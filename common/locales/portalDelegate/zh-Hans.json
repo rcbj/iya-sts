@@ -10,5 +10,17 @@
   "name": "指定",
   "clear": "不指定任何人",
   "doneSet": "已设置您的代理人。",
-  "doneCleared": "您未指定任何人。"
+  "doneCleared": "您未指定任何人。",
+  "searchHeading": "按用户名查找人员",
+  "searchSub": "请输入其用户名（uid）中的至少三个字符。停止输入三秒后开始搜索，按 Enter 键则立即搜索。只会找到本领域中账户在此创建的人员——不包括由联合合作方或社交登录创建的人员——也绝不会找到您本人或已停用的账户。",
+  "searchLabel": "用户名包含",
+  "searchButton": "搜索",
+  "searchTooShort": "请输入用户名中的至少 {min} 个字符进行搜索。",
+  "searchFailed": "目前无法搜索目录。请重试，或在下方输入其 DN。",
+  "searchNone": "这里没有人的用户名包含 <code>{q}</code>。",
+  "searchMore": "匹配的人员多于此处显示的人员。请输入更多用户名字符以缩小搜索范围。",
+  "colUid": "用户名",
+  "colCn": "姓名",
+  "colDn": "目录名称（DN）",
+  "choose": "指定此人"
 }

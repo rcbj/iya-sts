@@ -27,7 +27,10 @@
 //      3 left in the browser, /authn/wallet?siop=1&enrol=1, answered by a
 //      NEW key, lands on /portal/self-issued — drawn since #568 by the static
 //      portal from `/account-api`, signed in by single sign-on out of the same
-//      browser's session — and a browser with no session is refused.
+//      browser's session — and a browser with no session is refused. Since
+//      #693 the proved key is recorded as `proof: wallet` and the
+//      administrator's as `admin`, the page says which, and the enrolment
+//      writes a `portal.siop.enrol` audit row.
 //   6. A REMOVED KEY signs nobody in.
 //   7. THE VERIFIER, started at POST /admin-api/verifications/start
 //      (#587): a by-value SIOPv2 request with response_mode form_post,
@@ -474,6 +477,41 @@ async function test() {
                              second.thumbprint;
     }), r.text.slice(0, 400));
   });
+  // PROVENANCE (#693): the proved key says so, and the administrator's says
+  // it was enrolled by value.
+  check("the proved key is recorded as proved by the wallet, the " +
+        "administrator's as by value", function () {
+    const byProof = r.json.subjects.filter(function (one) {
+      return one.subject === "urn:ietf:params:oauth:jwk-thumbprint:sha-256:" +
+                             second.thumbprint;
+    })[0];
+    const byValue = r.json.subjects.filter(function (one) {
+      return one.subject === "urn:ietf:params:oauth:jwk-thumbprint:sha-256:" +
+                             key.thumbprint;
+    })[0];
+    assert.strictEqual(byProof.proof, "wallet", JSON.stringify(byProof));
+    assert.strictEqual(byValue.proof, "admin", JSON.stringify(byValue));
+  });
+  // THE ENROLMENT IS AUDITED (#693), as the removal always was.
+  let enrolRows = [];
+  for (let i = 0; i < 20 && !enrolRows.length; i += 1) {
+    const rows = await hop(null, "GET", api + "/audit?per=200&action=" +
+                           "portal.siop.enrol");
+    enrolRows = ((rows.json && (rows.json.rows || rows.json.events)) || [])
+      .filter(function (row) {
+        return row.actor === HOLDER && row.outcome === "success";
+      });
+    if (!enrolRows.length) {
+      await new Promise(function (resolve) {
+        setTimeout(resolve, 150);
+      });
+    }
+  }
+  check("the wallet enrolment wrote a portal.siop.enrol audit row",
+        function () {
+    assert.ok(enrolRows.length >= 1, "no portal.siop.enrol row for " +
+              HOLDER);
+  });
 
   // THE PORTAL PAGE ITSELF (#568): the static portal signs in as its public
   // client with PKCE and a DPoP-bound token, and single sign-on answers its
@@ -496,6 +534,10 @@ async function test() {
     assert.ok(page.html.indexOf(key.thumbprint) >= 0,
               "the administrator's key is listed");
     assert.ok(/id="siop-enrol"/.test(page.html), "no enrol link");
+    // How each was enrolled (#693).
+    assert.ok(page.html.indexOf("Proved with your wallet") >= 0 &&
+              page.html.indexOf("Added by an administrator") >= 0,
+              "the page does not say how each key was enrolled");
   });
   const gone = await portal.act("/portal/self-issued",
                                 { action: "remove", subject: secondUri });
@@ -558,7 +600,7 @@ async function test() {
                        JSON.stringify(verdict.json.verdict).slice(0, 600));
   });
 
-  assert.ok(checks >= 14, "only " + checks + " checks ran");
+  assert.ok(checks >= 16, "only " + checks + " checks ran");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");
   log.debug("Leaving test().");

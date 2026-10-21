@@ -15,5 +15,7 @@
   "openConsole": "Öppna konsolen",
   "copied": "Kopierat",
   "accounts.unsaved": "Den här sidan har ändringar som inte har sparats. Byta konto ändå? De går förlorade.",
-  "accounts.otherAccount": "Den inloggningen gällde ett annat konto, så den här fliken tog inte emot den. Logga in igen som {user}, eller byt konto från kontomenyn."
+  "accounts.otherAccount": "Den inloggningen gällde ett annat konto, så den här fliken tog inte emot den. Logga in igen som {user}, eller byt konto från kontomenyn.",
+  "accounts.refused.title": "Konsolen öppnas inte för det här kontot",
+  "accounts.refused.text": "Hanterings-API:t svarade {status} för kontot som den här fliken är inloggad som."
 }

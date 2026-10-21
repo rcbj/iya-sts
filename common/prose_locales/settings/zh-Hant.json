@@ -764,8 +764,8 @@
     "text": "一個瀏覽器中登入多個帳號"
   },
   "authn.multipleAccounts|description": {
-    "en": "d0b4899bdae1c43d",
-    "text": "允許一個瀏覽器同時持有多人的單一登入工作階段，並在其間選擇。開啟時，另一個人登入會在瀏覽器的帳號集（`sts_accounts` Cookie）中加入一個工作階段，而不是結束原有的工作階段；當有多個帳號已登入、而請求未說明針對哪個帳號時——此流程中未選擇帳號，也沒有指明帳號的 login_hint、id_token_hint 或 SAML Subject——請求會被送到 /authn/accounts 的帳號選擇器，prompt=select_account 也會顯示它。每個工作階段保留各自的有效期限、閒置逾時、升級驗證狀態與登出。關閉（預設）時，瀏覽器只有一個工作階段，另一個人登入會結束它。無論開啟或關閉，都在下一個請求時生效，且不會結束任何工作階段：開啟後，瀏覽器既有的工作階段成為其帳號集的第一個帳號；關閉後，瀏覽器的預設工作階段單獨繼續，其他工作階段照常到期。"
+    "en": "e0455f389b3cfb47",
+    "text": "允許一個瀏覽器同時持有多人的單一登入工作階段，並在其間選擇。開啟時，另一個人登入會在瀏覽器的帳號集（`sts_accounts` Cookie）中加入一個工作階段，而不是結束原有的工作階段；當有多個帳號已登入、而請求未說明針對哪個帳號時——此流程中未選擇帳號，也沒有指明帳號的 login_hint、id_token_hint 或 SAML Subject——請求會被送到 /authn/accounts 的帳號選擇器，prompt=select_account 也會顯示它。每個工作階段保留各自的有效期限、閒置逾時、升級驗證狀態與登出。預設開啟。關閉時，瀏覽器只有一個工作階段，另一個人登入會結束它。無論開啟或關閉，都在下一個請求時生效，且不會結束任何工作階段：開啟後，瀏覽器既有的工作階段成為其帳號集的第一個帳號；關閉後，瀏覽器的預設工作階段單獨繼續，其他工作階段照常到期。"
   },
   "authn.maxBrowserAccounts|label": {
     "en": "19115cee7c688f64",
@@ -3843,6 +3843,14 @@
     "en": "2394ee67a689920d",
     "text": "執行 OpenID Connect Key Binding 1.0（#150）。開啟時：探索文件列出 `bound_key` 範圍，未宣告任何範圍的用戶端可以請求它，請求它時必須提供 `dpop_jkt` 並使用授權碼流程（否則拒絕，STS-OAUTH-0704 與 0705）；隨後 ID Token 指明 DPoP 金鑰（`cnf.jwk`，`typ: dpop+id_token`），權杖請求必須以 `c_s256` 證明該金鑰，且每次更新都必須來自同一金鑰。**關閉時，它不存在，服務僅為 OpenID Connect Core**：不公布 `bound_key`，攜帶它的請求不會被拒絕——該範圍被忽略且不授予，正如 Core 對待 OP 不處理的範圍——也不綁定任何 ID Token。若信賴方會請求所有已公布的範圍且不了解 Key Binding，請將其關閉（#315）。關閉前已綁定的授權在更新時仍檢查其金鑰。"
   },
+  "oauth2.didClaim|label": {
+    "en": "d0b89f9c74f06728",
+    "text": "did 聲明"
+  },
+  "oauth2.didClaim|description": {
+    "en": "473d9916a85b21bb",
+    "text": "在 `did` 範圍之後，將某人的偏好 DID 作為 `did` 聲明放入 ID Token 和 UserInfo 回應中（#693）。開啟時，僅在以下條件全部滿足時才提供該聲明：用戶端在其 oauthAllowedScope 上聲明了 `did`（兩種模式皆然；它不在任何預設集合中），請求要求了該範圍，此人親自為該用戶端同意了它（全域同意不算），此人將一個以錢包證明過的 DID 標記為偏好（絕不是管理員輸入的 DID），並且帳戶未被停用。使用成對或暫時主體識別碼的用戶端永遠不會被告知，除非其 oauthDidClaimWithPairwise 為 TRUE，因為穩定的 DID 會破壞它們存在所要保障的不可關聯性。來自任何其他層的名為 `did` 的聲明會被移除。關閉：不公布該範圍，也從不提供該聲明。"
+  },
   "oauth2.sessionManagement|label": {
     "en": "9b2a882aa3250c63",
     "text": "OpenID Connect Session Management"
@@ -5787,6 +5795,14 @@
     "en": "7f75db9b5f30bc72",
     "text": "串接的 PEM 憑證，屬於此簽發者採信其金鑰證明的 Wallet Provider 與金鑰儲存元件：證明必須能以其中一把金鑰驗證，或由其中之一所簽發的憑證（其 x5c）簽署。留空表示不信任任何一方，此時金鑰證明會被拒絕。"
   },
+  "oid4vci.didHolderBinding|label": {
+    "en": "03baba1fe888a560",
+    "text": "綁定到本人的 DID"
+  },
+  "oid4vci.didHolderBinding|description": {
+    "en": "89f8d541b4738289",
+    "text": "其憑證綁定到本人的 DID 而非金鑰的憑證設定。對列出的每一個設定，錢包的證明必須以 kid 指明其金鑰，且該 kid 是本人在其 Self-issued IDs 頁面上證明過的 did:jwk 或 did:key URL（管理員輸入的項目不夠），憑證會攜帶該 DID：dc+sd-jwt 中為 cnf.kid，jwt_vc_json 中為 credentialSubject.id、sub 和 cnf.kid，ldp_vc 中為 credentialSubject.id。中繼資料會為其聲明 did:jwk 和 did:key。同一批次的每個副本都攜帶同一個 DID，因此可以互相關聯——這就是所做的取捨。留空時，每個設定都像以前一樣綁定到金鑰。不提供 did:web。"
+  },
   "vcApi.enabled|label": {
     "en": "5c2f9e8aabdd4d3b",
     "text": "提供 W3C VC API"
@@ -6066,6 +6082,14 @@
   "krb5.crossRealmClassicDelegation|description": {
     "en": "f95686ad2d2053e6",
     "text": "傳統限制委派（前端上的 appAllowedToDelegateTo）是否可以跨越 Kerberos 信任。預設關閉：它在單一領域內定義，而以資源為基礎的委派（目標上的 appAllowedToActOnBehalfOf，命名 SPN@REALM）才是跨越的那種。開啟時，前端所在領域在轉介證據前檢查自己的清單，目標所在領域將其視為已檢查；兩個領域都必須開啟。"
+  },
+  "krb5.s4uRoleSubject|label": {
+    "en": "01c225dc88b80527",
+    "text": "S4U 下服務所要求的角色由誰持有"
+  },
+  "krb5.s4uRoleSubject|description": {
+    "en": "497e1cff316db4ba",
+    "text": "在 S4U2Self 與 S4U2Proxy（傳統或基於資源）下，KDC 以誰的角色對照服務條目所要求的角色（appRequiredRole）。user（預設值）：票證所屬的人——PA-FOR-USER 中指名的使用者，或證據票證的用戶端——在本領域中以其完整名稱查詢，若其經由信任而來，則以其經過篩選的 SID 查詢。service：提出請求的服務，即 TGT 的用戶端，這是此設定出現之前 KDC 所檢查的。兩種情況下拒絕皆為 KDC_ERR_POLICY。一般的 TGS 請求只有一個主體，不受影響。規範對此未作規定：[MS-SFU] 只決定服務是否可以委派。"
   },
   "krb5.requireSidFilteringInProduct|label": {
     "en": "f4bc0b8bb8e18123",
@@ -6968,12 +6992,20 @@
     "text": "將主控台與入口網站註冊為接收端"
   },
   "ssf.internalReceivers|description": {
-    "en": "29e7cb1d4e0c30f3",
-    "text": "此服務是否為其「自己的」管理主控台與使用者入口網站植入 Shared Signals 串流，使兩者各自在自己的端點透過 RFC 8935 推送接收每個 CAEP 與 RISC 事件，並在 /admin/signals 與 /portal/signals 上繪製所收到的內容。它們是「一般」串流——在 /admin/ssf 暫停、縮減或刪除其中一個，它會保持該狀態直到重新啟動。請注意 ssf.pushDelivery 管轄此傳遞，如同管轄其他任何傳遞：關閉時，事件會在兩個串流上排隊，而不會到達任一頁面。"
+    "en": "1a148e2b3a63a17d",
+    "text": "此服務是否為其「自己的」管理主控台與使用者入口網站植入 Shared Signals 串流，使兩者各自接收每個 CAEP 與 RISC 事件——每隔 ssf.internalPollMs 透過 RFC 8936 輪詢從本服務自己的 /ssf/poll 收取（#771）——並在 /admin/signals 與 /portal/signals 上繪製所收到的內容。它們是「一般」串流——在 /admin/ssf 暫停、縮減或刪除其中一個，它會保持該狀態直到重新啟動。"
   },
   "ssf.internalReceivers|restartReason": {
     "en": "75c18a7223a2e0a3",
     "text": "兩個串流在 require ssf/ssf.ts 時植入，並在建構每個領域時再次植入，因此就地關閉此項會留下已存在的串流，而開啟它也不會建立任何串流"
+  },
+  "ssf.internalPollMs|label": {
+    "en": "245d4495769ca599",
+    "text": "主控台與入口網站輪詢間隔（毫秒）"
+  },
+  "ssf.internalPollMs|description": {
+    "en": "b80cedcb611f2fd3",
+    "text": "此服務自己的管理主控台與使用者入口網站多久收取一次其串流中保存的內容：透過 RFC 8936 輪詢從 /ssf/poll 收取（ssf.internal-poll 排程工作），每個請求最多 ssf.pollMaxEvents 個 SET。這是安全事件權杖（Security Event Token）在任一介面看到並據以行動之前最長的等待時間。0 會關閉此工作，此時事件會在兩個串流上排隊，而不會到達任一頁面。"
   },
   "ssf.maxStreams|label": {
     "en": "64775d43f39a7891",
@@ -7462,6 +7494,14 @@
   "risk.minimumHistory|description": {
     "en": "8febb2273519b4ee",
     "text": "人員需要多少次先前的登入，模型才會為其評分。次數較少者「不評分」，如同首次登入，而 new-device 與 new-tls-stack 訊號也等待相同的歷程：只有一兩次登入時，模型大多是母體的先驗，新人員的第二次登入會被判讀為 MEDIUM。證據訊號（清單、自動化用戶端、被拒絕的密碼、遭入侵的安全金鑰）則不論人員多新都適用。1 表示從第二次登入起評分。"
+  },
+  "risk.populationUsersCacheS|label": {
+    "en": "e30547f35344a4d6",
+    "text": "領域人數的保留秒數"
+  },
+  "risk.populationUsersCacheS|description": {
+    "en": "5e0a6cc869a4bab0",
+    "text": "風險評分在重新計算之前，保留某個領域中曾經登入過的人數（模型平滑項的分母）多長時間。計算需要掃描每人一列，因此每次登入都詢問，會隨著領域變大而代價更高；一分鐘前的計數對評分的影響，小於領域中多出一個人的影響。人數少於 1,000 的領域無論此設定為何，每次登入都會計算。0 表示每次登入都計算。"
   },
   "risk.geoMinimumCount|label": {
     "en": "e636b2310a4df74f",

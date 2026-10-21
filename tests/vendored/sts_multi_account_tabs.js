@@ -24,6 +24,10 @@
 //   2. A RELOAD KEEPS EACH TAB'S ACCOUNT: both tabs reloaded, each is drawn
 //      for the account it had — the sign-in a reload starts names it, so the
 //      shared cookie's default (bob, the last to sign in) does not decide.
+//   2a. SWITCH USER AND BACK (#751): the first tab's account menu offers
+//      bob and says the account it leaves stays signed in; pressing bob
+//      draws the tab for bob with nothing typed, and pressing alice in the
+//      same menu draws it for alice again — she stayed signed in.
 //   3. SIGNING ONE ACCOUNT OUT FROM ONE TAB: the first tab's Sign out goes to
 //      `/logout` with alice as its hint, the account step preselects her,
 //      and her own sign-out ends her session. The second tab, reloaded, is
@@ -90,7 +94,7 @@ const PASSWORD = "Mat-" + nodeCrypto.randomBytes(9).toString("base64url") +
   "-Aa1!";
 const WAIT_MS = 20000;
 // The fewest checks a full run makes.
-const FLOOR = 9;
+const FLOOR = 13;
 
 var screenshotDir = "";
 var checks = 0;
@@ -404,6 +408,63 @@ async function aReloadKeepsEachTabsAccount(driver, tabs) {
   log.debug("Leaving aReloadKeepsEachTabsAccount().");
 }
 
+// Opens this tab's account menu and presses the Switch user button for
+// the one other account it offers (#751).
+async function switchFromTheMenu(driver, who) {
+  log.debug("Entering switchFromTheMenu(). " + who);
+  await waitFor(driver, async function () {
+    return present(driver, "details.usermenu > summary");
+  }, "the portal drew no account menu.");
+  const open = await driver.executeScript(
+    "return !!document.querySelector('details.usermenu[open]');");
+  if (!open) {
+    await (await driver.findElement(By.css("details.usermenu > summary")))
+      .click();
+  }
+  await waitFor(driver, async function () {
+    return present(driver, "button[data-account-action='switch']");
+  }, "the account menu offered no account to switch to " + who + ".");
+  const offered = await driver.executeScript(
+    "var p = document.querySelector('details.usermenu .usermenupanel');" +
+    "return { text: p ? p.textContent : '', " +
+    "kept: !!(p && p.querySelector('p.usermenunote:not(" +
+    "[data-account-none])')), " +
+    "buttons: p ? p.querySelectorAll(" +
+    "\"button[data-account-action='switch']\").length : 0 };");
+  await (await driver.findElement(
+    By.css("button[data-account-action='switch']"))).click();
+  log.debug("Leaving switchFromTheMenu().");
+  return offered;
+}
+
+async function switchUserAndBack(driver, tabs) {
+  log.debug("Entering switchUserAndBack().");
+  await driver.switchTo().window(tabs.first);
+  await drawnFor(driver, ALICE, "the first tab was not alice's before the " +
+                 "switch.");
+  const toBob = await switchFromTheMenu(driver, BOB);
+  check("alice's menu offers bob alone, and says the account left stays " +
+        "signed in", function () {
+    assert.strictEqual(toBob.buttons, 1, JSON.stringify(toBob));
+    assert.ok(toBob.text.indexOf(BOB) >= 0, toBob.text);
+    assert.ok(toBob.kept, JSON.stringify(toBob));
+  });
+  await drawnFor(driver, BOB, "Switch user to " + BOB + " never drew the " +
+                 "tab for him.");
+  check("Switch user draws the tab for bob, with nothing typed",
+        function () {
+    assert.ok(true);
+  });
+  const toAlice = await switchFromTheMenu(driver, ALICE);
+  await drawnFor(driver, ALICE, "Switch user back to " + ALICE + " never " +
+                 "drew the tab for her — she should have stayed signed in.");
+  check("switching back draws the tab for alice, who stayed signed in",
+        function () {
+    assert.ok(toAlice.text.indexOf(ALICE) >= 0, toAlice.text);
+  });
+  log.debug("Leaving switchUserAndBack().");
+}
+
 async function signingOneAccountOut(driver, tabs) {
   log.debug("Entering signingOneAccountOut().");
   await driver.switchTo().window(tabs.first);
@@ -481,6 +542,7 @@ async function test() {
   try {
     const tabs = await aDifferentAccountInEachTab(driver);
     await aReloadKeepsEachTabsAccount(driver, tabs);
+    await switchUserAndBack(driver, tabs);
     await signingOneAccountOut(driver, tabs);
     await theBrowserLogIsClean(driver);
     assert.ok(checks >= FLOOR, "only " + checks + " checks ran; a SECTION " +

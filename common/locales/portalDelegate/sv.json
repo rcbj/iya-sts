@@ -10,5 +10,17 @@
   "name": "Ange dem",
   "clear": "Ange ingen",
   "doneSet": "Din ombudsperson är angiven.",
-  "doneCleared": "Du har inte angett någon."
+  "doneCleared": "Du har inte angett någon.",
+  "searchHeading": "Hitta en person efter användarnamn",
+  "searchSub": "Skriv minst tre tecken av personens användarnamn (uid). Sökningen körs när du har slutat skriva i tre sekunder, eller direkt när du trycker på Retur. Den hittar bara personer i den här sfären vars konton skapades här — inte sådana som en federationspartner eller en social inloggning skapade — och aldrig dig själv eller ett inaktiverat konto.",
+  "searchLabel": "Användarnamnet innehåller",
+  "searchButton": "Sök",
+  "searchTooShort": "Skriv minst {min} tecken av ett användarnamn för att söka.",
+  "searchFailed": "Det gick inte att söka i katalogen just nu. Försök igen, eller skriv personens DN nedan.",
+  "searchNone": "Ingen här har ett användarnamn som innehåller <code>{q}</code>.",
+  "searchMore": "Fler personer matchade än vad som visas här. Skriv mer av användarnamnet för att begränsa sökningen.",
+  "colUid": "Användarnamn",
+  "colCn": "Namn",
+  "colDn": "Katalognamn (DN)",
+  "choose": "Utse den här personen"
 }

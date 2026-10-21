@@ -310,6 +310,11 @@ class SignoutPages {
         ? '<div class="ok">' + t.html('logout.result.brief') + '</div>'
         : '<div class="warn">' + t.html('logout.result.nothingEnded') +
           '</div>') +
+      // Close the tab (rcbj, 2026-10-20): what this service held is ended,
+      // but the tab still holds whatever pages it showed, so the person is
+      // told to close it. On every outcome, the same as the server-drawn
+      // document's copy in logout.ts.
+      '<p><strong>' + t.html('logout.result.closeTab') + '</strong></p>' +
       '<p class="sub">' + t.html('logout.result.seeDetails') + '</p>' +
       // A root-relative link, which the runtime puts under the realm.
       '<p><a class="btn" href="/portal">' +

@@ -27,6 +27,38 @@
     "en": "87a572725d5885db",
     "text": "un nonce déjà consommé, si bien que la requête a été refusée"
   },
+  "caches.store.admin.console-totals.title": {
+    "en": "148cb7460d633eb9",
+    "text": "Totaux de l'index de la console, conservés"
+  },
+  "caches.store.admin.console-totals.description": {
+    "en": "21f463f4c0d3aa21",
+    "text": "Les totaux de l'index de la console — appels, jetons, artefacts, sessions, utilisateurs connus et utilisateurs connectés ici — que répond /admin-api/status. Compter les utilisateurs revient à résoudre chaque identité du registre, c'est pourquoi les totaux sont conservés quelques secondes."
+  },
+  "caches.store.admin.console-totals.bound": {
+    "en": "00ddf9958d051363",
+    "text": "Structurel : un jeu de totaux par domaine, construit au plus une fois à la fois."
+  },
+  "caches.store.admin.console-totals.lifetime": {
+    "en": "1fd142ea1eba6ca9",
+    "text": "Quinze secondes."
+  },
+  "caches.store.admin.users-population.title": {
+    "en": "187dfb82048a5dde",
+    "text": "Population de la page Utilisateurs, conservée"
+  },
+  "caches.store.admin.users-population.description": {
+    "en": "19ff0e331d0cabdb",
+    "text": "Chaque identité que le registre détient et chaque personne de l'annuaire, avec le recensement de ses identifiants : ce sur quoi /admin/users et /admin-api/users paginent, filtrent et comptent. La construire revient à résoudre chaque sujet du registre et à lire l'entrée de chaque personne ; la pagination la conserve donc au lieu de la reconstruire pour chaque page."
+  },
+  "caches.store.admin.users-population.bound": {
+    "en": "63612b99f35238a3",
+    "text": "Structurel : une population par domaine, construite au plus une fois à la fois."
+  },
+  "caches.store.admin.users-population.lifetime": {
+    "en": "39fc3b3cca7a059f",
+    "text": "Quinze secondes, et immédiatement dès qu'une écriture a lieu sous l'ou=users du domaine, ici ou appliquée depuis un autre processus."
+  },
   "caches.store.applications.listing.title": {
     "en": "eee968e6707b5423",
     "text": "Liste du registre des applications"
@@ -42,6 +74,22 @@
   "caches.store.applications.listing.lifetime": {
     "en": "0d7ef2a117733512",
     "text": "Jusqu’à ce que quoi que ce soit change sous ou=applications du domaine ; la lecture suivante l’analyse alors à nouveau."
+  },
+  "caches.store.applications.load.title": {
+    "en": "87b6608598fd495b",
+    "text": "Entrées d’application lues par identifiant"
+  },
+  "caches.store.applications.load.description": {
+    "en": "449808b7934fff9f",
+    "text": "L’entrée d’une application et son enregistrement analysé, par identifiant, afin que les vérifications d’une connexion ne lisent ni n’analysent l’entrée à chaque question."
+  },
+  "caches.store.applications.load.bound": {
+    "en": "2f0f2fdc2a335270",
+    "text": "Appliquée : MAX_LOAD_MEMO (256) identifiants par domaine ; au-delà, les réponses conservées sont abandonnées."
+  },
+  "caches.store.applications.load.lifetime": {
+    "en": "a1430f3b77ef4dc8",
+    "text": "Jusqu’à ce que quoi que ce soit change sous ou=applications du domaine ; la lecture suivante interroge alors à nouveau l’annuaire."
   },
   "caches.store.applications.ssf-allowed-events.title": {
     "en": "da62d279c1ec6d48",
@@ -351,6 +399,22 @@
     "en": "d0ae04f76208dec0",
     "text": "Aucune expiration : remplacée lorsque la hiérarchie change ici ou sur un autre nœud, et supprimée avec son domaine."
   },
+  "caches.store.keys.derived-digest-keys.title": {
+    "en": "f9fe85cae4c1d960",
+    "text": "Clés de condensat dérivées"
+  },
+  "caches.store.keys.derived-digest-keys.description": {
+    "en": "168b9cef8ba71a95",
+    "text": "La clé HMAC avec laquelle chaque libellé de condensat à clé est dérivé, afin qu’un condensat n’exécute pas HKDF à chaque appel. Conservée à côté de la clé dont elle est dérivée, comparée à chaque utilisation."
+  },
+  "caches.store.keys.derived-digest-keys.bound": {
+    "en": "ddbdac124aa8d60a",
+    "text": "Appliquée : MAX_DERIVED_DIGEST_KEYS (64) libellés ; au-delà, toutes les clés dérivées sont abandonnées."
+  },
+  "caches.store.keys.derived-digest-keys.lifetime": {
+    "en": "624f872facf2862c",
+    "text": "Jusqu’à ce que la clé dont elle est dérivée change (une nouvelle clé de condensat ou clé de chiffrement de clés), ce qui est vérifié à chaque utilisation."
+  },
   "caches.store.keys.plaintext.title": {
     "en": "51cb646ea755ee9e",
     "text": "Clés de signature déchiffrées"
@@ -527,6 +591,22 @@
     "en": "1c2c57f79cea4fb0",
     "text": "Jusqu’à ce que quoi que ce soit soit écrit sous ou=users du domaine."
   },
+  "caches.store.ldap.service-accounts.title": {
+    "en": "cf6e6b4822e4f795",
+    "text": "Comptes de service de l’annuaire"
+  },
+  "caches.store.ldap.service-accounts.description": {
+    "en": "c438b52f56cdcb94",
+    "text": "Les noms des comptes de service d’un domaine, afin qu’une décision de portée qui demande si une personne en possède un n’interroge pas l’annuaire sur tous."
+  },
+  "caches.store.ldap.service-accounts.bound": {
+    "en": "3fab118dee48ec80",
+    "text": "Structurelle : une liste par domaine, de la taille de ses comptes de service."
+  },
+  "caches.store.ldap.service-accounts.lifetime": {
+    "en": "6d41d8c344106c1b",
+    "text": "Jusqu’à ce qu’une écriture touche une entrée qui est, ou était, un compte de service ; la lecture suivante interroge alors à nouveau l’annuaire."
+  },
   "caches.store.ldap.subtree-listings.title": {
     "en": "89d5ba5e5411f55d",
     "text": "Listes des conteneurs de l’annuaire"
@@ -554,6 +634,22 @@
   "caches.store.ldap.username-index.lifetime": {
     "en": "b12dd09efefaa6bd",
     "text": "Jusqu’à ce que l’annuaire soit écrit d’une manière que l’index ne peut pas intégrer ; la recherche suivante le reconstruit alors. Un index par domaine."
+  },
+  "caches.store.ldap.windowed-entryuuids.title": {
+    "en": "1bcb1ccebd4c7781",
+    "text": "entryUUID fenêtrés"
+  },
+  "caches.store.ldap.windowed-entryuuids.description": {
+    "en": "4bbc3a85d38472cd",
+    "text": "Dans un processus qui tient une fenêtre sur l’annuaire, la clé à laquelle l’entryUUID de chaque personne ou appareil a été trouvé en dernier, pour qu’un sujet se résolve vers l’entrée que tient la fenêtre sans interroger à nouveau le stockage (#773). Vérifié contre l’entryUUID propre de l’entrée à chaque utilisation."
+  },
+  "caches.store.ldap.windowed-entryuuids.bound": {
+    "en": "a4522667ab0d5562",
+    "text": "Appliqué : ldap.workerCacheEntries par domaine, les plus anciens retirés en premier."
+  },
+  "caches.store.ldap.windowed-entryuuids.lifetime": {
+    "en": "317464bd9b5bd06a",
+    "text": "Jusqu’à ce que l’entrée qu’il désigne quitte la fenêtre, soit renommée ou ne porte plus cet entryUUID, ce qui est vérifié à chaque utilisation."
   },
   "caches.store.mail.outbox.title": {
     "en": "d40abea9379f4e22",
@@ -683,6 +779,22 @@
     "en": "bfe4788c0fa5b7fe",
     "text": "Appliquée : 256 jeux de clés par domaine, le plus ancien étant supprimé puis récupéré à nouveau lorsqu’il est de nouveau nécessaire."
   },
+  "caches.store.oauth2.declared-authorization-details-types.title": {
+    "en": "3f4c1bef936a03c4",
+    "text": "Types authorization_details déclarés"
+  },
+  "caches.store.oauth2.declared-authorization-details-types.description": {
+    "en": "5eba0c7bb76a5960",
+    "text": "Les types RFC 9396 que déclarent les applications d’un domaine, chacun avec la ressource qui en répond, afin qu’une autorisation ne construise pas une vue de chaque application pour les trouver."
+  },
+  "caches.store.oauth2.declared-authorization-details-types.bound": {
+    "en": "d25b94e5d9062281",
+    "text": "Structurelle : une réponse par domaine, de la taille des types que déclarent ses applications."
+  },
+  "caches.store.oauth2.declared-authorization-details-types.lifetime": {
+    "en": "3bfa4ec2d7a5b1f4",
+    "text": "Jusqu’à ce que quoi que ce soit change sous ou=applications du domaine ; la lecture suivante la reconstruit alors."
+  },
   "caches.store.oauth2.redeemed-codes.title": {
     "en": "d05b2abe4dfcac4c",
     "text": "Codes d’autorisation échangés"
@@ -702,6 +814,22 @@
   "caches.store.oauth2.redeemed-codes.hitMeaning": {
     "en": "55156810371e3ec1",
     "text": "un code déjà échangé, présenté de nouveau"
+  },
+  "caches.store.oauth2.refresh-token-bookkeeping.title": {
+    "en": "c9c28d7d082aab14",
+    "text": "Enregistrements de rotation des jetons de rafraîchissement"
+  },
+  "caches.store.oauth2.refresh-token-bookkeeping.description": {
+    "en": "38d9cf25fa52b3ad",
+    "text": "Un enregistrement par jeton de rafraîchissement et par famille, afin qu’un jeton de rafraîchissement rejoué révoque sa famille (RFC 9700), et ce que chaque autorisation a émis, afin que révoquer un jeton de rafraîchissement révoque le jeton d’accès émis à côté (RFC 7009)."
+  },
+  "caches.store.oauth2.refresh-token-bookkeeping.bound": {
+    "en": "945ea34a46306638",
+    "text": "Appliquée : oauth2.maxRefreshTokenFamilies enregistrements de jetons de rafraîchissement par domaine, le double pour ce qu’une autorisation a émis ; au-delà, les retirés partent d’abord, puis les plus anciens, avec un avertissement."
+  },
+  "caches.store.oauth2.refresh-token-bookkeeping.lifetime": {
+    "en": "584ca21b64df4c69",
+    "text": "Jusqu’à ce que la fenêtre de famille après l’émission du jeton soit écoulée ; la tâche caches.eject-expired abandonne alors l’enregistrement."
   },
   "caches.store.oauth2.request-uri.title": {
     "en": "3ae35b709a8c09f7",
@@ -1090,6 +1218,18 @@
   "caches.store.risk.dataset-lookups.lifetime": {
     "en": "cabefdef4e47cbf3",
     "text": "Jusqu’à ce qu’une version de jeu de données soit activée, ou que la limite la supprime."
+  },
+  "caches.store.risk.population-users.title": {
+    "en": "ee5f57710fdd1b70",
+    "text": "Évaluation des risques : nombre de personnes par domaine"
+  },
+  "caches.store.risk.population-users.description": {
+    "en": "cb24f916eda472c0",
+    "text": "Le nombre de personnes qui se sont connectées à chaque domaine, dénominateur du terme de lissage du modèle de risque, conservé pour qu’une connexion ne compte pas chaque personne qui s’est jamais connectée."
+  },
+  "caches.store.risk.population-users.bound": {
+    "en": "8154bb7a629a4263",
+    "text": "Structurel : un compte par domaine d’au moins 1000 personnes (scellé ou non), et il y a au plus realms.maxCount domaines en plus du domaine par défaut."
   },
   "caches.store.risk.standings.title": {
     "en": "492e058d1adf8354",

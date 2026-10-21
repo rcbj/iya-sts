@@ -16,12 +16,24 @@
 // into pasting on somebody else's behalf. An administrator may enrol by value
 // from /admin/users and POST /admin-api/users/enrol-self-issued-subject. The
 // wallet sign-in comes back to `/portal/self-issued?enrolled=1`, which the
-// view's operation turns into the page's notice.
+// view's operation turns into the page's notice. Since #693 each row says
+// how it was enrolled (`proof`), proving a subject that is already yours
+// proves it again (and re-pins a did:web whose document changed), and the
+// enrolment is audited (`portal.siop.enrol`, in `oid4vc/vc_signin.ts`).
 //
 // **SINCE #568 THESE ARE TWO `/account-api` OPERATIONS**, and the page is
 // drawn in the browser by `web_self_issued.ts`. **THE IDENTITY IS THE
 // TOKEN'S AND THERE IS NO PARAMETER FOR IT** — the portal's rule
-// (portal/CLAUDE.md): the removal names the SUBJECT, never whose it is.
+// (portal/CLAUDE.md): the removal names the SUBJECT, never whose it is, and
+// so does marking a proved DID as the preferred one (#693, `prefer` and
+// `unprefer` on the same POST), which the `did` claim releases.
+//
+// **NO ENTRY IS A REFUSAL, NOT AN EMPTY LIST** (2026-10-20). `siop.list()`
+// answers null where the directory holds no entry for the token's person,
+// and the view read that as `[]` — so a token naming somebody the directory
+// does not hold drew "none enrolled", indistinguishable from a person who
+// enrolled nothing. The GET refuses it (STS-PORTAL-0616, 404) and the page
+// says why; an entry with nothing enrolled is still the empty list.
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
@@ -42,13 +54,29 @@ interface PortalSelfIssuedDeps {
   log: { debug(message: string): void };
   siop: Json;
   config: { value(key: string): any };
+  // A did:jwk's or did:key's DID document, resolved from the identifier
+  // (`oid4vc/vc_did_resolver.ts`, `resolve()`); never a fetch.
+  resolveDid?: (did: string, req: Json) => Promise<Json>;
 }
 
 const REMOVE_FORM = vz.object({
-  action: vt.opt(vt.oneOf(['remove'])).describe('`remove`, the one act.'),
+  action: vt.opt(vt.oneOf(['remove', 'prefer', 'unprefer']))
+    .describe('`remove` (the default) takes the subject off; `prefer` ' +
+              'marks it as your preferred DID (#693), and `unprefer` ' +
+              'clears the mark.'),
   subject: vz.string().max(2048)
-    .describe('The enrolled subject to remove, from the list.')
+    .describe('The enrolled subject, from the list.')
 });
+
+const DID_QUERY = vz.object({
+  subject: vt.opt(vz.string().max(2048))
+    .describe('One of your enrolled self-issued subjects: a did:jwk or a ' +
+              'did:key. Left out, the page says to choose one.')
+});
+
+// The methods whose DID document is the identifier itself, and so can be
+// shown with nothing fetched.
+const RESOLVED_METHODS = /^did:(jwk|key):/;
 
 const SELF_ISSUED_QUERY = vz.object({
   enrolled: vt.opt(vt.oneOf(['1']))
@@ -78,7 +106,40 @@ class PortalSelfIssued {
   static defaultDeps(): PortalSelfIssuedDeps {
     helpers.log.debug("Entering PortalSelfIssued.defaultDeps().");
     helpers.log.debug("Leaving PortalSelfIssued.defaultDeps().");
-    return { log: helpers.log, siop: siop, config: config };
+    return { log: helpers.log, siop: siop, config: config,
+             // LAZILY: the resolver is the VC API's library, and the
+             // portal is loaded at 8a, long before it (rule 3e's reason —
+             // a require here would run its load-time slot early).
+             resolveDid: function resolveDid(did: string,
+                                             req: Json): Promise<Json> {
+               helpers.log.debug("Entering resolveDid().");
+               const resolver = require('../oid4vc/vc_did_resolver');
+               helpers.log.debug("Leaving resolveDid().");
+               return resolver.resolve(did, {}, req);
+             } };
+  }
+
+  // WHERE A ROW'S DID DOCUMENT IS (2026-10-20, rcbj: "the link to the
+  // published DID"): a did:web's published address, computed here so the
+  // browser does not carry the method's mapping; a did:jwk or did:key is
+  // its own document, shown by `/portal/self-issued/did`; a thumbprint is
+  // no DID and has neither. A did:web that cannot be mapped gets no link.
+  private documentOf(subject: string): Json {
+    const { log, siop } = this.deps;
+    log.debug("Entering PortalSelfIssued.documentOf().");
+    let url = '';
+    if (/^did:web:/.test(subject)) {
+      try {
+        url = siop.didWebUrl(subject);
+      } catch (e) {
+        log.debug("Caught in PortalSelfIssued.documentOf(): " +
+                  ((e && e.message) || e));
+        url = '';
+      }
+    }
+    log.debug("Leaving PortalSelfIssued.documentOf().");
+    return { didDocumentUrl: url,
+             didResolved: RESOLVED_METHODS.test(subject) };
   }
 
   /**
@@ -86,20 +147,202 @@ class PortalSelfIssued {
    * self-issued sign-in is on.
    *
    * @param username - the signed-in person
-   * @returns `{ enabled, subjects }`
+   * @param listed - what `siop.list()` already answered for them, if it was
+   *   asked; read here otherwise
+   * @returns `{ enabled, loginHint, didClaim, subjects }`
    */
-  view(username: string): Json {
+  view(username: string, listed?: Json[] | null): Json {
     const { log, siop, config } = this.deps;
+    const self = this;
     log.debug("Entering PortalSelfIssued.view().");
-    const held = siop.list(username) || [];
+    const held: Json[] = (listed === undefined ? siop.list(username)
+                                               : listed) || [];
     log.debug("Leaving PortalSelfIssued.view(). " + held.length);
     return { enabled: !!config.value('oid4vp.signInSelfIssued'),
+             // The account the Enrol link names (2026-10-20): which of the
+             // browser's sessions the enrolment is for, when Switch user has
+             // left several live (`oid4vc/vc_signin.ts`, startable()).
+             loginHint: String(username || ''),
+             // Whether the preferred DID is released as the `did` claim in
+             // this realm (#693): the page says so beside the mark.
+             didClaim: config.value('oauth2.didClaim') === true,
              subjects: held.map(function (one: Json): Json {
-               return { subject: String(one.subject),
+               return Object.assign({ subject: String(one.subject),
                         label: String(one.label || ''),
                         enrolledAt: one.enrolledAt || null,
-                        by: String(one.by || '') };
+                        by: String(one.by || ''),
+                        // How it was enrolled (#693): `wallet`, proved by
+                        // the person, or `admin`, by an administrator's
+                        // value.
+                        proof: String(one.proof || siop.PROOF_ADMIN),
+                        // The one proved DID marked as preferred (#693).
+                        preferred: one.preferred === true,
+                        // Where the key came from (2026-10-20), checked
+                        // again as it leaves; null for an enrolment from
+                        // before it was recorded.
+                        location: siop.locationOf(one.location) },
+                 // Its DID document's address, or that it is resolved from
+                 // the identifier (2026-10-20).
+                 self.documentOf(String(one.subject)));
              }) };
+  }
+
+  /**
+   * The GET: the page's view, or a refusal where the directory holds no
+   * entry for the token's person (STS-PORTAL-0616) — never an empty list
+   * standing in for "nobody here".
+   *
+   * @param ctx - the account API's helpers
+   * @param res - the response
+   * @param caller - the signed-in person
+   * @param enrolled - whether the wallet sign-in has just enrolled a subject
+   * @returns nothing
+   */
+  answer(ctx: AccountContext, res: Json, caller: AccountCaller,
+         enrolled: boolean): unknown {
+    const { log, siop } = this.deps;
+    log.debug("Entering PortalSelfIssued.answer().");
+    const who = caller.username;
+    const held = siop.list(who);
+    if (!Array.isArray(held)) {
+      const why = 'The directory holds no entry for ' + JSON.stringify(who) +
+        ', the person your sign-in names, so there is no list of ' +
+        'self-issued IDs to show. Sign out and sign in again; if this ' +
+        'persists, ask an administrator to look at your account.';
+      ctx.audit.record({
+        category: 'authentication', action: 'portal.siop.view',
+        errorCode: 'STS-PORTAL-0616', actor: who, target: who,
+        outcome: 'failure',
+        summary: 'could not be shown their self-issued IDs on ' +
+                 '/portal/self-issued: the directory holds no entry for them',
+        detail: { sub: caller.sub || undefined, errors: [why] }
+      });
+      log.debug("Leaving PortalSelfIssued.answer(). No entry.");
+      return ctx.refuse(res, 404, 'STS-PORTAL-0616', why);
+    }
+    const view = this.view(who, held);
+    if (enrolled) {
+      view.notice = ctx.translatorFor(who)
+        .text('portalSelfIssued.doneEnrolled');
+    }
+    log.debug("Leaving PortalSelfIssued.answer().");
+    return ctx.json(res, 200, view);
+  }
+
+  /**
+   * `GET /account-api/self-issued/did` (2026-10-20): the DID document of
+   * one of the CALLER's enrolled did:jwk or did:key subjects, resolved from
+   * the identifier. Not a resolver for anybody's input: a subject that is
+   * not enrolled for the token's person — somebody else's, or nobody's —
+   * is refused (STS-PORTAL-0618) before anything about it is said, and an
+   * enrolled one whose document is not the identifier itself — a did:web,
+   * published elsewhere, or a thumbprint, no DID — is refused
+   * (STS-PORTAL-0619). With no subject, the page's pointer back to the
+   * list.
+   *
+   * @param ctx - the account API's helpers
+   * @param req - the request
+   * @param res - the response
+   * @param caller - the signed-in person
+   * @param asked - the subject named, or ''
+   * @returns nothing
+   */
+  async didDocument(ctx: AccountContext, req: Json, res: Json,
+                    caller: AccountCaller, asked: string): Promise<unknown> {
+    const { log, siop, resolveDid } = this.deps;
+    log.debug("Entering PortalSelfIssued.didDocument().");
+    const who = caller.username;
+    if (!asked) {
+      log.debug("Leaving PortalSelfIssued.didDocument(). None named.");
+      return ctx.json(res, 200, { ok: true, subject: '', document: null });
+    }
+    const wanted = siop.normalise(asked);
+    const held = siop.list(who);
+    const mine = Array.isArray(held) && !!wanted &&
+      held.some(function (one: Json): boolean {
+        return one.subject === wanted;
+      });
+    const audited = function (code: string, why: string): string {
+      log.debug("Entering audited(). " + code);
+      ctx.audit.record({
+        category: 'authentication', action: 'portal.siop.did',
+        errorCode: code, actor: who, target: who, outcome: 'failure',
+        summary: 'could not be shown a DID document on ' +
+                 '/portal/self-issued/did',
+        detail: { subject: asked.slice(0, 256), errors: [why] } });
+      log.debug("Leaving audited().");
+      return why;
+    };
+    if (!mine) {
+      log.debug("Leaving PortalSelfIssued.didDocument(). Not theirs.");
+      return ctx.refuse(res, 404, 'STS-PORTAL-0618',
+        audited('STS-PORTAL-0618', 'That is not one of your enrolled ' +
+          'self-issued IDs, so there is no document of it to show here. ' +
+          'Open one from /portal/self-issued.'));
+    }
+    if (!RESOLVED_METHODS.test(wanted)) {
+      log.debug("Leaving PortalSelfIssued.didDocument(). Not resolved " +
+                "from the identifier.");
+      return ctx.refuse(res, 400, 'STS-PORTAL-0619',
+        audited('STS-PORTAL-0619', /^did:web:/.test(wanted)
+          ? 'A did:web\'s document is the one its owner publishes; its ' +
+            'link on /portal/self-issued opens it where it is published.'
+          : 'A JWK thumbprint is a key\'s digest, not a DID, and has no ' +
+            'DID document.'));
+    }
+    const resolved: Json = resolveDid ? await resolveDid(wanted, req) : null;
+    const meta = (resolved && resolved.didResolutionMetadata) || {};
+    if (!resolved || meta.error || !resolved.didDocument) {
+      log.debug("Leaving PortalSelfIssued.didDocument(). Unresolved.");
+      return ctx.refuse(res, 400, 'STS-PORTAL-0619',
+        audited('STS-PORTAL-0619', 'This DID could not be resolved from ' +
+          'the identifier: ' +
+          String(meta.errorMessage || meta.error || 'no document') + '.'));
+    }
+    log.debug("Leaving PortalSelfIssued.didDocument().");
+    return ctx.json(res, 200, { ok: true, subject: wanted,
+                                document: resolved.didDocument });
+  }
+
+  /**
+   * Marks one of the caller's proved DIDs as preferred, or clears the mark
+   * (#693).
+   *
+   * @param ctx - the account API's helpers
+   * @param res - the response
+   * @param caller - the signed-in person
+   * @param body - the checked body
+   * @returns nothing
+   */
+  prefer(ctx: AccountContext, res: Json, caller: AccountCaller,
+         body: Json): unknown {
+    const { log, siop } = this.deps;
+    log.debug("Entering PortalSelfIssued.prefer(). " + body.action);
+    const who = caller.username;
+    const clearing = body.action === 'unprefer';
+    const result = siop.setPreferred(who, clearing ? '' : body.subject);
+    ctx.audit.record({
+      category: 'authentication', action: 'portal.siop.prefer',
+      errorCode: result.ok ? undefined : 'STS-PORTAL-0615',
+      actor: who, target: who, outcome: result.ok ? 'success' : 'failure',
+      summary: (result.ok ? '' : 'could not ') +
+               (clearing ? 'cleared the preferred DID'
+                         : 'marked ' + body.subject + ' as the preferred ' +
+                           'DID') + ' on /portal/self-issued',
+      detail: { subject: clearing ? undefined : body.subject,
+                was: result.ok ? (result.was || undefined) : undefined,
+                errors: result.ok ? undefined : [result.error] }
+    });
+    if (!result.ok) {
+      log.debug("Leaving PortalSelfIssued.prefer(). Refused.");
+      return ctx.refuse(res, 400, 'STS-PORTAL-0615', result.error,
+                        { view: this.view(who) });
+    }
+    log.debug("Leaving PortalSelfIssued.prefer(). Done.");
+    return ctx.json(res, 200, { ok: true,
+      message: ctx.translatorFor(who).text(clearing
+        ? 'portalSelfIssued.doneUnpreferred'
+        : 'portalSelfIssued.donePreferred') });
   }
 
   /**
@@ -153,28 +396,76 @@ class PortalSelfIssued {
         summary: 'The wallet keys that sign you in with SIOPv2',
         description: '`subjects`: each enrolled self-issued subject (a DID ' +
           'or a JWK thumbprint), its label, when and by whom it was ' +
-          'enrolled. `enabled`: whether the self-issued sign-in is on. A ' +
+          'enrolled, and how (`proof`: `wallet`, proved by you, or ' +
+          '`admin`, by an administrator), whether it is your ' +
+          'preferred DID (`preferred`, #693), and where the key came ' +
+          'from (`location`: `{ kind, value }` — `web`, the web wallet ' +
+          'at that address; `app`, a wallet app, by the name it ' +
+          'reported or \'\'; `dc_api`, your browser, by its origin or ' +
+          '\'\'; `admin`; or null, not recorded), and where its DID ' +
+          'document is (`didDocumentUrl`, a did:web\'s published ' +
+          'address, or `didResolved`, a did:jwk or did:key resolved from ' +
+          'the identifier at /portal/self-issued/did). `enabled`: whether ' +
+          'the self-issued sign-in is on; `didClaim`: whether the preferred ' +
+          'DID may be released as the `did` claim here. A ' +
           'key is enrolled by proving it, at /authn/wallet?siop=1&enrol=1, ' +
-          'which comes back with `enrolled=1`; `notice` then says so.',
+          'which comes back with `enrolled=1`; `notice` then says so. ' +
+          'Where the directory holds no entry for the person the token ' +
+          'names it is refused (STS-PORTAL-0616) rather than answered as ' +
+          'an empty list.',
         query: SELF_ISSUED_QUERY,
+        statuses: {
+          404: 'The directory holds no entry for the token\'s person ' +
+               '(STS-PORTAL-0616).'
+        },
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
-          const view = self.view(caller.username);
-          if (input.query.enrolled === '1') {
-            view.notice = ctx.translatorFor(caller.username)
-              .text('portalSelfIssued.doneEnrolled');
-          }
-          return ctx.json(res, 200, view);
+          return self.answer(ctx, res, caller, input.query.enrolled === '1');
+        } },
+      { method: 'GET', path: ctx.BASE + '/self-issued/did',
+        operationId: 'getSelfIssuedDidDocument', tag: 'Self-issued IDs',
+        access: 'person', mirrors: 'GET ' + ctx.PORTAL + '/self-issued/did',
+        summary: 'The DID document of one of your enrolled did:jwk or ' +
+                 'did:key subjects',
+        description: '`document`: the DID document of `subject`, resolved ' +
+          'from the identifier itself — a did:jwk or did:key is its own ' +
+          'document, so nothing is published and nothing is fetched. Only ' +
+          'a subject enrolled for you: any other is refused ' +
+          '(STS-PORTAL-0618), and a did:web (its document is the one ' +
+          'published at its address, linked from the list) or a JWK ' +
+          'thumbprint (no DID) is refused (STS-PORTAL-0619). With no ' +
+          '`subject`, `{ subject: \'\', document: null }`.',
+        query: DID_QUERY,
+        statuses: {
+          400: 'A did:web or a JWK thumbprint, whose document is not the ' +
+               'identifier (STS-PORTAL-0619).',
+          404: 'Not one of your enrolled subjects (STS-PORTAL-0618).'
+        },
+        handler: function (req: Json, res: Json, caller: AccountCaller,
+                           input: Json): unknown {
+          return self.didDocument(ctx, req, res, caller,
+                                  String(input.query.subject || ''));
         } },
       { method: 'POST', path: ctx.BASE + '/self-issued',
         operationId: 'removeSelfIssued', tag: 'Self-issued IDs',
         access: 'person', mirrors: 'POST ' + ctx.PORTAL + '/self-issued',
-        summary: 'Removes a self-issued subject of yours',
-        description: 'The subject no longer signs you in. One that is not ' +
-          'enrolled for you is refused.',
+        summary: 'Removes a self-issued subject of yours, or marks one ' +
+                 'as your preferred DID',
+        description: '`remove` (the default): the subject no longer signs ' +
+          'you in. One that is not enrolled for you is refused. `prefer` ' +
+          '(#693): marks one DID you PROVED with your wallet as your ' +
+          'preferred one — the one a client you consent to may be told as ' +
+          'the `did` claim, where the realm releases it ' +
+          '(`oauth2.didClaim`); a subject an administrator added, or a ' +
+          'JWK thumbprint, is refused (STS-PORTAL-0615). `unprefer` clears ' +
+          'the mark. Removing the preferred subject clears it too.',
         body: REMOVE_FORM,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
+          if (input.body.action === 'prefer' ||
+              input.body.action === 'unprefer') {
+            return self.prefer(ctx, res, caller, input.body);
+          }
           return self.remove(ctx, res, caller, input.body);
         } }
     ];

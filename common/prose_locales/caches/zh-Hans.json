@@ -27,6 +27,38 @@
     "en": "87a572725d5885db",
     "text": "一个已使用过的 nonce，因此请求被拒绝"
   },
+  "caches.store.admin.console-totals.title": {
+    "en": "148cb7460d633eb9",
+    "text": "控制台首页统计（保留）"
+  },
+  "caches.store.admin.console-totals.description": {
+    "en": "21f463f4c0d3aa21",
+    "text": "控制台首页的统计——调用、令牌、工件、会话、已知用户以及在此登录过的用户——即 /admin-api/status 的回答。统计用户需要解析登记册中的每个身份，因此这些统计会保留几秒钟。"
+  },
+  "caches.store.admin.console-totals.bound": {
+    "en": "00ddf9958d051363",
+    "text": "结构性：每个领域一组统计，同一时间最多构建一次。"
+  },
+  "caches.store.admin.console-totals.lifetime": {
+    "en": "1fd142ea1eba6ca9",
+    "text": "十五秒。"
+  },
+  "caches.store.admin.users-population.title": {
+    "en": "187dfb82048a5dde",
+    "text": "用户页面人群（保留）"
+  },
+  "caches.store.admin.users-population.description": {
+    "en": "19ff0e331d0cabdb",
+    "text": "登记册中的每个身份和目录中的每个人员，以及各自的凭据普查：即 /admin/users 和 /admin-api/users 分页、筛选和计数的对象。构建它需要解析登记册中的每个主体并读取每个人员的条目，因此翻页时会保留它，而不是为每一页重新构建。"
+  },
+  "caches.store.admin.users-population.bound": {
+    "en": "63612b99f35238a3",
+    "text": "结构性：每个领域一份人群，同一时间最多构建一次。"
+  },
+  "caches.store.admin.users-population.lifetime": {
+    "en": "39fc3b3cca7a059f",
+    "text": "十五秒；当本领域的 ou=users 下有任何写入（在此进程或从其他进程应用）时立即失效。"
+  },
   "caches.store.applications.listing.title": {
     "en": "eee968e6707b5423",
     "text": "应用注册表列表"
@@ -42,6 +74,22 @@
   "caches.store.applications.listing.lifetime": {
     "en": "0d7ef2a117733512",
     "text": "直到该领域 ou=applications 下的任何内容发生变化；之后的下一次读取会重新解析它。"
+  },
+  "caches.store.applications.load.title": {
+    "en": "87b6608598fd495b",
+    "text": "按标识符读取的应用条目"
+  },
+  "caches.store.applications.load.description": {
+    "en": "449808b7934fff9f",
+    "text": "按标识符保存的单个应用条目及其解析后的记录，使登录过程中的各项检查不必每次都读取并解析该条目。"
+  },
+  "caches.store.applications.load.bound": {
+    "en": "2f0f2fdc2a335270",
+    "text": "强制：每个领域最多 MAX_LOAD_MEMO（256）个标识符；超出后丢弃已保存的应答。"
+  },
+  "caches.store.applications.load.lifetime": {
+    "en": "a1430f3b77ef4dc8",
+    "text": "直到该领域 ou=applications 下的任何内容发生变化；之后的下一次读取会重新查询目录。"
   },
   "caches.store.applications.ssf-allowed-events.title": {
     "en": "da62d279c1ec6d48",
@@ -351,6 +399,22 @@
     "en": "d0ae04f76208dec0",
     "text": "不过期：当层级在此处或其他节点上发生变化时被替换，并随其领域一起被丢弃。"
   },
+  "caches.store.keys.derived-digest-keys.title": {
+    "en": "f9fe85cae4c1d960",
+    "text": "派生的摘要密钥"
+  },
+  "caches.store.keys.derived-digest-keys.description": {
+    "en": "168b9cef8ba71a95",
+    "text": "每个带密钥摘要标签所派生的 HMAC 密钥，使计算摘要时不必每次都运行 HKDF。与派生它的密钥一起保存，并在每次使用时比较。"
+  },
+  "caches.store.keys.derived-digest-keys.bound": {
+    "en": "ddbdac124aa8d60a",
+    "text": "强制：MAX_DERIVED_DIGEST_KEYS（64）个标签；超出后丢弃所有派生密钥。"
+  },
+  "caches.store.keys.derived-digest-keys.lifetime": {
+    "en": "624f872facf2862c",
+    "text": "直到派生它的密钥发生变化（新的摘要密钥或密钥加密密钥），每次使用时都会检查。"
+  },
   "caches.store.keys.plaintext.title": {
     "en": "51cb646ea755ee9e",
     "text": "已解密的签名密钥"
@@ -527,6 +591,22 @@
     "en": "1c2c57f79cea4fb0",
     "text": "直到该领域 ou=users 下的任何内容被写入。"
   },
+  "caches.store.ldap.service-accounts.title": {
+    "en": "cf6e6b4822e4f795",
+    "text": "目录服务账户"
+  },
+  "caches.store.ldap.service-accounts.description": {
+    "en": "c438b52f56cdcb94",
+    "text": "某个领域的服务账户名称，使询问某人是否拥有服务账户的作用域决策不必向目录查询全部服务账户。"
+  },
+  "caches.store.ldap.service-accounts.bound": {
+    "en": "3fab118dee48ec80",
+    "text": "结构性：每个领域一个列表，大小等于其服务账户数。"
+  },
+  "caches.store.ldap.service-accounts.lifetime": {
+    "en": "6d41d8c344106c1b",
+    "text": "直到某次写入涉及一个现在是或曾经是服务账户的条目；之后的下一次读取会重新查询目录。"
+  },
   "caches.store.ldap.subtree-listings.title": {
     "en": "89d5ba5e5411f55d",
     "text": "目录容器列表"
@@ -554,6 +634,22 @@
   "caches.store.ldap.username-index.lifetime": {
     "en": "b12dd09efefaa6bd",
     "text": "直到目录以索引无法合并的方式被写入；之后的下一次查找会重建它。每个领域一个索引。"
+  },
+  "caches.store.ldap.windowed-entryuuids.title": {
+    "en": "1bcb1ccebd4c7781",
+    "text": "窗口中的 entryUUID"
+  },
+  "caches.store.ldap.windowed-entryuuids.description": {
+    "en": "4bbc3a85d38472cd",
+    "text": "在持有目录窗口的进程中，每个人或设备的 entryUUID 最近一次被找到时所在的键，使主体可以解析为窗口所持有的条目，而无需再次询问存储（#773）。每次使用时都会与条目自身的 entryUUID 核对。"
+  },
+  "caches.store.ldap.windowed-entryuuids.bound": {
+    "en": "a4522667ab0d5562",
+    "text": "强制：每个领域 ldap.workerCacheEntries 个，最旧的先被移除。"
+  },
+  "caches.store.ldap.windowed-entryuuids.lifetime": {
+    "en": "317464bd9b5bd06a",
+    "text": "直到它所指的条目离开窗口、被重命名或不再带有该 entryUUID 为止，每次使用时都会检查。"
   },
   "caches.store.mail.outbox.title": {
     "en": "d40abea9379f4e22",
@@ -683,6 +779,22 @@
     "en": "bfe4788c0fa5b7fe",
     "text": "强制：每个领域 256 个密钥集，丢弃最旧的，下次需要时重新获取。"
   },
+  "caches.store.oauth2.declared-authorization-details-types.title": {
+    "en": "3f4c1bef936a03c4",
+    "text": "已声明的 authorization_details 类型"
+  },
+  "caches.store.oauth2.declared-authorization-details-types.description": {
+    "en": "5eba0c7bb76a5960",
+    "text": "某个领域的应用所声明的 RFC 9396 类型，每个类型都附有负责应答它的资源，使授权时不必为查找它们而构建每个应用的视图。"
+  },
+  "caches.store.oauth2.declared-authorization-details-types.bound": {
+    "en": "d25b94e5d9062281",
+    "text": "结构性：每个领域一个应答，大小等于其应用所声明的类型。"
+  },
+  "caches.store.oauth2.declared-authorization-details-types.lifetime": {
+    "en": "3bfa4ec2d7a5b1f4",
+    "text": "直到该领域 ou=applications 下的任何内容发生变化；之后的下一次读取会重新构建它。"
+  },
   "caches.store.oauth2.redeemed-codes.title": {
     "en": "d05b2abe4dfcac4c",
     "text": "已兑换的授权码"
@@ -702,6 +814,22 @@
   "caches.store.oauth2.redeemed-codes.hitMeaning": {
     "en": "55156810371e3ec1",
     "text": "一个已兑换的授权码被再次出示"
+  },
+  "caches.store.oauth2.refresh-token-bookkeeping.title": {
+    "en": "c9c28d7d082aab14",
+    "text": "刷新令牌轮换记录"
+  },
+  "caches.store.oauth2.refresh-token-bookkeeping.description": {
+    "en": "38d9cf25fa52b3ad",
+    "text": "每个刷新令牌和每个令牌族各一条记录，使重放的刷新令牌会吊销其整个令牌族（RFC 9700）；以及每次授权所签发的内容，使吊销刷新令牌时会一并吊销与之同时签发的访问令牌（RFC 7009）。"
+  },
+  "caches.store.oauth2.refresh-token-bookkeeping.bound": {
+    "en": "945ea34a46306638",
+    "text": "强制：每个领域最多 oauth2.maxRefreshTokenFamilies 条刷新令牌记录，授权签发记录为其两倍；超出后先删除已轮换的，再删除最旧的，并发出警告。"
+  },
+  "caches.store.oauth2.refresh-token-bookkeeping.lifetime": {
+    "en": "584ca21b64df4c69",
+    "text": "直到令牌签发后的令牌族时间窗口过去；之后由 caches.eject-expired 任务删除该记录。"
   },
   "caches.store.oauth2.request-uri.title": {
     "en": "3ae35b709a8c09f7",
@@ -1090,6 +1218,18 @@
   "caches.store.risk.dataset-lookups.lifetime": {
     "en": "cabefdef4e47cbf3",
     "text": "直到某个数据集版本被激活，或因达到上限而被丢弃。"
+  },
+  "caches.store.risk.population-users.title": {
+    "en": "ee5f57710fdd1b70",
+    "text": "风险评分：每个领域的人数"
+  },
+  "caches.store.risk.population-users.description": {
+    "en": "cb24f916eda472c0",
+    "text": "每个领域中曾经登录过的人数，即风险模型平滑项的分母；保留下来，使一次登录不必统计每个曾经登录过的人。"
+  },
+  "caches.store.risk.population-users.bound": {
+    "en": "8154bb7a629a4263",
+    "text": "结构性：每个至少有 1000 人的领域一个计数（加密或未加密），且除默认领域外最多有 realms.maxCount 个领域。"
   },
   "caches.store.risk.standings.title": {
     "en": "492e058d1adf8354",

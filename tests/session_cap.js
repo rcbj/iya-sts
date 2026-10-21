@@ -653,10 +653,24 @@ function run(t) {
   log.debug("Leaving run().");
 }
 
+// THE OLD DEFAULT, SET EXPLICITLY (#751): `authn.multipleAccounts` is on by
+// default since 2026-10-20 (rcbj), and a switch of person here is meant to
+// end the session the browser was on, as it did when it was off.
+async function runWithOneSessionPerBrowser(t) {
+  log.debug("Entering runWithOneSessionPerBrowser().");
+  config.setOverride('authn.multipleAccounts', 'false');
+  try {
+    await run(t);
+  } finally {
+    config.clearOverride('authn.multipleAccounts');
+  }
+  log.debug("Leaving runWithOneSessionPerBrowser().");
+}
+
 module.exports = {
   name: 'session_cap',
   describe: 'authn.maxSessions refuses a new row at the realm cap, ends ' +
             'one own session at the per-subject cap (STS-AUTHN-0292), and ' +
             'each realm\'s sweep sheds at most its own budget (#350)',
-  run: run
+  run: runWithOneSessionPerBrowser
 };

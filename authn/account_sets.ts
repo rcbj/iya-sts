@@ -106,6 +106,24 @@ const tickets = realms.map({ persist: 'authn.accountTickets',
                              retain: 'age',
                              expiresAt: realms.expiryField('expires', 1) });
 
+// How long one slice of `sweepInSlices()` may hold the event loop: a few
+// requests' worth, so a request arriving mid-run waits at most that long.
+const SWEEP_SLICE_MS = 25;
+
+// How much sweeping one run of the job may do (#784): about a second of
+// work, a minute apart, so a pass over every set takes about an hour as it
+// did and a worker gives the sweep a percent or two rather than a minute.
+const SWEEP_RUN_BUDGET_MS = 1000;
+
+// WHERE THE PASS HAS GOT TO, per realm (#784): the ids the pass is visiting,
+// taken when it began, and how far through them it is. This process's own:
+// the job runs on one node, and a pass that moves to another starts again
+// there, which costs a repeated set and never a missed one.
+const sweepPasses = realms.keyed(function (): { ids: string[] | null;
+                                                at: number } {
+  return { ids: null, at: 0 };
+});
+
 /**
  * A browser's account set: the stores, the cookie and the operations on a
  * row. A static utility class.
@@ -755,36 +773,154 @@ class AccountSets {
     helpers.log.debug("Entering AccountSets.sweep().");
     const now = Date.now();
     const out = { sets: 0, ended: 0, expired: 0, deleted: 0 };
-    // Collected first: a save or a delete while the map is walked would
-    // change what is being walked.
+    AccountSets.sweptRows().forEach(function (stored: Json) {
+      AccountSets.sweepOne(stored, isLive, now, out);
+    });
+    helpers.log.debug("Leaving AccountSets.sweep(). " + JSON.stringify(out));
+    return out;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE SAME SWEEP, A SLICE AT A TIME (#780, 2026-10-21). `sweep()` checks
+  // every session of every set synchronously — a store round trip for each
+  // one the session window does not hold — and a load that signs in with a
+  // fresh cookie jar each time makes a set per sign-in: on 8081 at 150,000
+  // of them the hourly job held one of the two request workers at 100% for
+  // over a minute, and sign-ins halved. This does exactly what `sweep()`
+  // does, set by set, and gives the event loop back every `SWEEP_SLICE_MS`
+  // of work, so the requests the worker is also serving are answered
+  // between slices instead of after the whole run. A set changed by a
+  // request between two slices is read again when its turn comes.
+  // ---------------------------------------------------------------------------
+  /**
+   * Sweeps as `sweep()` does, yielding the event loop between slices of
+   * `SWEEP_SLICE_MS` (#780). The scheduler job's body.
+   *
+   * @param isLive - says whether a set should keep listing a session
+   * @returns a promise of `{ sets, ended, expired, deleted }`
+   */
+  static async sweepInSlices(isLive: (sid: string) => boolean):
+      Promise<Json> {
+    helpers.log.debug("Entering AccountSets.sweepInSlices().");
+    const now = Date.now();
+    const out = { sets: 0, ended: 0, expired: 0, deleted: 0, slices: 1 };
+    const ids = AccountSets.sweptRows().map(function (row: Json): string {
+      return String(row.id);
+    });
+    let sliceStarted = Date.now();
+    for (const id of ids) {
+      if (Date.now() - sliceStarted >= SWEEP_SLICE_MS) {
+        await new Promise(function (resolve): void {
+          setImmediate(resolve);
+        });
+        out.slices++;
+        sliceStarted = Date.now();
+      }
+      // Read again: a request may have changed or removed it meanwhile.
+      const stored = sets.get(id);
+      if (stored && stored.id) {
+        AccountSets.sweepOne(stored, isLive, now, out);
+      }
+    }
+    helpers.log.debug("Leaving AccountSets.sweepInSlices(). " +
+                      JSON.stringify(out));
+    return out;
+  }
+
+  // ---------------------------------------------------------------------------
+  // A PASS SPREAD OVER THE HOUR (#784). #780's slices give the event loop
+  // back, and the next slice takes it straight back: on 8081 at 190,000
+  // sets the run still held one of two request workers at 98% for a minute,
+  // a sign-in on it waited a slice at each await, and its change-log pull
+  // starved (sign-ins fell to 1.2 a second). So the job runs every minute
+  // and each run sweeps for at most SWEEP_RUN_BUDGET_MS, in slices, from
+  // where the last run stopped; a pass ends when every set it began with
+  // has been visited, and the next run begins another. Sets made during a
+  // pass wait for the next one, which nothing is waiting on: a set is
+  // pruned again whenever its browser draws the picker.
+  // ---------------------------------------------------------------------------
+  /**
+   * Sweeps for at most SWEEP_RUN_BUDGET_MS from where the last run stopped,
+   * yielding between slices (#784). The scheduler job's body.
+   *
+   * @param isLive - says whether a set should keep listing a session
+   * @param budgetMs - the run's budget; SWEEP_RUN_BUDGET_MS when absent
+   * @returns a promise of the run's counts, with `at` and `of` for the pass
+   */
+  static async sweepBudgeted(isLive: (sid: string) => boolean,
+                             budgetMs?: number): Promise<Json> {
+    helpers.log.debug("Entering AccountSets.sweepBudgeted().");
+    const budget = Number(budgetMs) > 0 ? Number(budgetMs)
+                                        : SWEEP_RUN_BUDGET_MS;
+    const pass = sweepPasses();
+    if (!pass.ids || pass.at >= pass.ids.length) {
+      pass.ids = AccountSets.sweptRows().map(function (row: Json): string {
+        return String(row.id);
+      });
+      pass.at = 0;
+    }
+    const now = Date.now();
+    const started = Date.now();
+    const out: Json = { sets: 0, ended: 0, expired: 0, deleted: 0, slices: 1,
+                        at: 0, of: pass.ids.length };
+    let sliceStarted = started;
+    while (pass.at < pass.ids.length && Date.now() - started < budget) {
+      if (Date.now() - sliceStarted >= SWEEP_SLICE_MS) {
+        await new Promise(function (resolve): void {
+          setImmediate(resolve);
+        });
+        out.slices++;
+        sliceStarted = Date.now();
+      }
+      const stored = sets.get(pass.ids[pass.at]);
+      pass.at++;
+      if (stored && stored.id) {
+        AccountSets.sweepOne(stored, isLive, now, out);
+      }
+    }
+    out.at = pass.at;
+    helpers.log.debug("Leaving AccountSets.sweepBudgeted(). " +
+                      JSON.stringify(out));
+    return out;
+  }
+
+  // The rows a sweep visits. Collected first: a save or a delete while the
+  // map is walked would change what is being walked.
+  private static sweptRows(): Json[] {
+    helpers.log.debug("Entering AccountSets.sweptRows().");
     const rows: Json[] = [];
     sets.forEach(function (row: Json) {
       if (row && row.id) {
         rows.push(row);
       }
     });
-    rows.forEach(function (stored: Json) {
-      out.sets++;
-      try {
-        const row = AccountSets.copy(stored);
-        const done = AccountSets.prune(row, isLive, now);
-        out.ended += done.ended;
-        out.expired += done.expired;
-        if (!AccountSets.size(row)) {
-          AccountSets.remove(row.id);
-          out.deleted++;
-        } else if (done.ended || done.expired) {
-          AccountSets.save(row);
-        }
-      } catch (e) {
-        // One row that cannot be read costs that row, never the sweep.
-        helpers.log.error(errorCodes.tag('STS-AUTHN-0344') + 'authn: the ' +
-                          'account-set expiry could not prune a set: ' +
-                          ((e && e.message) || e));
+    helpers.log.debug("Leaving AccountSets.sweptRows(). " + rows.length);
+    return rows;
+  }
+
+  // One set brought up to date, counted into `out`.
+  private static sweepOne(stored: Json, isLive: (sid: string) => boolean,
+                          now: number, out: Json): void {
+    helpers.log.debug("Entering AccountSets.sweepOne().");
+    out.sets++;
+    try {
+      const row = AccountSets.copy(stored);
+      const done = AccountSets.prune(row, isLive, now);
+      out.ended += done.ended;
+      out.expired += done.expired;
+      if (!AccountSets.size(row)) {
+        AccountSets.remove(row.id);
+        out.deleted++;
+      } else if (done.ended || done.expired) {
+        AccountSets.save(row);
       }
-    });
-    helpers.log.debug("Leaving AccountSets.sweep(). " + JSON.stringify(out));
-    return out;
+    } catch (e) {
+      // One row that cannot be read costs that row, never the sweep.
+      helpers.log.error(errorCodes.tag('STS-AUTHN-0344') + 'authn: the ' +
+                        'account-set expiry could not prune a set: ' +
+                        ((e && e.message) || e));
+    }
+    helpers.log.debug("Leaving AccountSets.sweepOne().");
   }
 }
 

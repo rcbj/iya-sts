@@ -697,7 +697,12 @@ async function censusQuestions(t, ldap, w, rows, users, bridge) {
           'byKeys pages, a byName only for a name not at uid=<name>, one ' +
           'question per identifier', JSON.stringify({ counts: asyncCounts,
             counter: counter }));
-  t.check(after.turns >= counter.pages - 1 && counter.pages >= 10,
+  // Since 2026-10-21 the pages are asked four at a time
+  // (`DirectoryWindow.entriesAtAsync()`), each giving the loop back before
+  // its question, so a group of four takes one turn: the loop still runs
+  // between groups, which is what this asserts.
+  t.check(after.turns >= Math.ceil(counter.pages / 4) - 1 &&
+          counter.pages >= 10,
           'E3. giving the event loop back between pages', after.turns +
           ' turn(s) for ' + counter.pages + ' page(s)');
 

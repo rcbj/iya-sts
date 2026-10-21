@@ -802,6 +802,14 @@ const DEVICE_ENROLLMENT_PROFILES = ENROLLMENT_PROFILES.concat(['device']);
 // oid4vc/vc_issuer.ts's IMPLEMENTED_ENC_VALUES, for both OID4VCI rows.
 const OID4VCI_ENC_VALUES = ['A128GCM', 'A256GCM'];
 
+// oid4vc/vc_configs.ts's VCI_CONFIGS ids, for `oid4vci.didHolderBinding`
+// (#693).
+const OID4VCI_CONFIG_IDS = ['IdentityCredential',
+                            'IdentityCredentialJwtVcJson',
+                            'IdentityCredentialLdpVc',
+                            'IdentityCredentialDid',
+                            'IdentityCredentialLdpVcDid'];
+
 // THE KEM AND HPKE JWE ALGS (#82): `common/crypto.js`'s section 4a table,
 // written out because this file requires nothing in this repository.
 // `tests/jwe_pq_kem.js` holds the two equal. The ML-KEM six are
@@ -2152,9 +2160,10 @@ const SETTINGS = [
                  'rate limiter bounds the attempts inside it.' },
 
   // ---------------------------------------------------------------------
-  // SEVERAL SIGNED-IN ACCOUNTS IN ONE BROWSER (#561). Off by default in
-  // both modes (the plan's D2), runtime and so per realm, read where it is
-  // used: `authn/account_sets.ts` and `authn/authn.ts`. Off, nothing here
+  // SEVERAL SIGNED-IN ACCOUNTS IN ONE BROWSER (#561). ON BY DEFAULT in
+  // both modes since 2026-10-20 (rcbj on #751: "default it to on"; it was
+  // off, the plan's D2, until then), runtime and so per realm, read where it
+  // is used: `authn/account_sets.ts` and `authn/authn.ts`. Off, nothing here
   // exists — no `sts_accounts` cookie, no picker — and a different person
   // signing in ends the browser's session exactly as before. In `Web
   // security` beside the session clocks, because what it changes is what a
@@ -2163,7 +2172,7 @@ const SETTINGS = [
   // ---------------------------------------------------------------------
   { key: 'authn.multipleAccounts', group: 'Web security',
     label: 'Several signed-in accounts in one browser',
-    env: 'STS_AUTHN_MULTIPLE_ACCOUNTS', type: 'bool', dflt: false,
+    env: 'STS_AUTHN_MULTIPLE_ACCOUNTS', type: 'bool', dflt: true,
     runtime: true,
     description: 'Let one browser hold sign-on sessions for several people ' +
                  'at once, and choose between them. On, signing in as a ' +
@@ -2175,7 +2184,7 @@ const SETTINGS = [
                  'than one is signed in is sent to the account picker at ' +
                  '/authn/accounts, and prompt=select_account shows it. ' +
                  'Every session keeps its own lifetime, idle timeout, ' +
-                 'step-up state and sign-out. Off, the default, the ' +
+                 'step-up state and sign-out. On is the default. Off, the ' +
                  'browser has one session and a different person signing ' +
                  'in ends it. Takes effect at the next request either way, ' +
                  'and ends nothing: turned on, a browser\'s existing ' +
@@ -7842,6 +7851,28 @@ const SETTINGS = [
                  'every advertised scope and know nothing of Key Binding ' +
                  '(#315). A grant already bound before it was turned off ' +
                  'keeps its key check on refresh.' },
+  // THE `did` CLAIM (#693, phase 2): a person's preferred, proved DID
+  // released to a client they consented to. Off by default, and
+  // `oauth-oidc/did_claim.ts` holds every other condition.
+  { key: 'oauth2.didClaim', group: 'OAuth 2.0 / OIDC',
+    label: 'The did claim',
+    env: 'STS_OAUTH2_DID_CLAIM', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Release a person\'s preferred DID as the `did` claim, in ' +
+                 'the ID Token and the UserInfo response, behind the `did` ' +
+                 'scope (#693). With it on, the claim is released only when ' +
+                 'the client declares `did` on its oauthAllowedScope (in ' +
+                 'both modes; it is in no default set), the request asked ' +
+                 'for the scope, the person consented to it for that client ' +
+                 'themselves (a global consent does not count), the person ' +
+                 'marked a DID they PROVED with their wallet as preferred ' +
+                 '(never one an administrator typed in), and the account is ' +
+                 'not disabled. A client using pairwise or ephemeral subject ' +
+                 'identifiers is never told it unless its ' +
+                 'oauthDidClaimWithPairwise is TRUE, because a stable DID ' +
+                 'defeats the unlinkability those exist for. A claim called ' +
+                 '`did` from any other layer is removed. Off: the scope is ' +
+                 'not advertised and the claim is never released.' },
   { key: 'oauth2.sessionManagement', group: 'OAuth 2.0 / OIDC',
     label: 'OpenID Connect Session Management',
     env: 'STS_OAUTH2_SESSION_MANAGEMENT', type: 'bool', dflt: false,
@@ -11247,6 +11278,30 @@ const SETTINGS = [
                  'one of them issued. Empty trusts none, and a key ' +
                  'attestation is then refused.' },
 
+  // THE PERSON'S DID AS THE HOLDER (#693 phase 2b): a configuration named
+  // here binds its credentials to a did:jwk or did:key the person PROVED
+  // with their wallet (oid4vc/siop.ts, provenSubjectsOf()) instead of to a
+  // bare key. Opt-in per configuration and empty by default, because one
+  // DID in every credential makes them linkable, which a key per copy
+  // prevents. oid4vc/CLAUDE.md argues it.
+  { key: 'oid4vci.didHolderBinding', group: 'OID4VCI',
+    label: 'Bind to the person\'s DID',
+    env: 'OID4VCI_DID_HOLDER_BINDING', type: 'csv', dflt: '',
+    runtime: true,
+    csvValues: OID4VCI_CONFIG_IDS,
+    description: 'The credential configurations whose credentials are ' +
+                 'bound to the person\'s DID rather than to a key. For each ' +
+                 'one named, the wallet\'s proof must name its key by a kid ' +
+                 'that is a did:jwk or did:key URL the person proved on ' +
+                 'their Self-issued IDs page (an administrator\'s entry is ' +
+                 'not enough), and the credential carries that DID: cnf.kid ' +
+                 'in a dc+sd-jwt, credentialSubject.id, sub and cnf.kid in a ' +
+                 'jwt_vc_json, credentialSubject.id in an ldp_vc. The ' +
+                 'metadata says did:jwk and did:key for it. Every copy of a ' +
+                 'batch carries the same DID, so they are linkable — the ' +
+                 'trade this makes. Empty binds every configuration to a ' +
+                 'key, as before. did:web is not offered.' },
+
   // --- The W3C VC API (#598) ------------------------------------------------
   //
   // **A PRODUCT SURFACE SINCE #598, AND OFF UNTIL A REALM TURNS IT ON.** Until
@@ -11652,6 +11707,30 @@ const SETTINGS = [
                  'realm checks its own list before it refers the evidence, ' +
                  'and the target\'s realm takes that as checked; both realms ' +
                  'must turn it on.' },
+
+  // WHOSE ROLE A SERVICE REQUIRES UNDER S4U (#747 item 2, rcbj 2026-10-20):
+  // [MS-SFU] governs only whether the service may impersonate or delegate,
+  // not whose authorization an access check the KDC adds of its own asks
+  // about, so it is a setting (krb5_kdc.js, s4uRoleSubjectOf()). The default
+  // is `user`, rcbj's choice (2026-10-20), and a behaviour change from the
+  // gate as first added (d6ba88e1), which asked about the service.
+  { key: 'krb5.s4uRoleSubject', group: 'Kerberos',
+    label: 'Whose role a service requires under S4U',
+    env: 'KRB5_S4U_ROLE_SUBJECT', type: 'enum',
+    enumValues: ['user', 'service'], dflt: 'user', runtime: true,
+    description: 'Under S4U2Self and S4U2Proxy (classic or resource-based), ' +
+                 'whose roles the KDC checks against the role a service\'s ' +
+                 'entry requires (appRequiredRole). user (the default): ' +
+                 'the person the ticket is for — the user named in ' +
+                 'PA-FOR-USER, or the evidence ticket\'s client — asked in ' +
+                 'this realm by their whole name, and by their filtered ' +
+                 'SIDs, when they came across a trust. service: the ' +
+                 'service that asks, the TGT\'s client, which is what the ' +
+                 'KDC checked before this setting existed. A refusal is ' +
+                 'KDC_ERR_POLICY either ' +
+                 'way. An ordinary TGS request has one subject and is not ' +
+                 'affected. The specifications leave this open: [MS-SFU] ' +
+                 'decides only whether the service may delegate.' },
 
   { key: 'krb5.requireSidFilteringInProduct', group: 'Kerberos',
     label: 'Require SID filtering on trusts',
@@ -13208,14 +13287,32 @@ const SETTINGS = [
                    'turning it on would create none',
     description: 'Whether this service seeds a Shared Signals stream for its ' +
                  'OWN admin console and user portal, so that each takes ' +
-                 'delivery of every CAEP and RISC event over RFC 8935 push ' +
-                 'at an endpoint of its own and draws what arrived at ' +
-                 '/admin/signals and /portal/signals. They are ORDINARY ' +
+                 'delivery of every CAEP and RISC event — collecting them ' +
+                 'over RFC 8936 poll from this service\'s own /ssf/poll ' +
+                 'every ssf.internalPollMs (#771) — and draws what arrived ' +
+                 'at /admin/signals and /portal/signals. They are ORDINARY ' +
                  'streams — pause one, narrow it or delete it at /admin/ssf ' +
-                 'and it stays that way until a restart. Note that ' +
-                 'ssf.pushDelivery governs this delivery like any other: ' +
-                 'with it off the events queue on the two streams and reach ' +
-                 'neither page.' },
+                 'and it stays that way until a restart.' },
+
+  // -------------------------------------------------------------------------
+  // HOW OFTEN THOSE TWO COLLECT (#771). The ssf.internal-poll job's interval:
+  // the longest a SET waits on its stream before the console or the portal
+  // sees it — and so how much later than a push did a received signal ends a
+  // surface's session. Each run polls only the streams with something
+  // waiting, many SETs to a request.
+  // -------------------------------------------------------------------------
+  { key: 'ssf.internalPollMs', group: 'SSF',
+    label: 'Console and portal poll interval (milliseconds)',
+    env: 'STS_SSF_INTERNAL_POLL_MS', type: 'int', dflt: 1000, min: 0,
+    max: 60000, runtime: true,
+    description: 'How often this service\'s own admin console and user ' +
+                 'portal collect what their streams hold, over RFC 8936 ' +
+                 'poll from /ssf/poll (the ssf.internal-poll scheduler job), ' +
+                 'up to ssf.pollMaxEvents SETs to a request. It is the ' +
+                 'longest a Security Event Token waits before either surface ' +
+                 'sees it and acts on it. 0 turns the job off, and the ' +
+                 'events then queue on the two streams and reach neither ' +
+                 'page.' },
 
   { key: 'ssf.maxStreams', group: 'SSF', label: 'Streams per receiver',
     env: 'STS_SSF_MAX_STREAMS', type: 'int', dflt: 25, min: 1, max: 1000,
@@ -13956,6 +14053,22 @@ const SETTINGS = [
                  '(lists, automated clients, refused passwords, a ' +
                  'compromised security key) apply however new the person ' +
                  'is. 1 scores from the second sign-in on.' },
+
+  // The realm's user count, kept (#779): see risk/risk_engine.ts's
+  // `populationUsers`.
+  { key: 'risk.populationUsersCacheS', group: 'Risk',
+    label: 'Seconds the realm\'s user count is kept',
+    env: 'STS_RISK_POPULATION_USERS_CACHE_S', type: 'int', dflt: 60, min: 0,
+    max: 86400, runtime: true,
+    description: 'How long risk scoring keeps the number of people who have ' +
+                 'signed in to a realm — the denominator of the model\'s ' +
+                 'smoothing term — before counting them again. Counting is ' +
+                 'a scan of one row per person, so asking at every sign-in ' +
+                 'costs more as the realm grows; a count a minute old ' +
+                 'changes a score by less than one person in the realm ' +
+                 'would. A realm of fewer than 1,000 people is counted at ' +
+                 'every sign-in whatever this says. 0 counts at every ' +
+                 'sign-in.' },
 
   // #255 (2026-09-26, rcbj's decision 4): Monitoring → Geolocation counts
   // people by place, and a place with one person in it names that person to

@@ -10,7 +10,8 @@
 //
 // Draws `/admin` from the answer of `GET /admin-api/status`: the totals, every
 // page this reader may see grouped as the sidebar is, what the console
-// deliberately does not do, and where the JSON is.
+// deliberately does not do (in development mode only, #753), and where the
+// JSON is.
 //
 // A `web_` MODULE, on `web_kit.ts`'s terms: it requires other `web_` modules
 // only, logs nothing, and is bundled for a browser by `build-typescript.sh`.
@@ -26,7 +27,7 @@ type Json = any;
 /**
  * Draws `/admin` from the answer of `GET /admin-api/status`: the totals, every
  * page this reader may see grouped as the sidebar is, what the console
- * deliberately does not do, and where the JSON is.
+ * deliberately does not do (in development mode only), and where the JSON is.
  *
  * A static utility class; it holds no state and takes no dependencies.
  */
@@ -65,7 +66,70 @@ class DashboardPage {
       kit.note(t.html('consoleDashboard.what.clients')) +
       kit.note(t.html('consoleDashboard.what.derived')) +
       DashboardPage.consoleGuide('/admin', json.sections, t) +
-      '<h2>' + t.html('consoleDashboard.not.heading') + '</h2>' +
+      DashboardPage.notDone(json, t) +
+      '<h2>' + t.html('consoleDashboard.test.heading') + '</h2>' +
+      kit.note(t.html('consoleDashboard.test.noteA') + ' ' +
+      link('/admin-api', '/admin-api') +
+      t.html('consoleDashboard.test.noteB')) +
+      // THE EXAMPLES ARE THE API'S OPERATIONS (#753): every `/admin/*` path
+      // answers the static console's one document since #446, so a
+      // `?format=json` there is the shell, not the page's view.
+      '<ul><li><code>GET ' + kit.esc(json.base) +
+      '/admin-api/metrics</code></li>' +
+      kit.bullet('<code>GET ' + kit.esc(json.base) +
+                  '/admin-api/groups</code>' +
+      t.html('consoleDashboard.test.and') + ' ' +
+      '<code>GET ' + kit.esc(json.base) +
+      '/admin-api/groups?group=cn=developers,ou=groups,...' +
+      '</code> ' + t.html('consoleDashboard.test.groups')) +
+      kit.bullet('<code>GET ' + kit.esc(json.base) +
+                  '/admin-api/users</code>' +
+      t.html('consoleDashboard.test.and') + ' ' +
+      '<code>GET ' + kit.esc(json.base) +
+      '/admin-api/users?user=alice</code> ' +
+      t.html('consoleDashboard.test.users')) +
+      kit.bullet('<code>GET ' + kit.esc(json.base) +
+      '/admin-api/tokens?page=1&amp;per=100</code> ' +
+      t.html('consoleDashboard.test.tokens')) +
+      kit.bullet('<code>GET ' + kit.esc(json.base) +
+      '/admin-api/sts-metadata</code> ' +
+      t.html('consoleDashboard.test.metadata')) +
+      kit.bullet('<code>GET ' + kit.esc(json.base) +
+      '/admin-api/console/delegation/map</code> ' +
+      t.html('consoleDashboard.test.map')) +
+      '<li><code>POST ' + kit.esc(json.base) +
+      '/admin-api/tokens/revoke</code> ' +
+      t.html('consoleDashboard.test.with') + ' ' +
+      '<code>{"target":"&lt;jti or ' +
+      'token&gt;"}</code></li><li><code>POST ' + kit.esc(json.base) +
+      '/admin-api/claims/replace</code> ' +
+      t.html('consoleDashboard.test.with') + ' ' +
+      '<code>' +
+      '{"set":"id_token","claims":[{"name":"dept",' +
+      '"value":"engineering"}]}</code></li></ul>';
+    return inner;
+  }
+
+  /**
+   * Draws *What it deliberately does not do*, in development mode only.
+   *
+   * Almost every entry is about what development mode does not check, so a
+   * realm in product mode is drawn none of it (#753). The answer's
+   * `testDouble` is `mode.describesItselfAsTestDouble()`, asked where the
+   * answer is built.
+   *
+   * @param json - the answer of `GET /admin-api/status`
+   * @param t - the page's translator (#539)
+   * @returns the section as HTML, or an empty string in product mode
+   */
+  static notDone(json, t) {
+    if (!json.testDouble) {
+      return '';
+    }
+    const link = function (href, text) {
+      return '<a href="' + href + '">' + text + '</a>';
+    };
+    return '<h2>' + t.html('consoleDashboard.not.heading') + '</h2>' +
       kit.note(t.html('consoleDashboard.not.intro')) +
       '<ul>' +
       kit.bullet(t.html('consoleDashboard.not.invalidate')) +
@@ -94,11 +158,7 @@ class DashboardPage {
       t.html('consoleDashboard.not.droppedOn') + ' ' +
       link('/admin/audit', t.html('consoleDashboard.link.audit')) +
       t.html('consoleDashboard.not.rememberB')) +
-      // The console's own door, per mode (#543 round 2): the answer's
-      // `verifiesCredentials` chooses, as `persistence` chooses above.
-      kit.bullet(t.html(json.verifiesCredentials
-        ? 'consoleDashboard.not.passwordProduct'
-        : 'consoleDashboard.not.password')) +
+      kit.bullet(t.html('consoleDashboard.not.password')) +
       kit.bullet(t.html('consoleDashboard.not.enforceA') + ' ' +
       link('/admin/oauth2', t.html('consoleDashboard.link.oauth')) + ' ' +
       t.html('consoleDashboard.not.enforceB') + ' ' +
@@ -122,47 +182,7 @@ class DashboardPage {
       ' <code>DELETE /scim/v2/Users/{id}</code> ' +
       t.html('consoleDashboard.not.deleteD')) +
       kit.bullet(t.html('consoleDashboard.not.oneRealm')) +
-      kit.bullet(t.html('consoleDashboard.not.scriptA') + ' ' +
-      link('/admin/delegation/map',
-           t.html('consoleDashboard.link.picture')) + ' ' +
-      t.html('consoleDashboard.not.scriptB')) +
-      '</ul>' +
-      '<h2>' + t.html('consoleDashboard.test.heading') + '</h2>' +
-      kit.note(t.html('consoleDashboard.test.noteA') + ' ' +
-      link('/admin-api', '/admin-api') +
-      t.html('consoleDashboard.test.noteB')) +
-      '<ul><li><code>GET ' + kit.esc(json.base) +
-      '/admin/metrics?format=json</code></li>' +
-      kit.bullet('<code>GET ' + kit.esc(json.base) +
-                  '/admin/groups?format=json</code>' +
-      t.html('consoleDashboard.test.and') + ' ' +
-      '<code>GET ' + kit.esc(json.base) +
-      '/admin/groups?group=cn=developers,ou=groups,...&amp;format=json' +
-      '</code> ' + t.html('consoleDashboard.test.groups')) +
-      kit.bullet('<code>GET ' + kit.esc(json.base) +
-                  '/admin/users?format=json</code>' +
-      t.html('consoleDashboard.test.and') + ' ' +
-      '<code>GET ' + kit.esc(json.base) +
-      '/admin/users?user=alice&amp;format=json</code> ' +
-      t.html('consoleDashboard.test.users')) +
-      kit.bullet('<code>GET ' + kit.esc(json.base) +
-      '/admin/tokens?format=json&amp;page=1&amp;per=100</code> ' +
-      t.html('consoleDashboard.test.tokens')) +
-      kit.bullet('<code>GET ' + kit.esc(json.base) +
-      '/admin/sts-metadata?format=json</code> ' +
-      t.html('consoleDashboard.test.metadata')) +
-      kit.bullet('<code>GET ' + kit.esc(json.base) +
-      '/admin/delegation/map?format=json</code> ' +
-      t.html('consoleDashboard.test.map')) +
-      '<li><code>POST ' + kit.esc(json.base) + '/admin/tokens</code> ' +
-      t.html('consoleDashboard.test.with') + ' ' +
-      '<code>{"action":"revoke","target":"&lt;jti or ' +
-      'token&gt;"}</code></li><li><code>POST ' + kit.esc(json.base) +
-      '/admin/claims</code> ' + t.html('consoleDashboard.test.with') + ' ' +
-      '<code>' +
-      '{"action":"replace","set":"id_token","claims":[{"name":"dept",' +
-      '"value":"engineering"}]}</code></li></ul>';
-    return inner;
+      '</ul>';
   }
 
   /**

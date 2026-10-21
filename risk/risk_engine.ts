@@ -317,6 +317,65 @@ const HOUR_MS = 3600 * 1000;
 const POPULATION = '*';
 
 // ---------------------------------------------------------------------------
+// THE REALM'S USER COUNT, KEPT FOR A WHILE (#779, 2026-10-21). `historyOf()`
+// asked the store at every sign-in how many people have EVER signed in to
+// the realm — a `count(*)` over one row per person, the denominator of the
+// model's smoothing term (`risk_model.ts`, "1 / number of users"). On 8081
+// it was postgres's busiest statement, 3.8 ms at 151,376 people and growing
+// with each one, on every sign-in's path. A number that moves by one per
+// new person and enters the score as 1/n does not need to be exact to the
+// second, so it is kept per realm for `risk.populationUsersCacheS` (0: asked
+// every time, as before) — and asked ONCE however many sign-ins want it at
+// the moment it is due, rather than once each.
+//
+// **ONLY FOR A REALM OF AT LEAST `POPULATION_KEPT_FROM` PEOPLE.** Below that
+// the scan is a few rows, and the count is a large part of each score: a
+// realm's first sign-ins are what the smoothing is for, and a count held at
+// 0 for a minute leaves every one of them with no population history at all
+// (`tests/risk_engine.js` C2, H1). The count is asked every time until it
+// reaches the bound, and kept once it has.
+// ---------------------------------------------------------------------------
+const POPULATION_KEPT_FROM = 1000;
+interface HeldUsers {
+  n: number;
+  at: number;
+  pending: Promise<number> | null;
+}
+const populationUsers = new Map<string, HeldUsers>();
+const populationUsersCount = cacheRegistry.register({
+  name: 'risk.population-users',
+  title: 'Risk scoring: each realm\'s user count',
+  description: 'How many people have signed in to each realm, the ' +
+    'denominator of the risk model\'s smoothing term, kept so a sign-in ' +
+    'does not count every person who ever signed in.',
+  owner: 'risk/risk_engine.ts',
+  scope: 'process',
+  settings: ['risk.populationUsersCacheS', 'realms.maxCount'],
+  maxEntries: function (): number | null {
+    // Two per realm: a sealed and a plain count (see the key).
+    return 2 * ((Number(config.value('realms.maxCount')) || 0) + 1);
+  },
+  bound: 'Structural: one count per realm of at least ' +
+    POPULATION_KEPT_FROM + ' people (sealed or not), and there are at most ' +
+    'realms.maxCount realms beside the default.',
+  lifetime: function (): string {
+    return 'risk.populationUsersCacheS seconds (' +
+      String(config.value('risk.populationUsersCacheS')) + '), then asked ' +
+      'again at the next sign-in.';
+  },
+  entries: function (): unknown[] {
+    const out: unknown[] = [];
+    const ttl = Number(config.value('risk.populationUsersCacheS')) * 1000;
+    populationUsers.forEach(function (held: HeldUsers, realm: string): void {
+      out.push({ realm: realm, key: held.n + ' user(s)',
+                 validUntil: new Date(held.at + ttl).toISOString(),
+                 basis: 'counted at ' + new Date(held.at).toISOString() });
+    });
+    return out;
+  }
+});
+
+// ---------------------------------------------------------------------------
 // THE HISTORY'S OWN FEATURES, outside the model (#506, 2026-10-07). Beside
 // the model's levels (`risk_model.ts`'s FEATURES) the person's history
 // counts three things the evaluators ask about: the TLS stack (`ja4`), the
@@ -1344,8 +1403,7 @@ class RiskEngine {
             String(attempt[first]) + '|', sealing));
         }
       }
-      users = await store.distinctValues(realm, subject, 'user', '',
-                                         sealing);
+      users = await this.populationUserCount(realm, subject, sealing);
     }
     log.debug("Leaving RiskEngine.historyOf().");
     return {
@@ -1362,6 +1420,58 @@ class RiskEngine {
         return distinct.get(first + '>' + level) || 0;
       }
     };
+  }
+
+  // The realm's user count (#779): held for risk.populationUsersCacheS, and
+  // one count in flight per realm. See `populationUsers`.
+  private populationUserCount(realm: string, subject: string,
+                              sealing: boolean): Promise<number> {
+    const { log, store } = this.deps;
+    log.debug("Entering RiskEngine.populationUserCount().");
+    const ttl = Math.max(0, Number(config.value('risk.populationUsersCacheS'))
+                            || 0) * 1000;
+    const key = String(realm || '') + '|' + (sealing ? 's' : 'p');
+    const held = populationUsers.get(key);
+    const now = Date.now();
+    if (ttl && held && held.pending) {
+      populationUsersCount.hit();
+      log.debug("Leaving RiskEngine.populationUserCount(). In flight.");
+      return held.pending;
+    }
+    if (ttl && held && now - held.at < ttl) {
+      populationUsersCount.hit();
+      log.debug("Leaving RiskEngine.populationUserCount(). Held.");
+      return Promise.resolve(held.n);
+    }
+    populationUsersCount.miss();
+    const asked = Promise.resolve(store.distinctValues(realm, subject, 'user',
+                                                       '', sealing));
+    if (!ttl) {
+      log.debug("Leaving RiskEngine.populationUserCount(). Not kept.");
+      return asked;
+    }
+    const entry: HeldUsers = { n: held ? held.n : 0, at: held ? held.at : 0,
+                               pending: null };
+    entry.pending = asked.then(function (n: number): number {
+      entry.n = Number(n) || 0;
+      entry.at = Date.now();
+      entry.pending = null;
+      if (entry.n < POPULATION_KEPT_FROM) {
+        // A small realm: not kept, asked again by the next sign-in.
+        populationUsers.delete(key);
+      }
+      return entry.n;
+    }, function (e: Json): never {
+      log.debug("Caught in RiskEngine.populationUserCount(): " +
+                ((e && e.message) || e));
+      // Not kept: the next sign-in asks again, as it always did.
+      entry.pending = null;
+      populationUsers.delete(key);
+      throw e;
+    });
+    populationUsers.set(key, entry);
+    log.debug("Leaving RiskEngine.populationUserCount(). Counting.");
+    return entry.pending;
   }
 
   // -------------------------------------------------------------------------

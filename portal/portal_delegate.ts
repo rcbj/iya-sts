@@ -40,6 +40,31 @@ interface PortalDelegateDeps {
   credentials: Json;
 }
 
+// THE SEARCH'S QUERY (2026-10-20): what the person typed, by part of a
+// `uid`. Its length below three is refused by the handler, with a code of
+// its own, rather than by the schema: the page says why in the person's
+// language, and a generic validation failure would not.
+const SEARCH_QUERY = vz.object({
+  q: vz.string().max(256)
+    .describe('Part of a username (`uid`), at least three characters. ' +
+              'Matched as a contains against the RDN value of the people ' +
+              'in this realm\'s `ou=users`.')
+});
+
+// The fewest characters a search takes. The directory refuses fewer too
+// (`ldap_server.js`, DELEGATE_CANDIDATE_MIN); this is the door's answer.
+const SEARCH_MIN = 3;
+
+// THE SEARCH'S OWN BUDGET, PER WINDOW OF `security.rateLimitWindowS`
+// (sixty seconds by default), counted across the cluster
+// (`websecurity.attemptShared()`). Not the settings' five per identity,
+// which are a guessing door's: the page asks after three idle seconds, so
+// a person refining a name asks a few times a minute, and a sixth answer
+// refused would be the page breaking. Thirty per person and 120 per
+// address still stop a script walking the directory three letters at a
+// time.
+const SEARCH_LIMIT = { identity: 30, address: 120 };
+
 const DELEGATE_FORM = vz.object({
   action: vt.opt(vt.oneOf(['set', 'clear']))
     .describe('`set` names the delegate; `clear` removes it.'),
@@ -136,6 +161,81 @@ class PortalDelegate {
   }
 
   /**
+   * Finds the native people of this realm whose `uid` contains what the
+   * caller typed (2026-10-20): at most ten, each `{ uid, cn, dn }`, and
+   * `more` when more matched. Rate-limited, audited, and never about
+   * anybody but people the caller could name anyway by typing their DN.
+   *
+   * @param ctx - the account API's helpers
+   * @param req - the request
+   * @param res - the response
+   * @param caller - the signed-in person
+   * @param query - the checked query
+   * @returns a promise of nothing
+   */
+  async search(ctx: AccountContext, req: Json, res: Json,
+               caller: AccountCaller, query: Json): Promise<unknown> {
+    const { log, credentials } = this.deps;
+    log.debug("Entering PortalDelegate.search().");
+    const who = caller.username;
+    const typed = String(query.q || '').trim();
+    const t = ctx.translatorFor(who);
+    const record = function (outcome: string, code: string | undefined,
+                             summary: string, detail: Json): void {
+      log.debug("Entering record().");
+      ctx.audit.record({
+        category: 'authentication', action: 'portal.delegation.search',
+        errorCode: code, actor: who, target: who, outcome: outcome,
+        summary: summary + ' on /portal/delegate',
+        detail: Object.assign({ query: typed }, detail)
+      });
+      log.debug("Leaving record().");
+    };
+    if (typed.length < SEARCH_MIN) {
+      record('failure', 'STS-PORTAL-0620', 'could not search for a ' +
+             'delegate with fewer than ' + SEARCH_MIN + ' characters', {});
+      log.debug("Leaving PortalDelegate.search(). Too short.");
+      return ctx.refuse(res, 400, 'STS-PORTAL-0620',
+                        t.text('portalDelegate.searchTooShort',
+                               { min: SEARCH_MIN }));
+    }
+    const allowed = await ctx.websecurity.attemptShared(
+      'portal-delegate-search', req, who, SEARCH_LIMIT);
+    if (!allowed.ok) {
+      const code = ctx.errorCodes.codeOf(allowed) || 'STS-PORTAL-0621';
+      record('failure', code, 'was refused a delegate search: too many', {});
+      log.debug("Leaving PortalDelegate.search(). Rate limited.");
+      return ctx.refuse(res, 429, code, allowed.detail);
+    }
+    let found: Json = null;
+    try {
+      found = await credentials.findDelegateCandidates(who, typed);
+    } catch (e) {
+      log.debug("Caught in PortalDelegate.search(): " +
+                ((e && e.message) || e));
+      found = null;
+    }
+    if (!found || !found.ok) {
+      const code = (found && ctx.errorCodes.codeOf(found)) ||
+        'STS-PORTAL-0622';
+      record('failure', code, 'could not search for a delegate', {});
+      log.debug("Leaving PortalDelegate.search(). The directory failed.");
+      return ctx.refuse(res, 503, 'STS-PORTAL-0622',
+                        t.text('portalDelegate.searchFailed'));
+    }
+    const people = (found.people || []).map(function (one: Json): Json {
+      return { uid: String(one.uid || ''), cn: String(one.cn || ''),
+               dn: String(one.dn || '') };
+    });
+    record('success', undefined, 'searched for a delegate (' +
+           people.length + ' shown' + (found.more ? ', more matched' : '') +
+           ')', { shown: people.length, more: !!found.more });
+    log.debug("Leaving PortalDelegate.search(). " + people.length);
+    return ctx.json(res, 200, { query: typed, people: people,
+                                more: !!found.more });
+  }
+
+  /**
    * The operations, for `account-api/account_api.ts`.
    *
    * @param ctx - the account API's helpers
@@ -159,6 +259,36 @@ class PortalDelegate {
         handler: function (req: Json, res: Json,
                            caller: AccountCaller): unknown {
           return ctx.json(res, 200, self.view(caller.username));
+        } },
+      { method: 'GET', path: ctx.BASE + '/delegate/candidates',
+        operationId: 'findDelegateCandidates', tag: 'Who may act for you',
+        access: 'person',
+        mirrors: 'GET ' + ctx.PORTAL + '/delegate/candidates',
+        summary: 'Finds people you may name, by part of their username',
+        description: 'The people of this realm whose username (`uid`, the ' +
+          'RDN value of their entry) contains `q`, at least three ' +
+          'characters: native people only — never one a federation ' +
+          'partner\'s or a consumer provider\'s sign-in created — and ' +
+          'never you, a disabled account, a service account, a group or ' +
+          'an application. At most ten, each `{ uid, cn, dn }` and nothing ' +
+          'else; `more` says more matched, and a narrower `q` finds them. ' +
+          'Naming one is POST /account-api/delegate with its `dn`.',
+        query: SEARCH_QUERY,
+        answer: { type: 'object', properties: {
+          query: { type: 'string' },
+          people: { type: 'array', maxItems: 10, items: {
+            type: 'object', properties: {
+              uid: { type: 'string' }, cn: { type: 'string' },
+              dn: { type: 'string' } } } },
+          more: { type: 'boolean' } } },
+        statuses: {
+          400: 'Fewer than three characters (STS-PORTAL-0620).',
+          429: 'Too many searches in the window (STS-PORTAL-0621, or the ' +
+               'rate limiter\'s own code).',
+          503: 'The directory could not answer (STS-PORTAL-0622).' },
+        handler: function (req: Json, res: Json, caller: AccountCaller,
+                           input: Json): unknown {
+          return self.search(ctx, req, res, caller, input.query);
         } },
       { method: 'POST', path: ctx.BASE + '/delegate',
         operationId: 'setDelegate', tag: 'Who may act for you',

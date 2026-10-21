@@ -82,7 +82,7 @@
   "nav.oid4vci": "OpenID4VCI",
   "nav.vc": "Verifierbara intyg",
   "nav.vc-claims": "Intygsanspråk",
-  "nav.vc-status": "Intygsstatus",
+  "nav.vc-monitor": "Verifierbara intyg",
   "nav.oid4vp": "OpenID4VP",
   "nav.vc-verifier-config": "Verifierarbegäran",
   "nav.xacml": "XACML",
@@ -193,8 +193,10 @@
   "nav.crypto-metadata": "Kryptografi",
   "shell.language": "Språk",
   "shell.browserLanguage": "Använd webbläsarens språk",
-  "shell.menu.switch": "Byt till ett annat konto",
+  "shell.menu.switch": "Byt användare",
   "shell.menu.switch.title": "Använd den här fliken som {user}. Andra flikar behåller sina konton.",
+  "shell.menu.switch.none": "Inget annat konto är inloggat i den här webbläsaren ännu.",
+  "shell.menu.switch.kept": "Kontot som den här fliken lämnar förblir inloggat, så du kan byta tillbaka till det här.",
   "shell.menu.another": "Logga in med ett annat konto",
   "shell.menu.another.title": "Logga in som en annan person i den här fliken. Konton som redan är inloggade i den här webbläsaren förblir inloggade, och andra flikar behåller sina."
 }

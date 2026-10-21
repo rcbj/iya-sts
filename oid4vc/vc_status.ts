@@ -41,7 +41,7 @@
 // (section 13.3's double-allocation rule is about live tokens).
 //
 // **WHAT A BIT SAYS IS COMPUTED, NOT STORED TWICE.** An entry keeps its
-// explicit status — what `/admin/vc-status` or a disown (`vc_issued.ts`) set
+// explicit status — what `/admin/vc/monitor` or a disown (`vc_issued.ts`) set
 // — and the issued register's handle. The published value is the explicit
 // one, or INVALID when an administrator revoked the credential's row on
 // `/admin/tokens` (read from `admin_stats.js` by handle, so a restore there

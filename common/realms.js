@@ -2498,6 +2498,27 @@ function remove(id) {
 // ---------------------------------------------------------------------------
 let persistObserver = null;
 
+// THE ON-DEMAND READER (#820): `{ active(handle), read(handle, realmId, key),
+// byIndex(handle, realmId, indexKey), journalled(handle, realmId, key) }`,
+// installed by `persistence_minted.js` once a driver that can answer is
+// open. Absent, or not `active()` for the store — an indexed store is not
+// until its index is complete — an `onDemand` store is an ordinary Map read
+// back whole: memory mode, development, every test with no store.
+let onDemandReader = null;
+
+/**
+ * Installs the reader an `onDemand` store asks for a row it does not hold.
+ *
+ * @param reader - the reader, or null to remove it
+ */
+function setOnDemandReader(reader) {
+  log.debug("Entering setOnDemandReader().");
+  onDemandReader = reader && typeof reader.read === 'function' &&
+    typeof reader.active === 'function' &&
+    typeof reader.journalled === 'function' ? reader : null;
+  log.debug("Leaving setOnDemandReader(). " + !!onDemandReader);
+}
+
 /**
  * Installs the observer every declared store reports its writes to, so
  * that minted state is written down.
@@ -2692,6 +2713,19 @@ function declareHandle(options, shape, accessors) {
     // /admin/scheduler and its API.
     // ---------------------------------------------------------------------
     restoreInWorkers: options.restoreInWorkers !== false,
+    // ---------------------------------------------------------------------
+    // `onDemand` (#820, 2026-10-21): the store is NOT read back whole at a
+    // start. A process holds a bounded set of its rows and reads one it does
+    // not hold from `sts_minted` by key when it is asked for (see map()
+    // below and `persistence_minted.js`'s on-demand reader). For the stores
+    // that grow with every person — refresh and grant tokens, families,
+    // account sets — which made every start read millions of rows. With
+    // `indexBy`, the index is written to `sts_minted_index` beside each row
+    // (`lookupsOf`), since a store not held whole cannot be walked.
+    // ---------------------------------------------------------------------
+    onDemand: !!options.onDemand,
+    lookupsOf: options.onDemand && typeof options.indexBy === 'function'
+      ? options.indexBy : null,
     // ---------------------------------------------------------------------
     // THE ACCESSORS LIVE ON THE REGISTRY ROW AND NOT ON THE STORE, and that is
     // the whole reason this is a registry at all. Two of the three shapes are
@@ -2918,6 +2952,99 @@ function keyed(factory, onLookup) {
 // A Map, per realm. Every member of the Map interface is delegated, including
 // the iterator — `for (const [k, v] of store)` is a shape this codebase uses.
 //
+// ---------------------------------------------------------------------------
+// A SECONDARY INDEX, KEPT BY THE PARTITION ITSELF (#766, 2026-10-20).
+//
+// `options.indexBy(value, key)` answers the index keys a record is filed
+// under (an array of strings, possibly empty), and `lookup(indexKey)` answers
+// the keys of the ambient realm's records filed under one. It is kept by the
+// partition Map, in its own `set`, `delete` and `clear`, because every way a
+// record enters or leaves a store ends there — the facade, the journalling
+// view, a restore and a row another process wrote (the handle's `restore` and
+// `remove`, `reconciledRestore()`) — so no door can forget it, and a store
+// that offers no `indexBy` gets a plain Map as before.
+//
+// **AN INDEXED FIELD CHANGES ONLY THROUGH `set`.** A record mutated in place
+// is not re-filed; the owner's `indexBy` names fields that never change on
+// a record (a token's `username` and `sub`), or the owner writes it back.
+// ---------------------------------------------------------------------------
+// A HOT PATH, ALL OF IT: `file()`, `unfile()`, `indexKeysOf()`, `set()`,
+// `delete()`, `clear()` and `lookup()` run on every write to an indexed
+// store and every question asked of one, so none has an Entering/Leaving
+// pair — the exception the code style allows, stated as it requires.
+class IndexedMap extends Map {
+  constructor(indexBy) {
+    super();
+    this.indexBy = indexBy;
+    /** @type {Map<string, Set<any>>} */
+    this.byIndex = new Map();
+  }
+
+  indexKeysOf(value, key) {
+    let keys = [];
+    try {
+      keys = value === undefined ? [] : (this.indexBy(value, key) || []);
+    } catch (e) {
+      // A record the owner cannot index is filed under nothing; it is still
+      // in the Map, so a walk finds it.
+      keys = [];
+    }
+    return keys;
+  }
+
+  file(value, key) {
+    this.indexKeysOf(value, key).forEach((ik) => {
+      if (!ik) {
+        return;
+      }
+      let held = this.byIndex.get(ik);
+      if (!held) {
+        held = new Set();
+        this.byIndex.set(ik, held);
+      }
+      held.add(key);
+    });
+  }
+
+  unfile(value, key) {
+    this.indexKeysOf(value, key).forEach((ik) => {
+      const held = this.byIndex.get(ik);
+      if (held) {
+        held.delete(key);
+        if (!held.size) {
+          this.byIndex.delete(ik);
+        }
+      }
+    });
+  }
+
+  set(key, value) {
+    if (super.has(key)) {
+      this.unfile(super.get(key), key);
+    }
+    super.set(key, value);
+    this.file(value, key);
+    return this;
+  }
+
+  delete(key) {
+    if (super.has(key)) {
+      this.unfile(super.get(key), key);
+    }
+    return super.delete(key);
+  }
+
+  clear() {
+    this.byIndex.clear();
+    super.clear();
+  }
+
+  lookup(indexKey) {
+    const held = this.byIndex.get(String(indexKey));
+    return held ? Array.from(held) : [];
+  }
+}
+
 // The JSDoc (#50) says what a caller holds: a Map, plus `realmMap()`. The
 // facade is built as a plain object with the iterator attached afterwards,
 // which the checker cannot see as a Map, so the return is cast.
@@ -2925,11 +3052,16 @@ function keyed(factory, onLookup) {
  * Makes a Map partitioned by realm, answering the ambient realm's Map.
  *
  * @param {any} [options]
- * @returns {Map<any, any> & { realmMap: (id?: any) => Map<any, any> }}
+ * @returns {Map<any, any> & { realmMap: (id?: any) => Map<any, any>,
+ *   lookup: (indexKey: string) => any[], onDemandLive: () => boolean }}
  */
 function map(options) {
   log.debug("Entering map().");
-  const per = keyed(function () { return new Map(); });
+  const indexBy = options && typeof options.indexBy === 'function'
+    ? options.indexBy : null;
+  const per = keyed(function () {
+    return indexBy ? new IndexedMap(indexBy) : new Map();
+  });
   // `reconcile`, for a per-realm store partly built from code — see the
   // contract above sharedMap(). The two accessors below ask it exactly as
   // sharedMap()'s do, through the same two functions, with the realm the row
@@ -3060,7 +3192,90 @@ function map(options) {
     return view;
   }
 
+  // -------------------------------------------------------------------------
+  // ON DEMAND (#820, 2026-10-21). With `options.onDemand` and a reader that
+  // is `active()`, the realm's Map is a bounded CACHE over `sts_minted`: a
+  // key it does not hold is read from the store by key and kept, and the
+  // oldest keys are dropped past `onDemand.maxEntries` — never one the
+  // minted journal still holds, because the flush reads a journalled key's
+  // value from here and would take its absence for a delete. A journalled
+  // key that is NOT held is a delete not yet written, and reads as absent
+  // rather than from the store, where the old row still is. `forEach`,
+  // `size` and the rest see only what is held: a store declared on-demand
+  // is not walked for what it holds, and `lookup()` asks the index.
+  // -------------------------------------------------------------------------
+  const onDemand = !!(options && options.onDemand);
+  const demandBound = onDemand && Number(options.onDemand.maxEntries) > 0
+    ? Math.floor(Number(options.onDemand.maxEntries)) : 20000;
+  function demandOn() {
+    return onDemand && !!onDemandReader && onDemandReader.active(handleName);
+  }
+  // Hot path: every on-demand write and read. No Entering/Leaving pair.
+  function demandTrim(realmId, target) {
+    if (target.size <= demandBound) {
+      return;
+    }
+    for (const key of target.keys()) {
+      if (target.size <= demandBound) {
+        break;
+      }
+      if (!onDemandReader.journalled(handleName, realmId, key)) {
+        target.delete(key);
+      }
+    }
+  }
+  // Hot path: every on-demand read. No Entering/Leaving pair.
+  function demandGet(k) {
+    const target = per();
+    if (target.has(k) || !demandOn()) {
+      return target.get(k);
+    }
+    const realmId = partitionId(currentId());
+    if (onDemandReader.journalled(handleName, realmId, k)) {
+      return undefined;
+    }
+    const found = onDemandReader.read(handleName, realmId, k);
+    if (!found || !found.present) {
+      return undefined;
+    }
+    target.set(k, found.value);
+    demandTrim(realmId, target);
+    return found.value;
+  }
+
   const facade = {
+    // The keys of the ambient realm's records filed under one index key
+    // (`options.indexBy`, #766); empty for a store that has no index. On
+    // demand, the index's rows as well (#820): each kept as it is read, a
+    // key held here as it is, and a delete not yet written left out.
+    lookup: function (indexKey) {
+      log.debug("Entering lookup().");
+      const target = per();
+      const held = typeof target.lookup === 'function'
+        ? target.lookup(indexKey) : [];
+      if (!demandOn() || typeof onDemandReader.byIndex !== 'function') {
+        log.debug("Leaving lookup().");
+        return held;
+      }
+      const realmId = partitionId(currentId());
+      const out = new Set(held);
+      (onDemandReader.byIndex(handleName, realmId, indexKey) || [])
+        .forEach(function (row) {
+          if (onDemandReader.journalled(handleName, realmId, row.key)) {
+            if (target.has(row.key)) {
+              out.add(row.key);
+            }
+            return;
+          }
+          if (!target.has(row.key)) {
+            target.set(row.key, row.value);
+          }
+          out.add(row.key);
+        });
+      demandTrim(realmId, target);
+      log.debug("Leaving lookup(). " + out.size + " key(s).");
+      return Array.from(out);
+    },
     // The realm's own Map, for the callers that genuinely want the whole thing
     // (a purge, a sweep across realms, a console page counting them). It is a
     // JOURNALLING VIEW — see viewOf() above.
@@ -3072,22 +3287,34 @@ function map(options) {
         // target as before; journal on the RESOLVED id
         : viewOf(partitionId(id), per.of(id));
     },
+    // Whether this store is a cache over the store right now (#820): what
+    // `size`, `forEach` and the rest see is then only what is held, and a
+    // bound kept by walking it is the cache's business, not the caller's.
+    onDemandLive: function () {
+      log.debug("Entering onDemandLive().");
+      log.debug("Leaving onDemandLive().");
+      return demandOn();
+    },
     get: function (k) {
       log.debug("Entering get().");
       log.debug("Leaving get().");
-      return per().get(k);
+      return onDemand ? demandGet(k) : per().get(k);
     },
     set: function (k, v) {
       log.debug("Entering set().");
-      per().set(k, v);
+      const target = per();
+      target.set(k, v);
       noteWrite(handle, k);
+      if (demandOn()) {
+        demandTrim(partitionId(currentId()), target);
+      }
       log.debug("Leaving set().");
       return facade;
     },
     has: function (k) {
       log.debug("Entering has().");
       log.debug("Leaving has().");
-      return per().has(k);
+      return onDemand ? demandGet(k) !== undefined : per().has(k);
     },
     delete: function (k) {
       log.debug("Entering delete().");
@@ -4371,6 +4598,7 @@ module.exports = {
   sharedMap: sharedMap,
   expiryField: expiryField,
   setPersistObserver: setPersistObserver,
+  setOnDemandReader: setOnDemandReader,
   unknownRealmPath: unknownRealmPath,
   handles: handles,
   handleFor: handleFor,

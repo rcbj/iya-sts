@@ -390,6 +390,8 @@ const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
                        // Self-issued subjects (#129, 2026-09-23).
                        'enrol-self-issued-subject',
                        'remove-self-issued-subject',
+                       // The preferred DID (#693, phase 2).
+                       'set-preferred-self-issued-subject',
                        // Devices (#130, 2026-09-23).
                        'remove-device',
                        // CIBA's test control (#131, 2026-09-23).
@@ -471,6 +473,10 @@ const CREDENTIAL_ADMIN_ACTIONS = ['reset-password', 'issue-password-reset',
   // `remove-self-issued-subject` takes one away. `oid4vc/siop.ts` keeps
   // them; a person enrols their own by proving the key on the portal.
   'enrol-self-issued-subject', 'remove-self-issued-subject',
+  // THE PREFERRED DID (#693, phase 2): `set-preferred-self-issued-subject`
+  // marks one subject the person PROVED, a DID, as the one the `did` claim
+  // releases (`subject`; empty clears the mark). `siop.setPreferred()`.
+  'set-preferred-self-issued-subject',
   // A DEVICE (#130, 2026-09-23): `remove-device` deletes one of the person's
   // device entries (`id`), and its Native SSO secret with it — the apps on
   // it are asked to sign in again. `common/devices.ts` keeps them.
@@ -2860,33 +2866,82 @@ class AdminActions {
     if (action === 'enrol-self-issued-subject' ||
         action === 'remove-self-issued-subject') {
       const { siop } = this.deps;
+      const self = this;
       const enrolling = action === 'enrol-self-issued-subject';
       const subject = String(body.subject || '').trim();
-      const done = enrolling
-        ? siop.enrol(who, subject, body.label, ctx.actor)
-        : siop.remove(who, subject, ctx.actor);
-      audited(enrolling ? 'admin.siop.enrolled' : 'admin.siop.removed',
+      const answer = function (done) {
+        log.debug("Entering answer(). " + action);
+        audited(enrolling ? 'admin.siop.enrolled' : 'admin.siop.removed',
+                (done.ok ? '' : 'could not ') +
+                (enrolling ? 'enrol ' : 'remove ') + 'the self-issued ' +
+                'subject ' + subject + (enrolling ? ' for ' : ' of ') + who +
+                (enrolling ? ' by value (unproven)' : ''),
+                { subject: subject, proof: enrolling ? 'admin' : undefined,
+                  pinnedKeys: done.ok && done.enrolled &&
+                    done.enrolled.pinnedKeys
+                    ? done.enrolled.pinnedKeys.join(' ') : undefined,
+                  errors: done.ok ? undefined : [done.error] },
+                done.ok ? 'success' : 'failure');
+        if (!done.ok) {
+          log.debug("Leaving answer(). " + action + " was refused.");
+          return self.refusedBy(done.code || (enrolling ? 'STS-ADMIN-0809'
+                                                        : 'STS-ADMIN-0810'),
+                                { ok: false, errors: [done.error] });
+        }
+        log.debug("Leaving answer(). " + action + ".");
+        return enrolling
+          ? { ok: true, username: who, enrolled: done.enrolled,
+              message: done.enrolled.subject + ' is enrolled for ' + who +
+                       ': a self-issued ID Token (SIOPv2) signed by that ' +
+                       'key now signs them in.' +
+                       (done.enrolled.pinnedKeys
+                         ? ' Its document\'s authentication keys are ' +
+                           'pinned; a key it names later signs nobody in ' +
+                           'until the person proves it.' : '') }
+          : { ok: true, username: who, removed: done.removed,
+              message: done.removed + ' no longer signs ' + who + ' in.' };
+      };
+      // AN ENROLMENT ANSWERS LATER (#693): a did:web's document is fetched
+      // to pin its keys (`siop.enrolByValue()`), so the act is a promise,
+      // which `/admin-api`'s users handler waits for. It never rejects.
+      if (enrolling) {
+        log.debug("Leaving AdminActions.credentialAdminAction(). " + action +
+                  ", answered when the enrolment settles.");
+        return siop.enrolByValue(who, subject, body.label, ctx.actor)
+          .then(answer);
+      }
+      log.debug("Leaving AdminActions.credentialAdminAction(). " + action +
+                ".");
+      return answer(siop.remove(who, subject, ctx.actor));
+    }
+
+    if (action === 'set-preferred-self-issued-subject') {
+      const { siop } = this.deps;
+      const subject = String(body.subject == null ? '' : body.subject).trim();
+      const done = siop.setPreferred(who, subject);
+      audited('admin.siop.preferred',
               (done.ok ? '' : 'could not ') +
-              (enrolling ? 'enrol ' : 'remove ') + 'the self-issued ' +
-              'subject ' + subject + (enrolling ? ' for ' : ' of ') + who,
-              { subject: subject,
+              (subject ? 'mark ' + subject + ' as ' + who + '\'s preferred ' +
+                         'DID' : 'clear ' + who + '\'s preferred DID'),
+              { subject: subject || undefined,
+                was: done.ok ? (done.was || undefined) : undefined,
                 errors: done.ok ? undefined : [done.error] },
               done.ok ? 'success' : 'failure');
       if (!done.ok) {
         log.debug("Leaving AdminActions.credentialAdminAction(). " + action +
                   " was refused.");
-        return this.refusedBy(enrolling ? 'STS-ADMIN-0809' : 'STS-ADMIN-0810',
+        return this.refusedBy('STS-ADMIN-0872',
                               { ok: false, errors: [done.error] });
       }
       log.debug("Leaving AdminActions.credentialAdminAction(). " + action +
                 ".");
-      return enrolling
-        ? { ok: true, username: who, enrolled: done.enrolled,
-            message: done.enrolled.subject + ' is enrolled for ' + who +
-                     ': a self-issued ID Token (SIOPv2) signed by that key ' +
-                     'now signs them in.' }
-        : { ok: true, username: who, removed: done.removed,
-            message: done.removed + ' no longer signs ' + who + ' in.' };
+      return { ok: true, username: who, preferred: done.preferred,
+               message: done.preferred
+                 ? done.preferred + ' is ' + who + '\'s preferred DID: a ' +
+                   'client allowed the did scope, and consented to, is told ' +
+                   'it as the did claim where oauth2.didClaim is on.'
+                 : who + ' has no preferred DID; the did claim is released ' +
+                   'to nobody.' };
     }
 
     if (action === 'set-service-account') {

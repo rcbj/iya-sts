@@ -4175,6 +4175,31 @@ function credentialKeyOf(req) {
     .slice(0, 22);
 }
 
+// THE READS WHOSE ANSWERS ARE KEPT PER PROCESS, by path, realm prefix and
+// all (`/realm/acme/admin-api/users` is that realm's own population).
+const KEPT_READ_PATHS = [/(?:^|\/)admin-api\/users$/,
+                         /(?:^|\/)admin-api\/mfa$/,
+                         /(?:^|\/)admin-api\/status$/];
+
+/**
+ * The affinity key of a read whose answer a worker keeps, or ''.
+ *
+ * @param path - the request path, without its query
+ * @returns `k:<path>`, or `''`
+ */
+function keptReadKeyOf(path) {
+  log.debug("Entering keptReadKeyOf().");
+  const text = String(path || '');
+  for (let i = 0; i < KEPT_READ_PATHS.length; i++) {
+    if (KEPT_READ_PATHS[i].test(text)) {
+      log.debug("Leaving keptReadKeyOf(). Kept.");
+      return 'k:' + text;
+    }
+  }
+  log.debug("Leaving keptReadKeyOf().");
+  return '';
+}
+
 /**
  * Returns the affinity key for a fanout request: the resource for a write
  * that names one, else a digest of the credential.
@@ -4185,11 +4210,21 @@ function credentialKeyOf(req) {
  */
 function mutationKeyOf(req, url) {
   log.debug("Entering mutationKeyOf().");
+  const path = String(url || '').split('?')[0];
   if (!mayWrite(req.method)) {
+    // A READ WHOSE ANSWER A WORKER KEEPS (2026-10-21) goes to the worker
+    // keeping it, whoever asks: `/admin-api/users`' population and
+    // `/admin-api/status`' totals are built per process (25 s and 20 s on
+    // 8081) and kept there, so a console whose token was renewed — a new
+    // credential key, maybe a new worker — waited for a second build.
+    const kept = keptReadKeyOf(path);
+    if (kept) {
+      log.debug("Leaving mutationKeyOf(). Kept answer.");
+      return kept;
+    }
     log.debug("Leaving mutationKeyOf().");
     return credentialKeyOf(req);
   }
-  const path = String(url || '').split('?')[0];
   for (let i = 0; i < RESOURCE_PATHS.length; i++) {
     const found = RESOURCE_PATHS[i].exec(path);
     if (found) {
@@ -4599,6 +4634,63 @@ function startOrder(forks) {
   return forks;
 }
 
+// Set when `start()` was asked early and the coordination check waits for
+// `confirmCoordination()`.
+let coordinationDeferred = false;
+
+// THE REFUSAL OF DISPATCH WITHOUT COORDINATION, as an Error, or null when
+// the store coordinates: `start()`'s check, and `confirmCoordination()`'s
+// for a pool started early.
+function coordinationRefusal(wants) {
+  log.debug("Entering coordinationRefusal().");
+  // Required HERE rather than at the top of the file: `persistence` is above
+  // every protocol module in the require order and this file is loaded by
+  // app.js, so a top-level require would pull the store into the router's
+  // position. By the time start() runs, it is a cache hit.
+  const persistence = require('../persistence/persistence');
+  const state = persistence.status();
+  if (!state.coordinates) {
+    const why = state.enabled
+      ? 'the store is "' + state.mode + '", which this build cannot ' +
+        'coordinate through (it needs a change log — see ' +
+        'persistence_replication.js\'s supports())'
+      : 'nothing is being persisted (persistence.mode is "' + state.mode +
+        '")';
+    log.debug("Leaving coordinationRefusal(). Refused.");
+    return new Error(errorCodes.tag('STS-WORKER-0024') +
+      'request_pool: ' + wants.length + ' entry/entries in ' +
+      'workers.dispatch are configured to be handled in a request worker (' +
+      wants.join(', ') + ') and THIS PROCESS IS NOT COORDINATING: ' + why +
+      '. Every worker would hold its own private copy of the directory, ' +
+      'the sessions and the settings, and a request answered by one would ' +
+      'not see what another had written — which does not fail, it answers ' +
+      'wrongly and intermittently. Configure a coordinating store ' +
+      '(persistence.mode postgres with persistence.coordinate on), or ' +
+      'clear workers.dispatch.');
+  }
+  log.info('request_pool: coordinating through the ' + state.mode + ' ' +
+           'store, so a worker sees what the others write.');
+  log.debug("Leaving coordinationRefusal().");
+  return null;
+}
+
+/**
+ * For a pool `start()` was asked to start early: the coordination check it
+ * deferred, asked now that this process coordinates. Resolves for a pool
+ * started the ordinary way.
+ *
+ * @returns a promise that rejects with `start()`'s STS-WORKER-0024 refusal
+ */
+function confirmCoordination() {
+  log.debug("Entering confirmCoordination().");
+  const wants = dispatchList();
+  const refused = coordinationDeferred && wants.length
+    ? coordinationRefusal(wants) : null;
+  coordinationDeferred = false;
+  log.debug("Leaving confirmCoordination().");
+  return refused ? Promise.reject(refused) : Promise.resolve();
+}
+
 // **SINCE #342 (2026-09-29) THE WORKERS ARE FORKED ONE AT A TIME** through
 // the start gate above queueFork(), and the promise resolves once the first
 // worker of each pool has settled rather than when all have.
@@ -4609,12 +4701,15 @@ function startOrder(forks) {
  *
  * Rejects when anything is dispatched while the store does not coordinate,
  * or when the surface pool's configuration is fatal.
+ * @param opts - optional; `early: true` when the front process starts the
+ *   pool before its own minted restore (2026-10-21), which defers the
+ *   coordination check to `confirmCoordination()`
  * @returns a promise of `{ started, wanted, pending, all, pools }`:
  *   `started` workers ready so far, `pending` of the initial set not yet
  *   settled, and `all` a promise of `{ started, wanted, pools }` once every
  *   one of the initial set has
  */
-function start() {
+function start(opts) {
   log.debug('Entering start().');
   if (starting) {
     log.debug('Leaving start(). Already starting.');
@@ -4688,36 +4783,26 @@ function start() {
   // first time somebody added a third kind of dispatchable thing.
   // ---------------------------------------------------------------------
   const wants = dispatchList();
-  if (wants.length) {
-    // Required HERE rather than at the top of the file: `persistence` is above
-    // every protocol module in the require order and this file is loaded by
-    // app.js, so a top-level require would pull the store into the router's
-    // position. By the time start() runs, it is a cache hit.
-    const persistence = require('../persistence/persistence');
-    const state = persistence.status();
-    if (!state.coordinates) {
-      const why = state.enabled
-        ? 'the store is "' + state.mode + '", which this build cannot ' +
-          'coordinate through (it needs a change log — see ' +
-          'persistence_replication.js\'s supports())'
-        : 'nothing is being persisted (persistence.mode is "' + state.mode +
-          '")';
-      starting = Promise.reject(new Error(errorCodes.tag('STS-WORKER-0024') +
-        'request_pool: ' + wants.length + ' entry/entries in ' +
-        'workers.dispatch are configured to be handled in a request worker (' +
-        wants.join(', ') + ') and THIS PROCESS IS NOT COORDINATING: ' + why +
-        '. Every worker would hold its own private copy of the directory, ' +
-        'the sessions and the settings, and a request answered by one would ' +
-        'not see what another had written — which does not fail, it answers ' +
-        'wrongly and intermittently. Configure a coordinating store ' +
-        '(persistence.mode postgres with persistence.coordinate on), or ' +
-        'clear workers.dispatch.'));
+  // **STARTED EARLY, THE CHECK WAITS (2026-10-21).** The front process may
+  // start the pool while it restores what it minted (`server.js`), so that
+  // the first worker's restore runs beside its own rather than after it:
+  // two restores of 2.1 million rows on 8081, 34 s and then 32 s, made a
+  // start 75 s long. Coordination begins only after the front's restore, so
+  // it cannot be asked yet; `confirmCoordination()` asks it once the front
+  // is coordinating, before anything is dispatched or bound, and refuses
+  // the start with the same error.
+  if (wants.length && opts && opts.early) {
+    coordinationDeferred = true;
+    log.info('request_pool: started beside this process\'s own restore; ' +
+             'the store\'s coordination is confirmed before the listener ' +
+             'binds.');
+  } else if (wants.length) {
+    const refused = coordinationRefusal(wants);
+    if (refused) {
+      starting = Promise.reject(refused);
       log.debug("Leaving start().");
       return starting;
     }
-    log.info('request_pool: coordinating through the ' + state.mode + ' ' +
-             'store, so a worker sees what the others write.');
-
   }
   // THE SURFACE POOL'S OWN REFUSAL, for the same class of reason and in the
   // same shape. See surfacePoolProblem().
@@ -7496,6 +7581,7 @@ module.exports = {
   schedulerRunner: schedulerRunner,
   size: size,
   start: start,
+  confirmCoordination: confirmCoordination,
   stop: stop,
   stats: stats,
   // Each ready worker's memory and CPU time, asked for over the channel

@@ -206,6 +206,32 @@ function fakePg(statements, answer) {
   FakeClient.prototype.query = function (sql, params) {
     const text = String(sql);
     statements.push({ sql: text, params: params || [] });
+    // A repair's read of the index row first (2026-10-21): the row in
+    // `answer.heldIndex`, or none.
+    if (/^SELECT expires_at, last_seen_at, started_at/.test(text)) {
+      const held = answer.heldIndex ? [answer.heldIndex] : [];
+      return Promise.resolve({ rows: held, rowCount: held.length });
+    }
+    // A flush's set-based statements (2026-10-21): each parameter an array
+    // over the rows. The lock-and-read answers every key with selectBody;
+    // a guarded INSERT … RETURNING returns every row when rowCount says it
+    // landed and none when it did not.
+    if (/^SELECT handle, realm, key, body FROM sts_minted/i.test(text)) {
+      const p = params || [];
+      const found = answer.selectBody == null ? [] : (p[0] || []).map(
+        function (h, i) {
+          return { handle: h, realm: p[1][i], key: p[2][i],
+                   body: answer.selectBody };
+        });
+      return Promise.resolve({ rows: found, rowCount: found.length });
+    }
+    if (/RETURNING handle, realm, key/.test(text)) {
+      const p = params || [];
+      const back = answer.rowCount ? (p[0] || []).map(function (h, i) {
+        return { handle: h, realm: p[1][i], key: p[2][i] };
+      }) : [];
+      return Promise.resolve({ rows: back, rowCount: back.length });
+    }
     if (/SELECT body FROM sts_minted/i.test(text)) {
       if (answer.selectBody == null) {
         return Promise.resolve({ rows: [], rowCount: 0 });
@@ -300,15 +326,53 @@ async function sqlHalf(t) {
   const tombInsert = matching(tombTx, /INSERT INTO sts_minted/i);
   const tombDelete = matching(tombTx, sessionDelete);
   t.equal(tombInsert.length, 1, 'a tombstone writes the marker');
-  t.equal(tombInsert[0].params[3], TOMBSTONE,
+  t.equal(tombInsert[0].params[3][0], TOMBSTONE,
           'and the marker is the tombstone body');
   t.equal(tombDelete.length, 1,
           'and deletes the index row in that same transaction');
-  t.equal(tombDelete[0].params[0], REALM, 'the delete names the realm');
-  t.equal(tombDelete[0].params[1], 'digest-gone', 'and the minted key');
+  t.equal(tombDelete[0].params[0][0], REALM, 'the delete names the realm');
+  t.equal(tombDelete[0].params[1][0], 'digest-gone', 'and the minted key');
   t.check(tombTx.indexOf(tombInsert[0]) < tombTx.indexOf(tombDelete[0]) &&
           tombTx.indexOf(tombDelete[0]) < tombTx.length - 1,
           'the index delete follows the marker and precedes COMMIT');
+
+  // #820: an on-demand store's index rows (`sts_minted_index`) are replaced
+  // in the transaction that writes the body, and go with a deleted row.
+  statements.length = 0;
+  answer.selectBody = null;
+  answer.rowCount = 1;
+  await driver.saveMinted([{
+    handle: 'oauth2_bcp.refreshTokens', realm: REALM, key: 'digest-tok',
+    body: 'sealed', tombstone: true, lookups: ['family-digest']
+  }], [{ handle: 'oauth2_bcp.refreshTokens', realm: REALM,
+         key: 'digest-old', tombstone: true, indexed: true, keySealed: '' }]);
+  const indexTx = txOf(statements);
+  const indexDeletes = matching(indexTx, /DELETE FROM sts_minted_index/i);
+  const indexInserts = matching(indexTx, /INSERT INTO sts_minted_index/i);
+  t.check(indexDeletes.length === 1 &&
+          indexDeletes[0].params[2].indexOf('digest-tok') >= 0 &&
+          indexDeletes[0].params[2].indexOf('digest-old') >= 0,
+          'an indexed row\'s old index rows are deleted, and a deleted ' +
+          'row\'s with it (#820)', JSON.stringify(indexDeletes.map(
+            function (one) { return one.params; })));
+  t.check(indexInserts.length === 1 &&
+          indexInserts[0].params[2][0] === 'family-digest' &&
+          indexInserts[0].params[3][0] === 'digest-tok' &&
+          indexTx.indexOf(indexInserts[0]) < indexTx.length - 1,
+          'and its new index rows are written before COMMIT (#820)',
+          JSON.stringify(indexInserts.map(function (one) {
+            return one.params;
+          })));
+  statements.length = 0;
+  answer.rowCount = 0;
+  await driver.saveMinted([{
+    handle: 'oauth2_bcp.refreshTokens', realm: REALM, key: 'digest-refused',
+    body: 'sealed', tombstone: true, lookups: ['family-digest']
+  }], []);
+  t.check(!matching(txOf(statements), /INSERT INTO sts_minted_index/i)
+            .length,
+          'a refused body files no index row (#820)');
+  answer.rowCount = 1;
 
   statements.length = 0;
   answer.selectBody = TOMBSTONE;
@@ -357,11 +421,12 @@ async function sqlHalf(t) {
   t.equal(accepted.refused.length, 0, 'a guarded upsert that lands is kept');
   t.equal(liveIndex.length, 1, 'and the index is written with it');
   t.equal(liveIndex[0].params.length, 15, 'fifteen columns');
-  t.equal(liveIndex[0].params[0], REALM, 'the index realm');
-  t.equal(liveIndex[0].params[1], 'digest-live', 'the minted key');
-  t.equal(liveIndex[0].params[2], null,
+  t.equal(liveIndex[0].params[0][0], REALM, 'the index realm');
+  t.equal(liveIndex[0].params[1][0], 'digest-live', 'the minted key');
+  t.equal(liveIndex[0].params[2][0], null,
           'a null expiresAt stays SQL NULL, not zero');
-  t.equal(liveIndex[0].params[3], 5000, 'last_seen_at is the millisecond');
+  t.equal(liveIndex[0].params[3][0], 5000,
+          'last_seen_at is the millisecond');
   t.check(liveTx.indexOf(liveBody[0]) < liveTx.indexOf(liveIndex[0]),
           'the index insert follows the body insert');
 
@@ -420,10 +485,36 @@ async function sqlHalf(t) {
   const writeTx = txOf(statements);
   t.equal(matching(writeTx, sessionInsert).length, 1,
           'writeSessionIndex upserts inside a transaction');
+  // 2026-10-21: a repair writes only where the held row differs. The row
+  // as postgres hands it back: bigints as strings, NULL as null.
+  const asHeld = { expires_at: null, last_seen_at: '5000',
+                   started_at: '1000', subject_key: 'subject-digest',
+                   username_key: 'username-digest', chosen: true,
+                   authenticated: true, kind: 'sign-on', rp_surface: '',
+                   parent_key: '', backs_console: false, credential_key: '',
+                   partner_relationship: '' };
+  answer.heldIndex = asHeld;
+  statements.length = 0;
+  await driver.writeSessionIndex(REALM, 'digest-one', index);
+  t.equal(matching(statements, sessionInsert).length +
+          matching(statements, /^BEGIN/).length, 0,
+          'a repair whose row already says what the body implies writes ' +
+          'nothing and opens no transaction');
+  answer.heldIndex = Object.assign({}, asHeld, { last_seen_at: '4000' });
+  statements.length = 0;
+  await driver.writeSessionIndex(REALM, 'digest-one', index);
+  t.equal(matching(txOf(statements), sessionInsert).length, 1,
+          'a repair whose row differs is written');
+  answer.heldIndex = asHeld;
   statements.length = 0;
   await driver.deleteSessionIndex(REALM, 'digest-one');
   t.equal(matching(txOf(statements), sessionDelete).length, 1,
           'deleteSessionIndex deletes inside a transaction');
+  answer.heldIndex = null;
+  statements.length = 0;
+  await driver.deleteSessionIndex(REALM, 'digest-one');
+  t.equal(matching(statements, sessionDelete).length, 0,
+          'and deletes nothing where there is no row');
 
   statements.length = 0;
   answer.selectBody = 'cipher-a';
@@ -1121,6 +1212,117 @@ async function withTempDir(fn) {
   }
 }
 
+// The index of an indexed on-demand store (#820) — `sts_minted_index` — is
+// written beside every body since schema version 24, so the rows stored
+// before it have none. Such a store is read back whole until the front
+// process has filed every row it holds and committed the mark.
+function indexDriver(complete, filed, marked, filters) {
+  log.debug("Entering indexDriver().");
+  log.debug("Leaving indexDriver().");
+  return {
+    loadMinted: function (filter) {
+      filters.push((filter.skipHandles || []).slice());
+      return Promise.resolve([]);
+    },
+    readMinted: noRead,
+    origin: testOrigin,
+    saveMinted: emptySave,
+    bridgeConnection: function () {
+      return { host: 'unused' };
+    },
+    mintedIndexComplete: function (handles) {
+      return Promise.resolve(handles.filter(function (one) {
+        return complete.indexOf(one) >= 0;
+      }));
+    },
+    writeMintedIndex: function (rows) {
+      rows.forEach(function (one) {
+        filed.push(one);
+      });
+      return Promise.resolve(rows.length);
+    },
+    markMintedIndexed: function (handle) {
+      marked.push(handle);
+      return Promise.resolve({});
+    }
+  };
+}
+
+async function indexBackfillCases(t, realm) {
+  log.debug("Entering indexBackfillCases().");
+  t.log.info('=== an indexed on-demand store waits for its index (#820) ===');
+  const store = realms.handleFor('session-index.on-demand') ? null :
+    realms.map({ persist: 'session-index.on-demand',
+                 onDemand: { maxEntries: 10 },
+                 indexBy: function (value) {
+                   return value && value.family ? [value.family] : [];
+                 } });
+  if (!store) {
+    t.bad('the on-demand test store was declared twice');
+    log.debug("Leaving indexBackfillCases().");
+    return;
+  }
+  store.set('old-1', { family: 'fam-a' });
+  store.set('old-2', { family: 'fam-b' });
+  let filed = [];
+  let marked = [];
+  let filters = [];
+  install(indexDriver([], filed, marked, filters));
+  await minted.restore();
+  for (let i = 0; i < 200 &&
+       marked.indexOf('session-index.on-demand') < 0; i++) {
+    await new Promise(function (resolve) {
+      setImmediate(resolve);
+    });
+  }
+  t.check(filters.length && filters[0].indexOf('session-index.on-demand') < 0,
+          'an indexed on-demand store with no mark is read back whole',
+          JSON.stringify(filters));
+  t.equal(store.onDemandLive(), false,
+          'and it is not on demand for the rest of this run');
+  const mine = filed.filter(function (one) {
+    return one.handle === 'session-index.on-demand';
+  });
+  const expect = ['old-1', 'old-2'].map(function (name) {
+    return minted.keyColumnOf('session-index.on-demand', realm.id, name);
+  }).sort();
+  t.equal(JSON.stringify(mine.map(function (one) {
+    return one.key;
+  }).sort()), JSON.stringify(expect),
+          'the backfill files every row it holds, under its key column');
+  t.check(mine.every(function (one) {
+    return one.realm === realm.id && one.indexKey && one.indexKey !==
+      'fam-a' && one.indexKey !== 'fam-b';
+  }), 'each in its realm, under the index value\'s digest, never the value',
+          JSON.stringify(mine));
+  t.check(marked.indexOf('session-index.on-demand') >= 0,
+          'and then commits the completion mark', JSON.stringify(marked));
+
+  filed = [];
+  marked = [];
+  filters = [];
+  install(indexDriver(['session-index.on-demand'], filed, marked, filters));
+  await minted.restore();
+  // The other indexed stores have no mark here and are filed; this one is.
+  for (let i = 0; i < 200 && marked.length < 2; i++) {
+    await new Promise(function (resolve) {
+      setImmediate(resolve);
+    });
+  }
+  t.check(filters.length &&
+          filters[0].indexOf('session-index.on-demand') >= 0,
+          'with the mark, the store is not read back at a start',
+          JSON.stringify(filters));
+  t.equal(store.onDemandLive(), true, 'it is on demand');
+  t.equal(filed.filter(function (one) {
+    return one.handle === 'session-index.on-demand';
+  }).length + marked.filter(function (one) {
+    return one === 'session-index.on-demand';
+  }).length, 0, 'and nothing is filed again');
+  store.realmMap().clear();
+  log.debug("Leaving indexBackfillCases().");
+}
+
 async function liveHalf(t, realm) {
   log.debug("Entering liveHalf().");
   const handle = realms.handleFor('authn.sessions');
@@ -1131,6 +1333,7 @@ async function liveHalf(t, realm) {
   await nullDigestCase(t, handle, captured);
   await backfillCases(t, handle);
   await floorCase(t);
+  await indexBackfillCases(t, realm);
   await applyCases(t, handle, realm);
   log.debug("Leaving liveHalf().");
 }

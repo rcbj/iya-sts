@@ -30,10 +30,10 @@ below, and the application attribute editor.
 
 | Page | Console menu | What you do there |
 |---|---|---|
-| `/admin/vc` | **Protocols → Verifiable Credentials** | One page with six tabs: **Metadata**, **OpenID4VCI**, **Credential claims**, **Credential status**, **OpenID4VP** and **Verifier request**. |
+| `/admin/vc` | **Protocols → Verifiable Credentials** | One page with five tabs: **Metadata**, **OpenID4VCI**, **Credential claims**, **OpenID4VP** and **Verifier request**. |
 | `/admin/vc#vc-tab-oid4vci` | the **OpenID4VCI** tab | Every `oid4vci.*` setting, saved with **Save OID4VCI**. |
 | `/admin/vc#vc-tab-claims` | the **Credential claims** tab | Choose which directory attributes a credential carries. |
-| `/admin/vc#vc-tab-status` | the **Credential status** tab | **Suspend**, **Reinstate** or **Revoke** one issued credential. |
+| `/admin/vc/monitor` | **Monitoring → Verifiable Credentials** | **Suspend**, **Reinstate** or **Revoke** one issued credential, on its **Credentials** tab. It was the **Credential status** tab of `/admin/vc`, whose old address opens it. |
 | `/admin/applications?application=<id>` | **Directory → Applications** | Register a wallet as an OAuth client, for the authorization code flow. |
 | `/portal/wallet` | user portal: **Add to your wallet** | A person makes an offer for their own wallet, and sees and removes what was issued to them. |
 
@@ -358,6 +358,49 @@ The proof's `iat` must be within `oid4vci.proofIatWindowS` (600 s) of now, and
 its `c_nonce` within `oid4vci.cNonceTtlS` (300 s) of being handed out. Each
 `c_nonce` is spent once.
 
+## Binding a credential to the person's DID
+
+By default a credential is bound to the key the wallet's proof names. A
+configuration can instead be bound to a **DID the person proved**: a
+`did:jwk` or `did:key` they enrolled with their wallet. Taken from
+`oid4vci_did_binding.js`; [OpenID4VCI](oid4vci.md#bound-to-the-persons-did)
+has the rules.
+
+**1. The person proves the DID.** On `/portal/self-issued` they choose
+*Enrol a wallet* and answer with the wallet that holds the key. A DID an
+administrator enrolled by value on `/admin/users` is never bound, because it
+was never proved. The person can prove it again with their wallet, and from
+then on it counts.
+
+**2. Name the configurations** (a comma-separated list of configuration ids):
+```bash
+api config/set '{"key":"oid4vci.didHolderBinding",
+  "value":"IdentityCredential,IdentityCredentialJwtVcJson"}'
+```
+The metadata now says `"cryptographic_binding_methods_supported":
+["did:jwk","did:key"]` for those two.
+
+**3. The wallet's proof names the DID by `kid`, not `jwk`:**
+```
+JOSE header  {"alg":"ES256","typ":"openid4vci-proof+jwt",
+              "kid":"did:jwk:eyJrdHkiOiJFQyIs…#0"}
+payload      {"aud":"https://sts.example","iat":…,"nonce":"<c_nonce>"}
+```
+For a `did:key`, the `kid` is `did:key:z6Mk…#z6Mk…`. The issued `dc+sd-jwt`
+carries `"cnf":{"kid":"did:jwk:…#0"}`, and a `jwt_vc_json` carries the DID as
+`credentialSubject.id` and `sub` as well.
+
+**What is refused:** a `jwk` proof (`STS-VC-0145`); a DID an administrator
+typed in (`STS-VC-0149`); somebody else's DID (`STS-VC-0150`); a DID enrolled
+for nobody, or removed since the offer (`STS-VC-0148`); a token this realm did
+not verify (`STS-VC-0146`); and a disabled account (`STS-VC-0147`). A
+`did:web` is refused as well (`STS-VC-0142`), because binding to a `did:web`
+is not built.
+
+**The cost.** Every copy, including every copy in a batch, carries the same
+DID, so any two of them can be linked. Only name a configuration whose
+verifiers ought to see one stable identifier.
+
 ## Encrypting requests and responses
 
 A wallet may encrypt its credential request to the realm's own key, which the
@@ -411,9 +454,9 @@ Status List entry, the W3C formats a Bitstring Status List entry, and the
 index is the same in every list. Taken from `vc_status_list.js`.
 
 **Console:**
-1. Open **Protocols → Verifiable Credentials**, tab **Credential status**.
-2. Find the credential under **Credentials** by its **Index**, **Format** or
-   **Expires**.
+1. Open **Monitoring → Verifiable Credentials** (`/admin/vc/monitor`).
+2. On its **Credentials** tab, find the credential by its **Index**,
+   **Format** or **Expires**.
 3. Click **Suspend**, **Reinstate** or **Revoke**. A revoked credential is
    INVALID, and that is final. A suspended one can be reinstated.
 

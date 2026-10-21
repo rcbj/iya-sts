@@ -6,6 +6,7 @@
   "scope.permission": "{description} — exposed by <code>{identifier}</code>, and the access token will be addressed to <code>{baseUri}</code>",
   "scope.permissionNamed": "the permission \"{name}\"",
   "scope.ordinary": "an ordinary scope: this service attaches no meaning to it and will put it on the token's scope claim as it stands",
+  "scope.did": "your preferred DID — the decentralized identifier you proved with your wallet and marked as preferred on your self-issued IDs page. It is the same value for every application you tell it to, so they could recognise you as one person",
   "detail.understood": "understood by <code>{resource}</code>, and the access token will be addressed to <code>{audience}</code>",
   "detail.described": "{description} — understood by <code>{resource}</code>, and the access token will be addressed to <code>{audience}</code>",
   "detailsNote": "This request carries <strong>{count, plural, one {# authorization detail} other {# authorization details}}</strong> (RFC 9396). You are asked about them every time: Allow agrees to exactly what is listed, for this one request.",

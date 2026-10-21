@@ -193,7 +193,7 @@ var config = {
     sessionReadTimeoutMs: 2000,     // Session read timeout (milliseconds)
     pendingTtlS: 600,               // How long a sign-in waits at the screen (seconds)
     mfaStepTtlS: 300,               // How long a second-factor step waits (seconds)
-    multipleAccounts: false,        // Several signed-in accounts in one browser
+    multipleAccounts: true,         // Several signed-in accounts in one browser
     maxBrowserAccounts: 10,         // Most accounts one browser remembers
     rememberedAccountDays: 30,      // How long a signed-out account is remembered (days)
     passwordAloneDoors: "",         // Password-only doors that accept a password alone
@@ -486,6 +486,7 @@ var config = {
     stepUpMaxAgeS: -1,                             // Step-up: oldest authentication this service's resource server accepts (s)
     errorPageAutoRedirectS: 0,                     // Error page: continue to the client after (seconds)
     keyBinding: true,                              // OpenID Connect Key Binding
+    didClaim: false,                               // the did claim (#693)
     sessionManagement: false,                      // OpenID Connect Session Management
     frontchannelLogout: true,                      // OpenID Connect Front-Channel Logout
     frontchannelLogoutWaitS: 3,                    // Front-channel logout: seconds before returning
@@ -834,7 +835,8 @@ var config = {
     statusListTtlS: 300,                              // Status list time to live (s)
     statusListLifetimeS: 86400,                       // Status list lifetime (s)
     keyAttestationRequired: false,                    // Require a key attestation
-    keyAttestationTrustedCertificates: ""             // Trusted key attesters (PEM)
+    keyAttestationTrustedCertificates: "",            // Trusted key attesters (PEM)
+    didHolderBinding: ""                              // Bind to the person's DID
   },
 
   // --- OID4VP ----------------------------------------------------------
@@ -938,6 +940,7 @@ var config = {
     krbtgtPassword: "krbtgt-mock-password",                // krbtgt password; restart to apply
     domainSid: "S-1-5-21-1004336348-1177238915-682003330", // Domain SID; restart to apply
     crossRealmClassicDelegation: false,                    // Classic delegation across trusts
+    s4uRoleSubject: "user",                                // Whose role a service requires under S4U
     requireSidFilteringInProduct: true,                    // Require SID filtering on trusts
     maxReferralHops: 5,                                    // Most trusts a referral path crosses
     trustKeyGraceSeconds: 0,                               // Grace for a rotated trust key (s)
@@ -1032,6 +1035,7 @@ var config = {
     deadLetterSweepS: 60,                                                                                                                                 // Dead-letter sweep interval (seconds)
     authBasic: true,                                                                                                                                      // Offer HTTP Basic
     internalReceivers: true,                                                                                                                              // Register the console and the portal as receivers; restart to apply
+    internalPollMs: 1000,                                                                                                                                 // Console and portal poll interval (milliseconds)
     maxStreams: 25,                                                                                                                                       // Streams per receiver
     inactivityTimeoutS: 0,                                                                                                                                // Stream inactivity timeout (s)
     inactivityAction: "pause",                                                                                                                            // What an inactive stream becomes
@@ -1108,6 +1112,7 @@ var config = {
     mediumScorePercent: 300,                               // MEDIUM from (percent of a score of 1)
     highScorePercent: 1000,                                // HIGH from (percent of a score of 1)
     minimumHistory: 5,                                     // Earlier sign-ins before a person is scored
+    populationUsersCacheS: 60,                             // Seconds the realm's user count is kept
     geoMinimumCount: 3,                                    // Fewest people a place is numbered with on the map
     listsMatchSpecialPurpose: true,                        // Lists match private and reserved addresses
     accountFailureThreshold: 5,                            // Refused passwords for one person that are a signal

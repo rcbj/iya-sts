@@ -1455,6 +1455,26 @@ let directoryVersion = 0;
 let groupsVersion = 0;
 
 // ---------------------------------------------------------------------------
+// THE SERVICE ACCOUNTS' CLOCK (#759), on the group clock's design.
+//
+// `serviceAccountNames()` walked the holders of the flag through the store —
+// a synchronous round trip — and the XACML scope decision asks it on every
+// sign-in (`ownership.ownsAnything()`, OWNER_READ and OWNER_WRITE): about 7%
+// of a request worker under a sign-in load. Its answer can change only by a
+// write to an entry that IS a service account or WAS one, so the names are
+// kept per realm (`serviceAccountListings`) until this clock moves, and
+// `noteServiceAccountsTouched()`, from `touchDirectory()`, moves it exactly
+// as `noteGroupsTouched()` moves the group clock: a write naming no DN; a DN
+// the kept answer holds; an entry that is one now, where this process holds
+// it (the realm's Map, or the window without asking the store); and a
+// windowed key it does not hold, which is not known. A write to anyone else
+// — every sign-in's consent and password write on an ordinary person — is a
+// Set lookup and a held lookup, and the kept answer survives it.
+// `tests/sign_in_owner_reads.js`.
+// ---------------------------------------------------------------------------
+let serviceAccountsVersion = 0;
+
+// ---------------------------------------------------------------------------
 // WHAT HAS BEEN WRITTEN SINCE AN LDAP ADD ASKED ITS NAMES (#625).
 //
 // One watch per add whose names are out being asked (`askBeforeTheAdd()`),
@@ -1539,6 +1559,7 @@ function touchDirectory(dn, after) {
   log.debug("Entering touchDirectory().");
   directoryVersion++;
   noteGroupsTouched(dn, after);
+  noteServiceAccountsTouched(dn, after);
   // And any add holding names it asked first is told what this write
   // touched (#625).
   noteHeldNamesTouched(dn, after);
@@ -2035,6 +2056,7 @@ const usernameIndexes = realms.keyed(function () {
 const usernameIndexCount = cacheRegistry.counter('ldap.username-index');
 const groupIndexCount = cacheRegistry.counter('ldap.group-index');
 const uuidIndexCount = cacheRegistry.counter('ldap.entryuuid-index');
+const windowedUuidCount = cacheRegistry.counter('ldap.windowed-entryuuids');
 const listingCount = cacheRegistry.counter('ldap.subtree-listings');
 
 // Every name this entry answers to, lower-cased and without repeats: its `uid`
@@ -2457,6 +2479,17 @@ const groupIndexes = realms.keyed(function () {
 
 const NO_GROUPS = new Map();
 
+// The service accounts' names and DNs per realm, kept by
+// `serviceAccountsVersion`; `usersDn` because a settings change moves the
+// container and moves no clock.
+const serviceAccountListings = realms.keyed(function () {
+  return { names: null, dnKeys: new Set(), version: -1, usersDn: '' };
+});
+
+// Its counter, set where it is registered with the other directory caches;
+// a no-op until then (the seed runs before that).
+let serviceAccountsCount = { hit: function () {}, miss: function () {} };
+
 // WHETHER THIS MODULE HAS FINISHED LOADING (#145), declared up here for the
 // group index's reason above: `putEntry()` runs during the seed, while this
 // file is still loading, and its membership note reads `groupRuleFor()`,
@@ -2539,6 +2572,38 @@ function noteGroupsTouched(dn, after) {
     return;
   }
   log.debug('Leaving noteGroupsTouched(). Not a group; the index stands.');
+}
+
+// Whether a write may have changed the service accounts (#759); see
+// `serviceAccountsVersion`. Hot path (every write): no Entering/Leaving
+// pair, the exception the code style allows, stated as it requires.
+function noteServiceAccountsTouched(dn, after) {
+  if (!moduleLoaded || dn === undefined || dn === null || dn === '') {
+    serviceAccountsVersion++;
+    return;
+  }
+  const key = normalizeDn(dn);
+  if (serviceAccountListings().dnKeys.has(key)) {
+    serviceAccountsVersion++;
+    return;
+  }
+  let now = after;
+  if (now === undefined) {
+    if (directoryWindow) {
+      const held = directoryWindow.heldIn(realms.currentId(), key);
+      if (!held.known) {
+        serviceAccountsVersion++;
+        return;
+      }
+      now = held.entry;
+    } else {
+      now = entries.get(key) || null;
+    }
+  }
+  if (now && now.attributes &&
+      serviceAccounts.isServiceAccount(now.attributes)) {
+    serviceAccountsVersion++;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -2900,6 +2965,10 @@ const OWN_NAMES = [
   // which partner asserted each and so could not be a link.
   'federationRelationship', 'federationIssuer', 'federationLink',
   'federationLastSeen', 'federationAttribute',
+  // WHO CREATED THE ENTRY when it was not one of this service's own doors
+  // (2026-10-20): `federation:<relationship>`, written once by the federated
+  // sign-in that created it and by nothing else. See PROVISIONED_BY.
+  'stsProvisionedBy',
 
   // WHAT THIS PERSON AGREED AN APPLICATION MAY ASK FOR ON THEIR BEHALF, one
   // value per (application, scope) — `20260901143000Z openid webapp1`. Invented
@@ -3679,6 +3748,44 @@ function entryUuidOf(stored) {
 const ENTRY_UUID_ALIAS = 'stsentryuuidalias';
 const CREATE_RACE_WINDOW_S = 60;
 
+// ---------------------------------------------------------------------------
+// `stsProvisionedBy`: WHO CREATED THIS ENTRY, WHEN IT WAS NOT THIS SERVICE'S
+// OWN DOOR (2026-10-20, rcbj's decision on the /portal/delegate search).
+//
+// Nothing on an entry said whether a federated sign-in had CREATED it or had
+// only reached a person who was here already. `federationRelationship`,
+// `federationIssuer`, `federationLink` and `federationLastSeen` are written
+// by EVERY federated sign-in (`applyFederatedAttributes()`), a link (#109)
+// included; the `origin` column is `authentication` for any entry a sign-in
+// created, a development-mode password sign-in as much as a partner's, and a
+// re-homing (#98) rewrites it to `rehomed`; and the created name,
+// `<relationship>~<subject>`, is a convention that a console create can
+// imitate. So the fact is written down where it happens, once:
+//
+//   * `autoCreateUser()`'s CREATE branch stamps `federation:<relationship>`
+//     when the sign-in that created the entry was federated — an enterprise
+//     partner or a consumer provider (#565), which is one path. A sign-in
+//     that LINKS or reaches an existing person writes nothing, so a native
+//     person who links a partner is still native.
+//   * `putEntry()` carries it through every overwrite, and on a create takes
+//     it only from its own `provisionedBy` option, never from the caller's
+//     attributes — `entryUUID`'s rule.
+//   * NO DOOR WRITES IT: it is NO-USER-MODIFICATION in every mode
+//     (ALWAYS_PROTECTED_OPERATIONAL, so an LDAP add or modify is refused
+//     STS-LDAP-0076), `addValues()` refuses it (a certificate's RDNs cannot
+//     carry it), `common/sourced_attributes.ts` refuses every `sts*` name to
+//     a partner's mapping and an attribute source, the person editor and
+//     SCIM write only their own allowlists, and a bulk import takes only
+//     ALLOWED_ATTRIBUTES.
+//   * It TRAVELS with the entry: a re-homing carries the attributes whole
+//     (`common/cell_rehome.ts`, `adoptEntry()`), and so do replication, the
+//     LDIF form and a restore.
+//
+// AN ENTRY WITHOUT IT IS NATIVE, including every entry written before it
+// existed: there is no backfill (rcbj).
+// ---------------------------------------------------------------------------
+const PROVISIONED_BY = 'stsprovisionedby';
+
 function entryUuidAliasesOf(stored) {
   log.debug("Entering entryUuidAliasesOf().");
   const values = (stored && stored.attributes &&
@@ -3847,13 +3954,72 @@ function entryByUuid(uuid) {
   }
   let found = residentEntryByUuid(wanted);
   if (!found && directoryWindow) {
+    found = windowHeldByUuid(wanted);
+  }
+  if (!found && directoryWindow) {
     // A PERSON OR A DEVICE, ASKED OF THE STORE (#349): a primary value
     // before an alias, as the index ranks them.
     found = uuidHolderOf(windowedFind('byUuid', [wanted],
                                       holdsUuid(wanted)) || [], wanted);
+    noteWindowedUuid(wanted, found);
   }
   log.debug("Leaving entryByUuid(). " + (found ? found.dn : 'None.'));
   return found;
+}
+
+// ---------------------------------------------------------------------------
+// A WINDOWED PERSON'S entryUUID, TO THE KEY THE STORE LAST ANSWERED WITH
+// (#773, 2026-10-21). In a windowed process every person's and every
+// device's UUID was a synchronous `byUuid` round trip, and a sign-in asks it
+// three times for the same person — `nameForSubject()`, the account-state
+// read and the delegation facts — while the entry itself is already in the
+// window from the password step. So the key a lookup found is kept, and the
+// next lookup takes the entry the window HOLDS at that key, without asking
+// the store, when it still carries that UUID as its own: a rename (a new
+// key), a delete, an entry the window has dropped, or a UUID that moved
+// all fall through to the store, as before. Only a PRIMARY value is kept —
+// an alias is ranked below a primary holder the store might also answer.
+// Bounded at `ldap.workerCacheEntries` per realm, the window's own size: a
+// key past it would name an entry the window no longer holds.
+// ---------------------------------------------------------------------------
+const windowedUuids = realms.keyed(function () {
+  return new Map();
+});
+
+// Hot path (every subject resolved in a windowed process): no Entering/
+// Leaving pair, the exception the code style allows, stated as it requires.
+function windowHeldByUuid(wanted) {
+  const memo = windowedUuids();
+  const key = memo.get(wanted);
+  if (!key) {
+    return null;
+  }
+  const held = directoryWindow.heldIn(realms.currentId(), key);
+  if (held.known && held.entry && entryUuidOf(held.entry) === wanted) {
+    windowedUuidCount.hit();
+    return held.entry;
+  }
+  if (held.known) {
+    // The window holds that key and it is not this UUID's any more.
+    memo.delete(wanted);
+  }
+  windowedUuidCount.miss();
+  return null;
+}
+
+// Hot path, as above.
+function noteWindowedUuid(wanted, found) {
+  if (!found || entryUuidOf(found) !== wanted) {
+    return;
+  }
+  const memo = windowedUuids();
+  const cap = Math.max(1, Number(config.value('ldap.workerCacheEntries')) ||
+                          1);
+  memo.delete(wanted);
+  memo.set(wanted, normalizeDn(found.dn));
+  while (memo.size > cap) {
+    memo.delete(memo.keys().next().value);
+  }
 }
 
 // The entry the UUID index names (the RESIDENT entries in a windowed
@@ -3960,6 +4126,10 @@ function rebuildUuidIndex(cache) {
 // per value, a primary value before an alias.
 // ---------------------------------------------------------------------------
 const UUID_BATCH = 500;
+// How many of a long list's store questions are asked at once (2026-10-21):
+// enough to overlap their round trips, few enough to leave the read pool to
+// the sign-ins beside them.
+const STORE_BATCHES_AT_ONCE = 4;
 
 /**
  * Finds the entries of the ambient realm holding each of a list of
@@ -4025,6 +4195,90 @@ function entriesByUuids(uuids) {
   }
   log.debug("Leaving entriesByUuids(). " + asked.length + " asked of the " +
             "store.");
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// THE SAME, ASKED ASYNCHRONOUSLY (#790). `entriesByUuids()` asks a windowed
+// store one SYNCHRONOUS statement per UUID_BATCH, and the console's Users
+// page asks it for every subject of the token register — about 228,000 on
+// 8081, 456 statements holding a request worker — so the request spent its
+// directory budget (STS-LDAP-0175) and answered 503. This asks the resident
+// index exactly as that does, then each batch of the rest through
+// `findWindowedAsync()`, which waits without holding the event loop and is
+// outside the request's synchronous budget. The same answers: a primary
+// value before an alias, and null for nobody.
+// ---------------------------------------------------------------------------
+/**
+ * `entriesByUuids()`, the store asked asynchronously a batch at a time.
+ *
+ * @param uuids - the UUIDs, bare or `urn:uuid:`
+ * @returns a promise of the Map `entriesByUuids()` answers
+ */
+async function entriesByUuidsAsync(uuids) {
+  log.debug("Entering entriesByUuidsAsync(). " + (uuids || []).length +
+            " value(s).");
+  if (!directoryWindow) {
+    log.debug("Leaving entriesByUuidsAsync(). No window: asked in place.");
+    return entriesByUuids(uuids);
+  }
+  // The resident index first, as entriesByUuids() asks it; no store.
+  const out = new Map();
+  (uuids || []).forEach(function (one) {
+    const wanted = String(one || '').trim().toLowerCase()
+      .replace(/^urn:uuid:/, '');
+    if (UUID_SHAPED.test(wanted)) {
+      out.set(wanted, null);
+    }
+  });
+  const cache = uuidIndexes();
+  if (cache.dirty || !cache.index) {
+    rebuildUuidIndex(cache);
+  }
+  out.forEach(function (unused, wanted) {
+    out.set(wanted, uuidIndexLookup(cache, wanted));
+  });
+  const asked = Array.from(out.keys()).filter(function (wanted) {
+    return out.get(wanted) === null;
+  });
+  const realmId = realms.currentId();
+  // A FEW BATCHES AT A TIME (2026-10-21), not one after another: the Users
+  // page's first build after a start asked 241 of them in turn on 8081,
+  // 5 s of waiting on the store. Each batch asks its own values and fills
+  // only them, so the order they answer in changes nothing.
+  const batches = [];
+  for (let at = 0; at < asked.length; at += UUID_BATCH) {
+    batches.push(asked.slice(at, at + UUID_BATCH));
+  }
+  await helpers.inParallel(batches, STORE_BATCHES_AT_ONCE, async function (batch) {
+    const wanted = new Set(batch);
+    const found = await directoryWindow.findWindowedAsync(realmId,
+      'withUuids', [realmId, batch], function (entry) {
+        return wanted.has(entryUuidOf(entry)) ||
+          entryUuidAliasesOf(entry).some(function (alias) {
+            return wanted.has(alias);
+          });
+      });
+    const hits = found.map(function (hit) {
+      return hit.entry;
+    });
+    // A primary value before an alias, as `entryByUuid()` ranks them.
+    hits.forEach(function (entry) {
+      const value = entryUuidOf(entry);
+      if (wanted.has(value) && out.get(value) === null) {
+        out.set(value, entry);
+      }
+    });
+    hits.forEach(function (entry) {
+      entryUuidAliasesOf(entry).forEach(function (alias) {
+        if (wanted.has(alias) && out.get(alias) === null) {
+          out.set(alias, entry);
+        }
+      });
+    });
+  });
+  log.debug("Leaving entriesByUuidsAsync(). " + asked.length + " asked of " +
+            "the store.");
   return out;
 }
 
@@ -4120,6 +4374,18 @@ function putEntry(dn, attributes, options) {
   delete stored.attributes[ENTRY_UUID_ALIAS];
   if (entryUuidAliasesOf(previous).length) {
     stored.attributes[ENTRY_UUID_ALIAS] = entryUuidAliasesOf(previous);
+  }
+  // AND WHO PROVISIONED IT (`stsProvisionedBy`, see PROVISIONED_BY), the
+  // same way again: the entry's, carried through every overwrite, and on a
+  // CREATE only what the door that creates it says in `opts.provisionedBy`
+  // — never a value a caller handed in among the attributes.
+  delete stored.attributes[PROVISIONED_BY];
+  const provisionedBefore = previous
+    ? (previous.attributes[PROVISIONED_BY] || []) : [];
+  if (provisionedBefore.length) {
+    stored.attributes[PROVISIONED_BY] = provisionedBefore.slice(0);
+  } else if (!previous && opts.provisionedBy) {
+    stored.attributes[PROVISIONED_BY] = [String(opts.provisionedBy)];
   }
   entries.set(normalizeDn(dn), stored);
   touchDirectory(stored.dn);
@@ -5417,9 +5683,25 @@ function namesForSubjects(subjects) {
   return out;
 }
 
+// `namesForSubjects()`, the store asked asynchronously (#790).
+async function namesForSubjectsAsync(subjects) {
+  log.debug('Entering namesForSubjectsAsync(). ' + (subjects || []).length +
+            ' subject(s).');
+  const out = new Map();
+  const found = await entriesByUuidsAsync(subjects || []);
+  (subjects || []).forEach(function (one) {
+    const text = String(one == null ? '' : one).trim().toLowerCase();
+    const stored = found.get(text.replace(/^urn:uuid:/, '')) || null;
+    out.set(text, stored && isPersonEntry(stored) ? personNameOf(stored) : '');
+  });
+  log.debug('Leaving namesForSubjectsAsync().');
+  return out;
+}
+
 helpers.setSubjectResolver({ subjectFor: subjectForName,
                              nameFor: nameForSubject,
-                             namesFor: namesForSubjects });
+                             namesFor: namesForSubjects,
+                             namesForAsync: namesForSubjectsAsync });
 
 // An RFC 4514 DN split into its RDNs, leaf first. The split is on commas that
 // are NOT escaped, because a value may legitimately contain one — `O=Example\,
@@ -5505,7 +5787,10 @@ function addValues(stored, name, values) {
     return false;
   }
   stored.attributes[key] = have.concat(added);
-  touchDirectory();
+  // The one entry it changed (#754): no operational attribute is written
+  // here (above), so no UUID moved, and a DN-less touch would make the next
+  // flush walk everything the directory window holds.
+  touchDirectory(stored.dn);
   log.debug('Leaving addValues().');
   return true;
 }
@@ -7267,10 +7552,20 @@ function autoCreateUser(detail) {
   }
   // `application` (#539): the client the sign-in was for, whose locale
   // policy gives the person a language.
+  // `provisionedBy` (2026-10-20): a FEDERATED sign-in that creates the
+  // entry stamps it `federation:<relationship>` — a consumer or social
+  // provider (#565) is a relationship like any other, so it is covered by
+  // the same line. A link (#109) never reaches here: it writes onto an
+  // entry that already exists, so a native person who links a partner
+  // stays unstamped, which is to say native. See PROVISIONED_BY.
   const created = putEntry(dn, Object.assign({}, plan.attributes,
                                              { description: [note] }),
                            { origin: 'authentication',
-                             application: String(detail.application || '') });
+                             application: String(detail.application || ''),
+                             provisionedBy: info.federation
+                               ? 'federation:' +
+                                 String(info.federation.id || '')
+                               : '' });
   // The invented facts a credential will assert about this person, written HERE
   // rather than into the credential, so that the entry an LDAP client reads and
   // the credential a wallet is handed say the same thing about the same person.
@@ -9835,7 +10130,9 @@ function addConsentValues(key, values, attribute) {
   const changed = addValues(stored, CONSENT_ATTRIBUTES[lower], values);
   if (changed) {
     stored.attributes.modifytimestamp = [generalizedTime()];
-    touchDirectory();
+    // Every authorization records the consent it applied, so this is on
+    // the sign-in path; the DN keeps its flush to this entry (#754).
+    touchDirectory(stored.dn);
   }
   log.debug('Leaving addConsentValues(). ' +
             (changed ? 'Written.' : 'Already ' +
@@ -9997,7 +10294,24 @@ function readPasswordHistory(key) {
 // password that fails quality or history, and it is what an LDAP client's error
 // handling expects to meet there.
 // ---------------------------------------------------------------------------
-function passwordWriteRefusal(dn, attributes, previous, touched, written) {
+// One hash of exactly this value from `screenedThen()`'s map, used once:
+// each is a fresh salt, so no two entries may share one.
+function takePrehashed(prehashed, value) {
+  log.debug('Entering takePrehashed().');
+  const list = prehashed && typeof prehashed.get === 'function'
+    ? prehashed.get(String(value)) : null;
+  const hash = list && list.length ? list.shift() : undefined;
+  log.debug('Leaving takePrehashed(). ' + (hash ? 'One.' : 'None.'));
+  return hash;
+}
+
+// `prehashed`, when the operation's asynchronous stage made one, maps each
+// clear password the request carried to hashes computed on libuv's thread
+// pool (#756, `screenedThen()`); one is handed to `preparePassword()` so the
+// write does not run scrypt on this thread. Absent, or holding none for this
+// value, the hash is made here as before.
+function passwordWriteRefusal(dn, attributes, previous, touched, written,
+                              prehashed) {
   log.debug('Entering passwordWriteRefusal(). dn=' + dn);
   const before = previous || {};
   const keyOf = function (lower) {
@@ -10053,7 +10367,8 @@ function passwordWriteRefusal(dn, attributes, previous, touched, written) {
   const prepared = credentials.preparePassword(usernameOfEntry({ dn: dn }),
                                                value, {
     current: had === undefined ? '' : String(had),
-    history: (before.pwdhistory || []).map(String)
+    history: (before.pwdhistory || []).map(String),
+    hashOfThisPassword: takePrehashed(prehashed, value)
   });
   if (!prepared.ok) {
     log.info('ldap: a userPassword for ' + dn + ' was refused: ' +
@@ -10397,13 +10712,18 @@ const SECRET_ATTRIBUTES = [
 ];
 
 const CLIENT_WRITTEN_OPERATIONAL = ['createtimestamp', 'modifytimestamp',
-                                    'entrydn', 'entryuuid', ENTRY_UUID_ALIAS];
+                                    'entrydn', 'entryuuid', ENTRY_UUID_ALIAS,
+                                    PROVISIONED_BY];
 
 // The operational attributes refused in EVERY mode (2026-09-14). `entryUUID`
 // is a person's `sub`; a client that could write one could make their entry
 // the subject of somebody else's tokens, which is not a development-mode
-// convenience but an identity theft with a result code.
-const ALWAYS_PROTECTED_OPERATIONAL = ['entryuuid', ENTRY_UUID_ALIAS];
+// convenience but an identity theft with a result code. `stsProvisionedBy`
+// (2026-10-20) for the same kind of reason: whoever could write or remove it
+// could make a partner's person native here, or a native one a partner's —
+// and the native ones are who a person may find on /portal/delegate.
+const ALWAYS_PROTECTED_OPERATIONAL = ['entryuuid', ENTRY_UUID_ALIAS,
+                                      PROVISIONED_BY];
 
 function isSecretAttribute(name) {
   log.debug("Entering isSecretAttribute().");
@@ -12612,6 +12932,14 @@ if (typeof credentials.setDirectory === 'function') {
       log.debug("Leaving readDelegationFacts().");
       return readDelegationFacts(key);
     },
+    // THE PEOPLE A PERSON MAY FIND ON /portal/delegate (2026-10-20): a
+    // `uid` containing `needle`, native, in this realm. A promise, because
+    // a windowed directory asks the store. See delegateCandidates().
+    delegateCandidates: function (needle, options) {
+      log.debug("Entering delegateCandidates hook.");
+      log.debug("Leaving delegateCandidates hook.");
+      return delegateCandidates(needle, options);
+    },
     writeNotDelegated: function (key, value) {
       log.debug("Entering writeNotDelegated().");
       log.debug("Leaving writeNotDelegated().");
@@ -13347,6 +13675,76 @@ function credentialTallies(spec) {
   return value;
 }
 
+// `credentialTallies()` FOR A CALLER THAT CAN WAIT (2026-10-21). In a
+// windowed process the tallies are a count over every person the realm
+// defines and a read of everybody holding a credential attribute, and
+// `/admin/users` asked both SYNCHRONOUSLY on the request worker that also
+// serves sign-ins: on 8081, with 280,000 people, the worker stood still for
+// up to nine seconds, a flush transaction it had open held its rows the
+// whole time, and sign-ins fell to a fifth of a request a second. Here the
+// same two questions go to the driver's read pool and the event loop runs
+// while the store answers. The same memo as the synchronous door, so a
+// tally either door made serves the other.
+/**
+ * `credentialTallies()`, the store asked asynchronously.
+ *
+ * @param spec - `{ password, holding }`, as `credentialTallies()` takes it
+ * @returns a promise of `{ people, withPassword, holders: [{ name, raw }] }`
+ */
+async function credentialTalliesAsync(spec) {
+  log.debug('Entering credentialTalliesAsync().');
+  if (!directoryWindow) {
+    log.debug('Leaving credentialTalliesAsync(). No window: in memory.');
+    return credentialTallies(spec);
+  }
+  const passwordAttribute = String((spec && spec.password) || 'userPassword')
+    .toLowerCase();
+  const holding = ((spec && spec.holding) || []).map(function (one) {
+    return String(one).toLowerCase();
+  });
+  const signature = passwordAttribute + '|' + holding.join(',');
+  const version = subtreeVersion(usersDn());
+  const held = credentialTalliesMemo();
+  if (held.value && held.version === version && held.spec === signature &&
+      Date.now() - held.at <= 10000) {
+    credentialTalliesCount.hit();
+    log.debug('Leaving credentialTalliesAsync(). Kept.');
+    return held.value;
+  }
+  credentialTalliesCount.miss();
+  const realmId = realms.currentId();
+  const base = normalizeDn(usersDn());
+  const suffix = ',' + base;
+  const value = { people: 0, withPassword: 0, holders: [] };
+  const counted = await directoryWindow.countHoldingAsync(realmId, base,
+                                                          passwordAttribute);
+  value.people = counted.n;
+  value.withPassword = counted.holding;
+  const seen = new Set();
+  for (const attribute of holding) {
+    const hits = await directoryWindow.holdersAsync(realmId, base, attribute,
+      function (entry) {
+        const values = entry.attributes[attribute];
+        return Array.isArray(values) && values.length > 0;
+      });
+    hits.forEach(function (hit) {
+      if (hit.key !== base && hit.key.endsWith(suffix) &&
+          !seen.has(hit.key)) {
+        seen.add(hit.key);
+        value.holders.push({ name: usernameOfEntry(hit.entry),
+                             raw: censusOfEntry(hit.entry) });
+      }
+    });
+  }
+  held.version = version;
+  held.at = Date.now();
+  held.spec = signature;
+  held.value = value;
+  log.debug('Leaving credentialTalliesAsync(). ' + value.people +
+            ' people, ' + value.holders.length + ' holding a credential.');
+  return value;
+}
+
 // ---------------------------------------------------------------------------
 // HOW MANY OF A LIST OF NAMES ARE PEOPLE IN THIS DIRECTORY (#610).
 //
@@ -13441,6 +13839,71 @@ function countPeopleNamed(names) {
   return people.size;
 }
 
+// `countPeopleNamed()` FOR A CALLER THAT CAN WAIT (2026-10-21), for
+// `credentialTalliesAsync()`'s reason: the same two batched questions on the
+// driver's read pool, and the same memo.
+/**
+ * `countPeopleNamed()`, the store asked asynchronously.
+ *
+ * @param names - the names
+ * @returns a promise of the count
+ */
+async function countPeopleNamedAsync(names) {
+  log.debug('Entering countPeopleNamedAsync(). ' + (names || []).length +
+            ' name(s).');
+  if (!directoryWindow) {
+    log.debug('Leaving countPeopleNamedAsync(). No window: the index.');
+    return countPeopleNamed(names);
+  }
+  const wanted = Array.from(new Set((names || []).map(function (one) {
+    return String(one == null ? '' : one).trim().toLowerCase();
+  }).filter(function (one) {
+    return !!one;
+  }))).sort();
+  const joined = wanted.join('\n');
+  const version = subtreeVersion(usersDn());
+  const held = peopleNamedMemo();
+  if (held.names === joined && held.version === version &&
+      Date.now() - held.at <= 10000) {
+    log.debug('Leaving countPeopleNamedAsync(). ' + held.value + ', kept.');
+    return held.value;
+  }
+  const realmId = realms.currentId();
+  const base = normalizeDn(usersDn());
+  const found = new Set();
+  const people = new Set();
+  const asked = new Set(wanted);
+  const note = function (hit) {
+    usernameKeysOf(hit.entry).forEach(function (name) {
+      if (asked.has(name)) {
+        found.add(name);
+        people.add(normalizeDn(hit.entry.dn));
+      }
+    });
+  };
+  const isPerson = function (entry, key) {
+    return normalizeDn(parentDn(entry.dn)) === base && !!key;
+  };
+  const dnKeys = wanted.map(function (name) {
+    return normalizeDn('uid=' + escapeDnValue(name) + ',' + usersDn());
+  });
+  (await directoryWindow.findWindowedAsync(realmId, 'byKeys',
+    [realmId, dnKeys], isPerson) || []).forEach(note);
+  const missed = wanted.filter(function (name) {
+    return !found.has(name);
+  });
+  if (missed.length) {
+    (await directoryWindow.findWindowedAsync(realmId, 'withNames',
+      [realmId, base, missed], isPerson) || []).forEach(note);
+  }
+  held.names = joined;
+  held.version = version;
+  held.at = Date.now();
+  held.value = people.size;
+  log.debug('Leaving countPeopleNamedAsync(). ' + people.size + ', asked.');
+  return people.size;
+}
+
 // ---------------------------------------------------------------------------
 // WHICH KEYS NAME A REGISTERED APPLICATION, AS ONE FUNCTION (#352).
 //
@@ -13498,7 +13961,15 @@ if (typeof credentials.addDirectoryHooks === 'function') {
     // The whole directory's credential tiles, and how many names are
     // people here (#610).
     credentialTallies: credentialTallies,
-    countPeopleNamed: countPeopleNamed
+    countPeopleNamed: countPeopleNamed,
+    // The same two, asked asynchronously, for `/admin/users` (2026-10-21).
+    credentialTalliesAsync: credentialTalliesAsync,
+    countPeopleNamedAsync: countPeopleNamedAsync,
+    // What a write under `ou=users` moves, here or applied from another
+    // process (2026-10-21): the key of `/admin/users`' kept population.
+    peopleVersion: function () {
+      return subtreeVersion(usersDn());
+    }
   });
 }
 
@@ -17013,7 +17484,7 @@ function ldapAddNow(req, res, next) {
     }
     const policyRefusal = passwordWriteRefusal(dn, attributes, {},
       Object.keys(attributes).map(function (key) { return key.toLowerCase(); }),
-      addedPassword);
+      addedPassword, req.stsPrehashed);
     if (policyRefusal) {
       log.debug('Leaving the LDAP add handler. The password was refused.');
       return next(ldapRefusal(req, '', 'an add of ' + dn +
@@ -17162,10 +17633,18 @@ function screenedThen(req, next, passwords, run) {
     // Not loaded in this process: nothing to screen with.
     breached = null;
   }
-  if (!breached || !passwords.length || !breached.enabled()) {
+  if (!passwords.length) {
     log.debug('Leaving screenedThen(). Nothing to screen.');
     return run(next);
   }
+  // A CLEAR PASSWORD IS ALSO HASHED HERE, ON LIBUV'S THREAD POOL (#756),
+  // whether or not the breach screen is on: `preparePassword()` is
+  // synchronous inside the body, and its scrypt held the worker's event loop
+  // for about 70 ms a write — a third of a request worker under a password
+  // load. The body takes the hash for the value it is setting
+  // (`takePrehashed()`); every policy, history and breach decision is still
+  // made there, against the entry as it is when the body runs.
+  const screening = !!breached && breached.enabled();
   req.stsAsyncOperation = true;
   let answered = false;
   const answerOnce = function (err) {
@@ -17179,10 +17658,33 @@ function screenedThen(req, next, passwords, run) {
     log.debug('Leaving runOnce().');
     return run(answerOnce);
   };
-  log.debug('Leaving screenedThen(). Screening.');
-  return Promise.all(passwords.map(function (one) {
-    return breached.screen(one);
-  })).then(runOnce, function (e) {
+  log.debug('Leaving screenedThen(). Screening and hashing.');
+  const hashed = Promise.all(passwords.map(function (one) {
+    return stsCrypto.hashSecretAsync(one).then(function (hash) {
+      return { password: one, hash: hash };
+    }, function (e) {
+      // The body hashes it itself, as it did before #756.
+      log.debug('Caught in screenedThen(): ' + ((e && e.message) || e));
+      return null;
+    });
+  })).then(function (pairs) {
+    const byPassword = new Map();
+    pairs.forEach(function (pair) {
+      if (!pair) {
+        return;
+      }
+      const list = byPassword.get(pair.password) || [];
+      list.push(pair.hash);
+      byPassword.set(pair.password, list);
+    });
+    req.stsPrehashed = byPassword;
+  });
+  const screened = screening
+    ? Promise.all(passwords.map(function (one) {
+      return breached.screen(one);
+    }))
+    : Promise.resolve();
+  return Promise.all([screened, hashed]).then(runOnce, function (e) {
     log.debug('Caught in screenedThen(): ' + ((e && e.message) || e));
     // screen() never rejects; this is its belt and braces.
     return runOnce();
@@ -17649,7 +18151,7 @@ function ldapModifyNow(req, res, next) {
     const policyRefusal = passwordWriteRefusal(stored.dn, working,
       stored.attributes, req.changes.map(function (change) {
         return String(change.modification.type || '').toLowerCase();
-      }), modifiedPassword);
+      }), modifiedPassword, req.stsPrehashed);
     if (policyRefusal) {
       log.debug('Leaving the LDAP modify handler. The password was refused.');
       return next(ldapRefusal(req, '', 'a modify of ' + dn +
@@ -17709,7 +18211,13 @@ function ldapModifyNow(req, res, next) {
   }
   working.modifytimestamp = [generalizedTime()];
   stored.attributes = working;
-  touchDirectory();
+  // THE DN IS NAMED (#754). A modify changes the one entry it names, and a
+  // touch with no DN made the next flush in a windowed process
+  // `collect(null)`: every entry the window held serialised and compared,
+  // per write. Under a password load that was a tenth of a request worker,
+  // growing as the window filled. The UUID index needs no dirty mark: the
+  // block above keeps `entryUUID` and its alias across the modify.
+  touchDirectory(stored.dn);
   stored.modifiedAt = working.modifytimestamp[0];
   const passwordBefore = firstValueOf(beforeModify, 'userpassword');
   const passwordAfter = firstValueOf(stored.attributes, 'userpassword');
@@ -20618,17 +21126,36 @@ function keepServiceAccountClass(attributes) {
 
 // Every service account in the ambient realm, by username. Only the holders
 // of the flag are visited (#349's walk), and only those pay isPersonEntry().
+// KEPT PER REALM BY `serviceAccountsVersion` (#759): the walk asks the store,
+// and a sign-in's scope decision asked it every time. A copy is handed out,
+// so no caller can change the kept list.
 function serviceAccountNames() {
   log.debug('Entering serviceAccountNames().');
+  const held = serviceAccountListings();
+  const users = normalizeDn(usersDn());
+  if (held.names && held.version === serviceAccountsVersion &&
+      held.usersDn === users) {
+    serviceAccountsCount.hit();
+    log.debug('Leaving serviceAccountNames(). Kept, ' + held.names.length);
+    return held.names.slice(0);
+  }
+  serviceAccountsCount.miss();
+  const version = serviceAccountsVersion;
   const out = [];
+  const keys = new Set();
   eachHolderOfAny(['stsserviceaccount'], function (entry) {
     if (serviceAccounts.isServiceAccount(entry.attributes) &&
         isPersonEntry(entry)) {
       out.push(usernameOfEntry(entry));
+      keys.add(normalizeDn(entry.dn));
     }
   });
+  held.names = out;
+  held.dnKeys = keys;
+  held.version = version;
+  held.usersDn = users;
   log.debug('Leaving serviceAccountNames(). ' + out.length);
-  return out;
+  return out.slice(0);
 }
 
 // An OWNER (rcbj: "a person or a group"): a DN, a username or a `urn:uuid:`
@@ -22211,6 +22738,172 @@ async function residentsPageAsync(after, limit) {
   log.debug('Leaving residentsPageAsync(). ' + people.length +
             ' person(s).');
   return { people: people, more: more, next: more ? cursor : '' };
+}
+
+// ---------------------------------------------------------------------------
+// THE PEOPLE A PERSON MAY NAME AS THEIR DELEGATE, FOUND BY `uid`
+// (2026-10-20, rcbj on /portal/delegate).
+//
+// `/account-api/delegate/candidates` asks this for any signed-in person, so
+// it is a directory search anybody here can run, and it is shaped by that:
+//
+//   * THE MATCH IS A CONTAINS ON THE ENTRY'S RDN VALUE — its `uid` for
+//     everybody this service names (`uid=<name>,ou=users,...`), lower-cased
+//     as the key is — and on nothing else. No other attribute is matched,
+//     and a result carries the uid, the `cn` (for display) and the DN only.
+//   * ONLY DIRECT CHILDREN OF THIS REALM'S `ou=users`: the realm is the
+//     ambient one, read before the first wait, and its tree is its own
+//     (`ldap/CLAUDE.md`), so another realm's people cannot be asked for.
+//   * ONLY NATIVE PEOPLE: an entry stamped `stsProvisionedBy` (a partner's
+//     or a consumer provider's sign-in created it — PROVISIONED_BY) is left
+//     out; so are a disabled account (`pwdAccountLockedTime`), a service
+//     account, a group placed under `ou=users`, and the person asking.
+//     `stsNotDelegated` on a CANDIDATE is not a reason: it says nobody may
+//     act for THEM, not that they may not act for somebody else.
+//   * BOUNDED IN BOTH STORES. The answer is at most `cap` people, and says
+//     `more` when more matched. In a windowed process (postgres) the store
+//     is asked one statement — `directory_queries.js`'s `uidContains`, a
+//     LIKE the trigram index `sts_ldap_entries_uid_trgm` answers — for at
+//     most `OVERFETCH` times the cap plus one, BEFORE the exclusions, which
+//     the store cannot apply to a sealed entry: so a page of excluded rows
+//     cannot starve the answer silently, and `more` is also said when the
+//     store had more rows than were read, since some of those may be people
+//     this would have shown. In memory the realm's people are held already
+//     (`personRows()`) and the match is exact.
+// ---------------------------------------------------------------------------
+const DELEGATE_CANDIDATE_CAP = 10;
+const DELEGATE_CANDIDATE_OVERFETCH = 5;
+const DELEGATE_CANDIDATE_MIN = 3;
+
+/**
+ * Why an entry is not one a person may find as a delegate, or '' when it is.
+ *
+ * A hot path (once per matching row): no Entering/Leaving pair.
+ *
+ * @param stored - the entry
+ * @param selfKey - the asking person's normalised DN
+ * @returns the reason, or ''
+ */
+function delegateCandidateExclusion(stored, selfKey) {
+  const attrs = (stored && stored.attributes) || {};
+  if (!stored || !isPersonEntry(stored)) {
+    return 'not a person';
+  }
+  if (selfKey && normalizeDn(stored.dn) === selfKey) {
+    return 'themselves';
+  }
+  if ((attrs[PROVISIONED_BY] || []).length) {
+    return 'provisioned by ' + String(attrs[PROVISIONED_BY][0]);
+  }
+  if ((attrs.pwdaccountlockedtime || []).length) {
+    return 'disabled';
+  }
+  if (serviceAccounts.isServiceAccount(attrs)) {
+    return 'a service account';
+  }
+  if (groupRuleFor(stored)) {
+    return 'a group';
+  }
+  return '';
+}
+
+/**
+ * One result row: the uid, the cn and the DN, and nothing else.
+ *
+ * A hot path (once per row shown): no Entering/Leaving pair.
+ *
+ * @param stored - the entry
+ * @returns `{ uid, cn, dn }`
+ */
+function delegateCandidateRow(stored) {
+  const attrs = stored.attributes || {};
+  return { uid: String((attrs.uid || [])[0] || usernameOfEntry(stored)),
+           cn: String((attrs.cn || [])[0] || ''),
+           dn: String(stored.dn) };
+}
+
+/**
+ * What one over-fetched page of the store's matches shows (see the block
+ * above): the rows the exclusions keep, and whether more MAY have matched —
+ * more kept than the cap, or the store answering as many rows as it was
+ * asked for, past which nobody has looked.
+ *
+ * @param rows - the store's rows, `{ entry }`, opened
+ * @param answered - how many rows the store answered
+ * @param asked - how many it was asked for
+ * @param cap - the most people shown
+ * @param selfKey - the asking person's normalised DN
+ * @returns `{ people, more }`, `people` not yet cut to the cap
+ */
+function delegateCandidatesOfPage(rows, answered, asked, cap, selfKey) {
+  log.debug('Entering delegateCandidatesOfPage().');
+  const people = [];
+  (rows || []).forEach(function (row) {
+    if (row && row.entry &&
+        !delegateCandidateExclusion(row.entry, selfKey)) {
+      people.push(delegateCandidateRow(row.entry));
+    }
+  });
+  const more = Number(answered) >= Number(asked) || people.length > cap;
+  log.debug('Leaving delegateCandidatesOfPage(). ' + people.length +
+            ' kept of ' + answered + '.');
+  return { people: people, more: more };
+}
+
+/**
+ * The native people of this realm whose `uid` contains `needle`, for
+ * `/portal/delegate` (see the block above).
+ *
+ * @param needle - the text the person typed; fewer than three characters
+ *   finds nobody
+ * @param options - `selfDn`, the asking person's DN; `cap`, at most ten
+ * @returns a promise of `{ people: [{ uid, cn, dn }], more }`
+ */
+async function delegateCandidates(needle, options) {
+  log.debug('Entering delegateCandidates().');
+  const o = options || {};
+  const wanted = String(needle || '').trim().toLowerCase();
+  const cap = Math.max(1, Math.min(DELEGATE_CANDIDATE_CAP,
+    Math.floor(Number(o.cap) || DELEGATE_CANDIDATE_CAP)));
+  const selfKey = o.selfDn ? normalizeDn(String(o.selfDn)) : '';
+  if (wanted.length < DELEGATE_CANDIDATE_MIN) {
+    log.debug('Leaving delegateCandidates(). Too short.');
+    return { people: [], more: false };
+  }
+  const kept = [];
+  let more = false;
+  if (directoryWindow) {
+    // The realm and the container before the wait, so the question stays
+    // in the realm the caller entered.
+    const realmId = realms.currentId();
+    const parent = normalizeDn(usersDn());
+    const asked = cap * DELEGATE_CANDIDATE_OVERFETCH + 1;
+    const page = await storeAsked(directoryWindow.uidContainsAsync(realmId,
+      parent, wanted, asked));
+    const read = delegateCandidatesOfPage(page.rows, page.asked, asked, cap,
+                                          selfKey);
+    read.people.forEach(function (one) {
+      kept.push(one);
+    });
+    more = read.more;
+  } else {
+    personRows().forEach(function (row) {
+      if (String(row.name || '').toLowerCase().indexOf(wanted) < 0) {
+        return;
+      }
+      const stored = storedPersonAt(row);
+      if (stored && !delegateCandidateExclusion(stored, selfKey)) {
+        kept.push(delegateCandidateRow(stored));
+      }
+    });
+    more = kept.length > cap;
+  }
+  kept.sort(function (a, b) {
+    return a.uid < b.uid ? -1 : (a.uid > b.uid ? 1 : 0);
+  });
+  log.debug('Leaving delegateCandidates(). ' + Math.min(cap, kept.length) +
+            ' shown' + (more ? ', and more matched.' : '.'));
+  return { people: kept.slice(0, cap), more: more };
 }
 
 /**
@@ -25598,6 +26291,41 @@ function describeDirectoryCaches() {
       return out;
     }
   });
+  // The service accounts by realm (#759), kept by their own clock.
+  serviceAccountsCount = cacheRegistry.register({
+    name: 'ldap.service-accounts',
+    title: 'Directory service accounts',
+    description: 'The names of a realm\'s service accounts, so a scope ' +
+      'decision that asks whether a person owns one does not ask the ' +
+      'directory for all of them.',
+    owner: 'ldap/ldap_server.js',
+    scope: 'realm',
+    maxEntries: oneIndexPerRealm,
+    bound: 'Structural: one list per realm, the size of its service ' +
+      'accounts.',
+    lifetime: function () {
+      log.debug("Entering the service accounts' lifetime().");
+      log.debug("Leaving the service accounts' lifetime().");
+      return 'Until a write touches an entry that is, or was, a service ' +
+        'account; the next read then asks the directory again.';
+    },
+    entries: function () {
+      log.debug("Entering the service accounts' entries().");
+      const out = [];
+      serviceAccountListings.existing().forEach(function (held, id) {
+        if (!held.names) {
+          return;
+        }
+        out.push({ realm: id, key: held.names.length +
+                     ' service account(s)',
+                   validUntil: null,
+                   valid: held.version === serviceAccountsVersion,
+                   basis: 'service account version (#759)' });
+      });
+      log.debug("Leaving the service accounts' entries().");
+      return out;
+    }
+  });
   cacheRegistry.register({
     name: 'ldap.entryuuid-index',
     title: 'Directory entryUUID index',
@@ -25622,6 +26350,35 @@ function describeDirectoryCaches() {
                    validUntil: null,
                    valid: cache.version === directoryVersion,
                    basis: 'directory version' });
+      });
+      return out;
+    }
+  });
+  cacheRegistry.register({
+    name: 'ldap.windowed-entryuuids',
+    title: 'Windowed entryUUIDs',
+    description: 'In a process holding a directory window, the key each ' +
+      'person\'s or device\'s entryUUID was last found at, so a subject ' +
+      'resolves to the entry the window holds without asking the store ' +
+      'again (#773). Checked against the entry\'s own entryUUID on every use.',
+    owner: 'ldap/ldap_server.js',
+    scope: 'realm',
+    maxEntries: function () {
+      return Math.max(1, Number(config.value('ldap.workerCacheEntries')) ||
+                         1);
+    },
+    bound: 'Enforced: ldap.workerCacheEntries per realm, the oldest dropped ' +
+      'first.',
+    settings: ['ldap.workerCacheEntries'],
+    lifetime: function () {
+      return 'Until the entry it names leaves the window, is renamed or no ' +
+        'longer carries that entryUUID, which is checked on every use.';
+    },
+    entries: function () {
+      const out = [];
+      windowedUuids.existing().forEach(function (memo, id) {
+        out.push({ realm: id, key: memo.size + ' UUID(s)', validUntil: null,
+                   basis: 'checked against the held entry on use' });
       });
       return out;
     }
@@ -25914,6 +26671,7 @@ module.exports = {
   // THE ENTRY UUID (2026-09-14): the lookups a person's `sub` and a SCIM id
   // go through, exported for SCIM and for the tests.
   entryByUuid: entryByUuid,
+  entriesByUuidsAsync: entriesByUuidsAsync,
   entriesByUuids: entriesByUuids,
   entryUuidOf: entryUuidOf,
   mergeCreateRace: mergeCreateRace,
@@ -25966,6 +26724,11 @@ module.exports = {
   personDns: personDns,
   residentsPage: residentsPage,
   residentsPageAsync: residentsPageAsync,
+  delegateCandidates: delegateCandidates,
+  delegateCandidatesOfPage: delegateCandidatesOfPage,
+  DELEGATE_CANDIDATE_OVERFETCH: DELEGATE_CANDIDATE_OVERFETCH,
+  DELEGATE_CANDIDATE_CAP: DELEGATE_CANDIDATE_CAP,
+  DELEGATE_CANDIDATE_MIN: DELEGATE_CANDIDATE_MIN,
   candidatePageAsync: candidatePageAsync,
   candidateByNameAsync: candidateByNameAsync,
   // /admin/ldap/directory's view, for the in-process test that counts what

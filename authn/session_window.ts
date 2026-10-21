@@ -32,7 +32,11 @@ const TOMBSTONE = '$tombstone$1';
 const NEGATIVE_CAP = 1024;
 const NEGATIVE_MS = 60000;
 const PAGE = 200;
-const SUBJECT_PAGE = 500;
+// How long a realm's count may answer an admission that is far from the cap
+// (#754), and how far "far" is: the larger of these two.
+const COUNT_FRESH_MS = 10000;
+const COUNT_MARGIN_MIN = 1000;
+const COUNT_MARGIN_SHARE = 0.01;
 
 const NOT_ENABLED = 'authn.sessionWindow cannot be on: minted persistence ' +
   'is not enabled.';
@@ -40,6 +44,12 @@ const SEVERAL_CELLS = 'authn.sessionWindow cannot be on: this process is ' +
   'one of several cells.';
 const NOT_A_DIGEST = 'authn.sessionWindow cannot be on: the minted key is ' +
   'not a digest.';
+
+interface RecentCount {
+  n: number;
+  at: number;
+  admitted: number;
+}
 
 interface Slot {
   session: any;
@@ -75,9 +85,12 @@ class SessionWindow {
   private readonly negative = new Map<string, number>();
   private readonly byDigest = new Map<string, string>();
   private readonly digestBySid = new Map<string, string>();
+  private readonly recentCounts = new Map<string, RecentCount>();
   private cooldownUntil = 0;
   private queryFn: QueryFn | null = null;
   private connectionOf: (() => any) | null = null;
+  private asyncQueryOf: ((name: string, args: unknown[]) =>
+    Promise<unknown>) | null = null;
   private bridge: SyncQuery | null = null;
   private touchFlusher: TouchFlusher | null = null;
 
@@ -178,6 +191,53 @@ class SessionWindow {
   }
 
   /**
+   * Keeps the driver's asynchronous form of the index's questions, which
+   * runs on its read pool (2026-10-21). `askAsync()` uses it.
+   *
+   * @param fn - answers a named query with a promise, or null
+   */
+  offerAsyncQuery(fn: ((name: string, args: unknown[]) =>
+                      Promise<unknown>) | null): void {
+    log.debug("Entering SessionWindow.offerAsyncQuery().");
+    this.asyncQueryOf = typeof fn === 'function' ? fn : null;
+    log.debug("Leaving SessionWindow.offerAsyncQuery().");
+  }
+
+  // ONE OF THE INDEX'S QUESTIONS, FOR A CALLER THAT CAN WAIT (2026-10-21):
+  // on the driver's read pool, so the event loop runs while the store
+  // answers — `/admin/users` counted every live session by opening every
+  // sealed body, synchronously, on the worker that serves sign-ins. A test's
+  // answer wins, as it does for the synchronous door; with neither, the
+  // synchronous door answers.
+  /**
+   * Asks the session index one of `session_queries.js`'s questions
+   * asynchronously.
+   *
+   * @param name - the query's name
+   * @param args - its arguments
+   * @returns a promise of the answer, null where it could not be asked
+   */
+  async askAsync(name: string, args: unknown[]): Promise<unknown> {
+    log.debug("Entering SessionWindow.askAsync(). " + name);
+    if (this.queryFn || !this.asyncQueryOf) {
+      const answer = this.indexAnswer(name, args);
+      log.debug("Leaving SessionWindow.askAsync(). Synchronously.");
+      return answer;
+    }
+    try {
+      const answer = await this.asyncQueryOf(name, args);
+      log.debug("Leaving SessionWindow.askAsync().");
+      return answer;
+    } catch (e) {
+      log.debug("Caught in SessionWindow.askAsync(): " +
+                ((e && (e as Error).message) || e));
+      this.noteReadFailure(e);
+      log.debug("Leaving SessionWindow.askAsync(). Failed.");
+      return null;
+    }
+  }
+
+  /**
    * Installs the answer a test gives instead of the bridge.
    *
    * @param fn - answers a named query, or null to clear it
@@ -211,6 +271,7 @@ class SessionWindow {
     this.negative.clear();
     this.byDigest.clear();
     this.digestBySid.clear();
+    this.recentCounts.clear();
     this.lru.clear();
     this.queryFn = null;
     const bridge = this.bridge;
@@ -484,6 +545,62 @@ class SessionWindow {
   }
 
   /**
+   * The realm's count as an admission against `cap` needs it (#754): exact
+   * near the cap, and far from it the store's count at most COUNT_FRESH_MS
+   * old plus what this process admitted since. `session.count` is a scan of
+   * the realm's index rows, so asking it on every sign-in made a sign-in
+   * cost O(sessions) — 0.6 ms at 4,500 sessions, about 130 ms at a million.
+   *
+   * What a cached answer can miss is what OTHER processes admitted within
+   * the window, and it is used only while the count plus this process's
+   * admissions is more than a margin (the larger of COUNT_MARGIN_MIN and
+   * COUNT_MARGIN_SHARE of the cap) below it; within the margin every
+   * admission asks again, as it always did. A session ended since is not
+   * subtracted, so the cached answer only ever overstates. The overshoot
+   * this allows is the other processes' admissions in one window past the
+   * margin — the cap was never locked (`makeRoomForSession()`).
+   *
+   * @param realmId - the realm
+   * @param cap - authn.maxSessions, at least 1
+   * @returns the count to compare with the cap, or null when unread
+   */
+  countForAdmission(realmId: string, cap: number): number | null {
+    log.debug("Entering SessionWindow.countForAdmission().");
+    const realm = String(realmId || '');
+    const now = Date.now();
+    const margin = Math.max(COUNT_MARGIN_MIN,
+                            Math.ceil(cap * COUNT_MARGIN_SHARE));
+    const recent = this.recentCounts.get(realm);
+    if (recent && now - recent.at < COUNT_FRESH_MS &&
+        recent.n + recent.admitted + margin < cap) {
+      log.debug("Leaving SessionWindow.countForAdmission(). Recent.");
+      return recent.n + recent.admitted;
+    }
+    const n = this.count(realm);
+    if (n === null) {
+      log.debug("Leaving SessionWindow.countForAdmission(). Unread.");
+      return null;
+    }
+    this.recentCounts.set(realm, { n: n, at: now, admitted: 0 });
+    log.debug("Leaving SessionWindow.countForAdmission(). Asked.");
+    return n;
+  }
+
+  /**
+   * One session admitted in this realm, for `countForAdmission()`.
+   *
+   * @param realmId - the realm
+   */
+  noteAdmitted(realmId: string): void {
+    log.debug("Entering SessionWindow.noteAdmitted().");
+    const recent = this.recentCounts.get(String(realmId || ''));
+    if (recent) {
+      recent.admitted += 1;
+    }
+    log.debug("Leaving SessionWindow.noteAdmitted().");
+  }
+
+  /**
    * Chosen rows of one subject, oldest first, or null when unread.
    *
    * @param realmId - the realm
@@ -566,43 +683,26 @@ class SessionWindow {
   }
 
   /**
-   * Chosen rows grouped by subject, oldest within each group left to the
-   * caller. Null when any page failed.
+   * The chosen sessions of the subjects holding more than `per` of them,
+   * grouped by subject — every row of at most `maxSubjects` such subjects,
+   * in one question (2026-10-21; `session.overCapRows`).
    *
    * @param realmId - the realm
-   * @returns the groups, or null
+   * @param per - the per-subject cap
+   * @param maxSubjects - the most subjects answered
+   * @returns the groups, or null when the index could not be read
    */
-  chosenBySubject(realmId: string): Array<{ subjectKey: string;
-      rows: any[] }> | null {
-    log.debug("Entering SessionWindow.chosenBySubject().");
-    const all: any[] = [];
-    let subject = '';
-    let key = '';
-    for (;;) {
-      const page = this.indexAnswer('session.subjectRows',
-        [String(realmId), subject, key]);
-      if (page === null) {
-        log.debug("Leaving SessionWindow.chosenBySubject(). Unread.");
-        return null;
-      }
-      const rows = Array.isArray(page) ? page : [];
-      rows.forEach(function (row) {
-        all.push(row);
-      });
-      if (rows.length < SUBJECT_PAGE) {
-        break;
-      }
-      const last = rows[rows.length - 1] || {};
-      const nextSubject = String(last.subjectKey || '');
-      const nextKey = String(last.key || '');
-      if (nextSubject === subject && nextKey === key) {
-        break;
-      }
-      subject = nextSubject;
-      key = nextKey;
+  overCapBySubject(realmId: string, per: number, maxSubjects: number):
+      Array<{ subjectKey: string; rows: any[] }> | null {
+    log.debug("Entering SessionWindow.overCapBySubject().");
+    const page = this.indexAnswer('session.overCapRows',
+      [String(realmId), Math.floor(per), Math.floor(maxSubjects)]);
+    if (page === null) {
+      log.debug("Leaving SessionWindow.overCapBySubject(). Unread.");
+      return null;
     }
     const groups = new Map<string, any[]>();
-    all.forEach(function (row) {
+    (Array.isArray(page) ? page : []).forEach(function (row) {
       const sk = String(row.subjectKey || '');
       let list = groups.get(sk);
       if (!list) {
@@ -615,7 +715,7 @@ class SessionWindow {
     groups.forEach(function (rows, subjectKey) {
       out.push({ subjectKey: subjectKey, rows: rows });
     });
-    log.debug("Leaving SessionWindow.chosenBySubject().");
+    log.debug("Leaving SessionWindow.overCapBySubject(). " + out.length);
     return out;
   }
 

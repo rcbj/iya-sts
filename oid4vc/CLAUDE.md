@@ -540,7 +540,7 @@ Three acts, all of them read through `vc_issued.disownedReason()`:
 * an administrator's revocation of the credential on `/admin/tokens` (the
   issued register's own mark, read by handle, so a restore undoes it);
 * a status-list entry that is not VALID — set by either of those, or by
-  `/admin/vc-status`;
+  `/admin/vc/monitor` (Monitoring → Verifiable Credentials);
 * its holder's Remove on `/portal/wallet` (#661), of one copy or of every
   copy of one issuance (#670): `removeForSubject()` stamps each copy
   removed, sets its entry INVALID and revokes its register row.
@@ -578,7 +578,7 @@ sign-out cannot be undone by the token it was meant to cut off.
 draft's linkability guidance) through a cluster claim, and free again when the
 credential expires. **A bit is COMPUTED**, never stored twice: the entry's own
 status, or INVALID because the issued register's mark says an administrator
-revoked it — so `/admin/tokens`, `/admin/vc-status`, an administrator's
+revoked it — so `/admin/tokens`, `/admin/vc/monitor`, an administrator's
 global sign-out and the sign-in door cannot disagree. The person's own
 Global logout on `/logout` sets no bit.
 
@@ -643,7 +643,7 @@ since #201 — issued directly by a trusted attester AND the two-certificate pat
 holding RFC 5280, where it was `checkIssued()` and a signature: an expired leaf,
 a CA as the leaf or an unimplemented critical extension vouched for the key.) So
 `/admin/oid4vp`, `/admin/oid4vci` and `/admin-api/config` carry them, and
-`/admin/vc-status` is where the lists themselves are read and changed. **On by default in both modes**: the screen
+`/admin/vc/monitor` is where the lists themselves are read and changed. **On by default in both modes**: the screen
 offers every mechanism the service supports, and this one signs in only an
 entry this realm issued a credential for on a token it verified — in product
 mode, a token from a person who signed in with a verified credential of their
@@ -691,6 +691,24 @@ signed request may use **all four Client Identifier prefixes** — six since
   held by somebody else) and goes back to the portal — no session is started.
   A pasted DID could be somebody else's; a proved one cannot. The admin door
   enrols by value (Admin Write), as it creates any other credential.
+* **An enrolment records WHERE THE KEY CAME FROM** (2026-10-20, rcbj on
+  `/portal/self-issued`): `location: { kind, value }` on the value.
+  `vc_signin.ts`'s `locationOf(tx)` reads it off the transaction the proof
+  answered — `dc_api` (the origin asked for) where the answer came that
+  way; `web` (the CONFIGURED `walletUrl`, never what a wallet said) where
+  the first fetch of the Request Object came by the web wallet's link;
+  otherwise `app`, named by the product tokens of that fetch's User-Agent
+  (`siop.reportedName()`: printable ASCII, no comments, at most 80
+  characters; `''` where nothing usable came). An administrator's value is
+  `admin`. **How the web link is told apart**: `waitView()`'s web-wallet
+  links carry `?via=web` on the `request_uri`, and the `GET
+  /oid4vp/request/:id` handler records `tx.signIn.fetchedBy` from it
+  (`noteFetch()`, first fetch wins, nothing written on a re-fetch) and
+  answers exactly what it answers without it — the id is the path's, the
+  Request Object carries no `request_uri`, and nothing compares one. The
+  scheme link and the QR code carry no marker. Proving a subject again
+  writes the location afresh; `enrol()` checks it (`siop.locationOf()`)
+  whoever passes it.
 * **`answerSelfIssued()` is one handler for `direct_post` and `form_post`**:
   the body is the same form either way; only the reply differs. A sign-in is
   always `direct_post`, because its binding cookie is SameSite=Lax and a form
@@ -699,8 +717,9 @@ signed request may use **all four Client Identifier prefixes** — six since
   (`siop.sameHolder()`), and the person is the credential's.
 * **A did:web is fetched only when it is enrolled** (`didKey()` asks
   `ownerOf()` first): it is the presenter's kind of URL, and the enrolment is
-  what makes it the person's or the administrator's — the root `CLAUDE.md`'s
-  row of URLs this service dials carries it.
+  what makes it the person's or the administrator's — `federation/CLAUDE.md`'s
+  list of URLs this service dials carries it (the twelfth row; the
+  nineteenth since #693, below).
 * **The prefixes live in `signedClientId()`**: the DID URL `kid`
   (`helpers.signJwt()`'s `kidDid`), the Verifier Attestation in the `jwt`
   header (a configured one is checked against this realm's key and refused
@@ -715,9 +734,188 @@ signed request may use **all four Client Identifier prefixes** — six since
   chooses its mode, and a fragment needs a script on a page here) and dynamic
   discovery of a Self-Issued OP (the static `siopv2:` configuration).
 
-`tests/siop.js` holds the library and the request builder in process;
-`tests/vendored/sts_siop.js` (local) drives the sign-in, both enrolments, the
-refusals and the bar door's `form_post` over HTTP.
+### #693's four prerequisites (2026-10-20, rcbj: "Do all that")
+
+The review on #693 found four things to fix before a DID is released in a
+claim or bound to a credential (phase 2). All four are built:
+
+1. **A did:web's key is PINNED.** `siop.ts` fetched `did.json` on every
+   sign-in with no memory of what it said, so whoever controlled the host
+   later — a new owner, a hijacked domain — held the sign-in key, and nothing
+   noticed. Each did:web value now carries `pinnedKeys`, RFC 7638 SHA-256
+   thumbprints: by proof, the key that signed the enrolment's ID Token; by
+   value, every `authentication` method with a `publicKeyJwk` the document
+   named WHEN the administrator enrolled it. **By value fetches then, and a
+   document that cannot be fetched or names no such key is REFUSED
+   (`STS-ADMIN-0871`)** rather than enrolled unpinned — the choice the review
+   left open; an unpinned did:web is exactly what this removed, and an
+   administrator who can name a DID can name one whose host answers. A later
+   token whose key the pin does not name is refused in BOTH modes
+   (`STS-VC-0126`, audited `siop.key.refused`), and the person re-enrols by
+   a fresh proof. `did:jwk`, `did:key` and thumbprints are their key and pin
+   nothing. **A value from before #693 has no pin**:
+   `mode.pinsSelfIssuedKeysOnFirstUse()` (REQUIREMENTS `siop-did-web-pin`) —
+   development pins the key it signs in with (trust on first use, a log line
+   and `siop.key.pinned`; `STS-VC-0129` if the write fails, the sign-in
+   standing), product refuses (`STS-VC-0127`, audited). Since the admin path
+   is now `async` (`siop.enrolByValue()`), `usersAction()` returns a promise
+   for that one act and `/admin-api`'s users handler waits for a thenable
+   (`STS-API-0136` if it rejects, which it is written not to).
+2. **PROVENANCE.** Each value says `proof: 'wallet'` (the person proved it,
+   with `provedAt`) or `'admin'` (by value, unproven). A value from before
+   #693 is read as `wallet` when its `by` is the self path's `self (SIOPv2)`
+   and `admin` otherwise — conservative, so nothing unproven is ever read as
+   proved. `list()` fills it in, `/admin/users`, `/admin-api` and
+   `/portal/self-issued` show it, and **`siop.provenSubjectsOf(username):
+   Json[]`** — the proved rows only — is what phase 2's claim and binding
+   read. A sign-in reads neither: an administrator's entry signs in as it
+   always did.
+3. **A did:web can be enrolled BY PROOF.** `didKey()` refused an unenrolled
+   did:web, so only an administrator could add one. Now
+   `verifyIdToken(token, { clientId, nonce, enrolment })` resolves one inside
+   a person's own enrolment transaction (`vc_verifier.ts`'s
+   `answerSelfIssued()` passes `enrolment` only for `tx.signIn.enrol`, never
+   with a `vp_token`), and **only after every check that needs no key has
+   passed** — `iss === sub`, the DID's syntax, then `aud`, `nonce`, `exp` and
+   `iat`, which are now judged BEFORE the key and still reported after it —
+   so a token for another transaction, a replay or a stale one dials
+   nothing. **One fetch per transaction** (`mayDial()`, its mark written
+   through the store before the fetch); a second, or a failed fetch, is
+   `STS-VC-0128`. That rule applies to every did:web fetch, not just an
+   enrolment's: an enrolled did:web is no longer fetched for a token whose
+   other checks failed. The enrolment is not held to a pin — it is where the
+   pin is made — and **proving a subject already yours proves it again**
+   (`again`, CAEP `update`): the re-pin flow, and how an administrator's
+   entry becomes a proved one. `federation/CLAUDE.md`'s nineteenth row is the
+   argument for the new dial.
+4. **The wallet enrolment is AUDITED**: `portal.siop.enrol` from
+   `vc_signin.ts`'s enrol branch, the removal's shape — success, or failure
+   with the code (`STS-VC-0094` refused by `siop.enrol()`, or the
+   transaction's own code when the proof did not verify).
+
+`tests/siop.js` holds the library and the request builder in process —
+since #693 also the pin, provenance, the per-mode legacy rule, the
+enrolment-only fetch, the internal-address refusal in product and the
+by-value refusals (sections 5, 8-11); `tests/vendored/sts_siop.js` (local)
+drives the sign-in, both enrolments, the refusals and the bar door's
+`form_post` over HTTP, and the provenance and the enrolment's audit row.
+**What has no test**: a did:web enrolled by proof end to end over HTTP —
+the job has no https document host on the service's network, and a did:web
+must be https (`didWebUrl()`), so the fetch is driven in process with a
+stubbed `fetchDocument` and, for the internal-address refusal, the real
+`fetchPublished()`.
+
+### #693's phase 2: the preferred DID and the `did` claim (2026-10-20)
+
+* **ONE PREFERRED DID, AND ONLY A PROVED ONE.** `siop.setPreferred(username,
+  subject)` marks one value `preferred: true` and clears it from every
+  other ('' clears all); `siop.preferredSubjectOf(username)` is the one
+  reader. It refuses a subject enrolled by value (`not-proved`), a JWK
+  thumbprint (`not-a-did` — it names a key, and a claim called `did`
+  carrying one would say something false) and one not enrolled. **`list()`
+  reads `preferred` as false on any row that is not `proof: 'wallet'`**,
+  whoever wrote it, so a hand-edited entry cannot make an administrator's
+  value releasable. The mark lives ON the existing JSON value rather than in
+  a second attribute, so removing the subject removes it and the one-writer
+  rule (`enrol()`, `remove()`, now `setPreferred()`) holds. **Proving the
+  subject again keeps the mark** (`enrol()` carries it across a re-proof):
+  re-pinning a did:web is not a change of mind. Setting the mark sends no
+  CAEP event — it changes nothing that signs anybody in.
+* **Two doors, the portal's rule and rule 7**: `/portal/self-issued`'s POST
+  takes `action: prefer | unprefer` beside `remove` (the identity is the
+  token's; `STS-PORTAL-0615`, audited `portal.siop.prefer`), and the
+  console's users page and `POST /admin-api/users/set-preferred-self-issued-subject`
+  are one act (`STS-ADMIN-0872`, audited `admin.siop.preferred`; an absent
+  `subject` clears).
+* **What releases it is `oauth-oidc/did_claim.ts`** — the scope, the
+  consent, the pairwise rule and the rest are argued in
+  `oauth-oidc/CLAUDE.md` (*The `did` claim*). It reaches this library
+  LAZILY, at the decision.
+* **Holder binding** (the other half of phase 2) reads
+  `provenSubjectsOf()` too; it is built separately.
+
+`tests/did_claim.js` holds both doors, the refusals, the by-value row's own
+`preferred` ignored, the re-proof and the removal in process.
+
+### #693 phase 2b: the person's proven DID as the holder (2026-10-20)
+
+The review's second row: a credential bound to a DID the person PROVED,
+for `did:jwk` and `did:key` only. Four pieces:
+
+1. **A KEY PROOF BY DID** (`vc_issuer.ts`, `verifyProofJwt()` and
+   `proofKeyOfKid()`). OpenID4VCI 1.0 Appendix F.1 lets a `jwt` proof name its
+   key with `kid`: "If the Credential shall be bound to a DID, the kid refers
+   to a DID URL which identifies a particular key in the DID Document". It also
+   says that each of `kid`, `jwk` and `x5c` "MUST NOT be present if" another
+   is, so `jwk` with `kid` is refused (`STS-VC-0140`). The `kid` has to be a
+   DID URL with a fragment naming a did:jwk or did:key method (`STS-VC-0141`).
+   It is resolved by `vc_did_resolver.ts`, from the identifier and with no
+   fetch, and only once the typ, alg, aud, iat and c_nonce checks have passed.
+   The method has to be in the document's `authentication` (`STS-VC-0144`).
+   **The specification names no relationship**, and `authentication` is DID
+   Core section 5.3.1's for proving control, which is what a proof of
+   possession does. That choice also refuses a did:jwk whose key says
+   `use: "enc"`. A did:web `kid` is refused outright (`STS-VC-0142`). A
+   configuration bound to a KEY binds to the key a `kid` names in the same
+   way as to a `jwk`, so nothing about it changed.
+2. **THE BINDING IS OPT-IN PER CONFIGURATION**: `oid4vci.didHolderBinding`, a
+   `csv` row whose closed set is `vc_configs.ts`'s ids (`OID4VCI_CONFIG_IDS`,
+   held equal by `tests/closed_setting_values.js`), empty by default.
+   `vciHolderBindingOf(id)` answers `key` or `did`. It is a setting rather
+   than a field of `VCI_CONFIGS` because the configurations are constants and
+   the realm's choice is configuration, which gives the console and
+   `/admin-api` parity for free (rule 7). For a `did` configuration,
+   `didBindingRefusal()` runs at the request, before the c_nonce is spent, and
+   again when a deferred one is collected. Every proof must name a DID
+   (`STS-VC-0145`, which also covers the `attestation` proof type). The person
+   is `signInSubjectOf()`'s VERIFIED subject (`STS-VC-0146`): a development
+   token this realm did not verify could name anybody, and `holderNameFrom()`
+   reads one unverified. Their account must not be disabled (`STS-VC-0147`).
+   Each DID must be in `siop.provenSubjectsOf()`: one enrolled for nobody,
+   never or since removed, is `STS-VC-0148`; one an administrator enrolled by
+   value is `STS-VC-0149`; and somebody else's is `STS-VC-0150`. **`siop.ts`
+   is unchanged**: the issuer reads it, lazily, through its deps. The codes
+   start at 0140 so that the DID claim (phase 2a), built beside this one,
+   could take the numbers after 0129.
+3. **WHAT THE CREDENTIAL CARRIES.**
+   * `dc+sd-jwt`: `cnf: { kid: <DID URL> }`, which is RFC 7800 section 3.4's
+     `kid` confirmation method. SD-JWT VC's `cnf` is "as defined in
+     [RFC7800]", with a JWK only RECOMMENDED. `sub` is unchanged because
+     SD-JWT VC says "There is no requirement for a binding to exist between
+     sub and cnf claims".
+   * `jwt_vc_json`: `credentialSubject.id` and `sub` are the DID, since
+     VCDM 1.1's JWT encoding has `sub` represent `credentialSubject.id`, and
+     `cnf.kid` is the DID URL.
+   * `ldp_vc`: `credentialSubject.id` is the DID. For a did:jwk that is what
+     it always was.
+   The metadata's `cryptographic_binding_methods_supported` is
+   `["did:jwk","did:key"]`, set after the DID variants clone their sibling,
+   because the binding is each configuration's own. `proof_types_supported`
+   is unchanged. The issued register keeps the DID as `holderDid` in every
+   format. **The Verifier reads `cnf.kid` and a did:key subject**
+   (`cnfKeyOf()`, `ldpFacts()`), only for did:jwk and did:key and never by a
+   fetch, so a DID-bound credential signs in like any other. The sign-in
+   compares a JOSE credential's `sub` with the register row, and accepts the
+   `holderDid` recorded for that credential as well as the person's subject,
+   because a DID-bound jwt_vc_json's `sub` is the DID.
+4. **THE TRADE IS LINKABILITY.** Every copy of a batch, and every later
+   credential from that configuration, carries the same DID, which is what
+   per-copy keys and the rounded validity times exist to prevent. That is why
+   the binding is a configuration's opt-in and never a default. The nonces and
+   `unlinkableTimes()` are unchanged.
+
+**did:web is excluded, and why.** Phase 1 pins a did:web's key at
+enrolment, which protects a SIGN-IN. A credential is checked later, by a
+relying party who resolves the DID itself. The host can change its document
+between the proof here and that check, so a credential bound to a did:web says
+nothing durable about the key. Building it needs the relying party's half of
+the pin, or a key-named binding beside the DID: a design of its own.
+
+`tests/oid4vci_did_binding.js` holds all of it in process: the kid proofs and
+their five refusals, the metadata, each format's output, the batch, every
+refusal above including a DID removed after the token and during a deferral,
+and the sign-in in every format. **What has no test**: an HTTP job
+(`tests/vendored/`, `local: true`), and a real wallet sending a `kid` proof.
 
 ## THE x509 CLIENT IDENTIFIER PREFIXES: `x509_san_dns` AND `x509_hash` (#230, 2026-09-26)
 
@@ -966,7 +1164,21 @@ second catalogue. What is more than a number, and what
 * **NO SCANS FOR ONE PERSON** (rcbj, 2026-10-17: "lists are maintained as
   you go"): `vc_issued.ts` indexes rows by subject and credentials by
   `notification_id` as they are recorded and drops them where it deletes a
-  row; the reader prunes a key the size bound evicted. Still scanning, and
+  row — the size bound's evictions included, read before `makeRoom()` takes
+  them. **A READER NEVER PRUNES A KEY FOR A ROW IT CANNOT SEE** (2026-10-20):
+  a `realms.map()` store is this process's copy, and `get()` answers
+  `undefined` alike for a row that is gone and for one that has not arrived
+  (another process's write still in the change log, a row the restore could
+  not open) — there is no "absent" to tell from "not here", so until then a
+  transient miss pruned the person's entry for good and their history read
+  as empty. Now a key is dropped only where this module deleted the row
+  itself, or where the row IS here and names another subject (or no longer
+  carries the notification); a read that throws keeps the entry and logs
+  `STS-VC-0151` once per read. A key left behind costs a dead lookup and
+  ends with the entry's own `expiresAt`. The backfill mark moved to
+  `#indexed-v2` the same day, so each realm is indexed once more and gets
+  back what an older reader pruned (`indexRow()` adds a key once).
+  `tests/vc_issued_index.js` holds all of it. Still scanning, and
   older than the indexes: `sweep()` on every `record()`, `lookupHolder()`
   (an `ldp_vc` sign-in) and `rowsForSubject(null)` (everyone's, for a global
   sign-out).
@@ -1200,7 +1412,7 @@ ADAPTER — and what it adapts to is this directory's machinery, not a copy:
 the cryptosuites are `vc_data_integrity.ts`'s, the keys are the realm key
 set's Ed25519, P-256 and P-384 members (`realmKeyFor()`, named by their
 did:key), a credential's status is an index `vc_status.ts` allocates, and a
-status change is `vc_status.setStatus()` — the act `/admin/vc-status`
+status change is `vc_status.setStatus()` — the act `/admin/vc/monitor`
 performs, one of the three that DISOWN a credential (*Disowned*, above).
 
 **A PRODUCT SURFACE SINCE #598 (rcbj's decision 2 on #591), AND OFF BY
@@ -1243,8 +1455,8 @@ header:
   an argument now. A private member under `verificationMethod` is refused
   rather than ignored. The DID queries go through `validation.check()`.
 * **THE STATUS-LIST PUBLISH LEFT** for `POST /admin-api/vc-status/publish`
-  (Admin Write) and a *Publish now* button on the Credential status tab
-  (`admin-ui/vc_status_admin.ts`): it was the suites' hook beside the list,
+  (Admin Write) and a *Publish now* button on Monitoring → Verifiable
+  Credentials (`admin-ui/vc_status_admin.ts`): it was the suites' hook beside the list,
   a list here is computed on every read, and an act that only says so is an
   operator's.
 

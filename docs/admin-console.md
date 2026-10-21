@@ -57,6 +57,18 @@ menu links to the user portal of the realm you signed in through, which signs
 you in from the same sign-on session the console used. A realm's own
 administrator who opens the plain `/portal` is sent to their realm's portal.
 
+**Switch user** is in the same menu, with
+[several accounts in one browser](multiple-accounts.md) turned on in the
+realm (`authn.multipleAccounts`, on by default): the other accounts signed
+in to this browser, each a press away, and **Sign in with another account**.
+The account the tab leaves stays signed in, and other tabs keep theirs.
+The account switched to gets exactly what its own roles give it — a person
+holding no console role gets the console's usual answer for them, and an
+account the console refuses outright gets a page that says so with the same
+Switch user list and Sign out, so the way back is on the page. Switching is
+not the *Sign in again* window that appears when a session ends: that one
+signs the tab's own account in again and refuses anybody else.
+
 **There is no setting that turns the gate off.** What `global.mode` changes is
 whether the password typed at the sign-in screen is *checked*:
 
@@ -154,14 +166,22 @@ every future token and assertion, and create people in the directory.
 
 ### The navigation
 
-The navigation is a grouped list down the left. Its five sections:
+The navigation is a grouped list down the left, and every section of it is
+**collapsed until you open it**. Click (or press Enter or Space on) a section's
+heading to open it; opening one closes whichever was open, so only one is open
+at a time. The section you opened stays open as you move between console pages
+in that tab, until you close it or open another; a reload or a new tab starts
+with everything collapsed. The section holding the page you are on is marked
+by a rule down its left even while it is collapsed. Its five sections:
 
 * **Overview** — `/admin`, the one page whose job is to point at the others.
   It is a section of one on purpose: it cannot sit under a heading naming a
   kind of content.
 * **Protocols** — a page, or a group of pages, per protocol family: OAuth2 /
   OIDC (settings, authorization servers, token lifetimes, custom claims,
-  UserInfo claims), SAML, Verifiable Credentials, XACML (Metadata, Settings,
+  UserInfo claims), SAML (Metadata, Global settings, Shared profile
+  settings, SAML 2.0 IdP, SAML 1.1 IdP, IdP-Initiated SSO, Assertions and
+  Attributes tabs), Verifiable Credentials, XACML (Metadata, Settings,
   Policies, Policy editor, Remote PEPs and Try a decision tabs), SCIM, SSF
   (Metadata, Shared Signals, CAEP and RISC tabs), Kerberos (Metadata, Settings,
   PAC claims and Principals tabs), Federation, OpenID
@@ -1128,6 +1148,29 @@ every permission it exposes and every grant in it.
 or `?application=` for one application's group with its rows and graph. Neither
 picture has a form on it.
 
+### Verifiable Credentials — `/admin/vc/monitor`
+
+What this realm's credential issuer has issued, and whether each credential is
+still good. The **Metadata** tab counts the credentials that carry a
+status-list index and how many are valid, suspended and revoked, and says where
+the Token Status List, its aggregation and the two Bitstring Status Lists are
+served, each Bitstring list with a **Publish now**. The **Credentials** tab
+lists every live credential, newest first and paged, with its index, format,
+configuration, status and who set it, and **Suspend**, **Reinstate** and
+**Revoke** on each row. A revoked credential is INVALID, which is final; a
+suspended one can be reinstated. Either stops it signing anybody in at
+`/authn/wallet`. A credential revoked on **Tokens** shows INVALID here too: the
+status is computed from both, so the two pages cannot disagree.
+
+It was the **Credential status** tab of Protocols → Verifiable Credentials
+until #752, and moved here beside the other families' Monitoring pages. Its old
+addresses, `/admin/vc#vc-tab-status` and `/admin/vc-status`, open it. The
+settings the lists are built with, `oid4vci.statusListTtlS` and
+`oid4vci.statusListLifetimeS`, stay on the OpenID4VCI tab of `/admin/vc`. The
+page is a realm's own, so a realm administrator sees it for their realm. API:
+`GET /admin-api/vc-status` and
+`POST /admin-api/vc-status/{suspend,reinstate,revoke,publish}`.
+
 ### Worker pools — `/admin/worker-pools`
 
 `/admin/worker-pools` shows the two pools of worker threads this node runs
@@ -1450,18 +1493,21 @@ for the same POST.
 
 ### Verifiable Credentials — `/admin/vc`
 
-The former separate OpenID4VCI, Credential status, OpenID4VP and Verifier
-request leaves are tabs on this one Protocols page:
+The former separate OpenID4VCI, OpenID4VP and Verifier request leaves are tabs
+on this one Protocols page:
 
 * **Metadata** lists the issuer and verifier endpoints. The explanatory
   OpenID4VCI and OpenID4VP guidance is in disclosures that are collapsed by
   default.
 * **OpenID4VCI** holds issuance settings.
 * **Credential claims** selects claims on issued credentials.
-* **Credential status** manages this realm's issued credential statuses.
 * **OpenID4VP** holds verifier and wallet sign-in settings.
 * **Verifier request** configures what this realm's OpenID4VP Verifier asks
   wallets to present.
+
+What has been issued, and each credential's status, is
+[Monitoring → Verifiable Credentials](#verifiable-credentials--adminvcmonitor),
+which was this page's Credential status tab until #752.
 
 ### Credential claims tab — `/admin/vc#vc-tab-claims`
 
@@ -1593,6 +1639,10 @@ service actually does. See
 [OAuth 2.0 and OpenID Connect](oauth-oidc.md#multiple-authorization-servers--adminauthorization-servers).
 
 ## What the console does not do
+
+The console's own index draws a longer list, *What it deliberately does not
+do*, in development mode only: almost all of it is about what development
+mode does not check. A realm in product mode does not show it.
 
 * **It does not invalidate a SAML assertion, a Kerberos ticket, an SVID or a
   verifiable credential.** None has a revocation mechanism a relying party

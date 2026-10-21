@@ -623,6 +623,10 @@
     "en": "2b77aa6b404dbdc0",
     "text": "OIDC Core avsnitt 8.1 `sector_identifier_uri`: en https-URL vars VÄRD är den sektor som ett parvis `sub` härleds för, så att flera omdirigeringsvärdar hos en organisation ser ett subjekt. En REGISTRERING som namnger en får den HÄMTAD och måste listas i den JSON-array den levererar, varje omdirigerings-URI i den; en som skrivs här av en administratör är administratörens påstående och hämtas inte. Tomt: sektorn är omdirigerings-URI:ernas värd, som då alla måste dela en."
   },
+  "applications.schema.attributes.oauthDidClaimWithPairwise.what": {
+    "en": "6a260538fdd857e4",
+    "text": "TRUE: den här klienten får veta personens föredragna DID (anspråket `did`, oauth2.didClaim) trots att den använder parvisa eller efemära subjektidentifierare. Allt annat, och för en klient med publikt subjekt spelar det ingen roll: aldrig. Ett parvist eller efemärt `sub` finns för att den här klienten inte ska kunna korrelera personen med andra klienter, och ett DID är samma värde hos varje klient som får det, vilket upphäver det — sätt det bara där den här klienten ändå ska känna personen genom deras DID. Kan inte sättas av en registrering."
+  },
   "applications.schema.attributes.oauthTokenEndpointAuthSigningAlg.what": {
     "en": "c3cee680e93f74e1",
     "text": "OIDC Core avsnitt 9 / RFC 7591 `token_endpoint_auth_signing_alg`: den ENDA JWS-algoritm som den här klientens autentiseringsintygande måste signeras med. Ett intygande signerat med någon annan avvisas, i varje läge. Tomt: vilken algoritm som helst som metoden tillåter."

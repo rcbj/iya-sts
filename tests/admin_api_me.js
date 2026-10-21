@@ -28,7 +28,10 @@
 //   5. a realm's own token, under that realm's prefix: the `realm`
 //      authority, that realm, and NO service page among its pages;
 //   6. the control, development with `adminApi.authRequired` off and no
-//      token: no caller, and both read and write.
+//      token: no caller, and both read and write;
+//   7. what it costs (2026-10-21): /me builds no statistics snapshot and asks
+//      no directory tally; /status asks the register's rows and the tally
+//      asynchronously, and keeps the totals for a few seconds.
 // ===========================================================================
 
 const fs = require('fs');
@@ -255,6 +258,129 @@ function childMain() {
     note(has(j.pages, REALM_PAGE) && !has(j.pages, SERVICE_PAGE),
          '5b. and no service page is among its pages', brief(r) + ' ' +
          has(j.pages, SERVICE_PAGE));
+
+    // --- 7. what it costs (2026-10-21) ---------------------------------------
+    // Every console page asks /me, and it built the whole statistics
+    // snapshot — every register subject resolved — and the directory's
+    // credential tally to answer its page list: ten seconds of a request
+    // worker on 8081. /me asks neither; /status asks both asynchronously.
+    const statsModule = require(ROOT_DIR + '/common/admin_stats');
+    const credentialsModule = require(ROOT_DIR + '/common/credentials');
+    const counted = { snapshot: 0, userRows: 0, userRowsAsync: 0,
+                      tally: 0, tallyAsync: 0 };
+    const realStats = { snapshot: statsModule.snapshot,
+                        userRows: statsModule.userRows,
+                        userRowsAsync: statsModule.userRowsAsync };
+    const realTally = credentialsModule.directoryFactorCounts;
+    const realTallyAsync = credentialsModule.directoryFactorCountsAsync;
+    statsModule.snapshot = function (opts) {
+      counted.snapshot++;
+      return realStats.snapshot.call(this, opts);
+    };
+    statsModule.userRows = function () {
+      counted.userRows++;
+      return realStats.userRows.apply(this, arguments);
+    };
+    statsModule.userRowsAsync = function () {
+      counted.userRowsAsync++;
+      return realStats.userRowsAsync.apply(this, arguments);
+    };
+    credentialsModule.directoryFactorCounts = function () {
+      counted.tally++;
+      return realTally.apply(this, arguments);
+    };
+    credentialsModule.directoryFactorCountsAsync = function () {
+      counted.tallyAsync++;
+      return realTallyAsync.apply(this, arguments);
+    };
+    let meCost = null;
+    let statusCost = null;
+    let status = null;
+    try {
+      r = await call(port, 'GET', '/admin-api/me', writer);
+      meCost = Object.assign({ status: r.status }, counted);
+      Object.keys(counted).forEach(function (k) {
+        counted[k] = 0;
+      });
+      status = await call(port, 'GET', '/admin-api/status', writer);
+      statusCost = Object.assign({ status: status.status }, counted);
+    } finally {
+      statsModule.snapshot = realStats.snapshot;
+      statsModule.userRows = realStats.userRows;
+      statsModule.userRowsAsync = realStats.userRowsAsync;
+      credentialsModule.directoryFactorCounts = realTally;
+      credentialsModule.directoryFactorCountsAsync = realTallyAsync;
+    }
+    note(meCost.status === 200 && meCost.snapshot === 0 &&
+         meCost.userRows === 0 && meCost.tally === 0 &&
+         meCost.tallyAsync === 0,
+         '7a. /admin-api/me builds no statistics snapshot and asks no ' +
+         'directory tally for its page list', JSON.stringify(meCost));
+    note(statusCost.status === 200 && statusCost.userRowsAsync === 1 &&
+         statusCost.tallyAsync === 1 && statusCost.userRows === 0 &&
+         statusCost.tally === 0 && status.json &&
+         typeof status.json.usersKnown === 'number',
+         '7b. /admin-api/status asks the register\'s rows and the tally ' +
+         'asynchronously, neither synchronously', JSON.stringify(statusCost));
+    // 7c (2026-10-21): the totals are kept for a few seconds — a second
+    // /status at once asks nothing again.
+    statsModule.userRowsAsync = function () {
+      counted.userRowsAsync++;
+      return realStats.userRowsAsync.apply(this, arguments);
+    };
+    counted.userRowsAsync = 0;
+    let statusAgain = null;
+    try {
+      statusAgain = await call(port, 'GET', '/admin-api/status', writer);
+    } finally {
+      statsModule.userRowsAsync = realStats.userRowsAsync;
+    }
+    note(statusAgain.status === 200 && counted.userRowsAsync === 0 &&
+         statusAgain.json && statusAgain.json.usersKnown ===
+           status.json.usersKnown,
+         '7c. a second /admin-api/status within the hold builds nothing ' +
+         'again', JSON.stringify({ status: statusAgain.status,
+                                   built: counted.userRowsAsync }));
+    // 7d (2026-10-21): past the hold, kept totals still answer at once and
+    // ONE rebuild runs behind them.
+    const consoleModule = require(ROOT_DIR + '/admin-ui/admin');
+    const Console = consoleModule.AdminConsole;
+    const realHold = Console.TOTALS_HOLD_MS;
+    Console.TOTALS_HOLD_MS = -1;
+    let rebuilt = 0;
+    // A rebuild made slow (2 s), so an answer that waited for it shows.
+    statsModule.userRowsAsync = function () {
+      rebuilt++;
+      const self = this;
+      const args = arguments;
+      return new Promise(function (resolve) {
+        setTimeout(resolve, 2000);
+      }).then(function () {
+        return realStats.userRowsAsync.apply(self, args);
+      });
+    };
+    let staleOne = null;
+    let staleTwo = null;
+    let staleMs = 0;
+    try {
+      const startedAt = Date.now();
+      staleOne = await call(port, 'GET', '/admin-api/status', writer);
+      staleMs = Date.now() - startedAt;
+      staleTwo = await call(port, 'GET', '/admin-api/status', writer);
+      // The rebuild behind them, before the stand-in is taken away.
+      await new Promise(function (resolve) {
+        setTimeout(resolve, 2500);
+      });
+    } finally {
+      Console.TOTALS_HOLD_MS = realHold;
+      statsModule.userRowsAsync = realStats.userRowsAsync;
+    }
+    note(staleOne.status === 200 && staleTwo.status === 200 &&
+         staleOne.json && staleOne.json.usersKnown === status.json.usersKnown &&
+         staleMs < 1500 && rebuilt === 1,
+         '7d. past the hold the kept totals answer at once, and one rebuild ' +
+         'runs behind them', JSON.stringify({ rebuilt: rebuilt,
+                                              ms: staleMs }));
 
     // --- 6. the control ------------------------------------------------------
     config.setOverride('adminApi.authRequired', false);

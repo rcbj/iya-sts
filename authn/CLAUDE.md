@@ -646,9 +646,17 @@ resolver follows.
 
 ## SEVERAL SIGNED-IN ACCOUNTS IN ONE BROWSER (#561, 2026-10-19)
 
-**`authn.multipleAccounts`, OFF BY DEFAULT in both modes (the plan's D2)**,
-runtime and so per realm, read where it is used. **Off, nothing below
-exists**: no `sts_accounts` cookie, no picker, `sessionOf()` reads the cookie
+**`authn.multipleAccounts`, ON BY DEFAULT in both modes SINCE 2026-10-20**
+— rcbj's decision on #751, "default it to on"; it was off by default until
+then (the plan's D2) — runtime and so per realm, read where it is used.
+**It is a behaviour change for every realm that never set it**: the account
+picker now appears whenever a browser holds more than one signed-in account
+and a request names none, and signing in as somebody else ADDS an account
+instead of ending the first session. No product-mode rule asks for it off
+(`common/mode.js` names it nowhere), so the default is the same in both
+modes. Tests that need the old behaviour set it off EXPLICITLY, and
+`tests/multi_account_sessions.js` asserts the new default. **Off, nothing
+below exists**: no `sts_accounts` cookie, no picker, `sessionOf()` reads the cookie
 alone, and a different person signing in ends the browser's session through
 `dropSession('a new sign-in in the same browser')` as it always did —
 `tests/multi_account_sessions.js` part 1 holds that. The plan is the comment
@@ -2042,6 +2050,28 @@ ends somebody else's session.
   replicated store. A worker restoring sessions, or applying another's
   writes from the change log, never evicts. Two concurrent inserters may
   overshoot by one each. The client address is not an admission key.
+* **Far from the cap the window does not count the realm on every insert
+  (#754, 2026-10-20).** `session.count` is a scan of the realm's index
+  rows, so asking it per sign-in made a sign-in O(sessions): 0.6 ms at
+  4,500, about 130 ms at a million, on the bridge. `countForAdmission()`
+  answers the store's count at most 10 s old plus this process's admissions
+  since, while that is more than a margin — the larger of 1,000 and 1% of
+  the cap — below it; within the margin every insert asks, as before. Ends
+  are not subtracted, so the cached answer only overstates. What it can
+  miss is other processes' admissions in one 10 s window past the margin,
+  the same overshoot the unlocked check already allows. With no cap
+  (`authn.maxSessions` below 1) nothing is counted.
+  `tests/sustained_load_costs.js` section B.
+* **A hosted surface's received signal visits its own sessions (#767,
+  2026-10-20).** `endRelyingPartySessions()` runs for every signal the
+  console and the portal receive — every password write sends both a CAEP
+  `credential-change` — and after the `session.surface` index it walked
+  every session the process held to find the surface's not yet in the
+  index: about 15% of the two request workers on 8081 under a password
+  load. The store files a session under `rp:<rpSurface>` (`realms.map()`'s
+  `indexBy`, `common/CLAUDE.md` 3b), which is set when the session is made
+  and never changed, and `heldSurfaceSessions()` visits those; the match
+  test is unchanged. `tests/surface_session_signals.js`.
 * **Lowering a cap does not mass-end.** The next insert ends at most one
   own row, and only when that subject is over their own cap. The
   `authn.session-expiry` job then ends at most that realm's
@@ -2914,6 +2944,14 @@ exists is not ended. **The enrolment emits
 no CAEP event**, because the signals the request asked for are the ADMIN doors'
 (`admin-core/admin_actions.ts`); the portal's own enrolment pages do not emit
 either. `tests/admin_credential_controls.js` section 7 drives it over HTTP.
+
+**THE SCREEN'S PASSWORD CHECK RUNS ON LIBUV'S THREAD POOL (#756,
+2026-10-20).** `screenAct()` and the password-factor step
+(`mfaPasswordAct()`) await `credentials.verifyAsync()` — `verify()`'s answer,
+with the scrypt comparison off the request worker's event loop, where it
+held the worker about 70 ms a sign-in (a fifth of a worker under a sign-in
+load). Both already awaited the rate limit just before, so the await adds no
+interleaving. `tests/password_scrypt_off_loop.js` section A.
 
 ## THE PASSWORD-ONLY DOORS REFUSE A SECOND-FACTOR PERSON'S PASSWORD, AND APP PASSWORDS ARE WHAT THEY TAKE (2026-09-22, #101)
 

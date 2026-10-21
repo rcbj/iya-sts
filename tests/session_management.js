@@ -460,10 +460,15 @@ function inAChild(t) {
       clean[key] = process.env[key];
     }
   });
+  // THE OLD DEFAULT, SET EXPLICITLY (#751): `authn.multipleAccounts` is on
+  // by default since 2026-10-20, and what this file holds is a browser
+  // with ONE session — the OP iframe's
+  // one-session script.
   const result = childProcess.spawnSync(process.execPath,
     ['-e', 'const fs = require("fs");\n(' + childMain.toString() + ')()'], {
       env: Object.assign(clean,
-                         { LOG_LEVEL: 'fatal', SM_ROOT: ROOT, SM_OUT: out }),
+                         { LOG_LEVEL: 'fatal', SM_ROOT: ROOT, SM_OUT: out,
+                           STS_AUTHN_MULTIPLE_ACCOUNTS: 'false' }),
       encoding: 'utf8', timeout: 240000, cwd: ROOT
     });
   let findings = null;

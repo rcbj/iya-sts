@@ -401,7 +401,9 @@ function childMain() {
       'mirrored operation and import the matching SAML 1.1 descriptor',
       consumedEndpoints + ' ' + metadataEnv.env.location.href);
 
-    // --- 9. all VC tabs are present on the first draw; paging is forwarded --
+    // --- 9. all VC tabs are present on the first draw; the status lists
+    // are Monitoring → Verifiable Credentials since #752, paged there, and
+    // the tab's old addresses land on it -------------------------------------
     const vcCalls = [];
     const vcEnv = makeEnv('/admin/vc', '', async function (url, init) {
       vcCalls.push(String(url));
@@ -411,34 +413,71 @@ function childMain() {
     await signedIn(runtime);
     await runtime.route();
     const vcHtml = vcEnv.env.document.body.innerHTML;
-    const statusUrl = vcCalls.filter(function (url) {
+    note(!vcCalls.some(function (url) {
       return url.indexOf('/admin-api/vc-status') >= 0;
-    })[0] || '';
-    note(statusUrl.indexOf('/admin-api/vc-status') >= 0 &&
+    }) &&
          vcHtml.indexOf('id="vc-tab-metadata"') >= 0 &&
          vcHtml.indexOf('id="vc-tab-oid4vci"') >= 0 &&
          vcHtml.indexOf('id="vc-tab-claims"') >= 0 &&
-         vcHtml.indexOf('id="vc-tab-status"') >= 0 &&
+         vcHtml.indexOf('id="vc-tab-status"') < 0 &&
          vcHtml.indexOf('id="vc-tab-oid4vp"') >= 0 &&
          vcHtml.indexOf('id="vc-tab-verifier-request"') >= 0,
-         '9a. the initial VC page draws all six tabs and its status view',
-         statusUrl + ' ' + vcHtml.slice(0, 200));
+         '9a. the initial VC page draws its five tabs and does not ask for ' +
+         'the status lists',
+         vcCalls.join(' ') + ' ' + vcHtml.slice(0, 200));
 
-    const pagedVcCalls = [];
-    const pagedVcEnv = makeEnv('/admin/vc', '?page=2&per=5',
+    const monitorCalls = [];
+    const pagedVcEnv = makeEnv('/admin/vc/monitor', '?page=2&per=5',
       async function (url, init) {
-        pagedVcCalls.push(String(url));
+        monitorCalls.push(String(url));
         return fetch(url, init);
       });
     runtime = new ConsoleRuntime(pagedVcEnv.env);
     await signedIn(runtime);
     await runtime.route();
-    const pagedStatus = pagedVcCalls.filter(function (url) {
+    const pagedStatus = monitorCalls.filter(function (url) {
       return url.indexOf('/admin-api/vc-status') >= 0;
     })[0] || '';
-    note(pagedStatus.indexOf('/admin-api/vc-status?page=2&per=5') >= 0,
-         '9b. VC status paging parameters reach the composed status operation',
+    const monitorHtml = pagedVcEnv.env.document.body.innerHTML;
+    note(pagedStatus.indexOf('/admin-api/vc-status?page=2&per=5') >= 0 &&
+         monitorHtml.indexOf('id="vc-monitor-tab-metadata"') >= 0 &&
+         monitorHtml.indexOf('id="vc-monitor-tab-credentials"') >= 0 &&
+         monitorHtml.indexOf('/oid4vci/status-lists/1') >= 0,
+         '9b. Monitoring → Verifiable Credentials draws the status lists ' +
+         'from GET /admin-api/vc-status, its paging forwarded',
          pagedStatus);
+
+    const oldTabCalls = [];
+    const oldTabEnv = makeEnv('/admin/vc', '', async function (url, init) {
+      oldTabCalls.push(String(url));
+      return fetch(url, init);
+    });
+    oldTabEnv.env.location.hash = '#vc-tab-status';
+    runtime = new ConsoleRuntime(oldTabEnv.env);
+    await signedIn(runtime);
+    await runtime.route();
+    note(oldTabEnv.env.location.pathname === '/admin/vc/monitor' &&
+         oldTabEnv.env.location.hash === '' &&
+         oldTabCalls.some(function (url) {
+           return url.indexOf('/admin-api/vc-status') >= 0;
+         }) &&
+         oldTabEnv.env.document.body.innerHTML.indexOf(
+           'id="vc-monitor-tab-credentials"') >= 0,
+         '9c. the Credential status tab\'s old address, /admin/vc' +
+         '#vc-tab-status, lands on Monitoring → Verifiable Credentials',
+         oldTabEnv.env.location.href);
+
+    const oldPageEnv = makeEnv('/admin/vc-status', '?page=2&per=5');
+    runtime = new ConsoleRuntime(oldPageEnv.env);
+    await signedIn(runtime);
+    await runtime.route();
+    note(oldPageEnv.env.location.pathname === '/admin/vc/monitor' &&
+         oldPageEnv.env.location.search === '?page=2&per=5' &&
+         oldPageEnv.env.document.body.innerHTML.indexOf(
+           'id="vc-monitor-tab-metadata"') >= 0,
+         '9d. and so does the page it was before the tabs, /admin/vc-status, ' +
+         'its query kept',
+         oldPageEnv.env.location.href);
 
     // --- 10. Cert issuance: each tab asked by its own names; old addresses -
     const certCalls = [];

@@ -15,5 +15,7 @@
   "openConsole": "打开控制台",
   "copied": "已复制",
   "accounts.unsaved": "此页面有尚未保存的更改。仍要切换账户吗？这些更改将会丢失。",
-  "accounts.otherAccount": "该登录属于另一个账户，因此此标签页没有采用。请以 {user} 的身份重新登录，或从账户菜单中切换账户。"
+  "accounts.otherAccount": "该登录属于另一个账户，因此此标签页没有采用。请以 {user} 的身份重新登录，或从账户菜单中切换账户。",
+  "accounts.refused.title": "控制台不会为此账户打开",
+  "accounts.refused.text": "管理 API 对此标签页所登录的账户返回了 {status}。"
 }

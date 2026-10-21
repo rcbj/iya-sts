@@ -254,7 +254,14 @@ const CHANGE_ROWS_PER_STATEMENT = 5000;
 // 21 SINCE 2026-10-18 (#350): `sts_sessions`, the index of a live session,
 // written in the same transaction as the sealed body. Not a column of
 // `sts_minted` — `expires_at` there stays NULL for a session.
-const SCHEMA_VERSION = 21;
+// 22 SINCE 2026-10-20 (#754): `sts_sessions_surface`, the partial index
+// `session.surface` reads. It was a scan of the realm's sessions, asked
+// twice per password change (each hosted surface answering the CAEP
+// `credential-change` it receives).
+// 23 SINCE 2026-10-20 (`/portal/delegate`'s search): the `pg_trgm`
+// extension and `sts_ldap_entries_uid_trgm`, a trigram GIN over the
+// `rdn_value` of the children of each realm's `ou=users`.
+const SCHEMA_VERSION = 24;
 
 // THE DATABASE'S CLOCK, in the milliseconds every cluster table stores. See the
 // cluster block in SCHEMA_OBJECTS for why no process's own clock is used.
@@ -380,6 +387,21 @@ const SESSION_INDEX_UPSERT =
 const SESSION_INDEX_DELETE =
   'DELETE FROM sts_sessions WHERE realm = $1 AND key = $2';
 
+// AN ON-DEMAND STORE'S INDEX ROWS (#820): every index row of the named
+// minted rows, and a set of them filed. Ordered by the primary key, so two
+// flushes take the rows' locks in one order.
+const MINTED_INDEX_DELETE =
+  'DELETE FROM sts_minted_index WHERE (handle, realm, key) IN (SELECT h, r, ' +
+  'k FROM unnest($1::text[], $2::text[], $3::text[]) AS u(h, r, k))';
+// The row that says a store's index is complete (#820): realm '' and a key
+// no digest can be ('$' is not in base64url).
+const MINTED_INDEX_MARK = '$index-complete$';
+const MINTED_INDEX_INSERT =
+  'INSERT INTO sts_minted_index (handle, realm, index_key, key) SELECT ' +
+  'u.h, u.r, u.i, u.k FROM unnest($1::text[], $2::text[], $3::text[], ' +
+  '$4::text[]) AS u(h, r, i, k) ORDER BY u.h, u.r, u.i, u.k ' +
+  'ON CONFLICT DO NOTHING';
+
 // Not a session. `$` is not in a keyed digest, and '' is not a realm id, so
 // the partial indexes do not see it. It commits with the last backfill page;
 // until that row exists the next start walks again (#350).
@@ -424,6 +446,35 @@ function sessionIndexParams(realm, key, index) {
   ];
 }
 
+// One index row as it is held, for `writeSessionIndex()`'s comparison.
+const SESSION_INDEX_READ =
+  'SELECT expires_at, last_seen_at, started_at, subject_key, username_key, ' +
+  'chosen, authenticated, kind, rp_surface, parent_key, backs_console, ' +
+  'credential_key, partner_relationship FROM sts_sessions ' +
+  'WHERE realm = $1 AND key = $2';
+
+// Whether a held index row says what `sessionIndexParams()` would write: the
+// thirteen columns after realm and key, numbers compared as numbers (a
+// bigint arrives as a string). A repair's hot path: no Entering/Leaving pair.
+function sessionIndexRowMatches(held, wanted) {
+  const number = function (value) {
+    return value === null || value === undefined ? null : Number(value);
+  };
+  return number(held.expires_at) === number(wanted[2]) &&
+    number(held.last_seen_at) === number(wanted[3]) &&
+    number(held.started_at) === number(wanted[4]) &&
+    String(held.subject_key) === wanted[5] &&
+    String(held.username_key) === wanted[6] &&
+    !!held.chosen === wanted[7] &&
+    !!held.authenticated === wanted[8] &&
+    String(held.kind) === wanted[9] &&
+    String(held.rp_surface) === wanted[10] &&
+    String(held.parent_key) === wanted[11] &&
+    !!held.backs_console === wanted[12] &&
+    String(held.credential_key) === wanted[13] &&
+    String(held.partner_relationship) === wanted[14];
+}
+
 // One row of a minted flush. Entering/Leaving on upsertSessionIndex() would
 // drown the log.
 function upsertSessionIndex(client, realm, key, index) {
@@ -435,6 +486,30 @@ function upsertSessionIndex(client, realm, key, index) {
 // would drown the log.
 function deleteSessionIndexRow(client, realm, key) {
   return client.query(SESSION_INDEX_DELETE, [realm, key]);
+}
+
+// The session index's rows of one minted flush in one statement: the
+// columns of SESSION_INDEX_UPSERT, each an array over the rows. Hot path (a
+// minted flush): no Entering/Leaving pair, the exception the code style
+// allows, stated as it requires.
+function upsertSessionIndexRows(client, rows) {
+  const columns = [];
+  rows.forEach(function (row) {
+    sessionIndexParams(row.realm, row.key, row.index)
+      .forEach(function (value, i) {
+        (columns[i] = columns[i] || []).push(value);
+      });
+  });
+  return client.query(
+    'INSERT INTO sts_sessions (realm, key, expires_at, last_seen_at, ' +
+    'started_at, subject_key, username_key, chosen, authenticated, kind, ' +
+    'rp_surface, parent_key, backs_console, credential_key, ' +
+    'partner_relationship) SELECT * FROM unnest($1::text[], $2::text[], ' +
+    '$3::bigint[], $4::bigint[], $5::bigint[], $6::text[], $7::text[], ' +
+    '$8::boolean[], $9::boolean[], $10::text[], $11::text[], $12::text[], ' +
+    '$13::boolean[], $14::text[], $15::text[]) ' +
+    SESSION_INDEX_UPSERT.slice(SESSION_INDEX_UPSERT.indexOf('ON CONFLICT')),
+    columns);
 }
 
 // How long a node row is kept after it expired, for `/admin/cluster` to show a
@@ -606,6 +681,32 @@ const SCHEMA_OBJECTS = [
   { name: 'sts_ldap_entries_rdn', afterColumns: true, statement:
   'CREATE INDEX IF NOT EXISTS sts_ldap_entries_rdn ON sts_ldap_entries ' +
   '(realm, parent_key, rdn_value)' },
+  // -------------------------------------------------------------------------
+  // A PERSON FOUND BY PART OF THEIR `uid` (schema version 23, 2026-10-20,
+  // `/portal/delegate`): a `pg_trgm` GIN over `rdn_value`, PARTIAL on the
+  // children of a realm's `ou=users` (`directory_queries.js`'s
+  // USERS_PARENT, which `uidContains` repeats so the planner can use it).
+  // `rdn_value` is generated from the key, lower-cased and in the clear —
+  // the one name of a person the database could already read — so this
+  // indexes nothing the store did not already show; every attribute stays
+  // sealed. Without it a contains match is a walk of the container, 50M
+  // rows on 8081 for a string nobody has. `extension`: the trigram operator
+  // class is `pg_trgm`'s, which is created first (`CREATE EXTENSION IF NOT
+  // EXISTS`, trusted since PostgreSQL 13, so a database owner may) — and,
+  // like every object here, only when the index is missing.
+  //
+  // **ON A LARGE EXISTING STORE THE OWNER BUILDS IT CONCURRENTLY FIRST.**
+  // `postgres/schema.sql` runs in one transaction, which CONCURRENTLY
+  // cannot, so it builds the index with a plain CREATE — a SHARE lock on
+  // the table for the build, which is every write held for minutes at 50M.
+  // `postgres/CLAUDE.md` gives the statement to run beforehand, after
+  // which the script's and this driver's `IF NOT EXISTS` find it built.
+  // -------------------------------------------------------------------------
+  { name: 'sts_ldap_entries_uid_trgm', afterColumns: true,
+    extension: 'pg_trgm', statement:
+  'CREATE INDEX IF NOT EXISTS sts_ldap_entries_uid_trgm ON sts_ldap_entries ' +
+  'USING gin (rdn_value gin_trgm_ops) ' + GIN_DIRECT + ' WHERE ' +
+  directoryQueries.USERS_PARENT },
   { name: 'sts_ldap_entries_names', afterColumns: true, statement:
   'CREATE INDEX IF NOT EXISTS sts_ldap_entries_names ON sts_ldap_entries ' +
   'USING gin (name_keys jsonb_path_ops) ' + GIN_DIRECT },
@@ -893,6 +994,32 @@ const SCHEMA_OBJECTS = [
   { name: 'sts_sessions_partner', statement:
   'CREATE INDEX IF NOT EXISTS sts_sessions_partner ON sts_sessions ' +
   '(realm, partner_relationship) WHERE partner_relationship <> \'\'' },
+  // A hosted surface's relying-party sessions (#754, schema version 22):
+  // `session.surface`, which `Authn.endRelyingPartySessions()` asks for
+  // every signal a surface receives. Partial for the others' reason: a
+  // sign-on session has no surface, and those are nearly every row.
+  { name: 'sts_sessions_surface', statement:
+  'CREATE INDEX IF NOT EXISTS sts_sessions_surface ON sts_sessions ' +
+  '(realm, rp_surface) WHERE rp_surface <> \'\'' },
+  // -------------------------------------------------------------------------
+  // AN ON-DEMAND STORE'S INDEX (#820, schema version 24). A store declared
+  // `onDemand` with `indexBy` (`common/realms.js`) is not held whole, so
+  // what it was walked for — every refresh token of one family, every token
+  // of one person — is filed here: the keyed digest of the index value
+  // beside the row's own key, written in the same transaction as the body.
+  // The bodies are sealed, so nothing else could answer it.
+  // -------------------------------------------------------------------------
+  { name: 'sts_minted_index', statement:
+  'CREATE TABLE IF NOT EXISTS sts_minted_index (' +
+  '  handle    text NOT NULL,' +
+  '  realm     text NOT NULL,' +
+  '  index_key text NOT NULL,' +
+  '  key       text NOT NULL,' +
+  '  PRIMARY KEY (handle, realm, index_key, key))' },
+  // A row's own index rows, for the flush's replace and a delete.
+  { name: 'sts_minted_index_key', statement:
+  'CREATE INDEX IF NOT EXISTS sts_minted_index_key ON sts_minted_index ' +
+  '(handle, realm, key)' },
   // -------------------------------------------------------------------------
   // THE CHANGE LOG (2026-09-06), which is what makes several processes against
   // one store agree rather than merely coexist.
@@ -2679,6 +2806,126 @@ function create(options) {
             JSON.stringify(entryCodec.dekKeys(attrs, sealed))];
   }
 
+  // ---------------------------------------------------------------------------
+  // THE DIRECTORY FLUSH'S SET-BASED WRITES (2026-10-21): `saveDirectory()`'s
+  // entries as fourteen parallel arrays, `entryParams()`'s columns, so one
+  // statement carries a whole chunk. Every column is text, the jsonb ones
+  // cast in the statement.
+  // ---------------------------------------------------------------------------
+  const ENTRY_UNNEST =
+    'unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[], ' +
+    '$6::text[], $7::text[], $8::text[], $9::text[], $10::text[], ' +
+    '$11::text[], $12::text[], $13::text[], $14::text[]) ' +
+    'AS u(r, k, dn, attrs, origin, created, modified, nk, mk, uk, ck, vk, ' +
+    'an, dk)';
+
+  function entryColumns(items) {
+    log.debug("Entering entryColumns().");
+    const columns = [];
+    for (let c = 0; c < 14; c++) {
+      columns.push([]);
+    }
+    items.forEach(function (item) {
+      const one = entryParams(item.row.realm, item.row.key, item.entry);
+      for (let c = 0; c < 14; c++) {
+        columns[c].push(one[c] === undefined ? null : one[c]);
+      }
+    });
+    log.debug("Leaving entryColumns().");
+    return columns;
+  }
+
+  // Merged entries another node already holds, every row of them locked by
+  // the flush: one UPDATE per chunk, so order cannot matter.
+  function updateEntries(client, items, moved) {
+    log.debug("Entering updateEntries(). " + items.length);
+    let chain = Promise.resolve();
+    for (let at = 0; at < items.length; at += CHANGE_ROWS_PER_STATEMENT) {
+      const chunk = items.slice(at, at + CHANGE_ROWS_PER_STATEMENT);
+      chain = chain.then(function () {
+        chunk.forEach(function (item) {
+          moved.push({ realm: item.row.realm, dn: item.row.key, op: 'put' });
+        });
+        return client.query(
+          'UPDATE sts_ldap_entries AS t SET dn = u.dn, ' +
+          'attrs = u.attrs::jsonb, origin = u.origin, ' +
+          'created_at = u.created, modified_at = u.modified, ' +
+          'name_keys = u.nk::jsonb, mail_keys = u.mk::jsonb, ' +
+          'uuid_keys = u.uk::jsonb, class_keys = u.ck::jsonb, ' +
+          'value_keys = u.vk::jsonb, attr_names = u.an::jsonb, ' +
+          'dek_keys = u.dk::jsonb FROM ' + ENTRY_UNNEST + ' ' +
+          'WHERE t.realm = u.r AND t.dn_key = u.k', entryColumns(chunk));
+      });
+    }
+    log.debug("Leaving updateEntries().");
+    return chain;
+  }
+
+  // New entries and blind ones in ONE INSERT per chunk, ordered by key, so
+  // the rows nobody has locked yet are locked in one order. A blind row
+  // that meets a stored one replaces it; a merged one that does is not
+  // written, and is answered in the promise's list for a second look.
+  function insertEntries(client, items, moved) {
+    log.debug("Entering insertEntries(). " + items.length);
+    const lost = [];
+    let chain = Promise.resolve();
+    for (let at = 0; at < items.length; at += CHANGE_ROWS_PER_STATEMENT) {
+      const chunk = items.slice(at, at + CHANGE_ROWS_PER_STATEMENT);
+      chain = chain.then(function () {
+        const params = entryColumns(chunk);
+        params.push(chunk.filter(function (item) {
+          return item.blind;
+        }).map(function (item) {
+          return String(item.row.realm) + '\n' + String(item.row.key);
+        }));
+        return client.query(
+          'INSERT INTO sts_ldap_entries ' +
+          '  (realm, dn_key, dn, attrs, origin, created_at, modified_at, ' +
+          '   name_keys, mail_keys, uuid_keys, class_keys, value_keys, ' +
+          '   attr_names, dek_keys) ' +
+          'SELECT u.r, u.k, u.dn, u.attrs::jsonb, u.origin, u.created, ' +
+          'u.modified, u.nk::jsonb, u.mk::jsonb, u.uk::jsonb, u.ck::jsonb, ' +
+          'u.vk::jsonb, u.an::jsonb, u.dk::jsonb FROM ' + ENTRY_UNNEST + ' ' +
+          'ORDER BY u.r, u.k ' +
+          'ON CONFLICT (realm, dn_key) DO UPDATE SET ' +
+          '  dn = EXCLUDED.dn, attrs = EXCLUDED.attrs, ' +
+          '  origin = EXCLUDED.origin, created_at = EXCLUDED.created_at, ' +
+          '  modified_at = EXCLUDED.modified_at, ' +
+          '  name_keys = EXCLUDED.name_keys, ' +
+          '  mail_keys = EXCLUDED.mail_keys, ' +
+          '  uuid_keys = EXCLUDED.uuid_keys, ' +
+          '  class_keys = EXCLUDED.class_keys, ' +
+          '  value_keys = EXCLUDED.value_keys, ' +
+          '  attr_names = EXCLUDED.attr_names, ' +
+          '  dek_keys = EXCLUDED.dek_keys ' +
+          'WHERE sts_ldap_entries.realm || E\'\\n\' || ' +
+          'sts_ldap_entries.dn_key = ANY($15::text[]) ' +
+          'RETURNING realm, dn_key', params
+        ).then(function (r) {
+          const written = new Set((r && r.rows || []).map(function (one) {
+            return String(one.realm) + '\n' + String(one.dn_key);
+          }));
+          chunk.forEach(function (item) {
+            const id = String(item.row.realm) + '\n' + String(item.row.key);
+            // **`row.key` AND NOT `row.entry.dn` (2026-09-07)**: a change
+            // row is a pointer the receiver dereferences by the NORMALISED
+            // dn, which is the key.
+            if (item.blind || written.has(id)) {
+              moved.push({ realm: item.row.realm, dn: item.row.key,
+                           op: 'put' });
+            } else {
+              lost.push(item.row);
+            }
+          });
+        });
+      });
+    }
+    log.debug("Leaving insertEntries().");
+    return chain.then(function () {
+      return lost;
+    });
+  }
+
   // A stored row's entry, its attributes opened. THROWS where the blob does
   // not open: an entry this process cannot read must not be taken for one
   // that is absent — the applier would remove it, and a merge would write
@@ -4227,6 +4474,16 @@ function create(options) {
         }).then(function () {
           let chain = Promise.resolve();
           late.forEach(function (object) {
+            // AN INDEX WHOSE OPERATOR CLASS AN EXTENSION SUPPLIES (the
+            // trigram index, schema version 23) has the extension created
+            // first, and only then: a store built by postgres/schema.sql
+            // has both, and this role is never asked for either.
+            if (object.extension) {
+              chain = chain.then(function () {
+                return client.query('CREATE EXTENSION IF NOT EXISTS ' +
+                                    object.extension);
+              });
+            }
             chain = chain.then(function () {
               return client.query(object.statement).then(function () {
                 created.push(object.name);
@@ -4881,8 +5138,12 @@ function create(options) {
           });
         };
 
-        // THE LOCKS, in one statement per chunk and in primary-key order.
-        const locking = merging.concat(change.deletes.slice(0).sort(byKey));
+        // THE LOCKS, in one statement per chunk and in primary-key order —
+        // EVERY row this flush touches, blind ones included (2026-10-21):
+        // the writes below are one statement per kind rather than one per
+        // row, so the only locks taken after this point are on rows that
+        // did not exist yet, and those are taken by ONE ordered INSERT.
+        const locking = merging.concat(blind, change.deletes).sort(byKey);
         for (let at = 0; at < locking.length;
              at += CHANGE_ROWS_PER_STATEMENT) {
           const chunk = locking.slice(at, at + CHANGE_ROWS_PER_STATEMENT);
@@ -4912,77 +5173,114 @@ function create(options) {
           });
         }
 
-        // **EVERY ROW WRITTEN IN ONE PRIMARY-KEY ORDER, MERGED AND BLIND
-        // TOGETHER (2026-09-30).** The locks above are in key order, but the
-        // writes that followed were every merged row and then every blind
-        // one, the blind ones in journal order. An INSERT of a row that does
-        // not exist yet locks nothing until it runs, so two nodes writing the
-        // same new entries — a new realm's `ou=crl` and its CRL entries,
-        // published by both nodes at once — took those locks in two different
-        // orders and PostgreSQL killed one with `deadlock detected`
-        // (STS-STORE-0002). Since #351 the request whose change was in that
-        // flush is answered 503 (STS-STORE-0066): CI run 36762417779's
-        // cluster job, sts_ldap_read_authorization. saveMinted() gave its
-        // table one order on 2026-09-12 for the same reason.
-        const writes = merging.map(function (row) {
-          return { row: row, merge: true };
-        }).concat(blind.map(function (row) {
-          return { row: row, merge: false };
-        })).sort(function (a, b) {
+        // **ONE STATEMENT PER KIND OF WRITE, NOT ONE PER ROW (2026-10-21).**
+        // A flush sent an UPDATE or an INSERT for every entry and a DELETE
+        // for every removal, each a round trip inside the transaction the
+        // request's answer waits for (#351) — the cost #789 measured for
+        // `saveMinted()` at 36 ms for seventeen rows, and a password write
+        // touches several entries. Now: the merged rows another node holds
+        // in one UPDATE, every row that is new or blind in one INSERT, the
+        // removals in one DELETE.
+        //
+        // **THE ORDER IS STILL ONE PRIMARY-KEY ORDER (2026-09-30).** An
+        // INSERT of a row that does not exist yet locks nothing until it
+        // runs, so two nodes writing the same new entries in two orders
+        // deadlocked (STS-STORE-0002; CI run 36762417779's cluster job).
+        // Every EXISTING row is locked above, in key order, before anything
+        // is written; the new ones are inserted by one statement ordered by
+        // key. A merged insert and a blind upsert are therefore the SAME
+        // statement — two would take the new rows' locks in two runs — and
+        // the conflict clause updates only the blind ones.
+        //
+        // A key that appears more than once is written once, as its last
+        // blind row or else its last merged row: what the per-row writes
+        // left behind, one statement after another.
+        const chosen = new Map();
+        merging.forEach(function (row) {
+          chosen.set(idOf(row.realm, row.key), { row: row, merge: true });
+        });
+        blind.forEach(function (row) {
+          chosen.set(idOf(row.realm, row.key), { row: row, merge: false });
+        });
+        const writes = Array.from(chosen.values()).sort(function (a, b) {
           return byKey(a.row, b.row);
         });
 
-        writes.forEach(function (one) {
-          const row = one.row;
-          if (one.merge) {
-            chain = chain.then(function () {
-              return settle(row, stored.get(idOf(row.realm, row.key)) || null,
-                            true);
+        chain = chain.then(function () {
+          const updates = [];
+          const inserts = [];
+          writes.forEach(function (one) {
+            const row = one.row;
+            if (!one.merge) {
+              inserts.push({ row: row, entry: row.entry, blind: true });
+              return;
+            }
+            const theirs = stored.get(idOf(row.realm, row.key)) || null;
+            const base = row.base ? JSON.parse(row.base) : null;
+            const verdict = directoryMerge.mergeEntry(base, row.entry, theirs);
+            if (verdict.outcome === 'theirs' ||
+                verdict.outcome === 'deleted') {
+              outcomes.push({ realm: row.realm, key: row.key,
+                              outcome: verdict.outcome,
+                              entry: verdict.entry });
+              return;
+            }
+            if (verdict.outcome === 'merged') {
+              outcomes.push({ realm: row.realm, key: row.key,
+                              outcome: 'merged', entry: verdict.entry });
+            }
+            if (theirs) {
+              updates.push({ row: row, entry: verdict.entry });
+            } else {
+              inserts.push({ row: row, entry: verdict.entry, blind: false });
+            }
+          });
+          return updateEntries(client, updates, moved).then(function () {
+            return insertEntries(client, inserts, moved);
+          }).then(function (lost) {
+            // A MERGED INSERT THAT MET A ROW: another node committed it
+            // between the lock and the insert. Looked at again, alone, as
+            // the per-row path always did — the second look writes it as it
+            // is rather than looping.
+            let again = Promise.resolve();
+            lost.forEach(function (row) {
+              again = again.then(function () {
+                return client.query(
+                  'SELECT realm, dn_key, dn, attrs, origin, created_at, ' +
+                  'modified_at FROM sts_ldap_entries ' +
+                  'WHERE realm = $1 AND dn_key = $2 FOR UPDATE',
+                  [row.realm, row.key]
+                ).then(function (found) {
+                  const now = (found.rows || [])[0];
+                  for (let i = outcomes.length - 1; i >= 0; i--) {
+                    if (outcomes[i].realm === row.realm &&
+                        outcomes[i].key === row.key) {
+                      outcomes.splice(i, 1);
+                    }
+                  }
+                  return settle(row, now ? entryOf(now) : null, false);
+                });
+              });
             });
-            return;
-          }
-          chain = chain.then(function () {
-            // **`row.key` AND NOT `row.entry.dn` (2026-09-07).** A change row
-            // is a POINTER, and the receiver dereferences it with
-            // `readEntry(realm, key)` — which is `WHERE dn_key = $2`, the
-            // NORMALISED dn. `row.entry.dn` is the DN as written, so every
-            // upsert pointed at a key that column never holds: the receiver
-            // looked it up, MISSED, concluded the entry had been deleted, and
-            // called `removeEntry()` — actively removing the entry it had just
-            // been told to add. (The merging path above records `row.key` for
-            // the same reason.)
-            moved.push({ realm: row.realm, dn: row.key, op: 'put' });
-            return client.query(
-              'INSERT INTO sts_ldap_entries ' +
-              '  (realm, dn_key, dn, attrs, origin, created_at, modified_at, ' +
-              '   name_keys, mail_keys, uuid_keys, class_keys, value_keys, ' +
-              '   attr_names, dek_keys) ' +
-              'VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8::jsonb, ' +
-              '$9::jsonb, $10::jsonb, $11::jsonb, $12::jsonb, $13::jsonb, ' +
-              '$14::jsonb) ' +
-              'ON CONFLICT (realm, dn_key) DO UPDATE SET ' +
-              '  dn = EXCLUDED.dn, attrs = EXCLUDED.attrs, ' +
-              '  origin = EXCLUDED.origin, created_at = EXCLUDED.created_at, ' +
-              '  modified_at = EXCLUDED.modified_at, ' +
-              '  name_keys = EXCLUDED.name_keys, ' +
-              '  mail_keys = EXCLUDED.mail_keys, ' +
-              '  uuid_keys = EXCLUDED.uuid_keys, ' +
-              '  class_keys = EXCLUDED.class_keys, ' +
-              '  value_keys = EXCLUDED.value_keys, ' +
-              '  attr_names = EXCLUDED.attr_names, ' +
-              '  dek_keys = EXCLUDED.dek_keys',
-              params(row, row.entry));
+            return again;
           });
         });
 
-        change.deletes.forEach(function (row) {
+        for (let at = 0; at < change.deletes.length;
+             at += CHANGE_ROWS_PER_STATEMENT) {
+          const chunk = change.deletes.slice(at,
+                                             at + CHANGE_ROWS_PER_STATEMENT);
           chain = chain.then(function () {
-            moved.push({ realm: row.realm, dn: row.key, op: 'delete' });
+            chunk.forEach(function (row) {
+              moved.push({ realm: row.realm, dn: row.key, op: 'delete' });
+            });
             return client.query(
-              'DELETE FROM sts_ldap_entries WHERE realm = $1 AND dn_key = $2',
-              [row.realm, row.key]);
+              'DELETE FROM sts_ldap_entries WHERE (realm, dn_key) IN ' +
+              '(SELECT r, k FROM unnest($1::text[], $2::text[]) AS u(r, k))',
+              [chunk.map(function (row) { return String(row.realm); }),
+               chunk.map(function (row) { return String(row.key); })]);
           });
-        });
+        }
 
         // A REALM THAT WENT AWAY takes its rows with it. The per-row deletes
         // above already cover every row this process knew about; this catches
@@ -5398,80 +5696,141 @@ function create(options) {
       const skip = new Set();
       log.debug("Leaving saveMinted().");
       return withTransaction(function (client) {
-        let chain = Promise.resolve();
-        const upsert = function (row, body, guarded) {
-          // `expires_at` (#333) is the store's own answer for the record,
-          // or NULL; see `expiresAt` in common/realms.js.
-          const expires = Number(row.expiresAt) > 0
-            ? Math.floor(Number(row.expiresAt)) : null;
+        // -------------------------------------------------------------------
+        // A FLUSH IS A FEW SET-BASED STATEMENTS, NOT ONE PER ROW (2026-10-21).
+        //
+        // Every row was its own statement, in sequence on one connection —
+        // a session row three (its lock, its guarded write, its index row)
+        // — and a process flushes one transaction at a time with every
+        // request's answer waiting for its commit. On 8081 under a sign-in
+        // load a flush averaged 36 ms for 17 rows and a worker had one in
+        // flight 64-74% of the time: that wait was the sign-in rate's cap.
+        // The same writes go as at most seven statements, whatever the
+        // number of rows:
+        //
+        //   1. EVERY ROW THE FLUSH TOUCHES, upserts and deletes alike, locked
+        //      in one SELECT … FOR UPDATE in (handle, realm, key) order — the
+        //      one order the per-row statements took their locks in, which is
+        //      what keeps two processes flushing overlapping rows from
+        //      deadlocking (`tests/postgres_minted_writes.js`). It reads the
+        //      merging rows' stored bodies on the way. A key no row holds yet
+        //      is locked by its INSERT, and each INSERT inserts in that order;
+        //   2. the guarded upserts (merged rows, and rows a tombstone may
+        //      refuse) in one INSERT … RETURNING — a row not returned is one
+        //      a tombstone refused, exactly as rowCount 0 was;
+        //   3. the plain upserts in one INSERT;
+        //   4. the tombstones written in one INSERT;
+        //   5. the plain deletes in one DELETE;
+        //   6. and 7. the session index's rows upserted and deleted, one
+        //      statement each, after the bodies as before.
+        // -------------------------------------------------------------------
+        const idOf = function (row) {
+          return String(row.handle) + '\n' + String(row.realm) + '\n' +
+            String(row.key);
+        };
+        const merging = [];
+        const guarded = [];
+        const plain = [];
+        const tombs = [];
+        const dels = [];
+        const seen = new Set();
+        statements.forEach(function (one) {
+          const row = one.row;
+          // One row per key in a statement: ON CONFLICT cannot touch a row
+          // twice. A journal names each key once; this is belt and braces.
+          if (seen.has(idOf(row))) {
+            return;
+          }
+          seen.add(idOf(row));
+          if (one.upsert && typeof row.merge === 'function') {
+            merging.push(row);
+          } else if (one.upsert && row.tombstone) {
+            guarded.push({ row: row, body: row.body });
+          } else if (one.upsert) {
+            plain.push({ row: row, body: row.body });
+          } else if (row.tombstone) {
+            tombs.push(row);
+          } else {
+            dels.push(row);
+          }
+        });
+        const byId = function (a, b) {
+          return idOf(a.row) < idOf(b.row) ? -1 : 1;
+        };
+        // `expires_at` (#333) is the store's own answer for the record, or
+        // NULL; see `expiresAt` in common/realms.js.
+        const expiresOf = function (row) {
+          return Number(row.expiresAt) > 0 ? Math.floor(Number(row.expiresAt))
+                                           : null;
+        };
+        const writeRows = function (list, isGuarded) {
+          if (!list.length) {
+            return Promise.resolve(null);
+          }
           return client.query(
-            'INSERT INTO sts_minted (handle, realm, key, body, ' +
-            'written_at, expires_at, key_sealed) VALUES ($1, $2, $3, $4, ' +
-            'now(), $5, $6) ' +
+            'INSERT INTO sts_minted (handle, realm, key, body, written_at, ' +
+            'expires_at, key_sealed) SELECT u.h, u.r, u.k, u.b, now(), u.e, ' +
+            'u.s FROM unnest($1::text[], $2::text[], $3::text[], ' +
+            '$4::text[], $5::bigint[], $6::text[]) AS u(h, r, k, b, e, s) ' +
+            'ORDER BY u.h, u.r, u.k ' +
             'ON CONFLICT (handle, realm, key) DO UPDATE SET ' +
             'body = EXCLUDED.body, written_at = now(), ' +
             'expires_at = EXCLUDED.expires_at, ' +
             'key_sealed = EXCLUDED.key_sealed' +
-            (guarded ? ' WHERE sts_minted.body <> $7' : ''),
-            guarded ? [row.handle, row.realm, row.key, body, expires,
-                       String(row.keySealed || ''), TOMBSTONE]
-                    : [row.handle, row.realm, row.key, body, expires,
-                       String(row.keySealed || '')]
+            (isGuarded ? ' WHERE sts_minted.body <> $7 ' +
+                         'RETURNING handle, realm, key' : ''),
+            [list.map(function (w) { return String(w.row.handle); }),
+             list.map(function (w) { return String(w.row.realm); }),
+             list.map(function (w) { return String(w.row.key); }),
+             list.map(function (w) { return w.body; }),
+             list.map(function (w) { return expiresOf(w.row); }),
+             list.map(function (w) { return String(w.row.keySealed || ''); })]
+              .concat(isGuarded ? [TOMBSTONE] : [])
           ).then(function (r) {
-            if (guarded && !(r && r.rowCount)) {
-              refused.push(row);
-              skip.add(row);
+            if (!isGuarded) {
+              return r;
             }
+            const written = new Set((r.rows || []).map(function (one) {
+              return idOf(one);
+            }));
+            list.forEach(function (w) {
+              if (!written.has(idOf(w.row))) {
+                refused.push(w.row);
+                skip.add(w.row);
+              }
+            });
             return r;
           });
         };
-        // One statement per minted row of a flush. Entering/Leaving on
-        // sessionSide() or afterBody() would drown the log. The index is
-        // written only after the body statement succeeded: a refused upsert
-        // does not put the body back and does not insert an index row.
-        const sessionSide = function (row, removing) {
-          if (row.handle !== 'authn.sessions') {
-            return null;
-          }
-          if (removing) {
-            return deleteSessionIndexRow(client, row.realm, row.key);
-          }
-          if (!row.index || typeof row.index !== 'object') {
-            return null;
-          }
-          return upsertSessionIndex(client, row.realm, row.key,
-                                    row.index);
-        };
-        const afterBody = function (row, removing, result) {
-          if (!removing && skip.has(row)) {
-            return result;
-          }
-          const side = sessionSide(row, removing);
-          if (!side) {
-            return result;
-          }
-          return side.then(function () {
-            return result;
-          });
-        };
-        statements.forEach(function (one) {
-          const row = one.row;
+        let chain = Promise.resolve();
+        const touched = statements.map(function (one) {
+          return one.row;
+        });
+        if (touched.length) {
           chain = chain.then(function () {
-            if (one.upsert && typeof row.merge === 'function') {
-              return client.query(
-                'SELECT body FROM sts_minted WHERE handle = $1 AND ' +
-                'realm = $2 AND key = $3 FOR UPDATE',
-                [row.handle, row.realm, row.key]
-              ).then(function (r) {
-                const found = (r.rows || [])[0];
-                if (found && found.body === TOMBSTONE) {
+            return client.query(
+              'SELECT handle, realm, key, body FROM sts_minted WHERE ' +
+              '(handle, realm, key) IN (SELECT h, r, k FROM ' +
+              'unnest($1::text[], $2::text[], $3::text[]) AS u(h, r, k)) ' +
+              'ORDER BY handle, realm, key FOR UPDATE',
+              [touched.map(function (row) { return String(row.handle); }),
+               touched.map(function (row) { return String(row.realm); }),
+               touched.map(function (row) { return String(row.key); })]
+            ).then(function (r) {
+              const stored = new Map();
+              (r.rows || []).forEach(function (found) {
+                stored.set(idOf(found), found.body);
+              });
+              merging.forEach(function (row) {
+                const found = stored.get(idOf(row));
+                if (found === TOMBSTONE) {
                   refused.push(row);
                   skip.add(row);
-                  return null;
+                  return;
                 }
                 let body = row.body;
-                if (found && found.body !== row.body) {
-                  const answer = row.merge(found.body);
+                if (found !== undefined && found !== row.body) {
+                  const answer = row.merge(found);
                   if (answer && answer !== row.body) {
                     body = answer;
                     merged.push({ handle: row.handle, realm: row.realm,
@@ -5479,41 +5838,103 @@ function create(options) {
                                   body: answer });
                   }
                 }
-                return upsert(row, body, true).then(function (written) {
-                  return afterBody(row, false, written);
-                });
+                guarded.push({ row: row, body: body });
               });
-            }
-            if (one.upsert) {
-              return upsert(row, row.body, !!row.tombstone)
-                .then(function (written) {
-                  return afterBody(row, false, written);
-                });
-            }
-            if (row.tombstone) {
-              // A TOMBSTONE HAS NO EXPIRY OF ITS OWN (#333): it lives for
-              // `persistence.mintedRetention` whatever the record it ended
-              // said, so the expiry purge never takes it early.
-              return client.query(
-                'INSERT INTO sts_minted (handle, realm, key, body, ' +
-                'written_at, expires_at, key_sealed) VALUES ($1, $2, $3, ' +
-                '$4, now(), NULL, $5) ON CONFLICT (handle, realm, key) DO ' +
-                'UPDATE SET body = EXCLUDED.body, written_at = now(), ' +
-                'expires_at = NULL, key_sealed = EXCLUDED.key_sealed',
-                [row.handle, row.realm, row.key, TOMBSTONE,
-                 String(row.keySealed || '')]
-              ).then(function (written) {
-                return afterBody(row, true, written);
-              });
-            }
-            return client.query(
-              'DELETE FROM sts_minted WHERE handle = $1 AND realm = $2 ' +
-              'AND key = $3',
-              [row.handle, row.realm, row.key]
-            ).then(function (written) {
-              return afterBody(row, true, written);
             });
           });
+        }
+        chain = chain.then(function () {
+          return writeRows(guarded.sort(byId), true);
+        }).then(function () {
+          return writeRows(plain.sort(byId), false);
+        }).then(function () {
+          return writeRows(tombs.map(function (row) {
+            return { row: { handle: row.handle, realm: row.realm,
+                            key: row.key, expiresAt: null,
+                            keySealed: row.keySealed },
+                     body: TOMBSTONE };
+          }).sort(byId), false);
+        }).then(function () {
+          if (!dels.length) {
+            return null;
+          }
+          return client.query(
+            'DELETE FROM sts_minted WHERE (handle, realm, key) IN (SELECT ' +
+            'h, r, k FROM unnest($1::text[], $2::text[], $3::text[]) AS ' +
+            'u(h, r, k))',
+            [dels.map(function (row) { return String(row.handle); }),
+             dels.map(function (row) { return String(row.realm); }),
+             dels.map(function (row) { return String(row.key); })]);
+        }).then(function () {
+          // THE SESSION INDEX, after the bodies, as each row's index write
+          // followed its body before: a body a tombstone refused writes none.
+          const indexed = guarded.concat(plain).map(function (w) {
+            return w.row;
+          }).filter(function (row) {
+            return row.handle === 'authn.sessions' && !skip.has(row) &&
+              row.index && typeof row.index === 'object';
+          }).sort(function (a, b) {
+            return idOf(a) < idOf(b) ? -1 : 1;
+          });
+          const gone = tombs.concat(dels).filter(function (row) {
+            return row.handle === 'authn.sessions';
+          });
+          let side = Promise.resolve(null);
+          if (indexed.length) {
+            side = side.then(function () {
+              return upsertSessionIndexRows(client, indexed);
+            });
+          }
+          if (gone.length) {
+            side = side.then(function () {
+              return client.query(
+                'DELETE FROM sts_sessions WHERE (realm, key) IN (SELECT r, ' +
+                'k FROM unnest($1::text[], $2::text[]) AS u(r, k))',
+                [gone.map(function (row) { return String(row.realm); }),
+                 gone.map(function (row) { return String(row.key); })]);
+            });
+          }
+          // AN ON-DEMAND STORE'S INDEX (#820, schema version 24), in the
+          // same transaction as the bodies and on the session index's rule:
+          // a body the tombstone guard refused writes none. A row carrying
+          // `lookups` (an array, possibly empty) has its index rows
+          // replaced; a deleted row of an indexed store loses them.
+          const looked = guarded.concat(plain).map(function (w) {
+            return w.row;
+          }).filter(function (row) {
+            return !skip.has(row) && Array.isArray(row.lookups);
+          });
+          const unindexed = looked.concat(tombs.concat(dels).filter(
+            function (row) {
+              return row.indexed === true;
+            }));
+          if (unindexed.length) {
+            side = side.then(function () {
+              return client.query(MINTED_INDEX_DELETE,
+                [unindexed.map(function (row) { return String(row.handle); }),
+                 unindexed.map(function (row) { return String(row.realm); }),
+                 unindexed.map(function (row) { return String(row.key); })]);
+            });
+          }
+          const filed = [];
+          looked.forEach(function (row) {
+            Array.from(new Set(row.lookups.map(String))).forEach(
+              function (indexKey) {
+                filed.push({ handle: String(row.handle),
+                             realm: String(row.realm), indexKey: indexKey,
+                             key: String(row.key) });
+              });
+          });
+          if (filed.length) {
+            side = side.then(function () {
+              return client.query(MINTED_INDEX_INSERT,
+                [filed.map(function (one) { return one.handle; }),
+                 filed.map(function (one) { return one.realm; }),
+                 filed.map(function (one) { return one.indexKey; }),
+                 filed.map(function (one) { return one.key; })]);
+            });
+          }
+          return side;
         });
         return chain.then(function () {
           // A LOG ROW PER MINTED KEY, upserts and deletes alike — the receiver
@@ -6033,6 +6454,28 @@ function create(options) {
         });
     },
 
+    // THE SESSION INDEX'S QUESTIONS ON THE READ POOL (2026-10-21):
+    // `directoryQuery()`'s arrangement for `session_queries.js`, so a caller
+    // that can wait asks without standing its event loop still. The
+    // index's columns are digests and numbers, so nothing is opened.
+    sessionIndexQuery: function (name, args) {
+      log.debug("Entering sessionIndexQuery(). " + name);
+      const sessionQueries = require('./session_queries');
+      let statement;
+      try {
+        statement = sessionQueries.build(name, args);
+      } catch (e) {
+        log.debug("Caught in sessionIndexQuery(): " + ((e && e.message) || e));
+        log.debug("Leaving sessionIndexQuery(). Unknown query.");
+        return Promise.reject(e);
+      }
+      log.debug("Leaving sessionIndexQuery().");
+      return readPool.query(statement.text, statement.values)
+        .then(function (r) {
+          return sessionQueries.answerOf(name, r.rows || []);
+        });
+    },
+
     // WHAT THE BRIDGE'S THREAD DIALS (#349 phase 3): the read pool's own
     // connection options — the same database, the same TLS decision — so
     // the thread is one more client of this store and never a second,
@@ -6087,23 +6530,94 @@ function create(options) {
       });
     },
 
-    // One `sts_sessions` row, in its own transaction. Apply repairs through
-    // this; the flush writes the index inside `saveMinted` instead.
-    writeSessionIndex: function (realmId, key, index) {
-      log.debug("Entering writeSessionIndex().");
-      log.debug("Leaving writeSessionIndex().");
-      return withTransaction(function (client) {
-        return upsertSessionIndex(client, realmId, key, index);
+    // -----------------------------------------------------------------------
+    // AN ON-DEMAND STORE'S INDEX, BACKFILLED (#820). Index rows are written
+    // beside a body write, so rows stored before schema version 24 have none,
+    // and a lookup by index would miss them — a revoked family's access
+    // tokens among them. An indexed store therefore stays read back whole
+    // until its index is COMPLETE: the front process files every row it
+    // restored (`writeMintedIndex()`), then commits the mark
+    // (`markMintedIndexed()`), and the next start reads it on demand.
+    // -----------------------------------------------------------------------
+    mintedIndexComplete: function (handles) {
+      log.debug("Entering mintedIndexComplete().");
+      log.debug("Leaving mintedIndexComplete().");
+      return pool.query(
+        'SELECT handle FROM sts_minted_index WHERE handle = ANY($1::text[]) ' +
+        'AND realm = $2 AND index_key = $3 AND key = $3',
+        [(handles || []).map(String), '', MINTED_INDEX_MARK]
+      ).then(function (r) {
+        return (r.rows || []).map(function (row) {
+          return String(row.handle);
+        });
       });
     },
 
+    writeMintedIndex: function (rows) {
+      log.debug("Entering writeMintedIndex(). " + (rows || []).length);
+      log.debug("Leaving writeMintedIndex().");
+      if (!rows || !rows.length) {
+        return Promise.resolve(0);
+      }
+      return pool.query(MINTED_INDEX_INSERT,
+        [rows.map(function (one) { return String(one.handle); }),
+         rows.map(function (one) { return String(one.realm); }),
+         rows.map(function (one) { return String(one.indexKey); }),
+         rows.map(function (one) { return String(one.key); })]
+      ).then(function (r) {
+        return r.rowCount || 0;
+      });
+    },
+
+    markMintedIndexed: function (handle) {
+      log.debug("Entering markMintedIndexed(). " + handle);
+      log.debug("Leaving markMintedIndexed().");
+      return pool.query(MINTED_INDEX_INSERT,
+        [[String(handle)], [''], [MINTED_INDEX_MARK], [MINTED_INDEX_MARK]]);
+    },
+
+    // One `sts_sessions` row, in its own transaction. Apply repairs through
+    // this; the flush writes the index inside `saveMinted` instead.
+    //
+    // **WRITTEN ONLY WHERE IT DIFFERS (2026-10-21).** Every process that
+    // applies another's session change repairs its index row — and the
+    // writer already wrote that row in the same transaction as the body, so
+    // with a front process and four request workers each session change
+    // became one write and four repairs, every repair a transaction of its
+    // own: on 8081, 250 single-row upserts a second, the busiest statement
+    // in the database. The row is read first, on the read pool, and written
+    // only when a column the body implies is not what it holds — so a row
+    // an older writer left behind is still repaired.
+    writeSessionIndex: function (realmId, key, index) {
+      log.debug("Entering writeSessionIndex().");
+      const wanted = sessionIndexParams(realmId, key, index);
+      log.debug("Leaving writeSessionIndex().");
+      return readPool.query(SESSION_INDEX_READ, [String(realmId), String(key)])
+        .then(function (r) {
+          const held = (r.rows || [])[0];
+          if (held && sessionIndexRowMatches(held, wanted)) {
+            return null;
+          }
+          return withTransaction(function (client) {
+            return upsertSessionIndex(client, realmId, key, index);
+          });
+        });
+    },
+
     // The index row for a session that is gone. Same key as `sts_minted`.
+    // Deleted only where there is one (2026-10-21), for the reason above.
     deleteSessionIndex: function (realmId, key) {
       log.debug("Entering deleteSessionIndex().");
       log.debug("Leaving deleteSessionIndex().");
-      return withTransaction(function (client) {
-        return deleteSessionIndexRow(client, realmId, key);
-      });
+      return readPool.query(SESSION_INDEX_READ, [String(realmId), String(key)])
+        .then(function (r) {
+          if (!(r.rows || []).length) {
+            return null;
+          }
+          return withTransaction(function (client) {
+            return deleteSessionIndexRow(client, realmId, key);
+          });
+        });
     },
 
     // True when the completion row has committed. A live index row is not

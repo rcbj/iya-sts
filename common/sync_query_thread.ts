@@ -110,7 +110,15 @@ function databaseBackend(connection: Record<string, unknown>,
         }
         c.end();
       });
+      // JIT OFF FOR THE BRIDGE'S WHOLE SESSION (2026-10-21). Every question
+      // this thread asks is a short indexed lookup, which JIT never helps —
+      // and one whose estimate is wrong pays for a compile anyway:
+      // `withUuids` cost 89 ms of JIT for 150 ms of work on 8081, the
+      // `jitOff` the driver's own door honours, which this connection did
+      // not. One statement per connection, not per question.
       connecting = c.connect().then(function () {
+        return c.query('SET jit = off');
+      }).then(function () {
         client = c;
         connecting = null;
         return c;

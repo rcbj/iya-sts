@@ -320,6 +320,10 @@ const DC_API_ENC_VALUES = ['A128GCM', 'A256GCM'];
 // The `kid` prefix of a direct_post.jwt transaction's response key; the rest
 // of the kid is the transaction's state (#187).
 const DIRECT_POST_JWT_KID = 'dpj-';
+// The query a web wallet's request_uri carries, and only its (2026-10-20):
+// which link was followed, read by the Request Object endpoint
+// (`noteFetch()`), never by what it answers.
+const FETCH_VIA_WEB = 'via=web';
 
 // The N-Quads IRIs an ldp_vc's disclosed statements are read by.
 const CRED = 'https://www.w3.org/2018/credentials#';
@@ -2075,15 +2079,25 @@ class VcVerifier {
 
   // The query the wallet is handed: by value it carries the whole request, by
   // reference only client_id and request_uri (OID4VP section 5.2).
+  //
+  // `via` is `web` for the WEB WALLET's link only (2026-10-20, rcbj on
+  // /portal/self-issued: where an enrolled key came from). It puts
+  // `?via=web` on the request_uri, which the Request Object endpoint reads
+  // as which link was followed and answers exactly as it answers without
+  // it: the id is the path's, and nothing compares the request_uri or
+  // signs it into the Request Object. The scheme link and the QR code
+  // carry none, so a web wallet is told apart by ADDRESS, never by what it
+  // says it is.
   /**
    * Returns the query the wallet is handed: the whole request by value, or
    * `client_id` and `request_uri` by reference (OpenID4VP section 5.2).
    *
    * @param req - the request
    * @param record - the transaction
+   * @param via - `web` to mark the request_uri as the web wallet's link
    * @returns the query string
    */
-  vpRequestQuery(req: any, record: any) {
+  vpRequestQuery(req: any, record: any, via?: string) {
     const { log, baseUrlOf } = this.deps;
     log.debug("Entering VcVerifier.vpRequestQuery().");
     const base = baseUrlOf(req);
@@ -2093,7 +2107,8 @@ class VcVerifier {
     const params: Record<string, string> = {};
     if (record.byReference) {
       params.client_id = record.clientId;
-      params.request_uri = base + '/oid4vp/request/' + record.id;
+      params.request_uri = base + '/oid4vp/request/' + record.id +
+        (via === 'web' ? '?' + FETCH_VIA_WEB : '');
       params.request_uri_method = 'get';
     } else {
       ['client_id', 'response_type', 'response_mode', 'response_uri',
@@ -2639,7 +2654,10 @@ class VcVerifier {
       });
       let named: any = null;
       try {
-        named = read.subject ? vcDataIntegrity.jwkOfDidJwk(read.subject) : null;
+        // A did:jwk, or since #693 a did:key the person proved (a credential
+        // bound to their DID): both resolve from the identifier.
+        named = read.subject
+          ? vcDataIntegrity.resolveVerificationMethod(read.subject).jwk : null;
       } catch (e) {
         log.debug("Caught in VcVerifier.verifyLdpVc(): " +
                   ((e && e.message) || e));
@@ -2673,6 +2691,38 @@ class VcVerifier {
     log.debug("Leaving VcVerifier.verifyLdpVc(). " +
               (result.ok ? 'accepted' : 'REFUSED'));
     return result;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE KEY A CREDENTIAL'S `cnf` NAMES: its `jwk`, or — for a credential this
+  // realm bound to the person's DID (#693 phase 2b) — the key its `kid`
+  // names, RFC 7800 section 3.4's confirmation method, when that is a
+  // did:jwk or did:key URL, both of which resolve from the identifier
+  // alone. Anything else (a did:web, a bare key id) is no key: nothing here
+  // fetches a holder's DID document. null for none.
+  // ---------------------------------------------------------------------------
+  private cnfKeyOf(cnf: any): any {
+    const { log, vcDataIntegrity } = this.deps;
+    log.debug("Entering VcVerifier.cnfKeyOf().");
+    if (cnf && cnf.jwk) {
+      log.debug("Leaving VcVerifier.cnfKeyOf(). cnf.jwk.");
+      return cnf.jwk;
+    }
+    const kid = cnf && typeof cnf.kid === 'string' ? cnf.kid : '';
+    if (!/^did:(jwk|key):[^#]+#.+$/.test(kid)) {
+      log.debug("Leaving VcVerifier.cnfKeyOf(). No key.");
+      return null;
+    }
+    try {
+      const jwk = vcDataIntegrity.resolveVerificationMethod(kid).jwk;
+      log.debug("Leaving VcVerifier.cnfKeyOf(). cnf.kid.");
+      return jwk;
+    } catch (e) {
+      log.debug("Caught in VcVerifier.cnfKeyOf(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving VcVerifier.cnfKeyOf(). Unresolvable.");
+      return null;
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -2711,7 +2761,7 @@ class VcVerifier {
       const s = value(m[1]);
       const p = m[2];
       const o = value(m[3]);
-      if (p === CRED + 'credentialSubject' && /^did:jwk:/.test(o)) {
+      if (p === CRED + 'credentialSubject' && /^did:(jwk|key):/.test(o)) {
         out.subject = o;
       } else if (p === CRED + 'issuer') {
         out.issuer = o;
@@ -2909,14 +2959,15 @@ class VcVerifier {
       wantedTypes.join(', ') + '].');
 
     // --- holder binding: the VP JWT is signed by the key the credential names
-    const cnfJwk = (vcPayload.cnf || {}).jwk;
+    const cnfJwk = this.cnfKeyOf(vcPayload.cnf);
     // Kept for status, the register and a sign-in.
     result.credentialJwt = vcJwt;
     result.credentialClaims = vcPayload;
     result.holderJwk = cnfJwk || null;
     if (!cnfJwk) {
       this.vpCheck(checks, 'Holder binding', false,
-        'the credential carries no cnf.jwk, so nothing says which key may ' +
+        'the credential carries no cnf.jwk (nor a cnf.kid naming a did:jwk ' +
+        'or did:key), so nothing says which key may ' +
         'present it.');
     } else {
       let holderOk = false;
@@ -2942,12 +2993,12 @@ class VcVerifier {
       if (holderOk) {
         this.vpCheck(checks, 'Holder binding', true,
           'the presentation JWT is signed by the key the credential is bound ' +
-          'to (cnf.jwk, alg ' +
+          'to (cnf, alg ' +
           vpHeader.alg + ').');
       } else {
         this.vpCheck(checks, 'Holder binding', false,
           'the presentation JWT is NOT signed by the key the credential is ' +
-          'bound to (cnf.jwk).');
+          'bound to (cnf).');
       }
     }
 
@@ -3260,13 +3311,14 @@ class VcVerifier {
 
     // The signature must verify against the key the CREDENTIAL names, not one
     // the presenter chose: that is what key binding means.
-    const cnfJwk = (payload.cnf && payload.cnf.jwk) || null;
+    const cnfJwk = this.cnfKeyOf(payload.cnf);
     // Kept on the result for a sign-in, which compares it with the key the
     // credential was issued to (`signInOutcome()`).
     result.holderJwk = cnfJwk;
     if (!cnfJwk) {
       this.vpCheck(checks, 'KB-JWT signature', false,
-        'the credential carries no cnf.jwk, so there is no key this ' +
+        'the credential carries no cnf.jwk (nor a cnf.kid naming a did:jwk ' +
+        'or did:key), so there is no key this ' +
         'presentation could be bound to.');
     } else {
       try {
@@ -3508,7 +3560,14 @@ class VcVerifier {
       if (!row) {
         return refuse('STS-VC-0059', notIssued);
       }
-      if (String(verified.sub || '') !== row.subject ||
+      // A credential bound to the person's DID (#693) names that DID as its
+      // `sub`, which the register recorded beside the person's subject.
+      const sub = String(verified.sub || '');
+      const boundDid = !!sub && [].concat(row.credentials || [])
+        .some(function (c: any) {
+          return !!c && c.holderDid === sub;
+        });
+      if ((sub !== row.subject && !boundDid) ||
           !presentedJkt || presentedJkt !== row.jkt) {
         return refuse('STS-VC-0066', 'The credential does not match what ' +
                       'this realm recorded when it issued it (its subject or ' +
@@ -4090,8 +4149,31 @@ class VcVerifier {
     log.debug("Entering VcVerifier.answerSelfIssued().");
     const types = String(record.responseType).split(' ');
     const withVp = types.indexOf('vp_token') >= 0;
+    // A PERSON'S OWN ENROLMENT (#693) may resolve a did:web nobody has
+    // enrolled yet — the only way to enrol one by proof — and fetches its
+    // document at most ONCE: the mark is written to the transaction, through
+    // the store, before the fetch, so a second answer racing this one finds
+    // it spent. The transaction exists only for a person signed in here
+    // (`vc_signin.ts` starts it from their session), and `siop.ts` dials
+    // only after the token's nonce, aud, exp and iat have passed.
+    const enrolFor = record.signIn && record.signIn.enrol && !withVp
+      ? record.signIn.enrol : null;
+    const enrolment = enrolFor ? {
+      username: String(enrolFor.username),
+      mayDial: function (): boolean {
+        log.debug("Entering mayDial().");
+        if (enrolFor.dialled) {
+          log.debug("Leaving mayDial(). Already fetched once.");
+          return false;
+        }
+        enrolFor.dialled = new Date().toISOString();
+        vpTransactions.set(String(record.state), record);
+        log.debug("Leaving mayDial(). The one fetch.");
+        return true;
+      } } : null;
     const idv = await siop.verifyIdToken(body.id_token,
-      { clientId: record.clientId, nonce: record.nonce });
+      { clientId: record.clientId, nonce: record.nonce,
+        enrolment: enrolment });
     let answer: any = null;
     let checks = idv.checks.slice(0);
     let ok = idv.ok;
@@ -4133,9 +4215,13 @@ class VcVerifier {
         // is the one the transaction was started by; whether it may be
         // enrolled (nobody else's, not too many) is `siop.enrol()`'s, asked
         // when the browser collects this.
+        // The key that signed the proof is what a did:web's enrolment pins
+        // (#693); `siop.enrol()` ignores it for any other subject.
         outcome = { ok: true, errorCode: '', reason: '',
                     username: String(record.signIn.enrol.username),
-                    subject: idv.subject, enrol: true };
+                    subject: idv.subject, enrol: true,
+                    pinnedKeys: idv.keyThumbprint ? [idv.keyThumbprint]
+                                                  : [] };
       } else {
         outcome = siop.signInOutcome(idv);
       }
@@ -4302,6 +4388,44 @@ class VcVerifier {
     return true;
   }
 
+  // WHO FETCHED A SIGN-IN'S REQUEST OBJECT (2026-10-20): `fetchedBy` on the
+  // transaction — `via` `web` where the request_uri carried the web
+  // wallet's marker (vpRequestQuery()) and `link` otherwise, and `agent`,
+  // the product tokens of the fetch's User-Agent (`siop.reportedName()`).
+  // `vc_signin.ts` turns it into where an enrolled key came from. **The
+  // FIRST fetch wins**: a later one, by whichever party, writes nothing, so
+  // a re-fetch cannot recolour a transaction somebody else opened, and the
+  // usual case (one fetch) costs one write. Only a sign-in's transaction
+  // records it; a failure here is logged and never reaches the answer.
+  /**
+   * Records who fetched a sign-in's Request Object, once.
+   *
+   * @param state - the transaction's state
+   * @param record - the transaction
+   * @param req - the fetch
+   */
+  private noteFetch(state: string, record: any, req: any): void {
+    const { log, vpTransactions, siop } = this.deps;
+    log.debug("Entering VcVerifier.noteFetch().");
+    if (!record.signIn || record.signIn.fetchedBy) {
+      log.debug("Leaving VcVerifier.noteFetch(). Nothing to record.");
+      return;
+    }
+    try {
+      const asked = req.query && req.query.via === 'web';
+      record.signIn.fetchedBy = {
+        via: asked ? 'web' : 'link',
+        agent: siop.reportedName(typeof req.get === 'function'
+          ? req.get('user-agent') : ''),
+        at: new Date().toISOString() };
+      vpTransactions.set(String(state), record);
+    } catch (e) {
+      log.debug("Caught in VcVerifier.noteFetch(): " +
+                ((e && e.message) || e));
+    }
+    log.debug("Leaving VcVerifier.noteFetch().");
+  }
+
   // Writes a transaction back THROUGH THE STORE, for the reason the response
   // endpoint gives: the journal sees `set()`, not a field on an object.
   /**
@@ -4355,6 +4479,7 @@ class VcVerifier {
         return oauthError(res, 404, 'invalid_request', 'No such Request ' +
                           'Object.');
       }
+      this.noteFetch(state, record, req);
       res.status(200)
          .type('application/oauth-authz-req+jwt')
          .send(record.requestObject);

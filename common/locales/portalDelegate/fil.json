@@ -10,5 +10,17 @@
   "name": "Italaga sila",
   "clear": "Walang italaga",
   "doneSet": "Naitakda na ang iyong delegado.",
-  "doneCleared": "Wala kang itinalaga."
+  "doneCleared": "Wala kang itinalaga.",
+  "searchHeading": "Maghanap ng tao ayon sa username",
+  "searchSub": "I-type ang hindi bababa sa tatlong character ng kanilang username (uid). Tumatakbo ang paghahanap kapag huminto ka sa pag-type nang tatlong segundo, o agad kapag pinindot mo ang Enter. Ang hinahanap lang nito ay ang mga tao sa realm na ito na ang account ay ginawa rito — hindi ang mga ginawa ng isang federation partner o ng social sign-in — at hindi kailanman ikaw o isang naka-disable na account.",
+  "searchLabel": "Naglalaman ang username ng",
+  "searchButton": "Maghanap",
+  "searchTooShort": "I-type ang hindi bababa sa {min} character ng isang username para maghanap.",
+  "searchFailed": "Hindi mahanapan ang directory sa ngayon. Subukang muli, o i-type ang kanilang DN sa ibaba.",
+  "searchNone": "Walang sinuman dito ang may username na naglalaman ng <code>{q}</code>.",
+  "searchMore": "Mas maraming tao ang tumugma kaysa sa ipinapakita rito. Mag-type pa ng username para paliitin ang paghahanap.",
+  "colUid": "Username",
+  "colCn": "Pangalan",
+  "colDn": "Pangalan sa directory (DN)",
+  "choose": "Italaga ang taong ito"
 }

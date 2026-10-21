@@ -623,6 +623,10 @@
     "en": "2b77aa6b404dbdc0",
     "text": "OIDC Core section 8.1 `sector_identifier_uri`：一個 https URL，其「主機」即為衍生成對 `sub` 所依據的區段，讓同一組織的多個重新導向主機看到同一個主體。指名它的「註冊」會讓它被「擷取」，且其每個重新導向 URI 都必須列在它所提供的 JSON 陣列中；由管理員在此寫入的值是管理員的聲明，不會被擷取。空白：區段為重新導向 URI 的主機，此時它們必須全部共用同一主機。"
   },
+  "applications.schema.attributes.oauthDidClaimWithPairwise.what": {
+    "en": "6a260538fdd857e4",
+    "text": "TRUE：即使此用戶端使用成對或暫時的主體識別碼，也可以將此人的偏好 DID（`did` 聲明，oauth2.didClaim）告知它。其他任何值——對於使用公開主體的用戶端則無關緊要——都表示從不告知。成對或暫時的 `sub` 的存在，是為了讓此用戶端無法將此人與其他用戶端關聯起來，而 DID 在每個被告知的用戶端處都是同一個值，會破壞這一點——僅在此用戶端本就應透過 DID 識別此人時才設定。註冊無法設定它。"
+  },
   "applications.schema.attributes.oauthTokenEndpointAuthSigningAlg.what": {
     "en": "c3cee680e93f74e1",
     "text": "OIDC Core section 9 / RFC 7591 `token_endpoint_auth_signing_alg`：此用戶端的驗證斷言必須使用的「唯一」JWS 演算法。以其他任何演算法簽署的斷言在每種模式下都會被拒絕。空白：方法所允許的任何演算法。"

@@ -479,6 +479,14 @@
     "en": "51871a2d4ac5a3aa",
     "text": "Avfrågar varje federationsrelation vars partners Shared Signals-ström är en pollningsström (RFC 8936): de Security Event Tokens den håller verifieras, åtgärdas och kvitteras."
   },
+  "sched.jobs.ssf.internal-poll.title": {
+    "en": "61d86947032a491a",
+    "text": "Shared Signals-pollning för konsolen och portalen"
+  },
+  "sched.jobs.ssf.internal-poll.describe": {
+    "en": "e68a7ab4fba5e9f4",
+    "text": "Tjänstens egen administratörskonsol och användarportal hämtar de Security Event Tokens som väntar på deras strömmar, i varje sfär, via RFC 8936-pollning från /ssf/poll — verifierade, registrerade, behandlade och kvitterade (#771)."
+  },
   "sched.jobs.ssf.stream-maintenance.title": {
     "en": "7b2875452b588faa",
     "text": "Underhåll av Shared Signals-strömmar"

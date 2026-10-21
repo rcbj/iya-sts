@@ -61,7 +61,7 @@ https://sts.example.com/realm/acme/launch/{application}?protocol=saml2
   application receives at its own registered address; this service never
   sends the browser to it.
 
-You will find the link in two places:
+You will find the link in these places:
 
 * **The user portal.** `/portal/applications` shows a **Sign in** link beside
   each application the person may use and that has IdP-initiated sign-in on.
@@ -70,6 +70,14 @@ You will find the link in two places:
   top, with a copy button. It is greyed while the switch is off, and says what
   is missing when the application has nowhere registered to send a sign-in.
   `/admin-api` returns the same links as `launchUrls` in the application view.
+* **The console, for SAML.** **Protocols → SAML → IdP-Initiated SSO** lists
+  every SAML 2.0 and SAML 1.1 application in the realm whose switch is on,
+  with its link (it opens in a new tab and has a copy button), its protocol,
+  and its identifier as a link to the application's page. A row that has
+  nowhere registered to send the sign-in says so. When the switch is off for
+  the whole realm and no application turns it on for itself, the tab says how
+  to turn it on. `GET /admin-api/saml-idp-initiated` returns the same list,
+  paged with `idpInitiatedPage` and `per`.
 
 The link also works anywhere else: a bookmark, an intranet page, an email.
 

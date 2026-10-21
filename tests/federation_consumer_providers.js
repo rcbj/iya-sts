@@ -534,6 +534,12 @@ function childMain() {
       return one === 'cp-discord https://discord.com 80351110224678912';
     }), 'D4. the link is the relationship, the issuer and the id',
          dLinks.join(' | '));
+    // A SOCIAL PROVIDER'S NEWCOMER IS STAMPED as an enterprise partner's
+    // is (2026-10-20): the same funnel, so the same line.
+    note(attr(dEntry, 'stsProvisionedBy').join('|') ===
+           'federation:cp-discord',
+         'D5. the Discord newcomer carries stsProvisionedBy ' +
+         'federation:cp-discord', JSON.stringify(dEntry && dEntry.attributes));
 
     // ===== E. GITHUB ========================================================
     people.github = { profile: { id: 583231, login: 'octocat',
@@ -701,9 +707,17 @@ function childMain() {
            'G1. a provider\'s person matching a local name and address ' +
            'never lands on the local entry',
            JSON.stringify(after && after.attributes));
-      note(!!entryOf(inSp(function () {
+      const own = entryOf(inSp(function () {
         return links.provisionedName('cp-discord', '5555');
-      })), 'G2. they get an entry of their own');
+      }));
+      note(!!own, 'G2. they get an entry of their own');
+      note(!attr(after, 'stsProvisionedBy').length &&
+           attr(own, 'stsProvisionedBy').join('|') ===
+             'federation:cp-discord',
+           'G2-ii. the local person stays unstamped (native); the ' +
+           'provider\'s own entry is stamped',
+           JSON.stringify([attr(after, 'stsProvisionedBy'),
+                           attr(own, 'stsProvisionedBy')]));
     } else {
       note(false, 'G1. a local person could be created for the collision ' +
            'case', 'ldap.createUser made nobody');

@@ -380,6 +380,61 @@ function rdnCount(realm, parentKey, needle) {
            values: [String(realm), String(parentKey), wanted] };
 }
 
+// ---------------------------------------------------------------------------
+// THE DIRECT CHILDREN OF `ou=users` WHOSE RDN VALUE CONTAINS A STRING
+// (2026-10-20, `/portal/delegate`'s search, `ldap_server.js`'s
+// `delegateCandidates()`).
+//
+// The RDN value is the one name of a person the database holds in the
+// clear (`rdn_value`, generated from the key and lower-cased with it; a
+// person's is their `uid`), so a contains match on it can be indexed while
+// every attribute stays sealed. `sts_ldap_entries_uid_trgm` is a `pg_trgm`
+// GIN over it, PARTIAL on `USERS_PARENT` — the children of a realm's
+// `ou=users`, whatever its base — and this statement repeats the predicate
+// character for character, because the planner uses a partial index only
+// where the query implies its WHERE.
+//
+// **THE TEXT IS A PARAMETER AND ITS WILDCARDS ARE ESCAPED** (`likeEscaped()`)
+// so `%`, `_` and `\` match themselves; nothing a caller typed is ever SQL.
+// No ORDER BY, so the LIMIT stops the heap scan at the limit-th match; the
+// caller sorts the page it was given.
+// ---------------------------------------------------------------------------
+const USERS_PARENT = "parent_key LIKE 'ou=users,%'";
+
+/**
+ * Escapes LIKE's wildcards and its escape character, `\`.
+ *
+ * @param text - the literal text
+ * @returns the text, safe inside a LIKE pattern with `ESCAPE '\'`
+ */
+function likeEscaped(text) {
+  log.debug("Entering likeEscaped().");
+  log.debug("Leaving likeEscaped().");
+  return String(text == null ? '' : text).replace(/[\\%_]/g, '\\$&');
+}
+
+/**
+ * At most `limit` direct children of `parentKey` whose RDN value contains
+ * `needle` (lower-cased), in no particular order.
+ *
+ * @param realm - the realm id
+ * @param parentKey - the parent's normalised DN, a realm's `ou=users`
+ * @param needle - the substring. An empty one matches every child: the
+ *   one caller asks only for three characters or more
+ * @param limit - the most rows (at most 1,000)
+ * @returns the statement
+ */
+function uidContains(realm, parentKey, needle, limit) {
+  log.debug("Entering uidContains().");
+  const wanted = String(needle || '').toLowerCase();
+  log.debug("Leaving uidContains().");
+  return { text: 'SELECT ' + COLUMNS + ' FROM sts_ldap_entries WHERE ' +
+                 'realm = $1 AND parent_key = $2 AND ' + USERS_PARENT +
+                 ' AND rdn_value LIKE $3 ESCAPE \'\\\' LIMIT $4',
+           values: [String(realm), String(parentKey),
+                    '%' + likeEscaped(wanted) + '%', pageSize(limit)] };
+}
+
 /**
  * One numbered page of a parent's direct children, in key order (#359).
  *
@@ -563,10 +618,16 @@ function withUuids(realm, uuids) {
     return JSON.stringify([keyed(one, 'uuid', true)]);
   });
   log.debug("Leaving withUuids().");
+  // **PLANNED WITHOUT JIT (2026-10-21)**, `residentOnly()`'s reason: the
+  // planner estimates `@> ANY` of 500 keys at 4.8 million rows on 8081's
+  // 1M-entry table — the GIN index answers 500 — so it compiled the
+  // statement every time: 89 ms of JIT for 150 ms of work, measured, and
+  // the Users page asks it once per 500 register subjects (134 times).
   return { text: 'SELECT ' + COLUMNS + ' FROM sts_ldap_entries WHERE ' +
                  'realm = $1 AND uuid_keys @> ANY($2::jsonb[]) ORDER BY ' +
                  'dn_key',
-           values: [String(realm), keys] };
+           values: [String(realm), keys],
+           jitOff: true };
 }
 
 /**
@@ -1341,7 +1402,8 @@ const QUERIES = {
   residentOnly: residentOnly,
   rdnPage: rdnPage,
   rdnCount: rdnCount,
-  containerPage: containerPage
+  containerPage: containerPage,
+  uidContains: uidContains
 };
 
 /**
@@ -1400,5 +1462,8 @@ module.exports = {
   residentOnly: residentOnly,
   rdnPage: rdnPage,
   rdnCount: rdnCount,
-  containerPage: containerPage
+  containerPage: containerPage,
+  uidContains: uidContains,
+  likeEscaped: likeEscaped,
+  USERS_PARENT: USERS_PARENT
 };

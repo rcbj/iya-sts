@@ -314,6 +314,21 @@ the top of the application's SAML tab, and on the user portal's
 `providerId` and `TARGET`. [Identity-provider-initiated sign-in](idp-initiated-sso.md)
 describes the link in full. `sts_idp_initiated_launch.js` is the job for it.
 
+**Which SPs it is on for.** **Protocols → SAML → IdP-Initiated SSO** lists
+every SAML 2.0 SP and SAML 1.1 relying party in the realm whose switch is on,
+by the realm setting or its own attribute, with its link (opens in a new tab,
+with a copy button) and the protocol's own endpoint. The identifier links to
+the application's page. A row that has no registered assertion consumer
+service says so: its link answers `STS-LAUNCH-0006` until one is added. With
+both realm settings off and no SP turning it on for itself, the tab says so
+and how to turn it on. The same list is `GET /admin-api/saml-idp-initiated`,
+paged with `idpInitiatedPage` and `per`:
+
+```bash
+curl -sk "$BASE/admin-api/saml-idp-initiated?idpInitiatedPage=2&per=25" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
 ### SAML 2.0: the unsolicited Response
 
 The protocol's own endpoint is:
@@ -490,7 +505,7 @@ by its `SessionIndex`; the Keycloak job sends one.
 
 ## Several accounts in one browser
 
-With `authn.multipleAccounts` on (off by default), one browser may be signed
+With `authn.multipleAccounts` on (the default), one browser may be signed
 in as several people at once. [Several accounts in one browser](multiple-accounts.md)
 describes the setting. For SAML 2.0 it changes three things:
 

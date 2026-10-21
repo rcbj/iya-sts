@@ -3397,6 +3397,18 @@ with `Cannot find module` naming a file the operator never mentioned.
      forgotten — the shortest window in which a revoked token works again —
      with an undated one last, and `STS-OAUTH-0787` logged at most once a
      minute. `tests/revoked_jti_expiry.js` holds all three.
+   - **THE TOKEN REGISTER IS INDEXED BY PERSON (#766, 2026-10-20).**
+     `holdsLiveIssuance()`, asked before every CAEP token-claims-change,
+     walked every record of the realm (up to `MAX_TOKENS`) — 9% of a request
+     worker under a password-write load on 8081. `realms.map()` takes
+     `indexBy(value, key)` and offers `lookup(indexKey)`: the index is kept
+     by the PARTITION Map (`IndexedMap`) in its own `set`, `delete` and
+     `clear`, which is where every way a record enters or leaves a store
+     ends — the facade, the journalling view, a restore, a replicated row —
+     so no door can forget it. `tokens` files each record under `u:<username>`
+     and `s:<sub>`; the question visits those and asks the walk's own test.
+     **An indexed field changes only through `set`**: neither changes on a
+     token record. `tests/token_register_index.js`.
 
 3c. **`audit.js` is a library too, it sits BESIDE `admin_stats.js` rather than
    under it, and one dependency into it is inverted.** `admin_stats.js` answers
@@ -6632,6 +6644,16 @@ built at 23b-ii beside the signing rotation. What a maintainer needs:
   (`ensureDigestKey()` at start, `pruneDigestKeys()` for the loser), and never
   rotated, superseded or destroyed. Where DEKs are derived the KEK-derived key
   is kept — nothing a digest names outlives the process there.
+* **THE HMAC KEY EACH LABEL DERIVES IS KEPT (#760, 2026-10-20)**, beside the
+  input it came from (the digest key, or the KEK's bytes), which is compared
+  on every call: HKDF ran per digest, and the minted store asks one for every
+  row it flushes, prefetches or applies — about 5% of a request worker under
+  a sign-in load. A new digest key or KEK derives again at once and the
+  digests are the ones they always were. It holds nothing the process does
+  not already hold in the clear (the KEK and the digest key are resident),
+  so it is outside `keys.plaintextRetention`'s claim, which is about
+  decrypted signing keys. `keys.derived-digest-keys` on `/admin/caches`,
+  label only; `tests/keyed_digest_derivation.js`.
 * **The settings are per process** (`perProcess`): the jobs run once for the
   service, and a realm cannot carry them.
 * **A PASS WITH NOTHING TO DO READS NOTHING (#623).** On 8081, at 1.5M
@@ -11672,6 +11694,19 @@ sighting moved the clock, which every authentication does. The mode is not in
 the key: the one mode-dependent member of a view is computed when it is built.
 `applications.listing` on `/admin/caches`.
 
+**`load()` is kept by the same clock (#758, 2026-10-20)**: one identifier's
+entry and parsed record, per realm, so the few dozen times a sign-in asks
+about its client (`clientConfigOf()` at the authorize, resume and token steps,
+`settingFor()`, the role and issuance checks) read the directory once per
+clock. Absence (`known: false`) is kept too. Every caller still gets a record
+of its own (`copyRecord()`, the credential snapshot `save()` compares with
+included), because writers change it and save it. At most `MAX_LOAD_MEMO`
+(256) identifiers per realm. **A sighting moves the clock on every
+authentication** (`seen()` writes the counters), so this saves the reads
+between two sightings — about 5% of a request worker under a sign-in load on
+8081. `applications.load` on `/admin/caches`;
+`tests/sign_in_registry_reads.js` section A.
+
 **A sealed field opens when it is READ.** `view()` makes each sealed member of
 `fields` an accessor that calls `keystore.open` on access and keeps nothing
 (key-material residency): a caller that wants the PEM gets it as before, and a
@@ -12734,6 +12769,16 @@ roles), `protectionOf()`, and the administrator's mark (`setProtected()`). A
 "may" here would be the `if` rcbj's directive removes; `xacml/xacml_pip.ts`
 asks these for the PDP, and an override of `access-control` may read them
 differently. A library (rule 3): every register is reached lazily.
+
+**`ownsAnything()` ASKS NOTHING OF THE STORE FOR AN ORDINARY PERSON (#759,
+2026-10-20)**, and it is still computed at the decision: the service accounts
+are the directory's kept names (`ldap/CLAUDE.md`, the service accounts'
+clock), the applications' owners come off the kept listing
+(`applications.ownerValues()`, no view of every application built), and both
+are current at the very next decision after a write. It asked the store for
+every service account and built a view of every application on every scope
+decision of every sign-in — about 7% of a request worker under a sign-in
+load. `tests/sign_in_owner_reads.js`.
 
 **OWNER_READ AND OWNER_WRITE ARE COMPUTED** (rcbj's decision 2), from the four
 owner attributes when a decision is made: `roles.js`'s ninth and tenth

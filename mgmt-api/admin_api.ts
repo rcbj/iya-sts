@@ -3666,8 +3666,9 @@ class AdminApi {
       // operation, as `/admin/caches` and `/admin/caches?cache=` are one page.
       // ---------------------------------------------------------------------
       // THE STATUS LISTS (#38's follow-ups): `vcStatusAdmin.statusView()`
-      // and `statusAction()`, the two functions the Credential status tab
-      // on `/admin/vc` draws.
+      // and `statusAction()`, the two functions Monitoring → Verifiable
+      // Credentials (`/admin/vc/monitor`) draws — the Credential status tab
+      // of `/admin/vc` until #752, which moved the page and not these.
       { method: 'GET', path: BASE + '/vc-status', tag: 'Credential status',
         operationId: 'getCredentialStatus',
         summary: 'This realm\'s credential status lists',
@@ -3682,7 +3683,7 @@ class AdminApi {
                      'INVALID or SUSPENDED), the `explicit` status set here, ' +
                      '`via`, `changedAt`, `allocatedAt` and `expiresAt` — ' +
                      'answered in `rowsPaging`.',
-        mirrors: 'GET /admin/vc',
+        mirrors: 'GET /admin/vc/monitor',
         parameters: [].concat(self.pagingParameters()),
         responseDescription: 'The lists and their credentials.',
         responseSchema: { type: 'object',
@@ -3698,7 +3699,7 @@ class AdminApi {
 
       { method: 'POST', route: BASE + '/vc-status/:action',
         tag: 'Credential status',
-        mirrors: 'POST /admin/vc',
+        mirrors: 'POST /admin/vc/monitor',
         handler: function (req, res) {
           log.debug("Entering the management API credential status action.");
           const result = vcStatusAdmin.statusAction(
@@ -3746,8 +3747,9 @@ class AdminApi {
           // THE STATUS-LIST PUBLISH (#598), moved here from the VC API's
           // test hook `POST /oid4vci/status-lists/bitstring/{purpose}/
           // publish` when the VC API became a product surface: an
-          // operator's act, Admin Write, beside the Credential status tab's
-          // control. `admin-ui/vc_status_admin.ts` argues it.
+          // operator's act, Admin Write, beside the per-credential controls
+          // on Monitoring → Verifiable Credentials.
+          // `admin-ui/vc_status_admin.ts` argues it.
           action: 'publish',
           operationId: 'publishStatusList',
           summary: 'Publish one Bitstring Status List',
@@ -6209,8 +6211,25 @@ class AdminApi {
           // which since #454 only its console twin,
           // `GET /admin-api/console/dashboard`, answers: this operation names
           // them in `consoleMembers` and `sendJson()` takes them off.
-          self.sendJson(res, 200, admin.dashboardJson(req));
-          log.debug("Leaving the management API status endpoint.");
+          // Its totals asked asynchronously (2026-10-21): the snapshot's
+          // register rows and the directory's tally stood a request worker
+          // still for ten seconds on 8081.
+          log.debug("Leaving the management API status endpoint. Asking.");
+          return admin.dashboardJsonAsync(req).then(function (json) {
+            self.sendJson(res, 200, json);
+          }, function (e) {
+            log.debug("Caught in the management API status endpoint: " +
+                      ((e && e.message) || e));
+            log.error(errorCodes.tag(errorCodes.codeOf(e) ||
+                                     'STS-LDAP-0139') +
+                      'admin-api: the console\'s totals could not be read ' +
+                      'from the store: ' + ((e && e.message) || e));
+            res.setHeader('Retry-After', '5');
+            errorCodes.mark(res, errorCodes.codeOf(e) || 'STS-LDAP-0139');
+            self.sendJson(res, 503, { error: 'temporarily_unavailable',
+              error_description: 'The directory could not be read; try ' +
+                'again shortly.' });
+          });
         } },
 
       // ---------------------------------------------------------------------
@@ -6560,7 +6579,17 @@ class AdminApi {
         summary: 'The self-issued (SIOPv2) subjects enrolled for one person',
         description: 'Each DID or RFC 9278 JWK thumbprint URI enrolled for ' +
                      'the person, with its label, when and by whom — every ' +
-                     'one a key whose self-issued ID Token signs them in. ' +
+                     'one a key whose self-issued ID Token signs them in — ' +
+                     'and how (`proof`: `wallet`, proved by the person, or ' +
+                     '`admin`, enrolled by value), with a did:web\'s ' +
+                     '`pinnedKeys` and the one proved DID the person ' +
+                     'prefers (`preferred`) (#693), and where the key ' +
+                     'came from (`location`, `{ kind, value }`: `web` and ' +
+                     'the web wallet\'s configured address, `app` and the ' +
+                     'name the wallet app reported in its User-Agent or ' +
+                     '\'\', `dc_api` and the browser origin or \'\', ' +
+                     '`admin`; absent on an enrolment from before it was ' +
+                     'recorded). ' +
                      'Beside them, whether signing in that way is on ' +
                      '(`oid4vp.signInSelfIssued`), how many a person may ' +
                      'hold, and the subject syntaxes accepted.',
@@ -6715,24 +6744,51 @@ class AdminApi {
             // for the audit rows this action writes (#446). It was an empty
             // actor while this API authenticated only clients; with no token
             // (development's open API) it still is.
-            const result = adminActions.usersAction(request,
+            const answered = adminActions.usersAction(request,
                                              { via: 'api',
                                                actor: self.callerNameOf(res),
                                                // The address a password reset
                                                // link is built on (2026-09-13).
                                                base: baseUrlOf(req) });
-            held.settle(!!result.ok);
-            // A CREATE'S ACTIVATION LINK, ABSOLUTE as well (#446): it is
-            // pasted into a message, and the address it is built on —
-            // `global.publicBaseUrl` where one is pinned — is the server's
-            // to know, not a browser's.
-            if (result.ok && /^\//.test(String(result.activationUrl || ''))) {
-              result.activationLink = baseUrlOf(req) + result.activationUrl;
+            const send = function (result) {
+              log.debug("Entering send().");
+              held.settle(!!result.ok);
+              // A CREATE'S ACTIVATION LINK, ABSOLUTE as well (#446): it is
+              // pasted into a message, and the address it is built on —
+              // `global.publicBaseUrl` where one is pinned — is the
+              // server's to know, not a browser's.
+              if (result.ok &&
+                  /^\//.test(String(result.activationUrl || ''))) {
+                result.activationLink = baseUrlOf(req) +
+                  result.activationUrl;
+              }
+              if (!result.ok) {
+                errorCodes.mark(res, errorCodes.codeOf(result) ||
+                                     'STS-API-0030');
+              }
+              self.sendJson(res, result.ok ? 200 : 400, result);
+              log.debug("Leaving send().");
+            };
+            // AN ACTION THAT ANSWERS LATER (#693): a by-value did:web
+            // enrolment fetches the DID document to pin its keys, so
+            // `usersAction()` hands back a promise for that one act; every
+            // other act still answers at once.
+            if (answered && typeof answered.then === 'function') {
+              log.debug("Leaving the management API users action " +
+                        "endpoint. Answered when the action settles.");
+              return answered.then(send, function (e) {
+                log.debug("Caught in the management API users action " +
+                          "endpoint: " + ((e && e.message) || e));
+                held.settle(false);
+                log.error(errorCodes.tag('STS-API-0136') + 'admin-api: ' +
+                          'the users action ' + request.action + ' failed: ' +
+                          ((e && e.message) || e));
+                errorCodes.mark(res, 'STS-API-0136');
+                self.sendJson(res, 500, { ok: false, errors: [
+                  'The action failed: ' + ((e && e.message) || e)] });
+              });
             }
-            if (!result.ok) {
-              errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0030');
-            }
-            self.sendJson(res, result.ok ? 200 : 400, result);
+            send(answered);
             log.debug("Leaving the management API users action endpoint.");
           });
             });
@@ -8090,7 +8146,15 @@ class AdminApi {
                          'subject is already enrolled for anybody in the ' +
                          'realm. A person enrols their own on ' +
                          '/portal/self-issued by proving the key with their ' +
-                         'wallet.',
+                         'wallet.\n\nWhat this enrols is recorded as BY ' +
+                         'VALUE (`proof: admin`, unproven), and nothing ' +
+                         'that releases or binds a subject reads it. A ' +
+                         'did:web\'s DID document is fetched now and every ' +
+                         'authentication key it names is pinned; a later ' +
+                         'sign-in with any other key is refused ' +
+                         '(STS-VC-0126). A document that cannot be fetched ' +
+                         'or names no such key is refused (STS-ADMIN-0871) ' +
+                         '(#693).',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',
@@ -8140,6 +8204,41 @@ class AdminApi {
               additionalProperties: false
             },
             responseDescription: 'What was removed.' },
+
+          { action: 'set-preferred-self-issued-subject',
+            operationId: 'setUserPreferredSelfIssuedSubject',
+            summary: 'Mark one of somebody\'s proved DIDs as their ' +
+                     'preferred one, or clear the mark',
+            description: 'Marks the subject — a DID the person PROVED with ' +
+                         'their wallet (`proof: wallet`) — as their ' +
+                         'preferred DID, and clears the mark from every ' +
+                         'other; an empty `subject` clears it. The preferred ' +
+                         'DID is what the `did` claim releases to a client ' +
+                         'allowed the `did` scope that the person consented ' +
+                         'to, where `oauth2.didClaim` is on (#693). A ' +
+                         'subject enrolled by value, a JWK thumbprint or one ' +
+                         'not enrolled is refused (STS-ADMIN-0872). The ' +
+                         'person does the same on /portal/self-issued.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                subject: { type: 'string',
+                           description: 'The DID, as listed; empty or ' +
+                                        'absent clears the mark.' }
+              },
+              required: ['user'],
+              examples: [{ user: 'alice',
+                           subject: 'did:jwk:eyJrdHkiOiJPS1AiLCJjcnYiOiJFZDI' +
+                                    '1NTE5IiwieCI6IjEyMyJ9' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The preferred DID, or none.' },
 
           { action: 'record-verification',
             operationId: 'recordUserVerification',
@@ -13432,6 +13531,56 @@ class AdminApi {
           log.debug("Entering the management API SAML 1.1 endpoint.");
           self.sendJson(res, 200, adminViews.saml11Json(req));
           log.debug("Leaving the management API SAML 1.1 endpoint.");
+        } },
+
+      // PROTOCOLS → SAML → IdP-Initiated SSO (#749), rule 7's half of the
+      // tab: a read, so `admin:read`, and per realm as every operation here
+      // is. The view is `adminViews.samlIdpInitiatedJson()`, which asks the
+      // door's own `LaunchLinks.enabled()`.
+      { method: 'GET', path: BASE + '/saml-idp-initiated',
+        tag: 'SAML 2.0',
+        operationId: 'getSamlIdpInitiatedApplications',
+        summary: 'The SAML applications a sign-in may be started here for, ' +
+                 'with each one\'s link',
+        description: 'Every SAML 2.0 service provider and SAML 1.1 relying ' +
+                     'party in this realm for which an ' +
+                     'identity-provider-initiated sign-in would be ALLOWED: ' +
+                     'the realm\'s `saml2.idpInitiatedSso` / ' +
+                     '`saml11.idpInitiatedSso` (off by default), unless the ' +
+                     'entry\'s `saml2IdpInitiatedSso` / ' +
+                     '`saml11IdpInitiatedSso` says otherwise — asked through ' +
+                     'the function `GET /launch/{app}` asks, so a row here ' +
+                     'is never one the link refuses with STS-LAUNCH-0005. ' +
+                     'One row per application and family; an application ' +
+                     'on in both is two rows.\n\n`launchUrl` is the link a ' +
+                     'person follows (`/launch/{app}?protocol=`, this ' +
+                     'realm\'s, on the sign-in service\'s listener) and ' +
+                     '`endpoint` the protocol\'s own unsolicited endpoint ' +
+                     'the link hands the browser to. A row whose `missing` ' +
+                     'is not empty is switched on and cannot work yet — it ' +
+                     'has no registered assertion consumer service, and ' +
+                     'the link answers STS-LAUNCH-0006 — and is listed so ' +
+                     'that it can be fixed.\n\n`realmSwitches` says ' +
+                     'whether each realm setting is on: with both off, only ' +
+                     'an entry\'s own override can put a row here.\n\nPaged ' +
+                     'on `idpInitiatedPage` and `per`, by identifier.',
+        mirrors: 'GET /admin/saml2',
+        parameters: this.detailPagingParameters([
+          { name: 'idpInitiated',
+            description: 'The applications, by identifier.' }
+        ]).concat(this.pagingParameters().filter(function (one) {
+          return one.name === 'per';
+        })),
+        responseDescription: 'One page of the applications, its paging and ' +
+                             'the realm\'s two switches.',
+        responseSchema:
+          { $ref: '#/components/schemas/SamlIdpInitiatedList' },
+        handler: function (req, res) {
+          log.debug("Entering the management API SAML IdP-initiated " +
+                    "endpoint.");
+          self.sendJson(res, 200, adminViews.samlIdpInitiatedJson(req));
+          log.debug("Leaving the management API SAML IdP-initiated " +
+                    "endpoint.");
         } },
 
       { method: 'POST', route: BASE + '/saml11/:action',
@@ -24200,12 +24349,12 @@ class AdminApi {
         operationId: 'getConsoleDashboard',
         summary: 'What the console\'s front page draws',
         description: 'The totals `GET /admin-api/status` answers, with the ' +
-                     'base URL, what is persisted, whether a presented ' +
-                     'password is verified in this realm ' +
-                     '(`verifiesCredentials`) and the console sections ' +
-                     'the caller may see, which is what `/admin` draws.',
-        members: ['base', 'persistence', 'verifiesCredentials',
-                  'sections'] },
+                     'base URL, what is persisted, whether this realm ' +
+                     'is in development mode and so draws what the ' +
+                     'console deliberately does not do (`testDouble`) ' +
+                     'and the console sections the caller may see, ' +
+                     'which is what `/admin` draws.',
+        members: ['base', 'persistence', 'testDouble', 'sections'] },
       { of: 'getNewApplicationForm', path: '/console/applications/new',
         operationId: 'getConsoleNewApplicationForm',
         summary: 'Everything the new application form is drawn from',
@@ -25258,7 +25407,9 @@ class AdminApi {
         bootstrapPasswordRequired: !!(roster && roster.claimPending),
         bootstrap: (roster && roster.bootstrap) || null
       },
-      pages: admin.consoleJson().pages.filter(function (path) {
+      // The pages alone (2026-10-21): `consoleJson()` built the whole
+      // snapshot for them, on every console page.
+      pages: admin.consolePages().filter(function (path) {
         return adminScope.pageVisible(scopeState, path);
       })
     };

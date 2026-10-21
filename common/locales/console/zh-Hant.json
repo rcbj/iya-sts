@@ -82,7 +82,7 @@
   "nav.oid4vci": "OpenID4VCI",
   "nav.vc": "可驗證憑證",
   "nav.vc-claims": "憑證宣告",
-  "nav.vc-status": "憑證狀態",
+  "nav.vc-monitor": "可驗證憑證",
   "nav.oid4vp": "OpenID4VP",
   "nav.vc-verifier-config": "驗證者請求",
   "nav.xacml": "XACML",
@@ -193,8 +193,10 @@
   "nav.crypto-metadata": "密碼學",
   "shell.language": "語言",
   "shell.browserLanguage": "使用瀏覽器的語言",
-  "shell.menu.switch": "切換到其他帳戶",
+  "shell.menu.switch": "切換使用者",
   "shell.menu.switch.title": "以 {user} 的身分使用此分頁。其他分頁保留各自的帳戶。",
+  "shell.menu.switch.none": "此瀏覽器中尚無其他已登入的帳戶。",
+  "shell.menu.switch.kept": "此分頁離開的帳戶仍保持登入，您可以在這裡切換回去。",
   "shell.menu.another": "使用其他帳戶登入",
   "shell.menu.another.title": "在此分頁中以另一個人的身分登入。已在此瀏覽器中登入的帳戶會保持登入，其他分頁保留各自的帳戶。"
 }

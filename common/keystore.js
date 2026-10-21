@@ -4435,11 +4435,86 @@ function keyedDigest(label, text) {
     log.debug("Leaving keyedDigest(). A KMS key and nothing stored.");
     return null;
   }
-  const derived = crypto.hkdf('sha256', ikm, Buffer.alloc(0),
-                              'sts-keyed-digest:' + String(label), 32);
+  const derived = derivedDigestKey(ikm, String(label));
   const out = crypto.hmac('sha256', derived, String(text), 'base64url');
   log.debug("Leaving keyedDigest().");
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// THE DERIVED DIGEST KEYS, ONE PER LABEL (#760, 2026-10-20).
+//
+// `keyedDigest()` ran HKDF on every call, and the minted store asks it for
+// every row it flushes, prefetches or applies (`keyColumnOf()`), and the
+// session window on every membership test: about 5% of a request worker
+// under a sign-in load. What HKDF answers depends on the input key and the
+// label and nothing else, so it is kept per label beside the input key it
+// was derived from, and that input — the stored digest key, or the KEK's
+// bytes — is compared, as bytes, on every call: a rotated digest key, a new
+// KEK, an ephemeral KEK replacing a durable one each derive again at once,
+// and the same digests come out as before.
+//
+// **WHAT THIS HOLDS IN MEMORY IS NOT A NEW KIND OF EXPOSURE**, and the
+// narrow claim `keys.plaintextRetention` makes (`key-material residency`)
+// is about decrypted SIGNING keys: the KEK and the digest key this is
+// derived from are resident already, in the clear, for as long as the
+// process holds them, and anything that can read this derived key can read
+// what it came from. The rows on `/admin/caches` name the label only.
+// Bounded at MAX_DERIVED_DIGEST_KEYS labels; `reset()` drops them.
+// ---------------------------------------------------------------------------
+const MAX_DERIVED_DIGEST_KEYS = 64;
+
+/** @type {Map<string, {ikm: Buffer, key: Buffer}>} */
+const derivedDigestKeys = new Map();
+
+const derivedDigestCount = cacheRegistry.register({
+  name: 'keys.derived-digest-keys',
+  title: 'Derived digest keys',
+  description: 'The HMAC key each keyed-digest label is derived with, so a ' +
+    'digest does not run HKDF on every call. Kept beside the key it was ' +
+    'derived from, which is compared on every use.',
+  owner: 'common/keystore.js',
+  scope: 'process',
+  maxEntries: function () {
+    return MAX_DERIVED_DIGEST_KEYS;
+  },
+  bound: 'Enforced: MAX_DERIVED_DIGEST_KEYS (' + MAX_DERIVED_DIGEST_KEYS +
+    ') labels; past it every derived key is dropped.',
+  lifetime: function () {
+    log.debug("Entering the derived digest keys' lifetime().");
+    log.debug("Leaving the derived digest keys' lifetime().");
+    return 'Until the key it was derived from changes (a new digest key or ' +
+      'key-encryption key), which is checked on every use.';
+  },
+  entries: function () {
+    log.debug("Entering the derived digest keys' entries().");
+    const out = [];
+    derivedDigestKeys.forEach(function (held, label) {
+      out.push({ key: label, validUntil: null, valid: true,
+                 basis: 'input key compared on use' });
+    });
+    log.debug("Leaving the derived digest keys' entries().");
+    return out;
+  }
+});
+
+// Hot path (every keyed digest): no Entering/Leaving pair, the exception
+// the code style allows, stated as it requires.
+function derivedDigestKey(ikm, label) {
+  const input = Buffer.isBuffer(ikm) ? ikm : Buffer.from(ikm);
+  const held = derivedDigestKeys.get(label);
+  if (held && held.ikm.length === input.length && held.ikm.equals(input)) {
+    derivedDigestCount.hit();
+    return held.key;
+  }
+  derivedDigestCount.miss();
+  const key = Buffer.from(crypto.hkdf('sha256', input, Buffer.alloc(0),
+                                      'sts-keyed-digest:' + label, 32));
+  if (!held && derivedDigestKeys.size >= MAX_DERIVED_DIGEST_KEYS) {
+    derivedDigestKeys.clear();
+  }
+  derivedDigestKeys.set(label, { ikm: Buffer.from(input), key: key });
+  return key;
 }
 
 // **THE `label` IS FOR ACCOUNTING AND FOR NOTHING ELSE**, which is why it is
@@ -5822,6 +5897,7 @@ function reset() {
   previousKek = null;
   kek = null;
   cellKek = null;
+  derivedDigestKeys.clear();
   log.debug('Leaving reset().');
 }
 

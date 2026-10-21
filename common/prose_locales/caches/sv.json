@@ -27,6 +27,38 @@
     "en": "87a572725d5885db",
     "text": "en nonce som redan förbrukats, så begäran nekades"
   },
+  "caches.store.admin.console-totals.title": {
+    "en": "148cb7460d633eb9",
+    "text": "Konsolindexets summor, sparade"
+  },
+  "caches.store.admin.console-totals.description": {
+    "en": "21f463f4c0d3aa21",
+    "text": "Konsolindexets summor — anrop, token, artefakter, sessioner, kända användare och användare som loggat in här — som /admin-api/status svarar med. Att räkna användarna innebär att varje identitet i registret löses upp, så summorna sparas några sekunder."
+  },
+  "caches.store.admin.console-totals.bound": {
+    "en": "00ddf9958d051363",
+    "text": "Strukturellt: en uppsättning summor per sfär, byggd högst en gång åt gången."
+  },
+  "caches.store.admin.console-totals.lifetime": {
+    "en": "1fd142ea1eba6ca9",
+    "text": "Femton sekunder."
+  },
+  "caches.store.admin.users-population.title": {
+    "en": "187dfb82048a5dde",
+    "text": "Användarsidans population, sparad"
+  },
+  "caches.store.admin.users-population.description": {
+    "en": "19ff0e331d0cabdb",
+    "text": "Varje identitet som registret har och varje person i katalogen, med var och ens inventering av inloggningsuppgifter: det som /admin/users och /admin-api/users bläddrar, filtrerar och räknar över. Att bygga den innebär att varje subjekt i registret löses upp och varje persons post läses, så bläddring sparar den i stället för att bygga den för varje sida."
+  },
+  "caches.store.admin.users-population.bound": {
+    "en": "63612b99f35238a3",
+    "text": "Strukturellt: en population per sfär, byggd högst en gång åt gången."
+  },
+  "caches.store.admin.users-population.lifetime": {
+    "en": "39fc3b3cca7a059f",
+    "text": "Femton sekunder, och genast när något skrivs under sfärens ou=users, här eller tillämpat från en annan process."
+  },
   "caches.store.applications.listing.title": {
     "en": "eee968e6707b5423",
     "text": "Listning av applikationsregistret"
@@ -42,6 +74,22 @@
   "caches.store.applications.listing.lifetime": {
     "en": "0d7ef2a117733512",
     "text": "Tills något under sfärens ou=applications ändras; nästa läsning tolkar det då på nytt."
+  },
+  "caches.store.applications.load.title": {
+    "en": "87b6608598fd495b",
+    "text": "Applikationsposter lästa efter identifierare"
+  },
+  "caches.store.applications.load.description": {
+    "en": "449808b7934fff9f",
+    "text": "En applikations post och dess tolkade post, efter identifierare, så att en inloggnings kontroller inte läser och tolkar posten för varje fråga."
+  },
+  "caches.store.applications.load.bound": {
+    "en": "2f0f2fdc2a335270",
+    "text": "Upprätthållen: MAX_LOAD_MEMO (256) identifierare per sfär; därutöver kastas de sparade svaren."
+  },
+  "caches.store.applications.load.lifetime": {
+    "en": "a1430f3b77ef4dc8",
+    "text": "Tills något under sfärens ou=applications ändras; nästa läsning frågar då katalogen på nytt."
   },
   "caches.store.applications.ssf-allowed-events.title": {
     "en": "da62d279c1ec6d48",
@@ -351,6 +399,22 @@
     "en": "d0ae04f76208dec0",
     "text": "Ingen utgång: ersätts när hierarkin ändras här eller på en annan nod, och släpps tillsammans med sin sfär."
   },
+  "caches.store.keys.derived-digest-keys.title": {
+    "en": "f9fe85cae4c1d960",
+    "text": "Härledda sammanfattningsnycklar"
+  },
+  "caches.store.keys.derived-digest-keys.description": {
+    "en": "168b9cef8ba71a95",
+    "text": "HMAC-nyckeln som varje etikett för nyckelbaserad sammanfattning härleds med, så att en sammanfattning inte kör HKDF vid varje anrop. Sparas bredvid nyckeln den härleddes ur, som jämförs vid varje användning."
+  },
+  "caches.store.keys.derived-digest-keys.bound": {
+    "en": "ddbdac124aa8d60a",
+    "text": "Upprätthållen: MAX_DERIVED_DIGEST_KEYS (64) etiketter; därutöver kastas alla härledda nycklar."
+  },
+  "caches.store.keys.derived-digest-keys.lifetime": {
+    "en": "624f872facf2862c",
+    "text": "Tills nyckeln den härleddes ur ändras (en ny sammanfattningsnyckel eller nyckelkrypteringsnyckel), vilket kontrolleras vid varje användning."
+  },
   "caches.store.keys.plaintext.title": {
     "en": "51cb646ea755ee9e",
     "text": "Dekrypterade signeringsnycklar"
@@ -527,6 +591,22 @@
     "en": "1c2c57f79cea4fb0",
     "text": "Tills något under sfärens ou=users skrivs."
   },
+  "caches.store.ldap.service-accounts.title": {
+    "en": "cf6e6b4822e4f795",
+    "text": "Katalogens tjänstekonton"
+  },
+  "caches.store.ldap.service-accounts.description": {
+    "en": "c438b52f56cdcb94",
+    "text": "Namnen på en sfärs tjänstekonton, så att ett omfångsbeslut som frågar om en person äger ett inte frågar katalogen efter alla."
+  },
+  "caches.store.ldap.service-accounts.bound": {
+    "en": "3fab118dee48ec80",
+    "text": "Strukturell: en lista per sfär, lika stor som dess tjänstekonton."
+  },
+  "caches.store.ldap.service-accounts.lifetime": {
+    "en": "6d41d8c344106c1b",
+    "text": "Tills en skrivning rör en post som är, eller var, ett tjänstekonto; nästa läsning frågar då katalogen på nytt."
+  },
   "caches.store.ldap.subtree-listings.title": {
     "en": "89d5ba5e5411f55d",
     "text": "Listningar av katalogbehållare"
@@ -554,6 +634,22 @@
   "caches.store.ldap.username-index.lifetime": {
     "en": "b12dd09efefaa6bd",
     "text": "Tills katalogen skrivs på ett sätt som indexet inte kan ta in; nästa uppslagning bygger då om det. Ett index per sfär."
+  },
+  "caches.store.ldap.windowed-entryuuids.title": {
+    "en": "1bcb1ccebd4c7781",
+    "text": "entryUUID i fönstret"
+  },
+  "caches.store.ldap.windowed-entryuuids.description": {
+    "en": "4bbc3a85d38472cd",
+    "text": "I en process som håller ett fönster mot katalogen, nyckeln där varje persons eller enhets entryUUID senast hittades, så att ett subjekt slås upp till posten fönstret håller utan att fråga lagret igen (#773). Kontrolleras mot postens eget entryUUID vid varje användning."
+  },
+  "caches.store.ldap.windowed-entryuuids.bound": {
+    "en": "a4522667ab0d5562",
+    "text": "Tillämpas: ldap.workerCacheEntries per sfär, de äldsta tas bort först."
+  },
+  "caches.store.ldap.windowed-entryuuids.lifetime": {
+    "en": "317464bd9b5bd06a",
+    "text": "Tills posten den namnger lämnar fönstret, byter namn eller inte längre bär det entryUUID, vilket kontrolleras vid varje användning."
   },
   "caches.store.mail.outbox.title": {
     "en": "d40abea9379f4e22",
@@ -683,6 +779,22 @@
     "en": "bfe4788c0fa5b7fe",
     "text": "Upprätthållen: 256 nyckeluppsättningar per sfär, där den äldsta släpps och hämtas igen nästa gång den behövs."
   },
+  "caches.store.oauth2.declared-authorization-details-types.title": {
+    "en": "3f4c1bef936a03c4",
+    "text": "Deklarerade authorization_details-typer"
+  },
+  "caches.store.oauth2.declared-authorization-details-types.description": {
+    "en": "5eba0c7bb76a5960",
+    "text": "De RFC 9396-typer som en sfärs applikationer deklarerar, var och en med den resurs som svarar för den, så att en auktorisering inte bygger en vy av varje applikation för att hitta dem."
+  },
+  "caches.store.oauth2.declared-authorization-details-types.bound": {
+    "en": "d25b94e5d9062281",
+    "text": "Strukturell: ett svar per sfär, lika stort som de typer dess applikationer deklarerar."
+  },
+  "caches.store.oauth2.declared-authorization-details-types.lifetime": {
+    "en": "3bfa4ec2d7a5b1f4",
+    "text": "Tills något under sfärens ou=applications ändras; nästa läsning bygger det då på nytt."
+  },
   "caches.store.oauth2.redeemed-codes.title": {
     "en": "d05b2abe4dfcac4c",
     "text": "Inlösta auktoriseringskoder"
@@ -702,6 +814,22 @@
   "caches.store.oauth2.redeemed-codes.hitMeaning": {
     "en": "55156810371e3ec1",
     "text": "en kod som redan lösts in, uppvisad igen"
+  },
+  "caches.store.oauth2.refresh-token-bookkeeping.title": {
+    "en": "c9c28d7d082aab14",
+    "text": "Rotationsposter för uppdateringstoken"
+  },
+  "caches.store.oauth2.refresh-token-bookkeeping.description": {
+    "en": "38d9cf25fa52b3ad",
+    "text": "En post per uppdateringstoken och per familj, så att en återspelad uppdateringstoken återkallar sin familj (RFC 9700), och vad varje beviljande utfärdade, så att återkallandet av en uppdateringstoken återkallar åtkomsttoken som utfärdades bredvid den (RFC 7009)."
+  },
+  "caches.store.oauth2.refresh-token-bookkeeping.bound": {
+    "en": "945ea34a46306638",
+    "text": "Upprätthållen: oauth2.maxRefreshTokenFamilies poster för uppdateringstoken per sfär, dubbelt så många för det ett beviljande utfärdade; därutöver försvinner de pensionerade först, sedan de äldsta, med en varning."
+  },
+  "caches.store.oauth2.refresh-token-bookkeeping.lifetime": {
+    "en": "584ca21b64df4c69",
+    "text": "Tills familjefönstret efter att token utfärdades har passerat; jobbet caches.eject-expired kastar då posten."
   },
   "caches.store.oauth2.request-uri.title": {
     "en": "3ae35b709a8c09f7",
@@ -1090,6 +1218,18 @@
   "caches.store.risk.dataset-lookups.lifetime": {
     "en": "cabefdef4e47cbf3",
     "text": "Tills en version av en datamängd aktiveras, eller gränsen släpper den."
+  },
+  "caches.store.risk.population-users.title": {
+    "en": "ee5f57710fdd1b70",
+    "text": "Riskbedömning: antalet personer i varje sfär"
+  },
+  "caches.store.risk.population-users.description": {
+    "en": "cb24f916eda472c0",
+    "text": "Hur många personer som har loggat in i varje sfär, nämnaren i riskmodellens utjämningsterm, sparat så att en inloggning inte räknar varje person som någonsin har loggat in."
+  },
+  "caches.store.risk.population-users.bound": {
+    "en": "8154bb7a629a4263",
+    "text": "Strukturell: ett antal per sfär med minst 1000 personer (förseglat eller inte), och det finns högst realms.maxCount sfärer utöver standardsfären."
   },
   "caches.store.risk.standings.title": {
     "en": "492e058d1adf8354",

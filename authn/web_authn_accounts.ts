@@ -50,8 +50,13 @@ class WebAuthnAccounts {
     return new Date(n).toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
   }
 
+  // ONE LINE PER ACCOUNT, ITS BUTTONS AT THE RIGHT (rcbj, 2026-10-20). The
+  // buttons were a `.row` under the names, each the card's full-width
+  // button, so every account was three lines and a slab of colour. Now the
+  // names and the time are one column and a small button sits beside them
+  // (`form.account` in WebCardCss.CARD_CSS). The ids are unchanged.
   /**
-   * One account's row: its names, its time, and its buttons.
+   * One account's row: its names and its time, and its buttons beside them.
    *
    * @param one - the account, from the view
    * @param i - its place, for the ids
@@ -67,6 +72,7 @@ class WebAuthnAccounts {
     return '<form method="post" action="/authn/accounts" class="account" ' +
       'id="account-' + i + '">' +
       '<input type="hidden" name="account" value="' + esc(one.key) + '">' +
+      '<div class="account-who">' +
       '<div class="account-name"><strong>' + esc(name) + '</strong>' +
       (one.username && one.username !== name
         ? ' <span class="sub">' + esc(one.username) + '</span>' : '') +
@@ -75,7 +81,8 @@ class WebAuthnAccounts {
         t.html(live ? 'authn.accounts.signedInAt'
                     : 'authn.accounts.signedOutAt', { when: when }) +
         '</div>' : '') +
-      '<div class="row">' +
+      '</div>' +
+      '<div class="account-acts">' +
       (live
         ? '<button type="submit" id="account-select-' + i + '" ' +
           'name="action" value="select">' +

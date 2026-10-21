@@ -1649,6 +1649,22 @@ const SCHEMA = {
             'written here by an administrator is the administrator\'s ' +
             'statement and is not fetched. Empty: the sector is the host of ' +
             'the redirect URIs, which must then all share one.' },
+    // THE `did` CLAIM AGAINST A PAIRWISE SUBJECT (#693, phase 2).
+    { name: 'oauthDidClaimWithPairwise', kind: 'single',
+      from: 'the console, the management API, or by hand',
+      families: ['oidc'],
+      familyWhy: 'It decides whether an ID Token and a UserInfo response ' +
+        'may carry the did claim, which only an OpenID Connect client is ' +
+        'given.',
+      what: 'TRUE: this client may be told the person\'s preferred DID (the ' +
+            '`did` claim, oauth2.didClaim) although it uses pairwise or ' +
+            'ephemeral subject identifiers. Anything else, and for a ' +
+            'public-subject client it does not matter: never. A pairwise ' +
+            'or ephemeral `sub` exists so that this client cannot ' +
+            'correlate the person with other clients, and a DID is the ' +
+            'same value at every client that is told it, which defeats ' +
+            'that — set it only where this client is meant to know the ' +
+            'person by their DID anyway. Not settable by a registration.' },
     { name: 'oauthTokenEndpointAuthSigningAlg', kind: 'single',
       from: 'POST /oauth2/register, the console, the management API, or by ' +
             'hand',
@@ -4615,6 +4631,8 @@ const EDITABLE = {
   // OIDC Core sections 8 and 9 (#118). One answer each.
   oauthSubjectType: 'set',
   oauthSectorIdentifierUri: 'set',
+  // The did claim against a pairwise subject (#693). One answer.
+  oauthDidClaimWithPairwise: 'set',
   oauthTokenEndpointAuthSigningAlg: 'set',
   oauthJwks: 'set',
   oauthJwksUri: 'set',
@@ -5818,6 +5836,8 @@ const BOOLEAN_ATTRIBUTES = [
   'oauthTlsClientCertificateBoundAccessTokens', 'oauthConfidential',
   'saml2EncryptAssertion', 'saml2EncryptLogoutNameId',
   'oauthRevokeRefreshOnLogout', 'appNotDelegated', 'appGroupsClaim',
+  // #693: the did claim to a pairwise or ephemeral client.
+  'oauthDidClaimWithPairwise',
   'krb5TrustedForDelegation',
   'saml2SignAssertion', 'saml2SignResponse', 'saml11SignAssertion',
   'saml11SignResponse', 'gnapBearerTokens', 'gnapSkipInteraction',
@@ -11720,8 +11740,13 @@ function attributesFor(record) {
     appFirstSeen: [generalizedTime(record.firstAt)],
     appLastSeen: [generalizedTime(record.lastAt)],
     appAuthentications: [String(record.authentications)],
-    appSessions: [String(record.sessions.length)],
-    appUsers: [String(record.users.length)],
+    // THE COUNTS, NOT THE LENGTH OF A LIST (2026-10-21): `seen()` sized
+    // `sessions` and `users` to the counts as sparse arrays so this read
+    // their length — on 8081, two arrays of 345,000 holes allocated at every
+    // sign-in for the load test's one client, and copied by every
+    // `copyRecord()`. The counts are the numbers; the lists stay empty.
+    appSessions: [String(countOf(record, 'sessionCount', 'sessions'))],
+    appUsers: [String(countOf(record, 'userCount', 'users'))],
     appRegistered: [record.registered ? 'TRUE' : 'FALSE'],
     description: record.description ? [record.description] : []
   };
@@ -11880,18 +11905,159 @@ function blankRecord(identifier) {
 function load(identifier) {
   log.debug("Entering load().");
   const backing = store();
+  const version = backing && typeof backing.applicationsVersion === 'function'
+    ? backing.applicationsVersion() : null;
+  if (version === null || version === undefined) {
+    log.debug("Leaving load(). No clock.");
+    return loadNow(identifier);
+  }
+  const held = loadMemo();
+  if (held.version !== version) {
+    held.version = version;
+    held.byIdentifier.clear();
+  }
+  const key = String(identifier);
+  let kept = held.byIdentifier.get(key);
+  if (kept) {
+    loadCount.hit();
+  } else {
+    loadCount.miss();
+    kept = loadNow(identifier);
+    if (held.byIdentifier.size >= MAX_LOAD_MEMO) {
+      held.byIdentifier.clear();
+    }
+    held.byIdentifier.set(key, kept);
+  }
+  log.debug("Leaving load(). " + (kept.known ? 'Known.' : 'Not known.'));
+  return { record: copyRecord(kept.record), known: kept.known,
+           entry: copyEntry(kept.entry) };
+}
+
+// What `load()` read before #758, every call: one entry out of the directory
+// and its attributes parsed into a record.
+function loadNow(identifier) {
+  log.debug("Entering loadNow().");
+  const backing = store();
   if (!backing) {
-    log.debug("Leaving load().");
+    log.debug("Leaving loadNow(). No store.");
     return { record: blankRecord(identifier), known: false, entry: null };
   }
   const entry = backing.readApplication(String(identifier));
   if (!entry) {
-    log.debug("Leaving load().");
+    log.debug("Leaving loadNow(). Not there.");
     return { record: blankRecord(identifier), known: false, entry: null };
   }
-  log.debug("Leaving load().");
+  log.debug("Leaving loadNow().");
   return { record: recordFromAttributes(entry.attributes), known: true,
            entry: entry };
+}
+
+// ---------------------------------------------------------------------------
+// ONE APPLICATION, KEPT BY THE REGISTRY'S CLOCK (#758).
+//
+// `load()` read the entry out of the directory and parsed it on every call,
+// and a sign-in calls it a few dozen times — `clientConfigOf()` at each of
+// the authorize, resume and token steps, `settingFor()`, the role and
+// issuance checks: about 5% of a request worker under a sign-in load. The
+// answer is kept per realm by `applicationsVersion()`, the clock the
+// listing below is kept by (every write under ou=applications, a write
+// naming no DN, a row another process wrote that this one applied), so the
+// first call after the clock moves reads the directory exactly as before
+// and the rest are answered from that read. Absence is kept too (`known:
+// false`), by the same clock.
+//
+// **EVERY CALLER STILL GETS A RECORD OF ITS OWN** (`copyRecord()`): writers
+// change the record and hand it to `save()`, so the kept one is never handed
+// out — the listing's rule. The credential snapshot `save()` compares with
+// is copied with it.
+//
+// Bounded at MAX_LOAD_MEMO identifiers per realm per clock: past it the
+// kept answers are dropped and read again.
+// ---------------------------------------------------------------------------
+const MAX_LOAD_MEMO = 256;
+
+const loadMemo = realms.keyed(function () {
+  return { version: null, byIdentifier: new Map() };
+});
+
+// Described to `/admin/caches` (rule 3ap).
+const loadCount = cacheRegistry.register({
+  name: 'applications.load',
+  title: 'Application entries read by identifier',
+  description: 'One application\'s entry and its parsed record, by ' +
+    'identifier, so the checks a sign-in makes do not read and parse the ' +
+    'entry per question.',
+  owner: 'common/applications.js',
+  scope: 'realm',
+  maxEntries: function () {
+    return MAX_LOAD_MEMO;
+  },
+  bound: 'Enforced: MAX_LOAD_MEMO (' + MAX_LOAD_MEMO + ') identifiers per ' +
+    'realm; past it the kept answers are dropped.',
+  lifetime: function () {
+    return 'Until anything under the realm\'s ou=applications changes; ' +
+      'the next read then asks the directory again.';
+  },
+  entries: function () {
+    const out = [];
+    loadMemo.existing().forEach(function (held, id) {
+      held.byIdentifier.forEach(function (kept, identifier) {
+        out.push({ realm: id, key: identifier, validUntil: null,
+                   valid: true, basis: 'ou=applications version' });
+      });
+    });
+    return out;
+  }
+});
+
+// A record's count of sessions or users: the counter where it has one, the
+// length of an older record's list otherwise.
+function countOf(record, counter, list) {
+  log.debug("Entering countOf().");
+  const n = Number(record && record[counter]);
+  log.debug("Leaving countOf().");
+  if (Number.isFinite(n) && n >= 0) {
+    return n;
+  }
+  return Array.isArray(record && record[list]) ? record[list].length : 0;
+}
+
+// A record that shares nothing with the one kept: the lists copied, each
+// field's values copied, and the credential snapshot carried, as
+// `recordFromAttributes()` would have made it.
+function copyRecord(record) {
+  log.debug("Entering copyRecord().");
+  const out = Object.assign({}, record, {
+    kinds: (record.kinds || []).slice(0),
+    protocols: (record.protocols || []).slice(0),
+    sessions: (record.sessions || []).slice(0),
+    users: (record.users || []).slice(0),
+    fields: copyValues(record.fields)
+  });
+  const snapshot = record[CREDENTIAL_SNAPSHOT];
+  if (snapshot) {
+    Object.defineProperty(out, CREDENTIAL_SNAPSHOT, {
+      value: JSON.parse(JSON.stringify(snapshot)), enumerable: false,
+      writable: true, configurable: true });
+  }
+  log.debug("Leaving copyRecord().");
+  return out;
+}
+
+// The entry `readApplication()` answered, with its attributes copied.
+function copyEntry(entry) {
+  log.debug("Entering copyEntry().");
+  if (!entry) {
+    log.debug("Leaving copyEntry(). None.");
+    return null;
+  }
+  const out = Object.assign({}, entry, {
+    attributes: copyValues(entry.attributes),
+    operational: Array.isArray(entry.operational)
+      ? entry.operational.slice(0) : entry.operational
+  });
+  log.debug("Leaving copyEntry().");
+  return out;
 }
 
 function save(record, how) {
@@ -12797,8 +12963,6 @@ function seen(detail) {
     setField(record, 'appLastUser', info.user);
     changed = true;
   }
-  record.sessions = new Array(record.sessionCount);
-  record.users = new Array(record.userCount);
 
   if (!changed) {
     log.debug("Leaving seen(). It was already known and said nothing new.");
@@ -17839,6 +18003,34 @@ function list() {
   return rows;
 }
 
+// Every application's `appOwner` values, read off the kept listing with no
+// view built (#759): `ownership.ownsAnything()` asks it on every scope
+// decision, and read the owners out of `list()`, a view of every
+// application, to find them. Strings, in `list()`'s order, one list per
+// application that names an owner.
+/**
+ * Returns the owners every application in the ambient realm names.
+ *
+ * @returns one list of owner values per application that has any
+ */
+function ownerValues() {
+  log.debug("Entering ownerValues().");
+  const kept = listing();
+  if (!kept) {
+    log.debug("Leaving ownerValues(). No store.");
+    return [];
+  }
+  const out = [];
+  kept.items.forEach(function (item) {
+    const owners = valuesOf(item.record.fields.appOwner).map(String);
+    if (owners.length) {
+      out.push(owners);
+    }
+  });
+  log.debug("Leaving ownerValues(). " + out.length);
+  return out;
+}
+
 // The applications carrying one value, as views, in `list()`'s order — what
 // the lookups below used to get by filtering the whole of `list()`.
 function lookedUp(mapName, wanted, attribute) {
@@ -18957,6 +19149,28 @@ function httpSignaturesOf(clientId) {
   return { known: !!found, required: required, fields: fields };
 }
 
+// THE `did` CLAIM AGAINST A PAIRWISE SUBJECT (#693): whether the client's
+// entry opts in to being told the person's DID although its `sub` is
+// pairwise or ephemeral. FALSE for anything but TRUE, and for a client
+// nobody registered.
+/**
+ * Says whether a client opts in to the `did` claim although it uses
+ * pairwise or ephemeral subject identifiers (`oauthDidClaimWithPairwise`).
+ *
+ * @param clientId - the client id
+ * @returns true only for TRUE on a known client
+ */
+function didClaimWithPairwiseOf(clientId) {
+  log.debug("Entering didClaimWithPairwiseOf().");
+  const who = String(clientId == null ? '' : clientId).trim();
+  const found = who ? (forClientId(who) || get(who)) : null;
+  const fields = (found && found.fields) || {};
+  const on = String(valuesOf(fields.oauthDidClaimWithPairwise)[0] || '')
+    .trim().toUpperCase() === 'TRUE';
+  log.debug("Leaving didClaimWithPairwiseOf(). " + on);
+  return on;
+}
+
 /**
  * Returns the application whose `oauthClientId` lists a value, matched exactly.
  *
@@ -20044,6 +20258,7 @@ module.exports = {
   attributesFor: attributesFor,
   nativeSsoOf: nativeSsoOf,
   httpSignaturesOf: httpSignaturesOf,
+  didClaimWithPairwiseOf: didClaimWithPairwiseOf,
   recordFromAttributes: recordFromAttributes,
   labelFor: labelFor,
   editableAttributes: editableAttributes,
@@ -20125,6 +20340,7 @@ module.exports = {
   list: list,
   // The clock `list()` is kept by (#625).
   listingVersion: listingVersion,
+  ownerValues: ownerValues,
   // OpenID Federation registrations (#134).
   federatedRegistrations: federatedRegistrations,
   federationExpired: federationExpired,

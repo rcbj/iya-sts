@@ -1047,6 +1047,10 @@
     "en": "f6af7681f3d25fd7",
     "text": "Un administrador quitó el sujeto autoemitido (SIOPv2) de una persona"
   },
+  "audit.actions.admin.siop.preferred.label": {
+    "en": "3c3a62cf5e46c516",
+    "text": "Un administrador marcó como preferido un DID demostrado de una persona, o quitó la marca"
+  },
   "audit.actions.ssf.signals.discover.label": {
     "en": "55d2d7d9682c339a",
     "text": "Se descubrió la configuración de Shared Signals de un socio de federación"
@@ -1327,9 +1331,25 @@
     "en": "51cd295b713684de",
     "text": "Se rechazó un formulario de clave de firma por su token CSRF"
   },
+  "audit.actions.portal.siop.enrol.label": {
+    "en": "9c4ac2b8893fae20",
+    "text": "Una persona inscribió un sujeto autoemitido demostrándolo con una billetera"
+  },
   "audit.actions.portal.siop.remove.label": {
     "en": "b6f77328c0b99b89",
     "text": "Una persona quitó un sujeto autoemitido"
+  },
+  "audit.actions.portal.siop.prefer.label": {
+    "en": "7e6377e63c113f97",
+    "text": "Una persona marcó como preferido un DID demostrado, o quitó la marca"
+  },
+  "audit.actions.siop.key.pinned.label": {
+    "en": "a2cc99b16a4a406e",
+    "text": "Un sujeto autoemitido did:web inscrito sin clave fijada quedó fijado a la clave con la que inició sesión (solo en desarrollo)"
+  },
+  "audit.actions.siop.key.refused.label": {
+    "en": "ce5975b773d8c9d7",
+    "text": "Se rechazó un inicio de sesión autoemitido did:web: la clave no era la fijada en la inscripción, o no había ninguna fijada"
   },
   "audit.actions.portal.vc.offer.label": {
     "en": "631dece03539cd4a",

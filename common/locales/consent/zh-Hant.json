@@ -6,6 +6,7 @@
   "scope.permission": "{description} — 由 <code>{identifier}</code> 公開，存取權杖將發往 <code>{baseUri}</code>",
   "scope.permissionNamed": "權限「{name}」",
   "scope.ordinary": "一般範圍：本服務不賦予它任何意義，會原樣放入權杖的 scope 宣告中",
+  "scope.did": "您的偏好 DID——您以錢包證明並在自行簽發 ID 頁面上標記為偏好的去中心化識別碼。告知的每個應用程式收到的都是同一個值，因此它們可以將您識別為同一個人",
   "detail.understood": "由 <code>{resource}</code> 理解，存取權杖將發往 <code>{audience}</code>",
   "detail.described": "{description} — 由 <code>{resource}</code> 理解，存取權杖將發往 <code>{audience}</code>",
   "detailsNote": "此要求包含 <strong>{count, plural, other {# 項授權詳細資料}}</strong>（RFC 9396）。每次都會詢問您：「允許」僅針對這一次要求，同意的正是所列內容。",

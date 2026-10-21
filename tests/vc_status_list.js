@@ -694,7 +694,7 @@ function childMain() {
          statusView.rows.some(function (r) {
            return r.idx === idx && r.status === 'INVALID';
          }),
-         '8c. /admin/vc-status (and GET /admin-api/vc-status, the same ' +
+         '8c. /admin/vc/monitor (and GET /admin-api/vc-status, the same ' +
          'function) reports the lists and every credential\'s status',
          JSON.stringify({ allocated: statusView.allocated,
                           invalid: statusView.invalid,

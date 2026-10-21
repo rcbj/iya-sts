@@ -216,7 +216,12 @@ class ServiceState {
     log.debug("Leaving ServiceState.reseedAfterRestore().");
   }
 
-  start(): Promise<any> {
+  // `opts.beforeMinted(keys)` (2026-10-21): called once the store, the
+  // signing keys and the shared secrets are in place and before this
+  // process restores what it minted — the point at which the front process
+  // may start its request workers, whose own restores then run beside this
+  // one (`server.js`). Its return is ignored; a throw is the caller's.
+  start(opts?: { beforeMinted?: (keys: any) => void }): Promise<any> {
     const { log, persistence, keystore, cluster, clusterSecrets, pki, realms,
             helpers } = this.deps;
     const self = this;
@@ -290,6 +295,9 @@ class ServiceState {
       // does nothing at all in development mode, in memory mode and on an ldif
       // store — see persistence_minted.js, which says which and why.
       // -----------------------------------------------------------------------
+      if (opts && typeof opts.beforeMinted === 'function') {
+        opts.beforeMinted(keys);
+      }
       return persistence.restoreMinted().then(function (mintedResult) {
         // ---------------------------------------------------------------------
         // AND THEN COORDINATION, WHICH IS LAST AND HAS TO BE.

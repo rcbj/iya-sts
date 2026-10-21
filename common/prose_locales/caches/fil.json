@@ -27,6 +27,38 @@
     "en": "87a572725d5885db",
     "text": "isang nonce na nagamit na, kaya tinanggihan ang request"
   },
+  "caches.store.admin.console-totals.title": {
+    "en": "148cb7460d633eb9",
+    "text": "Mga kabuuan ng index ng console, itinatabi"
+  },
+  "caches.store.admin.console-totals.description": {
+    "en": "21f463f4c0d3aa21",
+    "text": "Ang mga kabuuan ng index ng console — mga tawag, token, artifact, session, mga kilalang user at mga user na nag-sign in dito — na sinasagot ng /admin-api/status. Ang pagbilang ng mga user ay ang pag-resolve sa bawat pagkakakilanlan sa rehistro, kaya itinatabi ang mga kabuuan nang ilang segundo."
+  },
+  "caches.store.admin.console-totals.bound": {
+    "en": "00ddf9958d051363",
+    "text": "Istruktural: isang hanay ng mga kabuuan bawat realm, binubuo nang hindi hihigit sa isang beses sa isang pagkakataon."
+  },
+  "caches.store.admin.console-totals.lifetime": {
+    "en": "1fd142ea1eba6ca9",
+    "text": "Labinlimang segundo."
+  },
+  "caches.store.admin.users-population.title": {
+    "en": "187dfb82048a5dde",
+    "text": "Populasyon ng pahina ng Mga User, itinatabi"
+  },
+  "caches.store.admin.users-population.description": {
+    "en": "19ff0e331d0cabdb",
+    "text": "Bawat pagkakakilanlang hawak ng rehistro at bawat tao sa direktoryo, kasama ang sensus ng kanilang mga kredensyal: ang pinapahina, sinasala at binibilang ng /admin/users at /admin-api/users. Ang pagbuo nito ay ang pag-resolve sa bawat subject ng rehistro at pagbasa sa entry ng bawat tao, kaya itinatabi ito ng paghahati sa pahina sa halip na buuin para sa bawat pahina."
+  },
+  "caches.store.admin.users-population.bound": {
+    "en": "63612b99f35238a3",
+    "text": "Istruktural: isang populasyon bawat realm, binubuo nang hindi hihigit sa isang beses sa isang pagkakataon."
+  },
+  "caches.store.admin.users-population.lifetime": {
+    "en": "39fc3b3cca7a059f",
+    "text": "Labinlimang segundo, at agad kapag may isinulat sa ilalim ng ou=users ng realm, dito man o inilapat mula sa ibang proseso."
+  },
   "caches.store.applications.listing.title": {
     "en": "eee968e6707b5423",
     "text": "Listahan ng application registry"
@@ -42,6 +74,22 @@
   "caches.store.applications.listing.lifetime": {
     "en": "0d7ef2a117733512",
     "text": "Hanggang may magbago sa ilalim ng ou=applications ng realm; pagkatapos ay ipa-parse itong muli ng susunod na read."
+  },
+  "caches.store.applications.load.title": {
+    "en": "87b6608598fd495b",
+    "text": "Mga entry ng application na binasa ayon sa identifier"
+  },
+  "caches.store.applications.load.description": {
+    "en": "449808b7934fff9f",
+    "text": "Ang entry ng isang application at ang na-parse nitong record, ayon sa identifier, para hindi basahin at i-parse ng mga pagsusuri ng isang sign-in ang entry sa bawat tanong."
+  },
+  "caches.store.applications.load.bound": {
+    "en": "2f0f2fdc2a335270",
+    "text": "Ipinapatupad: MAX_LOAD_MEMO (256) na identifier bawat realm; lampas doon, itinatapon ang mga naitabing sagot."
+  },
+  "caches.store.applications.load.lifetime": {
+    "en": "a1430f3b77ef4dc8",
+    "text": "Hanggang may magbago sa ilalim ng ou=applications ng realm; pagkatapos ay muling tatanungin ng susunod na read ang directory."
   },
   "caches.store.applications.ssf-allowed-events.title": {
     "en": "da62d279c1ec6d48",
@@ -351,6 +399,22 @@
     "en": "d0ae04f76208dec0",
     "text": "Walang expiry: pinapalitan kapag nagbago ang hierarchy dito o sa ibang node, at tinatanggal kasama ng realm nito."
   },
+  "caches.store.keys.derived-digest-keys.title": {
+    "en": "f9fe85cae4c1d960",
+    "text": "Mga derived na digest key"
+  },
+  "caches.store.keys.derived-digest-keys.description": {
+    "en": "168b9cef8ba71a95",
+    "text": "Ang HMAC key na pinagmumulan ng bawat keyed-digest label, para hindi patakbuhin ng isang digest ang HKDF sa bawat tawag. Itinatabi kasama ng key na pinagmulan nito, na inihahambing sa bawat paggamit."
+  },
+  "caches.store.keys.derived-digest-keys.bound": {
+    "en": "ddbdac124aa8d60a",
+    "text": "Ipinapatupad: MAX_DERIVED_DIGEST_KEYS (64) na label; lampas doon, itinatapon ang lahat ng derived key."
+  },
+  "caches.store.keys.derived-digest-keys.lifetime": {
+    "en": "624f872facf2862c",
+    "text": "Hanggang magbago ang key na pinagmulan nito (bagong digest key o key-encryption key), na sinusuri sa bawat paggamit."
+  },
   "caches.store.keys.plaintext.title": {
     "en": "51cb646ea755ee9e",
     "text": "Mga naka-decrypt na signing key"
@@ -527,6 +591,22 @@
     "en": "1c2c57f79cea4fb0",
     "text": "Hanggang may maisulat sa ilalim ng ou=users ng realm."
   },
+  "caches.store.ldap.service-accounts.title": {
+    "en": "cf6e6b4822e4f795",
+    "text": "Mga service account sa directory"
+  },
+  "caches.store.ldap.service-accounts.description": {
+    "en": "c438b52f56cdcb94",
+    "text": "Ang mga pangalan ng mga service account ng isang realm, para hindi tanungin ng isang scope decision na nagtatanong kung may-ari ng isa ang isang tao ang directory tungkol sa lahat ng mga ito."
+  },
+  "caches.store.ldap.service-accounts.bound": {
+    "en": "3fab118dee48ec80",
+    "text": "Istruktural: isang listahan bawat realm, kasinlaki ng mga service account nito."
+  },
+  "caches.store.ldap.service-accounts.lifetime": {
+    "en": "6d41d8c344106c1b",
+    "text": "Hanggang may write na tumama sa isang entry na service account, o dati nang service account; pagkatapos ay muling tatanungin ng susunod na read ang directory."
+  },
   "caches.store.ldap.subtree-listings.title": {
     "en": "89d5ba5e5411f55d",
     "text": "Mga listahan ng container sa directory"
@@ -554,6 +634,22 @@
   "caches.store.ldap.username-index.lifetime": {
     "en": "b12dd09efefaa6bd",
     "text": "Hanggang masulatan ang directory sa paraang hindi kayang isama ng index; pagkatapos ay bubuuin itong muli ng susunod na lookup. Isang index bawat realm."
+  },
+  "caches.store.ldap.windowed-entryuuids.title": {
+    "en": "1bcb1ccebd4c7781",
+    "text": "Mga entryUUID na nasa window"
+  },
+  "caches.store.ldap.windowed-entryuuids.description": {
+    "en": "4bbc3a85d38472cd",
+    "text": "Sa prosesong may hawak na window ng directory, ang key kung saan huling natagpuan ang entryUUID ng bawat tao o device, para ma-resolve ang isang subject sa entry na hawak ng window nang hindi muling tinatanong ang store (#773). Sinusuri laban sa sariling entryUUID ng entry sa bawat paggamit."
+  },
+  "caches.store.ldap.windowed-entryuuids.bound": {
+    "en": "a4522667ab0d5562",
+    "text": "Ipinapatupad: ldap.workerCacheEntries bawat realm, inaalis muna ang pinakaluma."
+  },
+  "caches.store.ldap.windowed-entryuuids.lifetime": {
+    "en": "317464bd9b5bd06a",
+    "text": "Hanggang umalis sa window ang entry na pinangangalanan nito, mapalitan ng pangalan, o hindi na nagdadala ng entryUUID na iyon, na sinusuri sa bawat paggamit."
   },
   "caches.store.mail.outbox.title": {
     "en": "d40abea9379f4e22",
@@ -683,6 +779,22 @@
     "en": "bfe4788c0fa5b7fe",
     "text": "Ipinapatupad: 256 key set bawat realm; tinatanggal ang pinakaluma at kinukuha muli kapag kailangan na ulit."
   },
+  "caches.store.oauth2.declared-authorization-details-types.title": {
+    "en": "3f4c1bef936a03c4",
+    "text": "Mga idineklarang authorization_details type"
+  },
+  "caches.store.oauth2.declared-authorization-details-types.description": {
+    "en": "5eba0c7bb76a5960",
+    "text": "Ang mga RFC 9396 type na idinedeklara ng mga application ng isang realm, bawat isa kasama ang resource na sumasagot dito, para hindi bumuo ang isang authorization ng view ng bawat application para mahanap ang mga ito."
+  },
+  "caches.store.oauth2.declared-authorization-details-types.bound": {
+    "en": "d25b94e5d9062281",
+    "text": "Istruktural: isang sagot bawat realm, kasinlaki ng mga type na idinedeklara ng mga application nito."
+  },
+  "caches.store.oauth2.declared-authorization-details-types.lifetime": {
+    "en": "3bfa4ec2d7a5b1f4",
+    "text": "Hanggang may magbago sa ilalim ng ou=applications ng realm; pagkatapos ay muli itong bubuuin ng susunod na read."
+  },
   "caches.store.oauth2.redeemed-codes.title": {
     "en": "d05b2abe4dfcac4c",
     "text": "Mga na-redeem na authorization code"
@@ -702,6 +814,22 @@
   "caches.store.oauth2.redeemed-codes.hitMeaning": {
     "en": "55156810371e3ec1",
     "text": "isang code na na-redeem na, ipinakita muli"
+  },
+  "caches.store.oauth2.refresh-token-bookkeeping.title": {
+    "en": "c9c28d7d082aab14",
+    "text": "Mga record ng rotation ng refresh token"
+  },
+  "caches.store.oauth2.refresh-token-bookkeeping.description": {
+    "en": "38d9cf25fa52b3ad",
+    "text": "Isang record bawat refresh token at bawat family, para mabawi ng isang na-replay na refresh token ang family nito (RFC 9700), at kung ano ang inilabas ng bawat grant, para mabawi rin ng pagbawi sa isang refresh token ang access token na inilabas kasabay nito (RFC 7009)."
+  },
+  "caches.store.oauth2.refresh-token-bookkeeping.bound": {
+    "en": "945ea34a46306638",
+    "text": "Ipinapatupad: oauth2.maxRefreshTokenFamilies na record ng refresh token bawat realm, doble nito para sa inilabas ng isang grant; lampas doon, unang inaalis ang mga na-retire, saka ang pinakaluma, na may babala."
+  },
+  "caches.store.oauth2.refresh-token-bookkeeping.lifetime": {
+    "en": "584ca21b64df4c69",
+    "text": "Hanggang lumipas ang family window pagkatapos mailabas ang token; pagkatapos ay itinatapon ng caches.eject-expired job ang record."
   },
   "caches.store.oauth2.request-uri.title": {
     "en": "3ae35b709a8c09f7",
@@ -1090,6 +1218,18 @@
   "caches.store.risk.dataset-lookups.lifetime": {
     "en": "cabefdef4e47cbf3",
     "text": "Hanggang may ma-activate na dataset version, o tanggalin ito ng hangganan."
+  },
+  "caches.store.risk.population-users.title": {
+    "en": "ee5f57710fdd1b70",
+    "text": "Risk scoring: bilang ng tao sa bawat realm"
+  },
+  "caches.store.risk.population-users.description": {
+    "en": "cb24f916eda472c0",
+    "text": "Kung ilang tao na ang nag-sign in sa bawat realm, ang denominator ng smoothing term ng risk model, iniingatan para hindi bilangin ng isang sign-in ang bawat taong kailanman ay nag-sign in."
+  },
+  "caches.store.risk.population-users.bound": {
+    "en": "8154bb7a629a4263",
+    "text": "Structural: isang bilang bawat realm na may hindi bababa sa 1000 tao (naka-seal man o hindi), at may hanggang realms.maxCount na realm bukod sa default."
   },
   "caches.store.risk.standings.title": {
     "en": "492e058d1adf8354",

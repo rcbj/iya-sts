@@ -47,6 +47,9 @@ class WebShell {
   // The account menu's list of the browser's other accounts (#561), drawn
   // again in place when another tab changes them.
   static readonly ACCOUNTS_ID = 'sts-account-switch';
+  // The `name` every sidebar section's `<details>` shares, which makes them
+  // one exclusive group: opening one closes the other (#750, navBar()).
+  static readonly NAV_GROUP = 'sts-console-nav';
 
   /**
    * Draws a page's body inside the console's frame: the sidebar, the head
@@ -54,8 +57,9 @@ class WebShell {
    *
    * @param shell - the console's shell answer (`AdminConsole.shellJson()`)
    * @param page - `title`, `active` (the path that marks the nav), `up` (a
-   *   drill-down's way up, or null), `inner` (the body) and `path` (the
-   *   realm-relative path and query the page was asked with)
+   *   drill-down's way up, or null), `inner` (the body), `path` (the
+   *   realm-relative path and query the page was asked with) and, optional,
+   *   `openSection` (the one sidebar section drawn open, #750)
    * @returns the frame and the body, as the document's `<body>` content
    */
   static frame(shell: Json, page: Json): string {
@@ -309,11 +313,34 @@ class WebShell {
   // bold, because the reader is inside that section, and underlined so that
   // "the section you are in" cannot be read as "not clickable".
   //
-  // It is one `<nav>` holding one `<ul>` per section with a heading above it.
-  // The heading is plain text and NOT a link, for the reason the section is not
-  // a crumb: there is no page behind it. The section containing the page being
-  // drawn is marked, so a reader who arrived on a deep link can see where they
-  // are without reading every label.
+  // It is one `<nav>` holding one `<details>` per section, its `<summary>`
+  // the heading and its `<ul>` the pages. The heading is NOT a link, for the
+  // reason the section is not a crumb: there is no page behind it; what it
+  // does is open and close the section.
+  //
+  // EVERY SECTION IS CLOSED UNLESS THE READER OPENED IT, AND ONE IS OPEN AT A
+  // TIME (#750, rcbj: "everything collapsed by default and stay collapsed
+  // until the user opens a section. Only one section of the list should be
+  // open at a time"). The list was five sections and some eighty links, and
+  // the page somebody came for was a scroll away. So:
+  //
+  //   * Nothing opens itself — not even the section holding the page being
+  //     drawn. `page.openSection` is the ONE section drawn open, and it is
+  //     what the runtime remembers the reader opened (`onNavToggle()`), so a
+  //     section stays open as they move from page to page in that tab; a
+  //     fresh load, a new tab or the server-drawn console names none.
+  //   * The one-open rule is the browser's: every section's `<details>`
+  //     carries the same `name`, which makes them an exclusive group with no
+  //     script. A browser that predates `name` gets the same rule from
+  //     `onNavToggle()`, which closes the others itself.
+  //   * `<summary>` is the control, so a keyboard reaches it and a screen
+  //     reader announces it expanded or collapsed with no ARIA written here.
+  //
+  // The section containing the page being drawn is still MARKED (`current`,
+  // a rule down its left and the heading in the brand colour) whether or not
+  // it is open, so a reader who arrived on a deep link can see where they
+  // are without opening every section; the page's own entry inside it keeps
+  // its marker too.
   //
   // A GROUP inside a section is drawn as an `<li>` holding a heading and a
   // `<ul>` of its own, rather than as a second `<ul>` beside the first: a group
@@ -326,10 +353,12 @@ class WebShell {
    * Draws the console's navigation: the realm chooser and every section.
    *
    * A realm administrator sees only the pages of their realm and no chooser.
+   * Every section is drawn closed but `page.openSection`'s (#750).
    *
-   * @param active - the path of the page being drawn
-   * @param up - upTo()'s answer on a drill-down, or nothing
-   * @param req - the request, or nothing
+   * @param shell - the console's shell answer
+   * @param page - the page being drawn: `active`, `up`, `path` and, where
+   *   the reader opened one, `openSection` (a section's `data-section` key)
+   * @param t - the translator
    * @returns the `<nav>` as HTML
    */
   static navBar(shell, page, t) {
@@ -354,12 +383,16 @@ class WebShell {
         const links = section.items.map(function (item) {
           return WebShell.navItem(item, active, up, t);
         }).join('');
+        const key = WebShell.slugOf(section.title);
         // The title in the reader's language; `what` is the server's prose
         // and is drawn as it came.
-        return '<div class="navsec' + (inThisSection ? ' open' : '') + '">' +
-          '<p class="navhead" title="' + kit.esc(section.what) + '">' +
+        return '<details class="navsec' +
+          (inThisSection ? ' current' : '') + '" name="' +
+          WebShell.NAV_GROUP + '" data-section="' + kit.esc(key) + '"' +
+          (page.openSection === key ? ' open' : '') + '>' +
+          '<summary class="navhead" title="' + kit.esc(section.what) + '">' +
           kit.esc(WebShell.sectionTitle(t, 'section', section.title)) +
-          '</p><ul>' + links + '</ul></div>';
+          '</summary><ul>' + links + '</ul></details>';
       }).join('') + '</nav>';
     return html;
   }
@@ -925,8 +958,21 @@ class WebShell {
   // in flight and discards the tab's views — which the runtime does on the
   // press (`ConsoleRuntime.switchAccount()`), and an account's key is
   // carried, never a sid.
+  //
+  // **SWITCH USER IS A GROUP OF ITS OWN SINCE #751** (rcbj: "an option to
+  // switch users while keeping the current user signed in"). The heading is
+  // drawn whether or not another account is signed in yet — with none it
+  // says so, so the option is where the reader looks for it rather than
+  // appearing only once a second account exists — and a line under the
+  // buttons says what #561 already did and the reader could not see: the
+  // account this tab leaves STAYS SIGNED IN, and switching back is a press
+  // here, not a password. Still only with the setting on: off, the menu is
+  // the one it was before #561, to the byte (`tests/multi_account_tabs.js`
+  // 6) — signing in as somebody else there ENDS the browser's session, so an
+  // option promising otherwise would be false.
   /**
-   * Draws the account menu's list of the browser's other accounts.
+   * Draws the account menu's Switch user group: the browser's other
+   * accounts, Sign in with another account, and what a switch keeps.
    *
    * @param list - `GET /authn-api/accounts`'s answer
    * @param subject - this tab's subject
@@ -938,9 +984,10 @@ class WebShell {
     const others = WebAccounts.live(list).filter(function (one) {
       return String(one.sub || '') !== String(subject || '');
     });
-    return (others.length
-      ? '<p class="usermenuwho">' + t.html('console.shell.menu.switch') +
-        '</p>' + others.map(function (one) {
+    return '<p class="usermenuwho">' + t.html('console.shell.menu.switch') +
+      '</p>' +
+      (others.length
+        ? others.map(function (one) {
           return '<button type="button" class="linklike" ' +
             'data-account-action="switch" data-account-key="' +
             kit.esc(one.key) + '" title="' +
@@ -951,10 +998,13 @@ class WebShell {
               ? ' <span>' + kit.esc(one.username) + '</span>' : '') +
             '</button>';
         }).join('')
-      : '') +
+        : '<p class="usermenuwho" data-account-none="1">' +
+          t.html('console.shell.menu.switch.none') + '</p>') +
       '<button type="button" class="linklike" data-account-action="another" ' +
       'title="' + kit.esc(t.text('console.shell.menu.another.title')) + '">' +
-      t.html('console.shell.menu.another') + '</button>';
+      t.html('console.shell.menu.another') + '</button>' +
+      '<p class="usermenuwho">' + t.html('console.shell.menu.switch.kept') +
+      '</p>';
   }
 
   // ---------------------------------------------------------------------------

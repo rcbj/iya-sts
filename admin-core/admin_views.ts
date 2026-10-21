@@ -132,6 +132,7 @@ import listenerMap = require('../common/listener_map');
 import persistence = require('../persistence/persistence');
 import mode = require('../common/mode');
 import realms = require('../common/realms');
+import cacheRegistry = require('../common/cache_registry');
 import stats = require('../common/admin_stats');
 import oidcRp = require('../common/oidc_rp');
 import rbac = require('../admin-ui/admin_rbac');
@@ -967,6 +968,12 @@ interface AdminViewsDeps {
  * Each view computes the machine answer and reaches no markup, so a page and
  * its operation cannot disagree.
  */
+// realm -> `{ version, at, value, building }`: `/admin/users`' kept
+// population and census, or the build of it in flight
+// (`AdminViews.peopleAndCensusAsync()`). One per process, as every cache
+// here is, and described to /admin/caches below the class (rule 3ap).
+const populationHeld = new Map<string, any>();
+
 class AdminViews {
   /**
    * Builds the views over their dependencies.
@@ -987,6 +994,33 @@ class AdminViews {
    * The routes whose answers carry the map keys (the delegation namespace).
    */
   static readonly MAP_KEY_PROSE_ROUTES = MAP_KEY_PROSE_ROUTES;
+  /**
+   * How long `/admin/users`' population and census are kept while the
+   * directory's people do not move (2026-10-21; `peopleAndCensusAsync()`).
+   */
+  static readonly USERS_POPULATION_HOLD_MS = 15000;
+  /**
+   * How old a kept population may be and still answer a page asked without
+   * a filter while it is rebuilt (2026-10-21; `peopleAndCensusAsync()`).
+   */
+  static readonly USERS_POPULATION_STALE_MS = 120000;
+
+  /**
+   * Whether a users-list request pages without a search or a filter, so a
+   * kept population may answer it while it is rebuilt.
+   *
+   * @param req - the request
+   * @returns true when it names none of q, factor, protocol and kind
+   */
+  static unfiltered(req): boolean {
+    helpers.log.debug("Entering AdminViews.unfiltered().");
+    const query = (req && req.query) || {};
+    const filtered = ['q', 'factor', 'protocol', 'kind'].some(function (name) {
+      return String(query[name] || '').trim() !== '';
+    });
+    helpers.log.debug("Leaving AdminViews.unfiltered().");
+    return !filtered;
+  }
 
   /**
    * Extracts the kerberos namespace (#543): `/admin-api/kerberos/principals`'
@@ -9652,6 +9686,114 @@ class AdminViews {
     };
   }
 
+  // ---------------------------------------------------------------------------
+  // PROTOCOLS → SAML → IdP-Initiated SSO (#749): the realm's SAML 2.0 and
+  // SAML 1.1 applications a sign-in may be STARTED HERE for, one row per
+  // application and family, each with the link a person follows.
+  //
+  // **THE QUESTION IS THE DOOR'S OWN, ASKED THROUGH THE DOOR'S OWN
+  // FUNCTIONS.** Which families an entry can be launched in is
+  // `LaunchLinks.protocolsOf()`, and whether the switch is on for it is
+  // `LaunchLinks.enabled()` — the realm's `saml2.idpInitiatedSso` /
+  // `saml11.idpInitiatedSso` unless the entry's `saml2IdpInitiatedSso` /
+  // `saml11IdpInitiatedSso` says otherwise, through
+  // `applications.settingFor()` — which is what `/launch/{app}`
+  // (`launch/launch.ts`) asks before it hands the browser on. A second
+  // reading here would be a tab that lists an application the door then
+  // refuses (STS-LAUNCH-0005). What a row still LACKS — an assertion
+  // consumer service to send the answer to — is `missingOf()`'s, carried on
+  // the row rather than used to drop it: the switch is on, and the operator
+  // who turned it on needs to see that the link cannot work yet
+  // (STS-LAUNCH-0006), which is what the application's own launch card says
+  // too.
+  //
+  // **THE LINK IS `/launch/{app}?protocol=…`**, the one URL
+  // docs/idp-initiated-sso.md gives a person and the portal's Sign in link
+  // uses (`LaunchLinks.launchUrl()`, built where the sign-in service is
+  // advertised, realm prefix included); the protocol's own endpoint
+  // (`/saml2/unsolicited/{sp}`, `/saml11/sso/{rp}`) rides beside it, as it
+  // does on the launch card, for a partner who wants the native form.
+  //
+  // **BOUNDED AS ITS NEIGHBOURS ARE.** The rows come from
+  // `applications.list()`, the ambient realm's kept listing of
+  // `ou=applications` — what `saml2ServiceProviders()` and
+  // `saml11RelyingParties()` read — and never from `ou=users` or
+  // `ou=devices`, which `tests/no_full_directory_walk_in_requests.js`
+  // guards; only the page shown is decorated (pagedRows()). The list is
+  // `idpInitiated`, paged on `idpInitiatedPage` — pagingOf()'s name for a
+  // list that shares its page with others, here the SAML 2.0 tab's `page` —
+  // with `per` shared.
+  // ---------------------------------------------------------------------------
+  /**
+   * Builds the IdP-Initiated SSO tab's JSON: the SAML applications a sign-in
+   * may be started here for, one page of them, and the realm's two switches.
+   *
+   * @param req - the request
+   * @returns the JSON
+   */
+  samlIdpInitiatedJson(req) {
+    const { log, baseUrlOf, applications, config } = this.deps;
+    log.debug("Entering AdminViews.samlIdpInitiatedJson().");
+    const base = baseUrlOf(req);
+    const families = ['saml2', 'saml11'];
+    const candidates = [];
+    applications.list().forEach(function (view) {
+      LaunchLinks.protocolsOf(view).forEach(function (row) {
+        if (families.indexOf(row.id) < 0 ||
+            !LaunchLinks.enabled(view.identifier, row.id)) {
+          return;
+        }
+        candidates.push({ view: view, protocol: row });
+      });
+    });
+    // A stable order, so a page holds the same rows between two clicks: by
+    // identifier, then SAML 2.0 before SAML 1.1.
+    candidates.sort(function (a, b) {
+      const byId = String(a.view.identifier)
+        .localeCompare(String(b.view.identifier));
+      return byId || families.indexOf(a.protocol.id) -
+                     families.indexOf(b.protocol.id);
+    });
+    const paged = this.pagedRows(req.query || {}, candidates, {
+      name: 'idpInitiated', noun: 'sign-in links',
+      decorate: function (one) {
+        const view = one.view;
+        const fields = view.fields || {};
+        const entity = Array.isArray(fields.samlEntityId)
+          ? fields.samlEntityId[0] : fields.samlEntityId;
+        return {
+          identifier: view.identifier,
+          name: view.name || '',
+          entityId: String(entity || '') || view.identifier,
+          protocol: one.protocol.id,
+          label: one.protocol.label,
+          attribute: one.protocol.attribute,
+          launchUrl: LaunchLinks.launchUrl(base, view.identifier,
+                                           one.protocol.id),
+          endpoint: LaunchLinks.endpointUrl(base, view, one.protocol.id, ''),
+          missing: LaunchLinks.missingOf(view, one.protocol.id)
+        };
+      }
+    });
+    // THE REALM'S TWO SWITCHES, as the door reads one for an application
+    // with nothing on its entry: `settingFor()` with no identifier, so a
+    // mode that forces a setting is reported as the mode has it.
+    const realm = families.map(function (id) {
+      const row = LaunchLinks.protocol(id);
+      return { protocol: id, label: row.label, setting: row.setting,
+               attribute: row.attribute,
+               enabled: applications.settingFor('', row.setting,
+                                                config) === true };
+    });
+    log.debug("Leaving AdminViews.samlIdpInitiatedJson(). " +
+              candidates.length + " row(s).");
+    return {
+      idpInitiated: paged.shown,
+      idpInitiatedPaging: this.pagingJson(paged.paging),
+      realmSwitches: realm
+    };
+  }
+
   // WHAT /admin/authorization-servers ANSWERS: the profiles, and one of them.
   /**
    * Builds `/admin/authorization-servers`'s list of profiles.
@@ -12497,14 +12639,16 @@ class AdminViews {
     // WHO HOLDS A LIVE SIGN-ON SESSION, counted for the page's tile (#446):
     // one person with three browsers is one, by the same identity key the
     // rows are filed under.
-    const liveByUser: Record<string, number> = {};
-    this.signOnSessionRows().forEach(function (session) {
-      if (session.expired) {
-        return;
-      }
-      const key = stats.identityKeyOf(session.username || session.sub);
-      liveByUser[key] = (liveByUser[key] || 0) + 1;
-    });
+    //
+    // **NOT HERE FOR A CALLER THAT CAN WAIT (2026-10-21)**: `deferTiles`
+    // leaves this and the directory's tiles below to
+    // `usersListTilesAsync()`, which asks the store for both on its read
+    // pool. Counted here they read every live session's sealed body and
+    // every credential holder synchronously — on 8081 a request worker
+    // stood still for nine seconds and sign-ins fell to a fifth a second.
+    const deferTiles = !!(opts && opts.deferTiles);
+    const liveByUser: Record<string, number> = deferTiles ? {}
+      : this.liveSessionsByUser();
     // -----------------------------------------------------------------------
     // THE TILES, OVER THE WHOLE DIRECTORY (#610, 2026-10-13).
     //
@@ -12527,23 +12671,9 @@ class AdminViews {
     // the page then draws the list's counts, as it always did.
     // -----------------------------------------------------------------------
     const { credentials } = this.deps;
-    let directoryCounts = null;
-    const tallied = credentials.directoryFactorCounts();
-    if (tallied) {
-      const named = credentials.directoryPeopleNamed(
-        all.filter(function (row) {
-          return row.authenticated;
-        }).map(function (row) {
-          return row.key;
-        }));
-      const signedIn = named === null ? null
-        : Math.min(named, tallied.people);
-      directoryCounts = Object.assign({}, tallied, {
-        signedInHere: signedIn,
-        neverSignedInHere: signedIn === null ? null
-          : tallied.people - signedIn
-      });
-    }
+    const directoryCounts = deferTiles ? null
+      : this.directoryTilesOf(all, credentials.directoryFactorCounts(),
+                              credentials.directoryPeopleNamed);
     const pagingJson = this.pagingJson(paging);
     log.debug("Leaving AdminViews.usersListJson().");
     return {
@@ -12614,6 +12744,107 @@ class AdminViews {
       };
       }())
     };
+  }
+
+  // Who holds a live sign-on session, by identity key: every session walked.
+  // The synchronous door, for a process whose sessions are in memory.
+  private liveSessionsByUser(): Record<string, number> {
+    const { log, stats } = this.deps;
+    log.debug("Entering AdminViews.liveSessionsByUser().");
+    const liveByUser: Record<string, number> = {};
+    this.signOnSessionRows().forEach(function (session) {
+      if (session.expired) {
+        return;
+      }
+      const key = stats.identityKeyOf(session.username || session.sub);
+      liveByUser[key] = (liveByUser[key] || 0) + 1;
+    });
+    log.debug("Leaving AdminViews.liveSessionsByUser().");
+    return liveByUser;
+  }
+
+  // The directory's tiles from its tallies and the count of the list's
+  // signed-in names that are people there; null where it offers no tally.
+  private directoryTilesOf(all, tallied, named) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.directoryTilesOf().");
+    if (!tallied) {
+      log.debug("Leaving AdminViews.directoryTilesOf(). No tally.");
+      return null;
+    }
+    const n = typeof named === 'function' ? named(this.signedInKeys(all))
+      : named;
+    const signedIn = n === null || n === undefined ? null
+      : Math.min(n, tallied.people);
+    log.debug("Leaving AdminViews.directoryTilesOf().");
+    return Object.assign({}, tallied, {
+      signedInHere: signedIn,
+      neverSignedInHere: signedIn === null ? null
+        : tallied.people - signedIn
+    });
+  }
+
+  // The keys of the list's rows the register has seen authenticate.
+  private signedInKeys(all) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.signedInKeys().");
+    log.debug("Leaving AdminViews.signedInKeys().");
+    return all.filter(function (row) {
+      return row.authenticated;
+    }).map(function (row) {
+      return row.key;
+    });
+  }
+
+  // THE USERS LIST'S TILES, ASKED ASYNCHRONOUSLY (2026-10-21), into a view
+  // `usersListJson()` built with `deferTiles`: the directory's tallies and
+  // its count of the signed-in names on the driver's read pool, and the live
+  // sign-on sessions from the session index — how many people hold one, and
+  // each shown row's own — so nothing the page asks stands the worker still.
+  // A process whose sessions are in memory walks them, as before.
+  /**
+   * Fills a deferred users list's tiles, the store asked asynchronously.
+   *
+   * @param view - what `usersListJson()` answered with `deferTiles`
+   * @returns a promise of the same view
+   */
+  async usersListTilesAsync(view) {
+    const { log, credentials } = this.deps;
+    log.debug("Entering AdminViews.usersListTilesAsync().");
+    const json = view.json;
+    const tallied = await credentials.directoryFactorCountsAsync();
+    const named = tallied
+      ? await credentials.directoryPeopleNamedAsync(
+        this.signedInKeys(view.all))
+      : null;
+    const directoryCounts = this.directoryTilesOf(view.all, tallied, named);
+    json.directoryCounts = directoryCounts;
+    json.directoryPeople = directoryCounts ? directoryCounts.people
+      : view.population.directoryPeople;
+    const users = json.users || [];
+    const names = [];
+    users.forEach(function (row) {
+      names.push(row.key);
+      if (row.name && row.name !== row.key) {
+        names.push(row.name);
+      }
+    });
+    const live = await authn.liveSessionCountsAsync(names);
+    if (live) {
+      json.withActiveSession = live.people;
+      users.forEach(function (row) {
+        row.liveSessions = live.byUsername.get(row.key) ||
+          (row.name ? live.byUsername.get(row.name) : 0) || 0;
+      });
+    } else {
+      const liveByUser = this.liveSessionsByUser();
+      json.withActiveSession = Object.keys(liveByUser).length;
+      users.forEach(function (row) {
+        row.liveSessions = liveByUser[row.key] || 0;
+      });
+    }
+    log.debug("Leaving AdminViews.usersListTilesAsync().");
+    return view;
   }
 
   /**
@@ -12728,7 +12959,9 @@ class AdminViews {
     const { log, credentials, stats } = this.deps;
     const self = this;
     log.debug("Entering AdminViews.peopleRows().");
-    const seen = stats.userRows();
+    // `seen`: the register's rows already built (#790,
+    // `peopleAndCensusAsync()`), or built here.
+    const seen = (opts && opts.seen) || stats.userRows();
     const byKey = new Map();
     seen.forEach(function (row) {
       // `factors` is filled below. Declared here so that every row has the
@@ -12907,8 +13140,13 @@ class AdminViews {
     rows.forEach(function (row) {
       let merged = null;
       (spellings.get(row.key) || []).forEach(function (holder) {
-        merged = self.mergeFactors(merged,
-          facts.get(String(holder.username).trim()) || {});
+        const held = facts.get(String(holder.username).trim());
+        // A name the census could not answer (#786: the store refused it)
+        // adds nothing, so a row none of whose names was answered has no
+        // factors — unknown, counted in no tile — and not "no credential".
+        if (held) {
+          merged = self.mergeFactors(merged, held);
+        }
       });
       out.set(row.key, merged);
     });
@@ -12928,11 +13166,101 @@ class AdminViews {
    * @returns a promise of `{ population, census }`, as `usersListJson()`
    *   takes them in its options
    */
-  async peopleAndCensusAsync() {
-    const { log } = this.deps;
+  // `opts.mayBeStale` (2026-10-21): the caller pages without a filter, and
+  // a population up to USERS_POPULATION_STALE_MS old serves it AT ONCE while
+  // one rebuild runs behind it. Under a sign-in load the directory's version
+  // moves with every sign-in and the two request workers each keep their
+  // own, so a population that must be current was never current: every page
+  // of /admin/users waited 21–25 s for a build on 8081. A search or a filter
+  // (`q`, `factor`, `protocol`, `kind`) still waits for one that is, so a
+  // person just written is found by name.
+  async peopleAndCensusAsync(opts?: { mayBeStale?: boolean }) {
+    const { log, realms, credentials } = this.deps;
     log.debug("Entering AdminViews.peopleAndCensusAsync().");
+    // KEPT FOR A FEW SECONDS, ONE BUILD AT A TIME (2026-10-21). Building it
+    // is every register identity and every directory person's census — 25 s
+    // a page on 8081 at 67,000 identities under a sign-in load — and paging
+    // asked it again for every page. It is kept per realm for
+    // USERS_POPULATION_HOLD_MS (the directory tallies' ten-second reading,
+    // `credentialTallies()`, is the precedent) and is current only while
+    // the directory's people have not moved, here or by a change applied
+    // from elsewhere; a sign-in, which moves only the register, shows within
+    // that time. Concurrent askers share one build.
+    const realmId = String(realms.currentId());
+    const version = credentials.directoryPeopleVersion();
+    let entry = populationHeld.get(realmId);
+    if (!entry) {
+      entry = { version: null, at: 0, value: null, building: null };
+      populationHeld.set(realmId, entry);
+    }
+    const age = Date.now() - entry.at;
+    const current = entry.value !== null && entry.version === version &&
+      age <= AdminViews.USERS_POPULATION_HOLD_MS;
+    if (current) {
+      log.debug("Leaving AdminViews.peopleAndCensusAsync(). Kept.");
+      return entry.value;
+    }
+    const building = entry.building || this.rebuildPopulation(realmId, entry,
+                                                              version);
+    if (opts && opts.mayBeStale && entry.value !== null &&
+        age <= AdminViews.USERS_POPULATION_STALE_MS) {
+      // Served as it is; the rebuild's refusal is logged where it is caught.
+      building.catch(function (e) {
+        log.debug("Caught in AdminViews.peopleAndCensusAsync(), behind a " +
+                  "kept population: " + ((e && e.message) || e));
+      });
+      log.debug("Leaving AdminViews.peopleAndCensusAsync(). Kept, " +
+                "rebuilding.");
+      return entry.value;
+    }
+    log.debug("Leaving AdminViews.peopleAndCensusAsync(). Building.");
+    return building;
+  }
+
+  // One build of a realm's population into its entry; the entry keeps what
+  // it held until the build answers, and a failed build changes nothing.
+  private rebuildPopulation(realmId, entry, version) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.rebuildPopulation().");
+    entry.building = this.buildPeopleAndCensusAsync().then((value) => {
+      entry.value = value;
+      entry.version = version;
+      entry.at = Date.now();
+      entry.building = null;
+      return value;
+    }, (e) => {
+      log.debug("Caught in AdminViews.rebuildPopulation(): " +
+                ((e && e.message) || e));
+      entry.building = null;
+      throw e;
+    });
+    log.debug("Leaving AdminViews.rebuildPopulation().");
+    return entry.building;
+  }
+
+  // The build `peopleAndCensusAsync()` keeps.
+  private async buildPeopleAndCensusAsync() {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.buildPeopleAndCensusAsync().");
     const first = await this.directoryFirstNames();
-    const population = this.peopleRows({ directoryFirst: first });
+    // The register's subjects resolved asynchronously (#790): on 8081 they
+    // were ~228,000, asked synchronously, and the request spent its
+    // directory budget and answered 503.
+    //
+    // **AND THE POPULATION BUILT INSIDE THE SAME ANSWER (2026-10-21).** It
+    // was built after it, so `peopleRows()`'s `identityKeyOf()` of every
+    // population row — a `urn:uuid:` name the register never resolved among
+    // them — asked the directory synchronously, one subject at a time: 900
+    // questions for 900 subjects in tests/users_population_async.js P4, and
+    // 66,976 on 8081, on the worker that serves sign-ins.
+    const stats = this.deps.stats;
+    const build = () => {
+      return this.peopleRows({ directoryFirst: first,
+                               seen: stats.userRows() });
+    };
+    const population = typeof stats.withSubjectsResolvedAsync === 'function'
+      ? await stats.withSubjectsResolvedAsync(build)
+      : this.peopleRows({ directoryFirst: first });
     const census = await this.peopleCensusAsync(population, population.rows);
     log.debug("Leaving AdminViews.peopleAndCensusAsync().");
     return { population: population, census: census };
@@ -13715,9 +14043,13 @@ class AdminViews {
     log.debug("Entering AdminViews.mfaRosterJsonAsync().");
     // The population AND its census (#621): the census was 5,000
     // synchronous store questions here in a windowed process.
-    const asked = await this.peopleAndCensusAsync();
+    const asked = await this.peopleAndCensusAsync({
+      mayBeStale: AdminViews.unfiltered(req) });
+    // The tiles too (2026-10-21), for `usersJsonAsync()`'s reason.
+    const list = await this.usersListTilesAsync(this.usersListJson(req,
+      Object.assign({}, asked, { deferTiles: true })));
     log.debug("Leaving AdminViews.mfaRosterJsonAsync().");
-    return this.mfaRosterJson(req, asked);
+    return this.mfaRosterJson(req, Object.assign({}, asked, { list: list }));
   }
 
   // `usersJson()` FOR A CALLER THAT CAN WAIT (#616): the list's directory
@@ -13736,9 +14068,16 @@ class AdminViews {
     log.debug("Entering AdminViews.usersJsonAsync().");
     const wanted = String((req.query || {}).user || '').trim();
     // The population AND its census (#621), asked asynchronously.
-    const asked = wanted ? null : await this.peopleAndCensusAsync();
+    if (wanted) {
+      log.debug("Leaving AdminViews.usersJsonAsync(). One person.");
+      return this.usersJson(req, risk, null);
+    }
+    const asked = await this.peopleAndCensusAsync({
+      mayBeStale: AdminViews.unfiltered(req) });
+    const view = await this.usersListTilesAsync(this.usersListJson(req,
+      Object.assign({}, asked, { deferTiles: true })));
     log.debug("Leaving AdminViews.usersJsonAsync().");
-    return this.usersJson(req, risk, asked);
+    return view.json;
   }
 
   /**
@@ -14235,7 +14574,7 @@ class AdminViews {
   mfaRosterJson(req, opts?) {
     const { log, totp, webauthnPolicy } = this.deps;
     log.debug("Entering AdminViews.mfaRosterJson().");
-    const list = this.usersListJson(req, opts);
+    const list = (opts && opts.list) || this.usersListJson(req, opts);
     const people = (list.json.users || []).map(function (row) {
       const f = row.factors || {};
       return {
@@ -14466,6 +14805,45 @@ class AdminViews {
 // built from `defaultDeps()` when the module loads (see
 // `common/instance_slot.ts`).
 // ---------------------------------------------------------------------------
+// THE KEPT POPULATION, DESCRIBED (rule 3ap, 2026-10-21).
+cacheRegistry.register({
+  name: 'admin.users-population',
+  title: 'Users page population, kept',
+  description: 'Every identity the register holds and every directory ' +
+    'person, with each one\'s census of credentials: what /admin/users ' +
+    'and /admin-api/users page, filter and count over. Building it is ' +
+    'every register subject resolved and every person\'s entry read, so ' +
+    'paging keeps it rather than building it for each page.',
+  owner: 'admin-core/admin_views.ts',
+  scope: 'realm',
+  maxEntries: function (): number {
+    return 1;
+  },
+  bound: 'Structural: one population per realm, built at most once at a ' +
+    'time.',
+  lifetime: function (): string {
+    return 'Fifteen seconds, and at once when anything under the ' +
+      'realm\'s ou=users is written, here or applied from another process.';
+  },
+  entries: function (): any[] {
+    const out = [];
+    populationHeld.forEach(function (held: any, realmId: string) {
+      if (!held.value) {
+        return;
+      }
+      out.push({
+        realm: realmId,
+        key: 'ou=users and the register (' +
+          held.value.population.rows.length + ' rows)',
+        validUntil: held.at + AdminViews.USERS_POPULATION_HOLD_MS,
+        valid: Date.now() - held.at <= AdminViews.USERS_POPULATION_HOLD_MS,
+        basis: 'subtree version'
+      });
+    });
+    return out;
+  }
+});
+
 const slot = new InstanceSlot<AdminViews>(
   'admin-core/admin_views',
   () => new AdminViews(AdminViews.defaultDeps()),
@@ -14554,6 +14932,7 @@ export = {
   saml11DetailJson: slot.forward('saml11DetailJson'),
   saml11Json: slot.forward('saml11Json'),
   saml11ListJson: slot.forward('saml11ListJson'),
+  samlIdpInitiatedJson: slot.forward('samlIdpInitiatedJson'),
   saml2ServiceProviders: slot.forward('saml2ServiceProviders'),
   saml2Facts: slot.forward('saml2Facts'),
   valuesFor: slot.forward('valuesFor'),

@@ -46,7 +46,9 @@ type Json = any;
  * `<list>Page`.
  */
 const REFRESH_KEPT = ['page', 'per', 'stepup', 'gnapstepup', 'enrolled',
-                      'named'];
+                      'named',
+                      // The DID `/portal/self-issued/did` shows (2026-10-20).
+                      'subject'];
 
 /**
  * The portal's frame. A static utility class; it holds no state.
@@ -89,8 +91,9 @@ class PortalShell {
    * @returns the heading, as text
    */
   static headingFor(active: string, t: Json): string {
+    const parent = PortalShell.navPathFor(active);
     const row = kit.navPages().filter(function (one: Json): boolean {
-      return one.path === active;
+      return one.path === parent;
     })[0];
     // A COMPOSED KEY, built first: the catalog test's scan reads only a
     // literal key quoted in the call, and holds `NAV` to the catalog by its
@@ -98,6 +101,31 @@ class PortalShell {
     const key = 'portal.nav.' + kit.navSlug(row ? row.path : kit.BASE) +
       '.heading';
     return t.text(key);
+  }
+
+  // A SUB-PAGE'S PLACE IN THE COLUMN (2026-10-20, the first:
+  // `/portal/self-issued/did`): a page the column does not list is headed,
+  // and marked as open, as the deepest listed page whose path is a prefix
+  // of its own — never the overview's, which every path would match.
+  /**
+   * Returns the column's entry a page belongs under: its own path where the
+   * column lists it, else the deepest listed path it is under.
+   *
+   * @param active - the page's path
+   * @returns the column's path
+   */
+  static navPathFor(active: string): string {
+    const listed = kit.navPages().map(function (one: Json): string {
+      return String(one.path);
+    });
+    if (listed.indexOf(active) >= 0) {
+      return active;
+    }
+    return listed.filter(function (path: string): boolean {
+      return path !== kit.BASE && String(active).indexOf(path + '/') === 0;
+    }).sort(function (a: string, b: string): number {
+      return b.length - a.length;
+    })[0] || active;
   }
 
   /**
@@ -115,8 +143,9 @@ class PortalShell {
     };
     return '<nav aria-label="' + kit.esc(t.text('portal.shell.navAria')) +
       '">' + kit.NAV.map(function (section: Json): string {
+        const parent = PortalShell.navPathFor(active);
         const here = section.items.some(function (item: Json): boolean {
-          return item.path === active;
+          return item.path === parent;
         });
         const what = 'portal.section.' + section.key + '.what';
         const title = 'portal.section.' + section.key + '.title';
@@ -275,9 +304,16 @@ class PortalShell {
       PortalShell.accountItems(list, subject, t) + '</div></details>';
   }
 
+  // **SWITCH USER (#751)**: the summary reads *Switch user*, and the panel
+  // is drawn whether or not another account is signed in yet — with none it
+  // says so — closing on the line that says the account this tab leaves
+  // STAYS SIGNED IN, which #561 did and nothing on the page said. The
+  // console's group is the same (`admin-ui/web_shell.ts`,
+  // `accountItems()`); off, neither is drawn.
   /**
    * Draws the account menu's items: a button per other signed-in account,
-   * and Sign in with another account.
+   * or a line saying there is none, Sign in with another account, and what
+   * a switch keeps.
    *
    * @param list - the browser's account list
    * @param subject - this tab's subject
@@ -288,20 +324,24 @@ class PortalShell {
     const others = WebAccounts.live(list).filter(function (one: Json) {
       return String(one.sub || '') !== String(subject || '');
     });
-    return others.map(function (one: Json): string {
-      const name = WebAccounts.nameOf(one);
-      return '<button type="button" class="linklike" ' +
-        'data-account-action="switch" data-account-key="' +
-        kit.esc(one.key) + '" title="' +
-        kit.esc(t.text('portal.accounts.switchTitle', { user: name })) +
-        '">' + kit.esc(name) +
-        (one.username && one.username !== name
-          ? ' <span>' + kit.esc(one.username) + '</span>' : '') +
-        '</button>';
-    }).join('') +
+    return (others.length
+      ? others.map(function (one: Json): string {
+        const name = WebAccounts.nameOf(one);
+        return '<button type="button" class="linklike" ' +
+          'data-account-action="switch" data-account-key="' +
+          kit.esc(one.key) + '" title="' +
+          kit.esc(t.text('portal.accounts.switchTitle', { user: name })) +
+          '">' + kit.esc(name) +
+          (one.username && one.username !== name
+            ? ' <span>' + kit.esc(one.username) + '</span>' : '') +
+          '</button>';
+      }).join('')
+      : '<p class="usermenunote" data-account-none="1">' +
+        t.html('portal.accounts.none') + '</p>') +
       '<button type="button" class="linklike" data-account-action="another" ' +
       'title="' + kit.esc(t.text('portal.accounts.anotherTitle')) + '">' +
-      t.html('portal.accounts.another') + '</button>';
+      t.html('portal.accounts.another') + '</button>' +
+      '<p class="usermenunote">' + t.html('portal.accounts.kept') + '</p>';
   }
 
   /**

@@ -356,9 +356,8 @@ A credential stops signing anybody in after any of these:
   every credential issued up to that moment. The person's own Global logout
   on `/logout` leaves the credential, and the DID it is bound to, valid;
 * an administrator's revocation on `/admin/tokens`;
-* a status that is not VALID, set on the Credential status tab at
-  `/admin/vc#vc-tab-status` or by either of the
-  above.
+* a status that is not VALID, set on Monitoring → Verifiable Credentials
+  at `/admin/vc/monitor` or by either of the above.
 
 An ordinary sign-out of one application disowns nothing, and the person signs
 back in with the wallet they hold. A credential minted on an access token that
@@ -401,13 +400,47 @@ never the Self-Issued OP itself.
     `remove-self-issued-subject`, `GET /admin-api/users/self-issued-subjects`).
 
   A subject belongs to one person per realm, and a person may hold ten.
+  **Each enrolment records how it was made**: `proof: "wallet"` (the person
+  proved it) or `"admin"` (by value, unproven), shown on both pages and in
+  the API's list. Proving a subject already enrolled for you proves it
+  again — that is how an administrator's entry becomes a proved one. A
+  wallet enrolment is audited (`portal.siop.enrol`).
 * **What is checked** (SIOPv2 section 11.1): `iss` equals `sub`; a JWK
   Thumbprint subject is the thumbprint of `sub_jwk` (a private key there is
   refused); a DID subject's `kid` is one of its authentication methods; the
   signature (never `none`); `aud` is this Verifier's Client Identifier;
   `nonce`; `exp`; and `iat` no older than `oid4vp.siopIdTokenMaxAgeS`. A
-  `did:web` is fetched only once it is enrolled, through the outbound policy
-  every fetch here obeys.
+  `did:web` is fetched only once it is enrolled — or for its own enrolment,
+  below — through the outbound policy every fetch here obeys, and only for
+  a token whose `aud`, `nonce`, `exp` and `iat` already passed.
+* **A `did:web`'s key is pinned.** Its document lives on a host whose owner
+  can change, so the enrolment records the RFC 7638 thumbprint of the key:
+  the one that signed the proof, or — enrolled by an administrator — every
+  `authentication` key the document names at that moment (the document is
+  fetched then, and an enrolment it cannot be fetched for is refused,
+  `STS-ADMIN-0871`). A later ID Token signed by any other key is refused in
+  both modes (`STS-VC-0126`) and audited (`siop.key.refused`); the person
+  enrols the DID again on `/portal/self-issued`, which re-pins it. A
+  `did:web` enrolled before pinning has no pin: development pins the key it
+  next signs in with, product refuses it (`STS-VC-0127`) until it is
+  enrolled again. `did:jwk`, `did:key` and JWK thumbprints are their key.
+* **A `did:web` can be enrolled by proof.** Inside a person's own
+  enrolment — started from a session they hold — a `did:web` nobody has
+  enrolled is resolved, once per enrolment, after the token's other checks
+  passed (`STS-VC-0128` if it cannot be fetched, or for a second fetch).
+  In product mode an address inside the service's own network is refused.
+* **A preferred DID, released as a claim.** A person may mark ONE DID they
+  proved with their wallet as *preferred* on `/portal/self-issued` (an
+  administrator may too, from the person's page or with
+  `POST /admin-api/users/set-preferred-self-issued-subject`). An entry
+  enrolled by value, or a JWK thumbprint, cannot be preferred
+  (`STS-PORTAL-0615`, `STS-ADMIN-0872`); removing the preferred subject
+  clears the mark, and proving it again keeps it. Both acts are audited
+  (`portal.siop.prefer`, `admin.siop.preferred`). With `oauth2.didClaim` on
+  (off by default), the preferred DID is released as the `did` claim to a
+  client allowed the `did` scope that the person consented to — see
+  [Configure OIDC flows](configure-oidc-flows.md#release-a-persons-did-as-a-claim)
+  for every condition. It is never released in a SAML assertion.
 * **With a presentation** (`response_type=vp_token id_token`), the ID Token
   must be signed by the presentation's holder key.
 * **A verification start** takes `response_type` `id_token` (or `vp_token
@@ -593,8 +626,9 @@ see [OpenID4VCI](oid4vci.md#configuration). See
   catalogue row showing whether the issuer mints that claim. API:
   `GET /admin-api/verifier-request` and
   `POST /admin-api/verifier-request/{select,add,remove,defaults,format}`.
-* Its **Credential status** tab lets an operator suspend, reinstate or revoke
-  a credential, which stops it signing in.
+* **Monitoring → Verifiable Credentials** (`/admin/vc/monitor`) lets an
+  operator suspend, reinstate or revoke a credential, which stops it signing
+  in. It was the Credential status tab of `/admin/vc` until #752.
 * **Sessions** (`/admin/sessions`): wallet sign-ins appear as any other
   session, and end through the same sign-out doors.
 * **Users** (`/admin/users`): every holder whose presentation verified.

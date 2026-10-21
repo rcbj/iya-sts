@@ -627,7 +627,13 @@ ldif or multi-cell service is unchanged.
   with uptime — 7.4 s of a 15.6 s profile, the add rate halved in 33K adds.
   A ghost whose `WeakRef` is empty is dropped wherever it is met. Only
   `collect(null)` (a write naming nothing, a realm change, a failed
-  whole-walk flush) still walks both, by definition; the other per-write
+  whole-walk flush) still walks both, by definition — **so a hot writer
+  must name its DN (#754, 2026-10-20)**: the LDAP modify handler and
+  `addValues()` (the consent every authorization records) did not, and
+  under a password load and a sign-in load each flush serialised every
+  entry the window held, about a tenth of a request worker and growing as
+  the window filled. `tests/sustained_load_costs.js` section A counts what a
+  flush serialises after each; the other per-write
   walks are of `dirty`, bounded by one flush's changes. The answer is the
   walk's except in ORDER, which nothing reads (the postgres driver sorts by
   key). Section L of the test counts the walks and compares with the old.
@@ -1251,6 +1257,84 @@ reads the holders of `federationLink` (`eachHolderOfAny()`, not `persons()`) and
 returns a person whose every link starts with that relationship and who has no
 `userPassword` and is not already disabled.
 
+## `stsProvisionedBy`: WHO CREATED THE ENTRY, WHEN IT WAS NOT THIS SERVICE (2026-10-20)
+
+**rcbj's decision for `/portal/delegate`'s search, which must find NATIVE
+people only.** Until then nothing on an entry said whether a federated
+sign-in had CREATED it or had only reached somebody already here:
+
+* the five federation attributes above are written by EVERY federated
+  sign-in, a link (#109) and a provisioned person's first sign-in included;
+* the `origin` column is `authentication` for any entry a sign-in created,
+  a development-mode password sign-in as much as a partner's, and a
+  re-homing (#98) rewrites it to `rehomed`;
+* `<relationship>~<subject>` is a naming convention a console create can
+  imitate.
+
+So the fact is written down where it happens, once.
+`autoCreateUser()`'s create branch passes `putEntry()` a `provisionedBy` of
+`federation:<relationship>` when the creating sign-in was federated. A
+consumer or social provider (#565) is a relationship like any other, so the
+same line covers it. Nothing else writes it, and a sign-in that links or
+reaches an existing person writes nothing, so **a native person who links a
+partner stays native**.
+
+`putEntry()` keeps it as `entryUUID` is kept: the entry's own, carried
+through every overwrite. On a create it comes only from the option, never
+from the caller's attributes. **No door writes it**:
+
+* It is in `ALWAYS_PROTECTED_OPERATIONAL`, so an LDAP add or modify that
+  names it is refused `STS-LDAP-0076` in both modes, administrator included.
+* `addValues()` refuses it, so a certificate's RDNs cannot carry it.
+* `common/sourced_attributes.ts` refuses every `sts*` name to a partner's
+  mapping and to an attribute source.
+* The person editor (the console, `/admin-api` and the portal) and SCIM
+  write only their allowlists, and `createUser()` refuses an attribute it
+  does not know.
+* A bulk import takes only `ALLOWED_ATTRIBUTES`.
+
+**It travels**: a re-homing carries the attributes whole (`adoptEntry()`),
+and so do replication, the LDIF form and a restore. **An entry without it is
+native**, every entry written before it existed included. There is no
+backfill (rcbj). `tests/portal_delegate_search.js` section A holds all of
+this; `tests/federation_subject_policy.js` (1k-ii, 1m-ii) and
+`tests/federation_consumer_providers.js` (D5, G2-ii) hold it on real
+sign-ins.
+
+### `delegateCandidates()`: a `uid` contains-search anybody signed in may run
+
+The directory half of `GET /account-api/delegate/candidates`, reached
+through `credentials.setDirectory()`'s object (`delegateCandidates`):
+
+* It matches the direct children of the ambient realm's `ou=users`. The
+  match is a contains on the RDN value, which is the `uid` for everybody
+  this service names, and it needs three characters or more.
+* It leaves out an entry with `stsProvisionedBy`, the person asking, a
+  disabled account (`pwdAccountLockedTime`), a service account and a group.
+  Applications and devices are not under `ou=users`.
+* It answers at most ten, each `{ uid, cn, dn }`, with `more`.
+
+**In a windowed process it is ONE statement** (`directory_queries.js`'s
+`uidContains`), a LIKE whose text is a parameter with `%`, `_` and `\`
+escaped. `sts_ldap_entries_uid_trgm` answers it: a `pg_trgm` GIN over
+`rdn_value`, partial on `parent_key LIKE 'ou=users,%'`, schema version 23.
+`rdn_value` is generated, lower-cased and in the clear, so nothing sealed is
+indexed and nothing about a person is exposed that the table did not already
+show. rcbj first asked for a cn search and corrected it to uid, because cn
+is inside the sealed blob.
+
+The statement has no ORDER BY, so the LIMIT stops the scan. Measured on
+2M people under one `ou=users` (postgres 18): a rare text took 0.1 ms
+through the index, a text nobody has 0.02 ms, and a text most people
+contain 0.1 ms as a sequential scan that stopped at the 51st row.
+
+**The exclusions cannot run in the database, because the entry is sealed**,
+so the store is asked for five times the cap plus one (51). The entries are
+opened and the exclusions applied here. `more` is said when more than ten
+were kept OR the store filled the over-fetch, so a page of excluded rows can
+never answer "that is everybody" (`delegateCandidatesOfPage()`). In memory
+the realm's people are already held (`personRows()`), and the match is exact.
+
 ## `entryUUID`: THE ONE THING ABOUT AN ENTRY THAT NEVER CHANGES, AND A PERSON'S `sub` (2026-09-14)
 
 **A person's `sub` is `urn:uuid:<entryUUID>` in both modes**, and a SCIM resource's `id`
@@ -1487,6 +1571,18 @@ none on an add.
 group changes, local group writes and overwrites, in both modes, and checks
 after each step that the index held equals a fresh build — and, in a window,
 that an add asks the store nothing a rebuild asks.
+
+**THE SERVICE ACCOUNTS HAVE A CLOCK ON THE SAME RULE (#759, 2026-10-20).**
+`serviceAccountNames()` walked the holders of `stsServiceAccount` through
+the store, and the XACML scope decision asks it on every sign-in
+(`ownership.ownsAnything()`). It is kept per realm
+(`serviceAccountListings`, with the DNs it found) until
+`serviceAccountsVersion` moves, and `noteServiceAccountsTouched()`, beside
+`noteGroupsTouched()` in `touchDirectory()`, moves it for a write naming no
+DN, a DN the kept answer holds (it WAS one), an entry that IS one where this
+process holds it, and a windowed key it does not hold. Every other write —
+a sign-in's consent, a password — leaves it. `ldap.service-accounts` on
+`/admin/caches`; `tests/sign_in_owner_reads.js`.
 
 ### AND A FOURTH, WHICH IS THE SAME DOOR AND THE SAME LESSON A THIRD TIME
 
@@ -2399,6 +2495,19 @@ the change landed after the client was told. It now sets
 and answers a body that throws inside the promise (`unavailable` for an
 unreadable store, otherwise STS-LDAP-0143). With nothing to screen the
 handler still runs in the same tick. `tests/breached_passwords.js` section F.
+
+**A clear password is HASHED in that stage too, on libuv's thread pool
+(#756, 2026-10-20)**, whether or not the breach screen is on — so an add or
+modify carrying one is asynchronous in both modes now. `preparePassword()`
+is synchronous inside the body, and its scrypt held a request worker's event
+loop for about 70 ms a write: a third of a worker under a password load.
+`screenedThen()` makes one `hashSecretAsync()` per clear value into
+`req.stsPrehashed`; `passwordWriteRefusal()` takes one for the value it is
+setting (`takePrehashed()`, used once, a fresh salt each) and hands it to
+`preparePassword()` as `hashOfThisPassword`, which uses it in place of its
+own `hashSecret()`. Every policy, history and breach decision is still made
+in the body, against the entry as it is then; a value with no hash waiting
+is hashed there as before. `tests/password_scrypt_off_loop.js` section B.
 
 ### The wrapper goes on at REGISTRATION, beside the realm wrapper
 

@@ -37,6 +37,26 @@ device) is looked up among the CALLER's own, as it always was.
 link, and the single-use secret the link carries is the credential. They keep
 every rate limit the pages had.
 
+**An operation that answers about a value the caller names answers only
+for one of the CALLER's own** — `GET /account-api/self-issued/did`
+(2026-10-20) resolves a DID's document only where that DID is enrolled for
+the token's person, and refuses anything else (`STS-PORTAL-0618`) before
+saying anything about it, so the door is never a general resolver, or a
+way to learn whether somebody else holds a subject.
+
+**`GET /account-api/delegate/candidates` is the one operation that answers
+about OTHER people (2026-10-20, `/portal/delegate`'s search)**, and it is
+built for that: it needs at least three characters, matches only the `uid`,
+answers at most ten native people of the caller's realm, each as uid, cn
+and DN only, and says `more` instead of paging. It is audited
+(`portal.delegation.search`) and has a rate limit of its own:
+`websecurity.attemptShared()`, thirty a person and 120 an address in each
+`security.rateLimitWindowS` window, across the cluster (`STS-PORTAL-0621`).
+This API has no limit of its own apart from that. The other limits are
+per door: the reset, the TOTP code, an app password. It answers nothing a
+person could not already name by typing a DN. `portal/CLAUDE.md` has the
+rest.
+
 ## THE GATE, IN ITS ORDER
 
 Each step is a credential that stopped being one, answered 401 with a

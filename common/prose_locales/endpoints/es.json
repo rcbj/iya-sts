@@ -1103,6 +1103,10 @@
     "en": "f507cdd5e7327df3",
     "text": "Acciones de partes que confían SAML 1.1"
   },
+  "endpoints.route./admin-api/saml-idp-initiated.name": {
+    "en": "70297dbc6d423d65",
+    "text": "Aplicaciones SAML para las que se puede iniciar aquí un inicio de sesión"
+  },
   "endpoints.route./admin-api/saml-attributes.name": {
     "en": "e9808df4bc485128",
     "text": "Atributos SAML personalizados"

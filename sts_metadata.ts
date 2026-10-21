@@ -4693,7 +4693,10 @@ const ENDPOINTS: EndpointEntry[] = [
     specs: ['ssf', 'rfc8935', 'rfc8417'],
     effect: 'records a Security Event Token delivered to the user portal',
     what: 'RFC 8935 SECTION 2.1 PUSH DELIVERY, WITH THIS SERVICE AT BOTH ' +
-          'ENDS (2026-09-10). The portal\'s stream names this path as its ' +
+          'ENDS (2026-09-10) — FOR A STREAM SET BACK TO PUSH since #771, ' +
+          'which made the portal\'s seeded stream an RFC 8936 poll stream ' +
+          'it collects from /ssf/poll; while it is one, a push here is ' +
+          'refused. Set to push, the stream names this path as its ' +
           '`delivery.endpoint_url`, on this service\'s own loopback ' +
           'address, and `ssf/ssf_http.ts` POSTs each SET here as ' +
           'application/secevent+jwt with the stream\'s ' +
@@ -4715,9 +4718,9 @@ const ENDPOINTS: EndpointEntry[] = [
           'under load.',
     coverage: 'full for RFC 8935 section 2.1 receipt: the media type, the ' +
               'authorization header, the 202 with an empty body, and section ' +
-              '2.4\'s {err, description} refusal shape. It does not ' +
-              'implement RFC 8936 poll at this end — this receiver is a push ' +
-              'receiver — and nothing here retries, which is the ' +
+              '2.4\'s {err, description} refusal shape. It is the push half ' +
+              'only — the portal\'s poll half is the ssf.internal-poll job ' +
+              '(#771) — and nothing here retries, which is the ' +
               'transmitter\'s side of the same deliberate omission.' },
   { path: '/portal/claim-sources/callback', group: 'User portal',
     name: 'Connected claim sources — the provider\'s answer',
@@ -5113,7 +5116,7 @@ const ENDPOINTS: EndpointEntry[] = [
           'accept-terms: the console\'s five forms.' },
   { path: '/admin-api/vc-status', group: 'Management API',
     name: 'Credential status', specs: ['token-status-list', 'openapi'],
-    what: 'NON-SPEC. GET /admin/vc-status over JSON.' },
+    what: 'NON-SPEC. GET /admin/vc/monitor over JSON.' },
   { path: '/admin-api/vc-status/:action', group: 'Management API',
     name: 'Credential status actions', specs: ['openapi'],
     what: 'NON-SPEC. suspend, reinstate and revoke, with { idx }: the ' +
@@ -5622,9 +5625,11 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/admin-api/users/self-issued-subjects', group: 'Management API',
     name: 'One person\'s self-issued (SIOPv2) subjects', specs: ['siopv2'],
     what: 'NON-SPEC (#129). The DIDs and JWK thumbprints enrolled for a ' +
-          'person, each with its label and who enrolled it, beside whether ' +
-          'oid4vp.signInSelfIssued is on. POST ' +
-          '/admin-api/users/enrol-self-issued-subject enrols one by value; ' +
+          'person, each with its label, who enrolled it and how (proved by ' +
+          'the person\'s wallet, or by value), and a did:web with its ' +
+          'pinned keys (#693), beside whether oid4vp.signInSelfIssued is ' +
+          'on. POST /admin-api/users/enrol-self-issued-subject enrols one ' +
+          'by value, fetching a did:web\'s document to pin its keys; ' +
           '/admin-api/users/remove-self-issued-subject takes one away. ' +
           'Mirrors the Self-issued IDs block on the person\'s /admin/users ' +
           'page.' },
@@ -6805,6 +6810,16 @@ const ENDPOINTS: EndpointEntry[] = [
           'optional and buys two things — a metadata document to hand ' +
           'somebody, and a NAME to put in providerId so the audience is not ' +
           'guessed. Mirrors POST /admin/saml11.' },
+  { path: '/admin-api/saml-idp-initiated', group: 'Management API',
+    name: 'SAML applications a sign-in may start here for',
+    specs: ['saml2-profiles', 'saml11-profiles'],
+    what: 'NON-SPEC (#749). The SAML 2.0 service providers and SAML 1.1 ' +
+          'relying parties for which an identity-provider-initiated ' +
+          'sign-in is allowed — the realm setting or the entry\'s ' +
+          'override, asked through the function /launch/{app} asks — one ' +
+          'row per application and family, each with its /launch link and ' +
+          'the protocol\'s own unsolicited endpoint, paged. Mirrors the ' +
+          'IdP-Initiated SSO tab of /admin/saml2.' },
   { path: '/admin-api/saml-attributes', group: 'Management API',
     name: 'Custom SAML attributes',
     specs: ['saml2', 'saml11'],
@@ -7759,7 +7774,7 @@ const ENDPOINTS: EndpointEntry[] = [
             'continues as; needs an ?authn= id, so following it bare ' +
             'answers 400',
     what: 'SEVERAL SIGNED-IN ACCOUNTS IN ONE BROWSER (#561), where ' +
-          'authn.multipleAccounts is on (it is off by default). A request ' +
+          'authn.multipleAccounts is on (it is on by default). A request ' +
           'from a browser holding more than one signed-in account that ' +
           'names none of them — no account chosen in its flow, no ' +
           'login_hint or id_token_hint naming one — is sent here, and so is ' +
@@ -8912,7 +8927,7 @@ const ENDPOINTS: EndpointEntry[] = [
     name: 'Change a credential\'s status (VC API)',
     specs: ['vc-api', 'bitstring-status-list'],
     what: 'Revokes, suspends or lifts a suspension of a credential this ' +
-          'VC API issued with a status — the act /admin/vc-status ' +
+          'VC API issued with a status — the act /admin/vc/monitor ' +
           'performs, one of the three that disown a credential. A ' +
           'revocation is final. vc-api:issue.',
     effect: OFF_UNTIL_ENABLED },

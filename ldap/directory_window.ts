@@ -124,6 +124,8 @@ interface WindowDeps {
 
 // Rows per page of a scan.
 const PAGE = 500;
+// How many of a long list's pages are asked at once (2026-10-21).
+const PAGES_AT_ONCE = 4;
 
 // The composite key the window holds a realm's entry under.
 function slotKey(realmId: string, key: string): string {
@@ -1181,6 +1183,39 @@ class DirectoryWindow {
     return answer;
   }
 
+  // `fn` over every item with at most `limit` running at once; resolves when
+  // all are done, rejects with the first failure once the running ones have
+  // finished. A store question each, overlapped and still bounded.
+  private static async inParallel<T>(items: T[], limit: number,
+                                     fn: (item: T) => Promise<void>):
+      Promise<void> {
+    log.debug("Entering DirectoryWindow.inParallel(). " + items.length);
+    let next = 0;
+    let failure: unknown = null;
+    const runner = async function (): Promise<void> {
+      while (next < items.length && !failure) {
+        const item = items[next];
+        next += 1;
+        try {
+          await fn(item);
+        } catch (e) {
+          log.debug("Caught in DirectoryWindow.inParallel(): " +
+                    ((e && (e as Error).message) || e));
+          failure = failure || e;
+        }
+      }
+    };
+    const runners: Promise<void>[] = [];
+    for (let i = 0; i < Math.max(1, Math.min(limit, items.length)); i++) {
+      runners.push(runner());
+    }
+    await Promise.all(runners);
+    log.debug("Leaving DirectoryWindow.inParallel().");
+    if (failure) {
+      throw failure;
+    }
+  }
+
   // The event loop given back: what runs between two pages.
   private static yieldToLoop(): Promise<void> {
     log.debug("Entering DirectoryWindow.yieldToLoop().");
@@ -1436,8 +1471,13 @@ class DirectoryWindow {
     log.debug("Entering DirectoryWindow.entriesAtAsync(). " + keys.length);
     const out = new Map<string, Entry | null>();
     const ask: string[] = [];
+    // A SET BESIDE THE LIST (2026-10-21): `ask.indexOf()` for every key made
+    // this quadratic, and the Users page's census hands it every register
+    // name — on 8081, 67,000 of them held a request worker's event loop for
+    // twelve seconds before a single question went to the store.
+    const asking = new Set<string>();
     keys.forEach((key) => {
-      if (out.has(key) || ask.indexOf(key) >= 0) {
+      if (out.has(key) || asking.has(key)) {
         return;
       }
       if (!this.isWindowed(realmId, key)) {
@@ -1449,13 +1489,18 @@ class DirectoryWindow {
         out.set(key, held.entry);
       } else {
         ask.push(key);
+        asking.add(key);
       }
     });
+    // A FEW PAGES AT A TIME (2026-10-21), not one after another: the Users
+    // page's census asked 311 of them in turn on 8081, 4 s of waiting on the
+    // store. Each page asks its own keys and fills only them.
+    const pages: string[][] = [];
     for (let from = 0; from < ask.length && this.bridge; from += PAGE) {
-      if (from > 0) {
-        await DirectoryWindow.yieldToLoop();
-      }
-      const page = ask.slice(from, from + PAGE);
+      pages.push(ask.slice(from, from + PAGE));
+    }
+    await DirectoryWindow.inParallel(pages, PAGES_AT_ONCE, async (page) => {
+      await DirectoryWindow.yieldToLoop();
       const rows = (await this.askAsync('byKeys', [realmId, page]) as Row[]) ||
         [];
       if (counter) {
@@ -1473,7 +1518,7 @@ class DirectoryWindow {
           out.set(key, held ? held.entry : null);
         }
       });
-    }
+    });
     ask.forEach(function (key) {
       if (!out.has(key)) {
         // No store yet (before `attach()`): nothing can be known about it.
@@ -1561,9 +1606,15 @@ class DirectoryWindow {
    */
   async warmAsync(realmId: string, keys: string[]): Promise<number> {
     log.debug("Entering DirectoryWindow.warmAsync(). " + keys.length);
-    const ask = keys.filter((key, at) => {
-      return keys.indexOf(key) === at && this.isWindowed(realmId, key) &&
-        !this.heldSlot(realmId, key);
+    // Each key once, by a Set and not `keys.indexOf()` (2026-10-21), for
+    // `entriesAtAsync()`'s reason: that made it quadratic in the keys.
+    const once = new Set<string>();
+    const ask = keys.filter((key) => {
+      if (once.has(key)) {
+        return false;
+      }
+      once.add(key);
+      return this.isWindowed(realmId, key) && !this.heldSlot(realmId, key);
     }).slice(0, PAGE);
     if (!ask.length || !this.bridge) {
       log.debug("Leaving DirectoryWindow.warmAsync(). Nothing to ask.");
@@ -1746,6 +1797,39 @@ class DirectoryWindow {
     log.debug("Leaving DirectoryWindow.rdnPageAsync(). " + out.length +
               ' of ' + raw.length + '.');
     return { rows: out, asked: raw.length, last: last };
+  }
+
+  /**
+   * At most `limit` direct children of a realm's `ou=users` whose RDN value
+   * contains `needle`, asked asynchronously (`directory_queries.js`'s
+   * `uidContains`, 2026-10-20, `/portal/delegate`). Each row is what this
+   * process holds for its key, or the store's row; `asked` is how many
+   * rows the store answered, so a caller can tell a full answer from one
+   * the limit cut short.
+   *
+   * @param realmId - the realm id
+   * @param parentKey - the realm's `ou=users`, normalised
+   * @param needle - the substring, lower-cased
+   * @param limit - the most rows
+   * @returns `{ rows, asked }`
+   */
+  async uidContainsAsync(realmId: string, parentKey: string, needle: string,
+                         limit: number):
+      Promise<{ rows: Array<{ key: string; entry: Entry }>;
+                asked: number }> {
+    log.debug("Entering DirectoryWindow.uidContainsAsync().");
+    const raw = (await this.askAsync('uidContains',
+      [realmId, parentKey, String(needle || ''), limit]) as Row[]) || [];
+    const out: Array<{ key: string; entry: Entry }> = [];
+    raw.forEach((row) => {
+      const entry = this.heldOrRow(realmId, row);
+      if (entry) {
+        out.push({ key: row.key, entry: entry });
+      }
+    });
+    log.debug("Leaving DirectoryWindow.uidContainsAsync(). " + out.length +
+              ' of ' + raw.length + '.');
+    return { rows: out, asked: raw.length };
   }
 
   /**
@@ -1938,6 +2022,59 @@ class DirectoryWindow {
   countHolding(realmId: string, base: string, attribute: string):
       { n: number; holding: number } {
     log.debug("Entering DirectoryWindow.countHolding(). " + attribute);
+    const reaches = this.holdingReaches(realmId, base);
+    const stored = reaches && this.bridge
+      ? this.bridge.query('countHolding', [realmId, base, attribute]) as
+          { n: number; holding: number }
+      : null;
+    const out = this.holdingWith(realmId, base, attribute, reaches, stored);
+    log.debug("Leaving DirectoryWindow.countHolding().");
+    return out;
+  }
+
+  // `countHolding()` FOR A CALLER THAT CAN WAIT (2026-10-21): the store's
+  // two counts asked on the driver's read pool, so the event loop runs while
+  // a realm of a million people is counted. `/admin/users`' tiles asked it
+  // synchronously, on the worker that serves sign-ins.
+  /**
+   * `countHolding()`, the store asked asynchronously.
+   *
+   * @param realmId - the realm id
+   * @param base - the base's normalised DN
+   * @param attribute - the attribute name, lower-cased as stored
+   * @returns a promise of `{ n, holding }`
+   */
+  async countHoldingAsync(realmId: string, base: string, attribute: string):
+      Promise<{ n: number; holding: number }> {
+    log.debug("Entering DirectoryWindow.countHoldingAsync(). " + attribute);
+    const reaches = this.holdingReaches(realmId, base);
+    const stored = reaches && this.bridge
+      ? await this.askAsync('countHolding', [realmId, base, attribute]) as
+          { n: number; holding: number }
+      : null;
+    const out = this.holdingWith(realmId, base, attribute, reaches, stored);
+    log.debug("Leaving DirectoryWindow.countHoldingAsync().");
+    return out;
+  }
+
+  // Whether the base reaches a windowed container: only then is the store
+  // asked.
+  private holdingReaches(realmId: string, base: string): boolean {
+    log.debug("Entering DirectoryWindow.holdingReaches().");
+    log.debug("Leaving DirectoryWindow.holdingReaches().");
+    return this.deps.windowedContainers(realmId).some(function (c) {
+      return DirectoryWindow.within(c, base) || base.endsWith(',' + c);
+    });
+  }
+
+  // The resident entries' counts, the store's, and this process's unwritten
+  // changes, added up: `countHolding()`'s arithmetic, whichever way the
+  // store was asked.
+  private holdingWith(realmId: string, base: string, attribute: string,
+                      reaches: boolean,
+                      stored: { n: number; holding: number } | null):
+      { n: number; holding: number } {
+    log.debug("Entering DirectoryWindow.holdingWith(). " + attribute);
     const has = function (entry: Entry | null | undefined): number {
       const values = entry ? (entry.attributes || {})[attribute] : null;
       return Array.isArray(values) && values.length > 0 ? 1 : 0;
@@ -1950,12 +2087,7 @@ class DirectoryWindow {
         holding += has(entry);
       }
     });
-    const reaches = this.deps.windowedContainers(realmId).some(function (c) {
-      return DirectoryWindow.within(c, base) || base.endsWith(',' + c);
-    });
     if (reaches && this.bridge) {
-      const stored = this.bridge.query('countHolding',
-        [realmId, base, attribute]) as { n: number; holding: number };
       n += Number(stored && stored.n) || 0;
       holding += Number(stored && stored.holding) || 0;
       // `countUnder()`'s net, and the attribute's beside it: the entry as
@@ -1973,7 +2105,7 @@ class DirectoryWindow {
           try {
             before = JSON.parse(slot.base) as Entry;
           } catch (e) {
-            log.debug("Caught in DirectoryWindow.countHolding(): " +
+            log.debug("Caught in DirectoryWindow.holdingWith(): " +
                       ((e && e.message) || e));
             // A base that does not parse is one this window wrote itself
             // and cannot be; counted as an entry holding nothing.
@@ -1984,7 +2116,7 @@ class DirectoryWindow {
         holding += has(slot.entry) - has(before);
       });
     }
-    log.debug("Leaving DirectoryWindow.countHolding().");
+    log.debug("Leaving DirectoryWindow.holdingWith().");
     return { n: Math.max(0, n), holding: Math.max(0, holding) };
   }
 
