@@ -341,6 +341,46 @@ function childMain() {
          '7c. a second /admin-api/status within the hold builds nothing ' +
          'again', JSON.stringify({ status: statusAgain.status,
                                    built: counted.userRowsAsync }));
+    // 7d (2026-10-21): past the hold, kept totals still answer at once and
+    // ONE rebuild runs behind them.
+    const consoleModule = require(ROOT_DIR + '/admin-ui/admin');
+    const Console = consoleModule.AdminConsole;
+    const realHold = Console.TOTALS_HOLD_MS;
+    Console.TOTALS_HOLD_MS = -1;
+    let rebuilt = 0;
+    // A rebuild made slow (2 s), so an answer that waited for it shows.
+    statsModule.userRowsAsync = function () {
+      rebuilt++;
+      const self = this;
+      const args = arguments;
+      return new Promise(function (resolve) {
+        setTimeout(resolve, 2000);
+      }).then(function () {
+        return realStats.userRowsAsync.apply(self, args);
+      });
+    };
+    let staleOne = null;
+    let staleTwo = null;
+    let staleMs = 0;
+    try {
+      const startedAt = Date.now();
+      staleOne = await call(port, 'GET', '/admin-api/status', writer);
+      staleMs = Date.now() - startedAt;
+      staleTwo = await call(port, 'GET', '/admin-api/status', writer);
+      // The rebuild behind them, before the stand-in is taken away.
+      await new Promise(function (resolve) {
+        setTimeout(resolve, 2500);
+      });
+    } finally {
+      Console.TOTALS_HOLD_MS = realHold;
+      statsModule.userRowsAsync = realStats.userRowsAsync;
+    }
+    note(staleOne.status === 200 && staleTwo.status === 200 &&
+         staleOne.json && staleOne.json.usersKnown === status.json.usersKnown &&
+         staleMs < 1500 && rebuilt === 1,
+         '7d. past the hold the kept totals answer at once, and one rebuild ' +
+         'runs behind them', JSON.stringify({ rebuilt: rebuilt,
+                                              ms: staleMs }));
 
     // --- 6. the control ------------------------------------------------------
     config.setOverride('adminApi.authRequired', false);
