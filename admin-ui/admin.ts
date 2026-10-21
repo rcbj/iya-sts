@@ -2835,6 +2835,16 @@ class AdminConsole {
   peerClustersNow: any = null;
 
   /**
+   * How long the console's totals are kept (2026-10-21;
+   * `consoleJsonAsync()`).
+   */
+  static readonly TOTALS_HOLD_MS = 15000;
+
+  // realm -> `{ at, value, building }`: the totals kept, or their build in
+  // flight (`consoleJsonAsync()`).
+  private readonly totalsHeld = new Map<string, any>();
+
+  /**
    * Builds the console over the given modules.
    *
    * @param deps - the modules and helpers the console reads
@@ -5379,12 +5389,49 @@ class AdminConsole {
    *
    * @returns a promise of the JSON
    */
+  //
+  // **KEPT FOR A FEW SECONDS, ONE BUILD AT A TIME (2026-10-21)**: the
+  // register's rows are every identity it holds, resolved — 18 s of
+  // `/admin-api/status` on 8081 at 67,000 of them under a sign-in load — for
+  // two counts on the console's index. The totals are kept per realm for
+  // TOTALS_HOLD_MS, `/admin/users`' population hold, and askers in the
+  // meantime share one build.
   async consoleJsonAsync() {
-    const { log, stats, credentials } = this.deps;
+    const { log, realms } = this.deps;
     log.debug("Entering AdminConsole.consoleJsonAsync().");
+    const realmId = String(realms.currentId());
+    const held = this.totalsHeld.get(realmId);
+    if (held && (held.building ||
+                 Date.now() - held.at <= AdminConsole.TOTALS_HOLD_MS)) {
+      log.debug("Leaving AdminConsole.consoleJsonAsync(). Kept.");
+      return held.building || held.value;
+    }
+    const entry: any = { at: 0, value: null, building: null };
+    entry.building = this.buildConsoleTotalsAsync().then((value) => {
+      entry.value = value;
+      entry.at = Date.now();
+      entry.building = null;
+      return value;
+    }, (e) => {
+      log.debug("Caught in AdminConsole.consoleJsonAsync(): " +
+                ((e && e.message) || e));
+      if (this.totalsHeld.get(realmId) === entry) {
+        this.totalsHeld.delete(realmId);
+      }
+      throw e;
+    });
+    this.totalsHeld.set(realmId, entry);
+    log.debug("Leaving AdminConsole.consoleJsonAsync(). Built.");
+    return entry.building;
+  }
+
+  // The build `consoleJsonAsync()` keeps.
+  private async buildConsoleTotalsAsync() {
+    const { log, stats, credentials } = this.deps;
+    log.debug("Entering AdminConsole.buildConsoleTotalsAsync().");
     const knownUsers = await stats.userRowsAsync();
     const tally = await credentials.directoryFactorCountsAsync();
-    log.debug("Leaving AdminConsole.consoleJsonAsync().");
+    log.debug("Leaving AdminConsole.buildConsoleTotalsAsync().");
     return this.consoleJson({ knownUsers: knownUsers, tally: tally });
   }
   // THE DASHBOARD'S ANSWER (#446): `consoleJson()`'s totals, and what the

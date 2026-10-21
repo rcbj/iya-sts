@@ -5996,6 +5996,23 @@ class Credentials {
     return n;
   }
 
+  // THE DIRECTORY'S VERSION OF ITS PEOPLE (2026-10-21): a number every write
+  // under `ou=users` moves, for a caller that keeps something built from
+  // them (`/admin/users`' population). Null where no directory offers one.
+  /**
+   * The ambient realm's people's version, as the directory counts it.
+   *
+   * @returns a number, or null
+   */
+  directoryPeopleVersion() {
+    const { log } = this.deps;
+    log.debug('Entering Credentials.directoryPeopleVersion().');
+    const hook = this.directoryHook('peopleVersion');
+    const version = hook ? Number(hook()) : null;
+    log.debug('Leaving Credentials.directoryPeopleVersion().');
+    return version === null || Number.isFinite(version) ? version : null;
+  }
+
   // `directoryPeopleNamed()` FOR A CALLER THAT CAN WAIT (2026-10-21), for
   // `directoryFactorCountsAsync()`'s reason.
   /**
@@ -10386,6 +10403,7 @@ export = {
   factorCensusAsync: slot.forward('factorCensusAsync'),
   directoryFactorCountsAsync: slot.forward('directoryFactorCountsAsync'),
   directoryPeopleNamedAsync: slot.forward('directoryPeopleNamedAsync'),
+  directoryPeopleVersion: slot.forward('directoryPeopleVersion'),
   directoryFactorCounts: slot.forward('directoryFactorCounts'),
   directoryPeopleNamed: slot.forward('directoryPeopleNamed'),
   issueActivation: slot.forward('issueActivation'),

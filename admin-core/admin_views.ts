@@ -987,6 +987,15 @@ class AdminViews {
    * The routes whose answers carry the map keys (the delegation namespace).
    */
   static readonly MAP_KEY_PROSE_ROUTES = MAP_KEY_PROSE_ROUTES;
+  /**
+   * How long `/admin/users`' population and census are kept while the
+   * directory's people do not move (2026-10-21; `peopleAndCensusAsync()`).
+   */
+  static readonly USERS_POPULATION_HOLD_MS = 15000;
+
+  // realm -> `{ version, at, value, building }`: the kept population, or the
+  // build of it in flight (`peopleAndCensusAsync()`).
+  private readonly populationHeld = new Map<string, any>();
 
   /**
    * Extracts the kerberos namespace (#543): `/admin-api/kerberos/principals`'
@@ -13133,8 +13142,50 @@ class AdminViews {
    *   takes them in its options
    */
   async peopleAndCensusAsync() {
-    const { log } = this.deps;
+    const { log, realms, credentials } = this.deps;
     log.debug("Entering AdminViews.peopleAndCensusAsync().");
+    // KEPT FOR A FEW SECONDS, ONE BUILD AT A TIME (2026-10-21). Building it
+    // is every register identity and every directory person's census — 25 s
+    // a page on 8081 at 67,000 identities under a sign-in load — and paging
+    // asked it again for every page. It is kept per realm for
+    // USERS_POPULATION_HOLD_MS (the directory tallies' ten-second reading,
+    // `credentialTallies()`, is the precedent) and dropped at once when the
+    // directory's people move, here or by a change applied from elsewhere;
+    // a sign-in, which moves only the register, shows within that time.
+    // Concurrent askers share one build.
+    const realmId = String(realms.currentId());
+    const version = credentials.directoryPeopleVersion();
+    const held = this.populationHeld.get(realmId);
+    if (held && held.version === version &&
+        (held.building || Date.now() - held.at <=
+                          AdminViews.USERS_POPULATION_HOLD_MS)) {
+      log.debug("Leaving AdminViews.peopleAndCensusAsync(). Kept.");
+      return held.building || held.value;
+    }
+    const entry: any = { version: version, at: 0, value: null,
+                         building: null };
+    entry.building = this.buildPeopleAndCensusAsync().then((value) => {
+      entry.value = value;
+      entry.at = Date.now();
+      entry.building = null;
+      return value;
+    }, (e) => {
+      log.debug("Caught in AdminViews.peopleAndCensusAsync(): " +
+                ((e && e.message) || e));
+      if (this.populationHeld.get(realmId) === entry) {
+        this.populationHeld.delete(realmId);
+      }
+      throw e;
+    });
+    this.populationHeld.set(realmId, entry);
+    log.debug("Leaving AdminViews.peopleAndCensusAsync(). Built.");
+    return entry.building;
+  }
+
+  // The build `peopleAndCensusAsync()` keeps.
+  private async buildPeopleAndCensusAsync() {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.buildPeopleAndCensusAsync().");
     const first = await this.directoryFirstNames();
     // The register's subjects resolved asynchronously (#790): on 8081 they
     // were ~228,000, asked synchronously, and the request spent its
