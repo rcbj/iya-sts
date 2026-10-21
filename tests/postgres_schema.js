@@ -413,7 +413,7 @@ function checkTheReloptionsAgree(t, sql) {
     return /ON sts_ldap_entries USING gin/.test(statement) &&
       !/sts_ldap_entries_dek_keys /.test(statement);
   });
-  t.check(gins.length === 6 && gins.every(function (statement) {
+  t.check(gins.length === 7 && gins.every(function (statement) {
     return statement.indexOf('WITH (fastupdate = off)') > 0;
   }), 'every directory GIN index but the data keys\' is created with it',
           String(gins.length));
@@ -441,8 +441,9 @@ function checkTheVersionAgrees(t, sql) {
 // (#754) adds the seventh, `sts_sessions_surface`.
 function checkTheSessionIndex(t, sql) {
   log.debug("Entering checkTheSessionIndex().");
-  t.equal(driver.SCHEMA_VERSION, 22,
-          'the driver\'s schema version is 22 (#350, #754)');
+  t.equal(driver.SCHEMA_VERSION, 23,
+          'the driver\'s schema version is 23 (#350, #754, the uid ' +
+          'trigram index)');
   const names = ['sts_sessions_subject', 'sts_sessions_username',
                  'sts_sessions_expires', 'sts_sessions_parent',
                  'sts_sessions_credential', 'sts_sessions_partner',
@@ -479,6 +480,39 @@ function checkTheSessionIndex(t, sql) {
           'sts_sessions.expires_at is nullable and the primary key is ' +
           '(realm, key)', table && table.statement);
   log.debug("Leaving checkTheSessionIndex().");
+}
+
+// Schema 23 (2026-10-20, `/portal/delegate`): the uid trigram index, a GIN
+// with `pg_trgm`'s operator class over `rdn_value`, partial on the children
+// of a realm's `ou=users` — the predicate `uidContains` repeats, or the
+// planner cannot use it — and the extension created before it, in the
+// script and in the driver.
+function checkTheUidTrigramIndex(t, sql) {
+  log.debug("Entering checkTheUidTrigramIndex().");
+  const queries = require('../persistence/directory_queries');
+  const object = (driver.SCHEMA_OBJECTS || []).filter(function (one) {
+    return one.name === 'sts_ldap_entries_uid_trgm';
+  })[0];
+  t.check(!!object && object.extension === 'pg_trgm' &&
+          object.afterColumns === true &&
+          /USING gin \(rdn_value gin_trgm_ops\)/.test(object.statement) &&
+          object.statement.indexOf('WHERE ' + queries.USERS_PARENT) > 0,
+          'the driver declares the uid trigram index, partial on ' +
+          queries.USERS_PARENT + ', after pg_trgm',
+          object && object.statement);
+  const statement = queries.uidContains('r', 'ou=users,dc=x', 'abc', 5);
+  t.check(statement.text.indexOf(queries.USERS_PARENT) > 0,
+          'uidContains repeats the index\'s predicate', statement.text);
+  const all = statementsIn(sql);
+  const extensionAt = all.indexOf('CREATE EXTENSION IF NOT EXISTS pg_trgm');
+  const indexAt = all.findIndex(function (one) {
+    return one.indexOf('CREATE INDEX IF NOT EXISTS ' +
+                       'sts_ldap_entries_uid_trgm ') === 0;
+  });
+  t.check(extensionAt >= 0 && indexAt > extensionAt,
+          'the script creates pg_trgm before the index',
+          JSON.stringify({ extensionAt: extensionAt, indexAt: indexAt }));
+  log.debug("Leaving checkTheUidTrigramIndex().");
 }
 
 function checkThePrivilegeIsNarrow(t, sql) {
@@ -672,6 +706,7 @@ function run(t) {
   checkTheReloptionsAgree(t, sql);
   checkTheVersionAgrees(t, sql);
   checkTheSessionIndex(t, sql);
+  checkTheUidTrigramIndex(t, sql);
   checkThePrivilegeIsNarrow(t, sql);
   checkTheRoleNameAgrees(t);
   checkTheServerSettingsAgree(t);

@@ -176,7 +176,19 @@ them*):
 | `stsNotDelegated` | Never acted for, by anybody (`NOT_DELEGATED`). |
 | `stsDelegationSemantics` | Semantics this person may be acted for with. Empty means either. |
 | `stsDefaultDelegationSemantics` | Their default, after the actor's. |
-| `stsMayAct` | One party (the DN of a person or an application) this person names as their delegate. Their access tokens (and WS-Trust JWTs) carry RFC 8693 section 4.4's `may_act` claim naming it — the issuance policy's `assign-may-act` question assigns it, and a realm's policy may name another party or none. A person sets it themselves on `/portal/delegate`. |
+| `stsMayAct` | One party (the DN of a person or an application) this person names as their delegate. Their access tokens (and WS-Trust JWTs) carry RFC 8693 section 4.4's `may_act` claim naming it — the issuance policy's `assign-may-act` question assigns it, and a realm's policy may name another party or none. A person sets it themselves on `/portal/delegate`, by typing the DN or by finding a person by part of their username (see below). |
+
+**Finding a delegate on `/portal/delegate`.** Type at least three
+characters of the person's username (`uid`). The page searches when you stop
+typing for three seconds, or as soon as you press Enter. It lists at most ten
+people, each with their username, name and DN. If more people match, it says
+so, and typing more of the name narrows the list. It finds only *native*
+people of your own realm: never one a federation partner's or a consumer
+provider's sign-in created (their entry carries `stsProvisionedBy`), and
+never you, a disabled account, a service account, a group or an application.
+A person who was created here and later linked a partner account is still
+native. To name an application, type its DN in the box below the search. The
+operation is `GET /account-api/delegate/candidates?q=`.
 
 ### Realm settings
 

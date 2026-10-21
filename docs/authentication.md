@@ -1114,7 +1114,8 @@ be changed with `POST /admin-api/config/set`.
   `/portal/reset-password`; and `/portal/consents`, where a person withdraws
   what they agreed an application may ask for, revoking what it was issued
   under it (see [OAuth 2.0 and OpenID Connect](oauth-oidc.md#withdrawing-consent)).
-  `/portal/delegate` names the one party who may act for you — it is the
+  `/portal/delegate` names the one party who may act for you — typed as a
+  DN, or found by part of a person's username — and it is the
   `may_act` claim of your access tokens (see
   [OAuth 2.0 and OpenID Connect](oauth-oidc.md#token-exchange-rfc-8693)).
 * Failures are recorded under `STS-AUTHN-NNNN` codes; see

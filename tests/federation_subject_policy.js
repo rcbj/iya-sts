@@ -619,6 +619,13 @@ function childMain() {
       note(got.r.status === 200 && attr(dave, 'federationLink').length === 1,
            '1k. with the one-time code too, they are linked and signed in',
            got.r.status + ' ' + got.r.text.replace(/\s+/g, ' ').slice(0, 160));
+      // A LINK IS NOT A CREATION (2026-10-20): the native person who
+      // linked a partner carries no `stsProvisionedBy`, so they are still
+      // native — and found by /portal/delegate's search.
+      note(attr(dave, 'federationLink').length === 1 &&
+           !attr(dave, 'stsProvisionedBy').length,
+           '1k-ii. a native person who links a partner is not stamped as ' +
+           'provisioned by it', JSON.stringify(attr(dave, 'stsProvisionedBy')));
     }
 
     // A SECOND FACTOR REQUIRED, and none held: the enrolment step.
@@ -675,6 +682,13 @@ function childMain() {
          '1m. a subject naming nobody gets a NAMESPACED entry, ' +
          newbieName + ', linked at creation',
          got.r.status + ' ' + !!namespaced);
+    // AND STAMPED BY THE SIGN-IN THAT CREATED IT (2026-10-20), once: the
+    // relationship, never a value the partner sent.
+    note(attr(namespaced, 'stsProvisionedBy').join('|') ===
+           'federation:' + REL,
+         '1m-ii. the entry a federated sign-in created carries ' +
+         'stsProvisionedBy federation:' + REL,
+         JSON.stringify(attr(namespaced, 'stsProvisionedBy')));
 
     // #325's refusal was this shape, which 1m never makes. The username
     // source is the subject (the default, and what an OpenID Federation

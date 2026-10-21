@@ -1749,6 +1749,39 @@ class DirectoryWindow {
   }
 
   /**
+   * At most `limit` direct children of a realm's `ou=users` whose RDN value
+   * contains `needle`, asked asynchronously (`directory_queries.js`'s
+   * `uidContains`, 2026-10-20, `/portal/delegate`). Each row is what this
+   * process holds for its key, or the store's row; `asked` is how many
+   * rows the store answered, so a caller can tell a full answer from one
+   * the limit cut short.
+   *
+   * @param realmId - the realm id
+   * @param parentKey - the realm's `ou=users`, normalised
+   * @param needle - the substring, lower-cased
+   * @param limit - the most rows
+   * @returns `{ rows, asked }`
+   */
+  async uidContainsAsync(realmId: string, parentKey: string, needle: string,
+                         limit: number):
+      Promise<{ rows: Array<{ key: string; entry: Entry }>;
+                asked: number }> {
+    log.debug("Entering DirectoryWindow.uidContainsAsync().");
+    const raw = (await this.askAsync('uidContains',
+      [realmId, parentKey, String(needle || ''), limit]) as Row[]) || [];
+    const out: Array<{ key: string; entry: Entry }> = [];
+    raw.forEach((row) => {
+      const entry = this.heldOrRow(realmId, row);
+      if (entry) {
+        out.push({ key: row.key, entry: entry });
+      }
+    });
+    log.debug("Leaving DirectoryWindow.uidContainsAsync(). " + out.length +
+              ' of ' + raw.length + '.');
+    return { rows: out, asked: raw.length };
+  }
+
+  /**
    * One numbered page of a parent's direct children in key order, asked
    * asynchronously (#359). `asked` counts rows the store answered before
    * a delete made here dropped one, so a short page is the end of the

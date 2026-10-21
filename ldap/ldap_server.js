@@ -2964,6 +2964,10 @@ const OWN_NAMES = [
   // which partner asserted each and so could not be a link.
   'federationRelationship', 'federationIssuer', 'federationLink',
   'federationLastSeen', 'federationAttribute',
+  // WHO CREATED THE ENTRY when it was not one of this service's own doors
+  // (2026-10-20): `federation:<relationship>`, written once by the federated
+  // sign-in that created it and by nothing else. See PROVISIONED_BY.
+  'stsProvisionedBy',
 
   // WHAT THIS PERSON AGREED AN APPLICATION MAY ASK FOR ON THEIR BEHALF, one
   // value per (application, scope) — `20260901143000Z openid webapp1`. Invented
@@ -3743,6 +3747,44 @@ function entryUuidOf(stored) {
 const ENTRY_UUID_ALIAS = 'stsentryuuidalias';
 const CREATE_RACE_WINDOW_S = 60;
 
+// ---------------------------------------------------------------------------
+// `stsProvisionedBy`: WHO CREATED THIS ENTRY, WHEN IT WAS NOT THIS SERVICE'S
+// OWN DOOR (2026-10-20, rcbj's decision on the /portal/delegate search).
+//
+// Nothing on an entry said whether a federated sign-in had CREATED it or had
+// only reached a person who was here already. `federationRelationship`,
+// `federationIssuer`, `federationLink` and `federationLastSeen` are written
+// by EVERY federated sign-in (`applyFederatedAttributes()`), a link (#109)
+// included; the `origin` column is `authentication` for any entry a sign-in
+// created, a development-mode password sign-in as much as a partner's, and a
+// re-homing (#98) rewrites it to `rehomed`; and the created name,
+// `<relationship>~<subject>`, is a convention that a console create can
+// imitate. So the fact is written down where it happens, once:
+//
+//   * `autoCreateUser()`'s CREATE branch stamps `federation:<relationship>`
+//     when the sign-in that created the entry was federated — an enterprise
+//     partner or a consumer provider (#565), which is one path. A sign-in
+//     that LINKS or reaches an existing person writes nothing, so a native
+//     person who links a partner is still native.
+//   * `putEntry()` carries it through every overwrite, and on a create takes
+//     it only from its own `provisionedBy` option, never from the caller's
+//     attributes — `entryUUID`'s rule.
+//   * NO DOOR WRITES IT: it is NO-USER-MODIFICATION in every mode
+//     (ALWAYS_PROTECTED_OPERATIONAL, so an LDAP add or modify is refused
+//     STS-LDAP-0076), `addValues()` refuses it (a certificate's RDNs cannot
+//     carry it), `common/sourced_attributes.ts` refuses every `sts*` name to
+//     a partner's mapping and an attribute source, the person editor and
+//     SCIM write only their own allowlists, and a bulk import takes only
+//     ALLOWED_ATTRIBUTES.
+//   * It TRAVELS with the entry: a re-homing carries the attributes whole
+//     (`common/cell_rehome.ts`, `adoptEntry()`), and so do replication, the
+//     LDIF form and a restore.
+//
+// AN ENTRY WITHOUT IT IS NATIVE, including every entry written before it
+// existed: there is no backfill (rcbj).
+// ---------------------------------------------------------------------------
+const PROVISIONED_BY = 'stsprovisionedby';
+
 function entryUuidAliasesOf(stored) {
   log.debug("Entering entryUuidAliasesOf().");
   const values = (stored && stored.attributes &&
@@ -4184,6 +4226,18 @@ function putEntry(dn, attributes, options) {
   delete stored.attributes[ENTRY_UUID_ALIAS];
   if (entryUuidAliasesOf(previous).length) {
     stored.attributes[ENTRY_UUID_ALIAS] = entryUuidAliasesOf(previous);
+  }
+  // AND WHO PROVISIONED IT (`stsProvisionedBy`, see PROVISIONED_BY), the
+  // same way again: the entry's, carried through every overwrite, and on a
+  // CREATE only what the door that creates it says in `opts.provisionedBy`
+  // — never a value a caller handed in among the attributes.
+  delete stored.attributes[PROVISIONED_BY];
+  const provisionedBefore = previous
+    ? (previous.attributes[PROVISIONED_BY] || []) : [];
+  if (provisionedBefore.length) {
+    stored.attributes[PROVISIONED_BY] = provisionedBefore.slice(0);
+  } else if (!previous && opts.provisionedBy) {
+    stored.attributes[PROVISIONED_BY] = [String(opts.provisionedBy)];
   }
   entries.set(normalizeDn(dn), stored);
   touchDirectory(stored.dn);
@@ -7334,10 +7388,20 @@ function autoCreateUser(detail) {
   }
   // `application` (#539): the client the sign-in was for, whose locale
   // policy gives the person a language.
+  // `provisionedBy` (2026-10-20): a FEDERATED sign-in that creates the
+  // entry stamps it `federation:<relationship>` — a consumer or social
+  // provider (#565) is a relationship like any other, so it is covered by
+  // the same line. A link (#109) never reaches here: it writes onto an
+  // entry that already exists, so a native person who links a partner
+  // stays unstamped, which is to say native. See PROVISIONED_BY.
   const created = putEntry(dn, Object.assign({}, plan.attributes,
                                              { description: [note] }),
                            { origin: 'authentication',
-                             application: String(detail.application || '') });
+                             application: String(detail.application || ''),
+                             provisionedBy: info.federation
+                               ? 'federation:' +
+                                 String(info.federation.id || '')
+                               : '' });
   // The invented facts a credential will assert about this person, written HERE
   // rather than into the credential, so that the entry an LDAP client reads and
   // the credential a wallet is handed say the same thing about the same person.
@@ -10484,13 +10548,18 @@ const SECRET_ATTRIBUTES = [
 ];
 
 const CLIENT_WRITTEN_OPERATIONAL = ['createtimestamp', 'modifytimestamp',
-                                    'entrydn', 'entryuuid', ENTRY_UUID_ALIAS];
+                                    'entrydn', 'entryuuid', ENTRY_UUID_ALIAS,
+                                    PROVISIONED_BY];
 
 // The operational attributes refused in EVERY mode (2026-09-14). `entryUUID`
 // is a person's `sub`; a client that could write one could make their entry
 // the subject of somebody else's tokens, which is not a development-mode
-// convenience but an identity theft with a result code.
-const ALWAYS_PROTECTED_OPERATIONAL = ['entryuuid', ENTRY_UUID_ALIAS];
+// convenience but an identity theft with a result code. `stsProvisionedBy`
+// (2026-10-20) for the same kind of reason: whoever could write or remove it
+// could make a partner's person native here, or a native one a partner's —
+// and the native ones are who a person may find on /portal/delegate.
+const ALWAYS_PROTECTED_OPERATIONAL = ['entryuuid', ENTRY_UUID_ALIAS,
+                                      PROVISIONED_BY];
 
 function isSecretAttribute(name) {
   log.debug("Entering isSecretAttribute().");
@@ -12698,6 +12767,14 @@ if (typeof credentials.setDirectory === 'function') {
       log.debug("Entering readDelegationFacts().");
       log.debug("Leaving readDelegationFacts().");
       return readDelegationFacts(key);
+    },
+    // THE PEOPLE A PERSON MAY FIND ON /portal/delegate (2026-10-20): a
+    // `uid` containing `needle`, native, in this realm. A promise, because
+    // a windowed directory asks the store. See delegateCandidates().
+    delegateCandidates: function (needle, options) {
+      log.debug("Entering delegateCandidates hook.");
+      log.debug("Leaving delegateCandidates hook.");
+      return delegateCandidates(needle, options);
     },
     writeNotDelegated: function (key, value) {
       log.debug("Entering writeNotDelegated().");
@@ -22356,6 +22433,172 @@ async function residentsPageAsync(after, limit) {
   return { people: people, more: more, next: more ? cursor : '' };
 }
 
+// ---------------------------------------------------------------------------
+// THE PEOPLE A PERSON MAY NAME AS THEIR DELEGATE, FOUND BY `uid`
+// (2026-10-20, rcbj on /portal/delegate).
+//
+// `/account-api/delegate/candidates` asks this for any signed-in person, so
+// it is a directory search anybody here can run, and it is shaped by that:
+//
+//   * THE MATCH IS A CONTAINS ON THE ENTRY'S RDN VALUE — its `uid` for
+//     everybody this service names (`uid=<name>,ou=users,...`), lower-cased
+//     as the key is — and on nothing else. No other attribute is matched,
+//     and a result carries the uid, the `cn` (for display) and the DN only.
+//   * ONLY DIRECT CHILDREN OF THIS REALM'S `ou=users`: the realm is the
+//     ambient one, read before the first wait, and its tree is its own
+//     (`ldap/CLAUDE.md`), so another realm's people cannot be asked for.
+//   * ONLY NATIVE PEOPLE: an entry stamped `stsProvisionedBy` (a partner's
+//     or a consumer provider's sign-in created it — PROVISIONED_BY) is left
+//     out; so are a disabled account (`pwdAccountLockedTime`), a service
+//     account, a group placed under `ou=users`, and the person asking.
+//     `stsNotDelegated` on a CANDIDATE is not a reason: it says nobody may
+//     act for THEM, not that they may not act for somebody else.
+//   * BOUNDED IN BOTH STORES. The answer is at most `cap` people, and says
+//     `more` when more matched. In a windowed process (postgres) the store
+//     is asked one statement — `directory_queries.js`'s `uidContains`, a
+//     LIKE the trigram index `sts_ldap_entries_uid_trgm` answers — for at
+//     most `OVERFETCH` times the cap plus one, BEFORE the exclusions, which
+//     the store cannot apply to a sealed entry: so a page of excluded rows
+//     cannot starve the answer silently, and `more` is also said when the
+//     store had more rows than were read, since some of those may be people
+//     this would have shown. In memory the realm's people are held already
+//     (`personRows()`) and the match is exact.
+// ---------------------------------------------------------------------------
+const DELEGATE_CANDIDATE_CAP = 10;
+const DELEGATE_CANDIDATE_OVERFETCH = 5;
+const DELEGATE_CANDIDATE_MIN = 3;
+
+/**
+ * Why an entry is not one a person may find as a delegate, or '' when it is.
+ *
+ * A hot path (once per matching row): no Entering/Leaving pair.
+ *
+ * @param stored - the entry
+ * @param selfKey - the asking person's normalised DN
+ * @returns the reason, or ''
+ */
+function delegateCandidateExclusion(stored, selfKey) {
+  const attrs = (stored && stored.attributes) || {};
+  if (!stored || !isPersonEntry(stored)) {
+    return 'not a person';
+  }
+  if (selfKey && normalizeDn(stored.dn) === selfKey) {
+    return 'themselves';
+  }
+  if ((attrs[PROVISIONED_BY] || []).length) {
+    return 'provisioned by ' + String(attrs[PROVISIONED_BY][0]);
+  }
+  if ((attrs.pwdaccountlockedtime || []).length) {
+    return 'disabled';
+  }
+  if (serviceAccounts.isServiceAccount(attrs)) {
+    return 'a service account';
+  }
+  if (groupRuleFor(stored)) {
+    return 'a group';
+  }
+  return '';
+}
+
+/**
+ * One result row: the uid, the cn and the DN, and nothing else.
+ *
+ * A hot path (once per row shown): no Entering/Leaving pair.
+ *
+ * @param stored - the entry
+ * @returns `{ uid, cn, dn }`
+ */
+function delegateCandidateRow(stored) {
+  const attrs = stored.attributes || {};
+  return { uid: String((attrs.uid || [])[0] || usernameOfEntry(stored)),
+           cn: String((attrs.cn || [])[0] || ''),
+           dn: String(stored.dn) };
+}
+
+/**
+ * What one over-fetched page of the store's matches shows (see the block
+ * above): the rows the exclusions keep, and whether more MAY have matched —
+ * more kept than the cap, or the store answering as many rows as it was
+ * asked for, past which nobody has looked.
+ *
+ * @param rows - the store's rows, `{ entry }`, opened
+ * @param answered - how many rows the store answered
+ * @param asked - how many it was asked for
+ * @param cap - the most people shown
+ * @param selfKey - the asking person's normalised DN
+ * @returns `{ people, more }`, `people` not yet cut to the cap
+ */
+function delegateCandidatesOfPage(rows, answered, asked, cap, selfKey) {
+  log.debug('Entering delegateCandidatesOfPage().');
+  const people = [];
+  (rows || []).forEach(function (row) {
+    if (row && row.entry &&
+        !delegateCandidateExclusion(row.entry, selfKey)) {
+      people.push(delegateCandidateRow(row.entry));
+    }
+  });
+  const more = Number(answered) >= Number(asked) || people.length > cap;
+  log.debug('Leaving delegateCandidatesOfPage(). ' + people.length +
+            ' kept of ' + answered + '.');
+  return { people: people, more: more };
+}
+
+/**
+ * The native people of this realm whose `uid` contains `needle`, for
+ * `/portal/delegate` (see the block above).
+ *
+ * @param needle - the text the person typed; fewer than three characters
+ *   finds nobody
+ * @param options - `selfDn`, the asking person's DN; `cap`, at most ten
+ * @returns a promise of `{ people: [{ uid, cn, dn }], more }`
+ */
+async function delegateCandidates(needle, options) {
+  log.debug('Entering delegateCandidates().');
+  const o = options || {};
+  const wanted = String(needle || '').trim().toLowerCase();
+  const cap = Math.max(1, Math.min(DELEGATE_CANDIDATE_CAP,
+    Math.floor(Number(o.cap) || DELEGATE_CANDIDATE_CAP)));
+  const selfKey = o.selfDn ? normalizeDn(String(o.selfDn)) : '';
+  if (wanted.length < DELEGATE_CANDIDATE_MIN) {
+    log.debug('Leaving delegateCandidates(). Too short.');
+    return { people: [], more: false };
+  }
+  const kept = [];
+  let more = false;
+  if (directoryWindow) {
+    // The realm and the container before the wait, so the question stays
+    // in the realm the caller entered.
+    const realmId = realms.currentId();
+    const parent = normalizeDn(usersDn());
+    const asked = cap * DELEGATE_CANDIDATE_OVERFETCH + 1;
+    const page = await storeAsked(directoryWindow.uidContainsAsync(realmId,
+      parent, wanted, asked));
+    const read = delegateCandidatesOfPage(page.rows, page.asked, asked, cap,
+                                          selfKey);
+    read.people.forEach(function (one) {
+      kept.push(one);
+    });
+    more = read.more;
+  } else {
+    personRows().forEach(function (row) {
+      if (String(row.name || '').toLowerCase().indexOf(wanted) < 0) {
+        return;
+      }
+      const stored = storedPersonAt(row);
+      if (stored && !delegateCandidateExclusion(stored, selfKey)) {
+        kept.push(delegateCandidateRow(stored));
+      }
+    });
+    more = kept.length > cap;
+  }
+  kept.sort(function (a, b) {
+    return a.uid < b.uid ? -1 : (a.uid > b.uid ? 1 : 0);
+  });
+  log.debug('Leaving delegateCandidates(). ' + Math.min(cap, kept.length) +
+            ' shown' + (more ? ', and more matched.' : '.'));
+  return { people: kept.slice(0, cap), more: more };
+}
+
 /**
  * A store question asked asynchronously for a windowed console page
  * (#359), with its failure CODED: a rejection that carries no code of its
@@ -26144,6 +26387,11 @@ module.exports = {
   personDns: personDns,
   residentsPage: residentsPage,
   residentsPageAsync: residentsPageAsync,
+  delegateCandidates: delegateCandidates,
+  delegateCandidatesOfPage: delegateCandidatesOfPage,
+  DELEGATE_CANDIDATE_OVERFETCH: DELEGATE_CANDIDATE_OVERFETCH,
+  DELEGATE_CANDIDATE_CAP: DELEGATE_CANDIDATE_CAP,
+  DELEGATE_CANDIDATE_MIN: DELEGATE_CANDIDATE_MIN,
   candidatePageAsync: candidatePageAsync,
   candidateByNameAsync: candidateByNameAsync,
   // /admin/ldap/directory's view, for the in-process test that counts what

@@ -21909,6 +21909,24 @@ const CODES = [
       'the list links to), a JWK thumbprint (not a DID), or a did:jwk or ' +
       'did:key the resolver could not read (2026-10-20).',
     spec: 'HTTP 400 JSON' },
+  { code: 'STS-PORTAL-0620',
+    summary: 'A search on /portal/delegate (GET /account-api/delegate/' +
+      'candidates) was refused: the text had fewer than three characters, ' +
+      'the fewest the search takes, so that a search is never a listing ' +
+      'of the directory (2026-10-20).',
+    spec: 'HTTP 400 JSON' },
+  { code: 'STS-PORTAL-0621',
+    summary: 'A search on /portal/delegate was refused: the person or ' +
+      'their address had asked more times in the rate-limit window than ' +
+      'the search allows (thirty a person, 120 an address). Where the ' +
+      'limiter names its own bucket, its code is recorded instead ' +
+      '(2026-10-20).',
+    spec: 'HTTP 429 JSON' },
+  { code: 'STS-PORTAL-0622',
+    summary: 'A search on /portal/delegate could not be answered: no ' +
+      'directory was installed, or the store could not be read. The page ' +
+      'says so and the DN form still works (2026-10-20).',
+    spec: 'HTTP 503 JSON' },
   { code: 'STS-ACCOUNT-0001',
     summary: 'A request to /account-api presented no access token.',
     spec: 'RFC 6750 section 3.1 (401, WWW-Authenticate: DPoP)' },

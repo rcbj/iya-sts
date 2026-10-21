@@ -64,6 +64,7 @@ import kit = require('./web_portal_kit');
 import PortalShell = require('./web_portal_shell');
 import PortalPages = require('./web_portal_pages');
 import PortalWebAuthn = require('./web_portal_webauthn');
+import DelegatePages = require('./web_delegate');
 import WebAccounts = require('../common/web_accounts');
 
 type Json = any;
@@ -1288,6 +1289,11 @@ class PortalRuntime extends SpaClient {
       self.submit(form, null);
     });
     PortalRuntime.wireDependentSelects(doc);
+    // `/portal/delegate`'s search (2026-10-20): asked through this
+    // runtime's own token, its answers drawn in place.
+    DelegatePages.wire(doc, this.env.window || {}, function (path: string) {
+      return self.apiJson('GET', path);
+    }, this.t);
   }
 
   // A LIST WHOSE OPTIONS FOLLOW A CHOICE (2026-10-16, `/portal/wallet`'s

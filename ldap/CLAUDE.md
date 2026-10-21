@@ -1257,6 +1257,84 @@ reads the holders of `federationLink` (`eachHolderOfAny()`, not `persons()`) and
 returns a person whose every link starts with that relationship and who has no
 `userPassword` and is not already disabled.
 
+## `stsProvisionedBy`: WHO CREATED THE ENTRY, WHEN IT WAS NOT THIS SERVICE (2026-10-20)
+
+**rcbj's decision for `/portal/delegate`'s search, which must find NATIVE
+people only.** Until then nothing on an entry said whether a federated
+sign-in had CREATED it or had only reached somebody already here:
+
+* the five federation attributes above are written by EVERY federated
+  sign-in, a link (#109) and a provisioned person's first sign-in included;
+* the `origin` column is `authentication` for any entry a sign-in created,
+  a development-mode password sign-in as much as a partner's, and a
+  re-homing (#98) rewrites it to `rehomed`;
+* `<relationship>~<subject>` is a naming convention a console create can
+  imitate.
+
+So the fact is written down where it happens, once.
+`autoCreateUser()`'s create branch passes `putEntry()` a `provisionedBy` of
+`federation:<relationship>` when the creating sign-in was federated. A
+consumer or social provider (#565) is a relationship like any other, so the
+same line covers it. Nothing else writes it, and a sign-in that links or
+reaches an existing person writes nothing, so **a native person who links a
+partner stays native**.
+
+`putEntry()` keeps it as `entryUUID` is kept: the entry's own, carried
+through every overwrite. On a create it comes only from the option, never
+from the caller's attributes. **No door writes it**:
+
+* It is in `ALWAYS_PROTECTED_OPERATIONAL`, so an LDAP add or modify that
+  names it is refused `STS-LDAP-0076` in both modes, administrator included.
+* `addValues()` refuses it, so a certificate's RDNs cannot carry it.
+* `common/sourced_attributes.ts` refuses every `sts*` name to a partner's
+  mapping and to an attribute source.
+* The person editor (the console, `/admin-api` and the portal) and SCIM
+  write only their allowlists, and `createUser()` refuses an attribute it
+  does not know.
+* A bulk import takes only `ALLOWED_ATTRIBUTES`.
+
+**It travels**: a re-homing carries the attributes whole (`adoptEntry()`),
+and so do replication, the LDIF form and a restore. **An entry without it is
+native**, every entry written before it existed included. There is no
+backfill (rcbj). `tests/portal_delegate_search.js` section A holds all of
+this; `tests/federation_subject_policy.js` (1k-ii, 1m-ii) and
+`tests/federation_consumer_providers.js` (D5, G2-ii) hold it on real
+sign-ins.
+
+### `delegateCandidates()`: a `uid` contains-search anybody signed in may run
+
+The directory half of `GET /account-api/delegate/candidates`, reached
+through `credentials.setDirectory()`'s object (`delegateCandidates`):
+
+* It matches the direct children of the ambient realm's `ou=users`. The
+  match is a contains on the RDN value, which is the `uid` for everybody
+  this service names, and it needs three characters or more.
+* It leaves out an entry with `stsProvisionedBy`, the person asking, a
+  disabled account (`pwdAccountLockedTime`), a service account and a group.
+  Applications and devices are not under `ou=users`.
+* It answers at most ten, each `{ uid, cn, dn }`, with `more`.
+
+**In a windowed process it is ONE statement** (`directory_queries.js`'s
+`uidContains`), a LIKE whose text is a parameter with `%`, `_` and `\`
+escaped. `sts_ldap_entries_uid_trgm` answers it: a `pg_trgm` GIN over
+`rdn_value`, partial on `parent_key LIKE 'ou=users,%'`, schema version 23.
+`rdn_value` is generated, lower-cased and in the clear, so nothing sealed is
+indexed and nothing about a person is exposed that the table did not already
+show. rcbj first asked for a cn search and corrected it to uid, because cn
+is inside the sealed blob.
+
+The statement has no ORDER BY, so the LIMIT stops the scan. Measured on
+2M people under one `ou=users` (postgres 18): a rare text took 0.1 ms
+through the index, a text nobody has 0.02 ms, and a text most people
+contain 0.1 ms as a sequential scan that stopped at the 51st row.
+
+**The exclusions cannot run in the database, because the entry is sealed**,
+so the store is asked for five times the cap plus one (51). The entries are
+opened and the exclusions applied here. `more` is said when more than ten
+were kept OR the store filled the over-fetch, so a page of excluded rows can
+never answer "that is everybody" (`delegateCandidatesOfPage()`). In memory
+the realm's people are already held (`personRows()`), and the match is exact.
+
 ## `entryUUID`: THE ONE THING ABOUT AN ENTRY THAT NEVER CHANGES, AND A PERSON'S `sub` (2026-09-14)
 
 **A person's `sub` is `urn:uuid:<entryUUID>` in both modes**, and a SCIM resource's `id`

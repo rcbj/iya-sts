@@ -2694,6 +2694,13 @@ open the bodies. Memory and LDIF are unchanged. Where the window is on,
 one process holds a bounded set and the walks read this index; the
 argument is in `authn/CLAUDE.md`.
 
+**Schema version 23 (2026-10-20) is `sts_ldap_entries_uid_trgm`**, a
+`pg_trgm` GIN over `rdn_value`, partial on the children of a realm's
+`ou=users`, for `/portal/delegate`'s search. It is the one index here with
+an extension behind it, which the driver creates first where it may. How a
+large store builds it without holding writes is in `postgres/CLAUDE.md`, and
+the search itself is in `ldap/CLAUDE.md`.
+
 **`sts_sessions_surface` is the seventh index (#754, schema version 22).**
 `session.surface` — a hosted surface's relying-party sessions, which
 `Authn.endRelyingPartySessions()` asks for every signal the surface

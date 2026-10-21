@@ -1794,6 +1794,15 @@ partner answered (`STS-FED-0101`), and the subject decision again. No hook from
 `authn.ts` back into this module (4b forbids the require), and no state a
 cluster node could not read.
 
+**AN ENTRY A SIGN-IN CREATED IS STAMPED `stsProvisionedBy:
+federation:<relationship>` (2026-10-20)**, once, by `autoCreateUser()`'s
+create branch. An enterprise partner and a consumer provider are stamped
+alike, since they share one funnel. A link, a confirm and a returning person
+write nothing, so a person created here who links a partner stays native.
+No door may write or remove the stamp, and an entry without one is native
+(no backfill). `/portal/delegate`'s search finds only native people.
+`ldap/CLAUDE.md`, *`stsProvisionedBy`*, argues it.
+
 **CREATING ANYBODY** is the decision's call as well as the switch's: the
 funnel carries `create` and `autoCreateUser()` makes nobody without it, so a
 sign-in sent to an existing person can never create one because the entry

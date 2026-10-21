@@ -189,6 +189,33 @@ order. **The same run switches the directory's six GIN indexes to
 On 8081 the four lists held ~205,000 tuples each, so the flush is a few
 seconds of index writes inside the script's transaction.
 
+**VERSION 23 (2026-10-20) ADDS `pg_trgm` AND A TRIGRAM INDEX, AND A LARGE
+STORE SHOULD BUILD IT CONCURRENTLY FIRST.** `sts_ldap_entries_uid_trgm` is a
+GIN over `rdn_value` with `gin_trgm_ops`, partial on the children of each
+realm's `ou=users`. It is what `/portal/delegate`'s search asks
+(`ldap/CLAUDE.md`). `pg_trgm` ships in the official image's contrib and is a
+TRUSTED extension (PostgreSQL 13+), so the database owner may create it with
+no superuser. Measured on `postgres:18`: a non-superuser owner created it,
+and it landed in the `sts` schema.
+
+The script runs in one transaction, which `CREATE INDEX CONCURRENTLY`
+cannot, so the script builds the index with a plain CREATE, under the
+`SHARE` lock that holds every write to the directory for the build. That
+build took 6.3 s at 2M people (concurrently), and the index was 43 MB
+beside a 365 MB table. So at 8081's 50M, expect minutes and about 1 GB.
+**On such a store, run this as the owner BEFORE the version-23 image starts
+and before the script**, outside any transaction (psql's default, one
+statement at a time). The script's and the driver's `IF NOT EXISTS` then
+find it built:
+
+    CREATE EXTENSION IF NOT EXISTS pg_trgm;
+    CREATE INDEX CONCURRENTLY IF NOT EXISTS sts_ldap_entries_uid_trgm ON sts_ldap_entries USING gin (rdn_value gin_trgm_ops) WITH (fastupdate = off) WHERE parent_key LIKE 'ou=users,%';
+
+Use the search path the script sets (`sts, public`). A version-23 image
+started as `sts_app` against a store without the index is refused at open,
+as with every version's new index. The driver, as a role that may create,
+makes the extension first (`SCHEMA_OBJECTS`' `extension`).
+
 **THE DRIVER STILL CREATES WHAT IS MISSING AND THAT IS NOT A CONTRADICTION.**
 It probes with `to_regclass` first and issues a `CREATE` only for an object that
 is not there, so against a database this script has built it issues none. That

@@ -158,6 +158,7 @@ uploaded instead.
 | `federationRelationship`, `federationIssuer`, `federationLastSeen` | where a federated person came from. `federationLastSeen` is what `fedProvisionIdleMinutes` reads |
 | `federationLink` | `<relationship> <issuer> <subject>`: **the one that decides anything**, linking a partner's subject to this person (#109) |
 | `federationAttribute` | which of the entry's other attributes came from a partner's assertion |
+| `stsProvisionedBy` | `federation:<relationship>`, written once, by the federated sign-in that CREATED the entry (an enterprise partner or a consumer provider). A sign-in that links or reaches somebody already here writes nothing. No door may write or remove it (`constraintViolation` over LDAP), and it travels with the entry. An entry without it is native, and only native people are found by `/portal/delegate`'s search |
 | `oauthConsent` | `<time> <scope> <client_id>`, one value per (application, scope) |
 | `oauthConsentWithdrawn` | `<time> <scope> <client_id>` (#172). It stops a re-consent from reviving an older refresh token |
 | `stsIdaVerification` | OpenID Connect for Identity Assurance verifications as JSON (#127). **Withheld**, because evidence carries document numbers |
