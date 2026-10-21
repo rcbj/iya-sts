@@ -4126,6 +4126,10 @@ function rebuildUuidIndex(cache) {
 // per value, a primary value before an alias.
 // ---------------------------------------------------------------------------
 const UUID_BATCH = 500;
+// How many of a long list's store questions are asked at once (2026-10-21):
+// enough to overlap their round trips, few enough to leave the read pool to
+// the sign-ins beside them.
+const STORE_BATCHES_AT_ONCE = 4;
 
 /**
  * Finds the entries of the ambient realm holding each of a list of
@@ -4238,8 +4242,15 @@ async function entriesByUuidsAsync(uuids) {
     return out.get(wanted) === null;
   });
   const realmId = realms.currentId();
+  // A FEW BATCHES AT A TIME (2026-10-21), not one after another: the Users
+  // page's first build after a start asked 241 of them in turn on 8081,
+  // 5 s of waiting on the store. Each batch asks its own values and fills
+  // only them, so the order they answer in changes nothing.
+  const batches = [];
   for (let at = 0; at < asked.length; at += UUID_BATCH) {
-    const batch = asked.slice(at, at + UUID_BATCH);
+    batches.push(asked.slice(at, at + UUID_BATCH));
+  }
+  await helpers.inParallel(batches, STORE_BATCHES_AT_ONCE, async function (batch) {
     const wanted = new Set(batch);
     const found = await directoryWindow.findWindowedAsync(realmId,
       'withUuids', [realmId, batch], function (entry) {
@@ -4265,7 +4276,7 @@ async function entriesByUuidsAsync(uuids) {
         }
       });
     });
-  }
+  });
   log.debug("Leaving entriesByUuidsAsync(). " + asked.length + " asked of " +
             "the store.");
   return out;
