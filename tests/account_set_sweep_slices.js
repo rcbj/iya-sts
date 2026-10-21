@@ -19,7 +19,10 @@
 //       counts more than one slice;
 //   S2. it ends, remembers and deletes exactly what sweep() does on the same
 //       sets;
-//   S3. a set removed by a request between two slices is not written back.
+//   S3. a set removed by a request between two slices is not written back;
+//   B1–B3 (#784). a run of the job does at most its budget, the runs resume
+//       where the last stopped, every set of a pass is visited once, and a
+//       finished pass is followed by a new one.
 //
 // In a child process: it fills the module-wide account-set store.
 // ===========================================================================
@@ -144,6 +147,45 @@ function child() {
       return AccountSets.byId(victim);
     }), 'S3. a set a request removed between two slices stays removed — ' +
          'the sweep reads each set again when its turn comes');
+
+    // --- B (#784): a budgeted run, resuming --------------------------------
+    // A pass over these 100 new sets and the 600 already there, at a 60 ms
+    // budget with a 1 ms session check: several runs, each within budget,
+    // that together visit every set once and then begin a new pass.
+    inRealm(function () {
+      return fill(100, 'sd');
+    });
+    const runs = [];
+    let visited = 0;
+    let of = 0;
+    for (let i = 0; i < 40; i++) {
+      const t0 = Date.now();
+      const run = await inRealm(function () {
+        return AccountSets.sweepBudgeted(live, 60);
+      });
+      runs.push({ ms: Date.now() - t0, sets: run.sets, at: run.at,
+                  of: run.of });
+      visited += run.sets;
+      of = run.of;
+      if (run.at >= run.of) {
+        break;
+      }
+    }
+    const last = runs[runs.length - 1];
+    note(runs.length > 3 && runs.every(function (r) {
+      return r.ms < 60 + 2 * 25 + 30;
+    }), 'B1. each run stops near its budget, and a pass takes several runs',
+         JSON.stringify({ runs: runs.length, slowest: Math.max.apply(null,
+           runs.map(function (r) { return r.ms; })) }));
+    note(last.at === last.of && visited === of && of > 0,
+         'B2. the runs resume where the last stopped and visit every set of ' +
+         'the pass exactly once', JSON.stringify({ visited: visited, of: of }));
+    const next = await inRealm(function () {
+      return AccountSets.sweepBudgeted(live, 60);
+    });
+    note(next.at > 0 && next.at < next.of && next.sets > 0,
+         'B3. after a pass ends, the next run begins a new one',
+         JSON.stringify(next));
     finish();
   })().catch(function (e) {
     note(false, 'the child threw', (e && e.stack) || e);
