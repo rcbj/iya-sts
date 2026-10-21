@@ -1246,6 +1246,8 @@ class ProtocolStack {
     // here because requiring them from there could close a load cycle.
     const jobScheduler = require('../cluster/scheduler');
     require('./admin_stats').ensureTokenPurgeJob(jobScheduler);
+    // And the token holders' one-time backfill (#820), for the same reason.
+    require('./admin_stats').ensureHoldersBackfillJob(jobScheduler);
     require('../persistence/persistence_minted')
       .ensureTombstoneJob(jobScheduler);
     // And the expired-row purge (#333), for the same reason.

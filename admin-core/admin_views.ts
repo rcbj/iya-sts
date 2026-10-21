@@ -12599,7 +12599,16 @@ class AdminViews {
     // rows on this page and for nobody else (`pagedRows()`).
     const page = this.pagedRows(req.query, filtered, {
       decorate: function (row) {
-        return self.decoratePerson(population, row);
+        const decorated = self.decoratePerson(population, row);
+        // ON DEMAND (#820) the list's token counts are of the tokens a
+        // process holds; a shown row's own are read from the index.
+        if (self.deps.stats.tokensOnDemand() && decorated) {
+          const own = self.deps.stats.userRow(row.key);
+          if (own && own.tokens) {
+            decorated.tokens = own.tokens;
+          }
+        }
+        return decorated;
       }
     });
     const paging = page.paging;
