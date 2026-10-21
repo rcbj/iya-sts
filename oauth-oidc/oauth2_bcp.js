@@ -3548,6 +3548,29 @@ async function spendRefreshToken(opts) {
   const familyId = String((known && known.family) || claims[FAMILY_CLAIM] ||
                           '');
   const clientId = String(claims.client_id || '');
+  // THE CLAIM IS ASKED BESIDE THE FAMILY QUESTION, NOT AFTER IT (2026-10-21,
+  // #820): two round trips to the claim store in a row on every refresh,
+  // where neither answer depends on the other. The family's answer still
+  // decides first; a claim won meanwhile is released as any claim on a
+  // refused request is (`releaseUnlessSucceeded()`), and one that is not
+  // waited for is still settled, so its failure is never unhandled.
+  const expiresMs = Number(claims.exp) * 1000;
+  const skew = Number(config.value('oauth2.clockSkewS'));
+  const claiming = clusterClaims.claim({
+    scope: 'oauth.refresh', value: jti,
+    ttlMs: (isFinite(expiresMs) ? Math.max(0, expiresMs - Date.now())
+                                : refreshFamilyWindowMs()) +
+           (isFinite(skew) ? skew * 1000 : 0)
+  });
+  const settleUnused = function () {
+    claiming.then(function (unused) {
+      if (unused && unused.ok) {
+        clusterClaims.releaseUnlessSucceeded(o.res, unused.handle);
+      }
+    }, function (e) {
+      log.debug("Caught in spendRefreshToken(): " + ((e && e.message) || e));
+    });
+  };
   if (familyId) {
     let revoked = false;
     try {
@@ -3555,6 +3578,7 @@ async function spendRefreshToken(opts) {
         scope: 'oauth.refresh-family-revoked', value: familyId
       });
     } catch (e) {
+      settleUnused();
       log.debug("Caught in spendRefreshToken(): " + ((e && e.message) || e));
       log.error(errorCodes.tag('STS-OAUTH-0518') + 'RFC 9700 mode: whether ' +
                 'refresh family ' + familyId + ' was revoked could not be ' +
@@ -3564,6 +3588,7 @@ async function spendRefreshToken(opts) {
       return storeRefusal();
     }
     if (revoked) {
+      settleUnused();
       log.warn('RFC 9700 section 2.2.2: refresh token ' + jti + ' belongs ' +
                'to family ' + familyId + ', which a replay has already ' +
                'revoked. Refused, and revoked itself.');
@@ -3579,14 +3604,7 @@ async function spendRefreshToken(opts) {
                             'request.' };
     }
   }
-  const expiresMs = Number(claims.exp) * 1000;
-  const skew = Number(config.value('oauth2.clockSkewS'));
-  const answer = await clusterClaims.claim({
-    scope: 'oauth.refresh', value: jti,
-    ttlMs: (isFinite(expiresMs) ? Math.max(0, expiresMs - Date.now())
-                                : refreshFamilyWindowMs()) +
-           (isFinite(skew) ? skew * 1000 : 0)
-  });
+  const answer = await claiming;
   if (answer.ok) {
     clusterClaims.releaseUnlessSucceeded(o.res, answer.handle);
     log.debug("Leaving spendRefreshToken(). Spent.");
