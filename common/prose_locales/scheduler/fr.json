@@ -247,6 +247,14 @@
     "en": "46dabea2677465d2",
     "text": "Supprime chaque autorisation OAuth dont le dernier jeton a expiré, ainsi que l’enregistrement de chaque jeton créé sous une autorisation une fois qu’il expire (#142)."
   },
+  "sched.jobs.oauth2.token-holders-backfill.title": {
+    "en": "98c516f1cf99620a",
+    "text": "Rattrapage des détenteurs de jetons"
+  },
+  "sched.jobs.oauth2.token-holders-backfill.describe": {
+    "en": "868b926daccee16f",
+    "text": "Ajoute à la liste des utilisateurs le détenteur de chaque jeton déjà émis, une fois par domaine, maintenant que le registre des jetons est lu à la demande (#820)."
+  },
   "sched.jobs.oauth2.used-assertion-purge.title": {
     "en": "1b76c505917f3b58",
     "text": "Balayage des assertions utilisées expirées"

@@ -7430,7 +7430,13 @@ const SETTINGS = [
                  'A128KW', 'A192KW', 'A256KW',
                  'A128GCMKW', 'A192GCMKW', 'A256GCMKW', 'PBES2-HS256+A128KW',
                  'PBES2-HS384+A192KW', 'PBES2-HS512+A256KW', 'dir']),
-    dflt: 'RSA-OAEP-256', runtime: true,
+    // A256KW SINCE 2026-10-21 (#820, rcbj's decision; it was RSA-OAEP-256).
+    // A refresh token is sealed by this realm to itself, so a public key
+    // buys nothing; RSA cost a private-key decrypt and an encryption on the
+    // event loop at every refresh. A256KW wraps under the realm's own
+    // secret. A token sealed under RSA before still opens: open() reads the
+    // alg each token names, and the realm keeps its RSA key.
+    dflt: 'A256KW', runtime: true,
     description: 'The JWE key management algorithm every refresh token is ' +
                  'encrypted under. A refresh token is a signed JWT sealed to ' +
                  'THIS realm\'s own keys and is opaque to its client, so the ' +

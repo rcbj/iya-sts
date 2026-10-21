@@ -457,7 +457,7 @@ var config = {
     clockSkewS: 30,                                // Token clock skew (s)
     redirectUris: "",                              // Registered redirect URIs
     loopbackPortWildcard: true,                    // Loopback port wildcard
-    refreshTokenEncryptionAlg: "RSA-OAEP-256",     // Refresh token encryption: key management (alg)
+    refreshTokenEncryptionAlg: "A256KW",     // Refresh token encryption: key management (alg)
     refreshTokenEncryptionEnc: "A256GCM",          // Refresh token encryption: content (enc)
     refreshTokenEncryptionKeyBits: 2048,           // Refresh token encryption: RSA key size (bits)
     refreshTokenEncryptionCurve: "P-256",          // Refresh token encryption: EC curve

@@ -247,6 +247,14 @@
     "en": "46dabea2677465d2",
     "text": "移除最後一個權杖已到期的每個 OAuth 授與，以及在某授與下產生之每個權杖到期後的記錄（#142）。"
   },
+  "sched.jobs.oauth2.token-holders-backfill.title": {
+    "en": "98c516f1cf99620a",
+    "text": "權杖持有者回填"
+  },
+  "sched.jobs.oauth2.token-holders-backfill.describe": {
+    "en": "868b926daccee16f",
+    "text": "現在權杖登記表按需讀取（#820），因此每個領域執行一次，將每個已核發權杖的持有者記入使用者清單。"
+  },
   "sched.jobs.oauth2.used-assertion-purge.title": {
     "en": "1b76c505917f3b58",
     "text": "過期已使用斷言清理"
