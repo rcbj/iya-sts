@@ -101,7 +101,11 @@ class MetricsPage {
         kit.tile(snap.calls.healthProbes || 0,
                  t.text('consoleMetrics.tile.healthProbes')) +
         kit.tile(snap.tokens.held,
-                 t.text('consoleMetrics.tile.tokensIssued')) +
+                 t.text(snap.tokens.heldOnly
+                   // The register on demand (#820 part 3): these are the
+                   // recent ones a process holds, not every token issued.
+                   ? 'consoleMetrics.tile.tokensHeldRecent'
+                   : 'consoleMetrics.tile.tokensIssued')) +
         kit.tile(snap.tokens.revoked,
                  t.text('consoleMetrics.tile.tokensRevoked')) +
         kit.tile(snap.artifacts.held,

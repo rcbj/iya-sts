@@ -9564,8 +9564,8 @@
     "text": "运行记录保留时长（小时）"
   },
   "scheduler.runHistoryHours|description": {
-    "en": "0f3e63d5914e2685",
-    "text": "在这么多小时内结束的每次运行——包括失败的——都会保留，与每个作业最近 scheduler.runHistoryCount 次运行并列，以保留较多者为准。因此每分钟运行一次的作业，在其运行的每个领域中都保留一天的运行记录。0 只按次数保留。"
+    "en": "5c283870d0319ed7",
+    "text": "在此小时数内结束的每次运行都会保留（包括失败的运行），另外还保留每个作业最近的 scheduler.runHistoryCount 次运行，以保留较多者为准。因此，每分钟运行一次的作业会在其运行的每个领域中保留一小时的运行记录；如果 scheduler.runHistoryCount 更多，则保留其最近的 scheduler.runHistoryCount 次。0 表示只按数量保留。"
   },
   "scheduler.disabledJobs|label": {
     "en": "a33937a2bd564b6d",

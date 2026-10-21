@@ -1,6 +1,7 @@
 {
   "tile.calls": "端点调用",
   "tile.tokensIssued": "已签发令牌",
+  "tile.tokensHeldRecent": "持有的近期令牌",
   "tile.tokensRevoked": "已吊销令牌",
   "tile.artifacts": "其他工件",
   "tile.users": "已知用户",

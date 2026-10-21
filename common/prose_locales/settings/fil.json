@@ -9564,8 +9564,8 @@
     "text": "Tagal ng pagpapanatili ng mga run (oras)"
   },
   "scheduler.runHistoryHours|description": {
-    "en": "0f3e63d5914e2685",
-    "text": "Pinapanatili ang bawat run na natapos sa loob ng ganitong karaming oras — kasama ang pumalya — katabi ng huling scheduler.runHistoryCount na run ng bawat job, alinman ang mas maraming pinapanatili. Kaya ang job na tumatakbo bawat minuto ay nagpapanatili ng isang araw ng mga run sa bawat realm na pinagtatakbuhan nito. Ang bilang lang ang pinapanatili ng 0."
+    "en": "5c283870d0319ed7",
+    "text": "Itinatago ang bawat run na natapos sa loob ng ganitong dami ng oras — kasama ang nabigo — bukod sa huling scheduler.runHistoryCount na run ng bawat job, alinman ang mas maraming itinatago. Kaya ang job na tumatakbo bawat minuto ay nagtatago ng isang oras ng mga run sa bawat realm na tinatakbuhan nito, o ng huling scheduler.runHistoryCount kung mas marami iyon. Ang 0 ay bilang lamang ang itinatago."
   },
   "scheduler.disabledJobs|label": {
     "en": "a33937a2bd564b6d",

@@ -19,6 +19,9 @@
 //
 //   minted.read     one row by (handle, realm, key) — the key column is the
 //                   keyed digest `persistence_minted.js` files a row under;
+//   minted.page     a page of one store's live rows in one realm, in key
+//                   column order after a cursor (part 2): what a walk of
+//                   the whole store reads, a page at a time (`scan()`);
 //   minted.byIndex  the rows filed under one index key of an `indexBy`
 //                   store (`sts_minted_index`, schema version 24): what a
 //                   walk of the whole store used to find, such as every
@@ -43,6 +46,13 @@ const BY_INDEX = 'SELECT m.key, m.key_sealed, m.body FROM sts_minted_index i ' +
   'm.key = i.key WHERE i.handle = $1 AND i.realm = $2 AND i.index_key = $3 ' +
   'AND m.body <> $4 ORDER BY m.key LIMIT $5';
 
+const PAGE = 'SELECT key, key_sealed, body FROM sts_minted WHERE handle = $1 ' +
+  'AND realm = $2 AND key > $3 AND body <> $4 AND (expires_at IS NULL OR ' +
+  'expires_at > $5) ORDER BY key LIMIT $6';
+
+// The most rows one page answers.
+const PAGE_LIMIT = 500;
+
 // The most rows one index key answers. An index key is a family, a person:
 // a few rows, and a bound keeps a key that collects thousands from holding
 // the bridge.
@@ -62,6 +72,12 @@ function build(name, args) {
   if (name === 'minted.read') {
     log.debug("Leaving build().");
     return { text: READ, values: [String(a[0]), String(a[1]), String(a[2])] };
+  }
+  if (name === 'minted.page') {
+    log.debug("Leaving build().");
+    return { text: PAGE, values: [String(a[0]), String(a[1]), String(a[2]),
+                                  TOMBSTONE, Number(a[3]) || Date.now(),
+                                  PAGE_LIMIT] };
   }
   if (name === 'minted.byIndex') {
     log.debug("Leaving build().");
@@ -89,7 +105,7 @@ function answerOf(name, rows) {
     log.debug("Leaving answerOf().");
     return !row || row.body === TOMBSTONE ? null : { body: String(row.body) };
   }
-  if (name === 'minted.byIndex') {
+  if (name === 'minted.byIndex' || name === 'minted.page') {
     log.debug("Leaving answerOf().");
     return list.map(function (row) {
       return { key: String(row.key),
@@ -105,5 +121,6 @@ module.exports = {
   build: build,
   answerOf: answerOf,
   TOMBSTONE: TOMBSTONE,
-  BY_INDEX_LIMIT: BY_INDEX_LIMIT
+  BY_INDEX_LIMIT: BY_INDEX_LIMIT,
+  PAGE_LIMIT: PAGE_LIMIT
 };

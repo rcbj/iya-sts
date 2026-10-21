@@ -158,8 +158,33 @@ const ALLOCATION_ATTEMPTS = 32;
 // expiry purge takes it and a restore skips it; `retain: 'age'` lets the
 // rows written before this, which carry no expiry column, go after
 // `persistence.mintedRetention` rather than never.
+//
+// **KEY-RESIDENT ON DEMAND (#820 part 3)**: 454,000 live entries on 8081,
+// read back by every process at every start. A process holds the digest of
+// every live index — so minting finds a free one without reading the store
+// — and a bounded cache of rows; an entry is found by its token's jti
+// through the index (`j:`). The list is built from `invalid` below, not
+// from every entry.
 const entries = realms.map({ persist: 'access_token_status.entries',
                              retain: 'age',
+                             onDemand: { maxEntries: 20000,
+                                         keysResident: true,
+                                         beforeLive: function (): void {
+                                           AccessTokenStatus.fillInvalid();
+                                         } },
+                             indexBy: function (row: any): string[] {
+                               return row && row.jti
+                                 ? ['j:' + String(row.jti)] : [];
+                             },
+                             expiresAt: realms.expiryField('expiresAt', 1) });
+
+// idx -> { jti, expiresAt (ms) }: THE BITS THAT ARE REVOKED (#820 part 3),
+// per realm, persisted and global as `entries` is. Written when a token
+// with an entry is revoked and deleted when it is un-revoked — by the
+// marker `admin_stats.setStatusMarker()` calls, installed below — and
+// filled once from every entry before `entries` goes on demand
+// (`fillInvalid()`). Small: the revoked tokens that have not expired.
+const invalid = realms.map({ persist: 'access_token_status.invalid',
                              expiresAt: realms.expiryField('expiresAt', 1) });
 
 // realm|form -> { digest, token, signedAt, ttlMs }: the last list this
@@ -259,6 +284,7 @@ interface AccessTokenStatusDeps {
   pinnedBaseUrl: () => string;
   clusterClaims: typeof clusterClaims;
   entries: any;
+  invalid?: any;
   now: () => number;
 }
 
@@ -349,6 +375,7 @@ class AccessTokenStatus {
       pinnedBaseUrl: helpers.pinnedBaseUrl,
       clusterClaims: clusterClaims,
       entries: entries,
+      invalid: invalid,
       now: function now(): number {
         return Date.now();
       }
@@ -459,6 +486,13 @@ class AccessTokenStatus {
   private freeLocally(idx: number): boolean {
     const { log, entries, now } = this.deps;
     log.debug("Entering AccessTokenStatus.freeLocally().");
+    // On demand (#820 part 3) from the digests alone: an index with a live
+    // row is taken, without reading it — one past its expiry the store has
+    // not purged yet is taken too, which costs an attempt, not a mint.
+    if (typeof entries.onDemandLive === 'function' && entries.onDemandLive()) {
+      log.debug("Leaving AccessTokenStatus.freeLocally(). Resident.");
+      return !entries.has(String(idx));
+    }
     const held = entries.get(String(idx));
     log.debug("Leaving AccessTokenStatus.freeLocally().");
     return !(held && (!held.expiresAt || held.expiresAt > now()));
@@ -628,11 +662,22 @@ class AccessTokenStatus {
     const { log, entries } = this.deps;
     log.debug("Entering AccessTokenStatus.statusOfJti().");
     let found: { idx: number; status: number } | null = null;
-    entries.forEach((row: any, idx: string) => {
+    // Through the index (#820 part 3); a store held whole walks it there.
+    const keys = typeof entries.lookup === 'function'
+      ? entries.lookup('j:' + String(jti)) : [];
+    keys.forEach((idx: string) => {
+      const row = entries.get(idx);
       if (!found && row && row.jti === String(jti)) {
         found = { idx: Number(idx), status: this.statusOf(idx) };
       }
     });
+    if (!found && typeof entries.lookup !== 'function') {
+      entries.forEach((row: any, idx: string) => {
+        if (!found && row && row.jti === String(jti)) {
+          found = { idx: Number(idx), status: this.statusOf(idx) };
+        }
+      });
+    }
     log.debug("Leaving AccessTokenStatus.statusOfJti().");
     return found;
   }
@@ -646,14 +691,25 @@ class AccessTokenStatus {
     log.debug("Entering AccessTokenStatus.listBytes().");
     const values: number[] = [];
     const t = now();
-    entries.forEach((row: any, idx: string) => {
-      if (row && row.expiresAt && row.expiresAt <= t) {
-        return;
-      }
-      if (this.statusOf(idx) !== VALID) {
-        values[Number(idx)] = INVALID;
-      }
-    });
+    if (this.onDemand()) {
+      // From the revoked bits (#820 part 3): every live entry whose token
+      // is revoked has one, and an expired one is VALID here as it always
+      // was below.
+      this.deps.invalid.forEach((row: any, idx: string) => {
+        if (row && (!row.expiresAt || row.expiresAt > t)) {
+          values[Number(idx)] = INVALID;
+        }
+      });
+    } else {
+      entries.forEach((row: any, idx: string) => {
+        if (row && row.expiresAt && row.expiresAt <= t) {
+          return;
+        }
+        if (this.statusOf(idx) !== VALID) {
+          values[Number(idx)] = INVALID;
+        }
+      });
+    }
     const bytes = codec.packTsl(values, BITS, LIST_SIZE);
     log.debug("Leaving AccessTokenStatus.listBytes().");
     return bytes;
@@ -670,17 +726,93 @@ class AccessTokenStatus {
     let live = 0;
     let invalid = 0;
     const t = now();
-    entries.forEach((row: any, idx: string) => {
-      if (row && row.expiresAt && row.expiresAt <= t) {
-        return;
-      }
-      live += 1;
-      if (this.statusOf(idx) !== VALID) {
-        invalid += 1;
-      }
-    });
+    if (this.onDemand()) {
+      // The digests count the live entries; the revoked bits, the INVALID
+      // ones (#820 part 3).
+      live = entries.size;
+      this.deps.invalid.forEach((row: any) => {
+        if (row && (!row.expiresAt || row.expiresAt > t)) {
+          invalid += 1;
+        }
+      });
+    } else {
+      entries.forEach((row: any, idx: string) => {
+        if (row && row.expiresAt && row.expiresAt <= t) {
+          return;
+        }
+        live += 1;
+        if (this.statusOf(idx) !== VALID) {
+          invalid += 1;
+        }
+      });
+    }
     log.debug("Leaving AccessTokenStatus.counts().");
     return { size: LIST_SIZE, bits: BITS, live: live, invalid: invalid };
+  }
+
+  // Whether the list is built from the revoked bits (#820 part 3): the
+  // entries are on demand and there is a bits store to read.
+  private onDemand(): boolean {
+    const { entries, invalid } = this.deps;
+    return !!invalid && typeof entries.onDemandLive === 'function' &&
+      entries.onDemandLive();
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE REVOKED BITS (#820 part 3). `markRevoked()` is the marker
+  // `admin_stats` calls on every revocation and un-revocation; `fillInvalid()`
+  // writes every entry whose token is already revoked, once, while the
+  // entries are still held whole (`beforeLive`). Static: the stores are
+  // this module's, and the marker is installed when it loads.
+  // ---------------------------------------------------------------------------
+  /**
+   * Writes or clears the bit of the entry a jti holds, in the ambient realm.
+   *
+   * @param jti - the token's jti
+   * @param revoked - true when it was revoked, false when un-revoked
+   * @param kind - the token's kind, where its record says
+   */
+  static markRevoked(jti: string, revoked: boolean, kind: string): void {
+    helpers.log.debug("Entering AccessTokenStatus.markRevoked().");
+    // Only an access token has an entry: a refresh token revoked at every
+    // sign-out need not ask the index.
+    if (kind === 'refresh_token' || kind === 'id_token') {
+      helpers.log.debug("Leaving AccessTokenStatus.markRevoked(). " +
+                        "Not an access token.");
+      return;
+    }
+    entries.lookup('j:' + String(jti)).forEach(function (idx: string): void {
+      const row = entries.get(idx);
+      if (!row || row.jti !== String(jti)) {
+        return;
+      }
+      if (revoked) {
+        invalid.set(idx, { jti: String(jti), expiresAt: row.expiresAt });
+      } else {
+        invalid.delete(idx);
+      }
+    });
+    helpers.log.debug("Leaving AccessTokenStatus.markRevoked().");
+  }
+
+  /**
+   * Writes the bit of every held entry whose token is revoked, in the
+   * ambient realm: run once, while the entries are held whole, before they
+   * go on demand.
+   */
+  static fillInvalid(): void {
+    helpers.log.debug("Entering AccessTokenStatus.fillInvalid().");
+    const instance = new AccessTokenStatus(AccessTokenStatus.defaultDeps());
+    const t = Date.now();
+    let written = 0;
+    entries.forEach(function (row: any, idx: string): void {
+      if (row && (!row.expiresAt || row.expiresAt > t) &&
+          instance.statusOf(idx) !== VALID && !invalid.has(idx)) {
+        invalid.set(idx, { jti: String(row.jti), expiresAt: row.expiresAt });
+        written += 1;
+      }
+    });
+    helpers.log.debug("Leaving AccessTokenStatus.fillInvalid(). " + written);
   }
 
   // The key the list is signed with: see the header.
@@ -883,6 +1015,13 @@ const slot = new InstanceSlot<AccessTokenStatus>(
   helpers.log);
 
 slot.buildNowUnlessDeferred();
+
+// THE MARKER, installed when this module loads (#820 part 3; rule 3e):
+// `admin_stats` cannot require this module, which requires it.
+stats.setStatusMarker(function (jti: string, revoked: boolean,
+                                kind: string): void {
+  AccessTokenStatus.markRevoked(jti, revoked, kind);
+});
 
 /**
  * The access-token status list: one per realm, for OAuth RFC 9068 tokens and

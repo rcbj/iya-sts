@@ -1,6 +1,7 @@
 {
   "tile.calls": "llamadas a endpoints",
   "tile.tokensIssued": "tokens emitidos",
+  "tile.tokensHeldRecent": "tokens recientes retenidos",
   "tile.tokensRevoked": "tokens revocados",
   "tile.artifacts": "otros artefactos",
   "tile.users": "usuarios conocidos",

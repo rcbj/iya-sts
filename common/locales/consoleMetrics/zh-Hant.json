@@ -6,6 +6,7 @@
   "tile.routes": "被呼叫的路由",
   "tile.healthProbes": "成功的健康檢查探測，不計入呼叫",
   "tile.tokensIssued": "已核發權杖",
+  "tile.tokensHeldRecent": "持有的近期權杖",
   "tile.tokensRevoked": "已撤銷權杖",
   "tile.artifacts": "斷言、票證、憑證",
   "tile.sessions": "登入工作階段",

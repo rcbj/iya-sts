@@ -3337,6 +3337,20 @@ with `Cannot find module` naming a file the operator never mentioned.
    `grantRefresh`, which the issuer states in `signJwt()`'s context as it
    states `setId` (`oauth2.ts`'s `issuanceContext()`).
 
+   **`setStatusMarker()` (#820 part 3, 2026-10-21) IS A THIRD, AND IT PASSED
+   THE TEST BOTH WAYS ROUND.** `revoke()` calls it for every jti newly
+   revoked and `restore()` for every one un-revoked, with `(jti, revoked,
+   kind)`; `oauth-oidc/access_token_status.ts` fills it when it loads and
+   writes or clears the token's bit in `access_token_status.invalid`, the
+   store the status list is built from now that the entries are on demand.
+   The two halves: that module requires this file (`isRevoked()`), so a
+   require from here closes a cycle; and the revocation observer above
+   cannot carry it, since it hears only first revocations, not un-revoking,
+   and has one occupant whose failures mean something else. It is here for
+   the observer's reason — every door that revokes comes through these two
+   functions. A throw is logged (STS-OAUTH-0978) and never undoes the
+   revocation; introspection still refuses the token.
+
    **ITS ONE OBSERVER SLOT NOW CARRIES THREE KINDS OF EVENT, AND THAT IS NOT A
    SIXTH HOOK.** `setUserObserver()` is still one slot filled by one module at
    its require time; what changed is that `ldap_server.js` is offered an `event`

@@ -8457,7 +8457,10 @@ class Authn {
       // The grant each revoked token ends is reported by `stats.revoke()`'s
       // observer (#239) with the sign-out's own initiating entity (#242), so
       // a person signing out is `user` there too, not the observer's default.
-      { initiatingEntity: entity });
+      { initiatingEntity: entity },
+      // Where the session's tokens are filed (#820 part 3): the register is
+      // not held whole, and every sign-out would otherwise walk it.
+      ['sid:' + id]);
       if (revoked) {
         log.info('Back-Channel Logout section 2.7: signing out of session ' +
                  id + ' ' +

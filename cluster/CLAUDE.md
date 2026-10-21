@@ -705,7 +705,9 @@ thirty days and 5000 runs PER REALM, and `oauth2.claim-sources-refresh` —
 every minute, in every realm — is 1440 runs a day in each of 135 realms. Now
 a finished run is KEPT while it is one of its job's last
 `scheduler.runHistoryCount` (100) runs in its realm, or it ended within
-`scheduler.runHistoryHours` (24), whichever keeps more; the latest run of
+`scheduler.runHistoryHours` (1 since 2026-10-21, #820 part 3 — at 24 a day
+of every per-minute job in every realm was 199,000 rows on 8081, all read
+back by the front process at every start), whichever keeps more; the latest run of
 every job is always kept (a job that runs every ninety days still shows when
 it last ran), so is every run inside the window, failed ones included, and a
 queued or running row is never touched. A run of a job this build does not

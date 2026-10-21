@@ -1,6 +1,7 @@
 {
   "tile.calls": "anrop till slutpunkter",
   "tile.tokensIssued": "utfärdade token",
+  "tile.tokensHeldRecent": "senaste token som hålls",
   "tile.tokensRevoked": "återkallade token",
   "tile.artifacts": "andra artefakter",
   "tile.users": "kända användare",

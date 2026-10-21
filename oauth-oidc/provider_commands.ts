@@ -1424,7 +1424,8 @@ class ProviderCommands {
     try {
       const stats = this.deps.stats();
       const key = String(stats.identityKeyOf(username) || username);
-      stats.tokenList().forEach(function (record: Json) {
+      // This person's records, through the register's index (#820 part 3).
+      stats.tokenList(username).forEach(function (record: Json) {
         const who = String(record.username || record.subject || '');
         const client = String(record.clientId || record.client_id || '');
         if (client && who && (who === username ||
