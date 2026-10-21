@@ -512,6 +512,40 @@ function timeoutCase(t) {
   log.debug("Leaving timeoutCase().");
 }
 
+// warmAsync() (2026-10-21, #820): a session a refresh is about to read is
+// admitted off the event loop, unless something touched it meanwhile.
+async function warmCase(t) {
+  log.debug("Entering warmCase().");
+  t.log.info('on: a session warmed ahead of a read is admitted');
+  freshWindow();
+  let reads = 0;
+  queryFn = function (name, args) {
+    if (name === 'session.read') {
+      reads += 1;
+      if (args && args[1] === sidDigest('warm-touched')) {
+        sessionWindow.considerApply(REALM, 'warm-touched',
+                                    sessionBody('warm-touched'), false);
+        return { body: sealSession(sessionBody('warm-touched')) };
+      }
+      if (args && args[1] === sidDigest('warm-s1')) {
+        return { body: sealSession(sessionBody('warm-s1')) };
+      }
+    }
+    return emptyAnswer(name);
+  };
+  const admitted = await sessionWindow.warmAsync(REALM, 'warm-s1');
+  const before = reads;
+  const read = sessionWindow.get(REALM, 'warm-s1');
+  t.check(admitted && read.ok && read.session.id === 'warm-s1' &&
+          before === 1 && reads === 1,
+          'a warmed session is admitted, and its get() reads nothing more',
+          JSON.stringify({ admitted: admitted, reads: reads }));
+  const touched = await sessionWindow.warmAsync(REALM, 'warm-touched');
+  t.check(!touched,
+          'one changed while its read was out is not admitted from it');
+  log.debug("Leaving warmCase().");
+}
+
 function middlewareCase(t) {
   log.debug("Entering middlewareCase().");
   t.log.info('on: an unread cookie is 503 and the cookie stays');
@@ -1190,6 +1224,7 @@ async function onHalf(t) {
   await bridgeWaitCase(t);
   cooledIndexCase(t);
   shedErrorCase(t);
+  await warmCase(t);
   middlewareCase(t);
   parentCase(t);
   await dropErrorCase(t);

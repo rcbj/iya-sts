@@ -9092,6 +9092,25 @@ class Authn {
     return sessions.get(key) || null;
   }
 
+  /**
+   * Admits a session to the window ahead of a request that will read it,
+   * asynchronously (#820; `SessionWindow.warmAsync()`). Nothing where the
+   * window is off: the map holds every session.
+   *
+   * @param id - the session id
+   * @returns a promise of whether it was admitted
+   */
+  warmSessionAsync(id) {
+    const { log, realms } = this.deps;
+    log.debug("Entering Authn.warmSessionAsync().");
+    if (!id || !this.windowOn()) {
+      log.debug("Leaving Authn.warmSessionAsync(). Nothing to warm.");
+      return Promise.resolve(false);
+    }
+    log.debug("Leaving Authn.warmSessionAsync().");
+    return sessionWindow.warmAsync(realms.currentId(), String(id));
+  }
+
   // End one session named by its id. The protocol-independent logout's door,
   // and the console's. It does NOT touch the caller's cookie: the session being
   // ended is usually not the one the caller is holding, and clearing the cookie
@@ -18063,6 +18082,7 @@ export = {
   liveSessionCountsAsync: slot.forward('liveSessionCountsAsync'),
   sessionsHeldUnder: slot.forward('sessionsHeldUnder'),
   sessionById: slot.forward('sessionById'),
+  warmSessionAsync: slot.forward('warmSessionAsync'),
   // Who vouched for a session's latest sign-in — asked by the authorization
   // endpoint for the bootstrap administrator's claim at issuance (#446).
   latestAuthorityOf: slot.forward('latestAuthorityOf'),
