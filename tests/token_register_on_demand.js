@@ -27,7 +27,8 @@
 //       revokes what is not held;
 //   R6. every token holder is listed (`admin_stats.tokenHolders`), held
 //       tokens or not, and one person's row counts their tokens through the
-//       index; a JWT recorded notes its holder once, not once per token.
+//       index; a JWT recorded notes its holder once, not once per token;
+//   R7. the one-time backfill notes the holders of tokens already issued.
 //
 // In a child process: it installs a stand-in reader in `common/realms.js`.
 // ===========================================================================
@@ -189,6 +190,22 @@ function child() {
     note(once === before + 1 && writes === 0,
          'R6. a recorded JWT notes its holder once, not once per token',
          JSON.stringify({ before: before, once: once, writes: writes }));
+
+    // R7: the backfill notes the holders of tokens already issued — carol's
+    // and dave's are in the store, not held — and marks the realm done.
+    const ran = await stats.backfillTokenHolders();
+    const after = holders.dump('default').map(function (row) {
+      return row.key;
+    });
+    const again = await stats.backfillTokenHolders();
+    note(ran.realms === 1 && after.indexOf('carol') >= 0 &&
+         after.indexOf('dave') >= 0 && again.realms === 0 &&
+         stats.userRows().every(function (row) {
+           return row.key !== '$backfilled$';
+         }),
+         'R7. the backfill notes every holder in the store once per realm, ' +
+         'and its mark is no row of the list',
+         JSON.stringify({ ran: ran, again: again, after: after }));
   })().catch(function (e) {
     note(false, 'the child threw', (e && e.stack) || e);
   }).then(function () {

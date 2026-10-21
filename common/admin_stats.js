@@ -405,6 +405,104 @@ function noteTokenHolder(record) {
                           isClient: client || !!(held && held.isClient) });
 }
 
+// ---------------------------------------------------------------------------
+// THE HOLDERS OF THE TOKENS ISSUED BEFORE THE STORE ABOVE EXISTED, once per
+// realm: a scheduler job on the front process walks the register a page at
+// a time (`scanAsync()`) and notes every holder, then files the realm's mark
+// under HOLDERS_DONE — a key no identity has (`identityOf()` of '$…$' is a
+// name nobody signs in as, and the readers skip it). The rows replicate as
+// any write does. Off where the register is held whole: its own walk lists
+// every holder there.
+// ---------------------------------------------------------------------------
+const HOLDERS_DONE = '$backfilled$';
+const HOLDERS_JOB = 'admin_stats.token-holders-backfill';
+let holdersJobRegistered = false;
+
+// The realms whose holders are not yet all noted.
+function holdersOwed() {
+  log.debug("Entering holdersOwed().");
+  log.debug("Leaving holdersOwed().");
+  return realms.list().filter(function (r) {
+    return !tokenHolders.realmMap(r.id).has(HOLDERS_DONE);
+  });
+}
+
+async function backfillTokenHolders() {
+  log.debug("Entering backfillTokenHolders().");
+  let realmsDone = 0;
+  for (const r of holdersOwed()) {
+    await realms.run(r, async function () {
+      await tokens.scanAsync(function (record) {
+        if (record) {
+          noteTokenHolder(record);
+        }
+      });
+      tokenHolders.set(HOLDERS_DONE, { at: Date.now() });
+    });
+    realmsDone++;
+  }
+  log.info('admin: the holders of every token in ' + realmsDone + ' realm(s) ' +
+           'are on the users list (#820).');
+  log.debug("Leaving backfillTokenHolders().");
+  return { realms: realmsDone };
+}
+
+/**
+ * Registers the holders' backfill job, once.
+ *
+ * @param schedulerInstance - the scheduler, for the tests
+ */
+function ensureHoldersBackfillJob(schedulerInstance) {
+  log.debug("Entering ensureHoldersBackfillJob().");
+  if (holdersJobRegistered) {
+    log.debug("Leaving ensureHoldersBackfillJob(). Registered.");
+    return;
+  }
+  let scheduler = schedulerInstance || null;
+  if (!scheduler) {
+    try {
+      scheduler = require('../cluster/scheduler');
+    } catch (e) {
+      log.debug("Caught in ensureHoldersBackfillJob(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving ensureHoldersBackfillJob(). No scheduler.");
+      return;
+    }
+  }
+  if (!scheduler || typeof scheduler.register !== 'function') {
+    log.debug("Leaving ensureHoldersBackfillJob(). No scheduler yet.");
+    return;
+  }
+  holdersJobRegistered = true;
+  if (scheduler.job(HOLDERS_JOB)) {
+    log.debug("Leaving ensureHoldersBackfillJob(). Registered elsewhere.");
+    return;
+  }
+  scheduler.register({
+    id: HOLDERS_JOB,
+    title: 'Token holders backfill',
+    describe: 'Notes the holder of every token already issued on the users ' +
+              'list, once per realm, now that the token register is read on ' +
+              'demand (#820).',
+    owner: 'common/admin_stats.js',
+    onFront: 'it walks the whole token register from the store, which a ' +
+             'request worker should not hold a slot for',
+    everyMs: function () {
+      return 10 * 60 * 1000;
+    },
+    off: function () {
+      if (!tokens.onDemandLive()) {
+        return 'the token register is held whole';
+      }
+      return holdersOwed().length ? '' : 'every realm is done';
+    },
+    run: function () {
+      return backfillTokenHolders();
+    }
+  });
+  log.debug("Leaving ensureHoldersBackfillJob().");
+}
+
 // **ON DEMAND (#820 part 3)**: 546,000 records on 8081, read back by every
 // process at every start. A process holds the recent ones it was asked
 // about; a token is read by its jti when it is asked for; what has to find
@@ -6548,7 +6646,9 @@ function collectUserKeys() {
   // On demand (#820), every holder, not only those of the tokens held.
   if (tokens.onDemandLive()) {
     tokenHolders.forEach(function (row, key) {
-      add(key);
+      if (key !== HOLDERS_DONE) {
+        add(key);
+      }
     });
   }
   allArtifacts().forEach(function (record) {
@@ -6651,6 +6751,9 @@ function buildUserRowsResolved(onlyKey) {
   // tokens held here; a page reads a shown row's own from the index.
   if (wanted === null && tokens.onDemandLive()) {
     tokenHolders.forEach(function (holder, key) {
+      if (key === HOLDERS_DONE) {
+        return;
+      }
       const row = rowFor(key);
       if (row && holder && holder.isClient) {
         row.isClient = true;
@@ -7372,6 +7475,8 @@ module.exports = {
   // What signing a JWT reports through `helpers.setJwtRecorder()`, for the
   // tests that record one without signing it.
   recordJwt: recordJwt,
+  backfillTokenHolders: backfillTokenHolders,
+  ensureHoldersBackfillJob: ensureHoldersBackfillJob,
   userKeys: userKeys,
   issuedArtifactsOfKind: issuedArtifactsOfKind,
   userDetail: userDetail,
