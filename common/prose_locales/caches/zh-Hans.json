@@ -43,6 +43,22 @@
     "en": "0d7ef2a117733512",
     "text": "直到该领域 ou=applications 下的任何内容发生变化；之后的下一次读取会重新解析它。"
   },
+  "caches.store.applications.load.title": {
+    "en": "87b6608598fd495b",
+    "text": "按标识符读取的应用条目"
+  },
+  "caches.store.applications.load.description": {
+    "en": "449808b7934fff9f",
+    "text": "按标识符保存的单个应用条目及其解析后的记录，使登录过程中的各项检查不必每次都读取并解析该条目。"
+  },
+  "caches.store.applications.load.bound": {
+    "en": "2f0f2fdc2a335270",
+    "text": "强制：每个领域最多 MAX_LOAD_MEMO（256）个标识符；超出后丢弃已保存的应答。"
+  },
+  "caches.store.applications.load.lifetime": {
+    "en": "a1430f3b77ef4dc8",
+    "text": "直到该领域 ou=applications 下的任何内容发生变化；之后的下一次读取会重新查询目录。"
+  },
   "caches.store.applications.ssf-allowed-events.title": {
     "en": "da62d279c1ec6d48",
     "text": "Shared Signals 接收方权限"
@@ -682,6 +698,22 @@
   "caches.store.oauth2.client-jwks.bound": {
     "en": "bfe4788c0fa5b7fe",
     "text": "强制：每个领域 256 个密钥集，丢弃最旧的，下次需要时重新获取。"
+  },
+  "caches.store.oauth2.declared-authorization-details-types.title": {
+    "en": "3f4c1bef936a03c4",
+    "text": "已声明的 authorization_details 类型"
+  },
+  "caches.store.oauth2.declared-authorization-details-types.description": {
+    "en": "5eba0c7bb76a5960",
+    "text": "某个领域的应用所声明的 RFC 9396 类型，每个类型都附有负责应答它的资源，使授权时不必为查找它们而构建每个应用的视图。"
+  },
+  "caches.store.oauth2.declared-authorization-details-types.bound": {
+    "en": "d25b94e5d9062281",
+    "text": "结构性：每个领域一个应答，大小等于其应用所声明的类型。"
+  },
+  "caches.store.oauth2.declared-authorization-details-types.lifetime": {
+    "en": "3bfa4ec2d7a5b1f4",
+    "text": "直到该领域 ou=applications 下的任何内容发生变化；之后的下一次读取会重新构建它。"
   },
   "caches.store.oauth2.redeemed-codes.title": {
     "en": "d05b2abe4dfcac4c",

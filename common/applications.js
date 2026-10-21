@@ -11900,18 +11900,147 @@ function blankRecord(identifier) {
 function load(identifier) {
   log.debug("Entering load().");
   const backing = store();
+  const version = backing && typeof backing.applicationsVersion === 'function'
+    ? backing.applicationsVersion() : null;
+  if (version === null || version === undefined) {
+    log.debug("Leaving load(). No clock.");
+    return loadNow(identifier);
+  }
+  const held = loadMemo();
+  if (held.version !== version) {
+    held.version = version;
+    held.byIdentifier.clear();
+  }
+  const key = String(identifier);
+  let kept = held.byIdentifier.get(key);
+  if (kept) {
+    loadCount.hit();
+  } else {
+    loadCount.miss();
+    kept = loadNow(identifier);
+    if (held.byIdentifier.size >= MAX_LOAD_MEMO) {
+      held.byIdentifier.clear();
+    }
+    held.byIdentifier.set(key, kept);
+  }
+  log.debug("Leaving load(). " + (kept.known ? 'Known.' : 'Not known.'));
+  return { record: copyRecord(kept.record), known: kept.known,
+           entry: copyEntry(kept.entry) };
+}
+
+// What `load()` read before #758, every call: one entry out of the directory
+// and its attributes parsed into a record.
+function loadNow(identifier) {
+  log.debug("Entering loadNow().");
+  const backing = store();
   if (!backing) {
-    log.debug("Leaving load().");
+    log.debug("Leaving loadNow(). No store.");
     return { record: blankRecord(identifier), known: false, entry: null };
   }
   const entry = backing.readApplication(String(identifier));
   if (!entry) {
-    log.debug("Leaving load().");
+    log.debug("Leaving loadNow(). Not there.");
     return { record: blankRecord(identifier), known: false, entry: null };
   }
-  log.debug("Leaving load().");
+  log.debug("Leaving loadNow().");
   return { record: recordFromAttributes(entry.attributes), known: true,
            entry: entry };
+}
+
+// ---------------------------------------------------------------------------
+// ONE APPLICATION, KEPT BY THE REGISTRY'S CLOCK (#758).
+//
+// `load()` read the entry out of the directory and parsed it on every call,
+// and a sign-in calls it a few dozen times — `clientConfigOf()` at each of
+// the authorize, resume and token steps, `settingFor()`, the role and
+// issuance checks: about 5% of a request worker under a sign-in load. The
+// answer is kept per realm by `applicationsVersion()`, the clock the
+// listing below is kept by (every write under ou=applications, a write
+// naming no DN, a row another process wrote that this one applied), so the
+// first call after the clock moves reads the directory exactly as before
+// and the rest are answered from that read. Absence is kept too (`known:
+// false`), by the same clock.
+//
+// **EVERY CALLER STILL GETS A RECORD OF ITS OWN** (`copyRecord()`): writers
+// change the record and hand it to `save()`, so the kept one is never handed
+// out — the listing's rule. The credential snapshot `save()` compares with
+// is copied with it.
+//
+// Bounded at MAX_LOAD_MEMO identifiers per realm per clock: past it the
+// kept answers are dropped and read again.
+// ---------------------------------------------------------------------------
+const MAX_LOAD_MEMO = 256;
+
+const loadMemo = realms.keyed(function () {
+  return { version: null, byIdentifier: new Map() };
+});
+
+// Described to `/admin/caches` (rule 3ap).
+const loadCount = cacheRegistry.register({
+  name: 'applications.load',
+  title: 'Application entries read by identifier',
+  description: 'One application\'s entry and its parsed record, by ' +
+    'identifier, so the checks a sign-in makes do not read and parse the ' +
+    'entry per question.',
+  owner: 'common/applications.js',
+  scope: 'realm',
+  maxEntries: function () {
+    return MAX_LOAD_MEMO;
+  },
+  bound: 'Enforced: MAX_LOAD_MEMO (' + MAX_LOAD_MEMO + ') identifiers per ' +
+    'realm; past it the kept answers are dropped.',
+  lifetime: function () {
+    return 'Until anything under the realm\'s ou=applications changes; ' +
+      'the next read then asks the directory again.';
+  },
+  entries: function () {
+    const out = [];
+    loadMemo.existing().forEach(function (held, id) {
+      held.byIdentifier.forEach(function (kept, identifier) {
+        out.push({ realm: id, key: identifier, validUntil: null,
+                   valid: true, basis: 'ou=applications version' });
+      });
+    });
+    return out;
+  }
+});
+
+// A record that shares nothing with the one kept: the lists copied, each
+// field's values copied, and the credential snapshot carried, as
+// `recordFromAttributes()` would have made it.
+function copyRecord(record) {
+  log.debug("Entering copyRecord().");
+  const out = Object.assign({}, record, {
+    kinds: (record.kinds || []).slice(0),
+    protocols: (record.protocols || []).slice(0),
+    sessions: (record.sessions || []).slice(0),
+    users: (record.users || []).slice(0),
+    fields: copyValues(record.fields)
+  });
+  const snapshot = record[CREDENTIAL_SNAPSHOT];
+  if (snapshot) {
+    Object.defineProperty(out, CREDENTIAL_SNAPSHOT, {
+      value: JSON.parse(JSON.stringify(snapshot)), enumerable: false,
+      writable: true, configurable: true });
+  }
+  log.debug("Leaving copyRecord().");
+  return out;
+}
+
+// The entry `readApplication()` answered, with its attributes copied.
+function copyEntry(entry) {
+  log.debug("Entering copyEntry().");
+  if (!entry) {
+    log.debug("Leaving copyEntry(). None.");
+    return null;
+  }
+  const out = Object.assign({}, entry, {
+    attributes: copyValues(entry.attributes),
+    operational: Array.isArray(entry.operational)
+      ? entry.operational.slice(0) : entry.operational
+  });
+  log.debug("Leaving copyEntry().");
+  return out;
 }
 
 function save(record, how) {

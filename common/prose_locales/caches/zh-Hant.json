@@ -43,6 +43,22 @@
     "en": "0d7ef2a117733512",
     "text": "直到領域的 ou=applications 下有任何變更；下次讀取時會重新剖析。"
   },
+  "caches.store.applications.load.title": {
+    "en": "87b6608598fd495b",
+    "text": "依識別碼讀取的應用程式項目"
+  },
+  "caches.store.applications.load.description": {
+    "en": "449808b7934fff9f",
+    "text": "依識別碼保存的單一應用程式項目及其剖析後的記錄，讓登入時的各項檢查不必每次都讀取並剖析該項目。"
+  },
+  "caches.store.applications.load.bound": {
+    "en": "2f0f2fdc2a335270",
+    "text": "強制：每個領域最多 MAX_LOAD_MEMO（256）個識別碼；超過後會捨棄已保存的回應。"
+  },
+  "caches.store.applications.load.lifetime": {
+    "en": "a1430f3b77ef4dc8",
+    "text": "直到領域的 ou=applications 下有任何變更；下次讀取時會重新查詢目錄。"
+  },
   "caches.store.applications.ssf-allowed-events.title": {
     "en": "da62d279c1ec6d48",
     "text": "Shared Signals 接收端權限"
@@ -682,6 +698,22 @@
   "caches.store.oauth2.client-jwks.bound": {
     "en": "bfe4788c0fa5b7fe",
     "text": "強制：每個領域 256 個金鑰組，最舊者被捨棄，下次需要時再重新擷取。"
+  },
+  "caches.store.oauth2.declared-authorization-details-types.title": {
+    "en": "3f4c1bef936a03c4",
+    "text": "已宣告的 authorization_details 類型"
+  },
+  "caches.store.oauth2.declared-authorization-details-types.description": {
+    "en": "5eba0c7bb76a5960",
+    "text": "領域中各應用程式所宣告的 RFC 9396 類型，每個類型都附有負責回應它的資源，讓授權時不必為了找到它們而建立每個應用程式的檢視。"
+  },
+  "caches.store.oauth2.declared-authorization-details-types.bound": {
+    "en": "d25b94e5d9062281",
+    "text": "結構性：每個領域一份回應，大小等於其應用程式所宣告的類型。"
+  },
+  "caches.store.oauth2.declared-authorization-details-types.lifetime": {
+    "en": "3bfa4ec2d7a5b1f4",
+    "text": "直到領域的 ou=applications 下有任何變更；下次讀取時會重新建立。"
   },
   "caches.store.oauth2.redeemed-codes.title": {
     "en": "d05b2abe4dfcac4c",

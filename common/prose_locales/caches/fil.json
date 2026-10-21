@@ -43,6 +43,22 @@
     "en": "0d7ef2a117733512",
     "text": "Hanggang may magbago sa ilalim ng ou=applications ng realm; pagkatapos ay ipa-parse itong muli ng susunod na read."
   },
+  "caches.store.applications.load.title": {
+    "en": "87b6608598fd495b",
+    "text": "Mga entry ng application na binasa ayon sa identifier"
+  },
+  "caches.store.applications.load.description": {
+    "en": "449808b7934fff9f",
+    "text": "Ang entry ng isang application at ang na-parse nitong record, ayon sa identifier, para hindi basahin at i-parse ng mga pagsusuri ng isang sign-in ang entry sa bawat tanong."
+  },
+  "caches.store.applications.load.bound": {
+    "en": "2f0f2fdc2a335270",
+    "text": "Ipinapatupad: MAX_LOAD_MEMO (256) na identifier bawat realm; lampas doon, itinatapon ang mga naitabing sagot."
+  },
+  "caches.store.applications.load.lifetime": {
+    "en": "a1430f3b77ef4dc8",
+    "text": "Hanggang may magbago sa ilalim ng ou=applications ng realm; pagkatapos ay muling tatanungin ng susunod na read ang directory."
+  },
   "caches.store.applications.ssf-allowed-events.title": {
     "en": "da62d279c1ec6d48",
     "text": "Mga permission ng Shared Signals receiver"
@@ -682,6 +698,22 @@
   "caches.store.oauth2.client-jwks.bound": {
     "en": "bfe4788c0fa5b7fe",
     "text": "Ipinapatupad: 256 key set bawat realm; tinatanggal ang pinakaluma at kinukuha muli kapag kailangan na ulit."
+  },
+  "caches.store.oauth2.declared-authorization-details-types.title": {
+    "en": "3f4c1bef936a03c4",
+    "text": "Mga idineklarang authorization_details type"
+  },
+  "caches.store.oauth2.declared-authorization-details-types.description": {
+    "en": "5eba0c7bb76a5960",
+    "text": "Ang mga RFC 9396 type na idinedeklara ng mga application ng isang realm, bawat isa kasama ang resource na sumasagot dito, para hindi bumuo ang isang authorization ng view ng bawat application para mahanap ang mga ito."
+  },
+  "caches.store.oauth2.declared-authorization-details-types.bound": {
+    "en": "d25b94e5d9062281",
+    "text": "Istruktural: isang sagot bawat realm, kasinlaki ng mga type na idinedeklara ng mga application nito."
+  },
+  "caches.store.oauth2.declared-authorization-details-types.lifetime": {
+    "en": "3bfa4ec2d7a5b1f4",
+    "text": "Hanggang may magbago sa ilalim ng ou=applications ng realm; pagkatapos ay muli itong bubuuin ng susunod na read."
   },
   "caches.store.oauth2.redeemed-codes.title": {
     "en": "d05b2abe4dfcac4c",

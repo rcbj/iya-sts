@@ -11672,6 +11672,19 @@ sighting moved the clock, which every authentication does. The mode is not in
 the key: the one mode-dependent member of a view is computed when it is built.
 `applications.listing` on `/admin/caches`.
 
+**`load()` is kept by the same clock (#758, 2026-10-20)**: one identifier's
+entry and parsed record, per realm, so the few dozen times a sign-in asks
+about its client (`clientConfigOf()` at the authorize, resume and token steps,
+`settingFor()`, the role and issuance checks) read the directory once per
+clock. Absence (`known: false`) is kept too. Every caller still gets a record
+of its own (`copyRecord()`, the credential snapshot `save()` compares with
+included), because writers change it and save it. At most `MAX_LOAD_MEMO`
+(256) identifiers per realm. **A sighting moves the clock on every
+authentication** (`seen()` writes the counters), so this saves the reads
+between two sightings — about 5% of a request worker under a sign-in load on
+8081. `applications.load` on `/admin/caches`;
+`tests/sign_in_registry_reads.js` section A.
+
 **A sealed field opens when it is READ.** `view()` makes each sealed member of
 `fields` an accessor that calls `keystore.open` on access and keeps nothing
 (key-material residency): a caller that wants the PEM gets it as before, and a

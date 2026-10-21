@@ -1927,6 +1927,18 @@ so must `admin-ui/admin.ts`.
    (`admin-core/admin_actions.ts`) write the attribute through
    `updateApplication()`, the one door.
 
+   **`declaredTypes()` IS KEPT BY THE REGISTRY'S CLOCK (#758,
+   2026-10-20).** It built a view of every application per call, and a
+   sign-in asked it several times (`asMetadata()` on every authorization,
+   `audienceFor()`, `bearerRefusedBy()`, `requiredAcrsOf()` at issuance) —
+   6% of a request worker under a sign-in load. What it builds reads the
+   registry and nothing else, so it is kept per realm until
+   `applications.listingVersion()` moves; with no clock nothing is kept. The
+   kept answer is FROZEN, because every caller now shares it; none changed
+   it, and one that tries throws. Its two warnings (STS-OAUTH-0461, 0462)
+   are said once per registry version, not per request.
+   `tests/sign_in_registry_reads.js` section B.
+
 3an. **`step_up.ts` IS RFC 9470, AND A SESSION IS NO LONGER AN ANSWER TO A
    REQUEST IT DOES NOT MEET (2026-09-13).** Asked for as *a couple of new query
    parameters on the authorization endpoint*; `acr_values` and `max_age` were
