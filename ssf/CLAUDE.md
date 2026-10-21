@@ -218,9 +218,9 @@ set per node.
 
 **TWO DEPLOYMENT REQUIREMENTS, which no node can check for another.**
 * **Every node needs the same `global.port`.** The console's and portal's own
-  receiver streams are seeded with `https://<loopback>:<global.port>/…`
-  (`ssf_http.ts`'s `loopbackOrigin()`); the stream is shared, so a node pushes
-  to the SEEDING node's port on its own loopback. With different ports that is
+  receivers poll `https://<loopback>:<global.port>/ssf/poll` (#771;
+  `ssf_http.ts`'s `loopbackOrigin()`), and a stream set back to push carries
+  the SEEDING node's port, so a node pushes to that port on its own loopback. With different ports that is
   nothing — ECONNREFUSED, a dead stream, two empty inbox pages. (A same-host test
   with two ports works by accident: node B's loopback reaches node A.)
 * **`global.publicBaseUrl` must be pinned.** Unpinned, a seeded stream's `iss`
@@ -377,21 +377,41 @@ this service reading its own notes. A receiver is something a stream was agreed
 with, that gets a signed document it has to verify, addressed to an audience it
 has to recognise.
 
-**1. DELIVERY IS A REAL RFC 8935 PUSH OVER THE LOOPBACK INTERFACE, AND THE
-IN-PROCESS VERSION WAS WRITTEN FIRST AND TAKEN OUT.** Handing the SET to the
-inbox by function call would have skipped the body, the media type, the
-authorization header and the signature — everything a receiver does, leaving
-only the part that looks run. So `ssf_http.ts` dials this service's own address
-like any other receiver.
+**1. DELIVERY IS A REAL RFC 8936 POLL OVER THE LOOPBACK INTERFACE SINCE #771
+(2026-10-20), AND THE IN-PROCESS VERSION WAS WRITTEN FIRST AND TAKEN OUT.**
+Handing the SET to the inbox by function call would have skipped the request,
+the credential and the signature — everything a receiver does, leaving only
+the part that looks run. **It was RFC 8935 push until #771**, one loopback
+request per SET; every password write sends CAEP credential-change to both
+surfaces, so under twenty writes a second that was forty requests a second on
+the one worker the batch lane is confined to, which then missed the read
+barrier often enough to be the sign-in's five-second p95 on 8081. rcbj chose
+poll over push with batching and over in-process delivery: each surface now
+collects from this service's own `/ssf/poll` (`ssf_http.ts`'s `pollOwn()`,
+this process's loopback origin only, `pushSet()`'s pin) from the
+`ssf.internal-poll` job every `ssf.internalPollMs`, up to `ssf.pollMaxEvents`
+SETs to a request, and every SET goes through the checks a push went through
+(`take()`), then is acknowledged — or refused in `setErrs` — on the next
+request. **The cost is latency**: a received signal ends a surface's session up
+to one interval later than a push did. The job is a CLUSTER job once for the
+service, handed to a request worker (#408), and dials only a stream this
+process sees something waiting on, so a realm nobody uses costs a walk of an
+empty queue and no request. `/ssf/poll` answers an internal stream to its own
+receiver's credential only (`authorizesPoll()`, `STS-SSF-0145`), since no
+remote caller owns one; a stream seeded as push before #771 is moved to poll by
+the next seeding, and a push stream an operator pointed elsewhere is left
+alone. The receive endpoints stay, and refuse a push while the stream is poll
+(`STS-SSF-0146`). `tests/internal_signals_poll.js` holds it.
 
 **2. TWO OF `ssf_http.ts`'s FOUR BOUNDS DO NOT APPLY TO THAT ONE ADDRESS, AND A
 THIRD DELIBERATELY DOES.** `ssf.pushAllowedHosts` exists to stop this service
 dialling a host somebody named in a stream configuration, and this host is not
 named by anybody — it is computed from `global.port`. The https rule exists
 because a SET is somebody's security posture in transit, and a request from this
-process to itself does not traverse a network. **`ssf.pushDelivery` is NOT
-exempt**: with it off both internal receivers go silent, which is said at
-seeding time, on both inbox pages and in `status()`. `isOwnLoopback()` is an
+process to itself does not traverse a network. **`ssf.pushDelivery` does not
+govern the poll (#771)**: it stops this service POSTing an event to an address a
+receiver chose, and a poll is the receiver dialling the transmitter. It still
+governs a stream an operator set back to push, and `status()` says so then. `isOwnLoopback()` is an
 ORIGIN comparison and never a substring match, and `tests/ssf_receivers.js`
 asserts the refusal rather than the match.
 
@@ -416,8 +436,10 @@ console with no stream in `acme` would show an empty page in `acme` while
 somebody IN and a stream is about what HAPPENED.**
 
 **5. THE RECEIVE ENDPOINTS ARE GUARDED BY THE STREAM'S OWN
-`authorization_header`**, minted per stream and per start and given to nothing
-but this service's own transmitter, compared in constant time; then the `aud`,
+`authorization_header`** — on a stream set to push; since #771 the same derived
+value is the credential each surface PRESENTS at `/ssf/poll` instead — minted
+per stream and per start and given to nothing but this service's own
+transmitter, compared in constant time; then the `aud`,
 refusing `invalid_audience`; then the signature. **That member had never been
 set by anything here before** — a receiver supplies it, and this service had
 never been one — so the code path that sends it had never run against a receiver

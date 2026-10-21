@@ -6992,12 +6992,20 @@
     "text": "Registrera konsolen och portalen som mottagare"
   },
   "ssf.internalReceivers|description": {
-    "en": "29e7cb1d4e0c30f3",
-    "text": "Om den här tjänsten skapar en Shared Signals-ström för sin EGEN administratörskonsol och användarportal, så att var och en tar emot varje CAEP- och RISC-händelse över RFC 8935-push på en egen slutpunkt och visar det som kom fram på /admin/signals och /portal/signals. De är VANLIGA strömmar — pausa en, begränsa den eller ta bort den på /admin/ssf och den förblir så till en omstart. Observera att ssf.pushDelivery styr den här leveransen som vilken annan som helst: med den av köas händelserna på de två strömmarna och når ingen av sidorna."
+    "en": "1a148e2b3a63a17d",
+    "text": "Om den här tjänsten skapar en Shared Signals-ström för sin EGEN administratörskonsol och användarportal, så att var och en tar emot varje CAEP- och RISC-händelse — hämtade via RFC 8936-pollning från tjänstens egen /ssf/poll var ssf.internalPollMs (#771) — och visar det som kom fram på /admin/signals och /portal/signals. De är VANLIGA strömmar — pausa en, begränsa den eller ta bort den på /admin/ssf och den förblir så till en omstart."
   },
   "ssf.internalReceivers|restartReason": {
     "en": "75c18a7223a2e0a3",
     "text": "de två strömmarna skapas när ssf/ssf.ts laddas och igen när varje sfär byggs, så att stänga av detta i drift skulle lämna kvar de strömmar som redan finns och att slå på det skulle inte skapa några"
+  },
+  "ssf.internalPollMs|label": {
+    "en": "245d4495769ca599",
+    "text": "Pollningsintervall för konsolen och portalen (millisekunder)"
+  },
+  "ssf.internalPollMs|description": {
+    "en": "b80cedcb611f2fd3",
+    "text": "Hur ofta den här tjänstens egen administratörskonsol och användarportal hämtar det deras strömmar innehåller, via RFC 8936-pollning från /ssf/poll (schemaläggarjobbet ssf.internal-poll), upp till ssf.pollMaxEvents SET per begäran. Det är det längsta en Security Event Token väntar innan någon av ytorna ser den och agerar på den. 0 stänger av jobbet, och händelserna köas då på de två strömmarna och når ingen av sidorna."
   },
   "ssf.maxStreams|label": {
     "en": "64775d43f39a7891",

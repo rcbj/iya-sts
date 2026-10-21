@@ -16610,6 +16610,31 @@ const CODES = [
       'be decided or announced, so no CAEP credential-change was sent for ' +
       'it (#221 P5). The write itself stands.',
     spec: 'none — logged; nothing is sent to a receiver' },
+  { code: 'STS-SSF-0142',
+    summary: 'This service\'s own receivers were asked to poll a URL that ' +
+      'is not this process\'s own loopback origin (#771). A programming ' +
+      'error: the internal poll dials nothing else.',
+    spec: 'none — the poll is not made' },
+  { code: 'STS-SSF-0143',
+    summary: 'This service\'s own RFC 8936 poll endpoint answered one of its ' +
+      'own two receivers with something other than a 200 and a JSON object ' +
+      '(#771): the credential, the stream or the family refused it.',
+    spec: 'none — logged by the internal poll; nothing was collected' },
+  { code: 'STS-SSF-0144',
+    summary: 'The internal poll (#771) could not collect a surface\'s ' +
+      'Security Event Tokens in a realm: the request failed or was refused. ' +
+      'They stay queued on the stream and the next run tries again.',
+    spec: 'none — logged once per change of outcome' },
+  { code: 'STS-SSF-0145',
+    summary: 'A poll for one of this service\'s own receiver streams ' +
+      'presented the wrong authorization header, or none (#771). Only this ' +
+      'service\'s own receivers hold the credential.',
+    spec: 'RFC 8935 section 2.4 shape, err access_denied (HTTP 401)' },
+  { code: 'STS-SSF-0146',
+    summary: 'A Security Event Token was pushed to one of this service\'s ' +
+      'own receive endpoints while its stream is delivered by poll (#771). ' +
+      'Nothing is agreed to be pushed there.',
+    spec: 'RFC 8935 section 2.4 shape, err invalid_request (HTTP 400)' },
   // ===== RISK ==============================================================
   { code: 'STS-RISK-0001',
     summary: 'A dataset import was refused before anything was loaded: the ' +

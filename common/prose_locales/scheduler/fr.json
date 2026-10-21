@@ -479,6 +479,14 @@
     "en": "51871a2d4ac5a3aa",
     "text": "Interroge chaque relation de fédération dont le flux Shared Signals du partenaire est un flux par interrogation (RFC 8936) : les Security Event Tokens qu’il contient sont vérifiés, traités et acquittés."
   },
+  "sched.jobs.ssf.internal-poll.title": {
+    "en": "61d86947032a491a",
+    "text": "Interrogation Shared Signals de la console et du portail"
+  },
+  "sched.jobs.ssf.internal-poll.describe": {
+    "en": "e68a7ab4fba5e9f4",
+    "text": "La console d’administration et le portail utilisateur de ce service collectent les Security Event Tokens en attente sur leurs flux, dans chaque domaine, par interrogation RFC 8936 sur /ssf/poll — vérifiés, enregistrés, traités et acquittés (#771)."
+  },
   "sched.jobs.ssf.stream-maintenance.title": {
     "en": "7b2875452b588faa",
     "text": "Maintenance des flux Shared Signals"

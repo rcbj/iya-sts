@@ -6992,12 +6992,20 @@
     "text": "I-register ang console at ang portal bilang mga receiver"
   },
   "ssf.internalReceivers|description": {
-    "en": "29e7cb1d4e0c30f3",
-    "text": "Kung gumagawa ang serbisyong ito ng Shared Signals stream para sa SARILI nitong admin console at user portal, para tumanggap ang bawat isa ng bawat CAEP at RISC event sa RFC 8935 push sa sarili nitong endpoint at ipakita ang dumating sa /admin/signals at /portal/signals. KARANIWANG stream ang mga ito — i-pause ang isa, limitahan o i-delete ito sa /admin/ssf at mananatili itong ganoon hanggang sa isang restart. Tandaan na pinamamahalaan ng ssf.pushDelivery ang delivery na ito gaya ng iba: kapag naka-off ito, naka-queue ang mga event sa dalawang stream at hindi umaabot sa alinmang page."
+    "en": "1a148e2b3a63a17d",
+    "text": "Kung gumagawa ang serbisyong ito ng Shared Signals stream para sa SARILI nitong admin console at user portal, para tumanggap ang bawat isa ng bawat CAEP at RISC event — kinokolekta ang mga ito sa RFC 8936 poll mula sa sariling /ssf/poll ng serbisyong ito bawat ssf.internalPollMs (#771) — at ipakita ang dumating sa /admin/signals at /portal/signals. KARANIWANG stream ang mga ito — i-pause ang isa, limitahan o i-delete ito sa /admin/ssf at mananatili itong ganoon hanggang sa isang restart."
   },
   "ssf.internalReceivers|restartReason": {
     "en": "75c18a7223a2e0a3",
     "text": "ginagawa ang dalawang stream habang nire-require ang ssf/ssf.ts at muli habang binubuo ang bawat realm, kaya ang pag-off dito habang tumatakbo ay mag-iiwan sa mga stream na umiiral na at ang pag-on dito ay walang gagawin"
+  },
+  "ssf.internalPollMs|label": {
+    "en": "245d4495769ca599",
+    "text": "Interval ng poll ng console at portal (millisecond)"
+  },
+  "ssf.internalPollMs|description": {
+    "en": "b80cedcb611f2fd3",
+    "text": "Gaano kadalas kinokolekta ng sariling admin console at user portal ng serbisyong ito ang laman ng kanilang mga stream, sa RFC 8936 poll mula sa /ssf/poll (ang ssf.internal-poll na scheduler job), hanggang ssf.pollMaxEvents na SET bawat request. Ito ang pinakamatagal na hinihintay ng isang Security Event Token bago ito makita at aksyunan ng alinmang surface. Pinapatay ng 0 ang job, at naka-queue na lang ang mga event sa dalawang stream at hindi umaabot sa alinmang page."
   },
   "ssf.maxStreams|label": {
     "en": "64775d43f39a7891",

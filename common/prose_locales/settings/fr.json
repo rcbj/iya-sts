@@ -6992,12 +6992,20 @@
     "text": "Enregistrer la console et le portail comme récepteurs"
   },
   "ssf.internalReceivers|description": {
-    "en": "29e7cb1d4e0c30f3",
-    "text": "Indique si ce service crée un flux Shared Signals pour sa PROPRE console d’administration et son portail utilisateur, afin que chacun reçoive chaque événement CAEP et RISC par push RFC 8935 sur un endpoint qui lui est propre et affiche ce qui est arrivé sur /admin/signals et /portal/signals. Ce sont des flux ORDINAIRES — mettez-en un en pause, restreignez-le ou supprimez-le sur /admin/ssf et il le reste jusqu’à un redémarrage. Notez que ssf.pushDelivery régit cette remise comme toute autre : s’il est désactivé, les événements s’accumulent sur les deux flux et n’atteignent aucune des deux pages."
+    "en": "1a148e2b3a63a17d",
+    "text": "Indique si ce service crée un flux Shared Signals pour sa PROPRE console d’administration et son portail utilisateur, afin que chacun reçoive chaque événement CAEP et RISC — en les collectant par interrogation RFC 8936 sur le /ssf/poll de ce service toutes les ssf.internalPollMs (#771) — et affiche ce qui est arrivé sur /admin/signals et /portal/signals. Ce sont des flux ORDINAIRES — mettez-en un en pause, restreignez-le ou supprimez-le sur /admin/ssf et il le reste jusqu’à un redémarrage."
   },
   "ssf.internalReceivers|restartReason": {
     "en": "75c18a7223a2e0a3",
     "text": "les deux flux sont créés au chargement de ssf/ssf.ts, puis de nouveau à la construction de chaque domaine ; le désactiver à chaud laisserait donc les flux déjà existants, et l’activer n’en créerait aucun"
+  },
+  "ssf.internalPollMs|label": {
+    "en": "245d4495769ca599",
+    "text": "Intervalle d’interrogation de la console et du portail (millisecondes)"
+  },
+  "ssf.internalPollMs|description": {
+    "en": "b80cedcb611f2fd3",
+    "text": "À quelle fréquence la console d’administration et le portail utilisateur de ce service collectent ce que contiennent leurs flux, par interrogation RFC 8936 sur /ssf/poll (la tâche planifiée ssf.internal-poll), jusqu’à ssf.pollMaxEvents SET par requête. C’est le plus long délai qu’un Security Event Token attend avant que l’une ou l’autre surface le voie et agisse en conséquence. 0 désactive la tâche ; les événements s’accumulent alors sur les deux flux et n’atteignent aucune des deux pages."
   },
   "ssf.maxStreams|label": {
     "en": "64775d43f39a7891",

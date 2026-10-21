@@ -1035,6 +1035,7 @@ var config = {
     deadLetterSweepS: 60,                                                                                                                                 // Dead-letter sweep interval (seconds)
     authBasic: true,                                                                                                                                      // Offer HTTP Basic
     internalReceivers: true,                                                                                                                              // Register the console and the portal as receivers; restart to apply
+    internalPollMs: 1000,                                                                                                                                 // Console and portal poll interval (milliseconds)
     maxStreams: 25,                                                                                                                                       // Streams per receiver
     inactivityTimeoutS: 0,                                                                                                                                // Stream inactivity timeout (s)
     inactivityAction: "pause",                                                                                                                            // What an inactive stream becomes

@@ -479,6 +479,14 @@
     "en": "51871a2d4ac5a3aa",
     "text": "Pino-poll ang bawat federation relationship na poll stream (RFC 8936) ang Shared Signals stream ng partner: vine-verify, inaaksyunan at ina-acknowledge ang mga Security Event Token na hawak nito."
   },
+  "sched.jobs.ssf.internal-poll.title": {
+    "en": "61d86947032a491a",
+    "text": "Shared Signals poll ng console at portal"
+  },
+  "sched.jobs.ssf.internal-poll.describe": {
+    "en": "e68a7ab4fba5e9f4",
+    "text": "Kinokolekta ng sariling admin console at user portal ng serbisyong ito ang mga Security Event Token na naghihintay sa kanilang mga stream, sa bawat realm, sa RFC 8936 poll mula sa /ssf/poll — bine-verify, itinatala, inaaksyunan at kinikilala (#771)."
+  },
   "sched.jobs.ssf.stream-maintenance.title": {
     "en": "7b2875452b588faa",
     "text": "Maintenance ng Shared Signals stream"

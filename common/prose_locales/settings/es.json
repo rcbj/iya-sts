@@ -6992,12 +6992,20 @@
     "text": "Registrar la consola y el portal como receptores"
   },
   "ssf.internalReceivers|description": {
-    "en": "29e7cb1d4e0c30f3",
-    "text": "Si este servicio siembra un flujo de Shared Signals para su PROPIA consola de administración y su portal de usuario, de modo que cada uno reciba todos los eventos CAEP y RISC mediante push de RFC 8935 en un endpoint propio y dibuje lo que llegó en /admin/signals y /portal/signals. Son flujos NORMALES — pause uno, redúzcalo o elimínelo en /admin/ssf y quedará así hasta un reinicio. Tenga en cuenta que ssf.pushDelivery rige esta entrega como cualquier otra: con él desactivado, los eventos se encolan en los dos flujos y no llegan a ninguna de las dos páginas."
+    "en": "1a148e2b3a63a17d",
+    "text": "Si este servicio siembra un flujo de Shared Signals para su PROPIA consola de administración y su portal de usuario, de modo que cada uno reciba todos los eventos CAEP y RISC (recogiéndolos mediante sondeo de RFC 8936 del /ssf/poll de este servicio cada ssf.internalPollMs, #771) y dibuje lo que llegó en /admin/signals y /portal/signals. Son flujos NORMALES — pause uno, redúzcalo o elimínelo en /admin/ssf y quedará así hasta un reinicio."
   },
   "ssf.internalReceivers|restartReason": {
     "en": "75c18a7223a2e0a3",
     "text": "los dos flujos se siembran cuando se carga ssf/ssf.ts con require y de nuevo al construirse cada dominio, así que desactivar esto en caliente dejaría los flujos que ya existen y activarlo no crearía ninguno"
+  },
+  "ssf.internalPollMs|label": {
+    "en": "245d4495769ca599",
+    "text": "Intervalo de sondeo de la consola y el portal (milisegundos)"
+  },
+  "ssf.internalPollMs|description": {
+    "en": "b80cedcb611f2fd3",
+    "text": "Con qué frecuencia la consola de administración y el portal de usuario de este servicio recogen lo que contienen sus flujos, mediante sondeo de RFC 8936 en /ssf/poll (la tarea programada ssf.internal-poll), hasta ssf.pollMaxEvents SET por solicitud. Es lo máximo que un Security Event Token espera antes de que cualquiera de las dos superficies lo vea y actúe en consecuencia. 0 desactiva la tarea, y entonces los eventos se encolan en los dos flujos y no llegan a ninguna de las dos páginas."
   },
   "ssf.maxStreams|label": {
     "en": "64775d43f39a7891",

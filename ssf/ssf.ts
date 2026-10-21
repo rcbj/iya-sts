@@ -285,6 +285,10 @@ const MAINTENANCE_JOB = 'ssf.stream-maintenance';
 // See scheduleOptOuts().
 const OPT_OUT_JOB = 'risc.opt-out-effective';
 
+// This service's own console and portal collecting their streams by RFC 8936
+// poll (#771). See scheduleInternalPoll().
+const INTERNAL_POLL_JOB = 'ssf.internal-poll';
+
 /**
  * The Shared Signals Framework transmitter (OpenID SSF 1.0) and its CAEP and
  * RISC emission: the configuration metadata, the stream management, status,
@@ -1970,6 +1974,55 @@ class SharedSignals {
     log.debug('Leaving SharedSignals.scheduleOptOuts(). On the scheduler.');
   }
 
+  // -------------------------------------------------------------------------
+  // THIS SERVICE'S OWN TWO RECEIVERS COLLECT BY POLL (#771), AS A SCHEDULER
+  // JOB — rcbj's rule that anything periodic is one. `ssf/ssf_receivers.ts`
+  // carries the argument for poll; this is only its clock.
+  //
+  // A CLUSTER job, once for the service: a SET is collected and acknowledged
+  // once, and a run that walks every realm itself dials only the streams
+  // with something waiting, where a per-realm job would claim a slot per
+  // realm every second to find most of them empty. Its body is handed to a
+  // request worker (#408), so neither the polls' verification nor what a
+  // received signal ends runs on the front process's thread. `nice` 0: it is
+  // the latency of a revocation reaching a surface, and a busy worker is
+  // exactly when there is most to collect.
+  // -------------------------------------------------------------------------
+  /**
+   * Registers the `ssf.internal-poll` cluster scheduler job, once.
+   */
+  scheduleInternalPoll(): void {
+    const { log, config, receivers } = this.deps;
+    log.debug('Entering SharedSignals.scheduleInternalPoll().');
+    const scheduler = require('../cluster/scheduler');
+    if (scheduler.job(INTERNAL_POLL_JOB)) {
+      log.debug('Leaving SharedSignals.scheduleInternalPoll(). Registered.');
+      return;
+    }
+    scheduler.register({
+      id: INTERNAL_POLL_JOB,
+      title: 'Console and portal Shared Signals poll',
+      describe: 'This service\'s own admin console and user portal collect ' +
+                'the Security Event Tokens waiting on their streams, in ' +
+                'every realm, over RFC 8936 poll from /ssf/poll — verified, ' +
+                'recorded, acted on and acknowledged (#771).',
+      owner: 'ssf/ssf.ts',
+      kind: 'cluster',
+      everySetting: 'ssf.internalPollMs', everySettingUnit: 'ms',
+      nice: 0,
+      off: function () {
+        return !config.value('ssf.enabled') ? 'ssf.enabled is off'
+          : (!config.value('ssf.internalReceivers')
+            ? 'ssf.internalReceivers is off' : '');
+      },
+      run: function () {
+        return receivers.pollAll();
+      }
+    });
+    log.debug('Leaving SharedSignals.scheduleInternalPoll(). On the ' +
+              'scheduler.');
+  }
+
   // The job's body: one opt-out-effective per account that is due.
   /**
    * Sends `opt-out-effective` for each account whose opt-out delay has passed.
@@ -2771,29 +2824,56 @@ class SharedSignals {
         log.debug('Leaving POST /ssf/poll. Off.');
         return;
       }
-      const decision = this.gate(req, res, 'read');
-      if (!decision) {
-        log.debug('Leaving POST /ssf/poll. Refused.');
-        return;
+      // THIS SERVICE'S OWN TWO RECEIVERS (#771). Their streams are nobody's
+      // to manage over these endpoints (#144), so the ordinary gate and
+      // ownership would refuse them; what they present instead is the
+      // credential `ssf_receivers.ts` derives for each, and nothing else
+      // answers for one of those streams. The id is read before the gate for
+      // that reason only — every other stream is refused below exactly as
+      // before, with the same 404 for one that is not the caller's.
+      const early = this.jsonBody(req);
+      const earlyId = String((early && early.stream_id) ||
+                             req.query.stream_id || '');
+      const internal: Json = earlyId ? streams.getStream(earlyId) : null;
+      let record: Json = null;
+      let body: Json = early;
+      if (internal && streams.isInternal(internal)) {
+        if (!this.deps.receivers.authorizesPoll(internal,
+              (req.headers || {}).authorization)) {
+          errorCodes.mark(res, 'STS-SSF-0145');
+          this.fail(res, 401, 'access_denied',
+            'Stream ' + earlyId + ' is one of this service\'s own receiver ' +
+            'streams, and only that receiver holds the credential a poll ' +
+            'of it presents.');
+          log.debug('Leaving POST /ssf/poll. Not its receiver.');
+          return;
+        }
+        record = internal;
+      } else {
+        const decision = this.gate(req, res, 'read');
+        if (!decision) {
+          log.debug('Leaving POST /ssf/poll. Refused.');
+          return;
+        }
+        if (!body) {
+          errorCodes.mark(res, 'STS-SSF-0011');
+          this.fail(res, 400, 'invalid_request',
+                    'The request body is not JSON.');
+          log.debug('Leaving POST /ssf/poll. Not JSON.');
+          return;
+        }
+        const id = String(body.stream_id || req.query.stream_id || '');
+        record = this.ownedStream(res, decision, id,
+          'RFC 8936 has no stream_id member — a real poll endpoint is per ' +
+          'stream, and this transmitter publishes one URL, so the id goes ' +
+          'in the body or the query string. The stream configuration says ' +
+          'so in delivery.endpoint_url.');
+        if (!record) {
+          log.debug('Leaving POST /ssf/poll. No such stream.');
+          return;
+        }
       }
-      const body = this.jsonBody(req);
-      if (!body) {
-        errorCodes.mark(res, 'STS-SSF-0011');
-        this.fail(res, 400, 'invalid_request',
-                  'The request body is not JSON.');
-        log.debug('Leaving POST /ssf/poll. Not JSON.');
-        return;
-      }
-      const id = String(body.stream_id || req.query.stream_id || '');
-      const record: Json = this.ownedStream(res, decision, id,
-        'RFC 8936 has no stream_id member — a real poll endpoint is per ' +
-        'stream, and this transmitter publishes one URL, so the id goes in ' +
-        'the body or the query string. The stream configuration says so in ' +
-        'delivery.endpoint_url.');
-      if (!record) {
-        log.debug('Leaving POST /ssf/poll. No such stream.');
-        return;
-      }
+      const id = String(record.stream_id);
       if (record.delivery.method !== streams.DELIVERY_POLL) {
         errorCodes.mark(res, 'STS-SSF-0021');
         this.fail(res, 400, 'invalid_request',
@@ -5900,7 +5980,7 @@ class SharedSignals {
   //
   // One stream each, per trust realm, asking for every CAEP and every RISC
   // event type. `ssf/ssf_receivers.ts` carries the whole argument — why
-  // delivery is a real RFC 8935 push over the loopback interface rather than a
+  // delivery is a real RFC 8936 poll (#771) over the loopback interface, not a
   // function call, why the streams are in every realm, and what an empty inbox
   // page can mean.
   //
@@ -5980,7 +6060,7 @@ class SharedSignals {
   // between the capability and the hooks, are registered by the composition
   // root right after it installs the instance.
   /**
-   * Runs the installed instance's load-time steps: the three scheduler jobs,
+   * Runs the installed instance's load-time steps: the four scheduler jobs,
    * the capability, the hooks and the receivers.
    *
    * @param instance - the installed instance
@@ -5990,6 +6070,7 @@ class SharedSignals {
     instance.scheduleSweep();
     instance.scheduleMaintenance();
     instance.scheduleOptOuts();
+    instance.scheduleInternalPoll();
     instance.provideCapability();
     instance.installHooks();
     instance.seedOwnReceivers();

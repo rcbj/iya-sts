@@ -199,8 +199,12 @@ class SignalsPage {
       '</td></tr>';
 
     const inner = '<h1>' + t.html('consoleSignals.heading') + '</h1><p>' +
+      // Where its events are delivered (#771): the poll endpoint it collects
+      // from, or its own receive path for a stream set back to push.
       t.html('consoleSignals.intro', { realm: st.realm,
-                                       path: st.receivePath }) + '</p>' +
+        path: st.stream && st.stream.delivery === 'poll' ? '/ssf/poll'
+                                                         : st.receivePath }) +
+      '</p>' +
       why +
       tiles +
       // Three links in one paragraph: the words between them are messages

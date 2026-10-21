@@ -2244,8 +2244,12 @@
     "text": "SSF 端點是否在 OAuth 2.0 存取權杖之外也接受 HTTP Basic，並在 authorization_schemes 中發布。在開發模式下，任何用戶名稱搭配 \"invalid\" 以外的任何密碼都能通過；在產品模式下，密碼會依該人員雜湊後的 userPassword 驗證。無論哪種情況，Basic 主體都擁有兩個範圍，因為 Basic 不攜帶任何範圍——因此要對每個呼叫者強制執行 ssf.read 與 ssf.manage 的部署應關閉此項。"
   },
   "ssf.internalReceivers|description": {
-    "en": "29e7cb1d4e0c30f3",
-    "text": "此服務是否為其「自己的」管理主控台與用戶入口網站植入 Shared Signals 串流，使兩者各自在自己的端點透過 RFC 8935 推送接收每個 CAEP 與 RISC 事件，並在 /admin/signals 與 /portal/signals 上繪製所收到的內容。它們是「一般」串流——在 /admin/ssf 暫停、縮減或刪除其中一個，它會保持該狀態直到重新啟動。請注意 ssf.pushDelivery 管轄此傳遞，如同管轄其他任何傳遞：關閉時，事件會在兩個串流上排隊，而不會到達任一頁面。"
+    "en": "1a148e2b3a63a17d",
+    "text": "此服務是否為其「自己的」管理主控台與用戶入口網站植入 Shared Signals 串流，使兩者各自接收每個 CAEP 與 RISC 事件——每隔 ssf.internalPollMs 透過 RFC 8936 輪詢從本服務自己的 /ssf/poll 收取（#771）——並在 /admin/signals 與 /portal/signals 上繪製所收到的內容。它們是「一般」串流——在 /admin/ssf 暫停、縮減或刪除其中一個，它會保持該狀態直到重新啟動。"
+  },
+  "ssf.internalPollMs|description": {
+    "en": "b80cedcb611f2fd3",
+    "text": "此服務自己的管理主控台與用戶入口網站多久收取一次其串流中保存的內容：透過 RFC 8936 輪詢從 /ssf/poll 收取（ssf.internal-poll 排程工作），每個請求最多 ssf.pollMaxEvents 個 SET。這是安全事件權杖（Security Event Token）在任一介面看到並據以行動之前最長的等待時間。0 會關閉此工作，此時事件會在兩個串流上排隊，而不會到達任一頁面。"
   },
   "ssf.maxQueuedEvents|description": {
     "en": "637f991f7f0c3854",

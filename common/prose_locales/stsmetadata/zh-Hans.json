@@ -1176,16 +1176,16 @@
     "text": "非规范。门户唯一的样式表（#568）。"
   },
   "stsmetadata.endpoints./portal/signals/receive.what": {
-    "en": "88962f04a48dd187",
-    "text": "RFC 8935 第 2.1 节推送投递，两端都是本服务（2026-09-10）。门户的流将此路径指定为其 `delivery.endpoint_url`，位于本服务自己的环回地址上，`ssf/ssf_http.ts` 将每个 SET 以 application/secevent+jwt 形式并携带流的 `authorization_header` POST 到这里。它刻意是一个真实的 HTTP 请求：在进程内把事件交给页面会跳过主体、媒体类型、授权头部和签名，而这些就是接收方所做的一切——这与 `common/oidc_rp.ts` 关于在进程内兑换授权码所作的论证相同，只是针对另一种协议再次提出。它不通过会话进行身份验证，但并非没有防护：它检查的是其自身流上的持有者令牌，该令牌按流、按启动生成，只交给本服务自己的发送方，并以恒定时间比较；然后检查 `aud`，对发给其他任何人的 SET 以 `invalid_audience` 拒绝；然后检查签名。格式错误或地址错误的令牌会被记录并拒绝，而不是被丢弃，因为收到了什么正是要问的问题。刻意不进行速率限制，而该文件中的每个凭据端点都有速率限制：限速器会在负载下悄悄丢弃某人的账户已禁用通知。"
+    "en": "b5f30a87646c3fed",
+    "text": "RFC 8935 第 2.1 节推送投递，两端都是本服务（2026-09-10）——适用于自 #771 起被改回推送的流：#771 使门户预置的流成为 RFC 8936 轮询流，由门户从 /ssf/poll 收取；在它是轮询流期间，推送到这里会被拒绝。改回推送后，该流将此路径指定为其 `delivery.endpoint_url`，位于本服务自己的环回地址上，`ssf/ssf_http.ts` 将每个 SET 以 application/secevent+jwt 形式并携带流的 `authorization_header` POST 到这里。它刻意是一个真实的 HTTP 请求：在进程内把事件交给页面会跳过主体、媒体类型、授权头部和签名，而这些就是接收方所做的一切——这与 `common/oidc_rp.ts` 关于在进程内兑换授权码所作的论证相同，只是针对另一种协议再次提出。它不通过会话进行身份验证，但并非没有防护：它检查的是其自身流上的持有者令牌，该令牌按流、按启动生成，只交给本服务自己的发送方，并以恒定时间比较；然后检查 `aud`，对发给其他任何人的 SET 以 `invalid_audience` 拒绝；然后检查签名。格式错误或地址错误的令牌会被记录并拒绝，而不是被丢弃，因为收到了什么正是要问的问题。刻意不进行速率限制，而该文件中的每个凭据端点都有速率限制：限速器会在负载下悄悄丢弃某人的账户已禁用通知。"
   },
   "stsmetadata.endpoints./portal/signals/receive.effect": {
     "en": "cae5ee202c7c115e",
     "text": "记录投递给用户门户的 Security Event Token"
   },
   "stsmetadata.endpoints./portal/signals/receive.coverage": {
-    "en": "ec6133bbe750c0f0",
-    "text": "full：针对 RFC 8935 第 2.1 节的接收：媒体类型、授权头部、带空主体的 202，以及第 2.4 节的 {err, description} 拒绝格式。这一端不实现 RFC 8936 轮询——此接收方是推送接收方——这里也没有任何重试，这是发送方一侧同样刻意的省略。"
+    "en": "e0809edeada1161b",
+    "text": "full：针对 RFC 8935 第 2.1 节的接收：媒体类型、授权头部、带空主体的 202，以及第 2.4 节的 {err, description} 拒绝格式。这只是推送这一半——门户的轮询那一半是 ssf.internal-poll 作业（#771）——这里也没有任何重试，这是发送方一侧同样刻意的省略。"
   },
   "stsmetadata.endpoints./portal/claim-sources/callback.what": {
     "en": "fe33bd3204e812ee",

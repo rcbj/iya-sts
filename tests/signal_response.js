@@ -144,11 +144,10 @@ function childMain() {
         token = token.slice(0, -4) + (token.slice(-4) === 'AAAA' ? 'BBBB'
                                                                   : 'AAAA');
       }
-      const req = { headers: {
-        authorization: record.delivery.authorization_header,
-        'content-type': 'application/secevent+jwt' },
-        body: token, res: {} };
-      return receivers.accept('admin-console', req);
+      // Taken as the console's poll takes one (#771): the seeded stream is a
+      // poll stream, and `acceptPolled()` is the push's checks without the
+      // push.
+      return receivers.acceptPolled('admin-console', token);
     };
     const endedOf = function (answer) {
       return ((answer.entry && answer.entry.reactions) || [])
@@ -217,11 +216,8 @@ function childMain() {
         subject: subject,
         payload: Object.assign({ event_timestamp:
           Math.floor(Date.now() / 1000) }, payload || {}) });
-      const req = { headers: {
-        authorization: record.delivery.authorization_header,
-        'content-type': 'application/secevent+jwt' },
-        body: events.signSetSync(claims), res: {} };
-      return receivers.accept('admin-console', req);
+      return receivers.acceptPolled('admin-console',
+                                    events.signSetSync(claims));
     };
     const bySession = function (sid) {
       return { format: 'complex',

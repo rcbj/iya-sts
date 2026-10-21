@@ -12,8 +12,10 @@ two applications** — the admin console at `/admin` and the user portal at
 `/portal`.
 
 Each has a stream of its own, seeded when the service starts, asking for **every
-CAEP event type and every RISC event type**. Each takes delivery over RFC 8935
-push, at an endpoint of its own. And each draws what arrived on a page:
+CAEP event type and every RISC event type**. Each collects what its stream
+holds over RFC 8936 poll, from this service's own `/ssf/poll`, every
+`ssf.internalPollMs` (a second by default). And each draws what arrived on a
+page:
 
 | Page | Who it is for | What it shows |
 |---|---|---|
@@ -29,20 +31,30 @@ The console could have drawn these events by reading the registers this service
 already keeps — `/admin/caep-sessions` and `/admin/risc-accounts` are exactly
 that, and they were here first. It does not, and the difference is the point.
 
-A receiver is something a **stream was agreed with**, that is **POSTed a signed
-document**, that has to **verify the signature** and **find its own name in the
-audience** before it believes anything. Delivering the event to the page by a
+A receiver is something a **stream was agreed with**, that is **handed signed
+documents**, that has to **verify the signature** and **find its own name in
+the audience** before it believes anything. Delivering the event to the page by a
 function call inside this process would have skipped every one of those steps
 and left the part that merely looks run.
 
-So the delivery is a real HTTP request. This service dials itself, on the
-loopback interface, with its own TLS certificate pinned, carrying the bearer
-token that receiver's stream told the transmitter to use — and the receiver
-checks that token, checks that the SET is typed `secevent+jwt`, that its issuer
+So the delivery is a real HTTP request. Each receiver dials this service's own
+poll endpoint, on the loopback interface, with its TLS certificate pinned,
+presenting a credential this service derives for that receiver and gives to
+nothing else — and takes up to `ssf.pollMaxEvents` SETs to a request. It
+checks that each SET is typed `secevent+jwt`, that its issuer
 is the stream's and that its audience names the receiver, and verifies the
 signature, exactly as a receiver you wrote would have to (SSF 1.0 sections
-4.1.1 and 4.1.6). A SET that fails one of those is still listed, marked as
-refused.
+4.1.1 and 4.1.6). It acknowledges each one on its next request; a SET that
+fails one of those checks is still listed, marked as refused, and is sent back
+in `setErrs` (RFC 8936 section 2.2) so that it leaves the queue.
+
+**Until #771 (2026-10-20) it was RFC 8935 push**: the transmitter POSTed every
+SET to the receiver's own endpoint, one request each. Under a load of password
+changes — each one sends CAEP `credential-change` to both surfaces — that was
+two loopback requests per change. A SET now waits up to one poll interval
+before either surface sees it and acts on it. The two receive endpoints,
+`/admin/signals/receive` and `/portal/signals/receive`, still take a push for a
+stream an operator sets back to push at `/admin/ssf`.
 
 What a row keeps is the SET's header and claims and the verdict on it, with
 the SET itself named by `tokenDigest`, its SHA-256 in base64url. The signed
@@ -66,7 +78,7 @@ In the order to check them:
 | `ssf.enabled` is off | this service is not a transmitter at all — nothing is built, queued or sent |
 | `ssf.internalReceivers` is off | the two streams are not seeded; everything else about Shared Signals is unaffected |
 | the stream was deleted | it is an **ordinary** stream: pause, narrow or delete it at `/admin/ssf` and it stays that way until a restart |
-| `ssf.pushDelivery` is off | this service makes no outbound request, including the one to itself. Events queue on the stream and are visible at `/admin/ssf`, and reach neither page |
+| `ssf.internalPollMs` is 0 | the `ssf.internal-poll` job is off, so neither surface collects. Events queue on the stream and are visible at `/admin/ssf`, and reach neither page |
 | `caep.enabled` or `risc.enabled` is off | that vocabulary's types are not supported, so they are not delivered however the stream asked |
 
 The console's copy of this names the settings. The portal's does not — somebody
@@ -172,13 +184,15 @@ that event.
 | `ssf.internalReceivers` | `true` | seed the two streams. Restart to apply |
 | `ssf.actOnSignalsInDevelopment` | `false` | end the surfaces' own sessions on a received signal in development mode too; product always does |
 | `xacml.signalResponsePolicy` | `signal-response` | the policy asked which received events end them |
-| `ssf.pushDelivery` | `true` | make outbound push requests **at all**, these two included |
+| `ssf.internalPollMs` | `1000` | how often the two collect what their streams hold (the `ssf.internal-poll` scheduler job); 0 turns it off |
+| `ssf.pollMaxEvents` | `20` | the most SETs one poll answers |
 | `ssf.maxReceivedEvents` | `200` | how many delivered events each inbox keeps, per realm |
 
-`ssf.pushAllowedHosts`, `ssf.pushAllowHttp` and `ssf.pushSkipTlsVerification` do **not** apply to these two:
-the address is this process's own, computed rather than named by anybody, and a
-request that does not leave the host is not a Security Event Token in transit.
-Every other receiver is bound by both.
+`ssf.pushDelivery`, `ssf.pushAllowedHosts`, `ssf.pushAllowHttp` and
+`ssf.pushSkipTlsVerification` do **not** apply to these two: a poll is not a
+push, the address is this process's own, computed rather than named by anybody,
+and a request that does not leave the host is not a Security Event Token in
+transit. Every other receiver is bound by them.
 
 ## Over the management API
 
