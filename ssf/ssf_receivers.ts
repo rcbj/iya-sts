@@ -718,6 +718,25 @@ class SsfReceivers {
       return false;
     }
     record.delivery = { method: streams.DELIVERY_POLL };
+    // A PAUSE FOR HEALTH WAS ABOUT PUSHES, and a poll stream is never pushed
+    // to (#771's follow-up): on 8081 the console's stream had been paused
+    // over 404s from a receive path #446 removed, with 356,000 SETs queued,
+    // and a paused stream hands a poller nothing but its stream-updated
+    // events. So its dead-stream state is cleared as the move is made, and a
+    // pause the HEALTH CHECK made is lifted; a pause an operator made stays.
+    if (record.pausedForHealth || streams.isDead(record)) {
+      const forHealth = !!record.pausedForHealth;
+      record.deadSinceMs = 0;
+      record.nextProbeAtMs = 0;
+      record.deadReason = '';
+      record.failingSinceMs = 0;
+      record.pausedForHealth = false;
+      if (forHealth && record.status === 'paused') {
+        record.status = 'enabled';
+        record.statusReason = 'enabled when it moved to poll delivery: its ' +
+          'pause was for pushes that were failing';
+      }
+    }
     streams.note(record, 'delivery', 'Moved from RFC 8935 push to RFC 8936 ' +
       'poll (#771): this service\'s own ' + surface.label + ' now collects ' +
       'its events from /ssf/poll, many to a request, rather than being ' +
@@ -1212,7 +1231,20 @@ class SsfReceivers {
     for (const realm of realms.list()) {
       await realms.run(realm, async () => {
         for (const surface of SURFACES) {
-          const record = this.streamFor(surface.id);
+          let record = this.streamFor(surface.id);
+          // MOVED HERE AS WELL AS AT SEEDING (#771's follow-up). On 8081 the
+          // two streams were still push after the build that seeds them as
+          // poll: seeding runs as the module loads, in every process, and a
+          // store's push record that arrived after it — or a process holding
+          // the old copy writing it back — left it push. This job runs with
+          // the store open, on the leader, every ssf.internalPollMs, so a
+          // stream it finds still pushed to this service's own receive path
+          // is moved here; the next run polls it.
+          if (record && (record.delivery || {}).method ===
+                        streams.DELIVERY_PUSH && this.moveToPoll(surface,
+                                                                 record)) {
+            record = this.streamFor(surface.id);
+          }
           if (!record || (record.delivery || {}).method !==
                          streams.DELIVERY_POLL) {
             continue;

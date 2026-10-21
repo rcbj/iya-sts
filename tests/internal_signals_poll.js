@@ -28,7 +28,10 @@
 //   P5. `/ssf/poll` for an internal stream takes that receiver's credential
 //       and nothing else — not none, not the other surface's;
 //   P6. an empty stream is not dialled; `pollOwn()` dials only this process;
-//   P7. the scheduler job is registered on `ssf.internalPollMs`.
+//   P7. the scheduler job is registered on `ssf.internalPollMs`;
+//   P8. a push stream paused for health that arrives AFTER seeding (8081,
+//       2026-10-20) is moved by the poll job and its pause lifted; an
+//       operator's pause stays.
 //
 // In a CHILD PROCESS: it sets SSF settings, requires the family and listens
 // on a port of its own, plain http, as `global.port`.
@@ -247,6 +250,37 @@ function child() {
          'P7. the poll is the ssf.internal-poll cluster job, every ' +
          'ssf.internalPollMs', JSON.stringify(job && { every:
            job.everySetting, kind: job.kind }));
+
+    // --- P8 ------------------------------------------------------------
+    // The 8081 case: a push record, paused for health, arriving after the
+    // seeding that would have moved it. The poll job moves it and lifts
+    // the pause; an operator's pause on a moved stream stays.
+    const late = receivers.streamFor(ADMIN);
+    late.delivery = { method: streams.DELIVERY_PUSH,
+      endpoint_url: receivers.endpointFor(surface) };
+    late.status = 'paused';
+    late.pausedForHealth = true;
+    late.failingSinceMs = Date.now() - 600000;
+    streams.touch(late);
+    await receivers.pollAll();
+    const moved = receivers.streamFor(ADMIN);
+    note(moved.delivery.method === streams.DELIVERY_POLL &&
+         moved.status === 'enabled' && !moved.pausedForHealth &&
+         !moved.failingSinceMs,
+         'P8. a push stream paused for health that arrives after seeding is ' +
+         'moved to poll by the poll job, and its pause lifted',
+         JSON.stringify({ delivery: moved.delivery, status: moved.status }));
+    moved.delivery = { method: streams.DELIVERY_PUSH,
+      endpoint_url: receivers.endpointFor(surface) };
+    moved.status = 'paused';
+    moved.pausedForHealth = false;
+    streams.touch(moved);
+    await receivers.pollAll();
+    const kept = receivers.streamFor(ADMIN);
+    note(kept.delivery.method === streams.DELIVERY_POLL &&
+         kept.status === 'paused',
+         'P8. an operator\'s pause is kept when the stream moves',
+         JSON.stringify({ delivery: kept.delivery, status: kept.status }));
 
     server.close();
     finish();
