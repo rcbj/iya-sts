@@ -26,6 +26,8 @@
 //       session index — no session body walked.
 //   P5. entriesAtAsync(), which the census asks every name of, is linear in
 //       the keys it is handed.
+//   P6. the population is kept for the hold, shared by concurrent asks, and
+//       built again as soon as the directory's people move.
 //
 // In a child holding the directory as a windowed request worker over a
 // stand-in bridge that counts synchronous and asynchronous questions.
@@ -233,6 +235,32 @@ async function inTheWorker(t) {
   t.check(atMany.size === 60000 && tookMs < 3000,
           'P5. entriesAtAsync() answers 120,000 keys (60,000 distinct) in ' +
           'linear time', tookMs + ' ms, ' + atMany.size + ' answered');
+
+  // P6 (2026-10-21): the population is kept. Paging asked for it again on
+  // every page — 25 s each on 8081. A second ask within the hold builds
+  // nothing, two at once share one build, and a write under ou=users is
+  // seen at once.
+  await inRealm(function () {
+    return views.peopleAndCensusAsync();
+  });
+  asked.async = 0;
+  const again = await inRealm(function () {
+    return Promise.all([views.peopleAndCensusAsync(),
+                        views.peopleAndCensusAsync()]);
+  });
+  t.check(asked.async === 0 && again[0] === again[1],
+          'P6. within the hold the population is answered as it was built, ' +
+          'and two asks share it', JSON.stringify(asked));
+  await inRealm(function () {
+    return ldap.createUser('upa-after', { invent: false });
+  });
+  asked.async = 0;
+  const after = await inRealm(function () {
+    return views.peopleAndCensusAsync();
+  });
+  t.check(asked.async >= 1 && after !== again[0],
+          'P6. a person written under ou=users is seen at once: the ' +
+          'population is built again', JSON.stringify(asked));
   log.debug('Leaving inTheWorker().');
 }
 

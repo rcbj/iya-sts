@@ -13953,7 +13953,12 @@ if (typeof credentials.addDirectoryHooks === 'function') {
     countPeopleNamed: countPeopleNamed,
     // The same two, asked asynchronously, for `/admin/users` (2026-10-21).
     credentialTalliesAsync: credentialTalliesAsync,
-    countPeopleNamedAsync: countPeopleNamedAsync
+    countPeopleNamedAsync: countPeopleNamedAsync,
+    // What a write under `ou=users` moves, here or applied from another
+    // process (2026-10-21): the key of `/admin/users`' kept population.
+    peopleVersion: function () {
+      return subtreeVersion(usersDn());
+    }
   });
 }
 

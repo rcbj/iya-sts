@@ -31,7 +31,7 @@
 //      token: no caller, and both read and write;
 //   7. what it costs (2026-10-21): /me builds no statistics snapshot and asks
 //      no directory tally; /status asks the register's rows and the tally
-//      asynchronously.
+//      asynchronously, and keeps the totals for a few seconds.
 // ===========================================================================
 
 const fs = require('fs');
@@ -322,6 +322,25 @@ function childMain() {
          typeof status.json.usersKnown === 'number',
          '7b. /admin-api/status asks the register\'s rows and the tally ' +
          'asynchronously, neither synchronously', JSON.stringify(statusCost));
+    // 7c (2026-10-21): the totals are kept for a few seconds — a second
+    // /status at once asks nothing again.
+    statsModule.userRowsAsync = function () {
+      counted.userRowsAsync++;
+      return realStats.userRowsAsync.apply(this, arguments);
+    };
+    counted.userRowsAsync = 0;
+    let statusAgain = null;
+    try {
+      statusAgain = await call(port, 'GET', '/admin-api/status', writer);
+    } finally {
+      statsModule.userRowsAsync = realStats.userRowsAsync;
+    }
+    note(statusAgain.status === 200 && counted.userRowsAsync === 0 &&
+         statusAgain.json && statusAgain.json.usersKnown ===
+           status.json.usersKnown,
+         '7c. a second /admin-api/status within the hold builds nothing ' +
+         'again', JSON.stringify({ status: statusAgain.status,
+                                   built: counted.userRowsAsync }));
 
     // --- 6. the control ------------------------------------------------------
     config.setOverride('adminApi.authRequired', false);
