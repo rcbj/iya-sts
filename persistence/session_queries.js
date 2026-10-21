@@ -48,6 +48,11 @@ const CREDENTIAL = 'SELECT key FROM sts_sessions WHERE realm = $1 AND ' +
 const USERNAME = 'SELECT key FROM sts_sessions WHERE realm = $1 AND ' +
   'username_key = $2';
 
+// A subject's chosen sessions (#774), on `sts_sessions_subject`, whose
+// predicate is this one's.
+const SUBJECT = 'SELECT key FROM sts_sessions WHERE realm = $1 AND ' +
+  'chosen AND subject_key <> \'\' AND subject_key = $2';
+
 const PAGE = 'SELECT key FROM sts_sessions WHERE realm = $1 AND key > $2 ' +
   'ORDER BY key LIMIT $3';
 
@@ -95,6 +100,9 @@ function build(name, args) {
     values = [a[0], a[1]];
   } else if (name === 'session.username') {
     text = USERNAME;
+    values = [a[0], a[1]];
+  } else if (name === 'session.subject') {
+    text = SUBJECT;
     values = [a[0], a[1]];
   } else if (name === 'session.page') {
     text = PAGE;
@@ -168,6 +176,7 @@ function answerOf(name, rows) {
   }
   if (name === 'session.expired' || name === 'session.children' ||
       name === 'session.credential' || name === 'session.username' ||
+      name === 'session.subject' ||
       name === 'session.page' || name === 'session.surface' ||
       name === 'session.partner') {
     const out = [];

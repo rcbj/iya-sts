@@ -634,6 +634,39 @@ class Logout {
     return out;
   }
 
+  // ONE PERSON'S SESSIONS, READ AS ONE PERSON'S (#774): `authn`'s two indexed
+  // columns, the username and the subject the person's entry gives, and then
+  // `holderKeyOf()` — the walk's own rule — asked of each of those only, so
+  // the answer is the walk's for every session filed under either. What it
+  // does not see is a session filed under NEITHER: a name only
+  // `holderKeyOf()`'s normalisation maps to the key (a realm-qualified one)
+  // with no subject that still resolves, which `authn` no longer makes — every
+  // session it starts carries the entry's `urn:uuid:` sub. Used for ONE key
+  // (`heldIdsFor()`, the risk engine's `heldBy()`); a sign-out and a set of
+  // people keep the walk. Null where `authn` offers no such read.
+  private sessionsOfOne(key: string): Map<string, Loose[]> | null {
+    const { log, authn, stats } = this.deps;
+    log.debug("Entering Logout.sessionsOfOne().");
+    if (typeof authn.sessionsHeldUnder !== 'function') {
+      log.debug("Leaving Logout.sessionsOfOne(). No such read.");
+      return null;
+    }
+    const subject = String(helpers.subjectForName(key) || '');
+    const found = authn.sessionsHeldUnder(key, subject);
+    if (found == null) {
+      log.debug("Leaving Logout.sessionsOfOne(). Unread.");
+      throw new Error('the sessions could not be read');
+    }
+    const mine = found.filter((session) => {
+      const username = (session.user && session.user.username) || '';
+      const sub = (session.user && session.user.sub) || '';
+      return stats.holderKeyOf(username, sub) === key;
+    });
+    mine.sort((a, b) => { return (b.authTime || 0) - (a.authTime || 0); });
+    log.debug("Leaving Logout.sessionsOfOne(). " + mine.length + ".");
+    return new Map([[key, mine]]);
+  }
+
   // ---------------------------------------------------------------------------
   // ONE READ OF THE BIG STORES FOR A WHOLE SET OF PEOPLE (#351, 2026-09-29).
   //
@@ -666,7 +699,7 @@ class Logout {
 
   // Runs `fn` with the index built for `keys`, and takes it down after —
   // nested calls reuse the outer one when it covers them.
-  private withIndex<T>(keys: string[], fn: () => T): T {
+  private withIndex<T>(keys: string[], fn: () => T, oneByIndex?: boolean): T {
     const { log, stats } = this.deps;
     log.debug("Entering Logout.withIndex(). " + keys.length + " key(s).");
     const wanted = keys.map((key) => { return String(key || ''); });
@@ -678,7 +711,10 @@ class Logout {
     const outer = this.index;
     this.index = {
       keys: new Set(wanted),
-      sessions: this.sessionsByKey(wanted),
+      // One person asking what they hold reads their sessions by index
+      // (#774); a set, or a sign-out, walks.
+      sessions: (oneByIndex && wanted.length === 1 &&
+                 this.sessionsOfOne(wanted[0])) || this.sessionsByKey(wanted),
       holdings: stats.holdingsOf(wanted),
       wallet: this.walletRowsByKey(wanted),
       // #432: the GNAP grants and the OAuth grants, one walk each.
@@ -2759,7 +2795,7 @@ class Logout {
           return String(r.id);
         }));
       });
-    });
+    }, true);
     log.debug("Leaving Logout.heldIdsFor().");
     return out;
   }
