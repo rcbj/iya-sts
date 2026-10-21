@@ -111,6 +111,20 @@ const STYLE =
   // card on /portal/self-issued. `anywhere` (not `break-word`) is what lets
   // the table's automatic layout shrink the column to fit.
   'td code{overflow-wrap:anywhere}' +
+  // ...EXCEPT A VALUE DRAWN ON ONE LINE (2026-10-20, rcbj on
+  // /portal/self-issued: "a single line", the whole value in a tooltip). A
+  // block of its own width, cut with an ellipsis, so the column is that
+  // wide whatever the value; its `title` carries the rest. Narrower on a
+  // phone, where seven columns have less than half the room.
+  'td .oneline{display:inline-block;max-width:13em;overflow:hidden;' +
+  'text-overflow:ellipsis;white-space:nowrap;overflow-wrap:normal;' +
+  'vertical-align:bottom;cursor:help}' +
+  'td .oneline.location{max-width:10em}' +
+  '@media (max-width:40rem){td .oneline{max-width:8em}' +
+  'td .oneline.location{max-width:7em}}' +
+  // The last resort for a heading-row table too wide for its card on a
+  // narrow screen: it scrolls inside the card rather than past it.
+  '.scrollx{overflow-x:auto;max-width:100%}' +
   // THE RECOVERY CODE LIST (2026-09-10). Two columns where there is room and
   // one where there is not, because the list is read off a phone as often as
   // off a laptop — and a ten-character code that wraps mid-string is one

@@ -1553,6 +1553,22 @@ it; the page says whether this realm releases the mark as the `did` claim
 (`didClaim` on the view). What it is and what releases it:
 `oid4vc/CLAUDE.md` and `oauth-oidc/CLAUDE.md` (*The `did` claim*).
 
+**EACH ROW IS ONE LINE, AND SAYS WHERE THE KEY CAME FROM** (2026-10-20,
+rcbj on 8081). The subject is cut with an ellipsis (`td .oneline`, in
+`web_portal_kit.ts`; it overrides `td code`'s break-anywhere for that cell)
+and its `title` is the whole value. The **Location** column is the
+enrolment value's `location` (`oid4vc/CLAUDE.md`, 3ba), drawn the same way:
+one short line — a web wallet's host and port, an app's reported name, or
+*Browser (DC API)* / *Administrator* / *Not recorded* — and the full story
+in the `title`: the wallet's whole address, "Name reported by the wallet
+app: …", or a sentence. A wallet's name is its own say-so, so the page
+labels it as reported and escapes it like any other value. A row from
+before the column says *Not recorded*; proving it again records it. The
+table sits in `.scrollx`, so a phone too narrow for even the cut-down cells
+scrolls it inside the card. `tests/self_issued_location.js` holds all of
+it; the console's `/admin/users` block draws the same column
+(`admin-ui/web_users.ts`, `siopLocationCell()`).
+
 **NO ENTRY IS A REFUSAL, NOT AN EMPTY LIST** (2026-10-20, rcbj after an
 investigation of empty portal lists on 8081). `siop.list()` answers null where
 the directory holds no entry for the token's person, and the view read that as

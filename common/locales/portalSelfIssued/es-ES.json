@@ -5,5 +5,12 @@
   "off": "El inicio de sesión con un identificador autoemitido está desactivado aquí, así que no se puede registrar ninguna cartera desde esta página. Las claves de arriba siguen registradas.",
   "doneEnrolled": "La clave de su cartera está registrada. A partir de ahora inicia su sesión.",
   "proofWallet": "Demostrado con su cartera",
-  "reprove": "Registrar una clave que ya está aquí la demuestra de nuevo: hágalo si cambió la clave did:web de su cartera, y una entrada de un administrador pasa a ser una que usted demostró."
+  "reprove": "Registrar una clave que ya está aquí la demuestra de nuevo: hágalo si cambió la clave did:web de su cartera, y una entrada de un administrador pasa a ser una que usted demostró.",
+  "locationWeb": "Cartera web",
+  "locationWebTip": "Cartera web: {url}",
+  "locationAppUnnamed": "Aplicación de cartera",
+  "locationAppTip": "Nombre que dio la aplicación de cartera: {name}",
+  "locationAppUnnamedTip": "Una aplicación de cartera respondió a la solicitud; no indicó su nombre.",
+  "locationAdminTip": "Añadido por un administrador; no intervino ninguna cartera.",
+  "locationNoneTip": "Se registró antes de que este servicio anotara de dónde procede una clave. Demostrarla de nuevo con su cartera lo anota."
 }

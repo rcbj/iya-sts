@@ -137,6 +137,23 @@ const PROOF_ADMIN = 'admin';
 // #693 (no `proof` member) is told to have been proved.
 const SELF_BY = /^self\b/;
 
+// WHERE AN ENROLLED KEY CAME FROM (2026-10-20, rcbj on /portal/self-issued):
+// `location` on the enrolment value, `{ kind, value }`. `web` is the web
+// wallet whose link the person followed (`value` its configured address);
+// `app` a wallet app answering the scheme link (`value` the name it gave in
+// its User-Agent, or ''); `dc_api` the browser's Digital Credentials API
+// (`value` the origin, or ''); `admin` an administrator's enrolment by value.
+// A value from before it carries none, and the page says "not recorded".
+const LOCATION_KINDS = ['web', 'app', 'dc_api', 'admin'];
+
+// What a wallet's User-Agent may contribute to a page: RFC 9110 section
+// 10.1.5's product tokens (`name` or `name/version`), never its comments,
+// printable ASCII only, at most this many characters. It is the wallet's
+// own say-so and is SHOWN, never trusted for anything.
+const REPORTED_NAME_MAX = 80;
+const PRODUCT_TOKEN =
+  /^[A-Za-z0-9!#$%&'*+.^_`|~-]+(\/[A-Za-z0-9!#$%&'*+.^_`|~-]+)?$/;
+
 interface SiopDeps {
   log: typeof helpers.log;
   config: typeof config;
@@ -198,6 +215,80 @@ class Siop {
    * The provenance of a subject an administrator enrolled by value.
    */
   static readonly PROOF_ADMIN = PROOF_ADMIN;
+  /**
+   * The kinds of place an enrolled key may have come from.
+   */
+  static readonly LOCATION_KINDS = LOCATION_KINDS;
+
+  // THE NAME A WALLET GAVE ITSELF, made safe to show (2026-10-20): every
+  // character outside printable ASCII becomes a space (so nothing is joined
+  // that was apart), the parenthesised comments go, and what is left keeps
+  // only its product tokens, whole, up to REPORTED_NAME_MAX characters. ''
+  // where nothing usable arrived.
+  /**
+   * Returns the product tokens of a User-Agent, sanitised for display:
+   * printable ASCII, no comments, at most 80 characters, or ''.
+   *
+   * @param value - the User-Agent as it arrived
+   * @returns the name, or ''
+   */
+  static reportedName(value: unknown): string {
+    helpers.log.debug("Entering Siop.reportedName().");
+    let text = String(value === undefined || value === null ? '' : value)
+      .slice(0, 4096).replace(/[^\x20-\x7e]/g, ' ');
+    let was = '';
+    while (was !== text) {
+      was = text;
+      text = text.replace(/\([^()]*\)/g, ' ');
+    }
+    let out = '';
+    const tokens = text.split(/\s+/).filter(function (one) {
+      return PRODUCT_TOKEN.test(one);
+    });
+    for (const one of tokens) {
+      const next = out ? out + ' ' + one : one;
+      if (next.length > REPORTED_NAME_MAX) {
+        break;
+      }
+      out = next;
+    }
+    helpers.log.debug("Leaving Siop.reportedName(). " + out.length);
+    return out;
+  }
+
+  // An enrolment's `location`, as `enrol()` stores it, or null: a kind this
+  // service knows, and a value of the shape that kind holds — a web
+  // wallet's http(s) address, an app's reported name (sanitised again, so a
+  // caller cannot store what the fetch would not have), a browser origin,
+  // or nothing for an administrator.
+  /**
+   * Returns a checked enrolment location, `{ kind, value }`, or null.
+   *
+   * @param value - the location a caller gave
+   * @returns the location to store, or null
+   */
+  static locationOf(value: unknown): Json {
+    helpers.log.debug("Entering Siop.locationOf().");
+    const given: Json = value && typeof value === 'object' ? value : null;
+    const kind = given ? String(given.kind || '') : '';
+    if (LOCATION_KINDS.indexOf(kind) < 0) {
+      helpers.log.debug("Leaving Siop.locationOf(). None.");
+      return null;
+    }
+    const raw = String(given.value === undefined || given.value === null
+      ? '' : given.value);
+    let out = '';
+    if (kind === 'web') {
+      out = /^https?:\/\/[\x21-\x7e]+$/.test(raw) ? raw.slice(0, 2048) : '';
+    } else if (kind === 'app') {
+      out = Siop.reportedName(raw);
+    } else if (kind === 'dc_api') {
+      out = /^https?:\/\/[A-Za-z0-9.:\[\]-]+$/.test(raw) ? raw.slice(0, 256)
+                                                         : '';
+    }
+    helpers.log.debug("Leaving Siop.locationOf(). " + kind);
+    return { kind: kind, value: out };
+  }
 
   /**
    * Builds the relying party half from the modules it reads.
@@ -347,14 +438,16 @@ class Siop {
   }
 
   // Every subject a person has enrolled, as { subject, label, enrolledAt,
-  // by, proof, provedAt?, pinnedKeys? }, `proof` filled in for a value from
-  // before #693. null where the directory holds no entry for them.
+  // by, proof, provedAt?, pinnedKeys?, location? }, `proof` filled in for a
+  // value from before #693. null where the directory holds no entry for
+  // them.
   /**
    * Returns every subject a person has enrolled.
    *
    * @param username - the person
    * @returns `{ subject, label, enrolledAt, by, proof, provedAt?,
-   *   pinnedKeys? }` rows, or null when the directory holds no entry for them
+   *   pinnedKeys?, location? }` rows, or null when the directory holds no
+   *   entry for them
    */
   list(username: unknown): Json[] | null {
     const { log, credentials } = this.deps;
@@ -568,13 +661,15 @@ class Siop {
    * @param subject - the subject
    * @param label - a label for it
    * @param by - who enrolled it
-   * @param options - `proof` (`wallet` or `admin`, the default) and, for a
-   *   did:web, `pinnedKeys`: the RFC 7638 thumbprints its sign-ins may use
+   * @param options - `proof` (`wallet` or `admin`, the default), for a
+   *   did:web `pinnedKeys`: the RFC 7638 thumbprints its sign-ins may use,
+   *   and for a proof `location`: where the key came from
    * @returns `{ ok, enrolled, again }`, or `{ ok: false, error }`
    */
   enrol(username: unknown, subject: unknown, label: unknown,
         by: unknown, options?: { proof?: string;
-                                 pinnedKeys?: string[] }): Json {
+                                 pinnedKeys?: string[];
+                                 location?: Json }): Json {
     const { log, credentials } = this.deps;
     log.debug("Entering Siop.enrol(). user=" + username);
     const opts = options || {};
@@ -610,6 +705,15 @@ class Siop {
       proof: proof };
     if (proof === PROOF_WALLET) {
       record.provedAt = new Date().toISOString();
+    }
+    // WHERE IT CAME FROM (2026-10-20): what the proof's caller observed,
+    // checked; an administrator's value says so. Written afresh on every
+    // enrolment, so proving a subject again from another wallet says where
+    // it was proved last.
+    const location = proof === PROOF_ADMIN ? { kind: 'admin', value: '' }
+                                           : Siop.locationOf(opts.location);
+    if (location) {
+      record.location = location;
     }
     // PROVING A SUBJECT AGAIN KEEPS IT PREFERRED (#693): the mark is the
     // person's choice, and re-pinning a did:web is not a change of mind.
@@ -1325,6 +1429,9 @@ export = {
   PROOF_ADMIN: PROOF_ADMIN,
   didWebUrl: Siop.didWebUrl,
   provenanceOf: Siop.provenanceOf,
+  LOCATION_KINDS: LOCATION_KINDS,
+  reportedName: Siop.reportedName,
+  locationOf: Siop.locationOf,
   normalise: slot.forward('normalise'),
   list: slot.forward('list'),
   ownerOf: slot.forward('ownerOf'),

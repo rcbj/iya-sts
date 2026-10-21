@@ -320,6 +320,10 @@ const DC_API_ENC_VALUES = ['A128GCM', 'A256GCM'];
 // The `kid` prefix of a direct_post.jwt transaction's response key; the rest
 // of the kid is the transaction's state (#187).
 const DIRECT_POST_JWT_KID = 'dpj-';
+// The query a web wallet's request_uri carries, and only its (2026-10-20):
+// which link was followed, read by the Request Object endpoint
+// (`noteFetch()`), never by what it answers.
+const FETCH_VIA_WEB = 'via=web';
 
 // The N-Quads IRIs an ldp_vc's disclosed statements are read by.
 const CRED = 'https://www.w3.org/2018/credentials#';
@@ -2075,15 +2079,25 @@ class VcVerifier {
 
   // The query the wallet is handed: by value it carries the whole request, by
   // reference only client_id and request_uri (OID4VP section 5.2).
+  //
+  // `via` is `web` for the WEB WALLET's link only (2026-10-20, rcbj on
+  // /portal/self-issued: where an enrolled key came from). It puts
+  // `?via=web` on the request_uri, which the Request Object endpoint reads
+  // as which link was followed and answers exactly as it answers without
+  // it: the id is the path's, and nothing compares the request_uri or
+  // signs it into the Request Object. The scheme link and the QR code
+  // carry none, so a web wallet is told apart by ADDRESS, never by what it
+  // says it is.
   /**
    * Returns the query the wallet is handed: the whole request by value, or
    * `client_id` and `request_uri` by reference (OpenID4VP section 5.2).
    *
    * @param req - the request
    * @param record - the transaction
+   * @param via - `web` to mark the request_uri as the web wallet's link
    * @returns the query string
    */
-  vpRequestQuery(req: any, record: any) {
+  vpRequestQuery(req: any, record: any, via?: string) {
     const { log, baseUrlOf } = this.deps;
     log.debug("Entering VcVerifier.vpRequestQuery().");
     const base = baseUrlOf(req);
@@ -2093,7 +2107,8 @@ class VcVerifier {
     const params: Record<string, string> = {};
     if (record.byReference) {
       params.client_id = record.clientId;
-      params.request_uri = base + '/oid4vp/request/' + record.id;
+      params.request_uri = base + '/oid4vp/request/' + record.id +
+        (via === 'web' ? '?' + FETCH_VIA_WEB : '');
       params.request_uri_method = 'get';
     } else {
       ['client_id', 'response_type', 'response_mode', 'response_uri',
@@ -4380,6 +4395,37 @@ class VcVerifier {
    *
    * @param record - the transaction
    */
+  // WHO FETCHED A SIGN-IN'S REQUEST OBJECT (2026-10-20): `fetchedBy` on the
+  // transaction — `via` `web` where the request_uri carried the web
+  // wallet's marker (vpRequestQuery()) and `link` otherwise, and `agent`,
+  // the product tokens of the fetch's User-Agent (`siop.reportedName()`).
+  // `vc_signin.ts` turns it into where an enrolled key came from. **The
+  // FIRST fetch wins**: a later one, by whichever party, writes nothing, so
+  // a re-fetch cannot recolour a transaction somebody else opened, and the
+  // usual case (one fetch) costs one write. Only a sign-in's transaction
+  // records it; a failure here is logged and never reaches the answer.
+  private noteFetch(state: string, record: any, req: any): void {
+    const { log, vpTransactions, siop } = this.deps;
+    log.debug("Entering VcVerifier.noteFetch().");
+    if (!record.signIn || record.signIn.fetchedBy) {
+      log.debug("Leaving VcVerifier.noteFetch(). Nothing to record.");
+      return;
+    }
+    try {
+      const asked = req.query && req.query.via === 'web';
+      record.signIn.fetchedBy = {
+        via: asked ? 'web' : 'link',
+        agent: siop.reportedName(typeof req.get === 'function'
+          ? req.get('user-agent') : ''),
+        at: new Date().toISOString() };
+      vpTransactions.set(String(state), record);
+    } catch (e) {
+      log.debug("Caught in VcVerifier.noteFetch(): " +
+                ((e && e.message) || e));
+    }
+    log.debug("Leaving VcVerifier.noteFetch().");
+  }
+
   saveTransaction(record: any) {
     const { log, vpTransactions } = this.deps;
     log.debug("Entering VcVerifier.saveTransaction().");
@@ -4426,6 +4472,7 @@ class VcVerifier {
         return oauthError(res, 404, 'invalid_request', 'No such Request ' +
                           'Object.');
       }
+      this.noteFetch(state, record, req);
       res.status(200)
          .type('application/oauth-authz-req+jwt')
          .send(record.requestObject);

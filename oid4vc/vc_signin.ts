@@ -946,6 +946,10 @@ class VcSignin {
     const { ctx, tx } = admitted;
     const selfIssued = tx.responseType === 'id_token';
     const query = verifier.vpRequestQuery(req, tx);
+    // The web wallet's links carry the request_uri's marker (2026-10-20):
+    // the Request Object endpoint records which link was followed, which is
+    // how an enrolment says the key came from that web wallet.
+    const webQuery = verifier.vpRequestQuery(req, tx, 'web');
     const scheme = verifier.walletScheme(tx);
     const dcRequest = verifier.dcApiRequestFor(tx);
     const record = ctx.record;
@@ -965,12 +969,13 @@ class VcSignin {
         // under the scheme a wallet APP registers for
         // (`oid4vp.walletInvocation`, `siopv2://` for an ID Token alone),
         // or the web wallet the start NAMED.
-        sameDevice: (tx.signIn.walletNamed && tx.signIn.walletUrl
-          ? String(tx.signIn.walletUrl) : scheme) + '?' + query,
+        sameDevice: tx.signIn.walletNamed && tx.signIn.walletUrl
+          ? String(tx.signIn.walletUrl) + '?' + webQuery
+          : scheme + '?' + query,
         // A configured WEB wallet's link beside it, or '' — none is
         // offered where none is configured.
         webWallet: !tx.signIn.walletNamed && tx.signIn.walletUrl
-          ? String(tx.signIn.walletUrl) + '?' + query : '',
+          ? String(tx.signIn.walletUrl) + '?' + webQuery : '',
         // The plain QR code's text, only where it is offered: the same
         // scheme, for a wallet app on another device.
         qr: tx.signIn.crossDevice ? scheme + '?' + query : '',
@@ -1157,6 +1162,38 @@ class VcSignin {
     log.debug("Leaving VcSignin.auditEnrolment().");
   }
 
+  // WHERE A PROVED KEY CAME FROM (2026-10-20, rcbj on /portal/self-issued),
+  // read off the transaction it answered, as `siop.enrol()` stores it: the
+  // Digital Credentials API where the answer came that way (the origin it
+  // was asked for); the web wallet where the FIRST fetch of the request
+  // carried the web link's marker (`vc_verifier.ts`, `noteFetch()`) — named
+  // by its CONFIGURED address, never by anything the wallet said; and
+  // otherwise a wallet app, named by what its fetch's User-Agent reported,
+  // or by nothing. Never a refusal: a location is a note for the person.
+  /**
+   * Returns where the key that answered a transaction came from, as
+   * `{ kind, value }`: `dc_api`, `web` or `app`.
+   *
+   * @param tx - the transaction
+   * @returns the location
+   */
+  static locationOf(tx: any): Json {
+    helpers.log.debug("Entering VcSignin.locationOf().");
+    const signIn = (tx && tx.signIn) || {};
+    if (signIn.via === 'dc_api') {
+      helpers.log.debug("Leaving VcSignin.locationOf(). dc_api.");
+      return { kind: 'dc_api',
+               value: String((signIn.dcApi && signIn.dcApi.origin) || '') };
+    }
+    const fetched = signIn.fetchedBy || null;
+    if (fetched && fetched.via === 'web' && signIn.walletUrl) {
+      helpers.log.debug("Leaving VcSignin.locationOf(). web.");
+      return { kind: 'web', value: String(signIn.walletUrl) };
+    }
+    helpers.log.debug("Leaving VcSignin.locationOf(). app.");
+    return { kind: 'app', value: fetched ? String(fetched.agent || '') : '' };
+  }
+
   // ---------------------------------------------------------------------------
   // A DECIDED TRANSACTION, FINISHED: the refusal, or the session — after a
   // second factor where one is needed, or as the second factor itself. The
@@ -1235,7 +1272,8 @@ class VcSignin {
       const enrolled = siop.enrol(username, outcome.subject,
                                   'enrolled with a wallet', 'self (SIOPv2)',
                                   { proof: siop.PROOF_WALLET,
-                                    pinnedKeys: outcome.pinnedKeys || [] });
+                                    pinnedKeys: outcome.pinnedKeys || [],
+                                    location: VcSignin.locationOf(tx) });
       this.auditEnrolment(username, String(outcome.subject), tx,
                           enrolled.ok ? '' : 'STS-VC-0094',
                           enrolled.ok ? '' : String(enrolled.error),

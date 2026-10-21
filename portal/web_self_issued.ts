@@ -47,7 +47,12 @@ class SelfIssuedPages {
     const rows = held.map(function (one: Json) {
       // The enrolment instant in the reader's own way of writing a date
       // (#539).
-      return '<tr><td><code>' + kit.esc(one.subject) + '</code></td><td>' +
+      // ONE LINE, AND THE WHOLE VALUE ON HOVER (2026-10-20, rcbj): a
+      // did:jwk is two hundred characters, wrapped it took a dozen lines,
+      // so the cell is cut with an ellipsis and its `title` is the value.
+      return '<tr><td><code class="oneline subject" title="' +
+        kit.esc(one.subject) + '">' + kit.esc(one.subject) +
+        '</code></td><td>' +
         kit.esc(one.label || '') + '</td><td>' +
         kit.esc(one.enrolledAt ? t.date(one.enrolledAt) : '') +
         (one.by ? ' (' + kit.esc(one.by) + ')' : '') + '</td><td>' +
@@ -55,6 +60,7 @@ class SelfIssuedPages {
         // by an administrator, unproven.
         (one.proof === 'wallet' ? t.html('portalSelfIssued.proofWallet')
                                 : t.html('portalSelfIssued.proofAdmin')) +
+        '</td><td>' + SelfIssuedPages.locationCell(one.location, t) +
         '</td><td>' + SelfIssuedPages.preferCell(one, t) + '</td><td>' +
         '<form method="post" action="' + kit.esc(PATH) + '">' +
         '<input type="hidden" name="action" value="remove">' +
@@ -67,15 +73,18 @@ class SelfIssuedPages {
       '<div class="card"><h2>' + t.html('portalSelfIssued.heading') +
       '</h2><p class="sub">' + t.html('portalSelfIssued.sub') + '</p>' +
       (held.length
-        // `grid`: a heading ROW over six columns, not the portal's
-        // name-and-value table whose first `th` takes a third of the width.
-        ? '<table class="grid"><tr><th>' +
+        // `grid`: a heading ROW over seven columns, not the portal's
+        // name-and-value table whose first `th` takes a third of the width;
+        // `scrollx` keeps it inside the card on a screen too narrow for
+        // even the cut-down cells.
+        ? '<div class="scrollx"><table class="grid"><tr><th>' +
           t.html('portalSelfIssued.subject') +
           '</th><th>' + t.html('portalSelfIssued.label') + '</th><th>' +
           t.html('portalSelfIssued.enrolled') + '</th><th>' +
           t.html('portalSelfIssued.how') + '</th><th>' +
+          t.html('portalSelfIssued.location') + '</th><th>' +
           t.html('portalSelfIssued.preferred') + '</th><th></th></tr>' +
-          rows.join('') + '</table>' +
+          rows.join('') + '</table></div>' +
           // What the mark is for (#693), and whether this realm releases it.
           '<p class="sub" id="siop-preferred-note">' +
           t.html(view.didClaim ? 'portalSelfIssued.preferredNoteOn'
@@ -94,6 +103,64 @@ class SelfIssuedPages {
           ' ' + t.html('portalSelfIssued.reprove') + '</p>'
         : '<p class="sub" id="siop-off">' + t.html('portalSelfIssued.off') +
           '</p>') + '</div>';
+  }
+
+  /**
+   * One row's Location cell (2026-10-20): where the key came from, as ONE
+   * short line — a web wallet's host, an app's reported name, or a short
+   * label — with the whole of it in the `title`: the web wallet's address,
+   * the app's full reported name, or a sentence saying what the label
+   * means. Every value is escaped, the app's name above all: it is what a
+   * wallet said about itself.
+   *
+   * @param location - the row's `location`, or null
+   * @param t - the translator
+   * @returns the HTML
+   */
+  static locationCell(location: Json, t: Json): string {
+    const kind = location && location.kind ? String(location.kind) : '';
+    const value = location && location.value ? String(location.value) : '';
+    let shown = '';
+    let tip = '';
+    if (kind === 'web') {
+      shown = SelfIssuedPages.hostOf(value) ||
+        t.text('portalSelfIssued.locationWeb');
+      tip = t.text('portalSelfIssued.locationWebTip', { url: value });
+    } else if (kind === 'app') {
+      shown = value || t.text('portalSelfIssued.locationAppUnnamed');
+      tip = value ? t.text('portalSelfIssued.locationAppTip', { name: value })
+                  : t.text('portalSelfIssued.locationAppUnnamedTip');
+    } else if (kind === 'dc_api') {
+      shown = t.text('portalSelfIssued.locationDcApi');
+      tip = value
+        ? t.text('portalSelfIssued.locationDcApiOriginTip', { origin: value })
+        : t.text('portalSelfIssued.locationDcApiTip');
+    } else if (kind === 'admin') {
+      shown = t.text('portalSelfIssued.locationAdmin');
+      tip = t.text('portalSelfIssued.locationAdminTip');
+    } else {
+      shown = t.text('portalSelfIssued.locationNone');
+      tip = t.text('portalSelfIssued.locationNoneTip');
+    }
+    return '<span class="oneline location" title="' + kit.esc(tip) + '">' +
+      kit.esc(shown) + '</span>';
+  }
+
+  /**
+   * A web wallet's host and port, for its one-line cell; '' when the
+   * address does not parse.
+   *
+   * @param url - the address
+   * @returns the host
+   */
+  static hostOf(url: string): string {
+    try {
+      return new URL(url).host;
+    } catch (e) {
+      // Not an address after all: the cell says "web wallet", and the
+      // tooltip still carries what was stored.
+      return '';
+    }
   }
 
   /**

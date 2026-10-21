@@ -370,7 +370,10 @@ portal's `/portal/self-issued` page lets a person enrol a key.
   key that signed it is enrolled — a `did:web` too, whose document is fetched
   once for that enrolment and whose key is pinned. Nothing is typed. The row
   says **Proved with your wallet**, and the enrolment is audited
-  (`portal.siop.enrol`).
+  (`portal.siop.enrol`). Its **Location** says where the key came from: the
+  web wallet's host (its configured `oid4vp.walletUrl` on hover), the name a
+  wallet app reported in its `User-Agent`, or the browser's Digital
+  Credentials API. Each row is one line; hover over a value for all of it.
 * **An administrator**: on the person's page under **Directory → Users**,
   section **Self-issued IDs**, enter the **Subject** (a `did:jwk`, a
   `did:web`, or the JWK thumbprint) and a **Label**, then click **Enrol**.

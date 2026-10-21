@@ -2305,6 +2305,9 @@ class UsersPage {
         '</td><td>' + (one.proof === 'wallet'
           ? t.html('consoleUsers.mfaSection.siopProofWallet')
           : t.html('consoleUsers.mfaSection.siopProofAdmin')) +
+        // WHERE THE KEY CAME FROM (2026-10-20), as the portal shows it:
+        // one short line, the whole of it on hover.
+        '</td><td>' + UsersPage.siopLocationCell(one.location, t) +
         // THE PREFERRED DID (#693): the mark, and a button that sets it on
         // a proved DID or clears it — `set-preferred-self-issued-subject`.
         '</td><td>' + (one.preferred
@@ -2350,6 +2353,8 @@ class UsersPage {
           '</th><th>' + t.html('consoleUsers.mfaSection.thLabel') +
           '</th><th>' + t.html('consoleUsers.mfaSection.enrolled') + '</th>' +
           '<th>' + t.html('consoleUsers.mfaSection.siopThProof') + '</th>' +
+          '<th>' + t.html('consoleUsers.mfaSection.siopThLocation') +
+          '</th>' +
           '<th>' + t.html('consoleUsers.mfaSection.siopThPreferred') +
           '</th><th></th></tr>' + siopView.subjects.map(siopRow).join('') +
           '</table>'
@@ -2428,6 +2433,56 @@ class UsersPage {
   // refuses to remove the last way in. An operator must not be able to do what
   // the person themselves is stopped from doing.
   // ===========================================================================
+  // WHERE A SELF-ISSUED KEY CAME FROM (2026-10-20), the portal's column on
+  // this page too (rule 7's list is the same rows): one short line — a web
+  // wallet's host, an app's reported name, a short label — and the whole of
+  // it in the `title`. The app's name is what a wallet said about itself,
+  // so everything is escaped; the title is escaped here rather than through
+  // `kit.tip()`, which reads its text as markup.
+  /**
+   * Draws one self-issued row's Location cell: a short line, the rest on
+   * hover.
+   *
+   * @param location - the row's `location` (`{ kind, value }`), or absent
+   * @param t - the page's translator
+   * @returns the cell's HTML
+   */
+  static siopLocationCell(location, t) {
+    const kind = location && location.kind ? String(location.kind) : '';
+    const value = location && location.value ? String(location.value) : '';
+    const key = 'consoleUsers.mfaSection.siopLocation';
+    let shown = '';
+    let tip = '';
+    if (kind === 'web') {
+      let host = '';
+      try {
+        host = new URL(value).host;
+      } catch (e) {
+        // Not an address: the short label stands in, the tooltip still has
+        // what was stored.
+        host = '';
+      }
+      shown = host || t.text(key + 'Web');
+      tip = t.text(key + 'WebTip', { url: value });
+    } else if (kind === 'app') {
+      shown = value || t.text(key + 'AppUnnamed');
+      tip = value ? t.text(key + 'AppTip', { name: value })
+                  : t.text(key + 'AppUnnamedTip');
+    } else if (kind === 'dc_api') {
+      shown = t.text(key + 'DcApi');
+      tip = value ? t.text(key + 'DcApiOriginTip', { origin: value })
+                  : t.text(key + 'DcApiTip');
+    } else if (kind === 'admin') {
+      shown = t.text(key + 'Admin');
+      tip = t.text(key + 'AdminTip');
+    } else {
+      shown = t.text(key + 'None');
+      tip = t.text(key + 'NoneTip');
+    }
+    return '<span class="oneline" title="' + kit.esc(tip) + '">' +
+      kit.esc(shown) + '</span>';
+  }
+
   // THE EMAILED SECOND FACTOR (#64) on a person's page: whether they opted
   // in, whether it is being used and why not, and the one control an operator
   // has over it — clearing it. There is no Turn On: the opt-in is the

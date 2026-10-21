@@ -3826,6 +3826,12 @@ class AdminConsole {
       '.legend{display:flex;flex-wrap:wrap;gap:4px 18px;font-size:.8em;' +
       'color:#333;margin:.3em 0 .9em}.legend span{display:inline-flex;' +
       'align-items:center;gap:6px}code.ec{white-space:nowrap}' +
+      // A VALUE ON ONE LINE, THE REST ON HOVER (2026-10-20, the self-issued
+      // IDs' Location): cut with an ellipsis at a width of its own, so a
+      // wallet's long reported name never makes a tall row.
+      'td .oneline{display:inline-block;max-width:12em;overflow:hidden;' +
+      'text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom;' +
+      'cursor:help}' +
       'table{border-collapse:collapse;width:100%;' +
       'margin:.4rem 0 .9rem;font-size:.8em}th,td{border:1px solid ' +
       '#e2e2ea;padding:.3rem .5rem;text-align:left;vertical-align:top}' +

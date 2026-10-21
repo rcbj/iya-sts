@@ -129,7 +129,11 @@ class PortalSelfIssued {
                         // value.
                         proof: String(one.proof || siop.PROOF_ADMIN),
                         // The one proved DID marked as preferred (#693).
-                        preferred: one.preferred === true };
+                        preferred: one.preferred === true,
+                        // Where the key came from (2026-10-20), checked
+                        // again as it leaves; null for an enrolment from
+                        // before it was recorded.
+                        location: siop.locationOf(one.location) };
              }) };
   }
 
@@ -268,8 +272,12 @@ class PortalSelfIssued {
         description: '`subjects`: each enrolled self-issued subject (a DID ' +
           'or a JWK thumbprint), its label, when and by whom it was ' +
           'enrolled, and how (`proof`: `wallet`, proved by you, or ' +
-          '`admin`, by an administrator), and whether it is your ' +
-          'preferred DID (`preferred`, #693). `enabled`: whether the ' +
+          '`admin`, by an administrator), whether it is your ' +
+          'preferred DID (`preferred`, #693), and where the key came ' +
+          'from (`location`: `{ kind, value }` — `web`, the web wallet ' +
+          'at that address; `app`, a wallet app, by the name it ' +
+          'reported or \'\'; `dc_api`, your browser, by its origin or ' +
+          '\'\'; `admin`; or null, not recorded). `enabled`: whether the ' +
           'self-issued sign-in is on; `didClaim`: whether the preferred ' +
           'DID may be released as the `did` claim here. A ' +
           'key is enrolled by proving it, at /authn/wallet?siop=1&enrol=1, ' +
