@@ -2036,9 +2036,16 @@ memory mode, development, and every in-process test.
   it — a revoked family's older tokens among them. Until the store's
   completion mark is in `sts_minted_index` (realm `''`, `index_key = key =
   '$index-complete$'`) it is read back whole, as before, and `active(handle)`
-  says no; the front process then files every row it restored
-  (`backfillMintedIndexes()`, in batches, in the background) and commits the
-  mark, and the NEXT start reads it on demand. A row written meanwhile files
+  says no; the front process then files every row it restored and commits
+  the mark, and the NEXT start reads it on demand. **The filing is a
+  scheduler job, `persistence.minted-index-backfill`, never a step of the
+  start**: run from the restore, the first start of #823 on 8081 ran out of
+  heap copying two million rows (`dump()`) beside four restoring workers. The
+  job walks each partition in place (`handle.partition()`), a batch at a time
+  with a pause, and stops for the run past 85% of the heap limit.
+* **An on-demand store keeps no index in memory**: `lookup()` walks what is
+  held. Held whole, a family-to-keys Map over every token cost each process
+  hundreds of MB; on demand, what is held is bounded. A row written meanwhile files
   itself in the flush; one deleted meanwhile leaves an index row the
   lookup's join does not answer. A failure is STS-STORE-0086 and the next
   start tries again. The integrator found the gap on #823, before it ran
