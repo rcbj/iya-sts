@@ -5722,10 +5722,36 @@ async function namesForSubjectsAsync(subjects) {
   return out;
 }
 
+// PEOPLE A REQUEST IS ABOUT TO READ BY NAME, PUT IN THE WINDOW FIRST
+// (2026-10-21, #820): a refresh reads the person at `uid=<name>,ou=users`
+// for the consent check, and that was a synchronous read of the store on
+// the event loop. `warmAsync()` asks the store off it and puts the slot,
+// never one older than what this process holds. Plain names only: a
+// subject, a DN or a DID is found by what it recorded, not by its place.
+async function warmNamesAsync(names) {
+  log.debug("Entering warmNamesAsync().");
+  if (!directoryWindow) {
+    log.debug("Leaving warmNamesAsync(). No window.");
+    return 0;
+  }
+  const keys = (names || []).map(function (one) {
+    return String(one || '');
+  }).filter(function (one) {
+    return one && !/^urn:uuid:/i.test(one) && !DN_SHAPED.test(one) &&
+      !DID_SHAPED.test(one) && !SPIFFE_SHAPED.test(one);
+  }).map(function (one) {
+    return normalizeDn('uid=' + one + ',' + usersDn());
+  });
+  log.debug("Leaving warmNamesAsync().");
+  return keys.length
+    ? directoryWindow.warmAsync(realms.currentId(), keys) : 0;
+}
+
 helpers.setSubjectResolver({ subjectFor: subjectForName,
                              nameFor: nameForSubject,
                              namesFor: namesForSubjects,
-                             namesForAsync: namesForSubjectsAsync });
+                             namesForAsync: namesForSubjectsAsync,
+                             warmNames: warmNamesAsync });
 
 // An RFC 4514 DN split into its RDNs, leaf first. The split is on commas that
 // are NOT escaped, because a value may legitimately contain one — `O=Example\,
