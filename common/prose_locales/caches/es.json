@@ -767,6 +767,22 @@
     "en": "55156810371e3ec1",
     "text": "un código ya canjeado, presentado de nuevo"
   },
+  "caches.store.oauth2.refresh-token-bookkeeping.title": {
+    "en": "c9c28d7d082aab14",
+    "text": "Registros de rotación de tokens de actualización"
+  },
+  "caches.store.oauth2.refresh-token-bookkeeping.description": {
+    "en": "38d9cf25fa52b3ad",
+    "text": "Un registro por token de actualización y por familia, para que un token de actualización reproducido revoque su familia (RFC 9700), y lo que emitió cada concesión, para que revocar un token de actualización revoque el token de acceso emitido junto a él (RFC 7009)."
+  },
+  "caches.store.oauth2.refresh-token-bookkeeping.bound": {
+    "en": "945ea34a46306638",
+    "text": "Aplicado: oauth2.maxRefreshTokenFamilies registros de tokens de actualización por dominio, el doble para lo que emitió una concesión; por encima, primero se van los retirados y luego los más antiguos, con una advertencia."
+  },
+  "caches.store.oauth2.refresh-token-bookkeeping.lifetime": {
+    "en": "584ca21b64df4c69",
+    "text": "Hasta que pasa la ventana de familia posterior a la emisión del token; la tarea caches.eject-expired descarta entonces el registro."
+  },
   "caches.store.oauth2.request-uri.title": {
     "en": "3ae35b709a8c09f7",
     "text": "Objetos de solicitud obtenidos"

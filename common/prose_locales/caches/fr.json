@@ -767,6 +767,22 @@
     "en": "55156810371e3ec1",
     "text": "un code déjà échangé, présenté de nouveau"
   },
+  "caches.store.oauth2.refresh-token-bookkeeping.title": {
+    "en": "c9c28d7d082aab14",
+    "text": "Enregistrements de rotation des jetons de rafraîchissement"
+  },
+  "caches.store.oauth2.refresh-token-bookkeeping.description": {
+    "en": "38d9cf25fa52b3ad",
+    "text": "Un enregistrement par jeton de rafraîchissement et par famille, afin qu’un jeton de rafraîchissement rejoué révoque sa famille (RFC 9700), et ce que chaque autorisation a émis, afin que révoquer un jeton de rafraîchissement révoque le jeton d’accès émis à côté (RFC 7009)."
+  },
+  "caches.store.oauth2.refresh-token-bookkeeping.bound": {
+    "en": "945ea34a46306638",
+    "text": "Appliquée : oauth2.maxRefreshTokenFamilies enregistrements de jetons de rafraîchissement par domaine, le double pour ce qu’une autorisation a émis ; au-delà, les retirés partent d’abord, puis les plus anciens, avec un avertissement."
+  },
+  "caches.store.oauth2.refresh-token-bookkeeping.lifetime": {
+    "en": "584ca21b64df4c69",
+    "text": "Jusqu’à ce que la fenêtre de famille après l’émission du jeton soit écoulée ; la tâche caches.eject-expired abandonne alors l’enregistrement."
+  },
   "caches.store.oauth2.request-uri.title": {
     "en": "3ae35b709a8c09f7",
     "text": "Objets de requête récupérés"

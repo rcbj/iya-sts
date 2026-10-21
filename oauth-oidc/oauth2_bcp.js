@@ -124,6 +124,8 @@
 // config.js and error_codes.js and nothing else here, so it cannot join a
 // cycle, and it registers no route, so its position is not a position at all.
 const realms = require('../common/realms');
+// A leaf (it requires only config and error_codes), so it closes no cycle.
+const cacheRegistry = require('../common/cache_registry');
 const { log } = require('../common/helpers');
 const config = require('../common/config');
 // applications.js registers no route and requires nothing from oauth-oidc/, so
@@ -3178,7 +3180,16 @@ function noteRefreshIssued(jti, parentJti, clientId, parentFamily) {
         // lifetime wearing a different name.
         lastUsedAt: Date.now() };
   refreshFamilies.set(familyId, family);
-  forgetStaleRefreshTokens();
+  // THE BOUND AT THE INSERT, THE EXPIRY IN A JOB (#761, the root CLAUDE.md's
+  // rule for periodic work). This walked every record and every family on
+  // every issuance to drop the expired ones — a cost that grew with the
+  // population (1.2% of a request worker at 20,000 families on 8081, and
+  // the cap is a million). Expired records go in `caches.eject-expired`,
+  // every minute in every process (`refreshBookkeeping`, below); the cap is
+  // still kept here, by the same sweep, once the realm is past it.
+  if (refreshTokens.size > maxRefreshTokens()) {
+    forgetStaleRefreshTokens();
+  }
   log.debug("Leaving noteRefreshIssued(). Family " + familyId + ".");
 }
 
@@ -3271,9 +3282,84 @@ function noteGrantTokens(familyId, refreshJti, accessJti, clientId, expSec) {
     forget: (isFinite(exp) ? exp * 1000 : Date.now() +
              refreshFamilyWindowMs()) + (isFinite(skew) ? skew * 1000 : 0)
   });
-  forgetStaleGrantTokens();
+  // The bound here, the expiry in the job (#761), as `noteRefreshIssued()`.
+  if (grantTokens.size > 2 * maxRefreshTokens()) {
+    forgetStaleGrantTokens();
+  }
   log.debug("Leaving noteGrantTokens().");
 }
+
+// ---------------------------------------------------------------------------
+// THE THREE STORES ABOVE, DESCRIBED TO `/admin/caches` AND EJECTED BY ITS JOB
+// (#761, rule 3ap). `caches.eject-expired` calls `eject()` every minute in
+// every process; it deletes exactly what the insert-time sweep did — a
+// record whose `forget` has passed — so what a reader can find is what it
+// could find before, for a shorter time: the sweep ran only at the realm's
+// next issuance, and on an idle realm never. The cap stays at the insert.
+// One row per realm, with the counts: a row per record would be a million.
+// A hit is a refresh whose record was found when it was rotated.
+// ---------------------------------------------------------------------------
+function staleRecord(record, key, now) {
+  return !record || record.forget < now;
+}
+
+const refreshBookkeepingCount = cacheRegistry.register({
+  name: 'oauth2.refresh-token-bookkeeping',
+  title: 'Refresh token rotation records',
+  description: 'A record per refresh token and per family, so a replayed ' +
+    'refresh token revokes its family (RFC 9700), and what each grant ' +
+    'issued, so revoking a refresh token revokes the access token beside ' +
+    'it (RFC 7009).',
+  owner: 'oauth-oidc/oauth2_bcp.js',
+  scope: 'realm',
+  kind: 'replay',
+  settings: ['oauth2.maxRefreshTokenFamilies'],
+  maxEntries: function () {
+    log.debug("Entering the refresh bookkeeping's maxEntries().");
+    log.debug("Leaving the refresh bookkeeping's maxEntries().");
+    return maxRefreshTokens();
+  },
+  bound: 'Enforced: oauth2.maxRefreshTokenFamilies refresh-token records ' +
+    'per realm, twice that for what a grant issued; past it the retired ' +
+    'ones go first, then the oldest, with a warning.',
+  lifetime: function () {
+    log.debug("Entering the refresh bookkeeping's lifetime().");
+    log.debug("Leaving the refresh bookkeeping's lifetime().");
+    return 'Until the family window after the token was issued has passed; ' +
+      'the caches.eject-expired job then drops the record.';
+  },
+  entries: function () {
+    log.debug("Entering the refresh bookkeeping's entries().");
+    const out = [];
+    realms.list().forEach(function (r) {
+      const tokens = refreshTokens.realmMap(r.id);
+      const families = refreshFamilies.realmMap(r.id);
+      const grants = grantTokens.realmMap(r.id);
+      const n = (tokens ? tokens.size : 0);
+      if (!n && !(families && families.size) && !(grants && grants.size)) {
+        return;
+      }
+      out.push({ realm: r.id,
+                 key: n + ' token(s), ' + (families ? families.size : 0) +
+                   ' famil(ies), ' + (grants ? grants.size : 0) +
+                   ' grant record(s)',
+                 validUntil: null, valid: true,
+                 basis: 'each record\'s forget' });
+    });
+    log.debug("Leaving the refresh bookkeeping's entries().");
+    return out;
+  },
+  eject: function (now) {
+    log.debug("Entering the refresh bookkeeping's eject().");
+    const at = typeof now === 'number' ? now : Date.now();
+    const total = cacheRegistry.realmMapEjector(realms, refreshTokens,
+                                                staleRecord)(at) +
+      cacheRegistry.realmMapEjector(realms, refreshFamilies, staleRecord)(at) +
+      cacheRegistry.realmMapEjector(realms, grantTokens, staleRecord)(at);
+    log.debug("Leaving the refresh bookkeeping's eject(). " + total);
+    return total;
+  }
+});
 
 // The family a presented refresh token belongs to: what its own token says,
 // then what either record here says, then the token itself as the root of a
@@ -3524,6 +3610,11 @@ function noteRefreshRotated(jti) {
     return;
   }
   const known = refreshTokens.get(String(jti));
+  if (known) {
+    refreshBookkeepingCount.hit();
+  } else {
+    refreshBookkeepingCount.miss();
+  }
   if (known) {
     known.rotated = true;
     // THROUGH THE STORE, for noteRedeemed()'s reason: this is the mark that
