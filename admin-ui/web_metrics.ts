@@ -52,6 +52,13 @@ class MetricsPage {
     const snap = json;
     const signOn = json.signOnSessions.rows;
     const liveSignOn = signOn.filter(function (s) { return !s.expired; });
+    // WHILE THE SESSION WINDOW IS ON the rows are the newest few and the
+    // counts the session index's (#820): every session was drawn before.
+    const windowed = !!json.signOnSessions.windowed;
+    const activeCount = windowed && typeof json.signOnSessions.active ===
+      'number' ? json.signOnSessions.active : liveSignOn.length;
+    const heldCount = windowed && typeof json.signOnSessions.held ===
+      'number' ? json.signOnSessions.held : signOn.length;
 
     // The Who column holds SUBJECTS, and one family's are not names in any
     // readable sense: an OID4VCI credential's subject is a `did:jwk:` — a
@@ -110,7 +117,7 @@ class MetricsPage {
                  t.text('consoleMetrics.tile.tokensRevoked')) +
         kit.tile(snap.artifacts.held,
                  t.text('consoleMetrics.tile.artifacts')) +
-        kit.tile(liveSignOn.length, t.text('consoleMetrics.tile.sessions')) +
+        kit.tile(activeCount, t.text('consoleMetrics.tile.sessions')) +
         kit.tile(snap.sessions.distinctSubjects,
                  t.text('consoleMetrics.tile.subjects')) +
         kit.tile(kit.durationText(snap.uptimeMs),
@@ -158,7 +165,7 @@ class MetricsPage {
       '<a href="/admin/users">' + t.html('consoleMetrics.link.usersPage') +
       '</a> ' + t.html('consoleMetrics.sessions.noteB')) +
       '<h3>' + t.html('consoleMetrics.signOn.heading',
-                      { active: liveSignOn.length, held: signOn.length }) +
+                      { active: activeCount, held: heldCount }) +
       '</h3><table><tr><th>' + t.html('consoleMetrics.th.user') +
       '</th><th>' + t.html('consoleMetrics.th.state') +
       '</th><th>amr</th><th>acr' +
