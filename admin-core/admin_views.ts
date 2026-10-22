@@ -974,6 +974,10 @@ interface AdminViewsDeps {
 // here is, and described to /admin/caches below the class (rule 3ap).
 const populationHeld = new Map<string, any>();
 
+// How many of the newest sign-on sessions Monitoring → Metrics draws while
+// the session window is on (#820); the counts are the session index's.
+const METRICS_SESSION_ROWS = 100;
+
 class AdminViews {
   /**
    * Builds the views over their dependencies.
@@ -1639,10 +1643,12 @@ class AdminViews {
    * Lists the browser sign-on sessions as rows, computing whether each is still
    * live.
    *
+   * @param given - the sessions to draw, where the caller read only some
+   *   (#820: a page from the index, or one person's); every one when absent
    * @returns the rows
    * @throws when the session index could not be read
    */
-  signOnSessionRows() {
+  signOnSessionRows(given?) {
     const { log, sessionStartedAt } = this.deps;
     log.debug("Entering AdminViews.signOnSessionRows().");
     const nowMs = Date.now();
@@ -1650,9 +1656,12 @@ class AdminViews {
     // The injected map is who is cached. The list is every session the
     // index names while the window is on, and the map while it is off.
     // Null is an unread page. An empty row list would draw nobody signed in.
-    const matched = authn.sessionsMatching(function () {
-      return true;
-    });
+    // A caller that read only the sessions it draws passes them (#820): the
+    // whole list is every sealed body opened, one synchronous read each.
+    const matched = Array.isArray(given) ? given
+      : authn.sessionsMatching(function () {
+        return true;
+      });
     if (matched == null) {
       log.debug("Leaving AdminViews.signOnSessionRows(). Unread.");
       throw new Error('the sign-on sessions could not be read');
@@ -1705,6 +1714,40 @@ class AdminViews {
    *
    * @returns the snapshot and what the page draws from it
    */
+  /**
+   * Takes one metrics snapshot with the sign-on sessions counted by the
+   * session index and the newest of them drawn, while the window is on
+   * (#820); `metricsJson()` otherwise.
+   *
+   * @returns a promise of the snapshot and what the page draws from it
+   */
+  async metricsJsonAsync() {
+    const { log, stats } = this.deps;
+    log.debug("Entering AdminViews.metricsJsonAsync().");
+    const page = typeof authn.liveSessionPageAsync === 'function'
+      ? await authn.liveSessionPageAsync({ limit: METRICS_SESSION_ROWS })
+      : null;
+    if (!page) {
+      log.debug("Leaving AdminViews.metricsJsonAsync(). Window off.");
+      return this.metricsJson();
+    }
+    const snap = stats.snapshot();
+    // EVERY SESSION WAS DRAWN, AND OPENED TO BE DRAWN: 470,000 rows in this
+    // reply on 8081, read one synchronous query at a time. The counts are
+    // the index's and the rows the newest `METRICS_SESSION_ROWS`.
+    const rows = page.unread ? [] : this.signOnSessionRows(page.sessions);
+    const json = Object.assign({}, snap, {
+      startedAtIso: new Date(snap.startedAt).toISOString(),
+      signOnSessions: { held: page.unread ? null : page.total,
+                        active: page.unread ? null : page.total,
+                        rows: rows, windowed: true,
+                        unread: !!page.unread }
+    });
+    log.debug("Leaving AdminViews.metricsJsonAsync(). " + rows.length +
+              " row(s) of " + page.total + ".");
+    return json;
+  }
+
   metricsJson() {
     const { log, stats } = this.deps;
     log.debug("Entering AdminViews.metricsJson().");
@@ -4417,6 +4460,34 @@ class AdminViews {
     log.debug("Leaving AdminViews.sessionsView(). " + shown.length +
               " row(s) of " +
               filtered.length + " (" + all.length + " live).");
+    return this.sessionsAnswer({
+      all: all, filtered: filtered, shown: shown, paging: paging,
+      byKind: byKind, unauthenticated: unauthenticated,
+      anonymousShown: anonymousPage.shown,
+      anonymousPaging: anonymousPage.paging,
+      held: all.length, matched: filtered.length,
+      unauthenticatedHeld: unauthenticated.length,
+      wantedText: wantedText, wantedProtocol: wantedProtocol,
+      windowed: false });
+  }
+
+  // The view's answer from what it gathered: the whole list (`sessionsView()`)
+  // or one page of the session index (`sessionsViewAsync()`, #820), whose
+  // counts are the index's rather than the length of a list.
+  private sessionsAnswer(v) {
+    const { log, config } = this.deps;
+    log.debug("Entering AdminViews.sessionsAnswer().");
+    const all = v.all;
+    const filtered = v.filtered;
+    const shown = v.shown;
+    const paging = v.paging;
+    const byKind = v.byKind;
+    const unauthenticated = v.unauthenticated;
+    const wantedText = v.wantedText;
+    const wantedProtocol = v.wantedProtocol;
+    const anonymousPage = { shown: v.anonymousShown,
+                            paging: v.anonymousPaging };
+    log.debug("Leaving AdminViews.sessionsAnswer().");
     return {
       installed: true, all: all, filtered: filtered, shown: shown,
       paging: paging, byKind: byKind, unauthenticated: unauthenticated,
@@ -4424,13 +4495,18 @@ class AdminViews {
       wantedText: wantedText, wantedProtocol: wantedProtocol,
       json: {
         installed: true,
-        held: all.length, matched: filtered.length, shown: shown.length,
+        held: v.held, matched: v.matched, shown: shown.length,
+        // WHETHER THE COUNTS ARE THE SESSION INDEX'S (#820): the
+        // sessions are in the store, the search is exact (a whole
+        // username, subject or session id), and the protocol filter
+        // narrows the page it is applied to.
+        windowed: !!v.windowed,
         heldByKind: byKind,
         // Rule 7: the page grew a section, so the API grew the same answer. The
         // COUNT and the ROWS both, because "are there any" and "which ones" are
         // the two things a caller asks and deriving the first from the second
         // would make an empty list and an absent field look alike.
-        unauthenticatedHeld: unauthenticated.length,
+        unauthenticatedHeld: v.unauthenticatedHeld,
         unauthenticatedSessions: anonymousPage.shown.map(function (row) {
           return { id: row.id, family: row.family, username: row.username,
                    sub: row.sub, protocol: row.protocol,
@@ -4473,6 +4549,107 @@ class AdminViews {
         accountChoices: this.accountChoicesJson()
       }
     };
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE SAME VIEW FROM THE SESSION INDEX (2026-10-22, #820).
+  //
+  // `sessionsView()` builds the whole list and then pages it, and while the
+  // session window is on the whole list is every session's sealed body read
+  // and opened, one synchronous read each: about 470,000 on 8081, which held
+  // the request worker that answered the console for two minutes — and,
+  // through read-your-write, every other worker behind it, so sign-ins and
+  // refreshes stopped. This asks the index for the counts and one page and
+  // opens only that page's rows, on the driver's read pool.
+  //
+  // What changes for a reader, and the answer says so (`windowed`):
+  //   * the search is EXACT — a whole username, subject or session id — since
+  //     the index holds digests, not text;
+  //   * the protocol filter narrows the page it is applied to, since the
+  //     protocol is inside the sealed body;
+  //   * the other families (Kerberos tickets, GNAP grants, directory
+  //     connections), which the service holds whole and are few, are listed
+  //     ahead of the sessions on the first pages.
+  // While the window is off nothing changes: `sessionsView()` answers.
+  // ---------------------------------------------------------------------------
+  /**
+   * Builds `/admin/sessions` from the session index while the window is on.
+   *
+   * @param req - the request
+   * @returns a promise of the view
+   */
+  async sessionsViewAsync(req) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminViews.sessionsViewAsync().");
+    if (!logoutReader ||
+        typeof logoutReader.liveSessionsPageAsync !== 'function') {
+      log.debug("Leaving AdminViews.sessionsViewAsync(). Synchronous.");
+      return this.sessionsView(req);
+    }
+    const query = req.query || {};
+    const wantedText = this.queryOne(query, 'q').trim();
+    const wantedProtocol = this.queryOne(query, 'protocol').trim();
+    // The counts, and the other families, before the paging can be worked
+    // out: one session asked for.
+    const probe = await logoutReader.liveSessionsPageAsync(
+      { q: wantedText, offset: 0, limit: 1 });
+    if (!probe) {
+      log.debug("Leaving AdminViews.sessionsViewAsync(). Window off.");
+      return this.sessionsView(req);
+    }
+    const protocolMatches = function (row) {
+      return !wantedProtocol || row.protocol === wantedProtocol;
+    };
+    const others = probe.rows.filter(function (row) {
+      return row.family !== 'session' && protocolMatches(row) &&
+        self.chooserMatches([row.username, row.sub, row.handle, row.key,
+                             row.kind, row.protocol, row.accountSet],
+                            wantedText);
+    });
+    const total = probe.sessionTotal + others.length;
+    const paging = this.pagingOf(query, total, { noun: 'sessions' });
+    // The others first, then the sessions, newest first.
+    const ahead = others.slice(paging.offset, paging.offset + paging.perPage);
+    const room = paging.perPage - ahead.length;
+    let sessionRows = [];
+    if (room > 0) {
+      const page = await logoutReader.liveSessionsPageAsync(
+        { q: wantedText,
+          offset: Math.max(0, paging.offset - others.length), limit: room });
+      sessionRows = page ? page.rows.filter(function (row) {
+        return row.family === 'session' && protocolMatches(row);
+      }) : [];
+    }
+    const shown = ahead.concat(sessionRows);
+    const byKind: Record<string, any> = { session: probe.sessionTotal };
+    probe.rows.forEach(function (row) {
+      if (row.family !== 'session') {
+        byKind[row.family] = (byKind[row.family] || 0) + 1;
+      }
+    });
+    // The unauthenticated section's own page, from the index too.
+    const anonymousPaging = this.pagingOf(query, probe.unauthenticated,
+      { name: 'anonymous', noun: 'sessions' });
+    const anonymous = probe.unauthenticated
+      ? await logoutReader.liveSessionsPageAsync(
+        { authenticated: false, offset: anonymousPaging.offset,
+          limit: anonymousPaging.perPage })
+      : null;
+    const anonymousShown = anonymous ? anonymous.rows.filter(function (row) {
+      return row.family === 'session' && row.authenticated === false;
+    }) : [];
+    const seen = others.concat(sessionRows);
+    log.debug("Leaving AdminViews.sessionsViewAsync(). " + shown.length +
+              " row(s) of " + total + ".");
+    return this.sessionsAnswer({
+      all: seen, filtered: seen, shown: shown, paging: paging,
+      byKind: byKind, unauthenticated: anonymousShown,
+      anonymousShown: anonymousShown, anonymousPaging: anonymousPaging,
+      held: total, matched: total,
+      unauthenticatedHeld: probe.unauthenticated,
+      wantedText: wantedText, wantedProtocol: wantedProtocol,
+      windowed: true });
   }
 
   /**
@@ -12845,6 +13022,16 @@ class AdminViews {
         row.liveSessions = live.byUsername.get(row.key) ||
           (row.name ? live.byUsername.get(row.name) : 0) || 0;
       });
+    } else if (typeof authn.sessionWindowOn === 'function' &&
+               authn.sessionWindowOn()) {
+      // THE INDEX COULD NOT BE READ, and the sessions are in the store
+      // (#820): walking them all instead opens every sealed body, one
+      // synchronous read each — the two minutes Monitoring → Sessions held
+      // a worker for on 8081. Unread is drawn as unknown, not as none.
+      json.withActiveSession = null;
+      users.forEach(function (row) {
+        row.liveSessions = null;
+      });
     } else {
       const liveByUser = this.liveSessionsByUser();
       json.withActiveSession = Object.keys(liveByUser).length;
@@ -14503,7 +14690,20 @@ class AdminViews {
   sessionRowsFor(key) {
     const { log, stats } = this.deps;
     log.debug("Entering AdminViews.sessionRowsFor(). key=" + key);
-    const rows = this.signOnSessionRows().filter(function (session) {
+    // ONE PERSON'S, FROM THE INDEX, while the window is on (#820): every
+    // session opened to keep one person's was 470,000 synchronous reads on
+    // 8081, for a page about one person. The index files a session under
+    // its username, which is the key a person is listed under.
+    let given;
+    if (typeof authn.sessionWindowOn === 'function' &&
+        authn.sessionWindowOn()) {
+      given = authn.sessionsHeldUnder(String(key || ''), '');
+      if (given == null) {
+        log.debug("Leaving AdminViews.sessionRowsFor(). Unread.");
+        throw new Error('the sign-on sessions could not be read');
+      }
+    }
+    const rows = this.signOnSessionRows(given).filter(function (session) {
       return stats.holderKeyOf(session.username, session.sub) === key;
     });
     log.debug("Leaving AdminViews.sessionRowsFor(). " + rows.length +
@@ -14994,6 +15194,8 @@ export = {
   tokensView: slot.forward('tokensView'),
   sessionProtocolsIn: slot.forward('sessionProtocolsIn'),
   sessionsView: slot.forward('sessionsView'),
+  sessionsViewAsync: slot.forward('sessionsViewAsync'),
+  metricsJsonAsync: slot.forward('metricsJsonAsync'),
   auditView: slot.forward('auditView'),
   errorCodesView: slot.forward('errorCodesView'),
   usedAssertionsView: slot.forward('usedAssertionsView'),
