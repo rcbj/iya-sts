@@ -732,6 +732,38 @@ when nothing was listed and adds **`acrossCluster`** to the result and a
 sentence to `message`. `pending` and `acrossCluster` are additive; nothing that
 read the old shape loses a member.
 
+## ONE PERSON'S SESSIONS ARE READ FROM THE INDEX WHILE THE SESSION WINDOW IS ON (#820, 2026-10-22)
+
+On 8081 (product, postgres, about 470,000 signed-in people) the inventory of
+ONE person — `GET /admin-api/logout?user=`, and every sign-out through
+`terminate()` — walked every sealed session body: about 470,000 synchronous
+reads on a request worker (`common/sync_query.ts`), and through
+read-your-write every other worker waited behind it.
+
+* **`sessionsByKey()` reads each key's sessions from the index** while
+  `authn.sessionWindowOn()`: `sessionsOfOne()` per key, which is
+  `authn.sessionsHeldUnder(username, subject)` — two indexed columns — kept
+  by `holderKeyOf()`, the walk's own rule, so the answer is the walk's. A key
+  that is an unresolved `urn:uuid:` is its own subject. A key the index
+  cannot read THROWS, as the walk's unread page does: never "nobody", which
+  would let a global sign-out answer that nothing was live.
+* **With the window off it is the walk it was**: every session is in this
+  process's Map, so a walk is cheap and one walk serves a whole batch.
+* **THE GAP, accepted (rcbj, 2026-10-22)**: a session filed under NEITHER
+  the person's username NOR their entry's `urn:uuid:` subject — a
+  realm-qualified name with no subject that still resolves, which only a
+  build before every session carried the entry's subject could have made —
+  is not seen by the index, so it is neither listed nor ended. Such sessions
+  are legacy, no installation holds any, and nothing migrates them.
+* **`walletRowsByKey()` reads the register's subject index**
+  (`vcIssued.rowsForSubject(subject)`) per key, kept by `holderKeyOf()`,
+  where it walked every row with a directory read each. A key with no
+  subject holds none.
+
+What still walks: `liveSessions()` (the console's session list, which has
+its own index path since #850), and `oauth-grant`'s family, which reads
+`grantManagement.list()` whole. `tests/console_signout_scale.js`.
+
 ## WHAT A PERSON HOLDS IS WHAT A SIGN-OUT CAN END, AND A SET OF PEOPLE IS READ ONCE (#351, 2026-09-29)
 
 **`heldIds()` lists only terminable rows.** It listed every row, and the

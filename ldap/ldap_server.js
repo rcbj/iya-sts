@@ -12563,6 +12563,53 @@ function deviceEntriesOwnedBy(ownerDn) {
   return out;
 }
 
+// HOW MANY DEVICES THE REALM HOLDS, ASKED ASYNCHRONOUSLY (2026-10-22, #820):
+// Monitoring → Devices counted the register by reading every device
+// (`devices.all()`, a synchronous page of `ou=devices` at a time through the
+// bridge in a windowed process), which held a request worker as the register
+// grew. In a windowed process the store's count of the container's keys,
+// asked through the read pool; elsewhere null, and the caller counts the way
+// it always did. A failure carries STS-LDAP-0139 (`storeAsked()`).
+function deviceCountAsync() {
+  log.debug('Entering deviceCountAsync().');
+  if (!directoryWindow) {
+    log.debug('Leaving deviceCountAsync(). Not windowed.');
+    return null;
+  }
+  const asked = storeAsked(directoryWindow.askAsync('count',
+    [realms.currentId(), normalizeDn(devicesDn())])).then(function (n) {
+    return Number(n) || 0;
+  });
+  log.debug('Leaving deviceCountAsync(). Asked of the store.');
+  return asked;
+}
+
+// ONE PAGE OF DEVICES, ASKED ASYNCHRONOUSLY (2026-10-22, #820): the direct
+// children of `ou=devices` in key order, `offset` and `limit` (at most
+// DIRECTORY_SEARCH_PAGE), copied. Null outside a window, where the register
+// is memory and `listDeviceEntries()` answers. `asked` is how many rows the
+// store answered, so a caller can tell the last page from a short one.
+function deviceEntriesPageAsync(offset, limit) {
+  log.debug('Entering deviceEntriesPageAsync().');
+  if (!directoryWindow) {
+    log.debug('Leaving deviceEntriesPageAsync(). Not windowed.');
+    return null;
+  }
+  const n = Math.max(1, Math.min(DIRECTORY_SEARCH_PAGE,
+                                 Number(limit) || DIRECTORY_SEARCH_PAGE));
+  const from = Math.max(0, Number(offset) || 0);
+  const asked = storeAsked(directoryWindow.containerPageAsync(
+    realms.currentId(), normalizeDn(devicesDn()), from, n))
+    .then(function (page) {
+      return { asked: page.asked,
+               entries: page.rows.map(function (hit) {
+                 return copiedDeviceEntry(hit.entry);
+               }) };
+    });
+  log.debug('Leaving deviceEntriesPageAsync(). Asked of the store.');
+  return asked;
+}
+
 // The map, rebuilt from the container listing.
 function buildDeviceIndex(container) {
   log.debug('Entering buildDeviceIndex().');
@@ -12877,6 +12924,10 @@ if (typeof credentials.setDirectory === 'function') {
     deviceEntryByIndex: deviceEntryByIndex,
     // Every device one owner holds (#636), without copying the register.
     deviceEntriesOwnedBy: deviceEntriesOwnedBy,
+    // The register's count and one page of it, asked asynchronously
+    // (#820): what Monitoring → Devices counts from in a windowed process.
+    deviceCountAsync: deviceCountAsync,
+    deviceEntriesPageAsync: deviceEntriesPageAsync,
     // The OpenID Federation register (#132), checked where it is used.
     listOidfedEntries: listOidfedEntries,
     writeOidfedEntry: writeOidfedEntry,

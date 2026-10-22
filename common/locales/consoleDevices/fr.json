@@ -160,6 +160,7 @@
   "monitorHtml.registered": "enregistrés",
   "monitorHtml.removed": "supprimés",
   "monitorHtml.evicted": "évincés",
+  "monitorHtml.partial": "Ces tableaux comptent les {counted} premiers des {total} appareils ; le total est le décompte de l'annuaire lui-même.",
   "monitorHtml.leadBefore": "Ce que contient le registre de ce domaine, compté maintenant, et ce qui lui est arrivé : chaque enregistrement, suppression et éviction au plafond <code>devices.maxPerPerson</code> d’une personne, conservés jusqu’à <code>devices.eventsKept</code>, et chaque changement de conformité selon son auteur — admin, mdm, test-control, caep",
   "monitorHtml.since": " (le plus ancien date du {since})",
   "monitorHtml.leadAfter": ". Un appareil supprimé par un <code>ldapdelete</code> sur le socket n’est pas un événement ici — le registre ne le voit jamais.",

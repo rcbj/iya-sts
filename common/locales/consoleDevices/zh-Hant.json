@@ -160,6 +160,7 @@
   "monitorHtml.registered": "已註冊",
   "monitorHtml.removed": "已移除",
   "monitorHtml.evicted": "已逐出",
+  "monitorHtml.partial": "這些表格統計了 {total} 台裝置中的前 {counted} 台；總數是目錄本身的計數。",
   "monitorHtml.leadBefore": "本領域登記簿目前的計數，以及它發生過的事件：每次註冊、移除，以及人員達到 <code>devices.maxPerPerson</code> 時的逐出，最多保留 <code>devices.eventsKept</code> 筆，以及依操作者區分的每次合規性變更——admin、mdm、test-control、caep",
   "monitorHtml.since": "（最早的一筆來自 {since}）",
   "monitorHtml.leadAfter": "。透過通訊端上的 <code>ldapdelete</code> 移除的裝置不會在此記為事件——登記簿從未看到它。",
