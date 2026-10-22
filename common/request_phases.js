@@ -63,12 +63,15 @@ const SAMPLES_PER_ROUTE = 4000;
 // How many routes a window holds, and how many it reports. A path past the
 // first is kept under 'other', so a client inventing paths cannot grow it.
 const MAX_ROUTES = 64;
-const REPORTED_ROUTES = 8;
+const REPORTED_ROUTES = 12;
 // `prepare`, `db` and `rows` are a flush's (2026-10-22, #820): the minted
 // flush is recorded under its own route, `FLUSH minted`, in the process
 // that flushes — a request worker's own window and lines.
+// `directory`, `minted` and `keys` are a response's commit wait, by the part
+// it waited on (#820): `COMMIT through`, beside `FLUSH directory`.
 const PHASES = ['ticket', 'barrier', 'queue', 'handler', 'commit', 'bridge',
-                'prepare', 'db', 'rows', 'total'];
+                'prepare', 'db', 'rows', 'directory', 'minted', 'keys',
+                'total'];
 
 // Milliseconds the event loop spent blocked in synchronous store reads since
 // the process started (`noteBlocked()`).
