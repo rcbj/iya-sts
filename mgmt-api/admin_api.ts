@@ -6357,10 +6357,18 @@ class AdminApi {
         mirrors: 'GET /admin/metrics',
         responseDescription: 'The snapshot.',
         responseSchema: { $ref: '#/components/schemas/Metrics' },
-        handler: function (req, res) {
+        handler: function (req, res, next) {
           log.debug("Entering the management API metrics endpoint.");
-          self.sendJson(res, 200, adminViews.metricsJson());
-          log.debug("Leaving the management API metrics endpoint.");
+          // The sign-on sessions counted by the session index and the newest
+          // drawn, while the window is on (#820).
+          adminViews.metricsJsonAsync().then(function (json) {
+            self.sendJson(res, 200, json);
+            log.debug("Leaving the management API metrics endpoint.");
+          }).catch(function (e) {
+            log.debug("Caught in the management API metrics endpoint: " +
+                      ((e && e.message) || e));
+            next(e);
+          });
         } },
 
       { method: 'GET', path: BASE + '/users', tag: 'Users',
@@ -8724,16 +8732,25 @@ class AdminApi {
         ].concat(this.pagingParameters()),
         responseDescription: 'The live sessions, filtered and paged.',
         responseSchema: { $ref: '#/components/schemas/SessionList' },
-        handler: function (req, res) {
+        handler: function (req, res, next) {
           log.debug("Entering the management API sessions endpoint.");
-          // `.json`, because sessionsView() returns the whole MODEL — the rows,
+          // `.json`, because the view returns the whole MODEL — the rows,
           // the paging and the filters the page needs, with the machine answer
           // inside it. The console used to export a wrapper that unwrapped it
           // here, and repointing this call at the layer without the unwrap
           // answered the model: `/admin-api/sessions` reported 0 sessions for a
           // person holding nine, with nothing erroring.
-          self.sendJson(res, 200, adminViews.sessionsView(req).json);
-          log.debug("Leaving the management API sessions endpoint.");
+          //
+          // FROM THE SESSION INDEX while the window is on (#820): the whole
+          // list held a request worker for two minutes at 470,000 sessions.
+          adminViews.sessionsViewAsync(req).then(function (view) {
+            self.sendJson(res, 200, view.json);
+            log.debug("Leaving the management API sessions endpoint.");
+          }).catch(function (e) {
+            log.debug("Caught in the management API sessions endpoint: " +
+                      ((e && e.message) || e));
+            next(e);
+          });
         } },
 
       { method: 'POST', route: BASE + '/sessions/:action', tag: 'Sessions',

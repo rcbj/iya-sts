@@ -94,6 +94,26 @@ const LIVE_BY_USERNAME = 'SELECT username_key, count(*)::bigint AS n ' +
   'AND ' + LIVE_KINDS + ' AND (expires_at IS NULL OR expires_at > $3) ' +
   'GROUP BY username_key';
 
+// THE CONSOLE'S LIVE SESSIONS, COUNTED AND PAGED BY THE STORE (2026-10-22,
+// #820). Monitoring → Sessions, Monitoring → Metrics and a person's page built
+// their list by opening every session's sealed body, synchronously, on a
+// request worker: about 470,000 on 8081, two minutes during which nothing
+// else that worker held — and, through read-your-write, nothing on any other
+// worker — was answered. These answer the counts and one page, newest first,
+// and only the page's bodies are opened. $3..$5 are the digests a search
+// matched (username, subject, session id), '' for no search; $6 is 1 or 0 for
+// authenticated or not, -1 for both.
+const LIVE_ROWS = 'realm = $1 AND chosen AND (expires_at IS NULL OR ' +
+  'expires_at > $2) AND ($3 = \'\' OR username_key = $3 OR subject_key = $4 ' +
+  'OR key = $5) AND ($6::int < 0 OR authenticated = ($6::int = 1))';
+
+const LIVE_TOTALS = 'SELECT count(*) FILTER (WHERE authenticated)::bigint ' +
+  'AS a, count(*) FILTER (WHERE NOT authenticated)::bigint AS u FROM ' +
+  'sts_sessions WHERE ' + LIVE_ROWS;
+
+const LIVE_PAGE = 'SELECT key FROM sts_sessions WHERE ' + LIVE_ROWS +
+  ' ORDER BY started_at DESC, key LIMIT $7 OFFSET $8';
+
 /**
  * Builds one named statement.
  *
@@ -154,6 +174,12 @@ function build(name, args) {
   } else if (name === 'session.liveByUsername') {
     text = LIVE_BY_USERNAME;
     values = [a[0], a[1], a[2]];
+  } else if (name === 'session.liveTotals') {
+    text = LIVE_TOTALS;
+    values = [a[0], a[1], a[2], a[3], a[4], a[5]];
+  } else if (name === 'session.livePage') {
+    text = LIVE_PAGE;
+    values = [a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7]];
   } else {
     log.debug("Leaving build().");
     throw new Error('session_queries: unknown query "' + name + '"');
@@ -192,6 +218,12 @@ function answerOf(name, rows) {
     const row = list[0] || {};
     log.debug("Leaving answerOf().");
     return { n: Number(row.n || 0) };
+  }
+  if (name === 'session.liveTotals') {
+    const row = list[0] || {};
+    log.debug("Leaving answerOf().");
+    return { authenticated: Number(row.a || 0),
+             unauthenticated: Number(row.u || 0) };
   }
   if (name === 'session.liveByUsername') {
     const out = {};
@@ -232,7 +264,7 @@ function answerOf(name, rows) {
       name === 'session.credential' || name === 'session.username' ||
       name === 'session.subject' ||
       name === 'session.page' || name === 'session.surface' ||
-      name === 'session.partner') {
+      name === 'session.partner' || name === 'session.livePage') {
     const out = [];
     list.forEach(function (row) {
       if (row && row.key != null) {
