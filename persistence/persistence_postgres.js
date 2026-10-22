@@ -261,7 +261,13 @@ const CHANGE_ROWS_PER_STATEMENT = 5000;
 // 23 SINCE 2026-10-20 (`/portal/delegate`'s search): the `pg_trgm`
 // extension and `sts_ldap_entries_uid_trgm`, a trigram GIN over the
 // `rdn_value` of the children of each realm's `ou=users`.
-const SCHEMA_VERSION = 24;
+// 24 SINCE 2026-10-21 (#820): `sts_minted_index`, an on-demand store's
+// index rows.
+// 25 SINCE 2026-10-22 (#820): `sts_minted_index.sort_at` and the partial
+// index `sts_minted_index_sort`, a store's `sortBy` value on one more index
+// row per stored row, which `minted.newest` walks instead of sorting the
+// store by `written_at` (only a BRIN, #630).
+const SCHEMA_VERSION = 25;
 
 // THE DATABASE'S CLOCK, in the milliseconds every cluster table stores. See the
 // cluster block in SCHEMA_OBJECTS for why no process's own clock is used.
@@ -396,11 +402,22 @@ const MINTED_INDEX_DELETE =
 // The row that says a store's index is complete (#820): realm '' and a key
 // no digest can be ('$' is not in base64url).
 const MINTED_INDEX_MARK = '$index-complete$';
+// `sort_at` (schema version 25, 2026-10-22) is NULL on every index row
+// but a row's SORT row (`minted_queries.SORT_INDEX_KEY`), which carries the
+// store's `sortBy` value for `minted.newest`.
 const MINTED_INDEX_INSERT =
-  'INSERT INTO sts_minted_index (handle, realm, index_key, key) SELECT ' +
-  'u.h, u.r, u.i, u.k FROM unnest($1::text[], $2::text[], $3::text[], ' +
-  '$4::text[]) AS u(h, r, i, k) ORDER BY u.h, u.r, u.i, u.k ' +
-  'ON CONFLICT DO NOTHING';
+  'INSERT INTO sts_minted_index (handle, realm, index_key, key, sort_at) ' +
+  'SELECT u.h, u.r, u.i, u.k, u.s FROM unnest($1::text[], $2::text[], ' +
+  '$3::text[], $4::text[], $5::bigint[]) AS u(h, r, i, k, s) ' +
+  'ORDER BY u.h, u.r, u.i, u.k ON CONFLICT DO NOTHING';
+
+// One index row's `sort_at`: a whole number, or null for every row that is
+// not a sort row. Hot path (every index row a flush writes): no
+// Entering/Leaving pair.
+function sortAtParam(one) {
+  const n = one && one.sortAt;
+  return typeof n === 'number' && Number.isFinite(n) ? Math.trunc(n) : null;
+}
 
 // Not a session. `$` is not in a keyed digest, and '' is not a realm id, so
 // the partial indexes do not see it. It commits with the last backfill page;
@@ -1015,11 +1032,27 @@ const SCHEMA_OBJECTS = [
   '  realm     text NOT NULL,' +
   '  index_key text NOT NULL,' +
   '  key       text NOT NULL,' +
+  '  sort_at   bigint,' +
   '  PRIMARY KEY (handle, realm, index_key, key))' },
   // A row's own index rows, for the flush's replace and a delete.
   { name: 'sts_minted_index_key', statement:
   'CREATE INDEX IF NOT EXISTS sts_minted_index_key ON sts_minted_index ' +
   '(handle, realm, key)' },
+  // THE NEWEST ROWS OF A STORE, BY ITS SORT VALUE (2026-10-22, #820,
+  // schema version 25). A store declaring `sortBy` writes one more index
+  // row per stored row (`index_key` `minted_queries.SORT_INDEX_KEY`,
+  // `sort_at` its value), and `minted.newest` walks this index newest first
+  // instead of sorting the store's whole partition by `written_at` — 13-14 s
+  // a page over 1.7M tokens on 8081. `written_at` itself may carry no btree
+  // (it changes on every write, and a btree on it makes every update of
+  // `sts_minted` non-HOT, #630); `sts_minted_index` is written by INSERT and
+  // DELETE only, so an index here costs no HOT update. PARTIAL, because
+  // every other index row's `sort_at` is NULL; the query repeats the
+  // predicate so a generic plan uses it. `afterColumns`: an older table
+  // gets the column from SCHEMA_COLUMNS first.
+  { name: 'sts_minted_index_sort', afterColumns: true, statement:
+  'CREATE INDEX IF NOT EXISTS sts_minted_index_sort ON sts_minted_index ' +
+  '(handle, realm, sort_at DESC, key DESC) WHERE sort_at IS NOT NULL' },
   // -------------------------------------------------------------------------
   // THE CHANGE LOG (2026-09-06), which is what makes several processes against
   // one store agree rather than merely coexist.
@@ -1648,6 +1681,11 @@ const SCHEMA_COLUMNS = [
   { table: 'sts_minted', column: 'key_sealed', statement:
   'ALTER TABLE sts_minted ADD COLUMN IF NOT EXISTS key_sealed text NOT ' +
   'NULL DEFAULT \'\'' },
+  // A minted index row's sort value (#820, schema version 25). Nullable
+  // with no default, so adding it rewrites nothing: every existing index
+  // row reads NULL, which is what every row but a sort row holds anyway.
+  { table: 'sts_minted_index', column: 'sort_at', statement:
+  'ALTER TABLE sts_minted_index ADD COLUMN IF NOT EXISTS sort_at bigint' },
   // The directory's six generated lookup columns (#349, schema version 13).
   // Adding a STORED generated column rewrites the table once and fills every
   // existing row, which is the whole of the migration.
@@ -5977,6 +6015,17 @@ function create(options) {
                              realm: String(row.realm), indexKey: indexKey,
                              key: String(row.key) });
               });
+            // THE ROW'S SORT ROW (2026-10-22, #820), deleted above with the
+            // others and written with them: one more index row whose
+            // `sort_at` is the store's `sortBy` value, what `minted.newest`
+            // orders by. A row with no value has none.
+            if (sortAtParam(row) !== null) {
+              filed.push({ handle: String(row.handle),
+                           realm: String(row.realm),
+                           indexKey: require('./minted_queries')
+                             .SORT_INDEX_KEY,
+                           key: String(row.key), sortAt: row.sortAt });
+            }
           });
           if (filed.length) {
             side = side.then(function () {
@@ -5984,7 +6033,8 @@ function create(options) {
                 [filed.map(function (one) { return one.handle; }),
                  filed.map(function (one) { return one.realm; }),
                  filed.map(function (one) { return one.indexKey; }),
-                 filed.map(function (one) { return one.key; })]);
+                 filed.map(function (one) { return one.key; }),
+                 filed.map(sortAtParam)]);
             });
           }
           return side;
@@ -6644,7 +6694,8 @@ function create(options) {
         [rows.map(function (one) { return String(one.handle); }),
          rows.map(function (one) { return String(one.realm); }),
          rows.map(function (one) { return String(one.indexKey); }),
-         rows.map(function (one) { return String(one.key); })]
+         rows.map(function (one) { return String(one.key); }),
+         rows.map(sortAtParam)]
       ).then(function (r) {
         return r.rowCount || 0;
       });
@@ -6678,7 +6729,8 @@ function create(options) {
       log.debug("Entering markMintedIndexed(). " + handle);
       log.debug("Leaving markMintedIndexed().");
       return pool.query(MINTED_INDEX_INSERT,
-        [[String(handle)], [''], [MINTED_INDEX_MARK], [MINTED_INDEX_MARK]]);
+        [[String(handle)], [''], [MINTED_INDEX_MARK], [MINTED_INDEX_MARK],
+         [null]]);
     },
 
     // One `sts_sessions` row, in its own transaction. Apply repairs through
