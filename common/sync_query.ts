@@ -78,6 +78,8 @@ import path = require('path');
 import workerThreads = require('worker_threads');
 import asyncHooks = require('async_hooks');
 import errorCodes = require('./error_codes');
+// A LEAF: the time a request's worker spent blocked here (#820).
+import requestPhases = require('./request_phases');
 
 const log = bunyan.createLogger({ name: 'sts-sync-query' });
 
@@ -353,6 +355,7 @@ class SyncQuery {
     }
     const waited = Date.now() - started;
     this.figures.waitedMs += waited;
+    requestPhases.noteBlocked(waited);
     this.figures.longestMs = Math.max(this.figures.longestMs, waited);
     if (slot) {
       slot.waited += waited;
