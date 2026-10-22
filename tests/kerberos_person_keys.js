@@ -537,6 +537,46 @@ async function productChild() {
   const upgraded = await asReq('kpbob', PW);
   out.upgradedAs = { ok: upgraded.ok, code: upgraded.code,
                      eText: upgraded.eText };
+  // --- a REHASH re-stamps the keys and does not derive them (#820) ---
+  // Signed in under a scrypt policy, then once more after the policy moved
+  // to argon2id: the stored hash is upgraded, the password is the same, so
+  // the keys must be the same keys at the same kvno, derived no later.
+  const passwordPolicy = require(R + '/common/password_policy');
+  const policyWith = function (changes) {
+    return Object.assign({}, passwordPolicy.DEFAULTS, changes);
+  };
+  const keysOf = function (name) {
+    const raw = (entryOf(name).attributes.stskrb5keys) || [];
+    return raw.length
+      ? JSON.parse(keystore.open(String(raw[0]), 'kerberos-keys')) : null;
+  };
+  directory.createUser('kpdan', person('kpdan'));
+  out.rehash = { scryptSaved: passwordPolicy.save('default', policyWith(
+    { hashAlgorithm: 'scrypt', scryptLogN: 15, scryptParallelism: 3 })).ok };
+  credentials.setPassword('kpdan', PW);
+  await personKeys.idle();
+  const danBefore = keysOf('kpdan');
+  const danHashBefore = String(entryOf('kpdan').attributes.userpassword[0]);
+  out.rehash.argonSaved = passwordPolicy.save('default', policyWith(
+    { hashAlgorithm: 'argon2id' })).ok;
+  out.rehash.verified = (await credentials.verifyAsync('kpdan', PW,
+                                                       { via: 'test' })).ok;
+  await personKeys.idle();
+  const danAfter = keysOf('kpdan');
+  const danHashAfter = String(entryOf('kpdan').attributes.userpassword[0]);
+  out.rehash.upgraded = danHashBefore.indexOf('$scrypt$') === 0 &&
+                        danHashAfter.indexOf('$argon2id$') === 0;
+  out.rehash.sameKeys = !!danBefore && !!danAfter &&
+    JSON.stringify(danBefore.keys) === JSON.stringify(danAfter.keys) &&
+    danBefore.kvno === danAfter.kvno;
+  out.rehash.notDerived = !!danBefore && !!danAfter &&
+    danBefore.derivedAt === danAfter.derivedAt;
+  out.rehash.restamped = !!danAfter &&
+    danAfter.stamp === personKeys.stampOf(danHashAfter);
+  const danAs = await asReq('kpdan', PW);
+  out.rehash.asOk = danAs.ok;
+  passwordPolicy.save('default', policyWith({}));
+
   const wrongVerify = await credentials.verifyAsync('kpcarol-nobody', PW,
                                                     { via: 'test' });
   out.nobodyVerified = wrongVerify.ok;
@@ -1022,6 +1062,15 @@ function productModeRefusesAndUpgrades(t, r) {
           'A VERIFIED SIGN-IN DERIVES THE MISSING KEYS, and the next AS-REQ ' +
           'succeeds',
           JSON.stringify(r.upgradedAs));
+  t.check(r.rehash && r.rehash.scryptSaved && r.rehash.argonSaved &&
+          r.rehash.verified && r.rehash.upgraded,
+          'a sign-in after the policy moved from scrypt to argon2id upgrades ' +
+          'the stored hash', JSON.stringify(r.rehash));
+  t.check(r.rehash && r.rehash.sameKeys && r.rehash.notDerived &&
+          r.rehash.restamped && r.rehash.asOk,
+          'A REHASH RE-STAMPS THE KERBEROS KEYS: the same keys at the same ' +
+          'kvno, not derived again, stamped with the new hash, and the ' +
+          'password still gets a ticket (#820)', JSON.stringify(r.rehash));
   t.check(r.nobodyVerified === false && r.unknownAs.ok === false &&
           r.unknownAs.code === 6 &&
           /nobody by that name/.test(r.unknownAs.eText),
