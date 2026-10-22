@@ -375,14 +375,21 @@ const tokenHolders = realms.map({
   }
 });
 
-// How much longer a token must live than its holder's row before the row
-// is written again (seconds).
-const HOLDER_REFRESH_S = 3600;
+// HOW FAR PAST ITS TOKEN A HOLDER'S ROW IS WRITTEN TO LIVE (seconds), so a
+// row is written again only once a token outlives it. It was an hour, and a
+// row was written at the token's own `exp`: every refresh more than an hour
+// after the last rewrote it — one row per refresh on 8081, where people
+// refresh every 9.6 hours (#820, 2026-10-22). With a day of headroom a
+// person refreshing that often writes it about once a day. The cost is that
+// a row outlives its holder's last token by up to a day, which no reader
+// minds: the row's token COUNTS are the index's (`userRow()`), and
+// `lastExp` decides nothing but when the row expires.
+const HOLDER_HEADROOM_S = 86400;
 
 /**
  * Notes the holder of a token just recorded, when that holder is new or the
- * token outlives their row by `HOLDER_REFRESH_S`. A hot path (every JWT
- * signed): no Entering/Leaving pair.
+ * token outlives their row, which is written `HOLDER_HEADROOM_S` past the
+ * token. A hot path (every JWT signed): no Entering/Leaving pair.
  *
  * @param record - the token record
  */
@@ -405,12 +412,13 @@ function noteTokenHolder(record) {
   const exp = Number(record.exp) || 0;
   const lastExp = held ? Number(held.lastExp) || 0 : 0;
   const client = record.grant === 'client_credentials';
-  if (held && exp <= lastExp + HOLDER_REFRESH_S &&
-      (!client || held.isClient)) {
+  if (held && exp <= lastExp && (!client || held.isClient)) {
     return;
   }
   tokenHolders.set(key, { firstAt: held ? held.firstAt : Date.now(),
-                          lastExp: Math.max(exp, lastExp),
+                          lastExp: exp > 0
+                            ? Math.max(exp + HOLDER_HEADROOM_S, lastExp)
+                            : lastExp,
                           isClient: client || !!(held && held.isClient) });
 }
 
@@ -1248,7 +1256,14 @@ function revoke(jti, via, how, expSec) {
                        revokedExpOf(record),
                        revokedExpOf(revokedJtis.get(jti)));
   revokedJtis.set(jti, { exp: exp });
-  if (record) {
+  // A TOKEN SUPERSEDED BY ITS SUCCESSOR — a refresh token rotated on use —
+  // is not written back to the register (2026-10-22, #820). It was one of a
+  // refresh's 13.6 writes, every process applying it, for a fact
+  // `revokedJtis` above already holds and is what enforces it; the
+  // register's readers ask both (`tokenStateOf()`, and `tokenList()`'s
+  // `revoked` for the console). Every other revocation still writes it.
+  const superseded = !!(how && how.superseded);
+  if (record && !superseded) {
     record.revoked = true;
     record.revokedAt = record.revokedAt || Date.now();
     record.revokedVia = record.revokedVia || (via || 'unstated');
@@ -5127,7 +5142,12 @@ function tokenList(holder) {
   const nowMs = Date.now();
   const out = [];
   const shape = function (record) {
-    out.push(Object.assign({ state: tokenStateOf(record, nowMs) }, record));
+    const state = tokenStateOf(record, nowMs);
+    // Revoked in `revokedJtis` and not in the record: a token superseded on
+    // use, which `revoke()` does not write back (#820).
+    out.push(Object.assign({ state: state }, record,
+                           state === 'revoked' && !record.revoked
+                             ? { revoked: true } : {}));
   };
   if (holder) {
     recordsHeldBy(holder).forEach(shape);
