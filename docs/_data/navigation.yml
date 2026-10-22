@@ -13,6 +13,7 @@
     - { title: Overview, url: / }
     - { title: Getting started, url: /getting-started.html }
     - { title: Architecture, url: /architecture.html }
+    - { title: Where a request waits, url: /request-path.html }
     - { title: Configuration, url: /configuration.html }
     - { title: Endpoints, url: /endpoints.html }
     - { title: Trust realms, url: /trust-realms.html }
