@@ -712,6 +712,9 @@ function setDriver(theDriver, activeMode) {
                              digestOf: residentDigestOf,
                              page: onDemandPage,
                              readMany: onDemandReadMany,
+                             newestAsync: onDemandNewestAsync,
+                             countAsync: onDemandCountAsync,
+                             byIndexAsync: onDemandByIndexAsync,
                              journalled: pendingWrite });
   log.debug('Leaving setDriver(). ' + realms.handles().length +
             ' declared store(s).');
@@ -2526,6 +2529,106 @@ function onDemandPage(handle, realmId, after) {
   return { rows: out,
            next: rows.length >= pageLimit()
              ? String(rows[rows.length - 1].key) : '' };
+}
+
+// ---------------------------------------------------------------------------
+// THE SAME QUESTIONS, ASKED WITHOUT HOLDING THE EVENT LOOP (2026-10-22,
+// #820). A console page about a store with a million rows — Monitoring →
+// Tokens — asked `scan()`'s and `lookup()`'s questions through the bridge,
+// which stands the worker still for each round trip; and it walked only
+// what this process held, so two workers drew two different lists. These
+// ask the driver's READ POOL (`mintedQuery()`, `minted_queries.js`'s
+// statements) and open what comes back here. Each rejects where the store
+// cannot be asked, and the caller says the list was not read: an empty
+// answer would read as "nothing issued".
+// ---------------------------------------------------------------------------
+// The driver's asynchronous door, or a rejection naming why there is none.
+function mintedQueryAsync(name, args) {
+  log.debug("Entering mintedQueryAsync(). " + name);
+  if (!driver || typeof driver.mintedQuery !== 'function') {
+    log.debug("Leaving mintedQueryAsync(). No asynchronous door.");
+    return Promise.reject(new Error('the store has no asynchronous door ' +
+                                    'for on-demand questions'));
+  }
+  log.debug("Leaving mintedQueryAsync().");
+  return driver.mintedQuery(name, args);
+}
+
+// Rows the driver answered, each named and opened; a row whose name or
+// body will not open is left out, as a read leaves it.
+function openedRows(handle, rows, split) {
+  log.debug("Entering openedRows(). " + handle);
+  const declared = split ? realms.handleFor(handle) : null;
+  const out = [];
+  (rows || []).forEach(function (row) {
+    const name = nameOfRow({ key: row.key, keySealed: row.keySealed });
+    const opened = name === null ? undefined : openedBody(handle, row.body);
+    if (opened !== undefined) {
+      out.push({ key: declared ? splitKey(declared, name).key : name,
+                 value: opened });
+    }
+  });
+  log.debug("Leaving openedRows(). " + out.length + " row(s).");
+  return out;
+}
+
+/**
+ * The newest live rows of an on-demand store in one realm, newest written
+ * first, asked on the read pool.
+ *
+ * @param handle - the store
+ * @param realmId - the realm partition
+ * @param limit - at most this many (`minted_queries.NEWEST_LIMIT` caps it)
+ * @returns a promise of `[{ key, value }]`
+ */
+function onDemandNewestAsync(handle, realmId, limit) {
+  log.debug("Entering onDemandNewestAsync(). " + handle);
+  log.debug("Leaving onDemandNewestAsync().");
+  return mintedQueryAsync('minted.newest',
+                          [handle, realmId, Date.now(), limit])
+    .then(function (rows) {
+      return openedRows(handle, rows, true);
+    });
+}
+
+/**
+ * How many live rows an on-demand store holds in one realm, counted by the
+ * store on the read pool.
+ *
+ * @param handle - the store
+ * @param realmId - the realm partition
+ * @returns a promise of the count
+ */
+function onDemandCountAsync(handle, realmId) {
+  log.debug("Entering onDemandCountAsync(). " + handle);
+  log.debug("Leaving onDemandCountAsync().");
+  return mintedQueryAsync('minted.count', [handle, realmId, Date.now()])
+    .then(function (n) {
+      return Number(n) || 0;
+    });
+}
+
+/**
+ * The rows of an on-demand store filed under one index value, asked on the
+ * read pool.
+ *
+ * @param handle - the store's handle
+ * @param realmId - the realm
+ * @param value - the index value
+ * @returns a promise of `[{ key, value }]`
+ */
+function onDemandByIndexAsync(handle, realmId, value) {
+  log.debug("Entering onDemandByIndexAsync(). " + handle);
+  const digest = indexKeyOf(handle, realmId, value);
+  if (!digest) {
+    log.debug("Leaving onDemandByIndexAsync(). No key.");
+    return Promise.resolve([]);
+  }
+  log.debug("Leaving onDemandByIndexAsync().");
+  return mintedQueryAsync('minted.byIndex', [handle, realmId, digest])
+    .then(function (rows) {
+      return openedRows(handle, rows, false);
+    });
 }
 
 // The page size `minted_queries.js` answers, read where it is defined.

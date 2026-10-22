@@ -2108,6 +2108,19 @@ per worker, 4.6 → 1.3 GB in the front; listening 76 s → 42 s; all four
 workers 4 min → 80 s; the container 21.5 → 12.4 GB. `tests/on_demand_store.js`
 holds the map's rules; `tests/session_index.js` the index rows' writes.
 
+### Three console questions on the read pool (2026-10-22, #820)
+
+`realms.map()` grew `lookupEntriesAsync(indexKey)`, `newestAsync(limit)` and
+`countAsync()` for console pages about an on-demand store. They ask the
+driver's READ POOL (`mintedQuery()` on the postgres driver, by its tier on a
+tiered one) through `minted_queries.js`' `minted.byIndex`, `minted.newest`
+(newest written first, capped at `NEWEST_LIMIT`, 1,000) and `minted.count`,
+never the synchronous bridge, and merge what this process holds as `lookup()`
+merges it: a held row is the fresher, and a key with a write not yet committed
+answers from here or not at all. Each REJECTS where the store cannot be
+asked; the caller says the list was not read. Held whole, they answer from
+the Map. Monitoring → Tokens is the first caller (`common/CLAUDE.md`).
+
 ## WHAT ONE ADD WRITES TO THE CHANGE LOG (#618 phase 2, 2026-10-14)
 
 **Every minted row a flush writes is a row of `sts_changes` too**: sealed,

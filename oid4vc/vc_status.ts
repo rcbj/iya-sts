@@ -115,6 +115,16 @@ const SUSPENDED = 2;
  * Each status value's name.
  */
 const STATUS_NAMES = { 0: 'VALID', 1: 'INVALID', 2: 'SUSPENDED' };
+// A UTC day, the unit the entries are indexed by (`entries`' `indexBy`).
+const DAY_MS = 86400000;
+// How many days back the console's count looks for an entry past its expiry
+// and still held: `caches.eject-expired` removes those, so this is a margin
+// for a job that was switched off, not a window anything relies on
+// (2026-10-22, #820).
+const EXPIRED_LOOKBACK_DAYS = 7;
+// How many days back a page of the newest entries walks, by allocation day:
+// past every credential lifetime this service issues (#820).
+const ALLOCATED_LOOKBACK_DAYS = 800;
 
 // The paths, under a realm's prefix.
 /**
@@ -157,7 +167,36 @@ const MAX_FETCHED = 256;
 // idx -> { status, format, configId, artifactKey, expiresAt, allocatedAt,
 //          changedAt, via }
 // PER TRUST REALM, persisted: every process and node publishes the same list.
-const entries = realms.map({ persist: 'vc_status.entries' });
+//
+// INDEXED (2026-10-22, #820), so Monitoring → Verifiable Credentials counts
+// and pages without walking every entry: an explicit status that is not
+// VALID (`s:<value>`), the issued-register row it is for (`a:<key>`), and
+// the UTC day it was allocated (`d:<day>`) and expires (`x:<day>`). The
+// partition re-files a row on every `set`, so every change here writes a
+// COPY (`setStatus()`, `attach()`): a row mutated in place and set again
+// would stay filed under its old values.
+const entries = realms.map({
+  persist: 'vc_status.entries',
+  indexBy: function (row: any): string[] {
+    const out: string[] = [];
+    if (!row) {
+      return out;
+    }
+    if (row.status !== VALID) {
+      out.push('s:' + row.status);
+    }
+    if (row.artifactKey) {
+      out.push('a:' + row.artifactKey);
+    }
+    if (row.allocatedAt) {
+      out.push('d:' + Math.floor(Number(row.allocatedAt) / DAY_MS));
+    }
+    if (row.expiresAt) {
+      out.push('x:' + Math.floor(Number(row.expiresAt) / DAY_MS));
+    }
+    return out;
+  }
+});
 
 // uri -> { ok, why, bits, bytes (base64url), kind, fetchedAt, until }
 // PER PROCESS: a cache of what trusted foreign issuers published.
@@ -290,6 +329,8 @@ interface VcStatusDeps {
   stsCrypto: typeof stsCrypto;
   errorCodes: typeof errorCodes;
   artifactRevokedByKey: (key: string) => any;
+  // #820: every artifact key the issued register marks revoked.
+  revokedArtifactKeys: () => string[];
   signingKeyForAsync: typeof helpers.signingKeyForAsync;
   publishedKidFor: typeof helpers.publishedKidFor;
   certificateHeaderFor: typeof helpers.certificateHeaderFor;
@@ -369,6 +410,7 @@ class VcStatus {
       stsCrypto: stsCrypto,
       errorCodes: errorCodes,
       artifactRevokedByKey: stats.artifactRevokedByKey,
+      revokedArtifactKeys: stats.revokedArtifactKeys,
       signingKeyForAsync: helpers.signingKeyForAsync,
       publishedKidFor: helpers.publishedKidFor,
       certificateHeaderFor: helpers.certificateHeaderFor,
@@ -568,8 +610,9 @@ class VcStatus {
     log.debug("Entering VcStatus.attach().");
     const row = entries.get(String(key));
     if (row) {
-      row.artifactKey = String(artifactKey || '');
-      entries.set(String(key), row);
+      // A copy, so the index files it under its artifact (#820).
+      entries.set(String(key), Object.assign({}, row, {
+        artifactKey: String(artifactKey || '') }));
     }
     log.debug("Leaving VcStatus.attach().");
   }
@@ -637,12 +680,12 @@ class VcStatus {
       log.debug("Leaving VcStatus.setStatus(). Unchanged.");
       return false;
     }
-    row.status = wanted;
-    row.changedAt = now();
-    row.via = String(via || 'unstated');
-    entries.set(String(key), row);
+    // A copy, so the index files it under its new status (#820).
+    const changed = Object.assign({}, row, {
+      status: wanted, changedAt: now(), via: String(via || 'unstated') });
+    entries.set(String(key), changed);
     log.info('vc_status: status-list index ' + key + ' is now ' +
-             STATUS_NAMES[wanted] + ' (' + row.via + ').');
+             STATUS_NAMES[wanted] + ' (' + changed.via + ').');
     log.debug("Leaving VcStatus.setStatus(). Changed.");
     return true;
   }
@@ -685,15 +728,18 @@ class VcStatus {
    * @param req - the request, for the lists' URLs
    * @returns the summary
    */
-  summary(req: any): any {
+  summary(req: any, page?: { offset: number; limit: number }): any {
     const { log, baseUrlOf } = this.deps;
     log.debug("Entering VcStatus.summary().");
-    const rows = this.rows();
-    const count = function (name: string): number {
-      return rows.filter(function (r) {
-        return r.status === name;
-      }).length;
-    };
+    // THE COUNTS FROM THE INDEX AND ONE PAGE OF ROWS (2026-10-22, #820).
+    // It built a row for every live entry — up to 131,072 a realm, each
+    // asked its effective status — and sorted them all, for four numbers
+    // and the one page the console draws. `counts()` asks the index and
+    // `newestRows()` walks the allocation days back from today, stopping at
+    // the page. Without a `page`, every row, as before.
+    const counted = this.counts();
+    const rows = page ? this.newestRows(page.offset, page.limit)
+      : this.rows();
     const base = baseUrlOf(req);
     log.debug("Leaving VcStatus.summary().");
     return {
@@ -702,10 +748,129 @@ class VcStatus {
       aggregation: base + AGGREGATION_PATH,
       bitstring: PURPOSES.map((p) => this.bitstringUri(base, p)),
       ttlS: this.ttlSeconds(), lifetimeS: this.lifetimeSeconds(),
-      allocated: rows.length, valid: count('VALID'),
-      invalid: count('INVALID'), suspended: count('SUSPENDED'),
+      allocated: counted.allocated, valid: counted.valid,
+      invalid: counted.invalid, suspended: counted.suspended,
       rows: rows
     };
+  }
+
+  // THE FOUR COUNTS, FROM THE INDEX (2026-10-22, #820). An entry's
+  // effective status is INVALID past its expiry, else its explicit status
+  // where that is not VALID, else INVALID where the issued register revoked
+  // its credential, else VALID (`statusOf()`). So: the live entries are the
+  // store's size less the held ones past their expiry (the `x:` days up to
+  // today); SUSPENDED and the explicit INVALID are the `s:` keys; and the
+  // revoked credentials are the register's revocations joined through `a:`.
+  // Each step reads only the entries it counts. The store is held whole in
+  // every process, so `size` and every `lookup()` are exact.
+  /**
+   * Counts the ambient realm's live entries by effective status.
+   *
+   * @returns `{ allocated, valid, invalid, suspended }`
+   */
+  counts(): { allocated: number; valid: number; invalid: number;
+              suspended: number } {
+    const { log, entries, revokedArtifactKeys, now } = this.deps;
+    log.debug("Entering VcStatus.counts().");
+    const t = now();
+    const live = function (row: any): boolean {
+      return !!row && !(row.expiresAt && row.expiresAt <= t);
+    };
+    const today = Math.floor(t / DAY_MS);
+    let expiredHeld = 0;
+    for (let d = today - EXPIRED_LOOKBACK_DAYS; d <= today; d++) {
+      entries.lookup('x:' + d).forEach(function (idx: string) {
+        const row = entries.get(idx);
+        if (row && !live(row)) {
+          expiredHeld++;
+        }
+      });
+    }
+    const liveWith = function (indexKey: string): number {
+      return entries.lookup(indexKey).filter(function (idx: string) {
+        return live(entries.get(idx));
+      }).length;
+    };
+    const suspended = liveWith('s:' + SUSPENDED);
+    let invalid = liveWith('s:' + INVALID);
+    (revokedArtifactKeys() || []).forEach(function (key: string) {
+      entries.lookup('a:' + key).forEach(function (idx: string) {
+        const row = entries.get(idx);
+        if (live(row) && row.status === VALID) {
+          invalid++;
+        }
+      });
+    });
+    const allocated = Math.max(0, entries.size - expiredHeld);
+    log.debug("Leaving VcStatus.counts(). " + allocated + " live.");
+    return { allocated: allocated,
+             valid: Math.max(0, allocated - invalid - suspended),
+             invalid: invalid, suspended: suspended };
+  }
+
+  // ONE PAGE OF THE NEWEST LIVE ENTRIES, newest allocated first, in the
+  // shape `rows()` answers (2026-10-22, #820): the allocation days are
+  // walked back from today, a day's entries sorted, until the page is full.
+  // A day wholly before the page is counted and not sorted, and only the
+  // page's rows are asked their effective status.
+  /**
+   * Returns one page of the ambient realm's live entries, newest first.
+   *
+   * @param offset - how many to skip
+   * @param limit - how many to answer
+   * @returns the entries
+   */
+  newestRows(offset: number, limit: number): any[] {
+    const { log, entries, now } = this.deps;
+    log.debug("Entering VcStatus.newestRows().");
+    const t = now();
+    const skip = Math.max(0, Number(offset) || 0);
+    const want = Math.max(0, Number(limit) || 0);
+    const out: any[] = [];
+    let seen = 0;
+    const today = Math.floor(t / DAY_MS);
+    for (let d = today; d >= today - ALLOCATED_LOOKBACK_DAYS &&
+         out.length < want; d--) {
+      const day = entries.lookup('d:' + d).map(function (idx: string) {
+        return { idx: idx, row: entries.get(idx) };
+      }).filter(function (e: any) {
+        return e.row && !(e.row.expiresAt && e.row.expiresAt <= t);
+      });
+      if (seen + day.length <= skip) {
+        seen += day.length;
+        continue;
+      }
+      day.sort(function (a: any, b: any) {
+        return b.row.allocatedAt - a.row.allocatedAt;
+      });
+      for (const e of day) {
+        if (out.length >= want) {
+          break;
+        }
+        if (seen < skip) {
+          seen++;
+          continue;
+        }
+        seen++;
+        out.push(this.rowOf(e.idx, e.row));
+      }
+    }
+    log.debug("Leaving VcStatus.newestRows(). " + out.length + ".");
+    return out;
+  }
+
+  // One entry as the console draws it: `rows()`'s shape.
+  private rowOf(idx: string, row: any): any {
+    const { log } = this.deps;
+    log.debug("Entering VcStatus.rowOf().");
+    const effective = this.statusOf(idx);
+    log.debug("Leaving VcStatus.rowOf().");
+    return { idx: Number(idx), format: row.format,
+             configId: row.configId, artifactKey: row.artifactKey,
+             status: STATUS_NAMES[effective] || String(effective),
+             explicit: STATUS_NAMES[row.status] || String(row.status),
+             expiresAt: row.expiresAt, allocatedAt: row.allocatedAt,
+             changedAt: row.changedAt, via: row.via };
   }
 
   // The packed values of the ambient realm's list.
@@ -1491,6 +1656,8 @@ export = {
   setStatus: slot.forward('setStatus'),
   rows: slot.forward('rows'),
   summary: slot.forward('summary'),
+  counts: slot.forward('counts'),
+  newestRows: slot.forward('newestRows'),
   tslUri: slot.forward('tslUri'),
   bitstringUri: slot.forward('bitstringUri'),
   checkPresented: slot.forward('checkPresented'),

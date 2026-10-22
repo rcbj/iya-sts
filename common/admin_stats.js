@@ -365,6 +365,14 @@ function recordCall(call) {
 // ---------------------------------------------------------------------------
 const tokenHolders = realms.map({
   persist: 'admin_stats.tokenHolders',
+  // THE CLIENTS AMONG THEM, KEPT BY THE PARTITION (2026-10-22, #820), so
+  // Monitoring → Metrics counts the client holders without walking one row
+  // per person (`userCountsResolved()`). The IndexedMap re-files a row on
+  // every `set`, so a holder that becomes a client is filed when its row is
+  // written again.
+  indexBy: function (row) {
+    return row && row.isClient ? ['client'] : [];
+  },
   // A hot path (every row a flush writes): no Entering/Leaving pair.
   expiresAt: function (row) {
     const exp = Number(row && row.lastExp);
@@ -565,6 +573,13 @@ const tokens = realms.map({
     }
     if (record && record.x5tSpki) {
       out.push('spki:' + String(record.x5tSpki));
+    }
+    // THE REPLY IT CAME BACK IN (2026-10-22, #820): Monitoring → Tokens
+    // opens one issuance by its `set:<id>`, and on demand the members of a
+    // set are found by this key rather than by walking what is held. The
+    // issuer states the set id once, at issuance, so it never changes.
+    if (record && record.setId) {
+      out.push('set:' + String(record.setId));
     }
     return out;
   },
@@ -1446,6 +1461,29 @@ function artifactRevokedByKey(key) {
   log.debug("Leaving artifactRevokedByKey(). " + (mark ? "Revoked." :
                                                   "Not revoked."));
   return mark;
+}
+
+// EVERY HANDLE THE REGISTER MARKS REVOKED (2026-10-22, #820), for
+// Monitoring → Verifiable Credentials' counts: `vc_status.ts` joins these to
+// its entries through its `a:` index instead of asking every entry whether
+// its artifact is revoked. It walks the revocations, which grow with what an
+// administrator revoked and not with the population.
+/**
+ * Lists the handles of every artifact the register marks revoked in the
+ * ambient realm.
+ *
+ * @returns the handles
+ */
+function revokedArtifactKeys() {
+  log.debug("Entering revokedArtifactKeys().");
+  const out = [];
+  revokedArtifacts.forEach(function (mark, key) {
+    if (mark) {
+      out.push(String(key));
+    }
+  });
+  log.debug("Leaving revokedArtifactKeys(). " + out.length + ".");
+  return out;
 }
 
 // One artifact with the revocation overlaid, so that a row from another
@@ -2864,6 +2902,110 @@ function userRowsAsync() {
     return buildUserRowsResolved(undefined);
   });
 }
+
+// ---------------------------------------------------------------------------
+// THE USER COUNTS, WITHOUT A ROW PER PERSON (2026-10-22, #820).
+//
+// Monitoring → Metrics and the console's dashboard read four numbers off the
+// users list — how many identities are known, how many signed in here, how
+// many are clients, and how many authentications there were — and built
+// `userRowsAsync()` to get them: a row for every person, about 470,000 on
+// 8081, every one copied, counted and sorted on the event loop, to keep four
+// integers.
+//
+// The four come from the same sources the rows are built from, by the same
+// rules (`buildUserRowsResolved()`), and only one source grows with the
+// population: on demand, the token holders, one small row per person, held
+// whole. That one is never walked here. Its size is the Map's own, and its
+// CLIENTS are the `client` index the partition keeps on every `set`
+// (`tokenHolders`' `indexBy`) — a count maintained as the rows are written,
+// in every process, replication included, because every way a row enters or
+// leaves the Map ends in the partition's `set` and `delete`. What is walked
+// is bounded: the register's records (capped per process), the tokens this
+// process holds (the cache's 20,000) and the artifacts, each asked only
+// whether the holders already count it.
+//
+// The rejected alternatives: a counter `nums` would keep (a write per new
+// holder, a fan-in, and one more number to drift from the Map it counts),
+// and a scheduler job computing the rows off the request path (the same
+// O(people) walk, every few minutes, in every process).
+// ---------------------------------------------------------------------------
+/**
+ * Counts the users the users list would hold, without building its rows.
+ *
+ * @returns the counts `snapshot().users` reports: `known`,
+ *   `authenticatedHere`, `clients` and `authentications`
+ */
+function userCountsResolved() {
+  log.debug("Entering userCountsResolved().");
+  const keys = new Set();
+  const clients = new Set();
+  let authenticatedHere = 0;
+  let authentications = 0;
+  everyUserRecord().forEach(function (record) {
+    keys.add(record.key);
+    if (!record.knownBy) {
+      authenticatedHere++;
+    }
+    authentications += Number(record.authentications) || 0;
+    if (record.isClient) {
+      clients.add(record.key);
+    }
+  });
+  tokens.forEach(function (record) {
+    const key = identityOf(holderKeyOf(record.username, record.sub)).key;
+    if (!key) {
+      return;
+    }
+    keys.add(key);
+    if (record.grant === 'client_credentials') {
+      clients.add(key);
+    }
+  });
+  allArtifacts().forEach(function (record) {
+    const key = identityOf(record.subject).key;
+    if (key) {
+      keys.add(key);
+    }
+  });
+  let known = keys.size;
+  if (tokens.onDemandLive()) {
+    // Every holder is a row; a key another source named is counted again
+    // only when the holders do not already count it.
+    const holders = tokenHolders.size - (tokenHolders.has(HOLDERS_DONE)
+      ? 1 : 0);
+    let beyond = 0;
+    keys.forEach(function (key) {
+      if (key === HOLDERS_DONE || !tokenHolders.has(key)) {
+        beyond++;
+      }
+    });
+    known = holders + beyond;
+    tokenHolders.lookup('client').forEach(function (key) {
+      if (key !== HOLDERS_DONE) {
+        clients.add(key);
+      }
+    });
+  }
+  log.debug("Leaving userCountsResolved(). " + known + " known.");
+  return { known: known, authenticatedHere: authenticatedHere,
+           clients: clients.size, authentications: authentications };
+}
+
+/**
+ * `userCountsResolved()`, with the held tokens' and artifacts' subjects
+ * asked of the directory asynchronously, as `userRowsAsync()` asks them.
+ *
+ * @returns a promise of the counts
+ */
+function userCountsAsync() {
+  log.debug("Entering userCountsAsync().");
+  log.debug("Leaving userCountsAsync().");
+  return withSubjectsResolvedAsync(function () {
+    return userCountsResolved();
+  });
+}
+
 
 // A presented identity, split into the part that identifies a person here and
 // the parts that merely say where it was presented. Without entering/leaving
@@ -6161,12 +6303,16 @@ ISSUED_FAMILIES.forEach(function (entry) {
  *
  * @returns the rows
  */
-function issuedList(onlyTokens) {
+function issuedList(onlyTokens, withArtifacts) {
   log.debug("Entering issuedList().");
   const nowMs = Date.now();
   const out = [];
   // `onlyTokens`: these token records alone, as rows, and no artifacts —
-  // `issuedById()`'s one jti (#820 part 3).
+  // `issuedById()`'s one jti (#820 part 3). `withArtifacts` (2026-10-22):
+  // those artifacts beside them, for the store-backed lists, which read
+  // their tokens from the store and the artifacts from every process.
+  const artifactRows = withArtifacts !== undefined ? withArtifacts
+    : (onlyTokens ? [] : allArtifacts());
   (onlyTokens || tokens).forEach(function (record) {
     out.push(Object.assign({}, record, {
       family: 'token',
@@ -6180,7 +6326,7 @@ function issuedList(onlyTokens) {
       revocationReach: 'protocol'
     }));
   });
-  (onlyTokens ? [] : allArtifacts()).forEach(function (one) {
+  (artifactRows || []).forEach(function (one) {
     const record = withRevocation(one);
     const family = FAMILY_BY_ARTIFACT_KIND[record.kind];
     // A credential, or a kind added to the registry and not to the structure
@@ -6356,7 +6502,22 @@ function issuedArtifactsOfKind(kind) {
  */
 function issuedSets() {
   log.debug("Entering issuedSets().");
-  const rows = issuedList();
+  const out = groupIssued(issuedList());
+  log.debug("Leaving issuedSets(). " + out.length + " set(s).");
+  return out;
+}
+
+// The rows of `issuedList()` grouped into sets — the body of `issuedSets()`,
+// taken out so that the store-backed lists below (2026-10-22, #820) group
+// the rows they read exactly as the held list is grouped.
+/**
+ * Groups issued rows into the sets one response issued together.
+ *
+ * @param rows - rows in `issuedList()`'s shape and order
+ * @returns the sets
+ */
+function groupIssued(rows) {
+  log.debug("Entering groupIssued().");
   const byKey = new Map();
   const order = [];
   rows.forEach(function (row) {
@@ -6461,7 +6622,7 @@ function issuedSets() {
       members: members
     };
   });
-  log.debug("Leaving issuedSets(). " + out.length + " set(s) over " +
+  log.debug("Leaving groupIssued(). " + out.length + " set(s) over " +
       rows.length + " " +
       "row(s).");
   return out;
@@ -6488,6 +6649,143 @@ function issuedSetByKey(setKey) {
   const found =
       issuedSets().filter(function (set) { return set.setKey === wanted; });
   log.debug("Leaving issuedSetByKey(). " + found.length + " set(s) hold it.");
+  return found.length ? found[0] : null;
+}
+
+// ---------------------------------------------------------------------------
+// THE SAME LISTS, READ FROM THE STORE (2026-10-22, #820).
+//
+// On demand the register holds at most 20,000 records in each process — the
+// recent ones it was asked about — so `issuedSets()` answered with what the
+// answering worker happened to hold: two workers drew two different Tokens
+// pages, `?session=` found only what was held, and opening a set found it
+// only on the worker that had minted it. These read the store, on the
+// driver's read pool, and never hold the event loop:
+//
+//   a session   every record filed under `sid:<id>` (the index #820 part 3
+//               added for sign-outs), and the artifacts issued under it;
+//   a set       `set:<id>` (the index key added for this), or one record by
+//               its key for a `one:` set;
+//   the list    the NEWEST `ISSUED_NEWEST` records the store holds, by when
+//               each row was written, with every artifact beside them — a
+//               bounded window and NOT the whole register, which the answer
+//               says (`coverage`); the total is the store's own count.
+//
+// Held whole (memory, development, in-process tests) every one answers as
+// the synchronous function beside it does, so the small-population
+// behaviour is unchanged. A store that cannot be asked falls back to what
+// this process holds and says so, rather than drawing an empty list that
+// would read as "nothing issued".
+// ---------------------------------------------------------------------------
+// How many of the newest records the store-backed list reads.
+const ISSUED_NEWEST = 500;
+
+/**
+ * Lists the issued sets from the store: one session's, or the newest.
+ *
+ * @param opts - `session` (an exact session id), optional
+ * @returns a promise of `{ sets, coverage, tokenCount }`: `coverage` says
+ *   what the list covers (`source` `held` or `store`, `newest`, `session`,
+ *   `complete`, `unread`), and `tokenCount` is the store's count of live
+ *   token records (null where it could not be counted)
+ */
+async function issuedSetsAsync(opts) {
+  log.debug("Entering issuedSetsAsync().");
+  const session = String((opts && opts.session) || '');
+  if (!tokens.onDemandLive()) {
+    log.debug("Leaving issuedSetsAsync(). Held whole.");
+    return { sets: issuedSets(),
+             coverage: { source: 'held', complete: true, newest: null,
+                         session: session || null, unread: false },
+             tokenCount: tokens.size };
+  }
+  let records = null;
+  let unread = '';
+  try {
+    const entries = session
+      ? await tokens.lookupEntriesAsync('sid:' + session)
+      : await tokens.newestAsync(ISSUED_NEWEST);
+    records = (entries || []).map(function (e) {
+      return e.value;
+    }).filter(Boolean);
+  } catch (e) {
+    log.debug("Caught in issuedSetsAsync(): " + ((e && e.message) || e));
+    unread = String((e && e.message) || e);
+  }
+  let tokenCount = null;
+  try {
+    tokenCount = await tokens.countAsync();
+  } catch (e) {
+    log.debug("Caught in issuedSetsAsync(), counting: " +
+              ((e && e.message) || e));
+    tokenCount = null;
+  }
+  if (records === null) {
+    log.warn(errorCodes.tag('STS-ADMIN-0890') + 'admin: the token register ' +
+             'could not be read from the store (' + unread + '); the list ' +
+             'is what this process holds.');
+    log.debug("Leaving issuedSetsAsync(). Unread.");
+    return { sets: issuedSets(),
+             coverage: { source: 'held', complete: false, newest: null,
+                         session: session || null, unread: true },
+             tokenCount: tokenCount };
+  }
+  const every = allArtifacts();
+  const artifactRows = session ? every.filter(function (one) {
+    return String((one && one.sessionId) || '') === session;
+  }) : every;
+  const sets = groupIssued(issuedList(records, artifactRows));
+  const complete = session ? true
+    : (tokenCount !== null && records.length >= tokenCount);
+  log.debug("Leaving issuedSetsAsync(). " + sets.length + " set(s) from " +
+            records.length + " record(s).");
+  return { sets: sets,
+           coverage: { source: 'store', complete: complete,
+                       newest: session ? null : ISSUED_NEWEST,
+                       session: session || null, unread: false },
+           tokenCount: tokenCount };
+}
+
+/**
+ * Returns one issued set by its key, read from the store on demand.
+ *
+ * @param setKey - the set's key, `set:<id>` or `one:<key>`
+ * @returns a promise of the set, or null
+ */
+async function issuedSetByKeyAsync(setKey) {
+  log.debug("Entering issuedSetByKeyAsync(). setKey=" + setKey);
+  const wanted = String(setKey == null ? '' : setKey).trim();
+  if (!wanted || !tokens.onDemandLive()) {
+    log.debug("Leaving issuedSetByKeyAsync(). Held whole, or nothing asked.");
+    return issuedSetByKey(wanted);
+  }
+  let records = [];
+  let artifactRows = [];
+  if (wanted.indexOf('set:') === 0) {
+    const entries = await tokens.lookupEntriesAsync(wanted);
+    records = entries.map(function (e) {
+      return e.value;
+    }).filter(Boolean);
+  } else if (wanted.indexOf('one:') === 0) {
+    const key = wanted.slice(4);
+    artifactRows = allArtifacts().filter(function (one) {
+      return one && String(one.key || one.id || '') === key;
+    });
+    if (!artifactRows.length && key) {
+      // Read off the event loop first, so the `get()` below is a hit.
+      await tokens.warm([key]);
+      const record = tokens.get(key);
+      if (record) {
+        records = [record];
+      }
+    }
+  }
+  const found = groupIssued(issuedList(records, artifactRows))
+    .filter(function (set) {
+      return set.setKey === wanted;
+    });
+  log.debug("Leaving issuedSetByKeyAsync(). " + found.length +
+            " set(s) hold it.");
   return found.length ? found[0] : null;
 }
 
@@ -7303,8 +7601,14 @@ function snapshot(opts) {
   // `withoutUsers` (2026-10-22, #820): a caller that reads none of the user
   // counts — the token lifetimes and SAML assertions pages — asks for none,
   // since building them is a row for every person, synchronously.
-  const knownUsers = (opts && opts.knownUsers) ||
-    (opts && opts.withoutUsers ? [] : userRows());
+  //
+  // `userCounts` (2026-10-22, #820): the four counts themselves, from
+  // `userCountsAsync()`, which builds no row at all — what Monitoring →
+  // Metrics and the dashboard hand in now. The rows are built only where
+  // neither is handed in and the caller did not decline them.
+  const userCounts = opts && opts.userCounts ? opts.userCounts : null;
+  const knownUsers = userCounts ? [] : ((opts && opts.knownUsers) ||
+    (opts && opts.withoutUsers ? [] : userRows()));
 
   const callRows = Array.from(calls.values())
                         .sort(function (a, b) { return b.count - a.count; });
@@ -7460,7 +7764,13 @@ function snapshot(opts) {
     // Counted, not listed: the whole list is what /admin/users is for, and
     // repeating it inside every metrics reply would make the two disagree the
     // first time one of them changed.
-    users: { known: knownUsers.length, cap: MAX_USERS,
+    users: userCounts ? {
+             known: userCounts.known, cap: MAX_USERS,
+             forgotten: nums.usersForgotten + alsoElsewhere('usersForgotten'),
+             authenticatedHere: userCounts.authenticatedHere,
+             clients: userCounts.clients,
+             authentications: userCounts.authentications } : {
+             known: knownUsers.length, cap: MAX_USERS,
              forgotten: nums.usersForgotten + alsoElsewhere('usersForgotten'),
              authenticatedHere: knownUsers.filter(
                  function (r) { return r.authenticated; }).length,
@@ -7553,6 +7863,7 @@ module.exports = {
   renameIdentity: renameIdentity,
   userRows: userRows,
   userRowsAsync: userRowsAsync,
+  userCountsAsync: userCountsAsync,
   withSubjectsResolvedAsync: withSubjectsResolvedAsync,
   // #352: one row, and the keys alone, without building every row.
   userRow: userRow,
@@ -7606,6 +7917,7 @@ module.exports = {
   artifactByKey: artifactByKey,
   revokeArtifactsWhere: revokeArtifactsWhere,
   artifactRevokedByKey: artifactRevokedByKey,
+  revokedArtifactKeys: revokedArtifactKeys,
   isRevoked: isRevoked,
   revokedCount: revokedCount,
   claimSet: claimSet,
@@ -7650,6 +7962,9 @@ module.exports = {
   artifactList: artifactList,
   issuedList: issuedList,
   issuedSets: issuedSets,
+  issuedSetsAsync: issuedSetsAsync,
+  issuedSetByKeyAsync: issuedSetByKeyAsync,
+  ISSUED_NEWEST: ISSUED_NEWEST,
   issuedSetByKey: issuedSetByKey,
   issuedById: issuedById,
   snapshot: snapshot,
