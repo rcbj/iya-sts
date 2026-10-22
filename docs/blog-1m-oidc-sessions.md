@@ -311,8 +311,8 @@ Each change taught something, and most of the lessons outlast this service.
 * **Not every write needs the disk before the answer.** A counter that
   loses its last few hundred milliseconds in a crash costs nothing; a
   refresh token that's lost after it was issued costs a session. Sorting
-  writes into "must be durable before we answer" and "may lag" took a
-  third off the disk syncs, without weakening anything a client relies on.
+  writes into "must be durable before we answer" and "may lag" cut the disk
+  syncs by 40%, without weakening anything a client relies on.
 * **Fewer round trips beats faster round trips.** One statement per flush
   instead of about eleven, and one risk query instead of seven, did more
   than any setting we turned.
@@ -373,7 +373,7 @@ under this particular load, or what else a changed password hash would
 trigger. The Kerberos re-derivation was a side effect I didn't trace until
 the numbers showed it. I added an index that killed heap-only updates, and
 proposed a range query over keys that turned out to be digests. Both were
-reverted within the hour, but only because we were measuring after every
+caught or reverted within the hour, but only because we were measuring after every
 change. The process mattered more than any single fix: one change at a
 time, measured on the real load, rolled back when the numbers said so.
 
