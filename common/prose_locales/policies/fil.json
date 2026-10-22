@@ -84,8 +84,8 @@
     "text": "Algorithm sa pag-hash ng password"
   },
   "password.FIELDS.hashAlgorithm.what": {
-    "en": "5fa1e8c07342e8c3",
-    "text": "Ang algorithm na ginagamit sa pag-hash ng bagong naka-store na password: argon2id (RFC 9106, ang unang pinili ng OWASP Password Storage Cheat Sheet) o scrypt (RFC 7914). Ang naka-store na hash ay nagsasabi ng sarili nitong algorithm at mga parameter at patuloy na nabe-verify; ang hindi gumagamit ng algorithm na ito na may ganitong mga parameter ay muling iha-hash sa susunod na na-verify na pag-sign in ng tao. Ang mga client secret, activation token, recovery code at app password ay hindi mga password at nananatiling scrypt."
+    "en": "9f6e2faa116ebe94",
+    "text": "Ang algorithm na ginagamit sa pag-hash ng bagong naka-store na password: scrypt (RFC 7914), ang default, o argon2id (RFC 9106, ang unang pinili ng OWASP Password Storage Cheat Sheet). Ang naka-store na hash ay nagsasabi ng sarili nitong algorithm at mga parameter at patuloy na nabe-verify; ang hindi gumagamit ng algorithm na ito na may ganitong mga parameter ay muling iha-hash sa susunod na na-verify na pag-sign in ng tao. Ang mga client secret, activation token, recovery code at app password ay hindi mga password at nananatiling scrypt."
   },
   "password.FIELDS.argon2Memory.label": {
     "en": "f56cee65f89ca6d4",
@@ -128,8 +128,8 @@
     "text": "Gastos ng scrypt (log2 ng N)"
   },
   "password.FIELDS.scryptLogN.what": {
-    "en": "ee968ef217ec87e1",
-    "text": "Ang gastos sa CPU at memory ng scrypt para sa bagong naka-store na password habang scrypt ang algorithm, bilang power of two: ang 17 ay N=131072. Kasama ang parallelism, kailangan nitong tumugon sa talahanayan ng OWASP: 2^17 na may p=1, 2^16 na may p=2, 2^15 na may p=3, 2^14 na may p=5, o 2^13 na may p=10."
+    "en": "d6b7b8f956d8c0b0",
+    "text": "Ang gastos sa CPU at memory ng scrypt para sa bagong naka-store na password habang scrypt ang algorithm, bilang power of two: ang 15 (ang default) ay N=32768. Ipinapares ito ng talahanayan ng OWASP sa parallelism: 2^17 na may p=1, 2^16 na may p=2, 2^15 na may p=3, 2^14 na may p=5, o 2^13 na may p=10. Ang default, 2^15 na may p=1, ay mas mababa rito."
   },
   "password.FIELDS.scryptBlockSize.label": {
     "en": "7b7e7b5de9b8be58",
@@ -184,8 +184,8 @@
     "text": "Gaano kahaba ang password na GINAGAWA ng serbisyong ito — para sa bagong user na ginawa mula sa console o /admin-api, sa Generate ng isang operator, at sa product-mode na bootstrap account. Dapat itong hindi bababa sa minimum na haba at hindi bababa sa dalawang beses ng bilang ng simbolo dagdag ang dalawa. Ang dalawampung character mula sa alphabet na may 90 character ay mga 130 bit."
   },
   "password.SCHEMA.attributes.stsPwdHashAlgorithm.what": {
-    "en": "5fa1e8c07342e8c3",
-    "text": "Ang algorithm na ginagamit sa pag-hash ng bagong naka-store na password: argon2id (RFC 9106, ang unang pinili ng OWASP Password Storage Cheat Sheet) o scrypt (RFC 7914). Ang naka-store na hash ay nagsasabi ng sarili nitong algorithm at mga parameter at patuloy na nabe-verify; ang hindi gumagamit ng algorithm na ito na may ganitong mga parameter ay muling iha-hash sa susunod na na-verify na pag-sign in ng tao. Ang mga client secret, activation token, recovery code at app password ay hindi mga password at nananatiling scrypt."
+    "en": "9f6e2faa116ebe94",
+    "text": "Ang algorithm na ginagamit sa pag-hash ng bagong naka-store na password: scrypt (RFC 7914), ang default, o argon2id (RFC 9106, ang unang pinili ng OWASP Password Storage Cheat Sheet). Ang naka-store na hash ay nagsasabi ng sarili nitong algorithm at mga parameter at patuloy na nabe-verify; ang hindi gumagamit ng algorithm na ito na may ganitong mga parameter ay muling iha-hash sa susunod na na-verify na pag-sign in ng tao. Ang mga client secret, activation token, recovery code at app password ay hindi mga password at nananatiling scrypt."
   },
   "password.SCHEMA.attributes.stsPwdArgon2Memory.what": {
     "en": "ec649d8291c32776",
@@ -200,8 +200,8 @@
     "text": "Ilang lane ang paghahatian ng memory ng argon2id (p). Bahagi ito ng hash, hindi bilang ng thread: kinukwenta ng node ang isang hash sa iisang thread anuman ang sabihin nito. Ang 1 ang bilang ng OWASP."
   },
   "password.SCHEMA.attributes.stsPwdScryptLogN.what": {
-    "en": "ee968ef217ec87e1",
-    "text": "Ang gastos sa CPU at memory ng scrypt para sa bagong naka-store na password habang scrypt ang algorithm, bilang power of two: ang 17 ay N=131072. Kasama ang parallelism, kailangan nitong tumugon sa talahanayan ng OWASP: 2^17 na may p=1, 2^16 na may p=2, 2^15 na may p=3, 2^14 na may p=5, o 2^13 na may p=10."
+    "en": "d6b7b8f956d8c0b0",
+    "text": "Ang gastos sa CPU at memory ng scrypt para sa bagong naka-store na password habang scrypt ang algorithm, bilang power of two: ang 15 (ang default) ay N=32768. Ipinapares ito ng talahanayan ng OWASP sa parallelism: 2^17 na may p=1, 2^16 na may p=2, 2^15 na may p=3, 2^14 na may p=5, o 2^13 na may p=10. Ang default, 2^15 na may p=1, ay mas mababa rito."
   },
   "password.SCHEMA.attributes.stsPwdScryptBlockSize.what": {
     "en": "f0c104745b77d30a",

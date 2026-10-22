@@ -84,8 +84,8 @@
     "text": "密碼雜湊演算法"
   },
   "password.FIELDS.hashAlgorithm.what": {
-    "en": "5fa1e8c07342e8c3",
-    "text": "新儲存的密碼所用的雜湊演算法：argon2id（RFC 9106，OWASP Password Storage Cheat Sheet 的首選）或 scrypt（RFC 7914）。已儲存的雜湊註明其本身的演算法與參數，並繼續可以驗證；不是此演算法與這些參數的雜湊，會在此人下一次經過驗證的登入時重新計算。用戶端密鑰、啟用權杖、復原碼與應用程式密碼不是密碼，仍使用 scrypt。"
+    "en": "9f6e2faa116ebe94",
+    "text": "新儲存的密碼所用的雜湊演算法：scrypt（RFC 7914，預設）或 argon2id（RFC 9106，OWASP Password Storage Cheat Sheet 的首選）。已儲存的雜湊註明其本身的演算法與參數，並繼續可以驗證；不是此演算法與這些參數的雜湊，會在此人下一次經過驗證的登入時重新計算。用戶端密鑰、啟用權杖、復原碼與應用程式密碼不是密碼，仍使用 scrypt。"
   },
   "password.FIELDS.argon2Memory.label": {
     "en": "f56cee65f89ca6d4",
@@ -128,8 +128,8 @@
     "text": "scrypt 成本（N 的 log2）"
   },
   "password.FIELDS.scryptLogN.what": {
-    "en": "ee968ef217ec87e1",
-    "text": "演算法為 scrypt 時，新儲存密碼的 scrypt CPU 與記憶體成本，以 2 的冪表示：17 即 N=131072。它與平行度一起必須符合 OWASP 的表：2^17 配 p=1、2^16 配 p=2、2^15 配 p=3、2^14 配 p=5，或 2^13 配 p=10。"
+    "en": "d6b7b8f956d8c0b0",
+    "text": "演算法為 scrypt 時，新儲存密碼的 scrypt CPU 與記憶體成本，以 2 的冪表示：15（預設值）即 N=32768。OWASP 的表將它與平行度配對：2^17 配 p=1、2^16 配 p=2、2^15 配 p=3、2^14 配 p=5，或 2^13 配 p=10。預設值 2^15 配 p=1 低於該表。"
   },
   "password.FIELDS.scryptBlockSize.label": {
     "en": "7b7e7b5de9b8be58",
@@ -184,8 +184,8 @@
     "text": "本服務「自行產生」的密碼有多長——用於從主控台或 /admin-api 建立的新使用者、營運者的「產生」，以及產品模式的啟動帳戶。它必須至少等於最小長度，且至少為符號數的兩倍加二。從 90 個字元的字母表中取二十個字元約為 130 位元。"
   },
   "password.SCHEMA.attributes.stsPwdHashAlgorithm.what": {
-    "en": "5fa1e8c07342e8c3",
-    "text": "新儲存的密碼所用的雜湊演算法：argon2id（RFC 9106，OWASP Password Storage Cheat Sheet 的首選）或 scrypt（RFC 7914）。已儲存的雜湊註明其本身的演算法與參數，並繼續可以驗證；不是此演算法與這些參數的雜湊，會在此人下一次經過驗證的登入時重新計算。用戶端密鑰、啟用權杖、復原碼與應用程式密碼不是密碼，仍使用 scrypt。"
+    "en": "9f6e2faa116ebe94",
+    "text": "新儲存的密碼所用的雜湊演算法：scrypt（RFC 7914，預設）或 argon2id（RFC 9106，OWASP Password Storage Cheat Sheet 的首選）。已儲存的雜湊註明其本身的演算法與參數，並繼續可以驗證；不是此演算法與這些參數的雜湊，會在此人下一次經過驗證的登入時重新計算。用戶端密鑰、啟用權杖、復原碼與應用程式密碼不是密碼，仍使用 scrypt。"
   },
   "password.SCHEMA.attributes.stsPwdArgon2Memory.what": {
     "en": "ec649d8291c32776",
@@ -200,8 +200,8 @@
     "text": "argon2id 將其記憶體劃分成的通道數（p）。它是雜湊的一部分，而不是執行緒數：無論這裡寫多少，node 都在一個執行緒上計算雜湊。1 是 OWASP 的值。"
   },
   "password.SCHEMA.attributes.stsPwdScryptLogN.what": {
-    "en": "ee968ef217ec87e1",
-    "text": "演算法為 scrypt 時，新儲存密碼的 scrypt CPU 與記憶體成本，以 2 的冪表示：17 即 N=131072。它與平行度一起必須符合 OWASP 的表：2^17 配 p=1、2^16 配 p=2、2^15 配 p=3、2^14 配 p=5，或 2^13 配 p=10。"
+    "en": "d6b7b8f956d8c0b0",
+    "text": "演算法為 scrypt 時，新儲存密碼的 scrypt CPU 與記憶體成本，以 2 的冪表示：15（預設值）即 N=32768。OWASP 的表將它與平行度配對：2^17 配 p=1、2^16 配 p=2、2^15 配 p=3、2^14 配 p=5，或 2^13 配 p=10。預設值 2^15 配 p=1 低於該表。"
   },
   "password.SCHEMA.attributes.stsPwdScryptBlockSize.what": {
     "en": "f0c104745b77d30a",

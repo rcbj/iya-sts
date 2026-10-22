@@ -84,8 +84,8 @@
     "text": "Algorithme de hachage des mots de passe"
   },
   "password.FIELDS.hashAlgorithm.what": {
-    "en": "5fa1e8c07342e8c3",
-    "text": "L'algorithme avec lequel un mot de passe nouvellement enregistré est haché : argon2id (RFC 9106, le premier choix de l'OWASP Password Storage Cheat Sheet) ou scrypt (RFC 7914). Un hachage enregistré indique son propre algorithme et ses paramètres et continue d'être vérifié ; un hachage qui n'utilise pas cet algorithme avec ces paramètres est haché à nouveau lors de la prochaine connexion vérifiée de la personne. Les secrets client, jetons d'activation, codes de récupération et mots de passe d'application ne sont pas des mots de passe et restent en scrypt."
+    "en": "9f6e2faa116ebe94",
+    "text": "L'algorithme avec lequel un mot de passe nouvellement enregistré est haché : scrypt (RFC 7914), par défaut, ou argon2id (RFC 9106, le premier choix de l'OWASP Password Storage Cheat Sheet). Un hachage enregistré indique son propre algorithme et ses paramètres et continue d'être vérifié ; un hachage qui n'utilise pas cet algorithme avec ces paramètres est haché à nouveau lors de la prochaine connexion vérifiée de la personne. Les secrets client, jetons d'activation, codes de récupération et mots de passe d'application ne sont pas des mots de passe et restent en scrypt."
   },
   "password.FIELDS.argon2Memory.label": {
     "en": "f56cee65f89ca6d4",
@@ -128,8 +128,8 @@
     "text": "Coût scrypt (log2 de N)"
   },
   "password.FIELDS.scryptLogN.what": {
-    "en": "ee968ef217ec87e1",
-    "text": "Le coût CPU et mémoire de scrypt pour un mot de passe nouvellement enregistré lorsque l'algorithme est scrypt, en puissance de deux : 17 correspond à N=131072. Avec le parallélisme, il doit respecter le tableau de l'OWASP : 2^17 avec p=1, 2^16 avec p=2, 2^15 avec p=3, 2^14 avec p=5, ou 2^13 avec p=10."
+    "en": "d6b7b8f956d8c0b0",
+    "text": "Le coût CPU et mémoire de scrypt pour un mot de passe nouvellement enregistré lorsque l'algorithme est scrypt, en puissance de deux : 15 (la valeur par défaut) correspond à N=32768. Le tableau de l'OWASP l'associe au parallélisme : 2^17 avec p=1, 2^16 avec p=2, 2^15 avec p=3, 2^14 avec p=5, ou 2^13 avec p=10. La valeur par défaut, 2^15 avec p=1, est en dessous."
   },
   "password.FIELDS.scryptBlockSize.label": {
     "en": "7b7e7b5de9b8be58",
@@ -184,8 +184,8 @@
     "text": "La longueur d’un mot de passe que ce service INVENTE — pour un nouvel utilisateur créé depuis la console ou /admin-api, l’action Générer d’un opérateur, et le compte d’amorçage du mode produit. Elle doit être au moins égale à la longueur minimale et au moins égale à deux fois le nombre de symboles plus deux. Vingt caractères tirés d’un alphabet de 90 caractères représentent environ 130 bits."
   },
   "password.SCHEMA.attributes.stsPwdHashAlgorithm.what": {
-    "en": "5fa1e8c07342e8c3",
-    "text": "L'algorithme avec lequel un mot de passe nouvellement enregistré est haché : argon2id (RFC 9106, le premier choix de l'OWASP Password Storage Cheat Sheet) ou scrypt (RFC 7914). Un hachage enregistré indique son propre algorithme et ses paramètres et continue d'être vérifié ; un hachage qui n'utilise pas cet algorithme avec ces paramètres est haché à nouveau lors de la prochaine connexion vérifiée de la personne. Les secrets client, jetons d'activation, codes de récupération et mots de passe d'application ne sont pas des mots de passe et restent en scrypt."
+    "en": "9f6e2faa116ebe94",
+    "text": "L'algorithme avec lequel un mot de passe nouvellement enregistré est haché : scrypt (RFC 7914), par défaut, ou argon2id (RFC 9106, le premier choix de l'OWASP Password Storage Cheat Sheet). Un hachage enregistré indique son propre algorithme et ses paramètres et continue d'être vérifié ; un hachage qui n'utilise pas cet algorithme avec ces paramètres est haché à nouveau lors de la prochaine connexion vérifiée de la personne. Les secrets client, jetons d'activation, codes de récupération et mots de passe d'application ne sont pas des mots de passe et restent en scrypt."
   },
   "password.SCHEMA.attributes.stsPwdArgon2Memory.what": {
     "en": "ec649d8291c32776",
@@ -200,8 +200,8 @@
     "text": "Le nombre de voies entre lesquelles argon2id divise sa mémoire (p). Il fait partie du hachage, ce n'est pas un nombre de threads : node calcule un hachage sur un seul thread quelle que soit cette valeur. 1 est la valeur de l'OWASP."
   },
   "password.SCHEMA.attributes.stsPwdScryptLogN.what": {
-    "en": "ee968ef217ec87e1",
-    "text": "Le coût CPU et mémoire de scrypt pour un mot de passe nouvellement enregistré lorsque l'algorithme est scrypt, en puissance de deux : 17 correspond à N=131072. Avec le parallélisme, il doit respecter le tableau de l'OWASP : 2^17 avec p=1, 2^16 avec p=2, 2^15 avec p=3, 2^14 avec p=5, ou 2^13 avec p=10."
+    "en": "d6b7b8f956d8c0b0",
+    "text": "Le coût CPU et mémoire de scrypt pour un mot de passe nouvellement enregistré lorsque l'algorithme est scrypt, en puissance de deux : 15 (la valeur par défaut) correspond à N=32768. Le tableau de l'OWASP l'associe au parallélisme : 2^17 avec p=1, 2^16 avec p=2, 2^15 avec p=3, 2^14 avec p=5, ou 2^13 avec p=10. La valeur par défaut, 2^15 avec p=1, est en dessous."
   },
   "password.SCHEMA.attributes.stsPwdScryptBlockSize.what": {
     "en": "f0c104745b77d30a",

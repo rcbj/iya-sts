@@ -84,8 +84,8 @@
     "text": "Algoritmo de hash de contraseñas"
   },
   "password.FIELDS.hashAlgorithm.what": {
-    "en": "5fa1e8c07342e8c3",
-    "text": "El algoritmo con el que se calcula el hash de una contraseña recién almacenada: argon2id (RFC 9106, la primera opción del OWASP Password Storage Cheat Sheet) o scrypt (RFC 7914). Un hash almacenado indica su propio algoritmo y parámetros y se sigue verificando; uno que no use este algoritmo con estos parámetros se vuelve a calcular en el siguiente inicio de sesión verificado de la persona. Los secretos de cliente, tokens de activación, códigos de recuperación y contraseñas de aplicación no son contraseñas y siguen en scrypt."
+    "en": "9f6e2faa116ebe94",
+    "text": "El algoritmo con el que se calcula el hash de una contraseña recién almacenada: scrypt (RFC 7914), el predeterminado, o argon2id (RFC 9106, la primera opción del OWASP Password Storage Cheat Sheet). Un hash almacenado indica su propio algoritmo y parámetros y se sigue verificando; uno que no use este algoritmo con estos parámetros se vuelve a calcular en el siguiente inicio de sesión verificado de la persona. Los secretos de cliente, tokens de activación, códigos de recuperación y contraseñas de aplicación no son contraseñas y siguen en scrypt."
   },
   "password.FIELDS.argon2Memory.label": {
     "en": "f56cee65f89ca6d4",
@@ -128,8 +128,8 @@
     "text": "Coste de scrypt (log2 de N)"
   },
   "password.FIELDS.scryptLogN.what": {
-    "en": "ee968ef217ec87e1",
-    "text": "El coste de CPU y memoria de scrypt para una contraseña recién almacenada cuando el algoritmo es scrypt, como potencia de dos: 17 es N=131072. Junto con el paralelismo debe cumplir la tabla de OWASP: 2^17 con p=1, 2^16 con p=2, 2^15 con p=3, 2^14 con p=5 o 2^13 con p=10."
+    "en": "d6b7b8f956d8c0b0",
+    "text": "El coste de CPU y memoria de scrypt para una contraseña recién almacenada cuando el algoritmo es scrypt, como potencia de dos: 15 (el valor predeterminado) es N=32768. La tabla de OWASP lo combina con el paralelismo: 2^17 con p=1, 2^16 con p=2, 2^15 con p=3, 2^14 con p=5 o 2^13 con p=10. El valor predeterminado, 2^15 con p=1, está por debajo de ella."
   },
   "password.FIELDS.scryptBlockSize.label": {
     "en": "7b7e7b5de9b8be58",
@@ -184,8 +184,8 @@
     "text": "La longitud de una contraseña que este servicio INVENTA: para un usuario nuevo creado desde la consola o /admin-api, el botón Generar de un operador y la cuenta de arranque del modo producto. Debe ser al menos la longitud mínima y al menos el doble del número de símbolos más dos. Veinte caracteres de un alfabeto de 90 caracteres equivalen a unos 130 bits."
   },
   "password.SCHEMA.attributes.stsPwdHashAlgorithm.what": {
-    "en": "5fa1e8c07342e8c3",
-    "text": "El algoritmo con el que se calcula el hash de una contraseña recién almacenada: argon2id (RFC 9106, la primera opción del OWASP Password Storage Cheat Sheet) o scrypt (RFC 7914). Un hash almacenado indica su propio algoritmo y parámetros y se sigue verificando; uno que no use este algoritmo con estos parámetros se vuelve a calcular en el siguiente inicio de sesión verificado de la persona. Los secretos de cliente, tokens de activación, códigos de recuperación y contraseñas de aplicación no son contraseñas y siguen en scrypt."
+    "en": "9f6e2faa116ebe94",
+    "text": "El algoritmo con el que se calcula el hash de una contraseña recién almacenada: scrypt (RFC 7914), el predeterminado, o argon2id (RFC 9106, la primera opción del OWASP Password Storage Cheat Sheet). Un hash almacenado indica su propio algoritmo y parámetros y se sigue verificando; uno que no use este algoritmo con estos parámetros se vuelve a calcular en el siguiente inicio de sesión verificado de la persona. Los secretos de cliente, tokens de activación, códigos de recuperación y contraseñas de aplicación no son contraseñas y siguen en scrypt."
   },
   "password.SCHEMA.attributes.stsPwdArgon2Memory.what": {
     "en": "ec649d8291c32776",
@@ -200,8 +200,8 @@
     "text": "En cuántos carriles divide argon2id su memoria (p). Forma parte del hash, no es un número de hilos: node calcula un hash en un solo hilo diga lo que diga esto. 1 es la cifra de OWASP."
   },
   "password.SCHEMA.attributes.stsPwdScryptLogN.what": {
-    "en": "ee968ef217ec87e1",
-    "text": "El coste de CPU y memoria de scrypt para una contraseña recién almacenada cuando el algoritmo es scrypt, como potencia de dos: 17 es N=131072. Junto con el paralelismo debe cumplir la tabla de OWASP: 2^17 con p=1, 2^16 con p=2, 2^15 con p=3, 2^14 con p=5 o 2^13 con p=10."
+    "en": "d6b7b8f956d8c0b0",
+    "text": "El coste de CPU y memoria de scrypt para una contraseña recién almacenada cuando el algoritmo es scrypt, como potencia de dos: 15 (el valor predeterminado) es N=32768. La tabla de OWASP lo combina con el paralelismo: 2^17 con p=1, 2^16 con p=2, 2^15 con p=3, 2^14 con p=5 o 2^13 con p=10. El valor predeterminado, 2^15 con p=1, está por debajo de ella."
   },
   "password.SCHEMA.attributes.stsPwdScryptBlockSize.what": {
     "en": "f0c104745b77d30a",

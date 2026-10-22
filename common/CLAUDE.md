@@ -1140,6 +1140,23 @@ about **35 ms**, scrypt at 2^15 (p=3) about **250 ms** and at 2^17 (p=1) about
 **460 ms**, `hashSecret()`'s scrypt at 2^15 p=1 about **97 ms** —
 `tests/password_argon2id.js` logs the figures every run.
 
+**THE DEFAULT IS scrypt AGAIN SINCE 2026-10-22 (#820), AND ARGON2ID IS AN
+OPTION.** rcbj: "Make the default scrypt hashes, but keep argon2id as a
+supported option. Restore the original defaults for now." #847's defaults
+rehashed every stored password at its next sign-in, and on the load host 8081
+sign-in went from about 206 ms to about 387 ms. So `passwordHashSpec()` with no
+spec, and the policy's `hashAlgorithm` default, are scrypt at N=2^15, r=8, p=1
+— the pre-#847 parameters every stored password there already has — and
+`PASSWORD_HASH_ALGORITHMS` lists scrypt first. Decision 3 is half undone for
+scrypt: **the p floor in `passwordHashSpec()` is off** (p is taken as asked;
+`scryptOwaspMinP()` is still exported) and so is the policy's OWASP
+cross-field check, because the default itself is below the table and a policy
+must be able to save its own default. argon2id's floors are unchanged. The
+rehash rule is unchanged too and stays "different from the policy": a person
+whose stored hash is argon2id is hashed again with scrypt at 2^15 at their
+next verified sign-in, once, at about 100 ms. **#872 makes one of OWASP's
+pairs the default and restores both checks.**
+
 ### The four scrypt functions are one implementation with two doors
 
 `hashSecret` / `hashSecretAsync` and `verifySecret` / `verifySecretAsync` in
@@ -8661,7 +8678,9 @@ Seven more rows: `hashAlgorithm` (`stsPwdHashAlgorithm`, `argon2id` or
 `scrypt`, an `enum` row), `argon2Memory` / `argon2Iterations` /
 `argon2Parallelism` (min 19456 KiB / 2 / 1) and `scryptLogN` /
 `scryptBlockSize` / `scryptParallelism` (min 13 / 8 / 1, with OWASP's N-and-p
-table as a cross-field rule). **They are `optional`**: a save that leaves one
+table as a cross-field rule until 2026-10-22: since then the default is
+scrypt at 2^15, r=8, p=1, below that table, and the rule is off until #872 —
+see *A person's password is argon2id*, above). **They are `optional`**: a save that leaves one
 out keeps the value in force rather than being refused, because every caller
 written before them sends the six composition rows only.
 `hashSpec(profile)` answers them in `crypto.hashPassword()`'s shape, and
