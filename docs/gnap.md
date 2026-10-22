@@ -153,7 +153,7 @@ none:
 
 **The access-token status list is the realm's one list.** GNAP's JWTs share it
 with OAuth's [RFC 9068 access tokens](oauth-oidc.md#jwt-access-tokens-rfc-9068).
-It holds one bit per token over 1,048,576 indexes. Each index is allocated at
+It holds one bit per token over 16,777,216 indexes. Each index is allocated at
 random when the token is minted and freed when the token expires. The bit is
 computed from the revocation itself, so it is set however the token is revoked:
 at its management URI, by rotation, by revoking its grant, on `/admin/tokens`

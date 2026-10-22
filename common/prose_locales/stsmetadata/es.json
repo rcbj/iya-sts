@@ -2848,8 +2848,8 @@
     "text": "Un active/inactive honesto con los claims del token presentado (acr y auth_time entre ellos, RFC 9470 sección 6.2) como JSON de RFC 7662 o, cuando el encabezado Accept nombra application/token-introspection+jwt, como un JWT de RFC 9701 firmado (y opcionalmente cifrado) para el servidor de recursos que lo pidió, con los algoritmos que registró. Una solicitud JWT debe autenticarse como cliente en todos los modos y en caso contrario se rechaza con 400 invalid_client; una solicitud JSON debe autenticarse en modo producto (401) y no necesita hacerlo en desarrollo."
   },
   "stsmetadata.endpoints./status-lists/access-tokens.what": {
-    "en": "9968fbaef6a6743d",
-    "text": "El ÚNICO Status List Token de tokens de acceso del dominio (#432): cada token de acceso OAuth de RFC 9068 y cada token GNAP jwt-signed y jwt-encrypted nombra un índice en él (status.status_list), de modo que un servidor de recursos que comprueba un token por su cuenta lo ve revocado. application/statuslist+jwt, o application/statuslist+cwt según Accept; un bit por token sobre 1.048.576 índices, el bit calculado a partir del registro de revocación; ttl oauth2.accessTokenStatusListTtlS, exp oauth2.accessTokenStatusListLifetimeS, firmado con la clave RS256 de tokens de acceso del dominio. ?time= responde 501."
+    "en": "bd042da837f12da5",
+    "text": "El ÚNICO Status List Token de tokens de acceso del dominio (#432): cada token de acceso OAuth de RFC 9068 y cada token GNAP jwt-signed y jwt-encrypted nombra un índice en él (status.status_list), de modo que un servidor de recursos que comprueba un token por su cuenta lo ve revocado. application/statuslist+jwt, o application/statuslist+cwt según Accept; un bit por token sobre 16.777.216 índices, el bit calculado a partir del registro de revocación; ttl oauth2.accessTokenStatusListTtlS, exp oauth2.accessTokenStatusListLifetimeS, firmado con la clave RS256 de tokens de acceso del dominio. ?time= responde 501."
   },
   "stsmetadata.endpoints./status-lists.what": {
     "en": "9a8ef90105d2caca",

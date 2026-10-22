@@ -2848,8 +2848,8 @@
     "text": "Un actif/inactif honnête avec les revendications du jeton présenté — dont acr et auth_time (RFC 9470 section 6.2) — en JSON RFC 7662 ou, lorsque l’en-tête Accept nomme application/token-introspection+jwt, sous forme de JWT RFC 9701 signé (et éventuellement chiffré) pour le serveur de ressources qui l’a demandé, avec les algorithmes qu’il a enregistrés. Une requête JWT doit s’authentifier en tant que client dans tous les modes, faute de quoi elle est refusée par 400 invalid_client ; une requête JSON doit s’authentifier en mode produit (401) et n’y est pas tenue en mode développement."
   },
   "stsmetadata.endpoints./status-lists/access-tokens.what": {
-    "en": "9968fbaef6a6743d",
-    "text": "L’UNIQUE Status List Token des jetons d’accès du domaine (#432) : chaque jeton d’accès OAuth RFC 9068 et chaque jeton GNAP jwt-signed et jwt-encrypted y nomme un index (status.status_list), si bien qu’un serveur de ressources qui vérifie un jeton par lui-même le voit révoqué. application/statuslist+jwt, ou application/statuslist+cwt selon Accept ; un bit par jeton sur 1 048 576 index, le bit étant calculé à partir du registre des révocations ; ttl oauth2.accessTokenStatusListTtlS, exp oauth2.accessTokenStatusListLifetimeS, signé avec la clé RS256 des jetons d’accès du domaine. ?time= répond 501."
+    "en": "bd042da837f12da5",
+    "text": "L’UNIQUE Status List Token des jetons d’accès du domaine (#432) : chaque jeton d’accès OAuth RFC 9068 et chaque jeton GNAP jwt-signed et jwt-encrypted y nomme un index (status.status_list), si bien qu’un serveur de ressources qui vérifie un jeton par lui-même le voit révoqué. application/statuslist+jwt, ou application/statuslist+cwt selon Accept ; un bit par jeton sur 16 777 216 index, le bit étant calculé à partir du registre des révocations ; ttl oauth2.accessTokenStatusListTtlS, exp oauth2.accessTokenStatusListLifetimeS, signé avec la clé RS256 des jetons d’accès du domaine. ?time= répond 501."
   },
   "stsmetadata.endpoints./status-lists.what": {
     "en": "9a8ef90105d2caca",
