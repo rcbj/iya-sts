@@ -1736,6 +1736,24 @@ Measured cost, three workers on one PostgreSQL store: 37ms to 43ms per read and
 that existed before it, and because whether the wait is worth it is a question
 about the callers rather than about the pool.
 
+**THE CODE FLOW NEEDS IT (2026-10-22, #820).** On 8081, with 4 workers and it
+off, about 20% of `/oauth2/token` code exchanges answered "Unknown or
+already-used authorization code". Each one was a code another worker had just
+written. Turning it off is not a performance setting.
+
+**WHERE A DISPATCHED REQUEST'S TIME GOES (2026-10-22, #820)**:
+`common/request_phases.js`.
+- **The front** times three phases: the ticket wait, the read barrier, and
+  the round trip.
+- **The worker** times the rest: its commit barrier reports the handler, the
+  commit hold, and the time its loop was blocked in synchronous store reads.
+  It sends them in `x-sts-pool-phases`, which the front asks for and takes off.
+- **Reporting:** once a minute, one `request phases` log line per busiest
+  route, with p50/p95 for each phase. The last window is also kept in the
+  pool's `stats().phases`.
+- **Why it exists:** refreshes stopped at about 160 a second with 4 workers
+  and with 8 alike, and nothing measured where the time went.
+
 **A WORKER NO LONGER ANSWERS A WRITE BEFORE IT COMMITS (2026-09-29, #351).**
 `request_worker.ts`'s header still says the worker "answers immediately" and
 announces the commit afterwards; in postgres mode the first half stopped being
