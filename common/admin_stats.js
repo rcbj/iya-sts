@@ -6680,7 +6680,8 @@ async function issuedSetsAsync(opts) {
     log.debug("Leaving issuedSetsAsync(). Held whole.");
     return { sets: issuedSets(),
              coverage: { source: 'held', complete: true, newest: null,
-                         session: session || null, unread: false },
+                         session: session || null, unread: false,
+                         countEstimated: false },
              tokenCount: tokens.size };
   }
   let records = null;
@@ -6696,9 +6697,19 @@ async function issuedSetsAsync(opts) {
     log.debug("Caught in issuedSetsAsync(): " + ((e && e.message) || e));
     unread = String((e && e.message) || e);
   }
+  // THE TOTAL IS AN ESTIMATE WHERE THE STORE IS LARGE (2026-10-22, #820).
+  // The exact count was a scan of every live token record — 5.7-8.6 s on
+  // 8081's 2.4M, on every view of this page. `countEstimateAsync()` answers
+  // the planner's estimate for a large store and the exact count for a small
+  // one (`persistence_minted.js`); `countEstimated` tells the page and the
+  // API which they got, and an estimated total never makes the list
+  // "complete".
   let tokenCount = null;
+  let countEstimated = false;
   try {
-    tokenCount = await tokens.countAsync();
+    const counted = await tokens.countEstimateAsync();
+    tokenCount = counted.count;
+    countEstimated = !counted.exact;
   } catch (e) {
     log.debug("Caught in issuedSetsAsync(), counting: " +
               ((e && e.message) || e));
@@ -6711,7 +6722,8 @@ async function issuedSetsAsync(opts) {
     log.debug("Leaving issuedSetsAsync(). Unread.");
     return { sets: issuedSets(),
              coverage: { source: 'held', complete: false, newest: null,
-                         session: session || null, unread: true },
+                         session: session || null, unread: true,
+                         countEstimated: countEstimated },
              tokenCount: tokenCount };
   }
   const every = allArtifacts();
@@ -6720,13 +6732,14 @@ async function issuedSetsAsync(opts) {
   }) : every;
   const sets = groupIssued(issuedList(records, artifactRows));
   const complete = session ? true
-    : (tokenCount !== null && records.length >= tokenCount);
+    : (tokenCount !== null && !countEstimated && records.length >= tokenCount);
   log.debug("Leaving issuedSetsAsync(). " + sets.length + " set(s) from " +
             records.length + " record(s).");
   return { sets: sets,
            coverage: { source: 'store', complete: complete,
                        newest: session ? null : ISSUED_NEWEST,
-                       session: session || null, unread: false },
+                       session: session || null, unread: false,
+                       countEstimated: countEstimated },
            tokenCount: tokenCount };
 }
 

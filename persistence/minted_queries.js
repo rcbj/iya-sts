@@ -33,6 +33,9 @@
 //                   Only a store declaring `sortBy` has a sort value.
 //   minted.count    how many live rows one store holds in one realm
 //                   (2026-10-22, #820): a console total, on the read pool.
+//   minted.estimate the PLANNER's estimate of how many rows one store holds
+//                   in one realm (2026-10-22, #820): the console total of a
+//                   large store, where the exact count is a scan of it.
 //
 // A tombstone is an absence to every reader. Nothing here opens a body: the
 // rows come back sealed, and the process that asked opens them.
@@ -96,6 +99,23 @@ const COUNT = 'SELECT count(*)::bigint AS n FROM sts_minted WHERE ' +
   'handle = $1 AND realm = $2 AND body <> $3 AND (expires_at IS NULL OR ' +
   'expires_at > $4)';
 
+// THE ESTIMATE IS THE PLANNER'S, READ OUT OF `EXPLAIN` (2026-10-22, #820).
+// `minted.count` is exact and is a scan of the store's whole partition —
+// measured on 8081 with 2.43M token rows, 5.7-8.6 s per Monitoring -> Tokens
+// view; an index-only count of (handle, realm) is still linear (427 ms) and
+// grows with the store. `EXPLAIN` runs nothing: it asks the planner how many
+// rows the predicate matches, from the column statistics ANALYZE (and
+// autovacuum) keep — 0.5 ms warm, and 2,363,753 against 2,429,984 there,
+// within 3 %. It is a statistic, so it can be stale (a store that has just
+// grown or been purged) and is no count at all for a small store: the
+// realm with no tokens was estimated at 3,527. The caller therefore asks
+// the exact count below a threshold (`persistence_minted.js`) and labels
+// what it shows as an estimate above it. Only the two equality columns are
+// in the predicate — the planner's guess at `body <> tombstone` and the
+// expiry adds error, not precision.
+const ESTIMATE = 'EXPLAIN (FORMAT JSON) SELECT 1 FROM sts_minted WHERE ' +
+  'handle = $1 AND realm = $2';
+
 // The most rows one page answers.
 const PAGE_LIMIT = 500;
 
@@ -111,10 +131,10 @@ const BY_INDEX_LIMIT = 10000;
  * Builds one named statement.
  *
  * @param {string} name - `minted.read`, `minted.page`, `minted.byIndex`,
- *   `minted.newest` or `minted.count`
+ *   `minted.newest`, `minted.count` or `minted.estimate`
  * @param {unknown[]} args - `[handle, realm, key]`,
- *   `[handle, realm, indexKey]`, `[handle, realm, now, limit]` or
- *   `[handle, realm, now]`
+ *   `[handle, realm, indexKey]`, `[handle, realm, now, limit]`,
+ *   `[handle, realm, now]` or `[handle, realm]`
  * @returns {{ text: string, values: unknown[] }}
  */
 function build(name, args) {
@@ -141,6 +161,10 @@ function build(name, args) {
     log.debug("Leaving build().");
     return { text: COUNT, values: [String(a[0]), String(a[1]), TOMBSTONE,
                                    Number(a[2]) || Date.now()] };
+  }
+  if (name === 'minted.estimate') {
+    log.debug("Leaving build().");
+    return { text: ESTIMATE, values: [String(a[0]), String(a[1])] };
   }
   if (name === 'minted.byIndex') {
     log.debug("Leaving build().");
@@ -172,6 +196,10 @@ function answerOf(name, rows) {
     log.debug("Leaving answerOf().");
     return list.length ? Number(list[0].n) || 0 : 0;
   }
+  if (name === 'minted.estimate') {
+    log.debug("Leaving answerOf().");
+    return estimateOf(list[0]);
+  }
   if (name === 'minted.byIndex' || name === 'minted.page' ||
       name === 'minted.newest') {
     log.debug("Leaving answerOf().");
@@ -183,6 +211,32 @@ function answerOf(name, rows) {
   }
   log.debug("Leaving answerOf().");
   throw new Error('minted_queries: unknown query "' + name + '"');
+}
+
+/**
+ * The planner's row estimate out of an `EXPLAIN (FORMAT JSON)` row. The
+ * driver hands the plan back parsed (a `json` column) or as text, depending
+ * on the driver and its type parsers, so both are read.
+ *
+ * @param {any} row - the one row `EXPLAIN` answers
+ * @returns {number | null} the estimate, or null where none can be read
+ */
+function estimateOf(row) {
+  log.debug("Entering estimateOf().");
+  let plan = row ? row['QUERY PLAN'] : null;
+  if (typeof plan === 'string') {
+    try {
+      plan = JSON.parse(plan);
+    } catch (e) {
+      log.debug("Caught in estimateOf(): " + ((e && e.message) || e));
+      log.debug("Leaving estimateOf().");
+      return null;
+    }
+  }
+  const top = Array.isArray(plan) ? plan[0] : plan;
+  const n = top && top.Plan ? Number(top.Plan['Plan Rows']) : NaN;
+  log.debug("Leaving estimateOf().");
+  return Number.isFinite(n) && n >= 0 ? Math.round(n) : null;
 }
 
 module.exports = {

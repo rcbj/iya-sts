@@ -3111,7 +3111,8 @@ class IndexedMap extends Map {
  *     Promise<{ key: any, value: any }[]>,
  *   newestAsync: (limit: number) =>
  *     Promise<{ key: any, value: any }[] | null>,
- *   countAsync: () => Promise<number | null> }}
+ *   countAsync: () => Promise<number | null>,
+ *   countEstimateAsync: () => Promise<{ count: number, exact: boolean }> }}
  */
 function map(options) {
   log.debug("Entering map().");
@@ -3743,6 +3744,35 @@ function map(options) {
                                                 partitionId(currentId()));
       log.debug("Leaving countAsync(). " + n + ".");
       return n;
+    },
+    // How many live rows the ambient realm holds, as cheaply as is honest
+    // (2026-10-22, #820): the Map's size held whole; on demand the store's
+    // planner estimate for a large store and its exact count for a small
+    // one (`persistence_minted.js` argues the threshold). `exact` says
+    // which. A reader with no estimate answers its exact count. Rejects
+    // where the store cannot be asked.
+    countEstimateAsync: async function () {
+      log.debug("Entering countEstimateAsync().");
+      const target = per();
+      if (!demandOn()) {
+        log.debug("Leaving countEstimateAsync(). Held whole.");
+        return { count: target.size, exact: true };
+      }
+      const realm = partitionId(currentId());
+      if (typeof onDemandReader.countEstimateAsync === 'function') {
+        const answer = await onDemandReader.countEstimateAsync(handleName,
+                                                               realm);
+        log.debug("Leaving countEstimateAsync(). " + answer.count +
+                  (answer.exact ? "." : " (estimated)."));
+        return { count: Number(answer.count) || 0, exact: !!answer.exact };
+      }
+      if (typeof onDemandReader.countAsync !== 'function') {
+        log.debug("Leaving countEstimateAsync(). No count; held size.");
+        return { count: target.size, exact: true };
+      }
+      const n = await onDemandReader.countAsync(handleName, realm);
+      log.debug("Leaving countEstimateAsync(). " + n + ".");
+      return { count: Number(n) || 0, exact: true };
     },
     // The realm's own Map, for the callers that genuinely want the whole thing
     // (a purge, a sweep across realms, a console page counting them). It is a

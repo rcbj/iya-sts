@@ -716,6 +716,7 @@ function setDriver(theDriver, activeMode) {
                              readMany: onDemandReadMany,
                              newestAsync: onDemandNewestAsync,
                              countAsync: onDemandCountAsync,
+                             countEstimateAsync: onDemandCountEstimateAsync,
                              byIndexAsync: onDemandByIndexAsync,
                              journalled: pendingWrite });
   // And the fan-in its noted rows' reader (#820, `contributionsOnRead`).
@@ -2746,6 +2747,43 @@ function onDemandCountAsync(handle, realmId) {
   return mintedQueryAsync('minted.count', [handle, realmId, Date.now()])
     .then(function (n) {
       return Number(n) || 0;
+    });
+}
+
+// AN ESTIMATE WHERE THE EXACT COUNT WOULD BE A SCAN (2026-10-22, #820).
+// `minted.count` reads every live row of the store's partition: measured on
+// 8081 with 2.43M token records, 5.7-8.6 s for Monitoring -> Tokens' total,
+// paid on every view. An index-only count of (handle, realm) was 427 ms and
+// still grows with the store. The planner's row estimate (`minted.estimate`)
+// is 0.5 ms and was within 3 % there (2,363,753 for 2,429,984). It is a
+// statistic, so it is wrong for a small store — the realm with no tokens was
+// estimated at 3,527 — and below ESTIMATE_EXACT_BELOW the exact count is
+// asked instead, which is milliseconds at that size. The threshold is an
+// on-demand store's held bound (20,000): a store that would fit in memory is
+// counted, one that would not is estimated, and the answer says which.
+const ESTIMATE_EXACT_BELOW = 20000;
+
+/**
+ * How many live rows an on-demand store holds in one realm: the planner's
+ * estimate where that is large, the exact count where it is not.
+ *
+ * @param handle - the store
+ * @param realmId - the realm partition
+ * @returns a promise of `{ count, exact }`
+ */
+function onDemandCountEstimateAsync(handle, realmId) {
+  log.debug("Entering onDemandCountEstimateAsync(). " + handle);
+  log.debug("Leaving onDemandCountEstimateAsync().");
+  return mintedQueryAsync('minted.estimate', [handle, realmId])
+    .then(function (estimate) {
+      const n = Number(estimate);
+      if (estimate !== null && Number.isFinite(n) &&
+          n >= ESTIMATE_EXACT_BELOW) {
+        return { count: Math.round(n), exact: false };
+      }
+      return onDemandCountAsync(handle, realmId).then(function (exact) {
+        return { count: exact, exact: true };
+      });
     });
 }
 
