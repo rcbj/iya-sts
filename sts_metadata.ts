@@ -8621,7 +8621,7 @@ const ENDPOINTS: EndpointEntry[] = [
           '(status.status_list), so a resource server that checks a token ' +
           'on its own sees it revoked. application/statuslist+jwt, or ' +
           'application/statuslist+cwt by Accept; one bit per token over ' +
-          '1,048,576 indexes, the bit computed from the revocation register; ' +
+          '16,777,216 indexes, the bit computed from the revocation register; ' +
           'ttl oauth2.accessTokenStatusListTtlS, exp ' +
           'oauth2.accessTokenStatusListLifetimeS, signed with the realm\'s ' +
           'RS256 access-token key. ?time= answers 501.' },

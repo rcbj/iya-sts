@@ -680,8 +680,8 @@
     "text": "Ang index ng bawat buhay na access token sa access-token status list ng realm na ito — mga OAuth RFC 9068 token at ang dalawang JWT format ng GNAP — kasama ang jti nito, para makalkula ang bit mula sa revocation register."
   },
   "caches.store.oauth2.access-token-status.bound": {
-    "en": "04bb104bc7ab1ff8",
-    "text": "Ipinapatupad: 1048576 index ang hawak ng listahan bawat realm; ang listahang walang bakanteng index ay TUMATANGGING mag-mint ng access token (STS-OAUTH-0817) sa halip na gamitin muli ang isang buhay pa."
+    "en": "89d41edd17bc8817",
+    "text": "Ipinapatupad: 16777216 index ang hawak ng listahan bawat realm; ang listahang walang bakanteng index ay TUMATANGGING mag-mint ng access token (STS-OAUTH-0817) sa halip na gamitin muli ang isang buhay pa."
   },
   "caches.store.oauth2.access-token-status.lifetime": {
     "en": "8de02df809461e33",

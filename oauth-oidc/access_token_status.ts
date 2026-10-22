@@ -53,9 +53,10 @@
 //
 // **ONE BIT PER TOKEN.** An access token is VALID or INVALID; nothing here
 // suspends one (section 7.1's SUSPENDED is for a credential that may come
-// back). **2^20 INDEXES PER REALM**: an access token lives minutes, not years,
-// so the live population is the issuance rate times the lifetime, and a
-// million positions is 128 KiB before compression and almost nothing after —
+// back). **2^24 INDEXES PER REALM** (2^20 until #820, see LIST_SIZE): an
+// access token lives minutes, not years, so the live population is the
+// issuance rate times the lifetime, and 16 million positions is 2 MiB
+// before compression and almost nothing after —
 // while a list as small as the credential lists' 131,072 would be filled by a
 // busy realm in an hour. A list with no free index REFUSES to mint
 // (STS-OAUTH-0817) rather than reuse a live position, which section 13.3

@@ -2848,8 +2848,8 @@
     "text": "如实的 active/inactive，附带所出示令牌的声明——包括 acr 和 auth_time（RFC 9470 section 6.2）——以 RFC 7662 JSON 形式提供；或者，当 Accept 标头指定 application/token-introspection+jwt 时，以 RFC 9701 JWT 形式提供，为提问的资源服务器签名（并可选加密），使用其注册的算法。JWT 请求在每种模式下都必须以客户端身份认证，否则以 400 invalid_client 拒绝；JSON 请求在产品模式下必须认证（401），在开发模式下则不必。"
   },
   "stsmetadata.endpoints./status-lists/access-tokens.what": {
-    "en": "9968fbaef6a6743d",
-    "text": "本领域唯一的访问令牌 Status List Token（#432）：每个 OAuth RFC 9068 访问令牌以及每个 GNAP jwt-signed 和 jwt-encrypted 令牌都在其中指定一个索引（status.status_list），因此自行检查令牌的资源服务器能看到它已被吊销。application/statuslist+jwt，或按 Accept 提供 application/statuslist+cwt；1,048,576 个索引，每个令牌一位，该位根据吊销登记册计算；ttl 为 oauth2.accessTokenStatusListTtlS，exp 为 oauth2.accessTokenStatusListLifetimeS，使用本领域的 RS256 访问令牌密钥签名。?time= 应答 501。"
+    "en": "bd042da837f12da5",
+    "text": "本领域唯一的访问令牌 Status List Token（#432）：每个 OAuth RFC 9068 访问令牌以及每个 GNAP jwt-signed 和 jwt-encrypted 令牌都在其中指定一个索引（status.status_list），因此自行检查令牌的资源服务器能看到它已被吊销。application/statuslist+jwt，或按 Accept 提供 application/statuslist+cwt；16,777,216 个索引，每个令牌一位，该位根据吊销登记册计算；ttl 为 oauth2.accessTokenStatusListTtlS，exp 为 oauth2.accessTokenStatusListLifetimeS，使用本领域的 RS256 访问令牌密钥签名。?time= 应答 501。"
   },
   "stsmetadata.endpoints./status-lists.what": {
     "en": "9a8ef90105d2caca",

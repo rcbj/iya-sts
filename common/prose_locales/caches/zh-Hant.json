@@ -680,8 +680,8 @@
     "text": "每個有效存取權杖在此領域存取權杖狀態清單中的索引——OAuth RFC 9068 權杖以及 GNAP 的兩種 JWT 格式——連同其 jti，使該位元可從撤銷登錄計算而得。"
   },
   "caches.store.oauth2.access-token-status.bound": {
-    "en": "04bb104bc7ab1ff8",
-    "text": "強制：清單在每個領域保存 1048576 個索引；沒有可用索引的清單會「拒絕」產生存取權杖（STS-OAUTH-0817），而不是重複使用仍有效的索引。"
+    "en": "89d41edd17bc8817",
+    "text": "強制：清單在每個領域保存 16777216 個索引；沒有可用索引的清單會「拒絕」產生存取權杖（STS-OAUTH-0817），而不是重複使用仍有效的索引。"
   },
   "caches.store.oauth2.access-token-status.lifetime": {
     "en": "8de02df809461e33",

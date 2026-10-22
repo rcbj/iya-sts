@@ -680,8 +680,8 @@
     "text": "L’index de chaque jeton d’accès valide dans la liste de statut des jetons d’accès de ce domaine — les jetons OAuth RFC 9068 et les deux formats JWT de GNAP — avec son jti, afin que le bit puisse être calculé à partir du registre des révocations."
   },
   "caches.store.oauth2.access-token-status.bound": {
-    "en": "04bb104bc7ab1ff8",
-    "text": "Appliquée : la liste contient 1048576 index par domaine ; une liste sans index libre REFUSE de frapper le jeton d’accès (STS-OAUTH-0817) plutôt que de réutiliser un index encore utilisé."
+    "en": "89d41edd17bc8817",
+    "text": "Appliquée : la liste contient 16777216 index par domaine ; une liste sans index libre REFUSE de frapper le jeton d’accès (STS-OAUTH-0817) plutôt que de réutiliser un index encore utilisé."
   },
   "caches.store.oauth2.access-token-status.lifetime": {
     "en": "8de02df809461e33",

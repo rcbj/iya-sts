@@ -2848,8 +2848,8 @@
     "text": "Tapat na active/inactive kasama ang mga claim ng ipinakitang token — kabilang ang acr at auth_time (RFC 9470 section 6.2) — bilang RFC 7662 JSON, o, kapag pinangangalanan ng Accept header ang application/token-introspection+jwt, bilang RFC 9701 JWT na signed (at opsyonal na encrypted) para sa resource server na nagtanong, gamit ang mga algorithm na inirehistro nito. Ang JWT request ay dapat mag-authenticate bilang client sa bawat mode at tinatanggihan ng 400 invalid_client kung hindi; ang JSON request ay dapat mag-authenticate sa product mode (401) at hindi kailangan sa development."
   },
   "stsmetadata.endpoints./status-lists/access-tokens.what": {
-    "en": "9968fbaef6a6743d",
-    "text": "Ang NAG-IISANG access-token Status List Token ng realm (#432): bawat OAuth RFC 9068 access token at bawat GNAP jwt-signed at jwt-encrypted na token ay nagpapangalan ng index dito (status.status_list), kaya nakikita ng resource server na nagsusuri ng token nang mag-isa na revoked ito. application/statuslist+jwt, o application/statuslist+cwt ayon sa Accept; isang bit bawat token sa 1,048,576 na index, kinukuwenta ang bit mula sa revocation register; ttl oauth2.accessTokenStatusListTtlS, exp oauth2.accessTokenStatusListLifetimeS, signed gamit ang RS256 access-token key ng realm. Sumasagot ng 501 ang ?time=."
+    "en": "bd042da837f12da5",
+    "text": "Ang NAG-IISANG access-token Status List Token ng realm (#432): bawat OAuth RFC 9068 access token at bawat GNAP jwt-signed at jwt-encrypted na token ay nagpapangalan ng index dito (status.status_list), kaya nakikita ng resource server na nagsusuri ng token nang mag-isa na revoked ito. application/statuslist+jwt, o application/statuslist+cwt ayon sa Accept; isang bit bawat token sa 16,777,216 na index, kinukuwenta ang bit mula sa revocation register; ttl oauth2.accessTokenStatusListTtlS, exp oauth2.accessTokenStatusListLifetimeS, signed gamit ang RS256 access-token key ng realm. Sumasagot ng 501 ang ?time=."
   },
   "stsmetadata.endpoints./status-lists.what": {
     "en": "9a8ef90105d2caca",

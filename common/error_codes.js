@@ -9731,7 +9731,7 @@ const CODES = [
     spec: 'server_error at the endpoint that was minting the token' },
   { code: 'STS-OAUTH-0817',
     summary: 'The realm\'s access-token status list had no free index in ' +
-      'thirty-two random attempts (it holds 1,048,576), so the access ' +
+      'thirty-two random attempts (it holds 16,777,216), so the access ' +
       'token was not minted rather than share a live token\'s index ' +
       '(draft-ietf-oauth-status-list section 13.3; #432).',
     spec: 'server_error at the endpoint that was minting the token' },

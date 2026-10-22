@@ -2848,8 +2848,8 @@
     "text": "Ärligt active/inactive med den uppvisade tokens anspråk — acr och auth_time bland dem (RFC 9470 avsnitt 6.2) — som RFC 7662-JSON, eller, när Accept-huvudet namnger application/token-introspection+jwt, som en RFC 9701-JWT signerad (och valfritt krypterad) för den resursserver som frågade, med de algoritmer den registrerat. En JWT-begäran måste autentisera sig som klient i alla lägen och vägras annars med 400 invalid_client; en JSON-begäran måste autentisera sig i produktläge (401) och behöver inte i utvecklingsläge."
   },
   "stsmetadata.endpoints./status-lists/access-tokens.what": {
-    "en": "9968fbaef6a6743d",
-    "text": "Sfärens ENDA Status List Token för åtkomsttoken (#432): varje OAuth RFC 9068-åtkomsttoken och varje GNAP jwt-signed- och jwt-encrypted-token namnger ett index i den (status.status_list), så att en resursserver som kontrollerar en token på egen hand ser att den är återkallad. application/statuslist+jwt, eller application/statuslist+cwt via Accept; en bit per token över 1 048 576 index, biten beräknad från återkallelseregistret; ttl oauth2.accessTokenStatusListTtlS, exp oauth2.accessTokenStatusListLifetimeS, signerad med sfärens RS256-nyckel för åtkomsttoken. ?time= svarar 501."
+    "en": "bd042da837f12da5",
+    "text": "Sfärens ENDA Status List Token för åtkomsttoken (#432): varje OAuth RFC 9068-åtkomsttoken och varje GNAP jwt-signed- och jwt-encrypted-token namnger ett index i den (status.status_list), så att en resursserver som kontrollerar en token på egen hand ser att den är återkallad. application/statuslist+jwt, eller application/statuslist+cwt via Accept; en bit per token över 16 777 216 index, biten beräknad från återkallelseregistret; ttl oauth2.accessTokenStatusListTtlS, exp oauth2.accessTokenStatusListLifetimeS, signerad med sfärens RS256-nyckel för åtkomsttoken. ?time= svarar 501."
   },
   "stsmetadata.endpoints./status-lists.what": {
     "en": "9a8ef90105d2caca",

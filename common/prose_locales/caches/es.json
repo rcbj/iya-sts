@@ -680,8 +680,8 @@
     "text": "El índice de cada token de acceso vigente en la lista de estado de tokens de acceso de este dominio — tokens OAuth RFC 9068 y los dos formatos JWT de GNAP — con su jti, para que el bit pueda calcularse a partir del registro de revocaciones."
   },
   "caches.store.oauth2.access-token-status.bound": {
-    "en": "04bb104bc7ab1ff8",
-    "text": "Aplicado: la lista contiene 1048576 índices por dominio; una lista sin índice libre SE NIEGA a acuñar el token de acceso (STS-OAUTH-0817) en lugar de reutilizar uno vigente."
+    "en": "89d41edd17bc8817",
+    "text": "Aplicado: la lista contiene 16777216 índices por dominio; una lista sin índice libre SE NIEGA a acuñar el token de acceso (STS-OAUTH-0817) en lugar de reutilizar uno vigente."
   },
   "caches.store.oauth2.access-token-status.lifetime": {
     "en": "8de02df809461e33",

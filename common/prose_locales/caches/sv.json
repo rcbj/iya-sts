@@ -680,8 +680,8 @@
     "text": "Varje levande åtkomsttokens index i den här sfärens statuslista för åtkomsttoken — OAuth-token enligt RFC 9068 och GNAP:s två JWT-format — med dess jti, så att biten kan beräknas från återkallelseregistret."
   },
   "caches.store.oauth2.access-token-status.bound": {
-    "en": "04bb104bc7ab1ff8",
-    "text": "Upprätthållen: listan rymmer 1048576 index per sfär; en lista utan ledigt index NEKAR att skapa åtkomsttoken (STS-OAUTH-0817) i stället för att återanvända ett levande."
+    "en": "89d41edd17bc8817",
+    "text": "Upprätthållen: listan rymmer 16777216 index per sfär; en lista utan ledigt index NEKAR att skapa åtkomsttoken (STS-OAUTH-0817) i stället för att återanvända ett levande."
   },
   "caches.store.oauth2.access-token-status.lifetime": {
     "en": "8de02df809461e33",
