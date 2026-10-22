@@ -106,6 +106,15 @@ class ConsentPage {
         '</h3>' +
       kit.note(t.html('consoleConsent.recordedNote',
                       { attribute: json.withdrawnAttribute })) +
+      // READ FROM THE STORE A PAGE AT A TIME (#820): the paging is over
+      // people and the search is exact, and a bounded search says when it
+      // did not look at everybody.
+      (json.windowed ? kit.note(t.html('consoleConsent.windowedNote')) : '') +
+      (json.windowed && json.search && !json.search.complete
+        ? kit.warn(t.html('consoleConsent.searchIncomplete',
+                          { scanned: json.search.scanned,
+                            holders: json.search.holders }))
+        : '') +
       kit.sectionSearchForm({
         path: '/admin/consent', query: ctx.query, param: 'q',
         // The list this search narrows, so that a new search starts at page 1

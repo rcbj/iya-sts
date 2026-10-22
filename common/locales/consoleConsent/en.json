@@ -35,5 +35,7 @@
   "remove": "Remove",
   "unreadable": "This value is not in the shape this service writes &mdash; something put it on the entry by hand: <code>{raw}</code>. It is shown rather than dropped, because a value the page silently ignored would be one somebody wrote on purpose and could not find out was being ignored. It consents nothing.",
   "agreedAt": "agreed at {at}",
-  "revoke": "Revoke"
+  "revoke": "Revoke",
+  "windowedNote": "<strong>This realm's people are in the store, so this list is read a page at a time.</strong> It is paged by person: each page shows every consent its people hold, newest first. A search must name a whole username, client_id or scope.",
+  "searchIncomplete": "The search looked inside the first {scanned} of the {holders} people holding a consent; a client_id or scope only others hold is not shown."
 }

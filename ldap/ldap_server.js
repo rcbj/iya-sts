@@ -10251,6 +10251,87 @@ function listConsentValues() {
 }
 
 // ---------------------------------------------------------------------------
+// THE CONSENT HOLDERS A PAGE AT A TIME, IN A WINDOWED PROCESS (2026-10-22,
+// #820).
+//
+// `listConsentValues()` above is every person holding `oauthConsent`, and
+// consent is required by default, so on 8081 that is about 470,000 people —
+// each a synchronous bridge question and a decrypt, on the request worker
+// that answered Monitoring → Consent, and through read-your-write every
+// other worker behind it. These two answer what the page needs instead,
+// ASYNCHRONOUSLY on the read pool: how many hold one (the asked names'
+// index, `sts_ldap_entries_asked_names`) with one page of them, and the one
+// person a search names. They answer null where the directory is not
+// windowed — every entry is in memory there and the walk above is the
+// whole directory's own answer — so a caller keeps its old path. What the
+// values MEAN is `common/consent.ts`'s, which is handed them raw.
+// ---------------------------------------------------------------------------
+/**
+ * One page of the people under `ou=users` holding a consent, in key order,
+ * and how many there are; null outside a windowed process.
+ *
+ * @param offset - holders to skip
+ * @param limit - how many to read
+ * @returns a promise of `{ total, read, rows: [{ dn, username, values }] }`
+ */
+async function consentHoldersPageAsync(offset, limit) {
+  log.debug('Entering consentHoldersPageAsync().');
+  if (!directoryWindow) {
+    log.debug('Leaving consentHoldersPageAsync(). Not windowed.');
+    return null;
+  }
+  const realmId = realms.currentId();
+  const base = normalizeDn(usersDn());
+  const total = await storeAsked(directoryWindow.countHoldersAsync(realmId,
+    base, 'oauthconsent'));
+  const count = Math.max(0, Math.floor(Number(limit) || 0));
+  const page = count > 0
+    ? await storeAsked(directoryWindow.holdersPageAsync(realmId, base,
+        'oauthconsent', Math.max(0, Math.floor(Number(offset) || 0)), count,
+        function (entry) {
+          return isPersonEntry(entry);
+        }))
+    : { rows: [], read: 0 };
+  const rows = [];
+  page.rows.forEach(function (hit) {
+    const values = hit.entry.attributes.oauthconsent || [];
+    if (values.length) {
+      rows.push({ dn: hit.entry.dn, username: usernameOfEntry(hit.entry),
+                  values: values.slice(0) });
+    }
+  });
+  log.debug('Leaving consentHoldersPageAsync(). ' + rows.length + ' of ' +
+            total + '.');
+  return { total: total, read: page.read, rows: rows };
+}
+
+/**
+ * The one person a username names, with their consents, asked of the store
+ * asynchronously; null outside a windowed process, `{ row: null }` for a
+ * name that names nobody holding one.
+ *
+ * @param name - the username
+ * @returns a promise of `{ row }`
+ */
+async function consentHolderNamedAsync(name) {
+  log.debug('Entering consentHolderNamedAsync().');
+  if (!directoryWindow) {
+    log.debug('Leaving consentHolderNamedAsync(). Not windowed.');
+    return null;
+  }
+  const found = (await storeAsked(existingUserEntriesAsync([name])))[0];
+  const values = found && found.attributes && isPersonEntry(found)
+    ? (found.attributes.oauthconsent || []) : [];
+  const row = values.length
+    ? { dn: found.dn, username: usernameOfEntry(found),
+        values: values.slice(0) }
+    : null;
+  log.debug('Leaving consentHolderNamedAsync(). ' +
+            (row ? 'Found.' : 'None.'));
+  return { row: row };
+}
+
+// ---------------------------------------------------------------------------
 // THE CREDENTIAL STORE (2026-09-06). `userPassword` on a person's own entry.
 //
 // **RFC 4519 SECTION 2.41's ATTRIBUTE, AND THE NAME IS THE POINT**: an entry
@@ -14191,6 +14272,9 @@ if (typeof consent.setDirectory === 'function') {
       return removeConsentValues(key, values, 'oauthConsent');
     },
     listConsents: listConsentValues,
+    // ONE PAGE OF THE HOLDERS, in a windowed process (#820).
+    consentHoldersPageAsync: consentHoldersPageAsync,
+    consentHolderNamedAsync: consentHolderNamedAsync,
     // THE WITHDRAWALS (#172), on the same entry through the same functions.
     withdrawalsOf: function withdrawalsOf(key) {
       log.debug('Entering withdrawalsOf().');

@@ -1145,6 +1145,71 @@ class DirectoryWindow {
     return out;
   }
 
+  // ONE PAGE OF HOLDERS, AND HOW MANY (2026-10-22, #820). `holdersAsync()`
+  // answers every holder, which is right for a job that must see them all
+  // and wrong for a console page: Monitoring → Consent read about 470,000
+  // people to draw fifty. These two answer the page's questions —
+  // `directory_queries.js`'s `countWithAttribute` and `withAttributeAt` —
+  // asynchronously on the read pool, each row taken as the store answered
+  // it unless this process holds a newer copy (`holdersAsync()`'s rule),
+  // nothing handed out. What this process changed and has not written is
+  // NOT added: a page of the store is the store's page, and the count is
+  // the store's count.
+  /**
+   * How many windowed entries under a base the store says hold an
+   * attribute.
+   *
+   * @param realmId - the realm id
+   * @param base - the base's normalised DN
+   * @param attribute - the attribute name, lower-cased as stored
+   * @returns a promise of the count (0 before `attach()`)
+   */
+  async countHoldersAsync(realmId: string, base: string,
+                          attribute: string): Promise<number> {
+    log.debug("Entering DirectoryWindow.countHoldersAsync(). " + attribute);
+    const n = Number(await this.askAsync('countWithAttribute',
+      [realmId, base, attribute])) || 0;
+    log.debug("Leaving DirectoryWindow.countHoldersAsync(). " + n + '.');
+    return n;
+  }
+
+  /**
+   * One page of the windowed entries under a base that hold an attribute,
+   * in key order at an offset.
+   *
+   * @param realmId - the realm id
+   * @param base - the base's normalised DN
+   * @param attribute - the attribute name, lower-cased as stored
+   * @param offset - holders to skip
+   * @param limit - the page size
+   * @param predicate - the service's own rule, asked of each row
+   * @returns a promise of `{ rows: [{ key, entry }], read }`, `read` the
+   *   rows the store answered (for a caller paging on)
+   */
+  async holdersPageAsync(realmId: string, base: string, attribute: string,
+                         offset: number, limit: number,
+                         predicate: (entry: Entry, key: string) => boolean):
+      Promise<{ rows: Array<{ key: string; entry: Entry }>; read: number }> {
+    log.debug("Entering DirectoryWindow.holdersPageAsync(). " + attribute);
+    const out: Array<{ key: string; entry: Entry }> = [];
+    const rows = (await this.askAsync('withAttributeAt',
+      [realmId, base, attribute, offset, limit]) || []) as Row[];
+    rows.forEach((row) => {
+      if (!row || !this.isWindowed(realmId, row.key)) {
+        return;
+      }
+      const ck = slotKey(realmId, row.key);
+      const slot = this.lru.peek(ck) || this.touched.get(ck) ||
+        this.liveGhost(ck) || this.slotFromRow(realmId, row);
+      if (slot.entry && predicate(slot.entry, row.key)) {
+        out.push({ key: row.key, entry: slot.entry });
+      }
+    });
+    log.debug("Leaving DirectoryWindow.holdersPageAsync(). " + out.length +
+              ' of ' + rows.length + '.');
+    return { rows: out, read: rows.length };
+  }
+
   // ---------------------------------------------------------------------
   // THE STORE ASKED WITHOUT HOLDING THE EVENT LOOP (#616, 2026-10-14).
   //
