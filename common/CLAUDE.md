@@ -1741,6 +1741,53 @@ off, about 20% of `/oauth2/token` code exchanges answered "Unknown or
 already-used authorization code". Each one was a code another worker had just
 written. Turning it off is not a performance setting.
 
+**AND IT IS PER CLIENT SINCE THE SAME DAY: `session`, THE DEFAULT (rcbj,
+#820).** The barrier was global — every request waited for every ticket
+answered on another worker and for the generation every write had moved —
+which was 17–26 ms p50 of `/oauth2/authorize` and `/oauth2/token` on 8081,
+nearly all of it other browsers' writes. `workers.readYourWrite` is a mode
+now: `session`, `global` (the old barrier, whole) or `off`; `true` reads as
+`session` and `false` as `off`, so a stored boolean needs no rewrite. What
+each mode guarantees, exactly:
+
+* **`session`, a request carrying client keys** — every session cookie
+  (`s:<sid>`), the pool pin (`p:<pid>`) and every flow parameter in its URL
+  (`clientKeysOf()`, all of them, not affinity's first): it is answered only
+  after every ticket filed under any of its keys and answered before it
+  arrived has been announced committed (its own worker's excepted, which hold
+  the write in memory), and after its worker reached the generation of those
+  keys' writes ON OTHER WORKERS and of the front process's own writes. A
+  ticket is filed under the keys its request carried AND the session cookies
+  and flows its answer handed out (`learnTicketKeys()`), so the sign-in that
+  mints a session counts as that session's write. Bayou's read-your-writes,
+  and nothing more: no monotonic reads.
+* **`session`, a request with no key, or whose pool pin the route did not
+  honour** — today's global wait, unchanged. That is every back channel: the
+  code exchange from a client's server still waits for the code. A pin not
+  honoured is global because `oidc_rp.ts`'s back channel pins to the worker
+  holding a code ANOTHER client (the browser) wrote, which only that worker is
+  sure to hold.
+* **`global`** — every request waits for every write answered before it;
+  **`off`** — nobody waits.
+* **What `session` gives up**: a request does not wait for another client's
+  write, and operations (LDAP, Kerberos, SPIFFE) carry no key. **A console
+  page now sees another session's writes — a SCIM create, a token another
+  client redeemed, a KDC write, another administrator's change — only after
+  the workers converge** (0.5–1 s). A suite job that writes as one client and
+  reads as another at once needs `global`.
+* **Kept as they were**: the reaper, the 2,000 ms ticket bound and the
+  5,000 ms barrier bound (a keyed waiter times out and reaps exactly as a
+  global one), client-gone handling, both pools, and `runOperation()` with
+  #626's narrowing, which still waits globally.
+* **Bounded without a timer**: at most 20,000 keys, least recently used
+  first; each dispatch drops up to four of the oldest that hold no ticket and
+  whose writes every other worker has passed; a key evicted while it still
+  holds a ticket or a write SPILLS them to every keyed request
+  (`stats().sessionBarrier.spilled`), so eviction costs waiting, never a stale
+  read. A sync round now stamps the worker with the generation at the round's
+  START (`startSyncRound()`), which the sharing rule already allowed, so a
+  keyed round leaves no worker looking behind. `tests/request_ryw_session.js`.
+
 **WHERE A DISPATCHED REQUEST'S TIME GOES (2026-10-22, #820)**:
 `common/request_phases.js`.
 - **The front** times three phases: the ticket wait, the read barrier, and
