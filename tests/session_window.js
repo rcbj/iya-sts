@@ -1295,6 +1295,10 @@ function partialWalkCase(t) {
   const hitName = keystore.keyedDigest('session-username', 'walk-hit');
   const localName = keystore.keyedDigest('session-username', 'walk-local');
   const missName = keystore.keyedDigest('session-username', 'walk-miss');
+  // A sign-out's inventory reads one person's sessions by these two (#854,
+  // 2026-10-22): the walk of every session was two minutes on 8081.
+  const liveName = keystore.keyedDigest('session-username', 'walk-live');
+  const liveSubject = keystore.keyedDigest('session-subject', LIVE_SUB);
   const parentKey = keystore.keyedDigest('session-parent', 'walk-parent');
   const keepParent = keystore.keyedDigest('session-parent', 'walk-keep');
   const consoleParent = keystore.keyedDigest('session-parent',
@@ -1332,10 +1336,16 @@ function partialWalkCase(t) {
       if (second === hitName) {
         return ['walk-hit'];
       }
+      if (second === liveName) {
+        return pageNull ? null : ['walk-live'];
+      }
       if (localNull && second === localName) {
         return null;
       }
       return [];
+    }
+    if (name === 'session.subject' && second === liveSubject) {
+      return pageNull ? null : ['walk-live'];
     }
     if (name === 'session.children') {
       if (childrenNull && second === keepParent) {
@@ -1441,7 +1451,8 @@ function partialWalkCase(t) {
     const held = stats.holderKeyOf('walk-live', LIVE_SUB);
     const inventory = logout.inventoryFor(held);
     t.check(inventory.sessions >= 1,
-            'sessionsByKey still hits an uncached session');
+            'the inventory finds an uncached session through the index ' +
+            '(#854: by username and subject, not a walk)');
     const listed = adminViews.signOnSessionRows().map(function (row) {
       return row.id;
     });
@@ -1563,7 +1574,7 @@ function partialWalkCase(t) {
       logout.inventoryFor(held);
     });
     t.check(/could not be read/.test(inventoryBlow),
-            'an unread page fails the inventory', inventoryBlow);
+            'an unread index fails the inventory', inventoryBlow);
     const rowsBlow = thrownMessage(function () {
       adminViews.signOnSessionRows();
     });
