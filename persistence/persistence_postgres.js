@@ -3445,6 +3445,32 @@ function create(options) {
   // database, single-cell mode, ldif's neighbour — has one database and
   // reads where it writes, exactly as before.
   // -------------------------------------------------------------------------
+  // -------------------------------------------------------------------------
+  // THE TALLY POOL (2026-10-22, #820): writes that are counters, not
+  // records — the shared rate-limit windows and the risk engine's counts,
+  // assessments and subjects — commit with `synchronous_commit = off`.
+  // Postgres flushes its log ONE fsync at a time, and on 8081 a sign-in made
+  // about eleven committing transactions, half of them these: 187 fsyncs a
+  // second at 3.5 ms each held the log flush two thirds of the time, and
+  // that was the sign-in rate's ceiling. Committed this way a write is
+  // visible at once and durable within the WAL writer's next flush
+  // (`wal_writer_delay`, 200 ms); a crash of POSTGRES (not of this service)
+  // can lose the last fraction of a second of them. What is lost is a few
+  // attempts uncounted, or a statistic one sign-in short — rcbj's call on
+  // 2026-10-22. Sessions, codes, tokens, the directory and every minted row
+  // stay on `pool`, durable at commit. Small: these are single statements.
+  // -------------------------------------------------------------------------
+  const tallyPool = knexStore.openPool(
+    Object.assign({}, clientOptions(),
+                  { options: '-c synchronous_commit=off' }),
+    { max: 2, idleTimeoutMillis: 30000 });
+  tallyPool.on('error', function (err) {
+    log.error(errorCodes.tag('STS-STORE-0030') +
+              'persistence: an idle postgres client of the tally pool ' +
+              'errored: ' + err.message + '. The pool will make a new one ' +
+              'on the next write.');
+  });
+
   const readUrl = String(options.readUrl || '').trim();
   // The read pool's connection options when it is a pool of its own, for
   // the bridge's thread (#349) — `readClientOptions()` below.
@@ -4872,6 +4898,9 @@ function create(options) {
       }).then(function () {
         // The read replica's pool, when it is a pool of its own (#98).
         return readPool !== pool ? readPool.end() : null;
+      }).then(function () {
+        // The tally pool (#820).
+        return tallyPool.end();
       }).then(function () {
         // The liveness connection, last: leaving the cluster and giving the
         // origin back were its final statements.
@@ -7475,7 +7504,7 @@ function create(options) {
       log.debug("Entering countWindow(). scope=" + scope);
       const span = Math.max(1, Math.floor(Number(windowMs) || 0));
       log.debug("Leaving countWindow().");
-      return pool.query(
+      return tallyPool.query(
         'INSERT INTO sts_cluster_windows (scope, realm, key, count, ' +
         'window_ends_at, origin) VALUES ($1, $2, $3, 1, ' + DB_NOW +
         ' + $4::bigint, $5) ON CONFLICT (scope, realm, key) DO UPDATE SET ' +
@@ -7516,7 +7545,7 @@ function create(options) {
     clearWindow: function (scope, realmId, key) {
       log.debug("Entering clearWindow(). scope=" + scope);
       log.debug("Leaving clearWindow().");
-      return pool.query(
+      return tallyPool.query(
         'DELETE FROM sts_cluster_windows WHERE scope = $1 AND realm = $2 AND ' +
         'key = $3', [String(scope), String(realmId || ''), String(key)]
       ).then(function (r) {
@@ -8293,7 +8322,7 @@ function create(options) {
     riskRecordFailure: function (row) {
       log.debug("Entering riskRecordFailure(). door=" + row.door);
       log.debug("Leaving riskRecordFailure().");
-      return pool.query(
+      return tallyPool.query(
         'INSERT INTO sts_risk_failures (realm, at, door, subject, name_hmac, ' +
         'address_sealed, address_prefix, asn, error_code, origin) VALUES ' +
         '($1, $2, $3, $4, $5, $6, $7::cidr, $8, $9, $10) RETURNING id',
@@ -8400,7 +8429,7 @@ function create(options) {
     riskIncrementCounts: function (realm, rows, at) {
       log.debug("Entering riskIncrementCounts(). rows=" + rows.length);
       log.debug("Leaving riskIncrementCounts().");
-      return pool.query(
+      return tallyPool.query(
         'INSERT INTO sts_risk_feature_counts (realm, subject, feature, value, ' +
         'count, first_at, last_at) SELECT $1, u.subject, u.feature, u.value, ' +
         '1, $5, $5 FROM unnest($2::text[], $3::text[], $4::text[]) AS ' +
@@ -8424,7 +8453,7 @@ function create(options) {
     riskRecordAssessment: function (a) {
       log.debug("Entering riskRecordAssessment(). " + a.id);
       log.debug("Leaving riskRecordAssessment().");
-      return pool.query(
+      return tallyPool.query(
         'INSERT INTO sts_risk_assessments (realm, id, at, phase, door, ' +
         'subject, session_id, client_id, address_sealed, address_prefix, ' +
         'asn, as_org, country, subdivision, city, latitude, longitude, ' +
@@ -8532,7 +8561,7 @@ function create(options) {
     riskSettleAssessment: function (a) {
       log.debug("Entering riskSettleAssessment(). " + a.id);
       log.debug("Leaving riskSettleAssessment().");
-      return pool.query(
+      return tallyPool.query(
         'UPDATE sts_risk_assessments SET decision = $3, policy_id = $4, ' +
         'error_code = $5, session_id = CASE WHEN $6 = \'\' THEN session_id ' +
         'ELSE $6 END WHERE realm = $1 AND id = $2',
@@ -8550,7 +8579,7 @@ function create(options) {
     riskAmendAssessment: function (a) {
       log.debug("Entering riskAmendAssessment(). " + a.id);
       log.debug("Leaving riskAmendAssessment().");
-      return pool.query(
+      return tallyPool.query(
         'UPDATE sts_risk_assessments SET signals = $3::jsonb, score = $4, ' +
         'level = $5 WHERE realm = $1 AND id = $2',
         [a.realm || '', a.id, JSON.stringify(a.signals || []),
@@ -8602,7 +8631,7 @@ function create(options) {
     riskUpsertSubject: function (s) {
       log.debug("Entering riskUpsertSubject().");
       log.debug("Leaving riskUpsertSubject().");
-      return pool.query(
+      return tallyPool.query(
         'INSERT INTO sts_risk_subjects (realm, subject, score, level, ' +
         'previous_level, reason, last_assessment, crossed_at, actions, ' +
         'feedback, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, ' +
@@ -8825,7 +8854,7 @@ function create(options) {
     riskUpsertSessionContext: function (c) {
       log.debug("Entering riskUpsertSessionContext().");
       log.debug("Leaving riskUpsertSessionContext().");
-      return pool.query(
+      return tallyPool.query(
         'INSERT INTO sts_risk_session_context (realm, session_id, subject, ' +
         'address_prefix, asn, country, ua_hash, ja4, jkt, score, level, ' +
         'updated_at) VALUES ($1, $2, $3, $4::cidr, $5, $6, $7, $8, $9, $10, ' +
