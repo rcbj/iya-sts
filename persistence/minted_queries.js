@@ -56,9 +56,19 @@ const PAGE = 'SELECT key, key_sealed, body FROM sts_minted WHERE handle = $1 ' +
   'AND realm = $2 AND key > $3 AND body <> $4 AND (expires_at IS NULL OR ' +
   'expires_at > $5) ORDER BY key LIMIT $6';
 
-const NEWEST = 'SELECT key, key_sealed, body FROM sts_minted WHERE ' +
-  'handle = $1 AND realm = $2 AND body <> $3 AND (expires_at IS NULL OR ' +
-  'expires_at > $4) ORDER BY written_at DESC, key DESC LIMIT $5';
+// NEWEST BY THE STORE'S `n:` INDEX KEYS (2026-10-22, #820): a backward scan
+// of `sts_minted_index`'s primary key over the keys `n:` up to `n;` (the
+// next character), joined to the rows. Ordering `sts_minted` by
+// `written_at` was a sort of the whole store (13 s on 8081), and a btree
+// there would make every update of that table non-HOT. A store that files
+// no `n:` key answers nothing here; the token register files one per
+// record (`admin_stats.js`).
+const NEWEST = 'SELECT m.key, m.key_sealed, m.body FROM sts_minted_index i ' +
+  'JOIN sts_minted m ON m.handle = i.handle AND m.realm = i.realm AND ' +
+  'm.key = i.key WHERE i.handle = $1 AND i.realm = $2 AND ' +
+  'i.index_key >= \'n:\' AND i.index_key < \'n;\' AND m.body <> $3 AND ' +
+  '(m.expires_at IS NULL OR m.expires_at > $4) ORDER BY i.index_key DESC, ' +
+  'i.key DESC LIMIT $5';
 
 const COUNT = 'SELECT count(*)::bigint AS n FROM sts_minted WHERE ' +
   'handle = $1 AND realm = $2 AND body <> $3 AND (expires_at IS NULL OR ' +

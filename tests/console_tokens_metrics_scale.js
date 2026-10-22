@@ -66,7 +66,10 @@ function child() {
     const count = queries.build('minted.count', ['admin_stats.tokens', 'r', 5]);
     const rows = queries.answerOf('minted.newest',
       [{ key: 'k1', key_sealed: null, body: 'b1' }]);
-    note(/ORDER BY written_at DESC, key DESC LIMIT \$5/.test(newest.text) &&
+    // Newest by the register's `n:` index keys since the same day (#820):
+    // ordering `sts_minted` by `written_at` was a sort of the store.
+    note(/ORDER BY i\.index_key DESC, i\.key DESC LIMIT \$5/
+           .test(newest.text) &&
          newest.values[4] === queries.NEWEST_LIMIT &&
          newest.values[3] === 5 && /count\(\*\)/.test(count.text) &&
          count.values.length === 4 &&

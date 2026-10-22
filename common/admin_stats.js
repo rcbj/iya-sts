@@ -581,6 +581,18 @@ const tokens = realms.map({
     if (record && record.setId) {
       out.push('set:' + String(record.setId));
     }
+    // WHEN IT WAS ISSUED, SORTABLE (2026-10-22, #820): Monitoring → Tokens
+    // lists the newest records (`minted.newest`), and ordering the store's
+    // rows by `written_at` was a sort of ~1.7M rows on 8081, 13 s a page.
+    // A btree on `sts_minted.written_at` would answer it but would stop every
+    // update of that table being HOT (any btree column counts, partial or
+    // not), so the order is filed here, in `sts_minted_index`, whose rows are
+    // inserted and deleted and never updated. Seconds, zero-padded to twelve
+    // digits, so the text sorts as the number does.
+    if (record && Number(record.iat) > 0) {
+      out.push('n:' + String(Math.floor(Number(record.iat)))
+        .padStart(12, '0'));
+    }
     return out;
   },
   // A hot path (every row a flush writes): no Entering/Leaving pair.
