@@ -151,7 +151,9 @@ function browser(name) {
                             { method: method, redirect: "manual",
                                               headers: headers, body: body });
       const set = r.headers.getSetCookie ? r.headers.getSetCookie() : [];
-      set.forEach(function (one) { self.cookie = String(one).split(";")[0]; });
+      // Every cookie, merged by name, as a browser keeps them: an answer
+      // that sets `sts_accounts` (#561) must not replace `sts_session`.
+      self.cookie = authnSignin.foldCookies(self.cookie, set);
       const text = await r.text();
       log.debug("Leaving go(). status=" + r.status);
       return { status: r.status, location: r.headers.get("location") || "",
@@ -252,9 +254,12 @@ async function signIn(who, clientId, scope, extra) {
   assert.strictEqual(signedIn.next, "redirect",
     "the sign-in should answer where to go, got " + signedIn.status + " " +
     JSON.stringify(signedIn.json));
-  b.cookie = (signedIn.cookie.match(/(?:^|; )(sts_session=[^;]*)/) ||
-              [])[1] || "";
-  assert.ok(b.cookie, "signing in should establish a session.");
+  // EVERY COOKIE THE SIGN-IN SET, not only `sts_session`: since #561 it
+  // also sets the browser's account set (`sts_accounts`), and the ticket it
+  // returns with names that set.
+  b.cookie = signedIn.cookie || "";
+  assert.ok(/(?:^|; )sts_session=/.test(b.cookie),
+    "signing in should establish a session.");
   r = await b.go("GET", signedIn.location);
   log.debug("Leaving signIn(). " + r.status + " " + r.location);
   return { b: b, r: r };

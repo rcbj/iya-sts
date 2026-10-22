@@ -366,6 +366,29 @@ function partOn(t) {
   authn.spendAccountTicket(elsewhere);
   t.equal(authn.sessionOf(elsewhere), null,
           'a ticket minted for another address chooses nothing');
+  // A client that keeps only its sign-on cookie (2026-10-22): no set at all,
+  // and the very session the ticket names. That is not another account, so
+  // the ticket counts; the same cookie with a ticket for ANOTHER session of
+  // the set still chooses nobody.
+  const ownSid = b.jar[authn.SESSION_COOKIE].split('.')[0];
+  const otherSid = ownSid === alice.id ? bob.id : alice.id;
+  const sessionOnly = browser();
+  sessionOnly.jar[authn.SESSION_COOKIE] = b.jar[authn.SESSION_COOKIE];
+  const own = AccountSets.mintTicket(set.id, ownSid, '/oauth2/authorize',
+                                     'pending-4');
+  const keptOne = sessionOnly.req('/oauth2/authorize?sts_account=' + own);
+  authn.spendAccountTicket(keptOne);
+  t.equal((authn.sessionOf(keptOne) || {}).id, ownSid,
+          'a browser presenting no set but the ticket\'s own session on its ' +
+          'sign-on cookie acts as that session');
+  const notOwn = AccountSets.mintTicket(set.id, otherSid, '/oauth2/authorize',
+                                        'pending-5');
+  const keptOther = sessionOnly.req('/oauth2/authorize?sts_account=' +
+                                    notOwn);
+  authn.spendAccountTicket(keptOther);
+  t.check((authn.sessionOf(keptOther) || {}).id !== otherSid,
+          'and a ticket naming another of the set\'s sessions never chooses ' +
+          'it');
 
   // -------------------------------------------------------------------------
   t.log.info('=== 6. the picker ===');

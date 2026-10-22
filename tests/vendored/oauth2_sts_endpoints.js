@@ -374,9 +374,12 @@ async function signInAndAuthorize(meta, params, options) {
   assert.strictEqual(signedIn.next, "redirect",
     "submitting the sign-in screen should answer where to go next, got " +
     signedIn.status + " " + JSON.stringify(signedIn.json));
-  const cookie = signedIn.next === "redirect" &&
+  let cookie = signedIn.next === "redirect" &&
     !/[?&]authn_error=/.test(signedIn.location)
-    ? (signedIn.cookie.match(/(?:^|; )(sts_session=[^;]*)/) || [])[1] || ""
+    // Every cookie the sign-in set, as a browser keeps them: since #561 that
+    // is `sts_accounts` as well as `sts_session`, and the ticket the sign-in
+    // returns with names the set.
+    ? (/(?:^|; )sts_session=/.test(signedIn.cookie) ? signedIn.cookie : "")
     : "";
   let next = signedIn.location;
 
@@ -388,6 +391,11 @@ async function signInAndAuthorize(meta, params, options) {
   const refused = /[?&]authn_error=/.test(next);
   assert.ok(refused || cookie, "signing in should establish a session.");
   r = await get(next, cookie ? { headers: { cookie: cookie } } : {});
+  // And what that answer set, as a browser keeps it: the hop back to the
+  // authorization endpoint may hand out the account set's new value (#561).
+  if (cookie && r.headers.getSetCookie) {
+    cookie = authnSignin.foldCookies(cookie, r.headers.getSetCookie());
+  }
   if (refused) {
     const out = parseRedirect(r.headers.get("location"));
     out.prompted = true;
@@ -618,9 +626,14 @@ async function testLoginScreen(meta, verify) {
     "two different usernames must not share a subject.");
 
   // 5. The session: no second prompt, unless prompt=login asks for one.
-  const again = await authorize(meta, fresh(), { cookie: authz.cookie });
+  // The hint names the person signed in: since #561 a login_hint naming
+  // nobody signed in here is a request to sign THAT person in, never to go
+  // on as somebody else, so this section's `prefilled-user` would prompt.
+  const again = await authorize(meta, fresh({ login_hint: authz.username }),
+                                { cookie: authz.cookie });
   assert.strictEqual(again.prompted, false,
-    "a request on an established session should not prompt again.");
+    "a request on an established session should not prompt again; it went " +
+    "to " + (again.viaAuthorize || again.location || "?"));
   assert.ok(again.params.get("code"),
             "the session request should still issue a code.");
   const forced = await get(meta.authorization_endpoint + "?" +

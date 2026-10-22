@@ -633,10 +633,13 @@ async function test() {
   r = await alice.go("GET", R + "/oauth2/authorize?" +
                      form(codeRequest(plain, { prompt: "select_account" })
                        .params));
-  check("prompt=select_account sends a signed-in person to the sign-in " +
-        "screen to choose the account", function () {
+  // The account picker since #561 (`/authn/accounts`), where a browser
+  // holding an account set chooses among its accounts or signs in another;
+  // the sign-in screen where the browser has none.
+  check("prompt=select_account sends a signed-in person to choose the " +
+        "account: the account picker, or the sign-in screen", function () {
     assert.ok((r.status === 302 || r.status === 303) &&
-              /\/authn\/login\?authn=/.test(r.location),
+              /\/authn\/(login|accounts)\?authn=/.test(r.location),
               r.status + " " + r.location);
   });
 

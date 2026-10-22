@@ -2468,6 +2468,28 @@ class Authn {
     const row = AccountSets.spendTicket(ticket);
     const set = this.accountSetOf(req);
     const path = String(req.url || '').split('?')[0];
+    // A BROWSER THAT PRESENTS NO SET AT ALL, BUT THE VERY SESSION THE TICKET
+    // NAMES (2026-10-22, the full run). A client that keeps its sign-on
+    // cookie and not `sts_accounts` — an API client, a relying party's own
+    // HTTP stack, four of this repository's jobs — signed in, was handed a
+    // ticket for the set the sign-in made, and returned without it; the
+    // rule below for a set the request does not carry then chose nobody,
+    // and it was sent to sign in again. That rule exists so a request never
+    // acts as ANOTHER account (#561, rcbj's decision 1); a request whose own
+    // sign-on cookie is the ticket's session is not another account, so the
+    // ticket counts. A request presenting a different set still chooses
+    // nobody.
+    if (row && !set && !req.stsAccountSetUnread && row.path === path) {
+      const presented = this.cookieSession(req, SESSION_COOKIE);
+      if (presented && !presented.error &&
+          presented.id === String(row.sid) &&
+          this.accountSessionLive(row.sid)) {
+        req.stsAccountSelection = row.sid;
+        log.debug("Leaving Authn.spendAccountTicket(). Spent, on the " +
+                  "session the browser presents and no set.");
+        return;
+      }
+    }
     const why = !row ? 'it is unknown, spent or expired'
       : !set || set.id !== row.setId ? 'it was issued to another browser'
       : row.path !== path ? 'it was issued for another address'
