@@ -2169,13 +2169,97 @@ where the LATERAL's generic plan is the ordered index walk, 16 ms for 500
 rows. A store with no `sortBy` is refused `newestAsync()`.
 
 **The sort row lives and dies with the row's other index rows**: written in
-the flush's replace, deleted by `MINTED_INDEX_DELETE` with the row or its
+the flush's replace, deleted by the flush with the row or its
 tombstone, skipped by `unchangedLookups()` only when the index keys AND the
 sort value are what this process last committed (`filedFingerprint()`),
 recomputed from a merged row, and filed by the backfill job with the rest. A
 row whose body the expiry purge removed leaves a sort row the join passes
 over, like every other index row. No migration: rows written before version
 25 have no sort row and are not in the list until next written.
+## A MINTED FLUSH IS ONE STATEMENT (2026-10-22, #820)
+
+**Why.** On 8081 every writing request holds its answer until its writes
+commit (#351), and a request worker runs one minted flush at a time. The
+`FLUSH minted` phase lines (#858) put `saveMinted()` at 23 ms at the median
+for about ten rows, while `pg_stat_statements` counted about 5 ms of
+statements. The rest was about eleven round trips (BEGIN, the fence, the
+lock, seven writes, the change log, COMMIT), each an event-loop turn on a
+worker ~85% busy.
+
+**What.** `persistence_postgres.js`'s `MINTED_FLUSH` is the whole flush as
+one statement of data-modifying CTEs over unnest()ed arrays, sent outside a
+transaction (a statement is its own). It is a NAMED (prepared) statement:
+planned afresh it took 3–4 ms for ten rows, prepared 0.6 ms. Its
+parameters are the table `MINTED_FLUSH_LAYOUT`, and the text takes its `$n`
+from that table. Every parameter is present in every flush, so there is
+one statement text. The order inside it is made of data dependencies:
+
+1. `fence`: the origin claim and the leases FOR SHARE, and the membership.
+2. `lk`: every existing row locked FOR UPDATE in (handle, realm, key)
+   order. `ok` reads its count, so it is read to the end.
+3. Every write reads `ok`; the side tables and the change log read `done`
+   (the bodies' writes counted). They write only for a body `ins` returned.
+
+**One difference in how, none in what:** an index row the flush files
+again is kept rather than deleted and inserted again, and a sort row whose
+`sort_at` moved is updated in place (`ON CONFLICT … DO UPDATE … WHERE …
+IS DISTINCT FROM`). The rows left are the same; fewer are rewritten.
+
+**What stays the same.** Every table write, the tombstone guard, a merge,
+`key_sealed`, `expires_at`, the unchanged-lookups skipping, the change rows,
+the counts by kind (#626), and the notify after the commit (#630). The
+answer is still `{ refused, merged }`.
+
+**THE LOCK ORDER.** Rows that exist are locked in one total order before any
+write, as since 2026-09-12. All upserts, tombstone writes included, are ONE
+INSERT in that order; they were three INSERTs. Side-table rows are written
+only after their minted row is held. **Not proven, here or in the
+statements this replaced:**
+* a key that exists for one flush and is new to another (a third
+  transaction committed it between their snapshots) is locked at different
+  phases by the two;
+* a hard delete of a minted row already gone still deletes its side rows.
+
+Postgres answers such a cycle 40P01. The statement rolls back whole and is
+sent again (`retryingConflicts()`), as a deadlocked transaction always was.
+Advisory locks on every key would close the first case. They were refused:
+a large flush would fill the shared lock table.
+
+**A MERGING STORE (`mergeRow`) IS A COMPARE-AND-SET**, because its merge is
+JavaScript and needs the stored body. The statement names the body it merged
+with (`cas_*`): the body this process last committed for the key, or no row
+(a session just made). `chk` compares that with the locked row. On a miss,
+the statement writes nothing and answers the stored bodies; the merges are
+done again and the statement is sent again. Under the lock, the merge is
+exactly the one the read-then-write made. The memory of committed bodies
+(`mintedBodies`) is bounded at 2,048 entries and is only a guess. A failed
+flush forgets what it touched.
+
+**THE TRANSACTION IS STILL THERE** (`flushMintedInTransaction()`): BEGIN,
+`checkFence()`, the merging rows locked and read, `MINTED_FLUSH`, COMMIT.
+It is used when:
+* the fence did not hold — `checkFence()` re-asserts a lapsed origin claim
+  of ours, or fails the write as before;
+* or the compare-and-set missed twice.
+
+**Measured on postgres 18** (scratch schemas beside 8081's, since dropped):
+* the same 2,200 random flushes through the old driver and the new gave
+  identical tables (`sts_minted`, `sts_minted_index`, `sts_sessions`,
+  `sts_changes`) and identical answers. Some rows were rewritten behind the
+  drivers' backs to force misses, and one run was forced through the
+  transaction path;
+* four concurrent flushers over overlapping existing rows: 6,000 flushes,
+  0 deadlocks (as before);
+* over keys that are made and hard-deleted all the time: 103 deadlocks
+  retried, against 324 for the old statements, with no flush failing;
+* `EXPLAIN (GENERIC_PLAN)` against 8081's statistics: primary keys and
+  `sts_minted_index_key` everywhere, and no sequential scan of a large table.
+
+**For a test's `pg` double**: `tests/tools/minted_flush_double.js` plays the
+statement from its named parameters against Maps.
+`tests/minted_flush_one_statement.js` counts the round trips;
+`tests/postgres_minted_writes.js` reads the lock order and the gating off
+the statement.
 
 ## WHAT ONE ADD WRITES TO THE CHANGE LOG (#618 phase 2, 2026-10-14)
 

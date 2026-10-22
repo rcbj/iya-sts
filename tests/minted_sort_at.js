@@ -41,6 +41,7 @@ const path = require('path');
 const nodeCrypto = require('crypto');
 
 const storeDouble = require('./tools/store_double');
+const flushDouble = require('./tools/minted_flush_double');
 
 const config = require('../common/config');
 const realms = require('../common/realms');
@@ -57,11 +58,19 @@ const log = require('bunyan').createLogger({
 const REALM = 'minted-sort-at';
 const SORT = queries.SORT_INDEX_KEY;
 
-// A `pg` that connects to nothing and remembers every statement.
+// A `pg` that connects to nothing and remembers every statement. The minted
+// flush is one statement since #820 (MINTED_FLUSH), played against Maps by
+// `tools/minted_flush_double.js` and recorded as `MINTED_FLUSH` with its
+// parameters by name.
 function fakePg(statements) {
   log.debug("Entering fakePg().");
   function FakeClient() {}
   FakeClient.prototype.query = function (sql, params) {
+    if (flushDouble.isFlush(sql)) {
+      statements.push({ sql: 'MINTED_FLUSH',
+                        params: flushDouble.named(sql) });
+      return Promise.resolve(flushDouble.play(flushDouble.state(), sql));
+    }
     statements.push({ sql: String(sql && sql.text ? sql.text : sql),
                       params: params || [] });
     return Promise.resolve({ rows: [], rowCount: 0 });
@@ -109,10 +118,19 @@ function driverWith(statements) {
   }
 }
 
-// The index rows one INSERT INTO sts_minted_index files, as objects.
+// The index rows one statement files, as objects: the minted flush's
+// `ixnew_*` arrays (#820), or an INSERT INTO sts_minted_index's (the backfill
+// and the completion mark).
 function filedBy(statement) {
   log.debug("Entering filedBy().");
   const p = statement.params;
+  if (statement.sql === 'MINTED_FLUSH') {
+    log.debug("Leaving filedBy(). The flush.");
+    return (p.ixnew_h || []).map(function (handle, i) {
+      return { handle: handle, realm: p.ixnew_r[i], indexKey: p.ixnew_i[i],
+               key: p.ixnew_k[i], sortAt: p.ixnew_s[i] };
+    });
+  }
   const out = (p[0] || []).map(function (handle, i) {
     return { handle: handle, realm: p[1][i], indexKey: p[2][i], key: p[3][i],
              sortAt: p[4] ? p[4][i] : undefined };
@@ -125,15 +143,24 @@ function inserts(statements) {
   log.debug("Entering inserts().");
   log.debug("Leaving inserts().");
   return statements.filter(function (one) {
-    return /^INSERT INTO sts_minted_index /.test(one.sql);
+    return /^INSERT INTO sts_minted_index /.test(one.sql) ||
+      (one.sql === 'MINTED_FLUSH' && (one.params.ixnew_h || []).length > 0);
   });
 }
 
+// The rows whose index rows a flush replaces or drops, as the old DELETE's
+// three arrays: handles, realms, keys.
 function deletes(statements) {
   log.debug("Entering deletes().");
   log.debug("Leaving deletes().");
   return statements.filter(function (one) {
-    return /^DELETE FROM sts_minted_index /.test(one.sql);
+    return one.sql === 'MINTED_FLUSH' &&
+      (one.params.ixup_h || []).concat(one.params.ixgone_h || []).length > 0;
+  }).map(function (one) {
+    const p = one.params;
+    return { statement: one,
+             params: [p.ixup_h.concat(p.ixgone_h), p.ixup_r.concat(p.ixgone_r),
+                      p.ixup_k.concat(p.ixgone_k)] };
   });
 }
 
@@ -149,7 +176,7 @@ async function driverHalf(t) {
       lookups: ['digest-f'], sortAt: null }
   ], []);
   const ins = inserts(statements);
-  t.equal(ins.length, 1, 'A1. one INSERT files every index row');
+  t.equal(ins.length, 1, 'A1. one statement files every index row');
   const filed = ins.length ? filedBy(ins[0]) : [];
   const sortRows = filed.filter(function (one) {
     return one.indexKey === SORT;
@@ -167,15 +194,18 @@ async function driverHalf(t) {
   }).every(function (one) {
     return one.sortAt === null;
   }), 'A4. every other index row has sort_at NULL', JSON.stringify(filed));
-  t.check(ins.length && /\$5::bigint\[\]/.test(ins[0].sql) &&
-          /sort_at/.test(ins[0].sql),
-          'A5. the INSERT names the sort_at column', ins.length && ins[0].sql);
+  t.check(/ixi AS \(INSERT INTO sts_minted_index \(handle, realm, index_key, key, sort_at\)/
+            .test(postgres.MINTED_FLUSH) &&
+          /DO UPDATE SET sort_at = EXCLUDED\.sort_at WHERE sts_minted_index\.sort_at IS DISTINCT FROM EXCLUDED\.sort_at/
+            .test(postgres.MINTED_FLUSH),
+          'A5. the flush names the sort_at column, and a sort row filed ' +
+          'again with a moved value is updated in place');
   const del = deletes(statements);
   t.check(del.length === 1 && del[0].params[2].indexOf('k1') >= 0 &&
           del[0].params[2].indexOf('k2') >= 0 &&
-          statements.indexOf(del[0]) < statements.indexOf(ins[0]),
+          del[0].statement === ins[0],
           'A6. the row\'s old index rows, its sort row among them, are ' +
-          'deleted first and written again',
+          'replaced in the same statement',
           JSON.stringify(del.map(function (one) { return one.params; })));
 
   statements.length = 0;

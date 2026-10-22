@@ -37,6 +37,7 @@
 // ===========================================================================
 
 const storeDouble = require('./tools/store_double');
+const flushDouble = require('./tools/minted_flush_double');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -67,6 +68,28 @@ function fakeDatabase() {
     return typeof value === 'string' ? JSON.parse(value) : value;
   };
   db.query = function (sql, params) {
+    // THE MINTED FLUSH IS ONE STATEMENT SINCE #820, played against this
+    // database's own minted Map (keyed handle\nrealm\nkey, as the double
+    // keys it) and change log by `tools/minted_flush_double.js`.
+    if (flushDouble.isFlush(sql)) {
+      db.statements.push('MINTED_FLUSH');
+      const state = { minted: db.minted, sessions: new Map(),
+                      index: new Set(), changes: [] };
+      const played = flushDouble.play(state, sql);
+      db.minted.forEach(function (row) {
+        if (!row.written_ms) {
+          row.written_ms = Date.now();
+        }
+      });
+      state.changes.forEach(function (one) {
+        db.log.push({ seq: db.log.length + 1, origin: one.origin,
+                      kind: one.kind, realm: one.realm, key: one.key });
+      });
+      if (state.changes.length) {
+        db.changes += 1;
+      }
+      return Promise.resolve(played);
+    }
     const text = String(sql).replace(/\s+/g, ' ').trim();
     const p = params || [];
     db.statements.push(text);
