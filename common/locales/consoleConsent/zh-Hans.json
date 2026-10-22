@@ -35,5 +35,7 @@
   "remove": "删除",
   "unreadable": "此值不是本服务写入的格式——有人手动将其放到了条目上：<code>{raw}</code>。它被显示而不是被丢弃，因为页面默默忽略的值，正是有人有意写入却无法发现被忽略的值。它不表示任何同意。",
   "agreedAt": "同意于 {at}",
-  "revoke": "撤销"
+  "revoke": "撤销",
+  "windowedNote": "<strong>此领域的人员存放在存储中，因此此列表按页读取。</strong>它按人员分页：每页显示其人员的所有同意，最新的在前。搜索必须给出完整的用户名、client_id 或范围。",
+  "searchIncomplete": "搜索查看了持有同意的 {holders} 人中的前 {scanned} 人；仅由其他人持有的 client_id 或范围不会显示。"
 }

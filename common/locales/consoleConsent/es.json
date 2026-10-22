@@ -35,5 +35,7 @@
   "remove": "Quitar",
   "unreadable": "Este valor no tiene la forma que escribe este servicio — algo lo puso a mano en la entrada: <code>{raw}</code>. Se muestra en lugar de descartarse, porque un valor que la página ignorara en silencio sería uno que alguien escribió a propósito sin poder averiguar que se estaba ignorando. No consiente nada.",
   "agreedAt": "aceptado el {at}",
-  "revoke": "Revocar"
+  "revoke": "Revocar",
+  "windowedNote": "<strong>Las personas de este dominio están en el almacén, así que esta lista se lee página a página.</strong> Se pagina por persona: cada página muestra todos los consentimientos de sus personas, del más reciente al más antiguo. Una búsqueda debe nombrar un nombre de usuario, un client_id o un ámbito completos.",
+  "searchIncomplete": "La búsqueda examinó las primeras {scanned} de las {holders} personas con un consentimiento; no se muestra un client_id o ámbito que solo tengan otras."
 }

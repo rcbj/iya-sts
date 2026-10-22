@@ -1035,6 +1035,63 @@ function withAttribute(realm, baseKey, attribute, afterKey, limit) {
                     suffixLength(baseKey)] };
 }
 
+// ---------------------------------------------------------------------------
+// A CONSOLE PAGE OF HOLDERS, AND HOW MANY THERE ARE (2026-10-22, #820).
+//
+// Monitoring → Consent listed every person holding `oauthConsent` — about
+// 470,000 on 8081, because consent is required by default — through the
+// synchronous bridge, one decrypt each, on a request worker. These are the
+// two questions the page asks instead, asynchronously on the read pool: how
+// many entries under a base hold an attribute (the asked names' partial GIN
+// index for an asked name, `holdsClause()`'s rule — a count of the holders
+// the index narrows to, linear in the HOLDERS and never in the directory,
+// nothing opened), and one page of them in key order at an offset. The
+// offset is the console's page number, and the database walks it; a keyset
+// would need the console's paging to carry a cursor.
+// ---------------------------------------------------------------------------
+/**
+ * How many entries under a base hold an attribute.
+ *
+ * @param realm - the realm id
+ * @param baseKey - the base's normalised DN
+ * @param attribute - the attribute name, lower-cased as stored
+ * @returns the statement; its one row's `n` is the count
+ */
+function countWithAttribute(realm, baseKey, attribute) {
+  log.debug("Entering countWithAttribute().");
+  const name = String(attribute).toLowerCase();
+  log.debug("Leaving countWithAttribute().");
+  return { text: 'SELECT count(*)::bigint AS n FROM sts_ldap_entries WHERE ' +
+                 'realm = $1 AND ' + underClause(2, 4, false) + ' AND ' +
+                 holdsClause(name, 3),
+           values: [String(realm), String(baseKey), name,
+                    suffixLength(baseKey)] };
+}
+
+/**
+ * One page of the entries under a base that hold an attribute, in key
+ * order, after skipping `offset` of them.
+ *
+ * @param realm - the realm id
+ * @param baseKey - the base's normalised DN
+ * @param attribute - the attribute name, lower-cased as stored
+ * @param offset - holders to skip
+ * @param limit - the page size (at most 1,000)
+ * @returns the statement
+ */
+function withAttributeAt(realm, baseKey, attribute, offset, limit) {
+  log.debug("Entering withAttributeAt().");
+  const name = String(attribute).toLowerCase();
+  const skip = Math.max(0, Math.floor(Number(offset) || 0));
+  log.debug("Leaving withAttributeAt().");
+  return { text: 'SELECT ' + COLUMNS + ' FROM sts_ldap_entries WHERE ' +
+                 'realm = $1 AND ' + underClause(2, 6, false) + ' AND ' +
+                 holdsClause(name, 3) + ' ORDER BY dn_key LIMIT $4 ' +
+                 'OFFSET $5',
+           values: [String(realm), String(baseKey), name, pageSize(limit),
+                    skip, suffixLength(baseKey)] };
+}
+
 /**
  * Whether any entry of a realm holds an attribute: a counter for a counted
  * attribute, the asked names' index for an asked one, a scan otherwise.
@@ -1320,7 +1377,8 @@ function rowOf(row) {
 function answerOf(name, rows) {
   log.debug("Entering answerOf().");
   const list = Array.isArray(rows) ? rows : [];
-  if (name === 'count' || name === 'realmCount' || name === 'rdnCount') {
+  if (name === 'count' || name === 'realmCount' || name === 'rdnCount' ||
+      name === 'countWithAttribute') {
     log.debug("Leaving answerOf(). A count.");
     return Number((list[0] || {}).n || 0);
   }
@@ -1391,6 +1449,8 @@ const QUERIES = {
   countHolding: countHolding,
   hasChild: hasChild,
   withAttribute: withAttribute,
+  countWithAttribute: countWithAttribute,
+  withAttributeAt: withAttributeAt,
   withNames: withNames,
   anyWithAttribute: anyWithAttribute,
   classesUnder: classesUnder,
@@ -1451,6 +1511,8 @@ module.exports = {
   countHolding: countHolding,
   hasChild: hasChild,
   withAttribute: withAttribute,
+  countWithAttribute: countWithAttribute,
+  withAttributeAt: withAttributeAt,
   withNames: withNames,
   anyWithAttribute: anyWithAttribute,
   classesUnder: classesUnder,

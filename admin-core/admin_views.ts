@@ -2131,6 +2131,9 @@ class AdminViews {
       globals: globalPage.shown,
       users: consentPage.shown,
       matched: matched.length,
+      // WHETHER THE RECORDED HALF IS THE STORE'S PAGE (#820): never here,
+      // where every consent is read; see `consentPageViewAsync()`.
+      windowed: false,
       globalsPaging: this.pagingJson(globalPage.paging),
       usersPaging: this.pagingJson(consentPage.paging),
       query: { q: q },
@@ -2148,6 +2151,99 @@ class AdminViews {
               " override(s), " + consentPage.shown.length + " of " +
               matched.length + " consent(s).");
     return { json: json, register: register, q: q, matched: matched,
+             globalPage: globalPage, consentPage: consentPage };
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE SAME PAGE FROM THE STORE (2026-10-22, #820).
+  //
+  // `consentPageView()` builds the whole register and then pages it, and the
+  // register's recorded half is every person holding a consent: about
+  // 470,000 on 8081, one synchronous store read and a decrypt each, on the
+  // request worker answering — which held it, and through read-your-write
+  // every other worker. Where the directory is in the store this asks
+  // `consent.recordedPageAsync()` instead: the people counted from the asked
+  // names' index, one page of PEOPLE read on the read pool, only their rows
+  // opened. What changes for a reader, and the answer says so (`windowed`):
+  //   * `usersPaging` is over PEOPLE (`noun: 'people'`) and `matched` is how
+  //     many people hold a consent; a page shows every consent of its
+  //     people, newest first within it;
+  //   * `counts.consents` and `counts.unreadable` are the page's
+  //     (`counts.countsOf: 'page'`);
+  //   * the search is EXACT — a whole username, client_id or scope — and a
+  //     client_id or scope is looked for in at most a bounded number of
+  //     holders (`search`).
+  // The overrides half is configuration and is paged as before. With the
+  // directory in memory nothing changes: `consentPageView()` answers.
+  // ---------------------------------------------------------------------------
+  /**
+   * Builds `/admin/consent` from the store while the directory is windowed.
+   *
+   * @param req - the request
+   * @returns a promise of the view, `consentPageView()`'s shape
+   */
+  async consentPageViewAsync(req) {
+    const { log, applications, consent: consentStore } = this.deps;
+    const self = this;
+    log.debug("Entering AdminViews.consentPageViewAsync().");
+    const asked = (req && req.query) || {};
+    if (!consentStore ||
+        typeof consentStore.recordedPageAsync !== 'function') {
+      log.debug("Leaving AdminViews.consentPageViewAsync(). Synchronous.");
+      return this.consentPageView(asked);
+    }
+    const q = String((Array.isArray(asked.q) ? asked.q[0] : asked.q) || '')
+      .trim().toLowerCase();
+    let peoplePaging = null;
+    const page = await consentStore.recordedPageAsync({
+      q: q,
+      pageOf: function (people) {
+        peoplePaging = self.pagingOf(asked, people,
+          { name: 'users', noun: 'people', defaultPer: DELEGATION_PER_PAGE });
+        return { offset: peoplePaging.offset, limit: peoplePaging.perPage };
+      }
+    });
+    if (!page) {
+      log.debug("Leaving AdminViews.consentPageViewAsync(). Window off.");
+      return this.consentPageView(asked);
+    }
+    const register = consentStore.register({ recorded: false });
+    let consentPage;
+    if (page.search) {
+      // What a bounded search found is all there is to page.
+      consentPage = this.pagedRows(asked, page.users,
+        { name: 'users', noun: 'consents',
+          defaultPer: DELEGATION_PER_PAGE });
+    } else {
+      consentPage = { shown: page.users,
+                      paging: peoplePaging || this.pagingOf(asked,
+                        page.people, { name: 'users', noun: 'people',
+                                       defaultPer: DELEGATION_PER_PAGE }) };
+    }
+    const globalPage = this.pagedRows(asked, register.globals,
+      { name: 'globals', noun: 'overrides',
+        defaultPer: DELEGATION_PER_PAGE });
+    const matched = page.search ? page.users.length : page.people;
+    const json = Object.assign({}, register, {
+      globals: globalPage.shown,
+      users: consentPage.shown,
+      matched: matched,
+      windowed: true,
+      search: page.search,
+      counts: Object.assign({}, register.counts, page.counts,
+                            { globals: register.counts.globals }),
+      globalsPaging: this.pagingJson(globalPage.paging),
+      usersPaging: this.pagingJson(consentPage.paging),
+      query: { q: q },
+      withdrawnAttribute: consent.WITHDRAWN_ATTRIBUTE,
+      applicationChoices: applications.list().map(function (row) {
+        return { identifier: row.identifier, name: row.name || '' };
+      })
+    });
+    log.debug("Leaving AdminViews.consentPageViewAsync(). " +
+              consentPage.shown.length + " row(s), " + page.people +
+              " people.");
+    return { json: json, register: register, q: q, matched: page.users,
              globalPage: globalPage, consentPage: consentPage };
   }
 
@@ -15267,6 +15363,7 @@ export = {
   directoryPageJson: slot.forward('directoryPageJson'),
   consentView: slot.forward('consentView'),
   consentPageView: slot.forward('consentPageView'),
+  consentPageViewAsync: slot.forward('consentPageViewAsync'),
   rolesRegister: slot.forward('rolesRegister'),
   rolesView: slot.forward('rolesView'),
   policiesView: slot.forward('policiesView'),
