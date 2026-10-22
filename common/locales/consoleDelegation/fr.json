@@ -67,6 +67,8 @@
   "userChooserLabel": "Trouver une personne",
   "userChooserPlaceholder": "une partie d’un nom d’utilisateur, d’un principal ou d’un sujet",
   "userChooserNothing": "Personne ici ne correspond. Cette liste est le registre des identités RÉUNI avec toutes les personnes nommées par une délégation ; un nom qui figure sur la page ci-dessus mais pas ici a donc atteint ce service en tant qu’application plutôt qu’en tant que personne.",
+  "userChooserExact": "<strong>Ce registre est trop grand pour être listé.</strong> Les choix sont les identités qu’une délégation nomme, et une recherche ne trouve toute autre personne que par son nom exact.",
+  "usersPartial": "<strong>Seules certaines identités sont listées ici.</strong> Le registre est trop grand pour être listé en entier : ce sont les identités qu’une délégation nomme et celle recherchée par son nom.",
   "signedIn": "connecté",
   "toThisService": "à ce service",
   "issuedFor": "émis pour",
