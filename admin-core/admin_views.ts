@@ -13073,7 +13073,17 @@ class AdminViews {
     // PAGE, THEN DECORATE: the full factor row — keys, the authenticator's
     // detail, the recovery codes, what the columns draw — is built for the
     // rows on this page and for nobody else (`pagedRows()`).
-    const page = this.pagedRows(req.query, filtered, {
+    //
+    // **NOT HERE FOR A CALLER THAT CAN WAIT (#820, 2026-10-22)**:
+    // `deferDecoration` pages and leaves the shown rows to
+    // `usersListRowsAsync()`, which reads what every one of them needs
+    // together and asynchronously. Decorated here, each row was about nine
+    // synchronous directory reads (`decoratePerson()`), and on 8081 fifty of
+    // them spent the request's 5,000 ms store budget (STS-LDAP-0175): the
+    // console said the page could not be drawn, and the worker refused code
+    // exchanges while it waited.
+    const deferDecoration = !!(opts && opts.deferDecoration);
+    const page = this.pagedRows(req.query, filtered, deferDecoration ? {} : {
       decorate: function (row) {
         const decorated = self.decoratePerson(population, row);
         // ON DEMAND (#820) the list's token counts are of the tokens a
@@ -13224,11 +13234,113 @@ class AdminViews {
           users: shown.map(function (row) {
             return Object.assign({}, row,
                                  { liveSessions: liveByUser[row.key] || 0,
-                                   dn: self.personDnOf(row) });
+                                   dn: deferDecoration ? ''
+                                     : self.personDnOf(row) });
           })
       };
       }())
     };
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE SHOWN ROWS, DECORATED TOGETHER AND ASYNCHRONOUSLY (#820, 2026-10-22),
+  // into a view `usersListJson()` built with `deferDecoration`.
+  //
+  // What `decoratePerson()`, `personDnOf()` and — while the token register
+  // is on demand — `stats.userRow()` read one row at a time, synchronously,
+  // is read here for every shown row at once, off the event loop: the
+  // credentials of every spelling of every row
+  // (`credentials.factorHolderRowsAsync()`, the census's resolution a page
+  // at a time), each row's DN (`credentials.personDnsAsync()`), and each
+  // row's own token counts (`stats.userRowsOfAsync()`). The rows are then
+  // decorated exactly as `decoratePerson()` decorates one — the same
+  // spellings, united by the same `mergeFactors()` in the fold's order — so
+  // the page's answer is unchanged; `tests/users_page_rows_async.js` holds
+  // both. A spelling whose credentials the store refused adds nothing, so a
+  // row of nothing but those has no factors: unknown, not "none".
+  // ---------------------------------------------------------------------------
+  /**
+   * Decorates a deferred users list's shown rows, the store asked
+   * asynchronously.
+   *
+   * @param view - what `usersListJson()` answered with `deferDecoration`
+   * @returns a promise of the same view
+   */
+  async usersListRowsAsync(view) {
+    const { log, credentials, stats } = this.deps;
+    const self = this;
+    log.debug("Entering AdminViews.usersListRowsAsync().");
+    const shown = view.shown || [];
+    const spellings = (view.population && view.population.spellings) ||
+      new Map();
+    const holders = [];
+    const ownerOf = [];
+    shown.forEach(function (row, at) {
+      (spellings.get(row.key) || []).forEach(function (holder) {
+        holders.push(holder);
+        ownerOf.push(at);
+      });
+    });
+    const withDn = [];
+    shown.forEach(function (row, at) {
+      if (row && row.inDirectory) {
+        withDn.push(at);
+      }
+    });
+    const onDemand = typeof stats.tokensOnDemand === 'function' &&
+      stats.tokensOnDemand() && typeof stats.userRowsOfAsync === 'function';
+    const answers = await Promise.all([
+      typeof credentials.factorHolderRowsAsync === 'function'
+        ? credentials.factorHolderRowsAsync(holders)
+        : Promise.resolve(holders.map(function (holder) {
+          return credentials.factorHolderRow(holder);
+        })),
+      typeof credentials.personDnsAsync === 'function'
+        ? credentials.personDnsAsync(withDn.map(function (at) {
+          return String(shown[at].name || shown[at].key || '');
+        }))
+        : Promise.resolve(withDn.map(function (at) {
+          return self.personDnOf(shown[at]);
+        })),
+      onDemand ? stats.userRowsOfAsync(shown.map(function (row) {
+        return row.key;
+      })) : Promise.resolve(null)
+    ]);
+    const factorRows = answers[0] || [];
+    const merged = shown.map(function () {
+      return null;
+    });
+    factorRows.forEach(function (factors, i) {
+      if (factors) {
+        merged[ownerOf[i]] = self.mergeFactors(merged[ownerOf[i]], factors);
+      }
+    });
+    shown.forEach(function (row, at) {
+      row.factors = merged[at];
+    });
+    const own = answers[2];
+    if (own) {
+      shown.forEach(function (row, at) {
+        if (own[at] && own[at].tokens) {
+          row.tokens = own[at].tokens;
+        }
+      });
+    }
+    const dns = shown.map(function () {
+      return '';
+    });
+    (answers[1] || []).forEach(function (dn, i) {
+      dns[withDn[i]] = String(dn || '');
+    });
+    const before = (view.json && view.json.users) || [];
+    view.json.users = shown.map(function (row, at) {
+      return Object.assign({}, row, {
+        liveSessions: before[at] ? before[at].liveSessions : 0,
+        dn: dns[at] });
+    });
+    log.debug("Leaving AdminViews.usersListRowsAsync(). " + shown.length +
+              " row(s), " + holders.length + " spelling(s).");
+    return view;
   }
 
   // Who holds a live sign-on session, by identity key: every session walked.
@@ -14540,9 +14652,12 @@ class AdminViews {
     // synchronous store questions here in a windowed process.
     const asked = await this.peopleAndCensusAsync({
       mayBeStale: AdminViews.unfiltered(req) });
-    // The tiles too (2026-10-21), for `usersJsonAsync()`'s reason.
-    const list = await this.usersListTilesAsync(this.usersListJson(req,
-      Object.assign({}, asked, { deferTiles: true })));
+    // The tiles too (2026-10-21), for `usersJsonAsync()`'s reason, and the
+    // shown rows (#820).
+    const list = await this.usersListTilesAsync(
+      await this.usersListRowsAsync(this.usersListJson(req,
+        Object.assign({}, asked, { deferTiles: true,
+                                   deferDecoration: true }))));
     log.debug("Leaving AdminViews.mfaRosterJsonAsync().");
     return this.mfaRosterJson(req, Object.assign({}, asked, { list: list }));
   }
@@ -14569,8 +14684,12 @@ class AdminViews {
     }
     const asked = await this.peopleAndCensusAsync({
       mayBeStale: AdminViews.unfiltered(req) });
-    const view = await this.usersListTilesAsync(this.usersListJson(req,
-      Object.assign({}, asked, { deferTiles: true })));
+    // The shown rows decorated together and asynchronously (#820), then
+    // the tiles, which fill each shown row's live sessions.
+    const view = await this.usersListTilesAsync(
+      await this.usersListRowsAsync(this.usersListJson(req,
+        Object.assign({}, asked, { deferTiles: true,
+                                   deferDecoration: true }))));
     log.debug("Leaving AdminViews.usersJsonAsync().");
     return view.json;
   }

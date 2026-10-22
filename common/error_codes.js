@@ -6627,6 +6627,13 @@ const CODES = [
       'not be written (#847). The sign-in stands; the next verified ' +
       'sign-in tries again.',
     spec: '' },
+  { code: 'STS-AUTHN-0410',
+    summary: 'The credentials of the rows a users list shows could not be ' +
+      'read together (#820): the store refused (it was unavailable, or the ' +
+      'request\'s directory budget was spent), so those rows are drawn with ' +
+      'their factors unknown rather than as holding none; or the read threw ' +
+      'otherwise, and each row was asked on its own instead.',
+    spec: 'none — logged; the page is drawn' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',

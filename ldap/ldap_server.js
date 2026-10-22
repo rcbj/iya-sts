@@ -13680,12 +13680,103 @@ function credentialCensus(names) {
 async function credentialCensusAsync(names, counter) {
   log.debug('Entering credentialCensusAsync(). ' + (names || []).length +
             ' name(s).');
+  const out = await valuesOfNamesAsync(names, counter, censusOfEntry);
+  log.debug('Leaving credentialCensusAsync().');
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// THE SHOWN ROWS' CREDENTIALS, ASKED TOGETHER (#820, 2026-10-22).
+//
+// `/admin/users` decorated each row it showed through
+// `credentials.factorHolderRow()` — `mechanismsFor()`, about nine
+// `locateEntry()`s per person — and in a windowed process every one of them
+// that missed the window was a SYNCHRONOUS round trip through the bridge,
+// charged to the request's store budget (STS-LDAP-0175). On 8081, at about
+// 660,000 people under a sign-in load, fifty rows spent the budget and the
+// page "could not be drawn" while the worker refused code exchanges.
+//
+// This is the census's own resolution (`valuesOfNamesAsync()`, one `byKeys`
+// per five hundred names and a `byName` for each that missed, all through
+// the read pool) handing back, per name, the census's raw values and the one
+// more attribute a full roster row reads — the recovery codes, RAW, for
+// `credentials.ts` to interpret as `backupCodeStatus()` does. Nothing is
+// interpreted here, for `credentialCensus()`'s reason.
+// ---------------------------------------------------------------------------
+/**
+ * The credential values a full roster row reads, for each named person,
+ * asked asynchronously.
+ *
+ * @param names - the names, as `locateEntry()` takes them
+ * @param counter - optional; what the store was asked, for a test
+ * @returns a promise of one element per name: null where no entry is found,
+ *   else the census's values and `backupCodes`, the raw recovery-code value
+ */
+async function credentialRowsAsync(names, counter) {
+  log.debug('Entering credentialRowsAsync(). ' + (names || []).length +
+            ' name(s).');
+  const out = await valuesOfNamesAsync(names, counter, rowValuesOfEntry);
+  log.debug('Leaving credentialRowsAsync().');
+  return out;
+}
+
+// The DN of each named person's entry, by `personDnOf()`'s rule
+// (`existingUserEntry()`), asked asynchronously (#820): the users list
+// carries each shown row's DN, and asking it one name at a time was one
+// more synchronous round trip per row in a windowed process.
+/**
+ * Each named person's entry DN, asked asynchronously.
+ *
+ * @param names - the usernames
+ * @returns a promise of one DN per name, '' where there is no entry
+ */
+async function personDnsAsync(names) {
+  log.debug('Entering personDnsAsync(). ' + (names || []).length +
+            ' name(s).');
+  const list = (names || []).map(function (name) {
+    return String(name == null ? '' : name);
+  });
+  let found;
+  if (directoryWindow) {
+    found = await existingUserEntriesAsync(list);
+  } else {
+    found = list.map(function (name) {
+      return existingUserEntry(name);
+    });
+  }
+  const out = list.map(function (name, i) {
+    return found[i] ? found[i].dn : '';
+  });
+  log.debug('Leaving personDnsAsync().');
+  return out;
+}
+
+// One entry's values for a full roster row: the census's, and the recovery
+// codes raw. Called once per shown row, so no Entering/Leaving pair, for
+// `censusOfEntry()`'s reason.
+function rowValuesOfEntry(stored) {
+  const out = censusOfEntry(stored);
+  const codes = (stored.attributes.stsbackupcodes || [])[0];
+  out.backupCodes = codes ? String(codes) : '';
+  return out;
+}
+
+// `credentialCensusAsync()`'s resolution with what is read off each entry
+// handed in (#820): the census reads `censusOfEntry()`, a roster row
+// `rowValuesOfEntry()`. Outside a window it is the synchronous walk, which
+// asks no store.
+async function valuesOfNamesAsync(names, counter, ofEntry) {
+  log.debug('Entering valuesOfNamesAsync(). ' + (names || []).length +
+            ' name(s).');
   const list = (names || []).map(function (name) {
     return String(name == null ? '' : name);
   });
   if (!directoryWindow) {
-    log.debug('Leaving credentialCensusAsync(). No window.');
-    return credentialCensus(list);
+    log.debug('Leaving valuesOfNamesAsync(). No window.');
+    return list.map(function (name) {
+      const stored = locateEntry(name).stored;
+      return stored ? ofEntry(stored) : null;
+    });
   }
   const out = list.map(function () {
     return null;
@@ -13699,16 +13790,16 @@ async function credentialCensusAsync(names, counter) {
     return list[i];
   }), counter);
   plain.forEach(function (i, at) {
-    out[i] = found[at] ? censusOfEntry(found[at]) : null;
+    out[i] = found[at] ? ofEntry(found[at]) : null;
   });
   for (const i of shaped) {
     const stored = await locateStoredAsync(list[i]);
-    out[i] = stored ? censusOfEntry(stored) : null;
+    out[i] = stored ? ofEntry(stored) : null;
   }
   if (counter) {
     counter.identifiers = (counter.identifiers || 0) + shaped.length;
   }
-  log.debug('Leaving credentialCensusAsync(). ' + plain.length +
+  log.debug('Leaving valuesOfNamesAsync(). ' + plain.length +
             ' name(s), ' + shaped.length + ' identifier(s).');
   return out;
 }
@@ -14134,6 +14225,10 @@ if (typeof credentials.addDirectoryHooks === 'function') {
   credentials.addDirectoryHooks({
     credentialCensus: credentialCensus,
     credentialCensusAsync: credentialCensusAsync,
+    // The shown rows' full credential values and their DNs, asked
+    // together and asynchronously (#820).
+    credentialRowsAsync: credentialRowsAsync,
+    personDnsAsync: personDnsAsync,
     applicationMatcher: applicationMatcher,
     // How many people the realm DEFINES, counted rather than listed, and
     // the first names of them without listing the rest (#610) — the
