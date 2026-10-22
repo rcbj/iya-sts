@@ -84,8 +84,8 @@
     "text": "Hashalgoritm för lösenord"
   },
   "password.FIELDS.hashAlgorithm.what": {
-    "en": "5fa1e8c07342e8c3",
-    "text": "Algoritmen som ett nyligen lagrat lösenord hashas med: argon2id (RFC 9106, förstahandsvalet i OWASP Password Storage Cheat Sheet) eller scrypt (RFC 7914). En lagrad hash anger sin egen algoritm och sina parametrar och fortsätter att verifieras; en som inte använder den här algoritmen med de här parametrarna hashas om vid personens nästa verifierade inloggning. Klienthemligheter, aktiveringstoken, återställningskoder och applösenord är inte lösenord och förblir scrypt."
+    "en": "9f6e2faa116ebe94",
+    "text": "Algoritmen som ett nyligen lagrat lösenord hashas med: scrypt (RFC 7914), standardvalet, eller argon2id (RFC 9106, förstahandsvalet i OWASP Password Storage Cheat Sheet). En lagrad hash anger sin egen algoritm och sina parametrar och fortsätter att verifieras; en som inte använder den här algoritmen med de här parametrarna hashas om vid personens nästa verifierade inloggning. Klienthemligheter, aktiveringstoken, återställningskoder och applösenord är inte lösenord och förblir scrypt."
   },
   "password.FIELDS.argon2Memory.label": {
     "en": "f56cee65f89ca6d4",
@@ -128,8 +128,8 @@
     "text": "Kostnad för scrypt (log2 av N)"
   },
   "password.FIELDS.scryptLogN.what": {
-    "en": "ee968ef217ec87e1",
-    "text": "scrypts CPU- och minneskostnad för ett nyligen lagrat lösenord när algoritmen är scrypt, som en tvåpotens: 17 är N=131072. Tillsammans med parallellismen måste den uppfylla OWASP:s tabell: 2^17 med p=1, 2^16 med p=2, 2^15 med p=3, 2^14 med p=5 eller 2^13 med p=10."
+    "en": "d6b7b8f956d8c0b0",
+    "text": "scrypts CPU- och minneskostnad för ett nyligen lagrat lösenord när algoritmen är scrypt, som en tvåpotens: 15 (standardvärdet) är N=32768. OWASP:s tabell parar den med parallellismen: 2^17 med p=1, 2^16 med p=2, 2^15 med p=3, 2^14 med p=5 eller 2^13 med p=10. Standardvärdet, 2^15 med p=1, ligger under den."
   },
   "password.FIELDS.scryptBlockSize.label": {
     "en": "7b7e7b5de9b8be58",
@@ -184,8 +184,8 @@
     "text": "Hur långt ett lösenord som den här tjänsten HITTAR PÅ är — för en ny användare som skapas från konsolen eller /admin-api, en operatörs Generera och startkontot i produktläge. Det måste vara minst minimilängden och minst dubbla antalet symboler plus två. Tjugo tecken ur ett alfabet på 90 tecken är ungefär 130 bitar."
   },
   "password.SCHEMA.attributes.stsPwdHashAlgorithm.what": {
-    "en": "5fa1e8c07342e8c3",
-    "text": "Algoritmen som ett nyligen lagrat lösenord hashas med: argon2id (RFC 9106, förstahandsvalet i OWASP Password Storage Cheat Sheet) eller scrypt (RFC 7914). En lagrad hash anger sin egen algoritm och sina parametrar och fortsätter att verifieras; en som inte använder den här algoritmen med de här parametrarna hashas om vid personens nästa verifierade inloggning. Klienthemligheter, aktiveringstoken, återställningskoder och applösenord är inte lösenord och förblir scrypt."
+    "en": "9f6e2faa116ebe94",
+    "text": "Algoritmen som ett nyligen lagrat lösenord hashas med: scrypt (RFC 7914), standardvalet, eller argon2id (RFC 9106, förstahandsvalet i OWASP Password Storage Cheat Sheet). En lagrad hash anger sin egen algoritm och sina parametrar och fortsätter att verifieras; en som inte använder den här algoritmen med de här parametrarna hashas om vid personens nästa verifierade inloggning. Klienthemligheter, aktiveringstoken, återställningskoder och applösenord är inte lösenord och förblir scrypt."
   },
   "password.SCHEMA.attributes.stsPwdArgon2Memory.what": {
     "en": "ec649d8291c32776",
@@ -200,8 +200,8 @@
     "text": "Hur många banor argon2id delar upp sitt minne i (p). Det är en del av hashen, inte ett antal trådar: node beräknar en hash på en tråd oavsett vad detta säger. 1 är OWASP:s värde."
   },
   "password.SCHEMA.attributes.stsPwdScryptLogN.what": {
-    "en": "ee968ef217ec87e1",
-    "text": "scrypts CPU- och minneskostnad för ett nyligen lagrat lösenord när algoritmen är scrypt, som en tvåpotens: 17 är N=131072. Tillsammans med parallellismen måste den uppfylla OWASP:s tabell: 2^17 med p=1, 2^16 med p=2, 2^15 med p=3, 2^14 med p=5 eller 2^13 med p=10."
+    "en": "d6b7b8f956d8c0b0",
+    "text": "scrypts CPU- och minneskostnad för ett nyligen lagrat lösenord när algoritmen är scrypt, som en tvåpotens: 15 (standardvärdet) är N=32768. OWASP:s tabell parar den med parallellismen: 2^17 med p=1, 2^16 med p=2, 2^15 med p=3, 2^14 med p=5 eller 2^13 med p=10. Standardvärdet, 2^15 med p=1, ligger under den."
   },
   "password.SCHEMA.attributes.stsPwdScryptBlockSize.what": {
     "en": "f0c104745b77d30a",

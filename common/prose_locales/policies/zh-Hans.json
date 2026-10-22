@@ -84,8 +84,8 @@
     "text": "密码哈希算法"
   },
   "password.FIELDS.hashAlgorithm.what": {
-    "en": "5fa1e8c07342e8c3",
-    "text": "新存储的密码所用的哈希算法：argon2id（RFC 9106，OWASP Password Storage Cheat Sheet 的首选）或 scrypt（RFC 7914）。已存储的哈希注明其自身的算法和参数，并继续可以验证；不是此算法和这些参数的哈希会在此人下一次经过验证的登录时重新计算。客户端密钥、激活令牌、恢复代码和应用密码不是密码，仍使用 scrypt。"
+    "en": "9f6e2faa116ebe94",
+    "text": "新存储的密码所用的哈希算法：scrypt（RFC 7914，默认）或 argon2id（RFC 9106，OWASP Password Storage Cheat Sheet 的首选）。已存储的哈希注明其自身的算法和参数，并继续可以验证；不是此算法和这些参数的哈希会在此人下一次经过验证的登录时重新计算。客户端密钥、激活令牌、恢复代码和应用密码不是密码，仍使用 scrypt。"
   },
   "password.FIELDS.argon2Memory.label": {
     "en": "f56cee65f89ca6d4",
@@ -128,8 +128,8 @@
     "text": "scrypt 成本（N 的 log2）"
   },
   "password.FIELDS.scryptLogN.what": {
-    "en": "ee968ef217ec87e1",
-    "text": "算法为 scrypt 时，新存储密码的 scrypt CPU 与内存成本，以 2 的幂表示：17 即 N=131072。它与并行度一起必须满足 OWASP 的表：2^17 配 p=1，2^16 配 p=2，2^15 配 p=3，2^14 配 p=5，或 2^13 配 p=10。"
+    "en": "d6b7b8f956d8c0b0",
+    "text": "算法为 scrypt 时，新存储密码的 scrypt CPU 与内存成本，以 2 的幂表示：15（默认值）即 N=32768。OWASP 的表将它与并行度配对：2^17 配 p=1，2^16 配 p=2，2^15 配 p=3，2^14 配 p=5，或 2^13 配 p=10。默认值 2^15 配 p=1 低于该表。"
   },
   "password.FIELDS.scryptBlockSize.label": {
     "en": "7b7e7b5de9b8be58",
@@ -184,8 +184,8 @@
     "text": "本服务自行生成的密码有多长——用于从控制台或 /admin-api 创建的新用户、操作员的 Generate，以及产品模式的引导账户。它必须至少等于最小长度，并且至少为符号数的两倍加二。从 90 个字符的字母表中取二十个字符约为 130 位。"
   },
   "password.SCHEMA.attributes.stsPwdHashAlgorithm.what": {
-    "en": "5fa1e8c07342e8c3",
-    "text": "新存储的密码所用的哈希算法：argon2id（RFC 9106，OWASP Password Storage Cheat Sheet 的首选）或 scrypt（RFC 7914）。已存储的哈希注明其自身的算法和参数，并继续可以验证；不是此算法和这些参数的哈希会在此人下一次经过验证的登录时重新计算。客户端密钥、激活令牌、恢复代码和应用密码不是密码，仍使用 scrypt。"
+    "en": "9f6e2faa116ebe94",
+    "text": "新存储的密码所用的哈希算法：scrypt（RFC 7914，默认）或 argon2id（RFC 9106，OWASP Password Storage Cheat Sheet 的首选）。已存储的哈希注明其自身的算法和参数，并继续可以验证；不是此算法和这些参数的哈希会在此人下一次经过验证的登录时重新计算。客户端密钥、激活令牌、恢复代码和应用密码不是密码，仍使用 scrypt。"
   },
   "password.SCHEMA.attributes.stsPwdArgon2Memory.what": {
     "en": "ec649d8291c32776",
@@ -200,8 +200,8 @@
     "text": "argon2id 将其内存划分成的通道数（p）。它是哈希的一部分，而不是线程数：无论这里写多少，node 都在一个线程上计算哈希。1 是 OWASP 的值。"
   },
   "password.SCHEMA.attributes.stsPwdScryptLogN.what": {
-    "en": "ee968ef217ec87e1",
-    "text": "算法为 scrypt 时，新存储密码的 scrypt CPU 与内存成本，以 2 的幂表示：17 即 N=131072。它与并行度一起必须满足 OWASP 的表：2^17 配 p=1，2^16 配 p=2，2^15 配 p=3，2^14 配 p=5，或 2^13 配 p=10。"
+    "en": "d6b7b8f956d8c0b0",
+    "text": "算法为 scrypt 时，新存储密码的 scrypt CPU 与内存成本，以 2 的幂表示：15（默认值）即 N=32768。OWASP 的表将它与并行度配对：2^17 配 p=1，2^16 配 p=2，2^15 配 p=3，2^14 配 p=5，或 2^13 配 p=10。默认值 2^15 配 p=1 低于该表。"
   },
   "password.SCHEMA.attributes.stsPwdScryptBlockSize.what": {
     "en": "f0c104745b77d30a",

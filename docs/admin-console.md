@@ -577,9 +577,9 @@ stored as `cn=default,ou=passwordPolicies` in the realm's directory in the shape
 of draft-behera-ldap-password-policy (`pwdMinLength`, `pwdInHistory`, with
 `pwdHistory` and `pwdChangedTime` kept on each person), with the composition
 rules as this service's own `stsPwd*` attributes. It also chooses how a new
-password is hashed: argon2id at OWASP's minimum (m=19 MiB, t=2, p=1) by
-default, or scrypt, with each algorithm's parameters, and a stored hash in
-another form is hashed again at the person's next verified sign-in. Until it is saved the built-in
+password is hashed: scrypt at N=2^15, r=8, p=1 by default, or argon2id, with
+each algorithm's parameters, and a stored hash in another form is hashed again
+at the person's next verified sign-in. Until it is saved the built-in
 defaults are in force. **It is enforced in product mode only**, at every door
 that sets a password: the console, `/admin-api`, `/portal/password`,
 `/portal/activate` and an LDAP add or modify of `userPassword`, which is hashed

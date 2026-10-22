@@ -408,17 +408,24 @@ fields are optional in a save: one left out keeps the value in force.
 
 | Field | Attribute | Default | Bounds |
 |---|---|---|---|
-| `hashAlgorithm` | `stsPwdHashAlgorithm` | `argon2id` | `argon2id` or `scrypt` |
+| `hashAlgorithm` | `stsPwdHashAlgorithm` | `scrypt` | `scrypt` or `argon2id` |
 | `argon2Memory` | `stsPwdArgon2Memory` | 19456 KiB (19 MiB) | 19456 to 1048576 |
 | `argon2Iterations` | `stsPwdArgon2Iterations` | 2 | 2 to 16 |
 | `argon2Parallelism` | `stsPwdArgon2Parallelism` | 1 | 1 to 16 |
-| `scryptLogN` | `stsPwdScryptLogN` | 17 (N=131072) | 13 to 20 |
+| `scryptLogN` | `stsPwdScryptLogN` | 15 (N=32768) | 13 to 20 |
 | `scryptBlockSize` | `stsPwdScryptBlockSize` | 8 | 8 to 16 |
 | `scryptParallelism` | `stsPwdScryptParallelism` | 1 | 1 to 16 |
 
-No bound is below the OWASP Password Storage Cheat Sheet's minimum, in either
-mode. For scrypt the cost and parallelism must also meet OWASP's table: 2^17
-with p=1, 2^16 with p=2, 2^15 with p=3, 2^14 with p=5, or 2^13 with p=10.
+The default is scrypt at N=2^15, r=8, p=1, the parameters every password
+stored before 2026-10-22 already has. argon2id can be chosen instead; its
+bounds start at the OWASP Password Storage Cheat Sheet's minimum.
+
+The scrypt default is below OWASP's scrypt table (2^17 with p=1, 2^16 with
+p=2, 2^15 with p=3, 2^14 with p=5, or 2^13 with p=10). Until
+[#872](https://github.com/rcbj/iya-sts/issues/872) makes one of OWASP's pairs
+the default, neither the policy nor the hashing code enforces the table: a
+policy with a scrypt cost and parallelism below it is saved, and the
+parallelism asked for is the one used.
 
 An argon2id hash is stored as the PHC string
 `$argon2id$v=19$m=19456,t=2,p=1$<salt>$<hash>`, and a scrypt one as
@@ -426,9 +433,13 @@ An argon2id hash is stored as the PHC string
 of either form keeps verifying after the policy changes. When a password
 verifies and its stored hash is not the policy's algorithm and parameters, it
 is hashed again and written back. A change of parameters within one algorithm
-counts too. The person's password history and `pwdChangedTime` are not
-touched, because the password did not change. Development mode verifies no
-password, so the upgrade happens in product mode only.
+counts too. The rule is "different from the policy", not "weaker than the
+policy": a person whose stored hash is argon2id is hashed again with scrypt at
+their next sign-in when the policy says scrypt. That costs one scrypt hash at
+2^15, r=8, p=1 (about 100 ms) once per person. The person's password history
+and `pwdChangedTime` are not touched, because the password did not change.
+Development mode verifies no password, so the upgrade happens in product mode
+only.
 
 Client secrets, activation and reset tokens, recovery codes and app passwords
 are not passwords, and are still hashed with scrypt at

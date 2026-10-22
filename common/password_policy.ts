@@ -347,15 +347,22 @@ const FIELDS: PolicyField[] = [
   // a person's next verified sign-in, their stored hash (`credentials.ts`'s
   // upgrade). OPTIONAL: a save written before these rows existed keeps them.
   // -------------------------------------------------------------------------
+  //
+  // THE DEFAULT IS scrypt AT THE PRE-#847 PARAMETERS (rcbj, 2026-10-22,
+  // #820), which every stored password already is; argon2id is selectable.
+  // OWASP's scrypt pairs are reported, not enforced, until #872 makes
+  // OWASP's minimum the default.
+  // -------------------------------------------------------------------------
   { key: 'hashAlgorithm', attribute: 'stsPwdHashAlgorithm', type: 'enum',
-    dflt: 'argon2id', values: stsCrypto.PASSWORD_HASH_ALGORITHMS.slice(),
+    dflt: 'scrypt', values: stsCrypto.PASSWORD_HASH_ALGORITHMS.slice(),
     optional: true,
     label: 'Password hash algorithm',
-    what: 'The algorithm a newly stored password is hashed with: argon2id ' +
-          '(RFC 9106, the OWASP Password Storage Cheat Sheet\'s first ' +
-          'choice) or scrypt (RFC 7914). A stored hash names its own ' +
-          'algorithm and parameters and keeps verifying; one that is not in ' +
-          'this algorithm with these parameters is hashed again at the ' +
+    what: 'The algorithm a newly stored password is hashed with: scrypt ' +
+          '(RFC 7914), the default, or argon2id (RFC 9106, the OWASP ' +
+          'Password Storage Cheat Sheet\'s first choice). A stored hash ' +
+          'names its own algorithm and parameters and keeps verifying; ' +
+          'one that is not in this algorithm with these parameters is ' +
+          'hashed again at the ' +
           'person\'s next verified sign-in. Client secrets, activation ' +
           'tokens, recovery codes and app passwords are not passwords and ' +
           'stay scrypt.' },
@@ -392,9 +399,10 @@ const FIELDS: PolicyField[] = [
     max: stsCrypto.SCRYPT_PASSWORD_LIMITS.logN.max, optional: true,
     label: 'scrypt cost (log2 of N)',
     what: 'scrypt\'s CPU and memory cost for a newly stored password while ' +
-          'the algorithm is scrypt, as a power of two: 17 is N=131072. With ' +
-          'the parallelism it must meet OWASP\'s table: 2^17 with p=1, 2^16 ' +
-          'with p=2, 2^15 with p=3, 2^14 with p=5, or 2^13 with p=10.' },
+          'the algorithm is scrypt, as a power of two: 15 (the default) is ' +
+          'N=32768. OWASP\'s table pairs it with the parallelism: 2^17 ' +
+          'with p=1, 2^16 with p=2, 2^15 with p=3, 2^14 with p=5, or 2^13 ' +
+          'with p=10. The default, 2^15 with p=1, is below it.' },
   { key: 'scryptBlockSize', attribute: 'stsPwdScryptBlockSize', type: 'int',
     dflt: stsCrypto.SCRYPT_PASSWORD_LIMITS.r.dflt,
     min: stsCrypto.SCRYPT_PASSWORD_LIMITS.r.min,
@@ -703,16 +711,10 @@ class PasswordPolicy {
     // OWASP's scrypt table (#847): the parallelism a cost needs. Asked
     // whichever algorithm is chosen, because the values are stored either
     // way and switching to scrypt must not switch to a pair below it.
-    if (values.scryptLogN !== undefined &&
-        values.scryptParallelism !== undefined) {
-      const least = stsCrypto.scryptOwaspMinP(values.scryptLogN);
-      if (values.scryptParallelism < least) {
-        out.push('scrypt at 2^' + values.scryptLogN + ' needs a ' +
-                 'parallelism of at least ' + least + ' to meet OWASP\'s ' +
-                 'minimum; ' + values.scryptParallelism + ' is below it. ' +
-                 'Raise the cost or the parallelism.');
-      }
-    }
+    // NOT ENFORCED SINCE 2026-10-22 (rcbj, #820): the default itself,
+    // 2^15 with p=1, is below the table, and a policy must be able to save
+    // its own default. #872, which makes OWASP's minimum the default,
+    // brings this check back.
     log.debug("Leaving PasswordPolicy.crossFieldProblems().");
     return out;
   }

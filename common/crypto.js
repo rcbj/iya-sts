@@ -8832,15 +8832,22 @@ const ARGON2_LIMITS = Object.freeze({
   passes: Object.freeze({ min: 2, max: 16, dflt: 2 }),
   parallelism: Object.freeze({ min: 1, max: 16, dflt: 1 })
 });
+// THE DEFAULT IS THE PRE-#847 SCRYPT, 2^15 WITH r=8 AND p=1 (rcbj,
+// 2026-10-22, #820): every password already stored is that, so a default of
+// anything else rehashes the whole directory at its next sign-ins — on 8081
+// that was every sign-in of the load. It is below OWASP's table, which is
+// why OWASP's pairs are no longer a floor here; making OWASP's minimum the
+// default again is #872.
 const SCRYPT_PASSWORD_LIMITS = Object.freeze({
-  logN: Object.freeze({ min: 13, max: 20, dflt: 17 }),
+  logN: Object.freeze({ min: 13, max: 20, dflt: 15 }),
   r: Object.freeze({ min: 8, max: 16, dflt: 8 }),
   p: Object.freeze({ min: 1, max: 16, dflt: 1 })
 });
 // OWASP's scrypt table, by log2 N: the least p it lists at r=8. 2^17 and up
 // need p=1.
 const SCRYPT_OWASP_MIN_P = Object.freeze({ 13: 10, 14: 5, 15: 3, 16: 2 });
-const PASSWORD_HASH_ALGORITHMS = Object.freeze(['argon2id', 'scrypt']);
+// scrypt first: the default (rcbj, 2026-10-22). argon2id stays selectable.
+const PASSWORD_HASH_ALGORITHMS = Object.freeze(['scrypt', 'argon2id']);
 let warnedNoArgon2 = false;
 
 /**
@@ -8882,8 +8889,9 @@ function argon2Available() {
  * Returns the hash a NEW password is written under, clamped to the floors and
  * ceilings above: the algorithm and its parameters.
  *
- * argon2id where this runtime has it, and scrypt otherwise (said once,
- * STS-KEYS-0155). An absent spec is argon2id at OWASP's minimum.
+ * argon2id, when asked for, where this runtime has it, and scrypt otherwise
+ * (said once, STS-KEYS-0155). An absent spec is scrypt at 2^15, r=8, p=1
+ * (#820; #872 makes OWASP's minimum the default).
  *
  * @param spec - `{ algorithm, memory, passes, parallelism }` or
  *   `{ algorithm: 'scrypt', logN, r, p }`
@@ -8893,7 +8901,7 @@ function passwordHashSpec(spec) {
   log.debug("Entering passwordHashSpec().");
   const asked = spec || {};
   let algorithm = PASSWORD_HASH_ALGORITHMS.indexOf(asked.algorithm) >= 0
-    ? asked.algorithm : 'argon2id';
+    ? asked.algorithm : 'scrypt';
   if (algorithm === 'argon2id' && !argon2Available()) {
     if (!warnedNoArgon2) {
       warnedNoArgon2 = true;
@@ -8920,8 +8928,10 @@ function passwordHashSpec(spec) {
   const S = SCRYPT_PASSWORD_LIMITS;
   const logN = clampInt(asked.logN, S.logN.min, S.logN.max, S.logN.dflt);
   const r = clampInt(asked.r, S.r.min, S.r.max, S.r.dflt);
-  const p = Math.max(scryptOwaspMinP(logN),
-                     clampInt(asked.p, S.p.min, S.p.max, S.p.dflt));
+  // p IS TAKEN AS ASKED (2026-10-22, #820): OWASP's floor
+  // (`scryptOwaspMinP()`) is off while the default is below it; #872 puts
+  // it back.
+  const p = clampInt(asked.p, S.p.min, S.p.max, S.p.dflt);
   log.debug("Leaving passwordHashSpec(). scrypt.");
   return { algorithm: 'scrypt', logN: logN, r: r, p: p };
 }
