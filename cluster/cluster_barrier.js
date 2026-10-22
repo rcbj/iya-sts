@@ -69,6 +69,9 @@ const bunyan = require('bunyan');
 const config = require('../common/config');
 const errorCodes = require('../common/error_codes');
 const capabilities = require('./cluster_capabilities');
+// A LEAF: where a dispatched request's time goes (#820).
+const requestPhases = require('../common/request_phases');
+const workerThreads = require('worker_threads');
 
 const log = bunyan.createLogger({ name: 'sts-cluster-barrier' });
 config.registerLogger(log);
@@ -393,6 +396,44 @@ function mintedWrites(position) {
   return (Number(position.minted) || 0) - (Number(position.observed) || 0);
 }
 
+// The front's question about this request (#820): when it reached the
+// middleware, and how long the loop had been blocked by then.
+const PHASES_STAMP = Symbol('sts.requestPhases');
+
+/**
+ * Notes when a dispatched request reached this middleware, when the front
+ * asked where its time goes (#820). Only in a request worker: the front
+ * takes the question off what a client sent, and a process answering by
+ * itself has no front to tell.
+ *
+ * @param req - the request
+ * @param res - its response, which `holdUntilCommitted()` reports on
+ */
+// Hot path: every request. No Entering/Leaving pair.
+function stampPhases(req, res) {
+  if (!workerThreads.isMainThread && req && req.headers &&
+      req.headers[requestPhases.ASK_HEADER]) {
+    res[PHASES_STAMP] = { at: Date.now(),
+                          blocked: requestPhases.blockedTotal() };
+  }
+}
+
+// Puts the worker's half of a dispatched request's phases on its answer,
+// when the front asked: the handler's time, the hold for its commit, and the
+// time the loop was blocked in synchronous store reads meanwhile.
+// Hot path: every dispatched response. No Entering/Leaving pair.
+function reportPhases(res, handledAt) {
+  const stamp = res[PHASES_STAMP];
+  if (!stamp || res.headersSent) {
+    return;
+  }
+  const now = Date.now();
+  res.setHeader(requestPhases.PHASES_HEADER,
+                requestPhases.encode(handledAt - stamp.at, now - handledAt,
+                                     requestPhases.blockedTotal() -
+                                       stamp.blocked));
+}
+
 /**
  * Wraps `res.end()` so that a response whose request wrote anything is sent
  * only once those writes have committed; one that wrote nothing is sent at
@@ -412,6 +453,7 @@ function holdUntilCommitted(res, arrival, req) {
     log.debug("Entering end().");
     const args = arguments;
     res.end = end;
+    const handledAt = Date.now();
     const store = persistence();
     const positioned = arrival && typeof store.writeGeneration === 'function' &&
                        typeof store.commitThrough === 'function';
@@ -433,6 +475,7 @@ function holdUntilCommitted(res, arrival, req) {
       : store.pendingWrites();
     if (!wrote) {
       stats.answeredUnheld += 1;
+      reportPhases(res, handledAt);
       log.debug("Leaving end(). Nothing written while it was handled.");
       return end.apply(res, args);
     }
@@ -444,6 +487,7 @@ function holdUntilCommitted(res, arrival, req) {
     commitFailures(store, now).then(function (failed) {
       stats.totalHoldMs += Date.now() - began;
       if (!failed.length) {
+        reportPhases(res, handledAt);
         end.apply(res, args);
         return;
       }
@@ -685,6 +729,9 @@ function middleware() {
     const arrival = typeof store.writeGeneration === 'function'
       ? store.writeGeneration() : null;
     res[ARRIVAL] = arrival;
+    // THE FRONT ASKED WHERE THIS REQUEST'S TIME GOES (#820): stamped here,
+    // reported by the response's end below.
+    stampPhases(req, res);
     holdUntilCommitted(res, arrival, req);
     // RULE 1 IS STILL A CLUSTER RULE: one node has nobody to catch up with.
     if (!active()) {
@@ -743,6 +790,7 @@ module.exports = {
   middleware: middleware,
   syncShared: syncShared,
   holdUntilCommitted: holdUntilCommitted,
+  stampPhases: stampPhases,
   answerAfterCommit: answerAfterCommit,
   onCommitRefused: onCommitRefused,
   commitBeforeSending: commitBeforeSending,

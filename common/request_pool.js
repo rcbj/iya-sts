@@ -121,6 +121,8 @@ const clientAddress = require('./client_address');
 // A LEAF: the affinity maps below, described to `/admin/caches` (#74).
 const cacheRegistry = require('./cache_registry');
 const lingeringClose = require('./lingering_close');
+// A LEAF: where a dispatched request's time goes (#820).
+const requestPhases = require('./request_phases');
 // The HTTP/2 authority rule (#407): a leaf (node, express, the error-code
 // table).
 const Http2Express = require('./http2_express');
@@ -5775,8 +5777,12 @@ function middleware(options) {
       // express because the generation does not move until it has. Without it a
       // reader that arrives inside that window never waits at all — measured as
       // stale reads with zero barrier timeouts.
+      // WHEN IT ARRIVED, for where its time goes (#820): the waits below
+      // and the worker's answer are measured from here.
+      const timing = { arrived: Date.now(), ticketDone: 0, barrierDone: 0 };
       if (!readYourWrite()) {
-        proxy(entry, req, res, generation);
+        timing.ticketDone = timing.barrierDone = timing.arrived;
+        proxy(entry, req, res, generation, undefined, timing);
         return;
       }
       // ONE TICKET PER DISPATCHED REQUEST, TAKEN BEFORE IT IS SENT. Anything
@@ -5789,6 +5795,7 @@ function middleware(options) {
       // dispatched BEFORE it, and only then registers itself as outstanding
       // for everything that comes after.
       awaitCommitConfirmations(entry).then(function () {
+        timing.ticketDone = Date.now();
         const ticket = dispatchTicket(entry, req.method + ' ' +
           String(req.originalUrl || req.url || '').split('?')[0]);
         // WHAT THIS PROCESS ITSELF HAS WRITTEN SINCE THE LAST REQUEST, before
@@ -5797,11 +5804,13 @@ function middleware(options) {
         noteLocalWrites(localWriteCount(), localWriteKinds());
         const wanted = generation;
         if (entry.generation >= wanted) {
-          proxy(entry, req, res, wanted, ticket);
+          timing.barrierDone = timing.ticketDone;
+          proxy(entry, req, res, wanted, ticket, timing);
           return;
         }
         return barrier(entry, wanted).then(function () {
-          proxy(entry, req, res, wanted, ticket);
+          timing.barrierDone = Date.now();
+          proxy(entry, req, res, wanted, ticket, timing);
         });
       });
     }
@@ -5826,6 +5835,25 @@ const REPLAY_BODY_BYTES = 1024 * 1024;
 // How many requests were sent again that way, for stats().
 let replayCount = 0;
 
+// One answered request's phases, to `request_phases.js` (#820): the front's
+// two waits, what the worker reported, and the rest of the round trip — the
+// socket and the worker's event loop busy with other requests — as `queue`.
+// Hot path: every dispatched request. No Entering/Leaving pair.
+function notePhases(req, timing, dispatchedAt, answeredAt, worker) {
+  const roundTrip = answeredAt - dispatchedAt;
+  const inWorker = worker ? worker.handler + worker.commit : 0;
+  requestPhases.record(requestPhases.routeOf(req.method,
+                                             req.originalUrl || req.url), {
+    ticket: timing.ticketDone - timing.arrived,
+    barrier: timing.barrierDone - timing.ticketDone,
+    queue: worker ? Math.max(0, roundTrip - inWorker) : undefined,
+    handler: worker ? worker.handler : undefined,
+    commit: worker ? worker.commit : undefined,
+    bridge: worker ? worker.bridge : undefined,
+    total: answeredAt - timing.arrived
+  });
+}
+
 /**
  * Streams one request to a worker and the answer back, copying no body.
  *
@@ -5834,8 +5862,10 @@ let replayCount = 0;
  * @param res - the response
  * @param atGeneration - the generation the worker was brought to
  * @param ticket - the request's read-barrier ticket
+ * @param timing - when it arrived and its waits ended, for
+ *   `request_phases.js` (#820); optional
  */
-function proxy(entry, req, res, atGeneration, ticket) {
+function proxy(entry, req, res, atGeneration, ticket, timing) {
   log.debug('Entering proxy(). pid=' + entry.pid + ' ' + req.method + ' ' +
             req.url);
   // -------------------------------------------------------------------------
@@ -5898,6 +5928,9 @@ function proxy(entry, req, res, atGeneration, ticket) {
   // WHETHER THIS PROCESS ENDED THE UPSTREAM REQUEST ITSELF, because the client
   // went away first. See the response's `close` handler at the foot.
   let clientGone = false;
+  // When the worker's answer arrived, and the phases it reported (#820).
+  let answeredAt = 0;
+  let workerPhases = null;
   const finish = function (lost) {
     log.debug("Entering finish().");
     if (!done) {
@@ -5906,6 +5939,9 @@ function proxy(entry, req, res, atGeneration, ticket) {
       entry.served++;
       if (!lost) {
         noteAnswered(entry.pool, Date.now() - dispatchedAt);
+        if (timing && answeredAt) {
+          notePhases(req, timing, dispatchedAt, answeredAt, workerPhases);
+        }
       }
       // THE TICKET IS TAKEN AT DISPATCH NOW, NOT HERE — see dispatchTicket().
       // Taking it on `finish` left a window the client could drive straight
@@ -6070,6 +6106,11 @@ function proxy(entry, req, res, atGeneration, ticket) {
   const hello = helloModule.encodeForward(req);
   if (hello) {
     headers[helloModule.FORWARD_HEADER] = hello;
+  }
+  // WHERE ITS TIME GOES (#820): asked of the worker by this process only.
+  delete headers[requestPhases.ASK_HEADER];
+  if (timing) {
+    headers[requestPhases.ASK_HEADER] = '1';
   }
   delete headers[POOL_TICKET_HEADER];
   if (ticket) {
@@ -6266,6 +6307,9 @@ function proxy(entry, req, res, atGeneration, ticket) {
     // already gone. See LDAP_DROP_HEADER.
     // ------------------------------------------------------------------
     closeDirectoryConnections(answer.headers[LDAP_DROP_HEADER]);
+    answeredAt = Date.now();
+    workerPhases = requestPhases.decode(
+      answer.headers[requestPhases.PHASES_HEADER]);
     // FROM HERE THE WORKER HAS ANSWERED: it ran the handler, so it will
     // announce this ticket on its own `finish` or `close` whatever happens to
     // the pipe from now on. See ticketAbandoned().
@@ -6291,7 +6335,7 @@ function proxy(entry, req, res, atGeneration, ticket) {
       // The worker's instruction to this process, and no business of the
       // client's — for the reason the hop-by-hop headers below are dropped, and
       // because a header naming an identity key has no place on a page.
-      if (name === LDAP_DROP_HEADER) {
+      if (name === LDAP_DROP_HEADER || name === requestPhases.PHASES_HEADER) {
         return;
       }
       // Hop-by-hop headers belong to the connection this process made and not
@@ -7419,6 +7463,8 @@ function stats() {
   // before there was a second one; `running` is every worker of both, and
   // `pools` breaks both down.
   return {
+    // Where dispatched requests' time went in the last closed window (#820).
+    phases: requestPhases.stats(),
     configured: size(PROTOCOL_POOL),
     running: workers.length,
     ready: readyWorkers(PROTOCOL_POOL).length,
