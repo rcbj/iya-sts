@@ -1485,8 +1485,9 @@ function flush() {
                          // An ENDED key leaves a tombstone. See
                          // ENDED ROWS below.
                          tombstone: row.tombstone === true,
-                         // An on-demand store's index rows go with it (#820).
-                         indexed: typeof row.lookupsOf === 'function' });
+                         // An on-demand store's index rows go with it (#820),
+                         // its sort row among them (2026-10-22).
+                         indexed: isIndexed(row) });
           return;
         }
         // Of the plaintext about to be sealed, not of the ciphertext.
@@ -1525,8 +1526,13 @@ function flush() {
                        // and null too when they are what this process last
                        // committed for the key (`unchangedLookups()`).
                        lookups: unchangedLookups(row, handle, realmId, key,
-                         lookupsFor(row, handle, realmId, key,
-                                    present.value)),
+                         indexKeysFor(row, handle, realmId, key,
+                                      present.value),
+                         sortAtFor(row, present.value, key)),
+                       // The number a console's newest-first list orders
+                       // this row by, or null (`sortBy`, 2026-10-22, #820):
+                       // written as one more index row while `lookups` is.
+                       sortAt: sortAtFor(row, present.value, key),
                        // WHETHER A READER HAS TO WAIT FOR THIS ROW. An `own`
                        // store is per-process fan-in — every process keeps its
                        // own contribution and the console SUMS them when
@@ -1889,17 +1895,36 @@ let demandBridge = null;
 const committedLookups = new Map();
 const COMMITTED_LOOKUPS_MAX = 100000;
 
-// The lookups to write, or null when they are the committed ones. Hot path
-// (every indexed row a flush writes): no Entering/Leaving pair.
-function unchangedLookups(row, handle, realmId, key, lookups) {
+// The lookups to write, or null when they are the committed ones. The sort
+// value is part of what is compared (2026-10-22, #820): a row whose index
+// keys are unchanged and whose sort value moved rewrites its index rows, the
+// sort row among them. Hot path (every indexed row a flush writes): no
+// Entering/Leaving pair.
+function unchangedLookups(row, handle, realmId, key, lookups, sortAt) {
   if (!lookups || row.mergeRow) {
     return lookups;
   }
   const committed = committedLookups.get(demandId(handle, realmId, key));
-  if (committed !== undefined && committed === lookups.join('\n')) {
+  if (committed !== undefined &&
+      committed === filedFingerprint(lookups, sortAt)) {
     return null;
   }
   return lookups;
+}
+
+// What a row is filed under, as one string: its index keys and its sort
+// value. Hot path: no Entering/Leaving pair.
+function filedFingerprint(lookups, sortAt) {
+  return lookups.join('\n') + '\n\u0000' +
+    (sortAt === null || sortAt === undefined ? '' : String(sortAt));
+}
+
+// Whether a declared store writes `sts_minted_index` rows: index keys
+// (`indexBy`), a sort value (`sortBy`), or both. Hot path (every delete a
+// flush journals): no Entering/Leaving pair.
+function isIndexed(row) {
+  return !!row && (typeof row.lookupsOf === 'function' ||
+                   typeof row.sortOf === 'function');
 }
 
 // After a commit: what each written row is now filed under. Hot path (once
@@ -1911,8 +1936,7 @@ function noteCommittedLookups(upserts, deletes, result) {
     }));
   upserts.forEach(function (one) {
     const declared = realms.handleFor(one.handle);
-    if (!declared || typeof declared.lookupsOf !== 'function' ||
-        declared.mergeRow) {
+    if (!declared || !isIndexed(declared) || declared.mergeRow) {
       return;
     }
     const id = demandId(one.handle, one.realm, one.journalKey);
@@ -1924,7 +1948,7 @@ function noteCommittedLookups(upserts, deletes, result) {
       if (committedLookups.size >= COMMITTED_LOOKUPS_MAX) {
         committedLookups.clear();
       }
-      committedLookups.set(id, one.lookups.join('\n'));
+      committedLookups.set(id, filedFingerprint(one.lookups, one.sortAt));
     }
   });
   deletes.forEach(function (one) {
@@ -2193,6 +2217,15 @@ async function backfillMintedIndexes() {
             batch.push({ handle: declared.handle, realm: realmId,
                          indexKey: indexKey, key: key });
           });
+        }
+        // The row's sort value, filed the same way (2026-10-22, #820).
+        const sortAt = sortAtFor(declared, entry[1], entry[0]);
+        if (sortAt !== null) {
+          batch.push({ handle: declared.handle, realm: realmId,
+                       indexKey: require('./minted_queries').SORT_INDEX_KEY,
+                       key: keyColumnOf(declared.handle, realmId,
+                                        storedKey(declared, entry[0])),
+                       sortAt: sortAt });
         }
         if (++inBatch >= BACKFILL_BATCH) {
           await flushBatch();
@@ -2573,8 +2606,8 @@ function openedRows(handle, rows, split) {
 }
 
 /**
- * The newest live rows of an on-demand store in one realm, newest written
- * first, asked on the read pool.
+ * The newest live rows of an on-demand store in one realm, highest sort
+ * value (`sortBy`) first, asked on the read pool.
  *
  * @param handle - the store
  * @param realmId - the realm partition
@@ -2583,6 +2616,17 @@ function openedRows(handle, rows, split) {
  */
 function onDemandNewestAsync(handle, realmId, limit) {
   log.debug("Entering onDemandNewestAsync(). " + handle);
+  // ORDERED BY THE STORE'S SORT VALUE (2026-10-22, #820): `minted.newest`
+  // walks the `sort_at` index rows, which only a store declaring `sortBy`
+  // writes. Another store would answer an empty list, which reads as a
+  // store with no rows; it is refused instead, and the caller says the
+  // list was not read.
+  const declared = realms.handleFor(handle);
+  if (!declared || typeof declared.sortOf !== 'function') {
+    log.debug("Leaving onDemandNewestAsync(). No sortBy.");
+    return Promise.reject(new Error('persistence: "' + handle + '" ' +
+      'declares no sortBy, so its newest rows cannot be asked for'));
+  }
   log.debug("Leaving onDemandNewestAsync().");
   return mintedQueryAsync('minted.newest',
                           [handle, realmId, Date.now(), limit])
@@ -2668,6 +2712,48 @@ function lookupsFor(row, handle, realmId, key, value) {
   return out;
 }
 
+// The index keys a flush files a row under: `lookupsFor()`'s, or an empty
+// list for a store with a sort value and no index keys, so its sort row is
+// still replaced (2026-10-22, #820). Null for a store with neither.
+function indexKeysFor(row, handle, realmId, key, value) {
+  log.debug("Entering indexKeysFor().");
+  const lookups = lookupsFor(row, handle, realmId, key, value);
+  if (lookups === null && row && typeof row.sortOf === 'function') {
+    log.debug("Leaving indexKeysFor(). Sorted only.");
+    return [];
+  }
+  log.debug("Leaving indexKeysFor().");
+  return lookups;
+}
+
+// THE SORT VALUE (2026-10-22, #820): what a store's `sortBy` answers for a
+// row, as a whole number, or null — for a store with no `sortBy`, an answer
+// that is not a finite number, or a hook that throws. A null writes no sort
+// row: the row is simply not in `minted.newest`'s list, never a flush
+// failure.
+function sortAtFor(row, value, key) {
+  log.debug("Entering sortAtFor().");
+  if (!row || typeof row.sortOf !== 'function') {
+    log.debug("Leaving sortAtFor(). Not sorted.");
+    return null;
+  }
+  let answer = null;
+  try {
+    answer = row.sortOf(value, key);
+  } catch (e) {
+    log.debug("Caught in sortAtFor(): " + ((e && e.message) || e));
+    answer = null;
+  }
+  const n = typeof answer === 'number' ? answer : Number(answer);
+  if (answer === null || answer === undefined || answer === '' ||
+      !Number.isFinite(n)) {
+    log.debug("Leaving sortAtFor(). No value.");
+    return null;
+  }
+  log.debug("Leaving sortAtFor().");
+  return Math.trunc(n);
+}
+
 function nameOfRow(row) {
   log.debug("Entering nameOfRow().");
   if (!row || !row.keySealed) {
@@ -2733,7 +2819,8 @@ function mergerFor(row, handle, key, mine, upsert, realmId) {
       }
       upsert.expiresAt = expiryOf(row, merged, key, realmId);
       upsert.index = indexColumns(row, merged);
-      upsert.lookups = lookupsFor(row, handle, realmId, key, merged);
+      upsert.lookups = indexKeysFor(row, handle, realmId, key, merged);
+      upsert.sortAt = sortAtFor(row, merged, key);
       return sealed;
     } catch (e) {
       log.warn(errorCodes.tag('STS-STORE-0056') + 'persistence: the "' +
