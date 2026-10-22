@@ -26,6 +26,12 @@
 //                   store (`sts_minted_index`, schema version 24): what a
 //                   walk of the whole store used to find, such as every
 //                   refresh token of one family.
+//   minted.newest   the most recently written live rows of one store in one
+//                   realm, newest first (2026-10-22, #820): what a console
+//                   list of the newest of a store shows, asked on the
+//                   driver's read pool and never through the bridge.
+//   minted.count    how many live rows one store holds in one realm
+//                   (2026-10-22, #820): a console total, on the read pool.
 //
 // A tombstone is an absence to every reader. Nothing here opens a body: the
 // rows come back sealed, and the process that asked opens them.
@@ -50,8 +56,19 @@ const PAGE = 'SELECT key, key_sealed, body FROM sts_minted WHERE handle = $1 ' +
   'AND realm = $2 AND key > $3 AND body <> $4 AND (expires_at IS NULL OR ' +
   'expires_at > $5) ORDER BY key LIMIT $6';
 
+const NEWEST = 'SELECT key, key_sealed, body FROM sts_minted WHERE ' +
+  'handle = $1 AND realm = $2 AND body <> $3 AND (expires_at IS NULL OR ' +
+  'expires_at > $4) ORDER BY written_at DESC, key DESC LIMIT $5';
+
+const COUNT = 'SELECT count(*)::bigint AS n FROM sts_minted WHERE ' +
+  'handle = $1 AND realm = $2 AND body <> $3 AND (expires_at IS NULL OR ' +
+  'expires_at > $4)';
+
 // The most rows one page answers.
 const PAGE_LIMIT = 500;
+
+// The most rows `minted.newest` answers: a console list, not a walk.
+const NEWEST_LIMIT = 1000;
 
 // The most rows one index key answers. An index key is a family, a person:
 // a few rows, and a bound keeps a key that collects thousands from holding
@@ -61,9 +78,11 @@ const BY_INDEX_LIMIT = 10000;
 /**
  * Builds one named statement.
  *
- * @param {string} name - `minted.read` or `minted.byIndex`
- * @param {unknown[]} args - `[handle, realm, key]` or
- *   `[handle, realm, indexKey]`
+ * @param {string} name - `minted.read`, `minted.page`, `minted.byIndex`,
+ *   `minted.newest` or `minted.count`
+ * @param {unknown[]} args - `[handle, realm, key]`,
+ *   `[handle, realm, indexKey]`, `[handle, realm, now, limit]` or
+ *   `[handle, realm, now]`
  * @returns {{ text: string, values: unknown[] }}
  */
 function build(name, args) {
@@ -78,6 +97,18 @@ function build(name, args) {
     return { text: PAGE, values: [String(a[0]), String(a[1]), String(a[2]),
                                   TOMBSTONE, Number(a[3]) || Date.now(),
                                   PAGE_LIMIT] };
+  }
+  if (name === 'minted.newest') {
+    log.debug("Leaving build().");
+    return { text: NEWEST, values: [String(a[0]), String(a[1]), TOMBSTONE,
+                                    Number(a[2]) || Date.now(),
+                                    Math.max(1, Math.min(NEWEST_LIMIT,
+                                      Math.floor(Number(a[3]) || 1)))] };
+  }
+  if (name === 'minted.count') {
+    log.debug("Leaving build().");
+    return { text: COUNT, values: [String(a[0]), String(a[1]), TOMBSTONE,
+                                   Number(a[2]) || Date.now()] };
   }
   if (name === 'minted.byIndex') {
     log.debug("Leaving build().");
@@ -105,7 +136,12 @@ function answerOf(name, rows) {
     log.debug("Leaving answerOf().");
     return !row || row.body === TOMBSTONE ? null : { body: String(row.body) };
   }
-  if (name === 'minted.byIndex' || name === 'minted.page') {
+  if (name === 'minted.count') {
+    log.debug("Leaving answerOf().");
+    return list.length ? Number(list[0].n) || 0 : 0;
+  }
+  if (name === 'minted.byIndex' || name === 'minted.page' ||
+      name === 'minted.newest') {
     log.debug("Leaving answerOf().");
     return list.map(function (row) {
       return { key: String(row.key),
@@ -122,5 +158,6 @@ module.exports = {
   answerOf: answerOf,
   TOMBSTONE: TOMBSTONE,
   BY_INDEX_LIMIT: BY_INDEX_LIMIT,
-  PAGE_LIMIT: PAGE_LIMIT
+  PAGE_LIMIT: PAGE_LIMIT,
+  NEWEST_LIMIT: NEWEST_LIMIT
 };

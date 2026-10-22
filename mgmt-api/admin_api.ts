@@ -10387,10 +10387,19 @@ class AdminApi {
           'The matching sets, with the paging that found them ' +
                              'and their credentials flattened beside them.',
         responseSchema: { $ref: '#/components/schemas/IssuedList' },
-        handler: function (req, res) {
+        handler: function (req, res, next) {
           log.debug("Entering the management API issued-list endpoint.");
-          self.sendJson(res, 200, adminViews.tokensView(req.query).json);
-          log.debug("Leaving the management API issued-list endpoint.");
+          // From the store on demand (2026-10-22, #820): one session's
+          // every record, or the newest, and the store's count — never a
+          // walk of what this worker happens to hold.
+          adminViews.tokensViewAsync(req.query).then(function (view) {
+            self.sendJson(res, 200, view.json);
+            log.debug("Leaving the management API issued-list endpoint.");
+          }).catch(function (e) {
+            log.debug("Caught in the management API issued-list endpoint: " +
+                      ((e && e.message) || e));
+            next(e);
+          });
         } },
 
       { method: 'GET', path: BASE + '/tokens/set', tag: 'Tokens',
@@ -10417,10 +10426,18 @@ class AdminApi {
         responseDescription: 'The set and its members, or `found: false` and ' +
                              'the reason.',
         responseSchema: { $ref: '#/components/schemas/IssuedSetDetail' },
-        handler: function (req, res) {
+        handler: function (req, res, next) {
           log.debug("Entering the management API issued-set endpoint.");
-          self.sendJson(res, 200, adminViews.tokenSetView(req.query).json);
-          log.debug("Leaving the management API issued-set endpoint.");
+          // Found in the store by its key on demand (#820): `set:` through
+          // the register's index, `one:` by the record's key.
+          adminViews.tokenSetViewAsync(req.query).then(function (view) {
+            self.sendJson(res, 200, view.json);
+            log.debug("Leaving the management API issued-set endpoint.");
+          }).catch(function (e) {
+            log.debug("Caught in the management API issued-set endpoint: " +
+                      ((e && e.message) || e));
+            next(e);
+          });
         } },
 
       { method: 'POST', route: BASE + '/tokens/:action', tag: 'Tokens',

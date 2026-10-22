@@ -624,6 +624,21 @@ Now:
 The response endpoint marks the refusal with `verified.statusErrorCode`
 (0088, 0089, or 0072 for a status that is not VALID or cannot be read).
 
+**THE CONSOLE'S COUNTS AND PAGE COME FROM AN INDEX (2026-10-22, #820).**
+`entries` is indexed: a status that is not VALID (`s:<value>`), the
+issued-register row an entry is for (`a:<key>`), and the UTC day it was
+allocated (`d:<day>`) and expires (`x:<day>`). `counts()` reads the live
+count from the store's size less the held entries past their expiry (the
+`x:` days of the last week; `caches.eject-expired` removes older ones),
+SUSPENDED and explicit INVALID from `s:`, and the register's revocations
+(`stats.revokedArtifactKeys()`) joined through `a:`. `newestRows(offset,
+limit)` walks the allocation days back from today until the page is full.
+So `summary(req, page)` and Monitoring → Verifiable Credentials build only
+the page's rows, where they built and sorted every live entry. **A change
+writes a COPY** (`setStatus()`, `attach()`): the partition re-files a row on
+`set`, and a row mutated in place stays filed under its old values.
+`tests/console_tokens_metrics_scale.js` section V.
+
 ### Settings
 
 `oid4vp.signIn` (on), `oid4vp.signInTtlS` (300), `oid4vp.signInPollS` (3),

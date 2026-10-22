@@ -8294,3 +8294,24 @@ tab, and a service account's section of the person page —
   edited here.
 * `tests/flow_type_choices.js` holds the sets, the writes, every panel, the
   marks, the cut, the labels and the counters.
+
+## TOKENS, METRICS, THE DASHBOARD AND VC STATUS SCALE WITH THE STORE (2026-10-22, #820)
+
+8081 holds about 490,000 signed-in people and a million token records, and a
+console request that walks a per-person store holds a request worker still.
+
+* **Monitoring → Tokens** (`GET /admin-api/tokens`, `tokens/set`) is
+  `tokensViewAsync()` and `tokenSetViewAsync()` over `issuedSetsAsync()` and
+  `issuedSetByKeyAsync()` (`common/CLAUDE.md`). On demand the unfiltered list
+  is the store's newest 500 records and the totals the store's count;
+  `?session=` reads that session's every record; a set is found by its
+  `set:` index. The answer carries `coverage`, and `web_tokens.ts` draws a
+  note where the list is not the whole register (`coverageNewest`,
+  `coverageHeld`, `coverageUnread`, in the seven catalogs).
+* **Monitoring → Metrics and the dashboard** take `userCountsAsync()`, where
+  they built a row per person.
+* **Monitoring → Verifiable Credentials** pages before it builds rows:
+  `vc_status_admin.ts` pages from `vcStatus.counts()` and asks `summary()`
+  for that page alone (`oid4vc/CLAUDE.md`).
+
+`tests/console_tokens_metrics_scale.js` holds all four.
