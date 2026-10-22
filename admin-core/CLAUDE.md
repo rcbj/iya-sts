@@ -339,6 +339,23 @@ asks `stats.userRow(key)`, which runs the same builder for that key only, and
 `knownUserKeys()` — nine pages' "can this member's name be a link" — asks
 `stats.userKeys()` instead of building every row to read their keys.
 
+**AND SINCE 2026-10-22 (#820) IT ASKS ONLY THE NAMES READ.** `userKeys()`
+still built every key: about 940,000 user records and token holders on 8081,
+walked synchronously for each page view. That covers a token's lineage on
+Monitoring → Tokens, the audit log, and the delegation pictures. While the
+register is on demand, `knownUserKeys()` now answers each name it is asked,
+once per request, through `stats.userKeyTest()`. That test checks the user
+records (this process's and the replicated ones), the token holders, and the
+bounded artifacts. It does so with no walk of the store.
+- The roles page lists its candidates from the keys, so it asks
+  `allUserKeys()`, the whole set as before.
+- A snapshot that reads no user counts (token lifetimes, SAML assertions)
+  passes `withoutUsers` and builds no user rows.
+- Monitoring → Metrics builds its user rows with `userRowsAsync()`, as the
+  dashboard does.
+
+`tests/console_known_keys.js` covers this.
+
 **THE TILES COUNT THE DIRECTORY AND THE LIST IS CAPPED, AND THEY ARE
 DIFFERENT NUMBERS (#610, 2026-10-13).** With a bulk load running into 8081,
 `/admin/users` said 7,014 people while the directory held 25,000: every tile
