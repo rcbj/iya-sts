@@ -302,7 +302,7 @@
   "mfaSection.thAnswer": "Respuesta",
   "mfaSection.password": "Contraseña",
   "mfaSection.set": "establecida",
-  "mfaSection.passwordSet": " — un hash scrypt en su propia entrada. No se puede leer y esta consola no puede mostrarla; el formulario de abajo la reemplaza.",
+  "mfaSection.passwordSet": " — un hash en su propia entrada. No se puede leer y esta consola no puede mostrarla; el formulario de abajo la reemplaza.",
   "mfaSection.primaryKey": "Llave de seguridad principal",
   "mfaSection.primaryKeyNote": " — le permite iniciar sesión por sí sola, sin contraseña. La sesión registra entonces <code>amr [\"hwk\"]</code> y <code>acr \"1\"</code>.",
   "mfaSection.canSignIn": "Puede iniciar sesión",

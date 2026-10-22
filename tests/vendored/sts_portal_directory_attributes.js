@@ -533,7 +533,7 @@ async function theRefusalsHold(b) {
         "what is really in it", function () {
     const cell = String(drawn.get("userPassword"));
     assert.ok(/set/.test(cell), "it is drawn as: " + cell.slice(0, 200));
-    assert.ok(/scrypt/.test(cell),
+    assert.ok(/argon2id|scrypt/.test(cell),
       "the cell does not say what is stored there: " + cell.slice(0, 200));
   });
 

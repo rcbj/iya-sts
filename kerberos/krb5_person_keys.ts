@@ -1251,7 +1251,8 @@ class Krb5PersonKeys {
    *
    * @param name - the username
    * @param password - the plaintext password
-   * @param info - `event` (`set` or `verified`) and `hash`, the stored hash
+   * @param info - `event` (`set`, `verified` or, since #847, `rehash`)
+   *   and `hash`, the stored hash
    */
   observePassword(name: string, password: string, info?: Json): void {
     const self = this;
@@ -1380,6 +1381,12 @@ class Krb5PersonKeys {
     let kvno: number;
     if (record && record.stamp === stamp) {
       kvno = Number(record.kvno);
+    } else if (event === 'rehash' && record && record.name === name) {
+      // A REHASH (#847): the stored hash was replaced by another hash of the
+      // SAME password (`credentials.ts`'s upgrade on sign-in), so every key
+      // is the one it was. Same kvno; only the stamp moves to the new hash,
+      // and nothing is retired, because nothing changed.
+      kvno = Number(record.kvno);
     } else if (record || (info && info.kvno)) {
       kvno = Number((record || info).kvno) + 1;
     } else {
@@ -1453,7 +1460,8 @@ class Krb5PersonKeys {
       channel: 'internal', target: name + '@' + principals.REALM,
       summary: 'Kerberos keys for ' + name + ' were derived from the ' +
                'password just ' +
-               (event === 'set' ? 'set' : 'verified') + ' (kvno ' + kvno +
+               (event === 'set' ? 'set' : event === 'rehash'
+                 ? 'rehashed' : 'verified') + ' (kvno ' + kvno +
                ', ' + wanted.map(kcrypto.etypeName).join(', ') + ')',
       // No key, no salt beyond what ETYPE-INFO2 publishes anyway, no
       // password.
@@ -1467,7 +1475,8 @@ class Krb5PersonKeys {
              'Kerberos keys at ' +
              'kvno ' + kvno + ' (' + (sealed.sealed ? 'sealed' : 'clear, ' +
              'development key ' +
-             'store') + '), derived from the password just ' + event +
+             'store') + '), derived from the password just ' +
+             (event === 'rehash' ? 'rehashed' : event) +
              (previous.length ?
               '; keeping previous kvno ' + previous.map(function (one) {
                 return one.kvno;
@@ -1479,7 +1488,8 @@ class Krb5PersonKeys {
     if (!(record || (info && info.kvno))) {
       this.signalKeys(name, 'create', null, 'derived from the password ' +
                       'just ' + event + ' (kvno ' + kvno + ')');
-    } else if (!(record && record.stamp === stamp)) {
+    } else if (!(record && record.stamp === stamp) && event !== 'rehash') {
+      // A REHASH (#847) is the same password re-stamped: no new credential.
       this.signalKeys(name, 'update', null, 'derived from a new password ' +
                       '(kvno ' + kvno + ')');
     }

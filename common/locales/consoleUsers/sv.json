@@ -302,7 +302,7 @@
   "mfaSection.thAnswer": "Svar",
   "mfaSection.password": "Lösenord",
   "mfaSection.set": "satt",
-  "mfaSection.passwordSet": " — en scrypt-hash på deras egen post. Den kan inte läsas tillbaka och konsolen kan inte visa den; formuläret nedan ersätter den.",
+  "mfaSection.passwordSet": " — en hash på deras egen post. Den kan inte läsas tillbaka och konsolen kan inte visa den; formuläret nedan ersätter den.",
   "mfaSection.primaryKey": "Primär säkerhetsnyckel",
   "mfaSection.primaryKeyNote": " — loggar in dem på egen hand, utan lösenord. Sessionen registrerar då <code>amr [\"hwk\"]</code> och <code>acr \"1\"</code>.",
   "mfaSection.canSignIn": "Kan logga in",

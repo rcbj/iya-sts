@@ -820,8 +820,8 @@
     "text": "Kostnad för lösenordshash (log2 av scrypt N)"
   },
   "security.passwordHashLogN|description": {
-    "en": "332bb0d7bee5b84a",
-    "text": "scrypts CPU- och minneskostnad för ett NYLAGRAT lösenord, en klienthemlighet, en aktiveringstoken eller en återställningskod, som en tvåpotens: 15 är N=32768, ungefär 70 ms per hash på en vanlig maskin. Golvet på 14 är det minsta som tjänsten skriver. En höjning gör ett stulet lager långsammare att angripa och varje inloggning proportionellt långsammare. Redan lagrade hashar bär sina egna parametrar och påverkas inte."
+    "en": "3492bc25313f659a",
+    "text": "scrypts CPU- och minneskostnad för en NYLIGEN lagrad klienthemlighet, aktiverings- eller återställningstoken, återställningskod eller applösenord, som en tvåpotens: 15 är N=32768, ungefär 70 ms per hash på en vanlig maskin. Golvet 14 är det minsta den här tjänsten skriver. Att höja det gör ett stulet lager långsammare att angripa och varje inloggning långsammare i samma proportion. Redan lagrade hashar bär sina egna parametrar och påverkas inte. En persons lösenord hashas inte under detta: dess algoritm och kostnad är lösenordspolicyns (Katalog > Policyer)."
   },
   "security.passwordHashR|label": {
     "en": "d7d901b7702608d7",

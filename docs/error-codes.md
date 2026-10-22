@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4583** of them, in **47** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4586** of them, in **47** subsystems.
 
 ## Where a code appears
 
@@ -57,13 +57,13 @@ is an ordinary outcome.
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 32
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 20
-* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 143
+* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 145
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 206
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 56
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 341
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 342
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 724
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 115
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 33
@@ -720,6 +720,8 @@ Raised from: common/crypto.js, common/pq_jose.js, common/keystore.js, common/sec
 | `STS-KEYS-0152` | An HTTP message signature uses an algorithm the verifier does not allow. | the caller's: GNAP answers HTTP 401 invalid_client (400 invalid_resource_server at the RS-facing endpoints), a FAPI resource server HTTP 401 |
 | `STS-KEYS-0153` | An HTTP message signature does not verify over the signature base rebuilt from the message. | the caller's: GNAP answers HTTP 401 invalid_client (400 invalid_resource_server at the RS-facing endpoints), a FAPI resource server HTTP 401 |
 | `STS-KEYS-0154` | A response signature covers a ;req component, and no request message was given to read it from (RFC 9421 section 2.4). | the caller's: a signing resource server's defect, logged; a client verifying a response refuses it |
+| `STS-KEYS-0155` | This runtime has no argon2 (node before 24.7), so a new password was hashed with scrypt at the password policy's scrypt parameters instead of argon2id. Logged once per process. | — |
+| `STS-KEYS-0156` | A stored argon2id password hash could not be computed here — no argon2 in this runtime, or parameters outside the bounds this service computes — and was treated as no match. | — |
 
 ## STS-PKI
 
@@ -1525,6 +1527,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0406` | A sign-on session bound to a browser key was presented without a current bound cookie minted for its binding, and was not honoured for that request. The session is not ended. | none — the request is treated as signed out |
 | `STS-AUTHN-0407` | The sign-out could not end a device-bound session whose refresh failed its proof; it was ended directly, without the sign-out's fan-out. | — |
 | `STS-AUTHN-0408` | A sign-in could not be offered device binding: the response object takes no header. The session stands, unbound. | — |
+| `STS-AUTHN-0409` | A password that verified could not be re-hashed under the password policy's algorithm and parameters, or the new hash could not be written (#847). The sign-in stands; the next verified sign-in tries again. | — |
 
 ## STS-OAUTH
 

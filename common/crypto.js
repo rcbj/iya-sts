@@ -8751,6 +8751,12 @@ function decodeStoredSecret(stored) {
     return null;
   }
   const parts = text.split('$');
+  // `$argon2id$v=19$m=…,t=…,p=…$salt$hash` (#847) is read by its own
+  // decoder; everything below is the scrypt form.
+  if (parts[1] === 'argon2id') {
+    log.debug('Leaving decodeStoredSecret(). An argon2id form.');
+    return decodeArgon2Secret(parts);
+  }
   // `$scrypt$N$r$p$salt$hash` splits to ['', 'scrypt', N, r, p, salt, hash].
   if (parts.length !== 7 || parts[1] !== 'scrypt') {
     log.debug('Leaving decodeStoredSecret(). Not a form this file writes.');
@@ -8777,8 +8783,372 @@ function decodeStoredSecret(stored) {
     return null;
   }
   log.debug('Leaving decodeStoredSecret(). N=' + n + '.');
-  return { N: n, r: r, p: p, salt: salt, expected: expected,
-           keylen: expected.length, maxmem: 128 * n * r * 2 };
+  return { algorithm: 'scrypt', N: n, r: r, p: p, salt: salt,
+           expected: expected, keylen: expected.length,
+           maxmem: 128 * n * r * 2 };
+}
+
+// ---------------------------------------------------------------------------
+// ARGON2ID FOR A PERSON'S PASSWORD (2026-10-22, #847).
+//
+// RFC 9106's argon2id, which the OWASP Password Storage Cheat Sheet puts
+// first, for the passwords the password policy governs. **A PERSON'S
+// PASSWORD ONLY**: `hashSecret()` above stays scrypt for every other secret
+// this service verifies — a client secret, an activation or reset token, a
+// recovery code, an app password — which was rcbj's decision 3 on #847: the
+// password policy governs people's passwords and nothing else.
+//
+// **NODE'S OWN ARGON2.** `crypto.argon2()` and `crypto.argon2Sync()` arrived
+// in node 24.7 (the image runs 24.16), so there is no native package to add.
+// The asynchronous one is a CryptoJob, run on libuv's thread pool like
+// `crypto.scrypt()` — the arrangement #363 gave scrypt. A runtime without it
+// (an older node loading this file in-process) writes scrypt instead, said
+// once (STS-KEYS-0155), and refuses to verify an argon2id value
+// (STS-KEYS-0156) rather than guess.
+//
+// **THE STORED FORM IS THE PHC STRING** every argon2 library writes,
+// `$argon2id$v=19$m=<KiB>,t=<passes>,p=<lanes>$<salt>$<hash>`, the two
+// base64 fields without padding. It names its own parameters, so a value
+// written under one policy verifies under any later one — the property the
+// scrypt form was made self-describing for — and that is how the upgrade on
+// sign-in (`credentials.ts`) can find what is out of date.
+//
+// **THE FLOORS ARE OWASP'S AND ARE ENFORCED HERE AS WELL AS IN THE POLICY.**
+// m=19 MiB (19456 KiB), t=2, p=1 for argon2id; for scrypt, r=8 and N·p at
+// least what OWASP's table lists for that N (2^17 with p=1, 2^16 with p=2,
+// 2^15 with p=3, 2^14 with p=5, 2^13 with p=10). `passwordHashSpec()` clamps
+// to them, so a value that reached a policy some way its checks did not see
+// cannot make this module write a hash cheaper than OWASP's minimum —
+// `scryptParameters()`'s argument made again. The ceilings bound what a
+// policy may ask for, and what a STORED value may make a verification
+// compute: a hand-written `m=4194304` on an entry must not be a way to make
+// every sign-in allocate four gibibytes.
+// ---------------------------------------------------------------------------
+const ARGON2_SALT_BYTES = 16;
+const ARGON2_TAG_BYTES = 32;
+const ARGON2_VERSION = 19;
+const ARGON2_LIMITS = Object.freeze({
+  memory: Object.freeze({ min: 19456, max: 1048576, dflt: 19456 }),
+  passes: Object.freeze({ min: 2, max: 16, dflt: 2 }),
+  parallelism: Object.freeze({ min: 1, max: 16, dflt: 1 })
+});
+const SCRYPT_PASSWORD_LIMITS = Object.freeze({
+  logN: Object.freeze({ min: 13, max: 20, dflt: 17 }),
+  r: Object.freeze({ min: 8, max: 16, dflt: 8 }),
+  p: Object.freeze({ min: 1, max: 16, dflt: 1 })
+});
+// OWASP's scrypt table, by log2 N: the least p it lists at r=8. 2^17 and up
+// need p=1.
+const SCRYPT_OWASP_MIN_P = Object.freeze({ 13: 10, 14: 5, 15: 3, 16: 2 });
+const PASSWORD_HASH_ALGORITHMS = Object.freeze(['argon2id', 'scrypt']);
+let warnedNoArgon2 = false;
+
+/**
+ * Returns the least scrypt parallelism OWASP's table lists for a cost.
+ *
+ * @param logN - log2 of scrypt's N
+ * @returns the least p at r=8
+ */
+function scryptOwaspMinP(logN) {
+  log.debug("Entering scryptOwaspMinP().");
+  const n = Number(logN);
+  log.debug("Leaving scryptOwaspMinP().");
+  return n >= 17 ? 1 : (SCRYPT_OWASP_MIN_P[n] || 10);
+}
+
+// Node's argon2, held as `any`: the `@types/node` this repository checks
+// against predates node 24.7, which added it (`pq_native.js`'s reason for
+// the same cast).
+function argon2Api() {
+  log.debug("Entering argon2Api().");
+  const api = /** @type {any} */ (nodeCrypto);
+  log.debug("Leaving argon2Api().");
+  return typeof api.argon2Sync === 'function' &&
+         typeof api.argon2 === 'function' ? api : null;
+}
+
+/**
+ * Says whether this runtime can compute argon2id.
+ *
+ * @returns true on node 24.7 or later
+ */
+function argon2Available() {
+  log.debug("Entering argon2Available().");
+  log.debug("Leaving argon2Available().");
+  return !!argon2Api();
+}
+
+/**
+ * Returns the hash a NEW password is written under, clamped to the floors and
+ * ceilings above: the algorithm and its parameters.
+ *
+ * argon2id where this runtime has it, and scrypt otherwise (said once,
+ * STS-KEYS-0155). An absent spec is argon2id at OWASP's minimum.
+ *
+ * @param spec - `{ algorithm, memory, passes, parallelism }` or
+ *   `{ algorithm: 'scrypt', logN, r, p }`
+ * @returns the spec in force
+ */
+function passwordHashSpec(spec) {
+  log.debug("Entering passwordHashSpec().");
+  const asked = spec || {};
+  let algorithm = PASSWORD_HASH_ALGORITHMS.indexOf(asked.algorithm) >= 0
+    ? asked.algorithm : 'argon2id';
+  if (algorithm === 'argon2id' && !argon2Available()) {
+    if (!warnedNoArgon2) {
+      warnedNoArgon2 = true;
+      log.warn(errorCodes.tag('STS-KEYS-0155') +
+               'crypto: this runtime (node ' + process.version + ') has no ' +
+               'argon2, so new passwords are hashed with scrypt at the ' +
+               'policy\'s scrypt parameters instead of argon2id.');
+    }
+    algorithm = 'scrypt';
+  }
+  if (algorithm === 'argon2id') {
+    const L = ARGON2_LIMITS;
+    log.debug("Leaving passwordHashSpec(). argon2id.");
+    return {
+      algorithm: 'argon2id',
+      memory: clampInt(asked.memory, L.memory.min, L.memory.max,
+                       L.memory.dflt),
+      passes: clampInt(asked.passes, L.passes.min, L.passes.max,
+                       L.passes.dflt),
+      parallelism: clampInt(asked.parallelism, L.parallelism.min,
+                            L.parallelism.max, L.parallelism.dflt)
+    };
+  }
+  const S = SCRYPT_PASSWORD_LIMITS;
+  const logN = clampInt(asked.logN, S.logN.min, S.logN.max, S.logN.dflt);
+  const r = clampInt(asked.r, S.r.min, S.r.max, S.r.dflt);
+  const p = Math.max(scryptOwaspMinP(logN),
+                     clampInt(asked.p, S.p.min, S.p.max, S.p.dflt));
+  log.debug("Leaving passwordHashSpec(). scrypt.");
+  return { algorithm: 'scrypt', logN: logN, r: r, p: p };
+}
+
+// A PHC base64 field: standard alphabet, no padding.
+function phcB64(buf) {
+  log.debug("Entering phcB64().");
+  log.debug("Leaving phcB64().");
+  return buf.toString('base64').replace(/=+$/, '');
+}
+
+function encodeArgon2Secret(spec, salt, tag) {
+  log.debug("Entering encodeArgon2Secret().");
+  log.debug("Leaving encodeArgon2Secret().");
+  return '$argon2id$v=' + ARGON2_VERSION + '$m=' + spec.memory + ',t=' +
+         spec.passes + ',p=' + spec.parallelism + '$' + phcB64(salt) + '$' +
+         phcB64(tag);
+}
+
+// The argon2id form read back, or null for one this file would not write or
+// will not compute. NULL RATHER THAN A THROW, for `decodeStoredSecret()`'s
+// reason. The bounds are RFC 9106's own (m at least 8 KiB per lane, t at
+// least 1) below and this file's ceilings above: a stored value is verified
+// at the cost it names, which may be lower than a NEW hash's floor.
+function decodeArgon2Secret(parts) {
+  log.debug("Entering decodeArgon2Secret().");
+  // ['', 'argon2id', 'v=19', 'm=…,t=…,p=…', salt, hash]
+  if (parts.length !== 6 || parts[2] !== 'v=' + ARGON2_VERSION) {
+    log.debug("Leaving decodeArgon2Secret(). Not the form this file writes.");
+    return null;
+  }
+  const params = /^m=(\d{1,8}),t=(\d{1,3}),p=(\d{1,3})$/.exec(parts[3]);
+  const b64 = /^[A-Za-z0-9+/]+$/;
+  if (!params || !b64.test(parts[4]) || !b64.test(parts[5])) {
+    log.debug("Leaving decodeArgon2Secret(). The fields do not parse.");
+    return null;
+  }
+  const memory = Number(params[1]);
+  const passes = Number(params[2]);
+  const parallelism = Number(params[3]);
+  const salt = Buffer.from(parts[4], 'base64');
+  const expected = Buffer.from(parts[5], 'base64');
+  if (parallelism < 1 || parallelism > ARGON2_LIMITS.parallelism.max ||
+      passes < 1 || passes > ARGON2_LIMITS.passes.max ||
+      memory < 8 * parallelism || memory > ARGON2_LIMITS.memory.max ||
+      salt.length < 8 || expected.length < 4) {
+    log.warn(errorCodes.tag('STS-KEYS-0156') +
+             'crypto: a stored argon2id hash names parameters outside what ' +
+             'this service will compute (m=' + memory + ' KiB, t=' + passes +
+             ', p=' + parallelism + ') and is being treated as no match.');
+    log.debug("Leaving decodeArgon2Secret(). Out of bounds.");
+    return null;
+  }
+  log.debug("Leaving decodeArgon2Secret(). m=" + memory + '.');
+  return { algorithm: 'argon2id', memory: memory, passes: passes,
+           parallelism: parallelism, salt: salt, expected: expected,
+           keylen: expected.length };
+}
+
+function argon2Parameters(plaintext, spec) {
+  log.debug("Entering argon2Parameters().");
+  log.debug("Leaving argon2Parameters().");
+  return {
+    message: Buffer.from(String(plaintext == null ? '' : plaintext), 'utf8'),
+    nonce: Buffer.from(spec.salt),
+    parallelism: spec.parallelism,
+    tagLength: spec.keylen,
+    memory: spec.memory,
+    passes: spec.passes
+  };
+}
+
+// On this thread: the sync doors and the tests.
+function argon2DeriveSync(plaintext, spec) {
+  log.debug("Entering argon2DeriveSync().");
+  const api = argon2Api();
+  if (!api) {
+    log.debug("Leaving argon2DeriveSync(). No argon2 here.");
+    throw new Error('this runtime (node ' + process.version + ') has no ' +
+                    'argon2');
+  }
+  log.debug("Leaving argon2DeriveSync().");
+  return api.argon2Sync('argon2id', argon2Parameters(plaintext, spec));
+}
+
+// On libuv's thread pool: node's asynchronous argon2 is a CryptoJob, the
+// arrangement `deriveAsync()` has for scrypt.
+function argon2DeriveAsync(plaintext, spec) {
+  log.debug("Entering argon2DeriveAsync(). m=" + spec.memory);
+  const api = argon2Api();
+  if (!api) {
+    log.debug("Leaving argon2DeriveAsync(). No argon2 here.");
+    return Promise.reject(new Error('this runtime (node ' + process.version +
+                                    ') has no argon2'));
+  }
+  log.debug("Leaving argon2DeriveAsync(). On libuv.");
+  return new Promise(function (resolve, reject) {
+    api.argon2('argon2id', argon2Parameters(plaintext, spec),
+      function (err, derived) {
+        if (err) {
+          reject(err);
+          return;
+        }
+        resolve(Buffer.from(derived));
+      });
+  });
+}
+
+// The scrypt half of a password spec, in the shape `deriveAsync()` takes.
+function scryptPasswordSpec(spec, salt) {
+  log.debug("Entering scryptPasswordSpec().");
+  const n = Math.pow(2, spec.logN);
+  log.debug("Leaving scryptPasswordSpec().");
+  return { N: n, r: spec.r, p: spec.p, salt: salt, keylen: SCRYPT_KEYLEN,
+           maxmem: 2 * 128 * spec.r * (n + spec.p) };
+}
+
+/**
+ * Hashes a PERSON'S PASSWORD under a password-policy spec, on this thread:
+ * argon2id in the PHC form, or scrypt in `$scrypt$N$r$p$salt$hash`.
+ *
+ * Every other secret goes through `hashSecret()`, which stays scrypt.
+ *
+ * @param plaintext - the password
+ * @param spec - the policy's hash spec; see `passwordHashSpec()`
+ * @returns the stored form
+ */
+function hashPassword(plaintext, spec) {
+  log.debug('Entering hashPassword().');
+  const use = passwordHashSpec(spec);
+  if (use.algorithm === 'argon2id') {
+    const salt = nodeCrypto.randomBytes(ARGON2_SALT_BYTES);
+    const one = Object.assign({ salt: salt, keylen: ARGON2_TAG_BYTES }, use);
+    const tag = argon2DeriveSync(plaintext, one);
+    log.debug('Leaving hashPassword(). argon2id.');
+    return encodeArgon2Secret(use, salt, tag);
+  }
+  const salt = nodeCrypto.randomBytes(SCRYPT_SALT_BYTES);
+  const s = scryptPasswordSpec(use, salt);
+  const derived = nodeCrypto.scryptSync(String(plaintext == null ? '' :
+                                               plaintext),
+                                        salt, s.keylen,
+                                        { N: s.N, r: s.r, p: s.p,
+                                          maxmem: s.maxmem });
+  log.debug('Leaving hashPassword(). scrypt.');
+  return encodeStoredSecret(s.N, s.r, s.p, salt, derived);
+}
+
+/**
+ * Hashes a person's password as `hashPassword()` does, on libuv's thread
+ * pool.
+ *
+ * @param plaintext - the password
+ * @param spec - the policy's hash spec
+ * @returns a promise of the stored form
+ */
+function hashPasswordAsync(plaintext, spec) {
+  log.debug('Entering hashPasswordAsync().');
+  // Read ONCE, as `hashSecretAsync()` reads its cost once.
+  const use = passwordHashSpec(spec);
+  if (use.algorithm === 'argon2id') {
+    const salt = nodeCrypto.randomBytes(ARGON2_SALT_BYTES);
+    const one = Object.assign({ salt: salt, keylen: ARGON2_TAG_BYTES }, use);
+    log.debug('Leaving hashPasswordAsync(). argon2id, on libuv.');
+    return argon2DeriveAsync(plaintext, one).then(function (tag) {
+      return encodeArgon2Secret(use, salt, tag);
+    });
+  }
+  const salt = nodeCrypto.randomBytes(SCRYPT_SALT_BYTES);
+  const s = scryptPasswordSpec(use, salt);
+  log.debug('Leaving hashPasswordAsync(). scrypt, on libuv.');
+  return deriveAsync(plaintext, s).then(function (derived) {
+    return encodeStoredSecret(s.N, s.r, s.p, salt, derived);
+  });
+}
+
+/**
+ * Reads the algorithm and parameters a stored hash names, never its salt or
+ * value.
+ *
+ * @param stored - the stored form
+ * @returns `{ algorithm, memory, passes, parallelism }`,
+ *   `{ algorithm: 'scrypt', logN, r, p }`, or null for one this file did not
+ *   write
+ */
+function storedSecretParameters(stored) {
+  log.debug("Entering storedSecretParameters().");
+  const spec = decodeStoredSecret(stored);
+  if (!spec) {
+    log.debug("Leaving storedSecretParameters(). Unreadable.");
+    return null;
+  }
+  if (spec.algorithm === 'argon2id') {
+    log.debug("Leaving storedSecretParameters(). argon2id.");
+    return { algorithm: 'argon2id', memory: spec.memory, passes: spec.passes,
+             parallelism: spec.parallelism, keylen: spec.keylen };
+  }
+  log.debug("Leaving storedSecretParameters(). scrypt.");
+  return { algorithm: 'scrypt', logN: Math.log2(spec.N), r: spec.r,
+           p: spec.p, keylen: spec.keylen };
+}
+
+/**
+ * Says whether a stored password hash is already in the form a new one would
+ * be written in under this spec: the same algorithm and every parameter the
+ * same. What the upgrade on sign-in asks (#847).
+ *
+ * @param stored - the stored form
+ * @param spec - the policy's hash spec
+ * @returns true when nothing would change by hashing again
+ */
+function storedSecretMatchesSpec(stored, spec) {
+  log.debug("Entering storedSecretMatchesSpec().");
+  const held = storedSecretParameters(stored);
+  const want = passwordHashSpec(spec);
+  if (!held || held.algorithm !== want.algorithm) {
+    log.debug("Leaving storedSecretMatchesSpec(). Another algorithm.");
+    return false;
+  }
+  const same = want.algorithm === 'argon2id'
+    ? held.memory === want.memory && held.passes === want.passes &&
+      held.parallelism === want.parallelism &&
+      held.keylen === ARGON2_TAG_BYTES
+    : held.logN === want.logN && held.r === want.r && held.p === want.p &&
+      held.keylen === SCRYPT_KEYLEN;
+  log.debug("Leaving storedSecretMatchesSpec(). " + same);
+  return same;
 }
 
 /**
@@ -8851,7 +9221,8 @@ function hashSecretAsync(plaintext) {
 // plaintext — and a verification that treated one of those as a scrypt string
 // would refuse a correct password rather than saying it cannot read the value.
 /**
- * Says whether a stored value is one of this service's scrypt forms.
+ * Says whether a stored value is one of this service's hash forms: scrypt,
+ * or argon2id since #847.
  *
  * @param stored - the value
  * @returns true when it is
@@ -8859,11 +9230,13 @@ function hashSecretAsync(plaintext) {
 function isHashedSecret(stored) {
   log.debug("Entering isHashedSecret().");
   log.debug("Leaving isHashedSecret().");
-  return /^\$scrypt\$/.test(String(stored || ''));
+  // argon2id since #847: a person's password may be either.
+  return /^\$(scrypt|argon2id)\$/.test(String(stored || ''));
 }
 
 /**
- * Verifies a secret against a stored scrypt form, in constant time.
+ * Verifies a secret against a stored scrypt or argon2id form, in constant
+ * time.
  *
  * @param plaintext - the presented secret
  * @param stored - the stored form
@@ -8879,11 +9252,22 @@ function verifySecret(plaintext, stored) {
   }
   let derived;
   try {
-    derived = nodeCrypto.scryptSync(String(plaintext == null ? '' : plaintext),
-                                spec.salt, spec.keylen,
-                                { N: spec.N, r: spec.r, p: spec.p,
-                                  maxmem: spec.maxmem });
+    derived = spec.algorithm === 'argon2id'
+      ? argon2DeriveSync(plaintext, spec)
+      : nodeCrypto.scryptSync(String(plaintext == null ? '' : plaintext),
+                              spec.salt, spec.keylen,
+                              { N: spec.N, r: spec.r, p: spec.p,
+                                maxmem: spec.maxmem });
   } catch (e) {
+    log.debug('Caught in verifySecret(): ' + ((e && e.message) || e));
+    if (spec.algorithm === 'argon2id') {
+      // No argon2 in this runtime, or parameters it refused (#847).
+      log.warn(errorCodes.tag('STS-KEYS-0156') +
+               'crypto: a stored argon2id hash could not be computed here ' +
+               'and is being treated as no match: ' + e.message);
+      log.debug('Leaving verifySecret(). Uncomputable argon2id.');
+      return false;
+    }
     // Parameters this node cannot satisfy — a value stored by a build with a
     // higher cost, say. Reported rather than thrown, for decodeStoredSecret()'s
     // reason.
@@ -8918,9 +9302,19 @@ function verifySecretAsync(plaintext, stored) {
     return Promise.resolve(false);
   }
   log.debug('Leaving verifySecretAsync(). On libuv.');
-  return deriveAsync(plaintext, spec).then(function (derived) {
+  const derivation = spec.algorithm === 'argon2id'
+    ? argon2DeriveAsync(plaintext, spec) : deriveAsync(plaintext, spec);
+  return derivation.then(function (derived) {
     return constantTimeEquals(derived, spec.expected);
   }, function (e) {
+    log.debug('Caught in verifySecretAsync(): ' + ((e && e.message) || e));
+    if (spec.algorithm === 'argon2id') {
+      log.warn(errorCodes.tag('STS-KEYS-0156') +
+               'crypto: a stored argon2id hash could not be computed here ' +
+               'and is being treated as no match: ' +
+               ((e && e.message) || e));
+      return false;
+    }
     // Parameters this node cannot satisfy — verifySecret()'s case, answered
     // as it answers it.
     log.warn(errorCodes.tag('STS-KEYS-0005') +
@@ -16525,6 +16919,17 @@ module.exports = {
   verifySecret: verifySecret,
   verifySecretAsync: verifySecretAsync,
   isHashedSecret: isHashedSecret,
+  // --- a person's password (#847): argon2id or scrypt, by the policy ---
+  PASSWORD_HASH_ALGORITHMS: PASSWORD_HASH_ALGORITHMS,
+  ARGON2_LIMITS: ARGON2_LIMITS,
+  SCRYPT_PASSWORD_LIMITS: SCRYPT_PASSWORD_LIMITS,
+  scryptOwaspMinP: scryptOwaspMinP,
+  argon2Available: argon2Available,
+  passwordHashSpec: passwordHashSpec,
+  hashPassword: hashPassword,
+  hashPasswordAsync: hashPasswordAsync,
+  storedSecretParameters: storedSecretParameters,
+  storedSecretMatchesSpec: storedSecretMatchesSpec,
   // --- section 8: raw signatures and TPM 2.0 (#40) ---
   RAW_SIGNATURE_FAMILIES: RAW_SIGNATURE_FAMILIES,
   publicKeyFromSpki: publicKeyFromSpki,

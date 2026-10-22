@@ -36,8 +36,8 @@
     "text": "contraseñas"
   },
   "password.FIELDS.history.what": {
-    "en": "3d9f899c6a28ad30",
-    "text": "Cuántas de las contraseñas ANTERIORES de una persona se recuerdan y se rechazan. Mientras este valor sea mayor que 0 también se rechaza siempre la contraseña actual, así que 5 significa que una contraseña nueva no puede ser ninguna de las seis últimas. 0 desactiva la regla. Es el atributo del borrador, con el significado del borrador. Cada contraseña recordada se conserva como el hash scrypt con el que ya estaba guardada, en pwdHistory en la propia entrada de la persona, y comprobar una contraseña nueva cuesta una comparación de hash por cada contraseña recordada."
+    "en": "06be7ed15512bb42",
+    "text": "Cuántas contraseñas ANTERIORES de una persona se recuerdan y se rechazan. La contraseña actual también se rechaza siempre mientras este valor sea mayor que 0, así que 5 significa que una contraseña nueva no puede ser ninguna de las seis últimas. 0 desactiva la regla. El atributo del borrador, con el significado del borrador. Cada contraseña recordada se guarda como el hash con el que ya estaba almacenada (argon2id o scrypt), en pwdHistory en la propia entrada de la persona, y comprobar una contraseña nueva cuesta una comparación de hash por cada contraseña recordada."
   },
   "password.FIELDS.minSymbols.label": {
     "en": "95033032ad043277",
@@ -79,6 +79,74 @@
     "en": "9abc8e368dbfdf05",
     "text": "La longitud de una contraseña que este servicio INVENTA: para un usuario nuevo creado desde la consola o /admin-api, el botón Generar de un operador y la cuenta de arranque del modo producto. Debe ser al menos la longitud mínima y al menos el doble del número de símbolos más dos. Veinte caracteres de un alfabeto de 90 caracteres equivalen a unos 130 bits."
   },
+  "password.FIELDS.hashAlgorithm.label": {
+    "en": "3864bfd74ab51369",
+    "text": "Algoritmo de hash de contraseñas"
+  },
+  "password.FIELDS.hashAlgorithm.what": {
+    "en": "5fa1e8c07342e8c3",
+    "text": "El algoritmo con el que se calcula el hash de una contraseña recién almacenada: argon2id (RFC 9106, la primera opción del OWASP Password Storage Cheat Sheet) o scrypt (RFC 7914). Un hash almacenado indica su propio algoritmo y parámetros y se sigue verificando; uno que no use este algoritmo con estos parámetros se vuelve a calcular en el siguiente inicio de sesión verificado de la persona. Los secretos de cliente, tokens de activación, códigos de recuperación y contraseñas de aplicación no son contraseñas y siguen en scrypt."
+  },
+  "password.FIELDS.argon2Memory.label": {
+    "en": "f56cee65f89ca6d4",
+    "text": "Memoria de argon2id"
+  },
+  "password.FIELDS.argon2Memory.unit": {
+    "en": "97ee1b8dd0d5456b",
+    "text": "KiB"
+  },
+  "password.FIELDS.argon2Memory.what": {
+    "en": "ec649d8291c32776",
+    "text": "La memoria que usa un hash argon2id, en kibibytes (m). 19456 KiB (19 MiB) es el mínimo de OWASP y lo menos que este servicio escribirá. Aumentarlo hace más lento atacar un almacén robado, y cada inicio de sesión usa esa memoria de más."
+  },
+  "password.FIELDS.argon2Iterations.label": {
+    "en": "7d86f5ad8bfeae28",
+    "text": "Iteraciones de argon2id"
+  },
+  "password.FIELDS.argon2Iterations.unit": {
+    "en": "2c28ec094b830e09",
+    "text": "pasadas"
+  },
+  "password.FIELDS.argon2Iterations.what": {
+    "en": "b04ad660d2d130b6",
+    "text": "Cuántas pasadas hace argon2id sobre su memoria (t). 2 es el mínimo de OWASP con 19 MiB; cada pasada vuelve a añadir el mismo tiempo."
+  },
+  "password.FIELDS.argon2Parallelism.label": {
+    "en": "e1eb312244fb28cf",
+    "text": "Paralelismo de argon2id"
+  },
+  "password.FIELDS.argon2Parallelism.unit": {
+    "en": "ff1789b2348ddbc2",
+    "text": "carriles"
+  },
+  "password.FIELDS.argon2Parallelism.what": {
+    "en": "e5321dcccf2989ad",
+    "text": "En cuántos carriles divide argon2id su memoria (p). Forma parte del hash, no es un número de hilos: node calcula un hash en un solo hilo diga lo que diga esto. 1 es la cifra de OWASP."
+  },
+  "password.FIELDS.scryptLogN.label": {
+    "en": "91d752051cc3e278",
+    "text": "Coste de scrypt (log2 de N)"
+  },
+  "password.FIELDS.scryptLogN.what": {
+    "en": "ee968ef217ec87e1",
+    "text": "El coste de CPU y memoria de scrypt para una contraseña recién almacenada cuando el algoritmo es scrypt, como potencia de dos: 17 es N=131072. Junto con el paralelismo debe cumplir la tabla de OWASP: 2^17 con p=1, 2^16 con p=2, 2^15 con p=3, 2^14 con p=5 o 2^13 con p=10."
+  },
+  "password.FIELDS.scryptBlockSize.label": {
+    "en": "7b7e7b5de9b8be58",
+    "text": "Tamaño de bloque de scrypt (r)"
+  },
+  "password.FIELDS.scryptBlockSize.what": {
+    "en": "f0c104745b77d30a",
+    "text": "El tamaño de bloque de scrypt para una contraseña recién almacenada cuando el algoritmo es scrypt. La memoria es de unos 128 × N × r bytes; 8 es la cifra que dan la RFC 7914 y OWASP."
+  },
+  "password.FIELDS.scryptParallelism.label": {
+    "en": "0aa3282295d9521b",
+    "text": "Paralelismo de scrypt (p)"
+  },
+  "password.FIELDS.scryptParallelism.what": {
+    "en": "b088d02f4ec32169",
+    "text": "El paralelismo de scrypt para una contraseña recién almacenada cuando el algoritmo es scrypt. Node lo calcula en un solo hilo, así que un valor mayor cuesta tiempo y no núcleos; la descripción del coste enumera los pares que acepta OWASP."
+  },
   "password.SCHEMA.objectClasses.pwdPolicy.what": {
     "en": "ab642ea5cb282745",
     "text": "La clase de draft-behera-ldap-password-policy para una entrada de política de contraseñas. `pwdAttribute` indica el atributo que rige la política, y aquí siempre es `userPassword`."
@@ -96,8 +164,8 @@
     "text": "La contraseña más corta que este servicio establecerá, contada en caracteres (puntos de código Unicode, de modo que un emoji cuenta como uno). El atributo es el de draft-behera-ldap-password-policy. Doce es el valor predeterminado; NIST SP 800-63B pide al menos 8, y 15 cuando la contraseña es el único factor."
   },
   "password.SCHEMA.attributes.pwdInHistory.what": {
-    "en": "3d9f899c6a28ad30",
-    "text": "Cuántas de las contraseñas ANTERIORES de una persona se recuerdan y se rechazan. Mientras este valor sea mayor que 0 también se rechaza siempre la contraseña actual, así que 5 significa que una contraseña nueva no puede ser ninguna de las seis últimas. 0 desactiva la regla. Es el atributo del borrador, con el significado del borrador. Cada contraseña recordada se conserva como el hash scrypt con el que ya estaba guardada, en pwdHistory en la propia entrada de la persona, y comprobar una contraseña nueva cuesta una comparación de hash por cada contraseña recordada."
+    "en": "06be7ed15512bb42",
+    "text": "Cuántas contraseñas ANTERIORES de una persona se recuerdan y se rechazan. La contraseña actual también se rechaza siempre mientras este valor sea mayor que 0, así que 5 significa que una contraseña nueva no puede ser ninguna de las seis últimas. 0 desactiva la regla. El atributo del borrador, con el significado del borrador. Cada contraseña recordada se guarda como el hash con el que ya estaba almacenada (argon2id o scrypt), en pwdHistory en la propia entrada de la persona, y comprobar una contraseña nueva cuesta una comparación de hash por cada contraseña recordada."
   },
   "password.SCHEMA.attributes.stsPwdMinSymbols.what": {
     "en": "f9154c103bc3422d",
@@ -115,13 +183,41 @@
     "en": "9abc8e368dbfdf05",
     "text": "La longitud de una contraseña que este servicio INVENTA: para un usuario nuevo creado desde la consola o /admin-api, el botón Generar de un operador y la cuenta de arranque del modo producto. Debe ser al menos la longitud mínima y al menos el doble del número de símbolos más dos. Veinte caracteres de un alfabeto de 90 caracteres equivalen a unos 130 bits."
   },
+  "password.SCHEMA.attributes.stsPwdHashAlgorithm.what": {
+    "en": "5fa1e8c07342e8c3",
+    "text": "El algoritmo con el que se calcula el hash de una contraseña recién almacenada: argon2id (RFC 9106, la primera opción del OWASP Password Storage Cheat Sheet) o scrypt (RFC 7914). Un hash almacenado indica su propio algoritmo y parámetros y se sigue verificando; uno que no use este algoritmo con estos parámetros se vuelve a calcular en el siguiente inicio de sesión verificado de la persona. Los secretos de cliente, tokens de activación, códigos de recuperación y contraseñas de aplicación no son contraseñas y siguen en scrypt."
+  },
+  "password.SCHEMA.attributes.stsPwdArgon2Memory.what": {
+    "en": "ec649d8291c32776",
+    "text": "La memoria que usa un hash argon2id, en kibibytes (m). 19456 KiB (19 MiB) es el mínimo de OWASP y lo menos que este servicio escribirá. Aumentarlo hace más lento atacar un almacén robado, y cada inicio de sesión usa esa memoria de más."
+  },
+  "password.SCHEMA.attributes.stsPwdArgon2Iterations.what": {
+    "en": "b04ad660d2d130b6",
+    "text": "Cuántas pasadas hace argon2id sobre su memoria (t). 2 es el mínimo de OWASP con 19 MiB; cada pasada vuelve a añadir el mismo tiempo."
+  },
+  "password.SCHEMA.attributes.stsPwdArgon2Parallelism.what": {
+    "en": "e5321dcccf2989ad",
+    "text": "En cuántos carriles divide argon2id su memoria (p). Forma parte del hash, no es un número de hilos: node calcula un hash en un solo hilo diga lo que diga esto. 1 es la cifra de OWASP."
+  },
+  "password.SCHEMA.attributes.stsPwdScryptLogN.what": {
+    "en": "ee968ef217ec87e1",
+    "text": "El coste de CPU y memoria de scrypt para una contraseña recién almacenada cuando el algoritmo es scrypt, como potencia de dos: 17 es N=131072. Junto con el paralelismo debe cumplir la tabla de OWASP: 2^17 con p=1, 2^16 con p=2, 2^15 con p=3, 2^14 con p=5 o 2^13 con p=10."
+  },
+  "password.SCHEMA.attributes.stsPwdScryptBlockSize.what": {
+    "en": "f0c104745b77d30a",
+    "text": "El tamaño de bloque de scrypt para una contraseña recién almacenada cuando el algoritmo es scrypt. La memoria es de unos 128 × N × r bytes; 8 es la cifra que dan la RFC 7914 y OWASP."
+  },
+  "password.SCHEMA.attributes.stsPwdScryptParallelism.what": {
+    "en": "b088d02f4ec32169",
+    "text": "El paralelismo de scrypt para una contraseña recién almacenada cuando el algoritmo es scrypt. Node lo calcula en un solo hilo, así que un valor mayor cuesta tiempo y no núcleos; la descripción del coste enumera los pares que acepta OWASP."
+  },
   "password.SCHEMA.attributes.description.what": {
     "en": "93538e6b201100c5",
     "text": "Para qué sirve el perfil, para la próxima persona que lo lea."
   },
   "password.SCHEMA.personAttributes.pwdHistory.what": {
-    "en": "a057113a3f0da3b5",
-    "text": "Un valor por cada contraseña anterior recordada, en la forma del borrador `time#syntaxOID#length#data`, donde los datos son el hash scrypt con el que se guardó esa contraseña, nunca la contraseña. Lo mantiene este servicio y se rechaza en un add o modify de LDAP, porque un historial que cualquiera puede editar es un historial que cualquiera puede vaciar."
+    "en": "e800109ca0c5e386",
+    "text": "Un valor por cada contraseña anterior recordada, en la forma del borrador `time#syntaxOID#length#data`: los datos son el hash con el que se almacenó esa contraseña, nunca la contraseña. Lo mantiene este servicio y se rechaza en un add o modify de LDAP, porque un historial que cualquiera puede editar es un historial que cualquiera puede vaciar."
   },
   "password.SCHEMA.personAttributes.pwdChangedTime.what": {
     "en": "3c870b2e0c097f36",

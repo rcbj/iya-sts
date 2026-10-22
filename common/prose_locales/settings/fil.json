@@ -820,8 +820,8 @@
     "text": "Cost ng password hash (log2 ng scrypt N)"
   },
   "security.passwordHashLogN|description": {
-    "en": "332bb0d7bee5b84a",
-    "text": "Ang CPU at memory cost ng scrypt para sa BAGONG naka-store na password, client secret, activation token o recovery code, bilang power of two: ang 15 ay N=32768, mga 70ms bawat hash sa ordinaryong makina. Ang sahig na 14 ang pinakamababang isusulat ng serbisyong ito. Ang pagtaas nito ay nagpapabagal sa pag-atake sa ninakaw na store at nagpapabagal din nang katumbas sa bawat sign-in. Ang mga hash na naka-store na ay may dala ng sarili nilang parameter at hindi apektado."
+    "en": "3492bc25313f659a",
+    "text": "Ang gastos sa CPU at memory ng scrypt para sa BAGONG naka-store na client secret, activation o reset token, recovery code o app password, bilang power of two: ang 15 ay N=32768, mga 70ms bawat hash sa karaniwang makina. Ang pinakamababang 14 ang pinakamababang isusulat ng serbisyong ito. Kapag itinaas ito, mas bumabagal ang pag-atake sa ninakaw na store at bumabagal din nang proporsyonal ang bawat pag-sign in. Ang mga naka-store nang hash ay may sariling mga parameter at hindi naaapektuhan. Ang password ng isang tao ay hindi iha-hash sa ilalim nito: ang algorithm at gastos nito ay sa password policy (Directory > Policies)."
   },
   "security.passwordHashR|label": {
     "en": "d7d901b7702608d7",

@@ -1101,6 +1101,45 @@ why the stored form was made self-describing — and the async door reads the
 parameters ONCE, so the encoded value always names the cost the derivation
 really used. `tests/password_policy.js` pins both halves.
 
+**SINCE #847 (2026-10-22) THOSE SETTINGS COST EVERY SECRET BUT A PASSWORD.**
+A person's password is hashed by `hashPassword()` / `hashPasswordAsync()` at
+the password POLICY's algorithm and parameters (3ac, *How a password is
+stored*); `hashSecret()` — client secrets, activation and reset tokens,
+recovery codes, app passwords — is unchanged. See the next section.
+
+### A person's password is argon2id, and every stored form verifies (2026-10-22, #847)
+
+rcbj's four decisions on #847, in `crypto.js`'s *ARGON2ID FOR A PERSON'S
+PASSWORD* block:
+
+1. **argon2id (RFC 9106) at OWASP's minimum**, m=19456 KiB, t=2, p=1, through
+   node's own `crypto.argon2()` / `argon2Sync()` (node 24.7 and later; the
+   image runs 24.16, and the asynchronous one is a CryptoJob on libuv's
+   thread pool like scrypt's). No package. A runtime without it hashes a new
+   password with scrypt and says so once (`STS-KEYS-0155`), and refuses to
+   verify an argon2id value (`STS-KEYS-0156`) rather than claim it.
+2. **The stored form is the PHC string** every argon2 library reads,
+   `$argon2id$v=19$m=…,t=…,p=…$<salt>$<hash>`, base64 without padding, a
+   16-byte salt and a 32-byte tag. `decodeStoredSecret()` reads both forms,
+   so `verifySecret()` / `verifySecretAsync()` dispatch on the prefix and
+   every hash already stored keeps verifying. `isHashedSecret()` is the one
+   "is this one of our hashes" test (`/^\$(scrypt|argon2id)\$/`); the five
+   places that matched `$scrypt$` themselves ask it now.
+3. **The floors are OWASP's in both modes, and here as well as in the
+   policy**: `passwordHashSpec()` clamps a spec to `ARGON2_LIMITS` and
+   `SCRYPT_PASSWORD_LIMITS` and raises scrypt's p to OWASP's table for its N
+   (`scryptOwaspMinP()`: 2^17 p=1, 2^16 p=2, 2^15 p=3, 2^14 p=5, 2^13
+   p=10), whatever reached it. A spec it is not given is argon2id at the
+   minimum.
+4. **`storedSecretMatchesSpec()`** says whether a stored hash is already the
+   spec's algorithm with every parameter equal — what the upgrade on sign-in
+   asks (3ac).
+
+Measured in the tests image on this machine: one argon2id hash at the default
+about **35 ms**, scrypt at 2^15 (p=3) about **250 ms** and at 2^17 (p=1) about
+**460 ms**, `hashSecret()`'s scrypt at 2^15 p=1 about **97 ms** —
+`tests/password_argon2id.js` logs the figures every run.
+
 ### The four scrypt functions are one implementation with two doors
 
 `hashSecret` / `hashSecretAsync` and `verifySecret` / `verifySecretAsync` in
@@ -8565,9 +8604,36 @@ RECORDED in both modes, because moving the previous hash into `pwdHistory` costs
 no new hash and a realm switched to product should not start empty.
 `opts.generated` skips the history comparison (up to six scrypt derivations on
 the one thread every socket is served from, for a password nothing could have
-used before). A stored value that is not a scrypt hash is compared in constant
-time as the string it is, and never copied into the history.
-`tests/password_policy.js` holds all of it, eight mutants caught.
+used before). A stored value that is not one of this service's hashes
+(scrypt or argon2id) is compared in constant time as the string it is, and
+never copied into the history; each remembered hash is verified by its own
+form. `tests/password_policy.js` holds all of it, eight mutants caught.
+
+**HOW A PASSWORD IS STORED IS A RULE OF THE PROFILE TOO (#847, 2026-10-22).**
+Seven more rows: `hashAlgorithm` (`stsPwdHashAlgorithm`, `argon2id` or
+`scrypt`, an `enum` row), `argon2Memory` / `argon2Iterations` /
+`argon2Parallelism` (min 19456 KiB / 2 / 1) and `scryptLogN` /
+`scryptBlockSize` / `scryptParallelism` (min 13 / 8 / 1, with OWASP's N-and-p
+table as a cross-field rule). **They are `optional`**: a save that leaves one
+out keeps the value in force rather than being refused, because every caller
+written before them sends the six composition rows only.
+`hashSpec(profile)` answers them in `crypto.hashPassword()`'s shape, and
+`preparePassword()` hashes with it (a hash an LDAP write made off the loop is
+used only when it already matches the spec). Not mode-dependent.
+
+**THE UPGRADE ON SIGN-IN** (`credentials.ts`'s `upgradeHash()` /
+`upgradeHashAsync()`, after `verify()` and `verifyAsync()`): a password the
+CURRENT stored hash has just verified — never development's unchecked yes,
+never a service account's previous password — is hashed again and written
+back where the stored hash is not the profile's algorithm AND parameters
+(rcbj's decision 4: a parameter change counts). Compare and set: the entry's
+hash is read again with no await before the write, and a hash changed
+meanwhile is not overwritten. The hash alone is written — no `pwdHistory`, no
+`pwdChangedTime`, no credential-change signal or mail — and the Kerberos
+password observer is told `rehash`, which re-stamps the stored keys at the
+SAME kvno (`kerberos/krb5_person_keys.ts`). A failure is logged
+(`STS-AUTHN-0409`) and never costs the sign-in. There is no bulk rehash: the
+plaintext exists only at a sign-in. `tests/password_argon2id.js` holds it.
 
 **From the root `CLAUDE.md`'s `common/` row:** the profile is drawn at
 *Directory → Policies* (`/admin/policies`), ENFORCED IN PRODUCT MODE at every

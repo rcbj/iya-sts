@@ -820,8 +820,8 @@
     "text": "Coste del hash de contraseñas (log2 de N de scrypt)"
   },
   "security.passwordHashLogN|description": {
-    "en": "332bb0d7bee5b84a",
-    "text": "El coste de CPU y memoria de scrypt para una contraseña, un secreto de cliente, un token de activación o un código de recuperación guardados POR PRIMERA VEZ, como potencia de dos: 15 es N=32768, unos 70 ms por hash en una máquina corriente. El mínimo de 14 es lo menos que escribirá este servicio. Aumentarlo hace más lento atacar un almacén robado y hace cada inicio de sesión más lento en proporción. Los hashes ya guardados llevan sus propios parámetros y no se ven afectados."
+    "en": "3492bc25313f659a",
+    "text": "El coste de CPU y memoria de scrypt para un secreto de cliente, un token de activación o restablecimiento, un código de recuperación o una contraseña de aplicación RECIÉN almacenados, como potencia de dos: 15 es N=32768, unos 70 ms por hash en una máquina corriente. El mínimo de 14 es lo menos que este servicio escribirá. Aumentarlo hace más lento atacar un almacén robado y cada inicio de sesión en proporción. Los hashes ya almacenados llevan sus propios parámetros y no se ven afectados. La contraseña de una persona no se calcula con esto: su algoritmo y su coste son los de la política de contraseñas (Directorio > Políticas)."
   },
   "security.passwordHashR|label": {
     "en": "d7d901b7702608d7",

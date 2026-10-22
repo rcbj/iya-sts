@@ -1646,10 +1646,171 @@ class Credentials {
     // password would be stored as the new one's keys.
     if (answer.ok && answer.reason === 'verified' && !byPrevious) {
       this.notifyPassword(ready.name, password, 'verified', ready.stored);
+      // #847: the stored hash brought up to the policy's form, on this
+      // thread, as everything else this door does.
+      this.upgradeHash(ready.name, password, ready.stored);
     }
     this.noteRefusal(username, opts, answer);
     log.debug('Leaving Credentials.verify().');
     return answer;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE UPGRADE ON SIGN-IN (2026-10-22, #847).
+  //
+  // A password that has just VERIFIED against the stored hash, where that
+  // hash is not the password policy's preferred algorithm AND parameters, is
+  // hashed again under the policy and written back. rcbj's decision 4: a
+  // parameter change within one algorithm counts as much as a change of
+  // algorithm. It is the only way an old hash can move — there is no bulk
+  // rehash, because the plaintext exists only at a sign-in.
+  //
+  // Five rules, each a way to get it wrong:
+  //
+  //   * ONLY A VERIFIED PASSWORD, and only one the CURRENT hash verified —
+  //     never development mode's unchecked "yes" (that would replace a
+  //     person's hash with whatever was typed) and never a service account's
+  //     previous password during its rotation overlap.
+  //   * COMPARE AND SET. The write happens only while the entry still holds
+  //     the hash that verified, read with no await between it and the
+  //     write: a password changed in the meantime, here or on another node,
+  //     is never overwritten by a rehash of the old one.
+  //   * THE HASH ALONE. `writePassword()` without a history: `pwdHistory` and
+  //     `pwdChangedTime` are untouched, because the password did not change.
+  //     No credential-change signal and no "your password was changed"
+  //     message, for the same reason.
+  //   * THE KERBEROS KEYS FOLLOW THE STAMP. They are bound to the stored hash
+  //     (`kerberos/krb5_person_keys.ts`), so the observer is told of a
+  //     `rehash`, which re-stamps them at the SAME kvno: the password, and so
+  //     every key, is the one it was.
+  //   * IT NEVER COSTS THE SIGN-IN. A hash or a write that fails is logged
+  //     (STS-AUTHN-0409) and the person is signed in as they would have been;
+  //     the next verified sign-in tries again.
+  // ---------------------------------------------------------------------------
+  private rehashSpecFor(name, stored) {
+    const { log, crypto, passwordPolicy } = this.deps;
+    log.debug('Entering Credentials.rehashSpecFor().');
+    if (!this.directory || typeof this.directory.writePassword !== 'function' ||
+        !crypto.isHashedSecret(stored)) {
+      log.debug('Leaving Credentials.rehashSpecFor(). Nothing to upgrade.');
+      return null;
+    }
+    const spec = passwordPolicy.hashSpec(passwordPolicy.profileFor(name));
+    if (crypto.storedSecretMatchesSpec(stored, spec)) {
+      log.debug('Leaving Credentials.rehashSpecFor(). Already in force.');
+      return null;
+    }
+    log.debug('Leaving Credentials.rehashSpecFor(). Out of date.');
+    return spec;
+  }
+
+  // The compare-and-set write, with no await between the read and the write.
+  private rehashWrite(name, password, stored, hash) {
+    const { log, crypto, errorCodes } = this.deps;
+    log.debug('Entering Credentials.rehashWrite().');
+    try {
+      const now = String(this.directory.readPassword(name) || '');
+      if (now !== String(stored)) {
+        log.info('credentials: the stored password hash for ' + name +
+                 ' changed while it was being upgraded, so the upgrade was ' +
+                 'dropped; the newer password stands.');
+        log.debug('Leaving Credentials.rehashWrite(). Superseded.');
+        return false;
+      }
+      if (!this.directory.writePassword(name, hash)) {
+        log.warn(errorCodes.tag('STS-AUTHN-0409') +
+                 'credentials: the upgraded password hash for ' + name +
+                 ' could not be written (no entry); the sign-in stands.');
+        log.debug('Leaving Credentials.rehashWrite(). Not written.');
+        return false;
+      }
+    } catch (e) {
+      log.debug('Caught in Credentials.rehashWrite(): ' +
+                ((e && e.message) || e));
+      log.error(errorCodes.tag('STS-AUTHN-0409') +
+                'credentials: writing the upgraded password hash for ' + name +
+                ' threw, and the sign-in stands: ' +
+                ((e && e.message) || e));
+      log.debug('Leaving Credentials.rehashWrite(). The store threw.');
+      return false;
+    }
+    const from = crypto.storedSecretParameters(stored);
+    const to = crypto.storedSecretParameters(hash);
+    log.info('credentials: the stored password hash for ' + name + ' was ' +
+             'upgraded at a verified sign-in, from ' +
+             (from ? from.algorithm : 'an unknown form') + ' to ' +
+             (to ? to.algorithm : 'an unknown form') + ' at the password ' +
+             'policy\'s parameters.');
+    this.notifyPassword(name, password, 'rehash', hash);
+    log.debug('Leaving Credentials.rehashWrite(). Written.');
+    return true;
+  }
+
+  /**
+   * Hashes a just-verified password again under the password policy and
+   * writes it back where the stored hash is not the policy's algorithm and
+   * parameters (#847). On this thread; never throws.
+   *
+   * @param name - the person
+   * @param password - the password the stored hash just verified
+   * @param stored - that stored hash
+   * @returns true when a new hash was written
+   */
+  upgradeHash(name, password, stored) {
+    const { log, crypto, errorCodes } = this.deps;
+    log.debug('Entering Credentials.upgradeHash().');
+    const spec = this.rehashSpecFor(name, stored);
+    if (!spec) {
+      log.debug('Leaving Credentials.upgradeHash(). Nothing to do.');
+      return false;
+    }
+    let hash;
+    try {
+      hash = crypto.hashPassword(password, spec);
+    } catch (e) {
+      log.debug('Caught in Credentials.upgradeHash(): ' +
+                ((e && e.message) || e));
+      log.warn(errorCodes.tag('STS-AUTHN-0409') +
+               'credentials: the password hash for ' + name + ' could not ' +
+               'be upgraded, and the sign-in stands: ' +
+               ((e && e.message) || e));
+      log.debug('Leaving Credentials.upgradeHash(). The hash failed.');
+      return false;
+    }
+    const written = this.rehashWrite(name, password, stored, hash);
+    log.debug('Leaving Credentials.upgradeHash(). ' + written);
+    return written;
+  }
+
+  /**
+   * As `upgradeHash()`, with the new hash made on libuv's thread pool. Never
+   * rejects.
+   *
+   * @param name - the person
+   * @param password - the password the stored hash just verified
+   * @param stored - that stored hash
+   * @returns a promise of true when a new hash was written
+   */
+  upgradeHashAsync(name, password, stored) {
+    const { log, crypto, errorCodes } = this.deps;
+    log.debug('Entering Credentials.upgradeHashAsync().');
+    const spec = this.rehashSpecFor(name, stored);
+    if (!spec) {
+      log.debug('Leaving Credentials.upgradeHashAsync(). Nothing to do.');
+      return Promise.resolve(false);
+    }
+    log.debug('Leaving Credentials.upgradeHashAsync(). On libuv.');
+    return crypto.hashPasswordAsync(password, spec).then((hash) => {
+      return this.rehashWrite(name, password, stored, hash);
+    }, (e) => {
+      log.debug('Caught in Credentials.upgradeHashAsync(): ' +
+                ((e && e.message) || e));
+      log.warn(errorCodes.tag('STS-AUTHN-0409') +
+               'credentials: the password hash for ' + name + ' could not ' +
+               'be upgraded, and the sign-in stands: ' +
+               ((e && e.message) || e));
+      return false;
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -1712,6 +1873,13 @@ class Credentials {
           if (answer.ok && answer.reason === 'verified' && !byPrevious) {
             this.notifyPassword(ready.name, password, 'verified',
                                 ready.stored);
+            this.noteRefusal(username, opts, answer);
+            // #847: the stored hash brought up to the policy's form before
+            // the answer, which `upgradeHashAsync()` never fails.
+            return this.upgradeHashAsync(ready.name, password, ready.stored)
+              .then(() => {
+                return answer;
+              });
           }
           this.noteRefusal(username, opts, answer);
           return answer;
@@ -2035,7 +2203,9 @@ class Credentials {
       .filter((one) => { return !!one; });
     for (let i = 0; i < candidates.length; i++) {
       const stored = String(candidates[i]);
-      const same = stored.indexOf('$scrypt$') === 0
+      // Each remembered hash verified by its OWN form (#847): scrypt or
+      // argon2id, at the parameters it names.
+      const same = crypto.isHashedSecret(stored)
         ? crypto.verifySecret(password, stored)
         : crypto.constantTimeEquals(password, stored);
       if (same) {
@@ -2231,20 +2401,28 @@ class Credentials {
     // a hash — a clear value an older `ldapmodify` left behind is not written
     // into a second attribute where it would outlive the password it was.
     const next = [];
-    if (current && current.indexOf('$scrypt$') === 0) {
+    // A hash of either form (#847): a remembered password keeps the form it
+    // was stored in, and the history check verifies each by its own.
+    if (current && crypto.isHashedSecret(current)) {
       next.push(passwordPolicy.historyValue(current));
     }
     const history = next.concat(storedHistory).slice(0, profile.history);
     log.debug('Leaving Credentials.preparePassword(). Prepared; ' +
               history.length + ' remembered.');
+    // HASHED AS THE POLICY SAYS (#847): argon2id or scrypt, at the profile's
+    // parameters — `password_policy.ts`'s `hashSpec()`. Every other secret
+    // this file hashes stays `hashSecret()`'s scrypt.
+    const spec = passwordPolicy.hashSpec(profile);
     // A HASH THE CALLER ALREADY MADE OFF THE EVENT LOOP (#756): an LDAP
     // write hashes its clear password on libuv's thread pool before this
     // synchronous body runs. It is only ever a hash of this same plaintext
-    // (the caller looks it up by the value), and it must be one of ours;
-    // anything else is ignored and the hash is made here.
+    // (the caller looks it up by the value), and it must be one of ours in
+    // the policy's form now; anything else is ignored and the hash is made
+    // here.
     const given = options.hashOfThisPassword;
-    const hash = typeof given === 'string' && crypto.isHashedSecret(given)
-      ? given : crypto.hashSecret(password);
+    const hash = typeof given === 'string' && crypto.isHashedSecret(given) &&
+                 crypto.storedSecretMatchesSpec(given, spec)
+      ? given : crypto.hashPassword(password, spec);
     return { ok: true, hash: hash, history: history,
              profile: profile.name };
   }
@@ -2336,7 +2514,7 @@ class Credentials {
                                    'created ahead of time.'] });
     }
     log.info('credentials: a password was set for ' + name + '. It is stored ' +
-             'as a scrypt hash and CANNOT BE READ BACK — this service can ' +
+             'as a hash and CANNOT BE READ BACK — this service can ' +
              'never show it again, which is why the caller is given it once ' +
              'and only at the moment it is created.');
     const overlapMs = rotation ? Math.max(0, Number(rotation.overlapMs) || 0)
@@ -2569,7 +2747,7 @@ class Credentials {
                '  password: from admin.bootstrapPassword — NOT PRINTED, and ' +
                'not printed anywhere else either.\n\nNobody in this ' +
                'realm\'s directory held a credential, so this account was ' +
-               'given the password you configured. It is stored as a scrypt ' +
+               'given the password you configured. It is stored as a ' +
                'hash and CANNOT be read back — only reset.\n\nCHANGE IT. ' +
                'Sign in at /admin, or POST /admin-api/users/set-password.\n' +
                '=======================================================');
@@ -2582,7 +2760,7 @@ class Credentials {
              '  username: ' + username + '\n' +
              '  password: ' + password + '\n\nNobody in this realm\'s ' +
              'directory held a credential, so this one was generated so that ' +
-             'the service is reachable. It is stored as a scrypt hash and ' +
+             'the service is reachable. It is stored as a hash and ' +
              'CANNOT be recovered — only reset.\n\nCHANGE IT. Sign in at ' +
              '/admin, or POST ' +
              '/admin-api/users/set-password.\n' +
@@ -9237,7 +9415,7 @@ class Credentials {
    * @returns `{ ok: true, username, removed }`, or a refusal
    */
   removePassword(username) {
-    const { log, passwordPolicy, errorCodes } = this.deps;
+    const { log, passwordPolicy, errorCodes, crypto } = this.deps;
     const directory = this.directory;
     const coded = this.coded.bind(this);
     log.debug("Entering Credentials.removePassword().");
@@ -9263,7 +9441,7 @@ class Credentials {
       return { ok: true, username: name, removed: false };
     }
     const profile = passwordPolicy.profileFor(name);
-    const next = current.indexOf('$scrypt$') === 0
+    const next = crypto.isHashedSecret(current)
       ? [passwordPolicy.historyValue(current)] : [];
     let written = false;
     try {
@@ -10478,6 +10656,8 @@ export = {
   storable: slot.forward('storable'),
   verify: slot.forward('verify'),
   verifyAsync: slot.forward('verifyAsync'),
+  upgradeHash: slot.forward('upgradeHash'),
+  upgradeHashAsync: slot.forward('upgradeHashAsync'),
   // A PASSWORD THAT MUST BE CHANGED (2026-09-13) — see resetRefusal().
   passwordResetRequired: slot.forward('passwordResetRequired'),
   setPasswordResetRequired: slot.forward('setPasswordResetRequired'),

@@ -302,7 +302,7 @@
   "mfaSection.thAnswer": "Answer",
   "mfaSection.password": "Password",
   "mfaSection.set": "set",
-  "mfaSection.passwordSet": " — a scrypt hash on their own entry. It cannot be read back and this console cannot show it; the form below replaces it.",
+  "mfaSection.passwordSet": " — a hash on their own entry. It cannot be read back and this console cannot show it; the form below replaces it.",
   "mfaSection.primaryKey": "Primary security key",
   "mfaSection.primaryKeyNote": " — signs them in on its own, passwordless. The session then records <code>amr [\"hwk\"]</code> and <code>acr \"1\"</code>.",
   "mfaSection.canSignIn": "Can sign in",
