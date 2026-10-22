@@ -62,16 +62,27 @@ session. `workers.readYourWrite` decides what a request waits for:
 
 | Value | A request waits for |
 |---|---|
-| `session` (the default) | Only the writes of earlier requests that carried the same session cookie, pin cookie or flow, plus the front process's own writes. A request carrying none of them waits as in `global`. |
+| `session` (the default) | Only the writes of earlier requests that carried the same session cookie, pin cookie or flow, plus the front process's own writes. A code exchange at the token endpoint waits for its code's writes, as below. Any other request carrying none of them waits as in `global`. |
 | `global` | Every write any request made before it, through any worker. |
 | `off` | Nothing. Use it only where every client is pinned to one worker. |
 
 `true` means `session` and `false` means `off`.
 
 In `session` mode the token endpoint's code exchange has no session cookie,
-because it comes from the client's server rather than the browser. It
-therefore waits as in `global`, and under load it waits longer than the
-browser's requests do.
+because it comes from the client's server rather than the browser. It waits
+for its CODE instead. When the authorization endpoint redirects the browser
+with `code=` in the query, the pool files that answer under the code, together
+with whatever the browser's session and sign-in had still outstanding. A
+`POST` to the token endpoint with a form body of at most 16 KiB and a declared
+length is read before it waits, and passed to the worker unchanged. If it is
+an `authorization_code` grant for a code the pool learnt that way, it waits
+only for those writes.
+
+Everything else at the token endpoint waits as in `global`: a code the pool
+did not learn (one delivered by `form_post` or in a fragment, or minted on
+another node), the refresh grant, and a body that is larger, chunked or sent
+over HTTP/2 without a length. `stats().sessionBarrier.codeKeyed` counts the
+exchanges keyed by their code.
 
 ## Reading the `request phases` log line
 
@@ -116,8 +127,11 @@ request, and appear in the process that does the writing:
   requests on one worker. Password hashing and bulk imports are the usual
   causes; `workers.batch` keeps a bulk load in its own lane.
 * **`barrier` or `ticket` high.** Requests are waiting for other workers'
-  writes. Check that `workers.readYourWrite` is `session`; a high value on the
-  token endpoint alone is expected, as described above.
+  writes. Check that `workers.readYourWrite` is `session`. At the token
+  endpoint, compare `stats().sessionBarrier.codeKeyed` with `global`: a code
+  exchange keyed by its code waits only for its code, and a refresh, an
+  unknown code or a large body still waits as in `global`, as described
+  above.
 * **`commit` high.** The database is slow to commit. Compare `COMMIT through`'s
   parts with the `FLUSH` lines: a part much longer than its flush is waiting
   for an earlier write to finish first.

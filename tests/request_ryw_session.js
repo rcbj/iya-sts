@@ -33,9 +33,22 @@
 //       request waits globally;
 //   R8. bounded: a key evicted with a ticket outstanding spills it to every
 //       keyed request, until that ticket is announced.
+//   R9. THE CODE EXCHANGE (2026-10-22, #820): an authorization code redirect
+//       (a `Location` carrying `code=`) files its ticket under the code, with
+//       the session's own outstanding ticket; a `POST /oauth2/token` naming
+//       that code then waits for those two and not for another client's,
+//       and its worker is synced to their write; its body reaches the
+//       worker byte for byte;
+//  R10. an unknown code is the global wait, never "wait for nothing";
+//  R11. a refresh grant is the global wait;
+//  R12. a body over 16 KiB, and a chunked one, are the global wait, and each
+//       reaches the worker whole;
+//  R13. over HTTP/2: with a `content-length` keyed by its code, without one
+//       global, the body whole either way.
 // ===========================================================================
 
 const http = require('http');
+const http2 = require('http2');
 const os = require('os');
 const fs = require('fs');
 const path = require('path');
@@ -96,12 +109,23 @@ const STUB = [
   "  }",
   "  if (!m || !m.begin) { return; }",
   "  const server = http.createServer(function (req, res) {",
-  "    res.setHeader('x-worker', String(wt.threadId));",
-  "    res.setHeader('x-syncs', String(syncs));",
-  "    if (req.url.indexOf('/login') === 0) {",
-  "      res.setHeader('set-cookie', 'sts_session=ccc.h; Path=/');",
-  "    }",
-  "    res.end('ok');",
+  "    const parts = [];",
+  "    req.on('data', function (d) { parts.push(d); });",
+  "    req.on('end', function () {",
+  "      const body = Buffer.concat(parts);",
+  "      res.setHeader('x-worker', String(wt.threadId));",
+  "      res.setHeader('x-syncs', String(syncs));",
+  "      if (req.url.indexOf('/login') === 0) {",
+  "        res.setHeader('set-cookie', 'sts_session=ccc.h; Path=/');",
+  "      }",
+  "      const code = /^\\/authorize-code\\?code=([^&]+)/.exec(req.url);",
+  "      if (code) {",
+  "        res.statusCode = 302;",
+  "        res.setHeader('location', 'https://rp.example/cb?code=' +",
+  "                      code[1] + '&state=s');",
+  "      }",
+  "      res.end(body.length ? body : 'ok');",
+  "    });",
   "  });",
   "  server.listen(m.socket, function () {",
   "    wt.parentPort.postMessage({ ready: true });",
@@ -137,6 +161,104 @@ function start(port, urlPath, cookie) {
   return call;
 }
 
+// One POST, as a promise that remembers whether it has settled yet, with the
+// answer's body. `chunked` sends no content-length and writes the body in
+// pieces, so node frames it with Transfer-Encoding: chunked.
+function post(port, urlPath, body, chunked) {
+  log.debug("Entering post().");
+  const call = { done: false, answer: null };
+  call.promise = new Promise(function (resolve) {
+    const headers = { 'content-type': 'application/x-www-form-urlencoded' };
+    if (!chunked) {
+      headers['content-length'] = String(Buffer.byteLength(body));
+    }
+    const req = http.request({ host: '127.0.0.1', port: port,
+                               path: urlPath, method: 'POST', agent: false,
+                               headers: headers },
+                             function (answer) {
+      const parts = [];
+      answer.on('data', function (d) {
+        parts.push(d);
+      });
+      answer.on('end', function () {
+        call.done = true;
+        call.answer = { status: answer.statusCode, headers: answer.headers,
+                        body: Buffer.concat(parts) };
+        resolve(call.answer);
+      });
+    });
+    req.on('error', function (e) {
+      log.debug("Caught in post(): " + ((e && e.message) || e));
+      call.done = true;
+      call.answer = { status: 0, headers: {}, body: Buffer.alloc(0) };
+      resolve(call.answer);
+    });
+    if (chunked) {
+      const data = Buffer.from(body);
+      const step = Math.ceil(data.length / 3);
+      for (let i = 0; i < data.length; i += step) {
+        req.write(data.subarray(i, i + step));
+      }
+      req.end();
+    } else {
+      req.end(body);
+    }
+  });
+  log.debug("Leaving post().");
+  return call;
+}
+
+// The same over an HTTP/2 session, with or without a content-length.
+function postH2(session, urlPath, body, withLength) {
+  log.debug("Entering postH2().");
+  const call = { done: false, answer: null };
+  call.promise = new Promise(function (resolve) {
+    const headers = { ':method': 'POST', ':path': urlPath,
+                      'content-type': 'application/x-www-form-urlencoded' };
+    if (withLength) {
+      headers['content-length'] = String(Buffer.byteLength(body));
+    }
+    const stream = session.request(headers);
+    const parts = [];
+    let answerHeaders = {};
+    stream.on('response', function (h) {
+      answerHeaders = h;
+    });
+    stream.on('data', function (d) {
+      parts.push(d);
+    });
+    stream.on('end', function () {
+      call.done = true;
+      call.answer = { status: answerHeaders[':status'],
+                      headers: answerHeaders, body: Buffer.concat(parts) };
+      resolve(call.answer);
+    });
+    stream.on('error', function (e) {
+      log.debug("Caught in postH2(): " + ((e && e.message) || e));
+      call.done = true;
+      call.answer = { status: 0, headers: {}, body: Buffer.alloc(0) };
+      resolve(call.answer);
+    });
+    stream.end(body);
+  });
+  log.debug("Leaving postH2().");
+  return call;
+}
+
+// Every ticket either worker may still hold, announced: the stubs announce
+// nothing themselves, so every request this file dispatched left one.
+function announceAll(entries) {
+  log.debug("Entering announceAll().");
+  const range = [];
+  for (let i = 1; i <= 2000; i++) {
+    range.push(i);
+  }
+  entries.forEach(function (one) {
+    pool.receiveCommitted(one, { wrote: false, tickets: range });
+  });
+  log.debug("Leaving announceAll().");
+}
+
 // A finished, unannounced ticket on `entry`, filed under `keys`.
 function arm(entry, keys) {
   log.debug("Entering arm().");
@@ -164,7 +286,195 @@ function checkTheReaders(t) {
   t.equal(pool.clientKeysOf({ headers: {}, originalUrl: '/oauth2/token' },
                             pool.PROTOCOL_POOL).length, 0,
           'R1. a back-channel request carries no key');
+  // Which requests are read before the barrier (#820).
+  const form = 'application/x-www-form-urlencoded';
+  const ask = function (method, url, headers) {
+    return pool.codeExchangeCandidate({ method: method, originalUrl: url,
+                                        headers: headers });
+  };
+  t.check(ask('POST', '/oauth2/token',
+              { 'content-type': form, 'content-length': '40' }) &&
+          ask('POST', '/realm/r1/oauth2/token?x=1',
+              { 'content-type': form + '; charset=UTF-8',
+                'content-length': '16384' }) &&
+          ask('POST', '/as1/oauth2/token',
+              { 'content-type': form, 'content-length': '0' }),
+          'R9. a small form POST to a token endpoint, a realm\'s or a named ' +
+          'authorization server\'s, is read first', '');
+  t.check(!ask('GET', '/oauth2/token',
+               { 'content-type': form, 'content-length': '40' }) &&
+          !ask('POST', '/oauth2/authorize',
+               { 'content-type': form, 'content-length': '40' }) &&
+          !ask('POST', '/oauth2/token',
+               { 'content-type': 'application/json',
+                 'content-length': '40' }) &&
+          !ask('POST', '/oauth2/token', { 'content-type': form }) &&
+          !ask('POST', '/oauth2/token',
+               { 'content-type': form, 'content-length': '16385' }) &&
+          !ask('POST', '/oauth2/token',
+               { 'content-type': form, 'content-length': '40',
+                 'transfer-encoding': 'chunked' }) &&
+          !ask('POST', '/oauth2/token',
+               { 'content-type': form, 'content-length': '40',
+                 'content-encoding': 'gzip' }) &&
+          !ask('POST', '/oauth2/token',
+               { 'content-type': form, 'content-length': '4e1' }),
+          'R12. anything else is not: another method, path or type, no ' +
+          'length, over 16 KiB, a transfer or content encoding', '');
   log.debug("Leaving checkTheReaders().");
+}
+
+// R9 to R13: the code exchange, keyed by its code (#820), over HTTP/1.1 on
+// `port` and HTTP/2 on `port2`, both fronting the same two stub workers.
+async function checkTheCodeExchange(t, port, port2) {
+  log.debug("Entering checkTheCodeExchange().");
+  const workers = pool.workerTable().filter(function (w) {
+    return w.pool === pool.PROTOCOL_POOL;
+  });
+  announceAll(workers);
+  // The browser C, bound to a worker W by its first request.
+  const C = 'sts_session=ddd.h';
+  const first = await start(port, '/oauth2/authorize', C).promise;
+  const W = workers.filter(function (w) {
+    return String(w.pid) === first.headers['x-worker'];
+  })[0];
+  const O = workers.filter(function (w) {
+    return w !== W;
+  })[0];
+  // Every request with no key is sent to the OTHER worker, O: least loaded
+  // reads `served`. So the code exchange is never answered by the worker
+  // that holds the code in memory, which is the case the wait is for.
+  const served = W.served;
+  W.served = 1e9;
+  const session = http2.connect('http://127.0.0.1:' + port2);
+  session.on('error', function (e) {
+    log.debug("Caught in checkTheCodeExchange(): " + ((e && e.message) || e));
+  });
+  try {
+    await sleep(50);
+    announceAll(workers);
+    // How many sync rounds O has answered, once it is current.
+    const s0 = Number((await start(port, '/oauth2/token').promise)
+      .headers['x-syncs']);
+    await sleep(50);
+    announceAll(workers);
+    const before = pool.stats().sessionBarrier;
+
+    // R9. Another client's write on W, and this browser's own sign-in.
+    const other = arm(W, ['s:eee']);
+    const sign = arm(W, ['s:ddd']);
+    const redirect = await start(port, '/authorize-code?code=C9', C).promise;
+    t.check(redirect.status === 302 &&
+            /\?code=C9&/.test(String(redirect.headers.location)) &&
+            redirect.headers['x-worker'] === String(W.pid),
+            'R9. the authorization code redirect is answered by the ' +
+            'browser\'s worker', JSON.stringify(redirect.headers));
+    // The redirect's ticket is the next one after `sign`. It is finished as
+    // the answer is piped out; a moment for it.
+    const minted = sign + 1;
+    await sleep(50);
+    const sent = 'grant_type=authorization_code&code=C9&redirect_uri=' +
+                 encodeURIComponent('https://rp.example/cb') +
+                 '&code_verifier=' + 'v'.repeat(43);
+    const exchange = post(port, '/oauth2/token', sent, false);
+    await sleep(HELD_MS);
+    t.check(!exchange.done, 'R9. the code exchange is held by its code\'s ' +
+            'and its session\'s writes on another worker',
+            JSON.stringify(exchange.answer));
+    pool.receiveCommitted(W, { wrote: true, tickets: [sign, minted] });
+    const t0 = Date.now();
+    const answered = await exchange.promise;
+    t.check(answered.status === 200 &&
+            answered.headers['x-worker'] === String(O.pid) &&
+            (Date.now() - t0) < 1000,
+            'R9. and is answered on O once those two are announced, while ' +
+            'another client\'s write is not', (Date.now() - t0) + 'ms ' +
+            JSON.stringify(answered.headers));
+    t.equal(Number(answered.headers['x-syncs']), s0 + 1,
+            'R9. after O is synced to that write');
+    t.check(answered.body.equals(Buffer.from(sent)),
+            'R9. the body reaches the worker byte for byte',
+            answered.body.toString('utf8').slice(0, 120));
+    let now = pool.stats().sessionBarrier;
+    t.check(now.codeKeyed === before.codeKeyed + 1 &&
+            now.codesLearnt >= before.codesLearnt + 1,
+            'R9. stats() counts the learnt code and the keyed exchange',
+            JSON.stringify(now));
+
+    // R10 to R12, all held together by the other client's write on W.
+    const big = 'grant_type=authorization_code&code=C9&pad=' +
+                'x'.repeat(20000);
+    const unknown = post(port, '/oauth2/token',
+                         'grant_type=authorization_code&code=NEVER-SEEN',
+                         false);
+    const refresh = post(port, '/oauth2/token',
+                         'grant_type=refresh_token&refresh_token=C9', false);
+    const oversized = post(port, '/oauth2/token', big, false);
+    const chunkedBody = 'grant_type=authorization_code&code=C9&x=' +
+                        'y'.repeat(300);
+    const chunked = post(port, '/oauth2/token', chunkedBody, true);
+    await sleep(HELD_MS);
+    t.check(!unknown.done, 'R10. an unknown code waits globally: held by ' +
+            'another client\'s write', JSON.stringify(unknown.answer));
+    t.check(!refresh.done, 'R11. a refresh grant waits globally',
+            JSON.stringify(refresh.answer));
+    t.check(!oversized.done && !chunked.done,
+            'R12. a body over 16 KiB, and a chunked one, wait globally',
+            JSON.stringify([oversized.done, chunked.done]));
+    pool.receiveCommitted(W, { wrote: false, tickets: [other] });
+    const held = await Promise.all([unknown.promise, refresh.promise,
+                                    oversized.promise, chunked.promise]);
+    t.check(held.every(function (a) {
+      return a.status === 200;
+    }), 'R10-R12. and each is answered once it is announced',
+            held.map(function (a) {
+              return a.status;
+            }).join(','));
+    t.check(held[2].body.equals(Buffer.from(big)) &&
+            held[3].body.equals(Buffer.from(chunkedBody)),
+            'R12. both bodies reach the worker whole',
+            held[2].body.length + ' ' + held[3].body.length);
+    const after = pool.stats().sessionBarrier;
+    t.check(after.codeKeyed === now.codeKeyed &&
+            after.global >= now.global + 4,
+            'R10-R12. counted as global dispatches, none keyed by a code',
+            JSON.stringify(after));
+
+    // R13. Over HTTP/2. A code learnt and its writes announced; another
+    // client's write still outstanding on W.
+    await start(port, '/authorize-code?code=C13', C).promise;
+    await sleep(50);
+    announceAll(workers);
+    now = pool.stats().sessionBarrier;
+    const other2 = arm(W, ['s:eee']);
+    const h2Body = 'grant_type=authorization_code&code=C13&n=' +
+                   'z'.repeat(200);
+    const t1 = Date.now();
+    const keyed = await postH2(session, '/realm/r1/oauth2/token', h2Body,
+                               true).promise;
+    t.check(keyed.status === 200 && (Date.now() - t1) < 1000 &&
+            keyed.headers['x-worker'] === String(O.pid) &&
+            keyed.body.equals(Buffer.from(h2Body)),
+            'R13. an HTTP/2 code exchange with a content-length, under a ' +
+            'realm, is keyed by its code: not held, its body whole',
+            (Date.now() - t1) + 'ms ' + keyed.body.length);
+    t.equal(pool.stats().sessionBarrier.codeKeyed, now.codeKeyed + 1,
+            'R13. and counted as keyed by its code');
+    const unframed = postH2(session, '/oauth2/token', h2Body, false);
+    await sleep(HELD_MS);
+    t.check(!unframed.done, 'R13. without a content-length it waits ' +
+            'globally', JSON.stringify(unframed.answer));
+    pool.receiveCommitted(W, { wrote: false, tickets: [other2] });
+    const late = await unframed.promise;
+    t.check(late.status === 200 && late.body.equals(Buffer.from(h2Body)),
+            'R13. and is answered once it is announced, its body whole',
+            late.status + ' ' + late.body.length);
+  } finally {
+    W.served = served;
+    session.close();
+    announceAll(workers);
+  }
+  log.debug("Leaving checkTheCodeExchange().");
 }
 
 async function checkThePool(t) {
@@ -179,6 +489,7 @@ async function checkThePool(t) {
     pool.reset();
     pool.useWorkerModule(stubPath);
     let front = null;
+    let front2 = null;
     try {
       const one = await pool.queueFork(pool.PROTOCOL_POOL, 0);
       const two = await pool.queueFork(pool.PROTOCOL_POOL, 1);
@@ -191,6 +502,15 @@ async function checkThePool(t) {
         front.listen(0, '127.0.0.1', resolve);
       });
       const port = front.address().port;
+      // AND THE SAME POOL BEHIND AN HTTP/2 FRONT (#407), cleartext: the
+      // main port's adapter, which is what lets express serve HTTP/2.
+      const h2app = require('../common/http2_express').adapt(express());
+      h2app.use(pool.middleware());
+      front2 = http2.createServer({}, h2app);
+      await new Promise(function (resolve) {
+        front2.listen(0, '127.0.0.1', resolve);
+      });
+      const port2 = front2.address().port;
       const A = 'sts_session=aaa.h';
 
       // Where client A is held: its first request binds it to a worker.
@@ -292,6 +612,8 @@ async function checkThePool(t) {
       await waiting;
       t.check(released, 'R6. and is released once it is announced', '');
 
+      await checkTheCodeExchange(t, port, port2);
+
       // R5: global mode restores the old behaviour.
       await withEnv({ STS_WORKERS_READ_YOUR_WRITE: 'global' },
                     async function () {
@@ -322,6 +644,11 @@ async function checkThePool(t) {
         front.closeAllConnections();
         await new Promise(function (resolve) {
           front.close(resolve);
+        });
+      }
+      if (front2) {
+        await new Promise(function (resolve) {
+          front2.close(resolve);
         });
       }
       await pool.stop(3000);
