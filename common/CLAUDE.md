@@ -10751,11 +10751,25 @@ each argued there:
     recognition is one — and that walk cost the whole directory.
     STS-DEVICE-0029 on a token request, and `/admin-api/users?user=` 503
     at 6.4M people. `tests/device_lookups_windowed.js`.
-  * **Still every device, on a console page**: `list()` with no owner and
-    `counts()`, for `/admin-api/devices` and its tiles, and
-    `/admin-api/ldap/devices` — `tests/no_full_directory_walk_in_requests.js`
-    does not see the first two (the names are too common to follow), and
-    they cost the realm, not the register, in a windowed process.
+  * **Still every device, on a console page**: `list()` with no owner, for
+    `/admin-api/devices`, and `/admin-api/ldap/devices` —
+    `tests/no_full_directory_walk_in_requests.js` does not see the first
+    (the name is too common to follow), and it costs the realm, not the
+    register, in a windowed process.
+  * **Monitoring → Devices no longer counts every device (2026-10-22,
+    #820).** `countsAsync(isLive, { prepare })` asks the directory's
+    `deviceCountAsync()` for the total and `deviceEntriesPageAsync()` for ONE
+    page (the first 500 by key), runs `prepare(page)` — the console warms the
+    page's Native SSO sessions into the session window
+    (`authn.warmSessionAsync()`, in parallel) so the synchronous liveness
+    check reads the window and not the store — and tallies that page. It
+    answers `windowed`, `counted` and `complete` beside the tables, and the
+    page says when they cover only part of the register. Where the hooks are
+    not offered or answer null (the whole directory in memory) it is
+    `counts()`, `complete`. `devices_admin.ts`'s `monitorViewAsync()` and the
+    asynchronous `GET /admin-api/devices/monitor` are its callers;
+    `monitorView()` is kept, unchanged, for a caller that cannot wait.
+    `tests/console_devices_scale.js`.
 
 ### Remembered browsers (#265, 2026-09-26): `browser_devices.ts`
 

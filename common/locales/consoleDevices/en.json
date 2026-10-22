@@ -160,6 +160,7 @@
   "monitorHtml.registered": "registered",
   "monitorHtml.removed": "removed",
   "monitorHtml.evicted": "evicted",
+  "monitorHtml.partial": "These tables count the first {counted} of the {total} devices; the total is the directory's own count.",
   "monitorHtml.leadBefore": "What this realm's register holds, counted now, and what happened to it: every registration, removal, and eviction at a person's <code>devices.maxPerPerson</code>, kept up to <code>devices.eventsKept</code>, and every compliance change by who made it — admin, mdm, test-control, caep",
   "monitorHtml.since": " (the oldest is from {since})",
   "monitorHtml.leadAfter": ". A device removed by an <code>ldapdelete</code> on the socket is not an event here — the register never sees it.",
