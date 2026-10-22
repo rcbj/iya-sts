@@ -316,7 +316,18 @@ what it needs:**
   applies it to the shown slice only. `decoratePerson()` builds each shown
   row's full factors from `credentials.factorHolderRow()` — which is
   `mechanismsFor()` — per spelling, exactly as the old fold did for
-  everybody.
+  everybody. **The API's two doors decorate the shown rows together and
+  asynchronously (#820, 2026-10-22)**: they pass `deferDecoration` and hand
+  the view to `usersListRowsAsync()`, which asks
+  `credentials.factorHolderRowsAsync()` (the directory's
+  `credentialRowsAsync()`, read as the census reads), `personDnsAsync()`
+  and, while the token register is on demand, `stats.userRowsOfAsync()` for
+  every shown row at once, then decorates as `decoratePerson()` does. On
+  8081 fifty rows of about nine synchronous reads each spent the request's
+  store budget (STS-LDAP-0175) and the page could not be drawn. A store
+  that refuses leaves each row's factors null (unknown) and its DN empty
+  (STS-AUTHN-0410). The console's page and `?user=` still decorate a row at
+  a time. `tests/users_page_rows_async.js` holds it.
 
 **The census interprets nothing in the directory.** `ldap_server.js` hands
 back raw attribute values; which values are keys, what a sealed TOTP record
@@ -338,6 +349,40 @@ secret every time.
 asks `stats.userRow(key)`, which runs the same builder for that key only, and
 `knownUserKeys()` — nine pages' "can this member's name be a link" — asks
 `stats.userKeys()` instead of building every row to read their keys.
+
+**AND SINCE 2026-10-22 (#820) IT ASKS ONLY THE NAMES READ.** `userKeys()`
+still built every key: about 940,000 user records and token holders on 8081,
+walked synchronously for each page view. That covers a token's lineage on
+Monitoring → Tokens, the audit log, and the delegation pictures. While the
+register is on demand, `knownUserKeys()` now answers each name it is asked,
+once per request, through `stats.userKeyTest()`. That test checks the user
+records (this process's and the replicated ones), the token holders, and the
+bounded artifacts. It does so with no walk of the store.
+- The roles page lists its candidates from the keys, so it asked
+  `allUserKeys()`, the whole set — and then compared every candidate with
+  every key (`markSeen()`, rows times keys). **Since the same day it does
+  neither while the register is on demand**: the candidates are the
+  directory's people (a windowed directory's page, as #359 made them; the
+  in-memory directory's whole list otherwise), and "seen" is
+  `seenKeyOf()` — the name, its lower case and its normalised key, each asked
+  of `knownUserKeys()`. Held whole, the union of the directory and the people
+  seen is built as before, and the keys are folded to lower case ONCE
+  (`foldedKeysOf()`) rather than once per row. The picked person's fallback
+  asks the same one name. So, on demand, somebody who signed in and has no
+  directory entry is no longer offered — the windowed answer's rule; a typed
+  name can still be granted.
+- The delegation pages (`/admin/delegation`, its map and its user page) draw
+  their person chooser from `userGraph.userCatalogue()` (`common/CLAUDE.md`,
+  3p): on demand, the delegation's identities and an exact-name search, and
+  `delegationChooser()` answers `search` (`contains` or `exact`) and
+  `complete`; `/admin/delegation/user`'s answer carries `usersComplete`.
+- A snapshot that reads no user counts (token lifetimes, SAML assertions)
+  passes `withoutUsers` and builds no user rows.
+- Monitoring → Metrics builds its user rows with `userRowsAsync()`, as the
+  dashboard does.
+
+`tests/console_known_keys.js` covers this, and
+`tests/console_delegation_roles_scale.js` the roles and delegation pages.
 
 **THE TILES COUNT THE DIRECTORY AND THE LIST IS CAPPED, AND THEY ARE
 DIFFERENT NUMBERS (#610, 2026-10-13).** With a bulk load running into 8081,

@@ -33,7 +33,7 @@ libraries that decide things on its behalf.
 | `client_jwks.js` | **A client's registered `jwks_uri`, fetched and cached (#120, 2026-09-22).** Under `federation_http.ts`'s outbound policy; per realm; refetched for an unknown `kid`. A leaf. See *OpenID Connect Registration*. |
 | `session_management.js` | **OpenID Connect Session Management 1.0 (#121, 2026-09-23), off by default.** The OP browser state, `session_state`, the OP iframe's page, script and framing origins. A leaf. See 3ax. |
 | `jarm.ts` | **JARM, the JWT-secured authorization response (#143, built in #139).** The four response modes, the signed (and optionally encrypted) response JWT, the section 2.3.1 refusal, and the registration key check. `redirectBack()` in `oauth2.ts` is the one place that sends one. See 3aw. |
-| `access_token_status.ts` | **The access-token Token Status List (#432 phase 2, rcbj's decision 4, 2026-10-03)** — one list per realm for every RFC 9068 access token AND GNAP's two JWT formats, at `/status-lists/access-tokens` with its aggregation at `/status-lists`; random indexes claimed across the cluster; the bit computed from the revocation register. A ROUTE MODULE AND A LIBRARY (`oid4vc/vc_status.ts`'s shape), built and registered just after `oauth2` and `grant_management`. See *The access-token status list*, below. |
+| `access_token_status.ts` | **The access-token Token Status List (#432 phase 2, rcbj's decision 4, 2026-10-03)** — one list per realm for every RFC 9068 access token AND GNAP's two JWT formats, at `/status-lists/access-tokens` with its aggregation at `/status-lists`; indexes handed out from blocks each process leases across the cluster (#820); the bit computed from the revocation register. A ROUTE MODULE AND A LIBRARY (`oid4vc/vc_status.ts`'s shape), built and registered just after `oauth2` and `grant_management`. See *The access-token status list*, below. |
 | `oauth_grant_signals.ts` | **An OAuth grant revoked is CAEP's `session-revoked` about the grant (#239, 2026-09-26).** Fills `common/admin_stats.js`'s `setRevocationObserver()` slot: one event per grant, subject `oauth-grant:<id>` beside the person, the door's own `initiating_entity`, and a replay also a `risk-level-change`. Built at 23b-vi; registers nothing. See *OAuth grants on CAEP*, below. |
 
 **Everything but `oauth2.ts` — and, since 2026-09-13, the console page
@@ -2092,6 +2092,26 @@ so must `admin-ui/admin.ts`.
    `oauth2.maxRefreshTokenFamilies` (twice it for the grant records) the
    old sweep runs there, expired first, then retired, then the oldest,
    loudly. `tests/refresh_bookkeeping_ejection.js`.
+
+   **A REFRESH WRITES FEWER ROWS (#820, 2026-10-22).** It made 13.6 store
+   writes on 8081, and postgres's WAL flush was what the refresh rate ran
+   into. Three of them carried nothing another write did not:
+   - **What a grant issued** (#102's access token beside the refresh token)
+     is kept on the refresh token's own `refreshTokens` row when rotation
+     is on (`noteRefreshIssued()`'s `grant`). `noteGrantTokens()` then
+     writes nothing; with rotation off it writes `grantTokens` as before.
+     `grantMembersOf()` reads both, so older `grantTokens` rows still count.
+   - **The rotated token is not rewritten in the register.**
+     `admin_stats.revoke()` marks the token in `revokedJtis`, which is what
+     enforces it, and no longer rewrites its `admin_stats.tokens` record when
+     the revocation is `superseded`. The console reads `revokedJtis` too
+     (`tokenStateOf()`, and `tokenList()`'s `revoked`).
+   - **No delete of a rate-limit bucket that doesn't exist.** A successful
+     client authentication deletes one only when it exists
+     (`websecurity.succeeded()`).
+   Beside those, `admin_stats.tokenHolders` rows are written a day past their
+   token, so they are rewritten about once a day, not on every refresh.
+   `tests/refresh_writes.js`.
 
    **THE FOUR REFUSALS REFUSE, AND REFUSING IS THE DESIGN.** Everywhere else
    this service prefers to answer with something weaker rather than not answer
@@ -4319,6 +4339,15 @@ client's DELETE, performed for the person — filed by the grant's `sub`.
 `revoke()` takes the door's CAEP initiating entity where it states one
 (`policy` for a signal), and keeps `user` / `admin` otherwise.
 
+**THE LIST COUNTS TOKENS IN ONE PASS AND IS PAGED BEFORE IT IS DECORATED
+(2026-10-22, #820).** `list()` walked every `issued` row once per grant to
+count that grant's tokens — grants times tokens. It counts them by grant in
+one pass now, and `list(clientId, { bare: true })` leaves the grant resource
+off (keeping `created_at`, so the order is the same) for
+`/admin-api/grants`, which filters on the three identifiers, pages, and
+builds the resource for the page's rows only (`decorate()`).
+`tests/console_delegation_roles_scale.js` (G) holds both.
+
 `tests/grant_management.js` and `tests/vendored/sts_grant_management.js`,
 `sts_fapi_ciba.js` (local) hold it. **Not built**: Grant Management through
 the device flow (there is none here), `grant_management_action_required`,
@@ -5411,6 +5440,14 @@ of THIS directory needs:
   shared claims table exists — and otherwise a refusal (`STS-OAUTH-0820`)
   rather than a token on an index no other node was asked about. A token that
   cannot get an index is not minted (`STS-OAUTH-0816` store, `0817` full).
+* **Indexes come from a LEASED BLOCK since 2026-10-21 (#820)**, not one
+  claim each: a process claims a block of 1024 with one cluster claim and
+  hands them out itself, skipping an index whose entry is live. A block is
+  handed out from for five minutes and its lease outlives that by the
+  longest token it served plus the skew, so it is free again only when
+  every token from it has expired; a token that would outlive the lease gets
+  a block of its own; every allocation goes through a block. The header of
+  `access_token_status.ts` argues it.
 * **The row's expiry is the configured lifetime**, not the FAPI-capped one
   (#138 only shortens it): a row outliving its token costs an index for a few
   minutes, never a wrong bit.

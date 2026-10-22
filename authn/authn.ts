@@ -8457,7 +8457,10 @@ class Authn {
       // The grant each revoked token ends is reported by `stats.revoke()`'s
       // observer (#239) with the sign-out's own initiating entity (#242), so
       // a person signing out is `user` there too, not the observer's default.
-      { initiatingEntity: entity });
+      { initiatingEntity: entity },
+      // Where the session's tokens are filed (#820 part 3): the register is
+      // not held whole, and every sign-out would otherwise walk it.
+      ['sid:' + id]);
       if (revoked) {
         log.info('Back-Channel Logout section 2.7: signing out of session ' +
                  id + ' ' +
@@ -9022,6 +9025,85 @@ class Authn {
     return { people: Number(people.n) || 0, byUsername: byUsername };
   }
 
+  // THE CONSOLE'S LIVE SESSIONS, ONE PAGE AT A TIME (2026-10-22, #820).
+  // Monitoring → Sessions, Monitoring → Metrics and a person's page built
+  // their lists with `sessionsMatching()`, which while the window is on
+  // opens every session's sealed body — one synchronous read each, about
+  // 470,000 on 8081 — on the worker that serves sign-ins. That held the
+  // worker for two minutes, and through read-your-write every other worker
+  // waited behind it. This asks the index for the counts and one page,
+  // newest first, on the driver's read pool, and opens only the page.
+  //
+  // **A SEARCH IS EXACT**: the index holds digests, so `q` matches a whole
+  // username, subject or session id, not part of one. Null while the window
+  // is off: the sessions are in memory, and the caller walks them.
+  /**
+   * One page of the ambient realm's live sessions from the index.
+   *
+   * @param options - `q` (an exact username, subject or session id),
+   *   `authenticated` (true, false, or absent for both), `offset`, `limit`
+   * @returns a promise of `{ authenticated, unauthenticated, total,
+   *   sessions }`, of `{ unread: true }` when the index could not be read,
+   *   or of null while the window is off
+   */
+  async liveSessionPageAsync(options?) {
+    const { log, realms } = this.deps;
+    log.debug("Entering Authn.liveSessionPageAsync().");
+    if (!this.windowOn()) {
+      log.debug("Leaving Authn.liveSessionPageAsync(). Window off.");
+      return null;
+    }
+    const o = options || {};
+    const realmId = realms.currentId();
+    const q = String(o.q || '').trim();
+    // A search no digest can be made for matches nothing, not everything.
+    const none = '\u0000';
+    const byName = q ? (keystore.keyedDigest('session-username', q) || none)
+      : '';
+    const bySubject = q ? (keystore.keyedDigest('session-subject', q) || none)
+      : '';
+    const byId = q ? (sessionWindow.digestFor(realmId, q) || none) : '';
+    const authenticated = o.authenticated === true ? 1
+      : o.authenticated === false ? 0 : -1;
+    const limit = Math.max(1, Math.min(500, Number(o.limit) || 50));
+    const offset = Math.max(0, Number(o.offset) || 0);
+    const args = [realmId, Date.now(), byName, bySubject, byId,
+                  authenticated];
+    const totals = await sessionWindow.askAsync('session.liveTotals',
+                                                args) as any;
+    const keys = await sessionWindow.askAsync('session.livePage',
+      args.concat([limit, offset])) as any;
+    if (!totals || !Array.isArray(keys)) {
+      log.debug("Leaving Authn.liveSessionPageAsync(). Unread.");
+      return { unread: true };
+    }
+    const opened = await Promise.all(keys.map(function (digest) {
+      return sessionWindow.openAsync(realmId, String(digest));
+    }));
+    const sessions = opened.filter(function (session) {
+      return session && session.id;
+    });
+    const a = Number(totals.authenticated) || 0;
+    const u = Number(totals.unauthenticated) || 0;
+    log.debug("Leaving Authn.liveSessionPageAsync(). " + sessions.length +
+              " of " + (a + u) + ".");
+    return { authenticated: a, unauthenticated: u, total: a + u,
+             sessions: sessions };
+  }
+
+  /**
+   * Whether the session store is windowed: the sessions are in the store,
+   * not all in memory, and a walk of them is the index's (#820).
+   *
+   * @returns true while the window is on
+   */
+  sessionWindowOn() {
+    const { log } = this.deps;
+    log.debug("Entering Authn.sessionWindowOn().");
+    log.debug("Leaving Authn.sessionWindowOn().");
+    return this.windowOn();
+  }
+
   // THE SESSIONS OF THIS REALM THAT `test` ACCEPTS (#189), without the cookie
   // and without expiring them. For a SAML attribute authority, which is asked
   // about a subject by the NameID a service provider was GIVEN — a transient
@@ -9087,6 +9169,25 @@ class Authn {
     }
     log.debug("Leaving Authn.sessionById().");
     return sessions.get(key) || null;
+  }
+
+  /**
+   * Admits a session to the window ahead of a request that will read it,
+   * asynchronously (#820; `SessionWindow.warmAsync()`). Nothing where the
+   * window is off: the map holds every session.
+   *
+   * @param id - the session id
+   * @returns a promise of whether it was admitted
+   */
+  warmSessionAsync(id) {
+    const { log, realms } = this.deps;
+    log.debug("Entering Authn.warmSessionAsync().");
+    if (!id || !this.windowOn()) {
+      log.debug("Leaving Authn.warmSessionAsync(). Nothing to warm.");
+      return Promise.resolve(false);
+    }
+    log.debug("Leaving Authn.warmSessionAsync().");
+    return sessionWindow.warmAsync(realms.currentId(), String(id));
   }
 
   // End one session named by its id. The protocol-independent logout's door,
@@ -18058,8 +18159,11 @@ export = {
   // gave a service provider a NameID.
   sessionsMatching: slot.forward('sessionsMatching'),
   liveSessionCountsAsync: slot.forward('liveSessionCountsAsync'),
+  liveSessionPageAsync: slot.forward('liveSessionPageAsync'),
+  sessionWindowOn: slot.forward('sessionWindowOn'),
   sessionsHeldUnder: slot.forward('sessionsHeldUnder'),
   sessionById: slot.forward('sessionById'),
+  warmSessionAsync: slot.forward('warmSessionAsync'),
   // Who vouched for a session's latest sign-in — asked by the authorization
   // endpoint for the bootstrap administrator's claim at issuance (#446).
   latestAuthorityOf: slot.forward('latestAuthorityOf'),

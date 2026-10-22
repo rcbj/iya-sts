@@ -5336,8 +5336,13 @@ class AdminConsole {
     log.debug("Entering AdminConsole.consoleJson().");
     // `opts` (2026-10-21): the snapshot's user rows and the directory's tally
     // asked asynchronously, by `consoleJsonAsync()`.
-    const snap = stats.snapshot(opts && opts.knownUsers
-      ? { knownUsers: opts.knownUsers } : undefined);
+    // `userCounts` (2026-10-22, #820): the counts with no row per person,
+    // from `stats.userCountsAsync()`; `knownUsers` is still taken.
+    const asked = opts && (opts.userCounts || opts.knownUsers);
+    const snap = stats.snapshot(opts && opts.userCounts
+      ? { userCounts: opts.userCounts }
+      : (opts && opts.knownUsers ? { knownUsers: opts.knownUsers }
+                                 : undefined));
     // USERS KNOWN IS THE DIRECTORY'S COUNT (rcbj, 2026-10-20), the number
     // Directory → Users draws as "In the directory": every person under
     // `ou=users`, counted without listing them. It was the statistics
@@ -5347,7 +5352,7 @@ class AdminConsole {
     // bulk-loaded one. Where the directory offers no tally (no store, a
     // test's stub) the register's count stands, as the Users page's tiles
     // fall back to the list's.
-    const tally = opts && opts.knownUsers ? opts.tally
+    const tally = asked ? opts.tally
       : credentials.directoryFactorCounts();
     // sessions.size is who this process has cached. While the window is
     // on, the index count is who holds a session. A failed count stays
@@ -5360,6 +5365,9 @@ class AdminConsole {
       startedAt: new Date(snap.startedAt).toISOString(),
       uptimeMs: snap.uptimeMs,
       calls: snap.calls.total, tokensHeld: snap.tokens.held,
+      // The register on demand (#820 part 3): `tokensHeld` is the recent
+      // ones this process holds.
+      tokensHeldOnly: !!snap.tokens.heldOnly,
       tokensRevoked: snap.tokens.revoked,
       artifactsHeld: snap.artifacts.held, signOnSessions: signOnSessions,
       usersKnown: tally ? tally.people : snap.users.known,
@@ -5451,10 +5459,14 @@ class AdminConsole {
   private async buildConsoleTotalsAsync() {
     const { log, stats, credentials } = this.deps;
     log.debug("Entering AdminConsole.buildConsoleTotalsAsync().");
-    const knownUsers = await stats.userRowsAsync();
+    // THE COUNTS, NOT THE ROWS (2026-10-22, #820): `userRowsAsync()` built
+    // a row for every person — about 470,000 on 8081 — on the event loop,
+    // for the two counts this index draws. `userCountsAsync()` counts them
+    // without a row (`common/admin_stats.js`, `userCountsResolved()`).
+    const userCounts = await stats.userCountsAsync();
     const tally = await credentials.directoryFactorCountsAsync();
     log.debug("Leaving AdminConsole.buildConsoleTotalsAsync().");
-    return this.consoleJson({ knownUsers: knownUsers, tally: tally });
+    return this.consoleJson({ userCounts: userCounts, tally: tally });
   }
   // THE DASHBOARD'S ANSWER (#446): `consoleJson()`'s totals, and what the
   // page draws beside them — the sections this reader may see (the guide is

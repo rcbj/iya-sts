@@ -2286,14 +2286,19 @@ class AdminApi {
         operationId: 'getWebauthnSettings',
         summary:
           'The security-key ceremony\'s settings, and what a key may be here',
-        description: 'The twenty-one `webauthn.*` settings, in four kinds. ' +
+        description: 'Every `webauthn.*` setting, in four kinds. ' +
                      '**THE CEREMONY**: the RP name, the RP ID override, the ' +
-                     'algorithms offered, the user verification requirement, ' +
-                     'the attestation conveyance and the timeout — handed to ' +
-                     'the browser in the `PublicKeyCredential` options. ' +
-                     '**CTAP2**: the authenticator attachment, whether the ' +
-                     'credential is discoverable (a resident key), and ' +
-                     'whether `credProps` is asked for. **POLICY**: whether ' +
+                     'algorithms offered (with the three flags that widen or ' +
+                     'narrow them: `insecureAlgorithms`, `pqcOnly` and ' +
+                     '`pqcAlongsideClassical`), the user verification ' +
+                     'requirement, the attestation conveyance and the ' +
+                     'timeout — handed to the browser in the ' +
+                     '`PublicKeyCredential` options. **CTAP2**: the ' +
+                     'authenticator attachment and whether `credProps` is ' +
+                     'asked for; whether the credential is discoverable (a ' +
+                     'resident key) is the passkey policy\'s ' +
+                     '`securityKeyResidentKey` since #527, not a setting ' +
+                     'here. **POLICY**: whether ' +
                      'a key may be a primary credential, whether it may be a ' +
                      'second factor, and how many one person may hold — ' +
                      'which are not WebAuthn at all but what THIS service ' +
@@ -4854,7 +4859,11 @@ class AdminApi {
         description: '`counts` — `total`, `keys`, and `byOwnerKind`, ' +
                      '`byCompliance`, `byAttestation`, `byKeyKind`, ' +
                      '`byEnrolment`, `byStatus`, and `nativeSso` (`live`, ' +
-                     '`ended`, `none`) — and `timeline`: `days`, one row ' +
+                     '`ended`, `none`), with `windowed`, `counted` and ' +
+                     '`complete`: where the directory is a window onto ' +
+                     'the store, `total` is the store\'s count and the ' +
+                     'tables cover the first `counted` devices — and ' +
+                     '`timeline`: `days`, one row ' +
                      'per UTC day (`day`, `created`, `removed`, ' +
                      '`evicted`), the `totals` over every event kept and ' +
                      '`since`, the oldest. A removal by an `ldapdelete` on ' +
@@ -4869,9 +4878,17 @@ class AdminApi {
         responseDescription: 'The counts and the timeline.',
         responseSchema: { type: 'object',
           description: '`counts` and `timeline`.' },
-        handler: function (req, res) {
+        handler: function (req, res, next) {
           log.debug("Entering the management API devices monitor endpoint.");
-          self.sendJson(res, 200, devicesAdmin.monitorView(req, req.query));
+          // Asynchronous since #820: the counts are asked of the store and
+          // one page of devices is read, never every device.
+          devicesAdmin.monitorViewAsync(req, req.query).then(function (view) {
+            self.sendJson(res, 200, view);
+          }).catch(function (e) {
+            log.debug("Caught in the management API devices monitor " +
+                      "endpoint: " + ((e && e.message) || e));
+            next(e);
+          });
           log.debug("Leaving the management API devices monitor endpoint.");
         } },
 
@@ -6352,10 +6369,18 @@ class AdminApi {
         mirrors: 'GET /admin/metrics',
         responseDescription: 'The snapshot.',
         responseSchema: { $ref: '#/components/schemas/Metrics' },
-        handler: function (req, res) {
+        handler: function (req, res, next) {
           log.debug("Entering the management API metrics endpoint.");
-          self.sendJson(res, 200, adminViews.metricsJson());
-          log.debug("Leaving the management API metrics endpoint.");
+          // The sign-on sessions counted by the session index and the newest
+          // drawn, while the window is on (#820).
+          adminViews.metricsJsonAsync().then(function (json) {
+            self.sendJson(res, 200, json);
+            log.debug("Leaving the management API metrics endpoint.");
+          }).catch(function (e) {
+            log.debug("Caught in the management API metrics endpoint: " +
+                      ((e && e.message) || e));
+            next(e);
+          });
         } },
 
       { method: 'GET', path: BASE + '/users', tag: 'Users',
@@ -8719,16 +8744,25 @@ class AdminApi {
         ].concat(this.pagingParameters()),
         responseDescription: 'The live sessions, filtered and paged.',
         responseSchema: { $ref: '#/components/schemas/SessionList' },
-        handler: function (req, res) {
+        handler: function (req, res, next) {
           log.debug("Entering the management API sessions endpoint.");
-          // `.json`, because sessionsView() returns the whole MODEL — the rows,
+          // `.json`, because the view returns the whole MODEL — the rows,
           // the paging and the filters the page needs, with the machine answer
           // inside it. The console used to export a wrapper that unwrapped it
           // here, and repointing this call at the layer without the unwrap
           // answered the model: `/admin-api/sessions` reported 0 sessions for a
           // person holding nine, with nothing erroring.
-          self.sendJson(res, 200, adminViews.sessionsView(req).json);
-          log.debug("Leaving the management API sessions endpoint.");
+          //
+          // FROM THE SESSION INDEX while the window is on (#820): the whole
+          // list held a request worker for two minutes at 470,000 sessions.
+          adminViews.sessionsViewAsync(req).then(function (view) {
+            self.sendJson(res, 200, view.json);
+            log.debug("Leaving the management API sessions endpoint.");
+          }).catch(function (e) {
+            log.debug("Caught in the management API sessions endpoint: " +
+                      ((e && e.message) || e));
+            next(e);
+          });
         } },
 
       { method: 'POST', route: BASE + '/sessions/:action', tag: 'Sessions',
@@ -10353,10 +10387,19 @@ class AdminApi {
           'The matching sets, with the paging that found them ' +
                              'and their credentials flattened beside them.',
         responseSchema: { $ref: '#/components/schemas/IssuedList' },
-        handler: function (req, res) {
+        handler: function (req, res, next) {
           log.debug("Entering the management API issued-list endpoint.");
-          self.sendJson(res, 200, adminViews.tokensView(req.query).json);
-          log.debug("Leaving the management API issued-list endpoint.");
+          // From the store on demand (2026-10-22, #820): one session's
+          // every record, or the newest, and the store's count — never a
+          // walk of what this worker happens to hold.
+          adminViews.tokensViewAsync(req.query).then(function (view) {
+            self.sendJson(res, 200, view.json);
+            log.debug("Leaving the management API issued-list endpoint.");
+          }).catch(function (e) {
+            log.debug("Caught in the management API issued-list endpoint: " +
+                      ((e && e.message) || e));
+            next(e);
+          });
         } },
 
       { method: 'GET', path: BASE + '/tokens/set', tag: 'Tokens',
@@ -10383,10 +10426,18 @@ class AdminApi {
         responseDescription: 'The set and its members, or `found: false` and ' +
                              'the reason.',
         responseSchema: { $ref: '#/components/schemas/IssuedSetDetail' },
-        handler: function (req, res) {
+        handler: function (req, res, next) {
           log.debug("Entering the management API issued-set endpoint.");
-          self.sendJson(res, 200, adminViews.tokenSetView(req.query).json);
-          log.debug("Leaving the management API issued-set endpoint.");
+          // Found in the store by its key on demand (#820): `set:` through
+          // the register's index, `one:` by the record's key.
+          adminViews.tokenSetViewAsync(req.query).then(function (view) {
+            self.sendJson(res, 200, view.json);
+            log.debug("Leaving the management API issued-set endpoint.");
+          }).catch(function (e) {
+            log.debug("Caught in the management API issued-set endpoint: " +
+                      ((e && e.message) || e));
+            next(e);
+          });
         } },
 
       { method: 'POST', route: BASE + '/tokens/:action', tag: 'Tokens',
@@ -10394,12 +10445,18 @@ class AdminApi {
         handler: function (req, res) {
           log.debug("Entering the management API token action endpoint.");
           const body = parseBody(req);
-          const result = adminActions.tokenAction(self.withAction(req, body));
-          if (!result.ok) {
-            errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0036');
-          }
-          self.sendJson(res, result.ok ? 200 : 400, result);
-          log.debug("Leaving the management API token action endpoint.");
+          // A revoke-all, by kind or by user answers with a promise while
+          // the register is on demand (#820): a walk of the store that
+          // gives the event loop back between its pages.
+          return Promise.resolve(adminActions.tokenAction(
+            self.withAction(req, body))).then(function (result) {
+            if (!result.ok) {
+              errorCodes.mark(res, errorCodes.codeOf(result) ||
+                                   'STS-API-0036');
+            }
+            self.sendJson(res, result.ok ? 200 : 400, result);
+            log.debug("Leaving the management API token action endpoint.");
+          });
         },
         actions: [
           { action: 'revoke', operationId: 'revokeToken',
@@ -21314,10 +21371,18 @@ class AdminApi {
         responseDescription: 'The matching events, with the paging that ' +
                              'found them and the vocabulary the filters take.',
         responseSchema: { $ref: '#/components/schemas/AuditList' },
-        handler: function (req, res) {
+        handler: function (req, res, next) {
           log.debug("Entering the management API audit endpoint.");
-          self.sendJson(res, 200, adminViews.auditView(req.query).json);
-          log.debug("Leaving the management API audit endpoint.");
+          // Every other process's events, read now (#820): they are noted,
+          // not replicated, until a page asks.
+          audit.fresh().then(function () {
+            self.sendJson(res, 200, adminViews.auditView(req.query).json);
+            log.debug("Leaving the management API audit endpoint.");
+          }).catch(function (e) {
+            log.debug("Caught in the management API audit endpoint: " +
+                      ((e && e.message) || e));
+            next(e);
+          });
         } },
 
       // THE ERROR CODES (2026-09-12). A read with no write beside it, which is
@@ -21376,10 +21441,18 @@ class AdminApi {
                        '`retired`, `auditRowsHeld`, `auditRowsWithCode`, ' +
                        '`distinctCodesSeen`, `filter` and the paging ' +
                        'members.' },
-        handler: function (req, res) {
+        handler: function (req, res, next) {
           log.debug("Entering the management API error codes endpoint.");
-          self.sendJson(res, 200, adminViews.errorCodesView(req.query).json);
-          log.debug("Leaving the management API error codes endpoint.");
+          // The codes seen are counted over every process's events (#820).
+          audit.fresh().then(function () {
+            self.sendJson(res, 200,
+                          adminViews.errorCodesView(req.query).json);
+            log.debug("Leaving the management API error codes endpoint.");
+          }).catch(function (e) {
+            log.debug("Caught in the management API error codes endpoint: " +
+                      ((e && e.message) || e));
+            next(e);
+          });
         } },
 
       // THE USED-ASSERTION HISTORY (2026-09-13). A read with no write beside
@@ -23264,12 +23337,28 @@ class AdminApi {
                      'and the scope, and `matched` is how many it matched. ' +
                      'A caller that wants every row walks each half until ' +
                      'its `page` equals its `pages`. This is the page ' +
-                     '`/admin/consent` draws, from the same function.',
+                     '`/admin/consent` draws, from the same function.' +
+                     '\n\n**`windowed: true` (#820)** means the realm\'s ' +
+                     'people are in the store and the recorded half was ' +
+                     'read a page at a time rather than whole: ' +
+                     '`usersPaging` is over PEOPLE (`noun: people`) and ' +
+                     '`matched` and `counts.people` are how many people ' +
+                     'hold a consent, counted from an index; each page ' +
+                     'holds every consent of its people, newest first ' +
+                     'within it; `counts.consents` and `counts.unreadable` ' +
+                     'are the page\'s (`counts.countsOf: page`); and `q` ' +
+                     'is EXACT — a whole username, client_id or scope — ' +
+                     'with a client_id or scope looked for in at most the ' +
+                     'first 5,000 holders, `search.complete` saying whether ' +
+                     'that was everybody. `windowed: false` is the whole ' +
+                     'register, as described above.',
         mirrors: 'GET /admin/consent',
         parameters: [
           { name: 'q', in: 'query', required: false, schema: { type: 'string' },
             description: 'Substring of the person, the application or the ' +
-                         'scope, case-insensitive. Narrows `users` only.' }
+                         'scope, case-insensitive. Narrows `users` only. ' +
+                         'Where the answer is `windowed`, a whole ' +
+                         'username, client_id or scope instead.' }
         ].concat(self.detailPagingParameters([
           { name: 'globals',
             description: 'The global overrides, configuration on ' +
@@ -23294,10 +23383,19 @@ class AdminApi {
                                        '`counts`, `matched`, `query`, ' +
                                        '`required`, `storable`, `attribute` ' +
                                        'and `globalAttribute`.' },
-        handler: function (req, res) {
+        handler: function (req, res, next) {
           log.debug("Entering the management API consent endpoint.");
-          self.sendJson(res, 200, adminViews.consentPageView(req.query).json);
-          log.debug("Leaving the management API consent endpoint.");
+          // FROM THE STORE while the directory is windowed (#820): the whole
+          // register opened every consent holder, one synchronous read each,
+          // on the request worker — about 470,000 on 8081.
+          adminViews.consentPageViewAsync(req).then(function (view) {
+            self.sendJson(res, 200, view.json);
+            log.debug("Leaving the management API consent endpoint.");
+          }).catch(function (e) {
+            log.debug("Caught in the management API consent endpoint: " +
+                      ((e && e.message) || e));
+            next(e);
+          });
         } },
 
       { method: 'POST', route: BASE + '/consent/:action', tag: 'Delegation',

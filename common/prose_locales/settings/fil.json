@@ -820,8 +820,8 @@
     "text": "Cost ng password hash (log2 ng scrypt N)"
   },
   "security.passwordHashLogN|description": {
-    "en": "332bb0d7bee5b84a",
-    "text": "Ang CPU at memory cost ng scrypt para sa BAGONG naka-store na password, client secret, activation token o recovery code, bilang power of two: ang 15 ay N=32768, mga 70ms bawat hash sa ordinaryong makina. Ang sahig na 14 ang pinakamababang isusulat ng serbisyong ito. Ang pagtaas nito ay nagpapabagal sa pag-atake sa ninakaw na store at nagpapabagal din nang katumbas sa bawat sign-in. Ang mga hash na naka-store na ay may dala ng sarili nilang parameter at hindi apektado."
+    "en": "3492bc25313f659a",
+    "text": "Ang gastos sa CPU at memory ng scrypt para sa BAGONG naka-store na client secret, activation o reset token, recovery code o app password, bilang power of two: ang 15 ay N=32768, mga 70ms bawat hash sa karaniwang makina. Ang pinakamababang 14 ang pinakamababang isusulat ng serbisyong ito. Kapag itinaas ito, mas bumabagal ang pag-atake sa ninakaw na store at bumabagal din nang proporsyonal ang bawat pag-sign in. Ang mga naka-store nang hash ay may sariling mga parameter at hindi naaapektuhan. Ang password ng isang tao ay hindi iha-hash sa ilalim nito: ang algorithm at gastos nito ay sa password policy (Directory > Policies)."
   },
   "security.passwordHashR|label": {
     "en": "d7d901b7702608d7",
@@ -1108,8 +1108,8 @@
     "text": "User verification"
   },
   "webauthn.userVerification|description": {
-    "en": "e0f3bd0371bd63c6",
-    "text": "`required` bilang default sa bawat mode (rcbj, 2026-10-09; dati ay `preferred`). Kung dapat i-verify ng authenticator ang TAO — PIN, fingerprint, mukha — bukod sa pagpapatunay na hawak ang key. **ITO ANG TANGING CEREMONY SETTING NA IPINAPATUPAD DIN NG SERBISYONG ITO**: ipinapadala ang `required` sa browser at saka SINUSURI ang UV flag sa authenticator data kapag bumalik ang ceremony, kaya ang authenticator na hindi nag-verify ay tinatanggihan sa halip na tahimik na tanggapin. **Ang pagtaas nito ay hindi nagbabago sa INAANGKIN ng isang session.** Ang passwordless na sign-in ay nagtatala pa rin ng `amr [\"hwk\"]` at `acr \"1\"` — iisang factor — kahit `required`, dahil walang value ang RFC 8176 para sa *the authenticator verified the user* na tapat na maa-assert ng serbisyong ito, at ang pag-imbento ng mas malakas na claim ay mismong ang pekeng tinatanggihan ng profile na ito sa lahat ng iba pang lugar. Sinasabi ito ng `/admin/webauthn` sa page."
+    "en": "eb2931954812147c",
+    "text": "`required` bilang default sa bawat mode (rcbj, 2026-10-09; dati ay `preferred`). Kung dapat i-verify ng authenticator ang TAO — PIN, fingerprint, mukha — bukod sa pagpapatunay na hawak ang key. **IPINAPATUPAD DIN ITO NG SERBISYONG ITO**, gaya ng mga algorithm na iniaalok at ng RP ID: ipinapadala ang `required` sa browser at saka SINUSURI ang UV flag sa authenticator data kapag bumalik ang ceremony, kaya ang authenticator na hindi nag-verify ay tinatanggihan sa halip na tahimik na tanggapin. **Ang pagtaas nito ay hindi nagbabago sa INAANGKIN ng isang session.** Ang passwordless na sign-in ay nagtatala pa rin ng `amr [\"hwk\"]` at `acr \"1\"` — iisang factor — kahit `required`, dahil walang value ang RFC 8176 para sa *the authenticator verified the user* na tapat na maa-assert ng serbisyong ito, at ang pag-imbento ng mas malakas na claim ay mismong ang pekeng tinatanggihan ng profile na ito sa lahat ng iba pang lugar. Sinasabi ito ng `/admin/webauthn` sa page."
   },
   "webauthn.attestation|label": {
     "en": "13af8631fdb53757",
@@ -1620,8 +1620,8 @@
     "text": "Limit sa pag-start ng request worker (ms)"
   },
   "workers.startTimeoutMs|description": {
-    "en": "81d7608fc4c1da1f",
-    "text": "Gaano katagal puwedeng ihanda ng isang request o surface worker ang estado nito (ang store, ang mga key, ang mga minted row at ang coordination) bago nito iulat na hindi ito makapag-start. Tatlong sunod-sunod na pagkabigo at ititigil ng pool ang pag-fork hanggang workers.giveUpRetryMs, saka susubukan ang isa; hanggang handa ito, nananatili ang mga request sa front process. Taasan ito kung saan mabagal ang pag-start ng isang worker — isang malaking realm key set na muling sinesertipikahan sa bawat pag-start, isang malamig na database (#311)."
+    "en": "5d23a7adb4e81ee3",
+    "text": "Gaano katagal maaaring itayo ng isang request o surface worker ang estado nito (ang store, ang mga key, ang mga minted na row at ang koordinasyon) bago tumigil ang pool sa paghihintay dito. Ang worker na lumampas dito ay MABAGAL, hindi bigo: hinahayaan itong matapos at sumasali sa pool kapag handa na (#820). Sa apat na ulit lamang nito nag-uulat itong hindi makapagsimula; tatlong ganoong pagkabigo nang sunud-sunod at hihinto ang pool sa paggawa ng worker hanggang workers.giveUpRetryMs, saka susubukan ang isa; hangga't hindi pa ito handa, nananatili ang mga request sa front process. Taasan ito kung saan mabagal ang pagsisimula ng worker — isang malaking set ng realm key na nire-recertify ng bawat pagsisimula, isang malamig na database (#311)."
   },
   "workers.startTimeoutMs|restartReason": {
     "en": "7ac1de67a7c566c0",
@@ -1776,8 +1776,8 @@
     "text": "Read-your-write sa pagitan ng mga request worker"
   },
   "workers.readYourWrite|description": {
-    "en": "c96ff2ed1ab0bfce",
-    "text": "Kung dapat munang humabol ang isang request worker sa isinulat ng ibang worker bago ito maghain. Pinapa-CONVERGE ng coordination ang mga worker — nasukat sa kalahating segundo hanggang isang segundo — at ang convergence ay hindi read-your-write: kapag naka-off ito, ang caller na nagsusulat sa isang worker at nagbabasa sa iba ay maaaring sagutin ng hindi pa nakakahabol, na pinakamahalaga para sa mga fanout surface (SCIM, XACML, ang management API) dahil mismong doon napupunta kahit saan ang magkakasunod na request. Kapag naka-on, binibilang ng pool ang mga write at ang worker na nahuhuli ay nagpu-pull bago sumagot — kaya napupunta ang gastos sa unang read pagkatapos ng isang write sa bawat worker, at wala habang walang isinusulat. NAKA-ON BILANG DEFAULT mula noong #364, nang maging default ang request worker: sinasagot pa rin ng front thread ang hindi kailanman dina-dispatch, kaya kung hindi ay makikita ng caller na nawawala ang sarili nitong write sa pagitan ng dalawang request. Dapat itong naka-on para sa isang surface pool (workers.surfaceCount)."
+    "en": "cb6bbc928d5c9d50",
+    "text": "Kung kailangang humabol ang isang request worker sa mga write na ginawa sa ibang mga worker bago ito sumagot. Pinapaabot ng coordination ang mga worker sa iisang estado sa loob ng kalahating segundo hanggang isang segundo, at hindi iyon read-your-write. `session` (ang default): ang isang request na may dalang session cookie, ang pool cookie o isang sign-in flow sa address nito ay naghihintay lamang sa mga write ng mga naunang request na may dalang ganoon din, at sa sariling mga write ng front process; ang isang request na walang dala sa mga iyon, gaya ng token request mula sa server ng isang client, SCIM o isang tawag sa management API na may bearer token, ay naghihintay sa bawat write na nasagot bago ito. Kaya agad na nakikita ng isang browser ang sarili nitong mga write, at ang sa ibang browser o client kapag nagkaisa na lamang ang mga worker. `global`: bawat request ay naghihintay sa bawat write na nasagot bago ito, na nagkakahalaga ng sampu-sampung millisecond bawat request kapag may load. `off`: walang request na naghihintay, at maaaring hindi makita ng isang tumatawag ang sarili nitong write. Ang `true` ay nangangahulugang `session` at ang `false` ay nangangahulugang `off`. Hindi ito dapat naka-off para sa isang surface pool (workers.surfaceCount)."
   },
   "workers.socketDir|label": {
     "en": "92c5ff3b54b1efde",
@@ -5704,8 +5704,8 @@
     "text": "Pag-refresh ng wallet sign-in page (s)"
   },
   "oid4vp.signInPollS|description": {
-    "en": "439aa4f77625ebb1",
-    "text": "Gaano kadalas nire-reload ng QR-code page (oid4vp.signInCrossDevice) ang sarili nito habang sumasagot ang wallet sa ibang device. Isa itong <meta> refresh at hindi script, kaya buong page ang bawat reload. Hindi nagre-reload ang Digital Credentials API page: isasara ng reload ang wallet dialog ng browser."
+    "en": "b248261723e71249",
+    "text": "Kung gaano kadalas nagtatanong ang pahina ng QR code (oid4vp.signInCrossDevice) kung sumagot na ang wallet sa ibang device: pina-poll ng script nito ang POST /authn-api/wallet/{state}/status tuwing ganitong dami ng segundo, nang hindi nire-reload ang pahina (#574; isang <meta> refresh ito hanggang noon). Hindi nagpo-poll sa orasang ito ang pahina ng Digital Credentials API: hinihintay nito ang sagot ng wallet dialog ng browser."
   },
   "oid4vp.signInCrossDevice|label": {
     "en": "20ef4bd658348a2f",
@@ -9564,8 +9564,8 @@
     "text": "Tagal ng pagpapanatili ng mga run (oras)"
   },
   "scheduler.runHistoryHours|description": {
-    "en": "0f3e63d5914e2685",
-    "text": "Pinapanatili ang bawat run na natapos sa loob ng ganitong karaming oras — kasama ang pumalya — katabi ng huling scheduler.runHistoryCount na run ng bawat job, alinman ang mas maraming pinapanatili. Kaya ang job na tumatakbo bawat minuto ay nagpapanatili ng isang araw ng mga run sa bawat realm na pinagtatakbuhan nito. Ang bilang lang ang pinapanatili ng 0."
+    "en": "5c283870d0319ed7",
+    "text": "Itinatago ang bawat run na natapos sa loob ng ganitong dami ng oras — kasama ang nabigo — bukod sa huling scheduler.runHistoryCount na run ng bawat job, alinman ang mas maraming itinatago. Kaya ang job na tumatakbo bawat minuto ay nagtatago ng isang oras ng mga run sa bawat realm na tinatakbuhan nito, o ng huling scheduler.runHistoryCount kung mas marami iyon. Ang 0 ay bilang lamang ang itinatago."
   },
   "scheduler.disabledJobs|label": {
     "en": "a33937a2bd564b6d",

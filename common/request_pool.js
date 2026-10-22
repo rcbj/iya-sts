@@ -121,6 +121,8 @@ const clientAddress = require('./client_address');
 // A LEAF: the affinity maps below, described to `/admin/caches` (#74).
 const cacheRegistry = require('./cache_registry');
 const lingeringClose = require('./lingering_close');
+// A LEAF: where a dispatched request's time goes (#820).
+const requestPhases = require('./request_phases');
 // The HTTP/2 authority rule (#407): a leaf (node, express, the error-code
 // table).
 const Http2Express = require('./http2_express');
@@ -215,8 +217,21 @@ let ticketWaiters = [];
 const ticketInfo = new Map();
 
 // Forgets a ticket's description; called beside every `outstanding.delete()`.
+// And its CLIENT KEYS (2026-10-22, #820): every way a ticket ends — announced,
+// abandoned, reaped, its worker gone — passes here, so this is the one place
+// a key's set of outstanding tickets is kept honest. See clientStateFor().
 function forgetTicket(ticket) {
   log.debug("Entering forgetTicket().");
+  const info = ticketInfo.get(ticket);
+  if (info && info.keys) {
+    for (let i = 0; i < info.keys.length; i++) {
+      const state = clientStates.get(info.keys[i]);
+      if (state) {
+        state.tickets.delete(ticket);
+      }
+    }
+  }
+  spilledTickets.delete(ticket);
   ticketInfo.delete(ticket);
   log.debug("Leaving forgetTicket().");
 }
@@ -367,15 +382,28 @@ function releaseTicketWaiters() {
     return;
   }
   const lowest = new Map();
+  // A keyed reader (session mode, #820) is answered from its keys' tickets,
+  // once per worker and key set, as the global readers are once per worker.
+  const lowestKeyed = new Map();
   ticketWaiters = ticketWaiters.filter(function (w) {
     if (w.settled) {
       return false;
     }
-    const key = w.servedBy || null;
-    if (!lowest.has(key)) {
-      lowest.set(key, lowestBlocking(key));
+    let blocking;
+    if (w.keys) {
+      const id = (w.servedBy ? w.servedBy.pid : '') + '|' + w.keys.join('\n');
+      if (!lowestKeyed.has(id)) {
+        lowestKeyed.set(id, lowestBlockingFor(w.keys, w.servedBy));
+      }
+      blocking = lowestKeyed.get(id);
+    } else {
+      const key = w.servedBy || null;
+      if (!lowest.has(key)) {
+        lowest.set(key, lowestBlocking(key));
+      }
+      blocking = lowest.get(key);
     }
-    if (lowest.get(key) > w.need) {
+    if (blocking > w.need) {
       w.resolve();
       return false;
     }
@@ -403,6 +431,647 @@ function dropSettledWaiter() {
   log.debug("Leaving dropSettledWaiter(). Compacted.");
 }
 
+// ---------------------------------------------------------------------------
+// SESSION READ-YOUR-WRITE: A REQUEST WAITS FOR ITS OWN CLIENT'S WRITES, NOT
+// EVERYBODY'S (2026-10-22, #820).
+//
+// The barrier above was GLOBAL: every dispatched request waited for every
+// ticket answered before it on another worker, and for its worker to reach the
+// generation every worker's writes had moved. Under a sign-in load on 8081
+// that was 17–26 ms p50 of `/oauth2/authorize` and `/oauth2/token` and about
+// 72 ms of a 790 ms sign-in, nearly all of it spent waiting for writes made by
+// OTHER browsers. Turning the barrier off was not the answer: about one code
+// exchange in five then found "unknown code", a code another worker had just
+// written.
+//
+// What a client depends on is narrower, and it is Bayou's session guarantee
+// read-your-writes: a request must see the writes made by earlier requests of
+// the SAME client. So, with `workers.readYourWrite` at `session` (rcbj, on
+// #820):
+//
+// * **A CLIENT IS NAMED BY THE KEYS THE POOL ALREADY ROUTES BY** —
+//   clientKeysOf(): every session cookie it carries (`s:<sid>`), its pool pin
+//   (`p:<pid>`) and a flow it carries in the URL (`authn:<id>` …). ALL of
+//   them, not affinityKeyOf()'s first: a browser that signed in still sends
+//   the pin and the flow its pre-sign-in writes were made under, so waiting
+//   for the union is what carries a client across its own key changes.
+// * **A TICKET IS FILED UNDER THE KEYS ITS REQUEST CARRIED AND THE KEYS ITS
+//   ANSWER HANDED OUT** (learnTicketKeys(), the same Set-Cookie and Location
+//   reading learn() does for routing): the sign-in that mints a session is
+//   that session's write, though the request that made it had no session yet.
+// * **A KEYED REQUEST WAITS FOR ITS KEYS' FINISHED TICKETS ONLY**
+//   (lowestBlockingFor()), and for its worker to reach only the generation its
+//   keys' writes reached ON OTHER WORKERS (sessionWanted()) — a write the
+//   chosen worker made itself is in its memory, lowestBlocking()'s argument.
+// * **A REQUEST WITH NO KEY KEEPS THE GLOBAL WAIT, UNCHANGED.** That is every
+//   back channel — a client's server redeeming a code at `/oauth2/token`, a
+//   refresh, SCIM, `/admin-api` with a bearer token and no cookie — so the
+//   code exchange still waits for the code, as it always did.
+// * **A POOL PIN THE ROUTE DID NOT HONOUR IS NO KEY.** `p:<pid>` names a
+//   worker, shared by every client pinned there, and this service's own back
+//   channel (`oidc_rp.ts`) sends one to reach the worker that minted a code a
+//   DIFFERENT client (the browser) wrote. Landing on that worker, the code is
+//   in its memory; landing anywhere else (the worker is gone) it is not, so
+//   the request is served globally (sessionKeysFor()).
+// * **WHAT THE FRONT PROCESS WRITES ITSELF IS EVERYBODY'S** (frontGeneration):
+//   those writes carry no ticket and so no key, and they are rare.
+//
+// What is given up, and `docs/configuration.md` says so: a request does not
+// wait for ANOTHER client's write. A console page reads another session's
+// writes — a SCIM create, a token another client redeemed, an LDAP or
+// Kerberos operation (whose tickets carry no key) — only once the workers
+// converge, half a second to a second. `global` is the old barrier, whole.
+//
+// BOUNDED WITHOUT A TIMER (the root CLAUDE.md, *Anything periodic is a
+// scheduler job*): at most CLIENT_KEYS_MAX keys, least recently used first;
+// a key is dropped when it holds no ticket and every other worker has passed
+// its writes (pruneClientStates(), a few of the oldest on every dispatch);
+// and a key evicted while it still matters SPILLS — its tickets and its
+// generation become every keyed request's (spilledTickets,
+// spilledGeneration), so an eviction costs waiting, never a stale read.
+// ---------------------------------------------------------------------------
+const CLIENT_KEYS_MAX = 20000;
+// How many of the oldest keys each dispatch looks at to drop.
+const CLIENT_KEYS_PRUNED_PER_DISPATCH = 4;
+// key -> { tickets: Set<ticket>, writes: Map<worker pid, generation> }, in
+// least-recently-used order.
+const clientStates = new Map();
+const spilledTickets = new Set();
+let spilledGeneration = 0;
+let frontGeneration = 0;
+let clientEvictions = 0;
+let sessionDispatches = 0;
+let globalDispatches = 0;
+
+// ---------------------------------------------------------------------------
+// THE CODE EXCHANGE, KEYED BY ITS CODE (2026-10-22, #820).
+//
+// Once the barrier became per client, `POST /oauth2/token` got slower: 43 ms
+// to 70 ms p50 waiting on 8081, while `GET /oauth2/authorize` fell from 36 to
+// 9 ms and `/authn-api/pending` from 25 to 0. The code exchange comes from
+// the relying party's SERVER. It carries no cookie, and its code is in the
+// form BODY, which the barrier is decided before reading. So it took the
+// global wait, now shared with every other back channel.
+//
+// What the exchange depends on is narrow: the write that minted its code,
+// and the session and sign-in writes that code was minted from. So:
+//
+// * **AN ANSWER WHOSE `Location` CARRIES `code=` IN ITS QUERY FILES ITS
+//   TICKET UNDER `code:<value>`** (learnTicketKeys()). That is the
+//   authorization code redirect. The code key also INHERITS what is
+//   outstanding under the request's own keys at that moment: their tickets,
+//   and the generations their writes reached on each worker
+//   (inheritIntoCodeKey()). A ticket filed under the code key is in its
+//   `info.keys`, so forgetTicket() and noteCommittedFor() keep the code
+//   key's state as honest as any other key's.
+// * **A `POST` TO THE TOKEN ENDPOINT THAT WOULD WAIT GLOBALLY IS READ
+//   FIRST, IF IT IS SMALL AND PLAIN**: a form body, a `content-length` of at
+//   most CODE_BODY_MAX and no transfer or content encoding
+//   (codeExchangeCandidate()). The body is held whole (readCodeExchangeBody())
+//   and handed to proxy() as it arrived. Its bytes are signed and hashed by
+//   HTTP message signatures (#178), DPoP and client authentication, so they
+//   must reach the worker byte for byte. Any other body is not buffered at
+//   all; it streams as before.
+// * **IT IS KEYED BY ITS CODE ONLY IF THE POOL KNOWS THAT CODE**: an
+//   `authorization_code` grant naming one `code` this pool holds state for
+//   (codeKeysOf()). A refresh grant stays global; its token was issued in a
+//   JSON body and is usually hours old.
+// * **AN UNKNOWN CODE IS NEVER "WAIT FOR NOTHING"; IT IS THE GLOBAL WAIT,
+//   EXACTLY AS BEFORE.** The code may have come in a `form_post` body or a
+//   fragment, been minted by the front process, or come from another node.
+//   The pool learnt none of those, so it knows nothing it could wait for.
+//
+// Bounded like every other key: it is a key in `clientStates`, under the
+// same LRU, and an eviction spills it. One thing is added. A code key that
+// pruneClientStates() drops is SETTLED: no ticket outstanding, and every
+// other worker past its writes. Forgetting it would turn the exchange that
+// arrives a moment later into a global wait for nothing. So its name is kept
+// in `settledCodes`, a bounded set of names with no state, and an exchange
+// naming it is keyed and waits only for what every keyed request waits for
+// (the front process's writes and anything spilled). A name evicted from
+// `settledCodes` simply makes that code unknown again, which is global.
+// ---------------------------------------------------------------------------
+// The largest token request body read before the barrier. A code exchange
+// is a few hundred bytes; a client assertion or an attestation makes it a
+// few kilobytes.
+const CODE_BODY_MAX = 16 * 1024;
+// The token endpoint: the default authorization server's, a named one's
+// (`/<as>/oauth2/token`), and either under a realm. The pool reads
+// `originalUrl`, which keeps the `/realm/<id>` prefix app.js strips.
+const TOKEN_PATH = /^(?:\/realm\/[^/]+)?(?:\/[^/]+)?\/oauth2\/token$/;
+// Code keys pruned once settled, oldest first; see above.
+const settledCodes = new Set();
+let codeKeyedDispatches = 0;
+let codeKeysLearnt = 0;
+
+/**
+ * Returns a client key's state, most recently used from now.
+ *
+ * @param key - the client key
+ * @param create - whether to make one when there is none
+ * @returns the state, or null
+ */
+function clientStateFor(key, create) {
+  log.debug("Entering clientStateFor().");
+  let state = clientStates.get(key);
+  if (state) {
+    clientStates.delete(key);
+    clientStates.set(key, state);
+    log.debug("Leaving clientStateFor(). Held.");
+    return state;
+  }
+  if (!create) {
+    log.debug("Leaving clientStateFor(). None.");
+    return null;
+  }
+  state = { tickets: new Set(), writes: new Map() };
+  clientStates.set(key, state);
+  while (clientStates.size > CLIENT_KEYS_MAX) {
+    const oldest = clientStates.keys().next().value;
+    spillClientState(clientStates.get(oldest));
+    clientStates.delete(oldest);
+    clientEvictions++;
+  }
+  log.debug("Leaving clientStateFor(). Made.");
+  return state;
+}
+
+// A key forgotten while it still had something to wait for hands it to every
+// keyed request instead — the safe direction. A clean key spills nothing.
+function spillClientState(state) {
+  log.debug("Entering spillClientState().");
+  state.tickets.forEach(function (t) {
+    spilledTickets.add(t);
+  });
+  state.writes.forEach(function (gen) {
+    if (gen > spilledGeneration) {
+      spilledGeneration = gen;
+    }
+  });
+  log.debug("Leaving spillClientState().");
+}
+
+/**
+ * The client keys a request carries, in this pool: every session cookie, the
+ * pool's pin cookie and every flow the URL names.
+ *
+ * @param req - the request
+ * @param pool - the pool, which decides the pin cookie read
+ * @returns the keys, perhaps none
+ */
+function clientKeysOf(req, pool) {
+  log.debug("Entering clientKeysOf().");
+  const keys = [];
+  const pinCookie = poolCookieFor(pool);
+  const header = req.headers && req.headers.cookie;
+  if (header) {
+    const parts = String(header).split(';');
+    for (let i = 0; i < parts.length; i++) {
+      const bit = parts[i].trim();
+      const named = sessionCookieName(bit);
+      if (named) {
+        const sid = sidOfCookieValue(bit.slice(named.length + 1));
+        if (sid) {
+          keys.push('s:' + sid);
+        }
+      } else if (bit.indexOf(pinCookie + '=') === 0) {
+        const pin = bit.slice(pinCookie.length + 1);
+        if (pin) {
+          keys.push('p:' + pin);
+        }
+      }
+    }
+  }
+  const url = String(req.originalUrl || req.url || '');
+  const q = url.indexOf('?');
+  if (q >= 0) {
+    const query = url.slice(q + 1);
+    for (let i = 0; i < FLOW_PARAMS.length; i++) {
+      const found = flowParam(query, FLOW_PARAMS[i]);
+      if (found) {
+        keys.push(FLOW_PARAMS[i] + ':' + found);
+      }
+    }
+  }
+  log.debug("Leaving clientKeysOf(). " + keys.length + " key(s).");
+  return keys.filter(function (k, i) {
+    return keys.indexOf(k) === i;
+  });
+}
+
+/**
+ * The client keys a dispatched request is held to in `session` mode, or
+ * null for the global wait: no key at all, or a pin the route did not honour.
+ *
+ * @param req - the request
+ * @param pool - its pool
+ * @param entry - the worker it was routed to
+ * @returns the keys, or null
+ */
+function sessionKeysFor(req, pool, entry) {
+  log.debug("Entering sessionKeysFor().");
+  const keys = clientKeysOf(req, pool);
+  for (let i = 0; i < keys.length; i++) {
+    if (keys[i].indexOf('p:') === 0 &&
+        String(entry.pid) !== keys[i].slice(2)) {
+      log.debug("Leaving sessionKeysFor(). A pin not honoured: global.");
+      return null;
+    }
+  }
+  log.debug("Leaving sessionKeysFor().");
+  return keys.length ? keys : null;
+}
+
+// Files a ticket under more client keys — its request's at dispatch, and those
+// its answer handed out (learnTicketKeys()).
+function fileTicketUnder(ticket, keys) {
+  log.debug("Entering fileTicketUnder().");
+  const info = ticketInfo.get(ticket);
+  if (!info || !keys || !keys.length) {
+    log.debug("Leaving fileTicketUnder(). Nothing to file.");
+    return;
+  }
+  if (!info.keys) {
+    info.keys = [];
+  }
+  for (let i = 0; i < keys.length; i++) {
+    if (info.keys.indexOf(keys[i]) < 0) {
+      info.keys.push(keys[i]);
+    }
+    clientStateFor(keys[i], true).tickets.add(ticket);
+  }
+  log.debug("Leaving fileTicketUnder().");
+}
+
+/**
+ * Files a ticket under the session cookies and flows its answer hands the
+ * client, so the client's next request, carrying them, waits for it.
+ *
+ * @param ticket - the request's ticket, or undefined
+ * @param answer - the worker's response
+ */
+function learnTicketKeys(ticket, answer) {
+  log.debug("Entering learnTicketKeys().");
+  if (!ticket || !answer || !answer.headers) {
+    log.debug("Leaving learnTicketKeys().");
+    return;
+  }
+  const keys = [];
+  const setCookie = answer.headers['set-cookie'];
+  if (setCookie) {
+    const list = Array.isArray(setCookie) ? setCookie : [setCookie];
+    for (let i = 0; i < list.length; i++) {
+      const bit = String(list[i]).split(';')[0].trim();
+      const named = sessionCookieName(bit);
+      if (named) {
+        const sid = sidOfCookieValue(bit.slice(named.length + 1));
+        if (sid) {
+          keys.push('s:' + sid);
+        }
+      }
+    }
+  }
+  const location = answer.headers.location;
+  let code = '';
+  if (location) {
+    const q = String(location).indexOf('?');
+    if (q >= 0) {
+      // The query only: a fragment is not part of it, and a code carried in
+      // one is not learnt (it is the global wait, see THE CODE EXCHANGE).
+      const query = String(location).slice(q + 1).split('#')[0];
+      for (let i = 0; i < FLOW_PARAMS.length; i++) {
+        const found = flowParam(query, FLOW_PARAMS[i]);
+        if (found) {
+          keys.push(FLOW_PARAMS[i] + ':' + found);
+        }
+      }
+      code = flowParam(query, 'code');
+    }
+  }
+  fileTicketUnder(ticket, keys);
+  // AFTER the keys above are filed, so a session cookie this answer handed
+  // out is one of the keys the code inherits from.
+  if (code) {
+    inheritIntoCodeKey(ticket, 'code:' + code);
+  }
+  log.debug("Leaving learnTicketKeys().");
+}
+
+/**
+ * Files an authorization code redirect's ticket under the code's key, with
+ * everything outstanding under the request's own keys: their tickets, and
+ * the generations their writes reached on each worker. See THE CODE
+ * EXCHANGE, KEYED BY ITS CODE.
+ *
+ * @param ticket - the redirect's ticket
+ * @param codeKey - `code:<value>`
+ */
+function inheritIntoCodeKey(ticket, codeKey) {
+  log.debug("Entering inheritIntoCodeKey().");
+  const info = ticketInfo.get(ticket);
+  if (!info) {
+    log.debug("Leaving inheritIntoCodeKey(). No such ticket.");
+    return;
+  }
+  // A copy: fileTicketUnder() below adds the code key to `info.keys`.
+  const own = (info.keys || []).filter(function (k) {
+    return k !== codeKey;
+  });
+  const state = clientStateFor(codeKey, true);
+  codeKeysLearnt++;
+  for (let i = 0; i < own.length; i++) {
+    const from = clientStates.get(own[i]);
+    if (!from) {
+      // Evicted, and so spilled: every keyed request waits for it already.
+      continue;
+    }
+    // Each inherited ticket is filed under the code key properly, so the
+    // code key is told when it commits (noteCommittedFor()) and loses it
+    // when it ends (forgetTicket()).
+    Array.from(from.tickets).forEach(function (t) {
+      fileTicketUnder(t, [codeKey]);
+    });
+    from.writes.forEach(function (gen, pid) {
+      if (!((state.writes.get(pid) || 0) >= gen)) {
+        state.writes.set(pid, gen);
+      }
+    });
+  }
+  fileTicketUnder(ticket, [codeKey]);
+  log.debug("Leaving inheritIntoCodeKey(). " + own.length +
+            " key(s) inherited.");
+}
+
+// Whether a request might be a code exchange worth reading before the
+// barrier: a POST to the token endpoint with a small, plain form body of a
+// declared length. HTTP/2 may send no `content-length`; such a body is not
+// read first, and the request waits globally. A HOT PATH — every request
+// that would wait globally in `session` mode asks — so no Entering/Leaving
+// pair, for the reason route() has none.
+function codeExchangeCandidate(req) {
+  if (req.method !== 'POST') {
+    return false;
+  }
+  const path = String(req.originalUrl || req.url || '').split('?')[0];
+  if (!TOKEN_PATH.test(path)) {
+    return false;
+  }
+  const h = req.headers || {};
+  if (h['transfer-encoding'] || h['content-encoding']) {
+    return false;
+  }
+  const type = String(h['content-type'] || '').split(';')[0].trim()
+    .toLowerCase();
+  if (type !== 'application/x-www-form-urlencoded') {
+    return false;
+  }
+  const length = h['content-length'];
+  const declared = String(length === undefined ? '' : length).trim();
+  return /^[0-9]{1,6}$/.test(declared) && Number(declared) <= CODE_BODY_MAX;
+}
+
+/**
+ * Reads a code exchange's body before the barrier is decided, holding the
+ * chunks exactly as they arrived. Stops at CODE_BODY_MAX whatever the
+ * declared length said, pausing the request with the rest unread.
+ *
+ * @param req - the request
+ * @param res - its response, whose `close` before the end means the client
+ *   went away
+ * @param done - called once: `{ chunks, ended }`, or null when the client
+ *   went away or the request failed
+ */
+function readCodeExchangeBody(req, res, done) {
+  log.debug("Entering readCodeExchangeBody().");
+  const chunks = [];
+  let bytes = 0;
+  let settled = false;
+  const settle = function (outcome) {
+    log.debug("Entering settle().");
+    if (settled) {
+      log.debug("Leaving settle(). Already settled.");
+      return;
+    }
+    settled = true;
+    req.removeListener('data', onData);
+    req.removeListener('end', onEnd);
+    req.removeListener('aborted', onGone);
+    req.removeListener('error', onError);
+    res.removeListener('close', onGone);
+    log.debug("Leaving settle().");
+    done(outcome);
+  };
+  const onData = function (chunk) {
+    log.debug("Entering onData().");
+    chunks.push(chunk);
+    bytes += chunk.length;
+    if (bytes > CODE_BODY_MAX) {
+      // More than the declared length allowed (an HTTP/2 client may say one
+      // thing and send another). Paused, not read further: proxy() writes
+      // what is held and streams the rest, and the request waits globally.
+      req.pause();
+      settle({ chunks: chunks, ended: false });
+    }
+    log.debug("Leaving onData().");
+  };
+  const onEnd = function () {
+    log.debug("Entering onEnd().");
+    settle({ chunks: chunks, ended: true });
+    log.debug("Leaving onEnd().");
+  };
+  const onGone = function () {
+    log.debug("Entering onGone().");
+    settle(null);
+    log.debug("Leaving onGone().");
+  };
+  const onError = function (e) {
+    log.debug("Entering onError().");
+    log.debug("Caught in readCodeExchangeBody(): " +
+              ((e && e.message) || e));
+    // A request stream that failed has nothing to send a worker. The same
+    // answer as a client that went away: nothing is dispatched, and no
+    // ticket was ever taken.
+    settle(null);
+    log.debug("Leaving onError().");
+  };
+  req.on('data', onData);
+  req.on('end', onEnd);
+  req.on('aborted', onGone);
+  req.on('error', onError);
+  res.on('close', onGone);
+  log.debug("Leaving readCodeExchangeBody().");
+}
+
+/**
+ * The keys a code exchange is held to: `['code:<value>']` when the body is a
+ * whole `authorization_code` grant naming one code this pool knows, else
+ * null for the global wait.
+ *
+ * @param body - what readCodeExchangeBody() handed over
+ * @returns the keys, or null
+ */
+function codeKeysOf(body) {
+  log.debug("Entering codeKeysOf().");
+  if (!body || !body.ended) {
+    log.debug("Leaving codeKeysOf(). Not read whole.");
+    return null;
+  }
+  let form;
+  try {
+    form = new URLSearchParams(Buffer.concat(body.chunks).toString('utf8'));
+  } catch (e) {
+    log.debug("Caught in codeKeysOf(): " + ((e && e.message) || e));
+    // Not a form this process can read. The worker answers it as it
+    // always did; the wait is the global one.
+    log.debug("Leaving codeKeysOf(). Unreadable.");
+    return null;
+  }
+  const grants = form.getAll('grant_type');
+  const codes = form.getAll('code');
+  if (grants.length !== 1 || grants[0] !== 'authorization_code' ||
+      codes.length !== 1 || !codes[0]) {
+    log.debug("Leaving codeKeysOf(). Not one authorization code.");
+    return null;
+  }
+  const key = 'code:' + codes[0];
+  if (clientStateFor(key, false)) {
+    log.debug("Leaving codeKeysOf(). Held.");
+    return [key];
+  }
+  if (settledCodes.has(key)) {
+    // A code is redeemed once; a second exchange of it is global.
+    settledCodes.delete(key);
+    log.debug("Leaving codeKeysOf(). Settled.");
+    return [key];
+  }
+  log.debug("Leaving codeKeysOf(). Unknown: global.");
+  return null;
+}
+
+// Remembers a pruned code key's name, so its exchange stays keyed; see THE
+// CODE EXCHANGE, KEYED BY ITS CODE. Bounded as the key table is.
+function noteSettledCode(key) {
+  log.debug("Entering noteSettledCode().");
+  settledCodes.delete(key);
+  settledCodes.add(key);
+  while (settledCodes.size > CLIENT_KEYS_MAX) {
+    settledCodes.delete(settledCodes.values().next().value);
+  }
+  log.debug("Leaving noteSettledCode().");
+}
+
+// A ticket announced committed by `entry`: each of its keys has a write on
+// that worker no later than the worker's last writing announcement. That
+// generation, not one this announcement's own `wrote` says, because a write
+// can commit in a flush that does not yet name its ticket (the response had
+// not finished), and the later announcement that does may write nothing.
+function noteCommittedFor(ticket, entry) {
+  log.debug("Entering noteCommittedFor().");
+  const info = ticketInfo.get(ticket);
+  const gen = entry.wroteGeneration || 0;
+  if (!info || !info.keys || !gen) {
+    log.debug("Leaving noteCommittedFor().");
+    return;
+  }
+  for (let i = 0; i < info.keys.length; i++) {
+    const state = clientStates.get(info.keys[i]);
+    if (state && !((state.writes.get(entry.pid) || 0) >= gen)) {
+      state.writes.set(entry.pid, gen);
+    }
+  }
+  log.debug("Leaving noteCommittedFor().");
+}
+
+/**
+ * The generation a worker must reach before serving a keyed request: what
+ * the keys' writes on OTHER workers reached, what the front process wrote
+ * itself, and whatever was spilled.
+ *
+ * @param keys - the request's client keys
+ * @param entry - the worker it is going to
+ * @returns the generation
+ */
+function sessionWanted(keys, entry) {
+  log.debug("Entering sessionWanted().");
+  let wanted = Math.max(frontGeneration, spilledGeneration);
+  for (let i = 0; i < keys.length; i++) {
+    const state = clientStates.get(keys[i]);
+    if (!state) {
+      continue;
+    }
+    state.writes.forEach(function (gen, pid) {
+      if (pid !== entry.pid && gen > wanted) {
+        wanted = gen;
+      }
+    });
+  }
+  log.debug("Leaving sessionWanted(). " + wanted);
+  return wanted;
+}
+
+// The lowest finished, unannounced ticket of these keys (or spilled) that a
+// reader served by `servedBy` must wait for, or Infinity.
+function lowestBlockingFor(keys, servedBy) {
+  log.debug("Entering lowestBlockingFor().");
+  let lowest = Infinity;
+  const consider = function (t) {
+    if (t < lowest && finishedTickets.has(t) && outstanding.has(t) &&
+        !(servedBy && servedBy.tickets && servedBy.tickets.has(t))) {
+      lowest = t;
+    }
+  };
+  for (let i = 0; i < keys.length; i++) {
+    const state = clientStates.get(keys[i]);
+    if (state) {
+      state.tickets.forEach(consider);
+    }
+  }
+  spilledTickets.forEach(consider);
+  log.debug("Leaving lowestBlockingFor().");
+  return lowest;
+}
+
+// Drops the oldest keys that no longer make anybody wait: no ticket, and
+// every other worker already past their writes. A few per dispatch, so the
+// table drains under traffic with no timer and no walk.
+function pruneClientStates() {
+  log.debug("Entering pruneClientStates().");
+  let looked = 0;
+  const it = clientStates.keys();
+  const gone = [];
+  while (looked < CLIENT_KEYS_PRUNED_PER_DISPATCH) {
+    const next = it.next();
+    if (next.done) {
+      break;
+    }
+    looked++;
+    const state = clientStates.get(next.value);
+    if (state.tickets.size) {
+      continue;
+    }
+    let passed = true;
+    state.writes.forEach(function (gen, pid) {
+      workers.forEach(function (w) {
+        if (w.pid !== pid && !(w.generation >= gen)) {
+          passed = false;
+        }
+      });
+    });
+    if (passed) {
+      gone.push(next.value);
+    }
+  }
+  gone.forEach(function (key) {
+    clientStates.delete(key);
+    // A settled code key keeps its name, so the exchange that names it is
+    // still keyed (#820, THE CODE EXCHANGE, KEYED BY ITS CODE).
+    if (key.indexOf('code:') === 0) {
+      noteSettledCode(key);
+    }
+  });
+  log.debug("Leaving pruneClientStates(). " + gone.length + " dropped.");
+}
+
 // A ticket for a request about to be sent to `entry`. Cleared when that worker
 // reports a commit — see receiveCommitted(), which clears everything the worker
 // owes, because its flush covers every request it has finished.
@@ -412,9 +1081,11 @@ function dropSettledWaiter() {
  * @param entry - the worker's table entry
  * @param what - optional; the method and path, or the operation's kind, named
  *   should the ticket ever be dropped (STS-WORKER-0008)
+ * @param keys - optional; the client keys it is filed under in `session`
+ *   mode (see SESSION READ-YOUR-WRITE, above)
  * @returns the ticket number, or undefined when read-your-write is off
  */
-function dispatchTicket(entry, what) {
+function dispatchTicket(entry, what, keys) {
   log.debug("Entering dispatchTicket().");
   if (!readYourWrite()) {
     log.debug("Leaving dispatchTicket().");
@@ -429,6 +1100,7 @@ function dispatchTicket(entry, what) {
                                   answeredAt: 0, heardAtAnswer: 0 });
   if (!entry.tickets) { entry.tickets = new Set(); }
   entry.tickets.add(issuedTickets);
+  fileTicketUnder(issuedTickets, keys);
   log.debug("Leaving dispatchTicket().");
   return issuedTickets;
 }
@@ -684,16 +1356,23 @@ function warnSparingly(code, message) {
  * Resolves at once when read-your-write is off or nothing blocks; a timeout
  * is logged and the read is served anyway.
  * @param servedBy - the worker entry that will serve the read
+ * @param keys - optional; the reader's client keys in `session` mode, when
+ *   only those keys' tickets (and any spilled) are waited for — see SESSION
+ *   READ-YOUR-WRITE, above dispatchTicket()
  * @returns a promise that resolves when the reader may go on
  */
-function awaitCommitConfirmations(servedBy) {
+function awaitCommitConfirmations(servedBy, keys) {
   log.debug("Entering awaitCommitConfirmations().");
   if (!readYourWrite()) {
     log.debug("Leaving awaitCommitConfirmations().");
     return Promise.resolve();
   }
   const need = issuedTickets;
-  if (!blockedBelow(need, servedBy)) {
+  const keyed = keys && keys.length ? keys : null;
+  const blocked = keyed
+    ? lowestBlockingFor(keyed, servedBy) <= need
+    : blockedBelow(need, servedBy);
+  if (!blocked) {
     log.debug("Leaving awaitCommitConfirmations().");
     return Promise.resolve();
   }
@@ -701,7 +1380,8 @@ function awaitCommitConfirmations(servedBy) {
   return new Promise(/** @param {(value?: any) => void} resolve */
                      function (resolve) {
     let done = false;
-    const waiter = { need: need, servedBy: servedBy, resolve: function () {
+    const waiter = { need: need, servedBy: servedBy, keys: keyed,
+                     resolve: function () {
       log.debug("Entering resolve().");
       if (done) {
         log.debug("Leaving resolve().");
@@ -2175,6 +2855,9 @@ function receiveCommitted(entry, committed) {
     if (wasCurrent) {
       entry.generation = generation;
     }
+    // THE GENERATION OF THIS WORKER'S LAST WRITE, which the client keys of
+    // every ticket it names from now on are held to (#820, noteCommittedFor()).
+    entry.wroteGeneration = generation;
     // AND WHAT IT WAS (#626): windowed directory keys a write may be handed
     // in place of the pull, or shared. See staleKeysFor().
     noteWriteKinds(entry.pid, committed.windowedKeys);
@@ -2203,6 +2886,7 @@ function receiveCommitted(entry, committed) {
       if (!entry.tickets.has(ticket)) {
         return;
       }
+      noteCommittedFor(ticket, entry);
       outstanding.delete(ticket);
       finishedTickets.delete(ticket);
       finishedAt.delete(ticket);
@@ -3046,6 +3730,21 @@ function fork(pool, slot) {
                  readyWorkers(entry.pool).length + ' of ' + size(entry.pool) +
                  ' serving.');
         resolve(entry);
+        return;
+      }
+      // SLOW, NOT FAILED (#820): past `workers.startTimeoutMs` a worker
+      // says it is still starting. It is neither ended nor replaced — a
+      // `terminate()` mid-restore and a second restore beside it are what
+      // ran 8081 out of heap — and the pool stops waiting for it: it joins
+      // when it reports ready, through the branch above. A worker that does
+      // not come up at all says so later, as a failure, below.
+      if (message && message.ready === false && message.slow) {
+        entry.slow = true;
+        log.warn(errorCodes.tag('STS-WORKER-0051') +
+                 'request_pool: ' + entry.pool + ' worker ' + entry.pid +
+                 ' is slow to start: ' + message.error + '. It is left to ' +
+                 'finish, not replaced, and joins the pool when it is ready.');
+        resolve(null);
         return;
       }
       if (message && message.ready === false) {
@@ -5026,22 +5725,67 @@ function start(opts) {
 // for more.
 // ---------------------------------------------------------------------------
 /**
- * Tells whether the read barrier is on (`workers.readYourWrite`).
+ * Tells whether the read barrier is on (`workers.readYourWrite`), in either
+ * of its two modes.
  *
- * @returns the setting; false with no configuration
+ * @returns true for `session` and `global`; false for off or with no
+ *   configuration
  */
 function readYourWrite() {
   log.debug("Entering readYourWrite().");
+  log.debug("Leaving readYourWrite().");
+  return readYourWriteMode() !== 'off';
+}
+
+// ---------------------------------------------------------------------------
+// THE SETTING IS A MODE SINCE 2026-10-22 (#820), AND ITS OLD TWO VALUES KEEP
+// THEIR MEANING. `session` (the default) and `global` are the two barriers
+// (see SESSION READ-YOUR-WRITE, above dispatchTicket()); `off` is none. A
+// boolean `true` — a stored override, an appconfig file, a test's stub — is
+// `session`, and `false` is `off`, so nothing written before the mode existed
+// has to be rewritten. Anything else is `session`, the value that cannot
+// serve a caller its own write stale.
+// ---------------------------------------------------------------------------
+/**
+ * Answers the read-your-write mode in force.
+ *
+ * @returns `'session'`, `'global'` or `'off'`; `'off'` with no configuration
+ */
+function readYourWriteMode() {
+  log.debug("Entering readYourWriteMode().");
+  let raw;
   try {
-    log.debug("Leaving readYourWrite().");
-    return !!config.value('workers.readYourWrite');
+    raw = config.value('workers.readYourWrite');
   } catch (e) {
-    log.debug("Caught in readYourWrite(): " + ((e && e.message) || e));
-    log.debug("Leaving readYourWrite().");
+    log.debug("Caught in readYourWriteMode(): " + ((e && e.message) || e));
+    log.debug("Leaving readYourWriteMode().");
     // No configuration at all — the parent project's in-process jobs, npm
     // test. Off is the answer that changes nothing.
-    return false;
+    return 'off';
   }
+  log.debug("Leaving readYourWriteMode().");
+  return readYourWriteModeOf(raw);
+}
+
+/**
+ * Reads a value of `workers.readYourWrite` as a mode.
+ *
+ * @param raw - the setting's value: a mode, a boolean, or its text
+ * @returns `'session'`, `'global'` or `'off'`
+ */
+function readYourWriteModeOf(raw) {
+  log.debug("Entering readYourWriteModeOf().");
+  if (raw === undefined || raw === null || raw === false) {
+    log.debug("Leaving readYourWriteModeOf().");
+    return 'off';
+  }
+  const text = String(raw).trim().toLowerCase();
+  if (/^(off|false|no|0|)$/.test(text)) {
+    log.debug("Leaving readYourWriteModeOf().");
+    return 'off';
+  }
+  log.debug("Leaving readYourWriteModeOf().");
+  return text === 'global' ? 'global' : 'session';
 }
 
 // Bumped when a request that may have written completes. Workers carry the
@@ -5125,6 +5869,9 @@ function noteLocalWrites(written, kinds) {
   const added = count - localWritesSeen;
   localWritesSeen = count;
   generation++;
+  // EVERYBODY'S (#820): the front process's own writes carry no ticket and
+  // so no client key, so a keyed request waits for them as every request did.
+  frontGeneration = generation;
   // WHAT THEY WERE (#626): this process's own rows are named like a
   // worker's, under no worker's pid, so every worker is handed them.
   noteWriteKinds(null, kinds && kinds.windowedKeys);
@@ -5511,7 +6258,13 @@ function startSyncRound(entry, wanted) {
             wanted);
   const id = nextSyncId++;
   syncRounds++;
-  const round = { wanted: wanted, settled: false, promise: null };
+  // WHAT THE ROUND COVERS IS THE GENERATION NOW, not only what was asked for
+  // (#820): a round started now reads a target covering every write already
+  // announced — the sharing rule above. A session-mode reader asks for less
+  // than the generation, and stamping only that would leave the worker looking
+  // behind to the next global reader for writes this round already pulled.
+  const round = { wanted: Math.max(wanted, generation), settled: false,
+                  promise: null };
   // SET BEFORE THE MESSAGE IS SENT, because a channel that refuses it settles
   // the round synchronously below, and a round recorded after it had settled
   // would read as running to every reader after it.
@@ -5760,8 +6513,12 @@ function middleware(options) {
       // express because the generation does not move until it has. Without it a
       // reader that arrives inside that window never waits at all — measured as
       // stale reads with zero barrier timeouts.
+      // WHEN IT ARRIVED, for where its time goes (#820): the waits below
+      // and the worker's answer are measured from here.
+      const timing = { arrived: Date.now(), ticketDone: 0, barrierDone: 0 };
       if (!readYourWrite()) {
-        proxy(entry, req, res, generation);
+        timing.ticketDone = timing.barrierDone = timing.arrived;
+        proxy(entry, req, res, generation, undefined, timing);
         return;
       }
       // ONE TICKET PER DISPATCHED REQUEST, TAKEN BEFORE IT IS SENT. Anything
@@ -5773,22 +6530,71 @@ function middleware(options) {
       // can confirm until it has finished. So this waits for everything
       // dispatched BEFORE it, and only then registers itself as outstanding
       // for everything that comes after.
-      awaitCommitConfirmations(entry).then(function () {
-        const ticket = dispatchTicket(entry, req.method + ' ' +
-          String(req.originalUrl || req.url || '').split('?')[0]);
-        // WHAT THIS PROCESS ITSELF HAS WRITTEN SINCE THE LAST REQUEST, before
-        // the generation is read — a bump after this line would be a bump this
-        // request does not wait for. See noteLocalWrites().
-        noteLocalWrites(localWriteCount(), localWriteKinds());
-        const wanted = generation;
-        if (entry.generation >= wanted) {
-          proxy(entry, req, res, wanted, ticket);
-          return;
-        }
-        return barrier(entry, wanted).then(function () {
-          proxy(entry, req, res, wanted, ticket);
+      // SESSION OR GLOBAL (#820): a request carrying client keys waits for
+      // its own client's writes only — see SESSION READ-YOUR-WRITE, above
+      // dispatchTicket(). `keys` null is today's global wait, unchanged.
+      const session = readYourWriteMode() === 'session';
+      const keys = session ? sessionKeysFor(req, pool, entry) : null;
+      if (keys) {
+        sessionDispatches++;
+        pruneClientStates();
+        waitThenProxy(keys, null);
+        return;
+      }
+      // A CODE EXCHANGE IS READ BEFORE IT WAITS (#820): keyed by its code
+      // when the pool knows the code, global otherwise. See THE CODE
+      // EXCHANGE, KEYED BY ITS CODE, above. The body read goes into the
+      // ticket phase of `timing`, which starts at arrival.
+      if (session && codeExchangeCandidate(req)) {
+        readCodeExchangeBody(req, res, function (body) {
+          if (!body) {
+            // The client went away, or its request failed, before the body
+            // was in. Nothing was dispatched and no ticket was taken.
+            log.debug('request_pool: ' + req.method + ' ' + req.url +
+                      ' was not sent to a worker: its body did not arrive.');
+            if (!res.destroyed && !res.writableEnded) {
+              res.destroy();
+            }
+            return;
+          }
+          const codeKeys = codeKeysOf(body);
+          if (codeKeys) {
+            codeKeyedDispatches++;
+            pruneClientStates();
+          } else {
+            globalDispatches++;
+          }
+          waitThenProxy(codeKeys, body);
         });
-      });
+        return;
+      }
+      globalDispatches++;
+      waitThenProxy(null, null);
+
+      // THE WAITS AND THE DISPATCH, for keys already decided (null: global)
+      // and a body already read (null: streamed from `req`). A HOT PATH, for
+      // route()'s reason.
+      function waitThenProxy(keys, body) {
+        awaitCommitConfirmations(entry, keys).then(function () {
+          timing.ticketDone = Date.now();
+          const ticket = dispatchTicket(entry, req.method + ' ' +
+            String(req.originalUrl || req.url || '').split('?')[0], keys);
+          // WHAT THIS PROCESS ITSELF HAS WRITTEN SINCE THE LAST REQUEST,
+          // before the generation is read — a bump after this line would be
+          // a bump this request does not wait for. See noteLocalWrites().
+          noteLocalWrites(localWriteCount(), localWriteKinds());
+          const wanted = keys ? sessionWanted(keys, entry) : generation;
+          if (entry.generation >= wanted) {
+            timing.barrierDone = timing.ticketDone;
+            proxy(entry, req, res, wanted, ticket, timing, body);
+            return;
+          }
+          return barrier(entry, wanted).then(function () {
+            timing.barrierDone = Date.now();
+            proxy(entry, req, res, wanted, ticket, timing, body);
+          });
+        });
+      }
     }
   };
 }
@@ -5811,6 +6617,25 @@ const REPLAY_BODY_BYTES = 1024 * 1024;
 // How many requests were sent again that way, for stats().
 let replayCount = 0;
 
+// One answered request's phases, to `request_phases.js` (#820): the front's
+// two waits, what the worker reported, and the rest of the round trip — the
+// socket and the worker's event loop busy with other requests — as `queue`.
+// Hot path: every dispatched request. No Entering/Leaving pair.
+function notePhases(req, timing, dispatchedAt, answeredAt, worker) {
+  const roundTrip = answeredAt - dispatchedAt;
+  const inWorker = worker ? worker.handler + worker.commit : 0;
+  requestPhases.record(requestPhases.routeOf(req.method,
+                                             req.originalUrl || req.url), {
+    ticket: timing.ticketDone - timing.arrived,
+    barrier: timing.barrierDone - timing.ticketDone,
+    queue: worker ? Math.max(0, roundTrip - inWorker) : undefined,
+    handler: worker ? worker.handler : undefined,
+    commit: worker ? worker.commit : undefined,
+    bridge: worker ? worker.bridge : undefined,
+    total: answeredAt - timing.arrived
+  });
+}
+
 /**
  * Streams one request to a worker and the answer back, copying no body.
  *
@@ -5819,8 +6644,13 @@ let replayCount = 0;
  * @param res - the response
  * @param atGeneration - the generation the worker was brought to
  * @param ticket - the request's read-barrier ticket
+ * @param timing - when it arrived and its waits ended, for
+ *   `request_phases.js` (#820); optional
+ * @param body - optional; what readCodeExchangeBody() already read of the
+ *   request's body, `{ chunks, ended }`, written to the worker first and
+ *   unchanged, with the rest (when not ended) streamed from `req` (#820)
  */
-function proxy(entry, req, res, atGeneration, ticket) {
+function proxy(entry, req, res, atGeneration, ticket, timing, body) {
   log.debug('Entering proxy(). pid=' + entry.pid + ' ' + req.method + ' ' +
             req.url);
   // -------------------------------------------------------------------------
@@ -5883,6 +6713,9 @@ function proxy(entry, req, res, atGeneration, ticket) {
   // WHETHER THIS PROCESS ENDED THE UPSTREAM REQUEST ITSELF, because the client
   // went away first. See the response's `close` handler at the foot.
   let clientGone = false;
+  // When the worker's answer arrived, and the phases it reported (#820).
+  let answeredAt = 0;
+  let workerPhases = null;
   const finish = function (lost) {
     log.debug("Entering finish().");
     if (!done) {
@@ -5891,6 +6724,9 @@ function proxy(entry, req, res, atGeneration, ticket) {
       entry.served++;
       if (!lost) {
         noteAnswered(entry.pool, Date.now() - dispatchedAt);
+        if (timing && answeredAt) {
+          notePhases(req, timing, dispatchedAt, answeredAt, workerPhases);
+        }
       }
       // THE TICKET IS TAKEN AT DISPATCH NOW, NOT HERE — see dispatchTicket().
       // Taking it on `finish` left a window the client could drive straight
@@ -6055,6 +6891,11 @@ function proxy(entry, req, res, atGeneration, ticket) {
   const hello = helloModule.encodeForward(req);
   if (hello) {
     headers[helloModule.FORWARD_HEADER] = hello;
+  }
+  // WHERE ITS TIME GOES (#820): asked of the worker by this process only.
+  delete headers[requestPhases.ASK_HEADER];
+  if (timing) {
+    headers[requestPhases.ASK_HEADER] = '1';
   }
   delete headers[POOL_TICKET_HEADER];
   if (ticket) {
@@ -6242,6 +7083,12 @@ function proxy(entry, req, res, atGeneration, ticket) {
       // it never presents back on a browser cookie.
       learn(entry, answer);
     }
+    // AND THE CLIENT KEYS IT HANDS OUT ARE THIS TICKET'S TOO (#820), on every
+    // path: the sign-in that mints a session is that session's write. See
+    // SESSION READ-YOUR-WRITE, above dispatchTicket().
+    if (ticket && readYourWriteMode() === 'session') {
+      learnTicketKeys(ticket, answer);
+    }
     // ------------------------------------------------------------------
     // THE SOCKETS THIS ANSWER SAYS TO CLOSE, CLOSED BEFORE IT GOES OUT.
     //
@@ -6251,6 +7098,9 @@ function proxy(entry, req, res, atGeneration, ticket) {
     // already gone. See LDAP_DROP_HEADER.
     // ------------------------------------------------------------------
     closeDirectoryConnections(answer.headers[LDAP_DROP_HEADER]);
+    answeredAt = Date.now();
+    workerPhases = requestPhases.decode(
+      answer.headers[requestPhases.PHASES_HEADER]);
     // FROM HERE THE WORKER HAS ANSWERED: it ran the handler, so it will
     // announce this ticket on its own `finish` or `close` whatever happens to
     // the pipe from now on. See ticketAbandoned().
@@ -6276,7 +7126,7 @@ function proxy(entry, req, res, atGeneration, ticket) {
       // The worker's instruction to this process, and no business of the
       // client's — for the reason the hop-by-hop headers below are dropped, and
       // because a header naming an identity key has no place on a page.
-      if (name === LDAP_DROP_HEADER) {
+      if (name === LDAP_DROP_HEADER || name === requestPhases.PHASES_HEADER) {
         return;
       }
       // Hop-by-hop headers belong to the connection this process made and not
@@ -6494,7 +7344,11 @@ function proxy(entry, req, res, atGeneration, ticket) {
   // reached the worker. The pipe's back-pressure is kept: a write the
   // connection cannot take yet pauses the client until it drains.
   // -------------------------------------------------------------------------
-  req.on('data', function (chunk) {
+  // One chunk of the body, kept for a resend and written to the worker. A
+  // HOT PATH — every chunk of every dispatched body — so no Entering/Leaving
+  // pair, for route()'s reason.
+  let draining = false;
+  const forward = function (chunk) {
     if (replay.kept && !delivered) {
       replay.bytes += chunk.length;
       if (replay.bytes > REPLAY_BODY_BYTES) {
@@ -6511,17 +7365,44 @@ function proxy(entry, req, res, atGeneration, ticket) {
     const writing = upstream;
     if (!writing.write(chunk, wroteOn(writing))) {
       req.pause();
+      draining = true;
       writing.once('drain', function () {
+        draining = false;
         req.resume();
       });
     }
-  });
-  req.on('end', function () {
+  };
+  const endBody = function () {
+    log.debug("Entering endBody().");
     ended = true;
     if (!detached && !failed) {
       upstream.end(wroteOn(upstream));
     }
-  });
+    log.debug("Leaving endBody().");
+  };
+  // -------------------------------------------------------------------------
+  // A BODY ALREADY READ IS WRITTEN FIRST, AS IT ARRIVED (#820). A code
+  // exchange is read before the barrier, to find its code; its chunks go to
+  // the worker here in the same order and the same bytes, through the same
+  // copy for a resend (it is far under REPLAY_BODY_BYTES), so a signature
+  // over the body (#178, DPoP, client authentication) still verifies. Read
+  // whole, the request has ended and nothing more will arrive on it. Read in
+  // part (over CODE_BODY_MAX), it was paused with the rest unread: the
+  // handlers below take the rest, and it is resumed only once the worker's
+  // connection has room for it.
+  // -------------------------------------------------------------------------
+  if (body) {
+    body.chunks.forEach(forward);
+  }
+  if (body && body.ended) {
+    endBody();
+  } else {
+    req.on('data', forward);
+    req.on('end', endBody);
+    if (body && !draining) {
+      req.resume();
+    }
+  }
   req.on('aborted', function () {
     upstream.destroy();
     // THE CLIENT WENT AWAY. If the worker had already begun answering it will
@@ -7404,6 +8285,8 @@ function stats() {
   // before there was a second one; `running` is every worker of both, and
   // `pools` breaks both down.
   return {
+    // Where dispatched requests' time went in the last closed window (#820).
+    phases: requestPhases.stats(),
     configured: size(PROTOCOL_POOL),
     running: workers.length,
     ready: readyWorkers(PROTOCOL_POOL).length,
@@ -7486,6 +8369,24 @@ function stats() {
                // READERS THAT WAITED AT ALL, ever (#626): a reader with
                // nothing blocking it is not counted.
                waited: ticketWaits },
+    // SESSION READ-YOUR-WRITE (#820): the mode, how many dispatches were
+    // keyed and how many waited globally, and the client-key table. A
+    // `spilled` that is not zero means keys were evicted while they still
+    // mattered, and every keyed request waits for what they held.
+    // `codeKeyed` counts code exchanges keyed by their code, `codesLearnt`
+    // authorization code redirects learnt, and `settledCodes` the names kept
+    // of code keys pruned once settled (THE CODE EXCHANGE, KEYED BY ITS
+    // CODE).
+    sessionBarrier: { mode: readYourWriteMode(), session: sessionDispatches,
+                     global: globalDispatches,
+                     codeKeyed: codeKeyedDispatches,
+                     codesLearnt: codeKeysLearnt,
+                     settledCodes: settledCodes.size,
+                     keys: clientStates.size,
+                     evicted: clientEvictions,
+                     spilled: spilledTickets.size,
+                     spilledGeneration: spilledGeneration,
+                     frontGeneration: frontGeneration },
     dispatch: dispatchPrefixes(),
     affinities: affinities[PROTOCOL_POOL].size,
     socketDir: socketDir,
@@ -7548,6 +8449,17 @@ function reset() {
   ticketInfo.clear();
   ticketWaiters = [];
   settledWaiters = 0;
+  // And the client keys session mode keeps (#820).
+  clientStates.clear();
+  spilledTickets.clear();
+  spilledGeneration = 0;
+  frontGeneration = 0;
+  clientEvictions = 0;
+  sessionDispatches = 0;
+  globalDispatches = 0;
+  settledCodes.clear();
+  codeKeyedDispatches = 0;
+  codeKeysLearnt = 0;
   reaped = 0;
   // And what each write was and how it was sent (#626).
   lastSharedGeneration = 0;
@@ -7600,6 +8512,10 @@ module.exports = {
   dispatched: dispatched,
   fansOut: fansOut,
   readYourWrite: readYourWrite,
+  readYourWriteMode: readYourWriteMode,
+  readYourWriteModeOf: readYourWriteModeOf,
+  clientKeysOf: clientKeysOf,
+  codeExchangeCandidate: codeExchangeCandidate,
   dispatchPrefixes: dispatchPrefixes,
   fanoutPrefixes: fanoutPrefixes,
   affinityKeyOf: affinityKeyOf,

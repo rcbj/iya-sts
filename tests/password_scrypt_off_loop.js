@@ -19,8 +19,9 @@
 //      `credentials.verifyAsync()` and never `credentials.verify()`, and a
 //      refused password is still refused.
 //   B. AN LDAP ADD AND MODIFY carrying a clear `userPassword` hash it with
-//      `crypto.hashSecretAsync()` and never `crypto.hashSecret()`; each hash
-//      made is a scrypt hash of that password (it verifies), two people
+//      `crypto.hashPasswordAsync()` and never `crypto.hashPassword()` (the
+//      password policy's argon2id or scrypt since #847); each hash
+//      made is a hash of that password (it verifies), two people
 //      given one password get two different hashes (a salt each), and each
 //      entry stores the one made for it (an LDAP compare, which development
 //      mode answers for `userPassword`).
@@ -107,8 +108,9 @@ function childMain() {
          'verifyAsync ' + async.n + ', verify ' + sync.n);
 
     // --- B. an LDAP add and modify --------------------------------------
-    const hashSync = counted(stsCrypto, 'hashSecret');
-    const hashAsync = counted(stsCrypto, 'hashSecretAsync');
+    // A person's password is hashed by the policy's door since #847.
+    const hashSync = counted(stsCrypto, 'hashPassword');
+    const hashAsync = counted(stsCrypto, 'hashPasswordAsync');
     const USERS = 'ou=users,dc=example,dc=com';
     const operation = function (name, fields) {
       const req = {
@@ -165,16 +167,17 @@ function childMain() {
     note(r.ok === true, 'B3. a modify setting a clear userPassword succeeds',
          r.error || '');
     note(hashAsync.n === 2 && hashSync.n === 0,
-         'B4. both hashed on the thread pool (crypto.hashSecretAsync() ' +
-         'twice) and never with crypto.hashSecret()',
-         'hashSecretAsync ' + hashAsync.n + ', hashSecret ' + hashSync.n);
+         'B4. both hashed on the thread pool (crypto.hashPasswordAsync() ' +
+         'twice) and never with crypto.hashPassword()',
+         'hashPasswordAsync ' + hashAsync.n + ', hashPassword ' +
+         hashSync.n);
     const hashOne = String(hashAsync.answers[0] || '');
     const hashTwo = String(hashAsync.answers[1] || '');
     note(stsCrypto.isHashedSecret(hashOne) &&
          stsCrypto.isHashedSecret(hashTwo) &&
          stsCrypto.verifySecret(password, hashOne) &&
          stsCrypto.verifySecret(password, hashTwo),
-         'B5. each hash made is a scrypt hash of the password sent',
+         'B5. each hash made is a password hash of the password sent',
          hashOne.slice(0, 12) + ' ' + hashTwo.slice(0, 12));
     note(hashOne !== hashTwo,
          'B6. one password for two people is two hashes (a salt each)');

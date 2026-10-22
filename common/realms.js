@@ -125,6 +125,10 @@ config.registerLogger(log);
  * The id of the default realm, which has an empty path prefix.
  */
 const DEFAULT_ID = 'default';
+// How long an on-demand store remembers a key the store said is absent
+// (#820 part 2; see map()). Every write that could make it present forgets
+// it sooner; this is the backstop.
+const ABSENT_MS = 60 * 1000;
 
 /**
  * The default realm's record: built in, never stored, and never removed or
@@ -2619,6 +2623,19 @@ function declareHandle(options, shape, accessors) {
     // -----------------------------------------------------------------------
     merge: options.merge === 'own' ? 'own' : 'replace',
     // -----------------------------------------------------------------------
+    // `contributionsOnRead: true` (2026-10-21, #820), for a `merge: 'own'`
+    // store whose other processes' rows only a console page reads: another
+    // process's change is NOTED, not read and opened, and the page asks
+    // `persistence_replication.refreshContributions()` for the noted rows,
+    // in one batch, before it draws. The audit ring is this: each event
+    // rewrote a sealed segment of up to 32 events that every process read,
+    // opened and parsed — about 5,000 rows a minute on 8081 under a password
+    // load, in each of nine processes — for a page nobody had open. A row
+    // rewritten many times between two reads is read once.
+    // -----------------------------------------------------------------------
+    contributionsOnRead: options.merge === 'own' &&
+      options.contributionsOnRead === true,
+    // -----------------------------------------------------------------------
     // TWO MORE THINGS A STORE SAYS ABOUT ITS ROWS WHEN SEVERAL NODES WRITE
     // THEM (2026-09-14, #46 section 3), both argued in
     // `persistence/persistence_minted.js`:
@@ -2726,6 +2743,31 @@ function declareHandle(options, shape, accessors) {
     onDemand: !!options.onDemand,
     lookupsOf: options.onDemand && typeof options.indexBy === 'function'
       ? options.indexBy : null,
+    // `sortBy(value)` answers a number a console list of the store's
+    // newest rows is ordered by, or null (2026-10-22, #820). Written as
+    // one more `sts_minted_index` row beside the row (`sort_at`), so
+    // `minted.newest` walks a partial index instead of sorting every row
+    // by `written_at`, which has only a BRIN: a btree on `written_at`
+    // would make every update of `sts_minted` non-HOT
+    // (`persistence/CLAUDE.md`, *The newest rows by an index*).
+    sortOf: options.onDemand && typeof options.sortBy === 'function'
+      ? options.sortBy : null,
+    // A store whose rows written before it declared an `expiresAt` have
+    // none (#820 part 2): how long after its write such a row lives, in
+    // ms. The store is read back whole until those rows are given one
+    // (`persistence_minted.js`'s backfill job), since on demand only the
+    // store's expiry purge deletes a dead row.
+    expiryFromWrittenMs: options.onDemand &&
+      typeof options.onDemand.expiryFromWrittenMs === 'function'
+      ? options.onDemand.expiryFromWrittenMs : null,
+    // Run by the backfill job in the front process, in each realm, while the
+    // store is still held whole and just before its completion mark is
+    // written (#820 part 3): for an owner that derives a second store from
+    // this one and has to fill it once, from everything, before nothing is
+    // held whole again. Synchronous; a throw keeps the store whole.
+    beforeLive: options.onDemand &&
+      typeof options.onDemand.beforeLive === 'function'
+      ? options.onDemand.beforeLive : null,
     // ---------------------------------------------------------------------
     // THE ACCESSORS LIVE ON THE REGISTRY ROW AND NOT ON THE STORE, and that is
     // the whole reason this is a registry at all. Two of the three shapes are
@@ -2737,6 +2779,14 @@ function declareHandle(options, shape, accessors) {
     // `Object.keys()` and a spread all answer what they always did.
     // ---------------------------------------------------------------------
     dump: accessors.dump,
+    // The partition's own Map, uncopied, where the store has one: for a walk
+    // of a store too large to copy (#820's backfill). Read it, never write.
+    partition: accessors.partition,
+    forgetAbsent: accessors.forgetAbsent,
+    residentAdd: accessors.residentAdd,
+    residentRemove: accessors.residentRemove,
+    residentClear: accessors.residentClear,
+    keysResident: !!(options.onDemand && options.onDemand.keysResident),
     read: accessors.read,
     restore: accessors.restore,
     remove: accessors.remove
@@ -3053,14 +3103,29 @@ class IndexedMap extends Map {
  *
  * @param {any} [options]
  * @returns {Map<any, any> & { realmMap: (id?: any) => Map<any, any>,
- *   lookup: (indexKey: string) => any[], onDemandLive: () => boolean }}
+ *   lookup: (indexKey: string) => any[], onDemandLive: () => boolean,
+ *   scan: (fn: (value: any, key: any) => void) => void,
+ *   scanAsync: (fn: (value: any, key: any) => void) => Promise<void>,
+ *   warm: (keys: any[]) => Promise<void>, peek: (k: any) => any,
+ *   lookupEntriesAsync: (indexKey: string) =>
+ *     Promise<{ key: any, value: any }[]>,
+ *   newestAsync: (limit: number) =>
+ *     Promise<{ key: any, value: any }[] | null>,
+ *   countAsync: () => Promise<number | null>,
+ *   countEstimateAsync: () => Promise<{ count: number, exact: boolean }> }}
  */
 function map(options) {
   log.debug("Entering map().");
   const indexBy = options && typeof options.indexBy === 'function'
     ? options.indexBy : null;
+  // AN ON-DEMAND STORE KEEPS NO INDEX IN MEMORY (#820): its index is
+  // `sts_minted_index`, and `lookup()` walks only what is held. Until its
+  // index is complete it is held WHOLE — two million refresh and grant
+  // tokens on 8081 — and a family-to-keys Map over all of them cost every
+  // process hundreds of MB: the first start of #823 ran out of heap.
   const per = keyed(function () {
-    return indexBy ? new IndexedMap(indexBy) : new Map();
+    return indexBy && !(options && options.onDemand)
+      ? new IndexedMap(indexBy) : new Map();
   });
   // `reconcile`, for a per-realm store partly built from code — see the
   // contract above sharedMap(). The two accessors below ask it exactly as
@@ -3081,6 +3146,50 @@ function map(options) {
       });
       log.debug("Leaving dump().");
       return out;
+    },
+    partition: function (realmId) {
+      log.debug("Entering partition().");
+      log.debug("Leaving partition().");
+      return per.of(partitionId(realmId));
+    },
+    // A key another process wrote, or this one restored: forgotten as
+    // absent (#820 part 2). Called by the appliers whether or not the row is
+    // held. A no-op for a store that is not on demand.
+    forgetAbsent: function (realmId, k) {
+      log.debug("Entering forgetAbsent().");
+      if (absentPer) {
+        absentPer.of(partitionId(realmId)).delete(k);
+      }
+      warming.forEach(function (touched) {
+        touched.add(partitionId(realmId) + '\u0000' + k);
+      });
+      log.debug("Leaving forgetAbsent().");
+    },
+    // A key-resident store's digests (#820 part 2): `add` for a row read
+    // at a start or changed by another process, `clear` before a start's
+    // load. A no-op for any other store.
+    residentAdd: function (realmId, digest) {
+      log.debug("Entering residentAdd().");
+      if (residentPer && digest) {
+        residentPer.of(partitionId(realmId)).add(String(digest));
+      }
+      log.debug("Leaving residentAdd().");
+    },
+    residentRemove: function (realmId, digest) {
+      log.debug("Entering residentRemove().");
+      if (residentPer && digest) {
+        residentPer.of(partitionId(realmId)).delete(String(digest));
+      }
+      log.debug("Leaving residentRemove().");
+    },
+    residentClear: function () {
+      log.debug("Entering residentClear().");
+      if (residentPer) {
+        list().concat([DEFAULT_REALM]).forEach(function (one) {
+          residentPer.of(partitionId(one.id)).clear();
+        });
+      }
+      log.debug("Leaving residentClear().");
     },
     read: function (realmId, k) {
       log.debug("Entering read().");
@@ -3210,6 +3319,72 @@ function map(options) {
   function demandOn() {
     return onDemand && !!onDemandReader && onDemandReader.active(handleName);
   }
+  // -------------------------------------------------------------------------
+  // WHAT THE STORE SAID IS NOT THERE (#820 part 2): a key read and found
+  // absent is remembered for `ABSENT_MS`, at most `demandBound` of them, so a
+  // question that is usually "no" — is this token revoked? — is not a read
+  // of the store per request. A stale "no" would be a wrong answer, so
+  // everything that can make a remembered key present forgets it: a write
+  // here (`set()`), and another process's change, which the appliers in
+  // `persistence_minted.js` report through the handle's `forgetAbsent()`
+  // even when they skip the row. The bound in time is the backstop.
+  // -------------------------------------------------------------------------
+  const absentPer = onDemand ? keyed(function () {
+    return new Map();
+  }) : null;
+  // -------------------------------------------------------------------------
+  // KEY-RESIDENT (#820 part 2): `onDemand: { keysResident: true }`. The
+  // process holds the KEY COLUMN of every live row — the keyed digest the
+  // store files a row under, loaded at a start without reading one body —
+  // and no records beyond the bounded cache. A key whose digest is not held
+  // is absent, answered without the store; one that is is read. For a store
+  // whose question is membership on a hot path with keys that are usually
+  // absent — `admin_stats.revokedJtis`: is this token revoked? — where a
+  // read per question would be a read per request. `has()` is answered from
+  // the digests alone, with no read; `get()` reads a held digest's row.
+  // `size` is the count of digests. They are kept EXACT by every change: a
+  // write or delete here, and another process's, which the appliers read to
+  // learn whether it was a write or a delete (`residentAdd`/`residentRemove`
+  // in `persistence_minted.js`). What only the store's expiry purge removes
+  // stays until a read finds it gone — a row past its own expiry, which a
+  // store declares only where an expired row answers like an absent one.
+  // -------------------------------------------------------------------------
+  const keysResident = onDemand && options.onDemand.keysResident === true;
+  const residentPer = keysResident ? keyed(function () {
+    return new Set();
+  }) : null;
+  // Hot path: every key-resident question. No Entering/Leaving pair.
+  function digestOf(realmId, k) {
+    return typeof onDemandReader.digestOf === 'function'
+      ? onDemandReader.digestOf(handleName, realmId, k) : null;
+  }
+  // THE KEYS A CHANGE TOUCHED WHILE A WARM-UP WAS READING (`warm()`), one
+  // Set per warm-up in flight: its answer for such a key may predate the
+  // change, so it is not held. Filled by `forgetAbsent()`, which the
+  // appliers call for every change to a row this process does not hold.
+  const warming = new Set();
+  // Hot path: every on-demand miss. No Entering/Leaving pair.
+  function absentKnown(k) {
+    const absent = absentPer();
+    const until = absent.get(k);
+    if (until === undefined) {
+      return false;
+    }
+    if (until > Date.now()) {
+      return true;
+    }
+    absent.delete(k);
+    return false;
+  }
+  // Hot path: every on-demand miss. No Entering/Leaving pair.
+  function absentNote(k) {
+    const absent = absentPer();
+    absent.delete(k);
+    absent.set(k, Date.now() + ABSENT_MS);
+    if (absent.size > demandBound) {
+      absent.delete(absent.keys().next().value);
+    }
+  }
   // Hot path: every on-demand write and read. No Entering/Leaving pair.
   function demandTrim(realmId, target) {
     if (target.size <= demandBound) {
@@ -3234,8 +3409,25 @@ function map(options) {
     if (onDemandReader.journalled(handleName, realmId, k)) {
       return undefined;
     }
+    let digest = null;
+    if (keysResident) {
+      digest = digestOf(realmId, k);
+      if (digest && !residentPer().has(digest)) {
+        return undefined;
+      }
+    } else if (absentKnown(k)) {
+      return undefined;
+    }
     const found = onDemandReader.read(handleName, realmId, k);
     if (!found || !found.present) {
+      // A FAILED read is not remembered: only the store's own "absent".
+      if (found && found.present === false) {
+        if (digest) {
+          residentPer().delete(digest);
+        } else {
+          absentNote(k);
+        }
+      }
       return undefined;
     }
     target.set(k, found.value);
@@ -3251,8 +3443,26 @@ function map(options) {
     lookup: function (indexKey) {
       log.debug("Entering lookup().");
       const target = per();
-      const held = typeof target.lookup === 'function'
-        ? target.lookup(indexKey) : [];
+      let held = [];
+      if (typeof target.lookup === 'function') {
+        held = target.lookup(indexKey);
+      } else if (indexBy) {
+        // An on-demand store: a walk of what is held — the bounded cache
+        // when live, the whole store until then, which is what the callers
+        // did before #820 (`membersOf()` walked every token at a revoke).
+        target.forEach(function (value, key) {
+          let keys = [];
+          try {
+            keys = indexBy(value, key) || [];
+          } catch (e) {
+            log.debug("Caught in lookup(): " + ((e && e.message) || e));
+            keys = [];
+          }
+          if (keys.indexOf(indexKey) >= 0) {
+            held.push(key);
+          }
+        });
+      }
       if (!demandOn() || typeof onDemandReader.byIndex !== 'function') {
         log.debug("Leaving lookup().");
         return held;
@@ -3275,6 +3485,294 @@ function map(options) {
       demandTrim(realmId, target);
       log.debug("Leaving lookup(). " + out.size + " key(s).");
       return Array.from(out);
+    },
+    // THE ROWS A REQUEST IS ABOUT TO ASK FOR, READ IN ONE ASYNCHRONOUS BATCH
+    // (2026-10-21): a refresh knows its token's jti, family and register
+    // record the moment the token is opened, and asked each one with a
+    // synchronous read of the store that held the worker's event loop.
+    // Here each key not held, not pending and not known absent is read
+    // together with the others, off the event loop, and then held — unless
+    // a change to it arrived meanwhile (`warming`), or it is held or
+    // pending by then, when the read's answer may be the older one and is
+    // dropped. A key the store answers absent is remembered as such. A
+    // failed read holds nothing, and the request's own reads ask as they
+    // always did. A key-resident store asks only for a key whose digest it
+    // holds (2026-10-22, #820): one it does not hold is absent, known
+    // without the store, and its `has()` is free anyway — what a warm-up
+    // buys there is the BODY, which a writer reading the held value needs.
+    warm: async function (keys) {
+      log.debug("Entering warm().");
+      if (!demandOn() || typeof onDemandReader.readMany !== 'function') {
+        log.debug("Leaving warm(). Not here.");
+        return;
+      }
+      const realmId = partitionId(currentId());
+      const target = per();
+      const wanted = Array.from(new Set((keys || []).filter(function (k) {
+        if (k === undefined || k === null || k === '' || target.has(k) ||
+            onDemandReader.journalled(handleName, realmId, k)) {
+          return false;
+        }
+        if (keysResident) {
+          const digest = digestOf(realmId, k);
+          return !digest || residentPer().has(digest);
+        }
+        return !absentKnown(k);
+      })));
+      if (!wanted.length) {
+        log.debug("Leaving warm(). Nothing to read.");
+        return;
+      }
+      const touched = new Set();
+      warming.add(touched);
+      let found = null;
+      try {
+        found = await onDemandReader.readMany(handleName, realmId, wanted);
+      } catch (e) {
+        log.debug("Caught in warm(): " + ((e && e.message) || e));
+        found = null;
+      } finally {
+        warming.delete(touched);
+      }
+      if (!found) {
+        log.debug("Leaving warm(). The read failed.");
+        return;
+      }
+      wanted.forEach(function (k) {
+        if (touched.has(realmId + '\u0000' + k) || target.has(k) ||
+            onDemandReader.journalled(handleName, realmId, k)) {
+          return;
+        }
+        if (found.has(k)) {
+          target.set(k, found.get(k));
+        } else if (keysResident) {
+          const digest = digestOf(realmId, k);
+          if (digest) {
+            residentPer().delete(digest);
+          }
+        } else {
+          absentNote(k);
+        }
+      });
+      demandTrim(realmId, target);
+      log.debug("Leaving warm(). " + wanted.length + " key(s) asked.");
+    },
+    // EVERY ROW OF THE AMBIENT REALM, held or not (#820 part 3): for the
+    // few walks that must see the whole store — an administrator's
+    // revoke-all — where `forEach` sees only what is held. On demand, the
+    // held rows first (they are the newest, and a pending write is only
+    // here), then the store a page at a time, skipping what was seen and a
+    // key with a write not yet committed. Synchronous, through the bridge:
+    // a walk of the whole store, for the rare caller that has to. A page
+    // that cannot be read throws. Not on demand, `forEach`.
+    scan: function (fn) {
+      log.debug("Entering scan().");
+      const target = per();
+      if (!demandOn() || typeof onDemandReader.page !== 'function') {
+        target.forEach(function (value, key) {
+          fn(value, key);
+        });
+        log.debug("Leaving scan(). Held whole.");
+        return;
+      }
+      const realmId = partitionId(currentId());
+      const seen = new Set();
+      Array.from(target.entries()).forEach(function (entry) {
+        seen.add(entry[0]);
+        fn(entry[1], entry[0]);
+      });
+      let after = '';
+      let pages = 0;
+      do {
+        const page = onDemandReader.page(handleName, realmId, after);
+        pages++;
+        (page.rows || []).forEach(function (row) {
+          if (seen.has(row.key) ||
+              onDemandReader.journalled(handleName, realmId, row.key)) {
+            return;
+          }
+          seen.add(row.key);
+          fn(row.value, row.key);
+        });
+        after = page.next || '';
+      } while (after);
+      log.debug("Leaving scan(). " + seen.size + " row(s) in " + pages +
+                " page(s).");
+    },
+    // `scan()` that gives the event loop back between pages (#820): for a
+    // walk of the whole store a request is waiting on — an administrator's
+    // revoke-all through /admin-api — so the other requests the process is
+    // serving are answered between pages instead of after the whole walk.
+    // The realm is fixed when it is called. A promise; not on demand, the
+    // held rows and then resolved.
+    scanAsync: async function (fn) {
+      log.debug("Entering scanAsync().");
+      const target = per();
+      if (!demandOn() || typeof onDemandReader.page !== 'function') {
+        target.forEach(function (value, key) {
+          fn(value, key);
+        });
+        log.debug("Leaving scanAsync(). Held whole.");
+        return;
+      }
+      const realmId = partitionId(currentId());
+      const seen = new Set();
+      Array.from(target.entries()).forEach(function (entry) {
+        seen.add(entry[0]);
+        fn(entry[1], entry[0]);
+      });
+      let after = '';
+      let pages = 0;
+      do {
+        await new Promise(function (resolve) {
+          setImmediate(resolve);
+        });
+        const page = onDemandReader.page(handleName, realmId, after);
+        pages++;
+        (page.rows || []).forEach(function (row) {
+          if (seen.has(row.key) ||
+              onDemandReader.journalled(handleName, realmId, row.key)) {
+            return;
+          }
+          seen.add(row.key);
+          fn(row.value, row.key);
+        });
+        after = page.next || '';
+      } while (after);
+      log.debug("Leaving scanAsync(). " + seen.size + " row(s) in " + pages +
+                " page(s).");
+    },
+    // -----------------------------------------------------------------------
+    // THREE CONSOLE QUESTIONS ASKED WITHOUT HOLDING THE EVENT LOOP
+    // (2026-10-22, #820): one index key's rows, the newest rows, and how
+    // many there are. On demand they ask the store on the driver's read
+    // pool (`persistence_minted.js`), merged with what this process holds
+    // as `lookup()` merges it — a held row is the fresher, and a key with a
+    // write not yet committed is answered from here or not at all. Held
+    // whole, they answer from the Map: the store and the Map are one.
+    // -----------------------------------------------------------------------
+    // The ambient realm's records filed under one index key, as
+    // `[{ key, value }]`. A store that cannot be asked rejects.
+    lookupEntriesAsync: async function (indexKey) {
+      log.debug("Entering lookupEntriesAsync().");
+      const target = per();
+      const out = new Map();
+      if (typeof target.lookup === 'function') {
+        target.lookup(indexKey).forEach(function (key) {
+          out.set(key, target.get(key));
+        });
+      } else if (indexBy) {
+        target.forEach(function (value, key) {
+          let keys = [];
+          try {
+            keys = indexBy(value, key) || [];
+          } catch (e) {
+            log.debug("Caught in lookupEntriesAsync(): " +
+                      ((e && e.message) || e));
+            keys = [];
+          }
+          if (keys.indexOf(indexKey) >= 0) {
+            out.set(key, value);
+          }
+        });
+      }
+      if (!demandOn() || typeof onDemandReader.byIndexAsync !== 'function') {
+        log.debug("Leaving lookupEntriesAsync(). Held.");
+        return Array.from(out, function (e) {
+          return { key: e[0], value: e[1] };
+        });
+      }
+      const realmId = partitionId(currentId());
+      const rows = await onDemandReader.byIndexAsync(handleName, realmId,
+                                                     indexKey);
+      (rows || []).forEach(function (row) {
+        if (out.has(row.key) ||
+            onDemandReader.journalled(handleName, realmId, row.key)) {
+          return;
+        }
+        out.set(row.key, row.value);
+      });
+      log.debug("Leaving lookupEntriesAsync(). " + out.size + " row(s).");
+      return Array.from(out, function (e) {
+        return { key: e[0], value: e[1] };
+      });
+    },
+    // The newest rows of the ambient realm, highest `sortBy` first, as
+    // `[{ key, value }]`: the store's newest `limit` and every held row
+    // with a write not yet committed (which the store has not got). Null
+    // where the store is held whole: the caller walks the Map, as before.
+    newestAsync: async function (limit) {
+      log.debug("Entering newestAsync().");
+      const target = per();
+      if (!demandOn() || typeof onDemandReader.newestAsync !== 'function') {
+        log.debug("Leaving newestAsync(). Held whole.");
+        return null;
+      }
+      const realmId = partitionId(currentId());
+      const rows = await onDemandReader.newestAsync(handleName, realmId,
+                                                    limit);
+      const out = new Map();
+      target.forEach(function (value, key) {
+        if (onDemandReader.journalled(handleName, realmId, key)) {
+          out.set(key, value);
+        }
+      });
+      (rows || []).forEach(function (row) {
+        if (out.has(row.key) ||
+            onDemandReader.journalled(handleName, realmId, row.key)) {
+          return;
+        }
+        out.set(row.key, target.has(row.key) ? target.get(row.key)
+                                             : row.value);
+      });
+      log.debug("Leaving newestAsync(). " + out.size + " row(s).");
+      return Array.from(out, function (e) {
+        return { key: e[0], value: e[1] };
+      });
+    },
+    // How many live rows the ambient realm holds: the store's committed
+    // count on demand, the Map's size otherwise. Rejects where the store
+    // cannot be asked.
+    countAsync: async function () {
+      log.debug("Entering countAsync().");
+      const target = per();
+      if (!demandOn() || typeof onDemandReader.countAsync !== 'function') {
+        log.debug("Leaving countAsync(). Held whole.");
+        return target.size;
+      }
+      const n = await onDemandReader.countAsync(handleName,
+                                                partitionId(currentId()));
+      log.debug("Leaving countAsync(). " + n + ".");
+      return n;
+    },
+    // How many live rows the ambient realm holds, as cheaply as is honest
+    // (2026-10-22, #820): the Map's size held whole; on demand the store's
+    // planner estimate for a large store and its exact count for a small
+    // one (`persistence_minted.js` argues the threshold). `exact` says
+    // which. A reader with no estimate answers its exact count. Rejects
+    // where the store cannot be asked.
+    countEstimateAsync: async function () {
+      log.debug("Entering countEstimateAsync().");
+      const target = per();
+      if (!demandOn()) {
+        log.debug("Leaving countEstimateAsync(). Held whole.");
+        return { count: target.size, exact: true };
+      }
+      const realm = partitionId(currentId());
+      if (typeof onDemandReader.countEstimateAsync === 'function') {
+        const answer = await onDemandReader.countEstimateAsync(handleName,
+                                                               realm);
+        log.debug("Leaving countEstimateAsync(). " + answer.count +
+                  (answer.exact ? "." : " (estimated)."));
+        return { count: Number(answer.count) || 0, exact: !!answer.exact };
+      }
+      if (typeof onDemandReader.countAsync !== 'function') {
+        log.debug("Leaving countEstimateAsync(). No count; held size.");
+        return { count: target.size, exact: true };
+      }
+      const n = await onDemandReader.countAsync(handleName, realm);
+      log.debug("Leaving countEstimateAsync(). " + n + ".");
+      return { count: Number(n) || 0, exact: true };
     },
     // The realm's own Map, for the callers that genuinely want the whole thing
     // (a purge, a sweep across realms, a console page counting them). It is a
@@ -3300,11 +3798,30 @@ function map(options) {
       log.debug("Leaving get().");
       return onDemand ? demandGet(k) : per().get(k);
     },
+    // WHAT THIS PROCESS HOLDS FOR A KEY, AND NEVER A READ OF THE STORE
+    // (2026-10-22, #820): for a writer on a hot path that must not block on
+    // a miss — `admin_stats.js`'s `noteTokenHolder()`, once per JWT — and
+    // that writes blindly when nothing is held, leaving the store's
+    // `mergeRow` to combine its row with the one already there. Held whole,
+    // it is `get()`.
+    // Hot path: every recorded JWT. No Entering/Leaving pair.
+    peek: function (k) {
+      return per().get(k);
+    },
     set: function (k, v) {
       log.debug("Entering set().");
       const target = per();
       target.set(k, v);
       noteWrite(handle, k);
+      if (absentPer) {
+        absentPer().delete(k);
+      }
+      if (keysResident && demandOn()) {
+        const digest = digestOf(partitionId(currentId()), k);
+        if (digest) {
+          residentPer().add(digest);
+        }
+      }
       if (demandOn()) {
         demandTrim(partitionId(currentId()), target);
       }
@@ -3313,12 +3830,26 @@ function map(options) {
     },
     has: function (k) {
       log.debug("Entering has().");
+      if (keysResident && demandOn() && !per().has(k)) {
+        // From the digests alone (see `keysResident`): a key with a write
+        // not committed and not held is a delete not yet written.
+        const realmId = partitionId(currentId());
+        const digest = digestOf(realmId, k);
+        if (digest && !onDemandReader.journalled(handleName, realmId, k)) {
+          log.debug("Leaving has(). Resident.");
+          return residentPer().has(digest);
+        }
+      }
       log.debug("Leaving has().");
       return onDemand ? demandGet(k) !== undefined : per().has(k);
     },
     delete: function (k) {
       log.debug("Entering delete().");
-      const gone = per().delete(k);
+      let gone = per().delete(k);
+      if (keysResident && demandOn()) {
+        const digest = digestOf(partitionId(currentId()), k);
+        gone = (!!digest && residentPer().delete(digest)) || gone;
+      }
       // Reported whether or not the key was there. A delete of a key this
       // process never held may still have a ROW — restored from the store and
       // swept before anything read it — and reporting only the hits would
@@ -3362,7 +3893,9 @@ function map(options) {
     get size() {
       log.debug("Entering size().");
       log.debug("Leaving size().");
-      return per().size;
+      // Key-resident and live: every live row's digest is held, so the count
+      // is the store's, not the cache's (see `keysResident` above).
+      return keysResident && demandOn() ? residentPer().size : per().size;
     }
   };
   facade[Symbol.iterator] = function () { return per()[Symbol.iterator](); };

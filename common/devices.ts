@@ -3285,7 +3285,15 @@ class Devices {
                  (!!record.x5t && certThumbprints.indexOf(record.x5t) >= 0) ||
                  (!!record.x5tSpki &&
                   spkiThumbprints.indexOf(record.x5tSpki) >= 0);
-        }, why, { initiatingEntity: entity });
+        }, why, { initiatingEntity: entity },
+        // Where tokens bound to those keys are filed (#820 part 3).
+        jwkThumbprints.map(function (one: string): string {
+          return 'jkt:' + one;
+        }).concat(certThumbprints.map(function (one: string): string {
+          return 'x5t:' + one;
+        }), spkiThumbprints.map(function (one: string): string {
+          return 'spki:' + one;
+        })));
       }
     } catch (e) {
       log.error(errorCodes.tag('STS-DEVICE-0046') + 'devices: what the keys ' +
@@ -3311,16 +3319,29 @@ class Devices {
   counts(isLive?: (device: Device) => boolean): Json {
     const { log } = this.deps;
     log.debug("Entering Devices.counts().");
+    const out = Devices.emptyCounts();
+    this.all().forEach(function (d) {
+      Devices.tallyInto(out, d, isLive);
+    });
+    log.debug("Leaving Devices.counts(). " + out.total + ".");
+    return out;
+  }
+
+  // The counts with every table at zero, the shape `counts()` and
+  // `countsAsync()` fill.
+  private static emptyCounts(): Json {
+    helpers.log.debug("Entering Devices.emptyCounts().");
     const zero = function (list: string[]): Json {
-      log.debug("Entering zero().");
+      helpers.log.debug("Entering zero().");
       const out: Json = {};
       list.forEach(function (k) {
         out[k] = 0;
       });
-      log.debug("Leaving zero().");
+      helpers.log.debug("Leaving zero().");
       return out;
     };
-    const out: Json = {
+    helpers.log.debug("Leaving Devices.emptyCounts().");
+    return {
       total: 0,
       byOwnerKind: zero(OWNER_KINDS),
       byCompliance: zero(COMPLIANCE_STATES),
@@ -3335,35 +3356,97 @@ class Devices {
       keys: 0,
       nativeSso: { live: 0, ended: 0, none: 0 }
     };
-    // A HOT PATH: several times per device, so no Entering/Leaving pair.
+  }
+
+  // One device added to the counts.
+  // A HOT PATH: once per device counted, so no Entering/Leaving pair.
+  private static tallyInto(out: Json, d: Device,
+                           isLive?: (device: Device) => boolean): void {
     const bump = function (table: Json, key: string): void {
       table[key] = (table[key] || 0) + 1;
     };
-    this.all().forEach(function (d) {
-      out.total += 1;
-      bump(out.byOwnerKind, d.ownerKind);
-      bump(out.byCompliance, d.compliance);
-      bump(out.byAttestation, d.attestation);
-      bump(out.byStatus, d.status);
-      bump(out.byRiskLevel, d.riskLevel || 'unassessed');
-      bump(out.byEnrolment, d.enrolment.method);
-      out.keys += d.keys.length;
-      d.keys.forEach(function (k) {
-        bump(out.byKeyAttestationFormat,
-             (k.attestation && k.attestation.format) || 'none');
-      });
-      Devices.keyKindsOf(d).forEach(function (k) {
-        bump(out.byKeyKind, k);
-      });
-      if (!d.secretHash) {
-        out.nativeSso.none += 1;
-      } else if (d.session && isLive && isLive(d)) {
-        out.nativeSso.live += 1;
-      } else {
-        out.nativeSso.ended += 1;
-      }
+    out.total += 1;
+    bump(out.byOwnerKind, d.ownerKind);
+    bump(out.byCompliance, d.compliance);
+    bump(out.byAttestation, d.attestation);
+    bump(out.byStatus, d.status);
+    bump(out.byRiskLevel, d.riskLevel || 'unassessed');
+    bump(out.byEnrolment, d.enrolment.method);
+    out.keys += d.keys.length;
+    d.keys.forEach(function (k) {
+      bump(out.byKeyAttestationFormat,
+           (k.attestation && k.attestation.format) || 'none');
     });
-    log.debug("Leaving Devices.counts(). " + out.total + ".");
+    Devices.keyKindsOf(d).forEach(function (k) {
+      bump(out.byKeyKind, k);
+    });
+    if (!d.secretHash) {
+      out.nativeSso.none += 1;
+    } else if (d.session && isLive && isLive(d)) {
+      out.nativeSso.live += 1;
+    } else {
+      out.nativeSso.ended += 1;
+    }
+  }
+
+  // THE COUNTS, ASKED OF THE STORE (2026-10-22, #820). `counts()` reads every
+  // device, which in a windowed process is every row of `ou=devices` read
+  // synchronously through the bridge: a request worker held while the
+  // register grows, and through read-your-write every worker behind it.
+  // Where the directory offers the two asynchronous hooks, the total is the
+  // store's count of the container and the tables are tallied from ONE page
+  // of devices (`options.limit`, at most 500, the first by key), with
+  // `prepare(page)` run on that page before anything is tallied (the console
+  // warms the page's sessions there), and liveness asked of that page's
+  // devices only. The answer says so: `windowed`, `counted` (how many the
+  // tables cover) and `complete` (whether they cover the whole register).
+  // Where the hooks are not offered or answer nothing (the whole directory
+  // in memory) it is `counts()`, `complete`, as before.
+  /**
+   * Returns the counts Monitoring → Devices draws, from the store's count and
+   * one page of devices where the directory is a window onto the store.
+   *
+   * @param isLive - whether a device's Native SSO secret is bound to a live
+   *   session
+   * @param options - `limit` (the page, at most 500) and `prepare(page)`, a
+   *   promise run on the page before it is tallied
+   * @returns a promise of the counts
+   */
+  async countsAsync(isLive?: (device: Device) => boolean,
+                    options?: Json): Promise<Json> {
+    const { log } = this.deps;
+    log.debug("Entering Devices.countsAsync().");
+    const o = options || {};
+    const asked = this.store('hasHook', 'deviceCountAsync') &&
+      this.store('hasHook', 'deviceEntriesPageAsync')
+      ? this.store('deviceCountAsync') : null;
+    if (!asked) {
+      const whole = this.counts(isLive);
+      whole.windowed = false;
+      whole.counted = whole.total;
+      whole.complete = true;
+      log.debug("Leaving Devices.countsAsync(). Read whole.");
+      return whole;
+    }
+    const total = Number(await asked) || 0;
+    const limit = Math.max(1, Math.min(500, Number(o.limit) || 500));
+    const page = await this.store('deviceEntriesPageAsync', 0, limit);
+    const listed: Device[] = ((page && page.entries) || [])
+      .map(Devices.fromEntry);
+    if (typeof o.prepare === 'function') {
+      await o.prepare(listed);
+    }
+    const out = Devices.emptyCounts();
+    listed.forEach(function (d) {
+      Devices.tallyInto(out, d, isLive);
+    });
+    const counted = out.total;
+    out.total = total;
+    out.windowed = true;
+    out.counted = counted;
+    out.complete = counted >= total;
+    log.debug("Leaving Devices.countsAsync(). " + counted + " of " + total +
+              " tallied.");
     return out;
   }
 
@@ -3628,6 +3711,7 @@ export = {
   setRiskLevel: slot.forward('setRiskLevel'),
   setBrowserState: slot.forward('setBrowserState'),
   counts: slot.forward('counts'),
+  countsAsync: slot.forward('countsAsync'),
   events: slot.forward('events'),
   timeline: slot.forward('timeline')
 };

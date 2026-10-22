@@ -261,7 +261,13 @@ const CHANGE_ROWS_PER_STATEMENT = 5000;
 // 23 SINCE 2026-10-20 (`/portal/delegate`'s search): the `pg_trgm`
 // extension and `sts_ldap_entries_uid_trgm`, a trigram GIN over the
 // `rdn_value` of the children of each realm's `ou=users`.
-const SCHEMA_VERSION = 24;
+// 24 SINCE 2026-10-21 (#820): `sts_minted_index`, an on-demand store's
+// index rows.
+// 25 SINCE 2026-10-22 (#820): `sts_minted_index.sort_at` and the partial
+// index `sts_minted_index_sort`, a store's `sortBy` value on one more index
+// row per stored row, which `minted.newest` walks instead of sorting the
+// store by `written_at` (only a BRIN, #630).
+const SCHEMA_VERSION = 25;
 
 // THE DATABASE'S CLOCK, in the milliseconds every cluster table stores. See the
 // cluster block in SCHEMA_OBJECTS for why no process's own clock is used.
@@ -387,20 +393,28 @@ const SESSION_INDEX_UPSERT =
 const SESSION_INDEX_DELETE =
   'DELETE FROM sts_sessions WHERE realm = $1 AND key = $2';
 
-// AN ON-DEMAND STORE'S INDEX ROWS (#820): every index row of the named
-// minted rows, and a set of them filed. Ordered by the primary key, so two
-// flushes take the rows' locks in one order.
-const MINTED_INDEX_DELETE =
-  'DELETE FROM sts_minted_index WHERE (handle, realm, key) IN (SELECT h, r, ' +
-  'k FROM unnest($1::text[], $2::text[], $3::text[]) AS u(h, r, k))';
+// AN ON-DEMAND STORE'S INDEX ROWS (#820): a set of them filed, ordered by the
+// primary key, so two writers take the rows' locks in one order. A minted
+// flush writes and deletes them inside MINTED_FLUSH (2026-10-22).
 // The row that says a store's index is complete (#820): realm '' and a key
 // no digest can be ('$' is not in base64url).
 const MINTED_INDEX_MARK = '$index-complete$';
+// `sort_at` (schema version 25, 2026-10-22) is NULL on every index row
+// but a row's SORT row (`minted_queries.SORT_INDEX_KEY`), which carries the
+// store's `sortBy` value for `minted.newest`.
 const MINTED_INDEX_INSERT =
-  'INSERT INTO sts_minted_index (handle, realm, index_key, key) SELECT ' +
-  'u.h, u.r, u.i, u.k FROM unnest($1::text[], $2::text[], $3::text[], ' +
-  '$4::text[]) AS u(h, r, i, k) ORDER BY u.h, u.r, u.i, u.k ' +
-  'ON CONFLICT DO NOTHING';
+  'INSERT INTO sts_minted_index (handle, realm, index_key, key, sort_at) ' +
+  'SELECT u.h, u.r, u.i, u.k, u.s FROM unnest($1::text[], $2::text[], ' +
+  '$3::text[], $4::text[], $5::bigint[]) AS u(h, r, i, k, s) ' +
+  'ORDER BY u.h, u.r, u.i, u.k ON CONFLICT DO NOTHING';
+
+// One index row's `sort_at`: a whole number, or null for every row that is
+// not a sort row. Hot path (every index row a flush writes): no
+// Entering/Leaving pair.
+function sortAtParam(one) {
+  const n = one && one.sortAt;
+  return typeof n === 'number' && Number.isFinite(n) ? Math.trunc(n) : null;
+}
 
 // Not a session. `$` is not in a keyed digest, and '' is not a realm id, so
 // the partial indexes do not see it. It commits with the last backfill page;
@@ -486,30 +500,6 @@ function upsertSessionIndex(client, realm, key, index) {
 // would drown the log.
 function deleteSessionIndexRow(client, realm, key) {
   return client.query(SESSION_INDEX_DELETE, [realm, key]);
-}
-
-// The session index's rows of one minted flush in one statement: the
-// columns of SESSION_INDEX_UPSERT, each an array over the rows. Hot path (a
-// minted flush): no Entering/Leaving pair, the exception the code style
-// allows, stated as it requires.
-function upsertSessionIndexRows(client, rows) {
-  const columns = [];
-  rows.forEach(function (row) {
-    sessionIndexParams(row.realm, row.key, row.index)
-      .forEach(function (value, i) {
-        (columns[i] = columns[i] || []).push(value);
-      });
-  });
-  return client.query(
-    'INSERT INTO sts_sessions (realm, key, expires_at, last_seen_at, ' +
-    'started_at, subject_key, username_key, chosen, authenticated, kind, ' +
-    'rp_surface, parent_key, backs_console, credential_key, ' +
-    'partner_relationship) SELECT * FROM unnest($1::text[], $2::text[], ' +
-    '$3::bigint[], $4::bigint[], $5::bigint[], $6::text[], $7::text[], ' +
-    '$8::boolean[], $9::boolean[], $10::text[], $11::text[], $12::text[], ' +
-    '$13::boolean[], $14::text[], $15::text[]) ' +
-    SESSION_INDEX_UPSERT.slice(SESSION_INDEX_UPSERT.indexOf('ON CONFLICT')),
-    columns);
 }
 
 // How long a node row is kept after it expired, for `/admin/cluster` to show a
@@ -1015,11 +1005,27 @@ const SCHEMA_OBJECTS = [
   '  realm     text NOT NULL,' +
   '  index_key text NOT NULL,' +
   '  key       text NOT NULL,' +
+  '  sort_at   bigint,' +
   '  PRIMARY KEY (handle, realm, index_key, key))' },
   // A row's own index rows, for the flush's replace and a delete.
   { name: 'sts_minted_index_key', statement:
   'CREATE INDEX IF NOT EXISTS sts_minted_index_key ON sts_minted_index ' +
   '(handle, realm, key)' },
+  // THE NEWEST ROWS OF A STORE, BY ITS SORT VALUE (2026-10-22, #820,
+  // schema version 25). A store declaring `sortBy` writes one more index
+  // row per stored row (`index_key` `minted_queries.SORT_INDEX_KEY`,
+  // `sort_at` its value), and `minted.newest` walks this index newest first
+  // instead of sorting the store's whole partition by `written_at` — 13-14 s
+  // a page over 1.7M tokens on 8081. `written_at` itself may carry no btree
+  // (it changes on every write, and a btree on it makes every update of
+  // `sts_minted` non-HOT, #630); `sts_minted_index` is written by INSERT and
+  // DELETE only, so an index here costs no HOT update. PARTIAL, because
+  // every other index row's `sort_at` is NULL; the query repeats the
+  // predicate so a generic plan uses it. `afterColumns`: an older table
+  // gets the column from SCHEMA_COLUMNS first.
+  { name: 'sts_minted_index_sort', afterColumns: true, statement:
+  'CREATE INDEX IF NOT EXISTS sts_minted_index_sort ON sts_minted_index ' +
+  '(handle, realm, sort_at DESC, key DESC) WHERE sort_at IS NOT NULL' },
   // -------------------------------------------------------------------------
   // THE CHANGE LOG (2026-09-06), which is what makes several processes against
   // one store agree rather than merely coexist.
@@ -1648,6 +1654,11 @@ const SCHEMA_COLUMNS = [
   { table: 'sts_minted', column: 'key_sealed', statement:
   'ALTER TABLE sts_minted ADD COLUMN IF NOT EXISTS key_sealed text NOT ' +
   'NULL DEFAULT \'\'' },
+  // A minted index row's sort value (#820, schema version 25). Nullable
+  // with no default, so adding it rewrites nothing: every existing index
+  // row reads NULL, which is what every row but a sort row holds anyway.
+  { table: 'sts_minted_index', column: 'sort_at', statement:
+  'ALTER TABLE sts_minted_index ADD COLUMN IF NOT EXISTS sort_at bigint' },
   // The directory's six generated lookup columns (#349, schema version 13).
   // Adding a STORED generated column rewrites the table once and fills every
   // existing row, which is the whole of the migration.
@@ -2471,6 +2482,631 @@ const METRIC_PROBES = [
 
 // The claim scope a stable origin is held under (`adoptOrigin()`).
 const ORIGIN_SCOPE = 'persistence.origin';
+
+// ---------------------------------------------------------------------------
+// A MINTED FLUSH IS ONE STATEMENT (2026-10-22, #820).
+//
+// It was BEGIN, the fence (one to three statements), the lock, up to seven
+// writes, the change log and COMMIT: about eleven round trips, each an
+// event-loop turn on a request worker that is ~85% busy, while every
+// writing request waits for the commit. On 8081 `saveMinted()` took 23 ms
+// at the median for about ten rows, of which `pg_stat_statements` counted
+// about 5 ms of statements. So the whole flush is one statement with
+// data-modifying CTEs over unnest()ed arrays, sent outside a transaction
+// (a single statement is its own transaction). The fence, the lock, every
+// write and the change log commit together or not at all, as before.
+//
+// THE ORDER INSIDE ONE STATEMENT. PostgreSQL runs a statement's CTEs as
+// their rows are asked for, in no order it promises; what it does promise
+// is that a CTE runs before a row that reads it is produced. So the order
+// is made of DATA DEPENDENCIES, each a scalar subquery the planner makes a
+// one-time filter (an InitPlan read before the first row is fetched):
+//
+//   1. `fence`: the origin claim (FOR SHARE), the node's membership and
+//      its leases (FOR SHARE) — `checkFence()`'s three questions. `lk`
+//      reads it, so nothing is locked by a fenced flush.
+//   2. `lk`: EVERY existing row the flush touches, locked FOR UPDATE in
+//      ORDER BY handle, realm, key, before any write — the one lock order
+//      every flush takes (2026-09-12). `lkn` counts it, which reads it to
+//      the end; `ok` reads `lkn`, and every write reads `ok`. So no row is
+//      written until every existing row is locked.
+//   3. `ins` (every upsert, the tombstone writes among them, in that same
+//      ORDER BY) and `del`. `done` counts both, so they finish first.
+//   4. The side tables — `sts_sessions`, `sts_minted_index` — and the
+//      change log, which read `done`, and which write only for a row
+//      `ins` returned (a body the tombstone guard refused writes none).
+//
+// WHY TWO FLUSHES CANNOT DEADLOCK ON ROWS THAT EXIST: each takes its
+// existing minted rows' locks in one total order (step 2) and only then
+// writes; a write to a row it locked waits for nobody. A side-table row
+// is keyed by its minted row and written only after the flush holds that
+// row (its upsert came back from `ins`, or its tombstone was written), so
+// two flushes reach one side row only one after the other.
+//
+// AND ON A KEY NO ROW HOLDS YET: an INSERT of a new key waits only on
+// another transaction's uncommitted insert of the SAME key. All of a
+// flush's inserts are one INSERT in one ORDER BY, after all of its locks
+// — so two flushes inserting overlapping new keys meet them in the same
+// order, and the first to reach a key makes the other wait without
+// holding anything the first needs later in that order. (Until this, the
+// guarded, plain and tombstone writes were three INSERTs, so a key could
+// be inserted in the first by one flush and the third by another.)
+// What is NOT proven, here or in the statements this replaced: a key that
+// exists for one flush's lock and is new to another's (a third
+// transaction committed it between their snapshots) is locked by the
+// first in step 2 and by the second only at its insert, so the two
+// orders can cross. And a hard delete of a minted row that is already
+// gone still deletes its side rows without holding it. Both need three
+// transactions or an orphaned side row at once; PostgreSQL answers the
+// cycle with 40P01, the statement rolls back whole, and it is run again
+// (`retryingConflicts()`), as a deadlocked transaction always was.
+// Advisory locks on every key would close the first and were refused:
+// a flush of thousands of rows (a store that failed for a while) would
+// take thousands of entries of the shared lock table.
+//
+// A STORE THAT MERGES (`mergeRow`) needs the stored body to merge with,
+// and the merge is JavaScript (open, merge, seal: this driver holds no
+// key). It is a COMPARE-AND-SET, not a second transaction: the flush says
+// which body it merged with (`cas_*`), `chk` compares that with the row
+// `lk` locked, and a flush whose expectation was wrong writes nothing and
+// answers each stored body (`current`), merges again and is sent again.
+// What it expects is the body this process last committed for the key,
+// or no row — the case of a session just made — so the usual flush is
+// still one round trip. Under the lock the merge is exactly the one the
+// read-then-write transaction made. See `saveMinted()`.
+//
+// THE PARAMETERS ARE A TABLE (MINTED_FLUSH_LAYOUT) and the statement takes
+// its `$n` from it, so the two cannot drift; `tests/tools/
+// minted_flush_double.js` reads the same table to play the statement.
+// Every parameter is present in every flush (an empty array, or NULL for
+// no claim or no fence), so this is ONE statement text.
+// ---------------------------------------------------------------------------
+const MINTED_FLUSH_LAYOUT = [
+  // The fence: an origin claim and its reservation, or NULL; the node's
+  // membership id, or NULL; the leases the write needs, with tokens.
+  ['claim_key', 'text'], ['claim_reservation', 'text'],
+  ['node_id', 'text'], ['lease_names', 'text[]'],
+  ['lease_tokens', 'bigint[]'],
+  // Every row the flush touches, to lock.
+  ['lock_h', 'text[]'], ['lock_r', 'text[]'], ['lock_k', 'text[]'],
+  // A merging row's expected stored body (NULL: no row is expected).
+  ['cas_h', 'text[]'], ['cas_r', 'text[]'], ['cas_k', 'text[]'],
+  ['cas_body', 'text[]'],
+  // Every upsert, the tombstone writes included.
+  ['up_h', 'text[]'], ['up_r', 'text[]'], ['up_k', 'text[]'],
+  ['up_body', 'text[]'], ['up_expires', 'bigint[]'],
+  ['up_sealed', 'text[]'],
+  // The upserts no tombstone may refuse (a store that keeps none).
+  ['plain_h', 'text[]'], ['plain_r', 'text[]'], ['plain_k', 'text[]'],
+  ['tombstone', 'text'],
+  // The deletes that leave no tombstone.
+  ['del_h', 'text[]'], ['del_r', 'text[]'], ['del_k', 'text[]'],
+  // `sts_sessions` (#350): SESSION_INDEX_UPSERT's fifteen columns.
+  ['ses_realm', 'text[]'], ['ses_key', 'text[]'],
+  ['ses_expires', 'bigint[]'], ['ses_last_seen', 'bigint[]'],
+  ['ses_started', 'bigint[]'], ['ses_subject', 'text[]'],
+  ['ses_username', 'text[]'], ['ses_chosen', 'boolean[]'],
+  ['ses_authenticated', 'boolean[]'], ['ses_kind', 'text[]'],
+  ['ses_rp_surface', 'text[]'], ['ses_parent', 'text[]'],
+  ['ses_backs_console', 'boolean[]'], ['ses_credential', 'text[]'],
+  ['ses_partner', 'text[]'],
+  ['sesdel_realm', 'text[]'], ['sesdel_key', 'text[]'],
+  // `sts_minted_index` (#820): an upserted row's index rows are replaced
+  // (if it was written), a deleted row's go, and the new set is filed.
+  ['ixup_h', 'text[]'], ['ixup_r', 'text[]'], ['ixup_k', 'text[]'],
+  ['ixgone_h', 'text[]'], ['ixgone_r', 'text[]'], ['ixgone_k', 'text[]'],
+  ['ixnew_h', 'text[]'], ['ixnew_r', 'text[]'], ['ixnew_i', 'text[]'],
+  ['ixnew_k', 'text[]'], ['ixnew_s', 'bigint[]'],
+  // The change log: a row per key, and for an upsert the row it describes
+  // (written only if that row was), NULL for a delete.
+  ['origin', 'text'], ['chg_kind', 'text[]'], ['chg_realm', 'text[]'],
+  ['chg_key', 'text[]'], ['chg_h', 'text[]'], ['chg_r', 'text[]'],
+  ['chg_k', 'text[]']
+];
+
+// `$n::type` of a parameter of MINTED_FLUSH, by name. Used to build the
+// statement once, at load; it throws for a name the layout lacks. Run at
+// require time, before `create()` is handed the driver's logger, so it has
+// no Entering/Leaving pair (`common/config_file.js`'s reason).
+function flushParam(name) {
+  for (let i = 0; i < MINTED_FLUSH_LAYOUT.length; i++) {
+    if (MINTED_FLUSH_LAYOUT[i][0] === name) {
+      return '$' + (i + 1) + '::' + MINTED_FLUSH_LAYOUT[i][1];
+    }
+  }
+  throw new Error('MINTED_FLUSH_LAYOUT has no parameter ' + name);
+}
+
+// The statement, built once from the layout. `{name}` is that parameter.
+// Run at require time, for `flushParam()`'s reason no Entering/Leaving.
+function buildMintedFlush() {
+  const p = function (text) {
+    return text.replace(/\{([a-z_]+)\}/g, function (all, name) {
+      return flushParam(name);
+    });
+  };
+  // A minted row named by three columns of an alias, against `ins`.
+  const written = function (alias) {
+    return 'EXISTS (SELECT 1 FROM ins WHERE ins.handle = ' + alias +
+      '.h AND ins.realm = ' + alias + '.r AND ins.key = ' + alias + '.k)';
+  };
+  const after = '(SELECT go FROM ok) AND (SELECT n FROM done) >= 0';
+  const text = p(
+    '/* sts:minted-flush */ ' +
+    'WITH oc AS MATERIALIZED (SELECT 1 FROM sts_cluster_claims WHERE ' +
+    '{claim_key} IS NOT NULL AND scope = \'' + ORIGIN_SCOPE + '\' AND ' +
+    'realm = \'\' AND key = {claim_key} AND ' +
+    'reservation = {claim_reservation} AND expires_at > ' + DB_NOW +
+    ' FOR SHARE), ' +
+    'nd AS MATERIALIZED (SELECT 1 FROM sts_cluster_nodes WHERE ' +
+    '{node_id} IS NOT NULL AND node_id = {node_id} AND left_at = 0 AND ' +
+    'expires_at > ' + DB_NOW + '), ' +
+    'ls AS MATERIALIZED (SELECT l.name FROM sts_cluster_leases l ' +
+    'JOIN unnest({lease_names}, {lease_tokens}) AS w(name, token) ' +
+    'ON l.name = w.name AND l.token = w.token WHERE ' +
+    '{node_id} IS NOT NULL AND l.holder = {node_id} AND l.expires_at > ' +
+    DB_NOW + ' FOR SHARE OF l), ' +
+    'fence AS MATERIALIZED (SELECT ({claim_key} IS NULL OR ' +
+    'EXISTS (SELECT 1 FROM oc)) AND ({node_id} IS NULL OR ' +
+    '(EXISTS (SELECT 1 FROM nd) AND (SELECT count(*) FROM ls) = ' +
+    'cardinality({lease_names}))) AS ok), ' +
+    'lk AS MATERIALIZED (SELECT handle, realm, key, body FROM sts_minted ' +
+    'WHERE (handle, realm, key) IN (SELECT u.h, u.r, u.k FROM ' +
+    'unnest({lock_h}, {lock_r}, {lock_k}) AS u(h, r, k)) AND ' +
+    '(SELECT ok FROM fence) ORDER BY handle, realm, key FOR UPDATE), ' +
+    'lkn AS MATERIALIZED (SELECT count(*) AS n FROM lk), ' +
+    'chk AS MATERIALIZED (SELECT count(*) AS bad FROM ' +
+    'unnest({cas_h}, {cas_r}, {cas_k}, {cas_body}) AS e(h, r, k, b) ' +
+    'LEFT JOIN lk ON lk.handle = e.h AND lk.realm = e.r AND ' +
+    'lk.key = e.k WHERE lk.body IS DISTINCT FROM e.b), ' +
+    'ok AS MATERIALIZED (SELECT f.ok AND c.bad = 0 AND l.n >= 0 AS go ' +
+    'FROM fence f CROSS JOIN chk c CROSS JOIN lkn l), ' +
+    'ins AS (INSERT INTO sts_minted (handle, realm, key, body, ' +
+    'written_at, expires_at, key_sealed) SELECT u.h, u.r, u.k, u.b, ' +
+    'now(), u.e, u.s FROM unnest({up_h}, {up_r}, {up_k}, {up_body}, ' +
+    '{up_expires}, {up_sealed}) AS u(h, r, k, b, e, s) WHERE ' +
+    '(SELECT go FROM ok) ORDER BY u.h, u.r, u.k ' +
+    'ON CONFLICT (handle, realm, key) DO UPDATE SET ' +
+    'body = EXCLUDED.body, written_at = now(), ' +
+    'expires_at = EXCLUDED.expires_at, key_sealed = EXCLUDED.key_sealed ' +
+    'WHERE sts_minted.body <> {tombstone} OR ' +
+    'EXCLUDED.body = {tombstone} OR (EXCLUDED.handle, EXCLUDED.realm, ' +
+    'EXCLUDED.key) IN (SELECT q.h, q.r, q.k FROM unnest({plain_h}, ' +
+    '{plain_r}, {plain_k}) AS q(h, r, k)) RETURNING handle, realm, key), ' +
+    'del AS (DELETE FROM sts_minted WHERE (handle, realm, key) IN ' +
+    '(SELECT u.h, u.r, u.k FROM unnest({del_h}, {del_r}, {del_k}) AS ' +
+    'u(h, r, k)) AND (SELECT go FROM ok) RETURNING handle), ' +
+    'done AS MATERIALIZED (SELECT (SELECT count(*) FROM ins) + ' +
+    '(SELECT count(*) FROM del) AS n), ' +
+    'ses AS (INSERT INTO sts_sessions (realm, key, expires_at, ' +
+    'last_seen_at, started_at, subject_key, username_key, chosen, ' +
+    'authenticated, kind, rp_surface, parent_key, backs_console, ' +
+    'credential_key, partner_relationship) SELECT s.realm, s.key, ' +
+    's.expires_at, s.last_seen_at, s.started_at, s.subject_key, ' +
+    's.username_key, s.chosen, s.authenticated, s.kind, s.rp_surface, ' +
+    's.parent_key, s.backs_console, s.credential_key, ' +
+    's.partner_relationship FROM unnest({ses_realm}, {ses_key}, ' +
+    '{ses_expires}, {ses_last_seen}, {ses_started}, {ses_subject}, ' +
+    '{ses_username}, {ses_chosen}, {ses_authenticated}, {ses_kind}, ' +
+    '{ses_rp_surface}, {ses_parent}, {ses_backs_console}, ' +
+    '{ses_credential}, {ses_partner}) AS s(realm, key, expires_at, ' +
+    'last_seen_at, started_at, subject_key, username_key, chosen, ' +
+    'authenticated, kind, rp_surface, parent_key, backs_console, ' +
+    'credential_key, partner_relationship) WHERE ' + after + ' AND ' +
+    'EXISTS (SELECT 1 FROM ins WHERE ins.handle = \'authn.sessions\' ' +
+    'AND ins.realm = s.realm AND ins.key = s.key) ' +
+    'ORDER BY s.realm, s.key ' +
+    SESSION_INDEX_UPSERT.slice(SESSION_INDEX_UPSERT.indexOf('ON CONFLICT')) +
+    ' RETURNING 1), ' +
+    'sdel AS (DELETE FROM sts_sessions WHERE (realm, key) IN (SELECT ' +
+    'u.r, u.k FROM unnest({sesdel_realm}, {sesdel_key}) AS u(r, k)) ' +
+    'AND ' + after + ' RETURNING 1), ' +
+    'ixd AS (DELETE FROM sts_minted_index AS x WHERE (x.handle, x.realm, ' +
+    'x.key) IN (SELECT u.h, u.r, u.k FROM unnest({ixup_h}, {ixup_r}, ' +
+    '{ixup_k}) AS u(h, r, k) WHERE ' + written('u') + ' UNION ALL ' +
+    'SELECT g.h, g.r, g.k FROM unnest({ixgone_h}, {ixgone_r}, ' +
+    '{ixgone_k}) AS g(h, r, k)) AND NOT EXISTS (SELECT 1 FROM ' +
+    'unnest({ixnew_h}, {ixnew_r}, {ixnew_i}, {ixnew_k}) AS ' +
+    'f(h, r, i, k) WHERE f.h = x.handle AND f.r = x.realm AND ' +
+    'f.i = x.index_key AND f.k = x.key) AND ' + after + ' RETURNING 1), ' +
+    // An index row the flush files again is KEPT by `ixd`, not deleted and
+    // re-inserted, so a sort row (schema version 25) whose `sort_at` moved
+    // is updated in place here, and an unchanged row is left alone.
+    'ixi AS (INSERT INTO sts_minted_index (handle, realm, index_key, ' +
+    'key, sort_at) SELECT f.h, f.r, f.i, f.k, f.s FROM unnest({ixnew_h}, ' +
+    '{ixnew_r}, {ixnew_i}, {ixnew_k}, {ixnew_s}) AS f(h, r, i, k, s) ' +
+    'WHERE ' + after + ' AND ' + written('f') + ' ORDER BY f.h, f.r, f.i, ' +
+    'f.k ON CONFLICT (handle, realm, index_key, key) DO UPDATE SET ' +
+    'sort_at = EXCLUDED.sort_at WHERE sts_minted_index.sort_at IS ' +
+    'DISTINCT FROM EXCLUDED.sort_at RETURNING 1), ' +
+    'chg AS (INSERT INTO sts_changes (origin, kind, realm, key) SELECT ' +
+    '{origin}, c.kind, c.realm, c.key FROM unnest({chg_kind}, ' +
+    '{chg_realm}, {chg_key}, {chg_h}, {chg_r}, {chg_k}) WITH ORDINALITY ' +
+    'AS c(kind, realm, key, h, r, k, ord) WHERE ' + after + ' AND ' +
+    '(c.h IS NULL OR ' + written('c') + ') ORDER BY c.ord RETURNING 1) ' +
+    'SELECT f.ok AS fence_ok, c.bad AS cas_bad, o.go AS go, ' +
+    '(SELECT count(*) FROM chg) AS changes, ' +
+    '(SELECT count(*) FROM ses) + (SELECT count(*) FROM sdel) + ' +
+    '(SELECT count(*) FROM ixd) + (SELECT count(*) FROM ixi) AS side, ' +
+    '(SELECT json_agg(json_build_array(u.h, u.r, u.k)) FROM ' +
+    'unnest({up_h}, {up_r}, {up_k}) AS u(h, r, k) WHERE NOT ' +
+    written('u') + ') AS unwritten, ' +
+    'CASE WHEN c.bad > 0 THEN (SELECT json_agg(json_build_array(e.h, ' +
+    'e.r, e.k, lk.body)) FROM unnest({cas_h}, {cas_r}, {cas_k}) AS ' +
+    'e(h, r, k) LEFT JOIN lk ON lk.handle = e.h AND lk.realm = e.r AND ' +
+    'lk.key = e.k) END AS current ' +
+    'FROM fence f CROSS JOIN chk c CROSS JOIN ok o');
+  return text;
+}
+
+const MINTED_FLUSH = buildMintedFlush();
+
+// ---------------------------------------------------------------------------
+// MINTED_FLUSH IS A NAMED (PREPARED) STATEMENT. Measured on postgres 18 for
+// ten rows: planned afresh at every flush it took 3–4 ms, most of it
+// planning thirteen CTEs; prepared on the connection, the server keeps a
+// generic plan after five runs and the statement took 0.6 ms. The generic
+// plan was read off `EXPLAIN (GENERIC_PLAN)` against 8081's own statistics
+// (9.8M minted rows): every table is reached through its primary key or
+// `sts_minted_index_key`, no sequential scan of a large table. The name is
+// per connection, so each pooled connection prepares it once.
+// ---------------------------------------------------------------------------
+const MINTED_FLUSH_NAME = 'sts_minted_flush_v1';
+
+// MINTED_FLUSH as a query (`{ name, text, values }`), its arrays in the
+// layout's order from an object naming them. A name the object lacks is an
+// empty array, or NULL for a scalar. Hot path (every minted flush): no
+// Entering/Leaving pair.
+function mintedFlushQuery(named) {
+  return {
+    name: MINTED_FLUSH_NAME,
+    text: MINTED_FLUSH,
+    values: MINTED_FLUSH_LAYOUT.map(function (one) {
+      const value = named[one[0]];
+      if (value !== undefined) {
+        return value;
+      }
+      return /\[\]$/.test(one[1]) ? [] : null;
+    })
+  };
+}
+
+// A minted row's identity in a flush: handle, realm and key. Hot path (every
+// row of every minted flush): no Entering/Leaving pair.
+function mintedIdOf(row) {
+  return String(row.handle) + '\n' + String(row.realm) + '\n' +
+    String(row.key);
+}
+
+// Compared as code units rather than with `localeCompare()`, because the
+// order has to be the same in every process whatever its locale (the
+// statement sorts again in the database's own order, which is the order the
+// locks are taken in). Hot path: no Entering/Leaving pair.
+function byMintedId(a, b) {
+  const left = mintedIdOf(a);
+  const right = mintedIdOf(b);
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+// ---------------------------------------------------------------------------
+// WHAT A FLUSH WILL WRITE, BEFORE ANY MERGE (2026-10-22, #820): one row per
+// key (ON CONFLICT cannot touch a row twice; a journal names each key once,
+// so this is belt and braces), and each row's kind:
+//
+//   * `merging` — an upsert of a store with `mergeRow`, written through the
+//     merge with the stored body (`resolveMerges()`), guarded by the
+//     tombstone;
+//   * `guarded` — an upsert of a store that keeps tombstones: an upsert of
+//     a key holding one does nothing and is reported refused;
+//   * `plain` — any other upsert;
+//   * `tombs` — a delete of a store that keeps tombstones, written as one;
+//   * `dels` — any other delete.
+//
+// `saved` holds a merging row's columns as `persistence_minted.js` built
+// them: a merge writes the MERGED record's expiry, index and lookups onto
+// the row, and a merge done again from another stored body must start from
+// these. Hot path (every minted flush): no Entering/Leaving pair.
+// ---------------------------------------------------------------------------
+function planMintedFlush(upserts, deletes) {
+  const plan = { upserts: upserts, deletes: deletes, touched: [],
+                 merging: [], guarded: [], plain: [], tombs: [], dels: [],
+                 saved: new Map() };
+  const seen = new Set();
+  upserts.map(function (row) {
+    return { row: row, upsert: true };
+  }).concat(deletes.map(function (row) {
+    return { row: row, upsert: false };
+  })).sort(function (a, b) {
+    return byMintedId(a.row, b.row);
+  }).forEach(function (one) {
+    const row = one.row;
+    const id = mintedIdOf(row);
+    if (seen.has(id)) {
+      return;
+    }
+    seen.add(id);
+    plan.touched.push(row);
+    if (one.upsert && typeof row.merge === 'function') {
+      plan.merging.push(row);
+      plan.saved.set(row, { expiresAt: row.expiresAt, index: row.index,
+                            lookups: row.lookups, sortAt: row.sortAt });
+    } else if (one.upsert && row.tombstone) {
+      plan.guarded.push(row);
+    } else if (one.upsert) {
+      plan.plain.push(row);
+    } else if (row.tombstone) {
+      plan.tombs.push(row);
+    } else {
+      plan.dels.push(row);
+    }
+  });
+  return plan;
+}
+
+// ---------------------------------------------------------------------------
+// THE MERGING ROWS AGAINST THE STORED BODIES `stored` NAMES (an id to a
+// body; an id it lacks is no row): the rule the flush has applied since
+// 2026-09-14 (#46 section 3), unchanged. A stored tombstone refuses the
+// upsert; a stored body that is not this copy's is handed to the store's
+// merge, and what comes back is written and reported in `merged`. Each row
+// starts from the columns `persistence_minted.js` built (`plan.saved`), so a
+// merge done again from a newer body is the merge that body asks for. Hot
+// path (every minted flush): no Entering/Leaving pair.
+// ---------------------------------------------------------------------------
+function resolveMerges(plan, stored) {
+  const out = { writes: [], refused: [], merged: [] };
+  plan.merging.forEach(function (row) {
+    const saved = plan.saved.get(row);
+    row.expiresAt = saved.expiresAt;
+    row.index = saved.index;
+    row.lookups = saved.lookups;
+    row.sortAt = saved.sortAt;
+    const found = stored.get(mintedIdOf(row));
+    if (found === TOMBSTONE) {
+      out.refused.push(row);
+      return;
+    }
+    let body = row.body;
+    if (found !== undefined && found !== row.body) {
+      const answer = row.merge(found);
+      if (answer && answer !== row.body) {
+        body = answer;
+        out.merged.push({ handle: row.handle, realm: row.realm,
+                          key: row.key, journalKey: row.journalKey,
+                          body: answer });
+      }
+    }
+    out.writes.push({ row: row, body: body });
+  });
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// A CHANGE-LOG ROW PER MINTED KEY, upserts and deletes alike — the receiver
+// re-reads `sts_minted` for each and applies what it finds, or removes what
+// it does not, so the two cases need no distinction here. A change row names
+// ONE key and a minted row is identified by the PAIR, so the two are packed
+// into it.
+//
+// **THE SEPARATOR WAS A LITERAL NUL UNTIL 2026-09-07, AND `sts_changes.key`
+// IS `text`.** PostgreSQL refuses a NUL in text, so this INSERT failed — and
+// it is in the minted flush, which means the sealed rows written with it
+// were rolled back too. Every minted flush was lost, reported once as
+// `invalid byte sequence for encoding "UTF8": 0x00` and then as "the service
+// is unaffected", which it was: it went on answering from memory, alone,
+// which is exactly what a request worker pool cannot do. This is the same
+// mistake `storedKey()` made and the second place it was made.
+//
+// base64url both halves, joined with '.', which is not in that alphabet —
+// same encoding as `storedKey()`, for the same reason, and nothing to
+// migrate because no row in the old shape was ever committed.
+//
+// `minted-own` IS A SECOND KIND AND NOT A FLAG, because the only thing that
+// reads it is a `WHERE kind <> …` on the barrier's target — see
+// latestBlockingChangeSeq(). A column would have had to be added to
+// `sts_changes` and indexed; a kind is already there and already selected on.
+// THE NAME, SEALED, where the row carries one (#222): the key column is a
+// digest, and a reader needs the NAME — to drop it from its own store on a
+// delete, which no digest can tell it. A sealed value is not base64url (it
+// holds '$'), so a reader tells the two forms apart. Hot path (every row of
+// every minted flush): no Entering/Leaving pair.
+// ---------------------------------------------------------------------------
+function mintedChangeRow(row) {
+  return { kind: row.own ? 'minted-own' : 'minted', realm: row.realm,
+           key: Buffer.from(String(row.handle), 'utf8')
+                      .toString('base64url') +
+                '.' +
+                (row.keySealed ? String(row.keySealed)
+                  : Buffer.from(String(row.key), 'utf8')
+                      .toString('base64url')) };
+}
+
+// `expires_at` (#333) is the store's own answer for the record, or NULL; see
+// `expiresAt` in common/realms.js. Hot path: no Entering/Leaving pair.
+function mintedExpiresOf(row) {
+  return Number(row.expiresAt) > 0 ? Math.floor(Number(row.expiresAt))
+                                   : null;
+}
+
+// ---------------------------------------------------------------------------
+// MINTED_FLUSH'S WRITES, NAMED (MINTED_FLUSH_LAYOUT), for a plan whose merges
+// are `resolved`. A merging row the tombstone refused is written nowhere and
+// logged nowhere; every row is still LOCKED (`lock_*`), as each row the flush
+// touches always was. The fence and the compare-and-set are the caller's.
+// Hot path (every minted flush): no Entering/Leaving pair.
+// ---------------------------------------------------------------------------
+function mintedFlushWrites(plan, resolved, origin) {
+  const named = {};
+  const column = function (rows, read) {
+    return rows.map(read);
+  };
+  const handles = function (rows) {
+    return column(rows, function (row) { return String(row.handle); });
+  };
+  const realmsOf = function (rows) {
+    return column(rows, function (row) { return String(row.realm); });
+  };
+  const keys = function (rows) {
+    return column(rows, function (row) { return String(row.key); });
+  };
+  named.lock_h = handles(plan.touched);
+  named.lock_r = realmsOf(plan.touched);
+  named.lock_k = keys(plan.touched);
+  // Every upsert in one statement, in one order: the guarded ones (merged
+  // or not), the plain ones and the tombstones written.
+  const kept = plan.guarded.map(function (row) {
+    return { row: row, body: row.body };
+  }).concat(resolved.writes);
+  const writes = kept.concat(plan.plain.map(function (row) {
+    return { row: row, body: row.body };
+  }), plan.tombs.map(function (row) {
+    return { row: { handle: row.handle, realm: row.realm, key: row.key,
+                    expiresAt: null, keySealed: row.keySealed },
+             body: TOMBSTONE };
+  })).sort(function (a, b) {
+    return byMintedId(a.row, b.row);
+  });
+  const written = writes.map(function (w) { return w.row; });
+  named.up_h = handles(written);
+  named.up_r = realmsOf(written);
+  named.up_k = keys(written);
+  named.up_body = writes.map(function (w) { return w.body; });
+  named.up_expires = written.map(mintedExpiresOf);
+  named.up_sealed = written.map(function (row) {
+    return String(row.keySealed || '');
+  });
+  named.plain_h = handles(plan.plain);
+  named.plain_r = realmsOf(plan.plain);
+  named.plain_k = keys(plan.plain);
+  named.tombstone = TOMBSTONE;
+  named.del_h = handles(plan.dels);
+  named.del_r = realmsOf(plan.dels);
+  named.del_k = keys(plan.dels);
+  // THE SESSION INDEX (#350), after the bodies, as each row's index write
+  // followed its body before: a body a tombstone refused writes none (the
+  // statement writes an index row only for a body `ins` returned).
+  const upserted = kept.map(function (w) {
+    return w.row;
+  }).concat(plan.plain);
+  const indexed = upserted.filter(function (row) {
+    return row.handle === 'authn.sessions' && row.index &&
+      typeof row.index === 'object';
+  }).sort(byMintedId);
+  const sessionColumns = ['ses_realm', 'ses_key', 'ses_expires',
+    'ses_last_seen', 'ses_started', 'ses_subject', 'ses_username',
+    'ses_chosen', 'ses_authenticated', 'ses_kind', 'ses_rp_surface',
+    'ses_parent', 'ses_backs_console', 'ses_credential', 'ses_partner'];
+  sessionColumns.forEach(function (name) {
+    named[name] = [];
+  });
+  indexed.forEach(function (row) {
+    sessionIndexParams(row.realm, row.key, row.index)
+      .forEach(function (value, i) {
+        named[sessionColumns[i]].push(value);
+      });
+  });
+  const gone = plan.tombs.concat(plan.dels);
+  const goneSessions = gone.filter(function (row) {
+    return row.handle === 'authn.sessions';
+  });
+  named.sesdel_realm = realmsOf(goneSessions);
+  named.sesdel_key = keys(goneSessions);
+  // AN ON-DEMAND STORE'S INDEX (#820, schema version 24), on the session
+  // index's rule. A row carrying `lookups` (an array, possibly empty) has
+  // its index rows replaced; a deleted row of an indexed store loses them.
+  const looked = upserted.filter(function (row) {
+    return Array.isArray(row.lookups);
+  });
+  named.ixup_h = handles(looked);
+  named.ixup_r = realmsOf(looked);
+  named.ixup_k = keys(looked);
+  const unindexed = gone.filter(function (row) {
+    return row.indexed === true;
+  });
+  named.ixgone_h = handles(unindexed);
+  named.ixgone_r = realmsOf(unindexed);
+  named.ixgone_k = keys(unindexed);
+  const filed = [];
+  looked.forEach(function (row) {
+    Array.from(new Set(row.lookups.map(String))).forEach(function (indexKey) {
+      filed.push({ handle: String(row.handle), realm: String(row.realm),
+                   indexKey: indexKey, key: String(row.key) });
+    });
+    // THE ROW'S SORT ROW (2026-10-22, #820), replaced with the others: one
+    // more index row whose `sort_at` is the store's `sortBy` value, what
+    // `minted.newest` orders by. A row with no value has none.
+    if (sortAtParam(row) !== null) {
+      filed.push({ handle: String(row.handle), realm: String(row.realm),
+                   indexKey: require('./minted_queries').SORT_INDEX_KEY,
+                   key: String(row.key), sortAt: row.sortAt });
+    }
+  });
+  named.ixnew_h = filed.map(function (one) { return one.handle; });
+  named.ixnew_r = filed.map(function (one) { return one.realm; });
+  named.ixnew_i = filed.map(function (one) { return one.indexKey; });
+  named.ixnew_k = filed.map(function (one) { return one.key; });
+  named.ixnew_s = filed.map(sortAtParam);
+  // THE CHANGE LOG, upserts then deletes as before; an upsert's row is
+  // written only if its body was (a refused upsert changed nothing, so it
+  // tells nobody anything).
+  const refused = new Set(resolved.refused);
+  const changes = plan.upserts.filter(function (row) {
+    return !refused.has(row);
+  }).map(function (row) {
+    return { change: mintedChangeRow(row), row: row };
+  }).concat(plan.deletes.map(function (row) {
+    return { change: mintedChangeRow(row), row: null };
+  }));
+  named.origin = origin;
+  named.chg_kind = changes.map(function (one) { return one.change.kind; });
+  named.chg_realm = changes.map(function (one) {
+    return String(one.change.realm || '');
+  });
+  named.chg_key = changes.map(function (one) {
+    return String(one.change.key || '');
+  });
+  named.chg_h = changes.map(function (one) {
+    return one.row ? String(one.row.handle) : null;
+  });
+  named.chg_r = changes.map(function (one) {
+    return one.row ? String(one.row.realm) : null;
+  });
+  named.chg_k = changes.map(function (one) {
+    return one.row ? String(one.row.key) : null;
+  });
+  return named;
+}
+
+// What MINTED_FLUSH answered: one row, always, from a database. `known` is
+// false for an answer with no row, which only a test's double gives. Hot
+// path (every minted flush): no Entering/Leaving pair.
+function mintedFlushAnswer(result) {
+  const row = (result && result.rows && result.rows[0]) || null;
+  const truth = function (value) {
+    return value === true || value === 't' || value === 'true';
+  };
+  const list = function (value) {
+    const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+    return Array.isArray(parsed) ? parsed : [];
+  };
+  const unwritten = new Set(list(row && row.unwritten).map(function (one) {
+    return mintedIdOf({ handle: one[0], realm: one[1], key: one[2] });
+  }));
+  let current = null;
+  if (row && row.current) {
+    current = new Map();
+    list(row.current).forEach(function (one) {
+      if (one[3] !== null && one[3] !== undefined) {
+        current.set(mintedIdOf({ handle: one[0], realm: one[1],
+                                 key: one[2] }), String(one[3]));
+      }
+    });
+  }
+  return { known: !!row, fenceOk: !!row && truth(row.fence_ok),
+           go: !!row && truth(row.go),
+           casBad: row ? Number(row.cas_bad) || 0 : 0,
+           unwritten: unwritten, current: current };
+}
 
 // ---------------------------------------------------------------------------
 // A LAPSED ORIGIN CLAIM IS NOT PURGED WITH THE OTHERS (2026-09-29, #351).
@@ -3445,6 +4081,32 @@ function create(options) {
   // database, single-cell mode, ldif's neighbour — has one database and
   // reads where it writes, exactly as before.
   // -------------------------------------------------------------------------
+  // -------------------------------------------------------------------------
+  // THE TALLY POOL (2026-10-22, #820): writes that are counters, not
+  // records — the shared rate-limit windows and the risk engine's counts,
+  // assessments and subjects — commit with `synchronous_commit = off`.
+  // Postgres flushes its log ONE fsync at a time, and on 8081 a sign-in made
+  // about eleven committing transactions, half of them these: 187 fsyncs a
+  // second at 3.5 ms each held the log flush two thirds of the time, and
+  // that was the sign-in rate's ceiling. Committed this way a write is
+  // visible at once and durable within the WAL writer's next flush
+  // (`wal_writer_delay`, 200 ms); a crash of POSTGRES (not of this service)
+  // can lose the last fraction of a second of them. What is lost is a few
+  // attempts uncounted, or a statistic one sign-in short — rcbj's call on
+  // 2026-10-22. Sessions, codes, tokens, the directory and every minted row
+  // stay on `pool`, durable at commit. Small: these are single statements.
+  // -------------------------------------------------------------------------
+  const tallyPool = knexStore.openPool(
+    Object.assign({}, clientOptions(),
+                  { options: '-c synchronous_commit=off' }),
+    { max: 2, idleTimeoutMillis: 30000 });
+  tallyPool.on('error', function (err) {
+    log.error(errorCodes.tag('STS-STORE-0030') +
+              'persistence: an idle postgres client of the tally pool ' +
+              'errored: ' + err.message + '. The pool will make a new one ' +
+              'on the next write.');
+  });
+
   const readUrl = String(options.readUrl || '').trim();
   // The read pool's connection options when it is a pool of its own, for
   // the bridge's thread (#349) — `readClientOptions()` below.
@@ -4274,19 +4936,32 @@ function create(options) {
 
   async function withTransaction(fn) {
     log.debug('Entering withTransaction().');
+    log.debug("Leaving withTransaction().");
+    return retryingConflicts('a transaction', function () {
+      return transactionOnce(fn);
+    });
+  }
+
+  // `once` run again on a deadlock or a serialization failure, as a whole
+  // transaction always was (2026-10-02): a transaction that `once` runs,
+  // or since 2026-10-22 (#820) ONE statement outside a transaction — the
+  // minted flush — which PostgreSQL rolls back whole in the same way.
+  // `what` names it in the line that says so.
+  async function retryingConflicts(what, once) {
+    log.debug('Entering retryingConflicts(). ' + what);
     for (let attempt = 0; ; attempt++) {
       try {
-        const out = await transactionOnce(fn);
-        log.debug("Leaving withTransaction().");
+        const out = await once();
+        log.debug("Leaving retryingConflicts().");
         return out;
       } catch (err) {
-        log.debug("Caught in withTransaction(): " +
+        log.debug("Caught in retryingConflicts(): " +
                   ((err && err.message) || err));
         if (!retryableConflict(err) || attempt >= DEADLOCK_RETRIES) {
-          log.debug("Leaving withTransaction(). Failed.");
+          log.debug("Leaving retryingConflicts(). Failed.");
           throw err;
         }
-        log.info('persistence: a transaction met ' +
+        log.info('persistence: ' + what + ' met ' +
                  (err.code === '40P01' ? 'a deadlock' :
                   'a serialization failure') + ' and was rolled back by ' +
                  'the database; running it again (attempt ' + (attempt + 2) +
@@ -4299,6 +4974,250 @@ function create(options) {
         });
       }
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // THE CHANGE ROWS A MINTED FLUSH WROTE, counted as recordChanges() counts
+  // what it inserts (2026-10-22, #820): held against a transaction's client
+  // until its COMMIT returns, or — for MINTED_FLUSH run as a statement of
+  // its own, which committed as it ran — added to the committed counts and
+  // announced at once (#630). The INSERT is MINTED_FLUSH's; this is the
+  // bookkeeping recordChanges() does beside its own INSERT.
+  // -------------------------------------------------------------------------
+  function noteChanges(client, rows) {
+    log.debug("Entering noteChanges(). " + rows.length + " row(s).");
+    if (!rows.length) {
+      log.debug("Leaving noteChanges(). Nothing written.");
+      return;
+    }
+    const kinds = [];
+    rows.forEach(function (row) {
+      if (kinds.indexOf(row.kind) < 0) {
+        kinds.push(row.kind);
+      }
+    });
+    if (client && uncommittedRows.has(client)) {
+      classifyRows(uncommittedRows.get(client), rows);
+      const held = uncommittedKinds.get(client) || [];
+      kinds.forEach(function (kind) {
+        if (held.indexOf(kind) < 0) {
+          held.push(kind);
+        }
+      });
+      uncommittedKinds.set(client, held);
+      log.debug("Leaving noteChanges(). Held for the COMMIT.");
+      return;
+    }
+    classifyRows(null, rows);
+    announce(kinds, rows.length);
+    log.debug("Leaving noteChanges(). Committed.");
+  }
+
+  // -------------------------------------------------------------------------
+  // THE BODY THIS PROCESS LAST COMMITTED FOR A MERGING ROW (2026-10-22,
+  // #820): what MINTED_FLUSH's compare-and-set expects the stored row to be,
+  // so that a flush merges with it and is still one round trip. A guess and
+  // never a fact — the statement checks it under the row's lock, and a
+  // wrong one costs a second round trip, never a wrong write. So a key not
+  // held here is guessed to have no row (a session just made), a tombstone
+  // is remembered as one, a failed flush forgets what it touched, and the
+  // map is bounded: the oldest entry goes first.
+  // -------------------------------------------------------------------------
+  const MINTED_BODIES_MAX = 2048;
+  const mintedBodies = new Map();
+
+  // Hot path (every merging row a flush commits): no Entering/Leaving pair.
+  function rememberMintedBody(id, body) {
+    mintedBodies.delete(id);
+    if (body === undefined) {
+      return;
+    }
+    mintedBodies.set(id, body);
+    if (mintedBodies.size > MINTED_BODIES_MAX) {
+      mintedBodies.delete(mintedBodies.keys().next().value);
+    }
+  }
+
+  // After a COMMIT: each merging row's body as written (a tombstone where
+  // one refused it); a tombstone written over a key held here; a key a
+  // delete removed forgotten (so it is guessed to have no row).
+  function rememberFlush(plan, resolved, refused) {
+    log.debug("Entering rememberFlush().");
+    const refusedRows = new Set(refused);
+    resolved.writes.forEach(function (w) {
+      rememberMintedBody(mintedIdOf(w.row),
+                         refusedRows.has(w.row) ? TOMBSTONE : w.body);
+    });
+    resolved.refused.forEach(function (row) {
+      rememberMintedBody(mintedIdOf(row), TOMBSTONE);
+    });
+    plan.guarded.forEach(function (row) {
+      const id = mintedIdOf(row);
+      if (refusedRows.has(row) && mintedBodies.has(id)) {
+        rememberMintedBody(id, TOMBSTONE);
+      }
+    });
+    plan.tombs.forEach(function (row) {
+      const id = mintedIdOf(row);
+      if (mintedBodies.has(id)) {
+        rememberMintedBody(id, TOMBSTONE);
+      }
+    });
+    plan.dels.forEach(function (row) {
+      mintedBodies.delete(mintedIdOf(row));
+    });
+    log.debug("Leaving rememberFlush().");
+  }
+
+  // The fence's half of MINTED_FLUSH (`checkFence()`'s three questions):
+  // this process's origin claim, and the node's membership and leases.
+  function flushFence() {
+    log.debug("Entering flushFence().");
+    const named = {};
+    if (originClaim) {
+      named.claim_key = originClaim.key;
+      named.claim_reservation = originClaim.reservation;
+    }
+    const wanted = fence ? fence() : null;
+    if (wanted && wanted.nodeId) {
+      const leases = (wanted.leases || []).filter(function (one) {
+        return one && one.name;
+      });
+      named.node_id = wanted.nodeId;
+      named.lease_names = leases.map(function (one) {
+        return String(one.name);
+      });
+      named.lease_tokens = leases.map(function (one) {
+        return String(one.token);
+      });
+    }
+    log.debug("Leaving flushFence().");
+    return named;
+  }
+
+  // What a committed flush decided: the refused rows (a merging row a
+  // stored tombstone refused, and a guarded upsert the statement did not
+  // write), the merged ones, and the change rows it wrote — counted on
+  // `client`, or at once (`noteChanges()`).
+  function settleMintedFlush(client, plan, resolved, answer) {
+    log.debug("Entering settleMintedFlush().");
+    const refused = resolved.refused.slice(0);
+    plan.guarded.concat(resolved.writes.map(function (w) {
+      return w.row;
+    })).forEach(function (row) {
+      if (answer.unwritten.has(mintedIdOf(row))) {
+        refused.push(row);
+      }
+    });
+    const skip = new Set(refused);
+    noteChanges(client, plan.upserts.filter(function (row) {
+      return !skip.has(row);
+    }).concat(plan.deletes).map(mintedChangeRow));
+    log.debug("Leaving settleMintedFlush(). " + refused.length +
+              " refused.");
+    return { refused: refused, merged: resolved.merged, resolved: resolved };
+  }
+
+  // -------------------------------------------------------------------------
+  // THE FLUSH AS A TRANSACTION: BEGIN, the fence, the merging rows locked
+  // and read, MINTED_FLUSH, COMMIT — the read-then-write the flush was
+  // until 2026-10-22, now four or five round trips rather than about
+  // eleven. Taken where the one statement cannot finish the flush: a fence
+  // that did not hold (`checkFence()` re-asserts a lapsed origin claim, or
+  // fails the write as it always did), and a compare-and-set that missed
+  // twice (another process writing the same rows as fast as this one).
+  // -------------------------------------------------------------------------
+  function flushMintedInTransaction(plan) {
+    log.debug("Entering flushMintedInTransaction().");
+    log.debug("Leaving flushMintedInTransaction().");
+    return withTransaction(function (client) {
+      // Only a merging row needs its body before the write; every other
+      // row is locked by MINTED_FLUSH itself, in the same order.
+      const locked = !plan.merging.length ? Promise.resolve(null)
+        : client.query(
+          'SELECT handle, realm, key, body FROM sts_minted WHERE ' +
+          '(handle, realm, key) IN (SELECT h, r, k FROM ' +
+          'unnest($1::text[], $2::text[], $3::text[]) AS u(h, r, k)) ' +
+          'ORDER BY handle, realm, key FOR UPDATE',
+          [plan.touched.map(function (row) { return String(row.handle); }),
+           plan.touched.map(function (row) { return String(row.realm); }),
+           plan.touched.map(function (row) { return String(row.key); })]);
+      return locked.then(function (r) {
+        const stored = new Map();
+        ((r && r.rows) || []).forEach(function (found) {
+          stored.set(mintedIdOf(found), found.body);
+        });
+        const resolved = resolveMerges(plan, stored);
+        return client.query(mintedFlushQuery(
+          mintedFlushWrites(plan, resolved, processId)))
+          .then(function (answer) {
+            return settleMintedFlush(client, plan, resolved,
+                                     mintedFlushAnswer(answer));
+          });
+      });
+    });
+  }
+
+  // How many times the one statement is sent with a compare-and-set before
+  // the flush is made a transaction: the guess, and the bodies the miss
+  // answered with.
+  const MINTED_CAS_ATTEMPTS = 2;
+
+  // -------------------------------------------------------------------------
+  // A MINTED FLUSH (2026-10-22, #820): MINTED_FLUSH, one round trip, sent
+  // outside a transaction. A flush with merging rows expects each stored
+  // body (`mintedBodies`, or no row); a miss answers the bodies stored, the
+  // merges are done again from them and the statement is sent again. A fence
+  // that did not hold, or a second miss, is the transaction above.
+  // -------------------------------------------------------------------------
+  async function flushMinted(plan) {
+    log.debug("Entering flushMinted().");
+    let expected = new Map();
+    plan.merging.forEach(function (row) {
+      const id = mintedIdOf(row);
+      if (mintedBodies.has(id)) {
+        expected.set(id, mintedBodies.get(id));
+      }
+    });
+    for (let attempt = 0; attempt < MINTED_CAS_ATTEMPTS; attempt++) {
+      const resolved = resolveMerges(plan, expected);
+      const named = Object.assign(mintedFlushWrites(plan, resolved,
+                                                    processId),
+                                  flushFence());
+      const wanted = expected;
+      named.cas_h = plan.merging.map(function (row) {
+        return String(row.handle);
+      });
+      named.cas_r = plan.merging.map(function (row) {
+        return String(row.realm);
+      });
+      named.cas_k = plan.merging.map(function (row) {
+        return String(row.key);
+      });
+      named.cas_body = plan.merging.map(function (row) {
+        const body = wanted.get(mintedIdOf(row));
+        return body === undefined ? null : body;
+      });
+      const query = mintedFlushQuery(named);
+      const answer = mintedFlushAnswer(await retryingConflicts(
+        'a minted flush', function () {
+          return pool.query(query);
+        }));
+      if (!answer.known || !answer.fenceOk) {
+        log.debug("Leaving flushMinted(). The fence did not hold; as a " +
+                  "transaction.");
+        return flushMintedInTransaction(plan);
+      }
+      if (answer.go) {
+        log.debug("Leaving flushMinted(). One statement, attempt " +
+                  (attempt + 1) + ".");
+        return settleMintedFlush(null, plan, resolved, answer);
+      }
+      expected = answer.current || new Map();
+    }
+    log.debug("Leaving flushMinted(). The stored rows kept moving; as a " +
+              "transaction.");
+    return flushMintedInTransaction(plan);
   }
 
   function transactionOnce(fn) {
@@ -4872,6 +5791,9 @@ function create(options) {
       }).then(function () {
         // The read replica's pool, when it is a pool of its own (#98).
         return readPool !== pool ? readPool.end() : null;
+      }).then(function () {
+        // The tally pool (#820).
+        return tallyPool.end();
       }).then(function () {
         // The liveness connection, last: leaving the cluster and giving the
         // origin back were its final statements.
@@ -5642,352 +6564,85 @@ function create(options) {
       });
     },
 
-    // ONE TRANSACTION FOR THE WHOLE BATCH, for `saveDirectory()`'s reason: a
+    // THE KEYS OF A KEY-RESIDENT ON-DEMAND STORE (#820 part 2): the key
+    // column of every live row, and nothing else — no body is read, so none
+    // is opened. A process holds these to answer "is it there?" without the
+    // store; see `realms.map()`'s `keysResident`.
+    loadMintedKeys: function (handles, realmIds, nowMs) {
+      log.debug("Entering loadMintedKeys().");
+      log.debug("Leaving loadMintedKeys().");
+      if (!handles || !handles.length) {
+        return Promise.resolve([]);
+      }
+      return readPool.query(
+        'SELECT handle, realm, key FROM sts_minted WHERE handle = ANY($1::' +
+        'text[]) AND realm = ANY($2::text[]) AND body <> $3 AND ' +
+        '(expires_at IS NULL OR expires_at > $4)',
+        [handles.map(String), (realmIds || []).map(String), TOMBSTONE,
+         Number(nowMs) || Date.now()]
+      ).then(function (r) {
+        return (r.rows || []).map(function (row) {
+          return { handle: String(row.handle), realm: String(row.realm),
+                   key: String(row.key) };
+        });
+      });
+    },
+
+    // ONE COMMIT FOR THE WHOLE BATCH, for `saveDirectory()`'s reason: a
     // request that ended a session and started another must not be able to
-    // land half-written. It is a SEPARATE transaction from the directory's,
-    // which `persistence.js` argues where it calls this.
+    // land half-written. It is a SEPARATE commit from the directory's, which
+    // `persistence.js` argues where it calls this. Since 2026-10-22 (#820)
+    // that commit is one statement, MINTED_FLUSH, and not a transaction of
+    // about eleven — see MINTED_FLUSH for the order inside it and why two
+    // flushes still take their locks in one order, and `flushMinted()` for
+    // when it is a transaction after all.
+    //
+    // **IN ONE ORDER, BY PRIMARY KEY, UPSERTS AND DELETES INTERLEAVED
+    // (2026-09-12).** Each statement takes a row lock that is held to COMMIT,
+    // and every request worker flushes into this table at once. The
+    // statements went in journal order — upserts, then deletes — so two
+    // workers touching the same two rows could each lock one and wait on the
+    // other: `deadlock detected`, about a hundred and twelve times in one
+    // dispatched run. Every one of those failed the whole flush, put its keys
+    // back, and made the next flush bigger. Every row's lock is taken first,
+    // in (handle, realm, key) order, which is what makes a cycle impossible
+    // rather than rare.
+    // ---------------------------------------------------------------------
+    // TWO KINDS OF ROW DECLARED BY THEIR STORE (2026-09-14, #46 section 3),
+    // and a row of either is written in the same lock order as the rest:
+    //
+    //   * `tombstone` — a delete leaves TOMBSTONE behind and an upsert of a
+    //     key holding one does nothing and is reported in `refused`, so a
+    //     node holding an old copy cannot put back a session, a code or a
+    //     token another node ended. See TOMBSTONE above.
+    //   * `merge(storedBody)` — an in-place edit two nodes can make to one
+    //     row (a session's relying-party lists, its upgrade from an arrival
+    //     to a sign-in). The row is merged with the body stored under the
+    //     row's lock (`resolveMerges()`, compared and set by MINTED_FLUSH),
+    //     handed to the store's merge (which opens, merges and seals — this
+    //     driver never holds a key), and what comes back is written and
+    //     reported in `merged` for the caller to apply to its own copy.
+    // ---------------------------------------------------------------------
     saveMinted: function (upserts, deletes) {
       log.debug('Entering the postgres driver saveMinted(). ' +
                 upserts.length + ' upsert(s), ' + deletes.length +
                 ' delete(s).');
-      // **IN ONE ORDER, BY PRIMARY KEY, UPSERTS AND DELETES INTERLEAVED
-      // (2026-09-12).** Each statement takes a row lock that is held to COMMIT,
-      // and every request worker flushes into this table at once. The
-      // statements went in journal order — upserts, then deletes — so two
-      // workers touching the same two rows could each lock one and wait on the
-      // other: `deadlock detected`, about a hundred and twelve times in one
-      // dispatched run. Every one of those failed the whole flush, put its keys
-      // back, and made the next flush bigger. Sorting on (handle, realm, key)
-      // gives every transaction the same lock order, which is what makes a
-      // cycle impossible rather than rare. Compared as code units rather than
-      // with `localeCompare()`, because the order has to be the same in every
-      // process whatever its locale.
-      const statements = upserts.map(function (row) {
-        return { row: row, upsert: true };
-      }).concat(deletes.map(function (row) {
-        return { row: row, upsert: false };
-      })).sort(function (a, b) {
-        const left = [a.row.handle, a.row.realm, a.row.key].map(String);
-        const right = [b.row.handle, b.row.realm, b.row.key].map(String);
-        for (let i = 0; i < 3; i++) {
-          if (left[i] !== right[i]) {
-            return left[i] < right[i] ? -1 : 1;
-          }
-        }
-        return 0;
-      });
-      // ---------------------------------------------------------------------
-      // TWO KINDS OF ROW DECLARED BY THEIR STORE (2026-09-14, #46 section 3),
-      // and a row of either is written in the same lock order as the rest:
-      //
-      //   * `tombstone` — a delete leaves TOMBSTONE behind and an upsert of a
-      //     key holding one does nothing and is reported in `refused`, so a
-      //     node holding an old copy cannot put back a session, a code or a
-      //     token another node ended. See TOMBSTONE above.
-      //   * `merge(storedBody)` — an in-place edit two nodes can make to one
-      //     row (a session's relying-party lists, its upgrade from an arrival
-      //     to a sign-in). The row is read `FOR UPDATE`, handed to the store's
-      //     merge (which opens, merges and seals — this driver never holds a
-      //     key), and what comes back is written and reported in `merged` for
-      //     the caller to apply to its own copy.
-      // ---------------------------------------------------------------------
-      const refused = [];
-      const merged = [];
-      const skip = new Set();
+      const plan = planMintedFlush(upserts, deletes);
       log.debug("Leaving saveMinted().");
-      return withTransaction(function (client) {
-        // -------------------------------------------------------------------
-        // A FLUSH IS A FEW SET-BASED STATEMENTS, NOT ONE PER ROW (2026-10-21).
-        //
-        // Every row was its own statement, in sequence on one connection —
-        // a session row three (its lock, its guarded write, its index row)
-        // — and a process flushes one transaction at a time with every
-        // request's answer waiting for its commit. On 8081 under a sign-in
-        // load a flush averaged 36 ms for 17 rows and a worker had one in
-        // flight 64-74% of the time: that wait was the sign-in rate's cap.
-        // The same writes go as at most seven statements, whatever the
-        // number of rows:
-        //
-        //   1. EVERY ROW THE FLUSH TOUCHES, upserts and deletes alike, locked
-        //      in one SELECT … FOR UPDATE in (handle, realm, key) order — the
-        //      one order the per-row statements took their locks in, which is
-        //      what keeps two processes flushing overlapping rows from
-        //      deadlocking (`tests/postgres_minted_writes.js`). It reads the
-        //      merging rows' stored bodies on the way. A key no row holds yet
-        //      is locked by its INSERT, and each INSERT inserts in that order;
-        //   2. the guarded upserts (merged rows, and rows a tombstone may
-        //      refuse) in one INSERT … RETURNING — a row not returned is one
-        //      a tombstone refused, exactly as rowCount 0 was;
-        //   3. the plain upserts in one INSERT;
-        //   4. the tombstones written in one INSERT;
-        //   5. the plain deletes in one DELETE;
-        //   6. and 7. the session index's rows upserted and deleted, one
-        //      statement each, after the bodies as before.
-        // -------------------------------------------------------------------
-        const idOf = function (row) {
-          return String(row.handle) + '\n' + String(row.realm) + '\n' +
-            String(row.key);
-        };
-        const merging = [];
-        const guarded = [];
-        const plain = [];
-        const tombs = [];
-        const dels = [];
-        const seen = new Set();
-        statements.forEach(function (one) {
-          const row = one.row;
-          // One row per key in a statement: ON CONFLICT cannot touch a row
-          // twice. A journal names each key once; this is belt and braces.
-          if (seen.has(idOf(row))) {
-            return;
-          }
-          seen.add(idOf(row));
-          if (one.upsert && typeof row.merge === 'function') {
-            merging.push(row);
-          } else if (one.upsert && row.tombstone) {
-            guarded.push({ row: row, body: row.body });
-          } else if (one.upsert) {
-            plain.push({ row: row, body: row.body });
-          } else if (row.tombstone) {
-            tombs.push(row);
-          } else {
-            dels.push(row);
-          }
-        });
-        const byId = function (a, b) {
-          return idOf(a.row) < idOf(b.row) ? -1 : 1;
-        };
-        // `expires_at` (#333) is the store's own answer for the record, or
-        // NULL; see `expiresAt` in common/realms.js.
-        const expiresOf = function (row) {
-          return Number(row.expiresAt) > 0 ? Math.floor(Number(row.expiresAt))
-                                           : null;
-        };
-        const writeRows = function (list, isGuarded) {
-          if (!list.length) {
-            return Promise.resolve(null);
-          }
-          return client.query(
-            'INSERT INTO sts_minted (handle, realm, key, body, written_at, ' +
-            'expires_at, key_sealed) SELECT u.h, u.r, u.k, u.b, now(), u.e, ' +
-            'u.s FROM unnest($1::text[], $2::text[], $3::text[], ' +
-            '$4::text[], $5::bigint[], $6::text[]) AS u(h, r, k, b, e, s) ' +
-            'ORDER BY u.h, u.r, u.k ' +
-            'ON CONFLICT (handle, realm, key) DO UPDATE SET ' +
-            'body = EXCLUDED.body, written_at = now(), ' +
-            'expires_at = EXCLUDED.expires_at, ' +
-            'key_sealed = EXCLUDED.key_sealed' +
-            (isGuarded ? ' WHERE sts_minted.body <> $7 ' +
-                         'RETURNING handle, realm, key' : ''),
-            [list.map(function (w) { return String(w.row.handle); }),
-             list.map(function (w) { return String(w.row.realm); }),
-             list.map(function (w) { return String(w.row.key); }),
-             list.map(function (w) { return w.body; }),
-             list.map(function (w) { return expiresOf(w.row); }),
-             list.map(function (w) { return String(w.row.keySealed || ''); })]
-              .concat(isGuarded ? [TOMBSTONE] : [])
-          ).then(function (r) {
-            if (!isGuarded) {
-              return r;
-            }
-            const written = new Set((r.rows || []).map(function (one) {
-              return idOf(one);
-            }));
-            list.forEach(function (w) {
-              if (!written.has(idOf(w.row))) {
-                refused.push(w.row);
-                skip.add(w.row);
-              }
-            });
-            return r;
-          });
-        };
-        let chain = Promise.resolve();
-        const touched = statements.map(function (one) {
-          return one.row;
-        });
-        if (touched.length) {
-          chain = chain.then(function () {
-            return client.query(
-              'SELECT handle, realm, key, body FROM sts_minted WHERE ' +
-              '(handle, realm, key) IN (SELECT h, r, k FROM ' +
-              'unnest($1::text[], $2::text[], $3::text[]) AS u(h, r, k)) ' +
-              'ORDER BY handle, realm, key FOR UPDATE',
-              [touched.map(function (row) { return String(row.handle); }),
-               touched.map(function (row) { return String(row.realm); }),
-               touched.map(function (row) { return String(row.key); })]
-            ).then(function (r) {
-              const stored = new Map();
-              (r.rows || []).forEach(function (found) {
-                stored.set(idOf(found), found.body);
-              });
-              merging.forEach(function (row) {
-                const found = stored.get(idOf(row));
-                if (found === TOMBSTONE) {
-                  refused.push(row);
-                  skip.add(row);
-                  return;
-                }
-                let body = row.body;
-                if (found !== undefined && found !== row.body) {
-                  const answer = row.merge(found);
-                  if (answer && answer !== row.body) {
-                    body = answer;
-                    merged.push({ handle: row.handle, realm: row.realm,
-                                  key: row.key, journalKey: row.journalKey,
-                                  body: answer });
-                  }
-                }
-                guarded.push({ row: row, body: body });
-              });
-            });
-          });
-        }
-        chain = chain.then(function () {
-          return writeRows(guarded.sort(byId), true);
-        }).then(function () {
-          return writeRows(plain.sort(byId), false);
-        }).then(function () {
-          return writeRows(tombs.map(function (row) {
-            return { row: { handle: row.handle, realm: row.realm,
-                            key: row.key, expiresAt: null,
-                            keySealed: row.keySealed },
-                     body: TOMBSTONE };
-          }).sort(byId), false);
-        }).then(function () {
-          if (!dels.length) {
-            return null;
-          }
-          return client.query(
-            'DELETE FROM sts_minted WHERE (handle, realm, key) IN (SELECT ' +
-            'h, r, k FROM unnest($1::text[], $2::text[], $3::text[]) AS ' +
-            'u(h, r, k))',
-            [dels.map(function (row) { return String(row.handle); }),
-             dels.map(function (row) { return String(row.realm); }),
-             dels.map(function (row) { return String(row.key); })]);
-        }).then(function () {
-          // THE SESSION INDEX, after the bodies, as each row's index write
-          // followed its body before: a body a tombstone refused writes none.
-          const indexed = guarded.concat(plain).map(function (w) {
-            return w.row;
-          }).filter(function (row) {
-            return row.handle === 'authn.sessions' && !skip.has(row) &&
-              row.index && typeof row.index === 'object';
-          }).sort(function (a, b) {
-            return idOf(a) < idOf(b) ? -1 : 1;
-          });
-          const gone = tombs.concat(dels).filter(function (row) {
-            return row.handle === 'authn.sessions';
-          });
-          let side = Promise.resolve(null);
-          if (indexed.length) {
-            side = side.then(function () {
-              return upsertSessionIndexRows(client, indexed);
-            });
-          }
-          if (gone.length) {
-            side = side.then(function () {
-              return client.query(
-                'DELETE FROM sts_sessions WHERE (realm, key) IN (SELECT r, ' +
-                'k FROM unnest($1::text[], $2::text[]) AS u(r, k))',
-                [gone.map(function (row) { return String(row.realm); }),
-                 gone.map(function (row) { return String(row.key); })]);
-            });
-          }
-          // AN ON-DEMAND STORE'S INDEX (#820, schema version 24), in the
-          // same transaction as the bodies and on the session index's rule:
-          // a body the tombstone guard refused writes none. A row carrying
-          // `lookups` (an array, possibly empty) has its index rows
-          // replaced; a deleted row of an indexed store loses them.
-          const looked = guarded.concat(plain).map(function (w) {
-            return w.row;
-          }).filter(function (row) {
-            return !skip.has(row) && Array.isArray(row.lookups);
-          });
-          const unindexed = looked.concat(tombs.concat(dels).filter(
-            function (row) {
-              return row.indexed === true;
-            }));
-          if (unindexed.length) {
-            side = side.then(function () {
-              return client.query(MINTED_INDEX_DELETE,
-                [unindexed.map(function (row) { return String(row.handle); }),
-                 unindexed.map(function (row) { return String(row.realm); }),
-                 unindexed.map(function (row) { return String(row.key); })]);
-            });
-          }
-          const filed = [];
-          looked.forEach(function (row) {
-            Array.from(new Set(row.lookups.map(String))).forEach(
-              function (indexKey) {
-                filed.push({ handle: String(row.handle),
-                             realm: String(row.realm), indexKey: indexKey,
-                             key: String(row.key) });
-              });
-          });
-          if (filed.length) {
-            side = side.then(function () {
-              return client.query(MINTED_INDEX_INSERT,
-                [filed.map(function (one) { return one.handle; }),
-                 filed.map(function (one) { return one.realm; }),
-                 filed.map(function (one) { return one.indexKey; }),
-                 filed.map(function (one) { return one.key; })]);
-            });
-          }
-          return side;
-        });
-        return chain.then(function () {
-          // A LOG ROW PER MINTED KEY, upserts and deletes alike — the receiver
-          // re-reads `sts_minted` for each and applies what it finds, or
-          // removes what it does not, so the two cases need no distinction
-          // here. A change row names ONE key and a minted row is identified by
-          // the PAIR, so the two are packed into it.
-          //
-          // **THE SEPARATOR WAS A LITERAL NUL UNTIL 2026-09-07, AND
-          // `sts_changes.key` IS `text`.** PostgreSQL refuses a NUL in text, so
-          // this INSERT failed — and it is the last statement in the minted
-          // transaction, which means the sealed rows written just above it were
-          // rolled back too. Every minted flush was lost, reported once as
-          // `invalid byte sequence for encoding "UTF8": 0x00` and then as "the
-          // service is unaffected", which it was: it went on answering from
-          // memory, alone, which is exactly what a request worker pool cannot
-          // do. This is the same mistake `storedKey()` made and the second
-          // place it was made.
-          //
-          // base64url both halves, joined with '.', which is not in that
-          // alphabet — same encoding as `storedKey()`, for the same reason, and
-          // nothing to migrate because no row in the old shape was ever
-          // committed.
-          return recordChanges(client,
-                               upserts.filter(function (row) {
-                                 // A REFUSED UPSERT CHANGED NOTHING, so it
-                                 // tells nobody anything.
-                                 return !skip.has(row);
-                               }).concat(deletes).map(function (row) {
-            // `minted-own` IS A SECOND KIND AND NOT A FLAG, because the only
-            // thing that reads it is a `WHERE kind <> …` on the barrier's
-            // target — see latestBlockingChangeSeq(). A column would have had
-            // to be added to `sts_changes` and indexed; a kind is already
-            // there and already selected on.
-            // THE NAME, SEALED, where the row carries one (#222): the key
-            // column is a digest, and a reader needs the NAME — to drop it
-            // from its own store on a delete, which no digest can tell it. A
-            // sealed value is not base64url (it holds '$'), so a reader tells
-            // the two forms apart.
-            return { kind: row.own ? 'minted-own' : 'minted', realm: row.realm,
-                     key: Buffer.from(String(row.handle), 'utf8')
-                                .toString('base64url') +
-                          '.' +
-                          (row.keySealed ? String(row.keySealed)
-                            : Buffer.from(String(row.key), 'utf8')
-                                .toString('base64url')) };
-          }));
-        });
-      }).then(function () {
+      return flushMinted(plan).then(function (settled) {
+        rememberFlush(plan, settled.resolved, settled.refused);
         log.debug('Leaving the postgres driver saveMinted(). ' +
-                  refused.length + ' refused by a tombstone, ' +
-                  merged.length + ' merged.');
-        return { refused: refused, merged: merged };
+                  settled.refused.length + ' refused by a tombstone, ' +
+                  settled.merged.length + ' merged.');
+        return { refused: settled.refused, merged: settled.merged };
+      }, function (err) {
+        // Nothing of it was committed, and what the rows hold now is not
+        // known here: the next flush of them asks the store again.
+        log.debug("Caught in saveMinted(): " + ((err && err.message) || err));
+        plan.touched.forEach(function (row) {
+          mintedBodies.delete(mintedIdOf(row));
+        });
+        throw err;
       });
     },
 
@@ -6099,9 +6754,13 @@ function create(options) {
     // one bind per column per row instead of building a composite string that
     // both ends would have to agree how to escape.
     // -----------------------------------------------------------------------
-    readMintedMany: function (refs) {
+    // `opts.primary` (#820): from the primary even where reads go to a
+    // replica — an on-demand store's warm-up must not hold a row older than
+    // the one its synchronous read would have answered.
+    readMintedMany: function (refs, opts) {
       log.debug('Entering the postgres driver readMintedMany(). ' +
                 (refs || []).length + ' ref(s).');
+      const asking = opts && opts.primary ? pool : readPool;
       const list = (refs || []);
       if (!list.length) {
         log.debug("Leaving readMintedMany().");
@@ -6115,7 +6774,7 @@ function create(options) {
         binds.push(String(ref.handle), String(ref.realm), String(ref.key));
       });
       log.debug("Leaving readMintedMany().");
-      return readPool.query(
+      return asking.query(
         'SELECT m.handle, m.realm, m.key, m.body, ' +
         '(extract(epoch from m.written_at) * 1000)::bigint AS written_ms ' +
         'FROM sts_minted m JOIN (VALUES ' + values.join(', ') +
@@ -6476,6 +7135,30 @@ function create(options) {
         });
     },
 
+    // AN ON-DEMAND STORE'S QUESTIONS ON THE READ POOL (2026-10-22, #820):
+    // `sessionIndexQuery()`'s arrangement for `minted_queries.js`, so a
+    // console page that lists the newest rows of a store, counts it or
+    // finds one index key's rows waits on the store without standing its
+    // event loop still in the bridge. The rows come back sealed, and the
+    // caller opens them.
+    mintedQuery: function (name, args) {
+      log.debug("Entering mintedQuery(). " + name);
+      const mintedQueries = require('./minted_queries');
+      let statement;
+      try {
+        statement = mintedQueries.build(name, args);
+      } catch (e) {
+        log.debug("Caught in mintedQuery(): " + ((e && e.message) || e));
+        log.debug("Leaving mintedQuery(). Unknown query.");
+        return Promise.reject(e);
+      }
+      log.debug("Leaving mintedQuery().");
+      return readPool.query(statement.text, statement.values)
+        .then(function (r) {
+          return mintedQueries.answerOf(name, r.rows || []);
+        });
+    },
+
     // WHAT THE BRIDGE'S THREAD DIALS (#349 phase 3): the read pool's own
     // connection options — the same database, the same TLS decision — so
     // the thread is one more client of this store and never a second,
@@ -6563,17 +7246,43 @@ function create(options) {
         [rows.map(function (one) { return String(one.handle); }),
          rows.map(function (one) { return String(one.realm); }),
          rows.map(function (one) { return String(one.indexKey); }),
-         rows.map(function (one) { return String(one.key); })]
+         rows.map(function (one) { return String(one.key); }),
+         rows.map(sortAtParam)]
       ).then(function (r) {
         return r.rowCount || 0;
       });
+    },
+
+    // A LEGACY ROW'S EXPIRY, FROM WHEN IT WAS WRITTEN (#820 part 2): every
+    // live row of one store with no `expires_at` is given `written_at` plus
+    // `addMs`, in batches, so the expiry purge can delete it once nothing
+    // restores the store whole. No body is read and no change is written:
+    // the column is the store's bookkeeping, not a row's content.
+    backfillMintedExpiry: async function (handle, addMs) {
+      log.debug("Entering backfillMintedExpiry(). " + handle);
+      let total = 0;
+      for (;;) {
+        const r = await pool.query(
+          'UPDATE sts_minted SET expires_at = (extract(epoch FROM ' +
+          'written_at) * 1000)::bigint + $2 WHERE ctid IN (SELECT ctid FROM ' +
+          'sts_minted WHERE handle = $1 AND expires_at IS NULL AND body <> ' +
+          '$3 LIMIT 5000)', [String(handle), Math.max(0, Number(addMs) || 0),
+                             TOMBSTONE]);
+        total += r.rowCount || 0;
+        if (!r.rowCount) {
+          break;
+        }
+      }
+      log.debug("Leaving backfillMintedExpiry(). " + total);
+      return total;
     },
 
     markMintedIndexed: function (handle) {
       log.debug("Entering markMintedIndexed(). " + handle);
       log.debug("Leaving markMintedIndexed().");
       return pool.query(MINTED_INDEX_INSERT,
-        [[String(handle)], [''], [MINTED_INDEX_MARK], [MINTED_INDEX_MARK]]);
+        [[String(handle)], [''], [MINTED_INDEX_MARK], [MINTED_INDEX_MARK],
+         [null]]);
     },
 
     // One `sts_sessions` row, in its own transaction. Apply repairs through
@@ -7399,7 +8108,7 @@ function create(options) {
       log.debug("Entering countWindow(). scope=" + scope);
       const span = Math.max(1, Math.floor(Number(windowMs) || 0));
       log.debug("Leaving countWindow().");
-      return pool.query(
+      return tallyPool.query(
         'INSERT INTO sts_cluster_windows (scope, realm, key, count, ' +
         'window_ends_at, origin) VALUES ($1, $2, $3, 1, ' + DB_NOW +
         ' + $4::bigint, $5) ON CONFLICT (scope, realm, key) DO UPDATE SET ' +
@@ -7440,7 +8149,7 @@ function create(options) {
     clearWindow: function (scope, realmId, key) {
       log.debug("Entering clearWindow(). scope=" + scope);
       log.debug("Leaving clearWindow().");
-      return pool.query(
+      return tallyPool.query(
         'DELETE FROM sts_cluster_windows WHERE scope = $1 AND realm = $2 AND ' +
         'key = $3', [String(scope), String(realmId || ''), String(key)]
       ).then(function (r) {
@@ -8217,7 +8926,7 @@ function create(options) {
     riskRecordFailure: function (row) {
       log.debug("Entering riskRecordFailure(). door=" + row.door);
       log.debug("Leaving riskRecordFailure().");
-      return pool.query(
+      return tallyPool.query(
         'INSERT INTO sts_risk_failures (realm, at, door, subject, name_hmac, ' +
         'address_sealed, address_prefix, asn, error_code, origin) VALUES ' +
         '($1, $2, $3, $4, $5, $6, $7::cidr, $8, $9, $10) RETURNING id',
@@ -8318,13 +9027,42 @@ function create(options) {
       });
     },
 
+    // EVERY DISTINCT-VALUE COUNT ONE ASSESSMENT ASKS, IN ONE STATEMENT
+    // (2026-10-22, #820): `riskDistinctValues()` once per level, awaited one
+    // after another, was about seven round trips per sign-in on 8081 and
+    // 8,310 statements a minute. Each ask is `{ feature, prefix }`; the
+    // answer is the counts in the same order.
+    riskDistinctValuesMany: function (realm, subject, asks) {
+      log.debug("Entering riskDistinctValuesMany(). asks=" + asks.length);
+      log.debug("Leaving riskDistinctValuesMany().");
+      return pool.query(
+        'SELECT a.i, (SELECT count(*) FROM sts_risk_feature_counts c WHERE ' +
+        'c.realm = $1 AND c.subject = $2 AND c.feature = a.f AND (a.p = \'\' ' +
+        'OR starts_with(c.value, a.p))) AS n FROM unnest($3::text[], ' +
+        '$4::text[]) WITH ORDINALITY AS a(f, p, i) ORDER BY a.i',
+        [realm || '', subject, asks.map(function (one) {
+          return String(one.feature);
+        }), asks.map(function (one) {
+          return String(one.prefix || '');
+        })]
+      ).then(function (r) {
+        const out = asks.map(function () {
+          return 0;
+        });
+        r.rows.forEach(function (row) {
+          out[Number(row.i) - 1] = Number(row.n) || 0;
+        });
+        return out;
+      });
+    },
+
     // One sign-in counted: each (subject, feature, value) goes up by one, in
     // ONE statement, so two nodes counting at once never lose a count. The
     // caller has made the rows distinct (a statement may touch a row once).
     riskIncrementCounts: function (realm, rows, at) {
       log.debug("Entering riskIncrementCounts(). rows=" + rows.length);
       log.debug("Leaving riskIncrementCounts().");
-      return pool.query(
+      return tallyPool.query(
         'INSERT INTO sts_risk_feature_counts (realm, subject, feature, value, ' +
         'count, first_at, last_at) SELECT $1, u.subject, u.feature, u.value, ' +
         '1, $5, $5 FROM unnest($2::text[], $3::text[], $4::text[]) AS ' +
@@ -8348,7 +9086,7 @@ function create(options) {
     riskRecordAssessment: function (a) {
       log.debug("Entering riskRecordAssessment(). " + a.id);
       log.debug("Leaving riskRecordAssessment().");
-      return pool.query(
+      return tallyPool.query(
         'INSERT INTO sts_risk_assessments (realm, id, at, phase, door, ' +
         'subject, session_id, client_id, address_sealed, address_prefix, ' +
         'asn, as_org, country, subdivision, city, latitude, longitude, ' +
@@ -8456,7 +9194,7 @@ function create(options) {
     riskSettleAssessment: function (a) {
       log.debug("Entering riskSettleAssessment(). " + a.id);
       log.debug("Leaving riskSettleAssessment().");
-      return pool.query(
+      return tallyPool.query(
         'UPDATE sts_risk_assessments SET decision = $3, policy_id = $4, ' +
         'error_code = $5, session_id = CASE WHEN $6 = \'\' THEN session_id ' +
         'ELSE $6 END WHERE realm = $1 AND id = $2',
@@ -8474,7 +9212,7 @@ function create(options) {
     riskAmendAssessment: function (a) {
       log.debug("Entering riskAmendAssessment(). " + a.id);
       log.debug("Leaving riskAmendAssessment().");
-      return pool.query(
+      return tallyPool.query(
         'UPDATE sts_risk_assessments SET signals = $3::jsonb, score = $4, ' +
         'level = $5 WHERE realm = $1 AND id = $2',
         [a.realm || '', a.id, JSON.stringify(a.signals || []),
@@ -8526,7 +9264,7 @@ function create(options) {
     riskUpsertSubject: function (s) {
       log.debug("Entering riskUpsertSubject().");
       log.debug("Leaving riskUpsertSubject().");
-      return pool.query(
+      return tallyPool.query(
         'INSERT INTO sts_risk_subjects (realm, subject, score, level, ' +
         'previous_level, reason, last_assessment, crossed_at, actions, ' +
         'feedback, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, ' +
@@ -8749,7 +9487,7 @@ function create(options) {
     riskUpsertSessionContext: function (c) {
       log.debug("Entering riskUpsertSessionContext().");
       log.debug("Leaving riskUpsertSessionContext().");
-      return pool.query(
+      return tallyPool.query(
         'INSERT INTO sts_risk_session_context (realm, session_id, subject, ' +
         'address_prefix, asn, country, ua_hash, ja4, jkt, score, level, ' +
         'updated_at) VALUES ($1, $2, $3, $4::cidr, $5, $6, $7, $8, $9, $10, ' +
@@ -9545,6 +10283,10 @@ module.exports = {
   SCHEMA_RELOPTIONS: SCHEMA_RELOPTIONS,
   GIN_DIRECT: GIN_DIRECT,
   SCHEMA_VERSION: SCHEMA_VERSION,
+  // The minted flush as one statement (#820), for the tests' `pg` doubles
+  // (`tests/tools/minted_flush_double.js`), which play it by its layout.
+  MINTED_FLUSH: MINTED_FLUSH,
+  MINTED_FLUSH_LAYOUT: MINTED_FLUSH_LAYOUT,
   poolMax: poolMax,
   // What `pg` is given for a connection string (#98): for
   // `persistence/cell_convert.js`, which dials the service's databases

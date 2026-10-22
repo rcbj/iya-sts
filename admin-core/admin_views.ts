@@ -974,6 +974,10 @@ interface AdminViewsDeps {
 // here is, and described to /admin/caches below the class (rule 3ap).
 const populationHeld = new Map<string, any>();
 
+// How many of the newest sign-on sessions Monitoring → Metrics draws while
+// the session window is on (#820); the counts are the session index's.
+const METRICS_SESSION_ROWS = 100;
+
 class AdminViews {
   /**
    * Builds the views over their dependencies.
@@ -1639,10 +1643,12 @@ class AdminViews {
    * Lists the browser sign-on sessions as rows, computing whether each is still
    * live.
    *
+   * @param given - the sessions to draw, where the caller read only some
+   *   (#820: a page from the index, or one person's); every one when absent
    * @returns the rows
    * @throws when the session index could not be read
    */
-  signOnSessionRows() {
+  signOnSessionRows(given?) {
     const { log, sessionStartedAt } = this.deps;
     log.debug("Entering AdminViews.signOnSessionRows().");
     const nowMs = Date.now();
@@ -1650,9 +1656,12 @@ class AdminViews {
     // The injected map is who is cached. The list is every session the
     // index names while the window is on, and the map while it is off.
     // Null is an unread page. An empty row list would draw nobody signed in.
-    const matched = authn.sessionsMatching(function () {
-      return true;
-    });
+    // A caller that read only the sessions it draws passes them (#820): the
+    // whole list is every sealed body opened, one synchronous read each.
+    const matched = Array.isArray(given) ? given
+      : authn.sessionsMatching(function () {
+        return true;
+      });
     if (matched == null) {
       log.debug("Leaving AdminViews.signOnSessionRows(). Unread.");
       throw new Error('the sign-on sessions could not be read');
@@ -1705,6 +1714,46 @@ class AdminViews {
    *
    * @returns the snapshot and what the page draws from it
    */
+  /**
+   * Takes one metrics snapshot with the sign-on sessions counted by the
+   * session index and the newest of them drawn, while the window is on
+   * (#820); `metricsJson()` otherwise.
+   *
+   * @returns a promise of the snapshot and what the page draws from it
+   */
+  async metricsJsonAsync() {
+    const { log, stats } = this.deps;
+    log.debug("Entering AdminViews.metricsJsonAsync().");
+    const page = typeof authn.liveSessionPageAsync === 'function'
+      ? await authn.liveSessionPageAsync({ limit: METRICS_SESSION_ROWS })
+      : null;
+    if (!page) {
+      log.debug("Leaving AdminViews.metricsJsonAsync(). Window off.");
+      return this.metricsJson();
+    }
+    // THE USER COUNTS WITHOUT A ROW PER PERSON (2026-10-22, #820):
+    // `userRowsAsync()` built every person's row — about 470,000 on 8081 —
+    // on the event loop for four numbers. `userCountsAsync()` counts them
+    // from the token holders' size and client index and the bounded
+    // sources beside them (`common/admin_stats.js`), as the dashboard does.
+    const snap = stats.snapshot(typeof stats.userCountsAsync === 'function'
+      ? { userCounts: await stats.userCountsAsync() } : undefined);
+    // EVERY SESSION WAS DRAWN, AND OPENED TO BE DRAWN: 470,000 rows in this
+    // reply on 8081, read one synchronous query at a time. The counts are
+    // the index's and the rows the newest `METRICS_SESSION_ROWS`.
+    const rows = page.unread ? [] : this.signOnSessionRows(page.sessions);
+    const json = Object.assign({}, snap, {
+      startedAtIso: new Date(snap.startedAt).toISOString(),
+      signOnSessions: { held: page.unread ? null : page.total,
+                        active: page.unread ? null : page.total,
+                        rows: rows, windowed: true,
+                        unread: !!page.unread }
+    });
+    log.debug("Leaving AdminViews.metricsJsonAsync(). " + rows.length +
+              " row(s) of " + page.total + ".");
+    return json;
+  }
+
   metricsJson() {
     const { log, stats } = this.deps;
     log.debug("Entering AdminViews.metricsJson().");
@@ -1747,17 +1796,40 @@ class AdminViews {
   // in its hand.
   // ---------------------------------------------------------------------------
   /**
+   * Opens one token set by its key, read from the store on demand
+   * (2026-10-22, #820): `set:<id>` through the register's `set:` index,
+   * `one:<key>` by its key. Held whole, `tokenSetView()`.
+   *
+   * @param query - the query, whose `id` names the set
+   * @returns a promise of what `tokenSetView()` answers
+   */
+  async tokenSetViewAsync(query) {
+    const { log, stats } = this.deps;
+    log.debug("Entering AdminViews.tokenSetViewAsync().");
+    const asked = String((query && query.id) || '').trim();
+    const found = !asked ? null
+      : (typeof stats.issuedSetByKeyAsync === 'function'
+        ? await stats.issuedSetByKeyAsync(asked)
+        : stats.issuedSetByKey(asked));
+    log.debug("Leaving AdminViews.tokenSetViewAsync().");
+    return this.tokenSetView(query, asked ? found : null);
+  }
+
+  /**
    * Opens one token set by its key, for `GET /admin-api/tokens/set`.
    *
    * @param query - the query, whose `id` names the set
    * @returns the key asked, the set, and the JSON answer saying why when it is
    *   not found
    */
-  tokenSetView(query) {
+  tokenSetView(query, found?) {
     const { log, stats } = this.deps;
     log.debug("Entering AdminViews.tokenSetView().");
     const asked = String((query && query.id) || '').trim();
-    const set = asked ? stats.issuedSetByKey(asked) : null;
+    // `found` (2026-10-22, #820): the set `tokenSetViewAsync()` read from
+    // the store, or null for one it did not find there.
+    const set = found !== undefined ? found
+      : (asked ? stats.issuedSetByKey(asked) : null);
     log.debug("Leaving AdminViews.tokenSetView(). " +
               (set ? set.size + " member(s)." : "No " +
         "such set."));
@@ -2088,6 +2160,9 @@ class AdminViews {
       globals: globalPage.shown,
       users: consentPage.shown,
       matched: matched.length,
+      // WHETHER THE RECORDED HALF IS THE STORE'S PAGE (#820): never here,
+      // where every consent is read; see `consentPageViewAsync()`.
+      windowed: false,
       globalsPaging: this.pagingJson(globalPage.paging),
       usersPaging: this.pagingJson(consentPage.paging),
       query: { q: q },
@@ -2105,6 +2180,99 @@ class AdminViews {
               " override(s), " + consentPage.shown.length + " of " +
               matched.length + " consent(s).");
     return { json: json, register: register, q: q, matched: matched,
+             globalPage: globalPage, consentPage: consentPage };
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE SAME PAGE FROM THE STORE (2026-10-22, #820).
+  //
+  // `consentPageView()` builds the whole register and then pages it, and the
+  // register's recorded half is every person holding a consent: about
+  // 470,000 on 8081, one synchronous store read and a decrypt each, on the
+  // request worker answering — which held it, and through read-your-write
+  // every other worker. Where the directory is in the store this asks
+  // `consent.recordedPageAsync()` instead: the people counted from the asked
+  // names' index, one page of PEOPLE read on the read pool, only their rows
+  // opened. What changes for a reader, and the answer says so (`windowed`):
+  //   * `usersPaging` is over PEOPLE (`noun: 'people'`) and `matched` is how
+  //     many people hold a consent; a page shows every consent of its
+  //     people, newest first within it;
+  //   * `counts.consents` and `counts.unreadable` are the page's
+  //     (`counts.countsOf: 'page'`);
+  //   * the search is EXACT — a whole username, client_id or scope — and a
+  //     client_id or scope is looked for in at most a bounded number of
+  //     holders (`search`).
+  // The overrides half is configuration and is paged as before. With the
+  // directory in memory nothing changes: `consentPageView()` answers.
+  // ---------------------------------------------------------------------------
+  /**
+   * Builds `/admin/consent` from the store while the directory is windowed.
+   *
+   * @param req - the request
+   * @returns a promise of the view, `consentPageView()`'s shape
+   */
+  async consentPageViewAsync(req) {
+    const { log, applications, consent: consentStore } = this.deps;
+    const self = this;
+    log.debug("Entering AdminViews.consentPageViewAsync().");
+    const asked = (req && req.query) || {};
+    if (!consentStore ||
+        typeof consentStore.recordedPageAsync !== 'function') {
+      log.debug("Leaving AdminViews.consentPageViewAsync(). Synchronous.");
+      return this.consentPageView(asked);
+    }
+    const q = String((Array.isArray(asked.q) ? asked.q[0] : asked.q) || '')
+      .trim().toLowerCase();
+    let peoplePaging = null;
+    const page = await consentStore.recordedPageAsync({
+      q: q,
+      pageOf: function (people) {
+        peoplePaging = self.pagingOf(asked, people,
+          { name: 'users', noun: 'people', defaultPer: DELEGATION_PER_PAGE });
+        return { offset: peoplePaging.offset, limit: peoplePaging.perPage };
+      }
+    });
+    if (!page) {
+      log.debug("Leaving AdminViews.consentPageViewAsync(). Window off.");
+      return this.consentPageView(asked);
+    }
+    const register = consentStore.register({ recorded: false });
+    let consentPage;
+    if (page.search) {
+      // What a bounded search found is all there is to page.
+      consentPage = this.pagedRows(asked, page.users,
+        { name: 'users', noun: 'consents',
+          defaultPer: DELEGATION_PER_PAGE });
+    } else {
+      consentPage = { shown: page.users,
+                      paging: peoplePaging || this.pagingOf(asked,
+                        page.people, { name: 'users', noun: 'people',
+                                       defaultPer: DELEGATION_PER_PAGE }) };
+    }
+    const globalPage = this.pagedRows(asked, register.globals,
+      { name: 'globals', noun: 'overrides',
+        defaultPer: DELEGATION_PER_PAGE });
+    const matched = page.search ? page.users.length : page.people;
+    const json = Object.assign({}, register, {
+      globals: globalPage.shown,
+      users: consentPage.shown,
+      matched: matched,
+      windowed: true,
+      search: page.search,
+      counts: Object.assign({}, register.counts, page.counts,
+                            { globals: register.counts.globals }),
+      globalsPaging: this.pagingJson(globalPage.paging),
+      usersPaging: this.pagingJson(consentPage.paging),
+      query: { q: q },
+      withdrawnAttribute: consent.WITHDRAWN_ATTRIBUTE,
+      applicationChoices: applications.list().map(function (row) {
+        return { identifier: row.identifier, name: row.name || '' };
+      })
+    });
+    log.debug("Leaving AdminViews.consentPageViewAsync(). " +
+              consentPage.shown.length + " row(s), " + page.people +
+              " people.");
+    return { json: json, register: register, q: q, matched: page.users,
              globalPage: globalPage, consentPage: consentPage };
   }
 
@@ -3465,7 +3633,8 @@ class AdminViews {
   tokenLifetimesJson() {
     const { log, config, stats, configSettingFor, applications } = this.deps;
     log.debug("Entering AdminViews.tokenLifetimesJson().");
-    const snapshot = stats.snapshot();
+    // No user counts are read here (#820).
+    const snapshot = stats.snapshot({ withoutUsers: true });
     const settings = TOKEN_LIFETIME_KEYS.map(function (key) {
       return config.describe(configSettingFor(key));
     });
@@ -3534,7 +3703,8 @@ class AdminViews {
   samlAssertionsJson() {
     const { log, config, stats, configSettingFor } = this.deps;
     log.debug("Entering AdminViews.samlAssertionsJson().");
-    const snapshot = stats.snapshot();
+    // No user counts are read here (#820).
+    const snapshot = stats.snapshot({ withoutUsers: true });
     const settings = SAML_ASSERTION_KEYS.map(function (key) {
       return config.describe(configSettingFor(key));
     });
@@ -4151,7 +4321,7 @@ class AdminViews {
    * @param query - the request's query
    * @returns the view
    */
-  tokensView(query) {
+  tokensView(query, read?) {
     const { log, stats } = this.deps;
     log.debug("Entering AdminViews.tokensView().");
     const wantedFamily = String(query.family || '');
@@ -4177,7 +4347,11 @@ class AdminViews {
     // admin-ui/admin.ts for the argument, and stats.issuedSets() for the
     // grouping, which is decided by a set id the ISSUER stated rather than by
     // anything this file could infer from these rows.
-    const all = stats.issuedSets();
+    //
+    // `read` (2026-10-22, #820): what `tokensViewAsync()` read from the
+    // store — the sets, what they cover and the store's count. Without it,
+    // what this process holds, as always.
+    const all = read ? read.sets : stats.issuedSets();
     // EVERY FILTER MATCHES A SET WHEN ANY MEMBER MATCHES, and that is the one
     // thing about this page a reader has to be told rather than left to work
     // out. Asking for `kind=id_token` answers with the SETS that contain an ID
@@ -4249,6 +4423,17 @@ class AdminViews {
       log.debug("Leaving countMembers().");
       return sets.reduce(function (n, set) { return n + set.size; }, 0);
     };
+    // THE STORE'S COUNT, WHERE THE LIST WAS READ FROM THE STORE (#820):
+    // the sets above are a window (the newest, or one session's), so the
+    // credentials they hold are not what the store holds. The JWT figure
+    // is the store's count of live token records, and every other family's
+    // is what was counted above, since the artifacts are all read.
+    if (read && read.coverage && read.coverage.source === 'store' &&
+        read.tokenCount !== null && read.tokenCount !== undefined) {
+      heldCredentials += Number(read.tokenCount) -
+        (heldByFamily.token || 0);
+      heldByFamily.token = Number(read.tokenCount);
+    }
     const matchedCredentials = countMembers(filtered);
     const shownCredentials = countMembers(shown);
     // The flatten of what this page holds, in the order the table draws it:
@@ -4279,6 +4464,21 @@ class AdminViews {
         // meaning for an old one.
         held: heldCredentials,
         heldSets: all.length,
+        // WHAT THIS LIST COVERS (2026-10-22, #820). `source` is `held`
+        // (what the answering process holds — the whole register where it
+        // is held whole) or `store` (read from the store: `newest` is the
+        // window of most recently written records, `session` one session's
+        // every record). `complete` is false where the store holds more
+        // than the list shows, and `unread` true where the store could not
+        // be asked and the list fell back to what is held. `held` and
+        // `heldByFamily.token` are the store's count in `store` — the
+        // planner's ESTIMATE where `countEstimated` is true, which a large
+        // store answers in place of a scan of every row.
+        coverage: read ? read.coverage
+          : { source: 'held', complete: !stats.tokensOnDemand ||
+                !stats.tokensOnDemand(),
+              newest: null, session: wantedSession || null,
+              unread: false, countEstimated: false },
         // IN SETS, both of them, because sets are what this resource now lists
         // and what its paging counts. The credential figures are beside them.
         matched: filtered.length, matchedCredentials: matchedCredentials,
@@ -4316,6 +4516,28 @@ class AdminViews {
         paging: this.pagingJson(paging)
       }
     };
+  }
+
+  /**
+   * Builds `/admin/tokens` from the store on demand (2026-10-22, #820): one
+   * session's every record through the register's `sid:` index, or the
+   * newest records the store holds, with the store's count as the total.
+   * Held whole, `tokensView()`.
+   *
+   * @param query - the request's query
+   * @returns a promise of the view `tokensView()` answers
+   */
+  async tokensViewAsync(query) {
+    const { log, stats } = this.deps;
+    log.debug("Entering AdminViews.tokensViewAsync().");
+    if (typeof stats.issuedSetsAsync !== 'function') {
+      log.debug("Leaving AdminViews.tokensViewAsync(). No store door.");
+      return this.tokensView(query);
+    }
+    const read = await stats.issuedSetsAsync({
+      session: String((query && query.session) || '') });
+    log.debug("Leaving AdminViews.tokensViewAsync().");
+    return this.tokensView(query, read);
   }
 
   // The protocols this list can hold, for the filter. Built from the rows
@@ -4417,6 +4639,34 @@ class AdminViews {
     log.debug("Leaving AdminViews.sessionsView(). " + shown.length +
               " row(s) of " +
               filtered.length + " (" + all.length + " live).");
+    return this.sessionsAnswer({
+      all: all, filtered: filtered, shown: shown, paging: paging,
+      byKind: byKind, unauthenticated: unauthenticated,
+      anonymousShown: anonymousPage.shown,
+      anonymousPaging: anonymousPage.paging,
+      held: all.length, matched: filtered.length,
+      unauthenticatedHeld: unauthenticated.length,
+      wantedText: wantedText, wantedProtocol: wantedProtocol,
+      windowed: false });
+  }
+
+  // The view's answer from what it gathered: the whole list (`sessionsView()`)
+  // or one page of the session index (`sessionsViewAsync()`, #820), whose
+  // counts are the index's rather than the length of a list.
+  private sessionsAnswer(v) {
+    const { log, config } = this.deps;
+    log.debug("Entering AdminViews.sessionsAnswer().");
+    const all = v.all;
+    const filtered = v.filtered;
+    const shown = v.shown;
+    const paging = v.paging;
+    const byKind = v.byKind;
+    const unauthenticated = v.unauthenticated;
+    const wantedText = v.wantedText;
+    const wantedProtocol = v.wantedProtocol;
+    const anonymousPage = { shown: v.anonymousShown,
+                            paging: v.anonymousPaging };
+    log.debug("Leaving AdminViews.sessionsAnswer().");
     return {
       installed: true, all: all, filtered: filtered, shown: shown,
       paging: paging, byKind: byKind, unauthenticated: unauthenticated,
@@ -4424,13 +4674,18 @@ class AdminViews {
       wantedText: wantedText, wantedProtocol: wantedProtocol,
       json: {
         installed: true,
-        held: all.length, matched: filtered.length, shown: shown.length,
+        held: v.held, matched: v.matched, shown: shown.length,
+        // WHETHER THE COUNTS ARE THE SESSION INDEX'S (#820): the
+        // sessions are in the store, the search is exact (a whole
+        // username, subject or session id), and the protocol filter
+        // narrows the page it is applied to.
+        windowed: !!v.windowed,
         heldByKind: byKind,
         // Rule 7: the page grew a section, so the API grew the same answer. The
         // COUNT and the ROWS both, because "are there any" and "which ones" are
         // the two things a caller asks and deriving the first from the second
         // would make an empty list and an absent field look alike.
-        unauthenticatedHeld: unauthenticated.length,
+        unauthenticatedHeld: v.unauthenticatedHeld,
         unauthenticatedSessions: anonymousPage.shown.map(function (row) {
           return { id: row.id, family: row.family, username: row.username,
                    sub: row.sub, protocol: row.protocol,
@@ -4473,6 +4728,107 @@ class AdminViews {
         accountChoices: this.accountChoicesJson()
       }
     };
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE SAME VIEW FROM THE SESSION INDEX (2026-10-22, #820).
+  //
+  // `sessionsView()` builds the whole list and then pages it, and while the
+  // session window is on the whole list is every session's sealed body read
+  // and opened, one synchronous read each: about 470,000 on 8081, which held
+  // the request worker that answered the console for two minutes — and,
+  // through read-your-write, every other worker behind it, so sign-ins and
+  // refreshes stopped. This asks the index for the counts and one page and
+  // opens only that page's rows, on the driver's read pool.
+  //
+  // What changes for a reader, and the answer says so (`windowed`):
+  //   * the search is EXACT — a whole username, subject or session id — since
+  //     the index holds digests, not text;
+  //   * the protocol filter narrows the page it is applied to, since the
+  //     protocol is inside the sealed body;
+  //   * the other families (Kerberos tickets, GNAP grants, directory
+  //     connections), which the service holds whole and are few, are listed
+  //     ahead of the sessions on the first pages.
+  // While the window is off nothing changes: `sessionsView()` answers.
+  // ---------------------------------------------------------------------------
+  /**
+   * Builds `/admin/sessions` from the session index while the window is on.
+   *
+   * @param req - the request
+   * @returns a promise of the view
+   */
+  async sessionsViewAsync(req) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminViews.sessionsViewAsync().");
+    if (!logoutReader ||
+        typeof logoutReader.liveSessionsPageAsync !== 'function') {
+      log.debug("Leaving AdminViews.sessionsViewAsync(). Synchronous.");
+      return this.sessionsView(req);
+    }
+    const query = req.query || {};
+    const wantedText = this.queryOne(query, 'q').trim();
+    const wantedProtocol = this.queryOne(query, 'protocol').trim();
+    // The counts, and the other families, before the paging can be worked
+    // out: one session asked for.
+    const probe = await logoutReader.liveSessionsPageAsync(
+      { q: wantedText, offset: 0, limit: 1 });
+    if (!probe) {
+      log.debug("Leaving AdminViews.sessionsViewAsync(). Window off.");
+      return this.sessionsView(req);
+    }
+    const protocolMatches = function (row) {
+      return !wantedProtocol || row.protocol === wantedProtocol;
+    };
+    const others = probe.rows.filter(function (row) {
+      return row.family !== 'session' && protocolMatches(row) &&
+        self.chooserMatches([row.username, row.sub, row.handle, row.key,
+                             row.kind, row.protocol, row.accountSet],
+                            wantedText);
+    });
+    const total = probe.sessionTotal + others.length;
+    const paging = this.pagingOf(query, total, { noun: 'sessions' });
+    // The others first, then the sessions, newest first.
+    const ahead = others.slice(paging.offset, paging.offset + paging.perPage);
+    const room = paging.perPage - ahead.length;
+    let sessionRows = [];
+    if (room > 0) {
+      const page = await logoutReader.liveSessionsPageAsync(
+        { q: wantedText,
+          offset: Math.max(0, paging.offset - others.length), limit: room });
+      sessionRows = page ? page.rows.filter(function (row) {
+        return row.family === 'session' && protocolMatches(row);
+      }) : [];
+    }
+    const shown = ahead.concat(sessionRows);
+    const byKind: Record<string, any> = { session: probe.sessionTotal };
+    probe.rows.forEach(function (row) {
+      if (row.family !== 'session') {
+        byKind[row.family] = (byKind[row.family] || 0) + 1;
+      }
+    });
+    // The unauthenticated section's own page, from the index too.
+    const anonymousPaging = this.pagingOf(query, probe.unauthenticated,
+      { name: 'anonymous', noun: 'sessions' });
+    const anonymous = probe.unauthenticated
+      ? await logoutReader.liveSessionsPageAsync(
+        { authenticated: false, offset: anonymousPaging.offset,
+          limit: anonymousPaging.perPage })
+      : null;
+    const anonymousShown = anonymous ? anonymous.rows.filter(function (row) {
+      return row.family === 'session' && row.authenticated === false;
+    }) : [];
+    const seen = others.concat(sessionRows);
+    log.debug("Leaving AdminViews.sessionsViewAsync(). " + shown.length +
+              " row(s) of " + total + ".");
+    return this.sessionsAnswer({
+      all: seen, filtered: seen, shown: shown, paging: paging,
+      byKind: byKind, unauthenticated: anonymousShown,
+      anonymousShown: anonymousShown, anonymousPaging: anonymousPaging,
+      held: total, matched: total,
+      unauthenticatedHeld: probe.unauthenticated,
+      wantedText: wantedText, wantedProtocol: wantedProtocol,
+      windowed: true });
   }
 
   /**
@@ -5335,7 +5691,8 @@ class AdminViews {
       model.applicationChooser = this.delegationChooser('application',
         query, view.applications, carry);
       model.userChooser = this.delegationChooser('user', query,
-        this.deps.userGraph.userList(), carry);
+        this.deps.userGraph.userCatalogue(
+          WebKit.queryOne(query || {}, 'userq')), carry);
       model.mapKey = this.delegationMapKey();
       model.directoryLoaded = !!directoryReader;
       model.facts = this.delegationFacts(model);
@@ -5512,7 +5869,12 @@ class AdminViews {
     // Normalised the way the identity register normalises one, so a link
     // carrying `alice@STS.MOCK` finds the same person the chooser's does.
     const key = stats.identityKeyOf(asked);
-    const catalogue = userGraph.userList();
+    // A PAGE OF IDENTITIES, NOT EVERY ONE (2026-10-22, #820): while the
+    // token register is on demand `userCatalogue()` lists the identities a
+    // delegation names and the one the search names exactly, and says so.
+    const listed = userGraph.userCatalogue(
+      WebKit.queryOne(query || {}, 'userq'));
+    const catalogue = listed.entries;
     const activity = key ? userGraph.activityFor(key) : null;
     // An empty graph rather than none when nobody is selected.
     const graph = activity ? activity.graph : delegation.graph([]);
@@ -5585,12 +5947,14 @@ class AdminViews {
       graph: graph,
       counts: activity ? activity.counts : null,
       users: catalogue,
+      // False when `users` is not every identity (#820): the reader is told.
+      usersComplete: listed.complete,
       drawing: { width: drawn.width, height: drawn.height,
                  failed: drawn.failed || null },
       looks: look.looks, label: label, svg: drawn.svg
     };
     if (!(options && options.links === false)) {
-      model.chooser = this.delegationChooser('user', query, catalogue,
+      model.chooser = this.delegationChooser('user', query, listed,
         WebKit.listViewOf('/admin/delegation', query || {}));
       model.mapKey = this.delegationMapKey({ issuance: true });
       model.facts = this.delegationFacts(model);
@@ -5961,8 +6325,8 @@ class AdminViews {
       mechanismPage: page(delegation.TYPES, 'mechanisms', 'mechanisms'),
       applicationChooser: this.delegationChooser('application', q,
                                                  view.applications, carry),
-      userChooser: this.delegationChooser('user', q, userGraph.userList(),
-                                          carry),
+      userChooser: this.delegationChooser('user', q,
+        userGraph.userCatalogue(WebKit.queryOne(q || {}, 'userq')), carry),
       // What `permissionsSection()` and `delegationPolicySection()` draw.
       permissionsView: {
         register: permissions.register, listState: listState,
@@ -6221,15 +6585,28 @@ class AdminViews {
    *   `user` (`userq`, `userfrom`)
    * @param query - the page's query
    * @param catalogue - the delegation register's applications, or
-   *   `userGraph.userList()`
+   *   `userGraph.userCatalogue()`'s answer (`entries`, `search`,
+   *   `complete`, `exactKey`)
    * @param carry - the delegation table's filter
-   * @returns `total`, the pane's `entries` and its `slice`
+   * @returns `total`, the pane's `entries`, its `slice`, and `search`
+   *   (`contains` or `exact`) and `complete` (false when the catalogue
+   *   was not every identity)
    */
   delegationChooser(kind, query, catalogue, carry) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.delegationChooser(). kind=" + kind);
     const isApplication = kind === 'application';
-    const entries = (catalogue || []).map(function (entry) {
+    // A BOUNDED CATALOGUE SAYS SO (2026-10-22, #820). The person catalogue
+    // arrives as `userCatalogue()`'s answer: held whole it is every
+    // identity and a search matches any part of a name; on demand it is the
+    // delegation's identities and the one the search named EXACTLY, which
+    // matches even where the typed spelling is not one of its names.
+    const listed = Array.isArray(catalogue)
+      ? { entries: catalogue, search: 'contains', complete: true,
+          exactKey: null }
+      : (catalogue || { entries: [], search: 'contains', complete: true,
+                        exactKey: null });
+    const entries = (listed.entries || []).map(function (entry) {
       if (isApplication) {
         const roles = [];
         if (entry.roles.intermediary) {
@@ -6277,7 +6654,8 @@ class AdminViews {
     const fromParam = isApplication ? 'appfrom' : 'userfrom';
     const wanted = WebKit.queryOne(query || {}, param).trim();
     const matched = entries.filter(function (entry) {
-      return WebKit.chooserMatches(entry.names, wanted);
+      return entry.key === listed.exactKey ||
+        WebKit.chooserMatches(entry.names, wanted);
     });
     // The clamp `chooserPane()` applies, applied where the slice is cut.
     let from = parseInt(WebKit.queryOne(query || {}, fromParam), 10);
@@ -6289,7 +6667,9 @@ class AdminViews {
     return {
       total: entries.length,
       entries: matched.slice(from, from + WebKit.CHOOSER_HITS),
-      slice: { matched: matched.length, from: from }
+      slice: { matched: matched.length, from: from },
+      search: listed.search === 'exact' ? 'exact' : 'contains',
+      complete: listed.complete !== false
     };
   }
 
@@ -8624,7 +9004,7 @@ class AdminViews {
    * @returns the JSON
    */
   rbacListJson(req) {
-    const { log, realms, rbac } = this.deps;
+    const { log, realms, rbac, stats } = this.deps;
     const self = this;
     log.debug("Entering AdminViews.rbacListJson().");
     // The roster of the realm being read (2026-09-14, #32): the service roster
@@ -8676,11 +9056,19 @@ class AdminViews {
     const filterParams: Record<string, any> = { q: wantedText || '',
                                                 role: wantedRole || '',
                            per: req.query.per ? paging.perPage : '' };
-    const knownKeys = this.knownUserKeys();
+    // WHO HAS SIGNED IN, ASKED PER NAME WHILE THE REGISTER IS ON DEMAND
+    // (2026-10-22, #820). `allUserKeys()` built every key — about 940,000 on
+    // 8081, synchronously, per view — to mark which candidates have signed
+    // in and to union the ones who signed in with no entry. While the token
+    // register is on demand (`stats.userKeyTest()` answers a test) the
+    // candidates are the directory's people alone, as a windowed directory's
+    // always were, and "seen" is asked of each name on the page; held whole
+    // the union is built as it always was.
+    const onDemand = typeof stats.userKeyTest === 'function' &&
+      !!stats.userKeyTest();
     // A WINDOW PAGES THE STORE (#359). The list below is every person, which
     // on a window is a synchronous walk. The page is asked of the store
-    // instead; this call stays so the in-memory directory still builds the
-    // union it always built.
+    // instead.
     const ldapMod = require('../ldap/ldap_server');
     if (typeof ldapMod.directoryIsWindowed === 'function' &&
         ldapMod.directoryIsWindowed()) {
@@ -8689,11 +9077,14 @@ class AdminViews {
         info: info, state: state, grants: grants,
         wantedText: wantedText, needle: needle, wantedRole: wantedRole,
         filtered: filtered, paging: paging, shown: shown,
-        filterParams: filterParams, knownKeys: knownKeys
+        filterParams: filterParams,
+        knownKeys: onDemand ? this.knownUserKeys() : this.allUserKeys()
       });
     }
-    const candidates = rbac.candidates(Object.keys(knownKeys),
-                                      realms.currentId());
+    const knownKeys = onDemand ? this.knownUserKeys() : this.allUserKeys();
+    const candidates = onDemand
+      ? this.markSeen(rbac.candidates([], realms.currentId()), knownKeys)
+      : rbac.candidates(Object.keys(knownKeys), realms.currentId());
 
     // WHO CAN BE PICKED, SEARCHED AND PAGED (2026-09-13). This was a `<select>`
     // holding every candidate, and a realm bulk loaded with thousands of people
@@ -8857,23 +9248,73 @@ class AdminViews {
 
   // Marks directory rows the console has seen authenticate. The key's own
   // spelling is kept on a seen-only row; a directory row keeps the RDN.
+  //
+  // A NAME AT A TIME, NOT EVERY KEY PER ROW (2026-10-22, #820): this compared
+  // each row against every key the register holds — rows times keys, with
+  // the keys a million long on 8081. `seenKeyOf()` answers one name, case
+  // folded as the comparison folded it.
   private markSeen(rows: Array<{ username: string; seen: boolean }>,
                    knownKeys: Record<string, any>):
       Array<{ username: string; seen: boolean }> {
     const { log } = this.deps;
     log.debug("Entering AdminViews.markSeen().");
-    const keys = Object.keys(knownKeys || {});
+    const self = this;
+    const folded = this.foldedKeysOf(knownKeys);
     rows.forEach(function (row) {
-      const hit = keys.filter(function (key) {
-        return String(key).toLowerCase() ===
-          String(row.username).toLowerCase();
-      })[0];
-      if (hit) {
+      if (self.seenKeyOf(row.username, knownKeys, folded) !== null) {
         row.seen = true;
       }
     });
     log.debug("Leaving AdminViews.markSeen().");
     return rows;
+  }
+
+  // The register's keys by their lower case, for a set built WHOLE (held
+  // whole, the comparison is case-insensitive over every key and stays so);
+  // null for the per-name set `knownUserKeys()` answers on demand, which
+  // cannot be listed and is asked instead. One pass, not one per row.
+  private foldedKeysOf(knownKeys: Record<string, any>):
+      Map<string, string> | null {
+    const { log, stats } = this.deps;
+    log.debug("Entering AdminViews.foldedKeysOf().");
+    if (typeof stats.userKeyTest === 'function' && stats.userKeyTest()) {
+      log.debug("Leaving AdminViews.foldedKeysOf(). Asked per name.");
+      return null;
+    }
+    const folded = new Map<string, string>();
+    Object.keys(knownKeys || {}).forEach(function (key) {
+      const lower = String(key).toLowerCase();
+      if (!folded.has(lower)) {
+        folded.set(lower, key);
+      }
+    });
+    log.debug("Leaving AdminViews.foldedKeysOf(). " + folded.size +
+              " key(s).");
+    return folded;
+  }
+
+  // The register's spelling of a name the console has seen, or null: from
+  // the folded keys when they were built whole, else asked of the per-name
+  // set as typed, in lower case and as the register normalises it.
+  private seenKeyOf(name, knownKeys: Record<string, any>,
+                    folded: Map<string, string> | null): string | null {
+    const { stats } = this.deps;
+    // A hot path (once per row on the page): no Entering/Leaving pair.
+    const typed = String(name == null ? '' : name);
+    if (!typed) {
+      return null;
+    }
+    if (folded) {
+      const hit = folded.get(typed.toLowerCase());
+      return hit === undefined ? null : hit;
+    }
+    const tries = [typed, typed.toLowerCase(), stats.identityKeyOf(typed)];
+    for (const key of tries) {
+      if (key && knownKeys[key]) {
+        return String(key);
+      }
+    }
+    return null;
   }
 
   /**
@@ -8976,9 +9417,9 @@ class AdminViews {
           this.markSeen([named], known);
           picked = named;
         } else {
-          const seenKey = Object.keys(known).filter(function (key) {
-            return String(key).toLowerCase() === wanted;
-          })[0];
+          // One name asked, not every key walked (#820).
+          const seenKey = this.seenKeyOf(personAsked, known,
+                                         this.foldedKeysOf(known));
           if (seenKey) {
             picked = { username: seenKey, inDirectory: false, seen: true };
           }
@@ -9079,6 +9520,41 @@ class AdminViews {
   knownUserKeys() {
     const { log, stats } = this.deps;
     log.debug("Entering AdminViews.knownUserKeys().");
+    // ASKED KEY BY KEY WHILE THE REGISTER IS ON DEMAND (2026-10-22, #820):
+    // every caller here reads `known[name]` for the names on its page, and
+    // building every key walked about 940,000 rows on 8081, synchronously.
+    // Each name is asked once and remembered for the request. A caller that
+    // ENUMERATES the keys asks `allUserKeys()`.
+    const test = typeof stats.userKeyTest === 'function'
+      ? stats.userKeyTest() : null;
+    if (test) {
+      const asked: Record<string, boolean> = {};
+      log.debug("Leaving AdminViews.knownUserKeys(). Key by key.");
+      return new Proxy({}, {
+        get: function (target, name) {
+          if (typeof name !== 'string') {
+            return undefined;
+          }
+          if (!Object.prototype.hasOwnProperty.call(asked, name)) {
+            asked[name] = !!test(name);
+          }
+          return asked[name] ? true : undefined;
+        }
+      }) as Record<string, any>;
+    }
+    log.debug("Leaving AdminViews.knownUserKeys(). Every key.");
+    return this.allUserKeys();
+  }
+
+  /**
+   * Returns the keys of every identity the console's user registry knows,
+   * built whole: for a caller that lists them (the roles page).
+   *
+   * @returns a set of keys, as an object
+   */
+  allUserKeys() {
+    const { log, stats } = this.deps;
+    log.debug("Entering AdminViews.allUserKeys().");
     const known: Record<string, any> = {};
     // THE KEYS AND NOT THE ROWS (#352): `stats.userKeys()` answers the key of
     // every row `userRows()` would build, without building one — nine pages
@@ -9086,7 +9562,7 @@ class AdminViews {
     stats.userKeys().forEach(function (key) {
       known[key] = true;
     });
-    log.debug("Leaving AdminViews.knownUserKeys().");
+    log.debug("Leaving AdminViews.allUserKeys().");
     return known;
   }
 
@@ -12597,9 +13073,28 @@ class AdminViews {
     // PAGE, THEN DECORATE: the full factor row — keys, the authenticator's
     // detail, the recovery codes, what the columns draw — is built for the
     // rows on this page and for nobody else (`pagedRows()`).
-    const page = this.pagedRows(req.query, filtered, {
+    //
+    // **NOT HERE FOR A CALLER THAT CAN WAIT (#820, 2026-10-22)**:
+    // `deferDecoration` pages and leaves the shown rows to
+    // `usersListRowsAsync()`, which reads what every one of them needs
+    // together and asynchronously. Decorated here, each row was about nine
+    // synchronous directory reads (`decoratePerson()`), and on 8081 fifty of
+    // them spent the request's 5,000 ms store budget (STS-LDAP-0175): the
+    // console said the page could not be drawn, and the worker refused code
+    // exchanges while it waited.
+    const deferDecoration = !!(opts && opts.deferDecoration);
+    const page = this.pagedRows(req.query, filtered, deferDecoration ? {} : {
       decorate: function (row) {
-        return self.decoratePerson(population, row);
+        const decorated = self.decoratePerson(population, row);
+        // ON DEMAND (#820) the list's token counts are of the tokens a
+        // process holds; a shown row's own are read from the index.
+        if (self.deps.stats.tokensOnDemand() && decorated) {
+          const own = self.deps.stats.userRow(row.key);
+          if (own && own.tokens) {
+            decorated.tokens = own.tokens;
+          }
+        }
+        return decorated;
       }
     });
     const paging = page.paging;
@@ -12739,11 +13234,113 @@ class AdminViews {
           users: shown.map(function (row) {
             return Object.assign({}, row,
                                  { liveSessions: liveByUser[row.key] || 0,
-                                   dn: self.personDnOf(row) });
+                                   dn: deferDecoration ? ''
+                                     : self.personDnOf(row) });
           })
       };
       }())
     };
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE SHOWN ROWS, DECORATED TOGETHER AND ASYNCHRONOUSLY (#820, 2026-10-22),
+  // into a view `usersListJson()` built with `deferDecoration`.
+  //
+  // What `decoratePerson()`, `personDnOf()` and — while the token register
+  // is on demand — `stats.userRow()` read one row at a time, synchronously,
+  // is read here for every shown row at once, off the event loop: the
+  // credentials of every spelling of every row
+  // (`credentials.factorHolderRowsAsync()`, the census's resolution a page
+  // at a time), each row's DN (`credentials.personDnsAsync()`), and each
+  // row's own token counts (`stats.userRowsOfAsync()`). The rows are then
+  // decorated exactly as `decoratePerson()` decorates one — the same
+  // spellings, united by the same `mergeFactors()` in the fold's order — so
+  // the page's answer is unchanged; `tests/users_page_rows_async.js` holds
+  // both. A spelling whose credentials the store refused adds nothing, so a
+  // row of nothing but those has no factors: unknown, not "none".
+  // ---------------------------------------------------------------------------
+  /**
+   * Decorates a deferred users list's shown rows, the store asked
+   * asynchronously.
+   *
+   * @param view - what `usersListJson()` answered with `deferDecoration`
+   * @returns a promise of the same view
+   */
+  async usersListRowsAsync(view) {
+    const { log, credentials, stats } = this.deps;
+    const self = this;
+    log.debug("Entering AdminViews.usersListRowsAsync().");
+    const shown = view.shown || [];
+    const spellings = (view.population && view.population.spellings) ||
+      new Map();
+    const holders = [];
+    const ownerOf = [];
+    shown.forEach(function (row, at) {
+      (spellings.get(row.key) || []).forEach(function (holder) {
+        holders.push(holder);
+        ownerOf.push(at);
+      });
+    });
+    const withDn = [];
+    shown.forEach(function (row, at) {
+      if (row && row.inDirectory) {
+        withDn.push(at);
+      }
+    });
+    const onDemand = typeof stats.tokensOnDemand === 'function' &&
+      stats.tokensOnDemand() && typeof stats.userRowsOfAsync === 'function';
+    const answers = await Promise.all([
+      typeof credentials.factorHolderRowsAsync === 'function'
+        ? credentials.factorHolderRowsAsync(holders)
+        : Promise.resolve(holders.map(function (holder) {
+          return credentials.factorHolderRow(holder);
+        })),
+      typeof credentials.personDnsAsync === 'function'
+        ? credentials.personDnsAsync(withDn.map(function (at) {
+          return String(shown[at].name || shown[at].key || '');
+        }))
+        : Promise.resolve(withDn.map(function (at) {
+          return self.personDnOf(shown[at]);
+        })),
+      onDemand ? stats.userRowsOfAsync(shown.map(function (row) {
+        return row.key;
+      })) : Promise.resolve(null)
+    ]);
+    const factorRows = answers[0] || [];
+    const merged = shown.map(function () {
+      return null;
+    });
+    factorRows.forEach(function (factors, i) {
+      if (factors) {
+        merged[ownerOf[i]] = self.mergeFactors(merged[ownerOf[i]], factors);
+      }
+    });
+    shown.forEach(function (row, at) {
+      row.factors = merged[at];
+    });
+    const own = answers[2];
+    if (own) {
+      shown.forEach(function (row, at) {
+        if (own[at] && own[at].tokens) {
+          row.tokens = own[at].tokens;
+        }
+      });
+    }
+    const dns = shown.map(function () {
+      return '';
+    });
+    (answers[1] || []).forEach(function (dn, i) {
+      dns[withDn[i]] = String(dn || '');
+    });
+    const before = (view.json && view.json.users) || [];
+    view.json.users = shown.map(function (row, at) {
+      return Object.assign({}, row, {
+        liveSessions: before[at] ? before[at].liveSessions : 0,
+        dn: dns[at] });
+    });
+    log.debug("Leaving AdminViews.usersListRowsAsync(). " + shown.length +
+              " row(s), " + holders.length + " spelling(s).");
+    return view;
   }
 
   // Who holds a live sign-on session, by identity key: every session walked.
@@ -12835,6 +13432,16 @@ class AdminViews {
       users.forEach(function (row) {
         row.liveSessions = live.byUsername.get(row.key) ||
           (row.name ? live.byUsername.get(row.name) : 0) || 0;
+      });
+    } else if (typeof authn.sessionWindowOn === 'function' &&
+               authn.sessionWindowOn()) {
+      // THE INDEX COULD NOT BE READ, and the sessions are in the store
+      // (#820): walking them all instead opens every sealed body, one
+      // synchronous read each — the two minutes Monitoring → Sessions held
+      // a worker for on 8081. Unread is drawn as unknown, not as none.
+      json.withActiveSession = null;
+      users.forEach(function (row) {
+        row.liveSessions = null;
       });
     } else {
       const liveByUser = this.liveSessionsByUser();
@@ -14045,9 +14652,12 @@ class AdminViews {
     // synchronous store questions here in a windowed process.
     const asked = await this.peopleAndCensusAsync({
       mayBeStale: AdminViews.unfiltered(req) });
-    // The tiles too (2026-10-21), for `usersJsonAsync()`'s reason.
-    const list = await this.usersListTilesAsync(this.usersListJson(req,
-      Object.assign({}, asked, { deferTiles: true })));
+    // The tiles too (2026-10-21), for `usersJsonAsync()`'s reason, and the
+    // shown rows (#820).
+    const list = await this.usersListTilesAsync(
+      await this.usersListRowsAsync(this.usersListJson(req,
+        Object.assign({}, asked, { deferTiles: true,
+                                   deferDecoration: true }))));
     log.debug("Leaving AdminViews.mfaRosterJsonAsync().");
     return this.mfaRosterJson(req, Object.assign({}, asked, { list: list }));
   }
@@ -14074,8 +14684,12 @@ class AdminViews {
     }
     const asked = await this.peopleAndCensusAsync({
       mayBeStale: AdminViews.unfiltered(req) });
-    const view = await this.usersListTilesAsync(this.usersListJson(req,
-      Object.assign({}, asked, { deferTiles: true })));
+    // The shown rows decorated together and asynchronously (#820), then
+    // the tiles, which fill each shown row's live sessions.
+    const view = await this.usersListTilesAsync(
+      await this.usersListRowsAsync(this.usersListJson(req,
+        Object.assign({}, asked, { deferTiles: true,
+                                   deferDecoration: true }))));
     log.debug("Leaving AdminViews.usersJsonAsync().");
     return view.json;
   }
@@ -14494,7 +15108,20 @@ class AdminViews {
   sessionRowsFor(key) {
     const { log, stats } = this.deps;
     log.debug("Entering AdminViews.sessionRowsFor(). key=" + key);
-    const rows = this.signOnSessionRows().filter(function (session) {
+    // ONE PERSON'S, FROM THE INDEX, while the window is on (#820): every
+    // session opened to keep one person's was 470,000 synchronous reads on
+    // 8081, for a page about one person. The index files a session under
+    // its username, which is the key a person is listed under.
+    let given;
+    if (typeof authn.sessionWindowOn === 'function' &&
+        authn.sessionWindowOn()) {
+      given = authn.sessionsHeldUnder(String(key || ''), '');
+      if (given == null) {
+        log.debug("Leaving AdminViews.sessionRowsFor(). Unread.");
+        throw new Error('the sign-on sessions could not be read');
+      }
+    }
+    const rows = this.signOnSessionRows(given).filter(function (session) {
       return stats.holderKeyOf(session.username, session.sub) === key;
     });
     log.debug("Leaving AdminViews.sessionRowsFor(). " + rows.length +
@@ -14940,6 +15567,7 @@ export = {
   saml2Json: slot.forward('saml2Json'),
   saml2ListJson: slot.forward('saml2ListJson'),
   knownUserKeys: slot.forward('knownUserKeys'),
+  allUserKeys: slot.forward('allUserKeys'),
   rbacListJson: slot.forward('rbacListJson'),
   setDirectoryWriter: slot.forward('setDirectoryWriter'),
   setDirectoryReader: slot.forward('setDirectoryReader'),
@@ -14983,8 +15611,11 @@ export = {
   pagingJson: slot.forward('pagingJson'),
   pagedRows: slot.forward('pagedRows'),
   tokensView: slot.forward('tokensView'),
+  tokensViewAsync: slot.forward('tokensViewAsync'),
   sessionProtocolsIn: slot.forward('sessionProtocolsIn'),
   sessionsView: slot.forward('sessionsView'),
+  sessionsViewAsync: slot.forward('sessionsViewAsync'),
+  metricsJsonAsync: slot.forward('metricsJsonAsync'),
   auditView: slot.forward('auditView'),
   errorCodesView: slot.forward('errorCodesView'),
   usedAssertionsView: slot.forward('usedAssertionsView'),
@@ -15042,6 +15673,7 @@ export = {
   signOnSessionRows: slot.forward('signOnSessionRows'),
   metricsJson: slot.forward('metricsJson'),
   tokenSetView: slot.forward('tokenSetView'),
+  tokenSetViewAsync: slot.forward('tokenSetViewAsync'),
   permissionsView: slot.forward('permissionsView'),
   cryptoView: slot.forward('cryptoView'),
   keysView: slot.forward('keysView'),
@@ -15056,6 +15688,7 @@ export = {
   directoryPageJson: slot.forward('directoryPageJson'),
   consentView: slot.forward('consentView'),
   consentPageView: slot.forward('consentPageView'),
+  consentPageViewAsync: slot.forward('consentPageViewAsync'),
   rolesRegister: slot.forward('rolesRegister'),
   rolesView: slot.forward('rolesView'),
   policiesView: slot.forward('policiesView'),

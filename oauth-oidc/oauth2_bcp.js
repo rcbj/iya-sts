@@ -3128,8 +3128,10 @@ function familyForIssuance(jti, parentJti, parentFamily) {
 }
 
 // Every jti this node knows to be in a family: the per-token records, and a
-// legacy `members` array where a restored row still carries one.
-function membersOf(familyId, alsoJti) {
+// legacy `members` array where a restored row still carries one. `accessOut`,
+// where given, also collects the access tokens the records name (#820: what a
+// grant issued is on the refresh token's own row when rotation is on).
+function membersOf(familyId, alsoJti, accessOut) {
   log.debug("Entering membersOf().");
   const wanted = String(familyId || '');
   const out = new Set();
@@ -3144,6 +3146,9 @@ function membersOf(familyId, alsoJti) {
       const record = refreshTokens.get(jti);
       if (record && record.family === wanted) {
         out.add(String(jti));
+        if (accessOut && record.access) {
+          accessOut.add(String(record.access));
+        }
       }
     });
     const family = refreshFamilies.get(wanted);
@@ -3170,8 +3175,10 @@ function membersOf(familyId, alsoJti) {
  * @param parentJti - the presented token's jti, or '' for a family's root
  * @param clientId - the client
  * @param parentFamily - the presented token's own family claim
+ * @param grant - what the grant issued beside it, `{ access, expSec }`
+ *   (`noteGrantTokens()`'s record, kept on this row instead); optional
  */
-function noteRefreshIssued(jti, parentJti, clientId, parentFamily) {
+function noteRefreshIssued(jti, parentJti, clientId, parentFamily, grant) {
   log.debug("Entering noteRefreshIssued(). jti=" + jti + ", parent=" +
             (parentJti || '(root)'));
   // ROTATION IS NO LONGER THE MODE'S ALONE (#34, 2026-09-15): the bookkeeping
@@ -3186,9 +3193,16 @@ function noteRefreshIssued(jti, parentJti, clientId, parentFamily) {
   }
   const familyId = familyForIssuance(jti, parentJti, parentFamily);
   const forget = Date.now() + refreshFamilyWindowMs();
+  // WHAT THE GRANT ISSUED, ON THIS ROW (2026-10-22, #820): the access token
+  // minted beside it, kept as long as `grantTokens` would have kept it, so
+  // that `noteGrantTokens()` writes nothing while rotation is on — one of a
+  // refresh's 13.6 writes, every process applying it. `grantMembersOf()`
+  // reads it here; an older `grantTokens` row is still read there.
+  const kept = grant ? grantForgetOf(grant.expSec) : 0;
   refreshTokens.set(String(jti),
                     { family: familyId, clientId: String(clientId || ''),
-                                   rotated: false, forget: forget });
+                      rotated: false, forget: Math.max(forget, kept),
+                      access: grant ? String(grant.access || '') : '' });
   const known = refreshFamilies.get(familyId);
   // NO `members` ARRAY IS WRITTEN — see (2) above. What the row still holds
   // is the family's clock, and a lost update of either field between two
@@ -3285,6 +3299,17 @@ function forgetStaleGrantTokens() {
             "remembered.");
 }
 
+// How long what a grant issued is kept: until the later of its tokens'
+// expiries, plus the clock skew; the family window where there is none.
+function grantForgetOf(expSec) {
+  log.debug("Entering grantForgetOf().");
+  const skew = Number(config.value('oauth2.clockSkewS'));
+  const exp = Number(expSec);
+  log.debug("Leaving grantForgetOf().");
+  return (isFinite(exp) && exp > 0 ? exp * 1000 : Date.now() +
+          refreshFamilyWindowMs()) + (isFinite(skew) ? skew * 1000 : 0);
+}
+
 // Called from `refreshToken()` in `oauth2.ts`, the one function that mints a
 // refresh token, with the access token `tokenSet()` minted beside it (empty
 // where there was none). `expSec` is the later of the two `exp`s.
@@ -3304,14 +3329,17 @@ function noteGrantTokens(familyId, refreshJti, accessJti, clientId, expSec) {
     log.debug("Leaving noteGrantTokens(). Nothing to record.");
     return;
   }
-  const skew = Number(config.value('oauth2.clockSkewS'));
-  const exp = Number(expSec);
+  // WITH ROTATION ON, `noteRefreshIssued()` already wrote this on the refresh
+  // token's own row (#820).
+  if (senderConstraints.rotationRequired()) {
+    log.debug("Leaving noteGrantTokens(). On the refresh token's row.");
+    return;
+  }
   grantTokens.set(String(refreshJti), {
     family: String(familyId),
     access: String(accessJti || ''),
     clientId: String(clientId || ''),
-    forget: (isFinite(exp) ? exp * 1000 : Date.now() +
-             refreshFamilyWindowMs()) + (isFinite(skew) ? skew * 1000 : 0)
+    forget: grantForgetOf(expSec)
   });
   // The bound here, the expiry in the job (#761), as `noteRefreshIssued()`.
   if (!grantTokens.onDemandLive() &&
@@ -3427,7 +3455,13 @@ function familyOfRefresh(claims) {
 function grantMembersOf(familyId, alsoJti) {
   log.debug("Entering grantMembersOf().");
   const wanted = String(familyId || '');
-  const out = new Set(membersOf(wanted, alsoJti));
+  // The access tokens the refresh tokens' own rows name (#820), beside the
+  // older `grantTokens` rows below.
+  const access = new Set();
+  const out = new Set(membersOf(wanted, alsoJti, access));
+  access.forEach(function (jti) {
+    out.add(jti);
+  });
   if (wanted) {
     // By the family index (#820), as `membersOf()`.
     grantTokens.lookup(wanted).forEach(function (jti) {
@@ -3531,6 +3565,28 @@ function revokeFamily(familyId, clientId) {
  * @returns a promise of `{ ok: true, handle }`, or a refusal in
  *   `checkRefreshRequest()`'s shape with `revoke`
  */
+/**
+ * Reads the presented refresh token's record and its family together,
+ * off the event loop, before the checks that ask for them (2026-10-21,
+ * #820): see `warm()` in common/realms.js.
+ *
+ * @param claims - the opened refresh token's claims
+ * @returns a promise settled when both are held, absent or not read
+ */
+function warmRefresh(claims) {
+  log.debug("Entering warmRefresh().");
+  const c = claims || {};
+  const jti = String(c.jti || '');
+  const family = String(c[FAMILY_CLAIM] || '');
+  log.debug("Leaving warmRefresh().");
+  return Promise.all([
+    jti ? refreshTokens.warm([jti]) : null,
+    family ? refreshFamilies.warm([family]) : null
+  ]).then(function () {
+    return undefined;
+  });
+}
+
 async function spendRefreshToken(opts) {
   log.debug("Entering spendRefreshToken().");
   if (!senderConstraints.rotationRequired()) {
@@ -3548,6 +3604,29 @@ async function spendRefreshToken(opts) {
   const familyId = String((known && known.family) || claims[FAMILY_CLAIM] ||
                           '');
   const clientId = String(claims.client_id || '');
+  // THE CLAIM IS ASKED BESIDE THE FAMILY QUESTION, NOT AFTER IT (2026-10-21,
+  // #820): two round trips to the claim store in a row on every refresh,
+  // where neither answer depends on the other. The family's answer still
+  // decides first; a claim won meanwhile is released as any claim on a
+  // refused request is (`releaseUnlessSucceeded()`), and one that is not
+  // waited for is still settled, so its failure is never unhandled.
+  const expiresMs = Number(claims.exp) * 1000;
+  const skew = Number(config.value('oauth2.clockSkewS'));
+  const claiming = clusterClaims.claim({
+    scope: 'oauth.refresh', value: jti,
+    ttlMs: (isFinite(expiresMs) ? Math.max(0, expiresMs - Date.now())
+                                : refreshFamilyWindowMs()) +
+           (isFinite(skew) ? skew * 1000 : 0)
+  });
+  const settleUnused = function () {
+    claiming.then(function (unused) {
+      if (unused && unused.ok) {
+        clusterClaims.releaseUnlessSucceeded(o.res, unused.handle);
+      }
+    }, function (e) {
+      log.debug("Caught in spendRefreshToken(): " + ((e && e.message) || e));
+    });
+  };
   if (familyId) {
     let revoked = false;
     try {
@@ -3555,6 +3634,7 @@ async function spendRefreshToken(opts) {
         scope: 'oauth.refresh-family-revoked', value: familyId
       });
     } catch (e) {
+      settleUnused();
       log.debug("Caught in spendRefreshToken(): " + ((e && e.message) || e));
       log.error(errorCodes.tag('STS-OAUTH-0518') + 'RFC 9700 mode: whether ' +
                 'refresh family ' + familyId + ' was revoked could not be ' +
@@ -3564,6 +3644,7 @@ async function spendRefreshToken(opts) {
       return storeRefusal();
     }
     if (revoked) {
+      settleUnused();
       log.warn('RFC 9700 section 2.2.2: refresh token ' + jti + ' belongs ' +
                'to family ' + familyId + ', which a replay has already ' +
                'revoked. Refused, and revoked itself.');
@@ -3579,14 +3660,7 @@ async function spendRefreshToken(opts) {
                             'request.' };
     }
   }
-  const expiresMs = Number(claims.exp) * 1000;
-  const skew = Number(config.value('oauth2.clockSkewS'));
-  const answer = await clusterClaims.claim({
-    scope: 'oauth.refresh', value: jti,
-    ttlMs: (isFinite(expiresMs) ? Math.max(0, expiresMs - Date.now())
-                                : refreshFamilyWindowMs()) +
-           (isFinite(skew) ? skew * 1000 : 0)
-  });
+  const answer = await claiming;
   if (answer.ok) {
     clusterClaims.releaseUnlessSucceeded(o.res, answer.handle);
     log.debug("Leaving spendRefreshToken(). Spent.");
@@ -4513,6 +4587,7 @@ module.exports = {
   // which this file may require and which may never require this file back.
   rotationRequired: senderConstraints.rotationRequired,
   spendRefreshToken: spendRefreshToken,
+  warmRefresh: warmRefresh,
   revokeFamily: revokeFamily,
   revokeRefreshOnLogout: revokeRefreshOnLogout,
   noteTokenBinding: noteTokenBinding,

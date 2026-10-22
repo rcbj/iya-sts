@@ -3017,6 +3017,15 @@ server is seeing tokens it did not expect.
     other one about half the time, and a search that answers *nothing matches*
     to a string printed on the same page is worse than no search.
 
+  **ON A REGISTER TOO LARGE TO LIST THE PERSON PANE SEARCHES EXACTLY
+  (2026-10-22, #820).** While the token register is on demand the catalogue
+  is the delegation's identities and the one person the search names by
+  their exact name (`common/CLAUDE.md`, 3p); the answer says `search:
+  'exact'` and `complete: false`, and `delegationUserChooser()` draws the
+  pane — never the "nobody to choose" note — under
+  `consoleDelegation.userChooserExact`, and the user page's table under
+  `consoleDelegation.usersPartial`. Held whole, nothing changes.
+
   The two searches are independent (`appq`/`appfrom` and `userq`/`userfrom`),
   each rides in the OTHER's form and in the acts table's filter form
   (`chooserCarry()`) so that no control on the page clears a control the reader
@@ -8285,3 +8294,24 @@ tab, and a service account's section of the person page —
   edited here.
 * `tests/flow_type_choices.js` holds the sets, the writes, every panel, the
   marks, the cut, the labels and the counters.
+
+## TOKENS, METRICS, THE DASHBOARD AND VC STATUS SCALE WITH THE STORE (2026-10-22, #820)
+
+8081 holds about 490,000 signed-in people and a million token records, and a
+console request that walks a per-person store holds a request worker still.
+
+* **Monitoring → Tokens** (`GET /admin-api/tokens`, `tokens/set`) is
+  `tokensViewAsync()` and `tokenSetViewAsync()` over `issuedSetsAsync()` and
+  `issuedSetByKeyAsync()` (`common/CLAUDE.md`). On demand the unfiltered list
+  is the store's newest 500 records and the totals the store's count;
+  `?session=` reads that session's every record; a set is found by its
+  `set:` index. The answer carries `coverage`, and `web_tokens.ts` draws a
+  note where the list is not the whole register (`coverageNewest`,
+  `coverageHeld`, `coverageUnread`, in the seven catalogs).
+* **Monitoring → Metrics and the dashboard** take `userCountsAsync()`, where
+  they built a row per person.
+* **Monitoring → Verifiable Credentials** pages before it builds rows:
+  `vc_status_admin.ts` pages from `vcStatus.counts()` and asks `summary()`
+  for that page alone (`oid4vc/CLAUDE.md`).
+
+`tests/console_tokens_metrics_scale.js` holds all four.

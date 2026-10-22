@@ -312,6 +312,10 @@ const GLOBAL_MINTED = {
   // is an index, a jti and an expiry — nobody's data.
   'access_token_status.entries': 'the access-token status list every cell ' +
     'publishes',
+  // The bits of that list that are revoked (#820 part 3), for the list's
+  // reason: a token revoked in one cell reads INVALID at every other.
+  'access_token_status.invalid': 'the revoked bits of the access-token ' +
+    'status list every cell publishes',
   // The revocation identifiers of revoked biscuit tokens (#432), which a
   // resource server reads from whichever cell it reaches.
   'gnap.biscuitRevocations': 'revoked biscuit tokens\' revocation ids',
@@ -352,7 +356,8 @@ const CELL_MINTED = [
   // counters: a browser and its sessions are pinned to one cell.
   'admin_stats.accountCounts', 'authn.accountSets', 'authn.accountTickets',
   'admin_stats.artifacts', 'admin_stats.calls', 'admin_stats.claimSets',
-  'admin_stats.nums', 'admin_stats.scimCounts', 'admin_stats.tokens',
+  'admin_stats.nums', 'admin_stats.scimCounts', 'admin_stats.tokenHolders',
+  'admin_stats.tokens',
   'admin_stats.users', 'attribute_sources.status', 'audit.events',
   'audit.nums', 'authn.pending',
   'authn.pendingMfa', 'authn.pendingPasswordChange', 'authn.sessions',

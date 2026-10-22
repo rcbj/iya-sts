@@ -3597,8 +3597,32 @@ function generalizedTime(when) {
 
 function getEntry(dn) {
   log.debug("Entering getEntry().");
+  const found = entries.get(normalizeDn(dn)) || null;
+  // THE UUID OF AN ENTRY READ BY ITS DN, KEPT (2026-10-21). A refresh reads
+  // the person by DN for the consent check and then by UUID for "does the
+  // subject still name somebody", and the second was a synchronous `byUuid`
+  // read of the store although the window had just loaded the entry —
+  // `noteWindowedUuid()` was filled only by a lookup BY UUID. Now any entry
+  // the window answers is noted, so the UUID finds it held.
+  if (found && directoryWindow) {
+    noteHeldEntryUuid(found);
+  }
   log.debug("Leaving getEntry().");
-  return entries.get(normalizeDn(dn)) || null;
+  return found;
+}
+
+// `noteWindowedUuid()` for an entry the window just answered by DN, skipped
+// when the memo already names it there. Hot path (every windowed getEntry):
+// no Entering/Leaving pair.
+function noteHeldEntryUuid(found) {
+  const uuid = entryUuidOf(found);
+  if (!uuid) {
+    return;
+  }
+  if (windowedUuids().get(uuid) === normalizeDn(found.dn)) {
+    return;
+  }
+  noteWindowedUuid(uuid, found);
 }
 
 function hasChildren(dn) {
@@ -5698,10 +5722,36 @@ async function namesForSubjectsAsync(subjects) {
   return out;
 }
 
+// PEOPLE A REQUEST IS ABOUT TO READ BY NAME, PUT IN THE WINDOW FIRST
+// (2026-10-21, #820): a refresh reads the person at `uid=<name>,ou=users`
+// for the consent check, and that was a synchronous read of the store on
+// the event loop. `warmAsync()` asks the store off it and puts the slot,
+// never one older than what this process holds. Plain names only: a
+// subject, a DN or a DID is found by what it recorded, not by its place.
+async function warmNamesAsync(names) {
+  log.debug("Entering warmNamesAsync().");
+  if (!directoryWindow) {
+    log.debug("Leaving warmNamesAsync(). No window.");
+    return 0;
+  }
+  const keys = (names || []).map(function (one) {
+    return String(one || '');
+  }).filter(function (one) {
+    return one && !/^urn:uuid:/i.test(one) && !DN_SHAPED.test(one) &&
+      !DID_SHAPED.test(one) && !SPIFFE_SHAPED.test(one);
+  }).map(function (one) {
+    return normalizeDn('uid=' + one + ',' + usersDn());
+  });
+  log.debug("Leaving warmNamesAsync().");
+  return keys.length
+    ? directoryWindow.warmAsync(realms.currentId(), keys) : 0;
+}
+
 helpers.setSubjectResolver({ subjectFor: subjectForName,
                              nameFor: nameForSubject,
                              namesFor: namesForSubjects,
-                             namesForAsync: namesForSubjectsAsync });
+                             namesForAsync: namesForSubjectsAsync,
+                             warmNames: warmNamesAsync });
 
 // An RFC 4514 DN split into its RDNs, leaf first. The split is on commas that
 // are NOT escaped, because a value may legitimately contain one — `O=Example\,
@@ -10201,6 +10251,87 @@ function listConsentValues() {
 }
 
 // ---------------------------------------------------------------------------
+// THE CONSENT HOLDERS A PAGE AT A TIME, IN A WINDOWED PROCESS (2026-10-22,
+// #820).
+//
+// `listConsentValues()` above is every person holding `oauthConsent`, and
+// consent is required by default, so on 8081 that is about 470,000 people —
+// each a synchronous bridge question and a decrypt, on the request worker
+// that answered Monitoring → Consent, and through read-your-write every
+// other worker behind it. These two answer what the page needs instead,
+// ASYNCHRONOUSLY on the read pool: how many hold one (the asked names'
+// index, `sts_ldap_entries_asked_names`) with one page of them, and the one
+// person a search names. They answer null where the directory is not
+// windowed — every entry is in memory there and the walk above is the
+// whole directory's own answer — so a caller keeps its old path. What the
+// values MEAN is `common/consent.ts`'s, which is handed them raw.
+// ---------------------------------------------------------------------------
+/**
+ * One page of the people under `ou=users` holding a consent, in key order,
+ * and how many there are; null outside a windowed process.
+ *
+ * @param offset - holders to skip
+ * @param limit - how many to read
+ * @returns a promise of `{ total, read, rows: [{ dn, username, values }] }`
+ */
+async function consentHoldersPageAsync(offset, limit) {
+  log.debug('Entering consentHoldersPageAsync().');
+  if (!directoryWindow) {
+    log.debug('Leaving consentHoldersPageAsync(). Not windowed.');
+    return null;
+  }
+  const realmId = realms.currentId();
+  const base = normalizeDn(usersDn());
+  const total = await storeAsked(directoryWindow.countHoldersAsync(realmId,
+    base, 'oauthconsent'));
+  const count = Math.max(0, Math.floor(Number(limit) || 0));
+  const page = count > 0
+    ? await storeAsked(directoryWindow.holdersPageAsync(realmId, base,
+        'oauthconsent', Math.max(0, Math.floor(Number(offset) || 0)), count,
+        function (entry) {
+          return isPersonEntry(entry);
+        }))
+    : { rows: [], read: 0 };
+  const rows = [];
+  page.rows.forEach(function (hit) {
+    const values = hit.entry.attributes.oauthconsent || [];
+    if (values.length) {
+      rows.push({ dn: hit.entry.dn, username: usernameOfEntry(hit.entry),
+                  values: values.slice(0) });
+    }
+  });
+  log.debug('Leaving consentHoldersPageAsync(). ' + rows.length + ' of ' +
+            total + '.');
+  return { total: total, read: page.read, rows: rows };
+}
+
+/**
+ * The one person a username names, with their consents, asked of the store
+ * asynchronously; null outside a windowed process, `{ row: null }` for a
+ * name that names nobody holding one.
+ *
+ * @param name - the username
+ * @returns a promise of `{ row }`
+ */
+async function consentHolderNamedAsync(name) {
+  log.debug('Entering consentHolderNamedAsync().');
+  if (!directoryWindow) {
+    log.debug('Leaving consentHolderNamedAsync(). Not windowed.');
+    return null;
+  }
+  const found = (await storeAsked(existingUserEntriesAsync([name])))[0];
+  const values = found && found.attributes && isPersonEntry(found)
+    ? (found.attributes.oauthconsent || []) : [];
+  const row = values.length
+    ? { dn: found.dn, username: usernameOfEntry(found),
+        values: values.slice(0) }
+    : null;
+  log.debug('Leaving consentHolderNamedAsync(). ' +
+            (row ? 'Found.' : 'None.'));
+  return { row: row };
+}
+
+// ---------------------------------------------------------------------------
 // THE CREDENTIAL STORE (2026-09-06). `userPassword` on a person's own entry.
 //
 // **RFC 4519 SECTION 2.41's ATTRIBUTE, AND THE NAME IS THE POINT**: an entry
@@ -10353,7 +10484,8 @@ function passwordWriteRefusal(dn, attributes, previous, touched, written,
     log.debug('Leaving passwordWriteRefusal(). Unchanged.');
     return null;
   }
-  if (value.indexOf('$scrypt$') === 0) {
+  // Either of this service's hash forms (#847): scrypt, or argon2id.
+  if (stsCrypto.isHashedSecret(value)) {
     if (mode.verifiesCredentials()) {
       log.debug('Leaving passwordWriteRefusal(). A hash, in product mode.');
       return coded('STS-LDAP-0011', new ldap.ConstraintViolationError(
@@ -12513,6 +12645,53 @@ function deviceEntriesOwnedBy(ownerDn) {
   return out;
 }
 
+// HOW MANY DEVICES THE REALM HOLDS, ASKED ASYNCHRONOUSLY (2026-10-22, #820):
+// Monitoring → Devices counted the register by reading every device
+// (`devices.all()`, a synchronous page of `ou=devices` at a time through the
+// bridge in a windowed process), which held a request worker as the register
+// grew. In a windowed process the store's count of the container's keys,
+// asked through the read pool; elsewhere null, and the caller counts the way
+// it always did. A failure carries STS-LDAP-0139 (`storeAsked()`).
+function deviceCountAsync() {
+  log.debug('Entering deviceCountAsync().');
+  if (!directoryWindow) {
+    log.debug('Leaving deviceCountAsync(). Not windowed.');
+    return null;
+  }
+  const asked = storeAsked(directoryWindow.askAsync('count',
+    [realms.currentId(), normalizeDn(devicesDn())])).then(function (n) {
+    return Number(n) || 0;
+  });
+  log.debug('Leaving deviceCountAsync(). Asked of the store.');
+  return asked;
+}
+
+// ONE PAGE OF DEVICES, ASKED ASYNCHRONOUSLY (2026-10-22, #820): the direct
+// children of `ou=devices` in key order, `offset` and `limit` (at most
+// DIRECTORY_SEARCH_PAGE), copied. Null outside a window, where the register
+// is memory and `listDeviceEntries()` answers. `asked` is how many rows the
+// store answered, so a caller can tell the last page from a short one.
+function deviceEntriesPageAsync(offset, limit) {
+  log.debug('Entering deviceEntriesPageAsync().');
+  if (!directoryWindow) {
+    log.debug('Leaving deviceEntriesPageAsync(). Not windowed.');
+    return null;
+  }
+  const n = Math.max(1, Math.min(DIRECTORY_SEARCH_PAGE,
+                                 Number(limit) || DIRECTORY_SEARCH_PAGE));
+  const from = Math.max(0, Number(offset) || 0);
+  const asked = storeAsked(directoryWindow.containerPageAsync(
+    realms.currentId(), normalizeDn(devicesDn()), from, n))
+    .then(function (page) {
+      return { asked: page.asked,
+               entries: page.rows.map(function (hit) {
+                 return copiedDeviceEntry(hit.entry);
+               }) };
+    });
+  log.debug('Leaving deviceEntriesPageAsync(). Asked of the store.');
+  return asked;
+}
+
 // The map, rebuilt from the container listing.
 function buildDeviceIndex(container) {
   log.debug('Entering buildDeviceIndex().');
@@ -12827,6 +13006,10 @@ if (typeof credentials.setDirectory === 'function') {
     deviceEntryByIndex: deviceEntryByIndex,
     // Every device one owner holds (#636), without copying the register.
     deviceEntriesOwnedBy: deviceEntriesOwnedBy,
+    // The register's count and one page of it, asked asynchronously
+    // (#820): what Monitoring → Devices counts from in a windowed process.
+    deviceCountAsync: deviceCountAsync,
+    deviceEntriesPageAsync: deviceEntriesPageAsync,
     // The OpenID Federation register (#132), checked where it is used.
     listOidfedEntries: listOidfedEntries,
     writeOidfedEntry: writeOidfedEntry,
@@ -13497,12 +13680,103 @@ function credentialCensus(names) {
 async function credentialCensusAsync(names, counter) {
   log.debug('Entering credentialCensusAsync(). ' + (names || []).length +
             ' name(s).');
+  const out = await valuesOfNamesAsync(names, counter, censusOfEntry);
+  log.debug('Leaving credentialCensusAsync().');
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// THE SHOWN ROWS' CREDENTIALS, ASKED TOGETHER (#820, 2026-10-22).
+//
+// `/admin/users` decorated each row it showed through
+// `credentials.factorHolderRow()` — `mechanismsFor()`, about nine
+// `locateEntry()`s per person — and in a windowed process every one of them
+// that missed the window was a SYNCHRONOUS round trip through the bridge,
+// charged to the request's store budget (STS-LDAP-0175). On 8081, at about
+// 660,000 people under a sign-in load, fifty rows spent the budget and the
+// page "could not be drawn" while the worker refused code exchanges.
+//
+// This is the census's own resolution (`valuesOfNamesAsync()`, one `byKeys`
+// per five hundred names and a `byName` for each that missed, all through
+// the read pool) handing back, per name, the census's raw values and the one
+// more attribute a full roster row reads — the recovery codes, RAW, for
+// `credentials.ts` to interpret as `backupCodeStatus()` does. Nothing is
+// interpreted here, for `credentialCensus()`'s reason.
+// ---------------------------------------------------------------------------
+/**
+ * The credential values a full roster row reads, for each named person,
+ * asked asynchronously.
+ *
+ * @param names - the names, as `locateEntry()` takes them
+ * @param counter - optional; what the store was asked, for a test
+ * @returns a promise of one element per name: null where no entry is found,
+ *   else the census's values and `backupCodes`, the raw recovery-code value
+ */
+async function credentialRowsAsync(names, counter) {
+  log.debug('Entering credentialRowsAsync(). ' + (names || []).length +
+            ' name(s).');
+  const out = await valuesOfNamesAsync(names, counter, rowValuesOfEntry);
+  log.debug('Leaving credentialRowsAsync().');
+  return out;
+}
+
+// The DN of each named person's entry, by `personDnOf()`'s rule
+// (`existingUserEntry()`), asked asynchronously (#820): the users list
+// carries each shown row's DN, and asking it one name at a time was one
+// more synchronous round trip per row in a windowed process.
+/**
+ * Each named person's entry DN, asked asynchronously.
+ *
+ * @param names - the usernames
+ * @returns a promise of one DN per name, '' where there is no entry
+ */
+async function personDnsAsync(names) {
+  log.debug('Entering personDnsAsync(). ' + (names || []).length +
+            ' name(s).');
+  const list = (names || []).map(function (name) {
+    return String(name == null ? '' : name);
+  });
+  let found;
+  if (directoryWindow) {
+    found = await existingUserEntriesAsync(list);
+  } else {
+    found = list.map(function (name) {
+      return existingUserEntry(name);
+    });
+  }
+  const out = list.map(function (name, i) {
+    return found[i] ? found[i].dn : '';
+  });
+  log.debug('Leaving personDnsAsync().');
+  return out;
+}
+
+// One entry's values for a full roster row: the census's, and the recovery
+// codes raw. Called once per shown row, so no Entering/Leaving pair, for
+// `censusOfEntry()`'s reason.
+function rowValuesOfEntry(stored) {
+  const out = censusOfEntry(stored);
+  const codes = (stored.attributes.stsbackupcodes || [])[0];
+  out.backupCodes = codes ? String(codes) : '';
+  return out;
+}
+
+// `credentialCensusAsync()`'s resolution with what is read off each entry
+// handed in (#820): the census reads `censusOfEntry()`, a roster row
+// `rowValuesOfEntry()`. Outside a window it is the synchronous walk, which
+// asks no store.
+async function valuesOfNamesAsync(names, counter, ofEntry) {
+  log.debug('Entering valuesOfNamesAsync(). ' + (names || []).length +
+            ' name(s).');
   const list = (names || []).map(function (name) {
     return String(name == null ? '' : name);
   });
   if (!directoryWindow) {
-    log.debug('Leaving credentialCensusAsync(). No window.');
-    return credentialCensus(list);
+    log.debug('Leaving valuesOfNamesAsync(). No window.');
+    return list.map(function (name) {
+      const stored = locateEntry(name).stored;
+      return stored ? ofEntry(stored) : null;
+    });
   }
   const out = list.map(function () {
     return null;
@@ -13516,16 +13790,16 @@ async function credentialCensusAsync(names, counter) {
     return list[i];
   }), counter);
   plain.forEach(function (i, at) {
-    out[i] = found[at] ? censusOfEntry(found[at]) : null;
+    out[i] = found[at] ? ofEntry(found[at]) : null;
   });
   for (const i of shaped) {
     const stored = await locateStoredAsync(list[i]);
-    out[i] = stored ? censusOfEntry(stored) : null;
+    out[i] = stored ? ofEntry(stored) : null;
   }
   if (counter) {
     counter.identifiers = (counter.identifiers || 0) + shaped.length;
   }
-  log.debug('Leaving credentialCensusAsync(). ' + plain.length +
+  log.debug('Leaving valuesOfNamesAsync(). ' + plain.length +
             ' name(s), ' + shaped.length + ' identifier(s).');
   return out;
 }
@@ -13951,6 +14225,10 @@ if (typeof credentials.addDirectoryHooks === 'function') {
   credentials.addDirectoryHooks({
     credentialCensus: credentialCensus,
     credentialCensusAsync: credentialCensusAsync,
+    // The shown rows' full credential values and their DNs, asked
+    // together and asynchronously (#820).
+    credentialRowsAsync: credentialRowsAsync,
+    personDnsAsync: personDnsAsync,
     applicationMatcher: applicationMatcher,
     // How many people the realm DEFINES, counted rather than listed, and
     // the first names of them without listing the rest (#610) — the
@@ -14141,6 +14419,9 @@ if (typeof consent.setDirectory === 'function') {
       return removeConsentValues(key, values, 'oauthConsent');
     },
     listConsents: listConsentValues,
+    // ONE PAGE OF THE HOLDERS, in a windowed process (#820).
+    consentHoldersPageAsync: consentHoldersPageAsync,
+    consentHolderNamedAsync: consentHolderNamedAsync,
     // THE WITHDRAWALS (#172), on the same entry through the same functions.
     withdrawalsOf: function withdrawalsOf(key) {
       log.debug('Entering withdrawalsOf().');
@@ -17577,8 +17858,8 @@ function ldapAddNow(req, res, next) {
 // runs, so `credentials.preparePassword()` — synchronous, inside a modify that
 // is atomic across its changes — finds the verdict waiting and refuses a
 // breached password as it refuses one the policy does not allow. A value
-// already hashed (`{SCRYPT}`, `$scrypt$`) is not a password anybody typed and
-// is not asked about. The handler runs whatever the screen answered: an
+// already hashed (`{SCRYPT}`, `$scrypt$`, `$argon2id$`) is not a password
+// anybody typed and is not asked about. The handler runs whatever the screen answered: an
 // unreachable API decides nothing.
 // ---------------------------------------------------------------------------
 function clearPasswordsIn(attributes) {
@@ -17592,7 +17873,7 @@ function clearPasswordsIn(attributes) {
       const text = Buffer.isBuffer(value) ? value.toString('utf8')
                                           : String(value);
       if (text && !/^\{[A-Za-z0-9-]+\}/.test(text) &&
-          text.indexOf('$scrypt$') !== 0) {
+          !stsCrypto.isHashedSecret(text)) {
         out.push(text);
       }
     });
@@ -17660,7 +17941,11 @@ function screenedThen(req, next, passwords, run) {
   };
   log.debug('Leaving screenedThen(). Screening and hashing.');
   const hashed = Promise.all(passwords.map(function (one) {
-    return stsCrypto.hashSecretAsync(one).then(function (hash) {
+    // A PERSON'S PASSWORD, so the password policy's algorithm and
+    // parameters (#847) — the same spec `preparePassword()` checks the hash
+    // against before it takes it.
+    return stsCrypto.hashPasswordAsync(one, passwordPolicy.hashSpec(
+      passwordPolicy.profileFor())).then(function (hash) {
       return { password: one, hash: hash };
     }, function (e) {
       // The body hashes it itself, as it did before #756.

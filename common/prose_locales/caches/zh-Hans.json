@@ -680,8 +680,8 @@
     "text": "每个有效访问令牌在本领域访问令牌状态列表中的索引——OAuth RFC 9068 令牌和 GNAP 的两种 JWT 格式——连同其 jti，这样可以从撤销注册表计算出该位。"
   },
   "caches.store.oauth2.access-token-status.bound": {
-    "en": "04bb104bc7ab1ff8",
-    "text": "强制：每个领域该列表容纳 1048576 个索引；没有空闲索引的列表会拒绝铸造访问令牌（STS-OAUTH-0817），而不是重用一个有效的索引。"
+    "en": "89d41edd17bc8817",
+    "text": "强制：每个领域该列表容纳 16777216 个索引；没有空闲索引的列表会拒绝铸造访问令牌（STS-OAUTH-0817），而不是重用一个有效的索引。"
   },
   "caches.store.oauth2.access-token-status.lifetime": {
     "en": "8de02df809461e33",

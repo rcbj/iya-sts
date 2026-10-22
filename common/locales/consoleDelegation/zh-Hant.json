@@ -67,6 +67,8 @@
   "userChooserLabel": "尋找人員",
   "userChooserPlaceholder": "使用者名稱、主體名稱或 subject 的一部分",
   "userChooserNothing": "這裡沒有任何人符合。此清單是身分登錄與委派所指名的所有人的「聯集」，因此出現在上方頁面卻不在這裡的名稱，是以應用程式而非人員身分來到本服務的。",
+  "userChooserExact": "<strong>此登錄太大，無法全部列出。</strong>可選的是委派所指名的身分，其他人只能依其確切名稱搜尋到。",
+  "usersPartial": "<strong>這裡只列出部分身分。</strong>登錄太大，無法全部列出：這些是委派所指名的身分，以及依名稱搜尋的那一個。",
   "signedIn": "已登入",
   "toThisService": "本服務",
   "issuedFor": "簽發予",

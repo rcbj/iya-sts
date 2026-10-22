@@ -502,6 +502,8 @@ class Logout {
         // see liveSessions() for why enumerating them is this module's job
         // and not the console's.
         liveSessions: instance.liveSessions.bind(instance),
+        // One page of them from the session index (#820).
+        liveSessionsPageAsync: instance.liveSessionsPageAsync.bind(instance),
         SESSION_EXPIRY_RULES: instance.sessionExpiryRules
       });
     }
@@ -600,14 +602,43 @@ class Logout {
     return out.slice(0);
   }
 
-  // The sessions of every key asked, from ONE walk of the session store, by
-  // the rule above: grouped by `holderKeyOf()` where the old walk compared it
-  // with one key, so a batch of a thousand people walks the store once.
+  // The sessions of every key asked, by the rule above.
+  //
+  // WHILE THE SESSION WINDOW IS ON (2026-10-22, #820) each person's are read
+  // from the index — `sessionsOfOne()`, two indexed columns per key — and the
+  // store is never walked: on 8081 the walk was every sealed body, about
+  // 470,000 synchronous reads on a request worker, for the inventory of ONE
+  // person, and through read-your-write every other worker waited behind it.
+  // A key the index cannot read throws (unread, never "nobody"), as the walk
+  // does. THE GAP, accepted (rcbj): a session filed under NEITHER the
+  // person's username NOR their entry's subject — a realm-qualified name
+  // with no subject that still resolves, which only a build before every
+  // session carried the entry's `urn:uuid:` sub could have made — is not
+  // seen, so not listed and not ended. Such sessions are legacy and no
+  // installation holds any (rcbj, 2026-10-22).
+  //
+  // With the window off every session is in this process's memory, so the
+  // walk is a walk of a Map, ONE for a whole batch: grouped by
+  // `holderKeyOf()` where the old walk compared it with one key, so a batch
+  // of a thousand people walks the store once.
   private sessionsByKey(keys: string[]): Map<string, Loose[]> {
     const { log, authn, stats } = this.deps;
     log.debug("Entering Logout.sessionsByKey(). " + keys.length + " key(s).");
     const out = new Map();
     keys.forEach((key) => { out.set(String(key || ''), []); });
+    if (typeof authn.sessionWindowOn === 'function' &&
+        authn.sessionWindowOn() &&
+        typeof authn.sessionsHeldUnder === 'function') {
+      out.forEach((list, key) => {
+        if (!key) {
+          return;
+        }
+        const one = this.sessionsOfOne(key);
+        out.set(key, (one && one.get(key)) || []);
+      });
+      log.debug("Leaving Logout.sessionsByKey(). From the index.");
+      return out;
+    }
     // holderKeyOf moves when a urn:uuid subject resolves, so it is not a
     // column. The page is every sealed body; a cached subset is not.
     // Null is an unread page. An empty map would let a global sign-out
@@ -642,8 +673,9 @@ class Logout {
   // `holderKeyOf()`'s normalisation maps to the key (a realm-qualified one)
   // with no subject that still resolves, which `authn` no longer makes — every
   // session it starts carries the entry's `urn:uuid:` sub. Used for ONE key
-  // (`heldIdsFor()`, the risk engine's `heldBy()`); a sign-out and a set of
-  // people keep the walk. Null where `authn` offers no such read.
+  // (`heldIdsFor()`, the risk engine's `heldBy()`) and, while the session
+  // window is on, for every key a sign-out or a set of people names
+  // (`sessionsByKey()`, #820). Null where `authn` offers no such read.
   private sessionsOfOne(key: string): Map<string, Loose[]> | null {
     const { log, authn, stats } = this.deps;
     log.debug("Entering Logout.sessionsOfOne().");
@@ -651,7 +683,10 @@ class Logout {
       log.debug("Leaving Logout.sessionsOfOne(). No such read.");
       return null;
     }
-    const subject = String(helpers.subjectForName(key) || '');
+    // A key that is an unresolved `urn:uuid:` (`identityKeyOf()`'s answer for
+    // a session with no username) is its own subject (#820).
+    const subject = /^urn:uuid:/i.test(key) ? key
+      : String(helpers.subjectForName(key) || '');
     const found = authn.sessionsHeldUnder(key, subject);
     if (found == null) {
       log.debug("Leaving Logout.sessionsOfOne(). Unread.");
@@ -2021,16 +2056,32 @@ class Logout {
     return rows.slice(0);
   }
 
-  // The wallet credential rows of every key asked, from one walk (#351).
+  // The wallet credential rows of every key asked, each person's read through
+  // the register's subject index (2026-10-22, #820). It walked every row of
+  // the register with a `nameForSubject()` each — a directory read per row,
+  // for one person's sign-out. A row's subject is the person's
+  // `urn:uuid:<entryUUID>`, so the key's subject finds them: the key itself
+  // where it is an unresolved `urn:uuid:`, else the subject its entry gives.
+  // The walk's own rule (`holderKeyOf()`) then keeps only the rows that file
+  // under the key, so the answer is the walk's. A key with no subject holds
+  // none.
   private walletRowsByKey(keys: string[]): Map<string, any[]> {
     const { log, stats } = this.deps;
     log.debug("Entering Logout.walletRowsByKey().");
     const out = new Map();
     keys.forEach((key) => { out.set(String(key || ''), []); });
-    vcIssued.rowsForSubject(null).forEach(function (row) {
-      const list = out.get(stats.holderKeyOf(
-        helpers.nameForSubject(row.subject) || '', row.subject));
-      if (list) list.push(row);
+    out.forEach(function (list, key) {
+      const subject = /^urn:uuid:/i.test(key) ? key
+        : String(helpers.subjectForName(key) || '');
+      if (!subject) {
+        return;
+      }
+      vcIssued.rowsForSubject(subject).forEach(function (row) {
+        if (stats.holderKeyOf(helpers.nameForSubject(row.subject) || '',
+                              row.subject) === key) {
+          list.push(row);
+        }
+      });
     });
     log.debug("Leaving Logout.walletRowsByKey().");
     return out;
@@ -2273,11 +2324,14 @@ class Logout {
    * `/admin/sessions` and `GET /admin-api/sessions`. Expired sessions and
    * arrival sessions nobody has signed in to are left out.
    *
+   * @param given - the sign-on sessions to list, where the caller read a
+   *   page of them from the index (`liveSessionsPageAsync()`); every one
+   *   when absent
    * @returns the live sessions
    * @throws when the session index could not be read. The cache is not
    *   the list.
    */
-  liveSessions() {
+  liveSessions(given?) {
     const { log, authn, config, krb5Principals, ldapServer, stats } = this.deps;
     log.debug("Entering Logout.liveSessions().");
     const nowMs = Date.now();
@@ -2290,9 +2344,13 @@ class Logout {
     // drops a session when it is next looked up, so one still in the map with a
     // past `expires` is a session that has ended and has not been swept — and
     // this page is what is LIVE.
-    const matched = authn.sessionsMatching(function () {
-      return true;
-    });
+    // A PAGE THE CALLER READ FROM THE INDEX, where it gave one (#820):
+    // every session, opened one at a time, held a request worker for two
+    // minutes at 470,000 of them.
+    const matched = Array.isArray(given) ? given
+      : authn.sessionsMatching(function () {
+        return true;
+      });
     // Null is an unread page, already recorded as STS-AUTHN-0338. The
     // rows still cached are not who is signed in.
     if (matched == null) {
@@ -2649,6 +2707,38 @@ class Logout {
     log.debug("Leaving Logout.liveSessions(). " + out.length +
               " live session(s).");
     return out;
+  }
+
+  /**
+   * One page of the live sign-on sessions from the session index, as rows,
+   * with the other families' rows (Kerberos tickets, GNAP grants, directory
+   * connections), which are bounded by what the service holds (#820).
+   *
+   * @param options - as `authn.liveSessionPageAsync()`'s
+   * @returns a promise of `{ rows, sessionTotal, authenticated,
+   *   unauthenticated }`, or of null while the session window is off (the
+   *   caller lists `liveSessions()` whole)
+   * @throws when the session index could not be read
+   */
+  async liveSessionsPageAsync(options?) {
+    const { log, authn } = this.deps;
+    log.debug("Entering Logout.liveSessionsPageAsync().");
+    const page = typeof authn.liveSessionPageAsync === 'function'
+      ? await authn.liveSessionPageAsync(options) : null;
+    if (!page) {
+      log.debug("Leaving Logout.liveSessionsPageAsync(). Window off.");
+      return null;
+    }
+    if (page.unread) {
+      log.debug("Leaving Logout.liveSessionsPageAsync(). Unread.");
+      throw new Error('the sessions could not be read');
+    }
+    const rows = this.liveSessions(page.sessions);
+    log.debug("Leaving Logout.liveSessionsPageAsync(). " + rows.length +
+              " row(s).");
+    return { rows: rows, sessionTotal: page.total,
+             authenticated: page.authenticated,
+             unauthenticated: page.unauthenticated };
   }
 
   // ---------------------------------------------------------------------------

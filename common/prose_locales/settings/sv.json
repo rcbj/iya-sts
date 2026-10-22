@@ -820,8 +820,8 @@
     "text": "Kostnad för lösenordshash (log2 av scrypt N)"
   },
   "security.passwordHashLogN|description": {
-    "en": "332bb0d7bee5b84a",
-    "text": "scrypts CPU- och minneskostnad för ett NYLAGRAT lösenord, en klienthemlighet, en aktiveringstoken eller en återställningskod, som en tvåpotens: 15 är N=32768, ungefär 70 ms per hash på en vanlig maskin. Golvet på 14 är det minsta som tjänsten skriver. En höjning gör ett stulet lager långsammare att angripa och varje inloggning proportionellt långsammare. Redan lagrade hashar bär sina egna parametrar och påverkas inte."
+    "en": "3492bc25313f659a",
+    "text": "scrypts CPU- och minneskostnad för en NYLIGEN lagrad klienthemlighet, aktiverings- eller återställningstoken, återställningskod eller applösenord, som en tvåpotens: 15 är N=32768, ungefär 70 ms per hash på en vanlig maskin. Golvet 14 är det minsta den här tjänsten skriver. Att höja det gör ett stulet lager långsammare att angripa och varje inloggning långsammare i samma proportion. Redan lagrade hashar bär sina egna parametrar och påverkas inte. En persons lösenord hashas inte under detta: dess algoritm och kostnad är lösenordspolicyns (Katalog > Policyer)."
   },
   "security.passwordHashR|label": {
     "en": "d7d901b7702608d7",
@@ -1108,8 +1108,8 @@
     "text": "Användarverifiering"
   },
   "webauthn.userVerification|description": {
-    "en": "e0f3bd0371bd63c6",
-    "text": "`required` som standard i alla lägen (rcbj, 2026-10-09; det var `preferred`). Om autentiseraren måste verifiera PERSONEN — en PIN-kod, ett fingeravtryck, ett ansikte — utöver att bevisa innehav av nyckeln. **DETTA ÄR DEN ENDA CEREMONIINSTÄLLNING SOM TJÄNSTEN ÄVEN UPPRÄTTHÅLLER**: `required` skickas till webbläsaren och UV-flaggan i autentiseringsdata KONTROLLERAS sedan när ceremonin kommer tillbaka, så en autentiserare som inte verifierade vägras i stället för att tyst godtas. **En höjning ändrar inte vad en session PÅSTÅR.** En lösenordslös inloggning registrerar fortfarande `amr [\"hwk\"]` och `acr \"1\"` — en faktor — även med `required`, eftersom RFC 8176 inte har något värde för *autentiseraren verifierade användaren* som tjänsten ärligt skulle kunna intyga, och att hitta på det starkare anspråket är exakt den förfalskning som den här profilen vägrar överallt annars. `/admin/webauthn` säger det på sidan."
+    "en": "eb2931954812147c",
+    "text": "`required` som standard i alla lägen (rcbj, 2026-10-09; det var `preferred`). Om autentiseraren måste verifiera PERSONEN — en PIN-kod, ett fingeravtryck, ett ansikte — utöver att bevisa innehav av nyckeln. **TJÄNSTEN UPPRÄTTHÅLLER DEN ÄVEN**, liksom de erbjudna algoritmerna och RP-ID:t: `required` skickas till webbläsaren och UV-flaggan i autentiseringsdata KONTROLLERAS sedan när ceremonin kommer tillbaka, så en autentiserare som inte verifierade vägras i stället för att tyst godtas. **En höjning ändrar inte vad en session PÅSTÅR.** En lösenordslös inloggning registrerar fortfarande `amr [\"hwk\"]` och `acr \"1\"` — en faktor — även med `required`, eftersom RFC 8176 inte har något värde för *autentiseraren verifierade användaren* som tjänsten ärligt skulle kunna intyga, och att hitta på det starkare anspråket är exakt den förfalskning som den här profilen vägrar överallt annars. `/admin/webauthn` säger det på sidan."
   },
   "webauthn.attestation|label": {
     "en": "13af8631fdb53757",
@@ -1620,8 +1620,8 @@
     "text": "Startgräns för begärandearbetare (ms)"
   },
   "workers.startTimeoutMs|description": {
-    "en": "81d7608fc4c1da1f",
-    "text": "Hur lång tid en begärande- eller ytarbetare får ta på sig att få upp sitt tillstånd (lagret, nycklarna, de skapade raderna och koordineringen) innan den rapporterar att den inte kunde starta. Tre misslyckanden i rad och poolen slutar starta arbetare tills workers.giveUpRetryMs och prövar sedan en; tills den är uppe stannar begärandena i frontprocessen. Höj värdet där en arbetares start är långsam — en stor uppsättning sfärnycklar som varje start certifierar om, en kall databas (#311)."
+    "en": "5d23a7adb4e81ee3",
+    "text": "Hur länge en begäran- eller ytarbetare får ta på sig att bygga upp sitt tillstånd (lagret, nycklarna, de utfärdade raderna och samordningen) innan poolen slutar vänta på den. En arbetare som överskrider den är LÅNGSAM, inte misslyckad: den får bli klar och ansluter till poolen när den är redo (#820). Först vid fyra gånger detta rapporterar den att den inte kunde starta; tre sådana misslyckanden i rad och poolen slutar starta arbetare tills workers.giveUpRetryMs, och provar sedan en; tills den är redo stannar begärandena i frontprocessen. Höj den där en arbetares start är långsam — en stor uppsättning realm-nycklar som varje start certifierar om, en kall databas (#311)."
   },
   "workers.startTimeoutMs|restartReason": {
     "en": "7ac1de67a7c566c0",
@@ -1776,8 +1776,8 @@
     "text": "Read-your-write över begärandearbetare"
   },
   "workers.readYourWrite|description": {
-    "en": "c96ff2ed1ab0bfce",
-    "text": "Om en begärandearbetare måste komma ikapp med det som de andra arbetarna har skrivit innan den betjänar. Koordinering får arbetare att KONVERGERA — uppmätt till en halv sekund till en sekund — och konvergens är inte read-your-write: med detta av kan en anropare som skriver genom en arbetare och läser genom en annan besvaras av en som inte har kommit ikapp, vilket spelar störst roll för fanout-ytorna (SCIM, XACML, hanterings-API:t) just för att på varandra följande begäranden där hamnar var som helst. Med det på räknar poolen skrivningar och en arbetare som ligger efter hämtar innan den svarar — så kostnaden faller på den första läsningen efter en skrivning på varje arbetare, och på ingenting medan ingenting skrivs. PÅ SOM STANDARD sedan #364, när en begärandearbetare blev standard: fronttråden besvarar fortfarande det som aldrig skickas vidare, så en anropare skulle annars se sin egen skrivning försvinna mellan två begäranden. Det måste vara på för en ytpool (workers.surfaceCount)."
+    "en": "cb6bbc928d5c9d50",
+    "text": "Om en begäransarbetare måste komma ikapp med skrivningar som gjorts genom de andra arbetarna innan den svarar. Koordinering får arbetarna att konvergera på en halv sekund till en sekund, och det är inte read-your-write. `session` (standard): en begäran som bär en sessionskaka, poolkakan eller ett inloggningsflöde i sin adress väntar bara på skrivningarna från tidigare begäranden som bar samma sak, och på frontprocessens egna skrivningar; en begäran som inte bär något av dem, till exempel en tokenbegäran från en klients server, SCIM eller ett anrop till hanterings-API:t med en bearer-token, väntar på varje skrivning som besvarats före den. En webbläsare ser alltså sina egna skrivningar direkt, och en annan webbläsares eller klients först när arbetarna har konvergerat. `global`: varje begäran väntar på varje skrivning som besvarats före den, vilket kostar tiotals millisekunder per begäran under last. `off`: ingen begäran väntar, och en anropare kanske inte hittar sin egen skrivning. `true` betyder `session` och `false` betyder `off`. Den får inte vara avstängd för en ytpool (workers.surfaceCount)."
   },
   "workers.socketDir|label": {
     "en": "92c5ff3b54b1efde",
@@ -5704,8 +5704,8 @@
     "text": "Uppdatering av sidan för plånboksinloggning (s)"
   },
   "oid4vp.signInPollS|description": {
-    "en": "439aa4f77625ebb1",
-    "text": "Hur ofta QR-kodsidan (oid4vp.signInCrossDevice) laddar om sig själv medan en plånbok på en annan enhet svarar. Det är en <meta>-uppdatering och inte ett skript, så varje omladdning är en hel sida. Sidan för Digital Credentials API laddas inte om: en omladdning skulle stänga webbläsarens plånboksdialog."
+    "en": "b248261723e71249",
+    "text": "Hur ofta QR-kodsidan (oid4vp.signInCrossDevice) frågar om en plånbok på en annan enhet har svarat: dess skript pollar POST /authn-api/wallet/{state}/status var så många sekunder, utan att ladda om sidan (#574; fram till dess var det en <meta>-uppdatering). Digital Credentials API-sidan pollar inte enligt den här klockan: den väntar på att webbläsarens plånboksdialog svarar."
   },
   "oid4vp.signInCrossDevice|label": {
     "en": "20ef4bd658348a2f",
@@ -9564,8 +9564,8 @@
     "text": "Körningar behålls i (timmar)"
   },
   "scheduler.runHistoryHours|description": {
-    "en": "0f3e63d5914e2685",
-    "text": "Varje körning som avslutades inom så här många timmar behålls — även en misslyckad — utöver varje jobbs senaste scheduler.runHistoryCount körningar, den som behåller flest. Ett jobb som körs varje minut behåller därför ett dygns körningar i varje sfär det körs i. 0 behåller bara antalet."
+    "en": "5c283870d0319ed7",
+    "text": "Varje körning som avslutades inom så här många timmar behålls — även en misslyckad — utöver varje jobbs senaste scheduler.runHistoryCount körningar, det som behåller flest. Ett jobb som körs varje minut behåller därför en timmes körningar i varje realm det körs i, eller sina senaste scheduler.runHistoryCount om det är fler. 0 behåller bara antalet."
   },
   "scheduler.disabledJobs|label": {
     "en": "a33937a2bd564b6d",

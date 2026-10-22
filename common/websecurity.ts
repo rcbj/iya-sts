@@ -152,6 +152,7 @@ interface WebSecurityDeps {
 interface BucketStore {
   readonly size: number;
   get(key: string): Bucket | undefined;
+  has(key: string): boolean;
   set(key: string, value: Bucket): unknown;
   delete(key: string): boolean;
   clear(): void;
@@ -647,11 +648,22 @@ class WebSecurity {
             options?: { keepAddress?: boolean } | null): void {
     const { log, buckets } = this.deps;
     log.debug("Entering WebSecurity.succeeded().");
+    // ONLY A BUCKET THAT EXISTS IS DELETED (2026-10-22, #820): a delete is
+    // journalled whether or not anything was there, so every successful
+    // client authentication on a refresh wrote a row, which every process
+    // then applied, for a bucket that almost never exists. A bucket another
+    // process wrote that has not reached this one yet is not cleared here;
+    // that errs strict, and the next success after it arrives clears it.
+    const clear = function (key: string): void {
+      if (buckets.has(key)) {
+        buckets.delete(key);
+      }
+    };
     if (identity) {
-      buckets.delete(what + '|id|' + String(identity).toLowerCase());
+      clear(what + '|id|' + String(identity).toLowerCase());
     }
     if (!(options && options.keepAddress)) {
-      buckets.delete(what + '|ip|' + this.addressOf(req));
+      clear(what + '|ip|' + this.addressOf(req));
     }
     log.debug("Leaving WebSecurity.succeeded().");
   }
@@ -835,16 +847,34 @@ class WebSecurity {
    */
   blockedShared(what: string, req: any, identity?: unknown,
                 limit?: NamedLimit): Promise<LimitAnswer | null> {
+    const { log } = this.deps;
+    log.debug('Entering WebSecurity.blockedShared(). what=' + what);
+    log.debug('Leaving WebSecurity.blockedShared().');
+    return this.peekShared(what, req, identity, limit).then(
+      function (peeked) {
+        return peeked.answer;
+      });
+  }
+
+  // `blockedShared()`'s read, with the counts it read: `counts` maps each
+  // bucket key to its failures, or is null where the shared store was not
+  // read (no shared store, or it could not be reached).
+  private peekShared(what: string, req: any, identity?: unknown,
+                     limit?: NamedLimit):
+      Promise<{ answer: LimitAnswer | null;
+                counts: Map<string, number> | null }> {
     const { log, clusterCounters, errorCodes } = this.deps;
     const self = this;
-    log.debug('Entering WebSecurity.blockedShared(). what=' + what);
+    log.debug('Entering WebSecurity.peekShared(). what=' + what);
     if (!clusterCounters.sharesWindows()) {
-      log.debug('Leaving WebSecurity.blockedShared(). No shared store: ' +
+      log.debug('Leaving WebSecurity.peekShared(). No shared store: ' +
                 'blocked().');
-      return Promise.resolve(this.blocked(what, req, identity, limit));
+      return Promise.resolve({ answer: this.blocked(what, req, identity,
+                                                    limit),
+                               counts: null });
     }
     const checks = this.bucketChecks(what, req, identity, limit);
-    log.debug('Leaving WebSecurity.blockedShared(). Reading the store.');
+    log.debug('Leaving WebSecurity.peekShared(). Reading the store.');
     return Promise.all(checks.map(function (check) {
       return clusterCounters.peekWindow({ scope: SHARED_SCOPE, key: check.key,
                                           realm: '' });
@@ -854,18 +884,22 @@ class WebSecurity {
                  what + '" buckets could not be read from the shared store; ' +
                  'this process\'s own buckets decide, so for now the budget ' +
                  'is per node.');
-        return self.blocked(what, req, identity, limit);
+        return { answer: self.blocked(what, req, identity, limit),
+                 counts: null };
       }
       let refusal: Refusal | null = null;
+      const counts = new Map<string, number>();
       // AT the limit, for `blocked()`'s reason: this counts nothing.
       checks.forEach(function (check, i) {
+        counts.set(check.key, Number(answers[i].count) || 0);
         if (!refusal && answers[i].count >= check.limit) {
           refusal = { kind: check.kind, limit: check.limit,
                       retryAfterS: self.secondsLeft(answers[i].remainingMs) };
         }
       });
-      return refusal ? self.sharedRefusal(refusal, 'Too many failed attempts.')
-        : null;
+      return { answer: refusal
+        ? self.sharedRefusal(refusal, 'Too many failed attempts.') : null,
+               counts: counts };
     });
   }
 
@@ -938,20 +972,22 @@ class WebSecurity {
    */
   succeededShared(what: string, req: any, identity?: unknown,
                   options?: { keepAddress?: boolean; unlessBlocked?: boolean;
-                              limit?: NamedLimit } | null):
+                              limit?: NamedLimit;
+                              counted?: Map<string, number> | null } | null):
       Promise<LimitAnswer | null | void> {
     const { log, clusterCounters } = this.deps;
     const self = this;
     log.debug("Entering WebSecurity.succeededShared().");
     if (options && options.unlessBlocked) {
       log.debug("Leaving WebSecurity.succeededShared(). Asking first.");
-      return this.blockedShared(what, req, identity,
-                                options.limit).then(function (lockedOut) {
-        if (lockedOut) {
-          return lockedOut;
+      return this.peekShared(what, req, identity,
+                             options.limit).then(function (peeked) {
+        if (peeked.answer) {
+          return peeked.answer;
         }
         return self.succeededShared(what, req, identity,
-                                    { keepAddress: !!options.keepAddress })
+                                    { keepAddress: !!options.keepAddress,
+                                      counted: peeked.counts })
           .then(function () {
             return null;
           });
@@ -969,9 +1005,19 @@ class WebSecurity {
     if (!(options && options.keepAddress)) {
       keys.push(what + '|ip|' + this.addressOf(req));
     }
+    // A BUCKET JUST READ EMPTY IS NOT CLEARED (2026-10-21, #820): clearing a
+    // window with no failures in it changes nothing and cost a round trip to
+    // the store per bucket on every client authentication — two per token
+    // request. One that was not read, or read with failures, is cleared as
+    // before; a failure counted since the read is left counted, which is the
+    // same answer a success that arrived a moment earlier would have given.
+    const counted = options && options.counted;
+    const clearing = counted ? keys.filter(function (key) {
+      return !counted.has(key) || (counted.get(key) || 0) > 0;
+    }) : keys;
     log.debug("Leaving WebSecurity.succeededShared(). Clearing " +
-              keys.length + " window(s).");
-    return Promise.all(keys.map(function (key) {
+              clearing.length + " window(s).");
+    return Promise.all(clearing.map(function (key) {
       return clusterCounters.clearWindow({ scope: SHARED_SCOPE, key: key,
                                            realm: '' });
     })).then(function () {

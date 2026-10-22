@@ -36,8 +36,8 @@
     "text": "password"
   },
   "password.FIELDS.history.what": {
-    "en": "3d9f899c6a28ad30",
-    "text": "Ilan sa mga DATING password ng isang tao ang tinatandaan at tinatanggihan. Palaging tinatanggihan din ang kasalukuyang password habang higit sa 0 ito, kaya ang 5 ay nangangahulugang hindi puwedeng maging alinman sa huling anim ang bagong password. Pinapatay ng 0 ang patakaran. Attribute ito ng draft, na may kahulugan ng draft. Bawat tinatandaang password ay itinatago bilang scrypt hash na kung saan ito nakatago na, sa pwdHistory sa sariling entry ng tao, at ang pagsuri sa bagong password ay nagkakahalaga ng isang paghahambing ng hash sa bawat isang tinatandaan."
+    "en": "06be7ed15512bb42",
+    "text": "Ilan sa mga NAKARAANG password ng isang tao ang inaalala at tinatanggihan. Palaging tinatanggihan din ang kasalukuyang password habang higit sa 0 ito, kaya ang 5 ay nangangahulugang ang bagong password ay hindi maaaring alinman sa huling anim. Pinapatay ng 0 ang patakaran. Ang attribute ng draft, na may kahulugan ng draft. Bawat inaalalang password ay itinatago bilang hash na ginamit na sa pag-store nito (argon2id o scrypt), sa pwdHistory sa sariling entry ng tao, at ang pagsuri sa bagong password ay gumagastos ng isang paghahambing ng hash bawat isang inaalala."
   },
   "password.FIELDS.minSymbols.label": {
     "en": "95033032ad043277",
@@ -79,6 +79,74 @@
     "en": "9abc8e368dbfdf05",
     "text": "Gaano kahaba ang password na GINAGAWA ng serbisyong ito — para sa bagong user na ginawa mula sa console o /admin-api, sa Generate ng isang operator, at sa product-mode na bootstrap account. Dapat itong hindi bababa sa minimum na haba at hindi bababa sa dalawang beses ng bilang ng simbolo dagdag ang dalawa. Ang dalawampung character mula sa alphabet na may 90 character ay mga 130 bit."
   },
+  "password.FIELDS.hashAlgorithm.label": {
+    "en": "3864bfd74ab51369",
+    "text": "Algorithm sa pag-hash ng password"
+  },
+  "password.FIELDS.hashAlgorithm.what": {
+    "en": "9f6e2faa116ebe94",
+    "text": "Ang algorithm na ginagamit sa pag-hash ng bagong naka-store na password: scrypt (RFC 7914), ang default, o argon2id (RFC 9106, ang unang pinili ng OWASP Password Storage Cheat Sheet). Ang naka-store na hash ay nagsasabi ng sarili nitong algorithm at mga parameter at patuloy na nabe-verify; ang hindi gumagamit ng algorithm na ito na may ganitong mga parameter ay muling iha-hash sa susunod na na-verify na pag-sign in ng tao. Ang mga client secret, activation token, recovery code at app password ay hindi mga password at nananatiling scrypt."
+  },
+  "password.FIELDS.argon2Memory.label": {
+    "en": "f56cee65f89ca6d4",
+    "text": "Memory ng argon2id"
+  },
+  "password.FIELDS.argon2Memory.unit": {
+    "en": "97ee1b8dd0d5456b",
+    "text": "KiB"
+  },
+  "password.FIELDS.argon2Memory.what": {
+    "en": "ec649d8291c32776",
+    "text": "Ang memory na ginagamit ng isang argon2id hash, sa kibibytes (m). Ang 19456 KiB (19 MiB) ang minimum ng OWASP at ang pinakamababang isusulat ng serbisyong ito. Kapag itinaas ito, mas bumabagal ang pag-atake sa ninakaw na store, at bawat pag-sign in ay gagamit ng ganoon kadaming dagdag na memory."
+  },
+  "password.FIELDS.argon2Iterations.label": {
+    "en": "7d86f5ad8bfeae28",
+    "text": "Mga iteration ng argon2id"
+  },
+  "password.FIELDS.argon2Iterations.unit": {
+    "en": "2c28ec094b830e09",
+    "text": "pass"
+  },
+  "password.FIELDS.argon2Iterations.what": {
+    "en": "b04ad660d2d130b6",
+    "text": "Ilang pass ang ginagawa ng argon2id sa memory nito (t). Ang 2 ang minimum ng OWASP sa 19 MiB; bawat pass ay nagdaragdag muli ng parehong oras."
+  },
+  "password.FIELDS.argon2Parallelism.label": {
+    "en": "e1eb312244fb28cf",
+    "text": "Parallelism ng argon2id"
+  },
+  "password.FIELDS.argon2Parallelism.unit": {
+    "en": "ff1789b2348ddbc2",
+    "text": "lane"
+  },
+  "password.FIELDS.argon2Parallelism.what": {
+    "en": "e5321dcccf2989ad",
+    "text": "Ilang lane ang paghahatian ng memory ng argon2id (p). Bahagi ito ng hash, hindi bilang ng thread: kinukwenta ng node ang isang hash sa iisang thread anuman ang sabihin nito. Ang 1 ang bilang ng OWASP."
+  },
+  "password.FIELDS.scryptLogN.label": {
+    "en": "91d752051cc3e278",
+    "text": "Gastos ng scrypt (log2 ng N)"
+  },
+  "password.FIELDS.scryptLogN.what": {
+    "en": "d6b7b8f956d8c0b0",
+    "text": "Ang gastos sa CPU at memory ng scrypt para sa bagong naka-store na password habang scrypt ang algorithm, bilang power of two: ang 15 (ang default) ay N=32768. Ipinapares ito ng talahanayan ng OWASP sa parallelism: 2^17 na may p=1, 2^16 na may p=2, 2^15 na may p=3, 2^14 na may p=5, o 2^13 na may p=10. Ang default, 2^15 na may p=1, ay mas mababa rito."
+  },
+  "password.FIELDS.scryptBlockSize.label": {
+    "en": "7b7e7b5de9b8be58",
+    "text": "Laki ng block ng scrypt (r)"
+  },
+  "password.FIELDS.scryptBlockSize.what": {
+    "en": "f0c104745b77d30a",
+    "text": "Ang laki ng block ng scrypt para sa bagong naka-store na password habang scrypt ang algorithm. Ang memory ay humigit-kumulang 128 × N × r byte; ang 8 ang bilang na ibinibigay ng RFC 7914 at OWASP."
+  },
+  "password.FIELDS.scryptParallelism.label": {
+    "en": "0aa3282295d9521b",
+    "text": "Parallelism ng scrypt (p)"
+  },
+  "password.FIELDS.scryptParallelism.what": {
+    "en": "b088d02f4ec32169",
+    "text": "Ang parallelism ng scrypt para sa bagong naka-store na password habang scrypt ang algorithm. Kinukwenta ito ng Node sa iisang thread, kaya ang mas mataas na halaga ay gumagastos ng oras sa halip na mga core; inililista ng paglalarawan ng gastos ang mga pares na tinatanggap ng OWASP."
+  },
   "password.SCHEMA.objectClasses.pwdPolicy.what": {
     "en": "ab642ea5cb282745",
     "text": "Ang class ng draft-behera-ldap-password-policy para sa entry ng password policy. Pinangangalanan ng `pwdAttribute` ang attribute na pinamamahalaan ng policy, at dito ay palaging `userPassword` iyon."
@@ -96,8 +164,8 @@
     "text": "Ang pinakamaikling password na itatakda ng serbisyong ito, binibilang sa character (mga Unicode code point, kaya isa ang isang emoji). Ang attribute ay sa draft-behera-ldap-password-policy. Labindalawa ang default; humihingi ang NIST SP 800-63B ng hindi bababa sa 8, at 15 kapag ang password lang ang factor."
   },
   "password.SCHEMA.attributes.pwdInHistory.what": {
-    "en": "3d9f899c6a28ad30",
-    "text": "Ilan sa mga DATING password ng isang tao ang tinatandaan at tinatanggihan. Palaging tinatanggihan din ang kasalukuyang password habang higit sa 0 ito, kaya ang 5 ay nangangahulugang hindi puwedeng maging alinman sa huling anim ang bagong password. Pinapatay ng 0 ang patakaran. Attribute ito ng draft, na may kahulugan ng draft. Bawat tinatandaang password ay itinatago bilang scrypt hash na kung saan ito nakatago na, sa pwdHistory sa sariling entry ng tao, at ang pagsuri sa bagong password ay nagkakahalaga ng isang paghahambing ng hash sa bawat isang tinatandaan."
+    "en": "06be7ed15512bb42",
+    "text": "Ilan sa mga NAKARAANG password ng isang tao ang inaalala at tinatanggihan. Palaging tinatanggihan din ang kasalukuyang password habang higit sa 0 ito, kaya ang 5 ay nangangahulugang ang bagong password ay hindi maaaring alinman sa huling anim. Pinapatay ng 0 ang patakaran. Ang attribute ng draft, na may kahulugan ng draft. Bawat inaalalang password ay itinatago bilang hash na ginamit na sa pag-store nito (argon2id o scrypt), sa pwdHistory sa sariling entry ng tao, at ang pagsuri sa bagong password ay gumagastos ng isang paghahambing ng hash bawat isang inaalala."
   },
   "password.SCHEMA.attributes.stsPwdMinSymbols.what": {
     "en": "f9154c103bc3422d",
@@ -115,13 +183,41 @@
     "en": "9abc8e368dbfdf05",
     "text": "Gaano kahaba ang password na GINAGAWA ng serbisyong ito — para sa bagong user na ginawa mula sa console o /admin-api, sa Generate ng isang operator, at sa product-mode na bootstrap account. Dapat itong hindi bababa sa minimum na haba at hindi bababa sa dalawang beses ng bilang ng simbolo dagdag ang dalawa. Ang dalawampung character mula sa alphabet na may 90 character ay mga 130 bit."
   },
+  "password.SCHEMA.attributes.stsPwdHashAlgorithm.what": {
+    "en": "9f6e2faa116ebe94",
+    "text": "Ang algorithm na ginagamit sa pag-hash ng bagong naka-store na password: scrypt (RFC 7914), ang default, o argon2id (RFC 9106, ang unang pinili ng OWASP Password Storage Cheat Sheet). Ang naka-store na hash ay nagsasabi ng sarili nitong algorithm at mga parameter at patuloy na nabe-verify; ang hindi gumagamit ng algorithm na ito na may ganitong mga parameter ay muling iha-hash sa susunod na na-verify na pag-sign in ng tao. Ang mga client secret, activation token, recovery code at app password ay hindi mga password at nananatiling scrypt."
+  },
+  "password.SCHEMA.attributes.stsPwdArgon2Memory.what": {
+    "en": "ec649d8291c32776",
+    "text": "Ang memory na ginagamit ng isang argon2id hash, sa kibibytes (m). Ang 19456 KiB (19 MiB) ang minimum ng OWASP at ang pinakamababang isusulat ng serbisyong ito. Kapag itinaas ito, mas bumabagal ang pag-atake sa ninakaw na store, at bawat pag-sign in ay gagamit ng ganoon kadaming dagdag na memory."
+  },
+  "password.SCHEMA.attributes.stsPwdArgon2Iterations.what": {
+    "en": "b04ad660d2d130b6",
+    "text": "Ilang pass ang ginagawa ng argon2id sa memory nito (t). Ang 2 ang minimum ng OWASP sa 19 MiB; bawat pass ay nagdaragdag muli ng parehong oras."
+  },
+  "password.SCHEMA.attributes.stsPwdArgon2Parallelism.what": {
+    "en": "e5321dcccf2989ad",
+    "text": "Ilang lane ang paghahatian ng memory ng argon2id (p). Bahagi ito ng hash, hindi bilang ng thread: kinukwenta ng node ang isang hash sa iisang thread anuman ang sabihin nito. Ang 1 ang bilang ng OWASP."
+  },
+  "password.SCHEMA.attributes.stsPwdScryptLogN.what": {
+    "en": "d6b7b8f956d8c0b0",
+    "text": "Ang gastos sa CPU at memory ng scrypt para sa bagong naka-store na password habang scrypt ang algorithm, bilang power of two: ang 15 (ang default) ay N=32768. Ipinapares ito ng talahanayan ng OWASP sa parallelism: 2^17 na may p=1, 2^16 na may p=2, 2^15 na may p=3, 2^14 na may p=5, o 2^13 na may p=10. Ang default, 2^15 na may p=1, ay mas mababa rito."
+  },
+  "password.SCHEMA.attributes.stsPwdScryptBlockSize.what": {
+    "en": "f0c104745b77d30a",
+    "text": "Ang laki ng block ng scrypt para sa bagong naka-store na password habang scrypt ang algorithm. Ang memory ay humigit-kumulang 128 × N × r byte; ang 8 ang bilang na ibinibigay ng RFC 7914 at OWASP."
+  },
+  "password.SCHEMA.attributes.stsPwdScryptParallelism.what": {
+    "en": "b088d02f4ec32169",
+    "text": "Ang parallelism ng scrypt para sa bagong naka-store na password habang scrypt ang algorithm. Kinukwenta ito ng Node sa iisang thread, kaya ang mas mataas na halaga ay gumagastos ng oras sa halip na mga core; inililista ng paglalarawan ng gastos ang mga pares na tinatanggap ng OWASP."
+  },
   "password.SCHEMA.attributes.description.what": {
     "en": "93538e6b201100c5",
     "text": "Para saan ang profile, para sa susunod na tao."
   },
   "password.SCHEMA.personAttributes.pwdHistory.what": {
-    "en": "a057113a3f0da3b5",
-    "text": "Isang value sa bawat tinatandaang dating password, sa anyo ng draft na `time#syntaxOID#length#data` — ang data ay ang scrypt hash kung saan nakatago ang password na iyon, hindi kailanman ang password. Pinapanatili ng serbisyong ito at tinatanggihan sa LDAP add o modify, dahil ang history na kayang i-edit ng kahit sino ay history na kayang burahin ng kahit sino."
+    "en": "e800109ca0c5e386",
+    "text": "Isang value bawat inaalalang nakaraang password, sa anyo ng draft na `time#syntaxOID#length#data` — ang data ay ang hash kung saan na-store ang password na iyon, hindi kailanman ang password. Pinapanatili ng serbisyong ito at tinatanggihan sa isang LDAP add o modify, dahil ang history na kayang i-edit ng kahit sino ay history na kayang ubusin ng kahit sino."
   },
   "password.SCHEMA.personAttributes.pwdChangedTime.what": {
     "en": "3c870b2e0c097f36",

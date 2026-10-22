@@ -6,6 +6,7 @@
   "tile.routes": "anropade vägar",
   "tile.healthProbes": "lyckade hälsokontroller, inte räknade som anrop",
   "tile.tokensIssued": "utfärdade token",
+  "tile.tokensHeldRecent": "senaste token som hålls",
   "tile.tokensRevoked": "återkallade token",
   "tile.artifacts": "intyg, biljetter, autentiseringsuppgifter",
   "tile.sessions": "inloggningssessioner",

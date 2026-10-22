@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4578** of them, in **47** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4587** of them, in **47** subsystems.
 
 ## Where a code appears
 
@@ -52,19 +52,19 @@ is an ordinary outcome.
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 19
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
 * [Service core (`STS-CORE`)](#sts-core) — 94
-* [Worker pools (`STS-WORKER`)](#sts-worker) — 50
-* [Persistence and coordination (`STS-STORE`)](#sts-store) — 86
+* [Worker pools (`STS-WORKER`)](#sts-worker) — 51
+* [Persistence and coordination (`STS-STORE`)](#sts-store) — 87
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 32
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 20
-* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 143
+* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 145
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 206
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 56
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 341
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 723
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 343
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 724
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 115
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 33
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 29
@@ -88,7 +88,7 @@ is an ordinary outcome.
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 29
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 98
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 242
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 244
 * [Management API (`STS-API`)](#sts-api) — 86
 * [User portal (`STS-PORTAL`)](#sts-portal) — 107
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 19
@@ -304,6 +304,7 @@ Raised from: common/request_pool.js, common/request_worker.ts, common/service_st
 | `STS-WORKER-0048` | A heap limit was due for the front process and it could not restart itself with one (no process.execve, or the call failed), so it runs without a limit; its request workers still get one (#341). | — |
 | `STS-WORKER-0049` | A part of an operation's answer that a request worker sent ahead of it (#616: an LDAP search streaming its entries) could not be handed to the caller waiting in the front process — its socket write threw. The operation itself still ends with its answer. | — |
 | `STS-WORKER-0050` | After giving up, the pool scheduled another attempt to start one worker, after workers.giveUpRetryMs (doubled after each failed attempt, and never longer than an hour). Until a worker is ready, requests stay in the front process, or the hosted surfaces stay on the protocol workers. | — |
+| `STS-WORKER-0051` | A request worker took longer than workers.startTimeoutMs to start and is still starting (#820). The pool stops waiting for it and does not replace it; it joins when it reports ready. Only after four times the limit is it reported as failed (STS-WORKER-0017) and replaced. | — |
 
 ## STS-STORE
 
@@ -399,6 +400,7 @@ Raised from: persistence/.
 | `STS-STORE-0084` | An on-demand minted store (#820) could not read a row or an index from the store through its bridge — a timeout, a refused connection, a thread that failed. The row is answered as absent, which every reader of these stores refuses: a refresh token not found is not honoured. | none |
 | `STS-STORE-0085` | An on-demand minted store (#820) read a row whose sealed body will not open under this process's keys. It is answered as absent. | none |
 | `STS-STORE-0086` | The front process could not complete the index of an indexed on-demand minted store (#820): a write of its index rows or of the completion mark failed. Nothing is lost — the store stays read back whole at the next start, which tries again. | none |
+| `STS-STORE-0087` | Another process's rows of a store read when its page is drawn (`contributionsOnRead`, #820) could not be read. Nothing is lost: they stay noted and are read at the next refresh, and the page draws what this process already holds. | none |
 
 ## STS-CLUSTER
 
@@ -718,6 +720,8 @@ Raised from: common/crypto.js, common/pq_jose.js, common/keystore.js, common/sec
 | `STS-KEYS-0152` | An HTTP message signature uses an algorithm the verifier does not allow. | the caller's: GNAP answers HTTP 401 invalid_client (400 invalid_resource_server at the RS-facing endpoints), a FAPI resource server HTTP 401 |
 | `STS-KEYS-0153` | An HTTP message signature does not verify over the signature base rebuilt from the message. | the caller's: GNAP answers HTTP 401 invalid_client (400 invalid_resource_server at the RS-facing endpoints), a FAPI resource server HTTP 401 |
 | `STS-KEYS-0154` | A response signature covers a ;req component, and no request message was given to read it from (RFC 9421 section 2.4). | the caller's: a signing resource server's defect, logged; a client verifying a response refuses it |
+| `STS-KEYS-0155` | This runtime has no argon2 (node before 24.7), so a new password was hashed with scrypt at the password policy's scrypt parameters instead of argon2id. Logged once per process. | — |
+| `STS-KEYS-0156` | A stored argon2id password hash could not be computed here — no argon2 in this runtime, or parameters outside the bounds this service computes — and was treated as no match. | — |
 
 ## STS-PKI
 
@@ -1523,6 +1527,8 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0406` | A sign-on session bound to a browser key was presented without a current bound cookie minted for its binding, and was not honoured for that request. The session is not ended. | none — the request is treated as signed out |
 | `STS-AUTHN-0407` | The sign-out could not end a device-bound session whose refresh failed its proof; it was ended directly, without the sign-out's fan-out. | — |
 | `STS-AUTHN-0408` | A sign-in could not be offered device binding: the response object takes no header. The session stands, unbound. | — |
+| `STS-AUTHN-0409` | A password that verified could not be re-hashed under the password policy's algorithm and parameters, or the new hash could not be written (#847). The sign-in stands; the next verified sign-in tries again. | — |
+| `STS-AUTHN-0410` | The credentials of the rows a users list shows could not be read together (#820): the store refused (it was unavailable, or the request's directory budget was spent), so those rows are drawn with their factors unknown rather than as holding none; or the read threw otherwise, and each row was asked on its own instead. | none — logged; the page is drawn |
 
 ## STS-OAUTH
 
@@ -2211,7 +2217,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0797` | A SAML assertion presented to a token exchange is not the version its declared token type says: saml2 for SAML 2.0, saml1 for SAML 1.1 (#114). | 400 invalid_request (RFC 8693 sections 2.2.2 and 3) |
 | `STS-OAUTH-0798` | An assertion presented to a token exchange verified, and the person it names has no directory entry, so there is nobody to issue a token about or to name as the actor (#114). | 400 invalid_request (RFC 8693 section 2.2.2) |
 | `STS-OAUTH-0816` | No index in the realm's access-token status list could be allocated because the claim store could not be asked, so the OAuth or GNAP JWT access token was not minted (#432). | server_error at the endpoint that was minting the token |
-| `STS-OAUTH-0817` | The realm's access-token status list had no free index in thirty-two random attempts (it holds 1,048,576), so the access token was not minted rather than share a live token's index (draft-ietf-oauth-status-list section 13.3; #432). | server_error at the endpoint that was minting the token |
+| `STS-OAUTH-0817` | The realm's access-token status list had no free index in thirty-two random attempts (it holds 16,777,216), so the access token was not minted rather than share a live token's index (draft-ietf-oauth-status-list section 13.3; #432). | server_error at the endpoint that was minting the token |
 | `STS-OAUTH-0818` | The access-token status list could not be built or signed (#432). | HTTP 500 |
 | `STS-OAUTH-0819` | A historical access-token status list was asked for (`?time=`, draft-ietf-oauth-status-list section 8.4); none is kept (#432). | HTTP 501 |
 | `STS-OAUTH-0820` | An access token was asked for without a reserved status-list index in a process with a shared claims table, where none can be claimed synchronously; the caller must mint with accessTokenAsync(). A defect in the caller, refused rather than minted on an index no other node was asked about (#432). | server_error at the endpoint that was minting the token |
@@ -2255,6 +2261,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0975` | The did claim was left out: the person has no preferred DID that they proved with their wallet (none is marked, or the only DIDs are an administrator's by-value entries) (#693). | none: the claim is absent (logged) |
 | `STS-OAUTH-0976` | The did claim was left out: the person's account is disabled (#693). | none: the claim is absent (logged) |
 | `STS-OAUTH-0977` | A claim named did from another layer — a configured or typed claim, a claims request (OIDC Core 5.5) or a Claims Provider — was removed from an ID Token or UserInfo response: the name is the DID claim's, released only by its own rules (#693). | none: the claim is absent (logged) |
+| `STS-OAUTH-0978` | The access-token status list could not be told that a token was revoked or un-revoked (#820): its bit in the store of revoked bits was not written. The revocation itself stands, and introspection refuses the token; only the published list is behind until the token is revoked again or expires. | none — the revocation is not undone |
 
 ## STS-SAML
 
@@ -4775,6 +4782,8 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0870` | An administrator removed a credential (clear-key, clear-totp, clear-backup-codes or clear-email-factor) in a process with no sign-out model installed, so no session it signed in was ended (#722). The removal stands. | logged; the removal is answered as done |
 | `STS-ADMIN-0871` | enrol-self-issued-subject was refused for a did:web: its DID document could not be fetched, names another id, or names no authentication method with a publicKeyJwk, so there was no key to pin (#693). | HTTP 400 (API) |
 | `STS-ADMIN-0872` | set-preferred-self-issued-subject was refused: the subject is not enrolled for the person, was enrolled by value (unproven), is a JWK thumbprint rather than a DID, or the directory did not store the change (#693). | HTTP 400 (API) |
+| `STS-ADMIN-0890` | The token register could not be read from the store for Monitoring → Tokens; the list drawn is what the answering process holds, and the answer says so (`coverage.unread`) (#820). | logged; the page answers |
+| `STS-ADMIN-0895` | The token holders that are clients could not be read from the store's `client` index for the user counts (Monitoring → Metrics, the dashboard); the clients counted are the holders this process holds (#820). | logged; the page answers |
 
 ## STS-API
 

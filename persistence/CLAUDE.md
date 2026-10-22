@@ -197,6 +197,28 @@ does it with `openConnection()`.
 **What a second database (phase 3, a later ticket if wanted) would cost**: the
 SQL, not the layer. Every statement above is PostgreSQL's.
 
+**COUNTERS COMMIT WITHOUT WAITING FOR THE LOG FLUSH (2026-10-22, #820, rcbj's
+decision).** Postgres flushes its WAL one fsync at a time. On 8081 a sign-in
+made about eleven committing transactions, which came to 187 fsyncs a second
+at 3.5 ms each. That held the log flush two-thirds of the time, and it was the
+sign-in rate's ceiling.
+
+About half of those commits were counters, and they now go through the
+driver's tally pool. Its connections are opened with
+`-c synchronous_commit=off`:
+- the shared rate-limit windows: `countWindow`, `clearWindow`;
+- the risk engine's counts, assessments (recorded, settled, amended),
+  subjects, session context and failures.
+
+Such a write is visible at once and durable at the WAL writer's next flush.
+A crash of postgres itself can lose the last fraction of a second of them:
+an attempt uncounted, or a statistic one sign-in short.
+
+Everything else stays on `pool`, durable at commit: sessions, codes, tokens,
+the directory, every minted row, and the risk engine's action claim (which
+stops an action being taken twice). `tests/postgres_tally_commit.js` covers
+this.
+
 ## The sentence this directory reverses
 
 Every document in this repository said, in one wording or another, that this
@@ -830,6 +852,25 @@ Both write ONE ROW PER ORIGIN and the fan-in happens where the value is
 REPORTED — `audit.js`'s `list()` and `summary()`, `admin_stats.js`'s
 `snapshot()`, `xacml_monitor.js`'s. The test for `own` is one question: **is a
 write to this store an ASSIGNMENT or an INCREMENT?**
+
+**THE AUDIT LOG'S FAN-IN IS READ WHEN A PAGE ASKS, NOT AT EACH CHANGE
+(2026-10-21, #820).** `audit.events` and `audit.nums` are declared
+`contributionsOnRead`. Every event rewrote a sealed segment of up to 32
+events, and every other process read, opened and parsed it: about 5,000 rows
+a minute in each of 8081's nine processes under a password load, for a page
+nobody had open. Now:
+- the applier NOTES another process's change (`contributionStale()`);
+- the audit and error-code operations wait for `audit.fresh()`, which reads
+  every noted row in one batch (`refreshContributions()`, through
+  `readContributions()`);
+- a segment rewritten thirty times between two pages is read once;
+- past 5,000 noted rows for a store, the refresh runs on its own, so a
+  process whose page is never drawn stays bounded;
+- a failed read leaves the rows noted (`STS-STORE-0087`).
+
+A start still restores every origin's rows. Another accumulator qualifies
+only if its other processes' rows are read by nothing but a page that can
+wait for the refresh. `tests/audit_contributions_on_read.js` covers this.
 
 **AND A THIRD SHAPE SINCE 2026-09-12: A ROW PARTLY BUILT FROM CODE.** Last
 writer wins assumes the row is the only source of its value. `krb5.principals`
@@ -2036,17 +2077,208 @@ memory mode, development, and every in-process test.
   it — a revoked family's older tokens among them. Until the store's
   completion mark is in `sts_minted_index` (realm `''`, `index_key = key =
   '$index-complete$'`) it is read back whole, as before, and `active(handle)`
-  says no; the front process then files every row it restored
-  (`backfillMintedIndexes()`, in batches, in the background) and commits the
-  mark, and the NEXT start reads it on demand. A row written meanwhile files
+  says no; the front process then files every row it restored and commits
+  the mark, and the NEXT start reads it on demand. **The filing is a
+  scheduler job, `persistence.minted-index-backfill`, never a step of the
+  start**: run from the restore, the first start of #823 on 8081 ran out of
+  heap copying two million rows (`dump()`) beside four restoring workers. The
+  job walks each partition in place (`handle.partition()`), a batch at a time
+  with a pause, and stops for the run past 85% of the heap limit.
+* **An on-demand store keeps no index in memory**: `lookup()` walks what is
+  held. Held whole, a family-to-keys Map over every token cost each process
+  hundreds of MB; on demand, what is held is bounded. A row written meanwhile files
   itself in the flush; one deleted meanwhile leaves an index row the
   lookup's join does not answer. A failure is STS-STORE-0086 and the next
   start tries again. The integrator found the gap on #823, before it ran
   anywhere.
 
+* **A key the store said is absent is remembered** (part 2), for 60 s and at
+  most `maxEntries` of them, so a usually-"no" question is not a read per
+  request. Everything that could make it present forgets it: a `set()`
+  here, and the appliers' `forgetAbsent()` for another process's change to
+  a row this process does not hold. A read that FAILED is not remembered.
+* **A KEY-RESIDENT store holds its keys, not its rows** (part 2,
+  `onDemand: { keysResident: true }`): the key column of every live row,
+  loaded at a start by `loadMintedKeys()` without reading a body, so
+  `has()` is answered from the digests with no read and `size` counts them.
+  For membership on a hot path: `admin_stats.revokedJtis`, asked "is this
+  token revoked?" on every token check, almost always of a token that is
+  not. The digests are kept exact — the appliers READ another process's
+  change to such a store (prefetched with the page) and add or remove the
+  digest by whether it is a tombstone — except for what the expiry purge
+  deletes, which is a row past its own expiry: a revocation of a token no
+  verifier accepts anyway. Its cap and the hourly purge's walk are off on
+  demand; its rows carry their token's `exp` as `expiresAt`.
+
+* **On demand, only the store's expiry purge deletes a dead row**, since a
+  sweep that walks the store sees only what is held. A store whose rows
+  were written before it declared an `expiresAt` declares
+  `onDemand.expiryFromWrittenMs` and waits for the same completion mark as
+  an indexed one: the backfill job gives those rows `written_at` plus that
+  much, by statement in the store (`backfillMintedExpiry()`, no body read,
+  no change written), then marks it.
+
+* **A walk that must see everything uses `scan()`** (part 3): the held rows,
+  then the store a page at a time (`minted.page`, in key-column order),
+  synchronously through the bridge, a page that cannot be read THROWING
+  rather than ending the walk early. For the rare caller that has to —
+  an administrator's revoke-all, a reshaped claim's bearers — and never a
+  request's path. A caller that knows where its rows are filed asks the
+  index instead (`revokeWhere()`'s `candidates`). A walk a request waits on is
+  `scanAsync()`, which gives the event loop back between pages: /admin-api's
+  revoke-all, by kind and by user (`revokeWhereAsync()`, which also yields
+  every 500 revocations), so the process answers others meanwhile.
+
 The stores on demand: `oauth2_bcp.refreshTokens` and `oauth2_bcp.grantTokens`
-(filed by family), `oauth2_bcp.refreshFamilies`. `tests/on_demand_store.js`
+(filed by family), `oauth2_bcp.refreshFamilies`, key-resident
+`admin_stats.revokedJtis`, `authn.accountSets` (after its legacy
+expiries; `authn/account_sets.ts` argues the expiry), and
+`admin_stats.tokens` (part 3, filed by name, subject, session, client and
+bound key; the console's lists and counts are of what a process holds —
+rcbj's hybrid — and `snapshot().tokens.heldOnly` says so; every
+token's holder is kept apart, one small row each, in
+`admin_stats.tokenHolders`, so `/admin/users` still lists them all), and key-resident
+`access_token_status.entries` (part 3, filed by jti; the list is built from
+`access_token_status.invalid`, the revoked bits `admin_stats`'
+`setStatusMarker()` keeps, filled once from every entry by the store's
+`onDemand.beforeLive` before it goes on demand).
+
+**Measured on 8081 (2026-10-21, part 1 only)**: rows restored per worker
+3.56M → 1.71M, front 3.76M → 1.91M; heap at ready 4.2–4.3 GB → 2.6–3.1 GB
+per worker, 4.6 → 1.3 GB in the front; listening 76 s → 42 s; all four
+workers 4 min → 80 s; the container 21.5 → 12.4 GB. `tests/on_demand_store.js`
 holds the map's rules; `tests/session_index.js` the index rows' writes.
+
+### Three console questions on the read pool (2026-10-22, #820)
+
+`realms.map()` grew `lookupEntriesAsync(indexKey)`, `newestAsync(limit)` and
+`countAsync()` for console pages about an on-demand store. They ask the
+driver's READ POOL (`mintedQuery()` on the postgres driver, by its tier on a
+tiered one) through `minted_queries.js`' `minted.byIndex`, `minted.newest`
+(highest `sortBy` value first, capped at `NEWEST_LIMIT`, 1,000; below) and
+`minted.count`,
+never the synchronous bridge, and merge what this process holds as `lookup()`
+merges it: a held row is the fresher, and a key with a write not yet committed
+answers from here or not at all. Each REJECTS where the store cannot be
+asked; the caller says the list was not read. Held whole, they answer from
+the Map. Monitoring → Tokens is the first caller (`common/CLAUDE.md`).
+
+### The newest rows by an index, never by `written_at` (2026-10-22, #820)
+
+`minted.newest` was `ORDER BY written_at DESC` over `sts_minted`, and
+`written_at` has only a BRIN: every page of Monitoring → Tokens sorted the
+1.7M token rows of 8081's default realm, 13-14 s. A btree on `written_at`,
+even a partial one, is ruled out by #630: `written_at` changes on every
+write, so any btree naming it makes every update of `sts_minted` non-HOT,
+and WAL is the throughput bottleneck.
+
+**A store declares `sortBy: (value, key) => number | null` at `realms.map()`**
+(on demand only; `admin_stats.tokens` declares the record's `issuedAt`), and
+the flush writes ONE more `sts_minted_index` row per stored row: `index_key`
+`minted_queries.SORT_INDEX_KEY` (`$sort$`, which no `indexBy` digest can be),
+`sort_at` the value (schema version 25: a nullable `bigint`, every other
+index row NULL). `sts_minted_index` is written by INSERT and DELETE only, so
+its partial index `sts_minted_index_sort (handle, realm, sort_at DESC, key
+DESC) WHERE sort_at IS NOT NULL` costs no HOT update. `minted.newest` walks
+that index and reads each row through a `LATERAL (… LIMIT 1)` probe of
+`sts_minted`'s primary key, repeating the partial predicate. **The LATERAL is
+the point**: a plain JOIN's GENERIC plan (a prepared statement's, after five
+runs) scanned the whole store and sorted — 52 s on a copy of 8081's index —
+where the LATERAL's generic plan is the ordered index walk, 16 ms for 500
+rows. A store with no `sortBy` is refused `newestAsync()`.
+
+**The sort row lives and dies with the row's other index rows**: written in
+the flush's replace, deleted by the flush with the row or its
+tombstone, skipped by `unchangedLookups()` only when the index keys AND the
+sort value are what this process last committed (`filedFingerprint()`),
+recomputed from a merged row, and filed by the backfill job with the rest. A
+row whose body the expiry purge removed leaves a sort row the join passes
+over, like every other index row. No migration: rows written before version
+25 have no sort row and are not in the list until next written.
+## A MINTED FLUSH IS ONE STATEMENT (2026-10-22, #820)
+
+**Why.** On 8081 every writing request holds its answer until its writes
+commit (#351), and a request worker runs one minted flush at a time. The
+`FLUSH minted` phase lines (#858) put `saveMinted()` at 23 ms at the median
+for about ten rows, while `pg_stat_statements` counted about 5 ms of
+statements. The rest was about eleven round trips (BEGIN, the fence, the
+lock, seven writes, the change log, COMMIT), each an event-loop turn on a
+worker ~85% busy.
+
+**What.** `persistence_postgres.js`'s `MINTED_FLUSH` is the whole flush as
+one statement of data-modifying CTEs over unnest()ed arrays, sent outside a
+transaction (a statement is its own). It is a NAMED (prepared) statement:
+planned afresh it took 3–4 ms for ten rows, prepared 0.6 ms. Its
+parameters are the table `MINTED_FLUSH_LAYOUT`, and the text takes its `$n`
+from that table. Every parameter is present in every flush, so there is
+one statement text. The order inside it is made of data dependencies:
+
+1. `fence`: the origin claim and the leases FOR SHARE, and the membership.
+2. `lk`: every existing row locked FOR UPDATE in (handle, realm, key)
+   order. `ok` reads its count, so it is read to the end.
+3. Every write reads `ok`; the side tables and the change log read `done`
+   (the bodies' writes counted). They write only for a body `ins` returned.
+
+**One difference in how, none in what:** an index row the flush files
+again is kept rather than deleted and inserted again, and a sort row whose
+`sort_at` moved is updated in place (`ON CONFLICT … DO UPDATE … WHERE …
+IS DISTINCT FROM`). The rows left are the same; fewer are rewritten.
+
+**What stays the same.** Every table write, the tombstone guard, a merge,
+`key_sealed`, `expires_at`, the unchanged-lookups skipping, the change rows,
+the counts by kind (#626), and the notify after the commit (#630). The
+answer is still `{ refused, merged }`.
+
+**THE LOCK ORDER.** Rows that exist are locked in one total order before any
+write, as since 2026-09-12. All upserts, tombstone writes included, are ONE
+INSERT in that order; they were three INSERTs. Side-table rows are written
+only after their minted row is held. **Not proven, here or in the
+statements this replaced:**
+* a key that exists for one flush and is new to another (a third
+  transaction committed it between their snapshots) is locked at different
+  phases by the two;
+* a hard delete of a minted row already gone still deletes its side rows.
+
+Postgres answers such a cycle 40P01. The statement rolls back whole and is
+sent again (`retryingConflicts()`), as a deadlocked transaction always was.
+Advisory locks on every key would close the first case. They were refused:
+a large flush would fill the shared lock table.
+
+**A MERGING STORE (`mergeRow`) IS A COMPARE-AND-SET**, because its merge is
+JavaScript and needs the stored body. The statement names the body it merged
+with (`cas_*`): the body this process last committed for the key, or no row
+(a session just made). `chk` compares that with the locked row. On a miss,
+the statement writes nothing and answers the stored bodies; the merges are
+done again and the statement is sent again. Under the lock, the merge is
+exactly the one the read-then-write made. The memory of committed bodies
+(`mintedBodies`) is bounded at 2,048 entries and is only a guess. A failed
+flush forgets what it touched.
+
+**THE TRANSACTION IS STILL THERE** (`flushMintedInTransaction()`): BEGIN,
+`checkFence()`, the merging rows locked and read, `MINTED_FLUSH`, COMMIT.
+It is used when:
+* the fence did not hold — `checkFence()` re-asserts a lapsed origin claim
+  of ours, or fails the write as before;
+* or the compare-and-set missed twice.
+
+**Measured on postgres 18** (scratch schemas beside 8081's, since dropped):
+* the same 2,200 random flushes through the old driver and the new gave
+  identical tables (`sts_minted`, `sts_minted_index`, `sts_sessions`,
+  `sts_changes`) and identical answers. Some rows were rewritten behind the
+  drivers' backs to force misses, and one run was forced through the
+  transaction path;
+* four concurrent flushers over overlapping existing rows: 6,000 flushes,
+  0 deadlocks (as before);
+* over keys that are made and hard-deleted all the time: 103 deadlocks
+  retried, against 324 for the old statements, with no flush failing;
+* `EXPLAIN (GENERIC_PLAN)` against 8081's statistics: primary keys and
+  `sts_minted_index_key` everywhere, and no sequential scan of a large table.
+
+**For a test's `pg` double**: `tests/tools/minted_flush_double.js` plays the
+statement from its named parameters against Maps.
+`tests/minted_flush_one_statement.js` counts the round trips;
+`tests/postgres_minted_writes.js` reads the lock order and the gating off
+the statement.
 
 ## WHAT ONE ADD WRITES TO THE CHANGE LOG (#618 phase 2, 2026-10-14)
 

@@ -72,7 +72,7 @@
   "password.door": "Door",
   "password.reaches": "Reaches",
   "password.historyHeading": "The history, and what it costs",
-  "password.history": "<strong>A remembered password is the scrypt hash it was already stored as</strong>, moved into <code>pwdHistory</code> on the person's own entry when the next one replaces it — no new hash is made, and the password itself is never kept. Checking a new password costs one scrypt comparison per remembered one, about 70ms each on this thread, so a history of {history} is up to {ms}ms at a password change. A generated password skips the comparison, because nothing drawn at random is a previous password. <code>pwdHistory</code> and <code>pwdChangedTime</code> are maintained by this service and an LDAP modify naming either is refused in product mode.",
+  "password.history": "<strong>A remembered password is the hash it was already stored as</strong>, moved into <code>pwdHistory</code> on the person's own entry when the next one replaces it — no new hash is made, and the password itself is never kept. Checking a new password costs one hash comparison per remembered one, about 70ms each on this thread, so a history of {history} is up to {ms}ms at a password change. A generated password skips the comparison, because nothing drawn at random is a previous password. <code>pwdHistory</code> and <code>pwdChangedTime</code> are maintained by this service and an LDAP modify naming either is refused in product mode.",
   "password.generatorHeading": "The generator",
   "password.generator1": "<strong>New users created from the console or <code>/admin-api</code> get a generated password by default</strong>, shown or returned ONCE. It is drawn by ",
   "password.generatorFrom": " from ",

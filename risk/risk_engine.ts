@@ -1393,17 +1393,29 @@ class RiskEngine {
     const distinct = new Map<string, number>();
     let users = 0;
     if (population) {
+      // ONE BATCH, NOT A ROUND TRIP PER LEVEL (2026-10-22, #820): these
+      // were awaited one after another, about seven per sign-in on 8081.
+      const names: string[] = [];
+      const asks: Array<{ feature: string; prefix: string }> = [];
       for (const f of riskModel.FEATURES) {
         const first = f.levels[0][0];
         for (const level of f.levels.slice(1)) {
-          distinct.set(level[0], await store.distinctValues(
-            realm, subject, level[0], '', sealing));
-          distinct.set(first + '>' + level[0], await store.distinctValues(
-            realm, subject, first + '>' + level[0],
-            String(attempt[first]) + '|', sealing));
+          names.push(level[0]);
+          asks.push({ feature: level[0], prefix: '' });
+          names.push(first + '>' + level[0]);
+          asks.push({ feature: first + '>' + level[0],
+                      prefix: String(attempt[first]) + '|' });
         }
       }
-      users = await this.populationUserCount(realm, subject, sealing);
+      const [counted, people] = await Promise.all([
+        asks.length ? store.distinctValuesMany(realm, subject, asks, sealing)
+          : Promise.resolve([] as number[]),
+        this.populationUserCount(realm, subject, sealing)
+      ]);
+      names.forEach(function (name: string, i: number): void {
+        distinct.set(name, counted[i] || 0);
+      });
+      users = people;
     }
     log.debug("Leaving RiskEngine.historyOf().");
     return {

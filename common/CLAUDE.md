@@ -1101,6 +1101,62 @@ why the stored form was made self-describing — and the async door reads the
 parameters ONCE, so the encoded value always names the cost the derivation
 really used. `tests/password_policy.js` pins both halves.
 
+**SINCE #847 (2026-10-22) THOSE SETTINGS COST EVERY SECRET BUT A PASSWORD.**
+A person's password is hashed by `hashPassword()` / `hashPasswordAsync()` at
+the password POLICY's algorithm and parameters (3ac, *How a password is
+stored*); `hashSecret()` — client secrets, activation and reset tokens,
+recovery codes, app passwords — is unchanged. See the next section.
+
+### A person's password is argon2id, and every stored form verifies (2026-10-22, #847)
+
+rcbj's four decisions on #847, in `crypto.js`'s *ARGON2ID FOR A PERSON'S
+PASSWORD* block:
+
+1. **argon2id (RFC 9106) at OWASP's minimum**, m=19456 KiB, t=2, p=1, through
+   node's own `crypto.argon2()` / `argon2Sync()` (node 24.7 and later; the
+   image runs 24.16, and the asynchronous one is a CryptoJob on libuv's
+   thread pool like scrypt's). No package. A runtime without it hashes a new
+   password with scrypt and says so once (`STS-KEYS-0155`), and refuses to
+   verify an argon2id value (`STS-KEYS-0156`) rather than claim it.
+2. **The stored form is the PHC string** every argon2 library reads,
+   `$argon2id$v=19$m=…,t=…,p=…$<salt>$<hash>`, base64 without padding, a
+   16-byte salt and a 32-byte tag. `decodeStoredSecret()` reads both forms,
+   so `verifySecret()` / `verifySecretAsync()` dispatch on the prefix and
+   every hash already stored keeps verifying. `isHashedSecret()` is the one
+   "is this one of our hashes" test (`/^\$(scrypt|argon2id)\$/`); the five
+   places that matched `$scrypt$` themselves ask it now.
+3. **The floors are OWASP's in both modes, and here as well as in the
+   policy**: `passwordHashSpec()` clamps a spec to `ARGON2_LIMITS` and
+   `SCRYPT_PASSWORD_LIMITS` and raises scrypt's p to OWASP's table for its N
+   (`scryptOwaspMinP()`: 2^17 p=1, 2^16 p=2, 2^15 p=3, 2^14 p=5, 2^13
+   p=10), whatever reached it. A spec it is not given is argon2id at the
+   minimum.
+4. **`storedSecretMatchesSpec()`** says whether a stored hash is already the
+   spec's algorithm with every parameter equal — what the upgrade on sign-in
+   asks (3ac).
+
+Measured in the tests image on this machine: one argon2id hash at the default
+about **35 ms**, scrypt at 2^15 (p=3) about **250 ms** and at 2^17 (p=1) about
+**460 ms**, `hashSecret()`'s scrypt at 2^15 p=1 about **97 ms** —
+`tests/password_argon2id.js` logs the figures every run.
+
+**THE DEFAULT IS scrypt AGAIN SINCE 2026-10-22 (#820), AND ARGON2ID IS AN
+OPTION.** rcbj: "Make the default scrypt hashes, but keep argon2id as a
+supported option. Restore the original defaults for now." #847's defaults
+rehashed every stored password at its next sign-in, and on the load host 8081
+sign-in went from about 206 ms to about 387 ms. So `passwordHashSpec()` with no
+spec, and the policy's `hashAlgorithm` default, are scrypt at N=2^15, r=8, p=1
+— the pre-#847 parameters every stored password there already has — and
+`PASSWORD_HASH_ALGORITHMS` lists scrypt first. Decision 3 is half undone for
+scrypt: **the p floor in `passwordHashSpec()` is off** (p is taken as asked;
+`scryptOwaspMinP()` is still exported) and so is the policy's OWASP
+cross-field check, because the default itself is below the table and a policy
+must be able to save its own default. argon2id's floors are unchanged. The
+rehash rule is unchanged too and stays "different from the policy": a person
+whose stored hash is argon2id is hashed again with scrypt at 2^15 at their
+next verified sign-in, once, at about 100 ms. **#872 makes one of OWASP's
+pairs the default and restores both checks.**
+
 ### The four scrypt functions are one implementation with two doors
 
 `hashSecret` / `hashSecretAsync` and `verifySecret` / `verifySecretAsync` in
@@ -1735,6 +1791,86 @@ Measured cost, three workers on one PostgreSQL store: 37ms to 43ms per read and
 30ms to 37ms per write. **It is OFF by default** because that is the behaviour
 that existed before it, and because whether the wait is worth it is a question
 about the callers rather than about the pool.
+
+**THE CODE FLOW NEEDS IT (2026-10-22, #820).** On 8081, with 4 workers and it
+off, about 20% of `/oauth2/token` code exchanges answered "Unknown or
+already-used authorization code". Each one was a code another worker had just
+written. Turning it off is not a performance setting.
+
+**AND IT IS PER CLIENT SINCE THE SAME DAY: `session`, THE DEFAULT (rcbj,
+#820).** The barrier was global — every request waited for every ticket
+answered on another worker and for the generation every write had moved —
+which was 17–26 ms p50 of `/oauth2/authorize` and `/oauth2/token` on 8081,
+nearly all of it other browsers' writes. `workers.readYourWrite` is a mode
+now: `session`, `global` (the old barrier, whole) or `off`; `true` reads as
+`session` and `false` as `off`, so a stored boolean needs no rewrite. What
+each mode guarantees, exactly:
+
+* **`session`, a request carrying client keys** — every session cookie
+  (`s:<sid>`), the pool pin (`p:<pid>`) and every flow parameter in its URL
+  (`clientKeysOf()`, all of them, not affinity's first): it is answered only
+  after every ticket filed under any of its keys and answered before it
+  arrived has been announced committed (its own worker's excepted, which hold
+  the write in memory), and after its worker reached the generation of those
+  keys' writes ON OTHER WORKERS and of the front process's own writes. A
+  ticket is filed under the keys its request carried AND the session cookies
+  and flows its answer handed out (`learnTicketKeys()`), so the sign-in that
+  mints a session counts as that session's write. Bayou's read-your-writes,
+  and nothing more: no monotonic reads.
+* **`session`, a code exchange whose code the pool learnt** (since the same
+  day, second change): an answer whose `Location` query carries `code=` files
+  its ticket under `code:<value>`, which inherits the tickets and write
+  generations outstanding under that request's keys. A `POST` to a token
+  endpoint (`/realm/<id>`, `/<as>` or neither) that would wait globally, with
+  a form body of a declared length of at most 16 KiB and no transfer or
+  content encoding, is read before the barrier and handed to the worker byte
+  for byte. An `authorization_code` grant naming one code the pool holds
+  state for, or pruned once settled (`settledCodes`), waits for that key
+  only. An unknown code, a refresh grant, a larger, chunked or unframed
+  (HTTP/2 with no length) body is the global wait, never "wait for nothing":
+  the code may have come by `form_post`, a fragment, the front process or
+  another node. `stats().sessionBarrier.codeKeyed` counts them. 8081 before
+  it: `POST /oauth2/token` 43 → 70 ms p50 waiting once the barrier went per
+  session.
+* **`session`, a request with no key, or whose pool pin the route did not
+  honour** — today's global wait, unchanged. That is every other back
+  channel. A pin not
+  honoured is global because `oidc_rp.ts`'s back channel pins to the worker
+  holding a code ANOTHER client (the browser) wrote, which only that worker is
+  sure to hold.
+* **`global`** — every request waits for every write answered before it;
+  **`off`** — nobody waits.
+* **What `session` gives up**: a request does not wait for another client's
+  write, and operations (LDAP, Kerberos, SPIFFE) carry no key. **A console
+  page now sees another session's writes — a SCIM create, a token another
+  client redeemed, a KDC write, another administrator's change — only after
+  the workers converge** (0.5–1 s). A suite job that writes as one client and
+  reads as another at once needs `global`.
+* **Kept as they were**: the reaper, the 2,000 ms ticket bound and the
+  5,000 ms barrier bound (a keyed waiter times out and reaps exactly as a
+  global one), client-gone handling, both pools, and `runOperation()` with
+  #626's narrowing, which still waits globally.
+* **Bounded without a timer**: at most 20,000 keys, least recently used
+  first; each dispatch drops up to four of the oldest that hold no ticket and
+  whose writes every other worker has passed; a key evicted while it still
+  holds a ticket or a write SPILLS them to every keyed request
+  (`stats().sessionBarrier.spilled`), so eviction costs waiting, never a stale
+  read. A sync round now stamps the worker with the generation at the round's
+  START (`startSyncRound()`), which the sharing rule already allowed, so a
+  keyed round leaves no worker looking behind. `tests/request_ryw_session.js`.
+
+**WHERE A DISPATCHED REQUEST'S TIME GOES (2026-10-22, #820)**:
+`common/request_phases.js`.
+- **The front** times three phases: the ticket wait, the read barrier, and
+  the round trip.
+- **The worker** times the rest: its commit barrier reports the handler, the
+  commit hold, and the time its loop was blocked in synchronous store reads.
+  It sends them in `x-sts-pool-phases`, which the front asks for and takes off.
+- **Reporting:** once a minute, one `request phases` log line per busiest
+  route, with p50/p95 for each phase. The last window is also kept in the
+  pool's `stats().phases`.
+- **Why it exists:** refreshes stopped at about 160 a second with 4 workers
+  and with 8 alike, and nothing measured where the time went.
 
 **A WORKER NO LONGER ANSWERS A WRITE BEFORE IT COMMITS (2026-09-29, #351).**
 `request_worker.ts`'s header still says the worker "answers immediately" and
@@ -3337,6 +3473,20 @@ with `Cannot find module` naming a file the operator never mentioned.
    `grantRefresh`, which the issuer states in `signJwt()`'s context as it
    states `setId` (`oauth2.ts`'s `issuanceContext()`).
 
+   **`setStatusMarker()` (#820 part 3, 2026-10-21) IS A THIRD, AND IT PASSED
+   THE TEST BOTH WAYS ROUND.** `revoke()` calls it for every jti newly
+   revoked and `restore()` for every one un-revoked, with `(jti, revoked,
+   kind)`; `oauth-oidc/access_token_status.ts` fills it when it loads and
+   writes or clears the token's bit in `access_token_status.invalid`, the
+   store the status list is built from now that the entries are on demand.
+   The two halves: that module requires this file (`isRevoked()`), so a
+   require from here closes a cycle; and the revocation observer above
+   cannot carry it, since it hears only first revocations, not un-revoking,
+   and has one occupant whose failures mean something else. It is here for
+   the observer's reason — every door that revokes comes through these two
+   functions. A throw is logged (STS-OAUTH-0978) and never undoes the
+   revocation; introspection still refuses the token.
+
    **ITS ONE OBSERVER SLOT NOW CARRIES THREE KINDS OF EVENT, AND THAT IS NOT A
    SIXTH HOOK.** `setUserObserver()` is still one slot filled by one module at
    its require time; what changed is that `ldap_server.js` is offered an `event`
@@ -4706,6 +4856,19 @@ with `Cannot find module` naming a file the operator never mentioned.
    in* are opposite answers to one question. The chooser offers both and each
    row says which side it came from.
 
+   **WHILE THE TOKEN REGISTER IS ON DEMAND, A CHOOSER GETS
+   `userCatalogue()`, NOT `userList()` (2026-10-22, #820).** `userList()`
+   builds a row for every identity — about 470,000 on 8081 — for a pane that
+   shows ten. `userCatalogue(wanted)` answers the whole list, searched by any
+   part, while the register is held whole (`stats.userKeyTest()` null);
+   otherwise the delegation register's identities (bounded by
+   `delegation.maxRecords`) and the ONE person the search names EXACTLY — as
+   typed, in lower case, as `identityKeyOf()` normalises it — each built as the
+   one row `stats.userRow()` answers, and it says so: `search: 'exact'`,
+   `complete: false`, `exactKey`. `userEntry(key)` is one identity's row the
+   same way, which `activityFor()` reads. Nothing in either walks the
+   register. `tests/console_delegation_roles_scale.js` (D) holds it.
+
 ---
 
 3q. **`credential_graph.ts` is the same union asked a NARROWER question, and it
@@ -5492,6 +5655,86 @@ is a subtree per realm, and `applications.js`'s registry is that subtree's
 `ou=applications`. So a consent agreed in `acme` is invisible in the default
 realm without one line in this file mentioning a realm — which is the property
 to check a new store against, answered here by having no store.
+
+**WHERE THE DIRECTORY IS A WINDOW, THE RECORDED HALF IS READ A PAGE AT A TIME
+(2026-10-22, #820).** `register()` walks every holder of `oauthConsent`
+through the synchronous bridge and opens each entry, which on 8081 was about
+470,000 people per request. `recordedPageAsync(spec)` asks the directory's two
+optional hooks instead — `consentHoldersPageAsync(offset, limit)` (the count
+from the asked names' index and one page of PEOPLE) and
+`consentHolderNamedAsync(name)` — and answers null where they are absent or
+answer null, so the old path is unchanged in memory. Its paging is over
+people, its rows newest first per page, its counts of consents the page's
+(`countsOf: 'page'`), and its search EXACT: a whole username asked by name,
+and a client_id or scope looked for among at most `CONSENT_SEARCH_SCAN`
+holders, the answer's `search.complete` saying whether that was everybody.
+`register({ recorded: false })` answers the overrides alone. The people
+count is a Set now; it was an O(P²) reduce. `tests/console_consent_scale.js`.
+
+## The token list, the metrics and the dashboard, read from the store (2026-10-22, #820)
+
+On demand the token register holds at most 20,000 records a process
+(persistence, *A store that grows with every person is read on demand*), so
+`issuedSets()` answered with what the answering worker happened to hold, and
+Metrics and the dashboard built `userRowsAsync()`, a row per person, to keep
+four numbers. `admin_stats.js` answers each from the store now:
+
+* **`issuedSetsAsync({ session })`** reads one session's every record through
+  the register's `sid:` index, or the newest `ISSUED_NEWEST` (500) records by
+  when each row was written, with the store's count as the total. It says
+  what it covers (`coverage`: `source` `held` or `store`, `newest`,
+  `session`, `complete`, `unread`). A store that cannot be asked falls back to
+  what is held and says so (`unread`, `STS-ADMIN-0890`), never an empty list.
+* **`issuedSetByKeyAsync(setKey)`** finds a `set:<id>` through the index key
+  `set:` the token store now files (the issuer states the set id once, at
+  issuance), and a `one:` set by its key.
+* **`userCountsAsync()`** gives `snapshot().users`' four counts with no row:
+  the bounded sources are walked as `buildUserRowsResolved()` walks them, and
+  the token holders, the one source that grows with the population, are
+  counted by the partition's size and its `client` index (`tokenHolders`'
+  `indexBy`), maintained as rows are written in every process. A maintained
+  counter (merge-own) and a scheduler job were rejected: a write and a fan-in
+  per new holder, or the same O(people) walk every few minutes.
+  `snapshot({ userCounts })` takes them.
+
+Held whole (memory, development, in-process tests) each answers what its
+synchronous twin answers. `tests/console_tokens_metrics_scale.js`.
+
+### The token holders on demand (2026-10-22, #820)
+
+`admin_stats.tokenHolders` — one row per identity a token was issued to,
+what `/admin/users` lists beside the register — was held whole, so every
+request worker read back every row at its start (562,120 on 8081, a
+worker's start from 16 s to 52 s). It is `onDemand` with
+`keysResident: true` and `maxEntries` 20,000, so a process holds the rows it
+was asked about and the key digest of every row:
+
+* **`has()` and `size` answer from the digests with no read.** That is what
+  the console's synchronous readers ask (`knownUserKeys()`, `userKeyTest()`,
+  `userCountsResolved()`), so none of them had to become asynchronous; the
+  cost is a digest per holder per process (about 45 MB at 562,000).
+* **A write never waits on a read.** `noteTokenHolder()` runs for every JWT
+  and asks `peek()` — `realms.js`'s new facade member, what is held and never
+  a read of the store. A holder not held is written blindly (`firstAt` now,
+  `lastExp` the token's plus the headroom), and the store's `mergeRow` joins
+  it with the stored row under the row's lock: the earliest positive
+  `firstAt`, the latest `lastExp`, and a client once a client. The refresh
+  grant and the code grant warm the holder's row first
+  (`stats.warmTokenHolders()`, one `readMany` beside the other warm-ups), so
+  the blind write is the rare case. `warm()` now works on a key-resident
+  store: it asks only for a key whose digest is held, and drops a digest the
+  store answers absent.
+* **The counts are of every holder; the lists are of the held ones.**
+  `userCountsAsync()` counts the holders by the resident digests and the
+  clients through the store's `client` index (`lookupEntriesAsync()`, never
+  the blocking `lookup()`; a failure is `STS-ADMIN-0895` and the held clients
+  are counted). `collectUserKeys()` and `buildUserRowsResolved()` list the
+  holders this process holds, because a digest names nobody.
+* **The one-time backfill and its job (`oauth2.token-holders-backfill`) are
+  gone**: on demand they would walk the whole register, and the holders of
+  older tokens are written again by their next token.
+
+`tests/token_holders_on_demand.js` holds it.
 
 ## `roles.js` and `issuance_gate.js`: the fourth register, and the leaf that asks about it
 
@@ -8440,9 +8683,38 @@ RECORDED in both modes, because moving the previous hash into `pwdHistory` costs
 no new hash and a realm switched to product should not start empty.
 `opts.generated` skips the history comparison (up to six scrypt derivations on
 the one thread every socket is served from, for a password nothing could have
-used before). A stored value that is not a scrypt hash is compared in constant
-time as the string it is, and never copied into the history.
-`tests/password_policy.js` holds all of it, eight mutants caught.
+used before). A stored value that is not one of this service's hashes
+(scrypt or argon2id) is compared in constant time as the string it is, and
+never copied into the history; each remembered hash is verified by its own
+form. `tests/password_policy.js` holds all of it, eight mutants caught.
+
+**HOW A PASSWORD IS STORED IS A RULE OF THE PROFILE TOO (#847, 2026-10-22).**
+Seven more rows: `hashAlgorithm` (`stsPwdHashAlgorithm`, `argon2id` or
+`scrypt`, an `enum` row), `argon2Memory` / `argon2Iterations` /
+`argon2Parallelism` (min 19456 KiB / 2 / 1) and `scryptLogN` /
+`scryptBlockSize` / `scryptParallelism` (min 13 / 8 / 1, with OWASP's N-and-p
+table as a cross-field rule until 2026-10-22: since then the default is
+scrypt at 2^15, r=8, p=1, below that table, and the rule is off until #872 —
+see *A person's password is argon2id*, above). **They are `optional`**: a save that leaves one
+out keeps the value in force rather than being refused, because every caller
+written before them sends the six composition rows only.
+`hashSpec(profile)` answers them in `crypto.hashPassword()`'s shape, and
+`preparePassword()` hashes with it (a hash an LDAP write made off the loop is
+used only when it already matches the spec). Not mode-dependent.
+
+**THE UPGRADE ON SIGN-IN** (`credentials.ts`'s `upgradeHash()` /
+`upgradeHashAsync()`, after `verify()` and `verifyAsync()`): a password the
+CURRENT stored hash has just verified — never development's unchecked yes,
+never a service account's previous password — is hashed again and written
+back where the stored hash is not the profile's algorithm AND parameters
+(rcbj's decision 4: a parameter change counts). Compare and set: the entry's
+hash is read again with no await before the write, and a hash changed
+meanwhile is not overwritten. The hash alone is written — no `pwdHistory`, no
+`pwdChangedTime`, no credential-change signal or mail — and the Kerberos
+password observer is told `rehash`, which re-stamps the stored keys at the
+SAME kvno (`kerberos/krb5_person_keys.ts`). A failure is logged
+(`STS-AUTHN-0409`) and never costs the sign-in. There is no bulk rehash: the
+plaintext exists only at a sign-in. `tests/password_argon2id.js` holds it.
 
 **From the root `CLAUDE.md`'s `common/` row:** the profile is drawn at
 *Directory → Policies* (`/admin/policies`), ENFORCED IN PRODUCT MODE at every
@@ -10691,11 +10963,25 @@ each argued there:
     recognition is one — and that walk cost the whole directory.
     STS-DEVICE-0029 on a token request, and `/admin-api/users?user=` 503
     at 6.4M people. `tests/device_lookups_windowed.js`.
-  * **Still every device, on a console page**: `list()` with no owner and
-    `counts()`, for `/admin-api/devices` and its tiles, and
-    `/admin-api/ldap/devices` — `tests/no_full_directory_walk_in_requests.js`
-    does not see the first two (the names are too common to follow), and
-    they cost the realm, not the register, in a windowed process.
+  * **Still every device, on a console page**: `list()` with no owner, for
+    `/admin-api/devices`, and `/admin-api/ldap/devices` —
+    `tests/no_full_directory_walk_in_requests.js` does not see the first
+    (the name is too common to follow), and it costs the realm, not the
+    register, in a windowed process.
+  * **Monitoring → Devices no longer counts every device (2026-10-22,
+    #820).** `countsAsync(isLive, { prepare })` asks the directory's
+    `deviceCountAsync()` for the total and `deviceEntriesPageAsync()` for ONE
+    page (the first 500 by key), runs `prepare(page)` — the console warms the
+    page's Native SSO sessions into the session window
+    (`authn.warmSessionAsync()`, in parallel) so the synchronous liveness
+    check reads the window and not the store — and tallies that page. It
+    answers `windowed`, `counted` and `complete` beside the tables, and the
+    page says when they cover only part of the register. Where the hooks are
+    not offered or answer null (the whole directory in memory) it is
+    `counts()`, `complete`. `devices_admin.ts`'s `monitorViewAsync()` and the
+    asynchronous `GET /admin-api/devices/monitor` are its callers;
+    `monitorView()` is kept, unchanged, for a caller that cannot wait.
+    `tests/console_devices_scale.js`.
 
 ### Remembered browsers (#265, 2026-09-26): `browser_devices.ts`
 

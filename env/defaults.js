@@ -321,7 +321,7 @@ var config = {
     batchQueueLimit: 5000,                                         // Batch requests waiting
     batchQueueTimeoutS: 60,                                        // Longest a batch request waits (seconds)
     maxSockets: 64,                                                // Connections per request worker; restart to apply
-    readYourWrite: true,                                           // Read-your-write across request workers
+    readYourWrite: "session",                                      // Read-your-write across request workers
     socketDir: ""                                                  // Request worker socket directory; restart to apply
   },
 
@@ -457,7 +457,7 @@ var config = {
     clockSkewS: 30,                                // Token clock skew (s)
     redirectUris: "",                              // Registered redirect URIs
     loopbackPortWildcard: true,                    // Loopback port wildcard
-    refreshTokenEncryptionAlg: "RSA-OAEP-256",     // Refresh token encryption: key management (alg)
+    refreshTokenEncryptionAlg: "A256KW",     // Refresh token encryption: key management (alg)
     refreshTokenEncryptionEnc: "A256GCM",          // Refresh token encryption: content (enc)
     refreshTokenEncryptionKeyBits: 2048,           // Refresh token encryption: RSA key size (bits)
     refreshTokenEncryptionCurve: "P-256",          // Refresh token encryption: EC curve

@@ -169,7 +169,7 @@
   "caches.store.mail.outbox.hitMeaning": "a message suppressed as a duplicate of one already queued for the same act in mail.dedupWindowS",
   "caches.store.oauth2.access-token-status.title": "Access-token status entries",
   "caches.store.oauth2.access-token-status.description": "Each live access token's index in this realm's access-token status list — OAuth RFC 9068 tokens and GNAP's two JWT formats — with its jti, so the bit can be computed from the revocation register.",
-  "caches.store.oauth2.access-token-status.bound": "Enforced: the list holds 1048576 indexes per realm; a list with no free index REFUSES to mint the access token (STS-OAUTH-0817) rather than reuse a live one.",
+  "caches.store.oauth2.access-token-status.bound": "Enforced: the list holds 16777216 indexes per realm; a list with no free index REFUSES to mint the access token (STS-OAUTH-0817) rather than reuse a live one.",
   "caches.store.oauth2.access-token-status.lifetime": "as long as the access token it describes; its index is free again after that.",
   "caches.store.oauth2.access-token-status.hitMeaning": "a token's status was found here",
   "caches.store.oauth2.access-token-status-lists.title": "Signed access-token status lists",

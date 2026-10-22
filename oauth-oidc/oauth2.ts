@@ -461,6 +461,7 @@ interface OAuth2ServerDeps {
   // helpers.oauthError, which `oauthError()` below wraps.
   plainOauthError: typeof helpers.oauthError;
   signJwt: typeof helpers.signJwt;
+  signJwtAsync: typeof helpers.signJwtAsync;
   signJwtAs: typeof helpers.signJwtAs;
   allSigningKeys: typeof helpers.allSigningKeys;
   allSigningKeysAsync: typeof helpers.allSigningKeysAsync;
@@ -1692,6 +1693,7 @@ class OAuth2Server {
       bodyValues: helpers.bodyValues,
       plainOauthError: helpers.oauthError,
       signJwt: helpers.signJwt,
+      signJwtAsync: helpers.signJwtAsync,
       signJwtAs: helpers.signJwtAs,
       allSigningKeys: helpers.allSigningKeys,
       allSigningKeysAsync: helpers.allSigningKeysAsync,
@@ -3994,8 +3996,10 @@ class OAuth2Server {
     const { log } = this.deps;
     log.debug("Entering OAuth2Server.accessTokenAsync().");
     const reserved = await this.reserveAccessToken(base, opts);
+    // Signed on libuv's thread pool (#820): this caller can wait.
+    const plan = this.accessTokenUnsigned(base, reserved);
     log.debug("Leaving OAuth2Server.accessTokenAsync().");
-    return this.accessToken(base, reserved);
+    return this.deps.signJwtAsync(plan.payload, plan.context, plan.sign);
   }
 
   /**
@@ -4012,10 +4016,29 @@ class OAuth2Server {
    *   reserved and none can be claimed synchronously
    */
   accessToken(base: Json, opts: Json): Json {
+    const { log, signJwt } = this.deps;
+    log.debug("Entering OAuth2Server.accessToken().");
+    const plan = this.accessTokenUnsigned(base, opts);
+    log.debug("Leaving OAuth2Server.accessToken().");
+    return signJwt(plan.payload, plan.context, plan.sign);
+  }
+
+  // EVERYTHING `accessToken()` DOES BUT THE SIGNATURE (2026-10-21, #820): the
+  // claims, the context the register records and how it is signed, so a
+  // caller that can wait signs on libuv's thread pool (`signJwtAsync()`)
+  // and one that cannot signs here. Nothing in it depends on the signature.
+  /**
+   * Builds an access token's claims and signing choices, unsigned.
+   *
+   * @param base - the authorization server's base URL
+   * @param opts - as `accessToken()`'s
+   * @returns `{ payload, context, sign }`
+   */
+  private accessTokenUnsigned(base: Json, opts: Json): Json {
     const { log, nowSec, randomId, signJwt, userFor, mtls, stats,
             jwtAccessToken, accessTokenStatus, errorCodes } = this.deps;
     const self = this;
-    log.debug("Entering OAuth2Server.accessToken().");
+    log.debug("Entering OAuth2Server.accessTokenUnsigned().");
     const iat = nowSec();
     const user = opts.user || userFor(opts.username);
     // The jti and the status-list index — see reserveAccessToken().
@@ -4031,7 +4054,7 @@ class OAuth2Server {
                 'was asked for without a reserved status-list index, in a ' +
                 'process with a shared claims table; it is not minted. The ' +
                 'caller must use accessTokenAsync().');
-      log.debug("Leaving OAuth2Server.accessToken(). No status index.");
+      log.debug("Leaving OAuth2Server.accessTokenUnsigned(). No status index.");
       throw errorCodes.mark(new Error('the access token has no status-list ' +
                                       'index: mint it with ' +
                                       'accessTokenAsync()'), 'STS-OAUTH-0820');
@@ -4256,12 +4279,12 @@ class OAuth2Server {
     // common/jose_certificate_header.js. The `typ` is RFC 9068 section 2.1's,
     // and it is passed as a header member rather than set by signJwt() because
     // signJwt() also signs the refresh token, which is not an access token.
-    const token = signJwt(payloadWithCustom, self.issuanceContext(opts),
-                          { certificateHeader: 'access-token',
-                            header: jwtAccessToken.header(),
-                            algorithm: self.accessTokenAlg(opts.request) });
-    log.debug("Leaving OAuth2Server.accessToken().");
-    return token;
+    log.debug("Leaving OAuth2Server.accessTokenUnsigned().");
+    return { payload: payloadWithCustom,
+             context: self.issuanceContext(opts),
+             sign: { certificateHeader: 'access-token',
+                     header: jwtAccessToken.header(),
+                     algorithm: self.accessTokenAlg(opts.request) } };
   }
 
   // -------------------------------------------------------------------------
@@ -4400,10 +4423,37 @@ class OAuth2Server {
   }
 
   private refreshToken(base: Json, opts: Json): Json {
+    const { log, signJwt, refreshTokenCrypto } = this.deps;
+    log.debug("Entering OAuth2Server.refreshToken().");
+    const plan = this.refreshTokenPlan(base, opts);
+    // SIGNED, THEN ENCRYPTED (2026-09-12): see refreshTokenPlan() and
+    // `refresh_token_crypto.ts`.
+    const token = refreshTokenCrypto.seal(signJwt(plan.payload, plan.context,
+                                                  plan.sign));
+    this.refreshTokenNoted(plan, opts);
+    log.debug("Leaving OAuth2Server.refreshToken().");
+    return token;
+  }
+
+  // `refreshToken()` with the signature made on libuv's thread pool
+  // (2026-10-21, #820): the same claims, encryption and bookkeeping, in the
+  // same order, for a caller that can wait.
+  private async refreshTokenAsync(base: Json, opts: Json): Promise<Json> {
+    const { log, signJwtAsync, refreshTokenCrypto } = this.deps;
+    log.debug("Entering OAuth2Server.refreshTokenAsync().");
+    const plan = this.refreshTokenPlan(base, opts);
+    const token = refreshTokenCrypto.seal(
+      await signJwtAsync(plan.payload, plan.context, plan.sign));
+    this.refreshTokenNoted(plan, opts);
+    log.debug("Leaving OAuth2Server.refreshTokenAsync().");
+    return token;
+  }
+
+  private refreshTokenPlan(base: Json, opts: Json): Json {
     const { log, nowSec, randomId, signJwt, userFor, mtls, bcp,
             refreshTokenCrypto } = this.deps;
     const self = this;
-    log.debug("Entering OAuth2Server.refreshToken().");
+    log.debug("Entering OAuth2Server.refreshTokenPlan().");
     const iat = nowSec();
     const user = opts.user || userFor(opts.username);
     // Hoisted out of the payload so the LINEAGE can be recorded below. This is
@@ -4549,19 +4599,32 @@ class OAuth2Server {
     // it is what leaves this service. See `refresh_token_crypto.ts`.
     // The certificate header goes on the JWS, not on the JWE: the JWE is
     // encrypted to a key of this realm that has no certificate at all.
-    const token = refreshTokenCrypto.seal(signJwt(payload,
-                                                  self.issuanceContext(opts),
-                                                  { certificateHeader:
-                                                      'refresh-token',
-                                                    algorithm:
-                                                      self.accessTokenAlg(
-                                                        opts.request) }));
+    log.debug("Leaving OAuth2Server.refreshTokenPlan().");
+    return { payload: payload, refreshJti: refreshJti, familyId: familyId,
+             context: self.issuanceContext(opts),
+             sign: { certificateHeader: 'refresh-token',
+                     algorithm: self.accessTokenAlg(opts.request) } };
+  }
+
+  // What `refreshToken()` records once its token is signed: the family,
+  // the grant and Grant Management's grant (#820's split, unchanged).
+  private refreshTokenNoted(plan: Json, opts: Json): void {
+    const { log, bcp } = this.deps;
+    const self = this;
+    log.debug("Entering OAuth2Server.refreshTokenNoted().");
+    const refreshJti = plan.refreshJti;
+    const familyId = plan.familyId;
+    const payload = plan.payload;
     // RFC 9700 section 2.2.2. `parent_refresh_jti` is set only by the refresh
     // grant, so an empty one means this token is the root of its own family:
     // any grant minting its first refresh token. A no-op while rotation is not
     // required (neither compliance mode nor `oauth2.refreshTokenRotation`).
+    // With what this grant issued beside it (#820), which the row keeps.
     bcp.noteRefreshIssued(refreshJti, opts.parent_refresh_jti, opts.client_id,
-                          opts.parent_refresh_family);
+                          opts.parent_refresh_family,
+                          { access: opts.access_jti,
+                            expSec: Math.max(payload.exp,
+                                             Number(opts.access_exp) || 0) });
     // WHAT THIS GRANT ISSUED (#102): this refresh token and the access token
     // `tokenSet()` minted beside it, so that RFC 7009's revocation of any
     // refresh token of the family reaches both. Kept until the later of the
@@ -4574,8 +4637,7 @@ class OAuth2Server {
         Number(opts.grant_gen) || 1, refreshJti, 'refresh_token',
         payload.exp);
     }
-    log.debug("Leaving OAuth2Server.refreshToken().");
-    return token;
+    log.debug("Leaving OAuth2Server.refreshTokenNoted().");
   }
 
   // OIDC Core sections 3.1.3.6 and 3.3.2.11: at_hash and c_hash are the
@@ -5153,7 +5215,8 @@ class OAuth2Server {
       // (PS256 is FAPI 1.0 Advanced's default).
       // The KIND goes with it (#118): an ID Token carries no `typ` claim for
       // the register to read it off, so the one place that knows says so.
-      ? signJwt(payloadWithCustom,
+      // On libuv's thread pool since #820: idToken() can wait.
+      ? await self.deps.signJwtAsync(payloadWithCustom,
                 Object.assign({}, self.issuanceContext(opts),
                               { kind: 'id_token' }),
                 { certificateHeader: 'id-token', algorithm: idAlg,
@@ -5710,7 +5773,8 @@ class OAuth2Server {
                                                'grantAuthorizationDetails');
       // The access token beside it, for RFC 7009 (#102): recorded on the
       // refresh token's family so that revoking the grant revokes it too.
-      body.refresh_token = self.refreshToken(base,
+      // Signed on libuv's thread pool (#820): tokenSet() can wait.
+      body.refresh_token = await self.refreshTokenAsync(base,
         Object.assign({}, issuing, {
           access_jti: self.jtiOf(access),
           access_exp: this.deps.nowSec() + Number(body.expires_in || 0),
@@ -14789,6 +14853,16 @@ class OAuth2Server {
         return self.oauthError(res, 400, 'invalid_grant',
           'The authorization code has expired.');
       }
+      // THE PERSON'S TOKEN-HOLDER ROW, READ OFF THE EVENT LOOP WHILE THE
+      // CHECKS BELOW RUN (2026-10-22, #820), and awaited before the tokens
+      // are issued: recording them reads that row, and one not held is
+      // written fresh rather than read where the event loop would wait.
+      const holderWarm = stats.warmTokenHolders([String(
+        (record.user && record.user.username) || '')])
+        .catch(function (e) {
+          log.debug("Caught in OAuth2Server.tokenGrant(): " +
+                    ((e && e.message) || e));
+        });
       // BY DEFAULT THE CODE IS ALREADY SPENT (#424) — rcbj: "It doesn't matter
       // why the request to the Token Endpoint failed. The caller can only
       // submit a request with that authorization code once." What follows
@@ -15016,6 +15090,7 @@ class OAuth2Server {
       } else {
         authzCodes.delete(codeKey);
       }
+      await holderWarm;
       const issued = await issue({
         jkt: dpopJkt,
         // The DPoP key a bound ID Token names (Key Binding section 4).
@@ -15318,6 +15393,25 @@ class OAuth2Server {
                                'The refresh token is not ' +
                                'valid: ' + e.message);
       }
+      // THE ROWS THIS GRANT IS ABOUT TO ASK FOR, READ TOGETHER (2026-10-21,
+      // #820): the token's record, its family and its register record, each
+      // a synchronous read of the store otherwise. Started here, beside the
+      // home cell's answer, and awaited before the replay check.
+      const warming = Promise.all([
+        bcp.warmRefresh(claims),
+        stats.warmTokens([String(claims.jti || '')]),
+        // And the person's token-holder row, which recording the new
+        // tokens reads (2026-10-22, #820): held, `noteTokenHolder()`
+        // takes it as it is; not held, it would write a fresh row.
+        stats.warmTokenHolders([String(claims.username || '')]),
+        // And the person, at the place the consent check reads them.
+        helpers.warmPeopleAsync([String(claims.username || '')]),
+        // And the sign-on session an online token is bound to.
+        authn.warmSessionAsync(String(claims.sid || ''))
+      ]).catch(function (e) {
+        log.debug("Caught in OAuth2Server.tokenGrant(): " +
+                  ((e && e.message) || e));
+      });
       // A PERSON HOMED IN ANOTHER CELL IS CONFIRMED THERE FIRST (#98 D6):
       // their session was exported here, and a refresh is one of the acts
       // home is always asked about — a disable or a password change made
@@ -15338,6 +15432,7 @@ class OAuth2Server {
       // It also covers the two things this grant never checked: that the client
       // presenting the token is the client it was issued to, and that the scope
       // asked for is not wider than the scope granted.
+      await warming;
       const refreshCheck = bcp.checkRefreshRequest({
         claims: claims, body: body, clientId: String(client.client_id || '')
       });

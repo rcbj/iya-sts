@@ -327,7 +327,7 @@ async function run(t) {
         t.check(strong.ok === true, 'a person may set their own password ' +
                                     'over LDAP',
                 JSON.stringify(strong));
-        t.check(/^\$scrypt\$/.test(attributeOf(PERSON, 'userPassword').join()),
+        t.check(/^\$(scrypt|argon2id)\$/.test(attributeOf(PERSON, 'userPassword').join()),
                 'and it is stored as a hash');
         t.check(announced.length === 1 && announced[0].name === PERSON &&
                 announced[0].password === 'Self-Service-Passw0rd!' + STAMP,

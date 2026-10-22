@@ -302,14 +302,15 @@ async function theSettingsAreOnTheirPages() {
   });
 
   const web = await get("/webauthn");
-  check("GET /admin-api/webauthn carries the thirteen webauthn.* settings — " +
+  check("GET /admin-api/webauthn carries every webauthn.* setting — " +
         "there were NONE of these before 2026-09-10, and every ceremony " +
         "parameter was a literal in a string in authn/authn.ts", function () {
     assert.strictEqual(web.status, 200,
       "it answered " + web.status + " " + String(web.raw).slice(0, 200));
     const keys = keysOf(web.body);
     const own = keys.filter(function (k) { return /^webauthn\./.test(k); });
-    assert.ok(own.length >= 13,
+    // 23 on 2026-10-21 (#827); a floor, so a new row does not fail it.
+    assert.ok(own.length >= 23,
       "it drew " + own.length + " webauthn.* setting(s): " + keys.join(", "));
     assert.ok(keys.every(function (k) {
       return /^webauthn\./.test(k) || SHARED_GROUP.indexOf(k) !== -1;

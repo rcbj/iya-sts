@@ -192,7 +192,8 @@ class UsersPage {
         kit.esc(row.realms.map(function (r) { return r.realm; }).join(', ') ||
                  '—') +
         '</td><td ' +
-        'class="num">' + row.liveSessions + '</td>' +
+        'class="num">' + (row.liveSessions == null ? '—'
+          : row.liveSessions) + '</td>' +
         '<td class="num">' + row.tokens.issued + '</td>' +
         '<td class="num state-valid">' + row.tokens.valid + '</td>' +
         // EXPIRED IS ITS OWN COLUMN. It was counted in userRows() and shown
@@ -244,7 +245,7 @@ class UsersPage {
           t.text('consoleUsers.body.tileAuthenticated')],
          [dc.neverSignedInHere,
           t.text('consoleUsers.body.tileNeverHere')],
-         [json.withActiveSession,
+         [json.withActiveSession == null ? '—' : json.withActiveSession,
           t.text('consoleUsers.body.tileActive')],
          [dc.withSecond,
           t.text('consoleUsers.body.tileSecond')],
@@ -256,7 +257,7 @@ class UsersPage {
           t.text('consoleUsers.body.tileAuthenticated')],
          [json.known - json.authenticatedHere,
           t.text('consoleUsers.body.tileNeverHere')],
-         [json.withActiveSession,
+         [json.withActiveSession == null ? '—' : json.withActiveSession,
           t.text('consoleUsers.body.tileActive')],
          [factorCounts.withSecond,
           t.text('consoleUsers.body.tileSecond')],
@@ -472,7 +473,9 @@ class UsersPage {
   // `primary` key cannot sign in at all however much is enrolled on them. That
   // state is the ordinary one for somebody provisioned and not yet activated,
   // and saying "none" plainly is what sends the reader to the activation link
-  // on their row.
+  // — offered when a person is created, and issued for an existing person by
+  // `POST /admin-api/users/issue-activation` alone (their row has no button
+  // for it).
   /**
    * Draws what a person can sign in with (a password and primary security
    * keys), or "nothing yet" when they hold neither.

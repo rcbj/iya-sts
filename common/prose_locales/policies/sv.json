@@ -36,8 +36,8 @@
     "text": "lösenord"
   },
   "password.FIELDS.history.what": {
-    "en": "3d9f899c6a28ad30",
-    "text": "Hur många av en persons TIDIGARE lösenord som kommas ihåg och nekas. Det nuvarande lösenordet nekas alltid också så länge värdet är över 0, så 5 betyder att ett nytt lösenord inte får vara något av de sex senaste. 0 stänger av regeln. Utkastets attribut, med utkastets betydelse. Varje ihågkommet lösenord behålls som den scrypt-hash det redan var lagrat som, i pwdHistory på personens egen post, och att kontrollera ett nytt lösenord kostar en hashjämförelse per ihågkommet lösenord."
+    "en": "06be7ed15512bb42",
+    "text": "Hur många av en persons TIDIGARE lösenord som kommer ihåg och nekas. Det nuvarande lösenordet nekas alltid också så länge detta är över 0, så 5 betyder att ett nytt lösenord inte får vara något av de sex senaste. 0 stänger av regeln. Utkastets attribut, med utkastets betydelse. Varje ihågkommet lösenord sparas som den hash det redan var lagrat som (argon2id eller scrypt), i pwdHistory på personens egen post, och att kontrollera ett nytt lösenord kostar en hashjämförelse per ihågkommet lösenord."
   },
   "password.FIELDS.minSymbols.label": {
     "en": "95033032ad043277",
@@ -79,6 +79,74 @@
     "en": "9abc8e368dbfdf05",
     "text": "Hur långt ett lösenord som den här tjänsten HITTAR PÅ är — för en ny användare som skapas från konsolen eller /admin-api, en operatörs Generera och startkontot i produktläge. Det måste vara minst minimilängden och minst dubbla antalet symboler plus två. Tjugo tecken ur ett alfabet på 90 tecken är ungefär 130 bitar."
   },
+  "password.FIELDS.hashAlgorithm.label": {
+    "en": "3864bfd74ab51369",
+    "text": "Hashalgoritm för lösenord"
+  },
+  "password.FIELDS.hashAlgorithm.what": {
+    "en": "9f6e2faa116ebe94",
+    "text": "Algoritmen som ett nyligen lagrat lösenord hashas med: scrypt (RFC 7914), standardvalet, eller argon2id (RFC 9106, förstahandsvalet i OWASP Password Storage Cheat Sheet). En lagrad hash anger sin egen algoritm och sina parametrar och fortsätter att verifieras; en som inte använder den här algoritmen med de här parametrarna hashas om vid personens nästa verifierade inloggning. Klienthemligheter, aktiveringstoken, återställningskoder och applösenord är inte lösenord och förblir scrypt."
+  },
+  "password.FIELDS.argon2Memory.label": {
+    "en": "f56cee65f89ca6d4",
+    "text": "Minne för argon2id"
+  },
+  "password.FIELDS.argon2Memory.unit": {
+    "en": "97ee1b8dd0d5456b",
+    "text": "KiB"
+  },
+  "password.FIELDS.argon2Memory.what": {
+    "en": "ec649d8291c32776",
+    "text": "Minnet som en argon2id-hash använder, i kibibyte (m). 19456 KiB (19 MiB) är OWASP:s minimum och det minsta den här tjänsten skriver. Att höja det gör ett stulet lager långsammare att angripa, och varje inloggning använder så mycket mer minne."
+  },
+  "password.FIELDS.argon2Iterations.label": {
+    "en": "7d86f5ad8bfeae28",
+    "text": "Iterationer för argon2id"
+  },
+  "password.FIELDS.argon2Iterations.unit": {
+    "en": "2c28ec094b830e09",
+    "text": "pass"
+  },
+  "password.FIELDS.argon2Iterations.what": {
+    "en": "b04ad660d2d130b6",
+    "text": "Hur många pass argon2id gör över sitt minne (t). 2 är OWASP:s minimum vid 19 MiB; varje pass lägger till samma tid igen."
+  },
+  "password.FIELDS.argon2Parallelism.label": {
+    "en": "e1eb312244fb28cf",
+    "text": "Parallellism för argon2id"
+  },
+  "password.FIELDS.argon2Parallelism.unit": {
+    "en": "ff1789b2348ddbc2",
+    "text": "banor"
+  },
+  "password.FIELDS.argon2Parallelism.what": {
+    "en": "e5321dcccf2989ad",
+    "text": "Hur många banor argon2id delar upp sitt minne i (p). Det är en del av hashen, inte ett antal trådar: node beräknar en hash på en tråd oavsett vad detta säger. 1 är OWASP:s värde."
+  },
+  "password.FIELDS.scryptLogN.label": {
+    "en": "91d752051cc3e278",
+    "text": "Kostnad för scrypt (log2 av N)"
+  },
+  "password.FIELDS.scryptLogN.what": {
+    "en": "d6b7b8f956d8c0b0",
+    "text": "scrypts CPU- och minneskostnad för ett nyligen lagrat lösenord när algoritmen är scrypt, som en tvåpotens: 15 (standardvärdet) är N=32768. OWASP:s tabell parar den med parallellismen: 2^17 med p=1, 2^16 med p=2, 2^15 med p=3, 2^14 med p=5 eller 2^13 med p=10. Standardvärdet, 2^15 med p=1, ligger under den."
+  },
+  "password.FIELDS.scryptBlockSize.label": {
+    "en": "7b7e7b5de9b8be58",
+    "text": "Blockstorlek för scrypt (r)"
+  },
+  "password.FIELDS.scryptBlockSize.what": {
+    "en": "f0c104745b77d30a",
+    "text": "scrypts blockstorlek för ett nyligen lagrat lösenord när algoritmen är scrypt. Minnet är ungefär 128 × N × r byte; 8 är värdet som RFC 7914 och OWASP anger."
+  },
+  "password.FIELDS.scryptParallelism.label": {
+    "en": "0aa3282295d9521b",
+    "text": "Parallellism för scrypt (p)"
+  },
+  "password.FIELDS.scryptParallelism.what": {
+    "en": "b088d02f4ec32169",
+    "text": "scrypts parallellism för ett nyligen lagrat lösenord när algoritmen är scrypt. Node beräknar den på en tråd, så ett högre värde kostar tid snarare än kärnor; kostnadens beskrivning listar de par som OWASP godtar."
+  },
   "password.SCHEMA.objectClasses.pwdPolicy.what": {
     "en": "ab642ea5cb282745",
     "text": "Klassen från draft-behera-ldap-password-policy för en post med en lösenordspolicy. `pwdAttribute` anger attributet som policyn styr, och här är det alltid `userPassword`."
@@ -96,8 +164,8 @@
     "text": "Det kortaste lösenord som den här tjänsten sätter, räknat i tecken (Unicode-kodpunkter, så en emoji är ett). Attributet kommer från draft-behera-ldap-password-policy. Tolv är standardvärdet; NIST SP 800-63B kräver minst 8, och 15 där ett lösenord är den enda faktorn."
   },
   "password.SCHEMA.attributes.pwdInHistory.what": {
-    "en": "3d9f899c6a28ad30",
-    "text": "Hur många av en persons TIDIGARE lösenord som kommas ihåg och nekas. Det nuvarande lösenordet nekas alltid också så länge värdet är över 0, så 5 betyder att ett nytt lösenord inte får vara något av de sex senaste. 0 stänger av regeln. Utkastets attribut, med utkastets betydelse. Varje ihågkommet lösenord behålls som den scrypt-hash det redan var lagrat som, i pwdHistory på personens egen post, och att kontrollera ett nytt lösenord kostar en hashjämförelse per ihågkommet lösenord."
+    "en": "06be7ed15512bb42",
+    "text": "Hur många av en persons TIDIGARE lösenord som kommer ihåg och nekas. Det nuvarande lösenordet nekas alltid också så länge detta är över 0, så 5 betyder att ett nytt lösenord inte får vara något av de sex senaste. 0 stänger av regeln. Utkastets attribut, med utkastets betydelse. Varje ihågkommet lösenord sparas som den hash det redan var lagrat som (argon2id eller scrypt), i pwdHistory på personens egen post, och att kontrollera ett nytt lösenord kostar en hashjämförelse per ihågkommet lösenord."
   },
   "password.SCHEMA.attributes.stsPwdMinSymbols.what": {
     "en": "f9154c103bc3422d",
@@ -115,13 +183,41 @@
     "en": "9abc8e368dbfdf05",
     "text": "Hur långt ett lösenord som den här tjänsten HITTAR PÅ är — för en ny användare som skapas från konsolen eller /admin-api, en operatörs Generera och startkontot i produktläge. Det måste vara minst minimilängden och minst dubbla antalet symboler plus två. Tjugo tecken ur ett alfabet på 90 tecken är ungefär 130 bitar."
   },
+  "password.SCHEMA.attributes.stsPwdHashAlgorithm.what": {
+    "en": "9f6e2faa116ebe94",
+    "text": "Algoritmen som ett nyligen lagrat lösenord hashas med: scrypt (RFC 7914), standardvalet, eller argon2id (RFC 9106, förstahandsvalet i OWASP Password Storage Cheat Sheet). En lagrad hash anger sin egen algoritm och sina parametrar och fortsätter att verifieras; en som inte använder den här algoritmen med de här parametrarna hashas om vid personens nästa verifierade inloggning. Klienthemligheter, aktiveringstoken, återställningskoder och applösenord är inte lösenord och förblir scrypt."
+  },
+  "password.SCHEMA.attributes.stsPwdArgon2Memory.what": {
+    "en": "ec649d8291c32776",
+    "text": "Minnet som en argon2id-hash använder, i kibibyte (m). 19456 KiB (19 MiB) är OWASP:s minimum och det minsta den här tjänsten skriver. Att höja det gör ett stulet lager långsammare att angripa, och varje inloggning använder så mycket mer minne."
+  },
+  "password.SCHEMA.attributes.stsPwdArgon2Iterations.what": {
+    "en": "b04ad660d2d130b6",
+    "text": "Hur många pass argon2id gör över sitt minne (t). 2 är OWASP:s minimum vid 19 MiB; varje pass lägger till samma tid igen."
+  },
+  "password.SCHEMA.attributes.stsPwdArgon2Parallelism.what": {
+    "en": "e5321dcccf2989ad",
+    "text": "Hur många banor argon2id delar upp sitt minne i (p). Det är en del av hashen, inte ett antal trådar: node beräknar en hash på en tråd oavsett vad detta säger. 1 är OWASP:s värde."
+  },
+  "password.SCHEMA.attributes.stsPwdScryptLogN.what": {
+    "en": "d6b7b8f956d8c0b0",
+    "text": "scrypts CPU- och minneskostnad för ett nyligen lagrat lösenord när algoritmen är scrypt, som en tvåpotens: 15 (standardvärdet) är N=32768. OWASP:s tabell parar den med parallellismen: 2^17 med p=1, 2^16 med p=2, 2^15 med p=3, 2^14 med p=5 eller 2^13 med p=10. Standardvärdet, 2^15 med p=1, ligger under den."
+  },
+  "password.SCHEMA.attributes.stsPwdScryptBlockSize.what": {
+    "en": "f0c104745b77d30a",
+    "text": "scrypts blockstorlek för ett nyligen lagrat lösenord när algoritmen är scrypt. Minnet är ungefär 128 × N × r byte; 8 är värdet som RFC 7914 och OWASP anger."
+  },
+  "password.SCHEMA.attributes.stsPwdScryptParallelism.what": {
+    "en": "b088d02f4ec32169",
+    "text": "scrypts parallellism för ett nyligen lagrat lösenord när algoritmen är scrypt. Node beräknar den på en tråd, så ett högre värde kostar tid snarare än kärnor; kostnadens beskrivning listar de par som OWASP godtar."
+  },
   "password.SCHEMA.attributes.description.what": {
     "en": "93538e6b201100c5",
     "text": "Vad profilen är till för, för nästa person."
   },
   "password.SCHEMA.personAttributes.pwdHistory.what": {
-    "en": "a057113a3f0da3b5",
-    "text": "Ett värde per ihågkommet tidigare lösenord, i utkastets form `time#syntaxOID#length#data` — där data är den scrypt-hash som lösenordet lagrades som, aldrig lösenordet. Underhålls av den här tjänsten och nekas vid en LDAP-add eller -modify, eftersom en historik som vem som helst kan redigera är en historik som vem som helst kan tömma."
+    "en": "e800109ca0c5e386",
+    "text": "Ett värde per ihågkommet tidigare lösenord, i utkastets form `time#syntaxOID#length#data` — där data är den hash lösenordet lagrades under, aldrig lösenordet. Underhålls av den här tjänsten och nekas vid en LDAP-add eller -modify, eftersom en historik som vem som helst kan redigera är en historik som vem som helst kan tömma."
   },
   "password.SCHEMA.personAttributes.pwdChangedTime.what": {
     "en": "3c870b2e0c097f36",

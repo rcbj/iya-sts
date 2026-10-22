@@ -2233,7 +2233,7 @@ function boxFor(drawn, attribute) {
 //     overwrote a typed value would silently discard work; a fill that created
 //     somebody would be a preview button that commits.
 //   * A GENERATED PASSWORD COMES BACK IN THE PAGE and is not on the entry in
-//     the clear. It exists once — the store holds a scrypt hash — so if this
+//     the clear. It exists once — the store holds a password hash — so if this
 //     page did not show it, it would be gone.
 //   * AN ACTIVATION LINK REALLY OPENS THE PORTAL. The link is this service's
 //     own URL and the only proof that it was built right is spending it: a
@@ -2420,7 +2420,7 @@ async function theNewUserPageDescribesAPerson(driver) {
   check("a generated password is shown once, in the page", function () {
     assert.ok(String(shown).length >= 20,
       "the create answered without showing the generated password. It exists " +
-      "exactly once — the store holds a scrypt hash and this service cannot " +
+      "exactly once — the store holds a password hash and this service cannot " +
       "produce it again — so a page that does not show it has thrown away " +
       "the only copy. It showed " + JSON.stringify(shown));
   });
@@ -2433,15 +2433,18 @@ async function theNewUserPageDescribesAPerson(driver) {
       "so the credential was not set at all.");
     assert.notStrictEqual(held, String(shown),
       "THE ENTRY HOLDS THE PASSWORD IN THE CLEAR. credentials.js hashes it " +
-      "with scrypt precisely so that a directory read is not a credential " +
-      "dump, and this page is the newest door onto that function.");
+      "(argon2id by default, #847) precisely so that a directory read " +
+      "is not a credential dump, and this page is the newest door onto " +
+      "that function.");
     // A CREDENTIAL IS NEVER IN A GET (#446): /admin-api/ldap/directory
     // says a userPassword is set without returning it, so this job cannot
-    // see the hash's form — the in-process tests hold that it is scrypt.
+    // see the hash's form — the in-process tests hold that it is argon2id
+    // or scrypt.
     // What it can see is that the password it was shown is nowhere in the
     // entry the API answers.
-    assert.ok(held === "(set — not returned)" || /^\$scrypt\$/.test(held),
-      "and it should be withheld, or at most a scrypt hash; it starts " +
+    assert.ok(held === "(set — not returned)" ||
+              /^\$(scrypt|argon2id)\$/.test(held),
+      "and it should be withheld, or at most a password hash; it starts " +
       JSON.stringify(String(held).slice(0, 12)));
     assert.ok(JSON.stringify(passwordEntry).indexOf(String(shown)) < 0,
       "THE GENERATED PASSWORD IS IN THE DIRECTORY ENTRY THE API ANSWERS.");
@@ -2497,7 +2500,7 @@ async function theNewUserPageDescribesAPerson(driver) {
            "drawn, Fill filled the empty boxes and left the typed one and " +
            "the directory alone, a create with two boxes filled stored those " +
            "two and none of the five namePlan() invents, a generated " +
-           "password was shown once and stored as a scrypt hash, and the " +
+           "password was shown once and stored as a password hash, and the " +
            "activation link opened the portal.");
   log.debug("Leaving theNewUserPageDescribesAPerson().");
 }

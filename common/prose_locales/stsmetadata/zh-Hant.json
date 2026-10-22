@@ -1472,8 +1472,8 @@
     "text": "非規格端點。八個 `totp.*` 設定，旁邊附上 RFC 6238 演算法表——從 common/totp.ts 讀出而非另外寫下，因此報告不可能描述本服務並未計算的摘要演算法。變更摘要演算法、位數或週期只影響「新的」註冊；時間偏差視窗則對所有人即時生效。旁邊沒有 POST，這並不是缺漏：頁面上的每個表單都以 set-many POST 至 /admin/config。對應 GET /admin/totp。"
   },
   "stsmetadata.endpoints./admin-api/webauthn.what": {
-    "en": "c0a4d8af96e060e0",
-    "text": "非規格端點。二十一個 `webauthn.*` 設定，分為四類——「儀式」（RP 名稱、RP ID 覆寫、演算法、使用者驗證、證明傳遞、逾時）、CTAP2（驗證器附接方式、常駐金鑰、credProps）以及「原則」（金鑰是否可作為主要因素、是否可作為第二因素、每人可有幾把）——旁邊附上 COSE 演算法表，從 authn/webauthn.js（檢查簽章的模組）讀出。**只有一項會被強制執行，其餘都是請求**：userVerification 會依驗證器所簽署位元組中的 UV 旗標檢查。證明原則（#105）與目前生效的 FIDO 中繼資料一併回報。旁邊沒有 POST：表單以 set-many POST 至 /admin/config。對應 GET /admin/webauthn。"
+    "en": "b48aa4041763958e",
+    "text": "非規格端點。各項 `webauthn.*` 設定，分為四類——「儀式」（RP 名稱、RP ID 覆寫、演算法、使用者驗證、證明傳遞、逾時）、CTAP2（驗證器附接方式、credProps）以及「原則」（金鑰是否可作為主要因素、是否可作為第二因素、每人可有幾把）——旁邊附上 COSE 演算法表，從 authn/webauthn.js（檢查簽章的模組）讀出。**只有一項會被強制執行，其餘都是請求**：userVerification 會依驗證器所簽署位元組中的 UV 旗標檢查。證明原則（#105）與目前生效的 FIDO 中繼資料一併回報。旁邊沒有 POST：表單以 set-many POST 至 /admin/config。對應 GET /admin/webauthn。"
   },
   "stsmetadata.endpoints./admin-api/mfa.what": {
     "en": "22620e663bd803a3",
@@ -2848,8 +2848,8 @@
     "text": "誠實的 active/inactive 回答，附上所出示權杖的宣告——其中包括 acr 與 auth_time（RFC 9470 section 6.2）——以 RFC 7662 JSON 呈現；或者，當 Accept 標頭指名 application/token-introspection+jwt 時，以 RFC 9701 JWT 呈現，為提出請求的資源伺服器簽署（並可選擇加密），使用其註冊的演算法。JWT 請求在每種模式下都必須以用戶端身分驗證，否則以 400 invalid_client 拒絕；JSON 請求在產品模式下必須驗證（401），在開發模式下則不需要。"
   },
   "stsmetadata.endpoints./status-lists/access-tokens.what": {
-    "en": "9968fbaef6a6743d",
-    "text": "領域「唯一」的存取權杖 Status List Token（#432）：每個 OAuth RFC 9068 存取權杖與每個 GNAP jwt-signed 與 jwt-encrypted 權杖都在其中指名一個索引（status.status_list），因此自行檢查權杖的資源伺服器能看到其已被撤銷。application/statuslist+jwt，或依 Accept 為 application/statuslist+cwt；1,048,576 個索引中每個權杖一個位元，該位元由撤銷登錄計算；ttl 為 oauth2.accessTokenStatusListTtlS，exp 為 oauth2.accessTokenStatusListLifetimeS，以領域的 RS256 存取權杖金鑰簽署。?time= 回應 501。"
+    "en": "bd042da837f12da5",
+    "text": "領域「唯一」的存取權杖 Status List Token（#432）：每個 OAuth RFC 9068 存取權杖與每個 GNAP jwt-signed 與 jwt-encrypted 權杖都在其中指名一個索引（status.status_list），因此自行檢查權杖的資源伺服器能看到其已被撤銷。application/statuslist+jwt，或依 Accept 為 application/statuslist+cwt；16,777,216 個索引中每個權杖一個位元，該位元由撤銷登錄計算；ttl 為 oauth2.accessTokenStatusListTtlS，exp 為 oauth2.accessTokenStatusListLifetimeS，以領域的 RS256 存取權杖金鑰簽署。?time= 回應 501。"
   },
   "stsmetadata.endpoints./status-lists.what": {
     "en": "9a8ef90105d2caca",

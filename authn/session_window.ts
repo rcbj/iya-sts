@@ -98,6 +98,9 @@ class SessionWindow {
    * Builds the window and registers it. It asks the store nothing until a
    * miss, and nothing at all while the setting is off.
    */
+  // The keys touched while each `warmAsync()` was reading.
+  private warming = new Set<Set<string>>();
+
   constructor() {
     log.debug("Entering SessionWindow.constructor().");
     const self = this;
@@ -322,6 +325,104 @@ class SessionWindow {
     return this.opened(realm, id, digest);
   }
 
+  // -------------------------------------------------------------------------
+  // A SESSION A REQUEST IS ABOUT TO READ, ADMITTED FIRST AND OFF THE EVENT
+  // LOOP (2026-10-21, #820). A refresh of an online token reads its sign-on
+  // session, and a miss was a synchronous read of the store that held the
+  // worker. This asks the same question asynchronously and admits the
+  // answer — unless the session was touched while the question was out (a
+  // change applied, a local write, a commit: `noteTouched()`), or is held,
+  // pending or known by then, when the answer may be the older one and the
+  // synchronous read asks again. A failure or an absence admits nothing and
+  // remembers nothing: only `get()` decides those.
+  // -------------------------------------------------------------------------
+  /**
+   * The digest the index files a session id under, or null where no digest
+   * key is held (#820: a console search by session id).
+   *
+   * @param realmId - the realm
+   * @param sid - the session id
+   * @returns the digest, or null
+   */
+  digestFor(realmId: string, sid: string): string | null {
+    log.debug("Entering SessionWindow.digestFor().");
+    log.debug("Leaving SessionWindow.digestFor().");
+    return this.digestOf(String(realmId || ''), String(sid || ''));
+  }
+
+  /**
+   * Reads and opens one session by its digest, asynchronously, without
+   * admitting it (#820): a page of the console's live sessions, which must
+   * not push the sessions people are using out of the cache.
+   *
+   * @param realmId - the realm
+   * @param digest - the index's key
+   * @returns a promise of the session, null where it is gone or could not
+   *   be read, undefined where its body would not open
+   */
+  async openAsync(realmId: string, digest: string): Promise<any> {
+    log.debug("Entering SessionWindow.openAsync().");
+    const row = await this.askAsync('session.read',
+                                    [String(realmId || ''),
+                                     String(digest || '')]);
+    log.debug("Leaving SessionWindow.openAsync().");
+    return this.sessionFrom(row);
+  }
+
+  /**
+   * Admits a session asynchronously ahead of a `get()`.
+   *
+   * @param realmId - the realm
+   * @param sid - the session id
+   * @returns a promise of whether it was admitted
+   */
+  async warmAsync(realmId: string, sid: string): Promise<boolean> {
+    log.debug("Entering SessionWindow.warmAsync().");
+    const realm = String(realmId || '');
+    const id = String(sid || '');
+    const key = this.cacheKey(realm, id);
+    if (!id || !this.active() || this.lru.peek(key) ||
+        this.freshNegative(key) || this.mapRead(realm, id).present ||
+        this.journalledSafe(realm, id) || Date.now() < this.cooldownUntil) {
+      log.debug("Leaving SessionWindow.warmAsync(). Nothing to do.");
+      return false;
+    }
+    const digest = this.digestOf(realm, id);
+    if (!digest) {
+      log.debug("Leaving SessionWindow.warmAsync(). No digest.");
+      return false;
+    }
+    const touched = new Set<string>();
+    this.warming.add(touched);
+    let row: any = null;
+    try {
+      row = await this.askAsync('session.read', [realm, digest]);
+    } finally {
+      this.warming.delete(touched);
+    }
+    if (touched.has(key) || this.lru.peek(key) ||
+        this.journalledSafe(realm, id)) {
+      log.debug("Leaving SessionWindow.warmAsync(). Touched meanwhile.");
+      return false;
+    }
+    const session = this.sessionFrom(row);
+    if (!session || String(session.id || '') !== id) {
+      log.debug("Leaving SessionWindow.warmAsync(). Not admitted.");
+      return false;
+    }
+    this.admit(realm, id, session, false);
+    log.debug("Leaving SessionWindow.warmAsync(). Admitted.");
+    return true;
+  }
+
+  // Every warm-up in flight hears of a key changed here. Hot path (every
+  // apply, local write and commit): no Entering/Leaving pair.
+  private noteTouched(key: string): void {
+    this.warming.forEach(function (touched) {
+      touched.add(key);
+    });
+  }
+
   // Hot path: the cap's membership test. No Entering/Leaving pair. It does
   // not admit: a flood of unknown ids must not fill the live cache.
   /**
@@ -396,6 +497,7 @@ class SessionWindow {
       const realm = String(realmId || '');
       const id = String(sid || '');
       const key = this.cacheKey(realm, id);
+      this.noteTouched(key);
       const mapped = this.mapRead(realm, id);
       if (!mapped.present || mapped.value == null) {
         this.lru.delete(key);
@@ -465,6 +567,7 @@ class SessionWindow {
     const realm = String(realmId || '');
     const id = String(sid || '');
     const key = this.cacheKey(realm, id);
+    this.noteTouched(key);
     if (remove || value == null) {
       this.lru.delete(key);
       this.forgetDigest(realm, id);
@@ -1009,6 +1112,7 @@ class SessionWindow {
     const sid = String(row.journalKey);
     const realmId = String(row.realm);
     const key = this.cacheKey(realmId, sid);
+    this.noteTouched(key);
     const slot = this.lru.peek(key);
     if (!slot) {
       return;

@@ -675,6 +675,10 @@
     "en": "faa7f1245749fea5",
     "text": "Una persona nombró o borró la parte que puede actuar en su nombre"
   },
+  "audit.actions.portal.delegation.search.label": {
+    "en": "ce14f3c18b0c3f60",
+    "text": "Una persona buscó a alguien que pueda actuar en su nombre"
+  },
   "audit.actions.admin.password-policy.change.label": {
     "en": "3919c9c6efb6ee77",
     "text": "Se modificó un perfil de política de contraseñas"
@@ -934,6 +938,10 @@
   "audit.actions.ssf.stream.revived.label": {
     "en": "bb572a202bd6c70a",
     "text": "Se reactivó un flujo push muerto"
+  },
+  "audit.actions.ssf.stream.delivery.label": {
+    "en": "3df44dec0e09a7e4",
+    "text": "Un flujo receptor pasó de la entrega push a la entrega poll"
   },
   "audit.actions.ssf.deadletter.clear.label": {
     "en": "1caaf3043e122f70",
@@ -1342,6 +1350,14 @@
   "audit.actions.portal.siop.prefer.label": {
     "en": "7e6377e63c113f97",
     "text": "Una persona marcó como preferido un DID demostrado, o quitó la marca"
+  },
+  "audit.actions.portal.siop.view.label": {
+    "en": "e7a28d6d72970a6f",
+    "text": "Una persona no pudo ver sus sujetos autoemitidos"
+  },
+  "audit.actions.portal.siop.did.label": {
+    "en": "7fa86b94eee6535e",
+    "text": "Una persona no pudo ver el documento DID de un sujeto autoemitido"
   },
   "audit.actions.siop.key.pinned.label": {
     "en": "a2cc99b16a4a406e",

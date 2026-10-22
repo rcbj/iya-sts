@@ -135,6 +135,8 @@ const tiers = require('./tiers');
 // THE FAN-IN FOR `merge: 'own'` STORES. A LIBRARY, like this one, and required
 // in the ordinary direction: it does not require this file back.
 const replication = require('./persistence_replication');
+// A LEAF: where a flush's time goes (#820), beside the requests'.
+const requestPhases = require('../common/request_phases');
 // A LEAF with no requires: the failure codes on the log lines and the fatal
 // refusals below. NOT audit.js, which requires persistence_replication.js.
 const errorCodes = require('../common/error_codes');
@@ -709,7 +711,17 @@ function setDriver(theDriver, activeMode) {
   // And the on-demand stores their reader (#820).
   realms.setOnDemandReader({ active: demandLiveFor, read: onDemandRead,
                              byIndex: onDemandByIndex,
+                             digestOf: residentDigestOf,
+                             page: onDemandPage,
+                             readMany: onDemandReadMany,
+                             newestAsync: onDemandNewestAsync,
+                             countAsync: onDemandCountAsync,
+                             countEstimateAsync: onDemandCountEstimateAsync,
+                             byIndexAsync: onDemandByIndexAsync,
                              journalled: pendingWrite });
+  // And the fan-in its noted rows' reader (#820, `contributionsOnRead`).
+  replication.setContributionReader(
+    typeof theDriver.readMintedMany === 'function' ? readContributions : null);
   log.debug('Leaving setDriver(). ' + realms.handles().length +
             ' declared store(s).');
   return true;
@@ -898,12 +910,20 @@ function prefetch(changes) {
     }
     wanted.add(id);
     // Not an on-demand row this process does not hold (#820): applyChange()
-    // reads none of those.
+    // reads none of those. Nor another process's row of a store only a page
+    // reads: applyChange() notes it.
     const declared = realms.handleFor(parsed.handle);
-    if (declared && declared.onDemand && demandLiveFor(parsed.handle)) {
-      const local = declared.read(change.realm,
-                                  splitKey(declared, parsed.storedName).key);
+    if (declared && contributedOnRead(declared,
+                                      splitKey(declared, parsed.storedName))) {
+      return;
+    }
+    if (declared && declared.onDemand && !declared.keysResident &&
+        demandLiveFor(parsed.handle)) {
+      const name = splitKey(declared, parsed.storedName).key;
+      const local = declared.read(change.realm, name);
       if (!local || !local.present) {
+        // Not read; and no longer known to be absent (#820 part 2).
+        forgetAbsentIn(declared, change.realm, name);
         return;
       }
     }
@@ -988,6 +1008,7 @@ function prefetchedRow(handle, realmId, name) {
 function endPrefetch() {
   log.debug("Entering endPrefetch().");
   prefetched = null;
+  openedNames.clear();
   log.debug("Leaving endPrefetch().");
 }
 
@@ -1075,13 +1096,29 @@ function applyChange(change) {
     return Promise.resolve(false);
   }
   const split = splitKey(store, storedName);
+  // Another process changed the row: what this one committed for it may no
+  // longer be what is filed (see `committedLookups`).
+  committedLookups.delete(demandId(handle, change.realm, split.key));
+  // ANOTHER PROCESS'S ROW OF A STORE ONLY A PAGE READS IS NOTED, NOT READ
+  // (#820, `contributionsOnRead` in `common/realms.js`): the page reads it,
+  // with everything else noted, when it is drawn.
+  if (contributedOnRead(store, split)) {
+    replication.contributionStale(handle, change.realm, split.key,
+                                  split.origin, storedName);
+    log.debug("Leaving applyChange(). Noted, read when asked for.");
+    return Promise.resolve(true);
+  }
   // AN ON-DEMAND ROW THIS PROCESS DOES NOT HOLD IS NOT READ (#820): it would
   // only be skipped once read — `applyLocally()` admits nothing — and
   // whoever asks for it next reads it from the store as it then is. Only a
   // held row is read, to be replaced, or found gone.
-  if (store.onDemand && demandLiveFor(handle)) {
+  // A KEY-RESIDENT store's row IS read, held or not (#820 part 2): its
+  // digests are kept exact, and only the row says whether this was a write
+  // or a delete. `applyLocally()` files the digest and holds nothing new.
+  if (store.onDemand && !store.keysResident && demandLiveFor(handle)) {
     const local = store.read(change.realm, split.key);
     if (!local || !local.present) {
+      forgetAbsentIn(store, change.realm, split.key);
       log.debug("Leaving applyChange(). On demand, not held.");
       return Promise.resolve(true);
     }
@@ -1156,6 +1193,70 @@ function applyChange(change) {
     });
 }
 
+// Whether a change to this row is noted rather than read (#820): another
+// process's row of a `contributionsOnRead` store, with a reader to read it
+// by later. Hot path: every change applied. No Entering/Leaving pair.
+function contributedOnRead(store, split) {
+  return !!(store && store.contributionsOnRead && store.merge === 'own' &&
+            split && split.origin && split.origin !== origin &&
+            replication.contributionsReadable());
+}
+
+/**
+ * Reads noted contributions of other processes (#820, `contributionsOnRead`),
+ * in batches, from the primary.
+ *
+ * @param refs - `{ handle, realm, name }` for each row, `name` its stored name
+ * @returns a promise of a Map from `handle\0realm\0name` to the opened value,
+ *   or null where the row is gone; a row that will not open is left out
+ */
+function readContributions(refs) {
+  log.debug("Entering readContributions(). " + refs.length + " row(s).");
+  if (!driver || typeof driver.readMintedMany !== 'function') {
+    log.debug("Leaving readContributions(). No batched read.");
+    return Promise.reject(new Error('no batched read'));
+  }
+  const out = new Map();
+  const BATCH = 500;
+  let at = 0;
+  const next = function () {
+    if (at >= refs.length) {
+      return Promise.resolve(out);
+    }
+    const chunk = refs.slice(at, at + BATCH);
+    at += BATCH;
+    const byColumn = new Map();
+    const asked = chunk.map(function (ref) {
+      const column = keyColumnOf(ref.handle, ref.realm, ref.name);
+      byColumn.set(ref.handle + '\u0000' + ref.realm + '\u0000' + column,
+                   ref);
+      // Gone until a row says otherwise.
+      out.set(ref.handle + '\u0000' + ref.realm + '\u0000' + ref.name, null);
+      return { handle: ref.handle, realm: ref.realm, key: column };
+    });
+    return driver.readMintedMany(asked, { primary: true })
+      .then(function (rows) {
+        (rows || []).forEach(function (row) {
+          const ref = byColumn.get(row.handle + '\u0000' + row.realm +
+                                   '\u0000' + row.key);
+          if (!ref) {
+            return;
+          }
+          const id = ref.handle + '\u0000' + ref.realm + '\u0000' + ref.name;
+          const opened = openedBody(ref.handle, row.body);
+          if (opened === undefined) {
+            out.delete(id);
+          } else {
+            out.set(id, opened);
+          }
+        });
+        return next();
+      });
+  };
+  log.debug("Leaving readContributions().");
+  return next();
+}
+
 // Brings `sts_sessions` in line with a body another node committed (#350).
 // Idempotent. A driver without the methods (memory, ldif, an older stub)
 // skips it. A null digest writes nothing and does not delete a live row.
@@ -1201,7 +1302,11 @@ function applyLocally(store, realmId, key, value, remove) {
     // AN ON-DEMAND STORE ADMITS NOTHING (#820): another process's row
     // replaces one this process holds, and is not taken otherwise — it is
     // read from the store when somebody asks for it.
+    if (store && store.keysResident && demandLiveFor(store.handle)) {
+      residentIn(store, realmId, key, !remove);
+    }
     if (store && store.onDemand && !remove && demandLiveFor(store.handle)) {
+      forgetAbsentIn(store, realmId, key);
       const held = store.read(realmId, key);
       decision = held && held.present ? 'restore' : 'skip';
     }
@@ -1414,6 +1519,10 @@ function flush() {
   const taken = journal;
   // Everything journalled so far is in `taken`: no flush is in flight here.
   const takenAt = generation;
+  // WHERE A FLUSH'S TIME GOES (2026-10-22, #820): a request's commit hold
+  // was ~55 ms on 8081 while the flush's statements took a few. Taken here,
+  // before the rows are read and sealed.
+  const flushStartedAt = Date.now();
   const upserts = [];
   const deletes = [];
   let unsealable = 0;
@@ -1464,8 +1573,9 @@ function flush() {
                          // An ENDED key leaves a tombstone. See
                          // ENDED ROWS below.
                          tombstone: row.tombstone === true,
-                         // An on-demand store's index rows go with it (#820).
-                         indexed: typeof row.lookupsOf === 'function' });
+                         // An on-demand store's index rows go with it (#820),
+                         // its sort row among them (2026-10-22).
+                         indexed: isIndexed(row) });
           return;
         }
         // Of the plaintext about to be sealed, not of the ciphertext.
@@ -1500,9 +1610,17 @@ function flush() {
                        // Side-table columns, or null when there is no index.
                        // The merge path replaces these from the merged row.
                        index: indexed,
-                       // An on-demand store's index keys (#820), or null.
-                       lookups: lookupsFor(row, handle, realmId, key,
-                                           present.value),
+                       // An on-demand store's index keys (#820), or null —
+                       // and null too when they are what this process last
+                       // committed for the key (`unchangedLookups()`).
+                       lookups: unchangedLookups(row, handle, realmId, key,
+                         indexKeysFor(row, handle, realmId, key,
+                                      present.value),
+                         sortAtFor(row, present.value, key)),
+                       // The number a console's newest-first list orders
+                       // this row by, or null (`sortBy`, 2026-10-22, #820):
+                       // written as one more index row while `lookups` is.
+                       sortAt: sortAtFor(row, present.value, key),
                        // WHETHER A READER HAS TO WAIT FOR THIS ROW. An `own`
                        // store is per-process fan-in — every process keeps its
                        // own contribution and the console SUMS them when
@@ -1550,12 +1668,23 @@ function flush() {
   // THE DATA-KEY ROWS LAND FIRST (#391): a row sealed under a data encryption
   // key made during this flush must not reach another process before the key
   // does.
+  const flushSealedAt = Date.now();
+  let flushSentAt = 0;
   const saving = Promise.resolve(typeof keystore.settleDeks === 'function'
     ? keystore.settleDeks() : null).then(function () {
+    flushSentAt = Date.now();
     return driver.saveMinted(upserts, deletes);
   }).then(function (result) {
+    const doneAt = Date.now();
+    requestPhases.record('FLUSH minted', {
+      prepare: flushSealedAt - flushStartedAt,
+      queue: flushSentAt - flushSealedAt,
+      db: doneAt - flushSentAt,
+      rows: upserts.length + deletes.length,
+      total: doneAt - flushStartedAt });
     committedAt = Math.max(committedAt, takenAt);
     settleDecided(result);
+    noteCommittedLookups(upserts, deletes, result);
     try {
       const sessionWindow = sessionWindowIfOn();
       if (sessionWindow) {
@@ -1849,6 +1978,82 @@ const inFlightDemand = new Map();
 let demandBridge = null;
 
 // Hot path: every on-demand flush row. No Entering/Leaving pair.
+// ---------------------------------------------------------------------------
+// THE INDEX KEYS THIS PROCESS LAST COMMITTED FOR A ROW (2026-10-21). A row of
+// an indexed store is rewritten far more often than its index keys change —
+// a refresh rewrites the token it rotated and the register record it revoked,
+// neither filed anywhere new — and every rewrite deleted and re-inserted all
+// of its index rows: up to seven for a token. Remembered after a commit, a
+// row whose keys are unchanged writes none. Forgotten when this process
+// deletes the row, when another process's change to it is applied (it may
+// have deleted it, and its index rows with it), and wholesale past a bound;
+// a forgotten key is simply written in full again. Not for a store that
+// merges, whose keys are recomputed from the merged row in the transaction.
+// ---------------------------------------------------------------------------
+const committedLookups = new Map();
+const COMMITTED_LOOKUPS_MAX = 100000;
+
+// The lookups to write, or null when they are the committed ones. The sort
+// value is part of what is compared (2026-10-22, #820): a row whose index
+// keys are unchanged and whose sort value moved rewrites its index rows, the
+// sort row among them. Hot path (every indexed row a flush writes): no
+// Entering/Leaving pair.
+function unchangedLookups(row, handle, realmId, key, lookups, sortAt) {
+  if (!lookups || row.mergeRow) {
+    return lookups;
+  }
+  const committed = committedLookups.get(demandId(handle, realmId, key));
+  if (committed !== undefined &&
+      committed === filedFingerprint(lookups, sortAt)) {
+    return null;
+  }
+  return lookups;
+}
+
+// What a row is filed under, as one string: its index keys and its sort
+// value. Hot path: no Entering/Leaving pair.
+function filedFingerprint(lookups, sortAt) {
+  return lookups.join('\n') + '\n\u0000' +
+    (sortAt === null || sortAt === undefined ? '' : String(sortAt));
+}
+
+// Whether a declared store writes `sts_minted_index` rows: index keys
+// (`indexBy`), a sort value (`sortBy`), or both. Hot path (every delete a
+// flush journals): no Entering/Leaving pair.
+function isIndexed(row) {
+  return !!row && (typeof row.lookupsOf === 'function' ||
+                   typeof row.sortOf === 'function');
+}
+
+// After a commit: what each written row is now filed under. Hot path (once
+// per settled flush): no Entering/Leaving pair.
+function noteCommittedLookups(upserts, deletes, result) {
+  const refused = new Set(((result && result.refused) || []).map(
+    function (one) {
+      return demandId(one.handle, one.realm, one.journalKey);
+    }));
+  upserts.forEach(function (one) {
+    const declared = realms.handleFor(one.handle);
+    if (!declared || !isIndexed(declared) || declared.mergeRow) {
+      return;
+    }
+    const id = demandId(one.handle, one.realm, one.journalKey);
+    if (refused.has(id)) {
+      committedLookups.delete(id);
+      return;
+    }
+    if (Array.isArray(one.lookups)) {
+      if (committedLookups.size >= COMMITTED_LOOKUPS_MAX) {
+        committedLookups.clear();
+      }
+      committedLookups.set(id, filedFingerprint(one.lookups, one.sortAt));
+    }
+  });
+  deletes.forEach(function (one) {
+    committedLookups.delete(demandId(one.handle, one.realm, one.journalKey));
+  });
+}
+
 function demandId(handle, realmId, key) {
   return String(handle) + '\u0000' + String(realmId) + '\u0000' + String(key);
 }
@@ -1902,6 +2107,29 @@ function onDemandActive() {
 // every row written before schema version 24.
 const indexComplete = new Set();
 
+// A row another process wrote or deleted (#820 part 2): its key column
+// joins or leaves a key-resident store's keys.
+function residentIn(declared, realmId, key, present) {
+  log.debug("Entering residentIn().");
+  const digest = residentDigestOf(declared.handle, realmId, key);
+  if (present) {
+    declared.residentAdd(realmId, digest);
+  } else {
+    declared.residentRemove(realmId, digest);
+  }
+  log.debug("Leaving residentIn().");
+}
+
+// A key another process wrote is no longer known to be absent here (#820
+// part 2): `forgetAbsent()` on the store's handle, where it has one.
+function forgetAbsentIn(declared, realmId, key) {
+  log.debug("Entering forgetAbsentIn().");
+  if (declared && typeof declared.forgetAbsent === 'function') {
+    declared.forgetAbsent(realmId, key);
+  }
+  log.debug("Leaving forgetAbsentIn().");
+}
+
 /**
  * Whether one on-demand store reads on demand: the reader is active and,
  * for an indexed store, its index is complete.
@@ -1914,19 +2142,113 @@ function demandLiveFor(handle) {
   const declared = realms.handleFor(handle);
   log.debug("Leaving demandLiveFor().");
   return !!declared && declared.onDemand && onDemandActive() &&
-    (typeof declared.lookupsOf !== 'function' || indexComplete.has(handle));
+    (!owesMark(declared) || indexComplete.has(handle)) &&
+    // A key-resident store needs its keys loaded at a start (#820 part 2).
+    (!declared.keysResident || typeof driver.loadMintedKeys === 'function');
+}
+
+// Whether an on-demand store waits for the completion mark before it reads
+// on demand: an index to fill (#820), or legacy rows' expiries (part 2).
+function owesMark(declared) {
+  log.debug("Entering owesMark().");
+  log.debug("Leaving owesMark().");
+  return typeof declared.lookupsOf === 'function' ||
+    typeof declared.expiryFromWrittenMs === 'function';
+}
+
+// The key column a key-resident store's key is filed under (#820 part 2):
+// what `loadMintedKeys()` answers, so the two can be compared.
+// Hot path: every key-resident question. No Entering/Leaving pair.
+function residentDigestOf(handle, realmId, key) {
+  const declared = realms.handleFor(handle);
+  return declared ? keyColumnOf(handle, realmId, storedKey(declared, key))
+    : null;
+}
+
+/**
+ * Loads the key column of every live row of each live key-resident store
+ * into its handle (#820 part 2), beside the restore.
+ *
+ * @param filter - the restore's filter: its realms and instant
+ * @returns a promise of the number of keys loaded
+ */
+function loadResidentKeys(filter) {
+  log.debug("Entering loadResidentKeys().");
+  const resident = realms.handles().filter(function (declared) {
+    return declared.keysResident && demandLiveFor(declared.handle);
+  });
+  if (!resident.length) {
+    log.debug("Leaving loadResidentKeys(). None.");
+    return Promise.resolve(0);
+  }
+  resident.forEach(function (declared) {
+    declared.residentClear();
+  });
+  log.debug("Leaving loadResidentKeys().");
+  return driver.loadMintedKeys(resident.map(function (declared) {
+    return declared.handle;
+  }), filter.realms, filter.nowMs).then(function (rows) {
+    (rows || []).forEach(function (row) {
+      const declared = realms.handleFor(row.handle);
+      if (declared) {
+        declared.residentAdd(row.realm, row.key);
+      }
+    });
+    log.info('persistence: ' + (rows || []).length + ' key(s) of ' +
+             resident.length + ' key-resident store(s) loaded (' +
+             resident.map(function (declared) {
+               return declared.handle;
+             }).join(', ') + '), and none of their rows (#820).');
+    return (rows || []).length;
+  });
 }
 
 // ---------------------------------------------------------------------------
 // THE BACKFILL (#820): every row of an indexed on-demand store that is not
 // yet complete, filed under its index values from what the front process
-// restored — the store is held whole until then — in batches that give the
-// event loop back between them, then the mark. A row written meanwhile files
-// itself in the flush; a row deleted meanwhile leaves an index row that the
-// lookup's join with `sts_minted` does not answer. Once, after a start, in
-// the front process only; the next start reads the store on demand.
+// restored — the store is held whole until then — and then the mark. A row
+// written meanwhile files itself in the flush; a row deleted meanwhile leaves
+// an index row that the lookup's join with `sts_minted` does not answer.
+//
+// **A SCHEDULER JOB, NOT A STEP OF THE START.** Run from the restore, the
+// first start of #823 on 8081 ran out of heap: it copied two million rows
+// into an array (`dump()`) on a front process restoring beside four workers,
+// and a worker that overran its start was terminated mid-restore. As a
+// cluster job it runs on the leading front process, at its first slot after
+// the scheduler starts — after the pool is up and the listener bound — walks
+// each partition IN PLACE, a batch at a time with a pause between, and stops
+// for this run when the heap is past `BACKFILL_HEAP_SHARE` of its limit. A
+// stopped run is resumed whole at the next slot (index rows are written ON
+// CONFLICT DO NOTHING), and the mark is written only after a complete walk.
 // ---------------------------------------------------------------------------
-const BACKFILL_BATCH = 2000;
+const BACKFILL_JOB = 'persistence.minted-index-backfill';
+const BACKFILL_EVERY_MS = 5 * 60 * 1000;
+const BACKFILL_BATCH = 1000;
+const BACKFILL_PAUSE_MS = 10;
+const BACKFILL_HEAP_SHARE = 0.85;
+// The handles this process filed and marked: nothing is left to do for them.
+const indexBackfilled = new Set();
+let backfillJobRegistered = false;
+
+// The indexed on-demand stores still owed a complete index here.
+function backfillOwed() {
+  log.debug("Entering backfillOwed().");
+  log.debug("Leaving backfillOwed().");
+  return realms.handles().filter(function (declared) {
+    return declared.onDemand && owesMark(declared) &&
+      !indexComplete.has(declared.handle) &&
+      !indexBackfilled.has(declared.handle);
+  });
+}
+
+// True when the heap is too full to go on this run.
+function heapTooFull() {
+  log.debug("Entering heapTooFull().");
+  const limit = require('v8').getHeapStatistics().heap_size_limit;
+  log.debug("Leaving heapTooFull().");
+  return limit > 0 && process.memoryUsage().heapUsed > limit *
+    BACKFILL_HEAP_SHARE;
+}
 
 async function backfillMintedIndexes() {
   log.debug("Entering backfillMintedIndexes().");
@@ -1934,53 +2256,163 @@ async function backfillMintedIndexes() {
       typeof driver.writeMintedIndex !== 'function' ||
       typeof driver.markMintedIndexed !== 'function') {
     log.debug("Leaving backfillMintedIndexes(). Not here.");
-    return 0;
+    return { filed: 0, marked: 0, stopped: false };
   }
   let filed = 0;
-  for (const declared of realms.handles()) {
-    if (!declared.onDemand || typeof declared.lookupsOf !== 'function' ||
-        indexComplete.has(declared.handle)) {
+  let marked = 0;
+  // The ids a write is journalled under (`realms.currentId()`): '' is the
+  // default realm's partition too, and is not filed twice.
+  const realmIds = restoreFilter(Date.now()).realms.filter(function (id) {
+    return id !== '';
+  });
+  for (const declared of backfillOwed()) {
+    // LEGACY EXPIRIES FIRST (#820 part 2), in the store, by statement.
+    if (typeof declared.expiryFromWrittenMs === 'function') {
+      if (typeof driver.backfillMintedExpiry !== 'function') {
+        continue;
+      }
+      const given = await driver.backfillMintedExpiry(declared.handle,
+        Number(declared.expiryFromWrittenMs()) || 0);
+      log.info('persistence: ' + given + ' row(s) of "' + declared.handle +
+               '" written before it declared an expiry were given one ' +
+               '(#820).');
+    }
+    if (typeof declared.lookupsOf !== 'function') {
+      await driver.markMintedIndexed(declared.handle);
+      indexBackfilled.add(declared.handle);
+      marked++;
+      log.info('persistence: the on-demand store "' + declared.handle +
+               '" has every row\'s expiry (#820): from the next start it is ' +
+               'read on demand rather than restored whole.');
       continue;
     }
     let batch = [];
+    let inBatch = 0;
     const flushBatch = async function () {
       if (batch.length) {
         filed += await driver.writeMintedIndex(batch);
         batch = [];
-        await new Promise(function (resolve) {
-          setImmediate(resolve);
-        });
       }
+      inBatch = 0;
+      await new Promise(function (resolve) {
+        setTimeout(resolve, BACKFILL_PAUSE_MS);
+      });
     };
-    // The ids a write is journalled under (`realms.currentId()`): '' is the
-    // default realm's partition too, and is not filed twice.
-    const realmIds = restoreFilter(Date.now()).realms.filter(function (id) {
-      return id !== '';
-    });
     for (const realmId of realmIds) {
-      const rows = declared.dump(realmId) || [];
-      for (const row of rows) {
-        const lookups = lookupsFor(declared, declared.handle, realmId, row.key,
-                                   row.value) || [];
-        const key = keyColumnOf(declared.handle, realmId,
-                                storedKey(declared, row.key));
-        lookups.forEach(function (indexKey) {
+      // The partition itself, walked by its own iterator: no copy. A row
+      // added during a pause is visited or not, and files itself either way.
+      const partition = declared.partition(realmId);
+      if (!partition) {
+        continue;
+      }
+      for (const entry of partition.entries()) {
+        const lookups = lookupsFor(declared, declared.handle, realmId,
+                                   entry[0], entry[1]) || [];
+        if (lookups.length) {
+          const key = keyColumnOf(declared.handle, realmId,
+                                  storedKey(declared, entry[0]));
+          lookups.forEach(function (indexKey) {
+            batch.push({ handle: declared.handle, realm: realmId,
+                         indexKey: indexKey, key: key });
+          });
+        }
+        // The row's sort value, filed the same way (2026-10-22, #820).
+        const sortAt = sortAtFor(declared, entry[1], entry[0]);
+        if (sortAt !== null) {
           batch.push({ handle: declared.handle, realm: realmId,
-                       indexKey: indexKey, key: key });
-        });
-        if (batch.length >= BACKFILL_BATCH) {
+                       indexKey: require('./minted_queries').SORT_INDEX_KEY,
+                       key: keyColumnOf(declared.handle, realmId,
+                                        storedKey(declared, entry[0])),
+                       sortAt: sortAt });
+        }
+        if (++inBatch >= BACKFILL_BATCH) {
           await flushBatch();
+          if (heapTooFull()) {
+            log.warn(errorCodes.tag('STS-STORE-0086') + 'persistence: the ' +
+                     'index of "' + declared.handle + '" was not completed ' +
+                     'this run (#820): the heap is past ' +
+                     Math.round(BACKFILL_HEAP_SHARE * 100) + '% of its ' +
+                     'limit. The store stays read back whole, and the next ' +
+                     'run of ' + BACKFILL_JOB + ' tries again.');
+            log.debug("Leaving backfillMintedIndexes(). Heap.");
+            return { filed: filed, marked: marked, stopped: true };
+          }
         }
       }
     }
     await flushBatch();
+    // The owner's last word while the store is whole (`beforeLive`, #820
+    // part 3), in every realm, before the mark makes the next start read it
+    // on demand.
+    if (typeof declared.beforeLive === 'function') {
+      realmIds.forEach(function (realmId) {
+        realms.run(realms.get(realmId), function () {
+          declared.beforeLive(realmId);
+        });
+      });
+    }
     await driver.markMintedIndexed(declared.handle);
+    indexBackfilled.add(declared.handle);
+    marked++;
     log.info('persistence: the on-demand store "' + declared.handle +
              '" has its index complete (#820): from the next start it is ' +
              'read on demand rather than restored whole.');
   }
   log.debug("Leaving backfillMintedIndexes(). " + filed + " row(s) filed.");
-  return filed;
+  return { filed: filed, marked: marked, stopped: false };
+}
+
+/**
+ * Registers the backfill's scheduler job, once.
+ *
+ * @param schedulerInstance - the scheduler, for the tests
+ */
+function ensureIndexBackfillJob(schedulerInstance) {
+  log.debug("Entering ensureIndexBackfillJob().");
+  if (backfillJobRegistered) {
+    log.debug("Leaving ensureIndexBackfillJob(). Registered.");
+    return;
+  }
+  const scheduler = schedulerInstance || require('../cluster/scheduler');
+  if (!scheduler || typeof scheduler.register !== 'function') {
+    log.debug("Leaving ensureIndexBackfillJob(). No scheduler yet.");
+    return;
+  }
+  backfillJobRegistered = true;
+  if (scheduler.job(BACKFILL_JOB)) {
+    log.debug("Leaving ensureIndexBackfillJob(). Registered elsewhere.");
+    return;
+  }
+  scheduler.register({
+    id: BACKFILL_JOB,
+    title: 'On-demand store index backfill',
+    describe: 'Files the rows stored before schema version 24 of each ' +
+              'indexed on-demand minted store in sts_minted_index, then ' +
+              'marks the index complete, so the next start reads the store ' +
+              'on demand (#820).',
+    owner: 'persistence/persistence_minted.js',
+    onFront: 'it files the rows of stores the front process holds whole, ' +
+             'and only the front process registers it',
+    everyMs: function () {
+      return BACKFILL_EVERY_MS;
+    },
+    off: function () {
+      if (!onDemandActive()) {
+        return 'no store is read on demand here';
+      }
+      return backfillOwed().length ? '' : 'every index is complete';
+    },
+    run: function () {
+      return backfillMintedIndexes().catch(function (e) {
+        log.warn(errorCodes.tag('STS-STORE-0086') +
+                 'persistence: an on-demand store\'s index could not be ' +
+                 'completed (#820): ' + ((e && e.message) || e) + '. The ' +
+                 'store stays read back whole, and the next run tries again.');
+        return { failed: true };
+      });
+    }
+  });
+  log.debug("Leaving ensureIndexBackfillJob().");
 }
 
 /**
@@ -1993,7 +2425,7 @@ async function backfillMintedIndexes() {
 function indexesComplete() {
   log.debug("Entering indexesComplete().");
   const indexed = realms.handles().filter(function (declared) {
-    return declared.onDemand && typeof declared.lookupsOf === 'function';
+    return declared.onDemand && owesMark(declared);
   }).map(function (declared) {
     return declared.handle;
   });
@@ -2145,6 +2577,246 @@ function onDemandByIndex(handle, realmId, value) {
   return out;
 }
 
+/**
+ * Several rows of one on-demand store in one realm, asked together and off
+ * the event loop (`warm()`, 2026-10-21), from the primary.
+ *
+ * @param handle - the store
+ * @param realmId - the realm partition
+ * @param keys - the keys, as the store holds them
+ * @returns a promise of a Map from each key present to its value
+ */
+function onDemandReadMany(handle, realmId, keys) {
+  log.debug("Entering onDemandReadMany(). " + handle);
+  const declared = realms.handleFor(handle);
+  if (!declared || !driver || typeof driver.readMintedMany !== 'function') {
+    log.debug("Leaving onDemandReadMany(). No batched read.");
+    return Promise.reject(new Error('no batched read'));
+  }
+  const byColumn = new Map();
+  const refs = (keys || []).map(function (k) {
+    const column = keyColumnOf(handle, realmId, storedKey(declared, k));
+    byColumn.set(column, k);
+    return { handle: handle, realm: realmId, key: column };
+  });
+  log.debug("Leaving onDemandReadMany().");
+  return driver.readMintedMany(refs, { primary: true }).then(function (rows) {
+    const out = new Map();
+    (rows || []).forEach(function (row) {
+      const k = byColumn.get(String(row.key));
+      const opened = k === undefined ? undefined
+        : openedBody(handle, row.body);
+      if (opened !== undefined) {
+        out.set(k, opened);
+      }
+    });
+    return out;
+  });
+}
+
+/**
+ * One page of an on-demand store's live rows in one realm, in key-column
+ * order after `after` (#820 part 3): what `scan()` walks the store by. A
+ * page that cannot be read THROWS (STS-STORE-0084): a walk that stopped
+ * quietly would answer "everything" with part of it — a revoke-all that
+ * missed tokens.
+ *
+ * @param handle - the store
+ * @param realmId - the realm partition
+ * @param after - the cursor: the last row's key column, or ''
+ * @returns `{ rows: [{ key, value }], next }`, `next` '' at the end
+ */
+function onDemandPage(handle, realmId, after) {
+  log.debug("Entering onDemandPage(). " + handle);
+  const bridge = onDemandBridge();
+  if (!bridge) {
+    log.debug("Leaving onDemandPage(). No bridge.");
+    throw new Error(errorCodes.tag('STS-STORE-0084') + 'persistence: the ' +
+                    'on-demand store "' + handle + '" cannot be walked: no ' +
+                    'bridge to the store');
+  }
+  let rows = [];
+  try {
+    rows = bridge.query('minted.page', [handle, realmId, String(after || ''),
+                                        Date.now()]) || [];
+  } catch (e) {
+    log.error(errorCodes.tag('STS-STORE-0084') + 'persistence: a page of the ' +
+              'on-demand store "' + handle + '" could not be read: ' +
+              ((e && e.message) || e));
+    log.debug("Leaving onDemandPage(). Failed.");
+    throw e;
+  }
+  const declared = realms.handleFor(handle);
+  const out = [];
+  rows.forEach(function (row) {
+    const name = nameOfRow({ key: row.key, keySealed: row.keySealed });
+    const opened = name === null ? undefined : openedBody(handle, row.body);
+    if (opened !== undefined) {
+      out.push({ key: declared ? splitKey(declared, name).key : name,
+                 value: opened });
+    }
+  });
+  log.debug("Leaving onDemandPage(). " + out.length + " row(s).");
+  return { rows: out,
+           next: rows.length >= pageLimit()
+             ? String(rows[rows.length - 1].key) : '' };
+}
+
+// ---------------------------------------------------------------------------
+// THE SAME QUESTIONS, ASKED WITHOUT HOLDING THE EVENT LOOP (2026-10-22,
+// #820). A console page about a store with a million rows — Monitoring →
+// Tokens — asked `scan()`'s and `lookup()`'s questions through the bridge,
+// which stands the worker still for each round trip; and it walked only
+// what this process held, so two workers drew two different lists. These
+// ask the driver's READ POOL (`mintedQuery()`, `minted_queries.js`'s
+// statements) and open what comes back here. Each rejects where the store
+// cannot be asked, and the caller says the list was not read: an empty
+// answer would read as "nothing issued".
+// ---------------------------------------------------------------------------
+// The driver's asynchronous door, or a rejection naming why there is none.
+function mintedQueryAsync(name, args) {
+  log.debug("Entering mintedQueryAsync(). " + name);
+  if (!driver || typeof driver.mintedQuery !== 'function') {
+    log.debug("Leaving mintedQueryAsync(). No asynchronous door.");
+    return Promise.reject(new Error('the store has no asynchronous door ' +
+                                    'for on-demand questions'));
+  }
+  log.debug("Leaving mintedQueryAsync().");
+  return driver.mintedQuery(name, args);
+}
+
+// Rows the driver answered, each named and opened; a row whose name or
+// body will not open is left out, as a read leaves it.
+function openedRows(handle, rows, split) {
+  log.debug("Entering openedRows(). " + handle);
+  const declared = split ? realms.handleFor(handle) : null;
+  const out = [];
+  (rows || []).forEach(function (row) {
+    const name = nameOfRow({ key: row.key, keySealed: row.keySealed });
+    const opened = name === null ? undefined : openedBody(handle, row.body);
+    if (opened !== undefined) {
+      out.push({ key: declared ? splitKey(declared, name).key : name,
+                 value: opened });
+    }
+  });
+  log.debug("Leaving openedRows(). " + out.length + " row(s).");
+  return out;
+}
+
+/**
+ * The newest live rows of an on-demand store in one realm, highest sort
+ * value (`sortBy`) first, asked on the read pool.
+ *
+ * @param handle - the store
+ * @param realmId - the realm partition
+ * @param limit - at most this many (`minted_queries.NEWEST_LIMIT` caps it)
+ * @returns a promise of `[{ key, value }]`
+ */
+function onDemandNewestAsync(handle, realmId, limit) {
+  log.debug("Entering onDemandNewestAsync(). " + handle);
+  // ORDERED BY THE STORE'S SORT VALUE (2026-10-22, #820): `minted.newest`
+  // walks the `sort_at` index rows, which only a store declaring `sortBy`
+  // writes. Another store would answer an empty list, which reads as a
+  // store with no rows; it is refused instead, and the caller says the
+  // list was not read.
+  const declared = realms.handleFor(handle);
+  if (!declared || typeof declared.sortOf !== 'function') {
+    log.debug("Leaving onDemandNewestAsync(). No sortBy.");
+    return Promise.reject(new Error('persistence: "' + handle + '" ' +
+      'declares no sortBy, so its newest rows cannot be asked for'));
+  }
+  log.debug("Leaving onDemandNewestAsync().");
+  return mintedQueryAsync('minted.newest',
+                          [handle, realmId, Date.now(), limit])
+    .then(function (rows) {
+      return openedRows(handle, rows, true);
+    });
+}
+
+/**
+ * How many live rows an on-demand store holds in one realm, counted by the
+ * store on the read pool.
+ *
+ * @param handle - the store
+ * @param realmId - the realm partition
+ * @returns a promise of the count
+ */
+function onDemandCountAsync(handle, realmId) {
+  log.debug("Entering onDemandCountAsync(). " + handle);
+  log.debug("Leaving onDemandCountAsync().");
+  return mintedQueryAsync('minted.count', [handle, realmId, Date.now()])
+    .then(function (n) {
+      return Number(n) || 0;
+    });
+}
+
+// AN ESTIMATE WHERE THE EXACT COUNT WOULD BE A SCAN (2026-10-22, #820).
+// `minted.count` reads every live row of the store's partition: measured on
+// 8081 with 2.43M token records, 5.7-8.6 s for Monitoring -> Tokens' total,
+// paid on every view. An index-only count of (handle, realm) was 427 ms and
+// still grows with the store. The planner's row estimate (`minted.estimate`)
+// is 0.5 ms and was within 3 % there (2,363,753 for 2,429,984). It is a
+// statistic, so it is wrong for a small store — the realm with no tokens was
+// estimated at 3,527 — and below ESTIMATE_EXACT_BELOW the exact count is
+// asked instead, which is milliseconds at that size. The threshold is an
+// on-demand store's held bound (20,000): a store that would fit in memory is
+// counted, one that would not is estimated, and the answer says which.
+const ESTIMATE_EXACT_BELOW = 20000;
+
+/**
+ * How many live rows an on-demand store holds in one realm: the planner's
+ * estimate where that is large, the exact count where it is not.
+ *
+ * @param handle - the store
+ * @param realmId - the realm partition
+ * @returns a promise of `{ count, exact }`
+ */
+function onDemandCountEstimateAsync(handle, realmId) {
+  log.debug("Entering onDemandCountEstimateAsync(). " + handle);
+  log.debug("Leaving onDemandCountEstimateAsync().");
+  return mintedQueryAsync('minted.estimate', [handle, realmId])
+    .then(function (estimate) {
+      const n = Number(estimate);
+      if (estimate !== null && Number.isFinite(n) &&
+          n >= ESTIMATE_EXACT_BELOW) {
+        return { count: Math.round(n), exact: false };
+      }
+      return onDemandCountAsync(handle, realmId).then(function (exact) {
+        return { count: exact, exact: true };
+      });
+    });
+}
+
+/**
+ * The rows of an on-demand store filed under one index value, asked on the
+ * read pool.
+ *
+ * @param handle - the store's handle
+ * @param realmId - the realm
+ * @param value - the index value
+ * @returns a promise of `[{ key, value }]`
+ */
+function onDemandByIndexAsync(handle, realmId, value) {
+  log.debug("Entering onDemandByIndexAsync(). " + handle);
+  const digest = indexKeyOf(handle, realmId, value);
+  if (!digest) {
+    log.debug("Leaving onDemandByIndexAsync(). No key.");
+    return Promise.resolve([]);
+  }
+  log.debug("Leaving onDemandByIndexAsync().");
+  return mintedQueryAsync('minted.byIndex', [handle, realmId, digest])
+    .then(function (rows) {
+      return openedRows(handle, rows, false);
+    });
+}
+
+// The page size `minted_queries.js` answers, read where it is defined.
+function pageLimit() {
+  log.debug("Entering pageLimit().");
+  log.debug("Leaving pageLimit().");
+  return require('./minted_queries').PAGE_LIMIT;
+}
+
 // An on-demand store's index keys for one row, or null for a store with
 // none. A hook that throws files the row under nothing rather than failing
 // the flush.
@@ -2175,6 +2847,48 @@ function lookupsFor(row, handle, realmId, key, value) {
   return out;
 }
 
+// The index keys a flush files a row under: `lookupsFor()`'s, or an empty
+// list for a store with a sort value and no index keys, so its sort row is
+// still replaced (2026-10-22, #820). Null for a store with neither.
+function indexKeysFor(row, handle, realmId, key, value) {
+  log.debug("Entering indexKeysFor().");
+  const lookups = lookupsFor(row, handle, realmId, key, value);
+  if (lookups === null && row && typeof row.sortOf === 'function') {
+    log.debug("Leaving indexKeysFor(). Sorted only.");
+    return [];
+  }
+  log.debug("Leaving indexKeysFor().");
+  return lookups;
+}
+
+// THE SORT VALUE (2026-10-22, #820): what a store's `sortBy` answers for a
+// row, as a whole number, or null — for a store with no `sortBy`, an answer
+// that is not a finite number, or a hook that throws. A null writes no sort
+// row: the row is simply not in `minted.newest`'s list, never a flush
+// failure.
+function sortAtFor(row, value, key) {
+  log.debug("Entering sortAtFor().");
+  if (!row || typeof row.sortOf !== 'function') {
+    log.debug("Leaving sortAtFor(). Not sorted.");
+    return null;
+  }
+  let answer = null;
+  try {
+    answer = row.sortOf(value, key);
+  } catch (e) {
+    log.debug("Caught in sortAtFor(): " + ((e && e.message) || e));
+    answer = null;
+  }
+  const n = typeof answer === 'number' ? answer : Number(answer);
+  if (answer === null || answer === undefined || answer === '' ||
+      !Number.isFinite(n)) {
+    log.debug("Leaving sortAtFor(). No value.");
+    return null;
+  }
+  log.debug("Leaving sortAtFor().");
+  return Math.trunc(n);
+}
+
 function nameOfRow(row) {
   log.debug("Entering nameOfRow().");
   if (!row || !row.keySealed) {
@@ -2188,13 +2902,30 @@ function nameOfRow(row) {
 
 // The name half of a change-log key: sealed (it holds '$', which base64url
 // does not), or base64url of the name. Null when a sealed one does not open.
+// THE NAMES OPENED FOR THE PAGE BEING APPLIED (2026-10-21). A change's
+// sealed name was opened twice — by `prefetch()` and again by
+// `applyChange()` — in every process, for every change: a tenth of a request
+// worker's busy time on 8081 went to applying other processes' changes.
+// Held for the page only (`endPrefetch()` drops it) and bounded.
+const openedNames = new Map();
+const OPENED_NAMES_MAX = 20000;
+
 function nameOfChangeHalf(text) {
   log.debug("Entering nameOfChangeHalf().");
   const half = String(text || '');
   if (half.indexOf('$') >= 0) {
+    if (openedNames.has(half)) {
+      log.debug("Leaving nameOfChangeHalf(). Opened already.");
+      return openedNames.get(half);
+    }
     const opened = keystore.open(half, NAME_LABEL);
+    const name = opened === undefined ? null : opened;
+    if (openedNames.size >= OPENED_NAMES_MAX) {
+      openedNames.clear();
+    }
+    openedNames.set(half, name);
     log.debug("Leaving nameOfChangeHalf(). Sealed.");
-    return opened === undefined ? null : opened;
+    return name;
   }
   log.debug("Leaving nameOfChangeHalf().");
   return Buffer.from(half, 'base64url').toString('utf8');
@@ -2223,7 +2954,8 @@ function mergerFor(row, handle, key, mine, upsert, realmId) {
       }
       upsert.expiresAt = expiryOf(row, merged, key, realmId);
       upsert.index = indexColumns(row, merged);
-      upsert.lookups = lookupsFor(row, handle, realmId, key, merged);
+      upsert.lookups = indexKeysFor(row, handle, realmId, key, merged);
+      upsert.sortAt = sortAtFor(row, merged, key);
       return sealed;
     } catch (e) {
       log.warn(errorCodes.tag('STS-STORE-0056') + 'persistence: the "' +
@@ -2793,8 +3525,10 @@ function restore() {
         filter.skipHandles.push(declared.handle);
       }
     });
-    return driver.loadMinted(filter);
-  }).then(function (rows) {
+    return Promise.all([driver.loadMinted(filter),
+                        loadResidentKeys(filter)]);
+  }).then(function (loaded) {
+    const rows = loaded[0];
     pending = takePendingJournal();
     let restored = 0;
     droppedUnreadable = 0;
@@ -2913,15 +3647,11 @@ function restore() {
                'caches and the audit log are as they were before the ' +
                'restart.');
 
-      // The index of every indexed on-demand store still read back whole,
-      // filed in the background: the start does not wait for it.
-      backfillMintedIndexes().catch(function (e) {
-        log.warn(errorCodes.tag('STS-STORE-0086') +
-                 'persistence: an on-demand store\'s index could not be ' +
-                 'completed (#820): ' + ((e && e.message) || e) + '. The ' +
-                 'store is read back whole at the next start as well, and ' +
-                 'that start tries again.');
-      });
+      // The index of every indexed on-demand store still read back whole is
+      // filed by a scheduler job, after the start (see the backfill above).
+      if (!process.env.STS_REQUEST_WORKER && backfillOwed().length) {
+        ensureIndexBackfillJob();
+      }
       log.debug('Leaving restore(). ' + restored + ' row(s).');
       return { restored: restored };
     });
@@ -3023,6 +3753,7 @@ function reset() {
   // first flush wait on a driver that is no longer installed.
   flushInFlight = null;
   indexComplete.clear();
+  indexBackfilled.clear();
   generation = 0;
   observedGeneration = 0;
   observational.clear();
@@ -3187,6 +3918,7 @@ module.exports = {
   nameOfRow: nameOfRow,
   backfillSessionIndex: backfillSessionIndex,
   backfillMintedIndexes: backfillMintedIndexes,
+  ensureIndexBackfillJob: ensureIndexBackfillJob,
   sessionIndexChangeFloor: sessionIndexChangeFloor,
   ensureTombstoneJob: ensureTombstoneJob,
   ensureExpiryPurgeJob: ensureExpiryPurgeJob,

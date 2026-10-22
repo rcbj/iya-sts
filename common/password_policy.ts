@@ -102,6 +102,23 @@
 // are the ones that silently end or change the string there.
 //
 // ---------------------------------------------------------------------------
+// HOW A PASSWORD IS STORED IS A RULE OF THE PROFILE TOO (2026-10-22, #847).
+//
+// `stsPwdHashAlgorithm` names the algorithm a NEWLY stored password is hashed
+// with — argon2id by default, at OWASP's minimum (m=19 MiB, t=2, p=1), or
+// scrypt — and six more rows carry both algorithms' parameters. rcbj's
+// decisions on #847: argon2id is the default; scrypt stays selectable; no
+// bound is below OWASP's minimums, in either mode; a stored hash that is not
+// the preferred algorithm AND parameters is hashed again at the person's next
+// verified sign-in (`credentials.ts`); and the password policy governs
+// people's passwords only — every other secret stays scrypt. The seven rows
+// are OPTIONAL in a save: one left out keeps the value in force rather than
+// being refused, because every caller written before they existed sends the
+// six composition rows and nothing else, and keeping the value in force is
+// what the "every field is sent" rule exists to guarantee. `hashSpec()` is
+// what a password writer asks.
+//
+// ---------------------------------------------------------------------------
 // IT IS A LIBRARY (rule 3) AND A LEAF. It requires `helpers.js`, `mode.js`,
 // `crypto.js` and `error_codes.js`, registers no route, and reaches the
 // directory through a slot `ldap/ldap_server.js` fills — `common/roles.js`'s
@@ -146,10 +163,15 @@ type PasswordProfile = import('../types/password-policy').PasswordProfile;
 interface PolicyField {
   key: string;
   attribute: string;
-  type: 'int' | 'bool';
-  dflt: number | boolean;
+  type: 'int' | 'bool' | 'enum';
+  dflt: number | boolean | string;
   min?: number;
   max?: number;
+  // An `enum` row's closed set (#847).
+  values?: string[];
+  // A row a save may leave out (#847): it keeps the value in force, so a
+  // caller written before the row existed loosens nothing by not naming it.
+  optional?: boolean;
   label: string;
   unit?: string;
   what: string;
@@ -287,10 +309,10 @@ const FIELDS: PolicyField[] = [
           'refused. The current password is always refused as well while ' +
           'this is above 0, so 5 means a new password may be none of the ' +
           'last six. 0 turns the rule off. The draft\'s attribute, with the ' +
-          'draft\'s meaning. Each remembered password is kept as the scrypt ' +
-          'hash it was already stored as, in pwdHistory on the person\'s own ' +
-          'entry, and checking a new password costs one hash comparison per ' +
-          'one remembered.' },
+          'draft\'s meaning. Each remembered password is kept as the hash it ' +
+          'was already stored as (argon2id or scrypt), in pwdHistory on the ' +
+          'person\'s own entry, and checking a new password costs one hash ' +
+          'comparison per one remembered.' },
   { key: 'minSymbols', attribute: 'stsPwdMinSymbols', type: 'int',
     dflt: 1, min: 0, max: 16,
     label: 'Minimum number of symbols',
@@ -314,7 +336,90 @@ const FIELDS: PolicyField[] = [
           'created from the console or /admin-api, an operator\'s Generate, ' +
           'and the product-mode bootstrap account. It must be at least the ' +
           'minimum length and at least twice the symbol count plus two. ' +
-          'Twenty characters from a 90-character alphabet is about 130 bits.' }
+          'Twenty characters from a 90-character alphabet is about 130 bits.' },
+  // -------------------------------------------------------------------------
+  // HOW A PASSWORD IS STORED (2026-10-22, #847). The algorithm a NEWLY
+  // stored password is hashed with, and both algorithms' parameters. Every
+  // bound is OWASP's Password Storage Cheat Sheet minimum or above, in both
+  // modes (rcbj's decision 2), and `common/crypto.js` clamps to the same
+  // floors whatever this table says. A stored hash names its own algorithm
+  // and parameters, so changing these reaches the NEXT password set and, at
+  // a person's next verified sign-in, their stored hash (`credentials.ts`'s
+  // upgrade). OPTIONAL: a save written before these rows existed keeps them.
+  // -------------------------------------------------------------------------
+  //
+  // THE DEFAULT IS scrypt AT THE PRE-#847 PARAMETERS (rcbj, 2026-10-22,
+  // #820), which every stored password already is; argon2id is selectable.
+  // OWASP's scrypt pairs are reported, not enforced, until #872 makes
+  // OWASP's minimum the default.
+  // -------------------------------------------------------------------------
+  { key: 'hashAlgorithm', attribute: 'stsPwdHashAlgorithm', type: 'enum',
+    dflt: 'scrypt', values: stsCrypto.PASSWORD_HASH_ALGORITHMS.slice(),
+    optional: true,
+    label: 'Password hash algorithm',
+    what: 'The algorithm a newly stored password is hashed with: scrypt ' +
+          '(RFC 7914), the default, or argon2id (RFC 9106, the OWASP ' +
+          'Password Storage Cheat Sheet\'s first choice). A stored hash ' +
+          'names its own algorithm and parameters and keeps verifying; ' +
+          'one that is not in this algorithm with these parameters is ' +
+          'hashed again at the ' +
+          'person\'s next verified sign-in. Client secrets, activation ' +
+          'tokens, recovery codes and app passwords are not passwords and ' +
+          'stay scrypt.' },
+  { key: 'argon2Memory', attribute: 'stsPwdArgon2Memory', type: 'int',
+    dflt: stsCrypto.ARGON2_LIMITS.memory.dflt,
+    min: stsCrypto.ARGON2_LIMITS.memory.min,
+    max: stsCrypto.ARGON2_LIMITS.memory.max, optional: true,
+    label: 'argon2id memory',
+    unit: 'KiB',
+    what: 'The memory one argon2id hash uses, in kibibytes (m). 19456 KiB ' +
+          '(19 MiB) is OWASP\'s minimum and the least this service will ' +
+          'write. Raising it makes a stolen store slower to attack, and ' +
+          'every sign-in uses that much more memory.' },
+  { key: 'argon2Iterations', attribute: 'stsPwdArgon2Iterations',
+    type: 'int', dflt: stsCrypto.ARGON2_LIMITS.passes.dflt,
+    min: stsCrypto.ARGON2_LIMITS.passes.min,
+    max: stsCrypto.ARGON2_LIMITS.passes.max, optional: true,
+    label: 'argon2id iterations',
+    unit: 'passes',
+    what: 'How many passes argon2id makes over its memory (t). 2 is ' +
+          'OWASP\'s minimum at 19 MiB; each pass adds the same time again.' },
+  { key: 'argon2Parallelism', attribute: 'stsPwdArgon2Parallelism',
+    type: 'int', dflt: stsCrypto.ARGON2_LIMITS.parallelism.dflt,
+    min: stsCrypto.ARGON2_LIMITS.parallelism.min,
+    max: stsCrypto.ARGON2_LIMITS.parallelism.max, optional: true,
+    label: 'argon2id parallelism',
+    unit: 'lanes',
+    what: 'How many lanes argon2id divides its memory into (p). It is part ' +
+          'of the hash, not a thread count: node computes a hash on one ' +
+          'thread whatever this says. 1 is OWASP\'s figure.' },
+  { key: 'scryptLogN', attribute: 'stsPwdScryptLogN', type: 'int',
+    dflt: stsCrypto.SCRYPT_PASSWORD_LIMITS.logN.dflt,
+    min: stsCrypto.SCRYPT_PASSWORD_LIMITS.logN.min,
+    max: stsCrypto.SCRYPT_PASSWORD_LIMITS.logN.max, optional: true,
+    label: 'scrypt cost (log2 of N)',
+    what: 'scrypt\'s CPU and memory cost for a newly stored password while ' +
+          'the algorithm is scrypt, as a power of two: 15 (the default) is ' +
+          'N=32768. OWASP\'s table pairs it with the parallelism: 2^17 ' +
+          'with p=1, 2^16 with p=2, 2^15 with p=3, 2^14 with p=5, or 2^13 ' +
+          'with p=10. The default, 2^15 with p=1, is below it.' },
+  { key: 'scryptBlockSize', attribute: 'stsPwdScryptBlockSize', type: 'int',
+    dflt: stsCrypto.SCRYPT_PASSWORD_LIMITS.r.dflt,
+    min: stsCrypto.SCRYPT_PASSWORD_LIMITS.r.min,
+    max: stsCrypto.SCRYPT_PASSWORD_LIMITS.r.max, optional: true,
+    label: 'scrypt block size (r)',
+    what: 'scrypt\'s block size for a newly stored password while the ' +
+          'algorithm is scrypt. Memory is about 128 × N × r bytes; 8 is ' +
+          'the figure RFC 7914 and OWASP give.' },
+  { key: 'scryptParallelism', attribute: 'stsPwdScryptParallelism',
+    type: 'int', dflt: stsCrypto.SCRYPT_PASSWORD_LIMITS.p.dflt,
+    min: stsCrypto.SCRYPT_PASSWORD_LIMITS.p.min,
+    max: stsCrypto.SCRYPT_PASSWORD_LIMITS.p.max, optional: true,
+    label: 'scrypt parallelism (p)',
+    what: 'scrypt\'s parallelism for a newly stored password while the ' +
+          'algorithm is scrypt. Node computes it on one thread, so a higher ' +
+          'value costs time rather than cores; the cost\'s description ' +
+          'lists the pairs OWASP accepts.' }
 ];
 
 const FIELD_BY_KEY: Record<string, PolicyField> = {};
@@ -322,11 +427,11 @@ FIELDS.forEach(function (field) {
   FIELD_BY_KEY[field.key] = field;
 });
 
-const DEFAULTS: Readonly<Record<string, number | boolean>> =
+const DEFAULTS: Readonly<Record<string, number | boolean | string>> =
   Object.freeze(FIELDS.reduce(function (out, field) {
     out[field.key] = field.dflt;
     return out;
-  }, {} as Record<string, number | boolean>));
+  }, {} as Record<string, number | boolean | string>));
 
 // ---------------------------------------------------------------------------
 // THE SCHEMA. Published on /admin/policies the way every container's is,
@@ -361,8 +466,8 @@ const SCHEMA = {
   personAttributes: [
     { name: 'pwdHistory',
       what: 'One value per remembered previous password, in the draft\'s ' +
-            'form `time#syntaxOID#length#data` — the data being the scrypt ' +
-            'hash that password was stored under, never the password. ' +
+            'form `time#syntaxOID#length#data` — the data being the hash ' +
+            'that password was stored under, never the password. ' +
             'Maintained by this service and refused on an LDAP add or ' +
             'modify, because a history anybody can edit is a history ' +
             'anybody can empty.' },
@@ -535,11 +640,22 @@ class PasswordPolicy {
   // value will be compared against a password and a policy that read `12.5`
   // as 12 is a policy nobody wrote.
   private parseField(field: PolicyField,
-                     raw: unknown): { value?: number | boolean;
+                     raw: unknown): { value?: number | boolean | string;
                                       problem?: string } {
     const { log } = this.deps;
     log.debug("Entering PasswordPolicy.parseField().");
     const text = String(raw === undefined || raw === null ? '' : raw).trim();
+    if (field.type === 'enum') {
+      const values = field.values || [];
+      if (values.indexOf(text) < 0) {
+        log.debug("Leaving PasswordPolicy.parseField().");
+        return { problem: field.label + ' must be one of ' +
+                          values.join(', ') + '; "' + text.slice(0, 40) +
+                          '" is not.' };
+      }
+      log.debug("Leaving PasswordPolicy.parseField().");
+      return { value: text };
+    }
     if (field.type === 'bool') {
       const lower = text.toLowerCase();
       // LDAP's Boolean syntax is TRUE and FALSE (RFC 4517 section 3.3.3); a
@@ -592,6 +708,13 @@ class PasswordPolicy {
                ' symbols; it must be at least ' + (values.minSymbols * 2 + 2) +
                ' (twice the symbol count plus two).');
     }
+    // OWASP's scrypt table (#847): the parallelism a cost needs. Asked
+    // whichever algorithm is chosen, because the values are stored either
+    // way and switching to scrypt must not switch to a pair below it.
+    // NOT ENFORCED SINCE 2026-10-22 (rcbj, #820): the default itself,
+    // 2^15 with p=1, is below the table, and a policy must be able to save
+    // its own default. #872, which makes OWASP's minimum the default,
+    // brings this check back.
     log.debug("Leaving PasswordPolicy.crossFieldProblems().");
     return out;
   }
@@ -749,8 +872,9 @@ class PasswordPolicy {
     const { log } = this.deps;
     log.debug('Entering PasswordPolicy.validate().');
     const body = given || {};
-    const values: Record<string, number | boolean> = {};
+    const values: Record<string, number | boolean | string> = {};
     const problems: string[] = [];
+    let inForce: PasswordProfile | null = null;
     FIELDS.forEach((field) => {
       let raw = body[field.key];
       if (raw === undefined && field.type === 'bool' &&
@@ -759,6 +883,14 @@ class PasswordPolicy {
         // absent boolean IS the answer "no". Only there — an API caller that
         // left one out gets told, for the reason above.
         raw = 'false';
+      }
+      if (raw === undefined && field.optional) {
+        // LEFT OUT, THE VALUE IN FORCE STAYS (#847) — the stored one, or the
+        // built-in default — so a save cannot lower a hash cost it did not
+        // mention, which is the "every field is sent" rule's own reason.
+        inForce = inForce || this.read(DEFAULT_PROFILE);
+        values[field.key] = inForce[field.key];
+        return;
       }
       if (raw === undefined) {
         problems.push('`' + field.key + '` (' + field.label + ') is ' +
@@ -989,7 +1121,7 @@ class PasswordPolicy {
    * Builds one `pwdHistory` value in the draft's form,
    * `time#syntaxOID#length#data`, the data being the password's stored hash.
    *
-   * @param hash - the scrypt hash the password was stored under
+   * @param hash - the hash the password was stored under (argon2id or scrypt)
    * @param when - when it was set; now when absent
    * @returns the value
    */
@@ -1073,6 +1205,33 @@ class PasswordPolicy {
                     'on /admin/policies.'), 'STS-AUTHN-0111');
   }
 
+  // -------------------------------------------------------------------------
+  // HOW A NEW PASSWORD IS STORED (#847): the profile's algorithm and its
+  // parameters, in the shape `crypto.hashPassword()` takes. NOT mode
+  // dependent: the floors are OWASP's in both modes, and `crypto.js` clamps
+  // to them again.
+  // -------------------------------------------------------------------------
+  /**
+   * Returns the hash spec a profile names for a newly stored password.
+   *
+   * @param profile - the profile; the default one when absent
+   * @returns `{ algorithm, memory, passes, parallelism }` or
+   *   `{ algorithm: 'scrypt', logN, r, p }`, clamped by `crypto.js`
+   */
+  hashSpec(profile?: PasswordProfile | null): Record<string, any> {
+    const { log } = this.deps;
+    log.debug("Entering PasswordPolicy.hashSpec().");
+    const rules = profile || this.read(DEFAULT_PROFILE);
+    const spec = rules.hashAlgorithm === 'scrypt'
+      ? { algorithm: 'scrypt', logN: rules.scryptLogN,
+          r: rules.scryptBlockSize, p: rules.scryptParallelism }
+      : { algorithm: 'argon2id', memory: rules.argon2Memory,
+          passes: rules.argon2Iterations,
+          parallelism: rules.argon2Parallelism };
+    log.debug("Leaving PasswordPolicy.hashSpec(). " + spec.algorithm);
+    return stsCrypto.passwordHashSpec(spec);
+  }
+
   // Whether the profile is ENFORCED in this process — `mode.js`'s answer.
   /**
    * Tells whether the profile is enforced in this process:
@@ -1141,6 +1300,7 @@ export = {
   problemsWith: slot.forward('problemsWith'),
   describe: slot.forward('describe'),
   generate: slot.forward('generate'),
+  hashSpec: slot.forward('hashSpec'),
   historyValue: slot.forward('historyValue'),
   hashOfHistoryValue: slot.forward('hashOfHistoryValue'),
   generalizedTime: slot.forward('generalizedTime'),

@@ -208,6 +208,37 @@ async function refreshFamily(t) {
                 'instant — and revokes it (STS-OAUTH-0517)',
                 JSON.stringify(late));
 
+        // THE CLAIM IS ASKED BESIDE THE FAMILY QUESTION (2026-10-21, #820):
+        // two round trips in a row on every refresh became one.
+        const realHeld = store.claimHeld;
+        const realOnce = store.claimOnce;
+        const at = {};
+        store.claimHeld = function () {
+          const args = arguments;
+          at.heldStarted = at.heldStarted || Date.now();
+          return sleep(30).then(function () {
+            at.heldDone = at.heldDone || Date.now();
+            return realHeld.apply(store, args);
+          });
+        };
+        store.claimOnce = function () {
+          at.onceStarted = at.onceStarted || Date.now();
+          return realOnce.apply(store, arguments);
+        };
+        let side = null;
+        try {
+          side = await bcp.spendRefreshToken({ claims: {
+            jti: 'fam-side-by-side', client_id: 'fam-client', exp: exp,
+            refresh_family: 'fam-side' } });
+        } finally {
+          store.claimHeld = realHeld;
+          store.claimOnce = realOnce;
+        }
+        t.check(side && side.ok && at.onceStarted && at.heldDone &&
+                at.onceStarted < at.heldDone,
+                'THE SPEND IS CLAIMED WHILE THE FAMILY IS ASKED, not after: ' +
+                'one round trip, not two', JSON.stringify(at));
+
         const failing = {
           claimOnce: function () {
             return Promise.reject(new Error('the database is down'));

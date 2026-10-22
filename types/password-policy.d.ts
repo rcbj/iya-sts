@@ -22,5 +22,13 @@ export interface PasswordProfile {
   requireUppercase: boolean;
   requireDigit: boolean;
   generatedLength: number;
+  // How a new password is stored (#847).
+  hashAlgorithm: string;
+  argon2Memory: number;
+  argon2Iterations: number;
+  argon2Parallelism: number;
+  scryptLogN: number;
+  scryptBlockSize: number;
+  scryptParallelism: number;
   [field: string]: any;
 }

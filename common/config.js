@@ -2280,6 +2280,11 @@ const SETTINGS = [
   // than a group of rows: one rule in two places would be two answers to what a
   // password must be.
   //
+  // **A PERSON'S PASSWORD LEFT THESE THREE ROWS ON 2026-10-22 (#847)**: its
+  // algorithm (argon2id by default) and parameters are the password
+  // policy's, on Directory > Policies. These still decide every other secret
+  // this service verifies, which stay scrypt (rcbj's decision 3).
+  //
   // **THE HASH PARAMETERS APPLY TO NEW HASHES ONLY.** The stored form is
   // `$scrypt$N$r$p$salt$hash`, so a value written under yesterday's cost
   // verifies against the cost IT names and nothing already stored is touched.
@@ -2291,14 +2296,17 @@ const SETTINGS = [
     label: 'Password hash cost (log2 of scrypt N)',
     env: 'STS_SECURITY_PASSWORD_HASH_LOG_N',
     type: 'int', dflt: 15, runtime: true, min: 14, max: 20,
-    description: 'scrypt\'s CPU and memory cost for a NEWLY stored password, ' +
-                 'client secret, activation token or recovery code, as a ' +
-                 'power of two: 15 is N=32768, about 70ms a hash on an ' +
+    description: 'scrypt\'s CPU and memory cost for a NEWLY stored client ' +
+                 'secret, activation or reset token, recovery code or app ' +
+                 'password, as a power of two: 15 is N=32768, about 70ms a ' +
+                 'hash on an ' +
                  'ordinary machine. The floor of 14 is the least this ' +
                  'service will write. Raising it makes a stolen store slower ' +
                  'to attack and every sign-in slower in proportion. Already ' +
                  'stored hashes carry their own parameters and are ' +
-                 'unaffected.' },
+                 'unaffected. A person\'s password is not hashed under ' +
+                 'this: its algorithm and cost are the password policy\'s ' +
+                 '(Directory > Policies).' },
 
   { key: 'security.passwordHashR', group: 'Web security',
     label: 'Password hash block size (scrypt r)',
@@ -2851,8 +2859,9 @@ const SETTINGS = [
                  'was `preferred`). ' +
                  'Whether the authenticator must verify the PERSON — a PIN, ' +
                  'a fingerprint, a face — as well as prove possession of the ' +
-                 'key. **THIS IS THE ONE CEREMONY SETTING THIS SERVICE ALSO ' +
-                 'ENFORCES**: `required` is sent to the browser and the UV ' +
+                 'key. **THIS SERVICE ALSO ENFORCES IT**, as it does the ' +
+                 'algorithms offered and the RP ID: `required` is sent to ' +
+                 'the browser and the UV ' +
                  'flag in the authenticator data is then CHECKED when the ' +
                  'ceremony comes back, so an authenticator that did not ' +
                  'verify is refused rather than quietly accepted. **Raising ' +
@@ -3040,10 +3049,11 @@ const SETTINGS = [
   // `webauthn.residentKey` and `webauthn.usernameless` WERE HERE until #527
   // (2026-10-08). The passkey policy decides both now, per realm and
   // inherited from the default realm (`common/passkey_policy.ts`, Directory
-  // → Policies): `allowUsernameless`, off by default, and
-  // `securityKeyResidentKey`, which a security key is asked for — `required`
-  // while usernameless sign-in is off. No shim; REPLACED_SETTINGS refuses a
-  // start that still names either.
+  // → Policies): `allowUsernameless`, on by default since 2026-10-10 (it
+  // was off on #527's answer), and `securityKeyResidentKey`, which a
+  // security key is asked for — `required` by default, and always
+  // `required` while usernameless sign-in is off. No shim;
+  // REPLACED_SETTINGS refuses a start that still names either.
   // ---------------------------------------------------------------------
 
   { key: 'webauthn.credProps', group: 'WebAuthn',
@@ -3796,8 +3806,11 @@ const SETTINGS = [
     restartReason: 'a worker reads it once, when it starts',
     description: 'How long a request or surface worker may take to bring its ' +
                  'state up (the store, the keys, the minted rows and ' +
-                 'coordination) before it reports that it could not start. ' +
-                 'Three failures in a row and the pool stops forking until ' +
+                 'coordination) before the pool stops waiting for it. A ' +
+                 'worker past it is SLOW, not failed: it is left to finish ' +
+                 'and joins the pool when it is ready (#820). Only at four ' +
+                 'times this does it report that it could not start; three ' +
+                 'such failures in a row and the pool stops forking until ' +
                  'workers.giveUpRetryMs, then tries one worker; until it ' +
                  'is up, requests stay in the front process. Raise it ' +
                  'where a worker\'s start is slow — a large realm key set ' +
@@ -4161,29 +4174,36 @@ const SETTINGS = [
                  'when workers.requestCount is 0.' },
 
   // ---------------------------------------------------------------------
-  // READ-YOUR-WRITE ACROSS WORKERS. Off by default, and the cost is the reason.
+  // READ-YOUR-WRITE ACROSS WORKERS. On since #364; a MODE since #820
+  // (2026-10-22), `session` by default — the request pool's SESSION
+  // READ-YOUR-WRITE block argues it. `true` and `false` keep their meaning
+  // (`session`, `off`), so a stored boolean or an old environment needs no
+  // rewrite.
   // ---------------------------------------------------------------------
   { key: 'workers.readYourWrite', group: 'Global',
     label: 'Read-your-write across request workers',
-    env: 'STS_WORKERS_READ_YOUR_WRITE', type: 'bool', dflt: true,
+    env: 'STS_WORKERS_READ_YOUR_WRITE', type: 'enum',
+    enumValues: ['session', 'global', 'off', 'true', 'false'],
+    dflt: 'session',
     runtime: true, perProcess: true,
-    description: 'Whether a request worker must catch up with what the other ' +
-                 'workers have written before it serves. Coordination makes ' +
-                 'workers CONVERGE — measured at half a second to a second — ' +
-                 'and convergence is not read-your-write: with this off, a ' +
-                 'caller that writes through one worker and reads through ' +
-                 'another may be answered by one that has not caught up, ' +
-                 'which matters most for the fanout surfaces (SCIM, XACML, ' +
-                 'the management API) precisely because consecutive requests ' +
-                 'there land anywhere. With it on, the pool counts writes ' +
-                 'and a worker that is behind pulls before it answers — so ' +
-                 'the cost falls on the first read after a write on each ' +
-                 'worker, and on nothing while nothing is being written. ON ' +
-                 'BY DEFAULT since #364, when a request worker became the ' +
-                 'default: the front thread still answers what is never ' +
-                 'dispatched, so a caller would otherwise see its own write ' +
-                 'go missing between two requests. It must be on for a ' +
-                 'surface pool (workers.surfaceCount).' },
+    description: 'Whether a request worker must catch up with writes made ' +
+                 'through the other workers before it serves. Coordination ' +
+                 'makes workers converge in half a second to a second, and ' +
+                 'that is not read-your-write. `session` (the default): a ' +
+                 'request that carries a session cookie, the pool cookie or ' +
+                 'a sign-in flow in its address waits only for the writes of ' +
+                 'earlier requests that carried the same, and for the ' +
+                 'front process\'s own writes; a request carrying none of ' +
+                 'them, such as a token request from a client\'s server, ' +
+                 'SCIM or a management API call with a bearer token, waits ' +
+                 'for every write answered before it. So a browser sees its ' +
+                 'own writes at once, and another browser\'s or client\'s ' +
+                 'only once the workers converge. `global`: every request ' +
+                 'waits for every write answered before it, which costs ' +
+                 'tens of milliseconds a request under load. `off`: no ' +
+                 'request waits, and a caller may not find its own write. ' +
+                 '`true` means `session` and `false` means `off`. It must ' +
+                 'not be off for a surface pool (workers.surfaceCount).' },
 
   { key: 'workers.socketDir', group: 'Global',
     label: 'Request worker socket directory',
@@ -7425,7 +7445,13 @@ const SETTINGS = [
                  'A128KW', 'A192KW', 'A256KW',
                  'A128GCMKW', 'A192GCMKW', 'A256GCMKW', 'PBES2-HS256+A128KW',
                  'PBES2-HS384+A192KW', 'PBES2-HS512+A256KW', 'dir']),
-    dflt: 'RSA-OAEP-256', runtime: true,
+    // A256KW SINCE 2026-10-21 (#820, rcbj's decision; it was RSA-OAEP-256).
+    // A refresh token is sealed by this realm to itself, so a public key
+    // buys nothing; RSA cost a private-key decrypt and an encryption on the
+    // event loop at every refresh. A256KW wraps under the realm's own
+    // secret. A token sealed under RSA before still opens: open() reads the
+    // alg each token names, and the realm keeps its RSA key.
+    dflt: 'A256KW', runtime: true,
     description: 'The JWE key management algorithm every refresh token is ' +
                  'encrypted under. A refresh token is a signed JWT sealed to ' +
                  'THIS realm\'s own keys and is opaque to its client, so the ' +
@@ -11101,11 +11127,12 @@ const SETTINGS = [
     env: 'OID4VP_SIGN_IN_POLL_S', type: 'int', dflt: 3, min: 1, max: 60,
     runtime: true,
     description: 'How often the QR-code page (oid4vp.signInCrossDevice) ' +
-                 'reloads itself while a wallet on another device answers. ' +
-                 'It is a <meta> refresh and not a script, so every reload ' +
-                 'is a whole page. The Digital Credentials API page does ' +
-                 'not reload: a reload would close the browser\'s wallet ' +
-                 'dialog.' },
+                 'asks whether a wallet on another device has answered: ' +
+                 'its script polls POST /authn-api/wallet/{state}/status ' +
+                 'every this many seconds, without reloading the page ' +
+                 '(#574; it was a <meta> refresh until then). The Digital ' +
+                 'Credentials API page does not poll on this clock: it ' +
+                 'waits for the browser\'s wallet dialog to answer.' },
 
   // OFF BY DEFAULT IN EVERY MODE SINCE #38's FOLLOW-UPS (rcbj): the plain QR
   // code is the one wallet sign-in path a relay works on, and the Digital
@@ -17281,13 +17308,18 @@ const SETTINGS = [
 
   { key: 'scheduler.runHistoryHours', group: 'Scheduler',
     label: 'Runs kept for (hours)',
-    env: 'STS_SCHEDULER_RUN_HISTORY_HOURS', type: 'int', dflt: 24, min: 0,
+    // ONE HOUR SINCE #820 part 3 (2026-10-21, rcbj's decision; it was 24):
+    // a day of every per-minute job in every realm was 199,000 rows on 8081,
+    // every one read back by the front process at every start.
+    env: 'STS_SCHEDULER_RUN_HISTORY_HOURS', type: 'int', dflt: 1, min: 0,
     max: 8760, runtime: true, perProcess: true,
     description: 'Every run that ended within this many hours is kept — a ' +
                  'failed one included — beside each job\'s last ' +
                  'scheduler.runHistoryCount runs, whichever keeps more. A ' +
-                 'job that runs every minute therefore keeps a day of runs ' +
-                 'in each realm it runs in. 0 keeps the count alone.' },
+                 'job that runs every minute therefore keeps an hour of runs ' +
+                 'in each realm it runs in, or its last ' +
+                 'scheduler.runHistoryCount if that is more. 0 keeps the ' +
+                 'count alone.' },
 
   { key: 'scheduler.disabledJobs', group: 'Scheduler',
     label: 'Jobs switched off',

@@ -800,6 +800,10 @@ const ACTIONS = [
            'their default (#186)' },
   { action: 'portal.delegation.may-act', category: 'authentication',
     label: 'A person named or cleared the party who may act for them' },
+  // THE PERSON SEARCH ON /portal/delegate: a search by uid among the realm's
+  // native people for the party to name, answered, refused or failed.
+  { action: 'portal.delegation.search', category: 'authentication',
+    label: 'A person searched for someone who may act for them' },
 
   // A PASSWORD POLICY PROFILE WAS SAVED OR PUT BACK (2026-09-12). The SUBSTANCE
   // of the change, for `claims.change`'s reason: the `admin.change` row says a
@@ -1053,6 +1057,9 @@ const ACTIONS = [
     label: 'A push stream was declared dead after only failed pushes' },
   { action: 'ssf.stream.revived', category: 'signals',
     label: 'A dead push stream was revived' },
+  // #771: a hosted surface's receiver stream moved from push to poll.
+  { action: 'ssf.stream.delivery', category: 'signals',
+    label: 'A receiver stream moved from push to poll delivery' },
   { action: 'ssf.deadletter.clear', category: 'signals',
     label: 'A stream\'s dead-letter queue was emptied by hand' },
   { action: 'ssf.event.receive', category: 'signals',
@@ -1329,6 +1336,13 @@ const ACTIONS = [
   { action: 'portal.siop.prefer', category: 'authentication',
     label: 'A person marked a proved DID as their preferred one, or ' +
            'cleared the mark' },
+  // THE PAGES THAT SHOW THEM: /portal/self-issued, and the DID document a
+  // did:jwk or did:key subject resolves to on /portal/self-issued/did.
+  { action: 'portal.siop.view', category: 'authentication',
+    label: 'A person could not be shown their self-issued subjects' },
+  { action: 'portal.siop.did', category: 'authentication',
+    label: 'A person could not be shown a self-issued subject\'s DID ' +
+           'document' },
   { action: 'siop.key.pinned', category: 'authentication',
     label: 'A did:web self-issued subject enrolled with no pinned key was ' +
            'pinned to the key it signed in with (development only)' },
@@ -1471,8 +1485,13 @@ const OUTCOMES = ['success', 'refused', 'error'];
 // once a cluster barrier held responses for their commit. realms.js's
 // segmentedArr() argues it, including the one segment of already-dropped
 // events a stored copy can carry — which merged() below trims.
+// OTHER PROCESSES' SEGMENTS ARE READ WHEN THE PAGE IS DRAWN (2026-10-21,
+// #820): `contributionsOnRead`, and `fresh()` below. Every event rewrote a
+// sealed segment every other process read, opened and parsed — about 5,000
+// rows a minute in each of 8081's nine processes under a password load —
+// and the only reader of what they held is the audit page.
 const events = realms.arr({ persist: 'audit.events', merge: 'own',
-                            segment: 32 });
+                            segment: 32, contributionsOnRead: true });
 
 // ---------------------------------------------------------------------
 // PER TRUST REALM, like the ring above it. A sequence number shared between
@@ -1489,7 +1508,7 @@ const events = realms.arr({ persist: 'audit.events', merge: 'own',
 // afterwards on top of ones already read.
 const nums = realms.obj(function () {
   return { seq: 0, recorded: 0 };
-}, { persist: 'audit.nums', merge: 'own' });
+}, { persist: 'audit.nums', merge: 'own', contributionsOnRead: true });
 
 
 let dropped = 0;
@@ -2401,6 +2420,27 @@ function list() {
 //     another process's contribution here would throw away rows that process
 //     still holds and would report.
 // ---------------------------------------------------------------------------
+/**
+ * Reads what the other processes changed in the audit log since it was last
+ * asked (#820, `contributionsOnRead`), so `list()` and `summary()` answer
+ * every process's events. Never rejects; with one process, or with nothing
+ * noted, it resolves at once.
+ *
+ * @returns a promise, resolved when the rows are held
+ */
+function fresh() {
+  log.debug("Entering fresh().");
+  if (typeof replication.refreshContributions !== 'function') {
+    log.debug("Leaving fresh(). No fan-in.");
+    return Promise.resolve();
+  }
+  log.debug("Leaving fresh().");
+  return replication.refreshContributions(['audit.events', 'audit.nums'])
+    .then(function () {
+      return undefined;
+    });
+}
+
 function merged() {
   log.debug("Entering merged().");
   const mine = events.slice(0);
@@ -2582,6 +2622,7 @@ module.exports = {
   currentRequest: ambientRequest,
   list: list,
   summary: summary,
+  fresh: fresh,
   PROSE_ROUTES: PROSE_ROUTES,
   prose: prose
 };

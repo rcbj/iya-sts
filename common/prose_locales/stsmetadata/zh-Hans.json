@@ -1472,8 +1472,8 @@
     "text": "非规范。八个 `totp.*` 设置，以及旁边的 RFC 6238 算法表——从 common/totp.ts 中读取，而不是写死的，因此报告不可能描述本服务并不计算的摘要算法。更改摘要算法、位数或周期只影响新的注册；时钟偏差窗口对所有人实时生效。旁边没有 POST，这并不是缺口：页面上的每个表单都将 set-many 提交到 /admin/config。对应 GET /admin/totp。"
   },
   "stsmetadata.endpoints./admin-api/webauthn.what": {
-    "en": "c0a4d8af96e060e0",
-    "text": "非规范。二十一个 `webauthn.*` 设置，分为四类——仪式（RP 名称、RP ID 覆盖、算法、用户验证、证明传递方式、超时）、CTAP2（身份验证器连接方式、驻留密钥、credProps）和策略（密钥是否可以作为主要因素、是否可以作为第二因素、每人可有多少个）——以及旁边的 COSE 算法表，从检查签名的模块 authn/webauthn.js 中读取。**只有一项是强制执行的，其余都是请求**：userVerification 会依照身份验证器所签名字节中的 UV 标志进行检查。证明策略（#105）和当前生效的 FIDO 元数据在旁边报告。旁边没有 POST：各表单将 set-many 提交到 /admin/config。对应 GET /admin/webauthn。"
+    "en": "b48aa4041763958e",
+    "text": "非规范。各项 `webauthn.*` 设置，分为四类——仪式（RP 名称、RP ID 覆盖、算法、用户验证、证明传递方式、超时）、CTAP2（身份验证器连接方式、credProps）和策略（密钥是否可以作为主要因素、是否可以作为第二因素、每人可有多少个）——以及旁边的 COSE 算法表，从检查签名的模块 authn/webauthn.js 中读取。**只有一项是强制执行的，其余都是请求**：userVerification 会依照身份验证器所签名字节中的 UV 标志进行检查。证明策略（#105）和当前生效的 FIDO 元数据在旁边报告。旁边没有 POST：各表单将 set-many 提交到 /admin/config。对应 GET /admin/webauthn。"
   },
   "stsmetadata.endpoints./admin-api/mfa.what": {
     "en": "22620e663bd803a3",
@@ -2848,8 +2848,8 @@
     "text": "如实的 active/inactive，附带所出示令牌的声明——包括 acr 和 auth_time（RFC 9470 section 6.2）——以 RFC 7662 JSON 形式提供；或者，当 Accept 标头指定 application/token-introspection+jwt 时，以 RFC 9701 JWT 形式提供，为提问的资源服务器签名（并可选加密），使用其注册的算法。JWT 请求在每种模式下都必须以客户端身份认证，否则以 400 invalid_client 拒绝；JSON 请求在产品模式下必须认证（401），在开发模式下则不必。"
   },
   "stsmetadata.endpoints./status-lists/access-tokens.what": {
-    "en": "9968fbaef6a6743d",
-    "text": "本领域唯一的访问令牌 Status List Token（#432）：每个 OAuth RFC 9068 访问令牌以及每个 GNAP jwt-signed 和 jwt-encrypted 令牌都在其中指定一个索引（status.status_list），因此自行检查令牌的资源服务器能看到它已被吊销。application/statuslist+jwt，或按 Accept 提供 application/statuslist+cwt；1,048,576 个索引，每个令牌一位，该位根据吊销登记册计算；ttl 为 oauth2.accessTokenStatusListTtlS，exp 为 oauth2.accessTokenStatusListLifetimeS，使用本领域的 RS256 访问令牌密钥签名。?time= 应答 501。"
+    "en": "bd042da837f12da5",
+    "text": "本领域唯一的访问令牌 Status List Token（#432）：每个 OAuth RFC 9068 访问令牌以及每个 GNAP jwt-signed 和 jwt-encrypted 令牌都在其中指定一个索引（status.status_list），因此自行检查令牌的资源服务器能看到它已被吊销。application/statuslist+jwt，或按 Accept 提供 application/statuslist+cwt；16,777,216 个索引，每个令牌一位，该位根据吊销登记册计算；ttl 为 oauth2.accessTokenStatusListTtlS，exp 为 oauth2.accessTokenStatusListLifetimeS，使用本领域的 RS256 访问令牌密钥签名。?time= 应答 501。"
   },
   "stsmetadata.endpoints./status-lists.what": {
     "en": "9a8ef90105d2caca",

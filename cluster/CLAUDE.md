@@ -705,7 +705,9 @@ thirty days and 5000 runs PER REALM, and `oauth2.claim-sources-refresh` —
 every minute, in every realm — is 1440 runs a day in each of 135 realms. Now
 a finished run is KEPT while it is one of its job's last
 `scheduler.runHistoryCount` (100) runs in its realm, or it ended within
-`scheduler.runHistoryHours` (24), whichever keeps more; the latest run of
+`scheduler.runHistoryHours` (1 since 2026-10-21, #820 part 3 — at 24 a day
+of every per-minute job in every realm was 199,000 rows on 8081, all read
+back by the front process at every start), whichever keeps more; the latest run of
 every job is always kept (a job that runs every ninety days still shows when
 it last ran), so is every run inside the window, failed ones included, and a
 queued or running row is never touched. A run of a job this build does not
@@ -914,6 +916,7 @@ row's body runs on a request worker except those marked **front**:
 | `saml2.sp-metadata-refresh` | cluster, service, **front** (registered by the front process alone); `saml2.spMetadataRefreshIntervalS` | `saml/sp_metadata.ts` (P5) |
 | `persistence.change-log-pull` | per-process, **quiet**; `persistence.pollInterval` | `persistence/persistence_replication.js` (P5) |
 | `persistence.change-log-purge` | cluster, service; five minutes — replaced the `ops.change-log-purge` lease | `persistence/persistence_replication.js` (P5) |
+| `persistence.minted-index-backfill` | cluster, service; five minutes, registered by the front process's restore only while an indexed on-demand store's index is incomplete, off once every one is — files the rows stored before schema version 24 in `sts_minted_index` and writes the completion mark (#820) | `persistence/persistence_minted.js` |
 | `persistence.tombstone-purge` | cluster, service; ten minutes, registered at the first flush | `persistence/persistence_minted.js` (P5) |
 | `persistence.minted-expiry-purge` | cluster, service; five minutes, registered at start-up in every process, off where minted state is not persisted — deletes from `sts_minted`, in batches of 5000 and at most 20 batches of each kind per run, the rows no start reads any more: past their own `expires_at`, of a realm no longer in `sts_realms` (written over an hour ago), and a `retain: 'age'` store's rows with no expiry older than `persistence.mintedRetention`. The restore used to do the last of these in every process at every start (#333) | `persistence/persistence_minted.js` |
 | `persistence.event-loop-lag` | per-process, quiet; ten seconds, in every process that started its store (any mode) — reads and resets `perf_hooks.monitorEventLoopDelay()`, keeps the window for `/admin/persistence`, warns STS-STORE-0068 past 5 s (#351) | `persistence/persistence.js` |

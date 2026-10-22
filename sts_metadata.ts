@@ -5351,10 +5351,10 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/admin-api/webauthn', group: 'Management API',
     name: 'WebAuthn settings',
     specs: ['webauthn'],
-    what: 'NON-SPEC. The twenty-one `webauthn.*` settings in four kinds — the ' +
+    what: 'NON-SPEC. The `webauthn.*` settings in four kinds — the ' +
           'CEREMONY (RP name, RP ID override, algorithms, user verification, ' +
           'attestation conveyance, timeout), CTAP2 (authenticator ' +
-          'attachment, resident key, credProps) and POLICY (whether a key ' +
+          'attachment, credProps) and POLICY (whether a key ' +
           'may be primary, whether it may be a second factor, how many per ' +
           'person) — with the COSE algorithm table beside them, read from ' +
           'authn/webauthn.js, the module that checks the signature. **ONE IS ' +
@@ -8621,7 +8621,7 @@ const ENDPOINTS: EndpointEntry[] = [
           '(status.status_list), so a resource server that checks a token ' +
           'on its own sees it revoked. application/statuslist+jwt, or ' +
           'application/statuslist+cwt by Accept; one bit per token over ' +
-          '1,048,576 indexes, the bit computed from the revocation register; ' +
+          '16,777,216 indexes, the bit computed from the revocation register; ' +
           'ttl oauth2.accessTokenStatusListTtlS, exp ' +
           'oauth2.accessTokenStatusListLifetimeS, signed with the realm\'s ' +
           'RS256 access-token key. ?time= answers 501.' },

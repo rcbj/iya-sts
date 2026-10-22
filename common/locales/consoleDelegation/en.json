@@ -67,6 +67,8 @@
   "userChooserLabel": "Find a person",
   "userChooserPlaceholder": "part of a username, a principal or a subject",
   "userChooserNothing": "Nobody here matches that. This list is the identity register UNIONED with everybody a delegation named, so a name that is on the page above and not in here reached this service as an application rather than as a person.",
+  "userChooserExact": "<strong>This register is too large to list.</strong> The choices are the identities a delegation names, and a search finds anybody else only by their exact name.",
+  "usersPartial": "<strong>Only some identities are listed here.</strong> The register is too large to list whole: these are the identities a delegation names and the one searched for by name.",
   "signedIn": "signed in",
   "toThisService": "to this service",
   "issuedFor": "issued for",

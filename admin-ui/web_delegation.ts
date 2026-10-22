@@ -643,10 +643,17 @@ class DelegationPage {
    * @returns the chooser as HTML, or a note when there is nobody to choose
    */
   static delegationUserChooser(t, chooser, selectedKey, here) {
-    if (!chooser.total) {
+    // A BOUNDED CATALOGUE (2026-10-22, #820): with the register too large to
+    // list, the pane offers the identities a delegation names and finds
+    // anybody else by their exact name — so an empty catalogue is not
+    // "nobody to choose", and the reader is told how the search answers.
+    if (!chooser.total && chooser.complete !== false) {
       return kit.note(t.html('consoleDelegation.userChooserEmpty'));
     }
-    return kit.chooserPane({
+    return (chooser.search === 'exact'
+      ? kit.note(t.html('consoleDelegation.userChooserExact'))
+      : '') +
+      kit.chooserPane({
       here: here, param: 'userq', fromParam: 'userfrom',
       label: t.text('consoleDelegation.userChooserLabel'),
       placeholder: t.text('consoleDelegation.userChooserPlaceholder'),
@@ -2661,6 +2668,9 @@ class DelegationPage {
         : '') +
       kit.note(t.html('consoleDelegation.userChoose')) +
       chooser +
+      (json.usersComplete === false
+        ? kit.note(t.html('consoleDelegation.usersPartial'))
+        : '') +
       DelegationPage.delegationUserTable(t, json.users, json.facts,
                                         listView) +
       kit.note(t.html('consoleDelegation.userListUnioned'));
@@ -2833,6 +2843,9 @@ class DelegationPage {
 
       '<h2>' + t.html('consoleDelegation.hSomebodyElse') + '</h2>' +
       chooser +
+      (json.usersComplete === false
+        ? kit.note(t.html('consoleDelegation.usersPartial'))
+        : '') +
       DelegationPage.delegationUserTable(t, json.users, json.facts,
                                           listView) +
 

@@ -204,3 +204,7 @@ tls/tls-pages.bundle.js
 tls/tls-pages-spa.js*
 kerberos/spnego-pages.bundle.js
 kerberos/spnego-pages-spa.js*
+
+# Load and soak scripts run against a service from outside it (utilities/
+# README.md); nothing in the image reads them.
+utilities

@@ -1376,6 +1376,13 @@ const CODES = [
       'hosted surfaces stay on the protocol workers.',
     spec: '' },
   // ===== STORE =============================================================
+  { code: 'STS-WORKER-0051',
+    summary: 'A request worker took longer than workers.startTimeoutMs to ' +
+      'start and is still starting (#820). The pool stops waiting for it ' +
+      'and does not replace it; it joins when it reports ready. Only after ' +
+      'four times the limit is it reported as failed (STS-WORKER-0017) and ' +
+      'replaced.',
+    spec: '' },
   { code: 'STS-STORE-0001',
     summary: 'A scheduled persistence flush threw past its own handler.',
     spec: '' },
@@ -1780,6 +1787,12 @@ const CODES = [
       'on-demand minted store (#820): a write of its index rows or of the ' +
       'completion mark failed. Nothing is lost — the store stays read back ' +
       'whole at the next start, which tries again.',
+    spec: 'none' },
+  { code: 'STS-STORE-0087',
+    summary: 'Another process\'s rows of a store read when its page is drawn ' +
+      '(`contributionsOnRead`, #820) could not be read. Nothing is lost: ' +
+      'they stay noted and are read at the next refresh, and the page draws ' +
+      'what this process already holds.',
     spec: 'none' },
   // ===== CLUSTER ===========================================================
   { code: 'STS-CLUSTER-0001',
@@ -3189,6 +3202,16 @@ const CODES = [
       'request message was given to read it from (RFC 9421 section 2.4).',
     spec: 'the caller\'s: a signing resource server\'s defect, logged; ' +
       'a client verifying a response refuses it' },
+  { code: 'STS-KEYS-0155',
+    summary: 'This runtime has no argon2 (node before 24.7), so a new ' +
+      'password was hashed with scrypt at the password policy\'s scrypt ' +
+      'parameters instead of argon2id. Logged once per process.',
+    spec: '' },
+  { code: 'STS-KEYS-0156',
+    summary: 'A stored argon2id password hash could not be computed here — ' +
+      'no argon2 in this runtime, or parameters outside the bounds this ' +
+      'service computes — and was treated as no match.',
+    spec: '' },
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
       'service cannot use, so its Issuing CA was built with the ' +
@@ -6598,6 +6621,19 @@ const CODES = [
     summary: 'A sign-in could not be offered device binding: the response ' +
       'object takes no header. The session stands, unbound.',
     spec: '' },
+  { code: 'STS-AUTHN-0409',
+    summary: 'A password that verified could not be re-hashed under the ' +
+      'password policy\'s algorithm and parameters, or the new hash could ' +
+      'not be written (#847). The sign-in stands; the next verified ' +
+      'sign-in tries again.',
+    spec: '' },
+  { code: 'STS-AUTHN-0410',
+    summary: 'The credentials of the rows a users list shows could not be ' +
+      'read together (#820): the store refused (it was unavailable, or the ' +
+      'request\'s directory budget was spent), so those rows are drawn with ' +
+      'their factors unknown rather than as holding none; or the read threw ' +
+      'otherwise, and each row was asked on its own instead.',
+    spec: 'none — logged; the page is drawn' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
@@ -9718,7 +9754,7 @@ const CODES = [
     spec: 'server_error at the endpoint that was minting the token' },
   { code: 'STS-OAUTH-0817',
     summary: 'The realm\'s access-token status list had no free index in ' +
-      'thirty-two random attempts (it holds 1,048,576), so the access ' +
+      'thirty-two random attempts (it holds 16,777,216), so the access ' +
       'token was not minted rather than share a live token\'s index ' +
       '(draft-ietf-oauth-status-list section 13.3; #432).',
     spec: 'server_error at the endpoint that was minting the token' },
@@ -9967,6 +10003,13 @@ const CODES = [
       '— was removed from an ID Token or UserInfo response: the name is ' +
       'the DID claim\'s, released only by its own rules (#693).',
     spec: 'none: the claim is absent (logged)' },
+  { code: 'STS-OAUTH-0978',
+    summary: 'The access-token status list could not be told that a token ' +
+      'was revoked or un-revoked (#820): its bit in the store of revoked ' +
+      'bits was not written. The revocation itself stands, and introspection ' +
+      'refuses the token; only the published list is behind until the ' +
+      'token is revoked again or expires.',
+    spec: 'none — the revocation is not undone' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -21032,6 +21075,17 @@ const CODES = [
       'JWK thumbprint rather than a DID, or the directory did not store the ' +
       'change (#693).',
     spec: 'HTTP 400 (API)' },
+  { code: 'STS-ADMIN-0890',
+    summary: 'The token register could not be read from the store for ' +
+      'Monitoring → Tokens; the list drawn is what the answering process ' +
+      'holds, and the answer says so (`coverage.unread`) (#820).',
+    spec: 'logged; the page answers' },
+  { code: 'STS-ADMIN-0895',
+    summary: 'The token holders that are clients could not be read from the ' +
+      'store\'s `client` index for the user counts (Monitoring → Metrics, ' +
+      'the dashboard); the clients counted are the holders this process ' +
+      'holds (#820).',
+    spec: 'logged; the page answers' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',

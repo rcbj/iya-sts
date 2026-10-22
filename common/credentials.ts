@@ -1152,7 +1152,8 @@ class Credentials {
   // the work: a derivation queued for the old password and started after a
   // reset landed would otherwise stamp the old password's keys as the new
   // one's (seen on the cluster stack, 2026-09-24 — sts_kerberos_keytab).
-  private notifyPassword(name, password, event, hash?, retainPreviousMs?) {
+  private notifyPassword(name, password, event, hash?, retainPreviousMs?,
+                         previousHash?) {
     const { log } = this.deps;
     log.debug("Entering Credentials.notifyPassword().");
     if (!this.passwordObserver || !name || !password) {
@@ -1165,7 +1166,8 @@ class Credentials {
       this.passwordObserver(name, String(password),
                             { event: event, hash: hash || null,
                               retainPreviousMs: Number(retainPreviousMs) ||
-                                                0 });
+                                                0,
+                              previousHash: previousHash || null });
     } catch (e) {
       // Swallowed with a reason: see the header. What is lost is whatever the
       // observer derives, and the log says so; the credential act it observed
@@ -1646,10 +1648,175 @@ class Credentials {
     // password would be stored as the new one's keys.
     if (answer.ok && answer.reason === 'verified' && !byPrevious) {
       this.notifyPassword(ready.name, password, 'verified', ready.stored);
+      // #847: the stored hash brought up to the policy's form, on this
+      // thread, as everything else this door does.
+      this.upgradeHash(ready.name, password, ready.stored);
     }
     this.noteRefusal(username, opts, answer);
     log.debug('Leaving Credentials.verify().');
     return answer;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE UPGRADE ON SIGN-IN (2026-10-22, #847).
+  //
+  // A password that has just VERIFIED against the stored hash, where that
+  // hash is not the password policy's preferred algorithm AND parameters, is
+  // hashed again under the policy and written back. rcbj's decision 4: a
+  // parameter change within one algorithm counts as much as a change of
+  // algorithm. It is the only way an old hash can move — there is no bulk
+  // rehash, because the plaintext exists only at a sign-in.
+  //
+  // Five rules, each a way to get it wrong:
+  //
+  //   * ONLY A VERIFIED PASSWORD, and only one the CURRENT hash verified —
+  //     never development mode's unchecked "yes" (that would replace a
+  //     person's hash with whatever was typed) and never a service account's
+  //     previous password during its rotation overlap.
+  //   * COMPARE AND SET. The write happens only while the entry still holds
+  //     the hash that verified, read with no await between it and the
+  //     write: a password changed in the meantime, here or on another node,
+  //     is never overwritten by a rehash of the old one.
+  //   * THE HASH ALONE. `writePassword()` without a history: `pwdHistory` and
+  //     `pwdChangedTime` are untouched, because the password did not change.
+  //     No credential-change signal and no "your password was changed"
+  //     message, for the same reason.
+  //   * THE KERBEROS KEYS FOLLOW THE STAMP. They are bound to the stored hash
+  //     (`kerberos/krb5_person_keys.ts`), so the observer is told of a
+  //     `rehash`, which re-stamps them at the SAME kvno: the password, and so
+  //     every key, is the one it was.
+  //   * IT NEVER COSTS THE SIGN-IN. A hash or a write that fails is logged
+  //     (STS-AUTHN-0409) and the person is signed in as they would have been;
+  //     the next verified sign-in tries again.
+  // ---------------------------------------------------------------------------
+  private rehashSpecFor(name, stored) {
+    const { log, crypto, passwordPolicy } = this.deps;
+    log.debug('Entering Credentials.rehashSpecFor().');
+    if (!this.directory || typeof this.directory.writePassword !== 'function' ||
+        !crypto.isHashedSecret(stored)) {
+      log.debug('Leaving Credentials.rehashSpecFor(). Nothing to upgrade.');
+      return null;
+    }
+    const spec = passwordPolicy.hashSpec(passwordPolicy.profileFor(name));
+    if (crypto.storedSecretMatchesSpec(stored, spec)) {
+      log.debug('Leaving Credentials.rehashSpecFor(). Already in force.');
+      return null;
+    }
+    log.debug('Leaving Credentials.rehashSpecFor(). Out of date.');
+    return spec;
+  }
+
+  // The compare-and-set write, with no await between the read and the write.
+  private rehashWrite(name, password, stored, hash) {
+    const { log, crypto, errorCodes } = this.deps;
+    log.debug('Entering Credentials.rehashWrite().');
+    try {
+      const now = String(this.directory.readPassword(name) || '');
+      if (now !== String(stored)) {
+        log.info('credentials: the stored password hash for ' + name +
+                 ' changed while it was being upgraded, so the upgrade was ' +
+                 'dropped; the newer password stands.');
+        log.debug('Leaving Credentials.rehashWrite(). Superseded.');
+        return false;
+      }
+      if (!this.directory.writePassword(name, hash)) {
+        log.warn(errorCodes.tag('STS-AUTHN-0409') +
+                 'credentials: the upgraded password hash for ' + name +
+                 ' could not be written (no entry); the sign-in stands.');
+        log.debug('Leaving Credentials.rehashWrite(). Not written.');
+        return false;
+      }
+    } catch (e) {
+      log.debug('Caught in Credentials.rehashWrite(): ' +
+                ((e && e.message) || e));
+      log.error(errorCodes.tag('STS-AUTHN-0409') +
+                'credentials: writing the upgraded password hash for ' + name +
+                ' threw, and the sign-in stands: ' +
+                ((e && e.message) || e));
+      log.debug('Leaving Credentials.rehashWrite(). The store threw.');
+      return false;
+    }
+    const from = crypto.storedSecretParameters(stored);
+    const to = crypto.storedSecretParameters(hash);
+    log.info('credentials: the stored password hash for ' + name + ' was ' +
+             'upgraded at a verified sign-in, from ' +
+             (from ? from.algorithm : 'an unknown form') + ' to ' +
+             (to ? to.algorithm : 'an unknown form') + ' at the password ' +
+             'policy\'s parameters.');
+    // THE HASH IT REPLACED GOES WITH IT (2026-10-22, #820): the Kerberos
+    // keys were stamped with that one, and are the same keys under the new
+    // one, since the password did not change. krb5_person_keys.ts re-stamps
+    // them instead of deriving them again.
+    this.notifyPassword(name, password, 'rehash', hash, 0, stored);
+    log.debug('Leaving Credentials.rehashWrite(). Written.');
+    return true;
+  }
+
+  /**
+   * Hashes a just-verified password again under the password policy and
+   * writes it back where the stored hash is not the policy's algorithm and
+   * parameters (#847). On this thread; never throws.
+   *
+   * @param name - the person
+   * @param password - the password the stored hash just verified
+   * @param stored - that stored hash
+   * @returns true when a new hash was written
+   */
+  upgradeHash(name, password, stored) {
+    const { log, crypto, errorCodes } = this.deps;
+    log.debug('Entering Credentials.upgradeHash().');
+    const spec = this.rehashSpecFor(name, stored);
+    if (!spec) {
+      log.debug('Leaving Credentials.upgradeHash(). Nothing to do.');
+      return false;
+    }
+    let hash;
+    try {
+      hash = crypto.hashPassword(password, spec);
+    } catch (e) {
+      log.debug('Caught in Credentials.upgradeHash(): ' +
+                ((e && e.message) || e));
+      log.warn(errorCodes.tag('STS-AUTHN-0409') +
+               'credentials: the password hash for ' + name + ' could not ' +
+               'be upgraded, and the sign-in stands: ' +
+               ((e && e.message) || e));
+      log.debug('Leaving Credentials.upgradeHash(). The hash failed.');
+      return false;
+    }
+    const written = this.rehashWrite(name, password, stored, hash);
+    log.debug('Leaving Credentials.upgradeHash(). ' + written);
+    return written;
+  }
+
+  /**
+   * As `upgradeHash()`, with the new hash made on libuv's thread pool. Never
+   * rejects.
+   *
+   * @param name - the person
+   * @param password - the password the stored hash just verified
+   * @param stored - that stored hash
+   * @returns a promise of true when a new hash was written
+   */
+  upgradeHashAsync(name, password, stored) {
+    const { log, crypto, errorCodes } = this.deps;
+    log.debug('Entering Credentials.upgradeHashAsync().');
+    const spec = this.rehashSpecFor(name, stored);
+    if (!spec) {
+      log.debug('Leaving Credentials.upgradeHashAsync(). Nothing to do.');
+      return Promise.resolve(false);
+    }
+    log.debug('Leaving Credentials.upgradeHashAsync(). On libuv.');
+    return crypto.hashPasswordAsync(password, spec).then((hash) => {
+      return this.rehashWrite(name, password, stored, hash);
+    }, (e) => {
+      log.debug('Caught in Credentials.upgradeHashAsync(): ' +
+                ((e && e.message) || e));
+      log.warn(errorCodes.tag('STS-AUTHN-0409') +
+               'credentials: the password hash for ' + name + ' could not ' +
+               'be upgraded, and the sign-in stands: ' +
+               ((e && e.message) || e));
+      return false;
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -1712,6 +1879,13 @@ class Credentials {
           if (answer.ok && answer.reason === 'verified' && !byPrevious) {
             this.notifyPassword(ready.name, password, 'verified',
                                 ready.stored);
+            this.noteRefusal(username, opts, answer);
+            // #847: the stored hash brought up to the policy's form before
+            // the answer, which `upgradeHashAsync()` never fails.
+            return this.upgradeHashAsync(ready.name, password, ready.stored)
+              .then(() => {
+                return answer;
+              });
           }
           this.noteRefusal(username, opts, answer);
           return answer;
@@ -2035,7 +2209,9 @@ class Credentials {
       .filter((one) => { return !!one; });
     for (let i = 0; i < candidates.length; i++) {
       const stored = String(candidates[i]);
-      const same = stored.indexOf('$scrypt$') === 0
+      // Each remembered hash verified by its OWN form (#847): scrypt or
+      // argon2id, at the parameters it names.
+      const same = crypto.isHashedSecret(stored)
         ? crypto.verifySecret(password, stored)
         : crypto.constantTimeEquals(password, stored);
       if (same) {
@@ -2231,20 +2407,28 @@ class Credentials {
     // a hash — a clear value an older `ldapmodify` left behind is not written
     // into a second attribute where it would outlive the password it was.
     const next = [];
-    if (current && current.indexOf('$scrypt$') === 0) {
+    // A hash of either form (#847): a remembered password keeps the form it
+    // was stored in, and the history check verifies each by its own.
+    if (current && crypto.isHashedSecret(current)) {
       next.push(passwordPolicy.historyValue(current));
     }
     const history = next.concat(storedHistory).slice(0, profile.history);
     log.debug('Leaving Credentials.preparePassword(). Prepared; ' +
               history.length + ' remembered.');
+    // HASHED AS THE POLICY SAYS (#847): argon2id or scrypt, at the profile's
+    // parameters — `password_policy.ts`'s `hashSpec()`. Every other secret
+    // this file hashes stays `hashSecret()`'s scrypt.
+    const spec = passwordPolicy.hashSpec(profile);
     // A HASH THE CALLER ALREADY MADE OFF THE EVENT LOOP (#756): an LDAP
     // write hashes its clear password on libuv's thread pool before this
     // synchronous body runs. It is only ever a hash of this same plaintext
-    // (the caller looks it up by the value), and it must be one of ours;
-    // anything else is ignored and the hash is made here.
+    // (the caller looks it up by the value), and it must be one of ours in
+    // the policy's form now; anything else is ignored and the hash is made
+    // here.
     const given = options.hashOfThisPassword;
-    const hash = typeof given === 'string' && crypto.isHashedSecret(given)
-      ? given : crypto.hashSecret(password);
+    const hash = typeof given === 'string' && crypto.isHashedSecret(given) &&
+                 crypto.storedSecretMatchesSpec(given, spec)
+      ? given : crypto.hashPassword(password, spec);
     return { ok: true, hash: hash, history: history,
              profile: profile.name };
   }
@@ -2336,7 +2520,7 @@ class Credentials {
                                    'created ahead of time.'] });
     }
     log.info('credentials: a password was set for ' + name + '. It is stored ' +
-             'as a scrypt hash and CANNOT BE READ BACK — this service can ' +
+             'as a hash and CANNOT BE READ BACK — this service can ' +
              'never show it again, which is why the caller is given it once ' +
              'and only at the moment it is created.');
     const overlapMs = rotation ? Math.max(0, Number(rotation.overlapMs) || 0)
@@ -2569,7 +2753,7 @@ class Credentials {
                '  password: from admin.bootstrapPassword — NOT PRINTED, and ' +
                'not printed anywhere else either.\n\nNobody in this ' +
                'realm\'s directory held a credential, so this account was ' +
-               'given the password you configured. It is stored as a scrypt ' +
+               'given the password you configured. It is stored as a ' +
                'hash and CANNOT be read back — only reset.\n\nCHANGE IT. ' +
                'Sign in at /admin, or POST /admin-api/users/set-password.\n' +
                '=======================================================');
@@ -2582,7 +2766,7 @@ class Credentials {
              '  username: ' + username + '\n' +
              '  password: ' + password + '\n\nNobody in this realm\'s ' +
              'directory held a credential, so this one was generated so that ' +
-             'the service is reachable. It is stored as a scrypt hash and ' +
+             'the service is reachable. It is stored as a hash and ' +
              'CANNOT be recovered — only reset.\n\nCHANGE IT. Sign in at ' +
              '/admin, or POST ' +
              '/admin-api/users/set-password.\n' +
@@ -5613,6 +5797,230 @@ class Credentials {
   }
 
   // ===========================================================================
+  // THE SHOWN ROWS' FACTORS, READ TOGETHER (#820, 2026-10-22).
+  //
+  // `factorHolderRow()` is `mechanismsFor()` for one name — about nine
+  // directory reads (the keys, the password, the authenticator, the recovery
+  // codes twice, the emailed factor, the requirement, the reset link, the
+  // lock) — and `/admin/users` asked it of every row it showed. In a windowed
+  // process each read that missed the window was a SYNCHRONOUS round trip
+  // through the bridge, every one charged to the request's store budget. On
+  // 8081 (product, postgres, 4 request workers, ~660,000 people, a sign-in
+  // load) fifty rows spent the 5,000 ms budget: the log carried
+  // STS-AUTHN-0071, -0065 and -0080 wrapping STS-LDAP-0175, the console said
+  // the page could not be drawn, and code exchanges on the same worker were
+  // refused for a database connection while it stood still.
+  //
+  // So a caller that can wait asks for EVERY shown row at once: the
+  // directory's `credentialRowsAsync()` reads each name by the census's
+  // resolution, asynchronously and a page at a time, and hands the values
+  // back raw; this file interprets them with the SAME functions the one-name
+  // path uses — `keysFromValues()`, `totpStatusFromValue()`,
+  // `backupCodesFromValue()`, `backupCodeStatusOfHeld()` and the mail
+  // factor's `heldOfAttributes()` — so a row is the row `factorHolderRow()`
+  // gives, member for member. `tests/users_page_rows_async.js` compares them.
+  //
+  // **A REFUSAL IS UNKNOWN, NOT NONE**: where the store could not be read
+  // (unavailable, or the budget spent) every row is answered null — drawn
+  // with no factors, as a row nothing folded into always was — rather than
+  // as a person who holds nothing, and the page is still drawn. Any other
+  // throw is asked one row at a time, the census's fallback.
+  // ===========================================================================
+  /**
+   * Builds the roster rows of several population rows at once, the
+   * directory asked asynchronously.
+   *
+   * @param rows - population rows, `{ username, inDirectory, known }`
+   * @returns a promise of one roster row per row, as `factorHolderRow()`
+   *   builds it, or null for each where the store refused
+   */
+  async factorHolderRowsAsync(rows) {
+    const { log, errorCodes } = this.deps;
+    log.debug('Entering Credentials.factorHolderRowsAsync(). ' +
+              (rows || []).length + ' row(s).');
+    const list = rows || [];
+    const hook = this.directoryHook('credentialRowsAsync');
+    if (!hook || !list.length) {
+      log.debug('Leaving Credentials.factorHolderRowsAsync(). ' +
+                (list.length ? 'No asynchronous door; one at a time.'
+                  : 'Nothing to read.'));
+      return list.map((row) => {
+        return this.factorHolderRow(row);
+      });
+    }
+    const names = this.censusNames(list.map((row) => {
+      return row.username;
+    }));
+    let raws = null;
+    try {
+      raws = await hook(names);
+    } catch (e) {
+      if (Credentials.storeRefused(errorCodes, e)) {
+        log.error(errorCodes.tag('STS-AUTHN-0410') +
+                  'credentials: the credentials of ' + list.length +
+                  ' shown row(s) could not be read from the store, so they ' +
+                  'are drawn with their factors unknown: ' + e.message);
+        log.debug('Leaving Credentials.factorHolderRowsAsync(). Store ' +
+                  'refused.');
+        return list.map(() => {
+          return null;
+        });
+      }
+      log.error(errorCodes.tag('STS-AUTHN-0410') +
+                'credentials: reading the credentials of ' + list.length +
+                ' shown row(s) together threw, so each row is asked on its ' +
+                'own: ' + e.message);
+      raws = null;
+    }
+    if (!Array.isArray(raws) || raws.length !== list.length) {
+      log.debug('Leaving Credentials.factorHolderRowsAsync(). One at a ' +
+                'time.');
+      return list.map((row) => {
+        return this.factorHolderRow(row);
+      });
+    }
+    let mailFactor = null;
+    try {
+      mailFactor = require('./mail_factor');
+    } catch (e) {
+      log.debug('Caught in Credentials.factorHolderRowsAsync(): ' +
+                ((e && e.message) || e));
+      // Not held, for `mailFactorOf()`'s reason.
+      mailFactor = null;
+    }
+    const out = list.map((row, index) => {
+      return this.factorHolderRowFromValues(row, raws[index], names[index],
+                                            mailFactor);
+    });
+    log.debug('Leaving Credentials.factorHolderRowsAsync(). ' + out.length +
+              ' row(s), read together.');
+    return out;
+  }
+
+  // One roster row from the values the directory handed over, by
+  // `mechanismsFor()`'s rules — `raw` null is a name that finds no entry,
+  // which holds nothing, as `mechanismsFor()` answers for one. Called once
+  // per shown row.
+  private factorHolderRowFromValues(row, raw, name, mailFactor) {
+    const { log, backupCodes } = this.deps;
+    log.debug('Entering Credentials.factorHolderRowFromValues().');
+    const values = raw || {};
+    const keys = this.keysFromValues(values.webauthn || [], name);
+    const primaryKeys = keys.filter((one) => {
+      return one.role === 'primary';
+    }).length;
+    const mfaKeys = keys.filter((one) => {
+      return one.role === 'mfa';
+    }).length;
+    const authenticator = this.totpStatusFromValue(values.totp || '', name);
+    const totpEnrolled = !!authenticator;
+    let mailHeld = '';
+    if (mailFactor && values.mail &&
+        typeof mailFactor.heldOfAttributes === 'function') {
+      try {
+        mailHeld = mailFactor.heldOfAttributes(values.mail) || '';
+      } catch (e) {
+        log.debug('Caught in Credentials.factorHolderRowFromValues(): ' +
+                  ((e && e.message) || e));
+        // Not held, for `mailFactorOf()`'s reason.
+        mailHeld = '';
+      }
+    }
+    const held = this.backupCodesFromValue(values.backupCodes || '', name);
+    const password = !!values.password;
+    log.debug('Leaving Credentials.factorHolderRowFromValues().');
+    return {
+      username: row.username,
+      inDirectory: row.inDirectory,
+      known: row.known,
+      password: password,
+      primaryKeys: primaryKeys,
+      mfaKeys: mfaKeys,
+      totp: totpEnrolled,
+      totpUsable: totpEnrolled && !authenticator.unusable,
+      // `mechanismsFor()`'s `totpDetail`, member for member.
+      totpDetail: totpEnrolled
+        ? { enrolledAt: authenticator.enrolledAt || 0,
+            lastUsedAt: authenticator.lastUsedAt || 0,
+            algorithm: authenticator.algorithm || '',
+            digits: authenticator.digits || 0,
+            period: authenticator.period || 0,
+            sealed: !!authenticator.sealed,
+            unusable: !!authenticator.unusable,
+            why: authenticator.why || '' }
+        : null,
+      // A count and never the codes — `factorHolderRow()`'s reason.
+      backupCodes: this.backupCodeStatusOfHeld(held),
+      recoveryAdvised: backupCodes.offered() &&
+                       (mfaKeys > 0 || totpEnrolled) && !held,
+      mfaRequired: mfaKeys > 0 || totpEnrolled || !!mailHeld,
+      secondFactor: mfaKeys > 0 ? 'webauthn' :
+                    (totpEnrolled ? 'totp' :
+                     (mailHeld ? 'email-' + mailHeld : '')),
+      usable: password || primaryKeys > 0
+    };
+  }
+
+  // THE SHOWN ROWS' DNs, ASKED TOGETHER (#820): one DN per name by
+  // `personDnOf()`'s rule, from the directory's `personDnsAsync()`; where
+  // the directory offers none, `personDnOf()` one name at a time. A name the
+  // store could not answer is '' — a row drawn without a DN, which the
+  // console's search already reads as a person who cannot be named.
+  /**
+   * The entry DN of each named person, asked asynchronously.
+   *
+   * @param names - the usernames
+   * @returns a promise of one DN per name, '' where there is none
+   */
+  async personDnsAsync(names) {
+    const { log, errorCodes } = this.deps;
+    log.debug('Entering Credentials.personDnsAsync(). ' +
+              (names || []).length + ' name(s).');
+    const list = (names || []).map((name) => {
+      return String(name == null ? '' : name);
+    });
+    const hook = this.directoryHook('personDnsAsync');
+    if (hook && list.length) {
+      try {
+        const dns = await hook(list);
+        if (Array.isArray(dns) && dns.length === list.length) {
+          log.debug('Leaving Credentials.personDnsAsync(). Asked together.');
+          return dns.map((dn) => {
+            return String(dn || '');
+          });
+        }
+      } catch (e) {
+        if (Credentials.storeRefused(errorCodes, e)) {
+          log.error(errorCodes.tag('STS-AUTHN-0410') +
+                    'credentials: the DNs of ' + list.length + ' shown ' +
+                    'row(s) could not be read from the store, so they are ' +
+                    'drawn without one: ' + e.message);
+          log.debug('Leaving Credentials.personDnsAsync(). Store refused.');
+          return list.map(() => {
+            return '';
+          });
+        }
+        log.error(errorCodes.tag('STS-AUTHN-0410') +
+                  'credentials: reading the DNs of ' + list.length + ' shown ' +
+                  'row(s) together threw, so each is asked on its own: ' +
+                  e.message);
+      }
+    }
+    const out = list.map((name) => {
+      try {
+        return String(this.deviceStore('personDnOf', [name]) || '');
+      } catch (e) {
+        log.debug('Caught in Credentials.personDnsAsync(): ' +
+                  ((e && e.message) || e));
+        // Drawn without a DN, as `personDnOf()`'s caller draws one.
+        return '';
+      }
+    });
+    log.debug('Leaving Credentials.personDnsAsync(). One at a time.');
+    return out;
+  }
+
+  // ===========================================================================
   // THE CENSUS: WHAT EVERYBODY HOLDS, IN ONE PASS (#352, 2026-09-29).
   //
   // The seven tiles on `/admin/users` — hold a second factor, an authenticator
@@ -6299,8 +6707,7 @@ class Credentials {
   // second set be issued over a list somebody is holding on paper.
   // ---------------------------------------------------------------------------
   private backupCodesOf(username) {
-    const { log, keystore, backupCodes, errorCodes } = this.deps;
-    const { BACKUP_CODES_ATTRIBUTE } = Credentials;
+    const { log, errorCodes } = this.deps;
     const directory = this.directory;
     log.debug("Entering Credentials.backupCodesOf().");
     const name = String(username || '').trim();
@@ -6319,8 +6726,21 @@ class Credentials {
       log.debug('Leaving Credentials.backupCodesOf(). It threw.');
       return null;
     }
+    const out = this.backupCodesFromValue(raw, name);
+    log.debug('Leaving Credentials.backupCodesOf().');
+    return out;
+  }
+
+  // WHAT A STORED VALUE IS AS A SET OF RECOVERY CODES, in one place (#820,
+  // 2026-10-22): `backupCodesOf()` reads the value for one person and
+  // `factorHolderRowsAsync()` is handed it for the rows a page shows, and
+  // both must read it alike — `keysFromValues()`'s arrangement.
+  private backupCodesFromValue(raw, name) {
+    const { log, keystore, backupCodes } = this.deps;
+    const { BACKUP_CODES_ATTRIBUTE } = Credentials;
+    log.debug('Entering Credentials.backupCodesFromValue().');
     if (!raw) {
-      log.debug('Leaving Credentials.backupCodesOf(). None issued.');
+      log.debug('Leaving Credentials.backupCodesFromValue(). None issued.');
       return null;
     }
     let parsed;
@@ -6330,7 +6750,7 @@ class Credentials {
       log.warn('credentials: the ' + BACKUP_CODES_ATTRIBUTE + ' value on ' +
                name + ' is not JSON this service wrote and is being reported ' +
                'as an unusable set rather than ignored: ' + e.message);
-      log.debug('Leaving Credentials.backupCodesOf(). Not JSON.');
+      log.debug('Leaving Credentials.backupCodesFromValue(). Not JSON.');
       return { unusable: true, why: 'the stored value is not readable' };
     }
     let vault = parsed.vault;
@@ -6343,7 +6763,7 @@ class Credentials {
                  'They are reported as UNUSABLE rather than as absent, ' +
                  'because absent would let a second set be issued over the ' +
                  'one that person is holding.');
-        log.debug('Leaving Credentials.backupCodesOf(). Sealed under ' +
+        log.debug('Leaving Credentials.backupCodesFromValue(). Sealed under ' +
                   'another key.');
         return { unusable: true, sealed: true,
                  total: Number(parsed.total || 0),
@@ -6361,13 +6781,13 @@ class Credentials {
     } catch (e) {
       log.warn('credentials: the recovery code list for ' + name + ' opened ' +
                'and is not the array this service writes: ' + e.message);
-      log.debug('Leaving Credentials.backupCodesOf(). The vault is not an ' +
-                'array.');
+      log.debug('Leaving Credentials.backupCodesFromValue(). The vault is ' +
+                'not an array.');
       return { unusable: true, why: 'the stored code list is not readable' };
     }
     if (!Array.isArray(codes)) {
-      log.debug('Leaving Credentials.backupCodesOf(). The vault is not an ' +
-                'array.');
+      log.debug('Leaving Credentials.backupCodesFromValue(). The vault is ' +
+                'not an array.');
       return { unusable: true, why: 'the stored code list is not a list' };
     }
     // **NORMALISED TO ONE SHAPE HERE, WHICH IS WHY NOTHING ABOVE THIS LINE
@@ -6392,8 +6812,8 @@ class Credentials {
     const legacy = normalised.some((one) => {
       return one.hash && !backupCodes.isHash(one.hash);
     });
-    log.debug('Leaving Credentials.backupCodesOf(). ' + normalised.length +
-              ' code(s), ' +
+    log.debug('Leaving Credentials.backupCodesFromValue(). ' +
+              normalised.length + ' code(s), ' +
               normalised.filter((one) => { return !one.usedAt; }).length +
               ' unused, hashed=' + !legacy + '.');
     return {
@@ -6786,14 +7206,23 @@ class Credentials {
     log.debug("Entering Credentials.backupCodeStatus().");
     const name = String(username || '').trim();
     log.debug('Entering Credentials.backupCodeStatus(). username=' + name);
-    const held = this.backupCodesOf(name);
+    const out = this.backupCodeStatusOfHeld(this.backupCodesOf(name));
+    log.debug("Leaving Credentials.backupCodeStatus().");
+    return out;
+  }
+
+  // `backupCodeStatus()`'s answer from a set already read (#820), so a
+  // roster row built from values read together reports it exactly alike.
+  private backupCodeStatusOfHeld(held) {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.backupCodeStatusOfHeld().");
     if (!held) {
-      log.debug('Leaving Credentials.backupCodeStatus(). None issued.');
+      log.debug('Leaving Credentials.backupCodeStatusOfHeld(). None issued.');
       return { present: false, usable: false, total: 0, remaining: 0,
                used: 0, generatedAt: 0, lastUsedAt: 0, sealed: false, why: '' };
     }
     if (held.unusable) {
-      log.debug('Leaving Credentials.backupCodeStatus(). Present and ' +
+      log.debug('Leaving Credentials.backupCodeStatusOfHeld(). Present and ' +
                 'unreadable.');
       // The counts come off the record's CLEAR half, which is exactly what the
       // header says that half is for: a console can be honest about a set this
@@ -6809,9 +7238,9 @@ class Credentials {
                sealed: !!held.sealed, why: held.why || '' };
     }
     const remaining = held.codes.filter((one) => { return !one.usedAt; });
-    log.debug('Leaving Credentials.backupCodeStatus(). ' + remaining.length +
-              ' of ' + held.codes.length + ' unused, hashed=' +
-              !!held.hashed + '.');
+    log.debug('Leaving Credentials.backupCodeStatusOfHeld(). ' +
+              remaining.length + ' of ' + held.codes.length +
+              ' unused, hashed=' + !!held.hashed + '.');
     return { present: true, usable: true,
              total: held.codes.length, remaining: remaining.length,
              used: held.codes.length - remaining.length,
@@ -9237,7 +9666,7 @@ class Credentials {
    * @returns `{ ok: true, username, removed }`, or a refusal
    */
   removePassword(username) {
-    const { log, passwordPolicy, errorCodes } = this.deps;
+    const { log, passwordPolicy, errorCodes, crypto } = this.deps;
     const directory = this.directory;
     const coded = this.coded.bind(this);
     log.debug("Entering Credentials.removePassword().");
@@ -9263,7 +9692,7 @@ class Credentials {
       return { ok: true, username: name, removed: false };
     }
     const profile = passwordPolicy.profileFor(name);
-    const next = current.indexOf('$scrypt$') === 0
+    const next = crypto.isHashedSecret(current)
       ? [passwordPolicy.historyValue(current)] : [];
     let written = false;
     try {
@@ -10399,6 +10828,8 @@ export = {
   secondFactorPopulation: slot.forward('secondFactorPopulation'),
   directoryFirstNames: slot.forward('directoryFirstNames'),
   factorHolderRow: slot.forward('factorHolderRow'),
+  factorHolderRowsAsync: slot.forward('factorHolderRowsAsync'),
+  personDnsAsync: slot.forward('personDnsAsync'),
   factorCensus: slot.forward('factorCensus'),
   factorCensusAsync: slot.forward('factorCensusAsync'),
   directoryFactorCountsAsync: slot.forward('directoryFactorCountsAsync'),
@@ -10478,6 +10909,8 @@ export = {
   storable: slot.forward('storable'),
   verify: slot.forward('verify'),
   verifyAsync: slot.forward('verifyAsync'),
+  upgradeHash: slot.forward('upgradeHash'),
+  upgradeHashAsync: slot.forward('upgradeHashAsync'),
   // A PASSWORD THAT MUST BE CHANGED (2026-09-13) — see resetRefusal().
   passwordResetRequired: slot.forward('passwordResetRequired'),
   setPasswordResetRequired: slot.forward('setPasswordResetRequired'),

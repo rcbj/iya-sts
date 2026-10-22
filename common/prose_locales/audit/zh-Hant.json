@@ -675,6 +675,10 @@
     "en": "faa7f1245749fea5",
     "text": "某人指名或清除了可代表自己行事的一方"
   },
+  "audit.actions.portal.delegation.search.label": {
+    "en": "ce14f3c18b0c3f60",
+    "text": "某人搜尋了可代表自己行事的人"
+  },
   "audit.actions.admin.password-policy.change.label": {
     "en": "3919c9c6efb6ee77",
     "text": "變更了密碼原則設定檔"
@@ -934,6 +938,10 @@
   "audit.actions.ssf.stream.revived.label": {
     "en": "bb572a202bd6c70a",
     "text": "失效的推送串流已恢復"
+  },
+  "audit.actions.ssf.stream.delivery.label": {
+    "en": "3df44dec0e09a7e4",
+    "text": "接收方串流從推送傳遞改為輪詢傳遞"
   },
   "audit.actions.ssf.deadletter.clear.label": {
     "en": "1caaf3043e122f70",
@@ -1342,6 +1350,14 @@
   "audit.actions.portal.siop.prefer.label": {
     "en": "7e6377e63c113f97",
     "text": "某人將已證明的 DID 標記為偏好，或清除了該標記"
+  },
+  "audit.actions.portal.siop.view.label": {
+    "en": "e7a28d6d72970a6f",
+    "text": "無法向某人顯示其自行簽發主體"
+  },
+  "audit.actions.portal.siop.did.label": {
+    "en": "7fa86b94eee6535e",
+    "text": "無法向某人顯示自行簽發主體的 DID 文件"
   },
   "audit.actions.siop.key.pinned.label": {
     "en": "a2cc99b16a4a406e",

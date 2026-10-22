@@ -512,6 +512,40 @@ function timeoutCase(t) {
   log.debug("Leaving timeoutCase().");
 }
 
+// warmAsync() (2026-10-21, #820): a session a refresh is about to read is
+// admitted off the event loop, unless something touched it meanwhile.
+async function warmCase(t) {
+  log.debug("Entering warmCase().");
+  t.log.info('on: a session warmed ahead of a read is admitted');
+  freshWindow();
+  let reads = 0;
+  queryFn = function (name, args) {
+    if (name === 'session.read') {
+      reads += 1;
+      if (args && args[1] === sidDigest('warm-touched')) {
+        sessionWindow.considerApply(REALM, 'warm-touched',
+                                    sessionBody('warm-touched'), false);
+        return { body: sealSession(sessionBody('warm-touched')) };
+      }
+      if (args && args[1] === sidDigest('warm-s1')) {
+        return { body: sealSession(sessionBody('warm-s1')) };
+      }
+    }
+    return emptyAnswer(name);
+  };
+  const admitted = await sessionWindow.warmAsync(REALM, 'warm-s1');
+  const before = reads;
+  const read = sessionWindow.get(REALM, 'warm-s1');
+  t.check(admitted && read.ok && read.session.id === 'warm-s1' &&
+          before === 1 && reads === 1,
+          'a warmed session is admitted, and its get() reads nothing more',
+          JSON.stringify({ admitted: admitted, reads: reads }));
+  const touched = await sessionWindow.warmAsync(REALM, 'warm-touched');
+  t.check(!touched,
+          'one changed while its read was out is not admitted from it');
+  log.debug("Leaving warmCase().");
+}
+
 function middlewareCase(t) {
   log.debug("Entering middlewareCase().");
   t.log.info('on: an unread cookie is 503 and the cookie stays');
@@ -1190,6 +1224,7 @@ async function onHalf(t) {
   await bridgeWaitCase(t);
   cooledIndexCase(t);
   shedErrorCase(t);
+  await warmCase(t);
   middlewareCase(t);
   parentCase(t);
   await dropErrorCase(t);
@@ -1260,6 +1295,10 @@ function partialWalkCase(t) {
   const hitName = keystore.keyedDigest('session-username', 'walk-hit');
   const localName = keystore.keyedDigest('session-username', 'walk-local');
   const missName = keystore.keyedDigest('session-username', 'walk-miss');
+  // A sign-out's inventory reads one person's sessions by these two (#854,
+  // 2026-10-22): the walk of every session was two minutes on 8081.
+  const liveName = keystore.keyedDigest('session-username', 'walk-live');
+  const liveSubject = keystore.keyedDigest('session-subject', LIVE_SUB);
   const parentKey = keystore.keyedDigest('session-parent', 'walk-parent');
   const keepParent = keystore.keyedDigest('session-parent', 'walk-keep');
   const consoleParent = keystore.keyedDigest('session-parent',
@@ -1297,10 +1336,16 @@ function partialWalkCase(t) {
       if (second === hitName) {
         return ['walk-hit'];
       }
+      if (second === liveName) {
+        return pageNull ? null : ['walk-live'];
+      }
       if (localNull && second === localName) {
         return null;
       }
       return [];
+    }
+    if (name === 'session.subject' && second === liveSubject) {
+      return pageNull ? null : ['walk-live'];
     }
     if (name === 'session.children') {
       if (childrenNull && second === keepParent) {
@@ -1406,7 +1451,8 @@ function partialWalkCase(t) {
     const held = stats.holderKeyOf('walk-live', LIVE_SUB);
     const inventory = logout.inventoryFor(held);
     t.check(inventory.sessions >= 1,
-            'sessionsByKey still hits an uncached session');
+            'the inventory finds an uncached session through the index ' +
+            '(#854: by username and subject, not a walk)');
     const listed = adminViews.signOnSessionRows().map(function (row) {
       return row.id;
     });
@@ -1528,7 +1574,7 @@ function partialWalkCase(t) {
       logout.inventoryFor(held);
     });
     t.check(/could not be read/.test(inventoryBlow),
-            'an unread page fails the inventory', inventoryBlow);
+            'an unread index fails the inventory', inventoryBlow);
     const rowsBlow = thrownMessage(function () {
       adminViews.signOnSessionRows();
     });

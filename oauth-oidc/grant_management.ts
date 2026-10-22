@@ -833,36 +833,79 @@ class GrantManagement {
 
   // What the console and `/admin-api` list: every grant in the realm, the
   // newest first, optionally one client's. Never a token.
+  //
+  // THE TOKEN COUNTS IN ONE PASS (2026-10-22, #820). Each grant walked every
+  // row of `issued` to count its own — grants times tokens, about a million
+  // of each on 8081. The rows are counted by grant once, and each grant reads
+  // its count from the map.
+  //
+  // `bare` leaves the grant resource off each row — `created_at` is still
+  // set, for the order — so a caller that pages first can decorate only the
+  // page it shows (`decorate()`), as `/admin-api/grants` does.
   /**
    * Lists every grant in the realm, newest first, never with a token.
    *
    * @param clientId - only this client's grants
+   * @param options - `bare`: leave the grant resource off each row
    * @returns the grant rows
    */
-  list(clientId?: string): Json[] {
+  list(clientId?: string, options?: Json): Json[] {
     const { log } = this.deps;
     log.debug("Entering GrantManagement.list().");
+    const bare = !!(options && options.bare);
+    const counts = new Map<string, number>();
+    issued.forEach(function (row: Json): void {
+      if (row && row.grant) {
+        const id = String(row.grant);
+        counts.set(id, (counts.get(id) || 0) + 1);
+      }
+    });
     const out: Json[] = [];
     const self = this;
     grants.forEach(function (record: Json): void {
       if (clientId && record.clientId !== clientId) {
         return;
       }
-      let tokens = 0;
-      issued.forEach(function (row: Json): void {
-        if (row && row.grant === record.id) {
-          tokens += 1;
-        }
-      });
-      out.push(Object.assign({ grantId: record.id, clientId: record.clientId,
-                               subject: record.sub, generation: record.gen,
-                               tokens: tokens },
-                             self.resourceOf(record)));
+      const row: Json = { grantId: record.id, clientId: record.clientId,
+                          subject: record.sub, generation: record.gen,
+                          tokens: counts.get(String(record.id)) || 0 };
+      if (bare) {
+        row.created_at = Math.floor(Number(record.createdAt) / 1000);
+        out.push(row);
+        return;
+      }
+      out.push(Object.assign(row, self.resourceOf(record)));
     });
     out.sort(function (a: Json, b: Json): number {
       return Number(b.created_at) - Number(a.created_at);
     });
     log.debug("Leaving GrantManagement.list(). " + out.length);
+    return out;
+  }
+
+  // A `bare` row of `list()` with its grant resource, as `list()` without
+  // `bare` would have answered it: the grant read again by its id. A grant
+  // gone since is answered as the bare row.
+  /**
+   * Adds the grant resource to one row `list(…, { bare: true })` answered.
+   *
+   * @param row - the bare row
+   * @returns the row with its grant resource
+   */
+  decorate(row: Json): Json {
+    const { log } = this.deps;
+    log.debug("Entering GrantManagement.decorate().");
+    const record = grants.get(String(row && row.grantId));
+    if (!record) {
+      log.debug("Leaving GrantManagement.decorate(). Gone.");
+      return Object.assign({}, row);
+    }
+    const out = Object.assign({ grantId: row.grantId, clientId: row.clientId,
+                                subject: row.subject,
+                                generation: row.generation,
+                                tokens: row.tokens },
+                              this.resourceOf(record));
+    log.debug("Leaving GrantManagement.decorate().");
     return out;
   }
 
@@ -1136,6 +1179,7 @@ export = {
   resourceOf: slot.forward('resourceOf'),
   metadata: slot.forward('metadata'),
   list: slot.forward('list'),
+  decorate: slot.forward('decorate'),
   act: slot.forward('act'),
   purge: slot.forward('purge')
 };

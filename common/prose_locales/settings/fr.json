@@ -820,8 +820,8 @@
     "text": "Coût du hachage des mots de passe (log2 du N de scrypt)"
   },
   "security.passwordHashLogN|description": {
-    "en": "332bb0d7bee5b84a",
-    "text": "Le coût CPU et mémoire de scrypt pour un mot de passe, un secret client, un jeton d’activation ou un code de récupération NOUVELLEMENT stocké, exprimé en puissance de deux : 15 correspond à N=32768, environ 70 ms par hachage sur une machine ordinaire. Le plancher de 14 est le minimum que ce service écrira. L’augmenter ralentit l’attaque d’un stockage volé et ralentit proportionnellement chaque connexion. Les hachages déjà stockés portent leurs propres paramètres et ne sont pas affectés."
+    "en": "3492bc25313f659a",
+    "text": "Le coût CPU et mémoire de scrypt pour un secret client, un jeton d'activation ou de réinitialisation, un code de récupération ou un mot de passe d'application NOUVELLEMENT enregistré, en puissance de deux : 15 correspond à N=32768, environ 70 ms par hachage sur une machine ordinaire. Le plancher de 14 est le moins que ce service écrira. L'augmenter ralentit l'attaque d'un stockage volé et chaque connexion en proportion. Les hachages déjà enregistrés portent leurs propres paramètres et ne sont pas affectés. Le mot de passe d'une personne n'est pas haché ainsi : son algorithme et son coût sont ceux de la politique de mots de passe (Annuaire > Politiques)."
   },
   "security.passwordHashR|label": {
     "en": "d7d901b7702608d7",
@@ -1108,8 +1108,8 @@
     "text": "Vérification de l’utilisateur"
   },
   "webauthn.userVerification|description": {
-    "en": "e0f3bd0371bd63c6",
-    "text": "`required` par défaut dans tous les modes (rcbj, 2026-10-09 ; c’était `preferred`). Indique si l’authentificateur doit vérifier la PERSONNE — un PIN, une empreinte digitale, un visage — en plus de prouver la possession de la clé. **C’EST LE SEUL PARAMÈTRE DE CÉRÉMONIE QUE CE SERVICE APPLIQUE AUSSI** : `required` est envoyé au navigateur et l’indicateur UV des données de l’authentificateur est ensuite VÉRIFIÉ au retour de la cérémonie, si bien qu’un authentificateur qui n’a pas vérifié est refusé plutôt qu’accepté en silence. **Le relever ne change pas ce qu’une session REVENDIQUE.** Une connexion sans mot de passe enregistre toujours `amr [\"hwk\"]` et `acr \"1\"` — un seul facteur — même avec `required`, car RFC 8176 n’a aucune valeur pour *l’authentificateur a vérifié l’utilisateur* que ce service pourrait honnêtement affirmer, et inventer la revendication plus forte est exactement le faux-semblant que ce profil refuse partout ailleurs. `/admin/webauthn` l’indique sur la page."
+    "en": "eb2931954812147c",
+    "text": "`required` par défaut dans tous les modes (rcbj, 2026-10-09 ; c’était `preferred`). Indique si l’authentificateur doit vérifier la PERSONNE — un PIN, une empreinte digitale, un visage — en plus de prouver la possession de la clé. **CE SERVICE L’APPLIQUE AUSSI**, comme il le fait pour les algorithmes proposés et le RP ID : `required` est envoyé au navigateur et l’indicateur UV des données de l’authentificateur est ensuite VÉRIFIÉ au retour de la cérémonie, si bien qu’un authentificateur qui n’a pas vérifié est refusé plutôt qu’accepté en silence. **Le relever ne change pas ce qu’une session REVENDIQUE.** Une connexion sans mot de passe enregistre toujours `amr [\"hwk\"]` et `acr \"1\"` — un seul facteur — même avec `required`, car RFC 8176 n’a aucune valeur pour *l’authentificateur a vérifié l’utilisateur* que ce service pourrait honnêtement affirmer, et inventer la revendication plus forte est exactement le faux-semblant que ce profil refuse partout ailleurs. `/admin/webauthn` l’indique sur la page."
   },
   "webauthn.attestation|label": {
     "en": "13af8631fdb53757",
@@ -1620,8 +1620,8 @@
     "text": "Délai de démarrage d’un worker de requêtes (ms)"
   },
   "workers.startTimeoutMs|description": {
-    "en": "81d7608fc4c1da1f",
-    "text": "Combien de temps un worker de requêtes ou de surface peut mettre à initialiser son état (le stockage, les clés, les lignes émises et la coordination) avant de signaler qu’il n’a pas pu démarrer. Après trois échecs consécutifs, le pool cesse de créer des workers jusqu’à workers.giveUpRetryMs, puis en essaie un ; tant qu’il n’est pas prêt, les requêtes restent dans le processus frontal. Augmentez-le là où le démarrage d’un worker est lent — un jeu de clés de domaine volumineux que chaque démarrage recertifie, une base de données froide (#311)."
+    "en": "5d23a7adb4e81ee3",
+    "text": "Durée pendant laquelle un worker de requêtes ou de surfaces peut mettre en place son état (le stockage, les clés, les lignes émises et la coordination) avant que le pool cesse de l'attendre. Un worker qui la dépasse est LENT, pas en échec : on le laisse terminer et il rejoint le pool lorsqu'il est prêt (#820). Ce n'est qu'au quadruple de cette durée qu'il signale qu'il n'a pas pu démarrer ; trois échecs de ce type d'affilée et le pool cesse de créer des workers jusqu'à workers.giveUpRetryMs, puis en essaie un ; tant qu'il n'est pas prêt, les requêtes restent dans le processus frontal. Augmentez-la là où le démarrage d'un worker est lent — un grand jeu de clés de domaine que chaque démarrage recertifie, une base de données froide (#311)."
   },
   "workers.startTimeoutMs|restartReason": {
     "en": "7ac1de67a7c566c0",
@@ -1776,8 +1776,8 @@
     "text": "Read-your-write entre les workers de requêtes"
   },
   "workers.readYourWrite|description": {
-    "en": "c96ff2ed1ab0bfce",
-    "text": "Indique si un worker de requêtes doit rattraper ce que les autres workers ont écrit avant de servir. La coordination fait CONVERGER les workers — mesuré entre une demi-seconde et une seconde — et la convergence n’est pas du read-your-write : avec ce paramètre désactivé, un appelant qui écrit via un worker et lit via un autre peut recevoir la réponse d’un worker qui n’a pas rattrapé son retard, ce qui compte surtout pour les surfaces en fanout (SCIM, XACML, l’API de gestion), précisément parce que des requêtes consécutives y atterrissent n’importe où. Activé, le pool compte les écritures et un worker en retard se met à jour avant de répondre — le coût porte donc sur la première lecture après une écriture sur chaque worker, et sur rien tant que rien n’est écrit. ACTIVÉ PAR DÉFAUT depuis #364, lorsqu’un worker de requêtes est devenu la valeur par défaut : le thread frontal répond toujours à ce qui n’est jamais distribué, si bien qu’un appelant verrait sinon sa propre écriture disparaître entre deux requêtes. Il doit être activé pour un pool de surfaces (workers.surfaceCount)."
+    "en": "cb6bbc928d5c9d50",
+    "text": "Indique si un worker de requêtes doit rattraper les écritures faites par les autres workers avant de servir. La coordination fait converger les workers en une demi-seconde à une seconde, et ce n'est pas du read-your-write. `session` (par défaut) : une requête qui porte un cookie de session, le cookie du pool ou un flux de connexion dans son adresse n'attend que les écritures des requêtes antérieures qui portaient la même chose, ainsi que les écritures propres du processus frontal ; une requête qui n'en porte aucun, comme une requête de jeton venant du serveur d'un client, SCIM ou un appel à l'API de gestion avec un jeton bearer, attend toutes les écritures auxquelles il a été répondu avant elle. Un navigateur voit donc ses propres écritures immédiatement, et celles d'un autre navigateur ou client seulement une fois les workers convergés. `global` : chaque requête attend toutes les écritures auxquelles il a été répondu avant elle, ce qui coûte des dizaines de millisecondes par requête sous charge. `off` : aucune requête n'attend, et un appelant peut ne pas trouver sa propre écriture. `true` signifie `session` et `false` signifie `off`. Il ne doit pas être désactivé pour un pool de surfaces (workers.surfaceCount)."
   },
   "workers.socketDir|label": {
     "en": "92c5ff3b54b1efde",
@@ -5704,8 +5704,8 @@
     "text": "Rafraîchissement de la page de connexion par portefeuille (s)"
   },
   "oid4vp.signInPollS|description": {
-    "en": "439aa4f77625ebb1",
-    "text": "La fréquence à laquelle la page du code QR (oid4vp.signInCrossDevice) se recharge pendant qu’un portefeuille sur un autre appareil répond. C’est un rafraîchissement <meta> et non un script ; chaque rechargement est donc une page entière. La page de la Digital Credentials API ne se recharge pas : un rechargement fermerait la boîte de dialogue du portefeuille du navigateur."
+    "en": "b248261723e71249",
+    "text": "La fréquence à laquelle la page du code QR (oid4vp.signInCrossDevice) demande si un portefeuille sur un autre appareil a répondu : son script interroge POST /authn-api/wallet/{state}/status toutes les tant de secondes, sans recharger la page (#574 ; c’était un rafraîchissement <meta> jusque-là). La page de la Digital Credentials API n’interroge pas à ce rythme : elle attend la réponse de la boîte de dialogue du portefeuille du navigateur."
   },
   "oid4vp.signInCrossDevice|label": {
     "en": "20ef4bd658348a2f",
@@ -9564,8 +9564,8 @@
     "text": "Durée de conservation des exécutions (heures)"
   },
   "scheduler.runHistoryHours|description": {
-    "en": "0f3e63d5914e2685",
-    "text": "Chaque exécution terminée dans ce nombre d’heures est conservée — y compris une exécution en échec — en plus des scheduler.runHistoryCount dernières exécutions de chaque tâche, selon ce qui en conserve le plus. Une tâche qui s’exécute chaque minute conserve donc une journée d’exécutions dans chaque domaine où elle s’exécute. 0 ne conserve que le nombre."
+    "en": "5c283870d0319ed7",
+    "text": "Toute exécution terminée depuis moins de ce nombre d'heures est conservée — y compris une exécution en échec — en plus des scheduler.runHistoryCount dernières exécutions de chaque tâche, selon ce qui en conserve le plus. Une tâche qui s'exécute chaque minute conserve donc une heure d'exécutions dans chaque domaine où elle s'exécute, ou ses scheduler.runHistoryCount dernières si c'est davantage. 0 ne conserve que le nombre."
   },
   "scheduler.disabledJobs|label": {
     "en": "a33937a2bd564b6d",

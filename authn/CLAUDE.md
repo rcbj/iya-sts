@@ -2112,6 +2112,27 @@ fixed at start: turning it off while running is refused, because a start
 that skipped the session bodies would then answer committed sessions as
 absent. `tests/session_window.js` holds it.
 
+**A CONSOLE PAGE MAY NOT BE "A WALK THAT NEEDS EVERY SESSION" (2026-10-22,
+#820).** On 8081, Monitoring → Sessions opened all ~470,000 sealed bodies,
+one synchronous read each, on a request worker, and held it for two minutes.
+Through read-your-write every other worker waited behind it, and sign-ins and
+refreshes stopped.
+- **Monitoring → Sessions** pages with `liveSessionPageAsync()`, on the
+  driver's read pool, and opens only the page's bodies:
+  - `session.liveTotals` and `session.livePage` count and page the live
+    rows, newest first;
+  - a search is an exact username, subject or session id, matched by digest;
+  - the protocol filter narrows the page.
+- **Monitoring → Metrics** draws the counts and the newest 100.
+- **A person's page** reads only that person's sessions
+  (`sessionsHeldUnder()`).
+- **The Users page**, when the index count fails, draws "—" and does not
+  walk.
+- With the window off, nothing changes.
+
+`tests/console_sessions_index.js`. A sign-out's inventory (`logout.ts`'s
+`sessionsByKey()`) still walks every session, deliberately; see that file.
+
 **THE EVENT SAYS `policy` AND NOT `user`.** `caep.ts`'s rule for a `revoked` act
 was `admin` when an administrator did it and `user` otherwise, and an expiry is
 neither — a lifetime this service configured ran out, which is what CAEP section

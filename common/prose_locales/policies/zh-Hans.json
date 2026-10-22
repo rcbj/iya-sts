@@ -36,8 +36,8 @@
     "text": "个密码"
   },
   "password.FIELDS.history.what": {
-    "en": "3d9f899c6a28ad30",
-    "text": "记住并拒绝一个人的多少个旧密码。只要此值大于 0，当前密码也总会被拒绝，因此 5 表示新密码不得是最近六个密码中的任何一个。0 关闭此规则。这是该草案的属性，含义与草案相同。每个记住的密码都以其原本存储时的 scrypt 哈希形式保存在此人自己条目的 pwdHistory 中，检查新密码时每个记住的密码需要一次哈希比较。"
+    "en": "06be7ed15512bb42",
+    "text": "记住并拒绝一个人以前的多少个密码。只要此值大于 0，当前密码也总是被拒绝，所以 5 表示新密码不能是最近六个中的任何一个。0 关闭此规则。草案的属性，取草案的含义。每个记住的密码都按其原来存储时的哈希（argon2id 或 scrypt）保存在此人自己条目的 pwdHistory 中，检查一个新密码对每个记住的密码各需一次哈希比较。"
   },
   "password.FIELDS.minSymbols.label": {
     "en": "95033032ad043277",
@@ -79,6 +79,74 @@
     "en": "9abc8e368dbfdf05",
     "text": "本服务自行生成的密码有多长——用于从控制台或 /admin-api 创建的新用户、操作员的 Generate，以及产品模式的引导账户。它必须至少等于最小长度，并且至少为符号数的两倍加二。从 90 个字符的字母表中取二十个字符约为 130 位。"
   },
+  "password.FIELDS.hashAlgorithm.label": {
+    "en": "3864bfd74ab51369",
+    "text": "密码哈希算法"
+  },
+  "password.FIELDS.hashAlgorithm.what": {
+    "en": "9f6e2faa116ebe94",
+    "text": "新存储的密码所用的哈希算法：scrypt（RFC 7914，默认）或 argon2id（RFC 9106，OWASP Password Storage Cheat Sheet 的首选）。已存储的哈希注明其自身的算法和参数，并继续可以验证；不是此算法和这些参数的哈希会在此人下一次经过验证的登录时重新计算。客户端密钥、激活令牌、恢复代码和应用密码不是密码，仍使用 scrypt。"
+  },
+  "password.FIELDS.argon2Memory.label": {
+    "en": "f56cee65f89ca6d4",
+    "text": "argon2id 内存"
+  },
+  "password.FIELDS.argon2Memory.unit": {
+    "en": "97ee1b8dd0d5456b",
+    "text": "KiB"
+  },
+  "password.FIELDS.argon2Memory.what": {
+    "en": "ec649d8291c32776",
+    "text": "一次 argon2id 哈希使用的内存，以 KiB 计（m）。19456 KiB（19 MiB）是 OWASP 的最低值，也是本服务写入的最低值。提高它会让攻击被盗存储更慢，每次登录也会多用这么多内存。"
+  },
+  "password.FIELDS.argon2Iterations.label": {
+    "en": "7d86f5ad8bfeae28",
+    "text": "argon2id 迭代次数"
+  },
+  "password.FIELDS.argon2Iterations.unit": {
+    "en": "2c28ec094b830e09",
+    "text": "遍"
+  },
+  "password.FIELDS.argon2Iterations.what": {
+    "en": "b04ad660d2d130b6",
+    "text": "argon2id 在其内存上执行的遍数（t）。在 19 MiB 时，2 是 OWASP 的最低值；每多一遍就再增加同样的时间。"
+  },
+  "password.FIELDS.argon2Parallelism.label": {
+    "en": "e1eb312244fb28cf",
+    "text": "argon2id 并行度"
+  },
+  "password.FIELDS.argon2Parallelism.unit": {
+    "en": "ff1789b2348ddbc2",
+    "text": "通道"
+  },
+  "password.FIELDS.argon2Parallelism.what": {
+    "en": "e5321dcccf2989ad",
+    "text": "argon2id 将其内存划分成的通道数（p）。它是哈希的一部分，而不是线程数：无论这里写多少，node 都在一个线程上计算哈希。1 是 OWASP 的值。"
+  },
+  "password.FIELDS.scryptLogN.label": {
+    "en": "91d752051cc3e278",
+    "text": "scrypt 成本（N 的 log2）"
+  },
+  "password.FIELDS.scryptLogN.what": {
+    "en": "d6b7b8f956d8c0b0",
+    "text": "算法为 scrypt 时，新存储密码的 scrypt CPU 与内存成本，以 2 的幂表示：15（默认值）即 N=32768。OWASP 的表将它与并行度配对：2^17 配 p=1，2^16 配 p=2，2^15 配 p=3，2^14 配 p=5，或 2^13 配 p=10。默认值 2^15 配 p=1 低于该表。"
+  },
+  "password.FIELDS.scryptBlockSize.label": {
+    "en": "7b7e7b5de9b8be58",
+    "text": "scrypt 块大小（r）"
+  },
+  "password.FIELDS.scryptBlockSize.what": {
+    "en": "f0c104745b77d30a",
+    "text": "算法为 scrypt 时，新存储密码的 scrypt 块大小。内存约为 128 × N × r 字节；8 是 RFC 7914 和 OWASP 给出的值。"
+  },
+  "password.FIELDS.scryptParallelism.label": {
+    "en": "0aa3282295d9521b",
+    "text": "scrypt 并行度（p）"
+  },
+  "password.FIELDS.scryptParallelism.what": {
+    "en": "b088d02f4ec32169",
+    "text": "算法为 scrypt 时，新存储密码的 scrypt 并行度。Node 在一个线程上计算它，因此更高的值耗费的是时间而不是核心；成本的说明列出了 OWASP 接受的组合。"
+  },
   "password.SCHEMA.objectClasses.pwdPolicy.what": {
     "en": "ab642ea5cb282745",
     "text": "draft-behera-ldap-password-policy 中用于密码策略条目的类。`pwdAttribute` 指明该策略管辖的属性，在这里始终为 `userPassword`。"
@@ -96,8 +164,8 @@
     "text": "本服务将设置的最短密码，按字符计数（Unicode 码位，因此一个表情符号算一个字符）。该属性来自 draft-behera-ldap-password-policy。默认值为十二；NIST SP 800-63B 要求至少 8 个字符，在密码是唯一因素时要求 15 个。"
   },
   "password.SCHEMA.attributes.pwdInHistory.what": {
-    "en": "3d9f899c6a28ad30",
-    "text": "记住并拒绝一个人的多少个旧密码。只要此值大于 0，当前密码也总会被拒绝，因此 5 表示新密码不得是最近六个密码中的任何一个。0 关闭此规则。这是该草案的属性，含义与草案相同。每个记住的密码都以其原本存储时的 scrypt 哈希形式保存在此人自己条目的 pwdHistory 中，检查新密码时每个记住的密码需要一次哈希比较。"
+    "en": "06be7ed15512bb42",
+    "text": "记住并拒绝一个人以前的多少个密码。只要此值大于 0，当前密码也总是被拒绝，所以 5 表示新密码不能是最近六个中的任何一个。0 关闭此规则。草案的属性，取草案的含义。每个记住的密码都按其原来存储时的哈希（argon2id 或 scrypt）保存在此人自己条目的 pwdHistory 中，检查一个新密码对每个记住的密码各需一次哈希比较。"
   },
   "password.SCHEMA.attributes.stsPwdMinSymbols.what": {
     "en": "f9154c103bc3422d",
@@ -115,13 +183,41 @@
     "en": "9abc8e368dbfdf05",
     "text": "本服务自行生成的密码有多长——用于从控制台或 /admin-api 创建的新用户、操作员的 Generate，以及产品模式的引导账户。它必须至少等于最小长度，并且至少为符号数的两倍加二。从 90 个字符的字母表中取二十个字符约为 130 位。"
   },
+  "password.SCHEMA.attributes.stsPwdHashAlgorithm.what": {
+    "en": "9f6e2faa116ebe94",
+    "text": "新存储的密码所用的哈希算法：scrypt（RFC 7914，默认）或 argon2id（RFC 9106，OWASP Password Storage Cheat Sheet 的首选）。已存储的哈希注明其自身的算法和参数，并继续可以验证；不是此算法和这些参数的哈希会在此人下一次经过验证的登录时重新计算。客户端密钥、激活令牌、恢复代码和应用密码不是密码，仍使用 scrypt。"
+  },
+  "password.SCHEMA.attributes.stsPwdArgon2Memory.what": {
+    "en": "ec649d8291c32776",
+    "text": "一次 argon2id 哈希使用的内存，以 KiB 计（m）。19456 KiB（19 MiB）是 OWASP 的最低值，也是本服务写入的最低值。提高它会让攻击被盗存储更慢，每次登录也会多用这么多内存。"
+  },
+  "password.SCHEMA.attributes.stsPwdArgon2Iterations.what": {
+    "en": "b04ad660d2d130b6",
+    "text": "argon2id 在其内存上执行的遍数（t）。在 19 MiB 时，2 是 OWASP 的最低值；每多一遍就再增加同样的时间。"
+  },
+  "password.SCHEMA.attributes.stsPwdArgon2Parallelism.what": {
+    "en": "e5321dcccf2989ad",
+    "text": "argon2id 将其内存划分成的通道数（p）。它是哈希的一部分，而不是线程数：无论这里写多少，node 都在一个线程上计算哈希。1 是 OWASP 的值。"
+  },
+  "password.SCHEMA.attributes.stsPwdScryptLogN.what": {
+    "en": "d6b7b8f956d8c0b0",
+    "text": "算法为 scrypt 时，新存储密码的 scrypt CPU 与内存成本，以 2 的幂表示：15（默认值）即 N=32768。OWASP 的表将它与并行度配对：2^17 配 p=1，2^16 配 p=2，2^15 配 p=3，2^14 配 p=5，或 2^13 配 p=10。默认值 2^15 配 p=1 低于该表。"
+  },
+  "password.SCHEMA.attributes.stsPwdScryptBlockSize.what": {
+    "en": "f0c104745b77d30a",
+    "text": "算法为 scrypt 时，新存储密码的 scrypt 块大小。内存约为 128 × N × r 字节；8 是 RFC 7914 和 OWASP 给出的值。"
+  },
+  "password.SCHEMA.attributes.stsPwdScryptParallelism.what": {
+    "en": "b088d02f4ec32169",
+    "text": "算法为 scrypt 时，新存储密码的 scrypt 并行度。Node 在一个线程上计算它，因此更高的值耗费的是时间而不是核心；成本的说明列出了 OWASP 接受的组合。"
+  },
   "password.SCHEMA.attributes.description.what": {
     "en": "93538e6b201100c5",
     "text": "此配置文件的用途，留给下一个人看。"
   },
   "password.SCHEMA.personAttributes.pwdHistory.what": {
-    "en": "a057113a3f0da3b5",
-    "text": "每个记住的旧密码一个值，采用草案的格式 `time#syntaxOID#length#data`——其中 data 是该密码存储时所用的 scrypt 哈希，绝不是密码本身。由本服务维护，在 LDAP 添加或修改时会被拒绝，因为任何人都能编辑的历史记录也是任何人都能清空的历史记录。"
+    "en": "e800109ca0c5e386",
+    "text": "每个记住的以前密码一个值，采用草案的形式 `time#syntaxOID#length#data`——数据是该密码存储时的哈希，绝不是密码本身。由本服务维护，在 LDAP add 或 modify 中被拒绝，因为任何人都能编辑的历史就是任何人都能清空的历史。"
   },
   "password.SCHEMA.personAttributes.pwdChangedTime.what": {
     "en": "3c870b2e0c097f36",

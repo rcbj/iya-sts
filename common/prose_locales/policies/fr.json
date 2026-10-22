@@ -36,8 +36,8 @@
     "text": "mots de passe"
   },
   "password.FIELDS.history.what": {
-    "en": "3d9f899c6a28ad30",
-    "text": "Combien des ANCIENS mots de passe d’une personne sont mémorisés et refusés. Le mot de passe actuel est toujours refusé lui aussi tant que cette valeur est supérieure à 0 ; 5 signifie donc qu’un nouveau mot de passe ne peut être aucun des six derniers. 0 désactive la règle. C’est l’attribut du brouillon, avec le sens que lui donne le brouillon. Chaque mot de passe mémorisé est conservé sous la forme du hachage scrypt sous lequel il était déjà stocké, dans pwdHistory sur l’entrée de la personne elle-même, et vérifier un nouveau mot de passe coûte une comparaison de hachage par mot de passe mémorisé."
+    "en": "06be7ed15512bb42",
+    "text": "Le nombre de mots de passe PRÉCÉDENTS d'une personne qui sont mémorisés et refusés. Le mot de passe actuel est toujours refusé aussi tant que cette valeur est supérieure à 0 ; 5 signifie donc qu'un nouveau mot de passe ne peut être aucun des six derniers. 0 désactive la règle. L'attribut du brouillon, avec le sens du brouillon. Chaque mot de passe mémorisé est conservé sous le hachage avec lequel il était déjà enregistré (argon2id ou scrypt), dans pwdHistory sur l'entrée de la personne elle-même, et vérifier un nouveau mot de passe coûte une comparaison de hachage par mot de passe mémorisé."
   },
   "password.FIELDS.minSymbols.label": {
     "en": "95033032ad043277",
@@ -79,6 +79,74 @@
     "en": "9abc8e368dbfdf05",
     "text": "La longueur d’un mot de passe que ce service INVENTE — pour un nouvel utilisateur créé depuis la console ou /admin-api, l’action Générer d’un opérateur, et le compte d’amorçage du mode produit. Elle doit être au moins égale à la longueur minimale et au moins égale à deux fois le nombre de symboles plus deux. Vingt caractères tirés d’un alphabet de 90 caractères représentent environ 130 bits."
   },
+  "password.FIELDS.hashAlgorithm.label": {
+    "en": "3864bfd74ab51369",
+    "text": "Algorithme de hachage des mots de passe"
+  },
+  "password.FIELDS.hashAlgorithm.what": {
+    "en": "9f6e2faa116ebe94",
+    "text": "L'algorithme avec lequel un mot de passe nouvellement enregistré est haché : scrypt (RFC 7914), par défaut, ou argon2id (RFC 9106, le premier choix de l'OWASP Password Storage Cheat Sheet). Un hachage enregistré indique son propre algorithme et ses paramètres et continue d'être vérifié ; un hachage qui n'utilise pas cet algorithme avec ces paramètres est haché à nouveau lors de la prochaine connexion vérifiée de la personne. Les secrets client, jetons d'activation, codes de récupération et mots de passe d'application ne sont pas des mots de passe et restent en scrypt."
+  },
+  "password.FIELDS.argon2Memory.label": {
+    "en": "f56cee65f89ca6d4",
+    "text": "Mémoire argon2id"
+  },
+  "password.FIELDS.argon2Memory.unit": {
+    "en": "97ee1b8dd0d5456b",
+    "text": "Kio"
+  },
+  "password.FIELDS.argon2Memory.what": {
+    "en": "ec649d8291c32776",
+    "text": "La mémoire utilisée par un hachage argon2id, en kibioctets (m). 19456 Kio (19 Mio) est le minimum de l'OWASP et le moins que ce service écrira. L'augmenter ralentit l'attaque d'un stockage volé, et chaque connexion utilise d'autant plus de mémoire."
+  },
+  "password.FIELDS.argon2Iterations.label": {
+    "en": "7d86f5ad8bfeae28",
+    "text": "Itérations argon2id"
+  },
+  "password.FIELDS.argon2Iterations.unit": {
+    "en": "2c28ec094b830e09",
+    "text": "passes"
+  },
+  "password.FIELDS.argon2Iterations.what": {
+    "en": "b04ad660d2d130b6",
+    "text": "Le nombre de passes qu'argon2id effectue sur sa mémoire (t). 2 est le minimum de l'OWASP à 19 Mio ; chaque passe ajoute à nouveau le même temps."
+  },
+  "password.FIELDS.argon2Parallelism.label": {
+    "en": "e1eb312244fb28cf",
+    "text": "Parallélisme argon2id"
+  },
+  "password.FIELDS.argon2Parallelism.unit": {
+    "en": "ff1789b2348ddbc2",
+    "text": "voies"
+  },
+  "password.FIELDS.argon2Parallelism.what": {
+    "en": "e5321dcccf2989ad",
+    "text": "Le nombre de voies entre lesquelles argon2id divise sa mémoire (p). Il fait partie du hachage, ce n'est pas un nombre de threads : node calcule un hachage sur un seul thread quelle que soit cette valeur. 1 est la valeur de l'OWASP."
+  },
+  "password.FIELDS.scryptLogN.label": {
+    "en": "91d752051cc3e278",
+    "text": "Coût scrypt (log2 de N)"
+  },
+  "password.FIELDS.scryptLogN.what": {
+    "en": "d6b7b8f956d8c0b0",
+    "text": "Le coût CPU et mémoire de scrypt pour un mot de passe nouvellement enregistré lorsque l'algorithme est scrypt, en puissance de deux : 15 (la valeur par défaut) correspond à N=32768. Le tableau de l'OWASP l'associe au parallélisme : 2^17 avec p=1, 2^16 avec p=2, 2^15 avec p=3, 2^14 avec p=5, ou 2^13 avec p=10. La valeur par défaut, 2^15 avec p=1, est en dessous."
+  },
+  "password.FIELDS.scryptBlockSize.label": {
+    "en": "7b7e7b5de9b8be58",
+    "text": "Taille de bloc scrypt (r)"
+  },
+  "password.FIELDS.scryptBlockSize.what": {
+    "en": "f0c104745b77d30a",
+    "text": "La taille de bloc de scrypt pour un mot de passe nouvellement enregistré lorsque l'algorithme est scrypt. La mémoire est d'environ 128 × N × r octets ; 8 est la valeur donnée par la RFC 7914 et l'OWASP."
+  },
+  "password.FIELDS.scryptParallelism.label": {
+    "en": "0aa3282295d9521b",
+    "text": "Parallélisme scrypt (p)"
+  },
+  "password.FIELDS.scryptParallelism.what": {
+    "en": "b088d02f4ec32169",
+    "text": "Le parallélisme de scrypt pour un mot de passe nouvellement enregistré lorsque l'algorithme est scrypt. Node le calcule sur un seul thread, donc une valeur plus élevée coûte du temps plutôt que des cœurs ; la description du coût liste les paires acceptées par l'OWASP."
+  },
   "password.SCHEMA.objectClasses.pwdPolicy.what": {
     "en": "ab642ea5cb282745",
     "text": "La classe de draft-behera-ldap-password-policy pour une entrée de politique de mot de passe. `pwdAttribute` nomme l’attribut que régit la politique, et ici c’est toujours `userPassword`."
@@ -96,8 +164,8 @@
     "text": "Le mot de passe le plus court que ce service acceptera de définir, compté en caractères (points de code Unicode ; un emoji compte donc pour un). L’attribut est celui de draft-behera-ldap-password-policy. La valeur par défaut est douze ; NIST SP 800-63B demande au moins 8, et 15 lorsqu’un mot de passe est le seul facteur."
   },
   "password.SCHEMA.attributes.pwdInHistory.what": {
-    "en": "3d9f899c6a28ad30",
-    "text": "Combien des ANCIENS mots de passe d’une personne sont mémorisés et refusés. Le mot de passe actuel est toujours refusé lui aussi tant que cette valeur est supérieure à 0 ; 5 signifie donc qu’un nouveau mot de passe ne peut être aucun des six derniers. 0 désactive la règle. C’est l’attribut du brouillon, avec le sens que lui donne le brouillon. Chaque mot de passe mémorisé est conservé sous la forme du hachage scrypt sous lequel il était déjà stocké, dans pwdHistory sur l’entrée de la personne elle-même, et vérifier un nouveau mot de passe coûte une comparaison de hachage par mot de passe mémorisé."
+    "en": "06be7ed15512bb42",
+    "text": "Le nombre de mots de passe PRÉCÉDENTS d'une personne qui sont mémorisés et refusés. Le mot de passe actuel est toujours refusé aussi tant que cette valeur est supérieure à 0 ; 5 signifie donc qu'un nouveau mot de passe ne peut être aucun des six derniers. 0 désactive la règle. L'attribut du brouillon, avec le sens du brouillon. Chaque mot de passe mémorisé est conservé sous le hachage avec lequel il était déjà enregistré (argon2id ou scrypt), dans pwdHistory sur l'entrée de la personne elle-même, et vérifier un nouveau mot de passe coûte une comparaison de hachage par mot de passe mémorisé."
   },
   "password.SCHEMA.attributes.stsPwdMinSymbols.what": {
     "en": "f9154c103bc3422d",
@@ -115,13 +183,41 @@
     "en": "9abc8e368dbfdf05",
     "text": "La longueur d’un mot de passe que ce service INVENTE — pour un nouvel utilisateur créé depuis la console ou /admin-api, l’action Générer d’un opérateur, et le compte d’amorçage du mode produit. Elle doit être au moins égale à la longueur minimale et au moins égale à deux fois le nombre de symboles plus deux. Vingt caractères tirés d’un alphabet de 90 caractères représentent environ 130 bits."
   },
+  "password.SCHEMA.attributes.stsPwdHashAlgorithm.what": {
+    "en": "9f6e2faa116ebe94",
+    "text": "L'algorithme avec lequel un mot de passe nouvellement enregistré est haché : scrypt (RFC 7914), par défaut, ou argon2id (RFC 9106, le premier choix de l'OWASP Password Storage Cheat Sheet). Un hachage enregistré indique son propre algorithme et ses paramètres et continue d'être vérifié ; un hachage qui n'utilise pas cet algorithme avec ces paramètres est haché à nouveau lors de la prochaine connexion vérifiée de la personne. Les secrets client, jetons d'activation, codes de récupération et mots de passe d'application ne sont pas des mots de passe et restent en scrypt."
+  },
+  "password.SCHEMA.attributes.stsPwdArgon2Memory.what": {
+    "en": "ec649d8291c32776",
+    "text": "La mémoire utilisée par un hachage argon2id, en kibioctets (m). 19456 Kio (19 Mio) est le minimum de l'OWASP et le moins que ce service écrira. L'augmenter ralentit l'attaque d'un stockage volé, et chaque connexion utilise d'autant plus de mémoire."
+  },
+  "password.SCHEMA.attributes.stsPwdArgon2Iterations.what": {
+    "en": "b04ad660d2d130b6",
+    "text": "Le nombre de passes qu'argon2id effectue sur sa mémoire (t). 2 est le minimum de l'OWASP à 19 Mio ; chaque passe ajoute à nouveau le même temps."
+  },
+  "password.SCHEMA.attributes.stsPwdArgon2Parallelism.what": {
+    "en": "e5321dcccf2989ad",
+    "text": "Le nombre de voies entre lesquelles argon2id divise sa mémoire (p). Il fait partie du hachage, ce n'est pas un nombre de threads : node calcule un hachage sur un seul thread quelle que soit cette valeur. 1 est la valeur de l'OWASP."
+  },
+  "password.SCHEMA.attributes.stsPwdScryptLogN.what": {
+    "en": "d6b7b8f956d8c0b0",
+    "text": "Le coût CPU et mémoire de scrypt pour un mot de passe nouvellement enregistré lorsque l'algorithme est scrypt, en puissance de deux : 15 (la valeur par défaut) correspond à N=32768. Le tableau de l'OWASP l'associe au parallélisme : 2^17 avec p=1, 2^16 avec p=2, 2^15 avec p=3, 2^14 avec p=5, ou 2^13 avec p=10. La valeur par défaut, 2^15 avec p=1, est en dessous."
+  },
+  "password.SCHEMA.attributes.stsPwdScryptBlockSize.what": {
+    "en": "f0c104745b77d30a",
+    "text": "La taille de bloc de scrypt pour un mot de passe nouvellement enregistré lorsque l'algorithme est scrypt. La mémoire est d'environ 128 × N × r octets ; 8 est la valeur donnée par la RFC 7914 et l'OWASP."
+  },
+  "password.SCHEMA.attributes.stsPwdScryptParallelism.what": {
+    "en": "b088d02f4ec32169",
+    "text": "Le parallélisme de scrypt pour un mot de passe nouvellement enregistré lorsque l'algorithme est scrypt. Node le calcule sur un seul thread, donc une valeur plus élevée coûte du temps plutôt que des cœurs ; la description du coût liste les paires acceptées par l'OWASP."
+  },
   "password.SCHEMA.attributes.description.what": {
     "en": "93538e6b201100c5",
     "text": "À quoi sert le profil, pour la personne suivante."
   },
   "password.SCHEMA.personAttributes.pwdHistory.what": {
-    "en": "a057113a3f0da3b5",
-    "text": "Une valeur par ancien mot de passe mémorisé, sous la forme du brouillon `time#syntaxOID#length#data` — les données étant le hachage scrypt sous lequel ce mot de passe était stocké, jamais le mot de passe. Tenu à jour par ce service et refusé lors d’un add ou d’un modify LDAP, car un historique que n’importe qui peut modifier est un historique que n’importe qui peut vider."
+    "en": "e800109ca0c5e386",
+    "text": "Une valeur par mot de passe précédent mémorisé, sous la forme du brouillon `time#syntaxOID#length#data` — les données étant le hachage sous lequel ce mot de passe était enregistré, jamais le mot de passe. Tenu par ce service et refusé lors d'un ajout ou d'une modification LDAP, car un historique que n'importe qui peut modifier est un historique que n'importe qui peut vider."
   },
   "password.SCHEMA.personAttributes.pwdChangedTime.what": {
     "en": "3c870b2e0c097f36",

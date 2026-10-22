@@ -53,8 +53,9 @@ Broker API's FetchJWTSVID once the leader has attested the workload it names.
 Streams stay in the leader.
 
 `workers.dispatch` (default `*`, everything) says what goes to a worker, and
-`workers.readYourWrite` (default on) makes a worker catch up with what the
-leader wrote before it answers. Every worker is a whole second copy of the
+`workers.readYourWrite` (default `session`) makes a worker catch up with the
+writes a request depends on before it answers; [Where a request
+waits](request-path.md) follows a request through every wait on the way. Every worker is a whole second copy of the
 service's memory, so one is the default; add more only where the node has
 the cores to use them.
 

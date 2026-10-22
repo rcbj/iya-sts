@@ -19,7 +19,11 @@
 //   W2. an entry the window has dropped is asked of the store again;
 //   W3. an entry at that key that no longer carries the UUID is a miss, and
 //       the store's answer wins;
-//   W4. a UUID held only as an ALIAS is asked of the store every time.
+//   W4. a UUID held only as an ALIAS is asked of the store every time;
+//   W5. a person read BY DN is then found by UUID without asking the store
+//       (2026-10-21: a refresh reads both ways round);
+//   W6. a person warmed by name (`helpers.warmPeopleAsync()`, a refresh's
+//       warm-up) is then read by name without a synchronous question.
 //
 // In a child holding the directory as a windowed request worker over a
 // stand-in bridge that counts what it is asked.
@@ -38,7 +42,7 @@ const log = require('bunyan').createLogger({ name: 'windowed_entryuuid',
 
 const CHILD_FLAG = 'STS_TEST_WINDOWED_ENTRYUUID_CHILD';
 
-function inTheWorker(t) {
+async function inTheWorker(t) {
   log.debug('Entering inTheWorker().');
   const shared = require('./directory_window');
   const ldap = require('../ldap/ldap_server');
@@ -132,6 +136,37 @@ function inTheWorker(t) {
   t.check(asked() === a1 + 2,
           'W4. a UUID held only as an alias is asked of the store every ' +
           'time', String(asked() - a1));
+
+  const r = people[9];
+  const byDn = inRealm(function () {
+    // What the consent check reads a person by (`consentValuesOf()`).
+    return ldap.locateEntry(r.uid);
+  });
+  const b1 = asked();
+  const byUuid = inRealm(function () {
+    return ldap.entryByUuid('urn:uuid:' + r.uuid);
+  });
+  t.check(byDn && byUuid && byUuid.dn === byDn.dn && asked() === b1,
+          'W5. a person read by DN is then found by UUID without asking the ' +
+          'store', JSON.stringify({ asked: asked() - b1,
+            dn: byUuid && byUuid.dn }));
+
+  const helpers = require('../common/helpers');
+  const v = people[12];
+  const before6 = bridge.asked.length;
+  await inRealm(function () {
+    return helpers.warmPeopleAsync([v.uid]);
+  });
+  const warmAsked = bridge.asked.slice(before6);
+  const after6 = bridge.asked.length;
+  const byName = inRealm(function () {
+    return ldap.locateEntry(v.uid);
+  });
+  t.check(warmAsked.join(',') === 'byKeys' && byName && byName.stored &&
+          bridge.asked.length === after6,
+          'W6. a person warmed by name is then read by name with no ' +
+          'synchronous question', JSON.stringify({ warm: warmAsked,
+            after: bridge.asked.slice(after6) }));
   log.debug('Leaving inTheWorker().');
 }
 
@@ -146,16 +181,15 @@ function childMain() {
     }
   };
   let threw = '';
-  try {
-    inTheWorker(t);
-  } catch (e) {
+  inTheWorker(t).catch(function (e) {
     log.debug('Caught in childMain(): ' + ((e && e.message) || e));
     threw = (e && e.stack) || String(e);
-  }
-  fs.writeFileSync(process.env.PROBE_OUT,
-                   JSON.stringify({ seen: seen, threw: threw }));
-  log.debug('Leaving childMain().');
-  process.exit(0);
+  }).then(function () {
+    fs.writeFileSync(process.env.PROBE_OUT,
+                     JSON.stringify({ seen: seen, threw: threw }));
+    log.debug('Leaving childMain().');
+    process.exit(0);
+  });
 }
 
 function run(t) {

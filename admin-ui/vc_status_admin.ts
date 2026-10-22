@@ -146,16 +146,21 @@ class VcStatusAdmin {
   statusView(req: Req, query?: Json): Json {
     const { log, vcStatus, adminViews } = this.deps;
     log.debug("Entering VcStatusAdmin.statusView().");
-    const summary = vcStatus.summary(req);
-    const paged = adminViews.pagedRows(query || {}, summary.rows,
+    // THE PAGE BEFORE THE ROWS (2026-10-22, #820): the counts come from the
+    // status list's index, the paging from the count of live entries, and
+    // only the page's rows are built — where every live entry was built,
+    // sorted and then sliced.
+    const counted = vcStatus.counts();
+    const paging = adminViews.pagingOf(query || {}, counted.allocated,
                                        { noun: 'credentials' });
+    const summary = vcStatus.summary(req, { offset: paging.offset,
+                                            limit: paging.perPage });
     const out = Object.assign({}, summary, {
-      rows: paged.shown,
-      rowsPaging: adminViews.pagingJson(paged.paging)
+      rowsPaging: adminViews.pagingJson(paging)
     });
     log.debug("Leaving VcStatusAdmin.statusView(). " + summary.rows.length +
-              " row(s).");
-    return { json: out, paging: paged.paging };
+              " row(s) of " + counted.allocated + ".");
+    return { json: out, paging: paging };
   }
 
   // ---------------------------------------------------------------------------

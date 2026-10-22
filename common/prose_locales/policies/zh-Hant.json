@@ -36,8 +36,8 @@
     "text": "個密碼"
   },
   "password.FIELDS.history.what": {
-    "en": "3d9f899c6a28ad30",
-    "text": "記住並拒絕某人多少個「先前」的密碼。只要此值大於 0，目前的密碼也一律被拒絕，因此 5 表示新密碼不得是最近六個中的任何一個。0 會關閉此規則。這是該草案的屬性，含義與草案相同。每個記住的密碼都以其原本儲存時的 scrypt 雜湊保存在該人自身項目的 pwdHistory 中，檢查新密碼時每記住一個密碼就需一次雜湊比對。"
+    "en": "06be7ed15512bb42",
+    "text": "記住並拒絕一個人以前的多少個密碼。只要此值大於 0，目前的密碼也一律被拒絕，所以 5 表示新密碼不能是最近六個中的任何一個。0 關閉此規則。草案的屬性，取草案的含義。每個記住的密碼都以其原本儲存時的雜湊（argon2id 或 scrypt）保存在此人自己項目的 pwdHistory 中，檢查一個新密碼對每個記住的密碼各需一次雜湊比較。"
   },
   "password.FIELDS.minSymbols.label": {
     "en": "95033032ad043277",
@@ -79,6 +79,74 @@
     "en": "9abc8e368dbfdf05",
     "text": "本服務「自行產生」的密碼有多長——用於從主控台或 /admin-api 建立的新使用者、營運者的「產生」，以及產品模式的啟動帳戶。它必須至少等於最小長度，且至少為符號數的兩倍加二。從 90 個字元的字母表中取二十個字元約為 130 位元。"
   },
+  "password.FIELDS.hashAlgorithm.label": {
+    "en": "3864bfd74ab51369",
+    "text": "密碼雜湊演算法"
+  },
+  "password.FIELDS.hashAlgorithm.what": {
+    "en": "9f6e2faa116ebe94",
+    "text": "新儲存的密碼所用的雜湊演算法：scrypt（RFC 7914，預設）或 argon2id（RFC 9106，OWASP Password Storage Cheat Sheet 的首選）。已儲存的雜湊註明其本身的演算法與參數，並繼續可以驗證；不是此演算法與這些參數的雜湊，會在此人下一次經過驗證的登入時重新計算。用戶端密鑰、啟用權杖、復原碼與應用程式密碼不是密碼，仍使用 scrypt。"
+  },
+  "password.FIELDS.argon2Memory.label": {
+    "en": "f56cee65f89ca6d4",
+    "text": "argon2id 記憶體"
+  },
+  "password.FIELDS.argon2Memory.unit": {
+    "en": "97ee1b8dd0d5456b",
+    "text": "KiB"
+  },
+  "password.FIELDS.argon2Memory.what": {
+    "en": "ec649d8291c32776",
+    "text": "一次 argon2id 雜湊使用的記憶體，以 KiB 計（m）。19456 KiB（19 MiB）是 OWASP 的最低值，也是本服務寫入的最低值。提高它會讓攻擊遭竊的儲存區更慢，每次登入也會多用這麼多記憶體。"
+  },
+  "password.FIELDS.argon2Iterations.label": {
+    "en": "7d86f5ad8bfeae28",
+    "text": "argon2id 迭代次數"
+  },
+  "password.FIELDS.argon2Iterations.unit": {
+    "en": "2c28ec094b830e09",
+    "text": "遍"
+  },
+  "password.FIELDS.argon2Iterations.what": {
+    "en": "b04ad660d2d130b6",
+    "text": "argon2id 在其記憶體上執行的遍數（t）。在 19 MiB 時，2 是 OWASP 的最低值；每多一遍就再增加同樣的時間。"
+  },
+  "password.FIELDS.argon2Parallelism.label": {
+    "en": "e1eb312244fb28cf",
+    "text": "argon2id 平行度"
+  },
+  "password.FIELDS.argon2Parallelism.unit": {
+    "en": "ff1789b2348ddbc2",
+    "text": "通道"
+  },
+  "password.FIELDS.argon2Parallelism.what": {
+    "en": "e5321dcccf2989ad",
+    "text": "argon2id 將其記憶體劃分成的通道數（p）。它是雜湊的一部分，而不是執行緒數：無論這裡寫多少，node 都在一個執行緒上計算雜湊。1 是 OWASP 的值。"
+  },
+  "password.FIELDS.scryptLogN.label": {
+    "en": "91d752051cc3e278",
+    "text": "scrypt 成本（N 的 log2）"
+  },
+  "password.FIELDS.scryptLogN.what": {
+    "en": "d6b7b8f956d8c0b0",
+    "text": "演算法為 scrypt 時，新儲存密碼的 scrypt CPU 與記憶體成本，以 2 的冪表示：15（預設值）即 N=32768。OWASP 的表將它與平行度配對：2^17 配 p=1、2^16 配 p=2、2^15 配 p=3、2^14 配 p=5，或 2^13 配 p=10。預設值 2^15 配 p=1 低於該表。"
+  },
+  "password.FIELDS.scryptBlockSize.label": {
+    "en": "7b7e7b5de9b8be58",
+    "text": "scrypt 區塊大小（r）"
+  },
+  "password.FIELDS.scryptBlockSize.what": {
+    "en": "f0c104745b77d30a",
+    "text": "演算法為 scrypt 時，新儲存密碼的 scrypt 區塊大小。記憶體約為 128 × N × r 位元組；8 是 RFC 7914 與 OWASP 給出的值。"
+  },
+  "password.FIELDS.scryptParallelism.label": {
+    "en": "0aa3282295d9521b",
+    "text": "scrypt 平行度（p）"
+  },
+  "password.FIELDS.scryptParallelism.what": {
+    "en": "b088d02f4ec32169",
+    "text": "演算法為 scrypt 時，新儲存密碼的 scrypt 平行度。Node 在一個執行緒上計算它，因此更高的值耗費的是時間而不是核心；成本的說明列出了 OWASP 接受的組合。"
+  },
   "password.SCHEMA.objectClasses.pwdPolicy.what": {
     "en": "ab642ea5cb282745",
     "text": "draft-behera-ldap-password-policy 用於密碼原則項目的類別。`pwdAttribute` 指名原則所管轄的屬性，在此一律是 `userPassword`。"
@@ -96,8 +164,8 @@
     "text": "本服務會設定的最短密碼，以字元計算（Unicode 字碼指標，因此一個表情符號算一個）。此屬性來自 draft-behera-ldap-password-policy。預設為十二；NIST SP 800-63B 要求至少 8 個，若密碼是唯一因素則為 15 個。"
   },
   "password.SCHEMA.attributes.pwdInHistory.what": {
-    "en": "3d9f899c6a28ad30",
-    "text": "記住並拒絕某人多少個「先前」的密碼。只要此值大於 0，目前的密碼也一律被拒絕，因此 5 表示新密碼不得是最近六個中的任何一個。0 會關閉此規則。這是該草案的屬性，含義與草案相同。每個記住的密碼都以其原本儲存時的 scrypt 雜湊保存在該人自身項目的 pwdHistory 中，檢查新密碼時每記住一個密碼就需一次雜湊比對。"
+    "en": "06be7ed15512bb42",
+    "text": "記住並拒絕一個人以前的多少個密碼。只要此值大於 0，目前的密碼也一律被拒絕，所以 5 表示新密碼不能是最近六個中的任何一個。0 關閉此規則。草案的屬性，取草案的含義。每個記住的密碼都以其原本儲存時的雜湊（argon2id 或 scrypt）保存在此人自己項目的 pwdHistory 中，檢查一個新密碼對每個記住的密碼各需一次雜湊比較。"
   },
   "password.SCHEMA.attributes.stsPwdMinSymbols.what": {
     "en": "f9154c103bc3422d",
@@ -115,13 +183,41 @@
     "en": "9abc8e368dbfdf05",
     "text": "本服務「自行產生」的密碼有多長——用於從主控台或 /admin-api 建立的新使用者、營運者的「產生」，以及產品模式的啟動帳戶。它必須至少等於最小長度，且至少為符號數的兩倍加二。從 90 個字元的字母表中取二十個字元約為 130 位元。"
   },
+  "password.SCHEMA.attributes.stsPwdHashAlgorithm.what": {
+    "en": "9f6e2faa116ebe94",
+    "text": "新儲存的密碼所用的雜湊演算法：scrypt（RFC 7914，預設）或 argon2id（RFC 9106，OWASP Password Storage Cheat Sheet 的首選）。已儲存的雜湊註明其本身的演算法與參數，並繼續可以驗證；不是此演算法與這些參數的雜湊，會在此人下一次經過驗證的登入時重新計算。用戶端密鑰、啟用權杖、復原碼與應用程式密碼不是密碼，仍使用 scrypt。"
+  },
+  "password.SCHEMA.attributes.stsPwdArgon2Memory.what": {
+    "en": "ec649d8291c32776",
+    "text": "一次 argon2id 雜湊使用的記憶體，以 KiB 計（m）。19456 KiB（19 MiB）是 OWASP 的最低值，也是本服務寫入的最低值。提高它會讓攻擊遭竊的儲存區更慢，每次登入也會多用這麼多記憶體。"
+  },
+  "password.SCHEMA.attributes.stsPwdArgon2Iterations.what": {
+    "en": "b04ad660d2d130b6",
+    "text": "argon2id 在其記憶體上執行的遍數（t）。在 19 MiB 時，2 是 OWASP 的最低值；每多一遍就再增加同樣的時間。"
+  },
+  "password.SCHEMA.attributes.stsPwdArgon2Parallelism.what": {
+    "en": "e5321dcccf2989ad",
+    "text": "argon2id 將其記憶體劃分成的通道數（p）。它是雜湊的一部分，而不是執行緒數：無論這裡寫多少，node 都在一個執行緒上計算雜湊。1 是 OWASP 的值。"
+  },
+  "password.SCHEMA.attributes.stsPwdScryptLogN.what": {
+    "en": "d6b7b8f956d8c0b0",
+    "text": "演算法為 scrypt 時，新儲存密碼的 scrypt CPU 與記憶體成本，以 2 的冪表示：15（預設值）即 N=32768。OWASP 的表將它與平行度配對：2^17 配 p=1、2^16 配 p=2、2^15 配 p=3、2^14 配 p=5，或 2^13 配 p=10。預設值 2^15 配 p=1 低於該表。"
+  },
+  "password.SCHEMA.attributes.stsPwdScryptBlockSize.what": {
+    "en": "f0c104745b77d30a",
+    "text": "演算法為 scrypt 時，新儲存密碼的 scrypt 區塊大小。記憶體約為 128 × N × r 位元組；8 是 RFC 7914 與 OWASP 給出的值。"
+  },
+  "password.SCHEMA.attributes.stsPwdScryptParallelism.what": {
+    "en": "b088d02f4ec32169",
+    "text": "演算法為 scrypt 時，新儲存密碼的 scrypt 平行度。Node 在一個執行緒上計算它，因此更高的值耗費的是時間而不是核心；成本的說明列出了 OWASP 接受的組合。"
+  },
   "password.SCHEMA.attributes.description.what": {
     "en": "93538e6b201100c5",
     "text": "此設定檔的用途，供下一位接手的人參考。"
   },
   "password.SCHEMA.personAttributes.pwdHistory.what": {
-    "en": "a057113a3f0da3b5",
-    "text": "每個記住的先前密碼一個值，採用草案的形式 `time#syntaxOID#length#data`——data 是該密碼儲存時的 scrypt 雜湊，絕不是密碼本身。由本服務維護，並在 LDAP 新增或修改時拒絕，因為任何人都能編輯的歷史記錄，就是任何人都能清空的歷史記錄。"
+    "en": "e800109ca0c5e386",
+    "text": "每個記住的以前密碼一個值，採用草案的形式 `time#syntaxOID#length#data`——資料是該密碼儲存時的雜湊，絕不是密碼本身。由本服務維護，在 LDAP add 或 modify 中被拒絕，因為任何人都能編輯的歷史就是任何人都能清空的歷史。"
   },
   "password.SCHEMA.personAttributes.pwdChangedTime.what": {
     "en": "3c870b2e0c097f36",
