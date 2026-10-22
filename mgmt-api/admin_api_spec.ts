@@ -3268,6 +3268,15 @@ const SCHEMAS = {
                      'ones any revocation here affects.'
       },
       revokedCount: { type: 'integer' },
+      coverage: openObject(
+        'What this list covers (#820). `source` is `held` (what the ' +
+        'answering process holds — the whole register where it is held ' +
+        'whole) or `store` (read from the store: `newest` is the window of ' +
+        'most recently written records, `session` one session\'s every ' +
+        'record). `complete` is false where the store holds more than the ' +
+        'list shows; `unread` is true where the store could not be asked ' +
+        'and the list fell back to what is held. With `source` `store`, ' +
+        '`held` and `heldByFamily.token` are the store\'s own count.', {}),
       sets: { type: 'array',
               items: { $ref: '#/components/schemas/IssuedSet' } },
       issued: {

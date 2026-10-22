@@ -6504,6 +6504,30 @@ function create(options) {
         });
     },
 
+    // AN ON-DEMAND STORE'S QUESTIONS ON THE READ POOL (2026-10-22, #820):
+    // `sessionIndexQuery()`'s arrangement for `minted_queries.js`, so a
+    // console page that lists the newest rows of a store, counts it or
+    // finds one index key's rows waits on the store without standing its
+    // event loop still in the bridge. The rows come back sealed, and the
+    // caller opens them.
+    mintedQuery: function (name, args) {
+      log.debug("Entering mintedQuery(). " + name);
+      const mintedQueries = require('./minted_queries');
+      let statement;
+      try {
+        statement = mintedQueries.build(name, args);
+      } catch (e) {
+        log.debug("Caught in mintedQuery(): " + ((e && e.message) || e));
+        log.debug("Leaving mintedQuery(). Unknown query.");
+        return Promise.reject(e);
+      }
+      log.debug("Leaving mintedQuery().");
+      return readPool.query(statement.text, statement.values)
+        .then(function (r) {
+          return mintedQueries.answerOf(name, r.rows || []);
+        });
+    },
+
     // WHAT THE BRIDGE'S THREAD DIALS (#349 phase 3): the read pool's own
     // connection options — the same database, the same TLS decision — so
     // the thread is one more client of this store and never a second,

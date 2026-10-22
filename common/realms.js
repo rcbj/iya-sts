@@ -3084,7 +3084,12 @@ class IndexedMap extends Map {
  *   lookup: (indexKey: string) => any[], onDemandLive: () => boolean,
  *   scan: (fn: (value: any, key: any) => void) => void,
  *   scanAsync: (fn: (value: any, key: any) => void) => Promise<void>,
- *   warm: (keys: any[]) => Promise<void> }}
+ *   warm: (keys: any[]) => Promise<void>,
+ *   lookupEntriesAsync: (indexKey: string) =>
+ *     Promise<{ key: any, value: any }[]>,
+ *   newestAsync: (limit: number) =>
+ *     Promise<{ key: any, value: any }[] | null>,
+ *   countAsync: () => Promise<number | null> }}
  */
 function map(options) {
   log.debug("Entering map().");
@@ -3600,6 +3605,109 @@ function map(options) {
       } while (after);
       log.debug("Leaving scanAsync(). " + seen.size + " row(s) in " + pages +
                 " page(s).");
+    },
+    // -----------------------------------------------------------------------
+    // THREE CONSOLE QUESTIONS ASKED WITHOUT HOLDING THE EVENT LOOP
+    // (2026-10-22, #820): one index key's rows, the newest rows, and how
+    // many there are. On demand they ask the store on the driver's read
+    // pool (`persistence_minted.js`), merged with what this process holds
+    // as `lookup()` merges it — a held row is the fresher, and a key with a
+    // write not yet committed is answered from here or not at all. Held
+    // whole, they answer from the Map: the store and the Map are one.
+    // -----------------------------------------------------------------------
+    // The ambient realm's records filed under one index key, as
+    // `[{ key, value }]`. A store that cannot be asked rejects.
+    lookupEntriesAsync: async function (indexKey) {
+      log.debug("Entering lookupEntriesAsync().");
+      const target = per();
+      const out = new Map();
+      if (typeof target.lookup === 'function') {
+        target.lookup(indexKey).forEach(function (key) {
+          out.set(key, target.get(key));
+        });
+      } else if (indexBy) {
+        target.forEach(function (value, key) {
+          let keys = [];
+          try {
+            keys = indexBy(value, key) || [];
+          } catch (e) {
+            log.debug("Caught in lookupEntriesAsync(): " +
+                      ((e && e.message) || e));
+            keys = [];
+          }
+          if (keys.indexOf(indexKey) >= 0) {
+            out.set(key, value);
+          }
+        });
+      }
+      if (!demandOn() || typeof onDemandReader.byIndexAsync !== 'function') {
+        log.debug("Leaving lookupEntriesAsync(). Held.");
+        return Array.from(out, function (e) {
+          return { key: e[0], value: e[1] };
+        });
+      }
+      const realmId = partitionId(currentId());
+      const rows = await onDemandReader.byIndexAsync(handleName, realmId,
+                                                     indexKey);
+      (rows || []).forEach(function (row) {
+        if (out.has(row.key) ||
+            onDemandReader.journalled(handleName, realmId, row.key)) {
+          return;
+        }
+        out.set(row.key, row.value);
+      });
+      log.debug("Leaving lookupEntriesAsync(). " + out.size + " row(s).");
+      return Array.from(out, function (e) {
+        return { key: e[0], value: e[1] };
+      });
+    },
+    // The newest rows of the ambient realm, newest WRITTEN first, as
+    // `[{ key, value }]`: the store's newest `limit` and every held row
+    // with a write not yet committed (which the store has not got). Null
+    // where the store is held whole: the caller walks the Map, as before.
+    newestAsync: async function (limit) {
+      log.debug("Entering newestAsync().");
+      const target = per();
+      if (!demandOn() || typeof onDemandReader.newestAsync !== 'function') {
+        log.debug("Leaving newestAsync(). Held whole.");
+        return null;
+      }
+      const realmId = partitionId(currentId());
+      const rows = await onDemandReader.newestAsync(handleName, realmId,
+                                                    limit);
+      const out = new Map();
+      target.forEach(function (value, key) {
+        if (onDemandReader.journalled(handleName, realmId, key)) {
+          out.set(key, value);
+        }
+      });
+      (rows || []).forEach(function (row) {
+        if (out.has(row.key) ||
+            onDemandReader.journalled(handleName, realmId, row.key)) {
+          return;
+        }
+        out.set(row.key, target.has(row.key) ? target.get(row.key)
+                                             : row.value);
+      });
+      log.debug("Leaving newestAsync(). " + out.size + " row(s).");
+      return Array.from(out, function (e) {
+        return { key: e[0], value: e[1] };
+      });
+    },
+    // How many live rows the ambient realm holds: the store's committed
+    // count on demand, the Map's size otherwise. Rejects where the store
+    // cannot be asked.
+    countAsync: async function () {
+      log.debug("Entering countAsync().");
+      const target = per();
+      if (!demandOn() || typeof onDemandReader.countAsync !== 'function') {
+        log.debug("Leaving countAsync(). Held whole.");
+        return target.size;
+      }
+      const n = await onDemandReader.countAsync(handleName,
+                                                partitionId(currentId()));
+      log.debug("Leaving countAsync(). " + n + ".");
+      return n;
     },
     // The realm's own Map, for the callers that genuinely want the whole thing
     // (a purge, a sweep across realms, a console page counting them). It is a

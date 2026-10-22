@@ -21046,6 +21046,11 @@ const CODES = [
       'JWK thumbprint rather than a DID, or the directory did not store the ' +
       'change (#693).',
     spec: 'HTTP 400 (API)' },
+  { code: 'STS-ADMIN-0890',
+    summary: 'The token register could not be read from the store for ' +
+      'Monitoring → Tokens; the list drawn is what the answering process ' +
+      'holds, and the answer says so (`coverage.unread`) (#820).',
+    spec: 'logged; the page answers' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',

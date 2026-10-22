@@ -761,6 +761,18 @@ function create(options) {
     return tierOfHandle(handle).readMinted(handle, realmId, key);
   };
 
+  // An on-demand store's console questions (#820): the store's own tier,
+  // as a read of one of its rows is. A tier whose driver has no such door
+  // answers as it would have — a refusal the caller reads as unread.
+  driver.mintedQuery = function (name, args) {
+    log.debug("Entering tiered mintedQuery(). " + name);
+    const target = tierOfHandle(Array.isArray(args) ? args[0] : '');
+    log.debug("Leaving tiered mintedQuery().");
+    return typeof target.mintedQuery === 'function'
+      ? target.mintedQuery(name, args)
+      : Promise.reject(new Error('no on-demand query on this tier'));
+  };
+
   driver.readMintedMany = function (refs) {
     log.debug("Entering tiered readMintedMany().");
     const split = byHandleTier(refs);

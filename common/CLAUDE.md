@@ -5553,6 +5553,35 @@ holders, the answer's `search.complete` saying whether that was everybody.
 `register({ recorded: false })` answers the overrides alone. The people
 count is a Set now; it was an O(P²) reduce. `tests/console_consent_scale.js`.
 
+## The token list, the metrics and the dashboard, read from the store (2026-10-22, #820)
+
+On demand the token register holds at most 20,000 records a process
+(persistence, *A store that grows with every person is read on demand*), so
+`issuedSets()` answered with what the answering worker happened to hold, and
+Metrics and the dashboard built `userRowsAsync()`, a row per person, to keep
+four numbers. `admin_stats.js` answers each from the store now:
+
+* **`issuedSetsAsync({ session })`** reads one session's every record through
+  the register's `sid:` index, or the newest `ISSUED_NEWEST` (500) records by
+  when each row was written, with the store's count as the total. It says
+  what it covers (`coverage`: `source` `held` or `store`, `newest`,
+  `session`, `complete`, `unread`). A store that cannot be asked falls back to
+  what is held and says so (`unread`, `STS-ADMIN-0890`), never an empty list.
+* **`issuedSetByKeyAsync(setKey)`** finds a `set:<id>` through the index key
+  `set:` the token store now files (the issuer states the set id once, at
+  issuance), and a `one:` set by its key.
+* **`userCountsAsync()`** gives `snapshot().users`' four counts with no row:
+  the bounded sources are walked as `buildUserRowsResolved()` walks them, and
+  the token holders, the one source that grows with the population, are
+  counted by the partition's size and its `client` index (`tokenHolders`'
+  `indexBy`), maintained as rows are written in every process. A maintained
+  counter (merge-own) and a scheduler job were rejected: a write and a fan-in
+  per new holder, or the same O(people) walk every few minutes.
+  `snapshot({ userCounts })` takes them.
+
+Held whole (memory, development, in-process tests) each answers what its
+synchronous twin answers. `tests/console_tokens_metrics_scale.js`.
+
 ## `roles.js` and `issuance_gate.js`: the fourth register, and the leaf that asks about it
 
 Rules 3u and 3v. They arrived together on 2026-09-05 and they are two files

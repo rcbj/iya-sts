@@ -1731,11 +1731,13 @@ class AdminViews {
       log.debug("Leaving AdminViews.metricsJsonAsync(). Window off.");
       return this.metricsJson();
     }
-    // The user counts from rows built with the directory asked
-    // asynchronously, as the dashboard's (`consoleJsonAsync()`), not every
-    // person's row built synchronously (#820).
-    const snap = stats.snapshot(typeof stats.userRowsAsync === 'function'
-      ? { knownUsers: await stats.userRowsAsync() } : undefined);
+    // THE USER COUNTS WITHOUT A ROW PER PERSON (2026-10-22, #820):
+    // `userRowsAsync()` built every person's row — about 470,000 on 8081 —
+    // on the event loop for four numbers. `userCountsAsync()` counts them
+    // from the token holders' size and client index and the bounded
+    // sources beside them (`common/admin_stats.js`), as the dashboard does.
+    const snap = stats.snapshot(typeof stats.userCountsAsync === 'function'
+      ? { userCounts: await stats.userCountsAsync() } : undefined);
     // EVERY SESSION WAS DRAWN, AND OPENED TO BE DRAWN: 470,000 rows in this
     // reply on 8081, read one synchronous query at a time. The counts are
     // the index's and the rows the newest `METRICS_SESSION_ROWS`.
@@ -1794,17 +1796,40 @@ class AdminViews {
   // in its hand.
   // ---------------------------------------------------------------------------
   /**
+   * Opens one token set by its key, read from the store on demand
+   * (2026-10-22, #820): `set:<id>` through the register's `set:` index,
+   * `one:<key>` by its key. Held whole, `tokenSetView()`.
+   *
+   * @param query - the query, whose `id` names the set
+   * @returns a promise of what `tokenSetView()` answers
+   */
+  async tokenSetViewAsync(query) {
+    const { log, stats } = this.deps;
+    log.debug("Entering AdminViews.tokenSetViewAsync().");
+    const asked = String((query && query.id) || '').trim();
+    const found = !asked ? null
+      : (typeof stats.issuedSetByKeyAsync === 'function'
+        ? await stats.issuedSetByKeyAsync(asked)
+        : stats.issuedSetByKey(asked));
+    log.debug("Leaving AdminViews.tokenSetViewAsync().");
+    return this.tokenSetView(query, asked ? found : null);
+  }
+
+  /**
    * Opens one token set by its key, for `GET /admin-api/tokens/set`.
    *
    * @param query - the query, whose `id` names the set
    * @returns the key asked, the set, and the JSON answer saying why when it is
    *   not found
    */
-  tokenSetView(query) {
+  tokenSetView(query, found?) {
     const { log, stats } = this.deps;
     log.debug("Entering AdminViews.tokenSetView().");
     const asked = String((query && query.id) || '').trim();
-    const set = asked ? stats.issuedSetByKey(asked) : null;
+    // `found` (2026-10-22, #820): the set `tokenSetViewAsync()` read from
+    // the store, or null for one it did not find there.
+    const set = found !== undefined ? found
+      : (asked ? stats.issuedSetByKey(asked) : null);
     log.debug("Leaving AdminViews.tokenSetView(). " +
               (set ? set.size + " member(s)." : "No " +
         "such set."));
@@ -4296,7 +4321,7 @@ class AdminViews {
    * @param query - the request's query
    * @returns the view
    */
-  tokensView(query) {
+  tokensView(query, read?) {
     const { log, stats } = this.deps;
     log.debug("Entering AdminViews.tokensView().");
     const wantedFamily = String(query.family || '');
@@ -4322,7 +4347,11 @@ class AdminViews {
     // admin-ui/admin.ts for the argument, and stats.issuedSets() for the
     // grouping, which is decided by a set id the ISSUER stated rather than by
     // anything this file could infer from these rows.
-    const all = stats.issuedSets();
+    //
+    // `read` (2026-10-22, #820): what `tokensViewAsync()` read from the
+    // store — the sets, what they cover and the store's count. Without it,
+    // what this process holds, as always.
+    const all = read ? read.sets : stats.issuedSets();
     // EVERY FILTER MATCHES A SET WHEN ANY MEMBER MATCHES, and that is the one
     // thing about this page a reader has to be told rather than left to work
     // out. Asking for `kind=id_token` answers with the SETS that contain an ID
@@ -4394,6 +4423,17 @@ class AdminViews {
       log.debug("Leaving countMembers().");
       return sets.reduce(function (n, set) { return n + set.size; }, 0);
     };
+    // THE STORE'S COUNT, WHERE THE LIST WAS READ FROM THE STORE (#820):
+    // the sets above are a window (the newest, or one session's), so the
+    // credentials they hold are not what the store holds. The JWT figure
+    // is the store's count of live token records, and every other family's
+    // is what was counted above, since the artifacts are all read.
+    if (read && read.coverage && read.coverage.source === 'store' &&
+        read.tokenCount !== null && read.tokenCount !== undefined) {
+      heldCredentials += Number(read.tokenCount) -
+        (heldByFamily.token || 0);
+      heldByFamily.token = Number(read.tokenCount);
+    }
     const matchedCredentials = countMembers(filtered);
     const shownCredentials = countMembers(shown);
     // The flatten of what this page holds, in the order the table draws it:
@@ -4424,6 +4464,19 @@ class AdminViews {
         // meaning for an old one.
         held: heldCredentials,
         heldSets: all.length,
+        // WHAT THIS LIST COVERS (2026-10-22, #820). `source` is `held`
+        // (what the answering process holds — the whole register where it
+        // is held whole) or `store` (read from the store: `newest` is the
+        // window of most recently written records, `session` one session's
+        // every record). `complete` is false where the store holds more
+        // than the list shows, and `unread` true where the store could not
+        // be asked and the list fell back to what is held. `held` and
+        // `heldByFamily.token` are the store's count in `store`.
+        coverage: read ? read.coverage
+          : { source: 'held', complete: !stats.tokensOnDemand ||
+                !stats.tokensOnDemand(),
+              newest: null, session: wantedSession || null,
+              unread: false },
         // IN SETS, both of them, because sets are what this resource now lists
         // and what its paging counts. The credential figures are beside them.
         matched: filtered.length, matchedCredentials: matchedCredentials,
@@ -4461,6 +4514,28 @@ class AdminViews {
         paging: this.pagingJson(paging)
       }
     };
+  }
+
+  /**
+   * Builds `/admin/tokens` from the store on demand (2026-10-22, #820): one
+   * session's every record through the register's `sid:` index, or the
+   * newest records the store holds, with the store's count as the total.
+   * Held whole, `tokensView()`.
+   *
+   * @param query - the request's query
+   * @returns a promise of the view `tokensView()` answers
+   */
+  async tokensViewAsync(query) {
+    const { log, stats } = this.deps;
+    log.debug("Entering AdminViews.tokensViewAsync().");
+    if (typeof stats.issuedSetsAsync !== 'function') {
+      log.debug("Leaving AdminViews.tokensViewAsync(). No store door.");
+      return this.tokensView(query);
+    }
+    const read = await stats.issuedSetsAsync({
+      session: String((query && query.session) || '') });
+    log.debug("Leaving AdminViews.tokensViewAsync().");
+    return this.tokensView(query, read);
   }
 
   // The protocols this list can hold, for the filter. Built from the rows
@@ -15415,6 +15490,7 @@ export = {
   pagingJson: slot.forward('pagingJson'),
   pagedRows: slot.forward('pagedRows'),
   tokensView: slot.forward('tokensView'),
+  tokensViewAsync: slot.forward('tokensViewAsync'),
   sessionProtocolsIn: slot.forward('sessionProtocolsIn'),
   sessionsView: slot.forward('sessionsView'),
   sessionsViewAsync: slot.forward('sessionsViewAsync'),
@@ -15476,6 +15552,7 @@ export = {
   signOnSessionRows: slot.forward('signOnSessionRows'),
   metricsJson: slot.forward('metricsJson'),
   tokenSetView: slot.forward('tokenSetView'),
+  tokenSetViewAsync: slot.forward('tokenSetViewAsync'),
   permissionsView: slot.forward('permissionsView'),
   cryptoView: slot.forward('cryptoView'),
   keysView: slot.forward('keysView'),
