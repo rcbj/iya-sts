@@ -105,7 +105,17 @@ type RouteApp = typeof app;
 /**
  * The number of indexes in a realm's access-token status list.
  */
-const LIST_SIZE = 1048576;
+// 2^24 SINCE 2026-10-22 (#820); it was 2^20. On 8081, at about 620,000
+// people refreshing every 9.6 hours with 12-hour access tokens, 756,000
+// entries were live, and 907 of the 1,024 blocks a process leases from
+// were leased (each for the 12 hours a token from it can live, by every
+// process, across about ten restarts), so leasing failed and sign-ins and
+// refreshes were refused (STS-OAUTH-0817, "the list is full"). At 1M
+// people there would be ~1.25M live access tokens, more than 2^20 indexes
+// even with no block wasted. 2^24 is 16,384 blocks and room for ~13M. The
+// list a relying party fetches carries only the INVALID bits set, so it
+// stays small compressed; uncompressed it is 2 MiB per realm.
+const LIST_SIZE = 16777216;
 // One bit: VALID or INVALID (section 4.1 permits 1, 2, 4 or 8).
 const BITS = 1;
 /**
