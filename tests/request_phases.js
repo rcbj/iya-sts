@@ -95,6 +95,16 @@ function checkTheModule(t) {
           'Q3. the window closes on the first record after it, with p50, ' +
           'p95 and mean per phase, and none for a phase nobody reported',
           JSON.stringify(closed));
+  // A flush's phases (2026-10-22): `prepare`, `db` and `rows` are kept.
+  phases.reset();
+  phases.record('FLUSH minted', { prepare: 4, queue: 1, db: 30, rows: 7,
+                                  total: 35 }, t0 + 1);
+  phases.record('GET /y', { total: 1 }, t0 + phases.WINDOW_MS + 5);
+  const flushed = phases.stats() && phases.stats().routes['FLUSH minted'];
+  t.check(flushed && flushed.prepare.p50 === 4 && flushed.db.p50 === 30 &&
+          flushed.rows.p50 === 7 && flushed.total.p50 === 35,
+          'Q3. a flush\'s prepare, database time and rows are kept',
+          JSON.stringify(flushed));
   phases.reset();
   for (let i = 0; i < 70; i++) {
     phases.record('GET /r' + i, { total: 1 }, t0 + 1);
