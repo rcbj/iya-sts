@@ -82,7 +82,17 @@ const SKIP_FILES = ['common/crypto.js', 'admin-ui/console.bundle.js',
                     'home/home-spa.js', 'authn/authn.bundle.js',
                     'authn/authn-spa.js'];
 
-const SIGNING_CALL = /(?:\bsignJwt|\bsignJwtAs|\bsignJwtAsAsync|\.signJws|\.signJwsAsync|\bsignPublishedDocument)\(/g;
+// `signJwtAsync` since #820 (2026-10-21): the access, refresh and ID tokens a
+// caller can wait for are signed on libuv's thread pool.
+const SIGNING_CALL = /(?:\bsignJwt|\bsignJwtAs|\bsignJwtAsync|\bsignJwtAsAsync|\.signJws|\.signJwsAsync|\bsignPublishedDocument)\(/g;
+
+// A TOKEN'S SIGNING PLAN (#820, 2026-10-21): `accessTokenUnsigned()` and
+// `refreshTokenPlan()` build the payload and the signing options together,
+// so the sync and async signers can share them. The use case is named where
+// the plan is built, `sign: { certificateHeader: '<id>', … }`, and a call
+// that signs `plan.sign` is covered by it.
+const PLAN_SIGN = /\bsign:\s*\{\s*certificateHeader:\s*'([a-z0-9-]+)'/g;
+const SIGNS_A_PLAN = /\bplan\.sign\b/;
 
 function jsFilesUnder(dir, out) {
   log.debug("Entering jsFilesUnder().");
@@ -133,6 +143,11 @@ function scanSigners() {
     const text = fs.readFileSync(file, 'utf8');
     const lines = text.split('\n');
     let match;
+    PLAN_SIGN.lastIndex = 0;
+    while ((match = PLAN_SIGN.exec(text)) !== null) {
+      named.push({ id: match[1],
+                   where: rel + ':' + lineOf(text, match.index) });
+    }
     SIGNING_CALL.lastIndex = 0;
     while ((match = SIGNING_CALL.exec(text)) !== null) {
       const lineNo = lineOf(text, match.index);
@@ -156,6 +171,9 @@ function scanSigners() {
         if (!/certificate-header: none\s*—\s*\S/.test(above)) {
           exemptWithoutReason.push(rel + ':' + lineNo);
         }
+        continue;
+      }
+      if (SIGNS_A_PLAN.test(statement)) {
         continue;
       }
       const ids = [];

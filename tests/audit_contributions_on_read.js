@@ -74,7 +74,7 @@ function child() {
     const minted = require(ROOT + '/persistence/persistence_minted');
     realms.obj(function () {
       return { n: 0 };
-    }, { persist: 'acr.counters', merge: 'own' });
+    }, { persist: 'test.acr.counters', merge: 'own' });
     const rows = new Map();
     const asked = { one: 0, many: [] };
     let failMany = false;
@@ -178,10 +178,10 @@ function child() {
 
     asked.one = 0;
     const counterName = storedName('', 'process-b');
-    put('acr.counters', counterName, { n: 5 });
-    await minted.applyChange(change('acr.counters', counterName));
+    put('test.acr.counters', counterName, { n: 5 });
+    await minted.applyChange(change('test.acr.counters', counterName));
     const counted = realms.run(realms.get(realmId), function () {
-      return replication.remoteRows('acr.counters', undefined, '');
+      return replication.remoteRows('test.acr.counters', undefined, '');
     });
     note(asked.one === 1 && counted.length === 1 && counted[0].n === 5,
          'R4. a merge: \'own\' store without the flag is still read at the ' +

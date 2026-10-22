@@ -110,7 +110,8 @@ function child() {
         return pending.has(key);
       }
     });
-    const store = realms.map({ persist: 'ods.test', onDemand: { maxEntries: 3 },
+    const store = realms.map({ persist: 'test.ods.test',
+      onDemand: { maxEntries: 3 },
       indexBy: function (value) {
         return value && value.family ? [value.family] : [];
       } });
@@ -169,7 +170,7 @@ function child() {
          JSON.stringify(asked));
 
     stored.set('never', { family: 'f', n: 9 });
-    realms.handleFor('ods.test').forgetAbsent('default', 'never');
+    realms.handleFor('test.ods.test').forgetAbsent('default', 'never');
     asked.length = 0;
     const now = store.get('never');
     note(now && now.n === 9 && asked.indexOf('read:never') >= 0,
@@ -184,9 +185,9 @@ function child() {
          'D7. a local set() forgets that it was absent',
          JSON.stringify(asked));
 
-    const resident = realms.map({ persist: 'ods.resident',
+    const resident = realms.map({ persist: 'test.ods.resident',
       onDemand: { maxEntries: 3, keysResident: true } });
-    const rHandle = realms.handleFor('ods.resident');
+    const rHandle = realms.handleFor('test.ods.resident');
     rHandle.residentAdd('default', 'd:far-1');
     rHandle.residentAdd('default', 'd:gone-row');
     asked.length = 0;
@@ -217,7 +218,8 @@ function child() {
          JSON.stringify(asked));
 
     active = false;
-    const plain = realms.map({ persist: 'ods.plain', onDemand: { maxEntries: 1 } });
+    const plain = realms.map({ persist: 'test.ods.plain',
+      onDemand: { maxEntries: 1 } });
     asked.length = 0;
     plain.set('x', 1);
     plain.set('y', 2);
@@ -228,7 +230,7 @@ function child() {
          JSON.stringify({ asked: asked, size: plain.size }));
 
     active = true;
-    const warmed = realms.map({ persist: 'ods.warm',
+    const warmed = realms.map({ persist: 'test.ods.warm',
                                 onDemand: { maxEntries: 10 } });
     stored.set('w-1', { n: 1 });
     stored.set('w-2', { n: 2 });
@@ -248,7 +250,7 @@ function child() {
     stored.set('w-3', { n: 3, old: true });
     duringRead = function () {
       stored.set('w-3', { n: 33 });
-      realms.handleFor('ods.warm').forgetAbsent('default', 'w-3');
+      realms.handleFor('test.ods.warm').forgetAbsent('default', 'w-3');
     };
     await warmed.warm(['w-3']);
     duringRead = null;

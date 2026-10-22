@@ -95,6 +95,11 @@ function grants(t) {
         return all.filter(function (g) {
           return !clientId || g.clientId === clientId;
         });
+      },
+      // The view pages bare rows and decorates the page (#853); these rows
+      // need nothing added.
+      decorate: function (g) {
+        return g;
       } };
     } }));
   const first = api.grantsView({ per: '10' });

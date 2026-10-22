@@ -125,7 +125,8 @@ function childMain() {
       return w.inRealm(function () {
         const tx = m.verifier.buildVpRequest(w.fakeReq(''), {
           responseType: 'id_token',
-          signIn: { authnId: 'sil-' + Math.random(), ttlMs: 60000 } });
+          signIn: { authnId: 'sil-' +
+                    require('crypto').randomUUID(), ttlMs: 60000 } });
         tx.signIn.walletUrl = WALLET + '/authorize';
         m.verifier.saveTransaction(tx);
         return { tx: tx,

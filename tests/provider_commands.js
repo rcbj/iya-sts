@@ -71,12 +71,14 @@ function instance(clock, sent, answers, streams) {
       },
       fedHttp: {
         deliverForm: function (record, attribute, form) {
+          activity++;
           sent.push({ uri: record[attribute], form: form });
           const answer = answers.length ? answers.shift() :
             { ok: false, status: 500, kind: 'status', why: 'no answer' };
           return Promise.resolve(answer);
         },
         streamEvents: function (record, attribute, form, opts) {
+          activity++;
           sent.push({ uri: record[attribute], form: form, stream: true,
                       lastEventId: opts.lastEventId || '' });
           const plan = streams.shift();
@@ -99,12 +101,37 @@ function json(status, body) {
            body: JSON.stringify(body), why: 'it answered ' + status };
 }
 
+// How often the stand-in relying party has been called; settle() watches it.
+let activity = 0;
+// How long settle() waits after the last call before it calls things done,
+// and the longest it waits in all.
+const QUIET_MS = 150;
+const SETTLE_MAX_MS = 3000;
+
+// A command is dispatched after the minted rows it hands out are committed
+// (`afterMintedCommit()`), and that flush runs on a timer, so a send reaches
+// the stand-in some milliseconds later, not within a few turns of the loop
+// (#828: twenty turns saw nothing sent). So this waits until the stand-in
+// has been quiet for QUIET_MS, and at most SETTLE_MAX_MS.
 async function settle() {
   log.debug("Entering settle().");
   for (let i = 0; i < 20; i++) {
     await new Promise(function (resolve) {
       setImmediate(resolve);
     });
+  }
+  const startedAt = Date.now();
+  let seen = activity;
+  let quietSince = Date.now();
+  while (Date.now() - quietSince < QUIET_MS &&
+         Date.now() - startedAt < SETTLE_MAX_MS) {
+    await new Promise(function (resolve) {
+      setTimeout(resolve, 5);
+    });
+    if (activity !== seen) {
+      seen = activity;
+      quietSince = Date.now();
+    }
   }
   log.debug("Leaving settle().");
 }

@@ -318,7 +318,7 @@ function capturing(seen) {
 async function flushHalf(t) {
   log.debug("Entering flushHalf().");
   t.log.info('=== B. the flush hands the driver the store\'s sort value ===');
-  const both = realms.map({ persist: 'minted-sort-at.both',
+  const both = realms.map({ persist: 'test.minted-sort-at.both',
     onDemand: { maxEntries: 10 },
     indexBy: function (value) {
       return value && value.owner ? ['o:' + value.owner] : [];
@@ -329,12 +329,12 @@ async function flushHalf(t) {
       }
       return value ? value.at : null;
     } });
-  const sortedOnly = realms.map({ persist: 'minted-sort-at.sorted',
+  const sortedOnly = realms.map({ persist: 'test.minted-sort-at.sorted',
     onDemand: { maxEntries: 10 },
     sortBy: function (value) {
       return value ? value.at : null;
     } });
-  const plain = realms.map({ persist: 'minted-sort-at.plain',
+  const plain = realms.map({ persist: 'test.minted-sort-at.plain',
     onDemand: { maxEntries: 10 },
     indexBy: function (value) {
       return value && value.owner ? ['o:' + value.owner] : [];
@@ -354,31 +354,31 @@ async function flushHalf(t) {
   sortedOnly.set('s1', { at: 2000 });
   plain.set('p1', { owner: 'bob' });
   await minted.flush();
-  const t1 = of('minted-sort-at.both', 't1')[0] || {};
+  const t1 = of('test.minted-sort-at.both', 't1')[0] || {};
   t.check(t1.sortAt === 1000 && Array.isArray(t1.lookups) &&
           t1.lookups.length === 1,
           'B1. a store with sortBy hands its value, as a whole number, ' +
           'beside its index keys', JSON.stringify(t1));
-  const s1 = of('minted-sort-at.sorted', 's1')[0] || {};
+  const s1 = of('test.minted-sort-at.sorted', 's1')[0] || {};
   t.check(s1.sortAt === 2000 && Array.isArray(s1.lookups) &&
           s1.lookups.length === 0,
           'B2. a store with sortBy and no indexBy hands an empty key list, ' +
           'so its sort row is still replaced', JSON.stringify(s1));
-  const p1 = of('minted-sort-at.plain', 'p1')[0] || {};
+  const p1 = of('test.minted-sort-at.plain', 'p1')[0] || {};
   t.check(p1.sortAt === null && Array.isArray(p1.lookups),
           'B3. a store with no sortBy hands no value', JSON.stringify(p1));
 
   seen.length = 0;
   both.set('t1', { owner: 'alice', at: 1000.2, n: 2 });
   await minted.flush();
-  t.check((of('minted-sort-at.both', 't1')[0] || {}).lookups === null,
+  t.check((of('test.minted-sort-at.both', 't1')[0] || {}).lookups === null,
           'B4. a rewrite filed exactly as it was writes no index rows',
           JSON.stringify(seen));
 
   seen.length = 0;
   both.set('t1', { owner: 'alice', at: 3000 });
   await minted.flush();
-  const moved = of('minted-sort-at.both', 't1')[0] || {};
+  const moved = of('test.minted-sort-at.both', 't1')[0] || {};
   t.check(moved.sortAt === 3000 && Array.isArray(moved.lookups) &&
           moved.lookups.length === 1,
           'B5. a moved sort value under the same index keys rewrites them',
@@ -388,8 +388,8 @@ async function flushHalf(t) {
   both.set('t2', { owner: 'carol', boom: true });
   both.set('t3', { owner: 'carol', at: 'soon' });
   await minted.flush();
-  t.check((of('minted-sort-at.both', 't2')[0] || {}).sortAt === null &&
-          (of('minted-sort-at.both', 't3')[0] || {}).sortAt === null,
+  t.check((of('test.minted-sort-at.both', 't2')[0] || {}).sortAt === null &&
+          (of('test.minted-sort-at.both', 't3')[0] || {}).sortAt === null,
           'B6. a hook that throws, or answers no number, hands no value and ' +
           'fails nothing', JSON.stringify(seen));
 
@@ -397,10 +397,10 @@ async function flushHalf(t) {
   sortedOnly.delete('s1');
   plain.delete('p1');
   await minted.flush();
-  t.check((of('minted-sort-at.sorted', 's1')[0] || {}).indexed === true,
+  t.check((of('test.minted-sort-at.sorted', 's1')[0] || {}).indexed === true,
           'B7. a delete from a store with only sortBy takes its index rows',
           JSON.stringify(seen));
-  t.check((of('minted-sort-at.plain', 'p1')[0] || {}).indexed === true,
+  t.check((of('test.minted-sort-at.plain', 'p1')[0] || {}).indexed === true,
           'B8. and an indexBy store\'s delete still does');
 
   both.realmMap().clear();

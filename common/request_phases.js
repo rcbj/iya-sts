@@ -45,6 +45,10 @@
 // ---------------------------------------------------------------------------
 
 const bunyan = require('bunyan');
+// Node's own generator, for the reservoir's slot (tests/random_values.js:
+// no Math.random() in the service). Not common/crypto.js, which would end
+// this file being a leaf.
+const crypto = require('crypto');
 
 const log = bunyan.createLogger({
   name: 'sts-request-phases',
@@ -237,7 +241,7 @@ function record(route, phases, now) {
   }
   entry.n += 1;
   const slot = entry.n <= SAMPLES_PER_ROUTE ? entry.n - 1
-    : Math.floor(Math.random() * entry.n);
+    : crypto.randomInt(0, entry.n);
   if (slot >= SAMPLES_PER_ROUTE) {
     return;
   }

@@ -263,14 +263,16 @@ function childMain() {
     // Every console page asks /me, and it built the whole statistics
     // snapshot — every register subject resolved — and the directory's
     // credential tally to answer its page list: ten seconds of a request
-    // worker on 8081. /me asks neither; /status asks both asynchronously.
+    // worker on 8081. /me asks neither; /status asks both asynchronously —
+    // the register's COUNTS (`userCountsAsync()`, #855), not a row per
+    // person (`userRowsAsync()`, which it asked until then).
     const statsModule = require(ROOT_DIR + '/common/admin_stats');
     const credentialsModule = require(ROOT_DIR + '/common/credentials');
-    const counted = { snapshot: 0, userRows: 0, userRowsAsync: 0,
+    const counted = { snapshot: 0, userRows: 0, userCountsAsync: 0,
                       tally: 0, tallyAsync: 0 };
     const realStats = { snapshot: statsModule.snapshot,
                         userRows: statsModule.userRows,
-                        userRowsAsync: statsModule.userRowsAsync };
+                        userCountsAsync: statsModule.userCountsAsync };
     const realTally = credentialsModule.directoryFactorCounts;
     const realTallyAsync = credentialsModule.directoryFactorCountsAsync;
     statsModule.snapshot = function (opts) {
@@ -281,9 +283,9 @@ function childMain() {
       counted.userRows++;
       return realStats.userRows.apply(this, arguments);
     };
-    statsModule.userRowsAsync = function () {
-      counted.userRowsAsync++;
-      return realStats.userRowsAsync.apply(this, arguments);
+    statsModule.userCountsAsync = function () {
+      counted.userCountsAsync++;
+      return realStats.userCountsAsync.apply(this, arguments);
     };
     credentialsModule.directoryFactorCounts = function () {
       counted.tally++;
@@ -307,7 +309,7 @@ function childMain() {
     } finally {
       statsModule.snapshot = realStats.snapshot;
       statsModule.userRows = realStats.userRows;
-      statsModule.userRowsAsync = realStats.userRowsAsync;
+      statsModule.userCountsAsync = realStats.userCountsAsync;
       credentialsModule.directoryFactorCounts = realTally;
       credentialsModule.directoryFactorCountsAsync = realTallyAsync;
     }
@@ -316,31 +318,31 @@ function childMain() {
          meCost.tallyAsync === 0,
          '7a. /admin-api/me builds no statistics snapshot and asks no ' +
          'directory tally for its page list', JSON.stringify(meCost));
-    note(statusCost.status === 200 && statusCost.userRowsAsync === 1 &&
+    note(statusCost.status === 200 && statusCost.userCountsAsync === 1 &&
          statusCost.tallyAsync === 1 && statusCost.userRows === 0 &&
          statusCost.tally === 0 && status.json &&
          typeof status.json.usersKnown === 'number',
-         '7b. /admin-api/status asks the register\'s rows and the tally ' +
+         '7b. /admin-api/status asks the register\'s counts and the tally ' +
          'asynchronously, neither synchronously', JSON.stringify(statusCost));
     // 7c (2026-10-21): the totals are kept for a few seconds — a second
     // /status at once asks nothing again.
-    statsModule.userRowsAsync = function () {
-      counted.userRowsAsync++;
-      return realStats.userRowsAsync.apply(this, arguments);
+    statsModule.userCountsAsync = function () {
+      counted.userCountsAsync++;
+      return realStats.userCountsAsync.apply(this, arguments);
     };
-    counted.userRowsAsync = 0;
+    counted.userCountsAsync = 0;
     let statusAgain = null;
     try {
       statusAgain = await call(port, 'GET', '/admin-api/status', writer);
     } finally {
-      statsModule.userRowsAsync = realStats.userRowsAsync;
+      statsModule.userCountsAsync = realStats.userCountsAsync;
     }
-    note(statusAgain.status === 200 && counted.userRowsAsync === 0 &&
+    note(statusAgain.status === 200 && counted.userCountsAsync === 0 &&
          statusAgain.json && statusAgain.json.usersKnown ===
            status.json.usersKnown,
          '7c. a second /admin-api/status within the hold builds nothing ' +
          'again', JSON.stringify({ status: statusAgain.status,
-                                   built: counted.userRowsAsync }));
+                                   built: counted.userCountsAsync }));
     // 7d (2026-10-21): past the hold, kept totals still answer at once and
     // ONE rebuild runs behind them.
     const consoleModule = require(ROOT_DIR + '/admin-ui/admin');
@@ -349,14 +351,14 @@ function childMain() {
     Console.TOTALS_HOLD_MS = -1;
     let rebuilt = 0;
     // A rebuild made slow (2 s), so an answer that waited for it shows.
-    statsModule.userRowsAsync = function () {
+    statsModule.userCountsAsync = function () {
       rebuilt++;
       const self = this;
       const args = arguments;
       return new Promise(function (resolve) {
         setTimeout(resolve, 2000);
       }).then(function () {
-        return realStats.userRowsAsync.apply(self, args);
+        return realStats.userCountsAsync.apply(self, args);
       });
     };
     let staleOne = null;
@@ -373,7 +375,7 @@ function childMain() {
       });
     } finally {
       Console.TOTALS_HOLD_MS = realHold;
-      statsModule.userRowsAsync = realStats.userRowsAsync;
+      statsModule.userCountsAsync = realStats.userCountsAsync;
     }
     note(staleOne.status === 200 && staleTwo.status === 200 &&
          staleOne.json && staleOne.json.usersKnown === status.json.usersKnown &&

@@ -1277,8 +1277,8 @@ function indexDriver(complete, filed, marked, filters) {
 async function indexBackfillCases(t, realm) {
   log.debug("Entering indexBackfillCases().");
   t.log.info('=== an indexed on-demand store waits for its index (#820) ===');
-  const store = realms.handleFor('session-index.on-demand') ? null :
-    realms.map({ persist: 'session-index.on-demand',
+  const store = realms.handleFor('test.session-index.on-demand') ? null :
+    realms.map({ persist: 'test.session-index.on-demand',
                  onDemand: { maxEntries: 10 },
                  indexBy: function (value) {
                    return value && value.family ? [value.family] : [];
@@ -1311,16 +1311,17 @@ async function indexBackfillCases(t, realm) {
   const ran = await minted.backfillMintedIndexes();
   t.check(ran && !ran.stopped, 'the job\'s run completes',
           JSON.stringify(ran));
-  t.check(filters.length && filters[0].indexOf('session-index.on-demand') < 0,
+  t.check(filters.length &&
+          filters[0].indexOf('test.session-index.on-demand') < 0,
           'an indexed on-demand store with no mark is read back whole',
           JSON.stringify(filters));
   t.equal(store.onDemandLive(), false,
           'and it is not on demand for the rest of this run');
   const mine = filed.filter(function (one) {
-    return one.handle === 'session-index.on-demand';
+    return one.handle === 'test.session-index.on-demand';
   });
   const expect = ['old-1', 'old-2'].map(function (name) {
-    return minted.keyColumnOf('session-index.on-demand', realm.id, name);
+    return minted.keyColumnOf('test.session-index.on-demand', realm.id, name);
   }).sort();
   t.equal(JSON.stringify(mine.map(function (one) {
     return one.key;
@@ -1331,24 +1332,25 @@ async function indexBackfillCases(t, realm) {
       'fam-a' && one.indexKey !== 'fam-b';
   }), 'each in its realm, under the index value\'s digest, never the value',
           JSON.stringify(mine));
-  t.check(marked.indexOf('session-index.on-demand') >= 0,
+  t.check(marked.indexOf('test.session-index.on-demand') >= 0,
           'and then commits the completion mark', JSON.stringify(marked));
 
   filed = [];
   marked = [];
   filters = [];
-  install(indexDriver(['session-index.on-demand'], filed, marked, filters));
+  install(indexDriver(['test.session-index.on-demand'], filed, marked,
+                      filters));
   await minted.restore();
   await minted.backfillMintedIndexes();
   t.check(filters.length &&
-          filters[0].indexOf('session-index.on-demand') >= 0,
+          filters[0].indexOf('test.session-index.on-demand') >= 0,
           'with the mark, the store is not read back at a start',
           JSON.stringify(filters));
   t.equal(store.onDemandLive(), true, 'it is on demand');
   t.equal(filed.filter(function (one) {
-    return one.handle === 'session-index.on-demand';
+    return one.handle === 'test.session-index.on-demand';
   }).length + marked.filter(function (one) {
-    return one === 'session-index.on-demand';
+    return one === 'test.session-index.on-demand';
   }).length, 0, 'and nothing is filed again');
   store.realmMap().clear();
   log.debug("Leaving indexBackfillCases().");
