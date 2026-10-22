@@ -32,6 +32,7 @@ each.
 **Start here** —
 [Getting started](getting-started.md) ·
 [Architecture](architecture.md) ·
+[Where a request waits](request-path.md) ·
 [Configuration](configuration.md) ·
 [Endpoints](endpoints.md) ·
 [Trust realms](trust-realms.md) ·
