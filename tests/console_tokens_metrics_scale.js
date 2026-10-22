@@ -140,13 +140,15 @@ function child() {
         sessionId: sessionId || '', sessionAuthenticated: true,
         setId: setId || '', grant: 'authorization_code' } };
     };
-    const asked = { newest: [], index: [], count: 0, syncWalks: 0 };
+    const asked = { newest: [], index: [], count: 0, syncWalks: 0,
+      reads: 0, estimates: 0 };
     let failNewest = false;
     const reader = {
       active: function (handle) {
         return handle === 'admin_stats.tokens';
       },
       read: function () {
+        asked.reads++;
         return { present: false };
       },
       journalled: function () {
@@ -235,6 +237,32 @@ function child() {
            'and says so',
            JSON.stringify(fallen.coverage));
       failNewest = false;
+
+      // D4b (2026-10-22, #820): with the reader's planner estimate
+      // offered, the total is the estimate, labelled, the exact count
+      // is never asked, and building the page reads nothing through
+      // the synchronous bridge.
+      reader.countEstimateAsync = function () {
+        asked.estimates++;
+        return Promise.resolve({ count: 2400000, exact: false });
+      };
+      const countsBefore = asked.count;
+      const readsBefore = asked.reads;
+      const walksBefore = asked.syncWalks;
+      const estimated = await stats.issuedSetsAsync({});
+      const estimatedView = await views.tokensViewAsync({});
+      delete reader.countEstimateAsync;
+      note(estimated.tokenCount === 2400000 &&
+           estimated.coverage.countEstimated === true &&
+           estimated.coverage.complete === false &&
+           estimatedView.json.coverage.countEstimated === true &&
+           asked.estimates >= 2 && asked.count === countsBefore &&
+           asked.reads === readsBefore &&
+           asked.syncWalks === walksBefore,
+           'D4b. a large store\'s total is the planner\'s estimate, ' +
+           'labelled, with no exact count and no synchronous read',
+           JSON.stringify({ coverage: estimated.coverage, asked: asked,
+             countsBefore: countsBefore, readsBefore: readsBefore }));
 
       const demand = stats.snapshot({
         userCounts: await stats.userCountsAsync() }).users;

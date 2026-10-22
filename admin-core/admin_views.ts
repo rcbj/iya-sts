@@ -4471,12 +4471,14 @@ class AdminViews {
         // every record). `complete` is false where the store holds more
         // than the list shows, and `unread` true where the store could not
         // be asked and the list fell back to what is held. `held` and
-        // `heldByFamily.token` are the store's count in `store`.
+        // `heldByFamily.token` are the store's count in `store` — the
+        // planner's ESTIMATE where `countEstimated` is true, which a large
+        // store answers in place of a scan of every row.
         coverage: read ? read.coverage
           : { source: 'held', complete: !stats.tokensOnDemand ||
                 !stats.tokensOnDemand(),
               newest: null, session: wantedSession || null,
-              unread: false },
+              unread: false, countEstimated: false },
         // IN SETS, both of them, because sets are what this resource now lists
         // and what its paging counts. The credential figures are beside them.
         matched: filtered.length, matchedCredentials: matchedCredentials,

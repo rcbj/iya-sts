@@ -101,14 +101,19 @@ class TokensPage {
     const heldByFamily = json.heldByFamily;
     // WHAT THE LIST COVERS (2026-10-22, #820), said where it is not the
     // whole register: the store's newest window, a worker's held window,
-    // or a store that could not be read.
+    // or a store that could not be read. A large store's total is the
+    // planner's estimate rather than a scan of every row
+    // (`countEstimated`, 2026-10-22, #820), and the note says so.
     const coverage = json.coverage || {};
     const coverageNote = coverage.unread
       ? t.html('consoleTokens.coverageUnread')
       : (coverage.source === 'store' && coverage.newest &&
          coverage.complete === false)
-        ? t.html('consoleTokens.coverageNewest',
-                 { newest: coverage.newest })
+        ? (coverage.countEstimated
+          ? t.html('consoleTokens.coverageNewestEstimated',
+                   { newest: coverage.newest })
+          : t.html('consoleTokens.coverageNewest',
+                   { newest: coverage.newest }))
         : (coverage.source === 'held' && coverage.complete === false)
           ? t.html('consoleTokens.coverageHeld') : '';
     // What every paging link has to carry with it. The page number is not in
