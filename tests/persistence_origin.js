@@ -40,6 +40,7 @@
 delete process.env.CONFIG_FILE;
 
 const storeDouble = require('./tools/store_double');
+const flushDouble = require('./tools/minted_flush_double');
 const fs = require('fs');
 const path = require('path');
 const realms = require('../common/realms');
@@ -61,11 +62,31 @@ const QUIET = { debug: function () {}, info: function () {},
 function fakeDatabase() {
   log.debug("Entering fakeDatabase().");
   const db = { now: 1000000, claims: new Map(), statements: [],
+              flush: flushDouble.state(),
               nodes: new Map() };
   const keyOf = function (scope, realm, key) {
     return scope + '|' + realm + '|' + key;
   };
   db.query = function (sql, params) {
+    // A MINTED FLUSH IS ONE STATEMENT SINCE #820, its fence inside it: the
+    // origin claim is asked of this file's claims, the statement is played
+    // against Maps, and what it WROTE is recorded — its text names every
+    // table whether or not the fence let it write.
+    if (flushDouble.isFlush(sql)) {
+      const named = flushDouble.named(sql);
+      const claim = named.claim_key === null ? null
+        : db.claims.get(keyOf('persistence.origin', '', named.claim_key));
+      const fenceOk = named.claim_key === null ||
+        (!!claim && claim.reservation === named.claim_reservation &&
+         claim.expires > db.now);
+      db.statements.push('MINTED_FLUSH');
+      const answer = flushDouble.play(db.flush, sql, null,
+                                      { fenceOk: fenceOk });
+      if (answer.rows[0].go) {
+        db.statements.push('MINTED_FLUSH wrote');
+      }
+      return Promise.resolve(answer);
+    }
     const p = params || [];
     const text = String(sql);
     db.statements.push(text);
@@ -251,7 +272,7 @@ async function claimB2(t) {
     fenced = e;
   }
   const wrote = db.statements.some(function (sql) {
-    return /INSERT INTO sts_minted/.test(sql);
+    return sql === 'MINTED_FLUSH wrote';
   });
   t.check(!fenced && wrote && lost.length === 0,
           'a write after the lapse re-asserts the claim and goes through, ' +
@@ -449,7 +470,7 @@ async function claimB(t) {
     fenced = e;
   }
   const wrote = db.statements.slice(before).some(function (sql) {
-    return /INSERT INTO sts_minted/.test(sql);
+    return sql === 'MINTED_FLUSH wrote';
   });
   t.check(!!fenced && fenced.fenced === true && fenced.reason === 'origin' &&
           !wrote && lost.length === 1,

@@ -27,6 +27,7 @@ const replication = require('../persistence/persistence_replication');
 const scheduler = require('../cluster/scheduler');
 const authn = require('../authn/authn');
 const storeDouble = require('./tools/store_double');
+const flushDouble = require('./tools/minted_flush_double');
 
 const log = require('bunyan').createLogger({ name: 'session_index',
   level: process.env.LOG_LEVEL || 'info' });
@@ -204,6 +205,29 @@ function fakePg(statements, answer) {
   log.debug("Entering fakePg().");
   function FakeClient() {}
   FakeClient.prototype.query = function (sql, params) {
+    // THE MINTED FLUSH IS ONE STATEMENT SINCE #820, played against Maps by
+    // `tools/minted_flush_double.js`: each key it touches holds
+    // `answer.selectBody` when that is set, and a guarded upsert holds a
+    // tombstone (so it is not written) while `answer.rowCount` is 0.
+    // Recorded as `MINTED_FLUSH`, with its parameters by name and the
+    // state it left in `answer.flushed`.
+    if (flushDouble.isFlush(sql)) {
+      const named = flushDouble.named(sql);
+      const db = flushDouble.state();
+      named.lock_h.forEach(function (h, i) {
+        const key = h + '\n' + named.lock_r[i] + '\n' + named.lock_k[i];
+        if (answer.selectBody != null) {
+          db.minted.set(key, { body: answer.selectBody });
+        } else if (!answer.rowCount) {
+          db.minted.set(key, { body: TOMBSTONE });
+        }
+      });
+      const played = flushDouble.play(db, sql);
+      answer.flushed = db;
+      statements.push({ sql: 'MINTED_FLUSH', text: sql.text, params: named,
+                        go: played.rows[0].go });
+      return Promise.resolve(played);
+    }
     const text = String(sql);
     statements.push({ sql: text, params: params || [] });
     // A repair's read of the index row first (2026-10-21): the row in
@@ -212,10 +236,8 @@ function fakePg(statements, answer) {
       const held = answer.heldIndex ? [answer.heldIndex] : [];
       return Promise.resolve({ rows: held, rowCount: held.length });
     }
-    // A flush's set-based statements (2026-10-21): each parameter an array
-    // over the rows. The lock-and-read answers every key with selectBody;
-    // a guarded INSERT … RETURNING returns every row when rowCount says it
-    // landed and none when it did not.
+    // The flush's lock-and-read when it is a transaction (#820): every key
+    // with selectBody.
     if (/^SELECT handle, realm, key, body FROM sts_minted/i.test(text)) {
       const p = params || [];
       const found = answer.selectBody == null ? [] : (p[0] || []).map(
@@ -224,13 +246,6 @@ function fakePg(statements, answer) {
                    body: answer.selectBody };
         });
       return Promise.resolve({ rows: found, rowCount: found.length });
-    }
-    if (/RETURNING handle, realm, key/.test(text)) {
-      const p = params || [];
-      const back = answer.rowCount ? (p[0] || []).map(function (h, i) {
-        return { handle: h, realm: p[1][i], key: p[2][i] };
-      }) : [];
-      return Promise.resolve({ rows: back, rowCount: back.length });
     }
     if (/SELECT body FROM sts_minted/i.test(text)) {
       if (answer.selectBody == null) {
@@ -317,27 +332,46 @@ async function sqlHalf(t) {
   const sessionDelete = /DELETE FROM sts_sessions/i;
   const sessionInsert = /INSERT INTO sts_sessions/i;
 
+  // SINCE #820 THE FLUSH IS ONE STATEMENT (MINTED_FLUSH): what was a
+  // statement of the transaction is a set of its named arrays, and "in the
+  // same transaction" is "in the same statement". The order the CTEs run
+  // in is the statement's own: every side-table write reads `done`, which
+  // counts the bodies' writes, and writes only for a body `ins` returned.
+  const flushes = function () {
+    return statements.filter(function (one) {
+      return one.sql === 'MINTED_FLUSH';
+    });
+  };
+  const last = function () {
+    const all = flushes();
+    return all.length ? all[all.length - 1].params : {};
+  };
+  const text = postgres.MINTED_FLUSH;
+  t.check(/sdel AS \(DELETE FROM sts_sessions .*\(SELECT n FROM done\) >= 0/
+            .test(text) &&
+          /ses AS \(INSERT INTO sts_sessions .*\(SELECT n FROM done\) >= 0 AND EXISTS \(SELECT 1 FROM ins WHERE ins\.handle = 'authn\.sessions'/
+            .test(text),
+          'the index is written in the body\'s statement, after the ' +
+          'bodies, and only for a body that was written');
+
   statements.length = 0;
   await driver.saveMinted([], [{
     handle: 'authn.sessions', realm: REALM, key: 'digest-gone',
     tombstone: true, keySealed: ''
   }]);
-  const tombTx = txOf(statements);
-  const tombInsert = matching(tombTx, /INSERT INTO sts_minted/i);
-  const tombDelete = matching(tombTx, sessionDelete);
-  t.equal(tombInsert.length, 1, 'a tombstone writes the marker');
-  t.equal(tombInsert[0].params[3][0], TOMBSTONE,
+  let p = last();
+  const marker = (p.up_k || []).indexOf('digest-gone');
+  t.check(flushes().length === 1 && marker >= 0,
+          'a tombstone writes the marker');
+  t.equal(marker >= 0 ? p.up_body[marker] : null, TOMBSTONE,
           'and the marker is the tombstone body');
-  t.equal(tombDelete.length, 1,
-          'and deletes the index row in that same transaction');
-  t.equal(tombDelete[0].params[0][0], REALM, 'the delete names the realm');
-  t.equal(tombDelete[0].params[1][0], 'digest-gone', 'and the minted key');
-  t.check(tombTx.indexOf(tombInsert[0]) < tombTx.indexOf(tombDelete[0]) &&
-          tombTx.indexOf(tombDelete[0]) < tombTx.length - 1,
-          'the index delete follows the marker and precedes COMMIT');
+  t.equal((p.sesdel_key || []).length, 1,
+          'and deletes the index row in that same statement');
+  t.equal((p.sesdel_realm || [])[0], REALM, 'the delete names the realm');
+  t.equal((p.sesdel_key || [])[0], 'digest-gone', 'and the minted key');
 
   // #820: an on-demand store's index rows (`sts_minted_index`) are replaced
-  // in the transaction that writes the body, and go with a deleted row.
+  // in the statement that writes the body, and go with a deleted row.
   statements.length = 0;
   answer.selectBody = null;
   answer.rowCount = 1;
@@ -346,31 +380,25 @@ async function sqlHalf(t) {
     body: 'sealed', tombstone: true, lookups: ['family-digest']
   }], [{ handle: 'oauth2_bcp.refreshTokens', realm: REALM,
          key: 'digest-old', tombstone: true, indexed: true, keySealed: '' }]);
-  const indexTx = txOf(statements);
-  const indexDeletes = matching(indexTx, /DELETE FROM sts_minted_index/i);
-  const indexInserts = matching(indexTx, /INSERT INTO sts_minted_index/i);
-  t.check(indexDeletes.length === 1 &&
-          indexDeletes[0].params[2].indexOf('digest-tok') >= 0 &&
-          indexDeletes[0].params[2].indexOf('digest-old') >= 0,
+  p = last();
+  t.check((p.ixup_k || []).indexOf('digest-tok') >= 0 &&
+          (p.ixgone_k || []).indexOf('digest-old') >= 0,
           'an indexed row\'s old index rows are deleted, and a deleted ' +
-          'row\'s with it (#820)', JSON.stringify(indexDeletes.map(
-            function (one) { return one.params; })));
-  t.check(indexInserts.length === 1 &&
-          indexInserts[0].params[2][0] === 'family-digest' &&
-          indexInserts[0].params[3][0] === 'digest-tok' &&
-          indexTx.indexOf(indexInserts[0]) < indexTx.length - 1,
-          'and its new index rows are written before COMMIT (#820)',
-          JSON.stringify(indexInserts.map(function (one) {
-            return one.params;
-          })));
+          'row\'s with it (#820)', JSON.stringify([p.ixup_k, p.ixgone_k]));
+  t.check((p.ixnew_i || [])[0] === 'family-digest' &&
+          (p.ixnew_k || [])[0] === 'digest-tok' &&
+          answer.flushed.index.has(['oauth2_bcp.refreshTokens', REALM,
+                                    'family-digest', 'digest-tok']
+            .join('\n')),
+          'and its new index rows are written in that statement (#820)',
+          JSON.stringify([p.ixnew_i, p.ixnew_k]));
   statements.length = 0;
   answer.rowCount = 0;
   await driver.saveMinted([{
     handle: 'oauth2_bcp.refreshTokens', realm: REALM, key: 'digest-refused',
     body: 'sealed', tombstone: true, lookups: ['family-digest']
   }], []);
-  t.check(!matching(txOf(statements), /INSERT INTO sts_minted_index/i)
-            .length,
+  t.check(answer.flushed.index.size === 0,
           'a refused body files no index row (#820)');
   answer.rowCount = 1;
 
@@ -385,12 +413,12 @@ async function sqlHalf(t) {
       return 'put-back';
     }
   }], []);
-  const refusedTx = txOf(statements);
+  p = last();
   t.check(!merged, 'a stored tombstone is not merged');
   t.equal(refused.refused.length, 1, 'and the upsert is refused');
-  t.check(!matching(refusedTx, /INSERT INTO sts_minted/i).length,
+  t.check((p.up_k || []).indexOf('digest-back') < 0,
           'a refused upsert does not put the body back');
-  t.check(!matching(refusedTx, sessionInsert).length,
+  t.check(!(p.ses_key || []).length && !answer.flushed.sessions.size,
           'and does not write an index row');
 
   statements.length = 0;
@@ -400,13 +428,14 @@ async function sqlHalf(t) {
     handle: 'authn.sessions', realm: REALM, key: 'digest-lost',
     body: 'sealed', tombstone: true, index: index
   }], []);
-  const guardedTx = txOf(statements);
-  const guardedBody = matching(guardedTx, /INSERT INTO sts_minted/i);
+  p = last();
   t.equal(guarded.refused.length, 1,
           'a guarded upsert the database did not apply is refused');
-  t.check(guardedBody.length === 1 && /body <>/.test(guardedBody[0].sql),
-          'the guard is the tombstone comparison');
-  t.check(!matching(guardedTx, sessionInsert).length,
+  t.check(/WHERE sts_minted\.body <> \$[0-9]+::text OR/.test(text) &&
+          (p.plain_k || []).indexOf('digest-lost') < 0,
+          'the guard is the tombstone comparison, and the row is not ' +
+          'among the unguarded');
+  t.check(!answer.flushed.sessions.size,
           'and no index row is written for it');
 
   statements.length = 0;
@@ -415,45 +444,42 @@ async function sqlHalf(t) {
     handle: 'authn.sessions', realm: REALM, key: 'digest-live',
     body: 'sealed', tombstone: true, index: index
   }], []);
-  const liveTx = txOf(statements);
-  const liveBody = matching(liveTx, /INSERT INTO sts_minted/i);
-  const liveIndex = matching(liveTx, sessionInsert);
+  p = last();
   t.equal(accepted.refused.length, 0, 'a guarded upsert that lands is kept');
-  t.equal(liveIndex.length, 1, 'and the index is written with it');
-  t.equal(liveIndex[0].params.length, 15, 'fifteen columns');
-  t.equal(liveIndex[0].params[0][0], REALM, 'the index realm');
-  t.equal(liveIndex[0].params[1][0], 'digest-live', 'the minted key');
-  t.equal(liveIndex[0].params[2][0], null,
+  t.equal(answer.flushed.sessions.size, 1, 'and the index is written with it');
+  t.equal(postgres.MINTED_FLUSH_LAYOUT.filter(function (one) {
+    return /^ses_/.test(one[0]);
+  }).length, 15, 'fifteen columns');
+  t.equal((p.ses_realm || [])[0], REALM, 'the index realm');
+  t.equal((p.ses_key || [])[0], 'digest-live', 'the minted key');
+  t.equal((p.ses_expires || [])[0], null,
           'a null expiresAt stays SQL NULL, not zero');
-  t.equal(liveIndex[0].params[3][0], 5000,
+  t.equal((p.ses_last_seen || [])[0], 5000,
           'last_seen_at is the millisecond');
-  t.check(liveTx.indexOf(liveBody[0]) < liveTx.indexOf(liveIndex[0]),
-          'the index insert follows the body insert');
 
   statements.length = 0;
   await driver.saveMinted([], [{
     handle: 'authn.sessions', realm: REALM, key: 'digest-hard'
   }]);
-  const hardTx = txOf(statements);
-  t.equal(matching(hardTx, /DELETE FROM sts_minted/i).length, 1,
-          'a hard delete removes the body');
-  t.equal(matching(hardTx, sessionDelete).length, 1,
+  p = last();
+  t.equal((p.del_k || []).length, 1, 'a hard delete removes the body');
+  t.equal((p.sesdel_key || []).length, 1,
           'and the index row with it');
 
   statements.length = 0;
   await driver.saveMinted([], [{
     handle: 'oauth2.authzCodes', realm: REALM, key: 'code-1'
   }]);
-  t.check(!matching(txOf(statements), sessionDelete).length,
+  t.check(!(last().sesdel_key || []).length,
           'a delete of another store does not touch sts_sessions');
 
   statements.length = 0;
   await driver.saveMinted([{
     handle: 'authn.sessions', realm: REALM, key: 'digest-plain', body: 'x'
   }], []);
-  t.check(!matching(txOf(statements), sessionInsert).length &&
-          !matching(txOf(statements), sessionDelete).length,
-          'a session upsert with no index columns writes no index SQL');
+  p = last();
+  t.check(!(p.ses_key || []).length && !(p.sesdel_key || []).length,
+          'a session upsert with no index columns writes no index row');
 
   statements.length = 0;
   answer.done = true;
