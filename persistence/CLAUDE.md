@@ -197,6 +197,28 @@ does it with `openConnection()`.
 **What a second database (phase 3, a later ticket if wanted) would cost**: the
 SQL, not the layer. Every statement above is PostgreSQL's.
 
+**COUNTERS COMMIT WITHOUT WAITING FOR THE LOG FLUSH (2026-10-22, #820, rcbj's
+decision).** Postgres flushes its WAL one fsync at a time. On 8081 a sign-in
+made about eleven committing transactions, which came to 187 fsyncs a second
+at 3.5 ms each. That held the log flush two-thirds of the time, and it was the
+sign-in rate's ceiling.
+
+About half of those commits were counters, and they now go through the
+driver's tally pool. Its connections are opened with
+`-c synchronous_commit=off`:
+- the shared rate-limit windows: `countWindow`, `clearWindow`;
+- the risk engine's counts, assessments (recorded, settled, amended),
+  subjects, session context and failures.
+
+Such a write is visible at once and durable at the WAL writer's next flush.
+A crash of postgres itself can lose the last fraction of a second of them:
+an attempt uncounted, or a statistic one sign-in short.
+
+Everything else stays on `pool`, durable at commit: sessions, codes, tokens,
+the directory, every minted row, and the risk engine's action claim (which
+stops an action being taken twice). `tests/postgres_tally_commit.js` covers
+this.
+
 ## The sentence this directory reverses
 
 Every document in this repository said, in one wording or another, that this
