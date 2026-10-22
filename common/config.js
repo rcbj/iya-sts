@@ -4166,29 +4166,36 @@ const SETTINGS = [
                  'when workers.requestCount is 0.' },
 
   // ---------------------------------------------------------------------
-  // READ-YOUR-WRITE ACROSS WORKERS. Off by default, and the cost is the reason.
+  // READ-YOUR-WRITE ACROSS WORKERS. On since #364; a MODE since #820
+  // (2026-10-22), `session` by default — the request pool's SESSION
+  // READ-YOUR-WRITE block argues it. `true` and `false` keep their meaning
+  // (`session`, `off`), so a stored boolean or an old environment needs no
+  // rewrite.
   // ---------------------------------------------------------------------
   { key: 'workers.readYourWrite', group: 'Global',
     label: 'Read-your-write across request workers',
-    env: 'STS_WORKERS_READ_YOUR_WRITE', type: 'bool', dflt: true,
+    env: 'STS_WORKERS_READ_YOUR_WRITE', type: 'enum',
+    enumValues: ['session', 'global', 'off', 'true', 'false'],
+    dflt: 'session',
     runtime: true, perProcess: true,
-    description: 'Whether a request worker must catch up with what the other ' +
-                 'workers have written before it serves. Coordination makes ' +
-                 'workers CONVERGE — measured at half a second to a second — ' +
-                 'and convergence is not read-your-write: with this off, a ' +
-                 'caller that writes through one worker and reads through ' +
-                 'another may be answered by one that has not caught up, ' +
-                 'which matters most for the fanout surfaces (SCIM, XACML, ' +
-                 'the management API) precisely because consecutive requests ' +
-                 'there land anywhere. With it on, the pool counts writes ' +
-                 'and a worker that is behind pulls before it answers — so ' +
-                 'the cost falls on the first read after a write on each ' +
-                 'worker, and on nothing while nothing is being written. ON ' +
-                 'BY DEFAULT since #364, when a request worker became the ' +
-                 'default: the front thread still answers what is never ' +
-                 'dispatched, so a caller would otherwise see its own write ' +
-                 'go missing between two requests. It must be on for a ' +
-                 'surface pool (workers.surfaceCount).' },
+    description: 'Whether a request worker must catch up with writes made ' +
+                 'through the other workers before it serves. Coordination ' +
+                 'makes workers converge in half a second to a second, and ' +
+                 'that is not read-your-write. `session` (the default): a ' +
+                 'request that carries a session cookie, the pool cookie or ' +
+                 'a sign-in flow in its address waits only for the writes of ' +
+                 'earlier requests that carried the same, and for the ' +
+                 'front process\'s own writes; a request carrying none of ' +
+                 'them, such as a token request from a client\'s server, ' +
+                 'SCIM or a management API call with a bearer token, waits ' +
+                 'for every write answered before it. So a browser sees its ' +
+                 'own writes at once, and another browser\'s or client\'s ' +
+                 'only once the workers converge. `global`: every request ' +
+                 'waits for every write answered before it, which costs ' +
+                 'tens of milliseconds a request under load. `off`: no ' +
+                 'request waits, and a caller may not find its own write. ' +
+                 '`true` means `session` and `false` means `off`. It must ' +
+                 'not be off for a surface pool (workers.surfaceCount).' },
 
   { key: 'workers.socketDir', group: 'Global',
     label: 'Request worker socket directory',

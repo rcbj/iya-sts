@@ -186,7 +186,7 @@ class CommitAnnouncer {
   announceAnswered(ticket: unknown): boolean {
     const { log, config, persistence } = this.deps;
     log.debug("Entering CommitAnnouncer.announceAnswered().");
-    if (!config.value('workers.readYourWrite') ||
+    if (!CommitAnnouncer.barrierOn(config.value('workers.readYourWrite')) ||
         typeof persistence.answersAfterCommit !== 'function' ||
         !persistence.answersAfterCommit()) {
       log.debug("Leaving CommitAnnouncer.announceAnswered(). Not held here.");
@@ -228,7 +228,22 @@ class CommitAnnouncer {
     const { log, config } = this.deps;
     log.debug("Entering CommitAnnouncer.announcesWrites().");
     log.debug("Leaving CommitAnnouncer.announcesWrites().");
-    return !!config.value('workers.readYourWrite');
+    return CommitAnnouncer.barrierOn(config.value('workers.readYourWrite'));
+  }
+
+  // WHETHER `workers.readYourWrite` ASKS FOR THE BARRIER AT ALL, in either of
+  // its modes (2026-10-22, #820). It was a boolean and is `session`, `global`
+  // or `off` now, with `true` and `false` keeping their meaning — so its text
+  // `off` or `false`, which `!!value` would read as on, is off. The pool's
+  // `readYourWriteModeOf()` reads it the same way; the announcer does not
+  // require the pool, which is the front process's. A HOT PATH and a static
+  // with no logger in reach: asked for every answered request, so no
+  // Entering/Leaving pair.
+  static barrierOn(value: unknown): boolean {
+    if (value === undefined || value === null || value === false) {
+      return false;
+    }
+    return !/^(off|false|no|0|)$/i.test(String(value).trim());
   }
 
   // One more finished response, counted whether or not it is announced.
@@ -431,7 +446,7 @@ class CommitAnnouncer {
   noteOperationFinished(ticket: unknown, settled?: boolean): void {
     const { log, config } = this.deps;
     log.debug("Entering CommitAnnouncer.noteOperationFinished().");
-    if (!config.value('workers.readYourWrite')) {
+    if (!CommitAnnouncer.barrierOn(config.value('workers.readYourWrite'))) {
       log.debug("Leaving CommitAnnouncer.noteOperationFinished().");
       return;
     }
