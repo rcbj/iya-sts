@@ -21057,6 +21057,12 @@ const CODES = [
       'Monitoring → Tokens; the list drawn is what the answering process ' +
       'holds, and the answer says so (`coverage.unread`) (#820).',
     spec: 'logged; the page answers' },
+  { code: 'STS-ADMIN-0895',
+    summary: 'The token holders that are clients could not be read from the ' +
+      'store\'s `client` index for the user counts (Monitoring → Metrics, ' +
+      'the dashboard); the clients counted are the holders this process ' +
+      'holds (#820).',
+    spec: 'logged; the page answers' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',

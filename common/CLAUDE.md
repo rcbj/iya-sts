@@ -5582,6 +5582,42 @@ four numbers. `admin_stats.js` answers each from the store now:
 Held whole (memory, development, in-process tests) each answers what its
 synchronous twin answers. `tests/console_tokens_metrics_scale.js`.
 
+### The token holders on demand (2026-10-22, #820)
+
+`admin_stats.tokenHolders` — one row per identity a token was issued to,
+what `/admin/users` lists beside the register — was held whole, so every
+request worker read back every row at its start (562,120 on 8081, a
+worker's start from 16 s to 52 s). It is `onDemand` with
+`keysResident: true` and `maxEntries` 20,000, so a process holds the rows it
+was asked about and the key digest of every row:
+
+* **`has()` and `size` answer from the digests with no read.** That is what
+  the console's synchronous readers ask (`knownUserKeys()`, `userKeyTest()`,
+  `userCountsResolved()`), so none of them had to become asynchronous; the
+  cost is a digest per holder per process (about 45 MB at 562,000).
+* **A write never waits on a read.** `noteTokenHolder()` runs for every JWT
+  and asks `peek()` — `realms.js`'s new facade member, what is held and never
+  a read of the store. A holder not held is written blindly (`firstAt` now,
+  `lastExp` the token's plus the headroom), and the store's `mergeRow` joins
+  it with the stored row under the row's lock: the earliest positive
+  `firstAt`, the latest `lastExp`, and a client once a client. The refresh
+  grant and the code grant warm the holder's row first
+  (`stats.warmTokenHolders()`, one `readMany` beside the other warm-ups), so
+  the blind write is the rare case. `warm()` now works on a key-resident
+  store: it asks only for a key whose digest is held, and drops a digest the
+  store answers absent.
+* **The counts are of every holder; the lists are of the held ones.**
+  `userCountsAsync()` counts the holders by the resident digests and the
+  clients through the store's `client` index (`lookupEntriesAsync()`, never
+  the blocking `lookup()`; a failure is `STS-ADMIN-0895` and the held clients
+  are counted). `collectUserKeys()` and `buildUserRowsResolved()` list the
+  holders this process holds, because a digest names nobody.
+* **The one-time backfill and its job (`oauth2.token-holders-backfill`) are
+  gone**: on demand they would walk the whole register, and the holders of
+  older tokens are written again by their next token.
+
+`tests/token_holders_on_demand.js` holds it.
+
 ## `roles.js` and `issuance_gate.js`: the fourth register, and the leaf that asks about it
 
 Rules 3u and 3v. They arrived together on 2026-09-05 and they are two files

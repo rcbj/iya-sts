@@ -247,14 +247,6 @@
     "en": "46dabea2677465d2",
     "text": "Tar bort varje OAuth-beviljande vars sista token har gått ut, och posten för varje token som skapats under ett beviljande när den går ut (#142)."
   },
-  "sched.jobs.oauth2.token-holders-backfill.title": {
-    "en": "98c516f1cf99620a",
-    "text": "Efterfyllnad av tokeninnehavare"
-  },
-  "sched.jobs.oauth2.token-holders-backfill.describe": {
-    "en": "868b926daccee16f",
-    "text": "För in innehavaren av varje redan utfärdad token i användarlistan, en gång per realm, nu när tokenregistret läses vid behov (#820)."
-  },
   "sched.jobs.oauth2.used-assertion-purge.title": {
     "en": "1b76c505917f3b58",
     "text": "Rensning av utgångna använda intyganden"

@@ -27,8 +27,11 @@
 //       revokes what is not held;
 //   R6. every token holder is listed (`admin_stats.tokenHolders`), held
 //       tokens or not, and one person's row counts their tokens through the
-//       index; a JWT recorded notes its holder once, not once per token;
-//   R7. the one-time backfill notes the holders of tokens already issued.
+//       index; a JWT recorded notes its holder once, not once per token.
+//
+// (R7, the one-time backfill of the holders, went with the backfill on
+// 2026-10-22: the holders are on demand themselves now, and
+// `tests/token_holders_on_demand.js` holds them.)
 //
 // In a child process: it installs a stand-in reader in `common/realms.js`.
 // ===========================================================================
@@ -198,35 +201,6 @@ function child() {
     note(writes === 0,
          'R6. a token with only a subject notes no holder, and asks no ' +
          'directory', JSON.stringify({ writes: writes }));
-
-    // R7: the backfill notes the holders of tokens already issued — carol's
-    // and dave's are in the store, not held — and marks the realm done.
-    const ran = await stats.backfillTokenHolders();
-    const after = holders.dump('default').map(function (row) {
-      return row.key;
-    });
-    const again = await stats.backfillTokenHolders();
-    note(ran.realms === 1 && after.indexOf('carol') >= 0 &&
-         after.indexOf('dave') >= 0 && again.realms === 0 &&
-         stats.userRows().every(function (row) {
-           return row.key !== '$backfilled$';
-         }),
-         'R7. the backfill notes every holder in the store once per realm, ' +
-         'and its mark is no row of the list',
-         JSON.stringify({ ran: ran, again: again, after: after }));
-    // The job itself, registered with the real scheduler: a malformed
-    // registration throws (STS-SCHED-0009) at every process's start.
-    const scheduler = require(ROOT + '/cluster/scheduler');
-    let registered = null;
-    try {
-      stats.ensureHoldersBackfillJob(scheduler);
-      registered = scheduler.job('oauth2.token-holders-backfill');
-    } catch (e) {
-      registered = String((e && e.message) || e);
-    }
-    note(registered && typeof registered === 'object',
-         'R7. the backfill job registers with the scheduler',
-         typeof registered === 'string' ? registered : '');
   })().catch(function (e) {
     note(false, 'the child threw', (e && e.stack) || e);
   }).then(function () {
