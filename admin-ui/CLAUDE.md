@@ -3017,6 +3017,15 @@ server is seeing tokens it did not expect.
     other one about half the time, and a search that answers *nothing matches*
     to a string printed on the same page is worse than no search.
 
+  **ON A REGISTER TOO LARGE TO LIST THE PERSON PANE SEARCHES EXACTLY
+  (2026-10-22, #820).** While the token register is on demand the catalogue
+  is the delegation's identities and the one person the search names by
+  their exact name (`common/CLAUDE.md`, 3p); the answer says `search:
+  'exact'` and `complete: false`, and `delegationUserChooser()` draws the
+  pane — never the "nobody to choose" note — under
+  `consoleDelegation.userChooserExact`, and the user page's table under
+  `consoleDelegation.usersPartial`. Held whole, nothing changes.
+
   The two searches are independent (`appq`/`appfrom` and `userq`/`userfrom`),
   each rides in the OTHER's form and in the acts table's filter form
   (`chooserCarry()`) so that no control on the page clears a control the reader

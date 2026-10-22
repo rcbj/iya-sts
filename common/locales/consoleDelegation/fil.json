@@ -67,6 +67,8 @@
   "userChooserLabel": "Maghanap ng tao",
   "userChooserPlaceholder": "bahagi ng isang username, principal o subject",
   "userChooserNothing": "Walang tumugma diyan. Ang listahang ito ay ang identity register na PINAGSAMA sa lahat ng pinangalanan ng isang delegation, kaya ang pangalang nasa pahina sa itaas pero wala rito ay dumating sa serbisyong ito bilang application sa halip na tao.",
+  "userChooserExact": "<strong>Masyadong malaki ang register na ito para ilista.</strong> Ang mga pagpipilian ay ang mga identity na pinangalanan ng isang delegation, at sa eksaktong pangalan lamang nahahanap ng paghahanap ang iba pa.",
+  "usersPartial": "<strong>Ilan lamang na identity ang nakalista rito.</strong> Masyadong malaki ang register para ilista nang buo: ito ang mga identity na pinangalanan ng isang delegation at ang hinanap ayon sa pangalan.",
   "signedIn": "nag-sign in",
   "toThisService": "sa serbisyong ito",
   "issuedFor": "na-issue para kay",
