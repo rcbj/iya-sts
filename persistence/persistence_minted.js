@@ -135,6 +135,8 @@ const tiers = require('./tiers');
 // THE FAN-IN FOR `merge: 'own'` STORES. A LIBRARY, like this one, and required
 // in the ordinary direction: it does not require this file back.
 const replication = require('./persistence_replication');
+// A LEAF: where a flush's time goes (#820), beside the requests'.
+const requestPhases = require('../common/request_phases');
 // A LEAF with no requires: the failure codes on the log lines and the fatal
 // refusals below. NOT audit.js, which requires persistence_replication.js.
 const errorCodes = require('../common/error_codes');
@@ -1435,6 +1437,10 @@ function flush() {
   const taken = journal;
   // Everything journalled so far is in `taken`: no flush is in flight here.
   const takenAt = generation;
+  // WHERE A FLUSH'S TIME GOES (2026-10-22, #820): a request's commit hold
+  // was ~55 ms on 8081 while the flush's statements took a few. Taken here,
+  // before the rows are read and sealed.
+  const flushStartedAt = Date.now();
   const upserts = [];
   const deletes = [];
   let unsealable = 0;
@@ -1574,10 +1580,20 @@ function flush() {
   // THE DATA-KEY ROWS LAND FIRST (#391): a row sealed under a data encryption
   // key made during this flush must not reach another process before the key
   // does.
+  const flushSealedAt = Date.now();
+  let flushSentAt = 0;
   const saving = Promise.resolve(typeof keystore.settleDeks === 'function'
     ? keystore.settleDeks() : null).then(function () {
+    flushSentAt = Date.now();
     return driver.saveMinted(upserts, deletes);
   }).then(function (result) {
+    const doneAt = Date.now();
+    requestPhases.record('FLUSH minted', {
+      prepare: flushSealedAt - flushStartedAt,
+      queue: flushSentAt - flushSealedAt,
+      db: doneAt - flushSentAt,
+      rows: upserts.length + deletes.length,
+      total: doneAt - flushStartedAt });
     committedAt = Math.max(committedAt, takenAt);
     settleDecided(result);
     noteCommittedLookups(upserts, deletes, result);
