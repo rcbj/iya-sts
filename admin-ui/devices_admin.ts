@@ -833,6 +833,59 @@ class DevicesAdmin {
              complianceSources: devices.COMPLIANCE_SOURCES.slice(0) };
   }
 
+  // MONITORING → DEVICES WITHOUT A WALK (2026-10-22, #820). `monitorView()`
+  // counts every device, and where the directory is a window onto the store
+  // that is every row of `ou=devices` read synchronously, and a liveness
+  // question per device — a sign-on session read through the bridge each.
+  // This asks the store for the count, reads ONE page of devices
+  // asynchronously, and warms the sessions of that page's devices into the
+  // window (`authn.warmSessionAsync()`, in parallel) before the synchronous
+  // liveness check, so the check asks the window and never the store. The
+  // counts say whether they cover the register (`complete`). Where the
+  // directory is not windowed it is `monitorView()`, unchanged.
+  /**
+   * Returns Monitoring → Devices' view, its counts asked of the store and
+   * tallied from one page of devices where the directory is a window.
+   *
+   * @param req - the request
+   * @param query - the page's query (`days`)
+   * @returns a promise of the view
+   */
+  async monitorViewAsync(req: Req, query?: Json): Promise<Json> {
+    const { log, devices } = this.deps;
+    log.debug("Entering DevicesAdmin.monitorViewAsync().");
+    const self = this;
+    const q = query || {};
+    const warm = async function (page: Json[]): Promise<void> {
+      log.debug("Entering DevicesAdmin.monitorViewAsync() warm().");
+      // The authentication service, reached lazily: this module is built at
+      // 18q, after it, and holds no reference of its own.
+      const authn = require('../authn/authn');
+      const ids = page.filter(function (d: Json): boolean {
+        return !!d.secretHash && !!d.session;
+      }).map(function (d: Json): string {
+        return String(d.session);
+      });
+      await Promise.all(ids.map(function (id: string): Promise<boolean> {
+        return authn.warmSessionAsync(id).catch(function (e: Json) {
+          log.debug("Caught in DevicesAdmin.monitorViewAsync() warm(): " +
+                    ((e && e.message) || e));
+          return false;
+        });
+      }));
+      log.debug("Leaving DevicesAdmin.monitorViewAsync() warm(). " +
+                ids.length + " session(s).");
+    };
+    const counts = await devices.countsAsync(function (d: Json): boolean {
+      return self.liveness(d)(d.session);
+    }, { prepare: warm });
+    log.debug("Leaving DevicesAdmin.monitorViewAsync().");
+    return { counts: counts, timeline: devices.timeline(Number(q.days) ||
+                                                        30),
+             activity: deviceRecognition.activity(),
+             complianceSources: devices.COMPLIANCE_SOURCES.slice(0) };
+  }
+
   // Where a console form goes back to: the device it acted on, or the list
   // once it is gone.
   private backTo(body: Json, result: Json): string {
@@ -887,5 +940,6 @@ export = {
   mdmFeed: slot.forward('mdmFeed'),
   registrationView: slot.forward('registrationView'),
   registrationViewWithStatus: slot.forward('registrationViewWithStatus'),
-  monitorView: slot.forward('monitorView')
+  monitorView: slot.forward('monitorView'),
+  monitorViewAsync: slot.forward('monitorViewAsync')
 };

@@ -4859,7 +4859,11 @@ class AdminApi {
         description: '`counts` — `total`, `keys`, and `byOwnerKind`, ' +
                      '`byCompliance`, `byAttestation`, `byKeyKind`, ' +
                      '`byEnrolment`, `byStatus`, and `nativeSso` (`live`, ' +
-                     '`ended`, `none`) — and `timeline`: `days`, one row ' +
+                     '`ended`, `none`), with `windowed`, `counted` and ' +
+                     '`complete`: where the directory is a window onto ' +
+                     'the store, `total` is the store\'s count and the ' +
+                     'tables cover the first `counted` devices — and ' +
+                     '`timeline`: `days`, one row ' +
                      'per UTC day (`day`, `created`, `removed`, ' +
                      '`evicted`), the `totals` over every event kept and ' +
                      '`since`, the oldest. A removal by an `ldapdelete` on ' +
@@ -4874,9 +4878,17 @@ class AdminApi {
         responseDescription: 'The counts and the timeline.',
         responseSchema: { type: 'object',
           description: '`counts` and `timeline`.' },
-        handler: function (req, res) {
+        handler: function (req, res, next) {
           log.debug("Entering the management API devices monitor endpoint.");
-          self.sendJson(res, 200, devicesAdmin.monitorView(req, req.query));
+          // Asynchronous since #820: the counts are asked of the store and
+          // one page of devices is read, never every device.
+          devicesAdmin.monitorViewAsync(req, req.query).then(function (view) {
+            self.sendJson(res, 200, view);
+          }).catch(function (e) {
+            log.debug("Caught in the management API devices monitor " +
+                      "endpoint: " + ((e && e.message) || e));
+            next(e);
+          });
           log.debug("Leaving the management API devices monitor endpoint.");
         } },
 
