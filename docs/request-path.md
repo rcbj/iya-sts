@@ -12,6 +12,8 @@ itself. It hands each one to a worker thread
 request from the socket to the worker and back, names every place it can wait,
 and explains the log line that measures each wait.
 
+[![A request passes the main port's listen backlog; in the front process, the ticket wait, the barrier and the per-worker connection pool; in a request worker thread, the socket backlog, the event loop, the handler and the commit to PostgreSQL; then the answer returns to the client. Brackets above the stages name the phase of the request phases log line that measures each.](request-path.svg)](request-path.svg)
+
 ## The path, in order
 
 | # | Where it waits | What it is waiting for | What bounds it |
