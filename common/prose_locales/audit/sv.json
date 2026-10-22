@@ -675,6 +675,10 @@
     "en": "faa7f1245749fea5",
     "text": "En person namngav eller rensade den part som får agera för dem"
   },
+  "audit.actions.portal.delegation.search.label": {
+    "en": "ce14f3c18b0c3f60",
+    "text": "En person sökte efter någon som får agera för dem"
+  },
   "audit.actions.admin.password-policy.change.label": {
     "en": "3919c9c6efb6ee77",
     "text": "En profil för lösenordspolicyn ändrades"
@@ -934,6 +938,10 @@
   "audit.actions.ssf.stream.revived.label": {
     "en": "bb572a202bd6c70a",
     "text": "En död push-ström återupplivades"
+  },
+  "audit.actions.ssf.stream.delivery.label": {
+    "en": "3df44dec0e09a7e4",
+    "text": "En mottagarström gick från push-leverans till poll-leverans"
   },
   "audit.actions.ssf.deadletter.clear.label": {
     "en": "1caaf3043e122f70",
@@ -1342,6 +1350,14 @@
   "audit.actions.portal.siop.prefer.label": {
     "en": "7e6377e63c113f97",
     "text": "En person markerade ett bevisat DID som sitt föredragna, eller tog bort markeringen"
+  },
+  "audit.actions.portal.siop.view.label": {
+    "en": "e7a28d6d72970a6f",
+    "text": "En person kunde inte visas sina självutfärdade subjekt"
+  },
+  "audit.actions.portal.siop.did.label": {
+    "en": "7fa86b94eee6535e",
+    "text": "En person kunde inte visas ett självutfärdat subjekts DID-dokument"
   },
   "audit.actions.siop.key.pinned.label": {
     "en": "a2cc99b16a4a406e",

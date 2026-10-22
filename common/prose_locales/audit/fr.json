@@ -675,6 +675,10 @@
     "en": "faa7f1245749fea5",
     "text": "Une personne a nommé ou effacé la partie qui peut agir pour elle"
   },
+  "audit.actions.portal.delegation.search.label": {
+    "en": "ce14f3c18b0c3f60",
+    "text": "Une personne a cherché quelqu'un qui peut agir pour elle"
+  },
   "audit.actions.admin.password-policy.change.label": {
     "en": "3919c9c6efb6ee77",
     "text": "Un profil de politique de mot de passe a été modifié"
@@ -934,6 +938,10 @@
   "audit.actions.ssf.stream.revived.label": {
     "en": "bb572a202bd6c70a",
     "text": "Un flux push mort a été réactivé"
+  },
+  "audit.actions.ssf.stream.delivery.label": {
+    "en": "3df44dec0e09a7e4",
+    "text": "Un flux récepteur est passé de la livraison push à la livraison poll"
   },
   "audit.actions.ssf.deadletter.clear.label": {
     "en": "1caaf3043e122f70",
@@ -1342,6 +1350,14 @@
   "audit.actions.portal.siop.prefer.label": {
     "en": "7e6377e63c113f97",
     "text": "Une personne a marqué comme préféré un DID prouvé, ou a retiré la marque"
+  },
+  "audit.actions.portal.siop.view.label": {
+    "en": "e7a28d6d72970a6f",
+    "text": "Une personne n'a pas pu voir ses sujets auto-émis"
+  },
+  "audit.actions.portal.siop.did.label": {
+    "en": "7fa86b94eee6535e",
+    "text": "Une personne n'a pas pu voir le document DID d'un sujet auto-émis"
   },
   "audit.actions.siop.key.pinned.label": {
     "en": "a2cc99b16a4a406e",

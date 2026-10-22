@@ -675,6 +675,10 @@
     "en": "faa7f1245749fea5",
     "text": "May taong nagpangalan o nag-clear ng party na puwedeng kumilos para sa kanya"
   },
+  "audit.actions.portal.delegation.search.label": {
+    "en": "ce14f3c18b0c3f60",
+    "text": "May taong naghanap ng puwedeng kumilos para sa kanya"
+  },
   "audit.actions.admin.password-policy.change.label": {
     "en": "3919c9c6efb6ee77",
     "text": "May password policy profile na binago"
@@ -934,6 +938,10 @@
   "audit.actions.ssf.stream.revived.label": {
     "en": "bb572a202bd6c70a",
     "text": "May dead na push stream na binuhay muli"
+  },
+  "audit.actions.ssf.stream.delivery.label": {
+    "en": "3df44dec0e09a7e4",
+    "text": "May receiver stream na lumipat mula push papuntang poll na delivery"
   },
   "audit.actions.ssf.deadletter.clear.label": {
     "en": "1caaf3043e122f70",
@@ -1342,6 +1350,14 @@
   "audit.actions.portal.siop.prefer.label": {
     "en": "7e6377e63c113f97",
     "text": "Minarkahan ng isang tao na gusto ang isang pinatunayang DID, o inalis ang marka"
+  },
+  "audit.actions.portal.siop.view.label": {
+    "en": "e7a28d6d72970a6f",
+    "text": "May taong hindi maipakita ang kanyang mga self-issued subject"
+  },
+  "audit.actions.portal.siop.did.label": {
+    "en": "7fa86b94eee6535e",
+    "text": "May taong hindi maipakita ang DID document ng isang self-issued subject"
   },
   "audit.actions.siop.key.pinned.label": {
     "en": "a2cc99b16a4a406e",
