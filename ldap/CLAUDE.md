@@ -1109,8 +1109,12 @@ bridge's 2 s ran out. Now:
 
 **What still pages `ou=devices` on a request**, each costing the realm in a
 windowed process for the reason above: `/admin-api/devices`' list with no
-owner and its counts (`devices.list()`, `devices.counts()`,
-`common/CLAUDE.md`). `/admin-api/ldap/devices` (`ldapDevicesView()`) asks
+owner (`devices.list()`, `common/CLAUDE.md`). **The counts stopped on
+2026-10-22 (#820)**: `deviceCountAsync()` and `deviceEntriesPageAsync()`, two
+more hooks, ask the store the container's count and one page of its direct
+children through the read pool (`askAsync('count')`, `containerPageAsync()`,
+at most `DIRECTORY_SEARCH_PAGE`), and answer null outside a window, where
+`devices.countsAsync()` counts the Map as `counts()` did. `/admin-api/ldap/devices` (`ldapDevicesView()`) asks
 the store one page of the container's direct children
 (`windowedDevicesView()`, #359): one `count` and one `containerPage`. What
 would stop the list and the counts is the shape of `windowedDirectoryView()`

@@ -725,6 +725,12 @@ class DevicesPage {
                t.text('consoleDevices.monitorHtml.removed')) +
       kit.tile(String(tl.totals.evicted),
                t.text('consoleDevices.monitorHtml.evicted')) + '</div>' +
+      // Where the directory is a window onto the store the tables cover one
+      // page of the register and the total is the store's count (#820).
+      (c.complete === false ?
+        '<p class="meta">' + t.html('consoleDevices.monitorHtml.partial',
+          { counted: String(c.counted), total: String(c.total) }) +
+        '</p>' : '') +
       kit.note(t.html('consoleDevices.monitorHtml.leadBefore') +
         (tl.since ? t.html('consoleDevices.monitorHtml.since',
                            { since: tl.since }) : '') +
