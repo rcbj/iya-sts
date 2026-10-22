@@ -1279,7 +1279,10 @@ class Krb5PersonKeys {
                          (info && typeof info.hash === 'string' &&
                           info.hash) || null,
                          // #221: a service account's rotation overlap.
-                         Number(info && info.retainPreviousMs) || 0);
+                         Number(info && info.retainPreviousMs) || 0,
+                         // #820: the hash a rehash replaced.
+                         (info && typeof info.previousHash === 'string' &&
+                          info.previousHash) || null);
     }).catch(function (e) {
       log.error(errorCodes.tag('STS-KRB-0107') + 'krb5-keys: deriving the ' +
                 'Kerberos keys for ' + name + ' failed: ' +
@@ -1319,9 +1322,60 @@ class Krb5PersonKeys {
     return Promise.all(Array.from(inFlight.values()));
   }
 
+  // ---------------------------------------------------------------------------
+  // A REHASH RE-STAMPS THE KEYS; IT DOES NOT DERIVE THEM (2026-10-22, #820).
+  //
+  // #847 rehashes a stored password under the policy's algorithm at the first
+  // verified sign-in after the policy changed. The hash changes and the
+  // PASSWORD does not, and a Kerberos key is string-to-key of the password and
+  // the salt, so the keys come out byte for byte the same. Deriving them
+  // anyway cost every first sign-in a PBKDF2 per enctype (4,096 iterations
+  // for the SHA-1 ones, 32,768 for the SHA-2 ones) on libuv's pool, where it
+  // queued in front of every other sign-in's password check: on 8081 the
+  // password step went from 206 to 387 ms at p50 with the rehash on.
+  //
+  // It is re-stamped only when the record's stamp is the hash the rehash
+  // REPLACED — so these keys were derived from this same password — under the
+  // same salt and with every wanted enctype present. Anything else derives as
+  // before: keys from an older password, or a record missing an enctype.
+  // Same keys, same kvno, nothing retired, no `update` signal: to a KDC and to
+  // a keytab nothing changed.
+  // ---------------------------------------------------------------------------
+  private restamp(name: string, record: Json, info: Json,
+                  stamp: string): Json {
+    const { log, errorCodes } = this.deps;
+    log.debug('Entering Krb5PersonKeys.restamp(). name=' + name);
+    const sealed = this.sealRecord(Object.assign({}, record,
+                                                 { stamp: stamp }));
+    if (!sealed) {
+      log.error(errorCodes.tag('STS-KRB-0108') + 'krb5-keys: the Kerberos ' +
+                'keys for ' + name + ' could not be sealed again after its ' +
+                'password hash was upgraded, so they were NOT re-stamped; ' +
+                'the next verified sign-in derives them.');
+      log.debug('Leaving Krb5PersonKeys.restamp(). Not sealed.');
+      return { derived: false, why: 'seal' };
+    }
+    const infoValue = JSON.stringify(Object.assign({}, info || {},
+      { kvno: record.kvno, sealed: sealed.sealed, event: 'rehash',
+        stamp: stamp }));
+    if (!this.directory.writePerson(name, sealed.value, infoValue)) {
+      log.error(errorCodes.tag('STS-KRB-0109') + 'krb5-keys: the ' +
+                're-stamped Kerberos keys for ' + name + ' could not be ' +
+                'written to their entry.');
+      log.debug('Leaving Krb5PersonKeys.restamp(). Not written.');
+      return { derived: false, why: 'write' };
+    }
+    log.info('krb5-keys: ' + name + '\'s Kerberos keys (kvno ' +
+             record.kvno + ') were re-stamped for its upgraded password ' +
+             'hash; the password did not change, so neither did the keys.');
+    log.debug('Leaving Krb5PersonKeys.restamp().');
+    return { derived: false, why: 'restamped', kvno: record.kvno };
+  }
+
   private async derive(name: string, password: string,
                        event: string, hash: string | null,
-                       holdMs?: number): Promise<Json> {
+                       holdMs?: number,
+                       previousHash?: string | null): Promise<Json> {
     const { log, principals, config, errorCodes, audit,
             kcrypto } = this.deps;
     const directory = this.directory;
@@ -1356,6 +1410,15 @@ class Krb5PersonKeys {
                                         : { ok: false };
     const record = opened.ok ? opened.record : null;
     const info = this.parseInfo(current.info);
+    if (event === 'rehash' && previousHash && record &&
+        record.name === name && record.stamp === this.stampOf(previousHash) &&
+        record.salt === this.saltFor(name) &&
+        wanted.every(function (etype) {
+          return typeof record.keys[etype] === 'string';
+        })) {
+      log.debug('Leaving Krb5PersonKeys.derive(). A rehash; re-stamped.');
+      return this.restamp(name, record, info, stamp);
+    }
     // CURRENT means the record holds exactly the enctypes wanted: every one
     // of them, and none besides. The second half is #182's (2026-09-23): a
     // realm that became product holds an rc4-hmac key derived while it was

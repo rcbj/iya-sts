@@ -1152,7 +1152,8 @@ class Credentials {
   // the work: a derivation queued for the old password and started after a
   // reset landed would otherwise stamp the old password's keys as the new
   // one's (seen on the cluster stack, 2026-09-24 — sts_kerberos_keytab).
-  private notifyPassword(name, password, event, hash?, retainPreviousMs?) {
+  private notifyPassword(name, password, event, hash?, retainPreviousMs?,
+                         previousHash?) {
     const { log } = this.deps;
     log.debug("Entering Credentials.notifyPassword().");
     if (!this.passwordObserver || !name || !password) {
@@ -1165,7 +1166,8 @@ class Credentials {
       this.passwordObserver(name, String(password),
                             { event: event, hash: hash || null,
                               retainPreviousMs: Number(retainPreviousMs) ||
-                                                0 });
+                                                0,
+                              previousHash: previousHash || null });
     } catch (e) {
       // Swallowed with a reason: see the header. What is lost is whatever the
       // observer derives, and the log says so; the credential act it observed
@@ -1741,7 +1743,11 @@ class Credentials {
              (from ? from.algorithm : 'an unknown form') + ' to ' +
              (to ? to.algorithm : 'an unknown form') + ' at the password ' +
              'policy\'s parameters.');
-    this.notifyPassword(name, password, 'rehash', hash);
+    // THE HASH IT REPLACED GOES WITH IT (2026-10-22, #820): the Kerberos
+    // keys were stamped with that one, and are the same keys under the new
+    // one, since the password did not change. krb5_person_keys.ts re-stamps
+    // them instead of deriving them again.
+    this.notifyPassword(name, password, 'rehash', hash, 0, stored);
     log.debug('Leaving Credentials.rehashWrite(). Written.');
     return true;
   }
