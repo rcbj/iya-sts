@@ -4619,8 +4619,12 @@ class OAuth2Server {
     // grant, so an empty one means this token is the root of its own family:
     // any grant minting its first refresh token. A no-op while rotation is not
     // required (neither compliance mode nor `oauth2.refreshTokenRotation`).
+    // With what this grant issued beside it (#820), which the row keeps.
     bcp.noteRefreshIssued(refreshJti, opts.parent_refresh_jti, opts.client_id,
-                          opts.parent_refresh_family);
+                          opts.parent_refresh_family,
+                          { access: opts.access_jti,
+                            expSec: Math.max(payload.exp,
+                                             Number(opts.access_exp) || 0) });
     // WHAT THIS GRANT ISSUED (#102): this refresh token and the access token
     // `tokenSet()` minted beside it, so that RFC 7009's revocation of any
     // refresh token of the family reaches both. Kept until the later of the
