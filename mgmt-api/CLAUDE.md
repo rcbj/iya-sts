@@ -1096,6 +1096,15 @@ and is reported rather than dropped, exactly as a dangling grant is.
 `storable: false` means no directory is installed behind the register, so an
 answer is honoured once and forgotten.
 
+**`windowed: true` (2026-10-22, #820)** means the directory is a window onto
+the store and `users` is ONE PAGE OF PEOPLE: `usersPaging` counts people
+(`noun: 'people'`), `matched` is the holders the store counted, and `counts`
+of consents are the page's (`countsOf: 'page'`). `q` is then exact — a whole
+username, client_id or scope — and `search` says how many holders were looked
+at and whether that was all of them. The handler is asynchronous
+(`adminViews.consentPageViewAsync()`), which the console's page reads too;
+`windowed: false` is the whole register, as before.
+
 **THE FOUR ACTION NAMES STUTTER UNDER THIS PATH**
 (`/consent/grant-global-consent`) and that is deliberate exactly as
 `/permissions/define-permission`'s is. They are the names in the console's hidden

@@ -212,7 +212,27 @@ interface ConsentDirectory {
     { ok?: boolean; dn?: string; reason?: string } | null | undefined;
   removeAppliedConsent?(key: string, values: string[]):
     { dn?: string } | null | undefined;
+  // THE HOLDERS A PAGE AT A TIME (#820). Optional: a directory held in
+  // memory has none, and `register()` answers there. Each answers null
+  // where the directory is not windowed.
+  consentHoldersPageAsync?(offset: number, limit: number):
+    Promise<{ total: number; read: number;
+              rows: Array<{ username: string; dn: string;
+                            values?: string[] }> } | null>;
+  consentHolderNamedAsync?(name: string):
+    Promise<{ row: { username: string; dn: string;
+                     values?: string[] } | null } | null>;
 }
+
+/**
+ * How many consent holders an exact client_id or scope search looks inside,
+ * where the directory is in the store (#820): the values are sealed inside
+ * each entry, so no index can find one.
+ */
+const CONSENT_SEARCH_SCAN = 5000;
+
+/** How many holders one page of that scan asks the store for. */
+const CONSENT_SCAN_PAGE = 1000;
 
 // What revoking a grant's tokens needs from `oauth-oidc/oauth2_bcp.js` — the
 // #102 bookkeeping of what one grant issued. Reached LAZILY (see
@@ -1888,11 +1908,14 @@ class Consent {
    * every person's consents, newest first — for the console page and
    * `GET /admin-api/consent`.
    *
+   * @param options - `recorded: false` reads the global half only, for a
+   *   caller that pages the recorded half itself (`recordedPageAsync()`)
    * @returns `{ required, storable, attribute, globalAttribute, globals,
    *   users, counts }`
    */
-  register() {
+  register(options?) {
     const { log, applications } = this.deps;
+    const recorded = !(options && options.recorded === false);
     const self = this;
     log.debug("Entering Consent.register().");
     const globals = [];
@@ -1927,32 +1950,21 @@ class Consent {
     });
 
     const users = [];
-    if (this.directory) {
+    if (this.directory && recorded) {
       (this.directory.listConsents() || []).forEach(function (row) {
-        (row.values || []).forEach(function (value) {
-          const parsed = self.parseConsentValue(value);
-          if (!parsed.scope) {
-            // An `ldapmodify` can put anything in this attribute. It is SHOWN
-            // rather than dropped, for the reason a dangling grant is shown: a
-            // value the page silently ignored would be one somebody had written
-            // on purpose and could not find out was being ignored.
-            users.push({ username: row.username, dn: row.dn, scope: '',
-                         client: '',
-                         at: '', raw: value, unreadable: true });
-            return;
-          }
-          users.push({ username: row.username, dn: row.dn, scope: parsed.scope,
-                       client: parsed.client, at: parsed.at, raw: parsed.raw,
-                       unreadable: false });
-        });
+        self.recordedRowsOf(row, users);
       });
     }
-    // Newest first, which is what a page about consents somebody just gave has
-    // to show — the row you are looking for is the one you just made.
-    users.sort(function (a, b) {
-      return String(b.at).localeCompare(String(a.at));
-    });
+    self.newestFirst(users);
 
+    // HOW MANY PEOPLE IS A SET (2026-10-22, #820). It was a reduce that
+    // copied the accumulated array for every new name and searched it for
+    // every row — O(P²) in the people, which at 470,000 is not a count
+    // anybody waits for.
+    const people = new Set();
+    users.forEach(function (one) {
+      people.add(one.username);
+    });
     const out = {
       required: self.required(),
       storable: self.storable(),
@@ -1963,10 +1975,7 @@ class Consent {
       counts: {
         globals: globals.length,
         consents: users.length,
-        people: users.reduce(function (acc, one) {
-          return acc.indexOf(one.username) < 0 ?
-            acc.concat([one.username]) : acc;
-        }, []).length,
+        people: people.size,
         unreadable: users.filter(function (one) {
           return one.unreadable;
         }).length
@@ -1974,6 +1983,192 @@ class Consent {
     };
     log.debug("Leaving Consent.register(). " + out.counts.globals +
               " global, " + out.counts.consents + " recorded.");
+    return out;
+  }
+
+  // One person's consent values as the register's rows, appended to `into`.
+  // An `ldapmodify` can put anything in this attribute, so a value that does
+  // not parse is SHOWN rather than dropped, for the reason a dangling grant is
+  // shown: a value the page silently ignored would be one somebody had written
+  // on purpose and could not find out was being ignored.
+  /**
+   * Appends one person's consents to a list of register rows.
+   *
+   * @param row - `{ username, dn, values }`, as the directory hands it
+   * @param into - the list the rows are appended to
+   * @returns the list
+   */
+  recordedRowsOf(row, into) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering Consent.recordedRowsOf().");
+    (row.values || []).forEach(function (value) {
+      const parsed = self.parseConsentValue(value);
+      if (!parsed.scope) {
+        into.push({ username: row.username, dn: row.dn, scope: '',
+                    client: '', at: '', raw: value, unreadable: true });
+        return;
+      }
+      into.push({ username: row.username, dn: row.dn, scope: parsed.scope,
+                  client: parsed.client, at: parsed.at, raw: parsed.raw,
+                  unreadable: false });
+    });
+    log.debug("Leaving Consent.recordedRowsOf().");
+    return into;
+  }
+
+  // Newest first, which is what a page about consents somebody just gave has
+  // to show — the row you are looking for is the one you just made.
+  /**
+   * Sorts register rows newest first, in place.
+   *
+   * @param rows - the rows
+   * @returns the rows
+   */
+  newestFirst(rows) {
+    const { log } = this.deps;
+    log.debug("Entering Consent.newestFirst().");
+    rows.sort(function (a, b) {
+      return String(b.at).localeCompare(String(a.at));
+    });
+    log.debug("Leaving Consent.newestFirst().");
+    return rows;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE RECORDED HALF ONE PAGE AT A TIME, WHERE THE DIRECTORY IS IN THE STORE
+  // (2026-10-22, #820).
+  //
+  // `register()` reads every person holding a consent — about 470,000 on
+  // 8081, since consent is required by default — one synchronous store read
+  // and one decrypt each, on the request worker answering Monitoring →
+  // Consent; through read-your-write every other worker then waited behind
+  // it. Where the directory is windowed (`consentHoldersPageAsync()` on the
+  // slot answers), this asks instead, ASYNCHRONOUSLY on the read pool: how
+  // many PEOPLE hold a consent (the asked names' index), one page of PEOPLE,
+  // and only their rows opened. What changes for a reader, and the answer
+  // says so (`windowed: true`):
+  //
+  //   * the recorded half is paged by PERSON: a page holds every consent of
+  //     `limit` people, in the directory's key order, newest first within
+  //     the page, and `people` is the count the paging is over;
+  //   * `consents` and `unreadable` are the PAGE's, because counting values
+  //     would open every holder (`countsOf: 'page'`);
+  //   * the search is EXACT: a whole username (one person, asked by name),
+  //     or a whole client_id or scope looked for in at most `scanLimit`
+  //     holders, and `search.complete` says whether that was all of them.
+  //
+  // Null where the directory is not windowed: `register()` is the answer
+  // there, unchanged.
+  // ---------------------------------------------------------------------------
+  /**
+   * One page of the recorded half from the store, or null where the
+   * directory is not windowed.
+   *
+   * @param spec - `{ q, offset, limit, scanLimit, pageOf }`, `pageOf(people)`
+   *   answering `{ offset, limit }` in place of the two
+   * @returns a promise of `{ windowed, people, users, counts, search }` or
+   *   null
+   */
+  async recordedPageAsync(spec) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering Consent.recordedPageAsync().");
+    const directory = this.directory;
+    if (!directory || typeof directory.consentHoldersPageAsync !== 'function' ||
+        typeof directory.consentHolderNamedAsync !== 'function') {
+      log.debug("Leaving Consent.recordedPageAsync(). No paged directory.");
+      return null;
+    }
+    const asked = spec || {};
+    const q = String(asked.q || '').trim();
+    const limit = Math.max(1, Math.floor(Number(asked.limit) || 1));
+    const offset = Math.max(0, Math.floor(Number(asked.offset) || 0));
+    // The count, with no page: the paging needs it before it can say which
+    // page is shown.
+    const counted = await directory.consentHoldersPageAsync(0, 0);
+    if (!counted) {
+      log.debug("Leaving Consent.recordedPageAsync(). Not windowed.");
+      return null;
+    }
+    const users = [];
+    let search = null;
+    let people = Number(counted.total) || 0;
+    if (q) {
+      // AN EXACT SEARCH. The values are inside each entry's sealed blob, so
+      // no index can find a client_id or a scope: a whole username is asked
+      // by name, and a client_id or scope is looked for in the first
+      // `scanLimit` holders, a page at a time on the read pool.
+      const scanLimit = Math.max(1, Math.floor(Number(asked.scanLimit) ||
+                                              CONSENT_SEARCH_SCAN));
+      const wanted = q.toLowerCase();
+      const seen = new Set();
+      const named = await directory.consentHolderNamedAsync(q);
+      if (named && named.row) {
+        seen.add(String(named.row.dn).toLowerCase());
+        self.recordedRowsOf(named.row, users);
+      }
+      let scanned = 0;
+      while (scanned < scanLimit) {
+        const want = Math.min(CONSENT_SCAN_PAGE, scanLimit - scanned);
+        const page = await directory.consentHoldersPageAsync(scanned, want);
+        const rows = (page && page.rows) || [];
+        rows.forEach(function (row) {
+          if (seen.has(String(row.dn).toLowerCase())) {
+            return;
+          }
+          const mine = self.recordedRowsOf(row, []).filter(function (one) {
+            return String(one.client).toLowerCase() === wanted ||
+                   String(one.scope).toLowerCase() === wanted;
+          });
+          mine.forEach(function (one) {
+            users.push(one);
+          });
+        });
+        scanned += (page && page.read) || 0;
+        if (!page || !page.read || page.read < want) {
+          break;
+        }
+      }
+      const complete = scanned >= people;
+      search = { exact: true, q: q, scanned: scanned, scanLimit: scanLimit,
+                 holders: people, complete: complete };
+      self.newestFirst(users);
+      // The paging of a search is over its rows: what was found is all
+      // there is to page, and it is bounded by the scan.
+      const matchedPeople = new Set();
+      users.forEach(function (one) {
+        matchedPeople.add(one.username);
+      });
+      people = matchedPeople.size;
+    } else {
+      // The caller's paging is worked out from the count, so it may hand a
+      // function that turns the count into the page to read.
+      const at = typeof asked.pageOf === 'function'
+        ? asked.pageOf(people) : { offset: offset, limit: limit };
+      const page = await directory.consentHoldersPageAsync(at.offset,
+                                                           at.limit);
+      ((page && page.rows) || []).forEach(function (row) {
+        self.recordedRowsOf(row, users);
+      });
+      self.newestFirst(users);
+    }
+    const out = {
+      windowed: true,
+      people: people,
+      users: users,
+      search: search,
+      counts: {
+        people: Number(counted.total) || 0,
+        consents: users.length,
+        unreadable: users.filter(function (one) {
+          return one.unreadable;
+        }).length,
+        countsOf: 'page'
+      }
+    };
+    log.debug("Leaving Consent.recordedPageAsync(). " + users.length +
+              " row(s) of " + out.counts.people + " people.");
     return out;
   }
 
@@ -2081,5 +2276,6 @@ export = {
   refreshRefusal: slot.forward('refreshRefusal'),
   revokeIssuedUnder: slot.forward('revokeIssuedUnder'),
   register: slot.forward('register'),
+  recordedPageAsync: slot.forward('recordedPageAsync'),
   state: slot.forward('state')
 };
