@@ -26,7 +26,10 @@
 //       front replaces it;
 //   Q6. in a worker thread, the commit barrier answers the question with the
 //       handler's time and the time blocked in store reads meanwhile, and a
-//       request the front did not ask about carries nothing.
+//       request the front did not ask about carries nothing;
+//   Q7. a response's commit wait is reported by the part it waited on —
+//       `COMMIT through`, with `directory`, `minted` and `keys` — so a hold
+//       longer than the minted flush can be placed (2026-10-22).
 // ===========================================================================
 
 const http = require('http');
@@ -295,11 +298,27 @@ async function checkTheWorkerHalf(t) {
   log.debug("Leaving checkTheWorkerHalf().");
 }
 
+async function checkTheCommitParts(t) {
+  log.debug("Entering checkTheCommitParts().");
+  const persistence = require('../persistence/persistence');
+  phases.reset();
+  await persistence.commitThrough({ directory: 0, minted: 0 });
+  phases.record('GET /y', { total: 1 }, Date.now() + phases.WINDOW_MS + 5);
+  const parts = phases.stats() && phases.stats().routes['COMMIT through'];
+  t.check(parts && parts.n === 1 && parts.directory && parts.minted &&
+          parts.total && typeof parts.directory.p50 === 'number',
+          'Q7. a commit wait is reported by the part it waited on',
+          JSON.stringify(parts));
+  phases.reset();
+  log.debug("Leaving checkTheCommitParts().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   checkTheModule(t);
   await checkThePool(t);
   await checkTheWorkerHalf(t);
+  await checkTheCommitParts(t);
   pool.reset();
   phases.reset();
   log.debug("Leaving run().");

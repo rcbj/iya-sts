@@ -234,6 +234,9 @@ const realms = require('../common/realms');
 // A LEAF with no requires: the failure codes on the log lines and the fatal
 // refusals below. See common/error_codes.js.
 const errorCodes = require('../common/error_codes');
+// A LEAF: the per-request phase timers (#820), which the directory flush and
+// the commit wait below report into.
+const requestPhases = require('../common/request_phases');
 // A LEAF: the two shadows below, described to `/admin/caches` (#74).
 const cacheRegistry = require('../common/cache_registry');
 // THE CLUSTER GATE (2026-09-14, #46). A LIBRARY that is handed the open driver;
@@ -1635,6 +1638,8 @@ function flush() {
   // The claims this flush's directory transaction gives back (#628): taken
   // when the transaction is sent, and answered when it settles.
   let carriedReleases = [];
+  // When it began, for the `FLUSH directory` timer (#820).
+  const flushStartedAt = Date.now();
 
   // THE DATA-KEY ROWS LAND FIRST (#391): a directory entry carrying a value
   // sealed under a data encryption key made since the last flush must not
@@ -1846,6 +1851,14 @@ function flush() {
   }).then(function (result) {
     inFlightDirectory.clear();
     flushing = null;
+    // WHERE A RESPONSE'S COMMIT WAIT GOES (2026-10-22, #820): the minted
+    // flush had a timer and this one did not, so a commit wait three times
+    // the minted flush's could not be placed. Only a flush that wrote.
+    if (result && result.written !== false && changes) {
+      requestPhases.record('FLUSH directory', {
+        rows: changes.upserts.length + changes.deletes.length,
+        total: Date.now() - flushStartedAt });
+    }
     return result;
   });
 
@@ -5049,11 +5062,22 @@ module.exports = {
     log.debug("Entering commitThrough().");
     const wanted = target || { directory: dirGeneration,
                                minted: minted.generation() };
+    // Each part's wait, for the `COMMIT through` timer (2026-10-22, #820):
+    // a response's commit hold measured three times the minted flush, and
+    // nothing said which of these it was waiting on.
+    const began = Date.now();
+    const parts = { directory: 0, minted: 0, keys: 0 };
+    const timed = function (name, promise) {
+      return Promise.resolve(promise).then(function (answer) {
+        parts[name] = Date.now() - began;
+        return answer;
+      });
+    };
     const waits = [
-      directoryThrough(Number(wanted.directory) || 0),
+      timed('directory', directoryThrough(Number(wanted.directory) || 0)),
       // A minted flush started HERE is not inside flush(), whose tail arms
       // the retry, so its failure arms it here (#351).
-      Promise.resolve(minted.flushThrough(Number(wanted.minted) || 0))
+      timed('minted', minted.flushThrough(Number(wanted.minted) || 0))
         .then(function (answer) {
           if (answer && answer.error) {
             retryAfterFailure('a minted write a response waited for failed');
@@ -5076,7 +5100,7 @@ module.exports = {
       // signing keys never reached the store was answered as created, and
       // generated different keys at the next restart. Now the outcome's
       // `error` is this wait's answer, like the two flushes'.
-      waits.push(Promise.resolve(keystore.settleAll()).then(function (all) {
+      waits.push(timed('keys', keystore.settleAll()).then(function (all) {
         const failed = (all || []).filter(function (one) {
           return one && one.ok === false && one.error;
         });
@@ -5091,7 +5115,12 @@ module.exports = {
       }));
     }
     log.debug("Leaving commitThrough().");
-    return Promise.all(waits);
+    return Promise.all(waits).then(function (answers) {
+      requestPhases.record('COMMIT through', {
+        directory: parts.directory, minted: parts.minted, keys: parts.keys,
+        total: Date.now() - began });
+      return answers;
+    });
   },
   // ---------------------------------------------------------------------
   // ANSWER AFTER COMMIT (2026-09-29, #351) — whether this process's store is
