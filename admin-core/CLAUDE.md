@@ -316,7 +316,18 @@ what it needs:**
   applies it to the shown slice only. `decoratePerson()` builds each shown
   row's full factors from `credentials.factorHolderRow()` — which is
   `mechanismsFor()` — per spelling, exactly as the old fold did for
-  everybody.
+  everybody. **The API's two doors decorate the shown rows together and
+  asynchronously (#820, 2026-10-22)**: they pass `deferDecoration` and hand
+  the view to `usersListRowsAsync()`, which asks
+  `credentials.factorHolderRowsAsync()` (the directory's
+  `credentialRowsAsync()`, read as the census reads), `personDnsAsync()`
+  and, while the token register is on demand, `stats.userRowsOfAsync()` for
+  every shown row at once, then decorates as `decoratePerson()` does. On
+  8081 fifty rows of about nine synchronous reads each spent the request's
+  store budget (STS-LDAP-0175) and the page could not be drawn. A store
+  that refuses leaves each row's factors null (unknown) and its DN empty
+  (STS-AUTHN-0410). The console's page and `?user=` still decorate a row at
+  a time. `tests/users_page_rows_async.js` holds it.
 
 **The census interprets nothing in the directory.** `ldap_server.js` hands
 back raw attribute values; which values are keys, what a sealed TOTP record

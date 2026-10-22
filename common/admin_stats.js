@@ -53,7 +53,7 @@
 // ---------------------------------------------------------------------------
 
 const { log, setJwtRecorder, userFor, nameForSubject, subjectForName,
-        namesForSubjects, namesForSubjectsAsync,
+        namesForSubjects, namesForSubjectsAsync, warmPeopleAsync,
         LEGACY_SUBJECT_PREFIX } = require('./helpers');
 // TRUST REALMS: the stores below are partitioned by realm. It requires
 // config.js and the error-code table and nothing else here, so it cannot join a
@@ -2806,9 +2806,12 @@ function withSubjectsResolved(fn) {
  * directory asynchronously.
  *
  * @param fn - what to run
+ * @param alsoSubjects - optional; subjects of records `fn` will meet that
+ *   this process does not hold (#820: a shown row's tokens, read from the
+ *   store's index)
  * @returns a promise of what `fn` returns
  */
-async function withSubjectsResolvedAsync(fn) {
+async function withSubjectsResolvedAsync(fn, alsoSubjects) {
   log.debug("Entering withSubjectsResolvedAsync().");
   if (resolvedSubjects) {
     const inner = fn();
@@ -2832,6 +2835,7 @@ async function withSubjectsResolvedAsync(fn) {
     note(record.subject);
     note(record.person);
   });
+  (alsoSubjects || []).forEach(note);
   const resolved = subjects.size
     ? await namesForSubjectsAsync(Array.from(subjects)) : null;
   // Set only now, across a synchronous call: nothing else can run inside it.
@@ -5224,6 +5228,15 @@ function recordsHeldBy(name) {
   log.debug("Entering recordsHeldBy().");
   const wanted = String(name || '');
   const key = identityKeyOf(wanted);
+  // READ ALREADY, ASYNCHRONOUSLY (#820): `userRowsOfAsync()` hands in the
+  // records its index questions answered, and only the filter is left.
+  if (preloadedHeld && preloadedHeld.has(wanted)) {
+    const kept = preloadedHeld.get(wanted).filter(function (record) {
+      return !!record && holderKeyOf(record.username, record.sub) === key;
+    });
+    log.debug("Leaving recordsHeldBy(). " + kept.length + ", read already.");
+    return kept;
+  }
   const names = Array.from(new Set([wanted, key].filter(Boolean)));
   let subject = '';
   try {
@@ -5252,6 +5265,101 @@ function recordsHeldBy(name) {
   });
   log.debug("Leaving recordsHeldBy(). " + out.length);
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// A PAGE OF PEOPLE'S OWN ROWS, READ TOGETHER (#820, 2026-10-22).
+//
+// `/admin/users` puts each shown row's own token counts on it while the
+// register is on demand, and asked `userRow()` per row: two or three index
+// questions and a read per record (`recordsHeldBy()`), and the subjects of
+// every held token resolved again, each a SYNCHRONOUS round trip in a
+// windowed process — fifty rows' worth charged to one request's store
+// budget (STS-LDAP-0175 on 8081, beside the credentials the same rows read).
+// This asks the index questions of every row at once on the read pool
+// (`lookupEntriesAsync()`, which answers what `lookup()` and `get()`
+// would), resolves every subject the answers name in one asynchronous
+// question, and then builds the rows as `userRow()` builds one — the same
+// builder, handed the records (`preloadedHeld`). The person's own subject is
+// still `subjectForName()`'s, after the names were warmed into the window.
+// Held whole, there is no store to ask, and only the subjects are asked
+// asynchronously.
+// ---------------------------------------------------------------------------
+let preloadedHeld = null;
+
+// The candidate records filed under one person by the register's index —
+// by each name and by the subject — read asynchronously. Unfiltered: the
+// holder test resolves subjects, so it is made where they are resolved.
+async function recordsHeldByAsync(name) {
+  log.debug("Entering recordsHeldByAsync().");
+  const wanted = String(name || '');
+  const key = identityKeyOf(wanted);
+  const indexKeys = Array.from(new Set([wanted, key].filter(Boolean)))
+    .map(function (one) {
+      return 'u:' + one;
+    });
+  let subject = '';
+  try {
+    subject = String(subjectForName(key) || '');
+  } catch (e) {
+    log.debug("Caught in recordsHeldByAsync(): " + ((e && e.message) || e));
+    subject = '';
+  }
+  if (subject) {
+    indexKeys.push('s:' + subject);
+  }
+  const answers = await Promise.all(indexKeys.map(function (indexKey) {
+    return tokens.lookupEntriesAsync(indexKey);
+  }));
+  const byKey = new Map();
+  answers.forEach(function (entries) {
+    (entries || []).forEach(function (entry) {
+      if (entry && entry.value && !byKey.has(entry.key)) {
+        byKey.set(entry.key, entry.value);
+      }
+    });
+  });
+  log.debug("Leaving recordsHeldByAsync(). " + byKey.size + " candidate(s).");
+  return Array.from(byKey.values());
+}
+
+/**
+ * `userRow()` for several keys at once, the store asked asynchronously.
+ *
+ * @param keys - identity keys
+ * @returns a promise of one row per key, as `userRow()` answers it, or null
+ */
+async function userRowsOfAsync(keys) {
+  log.debug("Entering userRowsOfAsync(). " + (keys || []).length +
+            " key(s).");
+  const list = (keys || []).map(function (key) {
+    return String(key == null ? '' : key);
+  });
+  let held = null;
+  const also = [];
+  if (tokens.onDemandLive() && list.length) {
+    await warmPeopleAsync(list);
+    const answers = await Promise.all(list.map(recordsHeldByAsync));
+    held = new Map();
+    list.forEach(function (key, i) {
+      held.set(key, answers[i]);
+      answers[i].forEach(function (record) {
+        also.push(record.sub);
+      });
+    });
+  }
+  const rows = await withSubjectsResolvedAsync(function () {
+    preloadedHeld = held;
+    try {
+      return list.map(function (key) {
+        return buildUserRowsResolved(key)[0] || null;
+      });
+    } finally {
+      preloadedHeld = null;
+    }
+  }, also);
+  log.debug("Leaving userRowsOfAsync().");
+  return rows;
 }
 
 /**
@@ -7867,6 +7975,7 @@ module.exports = {
   withSubjectsResolvedAsync: withSubjectsResolvedAsync,
   // #352: one row, and the keys alone, without building every row.
   userRow: userRow,
+  userRowsOfAsync: userRowsOfAsync,
   // What signing a JWT reports through `helpers.setJwtRecorder()`, for the
   // tests that record one without signing it.
   recordJwt: recordJwt,
