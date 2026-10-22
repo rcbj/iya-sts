@@ -2093,6 +2093,26 @@ so must `admin-ui/admin.ts`.
    old sweep runs there, expired first, then retired, then the oldest,
    loudly. `tests/refresh_bookkeeping_ejection.js`.
 
+   **A REFRESH WRITES FEWER ROWS (#820, 2026-10-22).** It made 13.6 store
+   writes on 8081, and postgres's WAL flush was what the refresh rate ran
+   into. Three of them carried nothing another write did not:
+   - **What a grant issued** (#102's access token beside the refresh token)
+     is kept on the refresh token's own `refreshTokens` row when rotation
+     is on (`noteRefreshIssued()`'s `grant`). `noteGrantTokens()` then
+     writes nothing; with rotation off it writes `grantTokens` as before.
+     `grantMembersOf()` reads both, so older `grantTokens` rows still count.
+   - **The rotated token is not rewritten in the register.**
+     `admin_stats.revoke()` marks the token in `revokedJtis`, which is what
+     enforces it, and no longer rewrites its `admin_stats.tokens` record when
+     the revocation is `superseded`. The console reads `revokedJtis` too
+     (`tokenStateOf()`, and `tokenList()`'s `revoked`).
+   - **No delete of a rate-limit bucket that doesn't exist.** A successful
+     client authentication deletes one only when it exists
+     (`websecurity.succeeded()`).
+   Beside those, `admin_stats.tokenHolders` rows are written a day past their
+   token, so they are rewritten about once a day, not on every refresh.
+   `tests/refresh_writes.js`.
+
    **THE FOUR REFUSALS REFUSE, AND REFUSING IS THE DESIGN.** Everywhere else
    this service prefers to answer with something weaker rather than not answer
    at all (`mode.sendsWeakerThanAsked()` is a predicate about exactly that).

@@ -152,6 +152,7 @@ interface WebSecurityDeps {
 interface BucketStore {
   readonly size: number;
   get(key: string): Bucket | undefined;
+  has(key: string): boolean;
   set(key: string, value: Bucket): unknown;
   delete(key: string): boolean;
   clear(): void;
@@ -647,11 +648,22 @@ class WebSecurity {
             options?: { keepAddress?: boolean } | null): void {
     const { log, buckets } = this.deps;
     log.debug("Entering WebSecurity.succeeded().");
+    // ONLY A BUCKET THAT EXISTS IS DELETED (2026-10-22, #820): a delete is
+    // journalled whether or not anything was there, so every successful
+    // client authentication on a refresh wrote a row, which every process
+    // then applied, for a bucket that almost never exists. A bucket another
+    // process wrote that has not reached this one yet is not cleared here;
+    // that errs strict, and the next success after it arrives clears it.
+    const clear = function (key: string): void {
+      if (buckets.has(key)) {
+        buckets.delete(key);
+      }
+    };
     if (identity) {
-      buckets.delete(what + '|id|' + String(identity).toLowerCase());
+      clear(what + '|id|' + String(identity).toLowerCase());
     }
     if (!(options && options.keepAddress)) {
-      buckets.delete(what + '|ip|' + this.addressOf(req));
+      clear(what + '|ip|' + this.addressOf(req));
     }
     log.debug("Leaving WebSecurity.succeeded().");
   }
