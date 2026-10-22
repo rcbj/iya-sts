@@ -35,5 +35,7 @@
   "remove": "Alisin",
   "unreadable": "Wala sa hugis na isinusulat ng serbisyong ito ang value na ito — may naglagay nito nang mano-mano sa entry: <code>{raw}</code>. Ipinapakita ito sa halip na itapon, dahil ang value na tahimik na binabalewala ng pahina ay value na sinadyang isinulat ng isang tao na hindi niya malalamang binabalewala. Wala itong pinapayagan.",
   "agreedAt": "pumayag noong {at}",
-  "revoke": "Bawiin"
+  "revoke": "Bawiin",
+  "windowedNote": "<strong>Nasa store ang mga tao ng realm na ito, kaya binabasa ang listahang ito nang isang pahina sa bawat pagkakataon.</strong> Hinahati ito ayon sa tao: ipinapakita ng bawat pahina ang lahat ng pahintulot ng mga tao nito, pinakabago muna. Dapat pangalanan ng paghahanap ang buong username, client_id o scope.",
+  "searchIncomplete": "Tiningnan ng paghahanap ang unang {scanned} sa {holders} taong may pahintulot; hindi ipinapakita ang client_id o scope na hawak lamang ng iba."
 }

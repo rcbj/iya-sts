@@ -35,5 +35,7 @@
   "remove": "Ta bort",
   "unreadable": "Värdet har inte den form som tjänsten skriver — något har lagt det på posten för hand: <code>{raw}</code>. Det visas i stället för att släppas, eftersom ett värde som sidan tyst ignorerade vore ett som någon skrev avsiktligt utan att kunna ta reda på att det ignorerades. Det samtycker till ingenting.",
   "agreedAt": "godkänt {at}",
-  "revoke": "Återkalla"
+  "revoke": "Återkalla",
+  "windowedNote": "<strong>Den här realmens personer finns i lagret, så listan läses en sida i taget.</strong> Den pagineras per person: varje sida visar alla samtycken som dess personer har, nyaste först. En sökning måste ange ett helt användarnamn, client_id eller scope.",
+  "searchIncomplete": "Sökningen tittade i de första {scanned} av de {holders} personer som har ett samtycke; ett client_id eller scope som bara andra har visas inte."
 }

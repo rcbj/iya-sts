@@ -23292,12 +23292,28 @@ class AdminApi {
                      'and the scope, and `matched` is how many it matched. ' +
                      'A caller that wants every row walks each half until ' +
                      'its `page` equals its `pages`. This is the page ' +
-                     '`/admin/consent` draws, from the same function.',
+                     '`/admin/consent` draws, from the same function.' +
+                     '\n\n**`windowed: true` (#820)** means the realm\'s ' +
+                     'people are in the store and the recorded half was ' +
+                     'read a page at a time rather than whole: ' +
+                     '`usersPaging` is over PEOPLE (`noun: people`) and ' +
+                     '`matched` and `counts.people` are how many people ' +
+                     'hold a consent, counted from an index; each page ' +
+                     'holds every consent of its people, newest first ' +
+                     'within it; `counts.consents` and `counts.unreadable` ' +
+                     'are the page\'s (`counts.countsOf: page`); and `q` ' +
+                     'is EXACT — a whole username, client_id or scope — ' +
+                     'with a client_id or scope looked for in at most the ' +
+                     'first 5,000 holders, `search.complete` saying whether ' +
+                     'that was everybody. `windowed: false` is the whole ' +
+                     'register, as described above.',
         mirrors: 'GET /admin/consent',
         parameters: [
           { name: 'q', in: 'query', required: false, schema: { type: 'string' },
             description: 'Substring of the person, the application or the ' +
-                         'scope, case-insensitive. Narrows `users` only.' }
+                         'scope, case-insensitive. Narrows `users` only. ' +
+                         'Where the answer is `windowed`, a whole ' +
+                         'username, client_id or scope instead.' }
         ].concat(self.detailPagingParameters([
           { name: 'globals',
             description: 'The global overrides, configuration on ' +
@@ -23322,10 +23338,19 @@ class AdminApi {
                                        '`counts`, `matched`, `query`, ' +
                                        '`required`, `storable`, `attribute` ' +
                                        'and `globalAttribute`.' },
-        handler: function (req, res) {
+        handler: function (req, res, next) {
           log.debug("Entering the management API consent endpoint.");
-          self.sendJson(res, 200, adminViews.consentPageView(req.query).json);
-          log.debug("Leaving the management API consent endpoint.");
+          // FROM THE STORE while the directory is windowed (#820): the whole
+          // register opened every consent holder, one synchronous read each,
+          // on the request worker — about 470,000 on 8081.
+          adminViews.consentPageViewAsync(req).then(function (view) {
+            self.sendJson(res, 200, view.json);
+            log.debug("Leaving the management API consent endpoint.");
+          }).catch(function (e) {
+            log.debug("Caught in the management API consent endpoint: " +
+                      ((e && e.message) || e));
+            next(e);
+          });
         } },
 
       { method: 'POST', route: BASE + '/consent/:action', tag: 'Delegation',

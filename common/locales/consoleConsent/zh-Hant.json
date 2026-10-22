@@ -35,5 +35,7 @@
   "remove": "移除",
   "unreadable": "此值不是本服務寫入的格式——有人手動將其放到了項目上：<code>{raw}</code>。它被顯示而不是被捨棄，因為頁面默默忽略的值，正是有人刻意寫入卻無法發現被忽略的值。它不表示任何同意。",
   "agreedAt": "同意於 {at}",
-  "revoke": "撤銷"
+  "revoke": "撤銷",
+  "windowedNote": "<strong>此領域的人員存放在儲存區中，因此此清單按頁讀取。</strong>它按人員分頁：每頁顯示其人員的所有同意，最新的在前。搜尋必須給出完整的用戶名稱、client_id 或範圍。",
+  "searchIncomplete": "搜尋查看了持有同意的 {holders} 人中的前 {scanned} 人；僅由其他人持有的 client_id 或範圍不會顯示。"
 }

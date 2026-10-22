@@ -5525,6 +5525,21 @@ is a subtree per realm, and `applications.js`'s registry is that subtree's
 realm without one line in this file mentioning a realm — which is the property
 to check a new store against, answered here by having no store.
 
+**WHERE THE DIRECTORY IS A WINDOW, THE RECORDED HALF IS READ A PAGE AT A TIME
+(2026-10-22, #820).** `register()` walks every holder of `oauthConsent`
+through the synchronous bridge and opens each entry, which on 8081 was about
+470,000 people per request. `recordedPageAsync(spec)` asks the directory's two
+optional hooks instead — `consentHoldersPageAsync(offset, limit)` (the count
+from the asked names' index and one page of PEOPLE) and
+`consentHolderNamedAsync(name)` — and answers null where they are absent or
+answer null, so the old path is unchanged in memory. Its paging is over
+people, its rows newest first per page, its counts of consents the page's
+(`countsOf: 'page'`), and its search EXACT: a whole username asked by name,
+and a client_id or scope looked for among at most `CONSENT_SEARCH_SCAN`
+holders, the answer's `search.complete` saying whether that was everybody.
+`register({ recorded: false })` answers the overrides alone. The people
+count is a Set now; it was an O(P²) reduce. `tests/console_consent_scale.js`.
+
 ## `roles.js` and `issuance_gate.js`: the fourth register, and the leaf that asks about it
 
 Rules 3u and 3v. They arrived together on 2026-09-05 and they are two files
