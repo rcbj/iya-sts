@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4580** of them, in **47** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4581** of them, in **47** subsystems.
 
 ## Where a code appears
 
@@ -88,7 +88,7 @@ is an ordinary outcome.
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 29
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 98
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 242
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 243
 * [Management API (`STS-API`)](#sts-api) — 86
 * [User portal (`STS-PORTAL`)](#sts-portal) — 107
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 19
@@ -4777,6 +4777,7 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0870` | An administrator removed a credential (clear-key, clear-totp, clear-backup-codes or clear-email-factor) in a process with no sign-out model installed, so no session it signed in was ended (#722). The removal stands. | logged; the removal is answered as done |
 | `STS-ADMIN-0871` | enrol-self-issued-subject was refused for a did:web: its DID document could not be fetched, names another id, or names no authentication method with a publicKeyJwk, so there was no key to pin (#693). | HTTP 400 (API) |
 | `STS-ADMIN-0872` | set-preferred-self-issued-subject was refused: the subject is not enrolled for the person, was enrolled by value (unproven), is a JWK thumbprint rather than a DID, or the directory did not store the change (#693). | HTTP 400 (API) |
+| `STS-ADMIN-0890` | The token register could not be read from the store for Monitoring → Tokens; the list drawn is what the answering process holds, and the answer says so (`coverage.unread`) (#820). | logged; the page answers |
 
 ## STS-API
 
