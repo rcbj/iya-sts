@@ -61,8 +61,6 @@
   "sched.jobs.oauth2.expired-token-purge.describe": "Deletes the token records past their expiry and oauth2.expiredTokenRetentionS, and the revocations of tokens that have expired.",
   "sched.jobs.oauth2.grant-management-purge.title": "Grant Management: expired grants",
   "sched.jobs.oauth2.grant-management-purge.describe": "Removes each OAuth grant whose last token has expired, and the record of each token minted under a grant once it expires (#142).",
-  "sched.jobs.oauth2.token-holders-backfill.title": "Token holders backfill",
-  "sched.jobs.oauth2.token-holders-backfill.describe": "Notes the holder of every token already issued on the users list, once per realm, now that the token register is read on demand (#820).",
   "sched.jobs.oauth2.used-assertion-purge.title": "Expired used-assertion sweep",
   "sched.jobs.oauth2.used-assertion-purge.describe": "Deletes the RFC 7523 and RFC 7522 assertions whose lifetime has passed from the once-ever history every node shares.",
   "sched.jobs.oidfed.collection-crawl.title": "OpenID Federation Entity Collection crawl",

@@ -362,9 +362,45 @@ function recordCall(call) {
 // again does not write a row each time. It expires with the holder's last
 // token, as the register's records do. A row's token COUNTS are the
 // index's, read for the rows a page shows (`userRow()`).
+//
+// **ON DEMAND, KEYS RESIDENT (2026-10-22, #820).** Held whole it was read
+// back by every process at every start — 562,120 rows on 8081, and a
+// request worker's start went from 16 s to 52 s. So a process holds the
+// rows it was asked about (`maxEntries`) and the KEY COLUMN of every row:
+// `has()` and `size` answer from the keys with no read, which is what the
+// console's synchronous readers ask ("is this name a known identity?",
+// "how many are there?"), and a start loads the keys without opening one
+// body. The cost is a digest per holder per process — about 45 MB at
+// 562,000 — against the rows held whole before.
+//
+// **A WRITE NEVER WAITS ON A READ.** `noteTokenHolder()` runs for every JWT,
+// so a holder this process does not hold is written BLINDLY (`peek()`, no
+// `get()`), and `mergeRow` combines the blind row with the stored one at
+// the flush, under the row's lock: the earliest `firstAt`, the latest
+// `lastExp`, and a client once a client. The doors that know their holder
+// before they sign (a refresh, a code redemption) warm the row first
+// (`warmTokenHolders()`), so the blind write is the rare case.
 // ---------------------------------------------------------------------------
 const tokenHolders = realms.map({
   persist: 'admin_stats.tokenHolders',
+  onDemand: { maxEntries: 20000, keysResident: true },
+  // Pure and convergent (realms.js's rule for `mergeRow`): the minimum of
+  // the positive first sightings, the maximum `lastExp`, and the OR of
+  // `isClient` — each a lattice join, so merging again changes nothing.
+  // A hot path (every row a flush writes for this store): no
+  // Entering/Leaving pair.
+  mergeRow: function (mine, theirs) {
+    const a = mine || {};
+    const b = theirs || {};
+    const firsts = [Number(a.firstAt) || 0, Number(b.firstAt) || 0]
+      .filter(function (n) {
+        return n > 0;
+      });
+    return { firstAt: firsts.length ? Math.min.apply(null, firsts) : 0,
+             lastExp: Math.max(Number(a.lastExp) || 0,
+                               Number(b.lastExp) || 0),
+             isClient: !!(a.isClient || b.isClient) };
+  },
   // THE CLIENTS AMONG THEM, KEPT BY THE PARTITION (2026-10-22, #820), so
   // Monitoring → Metrics counts the client holders without walking one row
   // per person (`userCountsResolved()`). The IndexedMap re-files a row on
@@ -416,7 +452,12 @@ function noteTokenHolder(record) {
   if (!key) {
     return;
   }
-  const held = tokenHolders.get(key);
+  // WHAT IS HELD, NEVER A READ (#820): on demand `get()` of a holder this
+  // process does not hold is a synchronous read of the store, on the path
+  // of every token. Not held, the row is written blindly — `firstAt` now,
+  // `lastExp` this token's plus the headroom — and the store's `mergeRow`
+  // keeps the earlier `firstAt` and the later `lastExp` of the two.
+  const held = tokenHolders.peek(key);
   const exp = Number(record.exp) || 0;
   const lastExp = held ? Number(held.lastExp) || 0 : 0;
   const client = record.grant === 'client_credentials';
@@ -428,106 +469,6 @@ function noteTokenHolder(record) {
                             ? Math.max(exp + HOLDER_HEADROOM_S, lastExp)
                             : lastExp,
                           isClient: client || !!(held && held.isClient) });
-}
-
-// ---------------------------------------------------------------------------
-// THE HOLDERS OF THE TOKENS ISSUED BEFORE THE STORE ABOVE EXISTED, once per
-// realm: a scheduler job on the front process walks the register a page at
-// a time (`scanAsync()`) and notes every holder, then files the realm's mark
-// under HOLDERS_DONE — a key no identity has (`identityOf()` of '$…$' is a
-// name nobody signs in as, and the readers skip it). The rows replicate as
-// any write does. Off where the register is held whole: its own walk lists
-// every holder there.
-// ---------------------------------------------------------------------------
-const HOLDERS_DONE = '$backfilled$';
-// The id is the scheduler's (dot- or hyphen-separated lower-case words, so
-// not the store's `admin_stats.` prefix), beside `oauth2.expired-token-purge`.
-const HOLDERS_JOB = 'oauth2.token-holders-backfill';
-let holdersJobRegistered = false;
-
-// The realms whose holders are not yet all noted.
-function holdersOwed() {
-  log.debug("Entering holdersOwed().");
-  log.debug("Leaving holdersOwed().");
-  return realms.list().filter(function (r) {
-    return !tokenHolders.realmMap(r.id).has(HOLDERS_DONE);
-  });
-}
-
-async function backfillTokenHolders() {
-  log.debug("Entering backfillTokenHolders().");
-  let realmsDone = 0;
-  for (const r of holdersOwed()) {
-    await realms.run(r, async function () {
-      await tokens.scanAsync(function (record) {
-        if (record) {
-          noteTokenHolder(record);
-        }
-      });
-      tokenHolders.set(HOLDERS_DONE, { at: Date.now() });
-    });
-    realmsDone++;
-  }
-  log.info('admin: the holders of every token in ' + realmsDone + ' realm(s) ' +
-           'are on the users list (#820).');
-  log.debug("Leaving backfillTokenHolders().");
-  return { realms: realmsDone };
-}
-
-/**
- * Registers the holders' backfill job, once.
- *
- * @param schedulerInstance - the scheduler, for the tests
- */
-function ensureHoldersBackfillJob(schedulerInstance) {
-  log.debug("Entering ensureHoldersBackfillJob().");
-  if (holdersJobRegistered) {
-    log.debug("Leaving ensureHoldersBackfillJob(). Registered.");
-    return;
-  }
-  let scheduler = schedulerInstance || null;
-  if (!scheduler) {
-    try {
-      scheduler = require('../cluster/scheduler');
-    } catch (e) {
-      log.debug("Caught in ensureHoldersBackfillJob(): " +
-                ((e && e.message) || e));
-      log.debug("Leaving ensureHoldersBackfillJob(). No scheduler.");
-      return;
-    }
-  }
-  if (!scheduler || typeof scheduler.register !== 'function') {
-    log.debug("Leaving ensureHoldersBackfillJob(). No scheduler yet.");
-    return;
-  }
-  holdersJobRegistered = true;
-  if (scheduler.job(HOLDERS_JOB)) {
-    log.debug("Leaving ensureHoldersBackfillJob(). Registered elsewhere.");
-    return;
-  }
-  scheduler.register({
-    id: HOLDERS_JOB,
-    title: 'Token holders backfill',
-    describe: 'Notes the holder of every token already issued on the users ' +
-              'list, once per realm, now that the token register is read on ' +
-              'demand (#820).',
-    owner: 'common/admin_stats.js',
-    onFront: 'it walks the whole token register from the store, which a ' +
-             'request worker should not hold a slot for',
-    everyMs: function () {
-      return 10 * 60 * 1000;
-    },
-    off: function () {
-      if (!tokens.onDemandLive()) {
-        return 'the token register is held whole';
-      }
-      return holdersOwed().length ? '' : 'every realm is done';
-    },
-    run: function () {
-      return backfillTokenHolders();
-    }
-  });
-  log.debug("Leaving ensureHoldersBackfillJob().");
 }
 
 // **ON DEMAND (#820 part 3)**: 546,000 records on 8081, read back by every
@@ -2952,7 +2893,7 @@ function userRowsAsync() {
  * @returns the counts `snapshot().users` reports: `known`,
  *   `authenticatedHere`, `clients` and `authentications`
  */
-function userCountsResolved() {
+function userCountsResolved(holderClients) {
   log.debug("Entering userCountsResolved().");
   const keys = new Set();
   const clients = new Set();
@@ -2987,21 +2928,30 @@ function userCountsResolved() {
   let known = keys.size;
   if (tokens.onDemandLive()) {
     // Every holder is a row; a key another source named is counted again
-    // only when the holders do not already count it.
-    const holders = tokenHolders.size - (tokenHolders.has(HOLDERS_DONE)
-      ? 1 : 0);
+    // only when the holders do not already count it. `size` and `has()`
+    // answer from the keys every process holds (`keysResident`), with no
+    // read of the store.
+    const holders = tokenHolders.size;
     let beyond = 0;
     keys.forEach(function (key) {
-      if (key === HOLDERS_DONE || !tokenHolders.has(key)) {
+      if (!tokenHolders.has(key)) {
         beyond++;
       }
     });
     known = holders + beyond;
-    tokenHolders.lookup('client').forEach(function (key) {
-      if (key !== HOLDERS_DONE) {
-        clients.add(key);
-      }
+    // The client holders, read asynchronously by `userCountsAsync()` from
+    // the store's `client` index; synchronously only what is held (a
+    // `lookup()` on demand would be a blocking read of the store).
+    (holderClients || []).forEach(function (key) {
+      clients.add(key);
     });
+    if (!holderClients) {
+      tokenHolders.forEach(function (row, key) {
+        if (row && row.isClient) {
+          clients.add(key);
+        }
+      });
+    }
   }
   log.debug("Leaving userCountsResolved(). " + known + " known.");
   return { known: known, authenticatedHere: authenticatedHere,
@@ -3014,12 +2964,29 @@ function userCountsResolved() {
  *
  * @returns a promise of the counts
  */
-function userCountsAsync() {
+async function userCountsAsync() {
   log.debug("Entering userCountsAsync().");
-  log.debug("Leaving userCountsAsync().");
-  return withSubjectsResolvedAsync(function () {
-    return userCountsResolved();
+  let holderClients = null;
+  if (tokens.onDemandLive()) {
+    try {
+      holderClients = (await tokenHolders.lookupEntriesAsync('client'))
+        .map(function (entry) {
+          return entry.key;
+        });
+    } catch (e) {
+      log.debug("Caught in userCountsAsync(): " + ((e && e.message) || e));
+      log.warn(errorCodes.tag('STS-ADMIN-0895') + 'admin: the client ' +
+               'token holders could not be read from the store (' +
+               ((e && e.message) || e) + '); the clients counted are the ' +
+               'ones this process holds.');
+      holderClients = null;
+    }
+  }
+  const counts = await withSubjectsResolvedAsync(function () {
+    return userCountsResolved(holderClients);
   });
+  log.debug("Leaving userCountsAsync().");
+  return counts;
 }
 
 
@@ -6991,7 +6958,7 @@ function userKeyTest() {
   log.debug("Leaving userKeyTest().");
   return function (key) {
     const k = String(key == null ? '' : key);
-    if (!k || k === HOLDERS_DONE) {
+    if (!k) {
       return false;
     }
     if (users.has(k) || tokenHolders.has(k) ||
@@ -7037,12 +7004,14 @@ function collectUserKeys() {
   tokens.forEach(function (record) {
     add(holderKeyOf(record.username, record.sub));
   });
-  // On demand (#820), every holder, not only those of the tokens held.
+  // On demand (#820), the holders this process HOLDS, not only those of
+  // the tokens held. Not every holder: the store's are known only by their
+  // keyed digest (`keysResident`), which names nobody, and listing them all
+  // would read every row. A caller asking whether ONE key is known asks
+  // `userKeyTest()`, which answers for every holder from the digests.
   if (tokens.onDemandLive()) {
     tokenHolders.forEach(function (row, key) {
-      if (key !== HOLDERS_DONE) {
-        add(key);
-      }
+      add(key);
     });
   }
   allArtifacts().forEach(function (record) {
@@ -7141,13 +7110,14 @@ function buildUserRowsResolved(onlyKey) {
     if (record.issuedAt > row.lastActivityAt) row.lastActivityAt =
         record.issuedAt;
   });
-  // EVERY HOLDER ON DEMAND (#820): a row for each, its counts from the
-  // tokens held here; a page reads a shown row's own from the index.
+  // THE HOLDERS THIS PROCESS HOLDS, ON DEMAND (#820): a row for each, its
+  // counts from the tokens held here; a page reads a shown row's own from
+  // the index. Not every holder in the store — only their keys are held
+  // (`keysResident`), and those are digests — so the list is of the people
+  // this process has met recently and the directory's, and the counts
+  // (`userCountsAsync()`) are of every holder.
   if (wanted === null && tokens.onDemandLive()) {
     tokenHolders.forEach(function (holder, key) {
-      if (key === HOLDERS_DONE) {
-        return;
-      }
       const row = rowFor(key);
       if (row && holder && holder.isClient) {
         row.isClient = true;
@@ -7895,8 +7865,17 @@ module.exports = {
     log.debug("Leaving warmTokens().");
     return tokens.warm(jtis);
   },
-  backfillTokenHolders: backfillTokenHolders,
-  ensureHoldersBackfillJob: ensureHoldersBackfillJob,
+  // The token-holder rows of these usernames, read together off the event
+  // loop before a token is recorded for them (#820), so that
+  // `noteTokenHolder()` finds the row held and does not write blindly.
+  warmTokenHolders: function (usernames) {
+    log.debug("Entering warmTokenHolders().");
+    const keys = (usernames || []).map(function (name) {
+      return name ? identityKeyOf(name) : '';
+    }).filter(Boolean);
+    log.debug("Leaving warmTokenHolders().");
+    return tokenHolders.warm(keys);
+  },
   userKeys: userKeys,
   issuedArtifactsOfKind: issuedArtifactsOfKind,
   userDetail: userDetail,

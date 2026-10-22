@@ -3106,7 +3106,7 @@ class IndexedMap extends Map {
  *   lookup: (indexKey: string) => any[], onDemandLive: () => boolean,
  *   scan: (fn: (value: any, key: any) => void) => void,
  *   scanAsync: (fn: (value: any, key: any) => void) => Promise<void>,
- *   warm: (keys: any[]) => Promise<void>,
+ *   warm: (keys: any[]) => Promise<void>, peek: (k: any) => any,
  *   lookupEntriesAsync: (indexKey: string) =>
  *     Promise<{ key: any, value: any }[]>,
  *   newestAsync: (limit: number) =>
@@ -3495,20 +3495,28 @@ function map(options) {
     // pending by then, when the read's answer may be the older one and is
     // dropped. A key the store answers absent is remembered as such. A
     // failed read holds nothing, and the request's own reads ask as they
-    // always did. Not for a key-resident store, whose `has()` is free.
+    // always did. A key-resident store asks only for a key whose digest it
+    // holds (2026-10-22, #820): one it does not hold is absent, known
+    // without the store, and its `has()` is free anyway — what a warm-up
+    // buys there is the BODY, which a writer reading the held value needs.
     warm: async function (keys) {
       log.debug("Entering warm().");
-      if (!demandOn() || keysResident ||
-          typeof onDemandReader.readMany !== 'function') {
+      if (!demandOn() || typeof onDemandReader.readMany !== 'function') {
         log.debug("Leaving warm(). Not here.");
         return;
       }
       const realmId = partitionId(currentId());
       const target = per();
       const wanted = Array.from(new Set((keys || []).filter(function (k) {
-        return k !== undefined && k !== null && k !== '' && !target.has(k) &&
-          !onDemandReader.journalled(handleName, realmId, k) &&
-          !absentKnown(k);
+        if (k === undefined || k === null || k === '' || target.has(k) ||
+            onDemandReader.journalled(handleName, realmId, k)) {
+          return false;
+        }
+        if (keysResident) {
+          const digest = digestOf(realmId, k);
+          return !digest || residentPer().has(digest);
+        }
+        return !absentKnown(k);
       })));
       if (!wanted.length) {
         log.debug("Leaving warm(). Nothing to read.");
@@ -3536,6 +3544,11 @@ function map(options) {
         }
         if (found.has(k)) {
           target.set(k, found.get(k));
+        } else if (keysResident) {
+          const digest = digestOf(realmId, k);
+          if (digest) {
+            residentPer().delete(digest);
+          }
         } else {
           absentNote(k);
         }
@@ -3754,6 +3767,16 @@ function map(options) {
       log.debug("Entering get().");
       log.debug("Leaving get().");
       return onDemand ? demandGet(k) : per().get(k);
+    },
+    // WHAT THIS PROCESS HOLDS FOR A KEY, AND NEVER A READ OF THE STORE
+    // (2026-10-22, #820): for a writer on a hot path that must not block on
+    // a miss — `admin_stats.js`'s `noteTokenHolder()`, once per JWT — and
+    // that writes blindly when nothing is held, leaving the store's
+    // `mergeRow` to combine its row with the one already there. Held whole,
+    // it is `get()`.
+    // Hot path: every recorded JWT. No Entering/Leaving pair.
+    peek: function (k) {
+      return per().get(k);
     },
     set: function (k, v) {
       log.debug("Entering set().");

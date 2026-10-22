@@ -247,14 +247,6 @@
     "en": "46dabea2677465d2",
     "text": "Quita cada concesión OAuth cuyo último token haya caducado, y el registro de cada token acuñado bajo una concesión una vez que caduca (#142)."
   },
-  "sched.jobs.oauth2.token-holders-backfill.title": {
-    "en": "98c516f1cf99620a",
-    "text": "Relleno de titulares de tokens"
-  },
-  "sched.jobs.oauth2.token-holders-backfill.describe": {
-    "en": "868b926daccee16f",
-    "text": "Añade a la lista de usuarios al titular de cada token ya emitido, una vez por dominio, ahora que el registro de tokens se lee bajo demanda (#820)."
-  },
   "sched.jobs.oauth2.used-assertion-purge.title": {
     "en": "1b76c505917f3b58",
     "text": "Barrido de aserciones usadas caducadas"

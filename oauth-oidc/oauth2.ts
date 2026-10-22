@@ -14853,6 +14853,16 @@ class OAuth2Server {
         return self.oauthError(res, 400, 'invalid_grant',
           'The authorization code has expired.');
       }
+      // THE PERSON'S TOKEN-HOLDER ROW, READ OFF THE EVENT LOOP WHILE THE
+      // CHECKS BELOW RUN (2026-10-22, #820), and awaited before the tokens
+      // are issued: recording them reads that row, and one not held is
+      // written fresh rather than read where the event loop would wait.
+      const holderWarm = stats.warmTokenHolders([String(
+        (record.user && record.user.username) || '')])
+        .catch(function (e) {
+          log.debug("Caught in OAuth2Server.tokenGrant(): " +
+                    ((e && e.message) || e));
+        });
       // BY DEFAULT THE CODE IS ALREADY SPENT (#424) — rcbj: "It doesn't matter
       // why the request to the Token Endpoint failed. The caller can only
       // submit a request with that authorization code once." What follows
@@ -15080,6 +15090,7 @@ class OAuth2Server {
       } else {
         authzCodes.delete(codeKey);
       }
+      await holderWarm;
       const issued = await issue({
         jkt: dpopJkt,
         // The DPoP key a bound ID Token names (Key Binding section 4).
@@ -15389,6 +15400,10 @@ class OAuth2Server {
       const warming = Promise.all([
         bcp.warmRefresh(claims),
         stats.warmTokens([String(claims.jti || '')]),
+        // And the person's token-holder row, which recording the new
+        // tokens reads (2026-10-22, #820): held, `noteTokenHolder()`
+        // takes it as it is; not held, it would write a fresh row.
+        stats.warmTokenHolders([String(claims.username || '')]),
         // And the person, at the place the consent check reads them.
         helpers.warmPeopleAsync([String(claims.username || '')]),
         // And the sign-on session an online token is bound to.
