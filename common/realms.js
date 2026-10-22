@@ -2730,6 +2730,15 @@ function declareHandle(options, shape, accessors) {
     onDemand: !!options.onDemand,
     lookupsOf: options.onDemand && typeof options.indexBy === 'function'
       ? options.indexBy : null,
+    // `sortBy(value)` answers a number a console list of the store's
+    // newest rows is ordered by, or null (2026-10-22, #820). Written as
+    // one more `sts_minted_index` row beside the row (`sort_at`), so
+    // `minted.newest` walks a partial index instead of sorting every row
+    // by `written_at`, which has only a BRIN: a btree on `written_at`
+    // would make every update of `sts_minted` non-HOT
+    // (`persistence/CLAUDE.md`, *The newest rows by an index*).
+    sortOf: options.onDemand && typeof options.sortBy === 'function'
+      ? options.sortBy : null,
     // A store whose rows written before it declared an `expiresAt` have
     // none (#820 part 2): how long after its write such a row lives, in
     // ms. The store is read back whole until those rows are given one
@@ -3661,7 +3670,7 @@ function map(options) {
         return { key: e[0], value: e[1] };
       });
     },
-    // The newest rows of the ambient realm, newest WRITTEN first, as
+    // The newest rows of the ambient realm, highest `sortBy` first, as
     // `[{ key, value }]`: the store's newest `limit` and every held row
     // with a write not yet committed (which the store has not got). Null
     // where the store is held whole: the caller walks the Map, as before.

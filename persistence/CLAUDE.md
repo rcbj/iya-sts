@@ -2136,12 +2136,46 @@ holds the map's rules; `tests/session_index.js` the index rows' writes.
 `countAsync()` for console pages about an on-demand store. They ask the
 driver's READ POOL (`mintedQuery()` on the postgres driver, by its tier on a
 tiered one) through `minted_queries.js`' `minted.byIndex`, `minted.newest`
-(newest written first, capped at `NEWEST_LIMIT`, 1,000) and `minted.count`,
+(highest `sortBy` value first, capped at `NEWEST_LIMIT`, 1,000; below) and
+`minted.count`,
 never the synchronous bridge, and merge what this process holds as `lookup()`
 merges it: a held row is the fresher, and a key with a write not yet committed
 answers from here or not at all. Each REJECTS where the store cannot be
 asked; the caller says the list was not read. Held whole, they answer from
 the Map. Monitoring → Tokens is the first caller (`common/CLAUDE.md`).
+
+### The newest rows by an index, never by `written_at` (2026-10-22, #820)
+
+`minted.newest` was `ORDER BY written_at DESC` over `sts_minted`, and
+`written_at` has only a BRIN: every page of Monitoring → Tokens sorted the
+1.7M token rows of 8081's default realm, 13-14 s. A btree on `written_at`,
+even a partial one, is ruled out by #630: `written_at` changes on every
+write, so any btree naming it makes every update of `sts_minted` non-HOT,
+and WAL is the throughput bottleneck.
+
+**A store declares `sortBy: (value, key) => number | null` at `realms.map()`**
+(on demand only; `admin_stats.tokens` declares the record's `issuedAt`), and
+the flush writes ONE more `sts_minted_index` row per stored row: `index_key`
+`minted_queries.SORT_INDEX_KEY` (`$sort$`, which no `indexBy` digest can be),
+`sort_at` the value (schema version 25: a nullable `bigint`, every other
+index row NULL). `sts_minted_index` is written by INSERT and DELETE only, so
+its partial index `sts_minted_index_sort (handle, realm, sort_at DESC, key
+DESC) WHERE sort_at IS NOT NULL` costs no HOT update. `minted.newest` walks
+that index and reads each row through a `LATERAL (… LIMIT 1)` probe of
+`sts_minted`'s primary key, repeating the partial predicate. **The LATERAL is
+the point**: a plain JOIN's GENERIC plan (a prepared statement's, after five
+runs) scanned the whole store and sorted — 52 s on a copy of 8081's index —
+where the LATERAL's generic plan is the ordered index walk, 16 ms for 500
+rows. A store with no `sortBy` is refused `newestAsync()`.
+
+**The sort row lives and dies with the row's other index rows**: written in
+the flush's replace, deleted by `MINTED_INDEX_DELETE` with the row or its
+tombstone, skipped by `unchangedLookups()` only when the index keys AND the
+sort value are what this process last committed (`filedFingerprint()`),
+recomputed from a merged row, and filed by the backfill job with the rest. A
+row whose body the expiry purge removed leaves a sort row the join passes
+over, like every other index row. No migration: rows written before version
+25 have no sort row and are not in the list until next written.
 
 ## WHAT ONE ADD WRITES TO THE CHANGE LOG (#618 phase 2, 2026-10-14)
 

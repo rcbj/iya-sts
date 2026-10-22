@@ -66,7 +66,12 @@ function child() {
     const count = queries.build('minted.count', ['admin_stats.tokens', 'r', 5]);
     const rows = queries.answerOf('minted.newest',
       [{ key: 'k1', key_sealed: null, body: 'b1' }]);
-    note(/ORDER BY written_at DESC, key DESC LIMIT \$5/.test(newest.text) &&
+    // By the store's sort value through `sts_minted_index_sort` since
+    // 2026-10-22 (#820): `written_at` has only a BRIN.
+    note(/ORDER BY i\.sort_at DESC, i\.key DESC LIMIT \$5/
+         .test(newest.text) &&
+         /i\.sort_at IS NOT NULL/.test(newest.text) &&
+         !/written_at/.test(newest.text) &&
          newest.values[4] === queries.NEWEST_LIMIT &&
          newest.values[3] === 5 && /count\(\*\)/.test(count.text) &&
          count.values.length === 4 &&

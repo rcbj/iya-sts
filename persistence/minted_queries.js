@@ -26,10 +26,11 @@
 //                   store (`sts_minted_index`, schema version 24): what a
 //                   walk of the whole store used to find, such as every
 //                   refresh token of one family.
-//   minted.newest   the most recently written live rows of one store in one
-//                   realm, newest first (2026-10-22, #820): what a console
-//                   list of the newest of a store shows, asked on the
-//                   driver's read pool and never through the bridge.
+//   minted.newest   the live rows of one store in one realm with the
+//                   highest sort value first (2026-10-22, #820): what a
+//                   console list of the newest of a store shows, asked on
+//                   the driver's read pool and never through the bridge.
+//                   Only a store declaring `sortBy` has a sort value.
 //   minted.count    how many live rows one store holds in one realm
 //                   (2026-10-22, #820): a console total, on the read pool.
 //
@@ -56,9 +57,40 @@ const PAGE = 'SELECT key, key_sealed, body FROM sts_minted WHERE handle = $1 ' +
   'AND realm = $2 AND key > $3 AND body <> $4 AND (expires_at IS NULL OR ' +
   'expires_at > $5) ORDER BY key LIMIT $6';
 
-const NEWEST = 'SELECT key, key_sealed, body FROM sts_minted WHERE ' +
-  'handle = $1 AND realm = $2 AND body <> $3 AND (expires_at IS NULL OR ' +
-  'expires_at > $4) ORDER BY written_at DESC, key DESC LIMIT $5';
+// THE NEWEST ROWS, BY AN INDEX (2026-10-22, #820). It was `ORDER BY
+// written_at DESC` over `sts_minted`, which has only a BRIN on `written_at`
+// (#630: a btree, even a partial one, makes every update of the busiest
+// table non-HOT, since `written_at` changes on every write), so every page
+// view sorted the store's whole partition: 13-14 s for 1.7M token rows on
+// 8081. A store declaring `sortBy` writes one more `sts_minted_index` row
+// per row, `index_key` SORT_INDEX_KEY and `sort_at` its value — that table
+// is insert and delete only, so its index costs no HOT update — and this
+// walks `sts_minted_index_sort` newest first. The predicate `sort_at IS NOT
+// NULL` is the partial index's own, written out so a plan made without the
+// parameters' values can still use it. A sort row whose body is gone
+// (expiry-purged) or a tombstone finds no row and is passed over.
+//
+// THE BODY IS A LATERAL SUBQUERY WITH LIMIT 1, NOT A JOIN, AND THAT IS THE
+// FIX FOR THE GENERIC PLAN (2026-10-22, #820). Measured on a copy of 8081's
+// index with 2.37M sort rows: the plain JOIN's custom plan walked the index
+// (7.9 ms), but its GENERIC plan — what a prepared statement settles on
+// after five executions — estimated the handle's rows from the column's
+// average and chose a bitmap scan of the whole store, a hash join and a sort:
+// 52 s. The LIMIT inside the LATERAL keeps the planner from pulling the
+// subquery up into a join, so every plan is the ordered index walk on the
+// outside and one primary-key probe per row: 16 ms of execution for 500 rows
+// in the generic plan, 7.6 ms custom.
+const NEWEST = 'SELECT m.key, m.key_sealed, m.body FROM sts_minted_index i ' +
+  'CROSS JOIN LATERAL (SELECT x.key, x.key_sealed, x.body FROM sts_minted x ' +
+  'WHERE x.handle = i.handle AND x.realm = i.realm AND x.key = i.key AND ' +
+  'x.body <> $3 AND (x.expires_at IS NULL OR x.expires_at > $4) LIMIT 1) m ' +
+  'WHERE i.handle = $1 AND i.realm = $2 AND i.sort_at IS NOT NULL ' +
+  'ORDER BY i.sort_at DESC, i.key DESC LIMIT $5';
+
+// The `index_key` of a row's sort row. `$` is not in base64url, so no
+// `indexBy` digest is this, and it is not the completion mark
+// (`$index-complete$`), which sits under realm ''.
+const SORT_INDEX_KEY = '$sort$';
 
 const COUNT = 'SELECT count(*)::bigint AS n FROM sts_minted WHERE ' +
   'handle = $1 AND realm = $2 AND body <> $3 AND (expires_at IS NULL OR ' +
@@ -159,5 +191,6 @@ module.exports = {
   TOMBSTONE: TOMBSTONE,
   BY_INDEX_LIMIT: BY_INDEX_LIMIT,
   PAGE_LIMIT: PAGE_LIMIT,
-  NEWEST_LIMIT: NEWEST_LIMIT
+  NEWEST_LIMIT: NEWEST_LIMIT,
+  SORT_INDEX_KEY: SORT_INDEX_KEY
 };

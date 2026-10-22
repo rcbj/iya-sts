@@ -660,8 +660,18 @@ CREATE TABLE IF NOT EXISTS sts_minted_index (
   realm     text NOT NULL,
   index_key text NOT NULL,
   key       text NOT NULL,
+  sort_at   bigint,
   PRIMARY KEY (handle, realm, index_key, key));
 CREATE INDEX IF NOT EXISTS sts_minted_index_key ON sts_minted_index (handle, realm, key);
+-- Schema version 25 (#820, 2026-10-22): a store's `sortBy` value on one
+-- more index row per stored row, and the partial index `minted.newest`
+-- walks instead of sorting the store by `written_at`. `sts_minted_index`
+-- is insert and delete only, so this index costs no HOT update; a btree on
+-- `sts_minted.written_at` would (#630). Nullable with no default, so the
+-- ALTER rewrites nothing. On a large table, build the index CONCURRENTLY
+-- by hand first (outside a transaction); this statement then finds it.
+ALTER TABLE sts_minted_index ADD COLUMN IF NOT EXISTS sort_at bigint;
+CREATE INDEX IF NOT EXISTS sts_minted_index_sort ON sts_minted_index (handle, realm, sort_at DESC, key DESC) WHERE sort_at IS NOT NULL;
 
 -- ---------------------------------------------------------------------------
 -- THE CHANGE LOG (2026-09-06), which is what makes several processes against
@@ -1128,7 +1138,7 @@ CREATE TABLE IF NOT EXISTS sts_schema (
 -- WHAT VERSION OF THE ABOVE THIS IS. The driver writes the same row on open()
 -- and `tests/postgres_schema.js` checks that this number is its SCHEMA_VERSION,
 -- so the two cannot disagree about which schema is on disk.
-INSERT INTO sts_schema (version) VALUES (24) ON CONFLICT (version) DO NOTHING;
+INSERT INTO sts_schema (version) VALUES (25) ON CONFLICT (version) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
 -- THE APPLICATION ROLE: READ AND WRITE THE ROWS, AND NOTHING ELSE.

@@ -583,6 +583,22 @@ const tokens = realms.map({
     }
     return out;
   },
+  // NEWEST FIRST BY WHEN IT WAS ISSUED (2026-10-22, #820): Monitoring →
+  // Tokens lists the store's newest records, and `minted.newest` walks
+  // this value's index row (`sts_minted_index_sort`) rather than sorting
+  // 1.7M rows by `written_at`, which has only a BRIN. Milliseconds, so two
+  // tokens of one second keep their order; a record with neither field has
+  // no sort row and is not in that list. It never changes on a record once
+  // written, so a revocation's rewrite files the row where it was.
+  // A hot path (every row a flush writes): no Entering/Leaving pair.
+  sortBy: function (record) {
+    const ms = Number(record && record.issuedAt);
+    if (ms > 0) {
+      return ms;
+    }
+    const iat = Number(record && record.iat);
+    return iat > 0 ? iat * 1000 : null;
+  },
   // A hot path (every row a flush writes): no Entering/Leaving pair.
   expiresAt: function (record) {
     const exp = Number(record && record.exp);
@@ -6667,7 +6683,8 @@ function issuedSetByKey(setKey) {
 //   a set       `set:<id>` (the index key added for this), or one record by
 //               its key for a `one:` set;
 //   the list    the NEWEST `ISSUED_NEWEST` records the store holds, by when
-//               each row was written, with every artifact beside them — a
+//               each was issued (the store's `sortBy`), with every artifact
+//               beside them — a
 //               bounded window and NOT the whole register, which the answer
 //               says (`coverage`); the total is the store's own count.
 //
