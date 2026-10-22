@@ -67,6 +67,8 @@
   "userChooserLabel": "Buscar una persona",
   "userChooserPlaceholder": "parte de un nombre de usuario, un principal o un sujeto",
   "userChooserNothing": "Nadie coincide aquí. Esta lista es el registro de identidades UNIDO a todos los que nombró una delegación, así que un nombre que está en la página de arriba y no aquí llegó a este servicio como aplicación y no como persona.",
+  "userChooserExact": "<strong>Este registro es demasiado grande para listarlo.</strong> Las opciones son las identidades que nombra una delegación, y una búsqueda encuentra a cualquier otra persona solo por su nombre exacto.",
+  "usersPartial": "<strong>Aquí solo se listan algunas identidades.</strong> El registro es demasiado grande para listarlo entero: estas son las identidades que nombra una delegación y la que se buscó por su nombre.",
   "signedIn": "inició sesión",
   "toThisService": "en este servicio",
   "issuedFor": "emitido en nombre de",

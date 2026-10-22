@@ -4339,6 +4339,15 @@ client's DELETE, performed for the person — filed by the grant's `sub`.
 `revoke()` takes the door's CAEP initiating entity where it states one
 (`policy` for a signal), and keeps `user` / `admin` otherwise.
 
+**THE LIST COUNTS TOKENS IN ONE PASS AND IS PAGED BEFORE IT IS DECORATED
+(2026-10-22, #820).** `list()` walked every `issued` row once per grant to
+count that grant's tokens — grants times tokens. It counts them by grant in
+one pass now, and `list(clientId, { bare: true })` leaves the grant resource
+off (keeping `created_at`, so the order is the same) for
+`/admin-api/grants`, which filters on the three identifiers, pages, and
+builds the resource for the page's rows only (`decorate()`).
+`tests/console_delegation_roles_scale.js` (G) holds both.
+
 `tests/grant_management.js` and `tests/vendored/sts_grant_management.js`,
 `sts_fapi_ciba.js` (local) hold it. **Not built**: Grant Management through
 the device flow (there is none here), `grant_management_action_required`,

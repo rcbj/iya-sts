@@ -4738,6 +4738,19 @@ with `Cannot find module` naming a file the operator never mentioned.
    in* are opposite answers to one question. The chooser offers both and each
    row says which side it came from.
 
+   **WHILE THE TOKEN REGISTER IS ON DEMAND, A CHOOSER GETS
+   `userCatalogue()`, NOT `userList()` (2026-10-22, #820).** `userList()`
+   builds a row for every identity — about 470,000 on 8081 — for a pane that
+   shows ten. `userCatalogue(wanted)` answers the whole list, searched by any
+   part, while the register is held whole (`stats.userKeyTest()` null);
+   otherwise the delegation register's identities (bounded by
+   `delegation.maxRecords`) and the ONE person the search names EXACTLY — as
+   typed, in lower case, as `identityKeyOf()` normalises it — each built as the
+   one row `stats.userRow()` answers, and it says so: `search: 'exact'`,
+   `complete: false`, `exactKey`. `userEntry(key)` is one identity's row the
+   same way, which `activityFor()` reads. Nothing in either walks the
+   register. `tests/console_delegation_roles_scale.js` (D) holds it.
+
 ---
 
 3q. **`credential_graph.ts` is the same union asked a NARROWER question, and it

@@ -67,6 +67,8 @@
   "userChooserLabel": "Hitta en person",
   "userChooserPlaceholder": "del av ett användarnamn, en principal eller ett subjekt",
   "userChooserNothing": "Ingen här matchar det. Den här listan är identitetsregistret SAMMANSLAGET med alla som en delegering har angett, så ett namn som finns på sidan ovan men inte här nådde den här tjänsten som ett program snarare än som en person.",
+  "userChooserExact": "<strong>Det här registret är för stort för att listas.</strong> Valen är de identiteter som en delegering anger, och en sökning hittar alla andra endast på deras exakta namn.",
+  "usersPartial": "<strong>Bara vissa identiteter listas här.</strong> Registret är för stort för att listas helt: det här är de identiteter som en delegering anger och den som söktes på namn.",
   "signedIn": "loggade in",
   "toThisService": "i den här tjänsten",
   "issuedFor": "utfärdad för",
