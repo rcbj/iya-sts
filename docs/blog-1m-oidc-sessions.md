@@ -161,7 +161,7 @@ fell from 225 to 134 a second, and sign-ins rose from 16.4 to 18.1 a
 second.
 
 Writes to the minted stores became one statement per flush instead of about
-eight round trips, which took a flush from 23 ms to 14 ms at p50. The risk
+eleven round trips, which took a flush from 23 ms to 14 ms at p50. The risk
 engine's seven sequential count queries became one. Both cut handler and
 commit time, and both kept the database's work per sign-in down.
 
@@ -293,20 +293,96 @@ The soak passed, but it left a list. Each item is now a ticket:
 * Startup restores about 239,000 scheduler-run records it rarely needs.
 * The refresh ceiling is still the disk's sync rate.
 
-## What we took away
+## Lessons learned
 
-* **Measure the phases before guessing.** The per-phase timers turned
-  "sign-in is slow" into four separate numbers, and two of the biggest wins
-  (asynchronous counters and per-session read-your-write) were not where we
-  would have looked first.
-* **A load test that signs each person in once is a migration test too.**
-  Any change keyed to "the next sign-in" fires on every request.
-* **Holding a population is different from serving a rate.** Most of day
-  one was about state that grew with the number of people (stores, lists,
-  console pages), not about requests per second.
-* **Read-your-write can be scoped.** Global consistency was safe and
-  expensive; scoping it to the session gave
-  back most of the wait.
+Each change taught something, and most of the lessons outlast this service.
+
+* **Measure the phases before you guess.** "Sign-in is slow" became four
+  numbers once every request reported its read-your-write wait, queue,
+  handler and commit. Two of the biggest wins, asynchronous counters and
+  per-session read-your-write, were not where we would have looked first.
+  The timers cost a few hundred lines and paid for themselves on the first
+  reading.
+* **Anything that grows with the population will eventually be the
+  problem.** Day one was all about this: stores restored whole into every
+  worker, console pages that counted or sorted everybody, a status list of
+  fixed size, scheduler history restored at start. None was slow at 10,000
+  people. A request rate doesn't find these; holding a population does.
+* **Not every write needs the disk before the answer.** A counter that
+  loses its last few hundred milliseconds in a crash costs nothing; a
+  refresh token that's lost after it was issued costs a session. Sorting
+  writes into "must be durable before we answer" and "may lag" took a
+  third off the disk syncs, without weakening anything a client relies on.
+* **Fewer round trips beats faster round trips.** One statement per flush
+  instead of about eleven, and one risk query instead of seven, did more
+  than any setting we turned.
+* **Consistency can be scoped.** Global read-your-write was safe and simple,
+  and it made every request pay for every other request's writes. Session
+  consistency gives a client exactly the guarantee it needs: it sees its
+  own writes. The token endpoint showed the catch: a request with no session
+  key falls back to the expensive path, so every kind of request needs a key
+  of its own.
+* **A cheaper algorithm can make the system slower.** argon2id is faster
+  than scrypt per hash, and switching to it made sign-in slower. The
+  migration rehashed every password on first use, and a side effect
+  re-derived every person's Kerberos keys. Measure a change's whole path,
+  including what it triggers, not just its core operation.
+* **A load test that signs each person in once is a migration test.** Any
+  behaviour keyed to "the next sign-in" fires on every request of such a
+  test. That is useful (it finds the cost of a migration fast) once you know
+  it's happening.
+* **Indexes have a write cost you can't see in a query plan.** An index we
+  added to speed up a read turned off PostgreSQL's heap-only updates for the
+  busiest table, and every write got more expensive. We dropped it.
+* **Restarts leak.** Leases, held blocks and in-flight claims that only
+  expire on a timer pile up across restarts. A long-running test with many
+  deploys finds them; a single benchmark run never will.
+* **Blocking reads hide in plain sight.** A synchronous read is free on an
+  idle system and a disaster on a loaded one, because it holds the worker's
+  only thread. The console pages that broke under load all broke that way.
+
+## Why didn't you do it this way the first time?
+
+*A note from Claude, the AI model that wrote most of these changes with the
+iya-sts maintainer.*
+
+It's a fair question, and the honest answer has three parts.
+
+**Most of the first designs were right for what they were designed for.**
+Global read-your-write, one flush at a time per worker, and stores restored
+whole into memory were all chosen deliberately, and each has a comment in
+the code explaining the failure it prevents. One flush at a time exists
+because two overlapping flushes once stored a signed-in session as an
+anonymous arrival. Global read-your-write is the simplest way to be sure no
+request reads stale data. Those designs were built to be correct first, and
+at the scale they were tested at, they were fast enough. Each became a cost
+only at a size nobody had run yet. You can't easily tune for a bottleneck
+you haven't measured, and before this test there was nothing at a million
+sessions to measure.
+
+**Some of it I could have seen sooner.** A status list with a fixed size and
+leases that outlive their process was always going to fill up; the
+arithmetic was there before the error was. A console page that walks every
+session was always going to stop answering at some size. With a habit of
+asking "what happens to this at a million?" of every new store and page, I
+would have caught those in review rather than in the soak.
+
+**And some of it I got wrong along the way.** I made argon2id the default
+without thinking through what a rehash on every first sign-in would cost
+under this particular load, or what else a changed password hash would
+trigger. The Kerberos re-derivation was a side effect I didn't trace until
+the numbers showed it. I added an index that killed heap-only updates, and
+proposed a range query over keys that turned out to be digests. Both were
+reverted within the hour, but only because we were measuring after every
+change. The process mattered more than any single fix: one change at a
+time, measured on the real load, rolled back when the numbers said so.
+
+So the short answer is: the first designs bought correctness, measurement
+showed where that correctness was costing more than it needed to, and a few
+of my own wrong turns were caught by the same measurements. I'd rather start
+from correct and slow and measure my way to fast than the other way round.
+That said, the next time I write a store or a list, I'll ask the
+million-people question before the load test does.
 
 ---
 
