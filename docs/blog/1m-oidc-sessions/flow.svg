@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 470" font-family="Helvetica, Arial, sans-serif" font-size="12" role="img" aria-label="The five requests of an OpenID Connect authorization code sign-in between the browser, the relying party and iya-sts">
+<!-- SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC -->
+<!-- SPDX-License-Identifier: BUSL-1.1 -->
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#3e4c59"/></marker></defs>
+<rect width="900" height="470" fill="#ffffff"/>
+<text x="20" y="26" font-size="15" font-weight="bold" fill="#1f2933">One sign-in: the authorization code flow as the load drove it</text>
+<g font-weight="bold" text-anchor="middle" fill="#1f2933">
+<rect x="70" y="45" width="140" height="34" rx="6" fill="#eef2f7" stroke="#9aa5b1"/><text x="140" y="67">Browser (script)</text>
+<rect x="380" y="45" width="140" height="34" rx="6" fill="#eef2f7" stroke="#9aa5b1"/><text x="450" y="67">iya-sts (8081)</text>
+<rect x="690" y="45" width="140" height="34" rx="6" fill="#eef2f7" stroke="#9aa5b1"/><text x="760" y="67">Relying party</text>
+</g>
+<g stroke="#c8ced6" stroke-dasharray="4 4"><line x1="140" y1="79" x2="140" y2="412"/><line x1="450" y1="79" x2="450" y2="412"/><line x1="760" y1="79" x2="760" y2="412"/></g>
+<g stroke="#3e4c59" stroke-width="1.5" fill="none" marker-end="url(#a)">
+<path d="M140,110 H448"/><path d="M448,128 H142"/>
+<path d="M140,170 H448"/><path d="M448,188 H142"/>
+<path d="M140,230 H448"/><path d="M448,248 H142"/>
+<path d="M140,290 H448"/><path d="M448,308 H142"/>
+<path d="M760,370 H452"/><path d="M452,388 H758"/>
+</g>
+<g fill="#1f2933">
+<text x="150" y="104">1. GET /oauth2/authorize (client_id, PKCE, scope)</text>
+<text x="150" y="142" fill="#616e7c">302 to the sign-in page; a pending flow is created</text>
+<text x="150" y="164">2. GET /authn-api/pending</text>
+<text x="150" y="202" fill="#616e7c">200: the sign-in page loads the pending flow</text>
+<text x="150" y="224">3. POST /authn-api/pending (username, password)</text>
+<text x="150" y="262" fill="#616e7c">password hash check, risk engine, session created</text>
+<text x="150" y="284">4. GET /oauth2/authorize (with the session cookie)</text>
+<text x="150" y="322" fill="#616e7c">302 to the relying party with ?code=…</text>
+<text x="462" y="364">5. POST /oauth2/token (code, verifier, client auth)</text>
+<text x="462" y="402" fill="#616e7c">access, ID and refresh tokens</text>
+<text x="20" y="432" fill="#616e7c">Then, ~9.6 hours later and every 9.6 hours after: POST /oauth2/token with grant_type=refresh_token,</text>
+<text x="20" y="450" fill="#616e7c">which rotates the refresh token and keeps the session active. At 1M people that is ~29 refreshes a second.</text>
+</g>
+</svg>

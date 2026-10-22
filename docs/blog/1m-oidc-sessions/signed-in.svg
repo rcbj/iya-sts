@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 340" font-family="Helvetica, Arial, sans-serif" font-size="12">
+<!-- SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC -->
+<!-- SPDX-License-Identifier: BUSL-1.1 -->
+<rect width="900" height="340" fill="#ffffff"/>
+<text x="70" y="22" font-size="15" font-weight="bold" fill="#1f2933">People signed in (sessions held)</text>
+<line x1="70" x2="880" y1="290.0" y2="290.0" stroke="#e4e7eb"/>
+<text x="64" y="294.0" text-anchor="end" fill="#616e7c">0k</text>
+<line x1="70" x2="880" y1="227.5" y2="227.5" stroke="#e4e7eb"/>
+<text x="64" y="231.5" text-anchor="end" fill="#616e7c">250k</text>
+<line x1="70" x2="880" y1="165.0" y2="165.0" stroke="#e4e7eb"/>
+<text x="64" y="169.0" text-anchor="end" fill="#616e7c">500k</text>
+<line x1="70" x2="880" y1="102.5" y2="102.5" stroke="#e4e7eb"/>
+<text x="64" y="106.5" text-anchor="end" fill="#616e7c">750k</text>
+<line x1="70" x2="880" y1="40.0" y2="40.0" stroke="#e4e7eb"/>
+<text x="64" y="44.0" text-anchor="end" fill="#616e7c">1000k</text>
+<line x1="70.0" x2="70.0" y1="290" y2="294" stroke="#616e7c"/>
+<text x="70.0" y="308" text-anchor="middle" fill="#616e7c">Oct 20 22:00</text>
+<line x1="180.5" x2="180.5" y1="290" y2="294" stroke="#616e7c"/>
+<text x="180.5" y="308" text-anchor="middle" fill="#616e7c">Oct 21 04:00</text>
+<line x1="290.9" x2="290.9" y1="290" y2="294" stroke="#616e7c"/>
+<text x="290.9" y="308" text-anchor="middle" fill="#616e7c">Oct 21 10:00</text>
+<line x1="401.4" x2="401.4" y1="290" y2="294" stroke="#616e7c"/>
+<text x="401.4" y="308" text-anchor="middle" fill="#616e7c">Oct 21 16:00</text>
+<line x1="511.8" x2="511.8" y1="290" y2="294" stroke="#616e7c"/>
+<text x="511.8" y="308" text-anchor="middle" fill="#616e7c">Oct 21 22:00</text>
+<line x1="622.3" x2="622.3" y1="290" y2="294" stroke="#616e7c"/>
+<text x="622.3" y="308" text-anchor="middle" fill="#616e7c">Oct 22 04:00</text>
+<line x1="732.7" x2="732.7" y1="290" y2="294" stroke="#616e7c"/>
+<text x="732.7" y="308" text-anchor="middle" fill="#616e7c">Oct 22 10:00</text>
+<line x1="843.2" x2="843.2" y1="290" y2="294" stroke="#616e7c"/>
+<text x="843.2" y="308" text-anchor="middle" fill="#616e7c">Oct 22 16:00</text>
+<text x="475" y="332" text-anchor="middle" fill="#616e7c">time (UTC); gaps are restarts and pauses</text>
+<text transform="translate(16 165) rotate(-90)" text-anchor="middle" fill="#616e7c">people</text>
+<line x1="411.2" x2="411.2" y1="40" y2="290" stroke="#616e7c" stroke-dasharray="3 3"/>
+<text x="414.2" y="52" fill="#616e7c" font-size="11">on-demand stores</text>
+<line x1="637.6" x2="637.6" y1="40" y2="290" stroke="#616e7c" stroke-dasharray="3 3"/>
+<text x="640.6" y="66" fill="#616e7c" font-size="11">status list full</text>
+<line x1="665.8" x2="665.8" y1="40" y2="290" stroke="#616e7c" stroke-dasharray="3 3"/>
+<text x="668.8" y="52" fill="#616e7c" font-size="11">final build</text>
+<line x1="760.3" x2="760.3" y1="40" y2="290" stroke="#616e7c" stroke-dasharray="3 3"/>
+<text x="763.3" y="66" fill="#616e7c" font-size="11">1M signed in</text>
+<polyline fill="none" stroke="#2f6fb0" stroke-width="2" points="74.6,277.5 79.2,275.9 83.8,274.2 88.4,273.4 93.0,271.3 97.6,269.3 102.2,268.7 106.8,268.7 111.4,268.7 116.0,268.6 120.6,266.9 125.2,265.3 129.8,263.6 134.4,262.1 139.0,260.4 143.6,258.9 148.2,257.4 152.8,255.5 157.4,252.6 162.0,249.9 166.6,246.9 171.2,244.1 175.9,241.6 180.5,239.8 185.1,237.2 189.7,234.9 194.3,233.0 198.9,230.7 203.5,228.4 208.1,226.0 212.7,223.4 217.3,221.2 221.9,218.9 226.5,216.8 231.1,214.3 235.7,212.1 240.3,210.2 244.9,207.4 249.5,205.1 254.1,203.2 258.7,200.9 263.3,198.2 267.9,196.1 272.5,194.1 277.1,194.1 281.7,194.1 286.3,194.1 290.9,194.1 295.5,194.1 300.1,194.1 304.7,194.1 309.3,194.1 313.9,194.1 318.5,194.1 323.1,194.1 327.7,194.1 332.3,194.1 336.9,194.1 341.5,194.1 346.1,194.1 350.7,194.1 355.3,194.1 359.9,194.1 364.5,194.1 369.1,194.1 373.8,194.1 378.4,194.1 383.0,194.1 387.6,194.1 392.2,194.1 396.8,194.1 401.4,194.1 406.0,194.1 410.6,194.1"/>
+<polyline fill="none" stroke="#2f6fb0" stroke-width="2" points="470.4,194.1 475.0,193.9"/>
+<polyline fill="none" stroke="#2f6fb0" stroke-width="2" points="553.2,182.9 557.8,181.0 562.4,177.3"/>
+<polyline fill="none" stroke="#2f6fb0" stroke-width="2" points="580.9,166.7 585.5,162.5 590.1,158.8 594.7,155.1 599.3,152.1 603.9,148.9 608.5,146.0 613.1,143.0 617.7,139.1 622.3,136.1 626.9,133.7 631.5,130.2 636.1,128.6 640.7,126.0 645.3,123.9 649.9,121.4 654.5,119.1 659.1,116.9 663.7,114.0 668.3,109.3 672.9,104.9 677.5,100.6 682.1,96.2 686.7,92.0 691.3,87.5 695.9,83.2 700.5,78.7 705.1,74.4 709.7,70.1 714.3,66.0 718.9,61.9 723.5,57.6 728.1,53.4 732.7,49.2 737.3,44.8 741.9,40.7 746.5,40.0 751.1,40.0 755.7,40.0 760.3,40.0 764.9,40.0 769.5,40.0 774.1,40.0 778.8,40.0 783.4,40.0 788.0,40.0 792.6,40.0 797.2,40.0 801.8,40.0 806.4,40.0 811.0,40.0 815.6,40.0 820.2,40.0 824.8,40.0 829.4,40.0 834.0,40.0 838.6,40.0 843.2,40.0 847.8,40.0 852.4,40.0 857.0,40.0 861.6,40.0 866.2,40.0 870.8,40.0 875.4,40.0"/>
+<rect x="720" y="16" width="12" height="3" fill="#2f6fb0"/>
+<text x="736" y="21" fill="#1f2933">signed in</text>
+</svg>
