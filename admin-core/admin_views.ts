@@ -5518,7 +5518,8 @@ class AdminViews {
       model.applicationChooser = this.delegationChooser('application',
         query, view.applications, carry);
       model.userChooser = this.delegationChooser('user', query,
-        this.deps.userGraph.userList(), carry);
+        this.deps.userGraph.userCatalogue(
+          WebKit.queryOne(query || {}, 'userq')), carry);
       model.mapKey = this.delegationMapKey();
       model.directoryLoaded = !!directoryReader;
       model.facts = this.delegationFacts(model);
@@ -5695,7 +5696,12 @@ class AdminViews {
     // Normalised the way the identity register normalises one, so a link
     // carrying `alice@STS.MOCK` finds the same person the chooser's does.
     const key = stats.identityKeyOf(asked);
-    const catalogue = userGraph.userList();
+    // A PAGE OF IDENTITIES, NOT EVERY ONE (2026-10-22, #820): while the
+    // token register is on demand `userCatalogue()` lists the identities a
+    // delegation names and the one the search names exactly, and says so.
+    const listed = userGraph.userCatalogue(
+      WebKit.queryOne(query || {}, 'userq'));
+    const catalogue = listed.entries;
     const activity = key ? userGraph.activityFor(key) : null;
     // An empty graph rather than none when nobody is selected.
     const graph = activity ? activity.graph : delegation.graph([]);
@@ -5768,12 +5774,14 @@ class AdminViews {
       graph: graph,
       counts: activity ? activity.counts : null,
       users: catalogue,
+      // False when `users` is not every identity (#820): the reader is told.
+      usersComplete: listed.complete,
       drawing: { width: drawn.width, height: drawn.height,
                  failed: drawn.failed || null },
       looks: look.looks, label: label, svg: drawn.svg
     };
     if (!(options && options.links === false)) {
-      model.chooser = this.delegationChooser('user', query, catalogue,
+      model.chooser = this.delegationChooser('user', query, listed,
         WebKit.listViewOf('/admin/delegation', query || {}));
       model.mapKey = this.delegationMapKey({ issuance: true });
       model.facts = this.delegationFacts(model);
@@ -6144,8 +6152,8 @@ class AdminViews {
       mechanismPage: page(delegation.TYPES, 'mechanisms', 'mechanisms'),
       applicationChooser: this.delegationChooser('application', q,
                                                  view.applications, carry),
-      userChooser: this.delegationChooser('user', q, userGraph.userList(),
-                                          carry),
+      userChooser: this.delegationChooser('user', q,
+        userGraph.userCatalogue(WebKit.queryOne(q || {}, 'userq')), carry),
       // What `permissionsSection()` and `delegationPolicySection()` draw.
       permissionsView: {
         register: permissions.register, listState: listState,
@@ -6404,15 +6412,28 @@ class AdminViews {
    *   `user` (`userq`, `userfrom`)
    * @param query - the page's query
    * @param catalogue - the delegation register's applications, or
-   *   `userGraph.userList()`
+   *   `userGraph.userCatalogue()`'s answer (`entries`, `search`,
+   *   `complete`, `exactKey`)
    * @param carry - the delegation table's filter
-   * @returns `total`, the pane's `entries` and its `slice`
+   * @returns `total`, the pane's `entries`, its `slice`, and `search`
+   *   (`contains` or `exact`) and `complete` (false when the catalogue
+   *   was not every identity)
    */
   delegationChooser(kind, query, catalogue, carry) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.delegationChooser(). kind=" + kind);
     const isApplication = kind === 'application';
-    const entries = (catalogue || []).map(function (entry) {
+    // A BOUNDED CATALOGUE SAYS SO (2026-10-22, #820). The person catalogue
+    // arrives as `userCatalogue()`'s answer: held whole it is every
+    // identity and a search matches any part of a name; on demand it is the
+    // delegation's identities and the one the search named EXACTLY, which
+    // matches even where the typed spelling is not one of its names.
+    const listed = Array.isArray(catalogue)
+      ? { entries: catalogue, search: 'contains', complete: true,
+          exactKey: null }
+      : (catalogue || { entries: [], search: 'contains', complete: true,
+                        exactKey: null });
+    const entries = (listed.entries || []).map(function (entry) {
       if (isApplication) {
         const roles = [];
         if (entry.roles.intermediary) {
@@ -6460,7 +6481,8 @@ class AdminViews {
     const fromParam = isApplication ? 'appfrom' : 'userfrom';
     const wanted = WebKit.queryOne(query || {}, param).trim();
     const matched = entries.filter(function (entry) {
-      return WebKit.chooserMatches(entry.names, wanted);
+      return entry.key === listed.exactKey ||
+        WebKit.chooserMatches(entry.names, wanted);
     });
     // The clamp `chooserPane()` applies, applied where the slice is cut.
     let from = parseInt(WebKit.queryOne(query || {}, fromParam), 10);
@@ -6472,7 +6494,9 @@ class AdminViews {
     return {
       total: entries.length,
       entries: matched.slice(from, from + WebKit.CHOOSER_HITS),
-      slice: { matched: matched.length, from: from }
+      slice: { matched: matched.length, from: from },
+      search: listed.search === 'exact' ? 'exact' : 'contains',
+      complete: listed.complete !== false
     };
   }
 
@@ -8807,7 +8831,7 @@ class AdminViews {
    * @returns the JSON
    */
   rbacListJson(req) {
-    const { log, realms, rbac } = this.deps;
+    const { log, realms, rbac, stats } = this.deps;
     const self = this;
     log.debug("Entering AdminViews.rbacListJson().");
     // The roster of the realm being read (2026-09-14, #32): the service roster
@@ -8859,12 +8883,19 @@ class AdminViews {
     const filterParams: Record<string, any> = { q: wantedText || '',
                                                 role: wantedRole || '',
                            per: req.query.per ? paging.perPage : '' };
-    // EVERY KEY: the candidates below are listed from them.
-    const knownKeys = this.allUserKeys();
+    // WHO HAS SIGNED IN, ASKED PER NAME WHILE THE REGISTER IS ON DEMAND
+    // (2026-10-22, #820). `allUserKeys()` built every key — about 940,000 on
+    // 8081, synchronously, per view — to mark which candidates have signed
+    // in and to union the ones who signed in with no entry. While the token
+    // register is on demand (`stats.userKeyTest()` answers a test) the
+    // candidates are the directory's people alone, as a windowed directory's
+    // always were, and "seen" is asked of each name on the page; held whole
+    // the union is built as it always was.
+    const onDemand = typeof stats.userKeyTest === 'function' &&
+      !!stats.userKeyTest();
     // A WINDOW PAGES THE STORE (#359). The list below is every person, which
     // on a window is a synchronous walk. The page is asked of the store
-    // instead; this call stays so the in-memory directory still builds the
-    // union it always built.
+    // instead.
     const ldapMod = require('../ldap/ldap_server');
     if (typeof ldapMod.directoryIsWindowed === 'function' &&
         ldapMod.directoryIsWindowed()) {
@@ -8873,11 +8904,14 @@ class AdminViews {
         info: info, state: state, grants: grants,
         wantedText: wantedText, needle: needle, wantedRole: wantedRole,
         filtered: filtered, paging: paging, shown: shown,
-        filterParams: filterParams, knownKeys: knownKeys
+        filterParams: filterParams,
+        knownKeys: onDemand ? this.knownUserKeys() : this.allUserKeys()
       });
     }
-    const candidates = rbac.candidates(Object.keys(knownKeys),
-                                      realms.currentId());
+    const knownKeys = onDemand ? this.knownUserKeys() : this.allUserKeys();
+    const candidates = onDemand
+      ? this.markSeen(rbac.candidates([], realms.currentId()), knownKeys)
+      : rbac.candidates(Object.keys(knownKeys), realms.currentId());
 
     // WHO CAN BE PICKED, SEARCHED AND PAGED (2026-09-13). This was a `<select>`
     // holding every candidate, and a realm bulk loaded with thousands of people
@@ -9041,23 +9075,73 @@ class AdminViews {
 
   // Marks directory rows the console has seen authenticate. The key's own
   // spelling is kept on a seen-only row; a directory row keeps the RDN.
+  //
+  // A NAME AT A TIME, NOT EVERY KEY PER ROW (2026-10-22, #820): this compared
+  // each row against every key the register holds — rows times keys, with
+  // the keys a million long on 8081. `seenKeyOf()` answers one name, case
+  // folded as the comparison folded it.
   private markSeen(rows: Array<{ username: string; seen: boolean }>,
                    knownKeys: Record<string, any>):
       Array<{ username: string; seen: boolean }> {
     const { log } = this.deps;
     log.debug("Entering AdminViews.markSeen().");
-    const keys = Object.keys(knownKeys || {});
+    const self = this;
+    const folded = this.foldedKeysOf(knownKeys);
     rows.forEach(function (row) {
-      const hit = keys.filter(function (key) {
-        return String(key).toLowerCase() ===
-          String(row.username).toLowerCase();
-      })[0];
-      if (hit) {
+      if (self.seenKeyOf(row.username, knownKeys, folded) !== null) {
         row.seen = true;
       }
     });
     log.debug("Leaving AdminViews.markSeen().");
     return rows;
+  }
+
+  // The register's keys by their lower case, for a set built WHOLE (held
+  // whole, the comparison is case-insensitive over every key and stays so);
+  // null for the per-name set `knownUserKeys()` answers on demand, which
+  // cannot be listed and is asked instead. One pass, not one per row.
+  private foldedKeysOf(knownKeys: Record<string, any>):
+      Map<string, string> | null {
+    const { log, stats } = this.deps;
+    log.debug("Entering AdminViews.foldedKeysOf().");
+    if (typeof stats.userKeyTest === 'function' && stats.userKeyTest()) {
+      log.debug("Leaving AdminViews.foldedKeysOf(). Asked per name.");
+      return null;
+    }
+    const folded = new Map<string, string>();
+    Object.keys(knownKeys || {}).forEach(function (key) {
+      const lower = String(key).toLowerCase();
+      if (!folded.has(lower)) {
+        folded.set(lower, key);
+      }
+    });
+    log.debug("Leaving AdminViews.foldedKeysOf(). " + folded.size +
+              " key(s).");
+    return folded;
+  }
+
+  // The register's spelling of a name the console has seen, or null: from
+  // the folded keys when they were built whole, else asked of the per-name
+  // set as typed, in lower case and as the register normalises it.
+  private seenKeyOf(name, knownKeys: Record<string, any>,
+                    folded: Map<string, string> | null): string | null {
+    const { stats } = this.deps;
+    // A hot path (once per row on the page): no Entering/Leaving pair.
+    const typed = String(name == null ? '' : name);
+    if (!typed) {
+      return null;
+    }
+    if (folded) {
+      const hit = folded.get(typed.toLowerCase());
+      return hit === undefined ? null : hit;
+    }
+    const tries = [typed, typed.toLowerCase(), stats.identityKeyOf(typed)];
+    for (const key of tries) {
+      if (key && knownKeys[key]) {
+        return String(key);
+      }
+    }
+    return null;
   }
 
   /**
@@ -9160,9 +9244,9 @@ class AdminViews {
           this.markSeen([named], known);
           picked = named;
         } else {
-          const seenKey = Object.keys(known).filter(function (key) {
-            return String(key).toLowerCase() === wanted;
-          })[0];
+          // One name asked, not every key walked (#820).
+          const seenKey = this.seenKeyOf(personAsked, known,
+                                         this.foldedKeysOf(known));
           if (seenKey) {
             picked = { username: seenKey, inDirectory: false, seen: true };
           }

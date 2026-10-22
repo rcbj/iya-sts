@@ -114,6 +114,10 @@ class GrantManagementApi {
   // from this answer, so the page and a caller read the same slice. `grantq`
   // is a substring over the three identifiers a reader arrives holding;
   // filter first, then page, on `grantsPage` — `pagingOf()`'s rule.
+  //
+  // PAGED BEFORE IT IS DECORATED (2026-10-22, #820): the grant resource
+  // (scopes, claims, details) is built for the page's rows only; the filter
+  // reads the three identifiers a bare row already has.
   // ---------------------------------------------------------------------------
   /**
    * Builds the grants answer: one page of the grants the query matched.
@@ -129,7 +133,8 @@ class GrantManagementApi {
     const wanted = String(views.queryOne(query, 'grantq') || '')
       .trim().slice(0, 256);
     const needle = wanted.toLowerCase();
-    const all: Json[] = loadGrants().list(clientId || undefined);
+    const register = loadGrants();
+    const all: Json[] = register.list(clientId || undefined, { bare: true });
     const matched = all.filter(function (g: Json): boolean {
       return !needle ||
         [g.grantId, g.clientId, g.subject].some(function (v: Json): boolean {
@@ -138,9 +143,12 @@ class GrantManagementApi {
     });
     const page = views.pagedRows(query, matched,
                                  { name: 'grants', noun: 'grants' });
+    const shown = page.shown.map(function (g: Json): Json {
+      return register.decorate(g);
+    });
     log.debug("Leaving GrantManagementApi.grantsView(). " +
-              page.shown.length + " of " + matched.length + ".");
-    return { grants: page.shown, total: all.length, matched: matched.length,
+              shown.length + " of " + matched.length + ".");
+    return { grants: shown, total: all.length, matched: matched.length,
              filter: { q: wanted || null, clientId: clientId || null },
              paging: { grants: views.pagingJson(page.paging) } };
   }

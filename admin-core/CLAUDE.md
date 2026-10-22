@@ -347,14 +347,31 @@ register is on demand, `knownUserKeys()` now answers each name it is asked,
 once per request, through `stats.userKeyTest()`. That test checks the user
 records (this process's and the replicated ones), the token holders, and the
 bounded artifacts. It does so with no walk of the store.
-- The roles page lists its candidates from the keys, so it asks
-  `allUserKeys()`, the whole set as before.
+- The roles page lists its candidates from the keys, so it asked
+  `allUserKeys()`, the whole set — and then compared every candidate with
+  every key (`markSeen()`, rows times keys). **Since the same day it does
+  neither while the register is on demand**: the candidates are the
+  directory's people (a windowed directory's page, as #359 made them; the
+  in-memory directory's whole list otherwise), and "seen" is
+  `seenKeyOf()` — the name, its lower case and its normalised key, each asked
+  of `knownUserKeys()`. Held whole, the union of the directory and the people
+  seen is built as before, and the keys are folded to lower case ONCE
+  (`foldedKeysOf()`) rather than once per row. The picked person's fallback
+  asks the same one name. So, on demand, somebody who signed in and has no
+  directory entry is no longer offered — the windowed answer's rule; a typed
+  name can still be granted.
+- The delegation pages (`/admin/delegation`, its map and its user page) draw
+  their person chooser from `userGraph.userCatalogue()` (`common/CLAUDE.md`,
+  3p): on demand, the delegation's identities and an exact-name search, and
+  `delegationChooser()` answers `search` (`contains` or `exact`) and
+  `complete`; `/admin/delegation/user`'s answer carries `usersComplete`.
 - A snapshot that reads no user counts (token lifetimes, SAML assertions)
   passes `withoutUsers` and builds no user rows.
 - Monitoring → Metrics builds its user rows with `userRowsAsync()`, as the
   dashboard does.
 
-`tests/console_known_keys.js` covers this.
+`tests/console_known_keys.js` covers this, and
+`tests/console_delegation_roles_scale.js` the roles and delegation pages.
 
 **THE TILES COUNT THE DIRECTORY AND THE LIST IS CAPPED, AND THEY ARE
 DIFFERENT NUMBERS (#610, 2026-10-13).** With a bulk load running into 8081,

@@ -67,6 +67,8 @@
   "userChooserLabel": "查找人员",
   "userChooserPlaceholder": "用户名、主体名或主体的一部分",
   "userChooserNothing": "这里没有人与之匹配。此列表是身份注册表与委托指明过的所有人的并集，因此一个出现在上方页面却不在这里的名称，是以应用而非人员的身份到达本服务的。",
+  "userChooserExact": "<strong>此注册表太大，无法全部列出。</strong>可选的是委托指明过的身份，其他人只能按其确切名称搜索到。",
+  "usersPartial": "<strong>这里只列出部分身份。</strong>注册表太大，无法全部列出：这些是委托指明过的身份，以及按名称搜索的那一个。",
   "signedIn": "已登录",
   "toThisService": "到本服务",
   "issuedFor": "签发给",

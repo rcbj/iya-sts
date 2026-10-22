@@ -384,7 +384,8 @@ interface UserGraphDeps {
     debug(message: string): void;
     warn(message: string): void;
   };
-  stats: Pick<typeof stats, 'userRows' | 'userDetail' | 'identityKeyOf'>;
+  stats: Pick<typeof stats, 'userRows' | 'userDetail' | 'identityKeyOf'> &
+    Partial<Pick<typeof stats, 'userRow' | 'userKeyTest'>>;
   delegation: Pick<typeof delegation,
     'list' | 'identityList' | 'actsForIdentity' | 'graph'>;
   applications: Pick<typeof applications,
@@ -978,28 +979,152 @@ class UserGraph {
     const { log, stats, delegation } = this.deps;
     log.debug("Entering UserGraph.userList().");
     const byKey = new Map();
+    const self = this;
     stats.userRows().forEach(function (row) {
-      byKey.set(row.key, {
-        key: row.key,
-        name: row.name,
-        // The spelling to show. `forms` is already commonest-first from
-        // countedRows(), and the commonest spelling is the one a reader
-        // recognises.
-        presented: (row.forms[0] && row.forms[0].form) || row.key,
-        forms: row.forms.map(function (one) { return one.form; }),
-        authenticated: !!row.authenticated,
-        isClient: !!row.isClient,
-        authentications: row.authentications,
-        protocols: row.protocols.map(function (one) { return one.protocol; }),
-        tokens: row.tokens,
-        artifacts: row.artifacts,
-        lastAt: row.lastActivityAt,
-        delegated: false,
-        acts: 0, issued: 0, refused: 0, chains: 0,
-        roles: { initial: 0, intermediary: 0, target: 0 }
-      });
+      byKey.set(row.key, self.rowFromStats(row));
     });
-    delegation.identityList(delegation.list()).forEach(function (entry) {
+    this.foldDelegation(byKey, delegation.identityList(delegation.list()));
+    const out = UserGraph.byActivity(byKey);
+    log.debug("Leaving UserGraph.userList(). " + out.length +
+              " identity/identities, " +
+              out.filter(function (one) { return one.delegated; }).length +
+              " named in a delegation.");
+    return out;
+  }
+
+  // ---------------------------------------------------------------------------
+  // A CHOOSER'S CATALOGUE THAT DOES NOT BUILD EVERY PERSON (2026-10-22, #820).
+  //
+  // `userList()` builds a row for every identity the register holds — on
+  // 8081 about 470,000 signed-in people and a million tokens — to fill a
+  // chooser that shows ten. While the token register is on demand (the only
+  // state in which it is that large: `stats.userKeyTest()` answers a test
+  // then, and null while the register is held whole) the catalogue is
+  // BOUNDED instead:
+  //
+  //   * every identity a delegation act names, which the delegation register
+  //     bounds (`delegation.maxRecords` acts a process), each built as the
+  //     one row `stats.userRow()` answers, so it reads as it would have;
+  //   * and the one person the search NAMES, looked up EXACTLY — as typed,
+  //     in lower case, and as the register normalises it — and built as the
+  //     one row `stats.userRow()` answers, through the code the whole list
+  //     would have used.
+  //
+  // So in that state a search finds a person by their exact name, not by a
+  // part of it, and the answer says so (`search: 'exact'`); the delegation
+  // identities still match by any part. Held whole nothing changes: the
+  // whole list, a substring search.
+  // ---------------------------------------------------------------------------
+  /**
+   * Lists the identities a chooser offers, bounded while the token register
+   * is on demand.
+   *
+   * @param wanted - the search typed into the chooser, or ''
+   * @returns `{ entries, search, complete, exactKey }`: `search` is
+   *   `contains` or `exact`; `complete` is false when not every identity
+   *   was listed; `exactKey` the identity the search named, when one was
+   */
+  userCatalogue(wanted) {
+    const { log, stats, delegation } = this.deps;
+    log.debug("Entering UserGraph.userCatalogue().");
+    const test = stats.userKeyTest ? stats.userKeyTest() : null;
+    if (!test || !stats.userRow) {
+      const whole = this.userList();
+      log.debug("Leaving UserGraph.userCatalogue(). Held whole: " +
+                whole.length + " identity/identities.");
+      return { entries: whole, search: 'contains', complete: true };
+    }
+    const byKey = new Map();
+    const exact = this.exactRow(test, wanted);
+    if (exact) {
+      byKey.set(exact.key, exact);
+    }
+    // The delegation identities are built as the whole list would have
+    // built them — sign-ins, tokens and artifacts included — one row each,
+    // so the delegation register bounds the work and a row reads the same
+    // either way. One known to neither register is the delegation's alone.
+    const identities = delegation.identityList(delegation.list());
+    const self = this;
+    identities.forEach(function (entry) {
+      if (byKey.has(entry.key) || !test(entry.key)) {
+        return;
+      }
+      const row = stats.userRow(entry.key);
+      if (row) {
+        byKey.set(row.key, self.rowFromStats(row));
+      }
+    });
+    this.foldDelegation(byKey, identities);
+    const out = UserGraph.byActivity(byKey);
+    log.debug("Leaving UserGraph.userCatalogue(). Bounded: " + out.length +
+              " identity/identities" + (exact ? ", one found by name." : "."));
+    return { entries: out, search: 'exact', complete: false,
+             exactKey: exact ? exact.key : null };
+  }
+
+  // The one identity a search names, looked up exactly: as typed, in lower
+  // case, then as the register normalises it. Null when none is known.
+  private exactRow(test, wanted) {
+    const { log, stats } = this.deps;
+    log.debug("Entering UserGraph.exactRow().");
+    const term = String(wanted == null ? '' : wanted).trim();
+    if (!term) {
+      log.debug("Leaving UserGraph.exactRow(). Nothing typed.");
+      return null;
+    }
+    const tried = [];
+    [term, term.toLowerCase(), stats.identityKeyOf(term)].forEach(
+        function (candidate) {
+      const key = String(candidate == null ? '' : candidate);
+      if (key && tried.indexOf(key) < 0) {
+        tried.push(key);
+      }
+    });
+    for (const key of tried) {
+      if (!test(key)) {
+        continue;
+      }
+      const row = stats.userRow(key);
+      if (row) {
+        log.debug("Leaving UserGraph.exactRow(). Found.");
+        return this.rowFromStats(row);
+      }
+    }
+    log.debug("Leaving UserGraph.exactRow(). Nobody by that name.");
+    return null;
+  }
+
+  // One chooser row from one row of `stats.userRows()`. A hot path (once per
+  // identity on a held-whole register): no Entering/Leaving pair, which
+  // would write two lines per person.
+  private rowFromStats(row) {
+    return {
+      key: row.key,
+      name: row.name,
+      // The spelling to show. `forms` is already commonest-first from
+      // countedRows(), and the commonest spelling is the one a reader
+      // recognises.
+      presented: (row.forms[0] && row.forms[0].form) || row.key,
+      forms: row.forms.map(function (one) { return one.form; }),
+      authenticated: !!row.authenticated,
+      isClient: !!row.isClient,
+      authentications: row.authentications,
+      protocols: row.protocols.map(function (one) { return one.protocol; }),
+      tokens: row.tokens,
+      artifacts: row.artifacts,
+      lastAt: row.lastActivityAt,
+      delegated: false,
+      acts: 0, issued: 0, refused: 0, chains: 0,
+      roles: { initial: 0, intermediary: 0, target: 0 }
+    };
+  }
+
+  // Folds the delegation register's identities into rows keyed by identity.
+  private foldDelegation(byKey, identities) {
+    const { log } = this.deps;
+    log.debug("Entering UserGraph.foldDelegation(). " + identities.length +
+              " identity/identities.");
+    identities.forEach(function (entry) {
       let row = byKey.get(entry.key);
       if (!row) {
         // Named in a delegation and unknown to the identity register. The whole
@@ -1030,14 +1155,55 @@ class UserGraph {
       });
       if (entry.lastAt > row.lastAt) row.lastAt = entry.lastAt;
     });
-    const out = Array.from(byKey.values()).sort(function (a, b) {
+    log.debug("Leaving UserGraph.foldDelegation().");
+  }
+
+  // Most recently active first, then by key. A comparator's helper: no
+  // Entering/Leaving pair, which the caller's own lines already bracket.
+  private static byActivity(byKey: Map<string, any>): any[] {
+    return Array.from(byKey.values()).sort(function (a: any, b: any) {
       return b.lastAt - a.lastAt || a.key.localeCompare(b.key);
     });
-    log.debug("Leaving UserGraph.userList(). " + out.length +
-              " identity/identities, " +
-              out.filter(function (one) { return one.delegated; }).length +
-              " named in a delegation.");
-    return out;
+  }
+
+  // ---------------------------------------------------------------------------
+  // ONE IDENTITY'S CHOOSER ROW, WITHOUT EVERYBODY ELSE'S (2026-10-22, #820).
+  // `activityFor()` built `userList()` to keep one row. While the register is
+  // on demand it builds that one row (`stats.userRow()`) and folds in the
+  // delegation acts naming it; held whole, it is the list's row, as before.
+  // ---------------------------------------------------------------------------
+  /**
+   * Returns one identity's chooser row.
+   *
+   * @param key - the identity key
+   * @returns the row, or null when neither register names it
+   */
+  userEntry(key) {
+    const { log, stats, delegation } = this.deps;
+    log.debug("Entering UserGraph.userEntry(). key=" + key);
+    const wanted = String(key == null ? '' : key);
+    const test = stats.userKeyTest ? stats.userKeyTest() : null;
+    if (!test || !stats.userRow) {
+      const found = this.userList().filter(function (one) {
+        return one.key === wanted;
+      })[0] || null;
+      log.debug("Leaving UserGraph.userEntry(). Held whole: " +
+                (found ? "found." : "none."));
+      return found;
+    }
+    const byKey = new Map();
+    const row = test(wanted) ? stats.userRow(wanted) : null;
+    if (row) {
+      byKey.set(row.key, this.rowFromStats(row));
+    }
+    this.foldDelegation(byKey,
+      delegation.identityList(delegation.list()).filter(function (entry) {
+        return entry.key === wanted;
+      }));
+    const found = byKey.get(wanted) || null;
+    log.debug("Leaving UserGraph.userEntry(). Bounded: " +
+              (found ? "found." : "none."));
+    return found;
   }
 
   // ---------------------------------------------------------------------------
@@ -1588,10 +1754,7 @@ class UserGraph {
       log.debug("Leaving UserGraph.activityFor(). Nothing was asked for.");
       return null;
     }
-    const catalogue = this.userList();
-    const entry = catalogue.filter(function (one) {
-      return one.key === wanted;
-    })[0] || null;
+    const entry = this.userEntry(wanted);
     if (!entry) {
       log.debug("Leaving UserGraph.activityFor(). Neither register names " +
                 "that identity.");
@@ -1701,6 +1864,8 @@ export = {
   // relationship on two pages of one console.
   permissionsAddressedTo: slot.forward('permissionsAddressedTo'),
   userList: slot.forward('userList'),
+  userCatalogue: slot.forward('userCatalogue'),
+  userEntry: slot.forward('userEntry'),
   graphFor: slot.forward('graphFor'),
   activityFor: slot.forward('activityFor')
 };
