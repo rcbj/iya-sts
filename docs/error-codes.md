@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4581** of them, in **47** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4582** of them, in **47** subsystems.
 
 ## Where a code appears
 
@@ -53,7 +53,7 @@ is an ordinary outcome.
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
 * [Service core (`STS-CORE`)](#sts-core) — 94
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 51
-* [Persistence and coordination (`STS-STORE`)](#sts-store) — 86
+* [Persistence and coordination (`STS-STORE`)](#sts-store) — 87
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 32
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 20
@@ -400,6 +400,7 @@ Raised from: persistence/.
 | `STS-STORE-0084` | An on-demand minted store (#820) could not read a row or an index from the store through its bridge — a timeout, a refused connection, a thread that failed. The row is answered as absent, which every reader of these stores refuses: a refresh token not found is not honoured. | none |
 | `STS-STORE-0085` | An on-demand minted store (#820) read a row whose sealed body will not open under this process's keys. It is answered as absent. | none |
 | `STS-STORE-0086` | The front process could not complete the index of an indexed on-demand minted store (#820): a write of its index rows or of the completion mark failed. Nothing is lost — the store stays read back whole at the next start, which tries again. | none |
+| `STS-STORE-0087` | Another process's rows of a store read when its page is drawn (`contributionsOnRead`, #820) could not be read. Nothing is lost: they stay noted and are read at the next refresh, and the page draws what this process already holds. | none |
 
 ## STS-CLUSTER
 

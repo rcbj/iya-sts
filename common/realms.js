@@ -2623,6 +2623,19 @@ function declareHandle(options, shape, accessors) {
     // -----------------------------------------------------------------------
     merge: options.merge === 'own' ? 'own' : 'replace',
     // -----------------------------------------------------------------------
+    // `contributionsOnRead: true` (2026-10-21, #820), for a `merge: 'own'`
+    // store whose other processes' rows only a console page reads: another
+    // process's change is NOTED, not read and opened, and the page asks
+    // `persistence_replication.refreshContributions()` for the noted rows,
+    // in one batch, before it draws. The audit ring is this: each event
+    // rewrote a sealed segment of up to 32 events that every process read,
+    // opened and parsed — about 5,000 rows a minute on 8081 under a password
+    // load, in each of nine processes — for a page nobody had open. A row
+    // rewritten many times between two reads is read once.
+    // -----------------------------------------------------------------------
+    contributionsOnRead: options.merge === 'own' &&
+      options.contributionsOnRead === true,
+    // -----------------------------------------------------------------------
     // TWO MORE THINGS A STORE SAYS ABOUT ITS ROWS WHEN SEVERAL NODES WRITE
     // THEM (2026-09-14, #46 section 3), both argued in
     // `persistence/persistence_minted.js`:

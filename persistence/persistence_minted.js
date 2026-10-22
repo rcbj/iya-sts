@@ -718,6 +718,9 @@ function setDriver(theDriver, activeMode) {
                              countAsync: onDemandCountAsync,
                              byIndexAsync: onDemandByIndexAsync,
                              journalled: pendingWrite });
+  // And the fan-in its noted rows' reader (#820, `contributionsOnRead`).
+  replication.setContributionReader(
+    typeof theDriver.readMintedMany === 'function' ? readContributions : null);
   log.debug('Leaving setDriver(). ' + realms.handles().length +
             ' declared store(s).');
   return true;
@@ -906,8 +909,13 @@ function prefetch(changes) {
     }
     wanted.add(id);
     // Not an on-demand row this process does not hold (#820): applyChange()
-    // reads none of those.
+    // reads none of those. Nor another process's row of a store only a page
+    // reads: applyChange() notes it.
     const declared = realms.handleFor(parsed.handle);
+    if (declared && contributedOnRead(declared,
+                                      splitKey(declared, parsed.storedName))) {
+      return;
+    }
     if (declared && declared.onDemand && !declared.keysResident &&
         demandLiveFor(parsed.handle)) {
       const name = splitKey(declared, parsed.storedName).key;
@@ -1090,6 +1098,15 @@ function applyChange(change) {
   // Another process changed the row: what this one committed for it may no
   // longer be what is filed (see `committedLookups`).
   committedLookups.delete(demandId(handle, change.realm, split.key));
+  // ANOTHER PROCESS'S ROW OF A STORE ONLY A PAGE READS IS NOTED, NOT READ
+  // (#820, `contributionsOnRead` in `common/realms.js`): the page reads it,
+  // with everything else noted, when it is drawn.
+  if (contributedOnRead(store, split)) {
+    replication.contributionStale(handle, change.realm, split.key,
+                                  split.origin, storedName);
+    log.debug("Leaving applyChange(). Noted, read when asked for.");
+    return Promise.resolve(true);
+  }
   // AN ON-DEMAND ROW THIS PROCESS DOES NOT HOLD IS NOT READ (#820): it would
   // only be skipped once read — `applyLocally()` admits nothing — and
   // whoever asks for it next reads it from the store as it then is. Only a
@@ -1173,6 +1190,70 @@ function applyChange(change) {
         return applyLocally(store, change.realm, split.key, value, false);
       });
     });
+}
+
+// Whether a change to this row is noted rather than read (#820): another
+// process's row of a `contributionsOnRead` store, with a reader to read it
+// by later. Hot path: every change applied. No Entering/Leaving pair.
+function contributedOnRead(store, split) {
+  return !!(store && store.contributionsOnRead && store.merge === 'own' &&
+            split && split.origin && split.origin !== origin &&
+            replication.contributionsReadable());
+}
+
+/**
+ * Reads noted contributions of other processes (#820, `contributionsOnRead`),
+ * in batches, from the primary.
+ *
+ * @param refs - `{ handle, realm, name }` for each row, `name` its stored name
+ * @returns a promise of a Map from `handle\0realm\0name` to the opened value,
+ *   or null where the row is gone; a row that will not open is left out
+ */
+function readContributions(refs) {
+  log.debug("Entering readContributions(). " + refs.length + " row(s).");
+  if (!driver || typeof driver.readMintedMany !== 'function') {
+    log.debug("Leaving readContributions(). No batched read.");
+    return Promise.reject(new Error('no batched read'));
+  }
+  const out = new Map();
+  const BATCH = 500;
+  let at = 0;
+  const next = function () {
+    if (at >= refs.length) {
+      return Promise.resolve(out);
+    }
+    const chunk = refs.slice(at, at + BATCH);
+    at += BATCH;
+    const byColumn = new Map();
+    const asked = chunk.map(function (ref) {
+      const column = keyColumnOf(ref.handle, ref.realm, ref.name);
+      byColumn.set(ref.handle + '\u0000' + ref.realm + '\u0000' + column,
+                   ref);
+      // Gone until a row says otherwise.
+      out.set(ref.handle + '\u0000' + ref.realm + '\u0000' + ref.name, null);
+      return { handle: ref.handle, realm: ref.realm, key: column };
+    });
+    return driver.readMintedMany(asked, { primary: true })
+      .then(function (rows) {
+        (rows || []).forEach(function (row) {
+          const ref = byColumn.get(row.handle + '\u0000' + row.realm +
+                                   '\u0000' + row.key);
+          if (!ref) {
+            return;
+          }
+          const id = ref.handle + '\u0000' + ref.realm + '\u0000' + ref.name;
+          const opened = openedBody(ref.handle, row.body);
+          if (opened === undefined) {
+            out.delete(id);
+          } else {
+            out.set(id, opened);
+          }
+        });
+        return next();
+      });
+  };
+  log.debug("Leaving readContributions().");
+  return next();
 }
 
 // Brings `sts_sessions` in line with a body another node committed (#350).

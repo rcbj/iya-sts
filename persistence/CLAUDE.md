@@ -853,6 +853,25 @@ REPORTED — `audit.js`'s `list()` and `summary()`, `admin_stats.js`'s
 `snapshot()`, `xacml_monitor.js`'s. The test for `own` is one question: **is a
 write to this store an ASSIGNMENT or an INCREMENT?**
 
+**THE AUDIT LOG'S FAN-IN IS READ WHEN A PAGE ASKS, NOT AT EACH CHANGE
+(2026-10-21, #820).** `audit.events` and `audit.nums` are declared
+`contributionsOnRead`. Every event rewrote a sealed segment of up to 32
+events, and every other process read, opened and parsed it: about 5,000 rows
+a minute in each of 8081's nine processes under a password load, for a page
+nobody had open. Now:
+- the applier NOTES another process's change (`contributionStale()`);
+- the audit and error-code operations wait for `audit.fresh()`, which reads
+  every noted row in one batch (`refreshContributions()`, through
+  `readContributions()`);
+- a segment rewritten thirty times between two pages is read once;
+- past 5,000 noted rows for a store, the refresh runs on its own, so a
+  process whose page is never drawn stays bounded;
+- a failed read leaves the rows noted (`STS-STORE-0087`).
+
+A start still restores every origin's rows. Another accumulator qualifies
+only if its other processes' rows are read by nothing but a page that can
+wait for the refresh. `tests/audit_contributions_on_read.js` covers this.
+
 **AND A THIRD SHAPE SINCE 2026-09-12: A ROW PARTLY BUILT FROM CODE.** Last
 writer wins assumes the row is the only source of its value. `krb5.principals`
 holds rows that are not: a configured Kerberos account is BUILT FROM SETTINGS at
