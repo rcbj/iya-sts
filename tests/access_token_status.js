@@ -175,6 +175,10 @@ function childMain() {
          'status.status_list naming the realm\'s list (section 6.1)',
          JSON.stringify(claims.status || got.error));
     note(await bitAt(ref.idx) === 0, '2b. and its bit is VALID (0)');
+    // 2^20 ran out on 8081 at about 620,000 people (#820, 2026-10-22).
+    note(ats.LIST_SIZE >= 16777216,
+         '2b-ii. the list holds 2^24 indexes, room for a million people ' +
+         'with every leased block wasted', String(ats.LIST_SIZE));
     const revoked = await w.request('POST', '/oauth2/revoke', {
       form: Object.assign({ token: got.token }, w.client) });
     note(revoked.status === 200, '2c. /oauth2/revoke accepts it',
