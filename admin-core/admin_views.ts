@@ -1731,7 +1731,11 @@ class AdminViews {
       log.debug("Leaving AdminViews.metricsJsonAsync(). Window off.");
       return this.metricsJson();
     }
-    const snap = stats.snapshot();
+    // The user counts from rows built with the directory asked
+    // asynchronously, as the dashboard's (`consoleJsonAsync()`), not every
+    // person's row built synchronously (#820).
+    const snap = stats.snapshot(typeof stats.userRowsAsync === 'function'
+      ? { knownUsers: await stats.userRowsAsync() } : undefined);
     // EVERY SESSION WAS DRAWN, AND OPENED TO BE DRAWN: 470,000 rows in this
     // reply on 8081, read one synchronous query at a time. The counts are
     // the index's and the rows the newest `METRICS_SESSION_ROWS`.
@@ -3508,7 +3512,8 @@ class AdminViews {
   tokenLifetimesJson() {
     const { log, config, stats, configSettingFor, applications } = this.deps;
     log.debug("Entering AdminViews.tokenLifetimesJson().");
-    const snapshot = stats.snapshot();
+    // No user counts are read here (#820).
+    const snapshot = stats.snapshot({ withoutUsers: true });
     const settings = TOKEN_LIFETIME_KEYS.map(function (key) {
       return config.describe(configSettingFor(key));
     });
@@ -3577,7 +3582,8 @@ class AdminViews {
   samlAssertionsJson() {
     const { log, config, stats, configSettingFor } = this.deps;
     log.debug("Entering AdminViews.samlAssertionsJson().");
-    const snapshot = stats.snapshot();
+    // No user counts are read here (#820).
+    const snapshot = stats.snapshot({ withoutUsers: true });
     const settings = SAML_ASSERTION_KEYS.map(function (key) {
       return config.describe(configSettingFor(key));
     });
@@ -8853,7 +8859,8 @@ class AdminViews {
     const filterParams: Record<string, any> = { q: wantedText || '',
                                                 role: wantedRole || '',
                            per: req.query.per ? paging.perPage : '' };
-    const knownKeys = this.knownUserKeys();
+    // EVERY KEY: the candidates below are listed from them.
+    const knownKeys = this.allUserKeys();
     // A WINDOW PAGES THE STORE (#359). The list below is every person, which
     // on a window is a synchronous walk. The page is asked of the store
     // instead; this call stays so the in-memory directory still builds the
@@ -9256,6 +9263,41 @@ class AdminViews {
   knownUserKeys() {
     const { log, stats } = this.deps;
     log.debug("Entering AdminViews.knownUserKeys().");
+    // ASKED KEY BY KEY WHILE THE REGISTER IS ON DEMAND (2026-10-22, #820):
+    // every caller here reads `known[name]` for the names on its page, and
+    // building every key walked about 940,000 rows on 8081, synchronously.
+    // Each name is asked once and remembered for the request. A caller that
+    // ENUMERATES the keys asks `allUserKeys()`.
+    const test = typeof stats.userKeyTest === 'function'
+      ? stats.userKeyTest() : null;
+    if (test) {
+      const asked: Record<string, boolean> = {};
+      log.debug("Leaving AdminViews.knownUserKeys(). Key by key.");
+      return new Proxy({}, {
+        get: function (target, name) {
+          if (typeof name !== 'string') {
+            return undefined;
+          }
+          if (!Object.prototype.hasOwnProperty.call(asked, name)) {
+            asked[name] = !!test(name);
+          }
+          return asked[name] ? true : undefined;
+        }
+      }) as Record<string, any>;
+    }
+    log.debug("Leaving AdminViews.knownUserKeys(). Every key.");
+    return this.allUserKeys();
+  }
+
+  /**
+   * Returns the keys of every identity the console's user registry knows,
+   * built whole: for a caller that lists them (the roles page).
+   *
+   * @returns a set of keys, as an object
+   */
+  allUserKeys() {
+    const { log, stats } = this.deps;
+    log.debug("Entering AdminViews.allUserKeys().");
     const known: Record<string, any> = {};
     // THE KEYS AND NOT THE ROWS (#352): `stats.userKeys()` answers the key of
     // every row `userRows()` would build, without building one — nine pages
@@ -9263,7 +9305,7 @@ class AdminViews {
     stats.userKeys().forEach(function (key) {
       known[key] = true;
     });
-    log.debug("Leaving AdminViews.knownUserKeys().");
+    log.debug("Leaving AdminViews.allUserKeys().");
     return known;
   }
 
@@ -15149,6 +15191,7 @@ export = {
   saml2Json: slot.forward('saml2Json'),
   saml2ListJson: slot.forward('saml2ListJson'),
   knownUserKeys: slot.forward('knownUserKeys'),
+  allUserKeys: slot.forward('allUserKeys'),
   rbacListJson: slot.forward('rbacListJson'),
   setDirectoryWriter: slot.forward('setDirectoryWriter'),
   setDirectoryReader: slot.forward('setDirectoryReader'),

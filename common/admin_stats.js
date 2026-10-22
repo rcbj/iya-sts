@@ -6648,6 +6648,54 @@ function userKeys() {
   return keys;
 }
 
+// ---------------------------------------------------------------------------
+// ONE KEY ASKED, NOT EVERY KEY BUILT (2026-10-22, #820). Nine console pages
+// asked `userKeys()` only to decide which of the names on the page to draw
+// as links — the audit log, a token's lineage, the delegation pictures —
+// and on 8081 that walked every user record and every token holder, about
+// 940,000 rows, synchronously, per page. This answers the same question for
+// one key: a user record (here or in another process), a token holder, or
+// an artifact's subject. Null while the register is held whole, where the
+// walk is the register's size and `userKeys()` is the answer.
+// ---------------------------------------------------------------------------
+/**
+ * A test of whether one key is one `userKeys()` would answer, or null
+ * while the token register is held whole.
+ *
+ * @returns `(key) => boolean`, or null
+ */
+function userKeyTest() {
+  log.debug("Entering userKeyTest().");
+  if (!tokens.onDemandLive()) {
+    log.debug("Leaving userKeyTest(). Held whole.");
+    return null;
+  }
+  // The artifacts are bounded (`MAX_ARTIFACTS` a process); their subjects
+  // are read once, when a key is first asked.
+  let artifactKeys = null;
+  log.debug("Leaving userKeyTest().");
+  return function (key) {
+    const k = String(key == null ? '' : key);
+    if (!k || k === HOLDERS_DONE) {
+      return false;
+    }
+    if (users.has(k) || tokenHolders.has(k) ||
+        replication.remoteRows('admin_stats.users', undefined, k).length) {
+      return true;
+    }
+    if (artifactKeys === null) {
+      artifactKeys = new Set();
+      allArtifacts().forEach(function (record) {
+        const identity = identityOf(record.subject);
+        if (identity.key) {
+          artifactKeys.add(identity.key);
+        }
+      });
+    }
+    return artifactKeys.has(k);
+  };
+}
+
 // `userKeys()`'s walk, the subjects resolved.
 function collectUserKeys() {
   log.debug("Entering collectUserKeys().");
@@ -7251,7 +7299,12 @@ function snapshot(opts) {
   // subjects are asked of the directory without holding the event loop. Built
   // here they are every register subject asked synchronously — on 8081 the
   // console's dashboard stood a request worker still for ten seconds.
-  const knownUsers = (opts && opts.knownUsers) || userRows();
+  //
+  // `withoutUsers` (2026-10-22, #820): a caller that reads none of the user
+  // counts — the token lifetimes and SAML assertions pages — asks for none,
+  // since building them is a row for every person, synchronously.
+  const knownUsers = (opts && opts.knownUsers) ||
+    (opts && opts.withoutUsers ? [] : userRows());
 
   const callRows = Array.from(calls.values())
                         .sort(function (a, b) { return b.count - a.count; });
@@ -7506,6 +7559,7 @@ module.exports = {
   // What signing a JWT reports through `helpers.setJwtRecorder()`, for the
   // tests that record one without signing it.
   recordJwt: recordJwt,
+  userKeyTest: userKeyTest,
   // The register records of these jtis, read together off the event loop
   // before a request asks for them (#820; `warm()` in common/realms.js).
   warmTokens: function (jtis) {
