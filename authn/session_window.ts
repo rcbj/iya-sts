@@ -337,6 +337,39 @@ class SessionWindow {
   // remembers nothing: only `get()` decides those.
   // -------------------------------------------------------------------------
   /**
+   * The digest the index files a session id under, or null where no digest
+   * key is held (#820: a console search by session id).
+   *
+   * @param realmId - the realm
+   * @param sid - the session id
+   * @returns the digest, or null
+   */
+  digestFor(realmId: string, sid: string): string | null {
+    log.debug("Entering SessionWindow.digestFor().");
+    log.debug("Leaving SessionWindow.digestFor().");
+    return this.digestOf(String(realmId || ''), String(sid || ''));
+  }
+
+  /**
+   * Reads and opens one session by its digest, asynchronously, without
+   * admitting it (#820): a page of the console's live sessions, which must
+   * not push the sessions people are using out of the cache.
+   *
+   * @param realmId - the realm
+   * @param digest - the index's key
+   * @returns a promise of the session, null where it is gone or could not
+   *   be read, undefined where its body would not open
+   */
+  async openAsync(realmId: string, digest: string): Promise<any> {
+    log.debug("Entering SessionWindow.openAsync().");
+    const row = await this.askAsync('session.read',
+                                    [String(realmId || ''),
+                                     String(digest || '')]);
+    log.debug("Leaving SessionWindow.openAsync().");
+    return this.sessionFrom(row);
+  }
+
+  /**
    * Admits a session asynchronously ahead of a `get()`.
    *
    * @param realmId - the realm

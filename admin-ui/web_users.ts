@@ -192,7 +192,8 @@ class UsersPage {
         kit.esc(row.realms.map(function (r) { return r.realm; }).join(', ') ||
                  '—') +
         '</td><td ' +
-        'class="num">' + row.liveSessions + '</td>' +
+        'class="num">' + (row.liveSessions == null ? '—'
+          : row.liveSessions) + '</td>' +
         '<td class="num">' + row.tokens.issued + '</td>' +
         '<td class="num state-valid">' + row.tokens.valid + '</td>' +
         // EXPIRED IS ITS OWN COLUMN. It was counted in userRows() and shown
@@ -244,7 +245,7 @@ class UsersPage {
           t.text('consoleUsers.body.tileAuthenticated')],
          [dc.neverSignedInHere,
           t.text('consoleUsers.body.tileNeverHere')],
-         [json.withActiveSession,
+         [json.withActiveSession == null ? '—' : json.withActiveSession,
           t.text('consoleUsers.body.tileActive')],
          [dc.withSecond,
           t.text('consoleUsers.body.tileSecond')],
@@ -256,7 +257,7 @@ class UsersPage {
           t.text('consoleUsers.body.tileAuthenticated')],
          [json.known - json.authenticatedHere,
           t.text('consoleUsers.body.tileNeverHere')],
-         [json.withActiveSession,
+         [json.withActiveSession == null ? '—' : json.withActiveSession,
           t.text('consoleUsers.body.tileActive')],
          [factorCounts.withSecond,
           t.text('consoleUsers.body.tileSecond')],

@@ -502,6 +502,8 @@ class Logout {
         // see liveSessions() for why enumerating them is this module's job
         // and not the console's.
         liveSessions: instance.liveSessions.bind(instance),
+        // One page of them from the session index (#820).
+        liveSessionsPageAsync: instance.liveSessionsPageAsync.bind(instance),
         SESSION_EXPIRY_RULES: instance.sessionExpiryRules
       });
     }
@@ -2273,11 +2275,14 @@ class Logout {
    * `/admin/sessions` and `GET /admin-api/sessions`. Expired sessions and
    * arrival sessions nobody has signed in to are left out.
    *
+   * @param given - the sign-on sessions to list, where the caller read a
+   *   page of them from the index (`liveSessionsPageAsync()`); every one
+   *   when absent
    * @returns the live sessions
    * @throws when the session index could not be read. The cache is not
    *   the list.
    */
-  liveSessions() {
+  liveSessions(given?) {
     const { log, authn, config, krb5Principals, ldapServer, stats } = this.deps;
     log.debug("Entering Logout.liveSessions().");
     const nowMs = Date.now();
@@ -2290,9 +2295,13 @@ class Logout {
     // drops a session when it is next looked up, so one still in the map with a
     // past `expires` is a session that has ended and has not been swept — and
     // this page is what is LIVE.
-    const matched = authn.sessionsMatching(function () {
-      return true;
-    });
+    // A PAGE THE CALLER READ FROM THE INDEX, where it gave one (#820):
+    // every session, opened one at a time, held a request worker for two
+    // minutes at 470,000 of them.
+    const matched = Array.isArray(given) ? given
+      : authn.sessionsMatching(function () {
+        return true;
+      });
     // Null is an unread page, already recorded as STS-AUTHN-0338. The
     // rows still cached are not who is signed in.
     if (matched == null) {
@@ -2649,6 +2658,38 @@ class Logout {
     log.debug("Leaving Logout.liveSessions(). " + out.length +
               " live session(s).");
     return out;
+  }
+
+  /**
+   * One page of the live sign-on sessions from the session index, as rows,
+   * with the other families' rows (Kerberos tickets, GNAP grants, directory
+   * connections), which are bounded by what the service holds (#820).
+   *
+   * @param options - as `authn.liveSessionPageAsync()`'s
+   * @returns a promise of `{ rows, sessionTotal, authenticated,
+   *   unauthenticated }`, or of null while the session window is off (the
+   *   caller lists `liveSessions()` whole)
+   * @throws when the session index could not be read
+   */
+  async liveSessionsPageAsync(options?) {
+    const { log, authn } = this.deps;
+    log.debug("Entering Logout.liveSessionsPageAsync().");
+    const page = typeof authn.liveSessionPageAsync === 'function'
+      ? await authn.liveSessionPageAsync(options) : null;
+    if (!page) {
+      log.debug("Leaving Logout.liveSessionsPageAsync(). Window off.");
+      return null;
+    }
+    if (page.unread) {
+      log.debug("Leaving Logout.liveSessionsPageAsync(). Unread.");
+      throw new Error('the sessions could not be read');
+    }
+    const rows = this.liveSessions(page.sessions);
+    log.debug("Leaving Logout.liveSessionsPageAsync(). " + rows.length +
+              " row(s).");
+    return { rows: rows, sessionTotal: page.total,
+             authenticated: page.authenticated,
+             unauthenticated: page.unauthenticated };
   }
 
   // ---------------------------------------------------------------------------
