@@ -1120,6 +1120,38 @@ class RiskStore {
   }
 
   /**
+   * Several `distinctValues()` answers at once (#820): one statement where
+   * the database holds the history and the driver can batch, the same
+   * answers one by one otherwise.
+   *
+   * @param realm - the realm
+   * @param subject - a person's sub, or '*' for the population
+   * @param asks - `{ feature, prefix }` for each count wanted
+   * @param sealing - whether there is a key to seal under
+   * @returns the counts, in the order asked
+   */
+  async distinctValuesMany(realm: string, subject: string,
+                           asks: Array<{ feature: string; prefix: string }>,
+                           sealing: boolean): Promise<number[]> {
+    const { log } = this.deps;
+    log.debug("Entering RiskStore.distinctValuesMany(). " + asks.length);
+    if (this.failuresInDatabase(sealing) &&
+        typeof this.driver.riskDistinctValuesMany === 'function') {
+      const counts = await this.driver.riskDistinctValuesMany(realm,
+                                                              subject, asks);
+      log.debug("Leaving RiskStore.distinctValuesMany(). Database.");
+      return counts;
+    }
+    const out: number[] = [];
+    for (const one of asks) {
+      out.push(await this.distinctValues(realm, subject, one.feature,
+                                         one.prefix, sealing));
+    }
+    log.debug("Leaving RiskStore.distinctValuesMany(). One by one.");
+    return out;
+  }
+
+  /**
    * Counts one sign-in's feature values into the history.
    *
    * @param realm - the realm
@@ -2014,6 +2046,7 @@ export = {
   purgeFailures: slot.forward('purgeFailures'),
   featureCounts: slot.forward('featureCounts'),
   distinctValues: slot.forward('distinctValues'),
+  distinctValuesMany: slot.forward('distinctValuesMany'),
   incrementCounts: slot.forward('incrementCounts'),
   recordAssessment: slot.forward('recordAssessment'),
   listAssessments: slot.forward('listAssessments'),

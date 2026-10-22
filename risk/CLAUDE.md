@@ -480,6 +480,15 @@ row that shows a location), the dataset versions that answered, and the
 signals. `risk.assessmentRetentionDays` and `risk.historyRetentionDays` bound
 it, through the `risk.retention` job.
 
+**THE DISTINCT COUNTS ARE ONE STATEMENT (2026-10-22, #820).** `historyOf()`
+asked `riskDistinctValues()` once per feature level, two for each, awaited
+one after another: about seven round trips per sign-in on 8081, and 8,310
+statements a minute. It now asks `distinctValuesMany()`, which with the
+history in postgres is one statement (`riskDistinctValuesMany`, an `unnest`
+of the asks with a counting subquery each, index-only, 0.4 ms on 8081). It
+runs beside the population count, not after it. A driver without the
+batched door is asked one at a time, as before. `tests/risk_distinct_batch.js`.
+
 ## RISK IS DECIDED BY THE ISSUANCE POLICY (P3, 2026-09-22)
 
 **rcbj's directive: every authorization decision is XACML policy**, so the

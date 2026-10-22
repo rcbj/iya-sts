@@ -8475,6 +8475,35 @@ function create(options) {
       });
     },
 
+    // EVERY DISTINCT-VALUE COUNT ONE ASSESSMENT ASKS, IN ONE STATEMENT
+    // (2026-10-22, #820): `riskDistinctValues()` once per level, awaited one
+    // after another, was about seven round trips per sign-in on 8081 and
+    // 8,310 statements a minute. Each ask is `{ feature, prefix }`; the
+    // answer is the counts in the same order.
+    riskDistinctValuesMany: function (realm, subject, asks) {
+      log.debug("Entering riskDistinctValuesMany(). asks=" + asks.length);
+      log.debug("Leaving riskDistinctValuesMany().");
+      return pool.query(
+        'SELECT a.i, (SELECT count(*) FROM sts_risk_feature_counts c WHERE ' +
+        'c.realm = $1 AND c.subject = $2 AND c.feature = a.f AND (a.p = \'\' ' +
+        'OR starts_with(c.value, a.p))) AS n FROM unnest($3::text[], ' +
+        '$4::text[]) WITH ORDINALITY AS a(f, p, i) ORDER BY a.i',
+        [realm || '', subject, asks.map(function (one) {
+          return String(one.feature);
+        }), asks.map(function (one) {
+          return String(one.prefix || '');
+        })]
+      ).then(function (r) {
+        const out = asks.map(function () {
+          return 0;
+        });
+        r.rows.forEach(function (row) {
+          out[Number(row.i) - 1] = Number(row.n) || 0;
+        });
+        return out;
+      });
+    },
+
     // One sign-in counted: each (subject, feature, value) goes up by one, in
     // ONE statement, so two nodes counting at once never lose a count. The
     // caller has made the rows distinct (a statement may touch a row once).
