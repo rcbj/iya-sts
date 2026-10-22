@@ -3202,6 +3202,16 @@ const CODES = [
       'request message was given to read it from (RFC 9421 section 2.4).',
     spec: 'the caller\'s: a signing resource server\'s defect, logged; ' +
       'a client verifying a response refuses it' },
+  { code: 'STS-KEYS-0155',
+    summary: 'This runtime has no argon2 (node before 24.7), so a new ' +
+      'password was hashed with scrypt at the password policy\'s scrypt ' +
+      'parameters instead of argon2id. Logged once per process.',
+    spec: '' },
+  { code: 'STS-KEYS-0156',
+    summary: 'A stored argon2id password hash could not be computed here — ' +
+      'no argon2 in this runtime, or parameters outside the bounds this ' +
+      'service computes — and was treated as no match.',
+    spec: '' },
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
       'service cannot use, so its Issuing CA was built with the ' +
@@ -6610,6 +6620,12 @@ const CODES = [
   { code: 'STS-AUTHN-0408',
     summary: 'A sign-in could not be offered device binding: the response ' +
       'object takes no header. The session stands, unbound.',
+    spec: '' },
+  { code: 'STS-AUTHN-0409',
+    summary: 'A password that verified could not be re-hashed under the ' +
+      'password policy\'s algorithm and parameters, or the new hash could ' +
+      'not be written (#847). The sign-in stands; the next verified ' +
+      'sign-in tries again.',
     spec: '' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +

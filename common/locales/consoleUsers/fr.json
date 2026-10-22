@@ -302,7 +302,7 @@
   "mfaSection.thAnswer": "Réponse",
   "mfaSection.password": "Mot de passe",
   "mfaSection.set": "défini",
-  "mfaSection.passwordSet": " — un hachage scrypt sur sa propre entrée. Il ne peut pas être relu et cette console ne peut pas l’afficher ; le formulaire ci-dessous le remplace.",
+  "mfaSection.passwordSet": " — un hachage sur sa propre entrée. Il ne peut pas être relu et cette console ne peut pas l’afficher ; le formulaire ci-dessous le remplace.",
   "mfaSection.primaryKey": "Clé de sécurité principale",
   "mfaSection.primaryKeyNote": " — la connecte à elle seule, sans mot de passe. La session enregistre alors <code>amr [\"hwk\"]</code> et <code>acr \"1\"</code>.",
   "mfaSection.canSignIn": "Peut se connecter",

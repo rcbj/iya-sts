@@ -2280,6 +2280,11 @@ const SETTINGS = [
   // than a group of rows: one rule in two places would be two answers to what a
   // password must be.
   //
+  // **A PERSON'S PASSWORD LEFT THESE THREE ROWS ON 2026-10-22 (#847)**: its
+  // algorithm (argon2id by default) and parameters are the password
+  // policy's, on Directory > Policies. These still decide every other secret
+  // this service verifies, which stay scrypt (rcbj's decision 3).
+  //
   // **THE HASH PARAMETERS APPLY TO NEW HASHES ONLY.** The stored form is
   // `$scrypt$N$r$p$salt$hash`, so a value written under yesterday's cost
   // verifies against the cost IT names and nothing already stored is touched.
@@ -2291,14 +2296,17 @@ const SETTINGS = [
     label: 'Password hash cost (log2 of scrypt N)',
     env: 'STS_SECURITY_PASSWORD_HASH_LOG_N',
     type: 'int', dflt: 15, runtime: true, min: 14, max: 20,
-    description: 'scrypt\'s CPU and memory cost for a NEWLY stored password, ' +
-                 'client secret, activation token or recovery code, as a ' +
-                 'power of two: 15 is N=32768, about 70ms a hash on an ' +
+    description: 'scrypt\'s CPU and memory cost for a NEWLY stored client ' +
+                 'secret, activation or reset token, recovery code or app ' +
+                 'password, as a power of two: 15 is N=32768, about 70ms a ' +
+                 'hash on an ' +
                  'ordinary machine. The floor of 14 is the least this ' +
                  'service will write. Raising it makes a stolen store slower ' +
                  'to attack and every sign-in slower in proportion. Already ' +
                  'stored hashes carry their own parameters and are ' +
-                 'unaffected.' },
+                 'unaffected. A person\'s password is not hashed under ' +
+                 'this: its algorithm and cost are the password policy\'s ' +
+                 '(Directory > Policies).' },
 
   { key: 'security.passwordHashR', group: 'Web security',
     label: 'Password hash block size (scrypt r)',

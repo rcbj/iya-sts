@@ -302,7 +302,7 @@
   "mfaSection.thAnswer": "答案",
   "mfaSection.password": "密码",
   "mfaSection.set": "已设置",
-  "mfaSection.passwordSet": " — 其自身条目上的 scrypt 哈希。它无法被读回，此控制台也无法显示它；下方的表单可以替换它。",
+  "mfaSection.passwordSet": " — 其自身条目上的 哈希。它无法被读回，此控制台也无法显示它；下方的表单可以替换它。",
   "mfaSection.primaryKey": "主安全密钥",
   "mfaSection.primaryKeyNote": " — 可独立让他们登录，无需密码。会话随后记录 <code>amr [\"hwk\"]</code> 和 <code>acr \"1\"</code>。",
   "mfaSection.canSignIn": "能否登录",

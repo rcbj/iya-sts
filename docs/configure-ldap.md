@@ -396,9 +396,44 @@ api policies/save-password-policy '{"minLength":8,"history":1,"minSymbols":0,
 api policies/reset-password-policy '{}'    # delete the entry; the built-in defaults apply
 ```
 
-**A save must carry all six fields.** One that leaves a field out is refused
-by name for each, rather than resetting it. The built-in defaults are 12, 5,
-1, on, on and 20. The generated length must be at least the minimum length.
+**A save must carry the six composition fields.** One that leaves a field out
+is refused by name for each, rather than resetting it. The built-in defaults
+are 12, 5, 1, on, on and 20. The generated length must be at least the
+minimum length.
+
+### How a password is stored
+
+The same profile decides how a NEWLY stored password is hashed. These seven
+fields are optional in a save: one left out keeps the value in force.
+
+| Field | Attribute | Default | Bounds |
+|---|---|---|---|
+| `hashAlgorithm` | `stsPwdHashAlgorithm` | `argon2id` | `argon2id` or `scrypt` |
+| `argon2Memory` | `stsPwdArgon2Memory` | 19456 KiB (19 MiB) | 19456 to 1048576 |
+| `argon2Iterations` | `stsPwdArgon2Iterations` | 2 | 2 to 16 |
+| `argon2Parallelism` | `stsPwdArgon2Parallelism` | 1 | 1 to 16 |
+| `scryptLogN` | `stsPwdScryptLogN` | 17 (N=131072) | 13 to 20 |
+| `scryptBlockSize` | `stsPwdScryptBlockSize` | 8 | 8 to 16 |
+| `scryptParallelism` | `stsPwdScryptParallelism` | 1 | 1 to 16 |
+
+No bound is below the OWASP Password Storage Cheat Sheet's minimum, in either
+mode. For scrypt the cost and parallelism must also meet OWASP's table: 2^17
+with p=1, 2^16 with p=2, 2^15 with p=3, 2^14 with p=5, or 2^13 with p=10.
+
+An argon2id hash is stored as the PHC string
+`$argon2id$v=19$m=19456,t=2,p=1$<salt>$<hash>`, and a scrypt one as
+`$scrypt$N$r$p$<salt>$<hash>`. Each names its own parameters, so a stored hash
+of either form keeps verifying after the policy changes. When a password
+verifies and its stored hash is not the policy's algorithm and parameters, it
+is hashed again and written back. A change of parameters within one algorithm
+counts too. The person's password history and `pwdChangedTime` are not
+touched, because the password did not change. Development mode verifies no
+password, so the upgrade happens in product mode only.
+
+Client secrets, activation and reset tokens, recovery codes and app passwords
+are not passwords, and are still hashed with scrypt at
+`security.passwordHashLogN`, `security.passwordHashR` and
+`security.passwordHashP`.
 
 **Over LDAP**, the policy is an ordinary entry that `ldapsearch` can read.
 In the job, a modify of `userPassword` to `weak` is refused 19 and writes

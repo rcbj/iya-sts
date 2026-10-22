@@ -165,7 +165,7 @@ async function checkThePolicy(t, who) {
           'and sets the SAME password again: history is not enforced there ' +
           'either');
   t.check(attributeOf(who, 'pwdHistory').length === 1 &&
-          /^\d{14}Z#1\.3\.6\.1\.4\.1\.1466\.115\.121\.1\.40#\d+#\$scrypt\$/
+          /^\d{14}Z#1\.3\.6\.1\.4\.1\.1466\.115\.121\.1\.40#\d+#\$(scrypt|argon2id)\$/
             .test(attributeOf(who, 'pwdHistory')[0]),
           'but the history IS RECORDED, in draft-behera\'s ' +
           'time#oid#length#data form holding the previous HASH — so a realm ' +
@@ -341,7 +341,7 @@ async function checkThePolicy(t, who) {
               strong.failure && strong.failure.message);
       const hashed = attributeOf('password-policy-ldap-probe',
                                  'userPassword')[0];
-      t.check(/^\$scrypt\$/.test(hashed) &&
+      t.check(/^\$(scrypt|argon2id)\$/.test(hashed) &&
               crypto.verifySecret('Ldap-Passw0rd!', hashed),
               'and STORED AS A HASH — this door used to write the value ' +
               'verbatim, in the clear', String(hashed).slice(0, 20));
@@ -401,7 +401,7 @@ async function checkThePolicy(t, who) {
           'directory is moved between two instances of this service');
   t.check(!(await ldapModify(devProbe.dn,
                              [['replace', 'userPassword', 'x']])).failure &&
-          /^\$scrypt\$/.test(
+          /^\$(scrypt|argon2id)\$/.test(
             attributeOf('password-policy-ldap-dev', 'userPassword')[0]),
           'and a clear value is still HASHED there — storing a password in ' +
           'the clear is a storage defect, not a permissiveness');

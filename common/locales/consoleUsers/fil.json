@@ -302,7 +302,7 @@
   "mfaSection.thAnswer": "Sagot",
   "mfaSection.password": "Password",
   "mfaSection.set": "nakatakda",
-  "mfaSection.passwordSet": " — isang scrypt hash sa sarili nilang entry. Hindi ito mababasa pabalik at hindi ito maipapakita ng console na ito; pinapalitan ito ng form sa ibaba.",
+  "mfaSection.passwordSet": " — isang hash sa sarili nilang entry. Hindi ito mababasa pabalik at hindi ito maipapakita ng console na ito; pinapalitan ito ng form sa ibaba.",
   "mfaSection.primaryKey": "Primary security key",
   "mfaSection.primaryKeyNote": " — nagsa-sign in sa kanila nang mag-isa, walang password. Itinatala pagkatapos ng session ang <code>amr [\"hwk\"]</code> at <code>acr \"1\"</code>.",
   "mfaSection.canSignIn": "Makakapag-sign in",

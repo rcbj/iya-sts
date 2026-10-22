@@ -10484,7 +10484,8 @@ function passwordWriteRefusal(dn, attributes, previous, touched, written,
     log.debug('Leaving passwordWriteRefusal(). Unchanged.');
     return null;
   }
-  if (value.indexOf('$scrypt$') === 0) {
+  // Either of this service's hash forms (#847): scrypt, or argon2id.
+  if (stsCrypto.isHashedSecret(value)) {
     if (mode.verifiesCredentials()) {
       log.debug('Leaving passwordWriteRefusal(). A hash, in product mode.');
       return coded('STS-LDAP-0011', new ldap.ConstraintViolationError(
@@ -17762,8 +17763,8 @@ function ldapAddNow(req, res, next) {
 // runs, so `credentials.preparePassword()` — synchronous, inside a modify that
 // is atomic across its changes — finds the verdict waiting and refuses a
 // breached password as it refuses one the policy does not allow. A value
-// already hashed (`{SCRYPT}`, `$scrypt$`) is not a password anybody typed and
-// is not asked about. The handler runs whatever the screen answered: an
+// already hashed (`{SCRYPT}`, `$scrypt$`, `$argon2id$`) is not a password
+// anybody typed and is not asked about. The handler runs whatever the screen answered: an
 // unreachable API decides nothing.
 // ---------------------------------------------------------------------------
 function clearPasswordsIn(attributes) {
@@ -17777,7 +17778,7 @@ function clearPasswordsIn(attributes) {
       const text = Buffer.isBuffer(value) ? value.toString('utf8')
                                           : String(value);
       if (text && !/^\{[A-Za-z0-9-]+\}/.test(text) &&
-          text.indexOf('$scrypt$') !== 0) {
+          !stsCrypto.isHashedSecret(text)) {
         out.push(text);
       }
     });
@@ -17845,7 +17846,11 @@ function screenedThen(req, next, passwords, run) {
   };
   log.debug('Leaving screenedThen(). Screening and hashing.');
   const hashed = Promise.all(passwords.map(function (one) {
-    return stsCrypto.hashSecretAsync(one).then(function (hash) {
+    // A PERSON'S PASSWORD, so the password policy's algorithm and
+    // parameters (#847) — the same spec `preparePassword()` checks the hash
+    // against before it takes it.
+    return stsCrypto.hashPasswordAsync(one, passwordPolicy.hashSpec(
+      passwordPolicy.profileFor())).then(function (hash) {
       return { password: one, hash: hash };
     }, function (e) {
       // The body hashes it itself, as it did before #756.

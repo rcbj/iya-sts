@@ -820,8 +820,8 @@
     "text": "Coût du hachage des mots de passe (log2 du N de scrypt)"
   },
   "security.passwordHashLogN|description": {
-    "en": "332bb0d7bee5b84a",
-    "text": "Le coût CPU et mémoire de scrypt pour un mot de passe, un secret client, un jeton d’activation ou un code de récupération NOUVELLEMENT stocké, exprimé en puissance de deux : 15 correspond à N=32768, environ 70 ms par hachage sur une machine ordinaire. Le plancher de 14 est le minimum que ce service écrira. L’augmenter ralentit l’attaque d’un stockage volé et ralentit proportionnellement chaque connexion. Les hachages déjà stockés portent leurs propres paramètres et ne sont pas affectés."
+    "en": "3492bc25313f659a",
+    "text": "Le coût CPU et mémoire de scrypt pour un secret client, un jeton d'activation ou de réinitialisation, un code de récupération ou un mot de passe d'application NOUVELLEMENT enregistré, en puissance de deux : 15 correspond à N=32768, environ 70 ms par hachage sur une machine ordinaire. Le plancher de 14 est le moins que ce service écrira. L'augmenter ralentit l'attaque d'un stockage volé et chaque connexion en proportion. Les hachages déjà enregistrés portent leurs propres paramètres et ne sont pas affectés. Le mot de passe d'une personne n'est pas haché ainsi : son algorithme et son coût sont ceux de la politique de mots de passe (Annuaire > Politiques)."
   },
   "security.passwordHashR|label": {
     "en": "d7d901b7702608d7",

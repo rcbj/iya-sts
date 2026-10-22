@@ -302,7 +302,7 @@
   "mfaSection.thAnswer": "答案",
   "mfaSection.password": "密碼",
   "mfaSection.set": "已設定",
-  "mfaSection.passwordSet": " — 儲存在其自身項目上的 scrypt 雜湊。它無法被讀回，此主控台也無法顯示；下方的表單會取代它。",
+  "mfaSection.passwordSet": " — 儲存在其自身項目上的 雜湊。它無法被讀回，此主控台也無法顯示；下方的表單會取代它。",
   "mfaSection.primaryKey": "主要安全金鑰",
   "mfaSection.primaryKeyNote": " — 可單獨讓他們登入，無需密碼。工作階段接著會記錄 <code>amr [\"hwk\"]</code> 和 <code>acr \"1\"</code>。",
   "mfaSection.canSignIn": "可以登入",
