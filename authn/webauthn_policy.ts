@@ -420,6 +420,11 @@ class WebauthnPolicy {
     // trusted statement as an AAGUID list does.
     const enterpriseSerialAttribute =
       passkeyPolicy.enterpriseSerialAttribute();
+    // THE ALGORITHMS AN ATTESTATION MUST BE SIGNED WITH (#941) are only
+    // worth what the chain carrying them is worth — anybody can mint an
+    // ML-DSA chain — so the passkey policy's list demands a trusted
+    // statement too, and asks the browser for direct attestation.
+    const attestationAlgorithms = passkeyPolicy.attestationAlgorithms();
     const out = {
       configured: configured,
       policy: policy,
@@ -433,10 +438,12 @@ class WebauthnPolicy {
       androidSoftwareKeys:
         config.value('webauthn.attestationAndroidSoftwareKeys') === true,
       enterpriseSerialAttribute: enterpriseSerialAttribute,
+      attestationAlgorithms: attestationAlgorithms,
       demandsTrust: policy === 'require-trusted' ||
                     allowedAaguids.length > 0 ||
                     minCertificationLevel !== 'none' || requireFips ||
-                    !!enterpriseSerialAttribute
+                    !!enterpriseSerialAttribute ||
+                    attestationAlgorithms.length > 0
     };
     log.debug('Leaving WebauthnPolicy.attestationSettings(). policy=' +
               out.policy + ', demandsTrust=' + out.demandsTrust);

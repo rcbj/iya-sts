@@ -512,6 +512,16 @@ const PASSKEY_ATTRIBUTE = {
   ALGORITHM: xacmlRequest.VOCABULARY.PASSKEY_ALGORITHM,
   POST_QUANTUM: xacmlRequest.VOCABULARY.PASSKEY_POST_QUANTUM,
   LANE: xacmlRequest.VOCABULARY.PASSKEY_LANE,
+  // What the key's attestation was signed with (#941). The built-in rule
+  // reads ATTESTATION_ALGORITHM_ALLOWED alone.
+  ATTESTATION_STATEMENT_ALGORITHM:
+    xacmlRequest.VOCABULARY.PASSKEY_ATTESTATION_STATEMENT_ALGORITHM,
+  ATTESTATION_CERTIFICATE_ALGORITHM:
+    xacmlRequest.VOCABULARY.PASSKEY_ATTESTATION_CERTIFICATE_ALGORITHM,
+  ATTESTATION_POST_QUANTUM:
+    xacmlRequest.VOCABULARY.PASSKEY_ATTESTATION_POST_QUANTUM,
+  ATTESTATION_ALGORITHM_ALLOWED:
+    xacmlRequest.VOCABULARY.PASSKEY_ATTESTATION_ALGORITHM_ALLOWED,
   ATTESTATION_POLICY: xacmlRequest.VOCABULARY.SETTING_PREFIX +
                       'webauthn.attestationPolicy',
   ALLOWED_AAGUIDS: xacmlRequest.VOCABULARY.SETTING_PREFIX +
@@ -525,7 +535,7 @@ const PASSKEY_ATTRIBUTE = {
   VERDICTS: ['allow', 'refuse'],
   // The fact groups a question may carry.
   GROUPS: ['backup-eligible', 'pin-length', 'serial', 'attestation',
-           'algorithm', 'recovery'],
+           'algorithm', 'attestation-algorithm', 'recovery'],
   // The reasons the built-in rules give, and the code each records, per
   // action. A door words its refusal by the reason.
   REASONS: {
@@ -541,6 +551,9 @@ const PASSKEY_ATTRIBUTE = {
     'attestation-level': { register: '', use: 'STS-AUTHN-0316' },
     'attestation-fips': { register: '', use: 'STS-AUTHN-0316' },
     'post-quantum': { register: 'STS-AUTHN-0355', use: 'STS-AUTHN-0356' },
+    // #941: the algorithms the attestation was signed with.
+    'attestation-algorithm': { register: 'STS-AUTHN-0411',
+                               use: 'STS-AUTHN-0412' },
     // #724: a RECOVER_ACTION question records the `use` column.
     'recovery-self-service': { register: '', use: 'STS-AUTHN-0380' },
     'recovery-enrol-first': { register: '', use: 'STS-AUTHN-0381' }
@@ -2658,6 +2671,33 @@ const TEMPLATES: TemplateRow[] = [
                not(fact(R2, PK.POST_QUANTUM, true)),
                stages.length > 1 ? anyOf(stages) : stages[0]]));
       };
+      // AN ATTESTATION NOT SIGNED WITH WHAT THE PROFILE'S
+      // attestationAlgorithms LISTS (#941), after the post-quantum rule at
+      // each action: at register-passkey whenever the list is set, and at
+      // use-passkey only while enforceAttestationAtSignIn holds sign-ins to
+      // the attestation rules, by what registration recorded. On the one
+      // computed fact, ALLOWED, which question() decided and which is
+      // always sent with its group; a question without the group never
+      // trips it.
+      const attestationAlgorithmRule = function (action: string): any {
+        log.debug("Entering attestationAlgorithmRule().");
+        const listed = sizeIs('string-bag-size',
+                              strBag(env, pkSetting('attestationAlgorithms')),
+                              'integer-greater-than');
+        const held = action === PK.REGISTER_ACTION ? [listed]
+          : [listed, fact(env, pkSetting('enforceAttestationAtSignIn'),
+                          true)];
+        log.debug("Leaving attestationAlgorithmRule().");
+        return pkRule(action, 'attestation-algorithm',
+          'Refuse a passkey whose attestation is not a trusted one signed, ' +
+          'statement and every certificate of its chain, with an ' +
+          'algorithm the passkey policy\'s attestationAlgorithms allows ' +
+          (action === PK.REGISTER_ACTION
+            ? '(#941).'
+            : ', while sign-ins are held to the attestation rules (#941).'),
+          and([carries('attestation-algorithm')].concat(held).concat([
+            not(fact(R2, PK.ATTESTATION_ALGORITHM_ALLOWED, true))])));
+      };
       const passkeyRules: any[] = decidePasskeys ? [
         backupRule(PK.REGISTER_ACTION),
         pinRule(PK.REGISTER_ACTION),
@@ -2675,6 +2715,7 @@ const TEMPLATES: TemplateRow[] = [
                       'integer-greater-than'),
                not(fact(R2, PK.SERIAL_HELD, true))])),
         postQuantumRule(PK.REGISTER_ACTION),
+        attestationAlgorithmRule(PK.REGISTER_ACTION),
         { id: options.idBase + ':rule:passkey-register-allowed',
           effect: model.EFFECT.PERMIT,
           description: 'Register every other passkey.',
@@ -2722,6 +2763,7 @@ const TEMPLATES: TemplateRow[] = [
                fact(R2, PK.MODEL_LISTED, true),
                not(fact(R2, PK.FIPS, true))])),
         postQuantumRule(PK.USE_ACTION),
+        attestationAlgorithmRule(PK.USE_ACTION),
         { id: options.idBase + ':rule:passkey-use-allowed',
           effect: model.EFFECT.PERMIT,
           description: 'Let every other passkey sign somebody in.',

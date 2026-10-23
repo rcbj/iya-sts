@@ -1559,7 +1559,15 @@ class AdminApi {
               'the first credential or the second factor, and ' +
               '`registration-and-sign-in` refuses a classical one at ' +
               'registration too; refused while the realm offers no ML-DSA ' +
-              '(STS-AUTHN-0357).',
+              '(STS-AUTHN-0357). ' +
+              '`attestationAlgorithms` (`none`, #941, optional) lists the ' +
+              'algorithms a passkey\'s ATTESTATION must be signed with, ' +
+              'statement and every certificate leaf to anchor: ' +
+              '`post-quantum`, `ml-dsa-44`, `ml-dsa-65`, `ml-dsa-87`, ' +
+              '`slh-dsa`, `composite-ml-dsa`; set, it demands a trusted ' +
+              'statement and refuses any other at registration ' +
+              '(STS-AUTHN-0411), and at sign-in while ' +
+              '`enforceAttestationAtSignIn` is on (STS-AUTHN-0412).',
         example: { allowUsernameless: false, requireUsernameless: false,
                    securityKeyResidentKey: 'required',
                    backupEligibility: 'allow',
@@ -1571,7 +1579,8 @@ class AdminApi {
                    enterpriseSerialAttribute: '',
                    userDisplayName: 'displayName, givenName sn',
                    rpNameExtras: 'none', credentialLabel: '',
-                   aggregateDevices: true, postQuantumRequired: 'off' }
+                   aggregateDevices: true, postQuantumRequired: 'off',
+                   attestationAlgorithms: 'none' }
       },
       // #539: the fifth kind, with named profiles chosen by application.
       locale: {

@@ -3531,7 +3531,14 @@ class Credentials {
       algorithm: Credentials.keyAlgorithm({
         algorithm: given.algorithm, coseAlg: given.coseAlg,
         publicKeyJwk: given.publicKeyJwk }).name,
-      lane: lane
+      lane: lane,
+      // AND WHAT ITS ATTESTATION WAS SIGNED WITH (#941), as the verifier
+      // recorded it: always carried, so a key written by value with no
+      // attestation (an import, a test) is held to a profile's
+      // attestationAlgorithms too — it recorded none, which satisfies no
+      // list. Whether they satisfy it is the question's to say.
+      attestationAlgorithms: webauthnAttestation.recordedAlgorithms(
+        given.attestation)
     };
     if (typeof given.backupEligible === 'boolean') {
       facts.backupEligible = given.backupEligible;
@@ -3541,8 +3548,10 @@ class Credentials {
       const reason = synced.reason === 'pin-length' ? 'pin-length'
         : (synced.reason === 'backup-eligible' ? 'backup-eligible'
           : (synced.reason === 'post-quantum' ? 'post-quantum'
-            : (/^serial-/.test(synced.reason) ? 'device-serial'
-                                              : 'passkey-policy')));
+            : (synced.reason === 'attestation-algorithm'
+              ? 'attestation-algorithm'
+              : (/^serial-/.test(synced.reason) ? 'device-serial'
+                                                : 'passkey-policy'))));
       log.info('credentials: a passkey was NOT enrolled for ' + name +
                ' (' + synced.code + ', ' + reason + '): ' + synced.why);
       log.debug("Leaving Credentials.addKey(). Refused by the passkey " +

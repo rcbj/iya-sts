@@ -6657,6 +6657,28 @@ const CODES = [
       'their factors unknown rather than as holding none; or the read threw ' +
       'otherwise, and each row was asked on its own instead.',
     spec: 'none — logged; the page is drawn' },
+  // WHAT A PASSKEY'S ATTESTATION IS SIGNED WITH (#941): the passkey
+  // policy's attestationAlgorithms, decided by the issuance policy's
+  // passkey rules.
+  { code: 'STS-AUTHN-0411',
+    summary: 'A passkey was not registered: its attestation is not a ' +
+      'trusted one whose statement and every certificate of its chain, ' +
+      'leaf to anchor, are signed with an algorithm the selected passkey ' +
+      'policy profile\'s attestationAlgorithms allows (#941) — or it ' +
+      'carried no certificate (self or none attestation). Asked where ' +
+      'every key is written, so the sign-in screen, /portal/keys and an ' +
+      'activation link all refuse it.',
+    spec: 'the ceremony\'s page, drawn again with the reason' },
+  { code: 'STS-AUTHN-0412',
+    summary: 'A passkey did not sign anybody in: while the passkey policy ' +
+      'holds sign-ins to the attestation rules ' +
+      '(enforceAttestationAtSignIn), the algorithms its registration ' +
+      'recorded for its attestation are not what the selected profile\'s ' +
+      'attestationAlgorithms allows (#941), or it recorded none (a key ' +
+      'registered before #941, or with no trusted attestation). Recorded ' +
+      'on a session.refuse row.',
+    spec: 'the sign-in screen or the step\'s page, drawn again with the ' +
+      'reason' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',

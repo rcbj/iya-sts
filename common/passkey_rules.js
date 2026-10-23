@@ -48,6 +48,9 @@ const REASONS = {
   'attestation-level': { register: '', use: 'STS-AUTHN-0316' },
   'attestation-fips': { register: '', use: 'STS-AUTHN-0316' },
   'post-quantum': { register: 'STS-AUTHN-0355', use: 'STS-AUTHN-0356' },
+  // #941: what the attestation was signed with.
+  'attestation-algorithm': { register: 'STS-AUTHN-0411',
+                             use: 'STS-AUTHN-0412' },
   // #724: `recover-account` records the `use` column.
   'recovery-self-service': { register: '', use: 'STS-AUTHN-0380' },
   'recovery-enrol-first': { register: '', use: 'STS-AUTHN-0381' }
@@ -184,6 +187,17 @@ function strictReading(question) {
     : (required === 'sign-in' || required === 'registration-and-sign-in');
   if (!reason && carries('algorithm') && q.postQuantum !== true && pqStage) {
     reason = 'post-quantum';
+  }
+  // AN ATTESTATION NOT SIGNED WITH WHAT attestationAlgorithms LISTS (#941),
+  // after the post-quantum rule, on the one fact question() computed: at
+  // registration whenever the list is set, at sign-in only while
+  // enforceAttestationAtSignIn holds sign-ins to the attestation rules.
+  const listed = Array.isArray(policy.attestationAlgorithms) &&
+    policy.attestationAlgorithms.length > 0;
+  if (!reason && q.action !== RECOVER && carries('attestation-algorithm') &&
+      listed && (register || policy.enforceAttestationAtSignIn === true) &&
+      q.attestationAlgorithmAllowed !== true) {
+    reason = 'attestation-algorithm';
   }
   const out = reason
     ? { verdict: 'refuse', code: codeFor(reason, q.action), reason: reason }

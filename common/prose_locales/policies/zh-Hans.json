@@ -1199,6 +1199,14 @@
     "en": "bdbb83ca7b2a2c48",
     "text": "开发模式下默认为 `any`，产品模式下默认为 `not-weaker`。不要求通行密钥的账户恢复方式——密码重置链接、激活链接、恢复代码、通过电子邮件发送的代码或链接——是否为持有通行密钥的人恢复访问权限。`any`：立即恢复。`not-weaker`：此后第一次不是通过通行密钥的登录不能访问任何应用；此人需注册一个符合此策略的通行密钥并用它登录。`operator-only`：同 not-weaker，并且拒绝自助方式（忘记密码表单、登录时的恢复代码或通过电子邮件发送的代码或链接）；只剩下管理员的重置链接、生成的密码或激活链接。保存时省略此项，则保留内置默认值。"
   },
+  "passkey.FIELDS.attestationAlgorithms.label": {
+    "en": "fe72fed238e39ede",
+    "text": "通行密钥证明必须使用的签名算法"
+  },
+  "passkey.FIELDS.attestationAlgorithms.what": {
+    "en": "cb4ed83be3a69177",
+    "text": "默认为 `none`：无论证明使用何种算法签名都予以接受。否则为一个列表，取值于 post-quantum、ml-dsa-44、ml-dsa-65、ml-dsa-87、slh-dsa 和 composite-ml-dsa：只有当通行密钥带有一个携带证书的“受信任”证明，且其声明签名以及其证书链中从叶证书到信任锚的每个证书的签名都是列表允许的算法时，才会注册（`post-quantum` 允许任何 ML-DSA、SLH-DSA 或复合 ML-DSA 签名）。self 和 none 证明因不带证书而被拒绝。开启 enforceAttestationAtSignIn 后，每次登录都会依据注册时记录的内容按此规则检查通行密钥，因此在该规则之前注册的通行密钥将停止工作。这是证明的算法，而不是通行密钥本身的算法（postQuantumRequired）。保存时省略此项，则保留内置默认值。"
+  },
   "passkey.SCHEMA.objectClasses.stsPasskeyPolicy.what": {
     "en": "44bab556bd6240cc",
     "text": "本服务用于通行密钥策略的类：通行密钥在此领域中的行为方式。该条目以配置文件命名（`cn=default`）。"
@@ -1274,6 +1282,10 @@
   "passkey.SCHEMA.attributes.stsPasskeyRecoveryAssurance.what": {
     "en": "bdbb83ca7b2a2c48",
     "text": "开发模式下默认为 `any`，产品模式下默认为 `not-weaker`。不要求通行密钥的账户恢复方式——密码重置链接、激活链接、恢复代码、通过电子邮件发送的代码或链接——是否为持有通行密钥的人恢复访问权限。`any`：立即恢复。`not-weaker`：此后第一次不是通过通行密钥的登录不能访问任何应用；此人需注册一个符合此策略的通行密钥并用它登录。`operator-only`：同 not-weaker，并且拒绝自助方式（忘记密码表单、登录时的恢复代码或通过电子邮件发送的代码或链接）；只剩下管理员的重置链接、生成的密码或激活链接。保存时省略此项，则保留内置默认值。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyAttestationAlgorithms.what": {
+    "en": "cb4ed83be3a69177",
+    "text": "默认为 `none`：无论证明使用何种算法签名都予以接受。否则为一个列表，取值于 post-quantum、ml-dsa-44、ml-dsa-65、ml-dsa-87、slh-dsa 和 composite-ml-dsa：只有当通行密钥带有一个携带证书的“受信任”证明，且其声明签名以及其证书链中从叶证书到信任锚的每个证书的签名都是列表允许的算法时，才会注册（`post-quantum` 允许任何 ML-DSA、SLH-DSA 或复合 ML-DSA 签名）。self 和 none 证明因不带证书而被拒绝。开启 enforceAttestationAtSignIn 后，每次登录都会依据注册时记录的内容按此规则检查通行密钥，因此在该规则之前注册的通行密钥将停止工作。这是证明的算法，而不是通行密钥本身的算法（postQuantumRequired）。保存时省略此项，则保留内置默认值。"
   },
   "passkey.SCHEMA.attributes.stsPasskeySelectApplication.what": {
     "en": "03ba679923c40b45",
@@ -1414,6 +1426,10 @@
   "passkey.sentences.postQuantumEverywhere": {
     "en": "79742dacfba54ede",
     "text": "只有后量子（ML-DSA）通行密钥能被注册或让人登录"
+  },
+  "passkey.sentences.attestationAlgorithms": {
+    "en": "9e73c79f0de11296",
+    "text": "只有当证明受信任且其声明和证书链使用 {{algorithms}} 签名时，通行密钥才会注册"
   },
   "passkey.sentences.recoveryAny": {
     "en": "7383156c8eb1e363",

@@ -7028,7 +7028,10 @@ class Authn {
                     String(key.credentialId || '')),
                   aaguid: credentials.Credentials.aaguidString(key.aaguid) }
       });
-      if (code === 'STS-AUTHN-0316' &&
+      // A KEY WHOSE ATTESTATION'S ALGORITHMS NO LONGER SATISFY THE PROFILE
+      // (#941, STS-AUTHN-0412) changed standing as one #530 refuses did, so
+      // it is marked and signalled the same way, once.
+      if ((code === 'STS-AUTHN-0316' || code === 'STS-AUTHN-0412') &&
           credentials.noteKeyAttestationRefused(username, key.credentialId,
                                                 code, why)) {
         accountSignals.credentialChanged({

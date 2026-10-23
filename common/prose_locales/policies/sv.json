@@ -1199,6 +1199,14 @@
     "en": "bdbb83ca7b2a2c48",
     "text": "`any` SOM STANDARD I UTVECKLING, `not-weaker` I PRODUKT. Om en väg tillbaka in i kontot som inte kräver någon nyckel — en länk för att återställa lösenordet, en aktiveringslänk, en återställningskod, en kod eller länk som skickats via e-post — återger åtkomsten för en person som har en. `any`: genast. `not-weaker`: den första inloggningen därefter som inte är en nyckelinloggning når inget program; personen registrerar en nyckel som uppfyller den här policyn och loggar in med den. `operator-only`: som not-weaker, och självbetjäningsdörrarna (formuläret för glömt lösenord, en återställningskod eller en kod eller länk via e-post vid inloggning) nekas; bara en administratörs återställningslänk, genererade lösenord eller aktiveringslänk återstår. Utelämnas den vid en sparning behålls det inbyggda standardvärdet."
   },
+  "passkey.FIELDS.attestationAlgorithms.label": {
+    "en": "fe72fed238e39ede",
+    "text": "Algoritmer som en nyckels attestering måste vara signerad med"
+  },
+  "passkey.FIELDS.attestationAlgorithms.what": {
+    "en": "cb4ed83be3a69177",
+    "text": "`none` SOM STANDARD: en attestering godtas oavsett vilken algoritm den är signerad med. Annars en lista av post-quantum, ml-dsa-44, ml-dsa-65, ml-dsa-87, slh-dsa och composite-ml-dsa: en nyckel registreras bara med en BETROD attestering som bär ett certifikat, där utsagans signatur och signaturen på varje certifikat i dess kedja, från lövcertifikatet till förtroendeankaret, var och en är en som listan tillåter (`post-quantum` tillåter varje ML-DSA-, SLH-DSA- eller sammansatt ML-DSA-signatur). Self- och none-attestering avvisas, eftersom de saknar certifikat. Med enforceAttestationAtSignIn påslaget prövas nyckeln mot regeln vid varje inloggning utifrån det som registreringen sparade, så en nyckel registrerad före regeln slutar fungera. Detta gäller attesteringens algoritm, inte nyckelns egen (postQuantumRequired). Utelämnas den vid en sparning behålls det inbyggda standardvärdet."
+  },
   "passkey.SCHEMA.objectClasses.stsPasskeyPolicy.what": {
     "en": "44bab556bd6240cc",
     "text": "Den här tjänstens klass för en nyckelpolicy: hur nycklar beter sig i den här sfären. Posten namnges efter PROFILEN (`cn=default`)."
@@ -1274,6 +1282,10 @@
   "passkey.SCHEMA.attributes.stsPasskeyRecoveryAssurance.what": {
     "en": "bdbb83ca7b2a2c48",
     "text": "`any` SOM STANDARD I UTVECKLING, `not-weaker` I PRODUKT. Om en väg tillbaka in i kontot som inte kräver någon nyckel — en länk för att återställa lösenordet, en aktiveringslänk, en återställningskod, en kod eller länk som skickats via e-post — återger åtkomsten för en person som har en. `any`: genast. `not-weaker`: den första inloggningen därefter som inte är en nyckelinloggning når inget program; personen registrerar en nyckel som uppfyller den här policyn och loggar in med den. `operator-only`: som not-weaker, och självbetjäningsdörrarna (formuläret för glömt lösenord, en återställningskod eller en kod eller länk via e-post vid inloggning) nekas; bara en administratörs återställningslänk, genererade lösenord eller aktiveringslänk återstår. Utelämnas den vid en sparning behålls det inbyggda standardvärdet."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyAttestationAlgorithms.what": {
+    "en": "cb4ed83be3a69177",
+    "text": "`none` SOM STANDARD: en attestering godtas oavsett vilken algoritm den är signerad med. Annars en lista av post-quantum, ml-dsa-44, ml-dsa-65, ml-dsa-87, slh-dsa och composite-ml-dsa: en nyckel registreras bara med en BETROD attestering som bär ett certifikat, där utsagans signatur och signaturen på varje certifikat i dess kedja, från lövcertifikatet till förtroendeankaret, var och en är en som listan tillåter (`post-quantum` tillåter varje ML-DSA-, SLH-DSA- eller sammansatt ML-DSA-signatur). Self- och none-attestering avvisas, eftersom de saknar certifikat. Med enforceAttestationAtSignIn påslaget prövas nyckeln mot regeln vid varje inloggning utifrån det som registreringen sparade, så en nyckel registrerad före regeln slutar fungera. Detta gäller attesteringens algoritm, inte nyckelns egen (postQuantumRequired). Utelämnas den vid en sparning behålls det inbyggda standardvärdet."
   },
   "passkey.SCHEMA.attributes.stsPasskeySelectApplication.what": {
     "en": "03ba679923c40b45",
@@ -1414,6 +1426,10 @@
   "passkey.sentences.postQuantumEverywhere": {
     "en": "79742dacfba54ede",
     "text": "bara en postkvantnyckel (ML-DSA) registreras eller loggar in en person"
+  },
+  "passkey.sentences.attestationAlgorithms": {
+    "en": "9e73c79f0de11296",
+    "text": "en nyckel registreras bara med en betrodd attestering vars utsaga och certifikatkedja är signerade med {{algorithms}}"
   },
   "passkey.sentences.recoveryAny": {
     "en": "7383156c8eb1e363",
