@@ -1103,6 +1103,14 @@
     "en": "e35e276b9d933828",
     "text": "Activada, una persona puede tener a la vez una llave de acceso clásica y una poscuántica (ML-DSA), en el mismo autenticador si puede crear ambas. Cada llave de acceso se crea en una VÍA que la persona elige: la vía clásica solicita `webauthn.algorithms` sin ML-DSA (`ES256` y `RS256` si no queda ninguno), la vía poscuántica solicita solo ML-DSA. Cada vía tiene su propio identificador de usuario, de modo que la segunda llave de acceso no sustituye a la primera en el autenticador, y su propia lista de exclusión; un gestor de credenciales muestra la poscuántica con un nombre que indica su algoritmo —`<username>+ml-dsa` al crearla, `<username>+ml-dsa-65` (por ejemplo) cuando todas las llaves poscuánticas de la persona usan ese— que nunca es un nombre con el que se inicie sesión. `webauthn.maxKeysPerPerson` cuenta ambas vías. No puede activarse mientras `webauthn.pqcOnly` lo esté. Desactivada, cada ceremonia es como antes, y una llave de acceso poscuántica ya registrada sigue iniciando sesión; no se puede crear una nueva."
   },
+  "webauthn.postQuantumAllowCredentials|label": {
+    "en": "295b04bef9cf50bc",
+    "text": "Llaves de acceso que nombra un inicio de sesión cuando se exige una poscuántica"
+  },
+  "webauthn.postQuantumAllowCredentials|description": {
+    "en": "f34caf08dceeedd3",
+    "text": "Solo se lee mientras la política de llaves de acceso exige una llave de acceso poscuántica al iniciar sesión (`postQuantumRequired`), y solo donde la fila `postQuantumAllowCredentials` del perfil seleccionado es `realm`. `narrow` (el valor predeterminado) nombra solo las llaves de acceso poscuánticas (ML-DSA) de la persona en el `allowCredentials` del paso de llave de acceso, de modo que nunca se ofrece una clásica — pero una persona cuyo dispositivo solo guarda su llave clásica ve el propio mensaje «no se encontró ninguna llave de acceso» de la plataforma. `list-and-refuse` nombra todas las llaves de acceso que tiene y rechaza una clásica después de la ceremonia (STS-AUTHN-0356), con una página que dice que la aplicación exige una llave de acceso poscuántica y dónde añadir una. La contrapartida: la persona puede elegir una llave de acceso que será rechazada. En ambos casos, a una persona que no tiene ninguna llave de acceso poscuántica se le avisa antes de cualquier ceremonia."
+  },
   "webauthn.userVerification|label": {
     "en": "8b134177fe992d91",
     "text": "Verificación del usuario"

@@ -685,8 +685,9 @@ const FIELDS: PolicyField[] = [
           'postQuantumRequired requires a post-quantum passkey at sign-in. ' +
           '`narrow` names only the person\'s post-quantum (ML-DSA) passkeys ' +
           'in the passkey step\'s request, so a classical one is never ' +
-          'offered, and a person who picks one sees the platform\'s own ' +
-          '"no credential" message. `list-and-refuse` names every passkey ' +
+          'offered, and a person whose device holds only their classical ' +
+          'one sees the platform\'s own "no passkey found" message. ' +
+          '`list-and-refuse` names every passkey ' +
           'they hold and refuses a classical one after the ceremony, with a ' +
           'page saying that this application requires a post-quantum ' +
           'passkey and where to add one; the person may then pick a ' +

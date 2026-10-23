@@ -2866,8 +2866,8 @@ const SETTINGS = [
                  '(the default) names only the person\'s post-quantum ' +
                  '(ML-DSA) passkeys in the passkey step\'s ' +
                  '`allowCredentials`, so a classical one is never offered — ' +
-                 'but a person who picks one, or whose platform finds only ' +
-                 'it, sees the platform\'s own "no credential" message. ' +
+                 'but a person whose device holds only their classical one ' +
+                 'sees the platform\'s own "no passkey found" message. ' +
                  '`list-and-refuse` names every passkey they hold and ' +
                  'refuses a classical one after the ceremony ' +
                  '(STS-AUTHN-0356), with a page saying that the application ' +

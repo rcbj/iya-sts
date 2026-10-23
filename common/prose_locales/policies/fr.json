@@ -1127,6 +1127,14 @@
     "en": "ba077a59ecf25ecb",
     "text": "`off` (la valeur par défaut) accepte une clé d’accès quel que soit son algorithme de signature. `sign-in` n’accepte qu’une clé d’accès POST-QUANTIQUE, dont l’algorithme est ML-DSA-44, ML-DSA-65 ou ML-DSA-87 (RFC 9964), lorsqu’elle connecte quelqu’un, comme premier identifiant ou comme second facteur ; une clé classique peut encore être enregistrée. `registration-and-sign-in` refuse aussi une clé classique à l’enregistrement, et l’enregistrement ne propose alors que ML-DSA. C’est l’algorithme qui décide, pas la voie dans laquelle une clé a été créée. Refusé tant que le domaine ne propose aucun ML-DSA (webauthn.algorithms n’en nomme aucun, et ni webauthn.pqcOnly ni webauthn.pqcAlongsideClassical n’est activé)."
   },
+  "passkey.FIELDS.postQuantumAllowCredentials.label": {
+    "en": "295b04bef9cf50bc",
+    "text": "Clés d’accès qu’une connexion nomme lorsqu’une clé post-quantique est exigée"
+  },
+  "passkey.FIELDS.postQuantumAllowCredentials.what": {
+    "en": "af7666466d67e760",
+    "text": "`realm` (la valeur par défaut) suit le paramètre webauthn.postQuantumAllowCredentials du domaine. Lu seulement tant que postQuantumRequired exige une clé d’accès post-quantique à la connexion. `narrow` ne nomme que les clés d’accès post-quantiques (ML-DSA) de la personne dans la requête de l’étape de clé d’accès, de sorte qu’une clé classique n’est jamais proposée, et une personne dont l’appareil ne détient que sa clé classique voit le propre message « aucune clé d’accès trouvée » de la plateforme. `list-and-refuse` nomme toutes les clés d’accès qu’elle détient et refuse une clé classique après la cérémonie, avec une page indiquant que cette application exige une clé d’accès post-quantique et où en ajouter une ; la personne peut alors choisir une clé d’accès qui sera refusée. Dans les deux cas, une personne qui ne détient aucune clé d’accès post-quantique en est informée avant toute cérémonie. Omis d’un enregistrement, `realm` est conservé."
+  },
   "passkey.FIELDS.passkeyHints.label": {
     "en": "7445bda72b06c415",
     "text": "Indications qu’envoie « Créer une clé d’accès »"
@@ -1238,6 +1246,10 @@
   "passkey.SCHEMA.attributes.stsPasskeyPostQuantumRequired.what": {
     "en": "ba077a59ecf25ecb",
     "text": "`off` (la valeur par défaut) accepte une clé d’accès quel que soit son algorithme de signature. `sign-in` n’accepte qu’une clé d’accès POST-QUANTIQUE, dont l’algorithme est ML-DSA-44, ML-DSA-65 ou ML-DSA-87 (RFC 9964), lorsqu’elle connecte quelqu’un, comme premier identifiant ou comme second facteur ; une clé classique peut encore être enregistrée. `registration-and-sign-in` refuse aussi une clé classique à l’enregistrement, et l’enregistrement ne propose alors que ML-DSA. C’est l’algorithme qui décide, pas la voie dans laquelle une clé a été créée. Refusé tant que le domaine ne propose aucun ML-DSA (webauthn.algorithms n’en nomme aucun, et ni webauthn.pqcOnly ni webauthn.pqcAlongsideClassical n’est activé)."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyPostQuantumAllowCredentials.what": {
+    "en": "af7666466d67e760",
+    "text": "`realm` (la valeur par défaut) suit le paramètre webauthn.postQuantumAllowCredentials du domaine. Lu seulement tant que postQuantumRequired exige une clé d’accès post-quantique à la connexion. `narrow` ne nomme que les clés d’accès post-quantiques (ML-DSA) de la personne dans la requête de l’étape de clé d’accès, de sorte qu’une clé classique n’est jamais proposée, et une personne dont l’appareil ne détient que sa clé classique voit le propre message « aucune clé d’accès trouvée » de la plateforme. `list-and-refuse` nomme toutes les clés d’accès qu’elle détient et refuse une clé classique après la cérémonie, avec une page indiquant que cette application exige une clé d’accès post-quantique et où en ajouter une ; la personne peut alors choisir une clé d’accès qui sera refusée. Dans les deux cas, une personne qui ne détient aucune clé d’accès post-quantique en est informée avant toute cérémonie. Omis d’un enregistrement, `realm` est conservé."
   },
   "passkey.SCHEMA.attributes.stsPasskeyHintsPasskey.what": {
     "en": "2ffa66aabab7a053",

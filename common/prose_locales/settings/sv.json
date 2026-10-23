@@ -1103,6 +1103,14 @@
     "en": "e35e276b9d933828",
     "text": "På kan en person ha en klassisk nyckel och en postkvantnyckel (ML-DSA) samtidigt, på samma autentiserare om den kan skapa båda. Varje nyckel skapas i ett SPÅR som personen väljer: det klassiska spåret begär `webauthn.algorithms` utan ML-DSA (`ES256` och `RS256` om inget återstår), postkvantspåret begär bara ML-DSA. Varje spår har sitt eget användarhandtag, så att den andra nyckeln inte ersätter den första på autentiseraren, och sin egen exkluderingslista; en lösenordshanterare visar postkvantnyckeln under ett namn som anger dess algoritm — `<username>+ml-dsa` när den skapas, `<username>+ml-dsa-65` (till exempel) när alla personens postkvantnycklar använder just den — som aldrig är ett namn någon loggar in med. `webauthn.maxKeysPerPerson` räknar båda spåren. Kan inte vara på medan `webauthn.pqcOnly` är det. Av är varje ceremoni som förut, och en redan registrerad postkvantnyckel fortsätter att logga in; en ny kan inte skapas."
   },
+  "webauthn.postQuantumAllowCredentials|label": {
+    "en": "295b04bef9cf50bc",
+    "text": "Nycklar som en inloggning anger när en postkvantnyckel krävs"
+  },
+  "webauthn.postQuantumAllowCredentials|description": {
+    "en": "f34caf08dceeedd3",
+    "text": "Läses bara medan nyckelpolicyn kräver en postkvantnyckel vid inloggning (`postQuantumRequired`), och bara där den valda profilens rad `postQuantumAllowCredentials` är `realm`. `narrow` (standard) anger bara personens postkvantnycklar (ML-DSA) i nyckelstegets `allowCredentials`, så en klassisk nyckel erbjuds aldrig — men en person vars enhet bara har deras klassiska nyckel ser plattformens eget meddelande ”ingen nyckel hittades”. `list-and-refuse` anger varje nyckel personen har och avvisar en klassisk efter ceremonin (STS-AUTHN-0356), med en sida som säger att programmet kräver en postkvantnyckel och var man lägger till en. Avvägningen: personen kan välja en nyckel som kommer att avvisas. I båda fallen får en person som inte har någon postkvantnyckel veta det före varje ceremoni."
+  },
   "webauthn.userVerification|label": {
     "en": "8b134177fe992d91",
     "text": "Användarverifiering"
