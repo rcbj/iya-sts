@@ -538,6 +538,35 @@ async function checkAndroid(t) {
           /REVOKED \(KEY_COMPROMISE\)/.test(revokedKey.attestation.summary),
           '3g. a chain whose leaf the list revokes is self-asserted, with ' +
           'the reason', JSON.stringify(revokedKey).slice(0, 700));
+  // #902: the status check reads the path that VERIFIED, not the x5c as
+  // sent. Ten copies of the leaf ahead of the anchor once pushed the anchor
+  // past the ten certificates the check reads, so a revoked one went unseen.
+  const anchorSerial = pkiModule.certificateSerialHex(anchor.der);
+  await statusList(['ffff0001', anchorSerial]);
+  const padded = await (async function () {
+    log.debug("Entering padded().");
+    const pair = ecPair();
+    const c = enrolment.issueChallenge({ sessionId: 'sp-' + RUN,
+      username: ALICE, purpose: 'key' });
+    const leaf = await androidLeaf(pair, c.challenge, anchor, 1);
+    const x5c = [leaf.der.toString('base64')];
+    for (let i = 0; i < 10; i++) {
+      x5c.push(leaf.der.toString('base64'));
+    }
+    x5c.push(anchor.der.toString('base64'));
+    const out = await enrolment.proveKey({ username: ALICE,
+      sessionId: 'sp-' + RUN, challenge: c.challenge, audience: AUD,
+      proof: proof(pair, c.challenge, { x5c: x5c }) });
+    log.debug("Leaving padded().");
+    return out;
+  })();
+  const paddedKey = padded.ok ? padded.device.keys[0] : null;
+  t.check(!paddedKey || (paddedKey.attestation.level !== 'attested' &&
+                         paddedKey.attestation.revocation.status ===
+                           'revoked'),
+          '3g-ii. a revoked certificate behind ten padding entries is still ' +
+          'found: the key is not attested (#902)',
+          JSON.stringify(padded).slice(0, 700));
   set('global.mode', 'product');
   try {
     const refused = await withLeaf(function (serial) {
@@ -551,6 +580,15 @@ async function checkAndroid(t) {
   } finally {
     config.clearOverride('global.mode');
   }
+  // #903: a device key linked from an android-key PASSKEY carries the
+  // passkey's serials, and the recheck asks about it as it asks about one
+  // proved with an x5c.
+  const DevicesClass = devices.Devices || devices.constructor;
+  t.check(!!DevicesClass && DevicesClass.isAndroidRecheckable({
+    attestation: { level: 'attested', format: 'android-key', summary: '',
+                   verifiedAt: '', chainSerials: ['aa'] } }),
+          '3h-ii. a key linked from an android-key passkey is rechecked (#903)',
+          String(!!DevicesClass));
   await statusList(['ffff0001', revoked.serial, kept.serial, 'ffff0002']);
   const recheck = await attestationRevocation.recheckAll();
   const after = devices.byId(kept.out.device.id);

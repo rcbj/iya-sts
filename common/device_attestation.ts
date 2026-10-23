@@ -242,7 +242,9 @@ class DeviceAttestation {
   }
 
   // The chain `leaf` then `rest` against `anchors` (`pki.deviceAttestation-
-  // Anchors()`'s answer). `{ ok, anchor }` or `{ ok: false, why }`.
+  // Anchors()`'s answer). `{ ok, anchor, chain }` or `{ ok: false, why }`;
+  // `chain` is the DER of the path that VERIFIED, leaf first, which is what
+  // a revocation check must read (#902) rather than what the caller sent.
   private async chainOf(leaf: Buffer, rest: Buffer[],
                         anchors: Json): Promise<Json> {
     const { log, pki } = this.deps;
@@ -260,7 +262,10 @@ class DeviceAttestation {
     const top = path.chain[path.chain.length - 1];
     log.debug("Leaving DeviceAttestation.chainOf(). Anchored.");
     return { ok: true, anchor: String((top.x509 && top.x509.subject) || '')
-      .replace(/\n/g, ', ') + ' (' + anchors.source + ')' };
+      .replace(/\n/g, ', ') + ' (' + anchors.source + ')',
+             chain: path.chain.map(function (one: Json): Buffer {
+               return one.der;
+             }) };
   }
 
   // =========================================================================
@@ -443,12 +448,14 @@ class DeviceAttestation {
         'android-key-attestation', said + ', which verified and does NOT ' +
         'chain to a trusted root: ' + chain.why + '.') };
     }
-    // GOOGLE'S STATUS LIST (#256): every certificate of the chain asked
-    // about. A revoked or suspended one, or an unchecked chain where the
+    // GOOGLE'S STATUS LIST (#256): every certificate of the VERIFIED path
+    // asked about (#902). The x5c as sent could carry junk ahead of a revoked
+    // certificate, which the path builder skips by issuer name and the
+    // status check, reading at most ten, would never reach. A revoked or suspended one, or an unchecked chain where the
     // realm requires a check in product, leaves the key self-asserted; the
     // chain's serials and the answer are kept for the recheck.
     const revocation = this.deps.revocation();
-    const verdict = await revocation.consult(ders);
+    const verdict = await revocation.consult(chain.chain);
     const untrusted = revocation.untrusts(verdict);
     if (untrusted) {
       log.info(this.deps.errorCodes.tag(verdict.status === 'unchecked'
