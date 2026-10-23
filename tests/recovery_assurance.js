@@ -34,8 +34,9 @@
 //      password sign-in starts NO session and draws the set-up step, marked
 //      `recovery`, offering only a passkey, whose ceremony is a
 //      REGISTRATION; a session that a passkey did not answer is refused
-//      STS-AUTHN-0381 at `startSession()`; a passkey's is started and
-//      clears the recovery.
+//      STS-AUTHN-0381 at `startSession()`, as is one a key REGISTERED in
+//      the act answered (#901); a passkey's is started and clears the
+//      recovery.
 //   E. A RECOVERY CODE at the second-factor step, for a person holding an
 //      `mfa` passkey, is itself a recovery door: under `not-weaker` it
 //      leads to the same registration (a REGISTRATION although they hold a
@@ -332,6 +333,18 @@ function childMain() {
            pwDetail.recoveryLimited === true,
            'D4. at startSession() a session a passkey did not answer is ' +
            'refused STS-AUTHN-0381', JSON.stringify(pwDetail));
+      // #901: a key REGISTERED in the act is not a passkey signing them in.
+      const regDetail = { credential: { kind: 'webauthn',
+                                        id: 'ann-new-' + STAMP,
+                                        ceremony: 'registration' } };
+      const reg = authn.startSession(res, ANN, ['hwk', 'user'], 'mfa',
+                                     'a test', regDetail);
+      note(reg === null && regDetail.refusedWith === 'STS-AUTHN-0381' &&
+           !!credentials.recoveryPending(ANN),
+           'D4b. a session a key REGISTERED in the act answered is refused ' +
+           'STS-AUTHN-0381 too, and the recovery stays pending (#901)',
+           JSON.stringify(regDetail.refusedWith || '') + ' ' +
+           JSON.stringify(credentials.recoveryPending(ANN)));
       const keyDetail = { credential: { kind: 'webauthn',
                                         id: 'ann-primary-' + STAMP } };
       const key = authn.startSession(res, ANN, ['hwk', 'user'], 'mfa',
