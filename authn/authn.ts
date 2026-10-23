@@ -6837,7 +6837,15 @@ class Authn {
       { code: string; why: string; reason: string } | null {
     const { log, passkeyPolicy, credentials } = this.deps;
     log.debug("Entering Authn.recoveryRefusalAtSession().");
-    const kind = String((credential && credential.kind) || '');
+    // A key REGISTERED in the act is not a passkey that signed them in
+    // (#901): it was enrolled on the strength of the recovery itself, so it
+    // is named apart and the not-weaker rule, which asks for `webauthn`,
+    // does not count it. EAP's `phr` treats it the same way.
+    const registered = !!credential &&
+      String(credential.kind || '') === 'webauthn' &&
+      String(credential.ceremony || '') === 'registration';
+    const kind = registered ? 'webauthn-registration'
+      : String((credential && credential.kind) || '');
     const door = passkeyPolicy.RECOVERY_CREDENTIALS[kind] || '';
     const pending = credentials.recoveryPending(username);
     if (!pending && !door) {
@@ -6859,9 +6867,13 @@ class Authn {
   private recoveryCompleted(username: string, extra: any): void {
     const { log, credentials, audit } = this.deps;
     log.debug("Entering Authn.recoveryCompleted().");
+    // An ASSERTION only (#901): a key registered in the act proves nothing
+    // the recovery did not already grant.
     if (!extra || !extra.credential ||
-        String(extra.credential.kind || '') !== 'webauthn') {
-      log.debug("Leaving Authn.recoveryCompleted(). Not a passkey.");
+        String(extra.credential.kind || '') !== 'webauthn' ||
+        String(extra.credential.ceremony || 'assertion') !== 'assertion') {
+      log.debug("Leaving Authn.recoveryCompleted(). Not a passkey's " +
+                "assertion.");
       return;
     }
     const pending = credentials.recoveryPending(username);
