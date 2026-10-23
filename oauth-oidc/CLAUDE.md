@@ -4448,7 +4448,8 @@ specification, and each fix is in EVERY mode, because none is FAPI's own rule:
 What the suite still reports as WARNING, and why it stays:
 * **This realm's JWKS carries post-quantum keys** (`kty: AKP`, ML-DSA) the
   suite cannot parse — every module. The suite's gap, not ours; rcbj
-  (2026-09-24): PQC support matters more than a clean run.
+  (2026-09-24): PQC support matters more than a clean run. The #187 drivers'
+  classical twins (2026-10-23, 3bp) run without it.
 * **`claims_supported` names claims no directory attribute answers** —
   `middle_name`, `profile`, `picture`, `gender`, `zoneinfo`, `updated_at`,
   `phone_number_verified` (the `profile` scope's list) — so a claims request
@@ -5012,6 +5013,10 @@ failure in its driver):
   key before comparing the rest):
   post-quantum keys and algorithms (SLH-DSA, composite ML-DSA) the suite does
   not know. rcbj on #176: PQC support over a clean run.
+  **And every plan of those drivers also runs as a classical twin since
+  2026-10-23** (rcbj), in a realm with `keys.postQuantumSigning` off, judged
+  WITHOUT these entries — the proof that nothing but the suite's gap is
+  behind them (`tests/CLAUDE.md`, *The classical twins*).
 * `VerifyStatusListTokenSignatureUsingEmbeddedJwk`: outside HAIP the suite
   resolves a status list token's key only from a header `jwk`; this realm's
   names it by `kid` and carries its chain in `x5c`, which

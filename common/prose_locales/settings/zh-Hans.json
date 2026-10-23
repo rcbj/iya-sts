@@ -1275,6 +1275,14 @@
     "en": "16bd897eb9c3284a",
     "text": "在此领域加密给客户端或钱包所持密钥的场合，是否提供 ML-KEM 和 HPKE JWE 算法（#82——草案，参见 keys.encryptionKemAlgs）：在 `userinfo_encryption_alg_values_supported`、`id_token_encryption_alg_values_supported`、`authorization_encryption_alg_values_supported`（JARM）、`introspection_encryption_alg_values_supported` 以及 OpenID4VCI 颁发者的 `credential_response_encryption` 中公布，并在客户端注册或钱包指定其中之一时接受。**默认关闭，由管理员选择：**这些算法来自 Internet-Draft，尝试每种公布算法的客户端或一致性测试套件会遇到它不认识的算法。已为其中某种算法注册的客户端保留其注册；此项关闭时，其下一个加密响应会被拒绝，与此领域不提供的任何算法一样。"
   },
+  "keys.postQuantumSigning|label": {
+    "en": "34883416ca94e446",
+    "text": "后量子签名"
+  },
+  "keys.postQuantumSigning|description": {
+    "en": "68ffd5da182ec911",
+    "text": "此领域是否签名、发布并验证后量子及复合 JWS 算法（ML-DSA、SLH-DSA 以及复合 ML-DSA 算法）。**默认开启。**关闭时：`/oauth2/jwks` 和 DID 文档中没有任何后量子签名密钥（包括备用密钥、固定密钥和签名者组密钥）；发现文档、授权服务器、OpenID Federation、OpenID4VCI 和 OpenID4VP 文档的任何 `*_alg_values_supported` 或 `*_alg_values` 列表中都没有后量子算法；以其中之一签名的 JWS 在此领域验证 JWS 的任何地方都会被拒绝；客户端不能注册其中之一；仍需要其中之一的签名——此项开启期间注册的客户端，或 HTTP 消息签名——会被拒绝，而不是用一个无人能获取的密钥来签名。它是为 JOSE 库无法解析 AKP 密钥或不认识这些算法的客户端和测试套件而设的，OpenID 一致性测试套件即是其一。**不受影响：**COSE（通行密钥）、XML 签名、TLS、证书算法、ML-KEM 加密密钥（`keys.encryptionKemAlgs`）、`hybrid-groups` 证书在 `x5c` 中携带的 ML-DSA 替代密钥（单独的 ML-DSA 密钥被移除，证书不会重新签发），以及 `oidfed.signingAlg`：指定 ML-DSA 联合密钥的领域仍用它签名自己的声明，但会拒绝要求它验证的 ML-DSA 声明，因此在这里请保持该设置为经典算法。"
+  },
   "keys.kidFormat|label": {
     "en": "67642fcf21c7ca50",
     "text": "签名令牌的 kid 格式"

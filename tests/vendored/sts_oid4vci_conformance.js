@@ -32,6 +32,12 @@
 // made on the user portal (`POST /account-api/credentials/offers`, #589),
 // signed in as the static portal signs in.
 //
+// EVERY PLAN TWICE (rcbj, 2026-10-23): as above, and as its classical twin
+// `<key>-cl`, in a realm with `keys.postQuantumSigning` off, judged with the
+// post-quantum ledger entries (PQ_ONLY) removed — the proof of compliance
+// with no post-quantum exemption (`conformance_suite.js`, THE CLASSICAL
+// TWINS).
+//
 // OWNED HERE (local: true): this repository's credential issuer.
 // ---------------------------------------------------------------------------
 
@@ -79,7 +85,7 @@ const VCI = { fapi_profile: "vci", credential_format: "sd_jwt_vc",
               grant_management: "disabled", openid: "plain_oauth",
               sender_constrain: "dpop", vci_credential_encryption: "plain" };
 
-const PLANS = [
+const PLANS = oidf.withClassicalTwins([
   { key: "vci-wallet", name: "oid4vci-1_0-issuer-test-plan",
     variant: Object.assign({ vci_authorization_code_flow_variant:
                                "wallet_initiated",
@@ -100,7 +106,7 @@ const PLANS = [
   { key: "haip", name: "oid4vci-1_0-issuer-haip-test-plan", haip: true,
     variant: { credential_format: "sd_jwt_vc", grant_management: "disabled",
                vci_authorization_code_flow_variant: "wallet_initiated" } }
-];
+]);
 
 const EXPECTED = {
   // HAIP's FAPI 2.0 module redeems a code twice and then expects the access
@@ -165,6 +171,13 @@ const KNOWN_FAILURES = {
     "status list token's key only from a header jwk, and this realm names " +
     "it by kid and x5c"
 };
+// THE ENTRIES ABOUT POST-QUANTUM KEYS AND ALGORITHMS, which a classical twin
+// is judged without (`oidf.ledgerFor()`): an AKP key the suite cannot parse,
+// and the three algorithm lists its JWS table cannot hold.
+const PQ_ONLY = ["WarnOnUnusableJwksKeys",
+                 "VCIValidateProofSigningAlgValuesSupported",
+                 "VCIValidateCredentialSigningAlgValuesSupported",
+                 "ValidateServerJWKs"];
 
 let checks = 0;
 function check(what, fn) {
@@ -190,7 +203,8 @@ async function prepare(plan) {
     ["oauth2.fapi", "2-security"], ["oauth2.openRegistration", true],
     ["oid4vci.walletUrl", offerEndpoint],
     ["oid4vci.walletIssuancePath", ""],
-    ["federation.outboundCaFile", oidf.suiteCaFile()]];
+    ["federation.outboundCaFile", oidf.suiteCaFile()]]
+    .concat(plan.settings || []);
   // THE SAME-DEVICE OFFER IS THIS JOB'S OWN since #594 (the operator), so
   // that plan's realm runs in whatever mode the stack does; it was a
   // development realm while the offer came from the demo issuer's page.
@@ -441,8 +455,10 @@ async function test() {
                       ((e && e.message) || e));
       continue;
     }
-    const judged = oidf.judge(plan.key, ran, EXPECTED, KNOWN_WARNINGS,
-                              KNOWN_FAILURES);
+    const judged = oidf.judge(plan.key, ran,
+                              oidf.ledgerFor(plan, EXPECTED, PQ_ONLY),
+                              oidf.ledgerFor(plan, KNOWN_WARNINGS, PQ_ONLY),
+                              oidf.ledgerFor(plan, KNOWN_FAILURES, PQ_ONLY));
     log.info("  " + plan.key + ": " + JSON.stringify(judged.counts) +
              ", plan " + oidf.SUITE + "plan-detail.html?plan=" + ran.planId);
     judged.unexplained.forEach(function (line) {
@@ -464,7 +480,8 @@ async function test() {
 
 new Command()
   .description("The OpenID Foundation conformance suite's OpenID4VCI " +
-    "issuer plans (#187), against this service.")
+    "issuer plans (#187), against this service — each also as its " +
+    "classical twin, post-quantum signing off.")
   .addOption(new Option("-u, --url <url>", "base url (unused: the " +
                                            "service's is the realm's)"))
   .parse(process.argv);

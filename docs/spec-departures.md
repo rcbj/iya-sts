@@ -112,7 +112,7 @@ The opt-in profiles are not departures while they are off. When one is turned on
 |---|---|---|---|
 | **Weaker.** A JWS verifies with an RSA key under 2048 bits, or an HMAC key shorter than the hash output. An empty HMAC key is refused. | [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518) section 3.2: an HMAC key at least the size of the hash output MUST be used. Section 3.3: an RSA key of 2048 bits or more MUST be used. | Refused | `global.mode` |
 
-Every realm's JWKS also publishes post-quantum keys (`kty` `AKP`) beside the classical ones, and the metadata algorithm lists include ML-DSA, SLH-DSA and composite algorithms, some of whose identifiers come from drafts. That conforms to [RFC 7517](https://www.rfc-editor.org/rfc/rfc7517) section 5, which says a consumer SHOULD ignore a key whose `kty` it does not understand; a consumer that instead rejects the whole set cannot read these JWKS, and the OpenID conformance suite warns about them.
+Every realm's JWKS also publishes post-quantum keys (`kty` `AKP`) beside the classical ones, and the metadata algorithm lists include ML-DSA, SLH-DSA and composite algorithms, some of whose identifiers come from drafts. That conforms to [RFC 7517](https://www.rfc-editor.org/rfc/rfc7517) section 5, which says a consumer SHOULD ignore a key whose `kty` it does not understand; a consumer that instead rejects the whole set cannot read these JWKS, and the OpenID conformance suite warns about them. A realm with `keys.postQuantumSigning` off publishes, advertises and accepts none of them ([Post-quantum signing, switched off](oauth-oidc.md#post-quantum-signing-switched-off)).
 
 ## OpenID Federation
 

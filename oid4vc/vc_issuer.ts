@@ -898,6 +898,12 @@ class VcIssuer {
         }
       }
     });
+    // `keys.postQuantumSigning` off (2026-10-23): every algorithm list in the
+    // document — each configuration's credential_signing_alg_values_supported
+    // (#664) and the proof types' proof_signing_alg_values_supported — to the
+    // classical algorithms, which are what this realm then signs and
+    // verifies. Last, so a list built above cannot be missed.
+    helpers.withoutPqSigningAlgs(meta);
 
     log.debug("Leaving VcIssuer.vciMetadata(). " +
               Object.keys(meta.credential_configurations_supported).length +

@@ -889,7 +889,11 @@ class Siop {
     log.debug("Leaving Siop.clientMetadata().");
     return {
       subject_syntax_types_supported: SUBJECT_SYNTAX_TYPES.slice(0),
-      id_token_signing_alg_values_supported: ID_TOKEN_ALGS.slice(0)
+      // The classical ones alone while `keys.postQuantumSigning` is off
+      // (2026-10-23); a post-quantum self-issued ID Token is refused at its
+      // verification then too.
+      id_token_signing_alg_values_supported:
+        helpers.offeredJwsAlgs(ID_TOKEN_ALGS)
     };
   }
 

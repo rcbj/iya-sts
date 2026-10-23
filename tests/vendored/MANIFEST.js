@@ -235,7 +235,10 @@ const CLIENT_SOURCE_DIR = path.join('client', 'src');
 //                      Connect job (42 min serially, and it runs its plans
 //                      CONFORMANCE_PLAN_CONCURRENCY at a time) and the FAPI
 //                      job (33 min) each have a lane alone; the other four
-//                      (19 min together) share `conformance-b`.
+//                      (19 min together) share `conformance-b`. Those times
+//                      are from before 2026-10-23, when every plan of the
+//                      OpenID Connect, Federation, OpenID4VCI and OpenID4VP
+//                      jobs gained a classical twin: about twice as long.
 //   exclusive: true    nothing else in the protocol half runs while this job
 //                      does: every lane drains first, and none starts again
 //                      until it ends. For a job that changes what EVERY other
@@ -1401,9 +1404,11 @@ const JOBS = [
   // `conformance: true` for the FAPI job's reason; the plans share
   // `conformance_suite.js` (LOCAL_HELPERS) and fail on an unexplained
   // WARNING as well as a FAILED module. `local: true`: this repository's
-  // OpenID Provider.
+  // OpenID Provider. Every plan also runs as its classical twin since
+  // 2026-10-23 (`conformance_suite.js`, THE CLASSICAL TWINS), which doubled
+  // the plans, so the watchdog went from three hours to four and a half.
   { file: 'sts_oidcc_conformance.js',    browser: true, local: true,
-    conformance: true, timeoutMs: 10800000, lane: 'conformance' },
+    conformance: true, timeoutMs: 16200000, lane: 'conformance' },
   // Shared Signals (#187): the transmitter and CAEP interop plans, push and
   // poll, the CAEP events emitted by the job as the module asks for them.
   { file: 'sts_ssf_oidf_conformance.js', browser: false, local: true,
@@ -1411,21 +1416,23 @@ const JOBS = [
     lane: 'conformance-b' },
   // OpenID Federation 1.1 (#187): the deployed-entity plan for a Leaf realm
   // and for the Trust Anchor, and the plan in which the suite plays a whole
-  // federation and a realm is the OpenID Provider that joined it.
+  // federation and a realm is the OpenID Provider that joined it. This job
+  // and the two below run each plan twice since 2026-10-23 (the classical
+  // twins), so their watchdogs went from one hour to two.
   { file: 'sts_oidfed_conformance.js',   browser: true, local: true,
-    conformance: true, timeoutMs: 3600000,
+    conformance: true, timeoutMs: 7200000,
     lane: 'conformance-b' },
   // OpenID4VCI 1.0 (#187): the issuer plan wallet-initiated, offered and
   // pre-authorized, and the HAIP issuer plan; the job plays the issuer's
   // operator, delivering the offer and the transaction code.
   { file: 'sts_oid4vci_conformance.js',  browser: true, local: true,
-    conformance: true, timeoutMs: 3600000,
+    conformance: true, timeoutMs: 7200000,
     lane: 'conformance-b' },
   // OpenID4VP 1.0 (#187): the verifier plan, by direct_post and
   // direct_post.jwt; the job plays the End-User the Verifier sends to the
   // wallet, and makes the suite's issuer key at run time.
   { file: 'sts_oid4vp_conformance.js',   browser: false, local: true,
-    conformance: true, timeoutMs: 3600000,
+    conformance: true, timeoutMs: 7200000,
     lane: 'conformance-b' },
   // THE SAML INTEROPERABILITY PEERS (#189-#192, 2026-09-24): four independent
   // SAML service providers, each a second container under the `saml-peers`

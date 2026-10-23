@@ -643,7 +643,16 @@ class VcDid {
                      publicKeyJwk: { kty: 'RSA', use: 'sig', alg: 'RS256',
                                      kid: own.kid, n: jwk.n, e: jwk.e } });
     });
-    const signer = await this.didSignerAsync();
+    // NOT A POST-QUANTUM ONE while `keys.postQuantumSigning` is off
+    // (2026-10-23): the realm then signs nothing with it — didSignerAsync()
+    // would be refused (STS-KEYS-0158) — and publishes it nowhere, so the
+    // document is the RSA key's and the rest below.
+    const credentialAlg = String(this.deps.config.value(
+      'oid4vci.credentialSigningAlgorithm') || 'RS256');
+    const pqOff = stsCrypto.isPqJwsAlg(credentialAlg) &&
+      !stsCrypto.postQuantumSigningOn();
+    const signer = pqOff ? { alg: 'RS256', key: STS.privateKey, kid: STS.kid }
+      : await this.didSignerAsync();
     if (signer.alg !== 'RS256' && signer.kid !== STS.kid) {
       const held = stsKeysFor();
       const extra = (held.extraKeys || []).concat(held.pqKeys || [])

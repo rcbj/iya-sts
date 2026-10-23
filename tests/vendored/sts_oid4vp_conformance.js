@@ -30,6 +30,12 @@
 // realm's `oid4vp.walletUrl` is the suite's authorization endpoint — and
 // follows the redirect to the suite.
 //
+// EVERY PLAN TWICE (rcbj, 2026-10-23): as above, and as its classical twin
+// `<key>-cl`, in a realm with `keys.postQuantumSigning` off, judged with the
+// post-quantum ledger entries (PQ_ONLY) removed — the proof of compliance
+// with no post-quantum exemption (`conformance_suite.js`, THE CLASSICAL
+// TWINS).
+//
 // OWNED HERE (local: true): this repository's Verifier.
 // ---------------------------------------------------------------------------
 
@@ -65,7 +71,7 @@ const TAG = STAMP.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 10);
 // EUDI PID — which the Verifier is told to ask for.
 const VCT = "urn:eudi:pid:1";
 
-const PLANS = [
+const PLANS = oidf.withClassicalTwins([
   { key: "vp-direct-post", name: "oid4vp-1final-verifier-test-plan",
     responseMode: "direct_post",
     variant: { vp_profile: "plain_vp", credential_format: "sd_jwt_vc",
@@ -102,7 +108,7 @@ const PLANS = [
                client_id_prefix: "x509_hash",
                request_method: "request_uri_signed",
                response_mode: "direct_post.jwt" } }
-];
+]);
 
 const EXPECTED = {};
 // Conditions whose WARNING this service keeps, and why — the same sentences
@@ -121,6 +127,10 @@ const KNOWN_FAILURES = {
   VP1FinalValidateVpFormatsSupportedInClientMetadata: "the suite's JWS " +
     "algorithm table lacks SLH-DSA and the composite ML-DSA algorithms"
 };
+// THE ENTRIES ABOUT POST-QUANTUM KEYS AND ALGORITHMS, which a classical twin
+// is judged without (`oidf.ledgerFor()`).
+const PQ_ONLY = ["WarnOnUnusableJwksKeys",
+                 "VP1FinalValidateVpFormatsSupportedInClientMetadata"];
 
 let checks = 0;
 function check(what, fn) {
@@ -145,7 +155,8 @@ async function prepare(plan) {
     // without one is admitted by `own-only` (the realm's own credentials
     // still need theirs).
     ["oid4vp.requireStatusReference", "own-only"],
-    ["federation.outboundCaFile", oidf.suiteCaFile()]]);
+    ["federation.outboundCaFile", oidf.suiteCaFile()]]
+    .concat(plan.settings || []));
   let client = { client_id: "redirect_uri:" + realm.base + "/oid4vp/response" };
   if (plan.prefix) {
     // #230: the Verifier's own certificate, and the anchor the suite checks
@@ -250,8 +261,10 @@ async function test() {
                       ((e && e.message) || e));
       continue;
     }
-    const judged = oidf.judge(plan.key, ran, EXPECTED, KNOWN_WARNINGS,
-                              KNOWN_FAILURES);
+    const judged = oidf.judge(plan.key, ran,
+                              oidf.ledgerFor(plan, EXPECTED, PQ_ONLY),
+                              oidf.ledgerFor(plan, KNOWN_WARNINGS, PQ_ONLY),
+                              oidf.ledgerFor(plan, KNOWN_FAILURES, PQ_ONLY));
     log.info("  " + plan.key + ": " + JSON.stringify(judged.counts) +
              ", plan " + oidf.SUITE + "plan-detail.html?plan=" + ran.planId);
     judged.unexplained.forEach(function (line) {
@@ -272,7 +285,8 @@ async function test() {
 
 new Command()
   .description("The OpenID Foundation conformance suite's OpenID4VP " +
-    "verifier plan (#187), against this service.")
+    "verifier plan (#187), against this service — each variant also as " +
+    "its classical twin, post-quantum signing off.")
   .addOption(new Option("-u, --url <url>", "base url (unused: this test " +
                                            "needs no browser)"))
   .parse(process.argv);

@@ -3161,6 +3161,177 @@ function offeredJweAlgs(base) {
 }
 
 // ---------------------------------------------------------------------------
+// POST-QUANTUM JOSE SIGNING, SWITCHED OFF IN A REALM (2026-10-23, rcbj):
+// `keys.postQuantumSigning`. `crypto.js` reads the setting
+// (`postQuantumSigningOn()`) and refuses a post-quantum JWS at verification;
+// these three apply the same answer to what this realm PUBLISHES, so that
+// what it advertises, what it publishes and what it accepts cannot disagree:
+//
+//   offeredJwsAlgs(list)          a list of JWS algorithms, narrowed — for a
+//                                 registration check and a list built in one
+//                                 place;
+//   withoutPqSigningAlgs(doc)     every `*alg_values_supported` and
+//                                 `*_alg_values` member of a metadata
+//                                 document, at any depth, narrowed — for the
+//                                 documents as they leave (discovery, RFC
+//                                 8414, the Entity Configuration, the
+//                                 OpenID4VCI and OpenID4VP metadata), so a
+//                                 member added later is covered without
+//                                 being remembered;
+//   withoutPqSigningKeys(jwks)    a JWK Set's keys without a post-quantum
+//                                 signing key, for `/oauth2/jwks` — the
+//                                 standby, pinned and signer-group keys too.
+//
+// Each answers its input untouched while the setting is on, which is the
+// default, so a realm that never turns it off sees nothing new. None touches
+// a JWE list: the ML-KEM algorithms are `keys.encryptionKemAlgs`' and
+// `keys.offerKemEncryption`'s.
+// ---------------------------------------------------------------------------
+/**
+ * The JWS algorithms of `base` this realm offers: all of them while
+ * `keys.postQuantumSigning` is on, the classical ones while it is off.
+ *
+ * @param base - the list to narrow; `JWS_SIGNING_ALGS` by default
+ * @returns the narrowed list, a new array
+ */
+function offeredJwsAlgs(base) {
+  log.debug("Entering offeredJwsAlgs().");
+  const list = base || stsCrypto.JWS_SIGNING_ALGS;
+  const on = stsCrypto.postQuantumSigningOn();
+  const out = list.filter(function (alg) {
+    return on || !stsCrypto.isPqJwsAlg(alg);
+  });
+  log.debug("Leaving offeredJwsAlgs(). " + out.length);
+  return out;
+}
+
+// A member whose value is a list of algorithms a document advertises: RFC
+// 8414's and OpenID Connect Discovery's `*_alg_values_supported` (OpenID4VCI's
+// `credential_signing_` and `proof_signing_alg_values_supported` among them),
+// and OpenID4VP Appendix B's `alg_values`, `sd-jwt_alg_values` and
+// `kb-jwt_alg_values`.
+const ALG_LIST_MEMBER = /(?:^|_)alg_values(?:_supported)?$/;
+
+// One value of a document, copied with every algorithm list in it narrowed.
+// COPIED rather than edited in place: a nested object may be a module's own
+// constant (a proof-types table, a configured metadata object), and narrowing
+// it once would narrow it for every realm afterwards.
+function narrowedAlgLists(name, value) {
+  log.debug("Entering narrowedAlgLists(). " + name);
+  if (Array.isArray(value)) {
+    const out = ALG_LIST_MEMBER.test(name)
+      ? value.filter(function (one) {
+          return typeof one !== 'string' || !stsCrypto.isPqJwsAlg(one);
+        })
+      : value.map(function (one) {
+          return narrowedAlgLists('', one);
+        });
+    log.debug("Leaving narrowedAlgLists(). A list.");
+    return out;
+  }
+  if (!value || typeof value !== 'object' ||
+      Object.getPrototypeOf(value) !== Object.prototype) {
+    log.debug("Leaving narrowedAlgLists(). Not a document.");
+    return value;
+  }
+  const out = {};
+  Object.keys(value).forEach(function (key) {
+    const narrowed = narrowedAlgLists(key, value[key]);
+    // A list that had algorithms and has none left is LEFT OUT rather than
+    // published empty: an empty `*_alg_values_supported` says "none", which
+    // is a different claim from the member's absence. (Classical algorithms
+    // remain in every list this service builds, so it is a guard.)
+    if (Array.isArray(narrowed) && !narrowed.length &&
+        Array.isArray(value[key]) && value[key].length &&
+        ALG_LIST_MEMBER.test(key)) {
+      return;
+    }
+    out[key] = narrowed;
+  });
+  log.debug("Leaving narrowedAlgLists(). A document.");
+  return out;
+}
+
+/**
+ * Narrows every algorithm list of a metadata document (`*alg_values_supported`
+ * and `*_alg_values`, at any depth) to the classical algorithms while
+ * `keys.postQuantumSigning` is off. The document's own members are replaced;
+ * nothing nested is edited in place.
+ *
+ * @param doc - the document
+ * @returns the same document
+ */
+function withoutPqSigningAlgs(doc) {
+  log.debug("Entering withoutPqSigningAlgs().");
+  if (!doc || typeof doc !== 'object' || stsCrypto.postQuantumSigningOn()) {
+    log.debug("Leaving withoutPqSigningAlgs(). Unchanged.");
+    return doc;
+  }
+  const narrowed = narrowedAlgLists('', doc);
+  Object.keys(doc).forEach(function (key) {
+    if (Object.prototype.hasOwnProperty.call(narrowed, key)) {
+      doc[key] = narrowed[key];
+    } else {
+      delete doc[key];
+    }
+  });
+  log.debug("Leaving withoutPqSigningAlgs(). Narrowed.");
+  return doc;
+}
+
+/**
+ * A JWK Set's keys without a post-quantum signing key while
+ * `keys.postQuantumSigning` is off: a key whose `alg` is one, or an AKP key
+ * that is not marked `use: "enc"` (the ML-KEM decryption keys are).
+ *
+ * @param keys - the public JWKs
+ * @returns the keys to publish
+ */
+function withoutPqSigningKeys(keys) {
+  log.debug("Entering withoutPqSigningKeys().");
+  if (stsCrypto.postQuantumSigningOn()) {
+    log.debug("Leaving withoutPqSigningKeys(). Unchanged.");
+    return keys;
+  }
+  const out = (keys || []).filter(function (jwk) {
+    return !(jwk && (stsCrypto.isPqJwsAlg(jwk.alg) ||
+                     (jwk.kty === 'AKP' && jwk.use !== 'enc')));
+  });
+  log.debug("Leaving withoutPqSigningKeys(). " + out.length + " of " +
+            (keys || []).length + ".");
+  return out;
+}
+
+// The refusal of a post-quantum SIGNATURE in a realm that has them off, or
+// null. Asked by `signingKeyFor()` and its asynchronous twin, which every
+// signer of a JOSE object (and of an HTTP message signature, whose key is the
+// JWKS's) goes through: the key would be one the realm no longer publishes,
+// so whatever it signed could be verified by nobody. Said once per realm in
+// the log, because the cause is configuration — a client registered for one
+// while it was on, or a configured algorithm — and not the request.
+const pqSignaturesRefusedSaid = new Set();
+
+function pqSignatureRefusal(alg) {
+  log.debug("Entering pqSignatureRefusal(). alg=" + alg);
+  if (!stsCrypto.isPqJwsAlg(alg) || stsCrypto.postQuantumSigningOn()) {
+    log.debug("Leaving pqSignatureRefusal(). Allowed.");
+    return null;
+  }
+  const realmId = String(realms.currentId());
+  if (!pqSignaturesRefusedSaid.has(realmId)) {
+    pqSignaturesRefusedSaid.add(realmId);
+    log.warn(errorCodes.tag('STS-KEYS-0158') + 'helpers: the "' + realmId +
+             '" realm was asked for a ' + alg + ' signature while ' +
+             'keys.postQuantumSigning is off there, and refused it; a client ' +
+             'or setting still names a post-quantum algorithm.');
+  }
+  log.debug("Leaving pqSignatureRefusal(). Refused.");
+  return errorCodes.mark(new Error('this realm does not sign with ' + alg +
+    ': keys.postQuantumSigning is off, so it publishes no post-quantum key ' +
+    'to verify the signature with.'), 'STS-KEYS-0158');
+}
+
+// ---------------------------------------------------------------------------
 // THE REQUEST OBJECT ENCRYPTION KEYS FOR A KEY SET, BACKFILLED WHERE THE SET WAS
 // WRITTEN BEFORE THEY EXISTED (2026-09-13). `refreshTokenKeysFor()` above, step
 // for step: ask whether some process already made them, make them in the set's
@@ -4019,7 +4190,8 @@ function groupSignerFor(useCaseId, alg, allowPq) {
   const grp = useCaseId ? signerGroups.groupForUseCase(useCaseId) : null;
   if (!spec || spec.family === 'hmac' || !grp ||
       !signerGroups.hybridGroupsOn() ||
-      (spec.family === 'pq' && !allowPq)) {
+      (spec.family === 'pq' &&
+       (!allowPq || !stsCrypto.postQuantumSigningOn()))) {
     log.debug("Leaving groupSignerFor(). Not a group signature.");
     return null;
   }
@@ -6612,6 +6784,66 @@ function certifySignerGroupsLater(realmId, members) {
   log.debug("Leaving certifySignerGroupsLater().");
 }
 
+// ---------------------------------------------------------------------------
+// THE SIGNER GROUPS ARE MINTED ONCE FOR THE CLUSTER (2026-10-23, the full
+// run). `keystore.joinSignerGroups()` lets the first generator win between
+// the processes of ONE node, through its shared copy; two nodes each found no
+// groups stored, each made and stored its own (the store keeping the last),
+// and each certified its own, so the JWKS a balancer answered alternated
+// between two sets and one was never certified (sts_signer_groups in cluster
+// mode waited three minutes for 28 certified keys). So the minting is a
+// claim, as `oidfed/federation_keys.ts` mints its keys: the winner makes
+// them, and a process that loses waits, bounded, for the winner's groups to
+// be held here. A claim the store could not answer, or a wait that ends
+// without them, makes them here, as before.
+// ---------------------------------------------------------------------------
+const SIGNER_GROUPS_MINT_SCOPE = 'keys.signer-groups-mint';
+const SIGNER_GROUPS_WAIT_MS = 15000;
+const SIGNER_GROUPS_POLL_MS = 100;
+
+/**
+ * Makes a key set's signer groups, or waits for another process's.
+ *
+ * @param keys - the realm's key set
+ * @returns a promise of the groups made here, or of null where another
+ *   process's are held now
+ */
+async function mintOrAwaitSignerGroups(keys) {
+  log.debug("Entering mintOrAwaitSignerGroups().");
+  let claimed = { ok: true };
+  if (keys.realm !== undefined) {
+    try {
+      claimed = await require('../cluster/cluster_claims').claim({
+        scope: SIGNER_GROUPS_MINT_SCOPE,
+        value: String(keys.realm) + ':' + String(keys.kid || ''),
+        realm: String(keys.realm), ttlMs: 60000 });
+    } catch (e) {
+      log.debug("Caught in mintOrAwaitSignerGroups(): " +
+                ((e && e.message) || e));
+      claimed = { ok: true };
+    }
+  }
+  if (!claimed.ok && claimed.reason === 'used') {
+    const deadline = Date.now() + SIGNER_GROUPS_WAIT_MS;
+    while (Date.now() < deadline) {
+      if ((keys.signerGroups || []).length) {
+        log.debug("Leaving mintOrAwaitSignerGroups(). Minted elsewhere.");
+        return null;
+      }
+      await new Promise(function (resolve) {
+        setTimeout(resolve, SIGNER_GROUPS_POLL_MS);
+      });
+    }
+    log.warn(errorCodes.tag('STS-CORE-0163') + 'helpers: another process ' +
+             'claimed the "' + keys.realm + '" realm\'s signer-group keys ' +
+             'and they did not arrive within ' + SIGNER_GROUPS_WAIT_MS +
+             'ms; they are made here.');
+  }
+  const made = await makeSignerGroupsAsync();
+  log.debug("Leaving mintOrAwaitSignerGroups(). Made here.");
+  return made;
+}
+
 /**
  * Returns a key set's signer-group keys, making them on libuv's thread pool
  * where they do not exist yet; concurrent callers share one generation.
@@ -6630,7 +6862,12 @@ function signerGroupsForAsync(keys) {
     return keys.signerGroupsPromise;
   }
   const started = Date.now();
-  keys.signerGroupsPromise = makeSignerGroupsAsync().then(function (made) {
+  keys.signerGroupsPromise = mintOrAwaitSignerGroups(keys).then(function (
+      made) {
+    if (made === null) {
+      // Another node or worker minted them, and they are held now.
+      return keys.signerGroups;
+    }
     if (!(keys.signerGroups || []).length) {
       keys.signerGroups = made;
       // Shared, written down and certified under the rules
@@ -7121,6 +7358,12 @@ function kidNamesKey(headerKid, internalKid) {
  */
 function signingKeyFor(alg, useCaseId) {
   log.debug("Entering signingKeyFor(). alg=" + alg);
+  // A post-quantum algorithm in a realm that has them off (2026-10-23).
+  const refused = pqSignatureRefusal(alg);
+  if (refused) {
+    log.debug("Leaving signingKeyFor(). Post-quantum signing is off.");
+    throw refused;
+  }
   // A PINNED key first, where the realm signs with one (#263): the operator
   // chose it for this algorithm, over the group key as well.
   const pinned = pinnedJoseSigner(alg, true);
@@ -7194,6 +7437,12 @@ function keyListFor(alg) {
  */
 function signingKeyForAsync(alg, useCaseId) {
   log.debug("Entering signingKeyForAsync(). alg=" + alg);
+  // See signingKeyFor().
+  const refused = pqSignatureRefusal(alg);
+  if (refused) {
+    log.debug("Leaving signingKeyForAsync(). Post-quantum signing is off.");
+    return Promise.reject(refused);
+  }
   let direct;
   try {
     // A pinned key first (#263), then a signer-group key (#68) — see
@@ -8300,6 +8549,9 @@ module.exports = {
   kemAlgsConfigured: kemAlgsConfigured,
   decryptableJweAlgs: decryptableJweAlgs,
   offeredJweAlgs: offeredJweAlgs,
+  offeredJwsAlgs: offeredJwsAlgs,
+  withoutPqSigningAlgs: withoutPqSigningAlgs,
+  withoutPqSigningKeys: withoutPqSigningKeys,
   browserDeviceKeysFor: browserDeviceKeysFor,
   vcApiKeysFor: vcApiKeysFor,
   vcApiKeyFor: vcApiKeyFor,

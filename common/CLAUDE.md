@@ -601,6 +601,55 @@ external references (this service fetches nothing a signed document names),
 XSLT, and the Decryption Transform. `tests/w3c_xmlsec.js`'s `EXCEPTIONS`
 names each.
 
+## POST-QUANTUM JOSE SIGNING AS A PER-REALM SWITCH (rcbj, 2026-10-23)
+
+**`keys.postQuantumSigning`, on by default, turns a realm into a classical
+JOSE issuer and verifier.** It exists so the OpenID conformance jobs can run
+every plan in such a realm with no post-quantum exemption in the ledger
+(`tests/CLAUDE.md`, *The classical twins*), and for any client whose JOSE
+library rejects an AKP key. The row in `config.js` says what it turns off and
+what it does not; this is where each piece is and why it is there.
+
+* **One reader, in the leaf**: `crypto.js`'s `postQuantumSigningOn()`, read
+  per call in the ambient realm, and `isPqJwsAlg()` (`family: 'pq'` in
+  `JWS_ALGS`, so the ML-KEM JWE algs are never caught). `crypto.js` may not
+  require `helpers.js` (rule 3r), so the filters live in `helpers.js` and
+  ask it.
+* **Inbound, at the one choke point**: `prepareVerification()` refuses a
+  post-quantum `alg` after the caller's own list and before the signature,
+  so EVERY JOSE verifier refuses it whatever list it was handed — request
+  objects, client assertions, DPoP, key proofs, presentations, federation
+  statements. `STS-KEYS-0157` is MARKED on the Error (`errorCodes.mark()`),
+  never put in its message: callers copy the message into an
+  `error_description`, and a code is never sent.
+* **Outbound, at the one choke point**: `signingKeyFor()` and its twin
+  refuse a post-quantum alg (`STS-KEYS-0158`, logged once per realm), which
+  every JOSE signer and the HTTP message signer go through — a signature made
+  with a key the realm no longer publishes verifies for nobody, and a client
+  that registered one while the setting was on is the case it catches.
+  `groupSignerFor()` offers no post-quantum group key either.
+* **What is published**: `withoutPqSigningKeys()` filters the FINISHED JWKS
+  list (every source at once — per-algorithm, standby, pinned, a signer
+  group's bare partner — so a source added later cannot be missed; `use:
+  "enc"` AKP keys stay); `withoutPqSigningAlgs()` narrows every
+  `*alg_values_supported` / `*_alg_values` member of a document at any depth
+  as it leaves (`oauth2.ts`'s `asMetadata()` and `oidcMetadata()`, before the
+  profile as the modes are; the Entity Configuration's protocol metadata;
+  the OpenID4VCI issuer metadata), COPYING nested objects rather than editing
+  them, since one may be a module constant; `offeredJwsAlgs()` narrows a
+  list built in one place (the verifier's `vp_formats_supported`, SIOP,
+  `/crypto/metadata`, and every registration check and option list in
+  `applications.js`, which refuse with their existing codes, as
+  `offeredJweAlgs()`'s do).
+* **Not changed, deliberately**: COSE, XML, TLS and certificates are not
+  JOSE; a `hybrid-groups` certificate keeps its ML-DSA alternative key (the
+  certificates are not reissued); `oidfed.signingAlg` is the federation
+  layer's own choice, so an ML-DSA federation key keeps signing — and that
+  realm then refuses ML-DSA statements it verifies, which the row tells an
+  operator to avoid rather than this code refusing the combination.
+
+`tests/pq_signing_switch.js` holds it.
+
 ## `crypto.js` SECTION 4a: POST-QUANTUM AND HPKE KEY ESTABLISHMENT (#82, 2026-09-27)
 
 **JWE had RSA-OAEP and ECDH-ES only, so every encrypted token this service

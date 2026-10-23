@@ -170,6 +170,29 @@ function under(dn, baseDn) {
 // *Assert against the whole list*). `q` narrows it the way the API does.
 async function directoryOf(realm, q) {
   log.debug("Entering directoryOf(). " + realm.id);
+  // THE WALK IS REPEATED UNTIL IT IS WHOLE, a few times (2026-10-23). Behind
+  // a cluster's balancer each page may be answered by either node, and one
+  // that has not yet converged with the other's latest writes answers a
+  // shorter page, so a walk found 51 of the 53 its first page counted. What
+  // this job asserts is that paging reaches every entry, not how fast two
+  // nodes converge.
+  let walked = null;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    walked = await directoryWalk(realm, q);
+    if (walked.entries.length === walked.count) {
+      break;
+    }
+    await new Promise(function (resolve) {
+      setTimeout(resolve, 1000);
+    });
+  }
+  log.debug("Leaving directoryOf(). " + walked.entries.length + " entries.");
+  return walked;
+}
+
+// One walk of a realm's directory, page by page.
+async function directoryWalk(realm, q) {
+  log.debug("Entering directoryWalk(). " + realm.id);
   const entries = [];
   let page = 1;
   let first = null;
@@ -186,7 +209,7 @@ async function directoryOf(realm, q) {
     }
     page += 1;
   }
-  log.debug("Leaving directoryOf(). " + entries.length + " entries.");
+  log.debug("Leaving directoryWalk(). " + entries.length + " entries.");
   return { baseDn: String(first.baseDn || ""), count: first.count,
            entries: entries };
 }
