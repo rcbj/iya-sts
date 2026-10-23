@@ -782,6 +782,13 @@ class Oidfed {
       out.openid_credential_verifier =
         this.withoutNulls(v.federationVerifierMetadata(req));
     }
+    // `keys.postQuantumSigning` off (2026-10-23): every algorithm list of
+    // every entity type narrowed to the classical algorithms — the
+    // `request_authentication_signing_alg_values_supported` added above
+    // included, which the documents it came from never carried. The
+    // federation's OWN keys and statements are `oidfed.signingAlg`'s and are
+    // not touched (the setting's description says so).
+    helpers.withoutPqSigningAlgs(out);
     log.debug("Leaving Oidfed.protocolMetadata(). " +
               Object.keys(out).join(', '));
     return out;

@@ -1275,6 +1275,14 @@
     "en": "16bd897eb9c3284a",
     "text": "Indique si les algorithmes JWE ML-KEM et HPKE (#82 — des drafts, voir keys.encryptionKemAlgs) sont proposés là où ce domaine chiffre POUR une clé que détient un client ou un portefeuille : annoncés dans `userinfo_encryption_alg_values_supported`, `id_token_encryption_alg_values_supported`, `authorization_encryption_alg_values_supported` (JARM), `introspection_encryption_alg_values_supported` et le `credential_response_encryption` d’un émetteur OpenID4VCI, et acceptés lorsqu’un client en enregistre un ou qu’un portefeuille en nomme un. **Désactivé par défaut, et au choix d’un administrateur :** ces algorithmes proviennent d’Internet-Drafts, et un client ou une suite de conformité qui essaie chaque algorithme annoncé en rencontre qu’il ne connaît pas. Un client déjà enregistré pour l’un d’eux conserve son enregistrement ; avec ce paramètre désactivé, sa prochaine réponse chiffrée est refusée, comme pour tout algorithme que ce domaine ne propose pas."
   },
+  "keys.postQuantumSigning|label": {
+    "en": "34883416ca94e446",
+    "text": "Signature post-quantique"
+  },
+  "keys.postQuantumSigning|description": {
+    "en": "68ffd5da182ec911",
+    "text": "Indique si ce domaine signe, publie et vérifie les algorithmes JWS post-quantiques et composites (ML-DSA, SLH-DSA et les ML-DSA composites). **Activé par défaut.** Désactivé : aucune clé de signature post-quantique ne figure dans `/oauth2/jwks` ni dans le document DID (clés en attente, épinglées et de groupe de signataires comprises) ; aucun algorithme post-quantique ne figure dans une liste `*_alg_values_supported` ou `*_alg_values` des documents de découverte, du serveur d’autorisation, d’OpenID Federation, d’OpenID4VCI et d’OpenID4VP ; un JWS signé avec l’un d’eux est refusé partout où ce domaine en vérifie un ; un client ne peut pas en enregistrer un ; et une signature qui en exigerait encore un — pour un client enregistré pendant que ce paramètre était activé, ou une signature de message HTTP — est refusée plutôt que faite avec une clé que personne ne peut récupérer. Il existe pour les clients et les suites de tests dont les bibliothèques JOSE ne savent pas lire une clé AKP ou ne connaissent pas ces algorithmes, la suite de conformité OpenID parmi elles. **Inchangés :** COSE (clés d’accès), les signatures XML, TLS, les algorithmes de certificat, les clés de chiffrement ML-KEM (`keys.encryptionKemAlgs`), la clé alternative ML-DSA qu’un certificat `hybrid-groups` porte dans `x5c` (les clés ML-DSA nues sont retirées, les certificats ne sont pas réémis), et `oidfed.signingAlg` : un domaine qui nomme une clé de fédération ML-DSA continue d’en signer ses déclarations mais refuse une déclaration ML-DSA qu’on lui demande de vérifier, alors gardez ce paramètre classique ici."
+  },
   "keys.kidFormat|label": {
     "en": "67642fcf21c7ca50",
     "text": "Format du kid des jetons signés"

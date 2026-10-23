@@ -2364,6 +2364,11 @@ class OAuth2Server {
     // FAPI (#138): S256 alone, and the confidential client authentication
     // methods the profile allows.
     fapi.applyToMetadata(metadata);
+    // `keys.postQuantumSigning` off (2026-10-23): no post-quantum JWS
+    // algorithm in any `*_alg_values_supported` list — the same narrowing
+    // the JWKS and the verifiers apply. Before the profile, as the two modes
+    // above are, for the reason given below.
+    helpers.withoutPqSigningAlgs(metadata);
     // The PROFILE, last, so it can override anything above it — including what
     // RFC 9700 mode just narrowed. That order is deliberate and it is the one a
     // reader of the form expects: a profile is somebody saying "publish this",
@@ -3310,6 +3315,11 @@ class OAuth2Server {
                   this.deps.identityAssurance.discoveryMetadata());
     // OPENID CONNECT NATIVE SSO section 5 (#130).
     metadata.native_sso_supported = true;
+    // `keys.postQuantumSigning` off (2026-10-23): asMetadata() narrowed its
+    // own lists, and the OpenID Connect members merged since — the ID Token,
+    // UserInfo and request object lists among them — are narrowed here,
+    // before the profile, as there.
+    helpers.withoutPqSigningAlgs(metadata);
     // THE PROFILE, AGAIN, and it has to be applied twice.
     //
     // asMetadata() applied it already — and then the Object.assign above
@@ -3464,7 +3474,15 @@ class OAuth2Server {
         // signing algorithm advertised with no published key to check it
         // against is worse than one not offered at all: the client gets a
         // signature it cannot verify and reports a broken issuer.
-        keys: joseKid.withThumbprintUriEntries([{
+        //
+        // **AND WITH `keys.postQuantumSigning` OFF (2026-10-23) NO
+        // POST-QUANTUM SIGNING KEY AT ALL**: the whole list below goes through
+        // `helpers.withoutPqSigningKeys()`, so the per-algorithm keys, their
+        // standby generations, the pinned keys and a signer group's bare
+        // ML-DSA partner all leave together — filtering the finished list
+        // rather than each source is what keeps a source added later from
+        // being missed. The ML-KEM decryption keys stay (`use: "enc"`).
+        keys: helpers.withoutPqSigningKeys(joseKid.withThumbprintUriEntries([{
           kty: 'RSA', use: 'sig', kid: STS.kid,
           n: b64u(pub.n.toString(16)), e: b64u(pub.e.toString(16)),
           // **THE CHAIN AND NOT ONLY THE LEAF, SINCE 2026-09-11.** RFC 7517
@@ -3535,7 +3553,7 @@ class OAuth2Server {
         // one without the key.
           .concat(helpers.kemEncryptionKeysFor().map(function (one) {
             return stsCrypto.publicJweKemJwk(one.publicJwk);
-          }))
+          })))
       }, null, 2));
       log.debug("Leaving OAuth2Server.sendJwks().");
     } catch (e) {

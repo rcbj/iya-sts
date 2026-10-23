@@ -1763,11 +1763,16 @@ class VcVerifier {
   private vpFormatsSupported(): any {
     const { log, vcDataIntegrity } = this.deps;
     log.debug("Entering VcVerifier.vpFormatsSupported().");
+    // The classical ones alone while `keys.postQuantumSigning` is off
+    // (2026-10-23): every place this object is published — the request's
+    // `client_metadata`, the verifier metadata, the Entity Configuration —
+    // reads it here, and the verification refuses the rest anyway.
+    const algs = helpers.offeredJwsAlgs(ALL_ALGS);
     log.debug("Leaving VcVerifier.vpFormatsSupported().");
     return {
-      'dc+sd-jwt': { 'sd-jwt_alg_values': ALL_ALGS,
-                     'kb-jwt_alg_values': ALL_ALGS },
-      'jwt_vc_json': { alg_values: ALL_ALGS },
+      'dc+sd-jwt': { 'sd-jwt_alg_values': algs,
+                     'kb-jwt_alg_values': algs },
+      'jwt_vc_json': { alg_values: algs },
       'ldp_vc': { proof_type_values: ['DataIntegrityProof'],
                   cryptosuite_values: ['bbs-2023'].concat(
                     vcDataIntegrity.SUPPORTED_CRYPTOSUITES) }

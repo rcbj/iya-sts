@@ -1275,6 +1275,14 @@
     "en": "16bd897eb9c3284a",
     "text": "Si los algoritmos JWE ML-KEM y HPKE (#82 — borradores, consulte keys.encryptionKemAlgs) se ofrecen cuando este dominio cifra PARA una clave que tiene un cliente o una billetera: anunciados en `userinfo_encryption_alg_values_supported`, `id_token_encryption_alg_values_supported`, `authorization_encryption_alg_values_supported` (JARM), `introspection_encryption_alg_values_supported` y el `credential_response_encryption` de un emisor OpenID4VCI, y aceptados cuando un cliente registra uno o una billetera nombra uno. **Desactivado de forma predeterminada, y decisión de un administrador:** estos algoritmos proceden de Internet-Drafts, y un cliente o una suite de conformidad que prueba cada algoritmo anunciado se encuentra con algunos que no conoce. Un cliente ya registrado para uno conserva su registro; con esto desactivado su siguiente respuesta cifrada se rechaza, como para cualquier algoritmo que este dominio no ofrezca."
   },
+  "keys.postQuantumSigning|label": {
+    "en": "34883416ca94e446",
+    "text": "Firma poscuántica"
+  },
+  "keys.postQuantumSigning|description": {
+    "en": "68ffd5da182ec911",
+    "text": "Si este dominio firma, publica y verifica los algoritmos JWS poscuánticos y compuestos (ML-DSA, SLH-DSA y los ML-DSA compuestos). **Activado de forma predeterminada.** Desactivado: no hay ninguna clave de firma poscuántica en `/oauth2/jwks` ni en el documento DID (incluidas las claves en espera, fijadas y de grupo de firmantes); ningún algoritmo poscuántico aparece en ninguna lista `*_alg_values_supported` o `*_alg_values` de los documentos de descubrimiento, del servidor de autorización, de OpenID Federation, de OpenID4VCI y de OpenID4VP; un JWS firmado con uno se rechaza dondequiera que este dominio verifique uno; un cliente no puede registrar uno; y una firma que todavía necesitaría uno — para un cliente registrado mientras esto estaba activado, o una firma de mensaje HTTP — se rechaza en lugar de hacerse con una clave que nadie puede obtener. Existe para los clientes y las suites de pruebas cuyas bibliotecas JOSE no pueden leer una clave AKP o no conocen estos algoritmos, entre ellas la suite de conformidad de OpenID. **Sin cambios:** COSE (claves de acceso), las firmas XML, TLS, los algoritmos de certificado, las claves de cifrado ML-KEM (`keys.encryptionKemAlgs`), la clave alternativa ML-DSA que un certificado `hybrid-groups` lleva en `x5c` (las claves ML-DSA sueltas se retiran, los certificados no se vuelven a emitir) y `oidfed.signingAlg`: un dominio que nombra una clave de federación ML-DSA sigue firmando sus declaraciones con ella pero rechaza una declaración ML-DSA que se le pide verificar, así que mantenga ese ajuste clásico aquí."
+  },
   "keys.kidFormat|label": {
     "en": "67642fcf21c7ca50",
     "text": "Formato del kid de los tokens firmados"

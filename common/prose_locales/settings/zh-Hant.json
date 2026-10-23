@@ -1275,6 +1275,14 @@
     "en": "16bd897eb9c3284a",
     "text": "在此領域加密「給」用戶端或錢包所持金鑰的場合，是否提供 ML-KEM 與 HPKE JWE 演算法（#82——草案，請參閱 keys.encryptionKemAlgs）：在 `userinfo_encryption_alg_values_supported`、`id_token_encryption_alg_values_supported`、`authorization_encryption_alg_values_supported`（JARM）、`introspection_encryption_alg_values_supported` 以及 OpenID4VCI 簽發者的 `credential_response_encryption` 中公告，並在用戶端註冊或錢包指名時接受。**預設為關閉，由管理員選擇：**這些演算法出自 Internet-Draft，而嘗試每個公告演算法的用戶端或一致性測試套件會碰上它不認識的演算法。已為其中之一註冊的用戶端會保留其註冊；此設定關閉時，其下一個加密回應會被拒絕，如同此領域不提供的任何演算法。"
   },
+  "keys.postQuantumSigning|label": {
+    "en": "34883416ca94e446",
+    "text": "後量子簽章"
+  },
+  "keys.postQuantumSigning|description": {
+    "en": "68ffd5da182ec911",
+    "text": "此領域是否簽署、發布並驗證後量子與複合 JWS 演算法（ML-DSA、SLH-DSA 以及複合 ML-DSA 演算法）。**預設為開啟。**關閉時：`/oauth2/jwks` 與 DID 文件中沒有任何後量子簽章金鑰（包括待命、釘選與簽署者群組金鑰）；探索文件、授權伺服器、OpenID Federation、OpenID4VCI 與 OpenID4VP 文件的任何 `*_alg_values_supported` 或 `*_alg_values` 清單中都沒有後量子演算法；以其中之一簽署的 JWS 在此領域驗證 JWS 的任何地方都會被拒絕；用戶端不能註冊其中之一；而仍需要其中之一的簽章——此設定開啟期間註冊的用戶端，或 HTTP 訊息簽章——會被拒絕，而不是用一把無人能取得的金鑰簽署。它是為 JOSE 程式庫無法解析 AKP 金鑰或不認識這些演算法的用戶端與測試套件而設，OpenID 一致性測試套件即為其一。**不受影響：**COSE（通行金鑰）、XML 簽章、TLS、憑證演算法、ML-KEM 加密金鑰（`keys.encryptionKemAlgs`）、`hybrid-groups` 憑證在 `x5c` 中攜帶的 ML-DSA 替代金鑰（單獨的 ML-DSA 金鑰會被移除，憑證不會重新簽發），以及 `oidfed.signingAlg`：指名 ML-DSA 聯盟金鑰的領域仍以它簽署自己的聲明，卻會拒絕要求它驗證的 ML-DSA 聲明，因此請在此將該設定維持為傳統演算法。"
+  },
   "keys.kidFormat|label": {
     "en": "67642fcf21c7ca50",
     "text": "已簽署權杖的 kid 格式"

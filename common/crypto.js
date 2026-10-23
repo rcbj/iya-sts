@@ -3241,6 +3241,50 @@ function tokenClockSkew() {
 }
 
 // ---------------------------------------------------------------------------
+// POST-QUANTUM JOSE SIGNING, PER REALM (2026-10-23, rcbj):
+// `keys.postQuantumSigning`.
+//
+// THE ONE READER of the setting, here because this file is where every JWS is
+// verified and it already holds `config` — and it must stay a LEAF, so the
+// filters that apply the answer to a list, a document and a JWK Set live in
+// `helpers.js` and ask this. Read per call, in the ambient realm, never at
+// load: it is a runtime setting, and a realm switched off answers off from
+// its next request.
+//
+// What "post-quantum" means is this file's own table: `family: 'pq'`, which is
+// every algorithm `pq_jose.js` speaks (ML-DSA, SLH-DSA and the composites).
+// The ML-KEM JWE algorithms are not JWS algorithms and are not touched.
+// ---------------------------------------------------------------------------
+/**
+ * Tells whether the ambient realm signs, publishes and verifies the
+ * post-quantum and composite JWS algorithms (`keys.postQuantumSigning`, on by
+ * default).
+ *
+ * @returns false only when the setting is off
+ */
+function postQuantumSigningOn() {
+  log.debug("Entering postQuantumSigningOn().");
+  const on = config.value('keys.postQuantumSigning') !== false;
+  log.debug("Leaving postQuantumSigningOn(). " + on);
+  return on;
+}
+
+/**
+ * Tells whether a JWS algorithm is one of the post-quantum or composite ones
+ * (`family: 'pq'` in `JWS_ALGS`).
+ *
+ * @param alg - a JOSE algorithm name
+ * @returns true for ML-DSA, SLH-DSA and the composite ML-DSA algorithms
+ */
+function isPqJwsAlg(alg) {
+  log.debug("Entering isPqJwsAlg().");
+  const spec = Object.prototype.hasOwnProperty.call(JWS_ALGS, String(alg))
+    ? JWS_ALGS[String(alg)] : null;
+  log.debug("Leaving isPqJwsAlg().");
+  return !!spec && spec.family === 'pq';
+}
+
+// ---------------------------------------------------------------------------
 // VERIFY A JWS. `key` is whatever jsonwebtoken will verify with: this service's
 // own certificate PEM, a client's registered public key, a shared secret.
 //
@@ -3480,6 +3524,19 @@ function prepareVerification(token, key, options) {
     throw new Error('this JWS is signed with "' + header.alg + '" and only ' +
       allowed.join(', ') + ' ' + (allowed.length === 1 ? 'is' : 'are') +
       ' accepted here.');
+  }
+  // A POST-QUANTUM JWS IN A REALM THAT HAS THEM OFF (`keys.postQuantumSigning`,
+  // 2026-10-23) is refused HERE, after the caller's own list and before the
+  // signature: every JOSE verifier in this service comes through this
+  // function, so none of them can accept what the realm no longer publishes
+  // or advertises, whatever list it was handed. The code is marked on the
+  // Error, never put in its message — callers copy the message into an
+  // `error_description`, and a code is never sent (`error_codes.js`, rule 1).
+  if (isPqJwsAlg(header.alg) && !postQuantumSigningOn()) {
+    log.debug('Leaving prepareVerification(). Post-quantum signing is off.');
+    throw errorCodes.mark(new Error('this JWS is signed with "' +
+      header.alg + '", a post-quantum algorithm this realm does not ' +
+      'accept (keys.postQuantumSigning is off).'), 'STS-KEYS-0157');
   }
   const spec = jwsSpec(header.alg);
   const prepared = {
@@ -16796,6 +16853,8 @@ module.exports = {
   jwsSpec: jwsSpec,
   protectedHeaderFor: protectedHeaderFor,
   verifyCompactJws: verifyCompactJws,
+  postQuantumSigningOn: postQuantumSigningOn,
+  isPqJwsAlg: isPqJwsAlg,
   // The byte-level halves of the JOSE doors (#202): what external test
   // vectors are held to. See each function's head.
   jwsSignatureValid: jwsSignatureValid,

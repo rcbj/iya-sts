@@ -1193,6 +1193,34 @@ derived from the same table, so what is advertised is what is accepted.
   `kid`s whatever it says, so a verifier follows the `kid` and a cached JWKS
   never changes shape.
 
+#### Post-quantum signing, switched off
+
+**`keys.postQuantumSigning`** (Key material, per realm, **on by default**)
+turns the eleven post-quantum algorithms off in one realm, for a client whose
+JOSE library rejects a JWK Set containing an `AKP` key or a metadata list
+naming an algorithm it does not know. With it off, the realm is a classical
+JOSE issuer and verifier:
+
+* `/oauth2/jwks` carries no post-quantum signing key — the per-algorithm keys,
+  their standby and retired generations, pinned keys and a signer group's bare
+  ML-DSA key all leave together. The ML-KEM decryption keys
+  (`keys.encryptionKemAlgs`, `use: "enc"`) stay.
+* No algorithm list of the OpenID Connect Discovery, RFC 8414, OpenID
+  Federation, OpenID4VCI or OpenID4VP documents names one, and nor does the
+  DID document's key list.
+* A JWS signed with one is refused wherever the realm verifies one: request
+  objects, client assertions, DPoP proofs, key proofs, presentations,
+  federation statements.
+* A client cannot register one, and a client that registered one while the
+  setting was on is refused the response it would need signed, rather than
+  sent a signature made with a key the realm no longer publishes.
+
+Passkeys (COSE), XML signatures, TLS and certificates are not affected; a
+`hybrid-groups` certificate still carries its ML-DSA alternative key in
+`x5c`. The OpenID conformance jobs run every plan twice, once in a realm with
+the setting on and once with it off, so the second run is the evidence of a
+clean result with no post-quantum exemption.
+
 ### Custom claims — `/admin/claims`
 
 **Protocols → OAuth2 / OIDC → Custom claims** says what to add to every access

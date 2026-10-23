@@ -273,6 +273,7 @@ var config = {
     signerModel: "per-algorithm",      // Signer model
     encryptionKemAlgs: "",             // Post-quantum / hybrid decryption keys
     offerKemEncryption: false,         // Offer post-quantum / hybrid encryption to clients
+    postQuantumSigning: true,          // Post-quantum signing
     kidFormat: "internal",             // Signed token kid format
     kekProvider: "file",               // Key-encryption key provider; restart to apply
     kekTransitMount: "transit",        // Transit engine mount; restart to apply

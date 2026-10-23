@@ -3271,6 +3271,46 @@ const SETTINGS = [
                  'registered for one keeps its registration; with this off ' +
                  'its next encrypted response is refused, as for any ' +
                  'algorithm this realm does not offer.' },
+  // POST-QUANTUM JOSE SIGNING AS A SWITCH (2026-10-23, rcbj). The realm signs,
+  // publishes and verifies the ML-DSA, SLH-DSA and composite ML-DSA JWS
+  // algorithms by default, and a client whose JOSE library cannot parse an
+  // AKP key — the OpenID conformance suite's nimbus is one, and its JWS table
+  // lacks SLH-DSA and the composites — meets keys and list entries it cannot
+  // read. With this off the realm is a CLASSICAL JOSE issuer and verifier,
+  // which is what the conformance jobs' `-cl` twins run to prove compliance
+  // with no post-quantum exemption (`tests/CLAUDE.md`, *The classical
+  // twins*). One reader: `common/crypto.js`'s `postQuantumSigningOn()`, at
+  // request time; `common/helpers.js`'s three filters apply it to a list, a
+  // document and a JWK Set, and `signingKeyFor()` refuses the signature.
+  { key: 'keys.postQuantumSigning', group: 'Key material',
+    label: 'Post-quantum signing',
+    path: 'keys.postQuantumSigning', env: 'STS_KEYS_POST_QUANTUM_SIGNING',
+    type: 'bool', dflt: true, runtime: true,
+    description: 'Whether this realm signs, publishes and verifies the ' +
+                 'post-quantum and composite JWS algorithms (ML-DSA, ' +
+                 'SLH-DSA and the composite ML-DSA ones). **On by ' +
+                 'default.** Off: no post-quantum signing key is in ' +
+                 '`/oauth2/jwks` or the DID document (standby, pinned and ' +
+                 'signer-group keys included); no post-quantum algorithm is ' +
+                 'in any `*_alg_values_supported` or `*_alg_values` list of ' +
+                 'the discovery, authorization server, OpenID Federation, ' +
+                 'OpenID4VCI and OpenID4VP documents; a JWS signed with one ' +
+                 'is refused wherever this realm verifies one; a client may ' +
+                 'not register one; and a signature one would still need — ' +
+                 'for a client registered while this was on, or an HTTP ' +
+                 'message signature — is refused rather than made with a ' +
+                 'key nobody can fetch. It exists for clients and test ' +
+                 'suites whose JOSE libraries cannot parse an AKP key or do ' +
+                 'not know these algorithms, the OpenID conformance suite ' +
+                 'among them. **Not changed:** COSE (passkeys), XML ' +
+                 'signatures, TLS, certificate algorithms, the ML-KEM ' +
+                 'encryption keys (`keys.encryptionKemAlgs`), the ML-DSA ' +
+                 'alternative key a `hybrid-groups` certificate carries in ' +
+                 '`x5c` (the bare ML-DSA keys are dropped, the certificates ' +
+                 'are not reissued), and `oidfed.signingAlg`: a realm that ' +
+                 'names an ML-DSA federation key keeps signing its ' +
+                 'statements with it but refuses an ML-DSA statement it is ' +
+                 'asked to verify, so leave that setting classical here.' },
   { key: 'keys.kidFormat', group: 'Key material',
     label: 'Signed token kid format',
     path: 'keys.kidFormat', env: 'STS_KEYS_KID_FORMAT', type: 'enum',

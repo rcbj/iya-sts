@@ -3218,6 +3218,23 @@ const CODES = [
       'no argon2 in this runtime, or parameters outside the bounds this ' +
       'service computes — and was treated as no match.',
     spec: '' },
+  { code: 'STS-KEYS-0157',
+    summary: 'A JWS signed with a post-quantum or composite algorithm ' +
+      '(ML-DSA, SLH-DSA, composite ML-DSA) was presented to a realm whose ' +
+      'keys.postQuantumSigning is off, and was refused before its signature ' +
+      'was checked.',
+    spec: 'the caller\'s refusal: each protocol answers it as it answers a ' +
+      'JWS whose algorithm it does not accept (invalid_request_object, ' +
+      'invalid_client, invalid_grant, invalid_dpop_proof, invalid_proof and ' +
+      'the like)' },
+  { code: 'STS-KEYS-0158',
+    summary: 'A signature with a post-quantum or composite JWS algorithm ' +
+      'was asked of a realm whose keys.postQuantumSigning is off — a client ' +
+      'registered for one while it was on, a configured credential, ' +
+      'metadata or HTTP message signature algorithm — and was refused ' +
+      'rather than made with a key the realm no longer publishes.',
+    spec: 'the caller\'s: the response that needed the signature fails as ' +
+      'it does for an algorithm this realm holds no key for' },
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
       'service cannot use, so its Issuing CA was built with the ' +

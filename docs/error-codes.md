@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4588** of them, in **47** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4590** of them, in **47** subsystems.
 
 ## Where a code appears
 
@@ -57,7 +57,7 @@ is an ordinary outcome.
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 32
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 20
-* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 145
+* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 147
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 206
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 56
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
@@ -723,6 +723,8 @@ Raised from: common/crypto.js, common/pq_jose.js, common/keystore.js, common/sec
 | `STS-KEYS-0154` | A response signature covers a ;req component, and no request message was given to read it from (RFC 9421 section 2.4). | the caller's: a signing resource server's defect, logged; a client verifying a response refuses it |
 | `STS-KEYS-0155` | This runtime has no argon2 (node before 24.7), so a new password was hashed with scrypt at the password policy's scrypt parameters instead of argon2id. Logged once per process. | — |
 | `STS-KEYS-0156` | A stored argon2id password hash could not be computed here — no argon2 in this runtime, or parameters outside the bounds this service computes — and was treated as no match. | — |
+| `STS-KEYS-0157` | A JWS signed with a post-quantum or composite algorithm (ML-DSA, SLH-DSA, composite ML-DSA) was presented to a realm whose keys.postQuantumSigning is off, and was refused before its signature was checked. | the caller's refusal: each protocol answers it as it answers a JWS whose algorithm it does not accept (invalid_request_object, invalid_client, invalid_grant, invalid_dpop_proof, invalid_proof and the like) |
+| `STS-KEYS-0158` | A signature with a post-quantum or composite JWS algorithm was asked of a realm whose keys.postQuantumSigning is off — a client registered for one while it was on, a configured credential, metadata or HTTP message signature algorithm — and was refused rather than made with a key the realm no longer publishes. | the caller's: the response that needed the signature fails as it does for an algorithm this realm holds no key for |
 
 ## STS-PKI
 

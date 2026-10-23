@@ -5949,17 +5949,20 @@ const ATTRIBUTE_CHOICES = {
   oauthBackchannelTokenDeliveryMode: function () {
     return ['poll', 'ping', 'push'];
   },
+  // The JWS lists below are narrowed to the classical algorithms while
+  // `keys.postQuantumSigning` is off (helpers.offeredJwsAlgs(), 2026-10-23),
+  // as the registration checks they come from are.
   oauthBackchannelAuthenticationRequestSigningAlg: function () {
-    return stsCrypto.JWS_ASYMMETRIC_ALGS.slice(0);
+    return helpers.offeredJwsAlgs(stsCrypto.JWS_ASYMMETRIC_ALGS);
   },
   oauthSubjectType: function () {
     return ['public', 'pairwise', 'ephemeral'];
   },
   oauthTokenEndpointAuthSigningAlg: function () {
-    return stsCrypto.JWS_SIGNING_ALGS.slice(0);
+    return helpers.offeredJwsAlgs(stsCrypto.JWS_SIGNING_ALGS);
   },
   oauthIntrospectionSignedResponseAlg: function () {
-    return INTROSPECTION_SIGNING_ALGS.slice(0);
+    return helpers.offeredJwsAlgs(INTROSPECTION_SIGNING_ALGS);
   },
   oauthIntrospectionEncryptedResponseAlg: function () {
     return helpers.offeredJweAlgs(INTROSPECTION_ENCRYPTION_ALGS);
@@ -5968,7 +5971,7 @@ const ATTRIBUTE_CHOICES = {
     return INTROSPECTION_ENCRYPTION_ENCS.slice(0);
   },
   oauthRequestObjectSigningAlg: function () {
-    return REQUEST_OBJECT_SIGNING_ALGS.concat(
+    return helpers.offeredJwsAlgs(REQUEST_OBJECT_SIGNING_ALGS).concat(
       mode.acceptsUnsignedRequestObjects() ? ['none'] : []);
   },
   oauthRequestObjectEncryptionAlg: function () {
@@ -5980,7 +5983,7 @@ const ATTRIBUTE_CHOICES = {
   // #290's nine algorithms, from the lists clientResponseMetadataProblem()
   // checks.
   oauthIdTokenSignedResponseAlg: function () {
-    return stsCrypto.JWS_SIGNING_ALGS.slice(0);
+    return helpers.offeredJwsAlgs(stsCrypto.JWS_SIGNING_ALGS);
   },
   oauthIdTokenEncryptedResponseAlg: function () {
     return helpers.offeredJweAlgs(ID_TOKEN_ENCRYPTION_ALGS);
@@ -5989,7 +5992,7 @@ const ATTRIBUTE_CHOICES = {
     return ID_TOKEN_ENCRYPTION_ENCS.slice(0);
   },
   oauthUserinfoSignedResponseAlg: function () {
-    return USERINFO_SIGNING_ALGS.slice(0);
+    return helpers.offeredJwsAlgs(USERINFO_SIGNING_ALGS);
   },
   oauthUserinfoEncryptedResponseAlg: function () {
     return helpers.offeredJweAlgs(ID_TOKEN_ENCRYPTION_ALGS);
@@ -5998,7 +6001,7 @@ const ATTRIBUTE_CHOICES = {
     return ID_TOKEN_ENCRYPTION_ENCS.slice(0);
   },
   oauthAuthorizationSignedResponseAlg: function () {
-    return stsCrypto.JWS_SIGNING_ALGS.slice(0);
+    return helpers.offeredJwsAlgs(stsCrypto.JWS_SIGNING_ALGS);
   },
   oauthAuthorizationEncryptedResponseAlg: function () {
     return helpers.offeredJweAlgs(ID_TOKEN_ENCRYPTION_ALGS);
@@ -8484,14 +8487,17 @@ function introspectionResponseProblem(values) {
   const sign = text.introspection_signed_response_alg;
   const alg = text.introspection_encrypted_response_alg;
   const enc = text.introspection_encrypted_response_enc;
-  if (sign && INTROSPECTION_SIGNING_ALGS.indexOf(sign) < 0) {
+  // The classical algorithms alone while `keys.postQuantumSigning` is off
+  // (helpers.offeredJwsAlgs(), 2026-10-23) — what discovery advertises.
+  const signable = helpers.offeredJwsAlgs(INTROSPECTION_SIGNING_ALGS);
+  if (sign && signable.indexOf(sign) < 0) {
     log.debug("Leaving introspectionResponseProblem(). Signing alg.");
     return refusal('introspection_signed_response_alg', '"' + sign + '" ' +
       (sign.toLowerCase() === 'none'
         ? 'is refused: RFC 9701 section 5 says an introspection response ' +
           'MUST be cryptographically secured, so there is no unsigned one.'
         : 'is not an algorithm this service signs with. It signs with ' +
-          INTROSPECTION_SIGNING_ALGS.join(', ') + ' (see ' +
+          signable.join(', ') + ' (see ' +
           'introspection_signing_alg_values_supported).'));
   }
   // The ML-KEM and HPKE ones only where `keys.offerKemEncryption` is on
@@ -8692,12 +8698,14 @@ function jarmMetadataProblem(values) {
     }
   }
   const signAlg = String(asked.authorization_signed_response_alg || '').trim();
-  if (signAlg && stsCrypto.JWS_SIGNING_ALGS.indexOf(signAlg) < 0) {
+  // Classical only while `keys.postQuantumSigning` is off (2026-10-23).
+  const signable = helpers.offeredJwsAlgs(stsCrypto.JWS_SIGNING_ALGS);
+  if (signAlg && signable.indexOf(signAlg) < 0) {
     log.debug("Leaving jarmMetadataProblem(). Signing alg.");
     return refusal(names[0], '"' + signAlg + '" is not an algorithm this ' +
       'service signs an authorization response with' + (signAlg === 'none'
         ? ' — JARM section 3 does not allow none' : '') + '. It signs with ' +
-      stsCrypto.JWS_SIGNING_ALGS.join(', ') + ' (see ' +
+      signable.join(', ') + ' (see ' +
       'authorization_signing_alg_values_supported).');
   }
   const alg = String(asked.authorization_encrypted_response_alg || '').trim();
@@ -8958,11 +8966,15 @@ function requestObjectMetadataProblem(values) {
           : 'this realm is in product mode, where RFC 9101 section 4\'s ' +
             'signed request object is required') + '.');
     }
-  } else if (sign && REQUEST_OBJECT_SIGNING_ALGS.indexOf(sign) < 0) {
+  } else if (sign && helpers.offeredJwsAlgs(REQUEST_OBJECT_SIGNING_ALGS)
+               .indexOf(sign) < 0) {
+    // Classical only while `keys.postQuantumSigning` is off (2026-10-23):
+    // the verification would refuse the rest (STS-KEYS-0157).
     log.debug("Leaving requestObjectMetadataProblem(). Signing alg.");
     return refusal('request_object_signing_alg', '"' + sign + '" is not an ' +
       'algorithm this service verifies. It verifies ' +
-      REQUEST_OBJECT_SIGNING_ALGS.join(', ') + ' (see ' +
+      helpers.offeredJwsAlgs(REQUEST_OBJECT_SIGNING_ALGS).join(', ') +
+      ' (see ' +
       'request_object_signing_alg_values_supported).');
   }
   const alg = text.request_object_encryption_alg;
@@ -9264,10 +9276,11 @@ function signedResponseAlgProblem(values) {
   log.debug("Entering signedResponseAlgProblem().");
   const asked = values || {};
   /** @type {Array<{ member: string, algs: string[] }>} */
+  // Classical only while `keys.postQuantumSigning` is off (2026-10-23).
   const algs = [{ member: 'id_token_signed_response_alg',
-                  algs: stsCrypto.JWS_SIGNING_ALGS },
+                  algs: helpers.offeredJwsAlgs(stsCrypto.JWS_SIGNING_ALGS) },
                 { member: 'userinfo_signed_response_alg',
-                  algs: USERINFO_SIGNING_ALGS }];
+                  algs: helpers.offeredJwsAlgs(USERINFO_SIGNING_ALGS) }];
   for (let i = 0; i < algs.length; i++) {
     const value = asked[algs[i].member];
     if (value !== undefined && value !== null &&
@@ -9576,7 +9589,9 @@ function cibaMetadataProblem(values) {
                    'https URL with no fragment (CIBA Core section 4).');
   }
   const alg = asked.backchannel_authentication_request_signing_alg;
-  if (alg !== undefined && (stsCrypto.JWS_ASYMMETRIC_ALGS || [])
+  // Classical only while `keys.postQuantumSigning` is off (2026-10-23).
+  if (alg !== undefined &&
+      helpers.offeredJwsAlgs(stsCrypto.JWS_ASYMMETRIC_ALGS || [])
         .indexOf(String(alg)) < 0) {
     log.debug("Leaving cibaMetadataProblem(). The algorithm.");
     return refusal('backchannel_authentication_request_signing_alg', '"' +
@@ -9773,11 +9788,13 @@ function oidcSubjectMetadataProblem(values) {
   if (text.token_endpoint_auth_signing_alg) {
     const alg = text.token_endpoint_auth_signing_alg;
     const method = String(asked.token_endpoint_auth_method || '').trim();
-    if (stsCrypto.JWS_SIGNING_ALGS.indexOf(alg) < 0) {
+    // Classical only while `keys.postQuantumSigning` is off (2026-10-23).
+    const verifiable = helpers.offeredJwsAlgs(stsCrypto.JWS_SIGNING_ALGS);
+    if (verifiable.indexOf(alg) < 0) {
       log.debug("Leaving oidcSubjectMetadataProblem(). Unknown algorithm.");
       return refusal('token_endpoint_auth_signing_alg', '"' + alg + '" is ' +
                      'not a JWS algorithm this service verifies (' +
-                     stsCrypto.JWS_SIGNING_ALGS.join(', ') + '); `none` is ' +
+                     verifiable.join(', ') + '); `none` is ' +
                      'never one (OIDC Core section 9).');
     }
     const hmac = /^HS/.test(alg);

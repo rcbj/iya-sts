@@ -1275,6 +1275,14 @@
     "en": "16bd897eb9c3284a",
     "text": "Om ML-KEM- och HPKE-JWE-algoritmerna (#82 — utkast, se keys.encryptionKemAlgs) erbjuds där den här sfären krypterar TILL en nyckel som en klient eller plånbok har: annonserade i `userinfo_encryption_alg_values_supported`, `id_token_encryption_alg_values_supported`, `authorization_encryption_alg_values_supported` (JARM), `introspection_encryption_alg_values_supported` och en OpenID4VCI-utfärdares `credential_response_encryption`, och godtagna när en klient registrerar en eller en plånbok namnger en. **Av som standard, och ett val för administratören:** dessa algoritmer kommer från Internet-Drafts, och en klient eller en konformitetssvit som provar varje annonserad algoritm möter sådana den inte känner till. En klient som redan registrerats för en behåller sin registrering; med detta av vägras dess nästa krypterade svar, som för varje algoritm som sfären inte erbjuder."
   },
+  "keys.postQuantumSigning|label": {
+    "en": "34883416ca94e446",
+    "text": "Postkvantsäker signering"
+  },
+  "keys.postQuantumSigning|description": {
+    "en": "68ffd5da182ec911",
+    "text": "Om den här sfären signerar, publicerar och verifierar de postkvantsäkra och sammansatta JWS-algoritmerna (ML-DSA, SLH-DSA och de sammansatta ML-DSA-algoritmerna). **På som standard.** Av: ingen postkvantsäker signeringsnyckel finns i `/oauth2/jwks` eller i DID-dokumentet (vänte-, fästa och signerargruppsnycklar inräknade); ingen postkvantsäker algoritm finns i någon `*_alg_values_supported`- eller `*_alg_values`-lista i discovery-, auktoriseringsserver-, OpenID Federation-, OpenID4VCI- och OpenID4VP-dokumenten; en JWS signerad med en sådan vägras överallt där sfären verifierar en; en klient får inte registrera en; och en signatur som fortfarande skulle kräva en — för en klient som registrerades medan detta var på, eller en HTTP-meddelandesignatur — vägras i stället för att göras med en nyckel som ingen kan hämta. Den finns för klienter och testsviter vars JOSE-bibliotek inte kan tolka en AKP-nyckel eller inte känner till dessa algoritmer, bland dem OpenID-konformitetssviten. **Oförändrat:** COSE (passkeys), XML-signaturer, TLS, certifikatalgoritmer, ML-KEM-krypteringsnycklarna (`keys.encryptionKemAlgs`), den alternativa ML-DSA-nyckel som ett `hybrid-groups`-certifikat bär i `x5c` (de fristående ML-DSA-nycklarna tas bort, certifikaten utfärdas inte på nytt), och `oidfed.signingAlg`: en sfär som namnger en ML-DSA-federationsnyckel fortsätter att signera sina utsagor med den men vägrar en ML-DSA-utsaga som den ombeds verifiera, så behåll den inställningen klassisk här."
+  },
   "keys.kidFormat|label": {
     "en": "67642fcf21c7ca50",
     "text": "kid-format för signerade tokener"
