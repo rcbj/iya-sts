@@ -22,7 +22,7 @@
 //
 //   A. The row's built-in default is `any` in development and `not-weaker`
 //      in product (rcbj's decision on #724), and a save that leaves the row
-//      out is accepted and keeps the default.
+//      out is accepted and keeps the default, or the value stored (#907).
 //   B. The built-in document's `recover-account` rules and
 //      `common/passkey_rules.js`'s reading of them give one answer —
 //      verdict, code and reason — over a grid of every fact they read.
@@ -149,6 +149,17 @@ function childMain() {
            leftOut.profile.sources.recoveryAssurance === 'built-in',
            'A2. a save that leaves the row out is accepted and keeps the ' +
            'built-in default', JSON.stringify(leftOut.errors || []));
+      // #907: left out of a LATER save, a stored row is kept, not deleted.
+      const stored = withRow('operator-only');
+      const resaved = withRow('');
+      note(stored.ok && resaved.ok &&
+           resaved.profile.recoveryAssurance === 'operator-only' &&
+           resaved.profile.sources.recoveryAssurance !== 'built-in',
+           'A2b. a later save that leaves the row out keeps the stored ' +
+           'operator-only rather than deleting it (#907)',
+           JSON.stringify(resaved.profile ? resaved.profile.recoveryAssurance
+                                          : resaved.errors));
+      passkeyPolicy.reset('default');
       const bad = withRow('sometimes');
       note(!bad.ok, 'A3. a value outside the three is refused',
            JSON.stringify(bad.errors || []));
