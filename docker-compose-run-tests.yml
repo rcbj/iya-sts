@@ -1388,6 +1388,14 @@ services:
       # half instead of dialling the default. The stack sets it in every
       # mode, memory included.
       - STS_TEST_ATTRIBUTE_MYSQL_URL=${STS_TEST_ATTRIBUTE_MYSQL_URL-mysql://root:sts@mariadb:3306/sts}
+      # THE DATABASE THE PERSISTENCE JOB RESTARTS THE SERVICE AGAINST
+      # (moved from the parent project, 2026-10-23): the stack's postgres as
+      # its superuser, in which `tests/vendored/sts_persistence_postgres.js`
+      # creates a database of its own per run, and the CA directory its
+      # certificate is verified against (`sts-db-ca`, mounted below). `-`
+      # rather than `:-`, so ./run-coverage.sh's empty value skips the job.
+      - STS_TEST_PERSISTENCE_DB_URL=${STS_TEST_PERSISTENCE_DB_URL-postgres://sts:sts@postgres:5432/sts}
+      - STS_TEST_PERSISTENCE_DB_CA=${STS_TEST_PERSISTENCE_DB_CA-/run/secrets/database-ca}
       # THE MAIL CATCHER (#63): where `tests/vendored/sts_mail.js` reads what
       # arrived, and where it tells the service to deliver — the host, the
       # port and the catcher's certificate AS THE SERVICE SEES IT.
@@ -1490,6 +1498,9 @@ services:
       - sts-test-shared:/run/sts-test
       # A file secret push destination's directory (#221 P3) — see `sts`.
       - sts-test-secret-push:/run/sts-test-secret-push
+      # THE DATABASES' CERTIFICATES, read-only, as `sts` mounts them: what
+      # STS_TEST_PERSISTENCE_DB_CA names.
+      - sts-db-ca:/run/secrets/database-ca:ro
     depends_on:
       # The mail catcher (#63): STARTED, for xacml-pep's reason below — a
       # catcher that will not come up fails sts_mail.js and nothing else.
