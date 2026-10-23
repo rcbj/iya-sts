@@ -540,6 +540,8 @@
   "attestationCell.notChained": "，未鏈結到任何錨點",
   "attestationCell.trusted": "已驗證，受信任",
   "attestationCell.untrusted": "已驗證，不受信任",
+  "attestationAlgorithms.signedWith": "證明的簽章演算法",
+  "attestationAlgorithms.postQuantum": "後量子證明，簽章演算法",
   "androidRevocationText.unknown": "撤銷狀態未知（在開始查詢 Android 狀態清單之前註冊）",
   "androidRevocationText.notRevoked": "未撤銷",
   "androidRevocationText.unchecked": "撤銷狀態未檢查：{why}",

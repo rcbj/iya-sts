@@ -540,6 +540,8 @@
   "attestationCell.notChained": ", inte kedjad till något ankare",
   "attestationCell.trusted": "verifierad, betrodd",
   "attestationCell.untrusted": "verifierad, inte betrodd",
+  "attestationAlgorithms.signedWith": "attestering signerad med",
+  "attestationAlgorithms.postQuantum": "postkvantattestering, signerad med",
   "androidRevocationText.unknown": "återkallelse okänd (registrerad innan Androids statuslista konsulterades)",
   "androidRevocationText.notRevoked": "inte återkallad",
   "androidRevocationText.unchecked": "återkallelse okontrollerad: {why}",

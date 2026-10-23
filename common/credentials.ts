@@ -504,6 +504,35 @@ class Credentials {
              lane: Credentials.keyLane(k) };
   }
 
+  // THE ALGORITHMS ONE STORED KEY'S ATTESTATION WAS SIGNED WITH (#941), in
+  // the one shape every reader takes: the console's key rows, `GET
+  // /admin-api/users`, the passkey policy's `attestation-algorithm`
+  // facts, and a realm-wide report of how strong a realm's attestations
+  // are. The record `authn/webauthn_attestation.ts` wrote is the source
+  // (`attestation.algorithms`, its header argues the fields); this is
+  // `recordedAlgorithms()`'s reading of it — `verified`, `trusted`,
+  // `recorded` (false for a key registered before #941, or by a door that
+  // verified nothing), the `statement` algorithm, every `statements` and
+  // `certificates` entry (leaf first, the anchor last, a compound's
+  // members flattened) and `postQuantum`, true only where every one of
+  // them is. A key with no attestation record answers `recorded: false`.
+  /**
+   * Reads the algorithms one stored key's attestation was signed with
+   * (#941).
+   *
+   * @param key - the stored WebAuthn key
+   * @returns `{ verified, trusted, recorded, statement, statements,
+   *   certificates, postQuantum }`
+   */
+  static attestationAlgorithms(key: any): any {
+    helpers.log.debug("Entering Credentials.attestationAlgorithms().");
+    const out = webauthnAttestation.recordedAlgorithms(
+      (key || {}).attestation);
+    helpers.log.debug("Leaving Credentials.attestationAlgorithms(). " +
+                      (out.recorded ? 'recorded' : 'none'));
+    return out;
+  }
+
   // WHAT KIND OF AUTHENTICATOR ONE STORED KEY IS, IN A PERSON'S WORDS
   // (2026-09-26). `/portal/keys` draws it beside each key and
   // `/portal/devices` says with it why a key cannot be linked to a device.
@@ -10853,6 +10882,7 @@ export = {
   ROLES: Credentials.ROLES,
   keyKind: Credentials.keyKind,
   keyAlgorithm: Credentials.keyAlgorithm,
+  attestationAlgorithms: Credentials.attestationAlgorithms,
   // #470: the passkey pages' group, provider and name for a stored key.
   keyGroup: Credentials.keyGroup,
   keyProvider: Credentials.keyProvider,
