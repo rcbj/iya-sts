@@ -10587,11 +10587,26 @@ function tpmParseSignature(bytes) {
       const hash = r.u16();
       const rr = r.sized();
       const ss = r.sized();
+      // DER's INTEGER is MINIMAL (#904): no leading zero byte unless the
+      // next byte's top bit is set, where one is required to keep the value
+      // positive. A zero always put in front made about three genuine
+      // signatures in four invalid DER, which OpenSSL refuses on verify, and
+      // a TPM that zero-pads r or s to the curve size made it worse.
       const integer = function (b) {
         log.debug("Entering integer().");
+        let start = 0;
+        while (start < b.length - 1 && b[start] === 0) {
+          start++;
+        }
+        let body = b.subarray(start);
+        if (!body.length) {
+          body = Buffer.from([0]);
+        }
+        if (body[0] & 0x80) {
+          body = Buffer.concat([Buffer.from([0]), body]);
+        }
         log.debug("Leaving integer().");
-        return new asn1js.Integer({ valueHex: new Uint8Array(
-          Buffer.concat([Buffer.from([0]), b])) });
+        return new asn1js.Integer({ valueHex: new Uint8Array(body) });
       };
       const der = new asn1js.Sequence({ value: [integer(rr), integer(ss)] })
         .toBER(false);
