@@ -1382,8 +1382,11 @@ class PasskeyPolicy {
         if (parsed.problem) {
           problems.push(field.attribute + ' on ' + entry.dn + ' is ' +
                         'unreadable (' + parsed.problem + ') and the ' +
-                        'built-in default of ' + field.dflt + ' is in force ' +
-                        'instead.');
+                        // The default IN FORCE (#910): DEFAULTS reads the
+                        // mode for a row such as recoveryAssurance, whose
+                        // `dflt` is only development's.
+                        'built-in default of ' + DEFAULTS[field.key] +
+                        ' is in force instead.');
           return;
         }
         values[field.key] = parsed.value;
