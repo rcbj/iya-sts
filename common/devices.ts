@@ -1580,7 +1580,9 @@ class Devices {
     helpers.log.debug("Entering Devices.isAndroidRecheckable().");
     const att = key && key.attestation;
     const out = !!(att && att.level === 'attested' &&
-      att.format === 'android-key-attestation' &&
+      // A key linked from an android-key passkey (#903) is rechecked too.
+      (att.format === 'android-key-attestation' ||
+       att.format === 'android-key') &&
       Array.isArray(att.chainSerials) && att.chainSerials.length);
     helpers.log.debug("Leaving Devices.isAndroidRecheckable(). " + out);
     return out;
