@@ -2525,9 +2525,29 @@ class PasskeyPolicy {
       objectClass: ['top', 'stsPasskeyPolicy'],
       description: String((given && given.description) || '').slice(0, 1024)
     };
+    // An optional row LEFT OUT keeps what the realm's own entry stored
+    // (#907): the write below replaces the whole entry, so writing nothing
+    // for it deleted a stored `recoveryAssurance`, and a client written
+    // before the row existed — the caller `optional` is for — silently
+    // reverted the operator's choice to the built-in default.
+    const own = this.directory.allPasskeyPolicies().filter(function (one) {
+      return String(one.name || '').toLowerCase() ===
+             String(which).toLowerCase();
+    })[0];
+    const storedValue = function (attribute: string): unknown {
+      const held = (own && own.attributes) || {};
+      const key = Object.keys(held).filter(function (k) {
+        return k.toLowerCase() === attribute.toLowerCase();
+      })[0];
+      return key === undefined ? undefined : held[key];
+    };
     FIELDS.forEach(function (field) {
       const value = checked.values[field.key];
       if (value === undefined && field.optional) {
+        const kept = storedValue(field.attribute);
+        if (kept !== undefined) {
+          attributes[field.attribute] = kept;
+        }
         return;
       }
       attributes[field.attribute] = field.type === 'bool'
