@@ -45,10 +45,6 @@
 // ---------------------------------------------------------------------------
 
 const bunyan = require('bunyan');
-// Node's own generator, for the reservoir's slot (tests/random_values.js:
-// no Math.random() in the service). Not common/crypto.js, which would end
-// this file being a leaf.
-const crypto = require('crypto');
 
 const log = bunyan.createLogger({
   name: 'sts-request-phases',
@@ -61,7 +57,7 @@ const ASK_HEADER = 'x-sts-pool-phases-wanted';
 const PHASES_HEADER = 'x-sts-pool-phases';
 
 // How long one window is, and how many samples a route keeps in it (beyond
-// that, a sample replaces a random one — still an unbiased sample).
+// that, a sample replaces the oldest: the latest ones are kept).
 const WINDOW_MS = 60 * 1000;
 const SAMPLES_PER_ROUTE = 4000;
 // How many routes a window holds, and how many it reports. A path past the
@@ -240,11 +236,14 @@ function record(route, phases, now) {
     windowRoutes.set(key, entry);
   }
   entry.n += 1;
-  const slot = entry.n <= SAMPLES_PER_ROUTE ? entry.n - 1
-    : crypto.randomInt(0, entry.n);
-  if (slot >= SAMPLES_PER_ROUTE) {
-    return;
-  }
+  // A RING, NOT A RANDOM RESERVOIR (2026-10-22): past SAMPLES_PER_ROUTE a
+  // sample replaces the oldest, so a busy route's percentiles are its
+  // latest SAMPLES_PER_ROUTE requests of the window. A random slot needed a
+  // generator, and this leaf may use neither Math.random()
+  // (tests/random_values.js) nor node's crypto, which only common/crypto.js
+  // requires (tests/crypto_centralised.js) — and requiring that would end
+  // this file being a leaf.
+  const slot = (entry.n - 1) % SAMPLES_PER_ROUTE;
   PHASES.forEach(function (phase) {
     const value = phases[phase];
     if (typeof value === 'number' && isFinite(value)) {

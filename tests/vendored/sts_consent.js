@@ -347,8 +347,18 @@ async function wholeRegister() {
     if (page >= globals.pages && page >= users.pages) {
       assert.strictEqual(out.globals.length, globals.total,
         "every override was read across the pages");
-      assert.strictEqual(out.users.length, users.total,
-        "every recorded consent was read across the pages");
+      // Where the directory is in the store (#852, `windowed`), the
+      // recorded half is paged over PEOPLE and each page carries every
+      // consent of its people, so its total counts people; otherwise it
+      // counts consents.
+      const counted = r.body.windowed
+        ? new Set(out.users.map(function (one) {
+          return one.username;
+        })).size
+        : out.users.length;
+      assert.strictEqual(counted, users.total,
+        "every recorded consent was read across the pages (" +
+        (r.body.windowed ? "people" : "consents") + ")");
       log.debug("Leaving wholeRegister(). " + page + " page(s).");
       return out;
     }

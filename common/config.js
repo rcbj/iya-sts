@@ -4191,14 +4191,16 @@ const SETTINGS = [
                  'makes workers converge in half a second to a second, and ' +
                  'that is not read-your-write. `session` (the default): a ' +
                  'request that carries a session cookie, the pool cookie or ' +
-                 'a sign-in flow in its address waits only for the writes of ' +
-                 'earlier requests that carried the same, and for the ' +
+                 'a sign-in flow in its address waits for the writes of ' +
+                 'earlier requests that carried the same, for every write ' +
+                 'of a request that carried none of them, and for the ' +
                  'front process\'s own writes; a request carrying none of ' +
                  'them, such as a token request from a client\'s server, ' +
                  'SCIM or a management API call with a bearer token, waits ' +
                  'for every write answered before it. So a browser sees its ' +
-                 'own writes at once, and another browser\'s or client\'s ' +
-                 'only once the workers converge. `global`: every request ' +
+                 'own writes and every back channel\'s at once, and another ' +
+                 'browser\'s only once the workers converge. `global`: ' +
+                 'every request ' +
                  'waits for every write answered before it, which costs ' +
                  'tens of milliseconds a request under load. `off`: no ' +
                  'request waits, and a caller may not find its own write. ' +

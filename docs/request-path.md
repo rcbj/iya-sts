@@ -62,7 +62,7 @@ session. `workers.readYourWrite` decides what a request waits for:
 
 | Value | A request waits for |
 |---|---|
-| `session` (the default) | Only the writes of earlier requests that carried the same session cookie, pin cookie or flow, plus the front process's own writes. A code exchange at the token endpoint waits for its code's writes, as below. Any other request carrying none of them waits as in `global`. |
+| `session` (the default) | The writes of earlier requests that carried the same session cookie, pin cookie or flow, every write of a request that carried none of them (a relying party's server, an API caller, a dispatched LDAP operation), and the front process's own writes. It does not wait for another browser's writes. A code exchange at the token endpoint waits for its code's writes, as below. Any other request carrying none of them waits as in `global`. |
 | `global` | Every write any request made before it, through any worker. |
 | `off` | Nothing. Use it only where every client is pinned to one worker. |
 

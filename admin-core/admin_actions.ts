@@ -1358,10 +1358,12 @@ class AdminActions {
    * token set, a subject, a user, a kind, or everything.
    *
    * @param body - the parsed form or JSON body, whose `action` names the act
+   * @param setWarmed - true on the second pass of a set action, once its
+   *   members were read from the store (below); never from a request
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  tokenAction(body) {
+  tokenAction(body, setWarmed?) {
     const { log, stats } = this.deps;
     log.debug("Entering AdminActions.tokenAction(). action=" + (body.action ||
                                                                 '(none)'));
@@ -1491,6 +1493,31 @@ class AdminActions {
                                           'set, as the `setKey` on every row ' +
                                           'of GET /admin-api/tokens names ' +
                                           'it.'] });
+      }
+      // THE SET'S MEMBERS ARE READ FROM THE STORE FIRST (2026-10-22, the
+      // full run). The register is on demand (#820), so the process
+      // answering — another node in a cluster, another worker — may hold
+      // none of the set the list read from the store's `set:` index, and
+      // `issuedSetByKey()` below asks only what is held: restore-set
+      // answered "nothing here is called …" for a set the list had just
+      // shown. So the set is read the way the list reads it and its
+      // members warmed, and the act then runs as it always has.
+      if (!setWarmed && typeof stats.issuedSetByKeyAsync === 'function' &&
+          typeof stats.warmTokens === 'function') {
+        const self = this;
+        log.debug("Leaving AdminActions.tokenAction(). Reading the set " +
+                  "first.");
+        return stats.issuedSetByKeyAsync(setKey).then(function (found) {
+          const jtis = found ? found.members.map(function (member) {
+            return String(member.identifier || '');
+          }).filter(Boolean) : [];
+          return jtis.length ? stats.warmTokens(jtis) : null;
+        }).catch(function (e) {
+          log.debug("Caught in AdminActions.tokenAction(): " +
+                    ((e && e.message) || e));
+        }).then(function () {
+          return self.tokenAction(body, true);
+        });
       }
       const set = stats.issuedSetByKey(setKey);
       if (!set) {

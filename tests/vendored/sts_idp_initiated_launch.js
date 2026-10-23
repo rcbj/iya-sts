@@ -679,9 +679,17 @@ async function openIdLaunch(alice) {
     { action: "login", username: USER, password: PASSWORD }, alice.jar,
     { ignoreOffer: true });
   const back = pathOf(sent.location);
+  // The return carries an account selection ticket (`sts_account`) for the
+  // set the sign-in made, since #561; the address is the launch link, and
+  // the ticket is kept for the request that follows it.
+  const backLink = (function () {
+    const u = new URL(back || "/", realmBase() + "/");
+    u.searchParams.delete("sts_account");
+    return u.pathname + u.search;
+  })();
   await check("e2. signed in with the password, the sign-in returns to the " +
               "launch link", async function () {
-    expect(sent.status === 303 && back === realmPath() + link(RP_CLIENT),
+    expect(sent.status === 303 && backLink === realmPath() + link(RP_CLIENT),
            sent.status + " " + (sent.location ||
                                 String(sent.text || "").slice(0, 300)));
   });

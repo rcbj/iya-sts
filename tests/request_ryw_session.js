@@ -45,6 +45,8 @@
 //       reaches the worker whole;
 //  R13. over HTTP/2: with a `content-length` keyed by its code, without one
 //       global, the body whole either way.
+//  R14. a request with no client key is everybody's write: a keyed request
+//       waits for it (a back channel writes what a browser then reads).
 // ===========================================================================
 
 const http = require('http');
@@ -611,6 +613,22 @@ async function checkThePool(t) {
       pool.receiveCommitted(writer, { wrote: false, tickets: range });
       await waiting;
       t.check(released, 'R6. and is released once it is announced', '');
+
+      // R14 (2026-10-22, the full run): a request with no client key — a
+      // relying party's server — writes what a browser's request then reads
+      // (a GNAP grant, a pushed request). Its ticket is everybody's: client
+      // A is held by it, and released once it is announced.
+      announceAll([X, Y]);
+      await start(port, '/gnap/grants').promise;
+      const behind = start(port, '/oauth2/authorize', A);
+      await sleep(HELD_MS);
+      t.check(!behind.done, 'R14. a keyed request is held by a request ' +
+              'with no client key that answered before it',
+              JSON.stringify(behind.answer));
+      announceAll([X, Y]);
+      const behindAnswer = await behind.promise;
+      t.equal(behindAnswer.status, 200,
+              'R14. and is answered once that write is announced');
 
       await checkTheCodeExchange(t, port, port2);
 

@@ -477,10 +477,11 @@ function dropSettledWaiter() {
 //   those writes carry no ticket and so no key, and they are rare.
 //
 // What is given up, and `docs/configuration.md` says so: a request does not
-// wait for ANOTHER client's write. A console page reads another session's
-// writes — a SCIM create, a token another client redeemed, an LDAP or
-// Kerberos operation (whose tickets carry no key) — only once the workers
-// converge, half a second to a second. `global` is the old barrier, whole.
+// wait for ANOTHER BROWSER's write; a console page reads another session's
+// writes only once the workers converge, half a second to a second. A
+// request that carried no key — a back channel, SCIM, an API call, a
+// dispatched LDAP operation — is everybody's write (SHARED_KEY, below), so
+// a browser waits for it. `global` is the old barrier, whole.
 //
 // BOUNDED WITHOUT A TIMER (the root CLAUDE.md, *Anything periodic is a
 // scheduler job*): at most CLIENT_KEYS_MAX keys, least recently used first;
@@ -491,6 +492,19 @@ function dropSettledWaiter() {
 // spilledGeneration), so an eviction costs waiting, never a stale read.
 // ---------------------------------------------------------------------------
 const CLIENT_KEYS_MAX = 20000;
+// THE WRITES NO BROWSER MADE (2026-10-22, the full run). A request with no
+// client key — a relying party's server, an API caller — writes what a
+// browser's request then reads: a GNAP grant before its interaction start
+// URI, a pushed request before the authorize that names it, a SIOP or
+// OpenID4VP request object, a CIBA request, a client registered by DCR. In
+// `session` mode as first written a keyed request waited only for its own
+// keys, so it could read a worker that had not heard of any of those, and
+// thirteen single-node jobs failed (sts_gnap_interaction, sts_siop,
+// sts_userinfo_protected, sts_consent_withdrawal, …). So such a request's
+// ticket is filed under SHARED_KEY as well, and every keyed request waits
+// for SHARED_KEY with its own keys: a browser waits for every back channel's
+// writes, and still not for another browser's.
+const SHARED_KEY = '*';
 // How many of the oldest keys each dispatch looks at to drop.
 const CLIENT_KEYS_PRUNED_PER_DISPATCH = 4;
 // key -> { tickets: Set<ticket>, writes: Map<worker pid, generation> }, in
@@ -6538,7 +6552,7 @@ function middleware(options) {
       if (keys) {
         sessionDispatches++;
         pruneClientStates();
-        waitThenProxy(keys, null);
+        waitThenProxy(keys, null, false);
         return;
       }
       // A CODE EXCHANGE IS READ BEFORE IT WAITS (#820): keyed by its code
@@ -6564,26 +6578,34 @@ function middleware(options) {
           } else {
             globalDispatches++;
           }
-          waitThenProxy(codeKeys, body);
+          waitThenProxy(codeKeys, body, true);
         });
         return;
       }
       globalDispatches++;
-      waitThenProxy(null, null);
+      waitThenProxy(null, null, true);
 
       // THE WAITS AND THE DISPATCH, for keys already decided (null: global)
-      // and a body already read (null: streamed from `req`). A HOT PATH, for
-      // route()'s reason.
-      function waitThenProxy(keys, body) {
-        awaitCommitConfirmations(entry, keys).then(function () {
+      // and a body already read (null: streamed from `req`). `shared`: this
+      // request's write is a back channel's — no browser's own — and is
+      // filed under SHARED_KEY too, so every keyed request waits for it.
+      // A HOT PATH, for route()'s reason.
+      function waitThenProxy(keys, body, shared) {
+        // A keyed request waits for its keys AND for SHARED_KEY: the
+        // writes of requests no browser made (see SHARED_KEY).
+        const waitKeys = keys ? keys.concat([SHARED_KEY]) : null;
+        const fileKeys = shared ? (keys || []).concat([SHARED_KEY]) : keys;
+        awaitCommitConfirmations(entry, waitKeys).then(function () {
           timing.ticketDone = Date.now();
           const ticket = dispatchTicket(entry, req.method + ' ' +
-            String(req.originalUrl || req.url || '').split('?')[0], keys);
+            String(req.originalUrl || req.url || '').split('?')[0],
+            fileKeys);
           // WHAT THIS PROCESS ITSELF HAS WRITTEN SINCE THE LAST REQUEST,
           // before the generation is read — a bump after this line would be
           // a bump this request does not wait for. See noteLocalWrites().
           noteLocalWrites(localWriteCount(), localWriteKinds());
-          const wanted = keys ? sessionWanted(keys, entry) : generation;
+          const wanted = waitKeys ? sessionWanted(waitKeys, entry)
+            : generation;
           if (entry.generation >= wanted) {
             timing.barrierDone = timing.ticketDone;
             proxy(entry, req, res, wanted, ticket, timing, body);
@@ -7634,7 +7656,9 @@ function runOperation(kind, args, opts) {
   }
   log.debug("Leaving runOperation().");
   return awaitCommitConfirmations(entry).then(function () {
-    const ticket = dispatchTicket(entry, 'operation ' + kind);
+    // A dispatched operation (LDAP, SPIFFE) is a write no browser made, so
+    // every keyed request waits for it (SHARED_KEY).
+    const ticket = dispatchTicket(entry, 'operation ' + kind, [SHARED_KEY]);
     // WHAT THIS PROCESS ITSELF HAS WRITTEN SINCE THE LAST ONE, before the
     // generation is read. It matters more here than on the HTTP path, not
     // less: the front process is the one that holds every socket this service
