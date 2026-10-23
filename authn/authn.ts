@@ -10705,7 +10705,10 @@ class Authn {
   private keyDemandProblem(step, what): any {
     const { log } = this.deps;
     log.debug("Entering Authn.keyDemandProblem().");
-    if (!step || !step.authn || !step.authn.forceKey) {
+    // A demand made on RISK (`step.riskKey`, #899) is refused the same way
+    // as one a relying party made: the step that records it hides the code
+    // links, and without this a code posted to the act's URL still passed.
+    if (!step || ((!step.authn || !step.authn.forceKey) && !step.riskKey)) {
       log.debug("Leaving Authn.keyDemandProblem(). No key was demanded.");
       return null;
     }
@@ -11366,7 +11369,8 @@ class Authn {
       });
       if (!riskAnswer.allowed && riskAnswer.risk &&
           !riskAnswer.risk.observed) {
-        const holdsKey = enrolled.mfaKeys + enrolled.primaryKeys > 0;
+        // Only an mfa-role key answers (#898); the step offers no other.
+        const holdsKey = enrolled.mfaKeys > 0;
         if (riskAnswer.risk.action === 'refuse' ||
             (riskAnswer.risk.factor === 'security-key' && !holdsKey)) {
           const code = riskAnswer.risk.action === 'refuse' ? 'STS-RISK-0016'
@@ -11479,6 +11483,9 @@ class Authn {
           factor: 'enrol', alternate: '', backup: false, passwordless: false,
           requiredBy: requirement.byUser ? 'account' : 'realm',
           firstAmr: firstAmr, mfaAllowed: mfaAllowed,
+          // The sign-in's assessment (#906), for the finisher's session, as
+          // the step below and the password screen's set-up step carry it.
+          risk: assessment || undefined,
           expires: Date.now() + this.mfaStepTtlMs()
         });
         // The set-up step's page (#572), by its address.
@@ -11522,6 +11529,8 @@ class Authn {
         ? '' : (enrolled.mailFactor ? enrolled.mailFactor.held : ''),
       // The sign-in's assessment (#62 P3), for the finisher's session.
       risk: assessment || undefined,
+      // A security key demanded on risk, for keyDemandProblem() (#899).
+      riskKey: riskFactor === 'security-key',
       // The application's second factors (#475), as at the password screen.
       mfaAllowed: mfaAllowed,
       thenEnrol: thenEnrol,
@@ -13737,7 +13746,10 @@ class Authn {
     // their own authenticator. So a person holding nothing that answers the
     // demand is refused, and told nothing more than any refusal says.
     // -----------------------------------------------------------------------
-    const holdsKey = enrolled.mfaKeys + enrolled.primaryKeys > 0;
+    // Only an mfa-role key answers (#898): the step minted below offers only
+    // those, so a primary passkey counted here handed its holder the
+    // enrolling ceremony this paragraph refuses.
+    const holdsKey = enrolled.mfaKeys > 0;
     if (riskFactor && ((riskFactor === 'security-key' && !holdsKey) ||
                        (riskFactor !== 'security-key' && !holdsKey &&
                         !enrolled.totp))) {
@@ -13764,8 +13776,10 @@ class Authn {
     // register a key of their own. So that person is refused, and told where
     // a key is added; somebody who holds no second factor at all enrols one
     // here as always.
+    // A primary passkey is no answer (#898): the step offers mfa-role keys
+    // only, so counting one here handed its holder the enrolling ceremony.
     if (record.forceKey && !passwordless && enrolled.mfaKeys === 0 &&
-        enrolled.primaryKeys === 0 && enrolled.mfaRequired) {
+        enrolled.mfaRequired) {
       log.info('authn: a security key was demanded of "' + username + '", ' +
                'who holds a second factor and no key; refused.');
       errorCodes.mark(res, 'STS-AUTHN-0204');
