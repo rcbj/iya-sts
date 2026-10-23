@@ -89,9 +89,11 @@ const MAX_DEPTH = 24;
 function cborRead(buf, offset, depth) {
   log.debug('Entering cborRead().');
   if (depth > MAX_DEPTH) {
+    log.debug('Leaving cborRead(). Threw.');
     throw new Error('CBOR nested deeper than ' + MAX_DEPTH + ' levels');
   }
   if (offset >= buf.length) {
+    log.debug('Leaving cborRead(). Threw.');
     throw new Error('CBOR ran off the end of the buffer at ' + offset);
   }
   const initial = buf[offset];
@@ -112,9 +114,11 @@ function cborRead(buf, offset, depth) {
     const hi = buf.readUInt32BE(cursor), lo = buf.readUInt32BE(cursor + 4);
     value = hi * 4294967296 + lo; cursor += 8;
     if (!Number.isSafeInteger(value)) {
+      log.debug('Leaving cborRead(). Threw.');
       throw new Error('CBOR argument exceeds the exactly-representable range');
     }
   } else {
+    log.debug('Leaving cborRead(). Threw.');
     throw new Error('CBOR additional information ' + info + ' is reserved or ' +
                     'indefinite; CTAP2 canonical CBOR uses neither');
   }
@@ -128,6 +132,7 @@ function cborRead(buf, offset, depth) {
       return [-1 - value, cursor];
     case 2: {
       if (cursor + value > buf.length) {
+        log.debug('Leaving cborRead(). Threw.');
         throw new Error('a CBOR byte string claims ' + value + ' bytes, past ' +
             'the end of the input');
       }
@@ -136,6 +141,7 @@ function cborRead(buf, offset, depth) {
     }
     case 3: {
       if (cursor + value > buf.length) {
+        log.debug('Leaving cborRead(). Threw.');
         throw new Error('a CBOR text string claims ' + value + ' bytes, past ' +
             'the end of the input');
       }
@@ -157,6 +163,7 @@ function cborRead(buf, offset, depth) {
         const [k, afterKey] = cborRead(buf, cursor, depth + 1);
         const [v, afterValue] = cborRead(buf, afterKey, depth + 1);
         if (map.has(k)) {
+          log.debug('Leaving cborRead(). Threw.');
           throw new Error('a CBOR map repeats the key ' + JSON.stringify(k));
         }
         map.set(k, v); cursor = afterValue;
@@ -177,11 +184,12 @@ function cborRead(buf, offset, depth) {
         log.debug('Leaving cborRead().');
         return [null, cursor];
       }
+      log.debug('Leaving cborRead(). Threw.');
       throw new Error('CBOR simple value ' + info + ' is not decoded here');
     default:
+      log.debug('Leaving cborRead(). Threw.');
       throw new Error('CBOR major type ' + major + ' is not decoded here');
   }
-  log.debug('Leaving cborRead().');
 }
 
 /**
@@ -279,6 +287,7 @@ const b64u = stsCrypto ? stsCrypto.b64u : b64uStandalone;
 function coseKeyToJwk(coseKey) {
   log.debug('Entering coseKeyToJwk().');
   if (!(coseKey instanceof Map)) {
+    log.debug('Leaving coseKeyToJwk(). Threw.');
     throw new Error('the credential public key is not a COSE_Key map');
   }
   const kty = coseKey.get(1);
@@ -287,6 +296,7 @@ function coseKeyToJwk(coseKey) {
   if (kty === 2) {
     const crv = COSE_CURVES[coseKey.get(-1)];
     if (!crv) {
+      log.debug('Leaving coseKeyToJwk(). Threw.');
       throw new Error('unsupported COSE curve ' + coseKey.get(-1));
     }
     jwk = { kty: 'EC', crv: crv, x: b64u(coseKey.get(-2)),
@@ -296,6 +306,7 @@ function coseKeyToJwk(coseKey) {
   } else if (kty === 1) {
     const crv = COSE_CURVES[coseKey.get(-1)];
     if (!crv) {
+      log.debug('Leaving coseKeyToJwk(). Threw.');
       throw new Error('unsupported COSE OKP curve ' + coseKey.get(-1));
     }
     jwk = { kty: 'OKP', crv: crv, x: b64u(coseKey.get(-2)) };
@@ -304,11 +315,13 @@ function coseKeyToJwk(coseKey) {
     // whose `alg` is not an ML-DSA identifier is not one this reads.
     if (!/^ML-DSA-/.test(String(COSE_ALGS[String(alg)] || '')) ||
         !Buffer.isBuffer(coseKey.get(-1))) {
+      log.debug('Leaving coseKeyToJwk(). Threw.');
       throw new Error('an AKP COSE key needs an ML-DSA alg and a pub; this ' +
                       'one has alg ' + alg);
     }
     jwk = { kty: 'AKP', pub: b64u(coseKey.get(-1)) };
   } else {
+    log.debug('Leaving coseKeyToJwk(). Threw.');
     throw new Error('unsupported COSE key type ' + kty);
   }
   // THE ALGORITHM TRAVELS ON THE JWK (#105), because an assertion is checked
@@ -338,6 +351,7 @@ function coseKeyToJwk(coseKey) {
 function parseAuthenticatorData(buf) {
   log.debug('Entering parseAuthenticatorData(). bytes=' + buf.length);
   if (buf.length < 37) {
+    log.debug('Leaving parseAuthenticatorData(). Threw.');
     throw new Error('authenticator data is ' + buf.length + ' bytes; the ' +
         'fixed part alone is 37');
   }
@@ -354,12 +368,14 @@ function parseAuthenticatorData(buf) {
   let cursor = 37;
   if (out.flags.at) {
     if (buf.length < cursor + 18) {
+      log.debug('Leaving parseAuthenticatorData(). Threw.');
       throw new Error('the AT flag is set but the attested credential data ' +
                       'does not fit');
     }
     out.aaguid = buf.subarray(cursor, cursor + 16); cursor += 16;
     const idLength = buf.readUInt16BE(cursor); cursor += 2;
     if (buf.length < cursor + idLength) {
+      log.debug('Leaving parseAuthenticatorData(). Threw.');
       throw new Error('the credential ID claims ' + idLength + ' bytes, past ' +
           'the end');
     }
@@ -388,6 +404,7 @@ function parseClientData(buf, expectedType) {
   try {
     json = JSON.parse(text);
   } catch (e) {
+    log.debug('Leaving parseClientData(). Threw.');
     throw new Error('clientDataJSON is not JSON: ' + e.message);
   }
   log.debug("Leaving parseClientData().");
@@ -565,6 +582,7 @@ function verifyRegistration(input) {
 
   const [decoded] = cborDecodeFirst(attestationObject, 0);
   if (!(decoded instanceof Map)) {
+    log.debug('Leaving verifyRegistration(). Threw.');
     throw new Error('the attestation object is not a CBOR map');
   }
   const fmt = decoded.get('fmt');
