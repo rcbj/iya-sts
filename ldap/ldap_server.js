@@ -1473,6 +1473,8 @@ let groupsVersion = 0;
 // `tests/sign_in_owner_reads.js`.
 // ---------------------------------------------------------------------------
 let serviceAccountsVersion = 0;
+// The user-handle index's own clock (#909); see noteUserHandlesTouched().
+let userHandlesVersion = 0;
 
 // ---------------------------------------------------------------------------
 // WHAT HAS BEEN WRITTEN SINCE AN LDAP ADD ASKED ITS NAMES (#625).
@@ -1560,6 +1562,7 @@ function touchDirectory(dn, after) {
   directoryVersion++;
   noteGroupsTouched(dn, after);
   noteServiceAccountsTouched(dn, after);
+  noteUserHandlesTouched(dn, after);
   // And any add holding names it asked first is told what this write
   // touched (#625).
   noteHeldNamesTouched(dn, after);
@@ -11577,8 +11580,51 @@ function replaceWebauthnValues(key, values) {
 // expression and so a schema version).
 // ---------------------------------------------------------------------------
 const userHandleIndexes = realms.keyed(function () {
-  return { index: null, version: -1 };
+  return { index: null, dns: null, version: -1, builds: 0 };
 });
+
+// THE INDEX'S OWN CLOCK (#909), as the group index has one (#618). It was
+// `directoryVersion`, which every write in every realm moves — another
+// node's change-log applies and every passkey sign-in's counter rewrite
+// among them — so nearly every unknown handle rebuilt the whole index, and
+// an unauthenticated client could ask for one per request. This one moves
+// only for a write that names no DN, one to an entry the index holds, or
+// one to an entry holding a classical handle (the index walks only those).
+// Declared up beside `groupsVersion`, because touchDirectory() runs during
+// the module's load.
+
+// Whether a write may have changed who holds a user handle. Hot path (every
+// write): no Entering/Leaving pair, the exception the code style allows,
+// stated as it requires.
+function noteUserHandlesTouched(dn, after) {
+  if (!moduleLoaded || dn === undefined || dn === null || dn === '') {
+    userHandlesVersion++;
+    return;
+  }
+  const key = normalizeDn(dn);
+  const cache = userHandleIndexes();
+  if (cache.dns && cache.dns.has(key)) {
+    userHandlesVersion++;
+    return;
+  }
+  let now = after;
+  if (now === undefined) {
+    if (directoryWindow) {
+      const held = directoryWindow.heldIn(realms.currentId(), key);
+      if (!held.known) {
+        userHandlesVersion++;
+        return;
+      }
+      now = held.entry;
+    } else {
+      now = entries.get(key) || null;
+    }
+  }
+  if (now && now.attributes &&
+      String((now.attributes.stswebauthnuserhandle || [])[0] || '')) {
+    userHandlesVersion++;
+  }
+}
 
 // The attribute a lane's handle is stored in: the post-quantum lane's for
 // `pqc`, the classical one's for anything else (no lane is classical).
@@ -11641,8 +11687,9 @@ function webauthnUserHandleHolder(handle) {
       : null;
   };
   let found = wanted && cache.index ? holderAt(cache.index.get(wanted)) : null;
-  if (!found && wanted && cache.version !== directoryVersion) {
+  if (!found && wanted && cache.version !== userHandlesVersion) {
     const index = new Map();
+    const dns = new Set();
     eachHolderOfAny(['stswebauthnuserhandle'], function (stored) {
       if (!isPersonEntry(stored)) {
         return;
@@ -11652,16 +11699,30 @@ function webauthnUserHandleHolder(handle) {
                               [])[0] || '');
         if (value && !index.has(value)) {
           index.set(value, { dn: stored.dn, lane: lane });
+          dns.add(normalizeDn(stored.dn));
         }
       });
     });
     cache.index = index;
-    cache.version = directoryVersion;
+    cache.dns = dns;
+    cache.version = userHandlesVersion;
+    cache.builds++;
     found = holderAt(index.get(wanted));
   }
   log.debug('Leaving webauthnUserHandleHolder(). ' +
             (found ? found.owner + ' (' + found.lane + ')' : 'nobody'));
   return found;
+}
+
+// What the user-handle index has done in the ambient realm, for
+// `tests/user_handle_index_clock.js` (#909): how many times it was built,
+// the clock it is current for, and the clock now.
+function userHandleIndexState() {
+  log.debug("Entering userHandleIndexState().");
+  const cache = userHandleIndexes();
+  log.debug("Leaving userHandleIndexState().");
+  return { builds: cache.builds, version: cache.version,
+           userHandlesVersion: userHandlesVersion };
 }
 
 // The username of the PERSON whose entry holds `handle`, in either lane, or
@@ -26994,6 +27055,7 @@ module.exports = {
   groupsOfUser: groupsOfUser,
   // The group index's builds and clock, for tests/group_index_clock.js (#618).
   groupIndexState: groupIndexState,
+  userHandleIndexState: userHandleIndexState,
   applicationsDn: applicationsDn,
   spiffeDn: spiffeDn,
   spiffeEntriesDn: spiffeEntriesDn,
