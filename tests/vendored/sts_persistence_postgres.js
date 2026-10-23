@@ -1,0 +1,1677 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: BUSL-1.1
+
+// File: sts_persistence_postgres.js
+//
+// ---------------------------------------------------------------------------
+// MOVED HERE FROM THE PARENT PROJECT ON 2026-10-23, AND WHERE ITS DATABASE
+// COMES FROM NOW.
+//
+// It was written in id-proto-debugger's suite, which drove nothing of the
+// debugger here: it is a test of THIS service's persistence. Over there it ran
+// a throwaway postgres with `docker run` on the host. This stack's runner has
+// no docker socket, deliberately, so here the LAUNCHER supplies the database:
+// the stack's own postgres, reached as its superuser through
+// STS_TEST_PERSISTENCE_DB_URL, with its CA directory at
+// STS_TEST_PERSISTENCE_DB_CA. The job CREATES A DATABASE OF ITS OWN in it per
+// run and drops it at the end, so it never touches the service's schema and
+// two modes running it at once do not meet. That server is `hostssl` only and
+// its certificate is verified by default (#273), which is why the plaintext
+// half it used to have is gone and three certificate checks replaced it.
+//
+// It starts its own iya-sts as child processes of THIS container, from the
+// compiled tree the tests image carries, with an environment built from a
+// short allow-list rather than this container's — the runner exports the
+// mode's settings into process.env, and a child that inherited them would
+// join the stack's cluster or dial the stack's store.
+//
+// ---------------------------------------------------------------------------
+// THE MOCK STS'S POSTGRES PERSISTENCE MODE: WHAT SURVIVES A RESTART, WHAT MUST
+// NOT, AND THE THING TWO PROCESSES POINTED AT ONE DATABASE DO NOT DO.
+//
+// Every other job in this suite drives a mock STS that somebody else started
+// and that nobody restarts. That is the right arrangement for a protocol test
+// and it makes this feature untestable, because **persistence is a claim about
+// what happens across a restart** — a value held in memory is correct on every
+// endpoint for the whole life of the process that wrote it, and the damage
+// appears in the NEXT one. So this job starts its own database, starts its own
+// mock, restarts it, and reads what came back.
+//
+// It is the only job here that owns the service under test, which is also why
+// it is the only one that can assert the OTHER half — the half that is a
+// documented NON-goal and is the one a well-meaning change would break:
+//
+//   **NOTHING THIS SERVICE MINTS EVER PERSISTS, IN ANY MODE.** Sessions, access
+//   tokens, ID Tokens, refresh tokens, authorization codes, pre-authorized
+//   codes, SAML artifacts, Kerberos tickets, the replay caches, the statistics
+//   and the audit log all go with the process. The signing key is REGENERATED
+//   on every start, so a token restored from a database would verify against
+//   nothing — and the `kid` is derived from the key material, so it must be a
+//   different one after the restart.
+//
+// FOUR THINGS IT ASSERTS.
+//
+//   * **THE THREE THINGS THAT DO PERSIST come back**: the embedded directory
+//     (which is also the applications registry, the federation register and the
+//     SPIFFE registry — they are directory entries and nothing else), the trust
+//     realm registry with each realm's own overrides, and the runtime appconfig
+//     overrides. Each is written through a door a person uses and read back
+//     from a process that did not write it.
+//   * **THE THINGS THAT MUST NOT come back do not**, and the signing key is the
+//     one that proves it rather than merely illustrating it.
+//   * **PERSISTENCE IS NOT COORDINATION.** Two processes pointed at one
+//     database each hold their own copy of the directory in memory and never
+//     see each other's writes until they restart. `status.coordinates` is
+//     `false` and the reply says so in a sentence; this starts a second
+//     instance against the same database and demonstrates it, because a
+//     `false` in a JSON reply is a claim and this is the evidence for it.
+//   * **THE CONNECTION IS TLS, AND POSTGRES IS THE ONE ASKED.** The throwaway
+//     container is given a generated key pair and `ssl=on`, the mock dials it
+//     with `sslmode=require`, and the assertion is a `pg_stat_ssl` query — the
+//     server's own row per backend — rather than anything this side decided.
+//     That distinction is the whole point: a driver that asked for TLS and
+//     then handed `pg` an option which quietly disabled it would satisfy every
+//     check built out of the connection string, and `persistence_postgres.js`
+//     strips `sslmode` before `pg` sees it precisely because those two answers
+//     disagreed once already. The same database is then dialled again with no
+//     `sslmode` and both the report and postgres have to say plaintext, since
+//     a driver that turned TLS on unconditionally would make `sslmode=disable`
+//     mean its opposite. Until 2026-08-31 the container had no certificate at
+//     all, so only the plaintext half of that file was ever reached.
+//   * **A DATABASE THAT IS NOT THERE STOPS THE SERVICE**, since 2026-08-28,
+//     and this bullet said the opposite when it was written a few hours
+//     earlier. The old rule was that a failure is RECORDED rather than thrown
+//     and the mock keeps answering out of its seeded directory — on the
+//     argument that "a mock that refused to start because a database blinked
+//     would be the one failure mode a mock must not have". Half of that
+//     survives and is still asserted elsewhere: a store that breaks WHILE
+//     RUNNING is recorded and the service carries on. What changed is
+//     STARTUP, because the two are not alike — a process that never opened
+//     its store answers every endpoint out of a SEEDED directory while
+//     presenting itself as the one that was configured, and everything
+//     anybody does with it is thrown away by the next restart. So a
+//     CONFIGURED store that cannot be opened now exits non-zero and says
+//     which setting to look at. `persistence.mode=memory`, the default,
+//     reaches none of it.
+//
+// ---------------------------------------------------------------------------
+// WHAT IT NEEDS, AND WHY IT SKIPS RATHER THAN FAILS WITHOUT IT.
+//
+// Two things, both of which this stack supplies in every mode:
+//
+//   * **A POSTGRES** it may create a database in: STS_TEST_PERSISTENCE_DB_URL
+//     (the stack's server, as its superuser) and STS_TEST_PERSISTENCE_DB_CA
+//     (its CA directory). Without them — an AWS target, ./run-coverage.sh —
+//     it SKIPS, naming both.
+//   * **A COMPLETE, COMPILED TREE**, because it runs `node server.js` from
+//     it: this repository's root, which the tests image compiles in place,
+//     or MOCK_STS_DIR.
+//
+// **IT NEVER TOUCHES THE STACK'S SERVICE OR ITS SCHEMA.** It configures
+// nothing on the instance every other job is using and needs no realm to hide
+// in — everything it makes is in a database and processes it also destroys.
+//
+// Needs no browser and no Keycloak.
+// ---------------------------------------------------------------------------
+const assert = require("assert");
+const fs = require("fs");
+const net = require("net");
+const path = require("path");
+const tls = require("tls");
+const { Command, Option } = require("commander");
+const { spawn } = require("child_process");
+const common = require("./jwt_vc_json_common.js");
+const names = require("./random_username.js");
+const { declineToRun } = require("./expectation.js");
+
+var appconfig;
+var appconfigProblem = "";
+try {
+  appconfig = require(process.env.CONFIG_FILE);
+} catch (e) {
+  // The launchers always set CONFIG_FILE; a hand-run without one must still
+  // load, the arrangement tests/wait_for.js has. Reported once the logger
+  // exists, below.
+  appconfig = {};
+  appconfigProblem = (e && e.message) || String(e);
+}
+
+var bunyan = require("bunyan");
+var log = bunyan.createLogger({ name: "sts_persistence_postgres",
+                                level: appconfig.LOG_LEVEL || "info" });
+log.info("Log initialized. logLevel=" + log.level());
+if (appconfigProblem) {
+  log.debug("No CONFIG_FILE to read a log level from: " + appconfigProblem);
+}
+
+// The database this run creates, named after the run so that two runs (two
+// modes, or a retried job) cannot meet, and a leaked one says which run
+// leaked it.
+const ADMIN_URL = String(process.env.STS_TEST_PERSISTENCE_DB_URL || "");
+const DB_CA = String(process.env.STS_TEST_PERSISTENCE_DB_CA || "");
+const DATABASE = ("pgpersist_" + names.runStamp()).toLowerCase()
+  .replace(/[^a-z0-9_]/g, "_").slice(0, 60);
+
+// Everything this job started, so that teardown can be one function that runs
+// in a `finally` whether or not the assertions passed.
+const started = { database: false, processes: [] };
+
+// ---------------------------------------------------------------------------
+// PRECONDITIONS. Two ways to skip, and naming which is the whole value of
+// this — "no database was supplied" and "this tree is not compiled" send you
+// to completely different places.
+// ---------------------------------------------------------------------------
+async function preconditions() {
+  log.debug("Entering preconditions().");
+  const root = mockStsRoot();
+  if (!root) {
+    log.debug("Leaving preconditions(). No runnable mock STS tree.");
+    return { ok: false, why: "there is no COMPLETE mock STS checkout here to " +
+      "run. This job starts the service itself, so it needs the whole tree " +
+      "and its node_modules — not the thirty-odd modules the tests image " +
+      "carries. Looked at: MOCK_STS_DIR, ../sts (the submodule; an " +
+      "uninitialised one is an EMPTY DIRECTORY, so `git submodule update " +
+      "--init --recursive` is the usual fix), and ../../iya-sts. Set " +
+      "MOCK_STS_DIR to a working copy to run it. A tree that IS there and " +
+      "was skipped anyway is either missing its node_modules or is not " +
+      "BUILT — the mock is TypeScript since iya-sts #50 and a checkout has " +
+      "no .js beside its .ts, so `node server.js` refuses to start from " +
+      "one; `(cd sts && ./build-typescript.sh)` is the fix, and the [mock] " +
+      "lines above say which of the two it was." };
+  }
+
+  if (!ADMIN_URL || !DB_CA) {
+    log.debug("Leaving preconditions(). No database.");
+    return { ok: false, why: "no database. STS_TEST_PERSISTENCE_DB_URL and " +
+      "STS_TEST_PERSISTENCE_DB_CA name the stack's postgres and its CA, and " +
+      "docker-compose-run-tests.yml sets both in every mode; an AWS target " +
+      "and ./run-coverage.sh do not, and this job starts the service it " +
+      "drives, so there is nothing for it to do there." };
+  }
+  log.debug("Leaving preconditions().");
+  return { ok: true, root: root };
+}
+
+// A COMPLETE mock STS tree, or "". The candidate order is
+// tests/module_paths.js's
+// and the reasons for it are argued there; what differs is the TEST applied to
+// each candidate. That file is looking for one module to require, so existence
+// is enough. This one is going to run `node server.js`, so a tree without its
+// dependencies is not a candidate at all — and the tests image contains exactly
+// such a tree, which is the case this check exists for.
+// ---------------------------------------------------------------------------
+// A COMPILED tree, which became a third condition on 2026-09-17.
+//
+// The mock is TypeScript since iya-sts #50 and a CHECKOUT holds `x.ts` with no
+// `x.js` beside it: it is compiled inside that repository's own image build,
+// so `node server.js` from a checkout refuses to start with STS-CORE-0093 and
+// names 188 sources. Without this the tree looked runnable, the child was
+// spawned, and the job failed on "the mock STS exited with 1 before it was
+// listening" — a message about a process rather than about a missing build
+// step.
+//
+// ASKED OF THE MOCK'S OWN MODULE rather than reimplemented here. `sts/common/
+// compiled_tree.js` is what the service itself consults at startup, it takes
+// the root as a parameter, and it is plain .js precisely so it can run before
+// anything is compiled. A second walk here would be a second reading of which
+// directories hold sources and what a `.d.ts` means, and the two would come to
+// differ — the argument tests/krb5_codec_sync.js makes about the wire codec.
+//
+// A tree that is present and not built is a fact about THIS MACHINE, like a
+// missing npm install, so it makes the candidate not-a-candidate and this job
+// declines to run. It is not a failure: nothing about the debugger is broken.
+// To run it here, build the submodule — `(cd sts && ./build-typescript.sh)`.
+// ---------------------------------------------------------------------------
+function isCompiled(root) {
+  log.debug("Entering isCompiled(). root=" + root);
+  const module = path.join(root, "common", "compiled_tree.js");
+  if (!fs.existsSync(module)) {
+    // Older than #50, so every source is already .js and there is nothing to
+    // build. Not an obstacle, and not this function's business to guess at.
+    log.debug("Leaving isCompiled(). No compiled_tree.js; pre-TypeScript.");
+    return true;
+  }
+  let answer;
+  try {
+    answer = require(module).uncompiledSources(root);
+  } catch (e) {
+    log.info("[mock] " + root + " has a compiled_tree.js that could not be " +
+             "asked (" + e.message + "), so the tree is taken as built and " +
+             "the spawn below will say if it is not.");
+    log.debug("Leaving isCompiled(). Unreadable.");
+    return true;
+  }
+  if (!answer.found.length) {
+    log.debug("Leaving isCompiled(). Built.");
+    return true;
+  }
+  log.info("[mock] " + root + " is a checkout whose TypeScript is not built: " +
+           answer.found.length + " source(s) have no .js beside them (" +
+           answer.found.slice(0, 3).join(", ") + ", ...). `node server.js` " +
+           "refuses to start from it (STS-CORE-0093), so it is not a " +
+           "candidate. Build it with `(cd sts && ./build-typescript.sh)`.");
+  log.debug("Leaving isCompiled(). Not built.");
+  return false;
+}
+
+function mockStsRoot() {
+  log.debug("Entering mockStsRoot().");
+  const candidates = [
+    process.env.MOCK_STS_DIR,
+    // This repository's own root, which is the tree the tests image compiles
+    // in place; the two below are where the parent project looked.
+    path.join(__dirname, "..", ".."),
+    path.join(__dirname, "..", "sts"),
+    path.join(__dirname, "..", "..", "iya-sts")
+  ].filter(Boolean);
+  for (const candidate of candidates) {
+    const runnable = ["server.js", "package.json",
+                      path.join("node_modules", "express"),
+                      path.join("node_modules", "pg")].every(function (part) {
+      return fs.existsSync(path.join(candidate, part));
+    });
+    // The two conditions are reported APART, because they have different
+    // fixes and a message that names the wrong one sends the reader at the
+    // wrong command. This branch claimed "not the dependencies" for every
+    // rejected tree with a server.js in it, so a checkout that had its
+    // node_modules and only wanted building was reported as an npm problem.
+    if (!runnable) {
+      if (fs.existsSync(path.join(candidate, "server.js"))) {
+        log.info("[mock] " + candidate + " has a server.js but not the " +
+                 "dependencies to run it (express, pg), so it is not a " +
+                 "candidate. That is what the tests image looks like.");
+      }
+      continue;
+    }
+    if (!isCompiled(candidate)) {
+      continue;
+    }
+    log.info("[mock] Running the mock STS out of " + candidate + ".");
+    log.debug("Leaving mockStsRoot(). " + candidate);
+    return candidate;
+  }
+  log.debug("Leaving mockStsRoot(). None.");
+  return "";
+}
+
+// ---------------------------------------------------------------------------
+// THE DATABASE: one of this run's own, in the stack's postgres.
+//
+// The job's own connections are ENCRYPTED AND VERIFIED against the same CA
+// directory the children are given, so a CA the job could not use would fail
+// here, naming the job's setup, rather than as a refusal in the first child.
+// ---------------------------------------------------------------------------
+function caPem() {
+  log.debug("Entering caPem().");
+  const stat = fs.statSync(DB_CA);
+  const files = stat.isDirectory()
+    ? fs.readdirSync(DB_CA).filter(function (name) {
+      return /\.(crt|pem)$/.test(name);
+    }).map(function (name) {
+      return path.join(DB_CA, name);
+    })
+    : [DB_CA];
+  const pem = files.map(function (file) {
+    return fs.readFileSync(file, "utf8");
+  }).join("\n");
+  log.debug("Leaving caPem(). " + files.length + " file(s).");
+  return pem;
+}
+
+// The superuser URL with its database swapped and its query dropped: `pg`
+// parses `sslmode` too, and a string saying one thing beside an explicit
+// `ssl` option is the disagreement persistence_postgres.js strips it to avoid.
+function databaseUrlFor(database) {
+  log.debug("Entering databaseUrlFor(). " + database);
+  const url = new URL(ADMIN_URL);
+  url.pathname = "/" + database;
+  url.search = "";
+  log.debug("Leaving databaseUrlFor().");
+  return url.toString();
+}
+
+async function adminQuery(sql, params) {
+  log.debug("Entering adminQuery().");
+  const knexStore = require("../../persistence/knex_store");
+  const url = new URL(ADMIN_URL);
+  const client = knexStore.openConnection({
+    connectionString: databaseUrlFor(url.pathname.replace(/^\//, "")),
+    ssl: { ca: caPem(), servername: url.hostname }
+  });
+  await client.connect();
+  try {
+    const result = await client.query(sql, params || []);
+    log.debug("Leaving adminQuery().");
+    return result.rows || [];
+  } finally {
+    await client.end();
+  }
+}
+
+async function createDatabase() {
+  log.debug("Entering createDatabase().");
+  await adminQuery("CREATE DATABASE " + DATABASE);
+  started.database = true;
+  const base = databaseUrlFor(DATABASE);
+  log.info("[postgres] Created database " + DATABASE + " in " +
+           new URL(ADMIN_URL).host + " for this run.");
+  log.debug("Leaving createDatabase().");
+  return { url: base + "?sslmode=require", plain: base, own: true };
+}
+
+// The child's environment starts from THIS allow-list and nothing else. The
+// runner exports the mode's settings (STS_DATABASE_URL, the cluster and worker
+// settings, the keys source) into this container, and an inherited one would
+// point a child at the stack's store or into its cluster.
+function childBaseEnv() {
+  log.debug("Entering childBaseEnv().");
+  const env = {};
+  ["PATH", "HOME", "TMPDIR", "LANG", "TZ"].forEach(function (name) {
+    if (process.env[name] !== undefined) {
+      env[name] = process.env[name];
+    }
+  });
+  log.debug("Leaving childBaseEnv().");
+  return env;
+}
+
+// ---------------------------------------------------------------------------
+// THE MOCK. Started as a child process on ports nothing else is using, with
+// every listener this service has moved out of the way — the two Kerberos
+// sockets, LDAP and LDAPS, the two TLS listeners and SPIFFE's two TCP ports —
+// because a sibling stack is usually already holding the defaults and a bind
+// that fails is RECORDED rather than thrown here, so the symptom would be a
+// puzzling absence rather than an error.
+//
+// SPIFFE's two UNIX SOCKETS are turned OFF rather than moved: a socket has one
+// binder and the default path is shared, so moving them would need a directory
+// as well.
+// ---------------------------------------------------------------------------
+// `extraEnv` is how a section starts an instance configured differently from
+// the run's own — the coordination section starts one with
+// STS_PERSISTENCE_COORDINATE off, which is a setting the mock marks
+// `runtime: false`, so it cannot be reached through /admin-api/config/set.
+// ---------------------------------------------------------------------------
+// THE MOCK'S DEFAULT TLS PARAMETERS NEED OPENSSL 3.5, AND THE NODE RUNNING
+// THIS JOB MAY BE OLDER.
+//
+// This is the one job here that runs the mock with the HOST's node rather
+// than in the mock's own image, which pins Node 24 and so OpenSSL 3.5. Since
+// the 2026-09-27 submodule bump the mock's `tls.groups` default leads with
+// the ML-KEM hybrids (X25519MLKEM768, in OpenSSL 3.5's tuple syntax) and its
+// `tls.signatureAlgorithms` with ML-DSA, and it refuses to start at all when
+// a TLS context cannot be built from them — `[STS-TLS-0001] tls: NOT
+// STARTING`, which is correct of it. On a host whose node carries OpenSSL 3.0
+// (Node 22, for one) the first instance therefore exited 1 before listening,
+// and every section of this job went with it.
+//
+// So where this node cannot build those two lists, the child is handed the
+// mock's OWN defaults with the post-quantum entries taken out, through the two
+// environment variables the mock names in that message. That is the same
+// argument portEnv() makes for switching https off: what is under test here is
+// what SURVIVES A RESTART, and the key-exchange groups of a listener this job
+// never connects to are incidental. It is logged, and it changes nothing on a
+// node that has the algorithms — which the containerized stack's does.
+// ---------------------------------------------------------------------------
+let tlsEnvCache = null;
+
+function tlsEnvForThisNode(root) {
+  log.debug("Entering tlsEnvForThisNode().");
+  if (tlsEnvCache) {
+    log.debug("Leaving tlsEnvForThisNode(). Cached.");
+    return tlsEnvCache;
+  }
+  let supported = true;
+  try {
+    tls.createSecureContext({ ecdhCurve: "X25519MLKEM768",
+                              sigalgs: "mldsa65:ecdsa_secp256r1_sha256" });
+  } catch (e) {
+    log.debug("Caught in tlsEnvForThisNode(): " + e.message);
+    supported = false;
+  }
+  if (supported) {
+    tlsEnvCache = {};
+    log.debug("Leaving tlsEnvForThisNode(). This node has them.");
+    return tlsEnvCache;
+  }
+  let defaults = {};
+  try {
+    defaults = require(path.join(root, "env", "defaults.js")).tls || {};
+  } catch (e) {
+    log.debug("Caught in tlsEnvForThisNode(): " + e.message);
+  }
+  const groups = String(defaults.groups || "X25519:P-256:P-384")
+    .split(/[\s:\/]+/)
+    .filter(function (one) {
+      return one && !/mlkem/i.test(one);
+    });
+  const sigalgs = String(defaults.signatureAlgorithms ||
+      "ecdsa_secp256r1_sha256:rsa_pss_rsae_sha256")
+    .split(":")
+    .filter(function (one) {
+      return one && !/mldsa/i.test(one);
+    });
+  tlsEnvCache = { STS_TLS_GROUPS: groups.join(":"),
+                  STS_TLS_SIGALGS: sigalgs.join(":") };
+  log.info("[mock] this node (" + process.version + ", OpenSSL " +
+    process.versions.openssl + ") has no ML-KEM groups or ML-DSA " +
+    "signature schemes, which the mock's TLS defaults lead with, so each " +
+    "instance is started with them left out: STS_TLS_GROUPS=" +
+    tlsEnvCache.STS_TLS_GROUPS + ", STS_TLS_SIGALGS=" +
+    tlsEnvCache.STS_TLS_SIGALGS + ".");
+  log.debug("Leaving tlsEnvForThisNode(). Classical lists.");
+  return tlsEnvCache;
+}
+
+async function startMock(root, databaseUrl, label, extraEnv) {
+  log.debug("Entering startMock(). label=" + label);
+  const httpPort = await freePort();
+  const env = Object.assign(childBaseEnv(), await portEnv(httpPort),
+      tlsEnvForThisNode(root), {
+    STS_PERSISTENCE_MODE: "postgres",
+    // VERIFIED, against the stack's CA directory: the default since
+    // 2026-10-12, and what theServerCertificateIsVerified() takes away.
+    STS_DATABASE_TLS_CA_FILE: DB_CA,
+    // NOT `STS_PERSISTENCE_DATABASE_URL`, which is the name five of its six
+    // siblings would suggest and which this job spent a while getting wrong.
+    // A misspelling here is QUIET: the service dials the built-in default
+    // (postgres://sts:sts@localhost:5432/sts), cannot reach it, falls back to
+    // memory and reports `configuredMode: postgres, mode: memory` — which is
+    // correct behaviour and looks like a broken database.
+    STS_DATABASE_URL: databaseUrl,
+    STS_LOG_LEVEL: "warn",
+    // THIS INSTANCE'S /admin-api IS OPEN, and it is the one place in this
+    // suite where that is right rather than a shortcut. The mock began
+    // requiring an access token on that surface on 2026-09-09, audienced to
+    // ITSELF: the run's `STS_ADMIN_API_TOKEN` names the SHARED mock and is
+    // refused here, and minting one for a throwaway service on a random port
+    // would mean a token endpoint round trip before every restart in a job
+    // whose subject is what a restart KEEPS.
+    //
+    // It also made the readiness probe below unreachable, which is how this
+    // was found: `GET /admin-api/status` answered 401 for forty-five seconds
+    // and the job failed saying the service had not started, on a service
+    // that had been listening the whole time.
+    ADMIN_API_AUTH_REQUIRED: "false",
+    // The mock resolves CONFIG_FILE against ITS OWN root, and this suite's
+    // copy of that variable names a file under tests/. See
+    // tests/module_paths.js, which exists for this exact collision.
+    CONFIG_FILE: path.join(root, "env", "local.js")
+  }, extraEnv || {});
+
+  // THIS node, not whichever `node` is first on PATH: tlsEnvForThisNode()
+  // asked this binary's OpenSSL what it can do, and the answer is about the
+  // binary that then runs the mock only if they are the same one.
+  const child = spawn(process.execPath, ["server.js"], {
+    cwd: root, env: env, stdio: ["ignore", "pipe", "pipe"]
+  });
+  started.processes.push(child);
+  const output = [];
+  child.stdout.on("data", function (chunk) { output.push(String(chunk)); });
+  child.stderr.on("data", function (chunk) { output.push(String(chunk)); });
+
+  const base = "http://127.0.0.1:" + httpPort;
+  // TWO MINUTES, AND IT WAS FORTY-FIVE SECONDS until 2026-09-27. The loop
+  // polls, so a passing start pays nothing for the headroom. The mock of the
+  // 2026-09-27 bump starts a compiled TypeScript tree with over a thousand
+  // settings, and a SECOND instance also joins the first one's change log
+  // before it listens; in the pool, beside four browsers, that went past
+  // forty-five seconds while the same job alone started each instance well
+  // inside it.
+  const startBudgetMs = 120000;
+  const until = Date.now() + startBudgetMs;
+  while (Date.now() < until) {
+    if (child.exitCode !== null) {
+      assert.fail("the mock STS (" + label + ") exited with " +
+        child.exitCode + " before it was listening. Its output was:\n" +
+        output.join("").slice(-2000));
+    }
+    try {
+      const probe = await common.httpJson(base + "/admin-api/status");
+      if (probe.status === 200) {
+        log.info("[mock] " + label + " is listening on " + base + ".");
+        log.debug("Leaving startMock().");
+        return { base: base, child: child, output: output };
+      }
+    } catch (e) {
+      // Not up yet. The loop's own timeout is the failure, and it can say
+      // what the process printed, which a connection error cannot.
+      log.debug("Caught in startMock(): " + ((e && e.message) || e));
+    }
+    await pause(300);
+  }
+  assert.fail("the mock STS (" + label + ") did not answer on " + base +
+    " within " + (startBudgetMs / 1000) + " seconds. Its output was:\n" +
+    output.join("").slice(-2000));
+}
+
+async function stopMock(instance, why) {
+  log.debug("Entering stopMock(). why=" + why);
+  if (!instance || !instance.child || instance.child.exitCode !== null) {
+    log.debug("Leaving stopMock(). Already gone.");
+    return;
+  }
+  const ended = new Promise(function (resolve) {
+    instance.child.once("exit", resolve);
+  });
+  instance.child.kill("SIGTERM");
+  const killed = await Promise.race([ended, pause(8000).then(function () {
+    return "timeout";
+  })]);
+  if (killed === "timeout") {
+    log.warn("the mock STS did not stop on SIGTERM; killing it.");
+    instance.child.kill("SIGKILL");
+    await ended;
+  }
+  log.info("[mock] Stopped (" + why + ").");
+  log.debug("Leaving stopMock().");
+}
+
+// A port nothing is listening on, taken by binding to 0 and reading back what
+// the kernel chose. There is a race between closing and the mock binding, and
+// it is the standard one and the standard answer: the alternative is a fixed
+// port, and a fixed port on a machine that runs several of these stacks at once
+// is not a smaller risk, it is a certainty. See the local-stacks note in
+// tests/CLAUDE.md.
+function freePort() {
+  log.debug("Entering freePort().");
+  log.debug("Leaving freePort(). The port arrives on the promise.");
+  return new Promise(function (resolve, reject) {
+    const server = net.createServer();
+    server.unref();
+    server.on("error", reject);
+    server.listen(0, "127.0.0.1", function () {
+      const port = server.address().port;
+      server.close(function () { resolve(port); });
+    });
+  });
+}
+
+// Every listener this service has, moved out of the way. A sibling stack is
+// usually already holding the defaults, and a bind that fails is RECORDED
+// rather than thrown for the four socket families — so the symptom of a
+// collision would be a puzzling absence rather than an error.
+//
+// SPIFFE's two UNIX SOCKETS are turned OFF rather than moved: a socket has one
+// binder and the default path is shared, so moving them would need a directory
+// as well.
+//
+// AND THE MAIN PORT IS PINNED TO PLAIN HTTP, which is not a port but belongs
+// with them: it is the same act of pinning what this instance does rather
+// than inheriting an ambient default. Every request either caller makes is
+// `http://`, and the mock's default stopped being that. `global.https`
+// derives from `oauth2.rfc9700`, and the mock's own env/local.js — which both
+// callers name as CONFIG_FILE — has set `https: true` since its 2026-08-30
+// "TLS on all supported services" change.
+//
+// It broke the two callers in OPPOSITE directions, which is why it is set
+// here rather than in either of them. startMock() polls until the port
+// answers: the instance came up perfectly, in about a second, serving TLS to
+// a plain-http probe, and the failure was the wait loop's — "did not answer
+// within forty-five seconds", which reads as a service that could not start
+// rather than one that started and was not being spoken to. That cost four
+// red runs of the live-site suite. startMockExpectingFailure() polls to prove
+// the port NEVER answers, so the same change made it pass VACUOUSLY: with
+// TLS on, that probe cannot answer whether the service bound a listener it
+// should not have or not, and the check stopped checking without failing.
+//
+// Switching it off rather than teaching this job https is deliberate. What is
+// under test here is what SURVIVES A RESTART; the transport is incidental,
+// and a certificate regenerated on every start would put
+// `rejectUnauthorized: false` into every request below to prove nothing.
+async function portEnv(httpPort) {
+  log.debug("Entering portEnv(). httpPort=" + httpPort);
+  const env = {
+    STS_PORT: String(httpPort),
+    STS_HTTPS: "false",
+    STS_SPIFFE_WORKLOAD_SOCKET_ENABLED: "false",
+    STS_SPIFFE_SERVER_SOCKET_ENABLED: "false"
+  };
+  const others = ["STS_TLS_PORT", "STS_MTLS_PORT", "KRB5_KDC_PORT",
+                  "KRB5_SERVICE_PORT", "LDAP_PORT", "LDAPS_PORT",
+                  "STS_SPIFFE_WORKLOAD_PORT", "STS_SPIFFE_SERVER_PORT"];
+  for (const name of others) {
+    env[name] = String(await freePort());
+  }
+  log.debug("Leaving portEnv().");
+  return env;
+}
+
+function pause(ms) {
+  log.debug("Entering pause(). " + ms + "ms");
+  log.debug("Leaving pause().");
+  return new Promise(function (resolve) { setTimeout(resolve, ms); });
+}
+
+// ---------------------------------------------------------------------------
+// Talking to whichever instance is being driven.
+// ---------------------------------------------------------------------------
+async function get(instance, path) {
+  log.debug("Entering get(). path=" + path);
+  const reply = await common.httpJson(instance.base + path);
+  assert.strictEqual(reply.status, 200,
+    "GET " + path + " should answer 200; it answered " + reply.status + " " +
+    String(reply.raw).slice(0, 200));
+  log.debug("Leaving get().");
+  return reply.body;
+}
+
+async function post(instance, path, body) {
+  log.debug("Entering post(). path=" + path);
+  const reply = await common.httpJson(instance.base + path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body || {})
+  });
+  assert.ok(reply.status === 200 && reply.body && reply.body.ok !== false,
+    "POST " + path + " " + JSON.stringify(body) + " should succeed; it " +
+    "answered " + reply.status + " " +
+    JSON.stringify((reply.body && reply.body.errors) || reply.body)
+      .slice(0, 300));
+  log.debug("Leaving post().");
+  return reply.body;
+}
+
+async function status(instance) {
+  log.debug("Entering status().");
+  const shown = await get(instance, "/admin-api/persistence");
+  log.debug("Leaving status().");
+  return shown.status;
+}
+
+// The store's own account of itself, after giving a scheduled flush time to
+// happen. In postgres mode the write delay is zero — the driver writes in a
+// transaction rather than coalescing — but this waits on `pending` rather than
+// assuming that, so the file does not have to know.
+async function settled(instance) {
+  log.debug("Entering settled().");
+  const until = Date.now() + 8000;
+  let seen = await status(instance);
+  while (Date.now() < until && seen.pending) {
+    await pause(150);
+    seen = await status(instance);
+  }
+  log.debug("Leaving settled(). writes=" + seen.writes +
+            ", pending=" + seen.pending);
+  return seen;
+}
+
+// ---------------------------------------------------------------------------
+// WHAT POSTGRES ITSELF SAW OF THE MOCK'S CONNECTIONS.
+//
+// This is the half that cannot be faked by agreeing with ourselves. Every
+// other TLS check available here reads something THIS SIDE decided — the
+// connection string, or the report built out of it — and a driver that set
+// `sslmode=require` and then handed `pg` an option that quietly disabled it
+// would pass all of them. `pg_stat_ssl` is the server's own row per backend,
+// so it answers what actually crossed the socket.
+//
+// `datname` is what separates the CHILDREN's connections from everything
+// else on that server: the stack's service dials its own database, and this
+// job's own query dials the superuser's.
+//
+// It counts as well as tests, because `bool_and` over no rows is null and a
+// pool with nothing open would otherwise read as agreement. Zero connections
+// is a retry, never a pass.
+// ---------------------------------------------------------------------------
+async function connectionsFromTheMock() {
+  log.debug("Entering connectionsFromTheMock().");
+  const rows = await adminQuery(
+    "select count(*) filter (where s.ssl)::int as encrypted, " +
+    "count(*)::int as total " +
+    "from pg_stat_ssl s join pg_stat_activity a on a.pid = s.pid " +
+    "where a.datname = $1 and a.client_addr is not null", [DATABASE]);
+  const out = { encrypted: Number((rows[0] || {}).encrypted || 0),
+                total: Number((rows[0] || {}).total || 0) };
+  log.debug("Leaving connectionsFromTheMock(). " + out.encrypted + " of " +
+            out.total + " encrypted.");
+  return out;
+}
+
+// Wait for the pool to have opened something, then report it. A pool that is
+// idle between writes may hold nothing at the instant of the first query.
+async function settledConnections() {
+  log.debug("Entering settledConnections().");
+  const until = Date.now() + 15000;
+  let seen = await connectionsFromTheMock();
+  while (Date.now() < until && seen.total === 0) {
+    await pause(300);
+    seen = await connectionsFromTheMock();
+  }
+  log.debug("Leaving settledConnections(). total=" + seen.total);
+  return seen;
+}
+
+// ---------------------------------------------------------------------------
+// THE CONNECTION IS ENCRYPTED, AND THE SERVER AGREES.
+// ---------------------------------------------------------------------------
+async function theDatabaseConnectionIsEncrypted(instance, databaseUrl) {
+  log.debug("Entering theDatabaseConnectionIsEncrypted().");
+  log.info("=== The database connection, as postgres saw it ===");
+  // The messages below say what the connection string asked for, so check
+  // that it asked. A caller that wired the plaintext URL in here would
+  // otherwise get a failure explaining a `require` that was never sent.
+  assert.ok(/[?&]sslmode=require/i.test(databaseUrl),
+    "this section asserts the TLS path and must be given the TLS connection " +
+    "string; it was given one that does not ask for sslmode=require.");
+  const seen = await settledConnections();
+  assert.ok(seen.total > 0,
+    "postgres reports no client backend from this host at all, so there is " +
+    "nothing to judge and this check would otherwise pass by saying nothing. " +
+    "The mock is running and its store is healthy, so a pool connection " +
+    "should be open.");
+  assert.strictEqual(seen.encrypted, seen.total,
+    "every connection the mock made should be TLS — the connection string " +
+    "carries sslmode=require and the driver configures the socket itself — " +
+    "but postgres reports " + seen.encrypted + " of " + seen.total +
+    " encrypted. A `require` that arrives in the clear means the driver's " +
+    "own ssl option won over the string, which is the exact disagreement " +
+    "persistence_postgres.js strips the parameter to prevent.");
+  log.info("[tls] OK — postgres reports all " + seen.total + " of the mock's " +
+           "connection(s) encrypted, which is the server's account of it " +
+           "rather than ours.");
+  log.debug("Leaving theDatabaseConnectionIsEncrypted().");
+}
+
+// ---------------------------------------------------------------------------
+// AND NO sslmode IS STILL TLS (#273).
+//
+// This half used to prove the opposite branch, that a string with no `sslmode`
+// was dialled in the clear. This service has no such branch any more — it
+// dials every database over TLS whatever the string says — so the same
+// database is dialled with no `sslmode`, and both the report and postgres
+// must say it is ENCRYPTED, while the report still names the parameter as
+// absent rather than inventing one.
+// ---------------------------------------------------------------------------
+async function noSslmodeIsStillTls(root, plainUrl) {
+  log.debug("Entering noSslmodeIsStillTls().");
+  log.info("=== The same database with no sslmode ===");
+  const instance = await startMock(root, plainUrl, "the no-sslmode instance");
+  try {
+    const seen = await status(instance);
+    assert.strictEqual(seen.mode, "postgres",
+      "it should still reach the database; it is in " + seen.mode +
+      " and reports " + seen.lastError);
+    assert.strictEqual(seen.database.encrypted, true,
+      "and the report must say the connection IS encrypted — this service " +
+      "dials every database over TLS; it says " +
+      JSON.stringify(seen.database));
+    assert.strictEqual(seen.database.verifyCertificate, true,
+      "and VERIFIED, which is the default since 2026-10-12; it says " +
+      JSON.stringify(seen.database));
+    assert.strictEqual(seen.database.sslmode, "not set",
+      "naming the absent parameter rather than inventing a value; it says " +
+      JSON.stringify(seen.database.sslmode));
+    const onTheWire = await settledConnections();
+    assert.ok(onTheWire.total > 0,
+      "postgres reports no client backend in " + DATABASE + ", so there " +
+      "is nothing to judge.");
+    assert.strictEqual(onTheWire.encrypted, onTheWire.total,
+      "and postgres must have seen every one of them encrypted, or the " +
+      "report says TLS for a connection that went in the clear. It reports " +
+      onTheWire.encrypted + " of " + onTheWire.total + " encrypted.");
+    log.info("[no-sslmode] OK — the report says encrypted and verified, and " +
+             "postgres saw all " + onTheWire.total + " connection(s) " +
+             "encrypted.");
+  } finally {
+    await stopMock(instance, "the no-sslmode check is done");
+  }
+  log.debug("Leaving noSslmodeIsStillTls().");
+}
+
+// ---------------------------------------------------------------------------
+// THE DATABASE'S CERTIFICATE IS ACTUALLY VERIFIED (2026-10-12), AGAINST A REAL
+// SERVER.
+//
+// tests/database_tls_ca.js holds the settings and the options the driver is
+// handed, in process; nothing asked a real postgres to present a certificate
+// the service then refused. With STS_DATABASE_TLS_CA_FILE removed, the
+// server's certificate — self-signed inside its container — cannot be
+// verified against the default trust store, and the start must fail before
+// anything answers. The positive half is every other section of this job:
+// each instance is started with the CA and verification on, and reaches the
+// database.
+//
+// THE HOST NAME HALF IS NOT HERE, AND WHY IS A FINDING (2026-10-23). The
+// obvious case — the same CA, the server dialled by its IP address, which its
+// certificate does not name — STARTS. `pg` sets `servername` only when the
+// host is not an IP and passes no `host` to `tls.connect`, so node checks the
+// certificate against `localhost`, which this stack's certificate names.
+// So a database dialled by address is never checked against that address.
+// The case belongs here once the driver checks the address itself.
+// ---------------------------------------------------------------------------
+async function theServerCertificateIsVerified(root, database) {
+  log.debug("Entering theServerCertificateIsVerified().");
+  log.info("=== The database's certificate is verified ===");
+  const cases = [{ label: "with no CA to verify against", url: database.url,
+                   env: { STS_DATABASE_TLS_CA_FILE: null } }];
+  for (const c of cases) {
+    const ended = await startMockExpectingFailure(root, c.url, c.env);
+    assert.notStrictEqual(ended.code, 0,
+      "A SERVICE WHOSE DATABASE PRESENTS A CERTIFICATE IT CANNOT VERIFY MUST " +
+      "NOT START (" + c.label + "). It exited with " + ended.code + ".\n" +
+      ended.output.slice(-1200));
+    assert.ok(!ended.everAnswered,
+      "and it must never have answered a request (" + c.label + ").");
+    const fatal = fatalMessage(ended.output);
+    assert.ok(/certificate|self[- ]signed|altname|verify|hostname/i
+      .test(fatal),
+      "and the FATAL record must name the certificate as the reason (" +
+      c.label + "). It said:\n" + (fatal || ended.output.slice(-1200)));
+    log.info("[verify] OK — refused to start " + c.label + ": " +
+             fatal.slice(0, 160));
+  }
+  log.debug("Leaving theServerCertificateIsVerified().");
+}
+
+// ---------------------------------------------------------------------------
+// THE STORE OPENED, AND SAYS WHAT IT IS WITHOUT SAYING THE PASSWORD.
+// ---------------------------------------------------------------------------
+async function theStoreOpened(instance, databaseUrl) {
+  log.debug("Entering theStoreOpened().");
+  log.info("=== The store opened, in postgres mode ===");
+  const seen = await status(instance);
+  assert.strictEqual(seen.mode, "postgres",
+    "the store should be in postgres mode; it is in " + seen.mode +
+    (seen.configuredMode === "postgres"
+      ? " having been CONFIGURED for postgres, which means it fell back — " +
+        seen.lastError
+      : " and was configured for " + seen.configuredMode));
+  assert.strictEqual(seen.enabled, true, "and it should be enabled.");
+  assert.strictEqual(seen.healthy, true,
+    "and healthy; it reports " + seen.lastError);
+  assert.ok(seen.persistsDirectory && seen.persistsRealms &&
+            seen.persistsAppconfig,
+    "and all three things should be persisting; it reports " +
+    JSON.stringify({ directory: seen.persistsDirectory,
+                     realms: seen.persistsRealms,
+                     appconfig: seen.persistsAppconfig }));
+
+  // THE CONNECTION STRING CARRIES A PASSWORD and this reply is rendered on a
+  // console page and returned by an UNGATED management API. What comes back is
+  // the host, port, database and user parsed out of it, and never the string.
+  assert.ok(seen.database && seen.database.host && seen.database.database,
+    "the status should describe the database it is talking to; it says " +
+    JSON.stringify(seen.database));
+  const asText = JSON.stringify(seen);
+  assert.ok(asText.indexOf("postgres://") < 0,
+    "AND IT MUST NEVER ECHO THE CONNECTION STRING. It carries a password, " +
+    "and " +
+    "this reply is drawn on /admin/persistence and returned by an API that " +
+    "is " +
+    "not gated — so the whole point of parsing the host, port, database and " +
+    "user out of it is lost the moment the string itself appears beside " +
+    "them. " +
+    "The reply contains: " + asText.slice(0, 400));
+  assert.ok(!/"password"|:sts@|sts:sts/.test(asText),
+    "and no part of the credential either; the reply is " +
+    asText.slice(0, 400));
+
+  // THE TWO PLACES TLS LIVES HAVE TO AGREE. `sslmode` rides in the connection
+  // string and is postgres's own spelling; whether the certificate is BELIEVED
+  // is a setting, because `pg` takes that as a socket option and would ignore
+  // it in a URL. The report is built out of both, so what it must not do is
+  // disagree with the string it was built from — a page that said `encrypted`
+  // about a connection dialled without `sslmode` is the misleading half of a
+  // true sentence, and it is read by whoever is deciding whether a deployment
+  // is safe.
+  //
+  // Asserted against the URL rather than against a constant, so that the
+  // property is stated where the string is.
+  const asked = /[?&]sslmode=(require|verify-ca|verify-full|prefer)/i
+    .exec(databaseUrl);
+  assert.strictEqual(seen.database.encrypted, !!asked,
+    "the report's `encrypted` must agree with the connection string it was " +
+    "built from. The string " + (asked ? "asks for TLS (sslmode=" + asked[1] +
+    ")" : "does not ask for TLS") + " and the report says " +
+    JSON.stringify(seen.database));
+  if (asked) {
+    assert.strictEqual(seen.database.sslmode, asked[1].toLowerCase(),
+      "and it should name the mode that was actually asked for; it says " +
+      JSON.stringify(seen.database.sslmode));
+    assert.strictEqual(seen.database.verifyCertificate, true,
+      "and report the certificate as VERIFIED — the default of " +
+      "persistence.databaseTlsRejectUnauthorized since 2026-10-12, against " +
+      "the CA directory this job hands it. Encrypted and authenticated are " +
+      "two different answers; it says " + JSON.stringify(seen.database));
+  }
+
+  // AND IT MUST SAY WHETHER IT COORDINATES, in the same breath as saying it
+  // persists — because those are different promises and the second is the one
+  // somebody deploys against. `persistence.coordinate` is ON by default on a
+  // postgres store since 2026-09-09; it was absent before, and this assertion
+  // read `false` as the only correct answer. Both configurations are real and
+  // the section below drives both, so what is checked here is that the flag
+  // and the NOTE agree — a report that said one thing in a boolean and the
+  // other in the sentence beside it is worse than either.
+  assert.strictEqual(typeof seen.coordinates, "boolean",
+    "the status must SAY whether processes against this store coordinate; " +
+    "it says " + JSON.stringify(seen.coordinates));
+  if (seen.coordinates) {
+    assert.ok(/coordinate/i.test(String(seen.note || "")) &&
+        !/not coordination/i.test(String(seen.note || "")),
+      "and the note beside it should say so in a sentence an operator reads, " +
+      "since that is what somebody deploys against; it says " +
+      JSON.stringify(seen.note));
+  } else {
+    assert.ok(/not coordination/i.test(String(seen.note || "")),
+      "and the note beside it should say so in a sentence an operator reads, " +
+      "since that is what somebody deploys against; it says " +
+      JSON.stringify(seen.note));
+  }
+  log.info("[store] OK — postgres, healthy, all three things persisting, " +
+           "talking to " + seen.database.user + "@" + seen.database.host +
+           ":" + seen.database.port + "/" + seen.database.database +
+           " over " + seen.database.sslmode +
+           ", and the connection string appears nowhere in the reply.");
+  log.debug("Leaving theStoreOpened().");
+}
+
+// ---------------------------------------------------------------------------
+// WRITE ONE OF EACH OF THE THREE THINGS THAT PERSIST, THROUGH A DOOR A PERSON
+// USES.
+//
+// Not through the persistence module: what is under test is the whole path from
+// the management API down, which is what a person actually changes and the only
+// path any of this is reachable by.
+// ---------------------------------------------------------------------------
+async function writeSomethingOfEachKind(instance) {
+  log.debug("Entering writeSomethingOfEachKind().");
+  log.info("=== Writing one of each of the three things that persist ===");
+  const stamp = names.runStamp();
+  const made = {
+    realm: ("pgtest" + stamp).toLowerCase().replace(/[^a-z0-9-]/g, ""),
+    person: names.usernameFor("pgtest-person"),
+    application: "pgtest-app-" + stamp,
+    settingKey: "krb5.clockSkew",
+    settingValue: 0
+  };
+
+  // 1. THE REALM REGISTRY, with an override of its own on the row.
+  await post(instance, "/admin-api/realms/create", {
+    id: made.realm, name: "Postgres persistence test",
+    // A trust domain of its own: a string, realm-settable, and read by
+    // nothing else this job does. (It was saml2.entityId, which iya-sts
+    // removed on 2026-10-08, #523.)
+    overrides: { "spiffe.trustDomain": made.realm + ".pgtest.example" }
+  });
+
+  // 2. THE DIRECTORY — a person and an application, and the application in the
+  // REALM, so that what comes back has to come back into the right subtree.
+  await post(instance, "/admin-api/users/create", { username: made.person });
+  await post(instance,
+      "/realm/" + made.realm + "/admin-api/applications/create", {
+    identifier: made.application, name: "Postgres persistence test",
+    kind: "oauth2-client", protocols: ["oauth2"]
+  });
+
+  // 3. THE RUNTIME APPCONFIG OVERRIDES.
+  const before = await get(instance, "/admin-api/config");
+  made.settingValue = Number(settingRow(before, made.settingKey).value) + 11;
+  await post(instance, "/admin-api/config/set",
+      { key: made.settingKey, value: made.settingValue });
+
+  const seen = await settled(instance);
+  assert.ok(seen.writes > 0,
+    "the store should have written something by now; it reports " +
+    seen.writes + " write(s).");
+  assert.strictEqual(seen.failures, 0,
+    "and nothing should have failed: " + seen.lastError);
+  assert.strictEqual(seen.pending, false,
+    "and nothing should still be waiting.");
+  log.info("[written] OK — realm " + made.realm + ", person " + made.person +
+           ", application " + made.application + " in that realm, and " +
+           made.settingKey + "=" + made.settingValue + ", in " + seen.writes +
+           " write(s) with no failure.");
+  log.debug("Leaving writeSomethingOfEachKind().");
+  return made;
+}
+
+function settingRow(config, key) {
+  log.debug("Entering settingRow(). " + key);
+  let found;
+  (config.groups || []).forEach(function (group) {
+    (group.settings || []).forEach(function (setting) {
+      if (setting.key === key) {
+        found = setting;
+      }
+    });
+  });
+  log.debug("Leaving settingRow(). " + (found ? "found" : "none"));
+  return found;
+}
+
+// ---------------------------------------------------------------------------
+// WHAT THE FIRST PROCESS MINTED, so that the restart can be asked about it.
+//
+// A token and its `kid`, taken from the JWKS rather than from the token, so
+// that what is compared after the restart is the SERVICE's key rather than a
+// header this test read once.
+// ---------------------------------------------------------------------------
+async function mintSomething(instance, made) {
+  log.debug("Entering mintSomething().");
+  const reply = await common.httpJson(instance.base + "/oauth2/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: "grant_type=password&username=" + encodeURIComponent(made.person) +
+          "&password=x&client_id=pgtest-client&scope=openid"
+  });
+  assert.strictEqual(reply.status, 200,
+    "the token endpoint should mint a token; it answered " + reply.status);
+  const jwks = await get(instance, "/oauth2/jwks");
+  assert.ok(jwks.keys && jwks.keys.length,
+    "the service should publish a JWKS; it published " + JSON.stringify(jwks));
+  const held = {
+    accessToken: reply.body.access_token,
+    jti: claimOf(reply.body.access_token, "jti"),
+    kid: jwks.keys[0].kid,
+    audit: (await get(instance, "/admin-api/audit")).recorded,
+    tokensHeld: (await get(instance, "/admin-api/tokens")).held
+  };
+  assert.ok(held.jti && held.kid,
+    "and both a jti and a kid should have been read; got " +
+    JSON.stringify({ jti: held.jti, kid: held.kid }));
+  assert.ok(held.tokensHeld > 0,
+    "and the service should be holding what it just issued; it holds " +
+    held.tokensHeld);
+  log.info("[minted] A token with jti " + held.jti + ", signed by " +
+           held.kid + ". " + held.tokensHeld + " artifact(s) held and " +
+           held.audit + " audit row(s) recorded.");
+  log.debug("Leaving mintSomething().");
+  return held;
+}
+
+function claimOf(jwt, name) {
+  log.debug("Entering claimOf(). " + name);
+  if (!jwt) {
+    log.debug("Leaving claimOf(). No token.");
+    return "";
+  }
+  const parts = String(jwt).split(".");
+  if (parts.length < 2) {
+    log.debug("Leaving claimOf(). Not a JWT.");
+    return "";
+  }
+  try {
+    const value = JSON.parse(Buffer.from(parts[1], "base64url")
+      .toString("utf8"))[name] || "";
+    log.debug("Leaving claimOf().");
+    return value;
+  } catch (e) {
+    // A token this service minted always decodes; one that does not is worth
+    // reporting as an absent claim rather than as a crash, because the
+    // assertion that follows says more about what went wrong.
+    log.debug("Caught in claimOf(): " + ((e && e.message) || e));
+    log.debug("Leaving claimOf(). Undecodable.");
+    return "";
+  }
+}
+
+// ---------------------------------------------------------------------------
+// THE RESTART, AND THE THREE THINGS THAT MUST COME BACK.
+//
+// This is the assertion no other job in this suite can make, and it is made
+// against a process that did not write any of it.
+// ---------------------------------------------------------------------------
+async function everythingThatPersistsComesBack(instance, made) {
+  log.debug("Entering everythingThatPersistsComesBack().");
+  log.info("=== After a restart: what came back ===");
+  const seen = await status(instance);
+  assert.ok(seen.restoredAt,
+    "the store should say WHEN it restored; a process that read nothing back " +
+    "reports no instant at all, which is the difference between an empty " +
+    "database and a database that was never read.");
+
+  // The counts first, because they are the service's own account of the
+  // restore and a mismatch between them and the entries below says which half
+  // is wrong.
+  assert.strictEqual(seen.restored.realms, 1,
+    "ONE REALM should have been restored — this job made exactly one, and " +
+    "the " +
+    "DEFAULT realm is never a row (it is a constant in realms.js, so a store " +
+    "that carried one would be describing a realm nobody can remove). It " +
+    "reports " + seen.restored.realms);
+  assert.ok(seen.restored.entries > 0,
+    "and the directory should have come back; it restored " +
+    seen.restored.entries + " entr(ies).");
+  assert.strictEqual(seen.restored.overrides, 1,
+    "and the one runtime appconfig override; it restored " +
+    seen.restored.overrides);
+
+  // 1. THE REALM, and the override it was CREATED with — which is the field
+  // that was documented, exampled, validated and silently dropped by the
+  // shared action function for months, so it is worth following all the way
+  // to a database and back.
+  const realms = await get(instance, "/admin-api/realms");
+  const row = (realms.realms || []).filter(function (one) {
+    return one.id === made.realm;
+  })[0];
+  assert.ok(row, "the realm " + made.realm + " should be back; the registry " +
+    "holds " + JSON.stringify((realms.realms || []).map(function (one) {
+      return one.id;
+    })));
+  const trustDomain = ((row.settings || []).filter(function (setting) {
+    return setting.key === "spiffe.trustDomain";
+  })[0] || {}).value;
+  assert.strictEqual(trustDomain, made.realm + ".pgtest.example",
+    "and the override it was created with should be on it; the row carries " +
+    JSON.stringify(row.settings));
+
+  // 2. THE DIRECTORY, in both realms — the person in the default one and the
+  // application in the realm, so that a restore which put everything in one
+  // subtree fails here rather than looking correct.
+  const person = await get(instance,
+      "/admin-api/users?user=" + encodeURIComponent(made.person));
+  assert.strictEqual(person.known, true,
+    "the person created before the restart should still be in the directory.");
+  const application = await get(instance, "/realm/" + made.realm +
+      "/admin-api/applications?application=" +
+      encodeURIComponent(made.application));
+  assert.strictEqual(application.found, true,
+    "and the application should be back IN ITS REALM. The directory is a " +
+    "store per realm, so a restore that dropped everything into one subtree " +
+    "would leave this one invisible from the realm that owns it.");
+  assert.ok(String(application.dn).indexOf("dc=" + made.realm + ",") > 0,
+    "and its DN should still name that realm; it is " + application.dn);
+  const inDefault = await get(instance,
+      "/admin-api/applications?application=" +
+      encodeURIComponent(made.application));
+  assert.strictEqual(inDefault.found, false,
+    "AND IT MUST NOT BE VISIBLE IN THE DEFAULT REALM. Two realms here are " +
+    "two " +
+    "directories; a restore that flattened them would put every realm's " +
+    "applications in everybody's registry.");
+
+  // 3. THE APPCONFIG OVERRIDE, with its source.
+  const config = await get(instance, "/admin-api/config");
+  const setting = settingRow(config, made.settingKey);
+  assert.strictEqual(Number(setting.value), made.settingValue,
+    "the runtime override should be in force again; " + made.settingKey +
+    " reads " + setting.value + " against the " + made.settingValue +
+    " that was set before the restart.");
+  assert.strictEqual(setting.source, "override",
+    "and the row should say it came from an override rather than from the " +
+    "appconfig file — the saved values are re-applied through the same " +
+    "setOverride() a caller uses, so persistence adds no LAYER and the five " +
+    "are unchanged. It says " + setting.source);
+  log.info("[restored] OK — the realm and its create-time override, the " +
+           "person, the application in its own realm's subtree and not in " +
+           "anybody else's, and the appconfig override with its source.");
+  log.debug("Leaving everythingThatPersistsComesBack().");
+}
+
+// ---------------------------------------------------------------------------
+// AND THE HALF THAT IS A DOCUMENTED NON-GOAL.
+//
+// This is the one a well-meaning change breaks, because "the tokens went away"
+// reads like a bug and is the whole design: the signing key is regenerated on
+// every start, so a token restored from a database would verify against
+// nothing at all. The `kid` is derived from the key material — two instances
+// cannot claim one kid over different keys — which makes it the evidence
+// rather than an illustration.
+// ---------------------------------------------------------------------------
+async function nothingThatWasMintedComesBack(instance, held) {
+  log.debug("Entering nothingThatWasMintedComesBack().");
+  log.info("=== After a restart: what did NOT come back ===");
+  const jwks = await get(instance, "/oauth2/jwks");
+  assert.notStrictEqual(jwks.keys[0].kid, held.kid,
+    "THE SIGNING KEY MUST BE A NEW ONE. It is regenerated on every start and " +
+    "the kid is derived from the key material, so a service that came back " +
+    "with " + held.kid + " would be one that had persisted its private key — " +
+    "and every token in that database would then be a live credential " +
+    "surviving a restart, which is the opposite of what this store is for.");
+
+  const introspected = await common.httpJson(
+      instance.base + "/oauth2/introspect", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: "token=" + encodeURIComponent(held.accessToken)
+  });
+  assert.strictEqual(introspected.status, 200,
+    "introspection should answer 200 whatever it thinks of the token.");
+  assert.strictEqual(introspected.body.active, false,
+    "AND THE TOKEN MINTED BEFORE THE RESTART MUST BE DEAD. It was signed by " +
+    "a " +
+    "key that no longer exists, so a service that still called it active " +
+    "would be vouching for something it can no longer verify.");
+
+  const tokens = await get(instance, "/admin-api/tokens");
+  assert.strictEqual(tokens.held, 0,
+    "and the service should be holding NOTHING it minted: sessions, access " +
+    "tokens, ID Tokens, refresh tokens, codes, artifacts and tickets all go " +
+    "with the process, in every mode. It holds " + tokens.held);
+
+  const metrics = await get(instance, "/admin-api/metrics");
+  assert.ok(metrics.uptimeMs < 120000,
+    "and the statistics should be this process's rather than the last one's; " +
+    "it reports an uptime of " + metrics.uptimeMs + "ms.");
+  log.info("[not restored] OK — a new signing key (" + jwks.keys[0].kid +
+           " rather than " + held.kid + "), the old token dead at " +
+           "introspection, nothing held, and the statistics reset.");
+  log.debug("Leaving nothingThatWasMintedComesBack().");
+}
+
+// ---------------------------------------------------------------------------
+// PERSISTENCE AND COORDINATION ARE DIFFERENT PROMISES, AND THIS IS THE
+// EVIDENCE FOR BOTH RATHER THAN THE CLAIM.
+//
+// THIS SECTION ASSERTED THE OPPOSITE UNTIL 2026-09-10, and the reversal is the
+// reason it is worth reading rather than skimming. It used to demonstrate that
+// two processes pointed at one database each held their own copy of the
+// directory and never saw each other's writes — and it said, in the assertion
+// message, that if it ever started passing the other way it would be because
+// somebody had made the store a live one, "which would be a good feature and a
+// DIFFERENT one", and that `coordinates`, the note beside it and
+// persistence/CLAUDE.md would have to change in the same commit.
+//
+// That is exactly what happened. The mock grew `persistence.coordinate` —
+// every change written to a monotonic log INSIDE the transaction that made it,
+// each process applying what the others committed, with a LISTEN/NOTIFY nudge
+// that only makes the read prompt — and it is ON by default on a postgres
+// store. So the sentence to demonstrate is no longer one sentence:
+//
+//   coordinate ON   a write in one process ARRIVES in the other, without
+//                   either restarting. That is the default and is what
+//                   somebody deploying several copies now gets.
+//   coordinate OFF  the old behaviour, still offered and still correct: each
+//                   process alone with its own copy, reading the store once,
+//                   at startup.
+//
+// Both are driven here, out of one setting, because a job that covered only
+// the default would leave the recovery configuration untested and a job that
+// covered only the old one would be asserting a service nobody runs.
+//
+// THE DEMONSTRATION HAS TO BE CAREFUL ABOUT WHEN, and in both directions. A
+// second instance reads the store at startup, so anything written BEFORE it
+// started is legitimately there and proves nothing either way — which is why
+// the order is: start the second, then write in the first, then look. And the
+// arrival is a POLL rather than a read: the log is the contract and the
+// notification only makes it prompt, so "did not arrive yet" and "will never
+// arrive" are told apart by waiting, not by one look.
+// ---------------------------------------------------------------------------
+const COORDINATION_WAIT_MS = 15000;
+
+// Wait for a username to become known to an instance. Answers whether it did,
+// so the caller can assert either way — a bare `await` here would make the
+// negative case a timeout, which reads as a hung test rather than as the
+// answer it is.
+async function knownWithin(instance, username, howLong) {
+  log.debug("Entering knownWithin(). " + username);
+  const until = Date.now() + howLong;
+  for (;;) {
+    const seen = await get(instance,
+        "/admin-api/users?user=" + encodeURIComponent(username));
+    if (seen.known === true) {
+      log.debug("Leaving knownWithin(). Known.");
+      return true;
+    }
+    if (Date.now() >= until) {
+      log.debug("Leaving knownWithin(). Not known.");
+      return false;
+    }
+    await pause(300);
+  }
+}
+
+async function twoProcessesAndTheChangeLog(first, root, databaseUrl) {
+  log.debug("Entering twoProcessesAndTheChangeLog().");
+  log.info("=== Two processes, one database, coordination ON ===");
+  const second = await startMock(root, databaseUrl, "the second instance");
+  try {
+    const seen = await status(second);
+    assert.strictEqual(seen.mode, "postgres",
+      "the second instance should have opened the same store; it is in " +
+      seen.mode + " (" + seen.lastError + ")");
+    assert.ok(seen.restored.entries > 0,
+      "AND IT SHOULD HAVE READ WHAT THE FIRST ONE WROTE — everything " +
+      "written before it started is legitimately there, whatever " +
+      "coordination does afterwards. It restored " +
+      JSON.stringify(seen.restored));
+    assert.strictEqual(seen.coordinates, true,
+      "and it should be coordinating: persistence.coordinate is on by " +
+      "default on a postgres store. It says " +
+      JSON.stringify(seen.coordinates) + ", note " +
+      JSON.stringify(seen.note));
+
+    // Now a write in the FIRST instance, after the second is up.
+    const late = names.usernameFor("pgtest-late");
+    await post(first, "/admin-api/users/create", { username: late });
+    await settled(first);
+    assert.strictEqual((await get(first,
+        "/admin-api/users?user=" + encodeURIComponent(late))).known, true,
+      "the first instance should of course see its own write.");
+
+    assert.strictEqual(await knownWithin(second, late,
+        COORDINATION_WAIT_MS), true,
+      "AND THE SECOND INSTANCE MUST SEE IT, within " +
+      COORDINATION_WAIT_MS + "ms and without restarting. That is what " +
+      "`coordinates: true` promises: the change went into a monotonic log " +
+      "inside the transaction that created the person, and this process " +
+      "applies what the other committed. A failure here is either the log " +
+      "not being written or nothing reading it — the LISTEN/NOTIFY nudge is " +
+      "not it, because a missed notification costs latency and never a " +
+      "change.");
+    log.info("[coordination] OK — the second instance saw a write the first " +
+             "made after it had started, exactly as `coordinates: true` " +
+             "promises.");
+  } finally {
+    await stopMock(second, "the coordination check is done");
+  }
+
+  // ---------------------------------------------------------------------
+  // AND THE OTHER CONFIGURATION, which is what this service did before the
+  // change log existed and is still the honest description of a deployment
+  // with `persistence.coordinate` off. It is a RESTART-ONLY setting on the
+  // mock's own account, so it is given at startup and cannot be reached
+  // through /admin-api/config/set.
+  // ---------------------------------------------------------------------
+  log.info("=== Two processes, one database, coordination OFF ===");
+  // And it holds the WHOLE directory: on a postgres store iya-sts's default
+  // (ldap.workerDirectory=auto, #320) is a window that reads a person it
+  // does not hold straight from the store, so a lookup by name finds a write
+  // another process made with coordination off or on. "Its own copy" is the
+  // memory directory, and that is what this half is about.
+  const alone = await startMock(root, databaseUrl, "the lone instance",
+      { STS_PERSISTENCE_COORDINATE: "false",
+        LDAP_WORKER_DIRECTORY: "memory" });
+  try {
+    const seen = await status(alone);
+    assert.strictEqual(seen.coordinates, false,
+      "an instance started with STS_PERSISTENCE_COORDINATE=false must say " +
+      "so about itself; it says " + JSON.stringify(seen.coordinates));
+    assert.ok(/not coordination/i.test(String(seen.note || "")),
+      "and the note beside it should say what that means in a sentence an " +
+      "operator reads, since that is what somebody deploys against; it says " +
+      JSON.stringify(seen.note));
+    assert.ok(seen.restored.entries > 0,
+      "it should still have READ the store at startup — persistence is not " +
+      "what was turned off. It restored " + JSON.stringify(seen.restored));
+
+    const later = names.usernameFor("pgtest-uncoordinated");
+    await post(first, "/admin-api/users/create", { username: later });
+    await settled(first);
+    assert.strictEqual(await knownWithin(alone, later,
+        COORDINATION_WAIT_MS), false,
+      "AND IT MUST NOT SEE a write the first instance made after it " +
+      "started. With coordination off each process holds its own copy of " +
+      "the directory and reads the store once, at startup — which is the " +
+      "difference between persistence and clustering, and is the sentence " +
+      "the note above promises an operator.");
+    log.info("[coordination] OK — an instance with coordination off read " +
+             "what was already in the store and did not see a later write, " +
+             "exactly as `coordinates: false` promises.");
+  } finally {
+    await stopMock(alone, "the uncoordinated check is done");
+  }
+  log.debug("Leaving twoProcessesAndTheChangeLog().");
+}
+
+// ---------------------------------------------------------------------------
+// A CONFIGURED STORE THAT CANNOT BE OPENED STOPS THE SERVICE.
+//
+// This section asserted the OPPOSITE when it was written, and the reversal is
+// the reason it is worth reading rather than skimming. The old rule — a
+// failure is recorded, the mock falls back to memory and keeps answering — is
+// still right for a store that breaks WHILE RUNNING, and `flush()` still
+// behaves that way. It was wrong at STARTUP:
+//
+//   **A PROCESS THAT WAS TOLD TO PERSIST AND IS NOT PERSISTING LOOKS EXACTLY
+//   LIKE ONE THAT IS.** Every endpoint answers, the console draws, and the
+//   realms, applications and federation partners somebody creates are thrown
+//   away at the next restart — which is the restart they will do precisely
+//   because they expected the work to survive it. The fallback was reported on
+//   /admin/persistence and in the log, and neither is where anybody is looking
+//   while the service appears to be working.
+//
+// So this starts an instance pointed at a port nothing is listening on and
+// asserts that it EXITS, non-zero, having said which setting to look at — and
+// that it never bound a listener, because a service that answered anything at
+// all would be the old behaviour with a worse ending.
+//
+// It is asserted with a DEAD PORT rather than a stopped container because the
+// two are the same failure to this service and only one of them can be
+// arranged without touching the database the rest of this job is using.
+// ---------------------------------------------------------------------------
+async function anUnreachableDatabaseIsFatal(root) {
+  log.debug("Entering anUnreachableDatabaseIsFatal().");
+  log.info("=== A database that is not there ===");
+  const port = await freePort();
+  const nowhere = "postgres://sts:sts@127.0.0.1:" + port + "/sts";
+  const ended = await startMockExpectingFailure(root, nowhere);
+
+  assert.notStrictEqual(ended.code, 0,
+    "A MOCK CONFIGURED TO PERSIST AND UNABLE TO REACH ITS STORE MUST EXIT " +
+    "NON-ZERO. It exited with " + ended.code + ". A zero exit or a running " +
+    "process is the old behaviour — answering out of a seeded directory " +
+    "while " +
+    "presenting itself as the configured one — which loses everything " +
+    "anybody " +
+    "does with it at the next restart.\n" + ended.output.slice(-1200));
+
+  // The message is the other half, and it is read out of the FATAL log record
+  // rather than grepped out of the raw stream: this service logs bunyan JSON,
+  // so every quotation mark in the sentence is escaped on the wire and a
+  // regular expression written against the sentence as a person reads it does
+  // not match. Parsing also means the assertions are about the record the
+  // service chose to emit at level 60, rather than about anything that
+  // happened to contain the word.
+  const fatal = fatalMessage(ended.output);
+  assert.ok(fatal,
+    "the refusal must be logged at FATAL. An operator whose service will not " +
+    "start filters for the highest level first, and a refusal logged at " +
+    "`error` sits among the ordinary noise of a startup that then continues. " +
+    "The last of what it printed was:\n" + ended.output.slice(-1200));
+  assert.ok(/persistence\.mode is "postgres"/.test(fatal),
+    "the failure must name the MODE it was configured for, so that somebody " +
+    "who did not set it knows where it came from. It said:\n" + fatal);
+  assert.ok(/ECONNREFUSED|could not be read|connect/i.test(fatal),
+    "and it must name what actually went wrong rather than only that " +
+    "something did. It said:\n" + fatal);
+  assert.ok(/persistence\.mode=memory|STS_PERSISTENCE_MODE/.test(fatal),
+    "AND IT MUST SAY THE WAY OUT. Running this service without a store is " +
+    "one " +
+    "setting, and somebody who has just been refused a start is exactly the " +
+    "person who needs to be told which. It said:\n" + fatal);
+
+  assert.ok(!ended.everAnswered,
+    "and it must never have answered a request. A process that bound a " +
+    "listener and THEN exited would have had a window in which it served " +
+    "/oauth2/authorize out of a seeded directory, which is the state this " +
+    "refusal exists to make impossible — persistence.start() runs before the " +
+    "listener binds for exactly that reason.");
+  log.info("[fatal] OK — exited " + ended.code + " without ever answering, " +
+           "naming the mode, the cause and the setting that turns " +
+           "persistence off.");
+  log.debug("Leaving anUnreachableDatabaseIsFatal().");
+}
+
+// The FATAL record out of a bunyan stream, as a person would read it. Level 60
+// is bunyan's `fatal`, and taking the LAST one means a process that logged
+// several says its final word here.
+function fatalMessage(output) {
+  log.debug("Entering fatalMessage().");
+  let found = "";
+  String(output).split("\n").forEach(function (line) {
+    if (!line.trim()) {
+      return;
+    }
+    try {
+      const record = JSON.parse(line);
+      if (record.level >= 60 && record.msg) {
+        found = record.msg;
+      }
+    } catch (e) {
+      // Not a bunyan record — a node stack trace, or a partial line from a
+      // process that was still writing when it exited. Neither is what this
+      // is looking for, and both are legitimately present.
+      log.debug("Caught in fatalMessage(): " + ((e && e.message) || e));
+    }
+  });
+  log.debug("Leaving fatalMessage(). " + (found ? "found" : "none"));
+  return found;
+}
+
+// Start a mock that is EXPECTED to die, and report how it died. It is a
+// separate function from startMock() rather than a flag on it, because the two
+// wait for opposite things: one polls until a port answers and fails on exit,
+// and this one waits for exit and fails if the port ever answers.
+// `extraEnv` overrides the defaults, and a value of null REMOVES the variable
+// — how a section starts an instance with no CA to verify against.
+async function startMockExpectingFailure(root, databaseUrl, extraEnv) {
+  log.debug("Entering startMockExpectingFailure().");
+  const httpPort = await freePort();
+  const env = Object.assign(childBaseEnv(), await portEnv(httpPort),
+      tlsEnvForThisNode(root), {
+    STS_PERSISTENCE_MODE: "postgres",
+    STS_DATABASE_TLS_CA_FILE: DB_CA,
+    STS_DATABASE_URL: databaseUrl,
+    STS_LOG_LEVEL: "warn",
+    CONFIG_FILE: path.join(root, "env", "local.js")
+  }, extraEnv || {});
+  Object.keys(env).forEach(function (name) {
+    if (env[name] === null) {
+      delete env[name];
+    }
+  });
+  const child = spawn(process.execPath, ["server.js"], {
+    cwd: root, env: env, stdio: ["ignore", "pipe", "pipe"]
+  });
+  started.processes.push(child);
+  const output = [];
+  child.stdout.on("data", function (chunk) { output.push(String(chunk)); });
+  child.stderr.on("data", function (chunk) { output.push(String(chunk)); });
+
+  // Poll the port while waiting for the exit. A service that answers even once
+  // has bound a listener it should never have bound, and the only way to see
+  // that is to be asking while it is deciding.
+  let everAnswered = false;
+  const polling = setInterval(function () {
+    common.httpJson("http://127.0.0.1:" + httpPort + "/admin-api/status")
+      .then(function (reply) {
+        if (reply.status === 200) {
+          everAnswered = true;
+        }
+      })
+      .catch(function (e) {
+        // Connection refused, which is the expected answer throughout.
+        log.debug("Caught in startMockExpectingFailure(): " +
+                  ((e && e.message) || e));
+      });
+  }, 150);
+
+  const code = await Promise.race([
+    new Promise(function (resolve) {
+      child.once("exit", function (exitCode) { resolve(exitCode); });
+    }),
+    pause(45000).then(function () { return "did not exit"; })
+  ]);
+  clearInterval(polling);
+  if (code === "did not exit") {
+    child.kill("SIGKILL");
+    assert.fail("the mock STS was pointed at a database that is not there " +
+      "and " +
+      "was still running forty-five seconds later. It should have exited " +
+      "non-zero at startup. Its output was:\n" + output.join("").slice(-1500));
+  }
+  log.debug("Leaving startMockExpectingFailure(). code=" + code);
+  return { code: code, output: output.join(""), everAnswered: everAnswered };
+}
+
+// ---------------------------------------------------------------------------
+// TEARDOWN. Everything this job started, whether or not the assertions passed —
+// a leaked container holds a port and a leaked node process holds nine.
+// ---------------------------------------------------------------------------
+async function tearDown() {
+  log.debug("Entering tearDown().");
+  for (const child of started.processes) {
+    if (child.exitCode === null) {
+      try {
+        child.kill("SIGKILL");
+      } catch (e) {
+        // Already gone between the check and the signal, which is the only
+        // way this throws and is not worth reporting as a failure.
+        log.debug("could not kill a child process: " + e.message);
+      }
+    }
+  }
+  if (started.database) {
+    try {
+      await adminQuery("DROP DATABASE IF EXISTS " + DATABASE +
+                       " WITH (FORCE)");
+      started.database = false;
+      log.info("[teardown] Dropped database " + DATABASE + ".");
+    } catch (e) {
+      log.warn("[teardown] Could not drop " + DATABASE + ": " + e.message +
+               ". Drop it by hand.");
+    }
+  }
+  log.debug("Leaving tearDown().");
+}
+
+async function test() {
+  log.debug("Entering test().");
+  const ready = await preconditions();
+  if (!ready.ok) {
+    // Named, never silent — and RECORDED as a skip since 2026-09-02 rather
+    // than exiting 0 under "Test completed successfully (skipped)", which the
+    // runner counted as a pass. Both of this job's preconditions are genuine
+    // ABSENCES of things this machine was never given (a complete mock STS
+    // tree; a database the launcher supplies), so this stays a skip
+    // where the service checks elsewhere became failures. See
+    // tests/expectation.js.
+    declineToRun(log, ready.why);
+    log.debug("Leaving test(). Skipped.");
+    return;
+  }
+
+  try {
+    const database = await createDatabase();
+    const databaseUrl = database.url;
+
+    let instance = await startMock(ready.root, databaseUrl,
+        "the first instance");
+    await theStoreOpened(instance, databaseUrl);
+    const made = await writeSomethingOfEachKind(instance);
+    const held = await mintSomething(instance, made);
+    await theDatabaseConnectionIsEncrypted(instance, databaseUrl);
+
+    await twoProcessesAndTheChangeLog(instance, ready.root,
+        databaseUrl);
+
+    log.info("=== Restarting the mock STS ===");
+    await stopMock(instance, "so that the restart can be asserted");
+    instance = await startMock(ready.root, databaseUrl, "after the restart");
+    await everythingThatPersistsComesBack(instance, made);
+    await nothingThatWasMintedComesBack(instance, held);
+    await stopMock(instance, "the restart checks are done");
+
+    await noSslmodeIsStillTls(ready.root, database.plain);
+    await theServerCertificateIsVerified(ready.root, database);
+    await anUnreachableDatabaseIsFatal(ready.root);
+    log.info("Test completed successfully.");
+  } finally {
+    await tearDown();
+  }
+  log.debug("Leaving test().");
+}
+
+const program = new Command();
+program
+  .name("sts_persistence_postgres")
+  .description("Start a Postgres and a mock STS against it, restart the " +
+               "mock, " +
+      "and assert what survived, what did not, that two processes against " +
+      "one store coordinate through its change log and do not when that is " +
+      "turned off, that the database's certificate is verified, and that a " +
+      "missing database is fatal.")
+  // Accepted and ignored: run-report.js passes --url to every job, and
+  // tests/jwk_pem_encoding.js fails the suite if a job does not declare it.
+  .addOption(new Option("-u, --url <url>",
+      "base url (unused: this job starts the service it drives)"))
+  .parse(process.argv);
+
+test().catch(async function (e) {
+  log.error(e.stack || e.message);
+  await tearDown();
+  process.exit(1);
+});

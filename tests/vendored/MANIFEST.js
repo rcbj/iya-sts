@@ -1574,6 +1574,14 @@ const JOBS = [
   // reveal-secret, and in development a file destination on the shared
   // directory, test-pushed and read back. Refused in product mode.
   { file: 'sts_secret_destinations.js',  browser: false, local: true },
+  // THIS SERVICE'S POSTGRES PERSISTENCE, ACROSS A REAL RESTART (moved from
+  // the parent project, 2026-10-23): it starts iya-sts processes of its own
+  // against a database it creates in the stack's postgres, restarts them, and
+  // asserts what came back, what did not, coordination on and off, that the
+  // connection is TLS as postgres reports it, that the database's certificate
+  // is verified, and that a missing database stops the start. Skips where no
+  // database is supplied (an AWS target, ./run-coverage.sh).
+  { file: 'sts_persistence_postgres.js', browser: false, local: true },
   // OAuth 2.0 Attestation-Based Client Authentication (#229): a client
   // attester made at run time, the challenge endpoint, PAR, the code and
   // refresh token bound to the client instance, the DPoP combined mode and

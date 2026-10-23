@@ -525,6 +525,10 @@ else
     # win over the dial string.
     -e STS_TEST_ATTRIBUTE_DB_URL=
     -e STS_TEST_ATTRIBUTE_MYSQL_URL=
+    # And the persistence job's (moved from the parent project, 2026-10-23),
+    # for the same reason: no postgres here, so it skips.
+    -e STS_TEST_PERSISTENCE_DB_URL=
+    -e STS_TEST_PERSISTENCE_DB_CA=
     # THE MEMORY MODE'S KEYS (2026-09-27): the throwaway service is a
     # development process with no key-encryption key, and `keys.source` left
     # at `auto` follows the AMBIENT realm's mode — so in a product-mode realm a
