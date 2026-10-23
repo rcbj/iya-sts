@@ -106,6 +106,7 @@ import config = require('./config');
 import stsCrypto = require('./crypto');
 import pki = require('./pki');
 import errorCodes = require('./error_codes');
+import mode = require('./mode');
 import webauthnCodec = require('../authn/webauthn');
 
 type Json = any;
@@ -146,6 +147,7 @@ interface DeviceAttestationDeps {
   stsCrypto: typeof stsCrypto;
   pki: typeof pki;
   errorCodes: typeof errorCodes;
+  mode: typeof mode;
   webauthnCodec: typeof webauthnCodec;
   now: () => number;
   // Google's Android attestation status list (#256), reached lazily: it
@@ -193,7 +195,8 @@ class DeviceAttestation {
     helpers.log.debug("Entering DeviceAttestation.defaultDeps().");
     helpers.log.debug("Leaving DeviceAttestation.defaultDeps().");
     return { log: helpers.log, config: config, stsCrypto: stsCrypto,
-             pki: pki, errorCodes: errorCodes, webauthnCodec: webauthnCodec,
+             pki: pki, errorCodes: errorCodes, mode: mode,
+             webauthnCodec: webauthnCodec,
              now: Date.now,
              revocation: function (): Json {
                return require('./attestation_revocation');
@@ -760,6 +763,14 @@ class DeviceAttestation {
       return falsified('the signature\'s hash algorithm is not one this ' +
                        'service ' +
                   'verifies');
+    }
+    // SHA-1 only where broken algorithms are (#905), as WebAuthn refuses RS1
+    // outside development: a product realm must not count a key attested on
+    // the strength of a SHA-1 signature.
+    if (scheme.hash === 'sha1' && !this.deps.mode.usesBrokenAlgorithms()) {
+      log.debug("Leaving DeviceAttestation.tpmCertify(). SHA-1 refused.");
+      return falsified('the TPMS_ATTEST is signed with SHA-1, which this ' +
+                       'service accepts only in development mode');
     }
     let ak: Buffer | null = null;
     for (const der of certs) {

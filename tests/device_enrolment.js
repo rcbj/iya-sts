@@ -285,9 +285,13 @@ async function tpmBundle(jwk, anchor, spoil, extraData) {
         })() })] }).toSchema().toBER(false), true),
       extension('2.5.29.37', new pkijs.ExtKeyUsage({
         keyPurposes: ['2.23.133.8.3'] }).toSchema().toBER(false))] });
-  const raw = nodeCrypto.sign('sha256', spoil === 'signature'
-    ? Buffer.from('not certInfo') : certInfo, ak.privateKey);
-  const signature = Buffer.concat([u16(0x0014), u16(0x000b), tpm2b(raw)]);
+  // `sha1` is not spoiled but WEAK (#905): signed RSASSA-SHA1, TPM_ALG_SHA1.
+  const raw = nodeCrypto.sign(spoil === 'sha1' ? 'sha1' : 'sha256',
+    spoil === 'signature' ? Buffer.from('not certInfo') : certInfo,
+    ak.privateKey);
+  const signature = Buffer.concat([u16(0x0014),
+                                   u16(spoil === 'sha1' ? 0x0004 : 0x000b),
+                                   tpm2b(raw)]);
   const octets = function (b) {
     log.debug("Entering octets().");
     log.debug("Leaving octets().");
@@ -772,6 +776,29 @@ async function checkCertificates(t) {
       publicKeyPem: read.publicKeyPem, requested: {},
       attestations: read.attestations, via: 'test' })), 'STS-DEVICE-0020',
             '6i. a TPM statement spoiled (' + spoil + ') is refused');
+  }
+  // #905: a TPM2_Certify signed with SHA-1 is verified in development and
+  // refused in product, as WebAuthn refuses RS1 outside development.
+  const weak = await deviceCsr([await tpmBundle(spoiledKey.jwk, tpmRoot,
+                                                'sha1')], [],
+                               spoiledKey.pair);
+  const weakRead = await core.parseCsr(weak.der);
+  const weakIssue = function () {
+    log.debug("Entering weakIssue().");
+    log.debug("Leaving weakIssue().");
+    return core.issue({ family: 'est', profile: 'device',
+      principal: person(ALICE), target: { kind: 'person', id: ALICE },
+      publicKeyPem: weakRead.publicKeyPem, requested: {},
+      attestations: weakRead.attestations, via: 'test' });
+  };
+  t.check(code(await weakIssue()) !== 'STS-DEVICE-0020',
+          '6i-sha1a. a SHA-1 TPM statement is verified in development mode');
+  set('global.mode', 'product');
+  try {
+    t.equal(code(await weakIssue()), 'STS-DEVICE-0020',
+            '6i-sha1b. and refused in product mode (#905)');
+  } finally {
+    config.clearOverride('global.mode');
   }
   const two = await deviceCsr([bundle, bundle], [], first.pair);
   const twoRead = await core.parseCsr(two.der);
