@@ -9850,9 +9850,13 @@ class Credentials {
   holdsPasskey(username) {
     const { log } = this.deps;
     log.debug("Entering Credentials.holdsPasskey().");
-    const held = this.mechanismsFor(String(username || '').trim());
-    const out = !!held && (Number(held.primaryKeys || 0) +
-                           Number(held.mfaKeys || 0)) > 0;
+    // The keys themselves (#911), not mechanismsFor(): that is nine store
+    // reads and a TOTP unseal for a yes/no asked on every second-factor
+    // step and recovery door. Same answer — a key's role is primary or mfa.
+    const out = this.keysOf(String(username || '').trim())
+      .some(function (one) {
+        return one.role === 'primary' || one.role === 'mfa';
+      });
     log.debug("Leaving Credentials.holdsPasskey(). " + out);
     return out;
   }
