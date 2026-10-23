@@ -38,6 +38,12 @@
 //   f. an unknown `wauth` is refused as before (0006);
 //   h. a one-time code posted at the second-factor door under the demand is
 //      refused; i. `step_up.screenDemandFor()` is what both protocols read.
+//   j. a PRIMARY passkey does not answer a key demand after a password:
+//      somebody holding a second factor and no mfa-role key is refused
+//      (#898), not handed the ceremony that would enrol one.
+//   j. a PRIMARY passkey does not answer a key demand after a password:
+//      somebody holding a second factor and no mfa-role key is refused
+//      (#898), not handed the ceremony that would enrol one.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -468,6 +474,35 @@ function childMain() {
          'is demanded is refused — the link is not drawn, and a link that ' +
          'is not drawn is still a URL',
          codeAttempt.status + ' ' + codeAttempt.text.slice(0, 200));
+
+    // --- j. a PRIMARY passkey does not answer the demand (#898) --------------
+    // The key step offers mfa-role keys only, so a person holding a second
+    // factor and a primary passkey but no mfa key was handed the enrolling
+    // ceremony after a password alone: the bypass c3 refuses.
+    const primaryOnly = await withKey('wa-primary', true);
+    const beganPrimary = credentials.beginTotpEnrolment('wa-primary');
+    const confirmedPrimary = beganPrimary.ok
+      ? credentials.confirmTotpEnrolment('wa-primary',
+        totp.codeAt(beganPrimary.secret, Date.now()))
+      : beganPrimary;
+    note(primaryOnly.mode === 'create' && confirmedPrimary.ok,
+         'j0. (wa-primary holds a primary passkey and an authenticator app)',
+         primaryOnly.mode + ' ' + JSON.stringify(confirmedPrimary)
+           .slice(0, 160));
+    const dave = browser(port);
+    first = await dave.go('GET', signInUrl({ wauth: KEY }));
+    const daveScreen = await authnScreen.open({ port: port, jar: dave.jar,
+      at: String(first.headers.location) });
+    const refusedPrimary = await authnScreen.submit({ port: port,
+      jar: dave.jar, opened: daveScreen,
+      fields: { action: 'login', username: 'wa-primary',
+                password: 'anything' } });
+    note(refusedPrimary.apiStatus === 400 &&
+         /This request needs a passkey/.test(refusedPrimary.text),
+         'j1. a password sign-in by somebody holding a second factor and a ' +
+         'PRIMARY passkey but no mfa key is refused under a key demand, not ' +
+         'walked through a ceremony that would enrol one (#898)',
+         refusedPrimary.apiStatus + ' ' + refusedPrimary.text.slice(0, 200));
 
     // --- i. one mechanism, named in step_up.ts --------------------------------
     const stepUp = require(ROOT + '/oauth-oidc/step_up');
