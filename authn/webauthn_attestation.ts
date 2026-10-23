@@ -515,13 +515,9 @@ class WebauthnAttestation {
         facts.listed = !!listed;
         facts.compromised = !!m.compromised;
         if (listed) {
-          const held = String(m.certificationLevel || '')
-            .replace(/^FIDO_CERTIFIED_?/, '') ||
-            (m.certificationLevel ? 'L1' : 'none');
-          facts.rank = Math.max(0, LEVELS.indexOf(held));
-          facts.fips = (m.statusReports || []).some(function (r: Json) {
-            return /^FIPS140_CERTIFIED_L/.test(String(r.status || ''));
-          });
+          facts.rank = Math.max(0,
+            LEVELS.indexOf(WebauthnAttestation.heldLevel(m)));
+          facts.fips = WebauthnAttestation.fipsCertified(m);
         }
         sentences['attestation-compromised'] = 'The FIDO Metadata Service ' +
           'now reports this passkey\'s model (' + (m.description ||
@@ -1435,6 +1431,40 @@ class WebauthnAttestation {
 
   // The statuses that make a model compromised, for the sentence.
   /**
+   * The FIDO certification level an MDS model holds (#911): `L1` and up, or
+   * `none`. One reading for registration and sign-in, so that
+   * `attestationMinCertificationLevel` judges a model the same at both.
+   *
+   * @param m - the metadata statement's model
+   * @returns the level
+   */
+  static heldLevel(m: Json): string {
+    helpers.log.debug("Entering WebauthnAttestation.heldLevel().");
+    const level = String((m && m.certificationLevel) || '')
+      .replace(/^FIDO_CERTIFIED_?/, '') ||
+      (m && m.certificationLevel ? 'L1' : 'none');
+    helpers.log.debug("Leaving WebauthnAttestation.heldLevel().");
+    return level;
+  }
+
+  /**
+   * Whether an MDS model reports a FIPS 140 certification (#911), the one
+   * reading `attestationRequireFips` is judged by at registration and
+   * sign-in.
+   *
+   * @param m - the metadata statement's model
+   * @returns true when a status report says FIPS140_CERTIFIED_L*
+   */
+  static fipsCertified(m: Json): boolean {
+    helpers.log.debug("Entering WebauthnAttestation.fipsCertified().");
+    const out = ((m && m.statusReports) || []).some(function (r: Json) {
+      return /^FIPS140_CERTIFIED_L/.test(String(r.status || ''));
+    });
+    helpers.log.debug("Leaving WebauthnAttestation.fipsCertified().");
+    return out;
+  }
+
+  /**
    * Lists the status reports that make a model compromised, for the refusal
    * sentence.
    *
@@ -1512,9 +1542,7 @@ class WebauthnAttestation {
     }
     const m = listed.model || {};
     if (wantLevel) {
-      const held = String(m.certificationLevel || '')
-        .replace(/^FIDO_CERTIFIED_?/, '') || (m.certificationLevel ? 'L1'
-                                                                    : 'none');
+      const held = WebauthnAttestation.heldLevel(m);
       if (LEVELS.indexOf(held) < LEVELS.indexOf(
             settings.minCertificationLevel)) {
         log.debug("Leaving WebauthnAttestation.levelProblem(). Level.");
@@ -1524,10 +1552,7 @@ class WebauthnAttestation {
                ' (webauthn.attestationMinCertificationLevel).';
       }
     }
-    if (settings.requireFips && !(m.statusReports || []).some(
-          function (r: Json): boolean {
-            return /^FIPS140_CERTIFIED_L/.test(String(r.status || ''));
-          })) {
+    if (settings.requireFips && !WebauthnAttestation.fipsCertified(m)) {
       log.debug("Leaving WebauthnAttestation.levelProblem(). FIPS.");
       return 'The FIDO Metadata Service reports no FIPS 140 certification ' +
              'for this authenticator model, and this realm requires one ' +
