@@ -332,7 +332,22 @@ async function body(t) {
       data: JSON.stringify({ total_accounts: 2 }) }
   ], result: { ok: true, status: 200, ended: true, lastEventId: '3' } });
   const started = c.startTenant('cmd-app', 'audit_tenant', {});
-  await c.executeRun(started.run.id);
+  // startTenant() runs the stream itself once the minted rows it hands out
+  // are committed; calling executeRun() here as well made a second run of
+  // it race the first for the two planned streams (it failed in
+  // single-node, where the commit is slower). So this waits for that run.
+  const runStartedAt = Date.now();
+  while (Date.now() - runStartedAt < SETTLE_MAX_MS) {
+    const now = c.report({}).runs.filter(function (r) {
+      return r.id === started.run.id;
+    })[0];
+    if (now && now.state !== 'running') {
+      break;
+    }
+    await new Promise(function (resolve) {
+      setTimeout(resolve, 10);
+    });
+  }
   const runRow = c.report({}).runs.filter(function (r) {
     return r.id === started.run.id;
   })[0];
