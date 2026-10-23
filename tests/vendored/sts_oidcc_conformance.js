@@ -36,6 +36,11 @@
 //      reason; a WARNING from a condition KNOWN_WARNINGS does not name fails
 //      it too (#187: every warning is fixed or recorded with its reason, and
 //      `oauth-oidc/CLAUDE.md` 3bg carries the same sentences).
+//   4. EVERY PLAN TWICE (rcbj, 2026-10-23): as below, and as its classical
+//      twin `<key>-cl`, in a realm with `keys.postQuantumSigning` off, judged
+//      with the post-quantum ledger entries (PQ_ONLY) removed — the proof of
+//      compliance with no post-quantum exemption, beside the post-quantum
+//      run that keeps them (`conformance_suite.js`, THE CLASSICAL TWINS).
 //
 // OWNED HERE (local: true): this repository's OpenID Provider.
 // ---------------------------------------------------------------------------
@@ -77,9 +82,10 @@ const DYNAMIC = { server_metadata: "discovery",
 // ---------------------------------------------------------------------------
 // THE PLANS. `key` is what CONFORMANCE_PLANS names (a trailing `*` is a
 // prefix). `settings` are realm settings the plan needs; `static` registers
-// the clients here with that authentication method.
+// the clients here with that authentication method. Each is followed by its
+// classical twin (`withClassicalTwins()`, step 4 of the header).
 // ---------------------------------------------------------------------------
-const PLANS = [
+const PLANS = oidf.withClassicalTwins([
   // --- OpenID Provider certification profiles ---------------------------
   { key: "basic", name: "oidcc-basic-certification-test-plan",
     variant: DYNAMIC },
@@ -187,7 +193,7 @@ const PLANS = [
           verification: { trust_framework: { value: "eidas" } },
           claims: { given_name: null, family_name: null, email: null } } }
       }] } }
-];
+]);
 
 // ---------------------------------------------------------------------------
 // KNOWN AND ARGUED DIFFERENCES. `<plan key>/<module>` (or `*/<module>`) ->
@@ -255,6 +261,11 @@ const KNOWN_WARNINGS = {
     "and tenant, in every ID Token by rcbj's answer on #148",
     msg: /non-requested claim '(session_expiry|tenant)'|contains non-requested claims\. This may indicate/ }
 };
+
+// THE ENTRIES ABOUT POST-QUANTUM KEYS AND ALGORITHMS, which a classical twin
+// is judged without (`oidf.ledgerFor()`): its realm publishes no AKP key and
+// lists no post-quantum algorithm, so either condition there is a finding.
+const PQ_ONLY = ["VerifyNewJwksHasNewSigningKey", "WarnOnUnusableJwksKeys"];
 
 let checks = 0;
 function check(what, fn) {
@@ -332,8 +343,14 @@ async function staticClients(plan, base, api, alias) {
 
 async function prepare(plan) {
   log.debug("Entering prepare(). " + plan.key);
-  const realm = ("oidcc-" + plan.key + "-" + TAG).slice(0, 31)
-    .replace(/-+$/, "");
+  // A twin's realm is `oidcc-cl-<base>`, the base cut to eleven characters
+  // (unique across PLANS) so the whole TAG fits in a realm id's 31: as
+  // `oidcc-<key>-cl-` the longest twin kept four characters of it, which
+  // change every 28 minutes, and a second run on a kept stack within them
+  // would meet its own realm.
+  const realm = plan.classical
+    ? ("oidcc-cl-" + plan.base).slice(0, 20) + "-" + TAG
+    : ("oidcc-" + plan.key + "-" + TAG).slice(0, 31).replace(/-+$/, "");
   const base = root + "/realm/" + realm;
   const api = base + "/admin-api";
   const alias = "iya-" + plan.key + "-" + TAG;
@@ -511,8 +528,10 @@ async function runOnePlan(plan) {
     log.debug("Leaving runOnePlan(). It could not run.");
     return lines;
   }
-  const judged = oidf.judge(plan.key, ran, EXPECTED, KNOWN_WARNINGS,
-                            KNOWN_FAILURES);
+  const judged = oidf.judge(plan.key, ran,
+                            oidf.ledgerFor(plan, EXPECTED, PQ_ONLY),
+                            oidf.ledgerFor(plan, KNOWN_WARNINGS, PQ_ONLY),
+                            oidf.ledgerFor(plan, KNOWN_FAILURES, PQ_ONLY));
   log.info("  " + plan.key + ": " + JSON.stringify(judged.counts) +
            ", plan " + oidf.SUITE + "plan-detail.html?plan=" + ran.planId);
   judged.unexplained.forEach(function (line) {
@@ -533,6 +552,10 @@ async function test() {
   // different plans side by side, so nothing is shared but the suite's
   // server. CONFORMANCE_PLAN_CONCURRENCY=1 is the old one-at-a-time run.
   // Results are reported in PLANS order whatever order they finish in.
+  // The classical twins (2026-10-23) doubled the plans, to forty, and kept
+  // the width: each twin sits beside its plan in PLANS, so the two run
+  // close together, and MANIFEST.js's watchdog and the launcher's
+  // STS_CONFORMANCE_TIMEOUT were raised for the time instead.
   const wanted = PLANS.filter(function (plan) {
     return oidf.selected(plan.key);
   });
@@ -575,7 +598,8 @@ async function test() {
 new Command()
   .description("The OpenID Foundation conformance suite's OpenID Connect " +
     "plans (#187): the OP certification profiles, oidcc-test-plan's " +
-    "variants, and the four logout plans, against this service.")
+    "variants, and the four logout plans, against this service — each " +
+    "also as its classical twin, post-quantum signing off.")
   .addOption(new Option("-u, --url <url>", "base url (unused: the " +
                                            "service's is the realm's)"))
   .parse(process.argv);

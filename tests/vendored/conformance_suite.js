@@ -569,6 +569,76 @@ function judge(label, ran, expected, knownWarnings, knownFailures) {
   return { counts: counts, unexplained: unexplained };
 }
 
+// ---------------------------------------------------------------------------
+// THE CLASSICAL TWINS (rcbj, 2026-10-23). The post-quantum ledger entries —
+// a JWKS the suite cannot parse (kty AKP), an algorithm list naming SLH-DSA
+// or a composite ML-DSA its JWS table lacks — are the suite's gaps, argued
+// in each driver and kept (3bg: PQC support over a clean run). What they
+// could also hide is a defect of this service in the same module. So every
+// plan of the four #187 drivers that carry such entries (OpenID Connect,
+// OpenID Federation, OpenID4VCI, OpenID4VP) runs TWICE: as it always did, and
+// as its twin, `<key>-cl`, in a realm with `keys.postQuantumSigning` off — a
+// classical JOSE issuer and verifier — judged with the post-quantum entries
+// REMOVED from its ledger. A twin that passes is the proof of compliance
+// with no post-quantum exemption; the plan beside it is the proof that the
+// post-quantum realm loses nothing else.
+//
+//   withClassicalTwins(plans)       each plan followed by its twin: `key`
+//                                   suffixed, `base` the plan's own key,
+//                                   `classical: true`, and the setting
+//                                   appended to `settings` (which each
+//                                   driver applies to the realm it makes);
+//   ledgerFor(plan, table, pqOnly)  the table a twin is judged by: every
+//                                   entry named in `pqOnly` left out, and
+//                                   every entry keyed to the base plan
+//                                   (`<base>/<module>`, `<base>/*/<cond>`,
+//                                   `<base>/<module>/<cond>`) copied under the
+//                                   twin's key, so a non-post-quantum
+//                                   difference argued for a plan is argued
+//                                   for its twin. A plan that is not a twin
+//                                   gets the table unchanged.
+//
+// `CONFORMANCE_PLANS` names a twin by its own key (`basic-cl`), and a prefix
+// (`basic*`) takes both. The FAPI job has no twin: it carries no
+// post-quantum entry, so its run already is the classical proof.
+// ---------------------------------------------------------------------------
+const CLASSICAL_SUFFIX = "-cl";
+const CLASSICAL_SETTING = ["keys.postQuantumSigning", false];
+
+function withClassicalTwins(plans) {
+  log.debug("Entering withClassicalTwins(). " + plans.length);
+  const out = [];
+  plans.forEach(function (plan) {
+    out.push(plan);
+    out.push(Object.assign({}, plan, {
+      key: plan.key + CLASSICAL_SUFFIX, base: plan.key, classical: true,
+      settings: (plan.settings || []).concat([CLASSICAL_SETTING]) }));
+  });
+  log.debug("Leaving withClassicalTwins(). " + out.length);
+  return out;
+}
+
+function ledgerFor(plan, table, pqOnly) {
+  log.debug("Entering ledgerFor(). " + plan.key);
+  if (!plan.classical) {
+    log.debug("Leaving ledgerFor(). Not a twin.");
+    return table;
+  }
+  const out = {};
+  Object.keys(table).forEach(function (key) {
+    if ((pqOnly || []).indexOf(key) >= 0) {
+      return;
+    }
+    out[key] = table[key];
+    if (key.indexOf(plan.base + "/") === 0) {
+      out[plan.key + key.slice(plan.base.length)] = table[key];
+    }
+  });
+  log.debug("Leaving ledgerFor(). " + Object.keys(out).length + " of " +
+            Object.keys(table).length);
+  return out;
+}
+
 // The plans a run names (`CONFORMANCE_PLANS`, a comma list of keys), or all.
 function selected(key) {
   log.debug("Entering selected(). " + key);
@@ -599,6 +669,9 @@ module.exports = {
   runPlan: runPlan,
   judge: judge,
   selected: selected,
+  CLASSICAL_SETTING: CLASSICAL_SETTING,
+  withClassicalTwins: withClassicalTwins,
+  ledgerFor: ledgerFor,
   caAndLeaf: caAndLeaf,
   makeRealm: makeRealm,
   makePerson: makePerson,

@@ -29,6 +29,15 @@
 // The ledger is `conformance_suite.js`'s: a FAILED module, or a WARNING
 // from a condition KNOWN_WARNINGS does not name, fails the job.
 //
+// EVERY PLAN TWICE (rcbj, 2026-10-23): as above, and as its classical twin
+// `<key>-cl`, in a realm with `keys.postQuantumSigning` off, judged with the
+// post-quantum ledger entries (PQ_ONLY) removed — the proof of compliance
+// with no post-quantum exemption (`conformance_suite.js`, THE CLASSICAL
+// TWINS). The Trust Anchor's twin cannot be the default realm, whose
+// settings every other job shares, so it is a realm of its own that is a
+// Trust Anchor (`oidfed.realmsAreSubordinates` off there, no authority
+// hints); the Leaf's twin stays beneath the default realm, as its plan is.
+//
 // OWNED HERE (local: true): this repository's OpenID Federation entity.
 // ---------------------------------------------------------------------------
 
@@ -64,7 +73,7 @@ const STAMP = names.runStamp();
 const TAG = STAMP.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 10);
 const PASSWORD = "Conf-Passw0rd!-" + String(Date.now()).slice(-6);
 
-const PLANS = [
+const PLANS = oidf.withClassicalTwins([
   { key: "deployed-leaf", name: "openid-federation-deployed-entity-test-plan",
     variant: { server_metadata: "discovery",
                client_registration: "automatic" }, leaf: true },
@@ -76,7 +85,7 @@ const PLANS = [
     name: "openid-federation-entity-joined-to-test-federation-op-test-plan",
     variant: { server_metadata: "discovery",
                client_registration: "automatic" }, joined: true }
-];
+]);
 
 const EXPECTED = {};
 // Conditions whose WARNING this service keeps, and why — the same sentences
@@ -106,6 +115,10 @@ const KNOWN_FAILURES = {
     "ValidateAbsenceOfAuthorityHints"]: "the suite's prefix test takes a " +
     "Leaf under its Trust Anchor's URL for the Trust Anchor"
 };
+// THE ENTRIES ABOUT POST-QUANTUM KEYS AND ALGORITHMS, which a classical twin
+// is judged without (`oidf.ledgerFor()`).
+const PQ_ONLY = ["WarnOnUnusableJwksKeys",
+                 "ValidateRequestAuthenticationSigningAlgValuesSupported"];
 
 let checks = 0;
 function check(what, fn) {
@@ -158,16 +171,29 @@ async function prepare(plan) {
   };
   if (!plan.joined) {
     let entity = root;
+    let anchor = root;
     if (plan.leaf) {
       const id = ("fed-" + plan.key + "-" + TAG).slice(0, 31)
         .replace(/-+$/, "");
       entity = (await oidf.makeRealm(root, id, "Conformance " + plan.name,
-                                     [])).base;
+                                     plan.settings || [])).base;
+    } else if (plan.classical) {
+      // THE TRUST ANCHOR'S TWIN (see the header): a realm that names no
+      // superior is a Trust Anchor (OpenID Federation 1.1 section 3.1.2),
+      // and with `oidfed.realmsAreSubordinates` off it does not name the
+      // default realm. It has no subordinate of its own, where the default
+      // realm vouches for every realm here.
+      const id = ("fed-" + plan.key + "-" + TAG).slice(0, 31)
+        .replace(/-+$/, "");
+      entity = (await oidf.makeRealm(root, id, "Conformance " + plan.name,
+        [["oidfed.realmsAreSubordinates", false]]
+          .concat(plan.settings || []))).base;
+      anchor = entity;
     }
     configuration.federation = {
       entity_identifier: entity,
-      de_trust_anchor: root,
-      de_trust_anchor_jwks: await federationKeysOf(root)
+      de_trust_anchor: anchor,
+      de_trust_anchor_jwks: await federationKeysOf(anchor)
     };
     log.debug("Leaving prepare(). Deployed.");
     return configuration;
@@ -175,7 +201,8 @@ async function prepare(plan) {
   // The joined plan: this realm, the OP, trusting the suite's anchor.
   const id = ("fed-" + plan.key + "-" + TAG).slice(0, 31).replace(/-+$/, "");
   const realm = await oidf.makeRealm(root, id, "Conformance " + plan.name,
-    [["federation.outboundCaFile", oidf.suiteCaFile()]]);
+    [["federation.outboundCaFile", oidf.suiteCaFile()]]
+      .concat(plan.settings || []));
   const person = names.usernameFor("conf-" + plan.key);
   await oidf.makePerson(realm.api, person, PASSWORD);
   const anchor = oidf.SUITE + "test/a/" + alias + "/trust-anchor";
@@ -226,8 +253,10 @@ async function test() {
                       ((e && e.message) || e));
       continue;
     }
-    const judged = oidf.judge(plan.key, ran, EXPECTED, KNOWN_WARNINGS,
-                              KNOWN_FAILURES);
+    const judged = oidf.judge(plan.key, ran,
+                              oidf.ledgerFor(plan, EXPECTED, PQ_ONLY),
+                              oidf.ledgerFor(plan, KNOWN_WARNINGS, PQ_ONLY),
+                              oidf.ledgerFor(plan, KNOWN_FAILURES, PQ_ONLY));
     log.info("  " + plan.key + ": " + JSON.stringify(judged.counts) +
              ", plan " + oidf.SUITE + "plan-detail.html?plan=" + ran.planId);
     judged.unexplained.forEach(function (line) {
@@ -249,7 +278,8 @@ async function test() {
 
 new Command()
   .description("The OpenID Foundation conformance suite's OpenID " +
-    "Federation plans (#187), against this service.")
+    "Federation plans (#187), against this service — each also as its " +
+    "classical twin, post-quantum signing off.")
   .addOption(new Option("-u, --url <url>", "base url (unused: the " +
                                            "service's is the realm's)"))
   .parse(process.argv);

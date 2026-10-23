@@ -108,8 +108,19 @@ End-User for the OpenID4VP verifier.
 * Several SSF, OpenID Federation and OpenID4VCI details departed from the
   final specification texts.
 
-**Warnings that stay.** Every module warns that the realm's JWKS carries
-post-quantum keys the suite cannot parse. The OpenID Connect realms turn off
+**Every plan twice, with post-quantum signing on and off.** The suite cannot
+parse a post-quantum (`AKP`) key and its JWS algorithm table lacks SLH-DSA
+and the composite ML-DSA algorithms, so in a realm that publishes them some
+modules warn or fail for the suite's reason, and those are recorded with
+it. Every plan of the OpenID Connect, OpenID Federation, OpenID4VCI and
+OpenID4VP jobs therefore also runs as a classical twin (`<plan>-cl`), in a
+realm with [`keys.postQuantumSigning`](oauth-oidc.md#post-quantum-signing-switched-off)
+off, where none of those exemptions applies: a twin that passes is a clean
+result with nothing post-quantum excused. The FAPI plans already pass with
+no such exemption.
+
+**Warnings that stay.** In the post-quantum realms, every module warns that
+the realm's JWKS carries post-quantum keys the suite cannot parse. The OpenID Connect realms turn off
 `oauth2.requestUriFragmentCheck`, because the suite's `request_uri`
 fragments are random rather than hashes. The default stays the stricter
 check.
@@ -399,7 +410,8 @@ directory's `CLAUDE.md` in the repository.
 
 `./run-tests.sh` runs them all; see [Getting started](getting-started.md).
 
-* The OpenID Foundation plans take about two hours. By default they run in
+* The OpenID Foundation plans take several hours, since four of the jobs
+  run every plan twice (above). By default they run in
   the `memory` mode only (`STS_TEST_CONFORMANCE_MODES`). In CI they are a
   job of their own.
 * The four SAML peers run in `memory` and `single-node`

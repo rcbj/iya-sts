@@ -317,14 +317,21 @@ STS_TEARDOWN_TIMEOUT="${STS_TEARDOWN_TIMEOUT:-300}"
 #                                persisting mode would check the same rules
 #                                over again for sixteen more minutes.
 #   STS_CONFORMANCE_TIMEOUT      seconds ADDED to such a mode's bound (default
-#                                10800). #176's four plans took about sixteen
+#                                15600). #176's four plans took about sixteen
 #                                minutes; with #187's the six jobs took about
 #                                two hours and a quarter on 2026-09-24 (the
 #                                OpenID Connect job alone about ninety
 #                                minutes), and the JVM a minute to start.
+#                                It was 10800 until 2026-10-23, when every
+#                                plan of four of those jobs gained a classical
+#                                twin (tests/CLAUDE.md, *The classical twins*)
+#                                and the OpenID Connect lane, the long pole,
+#                                doubled; 15600 is as far as GitHub's six
+#                                hours let the `openid-conformance` job go
+#                                (tests/teardown_bounds.js).
 # ---------------------------------------------------------------------------
 STS_TEST_CONFORMANCE_MODES="${STS_TEST_CONFORMANCE_MODES-memory}"
-STS_CONFORMANCE_TIMEOUT="${STS_CONFORMANCE_TIMEOUT:-10800}"
+STS_CONFORMANCE_TIMEOUT="${STS_CONFORMANCE_TIMEOUT:-15600}"
 
 # ---------------------------------------------------------------------------
 # THE SAML INTEROPERABILITY PEERS (#189-#192, 2026-09-24).

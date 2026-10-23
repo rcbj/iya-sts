@@ -384,18 +384,18 @@ jobs:
   #
   # A JOB OF ITS OWN because of the time: the plans took about two hours and
   # a quarter on 2026-09-24, so the launcher grows such a mode's bound by
-  # STS_CONFORMANCE_TIMEOUT (180m) and no ceiling the `tests` job may have
-  # fits it. The same argument as that job's number: above the mode's bound
-  # (50m + 180m) and two teardowns (5m each) — and, since 2026-09-27, thirty
-  # minutes for the image build before any mode starts — so the launcher's
-  # bound is the
-  # one that fires, and under GitHub's own six hours
-  # (tests/teardown_bounds.js asserts both).
+  # STS_CONFORMANCE_TIMEOUT (260m since 2026-10-23, when four of the jobs
+  # gained a classical twin of every plan; 180m until then) and no ceiling
+  # the `tests` job may have fits it. The same argument as that job's
+  # number: above the mode's bound (50m + 260m) and two teardowns (5m each)
+  # — and, since 2026-09-27, thirty minutes for the image build before any
+  # mode starts — so the launcher's bound is the one that fires, and under
+  # GitHub's own six hours (tests/teardown_bounds.js asserts both).
   # ---------------------------------------------------------------------------
   openid-conformance:
     needs: mirror
     runs-on: ubuntu-latest
-    timeout-minutes: 280
+    timeout-minutes: 355
     steps:
       # See the tests job: recursive, for the nested node-ldapjs submodule.
       - name: Check out

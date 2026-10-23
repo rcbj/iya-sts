@@ -664,8 +664,10 @@ after another. Now:
   (it hit its bound; with two lanes it was still 55 minutes, all of it
   `conformance-b`). The OpenID Connect job also runs its plans
   `CONFORMANCE_PLAN_CONCURRENCY` at a time (default 3): each is a realm of
-  its own, so they share nothing but the suite's server. `main` keeps every
-  browser job, so no two browsers ever run at once.
+  its own, so they share nothing but the suite's server. Those times are
+  from before the classical twins (below, *The classical twins*) doubled
+  the plans of four of the jobs. `main` keeps every browser job, so no two
+  browsers ever run at once.
 * **An `exclusive: true` job is a barrier**: the lanes drain before it and
   wait for it. `admin_api`, `sts_admin_api_operations` and
   `sts_admin_console` are exclusive because they `revoke-all` (every job's own
@@ -2042,16 +2044,19 @@ profile, pinned by tag (`CONFORMANCE_SUITE_TAG`, `release-v5.3.1`).
 * **Which modes.** `STS_TEST_CONFORMANCE_MODES` (default `memory`) names the
   modes whose runner `up` activates the profile and hands the job
   `CONFORMANCE_SUITE_URL`; such a mode's bound grows by
-  `STS_CONFORMANCE_TIMEOUT` (10800 s since #187: the six jobs take about
-  two hours and a quarter). Everywhere else the runner reports the
+  `STS_CONFORMANCE_TIMEOUT` (15600 s since the classical twins of
+  2026-10-23; 10800 s from #187, when the six jobs took about two hours and
+  a quarter). Everywhere else the runner reports the
   job SKIPPED with the reason (`run-report.js`, the `conformance` flag — a
   deliberate exclusion, as `docker: true` is). **In CI the plans are a job
   of their own** (#187): `tests.yml`'s `tests` job empties the variable and
   its `openid-conformance` job runs `--modes=memory --conformance-only`
   (the `conformance: true` jobs, by that flag — `--only=conformance` is a
   substring and also matched the SSF and SCIM suites) under a
-  270-minute timeout, because no number the `tests` job may have fits two
-  hours of plans (`tests/teardown_bounds.js` holds both jobs' arithmetic).
+  355-minute timeout, because no number the `tests` job may have fits the
+  plans (`tests/teardown_bounds.js` holds both jobs' arithmetic, and the
+  six hours GitHub allows any job are why 15600 s is the most that bound
+  can be).
   `memory` because FAPI-CIBA
   approves through a development-mode test control, and each plan runs in a
   realm of its own under its FAPI profile, so a persisting mode would check the
@@ -2174,6 +2179,28 @@ Management under Message Signing, CIBA ping).
   turns it on for the parent's `oauth2_sts_endpoints.js`),
   `oauth2.requestUriFragmentCheck` off (the suite's request_uri fragments are
   hashes of random bytes), `oauth2.sessionManagement` on for its plan.
+* **THE CLASSICAL TWINS (rcbj, 2026-10-23).** The OpenID Connect,
+  OpenID Federation, OpenID4VCI and OpenID4VP drivers run every plan
+  TWICE: as it always ran, and as `<key>-cl` in a realm with
+  `keys.postQuantumSigning` off (`common/config.js` says what that turns
+  off), judged with each driver's `PQ_ONLY` ledger entries removed — the
+  AKP keys the suite cannot parse (`WarnOnUnusableJwksKeys`,
+  `ValidateServerJWKs`, `VerifyNewJwksHasNewSigningKey`) and the algorithm
+  lists its JWS table cannot hold. The post-quantum plans keep their
+  ledgers, which stay rcbj's #176 decision (PQC support over a clean run,
+  `oauth-oidc/CLAUDE.md` 3bg); the twins are the proof that nothing else
+  hides behind them. `conformance_suite.js`'s `withClassicalTwins()` makes
+  the twin and `ledgerFor()` its ledger, copying every entry keyed to the
+  base plan (`<plan>/…`) under the twin's key, so a non-post-quantum
+  difference argued for a plan is argued for its twin. What is particular:
+  the OpenID Connect twins' realms are `oidcc-cl-<base, 11 characters>-<TAG>`
+  so the whole run tag fits a realm id; the Federation Trust Anchor's twin
+  is a realm of its own with `oidfed.realmsAreSubordinates` off (a Trust
+  Anchor with no subordinate), because the default realm's settings are
+  every other job's. The FAPI job has no twin: it carries no post-quantum
+  entry. The time roughly doubled for those four jobs; MANIFEST.js's
+  watchdogs, `STS_CONFORMANCE_TIMEOUT` and the `openid-conformance` job's
+  timeout were raised for it.
 * **Not run**: the relying-party plans (this service is nobody's RP but its
   own), the Brazil and panva plans, the superseded drafts, AuthZEN, and the
   SSF receiver plans (#153). The suite publishes no push-mode FAPI-CIBA plan.
