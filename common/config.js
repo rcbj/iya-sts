@@ -2849,6 +2849,32 @@ const SETTINGS = [
                  'ceremony is as it was, and a post-quantum passkey already ' +
                  'registered goes on signing in; a new one cannot be ' +
                  'created.' },
+  // HOW `allowCredentials` IS BUILT WHILE A POST-QUANTUM PASSKEY IS
+  // REQUIRED AT SIGN-IN (#946), per realm; a passkey policy profile's row
+  // of the same name overrides it (`common/passkey_policy.ts`). `narrow` is
+  // what #718 built and stays the default.
+  { key: 'webauthn.postQuantumAllowCredentials', group: 'WebAuthn',
+    label: 'Passkeys a sign-in names where a post-quantum one is required',
+    path: 'webauthn.postQuantumAllowCredentials',
+    env: 'STS_WEBAUTHN_POST_QUANTUM_ALLOW_CREDENTIALS', type: 'enum',
+    enumValues: ['narrow', 'list-and-refuse'], dflt: 'narrow',
+    runtime: true,
+    description: 'Read only while the passkey policy requires a ' +
+                 'post-quantum passkey at sign-in (`postQuantumRequired`), ' +
+                 'and only where the selected profile\'s ' +
+                 '`postQuantumAllowCredentials` row is `realm`. `narrow` ' +
+                 '(the default) names only the person\'s post-quantum ' +
+                 '(ML-DSA) passkeys in the passkey step\'s ' +
+                 '`allowCredentials`, so a classical one is never offered — ' +
+                 'but a person who picks one, or whose platform finds only ' +
+                 'it, sees the platform\'s own "no credential" message. ' +
+                 '`list-and-refuse` names every passkey they hold and ' +
+                 'refuses a classical one after the ceremony ' +
+                 '(STS-AUTHN-0356), with a page saying that the application ' +
+                 'requires a post-quantum passkey and where to add one. The ' +
+                 'trade-off: the person may pick a passkey that will be ' +
+                 'refused. Either way a person holding no post-quantum ' +
+                 'passkey is told before any ceremony.' },
 
   { key: 'webauthn.userVerification', group: 'WebAuthn',
     label: 'User verification', path: 'webauthn.userVerification',

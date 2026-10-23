@@ -1559,7 +1559,13 @@ class AdminApi {
               'the first credential or the second factor, and ' +
               '`registration-and-sign-in` refuses a classical one at ' +
               'registration too; refused while the realm offers no ML-DSA ' +
-              '(STS-AUTHN-0357).',
+              '(STS-AUTHN-0357). `postQuantumAllowCredentials` (`realm`, ' +
+              '#946; optional) chooses how the passkey step names the ' +
+              'keys while one is required: `narrow` the post-quantum ones ' +
+              'only, `list-and-refuse` every one, a classical assertion ' +
+              'then refused after the ceremony with a page saying why, ' +
+              'and `realm` the realm\'s ' +
+              'webauthn.postQuantumAllowCredentials.',
         example: { allowUsernameless: false, requireUsernameless: false,
                    securityKeyResidentKey: 'required',
                    backupEligibility: 'allow',
@@ -1571,7 +1577,8 @@ class AdminApi {
                    enterpriseSerialAttribute: '',
                    userDisplayName: 'displayName, givenName sn',
                    rpNameExtras: 'none', credentialLabel: '',
-                   aggregateDevices: true, postQuantumRequired: 'off' }
+                   aggregateDevices: true, postQuantumRequired: 'off',
+                   postQuantumAllowCredentials: 'realm' }
       },
       // #539: the fifth kind, with named profiles chosen by application.
       locale: {

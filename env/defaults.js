@@ -248,6 +248,7 @@ var config = {
     insecureAlgorithms: false,                                                                                                                         // Use insecure algorithms (development only)
     pqcOnly: false,                                                                                                                                    // Request post-quantum algorithms only
     pqcAlongsideClassical: false,                                                                                                                      // Post-quantum passkey alongside a classical one
+    postQuantumAllowCredentials: "narrow",                                                                                                             // Passkeys a sign-in names where a post-quantum one is required
     userVerification: "required",                                                                                                                      // User verification
     attestation: "direct",                                                                                                                             // Attestation conveyance
     attestationPolicy: "by-mode",                                                                                                                      // Attestation policy

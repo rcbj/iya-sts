@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4590** of them, in **47** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4591** of them, in **47** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 343
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 344
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 724
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 115
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 33
@@ -1532,6 +1532,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0408` | A sign-in could not be offered device binding: the response object takes no header. The session stands, unbound. | — |
 | `STS-AUTHN-0409` | A password that verified could not be re-hashed under the password policy's algorithm and parameters, or the new hash could not be written (#847). The sign-in stands; the next verified sign-in tries again. | — |
 | `STS-AUTHN-0410` | The credentials of the rows a users list shows could not be read together (#820): the store refused (it was unavailable, or the request's directory budget was spent), so those rows are drawn with their factors unknown rather than as holding none; or the read threw otherwise, and each row was asked on its own instead. | none — logged; the page is drawn |
+| `STS-AUTHN-0420` | A passkey registration asked to be retried with the classical algorithms only (#944) — the retry offered after an ML-DSA-first registration failed on the device — where the realm forbids a classical passkey: webauthn.pqcOnly is on, the passkey policy's postQuantumRequired is registration-and-sign-in, or, at the sign-in step, it requires a post-quantum passkey to sign in. Refused before the ceremony is armed; nothing is written. | HTTP 400 (the sign-in API and the account API) |
 
 ## STS-OAUTH
 

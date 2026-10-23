@@ -228,6 +228,18 @@
 //                            (`stsPasswordResetSource`): SCHEMA's
 //                            `personAttributes`.
 //
+// #946 (2026-10-23) added `postQuantumAllowCredentials`: `realm` (the
+// default, optional on a save), `narrow` or `list-and-refuse` — how the
+// passkey step's `allowCredentials` is built while `postQuantumRequired`
+// applies at sign-in. `realm` follows the realm's setting of the same name
+// (`webauthn.postQuantumAllowCredentials`, `narrow` by default), which is
+// what the ticket asked for: per realm, or per policy. `narrow` is #718's
+// filter; `list-and-refuse` names every key and lets the issuance policy's
+// `post-quantum` rule refuse a classical assertion after the ceremony, with
+// the sign-in screen's panel saying why. It decides nothing itself, and is
+// sent to the issuance policy resolved, as a policy fact, for a realm's
+// own rules.
+//
 // One profile per realm, inherited from the default realm (answer 3); named
 // policies chosen by application or group are #535.
 //
@@ -527,6 +539,11 @@ const POST_QUANTUM_REQUIRED_VALUES = ['off', 'sign-in',
 const POST_QUANTUM_ALGORITHMS: ReadonlyArray<string> =
   Object.freeze(['ML-DSA-44', 'ML-DSA-65', 'ML-DSA-87']);
 /**
+ * What `postQuantumAllowCredentials` may be (#946): `realm` follows the
+ * realm's `webauthn.postQuantumAllowCredentials`.
+ */
+const POST_QUANTUM_ALLOW_CREDENTIALS = ['realm', 'narrow', 'list-and-refuse'];
+/**
  * What `recoveryAssurance` may be (#724).
  */
 const RECOVERY_ASSURANCE = ['any', 'not-weaker', 'operator-only'];
@@ -658,6 +675,24 @@ const FIELDS: PolicyField[] = [
           'while the realm offers no ML-DSA (webauthn.algorithms names ' +
           'none, and neither webauthn.pqcOnly nor ' +
           'webauthn.pqcAlongsideClassical is on).' },
+  { key: 'postQuantumAllowCredentials',
+    attribute: 'stsPasskeyPostQuantumAllowCredentials', type: 'enum',
+    values: POST_QUANTUM_ALLOW_CREDENTIALS.slice(), dflt: 'realm',
+    optional: true,
+    label: 'Passkeys a sign-in names where a post-quantum one is required',
+    what: '`realm` (the default) follows the realm\'s ' +
+          'webauthn.postQuantumAllowCredentials. Read only while ' +
+          'postQuantumRequired requires a post-quantum passkey at sign-in. ' +
+          '`narrow` names only the person\'s post-quantum (ML-DSA) passkeys ' +
+          'in the passkey step\'s request, so a classical one is never ' +
+          'offered, and a person who picks one sees the platform\'s own ' +
+          '"no credential" message. `list-and-refuse` names every passkey ' +
+          'they hold and refuses a classical one after the ceremony, with a ' +
+          'page saying that this application requires a post-quantum ' +
+          'passkey and where to add one; the person may then pick a ' +
+          'passkey that will be refused. A person holding no post-quantum ' +
+          'passkey is told before any ceremony either way. Left out of a ' +
+          'save, `realm` is kept.' },
   { key: 'passkeyHints', attribute: 'stsPasskeyHintsPasskey', type: 'list',
     values: HINTS.slice(), dflt: 'client-device,hybrid',
     label: 'Hints "Create a passkey" sends',
@@ -1598,6 +1633,31 @@ class PasskeyPolicy {
   }
 
   /**
+   * How the passkey step's `allowCredentials` is built while a post-quantum
+   * passkey is required at sign-in (#946): the selected profile's
+   * `postQuantumAllowCredentials`, and the realm's
+   * `webauthn.postQuantumAllowCredentials` where that row is `realm`.
+   *
+   * @param profile - a profile already read; read afresh when omitted
+   * @returns `narrow` or `list-and-refuse`
+   */
+  postQuantumAllowCredentials(profile?: PasskeyProfile | null): string {
+    const { log } = this.deps;
+    log.debug("Entering PasskeyPolicy.postQuantumAllowCredentials().");
+    const rules = profile || this.read();
+    const row = String(rules.postQuantumAllowCredentials || 'realm');
+    // THE REALM'S SETTING where the row says `realm` — read through
+    // `config.value()`, so the ambient realm's override answers — and
+    // `narrow`, #718's behaviour, for anything that is neither value.
+    const chosen = row === 'narrow' || row === 'list-and-refuse' ? row
+      : String(config.value('webauthn.postQuantumAllowCredentials') || '');
+    const out = chosen === 'list-and-refuse' ? 'list-and-refuse' : 'narrow';
+    log.debug("Leaving PasskeyPolicy.postQuantumAllowCredentials(). " + out +
+              (row === 'realm' ? ' (the realm\'s setting)' : ''));
+    return out;
+  }
+
+  /**
    * The refusal of a passkey's signature algorithm, or null (#718): the
    * question asked about the one fact group `algorithm`, so the portal's
    * and the console's key rows say what the decision would. One sentence,
@@ -2117,6 +2177,12 @@ class PasskeyPolicy {
       postQuantumRequired: POST_QUANTUM_REQUIRED_VALUES.indexOf(
         String(rules.postQuantumRequired)) >= 0
         ? String(rules.postQuantumRequired) : 'off',
+      // HOW THE PASSKEY STEP NAMED THE KEYS (#946), resolved — the realm's
+      // setting where the row is `realm` — so a realm's own rule may tell a
+      // classical key the person picked from a list from one they were
+      // never offered. No built-in rule reads it: the refusal is the
+      // `post-quantum` rule's either way.
+      postQuantumAllowCredentials: this.postQuantumAllowCredentials(rules),
       recoveryAssurance: this.recoveryAssurance(rules)
     };
     log.debug("Leaving PasskeyPolicy.question(). " + out.action + ' [' +
@@ -2654,6 +2720,8 @@ export = {
   POST_QUANTUM_REQUIRED_VALUES: POST_QUANTUM_REQUIRED_VALUES,
   isPostQuantum: PasskeyPolicy.isPostQuantum,
   requiresPostQuantum: slot.forward('requiresPostQuantum'),
+  POST_QUANTUM_ALLOW_CREDENTIALS: POST_QUANTUM_ALLOW_CREDENTIALS,
+  postQuantumAllowCredentials: slot.forward('postQuantumAllowCredentials'),
   postQuantumRefusal: slot.forward('postQuantumRefusal'),
   setDirectory: slot.forward('setDirectory'),
   directoryInstalled: slot.forward('directoryInstalled'),
