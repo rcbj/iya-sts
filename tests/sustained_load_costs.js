@@ -22,6 +22,8 @@
 //      entry's DN. With none, the next flush in a windowed process is
 //      `DirectoryWindow.collect(null)`, which serialises every entry the
 //      window holds — per write, and more as the window fills.
+//      A passkey's writes name theirs too (#908): the counter rewrite runs
+//      on every passkey sign-in.
 //   B. A REALM'S SESSION COUNT IS NOT ASKED PER SIGN-IN FAR FROM THE CAP.
 //      `SessionWindow.countForAdmission()` asks the store's `session.count`
 //      (a scan of the realm's index rows) once per 10 s while the count is
@@ -154,6 +156,33 @@ async function directoryWritesNameTheirDn(t) {
     return String(one).toLowerCase() === dn.toLowerCase();
   }), 'A6. the person\'s own entry, and nothing else',
           JSON.stringify(applied.seen));
+
+  // A passkey added, then rewritten — the rewrite is the one every passkey
+  // sign-in makes to its signature counter (#908).
+  const credentials = require('../common/credentials');
+  const keyId = 'load-cost-key-' + process.pid;
+  const keyAdded = await changesDuring(function () {
+    return credentials.addKey(uid, {
+      credentialId: keyId,
+      publicKeyJwk: { kty: 'EC', crv: 'P-256', x: 'a', y: 'b' },
+      signCount: 0 }, 'mfa');
+  });
+  t.check(keyAdded.answer && keyAdded.answer.ok === true,
+          'A6a. a passkey is recorded for the probe person',
+          JSON.stringify(keyAdded.answer));
+  t.check(keyAdded.seen.length > 0 && unnamed(keyAdded.seen) === 0,
+          'A6b. and every directory change it reports names a DN (#908)',
+          JSON.stringify(keyAdded.seen));
+  const keyRewritten = await changesDuring(function () {
+    return credentials.renameKey(uid, keyId, 'Rewritten');
+  });
+  t.check(keyRewritten.seen.length > 0 && unnamed(keyRewritten.seen) === 0 &&
+          keyRewritten.seen.every(function (one) {
+            return String(one).toLowerCase() === dn.toLowerCase();
+          }),
+          'A6c. a rewrite of the key, as a sign-in\'s counter update makes, ' +
+          'names the person\'s own entry and nothing else (#908)',
+          JSON.stringify(keyRewritten.seen));
 
   // Tidied up: this directory is module-wide (tests/CLAUDE.md).
   const removed = await operation('del', { dn: dn });

@@ -11522,7 +11522,10 @@ function writeWebauthnValue(key, value) {
   const have = stored.attributes.stswebauthncredential || [];
   stored.attributes.stswebauthncredential = have.concat([String(value)]);
   deriveAndroidMarker(stored);
-  touchDirectory();
+  // The DN it wrote (#908): the counter rewrite runs on every passkey
+  // sign-in, and a write that names nothing makes the next flush diff the
+  // whole directory and invalidates every listing.
+  touchDirectory(stored.dn);
   log.debug('Leaving writeWebauthnValue(). Written to ' + stored.dn + '.');
   return true;
 }
@@ -11543,7 +11546,10 @@ function replaceWebauthnValues(key, values) {
     stored.attributes.stswebauthncredential = values.map(String);
   }
   deriveAndroidMarker(stored);
-  touchDirectory();
+  // The DN it wrote (#908): the counter rewrite runs on every passkey
+  // sign-in, and a write that names nothing makes the next flush diff the
+  // whole directory and invalidates every listing.
+  touchDirectory(stored.dn);
   log.debug('Leaving replaceWebauthnValues(). ' +
             ((values || []).length) + ' key(s) left.');
   return true;
