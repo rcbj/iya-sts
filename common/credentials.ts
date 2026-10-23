@@ -4282,8 +4282,12 @@ class Credentials {
     const found = keys.filter(function (one) {
       return one.credentialId === String(credentialId);
     })[0];
+    // Compared as it is stored, truncated (#910): an untruncated reason
+    // over 500 characters never matched, so every attempt rewrote the key
+    // and sent CAEP credential-change again.
     if (!found || (found.attestationRefused &&
-                   found.attestationRefused.why === String(why || ''))) {
+                   found.attestationRefused.why ===
+                     String(why || '').slice(0, 500))) {
       log.debug('Leaving Credentials.noteKeyAttestationRefused(). ' +
                 'Nothing new.');
       return false;

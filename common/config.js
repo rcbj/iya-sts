@@ -18027,8 +18027,8 @@ const REALM_LISTENER_REPLACED = ' It was removed on 2026-10-07 (#472): a ' +
 const PASSKEY = ' decides it now — the passkey policy on Directory → ' +
   'Policies, per realm and inherited from the default realm — POST ' +
   '/admin-api/policies/save-passkey-policy, or the console. Usernameless ' +
-  'sign-in is off by default, and while it is off a security key is asked ' +
-  'for a discoverable credential.';
+  'sign-in is on by default (#910), and where a profile turns it off a ' +
+  'security key is asked for a discoverable credential.';
 
 // What #539's row says when it is still named.
 const LOCALE = ' decides it now — the locale policy on Directory → ' +
