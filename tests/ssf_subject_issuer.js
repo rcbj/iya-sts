@@ -119,7 +119,13 @@ function child() {
         sets = queued.map(function (one) {
           return one.claims || claimsOf(one.token);
         });
-        const types = sets.map(function (c) {
+        // Only the person's own events count towards "all arrived": the
+        // partner's control event is an account-enabled too, and counting
+        // it stopped the wait before the person's own had been queued
+        // (the full run, cluster and memory mode).
+        const types = sets.filter(function (c) {
+          return issuersIn(c.sub_id).indexOf('https://partner.example') < 0;
+        }).map(function (c) {
           return Object.keys(c.events || {})[0];
         });
         if (wanted.every(function (u) { return types.indexOf(u) >= 0; })) {

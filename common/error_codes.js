@@ -1125,6 +1125,12 @@ const CODES = [
       'The other realms.* settings stay settable process-wide from inside ' +
       'a realm.',
     spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-CORE-0163',
+    summary: 'Another process claimed a trust realm\'s signer-group keys ' +
+      '(keys.signerModel hybrid-groups) and they did not arrive within the ' +
+      'wait, so this process made them itself; the cluster may hold two ' +
+      'sets until one is replaced.',
+    spec: 'none — logged; group signatures go on' },
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
       'job sent to it may not arrive or its answer may not come back.' +

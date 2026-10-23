@@ -6612,6 +6612,66 @@ function certifySignerGroupsLater(realmId, members) {
   log.debug("Leaving certifySignerGroupsLater().");
 }
 
+// ---------------------------------------------------------------------------
+// THE SIGNER GROUPS ARE MINTED ONCE FOR THE CLUSTER (2026-10-23, the full
+// run). `keystore.joinSignerGroups()` lets the first generator win between
+// the processes of ONE node, through its shared copy; two nodes each found no
+// groups stored, each made and stored its own (the store keeping the last),
+// and each certified its own, so the JWKS a balancer answered alternated
+// between two sets and one was never certified (sts_signer_groups in cluster
+// mode waited three minutes for 28 certified keys). So the minting is a
+// claim, as `oidfed/federation_keys.ts` mints its keys: the winner makes
+// them, and a process that loses waits, bounded, for the winner's groups to
+// be held here. A claim the store could not answer, or a wait that ends
+// without them, makes them here, as before.
+// ---------------------------------------------------------------------------
+const SIGNER_GROUPS_MINT_SCOPE = 'keys.signer-groups-mint';
+const SIGNER_GROUPS_WAIT_MS = 15000;
+const SIGNER_GROUPS_POLL_MS = 100;
+
+/**
+ * Makes a key set's signer groups, or waits for another process's.
+ *
+ * @param keys - the realm's key set
+ * @returns a promise of the groups made here, or of null where another
+ *   process's are held now
+ */
+async function mintOrAwaitSignerGroups(keys) {
+  log.debug("Entering mintOrAwaitSignerGroups().");
+  let claimed = { ok: true };
+  if (keys.realm !== undefined) {
+    try {
+      claimed = await require('../cluster/cluster_claims').claim({
+        scope: SIGNER_GROUPS_MINT_SCOPE,
+        value: String(keys.realm) + ':' + String(keys.kid || ''),
+        realm: String(keys.realm), ttlMs: 60000 });
+    } catch (e) {
+      log.debug("Caught in mintOrAwaitSignerGroups(): " +
+                ((e && e.message) || e));
+      claimed = { ok: true };
+    }
+  }
+  if (!claimed.ok && claimed.reason === 'used') {
+    const deadline = Date.now() + SIGNER_GROUPS_WAIT_MS;
+    while (Date.now() < deadline) {
+      if ((keys.signerGroups || []).length) {
+        log.debug("Leaving mintOrAwaitSignerGroups(). Minted elsewhere.");
+        return null;
+      }
+      await new Promise(function (resolve) {
+        setTimeout(resolve, SIGNER_GROUPS_POLL_MS);
+      });
+    }
+    log.warn(errorCodes.tag('STS-CORE-0163') + 'helpers: another process ' +
+             'claimed the "' + keys.realm + '" realm\'s signer-group keys ' +
+             'and they did not arrive within ' + SIGNER_GROUPS_WAIT_MS +
+             'ms; they are made here.');
+  }
+  const made = await makeSignerGroupsAsync();
+  log.debug("Leaving mintOrAwaitSignerGroups(). Made here.");
+  return made;
+}
+
 /**
  * Returns a key set's signer-group keys, making them on libuv's thread pool
  * where they do not exist yet; concurrent callers share one generation.
@@ -6630,7 +6690,12 @@ function signerGroupsForAsync(keys) {
     return keys.signerGroupsPromise;
   }
   const started = Date.now();
-  keys.signerGroupsPromise = makeSignerGroupsAsync().then(function (made) {
+  keys.signerGroupsPromise = mintOrAwaitSignerGroups(keys).then(function (
+      made) {
+    if (made === null) {
+      // Another node or worker minted them, and they are held now.
+      return keys.signerGroups;
+    }
     if (!(keys.signerGroups || []).length) {
       keys.signerGroups = made;
       // Shared, written down and certified under the rules

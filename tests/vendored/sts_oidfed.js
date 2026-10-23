@@ -445,13 +445,19 @@ async function test() {
 
   log.info("=== 2. fetch ===");
   let r = await hop("GET", fetchAt + "?sub=" + encodeURIComponent(leafId));
+  // THE REALM'S KEYS AS THEY ARE NOW (2026-10-23). A `next` key is minted
+  // ahead and published at once (oidfed/federation_keys.ts), so the
+  // realm's Entity Configuration read at the start may predate a key the
+  // statement now pins (the full run, cluster). The statement is compared
+  // with the configuration read beside it.
+  const leafNow = await configurationOf(base);
   check("the statement about the realm, signed by the anchor, pinning the " +
         "realm's keys", function () {
     assert.strictEqual(r.status, 200, r.text.slice(0, 300));
     const ss = partsOf(r.text);
     assert.strictEqual(ss.claims.iss, anchorId);
     assert.strictEqual(ss.claims.sub, leafId);
-    assert.deepStrictEqual(ss.claims.jwks, leaf.parts.claims.jwks);
+    assert.deepStrictEqual(ss.claims.jwks, leafNow.parts.claims.jwks);
     assert.ok(verified(r.text, anchor.parts.claims.jwks));
   });
   const noSub = await hop("GET", fetchAt);

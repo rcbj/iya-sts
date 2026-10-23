@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4587** of them, in **47** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4588** of them, in **47** subsystems.
 
 ## Where a code appears
 
@@ -51,7 +51,7 @@ is an ordinary outcome.
 
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 19
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
-* [Service core (`STS-CORE`)](#sts-core) — 94
+* [Service core (`STS-CORE`)](#sts-core) — 95
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 51
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 87
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 32
@@ -245,6 +245,7 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | `STS-CORE-0160` | A garbage collection was asked for on Monitoring → Node Health with an action the operation does not have, or a target that is neither `all`, `front`, nor the threadId of a ready worker thread of this node (#611). Nothing was collected. | HTTP 400 for an unknown action or a malformed target, 404 for a thread this node does not have |
 | `STS-CORE-0161` | A trust realm was not created because this cluster already holds realms.maxCount of them, the default realm included (#368). A realm read back from the store or another process is not refused for this, so a restart of a registry that is already over the cap still comes up. Lowering the cap does not remove realms. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-CORE-0162` | realms.maxCount was set or cleared while a trust realm other than the default was ambient (#368). The limit is process-wide and only a service administrator in the default realm may change it. The other realms.* settings stay settable process-wide from inside a realm. | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-CORE-0163` | Another process claimed a trust realm's signer-group keys (keys.signerModel hybrid-groups) and they did not arrive within the wait, so this process made them itself; the cluster may hold two sets until one is replaced. | none — logged; group signatures go on |
 
 ## STS-WORKER
 
