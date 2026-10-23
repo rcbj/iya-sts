@@ -1234,7 +1234,9 @@ class Authn {
       accountSignals: accountSignals,
       clientHello: clientHello,
       deviceRecognition: deviceRecognition,
-      browserDevices: function () {
+      browserDevices: function browserDevices() {
+        helpers.log.debug("Entering browserDevices().");
+        helpers.log.debug("Leaving browserDevices().");
         return require('../common/browser_devices');
       },
       stsCrypto: stsCrypto,
@@ -6979,8 +6981,10 @@ class Authn {
   // metadata is a store lookup; never rejects.
   private async attestationAtSignIn(username: string, key: any):
       Promise<{ code: string; why: string } | null> {
+    // `audit` and `stsCrypto` from the deps too (#912), so a recording
+    // audit dependency sees the refusal rows this writes.
     const { log, passkeyPolicy, webauthnAttestation, credentials,
-      accountSignals, errorCodes } = this.deps;
+      accountSignals, errorCodes, audit, stsCrypto } = this.deps;
     log.debug("Entering Authn.attestationAtSignIn().");
     if (!key) {
       log.debug("Leaving Authn.attestationAtSignIn(). No key.");
@@ -16772,7 +16776,8 @@ class Authn {
    */
   mfaWebauthnOptions(req: any, res: any, mfaId: string, key: string,
                      lane?: string): void {
-    const { log, baseUrlOf, errorCodes, webauthnPolicy } = this.deps;
+    // `audit` from the deps (#912), as every other writer of its rows.
+    const { log, baseUrlOf, errorCodes, webauthnPolicy, audit } = this.deps;
     log.debug('Entering Authn.mfaWebauthnOptions().');
     const found = this.stepProblem('webauthn', mfaId);
     if (found.problem) {

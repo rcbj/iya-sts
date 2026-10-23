@@ -72,6 +72,10 @@ class WebWebAuthn {
     try {
       ext = c.getClientExtensionResults ? c.getClientExtensionResults() : {};
     } catch (e) {
+      // A browser that throws here still has a credential to post (#912):
+      // the registration goes on without the extension results, and the
+      // server records what it cannot read from them (credProps, so the
+      // key's discoverability) as unknown, which is all it would know.
       ext = {};
     }
     return { id: c.id, rawId: WebWebAuthn.b64u(c.rawId), type: c.type,
