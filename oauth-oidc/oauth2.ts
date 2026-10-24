@@ -11723,12 +11723,20 @@ class OAuth2Server {
       log.debug("Leaving OAuth2Server.withLogoutState(). No state.");
       return target;
     }
-    const at = target.indexOf('#');
-    const base = at >= 0 ? target.slice(0, at) : target;
-    const sep = base.indexOf('?') >= 0 ? '&' : '?';
+    const hashAt = target.indexOf('#');
+    const beforeFragment = hashAt >= 0 ? target.slice(0, hashAt) : target;
+    const fragment = hashAt >= 0 ? target.slice(hashAt) : '';
+    const queryAt = beforeFragment.indexOf('?');
+    const base = queryAt >= 0 ? beforeFragment.slice(0, queryAt)
+      : beforeFragment;
+    const query = new URLSearchParams(queryAt >= 0
+      ? beforeFragment.slice(queryAt + 1) : '');
+    // The RP's registered address may itself contain a `state`. The value
+    // from this end-session request is authoritative; appending a second one
+    // lets clients that read the first value receive stale state.
+    query.set('state', String(state));
     log.debug("Leaving OAuth2Server.withLogoutState().");
-    return base + sep + 'state=' + encodeURIComponent(String(state)) +
-           (at >= 0 ? target.slice(at) : '');
+    return base + '?' + query.toString() + fragment;
   }
 
   // A sign-out answer that is a PAGE for the person (#124, gap 8): a refusal
