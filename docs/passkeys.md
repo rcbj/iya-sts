@@ -352,6 +352,26 @@ registration in every case where the statement is verified.
 The passkey's recorded attestation is shown on `/portal/keys` and on the
 person's console page. A statement nothing verified is shown as *claimed*.
 
+**What the attestation was signed with.** Each registration also records the
+algorithm of the attestation statement (for example `ML-DSA-65` or
+`ES256`) and of every certificate in its chain, from the leaf to the trust
+anchor. The person's console page shows it under the attestation, marked
+post-quantum where every one of them is, and `GET /admin-api/users?user=`
+returns it for each passkey as `attestationAlgorithms`:
+
+| Field | What it holds |
+|---|---|
+| `recorded` | `false` for a passkey registered before this was recorded, or with no attestation |
+| `verified`, `trusted` | whether the statement was verified, and whether it chains to a trusted root |
+| `statement` | the statement's own signature algorithm; empty for `apple` and `none` |
+| `certificates` | each certificate's signature algorithm, leaf first and the anchor last, with its family and whether it is post-quantum |
+| `postQuantum` | `true` only when there is a certificate and every signature above is post-quantum (ML-DSA, SLH-DSA or composite ML-DSA) |
+
+Under `webauthn.attestationPolicy` `off` the algorithms are what the
+authenticator claimed, and `verified` says so. To require a post-quantum
+attestation, see
+[Requiring a post-quantum attestation](#requiring-a-post-quantum-attestation).
+
 **Binding security keys to the people they were issued to.** With enterprise
 attestation, the passkey policy's `enterpriseSerialAttribute` lets a security
 key register only for the person whose entry lists its serial number
@@ -371,6 +391,7 @@ described under [the passkey policy](authentication.md#the-passkey-policy):
 | `aggregateDevices` | One **Use passkey** choice for all of a person's passkeys (the default), or a list to pick one from. |
 | `recoveryAssurance` | Whether getting back in without the passkey restores access at once. See [Recovery](#losing-a-passkey-and-account-recovery). |
 | `postQuantumRequired` | See [Requiring a post-quantum passkey](#requiring-a-post-quantum-passkey). |
+| `attestationAlgorithms` | See [Requiring a post-quantum attestation](#requiring-a-post-quantum-attestation). |
 
 ### Different rules for different applications or groups
 
@@ -768,6 +789,117 @@ answers passkey questions itself, so the row has no effect in that realm.
 Rebuild the override from the current template. See [XACML](xacml.md) and
 [Configuring XACML and ALFA](configure-xacml.md).
 
+## Requiring a post-quantum attestation
+
+The passkey policy row `attestationAlgorithms`
+([#941](https://github.com/rcbj/iya-sts/issues/941)) is about the passkey's
+**attestation**: the authenticator's signed statement and the certificate
+chain behind it. `postQuantumRequired` (above) is about the passkey's own
+algorithm. A realm moving to post-quantum passkeys may want both: an ML-DSA
+passkey, attested by a chain a quantum computer cannot forge.
+
+### The row
+
+| Value | Effect |
+|---|---|
+| `none` (default) | no rule |
+| `post-quantum` | every signature may be any ML-DSA, SLH-DSA or composite ML-DSA one |
+| `ml-dsa-44`, `ml-dsa-65`, `ml-dsa-87` | that ML-DSA parameter set |
+| `slh-dsa`, `composite-ml-dsa` | any SLH-DSA, or any composite ML-DSA, signature |
+
+The value is a comma-separated list. Each signature — the statement's, and
+each certificate's from the leaf to the trust anchor — must be one an entry
+allows. `ml-dsa-65` alone refuses an ML-DSA-65 attestation key whose
+certificate an ML-DSA-87 root signed; `ml-dsa-65,ml-dsa-87` accepts it.
+
+* **A trusted attestation is required**, as for an AAGUID list: the chain
+  must reach a root in `webauthn.attestationTrustAnchors` or the FIDO
+  metadata. Anybody can make an ML-DSA certificate; only a trusted one says
+  something about the authenticator. Setting the row also makes registration
+  ask the browser for direct attestation.
+* **Registration**: a passkey whose attestation does not meet the list is not
+  registered (`STS-AUTHN-0411`). `none` and self attestation carry no
+  certificate and are refused.
+* **Sign-in**: only with `enforceAttestationAtSignIn` on, by what was
+  recorded at registration (`STS-AUTHN-0412`). A passkey registered before
+  this service recorded attestation algorithms stops signing in then. The
+  first refusal of each passkey sends a CAEP `credential-change`.
+
+Set it on the default policy, or on a
+[named policy](#different-rules-for-different-applications-or-groups) for one
+application or group. Over the API it is one more field of the profile
+(`POST /admin-api/policies/save-passkey-policy`); a save that leaves it out
+keeps the default.
+
+**Check what your passkeys hold first.** Few authenticators sign their
+attestation with a post-quantum algorithm today. Read each person's passkeys
+(`GET /admin-api/users?user=`, `attestationAlgorithms`) before requiring
+it, or nobody may be able to register.
+
+### The XACML facts
+
+A question carrying the fact group `attestation-algorithm` has, in the
+resource category:
+
+| Attribute | Type | Value |
+|---|---|---|
+| `urn:sts:xacml:passkey:attestation-statement-algorithm` | string | the statement's algorithm, for example `ML-DSA-65` |
+| `urn:sts:xacml:passkey:attestation-certificate-algorithm` | string bag | each certificate's signature algorithm, leaf to anchor (`ML-DSA-87`, `sha256-ecdsa`, `id-MLDSA65-ECDSA-P256-SHA512`) |
+| `urn:sts:xacml:passkey:attestation-post-quantum` | boolean | every one of them is post-quantum |
+| `urn:sts:xacml:passkey:attestation-algorithm-allowed` | boolean | they meet the profile's list (the built-in rule reads only this) |
+
+The list itself is `urn:sts:xacml:passkey-policy:attestationAlgorithms` in
+the environment, one value per entry. A realm's own rule can use the raw
+facts, as for [the post-quantum passkey facts](#how-it-is-decided-the-xacml-facts).
+An issuance policy override built before #941 has no rule for the row:
+rebuild it from the template.
+
+## Watching the move to post-quantum passkeys: the ceremony audit rows
+
+Every passkey registration and sign-in at the sign-in screen, the
+usernameless sign-in, `/portal/keys` and an activation link writes one
+audit row, `webauthn.ceremony`, whether it completed or not
+([#943](https://github.com/rcbj/iya-sts/issues/943)). Find them on
+**Monitoring → Audit log** or with
+`GET /admin-api/audit?action=webauthn.ceremony` (add `actor=` for one
+person, `outcome=refused` for the ones that failed). The row's detail:
+
+| Field | What it holds |
+|---|---|
+| `ceremony` | `registration` or `assertion` |
+| `door` | `sign-in-step`, `usernameless`, `portal` or `activation` |
+| `role`, `lane` | `primary` or `mfa`; `classical` or `pqc` |
+| `offered` | the algorithms offered, in order: for a registration, the list the browser was given (`pubKeyCredParams`); for a sign-in, the algorithms of the person's passkeys the ceremony could use |
+| `algorithm`, `postQuantum` | the algorithm that was used, and whether it is ML-DSA |
+| `client` | the browser and operating system, by name and major version only (`Chrome 141 on macOS 15`), from the User-Agent |
+| `transports`, `attachment` | what the browser reported: `internal`, `hybrid`, `usb`...; `platform` or `cross-platform` |
+| `clientError` | for a ceremony the browser did not complete, the error name its script reported: `NotAllowedError` (declined, timed out, or no passkey — the browser does not say which), `NotSupportedError`, `InvalidStateError`, `SecurityError`, `AbortError`, ...; `other` for anything else. The error's message is never recorded |
+| `attestation` | for a registration, what its attestation was signed with, leaf to anchor, and `(PQ)` where all of it is post-quantum |
+
+A refused row carries the error code the refusal was recorded under (for a
+browser that gave up, `STS-AUTHN-0022`).
+
+**A separate row, `webauthn.algorithm-mismatch`**, is written when a person
+who holds an ML-DSA passkey signs in with a classical one, where
+post-quantum was not required. Its detail names the algorithm `used`, the
+post-quantum algorithms the person `held`, the `door` and the `client`.
+Many of these mean people still reach for their old passkey, and requiring
+post-quantum at sign-in would refuse them today.
+
+What these rows answer:
+
+* **Is ML-DSA offered, and offered first?** `offered` on registrations.
+* **Which browsers make an ML-DSA passkey when asked?** Registrations whose
+  `offered` lists ML-DSA first, grouped by `client` and `algorithm`.
+* **Which fail, and how?** `outcome=refused` with `clientError`:
+  `NotSupportedError` where nothing on the device can make any algorithm
+  offered, `NotAllowedError` where the person declined or nothing answered.
+* **Who has a post-quantum passkey but does not use it?** The mismatch rows.
+
+No service log line is written per ceremony or per failed ceremony: the
+rows are the record, and a refusal's one log line comes from the request
+itself.
+
 ## Losing a passkey, and account recovery
 
 **Hold more than one.** The simplest recovery is a second passkey on a
@@ -964,6 +1096,7 @@ browser or a client. Look a code up in the audit log with
 | `STS-AUTHN-0355`, `0356` | a classical passkey, where a post-quantum one is required (registration, sign-in) |
 | `STS-AUTHN-0357` | a passkey policy requiring post-quantum, while the realm offers no ML-DSA |
 | `STS-AUTHN-0380`, `0381` | an account recovery refused, or limited to registering a new passkey |
+| `STS-AUTHN-0411`, `0412` | a passkey whose attestation is not signed with what `attestationAlgorithms` allows (registration, sign-in) |
 | `STS-ADMIN-0522` | an administrator's removal of a passkey was refused |
 
 **When the browser shows no prompt at all**, the passkey step has a link,
@@ -993,6 +1126,13 @@ way, because the browser refuses the ceremony before the service sees it.
   not yet narrow the browser's choice to the passkeys that can earn it.
 * **Only some authenticators make ML-DSA passkeys**, and the service cannot
   tell beforehand which.
+* **A post-quantum attestation has been tested only with a chain made for
+  the test.** No real authenticator's post-quantum attestation has been
+  tried; the attestation algorithms are recorded and enforced as WebAuthn
+  and the ML-DSA certificate profile describe them.
+* **The device link on `/portal/devices` writes no ceremony row yet.**
+  The ceremony rows cover the sign-in screen, the usernameless sign-in,
+  `/portal/keys` and activation links.
 * **Device Bound Session Credentials** (binding the session cookie to the
   browser) are a separate, optional feature, and an application cannot yet
   require them. See
