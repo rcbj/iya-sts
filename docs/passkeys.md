@@ -1013,8 +1013,8 @@ browser or a client. Look a code up in the audit log with
 | `STS-AUTHN-0355`, `0356` | a classical passkey, where a post-quantum one is required (registration, sign-in) |
 | `STS-AUTHN-0357` | a passkey policy requiring post-quantum, while the realm offers no ML-DSA |
 | `STS-AUTHN-0380`, `0381` | an account recovery refused, or limited to registering a new passkey |
-| `STS-AUTHN-0413` | the passkey report could not read the directory (503) |
-| `STS-AUTHN-0414` | a passkey report filter was refused: two at once, or a profile or application that is not here |
+| `STS-AUTHN-0415` | the passkey report could not read the directory (503) |
+| `STS-AUTHN-0416` | a passkey report filter was refused: two at once, or a profile or application that is not here |
 | `STS-ADMIN-0522` | an administrator's removal of a passkey was refused |
 
 **When the browser shows no prompt at all**, the passkey step has a link,

@@ -16,7 +16,7 @@
 // or profile reads that population's members, bounded; a list reads holders
 // after a key cursor, bounded. The module's header argues each bound.
 //
-// **A STORE THAT CANNOT BE READ IS A 503** (`STS-AUTHN-0413`), as every
+// **A STORE THAT CANNOT BE READ IS A 503** (`STS-AUTHN-0415`), as every
 // windowed console read answers one (`ldap_server.js`'s `storeAsked()`
 // marks the store's rejections `STS-LDAP-0139`); anything else is a 500.
 //
@@ -110,7 +110,7 @@ class PasskeyReportApi {
     const { log, errorCodes } = this.deps;
     log.debug("Entering PasskeyReportApi.refused().");
     // error-code: none — the report's own code, read off its answer
-    errorCodes.mark(res, errorCodes.codeOf(answer) || 'STS-AUTHN-0414');
+    errorCodes.mark(res, errorCodes.codeOf(answer) || 'STS-AUTHN-0416');
     this.sendJson(res, 400, { ok: false, errors: answer.errors || [] });
     log.debug("Leaving PasskeyReportApi.refused().");
   }
@@ -120,10 +120,10 @@ class PasskeyReportApi {
     const { log, errorCodes } = this.deps;
     log.debug("Entering PasskeyReportApi.failed().");
     const store = errorCodes.codeOf(e) === 'STS-LDAP-0139';
-    log.error(errorCodes.tag('STS-AUTHN-0413') + 'passkey report: ' + what +
+    log.error(errorCodes.tag('STS-AUTHN-0415') + 'passkey report: ' + what +
               ' could not be read' + (store ? ' (the store refused)' : '') +
               ': ' + ((e && e.message) || e));
-    errorCodes.mark(res, 'STS-AUTHN-0413');
+    errorCodes.mark(res, 'STS-AUTHN-0415');
     this.sendJson(res, store ? 503 : 500, { ok: false, errors: [
       store ? 'The directory could not be asked just now; try again.'
             : 'The passkey report could not be read.'] });
@@ -315,7 +315,7 @@ class PasskeyReportApi {
           if (!result.ok) {
             // error-code: none — the act's own code, read off the result
             errorCodes.mark(res, errorCodes.codeOf(result) ||
-                                 'STS-AUTHN-0416');
+                                 'STS-AUTHN-0418');
           }
           self.sendJson(res, result.ok ? 200 : 400, result);
           log.debug("Leaving the management API passkey report action. " +

@@ -329,7 +329,7 @@ class PasskeyReport {
         return !directory || typeof directory[name] !== 'function';
       });
     if (missing.length) {
-      log.error(errorCodes.tag('STS-AUTHN-0415') + 'passkey report: the ' +
+      log.error(errorCodes.tag('STS-AUTHN-0417') + 'passkey report: the ' +
                 'directory offered no ' + missing.join(', ') + ', so ' +
                 'nothing was installed; the report counts nothing until it ' +
                 'is.');
@@ -487,7 +487,7 @@ class PasskeyReport {
   // Called by the directory's two key-writing doors and its person delete,
   // synchronously, inside the write. **IT NEVER THROWS INTO THE WRITE**: a
   // passkey that was enrolled must not fail because a tally could not be
-  // kept (`STS-AUTHN-0411`, and the next recount is right again). Called
+  // kept (`STS-AUTHN-0413`, and the next recount is right again). Called
   // once per write of somebody's keys — a sign-in's counter update at most —
   // so the pair is kept.
   // -------------------------------------------------------------------------
@@ -528,7 +528,7 @@ class PasskeyReport {
       log.debug("Leaving PasskeyReport.noteKeysChanged(). Noted.");
       return true;
     } catch (e) {
-      log.error(errorCodes.tag('STS-AUTHN-0411') + 'passkey report: a ' +
+      log.error(errorCodes.tag('STS-AUTHN-0413') + 'passkey report: a ' +
                 'change to ' + String(who) + '\'s passkeys could not be ' +
                 'noted, and the write it describes is unaffected; the next ' +
                 'recount counts it: ' + ((e && e.message) || e));
@@ -594,7 +594,7 @@ class PasskeyReport {
         after = answer.next;
       }
     } catch (e) {
-      log.error(errorCodes.tag('STS-AUTHN-0412') + 'passkey report: the ' +
+      log.error(errorCodes.tag('STS-AUTHN-0414') + 'passkey report: the ' +
                 'recount of realm ' + realms.currentId() + ' failed after ' +
                 holders + ' holder(s), and the baseline is unchanged: ' +
                 ((e && e.message) || e));
@@ -750,7 +750,7 @@ class PasskeyReport {
 
   // -------------------------------------------------------------------------
   // THE FILTER. One of `group`, `profile` and `application`; none is the
-  // realm. A filter naming nothing here is refused (STS-AUTHN-0414).
+  // realm. A filter naming nothing here is refused (STS-AUTHN-0416).
   // -------------------------------------------------------------------------
   /**
    * Reads the report's filter from a query.
@@ -770,7 +770,7 @@ class PasskeyReport {
     // The code rides the refusal, non-enumerably, as `credentials.ts`'s
     // `coded()` attaches one: the API's handler reads it with `codeOf()`.
     const refuse = function (why: string): Json {
-      return errorCodes.mark({ ok: false, errors: [why] }, 'STS-AUTHN-0414');
+      return errorCodes.mark({ ok: false, errors: [why] }, 'STS-AUTHN-0416');
     };
     if (given > 1) {
       log.debug("Leaving PasskeyReport.filterOf(). Two filters.");
@@ -1263,7 +1263,7 @@ class PasskeyReport {
       log.debug("Leaving PasskeyReport.act(). Unknown action.");
       return errorCodes.mark({ ok: false, errors: ['Unknown action "' +
         action + '". Monitoring → Passkeys has one action: recount.'] },
-        'STS-AUTHN-0416');
+        'STS-AUTHN-0418');
     }
     let answer: Json;
     try {
@@ -1273,7 +1273,7 @@ class PasskeyReport {
         channel: o.channel || 'console' });
     } catch (e) {
       log.debug("Caught in PasskeyReport.act(): " + ((e && e.message) || e));
-      answer = { ok: false, errorCode: 'STS-AUTHN-0416',
+      answer = { ok: false, errorCode: 'STS-AUTHN-0418',
                  why: 'The recount could not be queued: ' +
                       ((e && e.message) || e) };
     }
@@ -1284,7 +1284,7 @@ class PasskeyReport {
       return errorCodes.mark({ ok: false,
         errors: [String((answer && answer.why) ||
                         'The recount could not be queued.')] },
-        String((answer && answer.errorCode) || 'STS-AUTHN-0416'));
+        String((answer && answer.errorCode) || 'STS-AUTHN-0418'));
     }
     log.debug("Leaving PasskeyReport.act(). Queued.");
     return { ok: true, action: 'recount', runId: answer.runId,

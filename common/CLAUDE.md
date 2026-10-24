@@ -13374,9 +13374,9 @@ what a maintainer must not undo:
   row records the attestation certificate's algorithm, then the `t|` facet,
   the Attestation tab and every list follow with no other change.
 * **A library and a slot (rule 3e).** `setDirectory()` is filled by
-  `ldap_server.js` and validated whole (`STS-AUTHN-0415`): that module
+  `ldap_server.js` and validated whole (`STS-AUTHN-0417`): that module
   requires this one, and the composition root builds this one at 18j-iv,
   before the directory at 21. Which values are keys is `credentials.ts`'s
   (`keysOfValues()`, the rule `keysOf()` uses), never this file's.
-* Codes `STS-AUTHN-0411` to `0416`. `tests/passkey_report.js` and
+* Codes `STS-AUTHN-0413` to `0418`. `tests/passkey_report.js` and
   `tests/vendored/sts_passkey_report.js` hold it.

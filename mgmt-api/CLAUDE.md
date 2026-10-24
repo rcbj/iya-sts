@@ -2583,7 +2583,7 @@ with a page of one list when `list` names one), `GET
 nothing else**, so the page and the operation cannot report different
 numbers; **no count is a directory scan** (`common/CLAUDE.md` 3cs). The
 recount QUEUES the scheduler job, never runs on the request. A filter refused
-is 400 with the report's own code (`STS-AUTHN-0414`); a store that could not
+is 400 with the report's own code (`STS-AUTHN-0416`); a store that could not
 be asked (`STS-LDAP-0139` on the rejection) is 503, anything else 500, both
-`STS-AUTHN-0413`. `list` and `lane` are closed sets, held at the gate (#86).
+`STS-AUTHN-0415`. `list` and `lane` are closed sets, held at the gate (#86).
 `tests/vendored/sts_passkey_report.js` drives it.

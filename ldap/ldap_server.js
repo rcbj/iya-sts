@@ -13270,7 +13270,7 @@ if (typeof passkeyReport.setDirectory === 'function') {
     personCount: personCount
   });
 } else {
-  log.warn(errorCodes.tag('STS-AUTHN-0415') + 'ldap: common/passkey_report ' +
+  log.warn(errorCodes.tag('STS-AUTHN-0417') + 'ldap: common/passkey_report ' +
            'offers no setDirectory(), so Monitoring → Passkeys counts ' +
            'nothing.');
 }

@@ -1532,12 +1532,12 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0408` | A sign-in could not be offered device binding: the response object takes no header. The session stands, unbound. | — |
 | `STS-AUTHN-0409` | A password that verified could not be re-hashed under the password policy's algorithm and parameters, or the new hash could not be written (#847). The sign-in stands; the next verified sign-in tries again. | — |
 | `STS-AUTHN-0410` | The credentials of the rows a users list shows could not be read together (#820): the store refused (it was unavailable, or the request's directory budget was spent), so those rows are drawn with their factors unknown rather than as holding none; or the read threw otherwise, and each row was asked on its own instead. | none — logged; the page is drawn |
-| `STS-AUTHN-0411` | A change to a person's passkeys could not be noted in the passkey report (#942). The write it describes stands; the report is short of it until the next recount. | none — logged; the write is unaffected |
-| `STS-AUTHN-0412` | The passkey report's recount (passkeys.report-recount) failed part-way: the directory could not be read. The baseline it would have replaced is kept; the run is recorded as failed. | none — the scheduler records the run as failed |
-| `STS-AUTHN-0413` | The passkey report, a list behind one of its counts or its export could not be read: the directory refused (503) or the read threw (500). | HTTP 503 or 500 from /admin-api/passkey-report |
-| `STS-AUTHN-0414` | A passkey report filter was refused: two filters at once, a passkey profile this realm does not have (or the default profile, which selects nobody by group), or an application it does not have. | HTTP 400 from /admin-api/passkey-report |
-| `STS-AUTHN-0415` | The passkey report's directory slot was offered without one of its three functions, so nothing was installed and the report counts nothing. | none — logged at startup |
-| `STS-AUTHN-0416` | A Monitoring → Passkeys action was refused: an action that does not exist, or a recount the scheduler could not queue. | HTTP 400 from POST /admin-api/passkey-report/{action} |
+| `STS-AUTHN-0413` | A change to a person's passkeys could not be noted in the passkey report (#942). The write it describes stands; the report is short of it until the next recount. | none — logged; the write is unaffected |
+| `STS-AUTHN-0414` | The passkey report's recount (passkeys.report-recount) failed part-way: the directory could not be read. The baseline it would have replaced is kept; the run is recorded as failed. | none — the scheduler records the run as failed |
+| `STS-AUTHN-0415` | The passkey report, a list behind one of its counts or its export could not be read: the directory refused (503) or the read threw (500). | HTTP 503 or 500 from /admin-api/passkey-report |
+| `STS-AUTHN-0416` | A passkey report filter was refused: two filters at once, a passkey profile this realm does not have (or the default profile, which selects nobody by group), or an application it does not have. | HTTP 400 from /admin-api/passkey-report |
+| `STS-AUTHN-0417` | The passkey report's directory slot was offered without one of its three functions, so nothing was installed and the report counts nothing. | none — logged at startup |
+| `STS-AUTHN-0418` | A Monitoring → Passkeys action was refused: an action that does not exist, or a recount the scheduler could not queue. | HTTP 400 from POST /admin-api/passkey-report/{action} |
 
 ## STS-OAUTH
 

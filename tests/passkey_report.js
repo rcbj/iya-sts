@@ -31,14 +31,14 @@
 //      directory's scan nothing.
 //   F. THE FILTERS: a group counts its members only; two filters, a profile
 //      nobody named, the default profile and an unknown application are
-//      refused with STS-AUTHN-0414.
+//      refused with STS-AUTHN-0416.
 //   G. THE LISTS: each kind's list is exactly its people; a list paged one
 //      row at a time by the `from` cursor visits each of them once; one
 //      algorithm, one model and the people with no passkey.
 //   H. THE EXPORT: CSV with a header and a row per person, and a cell a
 //      spreadsheet would read as a formula quoted.
 //   I. THE JOB AND THE ACT: the recount is registered with the scheduler,
-//      and an unknown action is refused with STS-AUTHN-0416.
+//      and an unknown action is refused with STS-AUTHN-0418.
 //
 // WHY IN PROCESS: what is asserted is which function the doors call and
 // how often the report asks the directory, which only a spy inside the
@@ -282,8 +282,8 @@ async function filters(t) {
    [{ application: 'pkr-no-such-' + STAMP }, 'an unknown application']]
     .forEach(function (pair) {
       const refused = report.filterOf(pair[0]);
-      t.check(!refused.ok && errorCodes.codeOf(refused) === 'STS-AUTHN-0414',
-              'F6. ' + pair[1] + ' is refused, coded STS-AUTHN-0414',
+      t.check(!refused.ok && errorCodes.codeOf(refused) === 'STS-AUTHN-0416',
+              'F6. ' + pair[1] + ' is refused, coded STS-AUTHN-0416',
               JSON.stringify(refused));
     });
   log.debug("Leaving filters().");
@@ -362,7 +362,7 @@ function jobAndAct(t) {
   t.check(!!scheduler.job(report.RECOUNT_JOB), 'I1. the recount is a ' +
           'scheduler job');
   const refused = report.act({ action: 'nonsense' }, { actor: 'test' });
-  t.check(!refused.ok && errorCodes.codeOf(refused) === 'STS-AUTHN-0416',
+  t.check(!refused.ok && errorCodes.codeOf(refused) === 'STS-AUTHN-0418',
           'I2. an unknown action is refused, coded', JSON.stringify(refused));
   t.equal(report.noteKeysChanged({ not: 'an array' }, null, 'x'), false,
           'I3. a note handed nonsense notes nothing and throws nothing');
