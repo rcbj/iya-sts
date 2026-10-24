@@ -6810,6 +6810,11 @@ class AdminApi {
             const answered = adminActions.usersAction(request,
                                              { via: 'api',
                                                actor: self.callerNameOf(res),
+                                               // WHO IS ENROLLING A PASSKEY
+                                               // FOR SOMEBODY (#945): the
+                                               // token's subject, a person,
+                                               // or nobody.
+                                               admin: self.callerPersonOf(res),
                                                // The address a password reset
                                                // link is built on (2026-09-13).
                                                base: baseUrlOf(req) });
@@ -8754,7 +8759,122 @@ class AdminApi {
               additionalProperties: false
             },
             responseDescription:
-              'The name the passkey now has, or why it was not renamed.' }
+              'The name the passkey now has, or why it was not renamed.' },
+
+          // #945: AN ADMINISTRATOR ENROLS A PASSKEY ON A PERSON'S BEHALF,
+          // the console's *Enrol a passkey for this person* on their page.
+          // Two acts, the person's own enrolment's two steps; the ceremony
+          // between them runs in the caller's browser.
+          { action: 'begin-passkey-enrolment',
+            operationId: 'beginUserPasskeyEnrolment',
+            summary: 'Begin enrolling a passkey for somebody, in your own ' +
+                     'browser',
+            description: 'Mints a WebAuthn registration challenge bound to ' +
+                         'YOU (the access token\'s subject, which must be a ' +
+                         'person), the person and the lane, held for five ' +
+                         'minutes at most and usable once, and answers the ' +
+                         'ceremony your browser runs (`ceremony`): the ' +
+                         'challenge, the realm\'s RP ID, the PERSON\'s user ' +
+                         'handle (`user.id`, per lane, #643) with their name ' +
+                         'and display name (the passkey policy\'s ' +
+                         'userDisplayName), the credentials to exclude (the ' +
+                         'person\'s keys in that lane) and `options` — the ' +
+                         'algorithms offered in order and the realm\'s ' +
+                         'attestation, user verification, resident key, ' +
+                         'hints and timeout. Every byte string is ' +
+                         'base64url.\n\nRefused unless the person\'s ' +
+                         'passkey policy\'s `adminEnrolment` is `on` ' +
+                         '(STS-AUTHN-0440, off by default), the person is ' +
+                         'in this realm\'s directory (STS-AUTHN-0441), the ' +
+                         'caller is a person (STS-AUTHN-0445), and the role, ' +
+                         'lane and `webauthn.maxKeysPerPerson` allow it. ' +
+                         'There is no import of a registration made ' +
+                         'elsewhere.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                role: { type: 'string', enum: ['primary', 'mfa'],
+                        description: '`mfa` (the default): a second factor ' +
+                                     'beside a password; `primary`: signs ' +
+                                     'them in on its own.' },
+                lane: { type: 'string', enum: ['classical', 'pqc'],
+                        description: 'The lane (#643) where the realm ' +
+                                     'offers both (webauthn.' +
+                                     'pqcAlongsideClassical); the ' +
+                                     'classical one otherwise.' },
+                kind: { type: 'string', enum: ['passkey', 'security-key'],
+                        description: 'Which kind of authenticator to ask ' +
+                                     'for; the realm\'s attachment setting ' +
+                                     'decides either way.' }
+              },
+              required: ['user'],
+              examples: [{ user: 'alice', role: 'mfa',
+                           kind: 'security-key' }],
+              additionalProperties: false
+            },
+            responseDescription: '`enrolmentId`, `expiresAt`, `role`, ' +
+                                 '`lane` and `ceremony`, or why it was not ' +
+                                 'begun.' },
+
+          { action: 'finish-passkey-enrolment',
+            operationId: 'finishUserPasskeyEnrolment',
+            summary: 'Finish enrolling a passkey for somebody',
+            description: 'Verifies what your browser\'s ' +
+                         '`navigator.credentials.create()` produced EXACTLY ' +
+                         'as the person\'s own registration is verified — ' +
+                         'the challenge, the origin and RP ID, user ' +
+                         'verification, the algorithms offered, the ' +
+                         'exclusion, the attestation statement (#105) and ' +
+                         'its algorithms (#941), and the passkey policy\'s ' +
+                         'registration rules (#718 and the rest) — and ' +
+                         'writes the key through the same writer, marked ' +
+                         '`enrolledBy` (you, your token\'s `sub`, and when). ' +
+                         'The enrolment is SPENT by this call whatever it ' +
+                         'answers: a second finish is refused ' +
+                         '(STS-AUTHN-0442, STS-AUTHN-0443).\n\n**Shared ' +
+                         'Signals**: a CAEP `credential-change` (`fido2-*`, ' +
+                         '`create`, initiated by `admin`), and the person is ' +
+                         'sent the security notice `passkey-enrolled`. ' +
+                         'Audited as `admin.passkey.enrolled`.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                enrolmentId: { type: 'string', maxLength: 128,
+                               description: 'The `enrolmentId` the begin ' +
+                                            'answered.' },
+                credential: { type: 'string', maxLength: 65536,
+                              description: 'The browser\'s registration as ' +
+                                           'JSON: `id`, `rawId`, `type`, ' +
+                                           '`authenticatorAttachment`, ' +
+                                           '`clientExtensionResults` and ' +
+                                           '`response` (`clientDataJSON`, ' +
+                                           '`attestationObject`, ' +
+                                           '`transports`), base64url — or ' +
+                                           '`{ error, message }` where the ' +
+                                           'browser refused.' }
+              },
+              required: ['user', 'enrolmentId', 'credential'],
+              examples: [{ user: 'alice', enrolmentId: 'q1w2e3r4',
+                           credential: '{"error":"NotAllowedError",' +
+                                       '"message":"cancelled"}' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The new passkey\'s `credentialId`, ' +
+                                 '`role`, `lane`, how many the person now ' +
+                                 'holds (`held`) and `enrolledBy`, or why ' +
+                                 'it was not registered.' }
         ] },
 
       // ---------------------------------------------------------------------
@@ -25406,6 +25526,31 @@ class AdminApi {
   }
 
   // ---------------------------------------------------------------------------
+  // WHO IS CALLING, AS A PERSON (#945): an administrator's passkey enrolment
+  // records the administrator — the verified token's subject, name and
+  // `sub` — and only a PERSON may be that: a client's own token names an
+  // application, and development's open API names nobody, so both answer
+  // null and the enrolment is refused (STS-AUTHN-0445).
+  // ---------------------------------------------------------------------------
+  /**
+   * Names the person whose access token this request was let in on.
+   *
+   * @param res - the response, whose locals the gate wrote
+   * @returns `{ username, sub }`, or null where the caller is no person
+   */
+  callerPersonOf(res): { username: string; sub: string } | null {
+    const { log } = this.deps;
+    log.debug("Entering AdminApi.callerPersonOf().");
+    const caller = res && res.locals && res.locals.apiCaller;
+    const out = caller && caller.kind === 'person' && caller.name
+      ? { username: String(caller.name), sub: String(caller.sub || '') }
+      : null;
+    log.debug("Leaving AdminApi.callerPersonOf(). " +
+              (out ? out.username : '(nobody)'));
+    return out;
+  }
+
+  // ---------------------------------------------------------------------------
   // THE CONSOLE'S GATE, AS THE TOKEN DECIDED IT (#446).
   //
   // The console's frame says who is signed in and with which roles, and
@@ -26247,6 +26392,9 @@ class AdminApi {
           kind: effective.subject.kind === 'application' ? 'application'
                                                          : 'person',
           name: String(effective.subject.name || ''),
+          // The token's own subject (#945), which an administrator's
+          // passkey enrolment records beside the name.
+          sub: String(claims.sub || ''),
           clientId: String(claims.client_id || ''),
           realm: tokenRealm,
           // What the decision above was made on, for `GET /admin-api/me`:

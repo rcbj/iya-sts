@@ -386,6 +386,28 @@ const pendingKeys = realms.map({ persist: 'credentials.pendingKeys',
                                  // #333: the ceremony's `expires`, ms.
                                  expiresAt: realms.expiryField('expires', 1) });
 
+// AN ADMINISTRATOR'S PENDING ENROLMENTS ON SOMEBODY'S BEHALF (#945), a store
+// of their own and NOT `pendingKeys`: that one is keyed by the person, so an
+// administrator beginning a ceremony for alice would have replaced the one
+// alice had armed on `/portal/keys` herself, and alice's `finish` would have
+// answered the administrator's challenge. Keyed by the ADMINISTRATOR AND THE
+// PERSON (`adminEnrolmentKey()`), so the challenge is bound to both, and
+// carrying the lane, so it is bound to that too. Persisted for
+// `pendingKeys`' reason: the begin and the finish can land on two nodes.
+const pendingAdminKeys = realms.map({
+  persist: 'credentials.pendingAdminKeys', retain: 'age',
+  // #333: the ceremony's `expires`, ms.
+  expiresAt: realms.expiryField('expires', 1) });
+
+// The key an administrator's pending enrolment for a person is held under
+// (#945): both names, lower case, joined by a character neither may hold.
+function adminEnrolmentKey(admin: unknown, username: unknown): string {
+  helpers.log.debug("Entering adminEnrolmentKey().");
+  helpers.log.debug("Leaving adminEnrolmentKey().");
+  return String(admin || '').trim().toLowerCase() + '\n' +
+         String(username || '').trim().toLowerCase();
+}
+
 /**
  * The one place a presented password is verified, and the store of every
  * credential a person holds on their own entry: the password, security
@@ -3606,6 +3628,21 @@ class Credentials {
     if (!this.deps.passkeyPolicy.hasSelection()) {
       this.deps.passkeyPolicy.select(name, '');
     }
+    // AN ADMINISTRATOR'S ENROLMENT (#945), refused HERE, the one writer, while
+    // the person's passkey policy does not allow it (`adminEnrolment` off,
+    // the default) — whatever door began it and however long ago, so a
+    // switch turned off while the administrator was touching the key
+    // refuses it. Only a record `enrolledByOf()` accepts says an
+    // administrator enrolled the key; anything else is no such claim.
+    const enrolledBy = Credentials.enrolledByOf((credential || {}).enrolledBy);
+    if (enrolledBy && !this.deps.passkeyPolicy.adminEnrolmentAllowed()) {
+      log.info('credentials: a passkey ' + enrolledBy.username + ' enrolled ' +
+               'for ' + name + ' was NOT written: the passkey policy does ' +
+               'not let an administrator enrol one (adminEnrolment off).');
+      log.debug("Leaving Credentials.addKey(). Administrator enrolment off.");
+      return coded('STS-AUTHN-0440', { ok: false, reason: 'admin-enrolment',
+               errors: [Credentials.ADMIN_ENROLMENT_OFF] });
+    }
     // ONE QUESTION TO THE ISSUANCE POLICY (#536): the key's BE flag, the
     // minimum PIN length it reported (#529), the device serial its
     // trusted attestation named (#532), and its signature algorithm with
@@ -3670,6 +3707,13 @@ class Credentials {
       facts.upgrade = { mode: upgrade.mode,
                         previousAlgorithm:
                           Credentials.keyAlgorithm(upgrading).name };
+    }
+    // WHO ENROLLED IT (#945): an administrator, on the person's behalf, in
+    // the administrator's browser — told to the issuance policy as a fact
+    // (the `enrolment` group), so a realm can forbid it by its own rule.
+    // The person's own enrolment carries none, as before.
+    if (enrolledBy) {
+      facts.enrolledBy = enrolledBy;
     }
     const synced = this.deps.passkeyPolicy.refusalFor('registration', facts);
     if (synced) {
@@ -3805,6 +3849,12 @@ class Credentials {
       // records and what `keyLane()` reads as classical. So with the switch
       // off a row is written exactly as it was.
       lane: lane === 'pqc' ? 'pqc' : undefined,
+      // WHO ENROLLED IT, WHERE AN ADMINISTRATOR DID (#945): `{ username,
+      // sub, at }` — the administrator's name and token subject and when —
+      // for the key lists to say "enrolled by an administrator" and the
+      // audit to be read against. Absent for the person's own enrolment,
+      // which is every key before #945.
+      enrolledBy: enrolledBy || undefined,
       // Who made or holds it, and which source said so (`keyProvider()`).
       provider: String(credential.provider || '').slice(0, 120),
       providerSource: ['mds', 'table'].indexOf(
@@ -9383,6 +9433,31 @@ class Credentials {
                errors: ['That enrolment is not the one in progress. Start ' +
                         'again.'] });
     }
+    log.debug('Leaving Credentials.checkKeyEnrolment(). Verifying the ' +
+              'registration.');
+    return this.verifyKeyRegistration(name, held, credential, options,
+      (stored) => {
+        return this.keyEnrolmentWritten(name, held, stored);
+      });
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE VERIFICATION BOTH REGISTRATION CEREMONIES SHARE (#945): the person's
+  // own (`checkKeyEnrolment()`, above) and an administrator's on their behalf
+  // (`checkAdminKeyEnrolment()`, below). Everything from the browser's answer
+  // to the write is ONE copy, so an administrator's enrolment is verified
+  // exactly as self-enrolment is — the challenge, the origin and RP ID, user
+  // verification, the algorithms the lane offered (#643, #944), the
+  // exclusion, the attestation statement (#105) and its algorithms (#941),
+  // and then `addKeyClaimed()` and so `addKey()`, the one writer, where the
+  // passkey policy and the issuance policy decide (#536, #718). `held` is the
+  // pending record either door minted; `written` turns the claimed write's
+  // answer into the door's.
+  // ---------------------------------------------------------------------------
+  private verifyKeyRegistration(name, held, credential, options, written) {
+    const { log, webauthnPolicy, webauthnVerifier } = this.deps;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.verifyKeyRegistration().");
     if (!credential || !credential.response ||
         !credential.response.attestationObject) {
       // The browser reports one error for a declined prompt, a missing
@@ -9391,7 +9466,7 @@ class Credentials {
       const said = credential && credential.error
         ? credential.error + ': ' + (credential.message || '')
         : 'the browser sent no credential';
-      log.debug('Leaving Credentials.checkKeyEnrolment(). No credential.');
+      log.debug('Leaving Credentials.verifyKeyRegistration(). No credential.');
       return coded('STS-AUTHN-0022',
                    { ok: false, reason: 'browser', errors: [said] });
     }
@@ -9424,7 +9499,8 @@ class Credentials {
           held.offered)
       });
     } catch (e) {
-      log.debug('Leaving Credentials.checkKeyEnrolment(). Verification threw.');
+      log.debug('Leaving Credentials.verifyKeyRegistration(). Verification ' +
+                'threw.');
       return coded('STS-AUTHN-0027', { ok: false, reason: 'invalid',
                errors: ['The registration could not be checked: ' +
                         e.message] });
@@ -9432,7 +9508,8 @@ class Credentials {
     if (!verdict.ok) {
       log.info('credentials: a security key enrolment for ' + name +
                ' did not verify — ' + (verdict.failed || []).join('; '));
-      log.debug('Leaving Credentials.checkKeyEnrolment(). It did not verify.');
+      log.debug('Leaving Credentials.verifyKeyRegistration(). It did not ' +
+                'verify.');
       return coded(webauthnPolicy.failureCodeFor(verdict),
                    { ok: false, reason: 'invalid',
                errors: ['The registration did not verify — ' +
@@ -9448,7 +9525,8 @@ class Credentials {
     if (held.exclude.indexOf(String(verdict.credentialId)) >= 0) {
       log.info('credentials: ' + name + ' presented an authenticator that is ' +
                'already enrolled. Refused as a duplicate.');
-      log.debug('Leaving Credentials.checkKeyEnrolment(). Already enrolled.');
+      log.debug('Leaving Credentials.verifyKeyRegistration(). Already ' +
+                'enrolled.');
       return coded('STS-AUTHN-0095', { ok: false, reason: 'duplicate',
                errors: ['That authenticator is already enrolled. Use a ' +
                         'DIFFERENT one — a backup on the same device is lost ' +
@@ -9460,7 +9538,7 @@ class Credentials {
     // function answers a promise now — see `addKeyClaimed()`. A refused
     // statement is refused like a ceremony that did not verify, and the
     // pending enrolment is kept, as for a refused write below.
-    log.debug('Leaving Credentials.checkKeyEnrolment(). Verifying the ' +
+    log.debug('Leaving Credentials.verifyKeyRegistration(). Verifying the ' +
               'attestation, then writing through the claim.');
     return this.deps.webauthnAttestation.assess(verdict).then((attested) => {
       if (!attested.ok) {
@@ -9514,7 +9592,10 @@ class Credentials {
       // The handle the page created it under (#474), and its lane (#643),
       // both off the pending record.
       userHandle: held.userHandle,
-      lane: held.lane || 'classical'
+      lane: held.lane || 'classical',
+      // WHO ENROLLED IT, where an administrator did (#945): off the pending
+      // record that door minted, never off the browser's answer.
+      enrolledBy: held.enrolledBy || undefined
     };
   }
 
@@ -10166,6 +10247,439 @@ class Credentials {
   }
 
   // ---------------------------------------------------------------------------
+
+  // ===========================================================================
+
+  // AN ADMINISTRATOR ENROLS A PASSKEY ON SOMEBODY'S BEHALF (#945, rule 3cv).
+  //
+  // rcbj's decision on the ticket: **a registration ceremony run in the
+  // ADMINISTRATOR'S browser, for the PERSON's user handle and lane, with the
+  // attestation verified as for self-enrolment — and no import of a
+  // registration produced elsewhere.** The case is a hardware authenticator
+  // an organisation hands out already registered (an ML-DSA security key,
+  // say): the administrator plugs it in at the console, the ceremony runs
+  // there against the realm's RP ID, and the credential is created under the
+  // person's own handle, so it signs the person in exactly as one they made
+  // themselves would. Nothing is imported: the attestation statement is the
+  // authenticator's, verified here, and an operator cannot type a key in.
+  //
+  // THE SAME TWO STEPS AS THE PERSON'S OWN, with these differences, each a
+  // reason rather than a preference:
+  //
+  //   * **THE CHALLENGE IS BOUND TO THE ADMINISTRATOR, THE PERSON AND THE
+  //     LANE** — held in `pendingAdminKeys` under both names, so it neither
+  //     replaces nor answers a ceremony the person armed themselves, and one
+  //     administrator cannot finish another's.
+  //   * **SHORT-LIVED**: `ADMIN_ENROLMENT_TTL_MS`, five minutes, or the
+  //     person's own TTL where that is shorter. The administrator is at the
+  //     console with the key in hand; "long enough to find it in a drawer"
+  //     is the person's reason and not theirs.
+  //   * **SINGLE USE, WHATEVER THE OUTCOME.** The finish takes the pending
+  //     record before it verifies anything and claims the challenge across
+  //     the cluster (`ADMIN_ENROLMENT_SCOPE`), so a second finish — a replay,
+  //     a double click, a second node — finds nothing (STS-AUTHN-0442) or a
+  //     spent challenge (STS-AUTHN-0443). The person's own pending record is
+  //     kept on a refused write so they need not start again; an operator's
+  //     act on somebody else's account starts again instead.
+  //   * **THE PERSON MUST EXIST IN THIS REALM, IN EVERY MODE**
+  //     (STS-AUTHN-0441): development creates a person at their first
+  //     sign-in, and an administrator's act on a name nobody holds would
+  //     create one. The directory is the realm's (the ambient realm), so a
+  //     realm administrator reaches their own realm's people and nobody
+  //     else's (#32).
+  //   * **THE PASSKEY POLICY MUST ALLOW IT**: the person's profile's
+  //     `adminEnrolment`, `off` by default (STS-AUTHN-0440), asked at the
+  //     begin as a courtesy and at `addKey()`, the one writer, as the
+  //     enforcement — beside the console role the API's gate already asks
+  //     for (Admin Write, `admin:write`).
+  //   * **THE KEY RECORDS WHO DID IT**: `enrolledBy { username, sub, at }`,
+  //     drawn as "enrolled by an administrator" on the console, the API and
+  //     the person's own passkey page, and told to the issuance policy as a
+  //     fact (the `enrolment` group) so a realm can forbid it by policy.
+  //
+  // What the ceremony offers is ONE CALL SITE, `adminEnrolmentAlgorithms()`:
+  // the pending record carries the list, the options are built from it, and
+  // the verifier holds the credential to it.
+  // ===========================================================================
+  /** The claim scope an administrator's enrolment challenge is spent under. */
+  static readonly ADMIN_ENROLMENT_SCOPE = 'authn.webauthn-admin-enrolment';
+  /** The longest an administrator's enrolment challenge is held. */
+  static readonly ADMIN_ENROLMENT_TTL_MS = 5 * 60 * 1000;
+  /** The refusal while the passkey policy's `adminEnrolment` is off. */
+  static readonly ADMIN_ENROLMENT_OFF = 'This person\'s passkey policy does ' +
+    'not let an administrator enrol a passkey for them (adminEnrolment is ' +
+    'off). Turn it on under Directory → Policies → Passkeys, or have them ' +
+    'create one themselves on their account page.';
+
+  /**
+   * Reads an `enrolledBy` record (#945): `{ username, sub, at }`, the
+   * administrator's name and token subject and when, each bounded. Anything
+   * that names no administrator is not one.
+   *
+   * @param raw - what a key or a pending record carries
+   * @returns the record, or null
+   */
+  static enrolledByOf(raw: unknown): { username: string; sub: string;
+                                       at: number } | null {
+    helpers.log.debug("Entering Credentials.enrolledByOf().");
+    const given: any = raw && typeof raw === 'object' ? raw : null;
+    const clean = function (value: unknown): string {
+      helpers.log.debug("Entering enrolledByOf() clean().");
+      helpers.log.debug("Leaving enrolledByOf() clean().");
+      return String(value || '').trim()
+        .replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 256);
+    };
+    const username = given ? clean(given.username) : '';
+    if (!username) {
+      helpers.log.debug("Leaving Credentials.enrolledByOf(). None.");
+      return null;
+    }
+    const at = Number(given.at);
+    helpers.log.debug("Leaving Credentials.enrolledByOf().");
+    return { username: username, sub: clean(given.sub),
+             at: Number.isFinite(at) && at > 0 ? Math.floor(at) : 0 };
+  }
+
+  // THE ALGORITHMS AN ADMINISTRATOR'S CEREMONY OFFERS (#945), IN ORDER — THE
+  // ONE CALL SITE. The realm's list for the lane (`webauthn_policy.ts`'s
+  // `algorithmIds()`, the same the person's own ceremony offers); a
+  // per-population registration list (#940) replaces THIS LINE and nothing
+  // else, because the pending record carries what it answers, the console's
+  // options are built from that, and the verifier holds the credential to it.
+  private adminEnrolmentAlgorithms(lane: string): number[] {
+    const { log, webauthnPolicy } = this.deps;
+    log.debug("Entering Credentials.adminEnrolmentAlgorithms().");
+    const out = webauthnPolicy.algorithmIds(lane, false);
+    log.debug("Leaving Credentials.adminEnrolmentAlgorithms().");
+    return Array.isArray(out) ? out.slice() : [];
+  }
+
+  /**
+   * Mints the challenge of a passkey registration an administrator runs in
+   * their own browser on a person's behalf (#945), refusing anything
+   * knowable before the authenticator is touched.
+   *
+   * @param username - the person the passkey is for
+   * @param admin - `{ username, sub }`: the administrator
+   * @param opts - `role` (`mfa` by default), `kind` and `lane`
+   * @returns `{ ok: true, enrolmentId, challenge, role, kind, lane,
+   *   userHandle, exclude, algorithms, expiresAt }`, or a refusal
+   */
+  beginAdminKeyEnrolment(username, admin, opts?) {
+    const { log, webauthnPolicy, errorCodes, crypto } = this.deps;
+    const { ROLES } = Credentials;
+    const directory = this.directory;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.beginAdminKeyEnrolment().");
+    const name = String(username || '').trim();
+    const options = opts || {};
+    const by = Credentials.enrolledByOf(admin);
+    if (!by) {
+      log.debug("Leaving Credentials.beginAdminKeyEnrolment(). No " +
+                "administrator.");
+      return coded('STS-AUTHN-0445', { ok: false, reason: 'admin',
+               errors: ['An administrator\'s enrolment names the ' +
+                        'administrator, and this request names nobody: it ' +
+                        'carried no access token whose subject is a ' +
+                        'person. Sign in to the console and try again.'] });
+    }
+    if (!directory || typeof directory.writeWebauthn !== 'function') {
+      log.debug("Leaving Credentials.beginAdminKeyEnrolment(). No store.");
+      return coded('STS-AUTHN-0059', { ok: false, errors: ['No credential ' +
+                                   'store is installed, so a security key ' +
+                                   'cannot be enrolled.'] });
+    }
+    // THE PERSON, IN THIS REALM, IN EVERY MODE — see the header.
+    if (!name || !this.entryExists(name)) {
+      log.debug("Leaving Credentials.beginAdminKeyEnrolment(). Nobody " +
+                "of that name here.");
+      return coded('STS-AUTHN-0441', { ok: false, reason: 'person',
+               errors: ['There is nobody called "' + name.slice(0, 80) +
+                        '" in this realm\'s directory, so there is nobody ' +
+                        'to enrol a passkey for.'] });
+    }
+    // THE PERSON'S PASSKEY POLICY (#535), which every check below reads,
+    // and its switch, asked first so the answer names the switch.
+    this.deps.passkeyPolicy.select(name, '');
+    if (!this.deps.passkeyPolicy.adminEnrolmentAllowed()) {
+      log.debug("Leaving Credentials.beginAdminKeyEnrolment(). The switch " +
+                "is off.");
+      return coded('STS-AUTHN-0440', { ok: false, reason: 'admin-enrolment',
+               errors: [Credentials.ADMIN_ENROLMENT_OFF] });
+    }
+    const role = String(options.role || 'mfa');
+    if (ROLES.indexOf(role) < 0) {
+      log.debug("Leaving Credentials.beginAdminKeyEnrolment(). Not a role.");
+      return coded('STS-AUTHN-0066', { ok: false, errors: ['A security key ' +
+                                   'is either "primary" or "mfa". ' +
+                                   '"' + role + '" is neither.'] });
+    }
+    const allowed = webauthnPolicy.roleAllowed(role);
+    if (!allowed.ok) {
+      log.debug("Leaving Credentials.beginAdminKeyEnrolment(). The role is " +
+                "not allowed here.");
+      return coded(errorCodes.codeOf(allowed) || 'STS-AUTHN-0044',
+                   { ok: false, errors: [allowed.why] });
+    }
+    // THE LANE (#643), as the person's own ceremony chooses it — including
+    // #718's answer of the post-quantum lane where only its key would be
+    // taken.
+    const lane = webauthnPolicy.enrolmentLane(String(options.lane || ''));
+    const laneAllowed = webauthnPolicy.laneRefusal(lane);
+    if (!laneAllowed.ok) {
+      log.debug("Leaving Credentials.beginAdminKeyEnrolment(). The lane is " +
+                "not offered here.");
+      return coded(errorCodes.codeOf(laneAllowed) || 'STS-AUTHN-0351',
+                   { ok: false, reason: 'lane', errors: [laneAllowed.why] });
+    }
+    const held = this.keysOf(name);
+    const cap = webauthnPolicy.settings().maxKeysPerPerson;
+    if (held.length >= cap) {
+      log.debug("Leaving Credentials.beginAdminKeyEnrolment(). At the cap.");
+      return coded('STS-AUTHN-0067', { ok: false,
+               errors: [name + ' already holds ' + held.length + ' security ' +
+                        'key(s), which is the most this realm allows ' +
+                        '(webauthn.maxKeysPerPerson). Remove one first.'] });
+    }
+    this.sweepPendingAdminKeys();
+    const kind = webauthnPolicy.authenticatorKinds()
+      .indexOf(String(options.kind || '')) >= 0 ? String(options.kind) : '';
+    const record = {
+      id: crypto.randomBytes(24).toString('base64url'),
+      username: name,
+      admin: by.username,
+      challenge: crypto.randomBytes(32).toString('base64url'),
+      role: role,
+      kind: kind,
+      lane: lane,
+      label: '',
+      // THE PERSON'S HANDLE IN THE LANE (#474, #643), minted now if they hold
+      // none: the credential is created under it, so it is theirs on the
+      // authenticator as one they made would be.
+      userHandle: this.userHandleOf(name, { mint: true, lane: lane }) ||
+                  this.newUserHandle(),
+      // Every key they hold in this lane, as the person's own ceremony
+      // excludes them.
+      exclude: held.filter((one) => {
+        return Credentials.keyLane(one) === lane;
+      }).map((one) => { return one.credentialId; }),
+      // WHAT THE CEREMONY OFFERS, the one call site's answer, carried so the
+      // options and the verifier cannot disagree.
+      offered: this.adminEnrolmentAlgorithms(lane),
+      enrolledBy: { username: by.username, sub: by.sub, at: 0 },
+      expires: Date.now() + Math.min(this.keyEnrolmentTtlMs(),
+                                     Credentials.ADMIN_ENROLMENT_TTL_MS)
+    };
+    pendingAdminKeys.set(adminEnrolmentKey(by.username, name), record);
+    log.info('credentials: ' + by.username + ' started enrolling a "' +
+             role + '" passkey for ' + name +
+             (lane !== 'classical' ? ' in the ' + lane + ' lane' : '') +
+             ', in their own browser. ' + record.exclude.length +
+             ' authenticator(s) already enrolled are excluded.');
+    log.debug("Leaving Credentials.beginAdminKeyEnrolment(). Challenge " +
+              "minted and held.");
+    return { ok: true, enrolmentId: record.id, challenge: record.challenge,
+             role: role, kind: kind, lane: lane,
+             userHandle: record.userHandle, exclude: record.exclude.slice(),
+             algorithms: record.offered.slice(),
+             expiresAt: new Date(record.expires).toISOString() };
+  }
+
+  // The administrators' pending records past their time, dropped as they
+  // are read — the read is where an expired one must not be answered.
+  private sweepPendingAdminKeys() {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.sweepPendingAdminKeys().");
+    const now = Date.now();
+    pendingAdminKeys.forEach((value, key) => {
+      if (!value || value.expires < now) {
+        pendingAdminKeys.delete(key);
+      }
+    });
+    log.debug("Leaving Credentials.sweepPendingAdminKeys().");
+  }
+
+  /**
+   * Returns an administrator's pending enrolment for a person (#945), if
+   * one is held and has not expired.
+   *
+   * @param admin - the administrator's username
+   * @param username - the person
+   * @returns the pending record, or null
+   */
+  pendingAdminKeyEnrolment(admin, username) {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.pendingAdminKeyEnrolment().");
+    this.sweepPendingAdminKeys();
+    const held = pendingAdminKeys.get(adminEnrolmentKey(admin, username));
+    log.debug("Leaving Credentials.pendingAdminKeyEnrolment().");
+    return held || null;
+  }
+
+  /**
+   * Forgets an administrator's pending enrolment for a person (#945).
+   *
+   * @param admin - the administrator's username
+   * @param username - the person
+   */
+  abandonAdminKeyEnrolment(admin, username) {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.abandonAdminKeyEnrolment().");
+    pendingAdminKeys.delete(adminEnrolmentKey(admin, username));
+    log.debug("Leaving Credentials.abandonAdminKeyEnrolment().");
+  }
+
+  /**
+   * Verifies the registration an administrator's browser produced for a
+   * person (#945) exactly as the person's own is verified, and only then
+   * writes the key, marked `enrolledBy`. The pending record is spent first,
+   * whatever the outcome.
+   *
+   * @param username - the person
+   * @param admin - `{ username, sub }`: the administrator finishing it
+   * @param enrolmentId - the pending enrolment's id
+   * @param credential - what the browser posted
+   * @param opts - `origin` and `rpId`, what the browser was talking to
+   * @returns a promise of `{ ok: true, username, role, credentialId, held,
+   *   lane, enrolledBy }`, or a refusal
+   */
+  confirmAdminKeyEnrolment(username, admin, enrolmentId, credential, opts?) {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.confirmAdminKeyEnrolment().");
+    const name = String(username || '').trim();
+    const by = Credentials.enrolledByOf(admin);
+    const held = by ? this.pendingAdminKeyEnrolment(by.username, name) : null;
+    // THE CEREMONY'S ROW (#943), however it ends, at the administrator's
+    // door: the person is the actor, as for every ceremony row, and the
+    // role is the key's — who ran it is the door's to say, and
+    // `admin.passkey.enrolled` names the administrator.
+    const note = (answer, threw?) => {
+      log.debug("Entering confirmAdminKeyEnrolment() note().");
+      const key = answer && answer.ok ? this.keysOf(name).filter(
+        function (one) {
+          return String(one.credentialId) ===
+                 String(answer.credentialId || '');
+        })[0] || null : null;
+      webauthnCeremonies.record({
+        ceremony: 'registration', door: 'admin-enrolment', username: name,
+        role: String((held && held.role) || ''),
+        lane: String((held && held.lane) || 'classical'),
+        outcome: answer && answer.ok ? 'success' : 'refused',
+        errorCode: answer && answer.ok ? ''
+          : String(this.deps.errorCodes.codeOf(answer) ||
+                   (threw ? 'STS-AUTHN-0447' : '')),
+        offered: (held && held.offered) || [],
+        algorithm: key ? Credentials.keyAlgorithm(key).name : '',
+        posted: credential, attestation: key ? key.attestation : null });
+      log.debug("Leaving confirmAdminKeyEnrolment() note().");
+    };
+    log.debug("Leaving Credentials.confirmAdminKeyEnrolment().");
+    return Promise.resolve().then(() => {
+      return this.checkAdminKeyEnrolment(name, by, held, enrolmentId,
+                                         credential, opts || {});
+    }).then(function (answer) {
+      note(answer);
+      return answer;
+    }, function (e) {
+      note(null, true);
+      throw e;
+    });
+  }
+
+  private checkAdminKeyEnrolment(name, by, held, enrolmentId, credential,
+                                 options) {
+    const { log, realms, errorCodes, claims } = this.deps;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.checkAdminKeyEnrolment().");
+    if (!by) {
+      log.debug("Leaving Credentials.checkAdminKeyEnrolment(). No " +
+                "administrator.");
+      return coded('STS-AUTHN-0445', { ok: false, reason: 'admin',
+               errors: ['An administrator\'s enrolment names the ' +
+                        'administrator, and this request names nobody.'] });
+    }
+    if (!held) {
+      log.debug("Leaving Credentials.checkAdminKeyEnrolment(). Nothing " +
+                "pending.");
+      return coded('STS-AUTHN-0442', { ok: false, reason: 'expired',
+               errors: ['There is no enrolment of yours in progress for ' +
+                        name.slice(0, 80) + ': it expired, it was already ' +
+                        'finished, or it was begun by another ' +
+                        'administrator. Start again.'] });
+    }
+    // SPENT NOW, WHATEVER FOLLOWS — see the header.
+    this.abandonAdminKeyEnrolment(by.username, name);
+    if (String(enrolmentId || '') !== String(held.id)) {
+      log.debug("Leaving Credentials.checkAdminKeyEnrolment(). A different " +
+                "enrolment.");
+      return coded('STS-AUTHN-0443', { ok: false, reason: 'mismatch',
+               errors: ['That enrolment is not the one in progress, so ' +
+                        'nothing was registered and the one in progress ' +
+                        'is cancelled. Start again.'] });
+    }
+    log.debug("Leaving Credentials.checkAdminKeyEnrolment(). Claiming the " +
+              "challenge.");
+    return claims.claim({
+      scope: Credentials.ADMIN_ENROLMENT_SCOPE, value: String(held.challenge),
+      ttlMs: Credentials.ADMIN_ENROLMENT_TTL_MS, realm: realms.currentId()
+    }).then((claimed) => {
+      if (!claimed.ok && claimed.reason === 'used') {
+        log.warn('credentials: an administrator\'s passkey enrolment for ' +
+                 name + ' was REFUSED: its challenge had already been ' +
+                 'answered, by another node or a request racing this one.');
+        return coded('STS-AUTHN-0443', { ok: false, reason: 'replay',
+          errors: ['That enrolment has already been answered. Start ' +
+                   'again.'] });
+      }
+      if (!claimed.ok) {
+        log.error(errorCodes.tag('STS-AUTHN-0444') + 'credentials: whether ' +
+                  'the challenge of an administrator\'s passkey enrolment ' +
+                  'for ' + name + ' was already answered could not be asked ' +
+                  '(' + (claimed.why || claimed.reason) + '), so it was ' +
+                  'refused.');
+        return coded('STS-AUTHN-0444', { ok: false, reason: 'store',
+          errors: ['The passkey could not be registered just now. Start ' +
+                   'again.'] });
+      }
+      // THE PERSON'S PASSKEY POLICY (#535), which the shared verification
+      // and the writer read.
+      this.deps.passkeyPolicy.select(name, '');
+      const pending = Object.assign({}, held, {
+        enrolledBy: { username: by.username,
+                      sub: by.sub || String((held.enrolledBy || {}).sub || ''),
+                      at: Date.now() } });
+      return this.verifyKeyRegistration(name, pending, credential, options,
+        (stored) => {
+          return this.adminKeyEnrolmentWritten(name, pending, stored);
+        });
+    });
+  }
+
+  // The end of `confirmAdminKeyEnrolment()`, once the claimed write has
+  // answered. Nothing to keep: the pending record was spent at the start.
+  private adminKeyEnrolmentWritten(name, held, stored) {
+    const { log, errorCodes } = this.deps;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.adminKeyEnrolmentWritten().");
+    if (!stored.ok) {
+      log.debug("Leaving Credentials.adminKeyEnrolmentWritten(). The store " +
+                "refused it.");
+      return coded(errorCodes.codeOf(stored) || 'STS-AUTHN-0068',
+                   { ok: false, reason: stored.reason || 'refused',
+                     errors: stored.errors });
+    }
+    log.info('credentials: ' + held.enrolledBy.username + ' enrolled a "' +
+             held.role + '" passkey for ' + name + '. They now hold ' +
+             this.keysOf(name).length + '.');
+    log.debug("Leaving Credentials.adminKeyEnrolmentWritten(). Enrolled.");
+    return { ok: true, username: name, role: held.role,
+             credentialId: stored.credentialId, lane: held.lane,
+             enrolledBy: held.enrolledBy,
+             held: this.keysOf(name).length };
+  }
+
+  // ---------------------------------------------------------------------------
+
   // THE ACTIVATION LINK (2026-09-06). HOW SOMEBODY WHO WAS PROVISIONED COMES TO
   // HOLD A CREDENTIAL.
   //
@@ -11831,6 +12345,15 @@ export = {
   beginKeyUpgrade: slot.forward('beginKeyUpgrade'),
   proveKeyUpgrade: slot.forward('proveKeyUpgrade'),
   confirmKeyUpgrade: slot.forward('confirmKeyUpgrade'),
+  // AN ADMINISTRATOR'S ENROLMENT ON SOMEBODY'S BEHALF (#945): the same two
+  // steps, bound to the administrator and the person, and `enrolledBy`.
+  beginAdminKeyEnrolment: slot.forward('beginAdminKeyEnrolment'),
+  pendingAdminKeyEnrolment: slot.forward('pendingAdminKeyEnrolment'),
+  abandonAdminKeyEnrolment: slot.forward('abandonAdminKeyEnrolment'),
+  confirmAdminKeyEnrolment: slot.forward('confirmAdminKeyEnrolment'),
+  enrolledByOf: Credentials.enrolledByOf,
+  ADMIN_ENROLMENT_SCOPE: Credentials.ADMIN_ENROLMENT_SCOPE,
+  ADMIN_ENROLMENT_TTL_MS: Credentials.ADMIN_ENROLMENT_TTL_MS,
   addKeyClaimed: slot.forward('addKeyClaimed'),
   noteKeyUsed: slot.forward('noteKeyUsed'),
   androidAttestedCredentials: slot.forward('androidAttestedCredentials'),

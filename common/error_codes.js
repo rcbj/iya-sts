@@ -6824,6 +6824,65 @@ const CODES = [
       'classical retry is offered for an upgrade, whose point is ML-DSA; ' +
       'the upgrade is dropped and the classical passkey is unchanged.',
     spec: 'HTTP 400 from POST /account-api/keys/upgrade' },
+  // AN ADMINISTRATOR ENROLS A PASSKEY ON A PERSON'S BEHALF (#945): the
+  // ceremony runs in the administrator's browser, `credentials.ts`'s
+  // `beginAdminKeyEnrolment()` and `confirmAdminKeyEnrolment()`, reached
+  // through POST /admin-api/users/{begin,finish}-passkey-enrolment. A
+  // verification that fails is refused with the code the person's own
+  // registration records (STS-AUTHN-0022, -0027, -0095, -0228, -0241 and
+  // the passkey policy's), because it is the same verification.
+  { code: 'STS-AUTHN-0440',
+    summary: 'An administrator\'s passkey enrolment for a person was ' +
+      'refused: the person\'s passkey policy profile does not allow one ' +
+      '(adminEnrolment is off, the default). Asked when the ceremony is ' +
+      'begun and again where the key is written, so a switch turned off ' +
+      'during the ceremony refuses it too.',
+    spec: 'HTTP 400 from /admin-api/users/{begin,finish}-passkey-enrolment' },
+  { code: 'STS-AUTHN-0441',
+    summary: 'An administrator\'s passkey enrolment named nobody this ' +
+      'realm\'s directory holds. Refused in every mode: development\'s ' +
+      'creating a person at their first sign-in is not something an ' +
+      'administrator\'s act on a name may do.',
+    spec: 'HTTP 400 from /admin-api/users/begin-passkey-enrolment' },
+  { code: 'STS-AUTHN-0442',
+    summary: 'An administrator\'s passkey enrolment was finished with none ' +
+      'in progress for that administrator and person: it expired (five ' +
+      'minutes at most), it was already finished or refused (it is single ' +
+      'use), or another administrator began it.',
+    spec: 'HTTP 400 from /admin-api/users/finish-passkey-enrolment' },
+  { code: 'STS-AUTHN-0443',
+    summary: 'An administrator\'s passkey enrolment was finished with the ' +
+      'id of another enrolment, or its challenge had already been answered ' +
+      '(a replay, or two requests racing on two nodes). Nothing was ' +
+      'registered and the enrolment is spent.',
+    spec: 'HTTP 400 from /admin-api/users/finish-passkey-enrolment' },
+  { code: 'STS-AUTHN-0444',
+    summary: 'Whether an administrator\'s passkey enrolment challenge had ' +
+      'already been answered could not be asked of the cluster\'s claims ' +
+      'store, so the enrolment was refused rather than risk a second use.',
+    spec: 'HTTP 400 from /admin-api/users/finish-passkey-enrolment' },
+  { code: 'STS-AUTHN-0445',
+    summary: 'An administrator\'s passkey enrolment named no administrator: ' +
+      'the request carried no access token whose subject is a person ' +
+      '(development\'s open /admin-api, or a client\'s own token), and a ' +
+      'key so enrolled must record who enrolled it.',
+    spec: 'HTTP 400 from /admin-api/users/{begin,finish}-passkey-enrolment' },
+  { code: 'STS-AUTHN-0446',
+    summary: 'An administrator\'s passkey enrolment was finished on an ' +
+      'address whose host is not one this realm\'s RP ID fits ' +
+      '(webauthn.rpId), the rule the person\'s own ceremony applies.',
+    spec: 'HTTP 400 from /admin-api/users/finish-passkey-enrolment' },
+  { code: 'STS-AUTHN-0447',
+    summary: 'An administrator\'s passkey enrolment could not be finished: ' +
+      'the verification or the write threw.',
+    spec: 'HTTP 500 from /admin-api/users/finish-passkey-enrolment' },
+  { code: 'STS-AUTHN-0448',
+    summary: 'An administrator\'s passkey enrolment was finished with no ' +
+      'ceremony result: `credential` is absent or is not JSON. The ' +
+      'browser\'s own refusal (a cancelled prompt, an authenticator that ' +
+      'cannot do what was asked) arrives as JSON and is recorded as the ' +
+      'person\'s own is (STS-AUTHN-0022).',
+    spec: 'HTTP 400 from /admin-api/users/finish-passkey-enrolment' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',

@@ -2299,6 +2299,65 @@ class AdminActions {
     return answer;
   }
 
+  // THE END OF AN ADMINISTRATOR'S PASSKEY ENROLMENT (#945): the audit row
+  // either way, and on success what the person is told — a CAEP
+  // credential-change (`create`, initiated by `admin`), which is also what
+  // queues the security notice mail (`mail_uses.ts`'s `fromAccountSignal()`,
+  // the path an administrator's password reset takes) — so a person who
+  // did not expect a key on their account hears of it at once.
+  private adminKeyEnrolled(who, done, ctx) {
+    const { log, credentials, auditLog, accountSignals } = this.deps;
+    log.debug("Entering AdminActions.adminKeyEnrolled().");
+    if (!done || !done.ok) {
+      auditLog.record({
+        category: 'authentication', action: 'admin.passkey.enrolment-refused',
+        errorCode: errorCodes.codeOf(done) || 'STS-AUTHN-0447',
+        actor: ctx.actor, target: who, outcome: 'failure',
+        summary: 'a passkey enrolment for ' + who + ' was not completed',
+        detail: { username: who, via: ctx.via, stage: 'finish',
+                  reason: (done && done.reason) || '',
+                  errors: (done && done.errors) || [] } });
+      log.debug("Leaving AdminActions.adminKeyEnrolled(). Refused.");
+      return this.refusedBy('STS-AUTHN-0447', done || { ok: false,
+        errors: ['The passkey could not be registered. Start again.'] });
+    }
+    const enrolled = credentials.keysOf(who).filter(function (one) {
+      return one.credentialId === String(done.credentialId || '');
+    })[0] || null;
+    accountSignals.credentialChanged({ username: who,
+      credentialType: accountSignals.keyCredentialType(enrolled),
+      fido2Aaguid: String((enrolled && enrolled.aaguid) || ''),
+      friendlyName: String((enrolled && enrolled.label) || ''),
+      changeType: 'create', initiatingEntity: 'admin', via: ctx.via,
+      reasonAdmin: 'An administrator (' + (ctx.actor || 'unnamed') +
+                   ') enrolled a ' + done.role + ' passkey for ' + who + '.',
+      reasonUser: 'An administrator enrolled a passkey on your account.' });
+    const algorithm = credentials.keyAlgorithm(enrolled || {});
+    auditLog.record({
+      category: 'authentication', action: 'admin.passkey.enrolled',
+      actor: ctx.actor, target: who, outcome: 'success',
+      summary: 'enrolled a "' + done.role + '" passkey for ' + who,
+      detail: { username: who, via: ctx.via, role: done.role,
+                lane: credentials.keyLane(enrolled || {}),
+                algorithm: algorithm.text || algorithm.name || '',
+                credentialId: String(done.credentialId || ''),
+                aaguid: String((enrolled && enrolled.aaguid) || ''),
+                enrolledBy: (done.enrolledBy || {}).username || '',
+                held: done.held } });
+    log.info('admin: ' + (ctx.actor || 'an unnamed caller') + ' (' +
+             ctx.via + ') enrolled a "' + done.role + '" passkey for "' +
+             who + '", who now holds ' + done.held + '.');
+    log.debug("Leaving AdminActions.adminKeyEnrolled(). Enrolled.");
+    return { ok: true, username: who, role: done.role, lane: done.lane,
+             credentialId: String(done.credentialId || ''),
+             held: done.held, enrolledBy: done.enrolledBy || null,
+             message: 'A ' + (done.role === 'primary' ? 'passwordless'
+                                                      : 'second-factor') +
+                      ' passkey is enrolled for ' + who + ', marked as ' +
+                      'enrolled by an administrator. They have been told; ' +
+                      'hand the authenticator over.' };
+  }
+
   // A PERSON WHOSE SESSIONS AN ADMINISTRATOR ENDED IS TOLD BY MAIL (#63): a
   // security notice they cannot decline. Only here, at the administrator's
   // two doors — a person's own sign-out tells nobody, and a reset or a
@@ -3629,12 +3688,17 @@ class AdminActions {
     // refusal lives, and an operator must not be able to do what the person
     // themselves is stopped from doing.
     //
-    // **THERE IS NO ENROL BESIDE THEM AND THERE CANNOT BE.** Enrolling an
-    // authenticator means being shown a shared secret, and an administrative
-    // door that handed one out would mint a working second factor for any
-    // account. A WebAuthn ceremony happens in the person's own browser against
-    // their own authenticator, and this console is not that browser. Both are
-    // `/portal`, or an activation link, which is itself a credential.
+    // **THERE IS NO ENROL OF AN AUTHENTICATOR APP BESIDE THEM AND THERE
+    // CANNOT BE.** Enrolling one means being shown a shared secret, and an
+    // administrative door that handed one out would mint a working second
+    // factor for any account. A PASSKEY is the one exception since #945,
+    // and it is not that door: the ceremony runs in the administrator's own
+    // browser against an authenticator THEY hold and hand over, nothing
+    // secret is shown, the passkey policy must allow it (`adminEnrolment`,
+    // off by default), the key records who enrolled it and the person is
+    // told — `begin-passkey-enrolment` below. The person's own authenticator
+    // is still enrolled where the person is: `/portal`, or an activation
+    // link, which is itself a credential.
     // ---------------------------------------------------------------------
     if (action === 'clear-totp') {
       const who = String(body.user || body.username || '').trim();
@@ -3969,6 +4033,177 @@ class AdminActions {
         ? { ok: true, message: 'The passkey of ' + who + ' is now called "' +
             result.label + '".', label: result.label }
         : this.refusedBy('STS-ADMIN-0850', result);
+    }
+
+    // ---------------------------------------------------------------------
+    // AN ADMINISTRATOR ENROLS A PASSKEY ON SOMEBODY'S BEHALF (#945, rule
+    // 3cv). Two acts, as the person's own enrolment is two steps: `begin`
+    // mints a challenge bound to this administrator, the person and the
+    // lane and answers the ceremony to run (`ceremony`); the console runs
+    // it in the ADMINISTRATOR'S browser — `navigator.credentials.create()`
+    // under the person's user handle, the realm's RP ID — and `finish`
+    // posts what the browser produced, verified exactly as the person's own
+    // registration is and written through the same writer, marked
+    // `enrolledBy`. rcbj's decision on the ticket: no import of a
+    // registration produced elsewhere, so there is no third act.
+    //
+    // The header above this block's siblings said there could be no enrol
+    // here, because "this console is not that browser". That was an
+    // argument about the PERSON'S authenticator, and it still holds: the
+    // administrator cannot touch it. What changed is the case: a key the
+    // organisation issues, which the administrator holds, registers in the
+    // administrator's browser and is handed over — and the person is told
+    // (CAEP and a security notice), the key says who enrolled it, and the
+    // passkey policy must allow it (`adminEnrolment`, off by default).
+    //
+    // THE ADMINISTRATOR IS THE TOKEN'S SUBJECT, never a body field: the API
+    // hands `admin` over from what its gate verified (`callerPersonOf()`),
+    // so an enrolment cannot be recorded against a name a caller chose.
+    // ---------------------------------------------------------------------
+    if (action === 'begin-passkey-enrolment') {
+      const who = String(body.user || body.username || '').trim();
+      if (!who) {
+        log.debug("Leaving AdminActions.usersAction(). No person named.");
+        return this.refused('STS-ADMIN-0518', { ok: false, errors: ['Name ' +
+          'the person the passkey is for, in `user`.'] });
+      }
+      const authn = require('../authn/authn');
+      const webauthnPolicy = require('../authn/webauthn_policy');
+      const passkeyPolicy = require('../common/passkey_policy');
+      // THE SAME ADDRESS RULE THE PERSON'S OWN CEREMONY APPLIES: an RP ID
+      // that does not fit the address the console is on is refused before
+      // anybody touches a key, rather than replaced.
+      const rpRefusal = ctx.base ? authn.rpIdProblem(ctx.base) : '';
+      if (rpRefusal) {
+        log.debug("Leaving AdminActions.usersAction(). The RP ID does not " +
+                  "fit.");
+        return this.refused('STS-AUTHN-0446', { ok: false,
+                                                errors: [rpRefusal] });
+      }
+      const begun = credentials.beginAdminKeyEnrolment(who, context &&
+        (context as any).admin, {
+        role: String(body.role || 'mfa'), kind: String(body.kind || ''),
+        lane: String(body.lane || '') });
+      if (!begun.ok) {
+        auditLog.record({
+          category: 'authentication', action: 'admin.passkey.enrolment-refused',
+          errorCode: errorCodes.codeOf(begun) || 'STS-AUTHN-0440',
+          actor: ctx.actor, target: who, outcome: 'failure',
+          summary: 'could not start enrolling a passkey for ' + who,
+          detail: { username: who, via: ctx.via, stage: 'begin',
+                    reason: begun.reason || '',
+                    errors: begun.errors || [] } });
+        log.debug("Leaving AdminActions.usersAction(). The begin was " +
+                  "refused.");
+        return this.refusedBy('STS-AUTHN-0440', begun);
+      }
+      const rpId = authn.rpIdOf(ctx.base);
+      // THE OPTIONS THE PERSON'S OWN CEREMONY IS ARMED WITH (the realm's
+      // attestation, user verification, resident key, hints, timeout), with
+      // THE ALGORITHMS THE PENDING RECORD CARRIES — the one call site
+      // `credentials.adminEnrolmentAlgorithms()` answered, and the list the
+      // finish is held to.
+      const options = webauthnPolicy.creationOptions(rpId, begun.kind,
+                                                     begun.lane, false);
+      options.algorithms = begun.algorithms.slice();
+      // THE NAME THE PROMPT SHOWS (#533): the person's, by the passkey
+      // policy's userDisplayName, the post-quantum lane's naming ML-DSA
+      // (#643) — the person's own prompt's name, on the administrator's
+      // screen.
+      const display = passkeyPolicy.withSelection(who, '', function () {
+        return passkeyPolicy.displayNameFor(who, who);
+      });
+      const user = credentials.laneUser(who, display, begun.lane);
+      auditLog.record({
+        category: 'authentication', action: 'admin.passkey.enrolment-started',
+        actor: ctx.actor, target: who, outcome: 'success',
+        summary: 'started enrolling a "' + begun.role + '" passkey for ' + who,
+        detail: { username: who, via: ctx.via, role: begun.role,
+                  lane: begun.lane, kind: begun.kind || 'any',
+                  excluded: begun.exclude.length } });
+      log.info('admin: ' + (ctx.actor || 'an unnamed caller') + ' (' +
+               ctx.via + ') started enrolling a "' + begun.role +
+               '" passkey for "' + who + '".');
+      log.debug("Leaving AdminActions.usersAction(). begin-passkey-" +
+                "enrolment minted a challenge.");
+      return { ok: true, username: who, enrolmentId: begun.enrolmentId,
+               role: begun.role, lane: begun.lane, kind: begun.kind,
+               expiresAt: begun.expiresAt,
+               // WHAT THE CONSOLE'S SCRIPT HANDS
+               // `navigator.credentials.create()`, every byte string as
+               // base64url: the challenge, the person's user handle and
+               // the keys excluded.
+               ceremony: { challenge: begun.challenge, rpId: rpId,
+                           user: { id: begun.userHandle, name: user.name,
+                                   displayName: user.displayName },
+                           exclude: begun.exclude.slice(),
+                           options: options },
+               message: 'A passkey enrolment for ' + who + ' is waiting ' +
+                        'for your authenticator until ' + begun.expiresAt +
+                        '.' };
+    }
+
+    if (action === 'finish-passkey-enrolment') {
+      const who = String(body.user || body.username || '').trim();
+      if (!who) {
+        log.debug("Leaving AdminActions.usersAction(). No person named.");
+        return this.refused('STS-ADMIN-0518', { ok: false, errors: ['Name ' +
+          'the person the passkey is for, in `user`.'] });
+      }
+      const admin = context && (context as any).admin;
+      let posted: any = null;
+      try {
+        posted = typeof body.credential === 'string'
+          ? JSON.parse(body.credential || 'null')
+          : (body.credential && typeof body.credential === 'object'
+            ? body.credential : null);
+      } catch (e) {
+        log.debug("Caught in AdminActions.usersAction(): " +
+                  ((e && e.message) || e));
+        // Not JSON: a hand-made request, answered below.
+        posted = null;
+      }
+      if (!posted || typeof posted !== 'object') {
+        // SPENT ALL THE SAME: a finish is single use whatever it carries.
+        const by = credentials.enrolledByOf(admin);
+        if (by) {
+          credentials.abandonAdminKeyEnrolment(by.username, who);
+        }
+        log.debug("Leaving AdminActions.usersAction(). No ceremony result.");
+        return this.refused('STS-AUTHN-0448', { ok: false, errors: ['No ' +
+          'ceremony result was sent: `credential` is the browser\'s ' +
+          'registration as JSON. A passkey is created by a browser, and ' +
+          'there is no form that can do it. Start again.'] });
+      }
+      const authn = require('../authn/authn');
+      const rpRefusal = ctx.base ? authn.rpIdProblem(ctx.base) : '';
+      if (rpRefusal) {
+        const by = credentials.enrolledByOf(admin);
+        if (by) {
+          credentials.abandonAdminKeyEnrolment(by.username, who);
+        }
+        log.debug("Leaving AdminActions.usersAction(). The RP ID does not " +
+                  "fit.");
+        return this.refused('STS-AUTHN-0446', { ok: false,
+                                                errors: [rpRefusal] });
+      }
+      const self = this;
+      log.debug("Leaving AdminActions.usersAction(). finish-passkey-" +
+                "enrolment answers when the verification settles.");
+      return credentials.confirmAdminKeyEnrolment(who, admin,
+        String(body.enrolmentId || body.enrolment_id || ''), posted,
+        { origin: authn.expectedOriginFor(ctx.base, posted),
+          rpId: authn.rpIdOf(ctx.base) }).then(function (done) {
+        return self.adminKeyEnrolled(who, done, ctx);
+      }, function (e) {
+        log.debug("Caught in AdminActions.usersAction(): " +
+                  ((e && e.message) || e));
+        log.error(errorCodes.tag('STS-AUTHN-0447') + 'admin: finishing a ' +
+                  'passkey enrolment for ' + who + ' threw: ' +
+                  ((e && e.message) || e));
+        return self.refused('STS-AUTHN-0447', { ok: false, errors: ['The ' +
+          'passkey could not be registered. Start again.'] });
+      });
     }
 
     // SET A PASSWORD ON SOMEBODY WHO IS ALREADY HERE (2026-09-06).

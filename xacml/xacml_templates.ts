@@ -526,6 +526,10 @@ const PASSKEY_ATTRIBUTE = {
   // registration (#940).
   PROFILE_ALGORITHM_OFFERED:
     xacmlRequest.VOCABULARY.PASSKEY_PROFILE_ALGORITHM_OFFERED,
+  // Who enrolled the key (#945): an administrator, on the person's behalf.
+  // No built-in rule reads them; a realm's own rule may.
+  ENROLLED_BY_ADMIN: xacmlRequest.VOCABULARY.PASSKEY_ENROLLED_BY_ADMIN,
+  ENROLLED_BY: xacmlRequest.VOCABULARY.PASSKEY_ENROLLED_BY,
   ATTESTATION_POLICY: xacmlRequest.VOCABULARY.SETTING_PREFIX +
                       'webauthn.attestationPolicy',
   ALLOWED_AAGUIDS: xacmlRequest.VOCABULARY.SETTING_PREFIX +
@@ -540,7 +544,7 @@ const PASSKEY_ATTRIBUTE = {
   // The fact groups a question may carry.
   GROUPS: ['backup-eligible', 'pin-length', 'serial', 'attestation',
            'algorithm', 'attestation-algorithm', 'profile-algorithm',
-           'recovery', 'upgrade'],
+           'enrolment', 'recovery', 'upgrade'],
   // The reasons the built-in rules give, and the code each records, per
   // action. A door words its refusal by the reason.
   REASONS: {

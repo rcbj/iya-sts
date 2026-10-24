@@ -285,6 +285,16 @@
 // A save is refused where they contradict another row (STS-AUTHN-0430,
 // 0431); a key outside the list is refused at the write by the issuance
 // policy (`profile-algorithm`, STS-AUTHN-0432).
+// #945 (2026-10-23) added `adminEnrolment`, `off` (optional on a save): `on`
+// lets an administrator enrol a passkey for a person from the console or
+// `/admin-api` — a registration ceremony run in the ADMINISTRATOR'S browser
+// for the person's user handle and lane, verified as the person's own is
+// (rcbj's decision on the ticket; no import of a registration made
+// elsewhere). Asked of the PERSON's profile, at the begin as a courtesy and
+// at `credentials.addKey()`, the one writer, as the enforcement
+// (STS-AUTHN-0440). A key so enrolled carries `enrolledBy`, and the
+// registration question carries it as the `enrolment` fact group, so a
+// realm's own rule can forbid it by policy; no built-in rule reads it.
 //
 // One profile per realm, inherited from the default realm (answer 3); named
 // policies chosen by application or group are #535.
@@ -513,7 +523,9 @@ const SENTENCES: Readonly<Record<string, string>> = Object.freeze({
     '{{algorithms}}',
   registrationClassicalOnly: 'a passkey registration offers only classical ' +
     'algorithms, from {{algorithms}}: no post-quantum passkey is made',
-  'param.realmAlgorithms': 'the realm\'s webauthn.algorithms'
+  'param.realmAlgorithms': 'the realm\'s webauthn.algorithms',
+  adminEnrolment: 'an administrator may enrol a passkey for a person, in ' +
+    'the administrator\'s own browser, verified as the person\'s own is'
 });
 
 const SELECTORS = [
@@ -656,6 +668,10 @@ const REGISTRATION_ALGORITHM_VALUES: ReadonlyArray<string> = Object.freeze(
     .filter(function (name) {
       return name !== 'RS1';
     }));
+/**
+ * What `adminEnrolment` may be (#945).
+ */
+const ADMIN_ENROLMENT_VALUES = ['off', 'on'];
 /**
  * What `recoveryAssurance` may be (#724).
  */
@@ -937,7 +953,23 @@ const FIELDS: PolicyField[] = [
           'registered before the rule stops working. This is the ' +
           'attestation\'s algorithm, not the passkey\'s own ' +
           '(postQuantumRequired). Left out of a save, the built-in default ' +
-          'is kept.' }
+          'is kept.' },
+  { key: 'adminEnrolment', attribute: 'stsPasskeyAdminEnrolment',
+    type: 'enum', values: ADMIN_ENROLMENT_VALUES.slice(), dflt: 'off',
+    optional: true,
+    label: 'Let an administrator enrol a passkey for a person',
+    what: '`off` BY DEFAULT. `on` lets an administrator holding the Admin ' +
+          'Write console role enrol a passkey for a person this profile ' +
+          'applies to, from the person\'s page on the console or ' +
+          '/admin-api: the registration ceremony runs in the ' +
+          'administrator\'s own browser, against an authenticator they ' +
+          'hold (a security key to be handed over, say), under the ' +
+          'person\'s user handle, and is verified exactly as the person\'s ' +
+          'own registration is — attestation, algorithms and this ' +
+          'policy\'s registration rules. Nothing made elsewhere can be ' +
+          'imported. The key records which administrator enrolled it and ' +
+          'when, and the person is told. Left out of a save, the built-in ' +
+          'default is kept.' }
 ];
 
 /**
@@ -2301,6 +2333,22 @@ class PasskeyPolicy {
     return out;
   }
 
+  /**
+   * Whether an administrator may enrol a passkey for a person (#945): the
+   * selected profile's `adminEnrolment` is `on`.
+   *
+   * @param profile - a profile already read; read afresh when omitted
+   * @returns true where it is on
+   */
+  adminEnrolmentAllowed(profile?: PasskeyProfile | null): boolean {
+    const { log } = this.deps;
+    log.debug("Entering PasskeyPolicy.adminEnrolmentAllowed().");
+    const rules = profile || this.read();
+    const on = String(rules.adminEnrolment || 'off') === 'on';
+    log.debug("Leaving PasskeyPolicy.adminEnrolmentAllowed(). " + on);
+    return on;
+  }
+
   // -------------------------------------------------------------------------
   // WHETHER AN ATTESTATION'S ALGORITHMS SATISFY THE LIST (#941), computed in
   // ONE place — `question()` — as `postQuantum` is for #718, so a door
@@ -2438,6 +2486,7 @@ class PasskeyPolicy {
   //   attestation     -> attestation (with `attestationSettings`)
   //   algorithm       -> algorithm (with `postQuantum` and `lane`, #718)
   //   upgrade         -> upgrade (`mode`, the previous algorithm, #939)
+  //   enrolledBy      -> enrolment (an administrator enrolled it, #945)
   // =========================================================================
   /**
    * Builds the passkey question (#536) for the issuance policy: the facts a
@@ -2566,6 +2615,17 @@ class PasskeyPolicy {
       out.profileAlgorithmOffered =
         offeredHere.indexOf(String(out.algorithm || '')) >= 0;
     }
+    // WHO ENROLLED IT (#945): an administrator, on the person's behalf. Sent
+    // only with an `enrolledBy` record naming one, so the person's own
+    // registration asks what it always asked; the boolean goes with the
+    // group always, for a realm's own rule to read. No built-in rule does:
+    // the switch is `adminEnrolment`, enforced at the writer.
+    if (has('enrolledBy') && given.enrolledBy &&
+        String(given.enrolledBy.username || '')) {
+      groups.push('enrolment');
+      out.enrolledByAdmin = true;
+      out.enrolledBy = String(given.enrolledBy.username).slice(0, 256);
+    }
     if (has('recovery') && given.recovery) {
       groups.push('recovery');
       const r = given.recovery;
@@ -2607,7 +2667,9 @@ class PasskeyPolicy {
       // `profile-algorithm` rule is gated on.
       registrationMode: registrationRows.registrationMode,
       registrationAlgorithms: offeredHere.slice(),
-      registrationAlgorithmsFrom: this.registrationAlgorithmsFrom(rules)
+      registrationAlgorithmsFrom: this.registrationAlgorithmsFrom(rules),
+      // #945: whether an administrator may enrol one, `off` or `on`.
+      adminEnrolment: this.adminEnrolmentAllowed(rules) ? 'on' : 'off'
     };
     log.debug("Leaving PasskeyPolicy.question(). " + out.action + ' [' +
               groups.join(', ') + ']');
@@ -2840,7 +2902,10 @@ class PasskeyPolicy {
         : []),
       // #940: said only where the profile sets a registration row of its
       // own, so a profile following the realm is described as it was.
-      ...this.registrationSentences(rules)
+      ...this.registrationSentences(rules),
+      // #945: said only while it is on, so a profile with it off is
+      // described as it was.
+      ...(this.adminEnrolmentAllowed(rules) ? [SENTENCES.adminEnrolment] : [])
     ];
     log.debug("Leaving PasskeyPolicy.describe().");
     return out;
@@ -3355,6 +3420,7 @@ export = {
   // #941.
   ATTESTATION_ALGORITHM_VALUES: ATTESTATION_ALGORITHM_VALUES,
   attestationAlgorithms: slot.forward('attestationAlgorithms'),
+  adminEnrolmentAllowed: slot.forward('adminEnrolmentAllowed'),
   attestationAlgorithmAllowed: PasskeyPolicy.attestationAlgorithmAllowed,
   // #940: a population's registration algorithms.
   REGISTRATION_MODES: REGISTRATION_MODES,
