@@ -376,6 +376,15 @@ const VOCABULARY = Object.freeze({
     'urn:sts:xacml:passkey:attestation-post-quantum',
   PASSKEY_ATTESTATION_ALGORITHM_ALLOWED:
     'urn:sts:xacml:passkey:attestation-algorithm-allowed',
+  // resource: WHETHER THE KEY'S ALGORITHM IS ONE THE SELECTED PASSKEY
+  // PROFILE OFFERS AT REGISTRATION (#940), with the fact group
+  // `profile-algorithm`, at register-passkey only — computed in ONE place,
+  // `passkey_policy.ts`'s `question()`, from the algorithm (PASSKEY_ALGORITHM,
+  // sent with the `algorithm` group) and the profile's resolved list, the
+  // policy fact `registrationAlgorithms`. A boolean always sent with its
+  // group, false for anything but true.
+  PASSKEY_PROFILE_ALGORITHM_OFFERED:
+    'urn:sts:xacml:passkey:profile-algorithm-offered',
   // environment: the SELECTED passkey policy profile's rows (#527, #535),
   // each after this prefix under its own name
   // (`urn:sts:xacml:passkey-policy:backupEligibility`).
@@ -749,6 +758,10 @@ class AuthorizationRequest {
   //                                            with `attestation-algorithm`
   //                                            (#941)
   //   policy.attestationAlgorithms             always (#941), a bag
+  //   profileAlgorithmOffered                  with `profile-algorithm`
+  //                                            (#940)
+  //   policy { registrationMode, registrationAlgorithmsFrom }, and
+  //   policy.registrationAlgorithms, a bag     always (#940)
   //   policy { backupEligibility, enforcePinLength, minPinLength,
   //            pinLengthOnlyIfSupported, enforceAttestationAtSignIn,
   //            enterpriseSerialAttribute, postQuantumRequired,
@@ -849,6 +862,13 @@ class AuthorizationRequest {
       this.resource(V.PASSKEY_ATTESTATION_ALGORITHM_ALLOWED,
                     [given.attestationAlgorithmAllowed === true], T.BOOLEAN);
     }
+    // WHETHER THE PROFILE OFFERS THE KEY'S ALGORITHM (#940), for the
+    // post-quantum fact's reason: false for anything but true, so silence
+    // never lets a key through.
+    if (has('profile-algorithm')) {
+      this.resource(V.PASSKEY_PROFILE_ALGORITHM_OFFERED,
+                    [given.profileAlgorithmOffered === true], T.BOOLEAN);
+    }
     const policy = given.policy || {};
     const P = V.PASSKEY_POLICY_PREFIX;
     this.environment(P + 'backupEligibility', one(policy.backupEligibility));
@@ -873,6 +893,18 @@ class AuthorizationRequest {
     this.environment(P + 'attestationAlgorithms',
                      (Array.isArray(policy.attestationAlgorithms)
                        ? policy.attestationAlgorithms : []).map(String));
+    // A POPULATION'S REGISTRATION ALGORITHMS (#940): the profile's mode as
+    // its row says it (`realm`, `pq-only`, `pq-first`, `classical-only`),
+    // the algorithms a registration under it may make as resolved (the
+    // realm's where the profile follows it), and whether those came from
+    // the profile (`profile`) or the realm (`realm`) — the last is what the
+    // built-in `profile-algorithm` rule is gated on.
+    this.environment(P + 'registrationMode', one(policy.registrationMode));
+    this.environment(P + 'registrationAlgorithms',
+                     (Array.isArray(policy.registrationAlgorithms)
+                       ? policy.registrationAlgorithms : []).map(String));
+    this.environment(P + 'registrationAlgorithmsFrom',
+                     one(policy.registrationAlgorithmsFrom));
     const recovery = given.recovery || null;
     if (has('recovery') && recovery) {
       this.resource(V.PASSKEY_RECOVERY_DOOR, one(recovery.door));

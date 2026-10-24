@@ -927,13 +927,17 @@ class PoliciesPage {
         t.html('consolePolicies.field.attributeName') + '</span>';
     } else if (field.type === 'list') {
       // AN ORDERED LIST (#531): typed, comma-separated, or `none`. A list of
-      // checkboxes could not say the order, which is the point of one.
+      // checkboxes could not say the order, which is the point of one. A
+      // row whose empty list is the REALM'S (#940, `registrationAlgorithms`)
+      // says `realm` instead.
       control = '<input type="text" id="' + kit.esc(id) + '" name="' +
         kit.esc(field.key) + '" value="' + kit.esc(field.value) + '"' + off +
         hint + '> <span class="sub">' +
         t.html('consolePolicies.field.listFrom') +
         kit.esc((field.values || []).join(', ')) +
-        t.html('consolePolicies.field.listOrNone') + '</span>';
+        t.html(field.empty === 'realm' ? 'consolePolicies.field.listOrRealm'
+                                       : 'consolePolicies.field.listOrNone') +
+        '</span>';
     } else {
       control = '<input type="number" id="' + kit.esc(id) + '" name="' +
         kit.esc(field.key) + '" min="' + kit.esc(field.min) + '" max="' +

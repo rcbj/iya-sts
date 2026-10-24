@@ -41,6 +41,7 @@ const ROOT = require('path').join(__dirname, '..');
 
 const ldap = require('../ldap/ldap_server');
 const passkeyPolicy = require('../common/passkey_policy');
+const webauthnPolicy = require('../authn/webauthn_policy');
 const adminActions = require('../admin-core/admin_actions');
 const adminViews = require('../admin-core/admin_views');
 // A renderer given no translator draws node's default, which common/i18n.ts
@@ -308,7 +309,9 @@ function run(t) {
           JSON.stringify(created && created.errors));
   try {
     const saves = [
-      named(names.strict, { selectApplications: APP, precedence: 5 }),
+      named(names.strict, { selectApplications: APP, precedence: 5,
+        registrationAlgorithms: 'ES256,RS256',
+        registrationMode: 'classical-only' }),
       named(names.client, { selectApplications: CLIENT.toUpperCase(),
                             selectGroups: group, precedence: 40 }),
       named(names.other, { selectApplications: OTHER, precedence: 1 })
@@ -319,6 +322,21 @@ function run(t) {
       function (one) {
         return one.errors;
       })));
+    const offer = webauthnPolicy.registrationOffer({ application: APP });
+    t.check(offer.profile === names.strict &&
+            offer.mode === 'classical-only' && offer.from === 'profile' &&
+            JSON.stringify(offer.algorithms) === '["ES256","RS256"]',
+            'A0. the selected application profile supplies its ordered ' +
+            'classical-only registration list',
+            JSON.stringify(offer));
+    const conflict = named(TAG + '-conflict', {
+      registrationAlgorithms: 'ES256',
+      registrationMode: 'classical-only',
+      postQuantumRequired: 'registration-and-sign-in'
+    });
+    t.check(!conflict.ok,
+            'A0b. classical-only cannot coexist with a profile that requires ' +
+            'a post-quantum registration', JSON.stringify(conflict.errors));
     const json = data(t, names);
     card(t, json, names);
     const drawn = subTabs(t, names);

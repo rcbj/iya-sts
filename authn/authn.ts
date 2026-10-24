@@ -17138,6 +17138,16 @@ class Authn {
       log.debug('Leaving Authn.mfaWebauthnOptions(). Not chosen.');
       return;
     }
+    // WHAT THIS REGISTRATION OFFERS (#940), under the profile selected for
+    // the step's person and application, recorded on the step: the finish
+    // holds the credential to it as well as to the list then
+    // (`webauthnPolicy.heldToOffer()`), so nothing the browser posts and no
+    // profile changed in between widens what was asked for.
+    if (facts.mode === 'create') {
+      found.step.offered = ((facts.ceremony.options || {}).algorithms || [])
+        .map(Number);
+      pendingMfa.set(mfaId, found.step);
+    }
     this.answerJson(res, 200, Object.assign({ ok: true }, facts.ceremony));
     log.debug('Leaving Authn.mfaWebauthnOptions(). ' + facts.mode);
   }
@@ -17509,9 +17519,12 @@ class Authn {
           // The classical retry's list where the step was armed for one
           // (#944), so a credential the retry did not ask for is refused
           // by the same check.
-          expectedAlgorithms: webauthnPolicy.algorithmIds(step.lane ||
-                                                          'classical',
-                                                          !!step.classicalOnly)
+          // And no wider than what the options offered under the step's
+          // passkey profile (#940), recorded when they were armed.
+          expectedAlgorithms: webauthnPolicy.heldToOffer(
+            webauthnPolicy.algorithmIds(step.lane || 'classical',
+                                        !!step.classicalOnly),
+            step.offered)
         });
         if (verdict.ok) {
           // ---------------------------------------------------------------

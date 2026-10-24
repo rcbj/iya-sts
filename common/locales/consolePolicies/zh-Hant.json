@@ -99,6 +99,7 @@
   "field.attributeName": "屬性名稱，或留空",
   "field.listFrom": "依順序，取自 ",
   "field.listOrNone": "，或 none",
+  "field.listOrRealm": "，或 realm（該領域的清單）",
   "field.thisProfile": "此設定檔",
   "field.defaultRealmProfile": "預設領域的設定檔",
   "field.builtIn": "內建預設值",

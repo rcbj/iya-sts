@@ -99,6 +99,7 @@
   "field.attributeName": "pangalan ng attribute, o walang laman",
   "field.listFrom": "ayon sa pagkakasunod, mula sa ",
   "field.listOrNone": ", o none",
+  "field.listOrRealm": ", o realm (ang listahan ng realm)",
   "field.thisProfile": "ang profile na ito",
   "field.defaultRealmProfile": "ang profile ng default na realm",
   "field.builtIn": "built-in na default",

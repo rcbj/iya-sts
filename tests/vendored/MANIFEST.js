@@ -1016,7 +1016,9 @@ const JOBS = [
   // marked, and the policy page's application search over the Applications
   // list, its Add saved by identifier. `local: true`: this repository's own
   // API. In a throwaway realm, because named policies change what a sign-in
-  // gets.
+  // gets. #940 adds profile registration algorithms and modes, verifies
+  // their ordered save/read, and refuses classical-only beside
+  // postQuantumRequired.
   { file: 'sts_passkey_policy_application.js', browser: false, local: true },
   // A SECURITY KEY'S ATTESTATION, VERIFIED (#105): keys enrolled at
   // /portal/keys in a throwaway realm with statements this job makes — an

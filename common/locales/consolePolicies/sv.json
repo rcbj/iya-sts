@@ -99,6 +99,7 @@
   "field.attributeName": "ett attributnamn, eller tomt",
   "field.listFrom": "i ordning, bland ",
   "field.listOrNone": ", eller none",
+  "field.listOrRealm": ", eller realm (sfärens lista)",
   "field.thisProfile": "den här profilen",
   "field.defaultRealmProfile": "standardsfärens profil",
   "field.builtIn": "inbyggt standardvärde",

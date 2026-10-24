@@ -99,6 +99,7 @@
   "field.attributeName": "属性名称，或留空",
   "field.listFrom": "按顺序，取自 ",
   "field.listOrNone": "，或 none",
+  "field.listOrRealm": "，或 realm（该领域的列表）",
   "field.thisProfile": "此配置文件",
   "field.defaultRealmProfile": "默认领域的配置文件",
   "field.builtIn": "内置默认值",

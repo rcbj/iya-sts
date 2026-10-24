@@ -6714,10 +6714,45 @@ const CODES = [
     summary: 'A passkey registration asked to be retried with the ' +
       'classical algorithms only (#944) — the retry offered after an ' +
       'ML-DSA-first registration failed on the device — where the realm ' +
-      'forbids a classical passkey: webauthn.pqcOnly is on, the passkey ' +
-      'policy\'s postQuantumRequired is registration-and-sign-in, or, at ' +
-      'the sign-in step, it requires a post-quantum passkey to sign in. ' +
-      'Refused before the ceremony is armed; nothing is written.',
+      'forbids a classical passkey: webauthn.pqcOnly is on (where the ' +
+      'passkey policy profile follows the realm), the profile\'s ' +
+      'registrationMode is pq-only (#940), its postQuantumRequired is ' +
+      'registration-and-sign-in, or, at the sign-in step, it requires a ' +
+      'post-quantum passkey to sign in. Refused before the ceremony is ' +
+      'armed; nothing is written.',
+    spec: 'HTTP 400 (the sign-in API and the account API)' },
+  { code: 'STS-AUTHN-0430',
+    summary: 'A passkey policy profile was not saved: its registrationMode ' +
+      'is classical-only (#940) and its postQuantumRequired is not off, ' +
+      'which a classical passkey can never satisfy, or its ' +
+      'attestationAlgorithms lists post-quantum attestation algorithms, ' +
+      'which admits only authenticators a classical-only population does ' +
+      'not hold. Nothing is written.',
+    spec: 'HTTP 400 from POST /admin-api/policies/save-passkey-policy' },
+  { code: 'STS-AUTHN-0431',
+    summary: 'A passkey policy profile was not saved: its registrationMode ' +
+      'is pq-only or pq-first (#940) and the algorithms it would offer — ' +
+      'its registrationAlgorithms, or the realm\'s webauthn.algorithms ' +
+      'where it lists none — name no ML-DSA algorithm, so the mode would ' +
+      'ask for what the list never offers. Nothing is written.',
+    spec: 'HTTP 400 from POST /admin-api/policies/save-passkey-policy' },
+  { code: 'STS-AUTHN-0432',
+    summary: 'A passkey was not registered: its signature algorithm is not ' +
+      'one the selected passkey policy profile offers at registration ' +
+      '(its registrationAlgorithms and registrationMode, #940), decided by ' +
+      'the issuance policy\'s profile-algorithm rule at ' +
+      'credentials.addKey(), the one writer, whichever door made the key. ' +
+      'Applies only to a profile that sets either row; one following the ' +
+      'realm is held by the ceremony\'s offered-algorithm check ' +
+      '(STS-AUTHN-0228). Nothing is written.',
+    spec: 'HTTP 400 (the sign-in API and the account API); the passkey ' +
+          'step and /portal/keys draw the sentence' },
+  { code: 'STS-AUTHN-0433',
+    summary: 'A passkey enrolment asked for the post-quantum lane (#643) ' +
+      'where the selected passkey policy profile\'s registrationMode is ' +
+      'classical-only (#940), which makes no post-quantum passkey. Refused ' +
+      'before the ceremony is armed and again at the write; a post-quantum ' +
+      'passkey already registered goes on signing in.',
     spec: 'HTTP 400 (the sign-in API and the account API)' },
   { code: 'STS-AUTHN-0421',
     summary: 'A passkey evidence export did not name both a username and a ' +

@@ -1135,6 +1135,22 @@
     "en": "af7666466d67e760",
     "text": "`realm` (el valor predeterminado) sigue el webauthn.postQuantumAllowCredentials del dominio. Solo se lee mientras postQuantumRequired exige una llave de acceso poscuántica al iniciar sesión. `narrow` nombra solo las llaves de acceso poscuánticas (ML-DSA) de la persona en la solicitud del paso de llave de acceso, de modo que nunca se ofrece una clásica, y una persona cuyo dispositivo solo guarda su llave clásica ve el propio mensaje «no se encontró ninguna llave de acceso» de la plataforma. `list-and-refuse` nombra todas las llaves de acceso que tiene y rechaza una clásica después de la ceremonia, con una página que dice que esta aplicación exige una llave de acceso poscuántica y dónde añadir una; la persona puede entonces elegir una llave de acceso que será rechazada. En ambos casos, a una persona que no tiene ninguna llave de acceso poscuántica se le avisa antes de cualquier ceremonia. Si se omite al guardar, se conserva `realm`."
   },
+  "passkey.FIELDS.registrationAlgorithms.label": {
+    "en": "48d2a5935e526db5",
+    "text": "Algoritmos que ofrece un registro de llave de acceso"
+  },
+  "passkey.FIELDS.registrationAlgorithms.what": {
+    "en": "4ff3748f6cb3a6f1",
+    "text": "`realm` (el valor predeterminado) ofrece el webauthn.algorithms del dominio. Si no, los algoritmos de firma que un registro de llave de acceso ofrece a las personas de este perfil, por orden de preferencia (un autenticador crea el primero que admite), de entre los algoritmos que webauthn.algorithms puede nombrar. La fila siguiente puede restringirla o reordenarla, y una llave de acceso cuyo algoritmo no sea uno de los que ofrece este perfil se rechaza al registrarse. Si se omite en un guardado, se conserva `realm`."
+  },
+  "passkey.FIELDS.registrationMode.label": {
+    "en": "ca3432814ea1b7a3",
+    "text": "Algoritmos poscuánticos en el registro"
+  },
+  "passkey.FIELDS.registrationMode.what": {
+    "en": "1466dbe275c566e7",
+    "text": "`realm` (el valor predeterminado) sigue webauthn.pqcOnly y webauthn.pqcAlongsideClassical. `pq-only` solo ofrece ML-DSA y rechaza un reintento con los algoritmos clásicos. `pq-first` ofrece primero ML-DSA y después los algoritmos clásicos, incluso donde el dominio solo pide ML-DSA. `classical-only` no ofrece ningún ML-DSA ni ninguna llave de acceso poscuántica junto a una clásica, para las personas cuyos dispositivos fallan en un registro ML-DSA. Se rechaza con postQuantumRequired distinto de off o con attestationAlgorithms definido (classical-only), y donde los algoritmos ofrecidos no nombran ningún ML-DSA (pq-only, pq-first). Si se omite en un guardado, se conserva `realm`."
+  },
   "passkey.FIELDS.passkeyHints.label": {
     "en": "7445bda72b06c415",
     "text": "Sugerencias que envía \"Crear una llave de acceso\""
@@ -1258,6 +1274,14 @@
   "passkey.SCHEMA.attributes.stsPasskeyPostQuantumAllowCredentials.what": {
     "en": "af7666466d67e760",
     "text": "`realm` (el valor predeterminado) sigue el webauthn.postQuantumAllowCredentials del dominio. Solo se lee mientras postQuantumRequired exige una llave de acceso poscuántica al iniciar sesión. `narrow` nombra solo las llaves de acceso poscuánticas (ML-DSA) de la persona en la solicitud del paso de llave de acceso, de modo que nunca se ofrece una clásica, y una persona cuyo dispositivo solo guarda su llave clásica ve el propio mensaje «no se encontró ninguna llave de acceso» de la plataforma. `list-and-refuse` nombra todas las llaves de acceso que tiene y rechaza una clásica después de la ceremonia, con una página que dice que esta aplicación exige una llave de acceso poscuántica y dónde añadir una; la persona puede entonces elegir una llave de acceso que será rechazada. En ambos casos, a una persona que no tiene ninguna llave de acceso poscuántica se le avisa antes de cualquier ceremonia. Si se omite al guardar, se conserva `realm`."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyRegistrationAlgorithms.what": {
+    "en": "4ff3748f6cb3a6f1",
+    "text": "`realm` (el valor predeterminado) ofrece el webauthn.algorithms del dominio. Si no, los algoritmos de firma que un registro de llave de acceso ofrece a las personas de este perfil, por orden de preferencia (un autenticador crea el primero que admite), de entre los algoritmos que webauthn.algorithms puede nombrar. La fila siguiente puede restringirla o reordenarla, y una llave de acceso cuyo algoritmo no sea uno de los que ofrece este perfil se rechaza al registrarse. Si se omite en un guardado, se conserva `realm`."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyRegistrationMode.what": {
+    "en": "1466dbe275c566e7",
+    "text": "`realm` (el valor predeterminado) sigue webauthn.pqcOnly y webauthn.pqcAlongsideClassical. `pq-only` solo ofrece ML-DSA y rechaza un reintento con los algoritmos clásicos. `pq-first` ofrece primero ML-DSA y después los algoritmos clásicos, incluso donde el dominio solo pide ML-DSA. `classical-only` no ofrece ningún ML-DSA ni ninguna llave de acceso poscuántica junto a una clásica, para las personas cuyos dispositivos fallan en un registro ML-DSA. Se rechaza con postQuantumRequired distinto de off o con attestationAlgorithms definido (classical-only), y donde los algoritmos ofrecidos no nombran ningún ML-DSA (pq-only, pq-first). Si se omite en un guardado, se conserva `realm`."
   },
   "passkey.SCHEMA.attributes.stsPasskeyHintsPasskey.what": {
     "en": "2ffa66aabab7a053",
@@ -1454,6 +1478,26 @@
   "passkey.sentences.recoveryOperatorOnly": {
     "en": "1a8f0b4a3319a435",
     "text": "una persona que tiene una llave de acceso solo recupera su cuenta a través de un administrador, y después no llega a ninguna aplicación hasta que una llave de acceso que cumpla esta política haya iniciado su sesión"
+  },
+  "passkey.sentences.registrationList": {
+    "en": "fec8859790708542",
+    "text": "un registro de llave de acceso ofrece {{algorithms}}, en ese orden, en lugar de la lista del dominio"
+  },
+  "passkey.sentences.registrationPqOnly": {
+    "en": "10bb1b9e748c737c",
+    "text": "un registro de llave de acceso solo ofrece algoritmos poscuánticos (ML-DSA), de entre {{algorithms}}, y ningún reintento clásico"
+  },
+  "passkey.sentences.registrationPqFirst": {
+    "en": "6d255de3f15849dd",
+    "text": "un registro de llave de acceso ofrece primero algoritmos poscuánticos (ML-DSA) y después los clásicos, de entre {{algorithms}}"
+  },
+  "passkey.sentences.registrationClassicalOnly": {
+    "en": "34338f9da2211979",
+    "text": "un registro de llave de acceso solo ofrece algoritmos clásicos, de entre {{algorithms}}: no se crea ninguna llave de acceso poscuántica"
+  },
+  "passkey.sentences.param.realmAlgorithms": {
+    "en": "62dd60f1d67057b4",
+    "text": "el webauthn.algorithms del dominio"
   },
   "kinds.locale.label": {
     "en": "1219a9dcfb9aa19f",

@@ -2578,6 +2578,9 @@ class AdminViews {
                  label: field.label,
                  type: field.type, min: field.min, max: field.max,
                  values: field.values, unit: field.unit || '',
+                 // A list row's word for empty (#940): `realm` for the
+                 // registration algorithms, `none` otherwise.
+                 empty: field.empty || '',
                  default: field.dflt,
                  value: profile[field.key],
                  source: profile.sources[field.key],
@@ -2610,7 +2613,8 @@ class AdminViews {
             return { key: field.key, attribute: field.attribute,
                      label: field.label, type: field.type, min: field.min,
                      max: field.max, values: field.values,
-                     unit: field.unit || '', default: field.dflt,
+                     unit: field.unit || '', empty: field.empty || '',
+                     default: field.dflt,
                      value: one[field.key], source: one.sources[field.key],
                      what: field.what };
           })
