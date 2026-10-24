@@ -19,7 +19,7 @@ holds it may act on that sign-in, so it is a bearer value, like the
 
 | Operation | What it answers or does |
 |---|---|
-| `GET /authn-api/pending/{id}` | What the screen offers — the mechanisms the realm's authentication policy accepts, the passkey options, the demands of the request (two factors, a security key), the federation partners, the Kerberos and wallet doors — and `csrf`, the token every act on this sign-in carries |
+| `GET /authn-api/pending/{id}` | What the screen offers — the mechanisms the realm's authentication policy accepts, the passkey options, the demands of the request (two factors, a security key), the federation partners, the Kerberos and wallet doors — and `csrf`, the token every act on this sign-in carries. After a classical passkey was refused where a post-quantum one is required, `postQuantumRequired` carries the page's links (`register`, and `upgrade`, empty until an in-place upgrade exists) |
 | `POST /authn-api/pending/{id}/password` | Sign in with a username and password (or `webauthn_only` for a passkey instead) |
 | `POST /authn-api/pending/{id}/passkey/options`, `…/passkey` | A passkey with no username: the challenge, then the ceremony's result |
 | `POST /authn-api/pending/{id}/email` | An emailed code or link as the first factor, where the policy allows it |
@@ -44,7 +44,7 @@ bearer value like the pending sign-in's.
 | `POST /authn-api/mfa/{id}/totp` | A one-time code (`code`) |
 | `POST /authn-api/mfa/{id}/backup-code` | A recovery code, spent |
 | `POST /authn-api/mfa/{id}/password` | A password as the second factor, after a wallet |
-| `POST /authn-api/mfa/{id}/webauthn/options`, `…/webauthn` | The passkey ceremony's options, then its result (`credential`) |
+| `POST /authn-api/mfa/{id}/webauthn/options`, `…/webauthn` | The passkey ceremony's options, then its result (`credential`). The options take `key` (a chosen passkey), `lane` (`classical` or `pqc`) and, for a registration that failed on the device, `algorithms: "classical"`: the retry with the classical algorithms only, refused (400, `STS-AUTHN-0420`) where a classical passkey is not allowed. A registration's options carry `fallback`: `asksPostQuantum`, `classical` (whether that retry may be offered) and `retrying` |
 | `POST /authn-api/mfa/{id}/setup/totp`, `…/setup/confirm`, `…/setup/webauthn` | Setting up a second factor: an authenticator app (its `otpauth:` URI is in the view; the first `code` confirms it) or a passkey |
 | `POST /authn-api/mfa/{id}/skip` | Ignore an offered second factor, where it was offered rather than required |
 | `POST /authn-api/mfa/{id}/email/send` | Mail a code or link (`kind`); answers `next: stay` |

@@ -955,9 +955,12 @@ decides what it means:
   (a resident key, which is what a passkey is) is no longer a setting: the
   `webauthn.residentKey` row was removed in #527 and replaced by the passkey
   policy's `securityKeyResidentKey` (Directory → Policies).
-* **POLICY** — `enabled`, `primaryAllowed`, `mfaAllowed`, `maxKeysPerPerson`.
-  Not WebAuthn at all: what THIS service will do with a key once the ceremony is
-  over.
+* **POLICY** — `enabled`, `primaryAllowed`, `mfaAllowed`, `maxKeysPerPerson`,
+  `postQuantumAllowCredentials`. Not WebAuthn at all: what THIS service will do
+  with a key once the ceremony is over, and — for the last, while a
+  post-quantum passkey is required — whether a classical one is left out of the
+  request or listed and refused afterwards
+  ([Passkeys](passkeys.md#narrow-or-list-and-refuse)).
 * **THE ATTESTATION STATEMENT** — `attestationPolicy` and the six
   `attestation*` rows beside it, below. Unlike the ceremony rows these do
   refuse a registration.
