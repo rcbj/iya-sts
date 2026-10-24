@@ -116,6 +116,7 @@
   "title.users-new": "Nuevo usuario",
   "title.vc": "Claims de credenciales",
   "title.vc-monitor": "Credenciales verificables (supervisión)",
+  "title.passkey-report": "Llaves de acceso (supervisión)",
   "title.xacml-editor": "Editor de políticas",
   "title.xacml": "XACML",
   "title.xacml-decide": "Probar una decisión",

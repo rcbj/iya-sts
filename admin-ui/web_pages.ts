@@ -67,6 +67,7 @@ import MailOutboxPage = require('./web_mail_outbox');
 import MetricsPage = require('./web_metrics');
 import ModePage = require('./web_mode');
 import NodeHealthPage = require('./web_node_health');
+import PasskeyReportPage = require('./web_passkey_report');
 import PkiPage = require('./web_pki');
 import ProtocolSettingsPage = require('./web_protocol_settings');
 import PoliciesPage = require('./web_policies');
@@ -353,6 +354,9 @@ const PROTOCOL_TABS: Record<string, string[]> = {
   '/admin/tls-connection': ['connection', 'forwarded'],
   '/admin/scheduler': ['leader', 'jobs', 'runs', 'commands', 'settings'],
   '/admin/devices/monitor': ['register', 'activity', 'days'],
+  // The list is drawn only when the query names one (#942).
+  '/admin/passkey-report': ['people', 'algorithms', 'models', 'profiles',
+                            'attestation', 'list'],
   '/admin/risk': ['assessments', 'standings', 'lookup', 'datasets', 'import',
                   'providers', 'failures', 'settings'],
   '/admin/risk-scoring': ['assessments', 'signals', 'decisions', 'process'],
@@ -754,6 +758,11 @@ const PAGES: WebPage[] = [
   { path: '/admin/oauth2/monitor', title: 'OAuth 2.0 / OIDC activity',
     operation: '/admin-api/oauth2/monitor',
     render: OAuth2MonitorPage.render },
+  // MONITORING → PASSKEYS (#942): born static, its lists paged by the
+  // query's `list`, `page` and `from`, which the operation reads as they are.
+  { path: '/admin/passkey-report', title: 'Passkeys',
+    operation: '/admin-api/passkey-report',
+    render: PasskeyReportPage.render },
   // `rows=shown`: the page's own call reads the certificates of the rows
   // it draws and no others (#352).
   { path: '/admin/pki', title: 'PKI', operation: '/admin-api/pki',

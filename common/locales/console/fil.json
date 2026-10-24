@@ -83,6 +83,7 @@
   "nav.vc": "Verifiable Credentials",
   "nav.vc-claims": "Mga claim ng credential",
   "nav.vc-monitor": "Verifiable Credentials",
+  "nav.passkey-report": "Mga passkey",
   "nav.oid4vp": "OpenID4VP",
   "nav.vc-verifier-config": "Request ng verifier",
   "nav.xacml": "XACML",
