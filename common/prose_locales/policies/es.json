@@ -1127,6 +1127,14 @@
     "en": "ba077a59ecf25ecb",
     "text": "`off` (el valor predeterminado) acepta una llave de acceso sea cual sea su algoritmo de firma. `sign-in` solo acepta una llave de acceso POSCUÁNTICA, cuyo algoritmo es ML-DSA-44, ML-DSA-65 o ML-DSA-87 (RFC 9964), cuando inicia la sesión de alguien, como primera credencial o como segundo factor; una clásica aún puede registrarse. `registration-and-sign-in` también rechaza una clásica en el registro, y el registro entonces solo ofrece ML-DSA. Decide el algoritmo, no el carril en que se creó una llave. Se rechaza mientras el dominio no ofrezca ningún ML-DSA (webauthn.algorithms no nombra ninguno, y ni webauthn.pqcOnly ni webauthn.pqcAlongsideClassical está activado)."
   },
+  "passkey.FIELDS.postQuantumAllowCredentials.label": {
+    "en": "295b04bef9cf50bc",
+    "text": "Llaves de acceso que nombra un inicio de sesión cuando se exige una poscuántica"
+  },
+  "passkey.FIELDS.postQuantumAllowCredentials.what": {
+    "en": "af7666466d67e760",
+    "text": "`realm` (el valor predeterminado) sigue el webauthn.postQuantumAllowCredentials del dominio. Solo se lee mientras postQuantumRequired exige una llave de acceso poscuántica al iniciar sesión. `narrow` nombra solo las llaves de acceso poscuánticas (ML-DSA) de la persona en la solicitud del paso de llave de acceso, de modo que nunca se ofrece una clásica, y una persona cuyo dispositivo solo guarda su llave clásica ve el propio mensaje «no se encontró ninguna llave de acceso» de la plataforma. `list-and-refuse` nombra todas las llaves de acceso que tiene y rechaza una clásica después de la ceremonia, con una página que dice que esta aplicación exige una llave de acceso poscuántica y dónde añadir una; la persona puede entonces elegir una llave de acceso que será rechazada. En ambos casos, a una persona que no tiene ninguna llave de acceso poscuántica se le avisa antes de cualquier ceremonia. Si se omite al guardar, se conserva `realm`."
+  },
   "passkey.FIELDS.passkeyHints.label": {
     "en": "7445bda72b06c415",
     "text": "Sugerencias que envía \"Crear una llave de acceso\""
@@ -1246,6 +1254,10 @@
   "passkey.SCHEMA.attributes.stsPasskeyPostQuantumRequired.what": {
     "en": "ba077a59ecf25ecb",
     "text": "`off` (el valor predeterminado) acepta una llave de acceso sea cual sea su algoritmo de firma. `sign-in` solo acepta una llave de acceso POSCUÁNTICA, cuyo algoritmo es ML-DSA-44, ML-DSA-65 o ML-DSA-87 (RFC 9964), cuando inicia la sesión de alguien, como primera credencial o como segundo factor; una clásica aún puede registrarse. `registration-and-sign-in` también rechaza una clásica en el registro, y el registro entonces solo ofrece ML-DSA. Decide el algoritmo, no el carril en que se creó una llave. Se rechaza mientras el dominio no ofrezca ningún ML-DSA (webauthn.algorithms no nombra ninguno, y ni webauthn.pqcOnly ni webauthn.pqcAlongsideClassical está activado)."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyPostQuantumAllowCredentials.what": {
+    "en": "af7666466d67e760",
+    "text": "`realm` (el valor predeterminado) sigue el webauthn.postQuantumAllowCredentials del dominio. Solo se lee mientras postQuantumRequired exige una llave de acceso poscuántica al iniciar sesión. `narrow` nombra solo las llaves de acceso poscuánticas (ML-DSA) de la persona en la solicitud del paso de llave de acceso, de modo que nunca se ofrece una clásica, y una persona cuyo dispositivo solo guarda su llave clásica ve el propio mensaje «no se encontró ninguna llave de acceso» de la plataforma. `list-and-refuse` nombra todas las llaves de acceso que tiene y rechaza una clásica después de la ceremonia, con una página que dice que esta aplicación exige una llave de acceso poscuántica y dónde añadir una; la persona puede entonces elegir una llave de acceso que será rechazada. En ambos casos, a una persona que no tiene ninguna llave de acceso poscuántica se le avisa antes de cualquier ceremonia. Si se omite al guardar, se conserva `realm`."
   },
   "passkey.SCHEMA.attributes.stsPasskeyHintsPasskey.what": {
     "en": "2ffa66aabab7a053",

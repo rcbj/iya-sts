@@ -1486,6 +1486,13 @@ two assertion doors for the attestation rules).
   `use-passkey` only with `enforceAttestationAtSignIn` (0412) — and
   `passkey_rules.js` mirrors it. A document built before #941 carries no
   such rule, as above.
+* **#946 ADDED ONE POLICY FACT AND NO RULE**:
+  `urn:sts:xacml:passkey-policy:postQuantumAllowCredentials`, `narrow` or
+  `list-and-refuse`, resolved from the realm's setting where the profile's
+  row is `realm`. A classical key refused under `list-and-refuse` is
+  refused by the `post-quantum` rule above, as under `narrow`; the fact is
+  there for a realm's own rule to tell a key picked from a full list from
+  one never offered.
 * **Arranged as the transfer questions are**: `xacml_passkey_verdicts.js`
   serves both the PEP and the gate. A realm's own document decides where it
   carries the obligation; otherwise the built-in document decides. Where

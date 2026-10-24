@@ -590,9 +590,12 @@ class AuthnSurface extends WebSurface {
       return;
     }
     if (path === '/authn/webauthn') {
-      // The lane a registration is made in (#643), where the page asked.
+      // The lane a registration is made in (#643), where the page asked;
+      // the classical retry (#944) where its button was the one pressed.
       await this.stepPasskey(String(fields.key || ''),
-                             String(fields.lane || ''));
+                             String(fields.lane || ''),
+                             String(fields.action || '') ===
+                               'webauthn-classical');
       return;
     }
     if (path === CONSENT_PATH) {
@@ -909,9 +912,13 @@ class AuthnSurface extends WebSurface {
    *
    * @param key - the passkey chosen (#534), or ''
    * @param lane - the lane a registration is made in (#643), or ''
+   * @param classical - the classical retry of a registration (#944): the
+   *   API is asked for the classical algorithms only, and refuses where
+   *   the realm forbids it
    * @returns nothing
    */
-  async stepPasskey(key: string, lane?: string): Promise<void> {
+  async stepPasskey(key: string, lane?: string,
+                    classical?: boolean): Promise<void> {
     if (this.pressed) {
       return;
     }
@@ -922,6 +929,9 @@ class AuthnSurface extends WebSurface {
       const asked: Json = key ? { key: key } : {};
       if (lane) {
         asked.lane = lane;
+      }
+      if (classical) {
+        asked.algorithms = 'classical';
       }
       const armed = await this.send(base + '/webauthn/options', asked);
       if (!armed.json || !armed.json.ok) {
@@ -943,6 +953,18 @@ class AuthnSurface extends WebSurface {
             : WebWebAuthn.asserted(await this.webauthn('get',
                 { publicKey: AuthnSurface.stepRequestOptions(c) }, aborted));
         } catch (e) {
+          // A REGISTRATION THAT ASKED FOR ML-DSA AND FAILED ON THE DEVICE
+          // (#944): the page's guidance — the classical retry where the
+          // realm allows it, the sentence that this device cannot make the
+          // required key where it does not — is shown in place, and
+          // nothing is sent: the step stays armed for the retry, and the
+          // failure goes to the ceremony log's hook (#943).
+          if (c.mode === 'create' &&
+              await WebWebAuthn.offerFallback(this.env.document,
+                this.env.window, e, { surface: 'authn',
+                                      fallback: c.fallback })) {
+            return;
+          }
           // The browser's error is deliberately ambiguous — no credential,
           // declined and timed out are one — so it is reported as given.
           credential = { error: e && e.name, message: e && e.message };

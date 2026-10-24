@@ -1127,6 +1127,14 @@
     "en": "ba077a59ecf25ecb",
     "text": "`off`（預設值）接受任何簽章演算法的密碼金鑰。`sign-in` 在密碼金鑰讓某人登入時（作為第一憑證或第二因素）只接受後量子密碼金鑰，即演算法為 ML-DSA-44、ML-DSA-65 或 ML-DSA-87（RFC 9964）的密碼金鑰；傳統密碼金鑰仍可註冊。`registration-and-sign-in` 在註冊時也拒絕傳統密碼金鑰，此時註冊只提供 ML-DSA。決定因素是演算法，而不是金鑰建立時所在的通道。當領域不提供任何 ML-DSA 時（webauthn.algorithms 未列出任何 ML-DSA，且 webauthn.pqcOnly 與 webauthn.pqcAlongsideClassical 皆未開啟）將被拒絕。"
   },
+  "passkey.FIELDS.postQuantumAllowCredentials.label": {
+    "en": "295b04bef9cf50bc",
+    "text": "要求後量子密碼金鑰時登入所列出的密碼金鑰"
+  },
+  "passkey.FIELDS.postQuantumAllowCredentials.what": {
+    "en": "af7666466d67e760",
+    "text": "`realm`（預設值）沿用該領域的 webauthn.postQuantumAllowCredentials。僅在 postQuantumRequired 要求登入時使用後量子密碼金鑰時讀取。`narrow` 在密碼金鑰步驟的請求中只列出此人的後量子（ML-DSA）密碼金鑰，因此從不提供傳統密碼金鑰，而裝置上只存有其傳統密碼金鑰的人會看到平台自己的「找不到密碼金鑰」訊息。`list-and-refuse` 列出此人持有的每個密碼金鑰，並在儀式結束後拒絕傳統密碼金鑰，同時顯示一個頁面，說明此應用程式要求後量子密碼金鑰以及在哪裡新增；此人隨後可能選擇一個將被拒絕的密碼金鑰。無論哪種方式，不持有任何後量子密碼金鑰的人都會在任何儀式之前得到告知。儲存時省略，則保留 `realm`。"
+  },
   "passkey.FIELDS.passkeyHints.label": {
     "en": "7445bda72b06c415",
     "text": "「Create a passkey」送出的提示"
@@ -1246,6 +1254,10 @@
   "passkey.SCHEMA.attributes.stsPasskeyPostQuantumRequired.what": {
     "en": "ba077a59ecf25ecb",
     "text": "`off`（預設值）接受任何簽章演算法的密碼金鑰。`sign-in` 在密碼金鑰讓某人登入時（作為第一憑證或第二因素）只接受後量子密碼金鑰，即演算法為 ML-DSA-44、ML-DSA-65 或 ML-DSA-87（RFC 9964）的密碼金鑰；傳統密碼金鑰仍可註冊。`registration-and-sign-in` 在註冊時也拒絕傳統密碼金鑰，此時註冊只提供 ML-DSA。決定因素是演算法，而不是金鑰建立時所在的通道。當領域不提供任何 ML-DSA 時（webauthn.algorithms 未列出任何 ML-DSA，且 webauthn.pqcOnly 與 webauthn.pqcAlongsideClassical 皆未開啟）將被拒絕。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyPostQuantumAllowCredentials.what": {
+    "en": "af7666466d67e760",
+    "text": "`realm`（預設值）沿用該領域的 webauthn.postQuantumAllowCredentials。僅在 postQuantumRequired 要求登入時使用後量子密碼金鑰時讀取。`narrow` 在密碼金鑰步驟的請求中只列出此人的後量子（ML-DSA）密碼金鑰，因此從不提供傳統密碼金鑰，而裝置上只存有其傳統密碼金鑰的人會看到平台自己的「找不到密碼金鑰」訊息。`list-and-refuse` 列出此人持有的每個密碼金鑰，並在儀式結束後拒絕傳統密碼金鑰，同時顯示一個頁面，說明此應用程式要求後量子密碼金鑰以及在哪裡新增；此人隨後可能選擇一個將被拒絕的密碼金鑰。無論哪種方式，不持有任何後量子密碼金鑰的人都會在任何儀式之前得到告知。儲存時省略，則保留 `realm`。"
   },
   "passkey.SCHEMA.attributes.stsPasskeyHintsPasskey.what": {
     "en": "2ffa66aabab7a053",

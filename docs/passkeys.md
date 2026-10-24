@@ -392,6 +392,7 @@ described under [the passkey policy](authentication.md#the-passkey-policy):
 | `recoveryAssurance` | Whether getting back in without the passkey restores access at once. See [Recovery](#losing-a-passkey-and-account-recovery). |
 | `postQuantumRequired` | See [Requiring a post-quantum passkey](#requiring-a-post-quantum-passkey). |
 | `attestationAlgorithms` | See [Requiring a post-quantum attestation](#requiring-a-post-quantum-attestation). |
+| `postQuantumAllowCredentials` | While a post-quantum passkey is required: name only the post-quantum passkeys at sign-in, or name them all and refuse a classical one with a page saying why. See [Narrow, or list and refuse](#narrow-or-list-and-refuse). |
 
 ### Different rules for different applications or groups
 
@@ -481,6 +482,53 @@ authenticator can make an `ES256` passkey; Windows Hello and some older TPMs
 make `RS256`. **Few authenticators can make an ML-DSA passkey yet.** With the
 default list, an authenticator that can make ML-DSA does so, and every other
 one falls back to a classical algorithm, so nobody is shut out.
+
+### When the device cannot make an ML-DSA passkey
+
+Some platforms do not simply skip an algorithm their authenticator cannot do:
+they fail the whole registration. Since
+[#944](https://github.com/rcbj/iya-sts/issues/944) the passkey step at sign-in
+and `/portal/keys` help the person when that happens.
+
+**What the person sees.** When a registration that asked for ML-DSA fails with
+the browser's `NotSupportedError`, the page shows, in the person's language:
+
+* **where a classical passkey is allowed**: "Your device could not make a
+  post-quantum (ML-DSA) passkey", and a **Try again with a classical
+  passkey** button. The retry asks for the classical algorithms only (the
+  configured list less ML-DSA). On `/portal/keys` it starts the same kind of
+  passkey again, in the same role.
+* **where it is not**: "This service requires a post-quantum (ML-DSA)
+  passkey, and this device could not make one. Use another device, or a
+  security key that can." No retry is offered.
+
+A failure the browser reports less precisely (`NotAllowedError`, which is
+also what a cancelled prompt or a timeout gives, or `UnknownError`) shows the
+same guidance worded with "if". Any other failure is reported as before. Where
+the browser says, through `PublicKeyCredential.getClientCapabilities()`, that
+it can make a passkey on a phone or another device nearby, the page adds a
+line saying so. That call has no way to report which algorithms an
+authenticator supports, so it cannot be used to choose the algorithms
+beforehand.
+
+**When the retry is not offered, and is refused.** A classical passkey is not
+allowed, so the page offers no retry and the service refuses one asked for
+anyway (`STS-AUTHN-0420`), when:
+
+| Where | Refused when |
+|---|---|
+| `/portal/keys` | `webauthn.pqcOnly` is on, or the person's passkey policy has `postQuantumRequired: registration-and-sign-in` |
+| the passkey step at sign-in | as above, or `postQuantumRequired` is `sign-in` for this application (the new classical passkey would not sign the person in) |
+
+With [both lanes](#a-classical-and-a-post-quantum-passkey-side-by-side) on, the
+retry creates a passkey in the classical lane.
+
+**Over the API.** `POST /authn-api/mfa/{id}/webauthn/options` and the Account
+API's `POST /account-api/keys` (`action: begin`) take `algorithms:
+"classical"` for the retry. The armed ceremony's `fallback` says whether it
+asks for ML-DSA (`asksPostQuantum`), whether the retry may be offered
+(`classical`), and whether this ceremony is the retry (`retrying`). See the
+[sign-in API](authn-api.md) and the [Account API](account-api.md).
 
 **See what was registered.** Each passkey's algorithm is shown on
 `/portal/keys` (**Details**), in the **Algorithm** column on the person's
@@ -641,8 +689,9 @@ The audit log's `session.start` row records which kind was used:
 **Be prepared for most of them not to.** The service does not check this. It
 offers ML-DSA in the post-quantum lane and verifies what comes back. If the
 authenticator cannot make an ML-DSA passkey, the browser reports that the
-ceremony failed and nothing is registered. The person can still create a
-classical passkey.
+ceremony failed and nothing is registered. The page then offers to try again
+with a classical passkey, where one is allowed
+([When the device cannot make an ML-DSA passkey](#when-the-device-cannot-make-an-ml-dsa-passkey)).
 
 This project's own tests make ML-DSA-44 and ML-DSA-65 passkeys with a software
 authenticator. Before you tell people to create a post-quantum passkey, try it
@@ -737,6 +786,9 @@ their only way in stops working.
   any prompt appears.
 * **With no username**, the request cannot be narrowed. If the person picks
   a classical passkey, the sign-in is refused after the prompt.
+* With `postQuantumAllowCredentials` set to `list-and-refuse`, the passkey
+  step lists every passkey and refuses a classical one after the prompt,
+  with a page that says why. See [Narrow, or list and refuse](#narrow-or-list-and-refuse).
 * `/portal/keys` and the console mark each classical passkey that no longer
   signs its owner in. The portal says: "This passkey signs with a classical
   algorithm, and this realm now accepts only post-quantum (ML-DSA) passkeys,
@@ -745,6 +797,41 @@ their only way in stops working.
   `credential-change` is sent.
 * Under `registration-and-sign-in`, every new passkey is offered ML-DSA only.
   With the side-by-side setting on, only the post-quantum lane is offered.
+
+### Narrow, or list and refuse
+
+With the username typed, the service can build the browser's request in one
+of two ways while a post-quantum passkey is required at sign-in
+([#946](https://github.com/rcbj/iya-sts/issues/946)):
+
+| Behaviour | What the request names | What the person meets |
+|---|---|---|
+| `narrow` (default) | the person's post-quantum passkeys only | A classical passkey is never offered. But a person whose device holds only their classical passkey gets the browser's own "no passkey found" message, which does not say why. |
+| `list-and-refuse` | every passkey the person holds | The person may pick a classical passkey. It is then refused after the prompt, and the sign-in screen says that this application requires a post-quantum passkey and links to **Add a post-quantum passkey** on the account page (`/portal/keys`). |
+
+**The trade-off.** `list-and-refuse` lets a person pick a passkey that will be
+refused, in exchange for a clear reason when they do. Either way, a person who
+holds no post-quantum passkey at all is told before any prompt, with the same
+page.
+
+The account page link works only if the person can sign in to the portal:
+another way in, or a portal application whose passkey policy does not
+require a post-quantum passkey.
+
+**A refused passkey is not a sign-in.** The refusal comes before any session,
+authentication event or `session.start` row. It is recorded as a
+`session.refuse` row with `STS-AUTHN-0356`. The passkey's signature counter is
+still advanced, as for every verified passkey, so the same answer cannot be
+replayed.
+
+**Setting it.**
+* **For the realm:** `webauthn.postQuantumAllowCredentials` (`narrow` or
+  `list-and-refuse`) on **Protocols → WebAuthn**, or with
+  `POST /admin-api/config/set`.
+* **For one passkey policy:** the row `postQuantumAllowCredentials` on
+  Directory → Policies → **Passkey policy**: `realm` (the default, follows the
+  setting), `narrow` or `list-and-refuse`. Over the API it is optional in
+  `POST /admin-api/policies/save-passkey-policy`; left out, `realm` is kept.
 
 ### How it is decided: the XACML facts
 
@@ -764,6 +851,11 @@ The row itself is `urn:sts:xacml:passkey-policy:postQuantumRequired`, and the
 fact groups a question carries are listed in `urn:sts:xacml:passkey:facts`
 (`algorithm` for these three), both in the environment category. The built-in
 rule reads `post-quantum` and never `lane`, for the reason given above.
+Since #946 the environment also carries
+`urn:sts:xacml:passkey-policy:postQuantumAllowCredentials`, `narrow` or
+`list-and-refuse` (the realm's setting where the row is `realm`). No built-in
+rule reads it. A realm's own rule can use it, for example to treat a classical
+passkey the person picked from a full list differently.
 
 **Most realms need nothing more than the row.** To decide differently, for
 example "post-quantum required only for a certain resource", you can write
@@ -997,6 +1089,7 @@ description of each is in [Configuration → WebAuthn](configuration.md#webauthn
 | `webauthn.insecureAlgorithms` | `STS_WEBAUTHN_INSECURE_ALGORITHMS` | `false` |
 | `webauthn.pqcOnly` | `STS_WEBAUTHN_PQC_ONLY` | `false` |
 | `webauthn.pqcAlongsideClassical` | `STS_WEBAUTHN_PQC_ALONGSIDE_CLASSICAL` | `false` |
+| `webauthn.postQuantumAllowCredentials` | `STS_WEBAUTHN_POST_QUANTUM_ALLOW_CREDENTIALS` | `narrow` |
 | `webauthn.userVerification` | `STS_WEBAUTHN_USER_VERIFICATION` | `required` |
 | `webauthn.attestation` | `STS_WEBAUTHN_ATTESTATION` | `direct` |
 | `webauthn.attestationPolicy` | `STS_WEBAUTHN_ATTESTATION_POLICY` | `by-mode` |
@@ -1097,6 +1190,7 @@ browser or a client. Look a code up in the audit log with
 | `STS-AUTHN-0357` | a passkey policy requiring post-quantum, while the realm offers no ML-DSA |
 | `STS-AUTHN-0380`, `0381` | an account recovery refused, or limited to registering a new passkey |
 | `STS-AUTHN-0411`, `0412` | a passkey whose attestation is not signed with what `attestationAlgorithms` allows (registration, sign-in) |
+| `STS-AUTHN-0420` | a registration retried with the classical algorithms only, where a classical passkey is not allowed |
 | `STS-ADMIN-0522` | an administrator's removal of a passkey was refused |
 
 **When the browser shows no prompt at all**, the passkey step has a link,
@@ -1125,7 +1219,8 @@ way, because the browser refuses the ceremony before the service sees it.
   request cannot ask for them. With `acr_values=phrh`, the passkey step does
   not yet narrow the browser's choice to the passkeys that can earn it.
 * **Only some authenticators make ML-DSA passkeys**, and the service cannot
-  tell beforehand which.
+  tell beforehand which. It helps after a failure instead (the classical
+  retry).
 * **A post-quantum attestation has been tested only with a chain made for
   the test.** No real authenticator's post-quantum attestation has been
   tried; the attestation algorithms are recorded and enforced as WebAuthn
@@ -1133,6 +1228,9 @@ way, because the browser refuses the ceremony before the service sees it.
 * **The device link on `/portal/devices` writes no ceremony row yet.**
   The ceremony rows cover the sign-in screen, the usernameless sign-in,
   `/portal/keys` and activation links.
+* **Upgrading a classical passkey to a post-quantum one in place** is not
+  built yet ([#939](https://github.com/rcbj/iya-sts/issues/939)). The refusal
+  page links to registration only.
 * **Device Bound Session Credentials** (binding the session cookie to the
   browser) are a separate, optional feature, and an application cannot yet
   require them. See

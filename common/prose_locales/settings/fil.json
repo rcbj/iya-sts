@@ -1103,6 +1103,14 @@
     "en": "e35e276b9d933828",
     "text": "Kapag naka-on, maaaring sabay na hawakan ng isang tao ang isang classical na passkey at isang post-quantum (ML-DSA) na passkey, sa iisang authenticator kung kaya nitong gawin ang dalawa. Bawat passkey ay ginagawa sa isang LANE na pinipili ng tao: humihiling ang classical na lane ng `webauthn.algorithms` nang walang ML-DSA (`ES256` at `RS256` kung wala nang matitira), at ML-DSA lamang ang hinihiling ng post-quantum na lane. May sariling user handle ang bawat lane, kaya hindi pinapalitan ng pangalawang passkey ang una sa authenticator, at may sariling exclude list; ipinapakita ng credential manager ang post-quantum sa isang pangalang nagsasabi ng algorithm nito — `<username>+ml-dsa` kapag ginawa, `<username>+ml-dsa-65` (halimbawa) kapag iisang algorithm na ang gamit ng lahat ng post-quantum na passkey ng tao — na hindi kailanman pangalang ginagamit sa pag-sign in. Binibilang ng `webauthn.maxKeysPerPerson` ang dalawang lane. Hindi maaaring naka-on habang naka-on ang `webauthn.pqcOnly`. Kapag naka-off, gaya ng dati ang bawat ceremony, at patuloy na nakakapag-sign in ang post-quantum na passkey na naka-register na; hindi na makakagawa ng bago."
   },
+  "webauthn.postQuantumAllowCredentials|label": {
+    "en": "295b04bef9cf50bc",
+    "text": "Mga passkey na pinapangalanan ng sign-in kapag kailangan ang post-quantum"
+  },
+  "webauthn.postQuantumAllowCredentials|description": {
+    "en": "f34caf08dceeedd3",
+    "text": "Binabasa lamang habang hinihingi ng passkey policy ang post-quantum na passkey sa sign-in (`postQuantumRequired`), at kapag `realm` lamang ang row na `postQuantumAllowCredentials` ng napiling profile. Ang `narrow` (ang default) ay pinapangalanan lamang ang mga post-quantum (ML-DSA) na passkey ng tao sa `allowCredentials` ng passkey step, kaya hindi kailanman inaalok ang classical — pero ang taong ang device ay may hawak lamang ng kanyang classical na passkey ay makakakita ng sariling mensahe ng platform na \"walang nahanap na passkey\". Ang `list-and-refuse` ay pinapangalanan ang bawat passkey na hawak niya at tinatanggihan ang classical pagkatapos ng ceremony (STS-AUTHN-0356), na may page na nagsasabing kailangan ng application ang post-quantum na passkey at kung saan magdadagdag nito. Ang kapalit: maaaring pumili ang tao ng passkey na tatanggihan. Alinman dito, ang taong walang hawak na post-quantum na passkey ay sinasabihan bago ang anumang ceremony."
+  },
   "webauthn.userVerification|label": {
     "en": "8b134177fe992d91",
     "text": "User verification"

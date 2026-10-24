@@ -1103,6 +1103,14 @@
     "en": "e35e276b9d933828",
     "text": "开启后，一个人可以同时持有经典通行密钥和后量子（ML-DSA）通行密钥，在能同时创建两者的身份验证器上可放在同一设备。每个通行密钥都在此人选择的“通道”中创建：经典通道请求去掉 ML-DSA 的 `webauthn.algorithms`（若一个不剩则为 `ES256` 和 `RS256`），后量子通道只请求 ML-DSA。每个通道都有自己的用户句柄，因此第二个通行密钥不会在身份验证器上替换第一个，并有自己的排除列表；凭据管理器以表明其算法的名称显示后量子通行密钥——创建时为 `<username>+ml-dsa`，当此人的所有后量子通行密钥都使用同一算法时为 `<username>+ml-dsa-65`（例如）——这个名称从不用于登录。`webauthn.maxKeysPerPerson` 计入两个通道。`webauthn.pqcOnly` 开启时不能开启。关闭时，每个仪式都与以前一样，已注册的后量子通行密钥仍可登录；不能再创建新的。"
   },
+  "webauthn.postQuantumAllowCredentials|label": {
+    "en": "295b04bef9cf50bc",
+    "text": "要求后量子通行密钥时登录所列出的通行密钥"
+  },
+  "webauthn.postQuantumAllowCredentials|description": {
+    "en": "f34caf08dceeedd3",
+    "text": "仅在通行密钥策略要求登录时使用后量子通行密钥（`postQuantumRequired`）时读取，且仅当所选配置文件的 `postQuantumAllowCredentials` 行为 `realm` 时。`narrow`（默认值）在通行密钥步骤的 `allowCredentials` 中只列出此人的后量子（ML-DSA）通行密钥，因此从不提供传统通行密钥——但设备上只存有其传统通行密钥的人会看到平台自己的“未找到通行密钥”消息。`list-and-refuse` 列出此人持有的每个通行密钥，并在仪式结束后拒绝传统通行密钥（STS-AUTHN-0356），同时显示一个页面，说明该应用要求后量子通行密钥以及在哪里添加。代价是：此人可能选择一个将被拒绝的通行密钥。无论哪种方式，不持有任何后量子通行密钥的人都会在任何仪式之前得到告知。"
+  },
   "webauthn.userVerification|label": {
     "en": "8b134177fe992d91",
     "text": "用户验证"

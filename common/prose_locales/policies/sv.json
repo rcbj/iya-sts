@@ -1127,6 +1127,14 @@
     "en": "ba077a59ecf25ecb",
     "text": "`off` (standardvärdet) godtar en nyckel oavsett signaturalgoritm. `sign-in` godtar bara en POSTKVANTNYCKEL, en vars algoritm är ML-DSA-44, ML-DSA-65 eller ML-DSA-87 (RFC 9964), när den loggar in någon, som första inloggningsuppgift eller som andra faktor; en klassisk nyckel kan fortfarande registreras. `registration-and-sign-in` nekar en klassisk nyckel även vid registrering, och registreringen erbjuder då bara ML-DSA. Det är algoritmen som avgör, inte det spår nyckeln skapades i. Nekas så länge sfären inte erbjuder någon ML-DSA (webauthn.algorithms namnger ingen, och varken webauthn.pqcOnly eller webauthn.pqcAlongsideClassical är på)."
   },
+  "passkey.FIELDS.postQuantumAllowCredentials.label": {
+    "en": "295b04bef9cf50bc",
+    "text": "Nycklar som en inloggning anger när en postkvantnyckel krävs"
+  },
+  "passkey.FIELDS.postQuantumAllowCredentials.what": {
+    "en": "af7666466d67e760",
+    "text": "`realm` (standard) följer sfärens webauthn.postQuantumAllowCredentials. Läses bara medan postQuantumRequired kräver en postkvantnyckel vid inloggning. `narrow` anger bara personens postkvantnycklar (ML-DSA) i nyckelstegets begäran, så en klassisk nyckel erbjuds aldrig, och en person vars enhet bara har deras klassiska nyckel ser plattformens eget meddelande ”ingen nyckel hittades”. `list-and-refuse` anger varje nyckel personen har och avvisar en klassisk efter ceremonin, med en sida som säger att det här programmet kräver en postkvantnyckel och var man lägger till en; personen kan då välja en nyckel som kommer att avvisas. I båda fallen får en person som inte har någon postkvantnyckel veta det före varje ceremoni. Utelämnad vid en sparning behålls `realm`."
+  },
   "passkey.FIELDS.passkeyHints.label": {
     "en": "7445bda72b06c415",
     "text": "Tips som ”Skapa en nyckel” skickar"
@@ -1246,6 +1254,10 @@
   "passkey.SCHEMA.attributes.stsPasskeyPostQuantumRequired.what": {
     "en": "ba077a59ecf25ecb",
     "text": "`off` (standardvärdet) godtar en nyckel oavsett signaturalgoritm. `sign-in` godtar bara en POSTKVANTNYCKEL, en vars algoritm är ML-DSA-44, ML-DSA-65 eller ML-DSA-87 (RFC 9964), när den loggar in någon, som första inloggningsuppgift eller som andra faktor; en klassisk nyckel kan fortfarande registreras. `registration-and-sign-in` nekar en klassisk nyckel även vid registrering, och registreringen erbjuder då bara ML-DSA. Det är algoritmen som avgör, inte det spår nyckeln skapades i. Nekas så länge sfären inte erbjuder någon ML-DSA (webauthn.algorithms namnger ingen, och varken webauthn.pqcOnly eller webauthn.pqcAlongsideClassical är på)."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyPostQuantumAllowCredentials.what": {
+    "en": "af7666466d67e760",
+    "text": "`realm` (standard) följer sfärens webauthn.postQuantumAllowCredentials. Läses bara medan postQuantumRequired kräver en postkvantnyckel vid inloggning. `narrow` anger bara personens postkvantnycklar (ML-DSA) i nyckelstegets begäran, så en klassisk nyckel erbjuds aldrig, och en person vars enhet bara har deras klassiska nyckel ser plattformens eget meddelande ”ingen nyckel hittades”. `list-and-refuse` anger varje nyckel personen har och avvisar en klassisk efter ceremonin, med en sida som säger att det här programmet kräver en postkvantnyckel och var man lägger till en; personen kan då välja en nyckel som kommer att avvisas. I båda fallen får en person som inte har någon postkvantnyckel veta det före varje ceremoni. Utelämnad vid en sparning behålls `realm`."
   },
   "passkey.SCHEMA.attributes.stsPasskeyHintsPasskey.what": {
     "en": "2ffa66aabab7a053",

@@ -11004,7 +11004,18 @@ class Authn {
     }
     errorCodes.mark(res, code);
     void base;
-    this.screenRefused(res, record, message);
+    // A CLASSICAL PASSKEY WHERE A POST-QUANTUM ONE IS REQUIRED, REFUSED AFTER
+    // ITS CEREMONY (#946): the usernameless sign-in, and under
+    // `list-and-refuse` the passkey step. The screen draws a panel of its
+    // own over the sentence — what the application requires and where to
+    // get such a passkey — in the page's language, where a platform's
+    // "no credential found" said nothing of this service's reason. The
+    // refused assertion is NO authentication event: the session's start
+    // refused it above, before any session, event or `session.start` row.
+    // (Its signature counter is spent, as every verified assertion's is, so
+    // it cannot be replayed.)
+    this.screenRefused(res, record, message,
+                       { postQuantumRequired: code === 'STS-AUTHN-0356' });
     log.debug("Leaving Authn.refusedSession(). Answered.");
     return true;
   }
@@ -11107,12 +11118,14 @@ class Authn {
    * @param res - the response
    * @param record - the pending sign-in
    * @param message - the sentence, English
-   * @param extra - `{ status, unknownCredential, noAutofill }`
+   * @param extra - `{ status, unknownCredential, noAutofill,
+   *   postQuantumRequired }` — the last (#946) draws the screen's panel for
+   *   a classical passkey refused where a post-quantum one is required
    * @returns nothing
    */
   screenRefused(res, record, message: string,
     extra?: { status?: number, unknownCredential?: string,
-    noAutofill?: boolean }): void {
+    noAutofill?: boolean, postQuantumRequired?: boolean }): void {
     const { log } = this.deps;
     log.debug("Entering Authn.screenRefused().");
     const asked = extra || {};
@@ -11126,6 +11139,10 @@ class Authn {
     const live = !!(record && record.id && !(record.expires < Date.now()));
     if (live) {
       record.screenError = json && !fromStep ? '' : String(message || '');
+      // THE PANEL (#946) is the record's, like the sentence, so the screen's
+      // view draws it whichever way the refusal reached the screen; every
+      // refusal sets it afresh, so the next one without it clears it.
+      record.postQuantumRequired = !!asked.postQuantumRequired;
       pending.set(record.id, record);
     }
     if (json) {
@@ -12127,6 +12144,7 @@ class Authn {
     const back = !!(record && record.id);
     if (back) {
       record.screenError = '';
+      delete record.postQuantumRequired;
       delete record.passkeyChallenge;
       record.rememberBrowser = false;
       record.expires = Date.now() + this.pendingTtlMs();
@@ -12822,6 +12840,10 @@ class Authn {
       // no Sign In, the passkey button the way in.
       usernameless: passkey && this.usernamelessRequired(record),
       email: emailFirst,
+      // A CLASSICAL PASSKEY REFUSED WHERE A POST-QUANTUM ONE IS REQUIRED
+      // (#946): the panel's links, while the last refusal was that one.
+      postQuantumRequired: record.postQuantumRequired
+        ? this.postQuantumHelp() : null,
       // FORGOT YOUR PASSWORD? (#63): the portal's self-service reset, where
       // `common/mail_uses.ts` says it is offered, never for a locked name.
       // Root-relative: the browser puts the realm's prefix on it.
@@ -14788,6 +14810,33 @@ class Authn {
     return (props && typeof props.rk === 'boolean') ? props.rk : null;
   }
 
+  // WHERE A PERSON GETS A POST-QUANTUM PASSKEY (#946), for the panel the
+  // sign-in screen and the passkey step draw when a classical one is
+  // refused: the account page's passkeys, root-relative so the browser
+  // puts the realm's prefix on it, where passkeys may be registered here at
+  // all — whether the person can reach it depends on the portal's own
+  // passkey profile, which the panel's words say — and #939's upgrade,
+  // which is '' until `postQuantumUpgradeOffered()` answers true.
+  /**
+   * The links of the post-quantum panel (#946).
+   *
+   * @returns `{ register, upgrade }`, each a path or ''
+   */
+  postQuantumHelp(): { register: string; upgrade: string } {
+    const { log, webauthnPolicy } = this.deps;
+    log.debug("Entering Authn.postQuantumHelp().");
+    const out = {
+      register: webauthnPolicy.offered() ? '/portal/keys' : '',
+      // #939 is not built: the flag is false and no link is drawn.
+      upgrade: webauthnPolicy.postQuantumUpgradeOffered()
+        ? '/portal/keys?upgrade=post-quantum' : ''
+    };
+    log.debug("Leaving Authn.postQuantumHelp(). " +
+              (out.register ? 'register' : 'none') +
+              (out.upgrade ? ', upgrade' : ''));
+    return out;
+  }
+
   // THE PASSKEY STEP'S FACTS (#572), which `webauthnPage()` drew as markup
   // and data attributes until then: what the page says and, as `ceremony`,
   // what `POST /authn-api/mfa/{id}/webauthn/options` hands the browser's
@@ -14836,14 +14885,30 @@ class Authn {
     // below, refused at `mfaWebauthnOptions()`) — and is NOT offered an
     // enrolment instead: the mode is decided on what they hold.
     const pqRequired = this.deps.passkeyPolicy.requiresPostQuantum('sign-in');
-    const known = pqRequired ? held.filter((one) => {
+    const pqHeld = pqRequired ? held.filter((one) => {
       return !this.deps.passkeyPolicy.postQuantumRefusal(
         credentials.keyAlgorithm(one), 'sign-in');
     }) : held;
+    // LIST AND REFUSE (#946), the alternative to narrowing: the realm's
+    // `webauthn.postQuantumAllowCredentials`, or the selected profile's
+    // row of that name. `narrow` (the default) is #718's filter above;
+    // `list-and-refuse` names EVERY key of the role, so a platform asked
+    // for a person's passkeys does not answer "no credential found" for
+    // the classical one they hold, and a classical assertion is refused
+    // after the ceremony by this service, in its own words, at the
+    // session's start (STS-AUTHN-0356 — the panel `refusedSession()` adds).
+    // The trade-off is the ticket's: the person may pick a key that will be
+    // refused. Either way a person holding NO post-quantum key is told
+    // before any ceremony (below): no choice of theirs could succeed, so
+    // there is nothing for a ceremony to find out.
+    const listAll = pqRequired &&
+      this.deps.passkeyPolicy.postQuantumAllowCredentials() ===
+        'list-and-refuse';
+    const known = listAll ? held : pqHeld;
     // A RECOVERY ENROLMENT (#724) is a registration, so it is not refused
     // for the keys already held; the new key meets the registration rules.
     const pqRefusal = !step.recovery && pqRequired && held.length &&
-      !known.length
+      !pqHeld.length
       ? this.deps.passkeyPolicy.postQuantumRefusal(
           credentials.keyAlgorithm(held[0]), 'sign-in')
       : null;
@@ -14896,6 +14961,18 @@ class Authn {
     // Read ONCE: rpIdOf() logs when it refuses a configured value.
     const rpId = this.rpIdOf(base);
     const options = webauthnPolicy.settings();
+    // THE CLASSICAL RETRY (#944), where a registration is drawn: whether
+    // the ceremony asks for ML-DSA at all (`asksPostQuantum`, so the page
+    // has guidance to give when the device cannot make one), whether a
+    // retry with the classical algorithms only may be offered here
+    // (`classical`), and whether this ceremony IS that retry. On the page's
+    // facts and on the ceremony's, language-free.
+    const fallback = mode === 'create' ? {
+      asksPostQuantum: webauthnPolicy.asksPostQuantum(stepLane,
+                                                      !!step.classicalOnly),
+      classical: !step.classicalOnly &&
+        webauthnPolicy.classicalFallbackOffered(stepLane, 'sign-in'),
+      retrying: !!step.classicalOnly } : null;
     const out = {
       mode: mode, passwordless: passwordless,
       choices: choosing ? known.map(function (one) {
@@ -14913,6 +14990,14 @@ class Authn {
       // ceremony would end in, said before it runs.
       postQuantumRefused: pqRefusal ? { code: pqRefusal.code,
                                         why: pqRefusal.why } : null,
+      // AND WHERE TO GET ONE (#946): the panel's links, drawn in the page's
+      // language — the refusal above stays English (#539).
+      postQuantumHelp: pqRefusal ? this.postQuantumHelp() : null,
+      // How `allowCredentials` was built while one is required (#946):
+      // `narrow` or `list-and-refuse`; '' while nothing is required.
+      postQuantumAllowCredentials: pqRequired
+        ? (listAll ? 'list-and-refuse' : 'narrow') : '',
+      fallback: fallback,
       // The technical fold (#470): what this ceremony asks for. The
       // ceremony's own names stay as they are; what is said ABOUT them is
       // in the page's language (#539).
@@ -14922,7 +15007,7 @@ class Authn {
       // The lane's algorithms where a registration is drawn (#643); the
       // configured list otherwise, and with the switch off.
       algorithms: (mode === 'create'
-        ? webauthnPolicy.algorithmsOffered(stepLane)
+        ? webauthnPolicy.algorithmsOffered(stepLane, !!step.classicalOnly)
         : (options.algorithms || [])).map(String),
       // THE LANES A REGISTRATION MAY BE MADE IN (#643): both while the
       // switch is on, which is when the page asks which; the one chosen.
@@ -14957,8 +15042,12 @@ class Authn {
           return String(one.credentialId);
         }),
         options: mode === 'create'
-          ? webauthnPolicy.creationOptions(rpId, undefined, stepLane)
-          : webauthnPolicy.requestOptions(rpId) } };
+          ? webauthnPolicy.creationOptions(rpId, undefined, stepLane,
+                                           !!step.classicalOnly)
+          : webauthnPolicy.requestOptions(rpId),
+        // The retry's facts (#944), for the script — and any caller of the
+        // API that runs the ceremony itself.
+        fallback: fallback } };
     log.debug("Leaving Authn.webauthnFacts(). mode=" + mode);
     return out;
   }
@@ -16097,8 +16186,10 @@ class Authn {
     log.debug("Entering Authn.screenAct(). " +
               String(body.action || 'login'));
     const base = baseUrlOf(req);
-    // A sentence the screen was showing belongs to the act before this one.
+    // A sentence the screen was showing belongs to the act before this one,
+    // and so does #946's panel.
     delete record.screenError;
+    delete record.postQuantumRequired;
 
     if (String(body.action || '') === 'cancel') {
       pending.delete(record.id);
@@ -16957,10 +17048,12 @@ class Authn {
    * @param mfaId - the step's id
    * @param key - the passkey chosen (#534), or ''
    * @param lane - the lane a registration is to be made in (#643), or ''
+   * @param algorithms - `classical` for the classical retry of a
+   *   registration that failed on the device (#944), or ''
    * @returns nothing; the answer is sent
    */
   mfaWebauthnOptions(req: any, res: any, mfaId: string, key: string,
-                     lane?: string): void {
+                     lane?: string, algorithms?: string): void {
     // `audit` from the deps (#912), as every other writer of its rows.
     const { log, baseUrlOf, errorCodes, webauthnPolicy, audit } = this.deps;
     log.debug('Entering Authn.mfaWebauthnOptions().');
@@ -16985,8 +17078,37 @@ class Authn {
         return;
       }
     }
+    // THE CLASSICAL RETRY (#944), ASKED AT THE DOOR AND NOT ON THE PAGE: the
+    // page offers it only where `classicalFallbackOffered()` says so, and a
+    // body sent by hand asking for it where the realm forbids a classical
+    // passkey is refused here, before any challenge is armed. Allowed, it is
+    // carried on the step like the lane — `classicalOnly`, read back by the
+    // registration branch for section 7.1's offered-algorithm check — and
+    // the lane is the classical one while both lanes are on. An ordinary
+    // request after a retry puts the step back on the realm's own list.
+    const retry = String(algorithms || '') === 'classical';
+    let stepLane = String(lane || '');
+    if (retry) {
+      this.deps.passkeyPolicy.select(String(found.step.username || ''),
+        found.step.authn && found.step.authn.application);
+      const retryAllowed = webauthnPolicy.classicalRetryRefusal('sign-in');
+      if (!retryAllowed.ok) {
+        errorCodes.mark(res, errorCodes.codeOf(retryAllowed) ||
+                             'STS-AUTHN-0420');
+        this.stepRefused(res, retryAllowed.why);
+        log.debug('Leaving Authn.mfaWebauthnOptions(). The classical retry ' +
+                  'is refused here.');
+        return;
+      }
+      stepLane = webauthnPolicy.classicalRetryLane(
+        stepLane || String(found.step.lane || ''));
+    }
+    if (!!found.step.classicalOnly !== retry) {
+      found.step.classicalOnly = retry;
+      pendingMfa.set(mfaId, found.step);
+    }
     const facts = this.webauthnFacts(baseUrlOf(req), mfaId, found.step, key,
-                                     String(lane || ''));
+                                     stepLane);
     // NO POST-QUANTUM KEY WHERE THE PROFILE REQUIRES ONE (#718): refused
     // before the ceremony is armed, so nobody touches a key the policy
     // would refuse — and recorded as the refusal it is, a session refused.
@@ -17384,8 +17506,12 @@ class Authn {
           // WebAuthn Level 3 section 7.1: the credential's alg must be one
           // of the pubKeyCredParams this realm offered (#105), in the lane
           // the ceremony was armed in (#643).
+          // The classical retry's list where the step was armed for one
+          // (#944), so a credential the retry did not ask for is refused
+          // by the same check.
           expectedAlgorithms: webauthnPolicy.algorithmIds(step.lane ||
-                                                          'classical')
+                                                          'classical',
+                                                          !!step.classicalOnly)
         });
         if (verdict.ok) {
           // ---------------------------------------------------------------

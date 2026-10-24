@@ -1127,6 +1127,14 @@
     "en": "ba077a59ecf25ecb",
     "text": "Tinatanggap ng `off` (ang default) ang passkey anuman ang algorithm nito sa pag-sign. Ang `sign-in` ay tumatanggap lang ng POST-QUANTUM na passkey, isang may algorithm na ML-DSA-44, ML-DSA-65 o ML-DSA-87 (RFC 9964), kapag nagsa-sign in ito ng tao, bilang unang credential o bilang second factor; puwede pa ring i-register ang classical. Tinatanggihan din ng `registration-and-sign-in` ang classical sa pag-register, at ML-DSA lang ang inaalok noon ng enrolment. Ang algorithm ang nagpapasya, hindi ang lane kung saan ginawa ang key. Tinatanggihan habang walang inaalok na ML-DSA ang realm (walang pinapangalanan ang webauthn.algorithms, at hindi naka-on ang webauthn.pqcOnly o ang webauthn.pqcAlongsideClassical)."
   },
+  "passkey.FIELDS.postQuantumAllowCredentials.label": {
+    "en": "295b04bef9cf50bc",
+    "text": "Mga passkey na pinapangalanan ng sign-in kapag kailangan ang post-quantum"
+  },
+  "passkey.FIELDS.postQuantumAllowCredentials.what": {
+    "en": "af7666466d67e760",
+    "text": "Ang `realm` (ang default) ay sumusunod sa webauthn.postQuantumAllowCredentials ng realm. Binabasa lamang habang hinihingi ng postQuantumRequired ang post-quantum na passkey sa sign-in. Ang `narrow` ay pinapangalanan lamang ang mga post-quantum (ML-DSA) na passkey ng tao sa request ng passkey step, kaya hindi kailanman inaalok ang classical, at ang taong ang device ay may hawak lamang ng kanyang classical na passkey ay makakakita ng sariling mensahe ng platform na \"walang nahanap na passkey\". Ang `list-and-refuse` ay pinapangalanan ang bawat passkey na hawak niya at tinatanggihan ang classical pagkatapos ng ceremony, na may page na nagsasabing kailangan ng application na ito ang post-quantum na passkey at kung saan magdadagdag nito; maaaring pumili ang tao ng passkey na tatanggihan. Alinman dito, ang taong walang hawak na post-quantum na passkey ay sinasabihan bago ang anumang ceremony. Kapag hindi isinama sa save, pinananatili ang `realm`."
+  },
   "passkey.FIELDS.passkeyHints.label": {
     "en": "7445bda72b06c415",
     "text": "Mga hint na ipinapadala ng \"Create a passkey\""
@@ -1246,6 +1254,10 @@
   "passkey.SCHEMA.attributes.stsPasskeyPostQuantumRequired.what": {
     "en": "ba077a59ecf25ecb",
     "text": "Tinatanggap ng `off` (ang default) ang passkey anuman ang algorithm nito sa pag-sign. Ang `sign-in` ay tumatanggap lang ng POST-QUANTUM na passkey, isang may algorithm na ML-DSA-44, ML-DSA-65 o ML-DSA-87 (RFC 9964), kapag nagsa-sign in ito ng tao, bilang unang credential o bilang second factor; puwede pa ring i-register ang classical. Tinatanggihan din ng `registration-and-sign-in` ang classical sa pag-register, at ML-DSA lang ang inaalok noon ng enrolment. Ang algorithm ang nagpapasya, hindi ang lane kung saan ginawa ang key. Tinatanggihan habang walang inaalok na ML-DSA ang realm (walang pinapangalanan ang webauthn.algorithms, at hindi naka-on ang webauthn.pqcOnly o ang webauthn.pqcAlongsideClassical)."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyPostQuantumAllowCredentials.what": {
+    "en": "af7666466d67e760",
+    "text": "Ang `realm` (ang default) ay sumusunod sa webauthn.postQuantumAllowCredentials ng realm. Binabasa lamang habang hinihingi ng postQuantumRequired ang post-quantum na passkey sa sign-in. Ang `narrow` ay pinapangalanan lamang ang mga post-quantum (ML-DSA) na passkey ng tao sa request ng passkey step, kaya hindi kailanman inaalok ang classical, at ang taong ang device ay may hawak lamang ng kanyang classical na passkey ay makakakita ng sariling mensahe ng platform na \"walang nahanap na passkey\". Ang `list-and-refuse` ay pinapangalanan ang bawat passkey na hawak niya at tinatanggihan ang classical pagkatapos ng ceremony, na may page na nagsasabing kailangan ng application na ito ang post-quantum na passkey at kung saan magdadagdag nito; maaaring pumili ang tao ng passkey na tatanggihan. Alinman dito, ang taong walang hawak na post-quantum na passkey ay sinasabihan bago ang anumang ceremony. Kapag hindi isinama sa save, pinananatili ang `realm`."
   },
   "passkey.SCHEMA.attributes.stsPasskeyHintsPasskey.what": {
     "en": "2ffa66aabab7a053",

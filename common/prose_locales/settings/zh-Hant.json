@@ -1103,6 +1103,14 @@
     "en": "e35e276b9d933828",
     "text": "開啟後，一個人可以同時持有傳統密碼金鑰與後量子（ML-DSA）密碼金鑰，在能同時建立兩者的驗證器上可放在同一裝置。每個密碼金鑰都在此人選擇的「通道」中建立：傳統通道要求去掉 ML-DSA 的 `webauthn.algorithms`（若一個不剩則為 `ES256` 與 `RS256`），後量子通道只要求 ML-DSA。每個通道都有自己的使用者識別碼，因此第二個密碼金鑰不會在驗證器上取代第一個，並有自己的排除清單；憑證管理工具以表明其演算法的名稱顯示後量子密碼金鑰——建立時為 `<username>+ml-dsa`，當此人的所有後量子密碼金鑰都使用同一演算法時為 `<username>+ml-dsa-65`（例如）——這個名稱從不用於登入。`webauthn.maxKeysPerPerson` 計入兩個通道。`webauthn.pqcOnly` 開啟時不能開啟。關閉時，每個儀式都與以前相同，已註冊的後量子密碼金鑰仍可登入；不能再建立新的。"
   },
+  "webauthn.postQuantumAllowCredentials|label": {
+    "en": "295b04bef9cf50bc",
+    "text": "要求後量子密碼金鑰時登入所列出的密碼金鑰"
+  },
+  "webauthn.postQuantumAllowCredentials|description": {
+    "en": "f34caf08dceeedd3",
+    "text": "僅在密碼金鑰原則要求登入時使用後量子密碼金鑰（`postQuantumRequired`）時讀取，且僅當所選設定檔的 `postQuantumAllowCredentials` 列為 `realm` 時。`narrow`（預設值）在密碼金鑰步驟的 `allowCredentials` 中只列出此人的後量子（ML-DSA）密碼金鑰，因此從不提供傳統密碼金鑰——但裝置上只存有其傳統密碼金鑰的人會看到平台自己的「找不到密碼金鑰」訊息。`list-and-refuse` 列出此人持有的每個密碼金鑰，並在儀式結束後拒絕傳統密碼金鑰（STS-AUTHN-0356），同時顯示一個頁面，說明該應用程式要求後量子密碼金鑰以及在哪裡新增。代價是：此人可能選擇一個將被拒絕的密碼金鑰。無論哪種方式，不持有任何後量子密碼金鑰的人都會在任何儀式之前得到告知。"
+  },
   "webauthn.userVerification|label": {
     "en": "8b134177fe992d91",
     "text": "使用者驗證"

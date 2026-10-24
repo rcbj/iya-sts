@@ -1567,7 +1567,14 @@ class AdminApi {
               '`slh-dsa`, `composite-ml-dsa`; set, it demands a trusted ' +
               'statement and refuses any other at registration ' +
               '(STS-AUTHN-0411), and at sign-in while ' +
-              '`enforceAttestationAtSignIn` is on (STS-AUTHN-0412).',
+              '`enforceAttestationAtSignIn` is on (STS-AUTHN-0412). ' +
+              '`postQuantumAllowCredentials` (`realm`, ' +
+              '#946; optional) chooses how the passkey step names the ' +
+              'keys while one is required: `narrow` the post-quantum ones ' +
+              'only, `list-and-refuse` every one, a classical assertion ' +
+              'then refused after the ceremony with a page saying why, ' +
+              'and `realm` the realm\'s ' +
+              'webauthn.postQuantumAllowCredentials.',
         example: { allowUsernameless: false, requireUsernameless: false,
                    securityKeyResidentKey: 'required',
                    backupEligibility: 'allow',
@@ -1580,7 +1587,8 @@ class AdminApi {
                    userDisplayName: 'displayName, givenName sn',
                    rpNameExtras: 'none', credentialLabel: '',
                    aggregateDevices: true, postQuantumRequired: 'off',
-                   attestationAlgorithms: 'none' }
+                   attestationAlgorithms: 'none',
+                   postQuantumAllowCredentials: 'realm' }
       },
       // #539: the fifth kind, with named profiles chosen by application.
       locale: {
