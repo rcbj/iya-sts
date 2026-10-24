@@ -1135,6 +1135,22 @@
     "en": "af7666466d67e760",
     "text": "Ang `realm` (ang default) ay sumusunod sa webauthn.postQuantumAllowCredentials ng realm. Binabasa lamang habang hinihingi ng postQuantumRequired ang post-quantum na passkey sa sign-in. Ang `narrow` ay pinapangalanan lamang ang mga post-quantum (ML-DSA) na passkey ng tao sa request ng passkey step, kaya hindi kailanman inaalok ang classical, at ang taong ang device ay may hawak lamang ng kanyang classical na passkey ay makakakita ng sariling mensahe ng platform na \"walang nahanap na passkey\". Ang `list-and-refuse` ay pinapangalanan ang bawat passkey na hawak niya at tinatanggihan ang classical pagkatapos ng ceremony, na may page na nagsasabing kailangan ng application na ito ang post-quantum na passkey at kung saan magdadagdag nito; maaaring pumili ang tao ng passkey na tatanggihan. Alinman dito, ang taong walang hawak na post-quantum na passkey ay sinasabihan bago ang anumang ceremony. Kapag hindi isinama sa save, pinananatili ang `realm`."
   },
+  "passkey.FIELDS.registrationAlgorithms.label": {
+    "en": "48d2a5935e526db5",
+    "text": "Mga algorithm na inaalok ng pag-register ng passkey"
+  },
+  "passkey.FIELDS.registrationAlgorithms.what": {
+    "en": "4ff3748f6cb3a6f1",
+    "text": "Inaalok ng `realm` (ang default) ang webauthn.algorithms ng realm. Kung hindi, ang mga algorithm sa pag-sign na inaalok ng pag-register ng passkey sa mga tao ng profile na ito, ayon sa pagkakasunod ng kagustuhan (ginagawa ng authenticator ang una nitong sinusuportahan), mula sa mga algorithm na puwedeng pangalanan ng webauthn.algorithms. Puwede itong paliitin o ayusin muli ng susunod na row, at tinatanggihan sa pag-register ang passkey na ang algorithm ay hindi isa sa mga inaalok ng profile na ito. Kapag hindi isinama sa pag-save, pinapanatili ang `realm`."
+  },
+  "passkey.FIELDS.registrationMode.label": {
+    "en": "ca3432814ea1b7a3",
+    "text": "Mga post-quantum na algorithm sa pag-register"
+  },
+  "passkey.FIELDS.registrationMode.what": {
+    "en": "1466dbe275c566e7",
+    "text": "Sinusunod ng `realm` (ang default) ang webauthn.pqcOnly at ang webauthn.pqcAlongsideClassical. ML-DSA lang ang inaalok ng `pq-only`, at tinatanggihan nito ang pag-ulit gamit ang mga classical na algorithm. Inaalok muna ng `pq-first` ang ML-DSA at pagkatapos ang mga classical na algorithm, kahit ML-DSA lang ang hinihingi ng realm. Walang inaalok na ML-DSA ang `classical-only` at walang post-quantum na passkey katabi ng classical, para sa mga taong pumapalya ang device sa pag-register ng ML-DSA. Tinatanggihan kapag ang postQuantumRequired ay hindi off o kapag may nakatakdang attestationAlgorithms (classical-only), at kapag walang ML-DSA sa mga inaalok na algorithm (pq-only, pq-first). Kapag hindi isinama sa pag-save, pinapanatili ang `realm`."
+  },
   "passkey.FIELDS.passkeyHints.label": {
     "en": "7445bda72b06c415",
     "text": "Mga hint na ipinapadala ng \"Create a passkey\""
@@ -1258,6 +1274,14 @@
   "passkey.SCHEMA.attributes.stsPasskeyPostQuantumAllowCredentials.what": {
     "en": "af7666466d67e760",
     "text": "Ang `realm` (ang default) ay sumusunod sa webauthn.postQuantumAllowCredentials ng realm. Binabasa lamang habang hinihingi ng postQuantumRequired ang post-quantum na passkey sa sign-in. Ang `narrow` ay pinapangalanan lamang ang mga post-quantum (ML-DSA) na passkey ng tao sa request ng passkey step, kaya hindi kailanman inaalok ang classical, at ang taong ang device ay may hawak lamang ng kanyang classical na passkey ay makakakita ng sariling mensahe ng platform na \"walang nahanap na passkey\". Ang `list-and-refuse` ay pinapangalanan ang bawat passkey na hawak niya at tinatanggihan ang classical pagkatapos ng ceremony, na may page na nagsasabing kailangan ng application na ito ang post-quantum na passkey at kung saan magdadagdag nito; maaaring pumili ang tao ng passkey na tatanggihan. Alinman dito, ang taong walang hawak na post-quantum na passkey ay sinasabihan bago ang anumang ceremony. Kapag hindi isinama sa save, pinananatili ang `realm`."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyRegistrationAlgorithms.what": {
+    "en": "4ff3748f6cb3a6f1",
+    "text": "Inaalok ng `realm` (ang default) ang webauthn.algorithms ng realm. Kung hindi, ang mga algorithm sa pag-sign na inaalok ng pag-register ng passkey sa mga tao ng profile na ito, ayon sa pagkakasunod ng kagustuhan (ginagawa ng authenticator ang una nitong sinusuportahan), mula sa mga algorithm na puwedeng pangalanan ng webauthn.algorithms. Puwede itong paliitin o ayusin muli ng susunod na row, at tinatanggihan sa pag-register ang passkey na ang algorithm ay hindi isa sa mga inaalok ng profile na ito. Kapag hindi isinama sa pag-save, pinapanatili ang `realm`."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyRegistrationMode.what": {
+    "en": "1466dbe275c566e7",
+    "text": "Sinusunod ng `realm` (ang default) ang webauthn.pqcOnly at ang webauthn.pqcAlongsideClassical. ML-DSA lang ang inaalok ng `pq-only`, at tinatanggihan nito ang pag-ulit gamit ang mga classical na algorithm. Inaalok muna ng `pq-first` ang ML-DSA at pagkatapos ang mga classical na algorithm, kahit ML-DSA lang ang hinihingi ng realm. Walang inaalok na ML-DSA ang `classical-only` at walang post-quantum na passkey katabi ng classical, para sa mga taong pumapalya ang device sa pag-register ng ML-DSA. Tinatanggihan kapag ang postQuantumRequired ay hindi off o kapag may nakatakdang attestationAlgorithms (classical-only), at kapag walang ML-DSA sa mga inaalok na algorithm (pq-only, pq-first). Kapag hindi isinama sa pag-save, pinapanatili ang `realm`."
   },
   "passkey.SCHEMA.attributes.stsPasskeyHintsPasskey.what": {
     "en": "2ffa66aabab7a053",
@@ -1454,6 +1478,26 @@
   "passkey.sentences.recoveryOperatorOnly": {
     "en": "1a8f0b4a3319a435",
     "text": "ang taong may hawak na passkey ay makakapag-recover lang ng account sa pamamagitan ng isang administrator, at pagkatapos ay hindi makakarating sa anumang application hangga't hindi siya nai-sign in ng passkey na tumutugon sa patakarang ito"
+  },
+  "passkey.sentences.registrationList": {
+    "en": "fec8859790708542",
+    "text": "inaalok ng pag-register ng passkey ang {{algorithms}}, sa ganoong pagkakasunod, kapalit ng listahan ng realm"
+  },
+  "passkey.sentences.registrationPqOnly": {
+    "en": "10bb1b9e748c737c",
+    "text": "post-quantum (ML-DSA) na algorithm lang ang inaalok ng pag-register ng passkey, mula sa {{algorithms}}, at walang classical na pag-ulit"
+  },
+  "passkey.sentences.registrationPqFirst": {
+    "en": "6d255de3f15849dd",
+    "text": "inaalok muna ng pag-register ng passkey ang mga post-quantum (ML-DSA) na algorithm at pagkatapos ang mga classical, mula sa {{algorithms}}"
+  },
+  "passkey.sentences.registrationClassicalOnly": {
+    "en": "34338f9da2211979",
+    "text": "classical na algorithm lang ang inaalok ng pag-register ng passkey, mula sa {{algorithms}}: walang ginagawang post-quantum na passkey"
+  },
+  "passkey.sentences.param.realmAlgorithms": {
+    "en": "62dd60f1d67057b4",
+    "text": "ang webauthn.algorithms ng realm"
   },
   "kinds.locale.label": {
     "en": "1219a9dcfb9aa19f",

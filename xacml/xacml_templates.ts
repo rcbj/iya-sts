@@ -522,6 +522,10 @@ const PASSKEY_ATTRIBUTE = {
     xacmlRequest.VOCABULARY.PASSKEY_ATTESTATION_POST_QUANTUM,
   ATTESTATION_ALGORITHM_ALLOWED:
     xacmlRequest.VOCABULARY.PASSKEY_ATTESTATION_ALGORITHM_ALLOWED,
+  // Whether the selected profile offers the key's algorithm at
+  // registration (#940).
+  PROFILE_ALGORITHM_OFFERED:
+    xacmlRequest.VOCABULARY.PASSKEY_PROFILE_ALGORITHM_OFFERED,
   ATTESTATION_POLICY: xacmlRequest.VOCABULARY.SETTING_PREFIX +
                       'webauthn.attestationPolicy',
   ALLOWED_AAGUIDS: xacmlRequest.VOCABULARY.SETTING_PREFIX +
@@ -535,7 +539,8 @@ const PASSKEY_ATTRIBUTE = {
   VERDICTS: ['allow', 'refuse'],
   // The fact groups a question may carry.
   GROUPS: ['backup-eligible', 'pin-length', 'serial', 'attestation',
-           'algorithm', 'attestation-algorithm', 'recovery', 'upgrade'],
+           'algorithm', 'attestation-algorithm', 'profile-algorithm',
+           'recovery', 'upgrade'],
   // The reasons the built-in rules give, and the code each records, per
   // action. A door words its refusal by the reason.
   REASONS: {
@@ -554,6 +559,8 @@ const PASSKEY_ATTRIBUTE = {
     // #941: the algorithms the attestation was signed with.
     'attestation-algorithm': { register: 'STS-AUTHN-0411',
                                use: 'STS-AUTHN-0412' },
+    // #940: an algorithm the selected profile does not offer.
+    'profile-algorithm': { register: 'STS-AUTHN-0432', use: '' },
     // #724: a RECOVER_ACTION question records the `use` column.
     'recovery-self-service': { register: '', use: 'STS-AUTHN-0380' },
     'recovery-enrol-first': { register: '', use: 'STS-AUTHN-0381' }
@@ -2698,6 +2705,26 @@ const TEMPLATES: TemplateRow[] = [
           and([carries('attestation-algorithm')].concat(held).concat([
             not(fact(R2, PK.ATTESTATION_ALGORITHM_ALLOWED, true))])));
       };
+      // A PASSKEY WHOSE ALGORITHM THE SELECTED PROFILE DOES NOT OFFER
+      // (#940), at register-passkey only, after the attestation-algorithm
+      // rule: on the one computed fact, OFFERED, which question() decided
+      // from the profile's resolved list. Only where the profile gives its
+      // population registration rows of its own (`registrationAlgorithmsFrom`
+      // `profile`): under the realm's settings the ceremony's own
+      // offered-algorithm check is the rule, as it always was, and a key
+      // written by value is not newly refused.
+      const profileAlgorithmRule = function (): any {
+        log.debug("Entering profileAlgorithmRule().");
+        log.debug("Leaving profileAlgorithmRule().");
+        return pkRule(PK.REGISTER_ACTION, 'profile-algorithm',
+          'Refuse a passkey whose signature algorithm is not one the ' +
+          'selected passkey policy profile offers at registration ' +
+          '(registrationAlgorithms and registrationMode, #940).',
+          and([carries('profile-algorithm'),
+               stringIs(env, pkSetting('registrationAlgorithmsFrom'),
+                        'profile'),
+               not(fact(R2, PK.PROFILE_ALGORITHM_OFFERED, true))]));
+      };
       const passkeyRules: any[] = decidePasskeys ? [
         backupRule(PK.REGISTER_ACTION),
         pinRule(PK.REGISTER_ACTION),
@@ -2716,6 +2743,7 @@ const TEMPLATES: TemplateRow[] = [
                not(fact(R2, PK.SERIAL_HELD, true))])),
         postQuantumRule(PK.REGISTER_ACTION),
         attestationAlgorithmRule(PK.REGISTER_ACTION),
+        profileAlgorithmRule(),
         { id: options.idBase + ':rule:passkey-register-allowed',
           effect: model.EFFECT.PERMIT,
           description: 'Register every other passkey.',

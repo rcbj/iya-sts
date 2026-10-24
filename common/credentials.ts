@@ -3615,6 +3615,9 @@ class Credentials {
     // ceremony's, else what `keyAlgorithm()` reads off the key itself, so
     // a key written by value is held to a post-quantum requirement too;
     // whether it IS post-quantum is the question's to say, not this door's.
+    // The same fact holds it to the algorithms the person's passkey profile
+    // offers at registration (#940, the `profile-algorithm` group), whichever
+    // door made it.
     const given = credential || {};
     const facts: Record<string, any> = {
       username: name,
@@ -3675,8 +3678,10 @@ class Credentials {
           : (synced.reason === 'post-quantum' ? 'post-quantum'
             : (synced.reason === 'attestation-algorithm'
               ? 'attestation-algorithm'
-              : (/^serial-/.test(synced.reason) ? 'device-serial'
-                                                : 'passkey-policy'))));
+              // #940: an algorithm the person's profile does not offer.
+              : (synced.reason === 'profile-algorithm' ? 'profile-algorithm'
+                : (/^serial-/.test(synced.reason) ? 'device-serial'
+                                                  : 'passkey-policy')))));
       log.info('credentials: a passkey was NOT enrolled for ' + name +
                ' (' + synced.code + ', ' + reason + '): ' + synced.why);
       log.debug("Leaving Credentials.addKey(). Refused by the passkey " +
@@ -9210,6 +9215,11 @@ class Credentials {
       lane: lane,
       // The classical retry (#944): the algorithms less ML-DSA.
       classicalOnly: classicalOnly,
+      // WHAT THIS CEREMONY OFFERS (#940), under the person's passkey
+      // profile as selected above: the finish holds the credential to it as
+      // well as to what is offered then (`heldToOffer()`), so neither a
+      // client nor a profile changed in between widens it.
+      offered: webauthnPolicy.algorithmIds(lane, classicalOnly),
       // NO LABEL (#470): the key takes its provider's or its group's name, and
       // the page asks for a nickname once it is registered.
       label: '',
@@ -9386,6 +9396,12 @@ class Credentials {
                    { ok: false, reason: 'browser', errors: [said] });
     }
 
+    // THE PERSON'S PASSKEY PROFILE (#940) where the door selected none, as
+    // the begin selected it, so the list now is read under the profile the
+    // ceremony was armed under.
+    if (!this.deps.passkeyPolicy.hasSelection()) {
+      this.deps.passkeyPolicy.select(name, '');
+    }
     let verdict;
     try {
       verdict = webauthnVerifier.verifyRegistration({
@@ -9401,9 +9417,11 @@ class Credentials {
         // classical lane, or a classical key the post-quantum one, is refused
         // as an algorithm that was not offered (STS-AUTHN-0228).
         // The classical retry's list where it was begun as one (#944).
-        expectedAlgorithms: webauthnPolicy.algorithmIds(held.lane,
-                                                        held.classicalOnly ===
-                                                          true)
+        // And no wider than what the begin offered under the person's
+        // passkey profile (#940), whatever the browser posted.
+        expectedAlgorithms: webauthnPolicy.heldToOffer(
+          webauthnPolicy.algorithmIds(held.lane, held.classicalOnly === true),
+          held.offered)
       });
     } catch (e) {
       log.debug('Leaving Credentials.checkKeyEnrolment(). Verification threw.');

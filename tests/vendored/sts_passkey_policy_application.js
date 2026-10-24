@@ -153,12 +153,29 @@ async function test() {
             Array.isArray(policies.body.passkey.fields),
             "GET /policies answered " + policies.status + " " +
             String(policies.raw).slice(0, 300));
+  check("THE PASSKEY POLICY API EXPOSES POPULATION REGISTRATION ALGORITHMS " +
+        "AND MODE", function () {
+    const fields = policies.body.passkey.fields;
+    const algorithms = fields.filter(function (field) {
+      return field.key === "registrationAlgorithms";
+    })[0];
+    const mode = fields.filter(function (field) {
+      return field.key === "registrationMode";
+    })[0];
+    assert.ok(algorithms && algorithms.type === "list" &&
+              algorithms.values.indexOf("ML-DSA-65") >= 0,
+      JSON.stringify(algorithms));
+    assert.ok(mode && mode.type === "enum" &&
+              mode.values.indexOf("classical-only") >= 0,
+      JSON.stringify(mode));
+  });
   const defaults = {};
   policies.body.passkey.fields.forEach(function (field) {
     defaults[field.key] = field.default;
   });
   await saveNamed(defaults, STRICT, { selectApplications: APP,
-                                      precedence: 5 });
+    precedence: 5, registrationAlgorithms: "ES256,RS256",
+    registrationMode: "classical-only" });
   await saveNamed(defaults, BYCLIENT, {
     selectApplications: CLIENT.toUpperCase(), selectGroups: "staff-" + TAG,
     precedence: 40 });
@@ -224,8 +241,20 @@ async function test() {
     })[0];
     assert.ok(strict, JSON.stringify(named));
     assert.deepStrictEqual(strict.selectApplications, [APP, LONE]);
+    assert.deepStrictEqual(strict.registrationAlgorithms, ["ES256", "RS256"]);
+    assert.strictEqual(strict.registrationMode, "classical-only");
   });
-  assert.ok(checks >= 5, "only " + checks + " checks ran; a section has " +
+  const conflict = await call("POST", "/policies/save-passkey-policy",
+    Object.assign({ profile: "conflict-" + TAG }, defaults, {
+      registrationAlgorithms: "ES256", registrationMode: "classical-only",
+      postQuantumRequired: "registration-and-sign-in" }));
+  check("CLASSICAL-ONLY CANNOT BE SAVED BESIDE A POST-QUANTUM REQUIRED " +
+        "POLICY", function () {
+    assert.strictEqual(conflict.status, 400, String(conflict.raw).slice(0, 300));
+    assert.ok(JSON.stringify(conflict.body).indexOf("registrationMode") >= 0,
+      JSON.stringify(conflict.body).slice(0, 400));
+  });
+  assert.ok(checks >= 7, "only " + checks + " checks ran; a section has " +
             "stopped being called.");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");
@@ -237,7 +266,8 @@ program
   .name("sts_passkey_policy_application")
   .description("An application's passkey policies read through /admin-api " +
       "(page.passkeyPolicies), and the policy page's application search " +
-      "and its Add saved by identifier (#609).")
+      "and its Add saved by identifier (#609), plus population registration " +
+      "algorithms, modes and the classical-only / PQ-required conflict (#940).")
   // Accepted and ignored: run-report.js passes --url to every job.
   .addOption(new Option("-u, --url <url>",
       "base url (unused: this test needs no browser)"))

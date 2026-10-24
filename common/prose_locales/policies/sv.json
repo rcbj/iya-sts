@@ -1135,6 +1135,22 @@
     "en": "af7666466d67e760",
     "text": "`realm` (standard) följer sfärens webauthn.postQuantumAllowCredentials. Läses bara medan postQuantumRequired kräver en postkvantnyckel vid inloggning. `narrow` anger bara personens postkvantnycklar (ML-DSA) i nyckelstegets begäran, så en klassisk nyckel erbjuds aldrig, och en person vars enhet bara har deras klassiska nyckel ser plattformens eget meddelande ”ingen nyckel hittades”. `list-and-refuse` anger varje nyckel personen har och avvisar en klassisk efter ceremonin, med en sida som säger att det här programmet kräver en postkvantnyckel och var man lägger till en; personen kan då välja en nyckel som kommer att avvisas. I båda fallen får en person som inte har någon postkvantnyckel veta det före varje ceremoni. Utelämnad vid en sparning behålls `realm`."
   },
+  "passkey.FIELDS.registrationAlgorithms.label": {
+    "en": "48d2a5935e526db5",
+    "text": "Algoritmer som en nyckelregistrering erbjuder"
+  },
+  "passkey.FIELDS.registrationAlgorithms.what": {
+    "en": "4ff3748f6cb3a6f1",
+    "text": "`realm` (standardvärdet) erbjuder sfärens webauthn.algorithms. Annars de signaturalgoritmer som en nyckelregistrering erbjuder den här profilens personer, i den ordning de föredras (en autentiserare skapar den första den stöder), bland de algoritmer som webauthn.algorithms kan namnge. Nästa rad kan begränsa eller ordna om listan, och en nyckel vars algoritm inte är en som den här profilen erbjuder nekas när den registreras. Utelämnad vid en sparning behålls `realm`."
+  },
+  "passkey.FIELDS.registrationMode.label": {
+    "en": "ca3432814ea1b7a3",
+    "text": "Postkvantalgoritmer vid registrering"
+  },
+  "passkey.FIELDS.registrationMode.what": {
+    "en": "1466dbe275c566e7",
+    "text": "`realm` (standardvärdet) följer webauthn.pqcOnly och webauthn.pqcAlongsideClassical. `pq-only` erbjuder bara ML-DSA och nekar ett nytt försök med de klassiska algoritmerna. `pq-first` erbjuder ML-DSA först och de klassiska algoritmerna efter, även där sfären bara begär ML-DSA. `classical-only` erbjuder ingen ML-DSA och ingen postkvantnyckel bredvid en klassisk, för personer vars enheter misslyckas med en ML-DSA-registrering. Nekas med postQuantumRequired annat än off eller med attestationAlgorithms angivet (classical-only), och där de erbjudna algoritmerna inte namnger någon ML-DSA (pq-only, pq-first). Utelämnad vid en sparning behålls `realm`."
+  },
   "passkey.FIELDS.passkeyHints.label": {
     "en": "7445bda72b06c415",
     "text": "Tips som ”Skapa en nyckel” skickar"
@@ -1258,6 +1274,14 @@
   "passkey.SCHEMA.attributes.stsPasskeyPostQuantumAllowCredentials.what": {
     "en": "af7666466d67e760",
     "text": "`realm` (standard) följer sfärens webauthn.postQuantumAllowCredentials. Läses bara medan postQuantumRequired kräver en postkvantnyckel vid inloggning. `narrow` anger bara personens postkvantnycklar (ML-DSA) i nyckelstegets begäran, så en klassisk nyckel erbjuds aldrig, och en person vars enhet bara har deras klassiska nyckel ser plattformens eget meddelande ”ingen nyckel hittades”. `list-and-refuse` anger varje nyckel personen har och avvisar en klassisk efter ceremonin, med en sida som säger att det här programmet kräver en postkvantnyckel och var man lägger till en; personen kan då välja en nyckel som kommer att avvisas. I båda fallen får en person som inte har någon postkvantnyckel veta det före varje ceremoni. Utelämnad vid en sparning behålls `realm`."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyRegistrationAlgorithms.what": {
+    "en": "4ff3748f6cb3a6f1",
+    "text": "`realm` (standardvärdet) erbjuder sfärens webauthn.algorithms. Annars de signaturalgoritmer som en nyckelregistrering erbjuder den här profilens personer, i den ordning de föredras (en autentiserare skapar den första den stöder), bland de algoritmer som webauthn.algorithms kan namnge. Nästa rad kan begränsa eller ordna om listan, och en nyckel vars algoritm inte är en som den här profilen erbjuder nekas när den registreras. Utelämnad vid en sparning behålls `realm`."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyRegistrationMode.what": {
+    "en": "1466dbe275c566e7",
+    "text": "`realm` (standardvärdet) följer webauthn.pqcOnly och webauthn.pqcAlongsideClassical. `pq-only` erbjuder bara ML-DSA och nekar ett nytt försök med de klassiska algoritmerna. `pq-first` erbjuder ML-DSA först och de klassiska algoritmerna efter, även där sfären bara begär ML-DSA. `classical-only` erbjuder ingen ML-DSA och ingen postkvantnyckel bredvid en klassisk, för personer vars enheter misslyckas med en ML-DSA-registrering. Nekas med postQuantumRequired annat än off eller med attestationAlgorithms angivet (classical-only), och där de erbjudna algoritmerna inte namnger någon ML-DSA (pq-only, pq-first). Utelämnad vid en sparning behålls `realm`."
   },
   "passkey.SCHEMA.attributes.stsPasskeyHintsPasskey.what": {
     "en": "2ffa66aabab7a053",
@@ -1454,6 +1478,26 @@
   "passkey.sentences.recoveryOperatorOnly": {
     "en": "1a8f0b4a3319a435",
     "text": "en person som har en nyckel återställer sitt konto bara genom en administratör, och når sedan inget program förrän en nyckel som uppfyller den här policyn har loggat in hen"
+  },
+  "passkey.sentences.registrationList": {
+    "en": "fec8859790708542",
+    "text": "en nyckelregistrering erbjuder {{algorithms}}, i den ordningen, i stället för sfärens lista"
+  },
+  "passkey.sentences.registrationPqOnly": {
+    "en": "10bb1b9e748c737c",
+    "text": "en nyckelregistrering erbjuder bara postkvantalgoritmer (ML-DSA), bland {{algorithms}}, och inget klassiskt nytt försök"
+  },
+  "passkey.sentences.registrationPqFirst": {
+    "en": "6d255de3f15849dd",
+    "text": "en nyckelregistrering erbjuder postkvantalgoritmer (ML-DSA) först och de klassiska efter dem, bland {{algorithms}}"
+  },
+  "passkey.sentences.registrationClassicalOnly": {
+    "en": "34338f9da2211979",
+    "text": "en nyckelregistrering erbjuder bara klassiska algoritmer, bland {{algorithms}}: ingen postkvantnyckel skapas"
+  },
+  "passkey.sentences.param.realmAlgorithms": {
+    "en": "62dd60f1d67057b4",
+    "text": "sfärens webauthn.algorithms"
   },
   "kinds.locale.label": {
     "en": "1219a9dcfb9aa19f",

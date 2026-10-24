@@ -99,6 +99,7 @@
   "field.attributeName": "an attribute name, or empty",
   "field.listFrom": "in order, from ",
   "field.listOrNone": ", or none",
+  "field.listOrRealm": ", or realm (the realm's list)",
   "field.thisProfile": "this profile",
   "field.defaultRealmProfile": "the default realm's profile",
   "field.builtIn": "built-in default",

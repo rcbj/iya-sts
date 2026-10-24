@@ -51,6 +51,8 @@ const REASONS = {
   // #941: what the attestation was signed with.
   'attestation-algorithm': { register: 'STS-AUTHN-0411',
                              use: 'STS-AUTHN-0412' },
+  // #940: an algorithm the selected profile does not offer.
+  'profile-algorithm': { register: 'STS-AUTHN-0432', use: '' },
   // #724: `recover-account` records the `use` column.
   'recovery-self-service': { register: '', use: 'STS-AUTHN-0380' },
   'recovery-enrol-first': { register: '', use: 'STS-AUTHN-0381' }
@@ -198,6 +200,15 @@ function strictReading(question) {
       listed && (register || policy.enforceAttestationAtSignIn === true) &&
       q.attestationAlgorithmAllowed !== true) {
     reason = 'attestation-algorithm';
+  }
+  // AN ALGORITHM THE SELECTED PROFILE DOES NOT OFFER (#940), after the
+  // attestation-algorithm rule, at registration only, and only where the
+  // profile sets registration rows of its own: on the one fact question()
+  // computed.
+  if (!reason && register && carries('profile-algorithm') &&
+      policy.registrationAlgorithmsFrom === 'profile' &&
+      q.profileAlgorithmOffered !== true) {
+    reason = 'profile-algorithm';
   }
   const out = reason
     ? { verdict: 'refuse', code: codeFor(reason, q.action), reason: reason }

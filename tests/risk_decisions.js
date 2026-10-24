@@ -204,6 +204,8 @@ function childMain() {
          'passkey-register-post-quantum,' +
          // #941's attestation-algorithm rule, one per stage.
          'passkey-register-attestation-algorithm,' +
+         // #940's profile-algorithm rule, at registration only.
+         'passkey-register-profile-algorithm,' +
          'passkey-register-allowed,' +
          'passkey-use-backup-eligible,passkey-use-pin-length,' +
          'passkey-use-attestation-unchecked,' +
@@ -712,8 +714,9 @@ function childMain() {
          // second-factor rule of #475, the fifteen passkey rules of
          // #536, #718's two post-quantum passkey rules, the five
          // Kerberos-trust exchange rules of #430 Phase 3, #724's three
-         // recovery rules and #941's two attestation-algorithm rules.
-         unprotectedPolicy.policy.rules.length === 92,
+         // recovery rules, #941's two attestation-algorithm rules and
+         // #940's profile-algorithm rule.
+         unprotectedPolicy.policy.rules.length === 93,
          'I5. neverLockOut none puts the console under the three rules, ' +
          'and HIGH refuses it', plain.decision);
 

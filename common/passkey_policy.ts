@@ -258,6 +258,34 @@
 // sent to the issuance policy resolved, as a policy fact, for a realm's
 // own rules.
 //
+// #940 (2026-10-23) added two rows that give a POPULATION its own
+// registration algorithms (rule 3cu; rcbj's decision on the ticket: on the
+// profiles, selected by application or group as `postQuantumRequired` is,
+// falling back to the realm settings):
+//
+//   registrationAlgorithms   `realm` (an empty list, written `realm` rather
+//                            than `none`, because empty means "the realm's
+//                            webauthn.algorithms", not "no algorithm"): an
+//                            ORDERED list of the algorithms a registration
+//                            offers in place of the realm's.
+//   registrationMode         `realm` (follow webauthn.pqcOnly and
+//                            webauthn.pqcAlongsideClassical), `pq-only`
+//                            (ML-DSA only, as pqcOnly), `pq-first` (ML-DSA
+//                            first, then classical — the realm's pqcOnly is
+//                            NOT applied to this population) or
+//                            `classical-only` (no ML-DSA, and no
+//                            post-quantum lane).
+//
+// Named `registration…` because they shape what a REGISTRATION offers and
+// nothing else: `postQuantumRequired` accepts or refuses a passkey, and
+// `attestationAlgorithms` is the attestation's. Both OPTIONAL on a save,
+// `recoveryAssurance`'s arrangement. This leaf stores and checks them;
+// `authn/webauthn_policy.ts` resolves them into `pubKeyCredParams`
+// (`registrationOffer()`, the one answer every registration door asks).
+// A save is refused where they contradict another row (STS-AUTHN-0430,
+// 0431); a key outside the list is refused at the write by the issuance
+// policy (`profile-algorithm`, STS-AUTHN-0432).
+//
 // One profile per realm, inherited from the default realm (answer 3); named
 // policies chosen by application or group are #535.
 //
@@ -319,6 +347,10 @@ interface PolicyField {
   unit?: string;
   // #724: a row a save may leave out, keeping the built-in default.
   optional?: boolean;
+  // #940: a `list` row's word for the empty list (`none` when unset) and
+  // its longest (eight when unset).
+  empty?: string;
+  maxItems?: number;
   label: string;
   what: string;
 }
@@ -376,8 +408,22 @@ interface PasskeyPolicyDeps {
   // Whether the realm in hand offers any ML-DSA algorithm at registration
   // (#718), asked at a save that requires a post-quantum passkey.
   // `authn/webauthn_policy.ts` answers, and it requires this module, so the
-  // default reaches it lazily.
-  offersPostQuantum(): boolean;
+  // default reaches it lazily. Since #940 it is asked of the ROWS being
+  // saved (`rows`), which may give the population its own list and mode.
+  offersPostQuantum(rows?: RegistrationRows): boolean;
+  // Every algorithm a registration under a profile's rows may make (#940):
+  // the union over the lanes and the classical retry, as
+  // `webauthn_policy.ts`'s `registrationAlgorithmsAllowed()` answers it.
+  // Reached lazily, for the same reason.
+  registrationAlgorithmsAllowed(rows: RegistrationRows): string[];
+}
+
+// The rows a registration's algorithms are resolved from (#940), handed to
+// `webauthn_policy.ts` where they are not the selected profile's own.
+interface RegistrationRows {
+  registrationAlgorithms: string[];
+  registrationMode: string;
+  postQuantumRequired: string;
 }
 
 /**
@@ -456,7 +502,18 @@ const SENTENCES: Readonly<Record<string, string>> = Object.freeze({
     'policy has signed them in',
   recoveryOperatorOnly: 'a person who holds a passkey recovers their ' +
     'account only through an administrator, and then reaches no ' +
-    'application until a passkey satisfying this policy has signed them in'
+    'application until a passkey satisfying this policy has signed them in',
+  // #940: said only where the profile sets a registration row of its own.
+  registrationList: 'a passkey registration offers {{algorithms}}, in that ' +
+    'order, in place of the realm\'s list',
+  registrationPqOnly: 'a passkey registration offers only post-quantum ' +
+    '(ML-DSA) algorithms, from {{algorithms}}, and no classical retry',
+  registrationPqFirst: 'a passkey registration offers post-quantum ' +
+    '(ML-DSA) algorithms first and the classical ones after them, from ' +
+    '{{algorithms}}',
+  registrationClassicalOnly: 'a passkey registration offers only classical ' +
+    'algorithms, from {{algorithms}}: no post-quantum passkey is made',
+  'param.realmAlgorithms': 'the realm\'s webauthn.algorithms'
 });
 
 const SELECTORS = [
@@ -572,6 +629,33 @@ const ATTESTATION_ALGORITHM_VALUES: ReadonlyArray<string> =
  * realm's `webauthn.postQuantumAllowCredentials`.
  */
 const POST_QUANTUM_ALLOW_CREDENTIALS = ['realm', 'narrow', 'list-and-refuse'];
+/**
+ * What `registrationMode` may be (#940): `realm` follows webauthn.pqcOnly
+ * and webauthn.pqcAlongsideClassical.
+ */
+const REGISTRATION_MODES = ['realm', 'pq-only', 'pq-first', 'classical-only'];
+/**
+ * How an empty `registrationAlgorithms` is written (#940): the realm's
+ * webauthn.algorithms, so the word is `realm` and not `none`.
+ */
+const REALM_LIST = 'realm';
+// THE ALGORITHMS A PROFILE'S LIST MAY NAME (#940): `webauthn.algorithms`'
+// own values — the verifier's table, which that row mirrors — read from the
+// row so the two cannot drift, less RS1. SHA-1 is offered only by the
+// development-only `webauthn.insecureAlgorithms`, a realm-wide switch, and a
+// population's list is not a way to name it. The literal is for a process
+// whose settings table lacks the row, which none does.
+/**
+ * The algorithms `registrationAlgorithms` may list (#940), as JOSE names.
+ */
+const REGISTRATION_ALGORITHM_VALUES: ReadonlyArray<string> = Object.freeze(
+  ((((config.SETTINGS || []) as any[]).filter(function (row) {
+    return row && row.key === 'webauthn.algorithms';
+  })[0] || {}).csvValues as string[] ||
+   ['ML-DSA-44', 'ML-DSA-65', 'ML-DSA-87', 'ES256', 'RS256'])
+    .filter(function (name) {
+      return name !== 'RS1';
+    }));
 /**
  * What `recoveryAssurance` may be (#724).
  */
@@ -723,6 +807,35 @@ const FIELDS: PolicyField[] = [
           'passkey that will be refused. A person holding no post-quantum ' +
           'passkey is told before any ceremony either way. Left out of a ' +
           'save, `realm` is kept.' },
+  { key: 'registrationAlgorithms',
+    attribute: 'stsPasskeyRegistrationAlgorithms', type: 'list',
+    values: REGISTRATION_ALGORITHM_VALUES.slice(), dflt: REALM_LIST,
+    empty: REALM_LIST, maxItems: REGISTRATION_ALGORITHM_VALUES.length,
+    optional: true,
+    label: 'Algorithms a passkey registration offers',
+    what: '`realm` (the default) offers the realm\'s webauthn.algorithms. ' +
+          'Otherwise the signature algorithms a passkey registration ' +
+          'offers to this profile\'s people, in order of preference (an ' +
+          'authenticator makes the first it supports), from the ' +
+          'algorithms webauthn.algorithms may name. The next row may ' +
+          'narrow or reorder it, and a passkey whose algorithm is not one ' +
+          'this profile offers is refused when it is registered. Left out ' +
+          'of a save, `realm` is kept.' },
+  { key: 'registrationMode', attribute: 'stsPasskeyRegistrationMode',
+    type: 'enum', values: REGISTRATION_MODES.slice(), dflt: 'realm',
+    optional: true,
+    label: 'Post-quantum algorithms at registration',
+    what: '`realm` (the default) follows webauthn.pqcOnly and ' +
+          'webauthn.pqcAlongsideClassical. `pq-only` offers only ML-DSA, ' +
+          'and refuses a retry with the classical algorithms. `pq-first` ' +
+          'offers ML-DSA first and the classical algorithms after it, even ' +
+          'where the realm requests ML-DSA only. `classical-only` offers no ' +
+          'ML-DSA and no post-quantum passkey beside a classical one, for ' +
+          'people whose devices fail an ML-DSA registration. Refused with ' +
+          'postQuantumRequired other than off or with ' +
+          'attestationAlgorithms set (classical-only), and where the ' +
+          'algorithms offered name no ML-DSA (pq-only, pq-first). Left out ' +
+          'of a save, `realm` is kept.' },
   { key: 'passkeyHints', attribute: 'stsPasskeyHintsPasskey', type: 'list',
     values: HINTS.slice(), dflt: 'client-device,hybrid',
     label: 'Hints "Create a passkey" sends',
@@ -962,14 +1075,23 @@ class PasskeyPolicy {
     log.debug("Leaving PasskeyPolicy.defaultDeps().");
     return { log: log, realms: realms, errorCodes: errorCodes,
              gate: issuanceGate,
-             offersPostQuantum: function (): boolean {
+             offersPostQuantum: function (rows?: RegistrationRows): boolean {
                log.debug("Entering offersPostQuantum().");
                // LAZILY (#718): `webauthn_policy.ts` requires this module,
                // and is loaded long before any save asks this.
                const out = require('../authn/webauthn_policy')
-                 .offersPostQuantum() === true;
+                 .offersPostQuantum(rows) === true;
                log.debug("Leaving offersPostQuantum(). " + out);
                return out;
+             },
+             registrationAlgorithmsAllowed: function (
+               rows: RegistrationRows): string[] {
+               log.debug("Entering registrationAlgorithmsAllowed().");
+               // LAZILY (#940), for #718's reason above.
+               const out = require('../authn/webauthn_policy')
+                 .registrationAlgorithmsAllowed(rows);
+               log.debug("Leaving registrationAlgorithmsAllowed().");
+               return Array.isArray(out) ? out.map(String) : [];
              } };
   }
 
@@ -1091,7 +1213,11 @@ class PasskeyPolicy {
       // AN ORDERED LIST OF THE ROW'S VALUES (#531), commas or spaces between
       // them, each once; empty or `none` is the empty list, written `none`
       // so a stored empty list is not read as "no value" and its default.
-      const items = text.toLowerCase() === NO_HINTS ? []
+      // THE ROW'S OWN WORD FOR EMPTY (#940): `realm` for
+      // `registrationAlgorithms`, whose empty list is the realm's, and the
+      // row's own length bound, since that list may name every algorithm.
+      const empty = field.empty || NO_HINTS;
+      const items = text.toLowerCase() === empty ? []
         : text.split(/[\s,]+/).filter(Boolean);
       const unknown = items.filter(function (one) {
         return (field.values || []).indexOf(one) < 0;
@@ -1099,14 +1225,16 @@ class PasskeyPolicy {
       const twice = items.filter(function (one, at) {
         return items.indexOf(one) !== at;
       });
-      if (unknown.length || twice.length || items.length > 8) {
+      if (unknown.length || twice.length ||
+          items.length > (field.maxItems || 8)) {
         log.debug("Leaving PasskeyPolicy.parseField(). Not a list.");
-        return { problem: field.label + ' must be "none" or a list of ' +
-                          (field.values || []).join(', ') + ', each once; ' +
-                          '"' + text.slice(0, 60) + '" is not.' };
+        return { problem: field.label + ' must be "' + empty + '" or a ' +
+                          'list of ' + (field.values || []).join(', ') +
+                          ', each once; "' + text.slice(0, 60) +
+                          '" is not.' };
       }
       log.debug("Leaving PasskeyPolicy.parseField().");
-      return { value: items.length ? items.join(',') : NO_HINTS };
+      return { value: items.length ? items.join(',') : empty };
     }
     if (field.type === 'int') {
       // `service_account_policy.ts`'s whole number, bounded by the row.
@@ -1704,6 +1832,102 @@ class PasskeyPolicy {
     const out = chosen === 'list-and-refuse' ? 'list-and-refuse' : 'narrow';
     log.debug("Leaving PasskeyPolicy.postQuantumAllowCredentials(). " + out +
               (row === 'realm' ? ' (the realm\'s setting)' : ''));
+    return out;
+  }
+
+  // -------------------------------------------------------------------------
+  // A POPULATION'S REGISTRATION ALGORITHMS (#940, rule 3cu). These say what
+  // the rows ARE; what a registration then offers — the verifier's table,
+  // the insecure switch, the lanes, #718's narrowing — is
+  // `webauthn_policy.ts`'s `registrationOffer()`, which reads them through
+  // these.
+  // -------------------------------------------------------------------------
+  /**
+   * The algorithms the selected profile's registrations offer in place of
+   * the realm's (#940): its `registrationAlgorithms`, in order, or [] where
+   * it follows the realm's webauthn.algorithms.
+   *
+   * @param profile - a profile already read; read afresh when omitted
+   * @returns the JOSE names, in the profile's order
+   */
+  registrationAlgorithms(profile?: PasskeyProfile | null): string[] {
+    const { log } = this.deps;
+    log.debug("Entering PasskeyPolicy.registrationAlgorithms().");
+    const rules = profile || this.read();
+    const text = String(rules.registrationAlgorithms === undefined ||
+                        rules.registrationAlgorithms === null
+      ? REALM_LIST : rules.registrationAlgorithms);
+    const out = text === REALM_LIST ? [] : text.split(',').filter(
+      function (one) {
+        return REGISTRATION_ALGORITHM_VALUES.indexOf(one) >= 0;
+      });
+    log.debug("Leaving PasskeyPolicy.registrationAlgorithms(). " +
+              (out.join(',') || 'the realm\'s'));
+    return out;
+  }
+
+  /**
+   * The selected profile's `registrationMode` (#940): `realm`, `pq-only`,
+   * `pq-first` or `classical-only`; `realm` for anything else.
+   *
+   * @param profile - a profile already read; read afresh when omitted
+   * @returns the mode
+   */
+  registrationMode(profile?: PasskeyProfile | null): string {
+    const { log } = this.deps;
+    log.debug("Entering PasskeyPolicy.registrationMode().");
+    const rules = profile || this.read();
+    const row = String(rules.registrationMode || 'realm');
+    const out = REGISTRATION_MODES.indexOf(row) >= 0 ? row : 'realm';
+    log.debug("Leaving PasskeyPolicy.registrationMode(). " + out);
+    return out;
+  }
+
+  /**
+   * The rows a registration's algorithms are resolved from (#940), as
+   * `webauthn_policy.ts` takes them for a profile that is not the selected
+   * one: the list, the mode and `postQuantumRequired`.
+   *
+   * @param profile - a profile already read, or a save's values; the
+   *   selected profile when omitted
+   * @returns `{ registrationAlgorithms, registrationMode,
+   *   postQuantumRequired }`
+   */
+  registrationRows(profile?: Record<string, any> | null): RegistrationRows {
+    const { log } = this.deps;
+    log.debug("Entering PasskeyPolicy.registrationRows().");
+    const rules = (profile || this.read()) as PasskeyProfile;
+    const out = {
+      registrationAlgorithms: this.registrationAlgorithms(rules),
+      registrationMode: this.registrationMode(rules),
+      postQuantumRequired: POST_QUANTUM_REQUIRED_VALUES.indexOf(
+        String(rules.postQuantumRequired)) >= 0
+        ? String(rules.postQuantumRequired) : 'off'
+    };
+    log.debug("Leaving PasskeyPolicy.registrationRows(). " +
+              out.registrationMode);
+    return out;
+  }
+
+  /**
+   * Says whether a profile gives its population registration rows of its
+   * own (#940) — a list, or a mode other than `realm` — rather than
+   * following the realm's settings. The issuance policy's
+   * `profile-algorithm` rule binds only such a profile: under the realm's
+   * settings the ceremony's own offered-algorithm check is the rule, as it
+   * always was.
+   *
+   * @param profile - a profile already read; read afresh when omitted
+   * @returns `profile` or `realm`
+   */
+  registrationAlgorithmsFrom(profile?: PasskeyProfile | null): string {
+    const { log } = this.deps;
+    log.debug("Entering PasskeyPolicy.registrationAlgorithmsFrom().");
+    const rules = profile || this.read();
+    const out = this.registrationAlgorithms(rules).length ||
+                this.registrationMode(rules) !== 'realm'
+      ? 'profile' : 'realm';
+    log.debug("Leaving PasskeyPolicy.registrationAlgorithmsFrom(). " + out);
     return out;
   }
 
@@ -2325,6 +2549,23 @@ class PasskeyPolicy {
         previousAlgorithm: previous,
         previousPostQuantum: PasskeyPolicy.isPostQuantum(previous) };
     }
+    // WHETHER THE KEY'S ALGORITHM IS ONE THIS PROFILE OFFERS AT
+    // REGISTRATION (#940), decided HERE as `postQuantum` is: at
+    // register-passkey only, from the algorithm the door handed over and the
+    // profile's rows resolved by `webauthn_policy.ts` — every lane's list
+    // and the classical retry's, since the write does not know which
+    // ceremony made the key. The ceremony's own offered-algorithm check
+    // (WebAuthn Level 3 section 7.1) holds the credential to its LANE's
+    // list; this holds every write, a key typed by value included, to the
+    // profile's.
+    const registrationRows = this.registrationRows(rules);
+    const offeredHere = this.deps.registrationAlgorithmsAllowed(
+      registrationRows);
+    if (at === 'registration' && has('algorithm')) {
+      groups.push('profile-algorithm');
+      out.profileAlgorithmOffered =
+        offeredHere.indexOf(String(out.algorithm || '')) >= 0;
+    }
     if (has('recovery') && given.recovery) {
       groups.push('recovery');
       const r = given.recovery;
@@ -2358,7 +2599,15 @@ class PasskeyPolicy {
       // classical key the person picked from a list from one they were
       // never offered. No built-in rule reads it: the refusal is the
       // `post-quantum` rule's either way.
-      postQuantumAllowCredentials: this.postQuantumAllowCredentials(rules)
+      postQuantumAllowCredentials: this.postQuantumAllowCredentials(rules),
+      // THE POPULATION'S REGISTRATION ALGORITHMS (#940): the mode as the row
+      // says it, the list a registration under this profile may make, as
+      // resolved (the realm's where the profile follows it), and whether the
+      // profile sets either row — the last is what the built-in
+      // `profile-algorithm` rule is gated on.
+      registrationMode: registrationRows.registrationMode,
+      registrationAlgorithms: offeredHere.slice(),
+      registrationAlgorithmsFrom: this.registrationAlgorithmsFrom(rules)
     };
     log.debug("Leaving PasskeyPolicy.question(). " + out.action + ' [' +
               groups.join(', ') + ']');
@@ -2486,6 +2735,16 @@ class PasskeyPolicy {
               ? 'Use an authenticator whose attestation is signed that way.'
               : 'Sign in another way, and register a passkey whose ' +
                 'attestation is.');
+    } else if (reason === 'profile-algorithm') {
+      // #940: the population's own list, by the profile's name, so the
+      // person and the operator read which profile said no.
+      why = 'That passkey signs with ' +
+            (String(asked.algorithm || '') || 'an algorithm never recorded') +
+            ', which is not one the passkey policy offers here (profile ' +
+            String(asked.profile || DEFAULT_PROFILE) + ': ' +
+            ((policy.registrationAlgorithms || []).join(', ') || 'nothing') +
+            ', registrationMode ' + String(policy.registrationMode || '') +
+            '). Use an authenticator that can make one of those.';
     } else if (reason === 'serial-not-held') {
       why = 'That security key (serial ' +
             String(asked.serial || '').slice(0, 64) + ') is not ' +
@@ -2578,10 +2837,31 @@ class PasskeyPolicy {
       ...(this.attestationAlgorithms(rules).length
         ? [fill(SENTENCES.attestationAlgorithms,
                 { algorithms: this.attestationAlgorithms(rules).join(', ') })]
-        : [])
+        : []),
+      // #940: said only where the profile sets a registration row of its
+      // own, so a profile following the realm is described as it was.
+      ...this.registrationSentences(rules)
     ];
     log.debug("Leaving PasskeyPolicy.describe().");
     return out;
+  }
+
+  // The registration rows in words (#940): nothing for a profile that follows
+  // the realm, a mode's sentence, else the list's.
+  private registrationSentences(rules: PasskeyProfile): string[] {
+    const { log } = this.deps;
+    log.debug("Entering PasskeyPolicy.registrationSentences().");
+    const list = this.registrationAlgorithms(rules);
+    const mode = this.registrationMode(rules);
+    const algorithms = list.length ? list.join(', ')
+      : SENTENCES['param.realmAlgorithms'];
+    const template = mode === 'pq-only' ? SENTENCES.registrationPqOnly
+      : (mode === 'pq-first' ? SENTENCES.registrationPqFirst
+        : (mode === 'classical-only' ? SENTENCES.registrationClassicalOnly
+          : (list.length ? SENTENCES.registrationList : '')));
+    log.debug("Leaving PasskeyPolicy.registrationSentences(). " + mode);
+    return template ? [serverProse.fill(template,
+                                        { algorithms: algorithms })] : [];
   }
 
   // A hint list in words (#531).
@@ -2672,6 +2952,124 @@ class PasskeyPolicy {
               " problem(s).");
     return { applications: applications, groups: groups,
              precedence: precedence, problems: problems };
+  }
+
+  // A save's values with every optional row it left out filled as the save
+  // will leave it (#940): the realm's own stored value (#907's rule), else
+  // the built-in default.
+  private standingValues(which: string,
+                         values: Record<string, boolean | string | number>):
+      Record<string, any> {
+    const { log } = this.deps;
+    log.debug("Entering PasskeyPolicy.standingValues().");
+    const out: Record<string, any> = Object.assign({}, DEFAULTS);
+    const own = this.directory &&
+      typeof this.directory.allPasskeyPolicies === 'function'
+      ? (this.directory.allPasskeyPolicies() || []).filter(function (one) {
+        return String(one.name || '').toLowerCase() === which;
+      })[0] : null;
+    FIELDS.forEach((field) => {
+      if (values[field.key] !== undefined) {
+        out[field.key] = values[field.key];
+        return;
+      }
+      if (!field.optional || !own) {
+        return;
+      }
+      const raw = this.firstValue(own.attributes || {}, field.attribute);
+      const parsed = raw === '' ? null : this.parseField(field, raw);
+      if (parsed && !parsed.problem) {
+        out[field.key] = parsed.value;
+      }
+    });
+    log.debug("Leaving PasskeyPolicy.standingValues().");
+    return out;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE REGISTRATION ROWS AGAINST THE REST OF THE PROFILE (#940), at the
+  // save, so a contradiction is the operator's to resolve rather than a
+  // population that can register nothing the profile accepts:
+  //
+  //   * `classical-only` with `postQuantumRequired` other than off — a
+  //     classical passkey can never satisfy that requirement, at sign-in
+  //     (`sign-in`) or at registration too (`registration-and-sign-in`).
+  //     The ticket's own sentence: "Classical-only must not be able to
+  //     satisfy a postQuantumRequired profile".
+  //   * `classical-only` with `attestationAlgorithms` set — every value of
+  //     that list is a post-quantum family, so it admits only authenticators
+  //     that attest with a post-quantum key, and a population held to
+  //     classical-only is the one whose devices cannot make ML-DSA; the
+  //     pair admits next to nobody, and says two opposite things.
+  //   * `pq-only` or `pq-first` where the algorithms the profile would offer
+  //     (its own list, else the realm's webauthn.algorithms) name no ML-DSA —
+  //     STS-AUTHN-0357's reason for postQuantumRequired: the mode would ask
+  //     for something the list never offers.
+  //
+  // STS-AUTHN-0430 for the first two, 0431 for the third. Asked of the rows
+  // as they will stand; a later change of webauthn.algorithms is answered at
+  // registration (`webauthn_policy.ts` offers all three ML-DSA then, as
+  // pqcOnly does), and a requirement inherited past a classical-only mode is
+  // answered by #718's narrowing, which wins.
+  // ---------------------------------------------------------------------------
+  private registrationContradiction(values: Record<string, any>):
+      { code: string; problem: string } | null {
+    const { log } = this.deps;
+    log.debug("Entering PasskeyPolicy.registrationContradiction().");
+    const rows = this.registrationRows(values);
+    const mode = rows.registrationMode;
+    const modeLabel = '`registrationMode` (' +
+      FIELD_BY_KEY.registrationMode.label + ') is ' + mode;
+    if (mode === 'classical-only' && rows.postQuantumRequired !== 'off') {
+      log.debug("Leaving PasskeyPolicy.registrationContradiction(). " +
+                "Classical only, post-quantum required.");
+      return { code: 'STS-AUTHN-0430',
+               problem: modeLabel + ', and `postQuantumRequired` (' +
+                        FIELD_BY_KEY.postQuantumRequired.label + ') is ' +
+                        rows.postQuantumRequired + ': a classical passkey ' +
+                        'can never satisfy that requirement, so this ' +
+                        'profile\'s people could register nothing that ' +
+                        'signs them in. Set one of the two differently.' };
+    }
+    const attested = String(values.attestationAlgorithms || NO_HINTS);
+    if (mode === 'classical-only' && attested !== NO_HINTS) {
+      log.debug("Leaving PasskeyPolicy.registrationContradiction(). " +
+                "Classical only, post-quantum attestation required.");
+      return { code: 'STS-AUTHN-0430',
+               problem: modeLabel + ', and `attestationAlgorithms` (' +
+                        FIELD_BY_KEY.attestationAlgorithms.label + ') is ' +
+                        attested + ': that list admits only an ' +
+                        'authenticator attesting with a post-quantum ' +
+                        'signature, which is not the device a ' +
+                        'classical-only population holds. Set ' +
+                        'attestationAlgorithms to none, or choose another ' +
+                        'mode.' };
+    }
+    if (mode === 'pq-only' || mode === 'pq-first') {
+      const asked = config.value('webauthn.algorithms');
+      const list = rows.registrationAlgorithms.length
+        ? rows.registrationAlgorithms
+        : (Array.isArray(asked) ? asked : String(asked || '').split(','))
+          .map(function (name) {
+            return String(name || '').trim();
+          });
+      if (!list.some(PasskeyPolicy.isPostQuantum)) {
+        log.debug("Leaving PasskeyPolicy.registrationContradiction(). A " +
+                  "post-quantum mode with no ML-DSA offered.");
+        return { code: 'STS-AUTHN-0431',
+                 problem: modeLabel + ', and the algorithms this profile ' +
+                          'would offer (' + (rows.registrationAlgorithms
+                            .length ? 'its registrationAlgorithms'
+                                    : 'the realm\'s webauthn.algorithms') +
+                          ': ' + (list.filter(Boolean).join(', ') ||
+                                  'nothing') +
+                          ') name no ML-DSA algorithm, so the mode would ' +
+                          'ask for what the list never offers. Add ' +
+                          'ML-DSA-44, ML-DSA-65 or ML-DSA-87 to the list.' };
+      }
+    }
+    log.debug("Leaving PasskeyPolicy.registrationContradiction(). None.");
+    return null;
   }
 
   /**
@@ -2770,8 +3168,21 @@ class PasskeyPolicy {
     // at once. Asked of the realm's WebAuthn settings as they are now; a
     // later change to them is answered by enrolment offering all three
     // ML-DSA algorithms anyway (`webauthn_policy.ts`), as `pqcOnly` does.
-    if (checked.values.postQuantumRequired !== 'off' &&
-        !this.deps.offersPostQuantum()) {
+    // THE PROFILE AS IT WILL STAND (#940): an optional row left out of this
+    // save keeps what the realm's own entry stored (#907, below), so the
+    // contradictions are asked of that, not of the body alone — a save of
+    // the old shape must not slip `postQuantumRequired` past a stored
+    // `classical-only`.
+    const standing = this.standingValues(which, checked.values);
+    const contradiction = this.registrationContradiction(standing);
+    if (contradiction) {
+      log.debug('Leaving PasskeyPolicy.save(). The registration rows ' +
+                'contradict another row.');
+      return errorCodes.mark({ ok: false, errors: [contradiction.problem] },
+                             contradiction.code);
+    }
+    if (standing.postQuantumRequired !== 'off' &&
+        !this.deps.offersPostQuantum(this.registrationRows(standing))) {
       log.debug('Leaving PasskeyPolicy.save(). Post-quantum required and ' +
                 'none offered.');
       return errorCodes.mark({ ok: false,
@@ -2945,6 +3356,13 @@ export = {
   ATTESTATION_ALGORITHM_VALUES: ATTESTATION_ALGORITHM_VALUES,
   attestationAlgorithms: slot.forward('attestationAlgorithms'),
   attestationAlgorithmAllowed: PasskeyPolicy.attestationAlgorithmAllowed,
+  // #940: a population's registration algorithms.
+  REGISTRATION_MODES: REGISTRATION_MODES,
+  REGISTRATION_ALGORITHM_VALUES: REGISTRATION_ALGORITHM_VALUES,
+  registrationAlgorithms: slot.forward('registrationAlgorithms'),
+  registrationMode: slot.forward('registrationMode'),
+  registrationRows: slot.forward('registrationRows'),
+  registrationAlgorithmsFrom: slot.forward('registrationAlgorithmsFrom'),
   hintsFor: slot.forward('hintsFor'),
   select: slot.forward('select'),
   selectionFor: slot.forward('selectionFor'),

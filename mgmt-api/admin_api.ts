@@ -1579,7 +1579,21 @@ class AdminApi {
               'only, `list-and-refuse` every one, a classical assertion ' +
               'then refused after the ceremony with a page saying why, ' +
               'and `realm` the realm\'s ' +
-              'webauthn.postQuantumAllowCredentials.',
+              'webauthn.postQuantumAllowCredentials. ' +
+              '`registrationAlgorithms` (`realm`, #940; optional) is the ' +
+              'ordered list a registration offers this profile\'s people ' +
+              'in place of the realm\'s webauthn.algorithms, and ' +
+              '`registrationMode` (`realm`, #940; optional) is `pq-only` ' +
+              '(ML-DSA only, no classical retry), `pq-first` (ML-DSA, then ' +
+              'the classical algorithms, whatever the realm\'s pqcOnly), ' +
+              '`classical-only` (no ML-DSA, no post-quantum lane) or ' +
+              '`realm` (webauthn.pqcOnly and ' +
+              'webauthn.pqcAlongsideClassical); a passkey outside what the ' +
+              'profile offers is refused at registration (STS-AUTHN-0432). ' +
+              'Refused: `classical-only` with `postQuantumRequired` not ' +
+              '`off` or with `attestationAlgorithms` set (STS-AUTHN-0430), ' +
+              'and `pq-only` or `pq-first` where the list offered names no ' +
+              'ML-DSA (STS-AUTHN-0431).',
         example: { allowUsernameless: false, requireUsernameless: false,
                    securityKeyResidentKey: 'required',
                    backupEligibility: 'allow',
@@ -1593,7 +1607,9 @@ class AdminApi {
                    rpNameExtras: 'none', credentialLabel: '',
                    aggregateDevices: true, postQuantumRequired: 'off',
                    attestationAlgorithms: 'none',
-                   postQuantumAllowCredentials: 'realm' }
+                   postQuantumAllowCredentials: 'realm',
+                   registrationAlgorithms: 'realm',
+                   registrationMode: 'realm' }
       },
       // #539: the fifth kind, with named profiles chosen by application.
       locale: {
