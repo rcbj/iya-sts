@@ -725,22 +725,192 @@ class WebauthnPolicy {
     return out;
   }
 
-  // WHETHER A CLASSICAL PASSKEY CAN BE UPGRADED IN PLACE (#939, which has
-  // not been built): false, so the refusal page of #946 links registration
-  // only. The flag is a FUNCTION rather than a literal on the page so #939
-  // turns the upgrade link on by answering true here, and nothing else.
+  // ---------------------------------------------------------------------------
+  // THE UPGRADE OF A CLASSICAL PASSKEY TO AN ML-DSA ONE (#939, 2026-10-23;
+  // rule 3ct).
+  //
+  // A person holding a classical passkey had two ways to an ML-DSA one: a
+  // second registration, which leaves two rows for one authenticator, or
+  // removing the classical key and registering again, which locks them out
+  // if the new registration fails after the removal. The upgrade is one
+  // ceremony pair — an ASSERTION with the classical key over a challenge
+  // minted for this upgrade (proof of possession, fresh), then a
+  // REGISTRATION offering ML-DSA only — and one write at the end
+  // (`credentials.confirmKeyUpgrade()`), so the classical key is touched
+  // only once the new one has verified.
+  //
+  // **WHAT THE WRITE DOES FOLLOWS `webauthn.pqcAlongsideClassical`** (rcbj's
+  // decision on #939): ON, the upgrade ADDS the ML-DSA key in the
+  // post-quantum lane under that lane's user handle and keeps the classical
+  // one (#643's two lanes, `alongside`); OFF, the ML-DSA key REPLACES the
+  // classical one in place, under the classical lane's handle — on one
+  // authenticator the new discoverable credential then replaces the old
+  // one on the device too, which is what "in place" means there (`replace`).
+  //
+  // **THE ALGORITHMS ARE ML-DSA ONLY**, the lane's list (or the configured
+  // one, with one lane) less everything else, in `webauthn.algorithms`'
+  // order, and all three the verifier knows where it names none —
+  // `pqcOnly`'s reason: an empty request is refused by the browser, and a
+  // classical one is the thing the upgrade exists not to make. There is no
+  // classical retry of an upgrade (#944's): its point is ML-DSA.
+  //
+  // **OFFERED BY DEFAULT** (`webauthn.pqcUpgrade`, per realm, on): it is a
+  // person's change to their own credential, proved by that credential,
+  // that can only make it stronger and that leaves the classical key as it
+  // was if anything fails. A realm that wants no such change turns it off.
+  // Nothing about it differs between development and product mode: the
+  // proof is a signature this service verifies in both, as it verifies the
+  // UV flag in both, and the attestation the new key brings is held to the
+  // policy in force (`attestationSettings()`, which is the mode's).
+  // ---------------------------------------------------------------------------
   /**
-   * Says whether this service offers #939's upgrade of a classical passkey
-   * to a post-quantum one. Not yet: always false.
+   * Decides whether this realm offers #939's upgrade of a classical passkey
+   * to an ML-DSA one at all: WebAuthn on, `webauthn.pqcUpgrade` on, an
+   * ML-DSA algorithm the verifier can check, and — with both lanes on —
+   * the post-quantum lane offered. The person's own keys, role and the
+   * passkey policy are asked by `credentials.keyUpgradeRefusal()`.
    *
-   * @returns false
+   * @returns `{ ok: true }`, or `{ ok: false, why }` carrying STS-AUTHN-0450
+   */
+  upgradeRefusal() {
+    const { config, log, errorCodes } = this.deps;
+    log.debug('Entering WebauthnPolicy.upgradeRefusal().');
+    if (!this.settings().enabled) {
+      log.debug('Leaving WebauthnPolicy.upgradeRefusal(). WebAuthn is off.');
+      return errorCodes.mark({ ok: false,
+               why: 'Passkeys are switched off in this realm ' +
+                    '(webauthn.enabled), so none can be upgraded.' },
+               'STS-AUTHN-0450');
+    }
+    if (config.value('webauthn.pqcUpgrade') === false) {
+      log.debug('Leaving WebauthnPolicy.upgradeRefusal(). Not offered.');
+      return errorCodes.mark({ ok: false,
+               why: 'Upgrading a classical passkey to a post-quantum ' +
+                    '(ML-DSA) one is not offered in this realm ' +
+                    '(webauthn.pqcUpgrade). You can register a ' +
+                    'post-quantum passkey beside it instead, where ' +
+                    'passkeys may be registered here.' }, 'STS-AUTHN-0450');
+    }
+    if (!this.upgradeAlgorithms().length) {
+      log.debug('Leaving WebauthnPolicy.upgradeRefusal(). No ML-DSA.');
+      return errorCodes.mark({ ok: false,
+               why: 'This service can verify no ML-DSA algorithm, so a ' +
+                    'passkey cannot be upgraded to one.' }, 'STS-AUTHN-0450');
+    }
+    if (this.alongsideClassical() && !this.laneRefusal('pqc').ok) {
+      log.debug('Leaving WebauthnPolicy.upgradeRefusal(). The ' +
+                'post-quantum lane is refused.');
+      return errorCodes.mark({ ok: false,
+               why: String(this.laneRefusal('pqc').why || '') },
+               'STS-AUTHN-0450');
+    }
+    log.debug('Leaving WebauthnPolicy.upgradeRefusal(). Offered.');
+    return { ok: true };
+  }
+
+  // WHETHER THE UPGRADE IS OFFERED HERE (#939), the flag #946's panel and
+  // `/portal/keys` read: `upgradeRefusal()` as a boolean. Whether a given
+  // person holds a key it applies to is `credentials.upgradableKeysOf()`'s
+  // to say — this module cannot require the credential store, which
+  // requires it.
+  /**
+   * Says whether this realm offers #939's upgrade of a classical passkey to
+   * an ML-DSA one.
+   *
+   * @returns true where `upgradeRefusal()` allows it
    */
   postQuantumUpgradeOffered(): boolean {
     const { log } = this.deps;
     log.debug('Entering WebauthnPolicy.postQuantumUpgradeOffered().');
-    log.debug('Leaving WebauthnPolicy.postQuantumUpgradeOffered(). Not ' +
-              'built (#939).');
-    return false;
+    const out = this.upgradeRefusal().ok;
+    log.debug('Leaving WebauthnPolicy.postQuantumUpgradeOffered(). ' + out);
+    return out;
+  }
+
+  /**
+   * What an upgrade's write does here (#939): `alongside` (the ML-DSA key
+   * added in the post-quantum lane, the classical one kept) while
+   * `webauthn.pqcAlongsideClassical` is on, `replace` (the ML-DSA key in
+   * the classical key's place) while it is off.
+   *
+   * @returns `alongside` or `replace`
+   */
+  upgradeMode(): string {
+    const { log } = this.deps;
+    log.debug('Entering WebauthnPolicy.upgradeMode().');
+    const out = this.alongsideClassical() ? 'alongside' : 'replace';
+    log.debug('Leaving WebauthnPolicy.upgradeMode(). ' + out);
+    return out;
+  }
+
+  /**
+   * The lane an upgrade's new key is made in (#939): `pqc` beside the
+   * classical key, `classical` in its place.
+   *
+   * @returns `pqc` or `classical`
+   */
+  upgradeLane(): string {
+    const { log } = this.deps;
+    log.debug('Entering WebauthnPolicy.upgradeLane().');
+    const out = this.upgradeMode() === 'alongside' ? 'pqc' : 'classical';
+    log.debug('Leaving WebauthnPolicy.upgradeLane(). ' + out);
+    return out;
+  }
+
+  /**
+   * The algorithms an upgrade's registration offers (#939): ML-DSA only,
+   * in the order the lane's list (`webauthn.algorithms`) names them, and
+   * every ML-DSA the verifier knows where it names none.
+   *
+   * @returns the JOSE names, possibly none where the verifier knows no
+   *   ML-DSA
+   */
+  upgradeAlgorithms(): string[] {
+    const { log } = this.deps;
+    log.debug('Entering WebauthnPolicy.upgradeAlgorithms().');
+    const lane = this.alongsideClassical() ? 'pqc' : '';
+    const named = this.lanedAlgorithms(lane).filter(function (name) {
+      return PQC_ALGS.indexOf(name) >= 0;
+    });
+    const out = named.length ? named : PQC_ALGS.filter(function (name) {
+      return ALG_IDS[name] !== undefined;
+    });
+    log.debug('Leaving WebauthnPolicy.upgradeAlgorithms(). ' + out.length +
+              ' ML-DSA.');
+    return out;
+  }
+
+  /**
+   * `upgradeAlgorithms()` as COSE identifiers, for `pubKeyCredParams` and
+   * for section 7.1's offered-algorithm check at the finish.
+   *
+   * @returns the COSE algorithm identifiers
+   */
+  upgradeAlgorithmIds(): number[] {
+    const { log } = this.deps;
+    log.debug('Entering WebauthnPolicy.upgradeAlgorithmIds().');
+    log.debug('Leaving WebauthnPolicy.upgradeAlgorithmIds().');
+    return this.upgradeAlgorithms().map(function (name) {
+      return ALG_IDS[name];
+    });
+  }
+
+  /**
+   * The registration options of an upgrade (#939): `creationOptions()` for
+   * the kind of authenticator the classical key is on, with ML-DSA only.
+   *
+   * @param rpId - the relying party id
+   * @param kind - `passkey` or `security-key`, the classical key's group
+   * @returns the options
+   */
+  upgradeCreationOptions(rpId, kind?) {
+    const { log } = this.deps;
+    log.debug('Entering WebauthnPolicy.upgradeCreationOptions().');
+    const out = this.creationOptions(rpId, kind, this.upgradeLane());
+    out.algorithms = this.upgradeAlgorithmIds();
+    log.debug('Leaving WebauthnPolicy.upgradeCreationOptions(). ' +
+              out.algorithms.length + ' ML-DSA.');
+    return out;
   }
 
   // THE LANE'S LIST (#643), before #718's narrowing: what
@@ -1458,6 +1628,11 @@ class WebauthnPolicy {
       lanes: this.lanes().map((lane) => {
         return { lane: lane, algorithms: this.algorithmsOffered(lane) };
       }),
+      // THE UPGRADE (#939): whether it is offered, what its write does and
+      // the ML-DSA it asks for.
+      pqcUpgrade: this.postQuantumUpgradeOffered(),
+      upgradeMode: this.upgradeMode(),
+      upgradeAlgorithms: this.upgradeAlgorithms(),
       curves: Object.keys(webauthn.COSE_CURVES).map(function (id) {
         return { name: webauthn.COSE_CURVES[id], coseCurve: Number(id) };
       }),
@@ -1558,6 +1733,13 @@ export = {
   classicalFallbackOffered: slot.forward('classicalFallbackOffered'),
   asksPostQuantum: slot.forward('asksPostQuantum'),
   postQuantumUpgradeOffered: slot.forward('postQuantumUpgradeOffered'),
+  // The upgrade itself (#939).
+  upgradeRefusal: slot.forward('upgradeRefusal'),
+  upgradeMode: slot.forward('upgradeMode'),
+  upgradeLane: slot.forward('upgradeLane'),
+  upgradeAlgorithms: slot.forward('upgradeAlgorithms'),
+  upgradeAlgorithmIds: slot.forward('upgradeAlgorithmIds'),
+  upgradeCreationOptions: slot.forward('upgradeCreationOptions'),
   laneWriteRule: WebauthnPolicy.laneWriteRule,
   LANES: LANES,
   PQC_ALGS: PQC_ALGS,

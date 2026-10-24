@@ -499,6 +499,7 @@
   "mfaSection.siopLabelTip": "Ett namn för nyckeln, så att den kan skiljas från de andra: plånboken eller enheten den finns i.",
   "mfaSection.enrolTitle": "Den som har den här nyckeln loggar in som personen. Registrera bara en nyckel du vet är deras.",
   "mfaSection.enrol": "Registrera",
+  "mfaSection.upgrade": "Uppgradera till ML-DSA",
   "mfaSection.siopNeedsWrite": "Att registrera eller ta bort en kräver <strong>Admin Write</strong>.",
   "mfaSection.leadBefore": "Allt i det här avsnittet gäller <code>{name}</code> och läses från deras egen katalogpost, genom samma <code>credentials.mechanismsFor()</code> som inloggningsskärmen och användarportalen frågar. Själva mekanismerna konfigureras på ",
   "mfaSection.leadAnd": " och ",

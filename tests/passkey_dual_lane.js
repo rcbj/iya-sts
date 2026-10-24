@@ -205,7 +205,7 @@ function childMain() {
                 oauthRedirectUri: [REDIRECT],
                 oauthTokenEndpointAuthMethod: 'none',
                 oauthGrantType: ['authorization_code'] } });
-    ['pkl-alice', 'pkl-bob', 'pkl-legacy'].forEach(function (name) {
+    ['pkl-alice', 'pkl-bob', 'pkl-legacy', 'pkl-upgrade', 'pkl-failure'].forEach(function (name) {
       ldap.createUser(name, { invent: false });
       credentials.setPassword(name, PASSWORD);
     });
@@ -558,6 +558,94 @@ function childMain() {
          '12. switched off, a post-quantum enrolment is refused ' +
          '(STS-AUTHN-0351) and the post-quantum key still signs in',
          JSON.stringify(offAgain) + ' ' + posted.status);
+    // 13. A classical passkey proves possession before an ML-DSA
+    // registration. Both the alongside lane and in-place replacement work;
+    // a failed registration leaves the original classical key unchanged.
+    config.setOverride(ON, true);
+    const upOld = await makeAuthenticator(-7, RPID, ORIGIN);
+    const upSeed = await enrol('pkl-upgrade',
+      { role: 'primary', kind: 'passkey', lane: 'classical' },
+      function (b) { return upOld.register(b.challenge, b.userHandle); });
+    const beginUpgrade = credentials.beginKeyUpgrade('pkl-upgrade',
+      upOld.credentialId);
+    const proveUpgrade = await credentials.proveKeyUpgrade('pkl-upgrade',
+      beginUpgrade.upgradeId, upOld.assert(beginUpgrade.challenge),
+      { origin: ORIGIN, rpId: RPID });
+    const proofView = view('pkl-upgrade').upgrade || {};
+    const proofHtml = keysPages.upgradeBlock(proofView,
+      { html: function (key) { return '[' + key + ']'; } });
+    const upNew = await makeAuthenticator(-49, RPID, ORIGIN);
+    const sideDone = await credentials.confirmKeyUpgrade('pkl-upgrade',
+      beginUpgrade.upgradeId,
+      upNew.register(proveUpgrade.challenge, proveUpgrade.userHandle),
+      { origin: ORIGIN, rpId: RPID });
+    const sideRows = credentials.keysOf('pkl-upgrade');
+    const oldSide = sideRows.filter(function (one) {
+      return one.credentialId === upOld.credentialId;
+    })[0] || {};
+    const newSide = sideRows.filter(function (one) {
+      return one.credentialId === upNew.credentialId;
+    })[0] || {};
+    const sideHistory = credentials.keyUpgradeHistory(newSide) || {};
+    const upgradeOps = new accountKeys.AccountKeys(
+      accountKeys.AccountKeys.defaultDeps()).accountOperations({
+        BASE: '/account-api', PORTAL: '/portal' });
+    note(upSeed.done.ok && beginUpgrade.ok && proveUpgrade.ok &&
+         proofView.pending && proofView.pending.phase === 'registration' &&
+         proofView.pending.options.algorithms.join(',') === '-48,-49,-50' &&
+         proofHtml.indexOf('data-mode="create"') >= 0 &&
+         upgradeOps.some(function (op) {
+           return op.operationId === 'upgradeKey' &&
+                  op.path === '/account-api/keys/upgrade';
+         }) &&
+         sideDone.ok && sideDone.mode === 'alongside' &&
+         sideRows.length === 2 && oldSide.upgradedTo === upNew.credentialId &&
+         sideHistory.previousAlgorithm === 'ES256' &&
+         sideHistory.mode === 'alongside',
+         '13a. the portal exposes an ML-DSA-only upgrade after proof, and ' +
+         'the alongside write records both keys and upgrade history',
+         JSON.stringify([beginUpgrade, proveUpgrade, sideDone, sideHistory]));
+    const failOld = await makeAuthenticator(-7, RPID, ORIGIN);
+    const failSeed = await enrol('pkl-failure',
+      { role: 'primary', kind: 'passkey', lane: 'classical' },
+      function (b) { return failOld.register(b.challenge, b.userHandle); });
+    const failBegin = credentials.beginKeyUpgrade('pkl-failure',
+      failOld.credentialId);
+    const failProof = await credentials.proveKeyUpgrade('pkl-failure',
+      failBegin.upgradeId, failOld.assert(failBegin.challenge),
+      { origin: ORIGIN, rpId: RPID });
+    const failDone = await credentials.confirmKeyUpgrade('pkl-failure',
+      failBegin.upgradeId, { error: 'NotAllowedError' },
+      { origin: ORIGIN, rpId: RPID });
+    const failRows = credentials.keysOf('pkl-failure');
+    note(failSeed.done.ok && failProof.ok && !failDone.ok &&
+         failRows.length === 1 &&
+         failRows[0].credentialId === failOld.credentialId &&
+         !credentials.keyUpgradeHistory(failRows[0]),
+         '13b. a refused ML-DSA registration keeps the classical passkey',
+         JSON.stringify([failDone, failRows]));
+    config.clearOverride(ON);
+    const replaceOld = credentials.keysOf('pkl-bob')[0] || {};
+    const replaceBegin = credentials.beginKeyUpgrade('pkl-bob',
+      replaceOld.credentialId);
+    const replaceProof = await credentials.proveKeyUpgrade('pkl-bob',
+      replaceBegin.upgradeId, bobOff.assert(replaceBegin.challenge),
+      { origin: ORIGIN, rpId: RPID });
+    const replaceNew = await makeAuthenticator(-49, RPID, ORIGIN);
+    const replaceDone = await credentials.confirmKeyUpgrade('pkl-bob',
+      replaceBegin.upgradeId,
+      replaceNew.register(replaceProof.challenge, replaceProof.userHandle),
+      { origin: ORIGIN, rpId: RPID });
+    const replaceRows = credentials.keysOf('pkl-bob');
+    note(replaceBegin.ok && replaceProof.ok && replaceDone.ok &&
+         replaceDone.mode === 'replace' && replaceRows.length === 1 &&
+         replaceRows[0].credentialId === replaceNew.credentialId &&
+         replaceRows[0].lane === 'classical' &&
+         (credentials.keyUpgradeHistory(replaceRows[0]) || {})
+           .previousAlgorithm === 'ES256',
+         '13c. when the lanes are not alongside, the ML-DSA key replaces ' +
+         'the proved classical key in the classical lane',
+         JSON.stringify([replaceDone, replaceRows]));
     server.close();
   })().catch(function (e) {
     note(false, 'the child ran to the end', e && e.stack);

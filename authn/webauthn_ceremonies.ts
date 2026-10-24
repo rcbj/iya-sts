@@ -31,7 +31,9 @@
 // with, and `detail` — at most twelve fields, `audit.js`'s cap:
 //
 //   ceremony       `registration` or `assertion`
-//   door           `sign-in-step`, `usernameless`, `portal` or `activation`
+//   door           `sign-in-step`, `usernameless`, `portal`, `activation`
+//                  or `upgrade` (#939: a classical passkey's proof of
+//                  possession and the ML-DSA registration that follows it)
 //   role           `primary`, `mfa` or ''
 //   lane           `classical` or `pqc` (#643)
 //   offered        the algorithms offered, IN ORDER, comma-separated: a
@@ -124,7 +126,7 @@ const CLIENT_ERRORS: ReadonlyArray<string> = Object.freeze([
  * The doors a ceremony row may name.
  */
 const DOORS: ReadonlyArray<string> = Object.freeze([
-  'sign-in-step', 'usernameless', 'portal', 'activation']);
+  'sign-in-step', 'usernameless', 'portal', 'activation', 'upgrade']);
 
 interface CeremonyEvent {
   ceremony: 'registration' | 'assertion';

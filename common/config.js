@@ -2875,6 +2875,31 @@ const SETTINGS = [
                  'trade-off: the person may pick a passkey that will be ' +
                  'refused. Either way a person holding no post-quantum ' +
                  'passkey is told before any ceremony.' },
+  // UPGRADING A CLASSICAL PASSKEY TO AN ML-DSA ONE (#939, rule 3ct), per
+  // realm, ON by default: a person's change to their own credential,
+  // proved by that credential, which leaves it as it was if anything
+  // fails. `authn/webauthn_policy.ts` reads it (`upgradeRefusal()`).
+  { key: 'webauthn.pqcUpgrade', group: 'WebAuthn',
+    label: 'Upgrade a classical passkey to a post-quantum one',
+    path: 'webauthn.pqcUpgrade',
+    env: 'STS_WEBAUTHN_PQC_UPGRADE', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'On (the default), a person may upgrade one of their ' +
+                 'classical passkeys to a post-quantum (ML-DSA) one on ' +
+                 '/portal/keys: they use the classical passkey once, to ' +
+                 'show it is theirs, and then create the new one, which is ' +
+                 'offered ML-DSA only. With ' +
+                 '`webauthn.pqcAlongsideClassical` on, the post-quantum ' +
+                 'passkey is ADDED in its own lane and the classical one ' +
+                 'is kept; with it off, the post-quantum passkey REPLACES ' +
+                 'the classical one in place, keeping its name and ' +
+                 'recording when it was upgraded and from which ' +
+                 'algorithm. The classical passkey is changed only once ' +
+                 'the new one has been verified, so a failed upgrade ' +
+                 'leaves it as it was. The new passkey meets every rule a ' +
+                 'registration does. Off, no passkey can be upgraded; a ' +
+                 'post-quantum passkey can still be registered beside a ' +
+                 'classical one where passkeys may be registered.' },
 
   { key: 'webauthn.userVerification', group: 'WebAuthn',
     label: 'User verification', path: 'webauthn.userVerification',

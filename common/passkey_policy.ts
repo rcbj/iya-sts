@@ -2213,6 +2213,7 @@ class PasskeyPolicy {
   //   serial          -> serial (with whether the person holds it)
   //   attestation     -> attestation (with `attestationSettings`)
   //   algorithm       -> algorithm (with `postQuantum` and `lane`, #718)
+  //   upgrade         -> upgrade (`mode`, the previous algorithm, #939)
   // =========================================================================
   /**
    * Builds the passkey question (#536) for the issuance policy: the facts a
@@ -2221,7 +2222,8 @@ class PasskeyPolicy {
    * @param at - `registration` or `sign-in`
    * @param facts - `{ username, backupEligible, minPinLength, serial,
    *   attestation, attestationSettings, enforceAttestation, algorithm,
-   *   lane }`, each optional
+   *   lane, upgrade }`, each optional — `upgrade` (#939) is `{ mode,
+   *   previousAlgorithm }`
    * @param profile - a profile already read; read afresh when omitted
    * @returns the question `issuance_gate.checkPasskey()` takes
    */
@@ -2307,6 +2309,21 @@ class PasskeyPolicy {
       out.attestationAlgorithmAllowed =
         PasskeyPolicy.attestationAlgorithmAllowed(a,
           this.attestationAlgorithms(rules));
+    }
+    // AN UPGRADE OF A CLASSICAL PASSKEY (#939): the registration is the
+    // second ceremony of an upgrade, with what its write will do
+    // (`replace` or `alongside`) and the algorithm of the passkey it
+    // upgrades. No built-in rule reads it — the new key is held to every
+    // registration rule as any other is — so a realm's own rule may forbid
+    // upgrades, or one mode of them, without touching the rest.
+    if (has('upgrade') && given.upgrade) {
+      groups.push('upgrade');
+      const u = given.upgrade;
+      const previous = String(u.previousAlgorithm || '');
+      out.upgrade = {
+        mode: u.mode === 'alongside' ? 'alongside' : 'replace',
+        previousAlgorithm: previous,
+        previousPostQuantum: PasskeyPolicy.isPostQuantum(previous) };
     }
     if (has('recovery') && given.recovery) {
       groups.push('recovery');

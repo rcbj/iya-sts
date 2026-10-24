@@ -1870,7 +1870,19 @@ class UsersPage {
             kit.esc(one.role === 'primary'
               ? t.text('consoleUsers.mfaSection.removePrimaryTitle')
               : t.text('consoleUsers.mfaSection.removeTitle')) + '">' +
-            t.html('consoleUsers.mfaSection.remove') + '</button></form>'
+            t.html('consoleUsers.mfaSection.remove') + '</button></form>' +
+            (keyLive.enabled && !one.algorithm.postQuantum
+              ? '<form method="post" action="/admin/users" ' +
+                'data-admin-passkey-upgrade="true">' +
+                '<input type="hidden" name="action" ' +
+                'value="begin-passkey-upgrade">' +
+                '<input type="hidden" name="user" value="' +
+                kit.esc(key) + '"><input type="hidden" ' +
+                'name="credentialId" value="' +
+                kit.esc(one.credentialId || '') + '"><button title="' +
+                kit.esc(t.text('consoleUsers.mfaSection.enrolTitle')) +
+                '">' + t.html('consoleUsers.mfaSection.upgrade') +
+                '</button></form>' : '')
           : '') + '</td></tr>';
     };
     const allKeys = mfaKeys.concat(primaryKeys);

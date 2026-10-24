@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4602** of them, in **47** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4611** of them, in **47** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 355
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 364
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 724
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 115
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 33
@@ -1544,6 +1544,15 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0421` | A passkey evidence export did not name both a username and a credential id. | HTTP 400 from GET /admin-api/passkey-report/evidence |
 | `STS-AUTHN-0422` | The named passkey has no RFC 4998 evidence record to export. | HTTP 404 from GET /admin-api/passkey-report/evidence |
 | `STS-AUTHN-0419` | An RFC 4998 passkey evidence record could not be renewed; the previous record remains stored and the failure is logged for retry on the next daily passkey report recount. | none — logged; no credential or prior evidence record is changed |
+| `STS-AUTHN-0450` | A passkey upgrade to a post-quantum (ML-DSA) one was refused before it began: the realm does not offer it (webauthn.pqcUpgrade is off, or WebAuthn is), the verifier knows no ML-DSA, or — with both lanes on — the post-quantum lane is not offered. Nothing was changed. | HTTP 400 from POST /account-api/keys/upgrade |
+| `STS-AUTHN-0451` | A passkey upgrade named a credential id that is not one of the caller's own passkeys. Nothing was changed. | HTTP 400 from POST /account-api/keys/upgrade |
+| `STS-AUTHN-0452` | A passkey upgrade named a passkey that is already post-quantum (ML-DSA): there is nothing to upgrade. | HTTP 400 from POST /account-api/keys/upgrade |
+| `STS-AUTHN-0453` | A passkey upgrade named a classical passkey that was already upgraded with a post-quantum passkey beside it, and that post-quantum passkey is still held. Remove it first to upgrade again. | HTTP 400 from POST /account-api/keys/upgrade |
+| `STS-AUTHN-0454` | A passkey upgrade's proof or registration arrived with no upgrade in progress: it expired, it was cancelled, another enrolment replaced it, or it names a different upgrade than the one in progress. Nothing was changed. | HTTP 400 from POST /account-api/keys/upgrade |
+| `STS-AUTHN-0455` | A passkey upgrade's proof of possession was refused before it was checked: the browser ran no assertion (it reported an error or posted nothing), or the assertion was made with a different credential than the passkey being upgraded. The upgrade is dropped; the classical passkey is unchanged. | HTTP 400 from POST /account-api/keys/upgrade |
+| `STS-AUTHN-0456` | A passkey upgrade's steps arrived out of order: a registration before the proof of possession, a second proof, or an upgrade in progress finished through the ordinary enrolment's finish (or an ordinary enrolment through the upgrade's). Nothing was changed. | HTTP 400 from POST /account-api/keys or /account-api/keys/upgrade |
+| `STS-AUTHN-0457` | A passkey upgrade's new post-quantum passkey verified, but the classical passkey it upgrades was removed or upgraded by another request since the proof of possession, so nothing was written. | HTTP 400 from POST /account-api/keys/upgrade |
+| `STS-AUTHN-0458` | A passkey upgrade's registration was not completed by the browser: it reported an error, or posted no credential. No classical retry is offered for an upgrade, whose point is ML-DSA; the upgrade is dropped and the classical passkey is unchanged. | HTTP 400 from POST /account-api/keys/upgrade |
 
 ## STS-OAUTH
 

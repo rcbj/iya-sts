@@ -356,6 +356,16 @@ const VOCABULARY = Object.freeze({
   PASSKEY_ALGORITHM: 'urn:sts:xacml:passkey:algorithm',
   PASSKEY_POST_QUANTUM: 'urn:sts:xacml:passkey:post-quantum',
   PASSKEY_LANE: 'urn:sts:xacml:passkey:lane',
+  // resource: AN UPGRADE OF A CLASSICAL PASSKEY (#939), with the fact group
+  // `upgrade` — true where the registration is the second ceremony of an
+  // upgrade, what its write does (`replace`, the ML-DSA key in the
+  // classical one's place, or `alongside`, beside it in the post-quantum
+  // lane), and the JOSE name of the algorithm of the passkey it upgrades.
+  // Read by no built-in rule: a realm's own rule may forbid upgrades.
+  PASSKEY_UPGRADE: 'urn:sts:xacml:passkey:upgrade',
+  PASSKEY_UPGRADE_MODE: 'urn:sts:xacml:passkey:upgrade-mode',
+  PASSKEY_UPGRADE_PREVIOUS_ALGORITHM:
+    'urn:sts:xacml:passkey:upgrade-previous-algorithm',
   // resource: WHAT THE KEY'S ATTESTATION WAS SIGNED WITH (#941), with the
   // fact group `attestation-algorithm` — the statement's own signature
   // algorithm by its COSE name (`ML-DSA-65`, `ES256`; absent for apple and
@@ -748,6 +758,7 @@ class AuthorizationRequest {
   //                          postQuantum }, attestationAlgorithmAllowed
   //                                            with `attestation-algorithm`
   //                                            (#941)
+  //   upgrade { mode, previousAlgorithm }      with `upgrade` (#939)
   //   policy.attestationAlgorithms             always (#941), a bag
   //   policy { backupEligibility, enforcePinLength, minPinLength,
   //            pinLengthOnlyIfSupported, enforceAttestationAtSignIn,
@@ -848,6 +859,14 @@ class AuthorizationRequest {
       }
       this.resource(V.PASSKEY_ATTESTATION_ALGORITHM_ALLOWED,
                     [given.attestationAlgorithmAllowed === true], T.BOOLEAN);
+    }
+    // AN UPGRADE (#939): true with its group, and what it does.
+    if (has('upgrade')) {
+      const u = given.upgrade || {};
+      this.resource(V.PASSKEY_UPGRADE, [true], T.BOOLEAN);
+      this.resource(V.PASSKEY_UPGRADE_MODE, one(u.mode));
+      this.resource(V.PASSKEY_UPGRADE_PREVIOUS_ALGORITHM,
+                    one(u.previousAlgorithm));
     }
     const policy = given.policy || {};
     const P = V.PASSKEY_POLICY_PREFIX;

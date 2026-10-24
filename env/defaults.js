@@ -249,6 +249,7 @@ var config = {
     pqcOnly: false,                                                                                                                                    // Request post-quantum algorithms only
     pqcAlongsideClassical: false,                                                                                                                      // Post-quantum passkey alongside a classical one
     postQuantumAllowCredentials: "narrow",                                                                                                             // Passkeys a sign-in names where a post-quantum one is required
+    pqcUpgrade: true,                                                                                                                                  // Upgrade a classical passkey to a post-quantum one
     userVerification: "required",                                                                                                                      // User verification
     attestation: "direct",                                                                                                                             // Attestation conveyance
     attestationPolicy: "by-mode",                                                                                                                      // Attestation policy

@@ -499,6 +499,7 @@
   "mfaSection.siopLabelTip": "Un nom pour cette clé, afin de la distinguer des autres : le portefeuille ou l’appareil où elle se trouve.",
   "mfaSection.enrolTitle": "Quiconque détient cette clé se connecte en tant que cette personne. N’enrôlez qu’une clé dont vous savez qu’elle lui appartient.",
   "mfaSection.enrol": "Enrôler",
+  "mfaSection.upgrade": "Passer à ML-DSA",
   "mfaSection.siopNeedsWrite": "En enrôler ou en supprimer un nécessite <strong>Admin Write</strong>.",
   "mfaSection.leadBefore": "Tout ce qui figure dans cette section concerne <code>{name}</code> et est lu depuis sa propre entrée d’annuaire, via le même <code>credentials.mechanismsFor()</code> que celui qu’interrogent l’écran de connexion et le portail utilisateur. Les mécanismes eux-mêmes se configurent sur ",
   "mfaSection.leadAnd": " et ",

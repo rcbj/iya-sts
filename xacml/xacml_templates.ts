@@ -535,7 +535,7 @@ const PASSKEY_ATTRIBUTE = {
   VERDICTS: ['allow', 'refuse'],
   // The fact groups a question may carry.
   GROUPS: ['backup-eligible', 'pin-length', 'serial', 'attestation',
-           'algorithm', 'attestation-algorithm', 'recovery'],
+           'algorithm', 'attestation-algorithm', 'recovery', 'upgrade'],
   // The reasons the built-in rules give, and the code each records, per
   // action. A door words its refusal by the reason.
   REASONS: {

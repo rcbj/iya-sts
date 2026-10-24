@@ -499,6 +499,7 @@
   "mfaSection.siopLabelTip": "此密钥的名称，以便与其他密钥区分：它所在的钱包或设备。",
   "mfaSection.enrolTitle": "持有此密钥的任何人都会以此人的身份登录。只登记您确知属于他们的密钥。",
   "mfaSection.enrol": "登记",
+  "mfaSection.upgrade": "升级到 ML-DSA",
   "mfaSection.siopNeedsWrite": "登记或移除需要 <strong>Admin Write</strong>。",
   "mfaSection.leadBefore": "此部分的所有内容都是关于 <code>{name}</code> 的，读取自其自身的目录条目，所用的 <code>credentials.mechanismsFor()</code> 与登录界面和用户门户询问的相同。这些机制本身在“协议”下的",
   "mfaSection.leadAnd": "和",
