@@ -2570,3 +2570,20 @@ operation `mirrors` the four routes, `/admin/roles/owners`,
 `/admin/groups/owners`, `/admin/applications/owners` and
 `/admin/users/service-account` — and an `ldapmodify` reaches the attribute
 too. Admin Read and Admin Write, as everything here.
+
+## `/admin-api/passkey-report` — MONITORING → PASSKEYS (#942, 2026-10-23)
+
+`mgmt-api/passkey_report_api.ts`, spread into the table like the secret
+destinations' operations: `GET /admin-api/passkey-report` (the page's view,
+with a page of one list when `list` names one), `GET
+/admin-api/passkey-report/export` (CSV or JSON, an attachment, at most
+`EXPORT_LIMIT` rows and `X-Passkey-Report-Truncated`) and `POST
+/admin-api/passkey-report/recount` (the page's one control, mirroring `POST
+/admin/passkey-report`). **All three are `common/passkey_report.ts`'s and
+nothing else**, so the page and the operation cannot report different
+numbers; **no count is a directory scan** (`common/CLAUDE.md` 3cs). The
+recount QUEUES the scheduler job, never runs on the request. A filter refused
+is 400 with the report's own code (`STS-AUTHN-0414`); a store that could not
+be asked (`STS-LDAP-0139` on the rejection) is 503, anything else 500, both
+`STS-AUTHN-0413`. `list` and `lane` are closed sets, held at the gate (#86).
+`tests/vendored/sts_passkey_report.js` drives it.
