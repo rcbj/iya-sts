@@ -540,6 +540,8 @@
   "attestationCell.notChained": ", no encadenado a ningún ancla",
   "attestationCell.trusted": "verificado, de confianza",
   "attestationCell.untrusted": "verificado, sin confianza",
+  "attestationAlgorithms.signedWith": "atestación firmada con",
+  "attestationAlgorithms.postQuantum": "atestación poscuántica, firmada con",
   "androidRevocationText.unknown": "revocación desconocida (registrado antes de que se consultara la lista de estado de Android)",
   "androidRevocationText.notRevoked": "no revocado",
   "androidRevocationText.unchecked": "revocación sin comprobar: {why}",

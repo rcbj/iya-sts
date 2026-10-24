@@ -12498,6 +12498,58 @@ function attestationKeyIdentifier(der) {
   }
 }
 
+// THE SIGNATURE ALGORITHM AN ATTESTATION CERTIFICATE IS SIGNED WITH (#941):
+// the OID of its outer signatureAlgorithm (RFC 5280 section 4.1.1.2), and
+// what this service calls it — the post-quantum registry's name for ML-DSA
+// (RFC 9881), SLH-DSA (RFC 9909) and composite ML-DSA (the LAMPS composite
+// draft), `x509.js`'s id for a classical one (`sha256-ecdsa`,
+// `sha384-rsa`, `ed25519`). `x509.sigAlgForOid()` is the one table of
+// those OIDs; this function only reads the certificate and asks it. It
+// says what the ISSUER signed with, which is the question #941 asks of a
+// chain: an ML-DSA attestation key certified under an ECDSA root is a
+// chain a quantum adversary forges at the root. RSASSA-PSS names its hash
+// in its parameters, which are not read here: it is `rsassa-pss`, with no
+// hash, rather than a guess. An OID nobody here knows is named by the OID.
+const ATTESTATION_PQ_FAMILIES = ['ML-DSA', 'SLH-DSA', 'Composite ML-DSA'];
+/**
+ * Says which signature algorithm a certificate was signed with (#941).
+ *
+ * @param der - the certificate's DER
+ * @returns `{ algorithm, oid, family, postQuantum, composite }`, or null
+ *   when it is not a certificate
+ */
+function attestationSignatureAlgorithm(der) {
+  log.debug("Entering attestationSignatureAlgorithm().");
+  let oid = '';
+  try {
+    const cert = pkijs.Certificate.fromBER(new Uint8Array(Buffer.from(der)));
+    oid = String(cert.signatureAlgorithm.algorithmId || '');
+  } catch (e) {
+    log.debug("Caught in attestationSignatureAlgorithm(): " +
+              ((e && e.message) || e));
+    log.debug("Leaving attestationSignatureAlgorithm(). Unreadable.");
+    return null;
+  }
+  const spec = x509.sigAlgForOid(oid) || null;
+  let algorithm = oid;
+  let family = 'unknown';
+  if (spec && spec.kind === 'pqc') {
+    const entry = pqcX509.alg(spec.pqc) || {};
+    algorithm = String(entry.name || spec.pqc);
+    family = String(spec.family || entry.family || 'unknown');
+  } else if (spec) {
+    algorithm = String(spec.id);
+    family = String(spec.kind);
+  } else if (oid === PATH_RSASSA_PSS) {
+    algorithm = 'rsassa-pss';
+    family = 'rsa';
+  }
+  log.debug("Leaving attestationSignatureAlgorithm(). " + algorithm);
+  return { algorithm: algorithm, oid: oid, family: family,
+           postQuantum: ATTESTATION_PQ_FAMILIES.indexOf(family) >= 0,
+           composite: family === 'Composite ML-DSA' };
+}
+
 // ----- OpenSSH --------------------------------------------------------------
 
 const SSH_CERT_SUFFIX = '-cert-v01@openssh.com';
@@ -13521,6 +13573,7 @@ module.exports = {
   attestationDeviceSerial: attestationDeviceSerial,
   certificateSerialHex: certificateSerialHex,
   attestationKeyIdentifier: attestationKeyIdentifier,
+  attestationSignatureAlgorithm: attestationSignatureAlgorithm,
   // --- the FIDO MDS3 BLOB (#62 P5) ---
   fidoMdsRoots: fidoMdsRoots,
   verifyFidoMdsBlob: verifyFidoMdsBlob,

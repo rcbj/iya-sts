@@ -114,6 +114,8 @@
   "audit.actions.device.delete.label": "A device was removed",
   "audit.actions.device.evict.label": "A device was removed to make room at its person's bound",
   "audit.actions.device.attestation-revoked.label": "A device key is no longer attested: Google's Android attestation status list revokes its chain",
+  "audit.actions.webauthn.ceremony.label": "A WebAuthn registration or assertion ran, completed or not",
+  "audit.actions.webauthn.algorithm-mismatch.label": "A person holding a post-quantum passkey signed in with a classical one",
   "audit.actions.webauthn.attestation-revoked.label": "A security key's attestation is no longer trusted: Google's Android attestation status list revokes its chain",
   "audit.actions.device.key-add.label": "A key was added to a device",
   "audit.actions.device.key-remove.label": "A key was removed from a device",

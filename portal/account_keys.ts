@@ -87,6 +87,13 @@ const ENROL_KEY_FORM = vz.object({
   lane: vt.opt(vt.oneOf(['classical', 'pqc']))
     .describe('`begin`: `classical` (the default) or `pqc`, where the realm ' +
               'offers a post-quantum passkey beside a classical one.'),
+  // THE CLASSICAL RETRY (#944): after an ML-DSA-first registration failed
+  // on the device, a `begin` with the classical algorithms only. Refused
+  // where the realm forbids a classical passkey (STS-AUTHN-0420).
+  algorithms: vt.opt(vt.oneOf(['classical']))
+    .describe('`begin`: `classical` retries with the classical algorithms ' +
+              'only, where `enrol.pending.fallback.classical` says the ' +
+              'realm allows it.'),
   enrolment_id: vt.opt(vt.base64url)
     .describe('`finish`: the pending enrolment the ceremony answers.'),
   credential: vz.string().max(validation.CAP.TEXT).optional()
@@ -267,7 +274,20 @@ class AccountKeys {
         userHandle: pending.userHandle || '',
         display: user.displayName,
         exclude: (pending.exclude || []).slice(0),
-        options: webauthnPolicy.creationOptions(rpId, pending.kind, lane)
+        options: webauthnPolicy.creationOptions(rpId, pending.kind, lane,
+                                                pending.classicalOnly ===
+                                                  true),
+        // THE CLASSICAL RETRY (#944): whether this ceremony asks for
+        // ML-DSA, whether a retry with the classical algorithms only may be
+        // offered if the device cannot make it, and whether this IS that
+        // retry. The page draws the guidance from these; the `begin` asks
+        // the realm again.
+        fallback: {
+          asksPostQuantum: webauthnPolicy.asksPostQuantum(lane,
+            pending.classicalOnly === true),
+          classical: pending.classicalOnly !== true &&
+                     webauthnPolicy.classicalFallbackOffered(lane),
+          retrying: pending.classicalOnly === true }
       };
     }
     if (policy.mfaAllowed) {
@@ -411,7 +431,9 @@ class AccountKeys {
       const begun: Json = credentials.beginKeyEnrolment(username, {
         role: String(body.role || 'mfa'), kind: String(body.kind || ''),
         // The lane (#643), refused there where the realm does not offer it.
-        lane: String(body.lane || 'classical') });
+        lane: String(body.lane || 'classical'),
+        // The classical retry (#944), refused there where it is forbidden.
+        classicalOnly: String(body.algorithms || '') === 'classical' });
       if (!begun.ok) {
         log.debug("Leaving AccountKeys.enrol(). Refused to start.");
         return refused(400, ctx.errorCodes.codeOf(begun) || 'STS-PORTAL-0033',
@@ -423,6 +445,7 @@ class AccountKeys {
         summary: username + ' started creating a passkey',
         detail: { role: begun.role, kind: begun.kind || 'any',
                   lane: begun.lane || 'classical',
+                  classicalOnly: !!begun.classicalOnly,
                   excluded: begun.exclude.length,
                   address: websecurity.addressOf(req) }
       });
@@ -684,7 +707,9 @@ class AccountKeys {
         mirrors: 'POST ' + ctx.PORTAL + '/keys',
         summary: 'Begins, finishes or cancels adding a passkey',
         description: '`begin` mints a challenge and holds it (the policy ' +
-          'and the `lane`, #643, checked at the door); `finish` verifies ' +
+          'and the `lane`, #643, checked at the door; `algorithms: ' +
+          'classical`, #944, the classical retry, refused where the realm ' +
+          'forbids a classical passkey); `finish` verifies ' +
           'the browser\'s registration with the sign-in screen\'s address rules and ' +
           'answers `go` naming the new passkey; `cancel` drops the waiting ' +
           'one. A refusal carries the page\'s `view`.',

@@ -149,6 +149,22 @@ class PortalWebAuthn {
   }
 
   /**
+   * The server's fallback facts (#944) a `#wa-data` element carries, as
+   * `data-fallback`; empty where it carries none.
+   *
+   * @param d - the element
+   * @returns the facts
+   */
+  static fallbackOf(d: Json): Json {
+    try {
+      return JSON.parse(d.getAttribute('data-fallback') || '{}') || {};
+    } catch (e) {
+      // Markup this page did not draw: no facts, and the failure is sent.
+      return {};
+    }
+  }
+
+  /**
    * Wires the page just drawn: the signal, and the ceremony button, whose
    * answer goes in `#wa-credential` and whose form is handed to `submit`.
    *
@@ -180,7 +196,21 @@ class PortalWebAuthn {
         }
       };
       PortalWebAuthn.ceremony(d, window.navigator).then(send, function (e) {
-        send({ error: e && e.name, message: e && e.message });
+        // A REGISTRATION THAT ASKED FOR ML-DSA AND FAILED ON THE DEVICE
+        // (#944): the page's guidance is shown in place and nothing is sent,
+        // so the waiting enrolment stays for the retry the guidance begins;
+        // the failure goes to the ceremony log's hook (#943). Anything else
+        // is sent as given, as it always was.
+        const facts = PortalWebAuthn.fallbackOf(d);
+        const offer = d.getAttribute('data-mode') === 'create'
+          ? WebWebAuthn.offerFallback(doc, window, e,
+                                      { surface: 'portal', fallback: facts })
+          : Promise.resolve(false);
+        offer.then(function (shown: boolean): void {
+          if (!shown) {
+            send({ error: e && e.name, message: e && e.message });
+          }
+        });
       });
     });
   }

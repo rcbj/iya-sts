@@ -421,9 +421,10 @@ function kind(t) {
           'P7. the fourth kind on Directory → Policies, with its two ' +
           'actions', JSON.stringify(policyKinds.actions()));
   const view = adminViews.policiesView({});
-  // Eighteen since #724 (`recoveryAssurance`), after #718's
-  // postQuantumRequired.
-  t.check(!!view.passkey && view.passkey.fields.length === 18 &&
+  // Twenty since #941 (`attestationAlgorithms`) and #946
+  // (`postQuantumAllowCredentials`), after #724's `recoveryAssurance` and
+  // #718's postQuantumRequired.
+  t.check(!!view.passkey && view.passkey.fields.length === 20 &&
           view.passkey.fields.some(function (field) {
             return field.key === 'securityKeyResidentKey' &&
                    field.type === 'enum' && field.values.length === 3;

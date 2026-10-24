@@ -614,6 +614,17 @@ const ACTIONS = [
   { action: 'device.attestation-revoked', category: 'directory',
     label: 'A device key is no longer attested: Google\'s Android ' +
            'attestation status list revokes its chain' },
+  // EVERY WEBAUTHN CEREMONY, AND THE ALGORITHM MISMATCH (#943): one row per
+  // registration or assertion at a door that runs one, successful or not —
+  // what was offered, what was used, which client, how the authenticator
+  // was reached, the browser's error name — and one when a person holding
+  // a post-quantum passkey signed in with a classical one.
+  // `authn/webauthn_ceremonies.ts` writes both and argues the fields.
+  { action: 'webauthn.ceremony', category: 'authentication',
+    label: 'A WebAuthn registration or assertion ran, completed or not' },
+  { action: 'webauthn.algorithm-mismatch', category: 'authentication',
+    label: 'A person holding a post-quantum passkey signed in with a ' +
+           'classical one' },
   { action: 'webauthn.attestation-revoked', category: 'authentication',
     label: 'A security key\'s attestation is no longer trusted: Google\'s ' +
            'Android attestation status list revokes its chain' },

@@ -12571,6 +12571,43 @@ post-quantum keys while required.
   generalised to a map by reason. `authn/CLAUDE.md` (*A post-quantum
   passkey required*) argues the doors.
 
+**#941 ADDED `attestationAlgorithms` (2026-10-23)**: `none`, or a list of
+`post-quantum`, `ml-dsa-44`, `ml-dsa-65`, `ml-dsa-87`, `slh-dsa` and
+`composite-ml-dsa` (`stsPasskeyAttestationAlgorithms`), the algorithms a
+passkey's ATTESTATION — statement and chain, leaf to anchor — must be
+signed with. Not `postQuantumRequired`, which is the passkey's own.
+
+* **Optional on a save**, `recoveryAssurance`'s arrangement, so a caller
+  sending the whole profile as it was is not refused (and no other test's
+  full-profile save had to change).
+* **It demands a trusted statement** (`webauthn_policy.ts`'s
+  `demandsTrust`): anybody can mint an ML-DSA chain.
+* **The fact group is `attestation-algorithm`**, carried by `addKey()`
+  always (a key written by value with no attestation satisfies no list)
+  and by `signInVerdict()` only while sign-ins are held to the rules. The
+  verdict `attestationAlgorithmAllowed` is computed in ONE place,
+  `question()`, by `attestationAlgorithmAllowed()` — verified, trusted,
+  at least one certificate, and every signature allowed by an entry —
+  as `postQuantum` is for #718. `STS-AUTHN-0411` (registration), `0412`
+  (sign-in). The record and its reader are `authn/CLAUDE.md`'s
+  (*What an attestation is signed with*).
+
+**#946 ADDED `postQuantumAllowCredentials` (2026-10-23)**: `realm` (the
+default, OPTIONAL on a save, `recoveryAssurance`'s arrangement), `narrow`
+or `list-and-refuse`, on the default and named profiles
+(`stsPasskeyPostQuantumAllowCredentials`); `realm` follows the realm's
+`webauthn.postQuantumAllowCredentials` (`narrow` by default) — the
+ticket's "per realm, or per policy". `postQuantumAllowCredentials()`
+resolves it and `question()` sends it resolved as a policy fact no built-in
+rule reads. It decides nothing: `authn/CLAUDE.md` (*List and refuse*) says
+what the passkey step does with it.
+
+**`web_webauthn.ts` (#944)** holds what both static surfaces do when a
+registration that asked for ML-DSA fails on the device: `failureKind()`,
+`capabilities()` (`getClientCapabilities()`, feature-detected),
+`offerFallback()` and the #943 hook `reportCeremonyFailure()`, a no-op
+until that ticket wires it. Still a `web_` module requiring nothing.
+
 ### `credentials.ts`'s half of the passkey lanes (#643, 2026-10-19)
 
 The lanes are argued in `authn/CLAUDE.md` (*Two lanes*); what this file

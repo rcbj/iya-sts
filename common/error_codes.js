@@ -6657,6 +6657,28 @@ const CODES = [
       'their factors unknown rather than as holding none; or the read threw ' +
       'otherwise, and each row was asked on its own instead.',
     spec: 'none — logged; the page is drawn' },
+  // WHAT A PASSKEY'S ATTESTATION IS SIGNED WITH (#941): the passkey
+  // policy's attestationAlgorithms, decided by the issuance policy's
+  // passkey rules.
+  { code: 'STS-AUTHN-0411',
+    summary: 'A passkey was not registered: its attestation is not a ' +
+      'trusted one whose statement and every certificate of its chain, ' +
+      'leaf to anchor, are signed with an algorithm the selected passkey ' +
+      'policy profile\'s attestationAlgorithms allows (#941) — or it ' +
+      'carried no certificate (self or none attestation). Asked where ' +
+      'every key is written, so the sign-in screen, /portal/keys and an ' +
+      'activation link all refuse it.',
+    spec: 'the ceremony\'s page, drawn again with the reason' },
+  { code: 'STS-AUTHN-0412',
+    summary: 'A passkey did not sign anybody in: while the passkey policy ' +
+      'holds sign-ins to the attestation rules ' +
+      '(enforceAttestationAtSignIn), the algorithms its registration ' +
+      'recorded for its attestation are not what the selected profile\'s ' +
+      'attestationAlgorithms allows (#941), or it recorded none (a key ' +
+      'registered before #941, or with no trusted attestation). Recorded ' +
+      'on a session.refuse row.',
+    spec: 'the sign-in screen or the step\'s page, drawn again with the ' +
+      'reason' },
   // THE PASSKEY REPORT (#942): Monitoring → Passkeys and
   // /admin-api/passkey-report, `common/passkey_report.ts`.
   { code: 'STS-AUTHN-0413',
@@ -6688,6 +6710,15 @@ const CODES = [
     summary: 'A Monitoring → Passkeys action was refused: an action that ' +
       'does not exist, or a recount the scheduler could not queue.',
     spec: 'HTTP 400 from POST /admin-api/passkey-report/{action}' },
+  { code: 'STS-AUTHN-0420',
+    summary: 'A passkey registration asked to be retried with the ' +
+      'classical algorithms only (#944) — the retry offered after an ' +
+      'ML-DSA-first registration failed on the device — where the realm ' +
+      'forbids a classical passkey: webauthn.pqcOnly is on, the passkey ' +
+      'policy\'s postQuantumRequired is registration-and-sign-in, or, at ' +
+      'the sign-in step, it requires a post-quantum passkey to sign in. ' +
+      'Refused before the ceremony is armed; nothing is written.',
+    spec: 'HTTP 400 (the sign-in API and the account API)' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',

@@ -653,6 +653,15 @@ inherited. `POST /admin-api/policies/define-person-attribute` and
 removed while anybody holds a value of it or the policy requires it.
 `/admin/users/new` and a person's Attributes tab mark every required field.
 
+**The passkey policy** is described row by row under
+[the passkey policy](authentication.md#the-passkey-policy) and, with recipes, in
+[Passkeys](passkeys.md). One row changes what a person sees at sign-in while a
+post-quantum passkey is required: **Passkeys a sign-in names where a
+post-quantum one is required** (`postQuantumAllowCredentials`, #946) —
+`realm` (follow `webauthn.postQuantumAllowCredentials` on Protocols →
+WebAuthn), `narrow` or `list-and-refuse`
+([Narrow, or list and refuse](passkeys.md#narrow-or-list-and-refuse)).
+
 ### Groups — `/admin/groups`
 
 `/admin/groups` reports the *directory* rather than what this service has

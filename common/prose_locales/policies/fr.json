@@ -1127,6 +1127,14 @@
     "en": "ba077a59ecf25ecb",
     "text": "`off` (la valeur par défaut) accepte une clé d’accès quel que soit son algorithme de signature. `sign-in` n’accepte qu’une clé d’accès POST-QUANTIQUE, dont l’algorithme est ML-DSA-44, ML-DSA-65 ou ML-DSA-87 (RFC 9964), lorsqu’elle connecte quelqu’un, comme premier identifiant ou comme second facteur ; une clé classique peut encore être enregistrée. `registration-and-sign-in` refuse aussi une clé classique à l’enregistrement, et l’enregistrement ne propose alors que ML-DSA. C’est l’algorithme qui décide, pas la voie dans laquelle une clé a été créée. Refusé tant que le domaine ne propose aucun ML-DSA (webauthn.algorithms n’en nomme aucun, et ni webauthn.pqcOnly ni webauthn.pqcAlongsideClassical n’est activé)."
   },
+  "passkey.FIELDS.postQuantumAllowCredentials.label": {
+    "en": "295b04bef9cf50bc",
+    "text": "Clés d’accès qu’une connexion nomme lorsqu’une clé post-quantique est exigée"
+  },
+  "passkey.FIELDS.postQuantumAllowCredentials.what": {
+    "en": "af7666466d67e760",
+    "text": "`realm` (la valeur par défaut) suit le paramètre webauthn.postQuantumAllowCredentials du domaine. Lu seulement tant que postQuantumRequired exige une clé d’accès post-quantique à la connexion. `narrow` ne nomme que les clés d’accès post-quantiques (ML-DSA) de la personne dans la requête de l’étape de clé d’accès, de sorte qu’une clé classique n’est jamais proposée, et une personne dont l’appareil ne détient que sa clé classique voit le propre message « aucune clé d’accès trouvée » de la plateforme. `list-and-refuse` nomme toutes les clés d’accès qu’elle détient et refuse une clé classique après la cérémonie, avec une page indiquant que cette application exige une clé d’accès post-quantique et où en ajouter une ; la personne peut alors choisir une clé d’accès qui sera refusée. Dans les deux cas, une personne qui ne détient aucune clé d’accès post-quantique en est informée avant toute cérémonie. Omis d’un enregistrement, `realm` est conservé."
+  },
   "passkey.FIELDS.passkeyHints.label": {
     "en": "7445bda72b06c415",
     "text": "Indications qu’envoie « Créer une clé d’accès »"
@@ -1199,6 +1207,14 @@
     "en": "bdbb83ca7b2a2c48",
     "text": "`any` PAR DÉFAUT EN DÉVELOPPEMENT, `not-weaker` EN PRODUIT. Indique si un moyen de revenir dans le compte qui ne demande aucune clé d’accès — un lien de réinitialisation du mot de passe, un lien d’activation, un code de récupération, un code ou un lien envoyé par courriel — rétablit l’accès d’une personne qui en détient une. `any` : immédiatement. `not-weaker` : la première connexion qui suit et qui n’est pas une connexion par clé d’accès n’atteint aucune application ; la personne enregistre une clé d’accès conforme à cette politique et se connecte avec elle. `operator-only` : comme not-weaker, et les portes en libre-service (le formulaire de mot de passe oublié, un code de récupération ou un code ou lien envoyé par courriel à la connexion) sont refusées ; seuls le lien de réinitialisation, le mot de passe généré ou le lien d’activation d’un administrateur restent possibles. Omise lors d’un enregistrement, la valeur par défaut intégrée est conservée."
   },
+  "passkey.FIELDS.attestationAlgorithms.label": {
+    "en": "fe72fed238e39ede",
+    "text": "Algorithmes avec lesquels l’attestation d’une clé d’accès doit être signée"
+  },
+  "passkey.FIELDS.attestationAlgorithms.what": {
+    "en": "cb4ed83be3a69177",
+    "text": "`none` PAR DÉFAUT : une attestation est acceptée quel que soit l’algorithme avec lequel elle est signée. Sinon, une liste parmi post-quantum, ml-dsa-44, ml-dsa-65, ml-dsa-87, slh-dsa et composite-ml-dsa : une clé d’accès n’est enregistrée qu’avec une attestation DE CONFIANCE qui porte un certificat, dont la signature de la déclaration et la signature de chaque certificat de sa chaîne, du certificat feuille jusqu’à l’ancre de confiance, sont chacune autorisées par la liste (`post-quantum` autorise toute signature ML-DSA, SLH-DSA ou ML-DSA composite). Les attestations « self » et « none » sont refusées, faute de certificat. Avec enforceAttestationAtSignIn activé, chaque connexion soumet la clé d’accès à cette règle d’après ce que son enregistrement a consigné ; une clé d’accès enregistrée avant la règle cesse donc de fonctionner. Il s’agit de l’algorithme de l’attestation, pas de celui de la clé d’accès elle-même (postQuantumRequired). Omis lors d’un enregistrement, la valeur par défaut intégrée est conservée."
+  },
   "passkey.SCHEMA.objectClasses.stsPasskeyPolicy.what": {
     "en": "44bab556bd6240cc",
     "text": "La classe de ce service pour une politique des clés d’accès : le comportement des clés d’accès dans ce domaine. L’entrée est nommée par le PROFIL (`cn=default`)."
@@ -1239,6 +1255,10 @@
     "en": "ba077a59ecf25ecb",
     "text": "`off` (la valeur par défaut) accepte une clé d’accès quel que soit son algorithme de signature. `sign-in` n’accepte qu’une clé d’accès POST-QUANTIQUE, dont l’algorithme est ML-DSA-44, ML-DSA-65 ou ML-DSA-87 (RFC 9964), lorsqu’elle connecte quelqu’un, comme premier identifiant ou comme second facteur ; une clé classique peut encore être enregistrée. `registration-and-sign-in` refuse aussi une clé classique à l’enregistrement, et l’enregistrement ne propose alors que ML-DSA. C’est l’algorithme qui décide, pas la voie dans laquelle une clé a été créée. Refusé tant que le domaine ne propose aucun ML-DSA (webauthn.algorithms n’en nomme aucun, et ni webauthn.pqcOnly ni webauthn.pqcAlongsideClassical n’est activé)."
   },
+  "passkey.SCHEMA.attributes.stsPasskeyPostQuantumAllowCredentials.what": {
+    "en": "af7666466d67e760",
+    "text": "`realm` (la valeur par défaut) suit le paramètre webauthn.postQuantumAllowCredentials du domaine. Lu seulement tant que postQuantumRequired exige une clé d’accès post-quantique à la connexion. `narrow` ne nomme que les clés d’accès post-quantiques (ML-DSA) de la personne dans la requête de l’étape de clé d’accès, de sorte qu’une clé classique n’est jamais proposée, et une personne dont l’appareil ne détient que sa clé classique voit le propre message « aucune clé d’accès trouvée » de la plateforme. `list-and-refuse` nomme toutes les clés d’accès qu’elle détient et refuse une clé classique après la cérémonie, avec une page indiquant que cette application exige une clé d’accès post-quantique et où en ajouter une ; la personne peut alors choisir une clé d’accès qui sera refusée. Dans les deux cas, une personne qui ne détient aucune clé d’accès post-quantique en est informée avant toute cérémonie. Omis d’un enregistrement, `realm` est conservé."
+  },
   "passkey.SCHEMA.attributes.stsPasskeyHintsPasskey.what": {
     "en": "2ffa66aabab7a053",
     "text": "Les indications (hints) WebAuthn (Level 3 section 5.4.8) qu’envoie *Créer une clé d’accès* sur le portail, dans l’ordre, parmi security-key, client-device et hybrid, ou aucune. Elles indiquent au navigateur quelle manière de créer la clé d’accès proposer en premier. Une indication ne peut pas contredire webauthn.authenticatorAttachment : client-device implique platform, security-key et hybrid impliquent cross-platform."
@@ -1274,6 +1294,10 @@
   "passkey.SCHEMA.attributes.stsPasskeyRecoveryAssurance.what": {
     "en": "bdbb83ca7b2a2c48",
     "text": "`any` PAR DÉFAUT EN DÉVELOPPEMENT, `not-weaker` EN PRODUIT. Indique si un moyen de revenir dans le compte qui ne demande aucune clé d’accès — un lien de réinitialisation du mot de passe, un lien d’activation, un code de récupération, un code ou un lien envoyé par courriel — rétablit l’accès d’une personne qui en détient une. `any` : immédiatement. `not-weaker` : la première connexion qui suit et qui n’est pas une connexion par clé d’accès n’atteint aucune application ; la personne enregistre une clé d’accès conforme à cette politique et se connecte avec elle. `operator-only` : comme not-weaker, et les portes en libre-service (le formulaire de mot de passe oublié, un code de récupération ou un code ou lien envoyé par courriel à la connexion) sont refusées ; seuls le lien de réinitialisation, le mot de passe généré ou le lien d’activation d’un administrateur restent possibles. Omise lors d’un enregistrement, la valeur par défaut intégrée est conservée."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyAttestationAlgorithms.what": {
+    "en": "cb4ed83be3a69177",
+    "text": "`none` PAR DÉFAUT : une attestation est acceptée quel que soit l’algorithme avec lequel elle est signée. Sinon, une liste parmi post-quantum, ml-dsa-44, ml-dsa-65, ml-dsa-87, slh-dsa et composite-ml-dsa : une clé d’accès n’est enregistrée qu’avec une attestation DE CONFIANCE qui porte un certificat, dont la signature de la déclaration et la signature de chaque certificat de sa chaîne, du certificat feuille jusqu’à l’ancre de confiance, sont chacune autorisées par la liste (`post-quantum` autorise toute signature ML-DSA, SLH-DSA ou ML-DSA composite). Les attestations « self » et « none » sont refusées, faute de certificat. Avec enforceAttestationAtSignIn activé, chaque connexion soumet la clé d’accès à cette règle d’après ce que son enregistrement a consigné ; une clé d’accès enregistrée avant la règle cesse donc de fonctionner. Il s’agit de l’algorithme de l’attestation, pas de celui de la clé d’accès elle-même (postQuantumRequired). Omis lors d’un enregistrement, la valeur par défaut intégrée est conservée."
   },
   "passkey.SCHEMA.attributes.stsPasskeySelectApplication.what": {
     "en": "03ba679923c40b45",
@@ -1414,6 +1438,10 @@
   "passkey.sentences.postQuantumEverywhere": {
     "en": "79742dacfba54ede",
     "text": "seule une clé d’accès post-quantique (ML-DSA) est enregistrée ou connecte une personne"
+  },
+  "passkey.sentences.attestationAlgorithms": {
+    "en": "9e73c79f0de11296",
+    "text": "une clé d’accès n’est enregistrée qu’avec une attestation de confiance dont la déclaration et la chaîne de certificats sont signées avec {{algorithms}}"
   },
   "passkey.sentences.recoveryAny": {
     "en": "7383156c8eb1e363",

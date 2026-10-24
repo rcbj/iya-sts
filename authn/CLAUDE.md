@@ -16,6 +16,7 @@ than living under `oauth-oidc/` where the screen used to be rendered.
 | `device_bound_sessions.ts` | **Device Bound Session Credentials (#725)**: the registration header, `POST /authn/dbsc/register` and `/authn/dbsc/refresh`, and the bound-cookie check `sessionOf()` asks. See *The session bound to a key the browser holds*, below. |
 | `webauthn.js` | The relying party's half of WebAuthn Level 3. |
 | `webauthn_policy.ts` | The ceremony's options, the four policy settings that refuse, and the attestation policy's settings (#105), kept out of `webauthn.js` so that file stays loadable on its own. |
+| `webauthn_ceremonies.ts` | **Every WebAuthn ceremony's audit row, and the algorithm mismatch (#943)**: one `webauthn.ceremony` row per registration and assertion at the four doors that run one, and a `webauthn.algorithm-mismatch` row. A library (rule 3). See *Every ceremony leaves a row*, below. |
 | `webauthn_attestation.ts` | **A registration's attestation statement, verified (#105)**: WebAuthn Level 3 section 7.1 steps 21-25 and all eight section 8 formats, the trust anchors (the realm's and the FIDO Metadata Service's), MDS status reports, revocation, and the record a key carries. A library (rule 3). See *The attestation statement*, below. |
 
 **A THIRD ENDPOINT LIVES IN `/authn/*` AND IS NOT IN THIS DIRECTORY.**
@@ -2775,6 +2776,71 @@ and ML-DSA ceremonies), `tests/passkey_xacml.js` section E, and
 `tests/vendored/sts_passkey_post_quantum_required.js` over `/admin-api`,
 `/account-api` and the sign-in screen.
 
+## THE CLASSICAL RETRY OF A REGISTRATION (#944, 2026-10-23)
+
+The offered list is ML-DSA first and a platform may fail the whole
+registration when an authenticator cannot do the first algorithm, rather
+than take the next. The passkey step and `/portal/keys` now offer a retry
+with the classical algorithms only. What holds it together:
+
+* **THE DOOR DECIDES, NOT THE PAGE.** `webauthnPolicy.classicalRetryRefusal(at)`
+  refuses it (`STS-AUTHN-0420`) under `webauthn.pqcOnly` and under a profile
+  requiring a post-quantum passkey at registration, and — `at: 'sign-in'`,
+  the passkey step only — under one requiring it at sign-in, whose new key
+  would be refused at the session's start the moment it was written. Asked
+  by `mfaWebauthnOptions()` (`algorithms: classical` on
+  `…/webauthn/options`) and by `credentials.beginKeyEnrolment()`
+  (`classicalOnly`). `algorithmsOffered(lane, classicalOnly)` IGNORES the
+  flag where the registration-level refusal applies, so a ceremony armed
+  before a setting changed asks for and is held to the realm's own list.
+* **CARRIED, NEVER READ BACK**: `step.classicalOnly` and the pending
+  enrolment's `classicalOnly`, which the finish passes to `algorithmIds()`
+  for section 7.1's offered-algorithm check — an ML-DSA credential answering
+  the retry is `STS-AUTHN-0228`. An ordinary options request after a retry
+  puts the step back on the realm's list. With both lanes on the retry is
+  the classical lane (`classicalRetryLane()`), under its handle.
+* **THE FACTS ARE LANGUAGE-FREE** (`fallback`: `asksPostQuantum`,
+  `classical`, `retrying`) on the step's view, its ceremony and the portal's
+  pending enrolment; the renderers draw the guidance hidden in the page's
+  language and `common/web_webauthn.ts`'s `offerFallback()` shows the part
+  the error is for — `NotSupportedError` plainly, `NotAllowedError` and
+  `UnknownError` (also a cancel, a timeout, anything) worded as "if" — and
+  posts nothing, so the step stays armed. Any other failure is posted as it
+  was (`STS-AUTHN-0022`).
+* **`getClientCapabilities()` HAS NO ALGORITHM MEMBER**, so it cannot choose
+  the algorithms beforehand. It is feature-detected after a failure, shows
+  the hybrid line only where `hybridTransport` is reported, and goes with
+  the failure to `WebWebAuthn.reportCeremonyFailure()` — a NO-OP that #943
+  wires to its ceremony log; this ticket builds no endpoint.
+
+**Tests**: `tests/passkey_post_quantum_fallback.js` sections A-C and E.
+
+## LIST AND REFUSE WHERE A POST-QUANTUM PASSKEY IS REQUIRED (#946, 2026-10-23)
+
+`passkeyPolicy.postQuantumAllowCredentials()` — the profile's row, or the
+realm's `webauthn.postQuantumAllowCredentials` where the row is `realm` —
+chooses how `webauthnFacts()` builds `allowCredentials` while #718's
+requirement applies at sign-in. `narrow` (default) is #718's filter;
+`list-and-refuse` names every key of the role, and a classical assertion
+reaches `startSessionHere()` and is refused there by the existing
+`post-quantum` rule (`STS-AUTHN-0356`) — before any session, event or
+`session.start` row; the counter is spent, as for every verified assertion.
+**A person holding no post-quantum key is still refused before the
+ceremony in both**: no pick of theirs could succeed.
+
+**The panel.** `refusedSession()` passes `postQuantumRequired` to
+`screenRefused()` for 0356, which marks the pending record (cleared by the
+next refusal, the next screen act and Start over); `screenView()` answers
+`postQuantumRequired` as `postQuantumHelp()`'s `{ register, upgrade }` and
+the step's facts carry `postQuantumHelp` beside `postQuantumRefused`.
+`WebAuthnLogin.postQuantumPanel()` draws it on the screen and the step page,
+translated, under the English sentence. `register` is `/portal/keys` where
+passkeys may be registered here; `upgrade` is '' until #939 makes
+`webauthnPolicy.postQuantumUpgradeOffered()` answer true. The usernameless
+sign-in, never narrowable, gets the same panel.
+
+**Tests**: `tests/passkey_post_quantum_fallback.js` section D.
+
 ## THE WEBAUTHN ADDRESS RULES (2026-09-12)
 
 Two changes to what a ceremony is held to, both about the address a request
@@ -2882,6 +2948,66 @@ software authenticator in all eight formats) and
 `tests/vendored/sts_webauthn_attestation.js` are the tests. Not done:
 enterprise attestation (section 5.4.7) has no RP ID allow-list, which the plan
 deferred.
+
+## WHAT AN ATTESTATION IS SIGNED WITH (#941, 2026-10-23)
+
+The attestation record a key carries gains `algorithms`: the statement's
+own signature algorithm by its COSE name, every x5c certificate's leaf
+first, the anchor a trusted path reached, a compound statement's members,
+and `postQuantum` — true only with at least one certificate and every
+signature post-quantum. `webauthn_attestation.ts`'s header argues the
+fields; what this directory needs is where they come from and go:
+
+* **Read off the statement as it arrived** (`algorithmsOf()`), in
+  `assess()` before any branch, so even the policy `off` records them —
+  as the authenticator's claim, beside `verified: false`. The anchor is
+  added once `trustOf()` reached one (it now answers `anchorDer`).
+  A certificate is named by `pki.attestationSignatureAlgorithm()`, which
+  says what its ISSUER signed it with.
+* **One reader**: `recordedAlgorithms()` (and
+  `credentials.attestationAlgorithms()` over it) — what the console's key
+  row, `GET /admin-api/users` and the passkey policy's
+  `attestation-algorithm` facts read. A key from before #941 answers
+  `recorded: false`.
+* **Enforced by the passkey policy's `attestationAlgorithms`**
+  (`common/CLAUDE.md` 3ch): at registration in `credentials.addKey()`
+  (`STS-AUTHN-0411`), at sign-in by `signInVerdict()` only while
+  `enforceAttestationAtSignIn` holds sign-ins to the rules
+  (`STS-AUTHN-0412`, marked and signalled once as 0316 is, in
+  `attestationAtSignIn()`). Set, the row demands trust
+  (`webauthn_policy.attestationSettings()`), so `demandedBy()` names it.
+
+`tests/passkey_attestation_algorithm.js` holds it over an ML-DSA chain
+made at run time with the service's own post-quantum certificate encoder.
+**No real post-quantum authenticator's attestation has been tested.**
+
+## EVERY CEREMONY LEAVES A ROW (#943, 2026-10-23)
+
+`webauthn_ceremonies.ts` writes `webauthn.ceremony` (its header lists the
+twelve detail fields, which are what a realm-wide report reads) at:
+
+* **the passkey step** — `noteStepCeremony()`, at the browser's refusal,
+  the RP ID, enrolment switched off, a check that threw, and
+  `finishWebauthn()`. The parsed credential rides on `body.posted`;
+  `body` is typed `any` for it.
+* **the usernameless sign-in** — `passkeySignIn()` keeps what it learns
+  (credential, owner, key, algorithm) in `passkeyCeremonies`, a WeakMap by
+  response, and `passkeyRefused()` — the one refusal funnel — writes the
+  row; the completed one is written just before `startSession()`.
+* **`/portal/keys` and an activation link** — `credentials.confirmKeyEnrolment()`,
+  reading the pending enrolment's lane BEFORE the check drops it
+  (`opts.door` names `activation`).
+* **not the device link** (`common/device_enrolment.ts`), which is owed.
+
+**The browser's error name comes through the ceremony's own endpoint**: both
+scripts already posted `{ error: e.name, message }` as the credential, so
+no report endpoint was added. Only an allow-listed DOMException name is
+kept, never the message. **The rows are `summarised`** — the request's
+HTTP call row writes the one log line a refusal earns — so no line per
+attempt. **The mismatch** is asked in `startSessionHere()` after the
+passkey policy let the key through (`noteAlgorithmMismatch()`): a
+classical key from a person who holds an ML-DSA one, where post-quantum
+was not required. `tests/webauthn_ceremony_log.js` holds it.
 
 ## `/authn/password-change`: A FORCED PASSWORD CHANGE AT THE SIGN-IN SCREEN (2026-09-13)
 

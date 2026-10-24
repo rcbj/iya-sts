@@ -166,6 +166,10 @@ import webauthnVerifier = require('../authn/webauthn');
 // `webauthn_policy`, `crypto`, `pki` and `error_codes`, and the FIDO metadata
 // and revocation lazily — none of which requires this file.
 import webauthnAttestation = require('../authn/webauthn_attestation');
+// EVERY CEREMONY'S AUDIT ROW (#943): `confirmKeyEnrolment()` is where
+// /portal/keys and an activation link verify a registration. A library over
+// the audit log and the passkey policy; it requires nothing back here.
+import webauthnCeremonies = require('../authn/webauthn_ceremonies');
 // THE ERROR CODES (2026-09-12). A LEAF that requires nothing, so it cannot
 // close a cycle from here — which is why it is this and not `audit.js`, which
 // this file must not reach. Every refusal below RETURNS a verdict to a caller
@@ -502,6 +506,35 @@ class Credentials {
              insecure: webauthnVerifier.INSECURE_COSE_ALGS
                .indexOf(coseAlg) >= 0,
              lane: Credentials.keyLane(k) };
+  }
+
+  // THE ALGORITHMS ONE STORED KEY'S ATTESTATION WAS SIGNED WITH (#941), in
+  // the one shape every reader takes: the console's key rows, `GET
+  // /admin-api/users`, the passkey policy's `attestation-algorithm`
+  // facts, and a realm-wide report of how strong a realm's attestations
+  // are. The record `authn/webauthn_attestation.ts` wrote is the source
+  // (`attestation.algorithms`, its header argues the fields); this is
+  // `recordedAlgorithms()`'s reading of it — `verified`, `trusted`,
+  // `recorded` (false for a key registered before #941, or by a door that
+  // verified nothing), the `statement` algorithm, every `statements` and
+  // `certificates` entry (leaf first, the anchor last, a compound's
+  // members flattened) and `postQuantum`, true only where every one of
+  // them is. A key with no attestation record answers `recorded: false`.
+  /**
+   * Reads the algorithms one stored key's attestation was signed with
+   * (#941).
+   *
+   * @param key - the stored WebAuthn key
+   * @returns `{ verified, trusted, recorded, statement, statements,
+   *   certificates, postQuantum }`
+   */
+  static attestationAlgorithms(key: any): any {
+    helpers.log.debug("Entering Credentials.attestationAlgorithms().");
+    const out = webauthnAttestation.recordedAlgorithms(
+      (key || {}).attestation);
+    helpers.log.debug("Leaving Credentials.attestationAlgorithms(). " +
+                      (out.recorded ? 'recorded' : 'none'));
+    return out;
   }
 
   // WHAT KIND OF AUTHENTICATOR ONE STORED KEY IS, IN A PERSON'S WORDS
@@ -3525,7 +3558,14 @@ class Credentials {
       algorithm: Credentials.keyAlgorithm({
         algorithm: given.algorithm, coseAlg: given.coseAlg,
         publicKeyJwk: given.publicKeyJwk }).name,
-      lane: lane
+      lane: lane,
+      // AND WHAT ITS ATTESTATION WAS SIGNED WITH (#941), as the verifier
+      // recorded it: always carried, so a key written by value with no
+      // attestation (an import, a test) is held to a profile's
+      // attestationAlgorithms too — it recorded none, which satisfies no
+      // list. Whether they satisfy it is the question's to say.
+      attestationAlgorithms: webauthnAttestation.recordedAlgorithms(
+        given.attestation)
     };
     if (typeof given.backupEligible === 'boolean') {
       facts.backupEligible = given.backupEligible;
@@ -3535,8 +3575,10 @@ class Credentials {
       const reason = synced.reason === 'pin-length' ? 'pin-length'
         : (synced.reason === 'backup-eligible' ? 'backup-eligible'
           : (synced.reason === 'post-quantum' ? 'post-quantum'
-            : (/^serial-/.test(synced.reason) ? 'device-serial'
-                                              : 'passkey-policy')));
+            : (synced.reason === 'attestation-algorithm'
+              ? 'attestation-algorithm'
+              : (/^serial-/.test(synced.reason) ? 'device-serial'
+                                                : 'passkey-policy'))));
       log.info('credentials: a passkey was NOT enrolled for ' + name +
                ' (' + synced.code + ', ' + reason + '): ' + synced.why);
       log.debug("Leaving Credentials.addKey(). Refused by the passkey " +
@@ -8910,8 +8952,9 @@ class Credentials {
    * be, refusing anything knowable before the person touches their key.
    *
    * @param username - the person
-   * @param opts - `role` (`mfa` by default), `kind`, and `lane` (#643:
-   *   `classical` by default, or `pqc`)
+   * @param opts - `role` (`mfa` by default), `kind`, `lane` (#643:
+   *   `classical` by default, or `pqc`), and `classicalOnly` (#944: the
+   *   classical retry of a registration that failed on the device)
    * @returns `{ ok: true, enrolmentId, challenge, … }`, or a refusal
    */
   beginKeyEnrolment(username, opts?) {
@@ -8950,7 +8993,25 @@ class Credentials {
     if (!this.deps.passkeyPolicy.hasSelection()) {
       this.deps.passkeyPolicy.select(name, '');
     }
-    const lane = webauthnPolicy.enrolmentLane(String(options.lane || ''));
+    let lane = webauthnPolicy.enrolmentLane(String(options.lane || ''));
+    // THE CLASSICAL RETRY (#944), refused here — not only on the page that
+    // offers it — where the realm forbids a classical passkey (pqcOnly, or
+    // a post-quantum passkey required at registration): STS-AUTHN-0420.
+    // Allowed, it is carried on the pending record, so the finish holds the
+    // credential to the retry's list, and it is made in the classical lane
+    // while both lanes are on.
+    const classicalOnly = options.classicalOnly === true;
+    if (classicalOnly) {
+      const retryAllowed = webauthnPolicy.classicalRetryRefusal();
+      if (!retryAllowed.ok) {
+        log.debug('Leaving Credentials.beginKeyEnrolment(). The classical ' +
+                  'retry is refused here.');
+        return coded(errorCodes.codeOf(retryAllowed) || 'STS-AUTHN-0420',
+                     { ok: false, reason: 'algorithms',
+                       errors: [retryAllowed.why] });
+      }
+      lane = webauthnPolicy.classicalRetryLane(lane);
+    }
     const laneAllowed = webauthnPolicy.laneRefusal(lane);
     if (!laneAllowed.ok) {
       log.debug('Leaving Credentials.beginKeyEnrolment(). The lane is not ' +
@@ -9004,6 +9065,8 @@ class Credentials {
       role: role,
       kind: kind,
       lane: lane,
+      // The classical retry (#944): the algorithms less ML-DSA.
+      classicalOnly: classicalOnly,
       // NO LABEL (#470): the key takes its provider's or its group's name, and
       // the page asks for a nickname once it is registered.
       label: '',
@@ -9036,7 +9099,7 @@ class Credentials {
     log.debug('Leaving Credentials.beginKeyEnrolment(). Challenge minted ' +
               'and held.');
     return { ok: true, enrolmentId: record.id, challenge: record.challenge,
-             role: role, kind: kind, lane: lane,
+             role: role, kind: kind, lane: lane, classicalOnly: classicalOnly,
              exclude: record.exclude.slice(),
              userHandle: record.userHandle,
              expiresAt: new Date(record.expires).toISOString() };
@@ -9087,15 +9150,49 @@ class Credentials {
    * @param username - the person
    * @param enrolmentId - the pending enrolment's id
    * @param credential - what the browser posted
-   * @param opts - `origin` and `rpId`, what the browser was talking to
+   * @param opts - `origin` and `rpId`, what the browser was talking to,
+   *   and `door` (#943), `portal` or `activation`, for the ceremony's row
    * @returns a promise of `addKey()`'s answer, or a refusal
    */
   confirmKeyEnrolment(username, enrolmentId, credential, opts?) {
     const { log } = this.deps;
     log.debug("Entering Credentials.confirmKeyEnrolment().");
+    // THE CEREMONY'S ROW (#943), however it ends: the pending enrolment is
+    // read FIRST, because a completed one is dropped — its lane is what the
+    // credential's algorithm was held to (`expectedAlgorithms`).
+    const name = String(username || '').trim();
+    const held = this.pendingKeyEnrolmentFor(name) || null;
+    const door = (opts || {}).door === 'activation' ? 'activation' : 'portal';
+    const note = (answer, threw?) => {
+      log.debug("Entering confirmKeyEnrolment() note().");
+      const key = answer && answer.ok ? this.keysOf(name).filter(
+        function (one) {
+          return String(one.credentialId) ===
+                 String(answer.credentialId || '');
+        })[0] || null : null;
+      webauthnCeremonies.record({
+        ceremony: 'registration', door: door, username: name,
+        role: String((answer && answer.role) || (held && held.role) || ''),
+        lane: String((held && held.lane) || 'classical'),
+        outcome: answer && answer.ok ? 'success' : 'refused',
+        errorCode: answer && answer.ok ? ''
+          : String(this.deps.errorCodes.codeOf(answer) ||
+                   (threw ? 'STS-AUTHN-0027' : '')),
+        offered: this.deps.webauthnPolicy.algorithmIds(
+          (held && held.lane) || 'classical'),
+        algorithm: key ? Credentials.keyAlgorithm(key).name : '',
+        posted: credential, attestation: key ? key.attestation : null });
+      log.debug("Leaving confirmKeyEnrolment() note().");
+    };
     log.debug("Leaving Credentials.confirmKeyEnrolment().");
     return Promise.resolve().then(() => {
       return this.checkKeyEnrolment(username, enrolmentId, credential, opts);
+    }).then(function (answer) {
+      note(answer);
+      return answer;
+    }, function (e) {
+      note(null, true);
+      throw e;
     });
   }
 
@@ -9149,7 +9246,10 @@ class Credentials {
         // ENROLMENT WAS BEGUN IN (#643), so an ML-DSA key answering the
         // classical lane, or a classical key the post-quantum one, is refused
         // as an algorithm that was not offered (STS-AUTHN-0228).
-        expectedAlgorithms: webauthnPolicy.algorithmIds(held.lane)
+        // The classical retry's list where it was begun as one (#944).
+        expectedAlgorithms: webauthnPolicy.algorithmIds(held.lane,
+                                                        held.classicalOnly ===
+                                                          true)
       });
     } catch (e) {
       log.debug('Leaving Credentials.checkKeyEnrolment(). Verification threw.');
@@ -10878,6 +10978,7 @@ export = {
   keyAlgorithm: Credentials.keyAlgorithm,
   // #942: which stored values are keys, for the passkey report.
   keysOfValues: Credentials.keysOfValues,
+  attestationAlgorithms: Credentials.attestationAlgorithms,
   // #470: the passkey pages' group, provider and name for a stored key.
   keyGroup: Credentials.keyGroup,
   keyProvider: Credentials.keyProvider,

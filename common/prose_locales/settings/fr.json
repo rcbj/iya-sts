@@ -1103,6 +1103,14 @@
     "en": "e35e276b9d933828",
     "text": "Activé, une personne peut détenir à la fois une clé d’accès classique et une clé d’accès post-quantique (ML-DSA), sur le même authentificateur s’il sait créer les deux. Chaque clé d’accès est créée dans une VOIE que la personne choisit : la voie classique demande `webauthn.algorithms` sans ML-DSA (`ES256` et `RS256` s’il n’en reste aucun), la voie post-quantique ne demande que ML-DSA. Chaque voie a son propre identifiant d’utilisateur, de sorte que la seconde clé d’accès ne remplace pas la première sur l’authentificateur, et sa propre liste d’exclusion ; un gestionnaire d’identifiants affiche la clé post-quantique sous un nom qui indique son algorithme — `<username>+ml-dsa` à sa création, `<username>+ml-dsa-65` (par exemple) dès que toutes les clés post-quantiques de la personne utilisent celui-là — qui n’est jamais un nom avec lequel on se connecte. `webauthn.maxKeysPerPerson` compte les deux voies. Ne peut pas être activé tant que `webauthn.pqcOnly` l’est. Désactivé, chaque cérémonie est comme avant, et une clé d’accès post-quantique déjà enregistrée continue de permettre la connexion ; une nouvelle ne peut pas être créée."
   },
+  "webauthn.postQuantumAllowCredentials|label": {
+    "en": "295b04bef9cf50bc",
+    "text": "Clés d’accès qu’une connexion nomme lorsqu’une clé post-quantique est exigée"
+  },
+  "webauthn.postQuantumAllowCredentials|description": {
+    "en": "f34caf08dceeedd3",
+    "text": "Lu seulement tant que la politique des clés d’accès exige une clé d’accès post-quantique à la connexion (`postQuantumRequired`), et seulement lorsque la ligne `postQuantumAllowCredentials` du profil sélectionné vaut `realm`. `narrow` (la valeur par défaut) ne nomme que les clés d’accès post-quantiques (ML-DSA) de la personne dans l’`allowCredentials` de l’étape de clé d’accès, de sorte qu’une clé classique n’est jamais proposée — mais une personne dont l’appareil ne détient que sa clé classique voit le propre message « aucune clé d’accès trouvée » de la plateforme. `list-and-refuse` nomme toutes les clés d’accès qu’elle détient et refuse une clé classique après la cérémonie (STS-AUTHN-0356), avec une page indiquant que l’application exige une clé d’accès post-quantique et où en ajouter une. Le compromis : la personne peut choisir une clé d’accès qui sera refusée. Dans les deux cas, une personne qui ne détient aucune clé d’accès post-quantique en est informée avant toute cérémonie."
+  },
   "webauthn.userVerification|label": {
     "en": "8b134177fe992d91",
     "text": "Vérification de l’utilisateur"

@@ -352,6 +352,8 @@ row says `disallow`. See [XACML](xacml.md).
 | `aggregateDevices` | on | A person's passkeys are one sign-in choice; off, one per passkey (below). |
 | `enterpriseSerialAttribute` | empty | The attribute of a person's entry holding the serials of the security keys issued to them; set, a key registers only if its enterprise attestation names one of them (below). |
 | `postQuantumRequired` | `off` | `sign-in` accepts only a **post-quantum** (ML-DSA) passkey at sign-in; `registration-and-sign-in` refuses a classical one at registration too (below). |
+| `attestationAlgorithms` | `none` | The algorithms a passkey's **attestation** must be signed with — the statement and every certificate of its chain, leaf to anchor: a list of `post-quantum`, `ml-dsa-44`, `ml-dsa-65`, `ml-dsa-87`, `slh-dsa`, `composite-ml-dsa`. Set, it requires a trusted attestation (below). |
+| `postQuantumAllowCredentials` | `realm` | While a post-quantum passkey is required at sign-in: `narrow` names only the person's post-quantum passkeys, `list-and-refuse` names every one and refuses a classical one after the prompt with a page saying why, `realm` follows `webauthn.postQuantumAllowCredentials` (below). |
 | `recoveryAssurance` | `any` in development, `not-weaker` in product | Whether recovering an account without its passkey restores access at once (`any`), only once a new passkey has signed the person in (`not-weaker`), or only through an administrator and then only that way (`operator-only`) (below). |
 
 **Both portal buttons ask for a discoverable credential by default.** *Create
@@ -465,9 +467,17 @@ does so, and that key counts as post-quantum.
   (with `webauthn.pqcAlongsideClassical` on, only the post-quantum kind).
 
 While it is required at sign-in, the passkey step asks the authenticator only
-for the person's post-quantum passkeys, and a person holding none is told so
-before any prompt appears. A sign-in with no username cannot be narrowed that
-way, so it is refused after the prompt. `/portal/keys` and the console mark a
+for the person's post-quantum passkeys (`narrow`, the default), and a person
+holding none is told so before any prompt appears. Under `narrow` a person
+whose device holds only their classical passkey sees the browser's own "no
+passkey found" message. With `postQuantumAllowCredentials` (or the realm's
+`webauthn.postQuantumAllowCredentials`) set to `list-and-refuse`, the step
+names every passkey instead, and a classical one picked is refused after the
+prompt (`STS-AUTHN-0356`) with a page that says the application requires a
+post-quantum passkey and links to adding one; the trade-off is that the
+person may pick a passkey that will be refused. A refused passkey starts no
+session and records no authentication. A sign-in with no username cannot be
+narrowed either way, so it is refused after the prompt, with the same page. `/portal/keys` and the console mark a
 classical passkey that no longer signs its owner in, and the first time each
 one is refused a CAEP `credential-change` is sent. Like every row, it can be
 set on a named policy, so a single application or group can require
@@ -484,9 +494,44 @@ A save that requires it is **refused while the realm offers no ML-DSA**
 register a passkey that satisfies it. If `webauthn.algorithms` changes
 afterwards, registration offers all three ML-DSA algorithms anyway.
 
+**When a device cannot make the ML-DSA passkey asked for** (#944), the
+passkey step and `/portal/keys` say so in the person's language and, where a
+classical passkey is allowed, offer **Try again with a classical passkey**.
+The retry is refused (`STS-AUTHN-0420`) under `webauthn.pqcOnly`, under
+`registration-and-sign-in`, and at the sign-in step under `sign-in`. See
+[Passkeys](passkeys.md#when-the-device-cannot-make-an-ml-dsa-passkey).
+
 A realm that keeps an issuance policy of its own, built from the
 `role-issuance` template before this row existed, decides passkeys with that
 document: rebuild it from the template for the realm to be held to the row.
+
+**A post-quantum attestation required** (`attestationAlgorithms`). This is
+about the passkey's **attestation** — the authenticator's signed statement
+about what made the key, and the certificate chain behind it — not the
+passkey's own algorithm, which `postQuantumRequired` covers. Every
+registration records what its attestation was signed with: the statement's
+algorithm, and the algorithm each certificate of the chain was signed with,
+from the leaf to the trust anchor. An ML-DSA passkey whose attestation chain
+ends in an ECDSA root is only as strong as that root.
+
+- `none`, the default, accepts an attestation whatever it is signed with.
+- A list — `post-quantum` (any ML-DSA, SLH-DSA or composite ML-DSA
+  signature), `ml-dsa-44`, `ml-dsa-65`, `ml-dsa-87`, `slh-dsa`,
+  `composite-ml-dsa` — registers a passkey only when its attestation is
+  **trusted** (it chains to a root in `webauthn.attestationTrustAnchors` or
+  the FIDO metadata) and every one of those signatures is one the list
+  allows (`STS-AUTHN-0411`). A passkey with `none` or self attestation has
+  no certificate and is refused. Like an AAGUID list, setting it asks the
+  browser for direct attestation, so synced passkeys, which send none, are
+  refused.
+- With `enforceAttestationAtSignIn` on, every sign-in holds the passkey to
+  the list by what its registration recorded (`STS-AUTHN-0412`). A passkey
+  registered before this service recorded attestation algorithms recorded
+  none, and stops signing in.
+
+Few authenticators sign their attestation with a post-quantum algorithm yet.
+Look at what the passkeys a realm already holds were attested with (the
+person's console page, or `GET /admin-api/users?user=`) before requiring it.
 
 **The attestation rules at sign-in** (`enforceAttestationAtSignIn`). The
 `webauthn.attestation*` settings — the attestation policy, the list of

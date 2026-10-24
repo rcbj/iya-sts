@@ -1127,6 +1127,14 @@
     "en": "ba077a59ecf25ecb",
     "text": "Tinatanggap ng `off` (ang default) ang passkey anuman ang algorithm nito sa pag-sign. Ang `sign-in` ay tumatanggap lang ng POST-QUANTUM na passkey, isang may algorithm na ML-DSA-44, ML-DSA-65 o ML-DSA-87 (RFC 9964), kapag nagsa-sign in ito ng tao, bilang unang credential o bilang second factor; puwede pa ring i-register ang classical. Tinatanggihan din ng `registration-and-sign-in` ang classical sa pag-register, at ML-DSA lang ang inaalok noon ng enrolment. Ang algorithm ang nagpapasya, hindi ang lane kung saan ginawa ang key. Tinatanggihan habang walang inaalok na ML-DSA ang realm (walang pinapangalanan ang webauthn.algorithms, at hindi naka-on ang webauthn.pqcOnly o ang webauthn.pqcAlongsideClassical)."
   },
+  "passkey.FIELDS.postQuantumAllowCredentials.label": {
+    "en": "295b04bef9cf50bc",
+    "text": "Mga passkey na pinapangalanan ng sign-in kapag kailangan ang post-quantum"
+  },
+  "passkey.FIELDS.postQuantumAllowCredentials.what": {
+    "en": "af7666466d67e760",
+    "text": "Ang `realm` (ang default) ay sumusunod sa webauthn.postQuantumAllowCredentials ng realm. Binabasa lamang habang hinihingi ng postQuantumRequired ang post-quantum na passkey sa sign-in. Ang `narrow` ay pinapangalanan lamang ang mga post-quantum (ML-DSA) na passkey ng tao sa request ng passkey step, kaya hindi kailanman inaalok ang classical, at ang taong ang device ay may hawak lamang ng kanyang classical na passkey ay makakakita ng sariling mensahe ng platform na \"walang nahanap na passkey\". Ang `list-and-refuse` ay pinapangalanan ang bawat passkey na hawak niya at tinatanggihan ang classical pagkatapos ng ceremony, na may page na nagsasabing kailangan ng application na ito ang post-quantum na passkey at kung saan magdadagdag nito; maaaring pumili ang tao ng passkey na tatanggihan. Alinman dito, ang taong walang hawak na post-quantum na passkey ay sinasabihan bago ang anumang ceremony. Kapag hindi isinama sa save, pinananatili ang `realm`."
+  },
   "passkey.FIELDS.passkeyHints.label": {
     "en": "7445bda72b06c415",
     "text": "Mga hint na ipinapadala ng \"Create a passkey\""
@@ -1199,6 +1207,14 @@
     "en": "bdbb83ca7b2a2c48",
     "text": "`any` BILANG DEFAULT SA DEVELOPMENT, `not-weaker` SA PRODUCT. Kung ang isang paraan pabalik sa account na hindi humihingi ng passkey — isang link sa pag-reset ng password, isang activation link, isang recovery code, isang code o link na ipinadala sa email — ay nagbabalik ng access para sa taong may hawak nito. `any`: agad-agad. `not-weaker`: ang unang sign-in pagkatapos nito na hindi passkey sign-in ay hindi makakarating sa anumang application; magre-register ang tao ng passkey na tumutugon sa patakarang ito at magsa-sign in gamit ito. `operator-only`: gaya ng not-weaker, at tinatanggihan ang mga self-service na pinto (ang form na nakalimutan ang password, isang recovery code o isang code o link na ipinadala sa email sa sign-in); ang reset link, nabuong password o activation link lang ng isang administrator ang natitira. Kapag hindi isinama sa pag-save, pinananatili ang built-in na default."
   },
+  "passkey.FIELDS.attestationAlgorithms.label": {
+    "en": "fe72fed238e39ede",
+    "text": "Mga algorithm na dapat gamitin sa paglagda ng attestation ng passkey"
+  },
+  "passkey.FIELDS.attestationAlgorithms.what": {
+    "en": "cb4ed83be3a69177",
+    "text": "`none` BILANG DEFAULT: tinatanggap ang isang attestation anuman ang algorithm na ginamit sa paglagda nito. Kung hindi, isang listahan mula sa post-quantum, ml-dsa-44, ml-dsa-65, ml-dsa-87, slh-dsa at composite-ml-dsa: nairerehistro lamang ang isang passkey kung may PINAGKAKATIWALAANG attestation na may dalang certificate, at ang lagda ng statement at ang lagda sa bawat certificate ng chain nito, mula sa leaf hanggang sa trust anchor, ay pinapayagan ng listahan (pinapayagan ng `post-quantum` ang anumang lagdang ML-DSA, SLH-DSA o composite ML-DSA). Tinatanggihan ang self at none na attestation, dahil wala silang certificate. Kapag naka-on ang enforceAttestationAtSignIn, sa bawat pag-sign in ay sinusuri ang passkey ayon sa itinala ng pagrehistro nito, kaya titigil sa paggana ang passkey na nairehistro bago ang patakaran. Ito ang algorithm ng attestation, hindi ang sa passkey mismo (postQuantumRequired). Kapag hindi isinama sa pag-save, pinananatili ang built-in na default."
+  },
   "passkey.SCHEMA.objectClasses.stsPasskeyPolicy.what": {
     "en": "44bab556bd6240cc",
     "text": "Ang class ng serbisyong ito para sa passkey policy: kung paano kumikilos ang mga passkey sa realm na ito. Ang entry ay pinangangalanan ayon sa PROFILE (`cn=default`)."
@@ -1239,6 +1255,10 @@
     "en": "ba077a59ecf25ecb",
     "text": "Tinatanggap ng `off` (ang default) ang passkey anuman ang algorithm nito sa pag-sign. Ang `sign-in` ay tumatanggap lang ng POST-QUANTUM na passkey, isang may algorithm na ML-DSA-44, ML-DSA-65 o ML-DSA-87 (RFC 9964), kapag nagsa-sign in ito ng tao, bilang unang credential o bilang second factor; puwede pa ring i-register ang classical. Tinatanggihan din ng `registration-and-sign-in` ang classical sa pag-register, at ML-DSA lang ang inaalok noon ng enrolment. Ang algorithm ang nagpapasya, hindi ang lane kung saan ginawa ang key. Tinatanggihan habang walang inaalok na ML-DSA ang realm (walang pinapangalanan ang webauthn.algorithms, at hindi naka-on ang webauthn.pqcOnly o ang webauthn.pqcAlongsideClassical)."
   },
+  "passkey.SCHEMA.attributes.stsPasskeyPostQuantumAllowCredentials.what": {
+    "en": "af7666466d67e760",
+    "text": "Ang `realm` (ang default) ay sumusunod sa webauthn.postQuantumAllowCredentials ng realm. Binabasa lamang habang hinihingi ng postQuantumRequired ang post-quantum na passkey sa sign-in. Ang `narrow` ay pinapangalanan lamang ang mga post-quantum (ML-DSA) na passkey ng tao sa request ng passkey step, kaya hindi kailanman inaalok ang classical, at ang taong ang device ay may hawak lamang ng kanyang classical na passkey ay makakakita ng sariling mensahe ng platform na \"walang nahanap na passkey\". Ang `list-and-refuse` ay pinapangalanan ang bawat passkey na hawak niya at tinatanggihan ang classical pagkatapos ng ceremony, na may page na nagsasabing kailangan ng application na ito ang post-quantum na passkey at kung saan magdadagdag nito; maaaring pumili ang tao ng passkey na tatanggihan. Alinman dito, ang taong walang hawak na post-quantum na passkey ay sinasabihan bago ang anumang ceremony. Kapag hindi isinama sa save, pinananatili ang `realm`."
+  },
   "passkey.SCHEMA.attributes.stsPasskeyHintsPasskey.what": {
     "en": "2ffa66aabab7a053",
     "text": "Ang mga WebAuthn hint (Level 3 section 5.4.8) na ipinapadala ng *Create a passkey* ng portal, ayon sa pagkakasunod, mula sa security-key, client-device at hybrid, o wala. Sinasabi nito sa browser kung aling paraan ng paggawa ng passkey ang uunahin. Hindi puwedeng sumalungat ang hint sa webauthn.authenticatorAttachment: ang client-device ay nangangahulugang platform, ang security-key at hybrid ay cross-platform."
@@ -1274,6 +1294,10 @@
   "passkey.SCHEMA.attributes.stsPasskeyRecoveryAssurance.what": {
     "en": "bdbb83ca7b2a2c48",
     "text": "`any` BILANG DEFAULT SA DEVELOPMENT, `not-weaker` SA PRODUCT. Kung ang isang paraan pabalik sa account na hindi humihingi ng passkey — isang link sa pag-reset ng password, isang activation link, isang recovery code, isang code o link na ipinadala sa email — ay nagbabalik ng access para sa taong may hawak nito. `any`: agad-agad. `not-weaker`: ang unang sign-in pagkatapos nito na hindi passkey sign-in ay hindi makakarating sa anumang application; magre-register ang tao ng passkey na tumutugon sa patakarang ito at magsa-sign in gamit ito. `operator-only`: gaya ng not-weaker, at tinatanggihan ang mga self-service na pinto (ang form na nakalimutan ang password, isang recovery code o isang code o link na ipinadala sa email sa sign-in); ang reset link, nabuong password o activation link lang ng isang administrator ang natitira. Kapag hindi isinama sa pag-save, pinananatili ang built-in na default."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyAttestationAlgorithms.what": {
+    "en": "cb4ed83be3a69177",
+    "text": "`none` BILANG DEFAULT: tinatanggap ang isang attestation anuman ang algorithm na ginamit sa paglagda nito. Kung hindi, isang listahan mula sa post-quantum, ml-dsa-44, ml-dsa-65, ml-dsa-87, slh-dsa at composite-ml-dsa: nairerehistro lamang ang isang passkey kung may PINAGKAKATIWALAANG attestation na may dalang certificate, at ang lagda ng statement at ang lagda sa bawat certificate ng chain nito, mula sa leaf hanggang sa trust anchor, ay pinapayagan ng listahan (pinapayagan ng `post-quantum` ang anumang lagdang ML-DSA, SLH-DSA o composite ML-DSA). Tinatanggihan ang self at none na attestation, dahil wala silang certificate. Kapag naka-on ang enforceAttestationAtSignIn, sa bawat pag-sign in ay sinusuri ang passkey ayon sa itinala ng pagrehistro nito, kaya titigil sa paggana ang passkey na nairehistro bago ang patakaran. Ito ang algorithm ng attestation, hindi ang sa passkey mismo (postQuantumRequired). Kapag hindi isinama sa pag-save, pinananatili ang built-in na default."
   },
   "passkey.SCHEMA.attributes.stsPasskeySelectApplication.what": {
     "en": "03ba679923c40b45",
@@ -1414,6 +1438,10 @@
   "passkey.sentences.postQuantumEverywhere": {
     "en": "79742dacfba54ede",
     "text": "post-quantum (ML-DSA) na passkey lang ang nare-register o nagsa-sign in ng tao"
+  },
+  "passkey.sentences.attestationAlgorithms": {
+    "en": "9e73c79f0de11296",
+    "text": "nairerehistro lamang ang isang passkey kung may pinagkakatiwalaang attestation na ang statement at certificate chain ay nilagdaan gamit ang {{algorithms}}"
   },
   "passkey.sentences.recoveryAny": {
     "en": "7383156c8eb1e363",

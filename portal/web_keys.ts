@@ -302,7 +302,60 @@ class KeysPages {
       ' data-allow=""' +
       ' data-exclude="' + kit.esc((pending.exclude || []).join(',')) + '"' +
       ' data-options="' + kit.esc(JSON.stringify(pending.options || {})) +
+      // The fallback's facts (#944), for the failure's report.
+      '" data-fallback="' + kit.esc(JSON.stringify(pending.fallback || {})) +
       '" data-mode="create"></div>';
+  }
+
+  // WHEN THE DEVICE CANNOT MAKE THE POST-QUANTUM PASSKEY ASKED FOR (#944):
+  // the guidance, drawn HIDDEN beside the ceremony and shown by
+  // `web_portal_webauthn.ts` (through `common/web_webauthn.ts`'s
+  // `offerFallback()`) only after the registration fails with an error it
+  // is for. Where the account API says the realm allows the classical
+  // retry, a form that begins the enrolment again — the same role, kind
+  // and lane, `algorithms` `classical`, which the API refuses again where
+  // the realm forbids it; where it does not, the sentence that this device
+  // cannot make the passkey this service requires. Nothing for a ceremony
+  // that asks for no ML-DSA, or that is the retry already.
+  /**
+   * The hidden guidance of a registration that may fail on ML-DSA, or ''.
+   *
+   * @param pending - the waiting registration, with its `fallback`
+   * @param t - the translator
+   * @returns the HTML
+   */
+  static fallback(pending: Json, t: Json): string {
+    const f = (pending && pending.fallback) || null;
+    if (!f || f.asksPostQuantum !== true || f.retrying === true) {
+      return '';
+    }
+    const allowed = f.classical === true;
+    return '<div class="warn" id="wa-fallback" hidden>' +
+      '<p id="wa-fallback-unsupported" hidden>' +
+      (allowed ? t.html('portal.key.unsupported')
+               : t.html('portal.key.cannotMake')) + '</p>' +
+      '<p id="wa-fallback-uncertain" hidden>' +
+      (allowed ? t.html('portal.key.maybeUnsupported')
+               : t.html('portal.key.maybeCannotMake')) + '</p>' +
+      '<p id="wa-fallback-hybrid" hidden>' + t.html('portal.key.hybrid') +
+      '</p>' +
+      (allowed
+        ? '<form method="post" action="' + PATH + '" ' +
+          'id="wa-retry-classical-form">' +
+          '<input type="hidden" name="action" value="begin">' +
+          '<input type="hidden" name="role" value="' +
+          kit.esc(pending.role || 'mfa') + '">' +
+          (pending.kind
+            ? '<input type="hidden" name="kind" value="' +
+              kit.esc(pending.kind) + '">' : '') +
+          '<input type="hidden" name="lane" value="' +
+          kit.esc(pending.lane || 'classical') + '">' +
+          '<input type="hidden" name="algorithms" value="classical">' +
+          '<button class="secondary" id="wa-retry-classical">' +
+          t.html('portal.key.retryClassical') + '</button></form>' +
+          '<p class="sub">' + t.html('portal.key.retryClassicalWhat') +
+          '</p>'
+        : '') + '</div>';
   }
 
   // ADDING A KEY: the ceremony while one is waiting, else the form with the
@@ -350,7 +403,8 @@ class KeysPages {
         '</button></form><form method="post" action="' + PATH + '">' +
         '<input type="hidden" name="action" value="cancel">' +
         '<button class="secondary">' + t.html('portal.enrol.cancel') +
-        '</button></form><p class="sub">' +
+        '</button></form>' + KeysPages.fallback(pending, t) +
+        '<p class="sub">' +
         (securityKey
           ? (pending.role === 'primary'
               ? t.html('portal.enrol.creatingKeyPrimary')
