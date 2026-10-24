@@ -1747,6 +1747,18 @@
     "en": "15a8c6d83ed6bc92",
     "text": "ICKE-SPEC (#221). add-destination, update-destination, remove-destination och test-push (en kanarieversion skriven till en testhemlighet): konsolens fyra handlingar, var och en granskad. Skrivbehörighetsuppgiften tas emot och returneras aldrig."
   },
+  "stsmetadata.endpoints./admin-api/passkey-report.what": {
+    "en": "d45e78dec310a21d",
+    "text": "ICKE-SPEC (#942). Det som Övervakning → Nycklar ritar: sfärens nycklar per algoritm och spår, dess personer per sort (endast postkvant, endast klassisk, båda, ingen), vilka autentiserarmodeller som har vilka algoritmer och varje nyckelprofils postQuantumRequired; filtrerat per grupp, nyckelprofil eller applikation, med en markörsidad lista över personerna bakom varje siffra. Siffrorna är ett aggregat som hålls aktuellt — en daglig omräkning av innehavarna plus de ändringar som noteras när nycklar skrivs — aldrig en genomsökning av katalogen per begäran."
+  },
+  "stsmetadata.endpoints./admin-api/passkey-report/export.what": {
+    "en": "41f6fbe31db08a88",
+    "text": "ICKE-SPEC (#942). De personer som en siffra på Övervakning → Nycklar avser, som CSV eller JSON, lästa en sida innehavare åt gången, högst hundratusen rader och med besked om de kapats. Inget nyckelmaterial."
+  },
+  "stsmetadata.endpoints./admin-api/passkey-report/:action.what": {
+    "en": "cd923c72e2ca4fba",
+    "text": "ICKE-SPEC (#942). recount: köar jobbet passkeys.report-recount för den här sfären hos schemaläggarens ledare, som gör en ny räkning av innehavarna till den nya baslinjen. Konsolens enda åtgärd på den sidan; den körs där varje jobb körs, aldrig i begäran."
+  },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
     "text": "ICKE-SPEC (#552). Det som Protokoll → SCIM → Klienter ritar: de applikationsposter som deklarerats för scim-client — de tjänsteleverantörer som den här sfären pushar sina personer och grupper till — var och en med sina köantal och sin backoff-paus, och med ?client= en klients omförsöks- och dödbrevsköer och upptäckt. Aldrig en inloggningsuppgift."

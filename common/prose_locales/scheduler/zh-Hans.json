@@ -287,6 +287,14 @@
     "en": "183fddf95526a70b",
     "text": "移除通过 OpenID Federation Trust Chain 注册且注册已结束的每个客户端（12.3）。每个端点早已将此类客户端视为未知；此作业只是避免条目残留。"
   },
+  "sched.jobs.passkeys.report-recount.title": {
+    "en": "484d9dcdbd9a681e",
+    "text": "通行密钥报告重新计数"
+  },
+  "sched.jobs.passkeys.report-recount.describe": {
+    "en": "049675db215c0863",
+    "text": "为 监控 → 通行密钥 统计领域的通行密钥（#942）：按算法和通道，统计仅持有后量子、仅持有传统或两者皆有的人员，以及哪些验证器型号持有哪些算法。只读取持有通行密钥的人员，每次一页；之后发生的变更会在写入时计入。"
+  },
   "sched.jobs.persistence.minted-expiry-purge.title": {
     "en": "2e5c5abaf78a47c9",
     "text": "过期铸造行清除"

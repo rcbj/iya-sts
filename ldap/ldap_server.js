@@ -359,6 +359,13 @@ const consent = require('../common/consent');
 // and requires nothing here, so this require can neither move a route nor close
 // a cycle; what crosses is the two functions the slot below installs.
 const credentials = require('../common/credentials');
+// THE PASSKEY REPORT (#942). A LIBRARY (rule 3) that registers no route and
+// requires only leaves (`credentials` above among them), so this require can
+// neither move a route nor close a cycle; it is built by the composition
+// root at 18j-iii, before this module. The two doors that write the keys
+// and the one that deletes a person note what changed through it, and its
+// directory slot is filled below with this module's three questions.
+const passkeyReport = require('../common/passkey_report');
 // The device register (#164), for `/admin/ldap/devices`: its schema and what
 // its entries mean. A library built before this module and loaded by it
 // already through `credentials`' neighbours — a cache hit, which moves no
@@ -1999,6 +2006,215 @@ async function holdersAsync(kind, attribute, names) {
   log.debug('Leaving holdersAsync(). ' + out.length + ' of ' + seen +
             ' entries walked in memory.');
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// THE PASSKEY REPORT'S QUESTIONS OF THE DIRECTORY (#942, 2026-10-23).
+//
+// `common/passkey_report.ts` counts who holds which kind of passkey, and
+// asks this file two things, both ASYNCHRONOUSLY and neither a walk of
+// `ou=users` in a windowed process:
+//
+//   * **`passkeyScanAsync()`** — the people under `ou=users` in key order
+//     after a cursor: the HOLDERS of `stsWebauthnCredential` (the asked
+//     names' index, `DirectoryWindow.rowsAfterAsync()`'s `withAttribute`)
+//     for the recount, the lists and the export; or every person
+//     (`page`) for the one list no index can name, the people holding NO
+//     passkey. It reads at most `readLimit` entries and stops once the
+//     caller's `accept()` has said yes `wanted` times, handing back the key
+//     of the last entry READ as the next cursor — so a filtered list resumes
+//     where its last page stopped, whatever it rejected.
+//   * **`passkeyPopulationAsync()`** — the members of the groups a filter
+//     names (a group, or a passkey profile's `stsPasskeySelectGroup`), by
+//     cn or DN as `addGroupMember()` resolves one, read together
+//     (`entriesAtAsync()`, five hundred keys a question), at most `limit`.
+//     A member that is not a person here (a nested group, a dangling DN)
+//     is not counted; nothing here walks a group tree.
+//
+// What a value MEANS is the report's (`credentials.keysOfValues()`), the
+// census's division of labour: this file hands the values over raw, with
+// the person's name and DN, and never the whole entry. Outside a window the
+// realm's own Map is walked and sorted once per call — **a walk, said here**,
+// as `credentialTallies()` says it: the in-memory directory keeps no index
+// per attribute.
+// ---------------------------------------------------------------------------
+const PASSKEY_SCAN_PAGE = 500;
+
+// One person as the report is handed them. Called once per entry a scan
+// reads, which is every holder of a realm on a recount: no Entering/Leaving
+// pair, the hot-path exception the code style allows, stated as it requires.
+function passkeyRowOf(stored) {
+  return { id: String(usernameOfEntry(stored) || ''), dn: stored.dn,
+           values: (stored.attributes.stswebauthncredential || []).slice(0) };
+}
+
+/**
+ * The people of the ambient realm after a cursor, in key order — the holders
+ * of `stsWebauthnCredential`, or every person — handed one at a time to
+ * `ask.accept()`.
+ *
+ * @param ask - `{ attribute, after, readLimit, wanted, accept }`:
+ *   `attribute` the held attribute ('' for every person), `after` the cursor
+ *   ('' from the start), `readLimit` the entries to read at most, `wanted`
+ *   how many yeses end the scan, `accept(row)` asked of each person
+ *   (`{ id, dn, values }`), answering whether it counted
+ * @returns a promise of `{ next, read, done }`: `next` the key of the last
+ *   entry read (the next scan's cursor), `done` true once nothing is left
+ */
+async function passkeyScanAsync(ask) {
+  log.debug('Entering passkeyScanAsync().');
+  const a = ask || {};
+  const attribute = String(a.attribute || '').toLowerCase();
+  const readLimit = Math.max(1, Number(a.readLimit) || PASSKEY_SCAN_PAGE);
+  const wanted = Math.max(1, Number(a.wanted) || 1);
+  const accept = typeof a.accept === 'function' ? a.accept
+    : function () { return false; };
+  const base = normalizeDn(usersDn());
+  const suffix = ',' + base;
+  let after = String(a.after || '');
+  let read = 0;
+  let yes = 0;
+  const take = function (stored) {
+    read += 1;
+    const row = passkeyRowOf(stored);
+    if (row.id && accept(row)) {
+      yes += 1;
+    }
+  };
+  if (directoryWindow) {
+    const realmId = realms.currentId();
+    let done = false;
+    while (read < readLimit && yes < wanted) {
+      const size = Math.min(PASSKEY_SCAN_PAGE, readLimit - read);
+      const page = await storeAsked(directoryWindow.rowsAfterAsync(realmId,
+        base, attribute, after, size,
+        function (entry) {
+          return isPersonEntry(entry);
+        }));
+      if (!page.read) {
+        done = true;
+        break;
+      }
+      // The cursor moves past every row the store answered, a person or
+      // not; the yeses are counted on the people.
+      for (const hit of page.rows) {
+        take(hit.entry);
+        if (yes >= wanted) {
+          after = hit.key;
+          break;
+        }
+      }
+      if (yes < wanted) {
+        after = page.last;
+        if (page.read < size) {
+          done = true;
+          break;
+        }
+      }
+    }
+    log.debug('Leaving passkeyScanAsync(). ' + read + ' read, ' + yes +
+              ' kept, asked of the store.');
+    return { next: after, read: read, done: done };
+  }
+  // The realm's own Map, held now: a walk, sorted once.
+  const store = entries.realmMap();
+  const keys = [];
+  let seen = 0;
+  for (const pair of store) {
+    const key = pair[0];
+    const stored = pair[1];
+    if (key !== base && key.endsWith(suffix) && key > after &&
+        isPersonEntry(stored) &&
+        (!attribute ||
+         (Array.isArray(stored.attributes[attribute]) &&
+          stored.attributes[attribute].length > 0))) {
+      keys.push(key);
+    }
+    seen += 1;
+    if (seen % HOLDER_SCAN_SLICE === 0) {
+      await new Promise(function (resolve) {
+        setImmediate(resolve);
+      });
+    }
+  }
+  keys.sort();
+  let at = 0;
+  while (at < keys.length && read < readLimit && yes < wanted) {
+    const stored = store.get(keys[at]);
+    if (stored) {
+      take(stored);
+    }
+    after = keys[at];
+    at += 1;
+  }
+  log.debug('Leaving passkeyScanAsync(). ' + read + ' read, ' + yes +
+            ' kept, of ' + seen + ' entries walked in memory.');
+  return { next: after, read: read, done: at >= keys.length };
+}
+
+/**
+ * The people in the groups a filter names, with their passkey values, read
+ * together and asynchronously.
+ *
+ * @param selectors - group cns or DNs
+ * @param limit - the members to read at most
+ * @returns a promise of `{ groups: [{ asked, dn, found, members }], rows:
+ *   [{ id, dn, values }], members, complete }`: `members` the distinct
+ *   member DNs the groups list, `complete` false when `limit` cut them
+ */
+async function passkeyPopulationAsync(selectors, limit) {
+  log.debug('Entering passkeyPopulationAsync(). ' +
+            (selectors || []).length + ' selector(s).');
+  const cap = Math.max(1, Number(limit) || 1);
+  const groups = [];
+  const wanted = new Set();
+  let members = 0;
+  (selectors || []).forEach(function (one) {
+    const asked = String(one == null ? '' : one).trim();
+    if (!asked) {
+      return;
+    }
+    const dn = DN_SHAPED.test(asked) ? asked : groupDnFor(asked);
+    const stored = getEntry(dn);
+    if (!stored || !groupRuleFor(stored)) {
+      groups.push({ asked: asked, dn: dn, found: false, members: 0 });
+      return;
+    }
+    const keys = memberKeysOf(stored);
+    groups.push({ asked: asked, dn: stored.dn, found: true,
+                  members: keys.length });
+    keys.forEach(function (key) {
+      if (!wanted.has(key)) {
+        members += 1;
+        if (wanted.size < cap) {
+          wanted.add(key);
+        }
+      }
+    });
+  });
+  const list = Array.from(wanted);
+  const rows = [];
+  if (directoryWindow) {
+    const found = await storeAsked(directoryWindow.entriesAtAsync(
+      realms.currentId(), list));
+    list.forEach(function (key) {
+      const stored = found.get(key);
+      if (stored && isPersonEntry(stored)) {
+        rows.push(passkeyRowOf(stored));
+      }
+    });
+  } else {
+    list.forEach(function (key) {
+      const stored = entries.get(key);
+      if (stored && isPersonEntry(stored)) {
+        rows.push(passkeyRowOf(stored));
+      }
+    });
+  }
+  log.debug('Leaving passkeyPopulationAsync(). ' + rows.length + ' of ' +
+            members + ' member(s).');
+  return { groups: groups, rows: rows, members: members,
+           complete: members <= cap };
 }
 
 // ---------------------------------------------------------------------------
@@ -11496,6 +11712,26 @@ function deriveAndroidMarker(stored) {
   log.debug('Leaving deriveAndroidMarker(). ' + ids.length + '.');
 }
 
+// WHAT A WRITE OF THE KEYS CHANGED, FOR THE PASSKEY REPORT (#942). Both
+// doors above call it with the values before and after, and the person
+// delete (`removePersonEntry()`) with what the entry held and nothing: the
+// report adds the difference to its own tally (`common/passkey_report.ts`
+// argues why that is the aggregate and not a count of the directory). The
+// report never throws into a write, and an older one without the function
+// is simply not told — its next recount puts it right. Called once per write
+// of somebody's keys, a sign-in's counter update at most: no hot path, so
+// the pair is kept.
+function notePasskeysChanged(stored, before, after) {
+  log.debug('Entering notePasskeysChanged().');
+  if (typeof passkeyReport.noteKeysChanged !== 'function') {
+    log.debug('Leaving notePasskeysChanged(). No report to tell.');
+    return;
+  }
+  passkeyReport.noteKeysChanged(before || [], after || [],
+                                usernameOfEntry(stored) || stored.dn);
+  log.debug('Leaving notePasskeysChanged().');
+}
+
 function readWebauthnValues(key) {
   log.debug('Entering readWebauthnValues(). key=' + key);
   const located = locateEntry(String(key || ''));
@@ -11525,6 +11761,8 @@ function writeWebauthnValue(key, value) {
   const have = stored.attributes.stswebauthncredential || [];
   stored.attributes.stswebauthncredential = have.concat([String(value)]);
   deriveAndroidMarker(stored);
+  notePasskeysChanged(stored, have,
+                      stored.attributes.stswebauthncredential);
   // The DN it wrote (#908): the counter rewrite runs on every passkey
   // sign-in, and a write that names nothing makes the next flush diff the
   // whole directory and invalidates every listing.
@@ -11543,12 +11781,15 @@ function replaceWebauthnValues(key, values) {
     log.debug('Leaving replaceWebauthnValues(). No entry.');
     return false;
   }
+  const before = (stored.attributes.stswebauthncredential || []).slice(0);
   if (!values || !values.length) {
     delete stored.attributes.stswebauthncredential;
   } else {
     stored.attributes.stswebauthncredential = values.map(String);
   }
   deriveAndroidMarker(stored);
+  notePasskeysChanged(stored, before,
+                      stored.attributes.stswebauthncredential || []);
   // The DN it wrote (#908): the counter rewrite runs on every passkey
   // sign-in, and a write that names nothing makes the next flush diff the
   // whole directory and invalidates every listing.
@@ -13017,6 +13258,23 @@ function writeActivation(key, hash, expires) {
 // `common/credentials.ts` without it costs a warning rather than a service that
 // will not start — and the warning says what is lost, which in product mode is
 // every sign-in.
+// THE PASSKEY REPORT'S SLOT (#942), filled here for rule 3e's two reasons:
+// this module requires the report (its write doors note there), so the
+// report cannot require this one back, and requiring this JavaScript route
+// module from the report's place in the order would drag the
+// `/admin/ldap/*` routes ahead of the console's. Validated whole there.
+if (typeof passkeyReport.setDirectory === 'function') {
+  passkeyReport.setDirectory({
+    scanAsync: passkeyScanAsync,
+    populationAsync: passkeyPopulationAsync,
+    personCount: personCount
+  });
+} else {
+  log.warn(errorCodes.tag('STS-AUTHN-0417') + 'ldap: common/passkey_report ' +
+           'offers no setDirectory(), so Monitoring → Passkeys counts ' +
+           'nothing.');
+}
+
 if (typeof credentials.setDirectory === 'function') {
   credentials.setDirectory({
     readPassword: readStoredPassword,
@@ -24547,11 +24805,17 @@ function removePersonEntry(stored, door) {
   log.debug('Entering removePersonEntry(). dn=' + stored.dn);
   const goneAttributes = attributeSnapshot(stored);
   const goneName = usernameOfEntry(stored);
+  // The passkeys the person held leave the report with them (#942).
+  const gonePasskeys = (stored.attributes.stswebauthncredential || [])
+    .slice(0);
   const current = indexesCurrent();
   const before = directoryVersion;
   entries.delete(normalizeDn(stored.dn));
   touchDirectory(stored.dn);
   noteIndexesDelete(stored, current);
+  if (gonePasskeys.length) {
+    notePasskeysChanged(stored, gonePasskeys, []);
+  }
   const batch = personBatches.getStore();
   if (batch) {
     batchForgetEntry(batch, normalizeDn(stored.dn), before);
@@ -27067,6 +27331,10 @@ module.exports = {
   // inversion applies. See the section above them for the whole argument.
   isPersonEntry: isPersonEntry,
   personCount: personCount,
+  // The passkey report's two questions (#942), for its in-process test;
+  // the report itself reaches them through its slot.
+  passkeyScanAsync: passkeyScanAsync,
+  passkeyPopulationAsync: passkeyPopulationAsync,
   allPersons: allPersons,
   personsHolding: personsHolding,
   // Whether this process holds its people as a window onto the store

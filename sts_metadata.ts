@@ -6066,6 +6066,30 @@ const ENDPOINTS: EndpointEntry[] = [
           'remove-destination and test-push (a canary version written to a ' +
           'test secret): the console\'s four acts, each audited. The write ' +
           'credential is taken and never returned.' },
+  { path: '/admin-api/passkey-report', group: 'Management API',
+    name: 'Who holds which passkey algorithm', specs: ['openapi', 'webauthn'],
+    what: 'NON-SPEC (#942). What Monitoring → Passkeys draws: the realm\'s ' +
+          'passkeys by algorithm and lane, its people by kind (post-quantum ' +
+          'only, classical only, both, none), which authenticator models ' +
+          'hold which algorithms, and each passkey profile\'s ' +
+          'postQuantumRequired; filtered by a group, a passkey profile or ' +
+          'an application, with a cursor-paged list of the people behind ' +
+          'any count. The counts are a maintained aggregate — a daily ' +
+          'recount of the holders plus the changes noted as keys are ' +
+          'written — never a scan of the directory per request.' },
+  { path: '/admin-api/passkey-report/export', group: 'Management API',
+    name: 'Export the people behind a passkey count',
+    specs: ['openapi', 'webauthn'],
+    what: 'NON-SPEC (#942). The people one Monitoring → Passkeys count ' +
+          'names, as CSV or JSON, read a page of holders at a time, at most ' +
+          'a hundred thousand rows and said when cut. No key material.' },
+  { path: '/admin-api/passkey-report/:action', group: 'Management API',
+    name: 'Recount the realm\'s passkeys', specs: ['openapi'],
+    what: 'NON-SPEC (#942). recount: queues the passkeys.report-recount job ' +
+          'for this realm on the scheduler\'s leader, which makes a fresh ' +
+          'count of the holders the new baseline. The console\'s one act ' +
+          'on that page; it runs where every job runs, never on the ' +
+          'request.' },
   { path: '/admin-api/scim/clients', group: 'Management API',
     name: 'Outbound SCIM clients', specs: ['openapi', 'rfc7644'],
     what: 'NON-SPEC (#552). What Protocols → SCIM → Clients draws: the ' +

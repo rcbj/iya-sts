@@ -742,6 +742,19 @@ ldif or multi-cell service is unchanged.
   - `attributeSourcePeoplePage()` (#615) is ONE `page()` after a key cursor
     (`DirectoryWindow.pageAfter()`), which `attribute-sources.refresh` asks
     instead of `attributeSourcePeople()`'s list-and-sort of everybody.
+  - **The passkey report's two questions (#942)**: `passkeyScanAsync()`
+    reads the people under `ou=users` after a key cursor — the holders of
+    `stsWebauthnCredential` (`withAttribute`), or every person (`page`) for
+    the list of those holding none — through
+    `DirectoryWindow.rowsAfterAsync()`, one asynchronous question a page,
+    stopping at the caller's read limit or its count of matches, the next
+    cursor the last key READ; `passkeyPopulationAsync()` reads a group's
+    members together (`entriesAtAsync()`), bounded. Outside a window the
+    first walks the realm's Map and sorts once per call, said there. The
+    two writers of `stsWebauthnCredential` and `removePersonEntry()` call
+    `notePasskeysChanged()`, which hands the report the values before and
+    after — **a new door that writes or drops a person's keys owes that
+    call** (`common/CLAUDE.md` 3cs).
   - `personCount()` is the store's count (above); `allPersons()` pages
     `ou=users` alone; `entriesUnder()` pages a windowed container and does NOT cache it.
   - **THE REQUESTS ARE ASYNCHRONOUS WHERE THEY READ MANY ROWS (#616,

@@ -2957,10 +2957,32 @@ class Credentials {
   // and both must agree about which values are keys at all.
   private keysFromValues(raw, username) {
     const { log } = this.deps;
-    const { WEBAUTHN_ATTRIBUTE } = Credentials;
     log.debug('Entering Credentials.keysFromValues().');
+    const out = Credentials.keysOfValues(raw, username);
+    log.debug('Leaving Credentials.keysFromValues(). ' + out.length + '.');
+    return out;
+  }
+
+  // THE SAME RULE FOR A CALLER WITH NO INSTANCE IN HAND (#942): the passkey
+  // report (`common/passkey_report.ts`) is handed a person's raw values by
+  // the directory, at the two doors that write them and a page at a time by
+  // its recount, and must count exactly the values `keysOf()` calls keys —
+  // a second parse there would be a second answer to "which values are
+  // keys". `keysFromValues()` above is this, so the two cannot drift.
+  /**
+   * Reads a person's stored `stsWebauthnCredential` values as keys: each
+   * value that is JSON this service wrote, with a credential id and a public
+   * key. Anything else is skipped with a warning.
+   *
+   * @param raw - the attribute's values, as the directory holds them
+   * @param username - whose they are, for the warning
+   * @returns the parsed keys
+   */
+  static keysOfValues(raw: unknown, username: unknown): any[] {
+    helpers.log.debug('Entering Credentials.keysOfValues().');
+    const { WEBAUTHN_ATTRIBUTE } = Credentials;
     const out = [];
-    (raw || []).forEach((value) => {
+    (Array.isArray(raw) ? raw : []).forEach((value) => {
       try {
         const parsed = JSON.parse(value);
         if (parsed && parsed.credentialId && parsed.publicKeyJwk) {
@@ -2969,12 +2991,13 @@ class Credentials {
       } catch (e) {
         // A value some other client wrote. Skipped with a warning rather than
         // throwing: one malformed key must not stop the others being usable.
-        log.warn('credentials: a ' + WEBAUTHN_ATTRIBUTE + ' value on ' +
-                 username + ' is not JSON this service wrote and is being ' +
-                 'ignored: ' + e.message);
+        helpers.log.warn('credentials: a ' + WEBAUTHN_ATTRIBUTE + ' value ' +
+                         'on ' + String(username) + ' is not JSON this ' +
+                         'service wrote and is being ignored: ' + e.message);
       }
     });
-    log.debug('Leaving Credentials.keysFromValues(). ' + out.length + '.');
+    helpers.log.debug('Leaving Credentials.keysOfValues(). ' + out.length +
+                      '.');
     return out;
   }
 
@@ -10953,6 +10976,8 @@ export = {
   ROLES: Credentials.ROLES,
   keyKind: Credentials.keyKind,
   keyAlgorithm: Credentials.keyAlgorithm,
+  // #942: which stored values are keys, for the passkey report.
+  keysOfValues: Credentials.keysOfValues,
   attestationAlgorithms: Credentials.attestationAlgorithms,
   // #470: the passkey pages' group, provider and name for a stored key.
   keyGroup: Credentials.keyGroup,

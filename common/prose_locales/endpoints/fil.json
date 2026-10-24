@@ -883,6 +883,18 @@
     "en": "f8f3c83e76dc9f4c",
     "text": "Baguhin ang mga destinasyon ng secret push"
   },
+  "endpoints.route./admin-api/passkey-report.name": {
+    "en": "9c856324242bc19b",
+    "text": "Sino ang may hawak ng aling algorithm ng passkey"
+  },
+  "endpoints.route./admin-api/passkey-report/export.name": {
+    "en": "058eb7c31724a848",
+    "text": "I-export ang mga tao sa likod ng isang bilang ng passkey"
+  },
+  "endpoints.route./admin-api/passkey-report/:action.name": {
+    "en": "738bbc740bd914fc",
+    "text": "Bilangin muli ang mga passkey ng realm"
+  },
   "endpoints.route./admin-api/scim/clients.name": {
     "en": "63c8ee9a6d93cb89",
     "text": "Mga outbound SCIM client"

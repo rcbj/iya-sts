@@ -83,6 +83,7 @@
   "nav.vc": "可验证凭证",
   "nav.vc-claims": "凭证声明",
   "nav.vc-monitor": "可验证凭证",
+  "nav.passkey-report": "通行密钥",
   "nav.oid4vp": "OpenID4VP",
   "nav.vc-verifier-config": "验证方请求",
   "nav.xacml": "XACML",

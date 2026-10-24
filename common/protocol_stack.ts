@@ -1296,6 +1296,14 @@ class ProtocolStack {
     // route. Here, beside the datasets it reads.
     this.build('common/attestation_revocation',
                require('./attestation_revocation'), 'AttestationRevocation');
+    // 18j-iv. THE PASSKEY REPORT (#942): a library that registers its
+    // recount job when built, and no route. Here, beside the other
+    // libraries a scheduler job owns, and BEFORE `ldap/ldap_server` (21),
+    // whose require fills its directory slot through the facades and whose
+    // two key-writing doors note there — a facade asked before this line
+    // would build a default instance the root could then not install.
+    this.build('common/passkey_report', require('./passkey_report'),
+               'PasskeyReport');
     this.build('risk/risk_engine', require('../risk/risk_engine'),
                'RiskEngine');
     require('../admin-ui/risk_admin');
@@ -1493,6 +1501,11 @@ class ProtocolStack {
     this.build('mgmt-api/secret_destinations_api',
                require('../mgmt-api/secret_destinations_api'),
                'SecretDestinationsApi');
+    // MONITORING -> PASSKEYS' OPERATIONS (#942), spread by
+    // `mgmt-api/admin_api` into its table as the destinations' are.
+    this.build('mgmt-api/passkey_report_api',
+               require('../mgmt-api/passkey_report_api'),
+               'PasskeyReportApi');
     // #552: the outbound SCIM clients' operations; the client itself is built
     // at 22, beside the SCIM server, and reached from here lazily.
     this.build('mgmt-api/scim_clients_api',

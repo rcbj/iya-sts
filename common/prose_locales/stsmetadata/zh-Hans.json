@@ -1747,6 +1747,18 @@
     "en": "15a8c6d83ed6bc92",
     "text": "非规范（#221）。add-destination、update-destination、remove-destination 和 test-push（将一个金丝雀版本写入测试秘密）：控制台的四个操作，每个都会被审计。写入凭据被接收后永不返回。"
   },
+  "stsmetadata.endpoints./admin-api/passkey-report.what": {
+    "en": "d45e78dec310a21d",
+    "text": "非规范（#942）。监控 → 通行密钥所绘制的内容：领域的通行密钥按算法和通道统计，人员按类型统计（仅后量子、仅传统、两者皆有、无），哪些验证器型号持有哪些算法，以及每个通行密钥配置文件的 postQuantumRequired；可按组、通行密钥配置文件或应用筛选，并附有按游标分页的、任一数字背后的人员列表。这些数字是持续维护的汇总——每天对持有者重新计数一次，再加上写入密钥时记录的变更——绝不是每次请求都扫描目录。"
+  },
+  "stsmetadata.endpoints./admin-api/passkey-report/export.what": {
+    "en": "41f6fbe31db08a88",
+    "text": "非规范（#942）。监控 → 通行密钥中某个数字所指的人员，以 CSV 或 JSON 导出，每次读取一页持有者，最多十万行，被截断时会注明。不含任何密钥材料。"
+  },
+  "stsmetadata.endpoints./admin-api/passkey-report/:action.what": {
+    "en": "cd923c72e2ca4fba",
+    "text": "非规范（#942）。recount：在调度器的主节点上为此领域排入 passkeys.report-recount 作业，该作业把对持有者的一次全新计数作为新的基线。这是控制台在该页面上的唯一操作；它在所有作业运行的地方运行，绝不在请求中运行。"
+  },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
     "text": "非规范（#552）。协议 → SCIM → 客户端所绘制的内容：声明用于 scim-client 的应用条目——本领域向其推送人员和组的服务提供方——每个附带其队列计数和退避暂停，带 ?client= 时为某个客户端的重试队列、死信队列和发现信息。从不包含凭据。"

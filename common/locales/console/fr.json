@@ -83,6 +83,7 @@
   "nav.vc": "Attestations vérifiables",
   "nav.vc-claims": "Revendications des attestations",
   "nav.vc-monitor": "Attestations vérifiables",
+  "nav.passkey-report": "Clés d’accès",
   "nav.oid4vp": "OpenID4VP",
   "nav.vc-verifier-config": "Requête du vérificateur",
   "nav.xacml": "XACML",

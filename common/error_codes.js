@@ -6679,6 +6679,37 @@ const CODES = [
       'on a session.refuse row.',
     spec: 'the sign-in screen or the step\'s page, drawn again with the ' +
       'reason' },
+  // THE PASSKEY REPORT (#942): Monitoring → Passkeys and
+  // /admin-api/passkey-report, `common/passkey_report.ts`.
+  { code: 'STS-AUTHN-0413',
+    summary: 'A change to a person\'s passkeys could not be noted in the ' +
+      'passkey report (#942). The write it describes stands; the report ' +
+      'is short of it until the next recount.',
+    spec: 'none — logged; the write is unaffected' },
+  { code: 'STS-AUTHN-0414',
+    summary: 'The passkey report\'s recount (passkeys.report-recount) ' +
+      'failed part-way: the directory could not be read. The baseline it ' +
+      'would have replaced is kept; the run is recorded as failed.',
+    spec: 'none — the scheduler records the run as failed' },
+  { code: 'STS-AUTHN-0415',
+    summary: 'The passkey report, a list behind one of its counts or its ' +
+      'export could not be read: the directory refused (503) or the read ' +
+      'threw (500).',
+    spec: 'HTTP 503 or 500 from /admin-api/passkey-report' },
+  { code: 'STS-AUTHN-0416',
+    summary: 'A passkey report filter was refused: two filters at once, a ' +
+      'passkey profile this realm does not have (or the default profile, ' +
+      'which selects nobody by group), or an application it does not have.',
+    spec: 'HTTP 400 from /admin-api/passkey-report' },
+  { code: 'STS-AUTHN-0417',
+    summary: 'The passkey report\'s directory slot was offered without one ' +
+      'of its three functions, so nothing was installed and the report ' +
+      'counts nothing.',
+    spec: 'none — logged at startup' },
+  { code: 'STS-AUTHN-0418',
+    summary: 'A Monitoring → Passkeys action was refused: an action that ' +
+      'does not exist, or a recount the scheduler could not queue.',
+    spec: 'HTTP 400 from POST /admin-api/passkey-report/{action}' },
   { code: 'STS-AUTHN-0420',
     summary: 'A passkey registration asked to be retried with the ' +
       'classical algorithms only (#944) — the retry offered after an ' +

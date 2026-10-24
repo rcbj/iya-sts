@@ -13359,3 +13359,61 @@ not refused, and the default stays.
   passkey registered at the step sends `credential-change` (create) where it
   is written, so the portal's Security activity shows both.
 * Codes `STS-AUTHN-0380` to `0383`. `tests/recovery_assurance.js` holds it.
+
+## 3cs. `passkey_report.ts`: WHO HOLDS WHICH PASSKEY ALGORITHM, KEPT RATHER THAN COUNTED (#942, 2026-10-23)
+
+Monitoring → Passkeys and `/admin-api/passkey-report`: passkeys by algorithm
+(JOSE name, COSE id) and lane, people by kind (post-quantum only, classical
+only, both, none), AAGUID by algorithm, each passkey profile's
+`postQuantumRequired`. **The kind is the ALGORITHM, never the lane** — #718's
+rule, for #718's reason. The file's header carries the argument at length;
+what a maintainer must not undo:
+
+* **THE REALM'S COUNTS ARE AN AGGREGATE, NEVER A SCAN PER REQUEST** (rcbj on
+  #942, the directory at #820's scale). A baseline in
+  `passkey_report.baseline` (whole-valued, per realm), counted by the cluster
+  job `passkeys.report-recount` (daily, per realm, manual) from the HOLDERS of
+  `stsWebauthnCredential` after a key cursor (`ldap_server.js`'s
+  `passkeyScanAsync()`, the asked names' index); plus the DIFFERENCES the
+  directory's writers hand `noteKeysChanged()`, summed into
+  `passkey_report.changes` — `merge: 'own'` (an increment, so each process's
+  row and the fan-in adds them), `contributionsOnRead` (only the page reads
+  the other processes' rows), `observation` (a tally riding the key write).
+  A change row counts only under the baseline's EPOCH; a recount writes a new
+  epoch, and every older row is ignored.
+* **THE WRITERS ARE THREE, AND A FOURTH OWES A CALL.** `writeWebauthnValue()`,
+  `replaceWebauthnValues()` and `removePersonEntry()` in `ldap_server.js`
+  (`notePasskeysChanged()`). Every enrolment, removal, rename, counter update
+  and attestation rewrite reaches one of the first two, and a socket write of
+  the attribute is refused (#237). **A new door that writes or drops a
+  person's `stsWebauthnCredential` calls `notePasskeysChanged()`**, or the
+  page is short of it until the next recount, with nothing failing. What no
+  door sees — `persistence/bulk_import.js`, an LDIF restore, a cell's
+  incoming `putEntry()`, a change to a person the running recount had already
+  read — the next recount puts right; the page says when it counted and how
+  many changes it has noted since, and has Recount now.
+* **A counter update notes nothing.** Each passkey sign-in rewrites the
+  values; the facets before and after are compared and an empty difference
+  writes no row. Keep that comparison if the note is ever made cheaper.
+* **THE FILTERS ARE BOUNDED, NOT AGGREGATED.** A group (cn or DN) or a named
+  passkey profile (#535: the members of its `stsPasskeySelectGroup` groups)
+  is counted from the members, read together (`passkeyPopulationAsync()`,
+  `entriesAtAsync()`), at most `POPULATION_LIMIT`, and says so past it. The
+  default profile is refused as a filter (it selects nobody by group). An
+  APPLICATION's population is the realm — anybody may sign in to it — and the
+  answer adds which profile governs its sign-ins (`forApplication()`).
+* **THE LISTS PAGE BY A KEY CURSOR** (`from`, handed back as
+  `paging.nextFrom`), at most `LIST_SCAN` entries a request, `complete:
+  false` when that stopped a page short; `page` without `from` reads from the
+  start. The export reads on to `EXPORT_LIMIT` rows and quotes a CSV cell a
+  spreadsheet would read as a formula.
+* **#941's EXTENSION POINT** is `attestationFacetOf()`: null until the key
+  row records the attestation certificate's algorithm, then the `t|` facet,
+  the Attestation tab and every list follow with no other change.
+* **A library and a slot (rule 3e).** `setDirectory()` is filled by
+  `ldap_server.js` and validated whole (`STS-AUTHN-0417`): that module
+  requires this one, and the composition root builds this one at 18j-iv,
+  before the directory at 21. Which values are keys is `credentials.ts`'s
+  (`keysOfValues()`, the rule `keysOf()` uses), never this file's.
+* Codes `STS-AUTHN-0413` to `0418`. `tests/passkey_report.js` and
+  `tests/vendored/sts_passkey_report.js` hold it.

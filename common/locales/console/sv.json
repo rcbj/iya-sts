@@ -83,6 +83,7 @@
   "nav.vc": "Verifierbara intyg",
   "nav.vc-claims": "Intygsanspråk",
   "nav.vc-monitor": "Verifierbara intyg",
+  "nav.passkey-report": "Nycklar",
   "nav.oid4vp": "OpenID4VP",
   "nav.vc-verifier-config": "Verifierarbegäran",
   "nav.xacml": "XACML",

@@ -116,6 +116,7 @@
   "title.users-new": "Nouvel utilisateur",
   "title.vc": "Revendications des attestations",
   "title.vc-monitor": "Attestations vérifiables (supervision)",
+  "title.passkey-report": "Clés d’accès (supervision)",
   "title.xacml-editor": "Éditeur de politiques",
   "title.xacml": "XACML",
   "title.xacml-decide": "Tester une décision",

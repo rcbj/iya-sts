@@ -1747,6 +1747,18 @@
     "en": "15a8c6d83ed6bc92",
     "text": "非規格端點（#221）。add-destination、update-destination、remove-destination 與 test-push（將一個金絲雀版本寫入測試機密）：主控台的四個動作，每個都會被稽核。寫入認證資訊只收取，絕不傳回。"
   },
+  "stsmetadata.endpoints./admin-api/passkey-report.what": {
+    "en": "d45e78dec310a21d",
+    "text": "非規格端點（#942）。監控 → 密碼金鑰所繪製的內容：領域的密碼金鑰依演算法和通道統計，人員依類型統計（僅後量子、僅傳統、兩者皆有、無），哪些驗證器型號持有哪些演算法，以及每個密碼金鑰設定檔的 postQuantumRequired；可依群組、密碼金鑰設定檔或應用程式篩選，並附有依游標分頁的、任一數字背後的人員清單。這些數字是持續維護的彙總——每天對持有者重新計數一次，再加上寫入金鑰時記錄的變更——絕不是每次請求都掃描目錄。"
+  },
+  "stsmetadata.endpoints./admin-api/passkey-report/export.what": {
+    "en": "41f6fbe31db08a88",
+    "text": "非規格端點（#942）。監控 → 密碼金鑰中某個數字所指的人員，以 CSV 或 JSON 匯出，每次讀取一頁持有者，最多十萬列，被截斷時會註明。不含任何金鑰材料。"
+  },
+  "stsmetadata.endpoints./admin-api/passkey-report/:action.what": {
+    "en": "cd923c72e2ca4fba",
+    "text": "非規格端點（#942）。recount：在排程器的主節點上為此領域排入 passkeys.report-recount 工作，該工作把對持有者的一次全新計數作為新的基準。這是主控台在該頁面上的唯一操作；它在所有工作執行的地方執行，絕不在請求中執行。"
+  },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
     "text": "非規格端點（#552）。協定 → SCIM → 用戶端所繪製的內容：宣告為 scim-client 的應用程式項目——此領域將其人員與群組推送至的服務提供者——各附其佇列計數與退避暫停，指定 ?client= 時則為單一用戶端的重試與無法投遞佇列以及探索資訊。絕不含認證資訊。"

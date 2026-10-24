@@ -1747,6 +1747,18 @@
     "en": "15a8c6d83ed6bc92",
     "text": "NON-SPEC (#221). add-destination, update-destination, remove-destination et test-push (une version témoin écrite dans un secret de test) : les quatre actions de la console, chacune auditée. Le justificatif d’écriture est reçu et jamais renvoyé."
   },
+  "stsmetadata.endpoints./admin-api/passkey-report.what": {
+    "en": "d45e78dec310a21d",
+    "text": "NON-SPEC (#942). Ce qu’affiche Supervision → Clés d’accès : les clés d’accès du domaine par algorithme et par voie, ses personnes par type (post-quantique uniquement, classique uniquement, les deux, aucune), quels modèles d’authentificateur détiennent quels algorithmes, et le postQuantumRequired de chaque profil de clé d’accès ; filtré par un groupe, un profil de clé d’accès ou une application, avec une liste paginée par curseur des personnes derrière chaque chiffre. Les chiffres sont un agrégat tenu à jour — un recomptage quotidien des détenteurs plus les changements notés à mesure que les clés sont écrites —, jamais un parcours de l’annuaire à chaque requête."
+  },
+  "stsmetadata.endpoints./admin-api/passkey-report/export.what": {
+    "en": "41f6fbe31db08a88",
+    "text": "NON-SPEC (#942). Les personnes que nomme un chiffre de Supervision → Clés d’accès, en CSV ou en JSON, lues une page de détenteurs à la fois, au plus cent mille lignes, avec mention en cas de coupure. Aucune matière de clé."
+  },
+  "stsmetadata.endpoints./admin-api/passkey-report/:action.what": {
+    "en": "cd923c72e2ca4fba",
+    "text": "NON-SPEC (#942). recount : met en file la tâche passkeys.report-recount pour ce domaine auprès du meneur du planificateur, qui fait d’un nouveau comptage des détenteurs la nouvelle base. La seule action de la console sur cette page ; elle s’exécute là où s’exécute toute tâche, jamais dans la requête."
+  },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
     "text": "NON-SPEC (#552). Ce qu’affiche Protocols → SCIM → Clients : les entrées d’application déclarées pour scim-client — les fournisseurs de services vers lesquels ce domaine pousse ses personnes et ses groupes — chacune avec les décomptes de sa file et sa pause de temporisation, et avec ?client= les files de nouvelles tentatives et de lettres mortes et la découverte d’un client. Jamais un justificatif."

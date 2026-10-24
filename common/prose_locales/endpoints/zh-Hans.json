@@ -883,6 +883,18 @@
     "en": "f8f3c83e76dc9f4c",
     "text": "更改秘密推送目标"
   },
+  "endpoints.route./admin-api/passkey-report.name": {
+    "en": "9c856324242bc19b",
+    "text": "谁持有哪种通行密钥算法"
+  },
+  "endpoints.route./admin-api/passkey-report/export.name": {
+    "en": "058eb7c31724a848",
+    "text": "导出某个通行密钥数字背后的人员"
+  },
+  "endpoints.route./admin-api/passkey-report/:action.name": {
+    "en": "738bbc740bd914fc",
+    "text": "重新统计领域的通行密钥"
+  },
   "endpoints.route./admin-api/scim/clients.name": {
     "en": "63c8ee9a6d93cb89",
     "text": "出站 SCIM 客户端"

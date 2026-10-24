@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4593** of them, in **47** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4599** of them, in **47** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 346
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 352
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 724
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 115
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 33
@@ -1534,6 +1534,12 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0410` | The credentials of the rows a users list shows could not be read together (#820): the store refused (it was unavailable, or the request's directory budget was spent), so those rows are drawn with their factors unknown rather than as holding none; or the read threw otherwise, and each row was asked on its own instead. | none — logged; the page is drawn |
 | `STS-AUTHN-0411` | A passkey was not registered: its attestation is not a trusted one whose statement and every certificate of its chain, leaf to anchor, are signed with an algorithm the selected passkey policy profile's attestationAlgorithms allows (#941) — or it carried no certificate (self or none attestation). Asked where every key is written, so the sign-in screen, /portal/keys and an activation link all refuse it. | the ceremony's page, drawn again with the reason |
 | `STS-AUTHN-0412` | A passkey did not sign anybody in: while the passkey policy holds sign-ins to the attestation rules (enforceAttestationAtSignIn), the algorithms its registration recorded for its attestation are not what the selected profile's attestationAlgorithms allows (#941), or it recorded none (a key registered before #941, or with no trusted attestation). Recorded on a session.refuse row. | the sign-in screen or the step's page, drawn again with the reason |
+| `STS-AUTHN-0413` | A change to a person's passkeys could not be noted in the passkey report (#942). The write it describes stands; the report is short of it until the next recount. | none — logged; the write is unaffected |
+| `STS-AUTHN-0414` | The passkey report's recount (passkeys.report-recount) failed part-way: the directory could not be read. The baseline it would have replaced is kept; the run is recorded as failed. | none — the scheduler records the run as failed |
+| `STS-AUTHN-0415` | The passkey report, a list behind one of its counts or its export could not be read: the directory refused (503) or the read threw (500). | HTTP 503 or 500 from /admin-api/passkey-report |
+| `STS-AUTHN-0416` | A passkey report filter was refused: two filters at once, a passkey profile this realm does not have (or the default profile, which selects nobody by group), or an application it does not have. | HTTP 400 from /admin-api/passkey-report |
+| `STS-AUTHN-0417` | The passkey report's directory slot was offered without one of its three functions, so nothing was installed and the report counts nothing. | none — logged at startup |
+| `STS-AUTHN-0418` | A Monitoring → Passkeys action was refused: an action that does not exist, or a recount the scheduler could not queue. | HTTP 400 from POST /admin-api/passkey-report/{action} |
 | `STS-AUTHN-0420` | A passkey registration asked to be retried with the classical algorithms only (#944) — the retry offered after an ML-DSA-first registration failed on the device — where the realm forbids a classical passkey: webauthn.pqcOnly is on, the passkey policy's postQuantumRequired is registration-and-sign-in, or, at the sign-in step, it requires a post-quantum passkey to sign in. Refused before the ceremony is armed; nothing is written. | HTTP 400 (the sign-in API and the account API) |
 
 ## STS-OAUTH

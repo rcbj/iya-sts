@@ -483,6 +483,11 @@ one is refused a CAEP `credential-change` is sent. Like every row, it can be
 set on a named policy, so a single application or group can require
 post-quantum passkeys while the rest of the realm does not.
 
+**Who would be refused** is on **Monitoring → Passkeys**
+([admin console](admin-console.md#passkeys--adminpasskey-report)): the people
+holding classical passkeys only, across the realm or in one group or one
+policy's population, listed and exported. Check it before turning the row on.
+
 A save that requires it is **refused while the realm offers no ML-DSA**
 (`STS-AUTHN-0357`): with `webauthn.algorithms` naming none, and neither
 `webauthn.pqcOnly` nor `webauthn.pqcAlongsideClassical` on, nobody could

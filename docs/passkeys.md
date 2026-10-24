@@ -45,6 +45,7 @@ rather than repeating them. Every setting in full is in
 | The authentication policy (which sign-in methods are accepted, and whether a second factor is required) | **Directory → Policies**, **Authentication policy** tab | `GET /admin-api/policies` (the `authn` member); `POST /admin-api/policies/save-authn-policy` and `reset-authn-policy` |
 | A person's passkeys | **Directory → Users** (`/admin/users`), the person's page, **Passkeys (WebAuthn)** | `GET /admin-api/users?user=<username>`; `POST /admin-api/users/{action}` |
 | Who holds which factor, across the realm | **Directory → Users** | `GET /admin-api/mfa` |
+| Who holds which passkey algorithm, across the realm | **Monitoring → Passkeys** (`/admin/passkey-report`) | `GET /admin-api/passkey-report`, `/export`, `POST /admin-api/passkey-report/recount` |
 | A new person with an activation link | **Directory → Users → New user** (`/admin/users/new`) | `POST /admin-api/users/create` |
 | Which methods one application accepts | **Directory → Applications**, the application's **Configuration** tab | `POST /admin-api/applications/add`, `/remove`, `/update-fields` |
 | Live sessions, and the record of what happened | **Monitoring → Sessions**, **Monitoring → Audit log** (`/admin/audit`) | `GET /admin-api/sessions`, `GET /admin-api/audit?code=<error code>` |
@@ -777,7 +778,8 @@ nobody could register a passkey that meets it.
 
 **Do this before you require it at sign-in:** make sure the people it applies
 to have registered a post-quantum passkey, or a classical passkey that is
-their only way in stops working.
+their only way in stops working. [Measuring the move](#measuring-the-move-to-post-quantum-passkeys)
+below says how to find them.
 
 ### What the person sees
 
@@ -880,6 +882,50 @@ your own rule:
 answers passkey questions itself, so the row has no effect in that realm.
 Rebuild the override from the current template. See [XACML](xacml.md) and
 [Configuring XACML and ALFA](configure-xacml.md).
+
+## Measuring the move to post-quantum passkeys
+
+**Monitoring → Passkeys** (`/admin/passkey-report`) counts the realm's people
+as post-quantum only, classical only, both or none, every passkey by
+algorithm and lane, and which authenticator models (AAGUIDs) hold which
+algorithms. [Admin console → Passkeys](admin-console.md#passkeys--adminpasskey-report)
+describes every tab.
+
+**Before requiring post-quantum passkeys for a group or an application:**
+
+1. Open **Monitoring → Passkeys**. On **Profiles**, find the named policy that
+   selects the group, and click *count its population*; or type the group's
+   cn in **Group**.
+2. On **People**, the *classical only* count is the people the rule would
+   refuse at sign-in. Click *list them*, and **Export CSV** to send them a
+   reminder.
+3. On **Models**, see which authenticators already make ML-DSA passkeys, and
+   which of your people's do not.
+4. When *classical only* is near zero, set `postQuantumRequired` on that
+   policy (above).
+
+**API.**
+
+```bash
+get() {   # get <path and query under /admin-api>
+  curl -sk "$BASE/admin-api/$1" -H "Authorization: Bearer $TOKEN"
+}
+# The whole realm
+get passkey-report
+# One group, and its classical-only people
+get "passkey-report?group=engineering&list=classical-only&per=50"
+# The next page: send back the cursor the answer gave
+get "passkey-report?group=engineering&list=classical-only&per=50&page=2&from=<list.paging.nextFrom>"
+# The same list as a file
+get "passkey-report/export?group=engineering&list=classical-only&format=csv" > classical.csv
+# Count the realm again now (after a bulk import, for example)
+api passkey-report/recount '{}'
+```
+
+The reads need a token with `admin:read`; the recount needs `admin:write`.
+The counts are kept as passkeys are written and recounted once a day, so they
+are current without reading the directory. Under a group or profile filter
+the members are read (at most 50,000). The answer's `counted` says which.
 
 ## Requiring a post-quantum attestation
 
@@ -1141,6 +1187,9 @@ Every console control has an API operation. The request bodies are in
 |---|---|
 | `GET /admin-api/webauthn` | the `webauthn.*` settings and what the ceremony offers |
 | `GET /admin-api/mfa` | who holds which factor, and the WebAuthn report (algorithms, lanes, attestation) |
+| `GET /admin-api/passkey-report` | who holds which passkey algorithm across the realm, by kind, algorithm, lane and model, filtered by `group`, `profile` or `application`, with the people behind a count (`list`, `page`, `per`, `from`) |
+| `GET /admin-api/passkey-report/export` | the people behind a count, as CSV or JSON (`format`) |
+| `POST /admin-api/passkey-report/recount` | count the realm's passkeys again now, on the scheduler |
 | `GET /admin-api/users?user=<name>` | one person, with each passkey's role, algorithm, lane, backup state, attestation and any policy refusal |
 | `POST /admin-api/users/clear-key` | remove one passkey (`user`, `credentialId`) |
 | `POST /admin-api/users/rename-key` | rename one passkey (`user`, `credentialId`, `label`; empty restores the default) |
@@ -1190,6 +1239,8 @@ browser or a client. Look a code up in the audit log with
 | `STS-AUTHN-0357` | a passkey policy requiring post-quantum, while the realm offers no ML-DSA |
 | `STS-AUTHN-0380`, `0381` | an account recovery refused, or limited to registering a new passkey |
 | `STS-AUTHN-0411`, `0412` | a passkey whose attestation is not signed with what `attestationAlgorithms` allows (registration, sign-in) |
+| `STS-AUTHN-0415` | the passkey report could not read the directory (503) |
+| `STS-AUTHN-0416` | a passkey report filter was refused: two at once, or a profile or application that is not here |
 | `STS-AUTHN-0420` | a registration retried with the classical algorithms only, where a classical passkey is not allowed |
 | `STS-ADMIN-0522` | an administrator's removal of a passkey was refused |
 

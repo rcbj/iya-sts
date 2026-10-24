@@ -2069,6 +2069,22 @@ const SECTIONS = [
                'at <code>/authn/wallet</code>. What the lists are built with ' +
                'is on <a href="/admin/vc">Protocols &rarr; Verifiable ' +
                'Credentials</a>.' },
+      // PASSKEYS (#942), filed here by the console's rule: it REPORTS who
+      // holds what, where Protocols → WebAuthn and Directory → Policies say
+      // what the realm offers and asks. Drawn by the static console
+      // (`admin-ui/web_passkey_report.ts`) from `GET
+      // /admin-api/passkey-report`. Realm-scoped, so a realm's own
+      // administrator reads their realm's.
+      { path: '/admin/passkey-report', label: 'Passkeys',
+        blurb: 'Who in this realm holds which kind of passkey: the people ' +
+               'holding post-quantum only, classical only, both or none, ' +
+               'every algorithm in each lane, which authenticator models ' +
+               'hold which algorithms, and what each passkey profile asks ' +
+               '&mdash; filtered by a group, a passkey profile or an ' +
+               'application, with the people behind every count and an ' +
+               'export. The counts are kept as passkeys are written and ' +
+               'recounted daily, never a scan per page. Recount now is the ' +
+               'one control.' },
       // THE AUTHORIZATION SERVER'S OWN TRAFFIC (2026-09-13), filed here and
       // not under Protocols beside `/admin/oauth2` for the XACML monitor's
       // reason: that page is what the server is CONFIGURED to do and this is
