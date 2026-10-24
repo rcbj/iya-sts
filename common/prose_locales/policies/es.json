@@ -1207,6 +1207,14 @@
     "en": "bdbb83ca7b2a2c48",
     "text": "`any` DE FORMA PREDETERMINADA EN DESARROLLO, `not-weaker` EN PRODUCTO. Si una forma de volver a la cuenta que no pide ninguna llave de acceso — un enlace de restablecimiento de contraseña, un enlace de activación, un código de recuperación, un código o enlace enviado por correo — restablece el acceso de una persona que tiene una. `any`: de inmediato. `not-weaker`: el primer inicio de sesión posterior que no sea con llave de acceso no llega a ninguna aplicación; la persona registra una llave de acceso que cumpla esta política e inicia sesión con ella. `operator-only`: como not-weaker, y se rechazan las puertas de autoservicio (el formulario de contraseña olvidada, un código de recuperación o un código o enlace enviado por correo al iniciar sesión); solo queda el enlace de restablecimiento, la contraseña generada o el enlace de activación de un administrador. Si se omite al guardar, se mantiene el valor predeterminado integrado."
   },
+  "passkey.FIELDS.attestationAlgorithms.label": {
+    "en": "fe72fed238e39ede",
+    "text": "Algoritmos con los que debe estar firmada la atestación de una clave de acceso"
+  },
+  "passkey.FIELDS.attestationAlgorithms.what": {
+    "en": "cb4ed83be3a69177",
+    "text": "`none` DE FORMA PREDETERMINADA: se acepta una atestación sea cual sea el algoritmo con el que esté firmada. En otro caso, una lista de post-quantum, ml-dsa-44, ml-dsa-65, ml-dsa-87, slh-dsa y composite-ml-dsa: una clave de acceso solo se registra con una atestación DE CONFIANZA que lleve un certificado, cuya firma de la declaración y la firma de cada certificado de su cadena, desde el certificado hoja hasta el ancla de confianza, sean cada una de las que la lista permite (`post-quantum` permite cualquier firma ML-DSA, SLH-DSA o ML-DSA compuesta). Las atestaciones «self» y «none» se rechazan, porque no llevan certificado. Con enforceAttestationAtSignIn activado, cada inicio de sesión somete la clave de acceso a esta regla según lo que su registro dejó constancia, de modo que una clave de acceso registrada antes de la regla deja de funcionar. Es el algoritmo de la atestación, no el de la propia clave de acceso (postQuantumRequired). Si se omite al guardar, se conserva el valor predeterminado integrado."
+  },
   "passkey.SCHEMA.objectClasses.stsPasskeyPolicy.what": {
     "en": "44bab556bd6240cc",
     "text": "La clase de este servicio para una política de llaves de acceso: cómo se comportan las llaves de acceso en este dominio. La entrada lleva el nombre del PERFIL (`cn=default`)."
@@ -1286,6 +1294,10 @@
   "passkey.SCHEMA.attributes.stsPasskeyRecoveryAssurance.what": {
     "en": "bdbb83ca7b2a2c48",
     "text": "`any` DE FORMA PREDETERMINADA EN DESARROLLO, `not-weaker` EN PRODUCTO. Si una forma de volver a la cuenta que no pide ninguna llave de acceso — un enlace de restablecimiento de contraseña, un enlace de activación, un código de recuperación, un código o enlace enviado por correo — restablece el acceso de una persona que tiene una. `any`: de inmediato. `not-weaker`: el primer inicio de sesión posterior que no sea con llave de acceso no llega a ninguna aplicación; la persona registra una llave de acceso que cumpla esta política e inicia sesión con ella. `operator-only`: como not-weaker, y se rechazan las puertas de autoservicio (el formulario de contraseña olvidada, un código de recuperación o un código o enlace enviado por correo al iniciar sesión); solo queda el enlace de restablecimiento, la contraseña generada o el enlace de activación de un administrador. Si se omite al guardar, se mantiene el valor predeterminado integrado."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyAttestationAlgorithms.what": {
+    "en": "cb4ed83be3a69177",
+    "text": "`none` DE FORMA PREDETERMINADA: se acepta una atestación sea cual sea el algoritmo con el que esté firmada. En otro caso, una lista de post-quantum, ml-dsa-44, ml-dsa-65, ml-dsa-87, slh-dsa y composite-ml-dsa: una clave de acceso solo se registra con una atestación DE CONFIANZA que lleve un certificado, cuya firma de la declaración y la firma de cada certificado de su cadena, desde el certificado hoja hasta el ancla de confianza, sean cada una de las que la lista permite (`post-quantum` permite cualquier firma ML-DSA, SLH-DSA o ML-DSA compuesta). Las atestaciones «self» y «none» se rechazan, porque no llevan certificado. Con enforceAttestationAtSignIn activado, cada inicio de sesión somete la clave de acceso a esta regla según lo que su registro dejó constancia, de modo que una clave de acceso registrada antes de la regla deja de funcionar. Es el algoritmo de la atestación, no el de la propia clave de acceso (postQuantumRequired). Si se omite al guardar, se conserva el valor predeterminado integrado."
   },
   "passkey.SCHEMA.attributes.stsPasskeySelectApplication.what": {
     "en": "03ba679923c40b45",
@@ -1426,6 +1438,10 @@
   "passkey.sentences.postQuantumEverywhere": {
     "en": "79742dacfba54ede",
     "text": "solo una llave de acceso poscuántica (ML-DSA) se registra o inicia la sesión de una persona"
+  },
+  "passkey.sentences.attestationAlgorithms": {
+    "en": "9e73c79f0de11296",
+    "text": "una clave de acceso solo se registra con una atestación de confianza cuya declaración y cadena de certificados están firmadas con {{algorithms}}"
   },
   "passkey.sentences.recoveryAny": {
     "en": "7383156c8eb1e363",

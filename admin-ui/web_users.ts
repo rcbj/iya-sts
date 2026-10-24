@@ -1846,6 +1846,8 @@ class UsersPage {
           ? '<div class="note state-invalid passkey-post-quantum-refused">' +
             kit.esc(one.postQuantumRefused) + '</div>' : '') + '</td>' +
         '<td>' + UsersPage.attestationCell(t, one.attestation, one.aaguid) +
+        // WHAT ITS ATTESTATION WAS SIGNED WITH (#941), leaf to anchor.
+        UsersPage.attestationAlgorithmsText(t, one.attestationAlgorithms) +
         '</td>' +
         '<td>' + kit.esc(backup) +
         (Array.isArray(one.transports) && one.transports.length
@@ -2670,6 +2672,30 @@ class UsersPage {
       (att.model ? ' — ' + kit.esc(att.model) : '') +
       ' <code>' + kit.esc(att.format) + '</code>' +
       UsersPage.androidRevocationText(t, att);
+  }
+
+  // THE ALGORITHMS A KEY'S ATTESTATION WAS SIGNED WITH (#941): the
+  // statement's, then each certificate's from the leaf to the anchor, with
+  // the whole marked post-quantum where every one of them is. Nothing for a
+  // key that recorded none (before #941, or no attestation): the cell
+  // already says "claimed" for those.
+  static attestationAlgorithmsText(t, a) {
+    if (!a || !a.recorded ||
+        (!a.statement && !(a.certificates || []).length)) {
+      return '';
+    }
+    const chain = (a.certificates || []).map(function (one) {
+      return String(one.algorithm || '');
+    }).filter(Boolean);
+    const names = (a.statements && a.statements.length ? a.statements
+                                                     : [])
+      .concat(chain.length ? [chain.join(' \u2192 ')] : []);
+    return '<div class="sub passkey-attestation-algorithms' +
+      (a.postQuantum ? ' state-valid' : '') + '">' +
+      t.html(a.postQuantum
+        ? 'consoleUsers.attestationAlgorithms.postQuantum'
+        : 'consoleUsers.attestationAlgorithms.signedWith') +
+      ' <code>' + kit.esc(names.join('; ')) + '</code></div>';
   }
 
   // What Google's Android attestation status list said of an android-key

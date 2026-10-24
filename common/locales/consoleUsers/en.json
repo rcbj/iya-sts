@@ -540,6 +540,8 @@
   "attestationCell.notChained": ", not chained to an anchor",
   "attestationCell.trusted": "verified, trusted",
   "attestationCell.untrusted": "verified, untrusted",
+  "attestationAlgorithms.signedWith": "attestation signed with",
+  "attestationAlgorithms.postQuantum": "post-quantum attestation, signed with",
   "androidRevocationText.unknown": "revocation unknown (registered before the Android status list was consulted)",
   "androidRevocationText.notRevoked": "not revoked",
   "androidRevocationText.unchecked": "revocation unchecked: {why}",

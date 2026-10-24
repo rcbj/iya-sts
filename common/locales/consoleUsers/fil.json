@@ -540,6 +540,8 @@
   "attestationCell.notChained": ", hindi naka-chain sa anumang anchor",
   "attestationCell.trusted": "verified, pinagkakatiwalaan",
   "attestationCell.untrusted": "verified, hindi pinagkakatiwalaan",
+  "attestationAlgorithms.signedWith": "attestation na nilagdaan gamit ang",
+  "attestationAlgorithms.postQuantum": "post-quantum na attestation, nilagdaan gamit ang",
   "androidRevocationText.unknown": "hindi alam ang revocation (nirehistro bago kinonsulta ang Android status list)",
   "androidRevocationText.notRevoked": "hindi binawi",
   "androidRevocationText.unchecked": "hindi nasuri ang revocation: {why}",

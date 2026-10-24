@@ -14803,6 +14803,13 @@ class AdminViews {
                  algorithm: credentials.keyAlgorithm(one),
                  lane: credentials.keyLane(one),
                  attestation: one.attestation || null,
+                 // THE ALGORITHMS ITS ATTESTATION WAS SIGNED WITH (#941):
+                 // `credentials.attestationAlgorithms()`'s one reading of
+                 // the record — the statement's, each certificate's leaf
+                 // first and the anchor's last, and whether all of them
+                 // are post-quantum; `recorded: false` for a key
+                 // registered before #941 or with no attestation.
+                 attestationAlgorithms: credentials.attestationAlgorithms(one),
                  // WHAT THE PASSKEY PAGES SHOW (#470): the name a page draws
                  // (the label, else the default), the group — `device` or
                  // `security-key` — the provider, when it was last used, the

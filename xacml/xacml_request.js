@@ -356,6 +356,26 @@ const VOCABULARY = Object.freeze({
   PASSKEY_ALGORITHM: 'urn:sts:xacml:passkey:algorithm',
   PASSKEY_POST_QUANTUM: 'urn:sts:xacml:passkey:post-quantum',
   PASSKEY_LANE: 'urn:sts:xacml:passkey:lane',
+  // resource: WHAT THE KEY'S ATTESTATION WAS SIGNED WITH (#941), with the
+  // fact group `attestation-algorithm` — the statement's own signature
+  // algorithm by its COSE name (`ML-DSA-65`, `ES256`; absent for apple and
+  // none); a bag of every certificate's signature algorithm, leaf first
+  // and the anchor last (`ML-DSA-65`, `sha256-ecdsa`,
+  // `id-MLDSA65-ECDSA-P256-SHA512`); whether ALL of them are post-quantum;
+  // whether the statement was verified and trusted (the `attestation`
+  // group's two facts, sent here too where that group is not); and whether
+  // they satisfy the selected profile's `attestationAlgorithms` list —
+  // computed in ONE place, `passkey_policy.ts`'s `question()`, as
+  // POST_QUANTUM is. The built-in rule reads ATTESTATION_ALGORITHM_ALLOWED
+  // alone; the rest is for a realm's own rules.
+  PASSKEY_ATTESTATION_STATEMENT_ALGORITHM:
+    'urn:sts:xacml:passkey:attestation-statement-algorithm',
+  PASSKEY_ATTESTATION_CERTIFICATE_ALGORITHM:
+    'urn:sts:xacml:passkey:attestation-certificate-algorithm',
+  PASSKEY_ATTESTATION_POST_QUANTUM:
+    'urn:sts:xacml:passkey:attestation-post-quantum',
+  PASSKEY_ATTESTATION_ALGORITHM_ALLOWED:
+    'urn:sts:xacml:passkey:attestation-algorithm-allowed',
   // environment: the SELECTED passkey policy profile's rows (#527, #535),
   // each after this prefix under its own name
   // (`urn:sts:xacml:passkey-policy:backupEligibility`).
@@ -724,6 +744,11 @@ class AuthorizationRequest {
   //   attestation { verified, trusted, aaguid, listed, compromised, rank,
   //                 fips, unchecked }          with `attestation`
   //   algorithm, postQuantum, lane            with `algorithm` (#718)
+  //   attestationAlgorithm { verified, trusted, statement, certificates,
+  //                          postQuantum }, attestationAlgorithmAllowed
+  //                                            with `attestation-algorithm`
+  //                                            (#941)
+  //   policy.attestationAlgorithms             always (#941), a bag
   //   policy { backupEligibility, enforcePinLength, minPinLength,
   //            pinLengthOnlyIfSupported, enforceAttestationAtSignIn,
   //            enterpriseSerialAttribute, postQuantumRequired,
@@ -802,6 +827,28 @@ class AuthorizationRequest {
                     T.BOOLEAN);
       this.resource(V.PASSKEY_LANE, one(given.lane));
     }
+    // WHAT THE ATTESTATION WAS SIGNED WITH (#941). The verdict is sent as
+    // a boolean always with its group, false for anything but true, for
+    // the post-quantum fact's reason: an absent "allowed" must never let a
+    // key through by its silence.
+    if (has('attestation-algorithm')) {
+      const a = given.attestationAlgorithm || {};
+      this.resource(V.PASSKEY_ATTESTATION_STATEMENT_ALGORITHM,
+                    one(a.statement));
+      this.resource(V.PASSKEY_ATTESTATION_CERTIFICATE_ALGORITHM,
+                    (Array.isArray(a.certificates) ? a.certificates : [])
+                      .map(String).filter(Boolean));
+      this.resource(V.PASSKEY_ATTESTATION_POST_QUANTUM,
+                    [a.postQuantum === true], T.BOOLEAN);
+      if (!has('attestation')) {
+        this.resource(V.PASSKEY_ATTESTATION_VERIFIED, [a.verified === true],
+                      T.BOOLEAN);
+        this.resource(V.PASSKEY_ATTESTATION_TRUSTED, [a.trusted === true],
+                      T.BOOLEAN);
+      }
+      this.resource(V.PASSKEY_ATTESTATION_ALGORITHM_ALLOWED,
+                    [given.attestationAlgorithmAllowed === true], T.BOOLEAN);
+    }
     const policy = given.policy || {};
     const P = V.PASSKEY_POLICY_PREFIX;
     this.environment(P + 'backupEligibility', one(policy.backupEligibility));
@@ -823,6 +870,9 @@ class AuthorizationRequest {
     this.environment(P + 'postQuantumAllowCredentials',
                      one(policy.postQuantumAllowCredentials));
     this.environment(P + 'recoveryAssurance', one(policy.recoveryAssurance));
+    this.environment(P + 'attestationAlgorithms',
+                     (Array.isArray(policy.attestationAlgorithms)
+                       ? policy.attestationAlgorithms : []).map(String));
     const recovery = given.recovery || null;
     if (has('recovery') && recovery) {
       this.resource(V.PASSKEY_RECOVERY_DOOR, one(recovery.door));

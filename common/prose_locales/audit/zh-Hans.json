@@ -459,6 +459,14 @@
     "en": "3571d30810b2d9c7",
     "text": "设备密钥不再被证明：Google 的 Android 证明状态列表吊销了其证书链"
   },
+  "audit.actions.webauthn.ceremony.label": {
+    "en": "49406d0c31568578",
+    "text": "运行了一次 WebAuthn 注册或断言，无论是否完成"
+  },
+  "audit.actions.webauthn.algorithm-mismatch.label": {
+    "en": "712b402391b059c6",
+    "text": "持有后量子通行密钥的人使用经典通行密钥登录"
+  },
   "audit.actions.webauthn.attestation-revoked.label": {
     "en": "0be46b8b29aaf446",
     "text": "安全密钥的证明不再受信任：Google 的 Android 证明状态列表吊销了其证书链"

@@ -228,6 +228,24 @@
 //                            (`stsPasswordResetSource`): SCHEMA's
 //                            `personAttributes`.
 //
+// #941 (2026-10-23) added `attestationAlgorithms`, `none`: the algorithms
+// a passkey's ATTESTATION must be signed with — not the passkey's own
+// (#718's row), the statement's and every certificate's of its chain, leaf
+// to anchor, as `authn/webauthn_attestation.ts` records them. A list of
+// `post-quantum` (any ML-DSA, SLH-DSA or composite ML-DSA signature),
+// `ml-dsa-44`, `ml-dsa-65`, `ml-dsa-87`, `slh-dsa` and
+// `composite-ml-dsa`; each signature must be one some entry allows. Set,
+// it DEMANDS A TRUSTED STATEMENT, as an AAGUID list does: an algorithm in a
+// chain nobody vouches for is the authenticator's say-so, and anybody can
+// mint an ML-DSA chain. Self and none attestation carry no certificate and
+// are refused. Decided by the issuance policy as every row is (reason
+// `attestation-algorithm`): at registration where every key is written
+// (STS-AUTHN-0411), and at sign-in only while `enforceAttestationAtSignIn`
+// holds sign-ins to the attestation rules, by what was recorded
+// (STS-AUTHN-0412) — so a key registered before #941, which recorded no
+// algorithms, stops signing in then. OPTIONAL ON A SAVE, as #724's row is,
+// so a caller sending the whole profile as it was is not refused.
+//
 // #946 (2026-10-23) added `postQuantumAllowCredentials`: `realm` (the
 // default, optional on a save), `narrow` or `list-and-refuse` — how the
 // passkey step's `allowCredentials` is built while `postQuantumRequired`
@@ -428,6 +446,9 @@ const SENTENCES: Readonly<Record<string, string>> = Object.freeze({
     'in; a classical one may still be registered',
   postQuantumEverywhere: 'only a post-quantum (ML-DSA) passkey is ' +
     'registered or signs a person in',
+  attestationAlgorithms: 'a passkey registers only with a trusted ' +
+    'attestation whose statement and certificate chain are signed with ' +
+    '{{algorithms}}',
   recoveryAny: 'an account recovery restores access at once, whatever ' +
     'passkey the person holds',
   recoveryNotWeaker: 'after an account recovery, a person who holds a ' +
@@ -538,6 +559,14 @@ const POST_QUANTUM_REQUIRED_VALUES = ['off', 'sign-in',
  */
 const POST_QUANTUM_ALGORITHMS: ReadonlyArray<string> =
   Object.freeze(['ML-DSA-44', 'ML-DSA-65', 'ML-DSA-87']);
+/**
+ * What `attestationAlgorithms` may list (#941): `post-quantum` allows any
+ * post-quantum signature (ML-DSA, SLH-DSA, composite ML-DSA), the others
+ * one parameter set or family. Empty, written `none`, is no rule.
+ */
+const ATTESTATION_ALGORITHM_VALUES: ReadonlyArray<string> =
+  Object.freeze(['post-quantum', 'ml-dsa-44', 'ml-dsa-65', 'ml-dsa-87',
+                 'slh-dsa', 'composite-ml-dsa']);
 /**
  * What `postQuantumAllowCredentials` may be (#946): `realm` follows the
  * realm's `webauthn.postQuantumAllowCredentials`.
@@ -775,7 +804,27 @@ const FIELDS: PolicyField[] = [
           'self-service doors (the forgot-password form, a recovery code ' +
           'or an emailed code or link at sign-in) are refused; only an ' +
           'administrator\'s reset link, generated password or activation ' +
-          'link remains. Left out of a save, the built-in default is kept.' }
+          'link remains. Left out of a save, the built-in default is kept.' },
+  { key: 'attestationAlgorithms',
+    attribute: 'stsPasskeyAttestationAlgorithms', type: 'list',
+    values: ATTESTATION_ALGORITHM_VALUES.slice(), dflt: NO_HINTS,
+    optional: true,
+    label: 'Algorithms a passkey\'s attestation must be signed with',
+    what: '`none` BY DEFAULT: an attestation is accepted whatever it is ' +
+          'signed with. Otherwise a list from post-quantum, ml-dsa-44, ' +
+          'ml-dsa-65, ml-dsa-87, slh-dsa and composite-ml-dsa: a passkey ' +
+          'registers only with a TRUSTED attestation that carries a ' +
+          'certificate, whose statement signature and the signature on ' +
+          'every certificate of its chain, from the leaf to the trust ' +
+          'anchor, are each one the list allows (`post-quantum` allows ' +
+          'any ML-DSA, SLH-DSA or composite ML-DSA signature). Self and ' +
+          'none attestation are refused, having no certificate. With ' +
+          'enforceAttestationAtSignIn on, every sign-in holds the passkey ' +
+          'to it by what its registration recorded, so a passkey ' +
+          'registered before the rule stops working. This is the ' +
+          'attestation\'s algorithm, not the passkey\'s own ' +
+          '(postQuantumRequired). Left out of a save, the built-in default ' +
+          'is kept.' }
 ];
 
 /**
@@ -2006,6 +2055,89 @@ class PasskeyPolicy {
   }
 
   /**
+   * The algorithms a passkey's attestation must be signed with (#941): the
+   * selected profile's `attestationAlgorithms`, or [] for none.
+   *
+   * @param profile - a profile already read; read afresh when omitted
+   * @returns the list, in the profile's order
+   */
+  attestationAlgorithms(profile?: PasskeyProfile | null): string[] {
+    const { log } = this.deps;
+    log.debug("Entering PasskeyPolicy.attestationAlgorithms().");
+    const rules = profile || this.read();
+    const text = String(rules.attestationAlgorithms === undefined ||
+                        rules.attestationAlgorithms === null
+      ? NO_HINTS : rules.attestationAlgorithms);
+    const out = text === NO_HINTS ? [] : text.split(',').filter(
+      function (one) {
+        return ATTESTATION_ALGORITHM_VALUES.indexOf(one) >= 0;
+      });
+    log.debug("Leaving PasskeyPolicy.attestationAlgorithms(). " +
+              (out.join(',') || 'none'));
+    return out;
+  }
+
+  // -------------------------------------------------------------------------
+  // WHETHER AN ATTESTATION'S ALGORITHMS SATISFY THE LIST (#941), computed in
+  // ONE place — `question()` — as `postQuantum` is for #718, so a door
+  // never says it and the built-in rule reads one boolean. Every signature
+  // must be one an entry allows: a statement algorithm by its COSE name
+  // (only RFC 9964's ML-DSA is post-quantum there), a certificate by the
+  // name, family and post-quantum flag `pki.attestationSignatureAlgorithm()`
+  // gave it. And the statement must have been VERIFIED and TRUSTED and carry
+  // a certificate: an algorithm nobody checked, or one in a chain no anchor
+  // vouches for, satisfies nothing. An empty list is no rule.
+  // -------------------------------------------------------------------------
+  /**
+   * Says whether an attestation's recorded algorithms satisfy a list of
+   * `attestationAlgorithms` values (#941).
+   *
+   * @param facts - `webauthn_attestation.recordedAlgorithms()`'s answer
+   * @param allowed - the list; empty is no rule
+   * @returns true where it does
+   */
+  static attestationAlgorithmAllowed(facts: Record<string, any> | null,
+                                     allowed: string[]): boolean {
+    log.debug("Entering PasskeyPolicy.attestationAlgorithmAllowed().");
+    if (!allowed || !allowed.length) {
+      log.debug("Leaving PasskeyPolicy.attestationAlgorithmAllowed(). " +
+                "No rule.");
+      return true;
+    }
+    const f = facts || {};
+    const certificates = Array.isArray(f.certificates) ? f.certificates : [];
+    if (f.verified !== true || f.trusted !== true || !certificates.length) {
+      log.debug("Leaving PasskeyPolicy.attestationAlgorithmAllowed(). Not " +
+                "a trusted chain.");
+      return false;
+    }
+    const one = function (name: string, family: string,
+                          postQuantum: boolean): boolean {
+      log.debug("Entering attestationAlgorithmAllowed() one().");
+      const lower = String(name || '').toLowerCase();
+      const ok = allowed.some(function (value) {
+        return value === 'post-quantum' ? postQuantum
+          : (value === 'slh-dsa' ? family === 'SLH-DSA'
+            : (value === 'composite-ml-dsa' ? family === 'Composite ML-DSA'
+                                            : lower === value));
+      });
+      log.debug("Leaving attestationAlgorithmAllowed() one(). " + ok);
+      return ok;
+    };
+    const statements = Array.isArray(f.statements) ? f.statements : [];
+    const out = statements.every(function (name: string) {
+      return one(name, /^ML-DSA-/.test(String(name)) ? 'ML-DSA' : '',
+                 PasskeyPolicy.isPostQuantum(name));
+    }) && certificates.every(function (c: Record<string, any>) {
+      return one(String((c && c.algorithm) || ''),
+                 String((c && c.family) || ''),
+                 !!(c && c.postQuantum === true));
+    });
+    log.debug("Leaving PasskeyPolicy.attestationAlgorithmAllowed(). " + out);
+    return out;
+  }
+
+  /**
    * Says whether every passkey sign-in is held to the attestation rules in
    * force (#530).
    *
@@ -2153,6 +2285,29 @@ class PasskeyPolicy {
       out.postQuantum = PasskeyPolicy.isPostQuantum(algorithm);
       out.lane = given.lane === 'pqc' ? 'pqc' : 'classical';
     }
+    // THE ALGORITHMS THE KEY'S ATTESTATION WAS SIGNED WITH (#941), and
+    // whether they satisfy the profile's list — decided HERE, as
+    // `postQuantum` is: a door hands over what the record says
+    // (`webauthn_attestation.recordedAlgorithms()`) and never its reading.
+    // The raw names go beside the verdict for a realm's own rules.
+    if (has('attestationAlgorithms')) {
+      groups.push('attestation-algorithm');
+      const a = given.attestationAlgorithms || {};
+      out.attestationAlgorithm = {
+        verified: a.verified === true, trusted: a.trusted === true,
+        recorded: a.recorded === true,
+        statement: String(a.statement || ''),
+        statements: (Array.isArray(a.statements) ? a.statements : [])
+          .map(String).slice(0, 8),
+        certificates: (Array.isArray(a.certificates) ? a.certificates : [])
+          .map(function (c) {
+            return String((c && c.algorithm) || '');
+          }).slice(0, 16),
+        postQuantum: a.postQuantum === true };
+      out.attestationAlgorithmAllowed =
+        PasskeyPolicy.attestationAlgorithmAllowed(a,
+          this.attestationAlgorithms(rules));
+    }
     if (has('recovery') && given.recovery) {
       groups.push('recovery');
       const r = given.recovery;
@@ -2178,13 +2333,15 @@ class PasskeyPolicy {
       postQuantumRequired: POST_QUANTUM_REQUIRED_VALUES.indexOf(
         String(rules.postQuantumRequired)) >= 0
         ? String(rules.postQuantumRequired) : 'off',
+      recoveryAssurance: this.recoveryAssurance(rules),
+      // #941: the list, [] for none.
+      attestationAlgorithms: this.attestationAlgorithms(rules),
       // HOW THE PASSKEY STEP NAMED THE KEYS (#946), resolved — the realm's
       // setting where the row is `realm` — so a realm's own rule may tell a
       // classical key the person picked from a list from one they were
       // never offered. No built-in rule reads it: the refusal is the
       // `post-quantum` rule's either way.
-      postQuantumAllowCredentials: this.postQuantumAllowCredentials(rules),
-      recoveryAssurance: this.recoveryAssurance(rules)
+      postQuantumAllowCredentials: this.postQuantumAllowCredentials(rules)
     };
     log.debug("Leaving PasskeyPolicy.question(). " + out.action + ' [' +
               groups.join(', ') + ']');
@@ -2290,6 +2447,28 @@ class PasskeyPolicy {
             (registering
               ? 'Use an authenticator that can make an ML-DSA passkey.'
               : 'Sign in another way, and register a post-quantum passkey.');
+    } else if (reason === 'attestation-algorithm') {
+      const a = asked.attestationAlgorithm || {};
+      const signed = [].concat(a.statements || [], a.certificates || [])
+        .filter(Boolean).slice(0, 8).join(', ');
+      why = (registering ? 'That passkey\'s attestation ' :
+                           'This passkey was registered with an ' +
+                           'attestation that ') +
+            (!a.verified || !a.trusted
+              ? (registering ? 'is not one this service verified and ' +
+                               'trusts'
+                             : 'this service did not verify and trust')
+              : (!(a.certificates || []).length
+                ? 'carries no certificate'
+                : 'is signed with ' +
+                  (signed || 'algorithms never recorded'))) +
+            ', and this realm requires one signed with ' +
+            ((policy.attestationAlgorithms || []).join(', ') || 'nothing') +
+            ' (the passkey policy\'s attestationAlgorithms). ' +
+            (registering
+              ? 'Use an authenticator whose attestation is signed that way.'
+              : 'Sign in another way, and register a passkey whose ' +
+                'attestation is.');
     } else if (reason === 'serial-not-held') {
       why = 'That security key (serial ' +
             String(asked.serial || '').slice(0, 64) + ') is not ' +
@@ -2376,7 +2555,13 @@ class PasskeyPolicy {
       rules.recoveryAssurance === 'operator-only'
         ? SENTENCES.recoveryOperatorOnly
         : (rules.recoveryAssurance === 'not-weaker'
-          ? SENTENCES.recoveryNotWeaker : SENTENCES.recoveryAny)
+          ? SENTENCES.recoveryNotWeaker : SENTENCES.recoveryAny),
+      // #941: said only while a list is set, so a profile without one is
+      // described as it was.
+      ...(this.attestationAlgorithms(rules).length
+        ? [fill(SENTENCES.attestationAlgorithms,
+                { algorithms: this.attestationAlgorithms(rules).join(', ') })]
+        : [])
     ];
     log.debug("Leaving PasskeyPolicy.describe().");
     return out;
@@ -2739,6 +2924,10 @@ export = {
   backupEligibleRefusal: slot.forward('backupEligibleRefusal'),
   pinLengthRule: slot.forward('pinLengthRule'),
   enforcesAttestationAtSignIn: slot.forward('enforcesAttestationAtSignIn'),
+  // #941.
+  ATTESTATION_ALGORITHM_VALUES: ATTESTATION_ALGORITHM_VALUES,
+  attestationAlgorithms: slot.forward('attestationAlgorithms'),
+  attestationAlgorithmAllowed: PasskeyPolicy.attestationAlgorithmAllowed,
   hintsFor: slot.forward('hintsFor'),
   select: slot.forward('select'),
   selectionFor: slot.forward('selectionFor'),

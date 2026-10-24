@@ -459,6 +459,14 @@
     "en": "3571d30810b2d9c7",
     "text": "En enhetsnyckel är inte längre attesterad: Googles statuslista för Android-attestering återkallar dess kedja"
   },
+  "audit.actions.webauthn.ceremony.label": {
+    "en": "49406d0c31568578",
+    "text": "En WebAuthn-registrering eller -assertion kördes, slutförd eller inte"
+  },
+  "audit.actions.webauthn.algorithm-mismatch.label": {
+    "en": "712b402391b059c6",
+    "text": "En person med en postkvantnyckel loggade in med en klassisk nyckel"
+  },
   "audit.actions.webauthn.attestation-revoked.label": {
     "en": "0be46b8b29aaf446",
     "text": "En säkerhetsnyckels attestering är inte längre betrodd: Googles statuslista för Android-attestering återkallar dess kedja"
