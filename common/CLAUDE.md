@@ -12571,6 +12571,22 @@ post-quantum keys while required.
   generalised to a map by reason. `authn/CLAUDE.md` (*A post-quantum
   passkey required*) argues the doors.
 
+**#946 ADDED `postQuantumAllowCredentials` (2026-10-23)**: `realm` (the
+default, OPTIONAL on a save, `recoveryAssurance`'s arrangement), `narrow`
+or `list-and-refuse`, on the default and named profiles
+(`stsPasskeyPostQuantumAllowCredentials`); `realm` follows the realm's
+`webauthn.postQuantumAllowCredentials` (`narrow` by default) — the
+ticket's "per realm, or per policy". `postQuantumAllowCredentials()`
+resolves it and `question()` sends it resolved as a policy fact no built-in
+rule reads. It decides nothing: `authn/CLAUDE.md` (*List and refuse*) says
+what the passkey step does with it.
+
+**`web_webauthn.ts` (#944)** holds what both static surfaces do when a
+registration that asked for ML-DSA fails on the device: `failureKind()`,
+`capabilities()` (`getClientCapabilities()`, feature-detected),
+`offerFallback()` and the #943 hook `reportCeremonyFailure()`, a no-op
+until that ticket wires it. Still a `web_` module requiring nothing.
+
 ### `credentials.ts`'s half of the passkey lanes (#643, 2026-10-19)
 
 The lanes are argued in `authn/CLAUDE.md` (*Two lanes*); what this file

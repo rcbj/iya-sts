@@ -2775,6 +2775,71 @@ and ML-DSA ceremonies), `tests/passkey_xacml.js` section E, and
 `tests/vendored/sts_passkey_post_quantum_required.js` over `/admin-api`,
 `/account-api` and the sign-in screen.
 
+## THE CLASSICAL RETRY OF A REGISTRATION (#944, 2026-10-23)
+
+The offered list is ML-DSA first and a platform may fail the whole
+registration when an authenticator cannot do the first algorithm, rather
+than take the next. The passkey step and `/portal/keys` now offer a retry
+with the classical algorithms only. What holds it together:
+
+* **THE DOOR DECIDES, NOT THE PAGE.** `webauthnPolicy.classicalRetryRefusal(at)`
+  refuses it (`STS-AUTHN-0420`) under `webauthn.pqcOnly` and under a profile
+  requiring a post-quantum passkey at registration, and — `at: 'sign-in'`,
+  the passkey step only — under one requiring it at sign-in, whose new key
+  would be refused at the session's start the moment it was written. Asked
+  by `mfaWebauthnOptions()` (`algorithms: classical` on
+  `…/webauthn/options`) and by `credentials.beginKeyEnrolment()`
+  (`classicalOnly`). `algorithmsOffered(lane, classicalOnly)` IGNORES the
+  flag where the registration-level refusal applies, so a ceremony armed
+  before a setting changed asks for and is held to the realm's own list.
+* **CARRIED, NEVER READ BACK**: `step.classicalOnly` and the pending
+  enrolment's `classicalOnly`, which the finish passes to `algorithmIds()`
+  for section 7.1's offered-algorithm check — an ML-DSA credential answering
+  the retry is `STS-AUTHN-0228`. An ordinary options request after a retry
+  puts the step back on the realm's list. With both lanes on the retry is
+  the classical lane (`classicalRetryLane()`), under its handle.
+* **THE FACTS ARE LANGUAGE-FREE** (`fallback`: `asksPostQuantum`,
+  `classical`, `retrying`) on the step's view, its ceremony and the portal's
+  pending enrolment; the renderers draw the guidance hidden in the page's
+  language and `common/web_webauthn.ts`'s `offerFallback()` shows the part
+  the error is for — `NotSupportedError` plainly, `NotAllowedError` and
+  `UnknownError` (also a cancel, a timeout, anything) worded as "if" — and
+  posts nothing, so the step stays armed. Any other failure is posted as it
+  was (`STS-AUTHN-0022`).
+* **`getClientCapabilities()` HAS NO ALGORITHM MEMBER**, so it cannot choose
+  the algorithms beforehand. It is feature-detected after a failure, shows
+  the hybrid line only where `hybridTransport` is reported, and goes with
+  the failure to `WebWebAuthn.reportCeremonyFailure()` — a NO-OP that #943
+  wires to its ceremony log; this ticket builds no endpoint.
+
+**Tests**: `tests/passkey_post_quantum_fallback.js` sections A-C and E.
+
+## LIST AND REFUSE WHERE A POST-QUANTUM PASSKEY IS REQUIRED (#946, 2026-10-23)
+
+`passkeyPolicy.postQuantumAllowCredentials()` — the profile's row, or the
+realm's `webauthn.postQuantumAllowCredentials` where the row is `realm` —
+chooses how `webauthnFacts()` builds `allowCredentials` while #718's
+requirement applies at sign-in. `narrow` (default) is #718's filter;
+`list-and-refuse` names every key of the role, and a classical assertion
+reaches `startSessionHere()` and is refused there by the existing
+`post-quantum` rule (`STS-AUTHN-0356`) — before any session, event or
+`session.start` row; the counter is spent, as for every verified assertion.
+**A person holding no post-quantum key is still refused before the
+ceremony in both**: no pick of theirs could succeed.
+
+**The panel.** `refusedSession()` passes `postQuantumRequired` to
+`screenRefused()` for 0356, which marks the pending record (cleared by the
+next refusal, the next screen act and Start over); `screenView()` answers
+`postQuantumRequired` as `postQuantumHelp()`'s `{ register, upgrade }` and
+the step's facts carry `postQuantumHelp` beside `postQuantumRefused`.
+`WebAuthnLogin.postQuantumPanel()` draws it on the screen and the step page,
+translated, under the English sentence. `register` is `/portal/keys` where
+passkeys may be registered here; `upgrade` is '' until #939 makes
+`webauthnPolicy.postQuantumUpgradeOffered()` answer true. The usernameless
+sign-in, never narrowable, gets the same panel.
+
+**Tests**: `tests/passkey_post_quantum_fallback.js` section D.
+
 ## THE WEBAUTHN ADDRESS RULES (2026-09-12)
 
 Two changes to what a ceremony is held to, both about the address a request

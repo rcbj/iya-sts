@@ -726,7 +726,8 @@ class AuthorizationRequest {
   //   algorithm, postQuantum, lane            with `algorithm` (#718)
   //   policy { backupEligibility, enforcePinLength, minPinLength,
   //            pinLengthOnlyIfSupported, enforceAttestationAtSignIn,
-  //            enterpriseSerialAttribute, postQuantumRequired }  always
+  //            enterpriseSerialAttribute, postQuantumRequired,
+  //            postQuantumAllowCredentials (#946) }  always
   //   settings { attestationPolicy, allowedAaguids, requiredRank,
   //              requireFips }                 with `attestation`
   //   recovery { door, at, credential, selfService, covered, pending }
@@ -816,6 +817,11 @@ class AuthorizationRequest {
                      one(policy.enterpriseSerialAttribute));
     this.environment(P + 'postQuantumRequired',
                      one(policy.postQuantumRequired));
+    // HOW THE PASSKEY STEP NAMED THE KEYS (#946): `narrow` or
+    // `list-and-refuse`, resolved from the realm's setting where the
+    // profile's row is `realm`. Read by no built-in rule.
+    this.environment(P + 'postQuantumAllowCredentials',
+                     one(policy.postQuantumAllowCredentials));
     this.environment(P + 'recoveryAssurance', one(policy.recoveryAssurance));
     const recovery = given.recovery || null;
     if (has('recovery') && recovery) {

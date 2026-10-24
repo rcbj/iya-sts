@@ -8887,8 +8887,9 @@ class Credentials {
    * be, refusing anything knowable before the person touches their key.
    *
    * @param username - the person
-   * @param opts - `role` (`mfa` by default), `kind`, and `lane` (#643:
-   *   `classical` by default, or `pqc`)
+   * @param opts - `role` (`mfa` by default), `kind`, `lane` (#643:
+   *   `classical` by default, or `pqc`), and `classicalOnly` (#944: the
+   *   classical retry of a registration that failed on the device)
    * @returns `{ ok: true, enrolmentId, challenge, … }`, or a refusal
    */
   beginKeyEnrolment(username, opts?) {
@@ -8927,7 +8928,25 @@ class Credentials {
     if (!this.deps.passkeyPolicy.hasSelection()) {
       this.deps.passkeyPolicy.select(name, '');
     }
-    const lane = webauthnPolicy.enrolmentLane(String(options.lane || ''));
+    let lane = webauthnPolicy.enrolmentLane(String(options.lane || ''));
+    // THE CLASSICAL RETRY (#944), refused here — not only on the page that
+    // offers it — where the realm forbids a classical passkey (pqcOnly, or
+    // a post-quantum passkey required at registration): STS-AUTHN-0420.
+    // Allowed, it is carried on the pending record, so the finish holds the
+    // credential to the retry's list, and it is made in the classical lane
+    // while both lanes are on.
+    const classicalOnly = options.classicalOnly === true;
+    if (classicalOnly) {
+      const retryAllowed = webauthnPolicy.classicalRetryRefusal();
+      if (!retryAllowed.ok) {
+        log.debug('Leaving Credentials.beginKeyEnrolment(). The classical ' +
+                  'retry is refused here.');
+        return coded(errorCodes.codeOf(retryAllowed) || 'STS-AUTHN-0420',
+                     { ok: false, reason: 'algorithms',
+                       errors: [retryAllowed.why] });
+      }
+      lane = webauthnPolicy.classicalRetryLane(lane);
+    }
     const laneAllowed = webauthnPolicy.laneRefusal(lane);
     if (!laneAllowed.ok) {
       log.debug('Leaving Credentials.beginKeyEnrolment(). The lane is not ' +
@@ -8981,6 +9000,8 @@ class Credentials {
       role: role,
       kind: kind,
       lane: lane,
+      // The classical retry (#944): the algorithms less ML-DSA.
+      classicalOnly: classicalOnly,
       // NO LABEL (#470): the key takes its provider's or its group's name, and
       // the page asks for a nickname once it is registered.
       label: '',
@@ -9013,7 +9034,7 @@ class Credentials {
     log.debug('Leaving Credentials.beginKeyEnrolment(). Challenge minted ' +
               'and held.');
     return { ok: true, enrolmentId: record.id, challenge: record.challenge,
-             role: role, kind: kind, lane: lane,
+             role: role, kind: kind, lane: lane, classicalOnly: classicalOnly,
              exclude: record.exclude.slice(),
              userHandle: record.userHandle,
              expiresAt: new Date(record.expires).toISOString() };
@@ -9126,7 +9147,10 @@ class Credentials {
         // ENROLMENT WAS BEGUN IN (#643), so an ML-DSA key answering the
         // classical lane, or a classical key the post-quantum one, is refused
         // as an algorithm that was not offered (STS-AUTHN-0228).
-        expectedAlgorithms: webauthnPolicy.algorithmIds(held.lane)
+        // The classical retry's list where it was begun as one (#944).
+        expectedAlgorithms: webauthnPolicy.algorithmIds(held.lane,
+                                                        held.classicalOnly ===
+                                                          true)
       });
     } catch (e) {
       log.debug('Leaving Credentials.checkKeyEnrolment(). Verification threw.');

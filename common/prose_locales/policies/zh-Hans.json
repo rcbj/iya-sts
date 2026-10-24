@@ -1127,6 +1127,14 @@
     "en": "ba077a59ecf25ecb",
     "text": "`off`（默认值）接受任何签名算法的通行密钥。`sign-in` 在通行密钥让某人登录时（作为第一凭据或第二因素）只接受后量子通行密钥，即算法为 ML-DSA-44、ML-DSA-65 或 ML-DSA-87（RFC 9964）的通行密钥；经典通行密钥仍可注册。`registration-and-sign-in` 在注册时也拒绝经典通行密钥，此时注册只提供 ML-DSA。决定因素是算法，而不是密钥创建时所在的通道。当领域不提供任何 ML-DSA 时（webauthn.algorithms 未列出任何 ML-DSA，且 webauthn.pqcOnly 和 webauthn.pqcAlongsideClassical 均未开启）将被拒绝。"
   },
+  "passkey.FIELDS.postQuantumAllowCredentials.label": {
+    "en": "295b04bef9cf50bc",
+    "text": "要求后量子通行密钥时登录所列出的通行密钥"
+  },
+  "passkey.FIELDS.postQuantumAllowCredentials.what": {
+    "en": "af7666466d67e760",
+    "text": "`realm`（默认值）沿用该领域的 webauthn.postQuantumAllowCredentials。仅在 postQuantumRequired 要求登录时使用后量子通行密钥时读取。`narrow` 在通行密钥步骤的请求中只列出此人的后量子（ML-DSA）通行密钥，因此从不提供传统通行密钥，而设备上只存有其传统通行密钥的人会看到平台自己的“未找到通行密钥”消息。`list-and-refuse` 列出此人持有的每个通行密钥，并在仪式结束后拒绝传统通行密钥，同时显示一个页面，说明此应用要求后量子通行密钥以及在哪里添加；此人随后可能选择一个将被拒绝的通行密钥。无论哪种方式，不持有任何后量子通行密钥的人都会在任何仪式之前得到告知。保存时省略，则保留 `realm`。"
+  },
   "passkey.FIELDS.passkeyHints.label": {
     "en": "7445bda72b06c415",
     "text": "“创建通行密钥”发送的提示"
@@ -1238,6 +1246,10 @@
   "passkey.SCHEMA.attributes.stsPasskeyPostQuantumRequired.what": {
     "en": "ba077a59ecf25ecb",
     "text": "`off`（默认值）接受任何签名算法的通行密钥。`sign-in` 在通行密钥让某人登录时（作为第一凭据或第二因素）只接受后量子通行密钥，即算法为 ML-DSA-44、ML-DSA-65 或 ML-DSA-87（RFC 9964）的通行密钥；经典通行密钥仍可注册。`registration-and-sign-in` 在注册时也拒绝经典通行密钥，此时注册只提供 ML-DSA。决定因素是算法，而不是密钥创建时所在的通道。当领域不提供任何 ML-DSA 时（webauthn.algorithms 未列出任何 ML-DSA，且 webauthn.pqcOnly 和 webauthn.pqcAlongsideClassical 均未开启）将被拒绝。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyPostQuantumAllowCredentials.what": {
+    "en": "af7666466d67e760",
+    "text": "`realm`（默认值）沿用该领域的 webauthn.postQuantumAllowCredentials。仅在 postQuantumRequired 要求登录时使用后量子通行密钥时读取。`narrow` 在通行密钥步骤的请求中只列出此人的后量子（ML-DSA）通行密钥，因此从不提供传统通行密钥，而设备上只存有其传统通行密钥的人会看到平台自己的“未找到通行密钥”消息。`list-and-refuse` 列出此人持有的每个通行密钥，并在仪式结束后拒绝传统通行密钥，同时显示一个页面，说明此应用要求后量子通行密钥以及在哪里添加；此人随后可能选择一个将被拒绝的通行密钥。无论哪种方式，不持有任何后量子通行密钥的人都会在任何仪式之前得到告知。保存时省略，则保留 `realm`。"
   },
   "passkey.SCHEMA.attributes.stsPasskeyHintsPasskey.what": {
     "en": "2ffa66aabab7a053",

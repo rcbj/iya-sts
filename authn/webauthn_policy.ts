@@ -479,14 +479,28 @@ class WebauthnPolicy {
    * list while `webauthn.pqcAlongsideClassical` is on: `classical` to the
    * names that are not ML-DSA (ES256 and RS256 where that leaves none),
    * `pqc` to ML-DSA (all three where the list names none). With the switch
-   * off a lane changes nothing.
+   * off a lane changes nothing. `classicalOnly` (#944) asks for the
+   * classical retry's list instead (`classicalRetryAlgorithms()`), and is
+   * ignored where the realm forbids that retry.
    * @param lane - `classical` or `pqc`, or nothing for the configured list
+   * @param classicalOnly - the classical retry of a registration (#944)
    * @returns the algorithm names
    */
-  algorithmsOffered(lane?: string) {
+  algorithmsOffered(lane?: string, classicalOnly?: boolean) {
     const { log } = this.deps;
     log.debug('Entering WebauthnPolicy.algorithmsOffered(). lane=' +
               String(lane || ''));
+    // THE CLASSICAL RETRY (#944), where the realm allows one. Where it does
+    // not, the flag is IGNORED rather than honoured: a pending ceremony
+    // that was armed for a retry before `webauthn.pqcOnly` or the passkey
+    // policy changed is then asked for, and held to, the list the realm
+    // offers now — never a classical one it forbids.
+    if (classicalOnly === true && this.classicalRetryRefusal().ok) {
+      const retry = this.classicalRetryAlgorithms(lane);
+      log.debug('Leaving WebauthnPolicy.algorithmsOffered(). ' +
+                retry.length + ' classical, a retry.');
+      return retry;
+    }
     const offered = this.lanedAlgorithms(lane);
     // A POST-QUANTUM PASSKEY REQUIRED AT REGISTRATION (#718): only ML-DSA
     // is offered, whatever the lane, so nobody makes a key the policy will
@@ -558,6 +572,168 @@ class WebauthnPolicy {
       ? 'pqc' : (wanted || 'classical');
     log.debug('Leaving WebauthnPolicy.enrolmentLane(). ' + out);
     return out;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE CLASSICAL RETRY OF A REGISTRATION (#944, 2026-10-23).
+  //
+  // The list is ML-DSA first and an authenticator takes the first algorithm
+  // it supports — but a platform may fail the whole registration when it is
+  // offered an algorithm the authenticator cannot do (`NotSupportedError`,
+  // or an error that says less), and then the person had nowhere to go. The
+  // sign-in step and `/portal/keys` now offer a retry that asks for the
+  // classical algorithms only, and THIS SERVICE DECIDES WHETHER THAT RETRY
+  // MAY BE MADE, NOT THE PAGE: a request for it is refused at the door
+  // (STS-AUTHN-0420) wherever a classical passkey would be refused anyway —
+  //
+  //   * `webauthn.pqcOnly` is on: the realm requests ML-DSA and nothing else;
+  //   * the selected passkey policy requires a post-quantum passkey at
+  //     registration (`postQuantumRequired: registration-and-sign-in`).
+  //
+  // Under `postQuantumRequired: sign-in` the retry IS allowed on
+  // `/portal/keys`: a classical passkey may still be registered there
+  // (#718's reading of the row), for the applications whose profile does
+  // not require one. It is refused AT THE SIGN-IN STEP (`at: 'sign-in'`),
+  // whose registration signs the person in at once: the session would be
+  // refused the moment the key was written (STS-AUTHN-0356), so the retry
+  // would be a ceremony spent on a refusal knowable before it. The retry's
+  // list is the lane's own less
+  // ML-DSA — `lanedAlgorithms('classical')` while both lanes are on, since a
+  // classical passkey belongs in the classical lane, under its handle — and
+  // `FALLBACK_ALGS` where that leaves nothing.
+  // ---------------------------------------------------------------------------
+  /**
+   * Decides whether a registration may be retried with the classical
+   * algorithms only (#944).
+   *
+   * @param at - `sign-in` for the sign-in step's registration, which signs
+   *   the person in at once; anything else for `/portal/keys`
+   * @returns `{ ok: true }`, or `{ ok: false, why }` carrying STS-AUTHN-0420
+   */
+  classicalRetryRefusal(at?: string) {
+    const { log, errorCodes } = this.deps;
+    log.debug('Entering WebauthnPolicy.classicalRetryRefusal(). ' +
+              String(at || ''));
+    if (this.pqcOnly()) {
+      log.debug('Leaving WebauthnPolicy.classicalRetryRefusal(). PQC only.');
+      return errorCodes.mark({ ok: false,
+               why: 'This realm requests post-quantum (ML-DSA) passkeys ' +
+                    'only (webauthn.pqcOnly), so a classical one cannot be ' +
+                    'made instead. Use a device or a security key that can ' +
+                    'make an ML-DSA passkey.' }, 'STS-AUTHN-0420');
+    }
+    if (passkeyPolicy.requiresPostQuantum('registration')) {
+      log.debug('Leaving WebauthnPolicy.classicalRetryRefusal(). Required ' +
+                'at registration.');
+      return errorCodes.mark({ ok: false,
+               why: 'The passkey policy requires a post-quantum (ML-DSA) ' +
+                    'passkey at registration (postQuantumRequired is ' +
+                    'registration-and-sign-in), so a classical one cannot ' +
+                    'be made instead. Use a device or a security key that ' +
+                    'can make an ML-DSA passkey.' }, 'STS-AUTHN-0420');
+    }
+    if (at === 'sign-in' && passkeyPolicy.requiresPostQuantum('sign-in')) {
+      log.debug('Leaving WebauthnPolicy.classicalRetryRefusal(). Required ' +
+                'at sign-in.');
+      return errorCodes.mark({ ok: false,
+               why: 'The passkey policy requires a post-quantum (ML-DSA) ' +
+                    'passkey to sign in here (postQuantumRequired), so a ' +
+                    'classical one made now would not sign you in. Use a ' +
+                    'device or a security key that can make an ML-DSA ' +
+                    'passkey.' }, 'STS-AUTHN-0420');
+    }
+    log.debug('Leaving WebauthnPolicy.classicalRetryRefusal(). Allowed.');
+    return { ok: true };
+  }
+
+  /**
+   * The lane a classical retry is made in (#944): the classical lane while
+   * both lanes are offered, whatever lane failed; the lane asked for (or
+   * `classical`) otherwise, where there is only one.
+   *
+   * @param lane - the lane the failed registration was armed in
+   * @returns the lane
+   */
+  classicalRetryLane(lane?: string): string {
+    const { log } = this.deps;
+    log.debug('Entering WebauthnPolicy.classicalRetryLane().');
+    const out = this.alongsideClassical() ? 'classical'
+                                          : String(lane || 'classical');
+    log.debug('Leaving WebauthnPolicy.classicalRetryLane(). ' + out);
+    return out;
+  }
+
+  // THE RETRY'S LIST (#944): the retry lane's own, less ML-DSA, and the
+  // fallback where that leaves nothing. Not asked about the refusal: the
+  // callers ask it first.
+  private classicalRetryAlgorithms(lane?: string): string[] {
+    const { log } = this.deps;
+    log.debug('Entering WebauthnPolicy.classicalRetryAlgorithms().');
+    const retryLane = this.classicalRetryLane(lane);
+    const out = this.lanedAlgorithms(retryLane).filter(function (name) {
+      return PQC_ALGS.indexOf(name) < 0;
+    });
+    log.debug('Leaving WebauthnPolicy.classicalRetryAlgorithms(). ' +
+              out.length + ' classical.');
+    return out.length ? out : FALLBACK_ALGS.slice();
+  }
+
+  /**
+   * Says whether a page should offer the classical retry of a registration
+   * armed in a lane (#944): the realm allows it, and the offer it would
+   * replace asked for ML-DSA — a retry of a list that names no ML-DSA would
+   * ask for the same thing again.
+   *
+   * @param lane - the lane the registration is armed in
+   * @param at - `sign-in` at the sign-in step, as `classicalRetryRefusal()`
+   * @returns true where the retry is offered
+   */
+  classicalFallbackOffered(lane?: string, at?: string): boolean {
+    const { log } = this.deps;
+    log.debug('Entering WebauthnPolicy.classicalFallbackOffered().');
+    const out = this.classicalRetryRefusal(at).ok &&
+      this.algorithmsOffered(lane).some(function (name) {
+        return PQC_ALGS.indexOf(name) >= 0;
+      });
+    log.debug('Leaving WebauthnPolicy.classicalFallbackOffered(). ' + out);
+    return out;
+  }
+
+  /**
+   * Says whether a registration armed in a lane asks for ML-DSA at all
+   * (#944): the pages offer the fallback's guidance only where it does.
+   *
+   * @param lane - the lane the registration is armed in
+   * @param classicalOnly - whether it is the classical retry already
+   * @returns true where ML-DSA is asked for
+   */
+  asksPostQuantum(lane?: string, classicalOnly?: boolean): boolean {
+    const { log } = this.deps;
+    log.debug('Entering WebauthnPolicy.asksPostQuantum().');
+    const out = this.algorithmsOffered(lane, classicalOnly)
+      .some(function (name) {
+        return PQC_ALGS.indexOf(name) >= 0;
+      });
+    log.debug('Leaving WebauthnPolicy.asksPostQuantum(). ' + out);
+    return out;
+  }
+
+  // WHETHER A CLASSICAL PASSKEY CAN BE UPGRADED IN PLACE (#939, which has
+  // not been built): false, so the refusal page of #946 links registration
+  // only. The flag is a FUNCTION rather than a literal on the page so #939
+  // turns the upgrade link on by answering true here, and nothing else.
+  /**
+   * Says whether this service offers #939's upgrade of a classical passkey
+   * to a post-quantum one. Not yet: always false.
+   *
+   * @returns false
+   */
+  postQuantumUpgradeOffered(): boolean {
+    const { log } = this.deps;
+    log.debug('Entering WebauthnPolicy.postQuantumUpgradeOffered().');
+    log.debug('Leaving WebauthnPolicy.postQuantumUpgradeOffered(). Not ' +
+              'built (#939).');
+    return false;
   }
 
   // THE LANE'S LIST (#643), before #718's narrowing: what
@@ -848,13 +1024,15 @@ class WebauthnPolicy {
    * `pubKeyCredParams`, in the same order.
    *
    * @param lane - `classical` or `pqc` (#643), as `algorithmsOffered()`
+   * @param classicalOnly - the classical retry (#944), as
+   *   `algorithmsOffered()`
    * @returns the COSE algorithm identifiers
    */
-  algorithmIds(lane?: string) {
+  algorithmIds(lane?: string, classicalOnly?: boolean) {
     const { log } = this.deps;
     log.debug("Entering WebauthnPolicy.algorithmIds().");
     log.debug("Leaving WebauthnPolicy.algorithmIds().");
-    return this.algorithmsOffered(lane)
+    return this.algorithmsOffered(lane, classicalOnly)
       .map(function (name) { return ALG_IDS[name]; });
   }
 
@@ -1036,10 +1214,12 @@ class WebauthnPolicy {
    * @param kind - `passkey` or `security-key`, as the person chose, if any
    * @param lane - `classical` or `pqc` (#643), the lane the enrolment was
    *   begun in; it decides the algorithms and nothing else
+   * @param classicalOnly - the classical retry (#944): the algorithms less
+   *   ML-DSA, where the realm allows it
    * @returns the options: RP, algorithms, attestation, timeout,
    * authenticator selection, hints and credProps
    */
-  creationOptions(rpId, kind?, lane?: string) {
+  creationOptions(rpId, kind?, lane?: string, classicalOnly?: boolean) {
     const { log } = this.deps;
     log.debug('Entering WebauthnPolicy.creationOptions(). rpId=' + rpId);
     const live = this.settings();
@@ -1062,8 +1242,8 @@ class WebauthnPolicy {
     const out = {
       rp: { name: live.rpName, id: rpId },
       // THE LANE'S ALGORITHMS (#643); with no lane, or the switch off, the
-      // configured list as it always was.
-      algorithms: this.algorithmIds(lane),
+      // configured list as it always was. The classical retry's (#944).
+      algorithms: this.algorithmIds(lane, classicalOnly),
       attestation: attestation,
       timeout: live.timeoutMs,
       authenticatorSelection: <AuthenticatorSelection>{
@@ -1365,6 +1545,12 @@ export = {
   // The post-quantum requirement's (#718).
   offersPostQuantum: slot.forward('offersPostQuantum'),
   enrolmentLane: slot.forward('enrolmentLane'),
+  // The classical retry of a registration (#944), and #939's upgrade flag.
+  classicalRetryRefusal: slot.forward('classicalRetryRefusal'),
+  classicalRetryLane: slot.forward('classicalRetryLane'),
+  classicalFallbackOffered: slot.forward('classicalFallbackOffered'),
+  asksPostQuantum: slot.forward('asksPostQuantum'),
+  postQuantumUpgradeOffered: slot.forward('postQuantumUpgradeOffered'),
   laneWriteRule: WebauthnPolicy.laneWriteRule,
   LANES: LANES,
   PQC_ALGS: PQC_ALGS,

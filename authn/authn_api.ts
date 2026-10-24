@@ -176,7 +176,12 @@ const KEY_BODY = vz.object({
   key: vt.opt(vt.base64url),
   // THE LANE A REGISTRATION IS MADE IN (#643): `classical` or `pqc`, where
   // the realm offers both. Kept on the step; the answer never names it.
-  lane: vt.opt(vt.oneOf(['classical', 'pqc']))
+  lane: vt.opt(vt.oneOf(['classical', 'pqc'])),
+  // THE CLASSICAL RETRY (#944): `classical` asks for a registration with
+  // the classical algorithms only, after an ML-DSA-first one failed on the
+  // device. Refused where the realm forbids a classical passkey
+  // (STS-AUTHN-0420); kept on the step otherwise.
+  algorithms: vt.opt(vt.oneOf(['classical']))
 }).strict();
 
 const CREDENTIAL_BODY = vz.object({
@@ -494,7 +499,11 @@ const OPERATIONS: Operation[] = [
       'policy\'s options, for `navigator.credentials.create()` or ' +
       '`.get()` as `mode` says. `lane` (`classical` or `pqc`) chooses the ' +
       'lane a registration is made in where the realm offers both (#643): ' +
-      'its handle, its algorithms and its exclude list.' },
+      'its handle, its algorithms and its exclude list. `algorithms: ' +
+      'classical` (#944) arms a registration with the classical ' +
+      'algorithms only, the retry `fallback.classical` says may be ' +
+      'offered after an ML-DSA-first registration failed on the device; ' +
+      'refused (400) where the realm forbids a classical passkey.' },
   { method: 'POST', path: API + '/mfa/:id/webauthn',
     operationId: 'finishPasskeyStep', access: 'mfa',
     mirrors: 'POST /authn/webauthn', action: 'webauthn',
@@ -1496,7 +1505,8 @@ class AuthnApi {
         break;
       case 'passkeyStepOptions':
         authn.mfaWebauthnOptions(req, res, id, String(body.key || ''),
-                                 String(body.lane || ''));
+                                 String(body.lane || ''),
+                                 String(body.algorithms || ''));
         break;
       case 'finishPasskeyStep':
         authn.mfaWebauthnAct(req, res, id, body);

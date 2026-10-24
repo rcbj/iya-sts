@@ -6657,6 +6657,17 @@ const CODES = [
       'their factors unknown rather than as holding none; or the read threw ' +
       'otherwise, and each row was asked on its own instead.',
     spec: 'none — logged; the page is drawn' },
+  // 0411-0419 are left to the passkey ceremony logging of #941 and #943,
+  // built beside this one, so the two tables merge without a renumber.
+  { code: 'STS-AUTHN-0420',
+    summary: 'A passkey registration asked to be retried with the ' +
+      'classical algorithms only (#944) — the retry offered after an ' +
+      'ML-DSA-first registration failed on the device — where the realm ' +
+      'forbids a classical passkey: webauthn.pqcOnly is on, the passkey ' +
+      'policy\'s postQuantumRequired is registration-and-sign-in, or, at ' +
+      'the sign-in step, it requires a post-quantum passkey to sign in. ' +
+      'Refused before the ceremony is armed; nothing is written.',
+    spec: 'HTTP 400 (the sign-in API and the account API)' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
