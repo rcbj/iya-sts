@@ -17,8 +17,9 @@
 // person cancel or did the platform say NotSupportedError. So every
 // registration and assertion at the doors that run one — the sign-in
 // screen's passkey step, the usernameless sign-in, `/portal/keys`, a device
-// link and an activation link (`credentials.confirmKeyEnrolment()`) — writes
-// ONE audit
+// link and an activation link (`credentials.confirmKeyEnrolment()`) and,
+// since #945, an administrator's enrolment on a person's behalf
+// (`credentials.confirmAdminKeyEnrolment()`) — writes ONE audit
 // row, `webauthn.ceremony`, successful or not, and a person who holds an
 // ML-DSA passkey signing in with a classical one where post-quantum was not
 // required writes a row of its own, `webauthn.algorithm-mismatch`.
@@ -31,7 +32,10 @@
 // with, and `detail` — at most twelve fields, `audit.js`'s cap:
 //
 //   ceremony       `registration` or `assertion`
-//   door           `sign-in-step`, `usernameless`, `portal` or `activation`
+//   door           `sign-in-step`, `usernameless`, `portal`, `activation`
+//                  or `admin-enrolment` (#945: an administrator's ceremony
+//                  on the person's behalf; `actor` is still the person,
+//                  and `admin.passkey.enrolled` names the administrator)
 //   role           `primary`, `mfa` or ''
 //   lane           `classical` or `pqc` (#643)
 //   offered        the algorithms offered, IN ORDER, comma-separated: a
@@ -124,7 +128,10 @@ const CLIENT_ERRORS: ReadonlyArray<string> = Object.freeze([
  * The doors a ceremony row may name.
  */
 const DOORS: ReadonlyArray<string> = Object.freeze([
-  'sign-in-step', 'usernameless', 'portal', 'activation']);
+  'sign-in-step', 'usernameless', 'portal', 'activation',
+  // An administrator's enrolment on a person's behalf, in the
+  // administrator's browser (#945, `credentials.confirmAdminKeyEnrolment()`).
+  'admin-enrolment']);
 
 interface CeremonyEvent {
   ceremony: 'registration' | 'assertion';

@@ -48,6 +48,7 @@ const { Command, Option } = require("commander");
 const { usernameFor } = require("./random_username.js");
 const fixtures = require("./oauth_fixtures.js");
 const portalSignin = require("./portal_signin.js");
+const consoleSignin = require("./console_signin.js");
 const pqc = require("./pqc.js");
 
 var appconfig;
@@ -86,6 +87,7 @@ var ORIGIN = new URL(base).origin;
 var RP_ID = new URL(base).hostname;
 
 var PERSON = usernameFor("passkey-dual");
+var ADMIN = usernameFor("passkey-enrol-admin");
 var PASSWORD = "Dual-lane " + nodeCrypto.randomBytes(12).toString("hex") +
                " !9";
 var CLIENT = "pk-dual-probe";
@@ -445,6 +447,61 @@ async function test() {
     assert.strictEqual(signalOf("pqc").name, PERSON + "+ml-dsa-65");
   });
 
+  // #945: the admin-only policy is off by default; once enabled, an
+  // administrator person token runs the ceremony in their own console.
+  const firstAdminAttempt = await call("POST",
+    "/users/begin-passkey-enrolment", { user: PERSON, lane: "pqc",
+      role: "mfa", kind: "passkey" });
+  const policyPage = await call("GET", "/policies");
+  const policyDefaults = {};
+  (policyPage.body.passkey.fields || []).forEach(function (field) {
+    policyDefaults[field.key] = field.default;
+  });
+  const enabledAdminEnrolment = await call("POST",
+    "/policies/save-passkey-policy", Object.assign({ profile: "default" },
+      policyDefaults, { adminEnrolment: "on" }));
+  const appCallerAfterEnable = await call("POST",
+    "/users/begin-passkey-enrolment", { user: PERSON, lane: "pqc",
+      role: "mfa", kind: "passkey" });
+  const personAdmin = await consoleSignin.signInToTheConsole(base, ADMIN,
+    log, { grant: "write" });
+  const adminPage = await personAdmin.page("/admin/users", { user: PERSON });
+  const adminBegin = await personAdmin.api("POST",
+    "/admin-api/users/begin-passkey-enrolment", { user: PERSON,
+      lane: "pqc", role: "mfa", kind: "passkey" });
+  const adminCeremony = adminBegin.json && adminBegin.json.ceremony;
+  const adminAuthenticator = makeAuthenticator(-49);
+  const adminFinish = adminCeremony
+    ? await personAdmin.api("POST",
+        "/admin-api/users/finish-passkey-enrolment", { user: PERSON,
+          enrolmentId: adminBegin.json.enrolmentId,
+          credential: JSON.stringify(adminAuthenticator.register(
+            adminCeremony.challenge, adminCeremony.user.id)) })
+    : { status: 0, json: null };
+  check("ADMIN PASSKEY ENROLMENT IS OFF BY DEFAULT, THEN AVAILABLE IN THE " +
+        "CONSOLE ONLY TO A PERSON TOKEN, AND RECORDS WHO ENROLLED IT",
+        function () {
+    assert.ok(firstAdminAttempt.status === 400 &&
+              JSON.stringify(firstAdminAttempt.body).indexOf("adminEnrolment")
+                >= 0,
+      JSON.stringify(firstAdminAttempt.body).slice(0, 300));
+    assert.ok(enabledAdminEnrolment.status === 200 &&
+              enabledAdminEnrolment.body.ok !== false,
+      JSON.stringify(enabledAdminEnrolment.body).slice(0, 300));
+    assert.strictEqual(appCallerAfterEnable.status, 400,
+      JSON.stringify(appCallerAfterEnable.body).slice(0, 300));
+    assert.ok(/data-admin-passkey-enrolment/.test(adminPage.text || ""),
+      "the person's admin detail page did not draw the enrollment control");
+    assert.strictEqual(adminBegin.status, 200,
+      JSON.stringify(adminBegin.json).slice(0, 300));
+    assert.deepStrictEqual(adminCeremony.options.algorithms, [-48, -49, -50]);
+    assert.strictEqual(adminFinish.status, 200,
+      JSON.stringify(adminFinish.json).slice(0, 300));
+    assert.strictEqual(adminFinish.json.enrolledBy.username, ADMIN);
+    assert.ok(adminFinish.json.enrolledBy.at > 0);
+    assert.strictEqual(adminFinish.json.lane, "pqc");
+  });
+
   // D. Either key, one person.
   log.info("=== signing in with either, and no username ===");
   let r = await withoutAUsername(function (challenge) {
@@ -503,7 +560,7 @@ async function test() {
       .slice(0, 300));
   });
 
-  assert.ok(checks >= 8, "only " + checks + " checks ran; a section has " +
+  assert.ok(checks >= 9, "only " + checks + " checks ran; a section has " +
             "stopped being called.");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");

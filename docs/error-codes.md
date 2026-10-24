@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4602** of them, in **47** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4611** of them, in **47** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 355
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 364
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 724
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 115
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 33
@@ -1544,6 +1544,15 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0421` | A passkey evidence export did not name both a username and a credential id. | HTTP 400 from GET /admin-api/passkey-report/evidence |
 | `STS-AUTHN-0422` | The named passkey has no RFC 4998 evidence record to export. | HTTP 404 from GET /admin-api/passkey-report/evidence |
 | `STS-AUTHN-0419` | An RFC 4998 passkey evidence record could not be renewed; the previous record remains stored and the failure is logged for retry on the next daily passkey report recount. | none — logged; no credential or prior evidence record is changed |
+| `STS-AUTHN-0440` | An administrator's passkey enrolment for a person was refused: the person's passkey policy profile does not allow one (adminEnrolment is off, the default). Asked when the ceremony is begun and again where the key is written, so a switch turned off during the ceremony refuses it too. | HTTP 400 from /admin-api/users/{begin,finish}-passkey-enrolment |
+| `STS-AUTHN-0441` | An administrator's passkey enrolment named nobody this realm's directory holds. Refused in every mode: development's creating a person at their first sign-in is not something an administrator's act on a name may do. | HTTP 400 from /admin-api/users/begin-passkey-enrolment |
+| `STS-AUTHN-0442` | An administrator's passkey enrolment was finished with none in progress for that administrator and person: it expired (five minutes at most), it was already finished or refused (it is single use), or another administrator began it. | HTTP 400 from /admin-api/users/finish-passkey-enrolment |
+| `STS-AUTHN-0443` | An administrator's passkey enrolment was finished with the id of another enrolment, or its challenge had already been answered (a replay, or two requests racing on two nodes). Nothing was registered and the enrolment is spent. | HTTP 400 from /admin-api/users/finish-passkey-enrolment |
+| `STS-AUTHN-0444` | Whether an administrator's passkey enrolment challenge had already been answered could not be asked of the cluster's claims store, so the enrolment was refused rather than risk a second use. | HTTP 400 from /admin-api/users/finish-passkey-enrolment |
+| `STS-AUTHN-0445` | An administrator's passkey enrolment named no administrator: the request carried no access token whose subject is a person (development's open /admin-api, or a client's own token), and a key so enrolled must record who enrolled it. | HTTP 400 from /admin-api/users/{begin,finish}-passkey-enrolment |
+| `STS-AUTHN-0446` | An administrator's passkey enrolment was finished on an address whose host is not one this realm's RP ID fits (webauthn.rpId), the rule the person's own ceremony applies. | HTTP 400 from /admin-api/users/finish-passkey-enrolment |
+| `STS-AUTHN-0447` | An administrator's passkey enrolment could not be finished: the verification or the write threw. | HTTP 500 from /admin-api/users/finish-passkey-enrolment |
+| `STS-AUTHN-0448` | An administrator's passkey enrolment was finished with no ceremony result: `credential` is absent or is not JSON. The browser's own refusal (a cancelled prompt, an authenticator that cannot do what was asked) arrives as JSON and is recorded as the person's own is (STS-AUTHN-0022). | HTTP 400 from /admin-api/users/finish-passkey-enrolment |
 
 ## STS-OAUTH
 

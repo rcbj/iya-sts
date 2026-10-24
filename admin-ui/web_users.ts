@@ -1874,6 +1874,16 @@ class UsersPage {
           : '') + '</td></tr>';
     };
     const allKeys = mfaKeys.concat(primaryKeys);
+    const adminEnrol = state.write && keyLive.enabled
+      ? '<form method="post" action="/admin/users" ' +
+        'data-admin-passkey-enrolment="true"><input type="hidden" ' +
+        'name="action" value="begin-passkey-enrolment">' +
+        '<input type="hidden" name="user" value="' + kit.esc(key) +
+        '"><input type="hidden" name="role" value="mfa">' +
+        '<button title="' + kit.esc(t.text('consoleUsers.mfaSection.enrolTitle')) +
+        '">' + t.html('consoleUsers.mfaSection.enrol') +
+        '</button><p class="note">' +
+        t.html('consoleUsers.mfaSection.enrolTitle') + '</p></form>' : '';
     const keysBlock = '<h3>' + t.html('consoleUsers.mfaSection.keysHeading') +
       '</h3>' +
       (allKeys.length
@@ -1909,7 +1919,7 @@ class UsersPage {
         mfa: keyLive.mfaAllowed ? 'yes' : 'no',
         max: String(keyLive.maxKeysPerPerson) }) +
       '<a href="/admin/webauthn">WebAuthn</a>' +
-      t.html('consoleUsers.mfaSection.realmAllowsAfter'));
+      t.html('consoleUsers.mfaSection.realmAllowsAfter')) + adminEnrol;
 
     // --- the recovery codes
     // --------------------------------------------------- **THE COUNTS AND

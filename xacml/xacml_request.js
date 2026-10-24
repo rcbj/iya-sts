@@ -376,6 +376,15 @@ const VOCABULARY = Object.freeze({
     'urn:sts:xacml:passkey:attestation-post-quantum',
   PASSKEY_ATTESTATION_ALGORITHM_ALLOWED:
     'urn:sts:xacml:passkey:attestation-algorithm-allowed',
+  // resource: WHO ENROLLED THE KEY (#945), with the fact group `enrolment`
+  // — sent only for a registration an ADMINISTRATOR ran in their own
+  // browser on the person's behalf: a boolean, true, and the
+  // administrator's username. No built-in rule reads them (the switch is
+  // the passkey policy's `adminEnrolment`, enforced at the writer); they
+  // are there so a realm's own rule can forbid an administrator's
+  // enrolment, or allow it only for some people or some administrators.
+  PASSKEY_ENROLLED_BY_ADMIN: 'urn:sts:xacml:passkey:enrolled-by-admin',
+  PASSKEY_ENROLLED_BY: 'urn:sts:xacml:passkey:enrolled-by',
   // environment: the SELECTED passkey policy profile's rows (#527, #535),
   // each after this prefix under its own name
   // (`urn:sts:xacml:passkey-policy:backupEligibility`).
@@ -749,6 +758,8 @@ class AuthorizationRequest {
   //                                            with `attestation-algorithm`
   //                                            (#941)
   //   policy.attestationAlgorithms             always (#941), a bag
+  //   enrolledByAdmin, enrolledBy              with `enrolment` (#945)
+  //   policy.adminEnrolment                    always (#945)
   //   policy { backupEligibility, enforcePinLength, minPinLength,
   //            pinLengthOnlyIfSupported, enforceAttestationAtSignIn,
   //            enterpriseSerialAttribute, postQuantumRequired,
@@ -849,6 +860,13 @@ class AuthorizationRequest {
       this.resource(V.PASSKEY_ATTESTATION_ALGORITHM_ALLOWED,
                     [given.attestationAlgorithmAllowed === true], T.BOOLEAN);
     }
+    // WHO ENROLLED IT (#945): an administrator. The boolean is sent as true
+    // with its group, for a realm's own rule.
+    if (has('enrolment')) {
+      this.resource(V.PASSKEY_ENROLLED_BY_ADMIN,
+                    [given.enrolledByAdmin === true], T.BOOLEAN);
+      this.resource(V.PASSKEY_ENROLLED_BY, one(given.enrolledBy));
+    }
     const policy = given.policy || {};
     const P = V.PASSKEY_POLICY_PREFIX;
     this.environment(P + 'backupEligibility', one(policy.backupEligibility));
@@ -870,6 +888,8 @@ class AuthorizationRequest {
     this.environment(P + 'postQuantumAllowCredentials',
                      one(policy.postQuantumAllowCredentials));
     this.environment(P + 'recoveryAssurance', one(policy.recoveryAssurance));
+    // #945: whether an administrator may enrol a passkey, `off` or `on`.
+    this.environment(P + 'adminEnrolment', one(policy.adminEnrolment));
     this.environment(P + 'attestationAlgorithms',
                      (Array.isArray(policy.attestationAlgorithms)
                        ? policy.attestationAlgorithms : []).map(String));

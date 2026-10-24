@@ -66,6 +66,7 @@ import WebPages = require('./web_pages');
 import WebShell = require('./web_shell');
 import WebForms = require('./web_forms');
 import WebAnswers = require('./web_answers');
+import WebWebAuthn = require('../common/web_webauthn');
 import WebMessages = require('../common/web_messages');
 import WebAccounts = require('../common/web_accounts');
 
@@ -2019,6 +2020,11 @@ class ConsoleRuntime extends SpaClient {
     const fields = ConsoleRuntime.fieldsOf(data);
     const action = Array.isArray(fields.action) ? fields.action[0]
                                                 : String(fields.action || '');
+    if (form && form.getAttribute &&
+        form.getAttribute('data-admin-passkey-enrolment') === 'true') {
+      await this.adminPasskeyEnrolment(fields);
+      return;
+    }
     // ENTER IN A FIELD'S SEARCH BOX SEARCHES (#459). Enter presses the
     // form's first submit button — the hidden default, which is Save — and
     // somebody who typed a name to look for has not asked to save the tab.
@@ -2191,6 +2197,87 @@ class ConsoleRuntime extends SpaClient {
     await this.go(back + (back.indexOf('?') < 0 ? '?' : '&') + key + '=' +
                   encodeURIComponent(message) +
                   String(this.env.location.hash || ''));
+  }
+
+  // AN ADMINISTRATOR'S PASSKEY ENROLMENT (#945) runs the WebAuthn ceremony
+  // in this browser while every API call still goes through the console's
+  // DPoP client. The server binds the one-use challenge to this administrator
+  // and the named person; a browser refusal is sent to finish to spend it.
+  /**
+   * Runs the begin, browser registration and finish steps for a person.
+   *
+   * @param fields - the submitted user and role
+   * @returns nothing
+   */
+  async adminPasskeyEnrolment(fields: Json): Promise<void> {
+    const who = String(fields.user || fields.username || '');
+    const back = this.here().replace(/([?&])(notice|error)=[^&]*/g, '$1')
+      .replace(/[?&]+$/, '');
+    const report = async function (self, kind, message) {
+      const join = back.indexOf('?') < 0 ? '?' : '&';
+      await self.go(back + join + kind + '=' + encodeURIComponent(message));
+    };
+    const begun = await this.apiJson('POST',
+      '/admin-api/users/begin-passkey-enrolment',
+      { user: who, role: String(fields.role || 'mfa'),
+        lane: String(fields.lane || ''), kind: String(fields.kind || '') });
+    if (!begun) {
+      return;
+    }
+    const ceremony = begun.json && begun.json.ceremony;
+    if (begun.status >= 400 || !begun.json || !begun.json.ok || !ceremony) {
+      const errors = begun.json && begun.json.errors;
+      await report(this, 'error', errors && errors[0]
+        ? errors[0] : 'The passkey enrolment could not be started.');
+      return;
+    }
+    let credential: Json;
+    try {
+      if (!this.env.navigator || !this.env.navigator.credentials ||
+          typeof this.env.navigator.credentials.create !== 'function') {
+        throw new Error('This browser cannot create a WebAuthn credential.');
+      }
+      const publicKey: Json = Object.assign({}, ceremony.options || {});
+      publicKey.challenge = WebWebAuthn.bytes(ceremony.challenge);
+      publicKey.rp = publicKey.rp || { id: ceremony.rpId, name: 'Iya STS' };
+      publicKey.user = Object.assign({}, ceremony.user, {
+        id: WebWebAuthn.bytes(ceremony.user.id) });
+      publicKey.pubKeyCredParams = (publicKey.algorithms || []).map(
+        function (alg) { return { type: 'public-key', alg: alg }; });
+      delete publicKey.algorithms;
+      publicKey.excludeCredentials = (ceremony.exclude || []).map(function (id) {
+        return { type: 'public-key', id: WebWebAuthn.bytes(id) };
+      });
+      publicKey.extensions = (publicKey.credProps || publicKey.minPinLength)
+        ? Object.assign(publicKey.credProps ? { credProps: true } : {},
+                        publicKey.minPinLength ? { minPinLength: true } : {})
+        : undefined;
+      delete publicKey.credProps;
+      delete publicKey.minPinLength;
+      const made = await this.env.navigator.credentials.create({
+        publicKey: publicKey });
+      if (!made) {
+        throw new Error('The authenticator did not create a credential.');
+      }
+      credential = WebWebAuthn.created(made);
+    } catch (e) {
+      credential = { error: String((e && e.name) || 'NotAllowedError'),
+        message: String((e && e.message) || 'The authenticator refused.') };
+    }
+    const finished = await this.apiJson('POST',
+      '/admin-api/users/finish-passkey-enrolment', {
+        user: who, enrolmentId: begun.json.enrolmentId,
+        credential: JSON.stringify(credential) });
+    if (!finished) {
+      return;
+    }
+    if (finished.status >= 400 || !finished.json || !finished.json.ok) {
+      const errors = finished.json && finished.json.errors;
+      await report(this, 'error', errors && errors[0]
+        ? errors[0] : 'The passkey could not be registered. Start again.');
+      return;
+    }
+    await report(this, 'notice', 'Passkey enrolled for ' + who + '.');
   }
 
   // A FIELD'S SEARCH (#459): `WebAnswers` reads the press and builds the
