@@ -1268,6 +1268,13 @@ const JOBS = [
   // `/admin-api/tls/trust/add` (and removes again). `local: true`: this
   // repository's console and management API.
   { file: 'sts_tls_connection.js',       browser: false, local: true },
+  // MONITORING → PASSKEYS (#942, 2026-10-23): the console page's shell,
+  // `GET /admin-api/passkey-report`'s shape and gate, a group's population
+  // (a person made here, in a group made here, counted and listed as
+  // holding no passkey), the refused filters, the CSV and JSON export, and
+  // Recount now queued on the scheduler. `local: true`: this repository's
+  // console and management API.
+  { file: 'sts_passkey_report.js',       browser: false, local: true },
   // LINKING A WEBAUTHN PLATFORM CREDENTIAL ON /portal/devices, IN A REAL
   // BROWSER (#258, 2026-10-06): Chrome's virtual authenticators enrol a
   // roaming key and a platform key on /portal/keys; the roaming one is
