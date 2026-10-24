@@ -16,6 +16,7 @@ than living under `oauth-oidc/` where the screen used to be rendered.
 | `device_bound_sessions.ts` | **Device Bound Session Credentials (#725)**: the registration header, `POST /authn/dbsc/register` and `/authn/dbsc/refresh`, and the bound-cookie check `sessionOf()` asks. See *The session bound to a key the browser holds*, below. |
 | `webauthn.js` | The relying party's half of WebAuthn Level 3. |
 | `webauthn_policy.ts` | The ceremony's options, the four policy settings that refuse, and the attestation policy's settings (#105), kept out of `webauthn.js` so that file stays loadable on its own. |
+| `webauthn_ceremonies.ts` | **Every WebAuthn ceremony's audit row, and the algorithm mismatch (#943)**: one `webauthn.ceremony` row per registration and assertion at the four doors that run one, and a `webauthn.algorithm-mismatch` row. A library (rule 3). See *Every ceremony leaves a row*, below. |
 | `webauthn_attestation.ts` | **A registration's attestation statement, verified (#105)**: WebAuthn Level 3 section 7.1 steps 21-25 and all eight section 8 formats, the trust anchors (the realm's and the FIDO Metadata Service's), MDS status reports, revocation, and the record a key carries. A library (rule 3). See *The attestation statement*, below. |
 
 **A THIRD ENDPOINT LIVES IN `/authn/*` AND IS NOT IN THIS DIRECTORY.**
@@ -2882,6 +2883,66 @@ software authenticator in all eight formats) and
 `tests/vendored/sts_webauthn_attestation.js` are the tests. Not done:
 enterprise attestation (section 5.4.7) has no RP ID allow-list, which the plan
 deferred.
+
+## WHAT AN ATTESTATION IS SIGNED WITH (#941, 2026-10-23)
+
+The attestation record a key carries gains `algorithms`: the statement's
+own signature algorithm by its COSE name, every x5c certificate's leaf
+first, the anchor a trusted path reached, a compound statement's members,
+and `postQuantum` — true only with at least one certificate and every
+signature post-quantum. `webauthn_attestation.ts`'s header argues the
+fields; what this directory needs is where they come from and go:
+
+* **Read off the statement as it arrived** (`algorithmsOf()`), in
+  `assess()` before any branch, so even the policy `off` records them —
+  as the authenticator's claim, beside `verified: false`. The anchor is
+  added once `trustOf()` reached one (it now answers `anchorDer`).
+  A certificate is named by `pki.attestationSignatureAlgorithm()`, which
+  says what its ISSUER signed it with.
+* **One reader**: `recordedAlgorithms()` (and
+  `credentials.attestationAlgorithms()` over it) — what the console's key
+  row, `GET /admin-api/users` and the passkey policy's
+  `attestation-algorithm` facts read. A key from before #941 answers
+  `recorded: false`.
+* **Enforced by the passkey policy's `attestationAlgorithms`**
+  (`common/CLAUDE.md` 3ch): at registration in `credentials.addKey()`
+  (`STS-AUTHN-0411`), at sign-in by `signInVerdict()` only while
+  `enforceAttestationAtSignIn` holds sign-ins to the rules
+  (`STS-AUTHN-0412`, marked and signalled once as 0316 is, in
+  `attestationAtSignIn()`). Set, the row demands trust
+  (`webauthn_policy.attestationSettings()`), so `demandedBy()` names it.
+
+`tests/passkey_attestation_algorithm.js` holds it over an ML-DSA chain
+made at run time with the service's own post-quantum certificate encoder.
+**No real post-quantum authenticator's attestation has been tested.**
+
+## EVERY CEREMONY LEAVES A ROW (#943, 2026-10-23)
+
+`webauthn_ceremonies.ts` writes `webauthn.ceremony` (its header lists the
+twelve detail fields, which are what a realm-wide report reads) at:
+
+* **the passkey step** — `noteStepCeremony()`, at the browser's refusal,
+  the RP ID, enrolment switched off, a check that threw, and
+  `finishWebauthn()`. The parsed credential rides on `body.posted`;
+  `body` is typed `any` for it.
+* **the usernameless sign-in** — `passkeySignIn()` keeps what it learns
+  (credential, owner, key, algorithm) in `passkeyCeremonies`, a WeakMap by
+  response, and `passkeyRefused()` — the one refusal funnel — writes the
+  row; the completed one is written just before `startSession()`.
+* **`/portal/keys` and an activation link** — `credentials.confirmKeyEnrolment()`,
+  reading the pending enrolment's lane BEFORE the check drops it
+  (`opts.door` names `activation`).
+* **not the device link** (`common/device_enrolment.ts`), which is owed.
+
+**The browser's error name comes through the ceremony's own endpoint**: both
+scripts already posted `{ error: e.name, message }` as the credential, so
+no report endpoint was added. Only an allow-listed DOMException name is
+kept, never the message. **The rows are `summarised`** — the request's
+HTTP call row writes the one log line a refusal earns — so no line per
+attempt. **The mismatch** is asked in `startSessionHere()` after the
+passkey policy let the key through (`noteAlgorithmMismatch()`): a
+classical key from a person who holds an ML-DSA one, where post-quantum
+was not required. `tests/webauthn_ceremony_log.js` holds it.
 
 ## `/authn/password-change`: A FORCED PASSWORD CHANGE AT THE SIGN-IN SCREEN (2026-09-13)
 

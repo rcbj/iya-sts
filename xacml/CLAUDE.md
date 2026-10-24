@@ -1473,6 +1473,19 @@ two assertion doors for the attestation rules).
   realm rebuilds its document from the template to be held to the row; a
   document built before #536 answers no passkey verdict and falls to the
   built-in rules as it always did.
+* **#941 ADDED THE ATTESTATION-ALGORITHM RULE, ONE PER ACTION, AFTER THE
+  POST-QUANTUM ONE.** The fact group is `attestation-algorithm`:
+  `urn:sts:xacml:passkey:attestation-statement-algorithm`, a bag
+  `...:attestation-certificate-algorithm` (leaf to anchor),
+  `...:attestation-post-quantum`, and the verdict
+  `...:attestation-algorithm-allowed` that `question()` computed; the
+  attestation group's `verified`/`trusted` facts are sent with it where
+  that group is not. The rule reads ALLOWED and the row
+  `urn:sts:xacml:passkey-policy:attestationAlgorithms` (a bag, empty for
+  none) — at `register-passkey` whenever it is set (0411), at
+  `use-passkey` only with `enforceAttestationAtSignIn` (0412) — and
+  `passkey_rules.js` mirrors it. A document built before #941 carries no
+  such rule, as above.
 * **Arranged as the transfer questions are**: `xacml_passkey_verdicts.js`
   serves both the PEP and the gate. A realm's own document decides where it
   carries the obligation; otherwise the built-in document decides. Where
