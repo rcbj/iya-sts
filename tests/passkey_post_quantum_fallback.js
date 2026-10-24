@@ -586,6 +586,18 @@ function childMain() {
         return null;
       } }, {}, { name: 'NotSupportedError' }, said);
     WebWebAuthn.reportCeremonyFailure = realReport;
+    let sentFailure = null;
+    WebWebAuthn.reportCeremonyFailure({ error: 'NotAllowedError',
+      message: 'must not be sent', capabilities: {
+        hybridTransport: true, privateField: 'must not be sent' } },
+      function (error, caps) {
+        sentFailure = { error: error, capabilities: caps };
+      });
+    note(sentFailure && sentFailure.error === 'NotAllowedError' &&
+         sentFailure.capabilities.hybridTransport === true &&
+         !sentFailure.capabilities.privateField,
+         'E2. the reporter forwards only an allowlisted error name and ' +
+         'boolean capabilities, never free text', JSON.stringify(sentFailure));
     note(WebWebAuthn.failureKind('NotSupportedError') === 'unsupported' &&
          WebWebAuthn.failureKind('UnknownError') === 'uncertain' &&
          WebWebAuthn.failureKind('InvalidStateError') === '' &&
@@ -614,7 +626,7 @@ function childMain() {
          WebAuthnLogin.postQuantumPanel(null, T) === '' &&
          drawnFallback.indexOf('value="webauthn-classical"') >= 0 &&
          WebAuthnMfa.fallback({ asksPostQuantum: false }, T) === '',
-         'E2. the panel links registration and no upgrade; the step\'s ' +
+         'E3. the panel links registration and no upgrade; the step\'s ' +
          'guidance carries the retry button, and nothing where no ML-DSA ' +
          'is asked for', drawnPanel.length + ' ' + drawnFallback.length);
     server.close();

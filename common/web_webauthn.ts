@@ -177,21 +177,40 @@ class WebWebAuthn {
     }
   }
 
-  // THE CEREMONY-FAILURE REPORT (#943 WIRES IT). #943 records a client-side
-  // registration failure with the ceremony logging it builds — the endpoint
-  // and its body are that ticket's. Until it lands this is a NO-OP, named so
-  // that the two branches meet at one call: #944 calls it with everything a
-  // record would want, and #943 replaces the body.
+  // THE CEREMONY-FAILURE REPORT (#952): the owning surface supplies the
+  // existing authenticated ceremony operation as `send`. The only values
+  // forwarded are an allowlisted DOMException name and capability booleans;
+  // never the exception's free-text message.
   /**
-   * Reports a ceremony that failed in the browser, for the ceremony log.
-   * A no-op until #943 wires it.
+   * Reports a ceremony that failed in the browser through its owning surface.
    *
-   * @param report - `{ surface, ceremony, error, message, kind,
+   * @param report - `{ surface, ceremony, error, kind,
    *   capabilities, offered, retrying }`
+   * @param send - the surface's authenticated ceremony operation
    * @returns nothing
    */
-  static reportCeremonyFailure(report: Json): void {
-    void report;
+  static reportCeremonyFailure(report: Json,
+      send?: (error: string, capabilities: Json) => void): void {
+    const safe = report || {};
+    const allowed = ['NotAllowedError', 'NotSupportedError',
+      'InvalidStateError', 'SecurityError', 'AbortError', 'ConstraintError',
+      'UnknownError', 'TimeoutError', 'OperationError', 'EncodingError',
+      'NotReadableError', 'DataError', 'TypeError'];
+    const name = allowed.indexOf(String(safe.error || '')) >= 0
+      ? String(safe.error) : 'UnknownError';
+    if (typeof send === 'function') {
+      const capNames = ['conditionalCreate', 'conditionalGet',
+        'hybridTransport', 'userVerifyingPlatformAuthenticator',
+        'relatedOrigin', 'signalAllAcceptedCredentials',
+        'signalCurrentUserDetails', 'signalUnknownCredential'];
+      const caps: Json = {};
+      capNames.forEach(function (key: string): void {
+        if (safe.capabilities && safe.capabilities[key] === true) {
+          caps[key] = true;
+        }
+      });
+      send(name, Object.keys(caps).length ? caps : null);
+    }
   }
 
   /**
@@ -215,16 +234,16 @@ class WebWebAuthn {
                   doc.getElementById('wa-fallback');
     const facts = (said && said.fallback) || {};
     return WebWebAuthn.capabilities(window).then(function (caps: Json) {
-      WebWebAuthn.reportCeremonyFailure({
-        surface: String((said && said.surface) || ''),
-        ceremony: 'create', error: name,
-        message: String((error && error.message) || ''), kind: kind,
-        capabilities: caps, offered: facts.asksPostQuantum === true
-          ? 'post-quantum-first' : 'classical',
-        retrying: facts.retrying === true });
       if (!kind || !block) {
         return false;
       }
+      WebWebAuthn.reportCeremonyFailure({
+        surface: String((said && said.surface) || ''),
+        ceremony: 'create', error: name,
+        kind: kind,
+        capabilities: caps, offered: facts.asksPostQuantum === true
+          ? 'post-quantum-first' : 'classical',
+        retrying: facts.retrying === true }, said && said.report);
       const show = function (id: string): void {
         const el = doc.getElementById(id);
         if (el) {

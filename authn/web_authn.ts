@@ -943,8 +943,7 @@ class AuthnSurface extends WebSurface {
       const nav = this.env.navigator;
       let credential: Json = null;
       if (!nav || !nav.credentials) {
-        credential = { error: 'NotSupportedError',
-                       message: 'no WebAuthn in this browser' };
+          credential = { error: 'NotSupportedError' };
       } else {
         try {
           credential = c.mode === 'create'
@@ -962,12 +961,20 @@ class AuthnSurface extends WebSurface {
           if (c.mode === 'create' &&
               await WebWebAuthn.offerFallback(this.env.document,
                 this.env.window, e, { surface: 'authn',
-                                      fallback: c.fallback })) {
+                  fallback: c.fallback,
+                  report: (error: string, capabilities: Json): void => {
+                    // This is the same CSRF-bound, rate-limited ceremony
+                    // operation. Its refusal records the event and keeps the
+                    // pending step armed for the classical retry.
+                    void this.send(base + '/webauthn', {
+                      credential: JSON.stringify({ error: error,
+                        capabilities: capabilities }) });
+                  } })) {
             return;
           }
           // The browser's error is deliberately ambiguous — no credential,
           // declined and timed out are one — so it is reported as given.
-          credential = { error: e && e.name, message: e && e.message };
+          credential = { error: e && e.name };
         }
       }
       const answer = await this.send(base + '/webauthn',

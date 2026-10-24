@@ -204,11 +204,16 @@ class PortalWebAuthn {
         const facts = PortalWebAuthn.fallbackOf(d);
         const offer = d.getAttribute('data-mode') === 'create'
           ? WebWebAuthn.offerFallback(doc, window, e,
-                                      { surface: 'portal', fallback: facts })
+              { surface: 'portal', fallback: facts,
+                report: function (error: string, capabilities: Json): void {
+                  // Report through the ceremony's existing authenticated
+                  // form operation. The service keeps the enrolment usable.
+                  send({ error: error, capabilities: capabilities });
+                } })
           : Promise.resolve(false);
         offer.then(function (shown: boolean): void {
           if (!shown) {
-            send({ error: e && e.name, message: e && e.message });
+            send({ error: e && e.name });
           }
         });
       });

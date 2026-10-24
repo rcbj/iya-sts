@@ -17437,8 +17437,8 @@ class Authn {
       // THE BROWSER'S ERROR NAME ON THE CEREMONY'S ROW (#943), as the
       // page's script reported it; never its message.
       this.noteStepCeremony(req, body, step, 'STS-AUTHN-0022');
-      return this.stepRefused(res, credential.error + ': ' +
-        (credential.message || '') + '  (WebAuthn reports one error for ' +
+      return this.stepRefused(res, credential.error +
+        ' (WebAuthn reports one error for ' +
         'several situations, so this does not say which.)');
     }
 

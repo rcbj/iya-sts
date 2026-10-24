@@ -1340,9 +1340,13 @@ way, because the browser refuses the ceremony before the service sees it.
   the test.** No real authenticator's post-quantum attestation has been
   tried; the attestation algorithms are recorded and enforced as WebAuthn
   and the ML-DSA certificate profile describe them.
-* **The device link on `/portal/devices` writes no ceremony row yet.**
+* **Device links on `/portal/devices` now write `webauthn.ceremony` rows.**
   The ceremony rows cover the sign-in screen, the usernameless sign-in,
-  `/portal/keys` and activation links.
+  `/portal/keys`, device links and activation links. When a browser declines a
+  registration, the existing authenticated ceremony operation records its
+  allowlisted error name and the client capabilities it reported; no error
+  message text is stored, and the pending ceremony remains available for its
+  retry.
 * **Upgrading a classical passkey to a post-quantum one in place** is not
   built yet ([#939](https://github.com/rcbj/iya-sts/issues/939)). The refusal
   page links to registration only.

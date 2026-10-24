@@ -16,8 +16,9 @@
 // ML-DSA offered first, does this browser make one when asked, did the
 // person cancel or did the platform say NotSupportedError. So every
 // registration and assertion at the doors that run one — the sign-in
-// screen's passkey step, the usernameless sign-in, `/portal/keys` and an
-// activation link (`credentials.confirmKeyEnrolment()`) — writes ONE audit
+// screen's passkey step, the usernameless sign-in, `/portal/keys`, a device
+// link and an activation link (`credentials.confirmKeyEnrolment()`) — writes
+// ONE audit
 // row, `webauthn.ceremony`, successful or not, and a person who holds an
 // ML-DSA passkey signing in with a classical one where post-quantum was not
 // required writes a row of its own, `webauthn.algorithm-mismatch`.
@@ -55,6 +56,8 @@
 //                  `InvalidStateError`, `SecurityError`, `AbortError`, ...),
 //                  one of `CLIENT_ERRORS` or `other`; NEVER its message,
 //                  which is free text a page could fill with anything
+//   capabilities   the true members of a fixed allowlist of client
+//                  capabilities, where getClientCapabilities() is available
 //   attestation    for a registration that recorded one, what its
 //                  attestation was signed with (#941): the statement's
 //                  algorithm, then the chain leaf to anchor, and `PQ` where
@@ -75,12 +78,14 @@
 //
 // HOW THE CLIENT'S ERROR ARRIVES: through the ceremony's own endpoint. The
 // sign-in surface's script (`authn/web_authn.ts`) and the portal's
-// (`portal/web_portal_webauthn.ts`) already post `{ error: e.name, message:
-// e.message }` as the credential when the browser rejects the ceremony, to
+// (`portal/web_portal_webauthn.ts`) post an allowlisted error name and the
+// available client capabilities as the credential when the browser rejects
+// the ceremony, to
 // the same `/authn-api/...` or `/account-api/...` operation a credential
 // goes to — CSRF-bound, behind the step or the person's token, and limited
 // as those are — so no endpoint was added: a second, unauthenticated report
-// door would be one more thing to rate-limit and one anybody could fill.
+// door would be one more thing to rate-limit and one anybody could fill. The
+// fallback UI reports the same way, leaving its pending step available.
 //
 // ---------------------------------------------------------------------------
 // THIS IS RULE 3: A LIBRARY. It registers no route. It requires
@@ -323,6 +328,14 @@ class WebauthnCeremonies {
       const door = DOORS.indexOf(String(e.door)) >= 0 ? String(e.door)
                                                       : 'sign-in-step';
       const clientError = WebauthnCeremonies.clientErrorName(posted.error);
+      const capabilityNames = ['conditionalCreate', 'conditionalGet',
+        'hybridTransport', 'userVerifyingPlatformAuthenticator',
+        'relatedOrigin', 'signalAllAcceptedCredentials',
+        'signalCurrentUserDetails', 'signalUnknownCredential'];
+      const capabilities = capabilityNames.filter(function (name: string) {
+        return posted.capabilities &&
+          posted.capabilities[name] === true;
+      }).join(',');
       const refused = e.outcome !== 'success';
       const row = audit.audit({
         action: 'webauthn.ceremony', category: 'authentication',
@@ -347,6 +360,7 @@ class WebauthnCeremonies {
           client: WebauthnCeremonies.clientOf(userAgent),
           transports: transports.join(','), attachment: attachment,
           clientError: clientError,
+          capabilities: capabilities,
           attestation: ceremony === 'registration'
             ? WebauthnCeremonies.attestationText(e.attestation) : ''
         }
