@@ -713,16 +713,43 @@ The audit log's `session.start` row records which kind was used:
 
 ### Which browsers and authenticators can make an ML-DSA passkey
 
-**Be prepared for most of them not to.** The service does not check this. It
-offers ML-DSA in the post-quantum lane and verifies what comes back. If the
-authenticator cannot make an ML-DSA passkey, the browser reports that the
-ceremony failed and nothing is registered. The page then offers to try again
-with a classical passkey, where one is allowed
-([When the device cannot make an ML-DSA passkey](#when-the-device-cannot-make-an-ml-dsa-passkey)).
+**Compatibility is still limited and varies by the browser, operating system,
+and authenticator combination.** A browser supporting WebAuthn does not mean
+its platform authenticator or passkey provider can create ML-DSA keys. The
+service does not probe that capability in advance. This status snapshot is
+dated **2026-10-23**; “reported” below means a public report, not a test by
+iya-sts.
 
-This project's own tests make ML-DSA-44 and ML-DSA-65 passkeys with a software
-authenticator. Before you tell people to create a post-quantum passkey, try it
-yourself with the authenticators and browsers they actually use.
+| Combination | Register an ML-DSA passkey | Sign in with one | Evidence and date |
+|---|---|---|---|
+| iya-sts in-process tests using a software authenticator (no browser or operating system) | Tested here with ML-DSA-44, -65 and -87 | Tested here with simulated assertions | Test-suite coverage, checked 2026-10-23. This verifies the service's ceremony and cryptography, not a real platform's support. |
+| Android, Firefox for Android, and an ML-DSA-capable USB security key | Reported successful | Not reported separately | A Firefox bug report's comment says creation worked on Android; the key model and exact software versions were not given. Reported around September 2026; checked 2026-10-23. [Report](https://bugzilla.mozilla.org/show_bug.cgi?id=2064183) |
+| Linux desktop, Firefox, and an ML-DSA-capable USB security key | Reported failure when only ML-DSA algorithms were offered | Firefox on Linux was reported to read credentials created on another platform | The Firefox report describes a failed WebAuthn.io registration; its tested key model and exact browser version were not given. Reported around September 2026; checked 2026-10-23. [Report](https://bugzilla.mozilla.org/show_bug.cgi?id=2064183) |
+| macOS, Firefox with the native macOS WebAuthn subsystem disabled, and an ML-DSA-capable USB security key | Reported failure, matching the Linux case | Not reported | The same Firefox report explains this test setup. Reported around September 2026; checked 2026-10-23. [Report](https://bugzilla.mozilla.org/show_bug.cgi?id=2064183) |
+| iOS, or macOS using its native autofill extension with a passkey manager that supports ML-DSA | Reported unavailable for creation | The report says assertions work on that manager's supported platforms, but does not enumerate them | A password-manager release note dated 2026-10-20. It does not identify browser, OS version, or authenticator details for each platform. [Release note](https://1password.com/blog/post-quantum-passkeys) |
+| Other browser, operating-system, and authenticator combinations | Unknown | Unknown | No result in the reports above establishes support for these combinations. |
+
+These reports are not compatibility guarantees. The Firefox report says
+registration worked with some other browser and operating-system combinations,
+but does not identify them. No real platform authenticator or security key has
+been tested by this project. No real authenticator's post-quantum attestation
+has been tested here.
+
+**Plan around the result for the person's actual device.** With the default
+algorithm list, an authenticator that cannot make ML-DSA can usually register a
+classical passkey. `webauthn.pqcAlongsideClassical` lets a person explicitly
+keep a classical passkey alongside a post-quantum one, when no policy requires
+ML-DSA for registration. `webauthn.pqcOnly` offers only ML-DSA, so a device
+that cannot make one cannot register a passkey. A passkey policy's
+`postQuantumRequired: registration-and-sign-in` has the same registration
+effect for people it selects; `sign-in` permits registration but refuses
+classical credentials at sign-in. See [when the device cannot make an ML-DSA
+passkey](#when-the-device-cannot-make-an-ml-dsa-passkey) and [requiring a
+post-quantum passkey](#requiring-a-post-quantum-passkey).
+
+The [realm report](#measuring-the-move-to-post-quantum-passkeys) shows who
+already has ML-DSA, classical-only passkeys, or no passkey, and the authenticator
+models reported at registration. The [ceremony audit rows](#watching-the-move-to-post-quantum-passkeys-the-ceremony-audit-rows) group outcomes by the browser and operating system reported in the User-Agent; they do not identify a precise device model. Use both before making ML-DSA mandatory.
 
 ### Checking that it worked
 
@@ -918,6 +945,14 @@ algorithms. [Admin console → Passkeys](admin-console.md#passkeys--adminpasskey
 describes every tab.
 
 **Before requiring post-quantum passkeys for a group or an application:**
+
+The realm report (#942) and ceremony audit rows (#943) are available for this
+rollout. An in-place upgrade of a classical passkey is not yet available
+([#939](https://github.com/rcbj/iya-sts/issues/939), status checked
+2026-10-23). For now, have each person register a separate ML-DSA passkey and
+verify that it signs in before removing their classical passkey. Keep the
+classical key as a recovery option until the ML-DSA credential has been tested
+on the person's device.
 
 1. Open **Monitoring → Passkeys**. On **Profiles**, find the named policy that
    selects the group, and click *count its population*; or type the group's
