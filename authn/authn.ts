@@ -666,6 +666,15 @@ import WebCardCss = require('../common/web_card_css');
 // requires the policy above, `crypto`, `pki` and `error_codes`, and reaches
 // the FIDO metadata and revocation lazily — nothing that reaches back here.
 import webauthnAttestation = require('./webauthn_attestation');
+// EVERY CEREMONY'S AUDIT ROW, AND THE ALGORITHM MISMATCH (#943). Rule 3: a
+// library over the audit log and the passkey policy, requiring nothing here.
+import webauthnCeremonies = require('./webauthn_ceremonies');
+// THE USERNAMELESS SIGN-IN'S CEREMONY IN HAND (#943), by the response it
+// will answer: `passkeySignIn()` learns the credential, the owner and the
+// key as it goes, and its one refusal funnel, `passkeyRefused()`, writes
+// the ceremony's row from what was learnt. Keyed by the response object so
+// it dies with the request, as the passkey policy's selection does.
+const passkeyCeremonies = new WeakMap<object, any>();
 // DEVICE BOUND SESSION CREDENTIALS (#725): the registration header on the
 // answer that sets the session cookie, and the bound cookie a bound session
 // needs. A route module of its own that reaches this one LAZILY, so the
@@ -1193,6 +1202,7 @@ interface AuthnDeps {
   authnPolicy: typeof authnPolicy;
   passkeyPolicy: typeof passkeyPolicy;
   webauthnAttestation: typeof webauthnAttestation;
+  webauthnCeremonies: typeof webauthnCeremonies;
   totp: typeof totp;
 }
 
@@ -1271,6 +1281,7 @@ class Authn {
       authnPolicy: authnPolicy,
       passkeyPolicy: passkeyPolicy,
       webauthnAttestation: webauthnAttestation,
+      webauthnCeremonies: webauthnCeremonies,
       totp: totp
     };
   }
@@ -6777,6 +6788,125 @@ class Authn {
     return out;
   }
 
+  // THE ALGORITHM MISMATCH (#943): the key that signed, read off its ROW as
+  // #718's question reads it, against every key the person holds; the
+  // ceremony library decides whether it is one and writes the row. Never
+  // throws, and decides nothing.
+  private noteAlgorithmMismatch(username: string, credential: any,
+                                via: string): void {
+    const { log, credentials, passkeyPolicy } = this.deps;
+    log.debug("Entering Authn.noteAlgorithmMismatch().");
+    try {
+      const keys = credentials.keysOf(username);
+      const id = String(credential.id || '');
+      const key = keys.filter(function (one) {
+        return String(one.credentialId) === id;
+      })[0] || null;
+      this.deps.webauthnCeremonies.algorithmMismatch({
+        username: username,
+        used: key ? credentials.keyAlgorithm(key).name
+                  : String(credential.algorithm || ''),
+        held: keys.map(function (one) {
+          return credentials.keyAlgorithm(one).name;
+        }),
+        required: passkeyPolicy.requiresPostQuantum('sign-in'),
+        door: String(via || '') });
+    } catch (e) {
+      // Evidence, never the sign-in: a row that could not be written leaves
+      // the session to start.
+      log.debug("Caught in Authn.noteAlgorithmMismatch(): " +
+                ((e && e.message) || e));
+    }
+    log.debug("Leaving Authn.noteAlgorithmMismatch().");
+  }
+
+  // THE PASSKEY STEP'S CEREMONY ROW (#943), at every way the step's act
+  // ends: the browser's refusal, the RP ID, enrolment switched off, a check
+  // that threw, and `finishWebauthn()` — verified or refused. What was
+  // offered: for a registration the lane's algorithms as the verifier held
+  // the credential to them (`expectedAlgorithms`), for an assertion the
+  // algorithms of the person's keys of the step's role.
+  private noteStepCeremony(req: any, body: any, step: any,
+                           refusedWith: string, verdict?: any): void {
+    const { log, credentials, webauthnPolicy } = this.deps;
+    log.debug("Entering Authn.noteStepCeremony(). " +
+              (refusedWith || 'completed'));
+    try {
+      const registration = String((body && body.mode) || '') === 'create';
+      const role = step.passwordless ? 'primary' : 'mfa';
+      const lane = String(step.lane || 'classical');
+      const v = verdict || {};
+      const posted = (body && body.posted) || {};
+      const keys = credentials.keysOf(step.username);
+      const named = String(posted.rawId || posted.id || '');
+      const own = keys.filter(function (one) {
+        return registration
+          ? String(one.credentialId) === String(v.credentialId || '')
+          : String(one.credentialId) === named;
+      })[0] || null;
+      this.deps.webauthnCeremonies.record({
+        ceremony: registration ? 'registration' : 'assertion',
+        door: 'sign-in-step', username: step.username, role: role,
+        lane: registration ? lane
+                           : (own ? credentials.keyLane(own) : ''),
+        outcome: refusedWith ? 'refused' : 'success',
+        errorCode: refusedWith,
+        offered: registration ? webauthnPolicy.algorithmIds(lane)
+          : keys.filter(function (one) {
+            return one.role === role;
+          }).map(function (one) {
+            return credentials.keyAlgorithm(one).name;
+          }),
+        algorithm: String(v.algorithm ||
+                          (own ? credentials.keyAlgorithm(own).name : '')),
+        posted: posted,
+        attestation: registration && own ? own.attestation : null,
+        req: req });
+    } catch (e) {
+      // Evidence, never the ceremony.
+      log.debug("Caught in Authn.noteStepCeremony(): " +
+                ((e && e.message) || e));
+    }
+    log.debug("Leaving Authn.noteStepCeremony().");
+  }
+
+  // THE USERNAMELESS SIGN-IN'S CEREMONY ROW (#943), from what
+  // `passkeySignIn()` learnt (`passkeyCeremonies`), once per response.
+  private notePasskeyCeremony(res: any, refusedWith: string): void {
+    const { log, credentials } = this.deps;
+    log.debug("Entering Authn.notePasskeyCeremony().");
+    const held = passkeyCeremonies.get(res);
+    if (!held) {
+      log.debug("Leaving Authn.notePasskeyCeremony(). No ceremony ran.");
+      return;
+    }
+    passkeyCeremonies.delete(res);
+    try {
+      const known = held.known || null;
+      this.deps.webauthnCeremonies.record({
+        ceremony: 'assertion', door: 'usernameless',
+        username: String(held.owner || ''), role: 'primary',
+        lane: known ? credentials.keyLane(known) : '',
+        outcome: refusedWith ? 'refused' : 'success',
+        errorCode: refusedWith,
+        offered: held.owner ? credentials.keysOf(held.owner)
+          .filter(function (one) {
+            return one.role === 'primary';
+          }).map(function (one) {
+            return credentials.keyAlgorithm(one).name;
+          }) : [],
+        algorithm: String(held.algorithm ||
+                          (known ? credentials.keyAlgorithm(known).name
+                                 : '')),
+        posted: held.posted, req: held.req });
+    } catch (e) {
+      // Evidence, never the sign-in.
+      log.debug("Caught in Authn.notePasskeyCeremony(): " +
+                ((e && e.message) || e));
+    }
+    log.debug("Leaving Authn.notePasskeyCeremony().");
+  }
+
   // A PASSKEY THE PASSKEY RULES REFUSED AT SIGN-IN FOR A REASON THAT
   // CHANGES ITS STANDING (#718, the post-quantum requirement): marked on
   // the key's row the first time per key and reason
@@ -7315,6 +7445,15 @@ class Authn {
       log.debug("Leaving Authn.startSessionHere(). The passkey policy " +
                 "refused the passkey.");
       return null;
+    }
+    // A CLASSICAL PASSKEY FROM A PERSON WHO HOLDS A POST-QUANTUM ONE (#943),
+    // where the policy above let it sign in — which it does only where
+    // post-quantum is not required at sign-in. An assertion only: a key
+    // registered in this act is the person's newest, not a fallback.
+    if (extra.authenticated !== false && extra.credential &&
+        String(extra.credential.kind || '') === 'webauthn' &&
+        extra.credential.ceremony !== 'registration') {
+      this.noteAlgorithmMismatch(username, extra.credential, via);
     }
     // -------------------------------------------------------------------------
     // ACCOUNT RECOVERY NO WEAKER THAN THE PASSKEY IT REPLACES (#724), asked
@@ -15263,6 +15402,8 @@ class Authn {
     log.debug("Entering Authn.passkeyRefused(). " + code);
     log.info('authn: a passkey sign-in with no username was refused (' +
              code + '): ' + logged);
+    // The ceremony's row (#943), where a ceremony was posted.
+    this.notePasskeyCeremony(res, code);
     if (record && record.id && !pending.has(record.id) &&
         !(record.expires < Date.now())) {
       pending.set(record.id, record);
@@ -15333,6 +15474,11 @@ class Authn {
         'the posted credential was not JSON',
         'The browser returned something this server could not read.');
     }
+    // THE CEREMONY IN HAND (#943), for its row: what was posted, and below
+    // whose it is, which key, and what it signed with.
+    const ceremony: any = { req: req, posted: credential, owner: '',
+                            known: null, algorithm: '' };
+    passkeyCeremonies.set(res, ceremony);
     if (credential.error || !credential.response) {
       // THE REAL BUTTON (the root CLAUDE.md's rule): pressed with the script
       // blocked it posts no credential, and is told why.
@@ -15366,6 +15512,7 @@ class Authn {
     // And the person's, once the handle names them (#535).
     if (owner) {
       this.deps.passkeyPolicy.select(owner, record.application);
+      ceremony.owner = owner;
     }
     if (!owner) {
       // A KEY REGISTERED BEFORE #474 hands back the username's bytes. Told
@@ -15399,6 +15546,7 @@ class Authn {
         errorCodes.codeOf(picked) || 'STS-AUTHN-0026', picked.why, SAID);
     }
     const known = picked.key;
+    ceremony.known = known;
     const handled = credentials.userHandleRefusal(owner, known, handle, true);
     if (!handled.ok) {
       log.debug("Leaving Authn.passkeySignIn(). Section 7.2 step 6.");
@@ -15464,6 +15612,10 @@ class Authn {
         attestationRefused.why, attestationRefused.why);
     }
     const flags = verdict.flags || {};
+    // The ceremony completed (#943): its row now, whatever the session's
+    // own decision below, which writes rows of its own.
+    ceremony.algorithm = String(verdict.algorithm || '');
+    this.notePasskeyCeremony(res, '');
     const said = { request: req, application: String(record.application ||
                                                        ''),
       risk: await this.assessSignIn(req, owner, record.protocol,
@@ -15509,6 +15661,10 @@ class Authn {
                 (String(body.mode) === 'create' ? 'registration' : 'assertion'),
                 'as verified by this server', { ok: verdict.ok,
                                                 checks: verdict.checks });
+    // The ceremony's row (#943): verified, or refused with its code.
+    this.noteStepCeremony(req, body, step, verdict.ok ? ''
+      : (errorCodes.codeOf(verdict) ||
+         webauthnPolicy.failureCodeFor(verdict)), verdict);
 
     if (!verdict.ok) {
       // Name the check that failed. "Authentication failed" would be true and
@@ -17121,7 +17277,7 @@ class Authn {
     }
     const step = found.step;
     const facts = this.webauthnFacts(base, mfaId, step, '');
-    const body = { mfa_id: mfaId, mode: facts.mode,
+    const body: any = { mfa_id: mfaId, mode: facts.mode,
                    credential: posted && posted.credential };
     let credential;
     try {
@@ -17135,6 +17291,9 @@ class Authn {
       return this.stepRefused(res, 'The browser returned something this ' +
                                    'server could not read.');
     }
+    // What was posted, for the ceremony's row (#943): its transports,
+    // attachment and the browser's error name, nothing else.
+    body.posted = credential;
     if (!credential.error && !credential.response) {
       // THE REAL BUTTON UNDER THE SCRIPT (#470): pressed with the script
       // blocked, it posts the step with no credential. Answered as the
@@ -17153,6 +17312,9 @@ class Authn {
       log.debug("Leaving Authn.mfaWebauthnAct(). The browser refused: " +
                 credential.error);
       errorCodes.mark(res, 'STS-AUTHN-0022');
+      // THE BROWSER'S ERROR NAME ON THE CEREMONY'S ROW (#943), as the
+      // page's script reported it; never its message.
+      this.noteStepCeremony(req, body, step, 'STS-AUTHN-0022');
       return this.stepRefused(res, credential.error + ': ' +
         (credential.message || '') + '  (WebAuthn reports one error for ' +
         'several situations, so this does not say which.)');
@@ -17167,6 +17329,7 @@ class Authn {
                'REFUSED. ' + rpRefusal);
       log.debug("Leaving Authn.mfaWebauthnAct(). The RP ID does not fit.");
       errorCodes.mark(res, 'STS-AUTHN-0023');
+      this.noteStepCeremony(req, body, step, 'STS-AUTHN-0023');
       return this.stepRefused(res, rpRefusal);
     }
     // THE ORIGIN, NOT THE BASE URL. See originOf() — a realm's base URL
@@ -17198,6 +17361,7 @@ class Authn {
           log.debug("Leaving Authn.mfaWebauthnAct(). Enrolment is switched " +
                     "off.");
           errorCodes.mark(res, 'STS-AUTHN-0044');
+          this.noteStepCeremony(req, body, step, 'STS-AUTHN-0044');
           return this.stepRefused(res, 'Passkeys are switched off in this ' +
             'realm (webauthn.enabled), so a new one cannot be registered ' +
             'here. A passkey already registered goes on working.');
@@ -17447,6 +17611,8 @@ class Authn {
       log.debug("Leaving Authn.mfaWebauthnAct(). Verification threw: " +
                 e.message);
       errorCodes.mark(res, errorCodes.codeOf(e) || 'STS-AUTHN-0027');
+      this.noteStepCeremony(req, body, step,
+                            errorCodes.codeOf(e) || 'STS-AUTHN-0027');
       return this.stepRefused(res, 'The second factor could not be ' +
                                    'checked: ' + e.message);
     }
@@ -17464,7 +17630,9 @@ class Authn {
             verdict = errorCodes.mark({ ok: false,
                                         checks: verdict.checks,
                                         failed: [attested.why],
-                                        why: attested.why },
+                                        why: attested.why,
+                                        // For the ceremony's row (#943).
+                                        algorithm: verdict.algorithm },
                                       errorCodes.codeOf(attested) ||
                                       'STS-AUTHN-0241');
             return null;
@@ -17500,7 +17668,9 @@ class Authn {
                                       checks: verdict.checks,
                                       failed: [(stored.errors || [])
                                         .join(' ')],
-                                      why: (stored.errors || []).join(' ') },
+                                      why: (stored.errors || []).join(' '),
+                                      // For the ceremony's row (#943).
+                                      algorithm: verdict.algorithm },
                                     errorCodes.codeOf(stored) ||
                                     'STS-AUTHN-0068');
         } else {

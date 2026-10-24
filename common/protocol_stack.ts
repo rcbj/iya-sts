@@ -303,6 +303,12 @@ class ProtocolStack {
     this.build('authn/webauthn_attestation',
                require('../authn/webauthn_attestation'),
                'WebauthnAttestation');
+    // #943: the audit rows every WebAuthn ceremony leaves. A library (rule
+    // 3) over the audit log, asked by both ceremony doors and by
+    // `credentials.confirmKeyEnrolment()`, so built before it.
+    this.build('authn/webauthn_ceremonies',
+               require('../authn/webauthn_ceremonies'),
+               'WebauthnCeremonies');
     this.build('common/credentials', require('./credentials'), 'Credentials');
     this.build('common/account_state', require('./account_state'),
                'AccountState');

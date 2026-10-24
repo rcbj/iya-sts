@@ -166,6 +166,10 @@ import webauthnVerifier = require('../authn/webauthn');
 // `webauthn_policy`, `crypto`, `pki` and `error_codes`, and the FIDO metadata
 // and revocation lazily — none of which requires this file.
 import webauthnAttestation = require('../authn/webauthn_attestation');
+// EVERY CEREMONY'S AUDIT ROW (#943): `confirmKeyEnrolment()` is where
+// /portal/keys and an activation link verify a registration. A library over
+// the audit log and the passkey policy; it requires nothing back here.
+import webauthnCeremonies = require('../authn/webauthn_ceremonies');
 // THE ERROR CODES (2026-09-12). A LEAF that requires nothing, so it cannot
 // close a cycle from here — which is why it is this and not `audit.js`, which
 // this file must not reach. Every refusal below RETURNS a verdict to a caller
@@ -9102,15 +9106,49 @@ class Credentials {
    * @param username - the person
    * @param enrolmentId - the pending enrolment's id
    * @param credential - what the browser posted
-   * @param opts - `origin` and `rpId`, what the browser was talking to
+   * @param opts - `origin` and `rpId`, what the browser was talking to,
+   *   and `door` (#943), `portal` or `activation`, for the ceremony's row
    * @returns a promise of `addKey()`'s answer, or a refusal
    */
   confirmKeyEnrolment(username, enrolmentId, credential, opts?) {
     const { log } = this.deps;
     log.debug("Entering Credentials.confirmKeyEnrolment().");
+    // THE CEREMONY'S ROW (#943), however it ends: the pending enrolment is
+    // read FIRST, because a completed one is dropped — its lane is what the
+    // credential's algorithm was held to (`expectedAlgorithms`).
+    const name = String(username || '').trim();
+    const held = this.pendingKeyEnrolmentFor(name) || null;
+    const door = (opts || {}).door === 'activation' ? 'activation' : 'portal';
+    const note = (answer, threw?) => {
+      log.debug("Entering confirmKeyEnrolment() note().");
+      const key = answer && answer.ok ? this.keysOf(name).filter(
+        function (one) {
+          return String(one.credentialId) ===
+                 String(answer.credentialId || '');
+        })[0] || null : null;
+      webauthnCeremonies.record({
+        ceremony: 'registration', door: door, username: name,
+        role: String((answer && answer.role) || (held && held.role) || ''),
+        lane: String((held && held.lane) || 'classical'),
+        outcome: answer && answer.ok ? 'success' : 'refused',
+        errorCode: answer && answer.ok ? ''
+          : String(this.deps.errorCodes.codeOf(answer) ||
+                   (threw ? 'STS-AUTHN-0027' : '')),
+        offered: this.deps.webauthnPolicy.algorithmIds(
+          (held && held.lane) || 'classical'),
+        algorithm: key ? Credentials.keyAlgorithm(key).name : '',
+        posted: credential, attestation: key ? key.attestation : null });
+      log.debug("Leaving confirmKeyEnrolment() note().");
+    };
     log.debug("Leaving Credentials.confirmKeyEnrolment().");
     return Promise.resolve().then(() => {
       return this.checkKeyEnrolment(username, enrolmentId, credential, opts);
+    }).then(function (answer) {
+      note(answer);
+      return answer;
+    }, function (e) {
+      note(null, true);
+      throw e;
     });
   }
 

@@ -459,6 +459,14 @@
     "en": "3571d30810b2d9c7",
     "text": "La clave de un dispositivo ya no está atestada: la lista de estado de atestación de Android de Google revoca su cadena"
   },
+  "audit.actions.webauthn.ceremony.label": {
+    "en": "49406d0c31568578",
+    "text": "Se ejecutó un registro o una aserción WebAuthn, completado o no"
+  },
+  "audit.actions.webauthn.algorithm-mismatch.label": {
+    "en": "712b402391b059c6",
+    "text": "Una persona que tiene una clave de acceso poscuántica inició sesión con una clásica"
+  },
   "audit.actions.webauthn.attestation-revoked.label": {
     "en": "0be46b8b29aaf446",
     "text": "La atestación de una llave de seguridad ya no es de confianza: la lista de estado de atestación de Android de Google revoca su cadena"

@@ -459,6 +459,14 @@
     "en": "3571d30810b2d9c7",
     "text": "裝置金鑰不再經過證明：Google 的 Android 證明狀態清單撤銷了其鏈結"
   },
+  "audit.actions.webauthn.ceremony.label": {
+    "en": "49406d0c31568578",
+    "text": "執行了一次 WebAuthn 註冊或斷言，無論是否完成"
+  },
+  "audit.actions.webauthn.algorithm-mismatch.label": {
+    "en": "712b402391b059c6",
+    "text": "持有後量子通行金鑰的人使用傳統通行金鑰登入"
+  },
   "audit.actions.webauthn.attestation-revoked.label": {
     "en": "0be46b8b29aaf446",
     "text": "安全金鑰的證明不再受信任：Google 的 Android 證明狀態清單撤銷了其鏈結"

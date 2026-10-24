@@ -459,6 +459,14 @@
     "en": "3571d30810b2d9c7",
     "text": "Une clé d’appareil n’est plus attestée : la liste de statut d’attestation Android de Google révoque sa chaîne"
   },
+  "audit.actions.webauthn.ceremony.label": {
+    "en": "49406d0c31568578",
+    "text": "Une inscription ou une assertion WebAuthn a eu lieu, aboutie ou non"
+  },
+  "audit.actions.webauthn.algorithm-mismatch.label": {
+    "en": "712b402391b059c6",
+    "text": "Une personne détenant une clé d’accès post-quantique s’est connectée avec une clé classique"
+  },
   "audit.actions.webauthn.attestation-revoked.label": {
     "en": "0be46b8b29aaf446",
     "text": "L’attestation d’une clé de sécurité n’est plus fiable : la liste de statut d’attestation Android de Google révoque sa chaîne"

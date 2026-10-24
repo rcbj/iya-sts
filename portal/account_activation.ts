@@ -566,7 +566,9 @@ class AccountActivation {
         done = await credentials.confirmKeyEnrolment(username,
           String(body.enrolment_id || ''), ceremony,
           { origin: authn.expectedOriginFor(base, ceremony),
-            rpId: authn.rpIdOf(base) });
+            rpId: authn.rpIdOf(base),
+            // The ceremony's row names this door (#943).
+            door: 'activation' });
       } catch (e) {
         log.debug("Caught in AccountActivation.keyStep(): " +
                   ((e && e.message) || e));
