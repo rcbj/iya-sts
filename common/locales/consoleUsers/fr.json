@@ -1,4 +1,5 @@
 {
+  "attestationEvidence": "Télécharger la preuve RFC 4998",
   "body.tipQ": "N’afficher que les personnes dont le nom d’utilisateur contient ce texte, sans tenir compte de la casse.",
   "body.tipProtocol": "N’afficher que les personnes qui se sont connectées au moins une fois par ce protocole. La liste comprend chaque protocole par lequel une personne listée ici s’est connectée.",
   "body.tipFactor": "N’afficher que les personnes dans cet état de second facteur. « enrôlement illisible par ce processus » est une application d’authentification enrôlée sous une clé que ce processus ne peut pas ouvrir. Une personne pour laquelle aucun stockage d’identifiants ne répond ne correspond qu’à « tout état ».",

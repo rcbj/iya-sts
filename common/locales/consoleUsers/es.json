@@ -1,4 +1,5 @@
 {
+  "attestationEvidence": "Descargar evidencia RFC 4998",
   "body.tipQ": "Mostrar solo las personas cuyo nombre de usuario contiene este texto, sin distinguir mayúsculas.",
   "body.tipProtocol": "Mostrar solo las personas que han iniciado sesión mediante este protocolo al menos una vez. La lista incluye todos los protocolos por los que ha iniciado sesión alguien de esta lista.",
   "body.tipFactor": "Mostrar solo las personas en este estado de segundo factor. «inscripción que este proceso no puede leer» es una app de autenticación inscrita con una clave que este proceso no puede abrir. Una persona por la que no responde ningún almacén de credenciales solo coincide con «cualquier estado».",

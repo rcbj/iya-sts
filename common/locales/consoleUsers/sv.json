@@ -1,4 +1,5 @@
 {
+  "attestationEvidence": "Hämta RFC 4998-bevis",
   "body.tipQ": "Visa bara personer vars användarnamn innehåller den här texten, oavsett skiftläge.",
   "body.tipProtocol": "Visa bara personer som har loggat in via det här protokollet minst en gång. Listan är alla protokoll som någon här har loggat in via.",
   "body.tipFactor": "Visa bara personer i det här tillståndet för andra faktor. ”enrolment this process cannot read” är en autentiseringsapp registrerad under en nyckel som den här processen inte kan öppna. En person som inget lager för behörighetsuppgifter svarar för matchar bara ”any state”.",

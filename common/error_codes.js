@@ -6719,6 +6719,18 @@ const CODES = [
       'the sign-in step, it requires a post-quantum passkey to sign in. ' +
       'Refused before the ceremony is armed; nothing is written.',
     spec: 'HTTP 400 (the sign-in API and the account API)' },
+  { code: 'STS-AUTHN-0421',
+    summary: 'A passkey evidence export did not name both a username and a ' +
+      'credential id.',
+    spec: 'HTTP 400 from GET /admin-api/passkey-report/evidence' },
+  { code: 'STS-AUTHN-0422',
+    summary: 'The named passkey has no RFC 4998 evidence record to export.',
+    spec: 'HTTP 404 from GET /admin-api/passkey-report/evidence' },
+  { code: 'STS-AUTHN-0419',
+    summary: 'An RFC 4998 passkey evidence record could not be renewed; the ' +
+      'previous record remains stored and the failure is logged for retry ' +
+      'on the next daily passkey report recount.',
+    spec: 'none — logged; no credential or prior evidence record is changed' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',

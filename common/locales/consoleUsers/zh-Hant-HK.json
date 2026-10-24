@@ -1,4 +1,5 @@
 {
+  "attestationEvidence": "下載 RFC 4998 證據",
   "newUserBody.emptyMiddle": "上的單一「Create」方塊的差別：那個按鈕會在輸入的任何用戶名稱背後虛構一個完整的人——姓名、電郵地址、出生日期、街道、國籍。這裡除非您按下製造它的按鈕，否則不會虛構任何內容。代價是：對沒有 <code>schacDateOfBirth</code> 的人斷言 <code>birthdate</code> 的已簽發認證，會在簽發時改用虛構值（<code>vc_claims.js</code> 這樣做，以免認證為空），因此在有人填入該屬性之前，認證與目錄會不一致。",
   "newUserBody.saBefore": "剔選後，此人受本領域的",
   "mfaSection.asksFor": " — 登入畫面會要求{factor, select, webauthn {安全金鑰} webauthnOrTotp {安全金鑰，並為身在未插入金鑰之電腦前的人提供驗證器應用程式作為替代} totp {其驗證器應用程式產生的驗證碼} emailLink {以電郵寄送的登入連結，這是他們持有的唯一第二因素} other {以電郵寄送的驗證碼，這是他們持有的唯一第二因素}}。僅憑密碼無法讓他們登入。",

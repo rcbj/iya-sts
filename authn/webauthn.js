@@ -658,6 +658,10 @@ function verifyRegistration(input) {
     // could have verified the statement even had it tried. This file verifies
     // nothing more for returning them.
     attStmt: plainOf(decoded.get('attStmt')),
+    // PRESERVED VERBATIM FOR LONG-TERM ATTESTATION EVIDENCE (#947): the
+    // verifier has already decoded this CBOR object, but RFC 4998 archives
+    // the exact bytes the authenticator sent, not a reconstructed map.
+    attestationObjectRaw: attestationObject,
     authDataRaw: authDataBuf,
     clientDataHash: sha256(clientDataJSON),
     credentialPublicKeyCose: authData.credentialPublicKey,

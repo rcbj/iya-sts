@@ -1,4 +1,5 @@
 {
+  "attestationEvidence": "Download RFC 4998 evidence",
   "body.tipQ": "Show only people whose username contains this text, in any case.",
   "body.tipProtocol": "Show only people who have signed in through this protocol at least once. The list is every protocol anyone listed here has signed in through.",
   "body.tipFactor": "Show only people in this second-factor state. \"enrolment this process cannot read\" is an authenticator app enrolled under a key this process cannot open. A person no credential store answers for matches only \"any state\".",

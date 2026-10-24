@@ -537,6 +537,68 @@ class Credentials {
     return out;
   }
 
+  /** Renews due RFC 4998 passkey evidence records for one directory entry. */
+  async renewAttestationEvidence(username: string,
+                                 targetAlgorithm?: string): Promise<number> {
+    const { log, errorCodes } = this.deps;
+    const directory = this.directory;
+    const name = String(username || '').trim();
+    log.debug('Entering Credentials.renewAttestationEvidence().');
+    if (!directory || typeof directory.readWebauthn !== 'function' ||
+        typeof directory.replaceWebauthn !== 'function') {
+      log.debug('Leaving Credentials.renewAttestationEvidence(). No store.');
+      return 0;
+    }
+    const raw = directory.readWebauthn(name) || [];
+    const evidence = require('./passkey_evidence');
+    let changed = 0;
+    const kept: string[] = [];
+    const rank: { [key: string]: number } = {
+      sha256: 1, sha384: 2, sha512: 3
+    };
+    for (let i = 0; i < raw.length; i += 1) {
+      let one: any;
+      try {
+        one = JSON.parse(raw[i]);
+      } catch (e) {
+        // A value this service cannot parse is outside evidence renewal's
+        // ownership. Preserve it exactly, as keysOfValues() does for reads.
+        kept.push(raw[i]);
+        continue;
+      }
+      const evidenceRecord = one && one.attestation &&
+        one.attestation.evidence;
+      const current = evidenceRecord &&
+        (evidenceRecord.hashAlgorithm || 'sha256');
+      const migrate = !!targetAlgorithm && rank[targetAlgorithm] >
+        (rank[current] || 1);
+      if (one && one.credentialId && evidenceRecord &&
+          (Number(evidenceRecord.renewAfter || 0) <= Date.now() || migrate)) {
+        one.attestation.evidence = migrate
+          ? await evidence.renewHashTree(evidenceRecord, targetAlgorithm)
+          : await evidence.renew(evidenceRecord, Date.now());
+        kept.push(JSON.stringify(one));
+        changed += 1;
+      } else {
+        kept.push(raw[i]);
+      }
+    }
+    if (changed) {
+      try {
+        if (!directory.replaceWebauthn(name, kept)) {
+          throw new Error('The person no longer has a directory entry.');
+        }
+      } catch (e) {
+        log.error(errorCodes.tag('STS-AUTHN-0419') + 'credentials: renewed ' +
+                  'passkey evidence for ' + name + ' could not be stored: ' +
+                  ((e && e.message) || e));
+        throw e;
+      }
+    }
+    log.debug('Leaving Credentials.renewAttestationEvidence(). ' + changed);
+    return changed;
+  }
+
   // WHAT KIND OF AUTHENTICATOR ONE STORED KEY IS, IN A PERSON'S WORDS
   // (2026-09-26). `/portal/keys` draws it beside each key and
   // `/portal/devices` says with it why a key cannot be linked to a device.
@@ -10979,6 +11041,7 @@ export = {
   // #942: which stored values are keys, for the passkey report.
   keysOfValues: Credentials.keysOfValues,
   attestationAlgorithms: Credentials.attestationAlgorithms,
+  renewAttestationEvidence: slot.forward('renewAttestationEvidence'),
   // #470: the passkey pages' group, provider and name for a stored key.
   keyGroup: Credentials.keyGroup,
   keyProvider: Credentials.keyProvider,

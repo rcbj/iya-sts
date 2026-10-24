@@ -2973,6 +2973,32 @@ const SETTINGS = [
                  'one is TRUSTED. Nothing is shipped: empty trusts only ' +
                  'what the active MDS BLOB lists.' },
 
+  { key: 'webauthn.attestationEvidenceTsaUrl', group: 'WebAuthn',
+    label: 'Passkey evidence timestamp authority URL',
+    path: 'webauthn.attestationEvidenceTsaUrl',
+    env: 'STS_WEBAUTHN_ATTESTATION_EVIDENCE_TSA_URL', type: 'string',
+    dflt: '', runtime: true,
+    description: 'When set with the TSA trust anchors, verified passkey ' +
+      'attestations receive an RFC 4998 EvidenceRecord whose initial ' +
+      'ArchiveTimeStamp is an RFC 3161 token from this HTTPS timestamp ' +
+      'authority. Empty disables evidence recording.' },
+  { key: 'webauthn.attestationEvidenceTsaTrustAnchors', group: 'WebAuthn',
+    label: 'Passkey evidence TSA trust anchors (PEM)',
+    path: 'webauthn.attestationEvidenceTsaTrustAnchors',
+    env: 'STS_WEBAUTHN_ATTESTATION_TSA_TRUST_ANCHORS', type: 'string',
+    dflt: '', runtime: true,
+    description: 'PEM trust anchors used to verify the RFC 3161 token and ' +
+      'its TSA certificate path. Evidence recording requires both this ' +
+      'bundle and the timestamp authority URL.' },
+  { key: 'webauthn.attestationEvidenceHashAlgorithm', group: 'WebAuthn',
+    label: 'Passkey evidence hash-tree algorithm',
+    path: 'webauthn.attestationEvidenceHashAlgorithm',
+    env: 'STS_WEBAUTHN_ATTESTATION_HASH_ALGORITHM', type: 'enum',
+    choices: ['sha256', 'sha384', 'sha512'], dflt: 'sha256', runtime: true,
+    description: 'Digest used by new RFC 4998 records. Raising this from ' +
+      'sha256 triggers RFC 4998 hash-tree renewal on the daily passkey ' +
+      'report recount, into a new ArchiveTimeStampChain.' },
+
   { key: 'webauthn.attestationAllowedAaguids', group: 'WebAuthn',
     label: 'Allowed authenticator models (AAGUIDs)',
     path: 'webauthn.attestationAllowedAaguids',

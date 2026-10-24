@@ -13417,3 +13417,17 @@ what a maintainer must not undo:
   (`keysOfValues()`, the rule `keysOf()` uses), never this file's.
 * Codes `STS-AUTHN-0413` to `0418`. `tests/passkey_report.js` and
   `tests/vendored/sts_passkey_report.js` hold it.
+
+## `passkey_evidence.ts`: RFC 4998 EVIDENCE FOR A VERIFIED CLASSICAL PASSKEY (#947)
+
+An optional RFC 3161 TSA signs the initial SHA-256 archive timestamp for a
+verified, trusted classical attestation. The TSA token, its CMS signature,
+critical time-stamping EKU, imprint and chain are checked against the operator's
+PEM anchors. The EvidenceRecord and its exact archived object live on the key.
+The daily `passkeys.report-recount` walk renews expiring TSA tokens in the same
+ArchiveTimeStampChain; raising `webauthn.attestationEvidenceHashAlgorithm` to
+SHA-384 or SHA-512 creates a hash-tree renewal in a new chain, retaining every
+prior chain. The admin export is served by `mgmt-api/passkey_report_api.ts` and
+linked from the person page. `tests/passkey_evidence.js` uses a local OpenSSL
+TSA fixture. This module uses the shared `crypto.js` digest boundary and
+PKIjs; it sends no data to a TSA unless the feature is enabled.

@@ -46,6 +46,7 @@ rather than repeating them. Every setting in full is in
 | A person's passkeys | **Directory → Users** (`/admin/users`), the person's page, **Passkeys (WebAuthn)** | `GET /admin-api/users?user=<username>`; `POST /admin-api/users/{action}` |
 | Who holds which factor, across the realm | **Directory → Users** | `GET /admin-api/mfa` |
 | Who holds which passkey algorithm, across the realm | **Monitoring → Passkeys** (`/admin/passkey-report`) | `GET /admin-api/passkey-report`, `/export`, `POST /admin-api/passkey-report/recount` |
+| A passkey's long-term attestation evidence | **Directory → Users**, the person's page, **Passkeys (WebAuthn)** | `GET /admin-api/passkey-report/evidence?username=<name>&credentialId=<id>` |
 | A new person with an activation link | **Directory → Users → New user** (`/admin/users/new`) | `POST /admin-api/users/create` |
 | Which methods one application accepts | **Directory → Applications**, the application's **Configuration** tab | `POST /admin-api/applications/add`, `/remove`, `/update-fields` |
 | Live sessions, and the record of what happened | **Monitoring → Sessions**, **Monitoring → Audit log** (`/admin/audit`) | `GET /admin-api/sessions`, `GET /admin-api/audit?code=<error code>` |
@@ -372,6 +373,31 @@ Under `webauthn.attestationPolicy` `off` the algorithms are what the
 authenticator claimed, and `verified` says so. To require a post-quantum
 attestation, see
 [Requiring a post-quantum attestation](#requiring-a-post-quantum-attestation).
+
+### RFC 4998 evidence for classical attestations
+
+Optionally, configure `STS_WEBAUTHN_ATTESTATION_EVIDENCE_TSA_URL` with an
+HTTPS RFC 3161 timestamp service and
+`STS_WEBAUTHN_ATTESTATION_TSA_TRUST_ANCHORS` with its PEM trust anchor(s).
+For each newly registered classical attestation that this service verifies
+and trusts, it timestamps the exact attestation bytes and the verified
+assessment, then stores the RFC 4998 EvidenceRecord on that passkey. A missing
+TSA configuration leaves evidence recording disabled. When enabled, a TSA
+failure refuses registration rather than saving an unattested evidence record.
+
+The daily passkey report recount renews timestamp chains before the timestamp
+certificate approaches expiry. Set
+`STS_WEBAUTHN_ATTESTATION_HASH_ALGORITHM` to `sha384` or `sha512` to migrate
+records by RFC 4998 hash-tree renewal; the recount adds a new chain covering
+the archived object and all previous chains. Admins can download a passkey's
+evidence from its person page or
+`GET /admin-api/passkey-report/evidence?username=<name>&credentialId=<id>`.
+The export contains the RFC 4998 DER record, the archived object and the
+timestamp tokens. Evidence is not backfilled for existing passkeys. The
+default digest is SHA-256. The TSA URL and trust anchors are available under
+**Protocols → WebAuthn** and in `GET /admin-api/webauthn`; the TSA URL must use
+HTTPS, and its signing certificate must chain to the configured anchors and
+have the critical `id-kp-timeStamping` purpose.
 
 **Binding security keys to the people they were issued to.** With enterprise
 attestation, the passkey policy's `enterpriseSerialAttribute` lets a security
@@ -1140,6 +1166,9 @@ description of each is in [Configuration → WebAuthn](configuration.md#webauthn
 | `webauthn.attestation` | `STS_WEBAUTHN_ATTESTATION` | `direct` |
 | `webauthn.attestationPolicy` | `STS_WEBAUTHN_ATTESTATION_POLICY` | `by-mode` |
 | `webauthn.attestationTrustAnchors` | `STS_WEBAUTHN_ATTESTATION_TRUST_ANCHORS` | empty |
+| `webauthn.attestationEvidenceTsaUrl` | `STS_WEBAUTHN_ATTESTATION_EVIDENCE_TSA_URL` | empty (disabled) |
+| `webauthn.attestationEvidenceTsaTrustAnchors` | `STS_WEBAUTHN_ATTESTATION_TSA_TRUST_ANCHORS` | empty |
+| `webauthn.attestationEvidenceHashAlgorithm` | `STS_WEBAUTHN_ATTESTATION_HASH_ALGORITHM` | `sha256` |
 | `webauthn.attestationAllowedAaguids` | `STS_WEBAUTHN_ATTESTATION_ALLOWED_AAGUIDS` | empty |
 | `webauthn.attestationMinCertificationLevel` | `STS_WEBAUTHN_ATTESTATION_MIN_CERTIFICATION` | `none` |
 | `webauthn.attestationRequireFips` | `STS_WEBAUTHN_ATTESTATION_REQUIRE_FIPS` | `false` |

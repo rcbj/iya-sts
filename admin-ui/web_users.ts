@@ -1848,6 +1848,7 @@ class UsersPage {
         '<td>' + UsersPage.attestationCell(t, one.attestation, one.aaguid) +
         // WHAT ITS ATTESTATION WAS SIGNED WITH (#941), leaf to anchor.
         UsersPage.attestationAlgorithmsText(t, one.attestationAlgorithms) +
+        UsersPage.attestationEvidenceLink(t, key, one) +
         '</td>' +
         '<td>' + kit.esc(backup) +
         (Array.isArray(one.transports) && one.transports.length
@@ -2696,6 +2697,20 @@ class UsersPage {
         ? 'consoleUsers.attestationAlgorithms.postQuantum'
         : 'consoleUsers.attestationAlgorithms.signedWith') +
       ' <code>' + kit.esc(names.join('; ')) + '</code></div>';
+  }
+
+  // The complete RFC 4998 record is downloaded through the authenticated
+  // management API, where it is an attachment with no-store headers.
+  static attestationEvidenceLink(t, username, one) {
+    if (!one || !one.attestation || !one.attestation.evidence) {
+      return '';
+    }
+    const href = '/admin-api/passkey-report/evidence?username=' +
+      encodeURIComponent(String(username || '')) + '&credentialId=' +
+      encodeURIComponent(String(one.credentialId || ''));
+    return '<div class="sub passkey-attestation-evidence"><a href="' +
+      kit.esc(href) + '">' +
+      t.html('consoleUsers.attestationEvidence') + '</a></div>';
   }
 
   // What Google's Android attestation status list said of an android-key

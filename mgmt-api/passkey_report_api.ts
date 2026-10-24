@@ -39,6 +39,7 @@ interface PasskeyReportApiDeps {
   // The report, lazily: this module is built with the other API modules,
   // and the report is only asked inside a handler.
   loadReport(): Json;
+  loadCredentials(): Json;
 }
 
 const BASE = '/admin-api';
@@ -74,6 +75,9 @@ class PasskeyReportApi {
       errorCodes: errorCodes,
       loadReport: function (): Json {
         return require('../common/passkey_report');
+      },
+      loadCredentials: function (): Json {
+        return require('../common/credentials');
       }
     };
   }
@@ -137,7 +141,8 @@ class PasskeyReportApi {
    * @returns the route rows
    */
   buildRoutes(): Json[] {
-    const { log, parseBody, errorCodes, loadReport } = this.deps;
+    const { log, parseBody, errorCodes, loadReport,
+            loadCredentials } = this.deps;
     const self = this;
     log.debug("Entering PasskeyReportApi.buildRoutes().");
     const report = loadReport();
@@ -299,6 +304,61 @@ class PasskeyReportApi {
                       "endpoint: " + ((e && e.message) || e));
             self.failed(res, e, 'the export');
           });
+        } },
+
+      { method: 'GET', path: BASE + '/passkey-report/evidence',
+        tag: 'Monitoring', operationId: 'exportPasskeyAttestationEvidence',
+        summary: 'Download one passkey RFC 4998 evidence record (#947)',
+        description: 'Returns the exact archived attestation object and ' +
+          'its RFC 4998 EvidenceRecord for one passkey. The TSA token is ' +
+          'independently verifiable against the configured TSA trust ' +
+          'anchors. A key has no evidence when no TSA was configured when ' +
+          'it was enrolled, or when its attestation was not trusted and ' +
+          'classical.',
+        mirrors: 'GET /admin/users',
+        parameters: [
+          { name: 'username', in: 'query', required: true,
+            schema: { type: 'string', maxLength: 256 } },
+          { name: 'credentialId', in: 'query', required: true,
+            schema: { type: 'string', maxLength: 2048 } }
+        ],
+        responseDescription: 'The RFC 4998 EvidenceRecord and archived data.',
+        responseSchema: { type: 'object', additionalProperties: true },
+        handler: function (req: Req, res: Res): void {
+          log.debug('Entering passkey evidence export endpoint.');
+          const username = String((req.query || {}).username || '').trim();
+          const credentialId = String((req.query || {}).credentialId || '');
+          if (!username || !credentialId) {
+            errorCodes.mark(res, 'STS-AUTHN-0421');
+            self.sendJson(res, 400, { errors: [
+              'username and credentialId are required.' ] });
+            return;
+          }
+          try {
+            const keys = loadCredentials().keysOf(username) || [];
+            const found = keys.filter(function (one: Json): boolean {
+              return one && one.credentialId === credentialId;
+            })[0];
+            const evidence = found && found.attestation &&
+              found.attestation.evidence;
+            if (!evidence) {
+              errorCodes.mark(res, 'STS-AUTHN-0422');
+              self.sendJson(res, 404, { errors: [
+                'This passkey has no archived attestation evidence.' ] });
+              return;
+            }
+            const filename = ('passkey-evidence-' + credentialId)
+              .replace(/[^A-Za-z0-9._-]/g, '_') + '.json';
+            res.status(200).set('Content-Type', 'application/json')
+              .set('Cache-Control', 'no-store')
+              .set('Content-Disposition', 'attachment; filename="' +
+                   filename + '"')
+              .send(JSON.stringify({ username: username,
+                credentialId: credentialId, evidence: evidence }, null, 2));
+          } catch (e) {
+            self.failed(res, e, 'passkey evidence');
+          }
+          log.debug('Leaving passkey evidence export endpoint.');
         } },
 
       { method: 'POST', route: BASE + '/passkey-report/:action',

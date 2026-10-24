@@ -1,4 +1,5 @@
 {
+  "attestationEvidence": "下載 RFC 4998 證據",
   "body.tipQ": "只顯示使用者名稱包含此文字的人員，不分大小寫。",
   "body.tipProtocol": "只顯示至少透過此通訊協定登入過一次的人員。清單列出此處任何人登入過的每一種通訊協定。",
   "body.tipFactor": "只顯示處於此第二因素狀態的人員。「enrolment this process cannot read」是以此處理程序無法開啟之金鑰登記的驗證器應用程式。沒有任何認證儲存區能回答的人員，只符合「any state」。",

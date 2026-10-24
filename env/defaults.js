@@ -253,6 +253,9 @@ var config = {
     attestation: "direct",                                                                                                                             // Attestation conveyance
     attestationPolicy: "by-mode",                                                                                                                      // Attestation policy
     attestationTrustAnchors: "",                                                                                                                       // Attestation trust anchors (PEM)
+    attestationEvidenceTsaUrl: "",                                                                                                                     // RFC 3161 TSA for passkey evidence records
+    attestationEvidenceTsaTrustAnchors: "",                                                                                                           // RFC 3161 TSA trust anchors (PEM)
+    attestationEvidenceHashAlgorithm: "sha256",                                                                                                      // RFC 4998 hash-tree algorithm and renewal target
     attestationAllowedAaguids: "",                                                                                                                     // Allowed authenticator models (AAGUIDs)
     attestationMinCertificationLevel: "none",                                                                                                          // Least FIDO certification level
     attestationRequireFips: false,                                                                                                                     // Require a FIPS 140 certified model

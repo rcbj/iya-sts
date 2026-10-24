@@ -118,6 +118,7 @@ import helpers = require('./helpers');
 import errorCodes = require('./error_codes');
 import realms = require('./realms');
 import credentials = require('./credentials');
+import config = require('./config');
 import replication = require('../persistence/persistence_replication');
 import InstanceSlot = require('./instance_slot');
 
@@ -560,6 +561,8 @@ class PasskeyReport {
     const counts: Record<string, number> = {};
     const names: Record<string, string> = {};
     let holders = 0;
+    let evidenceRenewed = 0;
+    let evidenceFailures = 0;
     let after = '';
     const self = this;
     try {
@@ -574,6 +577,7 @@ class PasskeyReport {
           return { summary: 'Stopped after ' + holders + ' holder(s); the ' +
                             'baseline is unchanged.' };
         }
+        const renewalCandidates: string[] = [];
         const answer = await directory.scanAsync({
           attribute: ATTRIBUTE, after: after, readLimit: RECOUNT_SLICE,
           wanted: Number.MAX_SAFE_INTEGER,
@@ -582,9 +586,44 @@ class PasskeyReport {
             PasskeyReport.addCounts(counts, f.counts, 1);
             PasskeyReport.addNames(names, f.names);
             holders += 1;
+            if (row.values.some(function (value: string): boolean {
+              try {
+                const key = JSON.parse(value);
+                const evidence = key && key.attestation &&
+                  key.attestation.evidence;
+                const target = String(config.value(
+                  'webauthn.attestationEvidenceHashAlgorithm') || 'sha256');
+                const rank: { [key: string]: number } = {
+                  sha256: 1, sha384: 2, sha512: 3
+                };
+                return !!evidence && (Number(evidence.renewAfter || 0) <=
+                  Date.now() || ((rank[target] || 0) >
+                    (rank[evidence.hashAlgorithm || 'sha256'] || 1)));
+              } catch (e) {
+                return false;
+              }
+            })) {
+              renewalCandidates.push(row.id);
+            }
             return true;
           }
         });
+        // RFC 4998 timestamp renewal (#947) piggybacks on this daily,
+        // cursor-paged scheduler walk. Only holders with due evidence reach
+        // the TSA, and each write happens after the scan slice has closed.
+        for (let i = 0; i < renewalCandidates.length; i += 1) {
+          try {
+            evidenceRenewed += await this.deps.credentials
+              .renewAttestationEvidence(renewalCandidates[i], String(
+                config.value('webauthn.attestationEvidenceHashAlgorithm') ||
+                'sha256'));
+          } catch (e) {
+            evidenceFailures += 1;
+            log.error(errorCodes.tag('STS-AUTHN-0419') +
+              'passkey evidence renewal failed for a holder in realm ' +
+              realms.currentId() + ': ' + ((e && e.message) || e));
+          }
+        }
         // The end, or a cursor that did not move (a slice of nothing but
         // entries that are not people), ends the count; never the number
         // of people a slice happened to hold.
@@ -614,7 +653,9 @@ class PasskeyReport {
     log.debug("Leaving PasskeyReport.recountAsync().");
     return { summary: 'Counted ' + holders + ' passkey holder(s) in ' +
                       row.durationMs + ' ms.',
-             holders: holders, durationMs: row.durationMs };
+             holders: holders, durationMs: row.durationMs,
+             evidenceRenewed: evidenceRenewed,
+             evidenceFailures: evidenceFailures };
   }
 
   // The baseline and every process's changes under its epoch, added.

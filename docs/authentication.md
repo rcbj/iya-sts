@@ -216,6 +216,22 @@ whose statement nothing verified is shown as *claimed*: a client that believed
 this service's word on an unverified statement would have learned something
 false about a real device.
 
+**Optional long-term evidence for trusted classical attestations (#947).**
+Configure `webauthn.attestationEvidenceTsaUrl` with an HTTPS RFC 3161 timestamp
+authority and `webauthn.attestationEvidenceTsaTrustAnchors` with its PEM trust
+anchors. The service then archives the exact attestation bytes together with
+the verification result in an RFC 4998 EvidenceRecord. The TSA token's
+signature, message imprint, certificate path and critical
+`id-kp-timeStamping` purpose are verified before registration succeeds. This
+feature is off when the TSA URL is empty; when enabled, a TSA failure refuses
+the registration. It applies to newly registered trusted classical
+attestations, not post-quantum or untrusted statements. Daily passkey report
+recounts renew timestamps; setting
+`webauthn.attestationEvidenceHashAlgorithm` to `sha384` or `sha512` requests
+hash-tree renewal into a new chain. Admins can export a record from the
+person's passkey page or the evidence export endpoint documented in
+[Passkeys and WebAuthn](passkeys.md#rfc-4998-evidence-for-classical-attestations).
+
 **A classical passkey and a post-quantum one, side by side**
 (`webauthn.pqcAlongsideClassical`, off by default, per realm). An
 authenticator replaces a passkey it already holds for this service when it
@@ -1045,6 +1061,9 @@ See [What is not checked](what-is-not-checked.md).
 | `webauthn.attestation` | `STS_WEBAUTHN_ATTESTATION` | `direct` | yes | The attestation conveyance asked for at registration. Whether a statement is verified is `webauthn.attestationPolicy`'s decision, not this setting's ([WebAuthn](#webauthn), above). |
 | `webauthn.attestationPolicy` | `STS_WEBAUTHN_ATTESTATION_POLICY` | `by-mode` | yes | What a registration's attestation statement must be: `verify-if-present` verifies every statement and refuses one that does not verify (`none`, self attestation and an unknown chain are accepted and recorded); `require-trusted` refuses anything that does not chain to an anchor, so no synced passkey; `off` verifies nothing (development only; product reads it as `by-mode`). `by-mode` is `verify-if-present` in product mode and `off` in development. |
 | `webauthn.attestationTrustAnchors` | `STS_WEBAUTHN_ATTESTATION_TRUST_ANCHORS` | *(empty)* | yes | Root certificates (a PEM bundle) an attestation certificate may chain to, beside those the FIDO Metadata Service lists; empty trusts only what the active MDS BLOB lists. |
+| `webauthn.attestationEvidenceTsaUrl` | `STS_WEBAUTHN_ATTESTATION_EVIDENCE_TSA_URL` | *(empty)* | yes | HTTPS RFC 3161 timestamp authority for optional RFC 4998 evidence records. Empty disables evidence recording; when enabled, TSA failure refuses registration of an eligible attestation. |
+| `webauthn.attestationEvidenceTsaTrustAnchors` | `STS_WEBAUTHN_ATTESTATION_TSA_TRUST_ANCHORS` | *(empty)* | yes | PEM trust anchors for validating timestamp tokens and their TSA certificate path. |
+| `webauthn.attestationEvidenceHashAlgorithm` | `STS_WEBAUTHN_ATTESTATION_HASH_ALGORITHM` | `sha256` | yes | Digest for new evidence records; `sha384` or `sha512` triggers RFC 4998 hash-tree renewal during the daily passkey report recount. |
 | `webauthn.attestationAllowedAaguids` | `STS_WEBAUTHN_ATTESTATION_ALLOWED_AAGUIDS` | *(empty: any model)* | yes | The authenticator models (AAGUIDs, comma-separated) a key may be registered from. Set, it requires a trusted attestation whatever the policy says. |
 | `webauthn.attestationMinCertificationLevel` | `STS_WEBAUTHN_ATTESTATION_MIN_CERTIFICATION` | `none` | yes | The least FIDO certification level (`L1` to `L3plus`) a model must hold, from MDS status reports; anything but `none` requires a trusted attestation from a model MDS lists. |
 | `webauthn.attestationRequireFips` | `STS_WEBAUTHN_ATTESTATION_REQUIRE_FIPS` | `false` | yes | Refuse a model MDS does not report as FIPS 140 certified; on, it requires a trusted attestation from a model MDS lists. |

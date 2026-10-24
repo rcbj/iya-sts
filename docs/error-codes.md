@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4599** of them, in **47** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4602** of them, in **47** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 352
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 355
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 724
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 115
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 33
@@ -1541,6 +1541,9 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0417` | The passkey report's directory slot was offered without one of its three functions, so nothing was installed and the report counts nothing. | none — logged at startup |
 | `STS-AUTHN-0418` | A Monitoring → Passkeys action was refused: an action that does not exist, or a recount the scheduler could not queue. | HTTP 400 from POST /admin-api/passkey-report/{action} |
 | `STS-AUTHN-0420` | A passkey registration asked to be retried with the classical algorithms only (#944) — the retry offered after an ML-DSA-first registration failed on the device — where the realm forbids a classical passkey: webauthn.pqcOnly is on, the passkey policy's postQuantumRequired is registration-and-sign-in, or, at the sign-in step, it requires a post-quantum passkey to sign in. Refused before the ceremony is armed; nothing is written. | HTTP 400 (the sign-in API and the account API) |
+| `STS-AUTHN-0421` | A passkey evidence export did not name both a username and a credential id. | HTTP 400 from GET /admin-api/passkey-report/evidence |
+| `STS-AUTHN-0422` | The named passkey has no RFC 4998 evidence record to export. | HTTP 404 from GET /admin-api/passkey-report/evidence |
+| `STS-AUTHN-0419` | An RFC 4998 passkey evidence record could not be renewed; the previous record remains stored and the failure is logged for retry on the next daily passkey report recount. | none — logged; no credential or prior evidence record is changed |
 
 ## STS-OAUTH
 

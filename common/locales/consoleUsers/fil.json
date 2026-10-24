@@ -1,4 +1,5 @@
 {
+  "attestationEvidence": "I-download ang RFC 4998 na ebidensya",
   "body.tipQ": "Ipakita lang ang mga taong naglalaman ang username ng tekstong ito, anuman ang malaki o maliit na titik.",
   "body.tipProtocol": "Ipakita lang ang mga taong nakapag-sign in na kahit minsan sa protocol na ito. Ang listahan ay bawat protocol na pinag-sign in-an ng sinumang nakalista rito.",
   "body.tipFactor": "Ipakita lang ang mga taong nasa estadong ito ng second factor. Ang «enrolment this process cannot read» ay isang authenticator app na na-enroll sa ilalim ng key na hindi mabuksan ng process na ito. Ang taong walang sumasagot na credential store ay tumutugma lang sa «any state».",

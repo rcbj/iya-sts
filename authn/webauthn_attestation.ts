@@ -437,6 +437,34 @@ class WebauthnAttestation {
       log.debug("Leaving WebauthnAttestation.assessUnder(). Level.");
       return refuse('STS-AUTHN-0238', levelProblem, recorded);
     }
+    // RFC 4998 EVIDENCE FOR CLASSICAL ATTESTATIONS (#947). The archive
+    // object binds the exact authenticator bytes to the verification result
+    // this service accepted. An enabled TSA is fail-closed: accepting a key
+    // while silently losing the requested evidence would misstate policy.
+    if (recorded.trusted && recorded.verified &&
+        !WebauthnAttestation.postQuantumAttestation(recorded.algorithms) &&
+        String(require('../common/config').value(
+          'webauthn.attestationEvidenceTsaUrl') || '').trim()) {
+      const raw = Buffer.from(verdict.attestationObjectRaw || []);
+      if (!raw.length) {
+        throw new Error('The raw attestation object was not preserved.');
+      }
+      const resultBytes = Buffer.from(JSON.stringify({
+        fmt: recorded.format, type: recorded.type,
+        verified: recorded.verified, trusted: recorded.trusted,
+        anchor: recorded.anchor, aaguid: recorded.aaguid,
+        algorithms: recorded.algorithms
+      }), 'utf8');
+      const length = Buffer.alloc(8);
+      length.writeUInt32BE(raw.length, 0);
+      length.writeUInt32BE(resultBytes.length, 4);
+      const archiveObject = Buffer.concat([
+        Buffer.from('IYA-PASSKEY-ATTESTATION-EVIDENCE-1\0', 'ascii'),
+        length, raw, resultBytes
+      ]);
+      recorded.evidence = await require('../common/passkey_evidence')
+        .create(archiveObject);
+    }
     log.info('webauthn: a ' + base.format + ' attestation verified (' +
              statement.type + ', ' + (recorded.trusted
                ? 'trusted through ' + recorded.anchor : 'untrusted') +
