@@ -585,10 +585,13 @@ class PasskeyReport {
             return true;
           }
         });
-        after = answer.next;
-        if (answer.done || !answer.read) {
+        // The end, or a cursor that did not move (a slice of nothing but
+        // entries that are not people), ends the count; never the number
+        // of people a slice happened to hold.
+        if (answer.done || answer.next === after) {
           break;
         }
+        after = answer.next;
       }
     } catch (e) {
       log.error(errorCodes.tag('STS-AUTHN-0412') + 'passkey report: the ' +
@@ -1168,10 +1171,10 @@ class PasskeyReport {
             return true;
           }
         });
-        after = answer.next;
-        if (answer.done || !answer.read) {
+        if (answer.done || answer.next === after) {
           break;
         }
+        after = answer.next;
         if (out.length >= EXPORT_LIMIT) {
           truncated = true;
           break;
