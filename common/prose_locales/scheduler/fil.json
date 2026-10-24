@@ -287,6 +287,14 @@
     "en": "183fddf95526a70b",
     "text": "Inaalis ang bawat client na nakarehistro sa pamamagitan ng OpenID Federation Trust Chain na natapos na ang registration (12.3). Sinasagot na ng bawat endpoint ang ganitong client bilang hindi kilala; pinipigilan lang nito na manatili ang entry."
   },
+  "sched.jobs.passkeys.report-recount.title": {
+    "en": "484d9dcdbd9a681e",
+    "text": "Muling pagbilang ng ulat ng passkey"
+  },
+  "sched.jobs.passkeys.report-recount.describe": {
+    "en": "049675db215c0863",
+    "text": "Binibilang ang mga passkey ng realm para sa Monitoring → Mga passkey (#942): ayon sa algorithm at lane, ang mga taong may hawak na post-quantum lang, classical lang o pareho, at kung aling mga modelo ng authenticator ang may hawak ng aling mga algorithm. Binabasa lang ang mga taong may hawak ng passkey, isang page sa bawat pagkakataon; idinadagdag ang mga pagbabagong ginawa pagkatapos nito habang isinusulat ang mga ito."
+  },
   "sched.jobs.persistence.minted-expiry-purge.title": {
     "en": "2e5c5abaf78a47c9",
     "text": "Pag-purge ng mga expired na minted row"

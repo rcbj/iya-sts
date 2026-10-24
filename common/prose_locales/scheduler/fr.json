@@ -287,6 +287,14 @@
     "en": "183fddf95526a70b",
     "text": "Supprime chaque client enregistré via une Trust Chain OpenID Federation dont l’enregistrement est terminé (12.3). Chaque point de terminaison traite déjà un tel client comme inconnu ; ceci évite seulement que l’entrée ne subsiste."
   },
+  "sched.jobs.passkeys.report-recount.title": {
+    "en": "484d9dcdbd9a681e",
+    "text": "Recomptage du rapport des clés d’accès"
+  },
+  "sched.jobs.passkeys.report-recount.describe": {
+    "en": "049675db215c0863",
+    "text": "Compte les clés d’accès du domaine pour Supervision → Clés d’accès (#942) : par algorithme et par voie, les personnes qui détiennent uniquement du post-quantique, uniquement du classique ou les deux, et quels modèles d’authentificateur détiennent quels algorithmes. Ne lit que les personnes qui détiennent une clé d’accès, une page à la fois ; les changements faits après sont ajoutés à mesure qu’ils sont écrits."
+  },
   "sched.jobs.persistence.minted-expiry-purge.title": {
     "en": "2e5c5abaf78a47c9",
     "text": "Purge des lignes créées expirées"

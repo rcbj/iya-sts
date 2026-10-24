@@ -1747,6 +1747,18 @@
     "en": "15a8c6d83ed6bc92",
     "text": "NON-SPEC (#221). add-destination, update-destination, remove-destination at test-push (isang canary version na isinulat sa isang test secret): ang apat na act ng console, bawat isa ay ina-audit. Tinatanggap ang write credential at hindi kailanman ibinabalik."
   },
+  "stsmetadata.endpoints./admin-api/passkey-report.what": {
+    "en": "d45e78dec310a21d",
+    "text": "NON-SPEC (#942). Ang iginuguhit ng Monitoring → Mga passkey: ang mga passkey ng realm ayon sa algorithm at lane, ang mga tao nito ayon sa uri (post-quantum lang, classical lang, pareho, wala), kung aling mga modelo ng authenticator ang may hawak ng aling mga algorithm, at ang postQuantumRequired ng bawat passkey profile; sinasala ayon sa grupo, passkey profile o application, kasama ang listahang naka-page ayon sa cursor ng mga tao sa likod ng anumang bilang. Ang mga bilang ay isang pinapanatiling aggregate — araw-araw na muling pagbilang ng mga may hawak dagdag ang mga pagbabagong naitala habang isinusulat ang mga key — at hindi kailanman pag-scan ng directory sa bawat request."
+  },
+  "stsmetadata.endpoints./admin-api/passkey-report/export.what": {
+    "en": "41f6fbe31db08a88",
+    "text": "NON-SPEC (#942). Ang mga taong pinangangalanan ng isang bilang sa Monitoring → Mga passkey, bilang CSV o JSON, binabasa nang isang page ng mga may hawak sa bawat pagkakataon, hanggang isandaang libong row at sinasabi kapag pinutol. Walang key material."
+  },
+  "stsmetadata.endpoints./admin-api/passkey-report/:action.what": {
+    "en": "cd923c72e2ca4fba",
+    "text": "NON-SPEC (#942). recount: inilalagay sa pila ang job na passkeys.report-recount para sa realm na ito sa leader ng scheduler, na ginagawang bagong baseline ang isang bagong bilang ng mga may hawak. Ang nag-iisang aksyon ng console sa page na iyon; tumatakbo ito kung saan tumatakbo ang bawat job, hindi kailanman sa request."
+  },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
     "text": "NON-SPEC (#552). Ang iginuguhit ng Protocols → SCIM → Clients: ang mga application entry na idineklara para sa scim-client — ang mga service provider na pinu-push-an ng realm na ito ng mga tao at group nito — bawat isa kasama ang mga bilang ng queue at backoff pause nito, at kapag may ?client=, ang retry at dead-letter queue at discovery ng isang client. Hindi kailanman credential."

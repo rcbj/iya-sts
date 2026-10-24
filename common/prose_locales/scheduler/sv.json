@@ -287,6 +287,14 @@
     "en": "183fddf95526a70b",
     "text": "Tar bort varje klient som registrerats genom en OpenID Federation Trust Chain vars registrering har upphört (12.3). Varje slutpunkt besvarar redan en sådan klient som okänd; detta hindrar bara posten från att ligga kvar."
   },
+  "sched.jobs.passkeys.report-recount.title": {
+    "en": "484d9dcdbd9a681e",
+    "text": "Omräkning av nyckelrapporten"
+  },
+  "sched.jobs.passkeys.report-recount.describe": {
+    "en": "049675db215c0863",
+    "text": "Räknar sfärens nycklar för Övervakning → Nycklar (#942): per algoritm och spår, de personer som har endast postkvant, endast klassiska eller båda, och vilka autentiserarmodeller som har vilka algoritmer. Läser bara de personer som har en nyckel, en sida åt gången; ändringar som görs efteråt läggs till när de skrivs."
+  },
   "sched.jobs.persistence.minted-expiry-purge.title": {
     "en": "2e5c5abaf78a47c9",
     "text": "Rensning av utgångna skapade rader"

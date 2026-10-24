@@ -71,6 +71,8 @@
   "sched.jobs.oidfed.key-rotate-now.describe": "Rotates the realm's Federation Entity Key now — or, as an emergency, revokes the current and next keys as compromised and replaces them.",
   "sched.jobs.oidfed.registrations-expire.title": "OpenID Federation registrations that ended",
   "sched.jobs.oidfed.registrations-expire.describe": "Removes each client registered through an OpenID Federation Trust Chain whose registration has ended (12.3). Every endpoint already answers such a client as unknown; this only stops the entry lingering.",
+  "sched.jobs.passkeys.report-recount.title": "Passkey report recount",
+  "sched.jobs.passkeys.report-recount.describe": "Counts the realm's passkeys for Monitoring → Passkeys (#942): by algorithm and lane, the people holding post-quantum only, classical only or both, and which authenticator models hold which algorithms. Reads only the people holding a passkey, a page at a time; the changes made after it are added as they are written.",
   "sched.jobs.persistence.minted-expiry-purge.title": "Expired minted rows purge",
   "sched.jobs.persistence.minted-expiry-purge.describe": "Deletes from the shared store, in batches of 5000 and at most 20 batches of each kind per run, the minted rows no start will read again: past their own expiry, of a realm that is no longer defined (written over an hour ago), and a short-lived store's rows with no expiry older than persistence.mintedRetention.",
   "sched.jobs.persistence.tombstone-purge.title": "Expired tombstones sweep",

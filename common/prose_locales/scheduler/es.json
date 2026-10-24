@@ -287,6 +287,14 @@
     "en": "183fddf95526a70b",
     "text": "Quita cada cliente registrado mediante una Trust Chain de OpenID Federation cuyo registro haya terminado (12.3). Cada endpoint ya responde a ese cliente como desconocido; esto solo evita que la entrada permanezca."
   },
+  "sched.jobs.passkeys.report-recount.title": {
+    "en": "484d9dcdbd9a681e",
+    "text": "Recuento del informe de llaves de acceso"
+  },
+  "sched.jobs.passkeys.report-recount.describe": {
+    "en": "049675db215c0863",
+    "text": "Cuenta las llaves de acceso del dominio para Supervisión → Llaves de acceso (#942): por algoritmo y carril, las personas que tienen solo poscuánticas, solo clásicas o ambas, y qué modelos de autenticador tienen qué algoritmos. Lee solo las personas que tienen una llave de acceso, una página a la vez; los cambios hechos después se suman a medida que se escriben."
+  },
   "sched.jobs.persistence.minted-expiry-purge.title": {
     "en": "2e5c5abaf78a47c9",
     "text": "Purga de filas acuñadas caducadas"
