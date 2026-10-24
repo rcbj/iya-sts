@@ -23,7 +23,9 @@
 //      carries the named server's `iss` (the one the ID Token named, not the
 //      sign-out's) and the session's `sid`; frame-src names the relying
 //      party's origin and frame-ancestors survives; and section 4's return
-//      is a <meta> refresh to the post_logout_redirect_uri, with the link.
+//      is a <meta> refresh to the post_logout_redirect_uri, with the link;
+//      state posted through the confirmation form replaces a stale state
+//      already on the registered URI, in both return paths.
 //   e. oauth2.frontchannelLogoutWaitS=0 keeps the link and draws no refresh.
 //   f. A STORED URI THAT NO LONGER MATCHES — the redirect URI it shared an
 //      origin with removed — is reported on /logout's inventory and not
@@ -66,7 +68,7 @@ const realmApi = base + R + "/admin-api";
 const RP = "https://rp.fclogout.example.test";
 const REDIRECT = RP + "/cb";
 const FRONTCHANNEL = RP + "/fc";
-const POST_LOGOUT = RP + "/signed-out";
+const POST_LOGOUT = RP + "/signed-out?client=frontchannel&state=stale";
 // A named authorization server inside the realm. Unconfigured, it publishes
 // this service's defaults under an issuer of its own, which is all d needs.
 const AS = "fcx";
@@ -331,7 +333,7 @@ function signOutUrl(client) {
   log.debug("Entering signOutUrl().");
   log.debug("Leaving signOutUrl().");
   return R + "/oauth2/logout?" + form({ client_id: client.client_id,
-    post_logout_redirect_uri: POST_LOGOUT });
+    post_logout_redirect_uri: POST_LOGOUT, state: "frontchannel-state" });
 }
 
 async function test() {
@@ -419,9 +421,18 @@ async function test() {
     });
   check("section 4's return: a <meta> refresh to post_logout_redirect_uri " +
         "after 3 seconds, and the link", function () {
-    assert.ok(page.indexOf('<meta http-equiv="refresh" content="3;url=' +
-                           POST_LOGOUT + '">') >= 0, page.slice(0, 1200));
-    assert.ok(page.indexOf('<a href="' + POST_LOGOUT + '">') >= 0);
+    const meta = /<meta http-equiv="refresh" content="3;url=([^"]+)">/
+      .exec(page);
+    const link = /<a href="([^"]*\/signed-out[^"]*)">/.exec(page);
+    assert.ok(meta, page.slice(0, 1200));
+    assert.ok(link, page.slice(0, 1200));
+    [meta[1], link[1]].forEach(function (encoded) {
+      const returned = new URL(encoded.replace(/&amp;/g, "&"));
+      assert.deepStrictEqual(returned.searchParams.getAll("state"),
+        ["frontchannel-state"], returned.toString());
+      assert.strictEqual(returned.searchParams.get("client"),
+                         "frontchannel", returned.toString());
+    });
   });
 
   log.info("=== e. oauth2.frontchannelLogoutWaitS=0 ===");
@@ -461,10 +472,14 @@ async function test() {
   });
   out = await signOut(b, signOutUrl(client));
   check("and /oauth2/logout frames nothing: with nobody left to notify it " +
-        "answers the plain redirect", function () {
+        "answers the return with the request's state", function () {
     assert.ok(out.status === 302 || out.status === 303,
               out.status + " " + out.text.slice(0, 400));
-    assert.strictEqual(out.location, POST_LOGOUT);
+    const returned = new URL(out.location);
+    assert.deepStrictEqual(returned.searchParams.getAll("state"),
+      ["frontchannel-state"], returned.toString());
+    assert.strictEqual(returned.searchParams.get("client"), "frontchannel",
+                       returned.toString());
   });
 
   log.info("Test completed successfully. " + checks + " check(s) passed.");

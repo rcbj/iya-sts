@@ -2373,8 +2373,10 @@ nothing registered, a private-use address never (`0290`), OAuth 2.1 mode never
 (`0286`), product never (`0603`), development yes. `oauth2.redirectUris` — the
 AUTHORIZATION list — is no longer read. A refused return is NOT a refusal of
 the sign-out: the person is signed out and the page says where they were not
-sent. `state` rides on every return (`withLogoutState()`), the front-channel
-page's included.
+sent. `state` rides on every return (`withLogoutState()`), including the
+front-channel page's refresh and link. When the registered return URI already
+has a `state`, the request's value replaces it; duplicate query values can
+make an RP read stale state.
 
 **THE CONFIRMATION** is a form POSTing the request's own parameters back with
 `confirm_for`, a digest of the session's CURRENT handle hash
