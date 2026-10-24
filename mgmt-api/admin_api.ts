@@ -8618,6 +8618,56 @@ class AdminApi {
             responseDescription: 'What was revoked — its id, name and ' +
                                  'doors; never its hash.' },
 
+          // #939: the administrator proves the existing classical passkey
+          // in their browser before the API arms ML-DSA registration. These
+          // are separate operations because the proof is one-use and the
+          // person must approve each ceremony in the authenticator.
+          { action: 'begin-passkey-upgrade',
+            operationId: 'beginUserPasskeyUpgrade',
+            summary: 'Begin upgrading a person\'s classical passkey',
+            description: 'Mints a one-use assertion challenge for the named ' +
+                         'classical passkey. The passkey must be present in ' +
+                         'the administrator\'s browser to continue.',
+            requestBodyRequired: true,
+            requestBody: { type: 'object', properties: {
+              user: { type: 'string' }, credentialId: { type: 'string' }
+            }, required: ['user', 'credentialId'], additionalProperties: false },
+            responseDescription: 'The upgrade id and assertion ceremony.' },
+          { action: 'prove-passkey-upgrade',
+            operationId: 'proveUserPasskeyUpgrade',
+            summary: 'Prove possession of a person\'s classical passkey',
+            description: 'Verifies the assertion before offering the ' +
+                         'ML-DSA registration ceremony. A refused proof ' +
+                         'leaves the existing key unchanged.',
+            requestBodyRequired: true,
+            requestBody: { type: 'object', properties: {
+              user: { type: 'string' }, upgradeId: { type: 'string' },
+              credential: { type: 'string', maxLength: 65536 }
+            }, required: ['user', 'upgradeId', 'credential'],
+              additionalProperties: false },
+            responseDescription: 'The ML-DSA registration ceremony.' },
+          { action: 'finish-passkey-upgrade',
+            operationId: 'finishUserPasskeyUpgrade',
+            summary: 'Finish upgrading a person\'s passkey',
+            description: 'Verifies and stores the ML-DSA registration, ' +
+                         'preserving the existing key if registration fails.',
+            requestBodyRequired: true,
+            requestBody: { type: 'object', properties: {
+              user: { type: 'string' }, upgradeId: { type: 'string' },
+              credential: { type: 'string', maxLength: 65536 }
+            }, required: ['user', 'upgradeId', 'credential'],
+              additionalProperties: false },
+            responseDescription: 'The upgraded key and both algorithms.' },
+          { action: 'cancel-passkey-upgrade',
+            operationId: 'cancelUserPasskeyUpgrade',
+            summary: 'Cancel a person\'s pending passkey upgrade',
+            description: 'Discards the pending one-use upgrade ceremony.',
+            requestBodyRequired: true,
+            requestBody: { type: 'object', properties: {
+              user: { type: 'string' }
+            }, required: ['user'], additionalProperties: false },
+            responseDescription: 'Whether the pending upgrade was cancelled.' },
+
           { action: 'clear-key', operationId: 'clearUserSecurityKey',
             summary: 'Remove one of somebody\'s security keys',
             description: 'Goes through the same `removeKey()` the person\'s ' +

@@ -499,6 +499,7 @@
   "mfaSection.siopLabelTip": "A name for this key, so it can be told from the others: the wallet or device it is in.",
   "mfaSection.enrolTitle": "Whoever holds this key signs in as this person. Enrol only a key you know is theirs.",
   "mfaSection.enrol": "Enrol",
+  "mfaSection.upgrade": "Upgrade to ML-DSA",
   "mfaSection.siopNeedsWrite": "Enrolling or removing one needs <strong>Admin Write</strong>.",
   "mfaSection.leadBefore": "Everything in this section is about <code>{name}</code> and is read from their own directory entry, through the same <code>credentials.mechanismsFor()</code> the sign-in screen and the user portal ask. The mechanisms themselves are configured on ",
   "mfaSection.leadAnd": " and ",

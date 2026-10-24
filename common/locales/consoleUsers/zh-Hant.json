@@ -499,6 +499,7 @@
   "mfaSection.siopLabelTip": "此金鑰的名稱，以便與其他金鑰區分：它所在的錢包或裝置。",
   "mfaSection.enrolTitle": "持有此金鑰的任何人都會以此人身分登入。只登記您確知屬於他們的金鑰。",
   "mfaSection.enrol": "登記",
+  "mfaSection.upgrade": "升級至 ML-DSA",
   "mfaSection.siopNeedsWrite": "登記或移除需要 <strong>Admin Write</strong>。",
   "mfaSection.leadBefore": "本區段的所有內容都關於 <code>{name}</code>，並透過登入畫面和使用者入口網站所詢問的同一個 <code>credentials.mechanismsFor()</code>，從其自己的目錄項目讀取。機制本身在「通訊協定」下的",
   "mfaSection.leadAnd": "和",

@@ -3529,9 +3529,12 @@ class Credentials {
    * @param username - the person
    * @param credential - what the ceremony produced
    * @param role - `primary` or `mfa`
+   * @param opts - `upgrade` (#939): `{ credentialId, mode }`, the classical
+   *   passkey this key upgrades and what the write does to it — `replace`
+   *   puts this key in its place, `alongside` keeps it beside this one
    * @returns `{ ok: true, username, role, … }`, or a refusal
    */
-  addKey(username, credential, role) {
+  addKey(username, credential, role, opts?) {
     const { log, backupCodes, webauthnPolicy, errorCodes } = this.deps;
     const { ROLES } = Credentials;
     const directory = this.directory;
@@ -3632,6 +3635,39 @@ class Credentials {
     if (typeof given.backupEligible === 'boolean') {
       facts.backupEligible = given.backupEligible;
     }
+    // AN UPGRADE (#939): the classical passkey it upgrades, looked up NOW
+    // among this person's keys — the entry as it is at the write, not as
+    // it was at the proof — and its algorithm sent to the policy beside
+    // what the write will do. Gone since the proof, nothing is written:
+    // the classical key it was to replace or annotate is not there to be
+    // left untouched, and a key added "beside" a key nobody holds is an
+    // ordinary registration nobody began.
+    const upgrade = opts && opts.upgrade ? opts.upgrade : null;
+    const upgrading = upgrade ? this.keysOf(name).filter(function (one) {
+      return String(one.credentialId) === String(upgrade.credentialId);
+    })[0] || null : null;
+    if (upgrade && (!upgrading ||
+                    Credentials.keyAlgorithm(upgrading).postQuantum ||
+                    (upgrade.mode === 'alongside' &&
+                     upgrading.upgradedTo &&
+                     this.keysOf(name).some(function (one) {
+                       return String(one.credentialId) ===
+                              String(upgrading.upgradedTo);
+                     })))) {
+      log.info('credentials: the passkey upgrade of ' + name + ' found ' +
+               'the classical passkey gone or already upgraded at the ' +
+               'write; nothing was written.');
+      log.debug("Leaving Credentials.addKey(). The upgraded key is gone.");
+      return coded('STS-AUTHN-0457', { ok: false, reason: 'upgrade',
+               errors: ['The passkey you were upgrading was removed or ' +
+                        'upgraded by another request since you used it, ' +
+                        'so nothing was changed.'] });
+    }
+    if (upgrading) {
+      facts.upgrade = { mode: upgrade.mode,
+                        previousAlgorithm:
+                          Credentials.keyAlgorithm(upgrading).name };
+    }
     const synced = this.deps.passkeyPolicy.refusalFor('registration', facts);
     if (synced) {
       const reason = synced.reason === 'pin-length' ? 'pin-length'
@@ -3674,7 +3710,11 @@ class Credentials {
                         'with the original.'] });
     }
     const cap = webauthnPolicy.settings().maxKeysPerPerson;
-    if (held.length >= cap) {
+    // AN UPGRADE IN PLACE (#939) ADDS NO KEY: the one it replaces is not
+    // counted, so a person at the cap may still upgrade. Beside it, it is
+    // one more key, and counted.
+    const replacing = !!(upgrading && upgrade.mode === 'replace');
+    if (held.length - (replacing ? 1 : 0) >= cap) {
       log.info('credentials: ' + name + ' already holds ' + held.length +
                ' security key(s) and webauthn.maxKeysPerPerson is ' + cap +
                ', so another was not enrolled.');
@@ -3766,6 +3806,27 @@ class Credentials {
         String(credential.providerSource || '')) >= 0
         ? String(credential.providerSource) : ''
     };
+    // THE UPGRADE'S HISTORY (#939), on the new key: when, from which
+    // algorithm and which credential, and what the write did. In place the
+    // key keeps the name and the enrolment date of the one it replaces —
+    // it is that passkey, made stronger — and beside it, the name only.
+    if (upgrading) {
+      const before = Credentials.keyAlgorithm(upgrading);
+      const extra: Record<string, any> = record;
+      extra.upgradedAt = record.enrolledAt;
+      extra.previousAlgorithm = before.name;
+      extra.previousCoseAlg = before.coseAlg || null;
+      extra.previousCredentialId = String(upgrading.credentialId);
+      extra.upgradeMode = upgrade.mode === 'alongside' ? 'alongside'
+                                                       : 'replace';
+      record.label = String(Credentials.keyName(upgrading) || '')
+        .slice(0, 60);
+      if (replacing) {
+        record.enrolledAt = Number(upgrading.enrolledAt) || record.enrolledAt;
+        // ITS LAST USE STAYS ITS OWN: the proof was a use of the classical
+        // key, and this one has not signed anybody in yet.
+      }
+    }
     if (!record.label) {
       // THE PASSKEY POLICY'S LABEL FIRST (#533), with {provider} and {kind}
       // filled in; else the provider's or the group's name, as before.
@@ -3777,7 +3838,26 @@ class Credentials {
     }
     let written = false;
     try {
-      written = directory.writeWebauthn(name, JSON.stringify(record));
+      // AN UPGRADE IS ONE WRITE OF THE WHOLE SET (#939), so the classical
+      // key is changed in the same act that adds the new one and never
+      // before it: in place, the new key where the old one was; beside it,
+      // the old one marked with its successor and the new one appended.
+      // Every other row is written back as it was read, at the write.
+      written = upgrading
+        ? directory.replaceWebauthn(name, this.keysOf(name).map(
+            function (one) {
+              if (String(one.credentialId) !==
+                  String(upgrading.credentialId)) {
+                return JSON.stringify(one);
+              }
+              if (replacing) {
+                return JSON.stringify(record);
+              }
+              return JSON.stringify(Object.assign({}, one, {
+                upgradedTo: record.credentialId,
+                upgradedAt: (record as Record<string, any>).upgradedAt }));
+            }).concat(replacing ? [] : [JSON.stringify(record)])) !== false
+        : directory.writeWebauthn(name, JSON.stringify(record));
     } catch (e) {
       log.error(errorCodes.tag('STS-AUTHN-0068') +
                 'credentials: writing a security key for ' + name + ' threw: ' +
@@ -3926,10 +4006,11 @@ class Credentials {
    * @param username - the person
    * @param credential - what the ceremony produced
    * @param role - `primary` or `mfa`
+   * @param opts - as `addKey()`'s: `upgrade` (#939)
    * @returns a promise of `addKey()`'s answer, or a refusal (`duplicate`,
    *   `store`)
    */
-  addKeyClaimed(username, credential, role) {
+  addKeyClaimed(username, credential, role, opts?) {
     const { log, realms, errorCodes, claims } = this.deps;
     const {
       WEBAUTHN_REGISTRATION_SCOPE,
@@ -3941,7 +4022,7 @@ class Credentials {
     if (!credentialId) {
       log.debug("Leaving Credentials.addKeyClaimed(). No id to claim; " +
                 "addKey() decides.");
-      return Promise.resolve(this.addKey(username, credential, role));
+      return Promise.resolve(this.addKey(username, credential, role, opts));
     }
     const name = String(username || '').trim();
     log.debug("Leaving Credentials.addKeyClaimed(). Claiming the " +
@@ -3969,7 +4050,7 @@ class Credentials {
           errors: ['The security key could not be registered just now. Try ' +
                    'again.'] });
       }
-      const stored = this.addKey(username, credential, role);
+      const stored = this.addKey(username, credential, role, opts);
       if (!stored.ok) {
         claims.release(claimed.handle);
       }
@@ -9274,6 +9355,17 @@ class Credentials {
     // THE ID IS CHECKED, so that a ceremony begun in one tab cannot be finished
     // with the challenge of another. It is the same rule the sign-in screen's
     // `mfa_id` follows.
+    // AN UPGRADE IN PROGRESS (#939) IS NOT AN ENROLMENT: it is finished
+    // through `confirmKeyUpgrade()`, whose write replaces or annotates the
+    // classical key. Finished here it would add a key without the proof of
+    // possession the upgrade's first step asks for.
+    if (held.upgrade) {
+      log.debug('Leaving Credentials.checkKeyEnrolment(). An upgrade, not ' +
+                'an enrolment.');
+      return coded('STS-AUTHN-0456', { ok: false, reason: 'mismatch',
+               errors: ['A passkey upgrade is in progress, not a new ' +
+                        'passkey. Finish or cancel the upgrade.'] });
+    }
     if (String(enrolmentId || '') !== held.id) {
       log.debug('Leaving Credentials.checkKeyEnrolment(). A different ' +
                 'enrolment.');
@@ -9363,35 +9455,49 @@ class Credentials {
       }
       return Credentials.keyProviderFor(verdict.aaguid,
         attested.attestation).then((named) => {
-      return this.addKeyClaimed(name, {
-        provider: named.provider,
-        providerSource: named.providerSource,
-        credentialId: verdict.credentialId,
-        publicKeyJwk: verdict.publicKeyJwk,
-        signCount: verdict.signCount,
-        label: held.label || undefined,
-        attachment: credential.authenticatorAttachment || null,
-        userVerified: !!(verdict.flags && verdict.flags.uv),
-        aaguid: verdict.aaguid || null,
-        algorithm: verdict.algorithm || null,
-        coseAlg: verdict.coseAlg || null,
-        attestation: attested.attestation,
-        // #470: what the passkey pages group and describe the key by.
-        backupEligible: !!(verdict.flags && verdict.flags.be),
-        backupState: !!(verdict.flags && verdict.flags.bs),
-        transports: Credentials.transportsOf(credential),
-        discoverable: Credentials.discoverableOf(credential),
-        // CTAP 2.1's minPinLength, as the key reported it (#529).
-        minPinLength: Credentials.reportedMinPinLength(verdict),
-        // The handle the page created it under (#474), and its lane (#643),
-        // both off the pending record.
-        userHandle: held.userHandle,
-        lane: held.lane || 'classical'
-      }, held.role).then((stored) => {
+      return this.addKeyClaimed(name,
+        Credentials.registeredKey(verdict, credential, attested, named, held),
+        held.role).then((stored) => {
         return this.keyEnrolmentWritten(name, held, stored);
       });
       });
     });
+  }
+
+  // WHAT A VERIFIED REGISTRATION HANDS THE ONE WRITER, `addKey()`: the
+  // verifier's verdict, the browser's reports, the attestation's record and
+  // the provider's name, and what the pending record carried. One builder
+  // for the enrolment's finish and the upgrade's (#939), so the two write
+  // the same row for the same ceremony.
+  private static registeredKey(verdict, credential, attested, named,
+                               held): Record<string, any> {
+    helpers.log.debug("Entering Credentials.registeredKey().");
+    helpers.log.debug("Leaving Credentials.registeredKey().");
+    return {
+      provider: named.provider,
+      providerSource: named.providerSource,
+      credentialId: verdict.credentialId,
+      publicKeyJwk: verdict.publicKeyJwk,
+      signCount: verdict.signCount,
+      label: held.label || undefined,
+      attachment: credential.authenticatorAttachment || null,
+      userVerified: !!(verdict.flags && verdict.flags.uv),
+      aaguid: verdict.aaguid || null,
+      algorithm: verdict.algorithm || null,
+      coseAlg: verdict.coseAlg || null,
+      attestation: attested.attestation,
+      // #470: what the passkey pages group and describe the key by.
+      backupEligible: !!(verdict.flags && verdict.flags.be),
+      backupState: !!(verdict.flags && verdict.flags.bs),
+      transports: Credentials.transportsOf(credential),
+      discoverable: Credentials.discoverableOf(credential),
+      // CTAP 2.1's minPinLength, as the key reported it (#529).
+      minPinLength: Credentials.reportedMinPinLength(verdict),
+      // The handle the page created it under (#474), and its lane (#643),
+      // both off the pending record.
+      userHandle: held.userHandle,
+      lane: held.lane || 'classical'
+    };
   }
 
   // The end of `confirmKeyEnrolment()`, once the claimed write has answered.
@@ -9416,6 +9522,628 @@ class Credentials {
     log.debug('Leaving Credentials.keyEnrolmentWritten(). Enrolled.');
     return { ok: true, username: name, role: held.role,
              credentialId: stored.credentialId,
+             held: this.keysOf(name).length };
+  }
+
+  // ===========================================================================
+  // UPGRADING A CLASSICAL PASSKEY TO AN ML-DSA ONE (#939, 2026-10-23; rule
+  // 3ct).
+  //
+  // A person with a classical passkey and an authenticator that can make an
+  // ML-DSA one could register a second passkey (two rows for one device) or
+  // remove the classical one and register again (locked out if the new
+  // registration fails after the removal). The upgrade is three steps on
+  // the ONE pending record an enrolment uses (`pendingKeys`, persisted and
+  // per realm, so a ceremony begun on one node is finished on another), with
+  // `upgrade` on it — so beginning an ordinary enrolment drops an upgrade in
+  // progress and the reverse, and `checkKeyEnrolment()` refuses to finish an
+  // upgrade as an enrolment (STS-AUTHN-0456):
+  //
+  //   1. `beginKeyUpgrade()` refuses whatever it can know before a ceremony
+  //      (`keyUpgradeRefusal()`, and the issuance policy asked with the
+  //      `upgrade` fact group), and mints an ASSERTION challenge bound to
+  //      this upgrade and this one credential.
+  //   2. `proveKeyUpgrade()` verifies an assertion BY THAT CREDENTIAL over
+  //      that challenge — proof of possession, fresh, and spent across the
+  //      cluster like a sign-in's (`spendAssertion()`: the challenge claimed
+  //      once, the counter advanced) — and only then mints the REGISTRATION
+  //      challenge, with an exclude list that leaves the classical
+  //      credential out so the same authenticator may answer.
+  //   3. `confirmKeyUpgrade()` verifies the registration against ML-DSA
+  //      only (`webauthnPolicy.upgradeAlgorithmIds()`, section 7.1's
+  //      offered-algorithm check), its attestation as any registration's,
+  //      and hands the key to `addKeyClaimed()` with `upgrade`, whose ONE
+  //      write of the whole set replaces the classical row (`replace`) or
+  //      marks it with its successor and appends the new one
+  //      (`alongside`). Every registration rule applies — the passkey
+  //      policy's post-quantum and attestation-algorithm rows (#718, #941)
+  //      among them — and the classical row is touched by nothing before
+  //      that write, so any refusal leaves it as it was.
+  //
+  // **THE DEVICE IS NOT THIS SERVICE'S TO PROTECT, AND IT IS SAID**: in
+  // place, the registration is made under the classical lane's user handle,
+  // so an authenticator replaces the classical credential it holds as soon
+  // as it makes the new one — before this service has seen the answer. A
+  // write refused after that (the cap reached in another tab, a policy row
+  // changed mid-ceremony) leaves the classical row here and no classical
+  // credential on that device; the person signs in with another passkey or
+  // another way, and upgrades again. Every check that can be made before
+  // the ceremony is made before it for that reason. A key registered before
+  // #474 has no minted handle, and its upgrade is made under the one the
+  // person holds now, which a device keeps beside the old credential.
+  //
+  // **NO SESSION ENDS**: the classical key that signed sessions in is
+  // replaced by its own holder, who just proved possession of it — #722's
+  // removal ends sessions so that somebody removing a key they do not
+  // recognise signs out whoever enrolled it, and nobody here is a stranger
+  // to the key.
+  // ===========================================================================
+
+  /**
+   * The upgrade history one stored key carries (#939), or null: on a key
+   * that IS an upgrade, when, from which algorithm and credential, and
+   * what the write did; on a classical key upgraded beside it, which key
+   * succeeded it and when.
+   *
+   * @param key - the stored WebAuthn key
+   * @returns `{ upgradedAt, mode, previousAlgorithm, previousCredentialId,
+   *   upgradedTo }`, or null for a key no upgrade touched
+   */
+  static keyUpgradeHistory(key: any): { upgradedAt: number; mode: string;
+                                        previousAlgorithm: string;
+                                        previousCredentialId: string;
+                                        upgradedTo: string } | null {
+    helpers.log.debug("Entering Credentials.keyUpgradeHistory().");
+    const k = key || {};
+    if (!k.upgradedAt && !k.upgradedTo && !k.previousCredentialId) {
+      helpers.log.debug("Leaving Credentials.keyUpgradeHistory(). None.");
+      return null;
+    }
+    const out = {
+      upgradedAt: Number(k.upgradedAt) || 0,
+      mode: k.previousCredentialId
+        ? (k.upgradeMode === 'alongside' ? 'alongside' : 'replace') : '',
+      previousAlgorithm: String(k.previousAlgorithm || ''),
+      previousCredentialId: String(k.previousCredentialId || ''),
+      upgradedTo: String(k.upgradedTo || '') };
+    helpers.log.debug("Leaving Credentials.keyUpgradeHistory().");
+    return out;
+  }
+
+  /**
+   * Decides whether one of a person's keys may be upgraded to an ML-DSA
+   * one (#939), by everything knowable without the issuance policy: the
+   * realm offers it, the key is theirs and classical, it has no
+   * post-quantum successor still held, its role may still be enrolled,
+   * and — beside it — the cap leaves room.
+   *
+   * @param username - the person
+   * @param key - one of their stored keys, or null for an id that named
+   *   none of theirs
+   * @returns `{ ok: true }`, or a refusal carrying its code
+   */
+  keyUpgradeRefusal(username, key) {
+    const { log, webauthnPolicy, errorCodes } = this.deps;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.keyUpgradeRefusal().");
+    const realm = webauthnPolicy.upgradeRefusal();
+    if (!realm.ok) {
+      log.debug("Leaving Credentials.keyUpgradeRefusal(). Not offered.");
+      return coded(errorCodes.codeOf(realm) || 'STS-AUTHN-0450',
+                   { ok: false, reason: 'upgrade', errors: [realm.why] });
+    }
+    if (!key) {
+      log.debug("Leaving Credentials.keyUpgradeRefusal(). Not theirs.");
+      return coded('STS-AUTHN-0451', { ok: false, reason: 'upgrade',
+               errors: ['No passkey of that id is registered for ' +
+                        String(username || '') + '.'] });
+    }
+    if (Credentials.keyAlgorithm(key).postQuantum) {
+      log.debug("Leaving Credentials.keyUpgradeRefusal(). Already " +
+                "post-quantum.");
+      return coded('STS-AUTHN-0452', { ok: false, reason: 'upgrade',
+               errors: ['That passkey is already post-quantum (' +
+                        Credentials.keyAlgorithm(key).name + '); there is ' +
+                        'nothing to upgrade.'] });
+    }
+    const held = this.keysOf(username);
+    if (key.upgradedTo && held.some(function (one) {
+      return String(one.credentialId) === String(key.upgradedTo);
+    })) {
+      log.debug("Leaving Credentials.keyUpgradeRefusal(). Upgraded " +
+                "already.");
+      return coded('STS-AUTHN-0453', { ok: false, reason: 'upgrade',
+               errors: ['That passkey was already upgraded: its ' +
+                        'post-quantum passkey is beside it. Remove that one ' +
+                        'first to upgrade again.'] });
+    }
+    const role = webauthnPolicy.roleAllowed(key.role);
+    if (!role.ok) {
+      log.debug("Leaving Credentials.keyUpgradeRefusal(). The role is not " +
+                "allowed.");
+      return coded(errorCodes.codeOf(role) || 'STS-AUTHN-0044',
+                   { ok: false, reason: 'upgrade', errors: [role.why] });
+    }
+    if (webauthnPolicy.upgradeMode() === 'alongside' &&
+        held.length >= webauthnPolicy.settings().maxKeysPerPerson) {
+      log.debug("Leaving Credentials.keyUpgradeRefusal(). At the cap.");
+      return coded('STS-AUTHN-0067', { ok: false, reason: 'upgrade',
+               errors: ['You already hold ' + held.length + ' passkey(s), ' +
+                        'the most this realm allows, and the upgrade adds ' +
+                        'one beside this passkey. Remove one first.'] });
+    }
+    log.debug("Leaving Credentials.keyUpgradeRefusal(). Allowed.");
+    return { ok: true };
+  }
+
+  /**
+   * The person's keys an upgrade may be begun for (#939), by
+   * `keyUpgradeRefusal()`.
+   *
+   * @param username - the person
+   * @returns the stored keys, possibly none
+   */
+  upgradableKeysOf(username) {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.upgradableKeysOf().");
+    const out = this.keysOf(username).filter((one) => {
+      return this.keyUpgradeRefusal(username, one).ok;
+    });
+    log.debug("Leaving Credentials.upgradableKeysOf(). " + out.length);
+    return out;
+  }
+
+  /**
+   * The upgrade in progress (#939), if the pending record is one.
+   *
+   * @param username - the person
+   * @returns the pending record, or null
+   */
+  pendingKeyUpgradeFor(username) {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.pendingKeyUpgradeFor().");
+    const held = this.pendingKeyEnrolmentFor(username);
+    log.debug("Leaving Credentials.pendingKeyUpgradeFor().");
+    return held && held.upgrade ? held : null;
+  }
+
+  /**
+   * Begins the upgrade of one of a person's classical passkeys to an
+   * ML-DSA one (#939): refuses what it can before any ceremony and mints
+   * the assertion challenge the classical key proves possession over.
+   *
+   * @param username - the person
+   * @param credentialId - the classical passkey's credential id, looked up
+   *   among this person's keys
+   * @returns `{ ok: true, upgradeId, challenge, credentialId, mode, lane,
+   *   expiresAt }`, or a refusal
+   */
+  beginKeyUpgrade(username, credentialId) {
+    const { log, webauthnPolicy, crypto } = this.deps;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.beginKeyUpgrade().");
+    const name = String(username || '').trim();
+    if (!this.deps.passkeyPolicy.hasSelection()) {
+      this.deps.passkeyPolicy.select(name, '');
+    }
+    const directory = this.directory;
+    if (!directory || typeof directory.replaceWebauthn !== 'function') {
+      log.debug("Leaving Credentials.beginKeyUpgrade(). No store.");
+      return coded('STS-AUTHN-0059', { ok: false, errors: ['No credential ' +
+                   'store is installed, so no passkey can be upgraded.'] });
+    }
+    const key = this.keysOf(name).filter(function (one) {
+      return String(one.credentialId) === String(credentialId || '');
+    })[0] || null;
+    const refused = this.keyUpgradeRefusal(name, key);
+    if (!refused.ok) {
+      log.debug("Leaving Credentials.beginKeyUpgrade(). Refused.");
+      return refused;
+    }
+    const mode = webauthnPolicy.upgradeMode();
+    const previousAlgorithm = Credentials.keyAlgorithm(key).name;
+    // THE ISSUANCE POLICY, ASKED BEFORE ANY CEREMONY with what is known
+    // now: that this is an upgrade, what it does and from which
+    // algorithm. No built-in rule refuses on it; a realm's own rule that
+    // forbids upgrades is met here rather than after two ceremonies. The
+    // new key's own facts are asked at the write, as any registration's.
+    const policy = this.deps.passkeyPolicy.refusalFor('registration',
+      { username: name, upgrade: { mode: mode,
+                                   previousAlgorithm: previousAlgorithm } });
+    if (policy) {
+      log.debug("Leaving Credentials.beginKeyUpgrade(). The policy " +
+                "refused it.");
+      return coded(policy.code, { ok: false, reason: 'upgrade',
+                                  errors: [policy.why] });
+    }
+    this.sweepPendingKeys();
+    const record = {
+      id: crypto.randomBytes(24).toString('base64url'),
+      username: name,
+      // THE PROOF'S CHALLENGE, an assertion's, replaced by the
+      // registration's once the proof is in.
+      challenge: crypto.randomBytes(32).toString('base64url'),
+      role: String(key.role || 'mfa'),
+      // The kind of authenticator the classical key is on, so the
+      // registration asks for the same kind (`creationOptions()`).
+      kind: Credentials.keyGroup(key) === 'security-key' ? 'security-key'
+                                                         : 'passkey',
+      lane: webauthnPolicy.upgradeLane(),
+      classicalOnly: false,
+      // ITS NAME, which the upgraded key keeps.
+      label: String(Credentials.keyName(key) || '').slice(0, 60),
+      userHandle: '',
+      exclude: [],
+      upgrade: { credentialId: String(key.credentialId), mode: mode,
+                 phase: 'proof', previousAlgorithm: previousAlgorithm,
+                 provenAt: 0 },
+      expires: Date.now() + this.keyEnrolmentTtlMs()
+    };
+    pendingKeys.set(name.toLowerCase(), record);
+    log.info('credentials: ' + name + ' began upgrading a ' +
+             previousAlgorithm + ' passkey to a post-quantum one (' + mode +
+             ').');
+    log.debug("Leaving Credentials.beginKeyUpgrade(). The proof's " +
+              "challenge is minted and held.");
+    return { ok: true, upgradeId: record.id, challenge: record.challenge,
+             credentialId: record.upgrade.credentialId, mode: mode,
+             lane: record.lane, role: record.role,
+             previousAlgorithm: previousAlgorithm,
+             expiresAt: new Date(record.expires).toISOString() };
+  }
+
+  // The pending upgrade a step answers, or the refusal that says why
+  // there is none to answer: nothing pending (0425), another one (0425),
+  // or the step out of order (0427).
+  private upgradeInHand(name, upgradeId, phase) {
+    const { log } = this.deps;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.upgradeInHand(). " + phase);
+    const held = this.pendingKeyEnrolmentFor(name);
+    if (!held || !held.upgrade || String(upgradeId || '') !== held.id) {
+      log.debug("Leaving Credentials.upgradeInHand(). None in progress.");
+      return { held: null, refused: coded('STS-AUTHN-0454',
+        { ok: false, reason: 'expired',
+          errors: ['That passkey upgrade is not the one in progress, or it ' +
+                   'has expired. Your passkey is unchanged; start again.'] }) };
+    }
+    if (held.upgrade.phase !== phase) {
+      log.debug("Leaving Credentials.upgradeInHand(). Out of order.");
+      return { held: null, refused: coded('STS-AUTHN-0456',
+        { ok: false, reason: 'mismatch',
+          errors: [phase === 'proof'
+            ? 'This passkey has already been used for this upgrade; create ' +
+              'the post-quantum passkey now.'
+            : 'Use your passkey first, to show it is yours, before the ' +
+              'post-quantum passkey is created.'] }) };
+    }
+    log.debug("Leaving Credentials.upgradeInHand().");
+    return { held: held, refused: null };
+  }
+
+  /**
+   * The upgrade's proof of possession (#939): verifies an assertion by the
+   * classical passkey over the challenge `beginKeyUpgrade()` minted,
+   * spends it across the cluster, and mints the registration's challenge.
+   * A refused proof drops the upgrade; the passkey is unchanged.
+   *
+   * @param username - the person
+   * @param upgradeId - the upgrade in progress
+   * @param assertion - what the browser posted
+   * @param opts - `origin` and `rpId`, what the browser was talking to
+   * @returns a promise of `{ ok: true, challenge, userHandle, exclude,
+   *   lane }`, or a refusal
+   */
+  proveKeyUpgrade(username, upgradeId, assertion, opts?) {
+    const { log, webauthnPolicy, webauthnVerifier, errorCodes } = this.deps;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.proveKeyUpgrade().");
+    const name = String(username || '').trim();
+    const options = opts || {};
+    const inHand = this.upgradeInHand(name, upgradeId, 'proof');
+    if (!inHand.held) {
+      log.debug("Leaving Credentials.proveKeyUpgrade(). Nothing to prove.");
+      return Promise.resolve(inHand.refused);
+    }
+    const held = inHand.held;
+    const key = this.keysOf(name).filter(function (one) {
+      return String(one.credentialId) === String(held.upgrade.credentialId);
+    })[0] || null;
+    // THE CEREMONY'S ROW (#943), however it ends: an assertion at the
+    // upgrade's door, by the key being upgraded.
+    const note = (answer, algorithm?) => {
+      log.debug("Entering proveKeyUpgrade() note().");
+      webauthnCeremonies.record({
+        ceremony: 'assertion', door: 'upgrade', username: name,
+        role: String(held.role || ''),
+        lane: key ? Credentials.keyLane(key) : 'classical',
+        outcome: answer && answer.ok ? 'success' : 'refused',
+        errorCode: answer && answer.ok ? ''
+          : String(errorCodes.codeOf(answer) || ''),
+        offered: key ? [Credentials.keyAlgorithm(key).name] : [],
+        algorithm: String(algorithm || ''), posted: assertion });
+      log.debug("Leaving proveKeyUpgrade() note().");
+      return answer;
+    };
+    const dropped = (code, why) => {
+      log.debug("Entering proveKeyUpgrade() dropped().");
+      this.abandonKeyEnrolment(name);
+      log.debug("Leaving proveKeyUpgrade() dropped().");
+      return note(coded(code, { ok: false, reason: 'proof', errors: [why] }));
+    };
+    if (!key) {
+      log.debug("Leaving Credentials.proveKeyUpgrade(). The key is gone.");
+      return Promise.resolve(dropped('STS-AUTHN-0457', 'The passkey you ' +
+        'were upgrading is no longer registered, so nothing was changed.'));
+    }
+    const response = assertion && assertion.response;
+    if (!assertion || assertion.error || !response ||
+        !response.authenticatorData || !response.signature) {
+      log.debug("Leaving Credentials.proveKeyUpgrade(). No assertion.");
+      return Promise.resolve(dropped('STS-AUTHN-0455',
+        (assertion && assertion.error
+          ? 'Your browser did not use the passkey (' + assertion.error +
+            '). '
+          : 'Your browser did not use the passkey. ') +
+        'Nothing was changed; start the upgrade again when you are ready.'));
+    }
+    if (String(assertion.rawId || assertion.id || '') !==
+        String(key.credentialId)) {
+      log.debug("Leaving Credentials.proveKeyUpgrade(). Another key.");
+      return Promise.resolve(dropped('STS-AUTHN-0455', 'That was a ' +
+        'different passkey from the one you are upgrading. Nothing was ' +
+        'changed; start again and use the passkey you chose.'));
+    }
+    let verdict;
+    try {
+      verdict = webauthnVerifier.verifyAssertion({
+        authenticatorData: response.authenticatorData,
+        clientDataJSON: response.clientDataJSON,
+        signature: response.signature,
+        publicKeyJwk: key.publicKeyJwk,
+        expectedChallenge: held.challenge,
+        expectedOrigin: String(options.origin || ''),
+        expectedRpId: String(options.rpId || ''),
+        requireUserVerification: webauthnPolicy.requireUserVerification(),
+        previousSignCount: key.signCount,
+        allowInsecure: webauthnPolicy.insecureAlgorithmsAllowed()
+      });
+    } catch (e) {
+      log.debug("Caught in Credentials.proveKeyUpgrade(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving Credentials.proveKeyUpgrade(). It threw.");
+      return Promise.resolve(dropped('STS-AUTHN-0027', 'The passkey could ' +
+        'not be checked: ' + ((e && e.message) || e) + '. Nothing was ' +
+        'changed.'));
+    }
+    if (Credentials.clonedKeyVerdict(verdict)) {
+      this.noteKeyCloned(name, key.credentialId, 'signature counter ' +
+                         verdict.signCount + ', last recorded ' +
+                         key.signCount + ' (a passkey upgrade)');
+    }
+    if (!verdict.ok) {
+      log.debug("Leaving Credentials.proveKeyUpgrade(). It did not verify.");
+      return Promise.resolve(dropped(webauthnPolicy.failureCodeFor(verdict),
+        'The passkey did not verify — ' + (verdict.failed || []).join('; ') +
+        '. Nothing was changed.'));
+    }
+    log.debug("Leaving Credentials.proveKeyUpgrade(). Spending the proof.");
+    return this.spendAssertion({
+      username: name, credentialId: key.credentialId,
+      signCount: verdict.signCount, flags: verdict.flags,
+      challenge: held.challenge, ttlMs: this.keyEnrolmentTtlMs()
+    }).then((spent) => {
+      if (!spent.ok) {
+        return dropped(errorCodes.codeOf(spent) || 'STS-AUTHN-0182',
+          'The passkey could not be accepted just now (' +
+          String(spent.detail || spent.reason) + '). Nothing was changed.');
+      }
+      // THE REGISTRATION'S CHALLENGE, ITS HANDLE AND ITS EXCLUDE LIST, now
+      // and not at the begin: only a proven upgrade may arm a ceremony
+      // that, in place, replaces the classical credential on the device.
+      // The handle is the lane's — the classical key's own in place, so
+      // the device replaces it; the post-quantum lane's beside it, so it
+      // does not. The exclude list is the lane's keys LESS the classical
+      // one, so the authenticator that holds it may answer.
+      const lane = String(held.lane || 'classical');
+      const own = Credentials.isUserHandle(key.userHandle) && lane !==
+        'pqc' ? String(key.userHandle) : '';
+      held.userHandle = own ||
+        this.userHandleOf(name, { mint: true, lane: lane }) ||
+        this.newUserHandle();
+      held.exclude = this.keysOf(name).filter(function (one) {
+        return Credentials.keyLane(one) === lane &&
+               String(one.credentialId) !== String(key.credentialId);
+      }).map(function (one) {
+        return String(one.credentialId);
+      });
+      held.challenge = this.deps.crypto.randomBytes(32).toString('base64url');
+      held.upgrade.phase = 'registration';
+      held.upgrade.provenAt = Date.now();
+      held.expires = Date.now() + this.keyEnrolmentTtlMs();
+      pendingKeys.set(name.toLowerCase(), held);
+      log.info('credentials: ' + name + ' proved possession of the passkey ' +
+               'being upgraded; the post-quantum registration is armed.');
+      note({ ok: true }, String(verdict.algorithm ||
+                                Credentials.keyAlgorithm(key).name));
+      return { ok: true, challenge: held.challenge,
+               userHandle: held.userHandle, exclude: held.exclude.slice(),
+               lane: lane };
+    });
+  }
+
+  /**
+   * The upgrade's registration (#939): verifies the new passkey against
+   * ML-DSA only and its attestation, and writes it — in place of the
+   * classical key, or beside it — in one write. Any refusal leaves the
+   * classical key as it was.
+   *
+   * @param username - the person
+   * @param upgradeId - the upgrade in progress
+   * @param credential - what the browser posted
+   * @param opts - `origin` and `rpId`, what the browser was talking to
+   * @returns a promise of `{ ok: true, credentialId, previousCredentialId,
+   *   previousAlgorithm, algorithm, mode, lane, held }`, or a refusal
+   */
+  confirmKeyUpgrade(username, upgradeId, credential, opts?) {
+    const { log, webauthnPolicy, errorCodes } = this.deps;
+    log.debug("Entering Credentials.confirmKeyUpgrade().");
+    const name = String(username || '').trim();
+    const inHand = this.upgradeInHand(name, upgradeId, 'registration');
+    if (!inHand.held) {
+      log.debug("Leaving Credentials.confirmKeyUpgrade(). Nothing to " +
+                "confirm.");
+      return Promise.resolve(inHand.refused);
+    }
+    const held = inHand.held;
+    const note = (answer, threw?) => {
+      log.debug("Entering confirmKeyUpgrade() note().");
+      const key = answer && answer.ok ? this.keysOf(name).filter(
+        function (one) {
+          return String(one.credentialId) ===
+                 String(answer.credentialId || '');
+        })[0] || null : null;
+      webauthnCeremonies.record({
+        ceremony: 'registration', door: 'upgrade', username: name,
+        role: String(held.role || ''), lane: String(held.lane || ''),
+        outcome: answer && answer.ok ? 'success' : 'refused',
+        errorCode: answer && answer.ok ? ''
+          : String(errorCodes.codeOf(answer) ||
+                   (threw ? 'STS-AUTHN-0027' : '')),
+        offered: webauthnPolicy.upgradeAlgorithmIds(),
+        algorithm: key ? Credentials.keyAlgorithm(key).name : '',
+        posted: credential, attestation: key ? key.attestation : null });
+      log.debug("Leaving confirmKeyUpgrade() note().");
+    };
+    log.debug("Leaving Credentials.confirmKeyUpgrade().");
+    return Promise.resolve().then(() => {
+      return this.checkKeyUpgrade(name, held, credential, opts || {});
+    }).then(function (answer) {
+      note(answer);
+      return answer;
+    }, function (e) {
+      note(null, true);
+      throw e;
+    });
+  }
+
+  private checkKeyUpgrade(name, held, credential, options) {
+    const { log, webauthnPolicy, webauthnVerifier } = this.deps;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.checkKeyUpgrade().");
+    if (!credential || credential.error || !credential.response ||
+        !credential.response.attestationObject) {
+      // THE BROWSER COULD NOT MAKE IT, and nothing classical is offered
+      // instead (#944's retry is not an upgrade's): the upgrade is dropped,
+      // so the page offers the passkey's Upgrade again rather than a
+      // ceremony against a challenge it has spent its patience on.
+      this.abandonKeyEnrolment(name);
+      log.debug("Leaving Credentials.checkKeyUpgrade(). No credential.");
+      return coded('STS-AUTHN-0458', { ok: false, reason: 'browser',
+        errors: [(credential && credential.error
+          ? 'Your browser did not create the post-quantum passkey (' +
+            credential.error + '). '
+          : 'Your browser did not create the post-quantum passkey. ') +
+          'Your passkey is unchanged.'] });
+    }
+    let verdict;
+    try {
+      verdict = webauthnVerifier.verifyRegistration({
+        attestationObject: credential.response.attestationObject,
+        clientDataJSON: credential.response.clientDataJSON,
+        expectedChallenge: held.challenge,
+        expectedOrigin: String(options.origin || ''),
+        expectedRpId: String(options.rpId || ''),
+        requireUserVerification: webauthnPolicy.requireUserVerification(),
+        // ML-DSA ONLY: a classical credential answering an upgrade is
+        // section 7.1's algorithm that was not offered (STS-AUTHN-0228).
+        expectedAlgorithms: webauthnPolicy.upgradeAlgorithmIds()
+      });
+    } catch (e) {
+      log.debug("Caught in Credentials.checkKeyUpgrade(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving Credentials.checkKeyUpgrade(). It threw.");
+      return coded('STS-AUTHN-0027', { ok: false, reason: 'invalid',
+               errors: ['The registration could not be checked: ' +
+                        ((e && e.message) || e) + '. Your passkey is ' +
+                        'unchanged.'] });
+    }
+    if (!verdict.ok) {
+      log.debug("Leaving Credentials.checkKeyUpgrade(). It did not verify.");
+      return coded(webauthnPolicy.failureCodeFor(verdict),
+                   { ok: false, reason: 'invalid',
+               errors: ['The post-quantum passkey did not verify — ' +
+                        (verdict.failed || []).join('; ') + '. Your ' +
+                        'passkey is unchanged.'] });
+    }
+    // THE EXCLUSION, as an enrolment checks it, and the classical
+    // credential itself: an authenticator answering with the key being
+    // upgraded made nothing new.
+    if (held.exclude.indexOf(String(verdict.credentialId)) >= 0 ||
+        String(verdict.credentialId) === String(held.upgrade.credentialId)) {
+      log.debug("Leaving Credentials.checkKeyUpgrade(). Already enrolled.");
+      return coded('STS-AUTHN-0095', { ok: false, reason: 'duplicate',
+               errors: ['That authenticator is already enrolled. Your ' +
+                        'passkey is unchanged.'] });
+    }
+    log.debug("Leaving Credentials.checkKeyUpgrade(). Verifying the " +
+              "attestation, then writing through the claim.");
+    return this.deps.webauthnAttestation.assess(verdict).then((attested) => {
+      if (!attested.ok) {
+        return coded(this.deps.errorCodes.codeOf(attested) ||
+                     'STS-AUTHN-0241',
+                     { ok: false, reason: 'attestation',
+                       errors: [attested.why + ' Your passkey is ' +
+                                'unchanged.'] });
+      }
+      return Credentials.keyProviderFor(verdict.aaguid,
+        attested.attestation).then((named) => {
+        return this.addKeyClaimed(name,
+          Credentials.registeredKey(verdict, credential, attested, named,
+                                    held),
+          held.role, { upgrade: { credentialId: held.upgrade.credentialId,
+                                  mode: held.upgrade.mode } });
+      }).then((stored) => {
+        return this.keyUpgradeWritten(name, held, stored);
+      });
+    });
+  }
+
+  // The end of `confirmKeyUpgrade()`, once the claimed write has answered.
+  private keyUpgradeWritten(name, held, stored) {
+    const { log, errorCodes } = this.deps;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.keyUpgradeWritten().");
+    if (!stored.ok) {
+      // KEPT, AS A REFUSED ENROLMENT IS, unless the classical key is what
+      // went (0428): the proof stands and a reason that may go away (the
+      // cap in another tab) need not cost the person their proof. The
+      // classical row was not written either way.
+      if (errorCodes.codeOf(stored) === 'STS-AUTHN-0457') {
+        this.abandonKeyEnrolment(name);
+      }
+      log.debug("Leaving Credentials.keyUpgradeWritten(). Refused.");
+      return coded(errorCodes.codeOf(stored) || 'STS-AUTHN-0068',
+                   { ok: false, reason: stored.reason || 'refused',
+                     errors: (stored.errors || []).map(function (one) {
+                       return String(one) + ' Your passkey is unchanged.';
+                     }) });
+    }
+    this.abandonKeyEnrolment(name);
+    const now = this.keysOf(name).filter(function (one) {
+      return String(one.credentialId) === String(stored.credentialId);
+    })[0] || {};
+    log.info('credentials: ' + name + ' upgraded a ' +
+             held.upgrade.previousAlgorithm + ' passkey to ' +
+             Credentials.keyAlgorithm(now).name + ' (' + held.upgrade.mode +
+             ').');
+    log.debug("Leaving Credentials.keyUpgradeWritten(). Upgraded.");
+    return { ok: true, username: name, role: held.role,
+             credentialId: stored.credentialId,
+             previousCredentialId: held.upgrade.credentialId,
+             previousAlgorithm: held.upgrade.previousAlgorithm,
+             algorithm: Credentials.keyAlgorithm(now).name,
+             mode: held.upgrade.mode, lane: String(held.lane || 'classical'),
              held: this.keysOf(name).length };
   }
 
@@ -11077,6 +11805,14 @@ export = {
   pendingKeyEnrolmentFor: slot.forward('pendingKeyEnrolmentFor'),
   abandonKeyEnrolment: slot.forward('abandonKeyEnrolment'),
   confirmKeyEnrolment: slot.forward('confirmKeyEnrolment'),
+  // Upgrading a classical passkey to an ML-DSA one (#939).
+  keyUpgradeHistory: Credentials.keyUpgradeHistory,
+  keyUpgradeRefusal: slot.forward('keyUpgradeRefusal'),
+  upgradableKeysOf: slot.forward('upgradableKeysOf'),
+  pendingKeyUpgradeFor: slot.forward('pendingKeyUpgradeFor'),
+  beginKeyUpgrade: slot.forward('beginKeyUpgrade'),
+  proveKeyUpgrade: slot.forward('proveKeyUpgrade'),
+  confirmKeyUpgrade: slot.forward('confirmKeyUpgrade'),
   addKeyClaimed: slot.forward('addKeyClaimed'),
   noteKeyUsed: slot.forward('noteKeyUsed'),
   androidAttestedCredentials: slot.forward('androidAttestedCredentials'),

@@ -499,6 +499,7 @@
   "mfaSection.siopLabelTip": "Un nombre para esta clave, para distinguirla de las demás: la billetera o el dispositivo en el que está.",
   "mfaSection.enrolTitle": "Quien tenga esta clave inicia sesión como esta persona. Inscriba solo una clave que sepa que es de esta persona.",
   "mfaSection.enrol": "Inscribir",
+  "mfaSection.upgrade": "Actualizar a ML-DSA",
   "mfaSection.siopNeedsWrite": "Inscribir o quitar uno requiere <strong>Admin Write</strong>.",
   "mfaSection.leadBefore": "Todo en esta sección trata de <code>{name}</code> y se lee de su propia entrada de directorio, mediante el mismo <code>credentials.mechanismsFor()</code> que consultan la pantalla de inicio de sesión y el portal de usuario. Los mecanismos en sí se configuran en ",
   "mfaSection.leadAnd": " y ",

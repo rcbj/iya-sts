@@ -48,6 +48,7 @@ const { Command, Option } = require("commander");
 const { usernameFor } = require("./random_username.js");
 const fixtures = require("./oauth_fixtures.js");
 const portalSignin = require("./portal_signin.js");
+const consoleSignin = require("./console_signin.js");
 const pqc = require("./pqc.js");
 
 var appconfig;
@@ -86,6 +87,7 @@ var ORIGIN = new URL(base).origin;
 var RP_ID = new URL(base).hostname;
 
 var PERSON = usernameFor("passkey-dual");
+var ADMIN = usernameFor("passkey-upgrade-admin");
 var PASSWORD = "Dual-lane " + nodeCrypto.randomBytes(12).toString("hex") +
                " !9";
 var CLIENT = "pk-dual-probe";
@@ -445,6 +447,55 @@ async function test() {
     assert.strictEqual(signalOf("pqc").name, PERSON + "+ml-dsa-65");
   });
 
+  // #939: the same proof-first upgrade, through the administrator's own
+  // person-bound console token, with two authenticator ceremonies.
+  const administrator = await consoleSignin.signInToTheConsole(base, ADMIN,
+    log, { grant: "write" });
+  const upgradeBegin = await administrator.api("POST",
+    "/admin-api/users/begin-passkey-upgrade", {
+      user: PERSON, credentialId: classical.credentialId });
+  const upgradeCeremony = upgradeBegin.json && upgradeBegin.json.ceremony;
+  const upgradeProof = upgradeCeremony
+    ? await administrator.api("POST",
+        "/admin-api/users/prove-passkey-upgrade", {
+          user: PERSON, upgradeId: upgradeBegin.json.upgradeId,
+          credential: JSON.stringify(classical.assert(
+            upgradeCeremony.challenge)) }) : { status: 0, json: null };
+  const registrationCeremony = upgradeProof.json &&
+                               upgradeProof.json.ceremony;
+  const adminUpgraded = makeAuthenticator(-49);
+  const upgradeFinish = registrationCeremony
+    ? await administrator.api("POST",
+        "/admin-api/users/finish-passkey-upgrade", {
+          user: PERSON, upgradeId: upgradeBegin.json.upgradeId,
+          credential: JSON.stringify(adminUpgraded.register(
+            registrationCeremony.challenge,
+            registrationCeremony.user.id)) })
+    : { status: 0, json: null };
+  const afterAdminUpgrade = await administrator.api("GET",
+    "/admin-api/users?user=" + encodeURIComponent(PERSON));
+  const adminKeys = afterAdminUpgrade.json &&
+    afterAdminUpgrade.json.factors && afterAdminUpgrade.json.factors.keys || [];
+  check("AN ADMINISTRATOR PROVES THE CLASSICAL KEY, THEN REGISTERS ML-DSA " +
+        "THROUGH THEIR PERSON-BOUND CONSOLE TOKEN", function () {
+    assert.strictEqual(upgradeBegin.status, 200,
+      JSON.stringify(upgradeBegin.json).slice(0, 300));
+    assert.deepStrictEqual(registrationCeremony.options.algorithms,
+                           [-48, -49, -50]);
+    assert.ok(upgradeProof.status === 200 &&
+              registrationCeremony.user.id !== c.pending.userHandle,
+      JSON.stringify(upgradeProof.json).slice(0, 300));
+    assert.strictEqual(upgradeFinish.status, 200,
+      JSON.stringify(upgradeFinish.json).slice(0, 300));
+    assert.strictEqual(upgradeFinish.json.mode, "alongside");
+    assert.ok(adminKeys.some(function (one) {
+      return one.credentialId === adminUpgraded.credentialId;
+    }), JSON.stringify(adminKeys).slice(0, 500));
+    assert.ok(adminKeys.some(function (one) {
+      return one.credentialId === classical.credentialId;
+    }), "the previous classical passkey disappeared");
+  });
+
   // D. Either key, one person.
   log.info("=== signing in with either, and no username ===");
   let r = await withoutAUsername(function (challenge) {
@@ -503,7 +554,7 @@ async function test() {
       .slice(0, 300));
   });
 
-  assert.ok(checks >= 8, "only " + checks + " checks ran; a section has " +
+  assert.ok(checks >= 9, "only " + checks + " checks ran; a section has " +
             "stopped being called.");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");

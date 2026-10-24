@@ -66,6 +66,7 @@ import WebPages = require('./web_pages');
 import WebShell = require('./web_shell');
 import WebForms = require('./web_forms');
 import WebAnswers = require('./web_answers');
+import WebWebAuthn = require('../common/web_webauthn');
 import WebMessages = require('../common/web_messages');
 import WebAccounts = require('../common/web_accounts');
 
@@ -2019,6 +2020,11 @@ class ConsoleRuntime extends SpaClient {
     const fields = ConsoleRuntime.fieldsOf(data);
     const action = Array.isArray(fields.action) ? fields.action[0]
                                                 : String(fields.action || '');
+    if (form && form.getAttribute &&
+        form.getAttribute('data-admin-passkey-upgrade') === 'true') {
+      await this.adminPasskeyUpgrade(fields);
+      return;
+    }
     // ENTER IN A FIELD'S SEARCH BOX SEARCHES (#459). Enter presses the
     // form's first submit button — the hidden default, which is Save — and
     // somebody who typed a name to look for has not asked to save the tab.
@@ -2191,6 +2197,92 @@ class ConsoleRuntime extends SpaClient {
     await this.go(back + (back.indexOf('?') < 0 ? '?' : '&') + key + '=' +
                   encodeURIComponent(message) +
                   String(this.env.location.hash || ''));
+  }
+
+  // The administrator's browser performs both ceremonies; the API validates
+  // each against the pending upgrade, and keeps the classical key until the
+  // ML-DSA registration is verified.
+  /**
+   * Proves and upgrades a person's passkey from the admin console.
+   *
+   * @param fields - the person and classical credential id
+   * @returns nothing
+   */
+  async adminPasskeyUpgrade(fields: Json): Promise<void> {
+    const who = String(fields.user || '');
+    const base = this.here().replace(/([?&])(notice|error)=[^&]*/g, '$1')
+      .replace(/[?&]+$/, '');
+    const report = async (kind: string, message: string) => {
+      await this.go(base + (base.indexOf('?') < 0 ? '?' : '&') + kind + '=' +
+                    encodeURIComponent(message));
+    };
+    let upgradeId = '';
+    try {
+      const begun = await this.apiJson('POST',
+        '/admin-api/users/begin-passkey-upgrade', {
+          user: who, credentialId: String(fields.credentialId || '') });
+      if (!begun) { return; }
+      if (begun.status >= 400 || !begun.json || !begun.json.ok) {
+        throw new Error(((begun.json && begun.json.errors) || []).join(' ') ||
+                        'The upgrade could not be started.');
+      }
+      upgradeId = String(begun.json.upgradeId || '');
+      const proof = begun.json.ceremony;
+      const asserted = await this.env.navigator.credentials.get({ publicKey: {
+        challenge: WebWebAuthn.bytes(proof.challenge), rpId: proof.rpId,
+        allowCredentials: [{ type: 'public-key',
+          id: WebWebAuthn.bytes(proof.allow) }],
+        userVerification: (proof.options && proof.options.userVerification) ||
+                          'preferred' } });
+      if (!asserted) { throw new Error('The passkey did not answer.'); }
+      const proved = await this.apiJson('POST',
+        '/admin-api/users/prove-passkey-upgrade', {
+          user: who, upgradeId: upgradeId,
+          credential: JSON.stringify(WebWebAuthn.asserted(asserted)) });
+      if (!proved) { return; }
+      if (proved.status >= 400 || !proved.json || !proved.json.ok) {
+        throw new Error(((proved.json && proved.json.errors) || []).join(' ') ||
+                        'The passkey proof was refused.');
+      }
+      const registration = proved.json.ceremony;
+      const options: Json = Object.assign({}, registration.options || {});
+      options.challenge = WebWebAuthn.bytes(registration.challenge);
+      options.user = Object.assign({}, registration.user, {
+        id: WebWebAuthn.bytes(registration.user.id) });
+      options.pubKeyCredParams = (options.algorithms || []).map(function (alg) {
+        return { type: 'public-key', alg: alg };
+      });
+      delete options.algorithms;
+      options.excludeCredentials = (registration.exclude || []).map(
+        function (id) { return { type: 'public-key',
+          id: WebWebAuthn.bytes(id) }; });
+      options.extensions = (options.credProps || options.minPinLength)
+        ? Object.assign(options.credProps ? { credProps: true } : {},
+                        options.minPinLength ? { minPinLength: true } : {})
+        : undefined;
+      delete options.credProps;
+      delete options.minPinLength;
+      const made = await this.env.navigator.credentials.create({
+        publicKey: options });
+      if (!made) { throw new Error('The authenticator refused registration.'); }
+      const finished = await this.apiJson('POST',
+        '/admin-api/users/finish-passkey-upgrade', { user: who,
+          upgradeId: upgradeId,
+          credential: JSON.stringify(WebWebAuthn.created(made)) });
+      if (!finished) { return; }
+      if (finished.status >= 400 || !finished.json || !finished.json.ok) {
+        throw new Error(((finished.json && finished.json.errors) || [])
+          .join(' ') || 'The passkey could not be upgraded.');
+      }
+      await report('notice', finished.json.message ||
+        'The passkey was upgraded.');
+    } catch (e) {
+      if (upgradeId) {
+        await this.apiJson('POST', '/admin-api/users/cancel-passkey-upgrade',
+                           { user: who }).catch(function () { return null; });
+      }
+      await report('error', String((e && e.message) || e));
+    }
   }
 
   // A FIELD'S SEARCH (#459): `WebAnswers` reads the press and builds the

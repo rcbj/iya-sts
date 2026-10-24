@@ -499,6 +499,7 @@
   "mfaSection.siopLabelTip": "Isang pangalan para sa key na ito, para matukoy ito mula sa iba: ang wallet o device na kinalalagyan nito.",
   "mfaSection.enrolTitle": "Ang sinumang may hawak ng key na ito ay nagsa-sign in bilang taong ito. Mag-enroll lang ng key na alam mong kanila.",
   "mfaSection.enrol": "I-enroll",
+  "mfaSection.upgrade": "I-upgrade sa ML-DSA",
   "mfaSection.siopNeedsWrite": "Kailangan ng <strong>Admin Write</strong> para mag-enroll o mag-alis ng isa.",
   "mfaSection.leadBefore": "Ang lahat sa seksyong ito ay tungkol sa <code>{name}</code> at binabasa mula sa sarili nilang directory entry, sa pamamagitan ng parehong <code>credentials.mechanismsFor()</code> na tinatanong ng sign-in screen at ng user portal. Ang mga mekanismo mismo ay naka-configure sa ",
   "mfaSection.leadAnd": " at ",

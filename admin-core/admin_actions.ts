@@ -3320,6 +3320,134 @@ class AdminActions {
                   actor: (context || {}).actor || String(body.actor || ''),
                   base: String((context || {}).base || '') };
 
+    // AN ADMINISTRATOR UPGRADES A PERSON'S CLASSICAL PASSKEY (#939). The
+    // assertion and ML-DSA registration both run in the operator's browser;
+    // credentials.ts spends the proof before issuing the registration
+    // challenge and preserves the old key until that registration verifies.
+    if (['begin-passkey-upgrade', 'prove-passkey-upgrade',
+         'finish-passkey-upgrade', 'cancel-passkey-upgrade']
+          .indexOf(action) >= 0) {
+      const who = String(body.user || body.username || '').trim();
+      if (!who) {
+        return this.refused('STS-ADMIN-0518', { ok: false,
+          errors: ['Name the person whose passkey is being upgraded.'] });
+      }
+      const authn = require('../authn/authn');
+      const webauthnPolicy = require('../authn/webauthn_policy');
+      const passkeyPolicy = require('../common/passkey_policy');
+      const rpId = ctx.base ? authn.rpIdOf(ctx.base) : '';
+      const audit = function (name, outcome, detail) {
+        auditLog.record({ category: 'authentication', action: name,
+          actor: ctx.actor, target: who, outcome: outcome,
+          summary: 'administrator ' + (outcome === 'success' ?
+            'advanced' : 'could not advance') + ' a passkey upgrade for ' +
+            who, detail: Object.assign({ username: who, via: ctx.via },
+                                       detail || {}) });
+      };
+      if (action === 'cancel-passkey-upgrade') {
+        const pending = credentials.pendingKeyUpgradeFor(who);
+        if (!pending || (body.upgradeId &&
+            String(body.upgradeId) !== String(pending.id))) {
+          return this.refused('STS-AUTHN-0454', { ok: false,
+            errors: ['There is no matching passkey upgrade in progress.'] });
+        }
+        credentials.abandonKeyEnrolment(who);
+        audit('admin.passkey.upgrade-cancelled', 'success', {});
+        return { ok: true, message: 'The pending passkey upgrade was cancelled.' };
+      }
+      if (action === 'begin-passkey-upgrade') {
+        const rpRefusal = ctx.base ? authn.rpIdProblem(ctx.base) : '';
+        if (rpRefusal) {
+          return this.refused('STS-AUTHN-0446', { ok: false,
+            errors: [rpRefusal] });
+        }
+        const begun = passkeyPolicy.withSelection(who, '', function () {
+          return credentials.beginKeyUpgrade(who,
+            String(body.credentialId || ''));
+        });
+        if (!begun.ok) {
+          audit('admin.passkey.upgrade-refused', 'failure',
+            { stage: 'begin', errors: begun.errors || [] });
+          return this.refusedBy('STS-AUTHN-0450', begun);
+        }
+        audit('admin.passkey.upgrade-started', 'success', {
+          stage: 'begin', mode: begun.mode, lane: begun.lane,
+          previousAlgorithm: begun.previousAlgorithm });
+        return { ok: true, upgradeId: begun.upgradeId,
+          ceremony: { challenge: begun.challenge, rpId: rpId,
+            allow: begun.credentialId,
+            options: { userVerification:
+              webauthnPolicy.settings().userVerification } } };
+      }
+      let posted: any = null;
+      try {
+        posted = typeof body.credential === 'string'
+          ? JSON.parse(body.credential || 'null') : body.credential;
+      } catch (e) { posted = null; }
+      const upgradeId = String(body.upgradeId || body.upgrade_id || '');
+      if (action === 'prove-passkey-upgrade') {
+        const checked = passkeyPolicy.withSelection(who, '', function () {
+          return credentials.proveKeyUpgrade(who, upgradeId, posted, {
+            origin: authn.expectedOriginFor(ctx.base, posted || {}),
+            rpId: rpId });
+        });
+        const self = this;
+        return Promise.resolve(checked).then(function (proven) {
+          if (!proven.ok) {
+            audit('admin.passkey.upgrade-refused', 'failure',
+              { stage: 'proof', errors: proven.errors || [] });
+            return self.refusedBy('STS-AUTHN-0455', proven);
+          }
+          const options = passkeyPolicy.withSelection(who, '', function () {
+            const pending = credentials.pendingKeyUpgradeFor(who);
+            return webauthnPolicy.upgradeCreationOptions(rpId,
+              pending ? pending.kind : '');
+          });
+          const display = passkeyPolicy.withSelection(who, '', function () {
+            return passkeyPolicy.displayNameFor(who, who);
+          });
+          const user = credentials.laneUser(who, display, proven.lane);
+          audit('admin.passkey.upgrade-proved', 'success',
+            { stage: 'proof', lane: proven.lane });
+          return { ok: true, ceremony: { challenge: proven.challenge,
+            rpId: rpId, user: { id: proven.userHandle, name: user.name,
+                                displayName: user.displayName },
+            exclude: proven.exclude, options: options } };
+        });
+      }
+      const self = this;
+      const finishing = passkeyPolicy.withSelection(who, '', function () {
+        return credentials.confirmKeyUpgrade(who, upgradeId, posted, {
+          origin: authn.expectedOriginFor(ctx.base, posted || {}), rpId: rpId });
+      });
+      return Promise.resolve(finishing).then(function (done) {
+        if (!done.ok) {
+          audit('admin.passkey.upgrade-refused', 'failure',
+            { stage: 'registration', errors: done.errors || [] });
+          return self.refusedBy('STS-AUTHN-0458', done);
+        }
+        const enrolled = credentials.keysOf(who).filter(function (one) {
+          return String(one.credentialId) === String(done.credentialId);
+        })[0] || null;
+        accountSignals.credentialChanged({ username: who,
+          credentialType: accountSignals.keyCredentialType(enrolled),
+          fido2Aaguid: String((enrolled && enrolled.aaguid) || ''),
+          friendlyName: String((enrolled && enrolled.label) || ''),
+          changeType: done.mode === 'replace' ? 'update' : 'create',
+          initiatingEntity: 'admin', via: 'admin passkey upgrade',
+          reasonAdmin: ctx.actor + ' upgraded a classical passkey for ' + who,
+          reasonUser: 'An administrator upgraded one of your passkeys.' });
+        audit('admin.passkey.upgraded', 'success', { stage: 'registration',
+          mode: done.mode, lane: done.lane,
+          previousAlgorithm: done.previousAlgorithm,
+          algorithm: done.algorithm });
+        return { ok: true, message: 'The passkey was upgraded.',
+          credentialId: done.credentialId, mode: done.mode,
+          previousAlgorithm: done.previousAlgorithm,
+          algorithm: done.algorithm, lane: done.lane };
+      });
+    }
+
     // DISABLE OR ENABLE AN ACCOUNT (2026-09-17, #36 follow-up). One call into
     // `common/account_state.ts`, which writes the lock and — for a disable —
     // ends everything the person holds through the global logout, so the
