@@ -558,6 +558,19 @@ What that changed, and why each piece is the way it is:
   `begin`'s `classical` default becomes the post-quantum lane
   (`webauthnPolicy.enrolmentLane()`). `authn/CLAUDE.md` (*A post-quantum
   passkey required*) argues the rest.
+* **The classical retry (#944)**: the armed ceremony carries `fallback`
+  (`asksPostQuantum`, `classical`, `retrying`), `#wa-data` carries it as
+  `data-fallback`, and `KeysPages.fallback()` draws the guidance HIDDEN
+  (`#wa-fallback`), shown by `web_portal_webauthn.ts` through
+  `common/web_webauthn.ts`'s `offerFallback()` only after a registration
+  that asked for ML-DSA fails — and then nothing is posted, so the pending
+  enrolment stays until the retry's form (`action` `begin`, the same role,
+  kind and lane, `algorithms` `classical`) replaces it. `begin` asks
+  `classicalRetryRefusal()` again (`STS-AUTHN-0420`, reason `algorithms`),
+  and the pending record's `classicalOnly` holds the finish to the retry's
+  list. The activation's and the device link's ceremonies draw no guidance,
+  so a failure there is posted as before. `authn/CLAUDE.md` (*The classical
+  retry*) argues it.
 
 `tests/passkey_management.js` holds the credential layer, and
 `tests/vendored/sts_portal_backup_keys.js` holds the page over HTTP: the two
