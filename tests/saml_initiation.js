@@ -41,7 +41,7 @@
 //      a person with a real password who signs in with it at the screen
 //      (and is refused with a wrong one). Only D runs twice: A, B, C and E
 //      run in product over the wire, in
-//      tests/vendored/sts_idp_initiated_saml.js, and a session's risk is
+//      tests/protocol/sts_idp_initiated_saml.js, and a session's risk is
 //      the one thing here HTTP cannot set up.
 //   E. THE MECHANISM RE-PROMPT ON /saml2/unsolicited (#457) makes the same
 //      one trip: back from it still on a mechanism the service provider
@@ -444,7 +444,7 @@ function childMain() {
       config.clearOverride('risk.enforceInDevelopment');
 
       // --- D (product). the same, in product mode (#715) ------------------
-      // The over-the-wire job, tests/vendored/sts_idp_initiated_saml.js,
+      // The over-the-wire job, tests/protocol/sts_idp_initiated_saml.js,
       // runs A, B, C and E in product (`single-node`, `cluster`); D cannot
       // be set up over HTTP, because a session's risk comes from datasets
       // the suite does not load, so it runs here a second time with the

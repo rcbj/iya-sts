@@ -785,7 +785,7 @@ door calls through `account_signals.ts`**: a recovery code spent sends
 who exists sends `recovery-activated` and
 `account-credential-change-required`, as issue-password-reset does, and one
 issued at create sends nothing. `tests/risc_identifiers_recovery.js`,
-`tests/mail.js` 15f, `tests/vendored/sts_risc_register_recovery.js`.
+`tests/mail.js` 15f, `tests/protocol/sts_risc_register_recovery.js`.
 
 **AND THE CAP NEVER FORGETS AN OPT-OUT (#260).** `trim()`
 (`risc.maxAccountsTracked`) drops the oldest OPTED-IN row, never a row whose
@@ -863,7 +863,7 @@ this service sends, and on nothing else: CAEP and SSF's own events keep
 
 ## WHY THE SUBJECT GRAMMAR IS WRITTEN OUT HERE AND NOT VENDORED
 
-`common/vendored/` holds byte-identical copies of the parent project's files,
+`common/crypto_impl/` holds byte-identical copies of the parent project's files,
 and `kerberos/`'s eight codec modules are vendored for a reason this file's
 `ssf_subjects.js` deliberately does not follow: **one wire codec must not exist
 twice.**
@@ -1472,7 +1472,7 @@ nothing" sentence now names it as one of two exceptions.
 * **SSF's own two events are always allowed**, because a receiver refused its
   verification event cannot learn that its stream works.
 
-`tests/vendored/sts_ssf_allowed_events.js` holds all of it against an
+`tests/protocol/sts_ssf_allowed_events.js` holds all of it against an
 unrestricted control stream; six mutants, all caught, two only after the job
 was tightened.
 
@@ -1558,7 +1558,7 @@ hierarchy moved. **Not in any setting**: the `sts` family is always offered
 `kerberos-tickets-invalidated` gained the reason `nothing-retained`: an
 ORDINARY rotation by hand with `krb5.retainedKeyVersions` 0 keeps nothing, and
 until #245 it ended every TGT unannounced (`kerberos/CLAUDE.md`).
-`tests/service_key_signals.js`, `tests/vendored/sts_service_key_signals.js`.
+`tests/service_key_signals.js`, `tests/protocol/sts_service_key_signals.js`.
 
 ## A CHANGE TO THE CERTIFICATE HIERARCHY TELLS THE PEOPLE UNDER IT (2026-09-26, #244)
 
@@ -1582,7 +1582,7 @@ what an earlier act orphaned. **The fan-out is batched**: 50 people at a time,
 each batch handed over (into the queue and the push cap) before the next, with
 a turn of the event loop between batches and the console's answer ahead of all
 of it. `tests/ca_hierarchy_signals.js`,
-`tests/vendored/sts_ca_hierarchy_signals.js`.
+`tests/protocol/sts_ca_hierarchy_signals.js`.
 
 ## A STREAM THIS TRANSMITTER DELETES IS TOLD FIRST (2026-09-26, #245)
 
@@ -1807,7 +1807,7 @@ For the next person adding one, this family's full list:
   `/admin-api/ssf` and `/admin-api/ssf/:action`. That is worth knowing because
   it is the shape of the mistake rather than one instance of it — a family's
   own endpoints are obvious and the CONSOLE and MANAGEMENT API rows it also
-  costs are the ones a checklist forgets. `tests/vendored/sts_metadata.js` is
+  costs are the ones a checklist forgets. `tests/protocol/sts_metadata.js` is
   what caught them, in the direction only it checks: registered and described
   nowhere;
 * `oauth-oidc/oauth2.ts` — the two scopes in `scopes_supported`;
@@ -1849,8 +1849,8 @@ purpose — the point of the section above is that this one is short.
 **THE ONE THING THAT IS NOT A FILE**, and it is the same one the eighth slot's
 section warns about: the refusal sentence is `Unknown action "x". The three
 are: …`, with the count from `helpers.numberWord(CAEP_CONSOLE_ACTIONS.length)`.
-It is READ by `tests/vendored/admin_api.js` and
-`tests/vendored/sts_admin_api_operations.js`, and a handler that writes it its
+It is READ by `tests/protocol/admin_api.js` and
+`tests/protocol/sts_admin_api_operations.js`, and a handler that writes it its
 own way turns both checks off with nothing failing.
 
 ---
@@ -1948,10 +1948,10 @@ asserts both.
 WAY EVERY OTHER ACTION HANDLER SPELLS IT.** `consoleAction()` answered an
 unknown action with `"x" is not an action on this resource. The ones that are:
 …` until 2026-09-01, which reads perfectly well and is INVISIBLE to the two
-checks that depend on it: `tests/vendored/admin_api.js` requires
+checks that depend on it: `tests/protocol/admin_api.js` requires
 `/unknown action/i` before it parses the list — that is the console/API parity
 check, so `/ssf`'s four actions were being compared against nothing — and
-`tests/vendored/sts_admin_api_operations.js` matches `Unknown action "x".
+`tests/protocol/sts_admin_api_operations.js` matches `Unknown action "x".
 <count phrase>: <list>.` across every documented resource, which is what caught
 it. It is `Unknown action "x". The six are: …` now (four then), with the count
 coming from `CONSOLE_ACTIONS.length` through `helpers.numberWord()` rather than
@@ -2338,7 +2338,7 @@ and `NIST-IAL` only for `nist_800_63A` with IAL1–3 (rcbj's reason for
 only when the namespace stayed; `change_direction` only where the levels are
 ordered.
 
-`tests/caep_claims_doors.js` and `tests/vendored/sts_caep_claims_doors.js`
+`tests/caep_claims_doors.js` and `tests/protocol/sts_caep_claims_doors.js`
 hold both.
 
 ## A PARTNER'S SHARED SIGNALS: THIS REALM AS A RECEIVER (#153, 2026-09-26; #373 and #374, 2026-10-01)
@@ -2454,7 +2454,7 @@ of this directory needs:
   disabled.
 
 `tests/ssf_transmitters.js` holds all of it in process;
-`tests/vendored/sts_ssf_foreign_receiver.js` (`local: true`) over HTTP, with
+`tests/protocol/sts_ssf_foreign_receiver.js` (`local: true`) over HTTP, with
 one realm's transmitter as the partner.
 
 ## DETECTED COMPROMISES, AND THE LAST CREDENTIALS (#231, #236, #237, 2026-09-26)
@@ -2521,7 +2521,7 @@ is a warning, never a refusal), so nothing there changed.
   so it goes nowhere until one exists.
 
 `tests/credential_signals.js` holds every row in process;
-`tests/vendored/sts_credential_signals.js` the ones a wire can reach.
+`tests/protocol/sts_credential_signals.js` the ones a wire can reach.
 
 ## A SUBJECT IS NAMED UNDER THE STREAM'S ISSUER (#154, 2026-10-05)
 
@@ -2538,7 +2538,7 @@ member — under the stream's `iss`; `coversSubject()` asks every emitter's
 candidate filter with it, and `transmitNow()` sends it. A partner's subject
 and one already under the stream's issuer are untouched.
 `tests/ssf_subject_issuer.js` holds it in process, with the published issuer
-set on the stream by hand; `tests/vendored/sts_ssf_subject_issuer.js` over the
+set on the stream by hand; `tests/protocol/sts_ssf_subject_issuer.js` over the
 wire, with the issuer DISCOVERED at the URL the suite reaches, which is where
 the mismatch happens (every local mode and an AWS target).
 
@@ -2755,7 +2755,7 @@ instead.
 
 `tests/application_signals.js` holds every row in process (the recorder sits
 on `ssf_streams.ts`'s three filters, so the real emitters build each event);
-`tests/vendored/sts_application_signals.js` subscribes a receiver to an
+`tests/protocol/sts_application_signals.js` subscribes a receiver to an
 application and rotates its secret over the wire.
 
 ## The roles reversed are the test peer's (#593, 2026-10-12)

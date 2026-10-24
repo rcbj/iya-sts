@@ -49,7 +49,7 @@ more than one family needs it, not because it felt general.
 | `http2_framing.ts` | **AN HTTP/2 BODY WITH NO `content-length` IS STILL A BODY (#407).** `markFramedBody()`, on each TLS HTTP listener's `request` event ahead of the app, adds `transfer-encoding: chunked` to an HTTP/2 request whose HEADERS did not end the stream and that sent no length, so body-parser's `hasBody()` reads it. **The header is SYNTHETIC and exists only on this service's side**: HTTP/2 forbids `transfer-encoding` (RFC 9113 section 8.2.2) and no client sent it — it is what the request pool forwards to a worker as the chunked body node's client sends there anyway, so it is real on that HTTP/1.1 hop and nowhere else. **It also appears in anything that captures `req.headers`** (the call log, the debugger's capture, a test echo) as though the client had sent it; read it there as "framed by HTTP/2", never as a client's request header. |
 | `secret_destinations.ts` | **WHERE A SERVICE ACCOUNT'S ROTATED PASSWORD IS PUSHED (#221 P3, 2026-10-06) — rule 3ce.** The register of secret push destinations, which is the realm's application entries declared for `secret-destination` and not a store of its own; `list()`, `get()`, `push()`, `testPush()`, `isDestination()`, the console's and the API's `act()`. The write path itself is `secrets.js`'s `pushSecret()`. |
 | `revocation_status.js` | **REVOCATION, CONSULTED (2026-09-12)** — the one function that answers whether a PRESENTED certificate chain is revoked: from the register for one this service issued, from the OCSP responder and the CRL (delta and indirect included) it names for anybody else's. `pki_revocation.js` publishes; this checks. A LIBRARY (rule 3ad). |
-| `vendored/` | Byte-identical copies of the parent project's files. **Do not edit them here** — see `common/vendored/CLAUDE.md`. |
+| `vendored/` | Byte-identical copies of the parent project's files. **Do not edit them here** — see `common/crypto_impl/CLAUDE.md`. |
 
 **`config_file.js` is new with the 2026-08-23 reorganisation and it exists
 because of it.** Fourteen modules read the appconfig file directly for the one
@@ -66,7 +66,7 @@ first and between them cover every way this service is loaded — `server.js`,
 removed it) — and it is
 idempotent, so all of them calling costs nothing. Those counts are from
 2026-08-23; on 2026-09-16 nineteen modules read the file directly and sixteen of
-them are VENDORED (the `common/vendored/` modules and the Kerberos codec copies)
+them are VENDORED (the `common/crypto_impl/` modules and the Kerberos codec copies)
 this repository may not edit, which is why the fix is a mutation of
 `process.env` rather than an edit per reader. `config_file.js`'s header keeps
 the list.
@@ -207,7 +207,7 @@ SAML 1.1 assertion this service ever issued carried an attribute the schema does
 not have, it verified anyway so it survived for months, and the fix had to be
 applied to EACH SIGNER SEPARATELY.
 
-**The mechanism is `common/vendored/xmldsig.js` and the policy is here**, and
+**The mechanism is `common/crypto_impl/xmldsig.js` and the policy is here**, and
 that split is the design rather than tidiness. The vendored file is the parent
 project's own XML security module, copied byte-identical, and it is the OTHER
 END of most of these exchanges: `tests/xmlsec_interop.js` over there already
@@ -226,7 +226,7 @@ encrypted under DK(key, "prf")), the two RFC 8009 ones (KDF-HMAC-SHA2) and RC4
 (HMAC-SHA1), `krb5PrfPlus()` and `krbFxCf2()`. An enctype with no PRF here is
 refused by name. `tests/kerberos_fast_otp.js` holds it to RFC 3961's n-fold
 vectors and MIT's `t_prf.c` and `t_cf2.expected`, which are external answers;
-the suite's own client (`tests/vendored/krb5_wire.js`) has an independent copy
+the suite's own client (`tests/protocol/krb5_wire.js`) has an independent copy
 written from the RFCs, and MIT's `kinit` agrees with both.
 
 **SECTION 8: SIGNATURES OVER RAW BYTES, AND THE TPM (2026-09-21, #40).**
@@ -659,7 +659,7 @@ two families behind the SAME two functions, `encryptJweCompact()` and
 algs by naming them.
 
 * **ML-KEM**, per draft-ietf-jose-pqc-kem-**05**. **-06 (2026-07-06) is
-  COSE-only**; the parent project's `tests/vendored/pqc.js` read -06 and
+  COSE-only**; the parent project's `tests/protocol/pqc.js` read -06 and
   concluded there was no JWE binding. -05 has one: the KEM ciphertext goes in
   `ek`, and the key comes from KMAC256 over RFC 7518's AlgorithmID ||
   SuppPubInfo, with PartyU and PartyV left out. It is direct (`ML-KEM-768`)
@@ -939,7 +939,7 @@ Export tab and at `/admin-api/applications/{action}` (rule 7). The file is
 
 Both acts are audited (`application.export`, `application.import`) with the
 attribute NAMES and never a value. `tests/application_ldif.js` and
-`tests/vendored/sts_application_ldif.js` hold it.
+`tests/protocol/sts_application_ldif.js` hold it.
 
 ## `appHomePageUrl`: THE ONE URL ON AN APPLICATION ENTRY THAT IS FOR A PERSON
 
@@ -2599,7 +2599,7 @@ It is seeded by the FACTORY now. **The lesson is that the two halves of ONE
 claim set were held in two modules and only one of them was per realm**, so
 the rule to check a converted store against is not "is it `realms.map()`"
 but "is everything this thing is made of". This repository's own
-`tests/vendored/sts_admin_api_operations.js` is the guard for both: it mints
+`tests/protocol/sts_admin_api_operations.js` is the guard for both: it mints
 a token in a realm and looks for the claim in the default realm's.
 
 **A THIRD WAS FOUND ON 2026-09-06 AND IT IS THE SAME EXPIRED REASON AGAIN.**
@@ -3253,7 +3253,7 @@ realm may carry the setting it was refusing. The whole page was unusable inside
 a realm. `checkOverride()` now defaults the argument from `realmFor(key)`, which
 fixes all four call sites at once and leaves an explicit `true` and an explicit
 `false` meaning exactly what they did. The parent project's
-`tests/vendored/sts_admin_console.js` presses that Save button and is the guard; the
+`tests/protocol/sts_admin_console.js` presses that Save button and is the guard; the
 in-process half is `tests/appconfig_persistence.js`, which asserts the rule
 itself.
 
@@ -5170,7 +5170,7 @@ over 20,976 combinations, `tests/exchange_policy_exhaustive.js` over all
 2,488,320 — the policy alone, no directory; `tests/delegation_policy.js`
 gathers the facts from real entries in both modes and drives WS-Trust's
 `handleRst()`; `tests/token_exchange_product.js` and the local job
-`tests/vendored/sts_delegation_policy.js` are every outcome at the doors.
+`tests/protocol/sts_delegation_policy.js` are every outcome at the doors.
 
 ## An OAuth client is not a person, and now it has somewhere to be
 
@@ -6121,8 +6121,8 @@ and it is worth knowing which because they are three different kinds of answer:
 file**, and that is the lesson the bug in `authn.js`'s sign-in gate taught: a
 suite that narrows applications only to CONFIGURED roles cannot see a wrong
 answer in `holds()` at all, because `configuredRolesOf()` answers those the
-same whatever the context says. `tests/vendored/sts_roles.js` is the configured
-half and `tests/vendored/sts_roles_builtin.js` is the computed one, and neither
+same whatever the context says. `tests/protocol/sts_roles.js` is the configured
+half and `tests/protocol/sts_roles_builtin.js` is the computed one, and neither
 substitutes for the other.
 
 **`EVERYBODY` HAS NO NEGATIVE CASE AND THAT IS A PROPERTY OF THE ROLE.** Its
@@ -6254,7 +6254,7 @@ keys, and every document that carries or describes the key is served
 that header too.
 
 **THAT SECOND RULE IS ENFORCED SINCE 2026-09-10 AND WAS BEING BROKEN WHEN IT
-STARTED BEING.** `tests/vendored/sts_metadata_anonymous.js` asks it of every
+STARTED BEING.** `tests/protocol/sts_metadata_anonymous.js` asks it of every
 metadata document at once — nineteen of them — and `/sts/cert` was the one
 served without the header: a WS-Trust STS certificate this process mints at
 startup and throws away at exit, cacheable by anything between here and a
@@ -6430,7 +6430,7 @@ key-encryption key from the OpenBao container: a realm created at runtime had
 other and each written down. `/oauth2/jwks` answered a different key per worker,
 so an assertion encrypted to the key one worker published would not decrypt on
 another — which is how it was found, as an "intermittent" OAEP failure in
-`tests/vendored/sts_jwt_bearer_grant.js` that had been written down as a flake.
+`tests/protocol/sts_jwt_bearer_grant.js` that had been written down as a flake.
 
 **PRODUCT MODE WITH REQUEST WORKERS HAD THIS ALL ALONG.** In development with no
 keystore `storedFor()` answers null, so the channel worked and nothing anywhere
@@ -7172,7 +7172,7 @@ module about certificates would be a require nothing needs.
 ### THE MECHANISM IS THE VENDORED MODULE'S AND THE POLICY IS HERE
 
 That is `crypto.js`'s own split, made a second time and for the same reason.
-`common/vendored/x509.js` is the parent project's PKI code, byte-identical —
+`common/crypto_impl/x509.js` is the parent project's PKI code, byte-identical —
 already held to roughly 240 certificates against OpenSSL over there, already
 what `spiffe/spiffe_ca.ts` mints every X509-SVID with. What this file adds is
 what is true of THIS service: which three tiers, which realm they belong to,
@@ -7226,7 +7226,7 @@ it is. Nothing those callers did before this change stopped working.
 ~~**WHAT IS DELIBERATELY NOT A LEAF**, said here because an absence is what
 nothing reports: the eleven post-quantum keys per realm, which come from
 `common/pq_jose.js`, whose independence from the vendored encoder is the point
-of it — see `common/vendored/CLAUDE.md`. It is stated on `/admin/pki` rather
+of it — see `common/crypto_impl/CLAUDE.md`. It is stated on `/admin/pki` rather
 than left to be discovered.~~
 
 **THE POST-QUANTUM KEYS ARE LEAVES TOO, SINCE 2026-09-13, AND THE INDEPENDENCE
@@ -7235,7 +7235,7 @@ from that realm's JOSE Issuing CA — reached from `pqKeysForAsync()` and
 `pqKeysFor()` when they are made (by the process whose set the realm keeps,
 `remember()`'s rule), from a store restore, and from `certifyKeySet()` — and the
 ML-DSA listener certificate from the TLS Issuing CA. Four things decide whether
-it is still the arrangement `common/vendored/CLAUDE.md` asks for:
+it is still the arrangement `common/crypto_impl/CLAUDE.md` asks for:
 
 * **ONLY THE PUBLIC KEY CROSSES.** `helpers.js` hands `certifyPqLater()` the
   `alg` and `publicJwk` of each and nothing else; generation, the private bytes
@@ -7588,7 +7588,7 @@ where it is PUBLISHED and VERIFIED: a `pinned` row in `ownRsaCertificates()`
 `certificateHeaderFor()` (its slot is `slot@kid`), `pinnedPublishedJwks()` for
 the JWKS, and `/crypto/metadata`'s `pinned`, `pinned-pending` and
 `pinned-retired` states. `tests/pinned_signers.js` holds it;
-`tests/vendored/sts_pinned_signer.js` verifies an ID token against the pinned
+`tests/protocol/sts_pinned_signer.js` verifies an ID token against the pinned
 key's JWKS entry over HTTP.
 
 **AN `xml` PIN IS ALSO THE REALM'S DECRYPTION KEY** (rcbj's extension, the
@@ -8220,7 +8220,7 @@ anybody already holds, which is the TOTP row's contract (it was `totp.enabled` u
 argues the page.
 
 `tests/rfc7523_person_issuer.js` is the in-process half and section 13 of
-`tests/vendored/sts_jwt_bearer_grant.js` the over-HTTP one. Two of the claims
+`tests/protocol/sts_jwt_bearer_grant.js` the over-HTTP one. Two of the claims
 cannot be reached over HTTP at all: the sealing is a property of what is on the
 entry rather than of any reply, and a certificate issued to somebody who has
 since been deleted is a state no sequence of endpoint calls can produce while
@@ -8268,7 +8268,7 @@ of them away. **They converge; what they do not do is converge before
 answering**, and every response served inside that window carries a key set the
 service is about to disown.
 
-It reached the suite as `tests/vendored/sts_jwt_bearer_grant.js` section 7 — an
+It reached the suite as `tests/protocol/sts_jwt_bearer_grant.js` section 7 — an
 RSA public key read from `/oauth2/jwks` on one worker, an assertion encrypted
 to it, a token request decrypted on another — **`oaep decoding error`**, which
 names nothing and reads as a broken JWE.
@@ -8498,7 +8498,7 @@ read, which RFC 5280 section 6.3 calls an undetermined status.
 **THE SUITE'S OWN CHAINS PAY FOR IT.** Every chain a job or launcher mints and
 presents to a product-mode service — the remote PEP credential, XACML users,
 certificate sign-ins, uploaded application and person keys — names its CAs'
-lists now, served by `tests/vendored/test_crl_host.js` from the job's own
+lists now, served by `tests/protocol/test_crl_host.js` from the job's own
 process, or (for the launcher's PEP credential, whose minter exits) written by
 `tests/tools/pep-credential.js --crl-base` and served by the PEP container at
 `GET /crl/<name>`. None of it is committed key material.
@@ -8604,7 +8604,7 @@ carry those flags as JSON booleans, so a `false` posted back must be `false`.
 Without that line `apply-profile` followed by `issue-certificate` with the draft
 in between turned every cleared box ON, and the first thing it produced was a
 refusal about a reuse checkbox nobody had ticked.
-`tests/vendored/sts_pki_workbench.js` found it on its first run;
+`tests/protocol/sts_pki_workbench.js` found it on its first run;
 `"false"` and `"0"` are excluded for the same reason one step along.
 
 ### `FIELDS` is a table because the page and the parser are two files
@@ -8642,7 +8642,7 @@ this service's OWN reading of the post-quantum constructions and is
 independent of the engine's on purpose — and handing a
 key generated by one to an encoder that expects the other's byte layout is
 exactly the class of defect that independence exists to expose.
-`common/vendored/CLAUDE.md` argues the same thing from the other end.
+`common/crypto_impl/CLAUDE.md` argues the same thing from the other end.
 
 So `SLOW_FAMILIES` is what the page warns with. In `dispatch` mode the console
 holds affinity to a REQUEST worker, so the stall is that worker's rather than
@@ -9281,7 +9281,7 @@ enrolled an authenticator, with nothing anywhere having decided that it should.
 **A new attribute this service invents cannot appear on the account page**, and
 that is a property of the list rather than of anybody remembering.
 
-`tests/vendored/sts_portal_directory_attributes.js` is where that is held: it
+`tests/protocol/sts_portal_directory_attributes.js` is where that is held: it
 confirms an enrolment, checks through `/admin-api` that the secret really is on
 the entry, and then requires that it is nowhere in the HTML. **Every other
 assertion in that file passes against the dump-the-entry implementation. Only
@@ -9757,7 +9757,7 @@ reach outside it and this is the index of them:
    sign-in waiting for a key nobody issued (STS-AUTHN-0208). A waiter now
    re-claims on each turn, so it takes over from a holder that finished,
    failed or died. `tests/oidc_rp_surface_key.js` and
-   `tests/vendored/sts_console_after_root.js` hold it. **Deleting one takes its surface offline
+   `tests/protocol/sts_console_after_root.js` hold it. **Deleting one takes its surface offline
    until a restart**, with a refusal that names the entry — which is the seeding
    rule finally having an observable consequence. — *THERE ARE THREE OF THEM
    SINCE 2026-09-06* under `applications.js`, above
@@ -10189,7 +10189,7 @@ passed, and no cross-verifier check), one by the source check (the grant keying
 by a prefixed issuer, which no in-process request reaches), and one equivalent
 (the restore's expiry filter, which the sweep every read runs makes
 unobservable) — and sections 14
-and 13 of `tests/vendored/sts_jwt_bearer_grant.js` and
+and 13 of `tests/protocol/sts_jwt_bearer_grant.js` and
 `sts_saml2_bearer_grant.js` the HTTP half, with four service mutants caught
 there.
 
@@ -10329,7 +10329,7 @@ names the `openssl pkcs12 -export -legacy` rebuild for an older macOS that refus
 that, rather than this service writing a second, weaker format.
 
 `tests/tls_client_certificates.js` pins it (nine mutants) and section 9 of
-`tests/vendored/sts_portal_signing_key.js` the portal half (two service mutants).
+`tests/protocol/sts_portal_signing_key.js` the portal half (two service mutants).
 
 **AN APPLICATION MAY HOLD ONE SINCE 2026-09-13.** `issue()`, `listFor()`,
 `activeFor()` and `revoke()` take a holder KIND, and an application's slot is
@@ -10427,7 +10427,7 @@ back as its CN plus its dNSNames, so with `CN=alice` on a certificate for
 say the same thing. The UID is what keeps the subject DN naming exactly ONE
 entry, since a host may be registered on two and `ldap_server.js`'s
 `locateEntry()` turns a person's subject DN back into an entry.
-`tests/vendored/sts_acme_certbot.js` and `sts_acme_lego.js` renew through it.
+`tests/protocol/sts_acme_certbot.js` and `sts_acme_lego.js` renew through it.
 
 **A REQUEST THAT NAMES NO PROFILE AND ONLY HOSTS IS A `tls-server` REQUEST
 (2026-09-26, #252, rcbj's decision on #207).** `profileForIdentifiers(family,
@@ -10694,7 +10694,7 @@ What is this directory's is where it is decided and what an app password is.
   `appPasswords.maxPerPerson`.
 
 `tests/second_factor_doors.js` is the in-process half;
-`tests/vendored/sts_second_factor_doors.js` drives the five doors over the wire.
+`tests/protocol/sts_second_factor_doors.js` drives the five doors over the wire.
 
 ### An application's own claim sets (2026-10-01)
 
@@ -11680,7 +11680,7 @@ that queued it and swept by a CLUSTER scheduler job. It differs in two ways:
   message.
 
 `tests/mail.js` holds all of it in process, including SMTP against a real
-`smtp-server` with STARTTLS and DKIM. `tests/vendored/sts_mail.js` drives it
+`smtp-server` with STARTTLS and DKIM. `tests/protocol/sts_mail.js` drives it
 over HTTP into the Mailpit the compose stack runs. docs/mail.md is the
 operator's guide.
 
@@ -11826,7 +11826,7 @@ credential store, the portal and the console must agree on is here:
 An emailed factor is `amr ["otp"]` (RFC 8176 has no value for email, D2) and
 meets NO risk step-up (`risk_engine.satisfiedBy()`'s `kinds`, D1).
 `tests/email_factor.js` drives it end to end in process;
-`tests/vendored/sts_email_factor.js` over HTTP into Mailpit.
+`tests/protocol/sts_email_factor.js` over HTTP into Mailpit.
 
 
 ## `closed_sets.ts`: THE CLOSED SETS AN ADMINISTRATOR'S INPUT IS HELD TO (#86, 2026-09-26)
@@ -12223,7 +12223,7 @@ product, unlike a caller-named fetch's, because a Vault is usually internal
 and only an administrator (Admin Write) can name one.
 
 **What has no test yet**: a real AWS, Google Cloud, Azure or Vault (the
-in-process test fakes all four; `tests/vendored/sts_secret_destinations.js`
+in-process test fakes all four; `tests/protocol/sts_secret_destinations.js`
 drives the register over HTTP and the `file` destination only); the sealing
 in product mode, which needs a persistent key-encryption key in process.
 
@@ -12997,7 +12997,7 @@ require this one to fill their templates.
     endpoint name such as "Token endpoint" is translated too.
 * **A coverage note's first word stays English** (test B, and the
   translators' validator). That word is `full`, `partial` or `minimal`, and
-  `tests/vendored/sts_metadata.js` reads it from the answer, as any consumer
+  `tests/protocol/sts_metadata.js` reads it from the answer, as any consumer
   may.
 * **Twenty-eight namespaces in all**, every base catalog current.
 
@@ -13416,7 +13416,7 @@ what a maintainer must not undo:
   before the directory at 21. Which values are keys is `credentials.ts`'s
   (`keysOfValues()`, the rule `keysOf()` uses), never this file's.
 * Codes `STS-AUTHN-0413` to `0418`. `tests/passkey_report.js` and
-  `tests/vendored/sts_passkey_report.js` hold it.
+  `tests/protocol/sts_passkey_report.js` hold it.
 
 ## `passkey_evidence.ts`: RFC 4998 EVIDENCE FOR A VERIFIED CLASSICAL PASSKEY (#947)
 

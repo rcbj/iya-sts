@@ -783,7 +783,7 @@ async function smtp(t) {
   const tm = require('../common/mail_transports');
   const errorCodes = require('../common/error_codes');
   const stsCrypto = require('../common/crypto');
-  const ca = require('./vendored/outbound_test_ca.js');
+  const ca = require('./protocol/outbound_test_ca.js');
   const authority = await ca.makeCa();
   const leaf = await ca.listenerCertificate(authority, 'localhost');
   const stranger = await ca.listenerCertificate(await ca.makeCa(),

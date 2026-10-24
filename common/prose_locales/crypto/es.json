@@ -457,7 +457,7 @@
   },
   "crypto.families.pki.signs": {
     "en": "f1ce79cf624ab6f5",
-    "text": "CERTIFICADOS. La Root se firma a sí misma una vez para el servicio; firma una Intermediate por dominio de confianza y una para el proceso; cada Intermediate firma una CA emisora por caso de uso; y cada CA emisora firma las hojas de su caso de uso — las claves de firma y de escucha del propio servicio, y los pares de claves emitidos a aplicaciones y personas. El algoritmo de firma es el elegido para la jerarquía y está restringido por la familia de claves del EMISOR y no la del sujeto, que es el error al que la propia cabecera de `common/vendored/x509.js` dedica un párrafo: importar una clave con un digest y firmar con otro produce un certificado cuyo algoritmo declarado y cuya firma real no coinciden, y `openssl verify` lo informa como una firma incorrecta sin nombrar ninguno de los dos."
+    "text": "CERTIFICADOS. La Root se firma a sí misma una vez para el servicio; firma una Intermediate por dominio de confianza y una para el proceso; cada Intermediate firma una CA emisora por caso de uso; y cada CA emisora firma las hojas de su caso de uso — las claves de firma y de escucha del propio servicio, y los pares de claves emitidos a aplicaciones y personas. El algoritmo de firma es el elegido para la jerarquía y está restringido por la familia de claves del EMISOR y no la del sujeto, que es el error al que la propia cabecera de `common/crypto_impl/x509.js` dedica un párrafo: importar una clave con un digest y firmar con otro produce un certificado cuyo algoritmo declarado y cuya firma real no coinciden, y `openssl verify` lo informa como una firma incorrecta sin nombrar ninguno de los dos."
   },
   "crypto.families.pki.verifies": {
     "en": "e27202f2b20a852a",
@@ -485,7 +485,7 @@
   },
   "crypto.families.pki.algorithms.0.how": {
     "en": "d40c79caa059f986",
-    "text": "X.509 v3, DER, mediante pkijs y asn1js — common/vendored/x509.js, el propio código PKI del proyecto principal, idéntico byte a byte. Un único codificador para este servicio y para la página PKI / X.509 de ese proyecto."
+    "text": "X.509 v3, DER, mediante pkijs y asn1js — common/crypto_impl/x509.js, el propio código PKI del proyecto principal, idéntico byte a byte. Un único codificador para este servicio y para la página PKI / X.509 de ese proyecto."
   },
   "crypto.families.pki.algorithms.1.what": {
     "en": "1b9e0c9e96801219",

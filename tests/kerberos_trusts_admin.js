@@ -36,7 +36,7 @@
 //
 // IN PROCESS because tickets are opened with keys only the inside holds, and
 // two Kerberos realms on one port is a shape no stack here publishes. The
-// same acts over HTTP are `tests/vendored/sts_kerberos_trusts_api.js`.
+// same acts over HTTP are `tests/protocol/sts_kerberos_trusts_api.js`.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -53,7 +53,7 @@ const adminViews = require('../admin-core/admin_views');
 const adminScope = require('../admin-ui/admin_scope');
 const WebKit = require('../admin-ui/web_kit');
 const KerberosTrustsPage = require('../kerberos/web_kerberos_trusts');
-const wire = require('./vendored/krb5_wire.js');
+const wire = require('./protocol/krb5_wire.js');
 const grants = require('./tools/cross_realm_grants');
 
 const log = require('bunyan').createLogger({

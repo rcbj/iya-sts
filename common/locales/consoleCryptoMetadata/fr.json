@@ -225,7 +225,7 @@
   "defensible": "C’est défendable en raison de ce que sont ces clés : générées au démarrage, gardées uniquement en mémoire, mortes à la sortie du processus, et ne protégeant rien — ce domaine de confiance est en mode développement, qui ne vérifie aucun mot de passe et ne valide aucun jeton qu’il n’a pas émis.",
   "notPersistedProduct": "Ces clés sont générées au démarrage, gardées uniquement en mémoire et mortes à la sortie du processus — le stockage de ce domaine de confiance ne conserve pas ses clés de signature. Mais ce domaine de confiance est en mode produit et vérifie chaque mot de passe et chaque jeton : jusque-là, une clé remise ici signe ce que les parties de confiance croient. Traitez-la comme la clé de signature active qu’elle est.",
   "needsWrite": "Cela nécessite <strong>Admin Write</strong>, une exigence plus forte que toute autre lecture de cette console, parce qu’ici lire, C’EST prendre.",
-  "exporter": "<strong>L’exportateur est celui du débogueur, intégré tel quel.</strong> <code>common/vendored/key_material.js</code> gère les quatre formats avec un mot de passe — PEM, DER, JWK et PKCS#12 — et c’est le même code que celui qu’exerce la page PKI du débogueur. Un second exportateur à côté serait la moins bonne copie.",
+  "exporter": "<strong>L’exportateur est celui du débogueur, intégré tel quel.</strong> <code>common/crypto_impl/key_material.js</code> gère les quatre formats avec un mot de passe — PEM, DER, JWK et PKCS#12 — et c’est le même code que celui qu’exerce la page PKI du débogueur. Un second exportateur à côté serait la moins bonne copie.",
   "theKeyPairs": "Les paires de clés",
   "thFormats": "Formats",
   "notMadeYet": "pas encore créée",

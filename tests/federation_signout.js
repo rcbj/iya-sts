@@ -14,7 +14,7 @@
 // Front-Channel logout, a WS-Federation cleanup — and tells a partner of a
 // sign-out here; `federation_sp.ts` keeps what a sign-in learns about the
 // partner's session and its SessionNotOnOrAfter; `logout/logout.ts` ends the
-// matched session through its one model. `tests/vendored/
+// matched session through its one model. `tests/protocol/
 // sts_federation_signout.js` drives all of it over HTTP against a running
 // service; this file holds what a running service cannot be made to show on
 // demand, and what is cheaper to pin at the function:
@@ -91,7 +91,7 @@ function childMain() {
     const backchannel = require(ROOT + '/oauth-oidc/backchannel_logout');
     const logout = require(ROOT + '/logout/logout');
     const stats = require(ROOT + '/common/admin_stats');
-    const xmldsig = require(ROOT + '/tests/vendored/saml_xmldsig');
+    const xmldsig = require(ROOT + '/tests/protocol/saml_xmldsig');
     const forge = require('node-forge');
 
     // EVERY CODE A RESPONSE IS MARKED WITH, in order: the refusals' codes
@@ -108,7 +108,7 @@ function childMain() {
 
     // HTTPS under a CA of this child's own — federation_subject_policy.js's
     // arrangement and reason: product refuses a plain-http back channel.
-    const testCa = require(ROOT + '/tests/vendored/outbound_test_ca');
+    const testCa = require(ROOT + '/tests/protocol/outbound_test_ca');
     const ca = await testCa.makeCa();
     const leaf = await testCa.listenerCertificate(ca, '127.0.0.1');
     const caPem = ca.certPem;

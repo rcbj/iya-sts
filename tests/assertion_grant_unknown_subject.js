@@ -90,7 +90,7 @@ function childMain() {
     const helpers = require(ROOT_DIR + '/common/helpers');
     const audit = require(ROOT_DIR + '/common/audit');
     const stsCrypto = require(ROOT_DIR + '/common/crypto');
-    const signer = require(ROOT_DIR + '/tests/vendored/saml_xmldsig.js');
+    const signer = require(ROOT_DIR + '/tests/protocol/saml_xmldsig.js');
 
     const server = http.createServer(app);
     await new Promise(function (r) { server.listen(0, '127.0.0.1', r); });

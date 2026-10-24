@@ -508,7 +508,7 @@ class XacmlRolePep {
   // The two alternatives were both worse. Seeding on `realms.onChange` puts a
   // policy in every realm's repository, which changes what `/xacml/policies`
   // answers, what a remote PEP pulls and what every count in
-  // `tests/vendored/sts_xacml_endpoints.js` asserts — for a document that has
+  // `tests/protocol/sts_xacml_endpoints.js` asserts — for a document that has
   // nothing to do with anybody else's boundary. Falling back to the DEFAULT
   // realm's copy couples two realms, which is the one thing the realm design
   // does not do.

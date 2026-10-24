@@ -10,7 +10,7 @@
 // UNDER WHICH NAME (2026-09-13).
 //
 // **WHY THIS IS IN PROCESS**, which is `tests/CLAUDE.md`'s question.
-// `tests/vendored/sts_pki_distribution_points.js` follows every `ldap://`
+// `tests/protocol/sts_pki_distribution_points.js` follows every `ldap://`
 // distribution point over the socket, and two mutants of what this file
 // guards SURVIVED it. Both for a reason no socket-side job can get around:
 //

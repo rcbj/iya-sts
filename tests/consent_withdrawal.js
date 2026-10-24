@@ -9,7 +9,7 @@
 // WITHDRAWN MEANS WITHDRAWN (#172): THE DECISION THE REFRESH GRANT ASKS, AND
 // THE REVOCATION A WITHDRAWAL MAKES, IN PROCESS.
 //
-// `tests/vendored/sts_consent_withdrawal.js` drives the whole thing over HTTP
+// `tests/protocol/sts_consent_withdrawal.js` drives the whole thing over HTTP
 // in both modes: a withdrawal through each door, the refresh refused, the
 // access token inactive at introspection, a re-consent reviving nothing, the
 // portal's form. What is HERE is what cannot be reached that way:

@@ -189,7 +189,7 @@ class VcStatusAdmin {
     };
     if (!Object.prototype.hasOwnProperty.call(ACTIONS, action)) {
       // `Unknown action "x". <phrase>: <list>.` — the shape every action
-      // resource answers and `tests/vendored/sts_admin_api_operations.js`
+      // resource answers and `tests/protocol/sts_admin_api_operations.js`
       // reads, because that job checks each console action has an operation
       // here BY reading the list back out of this sentence. "Name an
       // action: …" named them and did not name the action asked for, so the

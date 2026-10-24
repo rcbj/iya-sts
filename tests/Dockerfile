@@ -6,7 +6,7 @@
 # This is the image `docker-compose-run-tests.yml` builds for the `tests`
 # service: node, a Chrome, this whole repository, and both node_modules trees.
 # It runs tests/run-tests-in-container.sh, which drives EVERY job
-# (tests/vendored/MANIFEST.js is the count and no number is written here —
+# (tests/protocol/MANIFEST.js is the count and no number is written here —
 # one was, said twenty-three, and was wrong within a fortnight)
 # against the `sts` service beside it on the compose network and writes the
 # report to a bind mount. Nothing on the host is needed but docker.
@@ -15,7 +15,7 @@
 # it is about eight hundred lines shorter for one reason: that image is
 # assembled COPY by COPY out of a repository whose tests, borrowed modules and
 # vendored client files live in five directories, and it hit Docker's 125-layer
-# limit doing it. Here the tests ARE this repository — tests/ and tests/vendored/
+# limit doing it. Here the tests ARE this repository — tests/ and tests/protocol/
 # are committed files of this checkout — so one `COPY . ./` is the whole of it.
 #
 # ---------------------------------------------------------------------------
@@ -60,7 +60,7 @@
 # STAGES OF THEIR OWN AND COPIED INTO THE RUNNER BELOW.
 #
 # The ACME, EST and SCEP servers were only ever driven by this suite's own
-# clients (tests/vendored/acme_client.js, est_client.js, scep_client.js),
+# clients (tests/protocol/acme_client.js, est_client.js, scep_client.js),
 # second readings of the RFCs written here. These are the real ones, each
 # the client an operator of that protocol actually runs, each at ONE pinned
 # version and each checked before it is built:
@@ -220,7 +220,7 @@ RUN /usr/src/build-test-suite.sh /opt/scim2-test-suite
 #
 #   * SAMBA 4.25.0 (GPL-3.0, NEVER VENDORED): the release tarball, checked by
 #     sha256, built into /opt/samba for its raw Kerberos KDC tests,
-#     python/samba/tests/krb5 — tests/vendored/sts_kerberos_samba.js runs them
+#     python/samba/tests/krb5 — tests/protocol/sts_kerberos_samba.js runs them
 #     through tests/kerberos-interop/samba_krb5_driver.py. The distribution's
 #     python3-samba ships the bindings without that test tree, and the tree
 #     must match the bindings it imports, so both come from one tarball. The
@@ -230,7 +230,7 @@ RUN /usr/src/build-test-suite.sh /opt/scim2-test-suite
 #   * HEIMDAL (BSD-3-Clause) at a pinned master commit — 7.8.0, the last
 #     release, has no gss-token — and curl 8.16.0, the last curl that builds
 #     against Heimdal's GSSAPI, into /opt/heimdal, for
-#     tests/vendored/sts_kerberos_heimdal.js. Nothing of it goes on the PATH:
+#     tests/protocol/sts_kerberos_heimdal.js. Nothing of it goes on the PATH:
 #     the runner's kinit is MIT's.
 #
 # tests/kerberos-interop/build-*.sh pin, check and build; tests/CLAUDE.md,
@@ -336,7 +336,7 @@ RUN node -v && npm -v
 # THE VERSION IS NOT THE PARENT PROJECT'S, AND THAT IS DELIBERATE. That image
 # pins 121.0.6167.85, and its own comments explain what it works around there
 # (Web Crypto Ed25519 behind a flag). The browser jobs here drive this
-# service's console, and tests/vendored/sts_admin_console.js reads status codes
+# service's console, and tests/protocol/sts_admin_console.js reads status codes
 # and headers through WEBDRIVER BiDi (`network.responseCompleted`), because
 # `default-src 'none'` on the console is the thing under test and blocks a
 # `fetch()` from the page. BiDi network events are a recent Chrome, so this
@@ -420,7 +420,7 @@ RUN python3 -m venv /opt/certbot \
  && ldd /opt/enroll-clients/estclient
 # THE PUBLISHED XML SCHEMAS AND A VALIDATOR FOR THEM (#188, 2026-09-24):
 # libxml2's `xmllint`, and every OASIS and W3C schema
-# tests/vendored/sts_xml_schema_validation.js validates this service's SAML,
+# tests/protocol/sts_xml_schema_validation.js validates this service's SAML,
 # WS-Trust and WS-Federation documents against — FETCHED here, each checked
 # against the sha256 in tests/xml-schemas/SCHEMAS (the build fails on a
 # single differing byte), with the catalogue that lets the job run
@@ -439,7 +439,7 @@ ENV STS_XML_SCHEMA_DIR=/opt/xml-schemas
 # environment of its own, every package pinned to a version AND a sha256
 # (--require-hashes; tests/scim-conformance/requirements.txt says how to
 # re-pin). And the second, compiled in the stage at the top of this file.
-# tests/vendored/sts_scim_conformance.js runs both. Above the source copy,
+# tests/protocol/sts_scim_conformance.js runs both. Above the source copy,
 # for the schemas' reason.
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get -y install --no-install-recommends \
@@ -475,7 +475,7 @@ ENV STS_HEIMDAL_DIR=/opt/heimdal
 # upstream commits, each tarball checked against a sha256, and their Python
 # dependencies hash-pinned into a venv of their own. Run, never vendored;
 # the upstream `tests/` directory with its private keys is not copied.
-# tests/vendored/sts_tlsfuzzer.js and tests/tlsfuzzer_debugger.js drive it
+# tests/protocol/sts_tlsfuzzer.js and tests/tlsfuzzer_debugger.js drive it
 # through tests/tlsfuzzer/sts_adapter.py. Above the source copy, for the
 # schemas' reason: only the two files the fetch reads are copied first.
 COPY tests/tlsfuzzer/build-tlsfuzzer.sh tests/tlsfuzzer/requirements.txt \
@@ -610,7 +610,7 @@ RUN mkdir -p tests/report
 #
 # CONFIG_FILE is the appconfig layer the JOBS read for a log level, not the
 # service's — run-report.js overrides it per protocol job to ./env/local.js
-# relative to tests/vendored/. This one is for the runner itself.
+# relative to tests/protocol/. This one is for the runner itself.
 ENV CONFIG_FILE=./env/local.js
 # Where the service is, on the compose network. run-tests-in-container.sh passes
 # it to run-report.js as --service-url and waits for it first; the compose file

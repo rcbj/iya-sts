@@ -33,7 +33,7 @@
 // a verifier with no clock. Nothing over the wire can ask *what would the code
 // have been at 1970-01-01T00:00:59Z*, and nothing should be able to.
 //
-// The over-HTTP half of this feature is `tests/vendored/sts_portal_totp.js`,
+// The over-HTTP half of this feature is `tests/protocol/sts_portal_totp.js`,
 // which drives the enrolment and the sign-in with a code it computes itself.
 // The two are not substitutes: this one says the arithmetic is right, and that
 // one says the doors are wired up. Neither implies the other, and the vectors

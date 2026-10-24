@@ -9,7 +9,7 @@
 // THE ACME HANDLERS, DRIVEN THROUGH THE ROUTER BY AN INDEPENDENT CLIENT, IN A
 // CHILD PROCESS (2026-09-13).
 //
-// `tests/vendored/sts_acme_enrollment.js` is the over-HTTPS job and carries the
+// `tests/protocol/sts_acme_enrollment.js` is the over-HTTPS job and carries the
 // nine profiles, the chain to the Root, OCSP and the CRL. What is here is the
 // HANDLER half that job would have to arrange a stack for, run against the
 // whole protocol stack on an ephemeral plain-HTTP port:
@@ -50,7 +50,7 @@ function childMain() {
   const OUT = process.env.AP_OUT;
   const nodeCrypto = require('crypto');
   const http = require('http');
-  const C = require(ROOT_DIR + '/tests/vendored/acme_client.js');
+  const C = require(ROOT_DIR + '/tests/protocol/acme_client.js');
   const findings = [];
   function note(ok, what, detail) {
     findings.push({ ok: !!ok, what: what,

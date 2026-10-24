@@ -44,11 +44,11 @@
 //      hands the SAME one to the refreshed token; Grant Management's
 //      `grant_id` is used where there is one; the consent record keeps the
 //      details themselves (the screen's controls, a lowered Allow and a
-//      raised one refused are `tests/vendored/sts_gnap_catalogue.js`'s
+//      raised one refused are `tests/protocol/sts_gnap_catalogue.js`'s
 //      section 8, over HTTP).
 //
 // IN PROCESS, in a throwaway realm. The over-HTTP half is
-// `tests/vendored/sts_gnap_limits.js`.
+// `tests/protocol/sts_gnap_limits.js`.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;

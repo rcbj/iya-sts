@@ -13,7 +13,7 @@
 // keyGen, sigGen, sigVer and encapDecap, both revisions where there are two
 // — held to what this service does with each algorithm, through
 // common/crypto.js wherever crypto.js has a door, and through the vendored
-// engine crypto.js and `pki.js` share (`common/vendored/pqc_x509.js`) where
+// engine crypto.js and `pki.js` share (`common/crypto_impl/pqc_x509.js`) where
 // crypto.js has none. Every vector set is read and every test group is
 // either APPLIED or counted as not applicable with its reason; nothing is
 // skipped silently.
@@ -441,8 +441,8 @@ module.exports = {
       return;
     }
     crypto = require('../common/crypto');
-    pqcX509 = require('../common/vendored/pqc_x509');
-    pqc = require('../common/vendored/pqc');
+    pqcX509 = require('../common/crypto_impl/pqc_x509');
+    pqc = require('../common/crypto_impl/pqc');
     const commit = fs.existsSync(path.join(DIR, 'COMMIT'))
       ? fs.readFileSync(path.join(DIR, 'COMMIT'), 'utf8').trim()
       : '(unstamped)';

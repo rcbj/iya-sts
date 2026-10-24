@@ -30,7 +30,7 @@
 //      in no other.
 //   C. THE CROSSING IS A CHECK. A signature made by `pq_jose.js` verifies
 //      under the VENDORED X.509 reading against the public key read back out
-//      of the certificate. That is the independence `common/vendored/CLAUDE.md`
+//      of the certificate. That is the independence `common/crypto_impl/CLAUDE.md`
 //      insists on being USED: two readings that disagree now fail here, where
 //      before a certificate simply did not exist to disagree with. And the one
 //      translation — the ECDSA half's 0x04 — is shown to matter.
@@ -111,7 +111,7 @@ function spkiOf(certificatePem) {
 // and a DER Ecdsa-Sig-Value in X.509. The EdDSA halves are the same octets.
 function x509SignatureOf(pqJose, alg, signature) {
   log.debug("Entering x509SignatureOf().");
-  const x509 = require('../common/vendored/x509');
+  const x509 = require('../common/crypto_impl/x509');
   const cfg = pqJose.COMPOSITES[alg];
   if (!cfg || pqJose.TRAD[cfg.trad].kind !== 'ec') {
     log.debug("Leaving x509SignatureOf().");
@@ -154,8 +154,8 @@ async function inProcess(t) {
   const helpers = require('../common/helpers');
   const realms = require('../common/realms');
   const pqJose = require('../common/pq_jose');
-  const pqcX509 = require('../common/vendored/pqc_x509');
-  const x509 = require('../common/vendored/x509');
+  const pqcX509 = require('../common/crypto_impl/pqc_x509');
+  const x509 = require('../common/crypto_impl/x509');
 
   await keystore.start();
   [REALM_A, REALM_B].forEach(function (id) {

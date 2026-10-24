@@ -25,7 +25,7 @@
 // applications; they never define one, because what an application IS is
 // which routes this service registered, and only this file can say that.
 // `tests/hosted_applications.js` reads every path `sts_metadata.ts`
-// describes — which `tests/vendored/sts_metadata.js` holds to the running
+// describes — which `tests/protocol/sts_metadata.js` holds to the running
 // router in both directions — and fails on one that no application claims,
 // so a new route family cannot arrive unmapped and quietly answer on every
 // listener.

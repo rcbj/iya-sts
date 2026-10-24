@@ -82,7 +82,7 @@ about that line had to change.
      wrong within a month.
    * **What no code here can check is a new console control with no row.**
      Nothing in this service can see a form appear on a page. So the parity is
-     asserted from outside, by this repository's own `tests/vendored/admin_api.js`, and it
+     asserted from outside, by this repository's own `tests/protocol/admin_api.js`, and it
      reads the facts off the SERVICE rather than off a list in the test: the
      console's page list comes back in `GET /admin-api/status`, and each action
      handler, asked for an action that does not exist, replies naming the ones
@@ -229,7 +229,7 @@ THAT IS NOT DECORATION.** `POST /admin-api/users/{action}` mirrors `POST
 /admin/users` AND `POST /admin/users/new`, because both reach one action switch
 — `/admin/users/new` posts to ITSELF rather than to the list, so that a
 generated password and an activation link can be answered in a page body
-instead of a 303's query string. `tests/vendored/sts_admin_console.js` builds
+instead of a 303's query string. `tests/protocol/sts_admin_console.js` builds
 its list of "console paths that take a POST" by parsing this field, so a page
 left out of it reads as a control that reaches nothing. `/admin-api/xacml/{action}`
 names its former page paths and its three tab-specific controls; this is the
@@ -481,7 +481,7 @@ roles would grant — and does NOT repeat the document, because
 `GET /admin-api/openapi.json` is the document.
 
 **AND THE LEDGER'S ONLY EXEMPTION WENT WITH IT.**
-`tests/vendored/sts_admin_api_operations.js` kept a `NOT_DRIVEN_HERE` table
+`tests/protocol/sts_admin_api_operations.js` kept a `NOT_DRIVEN_HERE` table
 whose two rows were these two routes, the only operations on this API a JSON
 walk could not drive. Every operation this API documents now answers JSON and
 every one of them is driven; the table is kept, empty, because the next
@@ -629,7 +629,7 @@ administrative surface it cannot reach.
 
 They are why the off switch exists.
 
-* **A test drives this API.** The parent project's `tests/vendored/admin_api.js` walks
+* **A test drives this API.** The parent project's `tests/protocol/admin_api.js` walks
   every operation over HTTP with no browser and no cookie jar. A credential here
   would be the only one a test had to hold a secret for, in a service whose
   premise is that it authenticates nobody.
@@ -781,7 +781,7 @@ rule does not hold.** Parity says every console action has an operation and both
 go through one function, which is what stops the two DOORS drifting — and it
 worked: neither door was more permissive than the other. What it cannot catch is
 a field the API accepts and the console's form does not HAVE, because there is
-then no second implementation to disagree with. `tests/vendored/admin_api.js`
+then no second implementation to disagree with. `tests/protocol/admin_api.js`
 checks every documented schema property against a live reply, which is the check
 that would have caught this had it covered request bodies as well: a documented
 request property that changes nothing is the same class of defect as a
@@ -925,7 +925,7 @@ mirror the three added on 2026-09-05 — when `ou=roles`, `ou=policies` and
 `ou=peps` each got the page its own module's schema comment had been claiming
 for weeks. They exist because of rule 7 and for no other reason —
 a page of that console gets an operation here in the same change — and the
-parity check in `tests/vendored/admin_api.js` is what would have noticed if they
+parity check in `tests/protocol/admin_api.js` is what would have noticed if they
 had not.
 
 **They reach their views through `adminViews.directoryPageJson()`, over
@@ -996,7 +996,7 @@ it, and could create none of them.
 check — every control on that console has an operation here, every operation
 here names a control there — so it reports DRIFT and is silent about ABSENCE.
 That is not a flaw in the rule; it is the boundary of what a parity check can
-be. What found this was `tests/vendored/sts_directory_bulk_load_api.js`: a job
+be. What found this was `tests/protocol/sts_directory_bulk_load_api.js`: a job
 named "through the management API" that could not be written, because two of its
 three sections would have had to reach for SCIM.
 
@@ -1159,7 +1159,7 @@ construction (`tests/multi_account_concurrency.js` 7).
 
 `/admin/caep-sessions` is a page of the console and had no operation naming it:
 the CAEP GET beside it mirrors `/admin/caep`, and **one operation cannot mirror
-two pages**. Nothing noticed until `tests/vendored/admin_api.js` was run against
+two pages**. Nothing noticed until `tests/protocol/admin_api.js` was run against
 a tree where that page had a drill-down worth mirroring — the gap pre-dated the
 change that exposed it, which is the argument for the check rather than against
 it.
@@ -1468,7 +1468,7 @@ front process with the page (`common/request_pool.js`'s `NEVER_DISPATCHED`),
 because a worker's socket is the unix socket from the front process. Not a
 service operation: a realm administrator may call it. `tls/CLAUDE.md` argues
 the rest; `tests/tls_connection_page.js` and
-`tests/vendored/sts_tls_connection.js` hold it.
+`tests/protocol/sts_tls_connection.js` hold it.
 
 **AND THIS IS NOW THE TRUSTSTORE'S ONLY RUNTIME DOOR BESIDE THE CONSOLE'S**
 (#597): the open `POST /tls/trust` and `/tls/trust/clear` were deleted, and
@@ -1499,7 +1499,7 @@ new:
 
 `admin-ui/CLAUDE.md` (*A full garbage collection, on demand*) argues the
 rest; `tests/node_health_page.js` section 10 and
-`tests/vendored/sts_node_health.js` section 6 hold it.
+`tests/protocol/sts_node_health.js` section 6 hold it.
 
 ## `/admin-api/tls/trust` — THE TRUSTSTORE'S GATED RUNTIME DOOR (2026-09-12)
 
@@ -1525,7 +1525,7 @@ Four things a caller has to be told, and the descriptions tell them:
   whether it was written down. A removed `file` anchor still comes back.
 * **NO BULK CLEAR, AND `add` IS ALL OR NOTHING** on a block OpenSSL cannot
   read. `remove` takes ONE fingerprint and a bodyless POST removes nothing —
-  which matters because `tests/vendored/sts_metadata.js` posts to every route
+  which matters because `tests/protocol/sts_metadata.js` posts to every route
   with no body.
 * **NO PRIVATE KEY IS IN ANY REPLY** — the truststore holds certificates only.
 
@@ -1550,7 +1550,7 @@ a caller is told:
 
 * **ONE REPLY CARRIES KEY MATERIAL, ONCE**: a key this service generated, in
   `shown`, `no-store`. A trust password is never returned, and no read
-  carries a key (`tests/vendored/sts_kerberos_trusts_api.js` searches every
+  carries a key (`tests/protocol/sts_kerberos_trusts_api.js` searches every
   one).
 * **`remove` WANTS `confirm` REPEATING THE PARTNER REALM**, the console's typed
   confirmation as a field, because it takes the keys with it.
@@ -1709,7 +1709,7 @@ second set, and what it does is DELETE.
 **AND THERE IS NO OPERATION THAT READS A CODE.** `GET /users` reports the counts
 on each row and never the strings; the person reads their own set on
 `/portal/mfa` and nowhere else. That is asserted rather than trusted —
-`tests/vendored/sts_portal_backup_codes.js` walks this API's own OpenAPI
+`tests/protocol/sts_portal_backup_codes.js` walks this API's own OpenAPI
 document for a path that looks like a reader, and then checks that no code it
 holds appears anywhere in a `GET /users` reply.
 
@@ -1845,7 +1845,7 @@ realm does not hold is refused — `400` for a value that is not a SHA-256 (`STS
 `404` for one not held here (`STS-ADMIN-0641`), `500` for one that could not be
 described. A certificate from another realm is reached under that realm's
 prefix, which is the realm boundary rather than an inconvenience.
-`tests/vendored/sts_admin_api_operations.js`'s `theCertificateDetailsAnswer()`
+`tests/protocol/sts_admin_api_operations.js`'s `theCertificateDetailsAnswer()`
 drives both shapes, the colon spelling, and the refusal at the default realm's
 door of a certificate a throwaway realm holds.
 
@@ -2201,7 +2201,7 @@ instead, before any pane action, for both doors (`STS-PKI-0203`) — two of
 them fell back silently to a default before.
 
 `tests/closed_sets.js` holds all of this in process, through the route
-wrapper itself; `tests/vendored/sts_admin_closed_sets.js` (ours) holds the
+wrapper itself; `tests/protocol/sts_admin_closed_sets.js` (ours) holds the
 running service at every door, discovering every enum from the published
 document.
 
@@ -2586,4 +2586,4 @@ recount QUEUES the scheduler job, never runs on the request. A filter refused
 is 400 with the report's own code (`STS-AUTHN-0416`); a store that could not
 be asked (`STS-LDAP-0139` on the rejection) is 503, anything else 500, both
 `STS-AUTHN-0415`. `list` and `lane` are closed sets, held at the gate (#86).
-`tests/vendored/sts_passkey_report.js` drives it.
+`tests/protocol/sts_passkey_report.js` drives it.

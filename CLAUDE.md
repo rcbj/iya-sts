@@ -62,7 +62,7 @@ directory's `CLAUDE.md` is the documentation of what is in it.
 | Directory | What is in it |
 |---|---|
 | `common/` | Everything more than one family reads: settings, the express app, `crypto.js` (the one place this service signs, verifies, encrypts and decrypts), realms, the registers, `pki.js`, `mode.js`, the error codes, mail, cells, the hosted applications, the static surfaces' `web_*.ts`. `common/CLAUDE.md`. |
-| `common/vendored/` | Byte-identical copies of the parent project's files. **Do not edit them here** (except `pqc.js`, `pqc_x509.js`, `xmldsig.js`). `common/vendored/CLAUDE.md`. |
+| `common/crypto_impl/` | Byte-identical copies of the parent project's files. **Do not edit them here** (except `pqc.js`, `pqc_x509.js`, `xmldsig.js`). `common/crypto_impl/CLAUDE.md`. |
 | `home/` | The front door, `GET /`, and `/home-api`. `home/CLAUDE.md`. |
 | `logout/` | The protocol-independent sign-out at `/logout`, and the one model of a live session. `logout/CLAUDE.md`. |
 | `launch/` | `/launch/{app}`, the one identity-provider-initiated sign-in link per application (#426). `launch/CLAUDE.md`. |
@@ -744,7 +744,7 @@ party; it is off by default (`oauth2.sessionManagement`). `oauth-oidc/CLAUDE.md`
 argues it.
 
 **Do not replace Express's 404 body.** `Cannot GET /path` is how
-`tests/vendored/sts_metadata.js` tells an unrouted path from an endpoint legitimately answering
+`tests/protocol/sts_metadata.js` tells an unrouted path from an endpoint legitimately answering
 404. Fixing the header was the whole fix; a prettier 404 would break that test
 silently.
 
@@ -843,7 +843,7 @@ had to argue its own case.
 
 `GET /admin/sts-metadata` reads the endpoint list **from the running Express router**, so
 it cannot go stale — but it reports two kinds of drift and this repository's own
-`tests/vendored/sts_metadata.js` fails on both: a route registered and undescribed, and a
+`tests/protocol/sts_metadata.js` fails on both: a route registered and undescribed, and a
 description whose path is not registered (what a rename produces). See
 `docs/endpoints.md`.
 
@@ -866,8 +866,8 @@ card in `sts_metadata.ts`'s `PROTOCOLS`, a row in
 `/admin/crypto-metadata`, checks its family list against `PROTOCOLS` in both
 directions — and the card's name in the `cards` of a row of
 `common/realms.js`'s `realmSupport()`, which is what `/admin/realms` draws as
-*What is separated, and what is shared*. `tests/vendored/sts_metadata.js`
-fails on the first two, `tests/vendored/admin_api.js` on the third and
+*What is separated, and what is shared*. `tests/protocol/sts_metadata.js`
+fails on the first two, `tests/protocol/admin_api.js` on the third and
 `tests/realm_support.js` on the fourth. What nothing checks, and what a
 settings group also owes, is a row in `admin-ui/admin.ts`'s `SETTING_HOMES`;
 `admin-ui/CLAUDE.md` carries that and the second page's argument. **A new
@@ -883,7 +883,7 @@ authenticator at all** (it names NIST SP 800-63B-4 and RFC 8176 anyway).
 **Recovery codes carried it until #283 (2026-10-07)** on the claim that nobody
 wrote a specification for a recovery code; NIST SP 800-63B-4 section 3.1.2's
 *look-up secrets* are one, and the card now names it.
-`tests/vendored/sts_metadata.js` asserts that every card without the marker
+`tests/protocol/sts_metadata.js` asserts that every card without the marker
 names a specification — so the marker is what keeps that rule strict for
 everything it was written for. A card still costs all three things above whether or not it is
 a protocol, because the rule the page enforces is *no endpoint group without a
@@ -921,9 +921,9 @@ design.
 
 **THESE ARE THE PARENT PROJECT'S RULES SINCE 2026-09-12** — its root
 `CLAUDE.md`'s *Style Notes* — adopted here and swept across the tree that day.
-They bind every `.js` file except `common/vendored/`, the eight Kerberos codec
+They bind every `.js` file except `common/crypto_impl/`, the eight Kerberos codec
 copies, the `node-ldapjs` submodule and the non-`local` copies in
-`tests/vendored/`, none of which may be edited here.
+`tests/protocol/`, none of which may be edited here.
 
 * **Every named function is entered and left out loud.** Its first statement
   is `log.debug("Entering NAME().")` and every exit goes through
@@ -1040,7 +1040,7 @@ cannot read its own signing key does not start. `common/CLAUDE.md` argues both
 
 **The cross-cutting rule: every document that carries or describes a key is
 served `Cache-Control: no-store`.** If you add one, it needs that header too —
-`tests/vendored/sts_metadata_anonymous.js` asks it of every metadata document
+`tests/protocol/sts_metadata_anonymous.js` asks it of every metadata document
 and fails until the row is there.
 
 ## Versioning: M.N.O, fixed when an artifact is BUILT
@@ -1076,14 +1076,14 @@ modes are `memory`, `single-node` and `cluster` (a bare run runs all three),
 
 Where a new test goes, asked in this order:
 
-1. **Is it about this service's own `/admin` or `/admin-api`?** Then `tests/vendored/`, `local: true` — an ownership argument, not a capability one.
-2. **Can it be asserted over HTTP against a running service?** Then **`tests/vendored/`, `local: true` — written HERE since 2026-09-21** (rcbj's decision; it was `../id-proto-debugger/tests/`). A protocol job is the only kind an AWS target and the `product` mode can run, so a feature covered only in process is uncovered there.
+1. **Is it about this service's own `/admin` or `/admin-api`?** Then `tests/protocol/`, `local: true` — an ownership argument, not a capability one.
+2. **Can it be asserted over HTTP against a running service?** Then **`tests/protocol/`, `local: true` — written HERE since 2026-09-21** (rcbj's decision; it was `../id-proto-debugger/tests/`). A protocol job is the only kind an AWS target and the `product` mode can run, so a feature covered only in process is uncovered there.
 3. **Otherwise here**: it chooses how the process starts, needs a second container on the service's network, or needs a socket no stack publishes.
 
 **Never edit a vendored copy** — the next
 `node tests/tools/vendor-check.js --sync` overwrites it and the
 fix never reaches the parent. The `local: true` jobs are the inversion, edited
-here only. `tests/vendored/MANIFEST.js` says which is which.
+here only. `tests/protocol/MANIFEST.js` says which is which.
 
 `tests/CLAUDE.md` carries the job table, the launchers, the modes, the image
 mirror, the coverage run and the rules that are not optional there. **What

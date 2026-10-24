@@ -224,7 +224,7 @@ function create(options) {
                                            { attributes: baseHalves[which] }))
             : row.base;
           // A CELL HALF THAT WAS NEVER STORED HAS NO BASE (2026-09-28,
-          // tests/vendored/sts_cells_console.js). A group whose base held no
+          // tests/protocol/sts_cells_console.js). A group whose base held no
           // person resident here had no cell row at all — an empty half is
           // DELETED, below — so handing the driver the base entry with an
           // empty attribute map told its merge "this row existed and is gone
@@ -386,7 +386,7 @@ function create(options) {
             return one && one.cell && one.cell !== cellId;
           });
           // A RE-HOMED PERSON IS NOT A CONFLICT (2026-09-28,
-          // tests/vendored/sts_cells_rehome.js): `adopt-person` writes them
+          // tests/protocol/sts_cells_rehome.js): `adopt-person` writes them
           // here BEFORE the sending cell moves their index rows
           // (common/cell_rehome.ts, steps 3 and 5), so a flush that lands in
           // between finds them claimed by the cell they are leaving. That

@@ -3041,7 +3041,7 @@
   },
   "pki.keyAlgorithm|description": {
     "en": "763204ceb3af08e6",
-    "text": "L’algorithme de clé avec lequel une nouvelle autorité de certification est construite lorsque le formulaire n’en indique aucun : rsa-2048, rsa-3072, rsa-4096, ec-p256, ec-p384, ec-p521 ou ed25519, ou l’un des identifiants post-quantiques (ML-DSA, SLH-DSA, les composites et ML-KEM — qui ne peut pas signer, et n’est donc qu’une clé de sujet, jamais celle d’une autorité). RSA 2048 est la valeur par défaut parce que la FEUILLE que cette hiérarchie a pour raison d’émettre signe une assertion client que la bibliothèque OAuth de quelqu’un d’autre doit vérifier, et RS256 est le seul algorithme que possède chacune de ces bibliothèques. La liste est lue depuis common/vendored/key_material.js — le module qui génère la clé — de sorte qu’une valeur qu’il ne connaît pas est refusée à la construction, avec la liste à côté."
+    "text": "L’algorithme de clé avec lequel une nouvelle autorité de certification est construite lorsque le formulaire n’en indique aucun : rsa-2048, rsa-3072, rsa-4096, ec-p256, ec-p384, ec-p521 ou ed25519, ou l’un des identifiants post-quantiques (ML-DSA, SLH-DSA, les composites et ML-KEM — qui ne peut pas signer, et n’est donc qu’une clé de sujet, jamais celle d’une autorité). RSA 2048 est la valeur par défaut parce que la FEUILLE que cette hiérarchie a pour raison d’émettre signe une assertion client que la bibliothèque OAuth de quelqu’un d’autre doit vérifier, et RS256 est le seul algorithme que possède chacune de ces bibliothèques. La liste est lue depuis common/crypto_impl/key_material.js — le module qui génère la clé — de sorte qu’une valeur qu’il ne connaît pas est refusée à la construction, avec la liste à côté."
   },
   "pki.signatureAlgorithm|label": {
     "en": "43cdf39e69d6fdd4",
@@ -3081,7 +3081,7 @@
   },
   "pki.leafLifetimeDays|description": {
     "en": "b55ab0b2f1f1f04b",
-    "text": "Durée de validité d’un certificat de signature émis pour une application lorsque le formulaire n’indique aucune durée. Elle est PLAFONNÉE à l’expiration de l’autorité de certification émettrice elle-même plutôt que refusée lorsqu’elle la dépasserait : la cause ordinaire est une autorité de certification émettrice de cinq ans dans sa cinquième année, et un opérateur qui a demandé un an doit obtenir onze mois plutôt qu’une erreur arithmétique. Les durées de vie des niveaux eux-mêmes proviennent des profils de certificat de common/vendored/x509.js — vingt ans, dix et cinq — et peuvent être surchargées dans le formulaire et par les trois lignes pki.*LifetimeYears ci-dessous."
+    "text": "Durée de validité d’un certificat de signature émis pour une application lorsque le formulaire n’indique aucune durée. Elle est PLAFONNÉE à l’expiration de l’autorité de certification émettrice elle-même plutôt que refusée lorsqu’elle la dépasserait : la cause ordinaire est une autorité de certification émettrice de cinq ans dans sa cinquième année, et un opérateur qui a demandé un an doit obtenir onze mois plutôt qu’une erreur arithmétique. Les durées de vie des niveaux eux-mêmes proviennent des profils de certificat de common/crypto_impl/x509.js — vingt ans, dix et cinq — et peuvent être surchargées dans le formulaire et par les trois lignes pki.*LifetimeYears ci-dessous."
   },
   "pki.rootLifetimeYears|label": {
     "en": "72e3da975d05b214",

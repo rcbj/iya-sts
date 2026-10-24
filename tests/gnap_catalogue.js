@@ -38,7 +38,7 @@
 //      this one's claims added.
 //
 // IN PROCESS, in a throwaway realm, with the issuance PEP armed so a realm
-// policy is honoured. The over-HTTP half is `tests/vendored/
+// policy is honoured. The over-HTTP half is `tests/protocol/
 // sts_gnap_catalogue.js`.
 // ===========================================================================
 

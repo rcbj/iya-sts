@@ -42,7 +42,7 @@
 //
 // WHY IN PROCESS: what is asserted is which function the doors call and
 // how often the report asks the directory, which only a spy inside the
-// process can see; `tests/vendored/sts_passkey_report.js` drives the
+// process can see; `tests/protocol/sts_passkey_report.js` drives the
 // operation over HTTP.
 // ===========================================================================
 

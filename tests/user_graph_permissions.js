@@ -27,7 +27,7 @@
 // WHY IN PROCESS, WHICH IS THE QUESTION tests/CLAUDE.md ASKS FIRST.
 //
 // The end-to-end claim is NOT here and belongs over HTTP:
-// `tests/vendored/sts_delegated_permissions_example.js` builds five real
+// `tests/protocol/sts_delegated_permissions_example.js` builds five real
 // applications, spends a real token and reads the line back off
 // `/admin/delegation/user`, which is what proves the rule reaches a page.
 //

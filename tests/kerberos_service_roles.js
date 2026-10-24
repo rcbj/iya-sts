@@ -68,7 +68,7 @@ const realms = require('../common/realms');
 const roles = require('../common/roles');
 const applications = require('../common/applications');
 const kdc = require('../kerberos/krb5_kdc.js');
-const wire = require('./vendored/krb5_wire.js');
+const wire = require('./protocol/krb5_wire.js');
 // ARMS `issuance_gate.js`'s decider, the PEP the KDC's role question goes
 // to; without it every role question is answered "allowed — the XACML role
 // subsystem is not loaded" (kerberos_cross_realm_delegation.js says why).

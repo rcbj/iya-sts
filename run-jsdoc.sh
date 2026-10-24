@@ -39,7 +39,7 @@
 #
 # What is documented is tests/tools/jsdoc/typedoc.json: server.js,
 # sts_metadata.ts and every service directory, never the vendored copies (the
-# eight Kerberos codec copies, common/vendored/, debugger/embedded/).
+# eight Kerberos codec copies, common/crypto_impl/, debugger/embedded/).
 #
 # Options:
 #   --out=DIR               where the pages go (default ./apidocs). Emptied

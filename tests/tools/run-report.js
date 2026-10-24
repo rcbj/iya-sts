@@ -81,7 +81,7 @@
 // launcher built from it, or a throwaway copy it starts on ports of its own —
 // the same jobs, the code you just edited, no submodule bump.
 //
-// WHICH jobs is LISTED, in tests/vendored/MANIFEST.js. It was DERIVED from the
+// WHICH jobs is LISTED, in tests/protocol/MANIFEST.js. It was DERIVED from the
 // parent's own runner until the jobs were vendored on 2026-08-28; that
 // manifest's header says why a derivation stopped being possible.
 //
@@ -109,9 +109,9 @@
 // So the whole set runs unless it is turned off. What that costs is about a
 // minute instead of three seconds, and — until the same day — a parent
 // checkout beside this one. THAT SECOND COST IS GONE: the protocol jobs are
-// VENDORED into tests/vendored/ and are this repository's own files
+// VENDORED into tests/protocol/ and are this repository's own files
 // now, so there is no checkout that can be missing and no job that can
-// silently not run. See tests/vendored/MANIFEST.js for what is copied, what is
+// silently not run. See tests/protocol/MANIFEST.js for what is copied, what is
 // this repository's own, and why the copies are not edited here.
 //
 // `--no-protocol` is the way back to the old default, and the report says so
@@ -130,14 +130,14 @@
 //   --list                 name the jobs that would run; run none
 //   --protocol[=on|off|only]
 //                          also (or only) run the protocol jobs under
-//                          tests/vendored/ against a service. DEFAULT ON, as
+//                          tests/protocol/ against a service. DEFAULT ON, as
 //                          of 2026-08-28 — see THE DEFAULT IS THE WHOLE SET
 //                          above. `--protocol=off` (or --no-protocol) leaves
 //                          them out.
 //   --no-protocol          the same as --protocol=off.
 //   --parent=<dir>         ACCEPTED AND IGNORED. It named the checkout the
 //                          protocol jobs were read out of, and since they are
-//                          vendored into tests/vendored/ there is no such
+//                          vendored into tests/protocol/ there is no such
 //                          checkout. It is still parsed so that a script or a
 //                          habit passing it does not die on an unknown option;
 //                          tools/vendor-check.js is what takes it now.
@@ -216,7 +216,7 @@
 //                   the appconfig file that service reads (default
 //                   ./env/local.js, resolved by tests/tools/service.js). It is
 //                   the OTHER half of the log level: the vendored modules
-//                   under common/vendored/ build their loggers from this file
+//                   under common/crypto_impl/ build their loggers from this file
 //                   and never see STS_LOG_LEVEL, so a quiet run needs both.
 //                   ./run-coverage.sh sets it from the level.
 //   COVERAGE=true   collect V8 coverage from every job AND from the throwaway
@@ -234,11 +234,11 @@ const bunyan = require('bunyan');
 
 const service = require('./service');
 const trust = require('./trust');
-const manifest = require('../vendored/MANIFEST.js');
+const manifest = require('../protocol/MANIFEST.js');
 const coverage = require('./coverage-report');
 
 // A JOB THAT DECLINES TO RUN says so on a line of its own and exits with
-// this code: `tests/vendored/expectation.js`'s declineToRun(), whose two
+// this code: `tests/protocol/expectation.js`'s declineToRun(), whose two
 // constants these must match (it is a vendored helper, so it is read rather
 // than required here: a require would run nothing, but the rule for that
 // directory is to take nothing from it that a job does not).
@@ -428,7 +428,7 @@ const DEBUGGER_SITE = /localhost:3000|127\.0\.0\.1:3000/;
 const NEEDS_THE_MOCK = /WSTRUST_STS_URL|OID4VCI_ISSUER_URL/;
 
 // ---------------------------------------------------------------------------
-// The protocol jobs, as tests/vendored/MANIFEST.js lists them — the copies of
+// The protocol jobs, as tests/protocol/MANIFEST.js lists them — the copies of
 // the parent's and this repository's own — less the browser jobs when
 // --no-browser asked for that.
 // ---------------------------------------------------------------------------
@@ -527,7 +527,7 @@ function checkTestDependencies() {
 // IS THERE A DOCKER DAEMON THIS RUNNER CAN USE?
 //
 // Asked ONCE, and only when a job marked `docker: true` in
-// `tests/vendored/MANIFEST.js` is actually scheduled — there is exactly one,
+// `tests/protocol/MANIFEST.js` is actually scheduled — there is exactly one,
 // and probing for a daemon nobody is going to ask for would be a second of
 // somebody's run spent on nothing.
 //
@@ -1890,7 +1890,7 @@ async function main() {
         logLevel: process.env.STS_LOG_LEVEL || '',
         // The appconfig file that service reads, when the caller named one.
         // STS_LOG_LEVEL alone does NOT quieten a run: the eight vendored
-        // modules under common/vendored/ each build their own bunyan logger at
+        // modules under common/crypto_impl/ each build their own bunyan logger at
         // load from the CONFIG_FILE's logLevel, so a `debug` file goes on
         // writing every canonicalization however low this level is.
         // ./run-coverage.sh picks the file from the level and exports it
@@ -2197,7 +2197,7 @@ async function main() {
       job.env = Object.assign({}, process.env, {
         // These jobs read an appconfig file of their own for a log level, and
         // `./env/local.js` resolves against the cwd above — which is
-        // tests/vendored/, where the vendored copy of that file sits.
+        // tests/protocol/, where the vendored copy of that file sits.
         CONFIG_FILE: process.env.PARENT_CONFIG_FILE || './env/local.js',
         // THE MOCK UNDER TEST IS THIS REPOSITORY, WHICH IS THE ONE THING
         // VENDORING CHANGED FOR THESE JOBS.
@@ -2289,7 +2289,7 @@ async function main() {
       // THE TWO TRUST VARIABLES, AND THEY GO LAST SO NOTHING ABOVE CAN SHADOW
       // THEM. `NODE_EXTRA_CA_CERTS` is read by node ONCE at child start, which
       // is why it can only be handed to a job and never set for this runner;
-      // `STS_SPKI_PIN` is read by tests/vendored/browser_flags.js and becomes
+      // `STS_SPKI_PIN` is read by tests/protocol/browser_flags.js and becomes
       // Chrome's --ignore-certificate-errors-spki-list, so the browser jobs
       // are covered by the same two lines as the node ones. An empty
       // object on a plain-http run, which adds nothing rather than adding an
@@ -2471,7 +2471,7 @@ async function main() {
     schedule: opts.serial ? { serial: true }
       : { serial: false, unitConcurrency: opts.unitConcurrency },
     tree: describeTree(REPO_ROOT),
-    // The protocol jobs are VENDORED COPIES in tests/vendored/ since
+    // The protocol jobs are VENDORED COPIES in tests/protocol/ since
     // 2026-08-28, so they are at this tree's commit like everything else and
     // there is no second checkout to describe. `parentDir` and `parentTree`
     // are kept as empty strings rather than removed, so that an older

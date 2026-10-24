@@ -15,7 +15,7 @@
 // process rather than a request — that it implies RFC 9700 mode, and that it
 // moves `global.https` for the process and not for a realm.
 //
-// What is asked over HTTP instead is `tests/vendored/sts_oauth21.js`: the
+// What is asked over HTTP instead is `tests/protocol/sts_oauth21.js`: the
 // endpoints answering these decisions, which nothing here can show.
 //
 // Each section names the mutant it is there to catch.

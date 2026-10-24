@@ -39,7 +39,7 @@
 //
 // Every GET also answers `?format=json`, and every POST answers JSON when it
 // was sent JSON. That is not decoration: this repository's own
-// `tests/vendored/admin_api.js` and its siblings drive the console over HTTP
+// `tests/protocol/admin_api.js` and its siblings drive the console over HTTP
 // with no browser, and a console reachable only by clicking is a console no
 // test can assert against.
 //
@@ -1413,7 +1413,7 @@ const SECTIONS = [
       //   * **`GET /admin-api/users/new` STAYS.** Rule 7 requires an
       //     operation for every console PAGE and says nothing against one for
       //     a drill-down; the catalogue it publishes is what a script builds
-      //     a create from, and `tests/vendored/bulk_load.js` reads it.
+      //     a create from, and `tests/protocol/bulk_load.js` reads it.
       //     Deleting a working operation to tidy a table would be a
       //     regression dressed as consistency.
       // -------------------------------------------------------------------
@@ -4935,7 +4935,7 @@ class AdminConsole {
   // back in for somebody who has locked themselves out of the console, which is
   // a state `admin.openWhenEmpty: false` makes reachable. `mgmt-api/CLAUDE.md`
   // argues both halves. It is also why this gate does not break this
-  // repository's own `tests/vendored/admin_api.js`.
+  // repository's own `tests/protocol/admin_api.js`.
   //
   // **A REFUSAL IS A PAGE AND NOT A BARE STATUS.** 403 with an empty body is
   // the single least useful thing this could answer: the reader is signed in,
@@ -9190,7 +9190,7 @@ const PORTAL_PATH = '/portal';
 // **THERE IS NO SCRIPT AND THERE MUST NOT BE ONE**, which is why this is not a
 // type-ahead. `script-src 'none'` holds over the whole service (common/app.js)
 // and the parent suite asserts it against this console's live headers
-// (tests/vendored/admin_api.js) — so there is no keystroke handler, no fetch
+// (tests/protocol/admin_api.js) — so there is no keystroke handler, no fetch
 // and no debounce to build one out of, and anything written as though there
 // were would be a control that silently does nothing rather than one that half
 // works. What a browser gives for free is a GET form submitted by the Enter
@@ -9397,7 +9397,7 @@ let logoutReader = null;
 // reads as a management API that is working and is not. It was four until
 // phase five, which added TWO — `peps` for the remote PEP register, and
 // `decide`, which `/admin/xacml/decide` had needed since phase three and had
-// silently gone without (rule 7; `tests/vendored/admin_api.js` reads the
+// silently gone without (rule 7; `tests/protocol/admin_api.js` reads the
 // console's OWN page list rather than a list in the test, which is why the
 // omission was catchable at all). Both went into THIS set rather than into
 // slots of their own because it is the same module filling it and a second
@@ -9406,7 +9406,7 @@ let logoutReader = null;
 // `actionNames` is one more, outside the validated list (`xacmlActionNames()`
 // below answers `[]` without it), and is not decoration. The refusal sentence
 // for an unknown action names every action and counts them, and that sentence
-// is READ by `tests/vendored/admin_api.js` — so the API has to be able to ask
+// is READ by `tests/protocol/admin_api.js` — so the API has to be able to ask
 // the module what its actions are rather than keeping a second list that
 // could disagree.
 // ---------------------------------------------------------------------------
@@ -10902,7 +10902,7 @@ const consoleExports = {
   // The sign-out page's view and its four actions, for admin_api.js. Rule 7:
   // the API calls exactly these, so an action added to that switch is most of
   // adding it there — and the refusal sentence that names the four is what the
-  // repository's own tests/vendored/admin_api.js reads to check the parity.
+  // repository's own tests/protocol/admin_api.js reads to check the parity.
   jtiFrom: jtiFrom,
   // The four action functions. admin_api.js calls exactly these — it decides
   // nothing about a revocation or a claim that this console does not — which is

@@ -50,7 +50,7 @@
 //      console's page drawn from it (#446).
 //
 // The same over HTTP, against a running service in two throwaway realms, is
-// `tests/vendored/sts_mode_weak_settings.js`.
+// `tests/protocol/sts_mode_weak_settings.js`.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;

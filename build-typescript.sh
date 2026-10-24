@@ -80,7 +80,7 @@ fi
 # trees that are not ours. The same exclusions as tsconfig.build.json.
 sources() {
   find . \( -path ./node_modules -o -path ./tests -o -path ./node-ldapjs \
-            -o -path ./xacml-pep -o -path ./common/vendored \
+            -o -path ./xacml-pep -o -path ./common/crypto_impl \
             -o -path ./debugger/embedded -o -path ./.git \) -prune \
          -o -type f -name '*.ts' ! -name '*.d.ts' -print
 }

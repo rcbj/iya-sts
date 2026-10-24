@@ -13,7 +13,7 @@
 // cases are settings (`ssf.authScopeRead` set to `ssf.manage`, the write
 // setting renamed, both settings set to one custom name) and because both
 // modes have to agree. The wire half — a manage-only token driving a
-// stream — is `tests/vendored/sts_ssf_caep_scopes.js`.
+// stream — is `tests/protocol/sts_ssf_caep_scopes.js`.
 //
 // What is held:
 //

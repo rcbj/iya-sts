@@ -23,7 +23,7 @@
 //   D. The access-token algorithm: the setting, a named server's own member
 //      (and its refusal), and FAPI's default.
 //
-// `tests/vendored/sts_fapi_advanced.js` holds it over the wire.
+// `tests/protocol/sts_fapi_advanced.js` holds it over the wire.
 // ===========================================================================
 
 const childProcess = require('child_process');

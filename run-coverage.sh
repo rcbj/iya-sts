@@ -34,7 +34,7 @@
 #     protocol  — a throwaway copy of THIS WORKING TREE (of the tests IMAGE
 #                 built from it, in a containerized run — which is the same
 #                 tree one `COPY . ./` later), driven over HTTP by
-#                 the jobs in tests/vendored/ (MANIFEST.js is the count: some
+#                 the jobs in tests/protocol/ (MANIFEST.js is the count: some
 #                 vendored from the parent, the `local: true` ones this
 #                 repository's own). This is where every protocol family is
 #                 actually exercised, and it
@@ -250,7 +250,7 @@ unset STS_TEST_SERVICE_URL
 #
 # THE APPCONFIG FILE IS THE OTHER HALF OF THE LEVEL and this block cannot set
 # it: run-report.js starts the service in process here, and the VENDORED
-# modules under common/vendored/ each build a bunyan logger at load from
+# modules under common/crypto_impl/ each build a bunyan logger at load from
 # `require(process.env.CONFIG_FILE).logLevel`, never seeing STS_LOG_LEVEL. So
 # the file is chosen the way ./run-tests.sh chooses its own, and by the
 # same rule — the level picks it, a STS_TEST_CONFIG_FILE named in the
@@ -329,7 +329,7 @@ esac
 # THE BULK LOADS AT FIFTY PEOPLE (2026-10-02, rcbj). Coverage asks whether a
 # line ran, and the fiftieth create runs the same lines as the five
 # thousandth. This run used the library's sizes (5000 people, 50 groups,
-# 5000 memberships per door, tests/vendored/bulk_load.js) because it reads
+# 5000 memberships per door, tests/protocol/bulk_load.js) because it reads
 # nothing of tests/tools/modes.sh, and instrumented on CI's two cores the
 # /admin-api door took over twelve minutes and lost a connection
 # (sts_directory_bulk_load_api, run 36967212793). Five groups of ten, because

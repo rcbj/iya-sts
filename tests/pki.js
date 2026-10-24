@@ -31,7 +31,7 @@
 //     the store itself.
 //
 // The fourth — that the whole thing works end to end and reaches the token
-// endpoint — is `tests/vendored/sts_jwt_bearer_grant.js`, which drives
+// endpoint — is `tests/protocol/sts_jwt_bearer_grant.js`, which drives
 // `/admin-api/pki` and then presents an assertion. **Neither implies the
 // other**, which is the split `tests/totp.js` and `sts_portal_totp.js` already
 // have: this file says the arithmetic is right and that one says the doors are
@@ -56,7 +56,7 @@ const applications = require('../common/applications');
 require('../ldap/ldap_server');
 const keystore = require('../common/keystore');
 const stsCrypto = require('../common/crypto');
-const x509 = require('../common/vendored/x509');
+const x509 = require('../common/crypto_impl/x509');
 
 // This file's own logger, for the Entering/Leaving lines and the handled
 // exceptions the code style asks for. Its level is LOG_LEVEL, which is also
@@ -260,7 +260,7 @@ async function run(t) {
           'its certificate');
 
   // The case the whole check exists for.
-  const foreignPair = await require('../common/vendored/key_material')
+  const foreignPair = await require('../common/crypto_impl/key_material')
     .generateKeyPair('rsa-2048');
   const foreignRoot = await x509.issueCertificate({
     subject: [{ name: 'CN', value: 'Somebody Else Root' }],
@@ -275,7 +275,7 @@ async function run(t) {
                   usages: ['keyCertSign', 'cRLSign'] }
     }
   });
-  const foreignLeafPair = await require('../common/vendored/key_material')
+  const foreignLeafPair = await require('../common/crypto_impl/key_material')
     .generateKeyPair('rsa-2048');
   const foreignLeaf = await x509.issueCertificate({
     subject: [{ name: 'CN', value: 'mallory' }],

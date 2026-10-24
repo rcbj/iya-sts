@@ -327,7 +327,7 @@ they are written; what they cannot do is stay correct together.
 Three things it holds are worth knowing as a *user* of this service:
 
 * **The XML signer is the debugger's own**, vendored byte-identical into
-  `common/vendored/xmldsig.js`. Both ends of a SAML or WS-Federation exchange
+  `common/crypto_impl/xmldsig.js`. Both ends of a SAML or WS-Federation exchange
   with this service canonicalize with the same code. That matters because a
   disagreement about canonicalization is invisible until it is a signature
   that verifies on one side and not the other.
@@ -348,8 +348,8 @@ independent implementation, in both directions.
 
 ## The JSON-LD contexts are not optional
 
-`common/vendored/bbs2023.js` reads the three files in
-`common/vendored/contexts/` **when it is loaded**, at module scope. A missing
+`common/crypto_impl/bbs2023.js` reads the three files in
+`common/crypto_impl/contexts/` **when it is loaded**, at module scope. A missing
 one is not a degraded feature: the service does not start at all. They are
 vendored rather than fetched because a signature is computed over canonicalized
 statements. A one-byte difference in a context fails every signature later,
@@ -366,11 +366,11 @@ than copied:
 * the **JSON-LD contexts**, which live in the parent project's client tree.
   `bbs2023.js` resolves two layouts, and a sibling `contexts/` directory is its
   second candidate, so no code changed. That is also why the contexts sit
-  beside `bbs2023.js` in `common/vendored/` rather than anywhere else: keeping
+  beside `bbs2023.js` in `common/crypto_impl/` rather than anywhere else: keeping
   them a sibling is what lets a vendored file stay byte-identical.
 
 The protocol suite is written in the parent project and a copy of it runs here,
-in `tests/vendored/`; jobs that only this service needs are written here and
+in `tests/protocol/`; jobs that only this service needs are written here and
 marked `local: true`. Some of the parent's tests are interesting for *how* they
 check rather than what: the Kerberos codec tests use the codec's own symmetry as
 a round-trip oracle, pin every byte of the 0x8003 checksum and cover the RFC

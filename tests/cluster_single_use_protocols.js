@@ -165,7 +165,7 @@ function childMain() {
     const vcIssuer = require(ROOT + '/oid4vc/vc_issuer');
     const gnapStore = require(ROOT + '/gnap/gnap_store');
     const gnapProof = require(ROOT + '/gnap/gnap_proof');
-    const gnap = require(ROOT + '/tests/vendored/gnap_client.js');
+    const gnap = require(ROOT + '/tests/protocol/gnap_client.js');
     const principals = require(ROOT + '/kerberos/krb5_principals.js');
     const krb5Service = require(ROOT + '/kerberos/krb5_service.js');
     const msgs = require(ROOT + '/kerberos/krb5_messages.js');

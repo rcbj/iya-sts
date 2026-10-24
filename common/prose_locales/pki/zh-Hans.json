@@ -81,7 +81,7 @@
   },
   "pki.report.encoder": {
     "en": "e62315ba46619e60",
-    "text": "common/vendored/x509.js——父项目自己的 PKI 代码，逐字节相同，基于 pkijs 和 asn1js。本服务和该项目的 PKI / X.509 页面共用一个编码器。"
+    "text": "common/crypto_impl/x509.js——父项目自己的 PKI 代码，逐字节相同，基于 pkijs 和 asn1js。本服务和该项目的 PKI / X.509 页面共用一个编码器。"
   },
   "pki.report.residencyPersisted": {
     "en": "f0cab37351af3948",

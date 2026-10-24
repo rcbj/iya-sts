@@ -198,7 +198,7 @@ function productionSessionWalks() {
   log.debug("Entering productionSessionWalks().");
   const root = path.join(__dirname, '..');
   const skip = new RegExp('(^|/)(node_modules|tests|coverage|' +
-    'debugger/embedded|common/vendored|node-ldapjs|deploy|xacml-pep|' +
+    'debugger/embedded|common/crypto_impl|node-ldapjs|deploy|xacml-pep|' +
     'docs|\\.claude|types|companion)(/|$)');
   const hits = [];
   function strip(text) {

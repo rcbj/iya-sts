@@ -9,7 +9,7 @@
 // ASKING FOR MORE THAN EITHER SPECIFICATION REQUIRES (#34, 2026-09-15).
 //
 // `oauth-oidc/sender_constraints.js` argues the design; this is what holds it.
-// The claim worth testing is not "DPoP works" — `tests/vendored/sts_dpop.js`
+// The claim worth testing is not "DPoP works" — `tests/protocol/sts_dpop.js`
 // does that — but the five settings' own behaviour, and in particular the
 // three things a reader of the code would have to take on trust:
 //

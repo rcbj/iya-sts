@@ -249,7 +249,7 @@ application of your own still works. `docker compose up` re-runs the seeder.
 interesting step of the seeding answers JSON, so both jobs had to happen
 somewhere else. Using the image this repository already builds buys the property
 worth having: the store's listener certificate comes out of
-`common/vendored/x509.js`, the same encoder behind every other certificate this
+`common/crypto_impl/x509.js`, the same encoder behind every other certificate this
 service issues.
 
 **A subject alternative name is not optional** on that certificate. Every
@@ -282,7 +282,7 @@ point of the exercise.
   mode, which is what makes that mode read its key-encryption key from here.
   The database password comes from here in every mode, because the compose
   files' connection strings no longer carry one.
-* `tests/vendored/sts_secret_store.js` asserts the half this directory cannot:
+* `tests/protocol/sts_secret_store.js` asserts the half this directory cannot:
   that the RUNNING SERVICE took this path rather than a file.
 * `common/secrets.js` is the client — argued in `common/CLAUDE.md` under
   *`keystore.js` AND `secrets.js`* — and `common/config.js`'s `keys.vault*`

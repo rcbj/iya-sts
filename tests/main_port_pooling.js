@@ -14,7 +14,7 @@
 // the full handshake verified is a replicated shared store
 // (`tls.presentedChains`), and a request on a session that resumed before its
 // row arrived waits for it (`awaitResumedChain()`, `tls.resumedChainWaitMs`).
-// `tests/vendored/sts_main_port_pooling.js` is the over-HTTP half, across a
+// `tests/protocol/sts_main_port_pooling.js` is the over-HTTP half, across a
 // real cluster; what is here is what that job cannot choose — WHEN the row
 // arrives:
 //

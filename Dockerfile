@@ -192,7 +192,7 @@ RUN npm install --omit=dev && npm cache clean --force
 # that does not start rather than a degraded feature, which is the reason to be
 # sure they are here:
 #
-#   common/vendored/contexts  the JSON-LD contexts bbs2023.js loads at module
+#   common/crypto_impl/contexts  the JSON-LD contexts bbs2023.js loads at module
 #                             scope. They are a SIBLING of that module because it
 #                             is a byte-identical copy of the parent project's
 #                             and resolves path.join(__dirname, 'contexts') — so

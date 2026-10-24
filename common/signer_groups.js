@@ -109,7 +109,7 @@ const GROUP_IDS = GROUPS.map(function (one) { return one.id; });
 // with RSA-3072 and ML-DSA-87 with P-384), matched by security category —
 // a pairing whose halves are of different strengths protects at the weaker.
 //
-// `keyAlg` is `common/vendored/key_material.js`'s id, `jwsAlgs` the JWS
+// `keyAlg` is `common/crypto_impl/key_material.js`'s id, `jwsAlgs` the JWS
 // algorithms the key signs (an RSA key signs RS* and PS*; an EC key's curve
 // fixes its one algorithm), and `slot` the name its certificate is filed
 // under — `<group>/<slot>` — which can never collide with a per-algorithm

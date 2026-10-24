@@ -238,7 +238,7 @@ jobs:
       # order that changed, shows up here and not in the liveness probe.
       #
       # It is the CONSOLE's operation, behind a gate that cannot be turned off,
-      # so the check signs in first — through tests/vendored/console_signin.js's
+      # so the check signs in first — through tests/protocol/console_signin.js's
       # authorization code flow, which tests/tools/container-smoke.js calls —
       # and asks with the console's DPoP-bound token for 200 AND an endpoint
       # list. A bare status check on the page's path is what passed for weeks

@@ -37,8 +37,8 @@
 //
 // The token formats' own round trip of `act` is `tests/gnap_token_formats.js`;
 // the wire, verified by code that is not the service's, is
-// `tests/vendored/sts_gnap_rs.js`, and impersonation over HTTP is
-// `tests/vendored/sts_gnap_delegation.js`.
+// `tests/protocol/sts_gnap_rs.js`, and impersonation over HTTP is
+// `tests/protocol/sts_gnap_delegation.js`.
 //
 // IN A CHILD PROCESS, `cluster_single_use_protocols.js`'s arrangement: it
 // loads the whole stack and serves the shared app on a port of its own, and
@@ -81,7 +81,7 @@ function childMain() {
     const oauth2 = require(ROOT + '/oauth-oidc/oauth2');
     const tokens = require(ROOT + '/gnap/gnap_tokens');
     const gnapDelegation = require(ROOT + '/gnap/gnap_delegation');
-    const gnap = require(ROOT + '/tests/vendored/gnap_client.js');
+    const gnap = require(ROOT + '/tests/protocol/gnap_client.js');
 
     // The code each response was marked with, by request path — read off
     // the response object, which is where `errorCodes.mark()` puts it and

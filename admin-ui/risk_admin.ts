@@ -109,7 +109,7 @@ const ACTIONS = ['import', 'activate', 'rollback', 'delete', 'accept-terms'];
 // EVERY ACTION `/risk` HAS, which is what the unknown-action refusal names
 // (2026-09-26). `upload` (#215) is answered by a route of its own, registered
 // above `/risk/:action`, so `riskAction()` never sees it — but it is still one
-// of this resource's actions, and `tests/vendored/admin_api.js` reads THIS
+// of this resource's actions, and `tests/protocol/admin_api.js` reads THIS
 // sentence for the console/API parity (rule 7): an action missing from it is
 // invisible to that check. `sts_admin_api_operations.js` compares the sentence
 // with the OpenAPI document and found `upload` missing.

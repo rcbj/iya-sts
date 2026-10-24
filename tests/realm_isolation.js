@@ -729,7 +729,7 @@ function checkKerberosStores(t) {
 // 5d. GNAP (2026-09-12): twelve stores in `gnap/gnap_store.ts`, the approver
 // index in `gnap/gnap_signals.ts` and the counters in `gnap/gnap_monitor.ts`.
 //
-// `tests/vendored/sts_gnap_core.js` asserts the over-HTTP half — a token from
+// `tests/protocol/sts_gnap_core.js` asserts the over-HTTP half — a token from
 // one realm refused by another realm's resource server, a continuation token
 // that finds nothing in the default realm. What is here is the half that
 // cannot be asked over HTTP: that a realm removed and created again under the

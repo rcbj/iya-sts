@@ -22,7 +22,7 @@
 //      last), a met requirement answered 200 with what it decided on, and
 //      the refusals before any step-up question — no token, another audience,
 //      another typ, another issuer, a resource nobody configured.
-//   B. THE GNAP RESOURCE SERVER, with proofs made by `tests/vendored/
+//   B. THE GNAP RESOURCE SERVER, with proofs made by `tests/protocol/
 //      gnap_client.js` — the jobs' own independent client — so the two
 //      implementations of RFC 9421 and the GNAP JWS proofs are held to each
 //      other: httpsig, jwsd and jws accepted; another key, no proof, the
@@ -73,7 +73,7 @@ const { SignedXml } = require('xml-crypto');
 const peer = require('./peer/peer.js');
 const pki = require('./peer/peer_pki.js');
 const gnapPeer = require('./peer/peer_gnap.js');
-const gnap = require('./vendored/gnap_client.js');
+const gnap = require('./protocol/gnap_client.js');
 
 const log = require('bunyan').createLogger({ name: 'test_peer',
   level: process.env.LOG_LEVEL || 'info' });

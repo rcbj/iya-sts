@@ -14,7 +14,7 @@
 // doors are driven here with synthetic request streams — the API's (the body
 // is the file, the fields a query) and the console's (multipart, the fields
 // before the file) — and the console's route with a fake app, for its role
-// check. `tests/vendored/sts_admin_risk_upload.js` drives both over HTTP
+// check. `tests/protocol/sts_admin_risk_upload.js` drives both over HTTP
 // against a running service, the body-parser exemption and the gate
 // included. What this file holds:
 //
@@ -60,7 +60,7 @@ const riskDatasets = require('../risk/risk_datasets');
 const riskUpload = require('../risk/risk_upload');
 const riskTerms = require('../risk/risk_terms');
 const websecurity = require('../common/websecurity');
-const zipWriter = require('./vendored/zip_writer');
+const zipWriter = require('./protocol/zip_writer');
 
 const log = require('bunyan').createLogger({ name: 'risk_upload',
   level: process.env.LOG_LEVEL || 'info' });

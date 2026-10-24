@@ -22,7 +22,7 @@
 // signatures, one no entry claims) or a response whose bytes the test must
 // hold beside the request to verify `;req`. Over HTTP the service's clock
 // and its directory decide those. The HTTP half, which a client sees, is
-// `tests/vendored/sts_fapi_http_signatures.js`.
+// `tests/protocol/sts_fapi_http_signatures.js`.
 // ===========================================================================
 
 // Deleted rather than set, for the reason config_realm_layer.js gives.

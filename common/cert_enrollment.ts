@@ -89,12 +89,12 @@ import stsCrypto = require('./crypto');
 import credentials = require('./credentials');
 import enrollmentProfiles = require('./enrollment_profiles');
 import errorCodes = require('./error_codes');
-import keyMaterial = require('./vendored/key_material');
+import keyMaterial = require('./crypto_impl/key_material');
 import keystore = require('./keystore');
 import mode = require('./mode');
 import pki = require('./pki');
 import realms = require('./realms');
-import x509 = require('./vendored/x509');
+import x509 = require('./crypto_impl/x509');
 import adminRbac = require('../admin-ui/admin_rbac');
 import mtls = require('../oauth-oidc/mtls');
 // SEVERAL NODES AGAINST ONE STORE (2026-09-14, #46 section 2): the atomic

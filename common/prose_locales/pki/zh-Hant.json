@@ -81,7 +81,7 @@
   },
   "pki.report.encoder": {
     "en": "e62315ba46619e60",
-    "text": "common/vendored/x509.js——上層專案自己的 PKI 程式碼，逐位元組相同，建構於 pkijs 與 asn1js 之上。本服務與該專案的 PKI / X.509 頁面共用同一個編碼器。"
+    "text": "common/crypto_impl/x509.js——上層專案自己的 PKI 程式碼，逐位元組相同，建構於 pkijs 與 asn1js 之上。本服務與該專案的 PKI / X.509 頁面共用同一個編碼器。"
   },
   "pki.report.residencyPersisted": {
     "en": "f0cab37351af3948",

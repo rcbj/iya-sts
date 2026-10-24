@@ -43,10 +43,10 @@ import LazyModule = require('../common/lazy_module');
 // at its top, and together they are resident memory in every request worker
 // that never issues or verifies a BBS credential. `common/lazy_module.ts`
 // argues it; `common/helpers.js` defers the same file by hand.
-type Bbs2023 = typeof import('../common/vendored/bbs2023.js');
-const bbs2023: Bbs2023 = LazyModule.of('common/vendored/bbs2023.js',
+type Bbs2023 = typeof import('../common/crypto_impl/bbs2023.js');
+const bbs2023: Bbs2023 = LazyModule.of('common/crypto_impl/bbs2023.js',
   function () {
-    return require('../common/vendored/bbs2023.js') as Bbs2023;
+    return require('../common/crypto_impl/bbs2023.js') as Bbs2023;
   }, helpers.log);
 import InstanceSlot = require('../common/instance_slot');
 // The identity registry, for ONE call at the generator endpoint below: a DID

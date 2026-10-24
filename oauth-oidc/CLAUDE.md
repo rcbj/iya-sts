@@ -23,7 +23,7 @@ libraries that decide things on its behalf.
 | `oauth2_monitor_console.ts` | **The view and action model of that page (2026-09-13)** — `monitorView()` and `monitorAction()` (`delete-pushed-request`), no route, no `res`, no markup; both doors render the same call (rule 7). `gnap/gnap_console.ts`'s arrangement, and one of the files `tests/admin_actions_layer.js` allows to require `admin-core/admin_views.ts`. |
 | `oauth2_monitor_admin.ts` | **THE ONE FILE HERE BESIDE `oauth2.ts` THAT REGISTERS ROUTES**: `GET` and `POST /admin/oauth2/monitor`, in the console's shell. Required at 18f in `common/protocol_stack.ts`, never from `oauth2.ts`, which would drag the console in front of the authorization server. |
 | `web_oauth2_monitor.ts`, `web_grants.ts` | **The renderers of `/admin/oauth2/monitor` and `/admin/grants` since #446**: `web_` modules a browser can load, each drawing its page from the management API's answer alone (`admin-ui/CLAUDE.md`, *The static console's renderers*). `web_oauth2_monitor.ts` owns the page's path, the filter's `STATES` and the `BACK_PARAMS` a Withdraw carries back, which `oauth2_monitor_console.ts` and `oauth2_monitor_admin.ts` read from it — a `web_` module may require no server module, so the table a page is drawn from lives with the renderer. |
-| `oauth2_monitor_api.ts` | `GET /admin-api/oauth2/monitor` and `POST /admin-api/oauth2/monitor/{action}`, `ROUTES` spread into `mgmt-api/admin_api.ts` beside ACME's; requires its model lazily. Codes `STS-ADMIN-0700..0705` and `STS-API-0100..0102`; `tests/vendored/sts_oauth2_monitor.js` drives both doors. |
+| `oauth2_monitor_api.ts` | `GET /admin-api/oauth2/monitor` and `POST /admin-api/oauth2/monitor/{action}`, `ROUTES` spread into `mgmt-api/admin_api.ts` beside ACME's; requires its model lazily. Codes `STS-ADMIN-0700..0705` and `STS-API-0100..0102`; `tests/protocol/sts_oauth2_monitor.js` drives both doors. |
 | `protected_resource_metadata.ts` | **RFC 9728, CONSUMED (2026-09-13).** Reads a protected resource's metadata document — pasted, uploaded or fetched from an administrator's URL — checks every section 2 member and section 3.3, compares `authorization_servers` with the realm's issuers, and proposes the application `/admin/applications/new` creates. The fetch takes `federation_http.ts`'s policy and, in product mode, resolves once, refuses an internal address and pins the connection (`mode.dialsInternalAddresses()`) — the check and the resolution moved INTO `federation_http.ts` on 2026-09-17, when the back-channel delivery needed them too, and this module keeps its own refusal codes; section 3.3 and a non-https `resource` are refused in product and warned in development (`mode.acceptsNonconformingResourceMetadata()`); malformed is refused in both. `signed_metadata` is decoded, never verified or applied. Its file header argues each decision. |
 | `jwt_access_token.ts` | **RFC 9068, both halves (2026-09-13).** The `at+jwt` header, the issuer and default audience the minter uses and every resource server here checks, and the audience-and-scope plan behind section 3's refusals. In every mode — see 3ah. |
 | `backchannel_logout.ts` | **OpenID Connect Back-Channel Logout 1.0 (#36, 2026-09-17).** Plans, signs, encrypts and delivers a Logout Token to every relying party on an ending (or EXPIRING) session that registered a `backchannel_logout_uri`. Each delivery is a row of a persisted, replicated store: retried with backoff by any node across restarts, sent once through a claimed lease, dead-lettered on a final failure. See 3aq. **The RELYING PARTY's half — receiving a federation partner's Logout Token, and Front-Channel and RP-Initiated Logout towards a partner — is `../federation/federation_slo.ts` (#167)**, because there this service is a client of somebody else's OpenID Provider. |
@@ -536,7 +536,7 @@ so must `admin-ui/admin.ts`.
    **NOT DONE**: the OpenID conformance suite (a ticket of its own); items the
    profile puts on the CLIENT; a `request_uri` or JAR requirement, which is
    FAPI 1.0 Advanced (#139). `tests/fapi_baseline_units.js` holds the library
-   and the surfaces' key in a child process; `tests/vendored/sts_fapi_baseline.js`
+   and the surfaces' key in a child process; `tests/protocol/sts_fapi_baseline.js`
    drives a FAPI realm over HTTP, the portal's sign-in included.
 
    **FAPI 1.0 ADVANCED (#139, 2026-09-22) IS THE SECOND VALUE OF THE SAME
@@ -603,7 +603,7 @@ so must `admin-ui/admin.ts`.
 
    **NOT DONE**: the conformance suite (#176); a post-quantum access token
    (`accessToken()` is synchronous); GNAP's RS256 pins.
-   `tests/fapi_advanced_units.js` and `tests/vendored/sts_fapi_advanced.js`
+   `tests/fapi_advanced_units.js` and `tests/protocol/sts_fapi_advanced.js`
    hold it.
 
    **THE FAPI 2.0 SECURITY PROFILE (#140, 2026-09-22) IS THE THIRD VALUE,
@@ -651,7 +651,7 @@ so must `admin-ui/admin.ts`.
    **THE SURFACES under 2.0 take `advancedRedirect()` without JARM** — the
    push, `code`, `private_key_jwt`, DPoP — and, with the ordinary consent
    rules, their seeded global consent counts again.
-   `tests/fapi2_units.js` and `tests/vendored/sts_fapi2.js` hold it; the
+   `tests/fapi2_units.js` and `tests/protocol/sts_fapi2.js` hold it; the
    Attacker Model's mapping is in `docs/oauth-security.md`.
 
    **FAPI 2.0 MESSAGE SIGNING (#141, 2026-09-22) IS THE FOURTH VALUE,
@@ -670,7 +670,7 @@ so must `admin-ui/admin.ts`.
    written against a draft that did; rcbj split HTTP signatures on the resource
    servers out to #178. The surfaces ask for JARM under this profile as under
    Advanced. `tests/fapi2_message_signing_units.js` and
-   `tests/vendored/sts_fapi2_message_signing.js` hold it.
+   `tests/protocol/sts_fapi2_message_signing.js` hold it.
 
 3aw. **`jarm.ts` IS JARM, THE JWT-SECURED AUTHORIZATION RESPONSE (#143, BUILT
    IN #139, 2026-09-22), IN EVERY MODE.** FAPI 1.0 Advanced needs it, and it
@@ -781,7 +781,7 @@ so must `admin-ui/admin.ts`.
    on 2026-09-17) would have refused it `invalid_client`.
    `verifiedOnce()` keeps the promise for a document on the request object under
    a Symbol, keyed by method, client, type and the document itself.
-   `tests/vendored/sts_jwt_bearer_grant.js` section 14 is the over-HTTP proof and
+   `tests/protocol/sts_jwt_bearer_grant.js` section 14 is the over-HTTP proof and
    was mutation-tested by removing it.
 
    **AND AN ASSERTION MAY ARRIVE ENCRYPTED**, which is RFC 7523 section 3 claim
@@ -1414,7 +1414,7 @@ so must `admin-ui/admin.ts`.
    — is argued above `revokeEndpoint()`. **The grant revocation is not 3f's
    replay rule**, which leaves access tokens alive as evidence: a replay is the
    server detecting a copied chain, a revocation is the client ending the grant.
-   `tests/rfc7009_revocation.js` and `tests/vendored/sts_token_revocation.js`.
+   `tests/rfc7009_revocation.js` and `tests/protocol/sts_token_revocation.js`.
 
    **WHAT MAKES IT NOT A TOKEN** (section 8.1): `typ: token-introspection+jwt`,
    which no resource server here accepts; no top-level `sub` or `exp`; the
@@ -1498,7 +1498,7 @@ so must `admin-ui/admin.ts`.
 
    `/admin/crypto-metadata` lists the JWT introspection response's signing and
    encryption algorithms, read off this library, and
-   `tests/vendored/admin_api.js` holds both against the RFC 8414 document.
+   `tests/protocol/admin_api.js` holds both against the RFC 8414 document.
 
    **WHAT IS STILL NOT DONE:** section 9's legal basis for releasing token data
    is the deployment's to establish and nothing here can decide it.
@@ -1973,7 +1973,7 @@ so must `admin-ui/admin.ts`.
    making it development only: an application's requirement is the
    application's to enforce, as RFC 9470 section 3 has a resource server send
    the challenge, and the test peer (`tests/peer/peer_stepup.js`) plays one
-   for `tests/vendored/sts_step_up.js`. The entry's two attributes stay —
+   for `tests/protocol/sts_step_up.js`. The entry's two attributes stay —
    written by an operator, read by the console — and so do `dpop.ts`'s three
    options, the library half of such a resource server:
    `tests/rfc9470_step_up.js` serves a stub on them. `STS-OAUTH-0505` (an
@@ -2027,7 +2027,7 @@ so must `admin-ui/admin.ts`.
    GNAP's interaction does not read a requirement; a JAR round trip was not
    driven by a test with a requirement inside the object.
    `tests/rfc9470_step_up.js` holds the library, the registry and the endpoints
-   in a child process; `tests/vendored/sts_step_up.js` the page, the API and the
+   in a child process; `tests/protocol/sts_step_up.js` the page, the API and the
    flow over HTTP.
 
 3ao. **`sender_constraints.js` IS FIVE SETTINGS THAT ASK FOR MORE THAN EITHER
@@ -2245,7 +2245,7 @@ relying party renewing a session was told somebody had just authenticated, by no
 method. `refreshToken()` now puts the three inside the (encrypted) refresh token
 and the grant hands them back to `issue()`. It was found by this service's own
 console, which checks exactly that when it renews (`common/oidc_rp.ts`'s
-`checkRenewedClaims()`), and `tests/vendored/sts_hosted_surface_renewal.js`
+`checkRenewedClaims()`), and `tests/protocol/sts_hosted_surface_renewal.js`
 goes red without it.
 
 **EVERY READER OPENS FIRST, AND THERE ARE SIX**: the refresh grant,
@@ -2305,7 +2305,7 @@ the same day and read it at introspection instead.
    and with script off a relying party's question simply goes unanswered
    (moved from the root `CLAUDE.md`'s scripted-pages table, 2026-10-13). Off, both
    paths answer a 404 naming the setting (`STS-OAUTH-0601`), never Express's
-   `Cannot GET`, which `tests/vendored/sts_metadata.js` reads as unrouted.
+   `Cannot GET`, which `tests/protocol/sts_metadata.js` reads as unrouted.
 
    **NOT DONE, AND ON THE CARD**: a session that EXPIRES or that an
    administrator ends keeps its cookie, so the iframe says `unchanged` until
@@ -2313,7 +2313,7 @@ the same day and read it at introspection instead.
    a browser blocking third-party cookies never sends the cookie; a
    development client with no registered redirect URI cannot frame the
    iframe. `tests/session_management.js` and
-   `tests/vendored/sts_session_management.js` hold it.
+   `tests/protocol/sts_session_management.js` hold it.
 
    **SEVERAL ACCOUNTS IN ONE BROWSER (#561, the plan's section 7).** With
    `authn.multipleAccounts` on, the cookie carries the browser state of EVERY
@@ -2388,7 +2388,7 @@ it would clear a cookie it never saw. No script: a button needs none.
 **`ui_locales` is honoured on the sign-out pages since #539**: the
 confirmation and signed-out pages are drawn in it (namespace `oauthPages`),
 and a refusal stays English. `tests/rp_initiated_logout.js` holds
-it in a child process; `tests/vendored/sts_rp_initiated_logout.js` over HTTP.
+it in a child process; `tests/protocol/sts_rp_initiated_logout.js` over HTTP.
 
 ## OPENID CONNECT REGISTRATION, AND THE `jwks_uri` (#120, 2026-09-22)
 
@@ -2516,7 +2516,7 @@ accounts (rcbj's decision); an `https` URL on this service resolves by its
 a domain or path no realm has (`0593`), `rel` filtering, a JRD. **It sends
 `Access-Control-Allow-Origin: *` itself**: RFC 7033 section 5 makes CORS a
 MUST, the answer is a public URL, and so this is the one response
-`common/cors.js`'s allowlist does not decide. `tests/vendored/sts_discovery_realms.js`
+`common/cors.js`'s allowlist does not decide. `tests/protocol/sts_discovery_realms.js`
 holds all of it.
 
 ## `signed_metadata` is signed once a minute, not once a request
@@ -2950,7 +2950,7 @@ Token only when the token it issued carries `openid`**
 (`idTokenFollowsIssuedScope`). The other grants keep their ID Token when the
 plan strips `openid` from the access token: they are OpenID Connect requests,
 and the client asked who signed in. Native SSO is not affected — its ID Token
-is the point of it. `tests/vendored/sts_token_exchange_response.js` holds it.
+is the point of it. `tests/protocol/sts_token_exchange_response.js` holds it.
 
 **IN PRODUCT MODE BOTH TOKENS MUST VERIFY (2026-09-21), AND UNTIL THEN NEITHER
 HAD TO.** The branch tried `verifyJws()` on the `subject_token` and, on failure,
@@ -2996,7 +2996,7 @@ Three things about how it is done are the parts worth keeping:
   either of the other two with no way to reach the third — and `always` is the
   side the interesting client bug is on, because a credential arrives that the
   client did not ask for and must not leak. The default keeps the change
-  invisible to every existing caller, `tests/vendored/oauth2_sts_endpoints.js`
+  invisible to every existing caller, `tests/protocol/oauth2_sts_endpoints.js`
   among them.
 * **It is read on the CLIENT PERFORMING THE EXCHANGE**, through
   `applications.settingFor()` — the same call every other per-client OAuth
@@ -3590,7 +3590,7 @@ screen*), on #571's pattern:
   `AccessLimits.rows()` of them — by `web_consent_screen.ts`, in the
   `consent` catalogs' words, with the ids the page always had
   (`consent-allow`, `consent-deny`, which the conformance suite's person and
-  `tests/vendored/consent_screen.js`'s browser surface press).
+  `tests/protocol/consent_screen.js`'s browser surface press).
 * **`POST /oauth2/consent` IS DELETED.** Its body is `consentAct()`, moved
   whole: the limits read back (`loweredDetails()`), the record spent either
   way, the audit rows, `consent.record()` and the RFC 9396 Allow. It is
@@ -3617,9 +3617,9 @@ script, the index and the OpenAPI document, the view, every binding refusal,
 a raised and a lowered limit, Allow, a replay, Deny, the id never in an audit
 row, the form POST gone); `tests/web_surfaces.js`'s round trip over four
 consent cases; in process `tests/tools/authn_screen.js`'s `openConsent()` and
-`answerConsent()`, over HTTP `tests/vendored/authn_signin.js`'s
+`answerConsent()`, over HTTP `tests/protocol/authn_signin.js`'s
 `consentPage()`, `answerConsent()`, `consentFor()` and `consentWithJar()`,
-and `tests/vendored/consent_screen.js` (localised by #576).
+and `tests/protocol/consent_screen.js` (localised by #576).
 
 ### What it deliberately is not
 
@@ -3702,7 +3702,7 @@ true whether or not this service has been asked to enforce the BCP. A mock with
 `oauth2.rfc9700` off still knows perfectly well that a client sent a matching
 secret; refusing to notice would make both roles unusable in the default
 configuration — which is the configuration almost everything here runs in.
-`tests/vendored/sts_roles_builtin.js` asserts the mode is OFF before it asserts
+`tests/protocol/sts_roles_builtin.js` asserts the mode is OFF before it asserts
 anything else in that section, so the claim is about observation and not about
 enforcement.
 
@@ -3794,7 +3794,7 @@ OBSERVATION and never a refusal since this change; it was product mode's 401.
 OpenID4VCI pre-authorized code — section 6.1's anonymous access, where the
 code and its Transaction Code are the credential. The gate read a missing
 `client_id` as an unknown client and refused every anonymous wallet in
-product; `tests/vendored/sts_oid4vci_preauth_subject.js` (#158) found it in
+product; `tests/protocol/sts_oid4vci_preauth_subject.js` (#158) found it in
 single-node, and `tests/oauth_oid4vc_hardcoded.js` 6j-ii holds it in process.
 A wallet that NAMES a client is still judged.
 
@@ -3992,7 +3992,7 @@ SAML declaration. The verdict carries `issuerKind` and `person` like the JWT
 grant's, and `oauth2.ts` writes the authentication note and the delegation row as
 *a person presenting themselves* rather than as a third party vouching.
 `tests/person_credentials.js` holds it in process and
-`tests/vendored/sts_user_credentials.js` at `/oauth2/token`.
+`tests/protocol/sts_user_credentials.js` at `/oauth2/token`.
 
 ## A PERSON'S `sub` IS THEIR ENTRY'S, AND A GRANT WITH NO BROWSER STILL NEEDS ONE (2026-09-14)
 
@@ -4179,7 +4179,7 @@ directory entries (`common/devices.ts`, `ldap/CLAUDE.md`).
   unverified is held only to the list. All `invalid_request`, section 2.2.2's
   error — `unsupported_token_type` is RFC 7009's, not this RFC's.
 
-`tests/native_sso.js` and `tests/vendored/sts_native_sso.js` (local) hold it.
+`tests/native_sso.js` and `tests/protocol/sts_native_sso.js` (local) hold it.
 
 **The registered device as a fact on the issuance (#164 phase 2,
 2026-09-26).** `recognizedDeviceFor(opts)` asks `common/device_recognition.ts`
@@ -4276,7 +4276,7 @@ both modes, with an `/admin-api` test control that product closes.
   denies as the person would, open in development and refused in product
   (`mode.opensTestControls()`, ADMIN-0812/0813).
 
-`tests/ciba.js` and `tests/vendored/sts_ciba.js` (local) hold it.
+`tests/ciba.js` and `tests/protocol/sts_ciba.js` (local) hold it.
 
 
 ## 3bf. GRANT MANAGEMENT FOR OAUTH 2.0, AND FAPI-CIBA (2026-09-24, #142)
@@ -4350,7 +4350,7 @@ off (keeping `created_at`, so the order is the same) for
 builds the resource for the page's rows only (`decorate()`).
 `tests/console_delegation_roles_scale.js` (G) holds both.
 
-`tests/grant_management.js` and `tests/vendored/sts_grant_management.js`,
+`tests/grant_management.js` and `tests/protocol/sts_grant_management.js`,
 `sts_fapi_ciba.js` (local) hold it. **Not built**: Grant Management through
 the device flow (there is none here), `grant_management_action_required`,
 sharing a grant between client ids, and FAPI-CIBA's two OPTIONAL
@@ -4393,7 +4393,7 @@ request to the Token Endpoint failed."*
 
 ## 3bg. WHAT THE OPENID CONFORMANCE SUITE FOUND (2026-09-24, #176)
 
-The OpenID Foundation's suite runs as a job (`tests/vendored/sts_fapi_conformance.js`,
+The OpenID Foundation's suite runs as a job (`tests/protocol/sts_fapi_conformance.js`,
 `tests/CLAUDE.md` has the harness) against four plans: FAPI 2.0 Security
 Profile, FAPI 2.0 Message Signing, FAPI 1.0 Advanced and FAPI-CIBA — the
 suite has no FAPI 1.0 Baseline plan any more, so `sts_fapi_baseline.js` is
@@ -4534,7 +4534,7 @@ see and revoke, and the latest draft text with Core 5.6.2.
 **Tests**: `tests/claims_aggregation.js` (in process: the register, sealing,
 a flow finished by another person, a JWT about another subject or by another
 key, the consuming side refusing an unregistered issuer and endpoint without
-dialling it, refresh, the acts) and `tests/vendored/sts_claims_aggregation.js`
+dialling it, refresh, the acts) and `tests/protocol/sts_claims_aggregation.js`
 (over HTTP, a second realm of this service as the Claims Provider serving a
 configured `credit_score`: registration by discovery, linking on the portal
 across both realms, aggregated in the ID Token and UserInfo verified against
@@ -4588,7 +4588,7 @@ home-realm discovery. All in every mode.
   registered https addresses or the launch is refused — `launch/CLAUDE.md`
   — else the application's registered https home page).
 
-Tests: `tests/vendored/sts_enterprise_extensions.js`.
+Tests: `tests/protocol/sts_enterprise_extensions.js`.
 
 ## 3bj. THE EPHEMERAL SUBJECT IDENTIFIER (2026-09-26, #149)
 
@@ -4619,7 +4619,7 @@ SSF events naming it for that client, nothing relaxed in development.
   the event's own `session` member; before this a pairwise client's stream
   was told the public `sub`.
 
-Tests: `tests/vendored/sts_ephemeral_subjects.js`.
+Tests: `tests/protocol/sts_ephemeral_subjects.js`.
 
 ## THE `did` CLAIM: A PERSON'S PREFERRED DID (2026-10-20, #693 phase 2)
 
@@ -4744,7 +4744,7 @@ presented.
   still may not take it as an audience. A grant bound while it was on keeps
   its refresh key check, which reads `kb_jkt`, not the setting.
 
-Tests: `tests/vendored/sts_device_key_binding.js` (section 7 is #315),
+Tests: `tests/protocol/sts_device_key_binding.js` (section 7 is #315),
 `tests/device_key_binding.js` section 4.
 
 ## 3bl. OPENID PROVIDER COMMANDS, AND ONE OUTBOUND QUEUE (2026-09-26, #151)
@@ -4844,7 +4844,7 @@ rcbj's answers were every recommendation:
 
 Tests: `tests/provider_commands.js`, `tests/test_peer.js` (section G, the
 relying party's own correctness) and
-`tests/vendored/sts_provider_commands.js` (`testPeer: true`).
+`tests/protocol/sts_provider_commands.js` (`testPeer: true`).
 
 ## 3by. ASSERTIONS FROM DECLARED ISSUERS AS RFC 8693 SUBJECT AND ACTOR TOKENS (2026-10-03, #114)
 
@@ -4890,7 +4890,7 @@ maintainer changing anything near it needs to know:
   there is nothing to read unverified.
 
 Tests: `tests/token_exchange_assertions.js` (in process, both modes) and
-`tests/vendored/sts_token_exchange_assertions.js` (over HTTP).
+`tests/protocol/sts_token_exchange_assertions.js` (over HTTP).
 
 ## 3bp. WHAT THE REST OF THE CONFORMANCE SUITE FOUND (2026-09-24, #187)
 
@@ -4904,7 +4904,7 @@ from a specification and is fixed in EVERY mode unless the row says
 otherwise; each carries its regression check.
 
 **OAuth 2.0 and OpenID Connect** (`tests/oidcc_conformance_findings.js`,
-`tests/vendored/sts_oidc_core.js`):
+`tests/protocol/sts_oidc_core.js`):
 * **RFC 6749 section 6's client binding and scope check** lived behind RFC
   9700 mode (`oauth2_bcp.js`), as if they were that BCP's refinements; the
   suite's oidcc-refresh-token redeemed client 2's refresh token as client 1
@@ -4965,7 +4965,7 @@ put scope outside it). Message Signing KEEPS JARM: section 5.4.1 has an AS
 implementing response signing "require use of" it, so the plan's
 `plain_response` variant is not run.
 
-**Shared Signals** (`tests/vendored/sts_ssf_conformance.js`): a poll
+**Shared Signals** (`tests/protocol/sts_ssf_conformance.js`): a poll
 stream's `delivery.endpoint_url` names its stream (`?stream_id=`); Add
 Subject answers an empty 200 (8.1.3.2; remove stays 204);
 `critical_subject_members` is omitted rather than `[]`.
@@ -5049,7 +5049,7 @@ failure in its driver):
   the header it loads, runs `check_session.js` and answers. Listing that
   origin here would mean taking it from the request (the suite reaches the
   OP as `sts:8081`), so the module is argued, and the iframe is held by
-  `tests/session_management.js` and `tests/vendored/sts_session_management.js`.
+  `tests/session_management.js` and `tests/protocol/sts_session_management.js`.
   The job's browser entry for the suite's `session_verify` page stays, so
   the module runs once HtmlUnit is fixed.
 * `ekyc-server-one-claim-with-random-value-omitted` /
@@ -5154,7 +5154,7 @@ changing anything near it needs to know.
   challenge-endpoint rate limiting beyond the store's bound.
 
 Codes `STS-OAUTH-0720`..`0751`. Tests: `tests/client_attestation.js` (in
-process) and `tests/vendored/sts_client_attestation.js` (over HTTP).
+process) and `tests/protocol/sts_client_attestation.js` (over HTTP).
 
 ## 3bo. THE REGISTERED DEVICE IN TOKENS: `device_id`, `urn:sts:acr:compliant-device` AND THE ISSUANCE POLICY (2026-09-26, #164 phase 6)
 
@@ -5202,7 +5202,7 @@ comes from; this section covers what this directory does with it.
   is the binding key.** A DPoP `jkt` is the device JWK's RFC 7638
   thumbprint, and a certificate's `x5t#S256` is the certificate the device
   was recognised by. No second confirmation is added.
-  `tests/vendored/sts_devices.js` 14 holds `device_id` and `cnf.jkt` to
+  `tests/protocol/sts_devices.js` 14 holds `device_id` and `cnf.jkt` to
   the same key.
 * **`urn:sts:acr:compliant-device`** is in `step_up.ts`
   (`COMPLIANT_DEVICE`, `compliantDeviceOf()`) and in
@@ -5423,7 +5423,7 @@ Left for their own tickets:
   revocation and a device's removal send `credential-change` through the
   device register (#164 phase 4) and are not a grant's end here.
 
-`tests/vendored/sts_caep_oauth_grants.js` drives the whole of it over HTTP.
+`tests/protocol/sts_caep_oauth_grants.js` drives the whole of it over HTTP.
 
 ## THE ACCESS-TOKEN STATUS LIST (#432 phase 2, lane p2b, 2026-10-03)
 
@@ -5479,9 +5479,9 @@ of THIS directory needs:
   `oauth2.accessTokenStatusListLifetimeS`.
 
 Tests: `tests/access_token_status.js` (in process) and
-`tests/vendored/sts_access_token_status.js` (the OAuth half over HTTP, the
+`tests/protocol/sts_access_token_status.js` (the OAuth half over HTTP, the
 list verified and read by the job's own code); GNAP's half is
-`tests/vendored/sts_gnap_rs.js` section 8.
+`tests/protocol/sts_gnap_rs.js` section 8.
 
 ## 3ca. FAPI 2.0 HTTP SIGNATURES AT THE RESOURCE SERVERS (2026-10-05, #178)
 
@@ -5539,7 +5539,7 @@ Signatures*, **draft of 26 June 2026**, cited by date.
 
 Tests: `tests/http_signatures.js` (the mechanism, RFC 9421's vectors including
 section 2.4's), `tests/fapi_http_signatures.js` (this policy, section by
-section), `tests/vendored/sts_fapi_http_signatures.js` (`local: true`, over
+section), `tests/protocol/sts_fapi_http_signatures.js` (`local: true`, over
 HTTP with its own RFC 9421 signer and verifier).
 
 ## 3cb. THE ADMIN CONSOLE AS A PUBLIC CLIENT (#446, 2026-10-05)
@@ -5622,7 +5622,7 @@ last three on 2026-10-12, `9ee610e7`):
   (`SpaClient.nonceFor()` in `common/web_spa_client.ts`), so nothing extra
   has to cross the redirect, and refuse an ID Token that does not carry it
   (`nonceMatches()`) — the console's re-sign-in popup included. The two test
-  helpers (`tests/vendored/console_signin.js`, `portal_signin.js`) derive
+  helpers (`tests/protocol/console_signin.js`, `portal_signin.js`) derive
   the same value.
 * **No `query` response mode under FAPI 1.0 Advanced.** An Advanced realm
   still advertised `query`, so a runtime reading discovery asked for plain

@@ -225,7 +225,7 @@
   "defensible": "It is defensible because of what these keys are: generated at start, held only in memory, dead when the process exits, and protecting nothing — this trust realm is in development mode, which checks no password and validates no token it did not mint.",
   "notPersistedProduct": "These keys are generated at start, held only in memory and dead when the process exits — this trust realm's store does not keep its signing keys. But this trust realm is in product mode and verifies every password and token, so until then a key handed over here signs what relying parties believe: treat it as the live signing key it is.",
   "needsWrite": "It needs <strong>Admin Write</strong>, which is a stronger requirement than any other read on this console, because here reading IS taking.",
-  "exporter": "<strong>The exporter is the debugger's own, vendored.</strong> <code>common/vendored/key_material.js</code> does the four formats with a password — PEM, DER, JWK and PKCS#12 — and is the same code the debugger's PKI page has been exercised through. A second exporter beside it would be the worse copy.",
+  "exporter": "<strong>The exporter is the debugger's own, vendored.</strong> <code>common/crypto_impl/key_material.js</code> does the four formats with a password — PEM, DER, JWK and PKCS#12 — and is the same code the debugger's PKI page has been exercised through. A second exporter beside it would be the worse copy.",
   "theKeyPairs": "The key pairs",
   "thFormats": "Formats",
   "notMadeYet": "not made yet",

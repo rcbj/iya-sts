@@ -457,7 +457,7 @@
   },
   "crypto.families.pki.signs": {
     "en": "f1ce79cf624ab6f5",
-    "text": "MGA CERTIFICATE. Pinipirmahan ng Root ang sarili nito nang isang beses para sa serbisyo; pinipirmahan nito ang isang Intermediate bawat trust realm at isa para sa process; pinipirmahan ng bawat Intermediate ang isang Issuing CA bawat use case; at pinipirmahan ng bawat Issuing CA ang mga leaf ng use case nito — ang sariling signing at listener key ng serbisyo, at ang mga key pair na in-issue sa mga application at tao. Ang signature algorithm ay ang piniling para sa hierarchy at nililimitahan ng key family ng ISSUER sa halip na ng subject, na siyang pagkakamaling pinaglalaanan ng isang talata ng sariling header ng `common/vendored/x509.js`: ang pag-import ng key sa ilalim ng isang digest at pagpirma gamit ang iba ay gumagawa ng certificate na hindi tugma ang idineklarang algorithm at ang aktuwal na signature, at iniuulat ito ng `openssl verify` bilang bad signature nang walang pinapangalanan sa dalawa."
+    "text": "MGA CERTIFICATE. Pinipirmahan ng Root ang sarili nito nang isang beses para sa serbisyo; pinipirmahan nito ang isang Intermediate bawat trust realm at isa para sa process; pinipirmahan ng bawat Intermediate ang isang Issuing CA bawat use case; at pinipirmahan ng bawat Issuing CA ang mga leaf ng use case nito — ang sariling signing at listener key ng serbisyo, at ang mga key pair na in-issue sa mga application at tao. Ang signature algorithm ay ang piniling para sa hierarchy at nililimitahan ng key family ng ISSUER sa halip na ng subject, na siyang pagkakamaling pinaglalaanan ng isang talata ng sariling header ng `common/crypto_impl/x509.js`: ang pag-import ng key sa ilalim ng isang digest at pagpirma gamit ang iba ay gumagawa ng certificate na hindi tugma ang idineklarang algorithm at ang aktuwal na signature, at iniuulat ito ng `openssl verify` bilang bad signature nang walang pinapangalanan sa dalawa."
   },
   "crypto.families.pki.verifies": {
     "en": "e27202f2b20a852a",
@@ -485,7 +485,7 @@
   },
   "crypto.families.pki.algorithms.0.how": {
     "en": "d40c79caa059f986",
-    "text": "X.509 v3, DER, sa pamamagitan ng pkijs at asn1js — common/vendored/x509.js, ang sariling PKI code ng parent project, byte-identical. Iisang encoder para sa serbisyong ito at para sa PKI / X.509 page ng proyektong iyon."
+    "text": "X.509 v3, DER, sa pamamagitan ng pkijs at asn1js — common/crypto_impl/x509.js, ang sariling PKI code ng parent project, byte-identical. Iisang encoder para sa serbisyong ito at para sa PKI / X.509 page ng proyektong iyon."
   },
   "crypto.families.pki.algorithms.1.what": {
     "en": "1b9e0c9e96801219",

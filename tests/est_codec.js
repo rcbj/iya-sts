@@ -19,7 +19,7 @@
 // WHY IN PROCESS: every input is chosen — a body that is base64 but not
 // canonical, a certificate whose bytes a re-encoding would change (an ML-DSA
 // key), a boundary — and none of that needs a service. The protocol half is
-// `tests/vendored/sts_est_enrollment.js`.
+// `tests/protocol/sts_est_enrollment.js`.
 //
 // **THE CERTIFICATES MUST SURVIVE BYTE FOR BYTE**, which is the decision the
 // codec's header argues against pkijs's re-encoding, so it is asserted with an

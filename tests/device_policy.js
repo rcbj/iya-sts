@@ -38,7 +38,7 @@
 //      pairwise client and none for an ephemeral one; the DPoP-bound
 //      token's cnf.jkt is the device key's thumbprint, and no second cnf.
 //      (`claims_supported` and introspection are held over HTTP by
-//      `tests/vendored/sts_devices.js`.)
+//      `tests/protocol/sts_devices.js`.)
 //   H. SSF: a pairwise stream is told the pairwise device id, an ephemeral
 //      one no device.
 // ===========================================================================

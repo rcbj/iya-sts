@@ -106,7 +106,7 @@ function audienceFor(base) {
 }
 
 // `options` is for the ONE caller that wants a token this run's jobs would not
-// otherwise be given: `tests/vendored/sts_admin_api_auth.js`, which asserts the
+// otherwise be given: `tests/protocol/sts_admin_api_auth.js`, which asserts the
 // gate's refusals and therefore needs a token with ONE scope, or with an
 // audience naming somebody else. Both default to what every other caller wants,
 // so nothing that was written before this parameter existed changed.

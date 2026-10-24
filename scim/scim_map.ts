@@ -1394,7 +1394,7 @@ class ScimMap {
   // fact" rule exists for.
   //
   // What turned it up was a reader:
-  // `tests/vendored/sts_directory_bulk_load_scim.js` BUILDS every resource it
+  // `tests/protocol/sts_directory_bulk_load_scim.js` BUILDS every resource it
   // sends out of this table rather than out of a copy, and `type`, `parent`
   // and `extension` are what make that possible — two rows both map to
   // `phoneNumbers` and only `type` tells `telephoneNumber` from `mobile`, five

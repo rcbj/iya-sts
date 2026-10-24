@@ -21,7 +21,7 @@
 // The counterpart rule is in admin_api.ts: an /admin control gets an /admin-api
 // operation in the same commit. That one cannot be enforced by construction —
 // nothing can see a form appear on a page — so it is asserted by this
-// repository's own tests/vendored/admin_api.js (a `local: true` job) instead,
+// repository's own tests/protocol/admin_api.js (a `local: true` job) instead,
 // which walks the console's own NAV and action lists and fails on a page or an
 // action with no operation.
 //
@@ -1010,7 +1010,7 @@ const SETTINGS_BLOCK = openObject(
 //
 // Copied instead, this would be the pair of schemas that disagree about
 // `attributeCatalogue` within a month — and this repository's
-// tests/vendored/admin_api.js checks each documented property against a LIVE
+// tests/protocol/admin_api.js checks each documented property against a LIVE
 // reply, so
 // the disagreement would surface as a test failure naming a property rather
 // than as anything pointing here.

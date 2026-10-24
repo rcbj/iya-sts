@@ -26,8 +26,8 @@
 //     session is sent to the sign-in screen and a caller asking for
 //     `?format=json` is refused 401 rather than redirected. That is a change of
 //     behaviour for anything that fetched the old path unauthenticated, and the
-//     parent project's `tests/vendored/sts_metadata.js` now signs in the way
-//     `tests/vendored/admin_api.js` does.
+//     parent project's `tests/protocol/sts_metadata.js` now signs in the way
+//     `tests/protocol/admin_api.js` does.
 //   * **REQUIRING `admin.js` FROM HERE MOVES NOTHING.** That is the question to
 //     ask of any require in this service, because require order was route
 //     order until #50's R1 (and still is for a JavaScript module, which this
@@ -76,7 +76,7 @@
 //     entry. That is the direction that catches a route being renamed or
 //     removed.
 //
-// `tests/vendored/sts_metadata.js` fails on either, which is what makes the
+// `tests/protocol/sts_metadata.js` fails on either, which is what makes the
 // page's claim to completeness worth something. It is also why the route walk
 // happens per request instead of at require time: at require time the answer
 // would depend on module load order, and a module loaded after this one would
@@ -624,7 +624,7 @@ const SPECS: Spec[] = [
   //     vocabularies spoken over it. CAEP has been here since 2026-09-03 and
   //     RISC since 2026-09-04, so both are in this list now — and neither was
   //     until it was real, because a specification named here and not
-  //     implemented is an IDLE CLAIM and tests/vendored/sts_metadata.js fails
+  //     implemented is an IDLE CLAIM and tests/protocol/sts_metadata.js fails
   //     the page for one.
   { id: 'xacml30', name: 'OASIS XACML 3.0 (core)',
     where: 'OASIS',
@@ -3443,7 +3443,7 @@ const ENDPOINTS: EndpointEntry[] = [
     // rfc3961 belongs here because every message this relays has enc-parts
     // encrypted under that framework by the KDC behind it — and because a
     // specification nothing links to is an IDLE CLAIM, which
-    // tests/vendored/sts_metadata.js fails the page for. It was listed and
+    // tests/protocol/sts_metadata.js fails the page for. It was listed and
     // unlinked when the Kerberos rows were first added.
     // ms-pac since #595: every ticket the KDC behind it issues carries a
     // PAC, and the rows that linked it (`/krb5/principals`,

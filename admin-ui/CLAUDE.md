@@ -675,7 +675,7 @@ theirs.
 
 **What no code here can check is still the same gap rule 7 names.** Nothing in
 this service can see a form appear on a page, so the parity is asserted from
-outside by this repository's own `tests/vendored/admin_api.js` — and that test's page
+outside by this repository's own `tests/protocol/admin_api.js` — and that test's page
 list comes back in `GET /admin-api/status`, which now names eight more.
 
 ### What this cost on the pages that already existed
@@ -1036,7 +1036,7 @@ Create is an unnamed submit; *Fill* carries `fill=yes` of its own and the
 handler reads that FIRST. Two buttons both named `action` looks tidier and
 breaks two things: `form.elements.action` is then a `RadioNodeList` whose
 `.value` is empty, so anything finding a form by the action it posts — which is
-how `tests/vendored/sts_admin_console.js` finds every form it presses — stops
+how `tests/protocol/sts_admin_console.js` finds every form it presses — stops
 finding this one; and a hidden field plus a named button posts `action` TWICE,
 which is the ambiguity `common/validation.js` refuses everywhere else rather
 than resolving.
@@ -1636,7 +1636,7 @@ in the BINDING, not in the signature, and the page says which.
 
 A card in `sts_metadata.ts`'s `PROTOCOLS`, an entry in its `ENDPOINTS`, **and a
 row in `crypto_metadata.ts`'s `FAMILIES`**. The third is enforced:
-`tests/vendored/admin_api.js` — this repository's own — fails on the drift
+`tests/protocol/admin_api.js` — this repository's own — fails on the drift
 report being non-empty in either direction, on a coverage note that does not
 start `full`/`partial`/`minimal`, and on any of five algorithm lists differing from
 what this service advertises in its own discovery documents. That last check is
@@ -1707,7 +1707,7 @@ this console, and `mayWrite()` exists for that one caller. It goes through
 
 ### Four decisions
 
-* **The exporter is `common/vendored/key_material.js`, not a second one.** That
+* **The exporter is `common/crypto_impl/key_material.js`, not a second one.** That
   is the debugger's own keystore code, already vendored, already doing PEM, DER,
   JWK and PKCS#12 with a password. A second exporter would be the worse copy.
   **There are now THREE things in this file with names in that neighbourhood**
@@ -1893,7 +1893,7 @@ the realm's JWKS `x5c`, its SAML metadata and its signature headers went on
 publishing the signing keys' certificates from the SUPERSEDED Issuing CAs, with
 the old Intermediate in the chain — and the old Issuing CAs name the same
 `intermediate.crl` as the new ones, so one list was named by two issuers.
-`tests/vendored/sts_pki_distribution_points.js` failed on it in every mode.
+`tests/protocol/sts_pki_distribution_points.js` failed on it in every mode.
 
 **It was there on `develop` and was hidden by timing.** A runtime realm's keys
 were made by the first handler that read them, which for a realm created and
@@ -1951,7 +1951,7 @@ browser must never** — so the button is a POST and the result is a re-rendered
 page. That is the exact inversion of the parent project's *PKI / X.509* page,
 whose whole point is that the key never leaves the browser; what is mirrored
 here is the MODEL (the same three tiers, the same profiles, the same encoder,
-from `common/vendored/x509.js` byte-identical) and not the mechanism.
+from `common/crypto_impl/x509.js` byte-identical) and not the mechanism.
 
 ### The two columns are two different facts, and the page says which
 
@@ -2194,9 +2194,9 @@ that draws them repeats one wording.
 
 `PKI_ACTIONS` is `build`, `clear`, `issue` and `revoke`, and the count in the
 refusal comes from that list rather than being written out. **The sentence is
-read** — `tests/vendored/sts_admin_api_operations.js` matches `Unknown action
+read** — `tests/protocol/sts_admin_api_operations.js` matches `Unknown action
 "x". <prose>: a, b, c.` out of `errors` on every action resource, and
-`tests/vendored/admin_api.js` reads the same sentence for the parity check — so
+`tests/protocol/admin_api.js` reads the same sentence for the parity check — so
 a handler that phrased it its own way, or answered with a `why` alone, turns
 both of those off for its own resource with nothing failing. **The first version
 of this file did exactly that and went red on its first run**, which is what the
@@ -2401,7 +2401,7 @@ file's.
   listeners only that process holds. It therefore takes that process's session, read out of
   the store after the barrier the front process runs for a non-dispatched request.
 
-`tests/vendored/sts_admin_console.js`'s `theTruststorePageAddsAndRemoves()` presses both
+`tests/protocol/sts_admin_console.js`'s `theTruststorePageAddsAndRemoves()` presses both
 controls in a browser with a CA it mints — the Remove it presses is the one on the row
 carrying THAT CA's subject, which is what catches a button rendered with the wrong
 fingerprint — and asserts the truststore afterwards is exactly what it was before.
@@ -2992,7 +2992,7 @@ server is seeing tokens it did not expect.
   and the first is the one that decides the rest:
   * **There is no script and there must not be one** (until #446, 2026-10-05). `script-src 'none'` holds
     over the whole service (`../common/app.js`) and the parent suite asserts it
-    against this console's live headers (`tests/vendored/admin_api.js`), so there is no
+    against this console's live headers (`tests/protocol/admin_api.js`), so there is no
     keystroke handler, no fetch and no debounce to build a type-ahead out of —
     and anything written as though there were would be a control that silently
     does nothing rather than one that half works. What a browser gives free is a
@@ -3702,7 +3702,7 @@ Three things it cost, and each is the kind that goes wrong quietly:
    the session of the browser that pressed it, and `/admin-api` authenticates
    with a token rather than a session and is
    sessionless, so an operation there would have nothing to end.
-   `tests/vendored/sts_admin_console.js` carries the exemption — in
+   `tests/protocol/sts_admin_console.js` carries the exemption — in
    `NOT_A_CONSOLE_CONTROL`, with that sentence in it — so the check that reads
    the API's index for "every console POST reaches a mirrored route" does not go
    quietly amber.
@@ -3759,7 +3759,7 @@ holds no session in: following it runs the code flow in that realm, meets
 nothing, and asks them to sign in again as an account that is not theirs.
 `realmRoot()` takes the prefix back off and the href is ABSOLUTE, which is the
 one form that rewrite cannot prefix again. `theAccountMenuIsTheReaderSOwnCorner()`
-in `tests/vendored/sts_admin_console.js` asserts it in the realm that run
+in `tests/protocol/sts_admin_console.js` asserts it in the realm that run
 creates — and asserts that **Refresh beside it still carries the prefix**, so
 the check cannot pass because the rewrite stopped working.
 
@@ -3939,7 +3939,7 @@ breadcrumb leaf — `Admin console ›` with nothing after it, because `active` 
 !gate.session`, in that order: a service with the console gate off has no
 session either and every page in that nav is reachable. `sideColumn()`,
 `refreshLink()` and `gateBanner()` each apply it, and
-`tests/vendored/sts_admin_console.js` asserts the column's absence beside the
+`tests/protocol/sts_admin_console.js` asserts the column's absence beside the
 button's, off the survey's own `nav` count — with the count on the page BEFORE
 the sign-out asserted too, because a check that only reads zero passes just as
 well on a console that has lost its nav everywhere.
@@ -4041,7 +4041,7 @@ decisions, taken as the issue's plan recommended:
 
 `tests/console_bootstrap_product.js` holds the in-process half (the rules, the
 gate over a loopback socket, the debugger, the startup log) and
-`tests/vendored/sts_console_bootstrap_product.js` the HTTP half.
+`tests/protocol/sts_console_bootstrap_product.js` the HTTP half.
 
 **A grant to somebody who does not exist is allowed and dangles.** That is the
 interesting case for a mock — grant the role, then watch them arrive already
@@ -4287,7 +4287,7 @@ would cost an afternoon:
   single-slash-rooted path with no whitespace — `//host` and `https://host` are
   refused rather than corrected — and the realm id is looked up in the registry
   rather than trusted, with `/admin` as the answer to both refusals. It is not
-  in `NAV`, so it is not one of the console's pages and `tests/vendored/admin_api.js`'s
+  in `NAV`, so it is not one of the console's pages and `tests/protocol/admin_api.js`'s
   page parity does not ask for a `/admin-api` operation mirroring it.
 * **A SETTINGS FORM WRITES THE REALM IT IS READ IN, wherever it is drawn.**
   `config.setOverride()` lands on the ambient realm — see rule 3m — so the Save
@@ -4358,7 +4358,7 @@ between them — which is the most useful thing on the page.
 
 **FIVE ACTIONS, AND THEY ARE THIN ON PURPOSE.** `PERMISSION_ACTIONS` is built
 from the switch rather than typed, for `APPLICATION_ACTIONS`'s reason: this
-repository's own `tests/vendored/admin_api.js` READS the refusal sentence to
+repository's own `tests/protocol/admin_api.js` READS the refusal sentence to
 check that every console action has an `/admin-api` operation, so a list short by
 one turns the parity check off for that action. Each action calls
 `common/app_permissions.ts`, which calls `applications.updateApplication()`,
@@ -4501,7 +4501,7 @@ plausible: a grant is a value on the CLIENT's entry, so writing it to the
 resource instead produces a row that resolves in both directions, reads
 correctly on the delegation page's own grants table, and is wrong only at the
 token endpoint, later, to somebody else.
-`tests/vendored/sts_delegated_permissions_example.js` asserts exactly that pair
+`tests/protocol/sts_delegated_permissions_example.js` asserts exactly that pair
 of halves landing on the right entries, which is how much care the distinction
 is worth.
 
@@ -4802,7 +4802,7 @@ value; the generic application edit refuses it.
 **FIVE ACTIONS (the fifth, `revoke-application-consent`, since #172 — the
 console's and the API's twin of `/portal/consents`' per-application Withdraw),
 and `CONSENT_ACTIONS` is built from the switch rather than
-typed**, for `PERMISSION_ACTIONS`' reason: `tests/vendored/admin_api.js` reads
+typed**, for `PERMISSION_ACTIONS`' reason: `tests/protocol/admin_api.js` reads
 the refusal sentence to check that every console action has an `/admin-api`
 operation, so a list short by one turns the parity check off for that action.
 Two of the five go through `applications.updateApplication()` like every other
@@ -4872,7 +4872,7 @@ which is more than the row it is on. Each row's `why` is the button's `title`.
 omission: the gate is MIDDLEWARE and refuses every non-GET without Admin Write
 with a 403 and a page naming the group. A second check in the handler would have
 been a second refusal in a different shape — a 303 carrying a message — for one
-act, and `tests/vendored/sts_admin_console.js` asserts the 403.
+act, and `tests/protocol/sts_admin_console.js` asserts the 403.
 
 `GET /admin-api/sessions` and `POST /admin-api/sessions/revoke` mirror it, in
 the same change, which is rule 7; `mgmt-api/CLAUDE.md` argues why it is a
@@ -5092,7 +5092,7 @@ knowing before changing it.
 * **`composeParams` is a row member any page may use**, and
   `WebPages.composeRequests()` is the one reading of a row's composition: the
   runtime, `tests/tools/console_page.js`, `tests/console_web_bundle.js` and
-  `tests/vendored/console_signin.js` all ask it, where each had its own copy.
+  `tests/protocol/console_signin.js` all ask it, where each had its own copy.
 * **THE SEVEN FORMER ADDRESSES ARE GONE** (rcbj): `/admin/acme`,
   `/admin/spiffe/entries` and the rest are no console pages. Links between
   tabs are rewritten by `certTabLinks()`; a former page's `?format=json` link
@@ -5423,7 +5423,7 @@ solid brand fill `.pagenav .here` has had all along, so the two "you are here"
 markers in this console finally look alike. `aria-current="page"` says the same
 thing to a screen reader.
 
-**`tests/vendored/sts_metadata.js` pins all three** — the span, the
+**`tests/protocol/sts_metadata.js` pins all three** — the span, the
 `aria-current` and the `autofocus`+`tabindex` pair — because all three are
 invisible: nothing about the rendered page looks wrong if one is dropped, and
 the sidebar would quietly go back to starting at the top on every navigation.
@@ -5814,7 +5814,7 @@ Three consequences, and each is done rather than assumed:
 * **`GET /admin-api/users/new` STAYS.** Rule 7 requires an operation for every
   console PAGE and says nothing against one for a drill-down — `/admin/delegation/map`
   has none and that is fine too. The catalogue this one publishes is what a
-  script builds a create from, and `tests/vendored/bulk_load.js` reads it.
+  script builds a create from, and `tests/protocol/bulk_load.js` reads it.
   Deleting a working operation to tidy a table would be a regression dressed as
   consistency.
 
@@ -6034,7 +6034,7 @@ party can VERIFY as against which two it is offering.
 `common/totp.ts`'s `report()` and `authn/webauthn_policy.ts`'s — which is the
 rule `/admin/crypto-metadata` is built on, one layer down. A page that wrote the
 list out would describe something this service does not do the first time one
-was added. `tests/vendored/sts_second_factor_pages.js` is what makes that mean
+was added. `tests/protocol/sts_second_factor_pages.js` is what makes that mean
 something: it CHANGES a setting and requires the report to move with it, because
 reading the report on its own says nothing — a hand-written table is well-formed
 too.
@@ -6108,9 +6108,9 @@ column, because it is the one state on the page that needs acting on.
 
 `mfaAction()` checked for a missing `username` before it checked the action, so
 a probe posting an unknown action with no body was answered *name the person*.
-**`tests/vendored/sts_admin_api_operations.js` reads the refusal sentence from
+**`tests/protocol/sts_admin_api_operations.js` reads the refusal sentence from
 every action resource** to check that it NAMES the actions it knows — which is
-how `tests/vendored/admin_api.js`'s parity check discovers what to look for — so
+how `tests/protocol/admin_api.js`'s parity check discovers what to look for — so
 a resource that answers something else turns that check off for itself with
 nothing failing. It went red immediately, which is the whole reason that
 assertion exists.
@@ -6280,7 +6280,7 @@ button says so and why the act is audited like the other two
 (`admin.mfa.backup-codes.cleared`).
 
 **`USERS_ACTIONS` gained `clear-backup-codes` in the same change**, which is not
-cosmetic: `tests/vendored/sts_admin_api_operations.js` reads the refusal
+cosmetic: `tests/protocol/sts_admin_api_operations.js` reads the refusal
 sentence that list builds in order to discover what to check for, so a list
 short by one turns the parity check off for that action.
 
@@ -6515,7 +6515,7 @@ console's.
   `message` — so every notice from that handler was `notice=undefined`.
   `/admin/pki` draws no notice and nobody saw it; the application page does.
 
-`tests/vendored/sts_admin_console.js` presses every button it finds, and on an
+`tests/protocol/sts_admin_console.js` presses every button it finds, and on an
 application page that now includes Regenerate and Take off: both are safe to
 press on any entry the walk reaches (the console's and portal's own clients
 read their secret fresh on every sign-in, and `sts-management-api` is refused
@@ -6687,7 +6687,7 @@ Three things are decisions:
   number. **`roles` lost `members` and `claimed` in the same change**: every
   membership, unpaged, and the same rows `grants` pages (`?role=` narrows it).
 
-`tests/vendored/sts_admin_console.js` searches for the person on the pane's own
+`tests/protocol/sts_admin_console.js` searches for the person on the pane's own
 form, clicks the result, and grants on the form that opens.
 
 ## EVERY PROTOCOLS PAGE LISTS ITS REALM'S ENDPOINTS (2026-09-13)
@@ -6862,7 +6862,7 @@ answers under that name.
   the forms, the rule the sections around it follow.
 
 `tests/person_attribute_editor.js` draws the page in process and checks the
-section and its selects; `tests/vendored/sts_person_attributes.js` drives the
+section and its selects; `tests/protocol/sts_person_attributes.js` drives the
 API half over HTTP. No owned browser job presses the section yet.
 
 ## `/admin/mode`: WHAT THE MODE CHANGES, AND WHAT IS IN FORCE HERE (#181, 2026-09-23)
@@ -7254,7 +7254,7 @@ Four decisions:
 
 `GET /admin-api/worker-pools` answers the same `workerPoolsView()` (rule 7);
 a view that could not be built is `STS-WORKER-0044`. `tests/worker_pools_page.js`
-and `tests/vendored/sts_worker_pools.js` cover it.
+and `tests/protocol/sts_worker_pools.js` cover it.
 
 ---
 
@@ -7359,7 +7359,7 @@ real post-quantum child, went with #363), and `tests/debugger_api_process.js`
 section F holds the preload.
 `GET /admin-api/node-health` answers the same `nodeHealthView()` (rule 7); a
 view that could not be built is `STS-CORE-0124`.
-`tests/vendored/sts_node_health.js` is the HTTP half.
+`tests/protocol/sts_node_health.js` is the HTTP half.
 
 ### A FULL GARBAGE COLLECTION, ON DEMAND (#611, 2026-10-13)
 
@@ -7413,7 +7413,7 @@ schedule, and memory a forced collection does not free is held, not garbage.
 `tests/heap_collector.js` holds the collector; `tests/node_health_page.js`
 section 10 the targets, refusals, the silent thread, the audit row, the
 buttons and the drawn answer, and its section 7 the real channel;
-`tests/vendored/sts_node_health.js` section 6 the operation over HTTP.
+`tests/protocol/sts_node_health.js` section 6 the operation over HTTP.
 
 ---
 
@@ -7550,7 +7550,7 @@ is read. The box is ticked when either family is declared, and saving it
 declares both. The API still takes the two family ids.
 
 `tests/application_form_roles.js` holds the catalogue, and
-`tests/vendored/sts_admin_console.js`'s `theFieldGridIsPressed()` presses the
+`tests/protocol/sts_admin_console.js`'s `theFieldGridIsPressed()` presses the
 grid in a browser.
 
 ## AN APPLICATION'S PAGE CARRIES ITS ACME, EST AND SCEP CERTIFICATES (2026-10-01)
@@ -7881,7 +7881,7 @@ module always was, and imports the kit by its relative path.
 | `web_users.ts` (the person) | `/admin/users?user=` (`detail()`, the drill-down) and a name nothing knows (`unknown()`), with the page's thirteen sections moved beside it — the sessions and their tokens, the artifacts, how they authenticated, the directory entry, the second factors (`mfaSection()` with the e-mail factor, app passwords, verifications, devices and self-issued subjects), the key pairs, Kerberos, federation links, GNAP grants, the attribute grid and the controls. **The answer of `GET /admin-api/users?user=` gained `page`** (`admin_views.userPageData()`): the counts the tiles show, `back` and `params`, the credential store's report and three mechanisms' settings (`mfa`), the key-pair state without the private keys (`keyPairs`), the service-provider relationships a link may name, `person_editor.ts`'s field groups, who may act for them, and whether the risk standing was read (`riskAsked`). The unknown answer gained `registryKeeps`. **A credential leak closed with it**: the answer's `ldap` was the entry as stored — password hash, TOTP seed, recovery codes, private keys — and the directory reader slot now hands over `withoutSecrets()`'s copy (`tests/application_reveal_secret.js` 5). A refused form's values ride beside the answer as `state`, never in it. `WebKit.subTabbedPanels()` moved to the kit. |
 | `web_delegation.ts` | The delegation pages and the pieces they share (#446): a party, a row of the register, a box and a line of the picture, the two choosers, the policy and permission sections, and `drawing()` — the answer's `svg` with the two links under it. **The drawings stay laid out on the server**: dagre runs here, an answer carries `svg`, `drawing` and `looks`, and the key is markup drawn from `delegation_map.ts`'s glyphs (`AdminViews.delegationMapKey()`, the answer's `mapKey`). **`facts` is what `known` was**: the cells took the user keys the console had seen and asked `applications.get()` while drawing; an answer carries `facts` (`AdminViews.delegationFacts()`), `users` and `apps` for the names in it only. **The two choosers are searched and paged by the view** (`AdminViews.delegationChooser()`, `chooserPane()`'s `slice`), because the person catalogue is everybody this service has seen. **Every delegation page is drawn here, each from an operation of its own** (an `AdminViews.*Model()` the page and the operation share, each answering `format=svg` as the page does): `acts()` — `/admin/delegation` from `GET /admin-api/delegation`, whose answer is the page's model since #446 (the acts as before, `allowed`, `delegationPolicy`, the other six lists paged, the choosers and the two sections' views); `map()`; `chain()`, `application()`, `user()` (`/admin-api/delegation/chain`, `/application`, `/user`); `allowed()` and `cluster()` (`/delegation/allowed`, `/delegation/cluster`); `settings()` (`GET /admin-api/delegation-settings`, the register with `AdminViews.permissionsListStateOf()`); and `credential()` — `/admin/tokens/credential` from `GET /admin-api/tokens/credential` (`credentialLineageModel()`, each generation's `holder` and `originLabel`). The console's own copies of the shared pieces, thirty-four methods, were removed with the last of them. `tests/console_web_bundle.js` records one delegation act and draws the pages with example queries (`EXAMPLES`), so a chain, a person and a lineage are compared and not only the empty pages. |
 | `web_dashboard.ts` | `/admin`, the console index (#446): the totals, the guide — every page this reader may see, grouped as the sidebar is (`consoleGuide()`, `guideItem()`, `isNavGroup()`) — what the console deliberately does not do (`notDone()`, in development mode only, #753), and where the JSON is. Drawn from `GET /admin-api/status`, which answers `AdminConsole.dashboardJson()` since #446: `consoleJson()`'s totals and `sections` (`visibleSections()` for the caller's gate), `persistence`, `testDouble` and `base`. `dashboardJson` is the fifth name `tests/admin_actions_layer.js` lets the API call on the console: the guide is the console describing its own pages. |
-| `web_sts_metadata.ts` | `/admin/sts-metadata` (#446): `sts_metadata.ts`'s `renderInner()` and its helpers, drawn from `GET /admin-api/sts-metadata` (`StsMetadata.pageJson()`: `metadataJson()` with the router's `rows`, `https`, `rfc9700`, the authorization servers served and the group order). The router is still read on the server — that is the page — and the operation requires `sts_metadata.ts` lazily, since it is built last. `tests/console_web_bundle.js` D-drift asks that answer for undocumented and stale paths in process, the check `tests/vendored/sts_metadata.js` makes over HTTP. |
+| `web_sts_metadata.ts` | `/admin/sts-metadata` (#446): `sts_metadata.ts`'s `renderInner()` and its helpers, drawn from `GET /admin-api/sts-metadata` (`StsMetadata.pageJson()`: `metadataJson()` with the router's `rows`, `https`, `rfc9700`, the authorization servers served and the group order). The router is still read on the server — that is the page — and the operation requires `sts_metadata.ts` lazily, since it is built last. `tests/console_web_bundle.js` D-drift asks that answer for undocumented and stale paths in process, the check `tests/protocol/sts_metadata.js` makes over HTTP. |
 | `web_forms.ts` | Which `/admin-api` operation a console form is (#446, step 5). The static console has no server of its own, so a submitted form goes to the operation that mirrors it, read off `GET /admin-api`'s `operations` — every operation's `mirrors` (rule 7's declaration) and an action route's per-action path. A form resolves by its page and its `action` field, or by its page alone where one POST operation mirrors it, or by the action its page is named after (`POST /admin/keys/export`); anything else is null and the runtime refuses it rather than guess. `tests/console_web_bundle.js` F0 holds that every POST form a converted page draws resolves (378 form actions on 2026-10-05). |
 | `web_shell.ts` | The console's frame (#446, step 5): the sidebar (brand, realm chooser, the sections this reader may see), the head row (title, refresh, account menu), the trail, the gate's banner, a realm's removal banner, and the foot (persistence, the build, what the process runs as). `frame(shell, page)` draws it from the SHELL ANSWER, `AdminConsole.shellJson()` — `GET /admin-api/console` — and the page's own `title`, `active`, `up`, `inner` and realm-relative `path`. **`page()` draws through it** — no served page does since 2026-10-08, when the realm chooser became a page of its own (`RealmChooser.page()`); `tests/realm_retiring.js` still draws its banners through it; the frame it replaced (`pageLegacy()`) and the byte-for-byte parity test that held the two equal were deleted after the cutover (#446). The shell answer keeps the old frame's two gates apart: `gate` for the banners (what a caller handed `page()`), `navAuthority` and `sections` from the request. The constants the frame draws with (`MAX_CRUMB`, `SIGNOUT_PATH`, `REALM_SWITCH_PATH`, `ACTIVE_NAV_FOCUS`) and the open-gate banner live here. `shellJson` is the sixth name the layer test lets the API call on the console. **Since #454 the frame is reached with ADMIN_CONSOLE alone**, which the console's client confers on everybody signing in to it, so a person holding neither console role gets an answer rather than a 403 — and that answer carries no sections and no runtime facts (`holdsNoConsoleRole()`): the banner says what they hold, and nothing behind a link would let them in. |
 | `web_runtime.ts`, `web_console.ts` | **The static console's runtime** (#446 step 5), bundled by `build-typescript.sh` as `admin-ui/console.js` from `web_console.ts`, which only hands `ConsoleRuntime` the browser's objects and starts it. Sign-in is the code flow with PKCE S256 at the authorization server of the realm the console was opened in, `resource` that realm's `/admin-api`; the verifier, state and return path cross the redirect in sessionStorage, the tokens are held in memory only (a reload signs in again, silently while the sign-on session lasts). DPoP on every request with a non-extractable P-256 key made per page load, `ath` on API proofs, a server's nonce kept and a `use_dpop_nonce` refusal retried once, the refresh token rotated with the same key. Pages are routed on the console's own paths and drawn by `WebPages.render()` in `WebShell.frame()` (the shell is `GET /admin-api/console`, whose gate is the TOKEN's — `AdminApi.consoleGateOf()` over `meJson()`); a POST form goes to `WebForms.resolve()`'s operation or is refused; an act's answer is drawn as `respondToAction()` drew it, a reveal on the page that asked, a file saved; the realm switcher moves in place. Every browser object arrives through the constructor, which is what `tests/console_runtime.js` drives. **Served since the cutover (step 6)**: `/admin` and `/admin/*` answer the shell document with this script (`AdminConsole.shellDocument()`, drawn and sent through `common/shell_document.ts` since #570, its bytes unchanged), any other method 404. **No submit button stands in for it** (moved verbatim from the root `CLAUDE.md`'s scripted-pages table, 2026-10-13): a form has nowhere to post but the API, which takes a token a page without script cannot hold, so the shell's `<noscript>` says the console needs its script and nothing else is drawn; its policy adds `connect-src 'self'` beside `script-src 'self'`. **What it shares moved to `common/` on #570** (`common/CLAUDE.md`, 3cl): `ConsoleRuntime extends SpaClient extends WebPage`, both now `common/web_spa_client.ts` and `common/web_page.ts`, and `realmLinks()`, `targetFragment()` and `saveBase64()` are `WebPage`'s; the formatter is `common/web_messages.ts`; `sendConsoleFile()` and `acceptedEncoding()` hand their work to `ShellDocument`. Two rules it keeps from the server's form parser: a `formaction`'s query and the pressed button's value each TAKE THE PLACE of a field of the same name (Generate secret is `action=generate-secret` beside a create form's hidden `action=create`; since #454 that helper is the console's own operation, `/admin-api/console/applications/generate-secret`, and the runtime's form table is `GET /admin-api/console/operations`, both kinds, where it was the management index, and its request schemas come from both documents), and `shapeFields()` sends a form as its operation's schema takes it — a `patternProperties` member (the field grid's boxes) kept, a column of `attribute` boxes carried into `attributes`; `tests/console_web_bundle.js` F1b fails on a value dropped on the way and F0b on a named button that would be sent as its form's action. **A JOINED FIELD (#219)**: a control named `a|b` whose values are `x|y` is sent as the two fields `a=x` and `b=y` (`splitJoinedFields()`), which is how a form offers only the pairs that go together — Monitoring → Risk's *Dataset and its format* — without the API taking a combined member; F1b sends forms through the same split. **A SESSION THAT ENDS DOES NOT TAKE THE PAGE WITH IT (#508, rcbj 2026-10-07)**: a request that needs a sign-in WAITS (`send()` over `sendOnce()`), under a bar whose *Sign in again* opens the realm's own `/oauth2/authorize` in a popup (state prefixed `popup.`); that window's callback hands the code back over the `sts-console-signin` BroadcastChannel and closes, and this page redeems it with its own verifier and DPoP key and sends what was waiting, once — nothing for a different `sub`. *Sign in on this page* (and every case the popup cannot serve) keeps the forms' values in sessionStorage (`sts-console-restore`; never a password, file, hidden field or anything named for a secret, `keepsField()`) and the address with its fragment, and puts them back after for the same realm, page and person, saying nothing was sent. **Re-authentication is always the central sign-in** (rcbj): nothing here authenticates, extends a session or keeps one alive — a session is absolute, and a fresh sign-in by the same person adds an event to it without moving its end, which is why there is no 'stay signed in' warning. `tests/console_reauth.js` holds it with stand-ins. |
@@ -8248,7 +8248,7 @@ tab, and a service account's section of the person page —
   Save. **Each searching form opens with a hidden `default-submit`**, the
   application grid's reason: otherwise Enter in any box presses Find.
   `tests/passkey_policy_on_application.js` holds the data, the card, the
-  sub-tabs and the search; `tests/vendored/sts_passkey_policy_application.js`
+  sub-tabs and the search; `tests/protocol/sts_passkey_policy_application.js`
   the API half.
 
 ## AN APPLICATION'S DECLARED AND OBSERVED ATTRIBUTES (#706, #708; rcbj, 2026-10-19)

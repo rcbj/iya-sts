@@ -476,7 +476,7 @@ change anything here:
   `xacml-pep/enforcement_cases.json` — the table **`tests/xacml_pep.js`** holds
   the service's own enforcement rule to as well, so the two agree over seven
   decisions under both biases. None of it makes an HTTP request.
-- **`tests/vendored/sts_xacml_remote_pep.js`** holds the *deployment*: this
+- **`tests/protocol/sts_xacml_remote_pep.js`** holds the *deployment*: this
   container on the service's own docker network, registering, pulling, converging,
   being nudged, reporting its counters, and going on deciding after the PDP is
   taken away — and being issued its listener certificate,

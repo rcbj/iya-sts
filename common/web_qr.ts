@@ -538,7 +538,7 @@ class WebQr {
    */
   static utf8(text: string): number[] {
     // By hand rather than with TextEncoder, which the context a test draws
-    // the bundle in does not have (`tests/vendored/portal_signin.js`).
+    // the bundle in does not have (`tests/protocol/portal_signin.js`).
     const out: number[] = [];
     for (const ch of String(text)) {
       const c = ch.codePointAt(0) as number;

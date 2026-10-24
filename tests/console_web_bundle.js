@@ -86,7 +86,7 @@ function childMain() {
     // found whose console JSON carried `settings` and whose operation did
     // not (`/admin/attribute-sources`): a table like that agrees with the
     // page module and proves nothing about the API. The gate is not in the
-    // way here; it is `tests/vendored/admin_api.js`'s to hold.
+    // way here; it is `tests/protocol/admin_api.js`'s to hold.
     function apiAnswer(operation, query) {
       return new Promise(function (resolve, reject) {
         const entry = adminApi.ROUTES.filter(function (one) {

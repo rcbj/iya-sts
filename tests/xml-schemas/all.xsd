@@ -13,7 +13,7 @@
   it could contain, or the part of the document inside the first wildcard
   is not checked at all. This file is that set; the job adds the other half
   of the guarantee by refusing a document that uses a namespace no import
-  below covers (tests/vendored/sts_xml_schema_validation.js, `covered()`).
+  below covers (tests/protocol/sts_xml_schema_validation.js, `covered()`).
 
   Each import names the local file tests/tools/fetch-xml-schemas.sh put
   beside this one; the imports INSIDE the published files are resolved by

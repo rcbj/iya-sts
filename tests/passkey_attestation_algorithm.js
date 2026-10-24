@@ -31,7 +31,7 @@
 //   F. The console's and the API's key row carries the reading.
 //
 // THE ML-DSA CHAIN IS A FIXTURE MADE HERE, AT RUN TIME, with this service's
-// own post-quantum certificate encoder (`common/vendored/x509.js` over
+// own post-quantum certificate encoder (`common/crypto_impl/x509.js` over
 // `pqc_x509.js`), and its statement is signed with an ML-DSA-65 key this
 // file generates. NO REAL POST-QUANTUM AUTHENTICATOR'S ATTESTATION HAS BEEN
 // TESTED: none was available when #941 was built, so what is shown is that
@@ -51,8 +51,8 @@ const passkeyRules = require('../common/passkey_rules');
 const credentials = require('../common/credentials');
 const pki = require('../common/pki');
 const ldap = require('../ldap/ldap_server');
-const x509 = require('../common/vendored/x509');
-const pqx = require('../common/vendored/pqc_x509');
+const x509 = require('../common/crypto_impl/x509');
+const pqx = require('../common/crypto_impl/pqc_x509');
 const webauthn = require('../authn/webauthn');
 const webauthnPolicy = require('../authn/webauthn_policy');
 const attestation = require('../authn/webauthn_attestation');

@@ -220,7 +220,7 @@ const WST_NS = 'http://docs.oasis-open.org/ws-sx/ws-trust/200512';
 // `RequestedAttachedReference`); and there is no Cancel at all — no
 // CancelTarget and no RequestedTokenCancelled — so a Cancel is refused with
 // the version's own InvalidRequest fault rather than answered in elements
-// the version does not have. tests/vendored/sts_xml_schema_validation.js
+// the version does not have. tests/protocol/sts_xml_schema_validation.js
 // validates each version's answers against its own published schema.
 const WST_2004_04_NS = 'http://schemas.xmlsoap.org/ws/2004/04/trust';
 
@@ -3093,7 +3093,7 @@ class WsTrust {
   // and a client that re-read it from a proxy would be checking this service's
   // signatures against the certificate of a service that is no longer running.
   // It was the ONE metadata document in this service served without the header,
-  // which tests/vendored/sts_metadata_anonymous.js found by asking the same
+  // which tests/protocol/sts_metadata_anonymous.js found by asking the same
   // question of all nineteen of them at once.
   private stsCertEndpoint(req, res) {
     const { log, STS } = this.deps;

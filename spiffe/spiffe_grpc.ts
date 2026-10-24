@@ -1832,7 +1832,7 @@ class SpiffeGrpc {
   // a client that sent its one message and half-closed (a shape gRPC allows)
   // got an empty stream while the handler went on to SPEND THE JOIN TOKEN and
   // record the agent, so every retry was refused as spent.
-  // `tests/vendored/sts_spiffe_grpc.js` recorded it as a service defect and
+  // `tests/protocol/sts_spiffe_grpc.js` recorded it as a service defect and
   // worked round it on the client side; this is the fix. The stream is ended
   // once every handler started so far has written its answer or failed, and a
   // challenge outstanding at the half-close is failed with `ended` — the
@@ -2561,7 +2561,7 @@ class SpiffeGrpc {
   // presenting [SVID, old SPIFFE Issuing CA, old Intermediate] under a Root
   // nothing held, and every mutual-TLS caller holding the new bundle was
   // refused with `unable to get local issuer certificate` until a restart
-  // (tests/vendored/sts_spiffe_grpc.js section 7, red in every mode).
+  // (tests/protocol/sts_spiffe_grpc.js section 7, red in every mode).
   //
   // grpc-js keeps a watcher on every bound server for its credentials and
   // hands `updateSecureContextOptions()` to it as `setSecureContext()`, which

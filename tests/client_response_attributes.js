@@ -30,7 +30,7 @@
 //      prefetch take `clientConfigOf()`, not `registrationOf()`.
 //
 // The ID Token's own signature is held over HTTP by
-// `tests/vendored/sts_oidc_core.js` (section b2), which creates a client
+// `tests/protocol/sts_oidc_core.js` (section b2), which creates a client
 // through `/admin-api` with `oauthIdTokenSignedResponseAlg: ES256`.
 // ---------------------------------------------------------------------------
 

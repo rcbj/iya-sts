@@ -412,7 +412,7 @@ class CellSessions {
   // step only home holds: a consent screen, a second factor. Pinned to the
   // other cell on that answer, the browser took the step there and was told
   // nothing was waiting (STS-OAUTH consent, the `cells` mode's first run,
-  // 2026-09-28, tests/vendored/sts_cells_transfer.js). So the pin moves on
+  // 2026-09-28, tests/protocol/sts_cells_transfer.js). So the pin moves on
   // an answer that takes the browser OUT of this service — a redirect to
   // another origin, which is a flow handing its result to the client — and
   // every answer before it keeps the browser here. A flow that ends in a

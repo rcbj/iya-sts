@@ -31,7 +31,7 @@
 // ---------------------------------------------------------------------------
 // WHERE THE XML CODE CAME FROM, AND WHY IT IS NOT WRITTEN HERE.
 //
-// `common/vendored/xmldsig.js` is the parent project's own XML security module,
+// `common/crypto_impl/xmldsig.js` is the parent project's own XML security module,
 // copied here byte-identical under the rule that directory already has. It is
 // not a library somebody found: it is the OTHER END of most of these exchanges.
 // The debugger signs, verifies, encrypts and decrypts with it on its WS-Trust,
@@ -60,7 +60,7 @@
 // ---------------------------------------------------------------------------
 // THIS MODULE IS A LEAF AND MUST STAY ONE.
 //
-// It requires npm packages, `./vendored/xmldsig.js`, and `./config` — and
+// It requires npm packages, `./crypto_impl/xmldsig.js`, and `./config` — and
 // `config.js` requires nothing in this repository, so there is no cycle to
 // close and no route order to disturb. It registers no endpoint, exactly like
 // `oauth-oidc/dpop.ts` (rule 3), and it is BELOW `helpers.js` rather than
@@ -147,7 +147,7 @@ if (!global.XMLSerializer) {
   global.XMLSerializer = /** @type {any} */ (xmldom.XMLSerializer);
 }
 /** The vendored XML Signature engine. */
-const xmldsig = require('./vendored/xmldsig.js');
+const xmldsig = require('./crypto_impl/xmldsig.js');
 
 // The namespace URIs this file names. They are also exported by xmldsig.js and
 // are repeated here ONLY as local constants for readability — a caller that
@@ -413,7 +413,7 @@ function signXml(xml, opts) {
 // DigestMethod it has no row for before it ever calls a verifier. The
 // alternative was a second canonicalizing verifier in this file, which is
 // exactly the drift section 1's header exists to prevent; editing the
-// vendored file is forbidden (`common/vendored/CLAUDE.md`). A registered
+// vendored file is forbidden (`common/crypto_impl/CLAUDE.md`). A registered
 // digest row's `md` is a node hash dressed as forge's, because that is the
 // shape the engine calls.
 //
@@ -5663,7 +5663,7 @@ function describeJweKemAlg(alg) {
 // notion of what an `enc` value means. They are together here, over one table,
 // so a third algorithm is one row rather than two edits that have to agree.
 //
-// `common/vendored/jose_jwe.js` is the obvious alternative and is not used
+// `common/crypto_impl/jose_jwe.js` is the obvious alternative and is not used
 // here. This paragraph used to justify that by saying this service used
 // neither ECDH-ES nor the Concat KDF, only RSA-OAEP-256 with AES-GCM — which
 // stopped being true when the table below grew to RFC 7518 section 4 entire
@@ -6902,7 +6902,7 @@ function certificateIdentifiers(pem) {
 // beside a test stack) collide the same way with no restart at all.
 //
 // So the serial is random — 128 bits, the CA/Browser Forum's number, which is
-// also what `common/vendored/x509.js` already mints for every SPIFFE SVID.
+// also what `common/crypto_impl/x509.js` already mints for every SPIFFE SVID.
 //
 // WHAT THE CONSTANT WAS FOR IS KEPT, because it was a real thing rather than
 // laziness: a person looking at a packet capture, or at two PEM files, could
@@ -6960,9 +6960,9 @@ function certificateSerial(prefixHex) {
 // would be inventing a certificate profile language for two users.
 //
 // A THIRD generator is deliberately NOT folded in: `spiffe/spiffe_ca.ts` issues
-// through `common/vendored/x509.js` because **node-forge cannot sign with an EC
+// through `common/crypto_impl/x509.js` because **node-forge cannot sign with an EC
 // key at all** and SPIFFE issues P-256. That is a capability gap, not a
-// duplication, and `common/vendored/CLAUDE.md` records it.
+// duplication, and `common/crypto_impl/CLAUDE.md` records it.
 // ---------------------------------------------------------------------------
 // A forge key pair over an RSA private key given as PEM (PKCS#1 or PKCS#8 —
 // node reads either and forge is handed PKCS#1, which is what it writes).
@@ -9418,10 +9418,10 @@ function verifySecretAsync(plaintext, stored) {
 // file's kinds of thing — and the TPM structures they are fed are a codec
 // that stays in `spiffe/spiffe_tpm.ts`.
 //
-// It stays a LEAF: `./vendored/pqc_x509` requires only noble, asn1js and
+// It stays a LEAF: `./crypto_impl/pqc_x509` requires only noble, asn1js and
 // other vendored files.
 // ===========================================================================
-const pqcX509 = require('./vendored/pqc_x509');
+const pqcX509 = require('./crypto_impl/pqc_x509');
 
 // The families `verifyRawSignature()` understands.
 /** The families `verifyRawSignature()` understands. */

@@ -12,7 +12,7 @@ in the **admin console** (`/admin`) and once as calls to the **Management
 API** (`/admin-api`).
 
 **The values come from this repository's own test jobs** in
-`tests/vendored/` and `tests/`, and each recipe names the job it is taken
+`tests/protocol/` and `tests/`, and each recipe names the job it is taken
 from. The client recipes come from the jobs that drive real clients: certbot,
 lego, libest's `estclient`, sscep and certmonger. Change the realm, the names
 and the host names to your own.

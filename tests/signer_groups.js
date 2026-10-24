@@ -66,7 +66,7 @@ async function inProcess(t) {
   const helpers = require('../common/helpers');
   const realms = require('../common/realms');
   const pki = require('../common/pki');
-  const x509 = require('../common/vendored/x509');
+  const x509 = require('../common/crypto_impl/x509');
 
   t.log.info('=== A. the table: six groups, every JOSE use in one ===');
   t.equal(signerGroups.GROUP_IDS.join(','),

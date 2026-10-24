@@ -14,7 +14,7 @@
 // would be a password oracle. "Holds a second factor" is
 // `credentials.secondFactorDemand()`: a security key in the `mfa` role OR an
 // authenticator app. `tests/second_factor_doors.js` and
-// `tests/vendored/sts_second_factor_doors.js` hold the doors with a key, with
+// `tests/protocol/sts_second_factor_doors.js` hold the doors with a key, with
 // `stsMfaRequired` and with the policy, never with an app; TOTP enrolment was
 // asserted only at the Kerberos door (`sts_kerberos_fast_otp.js`).
 //

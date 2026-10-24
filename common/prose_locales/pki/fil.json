@@ -81,7 +81,7 @@
   },
   "pki.report.encoder": {
     "en": "e62315ba46619e60",
-    "text": "common/vendored/x509.js — ang sariling PKI code ng parent project, byte-identical, sa ibabaw ng pkijs at asn1js. Iisang encoder para sa serbisyong ito at para sa PKI / X.509 page ng project na iyon."
+    "text": "common/crypto_impl/x509.js — ang sariling PKI code ng parent project, byte-identical, sa ibabaw ng pkijs at asn1js. Iisang encoder para sa serbisyong ito at para sa PKI / X.509 page ng project na iyon."
   },
   "pki.report.residencyPersisted": {
     "en": "f0cab37351af3948",

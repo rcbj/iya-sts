@@ -19,7 +19,7 @@
 // ---------------------------------------------------------------------------
 // THE MECHANISM IS THE VENDORED INSPECTOR'S AND THE COMPLETENESS IS HERE.
 //
-// `common/vendored/x509.js`'s `describeCertificate()`, `describeExtension()`
+// `common/crypto_impl/x509.js`'s `describeCertificate()`, `describeExtension()`
 // and `verifyChain()` are the parent project's own certificate inspector — the
 // code behind its PKI / X.509 page and `saml_cert.html` — so an extension this
 // service names and one that project names are named by ONE table, and a
@@ -87,10 +87,10 @@ import stsCrypto = require('./crypto');
 import pkijs = require('pkijs');
 import asn1js = require('asn1js');
 // The parent project's own inspector, byte-identical. DO NOT EDIT IT HERE.
-import x509 = require('./vendored/x509');
+import x509 = require('./crypto_impl/x509');
 // Its post-quantum registry, for the one thing the inspector's summary gets
 // wrong — see `publicKeyLabel()`.
-import pqcX509 = require('./vendored/pqc_x509');
+import pqcX509 = require('./crypto_impl/pqc_x509');
 import InstanceSlot = require('./instance_slot');
 
 interface Logger {
@@ -169,7 +169,7 @@ const EXTENSION_LABELS: Record<string, string> = {
  * `/admin/pki`, `/admin/crypto-metadata` and `GET /admin-api/certificates`
  * answer from.
  *
- * The mechanism is the vendored inspector's (`common/vendored/x509.js`); this
+ * The mechanism is the vendored inspector's (`common/crypto_impl/x509.js`); this
  * class adds what a details view owes.
  */
 class CertificateDetails {

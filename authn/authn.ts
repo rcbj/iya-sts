@@ -14727,7 +14727,7 @@ class Authn {
   // shape in which it can be tested: a person holding TWO keys is the state
   // that tells "check the one the browser named" from "check the first one you
   // find", and no door in this service can currently enrol a second key — see
-  // `tests/vendored/sts_webauthn_second_factor.js`'s header.
+  // `tests/protocol/sts_webauthn_second_factor.js`'s header.
   //
   // **TWO FILTERS AND BOTH MATTER.**
   //

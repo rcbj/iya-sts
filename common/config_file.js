@@ -11,7 +11,7 @@
 // `require(process.env.CONFIG_FILE)` — for one thing each: the bunyan log level
 // they need before config.js exists. There were thirteen when this file was
 // written and there are nineteen on 2026-09-16: common/config.js,
-// common/mode.js, persistence/persistence_ldif.js, the eight common/vendored/
+// common/mode.js, persistence/persistence_ldif.js, the eight common/crypto_impl/
 // modules and the eight Kerberos codec copies. (It was fourteen until
 // 2026-08-24: helpers.js's read had been dead for some time and was removed
 // when CONFIG_FILE became optional, since `require(undefined)` throws.) That
@@ -21,7 +21,7 @@
 // hangs off.
 //
 // The 2026-08-23 reorganisation moved those modules into common/, kerberos/,
-// common/vendored/ and so on, and it took that property away silently. The
+// common/crypto_impl/ and so on, and it took that property away silently. The
 // documented invocation is
 //
 //     CONFIG_FILE=./env/local.js node server.js
@@ -38,7 +38,7 @@
 // later `require(process.env.CONFIG_FILE)` in any directory then resolves to
 // the same file. It is a mutation of process.env on purpose: the alternative is
 // changing every read site, and sixteen of them are VENDORED files this
-// repository may not edit (see common/vendored/CLAUDE.md and
+// repository may not edit (see common/crypto_impl/CLAUDE.md and
 // kerberos/CLAUDE.md).
 //
 // Four callers require this first and between them cover every way the

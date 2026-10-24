@@ -193,7 +193,7 @@ binding refusal, every act and its next step, the redacted audit row, the
 form POSTs gone); `tests/web_surfaces.js`'s round trip over seven cases in
 `tests/tools/web_surfaces.js`; in process, `tests/tools/authn_screen.js` is
 the walk every in-process test signs in through, and over HTTP every job
-signs in through `tests/vendored/authn_signin.js`.
+signs in through `tests/protocol/authn_signin.js`.
 
 ## THE STEPS AFTER THE SCREEN (#572, #573, 2026-10-12)
 
@@ -312,7 +312,7 @@ binding, each act and its next step, the rate limit, a session refused at
 the end, the redacted audit row); the round trip's step cases in
 `tests/tools/web_surfaces.js`; `tests/tools/authn_screen.js`'s `openStep()`,
 `stepAct()`, `passkeyStep()` and `ignoreOffer()` in process, and
-`tests/vendored/authn_signin.js`'s `step()`, `stepAct()`, `passkeyStep()`
+`tests/protocol/authn_signin.js`'s `step()`, `stepAct()`, `passkeyStep()`
 and `ignoreOffer()` over HTTP; the conformance suite's person presses an
 offered set-up step's Ignore (`conformance_browser.js`).
 
@@ -2188,7 +2188,7 @@ issued, and what the session carries is the fact that nobody authenticated.
 The page is markup; the endpoint is the door. A form posted by hand with
 `action=anonymous` while the setting is off must not mint a session that the
 console then lists and that an application's required role is then decided
-against. `tests/vendored/sts_roles_builtin.js` posts exactly that form as its
+against. `tests/protocol/sts_roles_builtin.js` posts exactly that form as its
 sixth mutant.
 
 ### The username in the form is IGNORED, and the principal is stable
@@ -2234,7 +2234,7 @@ So an application whose `appRequiredRole` was `ALL_AUTHENTICATED_USERS`
 configured could never be satisfied by anybody, and the refusal named the
 person and the role and looked entirely deliberate.
 
-**Why it survived:** `tests/vendored/sts_roles.js` narrows an application to a
+**Why it survived:** `tests/protocol/sts_roles.js` narrows an application to a
 CONFIGURED role, and the register answers those the same either way. Only a
 built-in role can see the difference. That is the general lesson rather than a
 detail about this bug — a computed role and a configured one exercise different
@@ -2719,7 +2719,7 @@ session event and the `session.start` row record the key's lane beside its
 algorithm (`credentialLane`).
 
 **Tests**: `tests/passkey_dual_lane.js` (in process, real ES256 and ML-DSA
-ceremonies), and `tests/vendored/sts_passkey_dual_lane.js` over
+ceremonies), and `tests/protocol/sts_passkey_dual_lane.js` over
 `/account-api` and the sign-in screen.
 
 ## A POST-QUANTUM PASSKEY REQUIRED (#718, 2026-10-19)
@@ -2773,7 +2773,7 @@ module does with it:
 
 **Tests**: `tests/passkey_post_quantum_required.js` (in process, real ES256
 and ML-DSA ceremonies), `tests/passkey_xacml.js` section E, and
-`tests/vendored/sts_passkey_post_quantum_required.js` over `/admin-api`,
+`tests/protocol/sts_passkey_post_quantum_required.js` over `/admin-api`,
 `/account-api` and the sign-in screen.
 
 ## THE CLASSICAL RETRY OF A REGISTRATION (#944, 2026-10-23)
@@ -2945,7 +2945,7 @@ header; what a maintainer of THIS directory needs is where it sits:
 
 `tests/webauthn_attestation.js` (with `tests/webauthn_attestation_kit.js`, a
 software authenticator in all eight formats) and
-`tests/vendored/sts_webauthn_attestation.js` are the tests. Not done:
+`tests/protocol/sts_webauthn_attestation.js` are the tests. Not done:
 enterprise attestation (section 5.4.7) has no RP ID allow-list, which the plan
 deferred.
 
@@ -3125,7 +3125,7 @@ interleaving. `tests/password_scrypt_off_loop.js` section A.
 * **THE ANSWER IS A WRONG PASSWORD'S, BYTE FOR BYTE**, and it counts against
   every rate limit a wrong password counts against — otherwise it is a
   password oracle. The code rides the verdict to the audit row and the log.
-  `tests/vendored/sts_second_factor_doors.js` compares the two answers as
+  `tests/protocol/sts_second_factor_doors.js` compares the two answers as
   strings at all five doors.
 * **APP PASSWORDS** (`common/app_passwords.ts`, the records in
   `credentials.ts`): generated, shown once, scrypt-hashed on the entry

@@ -4,7 +4,7 @@
 # tests/docker-compose-ldap.yml — THE DIRECTORY'S OWN SOCKET, PUBLISHED FOR THE
 # TEST STACK AND FOR NOTHING ELSE.
 #
-# ONE JOB NEEDS THIS AND IT IS `tests/vendored/sts_directory_bulk_load_ldap.js`,
+# ONE JOB NEEDS THIS AND IT IS `tests/protocol/sts_directory_bulk_load_ldap.js`,
 # which creates five thousand people, fifty groups and five thousand
 # memberships over RFC 4511 on the raw socket. Under `./run-tests.sh` it
 # needs nothing: the runner is a container on the bridge with the service and
@@ -62,7 +62,7 @@
 # service from INSIDE the container, where the directory is on 389. Published on
 # 11389, that URL names a port that answers nothing on the host — the same
 # defect the HTTP addresses had on 18081 — and
-# `tests/vendored/sts_pki_distribution_points.js` follows it from the host. So
+# `tests/protocol/sts_pki_distribution_points.js` follows it from the host. So
 # the mapping and the address the certificates carry are set together, here,
 # from one variable.
 #

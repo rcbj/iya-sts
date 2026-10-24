@@ -13357,7 +13357,7 @@ class OAuth2Server {
     // matched none of the branches below, and no code, refresh token or
     // CIBA id presented at another cell was ever relayed to the cell that
     // minted it (found by the `cells` mode's first run, 2026-09-28,
-    // tests/vendored/sts_cells_traveller.js).
+    // tests/protocol/sts_cells_traveller.js).
     const path = (String(req.baseUrl || '') + String(req.path || ''))
       .replace(/\/+$/, '');
     let artifact = '';
@@ -21087,7 +21087,7 @@ class OAuth2Server {
     //
     // Off (the default), both paths answer a 404 of their own that names the
     // setting — NOT Express's `Cannot GET`, which is how
-    // tests/vendored/sts_metadata.js tells a path nobody routed from an
+    // tests/protocol/sts_metadata.js tells a path nobody routed from an
     // endpoint answering 404.
     // -------------------------------------------------------------------------
     app.get(sessionManagement.IFRAME_PATH, function (req, res) {
@@ -21224,7 +21224,7 @@ class OAuth2Server {
 
     // SECTION 2.3's 405 IS MIDDLEWARE AND NOT A ROUTE, for
     // /admin/sts-metadata's reason: that page lists the methods the ROUTER
-    // holds for a path, and `tests/vendored/sts_metadata.js` calls every one
+    // holds for a path, and `tests/protocol/sts_metadata.js` calls every one
     // and fails on a 405 — so an `app.all()` would advertise ACL, PROPFIND and
     // the rest as methods this endpoint has, which is the opposite of what the
     // 405 says. A path-mounted middleware answers every method but POST at

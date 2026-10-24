@@ -58,7 +58,7 @@ const DIRECTORY = path.join(ROOT, 'common', 'prose_locales');
 // {{placeholders}}, its HTML tags and entities, and its ** — sorted, as one
 // string.
 // A COVERAGE NOTE's first word — `full`, `partial` or `minimal` — which
-// `tests/vendored/sts_metadata.js` reads from the answer and a consumer may
+// `tests/protocol/sts_metadata.js` reads from the answer and a consumer may
 // parse: a translation keeps it verbatim, first (phase 3).
 function coverageOf(text) {
   log.debug("Entering coverageOf().");

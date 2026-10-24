@@ -817,7 +817,7 @@ class CellPlacement {
         // pins it home, or its next request reaches the cell it came
         // through, which holds no such sign-in (STS-AUTHN-0003). Found by
         // the `cells` mode's first run (2026-09-28,
-        // tests/vendored/sts_cells_traveller.js).
+        // tests/protocol/sts_cells_traveller.js).
         if (req.stsCellRelay.reason === 'artifact') {
           const row = CellPlacement.rowFor(String(req.path || '/'));
           if (row && row.browser) {

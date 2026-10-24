@@ -31,7 +31,7 @@
 //      same function, and gone again after attributes-clear.
 //
 // In process, through `kdc.handleMessage()` and the local client
-// `tests/vendored/krb5_wire.js`, because every assertion opens a ticket with
+// `tests/protocol/krb5_wire.js`, because every assertion opens a ticket with
 // its service's key — which only the inside holds. Development mode, so the
 // fixture principals and the trusted realm exist.
 // ===========================================================================
@@ -52,7 +52,7 @@ const principals = require('../kerberos/krb5_principals.js');
 const kdc = require('../kerberos/krb5_kdc.js');
 const kcrypto = require('../kerberos/krb5_crypto.js');
 const kpac = require('../kerberos/krb5_pac.js');
-const wire = require('./vendored/krb5_wire.js');
+const wire = require('./protocol/krb5_wire.js');
 
 const log = require('bunyan').createLogger({ name: 'pac_claims',
   level: process.env.LOG_LEVEL || 'info' });

@@ -10,7 +10,7 @@ it covers the relying party (RP) to register, the settings to change, and the
 request the RP then sends. Each recipe is given twice: once as steps in the
 **admin console** and once as **Management API** calls.
 
-The values come from this repository's test jobs in `tests/vendored/`, and
+The values come from this repository's test jobs in `tests/protocol/`, and
 each recipe names the job it is taken from.
 [Configuring OAuth 2.0 grants](configure-oauth2-grants.md#before-you-start)
 explains the shared mechanics: the API token, the `api` shell helper used

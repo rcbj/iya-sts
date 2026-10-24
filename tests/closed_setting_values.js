@@ -144,10 +144,10 @@ function childMain() {
       });
     });
     probe('pki.keyAlgorithm', function () {
-      return rq('common/vendored/key_material').keyAlgIds();
+      return rq('common/crypto_impl/key_material').keyAlgIds();
     });
     probe('pki.signatureAlgorithm', function () {
-      const x509 = rq('common/vendored/x509');
+      const x509 = rq('common/crypto_impl/x509');
       return [''].concat(Object.keys(x509.SIG_ALGS).filter(function (id) {
         return !!x509.sigAlg(id);
       }));

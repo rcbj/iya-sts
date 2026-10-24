@@ -12,7 +12,7 @@
 // hop and for a third party, GAMMA.TEST (kd-c) — never the PARTNER.COM
 // fixture. Driven through `kdc.handleMessage()`, which routes by the realm
 // name in each request, with the suite's own client
-// (`tests/vendored/krb5_wire.js`):
+// (`tests/protocol/krb5_wire.js`):
 //
 //   S. S4U2SELF across realms ([MS-SFU] 3.1.5.1.1.2, 4.2): forwardable,
 //      not forwardable, a protected user, the service not listing the
@@ -68,7 +68,7 @@ const kdc = require('../kerberos/krb5_kdc.js');
 const kcrypto = require('../kerberos/krb5_crypto.js');
 const kpac = require('../kerberos/krb5_pac.js');
 const trusts = require('../kerberos/krb5_trusts');
-const wire = require('./vendored/krb5_wire.js');
+const wire = require('./protocol/krb5_wire.js');
 const grants = require('./tools/cross_realm_grants');
 // ARMS `issuance_gate.js`'s decider, the PEP the KDC's role question goes
 // to. The service always loads it (`common/protocol_stack.ts`, 23c); a test

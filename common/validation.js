@@ -1525,7 +1525,7 @@ function repeatable(inner) {
 // The first version of these schemas typed the sign-in form's `username` as
 // `vt.name.optional()`, so posting the form with the box empty was answered
 // 400 — where this service re-shows the screen and asks for a name.
-// **`tests/vendored/oauth2_sts_endpoints.js` asserts exactly that**: *an
+// **`tests/protocol/oauth2_sts_endpoints.js` asserts exactly that**: *an
 // empty username should re-show the form, not redirect*.
 //
 // The line is the one this whole file is about. *Is a name required here* is an

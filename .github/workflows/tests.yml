@@ -53,7 +53,7 @@
 # image and waits for /healthcheck, which proves every module resolved and the
 # port bound — the failure mode this repository has actually had most often.
 # This one drives the running service: the in-process jobs that assert module
-# contracts, and the protocol jobs (tests/vendored/MANIFEST.js is the count)
+# contracts, and the protocol jobs (tests/protocol/MANIFEST.js is the count)
 # that exercise every protocol family, the management API and — in a real
 # browser — the admin console. The two overlap
 # only in that both start the image.
@@ -62,7 +62,7 @@
 # authored in ../id-proto-debugger/tests/ (the root CLAUDE.md argues that
 # decision), and their CI drives the `sts/` gitlink — which is a PIN. A change
 # made here is not covered by that run until somebody bumps it. Many of
-# those jobs are vendored into tests/vendored/ precisely so that this repository
+# those jobs are vendored into tests/protocol/ precisely so that this repository
 # can run them against its own working tree; this workflow is where that
 # happens on every push. It does not replace bumping the pin, because that is
 # what gates the other project.
@@ -371,7 +371,7 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # THE OPENID FOUNDATION'S CONFORMANCE SUITE (#176, #187). The six jobs
-  # marked `conformance: true` in tests/vendored/MANIFEST.js — FAPI, OpenID
+  # marked `conformance: true` in tests/protocol/MANIFEST.js — FAPI, OpenID
   # Connect with its logout plans and Identity Assurance, Shared Signals,
   # OpenID Federation, OpenID4VCI and OpenID4VP — against the suite's own
   # three containers under the `conformance` compose profile, in the

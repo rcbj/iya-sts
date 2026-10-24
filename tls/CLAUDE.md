@@ -197,7 +197,7 @@ stack — collide the same way with no restart at all.
 The serial is now 128 bits of randomness with the caller's byte in FRONT of it,
 so `03…` still says which of this service's certificates a capture is looking
 at. `certificateSerial()` in `common/crypto.js` is where that is argued, and it
-is the same 128-bit serial `common/vendored/x509.js` has always minted for a
+is the same 128-bit serial `common/crypto_impl/x509.js` has always minted for a
 SPIFFE SVID. The signing key's certificate (`'02'`, `common/helpers.js`) and
 the ML-DSA one (`'04'`, below) were changed with it — neither is met in a
 browser, so neither showed the failure, and leaving them constant would have
@@ -850,7 +850,7 @@ same reason `tests/tls_trust_anchor.js`'s first section forks.
 
 The protocol half pinned the service's certificate ONCE, at run start, which was
 right for as long as this certificate could only change when the process did.
-`tests/vendored/sts_admin_api_operations.js` drives every declared operation of
+`tests/protocol/sts_admin_api_operations.js` drives every declared operation of
 the management API, `build-root` among them, so **every job after it lost its
 anchor**: twenty-nine failures per mode in `memory` and `postgres`, each naming
 a certificate and none naming a cause, on a service that was answering
@@ -859,7 +859,7 @@ protocol job now; `tests/CLAUDE.md` carries that half.
 
 ## "STILL CHAINS TO THE ROOT" WAS NOT CURRENT, AND THE FRONT PROCESS BUILT A BRANCH BESIDE A WORKER (2026-09-13)
 
-`tests/vendored/sts_pki_distribution_points.js` failed in `dispatch` mode only:
+`tests/protocol/sts_pki_distribution_points.js` failed in `dispatch` mode only:
 *`…/pki/crl/process/intermediate.crl` is named by certificates of two different
 authorities — CN=sts Intermediate CA (Process), O=sts and CN=sts Intermediate CA
 (Process), O=sts*. Read off the kept stack, not guessed: the handshake and
@@ -937,7 +937,7 @@ behind.** `applyAnchors()` reaches only the listeners registered through
 `trustClientCertificatesOn()`. LDAPS 636 (`ldap/ldap_server.js`) and every
 realm's SPIRE Server API (`spiffe/spiffe_server.ts`) set their context ONCE,
 when they bound, so after a Root replacement both presented a chain under a
-Root nothing held, and `tests/vendored/sts_ldaps.js` and `sts_spiffe_grpc.js`
+Root nothing held, and `tests/protocol/sts_ldaps.js` and `sts_spiffe_grpc.js`
 failed with `unable to get local issuer certificate` in every mode, until a
 restart. This module's own log line said "one anchor covers LDAPS 636" the
 whole time.
@@ -1015,7 +1015,7 @@ argument. The short version:
   handshake on one node and checks the other node's signature against the
   first node's key fails. That is tlsfuzzer's different-SNI probe and the
   TLS 1.2-ticket-as-PSK probe, both recorded as cluster-only exceptions
-  (`perNodeKey`, `clustered: true`) in `tests/vendored/tlsfuzzer_kit.js`.
+  (`perNodeKey`, `clustered: true`) in `tests/protocol/tlsfuzzer_kit.js`.
 * **Codes.** `STS-TLS-0036` is a key that could not be applied;
   `STS-TLS-0037` is a stored key that is not 48 bytes.
 
@@ -1294,7 +1294,7 @@ change re-applies it to every registered listener (the main port among them),
 ECDHE AES-GCM suites for TLS 1.2 — with `honorCipherOrder`, so the server's order wins and
 TLS 1.3 is what a modern client gets. It is the FAPI 2.0 Security Profile's section 5.2.2,
 made every listener's default rather than a FAPI switch, because a cipher suite belongs to
-the socket and a profile to a realm; `tests/vendored/sts_fapi2.js` proves the handshakes (TLS
+the socket and a profile to a realm; `tests/protocol/sts_fapi2.js` proves the handshakes (TLS
 1.3 preferred, a TLS 1.2 GCM suite accepted, a CBC suite refused). The floor is still node's
 TLSv1.2, which FAPI 2.0 allows. **A cipher list that builds no context is
 FATAL at require time**: found later it would be a TypeError from `createServer()`, or a
@@ -1516,9 +1516,9 @@ the table.
 ## WHAT tlsfuzzer FOUND (2026-09-26, #212)
 
 tlsfuzzer runs against all three listeners that present this module's
-certificate: the main port and LDAPS from `tests/vendored/sts_tlsfuzzer.js`,
+certificate: the main port and LDAPS from `tests/protocol/sts_tlsfuzzer.js`,
 and the debugger's from `tests/tlsfuzzer_debugger.js`. Both run the plan in
-`tests/vendored/tlsfuzzer_kit.js`, which records every exception with its
+`tests/protocol/tlsfuzzer_kit.js`, which records every exception with its
 reason; `tests/CLAUDE.md` (*THE TLS FUZZER*) says how it runs. It found four
 things in this module's policy, all fixed here.
 
@@ -1920,7 +1920,7 @@ its development-mode test control are history.
 `tests/tls_connection_page.js` drives the operation over a real TLS listener
 in a child (no certificate, an untrusted one, a trusted one, the proxy
 settings both ways, the page drawn and escaped, the pin);
-`tests/vendored/sts_tls_connection.js` (local) asks a running service, in every
+`tests/protocol/sts_tls_connection.js` (local) asks a running service, in every
 mode; `tests/diagnostic_pages.js` holds the old paths unrouted.
 
 ## Several accounts in one browser (#561, 2026-10-19)

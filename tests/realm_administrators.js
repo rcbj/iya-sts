@@ -42,7 +42,7 @@
 //
 // NOT HERE: the console gate's HTTP answers, the realm token at /admin-api and
 // the chooser page in a browser — those need the service's own port and were
-// driven against an isolated instance; `tests/vendored/sts_admin_api_auth.js`
+// driven against an isolated instance; `tests/protocol/sts_admin_api_auth.js`
 // and `sts_admin_api_operations.js` hold the API half over HTTP.
 // ===========================================================================
 

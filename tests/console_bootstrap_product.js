@@ -41,7 +41,7 @@
 // protocol stack, flips `global.mode` and writes rosters that every other file
 // in `run.js`'s one process would otherwise meet. The same claims over the
 // service's own port, against a running stack, are
-// `tests/vendored/sts_console_bootstrap_product.js`.
+// `tests/protocol/sts_console_bootstrap_product.js`.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;

@@ -27,7 +27,7 @@
 //
 //   https://www.w3.org/ns/credentials/v2
 //   https://www.w3.org/2018/credentials/v1
-//                        common/vendored/contexts/ — the copies bbs2023.js
+//                        common/crypto_impl/contexts/ — the copies bbs2023.js
 //                        reads, so the two loaders cannot disagree
 //   https://www.w3.org/ns/credentials/examples/v2
 //                        credentials_examples_v2.json   57393fbc…ae8e43de85
@@ -52,7 +52,7 @@
 //   https://w3id.org/citizenship/v4rc1
 //                        citizenship_v4rc1.json         5038c738…cf2279d7c
 //   https://idptools.com/contexts/identity/v1
-//                        common/vendored/contexts/, this issuer's own
+//                        common/crypto_impl/contexts/, this issuer's own
 //
 // The W3C documents are under the W3C Software and Document Licence; the
 // w3id.org ones are the W3C Credentials Community Group's, published under

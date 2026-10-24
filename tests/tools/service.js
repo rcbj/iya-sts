@@ -11,7 +11,7 @@
 // Nothing in the in-process half of `tests/` needs this — the whole point of
 // that half is that it drives modules IN PROCESS and binds no port (see
 // tests/CLAUDE.md). This module exists for the report generator's OTHER half:
-// the protocol jobs under `tests/vendored/` (copies of the parent project's)
+// the protocol jobs under `tests/protocol/` (copies of the parent project's)
 // that drive this service over HTTP, which `tests/tools/run-report.js` runs
 // against the WORKING TREE rather than against the `sts/` gitlink the
 // parent's own suite is pinned to. Those need a listener, and somebody has to
@@ -195,7 +195,7 @@ async function findPortBlock(preferredBase, log) {
 //
 // THE LEVEL TAKES TWO OPTIONS AND NOT ONE, which is easy to get wrong: opts.
 // logLevel reaches the loggers config.js registers, and the eight VENDORED
-// modules under common/vendored/ each build their own from
+// modules under common/crypto_impl/ each build their own from
 // `require(process.env.CONFIG_FILE).logLevel` at load and never see it. So a
 // caller that wants those loud or quiet passes opts.configFile as well. Left
 // empty, the fallback below is ./env/local.js, whose level is `info` — and
@@ -393,7 +393,7 @@ async function start(opts) {
       // removed from the middle of that list. **Two were removed from the
       // middle of it on 2026-09-16**, which moved the directory from `base +
       // 5` to `base + 3` and cost nothing.
-      // `tests/vendored/sts_directory_bulk_load_ldap.js`
+      // `tests/protocol/sts_directory_bulk_load_ldap.js`
       // is the caller that needed it and run-report.js is what hands it over.
       const ports = {};
       PORT_VARS.forEach(function (name, i) { ports[name] = base + i; });

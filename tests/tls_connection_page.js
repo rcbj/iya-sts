@@ -71,7 +71,7 @@ function childMain() {
     const WebKit = require(ROOT_DIR + '/admin-ui/web_kit');
     const nodeCrypto = require('crypto');
 
-    // The open API, development only: the gate is `tests/vendored/
+    // The open API, development only: the gate is `tests/protocol/
     // sts_tls_connection.js`'s to hold; what is asked here is the view.
     config.setOverride('adminApi.authRequired', false);
     const listener = https.createServer(

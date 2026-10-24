@@ -227,7 +227,7 @@ whose `wtrealm` is not a registered relying party is **a 404 page,
 
 `tests/unregistered_applications.js` (U7) holds it in both modes.
 
-`tests/issuer_names.js` (U4, U5) and `tests/vendored/wstrust_chain_kit.js`
+`tests/issuer_names.js` (U4, U5) and `tests/protocol/wstrust_chain_kit.js`
 (`samlIssuerFor()`, which asks this route for every tier) hold it;
 `sts_metadata_anonymous.js` section 5 holds the 404.
 
@@ -326,13 +326,13 @@ step-up sent once and refused on a marked return — with the risk put on the
 session object directly rather than scored. It does not complete a stepped-up
 sign-in (the test person holds no second factor).
 The risk step-up runs there a second time in PRODUCT mode (#715).
-**`tests/vendored/sts_idp_initiated_wsfed.js` is the product-mode and
+**`tests/protocol/sts_idp_initiated_wsfed.js` is the product-mode and
 cross-node coverage of the rest** — the same rules over the wire, in a
 throwaway realm in the run's mode, with relying parties and a person with a
 real password made through `/admin-api`, the realm setting set and reset
 there, and the relying party read back from `GET /logout`'s JSON inventory;
 the suite runs it in `memory`, `single-node` and `cluster`. Nothing else here is
-tested but by `tests/vendored/sts_saml11.js`, which posts a sign-in response to
+tested but by `tests/protocol/sts_saml11.js`, which posts a sign-in response to
 the test peer's relying party (the mock relying party that made the rest look
 covered was deleted, #592). What a test would add is the other negatives:
 an altered `wctx`, `wfresh` read as seconds rather than minutes, a SAML 1.1
@@ -345,7 +345,7 @@ working relying party looks finished and proves almost nothing.
 The federation metadata and the sign-in response's `wresult` — SAML 1.1 and
 SAML 2.0 tokens in the 2005/02 and 1.3 wrappers — are validated against the
 published WS-Federation 1.2, WS-Trust and SAML schemas by
-`tests/vendored/sts_xml_schema_validation.js`, in a development and a product
+`tests/protocol/sts_xml_schema_validation.js`, in a development and a product
 realm. Both were valid on the first run.
 
 ## The mock relying party — deleted (#592, 2026-10-12)

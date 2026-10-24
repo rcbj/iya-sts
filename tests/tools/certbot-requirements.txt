@@ -7,7 +7,7 @@
 # Generated on 2026-09-26 in ubuntu:latest (Python 3.14) with
 #   pip-compile --generate-hashes --strip-extras --no-header
 # from the one line `certbot==5.8.0`. BUMPING certbot is: change that line,
-# regenerate this file the same way, and run tests/vendored/sts_acme_certbot.js.
+# regenerate this file the same way, and run tests/protocol/sts_acme_certbot.js.
 acme==5.8.0 \
     --hash=sha256:44c4edb53acdd3fa8402cb29c78a6d1bd2005d777a4d2fcd12663bbc3c147b34 \
     --hash=sha256:637501767248156545d85c23b806381ac346c5eac759f8e35052af85b7bb3933

@@ -225,7 +225,7 @@
   "defensible": "之所以說得過去，是因為這些金鑰的性質：啟動時產生，只保存在記憶體中，程序結束即失效，而且什麼也不保護 — 本信任領域處於開發模式，不檢查任何密碼，也不驗證任何不是它自己簽發的權杖。",
   "notPersistedProduct": "這些金鑰在啟動時產生，只保存在記憶體中，程序結束即失效 — 本信任領域的存放區不保留其簽章金鑰。但本信任領域處於產品模式，會驗證每個密碼和每個權杖，因此在那之前，在這裡交出的金鑰所簽署的內容會被信賴方相信：請把它當作它本來就是的現用簽章金鑰來對待。",
   "needsWrite": "它需要 <strong>Admin Write</strong>，這比此主控台上任何其他讀取操作的要求都高，因為在這裡，讀取就是拿走。",
-  "exporter": "<strong>匯出器是偵錯工具自己的，以內建方式引入。</strong><code>common/vendored/key_material.js</code> 以帶密碼的方式處理四種格式 — PEM、DER、JWK 與 PKCS#12 — 也正是偵錯工具的 PKI 頁面一直在使用的程式碼。在它旁邊再放一個匯出器，只會是較差的副本。",
+  "exporter": "<strong>匯出器是偵錯工具自己的，以內建方式引入。</strong><code>common/crypto_impl/key_material.js</code> 以帶密碼的方式處理四種格式 — PEM、DER、JWK 與 PKCS#12 — 也正是偵錯工具的 PKI 頁面一直在使用的程式碼。在它旁邊再放一個匯出器，只會是較差的副本。",
   "theKeyPairs": "金鑰對",
   "thFormats": "格式",
   "notMadeYet": "尚未產生",

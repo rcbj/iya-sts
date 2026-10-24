@@ -36,7 +36,7 @@
 //      two new attributes, against a stub directory.
 //
 // The over-HTTP half — the page's two round trips and the operation — is driven
-// by `tests/vendored/sts_admin_api_operations.js`'s example replay and
+// by `tests/protocol/sts_admin_api_operations.js`'s example replay and
 // `sts_admin_console.js`'s form walk.
 // ===========================================================================
 

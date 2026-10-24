@@ -549,7 +549,7 @@ are in since phase three).
   answered `end` with `call.end()` at once, so a client that sent its one
   message and half-closed got an empty stream while `AttestAgent` went on to
   SPEND THE JOIN TOKEN — every retry then refused as spent.
-  `tests/vendored/sts_spiffe_grpc.js` recorded it as a service defect and
+  `tests/protocol/sts_spiffe_grpc.js` recorded it as a service defect and
   worked round it; the stream now ends once every handler has answered.
 * **`CreateJoinToken`'s `agent_id` IS AN ALIAS ENTRY, AS IN SPIRE.** It was
   stored and compared with the attesting agent's id, which is always
@@ -815,7 +815,7 @@ case:
 
 `tests/spiffe_workload_tcp_product.js` holds all of it — the posture, a real
 bind in both modes with a gRPC client over TCP, the three doors, exact `peer:`;
-`tests/vendored/sts_spiffe_grpc.js` the network's view in both states. The test
+`tests/protocol/sts_spiffe_grpc.js` the network's view in both states. The test
 stacks (`docker-compose-run-tests.yml`) DECLARE their bridge, which only this
 launcher's containers are on, so the product modes exercise the declared path.
 Where the posture is not served, that job asserts the refusal and then runs
@@ -892,7 +892,7 @@ service's scheduler cannot write it. Bundle streams use a lifetime of
 
 **WHERE IT IS ASSERTED.** `tests/spiffe_workload_agent.js` is the
 in-process half, in a child, and does not weaken
-`tests/spiffe_workload_tcp_product.js`. `tests/vendored/sts_spiffe_grpc.js`
+`tests/spiffe_workload_tcp_product.js`. `tests/protocol/sts_spiffe_grpc.js`
 still asserts the TCP refusal where the posture is not served, and then
 mints a join token, starts this agent and runs the rest of the job
 through its socket. On the declared bridge the job stays on TCP.
@@ -1004,7 +1004,7 @@ deleting ONE of two registration entries naming an identity leaves it active and
 deleting the second marks it revoked; that a ban and an unban round-trip while
 `spiffeRevokedAt` survives the unban; and that nothing anywhere is ever deleted
 from `ou=users`. Drive it with `@grpc/grpc-js` as a
-CLIENT — which is what `tests/vendored/sts_dpop.js` does by writing its own DPoP client
+CLIENT — which is what `tests/protocol/sts_dpop.js` does by writing its own DPoP client
 rather than importing the wallet's, and for the same reason: if both ends came
 from one implementation, a shared misunderstanding passes and interoperates with
 nobody.
@@ -1591,7 +1591,7 @@ spellings are copied from SPIRE's source, as #40's were.
 `tests/spiffe_attestor_systemd_podman.js`, `tests/spiffe_sigstore.js` (every
 key, certificate, SCT, Rekor entry and TUF repository made at run time) and
 `tests/spiffe_broker.js` (a real mutual-TLS listener in a child process) hold
-it in process; `tests/vendored/sts_spiffe_broker.js` over the network in a
+it in process; `tests/protocol/sts_spiffe_broker.js` over the network in a
 development and a product realm. **The interop run against a real
 `spire-agent` recorded on #40 is still not done.**
 

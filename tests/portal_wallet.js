@@ -13,7 +13,7 @@
 //      mask, lengths from one byte to the versions an offer reaches. An
 //      encoder that is wrong draws a picture that scans as nothing.
 //   B. In a child process with the whole stack, a person signed in as the
-//      static portal signs in (`tests/vendored/portal_signin.js`):
+//      static portal signs in (`tests/protocol/portal_signin.js`):
 //        1. `GET /account-api/credentials/offerable` lists the issuer's
 //           configurations, with the metadata's names;
 //        2. `POST /account-api/credentials/offers` makes a pre-authorized
@@ -67,7 +67,7 @@ function childMain() {
     const credentials = require(ROOT_DIR + '/common/credentials');
     const offers = require(ROOT_DIR + '/oid4vc/vc_offers');
     const authn = require(ROOT_DIR + '/authn/authn');
-    const signin = require(ROOT_DIR + '/tests/vendored/portal_signin');
+    const signin = require(ROOT_DIR + '/tests/protocol/portal_signin');
 
     const stamp = String(process.pid);
     const ALICE = 'pw-alice-' + stamp;

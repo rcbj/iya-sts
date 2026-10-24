@@ -4052,7 +4052,7 @@ class ApplicationsPage {
   // **TWO FORMS PER ROW AND NOT ONE WITH TWO BUTTONS.** Two submit buttons in
   // one form would both have to be named `action`, and `form.elements.action`
   // is then a RadioNodeList whose `.value` is empty — which is how
-  // `tests/vendored/sts_admin_console.js` finds a form, so the pair would read
+  // `tests/protocol/sts_admin_console.js` finds a form, so the pair would read
   // as controls that reach nothing (the trap `/admin/users/new` met). Each form
   // names its verb in one hidden field, so it does one thing however submitted.
   //

@@ -15,6 +15,6 @@
   ],
   "exclude": [
     "node_modules", "tests", "node-ldapjs", "xacml-pep",
-    "common/vendored", "debugger/embedded"
+    "common/crypto_impl", "debugger/embedded"
   ]
 }

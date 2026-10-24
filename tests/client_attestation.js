@@ -33,7 +33,7 @@
 //      its setting.
 //
 // The whole flow over HTTP — challenge endpoint, PAR, token, refresh — is
-// `tests/vendored/sts_client_attestation.js`.
+// `tests/protocol/sts_client_attestation.js`.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;

@@ -43,7 +43,7 @@
 // overridden and cleared afterwards: a person made with a real password,
 // a wrong one refused at the screen, the right one signing in, then g1-g3
 // under the labels "g1 (product)" and on. a-f run in product over the wire
-// instead, in `tests/vendored/sts_idp_initiated_wsfed.js`; g is here because
+// instead, in `tests/protocol/sts_idp_initiated_wsfed.js`; g is here because
 // HTTP cannot put a risk on a session. The comment above that pass says what
 // product changes for it.
 // ===========================================================================
@@ -336,7 +336,7 @@ function childMain() {
     // scoring against datasets the suite does not load — so it runs a
     // second time here, in product, as `tests/scim_auth_discovery.js` does
     // (`global.mode` overridden for the process, cleared in the `finally`).
-    // `tests/vendored/sts_idp_initiated_wsfed.js` holds a-f in product over
+    // `tests/protocol/sts_idp_initiated_wsfed.js` holds a-f in product over
     // the wire. What product changes for g, and how each is met:
     //
     //   * it CHECKS PASSWORDS and creates nobody because a sign-in named

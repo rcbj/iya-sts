@@ -9,7 +9,7 @@
 // THE EST ROUTE FUNCTIONS, THE VIEW MODEL AND THE REALM BOUNDARY, WITH NO PORT
 // (2026-09-13).
 //
-// `tests/vendored/sts_est_enrollment.js` drives EST over HTTPS against a
+// `tests/protocol/sts_est_enrollment.js` drives EST over HTTPS against a
 // running service. What is here is what that job cannot choose or cannot see:
 //
 //   * THE ERROR CODE of each refusal — never on the wire, so only a caller

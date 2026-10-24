@@ -753,7 +753,7 @@ tools now run against this KDC in the suite (`sts_kerberos_samba.js`,
   Directory does.
 
 What stays different from Active Directory, and why, is listed with each
-exception in `tests/vendored/sts_kerberos_samba.js` and on #204.
+exception in `tests/protocol/sts_kerberos_samba.js` and on #204.
 
 ### PAC claims
 

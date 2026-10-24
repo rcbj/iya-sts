@@ -12,7 +12,7 @@ access types to declare, the settings to change, and what the client then
 sends. Each recipe is given twice: once as steps in the **admin console** and
 once as **Management API** calls.
 
-The values come from this repository's test jobs in `tests/vendored/`, and
+The values come from this repository's test jobs in `tests/protocol/`, and
 each recipe names the job it is taken from. How GNAP *behaves* here, and every
 `gnap.*` setting with its default, is on [GNAP](gnap.md). This page covers
 only what to fill in.
@@ -23,7 +23,7 @@ below, and the console's **Set** / **Add to** / **Remove from** forms.
 Every GNAP request a client or resource server sends is **signed with its
 key** (an HTTP message signature, a JWS or mutual TLS). This page shows the
 bodies of those requests, not the signatures. The test jobs build theirs with
-`tests/vendored/gnap_client.js`, an independent client written from the RFCs,
+`tests/protocol/gnap_client.js`, an independent client written from the RFCs,
 which is a working reference for the signature base, `Content-Digest` and the
 interaction hash.
 

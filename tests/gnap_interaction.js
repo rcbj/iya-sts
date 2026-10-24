@@ -35,7 +35,7 @@
 //
 // Why in process (tests/CLAUDE.md's first question): B and F drive the
 // engine with a stubbed caller and move the clock, and D asks the issue
-// stage directly. The HTTP half is `tests/vendored/sts_gnap_interaction.js`.
+// stage directly. The HTTP half is `tests/protocol/sts_gnap_interaction.js`.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;

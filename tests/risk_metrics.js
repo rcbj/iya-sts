@@ -27,7 +27,7 @@
 //      from, its bad entries named and ignored.
 //
 // The postgres driver's SQL is held to the same answers by
-// `tests/vendored/sts_admin_risk.js` in the modes that have a database.
+// `tests/protocol/sts_admin_risk.js` in the modes that have a database.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;

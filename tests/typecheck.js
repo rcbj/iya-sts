@@ -53,7 +53,7 @@ const compiledTree = require('../common/compiled_tree');
 // The other root module, `sts_metadata.ts`, is TypeScript (#50) and needs no
 // marker; `ROOT_SOURCES` is what holds `tsconfig.json` to including it. The
 // files under them that are not this repository's to change stay unchecked: the
-// root CLAUDE.md names `common/vendored/` (a directory, never listed here
+// root CLAUDE.md names `common/crypto_impl/` (a directory, never listed here
 // because it is not read) and the eight Kerberos codec copies.
 const CHECKED_DIRS = ['account-api', 'acme', 'admin-core', 'admin-ui',
                       'attribute-sources', 'authn', 'cluster',

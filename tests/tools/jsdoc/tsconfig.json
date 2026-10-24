@@ -82,7 +82,7 @@
     "../../../node_modules",
     "../../../tests",
     "../../../node-ldapjs",
-    "../../../common/vendored",
+    "../../../common/crypto_impl",
     "../../../debugger/embedded",
     "../../../**/protos",
     "../../../**/native"

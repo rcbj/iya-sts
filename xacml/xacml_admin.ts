@@ -1360,7 +1360,7 @@ class XacmlAdmin {
         // THE SIXTH VIEW, AND IT WAS MISSING UNTIL PHASE FIVE. Rule 7 says
         // every console page gets an operation on /admin-api in the same
         // commit, and /admin/xacml/decide shipped in phase three without one —
-        // which `tests/vendored/admin_api.js` catches by reading the console's
+        // which `tests/protocol/admin_api.js` catches by reading the console's
         // own page list rather than a list in the test, and which nothing
         // noticed because that job had not been run against this branch. The
         // fix is here rather than in a route of its own because the parity is

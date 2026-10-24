@@ -283,7 +283,7 @@ touched** (#569's rule), and nothing they answer changed.
 
 **Tests**: `tests/logout_api.js`; the round trip's sign-out cases in
 `tests/tools/web_surfaces.js`; `tests/tools/authn_screen.js`'s `signOut()` in
-process and `tests/vendored/authn_signin.js`'s `signOut()` over HTTP, which
+process and `tests/protocol/authn_signin.js`'s `signOut()` over HTTP, which
 every job that signed out through the form now signs out through.
 
 ## SEVERAL ACCOUNTS IN ONE BROWSER (#561, 2026-10-19)

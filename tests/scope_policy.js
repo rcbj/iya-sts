@@ -37,7 +37,7 @@
 // one run, and C needs a grant carrying its scope from earlier — which over
 // HTTP is a refresh token minted before an allowance was removed. The HTTP
 // half — the refusals at the endpoints and the resource servers' re-check —
-// is `tests/vendored/sts_scope_policy.js`.
+// is `tests/protocol/sts_scope_policy.js`.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;

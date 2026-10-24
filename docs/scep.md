@@ -67,7 +67,7 @@ curl -s -X POST https://host:8081/admin-api/scep/create-challenge \
 The reply carries `challenge`, the SCEP URL for its profile (`url`, on the main
 port, and `plainUrl`, on the plain-HTTP listener), and a ready-to-paste `sscep`
 sequence that runs as it is written — the suite runs it
-(`tests/vendored/sts_scep_sscep.js`). Whoever redeems the challenge is issued a certificate **as the
+(`tests/protocol/sts_scep_sscep.js`). Whoever redeems the challenge is issued a certificate **as the
 entry it names**: a request naming anybody else in its subjectAltName is refused.
 
 ## Configuring SCEP
@@ -251,7 +251,7 @@ change either; it reads GetCACaps only to choose POST. Both are refused
 `badAlg` (`STS-SCEP-0020` for the signature), in both modes, and the refusal
 spends no challenge. Its transport works — GetCACert, GetCACaps and a POSTed
 PKIOperation as `application/octet-stream` — which the suite holds
-(`tests/vendored/sts_scep_micromdm.js`).
+(`tests/protocol/sts_scep_micromdm.js`).
 
 ## Profiles
 

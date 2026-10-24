@@ -100,10 +100,10 @@ function childMain() {
     // this service's own OpenID Provider, and product mode refuses a plain
     // http back channel whatever federation.outboundAllowHttp says — so the
     // listener serves a certificate from a CA this child makes now (the
-    // shared run-time CA helper, `tests/vendored/outbound_test_ca.js`), and
+    // shared run-time CA helper, `tests/protocol/outbound_test_ca.js`), and
     // federation.outboundCaFile names the CA, which is how product reaches a
     // privately certified partner.
-    const testCa = require(ROOT + '/tests/vendored/outbound_test_ca');
+    const testCa = require(ROOT + '/tests/protocol/outbound_test_ca');
     const ca = await testCa.makeCa();
     const leaf = await testCa.listenerCertificate(ca, '127.0.0.1');
     const caPem = ca.certPem;

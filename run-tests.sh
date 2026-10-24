@@ -15,7 +15,7 @@
 # It builds and brings up docker-compose-run-tests.yml: the `sts` service from
 # this repository's own Dockerfile, and a `tests` container with node, a Chrome
 # and this working tree in it. The tests container runs
-# tests/run-tests-in-container.sh — every job (tests/vendored/MANIFEST.js and
+# tests/run-tests-in-container.sh — every job (tests/protocol/MANIFEST.js and
 # tests/run.js's discovery are the count), the Selenium admin-console one
 # included — against the service by its compose DNS name, and
 # compose exits when it does. This script's exit code is that container's
@@ -300,7 +300,7 @@ STS_TEARDOWN_TIMEOUT="${STS_TEARDOWN_TIMEOUT:-300}"
 # THE OPENID FOUNDATION'S CONFORMANCE SUITE (#176, 2026-09-24).
 #
 # rcbj's decision on #142: "a job in ./run-tests.sh that fails when a module
-# fails". The jobs are tests/vendored/sts_fapi_conformance.js and, since #187,
+# fails". The jobs are tests/protocol/sts_fapi_conformance.js and, since #187,
 # five more — OpenID Connect, Shared Signals, OpenID Federation, OpenID4VCI
 # and OpenID4VP (tests/CLAUDE.md, *The other plans*); the suite is four
 # containers in docker-compose-run-tests.yml behind the `conformance` compose
@@ -339,7 +339,7 @@ STS_CONFORMANCE_TIMEOUT="${STS_CONFORMANCE_TIMEOUT:-15600}"
 # Four independent SAML service providers — the Shibboleth SP 3, pysaml2,
 # SimpleSAMLphp and Keycloak's SAML broker — built from tests/saml-peers/ and
 # brought up behind the `saml-peers` compose profile, each driven by a job of
-# its own (tests/vendored/sts_saml_interop_*.js). tests/CLAUDE.md, *THE SAML
+# its own (tests/protocol/sts_saml_interop_*.js). tests/CLAUDE.md, *THE SAML
 # PEERS*, argues all of it.
 #
 #   STS_TEST_SAML_PEERS_MODES    a comma list of modes, in modes.sh's
@@ -709,7 +709,7 @@ preflight || exit 1
 # WORKED WHILE DOING ALMOST NOTHING. STS_LOG_LEVEL reaches the loggers
 # config.js registers — its own, and the `sts` logger in helpers.js that every
 # protocol module destructures. It does NOT reach the VENDORED modules under
-# common/vendored/, which each build a bunyan logger at load from
+# common/crypto_impl/, which each build a bunyan logger at load from
 # `require(process.env.CONFIG_FILE).logLevel` and cannot be edited here. On the
 # run that measured this, the level alone left 3,869 debug lines of 3,951 —
 # 3,582 of them from `xmldsig`, which is every canonicalization of every signed
@@ -767,7 +767,7 @@ fi
 # ---------------------------------------------------------------------------
 # THE REMOTE PEP'S IDENTITY. The subject is what the certificate carries and
 # the CN out of it is what the mock files the registration under; the realm is
-# the one tests/vendored/sts_xacml_remote_pep.js creates and LEAVES STANDING
+# the one tests/protocol/sts_xacml_remote_pep.js creates and LEAVES STANDING
 # (no job here removes a realm since 2026-09-06). The stack is built fresh for
 # every run, so nothing carries over between them.
 # ---------------------------------------------------------------------------
@@ -1548,7 +1548,7 @@ mintThePepCredential()
   echo "and adding its Root CA to the mock's truststore..."
   # ---------------------------------------------------------------------
   # RUN IN THE SERVICE IMAGE, WHICH IS HOW THIS STAYS "DOCKER AND NOTHING
-  # ELSE". The tool is a node script that needs `common/vendored/x509.js` and
+  # ELSE". The tool is a node script that needs `common/crypto_impl/x509.js` and
   # its three npm packages (and bunyan, for its logger — see NODE_PATH at
   # mintAdminApiToken()); this host may have neither node nor node_modules.
   # The service image has both — so the REPOSITORY is mounted read-only for the

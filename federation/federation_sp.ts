@@ -6673,7 +6673,7 @@ class FederationSp {
   // (minOccurs 1), SingleSignOutNotificationEndpoint and
   // PassiveRequestorEndpoint, so a document holding only the last is invalid
   // against the published schema and a validating importer refuses it — which
-  // tests/vendored/sts_xml_schema_validation.js found. Both name the one
+  // tests/protocol/sts_xml_schema_validation.js found. Both name the one
   // address this relationship has, as AD FS's own relying-party documents do.
   // ---------------------------------------------------------------------------
   private wsfedMetadata(req, res, record, base, encryption) {

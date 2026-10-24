@@ -7616,7 +7616,7 @@ function autoCreateUser(detail) {
   // partner never recorded `federationRelationship` and never had the
   // partner's attributes refreshed — while `fedUpdateUserAttributes`' schema
   // row says the relationship "is recorded either way" and federation/CLAUDE.md
-  // promises the refresh. `tests/vendored/sts_federation_realms.js` found it
+  // promises the refresh. `tests/protocol/sts_federation_realms.js` found it
   // against a product-mode deployment. Only `applyFederatedAttributes()` runs
   // here: the description notes, the invented credential attributes and the
   // factor flags the branch further down writes belong to a service that
@@ -15500,7 +15500,7 @@ let secureServer = null;
 // context once and never again, so `POST /admin-api/pki/build-root` left it
 // presenting a leaf under a Root nothing trusted any more while the main port
 // moved on, and an LDAPS client failed with `unable to get local issuer
-// certificate` until a restart (tests/vendored/sts_ldaps.js). Registered on
+// certificate` until a restart (tests/protocol/sts_ldaps.js). Registered on
 // `tlsServer.onServerCertificateChange()`, which fires in the process that
 // holds this socket. `setSecureContext()` applies to the NEXT handshake; a
 // connection already open keeps the context it was made with.
@@ -15600,7 +15600,7 @@ const servers = secureServer ? [plainServer, secureServer] : [plainServer];
 // was consulted — so the bind handler below never saw one, and product mode's
 // refusal of an anonymous bind (48, inappropriateAuthentication,
 // STS-LDAP-0070) never happened: the bind answered success and only the read
-// after it was refused. `tests/vendored/sts_ldaps.js` found it against a
+// after it was refused. `tests/protocol/sts_ldaps.js` found it against a
 // product-mode deployment; nothing in process could, because
 // `performOperation()` enters the handler directly.
 //
@@ -17004,7 +17004,7 @@ function operationOutcome(operation, req, res, failure) {
     // **NOTHING IN EITHER SUITE WOULD HAVE SEEN IT** for the reason recorded
     // there: `ldap.sizeLimit` is 500 and the seeded directory holds about
     // thirty entries, so the only thing anywhere that reaches this branch is
-    // `tests/vendored/sts_directory_bulk_load_ldap.js` — over a socket, in a
+    // `tests/protocol/sts_directory_bulk_load_ldap.js` — over a socket, in a
     // stack, with operations off.
     // ---------------------------------------------------------------------
     // SPLICED, not read: a streaming search's batch that has not yet run
@@ -17594,7 +17594,7 @@ server.bind('', function (req, res, next) {
   // always; single-cell mode never asks.
   //
   // A PROJECTION IS NOT AN ENTRY THIS CELL HOLDS (2026-09-28,
-  // tests/vendored/sts_cells_unreachable.js). A session exported here puts a
+  // tests/protocol/sts_cells_unreachable.js). A session exported here puts a
   // credential-free copy of its person in this directory
   // (`common/cell_sessions.ts`, origin `projection:<home>`), and asking only
   // whether an entry exists sent a bind as that person to the local verifier
@@ -25346,7 +25346,7 @@ function memberDnFor(nameOrDn) {
 // the sentence: adding somebody who is already in the group is the state the
 // caller wanted, so it answers ok with `changed: false`. A 400 there would make
 // a script that adds on every run fail on its second one — and the bulk-load
-// jobs in tests/vendored are exactly such a script.
+// jobs in tests/protocol are exactly such a script.
 // ---------------------------------------------------------------------------
 /**
  * Adds a member to a group; adding one already there answers ok with `changed:

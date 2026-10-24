@@ -116,7 +116,7 @@ function childMain() {
     const delegation = require(ROOT + '/common/delegation');
     const personAssertions = require(ROOT + '/common/person_assertions');
     const dir = require(ROOT + '/ldap/ldap_server');
-    const signer = require(ROOT + '/tests/vendored/saml_xmldsig.js');
+    const signer = require(ROOT + '/tests/protocol/saml_xmldsig.js');
 
     const server = http.createServer(app);
     await new Promise(function (r) { server.listen(0, '127.0.0.1', r); });

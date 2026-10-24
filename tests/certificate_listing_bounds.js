@@ -528,7 +528,7 @@ async function claimC(t) {
              ' certificate(s)');
 
   // The reference, parsed from nothing with the old code's own steps.
-  const x509 = require('../common/vendored/x509');
+  const x509 = require('../common/crypto_impl/x509');
   const whole = inRealm(function () {
     return certificateViews.listView({ query: { per: '100000' } });
   });

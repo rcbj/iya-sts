@@ -615,7 +615,7 @@ const APPLICATIONS = [
         // vector's seed must verify under the vector's public key, and the
         // vector's own signature must verify too.
         const sig = crypto.jwsSignatureOver(c.alg, c.seed, hex(t.msg));
-        const spki = require('../common/vendored/pqc_x509')
+        const spki = require('../common/crypto_impl/pqc_x509')
           .encodeSpki(c.alg, c.pub);
         const pub = nodeCrypto.createPublicKey({ key: Buffer.from(spki),
                                                  format: 'der',

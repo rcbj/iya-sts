@@ -16,7 +16,7 @@
 // drives a WELL-FORMED request still passes.
 //
 // So this file is almost entirely negatives — the shape
-// `tests/vendored/sts_dpop.js` argues for. An identity provider that accepts a
+// `tests/protocol/sts_dpop.js` argues for. An identity provider that accepts a
 // good request looks finished and can be worth nothing.
 //
 // ---------------------------------------------------------------------------

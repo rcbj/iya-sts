@@ -84,8 +84,8 @@ const realms = require('./realms');
 // code non-enumerably, so an OCSP answer or a console reply serialised whole
 // never shows it; `pki/pki_service.ts` marks its response from `codeOf()`.
 const errorCodes = require('./error_codes');
-const keyMaterial = require('./vendored/key_material');
-const x509 = require('./vendored/x509');
+const keyMaterial = require('./crypto_impl/key_material');
+const x509 = require('./crypto_impl/x509');
 
 // ---------------------------------------------------------------------------
 // THE RFC 5280 SECTION 5.3.1 REASON CODES.
@@ -934,7 +934,7 @@ function derFromPem(pem) {
 }
 
 // pkijs wants a Web Crypto engine. node 18+ has one on the global, which is
-// what `common/vendored/key_material.js` already relies on — this is the same
+// what `common/crypto_impl/key_material.js` already relies on — this is the same
 // initialisation, said again here because requiring that module for its side
 // effect would be a dependency nobody could see. `crypto.js` hands the engine
 // over since #453, as the one place this service touches node's crypto.

@@ -40,9 +40,9 @@
 //      default, offered once turned on, read as off in product with it still
 //      stored (STS-CORE-0106, once).
 //
-// The clients are `tests/vendored/krb5_wire.js`'s, over an in-process
+// The clients are `tests/protocol/krb5_wire.js`'s, over an in-process
 // transport that hands each message to `kdc.handleMessage()`. The same over
-// TCP 88, and MIT kinit, is `tests/vendored/sts_kerberos_rc4.js`.
+// TCP 88, and MIT kinit, is `tests/protocol/sts_kerberos_rc4.js`.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -82,7 +82,7 @@ async function productChild() {
   const credentials = require(R + '/common/credentials');
   const personKeys = require(R + '/kerberos/krb5_person_keys');
   const actions = require(R + '/admin-core/admin_actions');
-  const wire = require(R + '/tests/vendored/krb5_wire.js');
+  const wire = require(R + '/tests/protocol/krb5_wire.js');
   // The code each refusal carries is RECORDED, never sent: the KDC hangs it
   // on the reply under a Symbol for its transport to write down, and this
   // transport reads it there.
@@ -217,7 +217,7 @@ async function developmentChild() {
   const principals = require(R + '/kerberos/krb5_principals.js');
   const kdc = require(R + '/kerberos/krb5_kdc.js');
   const scimAuth = require(R + '/scim/scim_auth');
-  const wire = require(R + '/tests/vendored/krb5_wire.js');
+  const wire = require(R + '/tests/protocol/krb5_wire.js');
   const inproc = { label: 'in-process', send: function (bytes) {
     return kdc.handleMessage(bytes);
   } };

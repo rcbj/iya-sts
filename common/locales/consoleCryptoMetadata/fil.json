@@ -225,7 +225,7 @@
   "defensible": "Maipagtatanggol ito dahil sa kung ano ang mga key na ito: ginagawa sa pag-start, sa memory lang hinahawakan, patay kapag lumabas ang proseso, at walang pinoprotektahan — nasa development mode ang trust realm na ito, na walang sinusuring password at walang vine-validate na token na hindi nito ginawa.",
   "notPersistedProduct": "Ginagawa ang mga key na ito sa pag-start, sa memory lang hinahawakan at patay kapag lumabas ang proseso — hindi iniingatan ng store ng trust realm na ito ang mga signing key nito. Pero nasa product mode ang trust realm na ito at vine-verify nito ang bawat password at token, kaya hanggang doon, ang key na ibinigay dito ay pumipirma sa pinaniniwalaan ng mga relying party: ituring ito bilang ang aktibong signing key na ito nga.",
   "needsWrite": "Kailangan nito ng <strong>Admin Write</strong>, na mas mahigpit na kinakailangan kaysa sa anumang ibang pagbasa sa console na ito, dahil dito ang pagbasa AY pagkuha.",
-  "exporter": "<strong>Ang exporter ay ang sa debugger mismo, vendored.</strong> Ginagawa ng <code>common/vendored/key_material.js</code> ang apat na format na may password — PEM, DER, JWK at PKCS#12 — at ito rin ang code na sinubok sa PKI page ng debugger. Ang pangalawang exporter sa tabi nito ang magiging mas masamang kopya.",
+  "exporter": "<strong>Ang exporter ay ang sa debugger mismo, vendored.</strong> Ginagawa ng <code>common/crypto_impl/key_material.js</code> ang apat na format na may password — PEM, DER, JWK at PKCS#12 — at ito rin ang code na sinubok sa PKI page ng debugger. Ang pangalawang exporter sa tabi nito ang magiging mas masamang kopya.",
   "theKeyPairs": "Ang mga key pair",
   "thFormats": "Mga format",
   "notMadeYet": "hindi pa nagagawa",

@@ -2,7 +2,7 @@
   "name": "iya-sts-tests",
   "private": true,
   "version": "1.0.0",
-  "description": "Dependencies of the VENDORED protocol jobs in tests/vendored/. Installed separately from the service on purpose — see the comment below and tests/CLAUDE.md.",
+  "description": "Dependencies of the VENDORED protocol jobs in tests/protocol/. Installed separately from the service on purpose — see the comment below and tests/CLAUDE.md.",
   "//": [
     "THIS FILE EXISTS BECAUSE OF .npmrc, AND NOT BECAUSE A SECOND PACKAGE IS",
     "TIDY. The repository root carries `omit=dev` and the Dockerfile passes",
@@ -32,7 +32,7 @@
     "",
     "mysql2 (MIT) is the exception that looks like a duplicate and is not.",
     "The service declares it as an OPTIONAL PEER and does not install it;",
-    "the attribute-source job's runner (tests/vendored/sts_attribute_sources.js,",
+    "the attribute-source job's runner (tests/protocol/sts_attribute_sources.js,",
     "#356) needs the client to create the MariaDB database, and the service",
     "image gets the same package from STS_CLOUD_SDKS on the test stack. A",
     "root devDependency would be omitted, and a root dependency would put a",

@@ -22,7 +22,7 @@
 // alternative private key is never in the public view" is an assertion about
 // what a function dropped, which over HTTP is the absence of a string.
 //
-// What is NOT re-asserted is the encoder: `common/vendored/x509.js`'s
+// What is NOT re-asserted is the encoder: `common/crypto_impl/x509.js`'s
 // preTBSCertificate arithmetic is the parent project's file and is held to
 // its own tests there. What is asserted is that `pki.js` REACHES it — each
 // tier carries the key it was asked for and a signature its issuer's
@@ -36,8 +36,8 @@ const config = require('../common/config');
 const pki = require('../common/pki');
 const keystore = require('../common/keystore');
 const errorCodes = require('../common/error_codes');
-const x509 = require('../common/vendored/x509');
-const keyMaterial = require('../common/vendored/key_material');
+const x509 = require('../common/crypto_impl/x509');
+const keyMaterial = require('../common/crypto_impl/key_material');
 
 const log = require('bunyan').createLogger({ name: 'pki_hybrid',
   level: process.env.LOG_LEVEL || 'info' });

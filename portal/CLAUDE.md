@@ -80,7 +80,7 @@ SOMEBODY A CREDENTIAL rather than taking one. **EIGHT SINCE 2026-09-13** —
 column from it, `headingFor()` titles the page from it, and `paths()` reports it
 to `sts_metadata.ts` — so a page added there appears in the column, in the
 browser tab and in the endpoint list, and one removed leaves none of the three
-behind. `tests/vendored/sts_portal_sessions.js` asserts, for the first four
+behind. `tests/protocol/sts_portal_sessions.js` asserts, for the first four
 (Overview, Applications, Password, Security keys), that its own entry is marked
 `aria-current="page"`.
 
@@ -249,7 +249,7 @@ is that the CALLER may administer this service, and the question this page
 answers is about the SUBJECT — an identity nothing on the request may
 nominate. A token is not a person. The feature is still
 driven by a test, which is what the convention is for:
-`tests/vendored/sts_portal_sessions.js` signs a real browser in and reads the
+`tests/protocol/sts_portal_sessions.js` signs a real browser in and reads the
 page.
 
 ### What the test asserts, and why the decisive one is a TRANSITION
@@ -573,7 +573,7 @@ What that changed, and why each piece is the way it is:
   retry*) argues it.
 
 `tests/passkey_management.js` holds the credential layer, and
-`tests/vendored/sts_portal_backup_keys.js` holds the page over HTTP: the two
+`tests/protocol/sts_portal_backup_keys.js` holds the page over HTTP: the two
 buttons, the groups, rename and Last used.
 
 ### It is held to the same two address rules as the sign-in screen (2026-09-12)
@@ -836,7 +836,7 @@ authorization request and the sign-out's address are the bytes they were.
   (`admin-ui/CLAUDE.md` 8c-iv). Off, still not drawn — and off is no
   longer the default: `authn.multipleAccounts` is on by default since
   2026-10-20 (rcbj, #751; `authn/CLAUDE.md`).
-  `tests/vendored/sts_multi_account_tabs.js` 2a switches a real tab to bob
+  `tests/protocol/sts_multi_account_tabs.js` 2a switches a real tab to bob
   and back to alice from it, nothing typed.
 * **A SWITCH** asks over a form typed in, aborts what is in flight —
   `sendOnce()`, `ownerJson()` (the owner token's requests, #607) and the
@@ -913,7 +913,7 @@ file that got it wrong: `POST /portal/activate` ended by linking to
 `authn.LOGIN_PATH`. **Nothing was broken except one `href`** — the password was
 set, the link was spent, the audit row was written — which is why it survived
 being written directly under an argument saying it could not work, and why the
-guard for it had to be an over-HTTP job (`tests/vendored/sts_portal_sessions.js`)
+guard for it had to be an over-HTTP job (`tests/protocol/sts_portal_sessions.js`)
 rather than anything in process.
 
 **It links to `/portal` now, and the destination is the argument.** That page
@@ -974,7 +974,7 @@ about to change is not.
 |---|---|---|
 | `tests/portal_access.js` | the CREDENTIAL layer: `credentials.removeKey()` looks an id up among the caller's OWN keys | a route that never reaches that function |
 | `tests/access_policy.js` | the POLICY layer: the XACML `access-control` document denies a subject who is not the owner | a handler that hands the PDP the wrong subject |
-| `tests/vendored/sts_portal_sessions.js` | the ROUTE, over HTTP, with two real signed-in browsers | nothing above it — this is the one that sends a request |
+| `tests/protocol/sts_portal_sessions.js` | the ROUTE, over HTTP, with two real signed-in browsers | nothing above it — this is the one that sends a request |
 
 **THE THIRD ONE EXISTS BECAUSE THE FIRST TWO NEVER SEND A REQUEST**, and that is
 not a theoretical gap. It was mutation-tested by making `/portal/password` read
@@ -988,7 +988,7 @@ was reading `GET /admin-api/audit` back and checking the ACTOR on the
 only the audit row proves the write.** If a handler changes something, assert
 who it was attributed to and not merely what came back.
 
-**`/portal/mfa` HAS ONE OF ITS OWN TOO** (`tests/vendored/sts_portal_totp.js`,
+**`/portal/mfa` HAS ONE OF ITS OWN TOO** (`tests/protocol/sts_portal_totp.js`,
 section 3), and on this page the rule protects something sharper than a leak:
 enrolling for somebody else would leave the attacker HOLDING that account's
 second factor. The decisive assertion is not that the page came back with the
@@ -1101,7 +1101,7 @@ thing this section must not do: **an entry in this directory carries whatever
 anybody put on it**, and this service writes four `sts`-prefixed CREDENTIALS
 onto that same object. A page that printed the entry would print a TOTP shared
 secret the day somebody enrolled an authenticator. That file's header carries
-the argument; `tests/vendored/sts_portal_directory_attributes.js` is where it
+the argument; `tests/protocol/sts_portal_directory_attributes.js` is where it
 is held, and every other assertion in that job passes against the wrong
 implementation.
 
@@ -1176,7 +1176,7 @@ card says what to do with the key it holds — claims and a `kid` for a JWT, an
 assertion. **Three things are shared rather than doubled**: the rate limit
 (a key generation costs the same CPU either way), `pki.personSelfService`, and
 the error codes, none of which named a profile. The nav label is *Signing
-keys*. `tests/vendored/sts_portal_signing_key.js` section 8 is the proof, and
+keys*. `tests/protocol/sts_portal_signing_key.js` section 8 is the proof, and
 its SAN check exists because a JWT leaf written onto the SAML attributes
 verifies exactly like a SAML one — the certificate's subjectAltName is the only
 place the difference shows; five mutants, all caught, that one only after the
@@ -1216,7 +1216,7 @@ and the person.
 nothing in this service opens it again — not this page, not `/admin/pki`, not
 `/admin-api`. The page says so at the moment it shows it, and *generate again*
 is the only answer to having lost it. That is the same position the recovery
-codes reached from the other direction, and `tests/vendored/sts_portal_signing_key.js`
+codes reached from the other direction, and `tests/protocol/sts_portal_signing_key.js`
 asserts it by fetching the page a second time and looking for a PEM block that
 must not be there.
 
@@ -1320,7 +1320,7 @@ What is this page's:
 **NO `/admin-api` MIRROR**, for this page's standing reason: the answer is
 per-person. An operator revokes one on `/admin/pki`'s revocation pane, where it
 is listed like every other leaf of the `tls-client` authority.
-`tests/vendored/sts_portal_signing_key.js` section 9 is the over-HTTP half; the
+`tests/protocol/sts_portal_signing_key.js` section 9 is the over-HTTP half; the
 handshake was `tests/tls_client_certificates.js` in process, because no launcher
 published 9443 to a job — **a certificate now arrives on the port every job
 already uses**, which is the deletion's one gift to this page.
@@ -1497,7 +1497,7 @@ administrator could see or end a GNAP grant. Four things are this page's:
   person, or one with nothing live left (`STS-PORTAL-0163`, 400) — the
   `/portal/keys` credential id's arrangement. `manage-own`, CSRF on the POST,
   and `gnap.grant.revoke` audited with the person as actor:
-  `tests/vendored/sts_gnap_core.js` section 15 asserts the ACTOR, this
+  `tests/protocol/sts_gnap_core.js` section 15 asserts the ACTOR, this
   directory's rule that only the audit row proves the write.
 * **Under cells (#98) it lists this cell's grants**, which is normally all of
   them (a grant moves to its resource owner's home before approval), and says
@@ -1863,7 +1863,7 @@ was), and **a ceremony the browser could not run abandons the pending
 enrolment** and draws the form again with the browser's error: the first
 version defaulted to *Built into this device* and kept the enrolment armed, so
 Linux Firefox — which has nothing built in — could register no key at all and
-never get back to the choice. `tests/vendored/sts_portal_backup_keys.js`
+never get back to the choice. `tests/protocol/sts_portal_backup_keys.js`
 section 1a holds both.
 
 **THE LINK STEP IS A SCRIPTED PAGE, AND ITS OWN ROW IN THE ROOT TABLE.** A
@@ -1882,7 +1882,7 @@ registers it self-asserted. Refusals are `STS-DEVICE-0016`–`0028`; the page
 and the JSON doors never take an identity from the request.
 
 **The scripted link step is driven in a real browser** by
-`tests/vendored/sts_portal_device_webauthn.js` (#258): Chrome's virtual
+`tests/protocol/sts_portal_device_webauthn.js` (#258): Chrome's virtual
 authenticators, the roaming key refused, the page with its script blocked,
 the armed policy, the link, and a later sign-in recognising the device.
 **In product it can only assert the refusal**: Chrome re-mints the virtual

@@ -53,7 +53,7 @@
 // care; a client that does a FULL handshake on one node and then checks the
 // other node's signature against the first node's key does, and that is
 // tlsfuzzer's different-SNI probe (an exception in
-// `tests/vendored/tlsfuzzer_kit.js`, for the cluster mode only).
+// `tests/protocol/tlsfuzzer_kit.js`, for the cluster mode only).
 //
 // **ONLY LDAPS SHARES IT.** The main port and the debugger's listener ask
 // for a client certificate, and a resumed session hands the server the LEAF

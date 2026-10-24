@@ -37,7 +37,7 @@
 // WHY IN PROCESS (tests/CLAUDE.md's first question): the vectors need chosen
 // inputs, and what the KDC wrote INTO a TGT is sealed under the krbtgt key,
 // which only the inside holds. The protocol half — MIT's `kinit -X` and
-// `kinit -n` over TCP 88 — is `tests/vendored/sts_kerberos_pkinit.js`.
+// `kinit -n` over TCP 88 — is `tests/protocol/sts_kerberos_pkinit.js`.
 // Every key pair here is generated at run time; none is in the repository.
 // ===========================================================================
 
@@ -161,7 +161,7 @@ function makeClient() {
   const pki = require('../common/pki');
   const realms = require('../common/realms');
   const cryptoLib = require('../common/crypto');
-  const keyMaterial = require('../common/vendored/key_material');
+  const keyMaterial = require('../common/crypto_impl/key_material');
   const ldap = require('../ldap/ldap_server');
   const core = require('../common/cert_enrollment');
   require('../kerberos/krb5_person_keys');

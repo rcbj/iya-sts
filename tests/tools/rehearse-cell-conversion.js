@@ -33,14 +33,14 @@
 // person as homed in cell A. Writes `<dir>/verified.json` and exits 1 on the
 // first failure, saying which.
 //
-// Node built-ins, bunyan and tests/vendored/cells_kit.js (a kit, not a job).
+// Node built-ins, bunyan and tests/protocol/cells_kit.js (a kit, not a job).
 // ===========================================================================
 "use strict";
 
 const assert = require("assert");
 const fs = require("fs");
 const path = require("path");
-const kit = require("../vendored/cells_kit");
+const kit = require("../protocol/cells_kit");
 const trust = require("./trust");
 const log = require("bunyan").createLogger({ name: "rehearse-cells",
   level: process.env.LOG_LEVEL || "info" });

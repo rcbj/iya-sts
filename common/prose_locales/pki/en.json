@@ -19,7 +19,7 @@
   "pki.subjectKinds.person.what": "Somebody in ou=users. Their key pair signs an RFC 7523 section 2.1 assertion ABOUT THEMSELVES and about nobody else — see common/person_assertions.js, which is where the refusal is argued.",
   "pki.purposes.jwt.what": "A JWS signing key. Its public half is written onto the application as a JWKS (oauthAssertionJwks) carrying the certificate chain in x5c, which is how RFC 7523 registers a key.",
   "pki.purposes.saml.what": "An XML Signature key. Its certificate is written onto the application as a PEM (oauthSamlAssertionCertificate), because SAML has no JWKS and what a party registers for that profile IS a certificate.",
-  "pki.report.encoder": "common/vendored/x509.js — the parent project's own PKI code, byte-identical, over pkijs and asn1js. One encoder for this service and for that project's PKI / X.509 page.",
+  "pki.report.encoder": "common/crypto_impl/x509.js — the parent project's own PKI code, byte-identical, over pkijs and asn1js. One encoder for this service and for that project's PKI / X.509 page.",
   "pki.report.residencyPersisted": "The CA private keys are in the persistence store, sealed under the same key-encryption key as the signing keys, and survive a restart.",
   "pki.report.residencyMemory": "The CA private keys are held in memory only. This service is in development mode, where key material is generated per start — a hierarchy built now is gone when this process exits.",
   "revocation.reasons.unspecified.what": "No reason given. RFC 5280 section 5.3.1 says the reason code extension SHOULD be omitted for this value, so an entry revoked this way carries no reason at all — which is what \"unspecified\" means on the wire.",

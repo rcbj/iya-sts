@@ -23,7 +23,7 @@
 // The keys are node's (`generateKeyPairSync`); the certificates are
 // node-forge's, the encoder `sts_saml11.js` and `sts_xml_schema_validation.js`
 // already build their relying parties' certificates with. The vendored PKI
-// encoder (`common/vendored/x509.js`) is not reachable from this image's
+// encoder (`common/crypto_impl/x509.js`) is not reachable from this image's
 // build context, and the peer needs nothing it has that forge lacks: no CRL
 // is named, because the service asks a CRL of a chain somebody PRESENTS
 // (#174) and this one is only ever presented by a listener it dials, as

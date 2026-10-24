@@ -1175,11 +1175,11 @@ hit the same trap through `request_pool.js` in P0.
   both doors to `active`, the bombs, the ambiguous and corrupt archives, the
   cap and a full disk, the form's CSRF and field order and the route's role
   check, the API's body types, the exemption predicate, both crash jobs, and
-  a `.gz` and `.zip` by path. `tests/vendored/sts_admin_risk_upload.js`
+  a `.gz` and `.zip` by path. `tests/protocol/sts_admin_risk_upload.js`
   (`local: true`) — the same over HTTP in every mode: a `.gz` through the
   API and a `.zip` through the console with a real session and token, a
   realm's upload, and the refusals.
-* `tests/vendored/sts_admin_risk.js` (`local: true`) — over HTTP in every mode,
+* `tests/protocol/sts_admin_risk.js` (`local: true`) — over HTTP in every mode,
   so the postgres driver's SQL answers in `single-node` and `cluster`, and in
   `cluster` a version activated on one node is answered by both.
 * `tests/postgres_schema.js` — the thirteen tables are in both copies of the
@@ -1210,7 +1210,7 @@ hit the same trap through `request_pool.js` in P0.
   every count of a window, the old and the other realm's left out, the
   signals beside their factors, a series that adds up, the standings, this
   process's counts, and the page without a script.
-  `tests/vendored/sts_admin_risk.js` sections 8 and 9 hold the postgres
+  `tests/protocol/sts_admin_risk.js` sections 8 and 9 hold the postgres
   driver's GROUP BY to the same sums over HTTP.
 * `tests/risk_realm_admin.js` — a realm administrator on both risk pages:
   the gate's refusals and permissions, the realm-only views, and the pages

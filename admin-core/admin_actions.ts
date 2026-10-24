@@ -131,7 +131,7 @@
 // thirty comment-interleaved lines. The symptom was a 500 with
 // `numberWord is not defined` on exactly one refusal path — which is the kind
 // of thing only a test that drives the surface can find, and
-// tests/vendored/sts_admin_api_operations.js did, on the first run after.
+// tests/protocol/sts_admin_api_operations.js did, on the first run after.
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 // A policy save's or reset's message is filled from `policy_kinds.ts`'s
@@ -293,7 +293,7 @@ const FORM_FURNITURE = {
 
 // BUILT FROM THE SWITCH BELOW RATHER THAN TYPED, for the reason
 // APPLICATION_ACTIONS gives at its own site: this repository's own
-// tests/vendored/admin_api.js READS the refusal sentence to check that every
+// tests/protocol/admin_api.js READS the refusal sentence to check that every
 // console action has an /admin-api operation, so a list that is short by one is
 // a list that turns the parity check off for that action.
 /**
@@ -354,7 +354,7 @@ const USER_FIELD_PREFIX = 'field.';
 // ---------------------------------------------------------------------------
 // The actions this resource accepts, built from the switch below rather than
 // typed — the same arrangement MFA_ACTIONS had on the page this absorbed, and
-// for the same reason: `tests/vendored/sts_admin_api_operations.js` reads the
+// for the same reason: `tests/protocol/sts_admin_api_operations.js` reads the
 // refusal sentence to discover what to check for, so a list that is short by
 // one turns the parity check off for that action.
 /**
@@ -654,9 +654,9 @@ const SAML11_RP_KIND = saml11.RP_KIND;
 // The two acts, through the one switch that has them — **BEHIND A GUARD OF ITS
 // OWN, and that guard is not ceremony.**
 //
-// `tests/vendored/sts_admin_api_operations.js` compares an action resource's
+// `tests/protocol/sts_admin_api_operations.js` compares an action resource's
 // REFUSAL SENTENCE against the operations the OpenAPI document declares for it,
-// in both directions, because `tests/vendored/admin_api.js`'s parity check
+// in both directions, because `tests/protocol/admin_api.js`'s parity check
 // reads that sentence to discover what to look for. A bare delegation to
 // `usersAction()` therefore answered `/admin-api/mfa/no-such-action` by naming
 // all five actions the USERS resource had then — so this resource claimed to
@@ -674,7 +674,7 @@ const MFA_ACTIONS = ['clear-totp', 'clear-key', 'clear-email-factor'];
 
 // BUILT FROM THE SWITCH BELOW RATHER THAN TYPED, for the reason
 // PERMISSION_ACTIONS gives at its own site: this repository's own
-// tests/vendored/admin_api.js READS the refusal sentence to check that every
+// tests/protocol/admin_api.js READS the refusal sentence to check that every
 // console action has an /admin-api operation, so a list that is short by one is
 // a list that turns the parity check off for that action.
 /**
@@ -685,7 +685,7 @@ const CONSENT_ACTIONS = ['grant-global-consent', 'revoke-global-consent',
                          'forget-user-consent'];
 
 // BUILT FROM THE SWITCH BELOW RATHER THAN TYPED, for CONSENT_ACTIONS' reason:
-// this repository's own tests/vendored/admin_api.js READS the refusal sentence
+// this repository's own tests/protocol/admin_api.js READS the refusal sentence
 // to check that every console action has an /admin-api operation, so a list
 // that is short by one turns the parity check off for that action.
 /**
@@ -2134,7 +2134,7 @@ class AdminActions {
   // what `respondToAction()` draws on a console page. **EVERY OTHER ACTION
   // RESOURCE ON `/admin-api` ANSWERS `{ ok, errors: [...] }`** — ssf,
   // permissions, realms, spiffe — and
-  // `tests/vendored/sts_admin_api_operations.js` reads that array on every one
+  // `tests/protocol/sts_admin_api_operations.js` reads that array on every one
   // of them: it walks every documented POST resource, sends an unknown action,
   // and requires the refusal SENTENCE to name the actions, because
   // `admin_api.js`'s parity check reads that same sentence to find out what
@@ -6478,7 +6478,7 @@ class AdminActions {
     // is that it was typed and went stale: `refresh-metadata` was added on
     // 2026-08-27 and this sentence still said "The six are" and named six. That
     // is not a cosmetic drift — this repository's own
-    // tests/vendored/admin_api.js READS this sentence to check that every
+    // tests/protocol/admin_api.js READS this sentence to check that every
     // console action has an /admin-api operation, so an action missing from it
     // is an action the parity check cannot see, and the API could lose the
     // operation entirely with nothing failing. A generated list cannot be short
@@ -9067,9 +9067,9 @@ class AdminActions {
     if (SIGNALS_CONSOLE_ACTIONS.indexOf(action) < 0) {
       // THE SENTENCE IS THE HOUSE SHAPE — `Unknown action "x". <prose>: a, b.`
       // — AND IT IS READ RATHER THAN BEING STYLE.
-      // `tests/vendored/sts_admin_api_operations.js` matches exactly that out
+      // `tests/protocol/sts_admin_api_operations.js` matches exactly that out
       // of `errors` on every action resource this API declares, and
-      // `tests/vendored/admin_api.js` reads the same sentence to check that
+      // `tests/protocol/admin_api.js` reads the same sentence to check that
       // every console action has an operation over there. This handler phrased
       // it its own way — `"x" is not one of clear.` — which parses as neither,
       // so it turned the parity check off for this resource with nothing
@@ -9198,8 +9198,8 @@ class AdminActions {
     const actor = String((context || {}).actor || '');
     const via = String((context || {}).via || 'console');
     if (TRUSTSTORE_ACTIONS.indexOf(action) < 0) {
-      // THE HOUSE SENTENCE, which `tests/vendored/sts_admin_api_operations.js`
-      // and `tests/vendored/admin_api.js` both READ — see signalsAction() above
+      // THE HOUSE SENTENCE, which `tests/protocol/sts_admin_api_operations.js`
+      // and `tests/protocol/admin_api.js` both READ — see signalsAction() above
       // for what a different phrasing silently turns off.
       log.debug("Leaving AdminActions.truststoreAction(). Unknown action.");
       return this.refused('STS-ADMIN-0500',
@@ -10139,8 +10139,8 @@ class AdminActions {
         return self.refusedBy('STS-ADMIN-0602', answer);
       });
     } else {
-      // THE HOUSE SENTENCE, which `tests/vendored/sts_admin_api_operations.js`
-      // and `tests/vendored/admin_api.js` both READ.
+      // THE HOUSE SENTENCE, which `tests/protocol/sts_admin_api_operations.js`
+      // and `tests/protocol/admin_api.js` both READ.
       log.debug("Leaving AdminActions.kerberosPrincipalsAction(). Unknown " +
                 "action.");
       return this.refused('STS-ADMIN-0602', { ok: false,

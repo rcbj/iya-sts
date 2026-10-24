@@ -37,7 +37,7 @@
 // they are PostgreSQL's grammar and PostgreSQL's catalog — and pretending
 // otherwise is how a test comes to assert a stale column list. They were run
 // against PostgreSQL 18 and 16 by hand when they were written, and the
-// over-HTTP half is `tests/vendored/sts_database_metrics.js`, which drives
+// over-HTTP half is `tests/protocol/sts_database_metrics.js`, which drives
 // them against the stack's real database.
 // ===========================================================================
 

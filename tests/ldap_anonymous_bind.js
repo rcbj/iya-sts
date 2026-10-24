@@ -12,7 +12,7 @@
 // ITSELF — `_getHandlerChain()` returns a no-op before any route is consulted
 // — so `ldap/ldap_server.js`'s bind handler never saw one and product mode's
 // documented refusal (48, inappropriateAuthentication, STS-LDAP-0070) never
-// happened. `tests/vendored/sts_ldaps.js` found it against a product-mode
+// happened. `tests/protocol/sts_ldaps.js` found it against a product-mode
 // deployment. The fix is the `routeAnonymousBinds` server option in the
 // `rcbj/node-ldapjs` fork, and this file holds it:
 //

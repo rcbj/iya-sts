@@ -8,7 +8,7 @@
 // ===========================================================================
 // WHAT THE OPENID FOUNDATION'S CONFORMANCE SUITE FOUND BEYOND FAPI (#187,
 // 2026-09-24), held in process so a regression is caught without the suite's
-// three containers. `tests/vendored/sts_oidcc_conformance.js` and its
+// three containers. `tests/protocol/sts_oidcc_conformance.js` and its
 // siblings are the plans themselves; this file is the regression check for
 // each service fix they led to, and `oauth-oidc/CLAUDE.md` 3bp is the record.
 //

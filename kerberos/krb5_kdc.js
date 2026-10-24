@@ -25,7 +25,7 @@
 //    design is that it reads the live Express router and so cannot go stale —
 //    and a protocol family it cannot see is the one way it can. The port-88
 //    listener therefore needs an explicit entry there; the drift test in
-//    tests/vendored/sts_metadata.js has to tolerate an entry with no route
+//    tests/protocol/sts_metadata.js has to tolerate an entry with no route
 //    behind it.
 //  * **Port 88 is privileged.** In the container this process is root and binds
 //    it directly. A host run is not root, so `KRB5_KDC_PORT` exists — and if it

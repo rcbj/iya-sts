@@ -7,7 +7,7 @@
 // tests/application_credentials.js — AN APPLICATION'S KEY PAIR REPLACED BY AN
 // UPLOADED CERTIFICATE, AND ITS CLIENT SECRET REGENERATED (2026-09-13).
 //
-// The over-HTTP half is `tests/vendored/sts_application_credentials.js`, which
+// The over-HTTP half is `tests/protocol/sts_application_credentials.js`, which
 // drives the two operations and then presents an assertion signed with the
 // uploaded key at a real token endpoint. What is here is what a request cannot
 // ask, and it is most of the CHAIN RULES, for one reason: every interesting
@@ -47,8 +47,8 @@ const applications = require('../common/applications');
 require('../ldap/ldap_server');
 const audit = require('../common/audit');
 const errorCodes = require('../common/error_codes');
-const x509 = require('../common/vendored/x509');
-const keyMaterial = require('../common/vendored/key_material');
+const x509 = require('../common/crypto_impl/x509');
+const keyMaterial = require('../common/crypto_impl/key_material');
 const pkiAdmin = require('../admin-ui/pki_admin');
 const adminActions = require('../admin-core/admin_actions');
 const adminViews = require('../admin-core/admin_views');

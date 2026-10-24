@@ -11,7 +11,7 @@
 // The line tests/CLAUDE.md draws is "can it be asserted by driving the
 // running service over HTTP?" Most of this feature CAN be — making a role,
 // narrowing an application, watching `/oauth2/token` answer `access_denied` —
-// and all of that is in `tests/vendored/sts_roles.js`, which drives an
+// and all of that is in `tests/protocol/sts_roles.js`, which drives an
 // authoring door and a deciding door in one job because that is the only way
 // either half means anything.
 //

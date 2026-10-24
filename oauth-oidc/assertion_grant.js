@@ -487,7 +487,7 @@ function unwrapAssertion(presented, opts) {
   // `https://issuer.example.test/…` is the ordinary case — splits into
   // exactly three parts, so an unsigned claims object was read as a JWS and
   // the refusal a caller got named a base64 problem instead of the rule it
-  // broke. `tests/vendored/sts_jwt_bearer_grant.js` sends precisely that.
+  // broke. `tests/protocol/sts_jwt_bearer_grant.js` sends precisely that.
   //
   // A JWS is three parts AND a protected header that is base64url JSON
   // carrying an `alg`, which is RFC 7515 section 3.1 read literally. Checked

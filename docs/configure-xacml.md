@@ -12,7 +12,7 @@ decides its own issuance, access and delegation with. Each recipe is given
 twice: once as steps in the **admin console** and once as **Management API**
 calls.
 
-The values come from this repository's test jobs in `tests/vendored/` and
+The values come from this repository's test jobs in `tests/protocol/` and
 `tests/`, and each recipe names the job it is taken from. How the PDP, the
 PIP and the embedded PEPs *behave*, and every setting with its default, are
 on [XACML 3.0 and ALFA](xacml.md); the container is on

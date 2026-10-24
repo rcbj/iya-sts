@@ -158,7 +158,7 @@ observed, a prefix or extension, another scheme or host, the launch
 record and `/oauth2/authorize` honouring and spending it, and the portal's
 and the console's links.
 
-`tests/vendored/sts_idp_initiated_launch.js` (over HTTP, `local: true`,
+`tests/protocol/sts_idp_initiated_launch.js` (over HTTP, `local: true`,
 #715): the same sections in a throwaway realm, run in `memory`, `single-node`
 and `cluster` — **the product-mode coverage**, and across nodes in
 `cluster`. The switches are set through `/admin-api`, the person signs in

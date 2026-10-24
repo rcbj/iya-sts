@@ -1825,7 +1825,7 @@ function takeIssuedCertificate(record, certPem, chainPem) {
   // So after `POST /admin-api/pki/build-root` they went on presenting a chain
   // under a Root nothing held any more, and every client that re-fetched the
   // anchor failed with `unable to get local issuer certificate` until the
-  // service restarted (tests/vendored/sts_ldaps.js and sts_spiffe_grpc.js,
+  // service restarted (tests/protocol/sts_ldaps.js and sts_spiffe_grpc.js,
   // red in every mode). The log line below said "one anchor covers LDAPS 636"
   // the whole time. The owners of those sockets re-key on this.
   notifyCertificateObservers(record.algorithm);
@@ -2751,7 +2751,7 @@ function trustAnchorPems() {
 // signed by the same Root, and the reconcile answered "already chains" about
 // the stale one.
 //
-// It reached the suite as `tests/vendored/sts_pki_distribution_points.js` in
+// It reached the suite as `tests/protocol/sts_pki_distribution_points.js` in
 // dispatch mode only: *http://…/pki/crl/process/intermediate.crl is named by
 // certificates of two different authorities — CN=sts Intermediate CA
 // (Process), O=sts and CN=sts Intermediate CA (Process), O=sts*. Measured on

@@ -376,7 +376,7 @@ class RolesPage {
       // from a control that does nothing. The handler answers the honest
       // thing instead: with nothing asked it draws no decision, exactly as
       // `GET /admin-api/roles/preview` answers 200 with `answered: false`. It
-      // was `required` for one run, and `tests/vendored/sts_admin_console.js`
+      // was `required` for one run, and `tests/protocol/sts_admin_console.js`
       // caught it — that job submits every GET form on this console and
       // asserts the browser actually went somewhere.
       '<form method="get" action="/admin/roles"><div ' +

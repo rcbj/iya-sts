@@ -337,30 +337,30 @@ never parsing an ACME or EST record (`common/CLAUDE.md`, 3ag).
   and the API rows' schemas, the failInfo map. Mutants caught: signature always
   verifying, no implicit rejection, a process-wide transaction store, a zod
   schema that drifted from the OpenAPI body.
-* `tests/vendored/sts_scep_sscep.js` — **certnanny's sscep at cb3e539, the real
+* `tests/protocol/sts_scep_sscep.js` — **certnanny's sscep at cb3e539, the real
   client** (#210), over the plain-HTTP listener: GetCACaps, GetCACert, the
   `/admin-api` hint run literally by bash, a challenge the person made on
   `/portal/certificates`, `-R`, GetCert, GetCRL, the historical renewal and the
   old serial on the CRL, and the refusals (reused, unknown, another realm's RA,
   3DES, SHA-1). No sscep warning on any success.
-* `tests/vendored/sts_scep_micromdm.js` — **micromdm's scepclient v2.3.0**
+* `tests/protocol/sts_scep_micromdm.js` — **micromdm's scepclient v2.3.0**
   (#211): its transport over HTTPS and plain HTTP, three ways of choosing the
   recipient, and the `badAlg` its fixed SHA-1 and DES draw (below), which
   spends no challenge.
-* `tests/vendored/sts_scep_certmonger.js` — **certmonger 0.79.21** (#249):
+* `tests/protocol/sts_scep_certmonger.js` — **certmonger 0.79.21** (#249):
   the daemon started by the job on a private socket, add-scep-ca, a request
   with the person's portal challenge, CertPoll through its own `scep-submit`
   and stored GetCertInitial, resubmit and rekey onto the CRL, the refusals
   (reused, another realm's RA, DES-EDE3 and SHA-1 by editing its CA record)
   as `CA_UNREACHABLE` plus the monitor's code, and the HTTPS exception.
-* `tests/vendored/sts_scep_jscep.js` — **jscep 3.0.1** through
+* `tests/protocol/sts_scep_jscep.js` — **jscep 3.0.1** through
   `tests/tools/jscep-driver` (#250): negotiated algorithms, GetCACert with the
   CA checked against the Intermediate and Root, GetNextCACert refused, enrol,
   poll, retry, all six AES × SHA-2 combinations, GetCert, GetCRL, renewal
   keeping and changing the key, the refusals, and HTTPS.
 * `tests/scep_enrollment.js` section 3a — a version 1 signer and a repeated
   transactionID, in process (mutants: `parts.length < 7`, the 0037 refusal).
-* `tests/vendored/sts_scep_enrollment.js` with `tests/vendored/scep_client.js`
+* `tests/protocol/sts_scep_enrollment.js` with `tests/protocol/scep_client.js`
   (forge + node, nothing from here) — over HTTP, ~70 checks, ~70 seconds (it
   waits out a sixty-second challenge). Mutants caught: no URL-profile check, no
   signer-key/CSR-key check.

@@ -58,7 +58,7 @@
 // token about it. Here the person has already been let in under whatever name
 // they typed — the code is checked against a secret THIS SERVICE generated and
 // showed them ninety seconds ago, so being strict costs a tester nothing but a
-// glance at their phone, and `tests/vendored/sts_portal_totp.js` computes the
+// glance at their phone, and `tests/protocol/sts_portal_totp.js` computes the
 // code in the job.
 //
 // What development mode DOES still relax is everything around it: the password

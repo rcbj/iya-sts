@@ -9318,7 +9318,7 @@ function create(options) {
     // decision, phase, country, score band, answer, signal — and the levels
     // per bucket of `bucketMs`. `risk_store.metricsOf()` shapes them, as it
     // does the memory store's. The bands are `RiskStore.bandOf()`'s,
-    // spelled again in SQL; `tests/vendored/sts_admin_risk.js` holds the
+    // spelled again in SQL; `tests/protocol/sts_admin_risk.js` holds the
     // two to the same answer for the same rows.
     riskAssessmentMetrics: function (realm, opts) {
       log.debug("Entering riskAssessmentMetrics(). realm=" + realm);

@@ -9,7 +9,7 @@
 // THE TLSFUZZER PLAN FOLLOWS THE LISTENER'S CERTIFICATE (#321).
 //
 // sts_tlsfuzzer.js reads the key a listener presents and hands it to
-// tests/vendored/tlsfuzzer_kit.js. This file holds that choice. A tlsfuzzer
+// tests/protocol/tlsfuzzer_kit.js. This file holds that choice. A tlsfuzzer
 // run needs the tests image and a service, and the choice can be asserted
 // without either: which scripts run for RSA and for ECDSA, that an omitted
 // key is RSA, that a curve exception excuses only the curves it names, that
@@ -28,7 +28,7 @@ const tls = require('tls');
 
 const log = require('bunyan').createLogger({ name: 'tlsfuzzer_plan',
   level: process.env.LOG_LEVEL || 'info' });
-const kit = require('./vendored/tlsfuzzer_kit');
+const kit = require('./protocol/tlsfuzzer_kit');
 
 const EC_SERVER = 'needs an ECDSA server certificate; this listener ' +
   'presents RSA';

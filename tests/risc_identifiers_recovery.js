@@ -36,7 +36,7 @@
 //           account observer, which it did not before #235.
 //
 // In a child process, because it loads the protocol stack. The HTTP half is
-// `tests/vendored/sts_risc_register_recovery.js`.
+// `tests/protocol/sts_risc_register_recovery.js`.
 // ===========================================================================
 
 const childProcess = require('child_process');

@@ -396,9 +396,9 @@ function childMain() {
       // An SVID under an authority nobody federated is still unauthorized at
       // the handshake; `spiffe_auth.ts` reads it off the socket and refuses
       // it UNAUTHENTICATED for not verifying, never "none was presented".
-      const x509 = require(ROOT + '/common/vendored/x509.js');
-      const keys = require(ROOT + '/common/vendored/key_material.js');
-      const testCa = require(ROOT + '/tests/vendored/outbound_test_ca.js');
+      const x509 = require(ROOT + '/common/crypto_impl/x509.js');
+      const keys = require(ROOT + '/common/crypto_impl/key_material.js');
+      const testCa = require(ROOT + '/tests/protocol/outbound_test_ca.js');
       const SpiffeAuth = require(ROOT + '/spiffe/spiffe_auth').SpiffeAuth;
       const foreignSvid = async function (foreignCa, id) {
         const pair = await keys.generateKeyPair('ec-p256');

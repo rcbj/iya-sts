@@ -37,7 +37,7 @@
 //     an operation cannot exist and be undocumented, and cannot be documented
 //     and not exist. What no code can check is the direction that matters — a
 //     new console control with no row here — and that is what this
-//     repository's own tests/vendored/admin_api.js (a `local: true` job)
+//     repository's own tests/protocol/admin_api.js (a `local: true` job)
 //     asserts, by walking the console's own NAV and the action names each of
 //     its action handlers accepts.
 //
@@ -7115,7 +7115,7 @@ class AdminApi {
                 // read there and refused HERE — not a member of this schema —
                 // at the cell it was relayed to, so no creation naming
                 // another cell could succeed until the `cells` mode's first
-                // run (2026-09-28, tests/vendored/sts_cells_routing.js).
+                // run (2026-09-28, tests/protocol/sts_cells_routing.js).
                 homeCell: { type: 'string', maxLength: 16,
                             description: 'Only when this service is ' +
                                          'deployed as cells (#98): the id ' +
@@ -16570,10 +16570,10 @@ class AdminApi {
           //
           // Phase three documented ten of the twenty-nine actions and shipped.
           // Rule 7 says a control added to the console gets an operation in the
-          // same commit, and `tests/vendored/sts_admin_api_operations.js` is
+          // same commit, and `tests/protocol/sts_admin_api_operations.js` is
           // the check — it compares the actions this document DECLARES against
           // the ones the handler's refusal sentence NAMES, in both directions,
-          // because that sentence is what `tests/vendored/admin_api.js`'s
+          // because that sentence is what `tests/protocol/admin_api.js`'s
           // parity check reads to find out what a resource can do. Nineteen
           // actions the sentence named and the document did not meant nineteen
           // console controls that could have lost their operation with nothing
@@ -18371,7 +18371,7 @@ class AdminApi {
       // BECAUSE THE DOCUMENT IS DIFFERENT. `/admin/caep-sessions` is a page of
       // the console and had no operation naming it — the GET above mirrors
       // `/admin/caep`, and one operation cannot mirror two pages. That gap was
-      // invisible until the parity check in tests/vendored/admin_api.js named
+      // invisible until the parity check in tests/protocol/admin_api.js named
       // it.
       //
       // ONE OPERATION ANSWERS BOTH SHAPES, `?session=` deciding which, for the
@@ -19893,7 +19893,7 @@ class AdminApi {
           { action: 'export', operationId: 'exportPkiKeyPair',
             summary: 'Write a key pair out as PEM, DER, a JWK set or a PKCS#12',
             description: 'The same export `/admin/keys` uses ' +
-                         '(`common/vendored/key_material.js`), so a `.p12` ' +
+                         '(`common/crypto_impl/key_material.js`), so a `.p12` ' +
                          'from here imports identically into keytool, ' +
                          'OpenSSL, Windows and macOS.\n\nThe answer is ' +
                          'JSON with the bytes base64’d and named, and the ' +
@@ -20234,7 +20234,7 @@ class AdminApi {
           //
           // They arrived on `/admin/pki` and on `PKI_ACTIONS` and NOT here,
           // which is rule 7 unpaid — and the thing that caught it was not the
-          // parity check: `tests/vendored/sts_admin_api_operations.js` compares
+          // parity check: `tests/protocol/sts_admin_api_operations.js` compares
           // the refusal SENTENCE this endpoint prints for an unknown action
           // against the actions this document declares, and the sentence is
           // generated from `PKI_ACTIONS`. So the console had two controls whose
@@ -20527,7 +20527,7 @@ class AdminApi {
                          'anywhere — which is what makes it the durable half.',
             requestBodyRequired: false,
             // THE EMPTY EXAMPLE IS WHAT DRIVES IT.
-            // `tests/vendored/sts_admin_api_operations.js` replays every POST
+            // `tests/protocol/sts_admin_api_operations.js` replays every POST
             // that carries an example and then asserts that every documented
             // operation was driven by something — so an action taking no
             // parameters and declaring no example is covered by nothing and
@@ -24787,7 +24787,7 @@ class AdminApi {
     // form still needs a management GET; for a drawing, that is the
     // operation its data comes from, and the row says so — `drawnOn` is
     // published in the index, where the parity check reads it
-    // (`tests/vendored/admin_api.js`), beside `mirrors`.
+    // (`tests/protocol/admin_api.js`), beside `mirrors`.
     const DRAWN_ON = {
       getDelegation: ['/admin/delegation/map', '/admin/delegation/chain'],
       getPermissions: ['/admin/delegation/allowed',
@@ -26554,7 +26554,7 @@ class AdminApi {
         }
         // AN UNKNOWN ACTION WHERE THE HELPERS LEFT (#454): the handler's
         // refusal names every action it carries out, helpers included, and
-        // that sentence is what tests/vendored/admin_api.js reads for the
+        // that sentence is what tests/protocol/admin_api.js reads for the
         // parity — so on the management address it would name four actions
         // the document no longer declares there. The sentence is built here
         // from what this address still declares, in the handler's shape.

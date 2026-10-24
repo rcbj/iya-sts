@@ -25,7 +25,7 @@
 //
 // In process, through the two functions: the over-HTTP half — a real sign-in
 // recording it and the portal drawing it — is section f of
-// `tests/vendored/sts_consent_withdrawal.js`.
+// `tests/protocol/sts_consent_withdrawal.js`.
 // ---------------------------------------------------------------------------
 
 delete process.env.CONFIG_FILE;

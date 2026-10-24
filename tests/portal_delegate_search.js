@@ -15,7 +15,7 @@
 // or a consumer provider's sign-in created, which `stsProvisionedBy`, written
 // once at that creation, says. In a child process, the whole stack on a
 // port of its own and a person signed in as the static portal signs in
-// (`tests/vendored/portal_signin.js`):
+// (`tests/protocol/portal_signin.js`):
 //
 //   A. THE STAMP: a federated create and a consumer provider's create write
 //      `federation:<relationship>`; a federated sign-in that reaches a
@@ -79,7 +79,7 @@ function childMain() {
     const personEditor = require(ROOT_DIR + '/ldap/person_editor');
     const scimMap = require(ROOT_DIR + '/scim/scim_map');
     const queries = require(ROOT_DIR + '/persistence/directory_queries');
-    const signin = require(ROOT_DIR + '/tests/vendored/portal_signin');
+    const signin = require(ROOT_DIR + '/tests/protocol/portal_signin');
 
     // Every name carries the run's token, so the search's text finds only
     // what this file made.

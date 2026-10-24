@@ -21,7 +21,7 @@
 //     written in this file, and its key — not the password — pre-authenticates
 //     a real AS-REQ built here with the vendored codec, and opens the AS-REP.
 //     That is `kinit -k` in miniature; the MIT client itself is driven by
-//     `tests/vendored/sts_kerberos_keytab.js`.
+//     `tests/protocol/sts_kerberos_keytab.js`.
 //   * **PRODUCT MODE, IN A CHILD PROCESS**, because the principal database is
 //     built at require time in the process's mode (kerberos_person_keys.js's
 //     reason): the keytab from the right password at the current kvno and no

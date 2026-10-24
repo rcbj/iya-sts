@@ -49,7 +49,7 @@ import errorCodes = require('../common/error_codes');
 import InstanceSlot = require('../common/instance_slot');
 // The key algorithm ids an enrollment may name (#86): the vendored registry,
 // a leaf that requires nothing of this service.
-import keyMaterial = require('../common/vendored/key_material');
+import keyMaterial = require('../common/crypto_impl/key_material');
 
 // THE PROFILE IS DELIBERATELY NOT AN ENUM (#86). It is a closed set, and
 // the handler (`common/cert_enrollment.ts`'s checkProfile()) holds it — and

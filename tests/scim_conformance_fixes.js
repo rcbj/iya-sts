@@ -8,7 +8,7 @@
 // ---------------------------------------------------------------------------
 // THE REGRESSION CHECKS FOR WHAT THE TWO SCIM HARNESSES FOUND (#206).
 //
-// tests/vendored/sts_scim_conformance.js runs python-scim's scim2-tester and
+// tests/protocol/sts_scim_conformance.js runs python-scim's scim2-tester and
 // scim2/test-suite against a running service; this holds each defect they
 // found, in process and over HTTP to /scim/v2 of the default realm, so that a
 // change to scim/ that brings one back fails `npm test` without either

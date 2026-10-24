@@ -41,7 +41,7 @@
 //
 // WHY IN PROCESS: the code on a refusal is recorded and never sent, so over
 // HTTP a refusal and a wrong password are — deliberately — the same answer.
-// `tests/vendored/sts_second_factor_doors.js` drives the five doors over the
+// `tests/protocol/sts_second_factor_doors.js` drives the five doors over the
 // wire against both modes' containers.
 // ===========================================================================
 

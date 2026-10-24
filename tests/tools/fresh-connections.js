@@ -22,7 +22,7 @@
 // balancer, or several clients, do to a cluster.
 //
 // **A PRELOAD, BECAUSE MOST OF THE CLIENTS ARE IN VENDORED FILES.** The jobs
-// under tests/vendored/ are copies of the parent project's and may not be
+// under tests/protocol/ are copies of the parent project's and may not be
 // edited here (tests/CLAUDE.md), and they call `fetch()` and `https.request()`
 // directly rather than through one helper. `attach-admin-token.js` is the
 // precedent for changing what every job's client does without touching a job.
@@ -49,7 +49,7 @@
 // Where the symbol is absent after that (a node whose bundled undici names it
 // differently), this says so at `warn` and falls back to adding
 // `connection: close` to the headers of a plain-object request, which undici
-// reads the same way; `tests/vendored/sts_cluster_alternation.js` is what
+// reads the same way; `tests/protocol/sts_cluster_alternation.js` is what
 // notices if neither took.
 // ===========================================================================
 

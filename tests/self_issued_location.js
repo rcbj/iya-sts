@@ -589,7 +589,7 @@ function didChildMain() {
       const siop = require(ROOT + '/oid4vc/siop');
       const di = require(ROOT + '/oid4vc/vc_data_integrity');
       const stsCrypto = require(ROOT + '/common/crypto');
-      const signin = require(ROOT + '/tests/vendored/portal_signin');
+      const signin = require(ROOT + '/tests/protocol/portal_signin');
       const stamp = String(process.pid);
       const ALICE = 'sid-alice-' + stamp;
       const BOB = 'sid-bob-' + stamp;

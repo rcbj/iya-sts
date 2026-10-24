@@ -52,8 +52,8 @@ const pki = require('../common/pki');
 const realms = require('../common/realms');
 const config = require('../common/config');
 const errorCodes = require('../common/error_codes');
-const keyMaterial = require('../common/vendored/key_material');
-const x509 = require('../common/vendored/x509');
+const keyMaterial = require('../common/crypto_impl/key_material');
+const x509 = require('../common/crypto_impl/x509');
 // What fills `cert_enrollment.setDirectory()`. Without it every entry is
 // "no directory" and every assertion below passes for the wrong reason.
 const ldap = require('../ldap/ldap_server');

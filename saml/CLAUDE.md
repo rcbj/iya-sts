@@ -379,7 +379,7 @@ got exactly right in opposite directions at six call sites.
 
 **ON 2026-08-27 THAT ARGUMENT STOPPED EXISTING, AND THAT — NOT THE LINE COUNT —
 IS WHAT `common/crypto.js` BOUGHT.** Every signer and verifier here now goes
-through one module over `common/vendored/xmldsig.js`, which resolves `ID`,
+through one module over `common/crypto_impl/xmldsig.js`, which resolves `ID`,
 `AssertionID`, `ResponseID` and `RequestID` from the document itself. There is
 no list to be told about, nothing is ever invented, and **there is no longer a
 parameter to get wrong** — `signDocument()` in `saml11_sso.ts` and
@@ -894,7 +894,7 @@ record of the decisions.
   authenticated session (`authn.sessionsOf()`) or with Success and NO assertion,
   and an AttributeQuery omits the AuthenticationStatement
   (`buildSaml11Assertion`'s new `authenticationStatement: false`). The vendored
-  `tests/vendored/sts_saml11.js` asserted the old AuthenticationQuery answer
+  `tests/protocol/sts_saml11.js` asserted the old AuthenticationQuery answer
   about a person who never signed in; the parent has since updated it to ask
   about a user who really signed in.
 * **NO SIGNER PASSED AN ALGORITHM.** `saml.signatureAlgorithm` and
@@ -1282,7 +1282,7 @@ line and the audit row. Until #160 each was `Requester` (or `Responder`) with
 a sentence naming the reason, which neither specification allows. `Requester`
 is kept for a request that is not an artifact resolution at all (not XML, no
 ArtifactResolve or Request, no Artifact). **Owed to the parent project**: its
-`tests/vendored/sts_saml11.js` resolves a per-relying-party artifact at the
+`tests/protocol/sts_saml11.js` resolves a per-relying-party artifact at the
 unscoped `/saml11/responder` and expects a replay to be `samlp:Requester`
 naming the one-shot rule; both now fail here until that copy is changed and
 synced.
@@ -1429,14 +1429,14 @@ whatever entry the Issuer named. Behind `mode.issuesToUnregisteredApplications()
 `tests/unregistered_applications.js` (S1–S5) holds it in both modes.
 
 **The parent project's paired SAML jobs** (decision 2 above) run against a
-development service, where nothing changed. `tests/vendored/sts_saml11.js` (a
+development service, where nothing changed. `tests/protocol/sts_saml11.js` (a
 parent copy) asserts a document is minted for an identifier nobody registered;
 in product that is now a 404, which is owed to the parent.
 
 Tests: `tests/saml_metadata_lifecycle.js` section F (both modes, every
 refusal, the positive product case against a realm anchor — its transport
 stubbed, because product refuses the loopback responder before any
-connection) and `tests/vendored/sts_saml_unregistered.js` over HTTP, in a
+connection) and `tests/protocol/sts_saml_unregistered.js` over HTTP, in a
 product realm and a development realm of one service, with an MDQ responder
 the job serves itself.
 
@@ -1564,7 +1564,7 @@ still denied: `RequestDenied` with `STS-SAML-0112` (risk) or `0100` / `0107`
 `tests/saml_initiation.js` holds all of it over HTTP, risk included (a
 session's risk put in place directly, with `risk.enforceInDevelopment`),
 and runs the risk step-up a second time in product mode (#715).
-**`tests/vendored/sts_idp_initiated_saml.js` is the product-mode
+**`tests/protocol/sts_idp_initiated_saml.js` is the product-mode
 coverage of the rest** (#715): the two switches of both profiles, the
 realm setting, InResponseTo absent, the relying party in the logout
 inventory and the mechanism re-prompt, over the wire in `single-node`
@@ -1575,7 +1575,7 @@ SAML 1.1 flow set the entry's switch on the application they create.
 
 ## EVERY DOCUMENT HERE IS VALIDATED AGAINST THE PUBLISHED SCHEMAS (#188, 2026-09-24)
 
-`tests/vendored/sts_xml_schema_validation.js` makes both profiles emit
+`tests/protocol/sts_xml_schema_validation.js` makes both profiles emit
 everything they emit — the metadata, the Response on each binding with and
 without an EncryptedAssertion, the ArtifactResponse, the error Responses,
 logout in both directions (with an EncryptedID), the federation module's
@@ -1608,7 +1608,7 @@ needs before changing it:
   open XML Encryption. TLS server authentication is a signing use of a key and
   is where every metadata-reading TLS engine looks. Last, so a consumer that
   takes the first signing certificate for XML signatures still takes the XML
-  key (`tests/vendored/sts_xml_schema_validation.js` is one such consumer).
+  key (`tests/protocol/sts_xml_schema_validation.js` is one such consumer).
 * **In BOTH roles**: the IDPSSODescriptor (artifact resolution) and the
   AttributeAuthorityDescriptor (the attribute query), because a service
   provider looks up the keys of the role whose endpoint it is calling.

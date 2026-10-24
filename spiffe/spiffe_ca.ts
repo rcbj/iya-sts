@@ -38,10 +38,10 @@
 // and would have interoperated; it would simply not have been what a client
 // author sees in front of a real SPIRE deployment.
 //
-// **Do not edit the four vendored files** (they are in `common/vendored/`). A
+// **Do not edit the four vendored files** (they are in `common/crypto_impl/`). A
 // change here that is not also made there is a fork nobody else can consume,
 // and nothing checks these four for drift automatically — see
-// `common/vendored/CLAUDE.md`.
+// `common/crypto_impl/CLAUDE.md`.
 //
 // ---------------------------------------------------------------------------
 // WHAT IS GENERATED PER START, AND WHAT IS NOT ANY MORE (2026-09-11)
@@ -121,8 +121,8 @@ import config = require('../common/config');
 import errorCodes = require('../common/error_codes');
 import cacheRegistry = require('../common/cache_registry');
 import spiffeId = require('./spiffe_id');
-import keys = require('../common/vendored/key_material');
-import x509 = require('../common/vendored/x509');
+import keys = require('../common/crypto_impl/key_material');
+import x509 = require('../common/crypto_impl/x509');
 
 // ---------------------------------------------------------------------------
 // THE SETTINGS, READ WHERE THEY ARE USED.
@@ -1234,7 +1234,7 @@ class SpiffeCa {
                // differ: the leaf was signed by the rebuilt SPIFFE Issuing CA
                // and travelled with the old one, and every client failed with
                // `unable to verify the first certificate`
-               // (tests/vendored/sts_spiffe_grpc.js section 7).
+               // (tests/protocol/sts_spiffe_grpc.js section 7).
                chainPem: made.issuerChainPem.slice(),
                chainDer: made.issuerChainDer.slice() };
     }
@@ -2089,7 +2089,7 @@ class SpiffeCa {
       subject: opts.subject || this.svidSubject(),
       publicKeyPem: publicPem,
       // **NO PROFILE, AND THAT IS SAFE FOR A REASON WORTH WRITING DOWN.** In
-      // `common/vendored/x509.js` a profile decides exactly one thing at
+      // `common/crypto_impl/x509.js` a profile decides exactly one thing at
       // issuance — a DEFAULT LIFETIME, used only when the caller supplies
       // neither `notBefore` nor `notAfter`. It contributes no extensions. This
       // caller supplies both, so naming one would change nothing and would

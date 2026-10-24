@@ -18,7 +18,7 @@ DID Core with DIF domain linkage.
 | `vc_status_codec.ts` | Their encodings: the compressed byte array, CBOR, COSE_Sign1, the JWT and CWT tokens, and the W3C bitstring (rule 3as). A pure library. |
 | `vc_data_integrity.ts` | The holder's Data Integrity proof on a presentation (`ecdsa-jcs-2019`, `eddsa-jcs-2022`, `mldsa44-jcs-2024`, `slhdsa128-jcs-2024`), `did:jwk` and `did:key` (rule 3at). A pure library — and since 2026-09-22 (#43) also the signer and verifier of a GNAP zcap token's JCS proof (`gnap/token_zcap.ts`), through `signDocument()`, `multikeyOf()` and a caller-supplied `resolveVerificationMethod`; and since #195/#196 the RDFC suites (`eddsa-rdfc-2022`, `ecdsa-rdfc-2019`), `ecdsa-sd-2023` (through `vc_ecdsa_sd.ts`), proof sets and chains (`verifyAllProofs()`) and the realm's own keys as did:keys (`realmKeyFor()`) — asked for by name, never the default. |
 | `vc_did.ts` | `did:web`, `did:jwk`, and the domain linkage document. |
-| `vc_jsonld.ts` | The CLOSED JSON-LD loader (the contexts in `contexts/` and `../common/vendored/contexts/`, each held to its SHA-256; nothing is fetched) and RDFC-1.0 over it (#194-#196). A library. |
+| `vc_jsonld.ts` | The CLOSED JSON-LD loader (the contexts in `contexts/` and `../common/crypto_impl/contexts/`, each held to its SHA-256; nothing is fetched) and RDFC-1.0 over it (#194-#196). A library. |
 | `vc_data_model.ts` | The VC Data Model 2.0 and 1.1 MUSTs a credential or presentation is refused for (#194). A library. |
 | `vc_ecdsa_sd.ts` | `ecdsa-sd-2023`: base proofs, derived proofs and their verification, the specification's own steps (#196). A library `vc_data_integrity.ts` dispatches to. |
 | `vc_jose_cose.ts` | VC-JOSE-COSE's envelopes: `vc+jwt`, `vc+sd-jwt`, `vc+cose` and the `vp` forms, secured and verified (#198). A library. |
@@ -675,10 +675,10 @@ list.
 
 **The parent project's wallet has not been RUN against this door**, and cannot
 be from here: its presentation code (`client/src/sd_jwt_vp.js`,
-`vc_presentation_*.js`) is not among the files vendored into `tests/vendored/`,
+`vc_presentation_*.js`) is not among the files vendored into `tests/protocol/`,
 so nothing in this repository can load it. What IS held
 (`tests/oid4vp_sign_in_formats.js` section 5) is its SHAPES, built with the
-vendored `tests/vendored/jws.js` that wallet signs with: its Key Binding JWT
+vendored `tests/protocol/jws.js` that wallet signs with: its Key Binding JWT
 and its VP JWT sign in, and its `ldp_vc` envelope — a bare derived proof — is
 refused by name. Three things that wallet would need before it could drive
 this door are recorded here rather than guessed at: it reads only the FIRST
@@ -811,7 +811,7 @@ claim or bound to a credential (phase 2). All four are built:
 `tests/siop.js` holds the library and the request builder in process —
 since #693 also the pin, provenance, the per-mode legacy rule, the
 enrolment-only fetch, the internal-address refusal in product and the
-by-value refusals (sections 5, 8-11); `tests/vendored/sts_siop.js` (local)
+by-value refusals (sections 5, 8-11); `tests/protocol/sts_siop.js` (local)
 drives the sign-in, both enrolments, the refusals and the bar door's
 `form_post` over HTTP, and the provenance and the enrolment's audit row.
 **What has no test**: a did:web enrolled by proof end to end over HTTP —
@@ -930,7 +930,7 @@ the pin, or a key-named binding beside the DID: a design of its own.
 their five refusals, the metadata, each format's output, the batch, every
 refusal above including a DID removed after the token and during a deferral,
 and the sign-in in every format. **What has no test**: an HTTP job
-(`tests/vendored/`, `local: true`), and a real wallet sending a `kid` proof.
+(`tests/protocol/`, `local: true`), and a real wallet sending a `kid` proof.
 
 ## THE x509 CLIENT IDENTIFIER PREFIXES: `x509_san_dns` AND `x509_hash` (#230, 2026-09-26)
 
@@ -1000,7 +1000,7 @@ the leaf, and `x509_hash:<b64url SHA-256 of the leaf's DER>` must be its hash.
   pool. The setting's description says so.
 
 `tests/oid4vp_x509_client_id.js` holds this in process.
-`tests/vendored/sts_oid4vp_x509.js` (local) checks each prefix over HTTP as a
+`tests/protocol/sts_oid4vp_x509.js` (local) checks each prefix over HTTP as a
 wallet does, using only node's `crypto`, and refuses the mismatches.
 
 **What the conformance driver (#187) sets.** The realm is set as for the
@@ -1140,7 +1140,7 @@ second catalogue. What is more than a number, and what
   RFC 9068 section 2.2 requires `client_id`, and section 6.1 lets the wallet
   omit it. The scope policy, the lifetime and the token registry still read the
   unnamed client, because giving them a defined value would judge an
-  unregistered client as if it were one. `tests/vendored/sts_oid4vci_preauth_subject.js`
+  unregistered client as if it were one. `tests/protocol/sts_oid4vci_preauth_subject.js`
   holds both.
 * **THE `wallet` PARAMETER IS AN OPEN REDIRECT IN PRODUCT** and is refused unless
   it is the configured wallet or listed in `oid4vci.allowedWalletUrls` /
@@ -1538,7 +1538,7 @@ bbs-2023 suite at the adapter (no ticket asks for its suite).
 
 `tests/vc_jsonld.js`, `tests/vc_rdfc_suites.js`, `tests/vc_data_model.js`,
 `tests/vc_jose_cose.js` and `tests/vc_api.js` hold the libraries in process;
-the six `tests/vendored/sts_*_suite.js` jobs run the W3C suites
+the six `tests/protocol/sts_*_suite.js` jobs run the W3C suites
 (`tests/CLAUDE.md`, *The W3C VC and DID suites*).
 
 ## THE DEMONSTRATION LEFT THE SERVICE (#594, 2026-10-12)

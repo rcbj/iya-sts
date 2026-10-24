@@ -546,7 +546,7 @@ class CryptoMetadataDocument {
   // (`saml/saml2_sso.ts`, #42 D8) to say where this document is. It was in
   // no schema at all until then, so a validator loading this one to check
   // that extension found nothing to check it against —
-  // tests/vendored/sts_xml_schema_validation.js loads this file for exactly
+  // tests/protocol/sts_xml_schema_validation.js loads this file for exactly
   // that and refused the metadata until the declaration was here.
   /**
    * Returns the XSD served at `/crypto/metadata.xsd`, which also declares the

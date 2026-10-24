@@ -13,7 +13,7 @@
 // relationship's encryption key — issued under the realm's Intermediate,
 // rotated with a grace period, published, and decrypted with under exactly
 // the algorithms the relationship accepts — and `common/crypto.js` performs
-// the XML Encryption and JWE underneath. `tests/vendored/
+// the XML Encryption and JWE underneath. `tests/protocol/
 // sts_federation_encryption.js` drives the sign-ins over HTTP with an
 // independent encryptor; this file pins what is cheaper at the function:
 //
@@ -72,7 +72,7 @@ function childMain() {
     const errorCodes = require(ROOT + '/common/error_codes');
     const stsCrypto = require(ROOT + '/common/crypto');
     const keystore = require(ROOT + '/common/keystore');
-    const x509 = require(ROOT + '/common/vendored/x509');
+    const x509 = require(ROOT + '/common/crypto_impl/x509');
     const audit = require(ROOT + '/common/audit');
     require(ROOT + '/ldap/ldap_server');
     const actions = require(ROOT + '/admin-core/admin_actions');

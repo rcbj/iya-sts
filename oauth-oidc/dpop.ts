@@ -42,7 +42,7 @@
 //     an OID4VCI credential proof of possession, say, which this very workflow
 //     also signs — is accepted as a DPoP proof.
 //
-// Which is why tests/vendored/sts_dpop.js removes each of those checks in turn
+// Which is why tests/protocol/sts_dpop.js removes each of those checks in turn
 // and requires that the suite notices.
 // ---------------------------------------------------------------------------
 

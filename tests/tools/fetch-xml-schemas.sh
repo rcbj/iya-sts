@@ -12,7 +12,7 @@
 # output directory, and REFUSES (exit 1, naming the file) when one does not
 # hash to the digest written there. Then it derives the one file the
 # published set cannot be used without (below), and copies catalog.xml and
-# all.xsd beside them. tests/vendored/sts_xml_schema_validation.js validates
+# all.xsd beside them. tests/protocol/sts_xml_schema_validation.js validates
 # with `xmllint --nonet` against that directory, so nothing is fetched while
 # the suite runs: this runs when the tests image is BUILT (tests/Dockerfile),
 # and by hand for a run outside that image.

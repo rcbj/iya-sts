@@ -25,7 +25,7 @@
 // **IT DOES NOT LIST ENDPOINTS, AND THAT IS THE ONE RULE TO KEEP.** `GET
 // /admin/sts-metadata` builds that list by walking the running Express router,
 // so it cannot go stale by omission, and this repository's own
-// `tests/vendored/sts_metadata.js` fails on drift in either direction. A
+// `tests/protocol/sts_metadata.js` fails on drift in either direction. A
 // hand-written list of highlights here would be a second, unchecked copy of it
 // — wrong within a month, on the page most likely to be read first and least
 // likely to be re-read. The documentation site makes the same argument in
@@ -53,7 +53,7 @@
 // important thing that could go wrong here. With no image the page is drawn
 // without one and `/logo.png` answers 404 with a sentence saying why, which is
 // also what keeps that route honest for the link check in
-// `tests/vendored/sts_metadata.js`: it fails on Express's own `Cannot GET`, so
+// `tests/protocol/sts_metadata.js`: it fails on Express's own `Cannot GET`, so
 // an endpoint answering for itself is the distinction it is looking for.
 //
 // ---------------------------------------------------------------------------
@@ -511,7 +511,7 @@ class Home {
       if (!logoBytes) {
         // 404 in this service's own words rather than Express's. The difference
         // is load-bearing for the link check in the parent project's
-        // tests/vendored/sts_metadata.js, which fails on `Cannot GET` and
+        // tests/protocol/sts_metadata.js, which fails on `Cannot GET` and
         // passes on an endpoint answering for itself — and it is the more
         // useful answer anyway.
         errorCodes.mark(res, 'STS-CORE-0038');

@@ -728,7 +728,7 @@ const REALM_BUILDS_ITS_OWN = '. A TRUST REALM may carry it even so: a ' +
 // URIs, OID4VP's `dc sd-jwt` from a form-decoded `+`) both are listed.
 // ---------------------------------------------------------------------------
 
-// common/vendored/key_material.js's keyAlgIds(), in its order.
+// common/crypto_impl/key_material.js's keyAlgIds(), in its order.
 const PKI_KEY_ALGORITHMS = [
   'rsa-2048', 'rsa-3072', 'rsa-4096', 'ec-p256', 'ec-p384', 'ec-p521',
   'ed25519',
@@ -748,7 +748,7 @@ const PKI_KEY_ALGORITHMS = [
   'ml-kem-512', 'ml-kem-768', 'ml-kem-1024'
 ];
 
-// common/vendored/x509.js's SIG_ALGS — every id sigAlg() resolves — in that
+// common/crypto_impl/x509.js's SIG_ALGS — every id sigAlg() resolves — in that
 // module's SIG_ALG_ORDER. The two SHA-1 ids stay: the row's `onlyWhile`
 // makes them development-only, which is a different refusal from this one.
 const PKI_SIGNATURE_ALGORITHMS = [
@@ -6585,7 +6585,7 @@ const SETTINGS = [
                  'issue signs a client assertion that somebody else\'s OAuth ' +
                  'library has to verify, and RS256 is the one algorithm ' +
                  'every such library has. The list is read from ' +
-                 'common/vendored/key_material.js — the module that ' +
+                 'common/crypto_impl/key_material.js — the module that ' +
                  'generates the key — so a value it does not know is refused ' +
                  'at the build with the list beside it.' },
   { key: 'pki.signatureAlgorithm', group: 'PKI',
@@ -6722,7 +6722,7 @@ const SETTINGS = [
                  'CA in its fifth year, and an operator who asked for a year ' +
                  'should get eleven months rather than an error about ' +
                  'arithmetic. The tiers\' own lifetimes come from the ' +
-                 'certificate profiles in common/vendored/x509.js — twenty ' +
+                 'certificate profiles in common/crypto_impl/x509.js — twenty ' +
                  'years, ten and five — and are overridable on the form and ' +
                  'by the three pki.*LifetimeYears rows below.' },
 
@@ -19822,7 +19822,7 @@ function describe(setting) {
     // WHETHER A REALM MAY CARRY IT, reported rather than left to be discovered
     // by a refusal. A management API that describes a setting as `editable`
     // and then refuses it under a realm prefix is telling half the truth, and
-    // it is the half a caller acts on: `tests/vendored/
+    // it is the half a caller acts on: `tests/protocol/
     // sts_admin_api_operations.js` walks this table for a runtime integer to
     // drive a realm override with, and picked `workers.count` (a setting
     // removed by #363) the day it was added — a setting a realm may not

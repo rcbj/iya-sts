@@ -52,9 +52,9 @@ const http = require('http');
 const https = require('https');
 const childProcess = require('child_process');
 // The run-time CA the HTTP jobs use, built by the vendored PKI encoder
-// (`common/vendored/x509.js`): one certificate encoder, and no key material
+// (`common/crypto_impl/x509.js`): one certificate encoder, and no key material
 // on disk in the repository (#171).
-const testCa = require('./vendored/outbound_test_ca');
+const testCa = require('./protocol/outbound_test_ca');
 
 const log = require('bunyan').createLogger({ name: 'outbound_tls',
   level: process.env.LOG_LEVEL || 'info' });

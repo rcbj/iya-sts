@@ -20,7 +20,7 @@
 // `script-src 'none'` (every page of it but `/admin/api-explorer`), so a page
 // of that shape is not available here at any price. What is mirrored is the
 // MODEL — the same three CA tiers, the same profiles, the same encoder, from
-// `common/vendored/x509.js`, which is that project's own file byte-identical —
+// `common/crypto_impl/x509.js`, which is that project's own file byte-identical —
 // and what is different is that every choice is a form field and every
 // computation is on the server.
 //
@@ -303,7 +303,7 @@ const SCOPED_ACTIONS = ['build-scope', 'reissue-use-case', 'recertify',
 // The count in the unknown-action sentence, spelt out. It used to index a
 // five-word array, which answered `undefined` the moment this list grew past
 // five — and that sentence is matched by
-// `tests/vendored/sts_admin_api_operations.js` on every action resource this
+// `tests/protocol/sts_admin_api_operations.js` on every action resource this
 // API declares, so it would have turned that check off for this one with
 // nothing failing.
 const COUNT_WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six',
@@ -608,9 +608,9 @@ class PkiAdmin {
   // This console's action functions answer `{ ok: false, errors: [...] }` and
   // `admin.respondToAction()` renders the array; `/admin-api` sends the whole
   // object back as JSON. **`errors` is the half a TEST reads** —
-  // `tests/vendored/sts_admin_api_operations.js` matches the unknown-action
+  // `tests/protocol/sts_admin_api_operations.js` matches the unknown-action
   // sentence out of it on every action resource this API declares, and
-  // `tests/vendored/admin_api.js` reads the same sentence to check that every
+  // `tests/protocol/admin_api.js` reads the same sentence to check that every
   // console action has an operation. A handler answering with a `why` alone
   // turns both of those off for its own resource with nothing failing, which is
   // what the first version of this file did and what went red on its first run.
@@ -2423,9 +2423,9 @@ class PkiAdmin {
     // ---------------------------------------------------------------------
     // **THE REFUSAL NAMES EVERY ACTION AND CARRIES AN `errors` ARRAY, AND BOTH
     // HALVES ARE READ BY A TEST RATHER THAN BEING STYLE.**
-    // `tests/vendored/sts_admin_api_operations.js` matches
+    // `tests/protocol/sts_admin_api_operations.js` matches
     // `Unknown action "x". <prose>: a, b, c.` out of `errors` on every action
-    // resource this API declares, and `tests/vendored/admin_api.js` reads the
+    // resource this API declares, and `tests/protocol/admin_api.js` reads the
     // same sentence to check that every console action has an operation over
     // there — so a handler that phrased it its own way, or answered with a
     // `why` alone, would turn that parity check off for this resource with

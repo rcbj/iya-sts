@@ -62,7 +62,7 @@ async function childMain(packageRoot) {
   const ca = require(p('spiffe/spiffe_ca'));
   const config = require(p('common/config'));
   const pki = require(p('common/pki'));
-  const x509 = require(p('common/vendored/x509'));
+  const x509 = require(p('common/crypto_impl/x509'));
   const jwt = require('jsonwebtoken');
   const pkijs = require('pkijs');
   const asn1js = require('asn1js');

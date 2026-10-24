@@ -213,7 +213,7 @@ fi
 manifestJobs() {
   docker run --rm -e EXCLUDE="$1" "${TESTS_IMAGE}" node -e '
     const skip = new Set(process.env.EXCLUDE.split(",").filter(Boolean));
-    process.stdout.write(require("./tests/vendored/MANIFEST.js").JOBS
+    process.stdout.write(require("./tests/protocol/MANIFEST.js").JOBS
       .map(function (j) { return j.file; })
       .filter(function (f) { return !skip.has(f); }).join(","));'
 }

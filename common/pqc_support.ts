@@ -71,7 +71,7 @@ import asn1js = require('asn1js');
 // JOSE composite names the X.509 registry does not use.
 import pqJose = require('./pq_jose');
 // The vendored registry: every post-quantum algorithm by id, name and OID.
-import pqcX509 = require('./vendored/pqc_x509');
+import pqcX509 = require('./crypto_impl/pqc_x509');
 // The JWE key establishment table (#82), for the JOSE KEM names — ML-KEM's
 // key-wrapping forms and the HPKE suites — the X.509 registry does not use.
 import stsCrypto = require('./crypto');

@@ -52,7 +52,7 @@ const DEFERRED = ['/node_modules/@grpc/grpc-js/build/src/index.js',
                   '/node_modules/@grpc/proto-loader/',
                   '/node_modules/protobufjs/',
                   '/node_modules/jsonld/',
-                  '/common/vendored/bbs2023.js'];
+                  '/common/crypto_impl/bbs2023.js'];
 
 function childScript() {
   log.debug("Entering childScript().");

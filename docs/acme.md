@@ -204,7 +204,7 @@ profile; `certbot renew` keeps it, consults `renewalInfo` (RFC 9773), and
 reissues the same names. certbot has **no key rollover** (RFC 8555 section
 7.3.5) at all; lego below does. The suite drives certbot 5.8.0 through
 registration, issuance, renewal, revocation, `update_account` and
-`unregister` (`tests/vendored/sts_acme_certbot.js`).
+`unregister` (`tests/protocol/sts_acme_certbot.js`).
 
 ### lego
 
@@ -224,7 +224,7 @@ are refused (`malformed`): the realm sets a certificate's lifetime. A
 registration refused once leaves lego holding a key with no account, and it
 then asks for the account BY that key (`onlyReturnExisting`) rather than
 registering — use a fresh `--path`. The suite drives lego v5.5.2
-(`tests/vendored/sts_acme_lego.js`).
+(`tests/protocol/sts_acme_lego.js`).
 
 ### acme.sh
 

@@ -11,7 +11,7 @@ operator does when delivery fails. Each recipe is given twice: once as steps
 in the **admin console** and once as **Management API** calls.
 
 The values come from this repository's test jobs, and each recipe names the
-job it is taken from. Most are in `tests/vendored/` and run against a service
+job it is taken from. Most are in `tests/protocol/` and run against a service
 in both development and product mode. The jobs add a run-specific suffix to
 every name; it is left off here. Change the identifiers, URLs and secrets to
 your own.

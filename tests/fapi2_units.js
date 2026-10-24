@@ -23,7 +23,7 @@
 //   I. The metadata: code, PAR required, the 5.4.1 algorithms (DPoP's too).
 //   J. PAR's client authentication and the assertion's string aud.
 //
-// `tests/vendored/sts_fapi2.js` holds it over the wire.
+// `tests/protocol/sts_fapi2.js` holds it over the wire.
 // ===========================================================================
 
 const childProcess = require('child_process');

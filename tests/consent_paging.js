@@ -26,7 +26,7 @@
 //   5. `q` NARROWING THE RECORDED HALF ONLY, with `matched` and the paging
 //      counting the narrowed list.
 //   6. A WALK OF EVERY PAGE seeing every row once — the reading
-//      `tests/vendored/sts_consent.js` now does.
+//      `tests/protocol/sts_consent.js` now does.
 //
 // In process, through the function both doors call: filling the register over
 // HTTP would be a sign-in and a consent screen per row. The markup — that the

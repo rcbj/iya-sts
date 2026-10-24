@@ -9,7 +9,7 @@
 // A gRPC CALL WAITS FOR THE CLUSTER'S READ BARRIER BEFORE IT IS ANSWERED
 // (2026-09-24).
 //
-// `tests/vendored/sts_spiffe_broker.js` in `cluster` mode: a broker removed
+// `tests/protocol/sts_spiffe_broker.js` in `cluster` mode: a broker removed
 // through the balancer on node B was still answered on its next call to node
 // A's Broker listener, because the barrier that makes a node apply what
 // another committed before serving a request (`cluster/cluster_barrier.js`,

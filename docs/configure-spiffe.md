@@ -13,7 +13,7 @@ steps in the **admin console** (`/admin`) and once as calls to the
 **Management API** (`/admin-api`).
 
 **The values come from this repository's own test jobs**, and each recipe
-names the job it is taken from. The jobs in `tests/vendored/` run against a
+names the job it is taken from. The jobs in `tests/protocol/` run against a
 service over the network, in development and in product mode. The jobs in
 `tests/` run in process and bind sockets no stack publishes. Change the
 identifiers, addresses and trust domains to your own.

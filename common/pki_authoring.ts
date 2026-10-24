@@ -121,10 +121,10 @@ import stsCrypto = require('./crypto');
 // refusal returned to a caller carries its code the same way.
 import errorCodes = require('./error_codes');
 // The debugger's own PKI code, byte-identical. DO NOT EDIT THEM HERE — see
-// `common/vendored/CLAUDE.md`. One encoder for this page and for that
+// `common/crypto_impl/CLAUDE.md`. One encoder for this page and for that
 // project's, which is the whole point of vendoring them.
-import x509 = require('./vendored/x509');
-import keyMaterial = require('./vendored/key_material');
+import x509 = require('./crypto_impl/x509');
+import keyMaterial = require('./crypto_impl/key_material');
 import InstanceSlot = require('./instance_slot');
 
 // ---------------------------------------------------------------------------
@@ -485,7 +485,7 @@ class PkiAuthoring {
         // `apply-profile` then `issue-certificate` with the draft in between
         // turned every cleared box ON, and the first thing that produced was
         // "reuse the key pair below is ticked and the boxes are empty" about a
-        // caller that never ticked it. `tests/vendored/sts_pki_workbench.js`
+        // caller that never ticked it. `tests/protocol/sts_pki_workbench.js`
         // found it on its first run.
         if (typeof raw === 'boolean') {
           out[field.name] = raw;
@@ -2041,7 +2041,7 @@ class PkiAuthoring {
   // ---------------------------------------------------------------------------
   // EXPORT: PEM, DER, a JWK set or a password-protected PKCS#12.
   //
-  // **THE EXPORT IS `common/vendored/key_material.js`'s, NOT A SECOND ONE** —
+  // **THE EXPORT IS `common/crypto_impl/key_material.js`'s, NOT A SECOND ONE** —
   // the same function `/admin/keys` uses, which is what makes a `.p12` from
   // this pane and one from that page import identically into keytool, OpenSSL,
   // Windows and macOS.

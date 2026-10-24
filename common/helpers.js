@@ -66,7 +66,7 @@ const bunyan = require("bunyan");
 // hand rather than through `common/lazy_module.ts`, because this file is in
 // the parent project's Kerberos COPY closure (kerberos/CLAUDE.md) and a new
 // require here would add that file to it.
-/** @type {typeof import('./vendored/bbs2023.js') | null} */
+/** @type {typeof import('./crypto_impl/bbs2023.js') | null} */
 let bbs2023Loaded = null;
 // ---------------------------------------------------------------------------
 // THE ONE PLACE THIS SERVICE SIGNS, VERIFIES, ENCRYPTS AND DECRYPTS, since
@@ -132,18 +132,18 @@ const log = bunyan.createLogger({ name: 'sts',
 /**
  * Returns the vendored BBS suite, requiring it the first time (#348).
  *
- * @returns {typeof import('./vendored/bbs2023.js')} the suite
+ * @returns {typeof import('./crypto_impl/bbs2023.js')} the suite
  */
 function bbs2023Suite() {
   log.debug("Entering bbs2023Suite().");
   if (!bbs2023Loaded) {
     try {
-      bbs2023Loaded = require('./vendored/bbs2023.js');
+      bbs2023Loaded = require('./crypto_impl/bbs2023.js');
     } catch (e) {
       // Thrown on to the caller, as the top-level require's failure was
       // thrown at start; logged first, because it now happens mid-request.
       log.error(errorCodes.tag('STS-CORE-0140') + 'helpers: ' +
-                'common/vendored/bbs2023.js, required at first use, did ' +
+                'common/crypto_impl/bbs2023.js, required at first use, did ' +
                 'not load: ' + ((e && e.message) || e));
       log.debug("Leaving bbs2023Suite(). Threw.");
       throw e;
@@ -1382,7 +1382,7 @@ function certifyLater(realmId, keys) {
 // **ONLY THE PUBLIC JWKS ARE HANDED OVER.** `pki.certifyPqKeys()` reads `alg`
 // and `publicJwk` and nothing else, and passing a list without the private
 // bytes makes that a property of the call rather than of the callee's manners —
-// `common/vendored/CLAUDE.md`'s rule about this service's post-quantum keys and
+// `common/crypto_impl/CLAUDE.md`'s rule about this service's post-quantum keys and
 // the certificate encoder is about exactly that boundary.
 // ---------------------------------------------------------------------------
 function certifyPqLater(realmId, pqKeys) {
@@ -2291,7 +2291,7 @@ function lazyKeySet(realmId, stored) {
   // or, when it had none, the keystore's (store or sibling) the first time a
   // read finds them there. A request worker whose set was built BEFORE
   // another process made the groups must still see them: the single-node
-  // run of tests/vendored/sts_signer_groups.js found the JWKS it served
+  // run of tests/protocol/sts_signer_groups.js found the JWKS it served
   // without them for good when this was read once, at construction.
   const groupsFrom = function (rows) {
     log.debug("Entering groupsFrom().");

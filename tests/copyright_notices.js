@@ -21,9 +21,9 @@
 //
 // REUSE-IgnoreEnd
 //
-// and everything that cannot (JSON, Markdown, data), the vendored copies that
-// may not be edited here, and the third-party material are declared in
-// REUSE.toml. LICENSE.md is the reader's half.
+// and everything that cannot (JSON, Markdown, data), the MIT-licensed source
+// snapshots, and third-party material are declared in REUSE.toml. LICENSE.md
+// is the reader's half.
 //
 // Four claims:
 //
@@ -31,11 +31,8 @@
 //      lines within its first few lines — a new file without them fails here,
 //      which is the only thing that keeps the rule true after the day it was
 //      applied;
-//   2. no file that may NOT be edited here was given one — the parent
-//      project's byte-identical copies (common/vendored/, the eight Kerberos
-//      codec files, the non-local tests/vendored/ jobs) and the third-party
-//      trees, since a header added to a copy is overwritten by the next sync
-//      and fails the parent's byte-equality test in the meantime;
+//   2. no third-party file was given a project header; MIT-licensed snapshots
+//      remain MIT even though this repository maintains them independently;
 //   3. every licence REUSE.toml or a header names has its text in LICENSES/;
 //   4. every third-party path REUSE.toml names still matches a file, so a
 //      tree that moves does not leave its licence declared for nothing.
@@ -71,51 +68,36 @@ const SKIP_PATHS = ['.claude', 'node-ldapjs', 'debugger/embedded',
                     'tests/report', 'tests/vectors', 'data', 'apidocs',
                     'rust/target'];
 
-// Trees this repository may not edit, and which therefore carry no header of
-// their own: REUSE.toml declares them.
-const NOT_EDITED_HERE = ['common/vendored/', 'spiffe/protos/',
+// Third-party trees that carry their own license metadata and are maintained
+// upstream: REUSE.toml declares them.
+const THIRD_PARTY = ['spiffe/protos/',
                          'xacml/conformance/', 'admin-ui/natural_earth/'];
-const KERBEROS_COPIES = ['kerberos/krb5_primitives.js',
-                         'kerberos/krb5_asn1.js', 'kerberos/krb5_crypto.js',
-                         'kerberos/krb5_messages.js', 'kerberos/krb5_ndr.js',
-                         'kerberos/krb5_pac.js', 'kerberos/krb5_gss.js',
-                         'kerberos/krb5_spnego.js'];
+const MIT_SNAPSHOTS = ['common/crypto_impl/', 'tests/protocol/',
+  'kerberos/krb5_primitives.js', 'kerberos/krb5_asn1.js',
+  'kerberos/krb5_crypto.js', 'kerberos/krb5_messages.js',
+  'kerberos/krb5_ndr.js', 'kerberos/krb5_pac.js',
+  'kerberos/krb5_gss.js', 'kerberos/krb5_spnego.js'];
 
 // Which files can carry a comment, and so must carry the header.
 const COMMENTED = new Set(['js', 'ts', 'cjs', 'mjs', 'java', 'c', 'php',
                            'sql', 'sh', 'py', 'tf', 'hcl', 'yml', 'yaml',
                            'cfg', 'conf', 'tfvars', 'rs']);
 
-function foreignVendoredJobs() {
-  log.debug("Entering foreignVendoredJobs().");
-  const manifest = require('./vendored/MANIFEST.js');
-  const out = new Set();
-  manifest.allFiles().forEach(function (f) {
-    if (f.source === 'tests') {
-      out.add('tests/vendored/' + f.rel);
-    }
+function isThirdParty(rel) {
+  log.debug("Entering isThirdParty().");
+  const answer = THIRD_PARTY.some(function (d) {
+    return rel.indexOf(d) === 0;
   });
-  log.debug("Leaving foreignVendoredJobs().");
-  return out;
+  log.debug("Leaving isThirdParty().");
+  return answer;
 }
 
-// This service's OWN files inside `common/vendored/` (#363, 2026-09-30):
-// they stopped being copies of the parent's, so they carry a header like
-// every other file this repository writes (`common/vendored/CLAUDE.md`).
-const OWNED_IN_VENDORED = ['common/vendored/pqc.js',
-                           'common/vendored/pqc_x509.js',
-                           'common/vendored/xmldsig.js'];
-
-function notEditedHere(rel, foreign) {
-  log.debug("Entering notEditedHere().");
-  if (OWNED_IN_VENDORED.indexOf(rel) >= 0) {
-    log.debug("Leaving notEditedHere(). Owned since #363.");
-    return false;
-  }
-  const answer = NOT_EDITED_HERE.some(function (d) {
-    return rel.indexOf(d) === 0;
-  }) || KERBEROS_COPIES.indexOf(rel) >= 0 || foreign.has(rel);
-  log.debug("Leaving notEditedHere().");
+function isMitSnapshot(rel) {
+  log.debug("Entering isMitSnapshot().");
+  const answer = MIT_SNAPSHOTS.some(function (p) {
+    return p.slice(-1) === '/' ? rel.indexOf(p) === 0 : rel === p;
+  });
+  log.debug("Leaving isMitSnapshot().");
   return answer;
 }
 
@@ -230,11 +212,9 @@ function patternToRegExp(pattern) {
 
 module.exports = {
   name: 'copyright_notices',
-  describe: 'every source file this repository owns carries its SPDX ' +
-    'copyright and licence lines; the vendored and third-party files ' +
-    'carry none, and REUSE.toml and LICENSES/ cover them',
+    describe: 'source files carry their SPDX headers or declared MIT / ' +
+    'third-party license metadata',
   run: function run(t) {
-    const foreign = foreignVendoredJobs();
     const files = walk();
     const missing = [];
     const edited = [];
@@ -244,12 +224,13 @@ module.exports = {
         return;
       }
       const header = headerOf(rel);
-      if (notEditedHere(rel, foreign)) {
+      if (isThirdParty(rel)) {
         if (header.any) {
           edited.push(rel);
         }
         return;
       }
+      if (isMitSnapshot(rel)) return;
       owned += 1;
       if (!header.owner || !header.licence) {
         missing.push(rel);
@@ -264,7 +245,7 @@ module.exports = {
         (missing.length > 20 ? ' … and ' + (missing.length - 20) + ' more'
                              : ''));
     t.check(edited.length === 0,
-      'no file that may not be edited here was given a header',
+      'third-party source files were not given this project\'s header',
       edited.join(', '));
 
     const annotations = reuseToml();

@@ -11,7 +11,7 @@ request a client then sends. Each recipe is given twice, once as steps in the
 (`/admin-api`).
 
 **The values come from this repository's own test jobs** in
-`tests/vendored/`, and each recipe names the job it is taken from. Those jobs
+`tests/protocol/`, and each recipe names the job it is taken from. Those jobs
 run against a service in both development and product mode, so the values are
 known to work in both. Change the identifiers, URLs and secrets to your own.
 

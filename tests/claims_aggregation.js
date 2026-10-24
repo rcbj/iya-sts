@@ -7,7 +7,7 @@
 //
 // ---------------------------------------------------------------------------
 // OPENID CONNECT CLAIMS AGGREGATION (#147), IN PROCESS: what
-// `tests/vendored/sts_claims_aggregation.js` cannot reach over HTTP — the
+// `tests/protocol/sts_claims_aggregation.js` cannot reach over HTTP — the
 // CONSUMING side (`resolve()`, which a federation sign-in calls), a source
 // from a provider this realm never registered, a JWT about somebody else, a
 // refresh, sealing, and a setup flow started by another person — against a

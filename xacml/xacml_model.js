@@ -17,7 +17,7 @@
 // a policy tree, and the decision values a PDP is allowed to produce.
 //
 // THE RULE THIS DIRECTORY IS BUILT ON, and it is the same argument
-// `common/vendored/xmldsig.js` makes about canonicalization one layer down: a
+// `common/crypto_impl/xmldsig.js` makes about canonicalization one layer down: a
 // GRAMMAR IS A READING, and three readings of XACML would be three chances to
 // disagree with the PDP at the far end. So there is one model. `xacml_xml.js`
 // reads XML into it, `xacml_json.js` reads and writes the JSON Profile,

@@ -60,7 +60,7 @@ resource that does not exist (which proves the route is registered) from
 Express's own `Cannot GET /path` for an unregistered one.
 
 It also reports **drift**, in six arrays, and this repository's own
-`tests/vendored/sts_metadata.js` fails on all six:
+`tests/protocol/sts_metadata.js` fails on all six:
 
 | Field | Means |
 |---|---|

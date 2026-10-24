@@ -558,7 +558,7 @@ function run(t) {
   // in this service could build it when this section was written**: the
   // sign-in screen's checkbox was the only enrolment there was, and it is
   // reserved for people who hold no second factor yet. `/portal/keys` enrols a
-  // second key now (`tests/vendored/sts_portal_backup_keys.js`), and the shape
+  // second key now (`tests/protocol/sts_portal_backup_keys.js`), and the shape
   // is still built here, through the credential layer, so the rule is asserted
   // directly rather than through a door.
   const twoKeys = 'webauthn-two-keys-probe';

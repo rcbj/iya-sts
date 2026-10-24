@@ -46,7 +46,7 @@
 // WHY IN PROCESS. Every claim is a comparison between FILES, which is
 // `teardown_bounds.js`'s shape and `admin_api_token_wiring.js`'s before it. The
 // one thing this cannot check is whether the actions still WORK, and nothing
-// here pretends to: that is `tests/vendored/sts_admin_api_operations.js`
+// here pretends to: that is `tests/protocol/sts_admin_api_operations.js`
 // driving every operation and `sts_admin_console.js` driving the pages.
 // **Both of those matter more than this file** — the first run of the moved
 // layer failed in one of them with `numberWord is not defined`, on the single

@@ -449,7 +449,7 @@ function childMain() {
 
     const kdc = require(ROOT + '/kerberos/krb5_kdc.js');
     const principals = require(ROOT + '/kerberos/krb5_principals.js');
-    const wire = require(ROOT + '/tests/vendored/krb5_wire.js');
+    const wire = require(ROOT + '/tests/protocol/krb5_wire.js');
     const inproc = { label: 'in-process', send: function (bytes) {
       return kdc.handleMessage(bytes);
     } };

@@ -11788,7 +11788,7 @@ class AdminViews {
                                    noun: 'certificates' });
     let keyAlgorithms = [];
     try {
-      keyAlgorithms = require('../common/vendored/key_material').keyAlgIds();
+      keyAlgorithms = require('../common/crypto_impl/key_material').keyAlgIds();
     } catch (e) {
       log.debug("Caught in AdminViews.applicationEnrollmentState(): " +
                 ((e && e.message) || e));
@@ -12431,7 +12431,7 @@ class AdminViews {
   // CLIENT's entry, so writing it to the resource instead produces a row that
   // resolves in both directions, reads correctly on the delegation page's own
   // grants table, and is wrong only at the token endpoint, later, to somebody
-  // else. `tests/vendored/sts_delegated_permissions_example.js` asserts exactly
+  // else. `tests/protocol/sts_delegated_permissions_example.js` asserts exactly
   // that pair of halves landing on the right entries, which is how much care
   // the distinction is worth.
   //

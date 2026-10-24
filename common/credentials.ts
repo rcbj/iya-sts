@@ -1004,7 +1004,7 @@ class Credentials {
   // created. A store with no writer looks exactly like a store nobody uses.
   //
   // `authn/authn.ts` writes here now — its own header carries the argument —
-  // and `tests/vendored/sts_webauthn_second_factor.js` drives a real ceremony
+  // and `tests/protocol/sts_webauthn_second_factor.js` drives a real ceremony
   // and reads the key back out of `GET /admin-api/users`, which is the
   // assertion that would have caught it.
   //
@@ -4902,7 +4902,7 @@ class Credentials {
     // It surfaced through the door it costs most at: `POST
     // /admin-api/users/clear-key`, which `admin-ui/CLAUDE.md` calls the way
     // back for somebody who lost their key.
-    // `tests/vendored/sts_webauthn_second_factor.js` found it in its first run,
+    // `tests/protocol/sts_webauthn_second_factor.js` found it in its first run,
     // in the section after the one that made keys reachable at all.
     //
     // **THE PERSON MAY STILL BE UNABLE TO SIGN IN AFTERWARDS**, and that is not

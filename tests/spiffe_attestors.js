@@ -59,8 +59,8 @@ async function childMain(packageRoot) {
   const api = require(p('spiffe/spiffe_api'));
   const ca = require(p('spiffe/spiffe_ca'));
   const config = require(p('common/config'));
-  const x509 = require(p('common/vendored/x509'));
-  const pqc = require(p('common/vendored/pqc_x509'));
+  const x509 = require(p('common/crypto_impl/x509'));
+  const pqc = require(p('common/crypto_impl/pqc_x509'));
   const out = {};
   await ca.ready();
   const td = ca.trustDomain();

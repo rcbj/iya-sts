@@ -42,7 +42,7 @@ and `/portal`.
 
 **IT LISTS NO ENDPOINTS AND MUST NOT START.** `GET /admin/sts-metadata` builds
 that list by walking the running Express router, so it cannot go stale by
-omission, and this repository's own `tests/vendored/sts_metadata.js` fails on drift in
+omission, and this repository's own `tests/protocol/sts_metadata.js` fails on drift in
 either direction. A hand-written set of highlights here would be a second,
 unchecked copy of it — wrong within a month, on the page most likely to be read
 first and least likely to be re-read. `docs/endpoints.md` makes the same
@@ -130,7 +130,7 @@ at it, so saying who you are is the entire question.
   down, and a missing decoration is the least important thing that could go
   wrong here. With no image the page is drawn without one and the route answers
   **404 in its own words**. That last part is load-bearing for the link check in
-  `tests/vendored/sts_metadata.js`, which fails on Express's `Cannot GET` and passes on an
+  `tests/protocol/sts_metadata.js`, which fails on Express's `Cannot GET` and passes on an
   endpoint answering for itself.
 * **It is this project's own logo (2026-10-01, rcbj)**: `docs/logo.png`, the
   one README.md shows, copied byte for byte (906 × 269, opaque, 22 kB, drawn

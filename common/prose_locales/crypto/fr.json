@@ -457,7 +457,7 @@
   },
   "crypto.families.pki.signs": {
     "en": "f1ce79cf624ab6f5",
-    "text": "DES CERTIFICATS. La Root se signe elle-même une fois pour le service ; elle signe une Intermediate par domaine de confiance et une pour le processus ; chaque Intermediate signe une Issuing CA par cas d’usage ; et chaque Issuing CA signe les certificats feuilles de son cas d’usage — les propres clés de signature et d’écouteur du service, ainsi que les paires de clés délivrées aux applications et aux personnes. L’algorithme de signature est celui choisi pour la hiérarchie et est contraint par la famille de clé de l’ÉMETTEUR plutôt que par celle du sujet, ce qui est l’erreur à laquelle l’en-tête même de `common/vendored/x509.js` consacre un paragraphe : importer une clé sous un condensé et signer avec un autre produit un certificat dont l’algorithme déclaré et la signature réelle divergent, et `openssl verify` le signale comme une mauvaise signature sans nommer ni l’un ni l’autre."
+    "text": "DES CERTIFICATS. La Root se signe elle-même une fois pour le service ; elle signe une Intermediate par domaine de confiance et une pour le processus ; chaque Intermediate signe une Issuing CA par cas d’usage ; et chaque Issuing CA signe les certificats feuilles de son cas d’usage — les propres clés de signature et d’écouteur du service, ainsi que les paires de clés délivrées aux applications et aux personnes. L’algorithme de signature est celui choisi pour la hiérarchie et est contraint par la famille de clé de l’ÉMETTEUR plutôt que par celle du sujet, ce qui est l’erreur à laquelle l’en-tête même de `common/crypto_impl/x509.js` consacre un paragraphe : importer une clé sous un condensé et signer avec un autre produit un certificat dont l’algorithme déclaré et la signature réelle divergent, et `openssl verify` le signale comme une mauvaise signature sans nommer ni l’un ni l’autre."
   },
   "crypto.families.pki.verifies": {
     "en": "e27202f2b20a852a",
@@ -485,7 +485,7 @@
   },
   "crypto.families.pki.algorithms.0.how": {
     "en": "d40c79caa059f986",
-    "text": "X.509 v3, DER, via pkijs et asn1js — common/vendored/x509.js, le code PKI propre au projet parent, identique octet pour octet. Un seul encodeur pour ce service et pour la page PKI / X.509 de ce projet."
+    "text": "X.509 v3, DER, via pkijs et asn1js — common/crypto_impl/x509.js, le code PKI propre au projet parent, identique octet pour octet. Un seul encodeur pour ce service et pour la page PKI / X.509 de ce projet."
   },
   "crypto.families.pki.algorithms.1.what": {
     "en": "1b9e0c9e96801219",

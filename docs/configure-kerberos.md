@@ -10,7 +10,7 @@ then runs. Each recipe is given twice, once as steps in the **admin console**
 (`/admin`) and once as calls to the **Management API** (`/admin-api`).
 
 **The values come from this repository's own test jobs** in
-`tests/vendored/` (and, where a case can only be driven inside the process,
+`tests/protocol/` (and, where a case can only be driven inside the process,
 `tests/`), and each recipe names the job it is taken from. Most of those jobs
 run against a service in both development and product mode. Change the
 realm names, host names and passwords to your own.

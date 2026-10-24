@@ -24,7 +24,7 @@
 //      supersedes it) and names that authority's CRL and responder. The
 //      private key is handed back ONCE and this module keeps no copy.
 //   2. PACKAGE — a password-protected PKCS#12 and a PEM key and chain, through
-//      `common/vendored/key_material.js`'s `exportKeyPair()`, which is the
+//      `common/crypto_impl/key_material.js`'s `exportKeyPair()`, which is the
 //      exporter `/admin/keys` and the Certificate & Key Configuration pane
 //      already use. One exporter, so a `.p12` from here imports exactly as one
 //      from those pages does.
@@ -92,7 +92,7 @@ const realms = require('./realms');
 const errorCodes = require('./error_codes');
 const cacheRegistry = require('./cache_registry');
 const pki = require('./pki');
-const keyMaterial = require('./vendored/key_material');
+const keyMaterial = require('./crypto_impl/key_material');
 // CAEP credential-change when this file changes a person's credential
 // (#145), through `ssf/account_signals.ts` — required LAZILY, when an event
 // is due. This file is loaded from `app.js`'s own chain, before the

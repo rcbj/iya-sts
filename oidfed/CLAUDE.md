@@ -242,7 +242,7 @@ revoked still answers for it.
   Trust Marks, over a federation built with real keys.
 - `tests/oidfed_entity.js`: the default realm as Trust Anchor with a realm
   beneath it, in process.
-- `tests/vendored/sts_oidfed.js` (local): the same over HTTP, with Trust Marks
+- `tests/protocol/sts_oidfed.js` (local): the same over HTTP, with Trust Marks
   and key rotation through `/admin-api`.
 - `tests/siop.js` 7f: the verifier's `openid_federation:` client identifier.
 - `tests/oidfed_extensions.js`: the page pointer; a subordinate's history
@@ -250,7 +250,7 @@ revoked still answers for it.
   a realm's creation, rotation and deletion; the Extended Listing's paging,
   claims and filters; the Entity Collection in process and by a CRAWL through
   a foreign Intermediate over a stub requester, with the fetch budget.
-- `tests/vendored/sts_oidfed_extensions.js` (local): the three endpoints over
+- `tests/protocol/sts_oidfed_extensions.js` (local): the three endpoints over
   HTTP, and the acts through `/admin-api`.
 
 **Still untested:**

@@ -26,12 +26,12 @@ SPDX-License-Identifier = "BUSL-1.1"
 # The byte-identical copies of the parent project's files, which have the
 # same owner, keep the parent project's MIT licence, and may not be edited
 # here to carry a header. "closest" lets a file's own header win, so this
-# service's own files under these paths (common/vendored/pqc.js,
+# service's own files under these paths (common/crypto_impl/pqc.js,
 # pqc_x509.js and xmldsig.js since #363, and the local: true jobs in
-# tests/vendored/) stay under the licence their header names.
+# tests/protocol/) stay under the licence their header names.
 [[annotations]]
 path = [
-  "common/vendored/**",
+  "common/crypto_impl/**",
   "kerberos/krb5_primitives.js",
   "kerberos/krb5_asn1.js",
   "kerberos/krb5_crypto.js",
@@ -40,7 +40,7 @@ path = [
   "kerberos/krb5_pac.js",
   "kerberos/krb5_gss.js",
   "kerberos/krb5_spnego.js",
-  "tests/vendored/**",
+  "tests/protocol/**",
 ]
 precedence = "closest"
 SPDX-FileCopyrightText = "2026 Iya CyberSecurity Solutions, LLC"
@@ -76,8 +76,8 @@ SPDX-License-Identifier = "Apache-2.0"
 # loader rather than fetched.
 [[annotations]]
 path = [
-  "common/vendored/contexts/credentials_v1.json",
-  "common/vendored/contexts/credentials_v2.json",
+  "common/crypto_impl/contexts/credentials_v1.json",
+  "common/crypto_impl/contexts/credentials_v2.json",
 ]
 precedence = "override"
 SPDX-FileCopyrightText = "World Wide Web Consortium (W3C)"

@@ -81,7 +81,7 @@
   },
   "pki.report.encoder": {
     "en": "e62315ba46619e60",
-    "text": "common/vendored/x509.js — el propio código PKI del proyecto padre, idéntico byte a byte, sobre pkijs y asn1js. Un codificador para este servicio y para la página PKI / X.509 de ese proyecto."
+    "text": "common/crypto_impl/x509.js — el propio código PKI del proyecto padre, idéntico byte a byte, sobre pkijs y asn1js. Un codificador para este servicio y para la página PKI / X.509 de ese proyecto."
   },
   "pki.report.residencyPersisted": {
     "en": "f0cab37351af3948",
