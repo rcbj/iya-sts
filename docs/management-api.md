@@ -434,6 +434,10 @@ cover:
   its attestation statement proved (format, type, verified, trusted, the
   anchor, the model the FIDO metadata names) — and `GET /admin-api/webauthn`
   reports the attestation policy in force and the FIDO MDS BLOB (#105).
+  `GET /admin-api/passkey-report` counts who holds which passkey algorithm
+  across the realm (post-quantum only, classical only, both, none; by
+  algorithm, lane and model), with the people behind a count, an export and
+  a recount (#942).
 * **Applications and what they are issued.** The application register,
   consent, permissions, roles, delegation and who may delegate (`GET
   /admin-api/delegation/policy`), issued tokens, the claim and SAML

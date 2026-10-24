@@ -203,7 +203,8 @@ by a rule down its left even while it is collapsed. Its five sections:
   lead, notes and tiles on Metadata, each table, chart or list a tab.
 * **Monitoring** — metrics, sessions, tokens, used assertions, delegation,
   the Shared Signals monitors, consent, XACML decisions, GNAP grants, the
-  enrollment monitors, OAuth activity, SCIM metrics, sign-out, the database,
+  enrollment monitors, Verifiable Credentials, passkeys, OAuth activity,
+  SCIM metrics, sign-out, the database,
   encryption, the secret store, caches, the worker pools, node health, the
   scheduler, the mail outbox, risk, the audit log and the error codes.
 * **Server configuration** — trust realms, configuration, mode, persistence,
@@ -1173,6 +1174,79 @@ settings the lists are built with, `oid4vci.statusListTtlS` and
 page is a realm's own, so a realm administrator sees it for their realm. API:
 `GET /admin-api/vc-status` and
 `POST /admin-api/vc-status/{suspend,reinstate,revoke,publish}`.
+
+### Passkeys — `/admin/passkey-report`
+
+Who in this realm holds which kind of passkey, and so how far a move to
+post-quantum passkeys has come. A person's **kind** is the signature
+algorithm of their passkeys, as recorded when each was registered: ML-DSA-44,
+ML-DSA-65 and ML-DSA-87 are post-quantum, everything else (ES256, RS256,
+EdDSA, …) is classical. The lane a passkey was made in
+([side by side](passkeys.md#a-classical-and-a-post-quantum-passkey-side-by-side))
+is shown, but never decides the kind.
+
+* **Metadata** says where the numbers came from: when the realm was last
+  counted, how many passkey holders that count read, and how many changes have
+  been noted since. It carries the filter and **Recount now**.
+* **People** counts everybody in the realm as **post-quantum only**,
+  **classical only**, **both** or **none**, with each kind's share. *Post-quantum
+  only* and *both* are the people who could still sign in with a passkey if
+  classical ones were refused; *classical only* are the people a
+  `postQuantumRequired` rule would refuse.
+* **Algorithms** counts every passkey by algorithm (its JOSE name and COSE
+  number) and lane.
+* **Models** lists each authenticator model by its AAGUID, with its name where
+  one is known, and the algorithms its passkeys use. *Not reported* is the
+  passkeys whose authenticator named no model.
+* **Profiles** shows what each [passkey policy](authentication.md#the-passkey-policy)
+  profile asks (`postQuantumRequired`) and what it selects. A named profile that
+  selects groups has a link to count its population.
+* **Attestation** is empty for now: the algorithm of a passkey's attestation
+  certificate is not recorded on the passkey yet. Once it is, this tab counts
+  passkeys by it.
+* **List** appears when you click *list them* beside any count: the people
+  behind it, a page at a time, with **Export CSV** and **Export JSON**.
+
+**How the numbers are kept.** The realm is recounted once a day (the
+scheduler job `passkeys.report-recount`, which reads only the people who hold
+a passkey), the first time soon after the service starts; between recounts
+every passkey enrolled, removed or deleted with its person is added as it
+happens. Opening
+the page never reads the directory, however many people it holds. A bulk
+import or a restore of the directory is seen at the next recount — press
+**Recount now** after one. The recount is queued on the scheduler, and
+Monitoring → Scheduler shows the run.
+
+**Filters.** One at a time:
+
+* **Group** (a cn or a DN): the group's members are read and counted. At most
+  50,000 members are read; the page says when a group is larger.
+* **Passkey profile**: the members of the groups a named profile selects. The
+  `default` profile cannot be chosen — it is what applies to everybody no named
+  profile selects.
+* **Application**: anybody may sign in to an application, so the counts are
+  the realm's. The page adds which passkey profile governs the application's
+  sign-ins, and how many group-selected profiles could still win for a person.
+
+**The lists** are read in order from where the page before stopped, so use
+**Next page** rather than typing a page number. A list reads at most 20,000
+people per page; when a filter is rare and the page stopped before it was
+full, it says so — go on to the next page, or narrow the filter. An export
+carries at most 100,000 rows and holds no key material. A cell that a
+spreadsheet would read as a formula is written with an apostrophe in front.
+
+**Reading the move to post-quantum passkeys.** Watch *classical only* fall
+and *post-quantum only* plus *both* rise. Before you set `postQuantumRequired`
+to `sign-in` for a profile, count that profile's population and list its
+*classical only* people: they are the ones who would be refused. See
+[Requiring a post-quantum passkey](passkeys.md#requiring-a-post-quantum-passkey).
+
+The page is a realm's own, so a realm's administrator sees their realm. API:
+`GET /admin-api/passkey-report` (the same answer, with `group`, `profile`,
+`application`, `list`, `page`, `per` and `from`),
+`GET /admin-api/passkey-report/export` and
+`POST /admin-api/passkey-report/recount`; the parameters are in
+`GET /admin-api/openapi.json`.
 
 ### Worker pools — `/admin/worker-pools`
 
