@@ -2044,9 +2044,12 @@ three differences:
   person asked for themselves (`stsPasswordResetSource: self`) is refused
   403, `STS-AUTHN-0380`, with its own sentence, and stays unspent; an
   administrator's is not. A spent link then leaves a pending recovery
-  (`credentials.noteRecovery()`), and `/portal/activate`'s finish does the
-  same for somebody who held a passkey before the link was issued. The
-  sign-in after either is held by `authn.ts` (`authn/CLAUDE.md`).
+  (`credentials.noteRecovery()`). Where a hold is required and that write
+  fails (#962, `STS-AUTHN-0382`), the link is not spent and the password is
+  taken off again, so it cannot sign in with nothing pending; the link can
+  be submitted again. `/portal/activate`'s finish does the same for
+  somebody who held a passkey before the link was issued. The sign-in
+  after either is held by `authn.ts` (`authn/CLAUDE.md`).
 
 ## SEVERAL NODES: A LINK IS CLAIMED BEFORE ANYTHING IS SET (2026-09-14, #46)
 

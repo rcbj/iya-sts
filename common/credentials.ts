@@ -1095,6 +1095,20 @@ class Credentials {
     return true;
   }
 
+  /**
+   * The directory hooks the slot holds, so a test that wraps one function
+   * can put that same function back. Nothing in the service calls this:
+   * the slot is filled once, at the directory's require.
+   *
+   * @returns the hooks, or null when none are installed
+   */
+  directoryInstalled() {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.directoryInstalled().");
+    log.debug("Leaving Credentials.directoryInstalled().");
+    return this.directory;
+  }
+
   // ---------------------------------------------------------------------------
   // THE POPULATION HOOKS (#352, 2026-09-29): two more functions of the SAME
   // directory, offered after `setDirectory()` rather than inside it.
@@ -11381,29 +11395,53 @@ class Credentials {
   }
 
   /**
+   * Whether a recovery has to be recorded before a reset can stand (#962).
+   * The same test `noteRecovery()` uses, so a caller that treats a false
+   * `noteRecovery()` as a failed reset does not invent a second rule: a
+   * person who holds a passkey, and the passkey policy selected for them
+   * is not `any`. No passkey, and `any`, are not a failed write — nothing
+   * was supposed to be written, and a later change of the row does not
+   * reach back to a recovery made while it allowed one.
+   *
+   * @param username - the person
+   * @returns true when a pending recovery has to be written
+   */
+  recoveryHoldRequired(username) {
+    const { log, passkeyPolicy } = this.deps;
+    log.debug("Entering Credentials.recoveryHoldRequired().");
+    const name = String(username || '').trim();
+    if (!name || !this.holdsPasskey(name)) {
+      log.debug("Leaving Credentials.recoveryHoldRequired(). Holds no " +
+                "passkey.");
+      return false;
+    }
+    if (!passkeyPolicy.hasSelection()) {
+      passkeyPolicy.select(name, '');
+    }
+    const required = passkeyPolicy.recoveryAssurance() !== 'any';
+    log.debug("Leaving Credentials.recoveryHoldRequired(). " + required);
+    return required;
+  }
+
+  /**
    * Records that a recovery door restored access (#724), where it matters:
-   * the person holds a passkey and the passkey policy selected for them
-   * holds a recovery to it (`recoveryAssurance` not `any`). Under `any`
-   * nothing is written, so a later change of the row does not reach back to
-   * a recovery made while it allowed one.
+   * `recoveryHoldRequired()` — the person holds a passkey and the passkey
+   * policy selected for them holds a recovery to it (`recoveryAssurance`
+   * not `any`). Under `any`, and for a person who holds no passkey, nothing
+   * is written and false is not a failed write. A false return when a hold
+   * WAS required is the directory write failing (`setRecoveryPending`,
+   * STS-AUTHN-0382); the caller decides what that does to the reset.
    *
    * @param username - the person
    * @param door - the recovery door (`passkey_policy.ts`'s RECOVERY_DOORS)
    * @returns true when a pending recovery was written
    */
   noteRecovery(username, door) {
-    const { log, passkeyPolicy } = this.deps;
+    const { log } = this.deps;
     log.debug("Entering Credentials.noteRecovery(). door=" + door);
     const name = String(username || '').trim();
-    if (!name || !this.holdsPasskey(name)) {
-      log.debug("Leaving Credentials.noteRecovery(). Holds no passkey.");
-      return false;
-    }
-    if (!passkeyPolicy.hasSelection()) {
-      passkeyPolicy.select(name, '');
-    }
-    if (passkeyPolicy.recoveryAssurance() === 'any') {
-      log.debug("Leaving Credentials.noteRecovery(). The policy allows any.");
+    if (!this.recoveryHoldRequired(name)) {
+      log.debug("Leaving Credentials.noteRecovery(). No hold is required.");
       return false;
     }
     const written = this.setRecoveryPending(name, String(door || ''));
@@ -12381,6 +12419,7 @@ export = {
   PASSWORD_ATTRIBUTE: Credentials.PASSWORD_ATTRIBUTE,
   RESERVED_REFUSAL: Credentials.RESERVED_REFUSAL,
   setDirectory: slot.forward('setDirectory'),
+  directoryInstalled: slot.forward('directoryInstalled'),
   addDirectoryHooks: slot.forward('addDirectoryHooks'),
   // The plaintext-password observer (2026-09-12) — see the block above it.
   setPasswordObserver: slot.forward('setPasswordObserver'),
@@ -12413,6 +12452,7 @@ export = {
   holdsPasskey: slot.forward('holdsPasskey'),
   recoveryPending: slot.forward('recoveryPending'),
   setRecoveryPending: slot.forward('setRecoveryPending'),
+  recoveryHoldRequired: slot.forward('recoveryHoldRequired'),
   noteRecovery: slot.forward('noteRecovery'),
   noteActivationRecovery: slot.forward('noteActivationRecovery'),
   passwordResetPending: slot.forward('passwordResetPending'),

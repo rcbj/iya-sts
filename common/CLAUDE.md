@@ -13324,7 +13324,12 @@ not refused, and the default stays.
   <instant>`), so every node and a restart agree. `credentials.noteRecovery()`
   writes it, only for a covered person and only while the selected profile is
   not `any` — so switching the row later does not reach back to recoveries
-  made while it allowed them. The doors that write it: the reset link's
+  made while it allowed them. Where a hold is required and that write fails,
+  the reset link's spend and an administrator's `reset-password` do not
+  finish: the password is removed, the link stays spendable, nobody is
+  signed out, and the answer is not success (#962, `STS-AUTHN-0382`).
+  `recoveryHoldRequired()` is that test, so a false `noteRecovery()` is a
+  failed reset only then. The doors that write it: the reset link's
   spend (`portal/account_reset.ts`, `password-reset` or `admin-reset` by the
   link's `stsPasswordResetSource`), the administrator's `reset-password`
   (`admin-password`), and the activation link's finish (`activation`, only
