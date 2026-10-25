@@ -200,19 +200,20 @@ class PasskeyReportApi {
           'lane. `keys`: `total`, `postQuantum`, `classical`, `byLane` and ' +
           '`byAlgorithm` (each `algorithm`, `coseAlg`, `lane`, ' +
           '`postQuantum`, `count`). `models`: each AAGUID with its name and ' +
-          'the algorithms its keys use. `attestation`: the attestation ' +
-          'certificates\' algorithms, `recorded: false` until the key rows ' +
-          'carry them (#941). `profiles`: each passkey profile\'s ' +
-          '`postQuantumRequired` and selectors. `counted`: where the ' +
-          'numbers came from — the recount\'s `baseline` (when, how long, ' +
-          'how many holders) plus the `changesSince` noted as keys were ' +
-          'written, or the `population` a filter read; null before the ' +
-          'first recount. With `list`, a page of the people behind one ' +
-          'count, paged by `page`, `per` and `from` (the cursor ' +
-          '`list.paging.nextFrom` hands back); a realm list reads at most ' +
-          report.LIST_SCAN + ' entries a request and says ' +
-          '`complete: false` when that stopped it. NO COUNT IS A SCAN OF ' +
-          'THE DIRECTORY: the realm\'s are a maintained aggregate.',
+          'the algorithms its keys use. `attestation`: the leaf ' +
+          'certificate\'s signature algorithm (#941). `recorded` is false ' +
+          'when no counted passkey stored one. `profiles`: each passkey ' +
+          'profile\'s `postQuantumRequired` and selectors. `counted`: ' +
+          'where the numbers came from — the recount\'s `baseline` ' +
+          '(when, how long, how many holders) plus the `changesSince` ' +
+          'noted as keys were written, or the `population` a filter ' +
+          'read; null before the first recount. With `list`, a page of ' +
+          'the people behind one count, paged by `page`, `per` and ' +
+          '`from` (the cursor `list.paging.nextFrom` hands back); a ' +
+          'realm list reads at most ' + report.LIST_SCAN + ' entries a ' +
+          'request and says `complete: false` when that stopped it. NO ' +
+          'COUNT IS A SCAN OF THE DIRECTORY: the realm\'s are a ' +
+          'maintained aggregate.',
         mirrors: 'GET /admin/passkey-report',
         parameters: FILTER.concat(LIST).concat([
           { name: 'page', in: 'query', required: false,

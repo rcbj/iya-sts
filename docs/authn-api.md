@@ -19,7 +19,7 @@ holds it may act on that sign-in, so it is a bearer value, like the
 
 | Operation | What it answers or does |
 |---|---|
-| `GET /authn-api/pending/{id}` | What the screen offers — the mechanisms the realm's authentication policy accepts, the passkey options, the demands of the request (two factors, a security key), the federation partners, the Kerberos and wallet doors — and `csrf`, the token every act on this sign-in carries. After a classical passkey was refused where a post-quantum one is required, `postQuantumRequired` carries the page's links (`register`, and `upgrade`, empty until an in-place upgrade exists) |
+| `GET /authn-api/pending/{id}` | What the screen offers — the mechanisms the realm's authentication policy accepts, the passkey options, the demands of the request (two factors, a security key), the federation partners, the Kerberos and wallet doors — and `csrf`, the token every act on this sign-in carries. After a classical passkey was refused where a post-quantum one is required, `postQuantumRequired` carries the page's links (`register`, and `upgrade`, which is `/portal/keys?upgrade=post-quantum` when `webauthn.pqcUpgrade` offers the in-place upgrade and empty when it does not) |
 | `POST /authn-api/pending/{id}/password` | Sign in with a username and password (or `webauthn_only` for a passkey instead) |
 | `POST /authn-api/pending/{id}/passkey/options`, `…/passkey` | A passkey with no username: the challenge, then the ceremony's result |
 | `POST /authn-api/pending/{id}/email` | An emailed code or link as the first factor, where the policy allows it |

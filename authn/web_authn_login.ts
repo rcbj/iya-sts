@@ -331,9 +331,9 @@ class WebAuthnLogin {
   // which a platform answering "no credential found" never said. In the
   // page's language; the refusal's own sentence, above it, stays English
   // (#539). The links are the view's: registration on the account page
-  // where passkeys may be registered here, and #939's upgrade, which no
-  // view names until that ticket is built (`postQuantumUpgradeOffered()`).
-  // Shared by the screen and the passkey step's page.
+  // where passkeys may be registered here, and #939's upgrade when
+  // `postQuantumUpgradeOffered()` is true. Shared by the screen and the
+  // passkey step's page.
   /**
    * The post-quantum panel, or ''.
    *

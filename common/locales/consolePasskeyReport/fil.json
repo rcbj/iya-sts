@@ -61,7 +61,7 @@
   "countThisProfile": "bilangin ang populasyon nito",
   "profilesNote": "Ang hinihingi ng bawat passkey profile: tinatanggihan ng <code>postQuantumRequired</code> ang classical na passkey sa sign-in (<code>sign-in</code>), o pati sa pag-register (<code>registration-and-sign-in</code>). Bilangin ang populasyon ng isang profile para makita kung sino ang tatanggihan nito.",
   "noProfiles": "Ang default na passkey profile lang ang mayroon ang realm na ito.",
-  "attestationPending": "Hindi pa naitatala sa passkey ang algorithm ng attestation certificate nito, kaya walang binibilang dito. Kapag naitala na, bibilangin ng tab na ito ang mga passkey ayon sa algorithm na pumirma sa kanilang attestation.",
+  "attestationPending": "Walang passkey na binibilang dito ang may naitalang algorithm ng attestation certificate. Ang passkey na nairehistro bago naitala ang algorithm na iyon, o ang attestation na walang certificate, ay hindi kasama.",
   "listHeading": "Ang mga tao sa likod ng:",
   "listHolding": "lahat ng may hawak ng passkey",
   "listAlgorithm": "algorithm na <code>{algorithm}</code>",

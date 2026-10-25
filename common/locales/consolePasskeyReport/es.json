@@ -61,7 +61,7 @@
   "countThisProfile": "contar su población",
   "profilesNote": "Lo que pide cada perfil de llaves de acceso: <code>postQuantumRequired</code> rechaza una llave de acceso clásica al iniciar sesión (<code>sign-in</code>), o también al registrarla (<code>registration-and-sign-in</code>). Cuente la población de un perfil para ver a quién rechazaría.",
   "noProfiles": "Este dominio solo tiene el perfil de llaves de acceso predeterminado.",
-  "attestationPending": "El algoritmo del certificado de atestación de una llave de acceso aún no se registra en la llave, así que aquí no se cuenta nada. Cuando se registre, esta pestaña contará las llaves de acceso por el algoritmo con que se firmó su atestación.",
+  "attestationPending": "Ninguna de las llaves de acceso contadas aquí tiene registrado el algoritmo del certificado de atestación. Una llave registrada antes de que ese algoritmo se guardara, o cuya atestación no traía certificado, queda fuera.",
   "listHeading": "Las personas detrás de:",
   "listHolding": "todas las que tienen una llave de acceso",
   "listAlgorithm": "el algoritmo <code>{algorithm}</code>",

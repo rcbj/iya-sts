@@ -13444,9 +13444,13 @@ what a maintainer must not undo:
   false` when that stopped a page short; `page` without `from` reads from the
   start. The export reads on to `EXPORT_LIMIT` rows and quotes a CSV cell a
   spreadsheet would read as a formula.
-* **#941's EXTENSION POINT** is `attestationFacetOf()`: null until the key
-  row records the attestation certificate's algorithm, then the `t|` facet,
-  the Attestation tab and every list follow with no other change.
+* **#941's attestation certificate is counted** by `attestationFacetOf()`:
+  the leaf of `attestation.algorithms` (a compound statement's members, and
+  the anchor only when the statement carried no certificate), as
+  `t|<algorithm>|<coseAlg>|<1|0>`. A key with no such record, or no
+  certificate, is not a row. ML-DSA-44/65/87 keep their COSE identifiers;
+  other certificate algorithms have none. The Attestation tab is empty
+  when nothing counted recorded one.
 * **A library and a slot (rule 3e).** `setDirectory()` is filled by
   `ldap_server.js` and validated whole (`STS-AUTHN-0417`): that module
   requires this one, and the composition root builds this one at 18j-iv,

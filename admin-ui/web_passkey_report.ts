@@ -15,9 +15,9 @@
 // population a filter read), the filter and Recount now; then People (the
 // four kinds), Algorithms (by algorithm and lane), Models (AAGUID by
 // algorithm), Profiles (what each passkey profile asks, and a link to count
-// its population), Attestation (#941's tab, empty until the key rows carry
-// the algorithm) and, when the query names one, the List behind a count with
-// its export.
+// its population), Attestation (#941's leaf certificate algorithm; empty
+// when none of the counted keys recorded one) and, when the query names
+// one, the List behind a count with its export.
 //
 // **THE LIST PAGES BY A CURSOR, AND THE LINKS CARRY IT.** A realm list is
 // read in key order from where the page before stopped, so the Next link
@@ -383,7 +383,9 @@ class PasskeyReportPage {
       rows + '</table>';
   }
 
-  // The Attestation tab (#941): empty until the key rows carry it.
+  // The Attestation tab (#941): the leaf certificate's signature
+  // algorithm. Empty when no counted passkey recorded one. A certificate
+  // algorithm that is not a COSE name has no COSE identifier to show.
   private static attestation(v: Json, t: Json): string {
     const self = PasskeyReportPage;
     const a = v.attestation || {};
@@ -394,9 +396,11 @@ class PasskeyReportPage {
       '</th><th>' + t.html('consolePasskeyReport.coseAlg') + '</th><th>' +
       t.html('consolePasskeyReport.postQuantum') + '</th><th>' +
       t.html('consolePasskeyReport.count') + '</th></tr>' +
-      (a.rows || []).map(function (r: Json) {
+      (a.rows || []).map(function (r: Json): string {
+        const cose = r.coseAlg === null || r.coseAlg === undefined
+          ? '—' : String(r.coseAlg);
         return '<tr><td><code>' + kit.esc(r.algorithm) + '</code></td><td>' +
-          kit.esc(String(r.coseAlg)) + '</td><td>' +
+          kit.esc(cose) + '</td><td>' +
           (r.postQuantum ? t.html('consolePasskeyReport.yes')
                          : t.html('consolePasskeyReport.no')) + '</td><td>' +
           self.cell(t, r.count) + '</td></tr>';

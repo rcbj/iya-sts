@@ -61,7 +61,7 @@
   "countThisProfile": "統計其族群",
   "profilesNote": "每個密碼金鑰設定檔的要求：<code>postQuantumRequired</code> 在登入時（<code>sign-in</code>），或在註冊時也（<code>registration-and-sign-in</code>）拒絕傳統密碼金鑰。統計某個設定檔的族群，即可看出它會拒絕誰。",
   "noProfiles": "此領域只有預設的密碼金鑰設定檔。",
-  "attestationPending": "密碼金鑰的證明憑證所用演算法尚未記錄在密碼金鑰上，因此這裡沒有統計任何內容。一旦記錄，本分頁將依簽署其證明的演算法統計密碼金鑰。",
+  "attestationPending": "此處統計的密碼金鑰都沒有已記錄的證明憑證演算法。在該演算法開始保存之前註冊的密碼金鑰，或證明中沒有憑證的密碼金鑰，不會出現在這裡。",
   "listHeading": "背後的人員：",
   "listHolding": "所有持有密碼金鑰的人",
   "listAlgorithm": "演算法 <code>{algorithm}</code>",

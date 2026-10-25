@@ -14967,7 +14967,7 @@ class Authn {
     log.debug("Entering Authn.postQuantumHelp().");
     const out = {
       register: webauthnPolicy.offered() ? '/portal/keys' : '',
-      // #939 is not built: the flag is false and no link is drawn.
+      // #939: drawn when this realm offers the upgrade.
       upgrade: webauthnPolicy.postQuantumUpgradeOffered()
         ? '/portal/keys?upgrade=post-quantum' : ''
     };

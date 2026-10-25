@@ -87,13 +87,16 @@
 // `LIST_SCAN` holders a request, and says so when it stopped before the page
 // was full. The export reads on to `EXPORT_LIMIT` rows.
 //
-// **AN EXTENSION POINT FOR #941.** The attestation certificate's algorithm
-// on each passkey record is being added by #941. `attestationFacetOf()`
-// below is where the report reads it: it answers null today, so no `t|`
-// facet is counted and `attestation.recorded` is false; when #941 records
-// the algorithm on the key row, that function returns it and the report,
-// the recount, the deltas and the page's Attestation tab count it with no
-// other change (the facet's encoding is `t|<algorithm>|<coseAlg>`).
+// **THE ATTESTATION CERTIFICATE (#941).** `attestationFacetOf()` reads the
+// leaf certificate's signature algorithm off `attestation.algorithms` (the
+// record #941 stores; a compound statement's members are walked the same
+// way, and the anchor is used only when the statement carried no
+// certificate). A key from before that record, or one whose attestation
+// had no certificate, answers null, so it is not a `t|` facet and the
+// Attestation tab says nothing was recorded. The facet is
+// `t|<algorithm>|<coseAlg>|<1|0>`: the COSE identifier when the
+// certificate algorithm is also a COSE name (ML-DSA-44/65/87), empty
+// otherwise, and `1` when that certificate's signature is post-quantum.
 //
 // A LIBRARY (rule 3): it registers no route. It requires `helpers`,
 // `error_codes`, `realms`, `credentials` (a leaf), `instance_slot` and the
@@ -349,8 +352,8 @@ class PasskeyReport {
   //   p|<kind>                        the person, once (no row for `none`)
   //   k|<algorithm>|<coseAlg>|<lane>  each key
   //   m|<aaguid>|<algorithm>|<coseAlg> each key, by model ('' unreported)
-  //   t|<algorithm>|<coseAlg>         each key's attestation algorithm —
-  //                                   #941's, see `attestationFacetOf()`
+  //   t|<algorithm>|<coseAlg>|<pq>    each key's attestation certificate
+  //                                   (#941), see `attestationFacetOf()`
   //
   // `names` carries the model name recorded on a key, by AAGUID, for the
   // page; it is not a count.
@@ -359,24 +362,56 @@ class PasskeyReport {
   // is every holder of a realm): no Entering/Leaving pair, the exception the
   // code style allows, stated as it requires.
   /**
-   * The attestation certificate's algorithm of one stored key: the
-   * EXTENSION POINT for #941, which records it on the key row. Null until
-   * then, so nothing is counted under `t|`.
+   * The attestation certificate's signature algorithm of one stored key
+   * (#941). The leaf of `attestation.algorithms`, which is what #941
+   * recorded; null when that record is absent or names no certificate, so
+   * a key from before #941 is not counted under `t|`.
+   *
+   * Hot path (once per key a recount, a list or an export reads): no
+   * Entering/Leaving pair, the exception the code style allows. It does
+   * not call `credentials.attestationAlgorithms()`, whose debug lines
+   * would run once per key of every holder.
    *
    * @param key - one stored key
-   * @returns `{ algorithm, coseAlg }`, or null where none is recorded
+   * @returns `{ algorithm, coseAlg, postQuantum }`, or null where no
+   *   certificate algorithm is recorded. `coseAlg` is the COSE identifier
+   *   when the certificate algorithm is also a COSE name, and null
+   *   otherwise (a certificate signature is not a COSE algorithm).
    */
   static attestationFacetOf(key: Json): { algorithm: string;
-                                          coseAlg: number } | null {
-    // #941 EXTENSION POINT. #941 records the attestation certificate's
-    // algorithm on the key row, under a member it names; when it lands,
-    // read that member here (and only here) and return `{ algorithm,
-    // coseAlg }` — every count, the deltas, the recount, the lists and the
-    // page's Attestation tab follow without another change. Nothing is
-    // guessed at before then: a member read under a name #941 did not
-    // choose would count nothing, or the wrong thing.
-    void key;
-    return null;
+      coseAlg: number | null; postQuantum: boolean } | null {
+    const algorithms = key && key.attestation &&
+      key.attestation.algorithms;
+    if (!algorithms || typeof algorithms !== 'object') {
+      return null;
+    }
+    const parts = [algorithms].concat(Array.isArray(algorithms.members)
+      ? algorithms.members : []);
+    let leaf: Json = null;
+    for (let i = 0; i < parts.length && !leaf; i += 1) {
+      const certs = parts[i] && Array.isArray(parts[i].certificates)
+        ? parts[i].certificates : [];
+      const first = certs.length ? certs[0] : null;
+      if (first && first.algorithm &&
+          String(first.algorithm) !== 'unreadable') {
+        leaf = first;
+      }
+    }
+    if (!leaf && algorithms.anchor && algorithms.anchor.algorithm &&
+        String(algorithms.anchor.algorithm) !== 'unreadable') {
+      leaf = algorithms.anchor;
+    }
+    if (!leaf) {
+      return null;
+    }
+    // A `|` would split the facet. No algorithm this service names has
+    // one; one it does not is still one row.
+    const name = String(leaf.algorithm).split('|').join('/');
+    const coseAlg = name === 'ML-DSA-44' ? -48
+      : (name === 'ML-DSA-65' ? -49
+         : (name === 'ML-DSA-87' ? -50 : null));
+    return { algorithm: name, coseAlg: coseAlg,
+             postQuantum: leaf.postQuantum === true };
   }
 
   // Hot path (once per person a recount, a list or an export reads, which
@@ -421,7 +456,9 @@ class PasskeyReport {
       add('m|' + aaguid + '|' + alg.name + '|' + alg.coseAlg);
       const attested = PasskeyReport.attestationFacetOf(key);
       if (attested) {
-        add('t|' + attested.algorithm + '|' + attested.coseAlg);
+        add('t|' + attested.algorithm + '|' +
+            (attested.coseAlg === null ? '' : String(attested.coseAlg)) +
+            '|' + (attested.postQuantum ? '1' : '0'));
       }
       if (aaguid && model) {
         names[aaguid] = model.slice(0, 120);
@@ -753,9 +790,15 @@ class PasskeyReport {
                                 postQuantum: /^ML-DSA-/.test(parts[2]),
                                 count: value });
       } else if (parts[0] === 't') {
-        attestation.push({ algorithm: parts[1], coseAlg: Number(parts[2]),
-                           postQuantum: /^ML-DSA-/.test(parts[1]),
-                           count: value });
+        // `coseAlg` is empty when the certificate algorithm is not a COSE
+        // name. `pq` is the certificate's own flag; a facet written before
+        // that field existed is post-quantum only by an ML-DSA name.
+        const coseAlg = parts[2] === '' || parts[2] === undefined
+          ? null : Number(parts[2]);
+        const postQuantum = parts.length > 3 ? parts[3] === '1'
+          : /^ML-DSA-/.test(parts[1]);
+        attestation.push({ algorithm: parts[1], coseAlg: coseAlg,
+                           postQuantum: postQuantum, count: value });
       }
     });
     byAlgorithm.sort(function (a, b) {
@@ -784,7 +827,8 @@ class PasskeyReport {
       keys: { total: keys, postQuantum: pqKeys, classical: keys - pqKeys,
               byLane: lanes, byAlgorithm: byAlgorithm },
       models: modelRows,
-      // #941's extension point: what `attestationFacetOf()` counted.
+      // What `attestationFacetOf()` counted (#941). `recorded` is false
+      // when no counted passkey stored a certificate algorithm.
       attestation: { recorded: attestation.length > 0, rows: attestation }
     };
   }

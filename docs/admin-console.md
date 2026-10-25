@@ -1231,9 +1231,12 @@ is shown, but never decides the kind.
 * **Profiles** shows what each [passkey policy](authentication.md#the-passkey-policy)
   profile asks (`postQuantumRequired`) and what it selects. A named profile that
   selects groups has a link to count its population.
-* **Attestation** is empty for now: the algorithm of a passkey's attestation
-  certificate is not recorded on the passkey yet. Once it is, this tab counts
-  passkeys by it.
+* **Attestation** counts passkeys by the signature algorithm of the
+  attestation certificate (the leaf, #941). A passkey registered before that
+  algorithm was stored, or one whose attestation carried no certificate, is
+  not in the table. ML-DSA-44, ML-DSA-65 and ML-DSA-87 are shown with their
+  COSE identifiers. Other certificate algorithms have none. A row is
+  post-quantum when that certificate's signature is.
 * **List** appears when you click *list them* beside any count: the people
   behind it, a page at a time, with **Export CSV** and **Export JSON**.
 

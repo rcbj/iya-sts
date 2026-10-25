@@ -61,7 +61,7 @@
   "countThisProfile": "räkna dess population",
   "profilesNote": "Vad varje nyckelprofil kräver: <code>postQuantumRequired</code> nekar en klassisk nyckel vid inloggning (<code>sign-in</code>), eller även vid registrering (<code>registration-and-sign-in</code>). Räkna en profils population för att se vem den skulle neka.",
   "noProfiles": "Den här sfären har bara standardprofilen för nycklar.",
-  "attestationPending": "Algoritmen för en nyckels attesteringscertifikat registreras inte på nyckeln ännu, så ingenting räknas här. När den gör det räknar den här fliken nycklarna efter den algoritm som deras attestering signerades med.",
+  "attestationPending": "Ingen av nycklarna som räknas här har en registrerad algoritm för attesteringscertifikatet. En nyckel som registrerades innan den algoritmen sparades, eller vars attestering inte bar något certifikat, lämnas utanför.",
   "listHeading": "Personerna bakom:",
   "listHolding": "alla som har en nyckel",
   "listAlgorithm": "algoritmen <code>{algorithm}</code>",

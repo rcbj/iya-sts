@@ -61,7 +61,7 @@
   "countThisProfile": "compter sa population",
   "profilesNote": "Ce que demande chaque profil de clé d’accès : <code>postQuantumRequired</code> refuse une clé d’accès classique à la connexion (<code>sign-in</code>), ou aussi à l’enregistrement (<code>registration-and-sign-in</code>). Comptez la population d’un profil pour voir qui il refuserait.",
   "noProfiles": "Ce domaine n’a que le profil de clé d’accès par défaut.",
-  "attestationPending": "L’algorithme du certificat d’attestation d’une clé d’accès n’est pas encore enregistré sur la clé : rien n’est donc compté ici. Dès qu’il le sera, cet onglet comptera les clés d’accès selon l’algorithme qui a signé leur attestation.",
+  "attestationPending": "Aucune des clés d’accès comptées ici n’a d’algorithme de certificat d’attestation enregistré. Une clé enregistrée avant que cet algorithme soit conservé, ou dont l’attestation ne portait pas de certificat, est absente.",
   "listHeading": "Les personnes derrière :",
   "listHolding": "tous ceux qui détiennent une clé d’accès",
   "listAlgorithm": "l’algorithme <code>{algorithm}</code>",

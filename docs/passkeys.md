@@ -936,6 +936,53 @@ answers passkey questions itself, so the row has no effect in that realm.
 Rebuild the override from the current template. See [XACML](xacml.md) and
 [Configuring XACML and ALFA](configure-xacml.md).
 
+## Upgrading a classical passkey
+
+`webauthn.pqcUpgrade` (default on, per realm) lets a person who already holds
+a classical passkey move it to ML-DSA without deleting it first
+([#939](https://github.com/rcbj/iya-sts/issues/939)). Off, no passkey can be
+upgraded (`STS-AUTHN-0450`).
+
+**On the portal.** Sign in and open `/portal/keys`. Under **Upgrade a
+passkey**, each classical passkey that can be upgraded has **Upgrade to
+post-quantum**. The ceremony is two steps:
+
+1. **Prove it.** The person asserts with that classical passkey. The
+   classical passkey is not changed.
+2. **Register ML-DSA.** The registration that follows offers ML-DSA only and
+   leaves that classical credential out of `excludeCredentials`, so the same
+   authenticator may answer. There is no classical retry: the point of the
+   upgrade is ML-DSA.
+
+What the write does depends on
+[`webauthn.pqcAlongsideClassical`](#a-classical-and-a-post-quantum-passkey-side-by-side):
+
+| Setting | What is kept |
+|---|---|
+| on | the ML-DSA passkey is added in the post-quantum lane, and the classical passkey stays |
+| off | the ML-DSA passkey replaces the classical one, keeping its name, and the record says when it was upgraded and from which algorithm |
+
+The classical passkey on this service is touched only once the new
+registration has been verified, so a failed upgrade leaves it as it was. The
+authenticator itself may replace the credential it holds as soon as it
+creates the new one, which can be before this service has accepted the
+answer. A registration that fails after that leaves the classical passkey
+here and no classical credential on that device; the person signs in another
+way and can upgrade again.
+
+A sign-in that refuses a classical passkey because a post-quantum one is
+required links here as `/portal/keys?upgrade=post-quantum` when the realm
+offers the upgrade.
+
+**On the console.** Directory → Users, on a classical passkey, **Upgrade to
+ML-DSA**. The same two steps run in the administrator's browser, against the
+person's authenticator. Over the API the actions are
+`begin-passkey-upgrade`, `prove-passkey-upgrade`, `finish-passkey-upgrade`
+and `cancel-passkey-upgrade` on `POST /admin-api/users`.
+
+The new passkey meets every rule a registration does, including
+`postQuantumRequired` and `attestationAlgorithms`.
+
 ## Measuring the move to post-quantum passkeys
 
 **Monitoring → Passkeys** (`/admin/passkey-report`) counts the realm's people
@@ -946,13 +993,14 @@ describes every tab.
 
 **Before requiring post-quantum passkeys for a group or an application:**
 
-The realm report (#942) and ceremony audit rows (#943) are available for this
-rollout. An in-place upgrade of a classical passkey is not yet available
-([#939](https://github.com/rcbj/iya-sts/issues/939), status checked
-2026-10-23). For now, have each person register a separate ML-DSA passkey and
-verify that it signs in before removing their classical passkey. Keep the
-classical key as a recovery option until the ML-DSA credential has been tested
-on the person's device.
+The realm report (#942), the ceremony audit rows (#943) and the
+[in-place upgrade](#upgrading-a-classical-passkey) (#939) are available for
+this rollout. A person who already holds a classical passkey proves that
+passkey and then registers an ML-DSA one. With
+`webauthn.pqcAlongsideClassical` on, the ML-DSA passkey is added beside the
+classical one. With it off, the ML-DSA passkey replaces the classical one,
+and only after the new registration has been verified. Keep another way in
+until that new passkey has signed in on the person's own device.
 
 1. Open **Monitoring → Passkeys**. On **Profiles**, find the named policy that
    selects the group, and click *count its population*; or type the group's
@@ -1357,9 +1405,14 @@ way, because the browser refuses the ceremony before the service sees it.
   allowlisted error name and the client capabilities it reported; no error
   message text is stored, and the pending ceremony remains available for its
   retry.
-* **Upgrading a classical passkey to a post-quantum one in place** is not
-  built yet ([#939](https://github.com/rcbj/iya-sts/issues/939)). The refusal
-  page links to registration only.
+* **An in-place upgrade can leave the classical credential only on this
+  service.** [Upgrading a classical passkey](#upgrading-a-classical-passkey)
+  ([#939](https://github.com/rcbj/iya-sts/issues/939)) is available. The
+  authenticator may replace the credential it holds as soon as it creates
+  the new one, which can be before this service has accepted the
+  registration. A registration that fails after that leaves the classical
+  passkey here and none on that device. The refusal page links to the
+  upgrade when the realm offers it.
 * **Device Bound Session Credentials** (binding the session cookie to the
   browser) are a separate, optional feature. A passkey profile can require
   a bound session (`deviceBoundRequired`), and only while

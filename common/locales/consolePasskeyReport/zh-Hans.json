@@ -61,7 +61,7 @@
   "countThisProfile": "统计其人群",
   "profilesNote": "每个通行密钥配置文件的要求：<code>postQuantumRequired</code> 在登录时（<code>sign-in</code>），或在注册时也（<code>registration-and-sign-in</code>）拒绝传统通行密钥。统计某个配置文件的人群，即可看出它会拒绝谁。",
   "noProfiles": "此领域只有默认的通行密钥配置文件。",
-  "attestationPending": "通行密钥的证明证书所用算法尚未记录在通行密钥上，因此这里没有统计任何内容。一旦记录，本标签页将按签署其证明的算法统计通行密钥。",
+  "attestationPending": "此处统计的通行密钥都没有已记录的证明证书算法。在该算法开始保存之前注册的通行密钥，或证明中没有证书的通行密钥，不会出现在这里。",
   "listHeading": "背后的人员：",
   "listHolding": "所有持有通行密钥的人",
   "listAlgorithm": "算法 <code>{algorithm}</code>",

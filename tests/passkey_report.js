@@ -101,7 +101,46 @@ function facets(t) {
   t.equal(report.facetsOfValues([], 'nobody').kind, 'none',
           'A6. no key is the kind none, with no person facet');
   t.equal(report.attestationFacetOf({}), null,
-          'A7. no attestation algorithm is read before #941 records one');
+          'A7. a key with no attestation record is not counted');
+  const leaf = report.attestationFacetOf({ attestation: { algorithms: {
+    certificates: [{ algorithm: 'ML-DSA-65', postQuantum: true }] } } });
+  t.equal(leaf && leaf.algorithm, 'ML-DSA-65',
+          'A8. the leaf certificate\'s algorithm is the one counted');
+  t.equal(leaf && leaf.coseAlg, -49,
+          'A9. an ML-DSA certificate name keeps its COSE identifier');
+  t.equal(leaf && leaf.postQuantum, true,
+          'A10. and the certificate\'s own post-quantum flag');
+  const classical = report.attestationFacetOf({ attestation: {
+    algorithms: { certificates: [{ algorithm: 'sha256-ecdsa',
+                                   postQuantum: false }] } } });
+  t.equal(classical && classical.coseAlg, null,
+          'A11. a classical certificate algorithm is not a COSE name');
+  t.equal(classical && classical.postQuantum, false,
+          'A12. and is not post-quantum');
+  const counted = report.facetsOfValues([JSON.stringify(Object.assign(
+    key('a3', 'ES256', -7), { attestation: { algorithms: { certificates: [
+      { algorithm: 'ML-DSA-87', postQuantum: true }] } } }))], 'someone');
+  t.equal(counted.counts['t|ML-DSA-87|-50|1'], 1,
+          'A13. that certificate counts under t|');
+  t.equal(report.attestationFacetOf({ attestation: { algorithms: {
+    statement: 'ES256', statementCoseAlg: -7 } } }), null,
+          'A14. a statement with no certificate is not an attestation ' +
+          'certificate');
+  const member = report.attestationFacetOf({ attestation: { algorithms: {
+    certificates: [],
+    members: [{ certificates: [{ algorithm: 'ML-DSA-44',
+                                 postQuantum: true }] }] } } });
+  t.equal(member && member.algorithm, 'ML-DSA-44',
+          'A15. a compound statement counts its first member\'s leaf');
+  t.equal(member && member.coseAlg, -48,
+          'A16. ML-DSA-44 keeps its COSE identifier');
+  const anchor = report.attestationFacetOf({ attestation: { algorithms: {
+    certificates: [{ algorithm: 'unreadable' }],
+    anchor: { algorithm: 'ML-DSA-87', postQuantum: true } } } });
+  t.equal(anchor && anchor.algorithm, 'ML-DSA-87',
+          'A17. an unreadable leaf falls through to the anchor');
+  t.equal(anchor && anchor.coseAlg, -50,
+          'A18. and the anchor keeps ML-DSA-87\'s COSE identifier');
   log.debug("Leaving facets().");
 }
 

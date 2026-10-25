@@ -61,7 +61,7 @@
   "countThisProfile": "count its population",
   "profilesNote": "What each passkey profile asks: <code>postQuantumRequired</code> refuses a classical passkey at sign-in (<code>sign-in</code>), or at registration as well (<code>registration-and-sign-in</code>). Count a profile's population to see whom it would refuse.",
   "noProfiles": "This realm has only the default passkey profile.",
-  "attestationPending": "The algorithm of a passkey's attestation certificate is not recorded on the passkey yet, so nothing is counted here. Once it is, this tab counts the passkeys by the algorithm their attestation was signed with.",
+  "attestationPending": "None of the passkeys counted here has a recorded attestation-certificate algorithm. A passkey registered before that algorithm was stored, or one whose attestation carried no certificate, is left out.",
   "listHeading": "The people behind:",
   "listHolding": "everybody holding a passkey",
   "listAlgorithm": "algorithm <code>{algorithm}</code>",
