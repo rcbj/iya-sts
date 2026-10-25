@@ -5945,7 +5945,10 @@ const ENDPOINTS: EndpointEntry[] = [
           'here. Besides the paged acts the reply carries `chains` — the ' +
           'distinct (mechanism, initial, intermediary, target) tuples among ' +
           'what matched, one per edge — and `policy`, who may delegate to ' +
-          'whom before anybody has tried. WALK IT BY `seq`. READ ONLY, one ' +
+          'whom before anybody has tried. RESUME BY `at`, not by `seq` ' +
+          '(#465). `seq` is unique and never reused and rises within each ' +
+          'process, but each worker thread numbers from a block of its ' +
+          'own, so it is not one order across them. READ ONLY, one ' +
           'of the two resources here that is: everything on it is an ' +
           'observation or somebody else\'s configuration, so there is ' +
           'nothing to change. Mirrors GET /admin/delegation.' },
@@ -6260,9 +6263,14 @@ const ENDPOINTS: EndpointEntry[] = [
           'and free text and paged with ?page= and ?per=. NO CREDENTIAL IS ' +
           'EVER IN A ROW — no password, bearer token, assertion or body; a ' +
           'modify names the attributes it changed and never their values. ' +
-          'WALK IT BY `seq` rather than by page: it is monotonic and never ' +
-          'reused, so "everything after 4102" is exact where page 2 taken a ' +
-          'second after page 1 can repeat a row that shifted onto it. READ ' +
+          'RESUME BY `at`, not by `seq` (#465). `seq` is unique across ' +
+          'every process of the service and never reused, and it rises ' +
+          'within each process, but each worker thread numbers from a ' +
+          'block of its own, so the numbers are not one order and ' +
+          '"everything after 4102" misses a later event recorded under a ' +
+          'lower number. `origin` breaks a tie with `seq`. Page 2 taken a ' +
+          'second after page 1 can repeat a row that shifted onto it. ' +
+          'READ ' +
           'ONLY — one of the two resources here that is, the other being ' +
           '/admin-api/delegation. There is no clear operation, because an ' +
           'erase control on an unprotected API would make an audit log ' +
