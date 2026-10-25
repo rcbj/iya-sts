@@ -4489,6 +4489,67 @@ class Credentials {
     return out;
   }
 
+  // ONE WRITE OF ONE KEY (#929). The five writers below each used to read
+  // the list, find the key, maybe change it and write every key back.
+  // `noteKeyUsed()` runs on every passkey sign-in, so this adds no store
+  // read: `keysOf()` once, with the username the caller passes (four of
+  // them pass it raw; `renameKey()` has already trimmed), and
+  // `replaceWebauthn` only when `mutate` says the row changed. A write of
+  // a mark that was already there is what sent CAEP credential-change a
+  // second time (#910). No store means the keys are not read. `mutate` is
+  // handed the object already in the list, so the written values include
+  // the change.
+  /**
+   * Rewrites one of a person's keys when `mutate` says it changed.
+   *
+   * @param username - as the caller passes it to `keysOf`
+   * @param credentialId - the key's credential id
+   * @param mutate - given the key already in the list; returns true when
+   *   that object changed and should be written
+   * @returns `{ reason }` of `no-store`, `missing` or `unchanged`, or
+   *   `{ reason: 'written', result, found }`, or
+   *   `{ reason: 'threw', error }`
+   */
+  private rewriteKey(username, credentialId, mutate) {
+    const { log } = this.deps;
+    const directory = this.directory;
+    log.debug('Entering Credentials.rewriteKey().');
+    if (!directory || typeof directory.replaceWebauthn !== 'function') {
+      log.debug('Leaving Credentials.rewriteKey(). No store.');
+      return { reason: 'no-store' };
+    }
+    const keys = this.keysOf(username);
+    const found = keys.filter((one) => {
+      return one.credentialId === String(credentialId);
+    })[0];
+    if (!found) {
+      log.debug('Leaving Credentials.rewriteKey(). No key.');
+      return { reason: 'missing' };
+    }
+    // False, including a refusal to touch a mark already stored: the write
+    // is what a second CAEP credential-change would follow (#910).
+    if (!mutate(found)) {
+      log.debug('Leaving Credentials.rewriteKey(). Nothing changed.');
+      return { reason: 'unchanged' };
+    }
+    try {
+      const result = directory.replaceWebauthn(
+        String(username || '').trim(), keys.map((one) => {
+          return JSON.stringify(one);
+        }));
+      log.debug('Leaving Credentials.rewriteKey(). Written.');
+      return { reason: 'written', result: result, found: found };
+    } catch (e) {
+      log.debug('Caught in Credentials.rewriteKey(): ' +
+                ((e && e.message) || e));
+      // The writer logs its own code. A failed counter must not undo a
+      // sign-in that already succeeded, and a failed mark must not look
+      // like one that was recorded.
+      log.debug('Leaving Credentials.rewriteKey(). Threw.');
+      return { reason: 'threw', error: e };
+    }
+  }
+
   /**
    * Makes a WebAuthn credential's `android-key` attestation untrusted because
    * Google's status list revokes or suspends a certificate of its chain.
@@ -4500,38 +4561,36 @@ class Credentials {
    */
   untrustKeyAttestation(username, credentialId, revocation) {
     const { log, errorCodes } = this.deps;
-    const directory = this.directory;
     log.debug('Entering Credentials.untrustKeyAttestation().');
-    if (!directory || typeof directory.replaceWebauthn !== 'function') {
+    const outcome = this.rewriteKey(username, credentialId, (found) => {
+      if (!found.attestation || found.attestation.trusted !== true) {
+        return false;
+      }
+      found.attestation = Object.assign({}, found.attestation, {
+        trusted: false, anchor: '',
+        androidRevocation: Object.assign({},
+          found.attestation.androidRevocation || {}, revocation || {}) });
+      return true;
+    });
+    if (outcome.reason === 'no-store') {
       log.debug('Leaving Credentials.untrustKeyAttestation(). No store.');
       return false;
     }
-    const keys = this.keysOf(username);
-    const found = keys.filter(function (one) {
-      return one.credentialId === String(credentialId);
-    })[0];
-    if (!found || !found.attestation || found.attestation.trusted !== true) {
-      log.debug('Leaving Credentials.untrustKeyAttestation(). Nothing to do.');
-      return false;
-    }
-    found.attestation = Object.assign({}, found.attestation, {
-      trusted: false, anchor: '',
-      androidRevocation: Object.assign({},
-        found.attestation.androidRevocation || {}, revocation || {}) });
-    try {
-      const written = !!directory.replaceWebauthn(
-        String(username || '').trim(), keys.map(function (one) {
-          return JSON.stringify(one);
-        }));
-      log.debug('Leaving Credentials.untrustKeyAttestation(). ' + written);
-      return written;
-    } catch (e) {
+    if (outcome.reason === 'threw') {
       log.error(errorCodes.tag('STS-AUTHN-0296') + 'credentials: the ' +
                 'revoked attestation of a security key of ' + username +
-                ' could not be recorded: ' + e.message);
+                ' could not be recorded: ' + outcome.error.message);
       log.debug('Leaving Credentials.untrustKeyAttestation(). Threw.');
       return false;
     }
+    if (outcome.reason !== 'written') {
+      log.debug('Leaving Credentials.untrustKeyAttestation(). ' +
+                'Nothing to do.');
+      return false;
+    }
+    const written = !!outcome.result;
+    log.debug('Leaving Credentials.untrustKeyAttestation(). ' + written);
+    return written;
   }
 
   // A KEY THE ATTESTATION RULES NOW REFUSE AT SIGN-IN (#530): marked on its
@@ -4549,44 +4608,41 @@ class Credentials {
    */
   noteKeyAttestationRefused(username, credentialId, code, why) {
     const { log, errorCodes } = this.deps;
-    const directory = this.directory;
     log.debug('Entering Credentials.noteKeyAttestationRefused().');
-    if (!directory || typeof directory.replaceWebauthn !== 'function') {
+    const outcome = this.rewriteKey(username, credentialId, (found) => {
+      // Compared as it is stored, truncated (#910): an untruncated reason
+      // over 500 characters never matched, so every attempt rewrote the key
+      // and sent CAEP credential-change again. Returning false is what
+      // stops that second write.
+      if (found.attestationRefused &&
+          found.attestationRefused.why ===
+            String(why || '').slice(0, 500)) {
+        return false;
+      }
+      found.attestationRefused = { code: String(code || ''),
+                                   why: String(why || '').slice(0, 500),
+                                   at: Date.now() };
+      return true;
+    });
+    if (outcome.reason === 'no-store') {
       log.debug('Leaving Credentials.noteKeyAttestationRefused(). No store.');
       return false;
     }
-    const keys = this.keysOf(username);
-    const found = keys.filter(function (one) {
-      return one.credentialId === String(credentialId);
-    })[0];
-    // Compared as it is stored, truncated (#910): an untruncated reason
-    // over 500 characters never matched, so every attempt rewrote the key
-    // and sent CAEP credential-change again.
-    if (!found || (found.attestationRefused &&
-                   found.attestationRefused.why ===
-                     String(why || '').slice(0, 500))) {
+    if (outcome.reason === 'threw') {
+      log.error(errorCodes.tag('STS-AUTHN-0318') + 'credentials: the ' +
+                'refused attestation of a passkey of ' + username +
+                ' could not be recorded: ' + outcome.error.message);
+      log.debug('Leaving Credentials.noteKeyAttestationRefused(). Threw.');
+      return false;
+    }
+    if (outcome.reason !== 'written') {
       log.debug('Leaving Credentials.noteKeyAttestationRefused(). ' +
                 'Nothing new.');
       return false;
     }
-    found.attestationRefused = { code: String(code || ''),
-                                 why: String(why || '').slice(0, 500),
-                                 at: Date.now() };
-    try {
-      const written = !!directory.replaceWebauthn(
-        String(username || '').trim(), keys.map(function (one) {
-          return JSON.stringify(one);
-        }));
-      log.debug('Leaving Credentials.noteKeyAttestationRefused(). ' +
-                written);
-      return written;
-    } catch (e) {
-      log.error(errorCodes.tag('STS-AUTHN-0318') + 'credentials: the ' +
-                'refused attestation of a passkey of ' + username +
-                ' could not be recorded: ' + e.message);
-      log.debug('Leaving Credentials.noteKeyAttestationRefused(). Threw.');
-      return false;
-    }
+    const written = !!outcome.result;
+    log.debug('Leaving Credentials.noteKeyAttestationRefused(). ' + written);
+    return written;
   }
 
   // A KEY THE ISSUANCE POLICY'S PASSKEY RULES NOW REFUSE AT SIGN-IN, BY
@@ -4610,41 +4666,42 @@ class Credentials {
    */
   noteKeyPolicyRefused(username, credentialId, reason, code, why) {
     const { log, errorCodes } = this.deps;
-    const directory = this.directory;
     log.debug('Entering Credentials.noteKeyPolicyRefused(). ' + reason);
-    if (!directory || typeof directory.replaceWebauthn !== 'function') {
+    const which = String(reason || '');
+    const outcome = this.rewriteKey(username, credentialId, (found) => {
+      // `&&` binds tighter than `?:`, which is the reading the old line
+      // had: an object already stored, otherwise none. An empty reason is
+      // nothing new, and the keys are still read — the old door read them
+      // before it noticed the reason.
+      const held = found.policyRefused &&
+        typeof found.policyRefused === 'object' ? found.policyRefused : {};
+      if (!which || (held[which] &&
+                     held[which].why === String(why || '').slice(0, 500))) {
+        return false;
+      }
+      found.policyRefused = Object.assign({}, held, {
+        [which]: { code: String(code || ''),
+                   why: String(why || '').slice(0, 500), at: Date.now() } });
+      return true;
+    });
+    if (outcome.reason === 'no-store') {
       log.debug('Leaving Credentials.noteKeyPolicyRefused(). No store.');
       return false;
     }
-    const keys = this.keysOf(username);
-    const found = keys.filter(function (one) {
-      return one.credentialId === String(credentialId);
-    })[0];
-    const which = String(reason || '');
-    const held = found && found.policyRefused &&
-      typeof found.policyRefused === 'object' ? found.policyRefused : {};
-    if (!found || !which ||
-        (held[which] && held[which].why === String(why || '').slice(0, 500))) {
-      log.debug('Leaving Credentials.noteKeyPolicyRefused(). Nothing new.');
-      return false;
-    }
-    found.policyRefused = Object.assign({}, held, {
-      [which]: { code: String(code || ''),
-                 why: String(why || '').slice(0, 500), at: Date.now() } });
-    try {
-      const written = !!directory.replaceWebauthn(
-        String(username || '').trim(), keys.map(function (one) {
-          return JSON.stringify(one);
-        }));
-      log.debug('Leaving Credentials.noteKeyPolicyRefused(). ' + written);
-      return written;
-    } catch (e) {
+    if (outcome.reason === 'threw') {
       log.error(errorCodes.tag('STS-AUTHN-0318') + 'credentials: the ' +
                 'refusal of a passkey of ' + username + ' (' + which + ') ' +
-                'could not be recorded: ' + e.message);
+                'could not be recorded: ' + outcome.error.message);
       log.debug('Leaving Credentials.noteKeyPolicyRefused(). Threw.');
       return false;
     }
+    if (outcome.reason !== 'written') {
+      log.debug('Leaving Credentials.noteKeyPolicyRefused(). Nothing new.');
+      return false;
+    }
+    const written = !!outcome.result;
+    log.debug('Leaving Credentials.noteKeyPolicyRefused(). ' + written);
+    return written;
   }
 
   // Update the signature counter after a successful assertion. WebAuthn's
@@ -4663,47 +4720,41 @@ class Credentials {
    */
   noteKeyUsed(username, credentialId, signCount, flags?) {
     const { log, errorCodes } = this.deps;
-    const directory = this.directory;
     log.debug('Entering Credentials.noteKeyUsed().');
-    if (!directory || typeof directory.replaceWebauthn !== 'function') {
-      log.debug("Leaving Credentials.noteKeyUsed().");
-      return false;
-    }
-    const keys = this.keysOf(username);
-    const found = keys.filter((one) => {
-      return one.credentialId === String(credentialId);
-    })[0];
-    if (!found) {
-      log.debug("Leaving Credentials.noteKeyUsed().");
-      return false;
-    }
-    found.signCount = Number(signCount || 0);
-    found.lastUsedAt = Date.now();
-    // THE BACKUP STATE CAN CHANGE AFTER ENROLMENT (WebAuthn Level 3 section
-    // 6.1.3: BS "can change over time"), so each assertion's is kept — and BE
-    // for a key enrolled before #470 kept it, since BE never changes and an
-    // assertion carries it too.
-    if (flags && typeof flags.bs === 'boolean') {
-      found.backupState = flags.bs;
-    }
-    if (flags && typeof flags.be === 'boolean' &&
-        typeof found.backupEligible !== 'boolean') {
-      found.backupEligible = flags.be;
-    }
-    try {
-      log.debug("Leaving Credentials.noteKeyUsed().");
-      return directory.replaceWebauthn(String(username || '').trim(),
-        keys.map((one) => { return JSON.stringify(one); }));
-    } catch (e) {
-      // The assertion already succeeded; failing to record the counter must not
-      // undo it. Logged, because a counter that stops advancing is a replay
-      // defence that stops defending.
+    const outcome = this.rewriteKey(username, credentialId, (found) => {
+      found.signCount = Number(signCount || 0);
+      found.lastUsedAt = Date.now();
+      // THE BACKUP STATE CAN CHANGE AFTER ENROLMENT (WebAuthn Level 3
+      // section 6.1.3: BS "can change over time"), so each assertion's is
+      // kept — and BE for a key enrolled before #470 kept it, since BE
+      // never changes and an assertion carries it too.
+      if (flags && typeof flags.bs === 'boolean') {
+        found.backupState = flags.bs;
+      }
+      if (flags && typeof flags.be === 'boolean' &&
+          typeof found.backupEligible !== 'boolean') {
+        found.backupEligible = flags.be;
+      }
+      return true;
+    });
+    if (outcome.reason === 'threw') {
+      // The assertion already succeeded; failing to record the counter
+      // must not undo it. Logged, because a counter that stops advancing
+      // is a replay defence that stops defending.
       log.error(errorCodes.tag('STS-AUTHN-0038') +
                 'credentials: the signature counter for ' + username +
-                ' could not be recorded: ' + e.message);
+                ' could not be recorded: ' + outcome.error.message);
       log.debug("Leaving Credentials.noteKeyUsed().");
       return false;
     }
+    if (outcome.reason === 'written') {
+      // The directory's own answer, not `!!` of it: a caller that recorded
+      // the counter reads whatever `replaceWebauthn` returned.
+      log.debug("Leaving Credentials.noteKeyUsed().");
+      return outcome.result;
+    }
+    log.debug("Leaving Credentials.noteKeyUsed().");
+    return false;
   }
 
   // ---------------------------------------------------------------------------
@@ -4988,6 +5039,8 @@ class Credentials {
     const directory = this.directory;
     const coded = this.coded.bind(this);
     log.debug('Entering Credentials.renameKey().');
+    // The store is asked before the label, as it always was: no store and
+    // a label that is not a name is still "no store" (STS-AUTHN-0059).
     if (!directory || typeof directory.replaceWebauthn !== 'function') {
       log.debug("Leaving Credentials.renameKey(). No store.");
       return coded('STS-AUTHN-0059', { ok: false, errors: ['No credential ' +
@@ -5002,29 +5055,38 @@ class Credentials {
           'name is at most 60 characters, with no control characters.'] });
     }
     const name = String(username || '').trim();
-    const keys = this.keysOf(name);
-    const found = keys.filter((one) => {
-      return one.credentialId === String(credentialId);
-    })[0];
-    if (!found) {
+    let previous = '';
+    // The name is already trimmed, and that is what `keysOf` is given —
+    // the other four writers pass the raw username. A found key is always
+    // written, even when the label is the one already stored: the old door
+    // wrote on every hit. An empty name puts the default back.
+    const outcome = this.rewriteKey(name, credentialId, (found) => {
+      previous = Credentials.keyName(found);
+      found.label = wanted || Credentials.defaultKeyName(found);
+      return true;
+    });
+    if (outcome.reason === 'missing') {
       log.debug("Leaving Credentials.renameKey(). Not theirs.");
       return coded('STS-AUTHN-0299', { ok: false, errors: ['No passkey of ' +
           'that id is registered for ' + name + '.'] });
     }
-    const previous = Credentials.keyName(found);
-    found.label = wanted || Credentials.defaultKeyName(found);
-    try {
-      directory.replaceWebauthn(name, keys.map((one) => {
-        return JSON.stringify(one);
-      }));
-    } catch (e) {
+    if (outcome.reason === 'threw') {
       log.debug("Leaving Credentials.renameKey(). The store threw.");
       return coded('STS-AUTHN-0068', { ok: false, errors: ['The credential ' +
-          'store refused the write: ' + e.message] });
+          'store refused the write: ' + outcome.error.message] });
+    }
+    if (outcome.reason === 'no-store') {
+      // The store was present above. This is it having gone between the
+      // check and the write: the same refusal. 'unchanged' is not this
+      // answer — a found key's mutation returns true, so it always writes,
+      // and a key that is theirs must not be reported as no store.
+      log.debug("Leaving Credentials.renameKey(). No store.");
+      return coded('STS-AUTHN-0059', { ok: false, errors: ['No credential ' +
+          'store is installed.'] });
     }
     log.info('credentials: a passkey of ' + name + ' was renamed.');
     log.debug("Leaving Credentials.renameKey().");
-    return { ok: true, label: found.label, previous: previous };
+    return { ok: true, label: outcome.found.label, previous: previous };
   }
 
   // ===========================================================================
@@ -6095,11 +6157,14 @@ class Credentials {
   // So a caller that can wait asks for EVERY shown row at once: the
   // directory's `credentialRowsAsync()` reads each name by the census's
   // resolution, asynchronously and a page at a time, and hands the values
-  // back raw; this file interprets them with the SAME functions the one-name
-  // path uses — `keysFromValues()`, `totpStatusFromValue()`,
-  // `backupCodesFromValue()`, `backupCodeStatusOfHeld()` and the mail
-  // factor's `heldOfAttributes()` — so a row is the row `factorHolderRow()`
-  // gives, member for member. `tests/users_page_rows_async.js` compares them.
+  // back raw. `interpretValues()` reads them ONCE — `keysFromValues()`,
+  // `totpStatusFromValue()` and the mail factor's `heldOfAttributes()` —
+  // and returns the census facts `factsFromValues()` returns, so a shown
+  // row does not parse the keys or the authenticator a second time (#820,
+  // #929). Recovery codes are read only for the row
+  // (`backupCodesFromValue()`, `backupCodeStatusOfHeld()`); the census does
+  // not start computing them. A row is the row `factorHolderRow()` gives,
+  // member for member. `tests/users_page_rows_async.js` compares them.
   //
   // **A REFUSAL IS UNKNOWN, NOT NONE**: where the store could not be read
   // (unavailable, or the budget spent) every row is answered null — drawn
@@ -6178,47 +6243,32 @@ class Credentials {
     return out;
   }
 
-  // One roster row from the values the directory handed over, by
-  // `mechanismsFor()`'s rules — `raw` null is a name that finds no entry,
-  // which holds nothing, as `mechanismsFor()` answers for one. Called once
-  // per shown row.
+  // One roster row from the values the directory handed over. The eight
+  // facts and the authenticator come from `interpretValues()`, read once;
+  // the row adds only what the census does not carry (`totpDetail`, the
+  // recovery-code count, `recoveryAdvised`). Called once per shown row
+  // (#820), so this must not parse the keys or the authenticator again.
+  // `raw` null finds no entry and holds nothing, as `mechanismsFor()`
+  // answers for one.
   private factorHolderRowFromValues(row, raw, name, mailFactor) {
     const { log, backupCodes } = this.deps;
     log.debug('Entering Credentials.factorHolderRowFromValues().');
-    const values = raw || {};
-    const keys = this.keysFromValues(values.webauthn || [], name);
-    const primaryKeys = keys.filter((one) => {
-      return one.role === 'primary';
-    }).length;
-    const mfaKeys = keys.filter((one) => {
-      return one.role === 'mfa';
-    }).length;
-    const authenticator = this.totpStatusFromValue(values.totp || '', name);
-    const totpEnrolled = !!authenticator;
-    let mailHeld = '';
-    if (mailFactor && values.mail &&
-        typeof mailFactor.heldOfAttributes === 'function') {
-      try {
-        mailHeld = mailFactor.heldOfAttributes(values.mail) || '';
-      } catch (e) {
-        log.debug('Caught in Credentials.factorHolderRowFromValues(): ' +
-                  ((e && e.message) || e));
-        // Not held, for `mailFactorOf()`'s reason.
-        mailHeld = '';
-      }
-    }
-    const held = this.backupCodesFromValue(values.backupCodes || '', name);
-    const password = !!values.password;
+    const read = this.interpretValues(raw, name, mailFactor, true);
+    const facts = read.facts;
+    const authenticator = read.authenticator;
+    const held = read.held;
+    const mfaKeys = facts.mfaKeys;
+    const totpEnrolled = facts.totp;
     log.debug('Leaving Credentials.factorHolderRowFromValues().');
     return {
       username: row.username,
       inDirectory: row.inDirectory,
       known: row.known,
-      password: password,
-      primaryKeys: primaryKeys,
+      password: facts.password,
+      primaryKeys: facts.primaryKeys,
       mfaKeys: mfaKeys,
       totp: totpEnrolled,
-      totpUsable: totpEnrolled && !authenticator.unusable,
+      totpUsable: facts.totpUsable,
       // `mechanismsFor()`'s `totpDetail`, member for member.
       totpDetail: totpEnrolled
         ? { enrolledAt: authenticator.enrolledAt || 0,
@@ -6234,11 +6284,9 @@ class Credentials {
       backupCodes: this.backupCodeStatusOfHeld(held),
       recoveryAdvised: backupCodes.offered() &&
                        (mfaKeys > 0 || totpEnrolled) && !held,
-      mfaRequired: mfaKeys > 0 || totpEnrolled || !!mailHeld,
-      secondFactor: mfaKeys > 0 ? 'webauthn' :
-                    (totpEnrolled ? 'totp' :
-                     (mailHeld ? 'email-' + mailHeld : '')),
-      usable: password || primaryKeys > 0
+      mfaRequired: facts.mfaRequired,
+      secondFactor: facts.secondFactor,
+      usable: facts.usable
     };
   }
 
@@ -6750,12 +6798,29 @@ class Credentials {
     };
   }
 
-  // One person's census facts from the raw values the directory handed over.
-  // `raw` is null for a name that finds no entry, which answers what
-  // `mechanismsFor()` answers for one: nothing held.
-  private factsFromValues(raw, name, mailFactor) {
+  // ONE PARSE OF A PERSON'S CREDENTIAL VALUES (#929). The census
+  // (`factsFromValues()`) and a shown row (`factorHolderRowFromValues()`)
+  // each used to parse the keys, the authenticator and the mailed factor
+  // and then compute the same eight facts. The Users page builds a row for
+  // every person it shows (#820), so a second parse there is the cost this
+  // removes. Recovery codes are read only when the caller asks: the census
+  // does not carry them and must not start computing them. `raw` null is a
+  // name that finds no entry, which holds nothing, as `mechanismsFor()`
+  // answers for one.
+  /**
+   * Interprets one person's raw credential values into the census facts,
+   * the authenticator record and, when asked, the held recovery codes.
+   *
+   * @param raw - the directory's values, or null
+   * @param name - the person
+   * @param mailFactor - the mailed-factor module, or null
+   * @param withBackup - whether to read the recovery codes
+   * @returns `{ facts, authenticator, held }`; `held` is null when the
+   *   recovery codes were not asked for
+   */
+  private interpretValues(raw, name, mailFactor, withBackup) {
     const { log } = this.deps;
-    log.debug('Entering Credentials.factsFromValues().');
+    log.debug('Entering Credentials.interpretValues().');
     const values = raw || {};
     const keys = this.keysFromValues(values.webauthn || [], name);
     const primaryKeys = keys.filter((one) => {
@@ -6772,27 +6837,45 @@ class Credentials {
       try {
         mailHeld = mailFactor.heldOfAttributes(values.mail) || '';
       } catch (e) {
-        log.debug('Caught in Credentials.factsFromValues(): ' +
+        log.debug('Caught in Credentials.interpretValues(): ' +
                   ((e && e.message) || e));
         // Not held, for `mailFactorOf()`'s reason.
         mailHeld = '';
       }
     }
     const password = !!values.password;
-    log.debug('Leaving Credentials.factsFromValues().');
+    // Only a roster row asks. The census's callers (`censusFacts()`,
+    // `factorCountsOf()`) pass false, so they do not open the codes.
+    const held = withBackup ?
+      this.backupCodesFromValue(values.backupCodes || '', name) : null;
+    log.debug('Leaving Credentials.interpretValues().');
     return {
-      password: password,
-      primaryKeys: primaryKeys,
-      mfaKeys: mfaKeys,
-      totp: totpEnrolled,
-      totpUsable: totpEnrolled && !authenticator.unusable,
-      // `mechanismsFor()`'s two lines, read against the same three facts.
-      mfaRequired: mfaKeys > 0 || totpEnrolled || !!mailHeld,
-      secondFactor: mfaKeys > 0 ? 'webauthn' :
-                    (totpEnrolled ? 'totp' :
-                     (mailHeld ? 'email-' + mailHeld : '')),
-      usable: password || primaryKeys > 0
+      facts: {
+        password: password,
+        primaryKeys: primaryKeys,
+        mfaKeys: mfaKeys,
+        totp: totpEnrolled,
+        totpUsable: totpEnrolled && !authenticator.unusable,
+        // `mechanismsFor()`'s two lines, read against the same three facts.
+        mfaRequired: mfaKeys > 0 || totpEnrolled || !!mailHeld,
+        secondFactor: mfaKeys > 0 ? 'webauthn' :
+                      (totpEnrolled ? 'totp' :
+                       (mailHeld ? 'email-' + mailHeld : '')),
+        usable: password || primaryKeys > 0
+      },
+      authenticator: authenticator,
+      held: held
     };
+  }
+
+  // The census's facts: `interpretValues()`'s object and nothing else.
+  // Recovery codes are not read here.
+  private factsFromValues(raw, name, mailFactor) {
+    const { log } = this.deps;
+    log.debug('Entering Credentials.factsFromValues().');
+    const facts = this.interpretValues(raw, name, mailFactor, false).facts;
+    log.debug('Leaving Credentials.factsFromValues().');
+    return facts;
   }
 
   // ---------------------------------------------------------------------------
