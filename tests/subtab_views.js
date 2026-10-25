@@ -16,7 +16,10 @@
 // with `appMfaMechanism` added on Every protocol (rcbj). What is held:
 //
 //   1. those two sub-tabs' simple fields are that set — no more, no fewer —
-//      and every name in `SIMPLE_FIELD_ATTRIBUTES` is a field the grid has;
+//      and every name in `SIMPLE_FIELD_ATTRIBUTES` is a field the grid has.
+//      #466 took `oauthConfidential` off the grid: the registry writes it
+//      from `oauthTokenEndpointAuthMethod`, so it is not a field the simple
+//      view lists;
 //   2. `WebKit.hasViews()` draws a switch for six fields or more with some of
 //      each kind, and for nothing else;
 //   3. the grid classes a non-simple cell `fg-adv` only when the form has
@@ -45,11 +48,13 @@ const log = require('bunyan').createLogger({
 // 2026-10-07. `appCorsOrigin` and `appRequiredRole` were held as well and are
 // drawn on tabs of their own.
 // `appMfaMechanism` is not held by either and was asked for beside them.
+// `oauthConfidential` was held as well. #466 took it off the grid, because
+// the registry writes it from the token endpoint authentication method.
 const EVERY = ['description', 'appHomePageUrl', 'appAuthnMechanism',
                'appMfaMechanism',
                'appAllowedToDelegateTo', 'appAllowedToActOnBehalfOf',
                'appDelegationSubjectGroup', 'appDelegationSemantics'];
-const OAUTH = ['oauthClientId', 'oauthConfidential',
+const OAUTH = ['oauthClientId',
                'oauthTokenEndpointAuthMethod', 'oauthRedirectUri',
                'oauthPostLogoutRedirectUri', 'oauthGrantType',
                'oauthResponseType', 'oauthAllowedScope', 'oauthAudience',

@@ -23334,6 +23334,14 @@ const CODES = [
     summary: 'An application\'s krb5S4uSelfRealm was given a Kerberos realm ' +
       'none of this realm\'s trusts accepts tickets from (#430).',
     spec: 'none (a refused administrative change)' },
+  { code: 'STS-REG-0363',
+    summary: 'oauthConfidential was given a value the token endpoint ' +
+      'authentication method does not make, or was asked to be edited on ' +
+      'its own. The registry writes the flag from the method: none, or no ' +
+      'method on an application created by hand, is FALSE, and any other ' +
+      'method is TRUE. A supplied value that disagrees is refused, and the ' +
+      'attribute is not edited on its own (#466).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger permission was asked for by somebody who may ' +
       'not hold it — not a person, not signed in, not in the ' +

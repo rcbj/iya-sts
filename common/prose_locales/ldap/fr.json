@@ -852,8 +852,8 @@
     "text": "Pour self_signed_tls_client_auth de RFC 8705 section 2.2 : le SHA-256 en base64url du DER du certificat avec lequel ce client s’authentifie. C’EST LE NOM PROPRE À CE SERVICE, conservé à côté de ce que nomme la RFC : depuis le 2026-09-13, un certificat authentifie aussi le client lorsqu’il est le x5c[0] d’une clé du jwks qu’il a enregistré (section 2.2.2). Obtenez l’empreinte d’un certificat avec GET /tls/sign-in, ou calculez-la : openssl x509 -outform DER | openssl dgst -sha256 -binary | base64url."
   },
   "applications.schema.attributes.oauthConfidential.what": {
-    "en": "ae52d212279d2378",
-    "text": "TRUE/FALSE, la détermination que le mode RFC 9700 fait à son sujet — et donc si PKCE lui est exigé et si son secret est vérifié. Écrit ici afin que la réponse puisse être lue plutôt que déduite."
+    "en": "11b68b893e67de65",
+    "text": "TRUE ou FALSE, la détermination que la méthode d’authentification du point de terminaison de jeton fait, écrite par ce registre afin que la réponse puisse être lue. `none`, ou l’absence de méthode sur une application créée à la main, est FALSE ; toute autre méthode est TRUE. RFC 9700 lit `oauthTokenEndpointAuthMethod` (`isConfidential()` dans `oauth2_bcp.js`), si bien que cet attribut n’est pas modifié. Une création peut l’indiquer seulement lorsque la valeur concorde, et un désaccord est refusé (`STS-REG-0363`). Une application OAuth ou OpenID Connect créée sans méthode et sans authentifiant est toujours enregistrée comme `none`."
   },
   "applications.schema.attributes.samlEntityId.what": {
     "en": "3987c430d22d9352",

@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4632** of them, in **47** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4633** of them, in **47** subsystems.
 
 ## Where a code appears
 
@@ -94,7 +94,7 @@ is an ordinary outcome.
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 19
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 13
 * [Identity-provider-initiated sign-in (`STS-LAUNCH`)](#sts-launch) — 7
-* [Registries (`STS-REG`)](#sts-reg) — 180
+* [Registries (`STS-REG`)](#sts-reg) — 181
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
 
 ## STS-HTTP
@@ -5295,6 +5295,7 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0360` | An application was not created: a client secret lifetime was given with no new client secret for it to apply to — oauthClientSecret empty, or a whole record carrying its own expiry (#394). | none (a console or management API refusal, HTTP 400) |
 | `STS-REG-0361` | A value was added to oauthScope by hand: it records the scopes a client ASKED FOR, written as requests arrive, and what it may be issued is oauthAllowedScope. A remove is allowed (#708). | none (a console or management API refusal, HTTP 400) |
 | `STS-REG-0362` | An application's krb5S4uSelfRealm was given a Kerberos realm none of this realm's trusts accepts tickets from (#430). | none (a refused administrative change) |
+| `STS-REG-0363` | oauthConfidential was given a value the token endpoint authentication method does not make, or was asked to be edited on its own. The registry writes the flag from the method: none, or no method on an application created by hand, is FALSE, and any other method is TRUE. A supplied value that disagrees is refused, and the attribute is not edited on its own (#466). | none (a console or management API refusal, HTTP 400) |
 
 ## STS-DBG
 

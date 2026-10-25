@@ -2432,11 +2432,21 @@ const SCHEMA = {
             'jwks it registered (section 2.2.2). Fetch a certificate\'s ' +
             'thumbprint with GET /tls/sign-in, or compute it: openssl x509 ' +
             '-outform DER | openssl dgst -sha256 -binary | base64url.' },
+    // THE METHOD IS THE DECLARATION (#466). RFC 9700 reads
+    // oauthTokenEndpointAuthMethod (oauth2_bcp.js isConfidential()). This
+    // attribute is the registry's record of that answer, so it can be read
+    // without inferring it, and it is not edited on its own.
     { name: 'oauthConfidential', kind: 'single', from: 'this registry',
-      what: 'TRUE/FALSE, the determination RFC 9700 mode makes about it — ' +
-            'and therefore whether PKCE is required of it and whether its ' +
-            'secret is checked. Written here so the answer can be read ' +
-            'rather than inferred.' },
+      what: 'TRUE or FALSE, the determination the token endpoint ' +
+            'authentication method makes, written by this registry so ' +
+            'the answer can be read. `none`, or no method on an ' +
+            'application created by hand, is FALSE; any other method is ' +
+            'TRUE. RFC 9700 reads `oauthTokenEndpointAuthMethod` ' +
+            '(`isConfidential()` in `oauth2_bcp.js`), so this attribute ' +
+            'is not edited. A create may state it only when the value ' +
+            'agrees, and a disagreement is refused (`STS-REG-0363`). An ' +
+            'OAuth or OpenID Connect application created with no method ' +
+            'and no credential is still recorded as `none`.' },
 
     // --- SAML, WS-Federation, WS-Trust ------------------------------------
     { name: 'samlEntityId', kind: 'multi', from: 'SAML 2.0 / SAML 1.1',
@@ -4557,10 +4567,15 @@ const SCHEMA = {
 // kinds and they must not be edited alike:
 //
 //   * DECLARED — what this application IS allowed to do. Its redirect URIs, its
-//     grant types, its secret, whether it is confidential. Nothing about them
+//     grant types, its secret, and the token endpoint authentication method,
+//     which is what says whether it is confidential. Nothing about them
 //     is a fact about the past; they are configuration, they are what RFC 9700
 //     mode READS, and being able to change them is the point of having a
-//     registry at all. These are editable.
+//     registry at all. These are editable. `oauthConfidential` is the
+//     registry's recorded determination of that method (#466) and is absent
+//     from this table: the method is what an operator edits, and the registry
+//     writes the flag so it can be read. A create may state a value that
+//     agrees; a value that does not is refused.
 //
 //   * DERIVED — what HAPPENED. The counters, the first and last sighting, the
 //     kinds and protocols it has been seen in, the redirect URIs it has
@@ -4722,7 +4737,6 @@ const EDITABLE = {
   oauthTlsClientAuthSanEmail: 'set',
   oauthTlsClientCertificateBoundAccessTokens: 'set',
   oauthTlsClientCertificateThumbprint: 'set',
-  oauthConfidential: 'set',
   appRegistrationAccessToken: 'set',
   samlEntityId: 'multi',
   // DECLARED, both of them, which is why they are here and the four SAML
@@ -5833,7 +5847,7 @@ const BOOLEAN_ATTRIBUTES = [
   'oauthBackchannelLogoutSessionRequired', 'oauthNativeSso',
   'oauthBackchannelUserCodeParameter', 'oauthRequireSignedRequestObject',
   'oauthRequirePushedAuthorizationRequests', 'oauthHttpSignedRequests',
-  'oauthTlsClientCertificateBoundAccessTokens', 'oauthConfidential',
+  'oauthTlsClientCertificateBoundAccessTokens',
   'saml2EncryptAssertion', 'saml2EncryptLogoutNameId',
   'oauthRevokeRefreshOnLogout', 'appNotDelegated', 'appGroupsClaim',
   // #693: the did claim to a pairwise or ephemeral client.
@@ -6207,6 +6221,286 @@ function choiceProblem(attribute, value) {
   log.debug("Leaving choiceProblem(). Not one of the values.");
   return '"' + text + '" is not a value ' + attribute + ' takes. It is one ' +
     'of ' + choices.join(', ') + '.';
+}
+
+// ---------------------------------------------------------------------------
+// oauthConfidential IS THE DETERMINATION THE METHODS MAKE (#466).
+//
+// Found on 2026-10-06 while provisioning applications in product mode: a
+// create wrote oauthConfidential TRUE on an entry whose only method was
+// `none`. The attribute is a cache of what RFC 9700 reads off the method
+// (`oauth2_bcp.js`'s `isConfidential()`, through `clientConfigOf()`), and a
+// cache that can disagree with the method is a second answer. The registry
+// writes the flag so the answer can be read. A caller may state the same
+// value; a value that disagrees is refused rather than overwritten, because
+// overwriting would hide the provisioning mistake. It is not edited on its
+// own afterwards: changing the method changes the flag.
+//
+// THE FIRST METHOD IS THE ONE THAT COUNTS, which is all `isConfidential()`
+// needs, because `none` is never held beside another method. An empty list
+// on a REGISTERED client is RFC 7591 section 2's client_secret_basic, and
+// an empty list on an application created by hand is FALSE — the same split
+// `clientConfigOf()` already makes. A confidential method is TRUE even when
+// the secret is missing: authentication then fails for lack of a credential,
+// and the flag does not pretend the client is public.
+// ---------------------------------------------------------------------------
+
+/**
+ * The token endpoint authentication methods in a value, trimmed, with
+ * duplicates and blanks dropped, in the order they were given.
+ *
+ * @param value - one method, a list, or nothing
+ * @returns the methods
+ */
+function authMethodList(value) {
+  log.debug("Entering authMethodList().");
+  const methods = valuesOf(value).map(function (one) {
+    return String(one).trim();
+  }).filter(function (one, index, all) {
+    return one !== '' && all.indexOf(one) === index;
+  });
+  log.debug("Leaving authMethodList().");
+  return methods;
+}
+
+/**
+ * The method a create infers when an OAuth or OpenID Connect application
+ * names none: a secret is client_secret_basic, a JWK Set or its URI is
+ * private_key_jwt, and no credential is `none`.
+ *
+ * @param fields - the fields the create carries
+ * @returns the method
+ */
+function credentialAuthMethod(fields) {
+  log.debug("Entering credentialAuthMethod().");
+  const bag = fields || {};
+  const present = function (name) {
+    log.debug("Entering present().");
+    const found = valuesOf(bag[name]).some(function (one) {
+      return String(one).trim() !== '';
+    });
+    log.debug("Leaving present().");
+    return found;
+  };
+  let method = 'none';
+  if (present('oauthClientSecret')) {
+    method = 'client_secret_basic';
+  } else if (present('oauthJwks') || present('oauthJwksUri')) {
+    method = 'private_key_jwt';
+  }
+  log.debug("Leaving credentialAuthMethod(). " + method);
+  return method;
+}
+
+/**
+ * The methods a hand-create will hold: the ones it named, or the one method
+ * inferred for an OAuth or OpenID Connect application that named none.
+ *
+ * @param protocols - the families the create declared
+ * @param fields - the fields the create carries
+ * @returns the methods
+ */
+function previewAuthMethods(protocols, fields) {
+  log.debug("Entering previewAuthMethods().");
+  const declared = authMethodList(fields &&
+    fields.oauthTokenEndpointAuthMethod);
+  if (declared.length) {
+    log.debug("Leaving previewAuthMethods(). Declared.");
+    return declared;
+  }
+  const ids = valuesOf(protocols);
+  if (ids.indexOf('oauth2') >= 0 || ids.indexOf('oidc') >= 0) {
+    log.debug("Leaving previewAuthMethods(). Inferred.");
+    return [credentialAuthMethod(fields)];
+  }
+  log.debug("Leaving previewAuthMethods(). None.");
+  return [];
+}
+
+/**
+ * TRUE or FALSE when the text is one of those words, ignoring case, and ''
+ * otherwise.
+ *
+ * @param value - the text a caller supplied
+ * @returns 'TRUE', 'FALSE' or ''
+ */
+function statedConfidential(value) {
+  log.debug("Entering statedConfidential().");
+  const text = String(value == null ? '' : value).trim().toUpperCase();
+  const out = text === 'TRUE' || text === 'FALSE' ? text : '';
+  log.debug("Leaving statedConfidential().");
+  return out;
+}
+
+/**
+ * The determination `isConfidential()` would make of this record.
+ *
+ * The first method wins. A registered client that names no method is
+ * client_secret_basic (RFC 7591 section 2). No method on an application
+ * created by hand, and `none`, are FALSE.
+ *
+ * @param record - an application record, or a preview with `registered` and
+ *   `fields`
+ * @returns 'TRUE' or 'FALSE'
+ */
+function oauthConfidentialOf(record) {
+  log.debug("Entering oauthConfidentialOf().");
+  const held = record || {};
+  const fields = held.fields || {};
+  const methods = authMethodList(fields.oauthTokenEndpointAuthMethod);
+  let method = '';
+  if (methods.length) {
+    method = methods[0];
+  } else if (held.registered) {
+    method = 'client_secret_basic';
+  }
+  const flag = method !== '' && method !== 'none' ? 'TRUE' : 'FALSE';
+  log.debug("Leaving oauthConfidentialOf(). " + flag);
+  return flag;
+}
+
+/**
+ * Why a supplied oauthConfidential may not be written, or '' when it was
+ * omitted or it is the determination.
+ *
+ * @param raw - the supplied value; empty means omitted
+ * @param determination - 'TRUE' or 'FALSE', from `oauthConfidentialOf()`
+ * @returns the refusal, or ''
+ */
+function confidentialDisagreement(raw, determination) {
+  log.debug("Entering confidentialDisagreement().");
+  const text = String(raw == null ? '' : raw).trim();
+  if (!text) {
+    log.debug("Leaving confidentialDisagreement(). Omitted.");
+    return '';
+  }
+  const stated = statedConfidential(text);
+  if (!stated) {
+    log.debug("Leaving confidentialDisagreement(). Not TRUE or FALSE.");
+    return 'oauthConfidential is TRUE or FALSE, and "' + text + '" is ' +
+      'neither. The registry writes it from ' +
+      'oauthTokenEndpointAuthMethod: none, or no method on an ' +
+      'application created by hand, is FALSE, and any other method is ' +
+      'TRUE.';
+  }
+  if (stated === determination) {
+    log.debug("Leaving confidentialDisagreement(). It agrees.");
+    return '';
+  }
+  log.debug("Leaving confidentialDisagreement(). It disagrees.");
+  return 'oauthConfidential ' + stated + ' does not match the token ' +
+    'endpoint authentication method, which makes this client ' +
+    determination + '. none, or no method on an application created by ' +
+    'hand, is FALSE, and any other method is TRUE. Change ' +
+    'oauthTokenEndpointAuthMethod to change it.';
+}
+
+/**
+ * The refusal for clearing oauthConfidential.
+ *
+ * @returns the sentence
+ */
+function confidentialClearSentence() {
+  log.debug("Entering confidentialClearSentence().");
+  log.debug("Leaving confidentialClearSentence().");
+  return 'oauthConfidential cannot be cleared. It is written from ' +
+    'oauthTokenEndpointAuthMethod: none, or no method on an application ' +
+    'created by hand, is FALSE, and any other method is TRUE. Change ' +
+    'the method to change it.';
+}
+
+/**
+ * The refusal for adding to or removing from oauthConfidential.
+ *
+ * @returns the sentence
+ */
+function confidentialModeSentence() {
+  log.debug("Entering confidentialModeSentence().");
+  log.debug("Leaving confidentialModeSentence().");
+  return 'oauthConfidential is written as a whole from ' +
+    'oauthTokenEndpointAuthMethod, so it is not added to or removed ' +
+    'from. Change the method to change it.';
+}
+
+/**
+ * Whether this entry's flag is the registry's to keep: an OAuth client, a
+ * registered client, one that already names a method or the flag, or a
+ * caller that supplied the flag.
+ *
+ * @param record - the application record
+ * @returns true when the flag belongs on the entry
+ */
+function carriesOauthClient(record) {
+  log.debug("Entering carriesOauthClient().");
+  const fields = (record && record.fields) || {};
+  const families = valuesOf(fields.appAllowedProtocol).map(function (one) {
+    return String(one).trim();
+  });
+  const carries = !!record && (
+    families.indexOf('oauth2') >= 0 || families.indexOf('oidc') >= 0 ||
+    families.indexOf('oid4vci') >= 0 || !!record.registered ||
+    authMethodList(fields.oauthTokenEndpointAuthMethod).length > 0 ||
+    fields.oauthConfidential !== undefined);
+  log.debug("Leaving carriesOauthClient(). " + carries);
+  return carries;
+}
+
+/**
+ * Writes the determination onto the record when the entry is an OAuth
+ * client, or when the caller supplied the flag. A SAML-only application
+ * that said nothing about it is left without the attribute.
+ *
+ * @param record - the application record
+ * @param options - `supplied` when the caller stated the flag
+ * @returns whether the record changed
+ */
+function recordOauthConfidential(record, options) {
+  log.debug("Entering recordOauthConfidential().");
+  const supplied = !!(options && options.supplied);
+  if (!carriesOauthClient(record) && !supplied) {
+    log.debug("Leaving recordOauthConfidential(). Not an OAuth client.");
+    return false;
+  }
+  const changed = setField(record, 'oauthConfidential',
+                           oauthConfidentialOf(record));
+  log.debug("Leaving recordOauthConfidential(). " +
+            (changed ? 'Written.' : 'Already said that.'));
+  return changed;
+}
+
+/**
+ * Writes the determination of an application's methods onto its entry, when
+ * that changes the stored flag.
+ *
+ * @param identifier - the application's identifier
+ * @returns `ok`, `changed` and the application
+ */
+function writeOauthConfidential(identifier) {
+  log.debug("Entering writeOauthConfidential(). identifier=" + identifier);
+  const loaded = load(identifier);
+  if (!loaded.known) {
+    log.debug("Leaving writeOauthConfidential(). No such application.");
+    return { ok: false, changed: false, application: null };
+  }
+  const record = loaded.record;
+  const changed = recordOauthConfidential(record);
+  if (changed) {
+    record.lastAt = record.lastAt || Date.now();
+    save(record);
+    audit.audit({
+      action: 'application.update', actor: '', protocol: 'console',
+      channel: 'internal', target: String(identifier),
+      summary: 'Application "' + identifier + '": oauthConfidential is ' +
+               'now "' + record.fields.oauthConfidential + '"',
+      detail: { identifier: String(identifier),
+                attribute: 'oauthConfidential', mode: 'set',
+                editedByHand: true }
+    });
+  }
+  log.debug("Leaving writeOauthConfidential(). " +
+            (changed ? 'Written.' : 'Already said that.'));
+  return { ok: true, changed: changed,
+           application: viewAfterWrite(identifier, record) };
 }
 
 // ---------------------------------------------------------------------------
@@ -6723,7 +7017,7 @@ const SIMPLE_FIELD_ATTRIBUTES = [
   'appAllowedToDelegateTo', 'appAllowedToActOnBehalfOf',
   'appDelegationSubjectGroup', 'appDelegationSemantics',
   // OAuth 2.0 / OpenID Connect (rcbj0002, rcbj0003).
-  'oauthClientId', 'oauthConfidential', 'oauthTokenEndpointAuthMethod',
+  'oauthClientId', 'oauthTokenEndpointAuthMethod',
   'oauthRedirectUri', 'oauthPostLogoutRedirectUri', 'oauthGrantType',
   'oauthResponseType', 'oauthAllowedScope', 'oauthAudience',
   'oauthPermissionBaseUri', 'oauthPermission', 'oauthDelegatedPermission',
@@ -11151,7 +11445,12 @@ function normaliseFields(value) {
       code = code || 'STS-REG-0006';
       return;
     }
-    if (!row.editable) {
+    // oauthConfidential is derived from the method and is not in EDITABLE
+    // (#466). A create may still state TRUE or FALSE when that is the
+    // determination, the same way a seed may state oauthScope. The
+    // agreement is checked in createApplication(), which knows the method
+    // this create will infer. A bad token is refused here.
+    if (!row.editable && name !== 'oauthConfidential') {
       errors.push('"' + name + '" cannot be given here. It is DERIVED — what ' +
                   'has happened to this application rather than what it may ' +
                   'do — and an entry created with one would be asserting a ' +
@@ -11166,6 +11465,16 @@ function normaliseFields(value) {
                   'so the alternative to refusing this is keeping one of ' +
                   'them and discarding the rest silently.');
       code = code || 'STS-REG-0008';
+      return;
+    }
+    if (name === 'oauthConfidential') {
+      const stated = statedConfidential(values[0]);
+      if (!stated) {
+        errors.push(confidentialDisagreement(values[0], 'FALSE'));
+        code = code || 'STS-REG-0363';
+        return;
+      }
+      fields[name] = stated;
       return;
     }
     // THE ONE VALUE CHECK ON THIS WALK, and it is here rather than left to
@@ -13289,11 +13598,22 @@ function applyRegistrationFields(record, registration, statement) {
   // attribute states the EFFECTIVE value rather than the absence. An entry
   // saying nothing here would read as "unknown", and RFC 9700 mode's answer for
   // this client is not unknown — it is confidential.
-  const method = meta.token_endpoint_auth_method === undefined
-    ? 'client_secret_basic' : String(meta.token_endpoint_auth_method);
-  setField(record, 'oauthTokenEndpointAuthMethod', method);
-  setField(record, 'oauthConfidential',
-           method && method !== 'none' ? 'TRUE' : 'FALSE');
+  // REPLACED, NOT ADDED TO, for the grant types' reason above (#466). The
+  // flag is the determination of the FIRST method, and a `multi` setField()
+  // only adds, so an update that names a method must not leave `none` in
+  // front of it. An empty string — the member present and blank — is not an
+  // omission and does not clear methods the entry already holds.
+  if (meta.token_endpoint_auth_method === undefined) {
+    delete record.fields.oauthTokenEndpointAuthMethod;
+    setField(record, 'oauthTokenEndpointAuthMethod', 'client_secret_basic');
+  } else {
+    const statedMethod = String(meta.token_endpoint_auth_method).trim();
+    if (statedMethod) {
+      delete record.fields.oauthTokenEndpointAuthMethod;
+      setField(record, 'oauthTokenEndpointAuthMethod', statedMethod);
+    }
+  }
+  recordOauthConfidential(record);
   log.debug("Leaving applyRegistrationFields().");
 }
 
@@ -13470,7 +13790,12 @@ function forgetRegistration(clientId) {
   softwareStatementFactNames().forEach(function (name) {
     delete record.fields[name];
   });
-  setField(record, 'oauthConfidential', 'FALSE');
+  // The flag follows the methods that remain (#466). Forcing FALSE here
+  // while a confidential method stayed was the same contradiction the other
+  // way round: the entry said public and still authenticated. The method is
+  // left as the registration wrote it; what changes is `registered`, which
+  // is what an empty method list is read against.
+  recordOauthConfidential(record);
   noteDescription(record, 'its RFC 7592 registration was deleted');
   record.lastAt = Date.now();
   save(record);
@@ -14373,6 +14698,30 @@ function createApplication(detail) {
             'leave the lifetime empty.')] }, 'STS-REG-0360');
     }
   }
+  // THE FLAG AND THE METHOD ARE ONE ANSWER (#466). A stated
+  // oauthConfidential is accepted when it is the determination the methods
+  // make — the ones named, or the one this create is about to infer for an
+  // OAuth or OpenID Connect application — and refused when it is not.
+  // Asked before the record is touched: a refusal must not leave a
+  // half-written entry. A hand-create is not a registration, so an omitted
+  // method is not yet client_secret_basic.
+  if (given.fields.oauthConfidential !== undefined) {
+    const determination = oauthConfidentialOf({
+      registered: false,
+      fields: {
+        oauthTokenEndpointAuthMethod: previewAuthMethods(asked.protocols,
+                                                         given.fields)
+      }
+    });
+    const flagProblem = confidentialDisagreement(
+      given.fields.oauthConfidential, determination);
+    if (flagProblem) {
+      log.debug("Leaving createApplication(). oauthConfidential disagrees.");
+      log.debug("Leaving createApplication().");
+      return errorCodes.mark({ ok: false, errors: [flagProblem] },
+                             'STS-REG-0363');
+    }
+  }
   const record = loaded.record;
   const now = Date.now();
   record.firstAt = now;
@@ -14403,6 +14752,11 @@ function createApplication(detail) {
   // The client secret goes the way setField() would send it, to
   // putClientSecret(), with the lifetime this create was given (#394).
   Object.keys(given.fields).forEach(function (name) {
+    // Written from the methods after they are inferred, below (#466).
+    // Copying the caller's value here would store it and then overwrite it.
+    if (name === 'oauthConfidential') {
+      return;
+    }
     if (name === 'oauthClientSecret' && lifetime.days !== null) {
       putClientSecret(record, given.fields[name],
                       { expiresAt: expiryOfLifetime(lifetime.days,
@@ -14443,13 +14797,7 @@ function createApplication(detail) {
   });
   if (declaredOauth.length &&
       !valuesOf(record.fields.oauthTokenEndpointAuthMethod).length) {
-    const has = function (name) {
-      return valuesOf(record.fields[name]).some(function (v) {
-        return String(v).trim() !== '';
-      });
-    };
-    const method = has('oauthClientSecret') ? 'client_secret_basic' :
-      (has('oauthJwks') || has('oauthJwksUri')) ? 'private_key_jwt' : 'none';
+    const method = credentialAuthMethod(record.fields);
     setField(record, 'oauthTokenEndpointAuthMethod', method);
     log.debug('applications: "' + identifier + '" is declared for ' +
               declaredOauth.join(' and ') + ' and named no ' +
@@ -14459,6 +14807,13 @@ function createApplication(detail) {
                ', from the credential the create carried') +
               '. Set oauthTokenEndpointAuthMethod explicitly to change it.');
   }
+  // The flag is that determination, including a value the caller stated
+  // when it agreed. An application that is not an OAuth client, and that
+  // did not state the flag, is left without the attribute.
+  recordOauthConfidential(record, {
+    supplied: Object.prototype.hasOwnProperty.call(given.fields,
+                                                   'oauthConfidential')
+  });
   // WHERE IT CAME FROM, said on the entry itself. An application created here
   // has never authenticated anything and its counters are zero; without this
   // line a reader would have to infer that from the zeros, and "created by
@@ -14635,7 +14990,11 @@ function updateApplication(identifier, change) {
                                  'SCHEMA.attributes, not writing it through ' +
                                  'this.'] }, 'STS-REG-0006');
   }
-  if (!row.editable) {
+  // oauthConfidential is absent from EDITABLE (#466). A set that states
+  // the determination heals a stale flag; anything else is refused with
+  // the sentence that names the method, which the generic derived-attribute
+  // refusal would misdescribe.
+  if (!row.editable && attribute !== 'oauthConfidential') {
     log.debug("Leaving updateApplication(). Not editable.");
     log.debug("Leaving updateApplication().");
     return errorCodes.mark({ ok: false, errors: ['"' + attribute + '" is not ' +
@@ -14666,6 +15025,31 @@ function updateApplication(identifier, change) {
                                  'forgotten.'] }, 'STS-REG-0008');
   }
   let value = String(asked.value == null ? '' : asked.value);
+  if (attribute === 'oauthConfidential') {
+    if (mode !== 'set') {
+      log.debug("Leaving updateApplication(). Not set as a whole.");
+      log.debug("Leaving updateApplication().");
+      return errorCodes.mark({ ok: false,
+                               errors: [confidentialModeSentence()] },
+                             'STS-REG-0363');
+    }
+    if (!value.trim()) {
+      log.debug("Leaving updateApplication(). Cannot be cleared.");
+      log.debug("Leaving updateApplication().");
+      return errorCodes.mark({ ok: false,
+                               errors: [confidentialClearSentence()] },
+                             'STS-REG-0363');
+    }
+    const determination = oauthConfidentialOf(loaded.record);
+    const flagProblem = confidentialDisagreement(value, determination);
+    if (flagProblem) {
+      log.debug("Leaving updateApplication(). The flag disagrees.");
+      log.debug("Leaving updateApplication().");
+      return errorCodes.mark({ ok: false, errors: [flagProblem] },
+                             'STS-REG-0363');
+    }
+    value = determination;
+  }
   if (mode !== 'set' && !value) {
     log.debug("Leaving updateApplication().");
     return errorCodes.mark({ ok: false,
@@ -15385,6 +15769,16 @@ function updateApplication(identifier, change) {
       delete record.fields[attribute];
     }
     what = 'removed "' + value + '" from ' + attribute;
+  }
+
+  // The stored flag follows the method (#466). Asked even when the method
+  // itself did not change, so putting the same method back heals a flag an
+  // ldapmodify left disagreeing with it.
+  if (attribute === 'oauthTokenEndpointAuthMethod' &&
+      recordOauthConfidential(record)) {
+    changed = true;
+    what = (what ? what + ', and ' : '') + 'oauthConfidential is now "' +
+      record.fields.oauthConfidential + '"';
   }
 
   if (!changed) {
@@ -16194,8 +16588,16 @@ function finishClientSecretWrite(identifier, record, opts, detail, summary) {
   const methodSet = !!primary &&
     (methodBefore === '' || methodBefore === 'none');
   if (methodSet) {
+    // setField on a multi attribute only ADDS. A method of `none` would
+    // stay FIRST, so isConfidential() would still read the client as
+    // public and `none` would sit beside client_secret_basic. The new
+    // method replaces `none` (#466).
+    if (methodBefore === 'none') {
+      delete record.fields.oauthTokenEndpointAuthMethod;
+    }
     setField(record, 'oauthTokenEndpointAuthMethod', 'client_secret_basic');
   }
+  recordOauthConfidential(record);
   if (record.fields.appRegistrationJson) {
     try {
       const document = JSON.parse(record.fields.appRegistrationJson);
@@ -19974,6 +20376,9 @@ function seedInternalApplication(spec) {
   Object.keys(spec.attributes || {}).forEach(function (name) {
     setField(record, name, spec.attributes[name]);
   });
+  // A seed's own attributes must not leave the flag disagreeing with the
+  // method the registration wrote (#466).
+  recordOauthConfidential(record);
   // QUIET (#221 P5): the service provisioning its own clients when a realm
   // or the process starts is not a change to a principal anybody could have
   // known — see save()'s header.
@@ -20173,6 +20578,11 @@ module.exports = {
   FLOW_RESPONSE_TYPES: FLOW_RESPONSE_TYPES,
   canonicalResponseType: canonicalResponseType,
   authMethodsProblem: authMethodsProblem,
+  oauthConfidentialOf: oauthConfidentialOf,
+  confidentialDisagreement: confidentialDisagreement,
+  confidentialClearSentence: confidentialClearSentence,
+  confidentialModeSentence: confidentialModeSentence,
+  writeOauthConfidential: writeOauthConfidential,
   choiceProblem: choiceProblem,
   corsOriginsOfRealm: corsOriginsOfRealm,
   redirectOriginsOfRealm: redirectOriginsOfRealm,
