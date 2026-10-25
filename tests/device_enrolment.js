@@ -18,6 +18,9 @@
 //   3. ANDROID KEY ATTESTATION built here: attested against a configured
 //      test root; a software key, a foreign challenge refused
 //      (STS-DEVICE-0018); a chain to no configured root self-asserted.
+//      (#928) an android-key platform passkey, trusted against its own
+//      anchor, is linked and the device key keeps the chain serials; a
+//      later status list downgrades that key and the device.
 //   4. APPLE APP ATTEST built here: attested; an app not configured refused
 //      (STS-DEVICE-0019).
 //   5. A LINKED WEBAUTHN PLATFORM CREDENTIAL: a fresh assertion links it,
@@ -65,6 +68,8 @@ const stsCrypto = require('../common/crypto');
 const errorCodes = require('../common/error_codes');
 const core = require('../common/cert_enrollment');
 const kit = require('./webauthn_attestation_kit');
+const webauthn = require('../authn/webauthn');
+const webauthnAttestation = require('../authn/webauthn_attestation');
 
 const log = require('bunyan').createLogger({ name: 'device_enrolment',
   level: process.env.LOG_LEVEL || 'info' });
@@ -589,6 +594,166 @@ async function checkAndroid(t) {
                    verifiedAt: '', chainSerials: ['aa'] } }),
           '3h-ii. a key linked from an android-key passkey is rechecked (#903)',
           String(!!DevicesClass));
+  // #928: 3h-ii asks the predicate of an object nobody stored, and 3i
+  // rechecks a key proved with an x5c. The joined path is a platform
+  // passkey whose android-key statement was trusted — `kit.androidKey`,
+  // the same statement C14 verifies — then `finishLink`, which copies the
+  // serials, then a list that revokes one of them. Its root is not
+  // section 3's `anchor`: that certificate is in the x5c chains 3i still
+  // has to downgrade, and revoking it here would downgrade `kept` first.
+  const registerAndroidPasskey = async function (root) {
+    log.debug("Entering registerAndroidPasskey().");
+    const ceremony = await kit.ceremony();
+    const made = await kit.androidKey(ceremony, root);
+    const verdict = webauthn.verifyRegistration(ceremony.input(made));
+    if (!verdict.ok) {
+      log.debug("Leaving registerAndroidPasskey(). Ceremony.");
+      return { ceremony: ceremony, verdict: verdict, assessed: null,
+               stored: null };
+    }
+    const assessed = await webauthnAttestation.assess(verdict);
+    if (!assessed.ok) {
+      log.debug("Leaving registerAndroidPasskey(). Attestation.");
+      return { ceremony: ceremony, verdict: verdict, assessed: assessed,
+               stored: null };
+    }
+    const stored = credentials.addKey(ALICE, {
+      credentialId: verdict.credentialId,
+      publicKeyJwk: verdict.publicKeyJwk,
+      signCount: verdict.signCount,
+      label: 'android platform',
+      attachment: 'platform',
+      aaguid: verdict.aaguid,
+      algorithm: verdict.algorithm,
+      coseAlg: verdict.coseAlg,
+      attestation: assessed.attestation,
+      backupEligible: !!(verdict.flags && verdict.flags.be),
+      backupState: !!(verdict.flags && verdict.flags.bs),
+      userVerified: !!(verdict.flags && verdict.flags.uv)
+    }, 'mfa');
+    log.debug("Leaving registerAndroidPasskey().");
+    return { ceremony: ceremony, verdict: verdict, assessed: assessed,
+             stored: stored };
+  };
+  // The assertion `finishLink` verifies has to name the credential the
+  // challenge was issued for. The signature is the credential key's, over
+  // authenticator data and the client-data hash, as section 5's is.
+  const linkAssertion = function (cred, credentialId, challenge) {
+    log.debug("Entering linkAssertion().");
+    const count = Buffer.alloc(4);
+    count.writeUInt32BE(5, 0);
+    const authData = Buffer.concat([sha256(Buffer.from('localhost')),
+                                    Buffer.from([0x05]), count]);
+    const clientData = Buffer.from(JSON.stringify({
+      type: 'webauthn.get', challenge: challenge,
+      origin: 'https://localhost:8081' }));
+    const signed = Buffer.concat([authData, sha256(clientData)]);
+    const sig = cred.sign(signed);
+    const id = String(credentialId || '');
+    log.debug("Leaving linkAssertion().");
+    return { id: id, rawId: id, type: 'public-key',
+             response: {
+               authenticatorData: authData.toString('base64url'),
+               clientDataJSON: clientData.toString('base64url'),
+               signature: sig.toString('base64url') } };
+  };
+  const keyOn = function (device, credentialId) {
+    log.debug("Entering keyOn().");
+    const keys = (device && device.keys) || [];
+    let found = null;
+    keys.forEach(function (k) {
+      const id = k && k.material && k.material.credentialId;
+      if (String(id || '') === String(credentialId || '')) {
+        found = k;
+      }
+    });
+    log.debug("Leaving keyOn().");
+    return found;
+  };
+  const passkeyRoot = await kit.root('Synthetic Google Passkey', 'ec');
+  set('webauthn.attestationPolicy', 'verify-if-present');
+  set('webauthn.attestationTrustAnchors', passkeyRoot.pem);
+  try {
+    const registered = await registerAndroidPasskey(passkeyRoot);
+    const assessed = registered.assessed;
+    const rev = assessed && assessed.attestation &&
+      assessed.attestation.androidRevocation;
+    const credentialId = registered.verdict
+      ? String(registered.verdict.credentialId || '') : '';
+    const passkey = (credentials.keysOf(ALICE) || []).filter(function (k) {
+      return String(k.credentialId) === credentialId;
+    })[0];
+    const recorded = passkey && passkey.attestation &&
+      passkey.attestation.androidRevocation;
+    const serials = rev && Array.isArray(rev.chainSerials)
+      ? rev.chainSerials.map(String) : [];
+    t.check(!!(registered.verdict && registered.verdict.ok && assessed &&
+               assessed.ok && assessed.attestation.trusted === true &&
+               assessed.attestation.format === 'android-key' &&
+               rev && rev.status === 'good' && serials.length &&
+               registered.stored && registered.stored.ok && passkey &&
+               passkey.attachment === 'platform' && recorded &&
+               JSON.stringify(recorded.chainSerials) ===
+                 JSON.stringify(serials)),
+            '3h-iii. an android-key platform passkey chained to a ' +
+            'configured anchor records the chain serials (#928)',
+            JSON.stringify({
+              failed: registered.verdict && registered.verdict.failed,
+              why: assessed && assessed.why,
+              stored: registered.stored && (registered.stored.errors ||
+                                            registered.stored.ok),
+              status: rev && rev.status,
+              serials: serials
+            }).slice(0, 700));
+    const begun = enrolment.beginLink({ username: ALICE,
+      sessionId: 'sap-' + RUN, credentialId: credentialId,
+      label: 'Alice android', platform: 'android' });
+    const cred = registered.ceremony && registered.ceremony.credential;
+    const linked = begun && begun.ok && cred ? await enrolment.finishLink({
+      username: ALICE, sessionId: 'sap-' + RUN,
+      challenge: begun.challenge,
+      credential: linkAssertion(cred, credentialId, begun.challenge),
+      origin: 'https://localhost:8081', rpId: 'localhost' }) : begun;
+    const lk = keyOn(linked && linked.device, credentialId);
+    const copied = lk && lk.attestation;
+    t.check(!!(linked && linked.ok && copied &&
+               copied.level === 'attested' &&
+               copied.format === 'android-key' &&
+               JSON.stringify(copied.chainSerials) ===
+                 JSON.stringify(serials.slice(0, 10)) &&
+               copied.revocation && rev &&
+               copied.revocation.status === rev.status &&
+               DevicesClass.isAndroidRecheckable(lk)),
+            '3h-iii. finishLink copies the serials and the verdict, and ' +
+            'the linked key is attested (#928)',
+            JSON.stringify({
+              link: linked && (linked.ok ? lk && lk.attestation
+                                         : linked.error),
+              code: code(linked)
+            }).slice(0, 700));
+    let listed = null;
+    let again = null;
+    let afterDevice = null;
+    if (linked && linked.ok && serials.length) {
+      listed = await statusList(serials);
+      again = await attestationRevocation.recheckAll();
+      afterDevice = devices.byId(linked.device.id);
+    }
+    const afterKey = keyOn(afterDevice, credentialId);
+    const downgraded = afterKey && afterKey.attestation;
+    t.check(!!(listed && listed.ok && again && again.downgraded >= 1 &&
+               downgraded && downgraded.level === 'self-asserted' &&
+               afterDevice && afterDevice.attestation === 'self-asserted' &&
+               /DOWNGRADED/.test(String(downgraded.summary || ''))),
+            '3h-iii. the recheck downgrades the linked key a newer list ' +
+            'revokes, and the device follows it (#928)',
+            JSON.stringify(again) + ' ' +
+              JSON.stringify(afterKey && afterKey.attestation)
+                .slice(0, 500));
+  } finally {
+    config.clearOverride('webauthn.attestationPolicy');
+    config.clearOverride('webauthn.attestationTrustAnchors');
+  }
   await statusList(['ffff0001', revoked.serial, kept.serial, 'ffff0002']);
   const recheck = await attestationRevocation.recheckAll();
   const after = devices.byId(kept.out.device.id);
