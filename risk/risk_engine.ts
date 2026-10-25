@@ -160,11 +160,13 @@ const SIGNALS: Record<string, Json> = {
   // recorded on the authentication event before the engine is asked.
   //
   //   * `compromised-device` (×50, HIGH on its own, as
-  //     `authenticator-compromised` is): the device is marked compromised. A
-  //     compromise ends every session the device authenticated and revokes
-  //     its certificates and secret, but its JWK and WebAuthn keys still
-  //     prove the device — they belong to the hardware — so a sign-in from
-  //     it is still possible, and is exactly the one to refuse.
+  //     `authenticator-compromised` is): the device is marked compromised.
+  //     The floor, not the factor alone, is what makes it HIGH once a
+  //     model score is below 0.2. A compromise ends every session the
+  //     device authenticated and revokes its certificates and secret, but
+  //     its JWK and WebAuthn keys still prove the device — they belong to
+  //     the hardware — so a sign-in from it is still possible, and is
+  //     exactly the one to refuse.
   //   * `non-compliant-device` (×3, the refused-password weight): an MDM, a
   //     posture feed or an administrator says the device does not meet the
   //     organisation's policy. Evidence, so it applies however new the
@@ -1141,9 +1143,9 @@ class RiskEngine {
   //     authenticator — stands as it was scored. A `new-device` is never
   //     ADDED here: the fingerprint was looked up when it was assessed.
   //   * THE SCORE IS RE-MADE from the model's own score and the factors,
-  //     with the known-context cap and the UNSCORED rule exactly as
-  //     `assessNow()` applies them, so an unchanged device gives the same
-  //     answer.
+  //     with the known-context cap, the floor under a compromising signal
+  //     and the UNSCORED rule exactly as `assessNow()` applies them, so an
+  //     unchanged device gives the same answer.
   //   * THE HISTORY MOVES ONCE. The assessment counted the attempt — its
   //     total, address, browser, TLS stack, credential, and the failures it
   //     read — and held back only the device feature; this counts that one
@@ -1207,10 +1209,20 @@ class RiskEngine {
     signals.forEach(function (s: Json): void {
       score *= s.factor;
     });
-    const capped = modelRow.knownContext ? this.capped(score, signals)
-                                         : null;
+    let capped = modelRow.knownContext ? this.capped(score, signals) : null;
     if (capped) {
       score = capped.score;
+    }
+    // The same floor as `assessNow()`, after the product and the cap, so
+    // a device recognised only here cannot land under HIGH either.
+    const beforeFloor = score;
+    score = this.floored(score, signals.map(function (s: Json): string {
+      return String(s.signal);
+    }));
+    if (capped && score !== beforeFloor) {
+      // The floor raised a score the cap had held just under HIGH. The
+      // record must not still say the cap holds it there.
+      capped = null;
     }
     const evidence = signals.filter(function (s: Json): boolean {
       return LOWERING_ONLY.indexOf(s.signal) < 0;
@@ -1566,6 +1578,33 @@ class RiskEngine {
   }
 
   // -------------------------------------------------------------------------
+  // THE FLOOR UNDER A COMPROMISING CREDENTIAL (#965). ×50 is HIGH from the
+  // score of 1 a sign-in with no model starts at (1 × 50), and is not once
+  // the model scores below 0.2: 0.2 × 50 is the HIGH line
+  // (`risk.highScorePercent` / 100). Issuance refuses only HIGH, so a
+  // familiar sign-in with a revoked key or a compromised device was LOW or
+  // MEDIUM and went through. `floored()` raises the score to that line
+  // AFTER the factor product and AFTER the known-context cap, so a
+  // lowering factor cannot divide it back under and the cap cannot pull
+  // it under. No other signal is floored: `browser-token-replayed` is also
+  // ×50 and stays a factor. `names` is the signal ids on the score.
+  // -------------------------------------------------------------------------
+  private floored(score: number, names: string[]): number {
+    const { log, config } = this.deps;
+    log.debug("Entering RiskEngine.floored().");
+    const compromising = names.indexOf('authenticator-compromised') >= 0 ||
+      names.indexOf('compromised-device') >= 0;
+    if (!compromising) {
+      log.debug("Leaving RiskEngine.floored(). Not one of them.");
+      return score;
+    }
+    const high = Number(config.value('risk.highScorePercent')) / 100;
+    const raised = Math.max(score, high);
+    log.debug("Leaving RiskEngine.floored(). " + raised + ".");
+    return raised;
+  }
+
+  // -------------------------------------------------------------------------
   // assess(input) — see the header. `input`: { realm, subject, sessionId,
   // door, clientId, context (the authentication event's), userAgent (the raw
   // header, read here and dropped), registeredDevice (the event's
@@ -1803,9 +1842,21 @@ class RiskEngine {
     signals.forEach(function (s: Json): void {
       score *= s.factor;
     });
-    const capped = knownContext ? this.capped(score, signals) : null;
+    let capped = knownContext ? this.capped(score, signals) : null;
     if (capped) {
       score = capped.score;
+    }
+    // AFTER the product and AFTER the cap (#965). The cap runs first, so
+    // it cannot pull a compromising signal back under HIGH, and a lowering
+    // factor has already been multiplied in. Nothing after this divides.
+    const beforeFloor = score;
+    score = this.floored(score, signals.map(function (s: Json): string {
+      return String(s.signal);
+    }));
+    if (capped && score !== beforeFloor) {
+      // The floor raised a score the cap had held just under HIGH. The
+      // record must not still say the cap holds it there.
+      capped = null;
     }
     const evidence = signals.filter(function (s: Json): boolean {
       return LOWERING_ONLY.indexOf(s.signal) < 0;
@@ -2261,7 +2312,10 @@ class RiskEngine {
   // Only UPWARD: a signal the session did not carry makes it riskier, and a
   // signal it carried that has gone (a list rotated) is not a reason to
   // trust it more than its sign-in did. Answers the session's new risk, or
-  // null when nothing new was found.
+  // null when nothing new was found. A compromising signal already held,
+  // whose stored score is still under the HIGH line, is not nothing: the
+  // floor raises it (#965). One already at the line, with nothing else
+  // fresh, is nothing, and is not written.
   // -------------------------------------------------------------------------
   /**
    * Re-checks a live session against what the datasets and failure history
@@ -2325,18 +2379,25 @@ class RiskEngine {
     const fresh = signals.filter(function (one: string): boolean {
       return held.indexOf(one) < 0 && factorOf[one] > 1;
     });
-    if (!fresh.length) {
+    // `0` is a legal score, so this is not `risk.score || 1`. `signals`
+    // is what this pass found, held or not, so a model the metadata has
+    // since marked compromised is on the floor even when its factor does
+    // not multiply; a signal only held is on it too.
+    let score = typeof risk.score === 'number' ? risk.score : 1;
+    const names = held.concat(signals);
+    if (!fresh.length && this.floored(score, names) <= score) {
       log.debug("Leaving RiskEngine.rescoreSession(). Nothing new.");
       return null;
     }
-    let score = typeof risk.score === 'number' ? risk.score : 1;
     fresh.forEach(function (one: string): void {
       score *= factorOf[one];
     });
     // The sign-in's known context caps what the session is raised to on
     // address evidence, as it capped the sign-in (#226). The score the
     // session carries already holds its own signals, so the cap is asked
-    // about the FRESH ones on top of it.
+    // about the FRESH ones on top of it. The floor is after that cap, so
+    // a known context cannot pull a compromising signal back under HIGH.
+    // Nothing after the floor divides the score.
     const recapped = risk.knownContext
       ? this.capped(score, fresh.map(function (one: string): Json {
         return { signal: one, factor: factorOf[one] };
@@ -2344,6 +2405,7 @@ class RiskEngine {
     if (recapped) {
       score = recapped.score;
     }
+    score = this.floored(score, names);
     const level = this.levelOf(score);
     if ((RANK[level] || 0) <= (RANK[String(risk.level)] || 0)) {
       log.debug("Leaving RiskEngine.rescoreSession(). No higher.");
@@ -2386,8 +2448,10 @@ class RiskEngine {
     this.holdStanding(realm, username, next);
     this.noteChange(realm, subject, username,
                     before ? String(before.level || '') : '', assessment);
-    log.info('risk: session ' + session.id + ' of ' + username + ' re-checked ' +
-             'at ' + level + ' (' + fresh.join(', ') + ').');
+    log.info('risk: session ' + session.id + ' of ' + username +
+             ' re-checked at ' + level + ' (' +
+             (fresh.length ? fresh.join(', ')
+                           : 'held, still under the HIGH line') + ').');
     log.debug("Leaving RiskEngine.rescoreSession(). " + level + ".");
     return next;
   }
