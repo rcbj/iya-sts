@@ -44,6 +44,16 @@
 //   j. a PRIMARY passkey does not answer a key demand after a password:
 //      somebody holding a second factor and no mfa-role key is refused
 //      (#898), not handed the ceremony that would enrol one.
+//   k. a phr wauth on a one-factor session is one step-up (forceKey,
+//      phishingClass empty) and a return that did not earn the class is
+//      refused (STS-WSFED-0030), the code recorded and not sent. Two
+//      class URIs in one wauth stay the unknown-method refusal;
+//   l. a phrh wauth sets phishingClass phrh, and the same one-trip refusal;
+//   m. a password wauth, a multi-factor wauth and a request with no wauth
+//      still issue the class they issued before #737;
+//   n. a passkey registration under phr earns nothing (0030); an assertion
+//      with that key carries the phr URI on both token types, and a later
+//      request that does not ask does not.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -220,6 +230,8 @@ function childMain() {
     const audit = require(ROOT + '/common/audit');
     const credentials = require(ROOT + '/common/credentials');
     const totp = require(ROOT + '/common/totp');
+    const authn = require(ROOT + '/authn/authn');
+    const realms = require(ROOT + '/common/realms');
 
     const config = require(ROOT + '/common/config');
     const server = http.createServer(app);
@@ -280,6 +292,33 @@ function childMain() {
       return audit.list().some(function (row) {
         return row.errorCode === code;
       });
+    };
+    const codeCount = async function (code) {
+      await sleep(50);
+      return audit.list().filter(function (row) {
+        return row.errorCode === code;
+      }).length;
+    };
+    const pendingOf = function (location) {
+      const found = /[?&]authn=([^&]+)/.exec(String(location || ''));
+      if (!found) {
+        return null;
+      }
+      return realms.run(realms.DEFAULT_REALM, function () {
+        return authn.pendingFor(decodeURIComponent(found[1]));
+      });
+    };
+    // The sign-in page xml-escapes the assertion into the form, so the
+    // class is read back out of that escaping. A 200 page does not echo
+    // wauth; a 400 refusal that quotes it does, and is not read this way.
+    const classRefOf = function (text) {
+      const found = /AuthnContextClassRef&gt;([^&]*)&lt;/.exec(String(text));
+      return found ? found[1] : '';
+    };
+    const methodOf = function (text) {
+      const found = /AuthenticationMethod=&quot;([^&]*)&quot;/.exec(
+        String(text));
+      return found ? found[1] : '';
     };
 
     // --- a. a one-factor session, and a password demand ----------------------
@@ -520,6 +559,165 @@ function childMain() {
          JSON.stringify([stepUp.screenDemandFor(['hwk']),
                          stepUp.screenDemandFor(['mfa', '1'])]));
 
+    // --- k–n. the EAP class URIs (#737) ------------------------------------
+    // The same two URIs acr_values=phr / phrh name. wauth is one of them.
+    const PHR = 'http://schemas.openid.net/pape/policies/2007/06/' +
+      'phishing-resistant';
+    const PHRH = 'http://schemas.openid.net/acr/2016/07/' +
+      'phishing-resistant-hardware';
+    const PPT = 'urn:oasis:names:tc:SAML:2.0:ac:classes:' +
+      'PasswordProtectedTransport';
+    const UNSPECIFIED = 'urn:oasis:names:tc:SAML:2.0:ac:classes:unspecified';
+    const beforeBoth = await codeCount('STS-WSFED-0006');
+    r = await bob.go('GET', signInUrl({ wauth: PHR + ' ' + PHRH }));
+    note(r.status === 400 && /not available/.test(r.text) &&
+         await codeCount('STS-WSFED-0006') === beforeBoth + 1,
+         'k0. two EAP URIs in one wauth are still one unknown value ' +
+         '(STS-WSFED-0006): wauth is a single URI',
+         r.status + ' ' + r.text.slice(0, 120));
+    const beforePhr = await codeCount('STS-WSFED-0030');
+    first = await bob.go('GET', signInUrl({ wauth: PHR }));
+    const phrPending = pendingOf(first.headers.location);
+    note(toSignIn(first) && !!phrPending && phrPending.forceKey === true &&
+         phrPending.phishingClass === '' &&
+         /step_up_honoured=1/.test(String(phrPending.returnTo || '')),
+         'k1. a phr wauth on a one-factor session is one step-up: ' +
+         'forceKey, phishingClass empty, the marker on the return',
+         JSON.stringify({ status: first.status,
+           forceKey: phrPending && phrPending.forceKey,
+           phishingClass: phrPending && phrPending.phishingClass,
+           returnTo: phrPending && phrPending.returnTo }));
+    const phrBack = phrPending
+      ? await bob.go('GET', String(phrPending.returnTo || '/'))
+      : { status: 0, text: '', headers: {} };
+    note(phrBack.status === 400 &&
+         /The class was not earned/.test(phrBack.text) &&
+         phrBack.text.indexOf('hardware-protected') < 0 &&
+         phrBack.text.indexOf('STS-WSFED-0030') < 0 &&
+         phrBack.text.indexOf(PHR) >= 0 && !toSignIn(phrBack),
+         'k2. coming back without earning the class is the refusal page, ' +
+         'once, and the code is not in the body',
+         phrBack.status + ' ' +
+         ((phrBack.text.match(/<title>[^<]*/) || [''])[0]));
+    note(await codeCount('STS-WSFED-0030') === beforePhr + 1,
+         'k3. and STS-WSFED-0030 is recorded');
+
+    const beforePhrh = await codeCount('STS-WSFED-0030');
+    first = await bob.go('GET', signInUrl({ wauth: PHRH }));
+    const phrhPending = pendingOf(first.headers.location);
+    note(toSignIn(first) && !!phrhPending &&
+         phrhPending.forceKey === true &&
+         phrhPending.phishingClass === 'phrh',
+         'l1. a phrh wauth forces a key and sets phishingClass phrh',
+         JSON.stringify({
+           forceKey: phrhPending && phrhPending.forceKey,
+           phishingClass: phrhPending && phrhPending.phishingClass }));
+    const phrhBack = phrhPending
+      ? await bob.go('GET', String(phrhPending.returnTo || '/'))
+      : { status: 0, text: '' };
+    note(phrhBack.status === 400 &&
+         /The class was not earned/.test(phrhBack.text) &&
+         /hardware-protected/.test(phrhBack.text) &&
+         phrhBack.text.indexOf('STS-WSFED-0030') < 0 &&
+         !toSignIn(phrhBack) &&
+         await codeCount('STS-WSFED-0030') === beforePhrh + 1,
+         'l2. still unmet after the one trip is the same refusal, and ' +
+         'STS-WSFED-0030 is recorded again',
+         phrhBack.status + ' ' + String(phrhBack.text || '').slice(0, 180));
+
+    r = await bob.go('GET', signInUrl({ wauth: PASSWORD,
+                                        tokenType: 'saml2' }));
+    note(r.status === 200 && classRefOf(r.text) === PPT &&
+         r.text.indexOf(PHR) < 0 && r.text.indexOf(PHRH) < 0,
+         'm1. a password wauth still issues PasswordProtectedTransport, ' +
+         'with neither EAP URI',
+         r.status + ' ' + classRefOf(r.text));
+    r = await bob.go('GET', signInUrl({ tokenType: 'saml2' }));
+    note(r.status === 200 && classRefOf(r.text) === PPT &&
+         r.text.indexOf(PHR) < 0 && r.text.indexOf(PHRH) < 0,
+         'm2. a request with no wauth is unchanged',
+         classRefOf(r.text));
+    r = await alice.go('GET', signInUrl({ wauth: MFA, tokenType: 'saml2' }));
+    note(r.status === 200 && classRefOf(r.text) === MFA &&
+         r.text.indexOf(PHR) < 0 && r.text.indexOf(PHRH) < 0,
+         'm3. a multi-factor wauth still issues multipleauthn',
+         classRefOf(r.text));
+    r = await bob.go('GET', signInUrl({ wauth: PASSWORD }));
+    note(r.status === 200 && methodOf(r.text) === PASSWORD &&
+         r.text.indexOf(PHR) < 0 && r.text.indexOf(PHRH) < 0,
+         'm4. the default SAML 1.1 token keeps am:password',
+         methodOf(r.text));
+
+    // A registration earns nothing, so the first passwordless sign-in
+    // under phr comes back to the refusal. The same key asserted in a
+    // new browser earns phr and not phrh (fmt none, no trusted attestation).
+    let phrKey = null;
+    const usePhrKey = function (c) {
+      if (!phrKey) {
+        phrKey = makeAuthenticator(c.rpId, 'http://127.0.0.1:' + port);
+      }
+      return c.mode === 'create' ? phrKey.register(c.challenge)
+                                 : phrKey.assert(c.challenge);
+    };
+    const passkeyAnswer = async function (username, wauth, extra) {
+      const b = browser(port);
+      const start = await b.go('GET', signInUrl(Object.assign(
+        { wauth: wauth }, extra || {})));
+      if (!toSignIn(start)) {
+        return { start: start, mode: '', answer: start, browser: b,
+                 pending: pendingOf(start.headers.location) };
+      }
+      const screen = await authnScreen.open({ port: port, jar: b.jar,
+        at: String(start.headers.location) });
+      const step = await authnScreen.follow({ port: port, jar: b.jar,
+        opened: screen, fields: { action: 'login', username: username,
+          password: '', webauthn_only: '1' } });
+      let mode = '';
+      const ran = await authnScreen.passkeyStep({ port: port, jar: b.jar,
+        opened: step }, function (c) {
+        mode = c.mode;
+        return usePhrKey(c);
+      });
+      const done = ran.answer || {};
+      const backTo = String((done.headers && done.headers.location) ||
+                            '')
+        .replace(/^https?:\/\/[^/]+/, '');
+      const answer = backTo ? await b.go('GET', backTo) : done;
+      return { start: start, mode: mode, answer: answer, browser: b,
+               pending: pendingOf(start.headers.location) };
+    };
+    const beforeN = await codeCount('STS-WSFED-0030');
+    const n1 = await passkeyAnswer('wa-phr', PHR);
+    note(n1.mode === 'create' && n1.pending &&
+         n1.pending.forceKey === true && n1.pending.phishingClass === '' &&
+         n1.answer.status === 400 &&
+         /The class was not earned/.test(n1.answer.text) &&
+         n1.answer.text.indexOf('STS-WSFED-0030') < 0 &&
+         await codeCount('STS-WSFED-0030') === beforeN + 1,
+         'n1. a registration under phr earns nothing: one trip, then the ' +
+         'class was not earned (STS-WSFED-0030)',
+         n1.mode + ' ' + n1.answer.status + ' ' +
+         String(n1.answer.text || '').slice(0, 160));
+    const n2 = await passkeyAnswer('wa-phr', PHR, { tokenType: 'saml2' });
+    note(n2.mode === 'get' && n2.answer.status === 200 &&
+         classRefOf(n2.answer.text) === PHR &&
+         n2.answer.text.indexOf(PHRH) < 0,
+         'n2. an assertion with the same key earns phr, and the SAML 2.0 ' +
+         'class ref is that URI',
+         n2.mode + ' ' + n2.answer.status + ' ' +
+         classRefOf(n2.answer.text));
+    const n3 = await n2.browser.go('GET', signInUrl({ wauth: PHR }));
+    note(n3.status === 200 && methodOf(n3.text) === PHR && !toSignIn(n3),
+         'n3. the same session meets phr at once, and the SAML 1.1 ' +
+         'AuthenticationMethod is that URI',
+         n3.status + ' ' + methodOf(n3.text));
+    const n4 = await n2.browser.go('GET', signInUrl({ tokenType: 'saml2' }));
+    note(n4.status === 200 && classRefOf(n4.text) === UNSPECIFIED &&
+         n4.text.indexOf(PHR) < 0 && n4.text.indexOf(PHRH) < 0,
+         'n4. a request that does not ask keeps unspecified, even though ' +
+         'the session earned phr',
+         classRefOf(n4.text));
+
     server.close();
     require('fs').writeFileSync(OUT, JSON.stringify(findings));
     process.exit(0);
@@ -584,9 +782,9 @@ async function run(t) {
 
 module.exports = {
   name: 'wsfed_wauth_step_up',
-  describe: 'WS-Federation wauth: a hardware or multi-factor demand the ' +
-            'session cannot meet is a step-up through the sign-in, the ' +
-            'assertion reports what happened, and a demand still unmet ' +
-            'after one attempt is refused with its code',
+  describe: 'WS-Federation wauth: a hardware, multi-factor or EAP-class ' +
+            'demand the session cannot meet is one step-up through the ' +
+            'sign-in, the assertion reports what happened, and a demand ' +
+            'still unmet after that attempt is refused with its code',
   run: run
 };

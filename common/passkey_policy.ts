@@ -969,7 +969,20 @@ const FIELDS: PolicyField[] = [
           'policy\'s registration rules. Nothing made elsewhere can be ' +
           'imported. The key records which administrator enrolled it and ' +
           'when, and the person is told. Left out of a save, the built-in ' +
-          'default is kept.' }
+          'default is kept.' },
+  // #740. Optional, so a save written before the row existed keeps the
+  // stored value (or the built-in off) instead of failing as a missing
+  // field. Refused while device-bound sessions are off: see save().
+  { key: 'deviceBoundRequired',
+    attribute: 'stsPasskeyDeviceBoundRequired',
+    type: 'bool', dflt: false, optional: true,
+    label: 'Require a device-bound session',
+    what: 'OFF BY DEFAULT. On, an issuance to an application this ' +
+          'profile covers waits until the sign-on session is bound to ' +
+          'the browser\'s key, and is refused when the browser skipped ' +
+          'that registration or the wait elapsed without a binding. A ' +
+          'session that was never offered registration is not refused ' +
+          'by this row. Refused while authn.deviceBoundSessions is off.' }
 ];
 
 /**
@@ -3260,6 +3273,22 @@ class PasskeyPolicy {
                         'webauthn.pqcAlongsideClassical is on), so no ' +
                         'passkey anybody could register would satisfy it. ' +
                         'Offer ML-DSA first.'] }, 'STS-AUTHN-0357');
+    }
+    // A BOUND SESSION REQUIRED WHERE NONE CAN BE OFFERED (#740). The same
+    // shape as post-quantum required with no ML-DSA: the profile would ask
+    // for a session this realm never offers to bind. Saving it off, or
+    // leaving it out, succeeds while the switch is off.
+    if (standing.deviceBoundRequired === true &&
+        config.value('authn.deviceBoundSessions') !== true) {
+      log.debug('Leaving PasskeyPolicy.save(). A device-bound session ' +
+                'is required and the feature is off.');
+      return errorCodes.mark({ ok: false,
+               errors: ['`deviceBoundRequired` (' +
+                        FIELD_BY_KEY.deviceBoundRequired.label +
+                        ') is on, and authn.deviceBoundSessions is off, ' +
+                        'so no session could meet it. Turn device-bound ' +
+                        'sessions on first.'] },
+                             'STS-AUTHN-0461');
     }
     if (!this.haveDirectory()) {
       log.debug('Leaving PasskeyPolicy.save(). No directory.');

@@ -421,9 +421,10 @@ function kind(t) {
           'P7. the fourth kind on Directory → Policies, with its two ' +
           'actions', JSON.stringify(policyKinds.actions()));
   const view = adminViews.policiesView({});
-  // Twenty-two since #940's population registration list and mode, after
-  // #941's attestationAlgorithms and #946's postQuantumAllowCredentials.
-  t.check(!!view.passkey && view.passkey.fields.length === 22 &&
+  // Twenty-three since #740's deviceBoundRequired, after #940's population
+  // registration list and mode, #941's attestationAlgorithms and #946's
+  // postQuantumAllowCredentials.
+  t.check(!!view.passkey && view.passkey.fields.length === 23 &&
           view.passkey.fields.some(function (field) {
             return field.key === 'securityKeyResidentKey' &&
                    field.type === 'enum' && field.values.length === 3;

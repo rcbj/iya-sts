@@ -1258,6 +1258,20 @@ class UsersPage {
    */
   static sessionBlock(t, session, tokenPage, back, params) {
     const nav = kit.pageNavPair('/admin/users', params, tokenPage.paging, t);
+    // Binding skipped (#743) names the reason tokens the session stored.
+    // pending, timedout and none stay the same "No" a session that is not
+    // bound has always drawn. The tokens are data; the sentence is the
+    // catalog's.
+    const binding = session.deviceBound || {};
+    const reasons = Array.isArray(binding.reasons)
+      ? binding.reasons.join(', ') : '';
+    const boundLine = binding.fact === 'skipped'
+      ? t.html('consoleUsers.sessionBlock.deviceBoundSkipped',
+               { reasons: reasons })
+      : (binding.bound
+        ? t.html('consoleUsers.sessionBlock.deviceBoundYes',
+                 { alg: binding.alg || '' })
+        : t.html('consoleUsers.sessionBlock.deviceBoundNo'));
     const html = '<h3>' + t.html('consoleUsers.sessionBlock.session') + ' ' +
       kit.shortened(session.id, 12) + ' &mdash; ' +
       '<span class="' + (session.expired ? 'state-expired' : 'state-valid') +
@@ -1282,6 +1296,8 @@ class UsersPage {
       (session.wsfedRealms.length ? kit.esc(session.wsfedRealms.join(', ')) :
        '—') +
       '</td></tr></table>' +
+      '<p>' + t.html('consoleUsers.sessionBlock.deviceBound') + ' ' +
+      boundLine + '</p>' +
       nav.head +
       UsersPage.userTokenTable(t, tokenPage.shown, back,
         t.text('consoleUsers.sessionBlock.nothingIssued')) +

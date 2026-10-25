@@ -8245,7 +8245,13 @@ tab, and a service account's section of the person page —
   what the box names, the form's posted fields kept as
   `state.policyDrafts[<key>]` and an Add appending the IDENTIFIER
   (`WebAnswers.withListedValue()`). Nothing is written until the form's
-  Save. **Each searching form opens with a hidden `default-submit`**, the
+  Save. **A refused create keeps that draft** (#841): the New policy form
+  posts `newProfile`, and `WebAnswers.redraw()` stores the posted fields in
+  the same `passkey-apps` cell and the refusal in
+  `state.policySaveErrors['passkey-apps']`, drawn above the form. The key
+  is the form's, not the typed name, so a collision with a stored profile
+  does not overlay that profile. **Each searching form opens with a hidden
+  `default-submit`**, the
   application grid's reason: otherwise Enter in any box presses Find.
   `tests/passkey_policy_on_application.js` holds the data, the card, the
   sub-tabs and the search; `tests/protocol/sts_passkey_policy_application.js`
@@ -8316,3 +8322,14 @@ console request that walks a per-person store holds a request worker still.
   for that page alone (`oid4vc/CLAUDE.md`).
 
 `tests/console_tokens_metrics_scale.js` holds all four.
+
+## A skipped device binding on a person's sessions (#743, 2026-10-25)
+
+A person's page draws each sign-on session's device binding under the
+session table: "Bound to this browser", then yes (with the algorithm),
+no, or "binding skipped" with the reason tokens
+(`consoleUsers.sessionBlock.deviceBoundSkipped`, in the seven base
+catalogs). The row's `deviceBound` is `deviceBindingOf()` — `fact` is
+`bound`, `skipped`, `pending`, `timedout` or `none`, and `reasons` are
+the tokens. The API stays language-free. `pending`, `timedout` and
+`none` stay "No".

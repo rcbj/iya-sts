@@ -674,6 +674,53 @@ class GnapRequest {
     return { ok: true, user: out };
   }
 
+  // #738. `interact.acr` is not an RFC 9635 member. The short names only:
+  // `phr`, or `phr` with `phrh`, forces a key and either class answers
+  // (`phishingClass` ''); only `phrh` forces a key of that class. Any
+  // other token means this is not the demand — a mixed list is not an
+  // EAP demand, the same rule as a SAML class list that names something
+  // else — and `tokens` still holds what was sent, empties dropped.
+  //
+  // The three lines for a pure list match `StepUp.phishingClassFor()`
+  // (`oauth-oidc/step_up.ts`). That module is not required here: the
+  // parser must not grow a require, and `phishingClassFor` would still
+  // say `phrh` after dropping a token it does not produce. These short
+  // names are not the EAP URIs; do not hand them to `signInFor()`.
+  /**
+   * Classifies an `interact.acr` value.
+   *
+   * @param value - the member as sent: a string, an array, or absent
+   * @returns `{ tokens, eap, forceKey, phishingClass }`
+   */
+  static interactAcrDemand(value: unknown): any {
+    helpers.log.debug("Entering GnapRequest.interactAcrDemand().");
+    const raw = Array.isArray(value) ? value
+      : (value === undefined || value === null || value === '' ? []
+                                                               : [value]);
+    const tokens: string[] = [];
+    raw.forEach(function (one: unknown): void {
+      String(one === undefined || one === null ? '' : one)
+        .split(/[\s,]+/)
+        .forEach(function (part: string): void {
+          const text = part.trim();
+          if (text) {
+            tokens.push(text);
+          }
+        });
+    });
+    const eap = tokens.length > 0 && tokens.every(function (one: string) {
+      return one === 'phr' || one === 'phrh';
+    });
+    const onlyHardware = eap && tokens.every(function (one: string) {
+      return one === 'phrh';
+    });
+    const out = { tokens: tokens, eap: eap, forceKey: eap,
+                  phishingClass: onlyHardware ? 'phrh' : '' };
+    helpers.log.debug("Leaving GnapRequest.interactAcrDemand(). " +
+                      (eap ? (out.phishingClass || 'phr') : 'not a demand'));
+    return out;
+  }
+
   // Section 2.5.
   private checkInteractMember(value) {
     const { log } = this.deps;
@@ -759,11 +806,20 @@ class GnapRequest {
       }
       hints = { uiLocales: value.hints.ui_locales || [] };
     }
+    // Present, including a mixed or empty list: the raw tokens, so a
+    // later reader can see it was not a demand. Absent: the property is
+    // omitted, and a request that did not ask keeps the interact object
+    // it has always carried.
+    const sentAcr = value.acr !== undefined;
+    const interact = sentAcr
+      ? { start: start, finish: finish, hints: hints,
+          acr: GnapRequest.interactAcrDemand(value.acr).tokens }
+      : { start: start, finish: finish, hints: hints };
     log.debug("Leaving GnapRequest.checkInteractMember(). start=" +
               start.join(',') + ", finish=" + (finish ? finish.method :
-                                               'none'));
-    return { ok: true, interact: { start: start, finish: finish, hints:
-                                   hints } };
+                                               'none') +
+              (sentAcr ? ', acr' : ''));
+    return { ok: true, interact: interact };
   }
 
   // ---------------------------------------------------------------------------
@@ -1261,5 +1317,13 @@ export = {
   parseModification: slot.forward('parseModification'),
   parseRotation: slot.forward('parseRotation'),
   parseIntrospection: slot.forward('parseIntrospection'),
-  parseRegistration: slot.forward('parseRegistration')
+  parseRegistration: slot.forward('parseRegistration'),
+  /**
+   * Classifies `interact.acr` (#738). Static: it reads no instance.
+   *
+   * @param value - the member as sent, or absent
+   * @returns `{ tokens, eap, forceKey, phishingClass }`
+   */
+  interactAcrDemand: (value: unknown): any =>
+    GnapRequest.interactAcrDemand(value)
 };

@@ -217,11 +217,18 @@ class AccountOverview {
                 authentications: Number(signOn.authentications || 0),
                 amr: (signOn.amr || []).slice(0),
                 acr: String(signOn.acr || ''),
-                // Bound to a key this browser holds (#725).
+                // Bound to a key this browser holds (#725). `fact` and
+                // `reasons` are language-free (#743): skipped names the
+                // tokens, and the page translates the sentence.
                 deviceBound: {
                   bound: !!(signOn.deviceBound && signOn.deviceBound.bound),
                   alg: String((signOn.deviceBound &&
-                               signOn.deviceBound.alg) || '') } },
+                               signOn.deviceBound.alg) || ''),
+                  fact: String((signOn.deviceBound &&
+                                signOn.deviceBound.fact) || 'none'),
+                  reasons: Array.isArray(signOn.deviceBound &&
+                                         signOn.deviceBound.reasons)
+                    ? signOn.deviceBound.reasons.map(String) : [] } },
       sessionEnds: Number(caller.session.expires || 0),
       timesSignedIn: detail ? Number(detail.authentications || 0) : null,
       directory: entry ? inetOrgPerson.describe(entry.attributes) : null,

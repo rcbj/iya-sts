@@ -154,6 +154,7 @@
   "overview.deviceBound": "Vinculada a este navegador",
   "overview.deviceBoundYes": "Sí, a una clave {alg} que posee este navegador",
   "overview.deviceBoundNo": "No",
+  "overview.deviceBoundSkipped": "Vinculación omitida ({reasons})",
   "overview.unstated": "sin indicar",
   "overview.sessionEnds": "Esta sesión termina",
   "overview.timesSignedIn": "Veces que ha iniciado sesión",

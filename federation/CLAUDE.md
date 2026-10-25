@@ -2291,3 +2291,53 @@ relationship's to set. Its answer is a cross-site POST, so a connect's
 binding cookie is `SameSite=None; Secure` there, over https only. Over http
 it fails closed.
 
+## Federated device-bound sessions are not implemented (#741, 2026-10-25)
+
+#725 binds a sign-on session to a key on this origin. The W3C Editor's
+Draft of Device Bound Session Credentials (8 September 2026,
+https://w3c.github.io/webappsec-dbsc/, read 2026-10-25) describes, in
+sections 9.5, 9.6 and 11.6 and in the registration algorithm, reusing one
+session's key at a relying party on another origin. That is not built
+here. The grammar is not stable enough to parse without guessing, and
+section 3.3's own example does not agree with itself.
+
+What was read:
+
+* The document's status is "Don't cite this document other than as work
+  in progress." Section 1 says "Note this is a very early drafting for
+  writing collaboration only." Section 12 says "This is an early draft of
+  the spec."
+* Section 3.3's narrative is "Suppose the owners of `example.com` also
+  run `example.co.uk`." The next sentence is "When extending the DBSC
+  session to `example.com.uk`."
+* Section 9.6's session instructions define `session_identifier`,
+  `refresh_url`, `continue`, `scope`, `credentials` and
+  `allowed_refresh_initiators`. They do not define `provider_key`,
+  `provider_session_id` or `provider_url`. Those names are parameters of
+  the `Secure-Session-Registration` header (section 9.1 and algorithm
+  8.11), not fields of the instructions.
+* Section 11.6 says "This endpoint must serve a JSON-encoded dictionary.
+  Three keys are defined:" `registering_origins`, `relying_origins`, and
+  "`provider_origin` is an optional string." The relying-party example is
+  `"provider_origin": "https://example.com/"` and the example object has
+  trailing commas, so it is not JSON. Algorithm 8.11 step 16 returns
+  failure when the provider document "contains the key `provider_origin`"
+  (16.3) or "does not include the key `relying_origins`" (16.4). Step 21
+  returns failure when the relying party's document "contains the key
+  `relying_origins`" (21.3) or "The value of the key `provider_origin`
+  is not the origin of provider URL" (21.5). The HTML origin of
+  `https://example.com` has no trailing slash, so the 11.6 example
+  `"provider_origin": "https://example.com/"` fails 21.5. 11.6 calls
+  `provider_origin` optional and puts `registering_origins` beside
+  `relying_origins` in one object; 8.11 treats those two keys as
+  belonging to opposite ends. `registering_origins` is the site-scoped
+  registration check (algorithm 8.9 step 11.8), not federation.
+* Section 9.5's `Secure-Session-Skipped` list is a different feature and
+  is parsed (#743). It is not this one.
+
+No `.well-known/device-bound-sessions` document is served, and no
+`provider_*` parameter is accepted. The portal and the console are this
+origin. A later draft that makes 11.6, 9.6 and algorithm 8.11 describe
+one grammar can be scoped to configured federation partners; it must not
+dial a URL a caller supplies.
+

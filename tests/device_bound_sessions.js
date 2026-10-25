@@ -41,6 +41,19 @@
 //  12. The same person signing in again from a browser that cannot prove
 //      the bound key replaces that session in the set, as with the setting
 //      off: one live session per person per browser.
+//  13. Secure-Session-Skipped (#743): a well-formed list is recorded and
+//      the fact is skipped; the same header again does not append; a
+//      malformed list is STS-AUTHN-0460 and stays pending; a skip after a
+//      binding does not unbind.
+//  14. include_site (#742) is false by default. On, a DNS host sets
+//      Domain to the registrable domain; an address does not.
+//  15. deviceBoundRequired (#740) cannot be saved while the feature is
+//      off (STS-AUTHN-0461); saving it off succeeds; saving it on succeeds
+//      once the feature is on.
+//  16. While required: pending does not issue yet; skipped and timedout
+//      are STS-AUTHN-0462; bound allows; not required issues; never offered
+//      is not refused; the feature off does not refuse a stored requirement.
+//      Federated sessions (#741) are not implemented and have no case.
 //
 // In process, because it chooses how the process starts (the setting is
 // flipped on a live stack) and asserts on the session store beside each
@@ -105,6 +118,11 @@ function childMain() {
     const config = require(ROOT_DIR + '/common/config');
     const sf = require(ROOT_DIR + '/common/structured_fields');
     const screen = require(ROOT_DIR + '/tests/tools/authn_screen');
+    const deviceBound = require(ROOT_DIR + '/authn/device_bound_sessions');
+    const passkeyPolicy = require(ROOT_DIR + '/common/passkey_policy');
+    const errorCodes = require(ROOT_DIR + '/common/error_codes');
+    const auditLog = require(ROOT_DIR + '/common/audit');
+    const issuanceGate = require(ROOT_DIR + '/common/issuance_gate');
 
     const server = http.createServer(app);
     await new Promise(function (r) {
@@ -420,6 +438,180 @@ function childMain() {
          again.sid + ' ' + JSON.stringify(Object.keys(setNow.sessions || {})));
     config.clearOverride('authn.multipleAccounts');
 
+    // --- 13. Secure-Session-Skipped (#743) --------------------------------
+    const skip = await signIn('db-skip');
+    const skipReq = reqOf(skip.jar);
+    skipReq.headers['secure-session-skipped'] =
+      'unreachable;session_identifier="abc", quota_exceeded';
+    const skipSeen = authn.sessionOf(skipReq);
+    const skipRow = authn.sessionById(skip.sid);
+    const skipBound = deviceBound.bindingOf(skipRow);
+    note(skipSeen && skipSeen.id === skip.sid &&
+         skipBound.fact === 'skipped' &&
+         skipBound.reasons.join(',') === 'unreachable,quota_exceeded' &&
+         (skipRow.dbsc.skippedIds || []).join(',') === 'abc,',
+         '13a. a well-formed Secure-Session-Skipped is recorded, the fact ' +
+         'is skipped, and the session stays honoured',
+         JSON.stringify(skipBound));
+    authn.sessionOf(skipReq);
+    const skipAgain = deviceBound.bindingOf(authn.sessionById(skip.sid));
+    note(skipAgain.reasons.length === 2,
+         '13b. the same header again does not append the reasons',
+         JSON.stringify(skipAgain.reasons));
+
+    const mal = await signIn('db-mal');
+    const malReq = reqOf(mal.jar);
+    malReq.headers['secure-session-skipped'] = '"not-a-token"';
+    authn.sessionOf(malReq);
+    const malBound = deviceBound.bindingOf(authn.sessionById(mal.sid));
+    const malRows = auditLog.list().filter(function (row) {
+      return row && row.errorCode === 'STS-AUTHN-0460' &&
+        (row.target === mal.sid ||
+         (row.detail && row.detail.sessionId === mal.sid));
+    });
+    note(malBound.fact === 'pending' && malRows.length === 1,
+         '13c. a malformed skip is STS-AUTHN-0460 and the session stays ' +
+         'pending', malBound.fact + ' ' + malRows.length);
+
+    const kept = await register('db-kept', keyPair());
+    const keptReq = reqOf(kept.s.jar);
+    keptReq.headers['secure-session-skipped'] = 'unreachable';
+    authn.sessionOf(keptReq);
+    const keptRow = authn.sessionById(kept.s.sid);
+    const keptBound = deviceBound.bindingOf(keptRow);
+    note(keptBound.fact === 'bound' && keptBound.reasons.length === 0 &&
+         !!keptRow.dbsc.jkt,
+         '13d. a skip after a binding does not unbind the session',
+         JSON.stringify(keptBound));
+
+    // --- 14. include_site (#742) ------------------------------------------
+    note(deviceBound.includeSite() === false,
+         '14a. authn.deviceBoundIncludeSite is off by default');
+    config.setOverride('authn.deviceBoundIncludeSite', true);
+    const siteIn = await signIn('db-site');
+    const siteOffer = offerOf(siteIn.r);
+    const siteReg = await post(siteIn.jar, siteOffer.path, {
+      host: 'login.example.com',
+      'secure-session-response': quoted(proof(keyPair(), siteOffer.challenge,
+                                              true)) });
+    const siteInstr = siteReg.json || {};
+    const siteCred = (siteInstr.credentials || [])[0] || {};
+    const siteSpec = (siteInstr.scope &&
+                      siteInstr.scope.scope_specification) || [];
+    const siteHosts = siteSpec.map(function (one) {
+      return one && one.domain;
+    });
+    note(siteReg.status === 200 && siteInstr.scope &&
+         siteInstr.scope.include_site === true &&
+         /Domain=example\.com/.test(String(siteCred.attributes)) &&
+         siteHosts.indexOf('login.example.com') < 0,
+         '14b. include_site and Domain=example.com only when the setting ' +
+         'is on, and the registering host is not excluded',
+         siteReg.status + ' ' + String(siteCred.attributes));
+    const loopIn = await signIn('db-loop');
+    const loopOffer = offerOf(loopIn.r);
+    const loopReg = await post(loopIn.jar, loopOffer.path, {
+      'secure-session-response': quoted(proof(keyPair(), loopOffer.challenge,
+                                              true)) });
+    const loopCred = ((loopReg.json || {}).credentials || [])[0] || {};
+    const loopScope = (loopReg.json || {}).scope || {};
+    note(loopReg.status === 200 && loopScope.include_site === true &&
+         !/Domain=/.test(String(loopCred.attributes)),
+         '14c. an address host keeps include_site and adds no Domain',
+         loopReg.status + ' ' + String(loopCred.attributes));
+    config.clearOverride('authn.deviceBoundIncludeSite');
+
+    // --- 15. requiring a bound session (#740) -----------------------------
+    config.setOverride('authn.deviceBoundSessions', false);
+    const refusedRequired = passkeyPolicy.save('default', Object.assign({},
+      passkeyPolicy.DEFAULTS, { deviceBoundRequired: true }));
+    note(refusedRequired.ok === false &&
+         errorCodes.codeOf(refusedRequired) === 'STS-AUTHN-0461',
+         '15a. deviceBoundRequired cannot be saved while the feature is off',
+         JSON.stringify(refusedRequired.errors || refusedRequired));
+    const savedOff = passkeyPolicy.save('default', Object.assign({},
+      passkeyPolicy.DEFAULTS, { deviceBoundRequired: false }));
+    note(savedOff.ok === true,
+         '15b. saving the requirement off succeeds while the feature is off',
+         JSON.stringify(savedOff.errors || savedOff));
+    config.setOverride('authn.deviceBoundSessions', true);
+    config.setOverride('authn.deviceBoundIssuanceWaitS', 60);
+    const savedOn = passkeyPolicy.save('default', Object.assign({},
+      passkeyPolicy.DEFAULTS, { deviceBoundRequired: true }));
+    const profileOn = passkeyPolicy.read('default');
+    note(savedOn.ok === true && profileOn.deviceBoundRequired === true,
+         '15c. the requirement saves while device-bound sessions are on',
+         JSON.stringify(savedOn.errors || profileOn.deviceBoundRequired));
+
+    // --- 16. issuance holds, then refuses or allows (#740) ----------------
+    const ask = function (session) {
+      return issuanceGate.check({
+        application: 'db-required',
+        kind: 'issue-authorization-code',
+        subject: { kind: 'user', name: 'db-wait' },
+        session: session
+      });
+    };
+    const waiting = await signIn('db-wait');
+    const waitSession = authn.sessionById(waiting.sid);
+    const heldBack = ask(waitSession);
+    note(deviceBound.factOf(waitSession) === 'pending' &&
+         heldBack.allowed === false && heldBack.deferred === true &&
+         errorCodes.codeOf(heldBack) !== 'STS-AUTHN-0462',
+         '16a. a pending session inside the window does not issue yet',
+         deviceBound.factOf(waitSession) + ' ' +
+         JSON.stringify({ allowed: heldBack.allowed,
+                          deferred: heldBack.deferred,
+                          code: errorCodes.codeOf(heldBack) }));
+    const skippedAsk = ask(Object.assign({}, waitSession, {
+      dbsc: Object.assign({}, waitSession.dbsc, {
+        skippedReasons: ['unreachable'], skippedIds: ['abc'] }) }));
+    note(skippedAsk.allowed === false && skippedAsk.deferred !== true &&
+         errorCodes.codeOf(skippedAsk) === 'STS-AUTHN-0462',
+         '16b. skipped refuses when a bound session is required',
+         errorCodes.codeOf(skippedAsk) + ' ' + skippedAsk.deferred);
+    const lateSession = { dbsc: { offeredAt: Date.now() - 120000 } };
+    const late = ask(lateSession);
+    note(deviceBound.factOf(lateSession) === 'timedout' &&
+         late.allowed === false && late.deferred !== true &&
+         errorCodes.codeOf(late) === 'STS-AUTHN-0462',
+         '16c. timedout refuses when a bound session is required',
+         deviceBound.factOf(lateSession) + ' ' + errorCodes.codeOf(late));
+    const boundAsk = ask({ dbsc: { id: 'bound-id', jkt: 'thumb',
+      alg: 'ES256', offeredAt: Date.now() - 120000,
+      skippedReasons: ['unreachable'] } });
+    note(boundAsk.allowed === true && boundAsk.deferred !== true,
+         '16d. bound allows',
+         JSON.stringify({ allowed: boundAsk.allowed,
+                          deferred: boundAsk.deferred }));
+    const notRequired = passkeyPolicy.save('default', Object.assign({},
+      passkeyPolicy.DEFAULTS, { deviceBoundRequired: false }));
+    const openAsk = ask(waitSession);
+    note(notRequired.ok === true && openAsk.allowed === true &&
+         openAsk.deferred !== true,
+         '16e. when the requirement is off, a pending session issues',
+         JSON.stringify({ ok: notRequired.ok, allowed: openAsk.allowed,
+                          deferred: openAsk.deferred,
+                          why: openAsk.why }));
+    const requiredAgain = passkeyPolicy.save('default', Object.assign({},
+      passkeyPolicy.DEFAULTS, { deviceBoundRequired: true }));
+    const noneSession = { dbsc: null };
+    const noneAsk = ask(noneSession);
+    note(requiredAgain.ok === true &&
+         deviceBound.factOf(noneSession) === 'none' &&
+         noneAsk.allowed === true && noneAsk.deferred !== true,
+         '16f. a session never offered registration is not refused',
+         deviceBound.factOf(noneSession) + ' ' + noneAsk.allowed + ' ' +
+         (noneAsk.why || ''));
+    config.setOverride('authn.deviceBoundSessions', false);
+    const offAsk = ask(waitSession);
+    note(offAsk.allowed === true && offAsk.deferred !== true,
+         '16g. with the feature off, a stored requirement does not refuse ' +
+         'a pending session',
+         JSON.stringify({ allowed: offAsk.allowed,
+                          deferred: offAsk.deferred, why: offAsk.why }));
+    config.clearOverride('authn.deviceBoundIssuanceWaitS');
+
     config.clearOverride('authn.deviceBoundSessions');
     server.close();
     fs.writeFileSync(OUT, JSON.stringify(findings));
@@ -491,6 +683,8 @@ module.exports = {
             'it, a replayed challenge and another key each ending the ' +
             'session, an unknown DBSC id leaving it alone, a browser ' +
             'without DBSC unchanged, and several accounts in one browser ' +
-            'each bound and honoured on its own (#561)',
+            'each bound and honoured on its own (#561). A skipped header ' +
+            'is recorded (#743), include_site follows its setting (#742), ' +
+            'and an application can require a bound session (#740)',
   run: run
 };

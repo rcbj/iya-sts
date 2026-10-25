@@ -154,6 +154,7 @@
   "overview.deviceBound": "Naka-bind sa browser na ito",
   "overview.deviceBoundYes": "Oo, sa isang {alg} key na hawak ng browser na ito",
   "overview.deviceBoundNo": "Hindi",
+  "overview.deviceBoundSkipped": "Nilaktawan ang binding ({reasons})",
   "overview.unstated": "hindi sinabi",
   "overview.sessionEnds": "Matatapos ang session na ito",
   "overview.timesSignedIn": "Ilang beses ka nang nag-sign in",

@@ -1599,6 +1599,33 @@ class Authn {
         : mineBinding.id !== other.dbsc.id ? mineBinding
         : Number(other.dbsc.refreshes || 0) >
           Number(mineBinding.refreshes || 0) ? other.dbsc : mineBinding;
+    } else if ((base.dbsc || other.dbsc) &&
+               !(base.dbsc && base.dbsc.jkt) &&
+               !(other.dbsc && other.dbsc.jkt)) {
+      // NEITHER COPY IS BOUND (#743). A skip or an offer has no jkt, and
+      // the assign above would keep only the further-along copy's dbsc.
+      // The earliest offer starts the wait; a copy that recorded reasons
+      // keeps them.
+      const left = base.dbsc || {};
+      const right = other.dbsc || {};
+      const offered = [Number(left.offeredAt) || 0,
+                       Number(right.offeredAt) || 0].filter(function (n) {
+        return n > 0;
+      });
+      const leftSkipped = Array.isArray(left.skippedReasons) &&
+        left.skippedReasons.length;
+      const rightSkipped = Array.isArray(right.skippedReasons) &&
+        right.skippedReasons.length;
+      const skip = leftSkipped ? left : (rightSkipped ? right : null);
+      out.dbsc = Object.assign({}, left, right);
+      if (offered.length) {
+        out.dbsc.offeredAt = Math.min.apply(null, offered);
+      }
+      if (skip) {
+        out.dbsc.skippedReasons = skip.skippedReasons.slice();
+        out.dbsc.skippedIds = Array.isArray(skip.skippedIds)
+          ? skip.skippedIds.slice() : [];
+      }
     }
     ['relyingParties', 'events'].forEach(function (field) {
       if (!Array.isArray(other[field]) || !Array.isArray(base[field])) {
@@ -2016,6 +2043,12 @@ class Authn {
     // is a copied `sts_session` or a skipped refresh, and the person's
     // session stays theirs. An unbound session, and every session while
     // `authn.deviceBoundSessions` is off, passes as it always did.
+    // A browser that declines or fails registration says so on
+    // Secure-Session-Skipped (#743). Recorded on the session this request
+    // presents, including one read with ignoreBinding so a refresh can
+    // finish. A well-formed skip is not a failure and does not end the
+    // session; a malformed one is recorded and the request goes on.
+    deviceBound.noteSkipped(session, req);
     if (ignoreBinding !== true && !deviceBound.honours(session, req)) {
       log.debug("Leaving Authn.honouredSession(). A device-bound session " +
                 "without its bound cookie.");
@@ -10296,6 +10329,11 @@ class Authn {
   //              factor, Kerberos ticket or wallet. With `forceMfa` too it is
   //              the key AFTER a password only. `step_up.screenDemand()`
   //              names the combinations.
+  //   phishingClass  `phrh` when this sign-in must earn hardware-protected
+  //              phishing resistance (#739). The passkey step then offers
+  //              only keys whose recorded evidence can, and says so before
+  //              the ceremony when none can. '' otherwise, including `phr`
+  //              beside `phrh` (either answers). `step_up.phishingClassFor()`.
   //   protocol   what to record the sign-in AS, for the admin console — this
   //              service cannot tell, and "every sign-in is an OIDC one" is
   //              exactly the wrong answer once more than one protocol uses it.
@@ -10335,8 +10373,8 @@ class Authn {
    *
    * The path is the sign-in screen, the federation chooser, a federated flow's
    * entry point or the Kerberos door; the caller cannot tell which. The options
-   * are `returnTo`, `details`, `hint`, `forceMfa`, `forceKey`, `protocol` and
-   * `application`.
+   * are `returnTo`, `details`, `hint`, `forceMfa`, `forceKey`,
+   * `phishingClass`, `protocol` and `application`.
    *
    * @param opts - the options, described above
    * @returns a path on this service
@@ -10722,6 +10760,10 @@ class Authn {
       // the entry point's header. On the record for `forcePasswordless`'s
       // reason: the POST at the other end is an answer, not the question.
       forceKey: forceKey,
+      // `phrh` WHEN THE SIGN-IN MUST EARN IT (#739), so the passkey step
+      // narrows `allowCredentials` to keys whose recorded evidence can.
+      // Anything else is '', including a request `phr` would also answer.
+      phishingClass: opts.phishingClass === 'phrh' ? 'phrh' : '',
       // Set only by a relationship configuring `webauthn`. Nothing a protocol
       // module passes can turn it on: a caller asking for a passwordless
       // sign-in is a caller choosing somebody else's authenticator for them,
@@ -14915,17 +14957,44 @@ class Authn {
     // A RECOVERY ENROLMENT (#724) REGISTERS, whatever keys the person holds:
     // the step exists because they cannot use the one they have.
     const mode = step.recovery ? 'create' : (held.length ? 'get' : 'create');
+    // `phrh` NARROWED (#739): the sign-in must earn hardware-protected
+    // phishing resistance, so `allowCredentials` names only keys whose
+    // RECORDED attestation is trusted and whose BE flag is clear — the same
+    // two facts `phishing_resistance.ts` reads off an assertion. A person
+    // who holds keys of this role and none of them qualify is told before
+    // any ceremony, and is not offered an enrolment: a registration in this
+    // act earns neither class. A discoverable (usernameless) ceremony has
+    // no list to narrow and is not this step; it is refused after, as
+    // STS-OAUTH-0971. `phr` beside `phrh` is either, and is not narrowed.
+    const phrhAsked = String((step.authn || {}).phishingClass || '') ===
+                      'phrh' && mode === 'get' && !pqRefusal;
+    let hardwareKnown = known;
+    let hardwareRefusal: { code: string, why: string } | null = null;
+    if (phrhAsked) {
+      const leaf = require('../common/phishing_resistance');
+      hardwareKnown = known.filter(function (one) {
+        return leaf.storedKeyEarnsHardware(one);
+      });
+      if (known.length && !hardwareKnown.length) {
+        hardwareRefusal = { code: 'STS-AUTHN-0459',
+          why: 'This sign-in asks for a hardware-protected ' +
+               'phishing-resistant passkey, and none of the passkeys held ' +
+               'for this step can earn it. A synced passkey, or one whose ' +
+               'attestation is not trusted, is not enough.' };
+      }
+    }
+    const offered = hardwareRefusal ? [] : hardwareKnown;
     // ONE CHOICE PER PASSKEY (#534), where the passkey policy says so and
     // there is more than one to choose from: until one is chosen the page
     // lists them, and once one is, the ceremony names only it. A chosen id
     // that is not one of this step's keys is not a choice.
-    const separate = mode === 'get' && known.length > 1 &&
+    const separate = mode === 'get' && offered.length > 1 &&
                      !this.deps.passkeyPolicy.aggregatesDevices();
-    const chosen = separate ? known.filter(function (one) {
+    const chosen = separate ? offered.filter(function (one) {
       return one.credentialId === String(chosenKey || '');
     })[0] || null : null;
     const choosing = separate && !chosen;
-    const allowed = chosen ? [chosen] : known;
+    const allowed = chosen ? [chosen] : offered;
     // THE LANE A REGISTRATION IS MADE IN (#643), ON THE STEP like the role:
     // chosen when the ceremony is armed (`mfaWebauthnOptions()` has asked
     // `laneRefusal()` of it), and read back from the step — never from the
@@ -14975,7 +15044,7 @@ class Authn {
       retrying: !!step.classicalOnly } : null;
     const out = {
       mode: mode, passwordless: passwordless,
-      choices: choosing ? known.map(function (one) {
+      choices: choosing ? offered.map(function (one) {
         return { id: String(one.credentialId),
                  name: String(credentials.keyName(one)) };
       }) : [],
@@ -14985,11 +15054,14 @@ class Authn {
       // well as refused at the act: a ceremony drawn under a refusal would
       // be a browser prompt whose answer is thrown away.
       problem: String(this.rpIdProblem(base) ||
-                      (pqRefusal ? pqRefusal.why : '') || ''),
+                      (pqRefusal ? pqRefusal.why : '') ||
+                      (hardwareRefusal ? hardwareRefusal.why : '') || ''),
       // NO POST-QUANTUM KEY WHERE ONE IS REQUIRED (#718): the refusal the
       // ceremony would end in, said before it runs.
       postQuantumRefused: pqRefusal ? { code: pqRefusal.code,
                                         why: pqRefusal.why } : null,
+      // NO KEY THAT CAN EARN `phrh` (#739), said before the ceremony.
+      hardwareRefused: hardwareRefusal,
       // AND WHERE TO GET ONE (#946): the panel's links, drawn in the page's
       // language — the refusal above stays English (#539).
       postQuantumHelp: pqRefusal ? this.postQuantumHelp() : null,
@@ -17132,6 +17204,27 @@ class Authn {
       log.debug('Leaving Authn.mfaWebauthnOptions(). No post-quantum key.');
       return;
     }
+    // NO KEY THAT CAN EARN `phrh` (#739): the same, before the ceremony is
+    // armed. A registration would not earn it either.
+    if (facts.hardwareRefused) {
+      const refusal = facts.hardwareRefused;
+      audit.audit({
+        action: 'session.refuse', actor: String(found.step.username || ''),
+        errorCode: refusal.code,
+        protocol: String((found.step.authn && found.step.authn.protocol) ||
+                         'OAuth 2.0 / OIDC'), channel: 'http', target: '',
+        summary: 'a session for ' + String(found.step.username || '') +
+                 ' was refused before the passkey step\'s ceremony: phrh ' +
+                 'was required and no held key can earn it',
+        detail: { credential: 'webauthn',
+                  application: String((found.step.authn &&
+                                       found.step.authn.application) || '') }
+      });
+      errorCodes.mark(res, refusal.code);
+      this.stepRefused(res, refusal.why);
+      log.debug('Leaving Authn.mfaWebauthnOptions(). No phrh key.');
+      return;
+    }
     if (facts.choices.length) {
       errorCodes.mark(res, 'STS-AUTHN-0329');
       this.stepRefused(res, 'Choose one of your passkeys first.');
@@ -17679,6 +17772,19 @@ class Authn {
                                 errorCodes.codeOf(picked));
         }
         const known = picked.key;
+        // `allowCredentials` IS A HINT (#739). A sign-in that must earn
+        // `phrh` named only the keys whose record can; an assertion that
+        // names some other key of the role is the same refusal, here,
+        // rather than a session the authorization endpoint then rejects.
+        if (String((step.authn || {}).phishingClass || '') === 'phrh') {
+          const leaf = require('../common/phishing_resistance');
+          if (!leaf.storedKeyEarnsHardware(known)) {
+            throw errorCodes.mark(new Error(
+              'This sign-in asks for a hardware-protected ' +
+              'phishing-resistant passkey, and the passkey that answered ' +
+              'cannot earn it.'), 'STS-AUTHN-0459');
+          }
+        }
         // WEBAUTHN LEVEL 3 SECTION 7.2 STEP 6 (#474): a `userHandle` the
         // authenticator returned must be the one this key was created
         // under. The username was typed, so its absence is allowed.

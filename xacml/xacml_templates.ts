@@ -723,9 +723,18 @@ const AUTHN_ATTRIBUTE = {
   // issuance the gate described: the four browser kinds.
   PHISHING_RESISTANCE: 'urn:sts:xacml:phishing-resistance',
   // An assignment on the authentication obligation (#723) naming WHAT the
-  // authentication lacked — `phishing-resistant` or `hardware-protected` —
-  // so the refusal the PEP writes says that, and not the role sentence.
-  REFUSAL: 'urn:sts:xacml:authentication-refusal'
+  // authentication lacked — `phishing-resistant`, `hardware-protected` or
+  // `device-bound-session` (#740) — so the refusal the PEP writes says
+  // that, and not the role sentence.
+  REFUSAL: 'urn:sts:xacml:authentication-refusal',
+  // THE DEVICE-BOUND SESSION (#740). The fact token (`bound`, `skipped`,
+  // `pending`, `timedout`, `none`) and whether the application's passkey
+  // profile requires a bound session (`true` only when it does). The PEP
+  // sends both only while `authn.deviceBoundSessions` is on. A missing
+  // attribute is an empty bag, and string-is-in on one is False, so a
+  // rule about them does not fire when the feature is off.
+  DEVICE_BOUND_SESSION: 'urn:sts:xacml:device-bound-session',
+  DEVICE_BOUND_REQUIRED: 'urn:sts:xacml:device-bound-required'
 };
 
 // ---------------------------------------------------------------------------
@@ -1709,6 +1718,43 @@ const TEMPLATES: TemplateRow[] = [
           advice: []
         });
       }
+
+      // -------------------------------------------------------------------
+      // A DEVICE-BOUND SESSION THE APPLICATION REQUIRES (#740). The
+      // requirement attribute is sent only while the feature is on and the
+      // passkey profile requires a binding, and the fact is the session's.
+      // This rule refuses `skipped` and `timedout`. `pending` is held by
+      // the PEP before the policy is asked, and `none` and `bound` are not
+      // refusals. A missing attribute is an empty bag, so the rule is
+      // inapplicable when the feature is off or the profile does not
+      // require one. The authentication obligation, so a refusal is not
+      // waived with the role question.
+      // -------------------------------------------------------------------
+      riskRules.push({
+        id: options.idBase + ':rule:device-bound-session',
+        effect: model.EFFECT.DENY,
+        description: 'Refuse an issuance an application requires to be ' +
+                     'device-bound when registration was skipped or the ' +
+                     'wait elapsed without a binding.',
+        target: null,
+        condition: B.apply(F1 + 'and', [
+          B.apply(F1 + 'string-is-in', [
+            B.value(TYPE.STRING, 'true'),
+            B.designator(env, AUTHN_ATTRIBUTE.DEVICE_BOUND_REQUIRED,
+                         TYPE.STRING)]),
+          B.apply(F1 + 'or', [
+            B.apply(F1 + 'string-is-in', [
+              B.value(TYPE.STRING, 'skipped'),
+              B.designator(env, AUTHN_ATTRIBUTE.DEVICE_BOUND_SESSION,
+                           TYPE.STRING)]),
+            B.apply(F1 + 'string-is-in', [
+              B.value(TYPE.STRING, 'timedout'),
+              B.designator(env, AUTHN_ATTRIBUTE.DEVICE_BOUND_SESSION,
+                           TYPE.STRING)])])
+        ]),
+        obligations: lacked('device-bound-session'),
+        advice: []
+      });
 
       // -------------------------------------------------------------------
       // THE REGISTERED DEVICE (#164 decision 3, phase 6). Two Deny rules,
