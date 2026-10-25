@@ -23480,9 +23480,14 @@ class AdminApi {
         handler: function (req, res) {
           log.debug("Entering the management API policies action endpoint.");
           const body = parseBody(req);
+          // THE TOKEN SUBJECT IS THE AUDIT TRAIL (#966), the same subject
+          // the users action passes. `callerNameOf` reads the gate's
+          // verified subject, and '' stays '' when development's open API
+          // has no token.
           const result =
             adminActions.policiesAction(self.withAction(req, body),
-                                        { via: 'api' });
+                                        { via: 'api',
+                                          actor: self.callerNameOf(res) });
           if (!result.ok) {
             errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0060');
           }
