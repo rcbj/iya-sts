@@ -3494,9 +3494,21 @@ class AdminActions {
     // the door. `base` (2026-09-13) is the address the request arrived on,
     // realm prefix included, so a password reset link can be handed back WHOLE
     // — the one thing an administrator does with it is send it to somebody.
-    const ctx = { via: (context || {}).via || 'console',
-                  actor: (context || {}).actor || String(body.actor || ''),
-                  base: String((context || {}).base || '') };
+    //
+    // AN OWN `actor` IS THE ACTOR EVEN WHEN IT IS EMPTY (#966). The management
+    // API always passes the verified token's subject, and '' means nobody was
+    // authenticated. Falling through to `body.actor` on that empty subject is
+    // how a name the request nominated reached the row. A caller that OMITS
+    // the property — an in-process call that still puts the name in the
+    // body — keeps today's `body.actor` fallback. The federation-unlink
+    // test is the one caller that passes `actor: ''` on purpose; its body
+    // names nobody, so that row stays empty.
+    const given = context || {};
+    const actorNamed = Object.prototype.hasOwnProperty.call(given, 'actor');
+    const ctx = { via: given.via || 'console',
+                  actor: actorNamed ? String(given.actor || '')
+                                    : String(body.actor || ''),
+                  base: String(given.base || '') };
 
     // AN ADMINISTRATOR UPGRADES A PERSON'S CLASSICAL PASSKEY (#939). The
     // assertion and ML-DSA registration both run in the operator's browser;
@@ -4391,7 +4403,9 @@ class AdminActions {
         reasonUser: 'Your password was changed by an administrator.' });
       auditLog.record({
         category: 'authentication', action: 'password.set',
-        actor: (body.actor || ''), target: who, outcome: 'success',
+        // THE SUBJECT THE CALLER PASSED (#966), which for this API is the
+        // verified token. The three create rows below record `ctx.actor` too.
+        actor: ctx.actor, target: who, outcome: 'success',
         summary: 'a password was set for ' + who + ' by an administrator',
         // NO PASSWORD AND NO HASH IN THE AUDIT ROW, generated or typed. The row
         // records that it happened and by which door; the value existed in one
@@ -4508,7 +4522,8 @@ class AdminActions {
         } else {
           auditLog.record({
             category: 'admin', action: 'admin.service-account.set',
-            actor: (body.actor || ''), target: result.username,
+            // `ctx.actor`: the subject the caller passed (#966).
+            actor: ctx.actor, target: result.username,
             outcome: 'success',
             summary: result.username + ' was created as a service account',
             detail: { owners: (((flagged as any).account || {}).owners ||
@@ -4540,7 +4555,8 @@ class AdminActions {
           } else {
             auditLog.record({
               category: 'authentication', action: 'password.set',
-              actor: (body.actor || ''), target: result.username,
+              // `ctx.actor`: the subject the caller passed (#966).
+              actor: ctx.actor, target: result.username,
               outcome: 'success',
               summary: 'a password was set for ' + result.username +
                        ' as they were created',
@@ -4575,7 +4591,8 @@ class AdminActions {
         } else {
           auditLog.record({
             category: 'authentication', action: 'activation.issued',
-            actor: (body.actor || ''), target: result.username,
+            // `ctx.actor`: the subject the caller passed (#966).
+            actor: ctx.actor, target: result.username,
             outcome: 'success',
             summary: 'an activation link was issued for ' + result.username +
                      ' as they were created',
@@ -7728,7 +7745,13 @@ class AdminActions {
               (body.action || '(none)'));
     const action = String(body.action || '');
     const ctx = context || {};
-    const actor = String(ctx.actor || body.actor || '');
+    // AN OWN `actor` IS THE SUBJECT EVEN WHEN IT IS EMPTY (#966), the same
+    // rule as `usersAction`. The policies route passes the token's subject,
+    // and '' means nobody was authenticated. A caller that omits the
+    // property — an in-process save that passes only `{ via }` — still
+    // records `body.actor`.
+    const actor = Object.prototype.hasOwnProperty.call(ctx, 'actor')
+      ? String(ctx.actor || '') : String(body.actor || '');
     const found = policyKinds.forAction(action);
     if (!found) {
       const known = policyKinds.actions();
