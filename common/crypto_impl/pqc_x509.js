@@ -62,6 +62,14 @@
 //      r || s in JOSE;
 //   3. the RSA components exist here and not in JOSE at all.
 //
+// The DER in (2) is written in this file (#445). @noble/curves 1.4.0 still
+// does the scalar arithmetic, and its DER codec writes the SEQUENCE length
+// as one byte. A P-521 Ecdsa-Sig-Value is always longer than 127 bytes, so
+// that byte is not a length: OpenSSL refuses every signature, and the same
+// codec refuses a correct long-form signature from anyone else. P-256 and
+// P-384 stay under the limit and are encoded exactly as that library
+// encodes them. The library stays at 1.4.0 — see crypto_impl/CLAUDE.md.
+//
 // So this module implements the composite from the draft directly rather than
 // calling pqc.js's version, and tests/pki_pqc_x509.js holds the two apart by
 // asserting that a composite certificate verifies with OpenSSL 3.5 while the
@@ -902,6 +910,186 @@ function compositeMessage(cfg, message) {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// An Ecdsa-Sig-Value: SEQUENCE { INTEGER r, INTEGER s }, minimally encoded.
+//
+// @noble/curves 1.4.0's toDERRawBytes() writes the SEQUENCE length as one
+// byte, and its verifier refuses a length whose high bit is set. P-521's
+// r and s are 66 octets, so the signature is always past 127 bytes and that
+// encoding is not DER. OpenSSL re-encodes what it parsed and compares the
+// bytes, and refuses every one. The scalar arithmetic stays on the library.
+// This is the same minimal-integer rule x509.js uses for a certificate
+// signature. Requiring that file from here is a cycle: it requires this one.
+// ---------------------------------------------------------------------------
+function bigIntToFixed(value, length) {
+  log.debug("Entering bigIntToFixed().");
+  var hex = value.toString(16);
+  if (hex.length % 2) {
+    hex = '0' + hex;
+  }
+  if (hex.length / 2 > length) {
+    log.debug("Leaving bigIntToFixed(). Wider than the field.");
+    throw new Error('An ECDSA component does not fit its curve.');
+  }
+  var out = new Uint8Array(length);
+  var rawLen = hex.length / 2;
+  var i;
+  for (i = 0; i < rawLen; i++) {
+    out[length - rawLen + i] =
+        parseInt(hex.substring(i * 2, i * 2 + 2), 16);
+  }
+  log.debug("Leaving bigIntToFixed().");
+  return out;
+}
+
+function bytesToBigInt(raw) {
+  log.debug("Entering bytesToBigInt().");
+  var hex = '';
+  var i;
+  for (i = 0; i < raw.length; i++) {
+    hex += (raw[i] < 16 ? '0' : '') + raw[i].toString(16);
+  }
+  var out = hex.length ? BigInt('0x' + hex) : BigInt(0);
+  log.debug("Leaving bytesToBigInt().");
+  return out;
+}
+
+function minimalDerInteger(raw) {
+  log.debug("Entering minimalDerInteger().");
+  var start = 0;
+  while (start + 1 < raw.length && raw[start] === 0 &&
+         (raw[start + 1] & 0x80) === 0) {
+    start = start + 1;
+  }
+  var trimmed = raw.slice(start);
+  if (trimmed.length === 0) {
+    trimmed = new Uint8Array([0]);
+  }
+  if ((trimmed[0] & 0x80) !== 0) {
+    var padded = new Uint8Array(trimmed.length + 1);
+    padded.set(trimmed, 1);
+    trimmed = padded;
+  }
+  log.debug("Leaving minimalDerInteger().");
+  return trimmed;
+}
+
+function derInteger(value, fieldLen) {
+  log.debug("Entering derInteger().");
+  var trimmed = minimalDerInteger(bigIntToFixed(value, fieldLen));
+  var out = new asn1js.Integer({ valueHex: bufferOf(trimmed) });
+  log.debug("Leaving derInteger().");
+  return out;
+}
+
+function ecdsaDerFromRs(r, s, fieldLen) {
+  log.debug("Entering ecdsaDerFromRs().");
+  var out = derOf(new asn1js.Sequence({
+    value: [derInteger(r, fieldLen), derInteger(s, fieldLen)]
+  }));
+  log.debug("Leaving ecdsaDerFromRs().");
+  return out;
+}
+
+// The definite-length SEQUENCE, or null. A long form that would have fit
+// in one byte is not DER, and neither is the one-byte form noble writes
+// once the length is 128 or more: that byte then has its high bit set,
+// which DER reads as a count of length octets.
+function derSequenceContent(bytes) {
+  log.debug("Entering derSequenceContent().");
+  if (bytes.length < 2 || bytes[0] !== 0x30) {
+    log.debug("Leaving derSequenceContent(). Not a SEQUENCE.");
+    return null;
+  }
+  var lengthOfLength = bytes[1];
+  var header;
+  var contentLen;
+  if (lengthOfLength < 0x80) {
+    header = 2;
+    contentLen = lengthOfLength;
+  } else if (lengthOfLength === 0x81) {
+    if (bytes.length < 3) {
+      log.debug("Leaving derSequenceContent(). Truncated.");
+      return null;
+    }
+    contentLen = bytes[2];
+    if (contentLen < 0x80) {
+      log.debug("Leaving derSequenceContent(). Non-minimal length.");
+      return null;
+    }
+    header = 3;
+  } else {
+    log.debug("Leaving derSequenceContent(). Unsupported length form.");
+    return null;
+  }
+  if (header + contentLen !== bytes.length) {
+    log.debug("Leaving derSequenceContent(). Length does not cover.");
+    return null;
+  }
+  log.debug("Leaving derSequenceContent().");
+  return bytes.subarray(header);
+}
+
+function integerIsMinimal(value) {
+  log.debug("Entering integerIsMinimal().");
+  var ok = value.length > 0 && (value[0] & 0x80) === 0 &&
+      !(value.length > 1 && value[0] === 0x00 &&
+        (value[1] & 0x80) === 0);
+  log.debug("Leaving integerIsMinimal(). " + ok);
+  return ok;
+}
+
+function derIntegerToBigInt(part, fieldLen) {
+  log.debug("Entering derIntegerToBigInt().");
+  var block = part && part.idBlock;
+  var view = part && part.valueBlock && part.valueBlock.valueHexView;
+  if (!block || block.tagClass !== 1 || block.tagNumber !== 2 || !view) {
+    log.debug("Leaving derIntegerToBigInt(). Not an INTEGER.");
+    return null;
+  }
+  var value = new Uint8Array(view);
+  if (!integerIsMinimal(value) || value.length > fieldLen + 1) {
+    log.debug("Leaving derIntegerToBigInt(). Not minimal.");
+    return null;
+  }
+  while (value.length > fieldLen && value[0] === 0) {
+    value = value.slice(1);
+  }
+  if (value.length > fieldLen) {
+    log.debug("Leaving derIntegerToBigInt(). Wider than the field.");
+    return null;
+  }
+  var fixed = new Uint8Array(fieldLen);
+  fixed.set(value, fieldLen - value.length);
+  log.debug("Leaving derIntegerToBigInt().");
+  return bytesToBigInt(fixed);
+}
+
+function ecdsaRsFromDer(der, fieldLen) {
+  log.debug("Entering ecdsaRsFromDer().");
+  var bytes = asBytes(der);
+  if (!derSequenceContent(bytes)) {
+    log.debug("Leaving ecdsaRsFromDer(). Not a DER SEQUENCE.");
+    return null;
+  }
+  var parsed = asn1js.fromBER(bufferOf(bytes));
+  var pair = (parsed.offset === bytes.length && parsed.result &&
+              parsed.result.valueBlock)
+    ? (parsed.result.valueBlock.value || []) : [];
+  if (pair.length !== 2) {
+    log.debug("Leaving ecdsaRsFromDer(). Not a pair.");
+    return null;
+  }
+  var r = derIntegerToBigInt(pair[0], fieldLen);
+  var s = derIntegerToBigInt(pair[1], fieldLen);
+  if (r === null || s === null) {
+    log.debug("Leaving ecdsaRsFromDer(). Bad integer.");
+    return null;
+  }
+  log.debug("Leaving ecdsaRsFromDer().");
+  return { r: r, s: s };
+}
+
 async function signComposite(cfg, message, priv) {
   log.debug("Entering signComposite(). alg=" + cfg.name);
   var halves = splitCompositePrivate(cfg, priv);
@@ -917,9 +1105,9 @@ async function signComposite(cfg, message, priv) {
   if (cfg.trad.kind === 'ec') {
     var info = TRAD_EC[cfg.trad.curve];
     var digest = hashFn(cfg.trad.sigHash)(mPrime);
-    tradSig = asBytes(info.curve
-        .sign(digest, ecScalarFromDer(cfg.trad, halves.trad))
-        .toDERRawBytes());
+    var signed = info.curve.sign(digest,
+        ecScalarFromDer(cfg.trad, halves.trad));
+    tradSig = ecdsaDerFromRs(signed.r, signed.s, info.fieldLen);
   } else if (cfg.trad.kind === 'ed') {
     var edCurve = cfg.trad.name === 'Ed448' ? ed448 : ed25519;
     tradSig = asBytes(edCurve.sign(mPrime, halves.trad));
@@ -959,8 +1147,13 @@ async function verifyComposite(cfg, sig, message, pub) {
     var info = TRAD_EC[cfg.trad.curve];
     var digest = hashFn(cfg.trad.sigHash)(mPrime);
     try {
-      tradOk = info.curve.verify(sigHalves.trad, digest, pubHalves.trad);
+      var rs = ecdsaRsFromDer(sigHalves.trad, info.fieldLen);
+      tradOk = !!rs && info.curve.verify(
+          { r: rs.r, s: rs.s }, digest, pubHalves.trad);
     } catch (e) {
+      // A point or a component the curve library refuses is a failed
+      // verification, which is the answer a bad signature already gets.
+      // The caller asked whether the composite verifies.
       log.debug("verifyComposite(): ECDSA half refused: " + e.message);
       tradOk = false;
     }

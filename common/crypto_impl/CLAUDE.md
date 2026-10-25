@@ -183,5 +183,14 @@ exact for a reason that now applies here too: a second opinion that floats to a
 different version of the curve library than the opinion it is being compared
 with is not a second opinion.
 
+**1.4.0 cannot write or read a P-521 ECDSA signature in DER (#445).** Its
+codec puts the SEQUENCE length in one byte, and a P-521 Ecdsa-Sig-Value is
+always longer than 127 bytes, so the byte it writes is not a length. The
+release that fixes the codec is 1.6.0. It is not taken: later 1.x releases
+change `sign()`'s nonce, 2.x is ESM-only and drops those subpaths, and the
+parent project and the protocol copies in `tests/protocol/` still pin 1.4.0.
+`pqc_x509.js` keeps the scalar arithmetic on this library and writes and
+reads the Ecdsa-Sig-Value itself. P-256 and P-384 encodings are unchanged.
+
 `@noble/post-quantum` was already a dependency (`common/pq_jose.js`) and its own
 nested `@noble/hashes` is unaffected.
