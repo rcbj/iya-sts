@@ -14159,6 +14159,23 @@ class AdminApi {
                      'rather than `page`, which is the convention for a ' +
                      'reply holding a list that is not the top-level ' +
                      'one.\n\n**The ?application= reply\'s ' +
+                     '`authenticationEvents`** (#954) are the audit log\'s ' +
+                     'authentication attempts that name this application, ' +
+                     'newest first: `authentication`, ' +
+                     '`authentication.refused`, `session.refuse` and ' +
+                     '`session.refused`, where `detail.client_id` or ' +
+                     '`detail.application` is the identifier or one of the ' +
+                     'entry\'s protocol names, exactly as spelled. Each row ' +
+                     'is an audit event. `authenticationEventsMatched` is ' +
+                     'how many, `authenticationEventsPaging` pages them ' +
+                     'under `authenticationsPage`, ' +
+                     '`authenticationEventsKnownActors` says which actors ' +
+                     'have a user page, and `authenticationEventsLog` says ' +
+                     'how full the audit log is. The member is not ' +
+                     '`authentications`: that one is the count. The list ' +
+                     'holds no more history than the audit log does, and ' +
+                     'nothing in it is a credential.\n\n**The ?application= ' +
+                     'reply\'s ' +
                      '`page.passkeyPolicies`** (#609) is what the console ' +
                      'draws as the read-only Passkey policy card of the ' +
                      'Every protocol sub-tab: every named passkey policy of ' +
@@ -14224,7 +14241,13 @@ class AdminApi {
             description: 'Which page of the attribute list, on the ' +
                          '`?application=` reply only. Named rather than the ' +
                          'bare `page` because it moves a list inside the ' +
-                         'reply rather than the reply itself.' }
+                         'reply rather than the reply itself.' },
+          { name: 'authenticationsPage', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'Which page of `authenticationEvents`, on the ' +
+                         '`?application=` reply only. Named rather than the ' +
+                         'bare `page` so it does not move the attribute ' +
+                         'list.' }
         ].concat(this.pagingParameters()),
         responseDescription: 'The matching applications with the paging that ' +
                              'found them, or one application with its ' +

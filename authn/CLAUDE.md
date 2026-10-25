@@ -1347,6 +1347,16 @@ would be several events for one act.
 
 ## It checks no password in development mode (product verifies it)
 
+A password the verifier refuses, a sign-in the rate limit stops, and a
+password the authentication policy will not take as a first factor are
+written by `noteRefusedAuthentication()` as `authentication.refused` (#954).
+A TOTP code, a recovery code and a passkey assertion that did not verify,
+once the owner is known, are written the same way. The row carries the
+reason token and the error code. The password stays off the row.
+`session.refuse`, written when a session is refused after a credential was
+accepted, is a different act and is not written again here.
+`common/CLAUDE.md` (3c) argues the line; the application's tab reads it.
+
 ## TWO KINDS OF BROWSER SESSION, ONE STORE (2026-09-06)
 
 `/admin` and `/portal` are OpenID Connect relying parties of this service's own

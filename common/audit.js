@@ -200,7 +200,11 @@ const CATEGORIES = [
           'this in three ways: an X509-SVID presented over mutual TLS at the ' +
           'SPIRE Server API (once per connection, for the reason a client ' +
           'certificate is), an agent attesting, and a JWT-SVID verified at ' +
-          'ValidateJWTSVID. Being ISSUED an SVID is not one of them.' },
+          'ValidateJWTSVID. Being ISSUED an SVID is not one of them. A ' +
+          'refusal of an attempt is `authentication.refused` beside the ' +
+          'acceptance: the same detail, outcome refused, and no counter ' +
+          'moved (#954). The application page lists both, and ' +
+          '`session.refuse` and `session.refused` when they name it.' },
   { category: 'session', label: 'Sessions',
     what: 'A browser sign-on session was created or ended. Shared between ' +
           'OAuth 2.0 / OIDC and WS-Federation, so a WS-Federation sign-out ' +
@@ -310,6 +314,13 @@ const CATEGORIES = [
 const ACTIONS = [
   { action: 'authentication', category: 'authentication',
     label: 'A credential was accepted' },
+  // THE ATTEMPT THAT DID NOT GET IN (#954). Recorded beside the acceptance
+  // rather than inside it: recordAuthentication() counts, and a refusal is
+  // not an acceptance. The application's Authentication attempts tab reads
+  // both, plus session.refuse and session.refused when they name the
+  // application. No credential is on the row — the note is a reason token.
+  { action: 'authentication.refused', category: 'authentication',
+    label: 'A credential was refused' },
 
   // ---------------------------------------------------------------------
   // THE USER PORTAL (2026-09-06). The first surface here where a PERSON acts
@@ -2403,6 +2414,65 @@ function list() {
   return out;
 }
 
+// What an application's Authentication attempts tab counts as an attempt
+// (#954). The acceptance and the refusal are the standard authentication
+// event. A session refused after a credential was accepted is a different
+// action and still an attempt at that application, so it is included.
+// session.reauthenticate is the acceptance written a second time and is not.
+const ATTEMPT_ACTIONS = {
+  'authentication': true,
+  'authentication.refused': true,
+  'session.refuse': true,
+  'session.refused': true
+};
+
+// A row names an application when detail.client_id or detail.application is
+// one of the names the caller handed, trimmed and exact. Identifiers are not
+// lower-cased (the registry's own rule). The summary and the target are not
+// read: the target is a session id, and a sentence that happens to contain
+// the name is not the application. Inlined in the filter below: it runs
+// twice per row of the ring, and an Entering line there would be the log.
+/**
+ * Lists the authentication attempts that name one of `names`, newest first.
+ *
+ * The actions are `authentication`, `authentication.refused`,
+ * `session.refuse` and `session.refused`. A row matches when
+ * `detail.client_id` or `detail.application`, trimmed, is one of `names`
+ * exactly. The list is this log: a capped ring, the same one `list()` reads.
+ *
+ * @param names - the application's identifier and its protocol names
+ * @returns a copy of the matching rows, newest first
+ */
+function authenticationEventsFor(names) {
+  log.debug("Entering authenticationEventsFor().");
+  const wanted = {};
+  (names || []).forEach(function (one) {
+    const text = String(one == null ? '' : one).trim();
+    if (text) {
+      wanted[text] = true;
+    }
+  });
+  if (!Object.keys(wanted).length) {
+    log.debug("Leaving authenticationEventsFor(). No names.");
+    return [];
+  }
+  const out = list().filter(function (row) {
+    if (!ATTEMPT_ACTIONS[row.action]) {
+      return false;
+    }
+    const detail = row.detail || {};
+    const client = String(detail.client_id == null ? '' :
+                          detail.client_id).trim();
+    const application = String(detail.application == null ? '' :
+                               detail.application).trim();
+    return (client.length > 0 && wanted[client] === true) ||
+           (application.length > 0 && wanted[application] === true);
+  });
+  log.debug("Leaving authenticationEventsFor(). " + out.length +
+            " event(s).");
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // THIS PROCESS'S EVENTS, AND EVERY OTHER PROCESS'S, IN ONE LIST.
 //
@@ -2632,6 +2702,7 @@ module.exports = {
   currentAddress: ambientAddress,
   currentRequest: ambientRequest,
   list: list,
+  authenticationEventsFor: authenticationEventsFor,
   summary: summary,
   fresh: fresh,
   PROSE_ROUTES: PROSE_ROUTES,

@@ -23,6 +23,7 @@ import kit = require('./web_kit');
 import TokenLifetimesPage = require('./web_token_lifetimes');
 import SettingsForms = require('./web_settings');
 import GroupsPage = require('./web_groups');
+import AuditPage = require('./web_audit');
 
 type Json = any;
 
@@ -1328,6 +1329,12 @@ class ApplicationsPage {
         '</td></tr>' +
         '</table>' +
             ApplicationsPage.protocolFamilySection(row, t) },
+        // EVERY ATTEMPT (#954), on every application. Not forFamilies():
+        // a sign-in names an application that has declared no protocol yet,
+        // and an empty list is the honest answer rather than a hidden tab.
+        { id: 'tab-authentications',
+          label: t.text('consoleApplications.a2.tabAuthentications'),
+          html: ApplicationsPage.authenticationsSection(ctx, json) },
         { id: 'tab-config',
           label: t.text('consoleApplications.a2.tabConfig'),
           html: ApplicationsPage.applicationFieldsSection(ctx, row, carryBack,
@@ -2134,6 +2141,53 @@ class ApplicationsPage {
   // answer from before it draws nothing.
   // ---------------------------------------------------------------------------
   static readonly OBSERVED_SHOWN = 10;
+
+  // THE ATTEMPTS (#954), drawn as the audit log draws one row, because the
+  // ticket asks for every field of that event. The columns' words are the
+  // audit catalog's: one table, one set of headings. The list is
+  // `authenticationEvents` and not `authentications`, which is the count.
+  /**
+   * Draws the Authentication attempts tab from the drill-down's answer.
+   *
+   * @param ctx - the render context
+   * @param json - the `?application=` answer
+   * @returns the section as HTML
+   */
+  static authenticationsSection(ctx, json) {
+    const t = ctx.t;
+    const rows = [].concat(json.authenticationEvents || []);
+    const paging = json.authenticationEventsPaging || { pages: 1, param:
+      'authenticationsPage', noun: 'attempts', page: 1, perPage: 0,
+      firstRow: 0, lastRow: 0, total: 0 };
+    const logInfo = json.authenticationEventsLog ||
+                    { maxEvents: 0, dropped: 0 };
+    const known = json.authenticationEventsKnownActors || {};
+    const nav = kit.pageNavPair('/admin/applications',
+      kit.pageParamsOf(ctx.query), paging);
+    const body = rows.map(function (event) {
+      return AuditPage.auditRow(event, known, t);
+    }).join('');
+    const head = function (key) {
+      return '<th>' + t.html(key) + '</th>';
+    };
+    return '<h3>' + t.html('consoleApplications.a2.authHeading') + '</h3>' +
+      kit.note(t.html('consoleApplications.a2.authNote', {
+        max: String(logInfo.maxEvents || 0),
+        dropped: Number(logInfo.dropped || 0)
+      })) +
+      '<p class="sub"><a href="/admin/audit">' +
+      t.html('consoleApplications.a2.authOpenLog') + '</a></p>' +
+      nav.head +
+      '<table><tr><th class="num">#</th>' +
+      head('consoleAudit.when') + head('consoleAudit.category') +
+      head('consoleAudit.action') + head('consoleAudit.outcome') +
+      head('consoleAudit.actor') + head('consoleAudit.from') +
+      head('consoleAudit.target') + head('consoleAudit.whatHappened') +
+      head('consoleAudit.detail') + '</tr>' +
+      (body || '<tr><td colspan="10">' +
+        t.html('consoleApplications.a2.authEmpty') + '</td></tr>') +
+      '</table>' + nav.foot;
+  }
 
   /**
    * Draws the Overview's activity rows (#708): authentications, sessions,
