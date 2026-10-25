@@ -3049,7 +3049,8 @@ const SETTINGS = [
     label: 'Passkey evidence hash-tree algorithm',
     path: 'webauthn.attestationEvidenceHashAlgorithm',
     env: 'STS_WEBAUTHN_ATTESTATION_HASH_ALGORITHM', type: 'enum',
-    choices: ['sha256', 'sha384', 'sha512'], dflt: 'sha256', runtime: true,
+    enumValues: ['sha256', 'sha384', 'sha512'], dflt: 'sha256',
+    runtime: true,
     description: 'Digest used by new RFC 4998 records. Raising this from ' +
       'sha256 triggers RFC 4998 hash-tree renewal on the daily passkey ' +
       'report recount, into a new ArchiveTimeStampChain.' },
