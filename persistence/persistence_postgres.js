@@ -3500,7 +3500,8 @@ function create(options) {
   // New entries and blind ones in ONE INSERT per chunk, ordered by key, so
   // the rows nobody has locked yet are locked in one order. A blind row
   // that meets a stored one replaces it; a merged one that does is not
-  // written, and is answered in the promise's list for a second look.
+  // written, and is answered in the promise's list. The flush merges it
+  // after COMMIT, in a transaction that locks only that row (#447).
   function insertEntries(client, items, moved) {
     log.debug("Entering insertEntries(). " + items.length);
     const lost = [];
@@ -3559,6 +3560,103 @@ function create(options) {
     log.debug("Leaving insertEntries().");
     return chain.then(function () {
       return lost;
+    });
+  }
+
+  // -----------------------------------------------------------------------
+  // A MERGED INSERT THAT LOST, MERGED AFTER THE FLUSH HAS COMMITTED (#447).
+  //
+  // The flush's transaction already holds every other row it locked, in
+  // primary-key order. Locking this row in there takes a lock out of that
+  // order. The 2026-10-05 single-node run deadlocked a flush's ordered
+  // `SELECT … ORDER BY realm, dn_key FOR UPDATE` against this single-row
+  // statement: each held a row the other was waiting to lock. This
+  // transaction holds nothing else. It locks this one row, merges, and
+  // writes. One row is an order, and a transaction that waits only on it
+  // holds nothing a flush needs while that flush waits on another row.
+  //
+  // A row that is gone is inserted. One that appears between the look and
+  // the insert is written as this process has it — the second look the
+  // per-row path took, so a row that keeps moving cannot loop — and that
+  // write is still the only directory row this transaction locks.
+  // -----------------------------------------------------------------------
+  function mergeLostRow(client, row, outcomes) {
+    log.debug("Entering mergeLostRow().");
+    const updateSql = 'UPDATE sts_ldap_entries SET dn = $3, attrs = ' +
+      '$4::jsonb, origin = $5, created_at = $6, modified_at = $7, ' +
+      'name_keys = $8::jsonb, mail_keys = $9::jsonb, uuid_keys = ' +
+      '$10::jsonb, class_keys = $11::jsonb, value_keys = $12::jsonb, ' +
+      'attr_names = $13::jsonb, dek_keys = $14::jsonb ' +
+      'WHERE realm = $1 AND dn_key = $2';
+    return client.query(
+      'SELECT realm, dn_key, dn, attrs, origin, created_at, ' +
+      'modified_at FROM sts_ldap_entries ' +
+      'WHERE realm = $1 AND dn_key = $2 FOR UPDATE',
+      [row.realm, row.key]
+    ).then(function (found) {
+      const now = (found.rows || [])[0];
+      let theirs = null;
+      let base = null;
+      try {
+        theirs = now ? entryFromRow(now) : null;
+        base = row.base ? JSON.parse(row.base) : null;
+      } catch (e) {
+        // The row does not open (STS-STORE-0072). saveDirectory() reads
+        // the data keys again and retries the flush once. This transaction
+        // rolls back with the throw, which is the whole result.
+        log.debug("Caught in mergeLostRow(): " + ((e && e.message) || e));
+        log.debug("Leaving mergeLostRow(). The row does not open.");
+        throw e;
+      }
+      // The flush may have recorded a merge against an empty row. Forget
+      // it: the row that committed is the one this merge is about.
+      for (let i = outcomes.length - 1; i >= 0; i--) {
+        if (outcomes[i].realm === row.realm &&
+            outcomes[i].key === row.key) {
+          outcomes.splice(i, 1);
+        }
+      }
+      const verdict = directoryMerge.mergeEntry(base, row.entry, theirs);
+      if (verdict.outcome === 'theirs' || verdict.outcome === 'deleted') {
+        outcomes.push({ realm: row.realm, key: row.key,
+                        outcome: verdict.outcome, entry: verdict.entry });
+        log.debug("Leaving mergeLostRow(). The stored row stands.");
+        return null;
+      }
+      if (verdict.outcome === 'merged') {
+        outcomes.push({ realm: row.realm, key: row.key,
+                        outcome: 'merged', entry: verdict.entry });
+      }
+      // After the two outcomes that do not write: a deleted verdict has no
+      // entry, and entryParams() reads entry.dn.
+      const values = entryParams(row.realm, row.key, verdict.entry);
+      let written = null;
+      if (theirs) {
+        written = client.query(updateSql, values);
+      } else {
+        written = client.query(
+          'INSERT INTO sts_ldap_entries ' +
+          '  (realm, dn_key, dn, attrs, origin, created_at, modified_at, ' +
+          '   name_keys, mail_keys, uuid_keys, class_keys, value_keys, ' +
+          '   attr_names, dek_keys) ' +
+          'VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8::jsonb, ' +
+          '$9::jsonb, $10::jsonb, $11::jsonb, $12::jsonb, $13::jsonb, ' +
+          '$14::jsonb) ON CONFLICT (realm, dn_key) DO NOTHING',
+          values
+        ).then(function (r) {
+          if (r && r.rowCount) {
+            return null;
+          }
+          return client.query(updateSql, values);
+        });
+      }
+      return written.then(function () {
+        return recordChanges(client, [{ kind: 'directory',
+                                        realm: row.realm, key: row.key }]);
+      }).then(function () {
+        log.debug("Leaving mergeLostRow().");
+        return null;
+      });
     });
   }
 
@@ -5934,13 +6032,22 @@ function create(options) {
     // key, before anything is written; a new row is then inserted in the same
     // order. A flush therefore holds no lock when it starts taking them and
     // takes them in the order every other flush does, which is
-    // `saveMinted()`'s argument one table over. An insert that finds its row
-    // committed by somebody else in the meantime (`ON CONFLICT DO NOTHING`
-    // answering no row) locks it and merges again.
+    // `saveMinted()`'s argument one table over.
+    //
+    // **A MERGED INSERT THAT LOSES IS NOT LOCKED HERE (#447).** The row was
+    // committed between the ordered lock and the insert, so the lock step
+    // did not take it. A single-row `FOR UPDATE` in this transaction is a
+    // new lock taken while the flush already holds its other rows — the
+    // opposite order from a flush that locked that row in its own ordered
+    // step. The 2026-10-05 single-node run deadlocked on that pair and
+    // retried. The flush commits without the lost row. Each lost row is
+    // then merged by `mergeLostRow()`, one transaction per row, in
+    // primary-key order. That transaction locks only the row it merges.
     // -----------------------------------------------------------------------
     saveDirectory: function (change) {
       log.debug('Entering the postgres driver saveDirectory().');
       const outcomes = [];
+      const pendingLost = [];
       const idOf = function (realm, key) {
         return String(realm) + '\n' + String(key);
       };
@@ -5962,6 +6069,36 @@ function create(options) {
         return idOf(row.realm, row.key);
       }));
       log.debug("Leaving saveDirectory().");
+      // Lost merged inserts, merged after this flush's transaction commits
+      // (#447). Cleared at the start of the body as well as here: a deadlock
+      // retry runs the body again without coming back through `attempt()`.
+      const mergeLostRows = function (rows) {
+        log.debug("Entering mergeLostRows().");
+        const seen = new Set();
+        const ordered = [];
+        rows.forEach(function (row) {
+          const id = idOf(row.realm, row.key);
+          if (!seen.has(id)) {
+            seen.add(id);
+            ordered.push(row);
+          }
+        });
+        ordered.sort(byKey);
+        if (!ordered.length) {
+          log.debug("Leaving mergeLostRows(). None.");
+          return null;
+        }
+        let chain = Promise.resolve();
+        ordered.forEach(function (row) {
+          chain = chain.then(function () {
+            return withTransaction(function (client) {
+              return mergeLostRow(client, row, outcomes);
+            });
+          });
+        });
+        log.debug("Leaving mergeLostRows().");
+        return chain;
+      };
       // **A MERGE THAT MEETS AN ENTRY UNDER A DATA KEY THIS PROCESS DOES NOT
       // HOLD YET IS TRIED ONCE MORE, AFTER THE DATA-KEY ROWS ARE READ AGAIN
       // (2026-10-02)** — the ordinary cause is a realm another worker thread
@@ -5969,7 +6106,10 @@ function create(options) {
       // `keystore.writeAfterDeks()` does the same for its own rows.
       const attempt = function (again) {
         outcomes.length = 0;
-        return withTransaction(transactionBody).catch(function (e) {
+        pendingLost.length = 0;
+        return withTransaction(transactionBody).then(function () {
+          return mergeLostRows(pendingLost);
+        }).catch(function (e) {
           if (!again || errorCodes.codeOf(e) !== 'STS-STORE-0072') {
             throw e;
           }
@@ -5984,80 +6124,10 @@ function create(options) {
         let chain = Promise.resolve();
         const moved = [];
         const stored = new Map();
+        pendingLost.length = 0;
 
         const entryOf = function (row) {
           return entryFromRow(row);
-        };
-        const params = function (row, entry) {
-          return entryParams(row.realm, row.key, entry);
-        };
-        const update = function (row, entry) {
-          moved.push({ realm: row.realm, dn: row.key, op: 'put' });
-          return client.query(
-            'UPDATE sts_ldap_entries SET dn = $3, attrs = $4::jsonb, ' +
-            'origin = $5, created_at = $6, modified_at = $7, ' +
-            'name_keys = $8::jsonb, mail_keys = $9::jsonb, ' +
-            'uuid_keys = $10::jsonb, class_keys = $11::jsonb, ' +
-            'value_keys = $12::jsonb, attr_names = $13::jsonb, ' +
-            'dek_keys = $14::jsonb ' +
-            'WHERE realm = $1 AND dn_key = $2', params(row, entry));
-        };
-        // What the merge decided, turned into a statement and an outcome.
-        // `again` is false on the second look after a lost insert race, so a
-        // row that keeps vanishing cannot loop.
-        const settle = function (row, theirs, again) {
-          const base = row.base ? JSON.parse(row.base) : null;
-          const verdict = directoryMerge.mergeEntry(base, row.entry, theirs);
-          if (verdict.outcome === 'theirs' || verdict.outcome === 'deleted') {
-            outcomes.push({ realm: row.realm, key: row.key,
-                            outcome: verdict.outcome, entry: verdict.entry });
-            return null;
-          }
-          if (verdict.outcome === 'merged') {
-            outcomes.push({ realm: row.realm, key: row.key,
-                            outcome: 'merged', entry: verdict.entry });
-          }
-          if (theirs) {
-            return update(row, verdict.entry);
-          }
-          return client.query(
-            'INSERT INTO sts_ldap_entries ' +
-            '  (realm, dn_key, dn, attrs, origin, created_at, modified_at, ' +
-            '   name_keys, mail_keys, uuid_keys, class_keys, value_keys, ' +
-            '   attr_names, dek_keys) ' +
-            'VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8::jsonb, ' +
-            '$9::jsonb, $10::jsonb, $11::jsonb, $12::jsonb, $13::jsonb, ' +
-            '$14::jsonb) ' +
-            'ON CONFLICT (realm, dn_key) DO NOTHING',
-            params(row, verdict.entry)
-          ).then(function (r) {
-            if (r && r.rowCount) {
-              moved.push({ realm: row.realm, dn: row.key, op: 'put' });
-              return null;
-            }
-            if (!again) {
-              // Committed by another node between the lock and the insert,
-              // twice. Written as it is rather than lost; the next flush
-              // merges against whatever is there.
-              return update(row, verdict.entry);
-            }
-            return client.query(
-              'SELECT realm, dn_key, dn, attrs, origin, created_at, ' +
-              'modified_at FROM sts_ldap_entries ' +
-              'WHERE realm = $1 AND dn_key = $2 FOR UPDATE',
-              [row.realm, row.key]
-            ).then(function (found) {
-              const now = (found.rows || [])[0];
-              // The merge was recorded against `theirs` = null; forget it.
-              for (let i = outcomes.length - 1; i >= 0; i--) {
-                if (outcomes[i].realm === row.realm &&
-                    outcomes[i].key === row.key) {
-                  outcomes.splice(i, 1);
-                }
-              }
-              return settle(row, now ? entryOf(now) : null, false);
-            });
-          });
         };
 
         // THE LOCKS, in one statement per chunk and in primary-key order —
@@ -6160,31 +6230,13 @@ function create(options) {
           return updateEntries(client, updates, moved).then(function () {
             return insertEntries(client, inserts, moved);
           }).then(function (lost) {
-            // A MERGED INSERT THAT MET A ROW: another node committed it
-            // between the lock and the insert. Looked at again, alone, as
-            // the per-row path always did — the second look writes it as it
-            // is rather than looping.
-            let again = Promise.resolve();
+            // A MERGED INSERT THAT MET A ROW another node committed between
+            // the lock and the insert. Not locked in this transaction
+            // (#447): the flush already holds its other rows. Merged after
+            // COMMIT, one row to a transaction.
             lost.forEach(function (row) {
-              again = again.then(function () {
-                return client.query(
-                  'SELECT realm, dn_key, dn, attrs, origin, created_at, ' +
-                  'modified_at FROM sts_ldap_entries ' +
-                  'WHERE realm = $1 AND dn_key = $2 FOR UPDATE',
-                  [row.realm, row.key]
-                ).then(function (found) {
-                  const now = (found.rows || [])[0];
-                  for (let i = outcomes.length - 1; i >= 0; i--) {
-                    if (outcomes[i].realm === row.realm &&
-                        outcomes[i].key === row.key) {
-                      outcomes.splice(i, 1);
-                    }
-                  }
-                  return settle(row, now ? entryOf(now) : null, false);
-                });
-              });
+              pendingLost.push(row);
             });
-            return again;
           });
         });
 

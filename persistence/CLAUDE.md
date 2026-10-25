@@ -1179,8 +1179,11 @@ nothing) — **plus, since 2026-10-02, what mine added: an attribute only mine
 holds and a list value theirs lacks** (`mergeCreations()`; two nodes seeding a
 realm's role group lost a grant's member otherwise); a change to an entry
 deleted elsewhere is dropped
-(`STS-STORE-0053`). A new row is `INSERT … ON CONFLICT DO NOTHING`, and losing
-that race locks the row and merges again. The driver answers `{ outcomes }` —
+(`STS-STORE-0053`). A new row is inserted in that same key order. A merged
+insert that meets a row committed between the lock and the insert is not
+locked inside the flush: after the flush commits, each such row is merged
+in a transaction that locks only that row (#447). The driver answers
+`{ outcomes }` —
 what the store decided that this process does not hold — and
 `applyDirectoryOutcomes()` puts each into the live directory with the journal
 suppressed and the shadow set to the STORED row; a local write made while the
