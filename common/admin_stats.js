@@ -70,14 +70,15 @@ const replication = require('../persistence/persistence_replication');
 // which most of the service already requires — can call it without dragging a
 // graph behind it.
 //
-// It is called from ONE place in here, recordAuthentication() below, and that
-// is the point: that function is already the single funnel every one of the
-// sixteen protocol families passes through at the moment a credential is
-// accepted, so the audit log gets its authentication events from one line
-// rather than from sixteen call sites, the seventeenth of which would be the
-// one nobody adds. It is also the only place in this service that has already
-// normalised the identity, which is what lets an audit row and a /admin/users
-// row name the same person.
+// Accepted credentials are recorded from ONE place, recordAuthentication()
+// below: that function is already the single funnel every one of the sixteen
+// protocol families passes through at the moment a credential is accepted, so
+// the audit log gets those events from one line rather than from sixteen
+// call sites. recordRefusedAuthentication() is the other line, and it is not
+// a second funnel: a refusal increments nothing and creates no user, because
+// putting it inside the acceptance would count an attempt that was turned
+// away. Both normalise the identity here, which is what lets an audit row
+// and a /admin/users row name the same person.
 const audit = require('./audit');
 // The registry of failure codes, a LEAF. The wrapped calls below that swallow a
 // throw log it with one; a refused claim-set change carries its code on the
@@ -3469,7 +3470,8 @@ function noteKnownIdentity(name, how) {
  * The user observer is told, which is how the directory learns of the person.
  *
  * @param detail - `presented`, `protocol`, `method`, `sessionId`, and
- *   optionally `amr`, `acr`, `client_id`, `note`, `isClient` and `sub`
+ *   optionally `amr`, `acr`, `client_id`, `application`, `note`, `isClient`
+ *   and `sub`
  * @returns the record, or null for an empty identity
  */
 function recordAuthentication(detail) {
@@ -3674,6 +3676,16 @@ function recordAuthentication(detail) {
       realm: identity.realm || '',
       sub: subject,
       client_id: info.client_id || '',
+      // THE APPLICATION THE DOOR NAMED (#954), beside client_id. An
+      // authorization-code sign-in authenticates in authn, which passes
+      // `application` and not `client_id`, so a row without this field does
+      // not name the application the person was signing in to. Empty is
+      // dropped by detailOf(). It is the twelfth key, which is the cap, so
+      // nothing further is added here. It is NOT handed to
+      // applications.recordAuthentication() below: that call counts, and
+      // the protocols that already know the identifier call seen()
+      // themselves. Counting this name as well would count one sign-in twice.
+      application: String(info.application || ''),
       amr: (info.amr || []).join(', '),
       acr: info.acr || '',
       sessionId: info.sessionId || '',
@@ -3719,6 +3731,77 @@ function recordAuthentication(detail) {
             " user(s) known.");
   log.debug("Leaving recordAuthentication().");
   return record;
+}
+
+// ---------------------------------------------------------------------------
+// A CREDENTIAL THAT WAS REFUSED (#954).
+//
+// The acceptance above is "a credential was accepted", and it counts. A
+// wrong password, a rate limit and a second factor that did not verify are
+// attempts too, and they are not acceptances: recording them there would
+// put a refusal on /admin/users as a sign-in and increment the application's
+// authentication counter. This writes the audit row and nothing else. No
+// user record is created, so a name that has never signed in does not appear
+// on /admin/users because somebody guessed at it.
+//
+// The note is a reason token (`wrong-password`), never the credential. The
+// caller is responsible for that; this function copies `note` and does not
+// read a password field because it is not given one.
+// ---------------------------------------------------------------------------
+/**
+ * Records that a presented credential was refused. Increments nothing.
+ *
+ * @param detail - `presented`, `protocol`, `method`, `errorCode`, and
+ *   optionally `client_id`, `application`, `amr`, `acr`, `sessionId`,
+ *   `isClient`, `sub`, `note`, `channel` and `address`
+ * @returns the audit row, or null when there was no identity
+ */
+function recordRefusedAuthentication(detail) {
+  log.debug("Entering recordRefusedAuthentication().");
+  const info = detail || {};
+  const identity = identityOf(info.presented);
+  if (!identity.key) {
+    log.debug("Leaving recordRefusedAuthentication(). No identity.");
+    return null;
+  }
+  const protocol = String(info.protocol || 'unstated');
+  const method = String(info.method || 'unstated');
+  // A lookup, not a create: subjectForName returns '' when the directory
+  // holds nobody of this name, and it does not write an entry.
+  const subject = info.sub ||
+    (info.isClient ? '' : subjectForName(identity.key));
+  // An empty address is omitted so the audit row takes the ambient source,
+  // the same way an acceptance with no address does.
+  const address = info.address ? String(info.address) : '';
+  const row = audit.audit({
+    action: 'authentication.refused',
+    outcome: 'refused',
+    errorCode: info.errorCode || '',
+    actor: identity.key,
+    actorForm: identity.form,
+    protocol: protocol,
+    channel: info.channel || 'http',
+    address: address,
+    target: info.sessionId || '',
+    summary: identity.key + ' was refused through ' + protocol + ' (' +
+             method + ')',
+    detail: {
+      method: method,
+      presented: identity.form,
+      realm: identity.realm || '',
+      sub: subject,
+      client_id: info.client_id || '',
+      application: String(info.application || ''),
+      amr: Array.isArray(info.amr) ? info.amr.join(', ') :
+                                     String(info.amr || ''),
+      acr: info.acr || '',
+      sessionId: info.sessionId || '',
+      isClient: !!info.isClient,
+      note: info.note || ''
+    }
+  });
+  log.debug("Leaving recordRefusedAuthentication().");
+  return row;
 }
 
 // ---------------------------------------------------------------------------
@@ -7957,6 +8040,7 @@ module.exports = {
   ISSUED_FAMILIES: ISSUED_FAMILIES,
   recordCall: recordCall,
   recordAuthentication: recordAuthentication,
+  recordRefusedAuthentication: recordRefusedAuthentication,
   // #561: the account sets' counters.
   recordAccountChoice: recordAccountChoice,
   accountChoiceCounts: accountChoiceCounts,

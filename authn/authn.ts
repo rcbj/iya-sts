@@ -11148,6 +11148,42 @@ class Authn {
     log.debug("Leaving Authn.answerJson().");
   }
 
+  // A CREDENTIAL REFUSED AT A SIGN-IN (#954). The acceptance funnel counts,
+  // and a refusal is not an acceptance, so this writes authentication.refused
+  // and moves no counter. The password is never an argument. A session.refuse
+  // written later, after a credential was accepted and the session was then
+  // refused, is a different act and is not written here. `pendingRecord` is
+  // the sign-in itself, or a second-factor step whose `authn` is one.
+  /**
+   * Records an authentication attempt that was refused, for the application
+   * the pending sign-in names.
+   *
+   * @param pendingRecord - the pending sign-in, or a step whose `authn` is
+   *   one
+   * @param username - who presented the credential
+   * @param method - the factor
+   * @param errorCode - the refusal's code
+   * @param note - a short reason, never the credential
+   * @returns nothing
+   */
+  noteRefusedAuthentication(pendingRecord, username: string, method: string,
+                            errorCode: string, note: string): void {
+    const { log } = this.deps;
+    log.debug("Entering Authn.noteRefusedAuthentication().");
+    const pending = pendingRecord || {};
+    const authn = pending.authn || pending;
+    stats.recordRefusedAuthentication({
+      presented: String(username || ''),
+      protocol: String(authn.protocol || ''),
+      method: method,
+      application: String(authn.application || ''),
+      errorCode: errorCode,
+      note: note,
+      channel: 'http'
+    });
+    log.debug("Leaving Authn.noteRefusedAuthentication().");
+  }
+
   // THE SCREEN AGAIN, WITH A SENTENCE: what every refusal at the screen was.
   // The record is put back while it has time left (`refusedSession()`'s
   // argument: the next act must find it). `extra` carries what a refused
@@ -15746,6 +15782,9 @@ class Authn {
         known.signCount);
     }
     if (!verdict.ok) {
+      this.noteRefusedAuthentication(record, owner, 'webauthn',
+        webauthnPolicy.failureCodeFor(verdict) || 'STS-AUTHN-0027',
+        'assertion-did-not-verify');
       log.debug("Leaving Authn.passkeySignIn(). The assertion did not " +
                 "verify.");
       return this.passkeyRefused(res, base, record,
@@ -15839,6 +15878,10 @@ class Authn {
       // until 2026-09-21, which hid both refusals behind an error page.
       const failed = Array.isArray(verdict.failed) && verdict.failed.length
         ? verdict.failed : [String(verdict.why || 'refused')];
+      this.noteRefusedAuthentication(step, step.username, 'webauthn',
+        errorCodes.codeOf(verdict) ||
+        webauthnPolicy.failureCodeFor(verdict),
+        'assertion-did-not-verify');
       log.debug("Leaving Authn.finishWebauthn(). Refused: " +
                 failed.join('; '));
       return this.stepRefused(res, 'The second factor did not verify — ' +
@@ -15991,8 +16034,11 @@ class Authn {
       // authenticator is broken.
       log.info('authn: the one-time code for "' + step.username +
                '" was refused (' + verdict.reason + ').');
-      log.debug('Leaving Authn.finishTotp(). Refused: ' + verdict.reason + '.');
       errorCodes.mark(res, errorCodes.codeOf(verdict) || 'STS-AUTHN-0105');
+      this.noteRefusedAuthentication(step, step.username, 'totp',
+        errorCodes.codeOf(verdict) || 'STS-AUTHN-0105',
+        String(verdict.reason || 'refused'));
+      log.debug('Leaving Authn.finishTotp(). Refused: ' + verdict.reason + '.');
       return this.stepRefused(res, verdict.detail);
     }
     // Not awaited: this function answers synchronously, and a clear that lands
@@ -16087,9 +16133,12 @@ class Authn {
       // reading the next line on a printed list and believing the list is dead.
       log.info('authn: a recovery code for "' + step.username +
                '" was refused (' + verdict.reason + ').');
+      errorCodes.mark(res, errorCodes.codeOf(verdict) || 'STS-AUTHN-0092');
+      this.noteRefusedAuthentication(step, step.username, 'backup-code',
+        errorCodes.codeOf(verdict) || 'STS-AUTHN-0092',
+        String(verdict.reason || 'refused'));
       log.debug('Leaving the recovery code endpoint. Refused: ' +
                 verdict.reason + '.');
-      errorCodes.mark(res, errorCodes.codeOf(verdict) || 'STS-AUTHN-0092');
       log.debug("Leaving Authn.finishBackupCode().");
       return this.stepRefused(res, verdict.detail);
     }
@@ -16610,6 +16659,8 @@ class Authn {
                'refused: this realm\'s authentication policy does not ' +
                'accept a password as a first factor.');
       errorCodes.mark(res, 'STS-AUTHN-0255');
+      this.noteRefusedAuthentication(record, username, 'password',
+        'STS-AUTHN-0255', 'password-not-a-first-factor');
       return this.screenRefused(res, record,
         'This realm does not accept a password as a first factor. Use one ' +
         'of the other ways of signing in below.');
@@ -16648,6 +16699,8 @@ class Authn {
                  's.');
         log.debug("Leaving Authn.screenAct(). Rate limited.");
         errorCodes.mark(res, 'STS-AUTHN-0008');
+        this.noteRefusedAuthentication(record, username, 'password',
+          'STS-AUTHN-0008', String(allowed.kind || 'rate-limit'));
         return this.screenRefused(res, record, allowed.detail,
                                   { status: 429 });
       }
@@ -16673,6 +16726,10 @@ class Authn {
                   "refused, so the form is shown again.");
         errorCodes.mark(res, errorCodes.codeOf(credential) ||
                              'STS-AUTHN-0054');
+        // The reason token, not credential.detail and not the password.
+        this.noteRefusedAuthentication(record, username, 'password',
+          errorCodes.codeOf(credential) || 'STS-AUTHN-0054',
+          String(credential.reason || 'refused'));
         return this.screenRefused(res, record,
           'Authentication failed for ' + username + '.');
       }

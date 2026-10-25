@@ -3616,7 +3616,8 @@ with `Cannot find module` naming a file the operator never mentioned.
    table, the replication fan-in and `client_address.js` (a leaf `helpers.js`
    already loads) and NOTHING ELSE in this repository, and
    that has to stay true: it is called from `app.js`'s call log,
-   from `admin_stats.js`'s `recordAuthentication()`, from `authn.js`'s session
+   from `admin_stats.js`'s `recordAuthentication()` and
+   `recordRefusedAuthentication()`, from `authn.js`'s session
    store and from every LDAP handler, which between them are most of the
    service. In particular it must not require `admin_stats.js`, because that
    module requires THIS one — so the identity normalisation an audit row wants
@@ -3632,6 +3633,21 @@ with `Cannot find module` naming a file the operator never mentioned.
    operation, because ldapjs dispatches straight into the handler and what a row
    says genuinely differs per operation. Do not add a recording site beside a
    funnel — that is how a category comes to be counted twice for one act.
+
+   **A refusal is not that funnel (#954).** `recordRefusedAuthentication()`
+   writes `authentication.refused`: the acceptance's detail, outcome refused,
+   and no counter and no user. Putting a refusal inside
+   `recordAuthentication()` would count an attempt that was turned away and
+   file the name on `/admin/users`. The acceptance's detail also carries
+   `application`, the name the door had, beside `client_id`. That name is
+   not handed to `applications.recordAuthentication()`, which counts, and
+   the protocols that already know the identifier call `seen()` themselves.
+   The application's Authentication attempts tab reads both actions, and
+   `session.refuse` and `session.refused` when `detail.client_id` or
+   `detail.application` is the identifier or one of `identifiersOf()`'s
+   values, through `authenticationEventsFor()`. `session.reauthenticate` is
+   the acceptance written a second time and is not in that list. The sign-in
+   screen calls the refusal line; it does not call `audit()` itself.
 
    **One request is deliberately not an event: a `/healthcheck` that answered
    200** (`QUIET_WHEN_OK` / `isQuietProbe()` in `recordHttp()`). It is asked
