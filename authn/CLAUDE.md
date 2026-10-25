@@ -2776,6 +2776,24 @@ and ML-DSA ceremonies), `tests/passkey_xacml.js` section E, and
 `tests/protocol/sts_passkey_post_quantum_required.js` over `/admin-api`,
 `/account-api` and the sign-in screen.
 
+## `phrh` NARROWS THE PASSKEY STEP'S `allowCredentials` (#739, 2026-10-25)
+
+`step_up.phishingClassFor()` is `phrh` only when every producible
+`acr_values` entry is `phrh`, or a required detail acr is `phrh`. `phr phrh`
+is either, and a synced key still answers `phr`, so nothing is narrowed.
+`beginAuthentication({ phishingClass: 'phrh' })` stores it on the pending
+record. `webauthnFacts()` then builds `allow` from keys
+`phishing_resistance.storedKeyEarnsHardware()` accepts (trusted attestation,
+BE recorded clear). A person who holds keys of the step's role and none of
+them qualify is told on the page (`hardwareRefused`, no ceremony button) and
+`mfaWebauthnOptions()` refuses to arm the ceremony (STS-AUTHN-0459, a
+`session.refuse` row). An assertion that names some other key of the role is
+the same code in `finishWebauthn()`: `allowCredentials` is a hint. The
+usernameless sign-in is not this step — its list is empty — and stays
+refused after the ceremony (STS-OAUTH-0971).
+
+**Tests**: `tests/eap_acr_values.js` C1b and C8.
+
 ## THE CLASSICAL RETRY OF A REGISTRATION (#944, 2026-10-23)
 
 The offered list is ML-DSA first and a platform may fail the whole
@@ -3626,3 +3644,75 @@ session, an unknown id leaving it alone, and a browser that never registers
 unchanged. **No test drives a real browser's DBSC** (none in the suite's
 images ships it enabled), and RS256 proofs are covered only by the shared
 verifier.
+
+## Device-bound sessions, four follow-ups (2026-10-25, #743 #742 #741 #740)
+
+The section above is the #725 record. It says federated sessions, site
+scope, `Secure-Session-Skipped` and a policy row that can require binding
+were not built. #743, #742 and #740 build the last three. #741 does not.
+
+**#743.** A browser that declines or fails registration sends
+`Secure-Session-Skipped`, an RFC 9651 list of sf-tokens. The draft names
+`unreachable`, `server_error` and `quota_exceeded`; any well-formed token
+is recorded, with each one's `session_identifier` (`skippedReasons`,
+`skippedIds` on `session.dbsc`). An empty list and an absent header do
+nothing. A non-token member, a `session_identifier` that is not an
+sf-string, or a value that does not parse, is `STS-AUTHN-0460` on the log
+and the audit row, and the session is not marked skipped. A well-formed
+skip is not a failure and burns no code. A session that already has a key
+is not unbound. `noteSkipped()` runs on the session read, ahead of the
+bound-cookie check.
+
+The fact a policy reads is one token, computed from the session rather
+than from the setting: `bound` (a key, even after a later skip),
+`skipped` (the reason tokens sit beside the fact, not in it), `pending`
+(registration was offered and has not completed, been skipped or timed
+out), `timedout` (the offer is older than
+`authn.deviceBoundIssuanceWaitS`; decided at the read, never stored, no
+timer), or `none` (DBSC was not in play for this session). Precedence is
+that order. The wait is strict: at the boundary the fact is still
+`pending`. The console's user page and the portal's Overview say "binding
+skipped" with the reason tokens. The APIs stay language-free; the browser
+translates. `pending`, `timedout` and `none` stay the "No" those pages
+already drew for a session that is not bound.
+
+**#742.** `authn.deviceBoundIncludeSite`, default `false`, read with
+`=== true`. Off, `scope.include_site` is false and the cookie domain is
+`cookieDomainAttribute()`, which is what #725 does. On, the instructions
+set `include_site` and the cookie's Domain is the registrable domain of
+the host that registered: `webauthn.rpId` when that is the host or a
+dotted suffix of it, otherwise the last two labels. There is no
+public-suffix list, so a name under `co.uk` needs `webauthn.rpId`. An
+address, localhost or a single label may still carry `include_site` and
+is not given a Domain it did not already have. Sibling hosts under that
+domain are excluded by a scope rule (`exclude`, path `/`): the debugger's
+public host (`debugger.publicBaseUrl`) and a custom listener's host,
+`publicBaseUrl` and extra hostnames, other than the host that registered.
+The main listener is this origin and is not excluded. A debugger on the
+same host and another port cannot be excluded: cookies are not
+port-scoped (RFC 6265), and a scope rule's domain and path cannot name a
+port. Realm path prefixes are the same origin and need no site scope. No
+`.well-known/device-bound-sessions` document is served. No new timer.
+
+**#741 is not implemented.** The Editor's Draft of 8 September 2026,
+read on 2026-10-25, does not give a stable grammar for reusing one
+session's key at an RP on another origin. The assessment, with the
+sentences that decided it, is in `federation/CLAUDE.md`. The portal and
+the console are this origin and do not need a federated session.
+
+**#740.** `deviceBoundRequired` on a passkey profile, default false,
+optional on a save. Saving it on while `authn.deviceBoundSessions` is
+off is refused (`STS-AUTHN-0461`, recorded, never sent). Saving it off,
+or leaving it out, succeeds while the switch is off. An issuance to an
+application the profile covers, while the feature is on, waits while the
+fact is `pending`: the gate answers `allowed: false` and `deferred: true`,
+with no error code, and that hold is not counted as a refusal. `skipped`
+and `timedout` are refused (`STS-AUTHN-0462`, recorded, never sent; the
+client still sees the issuance denial it already would). `bound` allows.
+`none` — registration was never offered — is not refused by this row,
+and the feature off does not refuse even when a profile still says
+required. The wait is `authn.deviceBoundIssuanceWaitS`, default 60
+seconds, minimum 0, read at the issuance. Zero means the wait has already
+elapsed. The fact inside `common/issuance_gate.js` is computed there.
+That file is in the Kerberos COPY closure and does not require this
+module; the two readings have to stay the same.

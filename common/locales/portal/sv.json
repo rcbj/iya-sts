@@ -154,6 +154,7 @@
   "overview.deviceBound": "Bunden till den här webbläsaren",
   "overview.deviceBoundYes": "Ja, till en {alg}-nyckel som den här webbläsaren innehar",
   "overview.deviceBoundNo": "Nej",
+  "overview.deviceBoundSkipped": "Bindning överhoppad ({reasons})",
   "overview.unstated": "ej angivet",
   "overview.sessionEnds": "Den här sessionen slutar",
   "overview.timesSignedIn": "Antal gånger du har loggat in",

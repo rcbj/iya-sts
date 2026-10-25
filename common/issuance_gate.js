@@ -246,7 +246,8 @@ function deciderInstalled() {
  * `subject`, `claims`, `realm`, and optionally `risk`, `session`, `device` and
  * `deviceDeferred`
  * @returns `{ allowed, decision, why, roles, required, policy }`, where
- * `allowed` is what the caller branches on
+ * `allowed` is what the caller branches on. A device-bound hold (#740)
+ * also carries `deferred: true` and is not an error code.
  */
 function check(request) {
   log.debug('Entering check(). kind=' + (request || {}).kind);
@@ -350,18 +351,34 @@ function check(request) {
   // AND THE SECOND FACTORS (#475), the same way and for the same reason:
   // the `mfa-mechanism` rule holds in both modes and is not about roles.
   const mfa = mfaFactsOf(asked);
+  // THE DEVICE-BOUND SESSION (#743, #740). Computed in THIS file:
+  // `authn/device_bound_sessions` must not be required from here. This
+  // file is in the Kerberos COPY closure (`kerberos/krb5_kdc.js` requires
+  // it), and a new require would owe the parent project a COPY line.
+  // `deviceBoundFactOf()` is the same reading as
+  // `DeviceBoundSessions.factFrom` and has to stay that way. The
+  // requirement makes the policy asked only while the feature is on, an
+  // application is named, and the fact is still open. `none` and `bound`
+  // do not, and the feature off does not, so a session that was never
+  // offered registration is decided exactly as before. There is no timer.
+  const deviceBoundSession = deviceBoundFactOf(asked);
+  const deviceBoundOn = config.value('authn.deviceBoundSessions') === true;
+  const deviceBoundMatters = deviceBoundOn && !!asked.application &&
+    (deviceBoundSession === 'pending' || deviceBoundSession === 'skipped' ||
+     deviceBoundSession === 'timedout');
   // WHETHER THE AUTHENTICATION WAS PHISHING-RESISTANT (#723), OpenID Connect
   // EAP ACR Values 1.0's `phr` / `phrh`, or `none`: rides along on the same
   // four browser kinds whenever the policy is asked, and does not make it
   // asked — the rules that read it are an operator's choice.
   const phishing = phishingFactsOf(asked);
   if (!enforceRoles && !risk && !deviceMatters && !protocolMatters &&
-      !mechanisms && !mfa) {
+      !mechanisms && !mfa && !deviceBoundMatters) {
     log.debug('Leaving check(). Enforcement is switched off.');
     return allow('roles.enforceIssuance is off, so the decision was not ' +
                  'asked for.');
   }
-  if (!asked.application && !risk && !deviceMatters) {
+  if (!asked.application && !risk && !deviceMatters &&
+      !deviceBoundMatters) {
     log.debug('Leaving check(). No application to decide about.');
     return allow('Nothing named an application, so there is no requirement ' +
                  'to check.');
@@ -380,6 +397,9 @@ function check(request) {
     allowedMfaMechanisms: mfa ? mfa.allowed : null,
     authority: authorityFactsOf(asked),
     phishingResistance: phishing,
+    // #740. The fact token. The PEP holds `pending` and refuses `skipped`
+    // and `timedout` when the application's profile requires a binding.
+    deviceBoundSession: deviceBoundSession,
     rolesWaived: asked.rolesWaived === true || !enforceRoles ||
                  !asked.application
   });
@@ -406,6 +426,40 @@ function check(request) {
   log.debug('Leaving check(). ' + (result.allowed ? 'Allowed.' : 'REFUSED: ' +
             result.why));
   return result;
+}
+
+// The device-bound fact of the session an issuance rests on (#743, #740):
+// `bound`, `skipped`, `pending`, `timedout` or `none`. The same reading as
+// `DeviceBoundSessions.factFrom`. It lives here so this file does not
+// require that module (the Kerberos COPY closure). `timedout` is this read
+// when a pending offer is older than `authn.deviceBoundIssuanceWaitS`.
+// Nothing stores that word and no timer flips it. Strictly past the window;
+// at the boundary the fact is still `pending`.
+/**
+ * Reads the device-bound fact off an issuance question's session.
+ *
+ * @param asked - the question, whose `session.dbsc` is the binding
+ * @returns `bound`, `skipped`, `pending`, `timedout` or `none`
+ */
+function deviceBoundFactOf(asked) {
+  log.debug('Entering deviceBoundFactOf().');
+  const session = asked && asked.session;
+  const d = session && session.dbsc;
+  let fact = 'none';
+  if (!d) {
+    fact = 'none';
+  } else if (d.jkt && d.id) {
+    fact = 'bound';
+  } else if (Array.isArray(d.skippedReasons) && d.skippedReasons.length) {
+    fact = 'skipped';
+  } else if (d.offeredAt) {
+    const wait = Number(config.value('authn.deviceBoundIssuanceWaitS'));
+    const seconds = Number.isFinite(wait) ? wait : 60;
+    fact = Date.now() - Number(d.offeredAt) > seconds * 1000
+      ? 'timedout' : 'pending';
+  }
+  log.debug('Leaving deviceBoundFactOf(). ' + fact);
+  return fact;
 }
 
 // ---------------------------------------------------------------------------

@@ -785,6 +785,39 @@ class StepUp {
     return out;
   }
 
+  /**
+   * Whether this sign-in must earn `phrh`, so the passkey step can offer
+   * only keys whose recorded evidence can (#739). `phrh` alone, or a
+   * required detail acr of `phrh`. `phr phrh` is either, and a synced key
+   * still answers `phr`, so it is not narrowed away.
+   *
+   * @param acrValues - the requested values ("any of")
+   * @param required - values every one of which is required
+   * @returns `phrh`, or ''
+   */
+  phishingClassFor(acrValues: string[] | null | undefined,
+                   required: string[] | null | undefined): string {
+    const { log } = this.deps;
+    log.debug("Entering StepUp.phishingClassFor().");
+    const requiredHardware = (required || []).some(function (one: string) {
+      return one === PhishingResistance.PHRH;
+    });
+    if (requiredHardware) {
+      log.debug("Leaving StepUp.phishingClassFor(). A required phrh.");
+      return PhishingResistance.PHRH;
+    }
+    const producible = (acrValues || []).filter((one: string) => {
+      return this.producible(one);
+    });
+    const hardware = producible.length > 0 && producible.every(
+      function (one: string) {
+        return one === PhishingResistance.PHRH;
+      });
+    log.debug("Leaving StepUp.phishingClassFor(). " +
+              (hardware ? "phrh" : "not only phrh"));
+    return hardware ? PhishingResistance.PHRH : '';
+  }
+
   private nowSec(): number {
     const { log } = this.deps;
     log.debug("Entering StepUp.nowSec().");
@@ -1181,6 +1214,8 @@ export = {
   screenDemand: slot.forward('screenDemand'),
   screenDemandFor: slot.forward('screenDemandFor'),
   screenDemandWith: slot.forward('screenDemandWith'),
+  // `phrh` only when it is the only answer (#739).
+  phishingClassFor: slot.forward('phishingClassFor'),
   assessSession: slot.forward('assessSession'),
   unmetRefusal: slot.forward('unmetRefusal'),
   tokenRefusal: slot.forward('tokenRefusal'),

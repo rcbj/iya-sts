@@ -234,6 +234,64 @@ function checkWalkers(t) {
   log.debug("Leaving checkWalkers().");
 }
 
+function checkInteractAcr(t) {
+  log.debug("Entering checkInteractAcr().");
+  t.log.info('C2. interact.acr (#738)');
+  let v = schemas.validate('grantRequest',
+                           grant({ interact: { start: ['redirect'],
+                                               acr: 'phrh' } }));
+  t.check(v.ok, 'a string interact.acr passes the schema', v.detail);
+  v = schemas.validate('grantRequest',
+                       grant({ interact: { start: ['redirect'],
+                                           acr: ['phr', 'phrh'],
+                                           madeUp: 1 } }));
+  t.check(v.ok, 'an array interact.acr and an unknown sibling pass',
+          v.detail);
+  v = schemas.validate('grantRequest',
+                       grant({ interact: { start: ['redirect'], acr: 7 } }));
+  t.check(!v.ok, 'a numeric interact.acr fails the schema', v.detail);
+  let r = request.parseGrantRequest(grant());
+  t.check(r.ok && r.request.interact.acr === undefined,
+          'absent interact.acr is not stored',
+          JSON.stringify(r.request && r.request.interact));
+  r = request.parseGrantRequest(grant({ interact: { start: ['redirect'],
+                                                    acr: '  phr , phrh ' } }));
+  t.check(r.ok && r.request.interact.acr.join() === 'phr,phrh',
+          'a string is split and empties are dropped',
+          JSON.stringify(r.ok ? r.request.interact.acr : r.why));
+  r = request.parseGrantRequest(grant({ interact: { start: ['redirect'],
+    acr: ['phrh', '', 'not-an-eap-class'] } }));
+  t.check(r.ok && r.request.interact.acr.join() ===
+          'phrh,not-an-eap-class',
+          'a mixed list is kept, empties dropped',
+          JSON.stringify(r.ok ? r.request.interact.acr : r.why));
+  const only = request.interactAcrDemand('phrh');
+  t.check(only.eap && only.forceKey && only.phishingClass === 'phrh' &&
+          only.tokens.join() === 'phrh',
+          'only phrh sets phishingClass phrh and forceKey',
+          JSON.stringify(only));
+  const either = request.interactAcrDemand(['phr', 'phrh']);
+  t.check(either.eap && either.forceKey && either.phishingClass === '',
+          'phr and phrh together set forceKey and phishingClass empty',
+          JSON.stringify(either));
+  const mixed = request.interactAcrDemand(['phrh', 'mfa']);
+  t.check(!mixed.eap && !mixed.forceKey && mixed.phishingClass === '' &&
+          mixed.tokens.join() === 'phrh,mfa',
+          'a mixed token is not a demand, and the raw list is kept',
+          JSON.stringify(mixed));
+  const absent = request.interactAcrDemand(undefined);
+  t.check(!absent.eap && !absent.forceKey && absent.phishingClass === '' &&
+          absent.tokens.length === 0,
+          'absent interact.acr does not set the demand',
+          JSON.stringify(absent));
+  const uri = request.interactAcrDemand(
+    'http://schemas.openid.net/pape/policies/2007/06/phishing-resistant');
+  t.check(!uri.eap && uri.tokens.length === 1,
+          'an EAP URI is not the short name, so it is not a demand',
+          JSON.stringify(uri));
+  log.debug("Leaving checkInteractAcr().");
+}
+
 function checkKeys(t) {
   log.debug("Entering checkKeys().");
   t.log.info('D. keys, and RFC 7638\'s published thumbprint');
@@ -314,6 +372,7 @@ module.exports = {
     checkSchemas(t);
     checkEnvelope(t);
     checkWalkers(t);
+    checkInteractAcr(t);
     checkKeys(t);
     checkInteractionHash(t);
     log.debug("Leaving run().");

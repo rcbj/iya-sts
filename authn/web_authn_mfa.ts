@@ -251,7 +251,9 @@ class WebAuthnMfa {
       // what the application requires, and where to add one — under the
       // refusal's own sentence.
       WebAuthnLogin.postQuantumPanel(w.postQuantumHelp, t) +
-      (choosing
+      // NO KEY THAT CAN EARN phrh (#739): the sentence above is the whole
+      // page. A ceremony button would arm a prompt whose answer is refused.
+      (w.hardwareRefused ? '' : (choosing
         // THE CHOICE (#534): a link per passkey, which draws this page again
         // for that one.
         ? '<p>' + t.html('authn.webauthn.choose') + '</p><ul id="wa-choices">' +
@@ -275,7 +277,7 @@ class WebAuthnMfa {
                                         : t.html('authn.webauthn.use')) +
           '</button></div>' +
           (create ? WebAuthnMfa.fallback(w.fallback, t) : '') +
-          '</form>') +
+          '</form>')) +
       WebAuthnMfa.startOver(t) +
       // THE TECHNICAL LINES FOLDED (#470): a person signing in reads the
       // heading, the button and the ways out; somebody debugging opens it.

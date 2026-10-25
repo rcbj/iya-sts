@@ -859,6 +859,29 @@ class WebAnswers {
                banner: ok ? '' : kit.warn(kit.esc(errors.join(' ') ||
                                                   'Refused.')) };
     }
+    // A REFUSED NEW NAMED POLICY (#841). The New policy form posts
+    // `newProfile`. A validation failure used to navigate to `?error=`,
+    // which draws that form blank and drops every field the reader typed.
+    // The search already keeps a Find in `state.policyDrafts` under the
+    // form's own key (`passkey-apps`, not the typed name); a refused Save
+    // uses the same cell, and the refusal is drawn on the form. Keying by
+    // the form rather than the typed name means a name that matches a
+    // stored profile does not land on that profile's form.
+    if (page === POLICIES_PAGE && !ok &&
+        WebAnswers.one(fields, 'newProfile') === '1') {
+      const kindId = String(action || '').replace(/^save-/, '')
+        .replace(/-policy$/, '');
+      const key = kindId + '-apps';
+      const out = WebAnswers.copy(json);
+      const before = out.state || {};
+      const drafts = Object.assign({}, before.policyDrafts || {});
+      drafts[key] = fields;
+      const saveErrors = Object.assign({}, before.policySaveErrors || {});
+      saveErrors[key] = errors.length ? errors : ['Refused.'];
+      out.state = Object.assign({}, before, {
+        policyDrafts: drafts, policySaveErrors: saveErrors });
+      return { json: out, banner: '' };
+    }
     return null;
   }
 

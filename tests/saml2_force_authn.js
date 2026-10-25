@@ -32,6 +32,16 @@
 //      NoAuthnContext (STS-SAML-0056).
 //   6. Unchanged: a plain request with a session is single sign-on with no
 //      screen, and IsPassive with no session is NoPassive.
+//   7. A RequestedAuthnContext of only the EAP phr URI, on a password
+//      session: one trip (a key is forced), and NoAuthnContext
+//      (STS-SAML-0116) when the person does not earn it. Only the hardware
+//      URI also sets phishingClass phrh.
+//   8. The same URI beside PasswordProtectedTransport does not force a
+//      trip, and the assertion keeps PasswordProtectedTransport.
+//   9. IsPassive with a password session and only the phr URI is NoPassive.
+//  10. SAML 1.1's non-spec authnContextClassRef does the same one trip and
+//      then a page (STS-SAML-0117). Without the parameter the method stays
+//      am:password.
 //
 // WHY A CHILD PROCESS: it serves the whole protocol stack on a loopback port.
 // ===========================================================================
@@ -125,8 +135,11 @@ function childMain() {
         (o.passive ? ' IsPassive="true"' : '') + '>' +
         '<saml:Issuer>urn:force-authn:sp</saml:Issuer>' +
         (o.context ? '<samlp:RequestedAuthnContext Comparison="exact">' +
-          '<saml:AuthnContextClassRef>' + o.context +
-          '</saml:AuthnContextClassRef></samlp:RequestedAuthnContext>' : '') +
+          [].concat(o.context).map(function (one) {
+            return '<saml:AuthnContextClassRef>' + one +
+              '</saml:AuthnContextClassRef>';
+          }).join('') +
+          '</samlp:RequestedAuthnContext>' : '') +
         '</samlp:AuthnRequest>';
       return '/saml2/sso?SAMLRequest=' + encodeURIComponent(
         zlib.deflateRawSync(Buffer.from(xml)).toString('base64'));
@@ -147,8 +160,12 @@ function childMain() {
       }
       const instant = /AuthnInstant="([^"]+)"/.exec(xml);
       const message = /<samlp:StatusMessage>([^<]*)</.exec(xml);
+      const classRef = /AuthnContextClassRef>([^<]*)</.exec(xml);
+      const method = /AuthenticationMethod="([^"]+)"/.exec(xml);
       return { codes: codes, authnInstant: instant ? instant[1] : '',
-               message: message ? message[1] : '' };
+               message: message ? message[1] : '',
+               classRef: classRef ? classRef[1] : '',
+               method: method ? method[1] : '' };
     }
 
     // Walks a flow. `atScreen` decides what happens at the sign-in screen:
@@ -158,6 +175,7 @@ function childMain() {
       let r = await request('GET', start);
       let screens = 0;
       let returnTo = '';
+      let record = null;
       for (let hop = 0; hop < 12; hop += 1) {
         // THE SIGN-IN SCREEN IS A STATIC PAGE SINCE #571: its act goes to
         // `/authn-api`, and its answer names where the browser goes next,
@@ -173,10 +191,20 @@ function childMain() {
             const pending = realms.run(realms.DEFAULT_REALM, function () {
               return authn.pendingFor(decodeURIComponent(authnId));
             });
+            if (!record) {
+              record = pending;
+            }
             returnTo = pending ? pending.returnTo : '';
             r = await request('GET', returnTo);
             atScreen = 'done';
             continue;
+          }
+          const authnId = /[?&]authn=([^&]+)/.exec(screenAt)[1];
+          const pending = realms.run(realms.DEFAULT_REALM, function () {
+            return authn.pendingFor(decodeURIComponent(authnId));
+          });
+          if (!record) {
+            record = pending;
           }
           const answer = await authnScreen.submit({ port: port, jar: jar,
             at: screenAt, fields: { action: atScreen,
@@ -197,7 +225,7 @@ function childMain() {
         break;
       }
       return { final: r, screens: screens, returnTo: returnTo,
-               response: responseOf(r) };
+               record: record, response: responseOf(r) };
     }
     function lastCode(code) {
       return realms.run(realms.DEFAULT_REALM, function () {
@@ -279,8 +307,74 @@ function childMain() {
     f = await drive(authnRequest({ passive: true }), 'login');
     note(f.screens === 0 && f.response &&
          f.response.codes.indexOf('NoPassive') >= 0,
-         '6b. unchanged: IsPassive with no session is NoPassive and no screen',
+         '6b. unchanged: IsPassive with no session is No passive and no screen',
          JSON.stringify({ screens: f.screens, response: f.response }));
+
+    // 7–10. The EAP class URIs (#736). A password session earns neither.
+    const PHR =
+      'http://schemas.openid.net/pape/policies/2007/06/phishing-resistant';
+    const PHRH =
+      'http://schemas.openid.net/acr/2016/07/phishing-resistant-hardware';
+    const PPT =
+      'urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport';
+    jar = {};
+    await drive(authnRequest({}), 'login', 'fa-erin');
+    f = await drive(authnRequest({ context: PHR }), 'skip', 'fa-erin');
+    note(f.screens === 1 && f.record && f.record.forceKey === true &&
+         f.record.phishingClass === '' && f.response &&
+         f.response.codes.indexOf('NoAuthnContext') >= 0 &&
+         lastCode('STS-SAML-0116'),
+         '7. only the phr URI forces a key and, unmet, is NoAuthnContext ' +
+         '(STS-SAML-0116) after one trip',
+         JSON.stringify({ screens: f.screens,
+           forceKey: f.record && f.record.forceKey,
+           phishingClass: f.record && f.record.phishingClass,
+           response: f.response }));
+    f = await drive(authnRequest({ context: PHRH }), 'skip', 'fa-erin');
+    note(f.screens === 1 && f.record && f.record.forceKey === true &&
+         f.record.phishingClass === 'phrh' && f.response &&
+         f.response.codes.indexOf('NoAuthnContext') >= 0,
+         '7b. only the hardware URI also sets phishingClass phrh',
+         JSON.stringify({ screens: f.screens,
+           phishingClass: f.record && f.record.phishingClass,
+           response: f.response }));
+    f = await drive(authnRequest({ context: [PPT, PHR] }), 'login',
+                    'fa-erin');
+    note(f.screens === 0 && f.response &&
+         f.response.codes[0] === 'Success' &&
+         f.response.classRef === PPT,
+         '8. phr beside PasswordProtectedTransport does not force a trip, ' +
+         'and the assertion keeps PasswordProtectedTransport',
+         JSON.stringify({ screens: f.screens, response: f.response }));
+    f = await drive(authnRequest({ context: PHR, passive: true }), 'login',
+                    'fa-erin');
+    note(f.screens === 0 && f.response &&
+         f.response.codes.indexOf('NoPassive') >= 0 &&
+         /RequestedAuthnContext/.test(f.response.message),
+         '9. IsPassive with a password session and only the phr URI is ' +
+         'NoPassive',
+         JSON.stringify({ screens: f.screens, response: f.response }));
+    function saml11(withClass) {
+      return '/saml11/sso?providerId=' + encodeURIComponent('urn:phr:sp') +
+        '&shire=' + encodeURIComponent('https://sp.phr.test/acs') +
+        '&TARGET=' + encodeURIComponent('https://sp.phr.test/app') +
+        (withClass
+          ? '&authnContextClassRef=' + encodeURIComponent(PHR) : '');
+    }
+    f = await drive(saml11(true), 'skip', 'fa-erin');
+    note(f.screens === 1 && f.record && f.record.forceKey === true &&
+         f.final.status === 403 && lastCode('STS-SAML-0117'),
+         '10. SAML 1.1 authnContextClassRef is one trip, then a page ' +
+         '(STS-SAML-0117)',
+         JSON.stringify({ screens: f.screens, status: f.final.status,
+           forceKey: f.record && f.record.forceKey }));
+    f = await drive(saml11(false), 'login', 'fa-erin');
+    note(f.screens === 0 && f.response &&
+         f.response.method ===
+           'urn:oasis:names:tc:SAML:1.0:am:password',
+         '10b. SAML 1.1 without the parameter keeps am:password',
+         JSON.stringify({ screens: f.screens, method: f.response &&
+           f.response.method, status: f.final.status }));
 
     server.close();
     require('fs').writeFileSync(OUT, JSON.stringify(findings));

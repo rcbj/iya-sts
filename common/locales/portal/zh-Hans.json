@@ -154,6 +154,7 @@
   "overview.deviceBound": "绑定到此浏览器",
   "overview.deviceBoundYes": "是，绑定到此浏览器持有的 {alg} 密钥",
   "overview.deviceBoundNo": "否",
+  "overview.deviceBoundSkipped": "已跳过绑定（{reasons}）",
   "overview.unstated": "未说明",
   "overview.sessionEnds": "此会话结束于",
   "overview.timesSignedIn": "您的登录次数",

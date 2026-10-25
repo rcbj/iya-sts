@@ -33,6 +33,11 @@
 //      on the page read as a field search; the address it asks; Add putting
 //      the IDENTIFIER in the box once; a redraw keeping the form's typed
 //      values with the results under the box.
+//   E. A REFUSED CREATE (#841): the New policy form posts `newProfile`, and
+//      a validation failure is drawn again in place. The typed fields stay
+//      on that form, the refusal with them, and a typed name that matches a
+//      stored profile does not overlay that profile. A refused save of the
+//      default profile is not that redraw.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -293,6 +298,67 @@ function search(t, drawn, names) {
   log.debug('Leaving search().');
 }
 
+// A refused New policy save (#841). The form posts `newProfile`, so the
+// draft is the form's (`passkey-apps`) even when the typed name is a stored
+// profile's.
+function refusedNew(t, drawn, names) {
+  log.debug('Entering refusedNew().');
+  const policies = require(ROOT + '/admin-ui/web_policies');
+  const answers = require(ROOT + '/admin-ui/web_answers');
+  const kit = require(ROOT + '/admin-ui/web_kit');
+  const why = 'A named profile with no application and no group selects ' +
+    'nothing.';
+  const fields = {
+    action: 'save-passkey-policy', newProfile: '1', profile: names.strict,
+    selectApplications: APP + '-typed', selectGroups: 'typed-group',
+    precedence: '9', minPinLength: '12', allowUsernameless: 'TRUE',
+    backupEligibility: 'disallow' };
+  const again = answers.redraw('/admin/policies', 'save-passkey-policy',
+                               fields, { ok: false, errors: [why] },
+                               drawn.view);
+  const kept = again && again.json && again.json.state;
+  const draft = kept && kept.policyDrafts && kept.policyDrafts['passkey-apps'];
+  const said = kept && kept.policySaveErrors &&
+    kept.policySaveErrors['passkey-apps'];
+  t.check(!!again && again.banner === '' && draft === fields &&
+          said && said[0] === why,
+          'E1. a refused create is drawn again, the posted fields under ' +
+          'the New policy form\'s own key, the refusal with them',
+          JSON.stringify(kept && kept.policySaveErrors));
+  t.check(answers.redraw('/admin/policies', 'save-passkey-policy',
+                        { profile: 'default', minPinLength: '12' },
+                        { ok: false, errors: [why] }, drawn.view) === null,
+          'E2. a refused save of the default profile is not that redraw');
+  const bare = answers.redraw('/admin/policies', 'save-passkey-policy',
+                              { newProfile: '1', profile: 'kept-name' },
+                              { ok: false }, drawn.view);
+  t.check(bare && bare.json.state.policySaveErrors['passkey-apps'][0] ===
+          'Refused.',
+          'E3. a refusal that names no error still says it was refused');
+  const html = policies.body(kit.context(), again.json);
+  const at = html.indexOf('id="passkey-sub-new"');
+  const form = html.slice(at, html.indexOf('</form>', at));
+  t.check(form.indexOf('name="newProfile" value="1"') >= 0 &&
+          form.indexOf('value="' + names.strict + '"') >= 0 &&
+          form.indexOf('value="' + APP + '-typed"') >= 0 &&
+          form.indexOf('value="typed-group"') >= 0 &&
+          /name="precedence" min="1" max="1000" value="9"/.test(form) &&
+          /name="minPinLength"[^>]*value="12"/.test(form) &&
+          /name="allowUsernameless"[^>]*value="TRUE" checked/.test(form) &&
+          /value="disallow" selected/.test(form) &&
+          form.indexOf(why) >= 0,
+          'E4. the New policy form still holds the name, the selectors, ' +
+          'the PIN length, the ticked box, the chosen enum and the refusal');
+  const namedAt = html.indexOf('id="passkey-profile-' + names.strict + '"');
+  const namedForm = html.slice(namedAt, html.indexOf('</form>', namedAt));
+  t.check(namedForm.indexOf(APP + '-typed') < 0 &&
+          namedForm.indexOf('value="12"') < 0 &&
+          namedForm.indexOf('value="typed-group"') < 0,
+          'E5. a typed name that matches a stored profile does not overlay ' +
+          'that profile\'s form');
+  log.debug('Leaving refusedNew().');
+}
+
 function run(t) {
   log.debug('Entering run().');
   const names = { strict: TAG + '-strict', client: TAG + '-byclient',
@@ -341,6 +407,7 @@ function run(t) {
     card(t, json, names);
     const drawn = subTabs(t, names);
     search(t, drawn, names);
+    refusedNew(t, drawn, names);
   } finally {
     passkeyPolicy.reset(names.strict);
     passkeyPolicy.reset(names.client);
