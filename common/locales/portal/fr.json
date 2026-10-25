@@ -154,6 +154,7 @@
   "overview.deviceBound": "Liée à ce navigateur",
   "overview.deviceBoundYes": "Oui, à une clé {alg} que détient ce navigateur",
   "overview.deviceBoundNo": "Non",
+  "overview.deviceBoundSkipped": "Liaison ignorée ({reasons})",
   "overview.unstated": "non précisé",
   "overview.sessionEnds": "Cette session se termine",
   "overview.timesSignedIn": "Nombre de vos connexions",

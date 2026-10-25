@@ -246,6 +246,37 @@ class DeviceBoundSessions {
     return isFinite(seconds) && seconds >= 1 ? Math.floor(seconds) : 600;
   }
 
+  /**
+   * Tells whether a bound session is scoped to the registrable domain
+   * (`authn.deviceBoundIncludeSite`, off by default, #742).
+   *
+   * @returns true when `scope.include_site` is set
+   */
+  includeSite(): boolean {
+    const { log, config } = this.deps;
+    log.debug("Entering DeviceBoundSessions.includeSite().");
+    log.debug("Leaving DeviceBoundSessions.includeSite().");
+    return config.value('authn.deviceBoundIncludeSite') === true;
+  }
+
+  /**
+   * Returns how long issuance waits for a registration that was offered
+   * (`authn.deviceBoundIssuanceWaitS`, #740), in seconds.
+   *
+   * Zero is legal and means the wait has already elapsed. Read directly:
+   * `0 || 60` would make that setting unreachable.
+   *
+   * @returns the wait in seconds
+   */
+  issuanceWaitS(): number {
+    const { log, config } = this.deps;
+    log.debug("Entering DeviceBoundSessions.issuanceWaitS().");
+    const wait = Number(config.value('authn.deviceBoundIssuanceWaitS'));
+    const seconds = isFinite(wait) ? wait : 60;
+    log.debug("Leaving DeviceBoundSessions.issuanceWaitS().");
+    return seconds;
+  }
+
   // --- the MACs -------------------------------------------------------------
 
   private mac(parts: unknown[]): string {
@@ -342,6 +373,56 @@ class DeviceBoundSessions {
     return !!(session && session.dbsc && session.dbsc.jkt && session.dbsc.id);
   }
 
+  /**
+   * The device-bound fact of a session (#743, #740): `bound`, `skipped`,
+   * `pending`, `timedout` or `none`.
+   *
+   * Computed from the session, not from the setting. `timedout` is decided
+   * at this read when a pending offer is older than
+   * `authn.deviceBoundIssuanceWaitS`; nothing stores that word and no timer
+   * flips it. `common/issuance_gate.js`'s `deviceBoundFactOf()` is the same
+   * reading and must stay the same: the gate cannot require this module
+   * (the Kerberos COPY closure).
+   *
+   * Precedence: a key (`jkt` and `id`) is `bound`, even if a skip header
+   * arrived later; stored skip reasons are `skipped`; an offer whose age
+   * exceeds the wait is `timedout`, and one still inside it is `pending`;
+   * anything else is `none` (DBSC was not in play for this session).
+   *
+   * @param session - the session row
+   * @returns the fact token
+   */
+  factOf(session: Json): string {
+    const { log, config, now } = this.deps;
+    log.debug("Entering DeviceBoundSessions.factOf().");
+    const fact = this.factFrom(session, config, now());
+    log.debug("Leaving DeviceBoundSessions.factOf(). " + fact);
+    return fact;
+  }
+
+  // One reading, so `factOf()` and a caller that already has the clock
+  // cannot drift. `nowMs` is the caller's clock.
+  private factFrom(session: Json, cfg: Json, nowMs: number): string {
+    const { log } = this.deps;
+    log.debug("Entering DeviceBoundSessions.factFrom().");
+    const d = session && session.dbsc;
+    let fact = 'none';
+    if (!d) {
+      fact = 'none';
+    } else if (d.jkt && d.id) {
+      fact = 'bound';
+    } else if (Array.isArray(d.skippedReasons) && d.skippedReasons.length) {
+      fact = 'skipped';
+    } else if (d.offeredAt) {
+      const wait = Number(cfg.value('authn.deviceBoundIssuanceWaitS'));
+      const seconds = isFinite(wait) ? wait : 60;
+      fact = nowMs - Number(d.offeredAt) > seconds * 1000
+        ? 'timedout' : 'pending';
+    }
+    log.debug("Leaving DeviceBoundSessions.factFrom(). " + fact);
+    return fact;
+  }
+
   // ---------------------------------------------------------------------------
   // ONE BOUND COOKIE PER BINDING WHERE A BROWSER HOLDS SEVERAL ACCOUNTS
   // (#561 with #725). The draft's session instructions name the cookie a
@@ -425,23 +506,303 @@ class DeviceBoundSessions {
     return ok;
   }
 
+  // A hot path (honouredSession runs on every session read): no
+  // Entering/Leaving pair. A debug line is written only when the header is
+  // present. Absent is the ordinary request and changes nothing. A
+  // well-formed skip is not a failure. A malformed one is recorded
+  // (STS-AUTHN-0460) and the request continues; the session is not marked
+  // skipped. A session that already has a key is not unbound by a later
+  // skip. An empty list is a no-op, not a malformed header.
+  /**
+   * Records `Secure-Session-Skipped` on a session that is not yet bound
+   * (#743).
+   *
+   * @param session - the session the request presented
+   * @param req - the request
+   */
+  noteSkipped(session: Json, req: Json): void {
+    if (this.deps.config.value('authn.deviceBoundSessions') !== true ||
+        !session ||
+        (session.dbsc && session.dbsc.jkt && session.dbsc.id)) {
+      return;
+    }
+    const raw = req && req.headers
+      ? req.headers['secure-session-skipped'] : '';
+    const text = Array.isArray(raw) ? raw.join(', ') : String(raw || '');
+    if (!text.trim()) {
+      return;
+    }
+    const parsed = this.parseSkipped(text);
+    if (!parsed.ok) {
+      this.deps.log.debug(this.deps.errorCodes.tag('STS-AUTHN-0460') +
+        'authn: Secure-Session-Skipped on session ' + session.id +
+        ' was not a list of sf-tokens (' + parsed.why +
+        ') and was not recorded.');
+      this.deps.audit.audit({
+        action: 'authn.session.binding-skipped', outcome: 'failure',
+        errorCode: 'STS-AUTHN-0460',
+        actor: (session.user && session.user.username) || '',
+        target: String(session.id || ''), channel: 'http',
+        protocol: 'Authentication',
+        summary: 'Secure-Session-Skipped on session ' + session.id +
+                 ' was malformed and was not recorded',
+        detail: { sessionId: session.id, why: parsed.why }
+      });
+      return;
+    }
+    if (!parsed.reasons.length) {
+      return;
+    }
+    const held = session.dbsc || {};
+    const prev = Array.isArray(held.skippedReasons) ? held.skippedReasons
+                                                    : [];
+    const prevIds = Array.isArray(held.skippedIds) ? held.skippedIds : [];
+    let same = prev.length === parsed.reasons.length;
+    parsed.reasons.forEach(function (reason, i) {
+      if (!same) {
+        return;
+      }
+      if (reason !== prev[i] ||
+          String(parsed.ids[i] || '') !== String(prevIds[i] || '')) {
+        same = false;
+      }
+    });
+    if (same) {
+      return;
+    }
+    session.dbsc = Object.assign({}, held, {
+      skippedReasons: parsed.reasons.slice(),
+      skippedIds: parsed.ids.slice()
+    });
+    this.deps.authn().noteSessionChanged(session);
+    const who = (session.user && session.user.username) || '';
+    this.deps.audit.audit({
+      action: 'authn.session.binding-skipped', outcome: 'success',
+      actor: who, target: who, channel: 'http',
+      protocol: 'Authentication',
+      summary: 'session ' + session.id + ' skipped device binding (' +
+               parsed.reasons.join(', ') + ')',
+      detail: { sessionId: session.id, reasons: parsed.reasons,
+                ids: parsed.ids }
+    });
+  }
+
+  // Section 9.5: a list of sf-tokens, each optionally carrying
+  // `session_identifier` as an sf-string. Any well-formed token is
+  // recorded, including one this service does not name. A non-token
+  // member, a `session_identifier` that is not an sf-string, or a value
+  // that does not parse, is malformed.
+  private parseSkipped(text: string): { ok: boolean; reasons: string[];
+                                        ids: string[]; why: string } {
+    const { log } = this.deps;
+    log.debug("Entering DeviceBoundSessions.parseSkipped().");
+    let list: Json = null;
+    try {
+      list = structuredFields.parseList(text);
+    } catch (e) {
+      // A throw is a field that is not a Structured Field list. That is
+      // the malformed case; the session stays as it was.
+      log.debug("Caught in DeviceBoundSessions.parseSkipped(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving DeviceBoundSessions.parseSkipped(). Malformed.");
+      return { ok: false, reasons: [], ids: [],
+               why: 'it is not a Structured Field list' };
+    }
+    const reasons: string[] = [];
+    const ids: string[] = [];
+    let why = '';
+    (list || []).forEach(function (item: Json) {
+      if (why) {
+        return;
+      }
+      if (!item || item.type !== 'token' ||
+          typeof item.value !== 'string' || !item.value) {
+        why = 'a member is not an sf-token';
+        return;
+      }
+      const idBare = structuredFields.param(item.params,
+                                            'session_identifier');
+      if (idBare !== undefined && idBare.type !== 'string') {
+        why = 'session_identifier is not an sf-string';
+        return;
+      }
+      reasons.push(String(item.value));
+      ids.push(idBare && typeof idBare.value === 'string'
+        ? String(idBare.value) : '');
+    });
+    if (why) {
+      log.debug("Leaving DeviceBoundSessions.parseSkipped(). " + why);
+      return { ok: false, reasons: [], ids: [], why: why };
+    }
+    log.debug("Leaving DeviceBoundSessions.parseSkipped(). " +
+              reasons.length + " token(s).");
+    return { ok: true, reasons: reasons, ids: ids, why: '' };
+  }
+
   // --- the cookie and the headers -------------------------------------------
 
   // The attributes the bound cookie is SET with and the attributes the
   // instructions DECLARE are one string, because the browser matches the two
   // (section 8.6: Domain, Path, Secure, HttpOnly, SameSite) and a cookie
   // whose attributes differ from its declaration is a cookie it refreshes
-  // for ever.
-  private cookieAttributes(): string {
+  // for ever. With `authn.deviceBoundIncludeSite` off, the domain is
+  // exactly `cookieDomainAttribute()` — no Domain that widens the cookie.
+  // On, Domain is the registrable domain of the request host, and an IP,
+  // localhost or single-label host keeps the attribute it already had:
+  // there is no wider site to name.
+  private cookieAttributes(req?: Json): string {
     const { log, config } = this.deps;
     log.debug("Entering DeviceBoundSessions.cookieAttributes().");
-    const domain = String(helpers.cookieDomainAttribute() || '')
+    let domain = String(helpers.cookieDomainAttribute() || '')
       .replace(/^;\s*/, '');
+    if (this.includeSite()) {
+      const site = this.widensTo(this.requestHost(req || null));
+      if (site) {
+        domain = 'Domain=' + site;
+      }
+    }
     const out = ['Path=/'].concat(domain ? [domain] : [])
       .concat(config.value('global.https') ? ['Secure'] : [])
       .concat(['HttpOnly', 'SameSite=Lax']).join('; ');
     log.debug("Leaving DeviceBoundSessions.cookieAttributes().");
     return out;
+  }
+
+  // The host a request was addressed to, without a port or a trailing dot.
+  // A URL is reduced to its host, so a listener's `publicBaseUrl` and a
+  // Host header share one reading.
+  private static bareHost(value: unknown): string {
+    log.debug("Entering DeviceBoundSessions.bareHost().");
+    let name = String(value || '').trim().toLowerCase();
+    const scheme = name.indexOf('://');
+    if (scheme >= 0) {
+      name = name.slice(scheme + 3);
+    }
+    name = name.split('/')[0].split('?')[0];
+    if (name.charAt(0) === '[') {
+      const end = name.indexOf(']');
+      name = end > 0 ? name.slice(1, end) : name;
+    } else if (name.indexOf(':') >= 0 &&
+               name.indexOf(':') === name.lastIndexOf(':')) {
+      name = name.slice(0, name.indexOf(':'));
+    }
+    name = name.replace(/\.$/, '');
+    log.debug("Leaving DeviceBoundSessions.bareHost().");
+    return name;
+  }
+
+  private requestHost(req: Json): string {
+    const { log } = this.deps;
+    log.debug("Entering DeviceBoundSessions.requestHost().");
+    const raw = req && req.headers ? req.headers.host : '';
+    const text = Array.isArray(raw) ? String(raw[0] || '')
+                                    : String(raw || '');
+    const host = DeviceBoundSessions.bareHost(text);
+    log.debug("Leaving DeviceBoundSessions.requestHost().");
+    return host;
+  }
+
+  // The registrable domain of a host. There is no public-suffix list here:
+  // `webauthn.rpId`, when it is the host or a label-boundary suffix and
+  // contains a dot, is the domain; otherwise the last two labels. A name
+  // under a multi-level suffix (`example.co.uk`) needs `webauthn.rpId`.
+  // An IP address, localhost or a single label is returned as itself —
+  // there is no wider site.
+  private registrableDomain(host: string): string {
+    const { log, config } = this.deps;
+    log.debug("Entering DeviceBoundSessions.registrableDomain().");
+    const name = DeviceBoundSessions.bareHost(host);
+    let site = name;
+    const ip = /^\d{1,3}(\.\d{1,3}){3}$/.test(name);
+    if (!name || name === 'localhost' || name.indexOf(':') >= 0 || ip ||
+        name.indexOf('.') < 0) {
+      site = name;
+    } else {
+      const rp = DeviceBoundSessions.bareHost(
+        config.value('webauthn.rpId') || '');
+      if (rp.indexOf('.') >= 0 &&
+          (name === rp || name.endsWith('.' + rp))) {
+        site = rp;
+      } else {
+        const labels = name.split('.');
+        site = labels.length <= 2 ? name : labels.slice(-2).join('.');
+      }
+    }
+    log.debug("Leaving DeviceBoundSessions.registrableDomain().");
+    return site;
+  }
+
+  // The Domain to set when site scope is on, or '' when the host has no
+  // wider DNS site (an address, localhost, a single label).
+  private widensTo(host: string): string {
+    const { log } = this.deps;
+    log.debug("Entering DeviceBoundSessions.widensTo().");
+    const site = this.registrableDomain(host);
+    const ip = /^\d{1,3}(\.\d{1,3}){3}$/.test(site);
+    const out = site && site.indexOf('.') >= 0 && !ip ? site : '';
+    log.debug("Leaving DeviceBoundSessions.widensTo().");
+    return out;
+  }
+
+  // Sibling hosts a site-scoped session must not cover (#742). Cookie
+  // Domain cannot exclude a host, so the draft's scope rule does: an
+  // `exclude` of the debugger's public host and of every custom or realm
+  // listener hostname under the registrable domain, other than the host
+  // that registered. The main listener is this origin. A debugger on the
+  // SAME host and another port cannot be excluded: cookies are not
+  // port-scoped (RFC 6265), and a scope rule's domain and path cannot
+  // name a port. Realm path prefixes are the same origin and are not
+  // listed. Nothing is excluded when site scope is off, or when the host
+  // has no wider site.
+  private siteExclusions(host: string): Json[] {
+    const { log, config } = this.deps;
+    log.debug("Entering DeviceBoundSessions.siteExclusions().");
+    const site = this.widensTo(host);
+    const found: string[] = [];
+    if (!site) {
+      log.debug("Leaving DeviceBoundSessions.siteExclusions(). No site.");
+      return [];
+    }
+    this.considerExclusion(found, host, site,
+                           config.value('debugger.publicBaseUrl'));
+    try {
+      const map = require('../common/listener_map');
+      (map.allListeners() || []).forEach((one: Json) => {
+        if (!one || one.builtin) {
+          return;
+        }
+        this.considerExclusion(found, host, site, one.host);
+        this.considerExclusion(found, host, site, one.publicBaseUrl);
+        (one.hostnames || []).forEach((named: string) => {
+          this.considerExclusion(found, host, site, named);
+        });
+      });
+    } catch (e) {
+      // The exclusion list is a narrowing. A listener map that cannot be
+      // read leaves the session site-scoped without holes rather than
+      // refusing the registration.
+      log.debug("Caught in DeviceBoundSessions.siteExclusions(): " +
+                ((e && e.message) || e));
+    }
+    const out = found.map(function (domain) {
+      return { type: 'exclude', domain: domain, path: '/' };
+    });
+    log.debug("Leaving DeviceBoundSessions.siteExclusions(). " +
+              out.length + " exclusion(s).");
+    return out;
+  }
+
+  private considerExclusion(found: string[], host: string, site: string,
+                            value: unknown): void {
+    const { log } = this.deps;
+    log.debug("Entering DeviceBoundSessions.considerExclusion().");
+    const bare = DeviceBoundSessions.bareHost(value);
+    if (bare && bare !== host &&
+        (bare === site || bare.endsWith('.' + site)) &&
+        found.indexOf(bare) < 0) {
+      found.push(bare);
+    }
+    log.debug("Leaving DeviceBoundSessions.considerExclusion().");
   }
 
   private appendHeader(res: Json, name: string, value: string): void {
@@ -457,7 +818,7 @@ class DeviceBoundSessions {
     log.debug("Leaving DeviceBoundSessions.appendHeader().");
   }
 
-  private setBoundCookie(res: Json, session: Json): void {
+  private setBoundCookie(res: Json, session: Json, req?: Json): void {
     const { log, now } = this.deps;
     log.debug("Entering DeviceBoundSessions.setBoundCookie().");
     const nowS = Math.floor(now() / 1000);
@@ -468,7 +829,7 @@ class DeviceBoundSessions {
     this.appendHeader(res, 'Set-Cookie', this.cookieNameOf(session) + '=' +
                       this.cookieValueFor(session, expiresS) +
                       '; Max-Age=' + (expiresS - nowS) + '; ' +
-                      this.cookieAttributes());
+                      this.cookieAttributes(req));
     log.debug("Leaving DeviceBoundSessions.setBoundCookie().");
   }
 
@@ -484,7 +845,10 @@ class DeviceBoundSessions {
   }
 
   // THE OFFER, made by `authn.ts` on the answer that sets the session
-  // cookie. Nothing is written: the challenge is a MAC over this session.
+  // cookie. The challenge is a MAC, so it is not stored. The instant of
+  // the offer is (`session.dbsc.offeredAt`, #743): #740 reads it when a
+  // pending registration has waited long enough, and a second offer does
+  // not move it. No timer is armed.
   /**
    * Adds `Secure-Session-Registration` to the answer that sets a sign-on
    * session's cookie, where the realm binds sessions and this one is a
@@ -525,24 +889,35 @@ class DeviceBoundSessions {
                                                   '') }]
       ] }]);
     this.appendHeader(res, 'Secure-Session-Registration', value);
+    if (!(session.dbsc && Number(session.dbsc.offeredAt) > 0)) {
+      session.dbsc = Object.assign({}, session.dbsc || {}, {
+        offeredAt: this.deps.now()
+      });
+      this.deps.authn().noteSessionChanged(session);
+    }
     log.debug("Leaving DeviceBoundSessions.offer(). Offered.");
     return true;
   }
 
-  // Section 9.6. The scope is this origin (`origin` absent), not the site,
-  // with no exclusions: every path the session cookie reaches, which is every
-  // path, since `sts_session` is `Path=/`.
-  private instructions(session: Json): Json {
+  // Section 9.6. `include_site` is false unless
+  // `authn.deviceBoundIncludeSite` is on (#742). Off, the scope
+  // specification is empty and the cookie domain is today's. On, the
+  // cookie's Domain is the registrable domain and sibling listener hosts
+  // under it are excluded (`siteExclusions()`).
+  private instructions(session: Json, req?: Json): Json {
     const { log, realms } = this.deps;
     log.debug("Entering DeviceBoundSessions.instructions().");
+    const site = this.includeSite();
+    const host = this.requestHost(req || null);
+    const spec = site ? this.siteExclusions(host) : [];
     log.debug("Leaving DeviceBoundSessions.instructions().");
     return {
       session_identifier: session.dbsc.id,
       refresh_url: realms.currentPrefix() + REFRESH_PATH,
       continue: true,
-      scope: { include_site: false, scope_specification: [] },
+      scope: { include_site: site, scope_specification: spec },
       credentials: [{ type: 'cookie', name: this.cookieNameOf(session),
-                      attributes: this.cookieAttributes() }],
+                      attributes: this.cookieAttributes(req) }],
       allowed_refresh_initiators: []
     };
   }
@@ -884,11 +1259,18 @@ class DeviceBoundSessions {
       publicJwk[m] = jwk[m];
     });
     const dbscId = stsCrypto.randomBytes(16).toString('base64url');
+    // The offer's instant stays, so a registration that finishes still
+    // says when it was asked. A skip recorded before the key arrived is
+    // cleared: the fact is `bound` because `jkt` is set, and the reasons
+    // would otherwise outlive the binding they described.
+    const offeredAt = session.dbsc && Number(session.dbsc.offeredAt) > 0
+      ? Number(session.dbsc.offeredAt) : this.deps.now();
     session.dbsc = {
       id: dbscId,
       alg: proof.header.alg, jwk: publicJwk,
       jkt: stsCrypto.jwkThumbprint(publicJwk),
-      boundAt: this.deps.now(), refreshes: 0, refreshedAt: 0
+      boundAt: this.deps.now(), refreshes: 0, refreshedAt: 0,
+      offeredAt: offeredAt
     };
     if (this.deps.multipleAccounts()) {
       // A cookie of this binding's own (`cookieNameOf()`).
@@ -904,9 +1286,9 @@ class DeviceBoundSessions {
                            proof.header.alg + ' key the browser holds',
                   detail: { sessionId: session.id, alg: proof.header.alg,
                             jkt: session.dbsc.jkt } });
-    this.setBoundCookie(res, session);
+    this.setBoundCookie(res, session, req);
     this.setChallengeHeader(res, session);
-    this.answer(res, 200, '', this.instructions(session));
+    this.answer(res, 200, '', this.instructions(session, req));
     log.debug("Leaving DeviceBoundSessions.register(). Bound.");
   }
 
@@ -1056,9 +1438,9 @@ class DeviceBoundSessions {
                            ' was renewed on a proof of its key',
                   detail: { sessionId: session.id,
                             refreshes: session.dbsc.refreshes } });
-    this.setBoundCookie(res, session);
+    this.setBoundCookie(res, session, req);
     this.setChallengeHeader(res, session);
-    this.answer(res, 200, '', this.instructions(session));
+    this.answer(res, 200, '', this.instructions(session, req));
     log.debug("Leaving DeviceBoundSessions.refresh(). Renewed.");
   }
 
@@ -1067,18 +1449,22 @@ class DeviceBoundSessions {
    * Describes a session's binding for a session row.
    *
    * @param session - the session row
-   * @returns `{ bound, alg, boundAt, refreshes, refreshedAt }`
+   * @returns `{ bound, alg, boundAt, refreshes, refreshedAt, fact, reasons }`
    */
   bindingOf(session: Json): Json {
     const { log } = this.deps;
     log.debug("Entering DeviceBoundSessions.bindingOf().");
     const bound = this.isBound(session);
-    const d = bound ? session.dbsc : {};
-    log.debug("Leaving DeviceBoundSessions.bindingOf(). bound=" + bound);
-    return { bound: bound, alg: String(d.alg || ''),
-             boundAt: Number(d.boundAt || 0),
-             refreshes: Number(d.refreshes || 0),
-             refreshedAt: Number(d.refreshedAt || 0) };
+    const d = (session && session.dbsc) || {};
+    const fact = this.factOf(session);
+    const reasons = Array.isArray(d.skippedReasons)
+      ? d.skippedReasons.map(String) : [];
+    log.debug("Leaving DeviceBoundSessions.bindingOf(). " + fact);
+    return { bound: bound, alg: bound ? String(d.alg || '') : '',
+             boundAt: bound ? Number(d.boundAt || 0) : 0,
+             refreshes: bound ? Number(d.refreshes || 0) : 0,
+             refreshedAt: bound ? Number(d.refreshedAt || 0) : 0,
+             fact: fact, reasons: reasons };
   }
 
   /**
@@ -1130,7 +1516,7 @@ slot.buildNowUnlessDeferred();
  *
  * Exports the class for the composition root and facades that forward to
  * the installed instance; `authn.ts` calls `offer`, `honours` and
- * `bindingOf`.
+ * `bindingOf`, and (#743) `noteSkipped` and `factOf`.
  * @namespace
  */
 export = {
@@ -1147,5 +1533,8 @@ export = {
   offer: slot.forward('offer'),
   honours: slot.forward('honours'),
   isBound: slot.forward('isBound'),
-  bindingOf: slot.forward('bindingOf')
+  bindingOf: slot.forward('bindingOf'),
+  noteSkipped: slot.forward('noteSkipped'),
+  factOf: slot.forward('factOf'),
+  includeSite: slot.forward('includeSite')
 };

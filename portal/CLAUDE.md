@@ -2172,3 +2172,13 @@ the account. The federation module and the directory are reached at request
 time (8a-acct is before 10c and 21). `federation/CLAUDE.md` has the
 federation half.
 
+## A skipped device binding on the Overview (#743, 2026-10-25)
+
+The Overview's "Bound to this browser" row already said yes or no
+(#725). A sign-on whose fact is `skipped` says "binding skipped" and the
+reason tokens the session stored (`overview.deviceBoundSkipped`,
+`{reasons}`, in the seven base catalogs). `fact` and `reasons` are
+language-free on the account answer; the browser translates. `pending`,
+`timedout` and `none` stay "No". The portal is this origin, so it does
+not use a site-scoped or federated DBSC session.
+

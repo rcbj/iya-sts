@@ -6824,6 +6824,36 @@ const CODES = [
       'classical retry is offered for an upgrade, whose point is ML-DSA; ' +
       'the upgrade is dropped and the classical passkey is unchanged.',
     spec: 'HTTP 400 from POST /account-api/keys/upgrade' },
+  { code: 'STS-AUTHN-0459',
+    summary: 'A sign-in that must earn phrh (OpenID Connect EAP ACR Values ' +
+      '1.0) reached the passkey step, and none of the keys held for that ' +
+      'step\'s role has recorded evidence that can earn it: trusted ' +
+      'attestation and backup eligibility clear. Said before the ceremony ' +
+      'is armed, and again if an assertion names some other key of the ' +
+      'role. A discoverable sign-in cannot be narrowed this way and is ' +
+      'refused afterwards (STS-OAUTH-0971).',
+    spec: 'HTTP 400 from the passkey step when acr_values or a required ' +
+      'detail acr is phrh' },
+  { code: 'STS-AUTHN-0460',
+    summary: 'A Secure-Session-Skipped header was not an RFC 9651 list of ' +
+      'sf-tokens, or a session_identifier in it was not an sf-string. ' +
+      'Recorded on the log and the audit row. The request continues and ' +
+      'the session is not marked skipped (#743).',
+    spec: 'log and audit; the request is not refused' },
+  { code: 'STS-AUTHN-0461',
+    summary: 'A passkey policy save was refused: it requires a ' +
+      'device-bound session (deviceBoundRequired) while ' +
+      'authn.deviceBoundSessions is off, so no browser would be offered ' +
+      'the registration the requirement asks for (#740).',
+    spec: 'HTTP 400 (management API)' },
+  { code: 'STS-AUTHN-0462',
+    summary: 'An issuance was refused: the application\'s passkey profile ' +
+      'requires a device-bound session and the session\'s fact is ' +
+      'skipped or timedout. A fact that is still pending is a hold, not ' +
+      'this refusal, and a session that was never offered registration ' +
+      'is not this refusal (#740).',
+    spec: 'the issuance site\'s existing denial (the code is recorded, ' +
+      'not sent)' },
   // AN ADMINISTRATOR ENROLS A PASSKEY ON A PERSON'S BEHALF (#945): the
   // ceremony runs in the administrator's browser, `credentials.ts`'s
   // `beginAdminKeyEnrolment()` and `confirmAdminKeyEnrolment()`, reached
@@ -10860,6 +10890,19 @@ const CODES = [
       'screen and the issuance policy still asked for a step-up on the ' +
       'session\'s risk; it is not sent round again. #711.',
     spec: 'HTTP 403 page' },
+  { code: 'STS-SAML-0116',
+    summary: 'A SAML 2.0 AuthnRequest named only the EAP phishing-resistant ' +
+      'class URIs (phr, or only phrh) and the session still had not earned ' +
+      'the class after the one trip to the sign-in screen. NoAuthnContext, ' +
+      'not a second trip. A list that also names some other class is not ' +
+      'this refusal. #736.',
+    spec: 'Responder / NoAuthnContext' },
+  { code: 'STS-SAML-0117',
+    summary: 'A SAML 1.1 sign-in carried the non-spec authnContextClassRef ' +
+      'parameter naming only an EAP phishing-resistant class, and the ' +
+      'session still had not earned it after the one trip to the sign-in ' +
+      'screen. A page, because this profile has no status to carry. #736.',
+    spec: 'HTTP 403 page' },
   // ===== WSTRUST ===========================================================
   { code: 'STS-WSTRUST-0001',
     summary: 'The RequestSecurityToken body is not well-formed XML (or is ' +
@@ -11193,6 +11236,13 @@ const CODES = [
       'issuance policy, and was refused rather than sent round again ' +
       '(#712).',
     spec: 'HTTP 403 error page' },
+  { code: 'STS-WSFED-0030',
+    summary: 'A wsignin1.0 named an EAP phishing-resistant class URI as ' +
+      'wauth (phr, or only phrh) and the session still had not earned ' +
+      'that class after the one trip to the sign-in screen. A page, ' +
+      'because this profile has no status to carry. Two class URIs in ' +
+      'one wauth stay the unknown-method refusal (#737).',
+    spec: 'HTTP 400 error page' },
   // ===== FED ===============================================================
   { code: 'STS-FED-0001',
     summary: 'A federation endpoint (login or assertion consumer service) ' +
@@ -19222,6 +19272,13 @@ const CODES = [
       'default audience (the demonstration resource server) went with it ' +
       '(#593).',
     spec: 'invalid_request (HTTP 400, RFC 9635 sections 3.6 and 8)' },
+  { code: 'STS-GNAP-0905',
+    summary: 'A GNAP grant\'s interact.acr named only phr, or only phrh, ' +
+      'and the session still had not earned that class after the one ' +
+      'interaction. A list that also names some other token is not this ' +
+      'refusal (#738).',
+    spec: 'RFC 9635 section 3.6 (request_denied, HTTP 403), at the next ' +
+      'continuation' },
   { code: 'STS-DEVICE-0001',
     summary: 'A device named an owner that is not a person or an application' +
       ' in the realm\'s directory, named no owner, or an owner kind ' +

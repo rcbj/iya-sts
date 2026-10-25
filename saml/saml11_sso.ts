@@ -79,6 +79,10 @@
 //        spelling at all.** The 2.0 module implements all three. Here they are
 //        absent from the protocol rather than unimplemented, which is why this
 //        file has no `NoPassive` path — there is no way to ask for one.
+//        The non-spec `authnContextClassRef` parameter (#736) is the same
+//        device as `format` and `profile`: when it names an EAP class URI,
+//        the sign-in is held to that class. When it is absent, the
+//        AuthenticationMethod is unchanged.
 //      * **A failure cannot be reported to the relying party.** With no request
 //        there is no `InResponseTo`, and — the part that actually decides it —
 //        an unsolicited `<samlp:Response>` carrying a failure status is not
@@ -255,6 +259,10 @@ import applications = require('../common/applications');
 // the persona facts an assertion carries in each mode. Leaves; no route moves.
 import mode = require('../common/mode');
 import authnContext = require('./authn_context');
+// The EAP class URIs (#736). A leaf; requiring it moves no route. SAML 1.1
+// has no RequestedAuthnContext; the non-spec parameter below is the only
+// way a request carries one.
+import PhishingResistance = require('../common/phishing_resistance');
 import documentSettings = require('./document_settings');
 // The certificate the back channel presents, as a metadata key (#248).
 import listenerKeys = require('./listener_keys');
@@ -1347,6 +1355,11 @@ class Saml11Sso {
     const session = ctx.session;
     const user = session.user;
     const how = this.authnMethodFor(session);
+    // The asked EAP class, when the session earned it (#736). '' keeps the
+    // method this assertion has always carried.
+    const askedMethod = PhishingResistance.assertionUri(
+      session, ctx.requestedUris);
+    const method = askedMethod || how.method;
     const lifetimeMin = Number(this.settingFor(
       ctx.rpId, 'saml11.assertionLifetimeMin')) || 60;
     const format = ctx.nameIdFormat ||
@@ -1357,7 +1370,7 @@ class Saml11Sso {
       subject: user.username,
       audience: ctx.rpId,
       lifetimeMin: lifetimeMin,
-      authnMethod: how.method,
+      authnMethod: method,
       authnInstant: authnInstant,
       issuer: ctx.providerId,
       nameIdFormat: format,
@@ -1382,7 +1395,7 @@ class Saml11Sso {
       // it, and the Shibboleth SP's stock policy refuses it.
       doNotCache: ctx.profile === 'post' &&
                   !!config.value('saml11.doNotCacheCondition'),
-      attributes: this.attributesFor(user, how.method, authnInstant),
+      attributes: this.attributesFor(user, method, authnInstant),
       sign: this.settingFor(ctx.rpId, 'saml11.signAssertion')
     });
     log.debug("Leaving Saml11Sso.buildAssertionFor(). " + assertion.length +
@@ -2045,17 +2058,27 @@ class Saml11Sso {
     // --- step 3: a session
     // ----------------------------------------------------
     const session = sessionOf(req);
+    // The non-spec parameter (#736). Absent, this demand is nothing and the
+    // assertion's AuthenticationMethod is unchanged.
+    const askedUris = PhishingResistance.uriList(
+      carried.authnContextClassRef);
+    const eapDemand = PhishingResistance.signInFor(askedUris);
+    const eapUnmet = !!session && !PhishingResistance.eapDemandMet(
+      session, askedUris);
     if (!session) {
       // Hold the parameters and go to authn.js's screen. The return address is
       // a GET on this endpoint carrying the held id, so coming back runs this
       // function again from the top with a session in place.
       //
-      // There is no ForceAuthn to honour and no RequestedAuthnContext to
-      // satisfy: neither exists in this protocol (decision 1), so an existing
-      // session is always good enough and this branch is reached only when
-      // there is none.
+      // There is no ForceAuthn and no RequestedAuthnContext in the protocol
+      // (decision 1). This branch is reached only when there is no session.
+      // An existing session is stepped up below only when
+      // authnContextClassRef names an EAP class (#736).
       const record = held || { id: randomId(18), params: carried };
       record.expires = Date.now() + this.requestTtlMs();
+      if (eapDemand.eapOnly) {
+        record.contextAt = Date.now();
+      }
       pendingFlows.set(record.id, record);
       pendingFlows.forEach((v, k) => {
         if (v.expires < Date.now()) {
@@ -2065,6 +2088,8 @@ class Saml11Sso {
       const returnTo = req.path + '?fid=' + encodeURIComponent(record.id);
       const where = beginAuthentication({
         returnTo: returnTo,
+        forceKey: eapDemand.forceKey,
+        phishingClass: eapDemand.phishingClass,
         protocol: 'SAML 1.1',
         // The relying party id is this application's identifier in the
         // registry; see the same line in saml2_sso.ts. Note it may be GUESSED
@@ -2125,6 +2150,57 @@ class Saml11Sso {
         'delivered to the service provider. This one cannot: there is no ' +
         'request to answer and no <code>InResponseTo</code> to name, so the ' +
         'report is this page.</p>');
+    }
+
+    // AN EAP CLASS THE NON-SPEC PARAMETER ASKED FOR (#736), still unmet
+    // after the one trip. The protocol has no status to carry, so the
+    // refusal is a page, as every refusal here is. The marker is on the
+    // held flow, so a browser cannot claim the trip.
+    if (eapUnmet) {
+      if (held && held.contextAt) {
+        pendingFlows.delete(String(params.fid || ''));
+        log.info('saml11: the session of "' +
+                 String((session.user || {}).username || '') +
+                 '" does not meet authnContextClassRef (' +
+                 askedUris.join(' ') + ') for "' + rpId +
+                 '", and the one trip has been made.');
+        errorCodes.mark(res, 'STS-SAML-0117');
+        log.debug("Leaving Saml11Sso.interSiteTransfer(). The class was " +
+                  "not earned.");
+        return this.samlError(res, 403,
+          'The sign-in does not meet the requested class',
+          'authnContextClassRef asked for ' + askedUris.join(' ') +
+          ', and the session does not earn it.',
+          '<p>SAML 1.1 has no <code>RequestedAuthnContext</code>. The ' +
+          'non-spec <code>authnContextClassRef</code> parameter names an ' +
+          'EAP class, and this sign-in did not earn it. The SAML 2.0 ' +
+          'profile answers the same fact with ' +
+          '<code>NoAuthnContext</code>.</p>');
+      }
+      const again = held || { id: randomId(18), params: carried };
+      again.expires = Date.now() + this.requestTtlMs();
+      again.contextAt = Date.now();
+      pendingFlows.set(again.id, again);
+      log.info('saml11: "' + rpId + '" asked for ' +
+               askedUris.join(' ') + ' and the session of "' +
+               String((session.user || {}).username || '') +
+               '" has not earned it; sent to sign in.');
+      const whereClass = beginAuthentication({
+        returnTo: req.path + '?fid=' + encodeURIComponent(again.id),
+        hint: String((session.user || {}).username || ''),
+        forceKey: eapDemand.forceKey,
+        phishingClass: eapDemand.phishingClass,
+        protocol: 'SAML 1.1',
+        application: rpId,
+        details: [
+          { label: 'authnContextClassRef', value: askedUris.join(' '),
+            note: 'a non-spec parameter. The class was required and this ' +
+                  'session has not earned it.' }
+        ]
+      });
+      log.debug("Leaving Saml11Sso.interSiteTransfer(). A step-up for the " +
+                "requested class.");
+      return res.set('Cache-Control', 'no-store').redirect(303, whereClass);
     }
 
     // --- step 4: the answer
@@ -2204,6 +2280,8 @@ class Saml11Sso {
       const whereAgain = beginAuthentication({
         returnTo: req.path + '?fid=' + encodeURIComponent(again.id),
         hint: String((session.user || {}).username || ''),
+        forceKey: eapDemand.forceKey,
+        phishingClass: eapDemand.phishingClass,
         protocol: 'SAML 1.1',
         application: rpId,
         details: [
@@ -2243,7 +2321,9 @@ class Saml11Sso {
         returnTo: req.path + '?fid=' + encodeURIComponent(again.id),
         hint: String((session.user || {}).username || ''),
         forceMfa: roleAnswer.risk.factor === 'second-factor',
-        forceKey: roleAnswer.risk.factor === 'security-key',
+        forceKey: roleAnswer.risk.factor === 'security-key' ||
+                  eapDemand.forceKey,
+        phishingClass: eapDemand.phishingClass,
         protocol: 'SAML 1.1',
         application: rpId
       });
@@ -2283,6 +2363,7 @@ class Saml11Sso {
       session: session, rpId: rpId, providerId: providerId, acsUrl: acsUrl,
       profile: wanted.profile, target: String(carried.TARGET || ''),
       nameIdFormat: String(carried.format || ''), how: who,
+      requestedUris: askedUris,
       // THE PATH SEGMENT THIS FLOW ARRIVED ON, carried beside `rpId` because
       // they are two different NAMES for the same relying party and only one
       // of them is what an artifact is later resolved at. `rpId` is
@@ -2305,7 +2386,8 @@ class Saml11Sso {
     const assertion = this.buildAssertionFor({
       session: session, rpId: ctx.rpId, providerId: ctx.providerId,
       profile: ctx.profile,
-      nameIdFormat: ctx.nameIdFormat, locality: this.localityOf(req)
+      nameIdFormat: ctx.nameIdFormat, locality: this.localityOf(req),
+      requestedUris: ctx.requestedUris
     });
     this.rememberAssertion(assertion);
 

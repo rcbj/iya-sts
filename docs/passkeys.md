@@ -1332,9 +1332,17 @@ way, because the browser refuses the ceremony before the service sees it.
   requires user verification, records two.
 * **A minimum PIN length is reported only by security keys configured to tell
   this service.** Platform authenticators and synced passkeys report nothing.
-* **SAML and WS-Federation do not yet carry `phr` / `phrh`**, and a GNAP
-  request cannot ask for them. With `acr_values=phrh`, the passkey step does
-  not yet narrow the browser's choice to the passkeys that can earn it.
+* **SAML honours the EAP class URIs.** A SAML 2.0 `RequestedAuthnContext`,
+  or SAML 1.1's non-spec `authnContextClassRef` parameter, naming only
+  `phr` or only `phrh` is the same demand as `acr_values`. When the request
+  does not name them, the assertion's class is unchanged. A WS-Federation
+  `wauth` naming one of those URIs, and a GNAP `interact.acr` of `phr` or
+  `phrh`, are the same demand. With `acr_values=phrh`
+  (or a required detail acr of `phrh`), the passkey step offers only
+  passkeys whose recorded attestation is trusted and whose backup
+  eligibility is clear, and says so before the ceremony when none of the
+  held keys can earn it. A usernameless sign-in has no list to narrow and
+  is still refused after the ceremony.
 * **Only some authenticators make ML-DSA passkeys**, and the service cannot
   tell beforehand which. It helps after a failure instead (the classical
   retry).
@@ -1353,8 +1361,9 @@ way, because the browser refuses the ceremony before the service sees it.
   built yet ([#939](https://github.com/rcbj/iya-sts/issues/939)). The refusal
   page links to registration only.
 * **Device Bound Session Credentials** (binding the session cookie to the
-  browser) are a separate, optional feature, and an application cannot yet
-  require them. See
+  browser) are a separate, optional feature. A passkey profile can require
+  a bound session (`deviceBoundRequired`), and only while
+  `authn.deviceBoundSessions` is on. See
   [Sessions](sessions.md#binding-the-cookie-to-the-browser-device-bound-session-credentials).
 * **The FIDO Alliance's conformance tools have not been run.** The relying
   party is covered by this project's own ceremony and attestation tests

@@ -2366,3 +2366,25 @@ is the action an operator's rule targets to refuse creation (by category, an
 unverified address, a level) while existing people still sign in.
 `STS-FED-0179` is its refusal.
 
+## A device-bound session an application requires (#740, 2026-10-25)
+
+Two environment attributes, sent only while `authn.deviceBoundSessions`
+is on (`AUTHN_ATTRIBUTE`):
+
+| Attribute | Values |
+|---|---|
+| `urn:sts:xacml:device-bound-session` (`DEVICE_BOUND_SESSION`) | the fact: `bound`, `skipped`, `pending`, `timedout` or `none` |
+| `urn:sts:xacml:device-bound-required` (`DEVICE_BOUND_REQUIRED`) | `true` when the application's passkey profile has `deviceBoundRequired` |
+
+The built-in issuance policy's `device-bound-session` rule denies when
+the requirement is `true` and the fact is `skipped` or `timedout`, with
+the authentication obligation naming `device-bound-session`. A missing
+attribute is an empty bag, and `string-is-in` on one is False, so the
+rule does not fire when the feature is off or the profile does not
+require a binding. `pending` is not that rule: `XacmlRolePep` holds it
+before the policy is asked (`allowed: false`, `deferred: true`, no error
+code, not counted). `skipped` and `timedout` are `STS-AUTHN-0462` there
+too, so an override written without the rule, and `xacml.enabled` off,
+still refuse. `none` and `bound` are not refusals. The fact is computed
+in `common/issuance_gate.js`, which does not require the DBSC module.
+

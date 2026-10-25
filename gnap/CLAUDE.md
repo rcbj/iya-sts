@@ -914,6 +914,45 @@ header argues the design; what a reader needs here:
   `oauth-oidc/CLAUDE.md` 3am. `interaction` and `consentActions` need
   nothing there: the consent screen asks for every detail every time.
 
+## `interact.acr`: `phr` and `phrh` on one interaction (#738)
+
+RFC 9635 has no field for the two OpenID Connect EAP classes. A grant
+request names them on **`interact.acr`**, the short names **`phr`** and
+**`phrh`** (not the EAP URIs `signInFor()` compares). A string or an
+array; empties dropped. `gnap_request.ts`'s `interactAcrDemand()` is the
+one classification, the same three lines as `StepUp.phishingClassFor()`
+for a list of only those names. `gnap_approval.ts`'s header argues it.
+
+* **ABSENT, OR ANY OTHER TOKEN, AND THE GRANT IS UNCHANGED.** A mixed
+  list is kept on the request so it is visible, and it is not a demand:
+  something else in the list can answer, the way a SAML class list that
+  names another class forces nothing here. No new flag, and a trusted
+  client's skip stands.
+* **ONLY `phrh`** forces a key and `phishingClass` `phrh` (the passkey
+  step offers keys that can earn it). **`phr`, or `phr` with `phrh`**,
+  forces a key and `phishingClass` `''`: either class answers, and a
+  synced key still earns `phr`. The floor only is required — `phrh`, or
+  else `phr`, which a hardware key also meets — because a catalogue acr
+  is each mandatory and listing both would make both mandatory.
+* **ONE TRIP, THEN REFUSE.** The approval page's existing step-up
+  (`step_up_honoured=1`) carries the class. No second loop. Still unmet
+  when the person comes back, `request_denied` and **`STS-GNAP-0905`**
+  (recorded, never sent). A catalogue acr unmet on that same return is
+  0905 when the class is still unmet; a catalogue-only shortfall stays
+  `STS-GNAP-0899`. The first sign-in, when there is no session yet, does
+  not set the return marker: that marker covers every shortfall.
+* **A SKIP CANNOT EARN IT.** No session exists to meet the class, so a
+  trusted client is not issued the grant (`STS-GNAP-0893` when it offers
+  no interaction; with interaction, the page). 0905 is only the refusal
+  after the trip.
+* **THE XACML FACT** is the existing
+  `urn:sts:xacml:phishing-resistance`. The issuance gate computes it
+  from the session, and only for a browser kind. GNAP access-token
+  issuance passes that session and does not pass a `phishingResistance`
+  argument: the gate does not read one. OAuth's token issuance passes
+  the same. A SAML subject assertion is a browser kind, so that check
+  already gets the fact from the session it is given.
+
 ## The interaction pages are a static surface (#578, 2026-10-12)
 
 #569 converts every page a person reads into a static application on
@@ -994,6 +1033,7 @@ needs here:
 | 0860–0877 | #432 phase 5: unreadable limits (0860); the owner policy (0861 a non-owner, 0863 an unanswered lookup); the approval page refusing a non-owner (0862), a raised limit (0866) or a lowered one its schema refuses (0867); a registration's owners (0864, 0865); a derivation raising a limit (0868); a lookup failing (0869); `gnap_spend.ts`'s spend (0870 over a limit, 0871 outside the window or interval, 0872 the receiver, 0873 the currency, 0874 an unreadable body, 0875 the store, 0876 a failed operation refunded — retired with the demonstration resource server by #593 — 0877 a refund that could not be made) |
 | 0890–0901 | #432 phase 6: a right dropped at issue for an approval without the page (0890) or short of its acr (0891); a trusted client that must interact (0892) or has no session for an acr (0893); an absent owner's time run out (0894); a derivation beyond the original needing its owner (0895) or short of the original's acr (0896); the owner's queue full (0897), the owner homed in another cell (0898), an unmet step-up (0899), the notice not queued (0900), an unknown owner (0901) |
 | 0902–0904 | #496, #505 and #593: an unregistered application in product (0902), a location naming no registered resource server in product (0903), an access token request naming no resource server at all, in every mode (0904) — see *A token for nobody in particular* below |
+| 0905 | #738: `interact.acr` of only `phr` and/or `phrh` was unmet after the one interaction (`request_denied`). A skip that never starts that interaction stays 0893 |
 
 `tests/error_codes.js` carries `gnapError(res`, `interactionError(res` and
 `apiRefusal(res` as failure patterns.
@@ -1004,7 +1044,7 @@ needs here:
 |---|---|
 | `tests/http_signatures.js` | RFC 9421 / 9530 / 8941, including the Appendix B and section 2.4 vectors (it was `tests/gnap_httpsig.js` until #178) |
 | `tests/gnap_token_formats.js` | one matrix over all five formats (the JWT two through an adapter), and attenuation for the three that attenuate; since #432 the full model carries a two-link `act` chain every format round-trips, an `act` appended to a macaroon by a holder is refused (0316), and the chain's grammar; since phase 5 a right with every kind of limit and the model's `grant` round-trip too |
-| `tests/gnap_request.js` | which layer refuses what — the schemas, control characters, the walkers — RFC 7638's thumbprint and RFC 9635's two interaction hash vectors |
+| `tests/gnap_request.js` | which layer refuses what — the schemas, control characters, the walkers — RFC 7638's thumbprint and RFC 9635's two interaction hash vectors; `interact.acr` (#738) as a string or an array, a mixed list kept and not a demand |
 | `tests/realm_isolation.js` | the GNAP stores are per realm and purged with it, and no module-scope Map |
 | `tests/protocol/sts_gnap_core.js` | the client instance's whole protocol over HTTP, every refusal by its error code — and since #432 phase 7 a reference refused from another client, the subject released once (section 7), and `/portal/gnap` and the per-person `/admin-api` operations (section 15). Its section 6 push listener presents a certificate from a CA the job makes at run time and sets `gnap.pushCaFile` to it (#171; skipped with no directory shared with the service), so the push is VERIFIED in both modes |
 | `tests/outbound_tls.js`, `tests/protocol/sts_outbound_tls.js` | the push finish's transport policy beside SSF's, federation's and XACML's (#171) |
@@ -1015,7 +1055,7 @@ needs here:
 | `tests/gnap_limits_ownership.js` | #432 phase 5 in process: the limits vocabulary and "lower", ownership from a resource set and by a stubbed lookup, the owner rules at both stages, `limitsRaised()`, `gnap_spend.ts`'s totals and the shared store's statement |
 | `tests/protocol/sts_gnap_limits.js` | the same over HTTP: a group owner registered on a resource set, a stranger refused on the approval page, a member approving, limits and `grant_id` at introspection, a limit lowered on the page and read off the token by the job, the test peer's resource server (#586; `tests/CLAUDE.md`, *THE TEST PEER*) spending to the limit from what introspection hands it, refunding and refusing |
 | `tests/gnap_person_grants.js` | #432 phase 7 in process: per-client opaque identifiers and references, subject released once on an authorization, the grant lifetime and the expiry job, finalization reasons, `too_fast`, self-declared display, one person's grants and who may revoke them |
-| `tests/gnap_interaction.js` | #432 phase 6 in process: the interaction and acr verdicts, who may skip through `createGrant()`, a remembered approval and `gnap.consentRequired` off not standing in for `always`, the issue stage's two drops, the step-up and its refusal, the absent owner's queue, answer, cap, timeout, forward and unknown name, `gnap.allowCrossUser` gone |
+| `tests/gnap_interaction.js` | #432 phase 6 in process: the interaction and acr verdicts, who may skip through `createGrant()`, a remembered approval and `gnap.consentRequired` off not standing in for `always`, the issue stage's two drops, the step-up and its refusal, the absent owner's queue, answer, cap, timeout, forward and unknown name, `gnap.allowCrossUser` gone; `interact.acr` (#738) on that step-up, the one-trip refusal `STS-GNAP-0905`, and a skip that the class blocks |
 | `tests/protocol/sts_gnap_interaction.js` | the same over HTTP: `never` without interaction, the trusted client against `always` and a consent action, a remembered `always` drawing the page again, an `mfa` type's step-up and refusal, and an absent owner approving and denying on `/portal/ciba` while the client polls |
 | `tests/gnap_interact_api.js` | #578 in a child serving the whole stack: the shells and their policy, the bundle, the index, the start mode's 303 and its 400 refusals, the approval page's redirect to the sign-in screen, a cancelled sign-in's finish with a verified hash, the view (facts, `csrf`, `next: page` with no session), the binding (415, 403 three ways, an unknown field, a bad limit control), Allow answering the finish URI with the section 4.2.3 hash and only the ticked right approved, a second answer refused, Deny's done view, the user code case-folded and spent once, the old form POSTs gone, and the compiled renderer drawing the API's view. The pages' renderers are held by `tests/web_surfaces.js`'s round trip |
 | `tests/access_token_status.js` | #432 p2b in process: the access-token list, both JWT formats' claim, the bit after `revokeTokens()` and after the register forgets, the biscuit list, discovery, and `rsCovers()` |

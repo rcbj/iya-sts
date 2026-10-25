@@ -253,7 +253,13 @@ const DEFS: Record<string, any> = {
         type: 'object', maxProperties: 16,
         properties: { ui_locales: strings(32, 64) },
         additionalProperties: true
-      }
+      },
+      // #738. Not an RFC 9635 member: the short names phr and phrh, sent
+      // as a string or as an array (a repeated value). 256 so an EAP URI
+      // is a token the walker can decline, not a schema refusal.
+      // Unknown siblings stay accepted (additionalProperties below).
+      acr: { anyOf: [str(256), { type: 'array', maxItems: 16,
+                                 items: str(256) }] }
     },
     additionalProperties: true
   },

@@ -154,6 +154,7 @@
   "overview.deviceBound": "Bound to this browser",
   "overview.deviceBoundYes": "Yes, to a {alg} key this browser holds",
   "overview.deviceBoundNo": "No",
+  "overview.deviceBoundSkipped": "Binding skipped ({reasons})",
   "overview.unstated": "unstated",
   "overview.sessionEnds": "This session ends",
   "overview.timesSignedIn": "Times you have signed in",

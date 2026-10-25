@@ -35,7 +35,7 @@ function of a merged implementation:
 | the relying party names itself | `<saml:Issuer>` on the request | it cannot — `providerId`, the path segment, or GUESSED from the TARGET's origin |
 | a failure goes | to the service provider, as a Response with a status | to a PAGE — there is nothing to answer |
 | Single Logout | both directions | **does not exist in the protocol** |
-| `ForceAuthn`, `IsPassive`, `RequestedAuthnContext` | all three implemented | **no spelling in the protocol** |
+| `ForceAuthn`, `IsPassive`, `RequestedAuthnContext` | all three implemented; the EAP class URIs are #736 | **no spelling in the protocol.** The non-spec `authnContextClassRef` parameter carries those URIs (#736) |
 | the artifact | 44 bytes, type 0x0004, stands for a MESSAGE | 42 bytes, type 0x0001, stands for an ASSERTION |
 | the SOAP endpoint answers | ArtifactResolve | four request types, including an attribute authority |
 
@@ -977,6 +977,40 @@ keeps the session and moves `auth_time` (`authn/CLAUDE.md`), which is what the f
 `AuthnInstant` in the Response comes from. `tests/saml2_force_authn.js` pins all of it
 over HTTP; four mutants, all caught — the cancellation one only after the test asserted
 HOW the cancellation was reported.
+
+## THE EAP PHISHING-RESISTANT CLASSES (#736, 2026-10-25)
+
+A `RequestedAuthnContext` that names the OpenID Connect EAP ACR Values 1.0
+class URIs is the same demand `acr_values=phr` / `phrh` is. The URIs are
+registered by that profile's section 5 (IANA Level of Assurance Profiles),
+and they live on `common/phishing_resistance.ts` — `URI_PHR`, `URI_PHRH` —
+rather than in a second table here:
+
+* `http://schemas.openid.net/pape/policies/2007/06/phishing-resistant` (`phr`)
+* `http://schemas.openid.net/acr/2016/07/phishing-resistant-hardware` (`phrh`)
+
+**Comparison is read as exact, which is the specification's default:** any
+named class can satisfy. `signInFor()` therefore forces a key only when every
+`AuthnContextClassRef` is one of those two URIs, and sets `phishingClass`
+`phrh` only when every one of them is the hardware URI. A list that also
+names `PasswordProtectedTransport`, or any class in `AC_MFA_DEMANDS`, does
+not force the key: that other class can answer the request, and the
+multi-factor demand keeps the behaviour it already had. When the request
+names neither URI, the assertion's `AuthnContextClassRef` is the value
+`authn_context.ts` already produced. When it names one and the session
+earned it, the assertion carries that URI — `phrh` when both were asked and
+both were earned.
+
+An unmet EAP-only list takes the one trip above and then `NoAuthnContext`
+(`STS-SAML-0116`), the same shape as an unmet multi-factor class
+(`STS-SAML-0056`). `IsPassive` still answers `NoPassive` (`STS-SAML-0008`).
+
+**SAML 1.1 has no `RequestedAuthnContext`.** The non-spec
+`authnContextClassRef` parameter is the same device as `format` and
+`profile`: absent, `AuthenticationMethod` is unchanged; present and naming
+only an EAP URI, one trip and then a page (`STS-SAML-0117`), because this
+profile has nowhere to put a status. `tests/eap_acr_values.js` (F) holds the
+leaf, and `tests/saml2_force_authn.js` (7–10) holds both profiles over HTTP.
 
 ---
 

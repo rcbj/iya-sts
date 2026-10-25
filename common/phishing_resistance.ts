@@ -91,6 +91,21 @@
 // which `factOf()` gives a value even when neither was earned). This file
 // only says what the evidence earned.
 //
+// **THE CLASS URIs LIVE HERE TOO (#736), AND NOWHERE ELSE.** SAML's
+// RequestedAuthnContext and WS-Federation's `wauth` name the same two
+// classes with the URIs OpenID Connect EAP ACR Values 1.0 section 5
+// registers (IANA Level of Assurance Profiles):
+//
+//   phr   http://schemas.openid.net/pape/policies/2007/06/phishing-resistant
+//   phrh  http://schemas.openid.net/acr/2016/07/phishing-resistant-hardware
+//
+// `signInFor()` is the exact-comparison reading, which is SAML's default:
+// any listed reference can satisfy. A list of only these URIs forces a key,
+// and a list of only the hardware URI must earn `phrh`. A list that also
+// names some other class forces nothing here — that other class can answer
+// the request. `assertionUri()` is the strongest asked class the session
+// earned, or '' so the caller keeps the vocabulary it already asserts.
+//
 // A LEAF, `authn_mechanisms.ts`'s shape: bunyan and nothing of this service,
 // so `common/issuance_gate.js` — in the parent project's Kerberos COPY
 // closure — can require it LAZILY on a browser issuance without owing a COPY
@@ -124,6 +139,13 @@ if (logLevelProblem) {
 const PHR = 'phr';
 const PHRH = 'phrh';
 
+// The same two classes, as a SAML AuthnContextClassRef or a WS-Federation
+// wauth names them (EAP ACR Values 1.0 section 5). URLs stay on one line.
+const URI_PHR =
+  'http://schemas.openid.net/pape/policies/2007/06/phishing-resistant';
+const URI_PHRH =
+  'http://schemas.openid.net/acr/2016/07/phishing-resistant-hardware';
+
 // What the XACML fact carries when neither was earned, so a rule can tell
 // "not phishing-resistant" from "not asked" — an absent designator is an
 // empty bag either way.
@@ -151,6 +173,14 @@ class PhishingResistance {
    * What the XACML fact says when neither was earned.
    */
   static readonly NONE = NONE;
+  /**
+   * The SAML and WS-Federation URI for `phr`.
+   */
+  static readonly URI_PHR = URI_PHR;
+  /**
+   * The SAML and WS-Federation URI for `phrh`.
+   */
+  static readonly URI_PHRH = URI_PHRH;
 
   /**
    * Tells whether a value is one of the two EAP classes.
@@ -305,6 +335,164 @@ class PhishingResistance {
     const out = (classes || []).filter(PhishingResistance.isClass);
     log.debug('Leaving PhishingResistance.factOf().');
     return out.length ? out : [NONE];
+  }
+
+  /**
+   * Whether a STORED passkey's recorded evidence can earn `phrh` (#739).
+   * The same two facts `ofEvent()` reads off an assertion: the attestation
+   * statement is trusted, and backup eligibility was reported clear. A flag
+   * that was not recorded is not clear. A registration in the same act is
+   * not a stored key, and is not asked here.
+   *
+   * @param key - a key as `credentials.keysOf()` returns it
+   * @returns true when that record can earn `phrh`
+   */
+  static storedKeyEarnsHardware(key: any): boolean {
+    log.debug('Entering PhishingResistance.storedKeyEarnsHardware().');
+    const one = key || {};
+    const attestation = one.attestation || {};
+    const earns = attestation.trusted === true &&
+                  one.backupEligible === false;
+    log.debug('Leaving PhishingResistance.storedKeyEarnsHardware(). ' +
+              earns);
+    return earns;
+  }
+
+  /**
+   * The EAP class a SAML or WS-Federation URI names, or ''.
+   *
+   * @param uri - an AuthnContextClassRef or a wauth value
+   * @returns `phr`, `phrh`, or ''
+   */
+  static classOfUri(uri: unknown): string {
+    log.debug('Entering PhishingResistance.classOfUri().');
+    const text = String(uri === undefined || uri === null ? '' : uri).trim();
+    const out = text === URI_PHR ? PHR : (text === URI_PHRH ? PHRH : '');
+    log.debug('Leaving PhishingResistance.classOfUri(). ' + (out || 'none'));
+    return out;
+  }
+
+  /**
+   * The URI for one EAP class, or '' for anything else.
+   *
+   * @param cls - `phr` or `phrh`
+   * @returns the class URI, or ''
+   */
+  static uriOfClass(cls: unknown): string {
+    log.debug('Entering PhishingResistance.uriOfClass().');
+    const out = cls === PHRH ? URI_PHRH : (cls === PHR ? URI_PHR : '');
+    log.debug('Leaving PhishingResistance.uriOfClass().');
+    return out;
+  }
+
+  /**
+   * Class URIs from a request field: one string, a repeated parameter, or
+   * several separated by whitespace or commas. Empty pieces are dropped.
+   *
+   * @param value - what the request carried
+   * @returns the URIs, in order
+   */
+  static uriList(value: unknown): string[] {
+    log.debug('Entering PhishingResistance.uriList().');
+    const raw = Array.isArray(value) ? value : (
+      value === undefined || value === null || value === '' ? [] : [value]);
+    const out: string[] = [];
+    raw.forEach(function (one) {
+      String(one === undefined || one === null ? '' : one)
+        .split(/[\s,]+/)
+        .forEach(function (part) {
+          const text = part.trim();
+          if (text) {
+            out.push(text);
+          }
+        });
+    });
+    log.debug('Leaving PhishingResistance.uriList(). ' + out.length);
+    return out;
+  }
+
+  /**
+   * What a list of class URIs requires of the sign-in (#736). Exact
+   * comparison: any listed reference can satisfy, so a key is forced only
+   * when every reference is one of these two URIs. `phishingClass` is
+   * `phrh` only when every one of them is the hardware URI.
+   *
+   * @param uris - AuthnContextClassRef or wauth values
+   * @returns `{ forceKey, phishingClass, eapOnly }`
+   */
+  static signInFor(uris: unknown): {
+    forceKey: boolean, phishingClass: string, eapOnly: boolean
+  } {
+    log.debug('Entering PhishingResistance.signInFor().');
+    const list = PhishingResistance.uriList(uris);
+    const classes = list.map(function (one) {
+      return PhishingResistance.classOfUri(one);
+    });
+    const eapOnly = list.length > 0 && classes.every(function (one) {
+      return one === PHR || one === PHRH;
+    });
+    const onlyHardware = eapOnly && classes.every(function (one) {
+      return one === PHRH;
+    });
+    const out = {
+      forceKey: eapOnly,
+      phishingClass: onlyHardware ? PHRH : '',
+      eapOnly: eapOnly
+    };
+    log.debug('Leaving PhishingResistance.signInFor(). ' +
+              (out.eapOnly ? (out.phishingClass || PHR) : 'not eap-only'));
+    return out;
+  }
+
+  /**
+   * Whether a session meets an EAP-only class-URI list. Any other list is
+   * not this demand — another class can answer it — and this answers true,
+   * including for an empty list. No session meets an EAP-only list.
+   *
+   * @param session - a session as `authn` keeps it, or null
+   * @param uris - the requested class URIs
+   * @returns true when the demand is met or there is none
+   */
+  static eapDemandMet(session: any, uris: unknown): boolean {
+    log.debug('Entering PhishingResistance.eapDemandMet().');
+    const demand = PhishingResistance.signInFor(uris);
+    if (!demand.eapOnly) {
+      log.debug('Leaving PhishingResistance.eapDemandMet(). Not an ' +
+                'EAP-only list.');
+      return true;
+    }
+    const earned = PhishingResistance.ofSession(session);
+    const met = demand.phishingClass === PHRH
+      ? earned.indexOf(PHRH) >= 0
+      : earned.indexOf(PHR) >= 0;
+    log.debug('Leaving PhishingResistance.eapDemandMet(). ' + met);
+    return met;
+  }
+
+  /**
+   * The class URI to put on an assertion when the request named one and
+   * the session earned it: `phrh` over `phr`. '' when nothing was asked or
+   * nothing earned was asked, so the caller keeps its own class.
+   *
+   * @param session - a session as `authn` keeps it, or null
+   * @param uris - the requested class URIs
+   * @returns the URI, or ''
+   */
+  static assertionUri(session: any, uris: unknown): string {
+    log.debug('Entering PhishingResistance.assertionUri().');
+    const asked = PhishingResistance.uriList(uris).map(function (one) {
+      return PhishingResistance.classOfUri(one);
+    });
+    const earned = PhishingResistance.ofSession(session);
+    let out = '';
+    if (asked.indexOf(PHRH) >= 0 && earned.indexOf(PHRH) >= 0) {
+      out = URI_PHRH;
+    } else if (asked.indexOf(PHR) >= 0 && earned.indexOf(PHR) >= 0) {
+      out = URI_PHR;
+    }
+    log.debug('Leaving PhishingResistance.assertionUri(). ' +
+              (out ? 'a class' : 'the caller\'s own'));
+    return out;
   }
 }
 

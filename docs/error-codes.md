@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4624** of them, in **47** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4632** of them, in **47** subsystems.
 
 ## Where a code appears
 
@@ -63,11 +63,11 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 377
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 381
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 724
-* [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 115
+* [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 117
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 33
-* [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 29
+* [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 30
 * [Federation (`STS-FED`)](#sts-fed) — 171
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 242
@@ -83,7 +83,7 @@ is an ordinary outcome.
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 48
 * [Mail (`STS-MAIL`)](#sts-mail) — 40
 * [Languages and locales (`STS-I18N`)](#sts-i18n) — 12
-* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 355
+* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 356
 * [Device register (`STS-DEVICE`)](#sts-device) — 52
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 29
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 98
@@ -1557,6 +1557,10 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0456` | A passkey upgrade's steps arrived out of order: a registration before the proof of possession, a second proof, or an upgrade in progress finished through the ordinary enrolment's finish (or an ordinary enrolment through the upgrade's). Nothing was changed. | HTTP 400 from POST /account-api/keys or /account-api/keys/upgrade |
 | `STS-AUTHN-0457` | A passkey upgrade's new post-quantum passkey verified, but the classical passkey it upgrades was removed or upgraded by another request since the proof of possession, so nothing was written. | HTTP 400 from POST /account-api/keys/upgrade |
 | `STS-AUTHN-0458` | A passkey upgrade's registration was not completed by the browser: it reported an error, or posted no credential. No classical retry is offered for an upgrade, whose point is ML-DSA; the upgrade is dropped and the classical passkey is unchanged. | HTTP 400 from POST /account-api/keys/upgrade |
+| `STS-AUTHN-0459` | A sign-in that must earn phrh (OpenID Connect EAP ACR Values 1.0) reached the passkey step, and none of the keys held for that step's role has recorded evidence that can earn it: trusted attestation and backup eligibility clear. Said before the ceremony is armed, and again if an assertion names some other key of the role. A discoverable sign-in cannot be narrowed this way and is refused afterwards (STS-OAUTH-0971). | HTTP 400 from the passkey step when acr_values or a required detail acr is phrh |
+| `STS-AUTHN-0460` | A Secure-Session-Skipped header was not an RFC 9651 list of sf-tokens, or a session_identifier in it was not an sf-string. Recorded on the log and the audit row. The request continues and the session is not marked skipped (#743). | log and audit; the request is not refused |
+| `STS-AUTHN-0461` | A passkey policy save was refused: it requires a device-bound session (deviceBoundRequired) while authn.deviceBoundSessions is off, so no browser would be offered the registration the requirement asks for (#740). | HTTP 400 (management API) |
+| `STS-AUTHN-0462` | An issuance was refused: the application's passkey profile requires a device-bound session and the session's fact is skipped or timedout. A fact that is still pending is a hold, not this refusal, and a session that was never offered registration is not this refusal (#740). | the issuance site's existing denial (the code is recorded, not sent) |
 | `STS-AUTHN-0440` | An administrator's passkey enrolment for a person was refused: the person's passkey policy profile does not allow one (adminEnrolment is off, the default). Asked when the ceremony is begun and again where the key is written, so a switch turned off during the ceremony refuses it too. | HTTP 400 from /admin-api/users/{begin,finish}-passkey-enrolment |
 | `STS-AUTHN-0441` | An administrator's passkey enrolment named nobody this realm's directory holds. Refused in every mode: development's creating a person at their first sign-in is not something an administrator's act on a name may do. | HTTP 400 from /admin-api/users/begin-passkey-enrolment |
 | `STS-AUTHN-0442` | An administrator's passkey enrolment was finished with none in progress for that administrator and person: it expired (five minutes at most), it was already finished or refused (it is single use), or another administrator began it. | HTTP 400 from /admin-api/users/finish-passkey-enrolment |
@@ -2423,6 +2427,8 @@ Raised from: saml/.
 | `STS-SAML-0113` | A SAML 1.1 sign-in started here — /saml11/sso with a TARGET and no shire — was refused: saml11.idpInitiatedSso is off for that relying party (the realm default, off, unless saml11IdpInitiatedSso on its entry turns it on). #711. | HTTP 403 page |
 | `STS-SAML-0114` | A SAML 1.1 sign-in the relying party started — a request carrying shire, the Shibboleth 1.3 AuthnRequest profile — was refused: saml11.spInitiatedSso is off for that relying party (saml11SpInitiatedSso FALSE on its entry, or the realm setting). The request is unsigned, so this closes a door rather than proving where a request came from. #711. | HTTP 403 page |
 | `STS-SAML-0115` | A SAML 1.1 flow came back from its one trip to the sign-in screen and the issuance policy still asked for a step-up on the session's risk; it is not sent round again. #711. | HTTP 403 page |
+| `STS-SAML-0116` | A SAML 2.0 AuthnRequest named only the EAP phishing-resistant class URIs (phr, or only phrh) and the session still had not earned the class after the one trip to the sign-in screen. NoAuthnContext, not a second trip. A list that also names some other class is not this refusal. #736. | Responder / NoAuthnContext |
+| `STS-SAML-0117` | A SAML 1.1 sign-in carried the non-spec authnContextClassRef parameter naming only an EAP phishing-resistant class, and the session still had not earned it after the one trip to the sign-in screen. A page, because this profile has no status to carry. #736. | HTTP 403 page |
 
 ## STS-WSTRUST
 
@@ -2503,6 +2509,7 @@ Raised from: ws-federation/.
 | `STS-WSFED-0027` | An identity-provider-initiated sign-in to a relying party with no usable registered wsfedReplyUrl: none, only observed ones, or a first one that is not an absolute http(s) URL (#712). | HTTP 400 error page |
 | `STS-WSFED-0028` | A wsignin1.0 from a relying party for which a sign-in it starts is turned off: wsfed.spInitiatedSso, or wsfedSpInitiatedSso on its entry, is FALSE (#426, #712). | HTTP 403 error page (the profile defines no error response) |
 | `STS-WSFED-0029` | An identity-provider-initiated sign-in back from its one step-up on risk (sts_risk_retry=1) was still denied on risk by the issuance policy, and was refused rather than sent round again (#712). | HTTP 403 error page |
+| `STS-WSFED-0030` | A wsignin1.0 named an EAP phishing-resistant class URI as wauth (phr, or only phrh) and the session still had not earned that class after the one trip to the sign-in screen. A page, because this profile has no status to carry. Two class URIs in one wauth stay the unknown-method refusal (#737). | HTTP 400 error page |
 
 ## STS-FED
 
@@ -4319,6 +4326,7 @@ Raised from: gnap/.
 | `STS-GNAP-0902` | Product mode: a GNAP request was proved with a key, or named an instance identifier, belonging to an application nobody registered (no appRegisteredBy; an entry created on first sight in development is not a registration) (#496). | invalid_client or invalid_resource_server (HTTP 401, RFC 9635 section 2.3.3) |
 | `STS-GNAP-0903` | Product mode: a GNAP access right named a location that is no registered resource server — none of this service's own, no registered application by audience, permission base URI, client_id or identifier, and not at or under a registered GNAP resource server's gnapResourceServerUri — so the request was refused rather than the right dropped (#505). | invalid_request (HTTP 400, RFC 9635 sections 3.6 and 8) |
 | `STS-GNAP-0904` | A GNAP access token request's access named no resource server — no registered reference, no location at or under a registered resource server's gnapResourceServerUri, no type a registered resource server declares, and not this service's own Shared Signals transmitter — so the token would have been for nobody in particular and the request was refused, in every mode. The default audience (the demonstration resource server) went with it (#593). | invalid_request (HTTP 400, RFC 9635 sections 3.6 and 8) |
+| `STS-GNAP-0905` | A GNAP grant's interact.acr named only phr, or only phrh, and the session still had not earned that class after the one interaction. A list that also names some other token is not this refusal (#738). | RFC 9635 section 3.6 (request_denied, HTTP 403), at the next continuation |
 
 ## STS-DEVICE
 

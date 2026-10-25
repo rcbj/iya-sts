@@ -13284,6 +13284,14 @@ The header quotes section 2 and argues each row:
 * **The evidence is on the event**: `authn.ts` records `ceremony` and
   `attestationTrusted` beside `backupEligible` (`authn/CLAUDE.md`, the event's
   credential).
+* **A stored key is the same two facts** (#739): `storedKeyEarnsHardware()`
+  reads `attestation.trusted === true` and `backupEligible === false` off the
+  key row, which is what the passkey step's `allowCredentials` is narrowed
+  by when the sign-in must earn `phrh` (`authn/CLAUDE.md`).
+* **The class URIs are this leaf's too** (#736): `URI_PHR` and `URI_PHRH`,
+  the URIs EAP ACR Values 1.0 section 5 registers. `signInFor()`,
+  `eapDemandMet()` and `assertionUri()` are what SAML reads, so a protocol
+  module does not keep a second table (`saml/CLAUDE.md`).
 * **`factOf()` is never empty**: `none` when nothing was earned. That is the
   issuance policy's `urn:sts:xacml:phishing-resistance`, so a rule can tell
   "not phishing-resistant" from "not asked" (`xacml/CLAUDE.md`).

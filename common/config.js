@@ -2038,6 +2038,36 @@ const SETTINGS = [
                  'before the browser must prove its key again, and so how ' +
                  'long a copied pair of cookies keeps working. Never past ' +
                  'the session\'s own end. Read when a cookie is issued.' },
+  // #742. Off is today's host-only cookie. On, Domain is the registrable
+  // domain. Read where the instructions and the cookie are written.
+  { key: 'authn.deviceBoundIncludeSite', group: 'Web security',
+    label: 'Scope a bound session to the registrable domain',
+    env: 'STS_AUTHN_DEVICE_BOUND_INCLUDE_SITE', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'Off, the default, a device-bound session\'s cookie is ' +
+                 'host-only, which is what this service has always done, ' +
+                 'and scope.include_site is false. On, the instructions ' +
+                 'set include_site and the cookie\'s Domain is the ' +
+                 'registrable domain of the host that registered (the ' +
+                 'webauthn.rpId when that is a suffix of the host, ' +
+                 'otherwise the last two labels; an address, localhost ' +
+                 'or a single label is not widened). The debugger\'s ' +
+                 'public host and a custom listener\'s host under that ' +
+                 'domain are excluded. A debugger on the same host and ' +
+                 'another port cannot be excluded: cookies are not ' +
+                 'port-scoped. Realm path prefixes are the same origin.' },
+  // #740. Read at each issuance. Zero is legal: the wait has elapsed.
+  // There is no timer.
+  { key: 'authn.deviceBoundIssuanceWaitS', group: 'Web security',
+    label: 'How long issuance waits for a device binding (seconds)',
+    env: 'STS_AUTHN_DEVICE_BOUND_ISSUANCE_WAIT_S', type: 'int',
+    dflt: 60, min: 0, max: 86400, runtime: true,
+    description: 'How long an issuance that requires a device-bound ' +
+                 'session waits after registration was offered. Read at ' +
+                 'the issuance, not by a timer: past it the session\'s ' +
+                 'fact is timedout and the issuance is refused. Zero ' +
+                 'means the wait has already elapsed. A session that was ' +
+                 'never offered registration is not refused by the wait.' },
 
   // #345, #350: the sign-on session store's size cap, per realm. At the
   // cap a new row is refused. A subject's own cap is the next two rows.

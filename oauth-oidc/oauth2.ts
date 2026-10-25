@@ -11637,6 +11637,10 @@ class OAuth2Server {
               ? (nameForSubject(pairwiseSubjects.localFor(idTokenHint.sub) ||
                                 idTokenHint.sub) || '') : ''),
       forceMfa: forceMfa, forceKey: !!screen.forceKey,
+      // `phrh` ONLY WHEN NOTHING ELSE WOULD ANSWER (#739), so the passkey
+      // step offers keys that can earn it. `phr phrh` stays ''.
+      phishingClass: stepUp.phishingClassFor(stepUpNeed.acrValues,
+                                             detailAcrs),
       // WHETHER THE ACCOUNT PICKER COMES FIRST (#561), where the browser
       // holds several accounts: `prompt=login` asks for a fresh sign-in, so
       // never; `prompt=select_account` (OIDC Core section 3.1.2.1) always.

@@ -1555,6 +1555,13 @@ class GnapGrants {
         continue;
       }
       const username = grant.ro ? grant.ro.username : null;
+      // #738: the phishing-resistance fact is the session's, and the
+      // gate computes it only for a browser kind. An access token is
+      // not one, so this call passes the session and no
+      // phishingResistance argument: the gate does not read one (that
+      // would be issuance_gate.js). OAuth's token issuance passes the
+      // same session and kind. A SAML subject assertion below is a
+      // browser kind, so that check already gets the fact.
       const allowed = gate.check({
         application: grant.client.identifier, kind: gate.ISSUANCE.ACCESS_TOKEN,
         // GNAP's, not OAuth 2.0's, for the protocol-declaration rule.
@@ -2074,9 +2081,12 @@ class GnapGrants {
   // And a right that needs an authentication level is never issued with no
   // session to meet it (STS-GNAP-0893): the request goes to the page, which
   // steps the person up, or — offering no interaction — is refused. An
-  // assertion's own `acr` is not taken as that session: it is a statement
-  // about a sign-in somewhere else, at some earlier time, presented by the
-  // client that wants the token.
+  // `interact.acr` of only `phr` and `phrh` is that same bar (#738): no
+  // session has earned it yet, so a skip would issue without the class.
+  // A list that names anything else is not the demand. An assertion's own
+  // `acr` is not taken as that session: it is a statement about a sign-in
+  // somewhere else, at some earlier time, presented by the client that
+  // wants the token.
   // ---------------------------------------------------------------------------
   private skipVerdict(trusted: boolean, asked: any, resolved: any,
                       requirement: any): any {
@@ -2109,6 +2119,20 @@ class GnapGrants {
       log.debug("Leaving GnapGrants.skipVerdict(). An acr is needed.");
       return { skip: false, forPerson: false, code: 'STS-GNAP-0893',
                why: 'a right needs authentication level ' + acrs.join(' ') +
+                    ', which only a session the resource owner signs in ' +
+                    'with can meet' };
+    }
+    // #738. The class has not been earned: there is no session on a skip.
+    // 0893, not 0905 — 0905 is the refusal after the one interaction trip.
+    // Absent, empty, or mixed: not a demand, and the skip stands.
+    const interact = asked && asked.interact;
+    const demand = this.deps.request.interactAcrDemand(
+      interact ? interact.acr : undefined);
+    if (skip && demand.eap) {
+      log.debug("Leaving GnapGrants.skipVerdict(). interact.acr needs a " +
+                "session.");
+      return { skip: false, forPerson: false, code: 'STS-GNAP-0893',
+               why: 'interact.acr asks for ' + demand.tokens.join(' ') +
                     ', which only a session the resource owner signs in ' +
                     'with can meet' };
     }
@@ -2296,8 +2320,8 @@ class GnapGrants {
     // right of an `always` type, or naming a consent action, needs its
     // owner on the page whoever asks; a request of `never` rights alone
     // needs nobody, from any client, acting as itself; and a right that
-    // needs an authentication level cannot be issued with no session to
-    // meet it.
+    // needs an authentication level, or an interact.acr of only phr and
+    // phrh (#738), cannot be issued with no session to meet it.
     const trusted = this.field(app, 'gnapSkipInteraction') === 'TRUE' &&
                     !caller.created;
     const skip = this.skipVerdict(trusted, asked, resolved, requirement);
@@ -2900,33 +2924,47 @@ class GnapGrants {
    * still does not meet it: the request is answered `request_denied`
    * (STS-GNAP-0899), recorded as the decision, and the finish method is
    * enacted — RFC 9470's "one sign-in, then refuse" in GNAP's vocabulary.
+   * `code` STS-GNAP-0905 is the same refusal when what came back unmet is
+   * `interact.acr` (#738): still `request_denied`, which is what a client
+   * is told. The code is recorded, never sent.
    *
    * @param req - the request to the approval page
    * @param grant - the grant
    * @param session - the session that came back
    * @param missing - the acr values it does not meet
+   * @param code - STS-GNAP-0899, or STS-GNAP-0905 for interact.acr
    * @returns the finish method's answer
    */
-  async refuseUnmetStepUp(req, grant, session, missing) {
+  async refuseUnmetStepUp(req, grant, session, missing, code?) {
     const { log, store, audit, monitor, subject } = this.deps;
     log.debug("Entering GnapGrants.refuseUnmetStepUp().");
+    const recorded = code || 'STS-GNAP-0899';
+    const interactAcr = recorded === 'STS-GNAP-0905';
     grant.interaction.decided = true;
     grant.decision = { approved: false, error: 'request_denied',
-                       code: 'STS-GNAP-0899',
-                       why: 'the approval needed authentication level ' +
-                            (missing || []).join(' ') + ', which the ' +
-                            'resource owner\'s sign-in did not meet (RFC ' +
-                            '9470).' };
+                       code: recorded,
+                       why: interactAcr
+                         ? 'interact.acr asked for ' +
+                           (missing || []).join(' ') +
+                           ', which the resource owner\'s one sign-in ' +
+                           'did not meet.'
+                         : 'the approval needed authentication level ' +
+                           (missing || []).join(' ') + ', which the ' +
+                           'resource owner\'s sign-in did not meet (RFC ' +
+                           '9470).' };
     const username = subject.normaliseName(session.user.username);
     grant.ro = { username: username, sessionId: session.id,
                  authTime: session.authTime, amr: session.amr,
                  acr: session.acr };
     monitor.record(grant.client.identifier, 'grant.denied',
                    { gnapError: 'request_denied' });
-    audit.failure('STS-GNAP-0899', { protocol: PROTOCOL, channel: 'http',
+    audit.failure(recorded, { protocol: PROTOCOL, channel: 'http',
       actor: username, target: grant.client.identifier,
-      summary: 'A GNAP approval needed a stronger sign-in than the resource ' +
-               'owner completed',
+      summary: interactAcr
+        ? 'A GNAP approval needed the phishing resistance interact.acr ' +
+          'asked for, and the one sign-in did not meet it'
+        : 'A GNAP approval needed a stronger sign-in than the resource ' +
+          'owner completed',
       detail: { grant: grant.id, missing: (missing || []).join(' '),
                 acr: String(session.acr || '') } });
     const finished = await this.finishInteraction(req, grant);

@@ -1689,7 +1689,11 @@ class AdminViews {
         // Which WS-Federation relying parties this session signed into. It is
         // the list wsignout1.0 has to fan out to, and seeing it is the only way
         // to know in advance what a sign-out is about to do.
-        wsfedRealms: Object.keys(session.wsfedRealms || {})
+        wsfedRealms: Object.keys(session.wsfedRealms || {}),
+        // The device-bound fact (#743): `bound`, `skipped`, `pending`,
+        // `timedout` or `none`, with the skip-reason tokens beside it.
+        // Language-free; the console translates the sentence.
+        deviceBound: authn.deviceBindingOf(session)
       },
       // THE BROWSER'S ACCOUNT SET IT BELONGS TO (#561), where it is in one —
       // several signed-in accounts in one browser, `authn/CLAUDE.md`. Only

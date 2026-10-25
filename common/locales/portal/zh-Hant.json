@@ -154,6 +154,7 @@
   "overview.deviceBound": "綁定到此瀏覽器",
   "overview.deviceBoundYes": "是，綁定到此瀏覽器持有的 {alg} 金鑰",
   "overview.deviceBoundNo": "否",
+  "overview.deviceBoundSkipped": "已略過綁定（{reasons}）",
   "overview.unstated": "未說明",
   "overview.sessionEnds": "此工作階段結束於",
   "overview.timesSignedIn": "您的登入次數",
