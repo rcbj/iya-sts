@@ -1292,9 +1292,98 @@ class ConsoleRuntime extends SpaClient {
       this.drawReauthBar(this.reauth.message || '');
     }
     this.targetFragment();
+    this.markOpenTabs();
     this.wireCopyButtons();
     this.loadPageScripts();
     this.revealActiveNav();
+  }
+
+  // THE TAB BEING READ, ON THE LINK (2026-10-25).
+  //
+  // The stylesheet names every tab id it knew when it was written and paints
+  // that link while its panel is the `:target`. A tab it does not name — a
+  // custom listener's, whose id is the operator's — shows its panel and
+  // leaves every link looking alike, which is how the Service account
+  // sub-tab read until its id was added (#602). After each draw, and
+  // whenever the fragment changes without a draw, the link whose panel is
+  // the target (or the first, when none in that bar is) gets `tab-current`,
+  // the same fill the stylesheet's own rule uses.
+  /**
+   * Marks the open tab of every tab bar on the page just drawn.
+   *
+   * @returns nothing
+   */
+  markOpenTabs(): void {
+    const doc = this.env.document;
+    if (!doc || typeof doc.querySelectorAll !== 'function' ||
+        typeof doc.querySelector !== 'function' ||
+        typeof doc.getElementById !== 'function') {
+      return;
+    }
+    const target = doc.querySelector(':target');
+    const roots = doc.querySelectorAll('.tabs, .subtabs');
+    const count = roots && typeof roots.length === 'number' ? roots.length
+      : 0;
+    for (let r = 0; r < count; r++) {
+      const kids = roots[r] && roots[r].children;
+      const nKids = kids && typeof kids.length === 'number' ? kids.length
+        : 0;
+      let bar = null;
+      for (let k = 0; k < nKids; k++) {
+        const el = kids[k];
+        if (el && el.classList && el.classList.contains('tabbar')) {
+          bar = el;
+          break;
+        }
+      }
+      if (!bar || !bar.children) {
+        continue;
+      }
+      const links = [];
+      for (let c = 0; c < bar.children.length; c++) {
+        const el = bar.children[c];
+        if (el && String(el.tagName).toUpperCase() === 'A') {
+          links.push(el);
+        }
+      }
+      let current = null;
+      for (let a = 0; a < links.length; a++) {
+        const link = links[a];
+        if (link.classList) {
+          link.classList.remove('tab-current');
+        }
+        if (typeof link.removeAttribute === 'function') {
+          link.removeAttribute('aria-current');
+        }
+        const href = String(typeof link.getAttribute === 'function'
+          ? (link.getAttribute('href') || '') : '');
+        const id = href.charAt(0) === '#' ? href.slice(1) : '';
+        const panel = id ? doc.getElementById(id) : null;
+        if (panel && target && (target === panel ||
+            (typeof panel.contains === 'function' &&
+             panel.contains(target)))) {
+          current = link;
+        }
+      }
+      if (!current) {
+        for (let a = 0; a < links.length; a++) {
+          if (!current || (links[a].classList &&
+                           links[a].classList.contains('first'))) {
+            current = links[a];
+            if (links[a].classList &&
+                links[a].classList.contains('first')) {
+              break;
+            }
+          }
+        }
+      }
+      if (current && current.classList) {
+        current.classList.add('tab-current');
+        if (typeof current.setAttribute === 'function') {
+          current.setAttribute('aria-current', 'true');
+        }
+      }
+    }
   }
 
   // THE ACTIVE TAB IS BROUGHT INTO VIEW IN THE SIDEBAR (2026-10-08). The
@@ -3134,6 +3223,9 @@ class ConsoleRuntime extends SpaClient {
         return self.send(String(method || 'GET'),
                          self.apiOrigin() + String(path), body);
       };
+      this.env.window.addEventListener('hashchange', function () {
+        self.markOpenTabs();
+      });
       this.env.window.addEventListener('popstate', function () {
         // A FRAGMENT'S OWN NAVIGATION — a tab pressed, or targetFragment() —
         // changes neither the path nor the query, and the browser has
@@ -3142,6 +3234,7 @@ class ConsoleRuntime extends SpaClient {
         // and fall back to the first.
         if (self.env.location.pathname + self.env.location.search ===
             self.drawnAt) {
+          self.markOpenTabs();
           return;
         }
         self.prefix = ConsoleRuntime.prefixOf(self.env.location.pathname);
