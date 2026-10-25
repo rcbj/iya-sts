@@ -344,6 +344,44 @@ class AccountKeys {
     return out;
   }
 
+  // THE CLASSICAL RETRY STAYS (#961) only for the report the guidance sends.
+  // offerFallback() posts the browser error with its own `capabilities`
+  // property — null where the platform reported none, which JSON keeps —
+  // and only when it is about to show the guidance. The ordinary refusal is
+  // `{ error }` with no such property, and that one is abandoned, as on
+  // 2026-09-26: keeping every browser error re-armed the same ceremony on
+  // every reload. The mark is the property, not the error's name. The
+  // ceremony log's declined registration posts `{ error: 'NotAllowedError' }`
+  // with no capabilities through confirmKeyEnrolment(), not this door, and
+  // still records reason `browser`. An upgrade's create phase draws the
+  // guidance with no classical begin and is dropped by confirmKeyUpgrade();
+  // this door is an enrolment, so a record marked upgrade is never kept.
+  // The condition is enrolView()'s: the one that draws `#wa-fallback` with
+  // a classical begin.
+  /**
+   * Whether a browser refusal is the guidance's report of a ceremony whose
+   * classical retry is still offered.
+   *
+   * @param credential - the posted ceremony answer
+   * @param waiting - the pending enrolment, read before the answer
+   * @returns whether the enrolment stays
+   */
+  private keepsClassicalRetry(credential: Json, waiting: Json): boolean {
+    const { log, webauthnPolicy } = this.deps;
+    log.debug("Entering AccountKeys.keepsClassicalRetry().");
+    const held = waiting || {};
+    const reported = !!credential && typeof credential === 'object' &&
+      Object.prototype.hasOwnProperty.call(credential, 'capabilities');
+    const lane = String(held.lane || 'classical');
+    const classicalOnly = held.classicalOnly === true;
+    const offers = reported && !held.upgrade && !!held.id &&
+      !classicalOnly &&
+      webauthnPolicy.asksPostQuantum(lane, classicalOnly) &&
+      webauthnPolicy.classicalFallbackOffered(lane);
+    log.debug("Leaving AccountKeys.keepsClassicalRetry(). " + offers);
+    return offers;
+  }
+
   // THE SIGNAL API'S DATA (#470, WebAuthn Level 3 section 5.1.10): every
   // credential id this person may still sign in with and their name, told
   // to the credential manager. ONLY UNDER A USER HANDLE THIS SERVICE MINTED
@@ -628,7 +666,19 @@ class AccountKeys {
         // timed out, or has no authenticator of the kind asked for. Keeping
         // the pending enrolment re-armed that same ceremony on every reload,
         // so it is abandoned and the sentence says what to try.
+        // EXCEPT THE REPORT THE GUIDANCE SENDS (#961): that post carries its
+        // own `capabilities` property, and where this enrolment's fallback
+        // offers the classical begin the enrolment stays and the answer
+        // carries no view, so a runtime that drew it would not replace the
+        // ceremony. The refusal is still audited above, as it always was.
         let why = (done.errors || ['The passkey could not be created.'])[0];
+        if (done.reason === 'browser' &&
+            this.keepsClassicalRetry(credential, waiting)) {
+          log.debug("Leaving AccountKeys.enrol(). The browser refused; " +
+                    "the classical retry stays.");
+          return ctx.refuse(res, 400,
+            ctx.errorCodes.codeOf(done) || 'STS-PORTAL-0036', why);
+        }
         if (done.reason === 'browser') {
           credentials.abandonKeyEnrolment(username);
           why += asked === 'security-key'
@@ -945,10 +995,13 @@ class AccountKeys {
         description: '`begin` mints a challenge and holds it (the policy ' +
           'and the `lane`, #643, checked at the door; `algorithms: ' +
           'classical`, #944, the classical retry, refused where the realm ' +
-          'forbids a classical passkey); `finish` verifies ' +
-          'the browser\'s registration with the sign-in screen\'s address rules and ' +
+          'forbids a classical passkey); `finish` verifies the browser\'s ' +
+          'registration with the sign-in screen\'s address rules and ' +
           'answers `go` naming the new passkey; `cancel` drops the waiting ' +
-          'one. A refusal carries the page\'s `view`.',
+          'one. A refusal carries the page\'s `view`, except a browser ' +
+          'error reported with its own `capabilities` property while the ' +
+          'classical retry is offered (#961): that enrolment stays and the ' +
+          'answer carries no view.',
         body: ENROL_KEY_FORM,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {

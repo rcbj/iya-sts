@@ -15,7 +15,9 @@
 //
 // THE CEREMONY IS THE SAME MARKUP THE SERVER DREW — `#wa-data`, `#wa-go`,
 // `#wa-form` with its hidden `#wa-credential` — and the runtime runs it
-// (`web_portal_webauthn.ts`) and sends `#wa-form` to `/account-api`; the
+// (`web_portal_webauthn.ts`) and sends `#wa-form` to `/account-api`. A
+// registration the guidance shows is reported through that finish without
+// the form being submitted and without the answer being drawn (#961). The
 // Signal API's `#wa-signal` likewise. RENAME is a `<details>` with a form in
 // it, markup that needs nothing more.
 //
