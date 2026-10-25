@@ -130,14 +130,15 @@ class ConsoleRuntime extends SpaClient {
   // first while one has. Set by an `input` or `change` inside a form, and
   // cleared by every drawing.
   private dirty: boolean;
-  // THE SIDEBAR SECTION THE READER OPENED (#750), by its `data-section`
-  // key, or '' while none is: every drawing draws that one open and every
-  // other closed, so a section opened stays open from page to page in this
-  // tab until the reader closes it or opens another. Held here and nowhere
-  // else — a page is drawn in place, never loaded, so this object outlives
-  // every move between console pages, and a reload, a new tab or a new
-  // sign-in starts with everything closed, which is what was asked for.
-  private openSection: string;
+  // THE SIDEBAR SECTION DRAWN OPEN (#750), by its `data-section` key.
+  // Null until this load chooses: the first drawing opens the section that
+  // holds the page, so a reload shows the list open where the reader is.
+  // After that it is the key they opened, or '' when they closed it, and
+  // every drawing draws that one open and every other closed. Held here and
+  // nowhere else — a page is drawn in place, never loaded, so this object
+  // outlives every move between console pages. A new load has no choice to
+  // restore and derives one from the page.
+  private openSection: string | null;
   // WHAT `GET /admin-api/console` ANSWERED WHEN IT REFUSED THIS TAB'S
   // ACCOUNT (#751): `{ status, json }`, so `route()` draws a page that says
   // so — with the account menu's Switch user group where the setting is on
@@ -172,7 +173,7 @@ class ConsoleRuntime extends SpaClient {
     this.reauth = null;
     this.submitting = null;
     this.dirty = false;
-    this.openSection = '';
+    this.openSection = null;
     this.shellRefusal = null;
   }
 
@@ -1273,6 +1274,16 @@ class ConsoleRuntime extends SpaClient {
                          : ''));
     const shell = this.shell || { gate: null, sections: [], realm: { id: '',
       name: '' }, navLabels: {}, version: {}, persistence: {} };
+    // A RELOAD HAS NO REMEMBERED SECTION. The choice starts unset, so the
+    // first drawing opens the section that holds this page — a reader who
+    // reloaded Directory → Applications is shown Directory open. A toggle
+    // after that records what they opened, or '' when they closed it, and
+    // that is what later drawings use. With no sections in hand yet the
+    // choice waits for a drawing that has them.
+    if (this.openSection === null && Array.isArray(shell.sections) &&
+        shell.sections.length) {
+      this.openSection = WebShell.sectionKeyOf(shell.sections, active);
+    }
     this.env.document.title = title + ' — IYA STS admin';
     this.env.document.body.innerHTML = ConsoleRuntime.realmLinks(
       WebShell.frame(shell, {
