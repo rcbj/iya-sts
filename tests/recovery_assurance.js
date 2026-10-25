@@ -71,8 +71,19 @@
 //      with nothing pending. The same false write still completes a reset
 //      for a person who holds no passkey. reset-password refuses rather
 //      than returning a password. The directory function is restored
-//      before the child exits. Sections D and H already ran with the
-//      real write.
+//      before section J. Sections D and H already ran with the real
+//      write.
+//   J. AN ACTIVATION ABANDONED AT THE KEY OR THE APP STEP (#927). Under
+//      not-weaker (product's default), a person who already holds a
+//      passkey, enrolled before the link is issued, is given an
+//      activation link. POST step=setup with a password and key_role=mfa
+//      stops at the key ceremony; a second person, totp=1 and no key
+//      role, stops at the authenticator step. Neither reaches finish().
+//      Each has a pending recovery whose door is activation, the password
+//      verifies in product mode, the link is still outstanding, and a
+//      password sign-in starts no session (the recovery set-up step, and
+//      STS-AUTHN-0381 at startSession()). This section runs after I
+//      restores the real recovery write.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -915,8 +926,9 @@ function childMain() {
       //
       // After D and H, so those real writes are untouched. The stub is
       // the directory function the child stack holds (the object
-      // setDirectory was given), and it is put back before anything else
-      // in this process runs. errorCodes is the binding section H made.
+      // setDirectory was given), and it is put back before section J,
+      // which records a recovery for real. errorCodes is the binding
+      // section H made.
       // ==================================================================
       rows('not-weaker');
       const credDir = credentials.directoryInstalled();
@@ -1043,6 +1055,184 @@ function childMain() {
           recoveryWritesFail = false;
           credDir.writeRecoveryPending = realRecoveryWrite;
         }
+
+        // ==================================================================
+        // J. AN ACTIVATION ABANDONED AT THE KEY OR APP STEP (#927)
+        //
+        // After the finally above, so writeRecoveryPending is the
+        // directory's again. finish() records the recovery too, but a
+        // person who stops at the key ceremony or the authenticator step
+        // never reaches it: the password is set and the link is not
+        // consumed (#900). The passkey is enrolled before the link, and
+        // the clock is past that key's enrolledAt, because
+        // noteActivationRecovery requires enrolledAt strictly less than
+        // the issue instant it derives from the link's expiry. The same
+        // millisecond records nothing. The wait is a spin on the clock,
+        // not a timer. Two people: one POST sets the password and draws
+        // one ceremony, and the key step is not the authenticator step.
+        // ==================================================================
+        // The spin is why a key enrolled and a link issued in one
+        // millisecond would record no recovery: the comparison is strict.
+        const pastEnrolment = function (who) {
+          const keys = credentials.keysOf(who) || [];
+          let enrolled = 0;
+          keys.forEach(function (one) {
+            const at = Number(one.enrolledAt || 0);
+            if (at > enrolled) {
+              enrolled = at;
+            }
+          });
+          let spins = 0;
+          while (Date.now() <= enrolled && spins < 10000000) {
+            spins += 1;
+          }
+          return { enrolled: enrolled, now: Date.now(), spins: spins };
+        };
+
+        const activationToken = function (user) {
+          const issued = actions.usersAction({
+            action: 'issue-activation', user: user }, context);
+          const link = String((issued && issued.activationUrl) || '');
+          const found = (link.match(/[?&]token=([^&]+)/) || [])[1] || '';
+          const token = decodeURIComponent(found);
+          const errors = (issued && issued.errors) || [];
+          return { ok: !!(issued && issued.ok === true && token),
+                   token: token, errors: errors };
+        };
+
+        const postActivation = function (user, token, extra) {
+          return request(port, 'POST', '/account-api/activation',
+            Object.assign({ user: user, token: token, step: 'setup' },
+                          extra));
+        };
+
+        // finish() would answer step ready and consume the link. The GET
+        // is the door somebody who abandoned the step uses to come back:
+        // it is still the setup form.
+        const stoppedShort = async function (who, linkToken, posted,
+                                             password, wantStep) {
+          const body = posted ? json(posted) : {};
+          const view = body.view || {};
+          const pending = credentials.activationPending(who);
+          const checked = linkToken
+            ? credentials.checkActivation(who, linkToken)
+            : { ok: false };
+          const verified = passwordSignsIn(who, password);
+          let reopened = null;
+          if (linkToken) {
+            reopened = await request(port, 'GET',
+              '/account-api/activation?user=' + encodeURIComponent(who) +
+              '&token=' + encodeURIComponent(linkToken));
+          }
+          const again = reopened ? json(reopened) : {};
+          const live = !!(reopened && reopened.status === 200 &&
+                          again.step === 'setup');
+          const unfinished = !!(posted && posted.status === 200 &&
+            body.ok === true && view.step === wantStep &&
+            view.step !== 'ready' &&
+            credentials.hasPassword(who) === true &&
+            pending && pending.expired !== true &&
+            checked.ok === true && doorOf(who) === 'activation' &&
+            verified.ok === true && live);
+          return {
+            ok: unfinished,
+            step: String(view.step || ''),
+            status: posted ? posted.status : 0,
+            door: doorOf(who),
+            verified: verified.ok === true,
+            link: checked.ok === true,
+            reopen: reopened ? reopened.status : 0,
+            reopenStep: String(again.step || ''),
+            text: String(posted ? posted.text : '').slice(0, 180)
+          };
+        };
+
+        rows('not-weaker');
+        const jKeyUser = 'ra-jkey-' + STAMP;
+        const jAppUser = 'ra-japp-' + STAMP;
+        const jKeyPass = 'Key-Stop-927!';
+        const jAppPass = 'App-Stop-927!';
+        primaryOnly(jKeyUser);
+        const jKeyClock = pastEnrolment(jKeyUser);
+        const jKeyIssued = activationToken(jKeyUser);
+        let jKeyPosted = null;
+        if (jKeyIssued.ok) {
+          jKeyPosted = await postActivation(jKeyUser, jKeyIssued.token, {
+            password: jKeyPass, confirm: jKeyPass, key_role: 'mfa' });
+        }
+        const jKeyStop = await stoppedShort(jKeyUser, jKeyIssued.token,
+          jKeyPosted, jKeyPass, 'key');
+        note(jKeyClock.enrolled > 0 && jKeyClock.now > jKeyClock.enrolled &&
+             jKeyIssued.ok && jKeyStop.ok,
+             'J1. under not-weaker, stopping at the key ceremony after ' +
+             'the password is set records door activation, leaves the ' +
+             'link outstanding and stores a password that verifies',
+             JSON.stringify({
+               step: jKeyStop.step, door: jKeyStop.door,
+               status: jKeyStop.status, verified: jKeyStop.verified,
+               link: jKeyStop.link, reopen: jKeyStop.reopen,
+               reopenStep: jKeyStop.reopenStep,
+               enrolled: jKeyClock.enrolled, now: jKeyClock.now,
+               issued: jKeyIssued.ok, errors: jKeyIssued.errors,
+               text: jKeyStop.text
+             }).slice(0, 320));
+        r = await signInAt({ username: jKeyUser, password: jKeyPass });
+        note(recoveryStep(r) && !signedIn(r),
+             'J2. that password sign-in draws the recovery set-up step ' +
+             'and starts no session that reaches an application',
+             (r.next || r.status) + ' ' +
+             JSON.stringify(r.view || r.text).slice(0, 240));
+        const jKeyDetail = { credential: { kind: 'password' } };
+        const jKeySession = authn.startSession(res, jKeyUser, ['pwd'], '1',
+                                                'a test', jKeyDetail);
+        note(jKeySession === null &&
+             jKeyDetail.refusedWith === 'STS-AUTHN-0381' &&
+             jKeyDetail.recoveryLimited === true &&
+             doorOf(jKeyUser) === 'activation',
+             'J3. at startSession() that sign-in is refused ' +
+             'STS-AUTHN-0381 and the activation recovery stays pending',
+             JSON.stringify(jKeyDetail) + ' door=' + doorOf(jKeyUser));
+
+        primaryOnly(jAppUser);
+        const jAppClock = pastEnrolment(jAppUser);
+        const jAppIssued = activationToken(jAppUser);
+        let jAppPosted = null;
+        if (jAppIssued.ok) {
+          jAppPosted = await postActivation(jAppUser, jAppIssued.token, {
+            password: jAppPass, confirm: jAppPass, totp: '1' });
+        }
+        const jAppStop = await stoppedShort(jAppUser, jAppIssued.token,
+          jAppPosted, jAppPass, 'totp');
+        note(jAppClock.enrolled > 0 && jAppClock.now > jAppClock.enrolled &&
+             jAppIssued.ok && jAppStop.ok,
+             'J4. under not-weaker, stopping at the authenticator step ' +
+             'after the password is set records door activation, leaves ' +
+             'the link outstanding and stores a password that verifies',
+             JSON.stringify({
+               step: jAppStop.step, door: jAppStop.door,
+               status: jAppStop.status, verified: jAppStop.verified,
+               link: jAppStop.link, reopen: jAppStop.reopen,
+               reopenStep: jAppStop.reopenStep,
+               enrolled: jAppClock.enrolled, now: jAppClock.now,
+               issued: jAppIssued.ok, errors: jAppIssued.errors,
+               text: jAppStop.text
+             }).slice(0, 320));
+        r = await signInAt({ username: jAppUser, password: jAppPass });
+        note(recoveryStep(r) && !signedIn(r),
+             'J5. that password sign-in draws the recovery set-up step ' +
+             'and starts no session that reaches an application',
+             (r.next || r.status) + ' ' +
+             JSON.stringify(r.view || r.text).slice(0, 240));
+        const jAppDetail = { credential: { kind: 'password' } };
+        const jAppSession = authn.startSession(res, jAppUser, ['pwd'], '1',
+                                                'a test', jAppDetail);
+        note(jAppSession === null &&
+             jAppDetail.refusedWith === 'STS-AUTHN-0381' &&
+             jAppDetail.recoveryLimited === true &&
+             doorOf(jAppUser) === 'activation',
+             'J6. at startSession() that sign-in is refused ' +
+             'STS-AUTHN-0381 and the activation recovery stays pending',
+             JSON.stringify(jAppDetail) + ' door=' + doorOf(jAppUser));
       }
 
       passkeyPolicy.reset('default');
@@ -1118,7 +1308,8 @@ module.exports = {
             'rules, the reset link, the forgot-password request, the ' +
             'recovery code, an administrator\'s set-password, keytab and ' +
             'LDAP password (#960), a recovery that cannot be recorded ' +
-            '(#962), and the sign-in limited to registering a passkey ' +
-            '(#724)',
+            '(#962), an activation abandoned at the key or authenticator ' +
+            'step (#927), and the sign-in limited to registering a ' +
+            'passkey (#724)',
   run: run
 };
