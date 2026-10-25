@@ -158,21 +158,26 @@ It also reads the SESSION store, which `../authn/authn.ts` owns.
    of the list should be open at a time."* A section is a `<details
    class="navsec" name="sts-console-nav" data-section="<slug of its title>">`
    whose `<summary class="navhead">` is the heading (`WebShell.navBar()`).
-   * **Nothing opens itself**, not even the section holding the page being
-     drawn — that one carries `current` instead (the rule down its left and
-     the heading in the brand colour), and the page's own entry inside it
-     keeps `aria-current`. Opening it on its own would be the menu deciding
-     for the reader, which is what was asked against.
+   * **A fresh load opens the section that holds the page.** `openSection`
+     starts unset. The first `draw()` records the section whose page is the
+     one being drawn (`WebShell.sectionKeyOf()`) and the sidebar is drawn
+     with that `<details open>`, so a reload of Directory → Applications →
+     an application shows Directory's list open, and the same for every
+     other page. The section still carries `current` (the rule down its left
+     and the heading in the brand colour), and the page's own entry inside
+     it keeps `aria-current`. The shell opens only the key it is handed; a
+     caller that names none still draws every section closed.
    * **The one-open rule is the shared `name`** (an exclusive accordion, no
      script). `ConsoleRuntime.onNavToggle()`, fed every `toggle` in the
      capture phase (it does not bubble), closes the others itself for a
      browser that predates `name`.
-   * **An opened section stays open from page to page** because the console
-     draws every page in place: the runtime holds the opened section's key
-     (`openSection`) and `draw()` hands it to the frame, so the next page's
-     sidebar is drawn with it open. It is held in the runtime and NOT in
-     storage on purpose: a reload, a new tab or a new sign-in starts with
-     everything closed, and the server-drawn `page()` names no section.
+   * **After that, the reader's choice stays.** Opening a section records
+     its key and closing the open one records `''`, and `draw()` hands that
+     to the frame, so a section stays as they left it from page to page —
+     including closed, and including open on a page that lives in another
+     section. It is held in the runtime and NOT in storage: a new load has
+     no choice to restore and derives one from the page. The server-drawn
+     `page()` names no section.
    * `revealActiveNav()` does not centre a tab inside a closed section (it
      has no box); it centres the open section's heading, or moves nothing.
    * A GROUP inside a section (`navgrp`) is not collapsible; only the five
