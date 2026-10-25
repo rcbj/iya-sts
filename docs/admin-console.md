@@ -1406,11 +1406,17 @@ Filtering is by category, action, outcome, actor and free text, and the filter
 vocabulary is read from the table the log records against. The actor filter is
 a **substring**, because the actor on a directory row is a bind DN and on a
 Kerberos row `alice@REALM`; where an identity has been normalised, the row
-carries both the key and the form presented. Paging is `?page=` and `?per=`, but
-**walk the list by `seq`**: it is monotonic and never reused, so "everything
-after 4,102" is exact while the log is still being written. The page's
-operation carries `oldestSeq` and `newestSeq`; a gap between the last `seq` a caller saw
-and `oldestSeq` is how many events the cap discarded.
+carries both the key and the form presented. Paging is `?page=` and `?per=`.
+**Resume by `at`, not by `seq`.** `seq` is unique across every process of the
+service and never reused, and it rises within each process. It is not one
+order across processes: a request worker is a thread with a heap of its own
+and numbers from a block of its own, so an event recorded later on another
+worker can carry a smaller number. "Everything after 4,102" misses that event.
+Read what is new by `at`, with `seq` and `origin` as the tie-break. The
+operation carries `oldestSeq` and `newestSeq`, the numbers of the oldest and
+newest events held by time, and `dropped`, how many the cap discarded. A gap
+in the numbers is unused space in another worker's block, not a count of
+discarded events.
 
 Two things it deliberately does not have:
 
