@@ -24,6 +24,7 @@ import TokenLifetimesPage = require('./web_token_lifetimes');
 import SettingsForms = require('./web_settings');
 import GroupsPage = require('./web_groups');
 import AuditPage = require('./web_audit');
+import DocLinks = require('../common/web_doc_links');
 
 type Json = any;
 
@@ -1846,7 +1847,12 @@ class ApplicationsPage {
         'aria-hidden="true">' + t.html('consoleApplications.a2.save') +
         '</button>';
     };
+    // These sub-panels are written out, not passed through
+    // `subTabbedPanels()`, so the link has to be put in here (#895). The
+    // SAML families do go through that helper; their group panel is only
+    // the bar, and gets a link only when it has no family panel of its own.
     const familiesPanel = '<div class="subpanel first" id="cfg-families">' +
+      DocLinks.consoleHtml(DocLinks.forConsoleTab('cfg-families'), t) +
       '<h3>' + t.html('consoleApplications.a2.familiesHeading') + '</h3>' +
       kit.note(t.html('consoleApplications.a2.familiesNote')) +
       formOpen('families', null,
@@ -2059,7 +2065,12 @@ class ApplicationsPage {
       // OAuth sub-tab, above the two lists it may use.
       const observedFlows = group.id === 'oauth'
         ? ApplicationsPage.applicationObservedFlows(row, t) : '';
+      const cfgDocs = (group.id === 'saml' && samlFamilyPanels.length)
+        ? ''
+        : DocLinks.consoleHtml(
+            DocLinks.forConsoleTab('cfg-' + group.id), t);
       return '<div class="subpanel" id="cfg-' + kit.esc(group.id) + '">' +
+        cfgDocs +
         launchCard + observedFlows +
         (group.id === 'saml' ? samlPanels :
           (fieldsFirst ? fieldForm + sections : sections + fieldForm)) +

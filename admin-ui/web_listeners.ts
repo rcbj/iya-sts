@@ -22,6 +22,7 @@
 
 import kit = require('./web_kit');
 import SettingsForms = require('./web_settings');
+import DocLinks = require('../common/web_doc_links');
 
 type Json = any;
 
@@ -327,7 +328,11 @@ class ListenersPage {
     json.listeners.filter(function (row: Json): boolean {
       return !!row.group && (row.tls || !!row.http);
     }).forEach(function (row: Json): void {
+      // `docs` rather than the id: `tab-` plus a listener id is the same
+      // shape as a policy kind's tab, and a prefix would name the wrong
+      // page (#895).
       panels.push({ id: 'tab-' + row.id, label: row.name,
+                    docs: DocLinks.forConsolePage(PAGE),
                     html: inForce(row.policy, row.http) +
                           settings([row.group]) });
     });

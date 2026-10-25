@@ -3618,6 +3618,7 @@ class AdminConsole {
       // without it every page's breadcrumb trail sits up against its heading.
       '.pagehead{display:flex;flex-wrap:wrap;gap:10px;align-items:baseline;' +
       'justify-content:space-between;margin:0 0 14px}' +
+      '.doclink{margin:0 0 12px;font-size:.92em}' +
       '.pagehead h1{margin:0}' +
       // The controls at the right-hand end of that row. `align-items:baseline`
       // again, because a <button> and an <a class=btn> are different boxes and

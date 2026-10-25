@@ -37,6 +37,7 @@
 // ---------------------------------------------------------------------------
 
 import kit = require('./web_portal_kit');
+import DocLinks = require('../common/web_doc_links');
 import WebAccounts = require('../common/web_accounts');
 
 type Json = any;
@@ -272,6 +273,8 @@ class PortalShell {
       PortalShell.chooser(t, me && me.locale, returnTo) + '</div></header>' +
       '<div class="shell"><div class="side"><div class="card">' +
       PortalShell.navBar(page.active, t) + '</div></div><div class="main">' +
+      // Above the flash, so a message does not push the link down (#895).
+      DocLinks.portalHtml(DocLinks.forPortalPage(page.active), t) +
       (page.error ? '<div class="err">' + kit.esc(page.error) + '</div>' : '') +
       (page.message ? '<div class="ok">' + kit.esc(page.message) + '</div>'
                     : '') +

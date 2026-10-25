@@ -802,6 +802,25 @@ In an assertion the claim is **one `<Attribute>` with several
 `<AttributeValue>` children**; one element per group with the same name would
 leave a relying party reading the first. The settings are on [LDAP](ldap.md).
 
+### Roles — `/admin/roles`
+
+`/admin/roles` is the realm's role register. The page is tabs. **Metadata**
+lists the built-in roles and who holds each. **Roles** lists the roles that
+have been made, who holds each, and what each authorizes; a name opens
+`/admin/roles?role=<name>`. **Create** makes a role, optionally for one
+application, with a display name and who may hold it (people, applications, or
+both). **Members** adds a holder: a person, a group, or an application. A
+person or a group need not exist yet. **Authorizes** names a permission the
+role grants. That is not Admin roles (`/admin/rbac`), which is who may use the
+console. **Requiring** lists the applications that require the role.
+**Preview** asks what would be issued for an application and a subject.
+**Settings** is the role settings.
+
+A role's own page has two tabs, **Role** and **Owners**. Role shows the role,
+its members, what it authorizes, and its directory entry. Owners finds a
+person or a group. A role can name at most 25 owners, and an owner grants
+nothing by being named.
+
 ### Applications — `/admin/applications`
 
 The other side of `/admin/users`: every OAuth client, OpenID Connect relying
