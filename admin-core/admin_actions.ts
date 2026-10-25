@@ -423,9 +423,12 @@ const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
 //                          everything, so the link is their way back.
 //   disable-primary-keys   every PRIMARY security key off, so passkeys no
 //                          longer sign them in; refused where that leaves no
-//                          way in.
+//                          way in. The sessions each removed key signed in
+//                          end (#963); every other session stays.
 //   disable-mfa            every second factor off: authenticator app, `mfa`
-//                          keys, recovery codes.
+//                          keys, recovery codes. The sessions each removed
+//                          factor signed in end (#963); a session only a
+//                          password signed in stays.
 //   require-mfa            a second factor required of them at the sign-in
 //   stop-requiring-mfa     screen, and the requirement taken away.
 //
@@ -2401,13 +2404,17 @@ class AdminActions {
 
   // ---------------------------------------------------------------------------
   // THE SESSIONS A REMOVED CREDENTIAL SIGNED IN (#722): ended, through the
-  // logout model's `endFactorSessions()`, by each of the four removals below
-  // — a security key, the authenticator app, the recovery codes and the
-  // emailed second factor. Only those sessions: unlike a password reset
-  // (`signOutEverywhere()`), a removal leaves every session the credential
-  // did not authenticate alone. Answered as a count for the result and the
-  // audit row; a process with no logout model ends nothing and says so
-  // (STS-ADMIN-0870), and nothing here undoes the removal.
+  // logout model's `endFactorSessions()`, by each of the four per-credential
+  // removals — a security key, the authenticator app, the recovery codes and
+  // the emailed second factor — and by the two bulk disables (#963).
+  // `disable-primary-keys` asks once per primary key it removed;
+  // `disable-mfa` asks once per mfa key it removed, and once for the
+  // authenticator app and once for the recovery codes when those went.
+  // Only the sessions that credential authenticated: unlike a password
+  // reset (`signOutEverywhere()`), a removal leaves every session the
+  // credential did not authenticate alone. Answered as a count for the
+  // result and the audit row; a process with no logout model ends nothing
+  // and says so (STS-ADMIN-0870), and nothing here undoes the removal.
   // ---------------------------------------------------------------------------
   private endFactorSessions(who, factor, ctx, what) {
     const { log, errorCodes } = this.deps;
@@ -2443,6 +2450,30 @@ class AdminActions {
       (failed ? ' ' + failed + ' could not be ended.' : '');
     log.debug("Leaving AdminActions.sessionsEndedSentence().");
     return words;
+  }
+
+  // One act that removed several credentials (#963). Each factor is one
+  // call to `endFactorSessions()` and the counts are added, so the result
+  // and the audit row carry one number the way one `clear-key` does. An
+  // empty list is still one call, with no factor: that call matches
+  // nothing and adds nothing, and it is not a sign-out of every session.
+  // A process with no logout model answers 0 (STS-ADMIN-0870); the
+  // removal has already been written and is not undone.
+  private sumFactorSessions(who, factors, ctx, what) {
+    const { log } = this.deps;
+    log.debug("Entering AdminActions.sumFactorSessions().");
+    const list = (factors && factors.length) ? factors : [null];
+    let sessionsEnded = 0;
+    let failed = 0;
+    const self = this;
+    list.forEach(function (factor) {
+      const ended = self.endFactorSessions(who, factor, ctx, what);
+      sessionsEnded += Number(ended && ended.sessionsEnded) || 0;
+      failed += Number(ended && ended.failed) || 0;
+    });
+    log.debug("Leaving AdminActions.sumFactorSessions(). " +
+              sessionsEnded + " ended, " + failed + " failed.");
+    return { sessionsEnded: sessionsEnded, failed: failed };
   }
 
   private credentialAdminAction(action, body, ctx) {
@@ -2624,18 +2655,20 @@ class AdminActions {
 
     if (action === 'disable-primary-keys') {
       const result = credentials.removePrimaryKeys(who);
-      audited('admin.mfa.primary-keys.removed',
-              (result.ok ? 'removed' : 'could not remove') + ' the primary ' +
-              'security keys of ' + who,
-              { removed: (result.removed || []).length,
-                errors: result.ok ? undefined : (result.errors || []) },
-              result.ok ? 'success' : 'failure');
+      // A refusal leaves the keys where they are, so no session ends.
+      // `removed` is absent on that answer (`removePrimaryKeys()`).
       if (!result.ok) {
+        audited('admin.mfa.primary-keys.removed',
+                'could not remove the primary security keys of ' + who,
+                { removed: (result.removed || []).length,
+                  errors: result.errors || [] },
+                'failure');
         log.debug("Leaving AdminActions.credentialAdminAction(). Keys " +
                   "refused.");
         return this.refusedBy('STS-ADMIN-0783', result);
       }
-      result.removed.forEach(function (one) {
+      const removed = result.removed || [];
+      removed.forEach(function (one) {
         accountSignals.credentialChanged({ username: who,
           credentialType: accountSignals.keyCredentialType(one),
           fido2Aaguid: String((one && one.aaguid) || ''),
@@ -2645,29 +2678,42 @@ class AdminActions {
           reasonUser: 'A security key that signed you in without a password ' +
                       'was removed from your account.' });
       });
+      // THE SESSIONS EACH REMOVED PRIMARY KEY SIGNED IN END (#963), and no
+      // other: a password session, and a session an mfa key signed in,
+      // stay. An empty list is still asked — `sumFactorSessions()` calls
+      // once with no factor, which matches nothing — and a missing
+      // sign-out module answers 0 (STS-ADMIN-0870) without putting the
+      // keys back. The CAEP deletes above are unchanged.
+      const ended = this.sumFactorSessions(who, removed.map(function (one) {
+        return { kind: 'webauthn',
+                 credentialId: String((one && one.credentialId) || '') };
+      }), ctx, 'a security key');
+      audited('admin.mfa.primary-keys.removed',
+              'removed the primary security keys of ' + who,
+              { removed: removed.length,
+                sessionsEnded: ended.sessionsEnded,
+                failed: ended.failed },
+              'success');
       log.debug("Leaving AdminActions.credentialAdminAction(). " +
                 "disable-primary-keys.");
-      return { ok: true, username: who, removed: result.removed,
-               message: result.removed.length + ' primary security key(s) of ' +
+      return { ok: true, username: who, removed: removed,
+               sessionsEnded: ended.sessionsEnded,
+               failed: ended.failed,
+               message: removed.length + ' primary security key(s) of ' +
                         who + ' removed. They sign in with their password ' +
                         'now; a key they hold as a second factor is ' +
-                        'untouched.' };
+                        'untouched.' + this.sessionsEndedSentence(ended) };
     }
 
     if (action === 'disable-mfa') {
       const result = credentials.removeSecondFactors(who);
       const removed = result.removed || { totp: false, keys: [],
                                           backupCodes: false };
-      audited('admin.mfa.disabled',
-              (result.ok ? 'disabled' : 'could not disable') + ' every ' +
-              'second factor of ' + who,
-              { totp: removed.totp, keys: removed.keys.length,
-                backupCodes: removed.backupCodes,
-                errors: result.ok ? undefined : (result.errors || []) },
-              result.ok ? 'success' : 'failure');
       // SAID FOR WHATEVER WENT, even on a write that failed part way: those
       // credentials are gone, and a receiver not told would go on trusting
-      // them.
+      // them. Sessions wait for a removal that finished: a partial write
+      // is a refusal, and a factor that is still there must not lose the
+      // sessions it signed in.
       if (removed.totp) {
         accountSignals.credentialChanged({ username: who,
           credentialType: accountSignals.TOTP_CREDENTIAL_TYPE,
@@ -2677,7 +2723,7 @@ class AdminActions {
           reasonUser: 'Your authenticator app was removed from your ' +
                       'account.' });
       }
-      removed.keys.forEach(function (one) {
+      (removed.keys || []).forEach(function (one) {
         accountSignals.credentialChanged({ username: who,
           credentialType: accountSignals.keyCredentialType(one),
           fido2Aaguid: String((one && one.aaguid) || ''),
@@ -2692,17 +2738,55 @@ class AdminActions {
                        who + ', recovery codes included.' });
       }
       if (!result.ok) {
+        audited('admin.mfa.disabled',
+                'could not disable every second factor of ' + who,
+                { totp: removed.totp, keys: (removed.keys || []).length,
+                  backupCodes: removed.backupCodes,
+                  errors: result.errors || [] },
+                'failure');
         log.debug("Leaving AdminActions.credentialAdminAction(). Second " +
                   "factors refused.");
         return this.refusedBy('STS-ADMIN-0784', result);
       }
+      // THE SESSIONS EACH REMOVED FACTOR SIGNED IN END (#963). A factor
+      // that was not held is not asked, so its sessions — there are none
+      // of its own — stay. The mfa-key list is asked even when empty: that
+      // call names no credential and adds nothing. The counts are one
+      // number, as one `clear-totp` reports one.
+      const keysEnded = this.sumFactorSessions(who,
+        (removed.keys || []).map(function (one) {
+          return { kind: 'webauthn',
+                   credentialId: String((one && one.credentialId) || '') };
+        }), ctx, 'a security key');
+      const totpEnded = removed.totp
+        ? this.endFactorSessions(who, { kind: 'totp' }, ctx,
+                                 'the authenticator app')
+        : { sessionsEnded: 0, failed: 0 };
+      const codesEnded = removed.backupCodes
+        ? this.endFactorSessions(who, { kind: 'backup-code' }, ctx,
+                                 'the recovery codes')
+        : { sessionsEnded: 0, failed: 0 };
+      const ended = {
+        sessionsEnded: keysEnded.sessionsEnded + totpEnded.sessionsEnded +
+                       codesEnded.sessionsEnded,
+        failed: keysEnded.failed + totpEnded.failed + codesEnded.failed
+      };
+      audited('admin.mfa.disabled',
+              'disabled every second factor of ' + who,
+              { totp: removed.totp, keys: (removed.keys || []).length,
+                backupCodes: removed.backupCodes,
+                sessionsEnded: ended.sessionsEnded,
+                failed: ended.failed },
+              'success');
       const requirement = credentials.mfaRequirementFor(who);
       log.debug("Leaving AdminActions.credentialAdminAction(). disable-mfa.");
       return { ok: true, username: who, removed: removed,
                requirement: requirement,
+               sessionsEnded: ended.sessionsEnded,
+               failed: ended.failed,
                message: 'Every second factor of ' + who + ' was removed (' +
                         'authenticator app: ' + (removed.totp ? 'yes' : 'no') +
-                        ', security keys: ' + removed.keys.length +
+                        ', security keys: ' + (removed.keys || []).length +
                         ', recovery codes: ' +
                         (removed.backupCodes ? 'yes' : 'no') + '). ' +
                         (requirement.required
@@ -2711,7 +2795,8 @@ class AdminActions {
                               : 'by the realm') +
                             '), so their next sign-in asks them to enrol ' +
                             'a new one.'
-                          : 'A password alone signs them in now.') };
+                          : 'A password alone signs them in now.') +
+                        this.sessionsEndedSentence(ended) };
     }
 
     if (action === 'create-app-password') {
