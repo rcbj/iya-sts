@@ -16338,6 +16338,18 @@ function ldapChannelOf(req) {
 // has no business loading at 21 for every process that never writes a
 // password — and a require that moved nothing would still read as if the
 // order mattered.
+//
+// AND THE RECOVERY HOLD (#960), the same way the console's set-password
+// notes it. A create or an update by somebody other than the person —
+// including an unbound connection, whose bound DN `boundDnOf()` reports as
+// '' — is an administrator putting a password on the entry. The person
+// binding as themselves proved the current password, so that change notes
+// nothing, and a revoke is not a password they can next sign in with.
+// `noteRecovery()` writes nothing when they hold no passkey or
+// `recoveryAssurance` is `any`. The require is lazy for the signal's
+// reason: this file already holds `credentials` for the hash itself, and
+// the hold must not be why that require moves. A throw is logged and the
+// write, which the handler has already committed, stands.
 // ---------------------------------------------------------------------------
 function notePasswordWritten(req, dn, username, changeType) {
   log.debug('Entering notePasswordWritten(). ' + changeType + ' ' + dn);
@@ -16355,6 +16367,16 @@ function notePasswordWritten(req, dn, username, changeType) {
   } catch (e) {
     log.debug('Caught in notePasswordWritten(): ' + ((e && e.message) || e));
     // The write stands whether or not a receiver is told.
+  }
+  if (!self && (changeType === 'create' || changeType === 'update')) {
+    try {
+      require('../common/credentials').noteRecovery(String(username || ''),
+                                                    'admin-password');
+    } catch (e) {
+      log.debug('Caught in notePasswordWritten(): ' +
+                ((e && e.message) || e));
+      // The password write stands whether or not the hold was recorded.
+    }
   }
   log.debug('Leaving notePasswordWritten().');
 }
