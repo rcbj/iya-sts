@@ -11216,6 +11216,61 @@ class AdminViews {
     return out;
   }
 
+  // THE AUTHENTICATION ATTEMPTS FOR ONE APPLICATION (#954).
+  //
+  // The audit log is the list. This does not keep a second one on the
+  // entry: the counters on the overview are how many, and these rows are
+  // which. The names are the registry identifier plus every protocol
+  // identifier the entry carries, because an authorization-code sign-in
+  // records `application` (often the client_id) and a grant records
+  // `client_id`, and the two strings are not always the identifier.
+  //
+  // The member is `authenticationEvents` and not `authentications`. The
+  // view already publishes `authentications` as the COUNT, and the tiles
+  // read it. A list under that name would replace the number.
+  /**
+   * Lists one application's authentication attempts from the audit log.
+   *
+   * @param req - the request, whose query pages the list
+   * @param row - the application's registry view
+   * @returns the rows shown, the paging, the match count, the actors this
+   *   console can link, and how full the audit log is
+   */
+  applicationAuthenticationEvents(req, row) {
+    const { log, applications, auditLog } = this.deps;
+    log.debug("Entering AdminViews.applicationAuthenticationEvents().");
+    const names = [String((row && row.identifier) || '')];
+    applications.identifiersOf(row).forEach(function (one) {
+      (one.values || []).forEach(function (value) {
+        names.push(String(value || ''));
+      });
+    });
+    const events = auditLog.authenticationEventsFor(names);
+    const paged = this.pagedRows((req && req.query) || {}, events, {
+      name: 'authentications', noun: 'attempts'
+    });
+    const known = this.knownUserKeys();
+    const knownActors: Record<string, boolean> = {};
+    paged.shown.forEach(function (event) {
+      if (event.actor && known[event.actor]) {
+        knownActors[event.actor] = true;
+      }
+    });
+    const summary = auditLog.summary();
+    log.debug("Leaving AdminViews.applicationAuthenticationEvents(). " +
+              paged.shown.length + " of " + events.length + ".");
+    return {
+      events: paged.shown,
+      paging: this.pagingJson(paged.paging),
+      matched: events.length,
+      knownActors: knownActors,
+      log: {
+        held: summary.held, recorded: summary.recorded,
+        dropped: summary.dropped, maxEvents: summary.maxEvents
+      }
+    };
+  }
+
   // The application drill-down: the entry, its attributes as a paged list, and
   // the delegated permissions it holds and exposes.
   /**
@@ -11290,6 +11345,7 @@ class AdminViews {
     const claimsState = this.applicationClaimsState(row,
       req && req.query ? req.query.claimsUser : '');
     const lifetimesState = this.applicationTokenLifetimesState(row);
+    const attempts = this.applicationAuthenticationEvents(req, row);
     log.debug("Leaving AdminViews.applicationDetailJson().");
     return {
       row: row, attributeRows: attributeRows, paged: paged, paging: paging,
@@ -11325,6 +11381,14 @@ class AdminViews {
           warnings: self.applicationScopeWarnings(row.identifier),
           attributesShown: self.maskedAttributeRows(paged.shown),
           attributesPaging: self.pagingJson(paging),
+          // THE ATTEMPTS (#954). Not `authentications`: that member is the
+          // count the tiles read. The rows are the audit log's, paged under
+          // authenticationsPage so they do not move the attribute list.
+          authenticationEvents: attempts.events,
+          authenticationEventsPaging: attempts.paging,
+          authenticationEventsMatched: attempts.matched,
+          authenticationEventsKnownActors: attempts.knownActors,
+          authenticationEventsLog: attempts.log,
           // `returnAddressesObserved` itself is WHOLE, on the row, beside the
           // slice the page draws — the same arrangement `delegatedPermissions`
           // makes below, because the slicing is this page's layout and not a
