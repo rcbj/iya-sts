@@ -44,7 +44,11 @@
 //      where `getClientCapabilities()` reports `hybridTransport`), reporting
 //      every failure to `reportCeremonyFailure()` (the #943 hook) and
 //      leaving the page alone for an error it is not for; the renderers'
-//      markup.
+//      markup. Since #961 a portal create whose guidance is shown reports
+//      the finish without submitting `#wa-form`, and the account API leaves
+//      that enrolment; an error the guidance does not handle still submits
+//      and abandons it, and the same report while the retry is not offered
+//      is still abandoned.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -187,6 +191,8 @@ function childMain() {
     const keysPages = require(ROOT + '/portal/web_keys');
     const authnScreen = require(ROOT + '/tests/tools/authn_screen');
     const WebWebAuthn = require(ROOT + '/common/web_webauthn');
+    const PortalWebAuthn = require(ROOT + '/portal/web_portal_webauthn');
+    const PortalRuntime = require(ROOT + '/portal/web_portal_runtime');
     const WebAuthnLogin = require(ROOT + '/authn/web_authn_login');
     const WebAuthnMfa = require(ROOT + '/authn/web_authn_mfa');
 
@@ -629,6 +635,321 @@ function childMain() {
          'E3. the panel links registration and no upgrade; the step\'s ' +
          'guidance carries the retry button, and nothing where no ML-DSA ' +
          'is asked for', drawnPanel.length + ' ' + drawnFallback.length);
+
+    // A portal create, driven the way the page wires it (#961). The click
+    // listener does not return its promise: create()'s rejection, the
+    // capability question and offerFallback()'s report are microtasks, so
+    // one timer lets them finish before the assertion reads them.
+    const drivePortalCreate = async function (rejectName) {
+      const submitted = [];
+      const reported = [];
+      const credential = { value: '' };
+      const form = {
+        getAttribute: function (name) {
+          return name === 'action' ? '/portal/keys' : null;
+        }
+      };
+      const fallback = { hidden: true };
+      const data = {
+        getAttribute: function (name) {
+          const attrs = {
+            'data-mode': 'create',
+            'data-challenge': '',
+            'data-rpid': '127.0.0.1',
+            'data-user': 'pqf-fay',
+            'data-userid': '',
+            'data-display': 'pqf-fay',
+            'data-allow': '',
+            'data-exclude': '',
+            'data-options': '{}',
+            'data-fallback': JSON.stringify({ asksPostQuantum: true,
+              classical: true, retrying: false })
+          };
+          return Object.prototype.hasOwnProperty.call(attrs, name)
+            ? attrs[name] : null;
+        }
+      };
+      const listeners = [];
+      const go = {
+        addEventListener: function (type, fn) {
+          if (type === 'click') {
+            listeners.push(fn);
+          }
+        }
+      };
+      const els = {
+        'wa-data': data, 'wa-go': go, 'wa-credential': credential,
+        'wa-form': form, 'wa-fallback': fallback,
+        'wa-fallback-unsupported': { hidden: true },
+        'wa-fallback-uncertain': { hidden: true },
+        'wa-fallback-hybrid': { hidden: true }
+      };
+      const doc = {
+        getElementById: function (id) {
+          return els[id] || null;
+        }
+      };
+      const win = {
+        navigator: { credentials: { create: function () {
+          return Promise.reject({ name: rejectName });
+        } } },
+        PublicKeyCredential: { getClientCapabilities: function () {
+          return Promise.resolve({ hybridTransport: true });
+        } }
+      };
+      PortalWebAuthn.wire(doc, win, function (posted) {
+        submitted.push(posted);
+      }, function (posted, body) {
+        reported.push({ form: posted, body: body });
+      });
+      listeners[0]({});
+      await new Promise(function (resolve) {
+        setTimeout(resolve, 0);
+      });
+      return { submitted: submitted, reported: reported,
+               credential: credential, fallback: fallback };
+    };
+    const parseReport = function (raw) {
+      try {
+        return JSON.parse(String(raw || ''));
+      } catch (e) {
+        // The child writes findings, not a log. A body that is not JSON is
+        // the assertion's detail.
+        return { parseError: String((e && e.message) || e) };
+      }
+    };
+    const kept = await drivePortalCreate('NotSupportedError');
+    const keptBody = kept.reported[0] && kept.reported[0].body;
+    const keptCredential = parseReport(keptBody && keptBody.credential);
+    note(kept.submitted.length === 0 && kept.reported.length === 1 &&
+         keptCredential.error === 'NotSupportedError' &&
+         Object.prototype.hasOwnProperty.call(keptCredential,
+                                               'capabilities') &&
+         keptCredential.capabilities &&
+         keptCredential.capabilities.hybridTransport === true &&
+         kept.fallback.hidden === false && kept.credential.value === '',
+         'E4. a NotSupportedError during a portal create that has ' +
+         '#wa-fallback reports the ceremony and does not submit the ' +
+         'finish form',
+         JSON.stringify({ submitted: kept.submitted.length,
+           reported: kept.reported.length,
+           credential: keptBody && keptBody.credential,
+           hidden: kept.fallback.hidden, field: kept.credential.value }));
+    const dropped = await drivePortalCreate('SecurityError');
+    const droppedCredential = parseReport(dropped.credential.value);
+    note(dropped.submitted.length === 1 && dropped.reported.length === 0 &&
+         droppedCredential.error === 'SecurityError' &&
+         !Object.prototype.hasOwnProperty.call(droppedCredential,
+                                                'capabilities') &&
+         dropped.fallback.hidden === true,
+         'E5. an error the guidance does not handle still submits the ' +
+         'finish form, with no capabilities property',
+         JSON.stringify({ submitted: dropped.submitted.length,
+           reported: dropped.reported.length,
+           field: dropped.credential.value,
+           hidden: dropped.fallback.hidden }));
+
+    // The runtime's quiet post is not submit(): an answer that carries a
+    // view must not be drawn, and the form's other fields still go.
+    const runtimeEnv = {
+      location: { href: 'http://127.0.0.1/portal/keys',
+                  pathname: '/portal/keys', origin: 'http://127.0.0.1',
+                  search: '', hash: '' },
+      document: { documentElement: null },
+      history: { pushState: function () { return undefined; },
+                 replaceState: function () { return undefined; } },
+      sessionStorage: { getItem: function () { return null; },
+                        setItem: function () { return undefined; },
+                        removeItem: function () { return undefined; } },
+      formDataOf: function () {
+        return { forEach: function (fn) {
+          fn('finish', 'action');
+          fn('enr-1', 'enrolment_id');
+          fn('', 'credential');
+        } };
+      }
+    };
+    const runtime = new PortalRuntime(runtimeEnv);
+    const seen = [];
+    runtime.submit = function (form) {
+      seen.push({ kind: 'submit', form: form });
+      return Promise.resolve();
+    };
+    runtime.reportForm = function (form, body) {
+      seen.push({ kind: 'report', form: form, body: body });
+      return Promise.resolve();
+    };
+    const realPortalWire = PortalWebAuthn.wire;
+    let passedQuiet = null;
+    PortalWebAuthn.wire = function (doc, win, submit, quiet) {
+      passedQuiet = quiet;
+      seen.push({ kind: 'wired', submit: typeof submit });
+    };
+    try {
+      runtime.wire();
+    } catch (e) {
+      // wire() throwing is the assertion's detail. The real wire is put
+      // back below either way.
+      seen.push({ kind: 'wire-threw',
+                  error: String((e && e.message) || e) });
+    } finally {
+      PortalWebAuthn.wire = realPortalWire;
+    }
+    if (typeof passedQuiet === 'function') {
+      passedQuiet({ id: 'finish-form' }, { credential:
+        '{"error":"NotSupportedError","capabilities":null}' });
+    }
+    await new Promise(function (resolve) {
+      setTimeout(resolve, 0);
+    });
+    let drew = false;
+    let postedFinish = null;
+    runtime.answered = function () {
+      drew = true;
+      return Promise.resolve();
+    };
+    runtime.apiJson = function (method, path, body) {
+      postedFinish = { method: method, path: path, body: body };
+      return Promise.resolve({ status: 400, json: { ok: false,
+        errors: ['NotSupportedError: '], view: { enrol: { pending: {} } } } });
+    };
+    runtime.publicJson = function () {
+      drew = true;
+      return Promise.resolve({ status: 500, json: {} });
+    };
+    runtime.formTable = { 'POST /portal/keys': { access: 'person',
+      path: '/account-api/keys' } };
+    runtime.ensureFormTable = function () {
+      return Promise.resolve(true);
+    };
+    const finishForm = {
+      getAttribute: function (name) {
+        return name === 'action' ? '/portal/keys' : null;
+      }
+    };
+    await PortalRuntime.prototype.reportForm.call(runtime, finishForm, {
+      credential: JSON.stringify({ error: 'NotSupportedError',
+                                  capabilities: null }) });
+    const postedBody = (postedFinish && postedFinish.body) || {};
+    const postedCredential = parseReport(postedBody.credential);
+    note(seen.some(function (one) { return one.kind === 'report'; }) &&
+         !seen.some(function (one) { return one.kind === 'submit'; }) &&
+         !drew && runtime.flash === null && runtime.view === null &&
+         postedFinish && postedFinish.method === 'POST' &&
+         postedFinish.path === '/account-api/keys' &&
+         postedBody.action === 'finish' &&
+         postedBody.enrolment_id === 'enr-1' &&
+         postedCredential.error === 'NotSupportedError' &&
+         Object.prototype.hasOwnProperty.call(postedCredential,
+                                               'capabilities') &&
+         postedCredential.capabilities === null,
+         'E5b. the runtime reports the finish through the account API and ' +
+         'does not draw an answer that carries a view',
+         JSON.stringify({ seen: seen.map(function (one) {
+           return one.kind;
+         }), drew: drew, posted: postedFinish && {
+           method: postedFinish.method, path: postedFinish.path,
+           action: postedBody.action, id: postedBody.enrolment_id,
+           credential: postedBody.credential } }));
+
+    // The account API, called as the finish operation is.
+    const finishKey = async function (credential) {
+      const keys = new accountKeys.AccountKeys(
+        accountKeys.AccountKeys.defaultDeps());
+      const sent = {};
+      const res = {};
+      const ctx = {
+        audit: audit,
+        websecurity: { addressOf: function () { return '127.0.0.1'; } },
+        errorCodes: errorCodes,
+        baseUrlOf: function () { return ORIGIN; },
+        translatorFor: function () {
+          return { text: function (key) { return key; } };
+        },
+        PORTAL: '/portal',
+        BASE: '/account-api',
+        refuse: function (response, status, code, why, extra) {
+          errorCodes.mark(response, code);
+          const body = Object.assign({ ok: false, errors: [String(why)] },
+                                      extra || {});
+          sent.status = status;
+          sent.body = body;
+          return body;
+        },
+        json: function (response, status, body) {
+          sent.status = status;
+          sent.body = body;
+          return body;
+        }
+      };
+      const held = credentials.pendingKeyEnrolmentFor('pqf-fay');
+      await keys.enrol(ctx, { headers: {} }, res, {
+        username: 'pqf-fay', session: { user: { name: 'pqf-fay' } }
+      }, {
+        action: 'finish',
+        enrolment_id: held ? held.id : '',
+        credential: JSON.stringify(credential)
+      });
+      return { sent: sent,
+               pending: credentials.pendingKeyEnrolmentFor('pqf-fay') };
+    };
+    const fayBefore = rows('portal.key.refused', 'pqf-fay');
+    const fayBegun = credentials.beginKeyEnrolment('pqf-fay',
+      { role: 'primary', kind: 'passkey' });
+    const fayKept = await finishKey({ error: 'NotSupportedError',
+                                      capabilities: null });
+    const keptAnswer = fayKept.sent.body || {};
+    note(fayBegun.ok && fayKept.pending &&
+         fayKept.pending.id === fayBegun.enrolmentId &&
+         fayKept.sent.status === 400 && keptAnswer.ok === false &&
+         !Object.prototype.hasOwnProperty.call(keptAnswer, 'view') &&
+         rows('portal.key.refused', 'pqf-fay') === fayBefore + 1,
+         'E6. a finish carrying the browser error with its own capabilities ' +
+         'property, while the classical retry is offered, leaves the ' +
+         'enrolment pending and answers no view',
+         JSON.stringify({ begun: fayBegun.enrolmentId,
+           pending: fayKept.pending && fayKept.pending.id,
+           status: fayKept.sent.status, ok: keptAnswer.ok,
+           hasView: Object.prototype.hasOwnProperty.call(keptAnswer, 'view'),
+           refused: rows('portal.key.refused', 'pqf-fay') }));
+    const fayAgain = credentials.beginKeyEnrolment('pqf-fay',
+      { role: 'primary', kind: 'passkey' });
+    const fayDropped = await finishKey({ error: 'SecurityError' });
+    const droppedAnswer = fayDropped.sent.body || {};
+    note(fayAgain.ok && !fayDropped.pending &&
+         Object.prototype.hasOwnProperty.call(droppedAnswer, 'view') &&
+         !((droppedAnswer.view || {}).enrol || {}).pending,
+         'E7. a finish the guidance does not handle still abandons the ' +
+         'enrolment and redraws the page',
+         JSON.stringify({ begun: fayAgain.ok, pending: !!fayDropped.pending,
+           hasView: Object.prototype.hasOwnProperty.call(droppedAnswer,
+                                                         'view') }));
+    config.setOverride('webauthn.pqcOnly', true);
+    let fayOnly = { pending: true, sent: { body: {} },
+                    begun: { ok: false } };
+    try {
+      const onlyBegun = credentials.beginKeyEnrolment('pqf-fay',
+        { role: 'primary', kind: 'passkey' });
+      fayOnly = await finishKey({ error: 'NotSupportedError',
+                                 capabilities: null });
+      fayOnly.begun = onlyBegun;
+    } catch (e) {
+      // The override is cleared below even when the finish throws. The
+      // child writes findings; the message is the assertion's detail.
+      fayOnly = { threw: String((e && e.message) || e), pending: true,
+                  sent: { body: {} }, begun: { ok: false } };
+    } finally {
+      config.clearOverride('webauthn.pqcOnly');
+    }
+    const onlyAnswer = (fayOnly.sent && fayOnly.sent.body) || {};
+    note(fayOnly.begun && fayOnly.begun.ok && !fayOnly.pending &&
+         Object.prototype.hasOwnProperty.call(onlyAnswer, 'view'),
+         'E8. the same report while the classical retry is not offered ' +
+         'still abandons the enrolment',
+         JSON.stringify({ ok: fayOnly.begun && fayOnly.begun.ok,
+           pending: !!fayOnly.pending,
+           hasView: Object.prototype.hasOwnProperty.call(onlyAnswer, 'view'),
+           threw: fayOnly.threw || '' }));
     server.close();
   })().catch(function (e) {
     note(false, 'the child ran to the end', e && e.stack);
@@ -679,6 +1000,7 @@ module.exports = {
   describe: 'the classical retry of an ML-DSA registration that failed on ' +
             'the device (#944) and list-and-refuse where a post-quantum ' +
             'passkey is required (#946): the rule at both doors, the ' +
-            'fallback facts and markup, the panel, and the browser\'s half',
+            'fallback facts and markup, the panel, and the browser\'s half ' +
+            '(#961: a shown guidance is reported, not submitted)',
   run: run
 };

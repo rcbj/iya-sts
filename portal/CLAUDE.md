@@ -563,14 +563,22 @@ What that changed, and why each piece is the way it is:
   `data-fallback`, and `KeysPages.fallback()` draws the guidance HIDDEN
   (`#wa-fallback`), shown by `web_portal_webauthn.ts` through
   `common/web_webauthn.ts`'s `offerFallback()` only after a registration
-  that asked for ML-DSA fails — and then nothing is posted, so the pending
-  enrolment stays until the retry's form (`action` `begin`, the same role,
-  kind and lane, `algorithms` `classical`) replaces it. `begin` asks
+  that asked for ML-DSA fails. The failure is posted as the finish's
+  `credential` — `{ error, capabilities }`, `capabilities` null where the
+  platform reported none — and the answer is not drawn (#961). The account
+  API leaves the enrolment and answers no `view` when that object has its
+  own `capabilities` property and the fallback offers the classical begin;
+  without the property, or when the fallback does not offer the retry, the
+  enrolment is abandoned and the page redrawn (2026-09-26). The retry's
+  form (`action` `begin`, the same role, kind and lane, `algorithms`
+  `classical`) replaces the enrolment when it is pressed. `begin` asks
   `classicalRetryRefusal()` again (`STS-AUTHN-0420`, reason `algorithms`),
   and the pending record's `classicalOnly` holds the finish to the retry's
-  list. The activation's and the device link's ceremonies draw no guidance,
-  so a failure there is posted as before. `authn/CLAUDE.md` (*The classical
-  retry*) argues it.
+  list. An upgrade's create phase draws the guidance with no classical
+  button and its finish still drops the upgrade. The activation's and the
+  device link's ceremonies draw no guidance, so a failure there is posted
+  as before and abandoned. `authn/CLAUDE.md` (*The classical retry*) argues
+  it.
 
 `tests/passkey_management.js` holds the credential layer, and
 `tests/protocol/sts_portal_backup_keys.js` holds the page over HTTP: the two
