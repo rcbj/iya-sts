@@ -255,7 +255,8 @@ attributes: `oauthClientId`, `oauthRedirectUri`, `oauthGrantType`,
 `federationPartnerId`, `ldapBindDn`, `scimClientId`, `spiffeWorkloadId`, and
 more for the features that read them (`oauthAllowedScope`, `appCorsOrigin`,
 `oauthPermission`, `oauthGlobalConsent` and the rest — the published table is
-the full list).
+the full list). The registry writes `oauthConfidential` from
+`oauthTokenEndpointAuthMethod`.
 
 **Every protocol family has an identifier attribute, and all but one
 accumulate.** Fourteen families share eleven attributes: OAuth 2.0, OpenID

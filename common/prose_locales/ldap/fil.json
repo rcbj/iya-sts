@@ -852,8 +852,8 @@
     "text": "Para sa RFC 8705 section 2.2 self_signed_tls_client_auth: ang base64url SHA-256 ng DER ng certificate na ginagamit ng client na ito sa pag-authenticate. SARILING PANGALAN NG SERBISYONG ITO, iniingatan katabi ng pinapangalanan ng RFC: mula noong 2026-09-13, ina-authenticate rin ng certificate ang client kapag ito ang x5c[0] ng isang key sa jwks na ni-register nito (section 2.2.2). Kunin ang thumbprint ng certificate gamit ang GET /tls/sign-in, o kalkulahin ito: openssl x509 -outform DER | openssl dgst -sha256 -binary | base64url."
   },
   "applications.schema.attributes.oauthConfidential.what": {
-    "en": "ae52d212279d2378",
-    "text": "TRUE/FALSE, ang pasyang ginagawa ng RFC 9700 mode tungkol dito — at samakatuwid kung hinihingi rito ang PKCE at kung sinusuri ang secret nito. Isinusulat dito para mabasa ang sagot sa halip na hulaan."
+    "en": "11b68b893e67de65",
+    "text": "TRUE o FALSE, ang pasyang ginagawa ng paraan ng pagpapatunay ng token endpoint, isinulat ng rehistro na ito upang mabasa ang sagot. Ang `none`, o ang kawalan ng paraan sa isang application na nilikha sa kamay, ay FALSE; ang anumang ibang paraan ay TRUE. Binabasa ng RFC 9700 ang `oauthTokenEndpointAuthMethod` (`isConfidential()` sa `oauth2_bcp.js`), kaya hindi ine-edit ang katangiang ito. Maaaring sabihin ito ng isang paglikha lamang kapag tugma ang halaga, at tinatanggihan ang hindi pagkakatugma (`STS-REG-0363`). Ang isang OAuth o OpenID Connect na application na nilikha nang walang paraan at walang kredensyal ay naitatala pa rin bilang `none`."
   },
   "applications.schema.attributes.samlEntityId.what": {
     "en": "3987c430d22d9352",

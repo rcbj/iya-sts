@@ -852,8 +852,8 @@
     "text": "用於 RFC 8705 第 2.2 節 self_signed_tls_client_auth：此用戶端用以驗證之憑證 DER 的 base64url SHA-256。這是「本服務自己的名稱」，與 RFC 所命名者並存：自 2026-09-13 起，當憑證是其所註冊 jwks 中某把金鑰的 x5c[0] 時，該憑證也能驗證此用戶端（第 2.2.2 節）。可用 GET /tls/sign-in 取得憑證的指紋，或自行計算：openssl x509 -outform DER | openssl dgst -sha256 -binary | base64url。"
   },
   "applications.schema.attributes.oauthConfidential.what": {
-    "en": "ae52d212279d2378",
-    "text": "TRUE/FALSE，即 RFC 9700 模式對它所做的判定——因此也決定是否要求它使用 PKCE，以及是否檢查其密碼。寫在這裡，讓答案可以直接讀取而不必推斷。"
+    "en": "11b68b893e67de65",
+    "text": "TRUE 或 FALSE，即權杖端點驗證方法所做的判定，由本登錄表寫入，以便可以直接讀取該答案。`none`，或在手工建立的應用上沒有方法，為 FALSE；任何其他方法為 TRUE。RFC 9700 讀取 `oauthTokenEndpointAuthMethod`（`oauth2_bcp.js` 中的 `isConfidential()`），因此不單獨編輯此屬性。建立時只有在值與判定一致時才能寫明它，不一致則被拒絕（`STS-REG-0363`）。一個在建立時既未給出方法也未給出憑據的 OAuth 或 OpenID Connect 應用仍被記錄為 `none`。"
   },
   "applications.schema.attributes.samlEntityId.what": {
     "en": "3987c430d22d9352",

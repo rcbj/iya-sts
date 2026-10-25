@@ -852,8 +852,8 @@
     "text": "För RFC 8705 avsnitt 2.2 self_signed_tls_client_auth: base64url-kodad SHA-256 av DER-formen av det certifikat som den här klienten autentiserar sig med. DEN HÄR TJÄNSTENS EGET NAMN, som hålls bredvid det som RFC:n namnger: sedan 2026-09-13 autentiserar ett certifikat också klienten när det är x5c[0] för en nyckel i den jwks den registrerade (avsnitt 2.2.2). Hämta ett certifikats tumavtryck med GET /tls/sign-in, eller beräkna det: openssl x509 -outform DER | openssl dgst -sha256 -binary | base64url."
   },
   "applications.schema.attributes.oauthConfidential.what": {
-    "en": "ae52d212279d2378",
-    "text": "TRUE/FALSE, den bedömning som RFC 9700-läget gör om den — och därmed om PKCE krävs av den och om dess hemlighet kontrolleras. Skrivs här så att svaret kan läsas i stället för att härledas."
+    "en": "11b68b893e67de65",
+    "text": "TRUE eller FALSE, den bedömning som autentiseringsmetoden för tokenändpunkten gör, skriven av det här registret så att svaret kan läsas. `none`, eller ingen metod på en applikation som skapats för hand, är FALSE; varje annan metod är TRUE. RFC 9700 läser `oauthTokenEndpointAuthMethod` (`isConfidential()` i `oauth2_bcp.js`), så det här attributet redigeras inte. Ett skapande får ange det bara när värdet stämmer, och ett värde som inte stämmer avvisas (`STS-REG-0363`). En OAuth- eller OpenID Connect-applikation som skapas utan metod och utan autentiseringsuppgift registreras ändå som `none`."
   },
   "applications.schema.attributes.samlEntityId.what": {
     "en": "3987c430d22d9352",

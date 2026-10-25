@@ -201,7 +201,8 @@ credential endpoint. A wallet is a public client. Taken from
 5. Click **Create the application**.
 6. On the application's page, in **Change what it is allowed to do**:
    - **Tick** `none` under `oauthTokenEndpointAuthMethod`, and nothing else.
-   - **Set** `oauthConfidential` to `FALSE`.
+     The registry records `oauthConfidential` FALSE because the method is
+     `none`.
    - **Tick** `authorization_code` under `oauthGrantType`.
    - **Add to** `oauthScope` the values `identity_credential` and
      `identity_credential_jwt`.
@@ -215,12 +216,13 @@ api applications/create '{
     "oauthClientId": "sts-oid4vp-wallet-job",
     "oauthGrantType": ["authorization_code"],
     "oauthTokenEndpointAuthMethod": "none",
-    "oauthConfidential": "FALSE",
     "oauthRedirectUri": ["https://wallet.sts-oid4vp-wallet-job.example.test/cb"],
     "oauthResponseType": ["code"],
     "oauthScope": ["identity_credential", "identity_credential_jwt"]
   }}'
 ```
+
+The registry writes `oauthConfidential` FALSE because the method is `none`.
 
 Each configuration's scope is in the issuer metadata (`scope` on the
 configuration). In product mode, a client with an empty `oauthAllowedScope`

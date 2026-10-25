@@ -71,9 +71,11 @@ api realms/create '{"id":"r1","domain":"r1.example.net","name":"r1",
 declared for** you tick the families. Under **Its fields** the form shows a
 grid of attributes, by their attribute names, for the families ticked. The
 *simplified view* shows the fields most clients need, among them
-`oauthRedirectUri`, `oauthConfidential`, `oauthTokenEndpointAuthMethod`,
+`oauthRedirectUri`, `oauthTokenEndpointAuthMethod`,
 `oauthGrantType`, `oauthResponseType`, `oauthAllowedScope`, `oauthAudience`
 and `oauthClientSecret`. **Show every field (advanced view)** shows the rest.
+The registry writes `oauthConfidential` from the authentication method, so
+the form does not offer that attribute.
 A list holds one box per value, with **+** to add one. A list with a fixed set
 of values, such as `oauthGrantType`, is a row of checkboxes; a long URN is
 shown by its last two parts (`grant-type:device_code`), with the whole value
@@ -88,6 +90,11 @@ Three things are filled in for you:
   `oauthTokenEndpointAuthMethod`, a client secret makes it
   `client_secret_basic`, an `oauthJwks` or `oauthJwksUri` makes it
   `private_key_jwt`, and no credential makes it `none`, a public client.
+* **The confidential flag follows the method.** `none`, or no method on an
+  application created by hand, is recorded as `oauthConfidential` FALSE. Any
+  other method is TRUE. A create may send that same value. A value that
+  disagrees is refused (`STS-REG-0363`). The method is what an operator
+  edits, and the registry writes the flag.
 * **The first secret's lifetime** is the **Lifetime (days)** box beside
   **Generate Secret**, or `lifetimeDays` on the API create. See
   [Client secrets](#client-secrets).
@@ -173,8 +180,8 @@ Taken from `oauth2_sts_endpoints.js`.
 3. Under **Protocol families it is declared for**, tick **OAuth 2.0** and **OpenID Connect**.
 4. Under **Its fields**, in the **OAuth 2.0 / OpenID Connect** group:
    - `oauthRedirectUri`: `com.example.oauth2stsendpoints:/callback`.
-   - `oauthConfidential`: **false**.
-   - `oauthTokenEndpointAuthMethod`: tick `none`, and nothing else.
+   - `oauthTokenEndpointAuthMethod`: tick `none`, and nothing else. The
+     registry records `oauthConfidential` FALSE because the method is `none`.
    - `oauthGrantType`: tick `authorization_code` and `refresh_token`.
    - `oauthResponseType`: tick `code`.
    - `oauthAllowedScope`: `openid`, `profile` and `email`, one box each (**+** adds a box).
@@ -191,10 +198,13 @@ api applications/create '{
     "oauthResponseType": ["code"],
     "oauthGrantType": ["authorization_code", "refresh_token"],
     "oauthAllowedScope": ["openid", "profile", "email"],
-    "oauthTokenEndpointAuthMethod": "none",
-    "oauthConfidential": "FALSE"
+    "oauthTokenEndpointAuthMethod": "none"
   }}'
 ```
+
+The registry writes `oauthConfidential` FALSE from `none`. Sending
+`"oauthConfidential": "FALSE"` states the same value. A different value is
+refused (`STS-REG-0363`).
 
 ### A confidential client (a web server)
 

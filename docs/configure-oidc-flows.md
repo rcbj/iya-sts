@@ -395,7 +395,6 @@ declared for **OpenID Connect**. Then, on its **Configuration** tab's
 api applications/create '{"identifier":"nsso-first","name":"nsso-first",
   "protocols":["oauth2","oidc"],
   "fields":{"oauthClientId":"nsso-first","oauthTokenEndpointAuthMethod":"none",
-            "oauthConfidential":"FALSE",
             "oauthRedirectUri":["https://nsso-first.example.test/cb"],
             "oauthResponseType":["code"],
             "oauthGrantType":["authorization_code","refresh_token",
@@ -403,6 +402,8 @@ api applications/create '{"identifier":"nsso-first","name":"nsso-first",
             "oauthScope":["openid","device_sso"],
             "oauthNativeSso":"TRUE","oauthNativeSsoGroup":"vendor.one"}}'
 ```
+
+The registry writes `oauthConfidential` FALSE from `none`.
 
 Create the second app, `nsso-second`, the same way with the same group. Only
 apps in the same group share sessions.

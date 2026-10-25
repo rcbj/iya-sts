@@ -4893,6 +4893,46 @@ class AdminActions {
         changes.push({ attribute: name, values: valuesOf(given[name]) });
       }
     });
+    // oauthConfidential IS THE DETERMINATION THE METHODS MAKE (#466). The
+    // field grid no longer edits it. A body that still names it is checked
+    // against the methods THIS body leaves — the methods it posts when it
+    // posts them, otherwise the ones on the entry — before any attribute is
+    // written. Checking each write against the entry as it stands would
+    // refuse a save that changes the method and the flag together, because
+    // the flag would be compared with the old method. A value that agrees
+    // is taken out of the list and written afterwards from the methods, so
+    // a stale flag heals. The refusal is returned here so it keeps
+    // STS-REG-0363; the batch's own code (STS-ADMIN-0836) would hide it.
+    let syncConfidential = false;
+    const confidentialChange = changes.filter(function (change) {
+      return change.attribute === 'oauthConfidential';
+    })[0];
+    if (confidentialChange) {
+      const methodChange = changes.filter(function (change) {
+        return change.attribute === 'oauthTokenEndpointAuthMethod';
+      })[0];
+      const projected = methodChange ? methodChange.values
+        : valuesOf(entry.fields.oauthTokenEndpointAuthMethod);
+      const determination = applications.oauthConfidentialOf({
+        registered: !!entry.registered,
+        fields: { oauthTokenEndpointAuthMethod: projected }
+      });
+      const statedValues = confidentialChange.values;
+      const problem = statedValues.length === 1
+        ? applications.confidentialDisagreement(statedValues[0],
+                                                determination)
+        : (statedValues.length
+          ? applications.confidentialDisagreement(statedValues.join(' '),
+                                                  determination)
+          : applications.confidentialClearSentence());
+      if (problem) {
+        log.debug("Leaving AdminActions.updateApplicationFields(). " +
+                  "oauthConfidential disagrees.");
+        return this.refused('STS-REG-0363', { ok: false, errors: [problem] });
+      }
+      syncConfidential = true;
+      changes.splice(changes.indexOf(confidentialChange), 1);
+    }
     const changed = [];
     const errors = [];
     changes.forEach(function (change) {
@@ -5003,6 +5043,12 @@ class AdminActions {
         errors: (changed.length
           ? ['Saved ' + changed.join(', ') + '; the rest was refused:']
           : []).concat(errors) });
+    }
+    if (syncConfidential) {
+      const synced = applications.writeOauthConfidential(identifier);
+      if (synced && synced.changed) {
+        changed.push('oauthConfidential');
+      }
     }
     log.debug("Leaving AdminActions.updateApplicationFields(). " +
               changed.length + " attribute(s) changed.");
