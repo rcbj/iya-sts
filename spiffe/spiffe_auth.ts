@@ -1783,6 +1783,10 @@ class SpiffeAuth {
         presented: info.presented,
         protocol: info.protocol || 'SPIFFE',
         method: info.method || 'unstated',
+        // The SPIFFE ID, which is what an application's
+        // spiffeWorkloadId holds. Not client_id: the funnel would count
+        // a sighting this family does not record that way.
+        application: String(info.presented || ''),
         note: info.note || ''
       });
     } catch (e) {

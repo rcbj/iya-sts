@@ -34,9 +34,19 @@
 //      list. `authenticationsPage` pages it.
 //   6. THE TAB, drawn with the audit log's columns and one audit row.
 //      The console was not driven in a browser; this is the render.
+//      The acceptance's method is on the row (`method=`).
+//   7. A KERBEROS SPN recorded only as `application` is on the
+//      application whose `krb5ServicePrincipalName` is that SPN, with
+//      the method, without `detail.client_id`, and without a count.
+//   8. THE DRILL-DOWN WAITS. `getApplications` calls `audit.fresh()`
+//      when `application` is set, the wait the audit page makes, so a
+//      row recorded on another worker is on the tab.
 // ---------------------------------------------------------------------------
 
 delete process.env.CONFIG_FILE;
+
+const fs = require('fs');
+const path = require('path');
 
 const applications = require('../common/applications');
 const audit = require('../common/audit');
@@ -70,6 +80,10 @@ const SID_RE = TAG + '-sid-re';
 const SID_CASE = TAG + '-sid-case';
 const SID_TRIM = TAG + '-sid-trim';
 const SID_DECOY = TAG + '-sid-decoy';
+const KRB = TAG + '-krb';
+const SPN = 'HTTP/' + TAG + '.example.com@' + TAG.toUpperCase() + '.EXAMPLE';
+const SID_KRB = TAG + '-sid-krb';
+const KRB_METHOD = 'TGS-REQ with a TGT (PA-TGS-REQ)';
 
 /**
  * A request for one applications read.
@@ -362,6 +376,7 @@ function run(t) {
           html.indexOf('<code>session.refuse</code>') >= 0 &&
           html.indexOf('client_id=' + APP) >= 0 &&
           html.indexOf('application=' + CLIENT) >= 0 &&
+          html.indexOf('method=password') >= 0 &&
           html.indexOf('href="/admin/audit?code=STS-AUTHN-0054"') >= 0 &&
           html.indexOf(PASSWORD) < 0 &&
           html.indexOf('No authentication attempt naming this ' +
@@ -391,6 +406,49 @@ function run(t) {
                              'application is in the audit log.') >= 0,
           '13. an application with no attempt still has the tab, and ' +
           'the table says so');
+
+  const krbBefore = countOf(KRB);
+  const krb = adminActions.applicationsAction({
+    action: 'create', identifier: KRB,
+    'field.krb5ServicePrincipalName': SPN
+  }, ['krb5']);
+  stats.recordAuthentication({
+    presented: USER, protocol: 'Kerberos v5', method: KRB_METHOD,
+    application: SPN, sessionId: SID_KRB,
+    note: 'a service ticket was issued'
+  });
+  const krbRow = listedSid(SID_KRB);
+  const krbJson = readOf(KRB);
+  const krbHtml = page.detail(kit.context({ application: KRB }), krbJson);
+  t.check(krb && krb.ok === true && krbBefore === null &&
+          countOf(KRB) === 0 && !!krbRow &&
+          krbRow.detail.application === SPN &&
+          krbRow.detail.method === KRB_METHOD &&
+          !krbRow.detail.client_id &&
+          sessionIds(krbJson.authenticationEvents).indexOf(SID_KRB) >= 0 &&
+          krbJson.authentications === 0 &&
+          krbHtml.indexOf('method=' + KRB_METHOD) >= 0 &&
+          krbHtml.indexOf('application=' + SPN) >= 0,
+          '14. a Kerberos SPN recorded only as application is on that ' +
+          'application, with the method, and is not counted',
+          JSON.stringify({ created: krb && krb.errors,
+                           detail: krbRow && krbRow.detail,
+                           ids: sessionIds(krbJson.authenticationEvents ||
+                                           []),
+                           count: countOf(KRB) }));
+
+  const apiSrc = fs.readFileSync(path.join(__dirname, '..', 'mgmt-api',
+                                            'admin_api.ts'), 'utf8');
+  const marker = "operationId: 'getApplications'";
+  const start = apiSrc.indexOf(marker);
+  const next = apiSrc.indexOf('operationId:', start + marker.length);
+  const handler = apiSrc.slice(start, next < 0 ? apiSrc.length : next);
+  t.check(start >= 0 && handler.indexOf('audit.fresh()') >= 0 &&
+          handler.indexOf('String(one) === \'\'') >= 0,
+          '15. the application drill-down waits for audit.fresh(), and ' +
+          'the list does not',
+          handler.slice(handler.indexOf('handler:'),
+                        handler.indexOf('handler:') + 700));
   log.debug("Leaving run().");
 }
 

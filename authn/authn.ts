@@ -3887,7 +3887,8 @@ class Authn {
       return null;
     }
     if (!room) {
-      this.auditCapRefusal(username, 'OAuth 2.0 / OIDC');
+      this.auditCapRefusal(username, 'OAuth 2.0 / OIDC',
+                           session.rpClientId, 'ID Token');
       if (spec.res) {
         errorCodes.mark(spec.res, 'STS-AUTHN-0337');
       }
@@ -4053,7 +4054,8 @@ class Authn {
       return null;
     }
     if (!room) {
-      this.auditCapRefusal(username, 'OAuth 2.0 / OIDC');
+      this.auditCapRefusal(username, 'OAuth 2.0 / OIDC',
+                           session.rpClientId, 'ID Token');
       if (spec.res) {
         errorCodes.mark(spec.res, 'STS-AUTHN-0337');
       }
@@ -4415,6 +4417,32 @@ class Authn {
   // **AND FIVE (2026-09-17, #38)**: `pop`, a wallet's presentation. Callers
   // that know better pass their own `method` (`vc_signin.ts` does), and this
   // branch is what a session row reads when nothing did.
+  //
+  // The two facts an application's Authentication attempts tab matches and
+  // draws (#954). `application` is the protocol's name for who was being
+  // signed in to — a client_id, an entityID, a wtrealm — and `method` is
+  // the phrase `methodPhraseFor()` gives the acceptance. Empty strings are
+  // dropped by the audit log, and neither is a client_id the funnel would
+  // count: copying one into the other would count a sign-in twice.
+  /**
+   * The application name and authentication method for an audit detail.
+   *
+   * @param application - the protocol's name for the application
+   * @param method - the authentication method
+   * @returns those two fields
+   */
+  private attemptFacts(application, method):
+      { application: string, method: string } {
+    const { log } = this.deps;
+    log.debug("Entering Authn.attemptFacts().");
+    const facts = {
+      application: String(application || ''),
+      method: String(method || '')
+    };
+    log.debug("Leaving Authn.attemptFacts().");
+    return facts;
+  }
+
   private methodPhraseFor(amr) {
     const { log } = this.deps;
     log.debug("Entering Authn.methodPhraseFor().");
@@ -5091,7 +5119,7 @@ class Authn {
     log.debug("Leaving Authn.noteRealmRefusal().");
   }
 
-  private auditCapRefusal(username, via) {
+  private auditCapRefusal(username, via, application?, method?) {
     const { log, audit } = this.deps;
     log.debug("Entering Authn.auditCapRefusal().");
     audit.audit({
@@ -5103,10 +5131,10 @@ class Authn {
       target: '',
       summary: 'a session for ' + username + ' was refused: the realm is ' +
                'at authn.maxSessions',
-      detail: {
+      detail: Object.assign(this.attemptFacts(application, method), {
         why: 'the realm is at authn.maxSessions and this insert freed ' +
              'no row'
-      }
+      })
     });
     log.debug("Leaving Authn.auditCapRefusal().");
   }
@@ -5755,7 +5783,7 @@ class Authn {
   // the device refuses. True when it refused, with `refusedWith` and
   // `refusedWhy` on the caller's `detail`, as every refusal here writes.
   // -------------------------------------------------------------------------
-  private refusedOnDevice(detail, username, via): boolean {
+  private refusedOnDevice(detail, username, via, method): boolean {
     const { log, gate, audit } = this.deps;
     log.debug("Entering Authn.refusedOnDevice().");
     const requirement = gate.deviceRequirementOf();
@@ -5784,10 +5812,11 @@ class Authn {
       protocol: via || 'OAuth 2.0 / OIDC', channel: 'http', target: '',
       summary: 'a session for ' + username + ' was refused on its device ' +
                'at the ' + (via || 'sign-in') + ' door',
-      detail: { why: answer.why, application: String(detail.application ||
-                                                     ''),
-                device: fact ? String(fact.id) : '',
-                policy: answer.policy || '' } });
+      detail: Object.assign(this.attemptFacts(detail.application, method), {
+        why: answer.why,
+        device: fact ? String(fact.id) : '',
+        policy: answer.policy || ''
+      }) });
     detail.refusedWith = code;
     detail.refusedWhy = answer.why;
     log.info('authn: a session for "' + username + '" was REFUSED on its ' +
@@ -6170,7 +6199,8 @@ class Authn {
       summary: username + ' re-authenticated through ' + event.via +
                ' on session ' + session.id + ' (acr ' +
                (previous.acr || 'none') + ' to ' + (event.acr || 'none') + ')',
-      detail: {
+      detail: Object.assign(this.attemptFacts(extra.application,
+        this.methodPhraseFor(event.amr)), {
         sessionId: session.id,
         sub: session.user.sub,
         amr: event.amr.join(', '),
@@ -6182,7 +6212,7 @@ class Authn {
         authority: event.authority.kind,
         // Unchanged, and said so: a re-authentication is not an extension.
         expiresAt: new Date(session.expires).toISOString()
-      }
+      })
     });
     this.notifySession('reauthenticated', session, { via: event.via,
       previous: previous, req: (res && res.req) || null });
@@ -7154,7 +7184,8 @@ class Authn {
   // refused for this reason, a CAEP credential-change (#239's pattern: the
   // credential changed state, by policy). Asynchronous, because today's FIDO
   // metadata is a store lookup; never rejects.
-  private async attestationAtSignIn(username: string, key: any):
+  private async attestationAtSignIn(username: string, key: any,
+      application?: string):
       Promise<{ code: string; why: string } | null> {
     // `audit` and `stsCrypto` from the deps too (#912), so a recording
     // audit dependency sees the refusal rows this writes.
@@ -7186,10 +7217,13 @@ class Authn {
         errorCode: code, protocol: 'WebAuthn', channel: 'http', target: '',
         summary: 'a passkey of ' + username + ' was refused at sign-in: ' +
                  'the attestation rules in force no longer accept it',
-        detail: { credential: 'webauthn',
-                  credentialFingerprint: stsCrypto.credentialFingerprint(
-                    String(key.credentialId || '')),
-                  aaguid: credentials.Credentials.aaguidString(key.aaguid) }
+        detail: Object.assign(this.attemptFacts(application,
+          'webauthn'), {
+          credential: 'webauthn',
+          credentialFingerprint: stsCrypto.credentialFingerprint(
+            String(key.credentialId || '')),
+          aaguid: credentials.Credentials.aaguidString(key.aaguid)
+        })
       });
       // A KEY WHOSE ATTESTATION'S ALGORITHMS NO LONGER SATISFY THE PROFILE
       // (#941, STS-AUTHN-0412) changed standing as one #530 refuses did, so
@@ -7264,7 +7298,7 @@ class Authn {
   // ---------------------------------------------------------------------------
   // A second factor the application does not allow (#475) is refused the
   // same way, under its own code: `answer.mechanism.secondFactor` says so.
-  private refuseOnMechanism(extra, username, via, answer) {
+  private refuseOnMechanism(extra, username, via, answer, method) {
     const { log, audit, errorCodes } = this.deps;
     log.debug("Entering Authn.refuseOnMechanism().");
     const secondFactor = answer.mechanism.secondFactor === true;
@@ -7282,10 +7316,11 @@ class Authn {
                (via || 'sign-in') + ' door: the application does not allow ' +
                (secondFactor ? 'that second factor'
                              : 'that sign-in mechanism'),
-      detail: { application: String(extra.application || ''),
-                allowed: answer.mechanism.allowed,
-                used: answer.mechanism.satisfied,
-                policy: answer.policy || '' }
+      detail: Object.assign(this.attemptFacts(extra.application, method), {
+        allowed: answer.mechanism.allowed,
+        used: answer.mechanism.satisfied,
+        policy: answer.policy || ''
+      })
     });
     extra.refusedWith = code;
     extra.refusedWhy = answer.why;
@@ -7300,6 +7335,11 @@ class Authn {
     log.debug("Entering Authn.startSessionHere(). username=" + username + ", acr=" +
               acr);
     const extra = detail || {};
+    // What a session.refuse on this sign-in names (#954): the application
+    // the door had, and the method the acceptance row will use. Ahead of
+    // the reason in every detail below, so the twelve-key cap keeps them.
+    const attemptMethod = extra.authenticated === false ? 'declined'
+      : this.methodPhraseFor(amr);
     // THE PASSKEY POLICY FOR THIS PERSON AND APPLICATION (#535), which the
     // passkey refusals below read.
     this.deps.passkeyPolicy.select(username, extra.application);
@@ -7322,8 +7362,8 @@ class Authn {
         protocol: via || 'OAuth 2.0 / OIDC', channel: 'http', target: '',
         summary: 'a session for ' + username + ' was refused at the ' +
                  (via || 'sign-in') + ' door: the realm is being removed',
-        detail: { why: retiring.why,
-                  application: String(extra.application || '') }
+        detail: Object.assign(this.attemptFacts(extra.application,
+          attemptMethod), { why: retiring.why })
       });
       extra.refusedWith = 'STS-CORE-0121';
       extra.refusedWhy = retiring.why;
@@ -7352,8 +7392,10 @@ class Authn {
         protocol: via || 'OAuth 2.0 / OIDC', channel: 'http', target: '',
         summary: 'a session for ' + username + ' was refused at the ' +
                  (via || 'sign-in') + ' door: the account is disabled',
-        detail: { why: 'pwdAccountLockedTime is set on the entry',
-                  application: String(extra.application || '') }
+        detail: Object.assign(this.attemptFacts(extra.application,
+          attemptMethod), {
+          why: 'pwdAccountLockedTime is set on the entry'
+        })
       });
       extra.refusedWith = 'STS-AUTHN-0201';
       log.debug("Leaving Authn.startSessionHere(). The account is disabled.");
@@ -7380,9 +7422,11 @@ class Authn {
         summary: 'a session for ' + username + ' was refused at the ' +
                  (via || 'sign-in') + ' door: a service account may not ' +
                  'sign in at a browser in this realm',
-        detail: { why: 'stsServiceAccount is TRUE and the service-account ' +
-                       'policy\'s allowBrowserSignIn is off',
-                  application: String(extra.application || '') }
+        detail: Object.assign(this.attemptFacts(extra.application,
+          attemptMethod), {
+          why: 'stsServiceAccount is TRUE and the service-account ' +
+               'policy\'s allowBrowserSignIn is off'
+        })
       });
       extra.refusedWith = 'STS-SVCACCT-0010';
       log.debug("Leaving Authn.startSessionHere(). A service account at a " +
@@ -7416,9 +7460,10 @@ class Authn {
         summary: 'a session for ' + username + ' was refused at the ' +
                  (via || 'sign-in') + ' door: the authentication policy ' +
                  'does not accept that mechanism in that role',
-        detail: { credential: String(extra.credential &&
-                                     extra.credential.kind),
-                  application: String(extra.application || '') }
+        detail: Object.assign(this.attemptFacts(extra.application,
+          attemptMethod), {
+          credential: String(extra.credential && extra.credential.kind)
+        })
       });
       extra.refusedWith = policyCode;
       log.debug("Leaving Authn.startSessionHere(). The policy refused.");
@@ -7459,12 +7504,14 @@ class Authn {
                          'post-quantum, where the passkey policy requires ' +
                          'a post-quantum one'
                        : 'the issuance policy refused the passkey'),
-        detail: { credential: 'webauthn',
-                  credentialFingerprint: String(extra.credential &&
-                                                extra.credential.id
-                    ? stsCrypto.credentialFingerprint(
-                        String(extra.credential.id)) : ''),
-                  application: String(extra.application || '') }
+        detail: Object.assign(this.attemptFacts(extra.application,
+          attemptMethod), {
+          credential: 'webauthn',
+          credentialFingerprint: String(extra.credential &&
+                                        extra.credential.id
+            ? stsCrypto.credentialFingerprint(
+                String(extra.credential.id)) : '')
+        })
       });
       // A KEY THAT NO LONGER SIGNS ITS OWNER IN (#718): the first time per
       // key and reason, its row is marked and CAEP's credential-change goes
@@ -7514,10 +7561,11 @@ class Authn {
                      'application'
                    : 'the passkey policy lets only an operator recover ' +
                      'this account'),
-        detail: { credential: String(extra.credential &&
-                                     extra.credential.kind),
-                  reason: recoveryRefused.reason,
-                  application: String(extra.application || '') }
+        detail: Object.assign(this.attemptFacts(extra.application,
+          attemptMethod), {
+          credential: String(extra.credential && extra.credential.kind),
+          reason: recoveryRefused.reason
+        })
       });
       extra.refusedWith = recoveryRefused.code;
       extra.refusedWhy = recoveryRefused.why;
@@ -7653,9 +7701,11 @@ class Authn {
           summary: 'a session for ' + username + ' was refused at the ' +
                    (via || 'sign-in') + ' door: the browser is signed in ' +
                    'to as many accounts as it may hold',
-          detail: { accountSet: accountSet ? accountSet.id : '',
-                    signedIn: held,
-                    application: String(extra.application || '') }
+          detail: Object.assign(this.attemptFacts(extra.application,
+            attemptMethod), {
+            accountSet: accountSet ? accountSet.id : '',
+            signedIn: held
+          })
         });
         extra.refusedWith = 'STS-AUTHN-0340';
         extra.refusedWhy = why;
@@ -7791,7 +7841,8 @@ class Authn {
       if (!mechanismAnswer.allowed && mechanismAnswer.mechanism) {
         log.debug("Leaving Authn.startSessionHere(). The application does " +
                   "not allow that mechanism.");
-        return this.refuseOnMechanism(extra, username, via, mechanismAnswer);
+        return this.refuseOnMechanism(extra, username, via, mechanismAnswer,
+                                      attemptMethod);
       }
     }
     if (extra.gated !== true) {
@@ -7851,12 +7902,14 @@ class Authn {
           protocol: via || 'OAuth 2.0 / OIDC', channel: 'http', target: '',
           summary: 'a session for ' + username + ' was refused on risk at ' +
                    'the ' + (via || 'sign-in') + ' door',
-          detail: { application: String(extra.application || ''),
-                    action: sessionAnswer.risk.action,
-                    factor: sessionAnswer.risk.factor,
-                    level: risk ? risk.level : '',
-                    assessment: risk ? risk.assessmentId : '',
-                    policy: sessionAnswer.policy || '' }
+          detail: Object.assign(this.attemptFacts(extra.application,
+            attemptMethod), {
+            action: sessionAnswer.risk.action,
+            factor: sessionAnswer.risk.factor,
+            level: risk ? risk.level : '',
+            assessment: risk ? risk.assessmentId : '',
+            policy: sessionAnswer.policy || ''
+          })
         });
         this.settleRisk(risk, { decision: riskDecision, errorCode: code,
                                 policy: sessionAnswer.policy });
@@ -7868,7 +7921,8 @@ class Authn {
       if (!sessionAnswer.allowed && sessionAnswer.mechanism) {
         log.debug("Leaving Authn.startSessionHere(). The application does " +
                   "not allow that mechanism.");
-        return this.refuseOnMechanism(extra, username, via, sessionAnswer);
+        return this.refuseOnMechanism(extra, username, via, sessionAnswer,
+                                      attemptMethod);
       }
       if (!sessionAnswer.allowed) {
         log.info('authn: a session for "' + username + '" was REFUSED by the ' +
@@ -7880,9 +7934,11 @@ class Authn {
           protocol: via || 'OAuth 2.0 / OIDC', channel: 'http', target: '',
           summary: 'a session for ' + username + ' was refused by the ' +
                    'issuance policy at the ' + (via || 'sign-in') + ' door',
-          detail: { why: sessionAnswer.why,
-                    application: String(extra.application || ''),
-                    policy: sessionAnswer.policy || '' }
+          detail: Object.assign(this.attemptFacts(extra.application,
+            attemptMethod), {
+            why: sessionAnswer.why,
+            policy: sessionAnswer.policy || ''
+          })
         });
         extra.refusedWith = sessionAnswer.device
           ? (sessionAnswer.device.refusal === 'compromised'
@@ -7893,7 +7949,8 @@ class Authn {
                   "it.");
         return null;
       }
-    } else if (!extra.key && this.refusedOnDevice(extra, username, via)) {
+    } else if (!extra.key && this.refusedOnDevice(extra, username, via,
+                                                 attemptMethod)) {
       // THE DEVICE QUESTION A GATED DOOR COULD NOT ASK (#164 phase 6). The
       // sign-in screen asks the policy BEFORE its credential is complete —
       // ahead of a WebAuthn ceremony that may be the very key naming the
@@ -8115,10 +8172,13 @@ class Authn {
         protocol: via || 'OAuth 2.0 / OIDC', channel: 'http', target: '',
         summary: 'a session for ' + username + ' was refused: the directory ' +
                  'holds no entry for them',
-        detail: { why: 'no directory entry, so no subject',
-                  federation: (extra.federation && extra.federation.id) || '',
-                  autocreate: extra.federation
-                    ? String(extra.federation.autocreate !== false) : '' }
+        detail: Object.assign(this.attemptFacts(extra.application,
+          attemptMethod), {
+          why: 'no directory entry, so no subject',
+          federation: (extra.federation && extra.federation.id) || '',
+          autocreate: extra.federation
+            ? String(extra.federation.autocreate !== false) : ''
+        })
       });
       extra.refusedWith = 'STS-AUTHN-0180';
       log.debug("Leaving Authn.startSessionHere(). There is no entry to be the " +
@@ -8251,7 +8311,8 @@ class Authn {
         return null;
       }
       if (!room) {
-        this.auditCapRefusal(username, via || 'OAuth 2.0 / OIDC');
+        this.auditCapRefusal(username, via || 'OAuth 2.0 / OIDC',
+                             extra.application, attemptMethod);
         extra.refusedWith = 'STS-AUTHN-0337';
         log.debug("Leaving Authn.startSessionHere(). The realm is at " +
                   "authn.maxSessions.");
@@ -8351,7 +8412,8 @@ class Authn {
                (username + ' was signed in at the ' +
                 (via || 'OAuth 2.0 / OIDC') +
                 ' screen; session ' + sessionId + ' was created'),
-      detail: {
+      detail: Object.assign(this.attemptFacts(extra.application,
+        attemptMethod), {
         sessionId: sessionId,
         sub: session.user.sub,
         amr: (amr || []).join(', '),
@@ -8373,7 +8435,7 @@ class Authn {
         // here at all — and the row is the only place that distinction will
         // ever be recorded. Without one, the mode's (defaultSignInNote()).
         note: extra.note || this.defaultSignInNote()
-      }
+      })
     });
     // THE ONE ACT IN THIS SERVICE THAT MAKES SOMETHING GO OUT WITHOUT ANYBODY
     // ASKING. See setSessionObserver() above, and `ssf/caep.ts` for what is
@@ -15804,7 +15866,8 @@ class Authn {
     }
     // THE ATTESTATION RULES IN FORCE (#530). The account is known by now,
     // so the refusal may say why.
-    const attestationRefused = await this.attestationAtSignIn(owner, known);
+    const attestationRefused = await this.attestationAtSignIn(owner,
+      known, record.application);
     if (attestationRefused) {
       log.debug("Leaving Authn.passkeySignIn(). The attestation rules " +
                 "refused the key.");
@@ -17252,9 +17315,10 @@ class Authn {
                  ' was refused before the passkey step\'s ceremony: the ' +
                  'passkey policy requires a post-quantum passkey and they ' +
                  'hold none',
-        detail: { credential: 'webauthn',
-                  application: String((found.step.authn &&
-                                       found.step.authn.application) || '') }
+        detail: Object.assign(this.attemptFacts(
+          found.step.authn && found.step.authn.application, 'webauthn'), {
+          credential: 'webauthn'
+        })
       });
       errorCodes.mark(res, refusal.code);
       this.stepRefused(res, refusal.why);
@@ -17273,9 +17337,10 @@ class Authn {
         summary: 'a session for ' + String(found.step.username || '') +
                  ' was refused before the passkey step\'s ceremony: phrh ' +
                  'was required and no held key can earn it',
-        detail: { credential: 'webauthn',
-                  application: String((found.step.authn &&
-                                       found.step.authn.application) || '') }
+        detail: Object.assign(this.attemptFacts(
+          found.step.authn && found.step.authn.application, 'webauthn'), {
+          credential: 'webauthn'
+        })
       });
       errorCodes.mark(res, refusal.code);
       this.stepRefused(res, refusal.why);
@@ -18017,7 +18082,8 @@ class Authn {
         function (one) {
           return String(one.credentialId) === String(toSpend.credentialId);
         })[0] || null;
-      return self.attestationAtSignIn(step.username, heldKey)
+      return self.attestationAtSignIn(step.username, heldKey,
+        step.authn && step.authn.application)
         .then(function (refused) {
           return refused ? Object.assign({}, spent, { attestation:
                                                        refused })

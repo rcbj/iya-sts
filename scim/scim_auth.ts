@@ -3412,6 +3412,10 @@ class ScimAuth {
         { set: () => {}, req: null }, decision.principal,
         ['pwd'], '1', 'SCIM',
         { key: key, cookie: false,
+          // The bearer token's client_id, where it named one. The
+          // attempts tab matches it. Not passed as client_id: the
+          // token grant already counted that sighting.
+          application: String(decision.clientId || ''),
           summary: decision.principal + ' authenticated at /scim/v2 over ' +
                    decision.scheme + '; session created',
           note: 'A SCIM credential was presented and accepted. This session ' +
