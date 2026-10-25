@@ -2804,8 +2804,9 @@ type RouteApp = typeof app;
  * It decides nothing; the actions live in admin-core.
  */
 
-const APPLICATION_TAB_IDS = ['tab-overview', 'tab-config', 'tab-credentials',
-  'tab-origins', 'tab-signals', 'tab-statements', 'tab-addresses',
+const APPLICATION_TAB_IDS = ['tab-overview', 'tab-authentications',
+  'tab-config', 'tab-credentials', 'tab-origins', 'tab-access-types',
+  'tab-scope-claims', 'tab-signals', 'tab-statements', 'tab-addresses',
   'tab-permissions', 'tab-roles', 'tab-owners', 'tab-metadata', 'tab-entry',
   'cfg-saml2', 'cfg-saml11',
   'tab-import-export', 'tab-remove'];
@@ -2836,6 +2837,15 @@ const USER_SUB_TAB_IDS = ['ucred-factors', 'ucred-password', 'ucred-service',
 // the tab being read.
 const CERT_TAB_IDS = ['cert-tab-metadata', 'cert-tab-acme', 'cert-tab-est',
   'cert-tab-scep', 'cert-tab-spiffe'];
+// The passkey policy's three sub-tabs (`web_policies.ts`). A sub-tab whose
+// id is not named here shows its panel and never lights its link.
+const POLICY_SUB_TAB_IDS = ['passkey-sub-default', 'passkey-sub-named',
+  'passkey-sub-new'];
+// A built-in listener with settings of its own (`listeners_admin.ts`): those
+// with a group and TLS or HTTP. A custom listener's id is the operator's,
+// so it is not named here; the runtime marks that link itself.
+const LISTENER_TAB_IDS = ['tab-main', 'tab-ldaps', 'tab-debugger',
+  'tab-revocation', 'tab-spiffe-server', 'tab-spiffe-broker', 'tab-cell'];
 const CERT_SUB_TAB_IDS = ['cert-spiffe-overview', 'cert-spiffe-entries',
   'cert-spiffe-agents', 'cert-spiffe-brokers', 'cert-acme-ca',
   'cert-acme-profiles', 'cert-acme-eab', 'cert-acme-accounts',
@@ -3551,6 +3561,11 @@ class AdminConsole {
   stylesheet(): string {
     const { log, applications } = this.deps;
     log.debug("Entering AdminConsole.stylesheet().");
+    // The tab being read. The same solid fill as `nav .here` and
+    // `.pagenav .here`: a white chip on `#f6f6fa` was not readable as
+    // "this one".
+    const tabHere = 'background:#12107c;color:#fff;font-weight:700;' +
+      'border-color:#12107c';
     const css = 'body{font-family:system-ui,-apple-system,"Segoe ' +
       'UI",Arial,sans-serif;background:#f4f4f7;margin:0;padding:2rem ' +
       '1rem;color:#222;line-height:1.45}' +
@@ -4476,6 +4491,10 @@ class AdminConsole {
       'border:1px solid #d5d5dd;border-bottom:0;border-radius:6px 6px 0 0;' +
       'background:#f6f6fa;color:#12107c;text-decoration:none;' +
       'font-size:.9em}.subbar a{font-size:.85em;padding:4px 10px}' +
+      // The runtime's mark (`markOpenTabs()`), for a tab this sheet does
+      // not name — a custom listener's. The `:has()` rules below paint the
+      // ones it does name, in this same fill.
+      '.tabbar a.tab-current{' + tabHere + '}' +
       '.tabpanel,.subpanel{scroll-margin-top:1rem}' +
       '@supports selector(:has(*)){' +
       '.tabs>.tabpanel,.subtabs>.subpanel{display:none}' +
@@ -4487,8 +4506,7 @@ class AdminConsole {
       ':target))>.subpanel.first{display:block}' +
       '.tabs:not(:has(>.tabpanel:target,>.tabpanel :target))>.tabbar ' +
       'a.first,.subtabs:not(:has(>.subpanel:target,>.subpanel :target))>' +
-      '.subbar a.first{background:#fff;font-weight:700;' +
-      'border-color:#12107c}' +
+      '.subbar a.first{' + tabHere + '}' +
       // The tab being read, one rule per tab: a selector cannot compare a
       // link's href with the id that is targeted, so the ids are named.
       APPLICATION_TAB_IDS.concat(applications.FIELD_GROUPS.map(function (g) {
@@ -4512,26 +4530,27 @@ class AdminConsole {
        'kerberos-tab-trusts',
        'scim-tab-metadata', 'server', 'clients', 'policies-tab-metadata',
        'tab-password', 'tab-authn', 'tab-serviceAccount', 'tab-passkey',
-       'tab-locale', 'tab-profiles', 'listeners-tab-metadata',
+       'tab-locale', 'tab-attributes', 'tab-profiles',
+       'listeners-tab-metadata',
        'tab-listeners', 'tab-custom', 'tab-applications', 'tab-defaults'],
+      LISTENER_TAB_IDS, POLICY_SUB_TAB_IDS,
       CERT_TAB_IDS, CERT_SUB_TAB_IDS,
       WebPagesTable.PROTOCOL_TAB_IDS).map(function (id) {
         const sub = id.indexOf('cfg-') === 0 ||
           USER_SUB_TAB_IDS.indexOf(id) >= 0 ||
-          CERT_SUB_TAB_IDS.indexOf(id) >= 0;
+          CERT_SUB_TAB_IDS.indexOf(id) >= 0 ||
+          POLICY_SUB_TAB_IDS.indexOf(id) >= 0;
         const outer = sub ? '.subtabs' : '.tabs';
         const bar = sub ? '.subbar' : '.tabbar';
         return outer + ':has(#' + id + ':target,#' + id + ' :target)>' + bar +
           ' a[href="#' + id + '"]';
-      }).join(',') + '{background:#fff;font-weight:700;' +
-      'border-color:#12107c}}' +
+      }).join(',') + '{' + tabHere + '}}' +
       ['json', 'table', 'fields'].map(function (tab) {
         return '#prm-tab-' + tab + ':checked~.prm-panel-' + tab +
                '{display:block}' +
                '#prm-tab-' + tab + ':checked~.prm-tablist label[for="prm-tab-' +
                tab +
-               '"]{background:#fff;border-color:#d5d5dd;font-weight:600;' +
-               'margin-bottom:-1px}' +
+               '"]{' + tabHere + ';margin-bottom:-1px}' +
                '#prm-tab-' + tab + ':focus-visible~.prm-tablist ' +
                'label[for="prm-tab-' + tab + '"]{outline:2px solid #12107c}';
       }).join('');

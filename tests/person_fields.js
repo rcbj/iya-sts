@@ -264,6 +264,74 @@ function childMain() {
       note(subLinks.indexOf('ucred-service') >= 0 && unmarked.length === 0,
            'E. every sub-tab of the person page is marked when it is read',
            JSON.stringify({ subLinks: subLinks, unmarked: unmarked }));
+      const here = 'background:#12107c;color:#fff;font-weight:700;' +
+        'border-color:#12107c';
+      const fills = function (selector) {
+        const at = css.indexOf(selector);
+        const brace = at < 0 ? -1 : css.indexOf('{', at);
+        return brace >= 0 &&
+          css.slice(brace, brace + here.length + 1) === '{' + here;
+      };
+      note(css.indexOf('.tabbar a.tab-current{' + here + '}') >= 0 &&
+             fills('a.first') &&
+             fills('a[href="#tab-authentications"]') &&
+             fills('>.subbar a[href="#passkey-sub-named"]'),
+           'E. the tab being read is filled in the brand colour');
+      // A tab whose id the stylesheet cannot name (a custom listener's)
+      // is still the one marked, by the runtime rather than by a selector.
+      const Runtime = require(ROOT + '/admin-ui/web_runtime');
+      const cls = function () {
+        const set = {};
+        return {
+          contains: function (c) { return !!set[c]; },
+          add: function (c) { set[c] = true; },
+          remove: function (c) { delete set[c]; }
+        };
+      };
+      const node = function (tag, attrs, children) {
+        return {
+          tagName: tag, classList: cls(), attrs: attrs || {},
+          children: children || [],
+          getAttribute: function (name) {
+            return this.attrs[name] || null;
+          },
+          setAttribute: function (name, value) {
+            this.attrs[name] = value;
+          },
+          removeAttribute: function (name) { delete this.attrs[name]; },
+          contains: function (other) {
+            const self = this;
+            if (other === self) {
+              return true;
+            }
+            return self.children.some(function (child) {
+              return child === other ||
+                (child.contains && child.contains(other));
+            });
+          }
+        };
+      };
+      const firstPanel = node('SECTION', { id: 'tab-listeners' }, []);
+      const custom = node('SECTION', { id: 'tab-custom-edge' }, []);
+      const linkFirst = node('A', { href: '#tab-listeners' }, []);
+      const linkCustom = node('A', { href: '#tab-custom-edge' }, []);
+      linkFirst.classList.add('first');
+      const bar = node('NAV', {}, [linkFirst, linkCustom]);
+      bar.classList.add('tabbar');
+      const root = node('DIV', {}, [bar, firstPanel, custom]);
+      const byId = { 'tab-listeners': firstPanel,
+                     'tab-custom-edge': custom };
+      const rt = Object.create(Runtime.prototype);
+      rt.env = { document: {
+        querySelectorAll: function () { return [root]; },
+        querySelector: function () { return custom; },
+        getElementById: function (id) { return byId[id] || null; }
+      } };
+      rt.markOpenTabs();
+      note(linkCustom.classList.contains('tab-current') &&
+             linkCustom.attrs['aria-current'] === 'true' &&
+             !linkFirst.classList.contains('tab-current'),
+           'E. a tab the stylesheet does not name is still the one marked');
       const writable = /action="\/admin\/users\/edit#ufg-name"/.test(inner);
       if (writable) {
         ['name', 'contact', 'organization', 'address', 'identity']
