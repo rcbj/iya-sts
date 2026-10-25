@@ -48,6 +48,15 @@
 //   G. /admin-api's save-passkey-policy takes the row (rule 7's parity), a
 //      value outside the three is refused, and a body that leaves it out —
 //      every caller written before it existed — is accepted.
+//   H. A recovery write that returns false (#962) is not a finished reset
+//      when a hold is required. Under not-weaker, spending an
+//      administrator's link for a passkey holder does not answer success,
+//      leaves the link spendable and leaves no password that signs in
+//      with nothing pending. The same false write still completes a reset
+//      for a person who holds no passkey. reset-password, reached the same
+//      way as issue-password-reset, refuses rather than returning a
+//      password. The directory function is restored before the child exits,
+//      and section D (above H) already ran with the real write.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -520,6 +529,141 @@ function childMain() {
            'outside the three, and accepts a body without it',
            JSON.stringify([taken, odd, old]).slice(0, 300));
 
+      // ==================================================================
+      // H. A RECOVERY WRITE THAT FAILS IS NOT A FINISHED RESET (#962)
+      //
+      // After D, so D's real write is untouched. The stub is the directory
+      // function the child stack holds (the object setDirectory was given),
+      // and it is put back before anything else in this process runs.
+      // ==================================================================
+      rows('not-weaker');
+      const errorCodes = require(ROOT + '/common/error_codes');
+      const credDir = credentials.directoryInstalled();
+      note(!!credDir && typeof credDir.writeRecoveryPending === 'function',
+           'H0. the directory the stack uses exposes writeRecoveryPending',
+           credDir ? typeof credDir.writeRecoveryPending : 'no directory');
+      if (credDir && typeof credDir.writeRecoveryPending === 'function') {
+        const realRecoveryWrite = credDir.writeRecoveryPending;
+        let recoveryWritesFail = false;
+        let failedWrites = 0;
+        credDir.writeRecoveryPending = function (key, value) {
+          if (recoveryWritesFail) {
+            // The directory could not record the recovery (#962).
+            failedWrites += 1;
+            return false;
+          }
+          return realRecoveryWrite(key, value);
+        };
+        const passwordSignsIn = function (who, password) {
+          // Product mode is the check development mode does not do: a
+          // name signs in there with no stored password. The override
+          // is only around verify, and is cleared before the next HTTP
+          // call, which must stay in development like the rest of this
+          // file.
+          config.setOverride('global.mode', 'product');
+          let verified = { ok: true, reason: 'not-run' };
+          try {
+            verified = credentials.verify(who, password, { via: 'test' });
+          } catch (e) {
+            // A throw is not a sign-in. The finding reports it.
+            verified = { ok: false, reason: String((e && e.message) || e) };
+          } finally {
+            config.clearOverride('global.mode');
+          }
+          return verified;
+        };
+        try {
+          recoveryWritesFail = true;
+          const CARA = 'ra-cara-' + STAMP;
+          ldapServer.createUser(CARA, {});
+          credentials.addKey(CARA, { credentialId: 'cara-primary-' + STAMP,
+            publicKeyJwk: KEY, label: 'cara key' }, 'primary');
+          token = issueLink(CARA);
+          const writesAtSpend = failedWrites;
+          r = await spend(CARA, token, 'Cara-Pass-111!');
+          const failedBody = json(r);
+          note(r.status !== 200 && failedBody.ok !== true &&
+               /not kept/.test(r.text) && /used again/.test(r.text) &&
+               !/STS-AUTHN-0382/.test(r.text) &&
+               failedWrites > writesAtSpend &&
+               !credentials.hasPassword(CARA) &&
+               credentials.recoveryPending(CARA) === null &&
+               credentials.checkPasswordReset(CARA, token).ok === true,
+               'H1. under not-weaker a failed recovery write does not ' +
+               'spend an administrator\'s link, does not answer success, ' +
+               'and does not keep the password',
+               r.status + ' ' + r.text.slice(0, 240));
+          const again = await spend(CARA, token, 'Cara-Pass-111!');
+          const againErrors = (json(again).errors || []).join(' ');
+          note(again.status !== 200 && json(again).ok !== true &&
+               /not kept/.test(againErrors) &&
+               !/not valid/.test(againErrors) &&
+               credentials.checkPasswordReset(CARA, token).ok === true,
+               'H2. the claim was released, so a second spend can still ' +
+               'be attempted and is not the spent-link refusal',
+               again.status + ' ' + againErrors.slice(0, 220));
+          const verified = passwordSignsIn(CARA, 'Cara-Pass-111!');
+          r = await signInAt({ username: CARA, password: 'Cara-Pass-111!' });
+          const ordinary = r.next === 'redirect' && !noSession(r) &&
+            credentials.hasPassword(CARA) &&
+            credentials.recoveryPending(CARA) === null;
+          note(!verified.ok && !credentials.hasPassword(CARA) &&
+               credentials.recoveryPending(CARA) === null && !ordinary,
+               'H3. it does not leave a password that signs in without a ' +
+               'pending recovery',
+               (verified.reason || verified.ok) + ' ' +
+               (r.next || r.status) + ' hasPassword=' +
+               credentials.hasPassword(CARA));
+
+          const PLAIN = 'ra-plain-' + STAMP;
+          ldapServer.createUser(PLAIN, {});
+          token = issueLink(PLAIN);
+          const writesAtPlain = failedWrites;
+          r = await spend(PLAIN, token, 'Plain-Pass-111!');
+          note(r.status === 200 && json(r).ok === true &&
+               credentials.recoveryPending(PLAIN) === null &&
+               credentials.hasPassword(PLAIN) === true &&
+               !credentials.checkPasswordReset(PLAIN, token).ok &&
+               failedWrites === writesAtPlain,
+               'H4. a person with no passkey still completes the reset, ' +
+               'with nothing pending, while the recovery write would ' +
+               'return false',
+               r.status + ' writes=' + failedWrites + ' ' +
+               r.text.slice(0, 160));
+
+          const writesAtReset = failedWrites;
+          const reset = actions.usersAction({ action: 'reset-password',
+                                              user: CARA }, context);
+          const resetText = (reset.errors || []).join(' ');
+          const resetVerified = passwordSignsIn(CARA,
+                                                 String(reset.password || ''));
+          r = await signInAt({ username: CARA,
+                               password: String(reset.password ||
+                                                'Cara-Pass-111!') });
+          const resetOrdinary = r.next === 'redirect' && !noSession(r) &&
+            credentials.hasPassword(CARA) &&
+            credentials.recoveryPending(CARA) === null;
+          note(reset.ok !== true && !reset.password &&
+               errorCodes.codeOf(reset) === 'STS-AUTHN-0382' &&
+               /not kept/.test(resetText) && /not complete/.test(resetText) &&
+               !/STS-AUTHN-0382/.test(resetText) &&
+               failedWrites > writesAtReset &&
+               !resetVerified.ok && !credentials.hasPassword(CARA) &&
+               credentials.recoveryPending(CARA) === null && !resetOrdinary,
+               'H5. reset-password under not-weaker does not return ok ' +
+               'with a password when the recovery write fails, and a ' +
+               'password sign-in is not an ordinary session',
+               JSON.stringify({ ok: reset.ok, password: !!reset.password,
+                                code: errorCodes.codeOf(reset),
+                                next: r.next,
+                                hasPassword: credentials.hasPassword(CARA) })
+                 .slice(0, 240));
+        } finally {
+          recoveryWritesFail = false;
+          credDir.writeRecoveryPending = realRecoveryWrite;
+        }
+      }
+
       passkeyPolicy.reset('default');
       server.close();
     });
@@ -592,6 +736,7 @@ module.exports = {
             'passkey policy\'s recoveryAssurance, the recover-account ' +
             'rules, the reset link, the forgot-password request, the ' +
             'recovery code and the sign-in limited to registering a ' +
-            'passkey (#724)',
+            'passkey (#724); a recovery that cannot be recorded does not ' +
+            'finish the reset (#962)',
   run: run
 };

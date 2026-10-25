@@ -2446,7 +2446,8 @@ class AdminActions {
   }
 
   private credentialAdminAction(action, body, ctx) {
-    const { log, credentials, auditLog, accountSignals } = this.deps;
+    const { log, credentials, auditLog, accountSignals, errorCodes } =
+      this.deps;
     log.debug("Entering AdminActions.credentialAdminAction(). action=" +
               action);
     if (CREDENTIAL_ADMIN_ACTIONS.indexOf(action) < 0) {
@@ -2477,15 +2478,48 @@ class AdminActions {
                   "password was refused.");
         return this.refusedBy('STS-ADMIN-0780', set);
       }
+      // THE RECOVERY BEFORE THE RESET IS FINISHED (#962). A false
+      // `noteRecovery()` is success when no hold is required — no passkey,
+      // or the selected `recoveryAssurance` is `any` — and
+      // `recoveryHoldRequired()` is that test, not a second copy of it.
+      // When a hold is required and the write failed, the password just
+      // stored would sign in with nothing pending. It is taken off, the
+      // outstanding link is left, nobody is signed out, and the generated
+      // password is not returned: the reset did not happen.
+      const hold = credentials.recoveryHoldRequired(who);
+      const noted = credentials.noteRecovery(who, 'admin-password');
+      if (hold && !noted) {
+        const removed = credentials.removePassword(who);
+        const removal = removed.ok ? ''
+          : ' Removing the password that was just stored also failed' +
+            ((removed.errors && removed.errors.length)
+              ? ': ' + removed.errors.join(' ') : '') + '.';
+        // The write itself is already logged by setRecoveryPending
+        // (STS-AUTHN-0382). This line is the reset that did not finish,
+        // and the removal when that also failed.
+        log.error(errorCodes.tag('STS-AUTHN-0382') + 'admin: the password ' +
+                  'of "' + who + '" was not kept and the reset is not ' +
+                  'complete.' + removal);
+        auditLog.record({
+          category: 'admin', action: 'admin.password.reset',
+          errorCode: 'STS-AUTHN-0382', actor: ctx.actor, target: who,
+          outcome: 'failure',
+          summary: 'an administrator\'s password reset of ' + who +
+                   ' was not completed: the recovery could not be recorded',
+          detail: { username: who, via: ctx.via,
+                    removed: !!(removed.ok && removed.removed) }
+        });
+        log.debug("Leaving AdminActions.credentialAdminAction(). The " +
+                  "recovery was not recorded.");
+        return this.refused('STS-AUTHN-0382', { ok: false, errors: [
+          'The password was not kept and the reset is not complete.'] });
+      }
       const forced = credentials.setPasswordResetRequired(who, true);
       // A LINK OUTSTANDING IS SPENT BY THIS: the administrator has just decided
       // what the password is, and a link left behind would let whoever holds it
-      // replace that decision.
+      // replace that decision. Only once the recovery, where one is required,
+      // has been recorded (#962).
       credentials.consumePasswordReset(who);
-      // AN OPERATOR'S RECOVERY (#724): for a person holding a passkey, the
-      // sign-in this password leads to is held by the passkey policy's
-      // recoveryAssurance until a passkey signs them in.
-      credentials.noteRecovery(who, 'admin-password');
       const signedOut = this.signOutEverywhere(who, ctx, 'a password reset');
       audited('admin.password.reset',
               'an administrator reset the password of ' + who,
