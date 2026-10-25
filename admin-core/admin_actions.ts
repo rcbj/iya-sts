@@ -4216,9 +4216,16 @@ class AdminActions {
     // ever written. Somebody following either instruction got a 404 naming an
     // endpoint this service documents.
     //
-    // It is `credentials.setPassword()` and nothing else: hashed there, never
-    // here, and never written as an attribute — which is also why
-    // `userPassword` is refused by the attribute door on `create`.
+    // It is `credentials.setPassword()`: hashed there, never here, and never
+    // written as an attribute — which is also why `userPassword` is refused
+    // by the attribute door on `create`. It does NOT set `pwdReset` and it
+    // does NOT sign the person out, which is what `reset-password` does
+    // besides the password. What it shares with that door, since #960, is
+    // the recovery note: a passkey holder's next password sign-in is held
+    // by `recoveryAssurance` until a passkey signs them in.
+    // `noteRecovery()` writes nothing when they hold no passkey or the row
+    // is `any`, and a failed write is already logged (STS-AUTHN-0382).
+    // Either way this action still answers that the password was set.
     if (action === 'set-password') {
       const who = String(body.user || body.username || '').trim();
       if (!who) {
@@ -4255,6 +4262,10 @@ class AdminActions {
                   "refused.");
         return this.refusedBy('STS-ADMIN-0525', set);
       }
+      // A passkey holder's recovery, noted the way `reset-password` notes
+      // it (#960). False — no passkey, assurance `any`, or a write already
+      // logged — does not fail the action: the password is set either way.
+      credentials.noteRecovery(who, 'admin-password');
       accountSignals.credentialChanged({ username: who,
         credentialType: 'password', changeType: 'update', via: ctx.via,
         reasonAdmin: 'An administrator set the password of ' + who + '.',
@@ -9999,7 +10010,11 @@ class AdminActions {
   //      one, the history is kept, and the observer derives the new keys at
   //      the next kvno. A generated one (`random`) is drawn against the same
   //      policy and NEVER SHOWN: the keytab is then the only credential that
-  //      opens the account until somebody sets a password again.
+  //      opens the account until somebody sets a password again. A passkey
+  //      holder's recovery is noted here too, as `reset-password` notes it
+  //      (#960), once that set has succeeded and before the keytab is asked
+  //      for — so a keytab that then fails has still recorded the hold.
+  //      Step 1's refusal is before any of this and notes nothing.
   //   3. What a reset does to the rest of the account, as `reset-password`
   //      does it: an outstanding reset link is spent (the administrator has
   //      just decided what the password is), they are signed out of
@@ -10043,6 +10058,11 @@ class AdminActions {
                 "refused.");
       return this.refusedBy('STS-ADMIN-0802', set);
     }
+    // Noted before the keytab is built (#960). A later failure still
+    // reports `passwordSet`, and the hold is already on the entry. False
+    // — no passkey, assurance `any`, or a write already logged — leaves
+    // the reset as it was.
+    credentials.noteRecovery(who, 'admin-password');
     credentials.setPasswordResetRequired(who, false);
     credentials.consumePasswordReset(who);
     const signedOut = this.signOutEverywhere(who, ctx,
