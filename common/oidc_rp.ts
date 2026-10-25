@@ -2848,7 +2848,8 @@ class OidcRelyingParty {
           outcome: 'refused',
           summary: 'the ' + surface.label + ' refused an ID Token from ' +
                    'this service: ' + verified.why,
-          detail: { surface: surface.id, client_id: surface.clientId,
+          detail: { method: 'ID Token',
+                    surface: surface.id, client_id: surface.clientId,
                     why: verified.why }
         });
         return self.coded(idTokenCode, { ok: false,

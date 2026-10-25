@@ -14180,7 +14180,11 @@ class AdminApi {
                      'how full the audit log is. The member is not ' +
                      '`authentications`: that one is the count. The list ' +
                      'holds no more history than the audit log does, and ' +
-                     'nothing in it is a credential.\n\n**The ?application= ' +
+                     'nothing in it is a credential. Another process\'s ' +
+                     'rows are read before this reply is built, the same ' +
+                     'wait GET /admin-api/audit makes, so an attempt ' +
+                     'recorded on a different worker is on the list.\n\n' +
+                     '**The ?application= ' +
                      'reply\'s ' +
                      '`page.passkeyPolicies`** (#609) is what the console ' +
                      'draws as the read-only Passkey policy card of the ' +
@@ -14259,10 +14263,29 @@ class AdminApi {
                              'found them, or one application with its ' +
                              'directory entry when `application` was given.',
         responseSchema: { $ref: '#/components/schemas/ApplicationList' },
-        handler: function (req, res) {
+        handler: function (req, res, next) {
           log.debug("Entering the management API applications endpoint.");
-          self.sendJson(res, 200, adminViews.applicationsJson(req));
-          log.debug("Leaving the management API applications endpoint.");
+          const send = function () {
+            log.debug("Entering send().");
+            self.sendJson(res, 200, adminViews.applicationsJson(req));
+            log.debug("Leaving send().");
+            log.debug("Leaving the management API applications endpoint.");
+          };
+          // The list carries no attempts. The drill-down's do, and they
+          // are the audit log: another worker's rows are noted, not held,
+          // until fresh() — the wait the audit page already makes (#820).
+          // Without it the Authentication attempts tab is empty on every
+          // application whenever the sign-in was recorded elsewhere.
+          const one = req.query && req.query.application;
+          if (one === undefined || one === null || String(one) === '') {
+            send();
+            return;
+          }
+          audit.fresh().then(send).catch(function (e) {
+            log.debug("Caught in the management API applications " +
+                      "endpoint: " + ((e && e.message) || e));
+            next(e);
+          });
         } },
 
       // WHAT A CREATE MAY SAY, read off the service. Rule 7 asks for an

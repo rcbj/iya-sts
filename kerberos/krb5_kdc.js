@@ -5655,6 +5655,11 @@ async function answerTgsReq(request, state) {
     method: s4u.mode === 'none' ? 'TGS-REQ with a TGT (PA-TGS-REQ)'
                                 : 'S4U2' + s4u.mode + ' (impersonated; ' +
                                                       'presented nothing)',
+    // The service principal is Kerberos's name for the application, the
+    // same string seen() filed above, so the attempts tab matches
+    // krb5ServicePrincipalName. Not client_id: the funnel would count
+    // the sighting seen() already recorded.
+    application: body.sname.name.join('/') + '@' + answeringRealm,
     note: s4u.mode === 'none'
       ? 'Asked ' + answeringRealm + ' for ' + body.sname.name.join('/') + '.'
       : 'Requested by ' + ticketPart.cname.name.join('/') + ', which asked ' +

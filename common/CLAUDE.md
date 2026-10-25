@@ -3647,7 +3647,14 @@ with `Cannot find module` naming a file the operator never mentioned.
    `detail.application` is the identifier or one of `identifiersOf()`'s
    values, through `authenticationEventsFor()`. `session.reauthenticate` is
    the acceptance written a second time and is not in that list. The sign-in
-   screen calls the refusal line; it does not call `audit()` itself.
+   screen calls the refusal line; it does not call `audit()` itself. A door
+   that knows its protocol's identifier passes it as `application` — a
+   Kerberos service principal, an LDAP bind DN, a client-certificate
+   subject, a WS-Trust AppliesTo, a SPIFFE ID, a SCIM bearer token's
+   client_id — and not as `client_id`, so the tab matches and the count is
+   not moved twice. `session.refuse` carries `method` beside that name,
+   ahead of the reason, inside the twelve-key cap. `session.start` and
+   `session.reauthenticate` carry both as well; neither action is on the tab.
 
    **One request is deliberately not an event: a `/healthcheck` that answered
    200** (`QUIET_WHEN_OK` / `isQuietProbe()` in `recordHttp()`). It is asked

@@ -5044,6 +5044,11 @@ function recordCertificateAuthentication(subject, common, cert, mode,
     presented: subject,
     protocol: 'TLS',
     method: 'client certificate on the main port (' + MAIN_PORT + ')',
+    // The certificate subject, RFC 4514, which is what an application's
+    // oauthTlsClientAuthSubjectDn holds. The attempts tab matches that.
+    // Not client_id: this sighting is the certificate, and the token
+    // endpoint records its own client_id when one authenticated there.
+    application: subject,
     note: 'the chain verified against one of the ' + anchors.length +
       ' anchor(s) in this service\'s truststore, and ' +
       (revocation && revocation.checked

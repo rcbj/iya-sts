@@ -17775,6 +17775,11 @@ server.bind('', function (req, res, next) {
     protocol: 'ldap',
     method: dn ? (appPassword ? 'simple bind (app password)' : 'simple bind')
       : 'anonymous simple bind',
+    // LDAP's name for the application is the bind DN
+    // (ldapBindDn). An entry that declared this DN lists the bind; one
+    // that did not is unchanged. Not client_id: a bind is not a sighting
+    // this registry counts, and the funnel would count it as one.
+    application: dn || '',
     note: appPassword
       ? 'an app password ("' + appPassword.name + '") was verified'
       : verified ? 'the password was verified' : 'no password was checked'

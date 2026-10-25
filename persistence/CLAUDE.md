@@ -860,9 +860,10 @@ events, and every other process read, opened and parsed it: about 5,000 rows
 a minute in each of 8081's nine processes under a password load, for a page
 nobody had open. Now:
 - the applier NOTES another process's change (`contributionStale()`);
-- the audit and error-code operations wait for `audit.fresh()`, which reads
-  every noted row in one batch (`refreshContributions()`, through
-  `readContributions()`);
+- the audit and error-code operations, and the application drill-down
+  (`GET /admin-api/applications?application=`, whose Authentication attempts
+  tab is this log), wait for `audit.fresh()`, which reads every noted row in
+  one batch (`refreshContributions()`, through `readContributions()`);
 - a segment rewritten thirty times between two pages is read once;
 - past 5,000 noted rows for a store, the refresh runs on its own, so a
   process whose page is never drawn stays bounded;
