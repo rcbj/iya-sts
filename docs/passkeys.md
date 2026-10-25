@@ -1126,10 +1126,12 @@ whose passkey is their only credential. See
 **An administrator's reset.** There is no self-service reset of a second
 factor. On the person's page:
 * **Disable passkeys as primary sign-in** (`disable-primary-keys`) removes
-  every passkey that signs them in on its own. It is offered only while they
-  have a password.
+  every passkey that signs them in on its own, and ends the sessions each of
+  those passkeys signed in. Other sessions stay. It is offered only while
+  they have a password.
 * **Disable all MFA** (`disable-mfa`) removes the authenticator app, every
-  second-step passkey and the recovery codes.
+  second-step passkey and the recovery codes, and ends the sessions each
+  removed factor signed in. A session a password alone signed in stays.
 * **Generate a password reset link** (`issue-password-reset`), or an
   activation link through the API (`issue-activation`), lets a person who
   lost their only passkey set up a new credential.
@@ -1257,8 +1259,8 @@ Every console control has an API operation. The request bodies are in
 | `GET /admin-api/users?user=<name>` | one person, with each passkey's role, algorithm, lane, backup state, attestation and any policy refusal |
 | `POST /admin-api/users/clear-key` | remove one passkey (`user`, `credentialId`) |
 | `POST /admin-api/users/rename-key` | rename one passkey (`user`, `credentialId`, `label`; empty restores the default) |
-| `POST /admin-api/users/disable-primary-keys` | remove every passkey that signs the person in on its own |
-| `POST /admin-api/users/disable-mfa` | remove every second factor |
+| `POST /admin-api/users/disable-primary-keys` | remove every passkey that signs the person in on its own, and end the sessions each signed in |
+| `POST /admin-api/users/disable-mfa` | remove every second factor, and end the sessions each removed factor signed in |
 | `POST /admin-api/users/require-mfa`, `stop-requiring-mfa` | require a second factor of one person |
 | `POST /admin-api/users/issue-activation` | a single-use activation link (`user`, optional `deliver: "mail"`) |
 | `GET /admin-api/policies` | the passkey and authentication policies, with every field's current value |

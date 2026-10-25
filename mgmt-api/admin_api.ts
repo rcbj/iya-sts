@@ -7717,7 +7717,10 @@ class AdminApi {
               additionalProperties: false
             },
             responseDescription: 'The keys removed — id, role, label and ' +
-                                 'when enrolled; never a public key.' },
+                                 'when enrolled; never a public key. ' +
+                                 '`sessionsEnded` counts the sessions ' +
+                                 'those keys signed in, which were ended ' +
+                                 '(#963); every other stays.' },
 
           { action: 'disable-mfa', operationId: 'disableUserSecondFactors',
             summary: 'Remove every second factor somebody holds',
@@ -7753,7 +7756,10 @@ class AdminApi {
             },
             responseDescription:
               'What was removed, and whether a second factor ' +
-                                 'is still required of them (`requirement`).' },
+              'is still required of them (`requirement`). ' +
+              '`sessionsEnded` counts the sessions each removed ' +
+              'factor signed in, which were ended (#963); every ' +
+              'other stays.' },
 
           { action: 'require-mfa', operationId: 'requireUserSecondFactor',
             summary: 'Require somebody to sign in with a second factor',

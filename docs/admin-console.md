@@ -537,10 +537,12 @@ of Admin Write. Each control is an action on `POST /admin/users` and on
   on the person's entry and not shown to the administrator at all. A person may
   also ask for one at `/portal/forgot-password` ([Mail](mail.md)).
 * **Disable passkeys** removes every security key that could sign the person
-  in on its own, leaving their password and second factors. It is offered only
-  while they have a password, so it cannot lock anybody out.
+  in on its own, leaving their password and second factors, and ends the
+  sessions each removed key signed in. Every other session stays. It is
+  offered only while they have a password, so it cannot lock anybody out.
 * **Disable all MFA** removes the authenticator app, every second-factor key and
-  the recovery codes.
+  the recovery codes, and ends the sessions each of those signed in. A session
+  a password alone signed in stays.
 * **Require MFA** / **Stop requiring MFA** marks the person (`stsMfaRequired`),
   so the sign-in screen makes them enrol an authenticator app or a security key
   at `/authn/mfa-setup` before it starts a session. The authentication policy's

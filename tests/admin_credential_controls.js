@@ -33,10 +33,14 @@
 //      create, initiated by the user).
 //   4. disable-primary-keys refuses somebody with no password, and otherwise
 //      removes every primary key and only those, with a credential-change per
-//      key.
+//      key, and ends a session that key signed in while a password-only
+//      session stays (#963).
 //   5. disable-mfa removes the authenticator app, every mfa key and the
 //      recovery codes, sends a credential-change per credential and RISC
 //      recovery-information-changed, and refuses somebody holding none.
+//      It ends a session that names a removed mfa key, one that names the
+//      authenticator app and one that names a recovery code, and leaves a
+//      password-only session (#963).
 //   6. require-mfa / stop-requiring-mfa write the per-account requirement, and
 //      the authentication policy's requireSecondFactor is the realm's.
 //   7. OVER HTTP, a sign-in for somebody of whom a second factor is required
@@ -129,6 +133,8 @@ function childMain() {
     const streams = require(ROOT + '/ssf/ssf_streams');
     const risc = require(ROOT + '/ssf/risc');
     const actions = require(ROOT + '/admin-core/admin_actions');
+    const authn = require(ROOT + '/authn/authn');
+    const audit = require(ROOT + '/common/audit');
     // #64: the realm-wide requirement and the authenticator-app switch are
     // the authentication policy's rows now (they were authn.mfaRequired and
     // totp.enabled).
@@ -189,6 +195,30 @@ function childMain() {
         return (claims.events || {})[uri] || null;
       };
       const context = { via: 'api', actor: 'tester', base: 'https://sts.test' };
+      // A session made as a sign-in door makes one. The credential on the
+      // event is what `endFactorSessions()` reads (#963); the screens'
+      // own files drive the ceremonies.
+      const sessionRes = { set: function () { return sessionRes; },
+                           append: function () { return sessionRes; },
+                           status: function () { return sessionRes; },
+                           type: function () { return sessionRes; },
+                           send: function () { return sessionRes; },
+                           req: null };
+      const sessionFor = function (name, amr, acr, credential) {
+        return authn.startSession(sessionRes, name, amr, acr,
+          'OAuth 2.0 / OIDC', { credential: credential });
+      };
+      const live = function (session) {
+        return !!(session && authn.sessionById(session.id));
+      };
+      // `audit.list()` is newest first. The success row is the one that
+      // counts sessions; a refusal of the same act is a different row.
+      const auditRow = function (actionName, target) {
+        return audit.list().filter(function (row) {
+          return row.action === actionName && row.target === target &&
+                 row.outcome === 'success';
+        })[0] || null;
+      };
 
       // ====================================================================
       // 1. RESET PASSWORD
@@ -330,6 +360,15 @@ function childMain() {
            '4a. refused for somebody whose primary key is their only way in',
            errorCodes.codeOf(refused));
       credentials.setPassword('ctl-bob', 'Bob-Pass-123!');
+      const byPrimary = sessionFor('ctl-bob', ['hwk'], '1',
+        { kind: 'webauthn', id: 'bob-primary' });
+      const byPassword = sessionFor('ctl-bob', ['pwd'], '1',
+        { kind: 'password' });
+      note(!!byPrimary && !!byPassword && live(byPrimary) &&
+           live(byPassword),
+           '4. (precondition) a session the primary key signed in and a ' +
+           'password-only session are both live',
+           'primary=' + live(byPrimary) + ' password=' + live(byPassword));
       const disabledKeys = actions.usersAction({ action: 'disable-primary-keys',
                                                  user: 'ctl-bob' }, context);
       const bobKeys = credentials.keysOf('ctl-bob');
@@ -337,6 +376,20 @@ function childMain() {
            bobKeys[0].role === 'mfa',
            '4b. every primary key goes and the mfa key stays',
            JSON.stringify(bobKeys.map(function (k) { return k.role; })));
+      note(disabledKeys.ok && disabledKeys.sessionsEnded === 1 &&
+           /1 session it signed in was ended/
+             .test(String(disabledKeys.message)) &&
+           !live(byPrimary) && live(byPassword),
+           '4d. disable-primary-keys ends the session the primary key ' +
+           'signed in and leaves the password-only one',
+           JSON.stringify(disabledKeys).slice(0, 300) + ' primary=' +
+           live(byPrimary) + ' password=' + live(byPassword));
+      const primaryRow = auditRow('admin.mfa.primary-keys.removed',
+                                  'ctl-bob');
+      note(primaryRow && primaryRow.detail &&
+           String(primaryRow.detail.sessionsEnded) === '1',
+           '4e. the audit row counts the session ended',
+           JSON.stringify(primaryRow && primaryRow.detail));
       sets = await waitFor('ctl-bob', 1);
       note(sets.some(function (c) {
         const p = payloadOf(c, CAEP + 'credential-change');
@@ -354,6 +407,19 @@ function childMain() {
       note(credentials.mechanismsFor('ctl-bob').totp &&
            credentials.mechanismsFor('ctl-bob').backupCodes.present,
            '5a. the fixture holds an app, an mfa key and recovery codes');
+      const byMfa = sessionFor('ctl-bob', ['pwd', 'hwk'], 'mfa',
+        { kind: 'webauthn', id: 'bob-mfa' });
+      const byTotp = sessionFor('ctl-bob', ['pwd', 'otp'], 'mfa',
+        { kind: 'totp' });
+      const byCode = sessionFor('ctl-bob', ['pwd', 'otp'], 'mfa',
+        { kind: 'backup-code' });
+      note(!!byMfa && !!byTotp && !!byCode && live(byMfa) &&
+           live(byTotp) && live(byCode) && live(byPassword),
+           '5. (precondition) sessions the mfa key, the authenticator ' +
+           'app and a recovery code signed in are live, and the ' +
+           'password-only one still is',
+           'mfa=' + live(byMfa) + ' totp=' + live(byTotp) + ' code=' +
+           live(byCode) + ' password=' + live(byPassword));
       const disabled = actions.usersAction({ action: 'disable-mfa',
                                              user: 'ctl-bob' }, context);
       const after = credentials.mechanismsFor('ctl-bob');
@@ -363,6 +429,22 @@ function childMain() {
            after.password,
            '5b. every second factor is removed and the password stays',
            JSON.stringify(disabled.removed));
+      note(disabled.ok && disabled.sessionsEnded === 3 &&
+           /3 sessions it signed in were ended/
+             .test(String(disabled.message)) &&
+           !live(byMfa) && !live(byTotp) && !live(byCode) &&
+           live(byPassword),
+           '5f. disable-mfa ends the sessions the removed mfa key, the ' +
+           'authenticator app and a recovery code signed in, and leaves ' +
+           'the password-only one',
+           JSON.stringify(disabled).slice(0, 400) + ' mfa=' + live(byMfa) +
+           ' totp=' + live(byTotp) + ' code=' + live(byCode) +
+           ' password=' + live(byPassword));
+      const mfaRow = auditRow('admin.mfa.disabled', 'ctl-bob');
+      note(mfaRow && mfaRow.detail &&
+           String(mfaRow.detail.sessionsEnded) === '3',
+           '5g. the audit row counts the sessions ended',
+           JSON.stringify(mfaRow && mfaRow.detail));
       sets = await waitFor('ctl-bob', 4);
       note(sets.some(function (c) {
         const p = payloadOf(c, CAEP + 'credential-change');
