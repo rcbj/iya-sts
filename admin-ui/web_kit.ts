@@ -48,6 +48,7 @@
 // THE CONSOLE'S TRANSLATOR (#539 phase 5): a `web_` module, as everything
 // here may require.
 import webMessages = require('../common/web_messages');
+import DocLinks = require('../common/web_doc_links');
 
 // About one rendered line of `.note` text in this console's content column.
 // The column is 62rem at `.note`'s .78em, so a line is nearer 130 characters
@@ -1103,8 +1104,35 @@ class WebKit {
       }).join('') + '</nav>' +
       shown.map(function (one, n) {
         return '<section class="tabpanel' + (n === 0 ? ' first' : '') +
-          '" id="' + WebKit.esc(one.id) + '">' + one.html + '</section>';
+          '" id="' + WebKit.esc(one.id) + '">' +
+          WebKit.withDocLink(one) + '</section>';
       }).join('') + '</div>';
+  }
+
+  // THE DOCUMENTATION LINK (#895) sits at the top of a leaf panel. A panel
+  // that already holds a tab bar is the container around those panels, and
+  // a second link above that bar would name the wrong page for whichever
+  // sub-tab is open. `one.docs` wins over the id, so a listener minted as
+  // `tab-` plus its own id cannot land on a policy tab of the same shape.
+  // The translator is the default: a draw sets that to the reader's
+  // (`applyLocale()`), and a test that compares the two consoles points
+  // the bundle's default at the same one.
+  /**
+   * A panel's markup with its documentation link, unless it is a tab
+   * container.
+   *
+   * @param one - `{ id, html, docs? }`
+   * @returns the panel body
+   */
+  static withDocLink(one): string {
+    const html = String((one && one.html) || '');
+    if (DocLinks.holdsTabs(html)) {
+      return html;
+    }
+    const href = (one && one.docs) ||
+      DocLinks.forConsoleTab(String((one && one.id) || ''));
+    return DocLinks.consoleHtml(href,
+      webMessages.WebTranslator.fallback()) + html;
   }
 
   // A DURATION AS A READER SAYS IT: "4 min 12 s", "2 h 5 min", "90 d" —
@@ -2547,7 +2575,7 @@ class WebKit {
       }).join('') + '</nav>' +
       shown.map(function (one, n) {
         return '<div class="subpanel' + (n === 0 ? ' first' : '') + '" id="' +
-          WebKit.esc(one.id) + '">' + one.html + '</div>';
+          WebKit.esc(one.id) + '">' + WebKit.withDocLink(one) + '</div>';
       }).join('') + '</div>';
   }
 

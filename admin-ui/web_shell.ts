@@ -29,6 +29,7 @@
 import kit = require('./web_kit');
 import DashboardPage = require('./web_dashboard');
 import WebAccounts = require('../common/web_accounts');
+import DocLinks = require('../common/web_doc_links');
 
 type Json = any;
 
@@ -84,6 +85,11 @@ class WebShell {
       '</div></div>' +
     WebShell.trailBar(page.active, page.up, page.title,
                       shell.navLabels, t) +
+    // A tabbed body carries the link inside each leaf panel (#895). An
+    // untabbed page has nowhere else to put it, so it sits under the trail,
+    // above the banners, on every such page.
+    (DocLinks.holdsTabs(page.inner) ? ''
+      : DocLinks.consoleHtml(DocLinks.forConsolePage(page.active), t)) +
     WebShell.gateBanner(shell, t) +
     WebShell.retiringBanner(shell, t) +
     WebShell.withDerivedTips(page.inner) +

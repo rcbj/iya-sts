@@ -1410,6 +1410,18 @@ path.
 *Every page here shows ONE trust realm* below, because it is the second half of
 that same decision.
 
+### A link to the documentation (#895)
+
+Every console page links to the public documentation
+(`https://rcbj.github.io/iya-sts/`), chosen by `common/web_doc_links.ts`. On a
+tabbed page the link is the first thing in each leaf panel
+(`WebKit.withDocLink()`). A panel that already contains a tab bar does not get
+a second one. The application-configuration sub-panels are written by hand, so
+the link is put in there. A listener tab sets `docs` on the panel, because its
+id is minted and the same shape as a policy tab. An untabbed page gets the one
+link under the breadcrumb trail, in `WebShell.frame()`. The public sign-out
+page uses the same tab helper and is not given a link.
+
 ### PROSE LONGER THAN A LINE IS COLLAPSED, AND THREE FUNCTIONS DECIDE IT
 
 Added 2026-08-26. `note()`, `warn()` and `bullet()` in `admin.ts` take a

@@ -66,6 +66,7 @@ import PortalPages = require('./web_portal_pages');
 import PortalWebAuthn = require('./web_portal_webauthn');
 import DelegatePages = require('./web_delegate');
 import WebAccounts = require('../common/web_accounts');
+import DocLinks = require('../common/web_doc_links');
 
 type Json = any;
 
@@ -715,7 +716,10 @@ class PortalRuntime extends SpaClient {
     const body = v.page.render(v.json, ctx);
     if ((v.page.access || 'person') !== 'person') {
       const title = v.page.title ? v.page.title(v.json, ctx) : 'IYA STS';
+      // `bare()` stays path-agnostic: a problem page and "not a page" use
+      // it too, and neither is a portal page with documentation (#895).
       this.put(title, PortalShell.bare(
+        DocLinks.portalHtml(DocLinks.forPortalPage(v.page.path), this.t) +
         (flash.error ? '<div class="err">' + kit.esc(flash.error) + '</div>'
                      : '') +
         (flash.message ? '<div class="ok">' + kit.esc(flash.message) +
