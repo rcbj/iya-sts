@@ -9554,7 +9554,11 @@ class Credentials {
       return this.addKeyClaimed(name,
         Credentials.registeredKey(verdict, credential, attested, named, held),
         held.role).then((stored) => {
-        return this.keyEnrolmentWritten(name, held, stored);
+        // THE DOOR'S EPILOGUE (#964), not keyEnrolmentWritten here: an
+        // administrator's enrolment must keep the person's pending record
+        // and answer lane and enrolledBy. Self-enrolment passes that
+        // function; the administrator's door passes its own.
+        return written(stored);
       });
       });
     });

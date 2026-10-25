@@ -48,6 +48,13 @@
 //  11. `webauthn.maxKeysPerPerson` counts both lanes.
 //  12. The switch turned off: a post-quantum enrolment is refused, and the
 //      post-quantum key still signs in.
+//  13. A classical passkey proves possession before an ML-DSA registration:
+//      alongside keeps both keys, a refusal leaves the classical one, and
+//      with the lanes off the ML-DSA key replaces it.
+//  14. An administrator's enrolment (#964), with the lanes on: a
+//      self-enrolment begun first is still pending afterwards; the new
+//      key's row and the answer both carry `lane` and `enrolledBy`; the
+//      person's own confirmKeyEnrolment still drops that pending record.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -624,6 +631,68 @@ function childMain() {
          !credentials.keyUpgradeHistory(failRows[0]),
          '13b. a refused ML-DSA registration keeps the classical passkey',
          JSON.stringify([failDone, failRows]));
+
+    // 14. AN ADMINISTRATOR'S ENROLMENT DOES NOT RUN THE PERSON'S EPILOGUE
+    // (#964). The two doors share verifyKeyRegistration; `written` is the
+    // door's finish. Self-enrolment drops pendingKeys. An administrator's
+    // must not — that record is the person's own ceremony — and must
+    // answer lane and enrolledBy. The credential is the kit's `none`
+    // attestation, the same bytes section 4 registers with, so
+    // verification is not stubbed.
+    const adminPolicy = passkeyPolicy.save('default',
+      Object.assign({}, passkeyPolicy.DEFAULTS, {
+        allowUsernameless: true, adminEnrolment: 'on' }));
+    const kept = 'pkl-kept';
+    ldap.createUser(kept, { invent: false });
+    credentials.setPassword(kept, PASSWORD);
+    const selfBegun = credentials.beginKeyEnrolment(kept, {
+      role: 'mfa', kind: 'passkey', lane: 'pqc' });
+    const admin = { username: 'pkl-operator',
+                    sub: 'urn:uuid:pkl-operator' };
+    const adminBegun = credentials.beginAdminKeyEnrolment(kept, admin, {
+      role: 'mfa', kind: 'passkey', lane: 'pqc' });
+    const adminAuth = await makeAuthenticator(-49, RPID, ORIGIN);
+    const adminDone = adminBegun.ok
+      ? await credentials.confirmAdminKeyEnrolment(kept, admin,
+          adminBegun.enrolmentId,
+          adminAuth.register(adminBegun.challenge,
+                             adminBegun.userHandle),
+          { origin: ORIGIN, rpId: RPID })
+      : adminBegun;
+    const still = credentials.pendingKeyEnrolmentFor(kept);
+    const adminRow = credentials.keysOf(kept).filter(function (one) {
+      return one.credentialId === adminAuth.credentialId;
+    })[0] || {};
+    const by = adminRow.enrolledBy || {};
+    const answered = (adminDone && adminDone.enrolledBy) || {};
+    note(adminPolicy.ok !== false && selfBegun.ok && adminBegun.ok &&
+         adminDone.ok === true && !!still &&
+         still.id === selfBegun.enrolmentId &&
+         adminRow.lane === 'pqc' && by.username === admin.username &&
+         by.sub === admin.sub && by.at > 0 &&
+         adminDone.lane === 'pqc' &&
+         answered.username === admin.username &&
+         answered.sub === admin.sub && answered.at > 0,
+         '14a. an administrator\'s enrolment keeps a pending ' +
+         'self-enrolment, and the key and the answer carry lane and ' +
+         'enrolledBy',
+         JSON.stringify({ policy: adminPolicy.ok, self: selfBegun.ok,
+           begun: adminBegun.ok, done: adminDone,
+           pending: still && still.id,
+           row: { lane: adminRow.lane, enrolledBy: adminRow.enrolledBy } }));
+    const ownAuth = await makeAuthenticator(-49, RPID, ORIGIN);
+    const ownDone = selfBegun.ok
+      ? await credentials.confirmKeyEnrolment(kept, selfBegun.enrolmentId,
+          ownAuth.register(selfBegun.challenge, selfBegun.userHandle),
+          { origin: ORIGIN, rpId: RPID })
+      : selfBegun;
+    note(ownDone.ok === true &&
+         credentials.pendingKeyEnrolmentFor(kept) === null,
+         '14b. the person\'s own confirmKeyEnrolment still drops its ' +
+         'pending record', JSON.stringify(ownDone));
+    // Optional rows left out of a save are kept (#907), so `off` is said.
+    passkeyPolicy.save('default', Object.assign({}, passkeyPolicy.DEFAULTS,
+      { allowUsernameless: true, adminEnrolment: 'off' }));
     config.clearOverride(ON);
     const replaceOld = credentials.keysOf('pkl-bob')[0] || {};
     const replaceBegin = credentials.beginKeyUpgrade('pkl-bob',
