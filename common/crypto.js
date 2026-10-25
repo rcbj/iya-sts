@@ -7082,7 +7082,7 @@ const ML_DSA_OIDS = {
 // INTERPRETER AND NOT ABOUT THIS SERVICE.
 //
 // ML-DSA reaches node with OpenSSL 3.5, which is node 24 — the version this
-// repository's Dockerfile pins (24.16.0). On anything older
+// repository's Dockerfile pins (24.22.1). On anything older
 // `generateKeyPairSync('ml-dsa-65')` throws `ERR_INVALID_ARG_VALUE: The
 // argument 'type' must be a supported key type`, a sentence that names neither
 // this service, nor the algorithm's real requirement, nor the way out — and it
@@ -7124,7 +7124,7 @@ function mlDsaAvailable() {
                e.message + '). Node ' + process.versions.node +
                ' is linked against OpenSSL ' + process.versions.openssl +
                '; ML-DSA needs OpenSSL 3.5, which is node 24 — this ' +
-               'repository pins 24.16.0 in its Dockerfile. Every ' +
+               'repository pins 24.22.1 in its Dockerfile. Every ' +
                'post-quantum algorithm here needs it since #363, the JOSE ' +
                'ones included (common/pq_native.js).');
     }
@@ -7181,7 +7181,7 @@ function selfSignedMlDsaCertificate(opts) {
                     ' key, so no ML-DSA certificate can be built here. Node ' +
                     process.versions.node + ' is linked against OpenSSL ' +
                     process.versions.openssl + '; ML-DSA needs OpenSSL 3.5, ' +
-                    'which is node 24 — this repository pins 24.16.0, and ' +
+                    'which is node 24 — this repository pins 24.22.1, and ' +
                     'every post-quantum algorithm here needs it (#363).');
   }
   // `any`: the algorithm is a variable, and the overloads want literals.
@@ -8856,7 +8856,7 @@ function decodeStoredSecret(stored) {
 // password policy governs people's passwords and nothing else.
 //
 // **NODE'S OWN ARGON2.** `crypto.argon2()` and `crypto.argon2Sync()` arrived
-// in node 24.7 (the image runs 24.16), so there is no native package to add.
+// in node 24.7 (the image runs 24.22.1), so there is no native package to add.
 // The asynchronous one is a CryptoJob, run on libuv's thread pool like
 // `crypto.scrypt()` — the arrangement #363 gave scrypt. A runtime without it
 // (an older node loading this file in-process) writes scrypt instead, said

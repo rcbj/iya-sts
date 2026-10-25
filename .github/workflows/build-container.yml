@@ -124,7 +124,7 @@ jobs:
           # tests/image_mirror_coverage.js holds this list to the Dockerfile.
           build-contexts: |
             ubuntu=docker-image://ghcr.io/rcbj/iya-sts/mirror/ubuntu:latest
-            node:24.16.0-bookworm-slim=docker-image://ghcr.io/rcbj/iya-sts/mirror/node:24.16.0-bookworm-slim
+            node:24.22.1-bookworm-slim=docker-image://ghcr.io/rcbj/iya-sts/mirror/node:24.22.1-bookworm-slim
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

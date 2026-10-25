@@ -57,7 +57,7 @@ OUT="${CURRENT_DIR}/apidocs"
 WHERE="auto"
 OPEN=0
 TOOLS="tests/tools/jsdoc"
-IMAGE="${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/node:24.16.0-bookworm-slim"
+IMAGE="${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/node:24.22.1-bookworm-slim"
 
 usage()
 {

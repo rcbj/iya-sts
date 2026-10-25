@@ -548,7 +548,7 @@ function theListener(t, got) {
   if (got.unavailable) {
     t.check(true, 'this runtime has no ML-DSA (node ' + process.versions.node +
             ', OpenSSL ' + process.versions.openssl + '; it needs 3.5, which ' +
-            'is node 24 — the Dockerfile pins 24.16.0), so the listener half ' +
+            'is node 24 — the Dockerfile pins 24.22.1), so the listener half ' +
             'did not run here');
     t.log.warn('NOT CHECKED HERE: the ML-DSA listener certificate. Run ' +
                './run-tests.sh, or use node 24.');

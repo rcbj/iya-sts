@@ -206,7 +206,7 @@ RUN /usr/src/jscep-driver/build.sh /usr/src/jscep-driver /out/jscep
 # /opt/vc-suites. Several carry test PRIVATE keys, which is why they are
 # fetched here and never committed. tests/CLAUDE.md, *The W3C VC and DID
 # suites*, is the provenance.
-FROM node:24.16.0-bookworm AS vc-suites
+FROM node:24.22.1-bookworm AS vc-suites
 COPY tests/vc-suites/fetch-suites.sh /usr/src/fetch-suites.sh
 RUN /usr/src/fetch-suites.sh /opt/vc-suites
 
@@ -315,7 +315,7 @@ WORKDIR /usr/src/sts
 # on a different node from the service it drives can pass on a syntax the
 # service cannot parse.
 ENV NVM_DIR /usr/local/nvm
-ENV NODE_VERSION=24.16.0
+ENV NODE_VERSION=24.22.1
 RUN mkdir -p ${NVM_DIR}
 RUN set -o pipefail && curl -fsSL --retry 5 --retry-all-errors --retry-delay 10 https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.5/install.sh | bash
 RUN . $NVM_DIR/nvm.sh && nvm version && echo -e ". $NVM_DIR/nvm.sh\nexport PATH=\$NVM_DIR/versions/node/\$(nvm version)/bin:\$PATH" >> ~/.bashrc

@@ -512,7 +512,7 @@ four changes:
 * **`rsa-oaep-mgf1p` and `rsa-1_5` wrap and unwrap through node's
   `publicEncrypt()` / `privateDecrypt()`**, and `transportOptions()` is gone.
   RSA-1_5 decryption needs OpenSSL's implicit rejection, which node 24 has
-  (both images run 24.16).
+  (both images run 24.22.1).
 * **`scep/scep_cms.ts`'s PKCS#1 v1.5 unwrap is node's `privateDecrypt()`**,
   where it was forge's non-constant-time JavaScript (the Marvin attack's
   target); a runtime without implicit rejection logs `STS-SCEP-0066` once.
@@ -1163,7 +1163,7 @@ PASSWORD* block:
 
 1. **argon2id (RFC 9106) at OWASP's minimum**, m=19456 KiB, t=2, p=1, through
    node's own `crypto.argon2()` / `argon2Sync()` (node 24.7 and later; the
-   image runs 24.16, and the asynchronous one is a CryptoJob on libuv's
+   image runs 24.22.1, and the asynchronous one is a CryptoJob on libuv's
    thread pool like scrypt's). No package. A runtime without it hashes a new
    password with scrypt and says so once (`STS-KEYS-0155`), and refuses to
    verify an argon2id value (`STS-KEYS-0156`) rather than claim it.

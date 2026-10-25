@@ -123,7 +123,7 @@ module.exports = {
     // Everything below needs node's OpenSSL 3.5 — the KEY and the SIGNATURE
     // are OpenSSL's, deliberately, because a test where both sides came from
     // one implementation proves nothing. That is node 24, which this
-    // repository's Dockerfile pins (24.16.0) and which the containerized run
+    // repository's Dockerfile pins (24.22.1) and which the containerized run
     // therefore always has; a developer on node 22 has an interpreter with no
     // ML-DSA in it, and until 2026-09-01 this file died there with
     // `ERR_INVALID_ARG_VALUE: The argument 'type' must be a supported key
@@ -144,7 +144,7 @@ module.exports = {
               'below did not run — node ' + process.versions.node +
               ' is linked against OpenSSL ' + process.versions.openssl +
               ' and ML-DSA needs 3.5, which is node 24 (the Dockerfile pins ' +
-              '24.16.0, so the containerized run does check all of it)');
+              '24.22.1, so the containerized run does check all of it)');
       t.log.warn('NOT CHECKED HERE: every ML-DSA certificate assertion in ' +
                  'pq_certificates.js. Run ./run-tests.sh, or use ' +
                  'node 24, to check them. Since #363 every post-quantum ' +

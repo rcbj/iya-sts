@@ -121,8 +121,8 @@ version: '2.4'
 # ---------------------------------------------------------------------------
 x-mirror-contexts: &mirror-contexts
   ubuntu: docker-image://${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/ubuntu:latest
-  "node:24.16.0-bookworm-slim": docker-image://${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/node:24.16.0-bookworm-slim
-  "node:24.16.0-bookworm": docker-image://${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/node:24.16.0-bookworm
+  "node:24.22.1-bookworm-slim": docker-image://${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/node:24.22.1-bookworm-slim
+  "node:24.22.1-bookworm": docker-image://${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/node:24.22.1-bookworm
   "rust:1.97-bookworm": docker-image://${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/rust:1.97-bookworm
   "debian:bookworm-slim": docker-image://${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/debian:bookworm-slim
   "golang:1.26.8-bookworm": docker-image://${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/golang:1.26.8-bookworm

@@ -17,7 +17,7 @@
 # the CA CERTIFICATE, and only that, to the shared directory it is given
 # (TEST_PEER_CA_DIR).
 # ===========================================================================
-FROM node:24.16.0-bookworm-slim
+FROM node:24.22.1-bookworm-slim
 
 WORKDIR /usr/src/peer
 COPY package.json package-lock.json ./

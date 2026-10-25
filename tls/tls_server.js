@@ -1385,7 +1385,7 @@ const SERVER_CERTIFICATES = (function buildServerCertificates() {
       return;
     }
     // THE RUNTIME BEFORE THE SPELLING. An ML-DSA certificate needs node's
-    // OpenSSL 3.5 (node 24; this repository's Dockerfile pins 24.16.0), and
+    // OpenSSL 3.5 (node 24; this repository's Dockerfile pins 24.22.1), and
     // this block runs at MODULE TOP LEVEL — so on node 22 a configured
     // `ml-dsa-65` used to throw out of a `require` and take the whole service
     // down before it bound anything, which is the failure the root CLAUDE.md's

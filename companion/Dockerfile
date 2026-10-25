@@ -19,7 +19,7 @@
 # from GitHub), against Debian's MIT headers, and the final image carries
 # the runtime libraries only — no compiler.
 # ===========================================================================
-FROM node:24.16.0-bookworm-slim AS build
+FROM node:24.22.1-bookworm-slim AS build
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends python3 make g++ \
@@ -31,7 +31,7 @@ RUN npm_config_build_from_source=true \
     npm ci --omit=dev --omit=optional --no-audit --no-fund && \
     npm cache clean --force
 
-FROM node:24.16.0-bookworm-slim
+FROM node:24.22.1-bookworm-slim
 
 # The MIT Kerberos runtime the acceptor loads (libgssapi_krb5.so.2, with
 # libkrb5 and libcom_err). No krb5.conf: an acceptor holding a keytab asks

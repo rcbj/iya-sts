@@ -495,7 +495,7 @@ the same argument at greater length.
 
 **IT NEEDS NODE 24, AND ASKING FOR IT ON AN OLDER ONE NO LONGER STOPS THE
 SERVICE.** ML-DSA reaches node with OpenSSL 3.5, which is node 24 — the version
-the Dockerfile pins (24.16.0). On node 22 `generateKeyPairSync('ml-dsa-65')`
+the Dockerfile pins (24.22.1). On node 22 `generateKeyPairSync('ml-dsa-65')`
 throws `ERR_INVALID_ARG_VALUE`, and until 2026-09-01 that throw came out of the
 certificate block at this module's TOP LEVEL: a `require` that throws takes the
 whole process down where a route could not, so a developer on node 22 who set
