@@ -10,9 +10,9 @@
 // reusable module whose functions take explicit arguments/options instead of
 // reading specific DOM element ids, so they are not tied to the SAML page.
 //
-// node-forge does all the crypto (RSA sign/keygen, block ciphers, RSA key
-// wrap). Only browser-native APIs (DOMParser/XMLSerializer, window.crypto) are
-// used besides forge, so this bundles cleanly with browserify + envify.
+// node-forge parses keys and runs the block ciphers. RSA signatures are
+// checked by node, and the content key, IV and RSA key transport are node's
+// too (#65). DOMParser and XMLSerializer are the browser APIs beside those.
 
 
 var bunyan = require("bunyan");
@@ -442,6 +442,67 @@ function mgfMdFor(uri) {
       return forge.md.sha1.create();
   }
 }
+
+// The hash name node uses for one OAEP digest. XML Encryption lets the
+// digest and MGF1 differ; node's publicEncrypt uses one hash for both,
+// which is the pair common/crypto.js already requires (#65).
+function oaepHashName(uri) {
+  log.debug("Entering oaepHashName().");
+  var name;
+  switch (uri) {
+    case 'http://www.w3.org/2000/09/xmldsig#sha1':
+    case XENC_NS + 'sha1':
+    case XENC11_NS + 'mgf1sha1':
+      name = 'sha1';
+      break;
+    case 'http://www.w3.org/2001/04/xmldsig-more#sha384':
+    case XENC11_NS + 'mgf1sha384':
+      name = 'sha384';
+      break;
+    case XENC_NS + 'sha512':
+    case XENC11_NS + 'mgf1sha512':
+      name = 'sha512';
+      break;
+    default:
+      name = 'sha256';
+  }
+  log.debug("Leaving oaepHashName().");
+  return name;
+}
+
+// forge.random is a second generator. Callers want the binary string the
+// cipher calls in this file already take (#65).
+function randomBinary(n) {
+  log.debug("Entering randomBinary().");
+  log.debug("Leaving randomBinary().");
+  return nodeCrypto.randomBytes(n).toString('binary');
+}
+
+// RSA key transport through node's OpenSSL. Forge's JavaScript RSA drew
+// its padding from a generator of its own (#65).
+function rsaWrapKey(pem, sessionKey, padding, hashName) {
+  log.debug("Entering rsaWrapKey().");
+  var params = { key: pem, padding: padding };
+  if (hashName) {
+    params.oaepHash = hashName;
+  }
+  var wrapped = nodeCrypto.publicEncrypt(params,
+      Buffer.from(sessionKey, 'binary')).toString('binary');
+  log.debug("Leaving rsaWrapKey().");
+  return wrapped;
+}
+
+function rsaUnwrapKey(pem, wrapped, padding, hashName) {
+  log.debug("Entering rsaUnwrapKey().");
+  var params = { key: pem, padding: padding };
+  if (hashName) {
+    params.oaepHash = hashName;
+  }
+  var key = nodeCrypto.privateDecrypt(params,
+      Buffer.from(wrapped, 'binary')).toString('binary');
+  log.debug("Leaving rsaUnwrapKey().");
+  return key;
+}
 // Parse caller-supplied XML, refusing anything that is not well-formed.
 //
 // This is the correct control for an XML input, and note what it deliberately
@@ -564,7 +625,7 @@ function encapsulateXml(xml, opts, ctx) {
 
   var plaintext = encPlaintext(xml, ctx.c14nMode, ctx.type);
   var ptBytes = forge.util.encodeUtf8(plaintext);
-  var iv = forge.random.getBytesSync(ctx.spec.ivBytes);
+  var iv = randomBinary(ctx.spec.ivBytes);
   var cipher = forge.cipher.createCipher(ctx.spec.cipher, sessionKey);
   cipher.start(ctx.spec.gcm ? { iv: iv, tagLength: 128 } : { iv: iv });
   cipher.update(forge.util.createBuffer(ptBytes));
@@ -632,13 +693,15 @@ function encryptXml(xml, opts) {
   if (!String(certField).trim()) throw new Error('No encryption certificate ' +
       '— paste a recipient certificate.');
   var certB64 = certPemToB64(certField);
-  var cert = forge.pki.certificateFromPem(pemWrapCert(certField));
-  var pub = cert.publicKey;
+  var certPem = pemWrapCert(certField);
+  // Parsed first so a certificate forge cannot read is refused before a
+  // content key is drawn.
+  forge.pki.certificateFromPem(certPem);
 
   var plaintext = encPlaintext(xml, c14nMode, type);
   var ptBytes = forge.util.encodeUtf8(plaintext);
-  var sessionKey = forge.random.getBytesSync(spec.keyBytes);
-  var iv = forge.random.getBytesSync(spec.ivBytes);
+  var sessionKey = randomBinary(spec.keyBytes);
+  var iv = randomBinary(spec.ivBytes);
   var cipher = forge.cipher.createCipher(spec.cipher, sessionKey);
   cipher.start(spec.gcm ? { iv: iv, tagLength: 128 } : { iv: iv });
   cipher.update(forge.util.createBuffer(ptBytes));
@@ -649,21 +712,36 @@ function encryptXml(xml, opts) {
 
   var wrapped, keyMethodInner = '';
   if (keyAlg === XENC_NS + 'rsa-1_5') {
-    wrapped = pub.encrypt(sessionKey, 'RSAES-PKCS1-V1_5');
+    wrapped = rsaWrapKey(certPem, sessionKey,
+        nodeCrypto.constants.RSA_PKCS1_PADDING, '');
   } else {
     var digestUri = opts.digest || (XENC_NS + 'sha256');
-    var oaepOpts = { md: forgeMdFor(digestUri) };
-    keyMethodInner = '<ds:DigestMethod xmlns:ds="' + DS_NS + '" Algorithm="' +
-        digestUri + '"/>';
+    var hashName = oaepHashName(digestUri);
+    var mgfName;
+    keyMethodInner = '<ds:DigestMethod xmlns:ds="' + DS_NS +
+        '" Algorithm="' + digestUri + '"/>';
     if (keyAlg === XENC11_NS + 'rsa-oaep') {
       var mgfUri = opts.mgf || (XENC11_NS + 'mgf1sha256');
-      oaepOpts.mgf1 = { md: mgfMdFor(mgfUri) };
+      mgfName = oaepHashName(mgfUri);
       keyMethodInner += '<xenc11:MGF xmlns:xenc11="' + XENC11_NS +
           '" Algorithm="' + mgfUri + '"/>';
     } else {
-      oaepOpts.mgf1 = { md: forge.md.sha1.create() };
+      // rsa-oaep-mgf1p fixes MGF1 at SHA-1. An unnamed digest follows it,
+      // because node uses one hash for the digest and the mask.
+      mgfName = 'sha1';
+      if (!opts.digest) {
+        hashName = 'sha1';
+        digestUri = 'http://www.w3.org/2000/09/xmldsig#sha1';
+        keyMethodInner = '<ds:DigestMethod xmlns:ds="' + DS_NS +
+            '" Algorithm="' + digestUri + '"/>';
+      }
     }
-    wrapped = pub.encrypt(sessionKey, 'RSA-OAEP', oaepOpts);
+    if (hashName !== mgfName) {
+      throw new Error('the key transport names digest ' + hashName +
+          ' and MGF ' + mgfName + '; node wraps only a matching pair');
+    }
+    wrapped = rsaWrapKey(certPem, sessionKey,
+        nodeCrypto.constants.RSA_PKCS1_OAEP_PADDING, hashName);
   }
   var wrappedB64 = forge.util.encode64(wrapped);
 
@@ -1223,27 +1301,37 @@ function decryptXml(xml, opts) {
     log.debug("Leaving decryptXml(). No private key.");
     throw new Error('decryptXml: privateKeyPem is required.');
   }
-  var priv = forge.pki.privateKeyFromPem(opts.privateKeyPem);
   var wrapped = forge.util.decode64(wrappedB64);
   var sessionKey;
   try {
     if (keyAlg === XENC_NS + 'rsa-1_5') {
-      sessionKey = priv.decrypt(wrapped, 'RSAES-PKCS1-V1_5');
+      sessionKey = rsaUnwrapKey(opts.privateKeyPem, wrapped,
+          nodeCrypto.constants.RSA_PKCS1_PADDING, '');
     } else {
       var digEl = kmEl ? firstByLocal(kmEl, 'DigestMethod') : null;
       var digestUri = digEl ? digEl.getAttribute('Algorithm') : (XENC_NS +
-          'sha256');
-      var oaep = { md: forgeMdFor(digestUri) };
+          'sha1');
+      var hashName = oaepHashName(digestUri);
+      var mgfName;
       if (keyAlg === XENC11_NS + 'rsa-oaep') {
         var mgfEl = kmEl ? firstByLocal(kmEl, 'MGF') : null;
         var mgfUri = mgfEl ? mgfEl.getAttribute('Algorithm') : (XENC11_NS +
             'mgf1sha1');
-        oaep.mgf1 = { md: mgfMdFor(mgfUri) };
+        mgfName = oaepHashName(mgfUri);
       } else {
-        // rsa-oaep-mgf1p: MGF1 is fixed to SHA-1.
-        oaep.mgf1 = { md: forge.md.sha1.create() };
+        // rsa-oaep-mgf1p: MGF1 is fixed to SHA-1. An absent digest is
+        // SHA-1 as well, the pair node can unwrap.
+        mgfName = 'sha1';
+        if (!digEl) {
+          hashName = 'sha1';
+        }
       }
-      sessionKey = priv.decrypt(wrapped, 'RSA-OAEP', oaep);
+      if (hashName !== mgfName) {
+        throw new Error('the key transport names digest ' + hashName +
+            ' and MGF ' + mgfName + '; node unwraps only a matching pair');
+      }
+      sessionKey = rsaUnwrapKey(opts.privateKeyPem, wrapped,
+          nodeCrypto.constants.RSA_PKCS1_OAEP_PADDING, hashName);
     }
   } catch (e) {
     throw new Error('could not unwrap the session key (wrong private key or ' +
