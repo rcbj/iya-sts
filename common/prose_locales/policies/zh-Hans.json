@@ -1231,6 +1231,22 @@
     "en": "cb4ed83be3a69177",
     "text": "默认为 `none`：无论证明使用何种算法签名都予以接受。否则为一个列表，取值于 post-quantum、ml-dsa-44、ml-dsa-65、ml-dsa-87、slh-dsa 和 composite-ml-dsa：只有当通行密钥带有一个携带证书的“受信任”证明，且其声明签名以及其证书链中从叶证书到信任锚的每个证书的签名都是列表允许的算法时，才会注册（`post-quantum` 允许任何 ML-DSA、SLH-DSA 或复合 ML-DSA 签名）。self 和 none 证明因不带证书而被拒绝。开启 enforceAttestationAtSignIn 后，每次登录都会依据注册时记录的内容按此规则检查通行密钥，因此在该规则之前注册的通行密钥将停止工作。这是证明的算法，而不是通行密钥本身的算法（postQuantumRequired）。保存时省略此项，则保留内置默认值。"
   },
+  "passkey.FIELDS.adminEnrolment.label": {
+    "en": "73fd6ffe6660cf3f",
+    "text": "允许管理员为某人注册通行密钥"
+  },
+  "passkey.FIELDS.adminEnrolment.what": {
+    "en": "9e395e59fd838fcf",
+    "text": "默认为 `off`。`on` 允许持有 Admin Write 控制台角色的管理员，为适用此配置文件的人注册通行密钥，从控制台上该人的页面或 /admin-api：注册仪式在管理员自己的浏览器中进行，对着管理员持有的身份验证器（例如一把要交出去的安全密钥），使用该人的用户句柄，并且与该人自己的注册完全一样地验证——证明、算法和此策略的注册规则。别处制作的任何东西都不能导入。密钥记录哪位管理员在何时注册了它，并告知该人。保存时省略此项，则保留内置默认值。"
+  },
+  "passkey.FIELDS.deviceBoundRequired.label": {
+    "en": "19194c290aaa3903",
+    "text": "要求设备绑定会话"
+  },
+  "passkey.FIELDS.deviceBoundRequired.what": {
+    "en": "5098a9645fefe2ff",
+    "text": "默认关闭。开启后，向此配置文件所覆盖的应用颁发时，会等到登录会话绑定到浏览器的密钥；若浏览器跳过该注册，或等待结束仍未绑定，则拒绝颁发。从未被提供注册的会话不会被此行拒绝。在 authn.deviceBoundSessions 关闭时拒绝。"
+  },
   "passkey.SCHEMA.objectClasses.stsPasskeyPolicy.what": {
     "en": "44bab556bd6240cc",
     "text": "本服务用于通行密钥策略的类：通行密钥在此领域中的行为方式。该条目以配置文件命名（`cn=default`）。"
@@ -1322,6 +1338,14 @@
   "passkey.SCHEMA.attributes.stsPasskeyAttestationAlgorithms.what": {
     "en": "cb4ed83be3a69177",
     "text": "默认为 `none`：无论证明使用何种算法签名都予以接受。否则为一个列表，取值于 post-quantum、ml-dsa-44、ml-dsa-65、ml-dsa-87、slh-dsa 和 composite-ml-dsa：只有当通行密钥带有一个携带证书的“受信任”证明，且其声明签名以及其证书链中从叶证书到信任锚的每个证书的签名都是列表允许的算法时，才会注册（`post-quantum` 允许任何 ML-DSA、SLH-DSA 或复合 ML-DSA 签名）。self 和 none 证明因不带证书而被拒绝。开启 enforceAttestationAtSignIn 后，每次登录都会依据注册时记录的内容按此规则检查通行密钥，因此在该规则之前注册的通行密钥将停止工作。这是证明的算法，而不是通行密钥本身的算法（postQuantumRequired）。保存时省略此项，则保留内置默认值。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyAdminEnrolment.what": {
+    "en": "9e395e59fd838fcf",
+    "text": "默认为 `off`。`on` 允许持有 Admin Write 控制台角色的管理员，为适用此配置文件的人注册通行密钥，从控制台上该人的页面或 /admin-api：注册仪式在管理员自己的浏览器中进行，对着管理员持有的身份验证器（例如一把要交出去的安全密钥），使用该人的用户句柄，并且与该人自己的注册完全一样地验证——证明、算法和此策略的注册规则。别处制作的任何东西都不能导入。密钥记录哪位管理员在何时注册了它，并告知该人。保存时省略此项，则保留内置默认值。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyDeviceBoundRequired.what": {
+    "en": "5098a9645fefe2ff",
+    "text": "默认关闭。开启后，向此配置文件所覆盖的应用颁发时，会等到登录会话绑定到浏览器的密钥；若浏览器跳过该注册，或等待结束仍未绑定，则拒绝颁发。从未被提供注册的会话不会被此行拒绝。在 authn.deviceBoundSessions 关闭时拒绝。"
   },
   "passkey.SCHEMA.attributes.stsPasskeySelectApplication.what": {
     "en": "03ba679923c40b45",
@@ -1498,6 +1522,10 @@
   "passkey.sentences.param.realmAlgorithms": {
     "en": "62dd60f1d67057b4",
     "text": "该领域的 webauthn.algorithms"
+  },
+  "passkey.sentences.adminEnrolment": {
+    "en": "41023a55f549b1cd",
+    "text": "管理员可以在自己的浏览器中为某人注册通行密钥，并像该人自己的通行密钥一样加以验证"
   },
   "kinds.locale.label": {
     "en": "1219a9dcfb9aa19f",

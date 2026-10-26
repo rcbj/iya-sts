@@ -1231,6 +1231,22 @@
     "en": "cb4ed83be3a69177",
     "text": "預設為 `none`：無論證明使用何種演算法簽章都予以接受。否則為一個清單，取值於 post-quantum、ml-dsa-44、ml-dsa-65、ml-dsa-87、slh-dsa 和 composite-ml-dsa：只有當通行金鑰帶有一個攜帶憑證的「受信任」證明，且其聲明簽章以及其憑證鏈中從葉憑證到信任錨點的每張憑證的簽章都是清單允許的演算法時，才會註冊（`post-quantum` 允許任何 ML-DSA、SLH-DSA 或複合 ML-DSA 簽章）。self 和 none 證明因不帶憑證而遭拒絕。開啟 enforceAttestationAtSignIn 後，每次登入都會依據註冊時記錄的內容按此規則檢查通行金鑰，因此在此規則之前註冊的通行金鑰將停止運作。這是證明的演算法，而不是通行金鑰本身的演算法（postQuantumRequired）。儲存時省略此項，則保留內建預設值。"
   },
+  "passkey.FIELDS.adminEnrolment.label": {
+    "en": "73fd6ffe6660cf3f",
+    "text": "允許管理員為某人註冊密碼金鑰"
+  },
+  "passkey.FIELDS.adminEnrolment.what": {
+    "en": "9e395e59fd838fcf",
+    "text": "預設為 `off`。`on` 允許持有 Admin Write 主控台角色的管理員，為適用此設定檔的人註冊密碼金鑰，從主控台上該人的頁面或 /admin-api：註冊儀式在管理員自己的瀏覽器中進行，對著管理員持有的驗證器（例如一把要交出去的安全金鑰），使用該人的使用者識別碼，並且與該人自己的註冊完全一樣地驗證——證明、演算法和此原則的註冊規則。別處製作的任何東西都不能匯入。金鑰記錄哪位管理員在何時註冊了它，並告知該人。儲存時省略此項，則保留內建預設值。"
+  },
+  "passkey.FIELDS.deviceBoundRequired.label": {
+    "en": "19194c290aaa3903",
+    "text": "要求裝置綁定工作階段"
+  },
+  "passkey.FIELDS.deviceBoundRequired.what": {
+    "en": "5098a9645fefe2ff",
+    "text": "預設關閉。開啟後，向此設定檔所涵蓋的應用程式核發時，會等到登入工作階段綁定到瀏覽器的金鑰；若瀏覽器略過該註冊，或等待結束仍未綁定，則拒絕核發。從未被提供註冊的工作階段不會被此列拒絕。在 authn.deviceBoundSessions 關閉時拒絕。"
+  },
   "passkey.SCHEMA.objectClasses.stsPasskeyPolicy.what": {
     "en": "44bab556bd6240cc",
     "text": "本服務用於密碼金鑰原則的類別：密碼金鑰在此領域中的行為方式。項目以「設定檔」命名（`cn=default`）。"
@@ -1322,6 +1338,14 @@
   "passkey.SCHEMA.attributes.stsPasskeyAttestationAlgorithms.what": {
     "en": "cb4ed83be3a69177",
     "text": "預設為 `none`：無論證明使用何種演算法簽章都予以接受。否則為一個清單，取值於 post-quantum、ml-dsa-44、ml-dsa-65、ml-dsa-87、slh-dsa 和 composite-ml-dsa：只有當通行金鑰帶有一個攜帶憑證的「受信任」證明，且其聲明簽章以及其憑證鏈中從葉憑證到信任錨點的每張憑證的簽章都是清單允許的演算法時，才會註冊（`post-quantum` 允許任何 ML-DSA、SLH-DSA 或複合 ML-DSA 簽章）。self 和 none 證明因不帶憑證而遭拒絕。開啟 enforceAttestationAtSignIn 後，每次登入都會依據註冊時記錄的內容按此規則檢查通行金鑰，因此在此規則之前註冊的通行金鑰將停止運作。這是證明的演算法，而不是通行金鑰本身的演算法（postQuantumRequired）。儲存時省略此項，則保留內建預設值。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyAdminEnrolment.what": {
+    "en": "9e395e59fd838fcf",
+    "text": "預設為 `off`。`on` 允許持有 Admin Write 主控台角色的管理員，為適用此設定檔的人註冊密碼金鑰，從主控台上該人的頁面或 /admin-api：註冊儀式在管理員自己的瀏覽器中進行，對著管理員持有的驗證器（例如一把要交出去的安全金鑰），使用該人的使用者識別碼，並且與該人自己的註冊完全一樣地驗證——證明、演算法和此原則的註冊規則。別處製作的任何東西都不能匯入。金鑰記錄哪位管理員在何時註冊了它，並告知該人。儲存時省略此項，則保留內建預設值。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyDeviceBoundRequired.what": {
+    "en": "5098a9645fefe2ff",
+    "text": "預設關閉。開啟後，向此設定檔所涵蓋的應用程式核發時，會等到登入工作階段綁定到瀏覽器的金鑰；若瀏覽器略過該註冊，或等待結束仍未綁定，則拒絕核發。從未被提供註冊的工作階段不會被此列拒絕。在 authn.deviceBoundSessions 關閉時拒絕。"
   },
   "passkey.SCHEMA.attributes.stsPasskeySelectApplication.what": {
     "en": "03ba679923c40b45",
@@ -1498,6 +1522,10 @@
   "passkey.sentences.param.realmAlgorithms": {
     "en": "62dd60f1d67057b4",
     "text": "該領域的 webauthn.algorithms"
+  },
+  "passkey.sentences.adminEnrolment": {
+    "en": "41023a55f549b1cd",
+    "text": "管理員可以在自己的瀏覽器中為某人註冊密碼金鑰，並像該人自己的密碼金鑰一樣加以驗證"
   },
   "kinds.locale.label": {
     "en": "1219a9dcfb9aa19f",

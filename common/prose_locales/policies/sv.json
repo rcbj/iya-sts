@@ -1231,6 +1231,22 @@
     "en": "cb4ed83be3a69177",
     "text": "`none` SOM STANDARD: en attestering godtas oavsett vilken algoritm den är signerad med. Annars en lista av post-quantum, ml-dsa-44, ml-dsa-65, ml-dsa-87, slh-dsa och composite-ml-dsa: en nyckel registreras bara med en BETROD attestering som bär ett certifikat, där utsagans signatur och signaturen på varje certifikat i dess kedja, från lövcertifikatet till förtroendeankaret, var och en är en som listan tillåter (`post-quantum` tillåter varje ML-DSA-, SLH-DSA- eller sammansatt ML-DSA-signatur). Self- och none-attestering avvisas, eftersom de saknar certifikat. Med enforceAttestationAtSignIn påslaget prövas nyckeln mot regeln vid varje inloggning utifrån det som registreringen sparade, så en nyckel registrerad före regeln slutar fungera. Detta gäller attesteringens algoritm, inte nyckelns egen (postQuantumRequired). Utelämnas den vid en sparning behålls det inbyggda standardvärdet."
   },
+  "passkey.FIELDS.adminEnrolment.label": {
+    "en": "73fd6ffe6660cf3f",
+    "text": "Låt en administratör registrera en nyckel för en person"
+  },
+  "passkey.FIELDS.adminEnrolment.what": {
+    "en": "9e395e59fd838fcf",
+    "text": "`off` SOM STANDARD. `on` låter en administratör som har konsolrollen Admin Write registrera en nyckel för en person som den här profilen gäller, från personens sida i konsolen eller /admin-api: registreringsceremonin körs i administratörens egen webbläsare, mot en autentiserare som administratören har (en säkerhetsnyckel som ska lämnas över, till exempel), under personens användarhandtag, och den verifieras precis som personens egen registrering — attestering, algoritmer och den här policyns registreringsregler. Ingenting som gjorts någon annanstans kan importeras. Nyckeln antecknar vilken administratör som registrerade den och när, och personen får veta det. Utelämnas den vid en sparning behålls det inbyggda standardvärdet."
+  },
+  "passkey.FIELDS.deviceBoundRequired.label": {
+    "en": "19194c290aaa3903",
+    "text": "Kräv en enhetsbunden session"
+  },
+  "passkey.FIELDS.deviceBoundRequired.what": {
+    "en": "5098a9645fefe2ff",
+    "text": "AV SOM STANDARD. På väntar en utfärdning till en tillämpning som den här profilen täcker tills inloggningssessionen är bunden till webbläsarens nyckel, och nekas när webbläsaren hoppade över den registreringen eller väntan löpte ut utan en bindning. En session som aldrig erbjöds registrering nekas inte av den här raden. Nekas medan authn.deviceBoundSessions är av."
+  },
   "passkey.SCHEMA.objectClasses.stsPasskeyPolicy.what": {
     "en": "44bab556bd6240cc",
     "text": "Den här tjänstens klass för en nyckelpolicy: hur nycklar beter sig i den här sfären. Posten namnges efter PROFILEN (`cn=default`)."
@@ -1322,6 +1338,14 @@
   "passkey.SCHEMA.attributes.stsPasskeyAttestationAlgorithms.what": {
     "en": "cb4ed83be3a69177",
     "text": "`none` SOM STANDARD: en attestering godtas oavsett vilken algoritm den är signerad med. Annars en lista av post-quantum, ml-dsa-44, ml-dsa-65, ml-dsa-87, slh-dsa och composite-ml-dsa: en nyckel registreras bara med en BETROD attestering som bär ett certifikat, där utsagans signatur och signaturen på varje certifikat i dess kedja, från lövcertifikatet till förtroendeankaret, var och en är en som listan tillåter (`post-quantum` tillåter varje ML-DSA-, SLH-DSA- eller sammansatt ML-DSA-signatur). Self- och none-attestering avvisas, eftersom de saknar certifikat. Med enforceAttestationAtSignIn påslaget prövas nyckeln mot regeln vid varje inloggning utifrån det som registreringen sparade, så en nyckel registrerad före regeln slutar fungera. Detta gäller attesteringens algoritm, inte nyckelns egen (postQuantumRequired). Utelämnas den vid en sparning behålls det inbyggda standardvärdet."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyAdminEnrolment.what": {
+    "en": "9e395e59fd838fcf",
+    "text": "`off` SOM STANDARD. `on` låter en administratör som har konsolrollen Admin Write registrera en nyckel för en person som den här profilen gäller, från personens sida i konsolen eller /admin-api: registreringsceremonin körs i administratörens egen webbläsare, mot en autentiserare som administratören har (en säkerhetsnyckel som ska lämnas över, till exempel), under personens användarhandtag, och den verifieras precis som personens egen registrering — attestering, algoritmer och den här policyns registreringsregler. Ingenting som gjorts någon annanstans kan importeras. Nyckeln antecknar vilken administratör som registrerade den och när, och personen får veta det. Utelämnas den vid en sparning behålls det inbyggda standardvärdet."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyDeviceBoundRequired.what": {
+    "en": "5098a9645fefe2ff",
+    "text": "AV SOM STANDARD. På väntar en utfärdning till en tillämpning som den här profilen täcker tills inloggningssessionen är bunden till webbläsarens nyckel, och nekas när webbläsaren hoppade över den registreringen eller väntan löpte ut utan en bindning. En session som aldrig erbjöds registrering nekas inte av den här raden. Nekas medan authn.deviceBoundSessions är av."
   },
   "passkey.SCHEMA.attributes.stsPasskeySelectApplication.what": {
     "en": "03ba679923c40b45",
@@ -1498,6 +1522,10 @@
   "passkey.sentences.param.realmAlgorithms": {
     "en": "62dd60f1d67057b4",
     "text": "sfärens webauthn.algorithms"
+  },
+  "passkey.sentences.adminEnrolment": {
+    "en": "41023a55f549b1cd",
+    "text": "en administratör får registrera en nyckel för en person, i administratörens egen webbläsare, verifierad som personens egen"
   },
   "kinds.locale.label": {
     "en": "1219a9dcfb9aa19f",

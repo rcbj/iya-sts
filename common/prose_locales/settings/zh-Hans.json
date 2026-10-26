@@ -691,6 +691,22 @@
     "en": "eb2c0a8e31f615d9",
     "text": "设备绑定会话所需的 cookie 在浏览器必须再次证明其密钥之前的有效时间，也就是复制的一对 cookie 能继续使用多久。绝不超过会话本身的结束时间。在签发 cookie 时读取。"
   },
+  "authn.deviceBoundIncludeSite|label": {
+    "en": "dfe9f9439467a7ed",
+    "text": "将绑定会话限定到可注册域"
+  },
+  "authn.deviceBoundIncludeSite|description": {
+    "en": "431c5a53f269b368",
+    "text": "关闭为默认。设备绑定会话的 cookie 只属于主机，这是此服务一直的做法，并且 scope.include_site 为 false。开启后，指示设置 include_site，cookie 的 Domain 是完成注册的主机的可注册域（当 webauthn.rpId 是该主机的后缀时用它，否则用最后两个标签；地址、localhost 或单个标签不会放宽）。调试器的公共主机以及该域下自定义监听器的主机被排除。同一主机、另一端口上的调试器无法排除：cookie 不按端口区分。领域路径前缀是同一来源。"
+  },
+  "authn.deviceBoundIssuanceWaitS|label": {
+    "en": "c379c77b9ef18c81",
+    "text": "颁发等待设备绑定的时长（秒）"
+  },
+  "authn.deviceBoundIssuanceWaitS|description": {
+    "en": "2562f13d1a8d0c51",
+    "text": "要求设备绑定会话的颁发，在提供注册之后等待多久。在颁发时读取，而不是靠定时器：超过此时长，会话的事实为 timedout，颁发被拒绝。零表示等待已经结束。从未被提供注册的会话不会因这次等待而被拒绝。"
+  },
   "authn.maxSessions|label": {
     "en": "5fa1f6294f5a3dc8",
     "text": "每领域最多单点登录会话数"
@@ -1111,6 +1127,14 @@
     "en": "f34caf08dceeedd3",
     "text": "仅在通行密钥策略要求登录时使用后量子通行密钥（`postQuantumRequired`）时读取，且仅当所选配置文件的 `postQuantumAllowCredentials` 行为 `realm` 时。`narrow`（默认值）在通行密钥步骤的 `allowCredentials` 中只列出此人的后量子（ML-DSA）通行密钥，因此从不提供传统通行密钥——但设备上只存有其传统通行密钥的人会看到平台自己的“未找到通行密钥”消息。`list-and-refuse` 列出此人持有的每个通行密钥，并在仪式结束后拒绝传统通行密钥（STS-AUTHN-0356），同时显示一个页面，说明该应用要求后量子通行密钥以及在哪里添加。代价是：此人可能选择一个将被拒绝的通行密钥。无论哪种方式，不持有任何后量子通行密钥的人都会在任何仪式之前得到告知。"
   },
+  "webauthn.pqcUpgrade|label": {
+    "en": "1c2af00d33a75721",
+    "text": "将经典通行密钥升级为后量子通行密钥"
+  },
+  "webauthn.pqcUpgrade|description": {
+    "en": "a77cd9a980262260",
+    "text": "开启（默认）时，一个人可以在 /portal/keys 上将自己的一个经典通行密钥升级为后量子（ML-DSA）通行密钥：先使用一次经典通行密钥，以证明它属于自己，然后创建新的，新的只提供 ML-DSA。`webauthn.pqcAlongsideClassical` 开启时，后量子通行密钥被加入自己的通道，经典通行密钥保留；关闭时，后量子通行密钥就地替换经典通行密钥，保留其名称，并记录何时升级、从哪种算法升级。经典通行密钥只在新的通过验证之后才改变，因此失败的升级让它保持原样。新通行密钥满足注册所满足的每一条规则。关闭时，任何通行密钥都不能升级；在允许注册通行密钥的地方，后量子通行密钥仍可以注册在经典通行密钥旁边。"
+  },
   "webauthn.userVerification|label": {
     "en": "8b134177fe992d91",
     "text": "用户验证"
@@ -1142,6 +1166,30 @@
   "webauthn.attestationTrustAnchors|description": {
     "en": "75ff97c509121fb5",
     "text": "证明证书可以链接到的根证书，以 PEM 包形式提供，作为 FIDO Metadata Service 为每个型号列出的根证书之外的补充——企业 TPM 背书 CA、厂商的根证书、Android 或 Apple 证明根证书，或测试根证书。到达其中之一的证书链即为受信任的。不随附任何内容：留空则只信任当前生效的 MDS BLOB 所列出的。"
+  },
+  "webauthn.attestationEvidenceTsaUrl|label": {
+    "en": "4dabd3df9187a34f",
+    "text": "通行密钥证据时间戳机构 URL"
+  },
+  "webauthn.attestationEvidenceTsaUrl|description": {
+    "en": "7fa58ac004a9e2e4",
+    "text": "与 TSA 信任锚一起设置时，已验证的通行密钥证明会收到一份 RFC 4998 EvidenceRecord，其最初的 ArchiveTimeStamp 是来自该 HTTPS 时间戳机构的 RFC 3161 令牌。留空则关闭证据记录。"
+  },
+  "webauthn.attestationEvidenceTsaTrustAnchors|label": {
+    "en": "8c29eb6dc36aa1a9",
+    "text": "通行密钥证据 TSA 信任锚（PEM）"
+  },
+  "webauthn.attestationEvidenceTsaTrustAnchors|description": {
+    "en": "7b20573a01a900a7",
+    "text": "用于验证 RFC 3161 令牌及其 TSA 证书路径的 PEM 信任锚。证据记录同时需要这组锚和时间戳机构 URL。"
+  },
+  "webauthn.attestationEvidenceHashAlgorithm|label": {
+    "en": "8c886d89947bce4c",
+    "text": "通行密钥证据散列树算法"
+  },
+  "webauthn.attestationEvidenceHashAlgorithm|description": {
+    "en": "ea9f111d1308b528",
+    "text": "新的 RFC 4998 记录使用的摘要。把它从 sha256 提高会在每日通行密钥报告重新计数时触发 RFC 4998 散列树续期，进入一条新的 ArchiveTimeStampChain。"
   },
   "webauthn.attestationAllowedAaguids|label": {
     "en": "1d32f2ee4864d344",

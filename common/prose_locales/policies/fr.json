@@ -1231,6 +1231,22 @@
     "en": "cb4ed83be3a69177",
     "text": "`none` PAR DÉFAUT : une attestation est acceptée quel que soit l’algorithme avec lequel elle est signée. Sinon, une liste parmi post-quantum, ml-dsa-44, ml-dsa-65, ml-dsa-87, slh-dsa et composite-ml-dsa : une clé d’accès n’est enregistrée qu’avec une attestation DE CONFIANCE qui porte un certificat, dont la signature de la déclaration et la signature de chaque certificat de sa chaîne, du certificat feuille jusqu’à l’ancre de confiance, sont chacune autorisées par la liste (`post-quantum` autorise toute signature ML-DSA, SLH-DSA ou ML-DSA composite). Les attestations « self » et « none » sont refusées, faute de certificat. Avec enforceAttestationAtSignIn activé, chaque connexion soumet la clé d’accès à cette règle d’après ce que son enregistrement a consigné ; une clé d’accès enregistrée avant la règle cesse donc de fonctionner. Il s’agit de l’algorithme de l’attestation, pas de celui de la clé d’accès elle-même (postQuantumRequired). Omis lors d’un enregistrement, la valeur par défaut intégrée est conservée."
   },
+  "passkey.FIELDS.adminEnrolment.label": {
+    "en": "73fd6ffe6660cf3f",
+    "text": "Permettre à un administrateur d’enregistrer une clé d’accès pour une personne"
+  },
+  "passkey.FIELDS.adminEnrolment.what": {
+    "en": "9e395e59fd838fcf",
+    "text": "`off` PAR DÉFAUT. `on` permet à un administrateur qui détient le rôle de console Admin Write d’enregistrer une clé d’accès pour une personne à laquelle ce profil s’applique, depuis la page de la personne sur la console ou /admin-api : la cérémonie d’enregistrement se déroule dans le propre navigateur de l’administrateur, auprès d’un authentificateur qu’il détient (une clé de sécurité à lui remettre, par exemple), sous l’identifiant d’utilisateur de la personne, et elle est vérifiée exactement comme l’enregistrement propre de la personne — attestation, algorithmes et règles d’enregistrement de cette politique. Rien de fabriqué ailleurs ne peut être importé. La clé enregistre quel administrateur l’a enregistrée et quand, et la personne en est informée. Omise lors d’un enregistrement, la valeur par défaut intégrée est conservée."
+  },
+  "passkey.FIELDS.deviceBoundRequired.label": {
+    "en": "19194c290aaa3903",
+    "text": "Exiger une session liée à l’appareil"
+  },
+  "passkey.FIELDS.deviceBoundRequired.what": {
+    "en": "5098a9645fefe2ff",
+    "text": "DÉSACTIVÉ PAR DÉFAUT. Activé, une émission vers une application que couvre ce profil attend que la session d’authentification soit liée à la clé du navigateur, et elle est refusée lorsque le navigateur a ignoré cet enregistrement ou que l’attente s’est écoulée sans liaison. Une session à laquelle l’enregistrement n’a jamais été proposé n’est pas refusée par cette ligne. Refusée tant que authn.deviceBoundSessions est désactivé."
+  },
   "passkey.SCHEMA.objectClasses.stsPasskeyPolicy.what": {
     "en": "44bab556bd6240cc",
     "text": "La classe de ce service pour une politique des clés d’accès : le comportement des clés d’accès dans ce domaine. L’entrée est nommée par le PROFIL (`cn=default`)."
@@ -1322,6 +1338,14 @@
   "passkey.SCHEMA.attributes.stsPasskeyAttestationAlgorithms.what": {
     "en": "cb4ed83be3a69177",
     "text": "`none` PAR DÉFAUT : une attestation est acceptée quel que soit l’algorithme avec lequel elle est signée. Sinon, une liste parmi post-quantum, ml-dsa-44, ml-dsa-65, ml-dsa-87, slh-dsa et composite-ml-dsa : une clé d’accès n’est enregistrée qu’avec une attestation DE CONFIANCE qui porte un certificat, dont la signature de la déclaration et la signature de chaque certificat de sa chaîne, du certificat feuille jusqu’à l’ancre de confiance, sont chacune autorisées par la liste (`post-quantum` autorise toute signature ML-DSA, SLH-DSA ou ML-DSA composite). Les attestations « self » et « none » sont refusées, faute de certificat. Avec enforceAttestationAtSignIn activé, chaque connexion soumet la clé d’accès à cette règle d’après ce que son enregistrement a consigné ; une clé d’accès enregistrée avant la règle cesse donc de fonctionner. Il s’agit de l’algorithme de l’attestation, pas de celui de la clé d’accès elle-même (postQuantumRequired). Omis lors d’un enregistrement, la valeur par défaut intégrée est conservée."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyAdminEnrolment.what": {
+    "en": "9e395e59fd838fcf",
+    "text": "`off` PAR DÉFAUT. `on` permet à un administrateur qui détient le rôle de console Admin Write d’enregistrer une clé d’accès pour une personne à laquelle ce profil s’applique, depuis la page de la personne sur la console ou /admin-api : la cérémonie d’enregistrement se déroule dans le propre navigateur de l’administrateur, auprès d’un authentificateur qu’il détient (une clé de sécurité à lui remettre, par exemple), sous l’identifiant d’utilisateur de la personne, et elle est vérifiée exactement comme l’enregistrement propre de la personne — attestation, algorithmes et règles d’enregistrement de cette politique. Rien de fabriqué ailleurs ne peut être importé. La clé enregistre quel administrateur l’a enregistrée et quand, et la personne en est informée. Omise lors d’un enregistrement, la valeur par défaut intégrée est conservée."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyDeviceBoundRequired.what": {
+    "en": "5098a9645fefe2ff",
+    "text": "DÉSACTIVÉ PAR DÉFAUT. Activé, une émission vers une application que couvre ce profil attend que la session d’authentification soit liée à la clé du navigateur, et elle est refusée lorsque le navigateur a ignoré cet enregistrement ou que l’attente s’est écoulée sans liaison. Une session à laquelle l’enregistrement n’a jamais été proposé n’est pas refusée par cette ligne. Refusée tant que authn.deviceBoundSessions est désactivé."
   },
   "passkey.SCHEMA.attributes.stsPasskeySelectApplication.what": {
     "en": "03ba679923c40b45",
@@ -1498,6 +1522,10 @@
   "passkey.sentences.param.realmAlgorithms": {
     "en": "62dd60f1d67057b4",
     "text": "le paramètre webauthn.algorithms du domaine"
+  },
+  "passkey.sentences.adminEnrolment": {
+    "en": "41023a55f549b1cd",
+    "text": "un administrateur peut enregistrer une clé d’accès pour une personne, dans le propre navigateur de l’administrateur, vérifiée comme l’est celle de la personne"
   },
   "kinds.locale.label": {
     "en": "1219a9dcfb9aa19f",

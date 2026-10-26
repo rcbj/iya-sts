@@ -4,8 +4,8 @@
     "text": "身分驗證"
   },
   "audit.categories.authentication.what": {
-    "en": "a75d8d51a0eb704d",
-    "text": "某個憑證被「接受」了，可能發生在此處十六個協定家族中的任何一個。它記錄在每個家族都已經會通過的單一匯集點，因此這是一個地方而不是十六個。SCIM 加入得較晚，SPIFFE 更晚。SCIM：其端點接受的方案中有三種——Basic、Digest 與 HOBA——每次請求都出示憑證，接受其中一個即是一次身分驗證。其他三種不會出現在此，因為每一種都是延續在別處記錄的身分驗證：存取權杖在簽發時即被接受，工作階段 Cookie 在其工作階段開始時被接受，而用戶端憑證是每個「連線」一次，而不是每個請求一次。SPIFFE 是第十六個，以三種方式到達此處：在 SPIRE Server API 透過相互 TLS 出示的 X509-SVID（每個連線一次，理由與用戶端憑證相同）、代理程式證明，以及在 ValidateJWTSVID 驗證的 JWT-SVID。「獲簽發」SVID 不在其中。"
+    "en": "8daae95bb7977a6c",
+    "text": "某個憑證被「接受」了，可能發生在此處十六個協定家族中的任何一個。它記錄在每個家族都已經會通過的單一匯集點，因此這是一個地方而不是十六個。SCIM 加入得較晚，SPIFFE 更晚。SCIM：其端點接受的方案中有三種——Basic、Digest 與 HOBA——每次請求都出示憑證，接受其中一個即是一次身分驗證。其他三種不會出現在此，因為每一種都是延續在別處記錄的身分驗證：存取權杖在簽發時即被接受，工作階段 Cookie 在其工作階段開始時被接受，而用戶端憑證是每個「連線」一次，而不是每個請求一次。SPIFFE 是第十六個，以三種方式到達此處：在 SPIRE Server API 透過相互 TLS 出示的 X509-SVID（每個連線一次，理由與用戶端憑證相同）、代理程式證明，以及在 ValidateJWTSVID 驗證的 JWT-SVID。「獲簽發」SVID 不在其中。一次嘗試的拒絕記在接受旁邊，動作為 `authentication.refused`：同樣的詳情，結果為拒絕，並且不移動任何計數器（#954）。應用程式頁面同時列出兩者，以及在點名該應用程式時的 `session.refuse` 和 `session.refused`。"
   },
   "audit.categories.session.label": {
     "en": "6fa3cbf451b2a1d5",
@@ -98,6 +98,10 @@
   "audit.actions.authentication.label": {
     "en": "579808c825684965",
     "text": "某個憑證被接受"
+  },
+  "audit.actions.authentication.refused.label": {
+    "en": "0b0281ef1e0768e4",
+    "text": "某個憑證被拒絕"
   },
   "audit.actions.portal.activate.label": {
     "en": "979387f5c20ade32",
@@ -1067,6 +1071,38 @@
     "en": "3c3a62cf5e46c516",
     "text": "管理員將某人已證明的 DID 標記為偏好，或清除了該標記"
   },
+  "audit.actions.admin.passkey.enrolment-started.label": {
+    "en": "571c0a6bca1d9163",
+    "text": "管理員開始為某人註冊通行金鑰"
+  },
+  "audit.actions.admin.passkey.enrolment-refused.label": {
+    "en": "1853c2bfff1cb208",
+    "text": "管理員為某人註冊通行金鑰被拒絕"
+  },
+  "audit.actions.admin.passkey.enrolled.label": {
+    "en": "62dfd8780a0a16af",
+    "text": "管理員為某人註冊了通行金鑰"
+  },
+  "audit.actions.admin.passkey.upgrade-started.label": {
+    "en": "85e2c7f2d669f98e",
+    "text": "管理員開始升級某人的通行金鑰"
+  },
+  "audit.actions.admin.passkey.upgrade-refused.label": {
+    "en": "e1490e5ffb7d9199",
+    "text": "管理員的通行金鑰升級被拒絕"
+  },
+  "audit.actions.admin.passkey.upgrade-proved.label": {
+    "en": "92550d6a5a04ca93",
+    "text": "管理員證明了某人的傳統通行金鑰"
+  },
+  "audit.actions.admin.passkey.upgrade-cancelled.label": {
+    "en": "3653731050769a1b",
+    "text": "管理員取消了某人的通行金鑰升級"
+  },
+  "audit.actions.admin.passkey.upgraded.label": {
+    "en": "de2f45f4af0eafa5",
+    "text": "管理員將某人的通行金鑰升級為 ML-DSA"
+  },
   "audit.actions.ssf.signals.discover.label": {
     "en": "55d2d7d9682c339a",
     "text": "探索了聯盟夥伴的 Shared Signals 組態"
@@ -1310,6 +1346,18 @@
   "audit.actions.portal.key.refused.label": {
     "en": "6679aa8b834badee",
     "text": "某人的安全金鑰註冊被拒絕"
+  },
+  "audit.actions.portal.key.upgrade-started.label": {
+    "en": "dbf67e17e370e57b",
+    "text": "某人開始將傳統通行金鑰升級為 ML-DSA"
+  },
+  "audit.actions.portal.key.upgrade-refused.label": {
+    "en": "704e6bb3a4472960",
+    "text": "某人的通行金鑰升級被拒絕"
+  },
+  "audit.actions.portal.key.upgraded.label": {
+    "en": "f16ccefcc9eb6aec",
+    "text": "某人將傳統通行金鑰升級為了 ML-DSA"
   },
   "audit.actions.portal.mfa.backup-codes.generated.label": {
     "en": "18ec89def789c4a2",

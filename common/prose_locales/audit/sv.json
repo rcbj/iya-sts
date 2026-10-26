@@ -4,8 +4,8 @@
     "text": "Autentisering"
   },
   "audit.categories.authentication.what": {
-    "en": "a75d8d51a0eb704d",
-    "text": "En autentiseringsuppgift GODTOGS, i någon av de sexton protokollfamiljerna här. Registreras i den enda tratt som var och en av dem redan passerar, så det är ett ställe och inte sexton. SCIM anslöt sent och SPIFFE ännu senare. SCIM: tre av de scheman som dess slutpunkter godtar — Basic, Digest och HOBA — presenterar en autentiseringsuppgift vid varje begäran, och att godta en är en autentisering. Dess andra tre syns inte här, eftersom var och en fortsätter en autentisering som registrerats någon annanstans: en åtkomsttoken godtogs när den utfärdades, en sessionscookie när dess session började och ett klientcertifikat en gång per ANSLUTNING snarare än en gång per begäran. SPIFFE är den sextonde och når hit på tre sätt: ett X509-SVID som presenteras över ömsesidig TLS vid SPIRE Server API (en gång per anslutning, av samma skäl som ett klientcertifikat), en agent som attesterar och ett JWT-SVID som verifieras vid ValidateJWTSVID. Att UTFÄRDAS ett SVID är inte ett av dem."
+    "en": "8daae95bb7977a6c",
+    "text": "En autentiseringsuppgift GODTOGS, i någon av de sexton protokollfamiljerna här. Registreras i den enda tratt som var och en av dem redan passerar, så det är ett ställe och inte sexton. SCIM anslöt sent och SPIFFE ännu senare. SCIM: tre av de scheman som dess slutpunkter godtar — Basic, Digest och HOBA — presenterar en autentiseringsuppgift vid varje begäran, och att godta en är en autentisering. Dess andra tre syns inte här, eftersom var och en fortsätter en autentisering som registrerats någon annanstans: en åtkomsttoken godtogs när den utfärdades, en sessionscookie när dess session började och ett klientcertifikat en gång per ANSLUTNING snarare än en gång per begäran. SPIFFE är den sextonde och når hit på tre sätt: ett X509-SVID som presenteras över ömsesidig TLS vid SPIRE Server API (en gång per anslutning, av samma skäl som ett klientcertifikat), en agent som attesterar och ett JWT-SVID som verifieras vid ValidateJWTSVID. Att UTFÄRDAS ett SVID är inte ett av dem. Ett avvisat försök är `authentication.refused` bredvid godkännandet: samma uppgift, utfall avvisat, och ingen räknare flyttas (#954). Applikationssidan listar båda, och `session.refuse` och `session.refused` när de namnger den."
   },
   "audit.categories.session.label": {
     "en": "6fa3cbf451b2a1d5",
@@ -98,6 +98,10 @@
   "audit.actions.authentication.label": {
     "en": "579808c825684965",
     "text": "En autentiseringsuppgift godtogs"
+  },
+  "audit.actions.authentication.refused.label": {
+    "en": "0b0281ef1e0768e4",
+    "text": "En autentiseringsuppgift avvisades"
   },
   "audit.actions.portal.activate.label": {
     "en": "979387f5c20ade32",
@@ -1067,6 +1071,38 @@
     "en": "3c3a62cf5e46c516",
     "text": "En administratör markerade en persons bevisade DID som föredraget, eller tog bort markeringen"
   },
+  "audit.actions.admin.passkey.enrolment-started.label": {
+    "en": "571c0a6bca1d9163",
+    "text": "En administratör började registrera en nyckel för en person"
+  },
+  "audit.actions.admin.passkey.enrolment-refused.label": {
+    "en": "1853c2bfff1cb208",
+    "text": "En administratörs registrering av en nyckel för en person avvisades"
+  },
+  "audit.actions.admin.passkey.enrolled.label": {
+    "en": "62dfd8780a0a16af",
+    "text": "En administratör registrerade en nyckel för en person"
+  },
+  "audit.actions.admin.passkey.upgrade-started.label": {
+    "en": "85e2c7f2d669f98e",
+    "text": "En administratör började uppgradera en persons nyckel"
+  },
+  "audit.actions.admin.passkey.upgrade-refused.label": {
+    "en": "e1490e5ffb7d9199",
+    "text": "En administratörs uppgradering av en nyckel avvisades"
+  },
+  "audit.actions.admin.passkey.upgrade-proved.label": {
+    "en": "92550d6a5a04ca93",
+    "text": "En administratör bevisade en persons klassiska nyckel"
+  },
+  "audit.actions.admin.passkey.upgrade-cancelled.label": {
+    "en": "3653731050769a1b",
+    "text": "En administratör avbröt uppgraderingen av en persons nyckel"
+  },
+  "audit.actions.admin.passkey.upgraded.label": {
+    "en": "de2f45f4af0eafa5",
+    "text": "En administratör uppgraderade en persons nyckel till ML-DSA"
+  },
   "audit.actions.ssf.signals.discover.label": {
     "en": "55d2d7d9682c339a",
     "text": "En federationspartners Shared Signals-konfiguration upptäcktes"
@@ -1310,6 +1346,18 @@
   "audit.actions.portal.key.refused.label": {
     "en": "6679aa8b834badee",
     "text": "En persons registrering av en säkerhetsnyckel avvisades"
+  },
+  "audit.actions.portal.key.upgrade-started.label": {
+    "en": "dbf67e17e370e57b",
+    "text": "En person började uppgradera en klassisk nyckel till ML-DSA"
+  },
+  "audit.actions.portal.key.upgrade-refused.label": {
+    "en": "704e6bb3a4472960",
+    "text": "En persons uppgradering av en nyckel avvisades"
+  },
+  "audit.actions.portal.key.upgraded.label": {
+    "en": "f16ccefcc9eb6aec",
+    "text": "En person uppgraderade en klassisk nyckel till ML-DSA"
   },
   "audit.actions.portal.mfa.backup-codes.generated.label": {
     "en": "18ec89def789c4a2",

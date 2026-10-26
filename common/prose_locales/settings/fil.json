@@ -691,6 +691,22 @@
     "en": "eb2c0a8e31f615d9",
     "text": "Gaano katagal nabubuhay ang cookie na kailangan ng isang device-bound session bago kailangang patunayan muli ng browser ang key nito, at kaya gaano katagal patuloy na gumagana ang isang kinopyang pares ng cookie. Hindi lalampas sa sariling katapusan ng session. Binabasa kapag nag-issue ng cookie."
   },
+  "authn.deviceBoundIncludeSite|label": {
+    "en": "dfe9f9439467a7ed",
+    "text": "I-scope ang bound na session sa registrable domain"
+  },
+  "authn.deviceBoundIncludeSite|description": {
+    "en": "431c5a53f269b368",
+    "text": "Naka-off, ang default, host-only ang cookie ng isang device-bound na session, na siyang palaging ginagawa ng serbisyong ito, at false ang scope.include_site. Kapag naka-on, itinatakda ng mga tagubilin ang include_site at ang Domain ng cookie ay ang registrable domain ng host na nagrehistro (ang webauthn.rpId kapag suffix ito ng host, kung hindi ay ang huling dalawang label; ang isang address, ang localhost o isang label ay hindi pinalalawak). Hindi kasama ang public host ng debugger at ang host ng isang custom na listener sa ilalim ng domain na iyon. Ang debugger sa parehong host at ibang port ay hindi maaaring hindi isama: ang mga cookie ay hindi naka-scope sa port. Ang mga path prefix ng realm ay iisang origin."
+  },
+  "authn.deviceBoundIssuanceWaitS|label": {
+    "en": "c379c77b9ef18c81",
+    "text": "Gaano katagal maghihintay ang issuance ng device binding (segundo)"
+  },
+  "authn.deviceBoundIssuanceWaitS|description": {
+    "en": "2562f13d1a8d0c51",
+    "text": "Gaano katagal maghihintay ang isang issuance na nangangailangan ng device-bound na session pagkatapos ihandog ang pagrehistro. Binabasa sa issuance, hindi ng isang timer: lampas dito, timedout ang fact ng session at tinatanggihan ang issuance. Ang zero ay nangangahulugang lumipas na ang paghihintay. Ang session na hindi kailanman inalok ng pagrehistro ay hindi tinatanggihan ng paghihintay."
+  },
   "authn.maxSessions|label": {
     "en": "5fa1f6294f5a3dc8",
     "text": "Pinakamaraming sign-on session bawat realm"
@@ -1111,6 +1127,14 @@
     "en": "f34caf08dceeedd3",
     "text": "Binabasa lamang habang hinihingi ng passkey policy ang post-quantum na passkey sa sign-in (`postQuantumRequired`), at kapag `realm` lamang ang row na `postQuantumAllowCredentials` ng napiling profile. Ang `narrow` (ang default) ay pinapangalanan lamang ang mga post-quantum (ML-DSA) na passkey ng tao sa `allowCredentials` ng passkey step, kaya hindi kailanman inaalok ang classical — pero ang taong ang device ay may hawak lamang ng kanyang classical na passkey ay makakakita ng sariling mensahe ng platform na \"walang nahanap na passkey\". Ang `list-and-refuse` ay pinapangalanan ang bawat passkey na hawak niya at tinatanggihan ang classical pagkatapos ng ceremony (STS-AUTHN-0356), na may page na nagsasabing kailangan ng application ang post-quantum na passkey at kung saan magdadagdag nito. Ang kapalit: maaaring pumili ang tao ng passkey na tatanggihan. Alinman dito, ang taong walang hawak na post-quantum na passkey ay sinasabihan bago ang anumang ceremony."
   },
+  "webauthn.pqcUpgrade|label": {
+    "en": "1c2af00d33a75721",
+    "text": "I-upgrade ang classical na passkey sa post-quantum"
+  },
+  "webauthn.pqcUpgrade|description": {
+    "en": "a77cd9a980262260",
+    "text": "Kapag naka-on (ang default), maaaring i-upgrade ng isang tao ang isa sa kanyang classical na passkey sa post-quantum (ML-DSA) sa /portal/keys: ginamit niya ang classical na passkey nang isang beses, para ipakita na kanya ito, at saka ginawa ang bago, na inaalok lang ng ML-DSA. Kapag naka-on ang `webauthn.pqcAlongsideClassical`, IDINAGDAG ang post-quantum na passkey sa sarili nitong lane at pinananatili ang classical; kapag naka-off, PINAPALITAN ng post-quantum na passkey ang classical sa lugar, pinapanatili ang pangalan nito at itinatala kung kailan ito na-upgrade at mula sa aling algorithm. Binabago lang ang classical na passkey kapag na-verify na ang bago, kaya ang bigong upgrade ay iniiwan ito kung ano ito. Tinutugunan ng bagong passkey ang bawat panuntunang tinutugunan ng isang pagrehistro. Kapag naka-off, walang passkey na maaaring i-upgrade; maaari pa ring irehistro ang post-quantum na passkey sa tabi ng classical kung saan maaaring magrehistro ng mga passkey."
+  },
   "webauthn.userVerification|label": {
     "en": "8b134177fe992d91",
     "text": "User verification"
@@ -1142,6 +1166,30 @@
   "webauthn.attestationTrustAnchors|description": {
     "en": "75ff97c509121fb5",
     "text": "Mga root certificate na puwedeng pag-chain-an ng isang attestation certificate, bilang PEM bundle, KATABI ng mga inililista ng FIDO Metadata Service para sa bawat model — isang corporate TPM endorsement CA, root ng isang vendor, ang Android o Apple attestation root, o isang test root. PINAGKAKATIWALAAN ang chain na umaabot sa isa. Walang kasamang naka-ship: ang walang laman ay nagtitiwala lang sa inililista ng aktibong MDS BLOB."
+  },
+  "webauthn.attestationEvidenceTsaUrl|label": {
+    "en": "4dabd3df9187a34f",
+    "text": "URL ng timestamp authority ng passkey evidence"
+  },
+  "webauthn.attestationEvidenceTsaUrl|description": {
+    "en": "7fa58ac004a9e2e4",
+    "text": "Kapag itinakda kasama ng mga trust anchor ng TSA, ang mga na-verify na passkey attestation ay tumatanggap ng RFC 4998 EvidenceRecord na ang unang ArchiveTimeStamp ay isang RFC 3161 token mula sa HTTPS timestamp authority na ito. Walang laman ang nagpapasara ng pagtatala ng evidence."
+  },
+  "webauthn.attestationEvidenceTsaTrustAnchors|label": {
+    "en": "8c29eb6dc36aa1a9",
+    "text": "Mga trust anchor ng TSA ng passkey evidence (PEM)"
+  },
+  "webauthn.attestationEvidenceTsaTrustAnchors|description": {
+    "en": "7b20573a01a900a7",
+    "text": "Mga PEM trust anchor na ginagamit para i-verify ang RFC 3161 token at ang certificate path ng TSA nito. Ang pagtatala ng evidence ay nangangailangan ng bundle na ito at ng URL ng timestamp authority."
+  },
+  "webauthn.attestationEvidenceHashAlgorithm|label": {
+    "en": "8c886d89947bce4c",
+    "text": "Algorithm ng hash tree ng passkey evidence"
+  },
+  "webauthn.attestationEvidenceHashAlgorithm|description": {
+    "en": "ea9f111d1308b528",
+    "text": "Digest na ginagamit ng mga bagong tala ng RFC 4998. Ang pagtataas nito mula sa sha256 ay nagti-trigger ng pag-renew ng hash tree ng RFC 4998 sa araw-araw na muling pagbilang ng passkey report, sa isang bagong ArchiveTimeStampChain."
   },
   "webauthn.attestationAllowedAaguids|label": {
     "en": "1d32f2ee4864d344",

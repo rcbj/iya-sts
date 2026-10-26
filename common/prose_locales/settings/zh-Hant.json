@@ -691,6 +691,22 @@
     "en": "eb2c0a8e31f615d9",
     "text": "裝置綁定工作階段所需的 cookie 在瀏覽器必須再次證明其金鑰之前的有效時間，也就是複製的一對 cookie 能繼續使用多久。絕不超過工作階段本身的結束時間。於簽發 cookie 時讀取。"
   },
+  "authn.deviceBoundIncludeSite|label": {
+    "en": "dfe9f9439467a7ed",
+    "text": "將綁定工作階段限定到可註冊網域"
+  },
+  "authn.deviceBoundIncludeSite|description": {
+    "en": "431c5a53f269b368",
+    "text": "關閉為預設。裝置綁定工作階段的 cookie 只屬於主機，這是此服務一直的做法，並且 scope.include_site 為 false。開啟後，指示設定 include_site，cookie 的 Domain 是完成註冊的主機的可註冊網域（當 webauthn.rpId 是該主機的後綴時用它，否則用最後兩個標籤；位址、localhost 或單個標籤不會放寬）。除錯器的公共主機以及該網域下自訂接聽器的主機被排除。同一主機、另一連接埠上的除錯器無法排除：cookie 不按連接埠區分。領域路徑前綴是同一來源。"
+  },
+  "authn.deviceBoundIssuanceWaitS|label": {
+    "en": "c379c77b9ef18c81",
+    "text": "核發等待裝置綁定的時長（秒）"
+  },
+  "authn.deviceBoundIssuanceWaitS|description": {
+    "en": "2562f13d1a8d0c51",
+    "text": "要求裝置綁定工作階段的核發，在提供註冊之後等待多久。在核發時讀取，而不是靠計時器：超過此時長，工作階段的事實為 timedout，核發被拒絕。零表示等待已經結束。從未被提供註冊的工作階段不會因這次等待而被拒絕。"
+  },
   "authn.maxSessions|label": {
     "en": "5fa1f6294f5a3dc8",
     "text": "每個領域的登入工作階段上限"
@@ -1111,6 +1127,14 @@
     "en": "f34caf08dceeedd3",
     "text": "僅在密碼金鑰原則要求登入時使用後量子密碼金鑰（`postQuantumRequired`）時讀取，且僅當所選設定檔的 `postQuantumAllowCredentials` 列為 `realm` 時。`narrow`（預設值）在密碼金鑰步驟的 `allowCredentials` 中只列出此人的後量子（ML-DSA）密碼金鑰，因此從不提供傳統密碼金鑰——但裝置上只存有其傳統密碼金鑰的人會看到平台自己的「找不到密碼金鑰」訊息。`list-and-refuse` 列出此人持有的每個密碼金鑰，並在儀式結束後拒絕傳統密碼金鑰（STS-AUTHN-0356），同時顯示一個頁面，說明該應用程式要求後量子密碼金鑰以及在哪裡新增。代價是：此人可能選擇一個將被拒絕的密碼金鑰。無論哪種方式，不持有任何後量子密碼金鑰的人都會在任何儀式之前得到告知。"
   },
+  "webauthn.pqcUpgrade|label": {
+    "en": "1c2af00d33a75721",
+    "text": "將傳統密碼金鑰升級為後量子密碼金鑰"
+  },
+  "webauthn.pqcUpgrade|description": {
+    "en": "a77cd9a980262260",
+    "text": "開啟（預設）時，一個人可以在 /portal/keys 上將自己的一個傳統密碼金鑰升級為後量子（ML-DSA）密碼金鑰：先使用一次傳統密碼金鑰，以證明它屬於自己，然後建立新的，新的只提供 ML-DSA。`webauthn.pqcAlongsideClassical` 開啟時，後量子密碼金鑰被加入自己的通道，傳統密碼金鑰保留；關閉時，後量子密碼金鑰就地取代傳統密碼金鑰，保留其名稱，並記錄何時升級、從哪種演算法升級。傳統密碼金鑰只在新的通過驗證之後才改變，因此失敗的升級讓它保持原樣。新密碼金鑰滿足註冊所滿足的每一條規則。關閉時，任何密碼金鑰都不能升級；在允許註冊密碼金鑰的地方，後量子密碼金鑰仍可以註冊在傳統密碼金鑰旁邊。"
+  },
   "webauthn.userVerification|label": {
     "en": "8b134177fe992d91",
     "text": "使用者驗證"
@@ -1142,6 +1166,30 @@
   "webauthn.attestationTrustAnchors|description": {
     "en": "75ff97c509121fb5",
     "text": "證明憑證可鏈結至的根憑證，以 PEM 套件形式提供，與 FIDO Metadata Service 為各型號列出者「並用」——企業 TPM 背書 CA、廠商的根憑證、Android 或 Apple 證明根憑證，或測試用根憑證。到達其中之一的鏈結即為「受信任」。不隨附任何內容：空白表示只信任目前生效之 MDS BLOB 所列出者。"
+  },
+  "webauthn.attestationEvidenceTsaUrl|label": {
+    "en": "4dabd3df9187a34f",
+    "text": "密碼金鑰證據時間戳記機構 URL"
+  },
+  "webauthn.attestationEvidenceTsaUrl|description": {
+    "en": "7fa58ac004a9e2e4",
+    "text": "與 TSA 信任錨一起設定時，已驗證的密碼金鑰證明會收到一份 RFC 4998 EvidenceRecord，其最初的 ArchiveTimeStamp 是來自該 HTTPS 時間戳記機構的 RFC 3161 權杖。留空則關閉證據記錄。"
+  },
+  "webauthn.attestationEvidenceTsaTrustAnchors|label": {
+    "en": "8c29eb6dc36aa1a9",
+    "text": "密碼金鑰證據 TSA 信任錨（PEM）"
+  },
+  "webauthn.attestationEvidenceTsaTrustAnchors|description": {
+    "en": "7b20573a01a900a7",
+    "text": "用於驗證 RFC 3161 權杖及其 TSA 憑證路徑的 PEM 信任錨。證據記錄同時需要這組錨和時間戳記機構 URL。"
+  },
+  "webauthn.attestationEvidenceHashAlgorithm|label": {
+    "en": "8c886d89947bce4c",
+    "text": "密碼金鑰證據雜湊樹演算法"
+  },
+  "webauthn.attestationEvidenceHashAlgorithm|description": {
+    "en": "ea9f111d1308b528",
+    "text": "新的 RFC 4998 記錄使用的摘要。把它從 sha256 提高會在每日密碼金鑰報告重新計數時觸發 RFC 4998 雜湊樹續期，進入一條新的 ArchiveTimeStampChain。"
   },
   "webauthn.attestationAllowedAaguids|label": {
     "en": "1d32f2ee4864d344",

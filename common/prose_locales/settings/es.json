@@ -691,6 +691,22 @@
     "en": "eb2c0a8e31f615d9",
     "text": "Cuánto vive la cookie que necesita una sesión vinculada al dispositivo antes de que el navegador deba volver a demostrar su clave, y por tanto cuánto sigue funcionando un par de cookies copiado. Nunca más allá del final de la propia sesión. Se lee cuando se emite una cookie."
   },
+  "authn.deviceBoundIncludeSite|label": {
+    "en": "dfe9f9439467a7ed",
+    "text": "Limitar una sesión vinculada al dominio registrable"
+  },
+  "authn.deviceBoundIncludeSite|description": {
+    "en": "431c5a53f269b368",
+    "text": "Desactivado, el valor predeterminado, la cookie de una sesión vinculada al dispositivo es solo del host, que es lo que este servicio siempre ha hecho, y scope.include_site es falso. Activado, las instrucciones ponen include_site y el Domain de la cookie es el dominio registrable del host que se registró (el webauthn.rpId cuando es un sufijo del host; si no, las dos últimas etiquetas; una dirección, localhost o una sola etiqueta no se amplía). El host público del depurador y el host de un listener personalizado bajo ese dominio quedan excluidos. Un depurador en el mismo host y otro puerto no puede excluirse: las cookies no se limitan por puerto. Los prefijos de ruta de un dominio son el mismo origen."
+  },
+  "authn.deviceBoundIssuanceWaitS|label": {
+    "en": "c379c77b9ef18c81",
+    "text": "Cuánto espera una emisión un vínculo de dispositivo (segundos)"
+  },
+  "authn.deviceBoundIssuanceWaitS|description": {
+    "en": "2562f13d1a8d0c51",
+    "text": "Cuánto espera una emisión que exige una sesión vinculada al dispositivo después de que se ofreció el registro. Se lee en la emisión, no con un temporizador: pasado ese plazo, el hecho de la sesión es timedout y la emisión se rechaza. Cero significa que la espera ya transcurrió. Una sesión a la que nunca se le ofreció el registro no es rechazada por la espera."
+  },
   "authn.maxSessions|label": {
     "en": "5fa1f6294f5a3dc8",
     "text": "Máximo de sesiones de inicio de sesión único por dominio"
@@ -1111,6 +1127,14 @@
     "en": "f34caf08dceeedd3",
     "text": "Solo se lee mientras la política de llaves de acceso exige una llave de acceso poscuántica al iniciar sesión (`postQuantumRequired`), y solo donde la fila `postQuantumAllowCredentials` del perfil seleccionado es `realm`. `narrow` (el valor predeterminado) nombra solo las llaves de acceso poscuánticas (ML-DSA) de la persona en el `allowCredentials` del paso de llave de acceso, de modo que nunca se ofrece una clásica — pero una persona cuyo dispositivo solo guarda su llave clásica ve el propio mensaje «no se encontró ninguna llave de acceso» de la plataforma. `list-and-refuse` nombra todas las llaves de acceso que tiene y rechaza una clásica después de la ceremonia (STS-AUTHN-0356), con una página que dice que la aplicación exige una llave de acceso poscuántica y dónde añadir una. La contrapartida: la persona puede elegir una llave de acceso que será rechazada. En ambos casos, a una persona que no tiene ninguna llave de acceso poscuántica se le avisa antes de cualquier ceremonia."
   },
+  "webauthn.pqcUpgrade|label": {
+    "en": "1c2af00d33a75721",
+    "text": "Actualizar una llave de acceso clásica a una poscuántica"
+  },
+  "webauthn.pqcUpgrade|description": {
+    "en": "a77cd9a980262260",
+    "text": "Activado (el valor predeterminado), una persona puede actualizar una de sus llaves de acceso clásicas a una poscuántica (ML-DSA) en /portal/keys: usa la llave clásica una vez, para mostrar que es suya, y luego crea la nueva, a la que solo se le ofrece ML-DSA. Con `webauthn.pqcAlongsideClassical` activado, la llave poscuántica se AÑADE en su propia vía y la clásica se conserva; desactivado, la llave poscuántica SUSTITUYE a la clásica en su lugar, conservando su nombre y anotando cuándo se actualizó y desde qué algoritmo. La llave clásica solo cambia una vez verificada la nueva, de modo que una actualización fallida la deja como estaba. La nueva llave cumple cada regla que cumple un registro. Desactivado, ninguna llave puede actualizarse; una llave poscuántica aún puede registrarse junto a una clásica donde se puedan registrar llaves."
+  },
   "webauthn.userVerification|label": {
     "en": "8b134177fe992d91",
     "text": "Verificación del usuario"
@@ -1142,6 +1166,30 @@
   "webauthn.attestationTrustAnchors|description": {
     "en": "75ff97c509121fb5",
     "text": "Certificados raíz a los que puede encadenar un certificado de atestación, como paquete PEM, ADEMÁS de los que el FIDO Metadata Service enumera para cada modelo — una CA corporativa de endoso TPM, la raíz de un fabricante, la raíz de atestación de Android o de Apple, o una raíz de pruebas. Una cadena que llega a una es DE CONFIANZA. No se incluye nada: vacío confía solo en lo que enumera el BLOB de MDS activo."
+  },
+  "webauthn.attestationEvidenceTsaUrl|label": {
+    "en": "4dabd3df9187a34f",
+    "text": "URL de la autoridad de sello de tiempo de las pruebas de llave de acceso"
+  },
+  "webauthn.attestationEvidenceTsaUrl|description": {
+    "en": "7fa58ac004a9e2e4",
+    "text": "Cuando se define junto con las anclas de confianza de la TSA, las atestaciones de llave de acceso verificadas reciben un EvidenceRecord de RFC 4998 cuyo ArchiveTimeStamp inicial es un token de RFC 3161 de esta autoridad de sello de tiempo HTTPS. Vacío desactiva el registro de pruebas."
+  },
+  "webauthn.attestationEvidenceTsaTrustAnchors|label": {
+    "en": "8c29eb6dc36aa1a9",
+    "text": "Anclas de confianza de la TSA de las pruebas de llave de acceso (PEM)"
+  },
+  "webauthn.attestationEvidenceTsaTrustAnchors|description": {
+    "en": "7b20573a01a900a7",
+    "text": "Anclas de confianza PEM usadas para verificar el token de RFC 3161 y la ruta de certificado de su TSA. El registro de pruebas exige tanto este conjunto como la URL de la autoridad de sello de tiempo."
+  },
+  "webauthn.attestationEvidenceHashAlgorithm|label": {
+    "en": "8c886d89947bce4c",
+    "text": "Algoritmo del árbol de hash de las pruebas de llave de acceso"
+  },
+  "webauthn.attestationEvidenceHashAlgorithm|description": {
+    "en": "ea9f111d1308b528",
+    "text": "Resumen que usan los registros nuevos de RFC 4998. Subirlo desde sha256 dispara la renovación del árbol de hash de RFC 4998 en el recuento diario del informe de llaves de acceso, en una nueva ArchiveTimeStampChain."
   },
   "webauthn.attestationAllowedAaguids|label": {
     "en": "1d32f2ee4864d344",

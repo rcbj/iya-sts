@@ -691,6 +691,22 @@
     "en": "eb2c0a8e31f615d9",
     "text": "Combien de temps vit le cookie dont une session liée à l’appareil a besoin avant que le navigateur doive à nouveau prouver sa clé, et donc combien de temps une paire de cookies copiée continue de fonctionner. Jamais au-delà de la fin de la session elle-même. Lu quand un cookie est émis."
   },
+  "authn.deviceBoundIncludeSite|label": {
+    "en": "dfe9f9439467a7ed",
+    "text": "Limiter une session liée au domaine enregistrable"
+  },
+  "authn.deviceBoundIncludeSite|description": {
+    "en": "431c5a53f269b368",
+    "text": "Désactivé, la valeur par défaut, le cookie d’une session liée à l’appareil est limité à l’hôte, ce que ce service a toujours fait, et scope.include_site est faux. Activé, les instructions posent include_site et le Domain du cookie est le domaine enregistrable de l’hôte qui s’est enregistré (le webauthn.rpId lorsqu’il est un suffixe de l’hôte, sinon les deux dernières étiquettes ; une adresse, localhost ou une seule étiquette n’est pas élargie). L’hôte public du débogueur et l’hôte d’un écouteur personnalisé sous ce domaine sont exclus. Un débogueur sur le même hôte et un autre port ne peut pas être exclu : les cookies ne sont pas limités au port. Les préfixes de chemin de domaine sont la même origine."
+  },
+  "authn.deviceBoundIssuanceWaitS|label": {
+    "en": "c379c77b9ef18c81",
+    "text": "Durée d’attente d’une liaison d’appareil avant une émission (secondes)"
+  },
+  "authn.deviceBoundIssuanceWaitS|description": {
+    "en": "2562f13d1a8d0c51",
+    "text": "Durée pendant laquelle une émission qui exige une session liée à l’appareil attend après que l’enregistrement a été proposé. Lu au moment de l’émission, et non par un minuteur : passé ce délai, le fait de la session est timedout et l’émission est refusée. Zéro signifie que l’attente est déjà écoulée. Une session à laquelle l’enregistrement n’a jamais été proposé n’est pas refusée par l’attente."
+  },
   "authn.maxSessions|label": {
     "en": "5fa1f6294f5a3dc8",
     "text": "Nombre maximal de sessions d’authentification unique par domaine"
@@ -1111,6 +1127,14 @@
     "en": "f34caf08dceeedd3",
     "text": "Lu seulement tant que la politique des clés d’accès exige une clé d’accès post-quantique à la connexion (`postQuantumRequired`), et seulement lorsque la ligne `postQuantumAllowCredentials` du profil sélectionné vaut `realm`. `narrow` (la valeur par défaut) ne nomme que les clés d’accès post-quantiques (ML-DSA) de la personne dans l’`allowCredentials` de l’étape de clé d’accès, de sorte qu’une clé classique n’est jamais proposée — mais une personne dont l’appareil ne détient que sa clé classique voit le propre message « aucune clé d’accès trouvée » de la plateforme. `list-and-refuse` nomme toutes les clés d’accès qu’elle détient et refuse une clé classique après la cérémonie (STS-AUTHN-0356), avec une page indiquant que l’application exige une clé d’accès post-quantique et où en ajouter une. Le compromis : la personne peut choisir une clé d’accès qui sera refusée. Dans les deux cas, une personne qui ne détient aucune clé d’accès post-quantique en est informée avant toute cérémonie."
   },
+  "webauthn.pqcUpgrade|label": {
+    "en": "1c2af00d33a75721",
+    "text": "Mettre à niveau une clé d’accès classique vers une clé post-quantique"
+  },
+  "webauthn.pqcUpgrade|description": {
+    "en": "a77cd9a980262260",
+    "text": "Activé (la valeur par défaut), une personne peut mettre à niveau l’une de ses clés d’accès classiques vers une clé post-quantique (ML-DSA) sur /portal/keys : elle utilise la clé d’accès classique une fois, pour montrer qu’elle est la sienne, puis crée la nouvelle, à laquelle seul ML-DSA est proposé. Avec `webauthn.pqcAlongsideClassical` activé, la clé d’accès post-quantique est AJOUTÉE dans sa propre voie et la classique est conservée ; désactivé, la clé d’accès post-quantique REMPLACE la classique sur place, en gardant son nom et en enregistrant quand elle a été mise à niveau et depuis quel algorithme. La clé d’accès classique n’est modifiée qu’une fois la nouvelle vérifiée, de sorte qu’une mise à niveau échouée la laisse telle qu’elle était. La nouvelle clé d’accès satisfait chaque règle qu’un enregistrement satisfait. Désactivé, aucune clé d’accès ne peut être mise à niveau ; une clé d’accès post-quantique peut encore être enregistrée à côté d’une classique là où les clés d’accès peuvent être enregistrées."
+  },
   "webauthn.userVerification|label": {
     "en": "8b134177fe992d91",
     "text": "Vérification de l’utilisateur"
@@ -1142,6 +1166,30 @@
   "webauthn.attestationTrustAnchors|description": {
     "en": "75ff97c509121fb5",
     "text": "Certificats racines auxquels un certificat d’attestation peut remonter, sous forme de lot PEM, EN PLUS de ceux que le FIDO Metadata Service liste pour chaque modèle — une AC d’endossement TPM d’entreprise, la racine d’un fournisseur, la racine d’attestation Android ou Apple, ou une racine de test. Une chaîne qui en atteint une est DE CONFIANCE. Rien n’est fourni : vide ne fait confiance qu’à ce que liste le BLOB MDS actif."
+  },
+  "webauthn.attestationEvidenceTsaUrl|label": {
+    "en": "4dabd3df9187a34f",
+    "text": "URL de l’autorité d’horodatage des preuves de clé d’accès"
+  },
+  "webauthn.attestationEvidenceTsaUrl|description": {
+    "en": "7fa58ac004a9e2e4",
+    "text": "Lorsqu’elle est définie avec les ancres de confiance de la TSA, les attestations de clé d’accès vérifiées reçoivent un EvidenceRecord RFC 4998 dont l’ArchiveTimeStamp initial est un jeton RFC 3161 de cette autorité d’horodatage HTTPS. Vide, l’enregistrement des preuves est désactivé."
+  },
+  "webauthn.attestationEvidenceTsaTrustAnchors|label": {
+    "en": "8c29eb6dc36aa1a9",
+    "text": "Ancres de confiance de la TSA des preuves de clé d’accès (PEM)"
+  },
+  "webauthn.attestationEvidenceTsaTrustAnchors|description": {
+    "en": "7b20573a01a900a7",
+    "text": "Ancres de confiance PEM utilisées pour vérifier le jeton RFC 3161 et le chemin de certificat de sa TSA. L’enregistrement des preuves exige à la fois ce paquet et l’URL de l’autorité d’horodatage."
+  },
+  "webauthn.attestationEvidenceHashAlgorithm|label": {
+    "en": "8c886d89947bce4c",
+    "text": "Algorithme de l’arbre de hachage des preuves de clé d’accès"
+  },
+  "webauthn.attestationEvidenceHashAlgorithm|description": {
+    "en": "ea9f111d1308b528",
+    "text": "Condensé utilisé par les nouveaux enregistrements RFC 4998. Le relever au-dessus de sha256 déclenche le renouvellement de l’arbre de hachage RFC 4998 lors du recomptage quotidien du rapport des clés d’accès, dans une nouvelle ArchiveTimeStampChain."
   },
   "webauthn.attestationAllowedAaguids|label": {
     "en": "1d32f2ee4864d344",

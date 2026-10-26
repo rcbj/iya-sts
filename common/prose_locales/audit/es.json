@@ -4,8 +4,8 @@
     "text": "Autenticación"
   },
   "audit.categories.authentication.what": {
-    "en": "a75d8d51a0eb704d",
-    "text": "Se ACEPTÓ una credencial, en cualquiera de las dieciséis familias de protocolos de este servicio. Se registra en el único embudo por el que ya pasan todas ellas, así que es un solo lugar y no dieciséis. SCIM se incorporó tarde y SPIFFE más tarde aún. SCIM: tres de los esquemas que aceptan sus endpoints — Basic, Digest y HOBA — presentan una credencial en cada solicitud, y aceptar una es una autenticación. Los otros tres no aparecen aquí, porque cada uno continúa una autenticación registrada en otro lugar: un token de acceso se aceptó cuando se emitió, una cookie de sesión cuando comenzó su sesión, y un certificado de cliente una vez por CONEXIÓN y no una vez por solicitud. SPIFFE es la decimosexta y llega aquí de tres formas: un X509-SVID presentado por TLS mutuo en la SPIRE Server API (una vez por conexión, por la misma razón que un certificado de cliente), un agente que se atesta y un JWT-SVID verificado en ValidateJWTSVID. Que se le EMITA un SVID no es una de ellas."
+    "en": "8daae95bb7977a6c",
+    "text": "Se ACEPTÓ una credencial, en cualquiera de las dieciséis familias de protocolos de este servicio. Se registra en el único embudo por el que ya pasan todas ellas, así que es un solo lugar y no dieciséis. SCIM se incorporó tarde y SPIFFE más tarde aún. SCIM: tres de los esquemas que aceptan sus endpoints — Basic, Digest y HOBA — presentan una credencial en cada solicitud, y aceptar una es una autenticación. Los otros tres no aparecen aquí, porque cada uno continúa una autenticación registrada en otro lugar: un token de acceso se aceptó cuando se emitió, una cookie de sesión cuando comenzó su sesión, y un certificado de cliente una vez por CONEXIÓN y no una vez por solicitud. SPIFFE es la decimosexta y llega aquí de tres formas: un X509-SVID presentado por TLS mutuo en la SPIRE Server API (una vez por conexión, por la misma razón que un certificado de cliente), un agente que se atesta y un JWT-SVID verificado en ValidateJWTSVID. Que se le EMITA un SVID no es una de ellas. Un rechazo de un intento es `authentication.refused` junto a la aceptación: el mismo detalle, resultado rechazado, y ningún contador se mueve (#954). La página de la aplicación enumera ambos, y `session.refuse` y `session.refused` cuando la nombran."
   },
   "audit.categories.session.label": {
     "en": "6fa3cbf451b2a1d5",
@@ -98,6 +98,10 @@
   "audit.actions.authentication.label": {
     "en": "579808c825684965",
     "text": "Se aceptó una credencial"
+  },
+  "audit.actions.authentication.refused.label": {
+    "en": "0b0281ef1e0768e4",
+    "text": "Se rechazó una credencial"
   },
   "audit.actions.portal.activate.label": {
     "en": "979387f5c20ade32",
@@ -1067,6 +1071,38 @@
     "en": "3c3a62cf5e46c516",
     "text": "Un administrador marcó como preferido un DID demostrado de una persona, o quitó la marca"
   },
+  "audit.actions.admin.passkey.enrolment-started.label": {
+    "en": "571c0a6bca1d9163",
+    "text": "Un administrador comenzó a registrar una clave de acceso para una persona"
+  },
+  "audit.actions.admin.passkey.enrolment-refused.label": {
+    "en": "1853c2bfff1cb208",
+    "text": "Se rechazó el registro de una clave de acceso que un administrador hacía para una persona"
+  },
+  "audit.actions.admin.passkey.enrolled.label": {
+    "en": "62dfd8780a0a16af",
+    "text": "Un administrador registró una clave de acceso para una persona"
+  },
+  "audit.actions.admin.passkey.upgrade-started.label": {
+    "en": "85e2c7f2d669f98e",
+    "text": "Un administrador comenzó a actualizar la clave de acceso de una persona"
+  },
+  "audit.actions.admin.passkey.upgrade-refused.label": {
+    "en": "e1490e5ffb7d9199",
+    "text": "Se rechazó la actualización de la clave de acceso hecha por un administrador"
+  },
+  "audit.actions.admin.passkey.upgrade-proved.label": {
+    "en": "92550d6a5a04ca93",
+    "text": "Un administrador demostró la clave de acceso clásica de una persona"
+  },
+  "audit.actions.admin.passkey.upgrade-cancelled.label": {
+    "en": "3653731050769a1b",
+    "text": "Un administrador canceló la actualización de la clave de acceso de una persona"
+  },
+  "audit.actions.admin.passkey.upgraded.label": {
+    "en": "de2f45f4af0eafa5",
+    "text": "Un administrador actualizó la clave de acceso de una persona a ML-DSA"
+  },
   "audit.actions.ssf.signals.discover.label": {
     "en": "55d2d7d9682c339a",
     "text": "Se descubrió la configuración de Shared Signals de un socio de federación"
@@ -1310,6 +1346,18 @@
   "audit.actions.portal.key.refused.label": {
     "en": "6679aa8b834badee",
     "text": "Se rechazó el registro de la llave de seguridad de una persona"
+  },
+  "audit.actions.portal.key.upgrade-started.label": {
+    "en": "dbf67e17e370e57b",
+    "text": "Una persona comenzó a actualizar una clave de acceso clásica a ML-DSA"
+  },
+  "audit.actions.portal.key.upgrade-refused.label": {
+    "en": "704e6bb3a4472960",
+    "text": "Se rechazó la actualización de la clave de acceso de una persona"
+  },
+  "audit.actions.portal.key.upgraded.label": {
+    "en": "f16ccefcc9eb6aec",
+    "text": "Una persona actualizó una clave de acceso clásica a ML-DSA"
   },
   "audit.actions.portal.mfa.backup-codes.generated.label": {
     "en": "18ec89def789c4a2",
