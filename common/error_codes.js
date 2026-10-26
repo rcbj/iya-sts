@@ -17218,10 +17218,12 @@ const CODES = [
       'not be checked, or its import threw rather than answering. The ' +
       'upload\'s file is deleted.' },
   { code: 'STS-RISK-0038',
-    summary: 'An authentication at HIGH or MEDIUM risk was PERMITTED for an ' +
-      'application the issuance policy says risk may never lock out (the ' +
-      'role-issuance template\'s neverLockOut, the console by default), ' +
-      'because the person holds no second factor to step up with (#226). ' +
+    summary: 'An authentication at HIGH or MEDIUM risk, or carrying a ' +
+      'signal the policy steps up or refuses on whatever the level (#503), ' +
+      'was PERMITTED for an application the issuance policy says risk may ' +
+      'never lock out (the role-issuance template\'s neverLockOut, the ' +
+      'console by default), because the person holds no second factor to ' +
+      'step up with (#226). ' +
       'The alarm: enrol a second factor for this person, and look at the ' +
       'assessment\'s signals.',
     spec: 'permitted; recorded on the audit row and logged as a warning' },

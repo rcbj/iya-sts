@@ -1402,7 +1402,32 @@ const TEMPLATES: TemplateRow[] = [
               'one of them, a second factor is not enough: an attacker ' +
               'relaying a person\'s one-time code from another machine ' +
               'passes a code, and cannot pass a WebAuthn ceremony bound to ' +
-              'this origin. Empty makes every MEDIUM a second-factor step-up.' }
+              'this origin. Empty makes every MEDIUM a second-factor ' +
+              'step-up.' },
+      { name: 'stepUpSignals',
+        label: 'Signals that demand a SECOND FACTOR below MEDIUM',
+        dflt: 'tor-exit, reputation, operator-deny', type: 'string',
+        help: 'The risk signals, comma separated, that ask for a second ' +
+              'factor at LOW, where the level alone asks for nothing ' +
+              '(#503). The score is a likelihood ratio and the MEDIUM line ' +
+              'is set for the whole population (risk.mediumScorePercent, ' +
+              '300 by default), so one signal lifts a familiar sign-in ' +
+              'over it less often than it did when the line was 1: a Tor ' +
+              'exit (×5) needs a model score of 0.6. A list the operator ' +
+              'loaded is a statement about the ADDRESS, not about this ' +
+              'person\'s habits, so what to do about it is decided here, ' +
+              'as policy, rather than by rescaling the factors. At MEDIUM ' +
+              'and HIGH the level\'s own rules decide. `none` builds no ' +
+              'such rule.' },
+      { name: 'refuseSignals',
+        label: 'Signals that REFUSE whatever the level',
+        dflt: '', type: 'string',
+        help: 'The risk signals, comma separated, that refuse the issuance ' +
+              'outright at any level, as HIGH does (#503). Empty by ' +
+              'default: a refusal on an address signal is what locked ' +
+              'every administrator out on #226, which is why a known ' +
+              'context caps such evidence at MEDIUM. The applications ' +
+              'neverLockOut names are stepped up instead, as at HIGH.' }
     ],
     build: function (answers, options) {
       log.debug('Entering buildRoleIssuance().');
@@ -1428,6 +1453,14 @@ const TEMPLATES: TemplateRow[] = [
           return one.toLowerCase() !== 'none';
         });
       const keySignals = B.listOf(given.keySignals);
+      // #503: the two signal-keyed lists. The step-up list has a default
+      // and `none` empties it; the refuse list is empty unless given.
+      const stepUpSignals = B.listOf(given.stepUpSignals === undefined
+        ? 'tor-exit, reputation, operator-deny' : given.stepUpSignals)
+        .filter(function (one: string): boolean {
+          return one.toLowerCase() !== 'none';
+        });
+      const refuseSignals = B.listOf(given.refuseSignals);
       const neverLockOut = B.listOf(given.neverLockOut === undefined
         ? 'sts-admin-console' : given.neverLockOut)
         .filter(function (one: string): boolean {
@@ -1510,14 +1543,24 @@ const TEMPLATES: TemplateRow[] = [
         return [{ id: RISK_ATTRIBUTE.OBLIGATION, on: model.EFFECT.DENY,
                   assignments: assignments }];
       };
-      const keySignal = keySignals.length
-        ? B.apply(F3 + 'any-of-any', [
-          { kind: 'function', functionId: F1 + 'string-equal' },
-          B.designator(env, RISK_ATTRIBUTE.SIGNAL, TYPE.STRING),
-          B.apply(F1 + 'string-bag', keySignals.map(function (one) {
-            return B.value(TYPE.STRING, one);
-          }))])
-        : null;
+      // "ONE OF THESE SIGNALS FIRED": the intersection of the SIGNAL bag
+      // and a list, for the key signals and (#503) the two lists below.
+      // `null` for an empty list, so a rule built on it is left out.
+      const signalIn = function (names: string[]): any {
+        log.debug("Entering signalIn().");
+        log.debug("Leaving signalIn().");
+        return names.length
+          ? B.apply(F3 + 'any-of-any', [
+            { kind: 'function', functionId: F1 + 'string-equal' },
+            B.designator(env, RISK_ATTRIBUTE.SIGNAL, TYPE.STRING),
+            B.apply(F1 + 'string-bag', names.map(function (one) {
+              return B.value(TYPE.STRING, one);
+            }))])
+          : null;
+      };
+      const keySignal = signalIn(keySignals);
+      const stepUpSignal = signalIn(stepUpSignals);
+      const refuseSignal = signalIn(refuseSignals);
       const held = function (factor: string): any {
         log.debug("Entering held().");
         log.debug("Leaving held().");
@@ -1549,8 +1592,18 @@ const TEMPLATES: TemplateRow[] = [
         return protectedApp
           ? B.apply(F1 + 'and', [condition, not(protectedApp)]) : condition;
       };
+      // "THE RISK ASKS FOR SOMETHING": HIGH, MEDIUM, and (#503) a signal
+      // on either list — what the protected applications are stepped up on
+      // instead of refused, and what their alarm is raised on.
       const elevated = B.apply(F1 + 'or', [levelIs('HIGH'),
-                                           levelIs('MEDIUM')]);
+                                           levelIs('MEDIUM')]
+        .concat(refuseSignal ? [refuseSignal] : [])
+        .concat(stepUpSignal ? [stepUpSignal] : []));
+      const elevatedWords = 'at HIGH or MEDIUM' +
+        (refuseSignal || stepUpSignal
+           ? ' (or with a signal of ' +
+             refuseSignals.concat(stepUpSignals).join(', ') + ')'
+           : '');
       const riskRules: any[] = [];
       if (decideRisk) {
         riskRules.push({
@@ -1565,7 +1618,28 @@ const TEMPLATES: TemplateRow[] = [
           target: null, condition: unprotected(levelIs('HIGH')),
           obligations: obligation('refuse', ''), advice: []
         });
+        // A SIGNAL THAT REFUSES WHATEVER THE LEVEL (#503). Empty by
+        // default. HIGH is the rule above, so this one takes the rest and
+        // the two stay exclusive; the MEDIUM rules below leave it out.
+        if (refuseSignal) {
+          riskRules.push({
+            id: options.idBase + ':rule:risk-signal-refuse',
+            effect: model.EFFECT.DENY,
+            description: 'Refuse an authentication carrying one of these ' +
+                         'signals, whatever its level: ' +
+                         refuseSignals.join(', ') + '.',
+            target: null,
+            condition: unprotected(B.apply(F1 + 'and', [refuseSignal,
+              not(levelIs('HIGH'))])),
+            obligations: obligation('refuse', ''), advice: []
+          });
+        }
         if (keySignal) {
+          const mediumKey = [levelIs('MEDIUM'), keySignal,
+            not(satisfied('security-key'))];
+          if (refuseSignal) {
+            mediumKey.push(not(refuseSignal));
+          }
           riskRules.push({
             id: options.idBase + ':rule:risk-medium-key',
             effect: model.EFFECT.DENY,
@@ -1573,8 +1647,7 @@ const TEMPLATES: TemplateRow[] = [
                          'TLS client, refuse until the authentication used ' +
                          'a SECURITY KEY — the obligation asks for one.',
             target: null,
-            condition: unprotected(B.apply(F1 + 'and', [levelIs('MEDIUM'),
-              keySignal, not(satisfied('security-key'))])),
+            condition: unprotected(B.apply(F1 + 'and', mediumKey)),
             obligations: obligation('step-up', 'security-key'), advice: []
           });
         }
@@ -1582,6 +1655,9 @@ const TEMPLATES: TemplateRow[] = [
           not(satisfied('second-factor'))];
         if (keySignal) {
           secondFactor.push(not(keySignal));
+        }
+        if (refuseSignal) {
+          secondFactor.push(not(refuseSignal));
         }
         riskRules.push({
           id: options.idBase + ':rule:risk-medium-second-factor',
@@ -1592,6 +1668,33 @@ const TEMPLATES: TemplateRow[] = [
           condition: unprotected(B.apply(F1 + 'and', secondFactor)),
           obligations: obligation('step-up', 'second-factor'), advice: []
         });
+        // A SIGNAL THAT DEMANDS A SECOND FACTOR BELOW MEDIUM (#503): at
+        // LOW, where the level alone asks for nothing (UNSCORED never
+        // carries a signal). MEDIUM and HIGH are the rules above, so the
+        // risk rules stay exclusive and a Deny still carries exactly one
+        // instruction. The ticket's arithmetic: with the MEDIUM line at 3
+        // (#499) a Tor exit (×5) lifts the model's score over it only from
+        // 0.6, where a line at 1 needed 0.2; the factors are evidence and
+        // the line is the population's prior, so rescaling one by the
+        // other would count the prior twice — the decision is policy.
+        if (stepUpSignal) {
+          const lowStepUp = [stepUpSignal, not(levelIs('HIGH')),
+            not(levelIs('MEDIUM')), not(satisfied('second-factor'))];
+          if (refuseSignal) {
+            lowStepUp.push(not(refuseSignal));
+          }
+          riskRules.push({
+            id: options.idBase + ':rule:risk-signal-step-up',
+            effect: model.EFFECT.DENY,
+            description: 'Below MEDIUM, with one of these signals (' +
+                         stepUpSignals.join(', ') + '), refuse until the ' +
+                         'authentication carried a SECOND FACTOR — the ' +
+                         'obligation asks for one.',
+            target: null,
+            condition: unprotected(B.apply(F1 + 'and', lowStepUp)),
+            obligations: obligation('step-up', 'second-factor'), advice: []
+          });
+        }
         // THE APPLICATIONS RISK MAY NEVER LOCK OUT (#226): a step-up to the
         // strongest factor the person HOLDS, at HIGH as at MEDIUM, and never
         // a refusal. Two rules, exclusive by what is held.
@@ -1599,9 +1702,9 @@ const TEMPLATES: TemplateRow[] = [
           riskRules.push({
             id: options.idBase + ':rule:risk-protected-key',
             effect: model.EFFECT.DENY,
-            description: 'For ' + neverLockOut.join(', ') + ', at HIGH or ' +
-                         'MEDIUM, ask a person who holds a security key ' +
-                         'for it — never a refusal.',
+            description: 'For ' + neverLockOut.join(', ') + ', ' +
+                         elevatedWords + ', ask a person who holds a ' +
+                         'security key for it — never a refusal.',
             target: null,
             condition: B.apply(F1 + 'and', [protectedApp, elevated,
               held('security-key'), not(satisfied('security-key'))]),
@@ -1610,9 +1713,10 @@ const TEMPLATES: TemplateRow[] = [
           riskRules.push({
             id: options.idBase + ':rule:risk-protected-second-factor',
             effect: model.EFFECT.DENY,
-            description: 'For ' + neverLockOut.join(', ') + ', at HIGH or ' +
-                         'MEDIUM, ask a person who holds a second factor ' +
-                         'and no security key for it — never a refusal.',
+            description: 'For ' + neverLockOut.join(', ') + ', ' +
+                         elevatedWords + ', ask a person who holds a ' +
+                         'second factor and no security key for it — ' +
+                         'never a refusal.',
             target: null,
             condition: B.apply(F1 + 'and', [protectedApp, elevated,
               not(held('security-key')), held('second-factor'),
@@ -3314,7 +3418,16 @@ const TEMPLATES: TemplateRow[] = [
                             ? ' — a security key where a signal is about the ' +
                               'device or TLS client (' + keySignals.join(', ') +
                               '), a second factor otherwise'
-                            : ' — a second factor') + '. The risk rules deny ' +
+                            : ' — a second factor') +
+                          (stepUpSignals.length
+                            ? '; below MEDIUM, one carrying ' +
+                              stepUpSignals.join(', ') + ' is refused until ' +
+                              'it carries a second factor (#503)'
+                            : '') +
+                          (refuseSignals.length
+                            ? '; one carrying ' + refuseSignals.join(', ') +
+                              ' is refused at any level (#503)'
+                            : '') + '. The risk rules deny ' +
                           'and override the role rule; an authentication ' +
                           'with no assessment is decided on roles alone.' +
                           (protectedApp
@@ -3430,9 +3543,9 @@ const TEMPLATES: TemplateRow[] = [
           // makes the PEP say so loudly.
           id: options.idBase + ':rule:risk-protected-alarm',
           effect: model.EFFECT.PERMIT,
-          description: 'For ' + neverLockOut.join(', ') + ', at HIGH or ' +
-                       'MEDIUM, with no second factor to ask for: permit ' +
-                       'on the roles, and raise the alarm.',
+          description: 'For ' + neverLockOut.join(', ') + ', ' +
+                       elevatedWords + ', with no second factor to ask ' +
+                       'for: permit on the roles, and raise the alarm.',
           target: null,
           condition: B.apply(F1 + 'and', [protectedApp, elevated,
             not(held('second-factor')), condition]),
