@@ -9,8 +9,9 @@ iya-sts is a full **OAuth 2.0 authorization server**
 provider** ([OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0.html)),
 with the extensions around them: discovery, PKCE, dynamic registration, token
 exchange, pushed and JWT-secured authorization requests, rich authorization
-requests, introspection, revocation, JWT access tokens and both OpenID Connect
-logout notifications. Every trust realm is its own authorization server, with
+requests, introspection, revocation, JWT access tokens (opaque handles are
+off by default) and both OpenID Connect logout notifications. Every trust
+realm is its own authorization server, with
 its own issuer, keys, clients, codes and tokens, and one realm (or one process)
 can publish several named authorization servers side by side.
 
@@ -1287,8 +1288,8 @@ Rotation with replay detection belongs to [OAuth security](oauth-security.md).
 
 ### JWT access tokens (RFC 9068)
 
-Every access token is a [RFC 9068](https://www.rfc-editor.org/rfc/rfc9068) JWT
-access token, **in every mode**: header `typ: at+jwt`, the seven required claims,
+The default access token is a [RFC 9068](https://www.rfc-editor.org/rfc/rfc9068)
+JWT, **in every mode**: header `typ: at+jwt`, the seven required claims,
 `username` for a person, and `auth_time`, `amr` and `acr` where an
 authentication is behind the grant. The `profile`, `email`, `address` and
 `phone` claims — `preferred_username` among them — are UserInfo's (OIDC Core
@@ -1322,6 +1323,17 @@ for (`PS256`, `ES256`, `EdDSA` and the rest of the RSA and elliptic-curve
 table), and a named authorization server can set its own
 `access_token_signing_alg`. Under FAPI 1.0 Advanced the default is **PS256**,
 and anything other than PS256 or ES256 is replaced by it.
+
+`oauth2.accessTokenFormat=opaque` switches the access token only. The token
+endpoint returns a 256-bit handle, this realm keeps the claims, and a resource
+server resolves the handle through introspection or by presenting it to a
+resource server here. Refresh tokens stay nested JWTs. ID tokens stay JWTs.
+An outstanding JWT keeps verifying if the setting changes, and an outstanding
+handle keeps resolving until it expires. A handle has no JOSE header, so a
+resource server here does not apply the `typ` check to it; the issuer and the
+audience still have to match. `oauth2.maxOpaqueAccessTokens`
+(100000 per realm) is how many handles are remembered; a further mint is
+refused when that store is full, rather than forgetting a live token.
 
 ### Token exchange (RFC 8693)
 
@@ -2121,6 +2133,8 @@ on [OAuth security](oauth-security.md#configuration).
 | `oauth2.maxSignedMetadataEntries` | `STS_OAUTH2_MAX_SIGNED_METADATA_ENTRIES` | `64` | yes | How many distinct signed metadata documents are cached (the key includes the Host the request arrived on). |
 | `oauth2.signedMetadataCertificateHeader` | `STS_OAUTH2_SIGNED_METADATA_CERTIFICATE_HEADER` | `x5u` | yes | Whether `signed_metadata` names its signing certificate chain: `x5u`, `x5c`, `both` or `none`. |
 | `oauth2.accessTokenSigningAlg` | `STS_OAUTH2_ACCESS_TOKEN_SIGNING_ALG` | `default` | yes | The JWS algorithm of access and refresh tokens. `default` is RS256, or PS256 under FAPI 1.0 Advanced. |
+| `oauth2.accessTokenFormat` | `STS_OAUTH2_ACCESS_TOKEN_FORMAT` | `jwt` | yes | `jwt` (the default) or `opaque`. Opaque returns a 256-bit handle and keeps the claims in this realm. Refresh tokens and ID tokens stay JWTs. |
+| `oauth2.maxOpaqueAccessTokens` | `STS_OAUTH2_MAX_OPAQUE_ACCESS_TOKENS` | `100000` | yes | How many opaque access tokens this realm remembers. A full store refuses the next mint rather than evicting a live token. |
 | `oauth2.jarmResponseLifetimeS` | `STS_OAUTH2_JARM_RESPONSE_LIFETIME_S` | `600` | yes | The `exp` of a JARM response, in seconds after it is signed (at most 600). |
 | `oauth2.eddsaCurve` | `STS_OAUTH2_EDDSA_CURVE` | `Ed25519` | yes | Which Edwards curve an `EdDSA` signature uses; both keys are published in the JWKS under different kids. |
 | `oauth2.basicAuthRealm` | `STS_OAUTH2_BASIC_AUTH_REALM` | `sts` | yes | The `realm` in the `WWW-Authenticate: Basic` challenge the token endpoint sends on a failed `client_secret_basic`. |

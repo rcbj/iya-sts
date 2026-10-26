@@ -116,6 +116,9 @@ import websecurity = require('../common/websecurity');
 import oidcRp = require('../common/oidc_rp');
 import authn = require('../authn/authn');
 import jwtAccessToken = require('../oauth-oidc/jwt_access_token');
+// Opaque access tokens (#501). Called directly, the way the gate reads a
+// JWT: the debugger looks a handle up in the default realm only.
+import opaqueAccessToken = require('../oauth-oidc/opaque_access_token');
 // RFC 8705 section 3.1's resource-server check (2026-09-13); a library.
 import mtls = require('../oauth-oidc/mtls');
 // RFC 9449's binding check, and #34's two settings (2026-09-15). Both are
@@ -514,6 +517,50 @@ class DebuggerServer {
                 ((e && e.message) || e));
       claims = null;
     }
+    // #501: the debugger's tokens are the default realm's, as the JWT
+    // above is. Expired falls through to the exp check. Revoked is refused
+    // here. A miss is counted only while that realm issues opaque tokens.
+    let opaqueAccess = false;
+    if (!claims && String(token).indexOf('.') < 0) {
+      const found = realms.run(realms.get(realms.DEFAULT_ID), function () {
+        return opaqueAccessToken.lookup(String(token));
+      });
+      if (found.kind === 'active' ||
+          (found.kind === 'inactive' && found.why === 'expired')) {
+        claims = found.claims;
+        opaqueAccess = true;
+      } else if (found.kind === 'inactive' && found.why === 'revoked') {
+        log.debug("Leaving DebuggerServer.verifyAccessToken(). Revoked " +
+                  "handle.");
+        return { ok: false, status: 401, code: 'STS-OAUTH-0982',
+                 error: 'invalid_token',
+                 why: 'That access token has been revoked.' };
+      } else if (found.kind === 'unknown') {
+        const issues = realms.run(realms.get(realms.DEFAULT_ID),
+          function () {
+            return opaqueAccessToken.issuesOpaque();
+          });
+        if (issues) {
+          const limited = realms.run(realms.get(realms.DEFAULT_ID),
+            function () {
+              return opaqueAccessToken.noteMiss(req);
+            });
+          if (limited) {
+            log.debug("Leaving DebuggerServer.verifyAccessToken(). Too " +
+                      "many unknown handles.");
+            return { ok: false, status: 429, code: 'STS-OAUTH-0983',
+                     error: 'invalid_token', retryAfterS: limited.retryAfterS,
+                     why: 'Too many attempts. Wait ' + limited.retryAfterS +
+                          ' seconds and try again.' };
+          }
+          log.debug("Leaving DebuggerServer.verifyAccessToken(). Unknown " +
+                    "handle.");
+          return { ok: false, status: 401, code: 'STS-OAUTH-0980',
+                   error: 'invalid_token',
+                   why: 'That access token is not valid.' };
+        }
+      }
+    }
     if (!claims) {
       log.debug("Leaving DebuggerServer.verifyAccessToken(). Did not verify.");
       return { ok: false, status: 401, code: 'STS-DBG-0003',
@@ -529,16 +576,20 @@ class DebuggerServer {
                why: 'That access token expired at ' +
                     new Date(Number(claims.exp) * 1000).toISOString() + '.' };
     }
-    const typ = jwtAccessToken.typOf(token);
-    if (!jwtAccessToken.isAccessTokenType(typ)) {
-      log.debug("Leaving DebuggerServer.verifyAccessToken(). Not an access " +
-                "token.");
-      return { ok: false, status: 401, code: 'STS-DBG-0005',
-               error: 'invalid_token',
-               why: 'RFC 9068 section 4: a JWT access token\'s typ is ' +
-                    '"at+jwt", ' +
-                    'and this one\'s is ' + (typ ? '"' + typ + '"' : 'absent') +
-                    '. An ID Token is not an access token.' };
+    // An opaque handle has no JOSE header (#501). Issuer and audience
+    // below still run.
+    if (!opaqueAccess) {
+      const typ = jwtAccessToken.typOf(token);
+      if (!jwtAccessToken.isAccessTokenType(typ)) {
+        log.debug("Leaving DebuggerServer.verifyAccessToken(). Not an " +
+                  "access token.");
+        return { ok: false, status: 401, code: 'STS-DBG-0005',
+                 error: 'invalid_token',
+                 why: 'RFC 9068 section 4: a JWT access token\'s typ is ' +
+                      '"at+jwt", and this one\'s is ' +
+                      (typ ? '"' + typ + '"' : 'absent') +
+                      '. An ID Token is not an access token.' };
+      }
     }
     const bases = [this.authorizationBaseOf(req)];
     const pinned = helpers.pinnedBaseUrl();
@@ -1258,6 +1309,9 @@ class DebuggerServer {
         if (!verdict.ok) {
           // error-code: none — refuse() marks verdict.code, the STS-DBG code
           // verifyAccessToken() chose for this failure.
+          if (verdict.retryAfterS) {
+            res.set('Retry-After', String(verdict.retryAfterS));
+          }
           self.refuse(req, res, verdict.status, verdict.code, verdict.error,
                       verdict.why,
                       'Bearer error="' + verdict.error + '", scope="' +
@@ -1384,6 +1438,9 @@ class DebuggerServer {
         }
         // error-code: none — refuse() marks verdict.code, from
         // verifyAccessToken().
+        if (verdict.retryAfterS) {
+          res.set('Retry-After', String(verdict.retryAfterS));
+        }
         self.refuse(req, res, verdict.status, verdict.code, verdict.error,
                     verdict.why);
         log.debug("Leaving the debugger gate. The session's token refused.");

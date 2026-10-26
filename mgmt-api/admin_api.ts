@@ -26012,6 +26012,71 @@ class AdminApi {
             claims = null;
           }
         }
+        // #501: a handle has no '.'. The default realm is tried first, as
+        // the JWT is, and the ambient realm only when that missed and the
+        // request is under a realm prefix. The first miss is not counted.
+        // A revoked row is refused here: the check below is "revoked OR
+        // the account is disabled", and a revokedAt-only row would pass it.
+        let opaqueAccess = false;
+        if (!claims && String(presented).indexOf('.') < 0) {
+          let found = realms.run(realms.get(realms.DEFAULT_ID),
+            function () {
+              return opaqueAccessToken.lookup(presented);
+            });
+          let heldRealm = realms.DEFAULT_ID;
+          if (found.kind === 'unknown' &&
+              realms.currentId() !== realms.DEFAULT_ID) {
+            found = opaqueAccessToken.lookup(presented);
+            heldRealm = realms.currentId();
+          }
+          if (found.kind === 'active' ||
+              (found.kind === 'inactive' && found.why === 'expired')) {
+            claims = found.claims;
+            opaqueAccess = true;
+            tokenRealm = heldRealm;
+          } else if (found.kind === 'inactive' &&
+                     found.why === 'revoked') {
+            errorCodes.mark(res, 'STS-API-0122');
+            res.set('WWW-Authenticate',
+                    'Bearer error="invalid_token", scope="' +
+                    scopesWanted + '"');
+            return self.sendJson(res, 401, { error: 'invalid_token',
+              errors: [
+                'That access token has been revoked, or the account it ' +
+                'was issued to is disabled.'] });
+          } else if (found.kind === 'unknown') {
+            const defIssues = realms.run(realms.get(realms.DEFAULT_ID),
+              function () {
+                return opaqueAccessToken.issuesOpaque();
+              });
+            const hereIssues = realms.currentId() === realms.DEFAULT_ID
+              ? defIssues : opaqueAccessToken.issuesOpaque();
+            if (defIssues || hereIssues) {
+              const limited = hereIssues
+                ? opaqueAccessToken.noteMiss(req)
+                : realms.run(realms.get(realms.DEFAULT_ID), function () {
+                    return opaqueAccessToken.noteMiss(req);
+                  });
+              if (limited) {
+                errorCodes.mark(res, 'STS-OAUTH-0983');
+                res.set('Retry-After', String(limited.retryAfterS));
+                res.set('WWW-Authenticate',
+                        'Bearer error="invalid_token", scope="' +
+                        scopesWanted + '"');
+                return self.sendJson(res, 429, { error: 'invalid_token',
+                  errors: [
+                    'Too many attempts. Wait ' + limited.retryAfterS +
+                    ' seconds and try again.'] });
+              }
+              errorCodes.mark(res, 'STS-OAUTH-0980');
+              res.set('WWW-Authenticate',
+                      'Bearer error="invalid_token", scope="' +
+                      scopesWanted + '"');
+              return self.sendJson(res, 401, { error: 'invalid_token',
+                errors: ['That access token is not valid.'] });
+            }
+          }
+        }
         if (!claims) {
           errorCodes.mark(res, 'STS-API-0002');
           res.set('WWW-Authenticate',
@@ -26068,18 +26133,24 @@ class AdminApi {
         // is signed with this key, so without the header an ID Token audienced
         // to a client named `…/admin-api` would be an administrative credential
         // here.
-        const typ = jwtAccessToken.typOf(presented);
-        if (!jwtAccessToken.isAccessTokenType(typ)) {
-          errorCodes.mark(res, 'STS-API-0082');
-          res.set('WWW-Authenticate',
-                  'Bearer error="invalid_token", scope="' + scopesWanted + '"');
-          return self.sendJson(res, 401, { error: 'invalid_token', errors: [
-            'RFC 9068 section 4: a JWT access token\'s typ header must be ' +
-            '"at+jwt", and this token\'s is ' +
-            (typ ? '"' + typ + '"' : 'absent') +
-            '. An ID Token or a refresh token is not an access token, and a ' +
-            'token minted before this service issued at+jwt is refused too; ' +
-            'ask /oauth2/token for a new one.'] });
+        // An opaque handle has no JOSE header (#501). Issuer and audience
+        // below still run.
+        if (!opaqueAccess) {
+          const typ = jwtAccessToken.typOf(presented);
+          if (!jwtAccessToken.isAccessTokenType(typ)) {
+            errorCodes.mark(res, 'STS-API-0082');
+            res.set('WWW-Authenticate', 'Bearer error="invalid_token", ' +
+                    'scope="' + scopesWanted + '"');
+            return self.sendJson(res, 401, { error: 'invalid_token',
+              errors: [
+                'RFC 9068 section 4: a JWT access token\'s typ header ' +
+                'must be "at+jwt", and this token\'s is ' +
+                (typ ? '"' + typ + '"' : 'absent') +
+                '. An ID Token or a refresh token is not an access ' +
+                'token, and a token minted before this service issued ' +
+                'at+jwt is refused too; ask /oauth2/token for a new one.']
+            });
+          }
         }
         if (tokenRealm === realms.DEFAULT_ID ? !self.issuerAccepted(claims, req)
                                              : !self.realmIssuerAccepted(claims,
@@ -26677,6 +26748,10 @@ import realms = require('../common/realms');
 // the way the other resource servers here read them. A library that registers
 // no route; `oauth2.js` already required it, so this is a cache hit.
 import jwtAccessToken = require('../oauth-oidc/jwt_access_token');
+// Opaque access tokens (#501). A library oauth2 already required, so this
+// is a cache hit. The gate calls it directly: the token check is not a
+// dependency a test's stand-in deps object has to grow.
+import opaqueAccessToken = require('../oauth-oidc/opaque_access_token');
 // RFC 8705 section 3.1 (2026-09-13): a certificate-bound access token is
 // usable only on a connection made with its certificate — the check every
 // other resource server here makes through `dpop.presentedAccessToken()`. A

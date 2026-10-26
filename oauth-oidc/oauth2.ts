@@ -250,6 +250,10 @@ import refreshTokenCrypto = require('./refresh_token_crypto');
 // issuerOf() is its issuerFor() — shared with the resource-server check in
 // dpop.ts, which could not otherwise have asked the same question.
 import jwtAccessToken = require('./jwt_access_token');
+// Opaque access tokens (#501). A library that registers no route and
+// requires neither this module nor dpop. Consulted from request paths
+// only, never while this module is loading.
+import opaqueAccessToken = require('./opaque_access_token');
 // The access-token status list (#432): the index every access token names in
 // `status.status_list`, and the aggregation this server's metadata
 // advertises. A route module and library that requires nothing here.
@@ -4008,7 +4012,7 @@ class OAuth2Server {
    *
    * @param base - the authorization server's base URL
    * @param opts - the grant's facts, as for `accessToken()`
-   * @returns the signed token
+   * @returns the access token
    */
   async accessTokenAsync(base: Json, opts: Json): Promise<Json> {
     const { log } = this.deps;
@@ -4016,6 +4020,12 @@ class OAuth2Server {
     const reserved = await this.reserveAccessToken(base, opts);
     // Signed on libuv's thread pool (#820): this caller can wait.
     const plan = this.accessTokenUnsigned(base, reserved);
+    // #501: an opaque handle is not signed. signJwt would log the compact
+    // JWS. The claims were already built; the store keeps them.
+    if (opaqueAccessToken.issuesOpaque()) {
+      log.debug("Leaving OAuth2Server.accessTokenAsync(). Opaque.");
+      return opaqueAccessToken.mint(plan.payload, plan.context);
+    }
     log.debug("Leaving OAuth2Server.accessTokenAsync().");
     return this.deps.signJwtAsync(plan.payload, plan.context, plan.sign);
   }
@@ -4029,14 +4039,19 @@ class OAuth2Server {
    *   `scope`, `audience`, `jkt`, `authorization_details`, `claims`, `acr`,
    *   `amr`, `auth_time`, `act`, `grant`, `request` and the rest — and
    *   `access_jti` / `status_ref` from `reserveAccessToken()`
-   * @returns the signed token
+   * @returns the access token
    * @throws Error marked STS-OAUTH-0820 when no status-list index was
-   *   reserved and none can be claimed synchronously
+   *   reserved and none can be claimed synchronously, or STS-OAUTH-0979 /
+   *   STS-OAUTH-0984 when an opaque mint is refused
    */
   accessToken(base: Json, opts: Json): Json {
     const { log, signJwt } = this.deps;
     log.debug("Entering OAuth2Server.accessToken().");
     const plan = this.accessTokenUnsigned(base, opts);
+    if (opaqueAccessToken.issuesOpaque()) {
+      log.debug("Leaving OAuth2Server.accessToken(). Opaque.");
+      return opaqueAccessToken.mint(plan.payload, plan.context);
+    }
     log.debug("Leaving OAuth2Server.accessToken().");
     return signJwt(plan.payload, plan.context, plan.sign);
   }
@@ -5394,6 +5409,16 @@ class OAuth2Server {
   lifetimeOf(token: string, fallback: number): number {
     const { log } = this.deps;
     log.debug("Entering OAuth2Server.lifetimeOf().");
+    // #501: an opaque handle has no payload to parse. The store knows
+    // exp and iat. Zero means it is not a stored handle, and the JWT
+    // read below answers the fallback, as it always did.
+    if (String(token || '').indexOf('.') < 0) {
+      const life = opaqueAccessToken.lifetimeSeconds(String(token || ''));
+      if (life > 0) {
+        log.debug("Leaving OAuth2Server.lifetimeOf(). Opaque. " + life);
+        return life;
+      }
+    }
     let lifetime = fallback;
     try {
       const claims = JSON.parse(Buffer.from(String(token).split('.')[1] || '',
@@ -8088,7 +8113,21 @@ class OAuth2Server {
     // bytes fail JSON.parse — so every exchange that minted no ID Token logged
     // STS-OAUTH-0182 at error with `Unexpected token '�', "�w^~)�"`, once per
     // suite mode, about a token that was never issued.
-    const parts = String(token || '').trim().split('.');
+    const raw = String(token || '');
+    // #501: a handle has no second segment. Asking the store comes BEFORE
+    // the "not a JWT" return, and a miss returns '' without logging
+    // STS-OAUTH-0182 — that code is for a token this endpoint just issued
+    // and then could not re-read.
+    if (raw && raw.indexOf('.') < 0) {
+      const jti = opaqueAccessToken.jtiOf(raw);
+      if (jti) {
+        log.debug("Leaving OAuth2Server.jtiOf(). An opaque access token.");
+        return jti;
+      }
+      log.debug("Leaving OAuth2Server.jtiOf(). Not a JWT.");
+      return '';
+    }
+    const parts = raw.trim().split('.');
     if (!token || parts.length < 2) {
       log.debug("Leaving OAuth2Server.jtiOf(). No token, or not a JWT.");
       return '';
@@ -16751,7 +16790,38 @@ class OAuth2Server {
         subjectType === exchangeAssertions.TYPES.saml1;
       let subjectAssertion: Json = null;
       let ownSubject = false;
-      if (!subjectIsSaml) {
+      // #501: an opaque subject_token is resolved from the store, not
+      // verified as a JWS. Expired and revoked are refused in every mode,
+      // including development, which otherwise exchanges an unverified
+      // token. An unknown handle leaves ownSubject false, so the strict
+      // path below refuses it and development reads it as it always read a
+      // non-JWT.
+      let subjectFromOpaque = false;
+      if (!subjectIsSaml && subjectToken.indexOf('.') < 0) {
+        const foundSubject = opaqueAccessToken.lookup(subjectToken);
+        if (foundSubject.kind === 'inactive' &&
+            foundSubject.why === 'expired') {
+          errorCodes.mark(res, 'STS-OAUTH-0981');
+          log.debug("Leaving OAuth2Server.tokenGrant(). The " +
+                    "subject_token has expired.");
+          return self.oauthError(res, 400, 'invalid_request',
+                                 'The subject_token has expired.');
+        }
+        if (foundSubject.kind === 'inactive' &&
+            foundSubject.why === 'revoked') {
+          errorCodes.mark(res, 'STS-OAUTH-0557');
+          log.debug("Leaving OAuth2Server.tokenGrant(). The " +
+                    "subject_token has been revoked.");
+          return self.oauthError(res, 400, 'invalid_request',
+                                 'The subject_token has been revoked.');
+        }
+        if (foundSubject.kind === 'active') {
+          subject = foundSubject.claims;
+          ownSubject = true;
+          subjectFromOpaque = true;
+        }
+      }
+      if (!subjectIsSaml && !subjectFromOpaque) {
         try {
           subject = helpers.verifyOwnJws(subjectJws);
           ownSubject = true;
@@ -16942,7 +17012,53 @@ class OAuth2Server {
         // is the record, inside the token that comes out, of who acted on the
         // subject's behalf, and a name read out of an unverified token puts a
         // claim there that nobody made. Development still reads it unverified.
-        if (strictExchange) {
+        // #501: an opaque actor_token is the store's claims. Expired and
+        // revoked are refused in every mode. A hit skips both verifies
+        // below, and development must not re-read it as a JWT.
+        const actorToken = String(body.actor_token);
+        let actorFromOpaque = false;
+        if (actorToken.indexOf('.') < 0) {
+          const foundActor = opaqueAccessToken.lookup(actorToken);
+          if (foundActor.kind === 'inactive' &&
+              foundActor.why === 'expired') {
+            errorCodes.mark(res, 'STS-OAUTH-0981');
+            log.debug("Leaving OAuth2Server.tokenGrant(). The " +
+                      "actor_token has expired.");
+            return self.oauthError(res, 400, 'invalid_request',
+                                   'The actor_token has expired.');
+          }
+          if (foundActor.kind === 'inactive' &&
+              foundActor.why === 'revoked') {
+            errorCodes.mark(res, 'STS-OAUTH-0557');
+            log.debug("Leaving OAuth2Server.tokenGrant(). The " +
+                      "actor_token has been revoked.");
+            return self.oauthError(res, 400, 'invalid_request',
+                                   'The actor_token has been revoked.');
+          }
+          if (foundActor.kind === 'active') {
+            actorClaims = foundActor.claims;
+            actorFromOpaque = true;
+          }
+        }
+        if (actorFromOpaque) {
+          const actorMismatch = self.kindProblem(
+            String(body.actor_token_type || '').trim(),
+            self.ownTokenKind(actorToken, actorClaims),
+            'actor_token');
+          if (actorMismatch) {
+            errorCodes.mark(res, 'STS-OAUTH-0628');
+            log.debug("Leaving OAuth2Server.tokenGrant(). The " +
+                      "actor_token is not its declared type.");
+            return self.oauthError(res, 400, 'invalid_request',
+                                   actorMismatch);
+          }
+          if (actorClaims.jti && stats.isRevoked(actorClaims.jti)) {
+            errorCodes.mark(res, 'STS-OAUTH-0557');
+            log.debug("Leaving OAuth2Server.tokenGrant().");
+            return self.oauthError(res, 400, 'invalid_request',
+                                   'The actor_token has been revoked.');
+          }
+        } else if (strictExchange) {
           try {
             actorClaims = helpers.verifyOwnJws(String(body.actor_token));
           } catch (e) {
@@ -17000,7 +17116,7 @@ class OAuth2Server {
             return self.oauthError(res, 400, 'invalid_request', ownMismatch);
           }
         }
-        if (!strictExchange) {
+        if (!strictExchange && !actorFromOpaque) {
           try {
             actorClaims = jsonFromB64u(String(body.actor_token)
               .split('.')[1]) || {};
@@ -18568,64 +18684,19 @@ class OAuth2Server {
     log.debug("Leaving OAuth2Server.introspectEndpoint().");
   }
 
-  // The RFC 7662 answer for one token, as the object the response carries.
-  // `{ active: false }` and nothing else for a token that is not active — which
-  // RFC 7662 section 2.2 permits and RFC 9701 section 5 REQUIRES of the JWT, so
-  // the one function serves both shapes of response.
-  private introspectionOf(token: Json): Json {
-    const { stsCrypto, log, STS, dpop, stats, refreshTokenCrypto } = this.deps;
-    log.debug("Entering OAuth2Server.introspectionOf().");
-    const inactive = { active: false };
-    if (!token) {
-      log.debug("Leaving OAuth2Server.introspectionOf(). No token.");
-      return inactive;
-    }
-    // An encrypted token is a refresh token: opened first, then verified like
-    // everything else. One that will not open is simply not active — RFC 7662
-    // section 2.2 says nothing more than that to anybody.
-    let jws = token;
-    if (refreshTokenCrypto.isEncrypted(token)) {
-      try {
-        jws = refreshTokenCrypto.open(token);
-      } catch (e) {
-        log.debug("Caught in OAuth2Server.introspectionOf(): the token does " +
-                  "not open (" + e.message + "), so it is inactive.");
-        log.debug("Leaving OAuth2Server.introspectionOf().");
-        return inactive;
-      }
-    }
-    let claims;
-    try {
-      claims = helpers.verifyOwnJws(jws);
-    } catch (e) {
-      // Expired, forged, or simply not one of ours.
-      log.debug("Caught in OAuth2Server.introspectionOf(): the token does " +
-                "not verify (" + e.message + "), so it is inactive.");
-      log.debug("Leaving OAuth2Server.introspectionOf().");
-      return inactive;
-    }
-    // AN UNENCRYPTED REFRESH TOKEN IS NOT ACTIVE, and neither is a JWE that
-    // opened to anything but one: the refresh grant refuses both, and an
-    // introspection that called one active would contradict the grant.
-    if ((claims.typ === 'Refresh') !== (jws !== token)) {
-      log.debug("Leaving OAuth2Server.introspectionOf(). A refresh token " +
-                "that is not encrypted, or a JWE that is not a refresh token.");
-      return inactive;
-    }
-    if (stats.isRevoked(claims.jti)) {
-      log.debug("Leaving OAuth2Server.introspectionOf(). Revoked.");
-      return inactive;
-    }
-    // JSON drops the members that are undefined, exactly as the response always
-    // did; the JWT's claims are serialised the same way, so both shapes carry
-    // the same members.
+  // The members an active token's introspection response carries. Shared by
+  // the JWT path and the opaque path (#501), so the two answers cannot
+  // drift. JSON drops the members that are undefined.
+  private introspectionAnswer(claims: Json): Json {
+    const { log, dpop } = this.deps;
+    log.debug("Entering OAuth2Server.introspectionAnswer().");
     const answer = JSON.parse(JSON.stringify({
       active: true,
       scope: claims.scope || '',
       client_id: claims.client_id,
       username: claims.username,
-      // A bound token is not a Bearer token, and an introspection response that
-      // says otherwise invites the caller to accept it as one.
+      // A bound token is not a Bearer token, and an introspection response
+      // that says otherwise invites the caller to accept it as one.
       token_type: claims.typ === 'Refresh' ? 'refresh_token'
                                           : (dpop.jktOf(claims) ? 'DPoP' :
                                              'Bearer'),
@@ -18664,8 +18735,84 @@ class OAuth2Server {
       exp: claims.exp, iat: claims.iat, nbf: claims.nbf,
       sub: claims.sub, aud: claims.aud, iss: claims.iss, jti: claims.jti
     }));
-    log.debug("Leaving OAuth2Server.introspectionOf(). Active.");
+    log.debug("Leaving OAuth2Server.introspectionAnswer().");
     return answer;
+  }
+
+  // The RFC 7662 answer for one token, as the object the response carries.
+  // `{ active: false }` and nothing else for a token that is not active — which
+  // RFC 7662 section 2.2 permits and RFC 9701 section 5 REQUIRES of the JWT, so
+  // the one function serves both shapes of response. It does not rate-limit:
+  // the caller (`introspectRequest`) counts a miss.
+  private introspectionOf(token: Json): Json {
+    const { log, stats, refreshTokenCrypto } = this.deps;
+    log.debug("Entering OAuth2Server.introspectionOf().");
+    const inactive = { active: false };
+    if (!token) {
+      log.debug("Leaving OAuth2Server.introspectionOf(). No token.");
+      return inactive;
+    }
+    // #501: a handle has no '.'. A hit is this realm's own claims. A known
+    // expired or revoked token, and an unknown one while the realm issues
+    // opaque tokens, are inactive and nothing else — the response never
+    // echoes the handle. An unknown string while the realm issues JWTs
+    // falls through, as a non-JWT always did.
+    const presented = String(token);
+    if (presented.indexOf('.') < 0) {
+      const found = opaqueAccessToken.lookup(presented);
+      if (found.kind === 'active') {
+        if (stats.isRevoked(found.claims && found.claims.jti)) {
+          log.debug("Leaving OAuth2Server.introspectionOf(). Revoked.");
+          return inactive;
+        }
+        log.debug("Leaving OAuth2Server.introspectionOf(). Opaque, active.");
+        return this.introspectionAnswer(found.claims);
+      }
+      if (found.kind === 'inactive' ||
+          (found.kind === 'unknown' && opaqueAccessToken.issuesOpaque())) {
+        log.debug("Leaving OAuth2Server.introspectionOf(). Opaque, " +
+                  "inactive.");
+        return inactive;
+      }
+    }
+    // An encrypted token is a refresh token: opened first, then verified like
+    // everything else. One that will not open is simply not active — RFC 7662
+    // section 2.2 says nothing more than that to anybody.
+    let jws = token;
+    if (refreshTokenCrypto.isEncrypted(token)) {
+      try {
+        jws = refreshTokenCrypto.open(token);
+      } catch (e) {
+        log.debug("Caught in OAuth2Server.introspectionOf(): the token does " +
+                  "not open (" + e.message + "), so it is inactive.");
+        log.debug("Leaving OAuth2Server.introspectionOf().");
+        return inactive;
+      }
+    }
+    let claims;
+    try {
+      claims = helpers.verifyOwnJws(jws);
+    } catch (e) {
+      // Expired, forged, or simply not one of ours.
+      log.debug("Caught in OAuth2Server.introspectionOf(): the token does " +
+                "not verify (" + e.message + "), so it is inactive.");
+      log.debug("Leaving OAuth2Server.introspectionOf().");
+      return inactive;
+    }
+    // AN UNENCRYPTED REFRESH TOKEN IS NOT ACTIVE, and neither is a JWE that
+    // opened to anything but one: the refresh grant refuses both, and an
+    // introspection that called one active would contradict the grant.
+    if ((claims.typ === 'Refresh') !== (jws !== token)) {
+      log.debug("Leaving OAuth2Server.introspectionOf(). A refresh token " +
+                "that is not encrypted, or a JWE that is not a refresh token.");
+      return inactive;
+    }
+    if (stats.isRevoked(claims.jti)) {
+      log.debug("Leaving OAuth2Server.introspectionOf(). Revoked.");
+      return inactive;
+    }
+    log.debug("Leaving OAuth2Server.introspectionOf(). Active.");
+    return this.introspectionAnswer(claims);
   }
 
   // ---------------------------------------------------------------------------
@@ -18917,11 +19064,30 @@ class OAuth2Server {
       authenticated = true;
     }
 
+    // #501: a miss of an opaque handle is counted here, not inside
+    // introspectionOf, because only this caller has the request. Before
+    // the limit the answer stays { active: false }. The sentence names no
+    // part of the token.
+    const presentedToken = String(body.token || '');
+    if (presentedToken.indexOf('.') < 0 &&
+        opaqueAccessToken.issuesOpaque() &&
+        opaqueAccessToken.lookup(presentedToken).kind === 'unknown') {
+      const limited = opaqueAccessToken.noteMiss(req);
+      if (limited) {
+        res.set('Retry-After', String(limited.retryAfterS));
+        log.debug("Leaving OAuth2Server.introspectRequest(). Too many " +
+                  "unknown handles.");
+        errorCodes.mark(res, 'STS-OAUTH-0983');
+        return self.oauthError(res, 429, 'invalid_request',
+          'Too many attempts. Wait ' + limited.retryAfterS +
+          ' seconds and try again.');
+      }
+    }
     // SECTION 5's "not intended to be introspected by the resource server",
     // asked of every caller that authenticated — see `intendedFor()` for the
     // rule rcbj chose. A token that is not the caller's is answered exactly as
     // an invalid one, so the two cannot be told apart.
-    let answer = self.introspectionOf(String(body.token || ''));
+    let answer = self.introspectionOf(presentedToken);
     if (authenticated && answer.active === true &&
         !introspectionJwt.intendedFor(answer, clientId, baseUrlOf(req))) {
       log.info('introspection: client "' + clientId + '" asked about a token ' +
@@ -19838,21 +20004,54 @@ class OAuth2Server {
       log.debug("Leaving OAuth2Server.revokeRequest(). A device secret.");
       return undefined;
     }
+    // #501: a handle is not a JWS and must not be handed to revocableKindOf,
+    // which reads a JOSE header. A hit is an access token. The owner check
+    // below still runs before anything is revoked. A miss while the realm
+    // issues opaque tokens is section 2.2 (HTTP 200, nothing revoked), or
+    // 429 once the address is over the shared miss limit. A miss while the
+    // realm issues JWTs falls through to the verify below.
+    let claims: Json = null;
+    let opaqueHit = false;
+    if (token.indexOf('.') < 0) {
+      const found = opaqueAccessToken.lookup(token);
+      if (found.kind === 'active' || found.kind === 'inactive') {
+        claims = found.claims;
+        opaqueHit = true;
+      } else if (found.kind === 'unknown' &&
+                 opaqueAccessToken.issuesOpaque()) {
+        const limited = opaqueAccessToken.noteMiss(req);
+        if (limited) {
+          res.set('Retry-After', String(limited.retryAfterS));
+          log.debug("Leaving OAuth2Server.revokeRequest(). Too many " +
+                    "unknown handles.");
+          errorCodes.mark(res, 'STS-OAUTH-0983');
+          return self.oauthError(res, 429, 'invalid_request',
+            'Too many attempts. Wait ' + limited.retryAfterS +
+            ' seconds and try again.');
+        }
+        res.status(200).end();
+        log.debug("Leaving OAuth2Server.revokeRequest(). An unknown " +
+                  "handle; nothing to revoke.");
+        return undefined;
+      }
+    }
     // THE TOKEN. An encrypted refresh token is opened first; `open()` throws
     // for one this realm cannot open, which RFC 7009 answers exactly as an
     // invalid token.
-    const sealed = refreshTokenCrypto.isEncrypted(token);
+    const sealed = opaqueHit ? false : refreshTokenCrypto.isEncrypted(token);
     let jws = token;
-    let claims: Json = null;
-    try {
-      jws = sealed ? refreshTokenCrypto.open(token) : token;
-      claims = helpers.verifyOwnJws(jws);
-    } catch (e) {
-      log.debug("Caught in OAuth2Server.revokeRequest(): the token does not " +
-                "verify (" + ((e && e.message) || e) + ").");
-      claims = null;
+    if (!opaqueHit) {
+      try {
+        jws = sealed ? refreshTokenCrypto.open(token) : token;
+        claims = helpers.verifyOwnJws(jws);
+      } catch (e) {
+        log.debug("Caught in OAuth2Server.revokeRequest(): the token does " +
+                  "not verify (" + ((e && e.message) || e) + ").");
+        claims = null;
+      }
     }
-    const kind = claims ? self.revocableKindOf(jws, claims, sealed) : null;
+    const kind = opaqueHit ? 'access'
+      : (claims ? self.revocableKindOf(jws, claims, sealed) : null);
     if (!kind) {
       // SECTION 2.2: "invalid tokens do not cause an error response".
       res.status(200).end();
@@ -19893,6 +20092,13 @@ class OAuth2Server {
     }
 
     const via = 'the RFC 7009 revocation endpoint';
+    // #501: the store's revokedAt and the token register both have to say
+    // revoked. The owner check above has already passed. A row lookup
+    // already deleted (it was expired) makes markRevoked a no-op; the
+    // register still records the jti.
+    if (opaqueHit) {
+      opaqueAccessToken.markRevoked(token);
+    }
     // THE CLIENT, ACTING FOR THE PERSON WHO GRANTED IT (#239): CAEP's `user`.
     // RFC 7009 section 1's case is a client whose user signed out or
     // uninstalled it, and no administrator or policy was involved.

@@ -568,6 +568,13 @@ class ProtocolStack {
     this.build('oauth-oidc/jwt_access_token',
                require('../oauth-oidc/jwt_access_token'),
                'JwtAccessTokens');
+    // Opaque access tokens (#501). A library: no register() line. Built
+    // here, before dpop and before oauth2's own build, because both call
+    // it. oauth2's require above already loaded the module (and deferred
+    // its instance); this is the install.
+    this.build('oauth-oidc/opaque_access_token',
+               require('../oauth-oidc/opaque_access_token'),
+               'OpaqueAccessToken');
     this.build('oauth-oidc/oauth2_monitor',
                require('../oauth-oidc/oauth2_monitor'),
                'OAuth2Monitor');

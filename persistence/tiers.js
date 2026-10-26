@@ -382,6 +382,9 @@ const CELL_MINTED = [
   'oauth2.claimSourceFlows', 'oauth2.commandAccounts',
   'oauth2.commandCallbacks', 'oauth2.commandDeliveries',
   'oauth2.deviceCodes', 'oauth2.ephemeralSubjects',
+  // An opaque access token's claims (#501), minted in this cell the way an
+  // authorization code is. The handle is stored as a digest.
+  'oauth2.opaqueAccessTokens',
   'oauth2.grantIssued', 'oauth2.grants', 'oauth2_monitor.counters',
   'oauth2.pushedRequests', 'oauth2.redeemedCodes', 'oauth2.tenantCommandRuns',
   'oidc_rp.flows', 'risc.register', 'saml11_sso.artifacts',

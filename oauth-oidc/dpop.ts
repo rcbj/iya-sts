@@ -95,6 +95,11 @@ import fapi = require('./fapi');
 // `authorization_servers.ts`, none of which requires this one, so the no-cycle
 // property is unchanged. The resource-server check below is its reader.
 import jwtAccessToken = require('./jwt_access_token');
+// Opaque access tokens (#501). A library that does not require this file.
+// Called directly, not through DpopDeps: the check below is the one door
+// the protected endpoints share, and a second copy of the dependency would
+// be a caller nobody updated.
+import opaqueAccessToken = require('./opaque_access_token');
 // For one decision: whether to REFUSE an access token in a query string rather
 // than merely ignore it (RFC 9700 section 4.3.2). A library that registers no
 // route and requires `common/` and `cluster/` libraries, client_auth.js,
@@ -1396,26 +1401,84 @@ class Dpop {
     // unverified token could have a cnf its holder wrote.
     let claims: Json = null;
     let verified = false;
-    try {
-      // Any generation of this realm's key (#42) — helpers.verifyOwnJws().
-      claims = helpers.verifyOwnJws(accessToken);
-      verified = true;
-    } catch (e) {
-      log.debug("Caught in Dpop.presentedAccessToken(): " +
-                ((e && e.message) || e));
-      log.debug("This access token is not one of ours, so its claims are " +
-                "read unverified: " +
-                e.message);
+    // #501: a handle has no '.'. resolve() is ambient-only. A miss while
+    // this realm issues opaque tokens is a generic invalid_token, and past
+    // the address limit a 429. Expired and revoked are refused here because
+    // this function does not otherwise check exp. A miss while the realm
+    // issues JWTs falls through to the unverified read below.
+    let opaqueHit = false;
+    if (accessToken.indexOf('.') < 0) {
+      const found = opaqueAccessToken.resolve(accessToken, req);
+      if (found.kind === 'limited') {
+        res.set('Retry-After', String(found.retryAfterS));
+        res.set('WWW-Authenticate', 'Bearer error="invalid_token"');
+        log.debug("Leaving Dpop.presentedAccessToken(). Too many unknown " +
+                  "handles.");
+        errorCodes.mark(res, 'STS-OAUTH-0983');
+        vciError(res, 429, 'invalid_token',
+          'Too many attempts. Wait ' + found.retryAfterS +
+          ' seconds and try again.');
+        log.debug("Leaving Dpop.presentedAccessToken().");
+        return null;
+      }
+      if (found.kind === 'unknown' && opaqueAccessToken.issuesOpaque()) {
+        res.set('WWW-Authenticate', 'Bearer error="invalid_token"');
+        log.debug("Leaving Dpop.presentedAccessToken(). Unknown handle.");
+        errorCodes.mark(res, 'STS-OAUTH-0980');
+        vciError(res, 401, 'invalid_token',
+                 'The access token is not valid.');
+        log.debug("Leaving Dpop.presentedAccessToken().");
+        return null;
+      }
+      if (found.kind === 'inactive' && found.why === 'expired') {
+        const when = found.claims && Number(found.claims.exp) > 0
+          ? new Date(Number(found.claims.exp) * 1000).toISOString() : '';
+        res.set('WWW-Authenticate', 'Bearer error="invalid_token"');
+        log.debug("Leaving Dpop.presentedAccessToken(). Expired handle.");
+        errorCodes.mark(res, 'STS-OAUTH-0981');
+        vciError(res, 401, 'invalid_token',
+          'The access token expired' + (when ? ' at ' + when : '') + '.');
+        log.debug("Leaving Dpop.presentedAccessToken().");
+        return null;
+      }
+      if (found.kind === 'inactive' && found.why === 'revoked') {
+        res.set('WWW-Authenticate', 'Bearer error="invalid_token"');
+        log.debug("Leaving Dpop.presentedAccessToken(). Revoked handle.");
+        errorCodes.mark(res, 'STS-OAUTH-0982');
+        vciError(res, 401, 'invalid_token',
+                 'The access token has been revoked.');
+        log.debug("Leaving Dpop.presentedAccessToken().");
+        return null;
+      }
+      if (found.kind === 'active') {
+        claims = found.claims;
+        verified = true;
+        opaqueHit = true;
+      }
+    }
+    if (!opaqueHit) {
       try {
-        claims = jsonFromB64u(String(accessToken).split('.')[1]) || {};
-      } catch (e2) {
-        // Not a JWT at all. Opaque tokens are legal, and this issuer accepts
-        // them as it always has — there is simply no binding to find in one.
+        // Any generation of this realm's key (#42) — helpers.verifyOwnJws().
+        claims = helpers.verifyOwnJws(accessToken);
+        verified = true;
+      } catch (e) {
         log.debug("Caught in Dpop.presentedAccessToken(): " +
-                  ((e2 && e2.message) || e2));
-        log.debug("...and it is not a JWT either, so there is no cnf to " +
-                  "read: " + e2.message);
-        claims = {};
+                  ((e && e.message) || e));
+        log.debug("This access token is not one of ours, so its claims " +
+                  "are read unverified: " +
+                  e.message);
+        try {
+          claims = jsonFromB64u(String(accessToken).split('.')[1]) || {};
+        } catch (e2) {
+          // Not a JWT. A realm that issues opaque tokens already refused
+          // a miss above. One that does not still has nothing to read a
+          // cnf from, which is the development path for a foreign token.
+          log.debug("Caught in Dpop.presentedAccessToken(): " +
+                    ((e2 && e2.message) || e2));
+          log.debug("...and it is not a JWT either, so there is no cnf " +
+                    "to read: " + e2.message);
+          claims = {};
+        }
       }
     }
     const boundTo = this.jktOf(claims);
@@ -1460,7 +1523,8 @@ class Dpop {
     // `mode.acceptsUnverifiedIssuerTokens()`, 2026-09-18).
     if (verified) {
       const profileProblem = jwtAccessToken.resourceServerRefusal(accessToken,
-        claims, baseUrlOf(req), { audience: opts.audience || null });
+        claims, baseUrlOf(req), { audience: opts.audience || null,
+                                  skipTyp: opaqueHit });
       if (profileProblem) {
         res.set('WWW-Authenticate', 'Bearer error="invalid_token"');
         log.debug("Leaving Dpop.presentedAccessToken(). RFC 9068 section 4 " +

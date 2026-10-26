@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4632** of them, in **47** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4638** of them, in **47** subsystems.
 
 ## Where a code appears
 
@@ -64,7 +64,7 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 381
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 724
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 730
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 117
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 33
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 30
@@ -2303,6 +2303,12 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0976` | The did claim was left out: the person's account is disabled (#693). | none: the claim is absent (logged) |
 | `STS-OAUTH-0977` | A claim named did from another layer — a configured or typed claim, a claims request (OIDC Core 5.5) or a Claims Provider — was removed from an ID Token or UserInfo response: the name is the DID claim's, released only by its own rules (#693). | none: the claim is absent (logged) |
 | `STS-OAUTH-0978` | The access-token status list could not be told that a token was revoked or un-revoked (#820): its bit in the store of revoked bits was not written. The revocation itself stands, and introspection refuses the token; only the published list is behind until the token is revoked again or expires. | none — the revocation is not undone |
+| `STS-OAUTH-0979` | An opaque access token was not minted: the realm's store was already at oauth2.maxOpaqueAccessTokens after expired rows were dropped, and a live token was not evicted to make room (#501). | none — the mint throws; no token is issued |
+| `STS-OAUTH-0980` | A presented access token has no "." and is not a handle this realm stored, while the realm issues opaque access tokens. The refusal is generic and carries no part of what was presented (#501). | HTTP 401 invalid_token |
+| `STS-OAUTH-0981` | A presented opaque access token is past its exp. The row is deleted. The refusal names the time and no part of the handle (#501). | HTTP 401 invalid_token |
+| `STS-OAUTH-0982` | A presented opaque access token has been revoked, either on its stored row or in the token register (#501). | HTTP 401 invalid_token |
+| `STS-OAUTH-0983` | Too many presented strings that are not stored opaque access tokens arrived from one address. Further misses wait (#501). A known token, a JWT and a success are not counted. | HTTP 429 invalid_token, Retry-After |
+| `STS-OAUTH-0984` | An opaque access token was not minted: three fresh 256-bit handles each collided with a digest already stored (#501). | none — the mint throws; no token is issued |
 
 ## STS-SAML
 
