@@ -681,7 +681,8 @@ async function sharedSignals(t) {
           outsiderAlone.refusal.error === 'invalid_scope',
           'I7. and ssf.read alone is invalid_scope',
           outsiderAlone ? JSON.stringify(outsiderAlone.refusal) : '');
-  const outsiderRow = JSON.stringify(narrowedRows(outsider).slice(-1));
+  // `audit.list()` is newest first, so the row just written is the first.
+  const outsiderRow = JSON.stringify(narrowedRows(outsider).slice(0, 1));
   t.check(/is in none of the groups of the role SSF_READ \(ssf-read\)/
             .test(outsiderRow) && !/console roster/.test(outsiderRow),
           'I7a. the audit row says the person is not in ssf-read, not ' +
@@ -739,7 +740,7 @@ async function sharedSignals(t) {
           'I13. in the group, without the application as a member, ' +
           'ssf.read is not issued',
           unmapped ? JSON.stringify(unmapped.refusal) : '');
-  const unmappedRow = JSON.stringify(narrowedRows(person).slice(-1));
+  const unmappedRow = JSON.stringify(narrowedRows(person).slice(0, 1));
   t.check(new RegExp('the application \\\\"' + app + '\\\\" is not a ' +
                      'member of the role SSF_READ').test(unmappedRow),
           'I13a. the audit row says the application is not a member of ' +
