@@ -87,6 +87,14 @@
     "en": "f4b474a8d20ad298",
     "text": "一個人在其所在領域中的自身帳戶：入口網站以在每個領域中植入的用戶端身分，透過該領域自己的授權伺服器登入，而每個頁面都讀寫該人在該領域目錄中的項目，並受該領域的密碼原則約束。"
   },
+  "realms.support.reporting.family": {
+    "en": "b1fa104b9bf0635e",
+    "text": "報表"
+  },
+  "realms.support.reporting.note": {
+    "en": "ca64742fe52ce6b3",
+    "text": "應用程式及其 API 位於領域路徑之下。定義與工作留在該領域的對應表中，共用對象是該領域目錄中的群組。"
+  },
   "realms.support.global-logout.family": {
     "en": "1b4192fb739d93e9",
     "text": "全域登出"

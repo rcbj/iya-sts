@@ -4228,8 +4228,8 @@
     "text": "Förinstallera konsolen och detta API som applikationer"
   },
   "applications.seedInternal|description": {
-    "en": "7092a96534fcb0ca",
-    "text": "Skapa applikationsposter för den här tjänstens egna ytor när den startar, under ou=applications med allt annat: ADMINISTRATÖRSKONSOLEN på /admin, ANVÄNDARPORTALEN på /portal, HANTERINGS-API:ET på /admin-api och — medan den är inbäddad — protokolldebuggerns två klienter. De förinstalleras som FULLSTÄNDIGA RFC 7591-registreringar snarare än som etiketter: konsolen och portalen som konfidentiella OpenID Connect-förlitande parter med authorization code-grantet, detta API som en konfidentiell OAuth-klient med client_credentials, var och en med en hemlighet — så att de är klienter som kan testas snarare än rader på en sida. Konsolen och portalen LOGGAR IN GENOM sina poster (/admin/callback och /portal/callback), så att stänga av detta, eller ta bort en, lämnar den ytan oförmögen att logga in någon tills en post finns igen. Den här behållaren är registret — en ldapmodify av den är en konfigurationsändring. PÅSLAGET som standard. Förinstalleras bara där identifieraren är ledig, så en post som en operatör har tagit bort förblir borttagen till nästa omstart."
+    "en": "0dcb321977df8ef6",
+    "text": "Skapa applikationsposter för den här tjänstens egna ytor när den startar, under ou=applications tillsammans med allt annat: ADMINKONSOLEN på /admin, ANVÄNDARPORTALEN på /portal, RAPPORTAPPLIKATIONEN på /report, RAPPORT-API:T på /report-api, HANTERINGS-API:T på /admin-api och — medan den är inbäddad — felsökarens två klienter. De seedas som FULLSTÄNDIGA RFC 7591-registreringar och inte som etiketter: konsolen och portalen som konfidentiella OpenID Connect-förlitande parter med authorization code-flödet, det här API:t som en konfidentiell OAuth-klient med client_credentials, var och en med en hemlighet — så de är klienter som kan prövas och inte rader på en sida. Konsolen och portalen LOGGAR IN GENOM sina poster (/admin/callback och /portal/callback), så att stänga av detta, eller ta bort en, lämnar ytan oförmögen att logga in någon tills en post finns igen. Den här containern är registret — en ldapmodify av den är en konfigurationsändring. PÅ som standard. Seedas bara där identifieraren är ledig, så en operatör som tog bort en får den att förbli borttagen till nästa omstart."
   },
   "applications.seedInternal|restartReason": {
     "en": "ce6b237794aa9252",
@@ -10126,6 +10126,110 @@
   "mail.notifyAdministrators|description": {
     "en": "bd3ae7ff26663b42",
     "text": "När TJÄNSTEN, inte en person, markerar en inloggningsuppgift som komprometterad eller inaktiverar ett konto (riskbedömning), skicka även e-post till varje medlem i sfärens Admin Write-förteckning som har en adress."
+  },
+  "report.syncMaxRows|label": {
+    "en": "77fdb27c30eb4bf8",
+    "text": "Radgräns för synkron rapport"
+  },
+  "report.syncMaxRows|description": {
+    "en": "563c41bbaffd74bb",
+    "text": "Det högsta antal rader en synkron rapport får returnera. En större gräns vägras i läget sync och blir ett jobb i auto."
+  },
+  "report.syncMaxBytes|label": {
+    "en": "f975fe6e57bfae86",
+    "text": "Bytegräns för synkron rapport"
+  },
+  "report.syncMaxBytes|description": {
+    "en": "e7c9e919bd0ac8ea",
+    "text": "Det högsta antal bytes en synkron rapport får returnera. Ett resultat över detta vägras i stället för att skickas delvis."
+  },
+  "report.syncMaxMs|label": {
+    "en": "ac021c892bcfc370",
+    "text": "Tidsgräns för synkron rapport (millisekunder)"
+  },
+  "report.syncMaxMs|description": {
+    "en": "f6ab877e4526a9f9",
+    "text": "Hur länge en synkron rapport får köras. Efter detta vägras anropet i stället för att besvaras med en ofullständig kropp."
+  },
+  "report.asyncMaxMs|label": {
+    "en": "f0c5ac5e9884050c",
+    "text": "Tidsgräns för rapportjobb (millisekunder)"
+  },
+  "report.asyncMaxMs|description": {
+    "en": "45c7c3ad19fc3c4a",
+    "text": "Hur länge ett rapportjobb får köras. Efter detta misslyckas jobbet i stället för att lagra ett ofullständigt resultat."
+  },
+  "report.asyncMaxRows|label": {
+    "en": "8aca969304d23655",
+    "text": "Radgräns för rapportjobb"
+  },
+  "report.asyncMaxRows|description": {
+    "en": "e5dceb18ca4c26a4",
+    "text": "Det högsta antal rader ett rapportjobb får skriva. En fråga som ber om fler vägras i varje läge."
+  },
+  "report.asyncMaxBytes|label": {
+    "en": "470a53d032622764",
+    "text": "Bytegräns för rapportjobb"
+  },
+  "report.asyncMaxBytes|description": {
+    "en": "91aac7df1ff51b42",
+    "text": "Det högsta antal bytes ett rapportjobb får lagra. Ett resultat över detta låter jobbet misslyckas i stället för att trunkeras."
+  },
+  "report.pdfMaxRows|label": {
+    "en": "5cf679421e7b7bf3",
+    "text": "Radgräns för PDF-rapport"
+  },
+  "report.pdfMaxRows|description": {
+    "en": "3b855ef0848c4ad4",
+    "text": "Det högsta antal rader en PDF-rapport får innehålla. En större fråga vägras och uppmanas använda CSV."
+  },
+  "report.pdfMaxPages|label": {
+    "en": "050231b3a1524a4b",
+    "text": "Sidgräns för PDF-rapport"
+  },
+  "report.pdfMaxPages|description": {
+    "en": "3b065500b4a246a3",
+    "text": "Det högsta antal sidor en PDF-rapport får innehålla. Efter detta vägras resultatet och uppmanas använda CSV."
+  },
+  "report.maxConcurrentPerRealm|label": {
+    "en": "2e8e9a195cac9a4c",
+    "text": "Körande rapportjobb per sfär"
+  },
+  "report.maxConcurrentPerRealm|description": {
+    "en": "7a252c3307b54d2a",
+    "text": "Hur många rapportjobb en sfär får ha igång samtidigt. En ytterligare inskickning vägras tills ett är klart."
+  },
+  "report.maxConcurrentPerSubject|label": {
+    "en": "3533626b8e0a8d15",
+    "text": "Körande rapportjobb per person"
+  },
+  "report.maxConcurrentPerSubject|description": {
+    "en": "525965a5866fed18",
+    "text": "Hur många rapportjobb en person får ha igång samtidigt."
+  },
+  "report.artifactRetentionS|label": {
+    "en": "ae014cb5ae4ea837",
+    "text": "Hur länge ett rapportresultat sparas (sekunder)"
+  },
+  "report.artifactRetentionS|description": {
+    "en": "c1e0935d871842f4",
+    "text": "Hur länge en färdig rapports bytes förblir tillgängliga för nedladdning. Därefter är resultatet borta."
+  },
+  "report.jobRetentionS|label": {
+    "en": "117aad13b6fa172e",
+    "text": "Hur länge en rapportjobbrad sparas (sekunder)"
+  },
+  "report.jobRetentionS|description": {
+    "en": "dfada581a8c28ca3",
+    "text": "Hur länge ett färdigt rapportjobbs rad stannar i listan. Ett jobb som fortfarande körs tas inte bort."
+  },
+  "report.usersGroup|label": {
+    "en": "21554dfaa265b36f",
+    "text": "Vem som kan få report:use utfärdad"
+  },
+  "report.usersGroup|description": {
+    "en": "28068508e0655509",
+    "text": "Kataloggruppen vars medlemmar kan få report:use utfärdad. Tom betyder att bara den här sfärens administratörer kan det. report:admin utfärdas bara till dessa administratörer."
   },
   "listenerMain.minVersion|label": {
     "en": "6470c151e28a9ab3",

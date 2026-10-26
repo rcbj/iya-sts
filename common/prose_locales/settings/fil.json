@@ -4228,8 +4228,8 @@
     "text": "I-seed ang console at ang API na ito bilang mga application"
   },
   "applications.seedInternal|description": {
-    "en": "7092a96534fcb0ca",
-    "text": "Gumawa ng mga application entry para sa sariling mga surface ng serbisyong ito kapag nagsisimula ito, sa ilalim ng ou=applications kasama ng lahat ng iba: ang ADMIN CONSOLE sa /admin, ang USER PORTAL sa /portal, ang MANAGEMENT API sa /admin-api, at — habang naka-embed ito — ang dalawang client ng protocol debugger. Sine-seed ang mga ito bilang BUONG RFC 7591 registration sa halip na mga label: ang console at ang portal bilang mga confidential na OpenID Connect relying party sa authorization code grant, ang API na ito bilang confidential na OAuth client sa client_credentials, bawat isa ay may secret — kaya mga client sila na masusubukan sa halip na mga row sa isang pahina. NAGSA-SIGN IN SA PAMAMAGITAN ng kanilang mga entry ang console at ang portal (/admin/callback at /portal/callback), kaya ang pag-off dito, o pagbura sa isa, ay nag-iiwan sa surface na iyon na hindi makapag-sign in ng sinuman hanggang may entry ulit. Ang container na ito ang registry — ang ldapmodify nito ay pagbabago ng configuration. NAKA-ON bilang default. Sine-seed lang kung saan bakante ang identifier, kaya ang operator na nagbura ng isa ay mananatili itong burado hanggang sa susunod na restart."
+    "en": "0dcb321977df8ef6",
+    "text": "Gumawa ng mga application entry para sa sariling mga surface ng serbisyong ito kapag nagsimula ito, sa ilalim ng ou=applications kasama ng lahat ng iba pa: ang ADMIN CONSOLE sa /admin, ang USER PORTAL sa /portal, ang REPORTS application sa /report, ang REPORT API sa /report-api, ang MANAGEMENT API sa /admin-api, at — habang naka-embed — ang dalawang client ng protocol debugger. Sine-seed ang mga ito bilang BUONG RFC 7591 registration sa halip na mga label: ang console at ang portal bilang confidential OpenID Connect relying party sa authorization code grant, ang API na ito bilang confidential OAuth client sa client_credentials, bawat isa ay may secret — kaya mga client sila na maaaring subukan sa halip na mga row sa isang pahina. Ang console at ang portal ay NAGSA-SIGN IN SA PAMAMAGITAN ng mga entry nila (/admin/callback at /portal/callback), kaya ang pag-off nito, o pagbura sa isa, ay nag-iiwan sa surface na iyon na hindi makapag-sign in ng sinuman hanggang may entry muli. Ang container na ito ang registry — ang ldapmodify nito ay pagbabago ng configuration. NAKA-ON bilang default. Sine-seed lamang kung libre ang identifier, kaya ang operator na nagbura ng isa ay mananatili itong binura hanggang sa susunod na restart."
   },
   "applications.seedInternal|restartReason": {
     "en": "ce6b237794aa9252",
@@ -10126,6 +10126,110 @@
   "mail.notifyAdministrators|description": {
     "en": "bd3ae7ff26663b42",
     "text": "Kapag ang SERBISYO, hindi isang tao, ang nagmarka ng credential bilang compromised o nag-disable ng account (risk scoring), padalhan din ng mail ang bawat member ng Admin Write roster ng realm na may address."
+  },
+  "report.syncMaxRows|label": {
+    "en": "77fdb27c30eb4bf8",
+    "text": "Cap ng row ng synchronous na report"
+  },
+  "report.syncMaxRows|description": {
+    "en": "563c41bbaffd74bb",
+    "text": "Ang pinakamaraming row na maaaring ibalik ng isang synchronous na report. Ang mas malaking limit ay tinatanggihan sa sync mode at nagiging job sa auto."
+  },
+  "report.syncMaxBytes|label": {
+    "en": "f975fe6e57bfae86",
+    "text": "Cap ng byte ng synchronous na report"
+  },
+  "report.syncMaxBytes|description": {
+    "en": "e7c9e919bd0ac8ea",
+    "text": "Ang pinakamaraming byte na maaaring ibalik ng isang synchronous na report. Ang resultang lampas dito ay tinatanggihan sa halip na ipadala nang bahagya."
+  },
+  "report.syncMaxMs|label": {
+    "en": "ac021c892bcfc370",
+    "text": "Cap ng oras ng synchronous na report (millisecond)"
+  },
+  "report.syncMaxMs|description": {
+    "en": "f6ab877e4526a9f9",
+    "text": "Gaano katagal maaaring tumakbo ang isang synchronous na report. Kapag lumampas dito, tinatanggihan ang tawag sa halip na sagutin ng bahagyang body."
+  },
+  "report.asyncMaxMs|label": {
+    "en": "f0c5ac5e9884050c",
+    "text": "Cap ng oras ng report job (millisecond)"
+  },
+  "report.asyncMaxMs|description": {
+    "en": "45c7c3ad19fc3c4a",
+    "text": "Gaano katagal maaaring tumakbo ang isang report job. Kapag lumampas dito, nabibigo ang job sa halip na mag-imbak ng bahagyang resulta."
+  },
+  "report.asyncMaxRows|label": {
+    "en": "8aca969304d23655",
+    "text": "Cap ng row ng report job"
+  },
+  "report.asyncMaxRows|description": {
+    "en": "e5dceb18ca4c26a4",
+    "text": "Ang pinakamaraming row na maaaring isulat ng isang report job. Ang query na humihingi ng higit pa ay tinatanggihan sa bawat mode."
+  },
+  "report.asyncMaxBytes|label": {
+    "en": "470a53d032622764",
+    "text": "Cap ng byte ng report job"
+  },
+  "report.asyncMaxBytes|description": {
+    "en": "91aac7df1ff51b42",
+    "text": "Ang pinakamaraming byte na maaaring iimbak ng isang report job. Ang resultang lampas dito ay nagpapabigo sa job sa halip na putulin."
+  },
+  "report.pdfMaxRows|label": {
+    "en": "5cf679421e7b7bf3",
+    "text": "Cap ng row ng PDF report"
+  },
+  "report.pdfMaxRows|description": {
+    "en": "3b855ef0848c4ad4",
+    "text": "Ang pinakamaraming row na maaaring laman ng isang PDF report. Ang mas malaking query ay tinatanggihan at hinihilingang gumamit ng CSV."
+  },
+  "report.pdfMaxPages|label": {
+    "en": "050231b3a1524a4b",
+    "text": "Cap ng pahina ng PDF report"
+  },
+  "report.pdfMaxPages|description": {
+    "en": "3b065500b4a246a3",
+    "text": "Ang pinakamaraming pahina na maaaring laman ng isang PDF report. Kapag lumampas dito, tinatanggihan ang resulta at hinihilingang gumamit ng CSV."
+  },
+  "report.maxConcurrentPerRealm|label": {
+    "en": "2e8e9a195cac9a4c",
+    "text": "Mga report job na tumatakbo bawat realm"
+  },
+  "report.maxConcurrentPerRealm|description": {
+    "en": "7a252c3307b54d2a",
+    "text": "Ilang report job ang maaaring sabay na tumatakbo sa isang realm. Ang karagdagang pagsusumite ay tinatanggihan hanggang may matapos."
+  },
+  "report.maxConcurrentPerSubject|label": {
+    "en": "3533626b8e0a8d15",
+    "text": "Mga report job na tumatakbo bawat tao"
+  },
+  "report.maxConcurrentPerSubject|description": {
+    "en": "525965a5866fed18",
+    "text": "Ilang report job ang maaaring sabay na tumatakbo para sa isang tao."
+  },
+  "report.artifactRetentionS|label": {
+    "en": "ae014cb5ae4ea837",
+    "text": "Gaano katagal itinatago ang resulta ng report (segundo)"
+  },
+  "report.artifactRetentionS|description": {
+    "en": "c1e0935d871842f4",
+    "text": "Gaano katagal nananatiling maida-download ang mga byte ng natapos na report. Pagkatapos nito, wala na ang resulta."
+  },
+  "report.jobRetentionS|label": {
+    "en": "117aad13b6fa172e",
+    "text": "Gaano katagal itinatago ang row ng report job (segundo)"
+  },
+  "report.jobRetentionS|description": {
+    "en": "dfada581a8c28ca3",
+    "text": "Gaano katagal nananatili sa listahan ang row ng natapos na report job. Ang job na tumatakbo pa ay hindi inaalis."
+  },
+  "report.usersGroup|label": {
+    "en": "21554dfaa265b36f",
+    "text": "Sino ang maaaring ma-issue-han ng report:use"
+  },
+  "report.usersGroup|description": {
+    "en": "28068508e0655509",
+    "text": "Ang directory group na ang mga miyembro ay maaaring ma-issue-han ng report:use. Ang walang laman ay nangangahulugang mga administrator lang ng realm na ito ang maaari. Ang report:admin ay ini-issue lamang sa mga administrator na iyon."
   },
   "listenerMain.minVersion|label": {
     "en": "6470c151e28a9ab3",

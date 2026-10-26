@@ -1175,6 +1175,74 @@
     "en": "69cf245f63b035d1",
     "text": "NON-SPEC. L’unique feuille de style du portail (#568)."
   },
+  "stsmetadata.endpoints./report.what": {
+    "en": "a9d6c3cc058a3617",
+    "text": "NON-SPEC. L’application de rapports statique (#956). Chaque chemin répond par un seul document, qui charge /report/report.js et ouvre la session en tant que client public sts-report."
+  },
+  "stsmetadata.endpoints./report/*.what": {
+    "en": "0d4a7436bac8a815",
+    "text": "NON-SPEC. Le même document que /report. Le script choisit la page d’après le chemin."
+  },
+  "stsmetadata.endpoints./report/report.js.what": {
+    "en": "06abcdf5598f2576",
+    "text": "NON-SPEC. Le runtime des rapports, construit par build-typescript.sh et servi précompressé. Public, comme le document."
+  },
+  "stsmetadata.endpoints./report/report.css.what": {
+    "en": "aa0e94707e105592",
+    "text": "NON-SPEC. L’unique feuille de style de l’application de rapports (#956)."
+  },
+  "stsmetadata.endpoints./report-api.what": {
+    "en": "7b8038436244d3de",
+    "text": "NON-SPEC. L’index de /report-api. Il prend le jeton DPoP de ce domaine pour sts-report, scope report:use ou report:admin."
+  },
+  "stsmetadata.endpoints./report-api/openapi.json.what": {
+    "en": "0a932f3efc26b3fb",
+    "text": "NON-SPEC. La description propre à l’API. Derrière le même jeton que le reste de /report-api, et servie no-store."
+  },
+  "stsmetadata.endpoints./report-api/catalog.what": {
+    "en": "07eb9bbaa64c98e2",
+    "text": "NON-SPEC. Les sources qu’une requête peut nommer, avec le type et les opérateurs de chaque champ. Les attributs d’identifiants en sont absents."
+  },
+  "stsmetadata.endpoints./report-api/catalog/:id.what": {
+    "en": "4d6e53c9ce4823ca",
+    "text": "NON-SPEC. Une source du catalogue, par son id."
+  },
+  "stsmetadata.endpoints./report-api/queries.what": {
+    "en": "0d15a58a10e2b1ba",
+    "text": "NON-SPEC. Une requête de catalogue. Une petite requête bornée reçoit sa réponse dans l’appel ; une plus grande est mise en file et reçoit 202."
+  },
+  "stsmetadata.endpoints./report-api/definitions.what": {
+    "en": "df098902244cfa53",
+    "text": "NON-SPEC. Les définitions que ce jeton peut voir : celles de son propriétaire, celles partagées avec un groupe dont il fait partie, et toutes quand le jeton porte report:admin."
+  },
+  "stsmetadata.endpoints./report-api/definitions/:id.what": {
+    "en": "74d936b2bb9fff66",
+    "text": "NON-SPEC. Une définition. Un id inconnu et un id que ce jeton ne peut pas voir reçoivent la même réponse."
+  },
+  "stsmetadata.endpoints./report-api/definitions/:id/share.what": {
+    "en": "12d23dbb24cec023",
+    "text": "NON-SPEC. Nomme les groupes d’annuaire qui peuvent exécuter la définition et lire ses résultats. Le propriétaire, ou report:admin, peut modifier cette liste."
+  },
+  "stsmetadata.endpoints./report-api/definitions/:id/run.what": {
+    "en": "991b657f7fe20e17",
+    "text": "NON-SPEC. Met en file la requête de la définition au nom de l’appelant. Un partage accorde cela et le résultat, pas une modification."
+  },
+  "stsmetadata.endpoints./report-api/jobs.what": {
+    "en": "f4e437b96fe383f5",
+    "text": "NON-SPEC. Les tâches que ce jeton peut voir, et la porte qui en met une en file à partir d’un document de requête."
+  },
+  "stsmetadata.endpoints./report-api/jobs/:id.what": {
+    "en": "d69a7d667bd631bf",
+    "text": "NON-SPEC. Une tâche. Un id inconnu et un id que ce jeton ne peut pas voir reçoivent la même réponse."
+  },
+  "stsmetadata.endpoints./report-api/jobs/:id/cancel.what": {
+    "en": "cbc407e431852e06",
+    "text": "NON-SPEC. Demande à une tâche en file ou en cours de s’arrêter. Les octets d’une tâche déjà terminée sont laissés à la rétention."
+  },
+  "stsmetadata.endpoints./report-api/jobs/:id/result.what": {
+    "en": "3b97b9774547de8c",
+    "text": "NON-SPEC. Les octets stockés d’une tâche terminée, tant que report.artifactRetentionS n’est pas écoulé. Passé ce délai, le résultat a disparu."
+  },
   "stsmetadata.endpoints./portal/signals/receive.what": {
     "en": "b5f30a87646c3fed",
     "text": "REMISE PAR PUSH DE LA SECTION 2.1 DE LA RFC 8935, AVEC CE SERVICE AUX DEUX EXTRÉMITÉS (2026-09-10) — POUR UN FLUX REMIS EN PUSH depuis #771, qui a fait du flux semé du portail un flux d’interrogation RFC 8936 qu’il collecte sur /ssf/poll ; tant qu’il l’est, un push ici est refusé. Remis en push, le flux nomme ce chemin comme son `delivery.endpoint_url`, sur l’adresse de bouclage propre à ce service, et `ssf/ssf_http.ts` envoie chaque SET ici en POST en tant qu’application/secevent+jwt avec l’`authorization_header` du flux. C’EST UNE VÉRITABLE REQUÊTE HTTP À DESSEIN : remettre l’événement à la page au sein du processus sauterait le corps, le type de média, l’en-tête d’autorisation et la signature, c’est-à-dire tout ce que fait un récepteur — l’argument que `common/oidc_rp.ts` avance à propos de l’échange d’un code d’autorisation au sein du processus, avancé à nouveau pour un autre protocole. NON AUTHENTIFIÉ PAR SESSION MAIS PAS SANS PROTECTION : ce qu’il vérifie, c’est le jeton porteur de son propre flux, produit par flux et par démarrage et remis uniquement au transmetteur propre à ce service, comparé en temps constant ; puis l’`aud`, en refusant avec `invalid_audience` un SET adressé à quelqu’un d’autre ; puis la signature. Un jeton mal formé ou mal adressé est ENREGISTRÉ ET REFUSÉ plutôt qu’abandonné, car ce qui est arrivé est précisément la question posée. Délibérément NON soumis à une limite de débit, contrairement à chaque point de terminaison de justificatifs de ce fichier : un limiteur abandonnerait silencieusement, sous charge, l’avis de désactivation de compte de quelqu’un."
@@ -3398,6 +3466,10 @@
   "stsmetadata.protocols.User portal.what": {
     "en": "835d40e9ff6eaabb",
     "text": "CE N’EST PAS UN PROTOCOLE, et il a une carte parce que cette page signale tout groupe de points de terminaison qu’aucune carte ne revendique — c’est la règle qui empêche une nouvelle famille d’arriver sans être annoncée, et il vaut mieux en payer le prix ici que de rendre la règle conditionnelle. LA PREMIÈRE SURFACE DE CE SERVICE QUI APPARTIENT À LA PERSONNE QUI LA REGARDE : toute autre page de navigateur ici est destinée à quelqu’un d’autre — l’écran de connexion est une étape du flux d’un autre protocole, l’écran de consentement pose une question et s’en va, /admin est destiné à un opérateur et protégé par deux rôles. C’est ici qu’une personne voit ce que ce fournisseur d’identité sait d’elle et modifie sa manière de s’authentifier : son mot de passe, ses clés de sécurité et, pour chacune, si elle est un identifiant principal ou un second facteur. C’est une APPLICATION DISTINCTE de la console d’administration, qui ne partage avec elle que la session d’authentification unique auprès du serveur d’autorisation de ce service : chacune est un client OAuth public (ici sts-user-portal) qui conserve en mémoire son propre jeton lié par DPoP. /portal/activate en est la moitié non authentifiée, où quelqu’un provisionné via /admin-api ou SCIM utilise un lien d’activation à usage unique et limité dans le temps pour configurer un identifiant — haché au repos comme un mot de passe, soumis à une limitation de débit, consommé lorsque la configuration s’achève plutôt qu’à l’ouverture du lien, et ne connectant jamais personne. DEPUIS #568, C’EST UNE APPLICATION STATIQUE au-dessus de /account-api, le groupe Account API ci-dessous : une opération par page et par formulaire, la personne étant toujours le sujet du jeton, décrite par son propre document OpenAPI."
+  },
+  "stsmetadata.protocols.Reporting.what": {
+    "en": "66663fd63a35a287",
+    "text": "NON PROTOCOLE. L’application de rapports (#956) : une page statique sur /report au-dessus de /report-api, le client public sts-report, et un catalogue des propres enregistrements de ce domaine. Elle ouvre la session dans le navigateur, détient un jeton lié par DPoP et ne prend jamais de chaîne SQL. Une définition enregistrée appartient à son propriétaire ; un partage avec un groupe d’annuaire accorde l’exécution et la lecture, pas la modification."
   },
   "stsmetadata.protocols.GNAP.what": {
     "en": "b938c4cb8feac54d",

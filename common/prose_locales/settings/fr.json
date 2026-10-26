@@ -4228,8 +4228,8 @@
     "text": "Préinstaller la console et cette API comme applications"
   },
   "applications.seedInternal|description": {
-    "en": "7092a96534fcb0ca",
-    "text": "Créer au démarrage des entrées d’application pour les surfaces propres à ce service, sous ou=applications avec tout le reste : la CONSOLE D’ADMINISTRATION sur /admin, le PORTAIL UTILISATEUR sur /portal, l’API DE GESTION sur /admin-api et — tant qu’il est intégré — les deux clients du débogueur de protocoles. Elles sont préinstallées comme des enregistrements RFC 7591 COMPLETS plutôt que comme des libellés : la console et le portail comme parties de confiance OpenID Connect confidentielles sur l’octroi par code d’autorisation, cette API comme client OAuth confidentiel sur client_credentials, chacun avec un secret — ce sont donc des clients que l’on peut exercer plutôt que des lignes sur une page. La console et le portail SE CONNECTENT VIA leurs entrées (/admin/callback et /portal/callback) : désactiver ce paramètre, ou supprimer l’une d’elles, laisse donc cette surface incapable de connecter qui que ce soit jusqu’à ce qu’une entrée existe de nouveau. Ce conteneur est le registre — un ldapmodify sur celui-ci est une modification de configuration. ACTIVÉ par défaut. Préinstallées uniquement là où l’identifiant est libre : un opérateur qui en a supprimé une la voit donc rester supprimée jusqu’au prochain redémarrage."
+    "en": "0dcb321977df8ef6",
+    "text": "Crée des entrées d’application pour les surfaces propres à ce service au démarrage, sous ou=applications avec tout le reste : la CONSOLE D’ADMINISTRATION sur /admin, le PORTAIL UTILISATEUR sur /portal, l’application de RAPPORTS sur /report, l’API DE RAPPORTS sur /report-api, l’API DE GESTION sur /admin-api et — tant qu’il est embarqué — les deux clients du débogueur de protocoles. Elles sont semées comme des enregistrements RFC 7591 COMPLETS plutôt que comme des libellés : la console et le portail comme parties de confiance OpenID Connect confidentielles sur le flux de code d’autorisation, cette API comme client OAuth confidentiel sur client_credentials, chacun avec un secret — ce sont donc des clients que l’on peut exercer plutôt que des lignes sur une page. La console et le portail OUVRENT LA SESSION par leurs entrées (/admin/callback et /portal/callback) : désactiver ceci, ou en supprimer une, laisse cette surface incapable de connecter qui que ce soit tant qu’une entrée n’existe pas de nouveau. Ce conteneur est le registre — un ldapmodify dessus est un changement de configuration. ACTIVÉ par défaut. Semées seulement là où l’identifiant est libre : un opérateur qui en a supprimé une la voit rester supprimée jusqu’au prochain redémarrage."
   },
   "applications.seedInternal|restartReason": {
     "en": "ce6b237794aa9252",
@@ -10126,6 +10126,110 @@
   "mail.notifyAdministrators|description": {
     "en": "bd3ae7ff26663b42",
     "text": "Lorsque le SERVICE, et non une personne, marque un identifiant comme compromis ou désactive un compte (évaluation des risques), envoyer aussi un courriel à chaque membre de la liste Admin Write du domaine qui possède une adresse."
+  },
+  "report.syncMaxRows|label": {
+    "en": "77fdb27c30eb4bf8",
+    "text": "Plafond de lignes d’un rapport synchrone"
+  },
+  "report.syncMaxRows|description": {
+    "en": "563c41bbaffd74bb",
+    "text": "Le plus grand nombre de lignes qu’un rapport synchrone peut renvoyer. Une limite supérieure est refusée en mode sync et devient une tâche en mode auto."
+  },
+  "report.syncMaxBytes|label": {
+    "en": "f975fe6e57bfae86",
+    "text": "Plafond d’octets d’un rapport synchrone"
+  },
+  "report.syncMaxBytes|description": {
+    "en": "e7c9e919bd0ac8ea",
+    "text": "Le plus grand nombre d’octets qu’un rapport synchrone peut renvoyer. Un résultat au-delà est refusé plutôt qu’envoyé en partie."
+  },
+  "report.syncMaxMs|label": {
+    "en": "ac021c892bcfc370",
+    "text": "Plafond de durée d’un rapport synchrone (millisecondes)"
+  },
+  "report.syncMaxMs|description": {
+    "en": "f6ab877e4526a9f9",
+    "text": "Durée pendant laquelle un rapport synchrone peut s’exécuter. Au-delà, l’appel est refusé plutôt que de recevoir une réponse partielle."
+  },
+  "report.asyncMaxMs|label": {
+    "en": "f0c5ac5e9884050c",
+    "text": "Plafond de durée d’une tâche de rapport (millisecondes)"
+  },
+  "report.asyncMaxMs|description": {
+    "en": "45c7c3ad19fc3c4a",
+    "text": "Durée pendant laquelle une tâche de rapport peut s’exécuter. Au-delà, la tâche échoue plutôt que de stocker un résultat partiel."
+  },
+  "report.asyncMaxRows|label": {
+    "en": "8aca969304d23655",
+    "text": "Plafond de lignes d’une tâche de rapport"
+  },
+  "report.asyncMaxRows|description": {
+    "en": "e5dceb18ca4c26a4",
+    "text": "Le plus grand nombre de lignes qu’une tâche de rapport peut écrire. Une requête qui en demande davantage est refusée dans tous les modes."
+  },
+  "report.asyncMaxBytes|label": {
+    "en": "470a53d032622764",
+    "text": "Plafond d’octets d’une tâche de rapport"
+  },
+  "report.asyncMaxBytes|description": {
+    "en": "91aac7df1ff51b42",
+    "text": "Le plus grand nombre d’octets qu’une tâche de rapport peut stocker. Un résultat au-delà fait échouer la tâche plutôt que d’être tronqué."
+  },
+  "report.pdfMaxRows|label": {
+    "en": "5cf679421e7b7bf3",
+    "text": "Plafond de lignes d’un rapport PDF"
+  },
+  "report.pdfMaxRows|description": {
+    "en": "3b855ef0848c4ad4",
+    "text": "Le plus grand nombre de lignes qu’un rapport PDF peut contenir. Une requête plus grande est refusée et il est demandé d’utiliser CSV."
+  },
+  "report.pdfMaxPages|label": {
+    "en": "050231b3a1524a4b",
+    "text": "Plafond de pages d’un rapport PDF"
+  },
+  "report.pdfMaxPages|description": {
+    "en": "3b065500b4a246a3",
+    "text": "Le plus grand nombre de pages qu’un rapport PDF peut contenir. Au-delà, le résultat est refusé et il est demandé d’utiliser CSV."
+  },
+  "report.maxConcurrentPerRealm|label": {
+    "en": "2e8e9a195cac9a4c",
+    "text": "Tâches de rapport en cours par domaine"
+  },
+  "report.maxConcurrentPerRealm|description": {
+    "en": "7a252c3307b54d2a",
+    "text": "Combien de tâches de rapport un domaine peut avoir en cours à la fois. Une soumission supplémentaire est refusée jusqu’à ce que l’une se termine."
+  },
+  "report.maxConcurrentPerSubject|label": {
+    "en": "3533626b8e0a8d15",
+    "text": "Tâches de rapport en cours par personne"
+  },
+  "report.maxConcurrentPerSubject|description": {
+    "en": "525965a5866fed18",
+    "text": "Combien de tâches de rapport une personne peut avoir en cours à la fois."
+  },
+  "report.artifactRetentionS|label": {
+    "en": "ae014cb5ae4ea837",
+    "text": "Durée de conservation d’un résultat de rapport (secondes)"
+  },
+  "report.artifactRetentionS|description": {
+    "en": "c1e0935d871842f4",
+    "text": "Durée pendant laquelle les octets d’un rapport terminé restent disponibles au téléchargement. Passé ce délai, le résultat a disparu."
+  },
+  "report.jobRetentionS|label": {
+    "en": "117aad13b6fa172e",
+    "text": "Durée de conservation d’une ligne de tâche de rapport (secondes)"
+  },
+  "report.jobRetentionS|description": {
+    "en": "dfada581a8c28ca3",
+    "text": "Durée pendant laquelle la ligne d’une tâche de rapport terminée reste dans la liste. Une tâche encore en cours n’est pas supprimée."
+  },
+  "report.usersGroup|label": {
+    "en": "21554dfaa265b36f",
+    "text": "Qui peut se voir délivrer report:use"
+  },
+  "report.usersGroup|description": {
+    "en": "28068508e0655509",
+    "text": "Le groupe d’annuaire dont les membres peuvent se voir délivrer report:use. Vide : seuls les administrateurs de ce domaine le peuvent. report:admin n’est délivré qu’à ces administrateurs."
   },
   "listenerMain.minVersion|label": {
     "en": "6470c151e28a9ab3",

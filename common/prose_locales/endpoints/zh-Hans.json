@@ -427,6 +427,74 @@
     "en": "3b05a0008cdc0eb1",
     "text": "门户的样式表"
   },
+  "endpoints.route./report.name": {
+    "en": "f8876dead2cd7bc2",
+    "text": "报表应用程序"
+  },
+  "endpoints.route./report/*.name": {
+    "en": "9e3bc85701ea48c1",
+    "text": "报表页面"
+  },
+  "endpoints.route./report/report.js.name": {
+    "en": "ce2cc0bd6254aff1",
+    "text": "报表脚本"
+  },
+  "endpoints.route./report/report.css.name": {
+    "en": "b4df466797766b01",
+    "text": "报表样式表"
+  },
+  "endpoints.route./report-api.name": {
+    "en": "41449550893ebaa2",
+    "text": "报表 API"
+  },
+  "endpoints.route./report-api/openapi.json.name": {
+    "en": "cbe083af297afd0a",
+    "text": "报表 OpenAPI 文档"
+  },
+  "endpoints.route./report-api/catalog.name": {
+    "en": "721b162ec29218a7",
+    "text": "报表目录"
+  },
+  "endpoints.route./report-api/catalog/:id.name": {
+    "en": "f4a97ac800f661e8",
+    "text": "单个报表数据源"
+  },
+  "endpoints.route./report-api/queries.name": {
+    "en": "ba718855c8f4548d",
+    "text": "运行报表查询"
+  },
+  "endpoints.route./report-api/definitions.name": {
+    "en": "b85da01b72f0f901",
+    "text": "已保存的报表定义"
+  },
+  "endpoints.route./report-api/definitions/:id.name": {
+    "en": "24d4a9eb8522c787",
+    "text": "单个报表定义"
+  },
+  "endpoints.route./report-api/definitions/:id/share.name": {
+    "en": "381aa8592d526281",
+    "text": "共享报表定义"
+  },
+  "endpoints.route./report-api/definitions/:id/run.name": {
+    "en": "2a41162da14e8aed",
+    "text": "运行已保存的报表"
+  },
+  "endpoints.route./report-api/jobs.name": {
+    "en": "792c052635196abd",
+    "text": "报表作业"
+  },
+  "endpoints.route./report-api/jobs/:id.name": {
+    "en": "4c2954e7f55686cb",
+    "text": "单个报表作业"
+  },
+  "endpoints.route./report-api/jobs/:id/cancel.name": {
+    "en": "8b217a98c1410cd2",
+    "text": "取消报表作业"
+  },
+  "endpoints.route./report-api/jobs/:id/result.name": {
+    "en": "31b5367e2efd2049",
+    "text": "报表结果"
+  },
   "endpoints.route./portal/signals/receive.name": {
     "en": "657c84b412c86001",
     "text": "门户的共享信号接收端点"

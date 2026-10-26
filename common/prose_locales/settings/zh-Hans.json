@@ -4228,8 +4228,8 @@
     "text": "将控制台和此 API 预置为应用"
   },
   "applications.seedInternal|description": {
-    "en": "7092a96534fcb0ca",
-    "text": "在启动时为本服务自己的接口创建应用条目，与其他所有条目一起位于 ou=applications 下：/admin 上的管理控制台、/portal 上的用户门户、/admin-api 上的管理 API，以及——在嵌入时——协议调试器的两个客户端。它们被预置为完整的 RFC 7591 注册信息，而不仅仅是标签：控制台和门户作为使用授权码许可的机密 OpenID Connect 依赖方，此 API 作为使用 client_credentials 的机密 OAuth 客户端，各自都有密钥——因此它们是可以实际使用的客户端，而不是页面上的行。控制台和门户通过其条目登录（/admin/callback 和 /portal/callback），因此关闭此设置或删除其中一个条目，会使该接口在条目再次存在之前无法让任何人登录。此容器就是注册表——对它执行 ldapmodify 即是一次配置更改。默认打开。只在标识符未被占用时预置，因此运维人员删除的条目会保持删除状态，直到下次重启。"
+    "en": "0dcb321977df8ef6",
+    "text": "在启动时为本服务自己的界面创建应用程序条目，与其他条目一起位于 ou=applications 之下：位于 /admin 的管理控制台、位于 /portal 的用户门户、位于 /report 的报表应用程序、位于 /report-api 的报表 API、位于 /admin-api 的管理 API，以及——在内嵌时——协议调试器的两个客户端。它们以完整的 RFC 7591 注册而不是标签的形式写入种子：控制台和门户是使用授权码授权的机密 OpenID Connect 依赖方，此 API 是使用 client_credentials 的机密 OAuth 客户端，每个都带有密钥——因此它们是可以实际操作的客户端，而不是页面上的行。控制台和门户通过各自的条目登录（/admin/callback 和 /portal/callback），因此关闭此项或删除其中一个，会使该界面无法让任何人登录，直到条目重新存在。此容器就是注册表——对它执行 ldapmodify 就是一次配置变更。默认开启。仅当标识符空闲时才写入种子，因此运维人员删除的条目会一直保持删除，直到下次重启。"
   },
   "applications.seedInternal|restartReason": {
     "en": "ce6b237794aa9252",
@@ -10126,6 +10126,110 @@
   "mail.notifyAdministrators|description": {
     "en": "bd3ae7ff26663b42",
     "text": "当由服务而非某个人将凭据标记为已泄露或禁用账户时（风险评分），也向该领域管理员写入名册中每位有地址的成员发送邮件。"
+  },
+  "report.syncMaxRows|label": {
+    "en": "77fdb27c30eb4bf8",
+    "text": "同步报表行数上限"
+  },
+  "report.syncMaxRows|description": {
+    "en": "563c41bbaffd74bb",
+    "text": "同步报表最多可返回的行数。更大的限制在 sync 模式下被拒绝，在 auto 模式下则成为一个作业。"
+  },
+  "report.syncMaxBytes|label": {
+    "en": "f975fe6e57bfae86",
+    "text": "同步报表字节上限"
+  },
+  "report.syncMaxBytes|description": {
+    "en": "e7c9e919bd0ac8ea",
+    "text": "同步报表最多可返回的字节数。超过此值的结果会被拒绝，而不是只发送一部分。"
+  },
+  "report.syncMaxMs|label": {
+    "en": "ac021c892bcfc370",
+    "text": "同步报表时间上限（毫秒）"
+  },
+  "report.syncMaxMs|description": {
+    "en": "f6ab877e4526a9f9",
+    "text": "同步报表可以运行多久。超过此时间，调用会被拒绝，而不是以不完整的正文应答。"
+  },
+  "report.asyncMaxMs|label": {
+    "en": "f0c5ac5e9884050c",
+    "text": "报表作业时间上限（毫秒）"
+  },
+  "report.asyncMaxMs|description": {
+    "en": "45c7c3ad19fc3c4a",
+    "text": "报表作业可以运行多久。超过此时间，作业会失败，而不是存储不完整的结果。"
+  },
+  "report.asyncMaxRows|label": {
+    "en": "8aca969304d23655",
+    "text": "报表作业行数上限"
+  },
+  "report.asyncMaxRows|description": {
+    "en": "e5dceb18ca4c26a4",
+    "text": "报表作业最多可写入的行数。要求更多行的查询在任何模式下都会被拒绝。"
+  },
+  "report.asyncMaxBytes|label": {
+    "en": "470a53d032622764",
+    "text": "报表作业字节上限"
+  },
+  "report.asyncMaxBytes|description": {
+    "en": "91aac7df1ff51b42",
+    "text": "报表作业最多可存储的字节数。超过此值的结果会使作业失败，而不是被截断。"
+  },
+  "report.pdfMaxRows|label": {
+    "en": "5cf679421e7b7bf3",
+    "text": "PDF 报表行数上限"
+  },
+  "report.pdfMaxRows|description": {
+    "en": "3b855ef0848c4ad4",
+    "text": "PDF 报表最多可容纳的行数。更大的查询会被拒绝，并要求改用 CSV。"
+  },
+  "report.pdfMaxPages|label": {
+    "en": "050231b3a1524a4b",
+    "text": "PDF 报表页数上限"
+  },
+  "report.pdfMaxPages|description": {
+    "en": "3b065500b4a246a3",
+    "text": "PDF 报表最多可容纳的页数。超过此值，结果会被拒绝，并要求改用 CSV。"
+  },
+  "report.maxConcurrentPerRealm|label": {
+    "en": "2e8e9a195cac9a4c",
+    "text": "每个领域运行的报表作业数"
+  },
+  "report.maxConcurrentPerRealm|description": {
+    "en": "7a252c3307b54d2a",
+    "text": "一个领域可以同时运行多少个报表作业。在其中一个完成之前，后续提交会被拒绝。"
+  },
+  "report.maxConcurrentPerSubject|label": {
+    "en": "3533626b8e0a8d15",
+    "text": "每人运行的报表作业数"
+  },
+  "report.maxConcurrentPerSubject|description": {
+    "en": "525965a5866fed18",
+    "text": "一个人可以同时运行多少个报表作业。"
+  },
+  "report.artifactRetentionS|label": {
+    "en": "ae014cb5ae4ea837",
+    "text": "报表结果保留多久（秒）"
+  },
+  "report.artifactRetentionS|description": {
+    "en": "c1e0935d871842f4",
+    "text": "已完成报表的字节可供下载多久。超过此时间，结果即消失。"
+  },
+  "report.jobRetentionS|label": {
+    "en": "117aad13b6fa172e",
+    "text": "报表作业行保留多久（秒）"
+  },
+  "report.jobRetentionS|description": {
+    "en": "dfada581a8c28ca3",
+    "text": "已完成报表作业的行在列表中保留多久。仍在运行的作业不会被移除。"
+  },
+  "report.usersGroup|label": {
+    "en": "21554dfaa265b36f",
+    "text": "谁可以被签发 report:use"
+  },
+  "report.usersGroup|description": {
+    "en": "28068508e0655509",
+    "text": "其成员可以被签发 report:use 的目录组。为空表示只有本领域的管理员可以。report:admin 只签发给这些管理员。"
   },
   "listenerMain.minVersion|label": {
     "en": "6470c151e28a9ab3",

@@ -319,6 +319,54 @@
     "en": "4f2c054a1405a843",
     "text": "Loggar, i den här processen, en rad med dess roll och dess minne: residenta storlek, använd och total heap, heapgränsen, externt minne och array buffers (#341)."
   },
+  "sched.jobs.report.drain.title": {
+    "en": "792c052635196abd",
+    "text": "Rapportjobb"
+  },
+  "sched.jobs.report.drain.describe": {
+    "en": "44526b11fff0c35e",
+    "text": "Tar köade rapportjobb för den här sfären, upp till samtidighetsgränserna, och skriver varje artefakt."
+  },
+  "sched.jobs.report.drain.here.title": {
+    "en": "e650bff45b03631e",
+    "text": "Rapportjobb på den här noden"
+  },
+  "sched.jobs.report.drain.here.describe": {
+    "en": "4ac0b964339af918",
+    "text": "Rapportnodens kopia av report.drain. Den gör ingenting om inte den här processen håller ops.reporting."
+  },
+  "sched.jobs.report.retention.title": {
+    "en": "5d356aad0991d4bf",
+    "text": "Lagringstid för rapporter"
+  },
+  "sched.jobs.report.retention.describe": {
+    "en": "820f16dd4154d80e",
+    "text": "Tar bort rapportartefakter som passerat sin lagringstid, släpper färdiga jobbrader som passerat sin, och låter ett körande jobb vars spärr är borta misslyckas."
+  },
+  "sched.jobs.report.retention.here.title": {
+    "en": "65aecca5c6b3edef",
+    "text": "Lagringstid för rapporter på den här noden"
+  },
+  "sched.jobs.report.retention.here.describe": {
+    "en": "aacfb1a2f3212be6",
+    "text": "Rapportnodens kopia av report.retention. Den gör ingenting om inte den här processen håller ops.reporting."
+  },
+  "sched.jobs.report.schedule.title": {
+    "en": "63e5ea89789332f4",
+    "text": "Rapportscheman"
+  },
+  "sched.jobs.report.schedule.describe": {
+    "en": "e1706c674f78a995",
+    "text": "Köar ett jobb för varje förfallen rapportdefinition, som dess ägare, så länge ägaren fortfarande kan köra frågan. Lagrade standardparametrar används. En som saknas behåller platsen."
+  },
+  "sched.jobs.report.schedule.here.title": {
+    "en": "a1a815b7c87fc8b6",
+    "text": "Rapportscheman på den här noden"
+  },
+  "sched.jobs.report.schedule.here.describe": {
+    "en": "eea786a826ff1054",
+    "text": "Rapportnodens kopia av report.schedule. Den gör ingenting om inte den här processen håller ops.reporting."
+  },
   "sched.jobs.risc.opt-out-effective.title": {
     "en": "04bdbc25402e8321",
     "text": "RISC-avregistreringar som träder i kraft"

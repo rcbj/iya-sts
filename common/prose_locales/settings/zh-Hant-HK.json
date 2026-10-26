@@ -1368,8 +1368,8 @@
     "text": "/portal/applications 在停止前針對多少個登錄項目詢問簽發原則。每個項目在回應此處每個通訊端的同一線程上，每種簽發類型都要花費一次原則評估，因此這限制了一個人開啟該頁面能佔用服務多久。頁面會說明有多少項目未被檢查。"
   },
   "applications.seedInternal|description": {
-    "en": "7092a96534fcb0ca",
-    "text": "在啟動時為此服務自己的介面建立應用程式項目，與其他項目一起位於 ou=applications 下：/admin 的「管理主控台」、/portal 的「用戶入口網站」、/admin-api 的「管理 API」，以及——在嵌入時——協定除錯工具的兩個客戶端。它們以「完整」的 RFC 7591 註冊預先建立，而不只是標籤：主控台與入口網站是使用授權碼授與的機密 OpenID Connect 依賴方，此 API 是使用 client_credentials 的機密 OAuth 客戶端，各自擁有密碼——因此它們是可以實際演練的客戶端，而不只是頁面上的列。主控台與入口網站「透過」其項目登入（/admin/callback 與 /portal/callback），因此關閉此設定或刪除其中一個，會讓該介面在項目再次存在之前無法讓任何人登入。此容器就是登錄——對它的 ldapmodify 就是一次組態變更。預設為開啟。只在識別碼未被使用時才預先建立，因此營運者刪除的項目在下次重新啟動前會保持刪除狀態。"
+    "en": "0dcb321977df8ef6",
+    "text": "在啟動時為此服務自己的介面建立應用程式項目，與其他項目一起位於 ou=applications 下：/admin 的「管理主控台」、/portal 的「用戶入口網站」、/report 的「報告應用程式」、/report-api 的「報告 API」、/admin-api 的「管理 API」，以及——在嵌入時——協定除錯工具的兩個客戶端。它們以「完整」的 RFC 7591 註冊預先建立，而不只是標籤：主控台與入口網站是使用授權碼授與的機密 OpenID Connect 依賴方，此 API 是使用 client_credentials 的機密 OAuth 客戶端，各自擁有密碼——因此它們是可以實際演練的客戶端，而不只是頁面上的列。主控台與入口網站「透過」其項目登入（/admin/callback 與 /portal/callback），因此關閉此設定或刪除其中一個，會讓該介面在項目再次存在之前無法讓任何人登入。此容器就是登錄——對它的 ldapmodify 就是一次組態變更。預設為開啟。只在識別碼未被使用時才預先建立，因此營運者刪除的項目在下次重新啟動前會保持刪除狀態。"
   },
   "federation.usernamePrefix|label": {
     "en": "37eb507f70b1793a",

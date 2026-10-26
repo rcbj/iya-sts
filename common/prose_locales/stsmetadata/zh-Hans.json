@@ -1175,6 +1175,74 @@
     "en": "69cf245f63b035d1",
     "text": "非规范。门户唯一的样式表（#568）。"
   },
+  "stsmetadata.endpoints./report.what": {
+    "en": "a9d6c3cc058a3617",
+    "text": "NON-SPEC。静态的报表应用程序（#956）。每个路径都返回同一个文档，该文档加载 /report/report.js，并以公共客户端 sts-report 登录。"
+  },
+  "stsmetadata.endpoints./report/*.what": {
+    "en": "0d4a7436bac8a815",
+    "text": "NON-SPEC。与 /report 相同的文档。脚本根据路径选择页面。"
+  },
+  "stsmetadata.endpoints./report/report.js.what": {
+    "en": "06abcdf5598f2576",
+    "text": "NON-SPEC。报表运行时，由 build-typescript.sh 构建并以预压缩形式提供。与文档一样是公开的。"
+  },
+  "stsmetadata.endpoints./report/report.css.what": {
+    "en": "aa0e94707e105592",
+    "text": "NON-SPEC。报表应用程序的唯一样式表（#956）。"
+  },
+  "stsmetadata.endpoints./report-api.what": {
+    "en": "7b8038436244d3de",
+    "text": "NON-SPEC。/report-api 的索引。它接受本领域为 sts-report 签发的、绑定 DPoP 的令牌，作用域为 report:use 或 report:admin。"
+  },
+  "stsmetadata.endpoints./report-api/openapi.json.what": {
+    "en": "0a932f3efc26b3fb",
+    "text": "NON-SPEC。API 自身的描述。与 /report-api 的其余部分使用同样的令牌，并以 no-store 提供。"
+  },
+  "stsmetadata.endpoints./report-api/catalog.what": {
+    "en": "07eb9bbaa64c98e2",
+    "text": "NON-SPEC。查询可以指明的数据源，以及每个字段的类型和运算符。不包含凭据属性。"
+  },
+  "stsmetadata.endpoints./report-api/catalog/:id.what": {
+    "en": "4d6e53c9ce4823ca",
+    "text": "NON-SPEC。目录中的单个数据源，按其 id 指定。"
+  },
+  "stsmetadata.endpoints./report-api/queries.what": {
+    "en": "0d15a58a10e2b1ba",
+    "text": "NON-SPEC。目录查询。小而有界的查询在调用中直接应答；较大的查询会排队并以 202 应答。"
+  },
+  "stsmetadata.endpoints./report-api/definitions.what": {
+    "en": "df098902244cfa53",
+    "text": "NON-SPEC。此令牌可以看到的定义：其所有者的定义、与它所在组共享的定义，以及当令牌携带 report:admin 时的所有定义。"
+  },
+  "stsmetadata.endpoints./report-api/definitions/:id.what": {
+    "en": "74d936b2bb9fff66",
+    "text": "NON-SPEC。单个定义。未知的 id 与此令牌无权查看的 id 得到相同的应答。"
+  },
+  "stsmetadata.endpoints./report-api/definitions/:id/share.what": {
+    "en": "12d23dbb24cec023",
+    "text": "NON-SPEC。指明可以运行该定义并读取其结果的目录组。所有者或 report:admin 可以更改该列表。"
+  },
+  "stsmetadata.endpoints./report-api/definitions/:id/run.what": {
+    "en": "991b657f7fe20e17",
+    "text": "NON-SPEC。以调用方的身份将该定义的查询排入队列。共享授予运行和查看结果的权限，不授予编辑权限。"
+  },
+  "stsmetadata.endpoints./report-api/jobs.what": {
+    "en": "f4e437b96fe383f5",
+    "text": "NON-SPEC。此令牌可以看到的作业，以及根据查询文档将作业排队的入口。"
+  },
+  "stsmetadata.endpoints./report-api/jobs/:id.what": {
+    "en": "d69a7d667bd631bf",
+    "text": "NON-SPEC。单个作业。未知的 id 与此令牌无权查看的 id 得到相同的应答。"
+  },
+  "stsmetadata.endpoints./report-api/jobs/:id/cancel.what": {
+    "en": "cbc407e431852e06",
+    "text": "NON-SPEC。请求排队或运行中的作业停止。已完成作业的字节留待保留期处理。"
+  },
+  "stsmetadata.endpoints./report-api/jobs/:id/result.what": {
+    "en": "3b97b9774547de8c",
+    "text": "NON-SPEC。已完成作业的存储字节，在 report.artifactRetentionS 未到期时可用。此后结果即消失。"
+  },
   "stsmetadata.endpoints./portal/signals/receive.what": {
     "en": "b5f30a87646c3fed",
     "text": "RFC 8935 第 2.1 节推送投递，两端都是本服务（2026-09-10）——适用于自 #771 起被改回推送的流：#771 使门户预置的流成为 RFC 8936 轮询流，由门户从 /ssf/poll 收取；在它是轮询流期间，推送到这里会被拒绝。改回推送后，该流将此路径指定为其 `delivery.endpoint_url`，位于本服务自己的环回地址上，`ssf/ssf_http.ts` 将每个 SET 以 application/secevent+jwt 形式并携带流的 `authorization_header` POST 到这里。它刻意是一个真实的 HTTP 请求：在进程内把事件交给页面会跳过主体、媒体类型、授权头部和签名，而这些就是接收方所做的一切——这与 `common/oidc_rp.ts` 关于在进程内兑换授权码所作的论证相同，只是针对另一种协议再次提出。它不通过会话进行身份验证，但并非没有防护：它检查的是其自身流上的持有者令牌，该令牌按流、按启动生成，只交给本服务自己的发送方，并以恒定时间比较；然后检查 `aud`，对发给其他任何人的 SET 以 `invalid_audience` 拒绝；然后检查签名。格式错误或地址错误的令牌会被记录并拒绝，而不是被丢弃，因为收到了什么正是要问的问题。刻意不进行速率限制，而该文件中的每个凭据端点都有速率限制：限速器会在负载下悄悄丢弃某人的账户已禁用通知。"
@@ -3398,6 +3466,10 @@
   "stsmetadata.protocols.User portal.what": {
     "en": "835d40e9ff6eaabb",
     "text": "“它不是协议”，之所以有一张卡片，是因为此页面会报告没有任何卡片认领的端点组——这条规则让新的协议族无法悄无声息地出现，在这里付出这个代价，比让规则附带条件更值得。“这是本服务中第一个属于正在查看它的那个人的界面”：此处其他所有浏览器页面都是为别人准备的——登录界面是另一个协议流程中的一步，同意界面问一个问题就离开，/admin 是给运营人员用的，并受两个角色的关卡保护。这里是一个人查看本身份提供方了解其哪些信息、并更改其认证方式的地方：其密码、其安全密钥，以及每个安全密钥是主凭据还是第二因素。它是“独立于管理控制台的应用”，除本服务授权服务器上的单点登录会话外与之不共享任何东西：两者都是公共 OAuth 客户端（此处为 sts-user-portal），各自在内存中持有自己绑定 DPoP 的令牌。/portal/activate 是其无需认证的那一半，通过 /admin-api 或 SCIM 预配的人在那里使用一次性、有时限的激活链接来设置凭据——静态存储时像密码一样哈希、有速率限制、在设置完成时而非打开链接时用掉，并且绝不会让任何人登录。“自 #568 起，它是基于 /account-api 的静态应用”（即下面的 Account API 组）：每个页面和每个表单对应一个操作，此人始终是令牌的主体，由其自己的 OpenAPI 文档描述。"
+  },
+  "stsmetadata.protocols.Reporting.what": {
+    "en": "66663fd63a35a287",
+    "text": "不是协议。报表应用程序（#956）：位于 /report 的静态页面，建立在 /report-api 之上，使用公共客户端 sts-report，以及本领域自身记录的目录。它在浏览器中登录，持有绑定 DPoP 的令牌，并且从不接受 SQL 字符串。已保存的定义属于其所有者；与目录组共享授予运行和读取权限，不授予编辑权限。"
   },
   "stsmetadata.protocols.GNAP.what": {
     "en": "b938c4cb8feac54d",

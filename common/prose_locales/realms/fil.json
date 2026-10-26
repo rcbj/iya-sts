@@ -87,6 +87,14 @@
     "en": "f4b474a8d20ad298",
     "text": "Ang sariling account ng tao sa realm na kinaroroonan niya: nagsa-sign in ang portal sa pamamagitan ng sariling authorization server ng realm bilang client na naka-seed sa bawat realm, at binabasa at sinusulatan ng bawat pahina ang entry ng tao sa directory ng realm na iyon, na sumusunod sa password policy ng realm na iyon."
   },
+  "realms.support.reporting.family": {
+    "en": "b1fa104b9bf0635e",
+    "text": "Reporting"
+  },
+  "realms.support.reporting.note": {
+    "en": "ca64742fe52ce6b3",
+    "text": "Ang application at ang API nito ay inaabot sa ilalim ng path ng realm. Ang mga definition at job ay nananatili sa mga map ng realm na iyon, at ang share ay isang group sa directory ng realm na iyon."
+  },
   "realms.support.global-logout.family": {
     "en": "1b4192fb739d93e9",
     "text": "Global logout"

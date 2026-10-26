@@ -147,6 +147,14 @@
     "en": "ae78f5077c808641",
     "text": "De sidor som tillhör den person som tittar på dem, och det konto-API som de ritas från."
   },
+  "listeners.applications.report.label": {
+    "en": "dacca3cba3f346a4",
+    "text": "Rapporter"
+  },
+  "listeners.applications.report.what": {
+    "en": "de1ee727530aad18",
+    "text": "De rapporter en person här får köra, och API:t de ritas från."
+  },
   "listeners.applications.admin-console.label": {
     "en": "ddf870cabeb295ab",
     "text": "Administratörskonsol"

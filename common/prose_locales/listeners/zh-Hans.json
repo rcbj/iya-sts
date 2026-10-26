@@ -147,6 +147,14 @@
     "en": "ae78f5077c808641",
     "text": "属于正在查看它们的那个人的页面，以及这些页面所依据的账户 API。"
   },
+  "listeners.applications.report.label": {
+    "en": "dacca3cba3f346a4",
+    "text": "报表"
+  },
+  "listeners.applications.report.what": {
+    "en": "de1ee727530aad18",
+    "text": "此处的人员可以运行的报表，以及绘制这些报表所用的 API。"
+  },
   "listeners.applications.admin-console.label": {
     "en": "ddf870cabeb295ab",
     "text": "管理控制台"

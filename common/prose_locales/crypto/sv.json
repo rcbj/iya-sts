@@ -623,6 +623,62 @@
     "en": "363f58a2eab8e37c",
     "text": "S256"
   },
+  "crypto.families.reporting.signs": {
+    "en": "8728ccd393fd7e6c",
+    "text": "Inget som en rapport utfärdar. Körmiljön signerar, i webbläsaren, en enda sak: ett DPoP-bevis enligt RFC 9449 (ES256) vid varje anrop till `/report-api` och vid tokenslutpunkten, med en P-256-nyckel som WebCrypto genererat som icke-exporterbar för just den sidinläsningen."
+  },
+  "crypto.families.reporting.verifies": {
+    "en": "294c4447e5523292",
+    "text": "VARJE ANROP TILL `/report-api`, vid dess grind (report/report_api.ts): åtkomsttoken är en RFC 9068 `at+jwt` som verifieras under DENNA sfärs signeringsnyckel (vilken generation som helst), dess utfärdare och målgrupp kontrolleras, och dess DPoP-bindning matchas mot ett bevis som grinden verifierar — den godtas aldrig som Bearer. Körmiljön verifierar ett JARM-auktoriseringssvar mot sfärens JWKS där sfären skickar ett."
+  },
+  "crypto.families.reporting.encrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "Ingenting."
+  },
+  "crypto.families.reporting.decrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "Ingenting."
+  },
+  "crypto.families.reporting.hashes": {
+    "en": "2ddfe2e29749ce1c",
+    "text": "SHA-256 av en färdig rapports bytes, lagrad bredvid dem (`sts_report_artifacts.sha256`) och kontrollerad när resultatet läses tillbaka. SHA-256 i webbläsaren för PKCE S256-utmaningen och DPoP-beviset `ath`."
+  },
+  "crypto.families.reporting.keys": {
+    "en": "feaa838ac5fb9b97",
+    "text": "Inga på servern. DPoP-nyckelparet lever i webbläsaren: P-256, genererat av WebCrypto med den privata halvan icke-exporterbar, hållet i minnet och borta när sidan försvinner. Själva tokens signeras av sfärens auktoriseringsserver (raden OAuth2 / OIDC)."
+  },
+  "crypto.families.reporting.algorithms.0.what": {
+    "en": "63f37962dc3dfb33",
+    "text": "Åtkomsttoken vid /report-api"
+  },
+  "crypto.families.reporting.algorithms.0.how": {
+    "en": "87be1920112e9844",
+    "text": "RFC 9068 at+jwt, verifierad under denna sfärs signeringsnyckel, DPoP-bunden"
+  },
+  "crypto.families.reporting.algorithms.1.what": {
+    "en": "e097c8970e32cda3",
+    "text": "DPoP-bevis (webbläsare)"
+  },
+  "crypto.families.reporting.algorithms.1.how": {
+    "en": "9bebf9949394145f",
+    "text": "ES256 med en icke-exporterbar WebCrypto P-256-nyckel per sidinläsning"
+  },
+  "crypto.families.reporting.algorithms.2.what": {
+    "en": "7e09ecc318c42463",
+    "text": "PKCE"
+  },
+  "crypto.families.reporting.algorithms.2.how": {
+    "en": "363f58a2eab8e37c",
+    "text": "S256"
+  },
+  "crypto.families.reporting.algorithms.3.what": {
+    "en": "80ea1ab36a2e5c55",
+    "text": "Lagrade rapportbytes"
+  },
+  "crypto.families.reporting.algorithms.3.how": {
+    "en": "9d40176053fec31b",
+    "text": "SHA-256, förvarad med artefakten och kontrollerad vid läsning"
+  },
   "crypto.families.gnap.signs": {
     "en": "ad4b982edb070f2c",
     "text": "DE FEM FORMATEN FÖR ÅTKOMSTTOKEN, varav tre inte är JWT:er. jwt-signed går genom samma signerare som varje annan JWT här, med huvudet `typ` gnap-at+jwt (#157); en biscuit signeras med sfärens Ed25519-nyckel (Biscuits egen blocksignatur); en ZCAP-LD-capability bär ett Data Integrity-bevis i den svit som gnap.zcapCryptosuite namnger — eddsa-jcs-2022 som standard, mldsa44-jcs-2024 eller slhdsa128-jcs-2024 med sfärens postkvantnyckel, eller Ed25519Signature2020 för kompatibilitet; en macaroon är en HMAC-SHA256-kedja under en nyckel som härleds per resursserver. Den signerar också ett HTTP-svar med RFC 9421 när en klientinstans ber om det."

@@ -1175,6 +1175,74 @@
     "en": "69cf245f63b035d1",
     "text": "NO ESTÁNDAR. La única hoja de estilos del portal (#568)."
   },
+  "stsmetadata.endpoints./report.what": {
+    "en": "a9d6c3cc058a3617",
+    "text": "NO ES UN ENDPOINT DE LA ESPECIFICACIÓN. La aplicación estática de informes (#956). Cada ruta responde un solo documento, que carga /report/report.js e inicia sesión como el cliente público sts-report."
+  },
+  "stsmetadata.endpoints./report/*.what": {
+    "en": "0d4a7436bac8a815",
+    "text": "NO ES UN ENDPOINT DE LA ESPECIFICACIÓN. El mismo documento que /report. El script elige la página según la ruta."
+  },
+  "stsmetadata.endpoints./report/report.js.what": {
+    "en": "06abcdf5598f2576",
+    "text": "NO ES UN ENDPOINT DE LA ESPECIFICACIÓN. El runtime de informes, construido por build-typescript.sh y servido precomprimido. Público, como el documento."
+  },
+  "stsmetadata.endpoints./report/report.css.what": {
+    "en": "aa0e94707e105592",
+    "text": "NO ES UN ENDPOINT DE LA ESPECIFICACIÓN. La única hoja de estilos de la aplicación de informes (#956)."
+  },
+  "stsmetadata.endpoints./report-api.what": {
+    "en": "7b8038436244d3de",
+    "text": "NO ES UN ENDPOINT DE LA ESPECIFICACIÓN. El índice de /report-api. Acepta el token de este dominio vinculado a DPoP para sts-report, con scope report:use o report:admin."
+  },
+  "stsmetadata.endpoints./report-api/openapi.json.what": {
+    "en": "0a932f3efc26b3fb",
+    "text": "NO ES UN ENDPOINT DE LA ESPECIFICACIÓN. La descripción propia de la API. Detrás del mismo token que el resto de /report-api, y servida con no-store."
+  },
+  "stsmetadata.endpoints./report-api/catalog.what": {
+    "en": "07eb9bbaa64c98e2",
+    "text": "NO ES UN ENDPOINT DE LA ESPECIFICACIÓN. Las fuentes que puede nombrar una consulta, y el tipo y los operadores de cada campo. Los atributos de credenciales están ausentes."
+  },
+  "stsmetadata.endpoints./report-api/catalog/:id.what": {
+    "en": "4d6e53c9ce4823ca",
+    "text": "NO ES UN ENDPOINT DE LA ESPECIFICACIÓN. Una fuente del catálogo, por su id."
+  },
+  "stsmetadata.endpoints./report-api/queries.what": {
+    "en": "0d15a58a10e2b1ba",
+    "text": "NO ES UN ENDPOINT DE LA ESPECIFICACIÓN. Una consulta de catálogo. Una pequeña y acotada se responde en la propia llamada; una mayor se pone en cola y se responde 202."
+  },
+  "stsmetadata.endpoints./report-api/definitions.what": {
+    "en": "df098902244cfa53",
+    "text": "NO ES UN ENDPOINT DE LA ESPECIFICACIÓN. Las definiciones que este token puede ver: las de su propietario, las compartidas con un grupo al que pertenece, y todas cuando el token lleva report:admin."
+  },
+  "stsmetadata.endpoints./report-api/definitions/:id.what": {
+    "en": "74d936b2bb9fff66",
+    "text": "NO ES UN ENDPOINT DE LA ESPECIFICACIÓN. Una definición. Un id desconocido y uno que este token no puede ver reciben la misma respuesta."
+  },
+  "stsmetadata.endpoints./report-api/definitions/:id/share.what": {
+    "en": "12d23dbb24cec023",
+    "text": "NO ES UN ENDPOINT DE LA ESPECIFICACIÓN. Nombra los grupos del directorio que pueden ejecutar la definición y leer sus resultados. El propietario, o report:admin, es quien puede cambiar esa lista."
+  },
+  "stsmetadata.endpoints./report-api/definitions/:id/run.what": {
+    "en": "991b657f7fe20e17",
+    "text": "NO ES UN ENDPOINT DE LA ESPECIFICACIÓN. Pone en cola la consulta de la definición como el llamante. Compartir concede esto y el resultado, no la edición."
+  },
+  "stsmetadata.endpoints./report-api/jobs.what": {
+    "en": "f4e437b96fe383f5",
+    "text": "NO ES UN ENDPOINT DE LA ESPECIFICACIÓN. Los trabajos que este token puede ver, y la puerta que pone en cola uno a partir de un documento de consulta."
+  },
+  "stsmetadata.endpoints./report-api/jobs/:id.what": {
+    "en": "d69a7d667bd631bf",
+    "text": "NO ES UN ENDPOINT DE LA ESPECIFICACIÓN. Un trabajo. Un id desconocido y uno que este token no puede ver reciben la misma respuesta."
+  },
+  "stsmetadata.endpoints./report-api/jobs/:id/cancel.what": {
+    "en": "cbc407e431852e06",
+    "text": "NO ES UN ENDPOINT DE LA ESPECIFICACIÓN. Pide a un trabajo en cola o en ejecución que se detenga. Los bytes de uno que ya terminó se dejan para la retención."
+  },
+  "stsmetadata.endpoints./report-api/jobs/:id/result.what": {
+    "en": "3b97b9774547de8c",
+    "text": "NO ES UN ENDPOINT DE LA ESPECIFICACIÓN. Los bytes almacenados de un trabajo terminado, mientras no haya pasado report.artifactRetentionS. Después el resultado desaparece."
+  },
   "stsmetadata.endpoints./portal/signals/receive.what": {
     "en": "b5f30a87646c3fed",
     "text": "ENTREGA PUSH DE LA SECCIÓN 2.1 DE RFC 8935, CON ESTE SERVICIO EN AMBOS EXTREMOS (2026-09-10), PARA UN FLUJO DEVUELTO A PUSH desde #771, que convirtió el flujo sembrado del portal en un flujo de sondeo de RFC 8936 que recoge de /ssf/poll; mientras lo sea, un push aquí se rechaza. Devuelto a push, el flujo nombra esta ruta como su `delivery.endpoint_url`, en la propia dirección de loopback de este servicio, y `ssf/ssf_http.ts` envía cada SET aquí por POST como application/secevent+jwt con el `authorization_header` del flujo. ES UNA SOLICITUD HTTP REAL A PROPÓSITO: entregar el evento a la página dentro del proceso omitiría el cuerpo, el tipo de medio, el encabezado de autorización y la firma, que es todo lo que hace un receptor; el argumento que `common/oidc_rp.ts` plantea sobre canjear un código de autorización dentro del proceso, planteado de nuevo para otro protocolo. SIN AUTENTICACIÓN POR SESIÓN, PERO NO DESPROTEGIDO: lo que comprueba es el token bearer de su propio flujo, generado por flujo y por arranque y entregado solo al propio transmisor de este servicio, comparado en tiempo constante; luego el `aud`, rechazando con `invalid_audience` un SET dirigido a cualquier otro; luego la firma. Un token mal formado o mal dirigido se REGISTRA Y SE RECHAZA en lugar de descartarse, porque lo que llegó es precisamente la pregunta que se plantea. Deliberadamente SIN límite de frecuencia, a diferencia de todo endpoint de credenciales de ese archivo: un limitador descartaría silenciosamente bajo carga el aviso de cuenta deshabilitada de alguien."
@@ -3398,6 +3466,10 @@
   "stsmetadata.protocols.User portal.what": {
     "en": "835d40e9ff6eaabb",
     "text": "NO ES UN PROTOCOLO, y tiene una tarjeta porque esta página informa de cualquier grupo de endpoints que ninguna tarjeta reclame, que es la regla que impide que una familia nueva llegue sin anunciarse, y merece la pena pagarla aquí en lugar de hacer la regla condicional. LA PRIMERA SUPERFICIE DE ESTE SERVICIO QUE PERTENECE A LA PERSONA QUE LA MIRA: todas las demás páginas de navegador de aquí son para otra persona: la pantalla de inicio de sesión es un paso en el flujo de otro protocolo, la pantalla de consentimiento hace una pregunta y se va, /admin es para un operador y está protegida por dos roles. Aquí es donde una persona ve lo que este proveedor de identidad sabe de ella y cambia cómo se autentica: su contraseña, sus llaves de seguridad y si cada una es una credencial principal o un segundo factor. Es una APLICACIÓN SEPARADA de la consola de administración y no comparte con ella nada más que la sesión de inicio de sesión en el servidor de autorización de este servicio: cada una es un cliente OAuth público (aquí sts-user-portal) que guarda en memoria su propio token vinculado a DPoP. /portal/activate es su mitad sin autenticación, donde alguien aprovisionado mediante /admin-api o SCIM gasta un enlace de activación de un solo uso y tiempo limitado para configurar una credencial: guardado con hash como una contraseña, con límite de frecuencia, gastado cuando termina la configuración y no cuando se abre el enlace, y sin iniciar nunca la sesión de nadie. DESDE #568 ES UNA APLICACIÓN ESTÁTICA sobre /account-api, el grupo Account API de más abajo: una operación por página y por formulario, siendo la persona siempre el sujeto del token, descrita por su propio documento OpenAPI."
+  },
+  "stsmetadata.protocols.Reporting.what": {
+    "en": "66663fd63a35a287",
+    "text": "NO ES UN PROTOCOLO. La aplicación de informes (#956): una página estática en /report sobre /report-api, el cliente público sts-report y un catálogo de los registros propios de este dominio. Inicia sesión en el navegador, conserva un token vinculado a DPoP y nunca acepta una cadena SQL. Una definición guardada pertenece a su propietario; compartirla con un grupo del directorio concede ejecutar y leer, no editar."
   },
   "stsmetadata.protocols.GNAP.what": {
     "en": "b938c4cb8feac54d",

@@ -4228,8 +4228,8 @@
     "text": "Sembrar la consola y esta API como aplicaciones"
   },
   "applications.seedInternal|description": {
-    "en": "7092a96534fcb0ca",
-    "text": "Crea entradas de aplicación para las superficies propias de este servicio al arrancar, bajo ou=applications junto con todo lo demás: la CONSOLA DE ADMINISTRACIÓN en /admin, el PORTAL DE USUARIO en /portal, la API DE GESTIÓN en /admin-api y — mientras esté integrado — los dos clientes del depurador de protocolos. Se siembran como registros COMPLETOS de RFC 7591 y no como etiquetas: la consola y el portal como partes que confían OpenID Connect confidenciales con el grant de código de autorización, esta API como cliente OAuth confidencial con client_credentials, cada uno con un secreto — así que son clientes que pueden ejercitarse y no filas en una página. La consola y el portal INICIAN SESIÓN A TRAVÉS de sus entradas (/admin/callback y /portal/callback), así que desactivar esto, o eliminar una, deja esa superficie sin poder iniciar la sesión de nadie hasta que vuelva a existir una entrada. Este contenedor es el registro — un ldapmodify sobre él es un cambio de configuración. ACTIVADO de forma predeterminada. Solo se siembran donde el identificador está libre, así que si un operador eliminó una, permanece eliminada hasta el siguiente reinicio."
+    "en": "0dcb321977df8ef6",
+    "text": "Crear entradas de aplicación para las superficies propias de este servicio al arrancar, bajo ou=applications junto con todo lo demás: la CONSOLA DE ADMINISTRACIÓN en /admin, el PORTAL DE USUARIO en /portal, la aplicación de INFORMES en /report, la API DE INFORMES en /report-api, la API DE GESTIÓN en /admin-api y — mientras esté integrado — los dos clientes del depurador de protocolos. Se siembran como registros COMPLETOS de RFC 7591 y no como simples etiquetas: la consola y el portal como partes que confían de OpenID Connect confidenciales con el grant de código de autorización, esta API como cliente OAuth confidencial con client_credentials, cada uno con un secreto — de modo que son clientes con los que se puede trabajar y no filas en una página. La consola y el portal INICIAN SESIÓN A TRAVÉS de sus entradas (/admin/callback y /portal/callback), así que desactivar esto, o eliminar una, deja a esa superficie sin poder iniciar sesión a nadie hasta que vuelva a existir una entrada. Este contenedor es el registro — un ldapmodify sobre él es un cambio de configuración. ACTIVADO de forma predeterminada. Se siembra solo donde el identificador está libre, de modo que si un operador eliminó una, sigue eliminada hasta el siguiente reinicio."
   },
   "applications.seedInternal|restartReason": {
     "en": "ce6b237794aa9252",
@@ -10126,6 +10126,110 @@
   "mail.notifyAdministrators|description": {
     "en": "bd3ae7ff26663b42",
     "text": "Cuando el SERVICIO, y no una persona, marca una credencial como comprometida o desactiva una cuenta (puntuación de riesgo), envía también un correo a cada miembro de la lista Admin Write del dominio que tenga una dirección."
+  },
+  "report.syncMaxRows|label": {
+    "en": "77fdb27c30eb4bf8",
+    "text": "Límite de filas de un informe síncrono"
+  },
+  "report.syncMaxRows|description": {
+    "en": "563c41bbaffd74bb",
+    "text": "El máximo de filas que puede devolver un informe síncrono. Un límite mayor se rechaza en modo sync y se convierte en un trabajo en auto."
+  },
+  "report.syncMaxBytes|label": {
+    "en": "f975fe6e57bfae86",
+    "text": "Límite de bytes de un informe síncrono"
+  },
+  "report.syncMaxBytes|description": {
+    "en": "e7c9e919bd0ac8ea",
+    "text": "El máximo de bytes que puede devolver un informe síncrono. Un resultado que lo supere se rechaza en lugar de enviarse en parte."
+  },
+  "report.syncMaxMs|label": {
+    "en": "ac021c892bcfc370",
+    "text": "Límite de tiempo de un informe síncrono (milisegundos)"
+  },
+  "report.syncMaxMs|description": {
+    "en": "f6ab877e4526a9f9",
+    "text": "Cuánto tiempo puede ejecutarse un informe síncrono. Pasado este tiempo la llamada se rechaza en lugar de responderse con un cuerpo parcial."
+  },
+  "report.asyncMaxMs|label": {
+    "en": "f0c5ac5e9884050c",
+    "text": "Límite de tiempo de un trabajo de informe (milisegundos)"
+  },
+  "report.asyncMaxMs|description": {
+    "en": "45c7c3ad19fc3c4a",
+    "text": "Cuánto tiempo puede ejecutarse un trabajo de informe. Pasado este tiempo el trabajo falla en lugar de almacenar un resultado parcial."
+  },
+  "report.asyncMaxRows|label": {
+    "en": "8aca969304d23655",
+    "text": "Límite de filas de un trabajo de informe"
+  },
+  "report.asyncMaxRows|description": {
+    "en": "e5dceb18ca4c26a4",
+    "text": "El máximo de filas que puede escribir un trabajo de informe. Una consulta que pida más se rechaza en todos los modos."
+  },
+  "report.asyncMaxBytes|label": {
+    "en": "470a53d032622764",
+    "text": "Límite de bytes de un trabajo de informe"
+  },
+  "report.asyncMaxBytes|description": {
+    "en": "91aac7df1ff51b42",
+    "text": "El máximo de bytes que puede almacenar un trabajo de informe. Un resultado que lo supere hace fallar el trabajo en lugar de truncarse."
+  },
+  "report.pdfMaxRows|label": {
+    "en": "5cf679421e7b7bf3",
+    "text": "Límite de filas de un informe PDF"
+  },
+  "report.pdfMaxRows|description": {
+    "en": "3b855ef0848c4ad4",
+    "text": "El máximo de filas que puede contener un informe PDF. Una consulta mayor se rechaza y se pide usar CSV."
+  },
+  "report.pdfMaxPages|label": {
+    "en": "050231b3a1524a4b",
+    "text": "Límite de páginas de un informe PDF"
+  },
+  "report.pdfMaxPages|description": {
+    "en": "3b065500b4a246a3",
+    "text": "El máximo de páginas que puede contener un informe PDF. Pasado este límite el resultado se rechaza y se pide usar CSV."
+  },
+  "report.maxConcurrentPerRealm|label": {
+    "en": "2e8e9a195cac9a4c",
+    "text": "Trabajos de informe en ejecución por dominio"
+  },
+  "report.maxConcurrentPerRealm|description": {
+    "en": "7a252c3307b54d2a",
+    "text": "Cuántos trabajos de informe puede tener en ejecución a la vez un dominio. Un envío adicional se rechaza hasta que termine uno."
+  },
+  "report.maxConcurrentPerSubject|label": {
+    "en": "3533626b8e0a8d15",
+    "text": "Trabajos de informe en ejecución por persona"
+  },
+  "report.maxConcurrentPerSubject|description": {
+    "en": "525965a5866fed18",
+    "text": "Cuántos trabajos de informe puede tener en ejecución a la vez una persona."
+  },
+  "report.artifactRetentionS|label": {
+    "en": "ae014cb5ae4ea837",
+    "text": "Cuánto tiempo se conserva el resultado de un informe (segundos)"
+  },
+  "report.artifactRetentionS|description": {
+    "en": "c1e0935d871842f4",
+    "text": "Cuánto tiempo siguen disponibles para descargar los bytes de un informe terminado. Pasado este tiempo el resultado desaparece."
+  },
+  "report.jobRetentionS|label": {
+    "en": "117aad13b6fa172e",
+    "text": "Cuánto tiempo se conserva la fila de un trabajo de informe (segundos)"
+  },
+  "report.jobRetentionS|description": {
+    "en": "dfada581a8c28ca3",
+    "text": "Cuánto tiempo permanece en la lista la fila de un trabajo de informe terminado. Un trabajo que sigue en ejecución no se elimina."
+  },
+  "report.usersGroup|label": {
+    "en": "21554dfaa265b36f",
+    "text": "A quién se le puede emitir report:use"
+  },
+  "report.usersGroup|description": {
+    "en": "28068508e0655509",
+    "text": "El grupo del directorio cuyos miembros pueden recibir report:use. Vacío significa que solo pueden los administradores de este dominio. report:admin se emite únicamente a esos administradores."
   },
   "listenerMain.minVersion|label": {
     "en": "6470c151e28a9ab3",

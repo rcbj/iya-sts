@@ -319,6 +319,54 @@
     "en": "4f2c054a1405a843",
     "text": "Registra, en este proceso, una línea con su rol y su memoria: tamaño residente, heap usado y total, el límite del heap, la memoria externa y los array buffers (#341)."
   },
+  "sched.jobs.report.drain.title": {
+    "en": "792c052635196abd",
+    "text": "Trabajos de informe"
+  },
+  "sched.jobs.report.drain.describe": {
+    "en": "44526b11fff0c35e",
+    "text": "Reclama los trabajos de informe en cola de este dominio, hasta los límites de concurrencia, y escribe cada artefacto."
+  },
+  "sched.jobs.report.drain.here.title": {
+    "en": "e650bff45b03631e",
+    "text": "Trabajos de informe en este nodo"
+  },
+  "sched.jobs.report.drain.here.describe": {
+    "en": "4ac0b964339af918",
+    "text": "La copia de report.drain del nodo de informes. No hace nada a menos que este proceso tenga ops.reporting."
+  },
+  "sched.jobs.report.retention.title": {
+    "en": "5d356aad0991d4bf",
+    "text": "Retención de informes"
+  },
+  "sched.jobs.report.retention.describe": {
+    "en": "820f16dd4154d80e",
+    "text": "Elimina los artefactos de informe que pasaron su retención, descarta las filas de trabajos terminados que pasaron la suya y hace fallar un trabajo en ejecución cuyo cerco ya no existe."
+  },
+  "sched.jobs.report.retention.here.title": {
+    "en": "65aecca5c6b3edef",
+    "text": "Retención de informes en este nodo"
+  },
+  "sched.jobs.report.retention.here.describe": {
+    "en": "aacfb1a2f3212be6",
+    "text": "La copia de report.retention del nodo de informes. No hace nada a menos que este proceso tenga ops.reporting."
+  },
+  "sched.jobs.report.schedule.title": {
+    "en": "63e5ea89789332f4",
+    "text": "Programaciones de informes"
+  },
+  "sched.jobs.report.schedule.describe": {
+    "en": "e1706c674f78a995",
+    "text": "Pone en cola un trabajo por cada definición de informe vencida, como su propietario, mientras ese propietario aún pueda ejecutar la consulta. Se usan los valores predeterminados de parámetros almacenados. Si falta uno, se conserva el turno."
+  },
+  "sched.jobs.report.schedule.here.title": {
+    "en": "a1a815b7c87fc8b6",
+    "text": "Programaciones de informes en este nodo"
+  },
+  "sched.jobs.report.schedule.here.describe": {
+    "en": "eea786a826ff1054",
+    "text": "La copia de report.schedule del nodo de informes. No hace nada a menos que este proceso tenga ops.reporting."
+  },
   "sched.jobs.risc.opt-out-effective.title": {
     "en": "04bdbc25402e8321",
     "text": "Exclusiones voluntarias de RISC que entran en vigor"

@@ -319,6 +319,54 @@
     "en": "4f2c054a1405a843",
     "text": "Journalise, dans ce processus, une ligne avec son rôle et sa mémoire : taille résidente, tas utilisé et total, limite du tas, mémoire externe et tampons de tableaux (#341)."
   },
+  "sched.jobs.report.drain.title": {
+    "en": "792c052635196abd",
+    "text": "Tâches de rapport"
+  },
+  "sched.jobs.report.drain.describe": {
+    "en": "44526b11fff0c35e",
+    "text": "Prend en charge les tâches de rapport en file pour ce domaine, dans la limite des plafonds de concurrence, et écrit chaque artefact."
+  },
+  "sched.jobs.report.drain.here.title": {
+    "en": "e650bff45b03631e",
+    "text": "Tâches de rapport sur ce nœud"
+  },
+  "sched.jobs.report.drain.here.describe": {
+    "en": "4ac0b964339af918",
+    "text": "La copie de report.drain du nœud de rapports. Elle ne fait rien si ce processus ne détient pas ops.reporting."
+  },
+  "sched.jobs.report.retention.title": {
+    "en": "5d356aad0991d4bf",
+    "text": "Rétention des rapports"
+  },
+  "sched.jobs.report.retention.describe": {
+    "en": "820f16dd4154d80e",
+    "text": "Supprime les artefacts de rapport au-delà de leur rétention, retire les lignes de tâches terminées au-delà de la leur, et fait échouer une tâche en cours dont la barrière a disparu."
+  },
+  "sched.jobs.report.retention.here.title": {
+    "en": "65aecca5c6b3edef",
+    "text": "Rétention des rapports sur ce nœud"
+  },
+  "sched.jobs.report.retention.here.describe": {
+    "en": "aacfb1a2f3212be6",
+    "text": "La copie de report.retention du nœud de rapports. Elle ne fait rien si ce processus ne détient pas ops.reporting."
+  },
+  "sched.jobs.report.schedule.title": {
+    "en": "63e5ea89789332f4",
+    "text": "Planifications de rapports"
+  },
+  "sched.jobs.report.schedule.describe": {
+    "en": "e1706c674f78a995",
+    "text": "Met en file une tâche pour chaque définition de rapport échue, au nom de son propriétaire, tant que celui-ci peut encore exécuter la requête. Les valeurs par défaut des paramètres stockés sont utilisées. Une valeur manquante conserve le créneau."
+  },
+  "sched.jobs.report.schedule.here.title": {
+    "en": "a1a815b7c87fc8b6",
+    "text": "Planifications de rapports sur ce nœud"
+  },
+  "sched.jobs.report.schedule.here.describe": {
+    "en": "eea786a826ff1054",
+    "text": "La copie de report.schedule du nœud de rapports. Elle ne fait rien si ce processus ne détient pas ops.reporting."
+  },
   "sched.jobs.risc.opt-out-effective.title": {
     "en": "04bdbc25402e8321",
     "text": "Prise d’effet des désinscriptions RISC"

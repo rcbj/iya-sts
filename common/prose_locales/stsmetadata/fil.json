@@ -1175,6 +1175,74 @@
     "en": "69cf245f63b035d1",
     "text": "NON-SPEC. Ang nag-iisang stylesheet ng portal (#568)."
   },
+  "stsmetadata.endpoints./report.what": {
+    "en": "a9d6c3cc058a3617",
+    "text": "NON-SPEC. Ang static na reports application (#956). Bawat path ay sumasagot ng isang document, na naglo-load ng /report/report.js at nagsa-sign in bilang public client na sts-report."
+  },
+  "stsmetadata.endpoints./report/*.what": {
+    "en": "0d4a7436bac8a815",
+    "text": "NON-SPEC. Ang parehong document ng /report. Pinipili ng script ang pahina mula sa path."
+  },
+  "stsmetadata.endpoints./report/report.js.what": {
+    "en": "06abcdf5598f2576",
+    "text": "NON-SPEC. Ang reports runtime, binuo ng build-typescript.sh at inihahain na precompressed. Public, tulad ng document."
+  },
+  "stsmetadata.endpoints./report/report.css.what": {
+    "en": "aa0e94707e105592",
+    "text": "NON-SPEC. Ang nag-iisang stylesheet ng reports application (#956)."
+  },
+  "stsmetadata.endpoints./report-api.what": {
+    "en": "7b8038436244d3de",
+    "text": "NON-SPEC. Ang index ng /report-api. Tumatanggap ito ng DPoP-bound na token ng realm na ito para sa sts-report, scope na report:use o report:admin."
+  },
+  "stsmetadata.endpoints./report-api/openapi.json.what": {
+    "en": "0a932f3efc26b3fb",
+    "text": "NON-SPEC. Ang sariling paglalarawan ng API. Nasa likod ng parehong token ng iba pang /report-api, at inihahain na no-store."
+  },
+  "stsmetadata.endpoints./report-api/catalog.what": {
+    "en": "07eb9bbaa64c98e2",
+    "text": "NON-SPEC. Ang mga source na maaaring pangalanan ng isang query, at ang type at mga operator ng bawat field. Wala ang mga credential attribute."
+  },
+  "stsmetadata.endpoints./report-api/catalog/:id.what": {
+    "en": "4d6e53c9ce4823ca",
+    "text": "NON-SPEC. Isang source mula sa catalog, ayon sa id nito."
+  },
+  "stsmetadata.endpoints./report-api/queries.what": {
+    "en": "0d15a58a10e2b1ba",
+    "text": "NON-SPEC. Isang catalog query. Ang maliit at may hangganan ay sinasagot sa mismong tawag; ang mas malaki ay ini-queue at sinasagot ng 202."
+  },
+  "stsmetadata.endpoints./report-api/definitions.what": {
+    "en": "df098902244cfa53",
+    "text": "NON-SPEC. Ang mga definition na maaaring makita ng token na ito: ang sa may-ari nito, ang mga ibinahagi sa group na kinabibilangan nito, at lahat kapag dala ng token ang report:admin."
+  },
+  "stsmetadata.endpoints./report-api/definitions/:id.what": {
+    "en": "74d936b2bb9fff66",
+    "text": "NON-SPEC. Isang definition. Ang hindi kilalang id at ang hindi maaaring makita ng token na ito ay iisang sagot."
+  },
+  "stsmetadata.endpoints./report-api/definitions/:id/share.what": {
+    "en": "12d23dbb24cec023",
+    "text": "NON-SPEC. Pinangangalanan ang mga directory group na maaaring magpatakbo ng definition at bumasa ng mga resulta nito. Ang may-ari, o report:admin, ang maaaring magbago ng listahang iyon."
+  },
+  "stsmetadata.endpoints./report-api/definitions/:id/run.what": {
+    "en": "991b657f7fe20e17",
+    "text": "NON-SPEC. Ini-queue ang query ng definition bilang ang tumawag. Ang share ay nagbibigay nito at ng resulta, hindi ng pag-edit."
+  },
+  "stsmetadata.endpoints./report-api/jobs.what": {
+    "en": "f4e437b96fe383f5",
+    "text": "NON-SPEC. Ang mga job na maaaring makita ng token na ito, at ang pintong nag-queue ng isa mula sa isang query document."
+  },
+  "stsmetadata.endpoints./report-api/jobs/:id.what": {
+    "en": "d69a7d667bd631bf",
+    "text": "NON-SPEC. Isang job. Ang hindi kilalang id at ang hindi maaaring makita ng token na ito ay iisang sagot."
+  },
+  "stsmetadata.endpoints./report-api/jobs/:id/cancel.what": {
+    "en": "cbc407e431852e06",
+    "text": "NON-SPEC. Hinihiling sa naka-queue o tumatakbong job na huminto. Ang mga byte ng natapos na ay iniiwan para sa retention."
+  },
+  "stsmetadata.endpoints./report-api/jobs/:id/result.what": {
+    "en": "3b97b9774547de8c",
+    "text": "NON-SPEC. Ang mga naimbak na byte ng natapos na job, hangga't hindi pa lumilipas ang report.artifactRetentionS. Pagkatapos noon, wala na ang resulta."
+  },
   "stsmetadata.endpoints./portal/signals/receive.what": {
     "en": "b5f30a87646c3fed",
     "text": "RFC 8935 SECTION 2.1 PUSH DELIVERY, NA ANG SERBISYONG ITO ANG NASA MAGKABILANG DULO (2026-09-10) — PARA SA STREAM NA IBINALIK SA PUSH mula #771, na ginawang RFC 8936 poll stream ang seeded stream ng portal na kinokolekta nito mula sa /ssf/poll; habang ganoon ito, tinatanggihan ang push dito. Kapag ibinalik sa push, pinangangalanan ng stream ang path na ito bilang `delivery.endpoint_url` nito, sa sariling loopback address ng serbisyong ito, at ipino-POST ng `ssf/ssf_http.ts` dito ang bawat SET bilang application/secevent+jwt kasama ang `authorization_header` ng stream. SADYANG TUNAY NA HTTP REQUEST ITO: ang pagbibigay ng event sa page sa loob ng process ay lalaktawan ang body, ang media type, ang authorization header at ang signature, na siyang lahat ng ginagawa ng receiver — ang argumentong ginagawa ng `common/oidc_rp.ts` tungkol sa pag-redeem ng authorization code sa loob ng process, ginawa muli para sa ibang protocol. HINDI AUTHENTICATED SA SESSION PERO HINDI WALANG BANTAY: ang sinusuri nito ay ang bearer token sa sarili nitong stream, ginawa bawat stream at bawat pag-start at ibinigay lang sa sariling transmitter ng serbisyong ito, inihahambing sa constant time; pagkatapos ay ang `aud`, tinatanggihan ng `invalid_audience` ang SET na naka-address sa iba; pagkatapos ay ang signature. Ang malformed o maling naka-address na token ay ITINATALA AT TINATANGGIHAN sa halip na itapon, dahil ang dumating ang siyang itinatanong. Sadyang WALANG rate limit, na mayroon ang bawat credential endpoint sa file na iyon: tahimik na itatapon ng limiter ang account-disabled notice ng isang tao kapag mabigat ang load."
@@ -3398,6 +3466,10 @@
   "stsmetadata.protocols.User portal.what": {
     "en": "835d40e9ff6eaabb",
     "text": "HINDI ITO PROTOCOL, at may card ito dahil nag-uulat ang page na ito ng endpoint group na walang card na umaangkin — na siyang patakarang pumipigil sa bagong family na dumating nang walang pasabi, at sulit itong bayaran dito sa halip na gawing kondisyonal ang patakaran. ANG UNANG SURFACE SA SERBISYONG ITO NA PAG-AARI NG TAONG TUMITINGIN DITO: bawat ibang browser page dito ay para sa iba — ang sign-in screen ay isang step sa flow ng ibang protocol, ang consent screen ay nagtatanong ng isang tanong at umaalis, ang /admin ay para sa operator at gated sa dalawang role. Dito nakikita ng tao kung ano ang alam ng identity provider na ito tungkol sa kanila at binabago kung paano sila nag-a-authenticate: ang kanilang password, at ang kanilang mga security key at kung primary credential o second factor ang bawat isa. HIWALAY ITONG APPLICATION mula sa admin console at walang pinaghahatian maliban sa sign-on session sa authorization server ng serbisyong ito: bawat isa ay public OAuth client (sts-user-portal dito) na may hawak ng sarili nitong DPoP-bound na token sa memory. Ang /portal/activate ang unauthenticated na kalahati nito, kung saan ginagamit ng taong na-provision sa pamamagitan ng /admin-api o SCIM ang single-use at may takdang oras na activation link para mag-set up ng credential — naka-hash habang nakaimbak tulad ng password, naka-rate limit, ginagamit kapag natapos ang setup sa halip na kapag binuksan ang link, at hindi kailanman nagsa-sign in ng sinuman. MULA #568 ISA ITONG STATIC APPLICATION sa ibabaw ng /account-api, ang Account API group sa ibaba: isang operation bawat page at bawat form, ang tao ay laging ang subject ng token, inilalarawan ng sarili nitong OpenAPI document."
+  },
+  "stsmetadata.protocols.Reporting.what": {
+    "en": "66663fd63a35a287",
+    "text": "HINDI ISANG PROTOCOL. Ang reports application (#956): isang static na pahina sa /report sa ibabaw ng /report-api, ang public client na sts-report, at isang catalog ng sariling mga record ng realm na ito. Nagsa-sign in ito sa browser, may hawak na DPoP-bound na token, at hindi kailanman tumatanggap ng SQL string. Ang naka-save na definition ay pag-aari ng may-ari nito; ang share sa isang directory group ay nagbibigay ng pagpapatakbo at pagbabasa, hindi ng pag-edit."
   },
   "stsmetadata.protocols.GNAP.what": {
     "en": "b938c4cb8feac54d",

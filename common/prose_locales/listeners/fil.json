@@ -147,6 +147,14 @@
     "en": "ae78f5077c808641",
     "text": "Ang mga page na pag-aari ng taong tumitingin sa mga ito, at ang account API na pinagkukunan ng mga ito."
   },
+  "listeners.applications.report.label": {
+    "en": "dacca3cba3f346a4",
+    "text": "Mga Report"
+  },
+  "listeners.applications.report.what": {
+    "en": "de1ee727530aad18",
+    "text": "Ang mga report na maaaring patakbuhin ng isang tao rito, at ang API na pinagkukunan ng mga ito."
+  },
   "listeners.applications.admin-console.label": {
     "en": "ddf870cabeb295ab",
     "text": "Admin console"

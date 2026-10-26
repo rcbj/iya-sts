@@ -1175,6 +1175,74 @@
     "en": "69cf245f63b035d1",
     "text": "ICKE-SPEC. Portalens enda stilmall (#568)."
   },
+  "stsmetadata.endpoints./report.what": {
+    "en": "a9d6c3cc058a3617",
+    "text": "NON-SPEC. Den statiska rapportapplikationen (#956). Varje sökväg besvaras med ett dokument, som läser in /report/report.js och loggar in som den publika klienten sts-report."
+  },
+  "stsmetadata.endpoints./report/*.what": {
+    "en": "0d4a7436bac8a815",
+    "text": "NON-SPEC. Samma dokument som /report. Skriptet väljer sida utifrån sökvägen."
+  },
+  "stsmetadata.endpoints./report/report.js.what": {
+    "en": "06abcdf5598f2576",
+    "text": "NON-SPEC. Rapportkörmiljön, byggd av build-typescript.sh och serverad förkomprimerad. Publik, precis som dokumentet."
+  },
+  "stsmetadata.endpoints./report/report.css.what": {
+    "en": "aa0e94707e105592",
+    "text": "NON-SPEC. Rapportapplikationens enda stilmall (#956)."
+  },
+  "stsmetadata.endpoints./report-api.what": {
+    "en": "7b8038436244d3de",
+    "text": "NON-SPEC. Indexet för /report-api. Det tar den här sfärens DPoP-bundna token för sts-report, scope report:use eller report:admin."
+  },
+  "stsmetadata.endpoints./report-api/openapi.json.what": {
+    "en": "0a932f3efc26b3fb",
+    "text": "NON-SPEC. API:ts egen beskrivning. Bakom samma token som resten av /report-api, och serverad no-store."
+  },
+  "stsmetadata.endpoints./report-api/catalog.what": {
+    "en": "07eb9bbaa64c98e2",
+    "text": "NON-SPEC. De källor en fråga får namnge, samt varje fälts typ och operatorer. Credential-attribut saknas."
+  },
+  "stsmetadata.endpoints./report-api/catalog/:id.what": {
+    "en": "4d6e53c9ce4823ca",
+    "text": "NON-SPEC. En källa ur katalogen, via sitt id."
+  },
+  "stsmetadata.endpoints./report-api/queries.what": {
+    "en": "0d15a58a10e2b1ba",
+    "text": "NON-SPEC. En katalogfråga. En liten begränsad besvaras i anropet; en större köas och besvaras med 202."
+  },
+  "stsmetadata.endpoints./report-api/definitions.what": {
+    "en": "df098902244cfa53",
+    "text": "NON-SPEC. De definitioner den här token får se: ägarens, de som delats med en grupp den ingår i, och samtliga när token bär report:admin."
+  },
+  "stsmetadata.endpoints./report-api/definitions/:id.what": {
+    "en": "74d936b2bb9fff66",
+    "text": "NON-SPEC. En definition. Ett okänt id och ett som den här token inte får se ger samma svar."
+  },
+  "stsmetadata.endpoints./report-api/definitions/:id/share.what": {
+    "en": "12d23dbb24cec023",
+    "text": "NON-SPEC. Namnger de kataloggrupper som får köra definitionen och läsa dess resultat. Ägaren, eller report:admin, är den som får ändra den listan."
+  },
+  "stsmetadata.endpoints./report-api/definitions/:id/run.what": {
+    "en": "991b657f7fe20e17",
+    "text": "NON-SPEC. Köar definitionens fråga som anroparen. En delning ger detta och resultatet, inte redigering."
+  },
+  "stsmetadata.endpoints./report-api/jobs.what": {
+    "en": "f4e437b96fe383f5",
+    "text": "NON-SPEC. De jobb den här token får se, och dörren som köar ett från ett frågedokument."
+  },
+  "stsmetadata.endpoints./report-api/jobs/:id.what": {
+    "en": "d69a7d667bd631bf",
+    "text": "NON-SPEC. Ett jobb. Ett okänt id och ett som den här token inte får se ger samma svar."
+  },
+  "stsmetadata.endpoints./report-api/jobs/:id/cancel.what": {
+    "en": "cbc407e431852e06",
+    "text": "NON-SPEC. Ber ett köat eller körande jobb att stanna. Bytes från ett som redan blivit färdigt lämnas åt lagringstiden."
+  },
+  "stsmetadata.endpoints./report-api/jobs/:id/result.what": {
+    "en": "3b97b9774547de8c",
+    "text": "NON-SPEC. De lagrade bytes för ett färdigt jobb, så länge report.artifactRetentionS inte har passerat. Därefter är resultatet borta."
+  },
   "stsmetadata.endpoints./portal/signals/receive.what": {
     "en": "b5f30a87646c3fed",
     "text": "PUSH-LEVERANS ENLIGT RFC 8935 AVSNITT 2.1, MED DEN HÄR TJÄNSTEN I BÅDA ÄNDAR (2026-09-10) — FÖR EN STRÖM SOM SATTS TILLBAKA TILL PUSH sedan #771, som gjorde portalens förinställda ström till en RFC 8936-pollningsström som portalen hämtar från /ssf/poll; så länge den är det nekas en push hit. Satt till push namnger strömmen den här sökvägen som sin `delivery.endpoint_url`, på den här tjänstens egen loopback-adress, och `ssf/ssf_http.ts` POSTar varje SET hit som application/secevent+jwt med strömmens `authorization_header`. DET ÄR EN RIKTIG HTTP-BEGÄRAN MED AVSIKT: att lämna händelsen till sidan inom processen skulle hoppa över kroppen, mediatypen, auktoriseringshuvudet och signaturen, vilket är allt en mottagare gör — samma argument som `common/oidc_rp.ts` för om att lösa in en auktoriseringskod inom processen, fört på nytt för ett annat protokoll. OAUTENTISERAD VIA SESSION MEN INTE OBEVAKAD: det den kontrollerar är bärartoken på dess egen ström, präglad per ström och per start och given till ingenting annat än den här tjänstens egen sändare, jämförd i konstant tid; därefter `aud`, med nekan `invalid_audience` för en SET adresserad till någon annan; därefter signaturen. En felformad eller feladresserad token REGISTRERAS OCH NEKAS snarare än kastas, eftersom det som kom fram är just frågan som ställs. Avsiktligt INTE hastighetsbegränsad, vilket varje slutpunkt för inloggningsuppgifter i den filen är: en begränsare skulle tyst kasta någons meddelande om inaktiverat konto under belastning."
@@ -3398,6 +3466,10 @@
   "stsmetadata.protocols.User portal.what": {
     "en": "835d40e9ff6eaabb",
     "text": "INTE ETT PROTOKOLL, och den har ett kort eftersom den här sidan rapporterar en slutpunktsgrupp som inget kort gör anspråk på — vilket är regeln som hindrar en ny familj från att dyka upp oanmäld, och det är värt att betala för det här snarare än att göra regeln villkorlig. DEN FÖRSTA YTAN I DEN HÄR TJÄNSTEN SOM TILLHÖR PERSONEN SOM TITTAR PÅ DEN: varje annan webbläsarsida här är till för någon annan — inloggningsskärmen är ett steg i ett annat protokolls flöde, samtyckesskärmen ställer en fråga och försvinner, /admin är till för en operatör och är grindad på två roller. Det är här en person ser vad den här identitetsleverantören vet om dem och ändrar hur de autentiserar sig: sitt lösenord, och sina säkerhetsnycklar och om var och en är en primär autentiseringsuppgift eller en andra faktor. Det är en SEPARAT APPLIKATION från administratörskonsolen och delar ingenting med den utom inloggningssessionen hos den här tjänstens auktoriseringsserver: var och en är en publik OAuth-klient (sts-user-portal här) som håller sin egen DPoP-bundna token i minnet. /portal/activate är dess oautentiserade halva, där någon som provisionerats via /admin-api eller SCIM förbrukar en tidsbegränsad aktiveringslänk för engångsbruk för att skapa en autentiseringsuppgift — hashad i vila som ett lösenord, hastighetsbegränsad, förbrukad när inställningen slutförs snarare än när länken öppnas, och loggar aldrig in någon. SEDAN #568 ÄR DET EN STATISK APPLIKATION ovanpå /account-api, gruppen Account API nedan: en operation per sida och per formulär, personen alltid tokenets subjekt, beskriven av sitt eget OpenAPI-dokument."
+  },
+  "stsmetadata.protocols.Reporting.what": {
+    "en": "66663fd63a35a287",
+    "text": "INTE ETT PROTOKOLL. Rapportapplikationen (#956): en statisk sida på /report över /report-api, den publika klienten sts-report, och en katalog över den här sfärens egna poster. Den loggar in i webbläsaren, håller en DPoP-bunden token och tar aldrig emot en SQL-sträng. En sparad definition tillhör sin ägare; en delning med en katalogrupp ger rätt att köra och läsa, inte att redigera."
   },
   "stsmetadata.protocols.GNAP.what": {
     "en": "b938c4cb8feac54d",

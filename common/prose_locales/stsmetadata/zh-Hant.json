@@ -1175,6 +1175,74 @@
     "en": "69cf245f63b035d1",
     "text": "非規格端點。入口網站唯一的樣式表（#568）。"
   },
+  "stsmetadata.endpoints./report.what": {
+    "en": "a9d6c3cc058a3617",
+    "text": "NON-SPEC。靜態的報表應用程式（#956）。每個路徑都回應同一份文件，該文件載入 /report/report.js 並以公用用戶端 sts-report 登入。"
+  },
+  "stsmetadata.endpoints./report/*.what": {
+    "en": "0d4a7436bac8a815",
+    "text": "NON-SPEC。與 /report 相同的文件。由指令碼依路徑選擇頁面。"
+  },
+  "stsmetadata.endpoints./report/report.js.what": {
+    "en": "06abcdf5598f2576",
+    "text": "NON-SPEC。報表執行階段，由 build-typescript.sh 建置並以預先壓縮的形式提供。與文件一樣是公開的。"
+  },
+  "stsmetadata.endpoints./report/report.css.what": {
+    "en": "aa0e94707e105592",
+    "text": "NON-SPEC。報表應用程式唯一的樣式表（#956）。"
+  },
+  "stsmetadata.endpoints./report-api.what": {
+    "en": "7b8038436244d3de",
+    "text": "NON-SPEC。/report-api 的索引。它接受此領域為 sts-report 簽發、繫結 DPoP 的權杖，範圍為 report:use 或 report:admin。"
+  },
+  "stsmetadata.endpoints./report-api/openapi.json.what": {
+    "en": "0a932f3efc26b3fb",
+    "text": "NON-SPEC。此 API 自身的描述。與 /report-api 其餘部分位於同一個權杖之後，並以 no-store 提供。"
+  },
+  "stsmetadata.endpoints./report-api/catalog.what": {
+    "en": "07eb9bbaa64c98e2",
+    "text": "NON-SPEC。查詢可指名的來源，以及每個欄位的類型與運算子。不含憑證屬性。"
+  },
+  "stsmetadata.endpoints./report-api/catalog/:id.what": {
+    "en": "4d6e53c9ce4823ca",
+    "text": "NON-SPEC。依其 id 取得目錄中的單一來源。"
+  },
+  "stsmetadata.endpoints./report-api/queries.what": {
+    "en": "0d15a58a10e2b1ba",
+    "text": "NON-SPEC。目錄查詢。小而有界的查詢在該次呼叫中回應；較大的則排入佇列並回應 202。"
+  },
+  "stsmetadata.endpoints./report-api/definitions.what": {
+    "en": "df098902244cfa53",
+    "text": "NON-SPEC。此權杖可以看到的定義：其擁有者的定義、與其所屬群組共用的定義，以及權杖帶有 report:admin 時的所有定義。"
+  },
+  "stsmetadata.endpoints./report-api/definitions/:id.what": {
+    "en": "74d936b2bb9fff66",
+    "text": "NON-SPEC。單一定義。未知的 id 與此權杖不得查看的 id 得到相同的回應。"
+  },
+  "stsmetadata.endpoints./report-api/definitions/:id/share.what": {
+    "en": "12d23dbb24cec023",
+    "text": "NON-SPEC。指名可以執行該定義並讀取其結果的目錄群組。可以變更該清單的是擁有者或 report:admin。"
+  },
+  "stsmetadata.endpoints./report-api/definitions/:id/run.what": {
+    "en": "991b657f7fe20e17",
+    "text": "NON-SPEC。以呼叫者的身分將該定義的查詢排入佇列。共用授予的是這項操作與結果，而不是編輯。"
+  },
+  "stsmetadata.endpoints./report-api/jobs.what": {
+    "en": "f4e437b96fe383f5",
+    "text": "NON-SPEC。此權杖可以看到的工作，以及從查詢文件排入一項工作的入口。"
+  },
+  "stsmetadata.endpoints./report-api/jobs/:id.what": {
+    "en": "d69a7d667bd631bf",
+    "text": "NON-SPEC。單一工作。未知的 id 與此權杖不得查看的 id 得到相同的回應。"
+  },
+  "stsmetadata.endpoints./report-api/jobs/:id/cancel.what": {
+    "en": "cbc407e431852e06",
+    "text": "NON-SPEC。要求已排入佇列或執行中的工作停止。已完成工作的位元組留待保留機制處理。"
+  },
+  "stsmetadata.endpoints./report-api/jobs/:id/result.what": {
+    "en": "3b97b9774547de8c",
+    "text": "NON-SPEC。已完成工作所儲存的位元組，在 report.artifactRetentionS 尚未過期時可取得。之後結果即消失。"
+  },
   "stsmetadata.endpoints./portal/signals/receive.what": {
     "en": "b5f30a87646c3fed",
     "text": "RFC 8935 第 2.1 節的推送傳遞，本服務同時位於兩端（2026-09-10）——適用於自 #771 起被改回推送的串流：#771 使入口網站植入的串流成為 RFC 8936 輪詢串流，由入口網站從 /ssf/poll 收取；在它是輪詢串流期間，推送到這裡會被拒絕。改回推送後，該串流將此路徑指名為其 `delivery.endpoint_url`，位於本服務自己的 loopback 位址上，而 `ssf/ssf_http.ts` 會以 application/secevent+jwt 並攜帶串流的 `authorization_header` 將每個 SET POST 到這裡。它刻意是一個真實的 HTTP 請求：在程序內直接把事件交給頁面，會略過本文、媒體類型、授權標頭與簽章，而這就是接收者所做的一切——這是 `common/oidc_rp.ts` 關於在程序內兌換授權碼所提出的論點，在另一個協定上再次提出。不以工作階段驗證，但並非毫無防護：它檢查的是自己串流上的持有人權杖，每個串流、每次啟動各產生一個，只交給本服務自己的傳輸器，並以常數時間比較；接著是 `aud`，對寄給其他對象的 SET 以 `invalid_audience` 拒絕；然後是簽章。格式錯誤或位址錯誤的權杖會被「記錄並拒絕」而非丟棄，因為收到了什麼正是被問的問題。刻意「不」限制速率，而該檔案中每個認證資訊端點都有限制：限速器在負載下會悄悄丟棄某人的帳戶停用通知。"
@@ -3398,6 +3466,10 @@
   "stsmetadata.protocols.User portal.what": {
     "en": "835d40e9ff6eaabb",
     "text": "「不是協定」，它之所以有一張卡片，是因為此頁面會回報沒有任何卡片認領的端點群組——這條規則讓新的系列無法悄悄出現，在這裡付出代價比讓規則附帶條件更值得。「本服務中第一個屬於正在看它的那個人的介面」：此處每個其他瀏覽器頁面都是為別人準備的——登入畫面是另一個協定流程中的一個步驟，同意畫面問一個問題就離開，/admin 是給營運者的，並以兩個角色管控。這裡是一個人查看此身分識別提供者對其所知、並變更其驗證方式的地方：其密碼、其安全金鑰，以及每把金鑰是主要認證還是第二要素。它是與管理主控台「分開的應用程式」，兩者除了本服務授權伺服器上的單一登入工作階段之外不共用任何東西：各自都是公開 OAuth 用戶端（此處為 sts-user-portal），在記憶體中持有自己的 DPoP 繫結權杖。/portal/activate 是其不需驗證的那一半，透過 /admin-api 或 SCIM 佈建的人在這裡使用一次性、有時效的啟用連結來設定認證——靜態時如密碼般雜湊保存、有速率限制、在設定完成時才用掉而非開啟連結時，且絕不讓任何人登入。「自 #568 起，它是建立在 /account-api 之上的靜態應用程式」，即下方的 Account API 群組：每個頁面與每個表單各一個作業，該人永遠是權杖的主體，並由其自己的 OpenAPI 文件描述。"
+  },
+  "stsmetadata.protocols.Reporting.what": {
+    "en": "66663fd63a35a287",
+    "text": "NOT A PROTOCOL。報表應用程式（#956）：位於 /report、建構在 /report-api 之上的靜態頁面，使用公用用戶端 sts-report，以及此領域自身記錄的目錄。它在瀏覽器中登入，持有繫結 DPoP 的權杖，且從不接受 SQL 字串。已儲存的定義屬於其擁有者；與目錄群組共用授予的是執行與讀取，而不是編輯。"
   },
   "stsmetadata.protocols.GNAP.what": {
     "en": "b938c4cb8feac54d",

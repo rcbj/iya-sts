@@ -623,6 +623,62 @@
     "en": "363f58a2eab8e37c",
     "text": "S256"
   },
+  "crypto.families.reporting.signs": {
+    "en": "8728ccd393fd7e6c",
+    "text": "報表不簽發任何東西。瀏覽器中的執行階段只簽署一樣東西：每次呼叫 `/report-api` 以及在權杖端點時所附的 RFC 9449 DPoP 證明（ES256），使用 WebCrypto 為該次頁面載入產生、不可匯出的 P-256 金鑰。"
+  },
+  "crypto.families.reporting.verifies": {
+    "en": "294c4447e5523292",
+    "text": "每一次 `/report-api` 呼叫，在其閘門處（report/report_api.ts）：存取權杖是以「此」領域的簽章金鑰（任何世代）驗證的 RFC 9068 `at+jwt`，並檢查其簽發者與受眾，其 DPoP 繫結由閘門所驗證的證明比對——絕不以 Bearer 接受。若領域傳送 JARM 授權回應，執行階段會對照領域的 JWKS 驗證它。"
+  },
+  "crypto.families.reporting.encrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "無。"
+  },
+  "crypto.families.reporting.decrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "無。"
+  },
+  "crypto.families.reporting.hashes": {
+    "en": "2ddfe2e29749ce1c",
+    "text": "已完成報表位元組的 SHA-256，與其並存儲存（`sts_report_artifacts.sha256`），並在讀回結果時檢查。瀏覽器中則以 SHA-256 計算 PKCE S256 挑戰值與 DPoP 證明的 `ath`。"
+  },
+  "crypto.families.reporting.keys": {
+    "en": "feaa838ac5fb9b97",
+    "text": "伺服器上沒有。DPoP 金鑰對存在於瀏覽器中：P-256，由 WebCrypto 產生且私鑰部分不可匯出，保存在記憶體中，隨頁面消失。權杖本身由領域的授權伺服器簽署（OAuth2 / OIDC 那一列）。"
+  },
+  "crypto.families.reporting.algorithms.0.what": {
+    "en": "63f37962dc3dfb33",
+    "text": "/report-api 的存取權杖"
+  },
+  "crypto.families.reporting.algorithms.0.how": {
+    "en": "87be1920112e9844",
+    "text": "RFC 9068 at+jwt，以此領域的簽章金鑰驗證，繫結 DPoP"
+  },
+  "crypto.families.reporting.algorithms.1.what": {
+    "en": "e097c8970e32cda3",
+    "text": "DPoP 證明（瀏覽器）"
+  },
+  "crypto.families.reporting.algorithms.1.how": {
+    "en": "9bebf9949394145f",
+    "text": "ES256，每次頁面載入使用一把不可匯出的 WebCrypto P-256 金鑰"
+  },
+  "crypto.families.reporting.algorithms.2.what": {
+    "en": "7e09ecc318c42463",
+    "text": "PKCE"
+  },
+  "crypto.families.reporting.algorithms.2.how": {
+    "en": "363f58a2eab8e37c",
+    "text": "S256"
+  },
+  "crypto.families.reporting.algorithms.3.what": {
+    "en": "80ea1ab36a2e5c55",
+    "text": "儲存的報表位元組"
+  },
+  "crypto.families.reporting.algorithms.3.how": {
+    "en": "9d40176053fec31b",
+    "text": "SHA-256，與成品一併保存，並在讀取時檢查"
+  },
   "crypto.families.gnap.signs": {
     "en": "ad4b982edb070f2c",
     "text": "五種存取權杖格式，其中三種不是 JWT。jwt-signed 經過與此處所有其他 JWT 相同的簽署器，其標頭 `typ` 為 gnap-at+jwt（#157）；biscuit 以領域的 Ed25519 金鑰簽署（Biscuit 本身的區塊簽章）；ZCAP-LD 能力攜帶 gnap.zcapCryptosuite 所指名套件的 Data Integrity 證明——預設為 eddsa-jcs-2022，搭配領域的後量子金鑰時為 mldsa44-jcs-2024 或 slhdsa128-jcs-2024，或為相容性而使用 Ed25519Signature2020；macaroon 是以每個資源伺服器衍生的金鑰建立的 HMAC-SHA256 鏈。當用戶端執行個體要求時，它也會以 RFC 9421 簽署 HTTP 回應。"

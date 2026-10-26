@@ -319,6 +319,54 @@
     "en": "4f2c054a1405a843",
     "text": "在此程序中記錄一行，包含其角色與記憶體：常駐大小、已使用與總計的堆積、堆積上限、外部記憶體與陣列緩衝區（#341）。"
   },
+  "sched.jobs.report.drain.title": {
+    "en": "792c052635196abd",
+    "text": "報表工作"
+  },
+  "sched.jobs.report.drain.describe": {
+    "en": "44526b11fff0c35e",
+    "text": "在並行上限內，認領此領域已排入佇列的報表工作，並寫入每個成品。"
+  },
+  "sched.jobs.report.drain.here.title": {
+    "en": "e650bff45b03631e",
+    "text": "此節點上的報表工作"
+  },
+  "sched.jobs.report.drain.here.describe": {
+    "en": "4ac0b964339af918",
+    "text": "報表節點上的 report.drain 副本。除非此程序持有 ops.reporting，否則不會做任何事。"
+  },
+  "sched.jobs.report.retention.title": {
+    "en": "5d356aad0991d4bf",
+    "text": "報表保留"
+  },
+  "sched.jobs.report.retention.describe": {
+    "en": "820f16dd4154d80e",
+    "text": "刪除超過保留期限的報表成品，移除超過保留期限的已完成工作列，並讓圍欄已消失的執行中工作失敗。"
+  },
+  "sched.jobs.report.retention.here.title": {
+    "en": "65aecca5c6b3edef",
+    "text": "此節點上的報表保留"
+  },
+  "sched.jobs.report.retention.here.describe": {
+    "en": "aacfb1a2f3212be6",
+    "text": "報表節點上的 report.retention 副本。除非此程序持有 ops.reporting，否則不會做任何事。"
+  },
+  "sched.jobs.report.schedule.title": {
+    "en": "63e5ea89789332f4",
+    "text": "報表排程"
+  },
+  "sched.jobs.report.schedule.describe": {
+    "en": "e1706c674f78a995",
+    "text": "為每個到期的報表定義，以其擁有者的身分排入一項工作，前提是該擁有者仍可執行查詢。使用已儲存的參數預設值。缺少的參數會保留該時段。"
+  },
+  "sched.jobs.report.schedule.here.title": {
+    "en": "a1a815b7c87fc8b6",
+    "text": "此節點上的報表排程"
+  },
+  "sched.jobs.report.schedule.here.describe": {
+    "en": "eea786a826ff1054",
+    "text": "報表節點上的 report.schedule 副本。除非此程序持有 ops.reporting，否則不會做任何事。"
+  },
   "sched.jobs.risc.opt-out-effective.title": {
     "en": "04bdbc25402e8321",
     "text": "RISC 選擇退出生效"

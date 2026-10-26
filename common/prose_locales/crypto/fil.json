@@ -623,6 +623,62 @@
     "en": "363f58a2eab8e37c",
     "text": "S256"
   },
+  "crypto.families.reporting.signs": {
+    "en": "8728ccd393fd7e6c",
+    "text": "Walang pinipirmahan na inilalabas ng isang report. Ang runtime, sa browser, ay pumipirma ng isang bagay: isang RFC 9449 DPoP proof (ES256) sa bawat tawag sa `/report-api` at sa token endpoint, gamit ang P-256 key na ginawa ng WebCrypto bilang non-extractable para sa page load na iyon."
+  },
+  "crypto.families.reporting.verifies": {
+    "en": "294c4447e5523292",
+    "text": "BAWAT TAWAG SA `/report-api`, sa gate nito (report/report_api.ts): ang access token ay isang RFC 9068 `at+jwt` na vine-verify sa ilalim ng signing key ng realm NA ITO (alinmang generation), sinusuri ang issuer at audience nito, at tinutugma ang DPoP binding nito sa isang proof na vine-verify ng gate — hindi kailanman tinatanggap bilang Bearer. Vine-verify ng runtime ang isang JARM authorization response laban sa JWKS ng realm kapag nagpapadala nito ang realm."
+  },
+  "crypto.families.reporting.encrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "Wala."
+  },
+  "crypto.families.reporting.decrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "Wala."
+  },
+  "crypto.families.reporting.hashes": {
+    "en": "2ddfe2e29749ce1c",
+    "text": "SHA-256 ng mga byte ng natapos na report, iniimbak sa tabi ng mga ito (`sts_report_artifacts.sha256`) at sinusuri kapag binasa muli ang resulta. SHA-256 sa browser para sa PKCE S256 challenge at sa `ath` ng DPoP proof."
+  },
+  "crypto.families.reporting.keys": {
+    "en": "feaa838ac5fb9b97",
+    "text": "Wala sa server. Ang DPoP key pair ay nasa browser: P-256, ginawa ng WebCrypto na ang private half ay non-extractable, nakaimbak sa memory at nawawala kasama ng page. Ang mga token mismo ay pinipirmahan ng authorization server ng realm (ang hanay ng OAuth2 / OIDC)."
+  },
+  "crypto.families.reporting.algorithms.0.what": {
+    "en": "63f37962dc3dfb33",
+    "text": "Access token sa /report-api"
+  },
+  "crypto.families.reporting.algorithms.0.how": {
+    "en": "87be1920112e9844",
+    "text": "RFC 9068 at+jwt, vine-verify sa ilalim ng signing key ng realm na ito, DPoP-bound"
+  },
+  "crypto.families.reporting.algorithms.1.what": {
+    "en": "e097c8970e32cda3",
+    "text": "DPoP proof (browser)"
+  },
+  "crypto.families.reporting.algorithms.1.how": {
+    "en": "9bebf9949394145f",
+    "text": "ES256 gamit ang non-extractable na WebCrypto P-256 key bawat page load"
+  },
+  "crypto.families.reporting.algorithms.2.what": {
+    "en": "7e09ecc318c42463",
+    "text": "PKCE"
+  },
+  "crypto.families.reporting.algorithms.2.how": {
+    "en": "363f58a2eab8e37c",
+    "text": "S256"
+  },
+  "crypto.families.reporting.algorithms.3.what": {
+    "en": "80ea1ab36a2e5c55",
+    "text": "Mga naimbak na byte ng report"
+  },
+  "crypto.families.reporting.algorithms.3.how": {
+    "en": "9d40176053fec31b",
+    "text": "SHA-256, itinatago kasama ng artifact at sinusuri sa pagbasa"
+  },
   "crypto.families.gnap.signs": {
     "en": "ad4b982edb070f2c",
     "text": "ANG LIMANG ACCESS TOKEN FORMAT, tatlo sa mga ito ay hindi JWT. Dumadaan ang jwt-signed sa parehong signer ng bawat iba pang JWT dito, ang header nitong `typ` ay gnap-at+jwt (#157); ang biscuit ay pinipirmahan gamit ang Ed25519 key ng realm (ang sariling block signature ng Biscuit); ang isang ZCAP-LD capability ay may dalang Data Integrity proof sa suite na pinangangalanan ng gnap.zcapCryptosuite — eddsa-jcs-2022 bilang default, mldsa44-jcs-2024 o slhdsa128-jcs-2024 gamit ang post-quantum key ng realm, o Ed25519Signature2020 para sa compatibility; ang macaroon ay isang HMAC-SHA256 chain sa ilalim ng key na hinango bawat resource server. Pumipirma rin ito ng HTTP response gamit ang RFC 9421 kapag humingi ang isang client instance."

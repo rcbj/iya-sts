@@ -87,6 +87,14 @@
     "en": "f4b474a8d20ad298",
     "text": "人员在其所在领域中自己的账户：门户作为在每个领域中植入的客户端，通过领域自己的授权服务器登录，每个页面都读写此人在该领域目录中的条目，并遵守该领域的密码策略。"
   },
+  "realms.support.reporting.family": {
+    "en": "b1fa104b9bf0635e",
+    "text": "报表"
+  },
+  "realms.support.reporting.note": {
+    "en": "ca64742fe52ce6b3",
+    "text": "应用程序及其 API 通过领域路径访问。定义和作业保留在该领域的映射中，共享对象是该领域目录中的组。"
+  },
   "realms.support.global-logout.family": {
     "en": "1b4192fb739d93e9",
     "text": "全局注销"

@@ -87,6 +87,14 @@
     "en": "f4b474a8d20ad298",
     "text": "Le compte propre d’une personne dans le domaine où elle se trouve : le portail se connecte par le serveur d’autorisation propre au domaine en tant que client amorcé dans chaque domaine, et chaque page lit et écrit l’entrée de la personne dans l’annuaire de ce domaine, soumise à la politique de mot de passe de ce domaine."
   },
+  "realms.support.reporting.family": {
+    "en": "b1fa104b9bf0635e",
+    "text": "Rapports"
+  },
+  "realms.support.reporting.note": {
+    "en": "ca64742fe52ce6b3",
+    "text": "L’application et son API sont joignables sous le chemin du domaine. Les définitions et les tâches restent dans les tables de ce domaine, et un partage vise un groupe de l’annuaire de ce domaine."
+  },
   "realms.support.global-logout.family": {
     "en": "1b4192fb739d93e9",
     "text": "Déconnexion globale"
