@@ -1469,12 +1469,178 @@ function reportNotice(job: any, username: string): any {
   return request;
 }
 
+// ---------------------------------------------------------------------------
+// THE GROUPS A RESULT IS SENT TO (#989). A definition's share list — the
+// groups whose members may run it and read its result — is also who is
+// emailed when a job of it completes with Notify on, at each group's OWN
+// `mail` attribute (set on the group page, `POST /admin-api/groups/set-mail`,
+// or at its create). `reportGroupRecipients()` splits the list into the
+// groups with an address and the groups without: the first are sent the
+// notice through the mail channel's group recipient (`groupDn`, so the
+// address is the directory's and never a request's); each of the second is
+// an error of its own, STS-REPORT-0037, logged and written on the audit
+// row, and the other recipients are still sent to. The owner's notice is
+// unchanged. The group search the definition page draws its pane from
+// (`reportGroupSearch()`) reads the same resident groups, five a page.
+// ---------------------------------------------------------------------------
+const GROUP_PAGE = 5;
+
+function reportGroupRows(ldap: any): any[] {
+  log.debug("Entering reportGroupRows().");
+  const list = typeof ldap.allGroupEntries === 'function' ?
+    (ldap.allGroupEntries() || []) : [];
+  const rows = list.map(function (group: any): any {
+    const cn = reportAttr(group, 'cn');
+    return {
+      dn: String(group.dn || ''),
+      name: cn || String(group.dn || ''),
+      mail: reportAttr(group, 'mail')
+    };
+  }).filter(function (row: any): boolean {
+    return !!row.dn;
+  });
+  log.debug("Leaving reportGroupRows(). " + rows.length + '.');
+  return rows;
+}
+
+function reportGroupSearch(q: any, page: any): any {
+  log.debug("Entering reportGroupSearch().");
+  const ldap = reportLdap();
+  const needle = String(q == null ? '' : q).trim().toLowerCase();
+  const all = reportGroupRows(ldap).filter(function (row: any): boolean {
+    return !needle || row.name.toLowerCase().indexOf(needle) >= 0 ||
+      row.dn.toLowerCase().indexOf(needle) >= 0;
+  });
+  all.sort(function (a: any, b: any): number {
+    return a.name.toLowerCase() < b.name.toLowerCase() ? -1 :
+      (a.name.toLowerCase() > b.name.toLowerCase() ? 1 : 0);
+  });
+  const pages = Math.max(1, Math.ceil(all.length / GROUP_PAGE));
+  const asked = Math.floor(Number(page) || 1);
+  const at = Math.min(pages, Math.max(1, asked));
+  const out = {
+    q: needle,
+    page: at,
+    pages: pages,
+    per: GROUP_PAGE,
+    total: all.length,
+    groups: all.slice((at - 1) * GROUP_PAGE, at * GROUP_PAGE)
+  };
+  log.debug("Leaving reportGroupSearch(). " + out.total + ' matched.');
+  return out;
+}
+
+function reportGroupRecipients(groups: any, ldap: any): any {
+  log.debug("Entering reportGroupRecipients().");
+  const known = reportGroupRows(ldap);
+  const byDn: Record<string, any> = {};
+  known.forEach(function (row: any): void {
+    byDn[row.dn.toLowerCase()] = row;
+  });
+  const addressed: any[] = [];
+  const missing: any[] = [];
+  (Array.isArray(groups) ? groups : []).forEach(function (dn: any): void {
+    const key = String(dn || '').trim().toLowerCase();
+    if (!key) {
+      return;
+    }
+    const row = byDn[key] || { dn: String(dn), name: String(dn), mail: '' };
+    if (row.mail) {
+      addressed.push(row);
+    } else {
+      missing.push(row);
+    }
+  });
+  log.debug("Leaving reportGroupRecipients(). " + addressed.length +
+    ' addressed, ' + missing.length + ' without an address.');
+  return { addressed: addressed, missing: missing };
+}
+
+function reportGroupNotice(job: any, group: any): any {
+  log.debug("Entering reportGroupNotice().");
+  const request = {
+    groupDn: group.dn,
+    template: 'report-ready',
+    values: {
+      username: group.name,
+      definition: job.definitionName || job.definitionId || '',
+      status: job.status
+    },
+    links: { report: '/report/jobs/' + job.id },
+    dedupKey: 'report-ready:' + job.id + ':' + group.dn,
+    actor: reportActor(job)
+  };
+  log.debug("Leaving reportGroupNotice().");
+  return request;
+}
+
+function reportNotifyGroups(job: any): void {
+  log.debug("Entering reportNotifyGroups().");
+  const def = stores.getDefinition(job.definitionId);
+  const groups = def && Array.isArray(def.groups) ? def.groups : [];
+  if (!groups.length) {
+    log.debug("Leaving reportNotifyGroups(). None.");
+    return;
+  }
+  const split = reportGroupRecipients(groups, reportLdap());
+  split.missing.forEach(function (group: any): void {
+    log.error(errorCodes.tag('STS-REPORT-0037') + 'report: job ' + job.id +
+      ' finished with Notify on, and the group ' + group.dn +
+      ' it is shared with has no mail attribute, so that group was not ' +
+      'sent the notice.');
+    reportAudit({
+      category: 'admin',
+      action: 'report.notify',
+      outcome: 'error',
+      errorCode: 'STS-REPORT-0037',
+      actor: reportActor(job),
+      summary: 'report job ' + job.id + ': the group ' + group.dn +
+        ' has no mail attribute',
+      detail: Object.assign({ group: group.dn }, reportDetail(job))
+    });
+  });
+  if (!split.addressed.length) {
+    log.debug("Leaving reportNotifyGroups(). Nobody addressed.");
+    return;
+  }
+  const mail = require('../common/mail');
+  split.addressed.forEach(function (group: any): void {
+    let sent: any = null;
+    try {
+      sent = mail.send(reportGroupNotice(job, group));
+    } catch (e) {
+      log.debug("Caught in reportNotifyGroups(): " +
+        ((e && e.message) || e));
+      log.warn(errorCodes.tag('STS-REPORT-0027') +
+        'report: the job finished and the notice to ' + group.dn +
+        ' was not sent.');
+      reportNotifyAudit(job, true);
+      return;
+    }
+    const why = sent && sent.error ? String(sent.error) : '';
+    const skipped = why.indexOf('no mail transport') >= 0 ||
+      why.indexOf('publicBaseUrl') >= 0;
+    if (sent && sent.ok) {
+      reportNotifyAudit(job, false);
+    } else if (!skipped) {
+      log.warn(errorCodes.tag('STS-REPORT-0027') +
+        'report: the job finished and the notice to ' + group.dn +
+        ' was not sent.');
+      reportNotifyAudit(job, true);
+    }
+  });
+  log.debug("Leaving reportNotifyGroups().");
+}
+
 function reportNotify(job: any): void {
   log.debug("Entering reportNotify().");
   if (!job || !job.notify || !job.definitionId) {
     log.debug("Leaving reportNotify(). Not asked.");
     return;
   }
+  // The shared groups first (#989); a throw there is caught per group, so
+  // the owner's notice below is never lost to a group's.
+  reportNotifyGroups(job);
   const username = reportActor(job);
   if (!username || username === job.owner) {
     log.debug("Leaving reportNotify(). No account name.");
@@ -1956,6 +2122,9 @@ export = {
   installReader: reportInstallReader,
   installDirectory: reportInstallDirectory,
   indexedLookups: reportIndexedLookups,
+  groupSearch: reportGroupSearch,
+  groupRecipients: reportGroupRecipients,
+  notify: reportNotify,
   abandonFences: reportAbandonFences,
   processToken: reportProcessToken,
   fenceGone: reportFenceGone,

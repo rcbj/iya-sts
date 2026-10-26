@@ -4727,6 +4727,19 @@ const ENDPOINTS: EndpointEntry[] = [
           'active, every realm with its id, name and path prefix (#986): ' +
           'what the application\'s realm field and switch are drawn from. ' +
           'Behind the same token as the rest of /report-api.' },
+  { path: '/report-api/groups', group: 'Reporting',
+    name: 'The group search, for the reports application', specs: [],
+    what: 'NON-SPEC. The realm\'s groups whose name or DN contains q, five ' +
+          'a page, each with its own mail attribute (#989): the definition ' +
+          'page\'s pane. A definition\'s groups are who is emailed its ' +
+          'result. Behind the same token as the rest of /report-api.' },
+  { path: '/report-api/schedules', group: 'Reporting',
+    name: 'The scheduled report definitions', specs: [],
+    what: 'NON-SPEC. Every definition that carries a schedule, with its ' +
+          'next run, the occurrence it last took, its skip notes and its ' +
+          'recent scheduled jobs (#992). report:use sees its own and ' +
+          'shared ones; report:admin the whole realm, and one owner by ' +
+          'name. Behind the same token as the rest of /report-api.' },
   { path: '/report-api/queries', group: 'Reporting',
     name: 'Run a report query', specs: [],
     what: 'NON-SPEC. A catalog query. A small bounded one answers in the ' +

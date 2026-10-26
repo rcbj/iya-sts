@@ -76,6 +76,9 @@ function reportDepsOf(): any {
 function reportHttpStatus(code: string): number {
   log.debug("Entering reportHttpStatus().");
   let status = 400;
+  if (code === 'STS-REPORT-0038') {
+    status = 403;
+  }
   if (code === 'STS-REPORT-0001' || code === 'STS-REPORT-0019' ||
       code === 'STS-REPORT-0020') {
     status = 404;
@@ -766,6 +769,10 @@ function reportDefinitionView(who: any, row: any): any {
     ownerName: reportOwnerName(String(row.owner || '')),
     schedule: row.schedule || '',
     scheduleEnabled: !!row.scheduleEnabled,
+    // When the schedule next runs and which occurrence it last took, so
+    // the page can tell "not due yet" from "skipped" (#989's follow-up).
+    nextRunAt: jobs.scheduleTimes(row).nextRunAt,
+    lastSlotAt: jobs.scheduleTimes(row).lastSlotAt,
     notify: !!row.notify,
     editable: editable,
     createdAt: jobs.iso(row.createdAt),
@@ -821,6 +828,135 @@ function reportRealmsView(): any {
   };
   log.debug("Leaving reportRealmsView().");
   return view;
+}
+
+// THE SCHEDULES (#992): every definition that carries a schedule, with what
+// the definition page shows of it and its recent scheduled jobs. A
+// report:use token sees the definitions it owns or is shared, as
+// /definitions does; report:admin sees every one in the realm and may name
+// one owner (`?owner=`, a subject or a username). A non-administrator who
+// names an owner is refused rather than narrowed to their own, so the
+// answer never quietly means something other than what was asked.
+const SCHEDULES_PER = 20;
+const SCHEDULES_PER_MAX = 100;
+const SCHEDULE_JOBS_SHOWN = 5;
+
+function reportOwnerAsked(asked: string): string {
+  log.debug("Entering reportOwnerAsked().");
+  const text = String(asked || '').trim();
+  if (!text) {
+    log.debug("Leaving reportOwnerAsked(). None.");
+    return '';
+  }
+  if (/^urn:uuid:/i.test(text)) {
+    log.debug("Leaving reportOwnerAsked(). A subject.");
+    return text;
+  }
+  const helpers = require('../common/helpers');
+  const subject = String(helpers.subjectForName(text) || '');
+  log.debug("Leaving reportOwnerAsked(). " + (subject ? 'Resolved.' :
+    'Unknown name.'));
+  return subject || text;
+}
+
+function reportSchedulesView(who: any, query: any): any {
+  log.debug("Entering reportSchedulesView().");
+  const q = query || {};
+  const admin = rights.isAdmin(who.scope);
+  const ownerAsked = reportOwnerAsked(q.owner);
+  if (ownerAsked && !admin && ownerAsked !== who.subject) {
+    log.debug("Leaving reportSchedulesView(). Another owner, refused.");
+    return { ok: false, code: 'STS-REPORT-0038', error: 'forbidden',
+      description: 'Only a realm administrator may list another ' +
+        'account\'s schedules.' };
+  }
+  const rows = stores.listDefinitions().filter(function (row: any): boolean {
+    if (!row.schedule) {
+      return false;
+    }
+    if (ownerAsked && row.owner !== ownerAsked) {
+      return false;
+    }
+    return rights.canSee(who.subject, who.scope, row);
+  });
+  rows.sort(function (left: any, right: any): number {
+    return String(left.name).localeCompare(String(right.name));
+  });
+  const per = Math.min(SCHEDULES_PER_MAX, Math.max(1,
+    Math.floor(Number(q.per) || SCHEDULES_PER)));
+  const pages = Math.max(1, Math.ceil(rows.length / per));
+  const page = Math.min(pages, Math.max(1, Math.floor(Number(q.page) || 1)));
+  const allJobs = stores.listJobs();
+  const schedules = rows.slice((page - 1) * per, page * per).map(
+    function (row: any): any {
+      const times = jobs.scheduleTimes(row);
+      const own = allJobs.filter(function (job: any): boolean {
+        return job.definitionId === row.id &&
+          job.queuedBecause === 'schedule';
+      });
+      own.sort(function (a: any, b: any): number {
+        return Number(b.submittedAt || 0) - Number(a.submittedAt || 0);
+      });
+      const notes = (Array.isArray(row.failures) ? row.failures : [])
+        .slice(-3).reverse().map(function (note: any): any {
+          return { at: jobs.iso(note && note.at),
+                   description: String((note && note.description) || '') };
+        });
+      return {
+        definition: {
+          id: row.id,
+          name: row.name,
+          owner: row.owner,
+          ownerName: reportOwnerName(String(row.owner || '')),
+          schedule: row.schedule,
+          scheduleEnabled: !!row.scheduleEnabled,
+          notify: !!row.notify,
+          nextRunAt: times.nextRunAt,
+          lastSlotAt: times.lastSlotAt,
+          failures: notes
+        },
+        jobs: own.slice(0, SCHEDULE_JOBS_SHOWN).map(function (job: any): any {
+          return jobs.jobView(job, false);
+        }),
+        jobCount: own.length
+      };
+    });
+  log.debug("Leaving reportSchedulesView(). " + rows.length + '.');
+  return {
+    ok: true,
+    scope: admin ? 'realm' : 'mine',
+    owner: ownerAsked || null,
+    page: page,
+    pages: pages,
+    per: per,
+    total: rows.length,
+    schedules: schedules
+  };
+}
+
+function reportServeSchedules(req: any, res: any, who: any): void {
+  log.debug("Entering reportServeSchedules().");
+  const view = reportSchedulesView(who, (req && req.query) || {});
+  if (!view.ok) {
+    reportSend(res, reportHttpStatus(view.code), view.code, view.error,
+      view.description);
+    log.debug("Leaving reportServeSchedules(). Refused.");
+    return;
+  }
+  delete view.ok;
+  reportJson(res, 200, view);
+  log.debug("Leaving reportServeSchedules().");
+}
+
+// THE GROUP SEARCH (#989): the definition page's pane, five a page, over
+// the realm's resident groups, each with its own address so the page can
+// say which groups a notice could reach.
+function reportServeGroups(req: any, res: any): void {
+  log.debug("Entering reportServeGroups().");
+  const query = (req && req.query) || {};
+  reportJson(res, 200, sources.groupSearch(String(query.q || ''),
+    Number(query.page || 1)));
+  log.debug("Leaving reportServeGroups().");
 }
 
 function reportServeRealms(res: any): void {
@@ -1260,6 +1396,10 @@ async function reportRoute(req: any, res: any, who: any): Promise<void> {
     reportServeSource(res, b);
   } else if (a === 'realms' && !b && method === 'GET') {
     reportServeRealms(res);
+  } else if (a === 'groups' && !b && method === 'GET') {
+    reportServeGroups(req, res);
+  } else if (a === 'schedules' && !b && method === 'GET') {
+    reportServeSchedules(req, res, who);
   } else if (a === 'queries' && !b && method === 'POST') {
     await reportAcceptQuery(req, res, who, false, null);
   } else if (a === 'definitions' && !b && method === 'GET') {
@@ -1395,6 +1535,12 @@ class ReportApi {
     app.get(BASE + '/realms', function (req: any, res: any): void {
       reportAnswer(req, res);
     });
+    app.get(BASE + '/groups', function (req: any, res: any): void {
+      reportAnswer(req, res);
+    });
+    app.get(BASE + '/schedules', function (req: any, res: any): void {
+      reportAnswer(req, res);
+    });
     app.post(BASE + '/queries', function (req: any, res: any): void {
       reportAnswer(req, res);
     });
@@ -1453,5 +1599,6 @@ export = {
   },
   realmsView: reportRealmsView,
   ownerName: reportOwnerName,
+  schedulesView: reportSchedulesView,
   ReportApi: ReportApi
 };

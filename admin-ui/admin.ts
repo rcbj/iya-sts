@@ -9518,7 +9518,8 @@ let directoryWriter = null;
 // AND SINCE #603 A GROUP'S OWNERS, added and taken off one at a time — the
 // group page's Owners tab writes each at once.
 const GROUP_WRITER_MEMBERS = ['createGroup', 'addGroupMember',
-                              'addGroupOwner', 'removeGroupOwner'];
+                              'addGroupOwner', 'removeGroupOwner',
+                              'setGroupMail'];
 let groupWriter = null;
 
 // The rule cell, the caveat and the links both groups pages carry are

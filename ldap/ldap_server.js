@@ -9833,7 +9833,8 @@ if (typeof admin.setGroupWriter === 'function') {
   admin.setGroupWriter({ createGroup: createGroup,
                          addGroupMember: addGroupMember,
                          addGroupOwner: addGroupOwner,
-                         removeGroupOwner: removeGroupOwner });
+                         removeGroupOwner: removeGroupOwner,
+                         setGroupMail: setGroupMail });
 } else {
   log.warn('ldap: the admin console offers no setGroupWriter(), so ' +
            '/admin/groups cannot create a group or add a member to one. The ' +
@@ -13670,6 +13671,21 @@ if (typeof mailChannel.setDirectory === 'function') {
       log.debug('Leaving personEntry().');
       return { dn: located.stored.dn,
                attributes: Object.assign({}, located.stored.attributes) };
+    },
+    // A GROUP BY DN, FOR A NOTICE ADDRESSED TO ITS OWN `mail` (#989): the
+    // stored entry's attributes as they are, so the channel reads `mail`
+    // and `cn` as it reads a person's. Null for anything that is not a
+    // group of this realm.
+    groupEntry: function (dn) {
+      log.debug('Entering groupEntry().');
+      const stored = getEntry(String(dn || ''));
+      if (!stored || !groupRuleFor(stored)) {
+        log.debug('Leaving groupEntry(). Not a group here.');
+        return null;
+      }
+      log.debug('Leaving groupEntry().');
+      return { dn: stored.dn,
+               attributes: Object.assign({}, stored.attributes) };
     },
     personByMail: function (address) {
       log.debug('Entering personByMail().');
@@ -25258,6 +25274,16 @@ function createGroup(displayName, options) {
   });
   const note = String(opts.note || '').trim() ||
     'created by hand rather than by a directory client';
+  // THE GROUP'S OWN ADDRESS (#989): `mail` on the group entry, where a
+  // report definition shared with the group sends its result notices.
+  // Checked here, at the one door, with the rule `setGroupMail()` applies.
+  const mailAsked = String(opts.mail == null ? '' : opts.mail).trim();
+  if (mailAsked && !GROUP_MAIL_SHAPE.test(mailAsked)) {
+    log.debug('Leaving createGroup(). Not an address.');
+    return coded('STS-LDAP-0177', { ok: false, errors: ['"' + mailAsked +
+      '" is not an email address, so it cannot be the group\'s mail ' +
+      'attribute. Give one address, local-part@domain, or none.'] });
+  }
   const attributes = {
     objectClass: ['top', 'groupOfNames'],
     cn: [wanted],
@@ -25265,6 +25291,9 @@ function createGroup(displayName, options) {
   };
   if (members.length) {
     attributes.member = members;
+  }
+  if (mailAsked) {
+    attributes.mail = [mailAsked];
   }
   const written = writeGroupEntry(dn, attributes, opts.origin || 'console');
   if (!written.ok) {
@@ -25539,6 +25568,104 @@ function addGroupMember(group, member, options) {
                                       'because this directory does no ' +
                                       'referential integrity in either ' +
                                       'direction.') };
+}
+
+// ---------------------------------------------------------------------------
+// A GROUP'S EMAIL ADDRESS (#989). One `mail` value on the group's own entry,
+// where a report definition shared with the group sends its result notices
+// (`report/sources.ts`, `reportNotify()`). Set or cleared through the group
+// page's form and `POST /admin-api/groups/set-mail`, which both reach this
+// one function; a create takes it as `opts.mail`. The shape rule is the
+// plainest one that refuses what cannot be delivered to — one local part,
+// one `@`, a domain with a dot, no whitespace — and is deliberately not the
+// mail channel's `addressProblem()`, which this file would otherwise have
+// to require for one regular expression. An empty value removes the
+// attribute. Nothing else about the entry is touched, and the operational
+// three are left out of the write for `addGroupMember()`'s reason.
+// ---------------------------------------------------------------------------
+const GROUP_MAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/**
+ * Sets or clears a group's `mail` attribute (#989).
+ *
+ * @param group - the group's `cn` or its whole DN
+ * @param mail - the address, or '' to remove it
+ * @param options - `origin`, `channel`, `protocol`, `actor`
+ * @returns `{ ok, changed, dn, mail }`, or a coded refusal
+ */
+function setGroupMail(group, mail, options) {
+  log.debug('Entering setGroupMail().');
+  const opts = options || {};
+  const wantedGroup = String(group == null ? '' : group).trim();
+  const wantedMail = String(mail == null ? '' : mail).trim();
+  if (!wantedGroup) {
+    log.debug('Leaving setGroupMail(). No group.');
+    return coded('STS-LDAP-0042', { ok: false, errors: [
+      'Which group? Send `group` with its `cn` or its whole DN.'] });
+  }
+  if (wantedMail && !GROUP_MAIL_SHAPE.test(wantedMail)) {
+    log.debug('Leaving setGroupMail(). Not an address.');
+    return coded('STS-LDAP-0177', { ok: false, errors: ['"' + wantedMail +
+      '" is not an email address, so it cannot be the group\'s mail ' +
+      'attribute. Give one address, local-part@domain, or none.'] });
+  }
+  const dn = DN_SHAPED.test(wantedGroup) ? wantedGroup :
+             groupDnFor(wantedGroup);
+  const existing = readGroupEntry(dn);
+  if (!existing) {
+    log.debug('Leaving setGroupMail(). No group there.');
+    return coded('STS-LDAP-0050', { ok: false, errors: [
+      'There is no group at ' + dn + '.'] });
+  }
+  const attributes = {};
+  let mailKey = 'mail';
+  Object.keys(existing.attributes).forEach(function (name) {
+    if (OPERATIONAL.indexOf(name.toLowerCase()) >= 0) {
+      return;
+    }
+    if (name.toLowerCase() === 'mail') {
+      mailKey = name;
+      return;
+    }
+    attributes[name] = existing.attributes[name].slice(0);
+  });
+  const before = String(((existing.attributes[mailKey] || [])[0]) || '');
+  if (before === wantedMail) {
+    log.debug('Leaving setGroupMail(). Unchanged.');
+    return { ok: true, changed: false, dn: existing.dn, mail: wantedMail,
+             message: wantedMail
+               ? existing.dn + ' already has the address ' + wantedMail + '.'
+               : existing.dn + ' has no address, as asked.' };
+  }
+  if (wantedMail) {
+    attributes[mailKey] = [wantedMail];
+  }
+  const written = writeGroupEntry(existing.dn, attributes,
+                                  opts.origin || 'console');
+  if (!written.ok) {
+    log.debug('Leaving setGroupMail(). Not written: ' + written.reason);
+    return coded(errorCodes.codeOf(written),
+                 { ok: false, reason: written.reason,
+             errors: ['The address could not be written onto ' +
+                      existing.dn + ' (' + written.reason + ').'] });
+  }
+  audit.recordDirectory({
+    action: 'group.set-mail',
+    actor: String(opts.actor || ''),
+    target: existing.dn,
+    protocol: String(opts.protocol || ''),
+    channel: opts.channel || 'internal',
+    summary: wantedMail
+      ? existing.dn + ' now has the address ' + wantedMail
+      : existing.dn + ' no longer has an address',
+    detail: { mail: wantedMail, before: before }
+  });
+  log.debug('Leaving setGroupMail().');
+  return { ok: true, changed: true, dn: existing.dn, mail: wantedMail,
+           entry: written.entry,
+           message: wantedMail
+             ? existing.dn + ' now has the address ' + wantedMail + '.'
+             : 'The address was removed from ' + existing.dn + '.' };
 }
 
 // ---------------------------------------------------------------------------
@@ -27416,6 +27543,7 @@ module.exports = {
   inPersonBatch: inPersonBatch,
   personBatchStep: personBatchStep,
   groupDnFor: groupDnFor,
+  setGroupMail: setGroupMail,
   // ---------------------------------------------------------------------
   // THE OPERATION CODEC, EXPORTED FOR `tests/ldap_operations.js` AND FOR
   // NOTHING ELSE IN THE SERVICE.

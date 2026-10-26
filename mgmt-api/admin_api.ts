@@ -9524,7 +9524,13 @@ class AdminApi {
                                'entry it meant to name.',
                   oneOf: [{ type: 'array', items: { type: 'string' } },
                           { type: 'string' }]
-                }
+                },
+                mail: { type: 'string',
+                        description: 'The group\'s own email address, its ' +
+                                     '`mail` attribute (#989): where a ' +
+                                     'report definition shared with the ' +
+                                     'group sends its result notices. One ' +
+                                     'address, or omitted.' }
               },
               required: ['group'],
               examples: [{ group: 'developers', note: 'the people who write it',
@@ -9584,6 +9590,39 @@ class AdminApi {
             responseDescription: 'Whether anything changed, the value ' +
                                  'written, and whether it resolves to an ' +
                                  'entry this directory holds.' },
+
+          // A GROUP'S EMAIL ADDRESS (#989): the group page's Email address
+          // form. The directory owns the shape rule and the refusals.
+          { action: 'set-mail', operationId: 'setGroupMail',
+            summary: 'Set or clear a group\'s email address',
+            description: 'Writes one `mail` value onto the group\'s own ' +
+                         'entry, or removes it when `mail` is empty. It is ' +
+                         'where a report definition shared with the group ' +
+                         'sends its result notices (the reports ' +
+                         'application, #989); a shared group with no ' +
+                         'address is written up as STS-REPORT-0037 when a ' +
+                         'notice is due. `group` is its `cn` or its whole ' +
+                         'DN. **Idempotent**: the same address again, or ' +
+                         'clearing one that is already absent, answers ' +
+                         '`ok: true` with `changed: false`. A value that is ' +
+                         'not an address (one local part, one `@`, a domain ' +
+                         'with a dot, no whitespace) is refused.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                group: { type: 'string',
+                         description: 'The group\'s `cn` or its whole DN.' },
+                mail: { type: 'string',
+                        description: 'The address, or empty to remove it.' }
+              },
+              required: ['group'],
+              examples: [{ group: 'developers',
+                           mail: 'developers@example.com' }],
+              additionalProperties: false
+            },
+            responseDescription: 'Whether anything changed, and the ' +
+                                 'address now on the entry.' },
 
           // A GROUP'S OWNERS (#603): what the group page's Owners tab saves
           // the moment Add or Remove is pressed.

@@ -88,13 +88,19 @@ const log = require('bunyan').createLogger({ name: 'mail',
 const ROOT = path.join(__dirname, '..');
 
 // A directory of people for the channel's slot: username → attributes.
-function stubDirectory(people) {
+function stubDirectory(people, groups) {
   log.debug('Entering stubDirectory().');
   const flags = {};
+  const held = groups || {};
   log.debug('Leaving stubDirectory().');
   return {
     people: people,
     flags: flags,
+    // A group by DN (#989): its attributes, or null.
+    groupEntry: function (dn) {
+      const attrs = held[String(dn || '').toLowerCase()];
+      return attrs ? { dn: dn, attributes: Object.assign({}, attrs) } : null;
+    },
     personEntry: function (u) {
       if (!people[u]) {
         return null;
@@ -299,6 +305,62 @@ async function recipients(t) {
     await stillSent.delivered;
   });
   log.debug('Leaving recipients().');
+}
+
+// ---------------------------------------------------------------------------
+// 3g. A GROUP AS A RECIPIENT (#989): the reports application's notice to a
+// shared group, at the group's own `mail`, resolved by the directory.
+// ---------------------------------------------------------------------------
+async function groupRecipients(t) {
+  log.debug('Entering groupRecipients().');
+  const realms = require('../common/realms');
+  const mailModule = require('../common/mail');
+  mailModule.setDirectory(stubDirectory(
+    { dana: { mail: ['dana@example.com'] } },
+    { 'cn=reporters,ou=groups,dc=example,dc=com':
+        { cn: ['reporters'], mail: ['reporters@example.com'] },
+      'cn=silent,ou=groups,dc=example,dc=com': { cn: ['silent'] } }));
+  await withRealm(t, realms, realmId('mail-groups'), {}, async function () {
+    const transports = stubTransports();
+    const m = makeMail({ transports: transports });
+    const sent = m.send({ groupDn: 'cn=reporters,ou=groups,dc=example,dc=com',
+                          template: 'test-message',
+                          values: { when: 'now', transport: 'stub' },
+                          dedupKey: 'g-1' });
+    t.check(sent.ok && sent.queued.length === 1,
+            '3g-a. a group with an address is queued once',
+            JSON.stringify(sent.refused));
+    const row = sent.queued[0] || {};
+    t.equal(row.to || row.address || row.recipient,
+            row.to || row.address || row.recipient,
+            '3g-b. the row names a recipient');
+    t.check(JSON.stringify(row).indexOf('reporters@example.com') >= 0,
+            '3g-c. the address is the group\'s own mail attribute',
+            JSON.stringify(row).slice(0, 300));
+    const again = m.send({ groupDn: 'cn=reporters,ou=groups,dc=example,dc=com',
+                           template: 'test-message',
+                           values: { when: 'now', transport: 'stub' },
+                           dedupKey: 'g-1' });
+    t.check(again.ok && again.queued.length === 0 &&
+            again.duplicates.length === 1,
+            '3g-d. the same act to the same group within the window is one ' +
+            'message');
+    const silent = m.send({ groupDn: 'cn=silent,ou=groups,dc=example,dc=com',
+                            template: 'test-message',
+                            values: { when: 'now', transport: 'stub' } });
+    t.check(!silent.ok && silent.refused[0] &&
+            silent.refused[0].code === 'STS-MAIL-0011',
+            '3g-e. a group with no mail attribute is refused as a person ' +
+            'without one is', JSON.stringify(silent.refused));
+    const gone = m.send({ groupDn: 'cn=gone,ou=groups,dc=example,dc=com',
+                          template: 'test-message',
+                          values: { when: 'now', transport: 'stub' } });
+    t.check(!gone.ok && gone.refused[0] &&
+            gone.refused[0].code === 'STS-MAIL-0012',
+            '3g-f. a group that is not there is refused as a missing ' +
+            'person is', JSON.stringify(gone.refused));
+  });
+  log.debug('Leaving groupRecipients().');
 }
 
 // ---------------------------------------------------------------------------
@@ -1717,6 +1779,7 @@ async function sections(t) {
   {
     templates(t);
     await recipients(t);
+    await groupRecipients(t);
     await ceilings(t);
     await twoNodes(t);
     await retries(t);

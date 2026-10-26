@@ -117,6 +117,85 @@ The index, the realms view and the version are read once per load
 without the `+`, and the variable reader over a form double; what it does
 not hold is the browser's cloning and the navigation.
 
+## The definition page, and who is emailed (#989)
+
+rcbj, 2026-10-26, after seeing #986's page. Four things:
+
+* **The query is edited with the New Query form's own controls.**
+  `queryFormHtml(t, sources, document)` draws both pages; the definition
+  page fills it from the saved document (source, fields, filter rows,
+  sort, limit, format, count and group-by), and Save reads the document
+  off the form with `queryDocument()` as New Query does. A filter the
+  rows cannot draw — an `or`, a `not`, an `in`, a value that is not a
+  string or number — is shown as JSON and rides back on a hidden
+  `whereJson` until a row is filled in (`whereLeaves()` decides). A
+  change of source redraws the query block empty for the new fields.
+* **The groups pane**: `GET /report-api/groups?q=&page=` is
+  `sources.groupSearch()`, a case-insensitive substring over the realm's
+  resident groups (`allGroupEntries()`), five a page in name order, each
+  with its own `mail`. The page draws the hits with an Add each and a
+  Previous/Next pager, and the chosen groups as a list of hidden
+  `group` inputs with a Remove each; Save posts the definition, then the
+  list to the share endpoint. Enter in the search box searches (a
+  keydown handler), not saves. Save and Delete are real buttons at the
+  foot, in a two-column `.editor`.
+* **The shared groups are emailed the result.** `reportNotify()` calls
+  `reportNotifyGroups()` first: `reportGroupRecipients()` splits the
+  definition's groups into those with a `mail` attribute and those
+  without; each of the first is sent the `report-ready` notice through
+  the mail channel's new group recipient (`groupDn`, resolved by the
+  directory, `common/CLAUDE.md` 3ba), with a dedup key per job and group;
+  each of the second is **`STS-REPORT-0037`**, logged with `log.error`
+  and written on the audit row (`report.notify`, outcome `error`, the
+  group's DN in the detail), and the others are still sent to. The
+  owner's notice is unchanged. A group's address is set on the console's
+  group page or at its create (`ldap/CLAUDE.md`).
+* **A tooltip on every field** (rcbj, the same day), the console's shape:
+  `tip(t, key)` puts a `title` on the field's label from a `report.tip*`
+  sentence (`admin-ui/web_kit.ts`'s `tip()` is the model). A new field
+  owes a `tipX` key in the seven base catalogs.
+* **The schedule's status** (rcbj: a schedule set, no job seen):
+  `jobs.scheduleTimes()` puts `nextRunAt` (croner's `cronNext`) and
+  `lastSlotAt` on the definition view, and `scheduleStatusHtml()` draws
+  them under the editor with one sentence on how a schedule runs and the
+  `failures` notes the schedule job left. The mechanism itself is
+  unchanged: `lastSlot` starts null, so the first pass after an enabled
+  save queues the most recent PAST occurrence within a minute, and each
+  later occurrence follows; a save with Enabled clear keeps the schedule
+  and never runs.
+* **`GET /report-api/schedules` (#992)**: `reportSchedulesView(who, query)`
+  — the scheduled definitions the caller may see (`rights.canSee`, so
+  owned and shared for `report:use`, the realm for `report:admin`), each
+  with `jobs.scheduleTimes()`, its last three notes and its five newest
+  jobs whose `queuedBecause` is `schedule`. `?owner=` (a subject or a
+  username through `helpers.subjectForName()`) is an administrator's;
+  `report:use` naming anyone but itself is `STS-REPORT-0038`, refused
+  rather than narrowed, so an answer never means something other than
+  what was asked. No page draws it yet.
+* **The status bubble** (rcbj, after Download said only "Something went
+  wrong"): `flash(kind, text)` puts the console's `.flash` — sticky at the
+  top of the card, `ok` or `err`, a dismiss — at the head of `#report`,
+  one at a time, and every act reports there: saved, deleted, queued as a
+  job, a refused run or save (the form stays), a failed download. **The
+  download bug**: `call()` read every `application/json` answer as the
+  API's JSON, so a JSON-format result had no `bytes`; `call(…, { raw:
+  true })` reads a 200 as bytes whatever its type and a refusal as JSON
+  for its description, and the message names the status when there is
+  none.
+* **The Parameters box explained**: `parametersHelpHtml()` under the Run
+  box names the parameters the saved filter holds (`paramNames()` walks
+  `param` leaves through `and`, `or` and `not`) or says it holds none and
+  the box is ignored, then gives the shape and one example. The query
+  form writes values, never parameters, so a page-made definition names
+  none; a parameterised one is written through the API.
+* `tests/report_query.js`'s `groups()` holds the search's paging and
+  matching, the recipients split, the form's prefill in every shape, the
+  JSON ride-back, the pane's markup, the tooltips and the parameters
+  sentence; `tests/mail.js` the group
+  recipient; `tests/directory_group_writes.js` the address on the entry.
+  Not held in process: the browser's Add/Remove and search, and a notice
+  sent to a real transport.
+
 ## The document
 
 A query is a JSON document: `source`, `select`, `where`, `orderBy`,

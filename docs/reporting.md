@@ -72,13 +72,74 @@ cannot answer from an index, so it has to read every person), `asked`
 synchronously), `run` (a saved definition run by hand) or `schedule`.
 
 A definition's page names its **owner** by display name or username
-(`ownerName`), with the subject kept on the API. Its **schedule** is
+(`ownerName`), with the subject kept on the API. Its **query is edited
+with the New Query form's own controls**, filled from the saved
+document; a filter the rows cannot draw (an `or`, a `not`, an `in`) is
+shown as JSON and kept until a row is filled in. Its **schedule** is
 edited as a date-time in UTC and seven weekday boxes: with weekdays
 ticked the definition runs at that time on those days every week; with
 none it runs on that date every year. The sentence under the controls
 says which, and shows the cron expression the API stores, so an
 expression written by hand on the API that the editor cannot draw is
-still seen.
+still seen. Save and Delete are buttons at the foot of the form.
+
+Every field of the application carries a **tooltip** on its label, the
+console's shape, saying what the field is for. The outcome of an act — a
+save, a delete, a query queued as a job, a refused run, a download that
+failed — is shown in a **status bubble** at the top of the page, with a
+dismiss; a refusal leaves the form as it was. A failed download names
+the API's reason, or the HTTP status when it gave none.
+
+**The Parameters box** on a definition's page is for a saved filter that
+names a parameter instead of a value, such as
+`{ "op": "eq", "field": "username", "param": "who" }`. The definition
+stores a default for it, and a run fills it from the JSON object typed
+in the box, for example `{"who": "rcbj"}`; a key given there overrides
+the stored default for that run only, and an empty box uses the defaults.
+The sentence under the box names the parameters the filter holds, or
+says that it holds none, in which case the box is ignored. The query form
+writes values, not parameters, so a definition made on the page names
+none unless its document is edited through the API.
+
+**How a schedule runs.** An enabled schedule is checked about once a
+minute by the `report.schedule` job. The most recent occurrence that has
+not yet been taken is queued as a job, owned by the definition's owner;
+so the first run follows within a minute of saving an enabled schedule
+whose expression has any past occurrence, and later runs follow each
+occurrence. The definition page says when the next run is due and which
+occurrence was last taken, and lists the reasons a scheduled run did not
+happen (`failures` on the API): the owner lost `report:use`, a parameter
+has no stored value, the query no longer validates, or the job could not
+be queued. A schedule that is saved with the Enabled box clear is kept
+and never runs.
+
+**`GET /report-api/schedules`** lists every definition that carries a
+schedule, each with `nextRunAt`, `lastSlotAt`, its last three skip notes
+and its most recent scheduled jobs (at most five, with `jobCount` for the
+total). With `report:use` the list is the definitions you own or are
+shared (`scope: "mine"`); with `report:admin` it is every one in the
+realm (`scope: "realm"`), and `?owner=` narrows it to one owner, given
+as a `urn:uuid:` subject or a username. A `report:use` token that names
+another owner is refused with `forbidden` (403). `page` and `per` page
+it, `per` at most 100.
+
+### The groups a definition is shared with, and who is emailed
+
+The **Groups emailed the result** pane is a search over the realm's
+groups (`GET /report-api/groups?q=&page=`, five a page, with Previous
+and Next), an Add beside each hit, and the chosen groups in a list with a
+Remove beside each. Save sends the list to the share endpoint. Members of
+those groups may run the definition and read its result, as before.
+
+**Since #989 those groups are also who is emailed.** When a job of the
+definition finishes with Notify on, the owner's notice is sent as before
+and each shared group is sent one at the group's own email address, the
+`mail` attribute of the group entry, which the console's group page sets
+(*Email address*, or `POST /admin-api/groups/set-mail`; a create may give
+it too). **A shared group with no address is an error of its own**,
+`STS-REPORT-0037`: logged, written on the audit row as `report.notify`
+with outcome `error`, and shown as *no email address* beside the group in
+the pane. The other recipients are still sent to.
 
 ## The catalog
 

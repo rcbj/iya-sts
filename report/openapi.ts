@@ -156,6 +156,52 @@ class OpenApi {
               }
             })
         },
+        '/report-api/groups': {
+          get: operation('Search the realm\'s groups',
+            'The groups of this realm whose name or DN contains `q` ' +
+            '(case-insensitive; empty matches every group), five a page ' +
+            'in name order, each with its own `mail` attribute or an ' +
+            'empty string. The definition page builds its share list from ' +
+            'it; a definition\'s groups are who is emailed its result, at ' +
+            'that address (#989).', {
+              parameters: [
+                { name: 'q', in: 'query', required: false,
+                  schema: { type: 'string' } },
+                { name: 'page', in: 'query', required: false,
+                  schema: { type: 'integer', minimum: 1 } }
+              ],
+              responses: {
+                '200': answered('One page of groups.',
+                  { $ref: '#/components/schemas/GroupPage' })
+              }
+            })
+        },
+        '/report-api/schedules': {
+          get: operation('The scheduled definitions and their runs',
+            'Every definition that carries a schedule, with when it next ' +
+            'runs, the occurrence it last took, the notes a skipped run ' +
+            'left, and its most recent scheduled jobs. A report:use token ' +
+            'sees the definitions it owns or is shared; report:admin sees ' +
+            'every one in the realm and may name one owner with `owner` ' +
+            '(a urn:uuid subject or a username). A report:use token that ' +
+            'names another owner is refused with forbidden (403). Paged; ' +
+            '`per` is at most 100.', {
+              parameters: [
+                { name: 'owner', in: 'query', required: false,
+                  schema: { type: 'string' } },
+                { name: 'page', in: 'query', required: false,
+                  schema: { type: 'integer', minimum: 1 } },
+                { name: 'per', in: 'query', required: false,
+                  schema: { type: 'integer', minimum: 1, maximum: 100 } }
+              ],
+              responses: {
+                '200': answered('The schedules.',
+                  { $ref: '#/components/schemas/SchedulePage' }),
+                '403': answered('Another owner was named without ' +
+                  'report:admin.', { $ref: '#/components/schemas/Error' })
+              }
+            })
+        },
         '/report-api/catalog': {
           get: operation('The report catalog',
             'Every source. Each field has an id, a meaning, a type, ' +
@@ -422,6 +468,69 @@ class OpenApi {
                 items: { $ref: '#/components/schemas/Realm' } }
             }
           },
+          Schedule: {
+            type: 'object',
+            properties: {
+              definition: {
+                type: 'object',
+                properties: {
+                  id: { type: 'string' },
+                  name: { type: 'string' },
+                  owner: { type: 'string' },
+                  ownerName: { type: 'string' },
+                  schedule: { type: 'string' },
+                  scheduleEnabled: { type: 'boolean' },
+                  notify: { type: 'boolean' },
+                  nextRunAt: { type: 'string', nullable: true },
+                  lastSlotAt: { type: 'string', nullable: true },
+                  failures: { type: 'array', items: { type: 'object',
+                    properties: { at: { type: 'string', nullable: true },
+                      description: { type: 'string' } } } }
+                }
+              },
+              jobs: { type: 'array',
+                description: 'The most recent scheduled jobs, newest first, ' +
+                  'at most five.',
+                items: { $ref: '#/components/schemas/Job' } },
+              jobCount: { type: 'integer',
+                description: 'How many scheduled jobs the definition has ' +
+                  'in all.' }
+            }
+          },
+          SchedulePage: {
+            type: 'object',
+            properties: {
+              scope: { type: 'string', enum: ['mine', 'realm'] },
+              owner: { type: 'string', nullable: true },
+              page: { type: 'integer' },
+              pages: { type: 'integer' },
+              per: { type: 'integer' },
+              total: { type: 'integer' },
+              schedules: { type: 'array',
+                items: { $ref: '#/components/schemas/Schedule' } }
+            }
+          },
+          Group: {
+            type: 'object',
+            properties: {
+              dn: { type: 'string' },
+              name: { type: 'string', description: 'The cn.' },
+              mail: { type: 'string',
+                description: 'The group\'s own address, or empty.' }
+            }
+          },
+          GroupPage: {
+            type: 'object',
+            properties: {
+              q: { type: 'string' },
+              page: { type: 'integer' },
+              pages: { type: 'integer' },
+              per: { type: 'integer', example: 5 },
+              total: { type: 'integer' },
+              groups: { type: 'array',
+                items: { $ref: '#/components/schemas/Group' } }
+            }
+          },
           Field: {
             type: 'object',
             properties: {
@@ -546,6 +655,12 @@ class OpenApi {
                   'empty. The application composes it from a date-time ' +
                   'and weekday boxes.' },
               scheduleEnabled: { type: 'boolean' },
+              nextRunAt: { type: 'string', nullable: true,
+                description: 'When the enabled schedule next occurs, ' +
+                  'ISO-8601 UTC; null when it is off or has no occurrence.' },
+              lastSlotAt: { type: 'string', nullable: true,
+                description: 'The most recent occurrence the schedule has ' +
+                  'taken (queued, or skipped with a note), or null.' },
               notify: { type: 'boolean' },
               editable: { type: 'boolean' },
               createdAt: { type: 'string', format: 'date-time' },

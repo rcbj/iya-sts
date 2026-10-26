@@ -524,6 +524,8 @@ function projections(t) {
     '/report-api/catalog',
     '/report-api/catalog/{id}',
     '/report-api/realms',
+    '/report-api/groups',
+    '/report-api/schedules',
     '/report-api/queries',
     '/report-api/definitions',
     '/report-api/definitions/{id}',
@@ -627,6 +629,76 @@ async function schedules(t) {
         'the queued job carries the stored parameter');
       t.equal(queued[0] && queued[0].queuedBecause, 'schedule',
         'a scheduled job says it was scheduled');
+      const times = jobs.scheduleTimes(stores.getDefinition(
+        saved.definition.id), when);
+      t.equal(times.lastSlotAt, '2026-10-25T12:00:00.000Z',
+        'the occurrence taken is the minute the schedule fired');
+      t.equal(times.nextRunAt, '2026-10-25T12:01:00.000Z',
+        'and the next run is the next minute');
+      t.equal(jobs.scheduleTimes({ schedule: '* * * * *',
+        scheduleEnabled: false, lastSlot: null }, when).nextRunAt, null,
+        'a schedule that is off has no next run');
+
+      // The schedules endpoint (#992): mine, the realm, one owner.
+      const api = require('../report/report_api');
+      stores.putDefinition({
+        id: 'def-other', name: 'theirs', owner: 'urn:uuid:other',
+        // Off, so the second scheduleNow() below still queues nothing;
+        // the list shows a schedule whether or not it is on.
+        document: scheduledDocument(), parameters: { who: 'bea' },
+        schedule: '0 9 * * 1', scheduleEnabled: false, notify: false,
+        groups: [], lastSlot: null, failures: [{ at: when,
+          description: 'A saved parameter was not given.' }],
+        createdAt: 1, modifiedAt: 1
+      });
+      stores.putDefinition({
+        id: 'def-plain', name: 'no schedule', owner: 'urn:uuid:test',
+        document: scheduledDocument(), parameters: { who: 'ada' },
+        schedule: '', scheduleEnabled: false, notify: false, groups: [],
+        lastSlot: null, failures: [], createdAt: 1, modifiedAt: 1
+      });
+      const mine = api.schedulesView({ subject: 'urn:uuid:test',
+        scope: 'report:use' }, {});
+      t.equal(mine.scope, 'mine', 'report:use lists its own');
+      t.equal(mine.schedules.map(function (s) {
+        return s.definition.id;
+      }).join(','), saved.definition.id,
+        'only the caller\'s scheduled definition, not the unscheduled one ' +
+        'and not another owner\'s');
+      t.equal(mine.schedules[0].jobs.length, 1,
+        'with its scheduled job');
+      t.equal(mine.schedules[0].jobs[0].queuedBecause, 'schedule',
+        'which says it was scheduled');
+      t.equal(mine.schedules[0].definition.nextRunAt !== null, true,
+        'and its next run');
+      const realm = api.schedulesView({ subject: 'urn:uuid:admin',
+        scope: 'report:use report:admin' }, {});
+      t.equal(realm.scope, 'realm', 'report:admin lists the realm');
+      t.equal(realm.total, 2, 'both scheduled definitions');
+      t.equal(realm.schedules[0].definition.name, 'theirs',
+        'in name order');
+      t.equal(realm.schedules[0].definition.failures[0].description,
+        'A saved parameter was not given.',
+        'with the notes a skipped run left');
+      const one = api.schedulesView({ subject: 'urn:uuid:admin',
+        scope: 'report:admin' }, { owner: 'urn:uuid:other' });
+      t.equal(one.total, 1, 'an administrator may ask for one owner');
+      t.equal(one.owner, 'urn:uuid:other', 'and the answer names them');
+      const refused = api.schedulesView({ subject: 'urn:uuid:test',
+        scope: 'report:use' }, { owner: 'urn:uuid:other' });
+      t.equal(refused.ok, false, 'report:use may not ask for another owner');
+      t.equal(refused.code, 'STS-REPORT-0038', 'and the refusal is 0038');
+      const self = api.schedulesView({ subject: 'urn:uuid:test',
+        scope: 'report:use' }, { owner: 'urn:uuid:test' });
+      t.equal(self.total, 1, 'naming oneself is allowed');
+      const paged = api.schedulesView({ subject: 'urn:uuid:admin',
+        scope: 'report:admin' }, { per: 1, page: 2 });
+      t.equal(paged.pages === 2 && paged.schedules.length === 1 &&
+        paged.schedules[0].definition.id === saved.definition.id, true,
+        'the list pages');
+      t.equal(api.schedulesView({ subject: 'urn:uuid:admin',
+        scope: 'report:admin' }, { per: 1000 }).per, 100,
+        'per is capped at a hundred');
       t.equal(jobs.jobView(queued[0], false).queuedBecause, 'schedule',
         'and its view carries the reason');
       const held = stores.getDefinition(saved.definition.id);
@@ -738,8 +810,17 @@ function directoryDouble(windowed) {
     dn: 'cn=staff,' + GROUPS_DN,
     origin: 'test',
     attributes: { cn: ['staff'], objectClass: ['groupOfNames'],
-      member: [ada.dn] }
+      mail: ['staff@example.com'], member: [ada.dn] }
   };
+  // Eight groups for the search's paging (#989): staff with an address,
+  // the rest without, so a page of five is five and the second page two.
+  const moreGroups = ['auditors', 'board', 'catering', 'dev', 'finance',
+    'ops', 'reporters'].map(function (name) {
+    return { dn: 'cn=' + name + ',' + GROUPS_DN, origin: 'test',
+      attributes: { cn: [name], objectClass: ['groupOfNames'],
+        description: ['the ' + name] } };
+  });
+  const allGroups = [staff].concat(moreGroups);
   const calls = { byName: 0, byUuid: 0, byMail: 0, contains: 0, walk: 0,
     groups: 0, groupPages: 0 };
   const byName = {};
@@ -780,6 +861,12 @@ function directoryDouble(windowed) {
         })[0] || null);
       });
       return Promise.resolve(out);
+    },
+    allGroupEntries: function () {
+      calls.groupList = (calls.groupList || 0) + 1;
+      return allGroups.map(function (one) {
+        return { dn: one.dn, attributes: one.attributes, members: [] };
+      });
     },
     groupsOfUser: function (name) {
       calls.groups++;
@@ -1345,6 +1432,241 @@ function chrome(t) {
   log.debug("Leaving chrome().");
 }
 
+function groups(t) {
+  log.debug("Entering groups().");
+  const sources = require('../report/sources');
+  const ReportRuntime = require('../report/web_report_pages');
+  const OpenApi = require('../report/openapi');
+  const tr = englishTranslator();
+  const built = directoryDouble(true);
+  sources.installDirectory(built.ldap);
+  try {
+    // The search: five a page, name order, case-insensitive, with mail.
+    const first = sources.groupSearch('', 1);
+    t.equal(first.per, 5, 'a page is five');
+    t.equal(first.total, 8, 'every group is counted');
+    t.equal(first.pages, 2, 'eight groups are two pages');
+    t.equal(first.groups.length, 5, 'the first page holds five');
+    t.equal(first.groups[0].name, 'auditors', 'in name order');
+    const second = sources.groupSearch('', 2);
+    t.equal(second.groups.length, 3, 'the second page holds the rest');
+    t.equal(sources.groupSearch('', 9).page, 2,
+      'a page past the end is the last page');
+    const found = sources.groupSearch('STA', 1);
+    t.equal(found.groups.map(function (g) {
+      return g.name;
+    }).join(','), 'staff', 'the search is a case-insensitive substring');
+    t.equal(found.groups[0].mail, 'staff@example.com',
+      'a group carries its own address');
+    t.equal(found.groups[0].dn, 'cn=staff,' + GROUPS_DN,
+      'and its DN');
+    t.equal(sources.groupSearch('nobody-here', 1).groups.length, 0,
+      'no match is an empty page');
+
+    // Who is emailed: the groups with an address, and the ones without.
+    const split = sources.groupRecipients(['cn=staff,' + GROUPS_DN,
+      'CN=Dev,' + GROUPS_DN, 'cn=gone,' + GROUPS_DN], built.ldap);
+    t.equal(split.addressed.length, 1, 'one shared group has an address');
+    t.equal(split.addressed[0].mail, 'staff@example.com',
+      'and it is the one sent to');
+    t.equal(split.missing.map(function (g) {
+      return g.name;
+    }).join(','), 'dev,cn=gone,' + GROUPS_DN,
+      'a group with no address and a group that is gone are each noted');
+    t.equal(split.missing[0].name, 'dev',
+      'a known group without an address is named by its cn');
+  } finally {
+    sources.installDirectory(null);
+  }
+
+  // The shared query form, filled from a saved document.
+  const catalog = new Catalog();
+  const spec = OpenApi.document(catalog);
+  const cat = { sources: catalog.list().map(function (src) {
+    return { id: src.id, fields: src.fields };
+  }) };
+  const filled = ReportRuntime.queryFormHtml(tr, cat.sources, {
+    source: 'users',
+    select: ['username', 'mail'],
+    where: { op: 'and', args: [
+      { op: 'eq', field: 'username', value: 'ada' },
+      { op: 'contains', field: 'mail', value: 'example' }] },
+    orderBy: [{ field: 'mail', dir: 'desc' }],
+    limit: 25,
+    format: 'csv'
+  });
+  t.check(filled.indexOf('<option value="users" selected>') >= 0,
+    'the saved source is selected');
+  t.check(filled.indexOf('value="username" checked') >= 0 &&
+    filled.indexOf('value="mail" checked') >= 0 &&
+    filled.indexOf('value="status" checked') < 0,
+    'the saved fields are ticked and the others are not');
+  t.check(filled.indexOf('name="filterField1"') >= 0 &&
+    filled.indexOf('name="filterField2"') < 0,
+    'two filter rows for two leaves');
+  t.check(filled.indexOf('name="filterValue0" value="ada"') >= 0 &&
+    filled.indexOf('name="filterValue1" value="example"') >= 0,
+    'each row carries its leaf\'s value', filled.slice(0, 200));
+  t.check(/filterOp1"[^]*?<option value="contains" selected>/.test(filled),
+    'the second row\'s operator is selected');
+  t.check(filled.indexOf('name="limit" value="25"') >= 0,
+    'the saved limit');
+  t.check(filled.indexOf('<option value="csv" selected>') >= 0,
+    'the saved format');
+  t.check(filled.indexOf('<option value="desc" selected>') >= 0,
+    'the saved sort direction');
+  t.check(filled.indexOf('name="whereJson"') < 0,
+    'a filter the rows can draw rides on no JSON');
+  const counted = ReportRuntime.queryFormHtml(tr, cat.sources, {
+    source: 'users', select: ['status'], aggregate: 'count',
+    groupBy: ['status'] });
+  t.check(counted.indexOf('name="counted" checked') >= 0,
+    'a count document ticks Count');
+  t.check(/groupBy"[^]*?<option value="status" selected>/.test(counted),
+    'and selects its group field');
+  t.check(counted.indexOf('value="username" checked') >= 0,
+    'a count document leaves every field ticked, as the form started');
+  const complex = ReportRuntime.queryFormHtml(tr, cat.sources, {
+    source: 'users',
+    where: { op: 'or', args: [
+      { op: 'eq', field: 'username', value: 'ada' },
+      { op: 'eq', field: 'username', value: 'bea' }] } });
+  t.check(complex.indexOf('name="whereJson"') >= 0 &&
+    complex.indexOf('name="filterValue0" value=') < 0,
+    'a filter the rows cannot draw rides along as JSON, the rows empty');
+  const fresh = ReportRuntime.queryFormHtml(tr, cat.sources, null);
+  t.check(fresh.indexOf('name="filterField0"') >= 0 &&
+    fresh.indexOf('name="limit" value="100"') >= 0,
+    'no document is the New Query page\'s empty form');
+  t.equal(ReportRuntime.whereLeaves(null).length, 0, 'no filter is no leaf');
+  t.equal(ReportRuntime.whereLeaves({ op: 'not', arg: {} }), null,
+    'a not cannot be drawn as rows');
+  t.equal(ReportRuntime.whereLeaves({ op: 'in', field: 'username',
+    value: ['a'] }), null, 'an in cannot be drawn as rows');
+
+  // The JSON ride-back through the reader.
+  const carried = ReportRuntime.queryDocument(formDouble({
+    source: 'users', limit: '10', format: 'json',
+    whereJson: JSON.stringify({ op: 'not',
+      arg: { op: 'eq', field: 'status', value: 'locked' } })
+  }), 'en');
+  t.equal(carried.where && carried.where.op, 'not',
+    'with no row filled in, the JSON filter is carried back');
+  const overridden = ReportRuntime.queryDocument(formDouble({
+    source: 'users', limit: '10', format: 'json',
+    filterField0: 'status', filterOp0: 'eq', filterValue0: 'locked',
+    whereJson: JSON.stringify({ op: 'not', arg: {} })
+  }), 'en');
+  t.equal(overridden.where && overridden.where.op, 'eq',
+    'a row filled in replaces the JSON filter');
+
+  // The pane: five hits with an Add each, a pager, a chosen row.
+  const page = ReportRuntime.groupResultsHtml(tr, {
+    page: 2, pages: 3, groups: [
+      { dn: 'cn=a,' + GROUPS_DN, name: 'a', mail: 'a@example.com' },
+      { dn: 'cn=b,' + GROUPS_DN, name: 'b', mail: '' }]
+  }, ['cn=b,' + GROUPS_DN]);
+  t.equal((page.match(/data-act="group-add"/g) || []).length, 2,
+    'an Add per hit');
+  t.check(page.indexOf('a@example.com') >= 0 &&
+    page.indexOf('no email address') >= 0,
+    'each hit shows its address, or that it has none');
+  t.check(/data-dn="cn=b,[^"]*"[^>]*disabled/.test(page),
+    'a hit already chosen cannot be added again');
+  t.check(page.indexOf('Page 2 of 3') >= 0 &&
+    page.indexOf('data-page="1"') >= 0 && page.indexOf('data-page="3"') >= 0,
+    'the pager names the page and offers both neighbours');
+  t.equal(ReportRuntime.groupResultsHtml(tr, { page: 1, pages: 1,
+    groups: [] }, []).indexOf('No group matches.') >= 0, true,
+    'no hit says so');
+  const chosenRow = ReportRuntime.chosenGroupHtml(tr,
+    { dn: 'cn=Staff,' + GROUPS_DN, name: 'Staff', mail: 's@example.com' });
+  t.check(chosenRow.indexOf('name="group" value="cn=Staff,') >= 0 &&
+    chosenRow.indexOf('data-dn="cn=staff,') >= 0 &&
+    chosenRow.indexOf('data-act="group-remove"') >= 0,
+    'a chosen group is a hidden input, keyed lower-cased, with a Remove');
+
+  t.check(spec.components.schemas.GroupPage &&
+    spec.paths['/report-api/groups'],
+    'the OpenAPI document carries the group search');
+
+  // A tooltip on every field, the console's shape: a title on the label.
+  const labelled = (fresh.match(/<label[^>]*>/g) || []);
+  const untitled = labelled.filter(function (one) {
+    return one.indexOf(' title="') < 0 && one.indexOf('name="field"') < 0;
+  });
+  t.check(labelled.length >= 8, 'the query form labels its fields',
+    String(labelled.length));
+  t.equal(untitled.filter(function (one) {
+    return !/^<label>$/.test(one);
+  }).length, 0, 'every labelled control carries a tooltip', untitled.join(' '));
+  t.check(fresh.indexOf('title="The catalog source the report reads') >= 0,
+    'the tooltip is the catalog\'s sentence');
+  const sched = ReportRuntime.scheduleEditorHtml(tr, '');
+  t.check(sched.indexOf('<label title="The time of day, in UTC') >= 0 &&
+    sched.indexOf('<label title="The weekdays the schedule repeats') >= 0,
+    'the schedule editor\'s two labels carry theirs');
+  const realmField = ReportRuntime.realmHtml(tr,
+    { current: { id: 'default', name: 'Default', prefix: '' }, realms: null },
+    '/report');
+  t.check(realmField.indexOf(
+    'title="The trust realm this page is showing') >= 0,
+    'the realm field carries its tooltip');
+
+  // The schedule's status under the editor: next run, last occurrence,
+  // how it works, and the notes a skipped run left.
+  const status = ReportRuntime.scheduleStatusHtml(tr, {
+    nextRunAt: '2026-10-27T09:30:00.000Z',
+    lastSlotAt: '2026-10-26T09:30:00.000Z',
+    failures: [{ at: Date.parse('2026-10-26T09:30:05Z'),
+      description: 'A saved parameter was not given.' }]
+  });
+  t.check(status.indexOf('Next run: 2026-10-27 09:30 UTC.') >= 0 &&
+    status.indexOf('Last occurrence taken: 2026-10-26 09:30 UTC.') >= 0,
+    'the status names the next run and the last occurrence', status);
+  t.check(status.indexOf('checked about once a minute') >= 0,
+    'and says how a schedule runs');
+  t.check(status.indexOf('A saved parameter was not given.') >= 0 &&
+    status.indexOf('Why a scheduled run did not happen') >= 0,
+    'the notes a skipped run left are listed');
+  const idle = ReportRuntime.scheduleStatusHtml(tr, { nextRunAt: null,
+    lastSlotAt: null, failures: [] });
+  t.check(idle.indexOf('No run is due') >= 0 &&
+    idle.indexOf('did not happen') < 0,
+    'no schedule says so and lists nothing');
+
+  // The status bubble: the console's flash, ok or err, with a dismiss.
+  const okBubble = ReportRuntime.flashHtml(tr, 'ok', 'Saved.');
+  t.check(okBubble.indexOf('<div class="flash" role="status">') === 0 &&
+    okBubble.indexOf('<div class="ok">Saved.') >= 0 &&
+    okBubble.indexOf('data-act="dismiss"') >= 0,
+    'an ok message is a flash with a dismiss', okBubble);
+  const errBubble = ReportRuntime.flashHtml(tr, 'err', 'a <b>');
+  t.check(errBubble.indexOf('<div class="err">a &lt;b&gt;') >= 0,
+    'an error message is escaped');
+  t.check(tr.text('report.downloadFailed', { status: '410' })
+    .indexOf('HTTP 410') >= 0, 'a failed download names its status');
+
+  // The parameters: the names a filter holds, and the sentence under Run.
+  t.equal(ReportRuntime.paramNames({ op: 'and', args: [
+    { op: 'eq', field: 'username', param: 'who' },
+    { op: 'or', args: [{ op: 'eq', field: 'status', param: 'state' },
+      { op: 'eq', field: 'username', param: 'who' }] },
+    { op: 'not', arg: { op: 'eq', field: 'mail', param: 'addr' } }]
+  }).join(','), 'who,state,addr', 'every parameter a filter names, once');
+  t.equal(ReportRuntime.paramNames({ op: 'eq', field: 'a', value: 'b' })
+    .length, 0, 'a value is not a parameter');
+  const helpNamed = ReportRuntime.parametersHelpHtml(tr, { where:
+    { op: 'eq', field: 'username', param: 'who' } });
+  t.check(helpNamed.indexOf('This definition names: who.') >= 0 &&
+    helpNamed.indexOf('{&quot;who&quot;: &quot;rcbj&quot;}') >= 0,
+    'the sentence names the parameters and shows the example', helpNamed);
+  t.check(ReportRuntime.parametersHelpHtml(tr, { where: null })
+    .indexOf('names no parameter, so the box is ignored') >= 0,
+    'a definition with none says the box is ignored');
+  log.debug("Leaving groups().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   documents(t);
@@ -1356,12 +1678,13 @@ async function run(t) {
   await schedules(t);
   await narrowing(t);
   chrome(t);
+  groups(t);
   log.debug("Leaving run().");
 }
 
 module.exports = {
   name: 'report_query',
   describe: 'report documents, formats, issuance, projections, schedules, ' +
-    'indexed lookups, the page chrome',
+    'indexed lookups, the page chrome, the groups',
   run: run
 };

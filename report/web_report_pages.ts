@@ -89,6 +89,50 @@ function navCurrent(path: string, suffix: string): boolean {
   return here === href || here.indexOf(href + '/') === 0;
 }
 
+// A TOOLTIP ON EVERY FIELD (rcbj, 2026-10-26), the console's shape: a
+// `title` on the field's label (`admin-ui/web_kit.ts`, `tip()`), from the
+// `report.tip*` sentences, so the browser shows it on hover and a reader
+// of the markup finds it on the control it explains.
+function tip(t: any, key: string): string {
+  const text = t.text(key);
+  return text && text !== key ? ' title="' + esc(text) + '"' : '';
+}
+
+// The parameters a saved filter names (`param` leaves), for the sentence
+// under the Run box (#989's follow-up): a run fills them from the JSON
+// object typed there; a definition naming none ignores the box.
+function paramNames(node: any, into?: string[]): string[] {
+  const out = into || [];
+  if (!node || typeof node !== 'object') {
+    return out;
+  }
+  if (node.op === 'and' || node.op === 'or') {
+    (node.args || []).forEach(function (arg: any): void {
+      paramNames(arg, out);
+    });
+  } else if (node.op === 'not') {
+    paramNames(node.arg, out);
+  } else if (typeof node.param === 'string' && node.param &&
+             out.indexOf(node.param) < 0) {
+    out.push(node.param);
+  }
+  return out;
+}
+
+function parametersHelpHtml(t: any, document: any): string {
+  const names = paramNames(document && document.where);
+  const named = names.length
+    ? t.text('report.parametersNamed', { names: names.join(', ') })
+    : t.text('report.parametersNone');
+  // The two JSON examples ride in as values: a brace in a catalog message
+  // is a parameter to the message format, so they cannot be written there.
+  return '<p class="sub params-help">' + esc(named) + ' ' +
+    esc(t.text('report.parametersHelp', {
+      leaf: '{"op": "eq", "field": "username", "param": "who"}',
+      example: '{"who": "rcbj"}'
+    })) + '</p>';
+}
+
 function navLink(href: string, label: string, current: boolean): string {
   return '<a href="' + esc(href) + '"' +
     (current ? ' aria-current="page"' : '') + '>' + esc(label) +
@@ -144,6 +188,183 @@ function filterRowHtml(t: any, n: number, fieldOptions: string,
     '</div>';
 }
 
+// THE QUERY FORM, SHARED (#989). The New Query page and the definition
+// page draw the same controls from the same function, the second filled
+// from the saved document, so a definition is edited with the controls it
+// was made with. `whereLeaves()` says whether the filter can be drawn as
+// rows — a leaf, or an `and` of leaves, each with an operator the row's
+// select offers — and when it cannot, the rows stay empty and the filter
+// rides along as JSON (`whereJson`), which `queryDocument()` carries back.
+const ROW_OPS = ['eq', 'ne', 'contains', 'startsWith', 'lt', 'le', 'gt',
+  'ge', 'isNull'];
+
+function whereLeaves(where: any): any[] | null {
+  if (where == null) {
+    return [];
+  }
+  const leafOk = function (node: any): boolean {
+    return !!node && typeof node === 'object' && ROW_OPS.indexOf(
+      String(node.op)) >= 0 && typeof node.field === 'string' &&
+      (node.op === 'isNull' || typeof node.value === 'string' ||
+       typeof node.value === 'number');
+  };
+  if (leafOk(where)) {
+    return [where];
+  }
+  if (where.op === 'and' && Array.isArray(where.args) &&
+      where.args.length && where.args.every(leafOk)) {
+    return where.args.slice();
+  }
+  return null;
+}
+
+function filterRowsHtml(t: any, fieldOptions: string, leaves: any[]): string {
+  if (!leaves.length) {
+    return filterRowHtml(t, 0, fieldOptions, true);
+  }
+  return leaves.map(function (leaf: any, n: number): string {
+    const row = filterRowHtml(t, n, fieldOptions, n === leaves.length - 1);
+    const value = leaf.op === 'isNull' ? '' : String(leaf.value);
+    return row
+      .replace('<option value="' + esc(leaf.field) + '">',
+        '<option value="' + esc(leaf.field) + '" selected>')
+      .replace('<option value="' + esc(leaf.op) + '">',
+        '<option value="' + esc(leaf.op) + '" selected>')
+      .replace('<input name="filterValue' + n + '">',
+        '<input name="filterValue' + n + '" value="' + esc(value) + '">');
+  }).join('');
+}
+
+function queryFormHtml(t: any, sources: any[], document: any): string {
+  const doc = document || {};
+  const current = String(doc.source || (sources[0] && sources[0].id) || '');
+  let fields: any[] = [];
+  sources.forEach(function (src: any): void {
+    if (src.id === current) {
+      fields = src.fields || [];
+    }
+  });
+  const counted = doc.aggregate === 'count';
+  const group = counted && Array.isArray(doc.groupBy) ? String(doc.groupBy[0] ||
+    '') : '';
+  const selected = Array.isArray(doc.select) && doc.select.length && !counted ?
+    doc.select : null;
+  const options = sources.map(function (src: any): string {
+    return '<option value="' + esc(src.id) + '"' +
+      (src.id === current ? ' selected' : '') + '>' + esc(src.id) +
+      '</option>';
+  }).join('');
+  const checks = fields.map(function (field: any): string {
+    const on = selected ? selected.indexOf(field.id) >= 0 : true;
+    return '<label><input type="checkbox" name="field" value="' +
+      esc(field.id) + '"' + (on ? ' checked' : '') + '> ' + esc(field.id) +
+      '</label>';
+  }).join(' ');
+  const fieldOptions = '<option value=""></option>' +
+    fields.map(function (field: any): string {
+      return '<option value="' + esc(field.id) + '">' + esc(field.id) +
+        '</option>';
+    }).join('');
+  const leaves = whereLeaves(doc.where);
+  const filters = filterRowsHtml(t, fieldOptions, leaves || []);
+  const kept = leaves ? '' :
+    '<input type="hidden" name="whereJson" value="' +
+    esc(JSON.stringify(doc.where)) + '">' +
+    '<pre class="sub">' + esc(JSON.stringify(doc.where, null, 1)) + '</pre>';
+  const order = Array.isArray(doc.orderBy) && doc.orderBy[0] ?
+    doc.orderBy[0] : null;
+  const sortOptions = order ? fieldOptions.replace(
+    '<option value="' + esc(String(order.field)) + '">',
+    '<option value="' + esc(String(order.field)) + '" selected>') :
+    fieldOptions;
+  const groupOptions = group ? fieldOptions.replace(
+    '<option value="' + esc(group) + '">',
+    '<option value="' + esc(group) + '" selected>') : fieldOptions;
+  const format = String(doc.format || 'json');
+  const formatOption = function (value: string, key: string): string {
+    return '<option value="' + value + '"' +
+      (format === value ? ' selected' : '') + '>' + esc(t.text(key)) +
+      '</option>';
+  };
+  return '<div class="field"><label' + tip(t, 'report.tipSource') + '>' +
+    esc(t.text('report.source')) +
+    '</label><select name="source">' + options + '</select></div>' +
+    '<div class="field"><label' + tip(t, 'report.tipFields') + '>' +
+    esc(t.text('report.fields')) +
+    '</label><div class="row">' + checks + '</div></div>' +
+    '<div class="field"><label' + tip(t, 'report.tipFilter') + '>' +
+    esc(t.text('report.filter')) +
+    '</label>' + filters + kept + '</div>' +
+    '<div class="field"><label' + tip(t, 'report.tipSort') + '>' +
+    esc(t.text('report.sort')) +
+    '</label><div class="row"><select name="sortField">' + sortOptions +
+    '</select><select name="sortDir"><option value="asc"' +
+    (order && order.dir !== 'desc' ? ' selected' : '') + '>' +
+    esc(t.text('report.ascending')) + '</option><option value="desc"' +
+    (order && order.dir === 'desc' ? ' selected' : '') + '>' +
+    esc(t.text('report.descending')) + '</option></select></div></div>' +
+    '<div class="field"><label' + tip(t, 'report.tipLimit') + '>' +
+    esc(t.text('report.limit')) +
+    '</label><input name="limit" value="' +
+    esc(String(doc.limit || 100)) + '"></div>' +
+    '<div class="field"><label' + tip(t, 'report.tipFormat') + '>' +
+    esc(t.text('report.format')) +
+    '</label><select name="format">' + formatOption('json', 'report.json') +
+    formatOption('csv', 'report.csv') + formatOption('pdf', 'report.pdf') +
+    '</select></div>' +
+    '<div class="field"><label' + tip(t, 'report.tipCount') + '>' +
+    '<input type="checkbox" name="counted"' +
+    (counted ? ' checked' : '') + '> ' + esc(t.text('report.count')) +
+    '</label><label' + tip(t, 'report.tipGroupBy') + '>' +
+    '<select name="groupBy">' + groupOptions + '</select> ' +
+    esc(t.text('report.groupBy')) + '</label></div>';
+}
+
+// THE GROUP PANE (#989): one page of the search's hits, five at most, each
+// with an Add; a pager under them; and the chosen groups as a list whose
+// hidden inputs are what Save posts to the share endpoint.
+function groupHitHtml(t: any, group: any, chosen: string[]): string {
+  const has = chosen.indexOf(String(group.dn).toLowerCase()) >= 0;
+  return '<div class="hit"><span class="who">' + esc(group.name) +
+    ' <span class="mail">' + esc(group.mail || t.text('report.noMail')) +
+    '</span></span>' +
+    '<button type="button" class="btn small" data-act="group-add" ' +
+    'data-dn="' + esc(group.dn) + '" data-name="' + esc(group.name) +
+    '" data-mail="' + esc(group.mail || '') + '"' +
+    (has ? ' disabled' : '') + '>' + esc(t.text('report.add')) +
+    '</button></div>';
+}
+
+function groupResultsHtml(t: any, page: any, chosen: string[]): string {
+  const hits = (page && page.groups) || [];
+  if (!hits.length) {
+    return '<p class="sub">' + esc(t.text('report.noGroups')) + '</p>';
+  }
+  const pager = page.pages > 1 ? '<div class="pager">' +
+    '<button type="button" class="btn small" data-act="group-page" ' +
+    'data-page="' + (page.page - 1) + '"' +
+    (page.page <= 1 ? ' disabled' : '') + '>' +
+    esc(t.text('report.previous')) + '</button><span>' +
+    esc(t.text('report.pageOf', { page: String(page.page),
+      pages: String(page.pages) })) + '</span>' +
+    '<button type="button" class="btn small" data-act="group-page" ' +
+    'data-page="' + (page.page + 1) + '"' +
+    (page.page >= page.pages ? ' disabled' : '') + '>' +
+    esc(t.text('report.next')) + '</button></div>' : '';
+  return '<div class="results">' + hits.map(function (group: any): string {
+    return groupHitHtml(t, group, chosen);
+  }).join('') + '</div>' + pager;
+}
+
+function chosenGroupHtml(t: any, group: any): string {
+  return '<li data-dn="' + esc(String(group.dn).toLowerCase()) + '">' +
+    '<input type="hidden" name="group" value="' + esc(group.dn) + '">' +
+    '<span class="who">' + esc(group.name) + ' <span class="mail">' +
+    esc(group.mail || t.text('report.noMail')) + '</span></span>' +
+    '<button type="button" class="btn small" data-act="group-remove">' +
+    esc(t.text('report.remove')) + '</button></li>';
+}
+
 // The realm field (#986), on the console's switcher shape
 // (`admin-ui/web_shell.ts`, `realmChooser()`): the label, then a select of
 // the realms and a Go button where the service has several, or the one
@@ -155,8 +376,8 @@ function realmHtml(t: any, view: any, path: string): string {
   }
   const current = view.current;
   const list = Array.isArray(view.realms) ? view.realms : [];
-  const label = '<label for="realmpick">' +
-    esc(t.text('report.trustRealm')) + '</label>';
+  const label = '<label for="realmpick"' + tip(t, 'report.tipTrustRealm') +
+    '>' + esc(t.text('report.trustRealm')) + '</label>';
   if (list.length < 2) {
     return '<div class="realmpick">' + label +
       '<span class="realmname" id="realmpick">' +
@@ -304,13 +525,43 @@ function scheduleEditorHtml(t: any, cron: string): string {
       (fields.days.indexOf(dow) >= 0 ? ' checked' : '') + '> ' +
       esc(weekdayName(t.locale, dow)) + '</label>';
   }).join(' ');
-  return '<div class="field"><label>' + esc(t.text('report.runAt')) +
+  return '<div class="field"><label' + tip(t, 'report.tipRunAt') + '>' +
+    esc(t.text('report.runAt')) +
     '</label><input type="datetime-local" name="scheduleAt" step="60" ' +
     'value="' + esc(fields.at) + '"></div>' +
-    '<div class="field"><label>' + esc(t.text('report.repeatOn')) +
+    '<div class="field"><label' + tip(t, 'report.tipRepeatOn') + '>' +
+    esc(t.text('report.repeatOn')) +
     '</label><div class="row days">' + boxes + '</div></div>' +
     '<p class="sub" data-schedule-preview>' +
     esc(schedulePreview(t, cron)) + '</p>';
+}
+
+// THE SCHEDULE'S STATUS (#989's follow-up): when it runs next, which
+// occurrence it last took, how it works in one sentence, and the notes the
+// schedule job left when a run did not happen. Drawn under the editor so
+// "no job yet" has an answer on the page.
+function scheduleStatusHtml(t: any, row: any): string {
+  const when = function (iso: any): string {
+    return String(iso || '').replace('T', ' ').replace(/:\d\d(\.\d+)?Z$/, '');
+  };
+  const next = row && row.nextRunAt
+    ? t.text('report.nextRun', { when: when(row.nextRunAt) })
+    : t.text('report.nextRunNone');
+  const last = row && row.lastSlotAt
+    ? ' ' + t.text('report.lastSlot', { when: when(row.lastSlotAt) }) : '';
+  const notes = (row && Array.isArray(row.failures) ? row.failures : [])
+    .slice().reverse();
+  const list = notes.length
+    ? '<p class="sub"><strong>' + esc(t.text('report.scheduleNotes')) +
+      '</strong></p><ul class="sub notes">' +
+      notes.map(function (note: any): string {
+        return '<li>' + esc(when(note && note.at ? new Date(note.at)
+          .toISOString() : '')) + ' ' + esc(String((note &&
+          note.description) || '')) + '</li>';
+      }).join('') + '</ul>'
+    : '';
+  return '<p class="sub schedule-status">' + esc(next) + esc(last) + ' ' +
+    esc(t.text('report.scheduleHow')) + '</p>' + list;
 }
 
 // Why a query is a job (#986), from the job's `queuedBecause`: one
@@ -345,6 +596,19 @@ function footerHtml(t: any, version: any): string {
 
 function problemHtml(t: any, text: string): string {
   return '<p class="err">' + esc(text || t.text('report.error')) + '</p>';
+}
+
+// A STATUS MESSAGE IN A BUBBLE AT THE TOP OF THE PAGE (rcbj, 2026-10-26),
+// the console's `.flash`: sticky at the top of the card, `ok` or `err`,
+// with a dismiss. It replaces the note at the foot of a form and the page
+// repaint a refusal used to cause, so a refused save or run leaves the
+// form as it was and says why above it.
+function flashHtml(t: any, kind: string, text: string): string {
+  return '<div class="flash" role="status"><div class="' +
+    (kind === 'ok' ? 'ok' : 'err') + '">' + esc(text) +
+    '<button type="button" class="btn dismiss" data-act="dismiss" ' +
+    'aria-label="' + esc(t.text('report.dismiss')) + '" title="' +
+    esc(t.text('report.dismiss')) + '">&times;</button></div></div>';
 }
 
 function tableHtml(headers: string[], rows: string[][]): string {
@@ -414,6 +678,19 @@ function queryDocument(form: any, locale: any): any {
     document.where = filters[0];
   } else if (filters.length > 1) {
     document.where = { op: 'and', args: filters };
+  } else if (form.elements.whereJson && form.elements.whereJson.value) {
+    // A FILTER THE ROWS CANNOT DRAW (#989): a saved definition whose
+    // `where` holds an `or`, a `not` or an `in` is shown as its JSON and
+    // carried back unchanged while no row is filled in.
+    try {
+      document.where = JSON.parse(String(form.elements.whereJson.value));
+    } catch (e) {
+      // Not JSON: the filter is dropped, as an empty form drops it.
+      document.where = undefined;
+    }
+    if (document.where === undefined) {
+      delete document.where;
+    }
   }
   if (sort) {
     document.orderBy = [{ field: sort, dir: dir === 'desc' ? 'desc' : 'asc' }];
@@ -440,6 +717,11 @@ class ReportRuntime extends SpaClient {
   private accountsListening: boolean;
   // The index's version and the realms view, read once per load (#986).
   private chrome: any;
+  // The catalog's sources, kept from the last read for a source change on
+  // the definition page (#989).
+  private catalogSources: any[];
+  // The group search's last query, for the pager (#989).
+  private groupQuery: string;
 
   /**
    * @param env - the browser's objects
@@ -460,6 +742,85 @@ class ReportRuntime extends SpaClient {
     this.i18n = new WebI18n(env, this, ['report']);
     this.accountsListening = false;
     this.chrome = null;
+    this.catalogSources = [];
+    this.groupQuery = '';
+  }
+
+  /**
+   * The shared query form, for a test (#989).
+   *
+   * @param t - the translator
+   * @param sources - the catalog's sources
+   * @param document - a saved document, or null for the New Query page
+   * @returns the controls' HTML
+   */
+  static queryFormHtml(t: any, sources: any[], document: any): string {
+    return queryFormHtml(t, sources, document);
+  }
+
+  /**
+   * The schedule's status lines and notes, for a test.
+   *
+   * @param t - the translator
+   * @param row - the definition view
+   * @returns the HTML
+   */
+  static scheduleStatusHtml(t: any, row: any): string {
+    return scheduleStatusHtml(t, row);
+  }
+
+  /**
+   * The parameters a filter names, for a test.
+   *
+   * @param where - the filter
+   * @returns the parameter names, each once
+   */
+  static paramNames(where: any): string[] {
+    return paramNames(where);
+  }
+
+  /**
+   * The sentence under the Run box, for a test.
+   *
+   * @param t - the translator
+   * @param document - the saved document
+   * @returns the sentence's HTML
+   */
+  static parametersHelpHtml(t: any, document: any): string {
+    return parametersHelpHtml(t, document);
+  }
+
+  /**
+   * The leaves a filter can be drawn as rows, for a test (#989).
+   *
+   * @param where - the filter
+   * @returns the leaves, or null when rows cannot draw it
+   */
+  static whereLeaves(where: any): any[] | null {
+    return whereLeaves(where);
+  }
+
+  /**
+   * One page of group hits, for a test (#989).
+   *
+   * @param t - the translator
+   * @param page - `GET /report-api/groups`'s answer
+   * @param chosen - the DNs already chosen, lower-cased
+   * @returns the pane's HTML
+   */
+  static groupResultsHtml(t: any, page: any, chosen: string[]): string {
+    return groupResultsHtml(t, page, chosen);
+  }
+
+  /**
+   * A chosen group's row, for a test (#989).
+   *
+   * @param t - the translator
+   * @param group - `{ dn, name, mail }`
+   * @returns the row's HTML
+   */
+  static chosenGroupHtml(t: any, group: any): string {
+    return chosenGroupHtml(t, group);
   }
 
   /**
@@ -854,7 +1215,8 @@ class ReportRuntime extends SpaClient {
    * @param body - a JSON body, or nothing
    * @returns the answer, or null when a sign-in began
    */
-  async call(method: string, path: string, body?: any): Promise<any> {
+  async call(method: string, path: string, body?: any,
+             options?: any): Promise<any> {
     const res = await this.sendOnce(method, this.url(path), body);
     if (res === ABORTED) {
       return null;
@@ -865,6 +1227,14 @@ class ReportRuntime extends SpaClient {
     }
     const type = String((res.headers && res.headers.get &&
       res.headers.get('Content-Type')) || '');
+    // A RESULT IS BYTES WHATEVER ITS TYPE (`raw`): a JSON-format report
+    // is served as application/json, and reading it as the API's JSON
+    // left `bytes` empty, so Download said only that something went
+    // wrong. A refusal is still read as JSON, for its description.
+    if (options && options.raw && res.status === 200) {
+      const bytes = await res.arrayBuffer();
+      return { status: res.status, bytes: bytes, media: type, res: res };
+    }
     if (type.indexOf('json') >= 0 || type === '') {
       let json: any = null;
       try {
@@ -1238,62 +1608,22 @@ class ReportRuntime extends SpaClient {
       return;
     }
     const sources = answer.json.sources;
-    const current = sourceId || (sources[0] && sources[0].id) || '';
-    let fields: any[] = [];
-    sources.forEach(function (src: any): void {
-      if (src.id === current) {
-        fields = src.fields || [];
-      }
-    });
+    this.catalogSources = sources;
     const self = this;
-    const options = sources.map(function (src: any): string {
-      return '<option value="' + esc(src.id) + '"' +
-        (src.id === current ? ' selected' : '') + '>' + esc(src.id) +
-        '</option>';
-    }).join('');
-    const checks = fields.map(function (field: any): string {
-      return '<label><input type="checkbox" name="field" value="' +
-        esc(field.id) + '" checked> ' + esc(field.id) + '</label>';
-    }).join(' ');
-    const fieldOptions = '<option value=""></option>' +
-      fields.map(function (field: any): string {
-        return '<option value="' + esc(field.id) + '">' + esc(field.id) +
-          '</option>';
-      }).join('');
-    // One row to begin with; the + beside it adds the next (#986).
-    const filters = filterRowHtml(self.t, 0, fieldOptions, true);
     this.paint('<form class="query-form" data-form="query">' +
-      '<div class="field"><label>' + esc(self.t.text('report.source')) +
-      '</label><select name="source">' + options + '</select></div>' +
-      '<div class="field"><label>' + esc(self.t.text('report.fields')) +
-      '</label><div class="row">' + checks + '</div></div>' +
-      '<div class="field"><label>' + esc(self.t.text('report.filter')) +
-      '</label>' + filters + '</div>' +
-      '<div class="field"><label>' + esc(self.t.text('report.sort')) +
-      '</label><div class="row"><select name="sortField">' + fieldOptions +
-      '</select><select name="sortDir"><option value="asc">' +
-      esc(self.t.text('report.ascending')) + '</option><option value="desc">' +
-      esc(self.t.text('report.descending')) + '</option></select></div></div>' +
-      '<div class="field"><label>' + esc(self.t.text('report.limit')) +
-      '</label><input name="limit" value="100"></div>' +
-      '<div class="field"><label>' + esc(self.t.text('report.format')) +
-      '</label><select name="format"><option value="json">' +
-      esc(self.t.text('report.json')) + '</option><option value="csv">' +
-      esc(self.t.text('report.csv')) + '</option><option value="pdf">' +
-      esc(self.t.text('report.pdf')) + '</option></select></div>' +
-      '<div class="field"><label><input type="checkbox" name="counted"> ' +
-      esc(self.t.text('report.count')) + '</label>' +
-      '<select name="groupBy">' + fieldOptions + '</select> ' +
-      esc(self.t.text('report.groupBy')) + '</div>' +
+      '<div data-query-block>' +
+      queryFormHtml(self.t, sources, { source: sourceId || '' }) +
+      '</div>' +
       // Save query (#986): the Name field and the Save button appear only
       // once the box is ticked; unticked, the form runs and saves nothing.
-      '<div class="field"><label><input type="checkbox" name="saveQuery"> ' +
+      '<div class="field"><label' + tip(self.t, 'report.tipSaveQuery') +
+      '><input type="checkbox" name="saveQuery"> ' +
       esc(self.t.text('report.saveQuery')) + '</label></div>' +
-      '<div class="field save-only" hidden><label>' +
+      '<div class="field save-only" hidden><label' +
+      tip(self.t, 'report.tipName') + '>' +
       esc(self.t.text('report.name')) +
       '</label><input name="definitionName"></div>' +
-      actionsHtml(self.t) +
-      '<p class="sub" id="report-note"></p></form>');
+      actionsHtml(self.t) + '</form>');
   }
 
   /**
@@ -1367,6 +1697,17 @@ class ReportRuntime extends SpaClient {
       }
       return;
     }
+    if (name === 'source' && el.closest &&
+        el.closest('form[data-form="definition"]')) {
+      // Another source on the definition page (#989): the query block is
+      // drawn again for its fields, empty, as the New Query page starts.
+      const block = el.closest('form').querySelector('[data-query-block]');
+      if (block) {
+        block.innerHTML = queryFormHtml(this.t, this.catalogSources,
+          { source: String(el.value || '') });
+      }
+      return;
+    }
     if ((name === 'scheduleAt' || name === 'repeatDay') && el.closest) {
       const form = el.closest('form[data-form="definition"]');
       const preview = form ? form.querySelector('[data-schedule-preview]') :
@@ -1435,41 +1776,163 @@ class ReportRuntime extends SpaClient {
         answer.json.error_description));
       return;
     }
-    const groups = (row.groups || []).join('\n');
     let editor = '';
     if (row.editable) {
+      // THE EDITOR (#989): the query with the New Query form's own
+      // controls, filled from the saved document; the schedule, the
+      // notice and the groups beside it; Save and Delete as buttons at
+      // the foot. The groups are what the share endpoint takes, and who
+      // is emailed the result.
+      const catalog = await this.call('GET', API + '/catalog');
+      const sources = (catalog && catalog.json && catalog.json.sources) ||
+        this.catalogSources || [];
+      this.catalogSources = sources;
+      const t = this.t;
+      const chosen = (row.groups || []).map(function (dn: string): string {
+        return chosenGroupHtml(t, { dn: dn, name: dn, mail: '' });
+      }).join('');
       editor = '<form data-form="definition" data-id="' + esc(row.id) + '">' +
-        '<div class="field"><label>' + esc(this.t.text('report.name')) +
+        '<div class="editor"><section>' +
+        '<h3>' + esc(t.text('report.queryHeading')) + '</h3>' +
+        '<div class="field"><label' + tip(t, 'report.tipName') + '>' +
+        esc(t.text('report.name')) +
         '</label><input name="name" value="' + esc(row.name) + '"></div>' +
-        '<h3>' + esc(this.t.text('report.schedule')) + '</h3>' +
-        scheduleEditorHtml(this.t, String(row.schedule || '')) +
-        '<div class="field"><label><input type="checkbox" name="enabled"' +
+        '<div data-query-block>' +
+        queryFormHtml(t, sources, row.document || {}) + '</div>' +
+        '</section><section>' +
+        '<h3>' + esc(t.text('report.settingsHeading')) + '</h3>' +
+        scheduleEditorHtml(t, String(row.schedule || '')) +
+        scheduleStatusHtml(t, row) +
+        '<div class="field"><label' + tip(t, 'report.tipEnabled') + '>' +
+        '<input type="checkbox" name="enabled"' +
         (row.scheduleEnabled ? ' checked' : '') + '> ' +
-        esc(this.t.text('report.enabled')) + '</label></div>' +
-        '<div class="field"><label><input type="checkbox" name="notify"' +
+        esc(t.text('report.enabled')) + '</label></div>' +
+        '<div class="field"><label' + tip(t, 'report.tipNotify') + '>' +
+        '<input type="checkbox" name="notify"' +
         (row.notify ? ' checked' : '') + '> ' +
-        esc(this.t.text('report.notify')) + '</label></div>' +
-        '<div class="actions"><button class="btn" type="submit">' +
-        esc(this.t.text('report.save')) + '</button>' +
-        '<button class="btn" type="button" data-act="delete" data-id="' +
-        esc(row.id) + '">' + esc(this.t.text('report.cancel')) +
-        '</button></div></form>' +
-        '<form data-form="share" data-id="' + esc(row.id) + '">' +
-        '<div class="field"><label>' + esc(this.t.text('report.groups')) +
-        '</label><textarea name="groups">' + esc(groups) +
-        '</textarea></div>' +
-        '<button class="btn" type="submit">' +
-        esc(this.t.text('report.share')) + '</button></form>';
+        esc(t.text('report.notify')) + '</label></div>' +
+        '<h3>' + esc(t.text('report.groupsHeading')) + '</h3>' +
+        '<div class="groups-pane">' +
+        '<div class="field"><label' + tip(t, 'report.tipGroupSearch') + '>' +
+        esc(t.text('report.groupSearch')) +
+        '</label><div class="row"><input type="search" name="groupQuery">' +
+        '<button type="button" class="btn small" data-act="group-search">' +
+        esc(t.text('report.search')) + '</button></div></div>' +
+        '<div data-group-results></div>' +
+        '<ul class="chosen" data-chosen-groups>' + chosen + '</ul>' +
+        '<p class="sub" data-chosen-none' + (chosen ? ' hidden' : '') + '>' +
+        esc(t.text('report.chosenNone')) + '</p>' +
+        '<p class="sub">' + esc(t.text('report.groupsNote')) + '</p>' +
+        '</div></section></div>' +
+        '<div class="foot-actions">' +
+        '<button class="button danger" type="button" data-act="delete" ' +
+        'data-id="' + esc(row.id) + '">' + esc(t.text('report.delete')) +
+        '</button>' +
+        '<button class="button" type="submit">' +
+        esc(t.text('report.save')) + '</button></div></form>';
     }
-    this.paint('<h2>' + esc(row.name) + '</h2><p>' +
+    this.paint('<h2>' + esc(row.name) + '</h2><p class="sub">' +
       esc(this.t.text('report.owner')) + ' ' +
       esc(row.ownerName || row.owner) + '</p>' +
       '<form data-form="run" data-id="' + esc(row.id) + '">' +
-      '<div class="field"><label>' +
+      '<div class="row"><label' + tip(this.t, 'report.tipParameters') + '>' +
       esc(this.t.text('report.parameters')) +
-      '</label><textarea name="parameters"></textarea></div>' +
-      '<button class="btn" type="submit">' +
-      esc(this.t.text('report.run')) + '</button></form>' + editor);
+      '</label><textarea name="parameters" rows="1" placeholder="' +
+      esc('{"who": "rcbj"}') + '"></textarea>' +
+      '<button class="button secondary" type="submit">' +
+      esc(this.t.text('report.run')) + '</button></div>' +
+      parametersHelpHtml(this.t, row.document) + '</form>' + editor);
+    if (row.editable) {
+      await this.searchGroups('', 1);
+    }
+  }
+
+  /**
+   * Runs the group search and draws its page into the pane (#989).
+   *
+   * @param q - the text typed
+   * @param page - the page asked for
+   * @returns nothing
+   */
+  async searchGroups(q: string, page: number): Promise<void> {
+    this.groupQuery = String(q || '');
+    const answer = await this.call('GET', API + '/groups?q=' +
+      encodeURIComponent(this.groupQuery) + '&page=' +
+      encodeURIComponent(String(page || 1)));
+    const doc = this.env.document;
+    const pane = doc.querySelector ? doc.querySelector('[data-group-results]')
+      : null;
+    if (!pane) {
+      return;
+    }
+    const chosen: string[] = [];
+    const held = doc.querySelectorAll('[data-chosen-groups] li');
+    for (let i = 0; i < held.length; i++) {
+      chosen.push(String(held[i].getAttribute('data-dn') || ''));
+    }
+    pane.innerHTML = groupResultsHtml(this.t, answer && answer.json, chosen);
+  }
+
+  /**
+   * Adds a group to the chosen list, once (#989).
+   *
+   * @param button - the Add pressed
+   * @returns nothing
+   */
+  addGroup(button: any): void {
+    const doc = this.env.document;
+    const list = doc.querySelector('[data-chosen-groups]');
+    if (!list) {
+      return;
+    }
+    const dn = String(button.getAttribute('data-dn') || '');
+    const key = dn.toLowerCase();
+    const items = list.querySelectorAll('li');
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].getAttribute('data-dn') === key) {
+        return;
+      }
+    }
+    list.insertAdjacentHTML('beforeend', chosenGroupHtml(this.t, {
+      dn: dn,
+      name: String(button.getAttribute('data-name') || dn),
+      mail: String(button.getAttribute('data-mail') || '')
+    }));
+    button.setAttribute('disabled', '');
+    const none = doc.querySelector('[data-chosen-none]');
+    if (none) {
+      none.setAttribute('hidden', '');
+    }
+  }
+
+  /**
+   * Takes a group off the chosen list (#989).
+   *
+   * @param button - the Remove pressed
+   * @returns nothing
+   */
+  removeGroup(button: any): void {
+    const item = button.closest ? button.closest('li') : null;
+    if (!item || !item.parentNode) {
+      return;
+    }
+    const key = String(item.getAttribute('data-dn') || '');
+    const list = item.parentNode;
+    list.removeChild(item);
+    const doc = this.env.document;
+    const adds = doc.querySelectorAll('[data-act="group-add"]');
+    for (let i = 0; i < adds.length; i++) {
+      if (String(adds[i].getAttribute('data-dn') || '').toLowerCase() ===
+          key) {
+        adds[i].removeAttribute('disabled');
+      }
+    }
+    if (!list.querySelectorAll('li').length) {
+      const none = doc.querySelector('[data-chosen-none]');
+      if (none) {
+        none.removeAttribute('hidden');
+      }
+    }
   }
 
   /**
@@ -1538,7 +2001,7 @@ class ReportRuntime extends SpaClient {
       esc(this.t.text('report.format')) + ' ' +
       formatWord(this.t, job.format) + '</p>' +
       (job.error ? problemHtml(this.t, job.error) : '') +
-      '<p>' + download + '</p><p id="report-note"></p>');
+      '<p>' + download + '</p>');
   }
 
   /**
@@ -1551,16 +2014,15 @@ class ReportRuntime extends SpaClient {
    */
   async download(id: string, format: string): Promise<void> {
     const answer = await this.call('GET', API + '/jobs/' +
-      encodeURIComponent(id) + '/result');
+      encodeURIComponent(id) + '/result', undefined, { raw: true });
     if (!answer) {
       return;
     }
     if (answer.status !== 200 || !answer.bytes) {
-      const note = this.env.document.getElementById('report-note');
-      if (note) {
-        note.textContent = (answer.json && answer.json.error_description) ||
-          this.t.text('report.error');
-      }
+      this.flash('err', (answer.json && (answer.json.error_description ||
+        answer.json.error)) ||
+        this.t.text('report.downloadFailed',
+          { status: String(answer.status || '') }));
       return;
     }
     const blob = new Blob([answer.bytes], {
@@ -1586,9 +2048,15 @@ class ReportRuntime extends SpaClient {
       return;
     }
     if (answer.status === 202 && answer.json && answer.json.job) {
+      const self = this;
+      const jobId = String(answer.json.job.id);
       this.env.history.pushState(null, '', this.prefix + BASE + '/jobs/' +
-        answer.json.job.id);
-      this.route();
+        jobId);
+      this.route().then(function (): void {
+        self.flash('ok', self.t.text('report.queuedAs', { id: jobId }));
+      }, function (): void {
+        return undefined;
+      });
       return;
     }
     if (answer.json && answer.json.rows) {
@@ -1610,8 +2078,42 @@ class ReportRuntime extends SpaClient {
         esc(this.t.text('report.download')) + '</a></p>');
       return;
     }
-    this.paint(problemHtml(this.t, answer.json &&
-      answer.json.error_description));
+    // A refusal keeps the form on the page and says why above it.
+    this.flash('err', (answer.json && (answer.json.error_description ||
+      answer.json.error)) || this.t.text('report.error'));
+  }
+
+  /**
+   * Shows a status message in the bubble at the top of the page, one at a
+   * time; the next replaces it, and a repaint clears it.
+   *
+   * @param kind - 'ok' or 'err'
+   * @param text - the message
+   * @returns nothing
+   */
+  flash(kind: string, text: string): void {
+    const doc = this.env.document;
+    const main = doc.getElementById('report');
+    if (!main) {
+      return;
+    }
+    const old = main.querySelector('.flash');
+    if (old && old.parentNode) {
+      old.parentNode.removeChild(old);
+    }
+    main.insertAdjacentHTML('afterbegin', flashHtml(this.t, kind, text));
+  }
+
+  /**
+   * The status bubble, for a test.
+   *
+   * @param t - the translator
+   * @param kind - 'ok' or 'err'
+   * @param text - the message
+   * @returns the bubble's HTML
+   */
+  static flashHtml(t: any, kind: string, text: string): string {
+    return flashHtml(t, kind, text);
   }
 
   /**
@@ -1702,9 +2204,38 @@ class ReportRuntime extends SpaClient {
         this.route();
         return;
       }
+      if (act === 'dismiss') {
+        event.preventDefault();
+        const bubble = el.closest ? el.closest('.flash') : null;
+        if (bubble && bubble.parentNode) {
+          bubble.parentNode.removeChild(bubble);
+        }
+        return;
+      }
       if (act === 'add-filter') {
         event.preventDefault();
         this.addFilterRow(el);
+        return;
+      }
+      if (act === 'group-search' || act === 'group-page') {
+        event.preventDefault();
+        const form = el.closest ? el.closest('form') : null;
+        const box = form && form.elements.groupQuery;
+        const q = act === 'group-search' ? String((box && box.value) || '')
+          : this.groupQuery;
+        const page = act === 'group-page' ?
+          Number(el.getAttribute('data-page') || 1) : 1;
+        this.searchGroups(q, page);
+        return;
+      }
+      if (act === 'group-add') {
+        event.preventDefault();
+        this.addGroup(el);
+        return;
+      }
+      if (act === 'group-remove') {
+        event.preventDefault();
+        this.removeGroup(el);
         return;
       }
       if (act === 'signin') {
@@ -1722,12 +2253,19 @@ class ReportRuntime extends SpaClient {
         event.preventDefault();
         const id = String(el.getAttribute('data-id') || '');
         this.call('DELETE', API + '/definitions/' + encodeURIComponent(id))
-          .then(function (answer: any): void {
+          .then(function (answer: any): any {
             if (answer && answer.status === 200) {
               self.env.history.pushState(null, '', self.prefix + BASE +
                 '/definitions');
-              self.route();
+              return self.route().then(function (): void {
+                self.flash('ok', self.t.text('report.deleted'));
+              });
             }
+            if (answer) {
+              self.flash('err', (answer.json &&
+                answer.json.error_description) || self.t.text('report.error'));
+            }
+            return null;
           }, function (): void {
             return undefined;
           });
@@ -1787,15 +2325,19 @@ class ReportRuntime extends SpaClient {
           schedule: '',
           scheduleEnabled: false,
           notify: false
-        }).then(function (answer: any): void {
+        }).then(function (answer: any): any {
           if (answer && answer.json && answer.json.definition) {
             self.env.history.pushState(null, '', self.prefix + BASE +
               '/definitions/' + answer.json.definition.id);
-            self.route();
-            return;
+            return self.route().then(function (): void {
+              self.flash('ok', self.t.text('report.saved'));
+            });
           }
-          self.paint(problemHtml(self.t, answer && answer.json &&
-            answer.json.error_description));
+          if (answer) {
+            self.flash('err', (answer.json && answer.json.error_description) ||
+              self.t.text('report.error'));
+          }
+          return null;
         }, function (): void {
           return undefined;
         });
@@ -1830,42 +2372,43 @@ class ReportRuntime extends SpaClient {
       });
       return;
     }
-    if (kind === 'share') {
-      const groups = String((form.elements.groups &&
-        form.elements.groups.value) || '').split(/\n/).map(
-        function (line: string): string {
-          return line.trim();
-        }).filter(function (line: string): boolean {
-          return line.length > 0;
-        });
-      this.call('POST', API + '/definitions/' + encodeURIComponent(id) +
-        '/share', { groups: groups }).then(function (): void {
-        self.route();
-      }, function (): void {
-        return undefined;
-      });
-      return;
-    }
     if (kind === 'definition') {
-      this.call('GET', API + '/definitions/' + encodeURIComponent(id)).then(
-        function (current: any): any {
-          const row = current && current.json && current.json.definition;
-          if (!row || !row.document) {
-            self.paint(problemHtml(self.t, self.t.text('report.error')));
-            return null;
+      // THE DOCUMENT IS READ OFF THE FORM (#989), as the New Query page
+      // reads it; then the groups go to the share endpoint. A refused save
+      // is drawn and the groups are not sent.
+      const groups: string[] = [];
+      const held = form.querySelectorAll('input[name="group"]');
+      for (let i = 0; i < held.length; i++) {
+        groups.push(String(held[i].value || ''));
+      }
+      this.call('POST', API + '/definitions/' + encodeURIComponent(id), {
+        name: String(form.elements.name.value || ''),
+        document: queryDocument(form, this.t && this.t.locale),
+        schedule: scheduleCronOf(form),
+        scheduleEnabled: !!form.elements.enabled.checked,
+        notify: !!form.elements.notify.checked
+      }).then(function (answer: any): any {
+        if (!answer || !answer.json || !answer.json.definition) {
+          if (answer) {
+            self.flash('err', (answer.json && answer.json.error_description) ||
+              self.t.text('report.error'));
           }
-          return self.call('POST', API + '/definitions/' +
-            encodeURIComponent(id), {
-            name: String(form.elements.name.value || ''),
-            document: row.document,
-            schedule: scheduleCronOf(form),
-            scheduleEnabled: !!form.elements.enabled.checked,
-            notify: !!form.elements.notify.checked
-          });
-        }).then(function (answer: any): void {
-        if (answer) {
-          self.route();
+          return null;
         }
+        return self.call('POST', API + '/definitions/' +
+          encodeURIComponent(id) + '/share', { groups: groups });
+      }).then(function (answer: any): any {
+        if (!answer) {
+          return null;
+        }
+        if (answer.status !== 200) {
+          self.flash('err', (answer.json && answer.json.error_description) ||
+            self.t.text('report.error'));
+          return null;
+        }
+        return self.route().then(function (): void {
+          self.flash('ok', self.t.text('report.saved'));
+        });
       }, function (): void {
         return undefined;
       });
@@ -1889,6 +2432,17 @@ class ReportRuntime extends SpaClient {
     this.env.document.addEventListener('change', function (event: any):
         void {
       self.onChange(event);
+    });
+    // Enter in the group search box searches rather than submitting the
+    // definition form it sits in (#989).
+    this.env.document.addEventListener('keydown', function (event: any):
+        void {
+      const el = event.target;
+      if (event.key === 'Enter' && el && el.getAttribute &&
+          el.getAttribute('name') === 'groupQuery') {
+        event.preventDefault();
+        self.searchGroups(String(el.value || ''), 1);
+      }
     });
     if (this.env.window) {
       this.env.window.addEventListener('popstate', function (): void {

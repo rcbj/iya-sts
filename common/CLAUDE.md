@@ -11604,6 +11604,18 @@ stated in its header. `tests/sync_query.js`.
 
 ## 3ba. The mail channel: `mail.ts`, `mail_transports.ts`, `mail_templates.ts`, `mail_uses.ts` (#63, 2026-09-22)
 
+**A GROUP AS A RECIPIENT (#989, 2026-10-26).** `SendRequest.groupDn` names a
+group of this realm, and the address is the group's own `mail` attribute,
+read through the directory slot's `groupEntry(dn)` (filled by
+`ldap/ldap_server.js` beside `personEntry`). It is queued under the DN as
+the recipient key, so the dedup window, the ceilings and the outbox rows
+name the group; a group with no entry or no address is refused with the
+codes a person's would be (`STS-MAIL-0012`, `0011`). The rule the channel
+was built on holds: the address comes from the directory and never from
+the request. The one caller is the reports application's result notice
+(`report/CLAUDE.md`), which checks the address first and records its own
+code for a group without one.
+
 Until #63 this service had no way to tell a person anything. A reset link and
 an activation link were shown to an administrator to pass on by hand, and a
 person could not start recovery themselves. **Four files, and the split is
