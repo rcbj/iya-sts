@@ -148,7 +148,7 @@ function mockStsSearchDirs(root) {
   }
   // The one module directory that is two levels down: the mock's vendored
   // copies of this project's own client modules (bbs2023.js and friends).
-  dirs.push(path.join(root, "common", "vendored"));
+  dirs.push(path.join(root, "common", "crypto_impl"));
   return dirs;
 }
 

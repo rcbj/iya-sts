@@ -30,7 +30,7 @@ const path = require("path");
 
 const ROOT = path.join(__dirname, "..", "..");
 const OWN = path.join(ROOT, "oid4vc", "contexts");
-const VENDORED = path.join(ROOT, "common", "vendored", "contexts");
+const VENDORED = path.join(ROOT, "common", "crypto_impl", "contexts");
 
 const FILES = {
   "https://www.w3.org/ns/credentials/v2": [VENDORED, "credentials_v2.json"],
@@ -77,5 +77,19 @@ function offlineFetch(input, init) {
   }
   return original(input, init);
 }
+
+// The Data Integrity suite's own loader throws NotFoundError for a context
+// it does not ship, rather than fetching it. The in-process verifier asks
+// this for the bytes the fetch hook would have answered.
+function documentFor(url) {
+  const key = String(url || "").replace(/#.*$/, "");
+  const where = FILES[key];
+  if (!where) {
+    return null;
+  }
+  return JSON.parse(fs.readFileSync(path.join(where[0], where[1]), "utf8"));
+}
+
+module.exports = { documentFor: documentFor };
 
 globalThis.fetch = offlineFetch;

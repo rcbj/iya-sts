@@ -131,8 +131,9 @@ const log = require('bunyan').createLogger({ name: 'pep-credential',
 
 const REPO = process.env.MOCK_STS_DIR ||
              path.join(__dirname, '..', '..');
-const x509 = require(path.join(REPO, 'common', 'vendored', 'x509.js'));
-const keys = require(path.join(REPO, 'common', 'vendored', 'key_material.js'));
+const x509 = require(path.join(REPO, 'common', 'crypto_impl', 'x509.js'));
+const keys = require(path.join(REPO, 'common', 'crypto_impl',
+                               'key_material.js'));
 
 const DEFAULT_SUBJECT = 'CN=remote-pep-1,OU=remote-peps,O=iya-sts';
 

@@ -92,7 +92,8 @@ interface VcJsonLdDeps {
   readBytes: (file: string) => Buffer;
 }
 
-const VENDORED = path.join(__dirname, '..', 'common', 'vendored', 'contexts');
+const VENDORED = path.join(__dirname, '..', 'common', 'crypto_impl',
+                           'contexts');
 const OWN = path.join(__dirname, 'contexts');
 
 // URL -> [directory, file]. Read once, when first asked for.

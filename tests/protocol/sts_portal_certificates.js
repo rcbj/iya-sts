@@ -70,8 +70,9 @@ if (appconfigProblem) {
 const REPO = process.env.MOCK_STS_DIR || path.join(__dirname, "..", "..");
 // The parent project's own PKI code, for building CSRs — the arrangement
 // `sts_user_credentials.js` already uses. Nothing from the enrollment core.
-const x509 = require(path.join(REPO, "common", "vendored", "x509.js"));
-const keys = require(path.join(REPO, "common", "vendored", "key_material.js"));
+const x509 = require(path.join(REPO, "common", "crypto_impl", "x509.js"));
+const keys = require(path.join(REPO, "common", "crypto_impl",
+                               "key_material.js"));
 
 var stsUrl = process.env.WSTRUST_STS_URL || "https://localhost:8081/sts";
 var base = process.env.OID4VCI_ISSUER_URL || stsUrl.replace(/\/sts\/?$/, "");

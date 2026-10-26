@@ -47,7 +47,7 @@ const REPO = process.env.MOCK_STS_DIR || path.join(__dirname, "..", "..");
 function vendored(name) {
   log.debug("Entering vendored(). name=" + name);
   log.debug("Leaving vendored().");
-  return require(path.join(REPO, "common", "vendored", name));
+  return require(path.join(REPO, "common", "crypto_impl", name));
 }
 
 // ---------------------------------------------------------------------------

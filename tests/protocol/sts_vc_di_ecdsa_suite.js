@@ -148,7 +148,8 @@ async function sdInterop(ctx, dir) {
   // held copies through its --require hook, and this in-process check
   // needs the same hook installed here, or it depends on the network (it
   // passed on a host with one and failed in the runner without).
-  require(path.join(__dirname, "..", "vc-suites", "offline-contexts.cjs"));
+  const offline = require(path.join(__dirname, "..", "vc-suites",
+                                   "offline-contexts.cjs"));
   const nm = path.join(dir, "node_modules", "@digitalbazaar");
   const vcLib = await import(path.join(nm, "vc", "lib", "index.js"));
   const di = await import(path.join(nm, "data-integrity", "lib",
@@ -173,7 +174,22 @@ async function sdInterop(ctx, dir) {
     // bare; the vc library passes the URL and wants a RemoteDocument.
     documentLoader: async function documentLoader(url) {
       log.debug("Entering documentLoader().");
-      const got = await loader.documentLoader({ url: url });
+      let got;
+      try {
+        got = await loader.documentLoader({ url: url });
+      } catch (e) {
+        log.debug("Caught in documentLoader(): " +
+                  ((e && e.message) || e));
+        // The suite's loader throws NotFoundError for a context it does
+        // not ship. credentials/v2 is one, and it is held here.
+        const held = offline.documentFor(url);
+        if (!held) {
+          log.debug("Leaving documentLoader(). Not held.");
+          throw e;
+        }
+        log.debug("Leaving documentLoader(). Held context.");
+        return { contextUrl: null, documentUrl: url, document: held };
+      }
       log.debug("Leaving documentLoader().");
       return got && got.document !== undefined ? got
         : { contextUrl: null, documentUrl: url, document: got };

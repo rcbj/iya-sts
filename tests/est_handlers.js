@@ -55,8 +55,9 @@ async function childMain() {
   const credentials = require(path.join(ROOT, 'common', 'credentials'));
   const core = require(path.join(ROOT, 'common', 'cert_enrollment'));
   const monitor = require(path.join(ROOT, 'common', 'enrollment_monitor'));
-  const x509 = require(path.join(ROOT, 'common', 'vendored', 'x509'));
-  const keys = require(path.join(ROOT, 'common', 'vendored', 'key_material'));
+  const x509 = require(path.join(ROOT, 'common', 'crypto_impl', 'x509'));
+  const keys = require(path.join(ROOT, 'common', 'crypto_impl',
+                                 'key_material'));
   const est = require(path.join(ROOT, 'est', 'est'));
   const estConsole = require(path.join(ROOT, 'est', 'est_console'));
   pkijs.setEngine('node', new pkijs.CryptoEngine({ name: 'node',

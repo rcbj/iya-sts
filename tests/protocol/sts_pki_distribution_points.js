@@ -165,8 +165,8 @@ var TOKEN_ENDPOINT = base + "/realm/" + REALM + "/oauth2/token";
 // hierarchy this service did not make — and the helper that serves its lists.
 const path = require("path");
 const REPO = process.env.MOCK_STS_DIR || path.join(__dirname, "..", "..");
-const x509 = require(path.join(REPO, "common", "vendored", "x509.js"));
-const keyMaterial = require(path.join(REPO, "common", "vendored",
+const x509 = require(path.join(REPO, "common", "crypto_impl", "x509.js"));
+const keyMaterial = require(path.join(REPO, "common", "crypto_impl",
                                       "key_material.js"));
 const crlHost = require("./test_crl_host.js");
 const serviceFacts = require("./service_facts.js");

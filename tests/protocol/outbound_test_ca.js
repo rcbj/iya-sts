@@ -54,8 +54,8 @@ const log = require("bunyan").createLogger({ name: "outbound_test_ca",
   level: process.env.LOG_LEVEL || "info" });
 
 const REPO = process.env.MOCK_STS_DIR || path.join(__dirname, "..", "..");
-const x509 = require(path.join(REPO, "common", "vendored", "x509.js"));
-const keys = require(path.join(REPO, "common", "vendored",
+const x509 = require(path.join(REPO, "common", "crypto_impl", "x509.js"));
+const keys = require(path.join(REPO, "common", "crypto_impl",
                                "key_material.js"));
 
 // The shared directory, or null when there is none — see the header.

@@ -77,7 +77,7 @@ const OWNER = names.usernameFor("fresh-owner");
 const PASSWORD = "Fresh-owner-" + crypto.randomBytes(9).toString("base64url") +
                  "-Aa1!";
 const REPO = process.env.MOCK_STS_DIR || path.join(__dirname, "..", "..");
-const x509 = require(path.join(REPO, "common", "vendored", "x509.js"));
+const x509 = require(path.join(REPO, "common", "crypto_impl", "x509.js"));
 const FRESH = "application/est-attestation-freshness+json";
 const EST = base + "/.well-known/est";
 

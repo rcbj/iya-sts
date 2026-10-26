@@ -120,7 +120,7 @@ const PASSWORD = "Dev-owner-" + crypto.randomBytes(9).toString("base64url") +
 const HOST = "dev-host-" + STAMP.toLowerCase().replace(/[^a-z0-9-]/g, "");
 const R = "/realm/" + REALM;
 const REPO = process.env.MOCK_STS_DIR || path.join(__dirname, "..", "..");
-const x509 = require(path.join(REPO, "common", "vendored", "x509.js"));
+const x509 = require(path.join(REPO, "common", "crypto_impl", "x509.js"));
 
 let checks = 0;
 function check(what, fn) {

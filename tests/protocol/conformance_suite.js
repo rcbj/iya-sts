@@ -414,10 +414,10 @@ function suiteCaFile() {
 async function selfSignedKey(label) {
   log.debug("Entering selfSignedKey(). " + label);
   const repo = require("path").join(__dirname, "..", "..");
-  const x509 = require(require("path").join(repo, "common", "vendored",
+  const x509 = require(require("path").join(repo, "common", "crypto_impl",
                                             "x509"));
   const keyMaterial = require(require("path").join(repo, "common",
-                                                   "vendored",
+                                                   "crypto_impl",
                                                    "key_material"));
   const pair = await keyMaterial.generateKeyPair("ec-p256");
   const issued = await x509.issueCertificate({
@@ -454,10 +454,10 @@ async function selfSignedKey(label) {
 async function caAndLeaf(label) {
   log.debug("Entering caAndLeaf(). " + label);
   const repo = require("path").join(__dirname, "..", "..");
-  const x509 = require(require("path").join(repo, "common", "vendored",
+  const x509 = require(require("path").join(repo, "common", "crypto_impl",
                                             "x509"));
   const keyMaterial = require(require("path").join(repo, "common",
-                                                   "vendored",
+                                                   "crypto_impl",
                                                    "key_material"));
   const now = Date.now();
   const caPair = await keyMaterial.generateKeyPair("ec-p256");

@@ -93,8 +93,8 @@ if (appconfigProblem) {
 }
 
 const REPO = process.env.MOCK_STS_DIR || path.join(__dirname, "..", "..");
-const x509 = require(path.join(REPO, "common", "vendored", "x509.js"));
-const keys = require(path.join(REPO, "common", "vendored",
+const x509 = require(path.join(REPO, "common", "crypto_impl", "x509.js"));
+const keys = require(path.join(REPO, "common", "crypto_impl",
                                "key_material.js"));
 
 var stsUrl = process.env.WSTRUST_STS_URL || "https://localhost:8081/sts";

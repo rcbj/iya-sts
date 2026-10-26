@@ -60,8 +60,8 @@ const REPO = process.env.MOCK_STS_DIR || path.join(__dirname, "..", "..");
 // Required for its side effect as well: it installs the Web Crypto engine the
 // pkijs below signs with. The same install `x509.js` uses, resolved from the
 // vendored directory so that it IS the same instance.
-require(path.join(REPO, "common", "vendored", "key_material.js"));
-const VENDORED = path.join(REPO, "common", "vendored");
+require(path.join(REPO, "common", "crypto_impl", "key_material.js"));
+const VENDORED = path.join(REPO, "common", "crypto_impl");
 const pkijs = require(require.resolve("pkijs", { paths: [VENDORED] }));
 const asn1js = require(require.resolve("asn1js", { paths: [VENDORED] }));
 

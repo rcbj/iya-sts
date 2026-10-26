@@ -42,7 +42,7 @@ const ROOT = path.join(__dirname, '..');
 const LAYER = require.resolve('../persistence/knex_store');
 
 // What is not the service's own source, or not this repository's.
-const SKIP = /(^|\/)(node_modules|node-ldapjs|coverage|debugger\/embedded|common\/vendored|deploy|xacml-pep|docs|\.claude|types|rust|apidocs|\.git)(\/|$)/;
+const SKIP = /(^|\/)(node_modules|node-ldapjs|coverage|debugger\/embedded|common\/crypto_impl|deploy|xacml-pep|docs|\.claude|types|rust|apidocs|\.git)(\/|$)/;
 
 // The requires a file may make of `pg` or `knex`, and why. No file may
 // require `pg`: even the layer does not name it — Knex's dialect loads it.

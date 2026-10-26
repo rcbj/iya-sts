@@ -77,8 +77,9 @@ async function certificatePem(x509, keys, alg, name) {
 async function run(t) {
   log.debug("Entering run().");
   const codec = require(path.join(ROOT, 'est', 'est_codec'));
-  const x509 = require(path.join(ROOT, 'common', 'vendored', 'x509'));
-  const keys = require(path.join(ROOT, 'common', 'vendored', 'key_material'));
+  const x509 = require(path.join(ROOT, 'common', 'crypto_impl', 'x509'));
+  const keys = require(path.join(ROOT, 'common', 'crypto_impl',
+                                 'key_material'));
 
   t.log.info('=== a request body (RFC 8951 section 3) ===');
   const der = nodeCrypto.randomBytes(200);

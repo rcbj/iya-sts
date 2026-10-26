@@ -45,8 +45,8 @@ const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 const facts = require("./service_facts.js");
 const consoleSignIn = require("./console_signin.js");
-const x509 = require("../../common/vendored/x509");
-const keyMaterial = require("../../common/vendored/key_material");
+const x509 = require("../../common/crypto_impl/x509");
+const keyMaterial = require("../../common/crypto_impl/key_material");
 
 var appconfig;
 let appconfigProblem = null;

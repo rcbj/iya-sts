@@ -77,8 +77,8 @@ if (appconfigProblem) {
 // The parent project's independent PKI code, for the EC and ML-KEM keys forge
 // cannot make, and pkijs for the CRL and OCSP messages.
 const REPO = process.env.MOCK_STS_DIR || path.join(__dirname, "..", "..");
-const x509 = require(path.join(REPO, "common", "vendored", "x509.js"));
-const keys = require(path.join(REPO, "common", "vendored",
+const x509 = require(path.join(REPO, "common", "crypto_impl", "x509.js"));
+const keys = require(path.join(REPO, "common", "crypto_impl",
                                "key_material.js"));
 const pkijs = require(path.join(REPO, "node_modules", "pkijs"));
 
