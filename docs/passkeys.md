@@ -50,7 +50,7 @@ rather than repeating them. Every setting in full is in
 | A new person with an activation link | **Directory → Users → New user** (`/admin/users/new`) | `POST /admin-api/users/create` |
 | Which methods one application accepts | **Directory → Applications**, the application's **Configuration** tab | `POST /admin-api/applications/add`, `/remove`, `/update-fields` |
 | Live sessions, and the record of what happened | **Monitoring → Sessions**, **Monitoring → Audit log** (`/admin/audit`) | `GET /admin-api/sessions`, `GET /admin-api/audit?code=<error code>` |
-| The person's own passkeys | the user portal's **Passkeys** page, `/portal/keys` | the [Account API](account-api.md): `GET` and `POST /account-api/keys` |
+| The person's own passkeys | the user portal's **Passkeys** page, `/portal/keys` | the [Account API](account-api.md): `GET` and `POST /account-api/keys`, and `POST /account-api/keys/upgrade` |
 | Signing in | `/authn/login`, then `/authn/webauthn` or `/authn/mfa-setup` | the [sign-in API](authn-api.md), `/authn-api` |
 
 **A token and the `api` helper.** The API examples below use the variables
@@ -199,9 +199,13 @@ that selects it. The details are in
 
 ### A passwordless account from the start
 
-An administrator **cannot create a passkey for somebody**: the ceremony runs in
-the person's own browser against their own authenticator. What the
-administrator gives them instead is a single-use **activation link**.
+By default an administrator does not enrol a passkey for somebody. The
+passkey policy's `adminEnrolment` is off, and the ceremony runs in the
+person's own browser against their own authenticator. What the
+administrator gives them is a single-use **activation link**. When
+`adminEnrolment` is on, an administrator with **Admin Write** can enrol
+one in their own browser; that is
+[below](#an-administrator-enrols-a-passkey).
 
 **Console (a new person).**
 1. **Directory → Users → New user** (`/admin/users/new`). Fill in the
@@ -238,6 +242,40 @@ The account is not set up, and the link is not used up, until the passkey is
 created. To have both a password and a passkey as a second step, they fill in
 the password and choose **Use a passkey as a second step, after the password
 above**.
+
+### An administrator enrols a passkey
+
+The passkey policy's `adminEnrolment` is off by default
+([#945](https://github.com/rcbj/iya-sts/issues/945)). Set it to `on` on the
+profile that applies to the person (the default profile, or a
+[named one](#different-rules-for-different-applications-or-groups)). An
+administrator holding **Admin Write** then sees **Enrol** on the person's
+page under **Directory → Users**, **Passkeys (WebAuthn)**, while WebAuthn
+is on. The note on the button says to enrol only a key you know is theirs:
+whoever holds it signs in as that person.
+
+The ceremony runs in the administrator's browser, against an authenticator
+they hold (a security key to hand over, for example), under the person's
+user handle. The console button enrols a passkey in the `mfa` role. The
+registration is verified exactly as the person's own is: attestation,
+algorithms and that profile's registration rules. Nothing made elsewhere
+can be imported. The key records which administrator enrolled it and when
+(`enrolledBy`), the person is sent the security notice `passkey-enrolled`,
+and the audit row is `admin.passkey.enrolled`.
+
+While the row is off, **Enrol** is still on the page and the ceremony is
+refused (`STS-AUTHN-0440`). A name nobody in this realm's directory holds
+is refused in every mode (`STS-AUTHN-0441`). The caller's token must be a
+person's, so the key can record who enrolled it (`STS-AUTHN-0445`). The
+enrolment lasts five minutes and is single use (`STS-AUTHN-0442`).
+
+**API.** `begin-passkey-enrolment`, then `finish-passkey-enrolment`, on
+`POST /admin-api/users`. Begin takes `user` and, optionally, `role`
+(`mfa`, the default, or `primary`), `lane` (`classical` or `pqc`, where
+both lanes are on) and `kind` (`passkey` or `security-key`). It answers
+`enrolmentId` and `ceremony`. Finish takes `user`, `enrolmentId` and
+`credential` (the browser's registration as JSON). The request bodies are
+in `GET /admin-api/openapi.json`.
 
 ### Requiring a passkey
 
@@ -420,6 +458,9 @@ described under [the passkey policy](authentication.md#the-passkey-policy):
 | `postQuantumRequired` | See [Requiring a post-quantum passkey](#requiring-a-post-quantum-passkey). |
 | `attestationAlgorithms` | See [Requiring a post-quantum attestation](#requiring-a-post-quantum-attestation). |
 | `postQuantumAllowCredentials` | While a post-quantum passkey is required: name only the post-quantum passkeys at sign-in, or name them all and refuse a classical one with a page saying why. See [Narrow, or list and refuse](#narrow-or-list-and-refuse). |
+| `registrationAlgorithms`, `registrationMode` | Which algorithms a registration for this profile's people offers, and whether ML-DSA comes first, alone, or not at all. `realm` follows the realm's WebAuthn settings. |
+| `adminEnrolment` | Off by default. On, an administrator may enrol a passkey for a person this profile applies to. See [An administrator enrols a passkey](#an-administrator-enrols-a-passkey). |
+| `deviceBoundRequired` | Off by default. On, an issuance to an application this profile covers waits for a device-bound session. See [Sessions](sessions.md#binding-the-cookie-to-the-browser-device-bound-session-credentials). |
 
 ### Different rules for different applications or groups
 
@@ -448,7 +489,9 @@ api policies/save-passkey-policy '{"profile":"strict-admins",
   "enforceAttestationAtSignIn":false,"passkeyHints":"client-device,hybrid",
   "securityKeyHints":"security-key","signInHints":"none",
   "enterpriseSerialAttribute":"","userDisplayName":"","rpNameExtras":"none",
-  "credentialLabel":"","aggregateDevices":true,"postQuantumRequired":"off"}'
+  "credentialLabel":"","aggregateDevices":true,"postQuantumRequired":"off",
+  "registrationAlgorithms":"realm","registrationMode":"realm",
+  "adminEnrolment":"off","deviceBoundRequired":false}'
 
 # Remove it
 api policies/reset-passkey-policy '{"profile":"strict-admins"}'
@@ -544,8 +587,13 @@ anyway (`STS-AUTHN-0420`), when:
 
 | Where | Refused when |
 |---|---|
-| `/portal/keys` | `webauthn.pqcOnly` is on, or the person's passkey policy has `postQuantumRequired: registration-and-sign-in` |
+| `/portal/keys` | the person's passkey policy has `registrationMode: pq-only`, or that row is `realm` and `webauthn.pqcOnly` is on, or `postQuantumRequired` is `registration-and-sign-in` |
 | the passkey step at sign-in | as above, or `postQuantumRequired` is `sign-in` for this application (the new classical passkey would not sign the person in) |
+
+`registrationMode: pq-first` still offers the classical retry where the
+realm's `webauthn.pqcOnly` is on. `classical-only` never asks for ML-DSA,
+so this failure does not arise. See
+[the passkey policy](authentication.md#the-passkey-policy).
 
 With [both lanes](#a-classical-and-a-post-quantum-passkey-side-by-side) on, the
 retry creates a passkey in the classical lane.
@@ -980,6 +1028,12 @@ person's authenticator. Over the API the actions are
 `begin-passkey-upgrade`, `prove-passkey-upgrade`, `finish-passkey-upgrade`
 and `cancel-passkey-upgrade` on `POST /admin-api/users`.
 
+**On the Account API.** The person calls `POST /account-api/keys/upgrade`
+with `action` `begin` (and `credentialId`), `prove`, `finish` or `cancel`.
+`prove` and `finish` send `upgrade_id` and `credential`. A refusal leaves
+the classical passkey as it was (`STS-AUTHN-0450` when the realm does not
+offer the upgrade, and `0451`–`0458` for a ceremony that does not complete).
+
 The new passkey meets every rule a registration does, including
 `postQuantumRequired` and `attestationAlgorithms`.
 
@@ -1114,7 +1168,7 @@ person, `outcome=refused` for the ones that failed). The row's detail:
 | Field | What it holds |
 |---|---|
 | `ceremony` | `registration` or `assertion` |
-| `door` | `sign-in-step`, `usernameless`, `portal` or `activation` |
+| `door` | `sign-in-step`, `usernameless`, `portal` (including a device link on `/portal/devices`), `activation`, `upgrade` or `admin-enrolment` |
 | `role`, `lane` | `primary` or `mfa`; `classical` or `pqc` |
 | `offered` | the algorithms offered, in order: for a registration, the list the browser was given (`pubKeyCredParams`); for a sign-in, the algorithms of the person's passkeys the ceremony could use |
 | `algorithm`, `postQuantum` | the algorithm that was used, and whether it is ML-DSA |
@@ -1247,6 +1301,7 @@ description of each is in [Configuration → WebAuthn](configuration.md#webauthn
 | `webauthn.pqcOnly` | `STS_WEBAUTHN_PQC_ONLY` | `false` |
 | `webauthn.pqcAlongsideClassical` | `STS_WEBAUTHN_PQC_ALONGSIDE_CLASSICAL` | `false` |
 | `webauthn.postQuantumAllowCredentials` | `STS_WEBAUTHN_POST_QUANTUM_ALLOW_CREDENTIALS` | `narrow` |
+| `webauthn.pqcUpgrade` | `STS_WEBAUTHN_PQC_UPGRADE` | `true` |
 | `webauthn.userVerification` | `STS_WEBAUTHN_USER_VERIFICATION` | `required` |
 | `webauthn.attestation` | `STS_WEBAUTHN_ATTESTATION` | `direct` |
 | `webauthn.attestationPolicy` | `STS_WEBAUTHN_ATTESTATION_POLICY` | `by-mode` |
@@ -1305,6 +1360,9 @@ Every console control has an API operation. The request bodies are in
 | `GET /admin-api/passkey-report/export` | the people behind a count, as CSV or JSON (`format`) |
 | `POST /admin-api/passkey-report/recount` | count the realm's passkeys again now, on the scheduler |
 | `GET /admin-api/users?user=<name>` | one person, with each passkey's role, algorithm, lane, backup state, attestation and any policy refusal |
+| `POST /admin-api/users/begin-passkey-enrolment`, `finish-passkey-enrolment` | enrol a passkey for a person, in the caller's browser, when their profile's `adminEnrolment` is `on` |
+| `POST /admin-api/users/begin-passkey-upgrade`, `prove-passkey-upgrade`, `finish-passkey-upgrade`, `cancel-passkey-upgrade` | upgrade one of a person's classical passkeys to ML-DSA |
+| `GET /admin-api/passkey-report/evidence` | one passkey's RFC 4998 evidence (`username`, `credentialId`) |
 | `POST /admin-api/users/clear-key` | remove one passkey (`user`, `credentialId`) |
 | `POST /admin-api/users/rename-key` | rename one passkey (`user`, `credentialId`, `label`; empty restores the default) |
 | `POST /admin-api/users/disable-primary-keys` | remove every passkey that signs the person in on its own, and end the sessions each signed in |
@@ -1356,6 +1414,12 @@ browser or a client. Look a code up in the audit log with
 | `STS-AUTHN-0415` | the passkey report could not read the directory (503) |
 | `STS-AUTHN-0416` | a passkey report filter was refused: two at once, or a profile or application that is not here |
 | `STS-AUTHN-0420` | a registration retried with the classical algorithms only, where a classical passkey is not allowed |
+| `STS-AUTHN-0430`, `0431` | a passkey policy was not saved: `registrationMode` `classical-only` contradicts `postQuantumRequired` or `attestationAlgorithms`, or `pq-only` / `pq-first` would offer no ML-DSA |
+| `STS-AUTHN-0432` | a passkey's algorithm is not one the selected profile offers at registration |
+| `STS-AUTHN-0433` | the post-quantum lane was asked for where the profile's `registrationMode` is `classical-only` |
+| `STS-AUTHN-0440` | an administrator's passkey enrolment, where the person's profile has `adminEnrolment` off. `0441`–`0448` are the other refusals of that ceremony |
+| `STS-AUTHN-0450` | a passkey upgrade, where the realm does not offer it (`webauthn.pqcUpgrade` off, or no ML-DSA). `0451`–`0458` are the other refusals of that ceremony |
+| `STS-AUTHN-0461` | a passkey policy requires a device-bound session while `authn.deviceBoundSessions` is off |
 | `STS-ADMIN-0522` | an administrator's removal of a passkey was refused |
 
 **When the browser shows no prompt at all**, the passkey step has a link,
@@ -1366,8 +1430,12 @@ way, because the browser refuses the ceremony before the service sees it.
 
 ## Limits, and what is not supported
 
-* **An administrator cannot create a passkey for somebody.** The ceremony runs
-  in the person's own browser. Use an activation link.
+* **An administrator enrols a passkey only when the passkey policy allows
+  it** (`adminEnrolment`, off by default). The ceremony runs in the
+  administrator's browser, against an authenticator they hold, and is
+  verified as the person's own registration. Nothing made elsewhere can be
+  imported. While the row is off, give the person an
+  [activation link](#a-passwordless-account-from-the-start).
 * **A passkey cannot be used at the password-only doors** (an LDAP bind,
   WS-Trust, SCIM, Shared Signals, EST Basic). A person with a second factor
   uses an [app password](authentication.md#the-password-only-doors-and-app-passwords)
@@ -1398,9 +1466,9 @@ way, because the browser refuses the ceremony before the service sees it.
   the test.** No real authenticator's post-quantum attestation has been
   tried; the attestation algorithms are recorded and enforced as WebAuthn
   and the ML-DSA certificate profile describe them.
-* **Device links on `/portal/devices` now write `webauthn.ceremony` rows.**
-  The ceremony rows cover the sign-in screen, the usernameless sign-in,
-  `/portal/keys`, device links and activation links. When a browser declines a
+* **Device links on `/portal/devices` write `webauthn.ceremony` rows** with
+  door `portal`. The doors are `sign-in-step`, `usernameless`, `portal`,
+  `activation`, `upgrade` and `admin-enrolment`. When a browser declines a
   registration, the existing authenticated ceremony operation records its
   allowlisted error name and the client capabilities it reported; no error
   message text is stored, and the pending ceremony remains available for its

@@ -963,9 +963,10 @@ decides what it means:
   afterwards ([Passkeys](passkeys.md#narrow-or-list-and-refuse)); for
   `pqcUpgrade`, whether a person may upgrade a classical passkey to an
   ML-DSA one ([Passkeys](passkeys.md#upgrading-a-classical-passkey)).
-* **THE ATTESTATION STATEMENT** — `attestationPolicy` and the six
-  `attestation*` rows beside it, below. Unlike the ceremony rows these do
-  refuse a registration.
+* **THE ATTESTATION STATEMENT** — `attestationPolicy` and the
+  `attestation*` rows beside it, below, including the RFC 4998 evidence
+  timestamp authority. Unlike the ceremony rows these do refuse a
+  registration.
 
 **Three ceremony rows are CHECKED when the ceremony comes back**, because the
 answer carries something signed or hashed to check them against:
