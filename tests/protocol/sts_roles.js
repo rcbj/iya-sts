@@ -513,38 +513,46 @@ async function anUnconfiguredRealmRefusesNobody() {
       "GET /admin-api/roles should answer 200; it answered " +
       register.status);
   });
-  check("a new realm holds exactly the four native roles", function () {
+  check("a new realm holds exactly the six native roles", function () {
     // #303: ADMIN_READ and ADMIN_WRITE are CONFIGURED roles seeded into every
     // realm, each held by the realm's own management API client and
     // authorizing its admin scope. #309: DEVICE_COMPLIANCE beside them,
     // authorizing device:compliance and seeded with NO member. #454:
     // ADMIN_CONSOLE, authorizing admin:console, with no member either — it
-    // is CONFERRED by the console's own client, sts-admin-console. Nothing
-    // else is seeded.
+    // is CONFERRED by the console's own client, sts-admin-console.
+    // SSF_READ and SSF_MANAGE authorize ssf.read and ssf.manage, seeded
+    // with the groups ssf-read and ssf-manage and with no application.
+    // Nothing else is seeded.
     const names = register.body.roles.map(function (r) { return r.name; });
     assert.strictEqual(JSON.stringify(names.slice().sort()),
       JSON.stringify(["ADMIN_CONSOLE", "ADMIN_READ", "ADMIN_WRITE",
-                      "DEVICE_COMPLIANCE"]),
-      "a realm's ou=roles starts with the four native roles; this one " +
+                      "DEVICE_COMPLIANCE", "SSF_MANAGE", "SSF_READ"]),
+      "a realm's ou=roles starts with the six native roles; this one " +
       "holds " + JSON.stringify(names));
     const wanted = { ADMIN_READ: "admin:read", ADMIN_WRITE: "admin:write",
                      DEVICE_COMPLIANCE: "device:compliance",
-                     ADMIN_CONSOLE: "admin:console" };
+                     ADMIN_CONSOLE: "admin:console",
+                     SSF_READ: "ssf.read", SSF_MANAGE: "ssf.manage" };
     register.body.roles.forEach(function (row) {
       const unheld = row.name === "DEVICE_COMPLIANCE" ||
-                     row.name === "ADMIN_CONSOLE";
+                     row.name === "ADMIN_CONSOLE" ||
+                     row.name === "SSF_READ" || row.name === "SSF_MANAGE";
       assert.ok(row.native === true && row.console === !unheld &&
                 (unheld ? row.applications.length === 0
                         : row.applications.indexOf("sts-management-api") >=
                           0) &&
                 (row.name !== "ADMIN_CONSOLE" ||
                  (row.conferredBy || []).indexOf("sts-admin-console") >= 0) &&
+                (row.name !== "SSF_READ" ||
+                 (row.groups || []).indexOf("ssf-read") >= 0) &&
+                (row.name !== "SSF_MANAGE" ||
+                 (row.groups || []).indexOf("ssf-manage") >= 0) &&
                 row.permissions.length === 1 &&
                 row.permissions[0] === wanted[row.name],
                 "each authorizes its own native permission; the console " +
-                "roles are held by sts-management-api, DEVICE_COMPLIANCE " +
-                "by nobody, and ADMIN_CONSOLE by nobody but conferred by " +
-                "sts-admin-console: " + JSON.stringify(row));
+                "roles are held by sts-management-api, and " +
+                "DEVICE_COMPLIANCE, ADMIN_CONSOLE, SSF_READ and SSF_MANAGE " +
+                "by no application: " + JSON.stringify(row));
     });
   });
   check("and the built-in ones are there anyway", function () {

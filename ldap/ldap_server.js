@@ -5387,10 +5387,10 @@ realms.onCreate(function (id) {
     // directory slot, which resolves the container from the ambient realm —
     // the same reason `seed()` is in here.
     applications.seedInternalApplications({ scope: 'every' });
-    // THE NATIVE ROLES (#303, #309) — ADMIN_READ and ADMIN_WRITE, each held
-    // by the realm's own management API client, and DEVICE_COMPLIANCE, held
-    // by nobody until an operator adds the MDM feed. After the applications,
-    // whose client they name.
+    // THE NATIVE ROLES (#303, #309) — the console roles, DEVICE_COMPLIANCE,
+    // and SSF_READ and SSF_MANAGE. After the applications, whose client the
+    // console roles name. The SSF groups are created here when missing and
+    // an existing group's members are left as they are.
     roles.seedNativeRoles();
   });
   log.info('ldap: built the "' + id + '" realm\'s subtree at ' +
@@ -9995,7 +9995,11 @@ if (typeof roles.setDirectory === 'function') {
       return (groupsOfUser(name).groups || []).map(function (one) {
         return one.cn;
       });
-    }
+    },
+    // Create a group when its DN is missing and leave an existing one
+    // alone, members included. Native-role seeding uses it for ssf-read
+    // and ssf-manage. putEntry would wipe whoever had been added.
+    ensureGroup: ensureGroup
   });
 } else {
   log.warn('ldap: common/roles.js offers no setDirectory(), so ou=roles is ' +
@@ -25306,6 +25310,31 @@ function createGroup(displayName, options) {
   return { ok: true, dn: written.dn, group: wanted,
            members: members, dangling: dangling,
            entry: written.entry };
+}
+
+// CREATE THE GROUP WHEN IT IS MISSING, AND NEVER REWRITE ONE THAT IS THERE.
+// Seeding calls this on every start, including after a restore. putEntry
+// would replace the entry and drop the members an operator had added.
+// An empty group is what createGroup() already allows.
+/**
+ * Creates a group when no entry stands at its DN, and reports the existing
+ * one without changing it.
+ *
+ * @param displayName - the group's name
+ * @param options - passed to `createGroup()` when the group is missing
+ * @returns `{ ok: true, existed, dn, group }`, or `createGroup()`'s refusal
+ */
+function ensureGroup(displayName, options) {
+  log.debug('Entering ensureGroup().');
+  const wanted = String(displayName == null ? '' : displayName).trim();
+  const dn = wanted ? groupDnFor(wanted) : '';
+  if (dn && getEntry(dn)) {
+    log.debug('Leaving ensureGroup(). Already there.');
+    return { ok: true, existed: true, dn: dn, group: wanted };
+  }
+  const made = createGroup(wanted, options || {});
+  log.debug('Leaving ensureGroup(). ' + (made.ok ? 'Created.' : 'Refused.'));
+  return made.ok ? Object.assign({ existed: false }, made) : made;
 }
 
 // WHERE A MEMBERSHIP VALUE POINTS, and it is `admin_rbac.js`'s memberValueFor()

@@ -47,6 +47,7 @@ const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const ldapjs = require("ldapjs");
 const names = require("./random_username.js");
+const ssfRoles = require("./ssf_roles.js");
 const facts = require("./service_facts.js");
 const nodeCrypto = require("crypto");
 const portal = require("./portal_signin.js");
@@ -418,6 +419,7 @@ const DOOR = { ldap: ldapBind, wstrust: wsTrust, scim: scim, ssf: ssf,
 // ---------------------------------------------------------------------------
 async function tokenFor(scope) {
   log.debug("Entering tokenFor().");
+  await ssfRoles.mapApplication(ssfRoles.sendPost(send), realmApi, RECEIVER, scope);
   const r = await send(realmBase + "/oauth2/token", { method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: form({ grant_type: "client_credentials", client_id: RECEIVER,

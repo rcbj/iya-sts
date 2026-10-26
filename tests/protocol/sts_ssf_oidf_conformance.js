@@ -43,6 +43,7 @@ const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 const registry = require("./sts_applications.js");
 const oidf = require("./conformance_suite.js");
+const ssfRoles = require("./ssf_roles.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -139,6 +140,7 @@ async function prepare(plan) {
       attribute: "oauthAllowedScope", value: scope },
       "declared " + scope);
   }
+  await ssfRoles.mapApplication(ssfRoles.sendPost(oidf.send), realm.api, registered.body.client_id, "ssf.read ssf.manage");
   const configuration = {
     alias: "iya-" + plan.key + "-" + TAG,
     description: "iya-sts " + plan.name + " " + STAMP,

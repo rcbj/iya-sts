@@ -51,6 +51,7 @@ const names = require("./random_username.js");
 const registry = require("./sts_applications.js");
 const consentScreen = require("./consent_screen.js");
 const PORTAL_SIGNIN = require("./portal_signin.js");
+const ssfRoles = require("./ssf_roles.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -266,6 +267,7 @@ async function exchange(app, fields) {
 // A client-credentials token for the receiver, for the stream and the poll.
 async function receiverToken() {
   log.debug("Entering receiverToken().");
+  await ssfRoles.mapApplication(ssfRoles.hopOptsPost(hop), api, RECEIVER, "ssf.read ssf.manage");
   const r = await hop(null, "POST", base + "/oauth2/token", { form: {
     grant_type: "client_credentials", client_id: RECEIVER,
     client_secret: RECEIVER_SECRET, scope: "ssf.read ssf.manage" } });

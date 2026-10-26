@@ -75,7 +75,8 @@ streams receivers create.
   registers in memory. Product on postgres persists them.
 
 In **both** modes a token is issued `ssf.read` or `ssf.manage` only if the
-client declares a scope granting it in `oauthAllowedScope`, and every token is
+client declares a scope granting it in `oauthAllowedScope` and the subject
+holds the matching role (`SSF_READ` or `SSF_MANAGE`). Every token is
 verified.
 
 ---
@@ -94,8 +95,10 @@ Profile's names:
 | `ssf.manage` | everything `ssf.read` does, and create, update or delete a stream, add or remove subjects, change status, and ask for verification |
 
 **Write includes read.** A client that declares only `ssf.manage` may also be
-issued `ssf.read`. A client that declares only `ssf.read` is refused
-`ssf.manage` with `invalid_scope`. The colon names `ssf:read` and `ssf:write`
+issued `ssf.read` when it holds `SSF_READ` as well. `SSF_MANAGE` does not
+authorize `ssf.read` on the token. At the transmitter, a token that already
+carries `ssf.manage` still includes read. A client that declares only
+`ssf.read` is refused `ssf.manage` with `invalid_scope`. The colon names `ssf:read` and `ssf:write`
 are **not** Shared Signals scopes: a client that declares them is refused
 `ssf.read` and `ssf.manage`, and a token carrying them is refused by the
 transmitter. `ssf.authScopeRead` and `ssf.authScopeWrite` add names of your

@@ -16,14 +16,17 @@
 // left behind:
 //
 //   1. Discovery lists `ssf.read` and `ssf.manage`, and neither colon name.
-//   2. A client that declares only `ssf.manage` is issued `ssf.read` as
-//      well as `ssf.manage`, with `expires_in` at most 3600 (the default
-//      lifetime, which is the profile's sixty-minute ceiling). Its manage
-//      token creates a stream, reads it, reads its status, polls, asks for
-//      verification and receives the verification SET.
-//   3. A client that declares only `ssf.read` is issued `ssf.read`, lists
-//      streams and is refused a create. The 403 names `ssf.manage`. It is
-//      refused `ssf.manage`.
+//   2. A client that declares only `ssf.manage` is not issued `ssf.read`
+//      until it holds SSF_READ. Holding SSF_MANAGE issues `ssf.manage`,
+//      with `expires_in` at most 3600 (the default lifetime, which is the
+//      profile's sixty-minute ceiling). That manage token creates a stream,
+//      reads it, reads its status, polls, asks for verification and
+//      receives the verification SET. Once the client also holds SSF_READ,
+//      the manage declaration issues `ssf.read`: write includes read at
+//      declaration, and the read role authorizes it. SSF_MANAGE does not.
+//   3. A client that declares only `ssf.read` is refused `ssf.read` until
+//      it holds SSF_READ, then is issued it, lists streams and is refused
+//      a create. The 403 names `ssf.manage`. It is refused `ssf.manage`.
 //   4. A client that declares only `ssf:read` is refused `ssf.read`; the
 //      `ssf:read` token it can still get is refused by the transmitter. A
 //      client that declares only `ssf:write` is refused `ssf.manage`.
@@ -40,6 +43,7 @@
 const assert = require("assert");
 const { Command, Option } = require("commander");
 const { usernameFor } = require("./random_username.js");
+const ssfRoles = require("./ssf_roles.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -150,6 +154,16 @@ function refusedInvalidScope(r) {
   log.debug("Leaving refusedInvalidScope().");
 }
 
+// The role gate's refusal. It is invalid_scope, and it does not name
+// oauthAllowedScope: the client declared a scope that covers the request.
+function refusedByRole(r) {
+  log.debug("Entering refusedByRole().");
+  assert.strictEqual(r.status, 400, r.text.slice(0, 400));
+  assert.strictEqual(r.json && r.json.error, "invalid_scope", r.text);
+  assert.ok(!/oauthAllowedScope/.test(r.text), r.text);
+  log.debug("Leaving refusedByRole().");
+}
+
 async function declare(identifier, scope, mode) {
   log.debug("Entering declare().");
   await ok(realmApi + "/applications/" + (mode || "add"),
@@ -231,10 +245,15 @@ async function test() {
 
   log.info("=== 2. ssf.manage reads and writes ===");
   r = await token(MANAGE, "ssf.read");
-  check("a client declaring only ssf.manage is issued ssf.read: write " +
-        "includes read", function () {
-    assert.strictEqual(r.status, 200, r.text.slice(0, 400));
-    assert.strictEqual(r.json.scope, "ssf.read", r.text);
+  check("a client declaring only ssf.manage is not issued ssf.read until " +
+        "it holds SSF_READ", function () {
+    refusedByRole(r);
+  });
+  await ssfRoles.mapApplication(ssfRoles.callPost(call), realmApi, MANAGE,
+                                "ssf.manage");
+  r = await token(MANAGE, "ssf.read");
+  check("holding SSF_MANAGE still does not issue ssf.read", function () {
+    refusedByRole(r);
   });
   r = await token(MANAGE, "ssf.manage");
   check("and is issued ssf.manage in the spelling it asked for", function () {
@@ -299,6 +318,14 @@ async function test() {
     })));
     assert.strictEqual(found.events[VERIFICATION].state, "caep-state");
   });
+  await ssfRoles.mapApplication(ssfRoles.callPost(call), realmApi, MANAGE,
+                                "ssf.read");
+  r = await token(MANAGE, "ssf.read");
+  check("holding SSF_READ as well, the manage declaration issues ssf.read",
+        function () {
+    assert.strictEqual(r.status, 200, r.text.slice(0, 400));
+    assert.strictEqual(r.json.scope, "ssf.read", r.text);
+  });
 
   log.info("=== 3. a read declaration ===");
   r = await token(DOT, "ssf.manage");
@@ -307,7 +334,13 @@ async function test() {
     refusedInvalidScope(r);
   });
   r = await token(DOT, "ssf.read");
-  check("and is issued ssf.read", function () {
+  check("holding no SSF_READ role, it is not issued ssf.read", function () {
+    refusedByRole(r);
+  });
+  await ssfRoles.mapApplication(ssfRoles.callPost(call), realmApi, DOT,
+                                "ssf.read");
+  r = await token(DOT, "ssf.read");
+  check("and is issued ssf.read once it holds SSF_READ", function () {
     assert.strictEqual(r.status, 200, r.text.slice(0, 300));
     assert.strictEqual(r.json.scope, "ssf.read", r.text);
   });
@@ -386,7 +419,7 @@ async function test() {
     assert.ok(/oauthAllowedScope/.test(r.text), r.text.slice(0, 400));
   });
 
-  assert.ok(checks >= 21, "only " + checks + " of 21 checks ran");
+  assert.ok(checks >= 25, "only " + checks + " of 25 checks ran");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");
   log.debug("Leaving test().");
@@ -396,7 +429,8 @@ const program = new Command();
 program
   .name("sts_ssf_caep_scopes")
   .description("CAEP Interoperability Profile scope names over the wire " +
-    "(#334): ssf.read and ssf.manage, and write includes read.")
+    "(#334): ssf.read and ssf.manage, write includes read, and the " +
+    "SSF_READ and SSF_MANAGE roles.")
   .addOption(new Option("-u, --url <url>", "base url (unused: this test " +
                                            "needs no browser)"))
   .parse(process.argv);

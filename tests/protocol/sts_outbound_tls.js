@@ -61,6 +61,7 @@ const http = require("http");
 const { Command, Option } = require("commander");
 const { usernameFor } = require("./random_username.js");
 const testCa = require("./outbound_test_ca.js");
+const ssfRoles = require("./ssf_roles.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -199,6 +200,7 @@ async function until(what, fn, ms) {
 
 async function tokenFor(realm, identifier) {
   log.debug("Entering tokenFor().");
+  await ssfRoles.mapApplication(ssfRoles.callPost(call), realmBase(realm) + "/admin-api", identifier, "ssf.read ssf.manage");
   const r = await fetch(realmBase(realm) + "/oauth2/token", { method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: "grant_type=client_credentials&client_id=" +

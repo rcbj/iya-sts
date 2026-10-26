@@ -20081,13 +20081,15 @@ const CODES = [
       'only an application is added on the role (#303).',
     spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-XACML-0076',
-    summary: 'A delete named a native role — ADMIN_READ, ADMIN_WRITE or ' +
-      'DEVICE_COMPLIANCE — which every realm keeps (#303, #309).',
+    summary: 'A delete named a native role — ADMIN_READ, ADMIN_WRITE, ' +
+      'DEVICE_COMPLIANCE, SSF_READ or SSF_MANAGE — which every realm keeps ' +
+      '(#303, #309).',
     spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-XACML-0077',
-    summary: 'A native role (ADMIN_READ, ADMIN_WRITE or DEVICE_COMPLIANCE) ' +
-      'could not be seeded in a realm; no machine client can be issued its ' +
-      'permission there until it exists (#303, #309).',
+    summary: 'A native role (ADMIN_READ, ADMIN_WRITE, DEVICE_COMPLIANCE, ' +
+      'SSF_READ or SSF_MANAGE) could not be seeded in a realm; no machine ' +
+      'client can be issued its permission there until it exists (#303, ' +
+      '#309).',
     spec: 'none — a warning in the log' },
   { code: 'STS-XACML-0078',
     summary: 'Neither the issuance policy nor the built-in one it falls back ' +
@@ -21195,13 +21197,13 @@ const CODES = [
       'mirroring /admin-api operation\'s enum declares (#86).',
     spec: 'HTTP 400 page', retired: true },
   { code: 'STS-ADMIN-0821',
-    summary: 'A permission gated by role — admin:read, admin:write, or an ' +
-      'application permission its resource lists in ' +
-      'oauthRoleGatedPermission — was asked for on behalf of a person or ' +
-      'an application no held role authorizes it for (for a person\'s ' +
-      'console roles: no Admin Read or Admin Write, not signed in, or the ' +
-      'bootstrap administrator before its claim), and was left off the ' +
-      'tokens (#302, #303).',
+    summary: 'A permission gated by role — admin:read, admin:write, ' +
+      'ssf.read, ssf.manage, or an application permission its resource ' +
+      'lists in oauthRoleGatedPermission — was asked for on behalf of a ' +
+      'person or an application no held role authorizes it for (for a ' +
+      'person\'s console roles: no Admin Read or Admin Write, not signed ' +
+      'in, or the bootstrap administrator before its claim), and was left ' +
+      'off the tokens (#302, #303).',
     spec: 'none — the token is issued without that scope (RFC 6749 ' +
       'section 3.3)' },
   { code: 'STS-ADMIN-0822',
@@ -21211,8 +21213,8 @@ const CODES = [
     spec: 'invalid_scope (RFC 6749 sections 4.1.2.1 and 5.2)' },
   { code: 'STS-ADMIN-0823',
     summary: 'add-permission or remove-permission named a native role — ' +
-      'ADMIN_READ, ADMIN_WRITE or DEVICE_COMPLIANCE — whose permission is ' +
-      'fixed (#303, #309).',
+      'ADMIN_READ, ADMIN_WRITE, DEVICE_COMPLIANCE, SSF_READ or ' +
+      'SSF_MANAGE — whose permission is fixed (#303, #309).',
     spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-ADMIN-0824',
     summary: 'add-permission or remove-permission named no permission ' +
@@ -21220,8 +21222,8 @@ const CODES = [
     spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-ADMIN-0825',
     summary: 'add-permission named a native permission (admin:read, ' +
-      'admin:write, device:compliance), which only its native role ' +
-      'authorizes (#303, #309).',
+      'admin:write, device:compliance, ssf.read, ssf.manage), which only ' +
+      'its native role authorizes (#303, #309).',
     spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-ADMIN-0826',
     summary: 'add-permission named a permission no application in the realm ' +

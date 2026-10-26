@@ -87,6 +87,7 @@ const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 const PORTAL_SIGNIN = require("./portal_signin.js");
 const registry = require("./sts_applications.js");
+const ssfRoles = require("./ssf_roles.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -735,6 +736,7 @@ async function test() {
            "registered a client that does not declare it");
   const tokenOf = async function (identifier, scope, resource) {
     log.debug("Entering tokenOf(). " + identifier);
+    await ssfRoles.mapApplication(ssfRoles.hopPost(hop), api, identifier, scope);
     const r = await fetch(base + "/oauth2/token", { method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: form(Object.assign({ grant_type: "client_credentials",

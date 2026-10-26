@@ -619,6 +619,16 @@ it is the client itself. Two kinds of scope are gated:
   `ADMIN_READ` and `ADMIN_WRITE` roles. A person holds those through the
   console's Admin Read and Admin Write groups, and an application by being a
   member of the role ([Management API](management-api.md)).
+* **`ssf.read` and `ssf.manage`**, always. They are authorized by the ordinary
+  native roles `SSF_READ` and `SSF_MANAGE`. A person is issued one only while
+  they belong to that role's group (`ssf-read` or `ssf-manage`, unless an
+  administrator changes the group) and the application they are signing in to
+  is a member of the role. An application's own token (`client_credentials`)
+  is issued one only while the application is a member. A direct user member
+  and a client that confers the role do not stand in for the group.
+  `SSF_MANAGE` does not authorize `ssf.read`. Declaring the scope, including a
+  write declaration covering a read request, is still required and is a
+  separate gate.
 * **An application permission its resource opts in.** List the permission's
   name in `oauthRoleGatedPermission` on the resource application. Then name the
   full permission (base URI + name) on a role, with the `add-permission` action

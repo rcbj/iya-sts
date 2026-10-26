@@ -71,8 +71,9 @@
 // argued at their rows in `BUILT_IN` below. ADMIN_READ and ADMIN_WRITE were
 // built-ins read off the scopes until #303 (2026-09-27), and DEVICE_COMPLIANCE
 // until #309 (2026-09-28): all three are CONFIGURED roles now, authorizing
-// their native permission — see THE NATIVE ROLES, below the table. No role is
-// read off a scope any more.
+// their native permission — see THE NATIVE ROLES, below the table. SSF_READ
+// and SSF_MANAGE are configured the same way, each authorizing its Shared
+// Signals scope. No role is read off a scope any more.
 //
 // ---------------------------------------------------------------------------
 // A ROLE AUTHORIZES PERMISSIONS (#303, part B of #88, 2026-09-27).
@@ -604,8 +605,9 @@ const CONSOLE_ROLE_APPLICATION = 'sts-management-api';
 // ---------------------------------------------------------------------------
 // THE NATIVE ROLES (#309, a follow-up to #88, 2026-09-28): every role that
 // authorizes one of this service's NATIVE permissions — the two console roles
-// above, ADMIN_CONSOLE (#454) and DEVICE_COMPLIANCE. Each is seeded in every
-// realm, cannot be deleted, and authorizes exactly its permission.
+// above, ADMIN_CONSOLE (#454), DEVICE_COMPLIANCE, and the two Shared Signals
+// roles SSF_READ and SSF_MANAGE. Each is seeded in every realm, cannot be
+// deleted, and authorizes exactly its permission.
 //
 // **DEVICE_COMPLIANCE WAS THE LAST ROLE READ OFF A SCOPE.** It was built in:
 // a token carrying `device:compliance` WAS the MDM feed (#164 phase 3), the
@@ -616,6 +618,19 @@ const CONSOLE_ROLE_APPLICATION = 'sts-management-api';
 // decision on #309): no client is the MDM feed until an operator adds it,
 // and the management API's own client is not, which is the separation #164
 // decision 2 made on purpose.
+//
+// **SSF_READ AND SSF_MANAGE ARE ORDINARY NATIVE ROLES, NOT CONSOLE ROLES.**
+// The console roles are a roster: their groups come from settings and are
+// not stored, people hold them through /admin/rbac, and write-implies-read
+// is a property of that roster. These two are not. Each stores its group
+// (`ssf-read`, `ssf-manage`) on `roleMemberGroup`, the group is created when
+// it is missing and never overwritten, and the permission is the scope of
+// the same name. Issuance then asks for both halves (`role_permissions.ts`):
+// a person is issued the scope only while they are in the role's group AND
+// the application they are signing in to is a member of the role. An
+// application's own token is issued it only while that application is a
+// member. SSF_MANAGE does not authorize `ssf.read`. A direct user member,
+// and a client that confers the role, do not stand in for the group.
 // ---------------------------------------------------------------------------
 const NATIVE_ROLES = CONSOLE_ROLES.concat([
   // THE ADMIN CONSOLE'S OWN ROLE (#454). What the console needs to draw
@@ -642,7 +657,23 @@ const NATIVE_ROLES = CONSOLE_ROLES.concat([
     what: 'The device compliance feed: an MDM or posture feed reporting a ' +
           'device\'s compliance through POST /admin-api/device-compliance, ' +
           'and nothing else on /admin-api. Authorizes the device:compliance ' +
-          'permission. Seeded with no member: add the feed\'s application.' }
+          'permission. Seeded with no member: add the feed\'s application.' },
+  { name: 'SSF_READ', consoleRole: '', permission: 'ssf.read',
+    groupSettings: [], seedApplications: [], seedGroups: ['ssf-read'],
+    what: 'Shared Signals read. Authorizes the ssf.read permission. A ' +
+          'person is issued it only while they belong to this role\'s ' +
+          'group, seeded as ssf-read, and the application they are signing ' +
+          'in to is a member of this role. An application is issued it on ' +
+          'its own token only while it is a member. SSF_MANAGE does not ' +
+          'authorize it.' },
+  { name: 'SSF_MANAGE', consoleRole: '', permission: 'ssf.manage',
+    groupSettings: [], seedApplications: [], seedGroups: ['ssf-manage'],
+    what: 'Shared Signals write. Authorizes the ssf.manage permission. A ' +
+          'person is issued it only while they belong to this role\'s ' +
+          'group, seeded as ssf-manage, and the application they are ' +
+          'signing in to is a member of this role. An application is issued ' +
+          'it on its own token only while it is a member. It does not ' +
+          'authorize ssf.read.' }
 ]);
 
 function nativeRoleFor(name) {
@@ -725,7 +756,8 @@ let warnedAboutNoDirectory = false;
  * `ou=roles`; `ldap/ldap_server.js` fills it.
  *
  * @param hooks - the directory's role hooks (`allRoles`, `writeRole`,
- *   `deleteRole`, `groupsOfUser`, and since #604 `resolveOwner`), or null
+ *   `deleteRole`, `groupsOfUser`, `ensureGroup`, and since #604
+ *   `resolveOwner`), or null
  */
 function setDirectory(hooks) {
   log.debug('Entering setDirectory().');
@@ -1397,19 +1429,62 @@ function setOwnerProtected(name, flag) {
 }
 
 // ---------------------------------------------------------------------------
-// SEEDING THE NATIVE ROLES (the two console roles, and DEVICE_COMPLIANCE
-// since #309), in the AMBIENT realm — `ldap_server.js`
-// calls it where it seeds this process's own applications, for the default
-// realm at startup and inside each realm's builder. An entry already there
-// is left exactly as it is, as `applications.js` leaves its seeded clients:
-// an operator who took the management API's client out of a role meant it.
-// Returns how many were created.
+// SEEDING THE NATIVE ROLES (the two console roles, DEVICE_COMPLIANCE since
+// #309, and SSF_READ and SSF_MANAGE), in the AMBIENT realm —
+// `ldap_server.js` calls it where it seeds this process's own applications,
+// for the default realm at startup and inside each realm's builder, and
+// again after a persistence restore replaces the tree. An entry already
+// there is left exactly as it is, as `applications.js` leaves its seeded
+// clients: an operator who took the management API's client out of a role,
+// or who renamed a Shared Signals role's group, meant it.
+//
+// A role's seed groups are a different matter. They are created only when
+// the DN is absent, and an existing group is never rewritten: `putEntry`
+// would replace the members, and a restore that then re-seeds would wipe
+// the person an operator had added. The group is ensured even when the role
+// entry is already there, so an upgrade that finds the role and not the
+// group still gains the group, empty.
+// Returns how many roles were created.
 // ---------------------------------------------------------------------------
 /**
- * Creates the two console roles in the ambient realm when they are missing,
- * with the management API's client as a member; an existing entry is left as
- * it is.
+ * Creates one native role's seed groups in the ambient realm when their DNs
+ * are absent. An existing group, members included, is left as it is.
  *
+ * A directory slot with no `ensureGroup` — a test stub — skips the groups.
+ * The role is still seeded; the group can be created later.
+ * @param row - a `NATIVE_ROLES` row
+ */
+function ensureSeedGroups(row) {
+  log.debug('Entering ensureSeedGroups().');
+  if (!directory || typeof directory.ensureGroup !== 'function') {
+    log.debug('Leaving ensureSeedGroups(). The directory has no ensureGroup.');
+    return;
+  }
+  (row.seedGroups || []).forEach(function (name) {
+    const made = directory.ensureGroup(name, {
+      note: 'Members of this group hold the native role ' + row.name +
+            ' when that role lists the group. Seeded empty; adding a ' +
+            'member is how a person is granted ' + row.permission + '.',
+      origin: 'seed',
+      actor: 'seed',
+      channel: 'internal'
+    });
+    if (!made || made.ok !== true) {
+      const why = made && made.errors ? made.errors.join(' ') : '';
+      log.warn(errorCodes.tag('STS-XACML-0077') + 'roles: the group "' +
+               name + '" for the native role "' + row.name +
+               '" was not seeded' + (why ? ': ' + why : '') + '.');
+    }
+  });
+  log.debug('Leaving ensureSeedGroups().');
+}
+
+/**
+ * Creates the native roles in the ambient realm when they are missing.
+ *
+ * The console roles are seeded with the management API's client as a
+ * member. SSF_READ and SSF_MANAGE are seeded with their groups and with no
+ * application. An existing role entry is left as it is.
  * @returns how many were created
  */
 function seedNativeRoles() {
@@ -1420,13 +1495,15 @@ function seedNativeRoles() {
   }
   let made = 0;
   NATIVE_ROLES.forEach(function (row) {
+    ensureSeedGroups(row);
     if (read(row.name)) {
       return;
     }
     const written = write(row.name, {
       description: row.what,
       applications: (row.seedApplications || []).slice(0),
-      conferredBy: (row.seedConferredBy || []).slice(0) });
+      conferredBy: (row.seedConferredBy || []).slice(0),
+      groups: (row.seedGroups || []).slice(0) });
     if (written.ok) {
       made += 1;
     } else {
@@ -1612,6 +1689,25 @@ function normalizeContext(who) {
     sids: Array.isArray(given.sids) ? given.sids.map(String).filter(Boolean)
                                     : []
   };
+}
+
+/**
+ * Returns the group common names a person is in, in the ambient realm.
+ *
+ * The directory slot already flattens `groupsOfUser()` to those names. No
+ * directory, or a person with none, is an empty list.
+ * @param username - the person's name
+ * @returns the group names
+ */
+function groupsOf(username) {
+  log.debug('Entering groupsOf().');
+  if (!directory || typeof directory.groupsOfUser !== 'function') {
+    log.debug('Leaving groupsOf(). No directory.');
+    return [];
+  }
+  const found = directory.groupsOfUser(String(username || '')) || [];
+  log.debug('Leaving groupsOf(). ' + found.length + ' group(s).');
+  return found;
 }
 
 function groupsFor(context) {
@@ -1823,8 +1919,8 @@ function prose() {
 }
 
 /**
- * The role register: who holds a role, the built-in computed roles, the two
- * console roles, and the roles claim.
+ * The role register: who holds a role, the built-in computed roles, the
+ * native roles, and the roles claim.
  *
  * A library and a leaf (rule 3): it requires only `helpers`, `config` and
  * `error_codes`, and reaches the directory through a slot.
@@ -1850,6 +1946,7 @@ module.exports = {
   nativeRoleFor: nativeRoleFor,
   isNativeRole: isNativeRole,
   seedNativeRoles: seedNativeRoles,
+  groupsOf: groupsOf,
   conferredBy: conferredBy,
   rolesAuthorizing: rolesAuthorizing,
   setDirectory: setDirectory,

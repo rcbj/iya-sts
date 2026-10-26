@@ -39,6 +39,7 @@ const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const names = require("./random_username.js");
+const ssfRoles = require("./ssf_roles.js");
 const facts = require("./service_facts.js");
 const portal = require("./portal_signin.js");
 
@@ -294,6 +295,7 @@ function refresh(token) {
 
 async function tokenFor(scope) {
   log.debug("Entering tokenFor().");
+  await ssfRoles.mapApplication(ssfRoles.sendPost(send), api, CLIENT, scope);
   const r = await postForm(base + "/oauth2/token", {
     grant_type: "client_credentials", client_id: CLIENT,
     client_secret: SECRET, scope: scope });

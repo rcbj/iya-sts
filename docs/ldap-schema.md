@@ -279,7 +279,12 @@ no object class and gains one on its next save.
 `admin.writeGroup` and are not stored on the entry; `sts-management-api` is a member of both. A third seeded role,
 `DEVICE_COMPLIANCE`, authorizes `device:compliance` and has no members until the MDM feed's application is added
 (#309). A fourth, `ADMIN_CONSOLE`, authorizes `admin:console` and has no members either: it is conferred by the
-console's client, `sts-admin-console`, on everybody who signs in to the console (#454). None of the four can be
+console's client, `sts-admin-console`, on everybody who signs in to the console (#454). Two more, `SSF_READ` and
+`SSF_MANAGE`, authorize `ssf.read` and `ssf.manage`. They are ordinary native roles, not the console roster: the
+groups `ssf-read` and `ssf-manage` are stored on `roleMemberGroup`, created empty when missing and never
+overwritten. A person is issued the scope only while they belong to the role's group and the application is a
+member; an application's own token needs the application to be a member. `SSF_MANAGE` does not authorize
+`ssf.read`. None of the six can be
 deleted, and their permissions are fixed. A role only applications may hold, and the two console roles, cannot be
 conferred. The service also computes eight
 built-in roles that are not stored: EVERYBODY, ALL_AUTHENTICATED_USERS, ALL_UNAUTHENTICATED_USERS,

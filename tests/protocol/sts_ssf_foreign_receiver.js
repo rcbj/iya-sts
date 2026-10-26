@@ -38,6 +38,7 @@ const fs = require("fs");
 const path = require("path");
 const tls = require("tls");
 const testCa = require("./outbound_test_ca.js");
+const ssfRoles = require("./ssf_roles.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -395,6 +396,7 @@ async function test() {
               oauthClientSecret: SECRET,
               oauthTokenEndpointAuthMethod: "client_secret_post" } },
     "registered B's client at A");
+  await ssfRoles.mapApplication(ssfRoles.hopOptsPost(hop), apiA, CLIENT, "ssf.read ssf.manage");
   for (const [realm, who] of [[baseA, A1], [baseB, B1], [baseA, A2],
                               [baseB, B2]]) {
     await registry.ensurePerson(realm, who, PASSWORD);

@@ -51,6 +51,7 @@ const assert = require("assert");
 const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
+const ssfRoles = require("./ssf_roles.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -278,6 +279,7 @@ async function idTokenFlow(realm) {
 
 async function ssfToken(realm) {
   log.debug("Entering ssfToken().");
+  await ssfRoles.mapApplication(ssfRoles.callPost(call), realmBase(realm) + "/admin-api", SSF_APP, "ssf.read ssf.manage");
   const r = await call("POST", realmBase(realm) + "/oauth2/token",
     form({ grant_type: "client_credentials", client_id: SSF_APP,
            client_secret: SECRET, scope: "ssf.read ssf.manage" }),

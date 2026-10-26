@@ -49,6 +49,7 @@ const assert = require("assert");
 const { Command, Option } = require("commander");
 const { usernameFor } = require("./random_username.js");
 const portal = require("./portal_signin.js");
+const ssfRoles = require("./ssf_roles.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -293,6 +294,7 @@ const SUBJECTS = {};
 
 async function receiverToken() {
   log.debug("Entering receiverToken().");
+  await ssfRoles.mapApplication(ssfRoles.callPost(call), realmBase() + "/admin-api", RECEIVER, "ssf.read ssf.manage");
   const r = await fetch(realmBase() + "/oauth2/token", { method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: form({ grant_type: "client_credentials", client_id: RECEIVER,

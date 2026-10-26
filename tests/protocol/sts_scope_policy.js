@@ -43,6 +43,7 @@ const assert = require("assert");
 const { Command, Option } = require("commander");
 const { usernameFor } = require("./random_username.js");
 const registry = require("./sts_applications.js");
+const ssfRoles = require("./ssf_roles.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -198,6 +199,7 @@ async function sharedSignals() {
   });
   await declare(realmApi, SSF_CLIENT, "ssf.read");
   await declare(realmApi, SSF_CLIENT, "ssf.manage");
+  await ssfRoles.mapApplication(ssfRoles.callPost(call), realmApi, SSF_CLIENT, "ssf.read ssf.manage");
   r = await token(realmBase, SSF_CLIENT, "ssf.read ssf.manage");
   check("declared, it is issued them", function () {
     assert.strictEqual(r.status, 200, r.text.slice(0, 300));

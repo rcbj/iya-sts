@@ -414,7 +414,8 @@ const JOBS = [
   { file: 'sts_ssf_conformance.js',      browser: false },
   // CAEP INTEROPERABILITY PROFILE SCOPE NAMES (#334): ssf.read and
   // ssf.manage, write includes read, and neither colon name is published,
-  // in a throwaway realm. `local: true`.
+  // in a throwaway realm. A client is issued one only while it holds the
+  // matching native role. `local: true`.
   { file: 'sts_ssf_caep_scopes.js',      browser: false },
   // OPENID CONNECT CORE OVER THE WIRE (#118, 2026-09-22): the ID Token's
   // hashes by its alg, errors in the fragment, POST at the authorization
@@ -1786,7 +1787,10 @@ const LOCAL_HELPERS = [
   // tenant configured for a realm, the registrations each role needs, and
   // the readback of what reached the peer. The peer itself is tests/peer/,
   // a container of the stack; nothing from the service.
-  'test_peer.js'
+  'test_peer.js',
+  // Maps a client_credentials application onto SSF_READ and SSF_MANAGE
+  // before a job mints ssf.read or ssf.manage. Idempotent.
+  'ssf_roles.js'
 ];
 
 // ---------------------------------------------------------------------------

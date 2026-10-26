@@ -36,6 +36,7 @@
 
 const assert = require("assert");
 const names = require("./random_username.js");
+const ssfRoles = require("./ssf_roles.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -129,6 +130,7 @@ function decode(token) {
 
 async function tokenFor(scope) {
   log.debug("Entering tokenFor().");
+  await ssfRoles.mapApplication(ssfRoles.sendPost(send), realmApi, RECEIVER, scope);
   const r = await send(realmBase + "/oauth2/token", { method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: form({ grant_type: "client_credentials", client_id: RECEIVER,

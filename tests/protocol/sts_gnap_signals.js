@@ -51,6 +51,7 @@ const { Command, Option } = require("commander");
 const { usernameFor } = require("./random_username.js");
 const gnap = require("./gnap_client.js");
 const flowLib = require("./gnap_flow.js");
+const ssfRoles = require("./ssf_roles.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -248,6 +249,7 @@ async function test() {
               oauthClientSecret: CONTROL_SECRET,
               oauthTokenEndpointAuthMethod: "client_secret_post" } },
     "registered the application that owns the unscoped control stream");
+  await ssfRoles.mapApplication(ssfRoles.jsonPost(h.apiPost), h.realmApi, CONTROL_ID, "ssf.read ssf.manage");
   const controlTokenAnswer = await (await fetch(h.realmBase + "/oauth2/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },

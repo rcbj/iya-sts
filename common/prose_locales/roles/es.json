@@ -107,6 +107,14 @@
     "en": "54220e44643bd84c",
     "text": "La fuente de cumplimiento de dispositivos: una fuente de MDM o de postura que informa del cumplimiento de un dispositivo mediante POST /admin-api/device-compliance, y nada más en /admin-api. Autoriza el permiso device:compliance. Se siembra sin miembros: añada la aplicación de la fuente."
   },
+  "roles.native.SSF_READ.what": {
+    "en": "0a43e12ff3313079",
+    "text": "Lectura de Shared Signals. Autoriza el permiso ssf.read. Una persona lo recibe solo mientras pertenece al grupo de este rol, sembrado como ssf-read, y la aplicación en la que inicia sesión es miembro de este rol. Una aplicación lo recibe en su propio token solo mientras es miembro. SSF_MANAGE no lo autoriza."
+  },
+  "roles.native.SSF_MANAGE.what": {
+    "en": "599cadcd7892cdd2",
+    "text": "Escritura de Shared Signals. Autoriza el permiso ssf.manage. Una persona lo recibe solo mientras pertenece al grupo de este rol, sembrado como ssf-manage, y la aplicación en la que inicia sesión es miembro de este rol. Una aplicación lo recibe en su propio token solo mientras es miembro. No autoriza ssf.read."
+  },
   "roles.memberKinds.user.label": {
     "en": "df381eb4bb572daf",
     "text": "una persona"

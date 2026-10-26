@@ -22,8 +22,14 @@
 //   * NATIVE permissions of this service, named in its own convention rather
 //     than as base + name (rcbj's decision 1 on #303): `admin:read` and
 //     `admin:write`, authorized by the two console roles ADMIN_READ and
-//     ADMIN_WRITE. Always gated — the management API is this service's own
-//     resource and it opted in by being written this way.
+//     ADMIN_WRITE, and `ssf.read` and `ssf.manage`, authorized by the
+//     ordinary native roles SSF_READ and SSF_MANAGE. Always gated — the
+//     management API and the transmitter are this service's own resources
+//     and they opted in by being written this way. SSF_READ and SSF_MANAGE
+//     are not the console roster: a person is issued one only while they
+//     belong to the role's group and the application is a member, and an
+//     application's own token only while the application is a member.
+//     SSF_MANAGE does not authorize `ssf.read`.
 //   * APPLICATION permissions — a resource's `oauthPermissionBaseUri` +
 //     `oauthPermission` name — gated only where that resource lists the name
 //     in `oauthRoleGatedPermission`. Every other scope, `openid` and a
@@ -160,8 +166,9 @@ interface Narrowed {
  * where a scope is narrowed, and again where a token is used.
  *
  * A scope is a request; a role is what authorizes it (#88, #303). Native
- * permissions (`admin:read`, `admin:write`) are always gated; an application
- * permission only where its resource lists it in `oauthRoleGatedPermission`.
+ * permissions (`admin:read`, `admin:write`, `ssf.read`, `ssf.manage`) are
+ * always gated; an application permission only where its resource lists it
+ * in `oauthRoleGatedPermission`.
  */
 class RolePermissions {
   /**
@@ -218,9 +225,13 @@ class RolePermissions {
 
   // ---------------------------------------------------------------------------
   // isGated(value) — whether a requested scope value is a permission that
-  // needs a role: a native one (a console role's permission), or an
-  // application permission its resource listed in `oauthRoleGatedPermission`.
-  // Asked in the ambient realm, whose registry defines the permission.
+  // needs a role: a native one (a console role's permission, or ssf.read
+  // or ssf.manage), or an application permission its resource listed in
+  // `oauthRoleGatedPermission`. Asked in the ambient realm, whose registry
+  // defines the permission. ssf.read and ssf.manage are not the console
+  // roster; narrowScope() keeps a role that authorizes them only while the
+  // application is a member and, for a person, only while they belong to
+  // the role's group.
   // ---------------------------------------------------------------------------
   /**
    * Tells whether a scope value is a permission that needs a role, in the
@@ -232,9 +243,10 @@ class RolePermissions {
   isGated(value: string): boolean {
     const { log, roles, applications } = this.deps;
     log.debug("Entering RolePermissions.isGated().");
-    // THE NATIVE PERMISSIONS (#303, #309): admin:read, admin:write and
-    // device:compliance, each authorized by its native role — and since
-    // #607 owner:read and owner:write, each by its computed owner role.
+    // THE NATIVE PERMISSIONS (#303, #309): admin:read, admin:write,
+    // device:compliance, ssf.read and ssf.manage, each authorized by its
+    // native role — and since #607 owner:read and owner:write, each by its
+    // computed owner role.
     const permissionOf = function (row: { permission: string }): string {
       log.debug("Entering permissionOf().");
       log.debug("Leaving permissionOf().");
@@ -611,6 +623,78 @@ class RolePermissions {
     return out;
   }
 
+  // Whether a role that authorizes an SSF permission may stand for it on
+  // this grant. Every other role stands. SSF_READ and SSF_MANAGE stand only
+  // for their own permission, and only while the client is a member of the
+  // role. A person must also belong to one of the role's groups. A direct
+  // user member and a conferring client do not stand in for the group.
+  // An application's own token needs no group.
+  private ssfRoleStands(role: string, value: string, who: Subject,
+                        clientId: string): boolean {
+    const { log, roles } = this.deps;
+    log.debug("Entering RolePermissions.ssfRoleStands().");
+    const native = roles.NATIVE_ROLES.filter(function (row) {
+      return row.name === role;
+    })[0];
+    if (!native || (native.name !== 'SSF_READ' &&
+                    native.name !== 'SSF_MANAGE')) {
+      log.debug("Leaving RolePermissions.ssfRoleStands(). Not an SSF role.");
+      return true;
+    }
+    if (native.permission !== value) {
+      log.debug("Leaving RolePermissions.ssfRoleStands(). Another " +
+                "permission.");
+      return false;
+    }
+    const client = String(clientId || '');
+    if (!client) {
+      log.debug("Leaving RolePermissions.ssfRoleStands(). No client.");
+      return false;
+    }
+    let row = null;
+    try {
+      row = roles.read(role);
+    } catch (e) {
+      log.debug("Caught in RolePermissions.ssfRoleStands(): " +
+                ((e && (e as Error).message) || e));
+      row = null;
+    }
+    if (!row) {
+      log.debug("Leaving RolePermissions.ssfRoleStands(). No role.");
+      return false;
+    }
+    const mapped = (row.applications || []).some(function (one: string) {
+      return String(one).toLowerCase() === client.toLowerCase();
+    });
+    if (!mapped) {
+      log.debug("Leaving RolePermissions.ssfRoleStands(). The application " +
+                "is not a member.");
+      return false;
+    }
+    if (who.kind === 'application') {
+      log.debug("Leaving RolePermissions.ssfRoleStands(). The " +
+                "application's own token.");
+      return true;
+    }
+    let groups: string[] = [];
+    try {
+      groups = typeof roles.groupsOf === 'function'
+        ? roles.groupsOf(String(who.name || '')) || [] : [];
+    } catch (e) {
+      log.debug("Caught in RolePermissions.ssfRoleStands(): " +
+                ((e && (e as Error).message) || e));
+      groups = [];
+    }
+    const lower = groups.map(function (one) {
+      return String(one).toLowerCase();
+    });
+    const inGroup = (row.groups || []).some(function (group: string) {
+      return lower.indexOf(String(group).toLowerCase()) >= 0;
+    });
+    log.debug("Leaving RolePermissions.ssfRoleStands(). " + inGroup);
+    return inGroup;
+  }
+
   // ---------------------------------------------------------------------------
   // narrowScope(scope, subject, context)
   //
@@ -683,7 +767,9 @@ class RolePermissions {
         scopeVerdicts.resourceStrings(
           scopeVerdicts.ATTRIBUTE.AUTHORIZING_ROLE,
           Object.keys(authorizes).filter(function (role) {
-            return authorizes[role].indexOf(value) >= 0;
+            return authorizes[role].indexOf(value) >= 0 &&
+                   self.ssfRoleStands(role, value, who,
+                                      String(ctx.clientId || ''));
           }))];
       if (applicationPermissions.indexOf(value) >= 0) {
         attributes.push(scopeVerdicts.resourceFact(
