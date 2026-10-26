@@ -1274,6 +1274,12 @@ class ProtocolStack {
     // is listening and deregisters itself as it stops (`server.js`); a
     // request worker only registers the job.
     require('../cluster/spiffe_targets').ensureJob(jobScheduler);
+    // 18i-report. REPORTING (#956). The module registers its six scheduler
+    // jobs at load, so it belongs after the scheduler is in hand. oauth2
+    // and authn are already loaded, which the API's lazy dependencies need.
+    // The two paths collide with nothing.
+    this.register(app, require('../report/report_app'), 'report/report_app');
+    this.register(app, require('../report/report_api'), 'report/report_api');
     // 18j. RISK SCORING (#62 P1, 2026-09-22): the store, the datasets and
     // the failure history are LIBRARIES (rule 3) that register no route, and
     // then Monitoring → Risk, for 18a's reason — the console's shell and the

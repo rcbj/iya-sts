@@ -87,6 +87,7 @@ protocol's section of the sidebar:
 [Risk scoring](risk-scoring.md) ·
 [Devices](devices.md) ·
 [Mail](mail.md) ·
+[Reports](reporting.md) ·
 [Attribute sources](attribute-sources.md) ·
 [Secret push destinations](secret-destinations.md) ·
 [CAEP events](caep-events.md) ·

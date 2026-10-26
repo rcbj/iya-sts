@@ -8812,6 +8812,9 @@ const SETTING_HOMES = [
   // CSRF scheme are facts about the PROCESS and every browser-facing surface
   // shares them.
   { group: 'Web security', pages: ['/admin/config'] },
+  // REPORTING (#956). The application is not a console page. The caps are
+  // process settings, drawn on /admin/config with the other process facts.
+  { group: 'Reporting', pages: ['/admin/config'] },
 
   { group: 'Trust realms', pages: ['/admin/realms'] },
   { group: 'OAuth 2.0 / OIDC', pages: ['/admin/oauth2'] },

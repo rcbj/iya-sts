@@ -1067,7 +1067,11 @@ const NO_PUBLIC_METADATA = {
   "Federation":
     "there is no service-wide document — /federation/metadata/:id is one per " +
     "CONFIGURED relationship, and section 5 asserts the surface is ungated " +
-    "by asking for a relationship that does not exist."
+    "by asking for a relationship that does not exist.",
+  "Reporting":
+    "not a protocol. /report-api/openapi.json describes the reports API, " +
+    "and it is behind the same DPoP-bound token as every other path there. " +
+    "A stranger is refused; nothing on this surface is fetched first."
 };
 
 // ---------------------------------------------------------------------------

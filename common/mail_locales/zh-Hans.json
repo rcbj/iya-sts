@@ -70,6 +70,11 @@
       "text": "如需以 {{username}} 身份完成登录 {{service}}，请在 {{minutes}} 分钟内，在您开始登录的那个浏览器中打开此链接：\n\n{{signin}}\n\n此链接只能使用一次，并且只能在该浏览器中使用。\n\n如果您没有在登录，请忽略此邮件：此链接无法让其他任何人登录。\n",
       "html": "<p>如需以 <strong>{{username}}</strong> 身份完成登录 {{service}}，请在 {{minutes}} 分钟内，在您开始登录的那个浏览器中<a href=\"{{signin}}\">打开此链接</a>。</p><p>此链接只能使用一次，并且只能在该浏览器中使用。</p><p>如果您没有在登录，请忽略此邮件：此链接无法让其他任何人登录。</p>"
     },
+    "report-ready": {
+      "subject": "您的 {{service}} 报表已{{status}}",
+      "text": "用户 {{username}} 的报表 {{definition}} 已{{status}}。\n\n打开它：\n\n{{report}}\n",
+      "html": "<p>用户 {{username}} 的报表 <strong>{{definition}}</strong> 已{{status}}。</p><p><a href=\"{{report}}\">打开它</a>。</p>"
+    },
     "reset-refused-attempt": {
       "subject": "有人试图重置您的 {{service}} 密码",
       "text": "{{when}}，有人请求重置账户 {{username}} 的密码，填写了此地址，并提供了一个不属于您的恢复码。没有任何更改，也没有发送重置链接。\n\n如果是您本人，请使用一个未用过的恢复码重试。如果不是，说明有人知道您的账户名和地址；请联系您的账户管理员。\n",

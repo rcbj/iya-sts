@@ -4688,6 +4688,77 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/portal/portal.css', group: 'User portal',
     name: 'The portal\'s stylesheet', specs: [],
     what: 'NON-SPEC. The portal\'s one stylesheet (#568).' },
+  { path: '/report', group: 'Reporting',
+    name: 'The reports application', specs: [],
+    what: 'NON-SPEC. The static reports application (#956). Every path ' +
+          'answers one document, which loads /report/report.js and signs ' +
+          'in as the public client sts-report.' },
+  { path: '/report/*', group: 'Reporting',
+    name: 'A reports page', specs: [],
+    what: 'NON-SPEC. The same document as /report. The script chooses the ' +
+          'page from the path.' },
+  { path: '/report/report.js', group: 'Reporting',
+    name: 'The reports script', specs: [],
+    what: 'NON-SPEC. The reports runtime, built by build-typescript.sh ' +
+          'and served precompressed. Public, like the document.' },
+  { path: '/report/report.css', group: 'Reporting',
+    name: 'The reports stylesheet', specs: [],
+    what: 'NON-SPEC. The reports application\'s one stylesheet (#956).' },
+  { path: '/report-api', group: 'Reporting',
+    name: 'The reports API', specs: [],
+    what: 'NON-SPEC. The index of /report-api. It takes this realm\'s ' +
+          'DPoP-bound token for sts-report, scope report:use or ' +
+          'report:admin.' },
+  { path: '/report-api/openapi.json', group: 'Reporting',
+    name: 'The reports OpenAPI document', specs: [],
+    what: 'NON-SPEC. The API\'s own description. Behind the same token as ' +
+          'the rest of /report-api, and served no-store.' },
+  { path: '/report-api/catalog', group: 'Reporting',
+    name: 'The report catalog', specs: [],
+    what: 'NON-SPEC. The sources a query may name, and each field\'s type ' +
+          'and operators. Credential attributes are absent.' },
+  { path: '/report-api/catalog/:id', group: 'Reporting',
+    name: 'One report source', specs: [],
+    what: 'NON-SPEC. One source from the catalog, by its id.' },
+  { path: '/report-api/queries', group: 'Reporting',
+    name: 'Run a report query', specs: [],
+    what: 'NON-SPEC. A catalog query. A small bounded one answers in the ' +
+          'call; a larger one is queued and answered 202.' },
+  { path: '/report-api/definitions', group: 'Reporting',
+    name: 'Saved report definitions', specs: [],
+    what: 'NON-SPEC. The definitions this token may see: its owner\'s, ' +
+          'those shared with a group it is in, and every one when the ' +
+          'token carries report:admin.' },
+  { path: '/report-api/definitions/:id', group: 'Reporting',
+    name: 'One report definition', specs: [],
+    what: 'NON-SPEC. One definition. An unknown id and one this token may ' +
+          'not see are the same answer.' },
+  { path: '/report-api/definitions/:id/share', group: 'Reporting',
+    name: 'Share a report definition', specs: [],
+    what: 'NON-SPEC. Names the directory groups that may run the ' +
+          'definition and read its results. The owner, or report:admin, ' +
+          'is who may change that list.' },
+  { path: '/report-api/definitions/:id/run', group: 'Reporting',
+    name: 'Run a saved report', specs: [],
+    what: 'NON-SPEC. Queues the definition\'s query as the caller. A ' +
+          'share grants this and the result, not an edit.' },
+  { path: '/report-api/jobs', group: 'Reporting',
+    name: 'Report jobs', specs: [],
+    what: 'NON-SPEC. The jobs this token may see, and the door that ' +
+          'queues one from a query document.' },
+  { path: '/report-api/jobs/:id', group: 'Reporting',
+    name: 'One report job', specs: [],
+    what: 'NON-SPEC. One job. An unknown id and one this token may not ' +
+          'see are the same answer.' },
+  { path: '/report-api/jobs/:id/cancel', group: 'Reporting',
+    name: 'Cancel a report job', specs: [],
+    what: 'NON-SPEC. Asks a queued or running job to stop. The bytes of ' +
+          'one that already finished are left for retention.' },
+  { path: '/report-api/jobs/:id/result', group: 'Reporting',
+    name: 'A report result', specs: [],
+    what: 'NON-SPEC. The stored bytes of a finished job, while ' +
+          'report.artifactRetentionS has not passed. After that the ' +
+          'result is gone.' },
   { path: '/portal/signals/receive', group: 'User portal',
     name: 'The portal\'s Shared Signals receive endpoint',
     specs: ['ssf', 'rfc8935', 'rfc8417'],
@@ -9504,6 +9575,15 @@ const PROTOCOLS: Protocol[] = [
           '/account-api, the Account API group below: an operation per page ' +
           'and per form, the person always the token\'s subject, described ' +
           'by its own OpenAPI document.' },
+  { name: 'Reporting', groups: ['Reporting'],
+    specs: [],
+    notAProtocol: true,
+    what: 'NOT A PROTOCOL. The reports application (#956): a static page ' +
+          'at /report over /report-api, the public client sts-report, and ' +
+          'a catalog of this realm\'s own records. It signs in in the ' +
+          'browser, holds a DPoP-bound token, and never takes a SQL ' +
+          'string. A saved definition belongs to its owner; a share with ' +
+          'a directory group grants running and reading, not editing.' },
   { name: 'GNAP', groups: ['GNAP'],
     specs: ['rfc9635', 'rfc9767', 'rfc9421', 'rfc9530'],
     what: 'An authorization server for the Grant Negotiation and ' +

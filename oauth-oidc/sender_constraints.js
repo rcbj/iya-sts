@@ -95,9 +95,10 @@ const CERTIFICATE_CLIENT_METHODS = ['tls_client_auth',
 // so a surface added there cannot quietly acquire an exemption.
 /**
  * The hosted relying parties the mutual-TLS refresh setting steps aside for:
- * the console and the portal.
+ * the console, the portal and the reports application.
  */
-const MTLS_EXEMPT_CLIENTS = ['sts-admin-console', 'sts-user-portal'];
+const MTLS_EXEMPT_CLIENTS = ['sts-admin-console', 'sts-user-portal',
+                             'sts-report'];
 
 // ---------------------------------------------------------------------------
 // THE ADMIN CONSOLE AS A PUBLIC CLIENT IS DPoP-BOUND, ALWAYS (#446,
@@ -128,12 +129,16 @@ const MTLS_EXEMPT_CLIENTS = ['sts-admin-console', 'sts-user-portal'];
 // it kept its backend-for-frontend (#444, D9), and rcbj's decision on #568
 // made it the console's pattern — a static application, a public client,
 // every token DPoP-bound. Same condition, same two checks.
+//
+// **THE REPORTS APPLICATION JOINED THEM ON #956**, on those same terms: a
+// static application, a public client, every token DPoP-bound.
 // ---------------------------------------------------------------------------
 /**
  * The hosted clients that are DPoP-bound whenever they are public clients:
- * the admin console and the user portal.
+ * the admin console, the user portal and the reports application.
  */
-const DPOP_BOUND_PUBLIC_CLIENTS = ['sts-admin-console', 'sts-user-portal'];
+const DPOP_BOUND_PUBLIC_CLIENTS = ['sts-admin-console', 'sts-user-portal',
+                                   'sts-report'];
 
 /**
  * Tells whether a client is one that must be DPoP-bound because it is the
