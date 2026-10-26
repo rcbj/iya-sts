@@ -1555,6 +1555,10 @@
     "en": "f6867c3c6a1d35bd",
     "text": "同一個人在存續中的工作階段上再次登入"
   },
+  "audit.actions.session.presented.label": {
+    "en": "d1629f19f6dc2282",
+    "text": "現有的登入工作階段已出示給某個應用程式"
+  },
   "audit.actions.session.refuse.label": {
     "en": "c8703bfa89913b23",
     "text": "工作階段因其登入機制而被拒絕"

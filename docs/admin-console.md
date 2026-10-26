@@ -330,6 +330,7 @@ here — they are on [Applications](applications.md).
 | Tab | What it holds |
 |---|---|
 | **Overview** | the tiles, the names they were seen under, and every authentication with the method that performed it |
+| **Authentication attempts** | every attempt by this person in the audit log, across every application and protocol: credentials accepted and refused, sessions refused, and an existing session presented to an application for single sign-on (method *existing session*) |
 | **Sessions & tokens** | each sign-on session with the tokens issued on it, the tokens on no session, and the assertions, tickets and credentials |
 | **Attributes** | their attributes as typed fields, one sub-tab per group — Name, Contact, Organization, Address, Identity, Other — each with its own **Save**, and the address on Contact |
 | **Credentials** | sub-tabs for second factors, the password controls, signing key pairs and Kerberos |
@@ -829,7 +830,11 @@ party, OpenID4VP verifier and Kerberos service, one entry per identifier. It is
 a **registry** that lives in the directory, so an `ldapmodify` there changes
 what the protocol endpoints do. It carries forms to create an application before
 it connects and to change what it is *allowed* to do — never its counters or
-sightings. [Applications](applications.md) documents the page,
+sightings. An application's **Authentication attempts** tab lists the audit
+log's attempts that name it: credentials accepted and refused, sessions
+refused, and a person's existing session presented to it for single sign-on
+(method *existing session*), which asks for no credential and was on neither
+tab before. [Applications](applications.md) documents the page,
 `/admin/applications/new`, the schema and CORS.
 
 ## Monitoring

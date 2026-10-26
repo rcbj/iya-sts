@@ -1555,6 +1555,10 @@
     "en": "f6867c3c6a1d35bd",
     "text": "Muling nag-sign in ang parehong tao sa isang buhay na session"
   },
+  "audit.actions.session.presented.label": {
+    "en": "d1629f19f6dc2282",
+    "text": "May umiiral na sign-on session na iniharap sa isang application"
+  },
   "audit.actions.session.refuse.label": {
     "en": "c8703bfa89913b23",
     "text": "May session na tinanggihan dahil sa sign-in mechanism nito"

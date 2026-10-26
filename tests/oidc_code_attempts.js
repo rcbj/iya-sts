@@ -29,6 +29,18 @@
 // client id (`application=` or `client_id=`) and the method. The password is
 // not on the page. The console was not driven in a browser; the HTML is the
 // console renderer's.
+//
+// THEN SINGLE SIGN-ON (2026-10-26). The first browser, still holding the
+// session it signed in with, asks `/oauth2/authorize` for `sts-admin-console`
+// and is answered with a code and no screen. No credential is presented, so
+// until `authn.notePresented()` wrote `session.presented` that visit was on
+// neither Authentication attempts tab. Both screen sign-ins write no such
+// row — the return trip to `/oauth2/authorize` is the sign-in's own — and
+// the single sign-on writes exactly one, on the console's tab and on the
+// person's. Neither screen sign-in's trip back from the consent screen is one
+// either. Last, a single sign-on into a second application of this file's
+// kind, which asks for consent: the visit before the consent screen and the
+// one after it are one act, and write one row.
 // ---------------------------------------------------------------------------
 
 delete process.env.CONFIG_FILE;
@@ -201,7 +213,73 @@ function childMain() {
     }
     log.debug("Leaving signIn(). " + clientId);
     return { location: loc, next: step.next, errors: step.errors || [],
-             status: step.status };
+             status: step.status, jar: jar };
+  }
+
+  /**
+   * An authorization request from a browser that already holds a session:
+   * redirects and a consent screen are followed, the sign-in screen is not.
+   *
+   * @param port - the listen port
+   * @param screen - the sign-in helper, for the consent screen
+   * @param userAgent - the browser name
+   * @param jar - the browser's cookies, holding its session
+   * @param clientId - the OAuth client id
+   * @param redirect - the registered redirect URI
+   * @returns the last location, whether the sign-in screen was reached, and
+   *   whether the consent screen was answered
+   */
+  async function authorizeOnSession(port, screen, userAgent, jar, clientId,
+                                    redirect) {
+    log.debug("Entering authorizeOnSession(). " + clientId);
+    const verifier = crypto.randomBytes(32).toString('base64url');
+    const challenge = crypto.createHash('sha256').update(verifier)
+      .digest('base64url');
+    let loc = '/oauth2/authorize?' + new URLSearchParams({
+      client_id: clientId, response_type: 'code', redirect_uri: redirect,
+      scope: 'openid', state: 's', nonce: 'n',
+      code_challenge: challenge, code_challenge_method: 'S256'
+    }).toString();
+    let screened = false;
+    let consented = false;
+    for (let i = 0; i < 6 && !/[?&]code=/.test(loc); i++) {
+      if (/\/authn\/login/.test(loc)) {
+        screened = true;
+        break;
+      }
+      if (/\/oauth2\/consent/.test(loc)) {
+        const allowed = await screen.answerConsent({ port: port, jar: jar,
+          userAgent: userAgent, at: pathOf(loc) });
+        consented = true;
+        loc = String((allowed.headers && allowed.headers.location) ||
+                     allowed.location || '');
+        continue;
+      }
+      const next = await get(port, jar, userAgent, loc);
+      loc = String((next.headers && next.headers.location) || '');
+      if (!(next.status >= 300 && next.status < 400)) {
+        break;
+      }
+    }
+    log.debug("Leaving authorizeOnSession(). " + clientId);
+    return { location: loc, screened: screened, consented: consented };
+  }
+
+  /**
+   * The person's `session.presented` rows in the audit log.
+   *
+   * @param audit - the audit log
+   * @param username - the person
+   * @returns those rows, newest first
+   */
+  async function presentedBy(audit, username) {
+    log.debug("Entering presentedBy().");
+    await audit.fresh();
+    const rows = audit.list().filter(function (row) {
+      return row.action === 'session.presented' && row.actor === username;
+    });
+    log.debug("Leaving presentedBy(). " + rows.length);
+    return rows;
   }
 
   /**
@@ -244,6 +322,7 @@ function childMain() {
     const ldap = require(ROOT + '/ldap/ldap_server');
     const views = require(ROOT + '/admin-core/admin_views');
     const page = require(ROOT + '/admin-ui/web_applications');
+    const usersPage = require(ROOT + '/admin-ui/web_users');
     const kit = require(ROOT + '/admin-ui/web_kit');
     const screen = require(ROOT + '/tests/tools/authn_screen');
 
@@ -354,6 +433,103 @@ function childMain() {
                                tab: consolePage.tab.slice(0, 400) }),
               PASSWORD));
 
+    const beforeSso = await presentedBy(audit, USER);
+    note(beforeSso.length === 0,
+         '7. neither screen sign-in wrote session.presented: the return ' +
+         'trip to /oauth2/authorize is the sign-in\'s own',
+         JSON.stringify(beforeSso.map(function (row) {
+           return row.detail;
+         })));
+
+    const sso = await authorizeOnSession(port, screen, CHROME, signed.jar,
+                                         CONSOLE, consoleRedirect);
+    const ssoCoded = !sso.screened && /[?&]code=/.test(sso.location);
+    note(coded && ssoCoded,
+         '8. the first browser reaches sts-admin-console on the session ' +
+         'it already holds, with no sign-in screen',
+         sso.screened + ' ' + sso.location);
+
+    const afterSso = await presentedBy(audit, USER);
+    const presented = (afterSso[0] && afterSso[0].detail) || {};
+    note(afterSso.length === 1 && presented.application === CONSOLE &&
+         presented.method === 'existing session' &&
+         afterSso[0].protocol === 'OAuth 2.0 / OIDC' && !!presented.sub &&
+         !!presented.sessionId,
+         '9. that single sign-on wrote one session.presented row naming ' +
+         'sts-admin-console, the method and the session',
+         JSON.stringify(afterSso.map(function (row) {
+           return { protocol: row.protocol, detail: row.detail };
+         })));
+
+    const ssoPage = await attemptsOf(views, page, kit, audit, port, CONSOLE);
+    const ssoEvents = (ssoPage.json.authenticationEvents || []).filter(
+      function (row) {
+        return row.action === 'session.presented' && row.actor === USER;
+      });
+    note(ssoEvents.length === 1 &&
+         ssoPage.tab.indexOf('session.presented') >= 0 &&
+         ssoPage.tab.indexOf('method=existing session') >= 0 &&
+         ssoPage.tab.indexOf(PASSWORD) < 0,
+         '10. Applications → sts-admin-console → Authentication attempts ' +
+         'lists the single sign-on',
+         safe(JSON.stringify({ events: ssoEvents.length,
+                               tab: ssoPage.tab.slice(0, 600) }),
+              PASSWORD));
+
+    const userJson = views.usersJson({
+      query: { user: USER },
+      headers: { host: '127.0.0.1:' + port },
+      protocol: 'http',
+      get: function () { return ''; }
+    });
+    const userHtml = usersPage.detail(kit.context({ user: USER }), userJson);
+    const userAt = userHtml.indexOf('id="utab-authentications"');
+    const userNext = userAt < 0 ? -1 :
+      userHtml.indexOf('id="utab-', userAt + 25);
+    const userTab = userAt < 0 ? '' :
+      userHtml.slice(userAt, userNext < 0 ? userHtml.length : userNext);
+    const userEvents = (userJson.authenticationEvents || []).filter(
+      function (row) {
+        return row.action === 'session.presented';
+      });
+    note(userEvents.length === 1 &&
+         userTab.indexOf('session.presented') >= 0 &&
+         userTab.indexOf('method=existing session') >= 0 &&
+         (userTab.indexOf('application=' + CONSOLE) >= 0) &&
+         userTab.indexOf(PASSWORD) < 0,
+         '11. the person\'s Authentication attempts tab lists the single ' +
+         'sign-on to sts-admin-console',
+         safe(JSON.stringify({ events: userEvents.length,
+                               tab: userTab.slice(0, 600) }), PASSWORD));
+
+    const APP2 = tag + '-consent';
+    const REDIRECT2 = 'https://rp2.' + tag + '.example/cb';
+    const created2 = applications.createApplication({
+      identifier: APP2, protocols: ['oauth2', 'oidc'],
+      fields: { oauthClientId: APP2, oauthRedirectUri: [REDIRECT2],
+                oauthGrantType: ['authorization_code'],
+                oauthResponseType: ['code'],
+                oauthAllowedScope: ['openid'],
+                oauthTokenEndpointAuthMethod: 'none' }
+    });
+    const before2 = (await presentedBy(audit, USER)).length;
+    const sso2 = await authorizeOnSession(port, screen, CHROME, signed.jar,
+                                          APP2, REDIRECT2);
+    const after2 = (await presentedBy(audit, USER)).filter(function (row) {
+      return (row.detail || {}).application === APP2;
+    });
+    const total2 = (await presentedBy(audit, USER)).length;
+    note(created2 && created2.ok === true && !sso2.screened &&
+         sso2.consented && /[?&]code=/.test(sso2.location) &&
+         after2.length === 1 &&
+         total2 === before2 + 1,
+         '12. a single sign-on through a consent screen writes one ' +
+         'session.presented row, not one each way',
+         JSON.stringify({ screened: sso2.screened, consented: sso2.consented,
+                          location: sso2.location,
+                          rows: after2.length, before: before2,
+                          total: total2 }));
+
     server.close();
     fs.writeFileSync(OUT, JSON.stringify(findings));
     log.debug("Leaving the oidc code attempts child.");
@@ -435,6 +611,7 @@ module.exports = {
   name: 'oidc code attempts',
   describe: 'an OIDC authorization-code sign-in is on the application ' +
             'page\'s Authentication attempts tab, including ' +
-            'sts-admin-console',
+            'sts-admin-console, and a single sign-on on an existing ' +
+            'session is on that tab and the person\'s',
   run: run
 };

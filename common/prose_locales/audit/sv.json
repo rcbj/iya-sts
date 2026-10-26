@@ -1555,6 +1555,10 @@
     "en": "f6867c3c6a1d35bd",
     "text": "Samma person loggade in igen i en levande session"
   },
+  "audit.actions.session.presented.label": {
+    "en": "d1629f19f6dc2282",
+    "text": "En befintlig inloggningssession visades upp för ett program"
+  },
   "audit.actions.session.refuse.label": {
     "en": "c8703bfa89913b23",
     "text": "En session avvisades på grund av sin inloggningsmekanism"

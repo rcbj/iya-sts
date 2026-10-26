@@ -3646,7 +3646,7 @@ class Saml2Sso {
     }
 
     pendingRequests.delete(String(params.rid || ''));
-    notePresented(session, 'SAML 2.0', req);
+    notePresented(session, 'SAML 2.0', req, spEntityId);
     this.issueSignInResponse(res, {
            request: request, session: session, spEntityId: spEntityId,
            idpEntityId: idpEntityId,
@@ -3946,7 +3946,7 @@ class Saml2Sso {
       log.debug("Leaving Saml2Sso.unsolicitedSignOn(). RequestDenied.");
       return;
     }
-    notePresented(session, 'SAML 2.0', req);
+    notePresented(session, 'SAML 2.0', req, spEntityId);
     this.issueSignInResponse(res, {
       request: { id: '', nameIdFormat: '', requestedAuthnContexts: [] },
       session: session, spEntityId: spEntityId, idpEntityId: idpEntityId,

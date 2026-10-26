@@ -573,8 +573,8 @@ class GnapApproval {
    * @param selection - `{ approve, ticked, subject }`, and (#432 phase 5)
    *   `req`, the portal's request, and `form`, how its posted limit
    *   controls are read (`common/limits_form.ts`)
-   * @returns `{ ok: true }`, `{ ok: false, stepUp: true, ask }` when the
-   *   session falls short, or `{ ok: false, why, code }`
+   * @returns `{ ok: true, approved, client }`, `{ ok: false, stepUp: true,
+   *   ask }` when the session falls short, or `{ ok: false, why, code }`
    */
   async answer(username: string, session: Json, id: string,
                selection: Json): Promise<Json> {
@@ -660,7 +660,10 @@ class GnapApproval {
       throw e;
     }
     log.debug("Leaving GnapApproval.answer(). Answered.");
-    return { ok: true, approved: !!selection.approve && anything };
+    // The client it was answered for, so the portal's `notePresented()`
+    // names the application on the `session.presented` row.
+    return { ok: true, approved: !!selection.approve && anything,
+             client: String((grant.client || {}).identifier || '') };
   }
 }
 

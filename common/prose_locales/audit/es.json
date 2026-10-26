@@ -1555,6 +1555,10 @@
     "en": "f6867c3c6a1d35bd",
     "text": "La misma persona volvió a iniciar sesión en una sesión activa"
   },
+  "audit.actions.session.presented.label": {
+    "en": "d1629f19f6dc2282",
+    "text": "Se presentó una sesión de inicio de sesión existente a una aplicación"
+  },
   "audit.actions.session.refuse.label": {
     "en": "c8703bfa89913b23",
     "text": "Se rechazó una sesión por su mecanismo de inicio de sesión"

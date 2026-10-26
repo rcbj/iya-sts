@@ -5536,10 +5536,21 @@ class Authn {
   // that is supposed to mean "single sign-on happened" would mean nothing. The
   // flag is set by startSession() and spent here, so it is exact rather than a
   // time window: a session created by this service is presented once for free.
+  //
+  // **AND IT IS AN AUDIT ROW, `session.presented`, WHERE IT IS REPORTED.** The
+  // Authentication attempts tabs (#954, #955) read the audit log's credential
+  // rows, and single sign-on presents no credential, so a person who reached
+  // an application on the session they already held appeared on neither the
+  // application's tab nor their own. `application` is the protocol's name for
+  // who the session was presented to — a client_id, an entityID, a wtrealm,
+  // a GNAP client — and is what the application's tab matches; a caller with
+  // no such name passes none, and the row is then on the person's tab only.
+  // Written here and nowhere else, so it is exactly as often as the CAEP
+  // event: the sign-in's own return trip writes no row, as it emits no event.
   // ---------------------------------------------------------------------------
   /**
    * Reports a session presented again for single sign-on (CAEP
-   * `session-presented`).
+   * `session-presented`), and writes the `session.presented` audit row.
    *
    * The first presentation of a brand-new session is the sign-in itself and is
    * not reported.
@@ -5547,10 +5558,12 @@ class Authn {
    * @param session - the session
    * @param via - the protocol it was presented to
    * @param req - the request
+   * @param application - the protocol's name for the application it was
+   *   presented to, when the caller has one
    * @returns true when it was reported
    */
-  notePresented(session, via, req) {
-    const { log } = this.deps;
+  notePresented(session, via, req, application?) {
+    const { log, audit } = this.deps;
     log.debug("Entering Authn.notePresented().");
     if (!session) {
       log.debug("Leaving Authn.notePresented(). No session.");
@@ -5565,10 +5578,73 @@ class Authn {
                 "trip.");
       return false;
     }
-    this.notifySession('presented', session, { via: via || 'OAuth 2.0 / OIDC',
+    const protocol = via || 'OAuth 2.0 / OIDC';
+    const user = session.user || {};
+    const username = String(user.username || '');
+    const named = String(application || '');
+    // No credential was presented, so `method` says what was instead. The
+    // session's own amr and acr are what the application was given, and are
+    // copied so the row reads as the tab's other rows do.
+    audit.audit({
+      action: 'session.presented',
+      actor: username,
+      protocol: protocol,
+      channel: 'http',
+      target: String(session.id || ''),
+      summary: username + '\'s existing session ' + session.id +
+               ' was presented through ' + protocol +
+               (named ? ' to ' + named : ''),
+      detail: Object.assign(this.attemptFacts(named, 'existing session'), {
+        presented: username,
+        sub: String(user.sub || ''),
+        sessionId: String(session.id || ''),
+        amr: (session.amr || []).join(', '),
+        acr: String(session.acr || '')
+      })
+    });
+    this.notifySession('presented', session, { via: protocol,
       req: req || null });
     log.debug("Leaving Authn.notePresented(). Reported.");
     return true;
+  }
+
+  // ---------------------------------------------------------------------------
+  // A PRESENTATION CONTINUED THROUGH THE CONSENT SCREEN (2026-10-26).
+  //
+  // An authorization request that needs consent reaches the endpoint twice:
+  // once before the consent screen and once on the way back from it. Both
+  // arrivals are ONE act, but notePresented() saw two. After a sign-in, the
+  // first arrival spent the free presentation and the second read as single
+  // sign-on; after a real single sign-on, the first was reported and the
+  // second was reported again. Either way CAEP's `session-presented` and a
+  // `session.presented` row on both Authentication attempts tabs said
+  // something happened that had not. The authorization endpoint calls this
+  // as it sends a request to the consent screen, whichever arrival that was,
+  // so the trip back is not a presentation of its own: the sign-in's stays
+  // the sign-in's, and a single sign-on is reported once, on the way in.
+  //
+  // It arms the same flag startSession() sets. A person who refuses consent
+  // leaves it armed, and their next presentation of this session goes
+  // unreported once. That is the same request coming back, in practice, and
+  // a missed event costs less than a false one.
+  // ---------------------------------------------------------------------------
+  /**
+   * Holds the next presentation of a session, because the request in flight
+   * goes through the consent screen and comes back to the endpoint.
+   *
+   * @param session - the session the request is answered on
+   */
+  holdPresentation(session) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.holdPresentation().");
+    if (!session) {
+      log.debug("Leaving Authn.holdPresentation(). No session.");
+      return;
+    }
+    session.firstPresentationIsTheSignIn = true;
+    // In the store as well, for notePresented()'s reason (#46).
+    this.noteSessionChanged(session);
+    log.debug("Leaving Authn.holdPresentation().");
   }
 
   // ---------------------------------------------------------------------------
@@ -18738,6 +18814,7 @@ export = {
   // require the other way would move every /ssf route.
   setSessionObserver: slot.forward('setSessionObserver'),
   notePresented: slot.forward('notePresented'),
+  holdPresentation: slot.forward('holdPresentation'),
   // The three the protocol-independent logout needs, and the reason each is
   // here rather than reimplemented over there: /logout ends sessions it was not
   // handed a cookie for, so it names them by id — and every one of them still
