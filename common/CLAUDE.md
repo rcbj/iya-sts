@@ -1127,6 +1127,18 @@ and DNS work.
    specifications — and since #363 its lattice primitive is OpenSSL where the
    debugger's is `@noble/post-quantum`, so the cross-check now covers ML-DSA
    itself too.
+6. **A SEED-ONLY EXPORT IS EXPANDED, NOT RETURNED.** Node 24.22.1 (OpenSSL
+   3.5.9) writes an ML-DSA or ML-KEM PKCS#8 as the seed alone (context tag
+   `0x80`). OpenSSL 3.5.6 wrote the expanded key or the "both" form, and
+   those two are still read. There is no node API for the expanded key, and
+   `OPENSSL_CONF` does not override the formats `InitCryptoOnce` sets
+   (`ml-dsa.output_formats` and `ml-kem.output_formats` are
+   `seed-only,priv-only`). `expandedFrom()` expands that seed with
+   `@noble/post-quantum` 0.4.1 `keygen` and returns the FIPS expanded key,
+   the same bytes noble and the older OpenSSL export agreed on. The library
+   is used for that expansion only; every signature, verification,
+   encapsulation and decapsulation stays on OpenSSL. SLH-DSA never takes
+   this path. Node still imports the expanded key as PKCS#8 tag `0x04`.
 
 ### scrypt is the other slow thing, and it is on libuv's thread pool too
 
