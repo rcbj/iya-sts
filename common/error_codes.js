@@ -10289,6 +10289,35 @@ const CODES = [
       'refuses the token; only the published list is behind until the ' +
       'token is revoked again or expires.',
     spec: 'none — the revocation is not undone' },
+  { code: 'STS-OAUTH-0979',
+    summary: 'An opaque access token was not minted: the realm\'s store ' +
+      'was already at oauth2.maxOpaqueAccessTokens after expired rows ' +
+      'were dropped, and a live token was not evicted to make room (#501).',
+    spec: 'none — the mint throws; no token is issued' },
+  { code: 'STS-OAUTH-0980',
+    summary: 'A presented access token has no "." and is not a handle ' +
+      'this realm stored, while the realm issues opaque access tokens. ' +
+      'The refusal is generic and carries no part of what was presented ' +
+      '(#501).',
+    spec: 'HTTP 401 invalid_token' },
+  { code: 'STS-OAUTH-0981',
+    summary: 'A presented opaque access token is past its exp. The row ' +
+      'is deleted. The refusal names the time and no part of the handle ' +
+      '(#501).',
+    spec: 'HTTP 401 invalid_token' },
+  { code: 'STS-OAUTH-0982',
+    summary: 'A presented opaque access token has been revoked, either ' +
+      'on its stored row or in the token register (#501).',
+    spec: 'HTTP 401 invalid_token' },
+  { code: 'STS-OAUTH-0983',
+    summary: 'Too many presented strings that are not stored opaque ' +
+      'access tokens arrived from one address. Further misses wait ' +
+      '(#501). A known token, a JWT and a success are not counted.',
+    spec: 'HTTP 429 invalid_token, Retry-After' },
+  { code: 'STS-OAUTH-0984',
+    summary: 'An opaque access token was not minted: three fresh 256-bit ' +
+      'handles each collided with a digest already stored (#501).',
+    spec: 'none — the mint throws; no token is issued' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +

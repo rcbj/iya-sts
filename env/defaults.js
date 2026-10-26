@@ -349,6 +349,7 @@ var config = {
     fapi: "off",                                   // FAPI profile; restart to apply
     fapiRequireMtls: false,                        // FAPI Advanced: require mutual TLS
     accessTokenSigningAlg: "default",              // Access token signing algorithm
+    accessTokenFormat: "jwt",                      // Access token format
     jarmResponseLifetimeS: 600,                    // JARM response lifetime (s)
     consentRequired: true,                         // Ask for consent
     refreshRequiresConsent: true,                  // Refresh requires recorded consent
@@ -408,6 +409,7 @@ var config = {
     codeReplayIdempotent: false,                   // Answer a repeated code redemption with the same tokens
     maxPendingTransactions: 500,                   // RFC 9700: remembered transactions (per realm)
     maxRefreshTokenFamilies: 2000,                 // RFC 9700: remembered refresh tokens (per realm)
+    maxOpaqueAccessTokens: 100000,                 // Opaque access tokens remembered (per realm)
     signedMetadataAlgorithm: "RS256",              // Algorithm signed_metadata is signed with
     accessTokenCertificateHeader: "x5u",           // Access token certificate header
     idTokenCertificateHeader: "x5u",               // ID Token certificate header

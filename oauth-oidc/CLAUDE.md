@@ -35,6 +35,7 @@ libraries that decide things on its behalf.
 | `jarm.ts` | **JARM, the JWT-secured authorization response (#143, built in #139).** The four response modes, the signed (and optionally encrypted) response JWT, the section 2.3.1 refusal, and the registration key check. `redirectBack()` in `oauth2.ts` is the one place that sends one. See 3aw. |
 | `access_token_status.ts` | **The access-token Token Status List (#432 phase 2, rcbj's decision 4, 2026-10-03)** — one list per realm for every RFC 9068 access token AND GNAP's two JWT formats, at `/status-lists/access-tokens` with its aggregation at `/status-lists`; indexes handed out from blocks each process leases across the cluster (#820); the bit computed from the revocation register. A ROUTE MODULE AND A LIBRARY (`oid4vc/vc_status.ts`'s shape), built and registered just after `oauth2` and `grant_management`. See *The access-token status list*, below. |
 | `oauth_grant_signals.ts` | **An OAuth grant revoked is CAEP's `session-revoked` about the grant (#239, 2026-09-26).** Fills `common/admin_stats.js`'s `setRevocationObserver()` slot: one event per grant, subject `oauth-grant:<id>` beside the person, the door's own `initiating_entity`, and a replay also a `risk-level-change`. Built at 23b-vi; registers nothing. See *OAuth grants on CAEP*, below. |
+| `opaque_access_token.ts` | **Opaque OAuth access tokens (#501), off by default.** A 256-bit handle in place of the RFC 9068 JWT when `oauth2.accessTokenFormat` is `opaque`; the claims stay in the realm. A library: no route. See 3cw. |
 
 **Everything but `oauth2.ts` — and, since 2026-09-13, the console page
 `oauth2_monitor_admin.ts`, required at 18f rather than from here, and since
@@ -56,6 +57,83 @@ Two ordering facts about this directory are in the root `CLAUDE.md` because they
 are facts about `common/protocol_stack.ts` (the sequence `server.js` loads):
 `ws-federation/wsfed.ts` must be required and registered AFTER `oauth2.ts`, and
 so must `admin-ui/admin.ts`.
+
+3cw. **`opaque_access_token.ts` (#501) mints an opaque access token only when
+   the realm asks, and the default stays the RFC 9068 JWT.** A JWT is what
+   every existing caller verifies. `oauth2.accessTokenFormat=opaque` changes
+   the access token alone: `accessToken()` / `accessTokenAsync()` call
+   `mint()` instead of `signJwt`. Refresh tokens stay nested JWTs. ID tokens
+   stay JWTs. GNAP's `gnap.accessTokenFormat` is not this switch.
+
+   **The handle is 32 bytes from `crypto.randomBytes`, base64url, with no
+   `.`.** The store key is `crypto.credentialDigest` (SHA-256). The handle
+   is not stored and not logged. `signJwt` is not called, because it logs
+   the compact JWS. `mint()` still calls `admin_stats.recordJwt` with an
+   empty signed string, so `/admin/tokens` and `isRevoked(jti)` see the
+   token; if that record throws, the row is deleted and the error is
+   rethrown. `admin_stats` is required inside `mint` and inside the
+   revocation check, not at the top of this file: it requires federation,
+   and a top-level require from a library `dpop` and `oauth2` require would
+   close that cycle.
+
+   **The store is `oauth2.opaqueAccessTokens`, per realm, on the cell tier,
+   not global and not on demand.** The jti is already stamped to the minting
+   cell, and that cell's database is what its nodes share, the way an
+   authorization code is. It is not on demand because `keysForJti` must find
+   the row from the index, and the cap walks the ambient partition.
+   `mergeRow` keeps this node's claims and only raises `revokedAt`: a
+   replica that has not heard of a revocation cannot clear one, and merging
+   the answer with either side again is the answer. Tombstones are safe
+   because a key is a random digest and is never written again after it is
+   deleted. An outstanding JWT keeps verifying if the setting flips to
+   opaque, and an outstanding handle keeps resolving after a flip back to
+   `jwt`, because `lookup()` does not read the setting.
+
+   **There is no new scheduler job.** Expiry is `expiresAt` on the row (so
+   `persistence.minted-expiry-purge` takes it), a delete when the row is
+   read past `exp`, the cap at insert, and
+   `cacheRegistry.realmMapEjector` under the name
+   `oauth2.opaque-access-tokens` (so `caches.eject-expired` takes it). The
+   read-time check is the correctness one.
+
+   **A full store refuses.** `oauth2.maxOpaqueAccessTokens` drops expired
+   rows and then throws STS-OAUTH-0979. A live token is not evicted to make
+   room. Three draws that collide throw STS-OAUTH-0984.
+
+   **A miss and a hit are different doors.** `lookup()` does not rate-limit.
+   An empty string or anything containing `.` is `not-opaque`. A hash miss
+   is `unknown`. Expired is deleted and answered `inactive`/`expired`.
+   `revokedAt`, or `admin_stats.isRevoked(jti)`, is `inactive`/`revoked`.
+   `resolve()` adds one miss to the shared bucket
+   `oauth2.opaque-access-token` only when the ambient realm currently issues
+   opaque tokens and the answer is `unknown`. A success, a JWT, and a known
+   expired or revoked token are not counted. `noteMiss()` returns null when
+   the realm does not issue opaque tokens, and it counts in whatever realm
+   is ambient when it is called. The guess limit is
+   `security.rateLimitPerAddress`. A miss past it is HTTP 429,
+   STS-OAUTH-0983, `Retry-After`, and the body does not say whether the
+   string was close.
+
+   **Who calls it.** `dpop.presentedAccessToken()` uses `resolve()` in the
+   ambient realm, which is how UserInfo, SCIM, Shared Signals, OpenID4VCI
+   and the other doors on that function accept a handle. Introspection and
+   revocation look the handle up and count a miss in the request, before
+   the answer; a miss introspects as `active: false` and revokes as RFC
+   7009's HTTP 200 until the limit. Token exchange treats a handle as the
+   subject or the actor, and an expired or revoked one is refused even when
+   the exchange is not strict. `jtiOf` and `lifetimeOf` ask the store before
+   they decide the string is not a JWT. `/admin-api` looks up the default
+   realm first and the ambient realm only when that was `unknown` and the
+   ambient realm is not the default, and counts the miss once. `/account-api`
+   looks up the ambient realm only, and reaches this module lazily because
+   it is built before `oauth2`. The debugger looks up the default realm
+   only. Those three skip the JWT `typ` check for a handle; issuer and
+   audience still run. A revoked handle is refused at the door, because a
+   later check that also treats a disabled account as revoked would accept
+   a row that only has `revokedAt`.
+
+   `tests/opaque_access_token.js` holds the library and, in a child, the
+   mint through `accessToken()`.
 
 ---
 
