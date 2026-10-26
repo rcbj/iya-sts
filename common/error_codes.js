@@ -23620,7 +23620,13 @@ const CODES = [
   { code: 'STS-REPORT-0035',
     summary: 'A scheduled report names a parameter and stores no value ' +
       'for it, so this occurrence did not run and the slot was kept.',
-    spec: 'recorded' }
+    spec: 'recorded' },
+  { code: 'STS-REPORT-0036',
+    summary: 'A synchronous users report names no filter the directory ' +
+      'can answer with an index, and the directory is windowed, so it ' +
+      'was refused rather than read person by person; in auto mode it ' +
+      'became a job.',
+    spec: 'result_too_large (HTTP 400)' }
   // ===== END ===============================================================
 ];
 

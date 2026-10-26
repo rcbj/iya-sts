@@ -19,6 +19,20 @@
 // holding the population: an ordered read keeps a heap of that size, and a
 // count keeps the groups and discards the rows. A source a test builds with
 // `bounded: false` cannot be run synchronously.
+//
+// `indexed` (#985) is the list of operators the STORE can answer for a field
+// without reading every row, and it is a fact about the directory rather
+// than a preference. A person's attributes are one sealed value in the
+// database, so nothing can filter on most of them there; beside the sealed
+// value the store keeps a keyed digest of `uid`, `mail` and `entryUUID`,
+// each with an index, and the RDN value — a person's `uid`, in the clear —
+// with a trigram index (`persistence/directory_queries.js`). So `username`
+// is indexed for `eq`, `in`, `contains` and `startsWith`, `mail` and
+// `entryUuid` for `eq` and `in`, and every other field for nothing.
+// `report/sources.ts` reads the list to decide whether a walk is bounded;
+// the page and the OpenAPI document show it. `operatorsFor()` still offers
+// every operator on every field of the type: a filter on a sealed field is
+// applied in process, after the indexed one has named the candidates.
 // ---------------------------------------------------------------------------
 
 import bunyan = require('bunyan');
@@ -58,7 +72,16 @@ interface FieldSpec {
   filter: boolean;
   sort: boolean;
   group: boolean;
+  indexed: string[];
 }
+
+// The operators the store answers with an index, per field of `users`. No
+// other source reads the directory row by row, so no other source has a row.
+const INDEXED: Record<string, string[]> = {
+  username: ['eq', 'in', 'contains', 'startsWith'],
+  mail: ['eq', 'in'],
+  entryUuid: ['eq', 'in']
+};
 
 interface SourceSpec {
   id: string;
@@ -70,7 +93,8 @@ interface SourceSpec {
   fields: FieldSpec[];
 }
 
-function field(id: string, type: string, meaning: string): FieldSpec {
+function field(id: string, type: string, meaning: string,
+               indexed?: string[]): FieldSpec {
   log.debug("Entering field().");
   const spec = {
     id: id,
@@ -78,7 +102,8 @@ function field(id: string, type: string, meaning: string): FieldSpec {
     meaning: meaning,
     filter: id !== 'members',
     sort: UNSORTABLE.indexOf(id) < 0,
-    group: GROUPABLE.indexOf(id) >= 0
+    group: GROUPABLE.indexOf(id) >= 0,
+    indexed: (indexed || []).slice()
   };
   log.debug("Leaving field().");
   return spec;
@@ -105,7 +130,7 @@ function standardSources(): SourceSpec[] {
     source('users',
       'The directory as it is now. Not a history of accounts. status ' +
       'locked means pwdAccountLockedTime is set.',
-      [field('username', 'string', 'The directory uid.'),
+      [field('username', 'string', 'The directory uid.', INDEXED.username),
        field('status', 'string',
          'locked when pwdAccountLockedTime is set, which is an ' +
          'administrative disable or any other lock; active otherwise.'),
@@ -114,8 +139,9 @@ function standardSources(): SourceSpec[] {
        field('modifiedAt', 'timestamp',
          'When the directory last changed the entry.'),
        field('entryUuid', 'string',
-         'The entryUUID. It can be filtered and cannot be sorted.'),
-       field('mail', 'string', 'The mail attribute.'),
+         'The entryUUID. It can be filtered and cannot be sorted.',
+         INDEXED.entryUuid),
+       field('mail', 'string', 'The mail attribute.', INDEXED.mail),
        field('displayName', 'string',
          'displayName, or cn when displayName is empty.'),
        field('memberOf', 'string',
@@ -245,6 +271,24 @@ class Catalog {
     log.debug("Entering Catalog().");
     this.sources = sources ? sources.slice() : standardSources();
     log.debug("Leaving Catalog().");
+  }
+
+  /**
+   * The operators the store can answer for a field with an index (#985),
+   * read off the field's `indexed` list; a test's own field with none is
+   * indexed for nothing.
+   *
+   * @param sourceId - the source
+   * @param fieldId - the field
+   * @returns the operator names, or an empty list
+   */
+  indexedFor(sourceId: string, fieldId: string): string[] {
+    log.debug("Entering Catalog.indexedFor().");
+    const spec = this.field(sourceId, fieldId);
+    const list = spec && Array.isArray((spec as any).indexed) ?
+      (spec as any).indexed.slice() : [];
+    log.debug("Leaving Catalog.indexedFor().");
+    return list;
   }
 
   /**

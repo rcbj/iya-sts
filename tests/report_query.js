@@ -17,6 +17,15 @@
 // narrowing does read the two admin group names and `report.usersGroup`,
 // and puts them back. The schedule uses the in-memory definition store
 // and an injected rights checker, and it does not drain the job it queues.
+//
+// THE INDEXED LOOKUPS (#985, `narrowing()`) are driven against a directory
+// DOUBLE installed through `sources.installDirectory()`, which counts each
+// door the reader opens — the name lookup, the UUID lookup, the window's
+// `byMail` and `uidContains`, and the page walk — so the file can hold the
+// claim the issue is about: a filter the store can answer never pages the
+// people, and the rows are the walk's. A real windowed directory needs a
+// postgres store, which this file does not open; the double answers what
+// `ldap_server.js`'s doors answer, in their shapes.
 // ---------------------------------------------------------------------------
 
 delete process.env.CONFIG_FILE;
@@ -681,6 +690,418 @@ async function schedules(t) {
   }
 }
 
+const USERS_DN = 'ou=users,dc=example,dc=com';
+const GROUPS_DN = 'ou=groups,dc=example,dc=com';
+
+function person(uid, extra) {
+  log.debug("Entering person().");
+  const attributes = {
+    uid: [uid],
+    cn: [uid.toUpperCase()],
+    mail: [uid + '@example.com'],
+    entryUUID: ['00000000-0000-4000-8000-00000000000' + uid.length],
+    createTimestamp: ['20261001120000Z']
+  };
+  Object.keys(extra || {}).forEach(function (key) {
+    attributes[key] = extra[key];
+  });
+  const entry = {
+    dn: 'uid=' + uid + ',' + USERS_DN,
+    origin: 'test',
+    attributes: attributes
+  };
+  log.debug("Leaving person().");
+  return entry;
+}
+
+/**
+ * A directory double with the doors `report/sources.ts` opens, each
+ * counted. `windowed` decides which directory it says it is.
+ *
+ * @param {boolean} windowed - whether the double is a window onto a store
+ * @returns {{ ldap: object, calls: object, people: object[] }}
+ */
+function directoryDouble(windowed) {
+  log.debug("Entering directoryDouble().");
+  const ada = person('ada', {
+    entryUUID: ['11111111-1111-4111-8111-111111111111'] });
+  const bea = person('bea', { pwdAccountLockedTime: ['20261001120000Z'] });
+  const cy = person('cy');
+  const xbea = person('xbea');
+  const people = [ada, bea, cy, xbea];
+  const staff = {
+    dn: 'cn=staff,' + GROUPS_DN,
+    origin: 'test',
+    attributes: { cn: ['staff'], objectClass: ['groupOfNames'],
+      member: [ada.dn] }
+  };
+  const calls = { byName: 0, byUuid: 0, byMail: 0, contains: 0, walk: 0,
+    groups: 0, groupPages: 0 };
+  const byName = {};
+  people.forEach(function (one) {
+    byName[one.attributes.uid[0]] = one;
+  });
+  const entries = new Map();
+  people.concat([staff]).forEach(function (one) {
+    entries.set(one.dn, one);
+  });
+  const ldap = {
+    entries: entries,
+    usersDn: function () {
+      return USERS_DN;
+    },
+    groupsDn: function () {
+      return GROUPS_DN;
+    },
+    directoryIsWindowed: function () {
+      return windowed;
+    },
+    existingUserEntry: function (name) {
+      return byName[String(name).toLowerCase()] || null;
+    },
+    existingUserEntriesAsync: function (names) {
+      calls.byName++;
+      return Promise.resolve(names.map(function (name) {
+        return byName[String(name).toLowerCase()] || null;
+      }));
+    },
+    entriesByUuidsAsync: function (uuids) {
+      calls.byUuid++;
+      const out = new Map();
+      uuids.forEach(function (uuid) {
+        const wanted = String(uuid).toLowerCase();
+        out.set(wanted, people.filter(function (one) {
+          return one.attributes.entryUUID[0] === wanted;
+        })[0] || null);
+      });
+      return Promise.resolve(out);
+    },
+    groupsOfUser: function (name) {
+      calls.groups++;
+      return { groups: name === 'ada' ? [
+        { cn: 'staff', via: ['member'], viaMemberOf: false },
+        { cn: 'claimed', via: [], viaMemberOf: true }
+      ] : [] };
+    },
+    residentsPageAsync: function () {
+      calls.walk++;
+      return Promise.resolve({
+        people: people.map(function (one) {
+          return { name: one.attributes.uid[0] };
+        }),
+        more: false,
+        next: ''
+      });
+    },
+    directoryWindow: {
+      findWindowedAsync: function (realmId, name, args, predicate) {
+        calls.byMail++;
+        const hits = name === 'byMail' ? people.filter(function (one) {
+          return predicate(one);
+        }) : [];
+        return Promise.resolve(hits.map(function (one) {
+          return { key: one.dn.toLowerCase(), entry: one };
+        }));
+      },
+      uidContainsAsync: function (realmId, parent, needle, limit) {
+        calls.contains++;
+        if (needle === 'full') {
+          return Promise.resolve({ rows: [], asked: limit });
+        }
+        const rows = people.filter(function (one) {
+          return one.attributes.uid[0].indexOf(needle) >= 0;
+        }).map(function (one) {
+          return { key: one.dn.toLowerCase(), entry: one };
+        });
+        return Promise.resolve({ rows: rows, asked: rows.length });
+      },
+      rdnPageAsync: function () {
+        calls.groupPages++;
+        return Promise.resolve({
+          rows: [{ key: staff.dn.toLowerCase(), entry: staff, rdn: 'staff' }],
+          last: 'staff',
+          asked: 1
+        });
+      }
+    }
+  };
+  log.debug("Leaving directoryDouble().");
+  return { ldap: ldap, calls: calls, people: people };
+}
+
+function names(result) {
+  log.debug("Entering names().");
+  const out = (result && result.rows || []).map(function (row) {
+    return row.username;
+  });
+  log.debug("Leaving names().");
+  return out;
+}
+
+async function narrowing(t) {
+  log.debug("Entering narrowing().");
+  const sources = require('../report/sources');
+  const OpenApi = require('../report/openapi');
+
+  // The catalog's marks, and the two documents that carry them.
+  const catalog = new Catalog();
+  t.equal(catalog.indexedFor('users', 'username').join(','),
+    'eq,in,contains,startsWith', 'username is indexed for four operators');
+  t.equal(catalog.indexedFor('users', 'mail').join(','), 'eq,in',
+    'mail is indexed for equality');
+  t.equal(catalog.indexedFor('users', 'entryUuid').join(','), 'eq,in',
+    'entryUuid is indexed for equality');
+  t.equal(catalog.indexedFor('users', 'displayName').length, 0,
+    'a sealed field is indexed for nothing');
+  t.equal(catalog.indexedFor('groups', 'name').length, 0,
+    'no other source carries a mark');
+  t.equal(catalog.indexedFor('users', 'userPassword').length, 0,
+    'a credential id is indexed for nothing');
+  const spec = OpenApi.document(catalog);
+  t.check(spec.components && spec.components.schemas &&
+    spec.components.schemas.Field &&
+    spec.components.schemas.Field.properties.indexed,
+    'the OpenAPI Field schema carries indexed');
+
+  // The planner.
+  const indexedOf = function (field) {
+    return catalog.indexedFor('users', field);
+  };
+  const plan = function (where) {
+    return sources.indexedLookups(where, indexedOf, 0);
+  };
+  const eq = plan({ op: 'eq', field: 'username', value: 'ada' });
+  t.equal(JSON.stringify(eq),
+    JSON.stringify([{ field: 'username', op: 'eq', values: ['ada'] }]),
+    'username equals is one exact lookup');
+  const list = plan({ op: 'in', field: 'username', value: ['ada', 'bea'] });
+  t.equal(list && list[0].values.join(','), 'ada,bea',
+    'username in is one exact lookup over the values');
+  const contains = plan({ op: 'contains', field: 'username', value: 'RCB' });
+  t.equal(JSON.stringify(contains),
+    JSON.stringify([{ field: 'username', op: 'contains', values: ['rcb'] }]),
+    'username contains is a lower-cased substring lookup');
+  t.equal(plan({ op: 'contains', field: 'username', value: 'rc' }), null,
+    'a needle under three characters is not indexed');
+  const starts = plan({ op: 'startsWith', field: 'username', value: 'bea' });
+  t.equal(starts && starts[0].op, 'contains',
+    'startsWith is asked as the substring superset');
+  t.equal(plan({ op: 'contains', field: 'mail', value: 'example' }), null,
+    'mail contains has no index');
+  t.equal(plan({ op: 'contains', field: 'displayName', value: 'Ada' }), null,
+    'a sealed field has no index');
+  t.equal(plan({ op: 'ne', field: 'username', value: 'ada' }), null,
+    'ne is not a lookup');
+  t.equal(plan({ op: 'isNull', field: 'mail' }), null,
+    'isNull is not a lookup');
+  t.equal(plan({ op: 'not', arg: { op: 'eq', field: 'username',
+    value: 'ada' } }), null, 'not is not a lookup');
+  const andOne = plan({ op: 'and', args: [
+    { op: 'eq', field: 'status', value: 'locked' },
+    { op: 'eq', field: 'username', value: 'ada' }] });
+  t.equal(andOne && andOne.length === 1 && andOne[0].field, 'username',
+    'an and is the lookups of its indexed arm');
+  const andExact = plan({ op: 'and', args: [
+    { op: 'contains', field: 'username', value: 'load' },
+    { op: 'eq', field: 'mail', value: 'a@b' }] });
+  t.equal(andExact && andExact[0].field, 'mail',
+    'an and prefers an exact arm to a substring one');
+  const orBoth = plan({ op: 'or', args: [
+    { op: 'eq', field: 'username', value: 'ada' },
+    { op: 'eq', field: 'mail', value: 'bea@example.com' }] });
+  t.equal(orBoth && orBoth.length, 2,
+    'an or of indexed arms is the union of their lookups');
+  t.equal(plan({ op: 'or', args: [
+    { op: 'eq', field: 'username', value: 'ada' },
+    { op: 'eq', field: 'status', value: 'locked' }] }), null,
+    'an or with a sealed arm is not a lookup');
+  const many = [];
+  for (let i = 0; i < 17; i++) {
+    many.push({ op: 'eq', field: 'username', value: 'u' + i });
+  }
+  t.equal(plan({ op: 'or', args: many }), null,
+    'an or of more than sixteen lookups walks');
+  t.equal(plan(null), null, 'no filter is no lookup');
+
+  // The reader, against a windowed double.
+  const built = directoryDouble(true);
+  sources.installDirectory(built.ldap);
+  const calls = built.calls;
+  const reset = function () {
+    Object.keys(calls).forEach(function (key) {
+      calls[key] = 0;
+    });
+  };
+  const read = function (extra, execution) {
+    const asked = ask(people(extra));
+    if (!asked.ok) {
+      return Promise.resolve(asked);
+    }
+    return sources.read(asked.plan, {
+      startedMs: Date.now(),
+      budgetMs: 5000,
+      execution: execution || 'sync'
+    });
+  };
+  const selectAll = ['username', 'status', 'mail', 'memberOf'];
+  try {
+    reset();
+    const one = await read({ select: selectAll,
+      where: { op: 'eq', field: 'username', value: 'ada' }, limit: 5 });
+    t.equal(one.ok, true, 'username equals is answered');
+    t.equal(names(one).join(','), 'ada', 'username equals names the person');
+    t.equal(one.rows[0].memberOf, 'staff',
+      'the row carries the groups that list the person, from the index');
+    t.equal(calls.byName, 1, 'one name lookup');
+    t.equal(calls.walk, 0, 'the people were not paged');
+    t.equal(calls.groupPages, 0, 'the groups were not paged');
+
+    reset();
+    const some = await read({ select: selectAll,
+      where: { op: 'in', field: 'username', value: ['bea', 'nobody', 'ada'] },
+      limit: 5 });
+    t.equal(names(some).join(','), 'bea,ada',
+      'username in names the people found, a missing name skipped');
+    t.equal(calls.byName + calls.walk, 1, 'one lookup and no walk');
+
+    reset();
+    const short = await read({
+      where: { op: 'contains', field: 'username', value: 'ad' }, limit: 5 });
+    t.equal(short.ok, false, 'a short substring cannot be answered now');
+    t.equal(short.code, 'STS-REPORT-0036', 'the unbounded filter is 0036');
+    t.equal(short.error, 'result_too_large',
+      'the public token is result_too_large');
+    t.equal(short.unbounded, true, 'the refusal says it is unbounded');
+    t.check(short.description.indexOf('username (eq, in, contains, ' +
+      'startsWith)') >= 0 && short.description.indexOf('mail (eq, in)') >= 0 &&
+      short.description.indexOf('entryUuid (eq, in)') >= 0,
+      'the refusal names the indexed fields', short.description);
+    t.equal(calls.walk, 0, 'a refused read paged nobody');
+
+    reset();
+    const sub = await read({
+      where: { op: 'contains', field: 'username', value: 'bea' }, limit: 5 });
+    t.equal(names(sub).join(','), 'bea,xbea',
+      'contains is answered from the substring index');
+    t.equal(calls.contains, 1, 'one substring lookup');
+
+    reset();
+    const prefix = await read({
+      where: { op: 'startsWith', field: 'username', value: 'bea' }, limit: 5 });
+    t.equal(names(prefix).join(','), 'bea',
+      'startsWith narrows the substring superset in process');
+
+    reset();
+    const mail = await read({
+      where: { op: 'eq', field: 'mail', value: 'ada@example.com' }, limit: 5 });
+    t.equal(names(mail).join(','), 'ada', 'mail equals names the person');
+    t.equal(calls.byMail, 1, 'one mail lookup');
+    // The store's lookup ignores case; the filter does not, as the walk's
+    // did not, so the answer is the walk's and not the index's.
+    reset();
+    const shouted = await read({
+      where: { op: 'eq', field: 'mail', value: 'ADA@example.com' }, limit: 5 });
+    t.equal(names(shouted).length, 0,
+      'a different-case address is looked up and then filtered out');
+    t.equal(calls.byMail, 1, 'the lookup was still asked, not a walk');
+    t.equal(calls.walk, 0, 'and nobody was paged');
+
+    reset();
+    const uuid = await read({
+      where: { op: 'eq', field: 'entryUuid',
+        value: '11111111-1111-4111-8111-111111111111' }, limit: 5 });
+    t.equal(names(uuid).join(','), 'ada', 'entryUuid equals names the person');
+    t.equal(calls.byUuid, 1, 'one UUID lookup');
+
+    reset();
+    const narrowedOut = await read({ select: selectAll,
+      where: { op: 'and', args: [
+        { op: 'eq', field: 'username', value: 'ada' },
+        { op: 'eq', field: 'status', value: 'locked' }] }, limit: 5 });
+    t.equal(names(narrowedOut).length, 0,
+      'the other arm still applies to the candidates');
+    t.equal(calls.walk, 0, 'an and with an indexed arm paged nobody');
+
+    reset();
+    const locked = await read({ select: selectAll,
+      where: { op: 'and', args: [
+        { op: 'eq', field: 'status', value: 'locked' },
+        { op: 'in', field: 'username', value: ['ada', 'bea'] }] }, limit: 5 });
+    t.equal(names(locked).join(','), 'bea',
+      'the sealed arm keeps the locked candidate');
+
+    reset();
+    const either = await read({
+      where: { op: 'or', args: [
+        { op: 'eq', field: 'username', value: 'ada' },
+        { op: 'eq', field: 'mail', value: 'bea@example.com' }] }, limit: 5 });
+    t.equal(names(either).join(','), 'ada,bea', 'an or unions the lookups');
+
+    reset();
+    const sealed = await read({
+      where: { op: 'contains', field: 'displayName', value: 'A' }, limit: 5 });
+    t.equal(sealed.code, 'STS-REPORT-0036',
+      'a sealed-field filter is refused synchronously on a window');
+    const sealedJob = await read({
+      where: { op: 'contains', field: 'displayName', value: 'A' }, limit: 5 },
+      'async');
+    t.equal(sealedJob.ok, true, 'the same filter runs as a job');
+    t.check(calls.walk >= 1, 'the job walked the people');
+    t.equal(names(sealedJob).join(','), 'ada,bea,xbea',
+      'the walk answers the sealed-field filter');
+
+    reset();
+    const plain = await read({ limit: 2 });
+    t.equal(plain.ok, true, 'no filter, no order and no count still walks');
+    t.equal(names(plain).length, 2, 'the walk stops at the limit');
+
+    reset();
+    const ordered = await read({ orderBy: [{ field: 'username',
+      dir: 'asc' }], limit: 2 });
+    t.equal(ordered.code, 'STS-REPORT-0036',
+      'an order with no indexed filter must see everybody, so is refused');
+    const counted = await read({ aggregate: 'count', groupBy: ['status'],
+      select: ['status'], limit: 5 });
+    t.equal(counted.code, 'STS-REPORT-0036',
+      'a count with no indexed filter is refused');
+    t.equal(calls.walk, 0, 'neither refusal paged anybody');
+
+    reset();
+    const capped = await read({
+      where: { op: 'contains', field: 'username', value: 'full' }, limit: 5 });
+    t.equal(capped.code, 'STS-REPORT-0036',
+      'a substring the store answers at its cap is not trusted whole');
+    t.equal(calls.contains, 1, 'the store was asked once');
+  } finally {
+    sources.installDirectory(null);
+  }
+
+  // The reader, against the memory directory: a name is still a lookup; a
+  // substring and an address have no index and walk the in-process Map.
+  const memory = directoryDouble(false);
+  sources.installDirectory(memory.ldap);
+  try {
+    const found = await read({ select: selectAll,
+      where: { op: 'eq', field: 'username', value: 'cy' }, limit: 5 });
+    t.equal(names(found).join(','), 'cy', 'memory: a name is looked up');
+    t.equal(memory.calls.byName, 1, 'memory: through the name door');
+    const walked = await read({
+      where: { op: 'contains', field: 'displayName', value: 'A' }, limit: 5 });
+    t.equal(walked.ok, true, 'memory: a sealed filter is answered now');
+    t.equal(names(walked).join(','), 'ada,bea,xbea',
+      'memory: the walk of the Map answers it');
+    const substring = await read({
+      where: { op: 'contains', field: 'username', value: 'bea' }, limit: 5 });
+    t.equal(names(substring).join(','), 'bea,xbea',
+      'memory: a substring walks, and the filter still holds');
+    t.equal(memory.calls.contains, 0,
+      'memory: the window is never asked');
+  } finally {
+    sources.installDirectory(null);
+  }
+  log.debug("Leaving narrowing().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   documents(t);
@@ -690,11 +1111,13 @@ async function run(t) {
   projections(t);
   await budget(t);
   await schedules(t);
+  await narrowing(t);
   log.debug("Leaving run().");
 }
 
 module.exports = {
   name: 'report_query',
-  describe: 'report documents, formats, issuance, projections, schedules',
+  describe: 'report documents, formats, issuance, projections, schedules, ' +
+    'indexed lookups',
   run: run
 };
