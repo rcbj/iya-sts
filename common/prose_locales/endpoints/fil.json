@@ -891,6 +891,10 @@
     "en": "058eb7c31724a848",
     "text": "I-export ang mga tao sa likod ng isang bilang ng passkey"
   },
+  "endpoints.route./admin-api/passkey-report/evidence.name": {
+    "en": "e9eb776b6513e45f",
+    "text": "Talaan ng ebidensyang RFC 4998 ng isang passkey"
+  },
   "endpoints.route./admin-api/passkey-report/:action.name": {
     "en": "738bbc740bd914fc",
     "text": "Bilangin muli ang mga passkey ng realm"

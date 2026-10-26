@@ -891,6 +891,10 @@
     "en": "058eb7c31724a848",
     "text": "Exporter les personnes derrière un chiffre de clés d’accès"
   },
+  "endpoints.route./admin-api/passkey-report/evidence.name": {
+    "en": "e9eb776b6513e45f",
+    "text": "Enregistrement de preuve RFC 4998 d’une clé d’accès"
+  },
   "endpoints.route./admin-api/passkey-report/:action.name": {
     "en": "738bbc740bd914fc",
     "text": "Recompter les clés d’accès du domaine"

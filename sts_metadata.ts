@@ -6086,6 +6086,14 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'NON-SPEC (#942). The people one Monitoring → Passkeys count ' +
           'names, as CSV or JSON, read a page of holders at a time, at most ' +
           'a hundred thousand rows and said when cut. No key material.' },
+  { path: '/admin-api/passkey-report/evidence', group: 'Management API',
+    name: 'One passkey\'s RFC 4998 evidence record',
+    specs: ['openapi', 'webauthn'],
+    what: 'NON-SPEC (#947). The archived attestation object and its ' +
+          'RFC 4998 EvidenceRecord for one passkey, named by username and ' +
+          'credentialId. The TSA token verifies against the configured ' +
+          'trust anchors. A key enrolled with no TSA, or whose attestation ' +
+          'was not trusted and classical, has no record.' },
   { path: '/admin-api/passkey-report/:action', group: 'Management API',
     name: 'Recount the realm\'s passkeys', specs: ['openapi'],
     what: 'NON-SPEC (#942). recount: queues the passkeys.report-recount job ' +

@@ -1755,6 +1755,10 @@
     "en": "41f6fbe31db08a88",
     "text": "NON-SPEC (#942). Les personnes que nomme un chiffre de Supervision → Clés d’accès, en CSV ou en JSON, lues une page de détenteurs à la fois, au plus cent mille lignes, avec mention en cas de coupure. Aucune matière de clé."
   },
+  "stsmetadata.endpoints./admin-api/passkey-report/evidence.what": {
+    "en": "04273b8322f6ed5c",
+    "text": "NON-SPEC (#947). L’objet d’attestation archivé et son EvidenceRecord RFC 4998 pour une clé d’accès, nommés par le nom d’utilisateur et credentialId. Le jeton de la TSA se vérifie avec les ancres de confiance configurées. Une clé inscrite sans TSA, ou dont l’attestation n’était pas de confiance et était classique, n’a aucun enregistrement."
+  },
   "stsmetadata.endpoints./admin-api/passkey-report/:action.what": {
     "en": "cd923c72e2ca4fba",
     "text": "NON-SPEC (#942). recount : met en file la tâche passkeys.report-recount pour ce domaine auprès du meneur du planificateur, qui fait d’un nouveau comptage des détenteurs la nouvelle base. La seule action de la console sur cette page ; elle s’exécute là où s’exécute toute tâche, jamais dans la requête."

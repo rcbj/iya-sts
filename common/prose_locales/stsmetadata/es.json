@@ -1755,6 +1755,10 @@
     "en": "41f6fbe31db08a88",
     "text": "NO ESTÁNDAR (#942). Las personas que nombra una cifra de Supervisión → Llaves de acceso, en CSV o JSON, leídas una página de titulares a la vez, como máximo cien mil filas, indicando cuándo se cortó. Ningún material de clave."
   },
+  "stsmetadata.endpoints./admin-api/passkey-report/evidence.what": {
+    "en": "04273b8322f6ed5c",
+    "text": "NON-SPEC (#947). El objeto de atestación archivado y su EvidenceRecord RFC 4998 de una llave de acceso, nombrados por el nombre de usuario y credentialId. El token de la TSA se verifica con las anclas de confianza configuradas. Una llave inscrita sin TSA, o cuya atestación no era de confianza y era clásica, no tiene registro."
+  },
   "stsmetadata.endpoints./admin-api/passkey-report/:action.what": {
     "en": "cd923c72e2ca4fba",
     "text": "NO ESTÁNDAR (#942). recount: pone en cola el trabajo passkeys.report-recount para este dominio en el líder del planificador, que hace de un recuento nuevo de los titulares la nueva base. La única acción de la consola en esa página; se ejecuta donde se ejecuta todo trabajo, nunca en la solicitud."

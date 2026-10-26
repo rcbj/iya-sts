@@ -222,6 +222,7 @@
   "endpoints.route./admin-api/secret-destinations/:action.name": "Change the secret push destinations",
   "endpoints.route./admin-api/passkey-report.name": "Who holds which passkey algorithm",
   "endpoints.route./admin-api/passkey-report/export.name": "Export the people behind a passkey count",
+  "endpoints.route./admin-api/passkey-report/evidence.name": "One passkey's RFC 4998 evidence record",
   "endpoints.route./admin-api/passkey-report/:action.name": "Recount the realm's passkeys",
   "endpoints.route./admin-api/scim/clients.name": "Outbound SCIM clients",
   "endpoints.route./admin-api/scim/clients/:action.name": "Change the outbound SCIM clients",

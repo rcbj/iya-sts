@@ -53,33 +53,54 @@ module.exports = {
   run: async function (t) {
     log.debug('Entering run().');
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'iya-passkey-evidence-'));
+    const caKey = path.join(dir, 'ca.key');
+    const caCert = path.join(dir, 'ca.crt');
     const key = path.join(dir, 'tsa.key');
     const cert = path.join(dir, 'tsa.crt');
+    const csr = path.join(dir, 'tsa.csr');
+    const ext = path.join(dir, 'tsa.ext');
+    const chain = path.join(dir, 'chain.pem');
     const serial = path.join(dir, 'tsa.serial');
     const request = path.join(dir, 'request.der');
     const response = path.join(dir, 'response.der');
     const configFile = path.join(dir, 'tsa.cnf');
     try {
+      // OpenSSL 3.5 refuses a TSA signer whose keyUsage includes
+      // keyCertSign. pkijs, with checkChain, refuses a signer that is
+      // not under a CA. The fixture is a CA plus a time-stamping leaf.
       command('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes',
-        '-keyout', key, '-out', cert, '-days', '2', '-subj',
-        '/CN=IYA Synthetic Test TSA', '-addext',
+        '-keyout', caKey, '-out', caCert, '-days', '2', '-subj',
+        '/CN=IYA Synthetic Test TSA CA', '-addext',
         'basicConstraints=critical,CA:TRUE', '-addext',
-        'keyUsage=critical,digitalSignature,keyCertSign', '-addext',
-        'extendedKeyUsage=critical,timeStamping']);
+        'keyUsage=critical,keyCertSign,cRLSign']);
+      command('openssl', ['req', '-newkey', 'rsa:2048', '-nodes',
+        '-keyout', key, '-out', csr, '-subj',
+        '/CN=IYA Synthetic Test TSA']);
+      fs.writeFileSync(ext, [
+        'basicConstraints=CA:FALSE',
+        'keyUsage=critical,digitalSignature',
+        'extendedKeyUsage=critical,timeStamping', ''
+      ].join('\n'));
+      command('openssl', ['x509', '-req', '-in', csr, '-CA', caCert,
+        '-CAkey', caKey, '-CAcreateserial', '-out', cert, '-days', '2',
+        '-extfile', ext]);
+      fs.writeFileSync(chain, fs.readFileSync(cert, 'utf8') +
+                              fs.readFileSync(caCert, 'utf8'));
       fs.writeFileSync(serial, '01\n');
       fs.writeFileSync(configFile, [
         '[ tsa ]', 'default_tsa = tsa_config1', '', '[ tsa_config1 ]',
         'serial = ' + serial, 'crypto_device = builtin',
-        'signer_cert = ' + cert, 'certs = ' + cert,
+        'signer_cert = ' + cert, 'certs = ' + chain,
         'signer_key = ' + key, 'signer_digest = sha256',
         'default_policy = 1.2.3.4.1', 'other_policies = 1.2.3.4.5',
         'digests = sha256, sha512', 'accuracy = secs:1', 'ordering = yes',
-        'tsa_name = yes', 'ess_cert_id_chain = no', ''
+        'tsa_name = yes', 'ess_cert_id_chain = no',
+        'ess_cert_id_alg = sha256', ''
       ].join('\n'));
       config.setOverride('webauthn.attestationEvidenceTsaUrl',
                          'https://tsa.example.test/');
       config.setOverride('webauthn.attestationEvidenceTsaTrustAnchors',
-                         fs.readFileSync(cert, 'utf8'));
+                         fs.readFileSync(caCert, 'utf8'));
       const tsaFetch = async function (_url, options) {
         fs.writeFileSync(request, Buffer.from(options.body));
         command('openssl', ['ts', '-reply', '-queryfile', request,
@@ -122,7 +143,9 @@ module.exports = {
       t.check(chains.length === 2 &&
               chains[1].valueBlock.value[0].valueBlock.value.length === 3 &&
               algorithms.some(function (one) {
-                return one.valueBlock.value[0].valueBlock.value ===
+                // asn1js keeps an OID as sid components. The dotted
+                // form is toString(), not value.
+                return one.valueBlock.value[0].valueBlock.toString() ===
                   '2.16.840.1.101.3.4.2.3';
               }) && migrated.hashAlgorithm === 'sha512',
               'D. hash-tree renewal adds a SHA-512 reduced tree and a new ' +

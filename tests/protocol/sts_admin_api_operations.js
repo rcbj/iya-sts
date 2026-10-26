@@ -1124,6 +1124,19 @@ async function everyReadAnswersAboutThisRealm(doc) {
       await aKeysCertificateChain();
       continue;
     }
+    // GET /passkey-report/evidence names one passkey. With neither
+    // username nor credentialId the documented refusal is a JSON 400.
+    if (path === "/passkey-report/evidence") {
+      const missing = await get(path);
+      assert.strictEqual(missing.status, 400,
+        "GET " + api + path + " without a passkey should answer 400; it " +
+        "answered " + missing.status + " " +
+        String(missing.raw).slice(0, 200));
+      assert.strictEqual(typeof missing.body, "object",
+        "GET " + api + path + "'s 400 should be a JSON object; it was " +
+        String(missing.raw).slice(0, 200));
+      continue;
+    }
     // AND SO DOES THE OPENID4VCI NOTIFICATION READ (#594): GET
     // /oid4vci/notifications takes the `notification_id` a Credential
     // Response carried, and this realm has issued none, so it is driven by

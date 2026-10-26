@@ -1755,6 +1755,10 @@
     "en": "41f6fbe31db08a88",
     "text": "NON-SPEC (#942). Ang mga taong pinangangalanan ng isang bilang sa Monitoring → Mga passkey, bilang CSV o JSON, binabasa nang isang page ng mga may hawak sa bawat pagkakataon, hanggang isandaang libong row at sinasabi kapag pinutol. Walang key material."
   },
+  "stsmetadata.endpoints./admin-api/passkey-report/evidence.what": {
+    "en": "04273b8322f6ed5c",
+    "text": "NON-SPEC (#947). Ang na-archive na attestation object at ang RFC 4998 EvidenceRecord nito para sa isang passkey, na pinangalanan ng username at credentialId. Ang TSA token ay nabe-verify sa mga naka-configure na trust anchor. Ang passkey na nairehistro nang walang TSA, o ang attestation na hindi pinagkakatiwalaan at classical, ay walang tala."
+  },
   "stsmetadata.endpoints./admin-api/passkey-report/:action.what": {
     "en": "cd923c72e2ca4fba",
     "text": "NON-SPEC (#942). recount: inilalagay sa pila ang job na passkeys.report-recount para sa realm na ito sa leader ng scheduler, na ginagawang bagong baseline ang isang bagong bilang ng mga may hawak. Ang nag-iisang aksyon ng console sa page na iyon; tumatakbo ito kung saan tumatakbo ang bawat job, hindi kailanman sa request."

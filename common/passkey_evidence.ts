@@ -154,7 +154,10 @@ class PasskeyEvidence {
     const priorSequence: any = (parsed.result as any).valueBlock.value[2];
     const digestAlgorithms: any = (parsed.result as any).valueBlock.value[1];
     if (!digestAlgorithms.valueBlock.value.some(function (one: any): boolean {
-      return one.valueBlock.value[0].valueBlock.value === oid;
+      // asn1js keeps an OID as sid components. The dotted form is
+      // toString(), not value, so a second renewal of the same
+      // algorithm would otherwise append it again.
+      return one.valueBlock.value[0].valueBlock.toString() === oid;
     })) {
       digestAlgorithms.valueBlock.value.push(new asn1js.Sequence({ value: [
         new asn1js.ObjectIdentifier({ value: oid }), new asn1js.Null()
@@ -271,9 +274,13 @@ class PasskeyEvidence {
                       'evidence.');
     }
     const trust = pemCertificates(anchors);
-    const verified = await signed.verify({ signer: 0, trustedCerts: trust,
-                                           checkChain: true,
-                                           checkDate: info.genTime });
+    // pkijs will not verify an id-ct-TSTInfo token until the stamped
+    // bytes are supplied, and it reports that as a missing detached
+    // input. The imprint check above is the same comparison; this
+    // argument is what lets the CMS signature and the chain run.
+    const verified = await signed.verify({ signer: 0,
+      data: bytes(data), trustedCerts: trust, checkChain: true,
+      checkDate: info.genTime });
     if (verified !== true) {
       throw new Error('The timestamp token signature or TSA chain did not ' +
                       'verify against the configured trust anchors.');

@@ -1755,6 +1755,10 @@
     "en": "41f6fbe31db08a88",
     "text": "非規格端點（#942）。監控 → 密碼金鑰中某個數字所指的人員，以 CSV 或 JSON 匯出，每次讀取一頁持有者，最多十萬列，被截斷時會註明。不含任何金鑰材料。"
   },
+  "stsmetadata.endpoints./admin-api/passkey-report/evidence.what": {
+    "en": "04273b8322f6ed5c",
+    "text": "NON-SPEC (#947). 一把密碼金鑰已封存的證明物件及其 RFC 4998 EvidenceRecord，由使用者名稱和 credentialId 指明。TSA 權杖對照已設定的信任錨進行驗證。沒有 TSA 時註冊的金鑰，或證明不受信任且為經典演算法的金鑰，沒有這筆記錄。"
+  },
   "stsmetadata.endpoints./admin-api/passkey-report/:action.what": {
     "en": "cd923c72e2ca4fba",
     "text": "非規格端點（#942）。recount：在排程器的主節點上為此領域排入 passkeys.report-recount 工作，該工作把對持有者的一次全新計數作為新的基準。這是主控台在該頁面上的唯一操作；它在所有工作執行的地方執行，絕不在請求中執行。"

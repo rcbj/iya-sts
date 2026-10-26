@@ -1755,6 +1755,10 @@
     "en": "41f6fbe31db08a88",
     "text": "ICKE-SPEC (#942). De personer som en siffra på Övervakning → Nycklar avser, som CSV eller JSON, lästa en sida innehavare åt gången, högst hundratusen rader och med besked om de kapats. Inget nyckelmaterial."
   },
+  "stsmetadata.endpoints./admin-api/passkey-report/evidence.what": {
+    "en": "04273b8322f6ed5c",
+    "text": "NON-SPEC (#947). Det arkiverade attesteringsobjektet och dess RFC 4998 EvidenceRecord för en nyckel, namngivna med användarnamn och credentialId. TSA-token verifieras mot de konfigurerade förtroendeankarna. En nyckel som registrerades utan TSA, eller vars attestering inte var betrodd och var klassisk, har ingen post."
+  },
   "stsmetadata.endpoints./admin-api/passkey-report/:action.what": {
     "en": "cd923c72e2ca4fba",
     "text": "ICKE-SPEC (#942). recount: köar jobbet passkeys.report-recount för den här sfären hos schemaläggarens ledare, som gör en ny räkning av innehavarna till den nya baslinjen. Konsolens enda åtgärd på den sidan; den körs där varje jobb körs, aldrig i begäran."

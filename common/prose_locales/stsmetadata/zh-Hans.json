@@ -1755,6 +1755,10 @@
     "en": "41f6fbe31db08a88",
     "text": "非规范（#942）。监控 → 通行密钥中某个数字所指的人员，以 CSV 或 JSON 导出，每次读取一页持有者，最多十万行，被截断时会注明。不含任何密钥材料。"
   },
+  "stsmetadata.endpoints./admin-api/passkey-report/evidence.what": {
+    "en": "04273b8322f6ed5c",
+    "text": "NON-SPEC (#947). 一把通行密钥已归档的证明对象及其 RFC 4998 EvidenceRecord，由用户名和 credentialId 指明。TSA 令牌对照已配置的信任锚进行验证。没有 TSA 时注册的密钥，或证明不受信任且为经典算法的密钥，没有这条记录。"
+  },
   "stsmetadata.endpoints./admin-api/passkey-report/:action.what": {
     "en": "cd923c72e2ca4fba",
     "text": "非规范（#942）。recount：在调度器的主节点上为此领域排入 passkeys.report-recount 作业，该作业把对持有者的一次全新计数作为新的基线。这是控制台在该页面上的唯一操作；它在所有作业运行的地方运行，绝不在请求中运行。"
