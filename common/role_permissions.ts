@@ -631,68 +631,119 @@ class RolePermissions {
   // An application's own token needs no group.
   private ssfRoleStands(role: string, value: string, who: Subject,
                         clientId: string): boolean {
+    return this.ssfRoleCheck(role, value, who, clientId).stands;
+  }
+
+  // ssfRoleStands()'s answer with the reason a role does not stand, for the
+  // STS-ADMIN-0821 row: which of the two halves is missing.
+  private ssfRoleCheck(role: string, value: string, who: Subject,
+                       clientId: string): { stands: boolean; why: string } {
     const { log, roles } = this.deps;
-    log.debug("Entering RolePermissions.ssfRoleStands().");
+    log.debug("Entering RolePermissions.ssfRoleCheck().");
     const native = roles.NATIVE_ROLES.filter(function (row) {
       return row.name === role;
     })[0];
     if (!native || (native.name !== 'SSF_READ' &&
                     native.name !== 'SSF_MANAGE')) {
-      log.debug("Leaving RolePermissions.ssfRoleStands(). Not an SSF role.");
-      return true;
+      log.debug("Leaving RolePermissions.ssfRoleCheck(). Not an SSF role.");
+      return { stands: true, why: '' };
     }
     if (native.permission !== value) {
-      log.debug("Leaving RolePermissions.ssfRoleStands(). Another " +
+      log.debug("Leaving RolePermissions.ssfRoleCheck(). Another " +
                 "permission.");
-      return false;
+      return { stands: false,
+               why: role + ' does not authorize ' + value };
     }
     const client = String(clientId || '');
     if (!client) {
-      log.debug("Leaving RolePermissions.ssfRoleStands(). No client.");
-      return false;
+      log.debug("Leaving RolePermissions.ssfRoleCheck(). No client.");
+      return { stands: false,
+               why: 'no client is named, and ' + role + ' needs the ' +
+                    'client to be a member' };
     }
     let row = null;
     try {
       row = roles.read(role);
     } catch (e) {
-      log.debug("Caught in RolePermissions.ssfRoleStands(): " +
+      log.debug("Caught in RolePermissions.ssfRoleCheck(): " +
                 ((e && (e as Error).message) || e));
       row = null;
     }
     if (!row) {
-      log.debug("Leaving RolePermissions.ssfRoleStands(). No role.");
-      return false;
+      log.debug("Leaving RolePermissions.ssfRoleCheck(). No role.");
+      return { stands: false,
+               why: 'the role ' + role + ' could not be read' };
     }
     const mapped = (row.applications || []).some(function (one: string) {
       return String(one).toLowerCase() === client.toLowerCase();
     });
     if (!mapped) {
-      log.debug("Leaving RolePermissions.ssfRoleStands(). The application " +
+      log.debug("Leaving RolePermissions.ssfRoleCheck(). The application " +
                 "is not a member.");
-      return false;
+      return { stands: false,
+               why: 'the application "' + client + '" is not a member of ' +
+                    'the role ' + role };
     }
     if (who.kind === 'application') {
-      log.debug("Leaving RolePermissions.ssfRoleStands(). The " +
+      log.debug("Leaving RolePermissions.ssfRoleCheck(). The " +
                 "application's own token.");
-      return true;
+      return { stands: true, why: '' };
     }
     let groups: string[] = [];
     try {
       groups = typeof roles.groupsOf === 'function'
         ? roles.groupsOf(String(who.name || '')) || [] : [];
     } catch (e) {
-      log.debug("Caught in RolePermissions.ssfRoleStands(): " +
+      log.debug("Caught in RolePermissions.ssfRoleCheck(): " +
                 ((e && (e as Error).message) || e));
       groups = [];
     }
     const lower = groups.map(function (one) {
       return String(one).toLowerCase();
     });
-    const inGroup = (row.groups || []).some(function (group: string) {
-      return lower.indexOf(String(group).toLowerCase()) >= 0;
+    const roleGroups: string[] = (row.groups || []).map(String);
+    const inGroup = roleGroups.some(function (group: string) {
+      return lower.indexOf(group.toLowerCase()) >= 0;
     });
-    log.debug("Leaving RolePermissions.ssfRoleStands(). " + inGroup);
-    return inGroup;
+    log.debug("Leaving RolePermissions.ssfRoleCheck(). " + inGroup);
+    return { stands: inGroup,
+             why: inGroup ? '' : String(who.name || 'the person') +
+               ' is in none of the groups of the role ' + role + ' (' +
+               (roleGroups.join(', ') || 'it lists none') + ')' };
+  }
+
+  // Why one gated permission was taken off, for the STS-ADMIN-0821 row.
+  // `held.why` is about the console roster, so it explains admin:read and
+  // admin:write only, unless nobody authenticated, which explains every
+  // value. An SSF permission names the half of its role that is missing.
+  private whyRemoved(value: string, held: Held, who: Subject,
+                     clientId: string): string {
+    const { roles } = this.deps;
+    const name = String(who.name || '').trim();
+    const nobody = !name ||
+      (who.kind !== 'application' && who.authenticated === false);
+    if (held.why && nobody) {
+      return held.why;
+    }
+    const onRoster = roles.CONSOLE_ROLES.some(function (row: any) {
+      return row.permission === value;
+    });
+    if (onRoster && held.why) {
+      return held.why;
+    }
+    const ssf = roles.NATIVE_ROLES.filter(function (row: any) {
+      return row.permission === value &&
+             (row.name === 'SSF_READ' || row.name === 'SSF_MANAGE');
+    })[0];
+    if (ssf) {
+      const check = this.ssfRoleCheck(ssf.name, value, who, clientId);
+      if (!check.stands) {
+        return check.why;
+      }
+    }
+    return (name || 'an unnamed subject') + ' holds no role authorizing ' +
+      value + (held.configured.length
+        ? ' (holds ' + held.configured.join(', ') + ')' : '');
   }
 
   // ---------------------------------------------------------------------------
@@ -825,10 +876,11 @@ class RolePermissions {
       return removed.indexOf(one) < 0;
     });
     const name = String(who.name || '');
-    const reason = held.why ||
-      (name || 'an unnamed subject') + ' holds no role authorizing ' +
-      removed.join(', ') + (held.configured.length
-        ? ' (holds ' + held.configured.join(', ') + ')' : '');
+    const reason = removed.map(function (value) {
+      return self.whyRemoved(value, held, who, String(ctx.clientId || ''));
+    }).filter(function (one, at, all) {
+      return all.indexOf(one) === at;
+    }).join('; ');
     // ONE line in the log, and it is the audit row's: `audit.js` writes a row
     // carrying an errorCode to the log itself.
     // STS-ADMIN-0821 unless the policy named another code for the first
