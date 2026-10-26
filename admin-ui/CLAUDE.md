@@ -7741,13 +7741,17 @@ configuration grid split by protocol.
 
 rcbj asked for `/admin/users?user=` to be organised the way an application's
 page now is. He chose:
-* seven tabs (eight since #432 phase 7 added GNAP grants);
+* nine tabs (Authentication attempts, #955, after Overview; eight since #432 phase 7 added GNAP grants);
 * a typed grid with one sub-tab per group, each with its own Save;
 * the same grid on `/admin/users/new`.
 
 **The tabs.** `tabbedPanels('usertabs', …)` draws them, ids
 `USER_TAB_IDS`, with no script:
 * **Overview**: the tiles, the names seen and the authentications.
+* **Authentication attempts** (#955): the audit log's attempts by this
+  person, across every application and protocol, including refusals.
+  The overview's authentication table stays the identity register's
+  acceptances.
 * **Sessions & tokens**.
 * **Attributes**: `personFieldsSection()`.
 * **Credentials**: four sub-tabs, `ucred-factors`, `ucred-password`,

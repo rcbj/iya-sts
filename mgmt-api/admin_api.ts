@@ -6450,7 +6450,29 @@ class AdminApi {
                      'remembers. OpenAPI cannot spell a parameter whose name ' +
                      'is built at runtime, and a `session-{id}Page` in the ' +
                      'list would generate a client that sends a literal ' +
-                     '`{id}` — so it is here in words instead.\n\nTHE ' +
+                     '`{id}` — so it is here in words instead.\n\n' +
+                     '**The ?user= reply\'s `authenticationEvents`** ' +
+                     '(#955) are the audit log\'s authentication ' +
+                     'attempts by this person, newest first, across ' +
+                     'every application and protocol: ' +
+                     '`authentication`, `authentication.refused`, ' +
+                     '`session.refuse` and `session.refused`. A row is ' +
+                     'this person\'s when its actor, the name they ' +
+                     'presented, `detail.sub` or `detail.presented` is ' +
+                     'their name, a name they have been seen under, or ' +
+                     'their subject, exactly as spelled. Each row is an ' +
+                     'audit event. `authenticationEventsMatched` is how ' +
+                     'many, `authenticationEventsPaging` pages them ' +
+                     'under `authenticationsPage`, ' +
+                     '`authenticationEventsKnownActors` says which ' +
+                     'actors have a user page, and ' +
+                     '`authenticationEventsLog` says how full the audit ' +
+                     'log is. The member is not `authentications`: that ' +
+                     'one is the count. The list holds no more history ' +
+                     'than the audit log does, and nothing in it is a ' +
+                     'credential. Another process\'s rows are read ' +
+                     'before this reply is built when `user` is set, ' +
+                     'the same wait GET /admin-api/audit makes.\n\nTHE ' +
                      'LIST IS CAPPED AND THE COUNT IS NOT (#610). ' +
                      '`directoryPeople` is how many people the realm\'s ' +
                      'directory defines, counted by the directory without ' +
@@ -6500,7 +6522,14 @@ class AdminApi {
                          'carrying `stsServiceAccount`); `person`: ' +
                          'everybody else. Each row says which in ' +
                          '`serviceAccount`, and `serviceAccounts` counts ' +
-                         'them over the whole list.' }
+                         'them over the whole list.' },
+          { name: 'authenticationsPage', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'Which page of `authenticationEvents`, on the ' +
+                         '`?user=` reply only. Named rather than the bare ' +
+                         '`page` so it does not move the session list. ' +
+                         'The member is not `authentications`: that one ' +
+                         'is the count.' }
         ].concat(this.pagingParameters()).concat(this.detailPagingParameters([
           { name: 'sessions',
             description: 'Sign-on session blocks, which default to ' +
@@ -6538,33 +6567,56 @@ class AdminApi {
           { $ref: '#/components/schemas/UserList' },
           { $ref: '#/components/schemas/UserDetail' }
         ] },
-        handler: function (req, res) {
+        handler: function (req, res, next) {
           log.debug("Entering the management API users endpoint.");
           // The person's current risk, read first (#62) — the console's
           // route does the same, so the two answers agree.
           // The list's directory names are asked of the store
           // asynchronously (#616: `usersJsonAsync()`), which held a request
           // worker's event loop for seconds at 200,000 people.
-          return adminViews.riskFor(req.query).then(function (risk) {
-            return adminViews.usersJsonAsync(req, risk);
-          }).then(function (json) {
-            self.sendJson(res, 200, json);
-          }, function (e) {
+          const run = function () {
+            log.debug("Entering run().");
+            return adminViews.riskFor(req.query).then(function (risk) {
+              return adminViews.usersJsonAsync(req, risk);
+            }).then(function (json) {
+              self.sendJson(res, 200, json);
+              log.debug("Leaving run().");
+            }, function (e) {
+              log.debug("Caught in the management API users endpoint: " +
+                        ((e && e.message) || e));
+              // The directory read failed after the handler had already
+              // started: answer 503 here, and do not rethrow, so a
+              // drill-down's fresh() does not also call next().
+              log.error(errorCodes.tag(errorCodes.codeOf(e) ||
+                                       'STS-LDAP-0139') +
+                        'admin-api: the users list ' +
+                        'could not be read from the store: ' +
+                        ((e && e.message) || e));
+              res.setHeader('Retry-After', '5');
+              errorCodes.mark(res, errorCodes.codeOf(e) ||
+                                   'STS-LDAP-0139');
+              self.sendJson(res, 503, { error: 'temporarily_unavailable',
+                error_description: 'The directory could not be read; try ' +
+                  'again shortly.' });
+              log.debug("Leaving run(). The directory could not be read.");
+            });
+          };
+          // The list carries no attempts. The drill-down's do, and they
+          // are the audit log: another worker's rows are noted, not held,
+          // until fresh() — the wait the audit page already makes (#820).
+          const named = req.query && String(req.query.user || '').trim();
+          if (!named) {
+            log.debug("Leaving the management API users endpoint. " +
+                      "The list.");
+            return run();
+          }
+          return audit.fresh().then(run).catch(function (e) {
             log.debug("Caught in the management API users endpoint: " +
                       ((e && e.message) || e));
-            log.error(errorCodes.tag(errorCodes.codeOf(e) ||
-                                     'STS-LDAP-0139') +
-                      'admin-api: the users list ' +
-                      'could not be read from the store: ' +
-                      ((e && e.message) || e));
-            res.setHeader('Retry-After', '5');
-            errorCodes.mark(res, errorCodes.codeOf(e) ||
-                                 'STS-LDAP-0139');
-            self.sendJson(res, 503, { error: 'temporarily_unavailable',
-              error_description: 'The directory could not be read; try ' +
-                'again shortly.' });
+            log.debug("Leaving the management API users endpoint. " +
+                      "fresh().");
+            next(e);
           });
-          log.debug("Leaving the management API users endpoint.");
         } },
 
       // RULE 7 FOR /admin/users/new, and it earns its place beyond the parity

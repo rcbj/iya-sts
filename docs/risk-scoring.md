@@ -365,10 +365,12 @@ as any other is.
 
 ### What people say about their own sign-ins
 
-Each person sees their own assessed sign-ins of the last thirty days on the
-user portal, at **Recent sign-ins** (`/portal/sign-ins`): when, from where,
-with what browser and system, and at what level, newest first and twenty a
-page. Each has two buttons:
+Each person sees their own assessed sign-ins on the user portal, at
+**Recent sign-ins** (`/portal/sign-ins`): when, from where, with what
+browser and system, through which door, for which application, and at what
+level, newest first and twenty a page. The window is the realm's
+`audit.authenticationHistoryDays`, thirty days by default. Each has two
+buttons:
 
 - **This wasn't me** puts the person's risk at HIGH. By default that ends
   every session they hold, this one included, and RISC is told their

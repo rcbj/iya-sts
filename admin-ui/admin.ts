@@ -2812,15 +2812,16 @@ const APPLICATION_TAB_IDS = ['tab-overview', 'tab-authentications',
   'tab-import-export', 'tab-remove'];
 
 // A PERSON'S PAGE AS TABS (rcbj, 2026-10-01), the application page's model:
-// seven tabs, the Attributes tab one sub-tab per field group (ufg-<group>,
-// each with its own Save) and the Credentials tab one per kind of credential.
+// nine tabs (Authentication attempts, #955, after Overview), the Attributes
+// tab one sub-tab per field group (ufg-<group>, each with its own Save) and
+// the Credentials tab one per kind of credential.
 // A group's page (#603): Group, then Owners.
 const GROUP_TAB_IDS = ['gtab-group', 'gtab-owners'];
 // A role's page (#604): Role, then Owners.
 const ROLE_TAB_IDS = ['rtab-role', 'rtab-owners'];
-const USER_TAB_IDS = ['utab-overview', 'utab-activity', 'utab-attributes',
-  'utab-credentials', 'utab-federation', 'utab-gnap', 'utab-entry',
-  'utab-signout'];
+const USER_TAB_IDS = ['utab-overview', 'utab-authentications',
+  'utab-activity', 'utab-attributes', 'utab-credentials', 'utab-federation',
+  'utab-gnap', 'utab-entry', 'utab-signout'];
 // `ucred-service` (#221's Service account sub-tab) was missing until #602,
 // so that one sub-tab never showed as the one being read;
 // `tests/person_fields.js` now holds every sub-tab the page draws to this

@@ -291,6 +291,7 @@ const EXACT: Record<string, string> = {
   'tab-addresses': 'applications.html#the-console-page-and-the-api',
   'tab-permissions': 'delegation.html',
   'utab-overview': 'admin-console.html#users--adminusers',
+  'utab-authentications': 'admin-console.html#users--adminusers',
   'utab-activity': 'sessions.html#adminsessions--what-is-live-right-now',
   'utab-attributes':
     'admin-console.html#changing-a-persons-attributes',
