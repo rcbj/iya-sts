@@ -95,11 +95,14 @@ function navLink(href: string, label: string, current: boolean): string {
     '</a>';
 }
 
-// The bar: the realm field first (#986), the pages, the account menu — which
-// holds Sign out since #986 — and the language chooser.
+// Two bars (#986). The top one is smaller and right-justified and holds
+// the controls about the reader rather than the pages: the realm field,
+// the language chooser and the user menu, which holds Sign out. The bar
+// under it is the pages and Refresh.
 function navHtml(t: any, realm: string, accounts: string, chooser: string,
                  path: string): string {
-  return '<div class="bar">' + realm + '<nav class="nav">' +
+  return '<div class="topbar">' + realm + chooser + accounts + '</div>' +
+    '<div class="bar"><nav class="nav">' +
     navLink(BASE, t.text('report.catalog'), navCurrent(path, '')) +
     navLink(BASE + '/query', t.text('report.newQuery'),
       navCurrent(path, '/query')) +
@@ -109,7 +112,7 @@ function navHtml(t: any, realm: string, accounts: string, chooser: string,
       navCurrent(path, '/jobs')) +
     '<button type="button" class="btn" data-act="refresh">' +
     esc(t.text('report.refresh')) + '</button>' +
-    '</nav>' + accounts + chooser + '</div>';
+    '</nav></div>';
 }
 
 // One filter row (#986): a field, an operator, a value, and — on the last
@@ -170,6 +173,24 @@ function realmHtml(t: any, view: any, path: string): string {
     '<select id="realmpick" name="realm">' + options + '</select>' +
     '<button type="submit" class="btn">' + esc(t.text('report.go')) +
     '</button></div></form>';
+}
+
+// The query form's buttons (#986). SAVE IS FIRST IN THE DOCUMENT and drawn
+// second: a form submitted with Enter — in the Name box, say — activates
+// its DEFAULT button, the first submit button in tree order that is not
+// disabled, and until this was so, Enter in the Name box RAN the query
+// instead of saving it (rcbj, 2026-10-26: a saved query came back as a
+// job's row count). So Save is first, `disabled` as well as `hidden` while
+// the Save query box is clear — a hidden button is still a default button;
+// a disabled one is not — and `.actions .save-only { order: 2 }` puts it
+// after Run for the eye. With the box ticked, Enter saves; Run still runs.
+function actionsHtml(t: any): string {
+  return '<div class="actions">' +
+    '<button type="submit" class="btn save-only" hidden disabled ' +
+    'name="intent" value="save">' + esc(t.text('report.save')) +
+    '</button>' +
+    '<button type="submit" class="btn" name="intent" value="run">' +
+    esc(t.text('report.run')) + '</button></div>';
 }
 
 // The service version under the card (#986), from the index's `version`.
@@ -336,6 +357,31 @@ class ReportRuntime extends SpaClient {
    */
   static realmHtml(t: any, view: any, path: string): string {
     return realmHtml(t, view, path);
+  }
+
+  /**
+   * The two bars, for a test (#986).
+   *
+   * @param t - the translator
+   * @param realm - the realm field's HTML
+   * @param accounts - the user menu's HTML
+   * @param chooser - the language chooser's HTML
+   * @param path - the page path
+   * @returns the bars' HTML
+   */
+  static navHtml(t: any, realm: string, accounts: string, chooser: string,
+                 path: string): string {
+    return navHtml(t, realm, accounts, chooser, path);
+  }
+
+  /**
+   * The query form's buttons, for a test (#986).
+   *
+   * @param t - the translator
+   * @returns the buttons' HTML
+   */
+  static actionsHtml(t: any): string {
+    return actionsHtml(t);
   }
 
   /**
@@ -1053,11 +1099,7 @@ class ReportRuntime extends SpaClient {
       '<div class="field save-only" hidden><label>' +
       esc(self.t.text('report.name')) +
       '</label><input name="definitionName"></div>' +
-      '<div class="actions"><button type="submit" class="btn" ' +
-      'name="intent" value="run">' + esc(self.t.text('report.run')) +
-      '</button><button type="submit" class="btn save-only" hidden ' +
-      'name="intent" value="save">' + esc(self.t.text('report.save')) +
-      '</button></div>' +
+      actionsHtml(self.t) +
       '<p class="sub" id="report-note"></p></form>');
   }
 
@@ -1120,8 +1162,14 @@ class ReportRuntime extends SpaClient {
       for (let i = 0; i < only.length; i++) {
         if (el.checked) {
           only[i].removeAttribute('hidden');
+          only[i].removeAttribute('disabled');
         } else {
           only[i].setAttribute('hidden', '');
+          // A hidden submit button is still the form's default button;
+          // a disabled one is not (see actionsHtml()).
+          if (only[i].tagName === 'BUTTON') {
+            only[i].setAttribute('disabled', '');
+          }
         }
       }
       return;

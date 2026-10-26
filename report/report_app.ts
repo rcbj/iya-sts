@@ -58,30 +58,40 @@ const REPORT_STYLE = [
   '.nav a:hover, .nav .btn:hover { background: #e7e9f4; }',
   '.nav a[aria-current="page"] { background: #fff; color: #12107c;',
   '  box-shadow: inset 0 0 0 1px #c9cad6; font-weight: 600; }',
-  '.bar .language-chooser { display: flex; align-items: center;',
-  '  gap: .35rem; margin: 0; font-size: .85em; }',
-  '.bar .language-chooser button, .bar .language-chooser select {',
+  // The top bar (#986): smaller, right-justified, the controls about the
+  // reader — the realm field, the language chooser, the user menu. Each
+  // control is one inline row so the bar stays one line where it can.
+  '.topbar { display: flex; justify-content: flex-end; flex-wrap: wrap;',
+  '  gap: 1rem; align-items: center; margin: 0 0 .45rem;',
+  '  font-size: .85em; }',
+  '.topbar .language-chooser { display: flex; align-items: center;',
+  '  gap: .35rem; margin: 0; }',
+  '.topbar .language-chooser button, .topbar .language-chooser select {',
   '  font: inherit; }',
-  // The realm field and switch (#986), first in the bar, on the console's
-  // `.realmpick` shape: the label small and above, the select taking the
-  // room so a long realm name is readable, the button taking what it
-  // needs. With one realm the name is text and there is no select.
-  '.realmpick { margin: 0; padding: 0 .35rem 0 0;',
-  '  border-right: 1px solid #c9cad6; }',
-  '.realmpick label { display: block; margin: 0 0 2px; font-size: .7em;',
-  '  text-transform: uppercase; letter-spacing: .06em; color: #8a8a99;',
-  '  font-weight: 700; }',
+  '.topbar .usermenu { margin-left: 0; }',
+  // The realm field and switch (#986), on the console's `.realmpick`
+  // shape made inline: the label before the control, the select taking
+  // what a realm name needs, the Go button beside it. With one realm the
+  // name is text and there is no select.
+  '.realmpick { margin: 0; display: flex; align-items: center;',
+  '  gap: .35rem; }',
+  '.realmpick label { color: #8a8a99; font-weight: 700; font-size: .85em;',
+  '  text-transform: uppercase; letter-spacing: .06em; }',
   '.realmpickrow { display: flex; gap: 6px; align-items: stretch; }',
-  '.realmpick select { flex: 1 1 auto; min-width: 0; font: inherit;',
-  '  padding: 3px 4px; border: 1px solid #c9c9d4; border-radius: 5px;',
+  '.realmpick select { min-width: 0; font: inherit;',
+  '  padding: 2px 4px; border: 1px solid #c9c9d4; border-radius: 5px;',
   '  background: #fff; color: #222; }',
-  '.realmpick button { flex: 0 0 auto; padding: 3px 9px; font: inherit;',
+  '.realmpick button { flex: 0 0 auto; padding: 2px 9px; font: inherit;',
   '  font-size: .92em; }',
   '.realmpick .realmname { font-weight: 600; }',
   // The documentation link under the bar, and the version under the card.
   '.doclink { margin: -.5rem 0 1rem; font-size: .9em; }',
   '.foot { margin: .75rem 0 0; color: #6b6f80; font-size: .85em;',
   '  text-align: right; }',
+  // Save is first in the document so that Enter saves when the Save query
+  // box is ticked, and drawn after Run (`web_report_pages.ts`,
+  // `actionsHtml()`).
+  '.actions .save-only { order: 2; }',
   // A filter row and the + that adds the next one (#986).
   '.filterrow { margin: 0 0 .35rem; }',
   '.filterrow .addfilter { border: 1px solid #c9cad6; border-radius: 6px;',

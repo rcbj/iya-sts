@@ -54,7 +54,11 @@ and `docs/configuration.md`.
 rcbj asked for five things on 2026-10-26, all drawn by
 `web_report_pages.ts` from `/report-api` answers, the surface rule:
 
-* **The trust realm**, first in the bar, on the console's switcher shape
+* **Two bars**: a smaller right-justified `.topbar` above with the
+  controls about the reader — the realm field, the language chooser, the
+  user menu, in that order — and the `.bar` below with the pages and
+  Refresh (rcbj, the same day, after seeing the one bar).
+* **The trust realm**, first in the top bar, on the console's switcher shape
   (`admin-ui/web_shell.ts`'s `realmChooser()`): the label, a select of
   the realms and a Go button where the service has several, the one
   realm's name otherwise. `GET /report-api/realms` answers the current
@@ -78,7 +82,14 @@ rcbj asked for five things on 2026-10-26, all drawn by
   `and`'s cap). Nothing is stored for a template.
 * **A Save query box**: the Name field and the Save button carry
   `save-only` and `hidden` until it is ticked (`onChange()`); unticked,
-  the form runs and saves nothing.
+  the form runs and saves nothing. **Save is FIRST in the document and
+  `disabled` as well as hidden until then** (`actionsHtml()`): Enter in a
+  text box activates the form's default button — the first submit button
+  in tree order that is not disabled, hidden or not — and with Run first,
+  Enter in the Name box ran the query instead of saving it (rcbj,
+  2026-10-26: on 8081 that run became a job, and the job page's row count
+  was what came back). `.actions .save-only { order: 2 }` draws Save after
+  Run.
 * **Sign out is in the user menu**, which is therefore drawn for every
   signed-in person; the switch group inside it still appears only with
   `authn.multipleAccounts` on, as before.

@@ -1181,6 +1181,42 @@ function chrome(t) {
   t.equal(ReportRuntime.realmHtml(tr, null, '/report'), '',
     'no view yet draws nothing');
 
+  // The two bars: the reader's controls above, right-justified; the pages
+  // below.
+  const bars = ReportRuntime.navHtml(tr, '<i>REALM</i>', '<i>MENU</i>',
+    '<i>LANG</i>', '/report/jobs');
+  const top = bars.indexOf('<div class="topbar">');
+  const main = bars.indexOf('<div class="bar">');
+  t.check(top === 0 && main > top, 'the top bar comes before the nav bar');
+  const topHtml = bars.slice(top, main);
+  t.check(topHtml.indexOf('REALM') >= 0 && topHtml.indexOf('LANG') >= 0 &&
+    topHtml.indexOf('MENU') >= 0,
+    'the top bar holds the realm field, the language chooser and the menu');
+  t.check(topHtml.indexOf('REALM') < topHtml.indexOf('LANG') &&
+    topHtml.indexOf('LANG') < topHtml.indexOf('MENU'),
+    'in that order');
+  t.check(bars.slice(main).indexOf('REALM') < 0 &&
+    bars.slice(main).indexOf('data-act="refresh"') >= 0 &&
+    bars.slice(main).indexOf('/logout') < 0,
+    'the nav bar holds the pages and Refresh, and no Sign out');
+
+  // The buttons: Save first in the document, disabled and hidden until
+  // the Save query box is ticked, so Enter runs until then and saves after.
+  const actions = ReportRuntime.actionsHtml(tr);
+  const saveAt = actions.indexOf('value="save"');
+  const runAt = actions.indexOf('value="run"');
+  t.check(saveAt >= 0 && runAt > saveAt,
+    'the Save button comes before Run in the document');
+  const saveTag = actions.slice(actions.lastIndexOf('<button', saveAt),
+    saveAt);
+  t.check(saveTag.indexOf(' disabled') >= 0 && saveTag.indexOf(' hidden') >= 0,
+    'the Save button starts disabled as well as hidden', saveTag);
+  t.check(saveTag.indexOf('save-only') >= 0,
+    'the Save button is one the Save query box reveals');
+  const runTag = actions.slice(actions.lastIndexOf('<button', runAt), runAt);
+  t.check(runTag.indexOf('disabled') < 0 && runTag.indexOf('hidden') < 0,
+    'the Run button is the default button until then');
+
   // The footer.
   const foot = ReportRuntime.footerHtml(tr, { version: '0.1.1', stamped: true,
     buildInfo: 'built 2026-10-26' });
