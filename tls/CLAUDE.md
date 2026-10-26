@@ -1418,13 +1418,18 @@ Pooling settings on each HTTP/HTTPS listener tab."
     no name and only notes a mismatch) nor node's `resumeSession` event (it
     passes the ID alone) does it, so tlsfuzzer's
     `test-invalid-server-name-extension-resumption.py` failed on the
-    debugger's listener the day the size went to 2048. The name a hello
-    offers is known only to node's `onclienthello` handler, so
-    `installClientHelloHook()` wraps `TLSSocket.prototype._init` once and,
-    for the servers `attachSessionCache()` registered, wraps each socket's
-    `onclienthello` and `onnewsession` (`watchClientHello()`); the cache keeps
-    the name with the session and compares it byte for byte. It FAILS
-    CLOSED: a name it cannot see refuses the resumption, and a node with no
+    debugger's listener the day the size went to 2048. Node 24's
+    `onclienthello` carries the session id and the ticket flag only —
+    `hello.servername` is absent, and `getServername()` is still false
+    while `resumeSession` runs — so `installSessionNameSniffer()` reads
+    the name from the raw ClientHello before the TLS engine (the
+    pause-and-unshift `client_hello.ts` uses). `installClientHelloHook()`
+    still wraps `TLSSocket.prototype._init` once and, for the servers
+    `attachSessionCache()` registered, wraps each socket's `onclienthello`
+    and `onnewsession` (`watchClientHello()`), preferring
+    `hello.servername` when a node passes it. The cache keeps the name
+    with the session and compares it byte for byte. It FAILS CLOSED: a
+    name it cannot see refuses the resumption, and a node with no
     `_init` is logged as STS-TLS-0046 and resumes nothing by ID.
     `tests/listener_tls_policy.js` L5c holds it. **TLS 1.2 TICKETS are not
     covered**: node resumes a ticket inside OpenSSL with no event, and
@@ -1585,7 +1590,13 @@ is Node/OpenSSL behaviour this service cannot configure, and each is also on
 * a lazy KeyUpdate answer;
 * OpenSSL checking `legacy_record_version`;
 * the hybrid and compressed-point leniency;
-* no ALPN on LDAPS.
+* no ALPN on LDAPS;
+* an empty body of an extension the script still calls unassigned
+  (`emptyAssignedExtension`,
+  `test-tls13-large-number-of-extensions.py`): the first chunk is ids 2
+  through 4119, which includes extensions IANA has assigned and OpenSSL
+  implements, so RFC 8446 section 4.2 requires decode_error. Later chunks
+  are ids nobody has assigned and are ignored.
 
 One TOOL entry sits beside them, `h2Preface` (2026-10-19): since #703 a TLS
 1.2 resumption that offers only `h2` after a full handshake on `http/1.1`

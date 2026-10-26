@@ -291,6 +291,14 @@ const WHY = {
     "walk for revocation (common/revocation_status.js), so a ticket from " +
     "one node is not accepted by the other and the client makes a full " +
     "handshake: the script's resumption on the other node fails" },
+  emptyAssignedExtension: { why: "openssl", reason: "the script's list " +
+    "of unassigned extension ids is stale. Its first empty-extension " +
+    "chunk is ids 2 through 4119, which includes extensions IANA has " +
+    "since assigned and OpenSSL implements (compress_certificate, " +
+    "ticket_request, delegated_credential and others) sent with an " +
+    "empty body. RFC 8446 section 4.2 requires decode_error when an " +
+    "implementation parses an extension whose body does not match; " +
+    "later chunks are ids nobody has assigned and are ignored" },
   cipherOrder: { why: "design", reason: "honorCipherOrder: the SERVER's " +
     "BCP 195 order wins, which puts AES-128-GCM before AES-256-GCM for TLS " +
     "1.2 where the probe expects the client's first choice" }
@@ -757,7 +765,10 @@ const PLAN = [
                     "alertChoice")] },
   { script: "test-tls13-large-number-of-extensions.py",
     serverKey: "rsa", skip: RSA_SERVER,
-    args: ["--supgroup"] },
+    args: ["--supgroup"],
+    exceptions: [ex("empty unassigned extensions, ids in range from " +
+                    "2 to 4119", "decode_error",
+                    "emptyAssignedExtension")] },
   { script: "test-tls13-legacy-version.py",
     serverKey: "rsa", skip: RSA_SERVER,
     exceptions: [ex("version (3, 0)", "handshake_failure",
