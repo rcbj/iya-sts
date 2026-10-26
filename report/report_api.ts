@@ -766,6 +766,10 @@ function reportDefinitionView(who: any, row: any): any {
     ownerName: reportOwnerName(String(row.owner || '')),
     schedule: row.schedule || '',
     scheduleEnabled: !!row.scheduleEnabled,
+    // When the schedule next runs and which occurrence it last took, so
+    // the page can tell "not due yet" from "skipped" (#989's follow-up).
+    nextRunAt: jobs.scheduleTimes(row).nextRunAt,
+    lastSlotAt: jobs.scheduleTimes(row).lastSlotAt,
     notify: !!row.notify,
     editable: editable,
     createdAt: jobs.iso(row.createdAt),

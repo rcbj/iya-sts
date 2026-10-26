@@ -628,6 +628,15 @@ async function schedules(t) {
         'the queued job carries the stored parameter');
       t.equal(queued[0] && queued[0].queuedBecause, 'schedule',
         'a scheduled job says it was scheduled');
+      const times = jobs.scheduleTimes(stores.getDefinition(
+        saved.definition.id), when);
+      t.equal(times.lastSlotAt, '2026-10-25T12:00:00.000Z',
+        'the occurrence taken is the minute the schedule fired');
+      t.equal(times.nextRunAt, '2026-10-25T12:01:00.000Z',
+        'and the next run is the next minute');
+      t.equal(jobs.scheduleTimes({ schedule: '* * * * *',
+        scheduleEnabled: false, lastSlot: null }, when).nextRunAt, null,
+        'a schedule that is off has no next run');
       t.equal(jobs.jobView(queued[0], false).queuedBecause, 'schedule',
         'and its view carries the reason');
       const held = stores.getDefinition(saved.definition.id);
@@ -1541,6 +1550,28 @@ function groups(t) {
   t.check(realmField.indexOf(
     'title="The trust realm this page is showing') >= 0,
     'the realm field carries its tooltip');
+
+  // The schedule's status under the editor: next run, last occurrence,
+  // how it works, and the notes a skipped run left.
+  const status = ReportRuntime.scheduleStatusHtml(tr, {
+    nextRunAt: '2026-10-27T09:30:00.000Z',
+    lastSlotAt: '2026-10-26T09:30:00.000Z',
+    failures: [{ at: Date.parse('2026-10-26T09:30:05Z'),
+      description: 'A saved parameter was not given.' }]
+  });
+  t.check(status.indexOf('Next run: 2026-10-27 09:30 UTC.') >= 0 &&
+    status.indexOf('Last occurrence taken: 2026-10-26 09:30 UTC.') >= 0,
+    'the status names the next run and the last occurrence', status);
+  t.check(status.indexOf('checked about once a minute') >= 0,
+    'and says how a schedule runs');
+  t.check(status.indexOf('A saved parameter was not given.') >= 0 &&
+    status.indexOf('Why a scheduled run did not happen') >= 0,
+    'the notes a skipped run left are listed');
+  const idle = ReportRuntime.scheduleStatusHtml(tr, { nextRunAt: null,
+    lastSlotAt: null, failures: [] });
+  t.check(idle.indexOf('No run is due') >= 0 &&
+    idle.indexOf('did not happen') < 0,
+    'no schedule says so and lists nothing');
 
   // The parameters: the names a filter holds, and the sentence under Run.
   t.equal(ReportRuntime.paramNames({ op: 'and', args: [

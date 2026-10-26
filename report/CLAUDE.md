@@ -154,6 +154,15 @@ rcbj, 2026-10-26, after seeing #986's page. Four things:
   `tip(t, key)` puts a `title` on the field's label from a `report.tip*`
   sentence (`admin-ui/web_kit.ts`'s `tip()` is the model). A new field
   owes a `tipX` key in the seven base catalogs.
+* **The schedule's status** (rcbj: a schedule set, no job seen):
+  `jobs.scheduleTimes()` puts `nextRunAt` (croner's `cronNext`) and
+  `lastSlotAt` on the definition view, and `scheduleStatusHtml()` draws
+  them under the editor with one sentence on how a schedule runs and the
+  `failures` notes the schedule job left. The mechanism itself is
+  unchanged: `lastSlot` starts null, so the first pass after an enabled
+  save queues the most recent PAST occurrence within a minute, and each
+  later occurrence follows; a save with Enabled clear keeps the schedule
+  and never runs.
 * **The Parameters box explained**: `parametersHelpHtml()` under the Run
   box names the parameters the saved filter holds (`paramNames()` walks
   `param` leaves through `and`, `or` and `not`) or says it holds none and

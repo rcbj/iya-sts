@@ -121,5 +121,10 @@
   "accounts.anotherTitle": "Sign in as a different person in this tab. The accounts already signed in in this browser stay signed in, and other tabs keep theirs.",
   "accounts.kept": "The account this tab leaves stays signed in, so you can switch back to it here.",
   "accounts.refused": "The sign-in came back as another account than the one chosen, so this tab did not take it.",
-  "accounts.failed": "The sign-in as the other account could not be started."
+  "accounts.failed": "The sign-in as the other account could not be started.",
+  "nextRun": "Next run: {when} UTC.",
+  "nextRunNone": "No run is due: the schedule is off or names no time.",
+  "lastSlot": "Last occurrence taken: {when} UTC.",
+  "scheduleNotes": "Why a scheduled run did not happen",
+  "scheduleHow": "An enabled schedule is checked about once a minute; the most recent occurrence not yet taken is queued as a job, the first one within a minute of saving. Each run is a job on the Jobs page, owned by you."
 }

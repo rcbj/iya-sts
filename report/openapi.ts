@@ -587,6 +587,12 @@ class OpenApi {
                   'empty. The application composes it from a date-time ' +
                   'and weekday boxes.' },
               scheduleEnabled: { type: 'boolean' },
+              nextRunAt: { type: 'string', nullable: true,
+                description: 'When the enabled schedule next occurs, ' +
+                  'ISO-8601 UTC; null when it is off or has no occurrence.' },
+              lastSlotAt: { type: 'string', nullable: true,
+                description: 'The most recent occurrence the schedule has ' +
+                  'taken (queued, or skipped with a note), or null.' },
               notify: { type: 'boolean' },
               editable: { type: 'boolean' },
               createdAt: { type: 'string', format: 'date-time' },

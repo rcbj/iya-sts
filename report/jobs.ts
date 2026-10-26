@@ -327,6 +327,37 @@ function reportBag(document: any, parameters: any): any {
   return bag;
 }
 
+// WHEN A SCHEDULE RUNS NEXT, AND WHICH OCCURRENCE IT LAST TOOK (#989's
+// follow-up, rcbj: a schedule set and no job seen). The page draws both,
+// so a reader can tell "not due yet" from "skipped", and the failure notes
+// say why a skip happened. Null where the schedule is off or has no
+// occurrence; `cronNext` is croner's, in UTC, as the job's `cronPrev` is.
+function reportScheduleTimes(def: any, nowMs?: number): any {
+  log.debug("Entering reportScheduleTimes().");
+  const out = { nextRunAt: null as string | null,
+                lastSlotAt: null as string | null };
+  if (def && typeof def.lastSlot === 'number') {
+    out.lastSlotAt = reportIso(def.lastSlot);
+  }
+  if (!def || !def.scheduleEnabled || !def.schedule) {
+    log.debug("Leaving reportScheduleTimes(). Off.");
+    return out;
+  }
+  try {
+    const scheduler = require('../cluster/scheduler');
+    const next = scheduler.Scheduler.cronNext(String(def.schedule),
+      typeof nowMs === 'number' ? nowMs : Date.now());
+    out.nextRunAt = next == null ? null : reportIso(next);
+  } catch (e) {
+    // An expression croner cannot read has no next run; the save refused
+    // it already, so this is a row written by hand.
+    log.debug("Caught in reportScheduleTimes(): " + ((e && e.message) || e));
+    out.nextRunAt = null;
+  }
+  log.debug("Leaving reportScheduleTimes().");
+  return out;
+}
+
 function reportCronOk(expr: string): boolean {
   log.debug("Entering reportCronOk().");
   if (!expr) {
@@ -779,6 +810,7 @@ reportOfferLease();
 
 export = {
   submit: reportSubmit,
+  scheduleTimes: reportScheduleTimes,
   save: reportSave,
   share: reportShare,
   remove: reportRemove,

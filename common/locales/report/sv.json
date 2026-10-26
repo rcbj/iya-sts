@@ -121,5 +121,10 @@
   "accounts.anotherTitle": "Logga in som en annan person i den här fliken. Konton som redan är inloggade i den här webbläsaren förblir inloggade, och andra flikar behåller sina.",
   "accounts.kept": "Kontot som den här fliken lämnar förblir inloggat, så du kan byta tillbaka till det här.",
   "accounts.refused": "Inloggningen kom tillbaka som ett annat konto än det som valdes, så den här fliken tog inte emot den.",
-  "accounts.failed": "Inloggningen som det andra kontot kunde inte startas."
+  "accounts.failed": "Inloggningen som det andra kontot kunde inte startas.",
+  "nextRun": "Nästa körning: {when} UTC.",
+  "nextRunNone": "Ingen körning väntar: schemat är av eller anger ingen tid.",
+  "lastSlot": "Senaste tagna tillfälle: {when} UTC.",
+  "scheduleNotes": "Varför en schemalagd körning inte skedde",
+  "scheduleHow": "Ett påslaget schema kontrolleras ungefär en gång i minuten; det senaste tillfället som ännu inte tagits ställs i kö som ett jobb, det första inom en minut efter att du sparat. Varje körning är ett jobb på sidan Jobb, som du äger."
 }

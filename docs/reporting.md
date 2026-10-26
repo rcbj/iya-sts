@@ -97,6 +97,18 @@ says that it holds none, in which case the box is ignored. The query form
 writes values, not parameters, so a definition made on the page names
 none unless its document is edited through the API.
 
+**How a schedule runs.** An enabled schedule is checked about once a
+minute by the `report.schedule` job. The most recent occurrence that has
+not yet been taken is queued as a job, owned by the definition's owner;
+so the first run follows within a minute of saving an enabled schedule
+whose expression has any past occurrence, and later runs follow each
+occurrence. The definition page says when the next run is due and which
+occurrence was last taken, and lists the reasons a scheduled run did not
+happen (`failures` on the API): the owner lost `report:use`, a parameter
+has no stored value, the query no longer validates, or the job could not
+be queued. A schedule that is saved with the Enabled box clear is kept
+and never runs.
+
 ### The groups a definition is shared with, and who is emailed
 
 The **Groups emailed the result** pane is a search over the realm's

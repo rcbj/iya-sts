@@ -121,5 +121,10 @@
   "accounts.anotherTitle": "Se connecter en tant qu’une autre personne dans cet onglet. Les comptes déjà connectés dans ce navigateur le restent, et les autres onglets conservent le leur.",
   "accounts.kept": "Le compte que cet onglet quitte reste connecté : vous pouvez y revenir d’ici.",
   "accounts.refused": "La connexion est revenue pour un autre compte que celui qui a été choisi, donc cet onglet ne l’a pas pris.",
-  "accounts.failed": "La connexion avec l’autre compte n’a pas pu démarrer."
+  "accounts.failed": "La connexion avec l’autre compte n’a pas pu démarrer.",
+  "nextRun": "Prochaine exécution : {when} UTC.",
+  "nextRunNone": "Aucune exécution prévue : la planification est désactivée ou ne nomme aucune heure.",
+  "lastSlot": "Dernière occurrence prise : {when} UTC.",
+  "scheduleNotes": "Pourquoi une exécution planifiée n’a pas eu lieu",
+  "scheduleHow": "Une planification activée est vérifiée environ une fois par minute ; l’occurrence la plus récente non encore prise est mise en file comme travail, la première dans la minute qui suit l’enregistrement. Chaque exécution est un travail sur la page Travaux, dont vous êtes propriétaire."
 }

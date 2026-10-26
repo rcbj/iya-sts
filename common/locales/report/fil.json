@@ -121,5 +121,10 @@
   "accounts.anotherTitle": "Mag-sign in bilang ibang tao sa tab na ito. Mananatiling naka-sign in ang mga account na naka-sign in na sa browser na ito, at pananatilihin ng ibang mga tab ang kanila.",
   "accounts.kept": "Mananatiling naka-sign in ang account na iiwan ng tab na ito, kaya makakabalik ka rito.",
   "accounts.refused": "Bumalik ang pag-sign in bilang ibang account kaysa sa napili, kaya hindi ito tinanggap ng tab na ito.",
-  "accounts.failed": "Hindi masimulan ang pag-sign in bilang isa pang account."
+  "accounts.failed": "Hindi masimulan ang pag-sign in bilang isa pang account.",
+  "nextRun": "Susunod na pagtakbo: {when} UTC.",
+  "nextRunNone": "Walang nakatakdang pagtakbo: naka-off ang iskedyul o walang oras na pinangalanan.",
+  "lastSlot": "Huling pagkakataong nakuha: {when} UTC.",
+  "scheduleNotes": "Bakit hindi naganap ang isang naka-iskedyul na pagtakbo",
+  "scheduleHow": "Sinusuri ang naka-on na iskedyul nang humigit-kumulang isang beses bawat minuto; ang pinakabagong pagkakataong hindi pa nakuha ay inilalagay sa pila bilang trabaho, ang una sa loob ng isang minuto mula sa pag-save. Bawat pagtakbo ay isang trabaho sa pahina ng Mga Trabaho, na pag-aari mo."
 }

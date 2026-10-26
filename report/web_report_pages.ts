@@ -536,6 +536,34 @@ function scheduleEditorHtml(t: any, cron: string): string {
     esc(schedulePreview(t, cron)) + '</p>';
 }
 
+// THE SCHEDULE'S STATUS (#989's follow-up): when it runs next, which
+// occurrence it last took, how it works in one sentence, and the notes the
+// schedule job left when a run did not happen. Drawn under the editor so
+// "no job yet" has an answer on the page.
+function scheduleStatusHtml(t: any, row: any): string {
+  const when = function (iso: any): string {
+    return String(iso || '').replace('T', ' ').replace(/:\d\d(\.\d+)?Z$/, '');
+  };
+  const next = row && row.nextRunAt
+    ? t.text('report.nextRun', { when: when(row.nextRunAt) })
+    : t.text('report.nextRunNone');
+  const last = row && row.lastSlotAt
+    ? ' ' + t.text('report.lastSlot', { when: when(row.lastSlotAt) }) : '';
+  const notes = (row && Array.isArray(row.failures) ? row.failures : [])
+    .slice().reverse();
+  const list = notes.length
+    ? '<p class="sub"><strong>' + esc(t.text('report.scheduleNotes')) +
+      '</strong></p><ul class="sub notes">' +
+      notes.map(function (note: any): string {
+        return '<li>' + esc(when(note && note.at ? new Date(note.at)
+          .toISOString() : '')) + ' ' + esc(String((note &&
+          note.description) || '')) + '</li>';
+      }).join('') + '</ul>'
+    : '';
+  return '<p class="sub schedule-status">' + esc(next) + esc(last) + ' ' +
+    esc(t.text('report.scheduleHow')) + '</p>' + list;
+}
+
 // Why a query is a job (#986), from the job's `queuedBecause`: one
 // sentence per reason the API records, nothing for a job that records
 // none (one queued before the field existed).
@@ -715,6 +743,17 @@ class ReportRuntime extends SpaClient {
    */
   static queryFormHtml(t: any, sources: any[], document: any): string {
     return queryFormHtml(t, sources, document);
+  }
+
+  /**
+   * The schedule's status lines and notes, for a test.
+   *
+   * @param t - the translator
+   * @param row - the definition view
+   * @returns the HTML
+   */
+  static scheduleStatusHtml(t: any, row: any): string {
+    return scheduleStatusHtml(t, row);
   }
 
   /**
@@ -1742,6 +1781,7 @@ class ReportRuntime extends SpaClient {
         '</section><section>' +
         '<h3>' + esc(t.text('report.settingsHeading')) + '</h3>' +
         scheduleEditorHtml(t, String(row.schedule || '')) +
+        scheduleStatusHtml(t, row) +
         '<div class="field"><label' + tip(t, 'report.tipEnabled') + '>' +
         '<input type="checkbox" name="enabled"' +
         (row.scheduleEnabled ? ' checked' : '') + '> ' +

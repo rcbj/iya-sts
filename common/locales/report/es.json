@@ -121,5 +121,10 @@
   "accounts.anotherTitle": "Iniciar sesión como otra persona en esta pestaña. Las cuentas que ya tienen la sesión iniciada en este navegador la conservan, y las demás pestañas conservan la suya.",
   "accounts.kept": "La cuenta que deja esta pestaña conserva la sesión iniciada, así que puede volver a ella desde aquí.",
   "accounts.refused": "El inicio de sesión volvió como otra cuenta distinta de la elegida, así que esta pestaña no la aceptó.",
-  "accounts.failed": "No se pudo iniciar la sesión como la otra cuenta."
+  "accounts.failed": "No se pudo iniciar la sesión como la otra cuenta.",
+  "nextRun": "Próxima ejecución: {when} UTC.",
+  "nextRunNone": "No hay ejecución prevista: la programación está desactivada o no indica hora.",
+  "lastSlot": "Última ocurrencia tomada: {when} UTC.",
+  "scheduleNotes": "Por qué no ocurrió una ejecución programada",
+  "scheduleHow": "Una programación activada se comprueba más o menos cada minuto; la ocurrencia más reciente aún no tomada se pone en cola como trabajo, la primera en el minuto siguiente al guardado. Cada ejecución es un trabajo en la página Trabajos, del que usted es propietario."
 }
