@@ -136,10 +136,20 @@ function reportReporterLive(): boolean {
   return live;
 }
 
+function reportOnWorker(): boolean {
+  log.debug("Entering reportOnWorker().");
+  // worker_channel.ts ends with `export = WorkerChannel`, so this
+  // require is the class. `.WorkerChannel` is undefined, and reading
+  // `inWorkerThread` there threw before a job could decide to run.
+  const WorkerChannel = require('../common/worker_channel');
+  const onWorker = WorkerChannel.inWorkerThread();
+  log.debug("Leaving reportOnWorker().");
+  return onWorker;
+}
+
 function reportClusterRuns(): boolean {
   log.debug("Entering reportClusterRuns().");
-  const channel = require('../common/worker_channel');
-  if (channel.WorkerChannel.inWorkerThread()) {
+  if (reportOnWorker()) {
     log.debug("Leaving reportClusterRuns(). Worker.");
     return false;
   }
@@ -162,8 +172,7 @@ function reportClusterRuns(): boolean {
 
 function reportHereRuns(): boolean {
   log.debug("Entering reportHereRuns().");
-  const channel = require('../common/worker_channel');
-  if (channel.WorkerChannel.inWorkerThread()) {
+  if (reportOnWorker()) {
     log.debug("Leaving reportHereRuns(). Worker.");
     return false;
   }

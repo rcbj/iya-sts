@@ -21,6 +21,9 @@
 // KNOWN warnings (condition -> reason) and a warning from any other condition
 // fails the job exactly as a FAILED module does. A reason is a sentence a
 // reviewer can check, and the same sentence is in oauth-oidc/CLAUDE.md 3bg.
+// A known failure is the same shape: a sentence argues any message from
+// that condition, and { why, msg: RegExp } argues one message
+// (tests/conformance_ledger.js).
 //
 // OWNED HERE (local: true): nothing in the parent project uses it.
 // ---------------------------------------------------------------------------
@@ -511,13 +514,32 @@ async function caAndLeaf(label) {
 // THE LEDGER. `expected` is `<label>/<module>` -> reason (a FAILED module
 // that is argued), `knownWarnings` is `<condition>` -> reason (a WARNING the
 // service keeps, and why), and `knownFailures` is `<condition>` (or, for one
-// plan only, `<label>/*/<condition>`, and for one module only,
-// `<label>/<module>/<condition>`) -> reason: a
-// FAILURE from that condition alone is argued, and a module that fails on it
-// AND on anything else is still a failure — which is why it is keyed by the
-// suite's condition and not by the module, so one argued difference cannot
-// hide the next. Answers the counts and the unexplained lines.
+// plan only, `<label>/*/<condition>`, for one module only,
+// `<label>/<module>/<condition>`, and for one module of every plan,
+// `*/<module>/<condition>`) -> reason: a FAILURE from that condition alone
+// is argued, and a module that fails on it AND on anything else is still a
+// failure — which is why it is keyed by the suite's condition and not by
+// the module, so one argued difference cannot hide the next. A reason is a
+// sentence (any message from that condition) or { why, msg: RegExp } when
+// only some of the condition's messages are argued. Answers the counts and
+// the unexplained lines.
 // ---------------------------------------------------------------------------
+
+// Whether one ledger entry argues this failure. A sentence argues any
+// message from the condition. { why, msg: RegExp } argues the messages it
+// matches, and a different message from the same condition stays a finding.
+function failureCovered(known, failure) {
+  log.debug("Entering failureCovered().");
+  let covered = false;
+  if (typeof known === "string") {
+    covered = true;
+  } else if (known && known.msg) {
+    covered = known.msg.test(String(failure.msg || ""));
+  }
+  log.debug("Leaving failureCovered(). " + covered);
+  return covered;
+}
+
 function judge(label, ran, expected, knownWarnings, knownFailures) {
   log.debug("Entering judge(). " + label);
   const counts = {};
@@ -534,9 +556,11 @@ function judge(label, ran, expected, knownWarnings, knownFailures) {
                        r.status === "INTERRUPTED") &&
       r.failures.length > 0 &&
       r.failures.every(function (f) {
-        return !!(failureKnown[f.src] ||
-                  failureKnown[label + "/*/" + f.src] ||
-                  failureKnown[label + "/" + r.module + "/" + f.src]);
+        return failureCovered(failureKnown[f.src], f) ||
+          failureCovered(failureKnown[label + "/*/" + f.src], f) ||
+          failureCovered(
+            failureKnown[label + "/" + r.module + "/" + f.src], f) ||
+          failureCovered(failureKnown["*/" + r.module + "/" + f.src], f);
       });
     const moduleArgued = expected[label + "/" + r.module] ||
                          expected["*/" + r.module];
@@ -596,7 +620,10 @@ function judge(label, ran, expected, knownWarnings, knownFailures) {
 //                                   twin's key, so a non-post-quantum
 //                                   difference argued for a plan is argued
 //                                   for its twin. A plan that is not a twin
-//                                   gets the table unchanged.
+//                                   gets the table unchanged. An entry that
+//                                   `pqOnly` does not name stays, which is
+//                                   how a message-scoped argument survives
+//                                   the post-quantum entries leaving.
 //
 // `CONFORMANCE_PLANS` names a twin by its own key (`basic-cl`), and a prefix
 // (`basic*`) takes both. The FAPI job has no twin: it carries no

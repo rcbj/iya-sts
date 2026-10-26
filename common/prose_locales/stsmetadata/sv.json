@@ -1064,8 +1064,8 @@
     "text": "Allt som en anropare behöver för att VERIFIERA den här tjänsten, som PEM: certifikatet som varje TLS-socket i den här processen visar upp — huvudporten och katalogens LDAPS-lyssnare på 636, som serverar samma certifikat och nyckel snarare än ett andra par — följt av kedjan mellan det och den här tjänstens egen rot-CA, och den roten. Det är ett beslut om vad en ANROPARE måste göra snarare än ett sparat nyckelpar: ett ankare som täcker huvudporten och 636 är EN hämtning, där två skulle få en ldapsearch att misslyckas med \"unable to get local issuer certificate\" mot ett förtroendelager byggt för HTTPS-porten — ett fel som inte namnger något och läses som en trasig katalog. SEDAN 2026-09-11 FINNS KEDJAN OCH ROTEN I DET HÄR DOKUMENTET, eftersom certifikatet slutade vara självsignerat den dagen: OpenSSL tar ett självsignerat löv i ett förtroendelager som ett ankare och nekar ett certifierat, så en anropare som fäste enbart lövet fick samma fel om en rot den aldrig hade fått. LÖVET KOMMER FÖRST, för en anropare som bara vill ha det. Det GENERERAS OM VID VARJE START i båda lägena (om inte tls.certificateFile tillhandahåller det), som en signeringsnyckel i utvecklingsläge, så det är ett ankare som ingen kan ha byggt in och ingen cachad kopia av det förblir giltig — därav Cache-Control: no-store. Det publicerar ingen privat nyckel. Hämta det till ditt eget förtroendelager i stället för att stänga av verifieringen."
   },
   "stsmetadata.endpoints./.what": {
-    "en": "4c29594ca1759528",
-    "text": "Vad den här tjänsten är, i ett kort: projektet på GitHub, dess ärenden, dokumentationssajten och de två ytor på den här instansen som en människa snarare än en klient går till — administrationskonsolen och användarportalen. Den listar AVSIKTLIGT INGA slutpunkter — den här sidan är listan, den genereras, och ett handskrivet urval på ytterdörren vore en andra kopia av den som ingenting kontrollerar. Det var en odirigerad sökväg fram till 2026-08-24, så svaret på den första URL en människa skriver var Express \"Cannot GET /\". Sedan #579 är den en statisk yta: detta besvarar skalet, och /home.js ritar kortet på webbläsarens språk utifrån /home-api/front."
+    "en": "85b6e9694fbfb459",
+    "text": "Vad den här tjänsten är, i ett kort: projektet på GitHub, dess ärenden, dokumentationssajten och de ytor på den här instansen som en människa snarare än en klient går till — administrationskonsolen, användarportalen och rapporterna. Den listar AVSIKTLIGT INGA slutpunkter — den här sidan är listan, den genereras, och ett handskrivet urval på ytterdörren vore en andra kopia av den som ingenting kontrollerar. Det var en odirigerad sökväg fram till 2026-08-24, så svaret på den första URL en människa skriver var Express \"Cannot GET /\". Sedan #579 är den en statisk yta: detta besvarar skalet, och /home.js ritar kortet på webbläsarens språk utifrån /home-api/front."
   },
   "stsmetadata.endpoints./home.js.what": {
     "en": "676325f92b405058",
@@ -1080,8 +1080,8 @@
     "text": "NON-SPEC (#579). Ytterdörrens API-operationer, var och en med den sida den är dörren till (mirrors), så som /account-api listar sina egna. Offentlig och språkfri."
   },
   "stsmetadata.endpoints./home-api/front.what": {
-    "en": "e608f6ceb4c13f9a",
-    "text": "NON-SPEC (#579). Allt som startsidan ritar, som fakta och inga ord: namnet, versionen och dess build, om en inloggning kontrollerar lösenordet och om konsolen är skyddad, logotypen och de fem länkarna som id:n och adresser — konsolens och portalens på den lyssnare som besvarar dem (#472). Offentlig, no-store; den listar inga slutpunkter, precis som sidan aldrig gjorde."
+    "en": "617325f4b1fdbe01",
+    "text": "NON-SPEC (#579). Allt som startsidan ritar, som fakta och inga ord: namnet, versionen och dess build, om en inloggning kontrollerar lösenordet och om konsolen är skyddad, logotypen och de sex länkarna som id:n och adresser — konsolen, portalen och rapporterna, var och en på den lyssnare som besvarar den (#472). Offentlig, no-store; den listar inga slutpunkter, precis som sidan aldrig gjorde."
   },
   "stsmetadata.endpoints./logo.png.what": {
     "en": "3ecb997587060c27",

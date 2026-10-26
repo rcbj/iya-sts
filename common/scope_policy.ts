@@ -23,7 +23,8 @@
 // **THREE KINDS OF SCOPE, READ THREE WAYS.**
 //
 //   * THIS SERVICE'S OWN PROTECTED SCOPES — `admin:read` and `admin:write`
-//     (/admin-api), the SCIM pair (`scim.scopeRead`, `scim.scopeWrite`), the
+//     (/admin-api), `report:use` and `report:admin` (/report-api), the
+//     SCIM pair (`scim.scopeRead`, `scim.scopeWrite`), the
 //     Shared Signals scopes (`ssf.authScopeRead`, `ssf.authScopeWrite`, and
 //     the fixed names `ssf.read` and `ssf.manage` —
 //     `common/ssf_scopes.ts`, #334; renaming a setting adds a name and
@@ -113,6 +114,15 @@ const OIDC_SCOPES = Object.freeze(['openid', 'profile', 'email', 'address',
  */
 const ADMIN_SCOPES = Object.freeze(['admin:read', 'admin:write',
                                     'admin:console']);
+
+// `/report-api`'s two (#956). Protected like the admin scopes: issued only
+// to a client that declares them, in both modes, and the API asks again on
+// every call. `sts-report` is seeded declaring both. Written out rather
+// than required from `report/`, for the debugger permission's reason below.
+/**
+ * The report API's scopes: `report:use` and `report:admin`.
+ */
+const REPORT_SCOPES = Object.freeze(['report:use', 'report:admin']);
 
 // AN OWNER'S TWO (#607): `/admin-api` for the objects a person owns, read
 // and changed within the access-control policy's owner rule. Protected like
@@ -313,7 +323,7 @@ class ScopePolicy {
   protectedScopes(): string[] {
     const { log, config } = this.deps;
     log.debug("Entering ScopePolicy.protectedScopes().");
-    const names = ADMIN_SCOPES.slice(0);
+    const names = ADMIN_SCOPES.slice(0).concat(REPORT_SCOPES);
     [String(config.value('scim.scopeRead') || 'scim:read'),
      String(config.value('scim.scopeWrite') || 'scim:write'),
      DEBUGGER_PERMISSION, DEVICE_COMPLIANCE_SCOPE, ACCOUNT_SCOPE]
@@ -774,6 +784,7 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   OIDC_SCOPES: OIDC_SCOPES,
   ADMIN_SCOPES: ADMIN_SCOPES,
+  REPORT_SCOPES: REPORT_SCOPES,
   OWNER_SCOPES: OWNER_SCOPES,
   DEBUGGER_PERMISSION: DEBUGGER_PERMISSION,
   DEVICE_COMPLIANCE_SCOPE: DEVICE_COMPLIANCE_SCOPE,

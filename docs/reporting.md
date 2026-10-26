@@ -10,9 +10,12 @@ against one catalog source. The answer is JSON, CSV or PDF. This service
 does not accept a SQL statement, and it does not forward a query to
 PostgreSQL or to an operator's attribute-source database.
 
-Open `/report` and sign in. The browser uses the public client
+Open `/report` — the front page links to it — and sign in. The browser uses the public client
 `sts-report` (PKCE S256, a DPoP-bound token, `resource` this realm's
-`/report-api`). The words on the page come from the signed-in user's
+`/report-api`). Each realm also has `sts-report-api`, the application for
+that API. It exposes `report:use` and `report:admin`. Those two are granted
+to `sts-report`, and `sts-report` declares them, the same way the admin
+console declares `admin:read` and `admin:write`. The words on the page come from the signed-in user's
 language. The API stays language-free, and every error sentence is
 English. When several accounts in one browser are enabled, the page uses
 the same account switcher as the portal.

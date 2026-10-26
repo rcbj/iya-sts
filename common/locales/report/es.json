@@ -55,5 +55,15 @@
   "opLe": "como máximo",
   "opGt": "mayor que",
   "opGe": "como mínimo",
-  "opIsNull": "está vacío"
+  "opIsNull": "está vacío",
+  "accounts.summaryTitle": "Esta pestaña tiene la sesión iniciada como {user}. Las demás cuentas con sesión iniciada en este navegador y un inicio de sesión con otra cuenta. El cambio afecta solo a esta pestaña.",
+  "accounts.who": "Sesión iniciada como <strong>{user}</strong>",
+  "accounts.switch": "Cambiar de usuario",
+  "accounts.switchTitle": "Usar esta pestaña como {user}. Las demás pestañas conservan su cuenta.",
+  "accounts.none": "Todavía no hay otra cuenta con la sesión iniciada en este navegador.",
+  "accounts.another": "Iniciar sesión con otra cuenta",
+  "accounts.anotherTitle": "Iniciar sesión como otra persona en esta pestaña. Las cuentas que ya tienen la sesión iniciada en este navegador la conservan, y las demás pestañas conservan la suya.",
+  "accounts.kept": "La cuenta que deja esta pestaña conserva la sesión iniciada, así que puede volver a ella desde aquí.",
+  "accounts.refused": "El inicio de sesión volvió como otra cuenta distinta de la elegida, así que esta pestaña no la aceptó.",
+  "accounts.failed": "No se pudo iniciar la sesión como la otra cuenta."
 }

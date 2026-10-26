@@ -5096,7 +5096,12 @@ failure in its driver):
   **And every plan of those drivers also runs as a classical twin since
   2026-10-23** (rcbj), in a realm with `keys.postQuantumSigning` off, judged
   WITHOUT these entries — the proof that nothing but the suite's gap is
-  behind them (`tests/CLAUDE.md`, *The classical twins*).
+  behind them (`tests/CLAUDE.md`, *The classical twins*). The classical twin
+  still publishes EdDSA (kty OKP, Ed25519 and Ed448). The same condition
+  then reports `unknown key type 'OKP'` and stops before the new-key check.
+  That one message, on `oidcc-server-rotate-keys` only, stays in the OpenID
+  Connect ledger. Any other message from the condition is a finding
+  (`tests/protocol/sts_oidcc_conformance.js`).
 * `VerifyStatusListTokenSignatureUsingEmbeddedJwk`: outside HAIP the suite
   resolves a status list token's key only from a header `jwk`; this realm's
   names it by `kid` and carries its chain in `x5c`, which
@@ -5787,8 +5792,9 @@ one definition of that phrase, shared with GNAP's locations
   VC-API endpoints all read through `dpop.presentedAccessToken()`); the
   management API, by what `mgmt-api/admin_api.ts` accepts as an audience
   (its new `namesThisApi()` facade over `audienceAccepted()` and
-  `realmAudienceAccepted()`); and the account API (#568) — the GNAP
-  demonstration resource server was one until #593 deleted it;
+  `realmAudienceAccepted()`); the account API (#568); and the reports API
+  (`/report-api`, #956) — the GNAP demonstration resource server was one
+  until #593 deleted it;
 * **or a registered application** (`appRegisteredBy`), found by its
   `oauthAudience`, client_id, identifier — `resolveTarget()`'s lookups — or
   permission base URI (normalised), the four names

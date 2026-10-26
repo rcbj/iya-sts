@@ -34,6 +34,7 @@ one, the paths it answers and where it is.
 | `home` | `GET /`, the documentation, terms and policy pages, the realm list |
 | `authn` | The sign-in service, its second factors, the wallet, SPNEGO and certificate sign-ins (`/tls/sign-in`), and `/logout` |
 | `portal` | The user portal |
+| `report` | Reports at `/report`, and `/report-api` |
 | `admin-console` | The admin console, `/admin` |
 | `management-api` | `/admin-api` |
 | `oauth-oidc` | The authorization server and OpenID provider, their discovery documents, the access-token status list |

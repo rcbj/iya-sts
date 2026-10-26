@@ -55,5 +55,15 @@
   "opLe": "hindi hihigit sa",
   "opGt": "mas mataas sa",
   "opGe": "hindi bababa sa",
-  "opIsNull": "walang laman"
+  "opIsNull": "walang laman",
+  "accounts.summaryTitle": "Naka-sign in ang tab na ito bilang {user}. Ang ibang mga account na naka-sign in sa browser na ito, at pag-sign in gamit ang ibang account. Ang tab na ito lang ang binabago ng paglipat.",
+  "accounts.who": "Naka-sign in bilang <strong>{user}</strong>",
+  "accounts.switch": "Lumipat ng user",
+  "accounts.switchTitle": "Gamitin ang tab na ito bilang {user}. Pananatilihin ng ibang mga tab ang kanilang account.",
+  "accounts.none": "Wala pang ibang account na naka-sign in sa browser na ito.",
+  "accounts.another": "Mag-sign in gamit ang ibang account",
+  "accounts.anotherTitle": "Mag-sign in bilang ibang tao sa tab na ito. Mananatiling naka-sign in ang mga account na naka-sign in na sa browser na ito, at pananatilihin ng ibang mga tab ang kanila.",
+  "accounts.kept": "Mananatiling naka-sign in ang account na iiwan ng tab na ito, kaya makakabalik ka rito.",
+  "accounts.refused": "Bumalik ang pag-sign in bilang ibang account kaysa sa napili, kaya hindi ito tinanggap ng tab na ito.",
+  "accounts.failed": "Hindi masimulan ang pag-sign in bilang isa pang account."
 }

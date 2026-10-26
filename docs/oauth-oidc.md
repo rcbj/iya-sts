@@ -216,7 +216,7 @@ every grant but the token exchange (whose targets are RFC 8693's, below). A
 registered target is one of this service's own resource servers — the
 default resource indicator `<base>/resource` (or a named authorization
 server's), which UserInfo, SCIM, Shared Signals and OpenID4VCI accept;
-`<base>/admin-api`; `<base>/account-api` — or an
+`<base>/admin-api`; `<base>/account-api`; `<base>/report-api` — or an
 application registered through the console, `/admin-api`,
 `POST /oauth2/register`, an LDAP add or an OpenID Federation, named by its
 audience, permission base URI, `client_id` or identifier. The embedded

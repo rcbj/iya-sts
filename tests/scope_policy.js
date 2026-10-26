@@ -11,14 +11,17 @@
 // Five claims, each about `common/scope_policy.ts` and the two places
 // `oauth-oidc/oauth2.ts` asks it:
 //
-//   A. THIS SERVICE'S OWN PROTECTED SCOPES — admin:*, the SCIM scopes (by
+//   A. THIS SERVICE'S OWN PROTECTED SCOPES — admin:*, report:use and
+//      report:admin, the SCIM scopes (by
 //      their SETTINGS, not their default spelling), the Shared Signals
 //      scopes (the settings PLUS ssf.read and ssf.manage, which stay
 //      protected when a setting is renamed; ssf:read and ssf:write are not
 //      Shared Signals scopes, #334),
 //      the debugger permission — are refused to a client that does not
 //      declare them, IN BOTH MODES, and allowed to one that does; and the
-//      seeded clients declare what they use.
+//      seeded clients declare what they use. The report API is seeded in
+//      every realm and its two permissions are granted to sts-report; a
+//      start puts a missing grant back.
 //   B. EVERY OTHER SCOPE is issued freely in development, and in product only
 //      when the client's `oauthAllowedScope` lists it — or, with no list, when
 //      it is in the documented default set; a scope naming an application or
@@ -50,6 +53,7 @@ const audit = require('../common/audit');
 const scopePolicy = require('../common/scope_policy');
 const oauth2 = require('../oauth-oidc/oauth2');
 const debuggerAccess = require('../debugger/debugger_access');
+const realms = require('../common/realms');
 
 const log = require('bunyan').createLogger({ name: 'scope_policy',
   level: process.env.LOG_LEVEL || 'info' });
@@ -139,6 +143,66 @@ function claimA(t) {
           'the seeded sts-management-api declares both admin scopes');
   t.check(scopePolicy.declares('sts-admin-console', 'admin:write'),
           'and so does sts-admin-console, whose explorer mints admin tokens');
+  t.check(scopePolicy.isProtected('report:use') &&
+          scopePolicy.isProtected('report:admin'),
+          'report:use and report:admin are protected, like admin:read and ' +
+          'admin:write');
+  t.check(scopePolicy.declares('sts-report', 'report:use') &&
+          scopePolicy.declares('sts-report', 'report:admin'),
+          'the seeded sts-report declares both report scopes');
+  t.equal(codeOf(scopePolicy.refusal('report:use', 'sts-report')), null,
+          'report:use is allowed to the client that declares it');
+  t.equal(codeOf(scopePolicy.refusal('report:admin', 'sp-bare')),
+          'STS-OAUTH-0577',
+          'report:admin is refused to a client that does not declare it');
+  const api = applications.get('sts-report-api');
+  const names = (api ? applications.permissionsOf(api) : []).map(
+    function (one) {
+      return one.name;
+    });
+  t.check(!!api && names.indexOf('report:use') >= 0 &&
+          names.indexOf('report:admin') >= 0,
+          'sts-report-api is seeded and defines both permissions');
+  const ids = (api ? applications.permissionsOf(api) : []).map(
+    function (one) {
+      return one.id;
+    });
+  ids.forEach(function (id) {
+    t.check(applications.holdsPermission('sts-report', id),
+            'sts-report holds the delegated permission ' + id);
+  });
+  ids.forEach(function (id) {
+    const removed = applications.updateApplication('sts-report', {
+      attribute: 'oauthDelegatedPermission', mode: 'remove', value: id });
+    t.check(removed && removed.ok &&
+            !applications.holdsPermission('sts-report', id),
+            'the grant of ' + id + ' can be removed',
+            JSON.stringify(removed));
+  });
+  const deleted = applications.deleteApplication('sts-report-api');
+  t.check(deleted && deleted.ok && !applications.get('sts-report-api'),
+          'sts-report-api can be deleted', JSON.stringify(deleted));
+  applications.seedInternalApplications({ scope: 'default' });
+  const again = applications.get('sts-report-api');
+  t.check(!!again, 'reseeding puts sts-report-api back');
+  (again ? applications.permissionsOf(again) : []).forEach(function (one) {
+    t.check(applications.holdsPermission('sts-report', one.id),
+            'and puts the grant of ' + one.name + ' back on sts-report');
+  });
+  const made = realms.get('report-api-seed') ||
+    realms.create({ id: 'report-api-seed', name: 'report-api-seed' });
+  t.check(made && (made.ok || made.id),
+          'a realm can be created to see the every-realm seed',
+          JSON.stringify(made));
+  realms.run(realms.get('report-api-seed'), function () {
+    const there = applications.get('sts-report-api');
+    t.check(!!there && !applications.get('sts-debugger-api'),
+            'a new realm gets the report API and not the debugger');
+    (there ? applications.permissionsOf(there) : []).forEach(function (one) {
+      t.check(applications.holdsPermission('sts-report', one.id),
+              'and that realm\'s sts-report holds ' + one.name);
+    });
+  });
   config.setOverride('scim.scopeWrite', 'prov:write');
   try {
     t.check(scopePolicy.isProtected('prov:write') &&

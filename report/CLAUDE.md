@@ -9,10 +9,29 @@ built as `report/report-spa.js` (`ReportRuntime extends SpaClient`,
 in the browser as the public client `sts-report` (PKCE S256, `resource`
 the realm's `/report-api`, scopes `report:use` and `report:admin`), holds
 a DPoP-bound token in memory, and draws every page from `/report-api`.
+In product that `resource` is a registered target because `/report-api`
+is one of this service's own resource servers
+(`common/registered_targets.ts`), compared whole, as `/account-api` is.
+Each realm is also seeded with `sts-report-api`, the application that
+defines `report:use` and `report:admin` (`oauthPermission`, base this
+realm's `/report-api`). `sts-report` holds both as delegated permissions
+and declares the same two words on its registration `scope` and
+`oauthGlobalConsent`, which is how `admin:read` and `admin:write` sit on
+`sts-admin-console`. The browser asks for the words. A start that finds
+`sts-report` already present adds a missing grant and a missing declared
+scope, and does not rewrite consent, redirects or secrets.
+`common/applications.js` seeds both, in every realm.
+With `authn.multipleAccounts` on, the account control is the console's
+menu: the summary is the account this tab is, and the panel lists the
+browser's other signed-in accounts as switch buttons, plus a sign-in as
+another account. The panel is taken out of flow, so opening it does not
+push the page down. A switch is this tab's own authorization request
+(`login_hint`, and the subject the answer must be for). The account the
+tab leaves stays signed in. Off, the control is not drawn.
 The shell's policy is `script-src 'self'`, `style-src 'self'`, and
 `connect-src` the origins of the authorization server and the sign-in
-screen, through `app.contentSecurityPolicy()`. `docs/reporting.md` is the
-operator's page. The caps are the Reporting group in `common/config.js`
+screen, through `app.contentSecurityPolicy()`. The front door links to it
+(`home/home.ts`). `docs/reporting.md` is the operator's page. The caps are the Reporting group in `common/config.js`
 and `docs/configuration.md`.
 
 | File | What it is |

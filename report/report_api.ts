@@ -400,6 +400,26 @@ function reportPresented(req: any): any {
   return out;
 }
 
+// The browser sends `resource` as this realm's `/report-api`, with no
+// trailing slash, and that is the audience the token carries. A client
+// that instead asks for one of the API's permission identifiers is issued
+// `aud` of `permissionBaseOf` of that URL, which adds the slash. Both name
+// this API.
+function reportAudienceOk(audiences: any, base: string): boolean {
+  log.debug("Entering reportAudienceOk().");
+  const exact = base + BASE;
+  const withSlash = exact + '/';
+  let ok = false;
+  (Array.isArray(audiences) ? audiences : []).forEach(function (one: any) {
+    const text = String(one);
+    if (text === exact || text === withSlash) {
+      ok = true;
+    }
+  });
+  log.debug("Leaving reportAudienceOk(). " + ok);
+  return ok;
+}
+
 function reportAuthenticate(req: any, res: any): any {
   log.debug("Entering reportAuthenticate().");
   const deps = reportDepsOf();
@@ -480,7 +500,7 @@ function reportAuthenticate(req: any, res: any): any {
   }
   const audiences = Array.isArray(claims.aud) ? claims.aud :
     (claims.aud === undefined || claims.aud === null ? [] : [claims.aud]);
-  if (audiences.map(String).indexOf(base + BASE) < 0) {
+  if (!reportAudienceOk(audiences, base)) {
     reportForbidden(res, 'STS-REPORT-0011', 'invalid_token',
       'That access token is not for this API.');
     log.debug("Leaving reportAuthenticate(). Another audience.");

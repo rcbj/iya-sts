@@ -17,10 +17,10 @@
 //
 // So this page exists, and it is deliberately SHORT. It carries the logo of the
 // project this service was extracted from, says what this service is called,
-// and offers five links — the repository, its issues, the documentation site,
-// and the two surfaces on THIS instance that a person rather than a client
-// goes to: the admin console and the user portal. It is a signpost, not a
-// second documentation site.
+// and offers six links — the repository, its issues, the documentation site,
+// and the three surfaces on THIS instance that a person rather than a client
+// goes to: the admin console, the user portal and reports. It is a signpost,
+// not a second documentation site.
 //
 // **IT DOES NOT LIST ENDPOINTS, AND THAT IS THE ONE RULE TO KEEP.** `GET
 // /admin/sts-metadata` builds that list by walking the running Express router,
@@ -87,10 +87,11 @@
 //   * `GET /home-api` is the API's index and `GET /home-api/front` the one
 //     page's VIEW, language-free: the name, the version and its build, the
 //     two facts of the mode a sign-in sentence depends on, the image, and
-//     the five links as ids and addresses — the console's and the portal's
-//     on the listener that answers them (#472), relative where it is this
-//     one. The browser draws it in its language from the `home` catalogs
-//     (`web_home_front.ts`), the same messages the server-drawn page used.
+//     the six links as ids and addresses — the console's, the portal's and
+//     reports' on the listener that answers them (#472), relative where it
+//     is this one. The browser draws it in its language from the `home`
+//     catalogs (`web_home_front.ts`), the same messages the server-drawn
+//     page used.
 //
 // SCRIPT IS REQUIRED (rcbj on #569): with script blocked the shell's
 // `<noscript>` says what the page is, and links the documentation, since a
@@ -167,8 +168,8 @@ import PageLocale = require('../common/page_locale');
 import ShellDocument = require('../common/shell_document');
 
 // WHICH LISTENER ANSWERS WHICH APPLICATION (#472). A LIBRARY that `helpers`
-// already loads; the console's and the portal's links, and the chooser's
-// sign-in service, are addressed where they are answered.
+// already loads; the console's, the portal's and reports' links, and the
+// chooser's sign-in service, are addressed where they are answered.
 import listenerMap = require('../common/listener_map');
 
 type Json = any;
@@ -180,7 +181,7 @@ const VERSION = APP_VERSION.version;
 const BUILD_INFO = version.buildInfo(APP_VERSION);
 
 // ---------------------------------------------------------------------------
-// THE FIVE LINKS.
+// THE SIX LINKS.
 //
 // Three of them name the repository this service lives in, and they are
 // written out rather than derived from `package.json` — that manifest carries
@@ -223,6 +224,15 @@ const CONSOLE_PATH = '/admin';
 // page list, `sts_metadata.js` reports it, and a set of highlights here would
 // be a second copy that goes stale the first time a page is added there.
 const PORTAL_PATH = '/portal';
+
+// THE SIXTH LINK (the reports application, #956). Relative for the reason
+// above, and addressed with `linkTo()` for the same #472 reason as the
+// console and the portal: the page and `/report-api` are one hosted
+// application, so a listener that does not answer them would 404 a link
+// that stayed on this one. It lists none of the report pages. The page
+// list is the application's own, and a set of highlights here would be a
+// second copy of it.
+const REPORT_PATH = '/report';
 
 const LOGO_PATH = path.join(__dirname, 'assets', 'logo.png');
 
@@ -537,15 +547,15 @@ class Home {
   // words: the browser draws them in its language (`web_home_front.ts`).
   //
   // ONE COPY OF WHAT SIGNING IN HERE MEANS is still the rule, and it moved
-  // with the words: both same-origin links send a reader to a sign-in screen,
-  // and what that screen CHECKS is a property of the mode rather than of
-  // either surface — so the view carries the two facts of the mode it
-  // depends on, once, and the renderer chooses the sentence once for both
-  // rows. **It used to be a clause on the console's row reading "it asks you
-  // to sign in, and nothing else here does"**, false from the day the portal
-  // arrived, and "no password checked" stated unconditionally, which is a
-  // development-mode fact (`home/CLAUDE.md`). Read per request, because a
-  // front door is drawn from what is true now.
+  // with the words: the three same-origin links send a reader to a sign-in
+  // screen, and what that screen CHECKS is a property of the mode rather
+  // than of any one surface — so the view carries the two facts of the mode
+  // it depends on, once, and the renderer chooses the sentence once for
+  // every such row. **It used to be a clause on the console's row reading
+  // "it asks you to sign in, and nothing else here does"**, false from the
+  // day the portal arrived, and "no password checked" stated
+  // unconditionally, which is a development-mode fact (`home/CLAUDE.md`).
+  // Read per request, because a front door is drawn from what is true now.
   // ---------------------------------------------------------------------------
 
   /**
@@ -598,7 +608,7 @@ class Home {
       logo: logoBytes
         ? { src: LOGO_ROUTE, width: LOGO_WIDTH, height: LOGO_HEIGHT }
         : null,
-      // THE FIVE LINKS, by id; the renderer has the words for each.
+      // THE SIX LINKS, by id; the renderer has the words for each.
       links: [
         { id: 'repo', href: REPO_URL, external: true },
         { id: 'issues', href: ISSUES_URL, external: true },
@@ -606,7 +616,9 @@ class Home {
         { id: 'console', external: false,
           href: this.linkTo(req, 'admin-console', CONSOLE_PATH) },
         { id: 'portal', external: false,
-          href: this.linkTo(req, 'portal', PORTAL_PATH) }
+          href: this.linkTo(req, 'portal', PORTAL_PATH) },
+        { id: 'report', external: false,
+          href: this.linkTo(req, 'report', REPORT_PATH) }
       ]
     };
     log.debug("Leaving Home.frontView().");
@@ -630,7 +642,7 @@ class Home {
         { method: 'GET', path: FRONT_OPERATION, operationId: 'getFront',
           access: 'public', mirrors: 'GET /',
           summary: 'The front page\'s view: the name, the version, the ' +
-                   'mode\'s two facts, the image and the five links' }
+                   'mode\'s two facts, the image and the six links' }
       ]
     };
     log.debug("Leaving Home.apiIndex().");

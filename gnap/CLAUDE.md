@@ -1280,8 +1280,9 @@ not answer to already gets (`STS-GNAP-0812`).
 A location is registered when `common/registered_targets.ts` says so — the
 one definition shared with RFC 8707's `resource` (`oauth-oidc/CLAUDE.md`):
 one of this service's own resource servers (the default resource indicator,
-`/admin-api`, `/account-api`) or a registered application by audience,
-permission base URI, client_id or identifier — or when it is AT or UNDER the
+`/admin-api`, `/account-api`, `/report-api`) or a registered application by
+audience, permission base URI, client_id or identifier — or when it is AT
+or UNDER the
 `gnapResourceServerUri` of a REGISTERED GNAP resource server, GNAP's own
 addressing and the match `resourceServersFor()` makes. "Registered" is
 `appRegisteredBy`; an RS a development sighting filed is not one.

@@ -12275,8 +12275,9 @@ product, to one definition, this file's:
   that checks an `aud` rather than from a list: the default resource
   indicator of a hosted authorization server
   (`jwt_access_token.isOwnResourceAudience()`), the management API
-  (`mgmt-api/admin_api`'s `namesThisApi()`), and the account API (#568) —
-  the GNAP demonstration resource server was the fourth until #593;
+  (`mgmt-api/admin_api`'s `namesThisApi()`), the account API (#568), and
+  the reports API (`/report-api`, #956) — the GNAP demonstration resource
+  server was the fourth until #593;
 * **or a registered application** (`appRegisteredBy`) by `oauthAudience`,
   client_id, identifier or permission base URI — the embedded debugger's api
   is one, seeded registered.

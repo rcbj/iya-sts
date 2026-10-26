@@ -23,7 +23,7 @@
 //   4. THE API: the index lists the view's operation as the door of `GET /`,
 //      and the view answers everything the old page showed — the version
 //      this build reports, the mode's two facts as `common/mode.js` answers
-//      them, the logo, and the five links by id.
+//      them, the logo, and the six links by id.
 //   5. DRAWN FROM THE LIVE ANSWER: the renderers' bundle draws the view this
 //      process answered, after the wire, into the card the old page was —
 //      the name, the version, the sign-in sentence of this mode, every link.
@@ -153,7 +153,7 @@ function childMain() {
          'under it', prefix + ' ' + r.text.slice(0, 600));
     const inRealm = await call(port, prefix + '/home-api/front');
     note(inRealm.status === 200 && inRealm.json && inRealm.json.view &&
-         inRealm.json.view.links.length === 5,
+         inRealm.json.view.links.length === 6,
          '2b. and the realm answers its own view', inRealm.text.slice(0, 200));
 
     // --- 3. the bundle and the stylesheet --------------------------------
@@ -220,11 +220,14 @@ function childMain() {
          view.logo.width === 906 && view.logo.height === 269,
          '4e. and the logo', JSON.stringify(view.logo));
     note(JSON.stringify(ids) ===
-           JSON.stringify(['repo', 'issues', 'docs', 'console', 'portal']) &&
+           JSON.stringify(['repo', 'issues', 'docs', 'console', 'portal',
+                           'report']) &&
          view.links[3].href === '/admin' && view.links[4].href === '/portal' &&
-         view.links[0].external === true && view.links[3].external === false,
-         '4f. and the five links by id, the console and the portal ' +
-         'relative where this listener answers them',
+         view.links[5].href === '/report' &&
+         view.links[0].external === true && view.links[3].external === false &&
+         view.links[5].external === false,
+         '4f. and the six links by id, the console, the portal and ' +
+         'reports relative where this listener answers them',
          JSON.stringify(view.links));
     note(JSON.stringify(view).indexOf('sign in') < 0 &&
          JSON.stringify(view).indexOf('GitHub') < 0,
@@ -262,9 +265,10 @@ function childMain() {
          drawn.indexOf(sentence) > 0 &&
          view.links.every(function (one) {
            return drawn.indexOf('href="' + one.href + '"') > 0;
-         }) && drawn.split('<li>').length === 6,
+         }) && drawn.indexOf(own.reportLabel) > 0 &&
+         drawn.split('<li>').length === 7,
          '5a. the bundle draws the live view, after the wire, as the card ' +
-         'it was: the name, the version, this mode\'s sentence, five links',
+         'it was: the name, the version, this mode\'s sentence, six links',
          loaded.problem + ' ' + drawn.slice(0, 600));
     note(framed.indexOf('<div class="card"><div class="hero"><img ' +
                         'src="/logo.png"') === 0 &&

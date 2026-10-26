@@ -55,5 +55,15 @@
   "opLe": "au plus",
   "opGt": "supérieur à",
   "opGe": "au moins",
-  "opIsNull": "est vide"
+  "opIsNull": "est vide",
+  "accounts.summaryTitle": "Cet onglet est connecté en tant que {user}. Les autres comptes connectés dans ce navigateur, et une connexion avec un autre compte. Le changement ne concerne que cet onglet.",
+  "accounts.who": "Connecté en tant que <strong>{user}</strong>",
+  "accounts.switch": "Changer d’utilisateur",
+  "accounts.switchTitle": "Utiliser cet onglet en tant que {user}. Les autres onglets conservent leur compte.",
+  "accounts.none": "Aucun autre compte n’est encore connecté dans ce navigateur.",
+  "accounts.another": "Se connecter avec un autre compte",
+  "accounts.anotherTitle": "Se connecter en tant qu’une autre personne dans cet onglet. Les comptes déjà connectés dans ce navigateur le restent, et les autres onglets conservent le leur.",
+  "accounts.kept": "Le compte que cet onglet quitte reste connecté : vous pouvez y revenir d’ici.",
+  "accounts.refused": "La connexion est revenue pour un autre compte que celui qui a été choisi, donc cet onglet ne l’a pas pris.",
+  "accounts.failed": "La connexion avec l’autre compte n’a pas pu démarrer."
 }

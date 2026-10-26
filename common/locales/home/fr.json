@@ -17,6 +17,9 @@
   "portalLabel": "Le portail utilisateur de cette instance",
   "portalNote": "Les pages de compte de la personne qui les consulte : comment elle se connecte à ce service, ce qu’il détient à son sujet, et où il la connectera.",
   "portalNoRole": "Il ne demande aucun rôle, et c’est toute la différence avec la console ci-dessus : chacune de ses pages concerne la personne qui la consulte, donc dire qui vous êtes est la seule question.",
+  "reportLabel": "Les rapports de cette instance",
+  "reportNote": "Les rapports qu’une personne ici peut exécuter, et les résultats de ceux qu’elle a déjà exécutés.",
+  "reportWho": "Un administrateur peut l’ouvrir. Toute autre personne ne peut l’ouvrir qu’en tant que membre du groupe de rapports du domaine.",
   "signInProduct": "Vous devrez vous connecter, et cette instance est en mode produit : le mot de passe est donc vérifié par rapport au compte.",
   "signInDevelopment": "Vous devrez vous connecter — n’importe quel nom d’utilisateur, et aucun mot de passe n’est vérifié."
 }

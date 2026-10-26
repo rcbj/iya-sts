@@ -5374,14 +5374,11 @@ realms.onCreate(function (id) {
     // realm whose alice had no birthdate while her credential asserted one is
     // the same disagreement in a new place.
     populateVcAttributes();
-    // AND THE APPLICATIONS THAT ARE THIS PROCESS, filtered to the ones a REALM
-    // needs — which is the user portal's client and nothing else (2026-09-06).
-    // `/portal` is a relying party of this service's own authorization server
-    // and reads the AMBIENT realm's session, so a realm without this entry has
-    // a portal that cannot sign anybody in; the console's client is the
-    // default realm's alone, because its gate accepts that realm's session
-    // wherever it is reached. `applications.js`'s rows carry `realmScope` and
-    // argue all three answers.
+    // AND THE APPLICATIONS THAT ARE THIS PROCESS, filtered to the rows a
+    // realm needs: every row whose realmScope is 'every' — the console, the
+    // portal, the reports client, the report API and the management API.
+    // The debugger's two stay in the default realm. `applications.js`'s rows
+    // carry `realmScope` and argue each one.
     //
     // It is INSIDE the `realms.run()` because the registry writes through the
     // directory slot, which resolves the container from the ambient realm —
@@ -22611,13 +22608,13 @@ federation.setDirectory({
   federationIdleCandidates: federationIdleCandidates
 });
 
-// AND THE TWO APPLICATIONS THAT ARE THIS PROCESS, immediately after — because
+// AND THIS SERVICE'S OWN APPLICATIONS, immediately after — because
 // this line is the earliest moment at which there is a container to write into,
 // and the entries have to be there before anything can ask for them.
 //
 // It is here rather than in seed() above for a reason worth keeping: seed()
-// builds the TREE, this module's half of the arrangement, while what these two
-// entries hold is a pair of RFC 7591 registrations, which is that module's
+// builds the TREE, this module's half of the arrangement, while what these
+// entries hold is a set of RFC 7591 registrations, which is that module's
 // half. Writing them up there would mean this file knowing the application
 // schema — the exact division the four functions above exist to avoid — and it
 // could not run there anyway, since the slot they go through is filled on the

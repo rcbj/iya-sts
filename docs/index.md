@@ -155,11 +155,11 @@ Accept it, or fetch the certificate, its chain and the Root with
 ([TLS](tls.md#the-server-certificate)); `STS_HTTPS=false` runs the plain port
 this used to be.
 
-Then open <https://localhost:8081/> — a front page with the five things worth
-having on one: this repository, its issues, this site, and the two surfaces on
-that instance that a person rather than a client goes to — the admin console,
-and the user portal at `/portal`, which is that instance's account page for
-whoever signs in to it. Its Overview draws **every standard inetOrgPerson
+Then open <https://localhost:8081/> — a front page with the six things worth
+having on one: this repository, its issues, this site, and the three surfaces
+on that instance that a person rather than a client goes to — the admin
+console, reports at `/report`, and the user portal at `/portal`, which is that
+instance's account page for whoever signs in to it. Its Overview draws **every standard inetOrgPerson
 attribute** the signed-in person's directory entry could hold — all fifty,
 grouped by the three object classes a person here is filed under, with the LDAP
 attribute name and the RFC printed under each value, because the reason to read

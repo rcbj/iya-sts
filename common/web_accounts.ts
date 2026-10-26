@@ -43,7 +43,8 @@
 //     authorization request with `prompt=login` (`/authn/login` is not a
 //     destination: it needs a pending sign-in). The console and the portal
 //     draw their own menus from the same list (`admin-ui/web_shell.ts`,
-//     `portal/web_portal_shell.ts`).
+//     `portal/web_portal_shell.ts`), and so does the reports application
+//     (`report/web_report_pages.ts`).
 //
 // A `web_` MODULE, on `admin-ui/web_kit.ts`'s terms: it requires nothing,
 // logs nothing (code that runs in a browser is exempt from the Entering /

@@ -12,17 +12,17 @@
 // surface on #570's foundation (`common/CLAUDE.md` 3cl), and this is its
 // renderer: the card's body drawn from `GET /home-api/front`'s view — the
 // name, the version and its provenance, what a sign-in here checks, the
-// image, and the five links — in the page's language, from the `home`
+// image, and the six links — in the page's language, from the `home`
 // catalog namespace the server-drawn page used, word for word.
 //
 // THE VIEW IS LANGUAGE-FREE (`home/home.ts`, `frontView()`): each link is an
 // `id` and an address, and THIS module turns the id into its label and note.
 // What a sign-in means is two facts of the mode (`verifiesCredentials`,
 // `gatesConsole`) and the sentences are chosen here, as `signInMeans()` chose
-// them on the server — one copy of the choice, drawn on both rows.
+// them on the server — one copy of the choice, drawn on each same-origin row.
 //
 // IT LISTS NO ENDPOINTS, AND THAT IS STILL THE ONE RULE (`home/CLAUDE.md`):
-// the links are the five the view names and nothing else.
+// the links are the six the view names and nothing else.
 //
 // A `web_` MODULE (`admin-ui/web_kit.ts`'s terms): it requires nothing at
 // all — not even the surface's runtime, so the renderers' bundle is the
@@ -34,15 +34,16 @@ type Json = any;
 
 /**
  * Each link the view may name: its label's and its note's message keys.
- * The console's and the portal's notes are assembled from several
- * sentences, by `noteOf()`.
+ * The console's, the portal's and reports' notes are assembled from
+ * several sentences, by `noteOf()`.
  */
 const LINKS: Record<string, { label: string; note: string }> = {
   repo: { label: 'home.repoLabel', note: 'home.repoNote' },
   issues: { label: 'home.issuesLabel', note: 'home.issuesNote' },
   docs: { label: 'home.docsLabel', note: 'home.docsNote' },
   console: { label: 'home.consoleLabel', note: 'home.consoleNote' },
-  portal: { label: 'home.portalLabel', note: 'home.portalNote' }
+  portal: { label: 'home.portalLabel', note: 'home.portalNote' },
+  report: { label: 'home.reportLabel', note: 'home.reportNote' }
 };
 
 /**
@@ -70,8 +71,8 @@ class WebHomeFront {
   }
 
   /**
-   * What a sign-in on either surface checks: a fact of the mode, not of the
-   * surface, so one sentence for both rows.
+   * What a sign-in on a same-origin surface checks: a fact of the mode,
+   * not of the surface, so one sentence for each such row.
    *
    * @param view - the front view
    * @param t - the page's translator
@@ -84,8 +85,8 @@ class WebHomeFront {
   }
 
   /**
-   * A link's note: one message, or for the console and the portal the
-   * sentences the mode selects.
+   * A link's note: one message, or for the console, the portal and
+   * reports the sentences the mode selects.
    *
    * @param id - the link's id
    * @param view - the front view
@@ -105,6 +106,10 @@ class WebHomeFront {
     if (id === 'portal') {
       return note + ' ' + WebHomeFront.signInMeans(view, t) + ' ' +
         t.html('home.portalNoRole');
+    }
+    if (id === 'report') {
+      return note + ' ' + WebHomeFront.signInMeans(view, t) + ' ' +
+        t.html('home.reportWho');
     }
     return note;
   }

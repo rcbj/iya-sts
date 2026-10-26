@@ -41,6 +41,11 @@
 //      with the post-quantum ledger entries (PQ_ONLY) removed — the proof of
 //      compliance with no post-quantum exemption, beside the post-quantum
 //      run that keeps them (`conformance_suite.js`, THE CLASSICAL TWINS).
+//      The twin still publishes EdDSA keys (kty OKP). nimbus throws
+//      "unknown key type 'OKP'" from VerifyNewJwksHasNewSigningKey on
+//      oidcc-server-rotate-keys and stops before the new-key check. That
+//      one message stays in the ledger. Any other message from the
+//      condition is a finding.
 //
 // OWNED HERE (local: true): this repository's OpenID Provider.
 // ---------------------------------------------------------------------------
@@ -234,7 +239,17 @@ const KNOWN_FAILURES = {
   // runs the module; the rotation itself succeeds.
   VerifyNewJwksHasNewSigningKey: "nimbus cannot parse the realm's " +
     "post-quantum keys (kty AKP); rcbj (2026-09-24): PQC support matters " +
-    "more than a clean run (3bg)"
+    "more than a clean run (3bg)",
+  // The classical twin publishes no AKP key, so the entry above is removed
+  // from its ledger (PQ_ONLY). The same condition then throws on kty OKP
+  // (Ed25519 and Ed448, RFC 8037) instead of skipping a key type it does
+  // not know (RFC 7517 section 5), and stops before it can see a new
+  // signing key. Not listed in PQ_ONLY, so the twin keeps it. A different
+  // message from this condition is still a finding.
+  ["*/oidcc-server-rotate-keys/VerifyNewJwksHasNewSigningKey"]: {
+    why: "nimbus throws on kty OKP (Ed25519 and Ed448) instead of " +
+      "skipping a key type it does not know (RFC 7517 section 5)",
+    msg: /unknown key type 'OKP'/ }
 };
 
 // Conditions whose WARNING this service keeps, and why — the same sentences
@@ -265,6 +280,8 @@ const KNOWN_WARNINGS = {
 // THE ENTRIES ABOUT POST-QUANTUM KEYS AND ALGORITHMS, which a classical twin
 // is judged without (`oidf.ledgerFor()`): its realm publishes no AKP key and
 // lists no post-quantum algorithm, so either condition there is a finding.
+// The OKP entry above is not in this list. The twin still publishes EdDSA
+// keys, and nimbus's refusal of those is argued on its own message.
 const PQ_ONLY = ["VerifyNewJwksHasNewSigningKey", "WarnOnUnusableJwksKeys"];
 
 let checks = 0;

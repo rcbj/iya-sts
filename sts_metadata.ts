@@ -4414,9 +4414,10 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/', group: 'Service', name: 'The front page',
     specs: [],
     what: 'What this service is, in one card: the project on GitHub, its ' +
-          'issues, the documentation site, and the two surfaces on this ' +
+          'issues, the documentation site, and the surfaces on this ' +
           'instance that a person rather than a client goes to — the admin ' +
-          'console and the user portal. It lists NO endpoints on purpose — ' +
+          'console, the user portal and reports. It lists NO endpoints on ' +
+          'purpose — ' +
           'this page is the ' +
           'list, it is generated, and a hand-written set of highlights on ' +
           'the front door would be a second copy of it that nothing checks. ' +
@@ -4446,10 +4447,10 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'NON-SPEC (#579). Everything the front page draws, as facts and ' +
           'no words: the name, the version and its build, whether a ' +
           'sign-in checks the password and whether the console is gated, ' +
-          'the logo, and the five links as ids and addresses — the ' +
-          'console\'s and the portal\'s on the listener that answers them ' +
-          '(#472). Public, no-store; it lists no endpoints, as the page ' +
-          'never did.' },
+          'the logo, and the six links as ids and addresses — the ' +
+          'console, the portal and reports, each on the listener that ' +
+          'answers it (#472). Public, no-store; it lists no endpoints, as ' +
+          'the page never did.' },
   { path: '/logo.png', group: 'Service', name: 'The logo on the front page',
     specs: [],
     what: 'The front page\'s logo, `home/assets/logo.png`, read from ' +

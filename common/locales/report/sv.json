@@ -55,5 +55,15 @@
   "opLe": "högst",
   "opGt": "större än",
   "opGe": "minst",
-  "opIsNull": "är tomt"
+  "opIsNull": "är tomt",
+  "accounts.summaryTitle": "Den här fliken är inloggad som {user}. De andra kontona som är inloggade i den här webbläsaren, och en inloggning med ett annat konto. Bytet gäller bara den här fliken.",
+  "accounts.who": "Inloggad som <strong>{user}</strong>",
+  "accounts.switch": "Byt användare",
+  "accounts.switchTitle": "Använd den här fliken som {user}. Andra flikar behåller sina konton.",
+  "accounts.none": "Inget annat konto är inloggat i den här webbläsaren ännu.",
+  "accounts.another": "Logga in med ett annat konto",
+  "accounts.anotherTitle": "Logga in som en annan person i den här fliken. Konton som redan är inloggade i den här webbläsaren förblir inloggade, och andra flikar behåller sina.",
+  "accounts.kept": "Kontot som den här fliken lämnar förblir inloggat, så du kan byta tillbaka till det här.",
+  "accounts.refused": "Inloggningen kom tillbaka som ett annat konto än det som valdes, så den här fliken tog inte emot den.",
+  "accounts.failed": "Inloggningen som det andra kontot kunde inte startas."
 }

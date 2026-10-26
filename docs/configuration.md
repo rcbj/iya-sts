@@ -1829,7 +1829,7 @@ what its api may dial.
 |---|---|---|---|---|
 | `applications.max` | `STS_APPLICATIONS_MAX` | `500` | yes | How many entries may live under ou=applications — an OAuth client_id, a WS-Federation wtrealm, a SAML entityID, a WS-Trust AppliesTo, a Kerberos SPN. |
 | `portal.applicationScanLimit` | `STS_PORTAL_APPLICATION_SCAN_LIMIT` | `1000` | yes | How many registry entries `/portal/applications` asks the issuance policy about before it stops; the page says how many it did not look at. |
-| `applications.seedInternal` | `STS_APPLICATIONS_SEED_INTERNAL` | `true` | **restart** — the two entries are written once, as ldap_server.js is required and fills the registry's directory slot | Create an application entry for the ADMIN CONSOLE at /admin and one for the MANAGEMENT API at /admin-api when this service starts, under ou=applications with everything else. |
+| `applications.seedInternal` | `STS_APPLICATIONS_SEED_INTERNAL` | `true` | **restart** — the entries are written once, as ldap_server.js is required and fills the registry's directory slot | Create application entries for this service's own surfaces when it starts, under ou=applications: the admin console at /admin, the user portal at /portal, the reports application at /report, the report API at /report-api, and the management API at /admin-api. |
 
 ### Federation
 

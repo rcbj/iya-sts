@@ -55,5 +55,15 @@
   "opLe": "at most",
   "opGt": "greater than",
   "opGe": "at least",
-  "opIsNull": "is empty"
+  "opIsNull": "is empty",
+  "accounts.summaryTitle": "This tab is signed in as {user}. The other accounts signed in in this browser, and a sign-in as another account. Switching changes this tab only.",
+  "accounts.who": "Signed in as <strong>{user}</strong>",
+  "accounts.switch": "Switch user",
+  "accounts.switchTitle": "Use this tab as {user}. Other tabs keep the accounts they are.",
+  "accounts.none": "No other account is signed in in this browser yet.",
+  "accounts.another": "Sign in with another account",
+  "accounts.anotherTitle": "Sign in as a different person in this tab. The accounts already signed in in this browser stay signed in, and other tabs keep theirs.",
+  "accounts.kept": "The account this tab leaves stays signed in, so you can switch back to it here.",
+  "accounts.refused": "The sign-in came back as another account than the one chosen, so this tab did not take it.",
+  "accounts.failed": "The sign-in as the other account could not be started."
 }

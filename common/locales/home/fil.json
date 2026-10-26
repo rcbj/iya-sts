@@ -17,6 +17,9 @@
   "portalLabel": "Ang user portal sa instance na ito",
   "portalNote": "Ang mga pahina ng account ng sinumang tumitingin sa mga ito: kung paano sila nagsa-sign in sa serbisyong ito, ano ang hawak nito tungkol sa kanila, at saan sila nito isa-sign in.",
   "portalNoRole": "Wala itong hinihinging role, at iyon ang buong pagkakaiba nito sa console sa itaas: ang bawat pahina nito ay tungkol sa taong tumitingin, kaya ang pagsabi kung sino ka ang tanging tanong.",
+  "reportLabel": "Ang mga ulat sa instance na ito",
+  "reportNote": "Ang mga ulat na maaaring patakbuhin ng isang tao rito, at ang mga resulta ng mga napatakbo na.",
+  "reportWho": "Maaari itong buksan ng isang administrator. Ang iba ay maaari lamang itong buksan bilang miyembro ng report group ng realm.",
   "signInProduct": "Hihilingin nitong mag-sign in ka, at nasa product mode ang instance na ito, kaya sinusuri ang password laban sa account.",
   "signInDevelopment": "Hihilingin nitong mag-sign in ka — kahit anong username, at walang password na sinusuri."
 }

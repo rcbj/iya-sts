@@ -12,6 +12,11 @@
 //
 // A `web_` MODULE: it requires other `web_` modules only and logs nothing.
 // It does not hand a callback to another tab, and it does not poll.
+//
+// The account control is the console's menu (`admin-ui/web_shell.ts`), not
+// `WebAccounts.controlHtml()`. That control lists every live account in
+// the document flow. This one names the account this tab is, and offers
+// the browser's other signed-in accounts as a switch.
 // ---------------------------------------------------------------------------
 
 import SpaClient = require('../common/web_spa_client');
@@ -24,6 +29,7 @@ const SCOPE = 'openid profile email offline_access report:use report:admin';
 const BASE = '/report';
 const API = '/report-api';
 const SIGNIN_KEY = 'sts-report-pkce';
+const ACCOUNTS_ID = 'sts-report-accounts';
 const REFRESH_EARLY = 30;
 const NEEDS_SIGN_IN = { needsSignIn: true };
 const ABORTED = { aborted: true };
@@ -68,16 +74,31 @@ function formatWord(t: any, format: string): string {
   return esc(format);
 }
 
-function navHtml(t: any, accounts: string, chooser: string): string {
+function navCurrent(path: string, suffix: string): boolean {
+  const here = String(path || '');
+  if (!suffix) {
+    return here === BASE || here.indexOf(BASE + '/sources/') === 0;
+  }
+  const href = BASE + suffix;
+  return here === href || here.indexOf(href + '/') === 0;
+}
+
+function navLink(href: string, label: string, current: boolean): string {
+  return '<a href="' + esc(href) + '"' +
+    (current ? ' aria-current="page"' : '') + '>' + esc(label) +
+    '</a>';
+}
+
+function navHtml(t: any, accounts: string, chooser: string,
+                 path: string): string {
   return '<div class="bar"><nav class="nav">' +
-    '<a href="' + esc(BASE) + '">' + esc(t.text('report.catalog')) +
-    '</a>' +
-    '<a href="' + esc(BASE + '/query') + '">' +
-    esc(t.text('report.newQuery')) + '</a>' +
-    '<a href="' + esc(BASE + '/definitions') + '">' +
-    esc(t.text('report.definitions')) + '</a>' +
-    '<a href="' + esc(BASE + '/jobs') + '">' +
-    esc(t.text('report.jobs')) + '</a>' +
+    navLink(BASE, t.text('report.catalog'), navCurrent(path, '')) +
+    navLink(BASE + '/query', t.text('report.newQuery'),
+      navCurrent(path, '/query')) +
+    navLink(BASE + '/definitions', t.text('report.definitions'),
+      navCurrent(path, '/definitions')) +
+    navLink(BASE + '/jobs', t.text('report.jobs'),
+      navCurrent(path, '/jobs')) +
     '<a href="/logout">' + esc(t.text('report.signOut')) + '</a>' +
     '<button type="button" class="btn" data-act="refresh">' +
     esc(t.text('report.refresh')) + '</button>' +
@@ -241,9 +262,11 @@ class ReportRuntime extends SpaClient {
    *
    * @param state - the state
    * @param verifier - the PKCE verifier
+   * @param extra - `login_hint` and `prompt` for a switch, or nothing
    * @returns the URL
    */
-  async authorizeUrl(state: string, verifier: string): Promise<string> {
+  async authorizeUrl(state: string, verifier: string,
+                     extra?: any): Promise<string> {
     const params: any = {
       response_type: 'code',
       client_id: CLIENT_ID,
@@ -255,9 +278,12 @@ class ReportRuntime extends SpaClient {
       resource: this.resource(),
       nonce: await this.nonceFor(verifier)
     };
-    const hint = this.hintFor(null);
+    const hint = this.hintFor(extra);
     if (hint) {
       params.login_hint = hint;
+    }
+    if (extra && extra.prompt) {
+      params.prompt = String(extra.prompt);
     }
     return this.authorizationRequestUrl(params);
   }
@@ -266,18 +292,29 @@ class ReportRuntime extends SpaClient {
    * Sends the browser to sign in.
    *
    * @param returnTo - where to land afterwards
+   * @param extra - for a switch: `login_hint` ('' for none), `prompt`,
+   *   `expect` (the subject the answer must be for) and `another`
    * @returns nothing
    */
-  async beginSignIn(returnTo: string): Promise<void> {
+  async beginSignIn(returnTo: string, extra?: any): Promise<void> {
     const verifier = this.random(32);
     const state = this.random(16);
-    this.env.sessionStorage.setItem(SIGNIN_KEY, JSON.stringify({
+    const asked = extra || {};
+    const record: any = {
       verifier: verifier,
       state: state,
       returnTo: returnTo,
       prefix: this.prefix
-    }));
-    this.env.location.assign(await this.authorizeUrl(state, verifier));
+    };
+    if (asked.expect) {
+      record.expect = String(asked.expect);
+    }
+    if (asked.another) {
+      record.another = true;
+    }
+    this.env.sessionStorage.setItem(SIGNIN_KEY, JSON.stringify(record));
+    this.env.location.assign(await this.authorizeUrl(state, verifier,
+                                                     asked));
   }
 
   /**
@@ -325,12 +362,25 @@ class ReportRuntime extends SpaClient {
       this.paint(problemHtml(this.t, this.t.text('report.error')));
       return;
     }
+    // A switch is for one account. An answer for another subject is not
+    // kept, so a reload resumes the account this tab was, by its hint.
+    if (saved.expect &&
+        !SpaClient.answerIsFor(String(saved.expect),
+                               answer.json.id_token)) {
+      this.paint(problemHtml(this.t,
+        this.t.text('report.accounts.refused')));
+      return;
+    }
+    const before = this.storedAccount();
     this.keepTokens(answer.json);
     this.username = SpaClient.claimOf(answer.json.id_token,
       'preferred_username');
     this.env.history.replaceState(null, '',
       this.prefix + String(saved.returnTo || BASE));
     await this.route();
+    if (saved.another || (before && before.sub !== this.subject)) {
+      this.announceAccounts('added');
+    }
   }
 
   /**
@@ -477,10 +527,10 @@ class ReportRuntime extends SpaClient {
    * @returns nothing
    */
   paint(body: string): void {
-    const accounts = WebAccounts.controlHtml(this.accounts, this.t);
+    const accounts = ReportRuntime.accountMenu(this);
     const chooser = this.i18n.chooser(this.t, this.here());
     const html = '<h1>' + esc(this.t.text('report.title')) + '</h1>' +
-      navHtml(this.t, accounts, chooser) + body;
+      navHtml(this.t, accounts, chooser, this.reportPath()) + body;
     const main = this.env.document.getElementById('report');
     if (main) {
       main.innerHTML = html;
@@ -500,8 +550,157 @@ class ReportRuntime extends SpaClient {
     this.accountsListening = true;
     const self = this;
     this.listenForAccounts(function (): void {
-      self.route();
+      self.redrawAccountMenu();
     });
+  }
+
+  /**
+   * The name of the account this tab is.
+   *
+   * @param page - the runtime
+   * @returns the display name, the username, or the subject
+   */
+  static accountLabel(page: ReportRuntime): string {
+    const current = WebAccounts.bySubject(page.accounts, page.subject);
+    const named = current ? WebAccounts.nameOf(current) : '';
+    if (named) {
+      return named;
+    }
+    if (page.username) {
+      return page.username;
+    }
+    const kept = page.storedAccount();
+    if (kept && kept.username) {
+      return String(kept.username);
+    }
+    return String(page.subject || '');
+  }
+
+  /**
+   * The account menu: this tab's account, and a switch to the browser's
+   * other signed-in accounts. Nothing when several accounts are off.
+   *
+   * @param page - the runtime
+   * @returns the menu's HTML, or ''
+   */
+  static accountMenu(page: ReportRuntime): string {
+    const list = page.accounts;
+    if (!list || !list.enabled) {
+      return '';
+    }
+    const name = ReportRuntime.accountLabel(page);
+    const t = page.t;
+    return '<details class="usermenu"><summary title="' +
+      esc(t.text('report.accounts.summaryTitle', { user: name })) + '">' +
+      esc(name) + '</summary><div class="usermenupanel">' +
+      '<p class="usermenuwho">' +
+      t.html('report.accounts.who', { user: name }) + '</p>' +
+      '<div id="' + ACCOUNTS_ID + '" class="usermenuaccounts">' +
+      ReportRuntime.accountItems(page) + '</div></div></details>';
+  }
+
+  /**
+   * The menu's switch group: a button per other signed-in account, or a
+   * line saying there is none, then a sign-in as another account.
+   *
+   * @param page - the runtime
+   * @returns the group's HTML
+   */
+  static accountItems(page: ReportRuntime): string {
+    const t = page.t;
+    const others = WebAccounts.live(page.accounts).filter(
+      function (one: any): boolean {
+        return String(one.sub || '') !== String(page.subject || '');
+      });
+    return '<p class="usermenuwho">' +
+      t.html('report.accounts.switch') + '</p>' +
+      (others.length
+        ? others.map(function (one: any): string {
+          const name = WebAccounts.nameOf(one);
+          return '<button type="button" class="linklike" ' +
+            'data-account-action="switch" data-account-key="' +
+            esc(one.key) + '" title="' +
+            esc(t.text('report.accounts.switchTitle', { user: name })) +
+            '">' + esc(name) +
+            (one.username && one.username !== name
+              ? ' <span>' + esc(one.username) + '</span>' : '') +
+            '</button>';
+        }).join('')
+        : '<p class="usermenuwho" data-account-none="1">' +
+          t.html('report.accounts.none') + '</p>') +
+      '<button type="button" class="linklike" ' +
+      'data-account-action="another" title="' +
+      esc(t.text('report.accounts.anotherTitle')) + '">' +
+      t.html('report.accounts.another') + '</button>' +
+      '<p class="usermenuwho">' + t.html('report.accounts.kept') + '</p>';
+  }
+
+  /**
+   * Draws the switch group again, leaving the open menu open.
+   *
+   * @returns nothing
+   */
+  redrawAccountMenu(): void {
+    const doc = this.env.document;
+    const el = doc && doc.getElementById
+      ? doc.getElementById(ACCOUNTS_ID) : null;
+    if (el) {
+      el.innerHTML = ReportRuntime.accountItems(this);
+    }
+  }
+
+  /**
+   * Switches this tab to another signed-in account of the browser.
+   *
+   * @param key - the account's key, from the menu
+   * @returns nothing
+   */
+  async switchAccount(key: string): Promise<void> {
+    const account = WebAccounts.byKey(this.accounts, key);
+    if (!account) {
+      this.redrawAccountMenu();
+      return;
+    }
+    const back = this.here();
+    this.endIdentity();
+    this.discardClient();
+    try {
+      await this.beginSignIn(back, {
+        login_hint: String(account.username || account.sub || ''),
+        expect: String(account.sub || '')
+      });
+    } catch (e) {
+      // The browser has no logger. The page says the switch did not
+      // start, and keeps what the browser reported.
+      this.paint(problemHtml(this.t,
+        this.t.text('report.accounts.failed') + ' ' +
+        String((e && e.message) || e)));
+    }
+  }
+
+  /**
+   * Signs this tab in as another account. The accounts already signed in
+   * stay signed in.
+   *
+   * @returns nothing
+   */
+  async signInAnother(): Promise<void> {
+    const back = this.here();
+    this.endIdentity();
+    this.discardClient();
+    try {
+      await this.beginSignIn(back, {
+        login_hint: '',
+        prompt: 'login',
+        another: true
+      });
+    } catch (e) {
+      // The browser has no logger. The page says the sign-in did not
+      // start, and keeps what the browser reported.
+      this.paint(problemHtml(this.t,
+        this.t.text('report.accounts.failed') + ' ' +
+        String((e && e.message) || e)));
+    }
   }
 
   /**
@@ -908,10 +1107,13 @@ class ReportRuntime extends SpaClient {
       await this.finishSignIn();
       return;
     }
+    // Opening the application starts the code flow, as the portal and the
+    // console do. The token is only in this page's memory, so a fresh
+    // load has none, and the catalog is an answer from /report-api.
+    // Painting a Sign in button under the word Loading left the page
+    // where the shell had already said it was loading.
     if (!this.accessToken) {
-      this.paint('<p><button type="button" class="btn" data-act="signin">' +
-        esc(this.t.text('report.signIn')) + '</button></p><p class="sub">' +
-        esc(this.t.text('report.loading')) + '</p>');
+      await this.beginSignIn(this.here());
       return;
     }
     await this.hearAccounts();
@@ -959,6 +1161,18 @@ class ReportRuntime extends SpaClient {
    */
   onClick(event: any): void {
     const self = this;
+    const asked = this.accounts && this.accounts.enabled
+      ? WebAccounts.actionOf(event.target) : null;
+    if (asked && (asked.action === 'switch' ||
+                  asked.action === 'another')) {
+      event.preventDefault();
+      if (asked.action === 'switch') {
+        this.switchAccount(asked.key);
+      } else {
+        this.signInAnother();
+      }
+      return;
+    }
     let el = event.target;
     for (let i = 0; el && i < 6; i++) {
       const act = el.getAttribute ? el.getAttribute('data-act') : '';

@@ -8616,7 +8616,9 @@ const SETTINGS = [
     description: 'Create application entries for this service\'s own ' +
                  'surfaces when it starts, under ou=applications with ' +
                  'everything else: the ADMIN CONSOLE at /admin, the USER ' +
-                 'PORTAL at /portal, the MANAGEMENT API at /admin-api, and — ' +
+                 'PORTAL at /portal, the REPORTS application at /report, ' +
+                 'the REPORT API at /report-api, the MANAGEMENT API at ' +
+                 '/admin-api, and — ' +
                  'while it is embedded — the protocol debugger\'s two ' +
                  'clients. They are seeded as FULL RFC 7591 registrations ' +
                  'rather than as labels: the console and the portal as ' +

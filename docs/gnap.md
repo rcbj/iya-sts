@@ -260,7 +260,7 @@ created that way: an entry made on first sight is not a registration (#496,
 mode** (#505). Each location of each access right must be at or under the
 `gnapResourceServerUri` of a registered resource server, be one of this
 service's own resource servers (the default resource indicator,
-`/admin-api`, `/account-api`), or name
+`/admin-api`, `/account-api`, `/report-api`), or name
 a registered application by its audience, permission base URI, `client_id`
 or identifier. Otherwise the request is refused `invalid_request` (400,
 `STS-GNAP-0903`) at creation, modification and derivation alike — the right

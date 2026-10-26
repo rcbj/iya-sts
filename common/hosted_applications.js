@@ -99,6 +99,15 @@ const APPLICATIONS = [
     what: 'The pages that belong to the person looking at them, and the ' +
           'account API they are drawn from.',
     prefixes: ['/portal', '/account-api'], exact: [] },
+  // `/report-api` IS THE REPORTS APPLICATION'S (#956): the page is a
+  // static application that draws every page from it, so the two are one
+  // application on one listener, as the portal and `/account-api` are.
+  // The shell reads the sign-on session to decide the realm chooser, which
+  // is why `session` is set.
+  { id: 'report', label: 'Reports', session: true,
+    what: 'The reports a person here may run, and the API they are drawn ' +
+          'from.',
+    prefixes: ['/report-api', '/report'], exact: [] },
   { id: 'admin-console', label: 'Admin console', rescued: true,
     what: 'The console at /admin, its script and its pages.',
     prefixes: ['/admin'], exact: [] },
