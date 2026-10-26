@@ -326,6 +326,20 @@ const BUILT_IN: TemplateSpec[] = [
           '{{minutes}} minutes.</p><p>It works once, and only in that ' +
           'browser.</p><p>If you are not signing in, ignore this message: ' +
           'the link cannot sign anybody else in.</p>' },
+  // #956: a finished report, when the definition asked to be told. A
+  // notification, so a person may decline it. The link is this service's
+  // own reports page, never an address the query named. Failure to send
+  // does not fail the job (STS-REPORT-0027).
+  { id: 'report-ready', category: 'notification',
+    title: 'A report is ready',
+    values: ['username', 'definition', 'status'],
+    links: ['report'],
+    subject: 'Your {{service}} report is {{status}}',
+    text: 'The report {{definition}} for {{username}} is {{status}}.\n\n' +
+          'Open it:\n\n{{report}}\n',
+    html: '<p>The report <strong>{{definition}}</strong> for ' +
+          '{{username}} is {{status}}.</p><p><a href="{{report}}">Open ' +
+          'it</a>.</p>' },
   { id: 'reset-refused-attempt', category: 'security',
     title: 'A password reset was refused',
     values: ['username', 'when'],

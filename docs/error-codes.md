@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4639** of them, in **47** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4671** of them, in **48** subsystems.
 
 ## Where a code appears
 
@@ -96,6 +96,7 @@ is an ordinary outcome.
 * [Identity-provider-initiated sign-in (`STS-LAUNCH`)](#sts-launch) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 181
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
+* [Reporting (`STS-REPORT`)](#sts-report) — 32
 
 ## STS-HTTP
 
@@ -5339,6 +5340,47 @@ Raised from: debugger/, and the debugger scope rule in oauth-oidc/oauth2.ts.
 | `STS-DBG-0031` | A DPoP-bound access token (cnf.jkt) was presented to the debugger as a Bearer token. | invalid_token (HTTP 401) |
 | `STS-DBG-0032` | A DPoP proof presented to the debugger did not verify, and the proof check reported no code of its own. | invalid_dpop_proof (HTTP 401) |
 | `STS-DBG-0033` | Product mode: the debugger permission was refused to the bootstrap administrator because it has not yet claimed the console with its password; until it has, its roles are honoured at the console alone, from a password sign-in (#103). | none at issuance (the scope is left off); HTTP 403 at the debugger |
+
+## STS-REPORT
+
+**Reporting.** The reports application at /report and its API at /report-api: catalog queries, saved definitions, jobs and stored results (#956).
+
+Raised from: report/.
+
+| Code | What failed | Client sees |
+|---|---|---|
+| `STS-REPORT-0001` | A report query named a source the catalog does not publish. | unknown_source (HTTP 404) |
+| `STS-REPORT-0002` | A report query named a field the source does not publish. | unknown_field (HTTP 400) |
+| `STS-REPORT-0003` | A report query used an operator, an aggregate or a format the catalog does not allow. | unsupported_operation or unsupported_format (HTTP 400) |
+| `STS-REPORT-0004` | A report query document is not the shape this service accepts. | invalid_query (HTTP 400) |
+| `STS-REPORT-0005` | A report asks for more than its mode allows, or a synchronous run exceeded its time. | result_too_large (HTTP 400) |
+| `STS-REPORT-0006` | The reports API was called with no access token. | HTTP 401 |
+| `STS-REPORT-0007` | The access token presented to the reports API did not verify. | invalid_token (HTTP 401) |
+| `STS-REPORT-0008` | The access token presented to the reports API has expired. | invalid_token (HTTP 401) |
+| `STS-REPORT-0009` | The token presented to the reports API is not an access token. | invalid_token (HTTP 401) |
+| `STS-REPORT-0010` | The access token presented to the reports API was issued by another issuer. | invalid_token (HTTP 401) |
+| `STS-REPORT-0011` | The access token is not audienced to this realm's reports API. | invalid_token (HTTP 403) |
+| `STS-REPORT-0012` | The access token is revoked, or the account is disabled. | invalid_token (HTTP 401) |
+| `STS-REPORT-0013` | The sign-on session the access token came from has ended. | invalid_token (HTTP 401) |
+| `STS-REPORT-0014` | A certificate-bound access token was presented to the reports API without that certificate. | invalid_token (HTTP 401) |
+| `STS-REPORT-0015` | A DPoP-bound token was sent to the reports API as Bearer, or the proof was refused and named no code of its own. | invalid_token or invalid_dpop_proof (HTTP 401) |
+| `STS-REPORT-0016` | The access token presented to the reports API names no person. | forbidden (HTTP 403) |
+| `STS-REPORT-0017` | The token lacks report:use or report:admin, or the client no longer declares the scope. | insufficient_scope or forbidden (HTTP 403) |
+| `STS-REPORT-0018` | This account may not use reports in this realm. | forbidden (HTTP 403) |
+| `STS-REPORT-0019` | No such report definition, including one the caller may not see. | not_found (HTTP 404) |
+| `STS-REPORT-0020` | No such report job, including one the caller may not see. | job_not_found (HTTP 404) |
+| `STS-REPORT-0021` | The report job has not finished, so its result is not ready. | job_not_ready (HTTP 409) |
+| `STS-REPORT-0022` | The report result is past its retention and is gone. | result_expired (HTTP 410) |
+| `STS-REPORT-0023` | This realm or this person already has as many report jobs running as the setting allows. | too_many_jobs (HTTP 429) |
+| `STS-REPORT-0024` | A report source was unavailable, or the report could not be completed. | unavailable (HTTP 500) |
+| `STS-REPORT-0025` | A running report job's process fence is gone, so the job is failed rather than resumed after a restart. | recorded; the job fails |
+| `STS-REPORT-0027` | A report completion notice could not be sent. The job still completed. | recorded |
+| `STS-REPORT-0028` | A scheduled report's owner may no longer run it, so this occurrence did not run. | recorded |
+| `STS-REPORT-0029` | The report job completed but its stored bytes are gone. | result_expired (HTTP 410) |
+| `STS-REPORT-0030` | A report definition was refused for its name, query, schedule or owner. | invalid_query (HTTP 400) |
+| `STS-REPORT-0031` | A share of a report definition was refused. | HTTP 400 |
+| `STS-REPORT-0032` | A report job was cancelled before it finished. | recorded |
+| `STS-REPORT-0033` | A method other than GET or HEAD was sent to the reports document. | HTTP 404 |
 
 ## Adding a code
 

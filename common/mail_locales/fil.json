@@ -70,6 +70,11 @@
       "text": "Para tapusin ang pag-sign in sa {{service}} bilang {{username}}, buksan ang link na ito SA BROWSER KUNG SAAN KA NAGSIMULANG MAG-SIGN IN, sa loob ng {{minutes}} minuto:\n\n{{signin}}\n\nIsang beses lang ito gagana, at sa browser na iyon lang.\n\nKung hindi ka nagsa-sign in, balewalain ang mensaheng ito: hindi makakapag-sign in ng iba ang link.\n",
       "html": "<p>Para tapusin ang pag-sign in sa {{service}} bilang <strong>{{username}}</strong>, <a href=\"{{signin}}\">buksan ang link na ito</a> sa browser kung saan ka nagsimulang mag-sign in, sa loob ng {{minutes}} minuto.</p><p>Isang beses lang ito gagana, at sa browser na iyon lang.</p><p>Kung hindi ka nagsa-sign in, balewalain ang mensaheng ito: hindi makakapag-sign in ng iba ang link.</p>"
     },
+    "report-ready": {
+      "subject": "Ang iyong ulat sa {{service}} ay {{status}}",
+      "text": "Ang ulat na {{definition}} para kay {{username}} ay {{status}}.\n\nBuksan ito:\n\n{{report}}\n",
+      "html": "<p>Ang ulat na <strong>{{definition}}</strong> para kay {{username}} ay {{status}}.</p><p><a href=\"{{report}}\">Buksan ito</a>.</p>"
+    },
     "reset-refused-attempt": {
       "subject": "May sumubok na i-reset ang iyong password sa {{service}}",
       "text": "Noong {{when}}, may humiling na i-reset ang password ng account na {{username}}, inilagay ang address na ito, at nagbigay ng recovery code na hindi sa iyo. Walang binago at walang ipinadalang reset link.\n\nKung ikaw ito, subukang muli gamit ang recovery code na hindi pa nagagamit. Kung hindi, may nakakaalam ng pangalan ng iyong account at ng iyong address; makipag-ugnayan sa namamahala ng iyong account.\n",

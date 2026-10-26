@@ -267,7 +267,9 @@ const CHANGE_ROWS_PER_STATEMENT = 5000;
 // index `sts_minted_index_sort`, a store's `sortBy` value on one more index
 // row per stored row, which `minted.newest` walks instead of sorting the
 // store by `written_at` (only a BRIN, #630).
-const SCHEMA_VERSION = 25;
+// 26 SINCE 2026-10-25 (#956): `sts_report_artifacts`, the bytes of a
+// finished report. Definitions and job rows stay in the realm maps.
+const SCHEMA_VERSION = 26;
 
 // THE DATABASE'S CLOCK, in the milliseconds every cluster table stores. See the
 // cluster block in SCHEMA_OBJECTS for why no process's own clock is used.
@@ -1565,6 +1567,17 @@ const SCHEMA_OBJECTS = [
   '  cell       text   NOT NULL,' +
   '  written_at bigint NOT NULL,' +
   '  PRIMARY KEY (realm, kind, digest))' },
+  // A finished report's bytes (#956, schema version 26). The definition and
+  // the job row stay in the realm maps; this table is only the artifact.
+  { name: 'sts_report_artifacts', statement:
+  'CREATE TABLE IF NOT EXISTS sts_report_artifacts (' +
+  '  realm      text   NOT NULL,' +
+  '  job_id     text   NOT NULL,' +
+  '  bytes      bytea  NOT NULL,' +
+  '  sha256     text   NOT NULL,' +
+  '  media_type text   NOT NULL,' +
+  '  created_at bigint NOT NULL,' +
+  '  PRIMARY KEY (realm, job_id))' },
   // What version of the above is on disk. One row, and nothing reads it yet —
   // it is here so that a future change has something to look at other than the
   // shape of the tables.
@@ -10135,6 +10148,53 @@ function create(options) {
           live: Number((answers[2].rows[0] || {}).live) || 0
         };
       });
+    },
+
+    // A finished report's bytes (#956). Upserted: a retry of the same job
+    // replaces the artifact rather than leaving the first one.
+    putReportArtifact: function (row) {
+      log.debug("Entering putReportArtifact().");
+      log.debug("Leaving putReportArtifact().");
+      return pool.query(
+        'INSERT INTO sts_report_artifacts (realm, job_id, bytes, sha256, ' +
+        'media_type, created_at) VALUES ($1, $2, $3, $4, $5, $6) ' +
+        'ON CONFLICT (realm, job_id) DO UPDATE SET ' +
+        'bytes = EXCLUDED.bytes, sha256 = EXCLUDED.sha256, ' +
+        'media_type = EXCLUDED.media_type, ' +
+        'created_at = EXCLUDED.created_at',
+        [row.realm, row.jobId, row.bytes, row.sha256, row.mediaType,
+         Number(row.createdAt)]
+      );
+    },
+
+    getReportArtifact: function (key) {
+      log.debug("Entering getReportArtifact().");
+      log.debug("Leaving getReportArtifact().");
+      return pool.query(
+        'SELECT bytes, sha256, media_type, created_at FROM ' +
+        'sts_report_artifacts WHERE realm = $1 AND job_id = $2',
+        [key.realm, key.jobId]
+      ).then(function (r) {
+        const found = r.rows[0];
+        if (!found) {
+          return null;
+        }
+        return {
+          bytes: found.bytes,
+          sha256: found.sha256,
+          mediaType: found.media_type,
+          createdAt: Number(found.created_at)
+        };
+      });
+    },
+
+    deleteReportArtifact: function (key) {
+      log.debug("Entering deleteReportArtifact().");
+      log.debug("Leaving deleteReportArtifact().");
+      return pool.query(
+        'DELETE FROM sts_report_artifacts WHERE realm = $1 AND job_id = $2',
+        [key.realm, key.jobId]
+      );
     },
 
     purgeUsedAssertions: function (nowMs) {

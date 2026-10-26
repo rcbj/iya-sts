@@ -179,27 +179,27 @@ var config = {
 
   // --- Web security ----------------------------------------------------
   authn: {
-    sessionSweepS: 30,              // How often expired sessions are ended (seconds)
-    cookieDomain: "",               // Sign-on session cookie domain
-    sessionLifetimeS: 3600,         // Session lifetime (seconds)
-    sessionIdleTimeoutS: 0,         // Session idle timeout (seconds, 0 = none)
-    deviceBoundSessions: false,     // Bind sessions to the browser's key (DBSC)
+    sessionSweepS: 30,               // How often expired sessions are ended (seconds)
+    cookieDomain: "",                // Sign-on session cookie domain
+    sessionLifetimeS: 3600,          // Session lifetime (seconds)
+    sessionIdleTimeoutS: 0,          // Session idle timeout (seconds, 0 = none)
+    deviceBoundSessions: false,      // Bind sessions to the browser's key (DBSC)
     deviceBoundCookieLifetimeS: 600, // Bound cookie lifetime (seconds)
-    deviceBoundIncludeSite: false,   // Site-scope the bound cookie (#742)
-    deviceBoundIssuanceWaitS: 60,    // Seconds issuance waits for a binding
-    maxSessions: 100000,            // Most sign-on sessions per realm
-    maxSessionsPerSubject: 32,      // Most countable sessions per subject
-    sessionShedPerSweep: 100,       // Own surplus sessions ended per sweep
-    sessionWindow: "auto",          // Bounded session window; restart to apply
-    sessionCacheEntries: 10000,     // Sessions one process holds
-    sessionReadTimeoutMs: 2000,     // Session read timeout (milliseconds)
-    pendingTtlS: 600,               // How long a sign-in waits at the screen (seconds)
-    mfaStepTtlS: 300,               // How long a second-factor step waits (seconds)
-    multipleAccounts: true,         // Several signed-in accounts in one browser
-    maxBrowserAccounts: 10,         // Most accounts one browser remembers
-    rememberedAccountDays: 30,      // How long a signed-out account is remembered (days)
-    passwordAloneDoors: "",         // Password-only doors that accept a password alone
-    unauthenticatedSessions: false  // Offer "Continue without signing in"
+    deviceBoundIncludeSite: false,   // Scope a bound session to the registrable domain
+    deviceBoundIssuanceWaitS: 60,    // How long issuance waits for a device binding (seconds)
+    maxSessions: 100000,             // Most sign-on sessions per realm
+    maxSessionsPerSubject: 32,       // Most countable sessions per subject
+    sessionShedPerSweep: 100,        // Own surplus sessions ended per sweep
+    sessionWindow: "auto",           // Bounded session window; restart to apply
+    sessionCacheEntries: 10000,      // Sessions one process holds
+    sessionReadTimeoutMs: 2000,      // Session read timeout (milliseconds)
+    pendingTtlS: 600,                // How long a sign-in waits at the screen (seconds)
+    mfaStepTtlS: 300,                // How long a second-factor step waits (seconds)
+    multipleAccounts: true,          // Several signed-in accounts in one browser
+    maxBrowserAccounts: 10,          // Most accounts one browser remembers
+    rememberedAccountDays: 30,       // How long a signed-out account is remembered (days)
+    passwordAloneDoors: "",          // Password-only doors that accept a password alone
+    unauthenticatedSessions: false   // Offer "Continue without signing in"
   },
 
   // --- Web security ----------------------------------------------------
@@ -256,9 +256,9 @@ var config = {
     attestation: "direct",                                                                                                                             // Attestation conveyance
     attestationPolicy: "by-mode",                                                                                                                      // Attestation policy
     attestationTrustAnchors: "",                                                                                                                       // Attestation trust anchors (PEM)
-    attestationEvidenceTsaUrl: "",                                                                                                                     // RFC 3161 TSA for passkey evidence records
-    attestationEvidenceTsaTrustAnchors: "",                                                                                                           // RFC 3161 TSA trust anchors (PEM)
-    attestationEvidenceHashAlgorithm: "sha256",                                                                                                      // RFC 4998 hash-tree algorithm and renewal target
+    attestationEvidenceTsaUrl: "",                                                                                                                     // Passkey evidence timestamp authority URL
+    attestationEvidenceTsaTrustAnchors: "",                                                                                                            // Passkey evidence TSA trust anchors (PEM)
+    attestationEvidenceHashAlgorithm: "sha256",                                                                                                        // Passkey evidence hash-tree algorithm
     attestationAllowedAaguids: "",                                                                                                                     // Allowed authenticator models (AAGUIDs)
     attestationMinCertificationLevel: "none",                                                                                                          // Least FIDO certification level
     attestationRequireFips: false,                                                                                                                     // Require a FIPS 140 certified model
@@ -467,7 +467,7 @@ var config = {
     clockSkewS: 30,                                // Token clock skew (s)
     redirectUris: "",                              // Registered redirect URIs
     loopbackPortWildcard: true,                    // Loopback port wildcard
-    refreshTokenEncryptionAlg: "A256KW",     // Refresh token encryption: key management (alg)
+    refreshTokenEncryptionAlg: "A256KW",           // Refresh token encryption: key management (alg)
     refreshTokenEncryptionEnc: "A256GCM",          // Refresh token encryption: content (enc)
     refreshTokenEncryptionKeyBits: 2048,           // Refresh token encryption: RSA key size (bits)
     refreshTokenEncryptionCurve: "P-256",          // Refresh token encryption: EC curve
@@ -496,7 +496,7 @@ var config = {
     stepUpMaxAgeS: -1,                             // Step-up: oldest authentication this service's resource server accepts (s)
     errorPageAutoRedirectS: 0,                     // Error page: continue to the client after (seconds)
     keyBinding: true,                              // OpenID Connect Key Binding
-    didClaim: false,                               // the did claim (#693)
+    didClaim: false,                               // The did claim
     sessionManagement: false,                      // OpenID Connect Session Management
     frontchannelLogout: true,                      // OpenID Connect Front-Channel Logout
     frontchannelLogoutWaitS: 3,                    // Front-channel logout: seconds before returning
@@ -755,7 +755,7 @@ var config = {
     jwtCertificateHeader: "x5u"  // JWT certificate header
   },
 
-  // --- WS-Federation assertions ----------------------------------------
+  // --- WS-Federation ---------------------------------------------------
   wsfed: {
     idpInitiatedSso: false,   // Identity-provider-initiated sign-in
     spInitiatedSso: true,     // Relying-party-initiated sign-in
@@ -1174,9 +1174,9 @@ var config = {
 
   // --- Audit log -------------------------------------------------------
   audit: {
-    maxEvents: 5000,                // Maximum events held
-    protocolCalls: true,            // Record protocol endpoint calls
-    authenticationHistoryDays: 30   // Authentication history (days)
+    maxEvents: 5000,               // Maximum events held
+    protocolCalls: true,           // Record protocol endpoint calls
+    authenticationHistoryDays: 30  // Authentication history (days)
   },
 
   // --- Delegation ------------------------------------------------------
@@ -1395,7 +1395,7 @@ var config = {
     enabled: true,        // Run scheduled jobs
     tickS: 15,            // How often the leader looks for due jobs (seconds)
     runHistoryCount: 100, // Runs kept per job
-    runHistoryHours: 24,  // Runs kept for (hours)
+    runHistoryHours: 1,   // Runs kept for (hours)
     disabledJobs: "",     // Jobs switched off
     runTimeoutS: 600,     // The longest a run may take (seconds)
     maxConcurrentRuns: 2, // Most runs going at once
@@ -1463,6 +1463,22 @@ var config = {
     verificationTtlMinutes: 1440,        // Address verification link lifetime (minutes)
     securityNotices: true,               // Security notices
     notifyAdministrators: true           // Tell administrators of system acts
+  },
+
+  // --- Reporting -------------------------------------------------------
+  report: {
+    syncMaxRows: 500,           // Synchronous report row cap
+    syncMaxBytes: 1000000,      // Synchronous report byte cap
+    syncMaxMs: 2000,            // Synchronous report time cap (milliseconds)
+    asyncMaxRows: 100000,       // Report job row cap
+    asyncMaxBytes: 32000000,    // Report job byte cap
+    pdfMaxRows: 2000,           // PDF report row cap
+    pdfMaxPages: 100,           // PDF report page cap
+    maxConcurrentPerRealm: 2,   // Report jobs running per realm
+    maxConcurrentPerSubject: 1, // Report jobs running per person
+    artifactRetentionS: 86400,  // How long a report result is kept (seconds)
+    jobRetentionS: 604800,      // How long a report job row is kept (seconds)
+    usersGroup: ""              // Who may be issued report:use
   },
 
   // --- Listener: Main port ---------------------------------------------

@@ -70,6 +70,11 @@
       "text": "Para terminar de iniciar sesión en {{service}} como {{username}}, abra este enlace EN EL NAVEGADOR DONDE EMPEZÓ A INICIAR SESIÓN, en los próximos {{minutes}} minutos:\n\n{{signin}}\n\nSolo funciona una vez, y solo en ese navegador.\n\nSi no está iniciando sesión, ignore este mensaje: el enlace no puede iniciar la sesión de nadie más.\n",
       "html": "<p>Para terminar de iniciar sesión en {{service}} como <strong>{{username}}</strong>, <a href=\"{{signin}}\">abra este enlace</a> en el navegador donde empezó a iniciar sesión, en los próximos {{minutes}} minutos.</p><p>Solo funciona una vez, y solo en ese navegador.</p><p>Si no está iniciando sesión, ignore este mensaje: el enlace no puede iniciar la sesión de nadie más.</p>"
     },
+    "report-ready": {
+      "subject": "Su informe de {{service}} está {{status}}",
+      "text": "El informe {{definition}} para {{username}} está {{status}}.\n\nÁbralo:\n\n{{report}}\n",
+      "html": "<p>El informe <strong>{{definition}}</strong> para {{username}} está {{status}}.</p><p><a href=\"{{report}}\">Ábralo</a>.</p>"
+    },
     "reset-refused-attempt": {
       "subject": "Alguien intentó restablecer su contraseña de {{service}}",
       "text": "El {{when}} alguien pidió restablecer la contraseña de la cuenta {{username}}, indicó esta dirección y dio un código de recuperación que no es uno de los suyos. No se cambió nada y no se envió ningún enlace de restablecimiento.\n\nSi fue usted, vuelva a intentarlo con un código de recuperación sin usar. Si no, alguien conoce el nombre de su cuenta y su dirección; comuníquese con quien administra su cuenta.\n",

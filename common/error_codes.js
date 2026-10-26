@@ -447,7 +447,12 @@ const SUBSYSTEMS = [
            'oauth-oidc/oauth2.ts',
     what: 'The embedded identity protocol debugger: its listener, its ' +
           'sign-in, the access token its api requires, the permission that ' +
-          'token carries, and the api process it forwards to.' }
+          'token carries, and the api process it forwards to.' },
+  { id: 'REPORT', label: 'Reporting',
+    where: 'report/',
+    what: 'The reports application at /report and its API at /report-api: ' +
+          'catalog queries, saved definitions, jobs and stored results ' +
+          '(#956).' }
 ];
 
 // ---------------------------------------------------------------------------
@@ -23493,7 +23498,117 @@ const CODES = [
       'with its password; until it has, its roles are honoured at the ' +
       'console alone, from a password sign-in (#103).',
     spec: 'none at issuance (the scope is left off); HTTP 403 at the ' +
-      'debugger' }
+      'debugger' },
+  // #956. Recorded, never sent. The public token is named in `spec`.
+  { code: 'STS-REPORT-0001',
+    summary: 'A report query named a source the catalog does not publish.',
+    spec: 'unknown_source (HTTP 404)' },
+  { code: 'STS-REPORT-0002',
+    summary: 'A report query named a field the source does not publish.',
+    spec: 'unknown_field (HTTP 400)' },
+  { code: 'STS-REPORT-0003',
+    summary: 'A report query used an operator, an aggregate or a format ' +
+      'the catalog does not allow.',
+    spec: 'unsupported_operation or unsupported_format (HTTP 400)' },
+  { code: 'STS-REPORT-0004',
+    summary: 'A report query document is not the shape this service accepts.',
+    spec: 'invalid_query (HTTP 400)' },
+  { code: 'STS-REPORT-0005',
+    summary: 'A report asks for more than its mode allows, or a synchronous ' +
+      'run exceeded its time.',
+    spec: 'result_too_large (HTTP 400)' },
+  { code: 'STS-REPORT-0006',
+    summary: 'The reports API was called with no access token.',
+    spec: 'HTTP 401' },
+  { code: 'STS-REPORT-0007',
+    summary: 'The access token presented to the reports API did not verify.',
+    spec: 'invalid_token (HTTP 401)' },
+  { code: 'STS-REPORT-0008',
+    summary: 'The access token presented to the reports API has expired.',
+    spec: 'invalid_token (HTTP 401)' },
+  { code: 'STS-REPORT-0009',
+    summary: 'The token presented to the reports API is not an access token.',
+    spec: 'invalid_token (HTTP 401)' },
+  { code: 'STS-REPORT-0010',
+    summary: 'The access token presented to the reports API was issued by ' +
+      'another issuer.',
+    spec: 'invalid_token (HTTP 401)' },
+  { code: 'STS-REPORT-0011',
+    summary: 'The access token is not audienced to this realm\'s reports API.',
+    spec: 'invalid_token (HTTP 403)' },
+  { code: 'STS-REPORT-0012',
+    summary: 'The access token is revoked, or the account is disabled.',
+    spec: 'invalid_token (HTTP 401)' },
+  { code: 'STS-REPORT-0013',
+    summary: 'The sign-on session the access token came from has ended.',
+    spec: 'invalid_token (HTTP 401)' },
+  { code: 'STS-REPORT-0014',
+    summary: 'A certificate-bound access token was presented to the reports ' +
+      'API without that certificate.',
+    spec: 'invalid_token (HTTP 401)' },
+  { code: 'STS-REPORT-0015',
+    summary: 'A DPoP-bound token was sent to the reports API as Bearer, or ' +
+      'the proof was refused and named no code of its own.',
+    spec: 'invalid_token or invalid_dpop_proof (HTTP 401)' },
+  { code: 'STS-REPORT-0016',
+    summary: 'The access token presented to the reports API names no person.',
+    spec: 'forbidden (HTTP 403)' },
+  { code: 'STS-REPORT-0017',
+    summary: 'The token lacks report:use or report:admin, or the client no ' +
+      'longer declares the scope.',
+    spec: 'insufficient_scope or forbidden (HTTP 403)' },
+  { code: 'STS-REPORT-0018',
+    summary: 'This account may not use reports in this realm.',
+    spec: 'forbidden (HTTP 403)' },
+  { code: 'STS-REPORT-0019',
+    summary: 'No such report definition, including one the caller may not see.',
+    spec: 'not_found (HTTP 404)' },
+  { code: 'STS-REPORT-0020',
+    summary: 'No such report job, including one the caller may not see.',
+    spec: 'job_not_found (HTTP 404)' },
+  { code: 'STS-REPORT-0021',
+    summary: 'The report job has not finished, so its result is not ready.',
+    spec: 'job_not_ready (HTTP 409)' },
+  { code: 'STS-REPORT-0022',
+    summary: 'The report result is past its retention and is gone.',
+    spec: 'result_expired (HTTP 410)' },
+  { code: 'STS-REPORT-0023',
+    summary: 'This realm or this person already has as many report jobs ' +
+      'running as the setting allows.',
+    spec: 'too_many_jobs (HTTP 429)' },
+  { code: 'STS-REPORT-0024',
+    summary: 'A report source was unavailable, or the report could not be ' +
+      'completed.',
+    spec: 'unavailable (HTTP 500)' },
+  { code: 'STS-REPORT-0025',
+    summary: 'A running report job\'s process fence is gone, so the job is ' +
+      'failed rather than resumed after a restart.',
+    spec: 'recorded; the job fails' },
+  { code: 'STS-REPORT-0027',
+    summary: 'A report completion notice could not be sent. The job still ' +
+      'completed.',
+    spec: 'recorded' },
+  { code: 'STS-REPORT-0028',
+    summary: 'A scheduled report\'s owner may no longer run it, so this ' +
+      'occurrence did not run.',
+    spec: 'recorded' },
+  { code: 'STS-REPORT-0029',
+    summary: 'The report job completed but its stored bytes are gone.',
+    spec: 'result_expired (HTTP 410)' },
+  { code: 'STS-REPORT-0030',
+    summary: 'A report definition was refused for its name, query, schedule ' +
+      'or owner.',
+    spec: 'invalid_query (HTTP 400)' },
+  { code: 'STS-REPORT-0031',
+    summary: 'A share of a report definition was refused.',
+    spec: 'HTTP 400' },
+  { code: 'STS-REPORT-0032',
+    summary: 'A report job was cancelled before it finished.',
+    spec: 'recorded' },
+  { code: 'STS-REPORT-0033',
+    summary: 'A method other than GET or HEAD was sent to the reports ' +
+      'document.',
+    spec: 'HTTP 404' }
   // ===== END ===============================================================
 ];
 

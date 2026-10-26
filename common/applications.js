@@ -20124,11 +20124,11 @@ function debuggerApplications() {
 // tokens with the session anyway: the relying-party session holding each one
 // ends in the same cascade, so the token is nobody's any more.
 /**
- * The client ids this service's own hosted surfaces (the console, the portal
- * and the debugger) sign in as.
+ * The client ids this service's own hosted surfaces (the console, the portal,
+ * the reports application and the debugger) sign in as.
  */
 const HOSTED_SURFACE_CLIENT_IDS = Object.freeze(['sts-admin-console',
-  'sts-user-portal', 'sts-debugger-ui']);
+  'sts-user-portal', 'sts-report', 'sts-debugger-ui']);
 
 // The rows, built fresh on each call because each carries a credential that is
 // generated rather than declared — a registration access token, and a client
@@ -20281,6 +20281,44 @@ function internalApplications() {
         // issued to it is DPoP-bound to a key the browser cannot export
         // (`sender_constraints.js`, DPOP_BOUND_PUBLIC_CLIENTS). It was
         // private_key_jwt while the server signed in for it.
+        token_endpoint_auth_method: 'none'
+      } },
+    // THE REPORTS APPLICATION (#956). The portal's pattern: a static
+    // application signing in in the browser as the public client
+    // `sts-report`, PKCE, every token DPoP-bound. `/report` reads the
+    // ambient realm's session, so a realm without this entry could not
+    // sign anybody in. The two report scopes are declared here and
+    // narrowed at issuance (`report/rights.ts`): `report:use` for the
+    // configured group and for administrators, `report:admin` only for
+    // an administrator.
+    { identifier: 'sts-report',
+      name: 'Reports',
+      kinds: ['oauth2-client', 'oidc-relying-party'],
+      protocols: ['OAuth 2.0 / OIDC'],
+      realmScope: 'every',
+      description: 'seeded at startup: this service\'s own reports at ' +
+                   '/report (applications.seedInternal)',
+      attributes: { appAllowedProtocol: ['oauth2', 'oidc'],
+                    oauthGlobalConsent: ['openid', 'profile', 'email',
+                                         'offline_access', 'report:use',
+                                         'report:admin'] },
+      registration: {
+        client_id: 'sts-report',
+        client_name: 'Reports',
+        client_id_issued_at: issued,
+        registration_access_token: randomId(24),
+        registration_client_uri: helpers.rebaseTo(base, 'oauth-oidc') +
+                                 '/oauth2/register/sts-report',
+        client_uri: helpers.rebaseTo(base, 'report') + '/report',
+        application_type: 'web',
+        redirect_uris: [helpers.rebaseTo(base, 'report') +
+                        '/report/callback'],
+        post_logout_redirect_uris: [helpers.rebaseTo(base, 'report') +
+                                    '/report'],
+        grant_types: ['authorization_code', 'refresh_token'],
+        response_types: ['code'],
+        scope: 'openid profile email offline_access report:use ' +
+               'report:admin',
         token_endpoint_auth_method: 'none'
       } },
     { identifier: 'sts-management-api',

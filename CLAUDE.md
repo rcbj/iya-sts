@@ -68,6 +68,7 @@ directory's `CLAUDE.md` is the documentation of what is in it.
 | `launch/` | `/launch/{app}`, the one identity-provider-initiated sign-in link per application (#426). `launch/CLAUDE.md`. |
 | `portal/` | The user portal, a static application over `/account-api`. `portal/CLAUDE.md`. |
 | `account-api/` | `/account-api`, the portal's only door. `account-api/CLAUDE.md`. |
+| `report/` | The reports application at `/report` and its API at `/report-api` (#956). `report/CLAUDE.md`. |
 | `oauth-oidc/` | The authorization server and OpenID provider. `oauth-oidc/CLAUDE.md`. |
 | `authn/` | The sign-in service, which **owns the SESSION**, and its static screens over `/authn-api`. `authn/CLAUDE.md`. |
 | `saml/` | SAML 2.0 and SAML 1.1, each a separate identity provider. `saml/CLAUDE.md`. |
@@ -156,6 +157,7 @@ surfaces below are the exceptions, each argued where it lives.
 | `/xacml/pep/*`, `POST /xacml/pip` | a client certificate holding `REMOTE_PEPS` | `xacml/CLAUDE.md` |
 | `GET /xacml`, `POST /xacml/pdp`, `GET /xacml/policies` | a client certificate holding `XACML_USER` | `xacml/CLAUDE.md` |
 | `/account-api` | this realm's DPoP-bound `account:manage` token; the person is always its subject | `account-api/CLAUDE.md` |
+| `/report-api` | this realm's DPoP-bound `report:use` or `report:admin` token, issued to `sts-report` | `report/CLAUDE.md` |
 | `/admin-api` | an access token audienced to it, with the scope the operation needs | `mgmt-api/CLAUDE.md` |
 | `/oauth2/introspect` | client authentication | `oauth-oidc/CLAUDE.md` (3ai) |
 | the debugger listener | a token only console administrators are issued; cannot be turned off | `debugger/CLAUDE.md` |
@@ -521,6 +523,7 @@ preference; this table says what the constraint is and the named file says why.
 | 18g | `admin-ui/caches_admin` | 18a's placement and 18a's reason (#74). | `admin-ui/CLAUDE.md` |
 | 18h | `admin-ui/vc_status_admin` | 18a's placement and 18a's reason, after `oid4vc/vc_status`. | `admin-ui/CLAUDE.md` |
 | 18i | `admin-ui/scheduler_admin` | 18a's placement and 18a's reason (#49); the page asks the scheduler when drawn, so a job registered later still appears. | `cluster/CLAUDE.md` |
+| 18i-report | `report/report_app`, `report/report_api` | After the scheduler is in hand (the module registers its six jobs at load), and after `oauth2` and `authn` (the API's lazy dependencies). The two paths collide with nothing. | `report/CLAUDE.md` |
 | 18j | `risk/risk_store`, `risk_datasets`, `risk_failures`, `risk_upload`, `risk_engine`, then `admin-ui/risk_admin` | 18a's placement and reason (#62): libraries, then the page, after the scheduler. **Nothing requires the libraries earlier** — they are reached lazily. | `risk/CLAUDE.md` |
 | 18j-iii | `common/attestation_revocation` | Inside 18j, after `risk/risk_datasets` (#256). A library: registers scheduler jobs, no route; reached lazily. | `common/CLAUDE.md` (3cf) |
 | 18j-iv | `common/passkey_report` | After 18j-iii, before `ldap/ldap_server` (21), whose require fills its directory slot and whose key-writing doors note there (#942). A library: a scheduler job, no route. | `common/CLAUDE.md` (3cs) |
@@ -788,6 +791,7 @@ human-facing page outside `/admin` and `/portal` into one, surface by surface**
 |---|---|---|
 | `/admin`, `/admin/*` — the console (#446) | `/admin/console.js`; `connect-src 'self'` | `admin-ui/CLAUDE.md`, `mgmt-api/CLAUDE.md` |
 | `/portal`, `/portal/*` — the portal (#568) | `/portal/portal.js`; `connect-src 'self'`, `img-src 'self' data:` | `portal/CLAUDE.md`, `account-api/CLAUDE.md` |
+| `/report`, `/report/*` — the reports application (#956) | `/report/report.js`; `connect-src` the sign-in origins, `style-src 'self'` | `report/CLAUDE.md` |
 | `/` — the front door (#579) | `/home.js`; `style-src`, `connect-src` (+ the sign-in origin) | `home/CLAUDE.md` |
 | `/authn/login`, `/authn/select-idp`, `/authn/password-change` (#571) | `/authn/signin.js`; `style-src`, `connect-src` | `authn/CLAUDE.md` |
 | the steps after the screen: `/authn/totp`, `/authn/webauthn`, `/authn/backup-code`, `/authn/password-factor`, `/authn/mfa-setup`, `/authn/email-*` (#572, #573) | `/authn/signin.js`; the same | `authn/CLAUDE.md` |
@@ -877,8 +881,9 @@ page under Protocols also owes a row in `admin-core/protocol_endpoints.ts`**
 reason; `tests/protocol_endpoints.js` fails otherwise.
 
 **AND A CARD IS NOT ALWAYS A PROTOCOL, WHICH IS WHY THE COUNT IN THE OVERVIEW
-AND THE COUNT ON THAT PAGE ARE DIFFERENT NUMBERS.** Two cards carry
-`notAProtocol` — the User portal, which is an APPLICATION, and **Email codes and
+AND THE COUNT ON THAT PAGE ARE DIFFERENT NUMBERS.** Three cards carry
+`notAProtocol` — the User portal and Reporting (#956), which are
+applications, and **Email codes and
 links (#64), a credential mechanism that a guideline says is not an
 authenticator at all** (it names NIST SP 800-63B-4 and RFC 8176 anyway).
 **Recovery codes carried it until #283 (2026-10-07)** on the claim that nobody

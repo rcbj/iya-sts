@@ -206,6 +206,12 @@ bundle_surface "the admin console" admin-ui/web_pages.ts StsConsole \
 bundle_surface "the user portal" portal/web_portal_pages.ts StsPortal \
   portal/portal.bundle.js portal/web_portal.ts portal/portal-spa.js
 
+# THE REPORTS APPLICATION (#956): `report/report.bundle.js` (`StsReport`,
+# `web_report_pages.ts`) and `report/report-spa.js` (`web_report.ts`), served
+# at `/report/report.js`.
+bundle_surface "the report" report/web_report_pages.ts StsReport \
+  report/report.bundle.js report/web_report.ts report/report-spa.js
+
 # THE FRONT DOOR (#579), the first public surface: `home/home.bundle.js`
 # (`StsHome`, `web_home_pages.ts`) and `home/home-spa.js` (`web_home.ts`),
 # served at `/home.js` — `home-spa.js` because `home/home.js` is `home.ts`.

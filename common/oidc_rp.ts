@@ -196,7 +196,7 @@ import listenerMap = require('./listener_map');
 import hostedApplications = require('./hosted_applications');
 import tlsModule = require('tls');
 
-type SurfaceId = 'admin' | 'portal' | 'debugger';
+type SurfaceId = 'admin' | 'portal' | 'report' | 'debugger';
 
 interface Surface {
   id: SurfaceId;
@@ -338,8 +338,8 @@ interface OidcRelyingPartyDeps {
 // ---------------------------------------------------------------------------
 /**
  * The hosted surfaces that sign in as OpenID Connect relying parties of this
- * service (`admin`, `portal`, `debugger`): each one's client id, callback path,
- * cookie, realms and scopes.
+ * service (`admin`, `portal`, `report`, `debugger`): each one's client id,
+ * callback path, cookie, realms and scopes.
  */
 const SURFACES: Record<SurfaceId, Surface> = {
   admin: {
@@ -362,6 +362,21 @@ const SURFACES: Record<SurfaceId, Surface> = {
     sessionRealm: 'ambient',
     scopes: ['openid', 'profile', 'email', 'offline_access']
   },
+  // THE REPORTS APPLICATION (#956), on the portal's pattern: a static
+  // application on this origin, signing in in the browser as the public
+  // client `sts-report`. The report scopes are not on this list. The
+  // browser asks for them, and the registration declares them; issuance
+  // narrows them (`report/rights.ts`).
+  report: {
+    id: 'report',
+    clientId: 'sts-report',
+    label: 'Reports',
+    callbackPath: '/report/callback',
+    cookie: 'sts_report',
+    flowRealm: 'ambient',
+    sessionRealm: 'ambient',
+    scopes: ['openid', 'profile', 'email', 'offline_access']
+  },
   // THE EMBEDDED PROTOCOL DEBUGGER (2026-09-13), and the first surface that
   // is NOT ON THIS SERVICE'S ORIGIN: it is served by
   // `debugger/debugger_server.ts` on a listener of its own. Two things follow
@@ -371,7 +386,7 @@ const SURFACES: Record<SurfaceId, Surface> = {
   //   * the redirect URI is on the debugger's origin and the authorization
   //     endpoint is on the main port's, so `beginSignIn()` and
   //     `handleCallback()` take `callbackBase` and `authorizationBase` where
-  //     the other two surfaces use one base for both;
+  //     the surfaces on this origin use one base for both;
   //   * the back channel's Host header is the AUTHORIZATION base's, because
   //     that is the issuer the browser was sent to.
   //
@@ -943,7 +958,7 @@ class OidcRelyingParty {
    * about to sign in with, in the realm the request is under.
    *
    * @param req - the request for the shell
-   * @param id - the surface, `admin` or `portal`
+   * @param id - the surface, `admin`, `portal` or `report`
    * @returns `{ ok, why }`, as `ensureRedirectUri()` answers
    */
   ensureSurfaceCallback(req: any, id: string): any {

@@ -842,7 +842,7 @@ per-process jobs and the algorithmic fixes are a follow-up. `scheduler.ts`'s
   and runs on the front for the process's life.
 * **An exemption is a reason**: `onFront: '<why>'` on the registration. An
   empty or non-string one is refused (`STS-SCHED-0009`), and
-  `tests/scheduler_workers.js` F holds it. Four jobs carry one, the first
+  `tests/scheduler_workers.js` F holds it. Seven jobs carry one. The first
   three because they must:
   `scheduler.history`, which reads the whole of `scheduler.runs`, which a
   worker does not restore (#617); `keys.data-key-reencrypt`, whose
@@ -859,7 +859,10 @@ per-process jobs and the algorithmic fixes are a follow-up. `scheduler.ts`'s
   generation, and every outbound delivery is claimed per row. The fourth,
   `saml2.sp-metadata-refresh`, stays only because its owner registers it
   from `server.js`'s `listen()` alone, so no worker has it; registering it
-  in every process would let it move.
+  in every process would let it move. The fifth, sixth and seventh,
+  `report.drain`, `report.retention` and `report.schedule` (#956), stay on
+  the front because the fence of a running report is a set in this process,
+  which a worker does not share (`report/CLAUDE.md`).
 * **Nice: a run held for load, never for long.** A due SCHEDULED run of a
   job whose `nice` (0–19, default 10) is above 0 waits before its claim,
   while even the least-loaded worker is heavy. Heavy means
@@ -941,6 +944,12 @@ row's body runs on a request worker except those marked **front**:
 | `oauth2.expired-token-purge` | cluster, service; hourly — a token record past its expiry and `oauth2.expiredTokenRetentionS`, and the revocation of an expired token, dated by the `exp` the revocation carries since #345 (not per-process: the revocation set is replicated, so one delete on the leader reaches every process) | `common/admin_stats.js` (P5; the ticket's "tracked tokens"), `common/CLAUDE.md` 3b |
 | `oauth2.client-secret-expiry` | cluster, realm; daily — warns (audit + log) about secrets expiring within `oauth2.clientSecretExpiryWarningDays` or applications whose every secret has expired, and removes expired secrets an application holds an unexpired one beside (never its last) | `common/signing_rotation.ts`, `common/applications.js` (P5) |
 | `keys.data-key-reencrypt` | cluster, service, **front**; hourly — re-seals every value under a superseded data key and destroys one nothing is sealed under; on the front because `keystore.resealOwnRows()` re-seals the rows the running process holds sealed in memory (#408) | `common/data_key_rotation.ts`, `common/CLAUDE.md` (*Rotation, re-sealing, destruction*) |
+| `report.drain` | cluster, realm, **front**; every 2 s — claims queued report jobs up to the concurrency caps and writes each artifact. The fence is a set in this process, so the body stays on the front (#956) | `report/jobs.ts`, `report/CLAUDE.md` |
+| `report.retention` | cluster, realm, **front**; every 60 s — deletes artifacts past their retention, drops finished job rows past theirs, and fails a running job whose fence is gone (#956) | `report/jobs.ts`, `report/CLAUDE.md` |
+| `report.schedule` | cluster, realm, **front**; every 60 s — enqueues a job for each due definition, as its owner, while that owner can still run it (#956) | `report/jobs.ts`, `report/CLAUDE.md` |
+| `report.drain.here` | per-process, realm, quiet; every 2 s — `report.drain` on the process that holds `ops.reporting` (`STS_REPORT_NODE=true`); a no-op otherwise (#956) | `report/jobs.ts`, `report/CLAUDE.md` |
+| `report.retention.here` | per-process, realm, quiet; every 60 s — `report.retention` on that same holder (#956) | `report/jobs.ts`, `report/CLAUDE.md` |
+| `report.schedule.here` | per-process, realm, quiet; every 60 s — `report.schedule` on that same holder (#956) | `report/jobs.ts`, `report/CLAUDE.md` |
 
 **The timers still outside it** are listed, each with the reason it stays, in
 `tests/no_periodic_timers.js`, which fails on a new one and on an entry whose

@@ -70,6 +70,11 @@
       "text": "Pour terminer votre connexion à {{service}} en tant que {{username}}, ouvrez ce lien DANS LE NAVIGATEUR OÙ VOUS AVEZ COMMENCÉ À VOUS CONNECTER, dans les {{minutes}} minutes :\n\n{{signin}}\n\nIl ne fonctionne qu’une fois, et seulement dans ce navigateur.\n\nSi vous n’êtes pas en train de vous connecter, ignorez ce message : le lien ne peut connecter personne d’autre.\n",
       "html": "<p>Pour terminer votre connexion à {{service}} en tant que <strong>{{username}}</strong>, <a href=\"{{signin}}\">ouvrez ce lien</a> dans le navigateur où vous avez commencé à vous connecter, dans les {{minutes}} minutes.</p><p>Il ne fonctionne qu’une fois, et seulement dans ce navigateur.</p><p>Si vous n’êtes pas en train de vous connecter, ignorez ce message : le lien ne peut connecter personne d’autre.</p>"
     },
+    "report-ready": {
+      "subject": "Votre rapport {{service}} est {{status}}",
+      "text": "Le rapport {{definition}} pour {{username}} est {{status}}.\n\nOuvrez-le :\n\n{{report}}\n",
+      "html": "<p>Le rapport <strong>{{definition}}</strong> pour {{username}} est {{status}}.</p><p><a href=\"{{report}}\">Ouvrez-le</a>.</p>"
+    },
     "reset-refused-attempt": {
       "subject": "Quelqu’un a tenté de réinitialiser votre mot de passe {{service}}",
       "text": "Le {{when}}, quelqu’un a demandé la réinitialisation du mot de passe du compte {{username}}, a indiqué cette adresse et a fourni un code de récupération qui n’est pas l’un des vôtres. Rien n’a été modifié et aucun lien de réinitialisation n’a été envoyé.\n\nSi c’était vous, réessayez avec un code de récupération inutilisé. Sinon, quelqu’un connaît le nom de votre compte et votre adresse ; contactez la personne qui gère votre compte.\n",
