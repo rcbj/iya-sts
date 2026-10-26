@@ -4621,6 +4621,8 @@ class ApplicationsPage {
         t.html('consoleApplications.a3.appPermsNoteB') +
         '<a href="/admin/roles">' + t.html('consoleApplications.a3.roles') +
         '</a>.') +
+      kit.note(t.html('consoleApplications.relations.appPerms'),
+               t.html('consoleApplications.relations.label')) +
       '<table><thead><tr><th>' + t.html('consoleApplications.a3.colRole') +
       '</th><th>' + t.html('consoleApplications.a3.colCarriedIn') +
       '</th><th>' + t.html('consoleApplications.a3.colAuthorizes') +
@@ -4722,6 +4724,8 @@ class ApplicationsPage {
       kit.note(t.html('consoleApplications.a3.requiredNoteA') + '<code>' +
         kit.esc(identifier) + '</code>' +
         t.html('consoleApplications.a3.requiredNoteB')) +
+      kit.note(t.html('consoleApplications.relations.required'),
+               t.html('consoleApplications.relations.label')) +
       '<table><thead><tr><th>' + t.html('consoleApplications.a3.colRole') +
       '</th><th>' + t.html('consoleApplications.a3.colResolvesTo') +
       '</th><th></th></tr>' +

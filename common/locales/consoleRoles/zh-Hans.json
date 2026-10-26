@@ -147,5 +147,10 @@
   "detail.entryHeading": "它的目录条目",
   "detail.editOnList": "成员、权限和授予它的客户端在“角色”页面的“您创建的角色”中更改。",
   "owners.lead": "对此角色负责的人员和组。在下方查找一个并按 <strong>添加</strong>，或用 <strong>移除</strong> 删除一个：每次按下即刻保存。所有者不授予任何权限：此服务中没有任何部分读取它来做决定。",
-  "owners.leadRead": "对此角色负责的人员和组，来自其 <code>owner</code> 值。所有者不授予任何权限。"
+  "owners.leadRead": "对此角色负责的人员和组，来自其 <code>owner</code> 值。所有者不授予任何权限。",
+  "relations.label": "它与其他角色设置有何不同",
+  "relations.give": "<strong>此表单添加成员：即持有该角色的对象。</strong>人员写入 <code>roleMemberUser</code>，组写入 <code>roleMemberGroup</code>（组的成员通过该组持有角色），应用写入 <code>roleMemberApplication</code>。角色页面在“谁持有它”下列出它们，应用页面在“角色”标签的“应用权限”下列出它自己的角色。另有两项设置会提到角色，但不会让任何对象成为成员。应用的“使用它所需持有的角色”（<code>appRequiredRole</code>）要求先持有该角色才会签发任何内容。“授予它的客户端”中的客户端把角色借给通过它登录的人员，且仅限该客户端的令牌。<code>SSF_READ</code> 和 <code>SSF_MANAGE</code> 更严格：只有当人员属于该角色的组、且其登录的应用是该角色的应用成员时，才会签发相应的 scope，因此在这里直接添加的人员不算数。",
+  "relations.holds": "<strong>成员：谁持有此角色。</strong>人员直接持有，组的成员通过组持有，应用以其自身身份持有。应用成员自己的令牌（<code>client_credentials</code>）携带该角色，并可获得它所授权的内容。对于 <code>SSF_READ</code> 和 <code>SSF_MANAGE</code>，应用成员同时也是其登录可获得该 scope 的应用：只有当人员属于该角色的组、且其登录的应用列在此处时，才能获得 <code>ssf.read</code>。成员可在“角色”页面添加，应用也可在其自身页面的“角色”标签“应用权限”下添加；两者写入同一条目。下方的“授予它的客户端”和“要求它的应用程序”不是成员。",
+  "relations.conferred": "<strong>把此角色借给通过它们登录的人员的客户端。</strong>这是角色上的 <code>roleConferredBy</code>。通过此处所列客户端登录的人员，在该客户端的令牌上持有该角色，不涉及其他令牌，用于判断这些令牌可携带哪些受控权限。这不是成员关系：该客户端自己的 <code>client_credentials</code> 令牌不持有该角色，也不满足应用所要求的角色。<code>SSF_READ</code> 和 <code>SSF_MANAGE</code> 忽略此设置。",
+  "relations.required": "<strong>在签发任何内容之前要求此角色的应用。</strong>每个应用都在其 <code>appRequiredRole</code> 中指定此角色，该设置位于应用页面的“角色”标签“使用它所需持有的角色”下。不持有应用所要求的任何角色的人，得不到该应用的令牌、断言或会话。要求一个角色不会授予任何东西：它不添加 scope 或权限，也不会让应用成为成员。若要让某应用的登录获得 <code>ssf.read</code>，请在“谁持有它”下将其添加为应用。"
 }

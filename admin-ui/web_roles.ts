@@ -249,6 +249,10 @@ class RolesPage {
         return '<strong>' + kit.esc(one.label) + '</strong> &mdash; ' +
                kit.esc(one.what);
       }).join('<br>')) +
+      // How a membership differs from a requirement and a conferral, which
+      // the three role sections and the application's Roles tab also name.
+      kit.note(t.html('consoleRoles.relations.give'),
+               t.html('consoleRoles.relations.label')) +
       (register.roles.length ? ''
         : kit.warn(t.html('consoleRoles.body.noRoleBefore') +
           '<a href="#create">' + t.html('consoleRoles.body.createARole') +
@@ -548,6 +552,8 @@ class RolesPage {
       t.html('consoleRoles.detail.membersHeading',
              { n: role.holderCount }) + '</h3>' +
       kit.note(t.html('consoleRoles.detail.membersNote')) +
+      kit.note(t.html('consoleRoles.relations.holds'),
+               t.html('consoleRoles.relations.label')) +
       '<table><tr>' + (json.memberKinds || []).map(function (one) {
         return '<th>' + t.html('consoleRoles.body.thHeldBy',
                                { kind: one.label }) + '</th>';
@@ -569,11 +575,15 @@ class RolesPage {
       listOf(role.permissions, null) +
       '<h3 id="role-conferred">' +
       t.html('consoleRoles.detail.conferredHeading') + '</h3>' +
+      kit.note(t.html('consoleRoles.relations.conferred'),
+               t.html('consoleRoles.relations.label')) +
       listOf(role.conferredBy, function (one) {
         return '/admin/applications?application=' + encodeURIComponent(one);
       }) +
       '<h3 id="role-required">' +
       t.html('consoleRoles.detail.requiredHeading') + '</h3>' +
+      kit.note(t.html('consoleRoles.relations.required'),
+               t.html('consoleRoles.relations.label')) +
       ((role.requiredBy || []).length ? role.requiredBy.map(function (one) {
         return '<div><a href="' + kit.esc('/admin/applications?application=' +
           encodeURIComponent(one.application)) + '">' + kit.esc(one.name) +
