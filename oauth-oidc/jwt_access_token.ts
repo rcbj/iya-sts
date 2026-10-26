@@ -514,7 +514,8 @@ class JwtAccessTokens {
    * @param base - the request's base URL
    * @param options - `audience` (`{ names, label }`), which replaces the
    *   audience check for a resource server answering for a registered
-   *   application
+   *   application, and `skipTyp` for an opaque handle (#501), which has no
+   *   JOSE header. Issuer and audience are still checked.
    * @returns null to accept, or an `invalid_token` refusal `{ error,
    *   description }` carrying its error code
    */
@@ -524,18 +525,23 @@ class JwtAccessTokens {
     const self = this;
     log.debug("Entering JwtAccessTokens.resourceServerRefusal().");
     const audience = (options && options.audience) || null;
-    const typ = this.typOf(token);
-    if (!this.isAccessTokenType(typ)) {
-      log.debug("Leaving JwtAccessTokens.resourceServerRefusal(). typ=" +
-                (typ || '(none)'));
-      return this.refusal('STS-OAUTH-0247',
-        'RFC 9068 section 4: a resource server MUST verify that the typ ' +
-        'header of a JWT access token is "at+jwt", and this token\'s is ' +
-        (typ ? '"' + typ + '"' : 'absent') + '. Every token this service ' +
-        'signs is signed with the same key, so the header is what tells an ' +
-        'access token apart from an ID Token, a logout token or a Security ' +
-        'Event Token. An access token minted before this service issued ' +
-        'at+jwt is refused too; ask the token endpoint for a new one.');
+    // An opaque handle (#501) has no JOSE header. The caller resolved it
+    // from the store and passes skipTyp. Issuer and audience still run.
+    if (!(options && options.skipTyp)) {
+      const typ = this.typOf(token);
+      if (!this.isAccessTokenType(typ)) {
+        log.debug("Leaving JwtAccessTokens.resourceServerRefusal(). typ=" +
+                  (typ || '(none)'));
+        return this.refusal('STS-OAUTH-0247',
+          'RFC 9068 section 4: a resource server MUST verify that the typ ' +
+          'header of a JWT access token is "at+jwt", and this token\'s is ' +
+          (typ ? '"' + typ + '"' : 'absent') + '. Every token this service ' +
+          'signs is signed with the same key, so the header is what tells ' +
+          'an access token apart from an ID Token, a logout token or a ' +
+          'Security Event Token. An access token minted before this ' +
+          'service issued at+jwt is refused too; ask the token endpoint ' +
+          'for a new one.');
+      }
     }
     const claimsIn = claims || {};
     if (!this.isHostedIssuer(claimsIn.iss, base)) {

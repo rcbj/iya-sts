@@ -181,6 +181,7 @@ interface AccountApiDeps {
     stats(): Json;
     accountState(): Json;
     jwtAccessToken(): Json;
+    opaqueAccessToken(): Json;
     dpop(): Json;
     senderConstraints(): Json;
     mtls(): Json;
@@ -233,6 +234,11 @@ class AccountApi {
         },
         jwtAccessToken: function () {
           return require('../oauth-oidc/jwt_access_token');
+        },
+        // #501. Lazy, for jwtAccessToken's reason: this module loads
+        // before oauth2.
+        opaqueAccessToken: function () {
+          return require('../oauth-oidc/opaque_access_token');
         },
         dpop: function () {
           return require('../oauth-oidc/dpop');
@@ -625,12 +631,46 @@ class AccountApi {
     // person's own account in the realm they are in, and its token comes
     // from that realm's authorization server. Any generation of it (#42).
     let claims: Json = null;
+    let opaqueAccess = false;
     try {
       claims = helpers.verifyOwnJws(presentation.token);
     } catch (e) {
       log.debug("Caught in AccountApi.authenticate(): " +
                 ((e && e.message) || e));
       claims = null;
+    }
+    // #501: this API is ambient only. A handle is not tried against the
+    // default realm. Expired falls through to the exp check. Revoked is
+    // refused here, because that check is "revoked OR disabled" and a
+    // revokedAt-only row would pass it.
+    if (!claims && presentation.token.indexOf('.') < 0) {
+      const found = lazy.opaqueAccessToken().lookup(presentation.token);
+      if (found.kind === 'active' ||
+          (found.kind === 'inactive' && found.why === 'expired')) {
+        claims = found.claims;
+        opaqueAccess = true;
+      } else if (found.kind === 'inactive' && found.why === 'revoked') {
+        log.debug("Leaving AccountApi.authenticate(). Revoked handle.");
+        return this.unauthorized(res, 'STS-ACCOUNT-0007', 'invalid_token',
+          'That access token has been revoked, or the account it was ' +
+          'issued to is disabled.');
+      } else if (found.kind === 'unknown' &&
+                 lazy.opaqueAccessToken().issuesOpaque()) {
+        const limited = lazy.opaqueAccessToken().noteMiss(req);
+        if (limited) {
+          res.set('Retry-After', String(limited.retryAfterS));
+          log.debug("Leaving AccountApi.authenticate(). Too many unknown " +
+                    "handles.");
+          this.refuse(res, 429, 'STS-OAUTH-0983',
+            'Too many attempts. Wait ' + limited.retryAfterS +
+            ' seconds and try again.',
+            { error: 'invalid_token' });
+          return null;
+        }
+        log.debug("Leaving AccountApi.authenticate(). Unknown handle.");
+        return this.unauthorized(res, 'STS-OAUTH-0980', 'invalid_token',
+          'That access token is not valid.');
+      }
     }
     if (!claims) {
       log.debug("Leaving AccountApi.authenticate(). Does not verify.");
@@ -647,13 +687,17 @@ class AccountApi {
     }
     // RFC 9068 SECTION 4, in its order: the type, the issuer, the audience.
     const jwtAccessToken = lazy.jwtAccessToken();
-    const typ = jwtAccessToken.typOf(presentation.token);
-    if (!jwtAccessToken.isAccessTokenType(typ)) {
-      log.debug("Leaving AccountApi.authenticate(). Not an access token.");
-      return this.unauthorized(res, 'STS-ACCOUNT-0004', 'invalid_token',
-        'RFC 9068 section 4: an access token\'s typ header must be ' +
-        '"at+jwt", and this token\'s is ' + (typ ? '"' + typ + '"'
-                                                  : 'absent') + '.');
+    // An opaque handle has no JOSE header (#501). Issuer and audience
+    // still run.
+    if (!opaqueAccess) {
+      const typ = jwtAccessToken.typOf(presentation.token);
+      if (!jwtAccessToken.isAccessTokenType(typ)) {
+        log.debug("Leaving AccountApi.authenticate(). Not an access token.");
+        return this.unauthorized(res, 'STS-ACCOUNT-0004', 'invalid_token',
+          'RFC 9068 section 4: an access token\'s typ header must be ' +
+          '"at+jwt", and this token\'s is ' + (typ ? '"' + typ + '"'
+                                                    : 'absent') + '.');
+      }
     }
     const base = baseUrlOf(req);
     if (!jwtAccessToken.isHostedIssuer(claims.iss, base)) {

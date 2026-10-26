@@ -4653,6 +4653,22 @@ const SETTINGS = [
                  'or ES256. A named authorization server may carry its own ' +
                  '(access_token_signing_alg).' },
 
+  // OPAQUE ACCESS TOKENS (#501). The default stays an RFC 9068 JWT. `opaque`
+  // makes a NEW access token a 256-bit handle: the claims stay here, the
+  // client carries only the handle, and a resource server resolves it by
+  // presenting it or by introspection. Refresh tokens stay nested JWTs and
+  // ID tokens stay JWTs. A token already issued keeps the shape it had.
+  { key: 'oauth2.accessTokenFormat', group: 'OAuth 2.0 / OIDC',
+    label: 'Access token format',
+    env: 'STS_OAUTH2_ACCESS_TOKEN_FORMAT', type: 'enum',
+    enumValues: ['jwt', 'opaque'],
+    dflt: 'jwt', runtime: true,
+    description: 'Whether a new access token is an RFC 9068 JWT (jwt, the ' +
+                 'default) or a 256-bit opaque handle (opaque). The claims ' +
+                 'of an opaque token stay in this realm; refresh tokens ' +
+                 'stay nested JWTs and ID tokens stay JWTs. A token already ' +
+                 'issued keeps the shape it was minted with.' },
+
   // JARM (#139, #143): how long a JWT-secured authorization response is good
   // for. JARM section 2.1 recommends a short-lived `exp`, ten minutes at most.
   { key: 'oauth2.jarmResponseLifetimeS', group: 'OAuth 2.0 / OIDC',
@@ -5794,6 +5810,18 @@ const SETTINGS = [
                  'forgotten still works; its next rotation starts a new ' +
                  'family. Raise it for a deployment with more concurrently ' +
                  'live refresh tokens than this.' },
+
+  // How many opaque access tokens one realm remembers (#501). Expired rows
+  // are dropped first. A live one is not evicted: the mint is refused.
+  { key: 'oauth2.maxOpaqueAccessTokens', group: 'OAuth 2.0 / OIDC',
+    label: 'Opaque access tokens remembered (per realm)',
+    env: 'STS_OAUTH2_MAX_OPAQUE_ACCESS_TOKENS', type: 'int',
+    dflt: 100000, min: 16, max: 1000000, runtime: true,
+    description: 'How many opaque access tokens this realm remembers. ' +
+                 'When it is full, expired rows are dropped and a further ' +
+                 'mint is refused (STS-OAUTH-0979) rather than evicting a ' +
+                 'live token. Applies when oauth2.accessTokenFormat is ' +
+                 'opaque.' },
 
   { key: 'oauth2.signedMetadataAlgorithm', group: 'OAuth 2.0 / OIDC',
     label: 'Algorithm signed_metadata is signed with',
