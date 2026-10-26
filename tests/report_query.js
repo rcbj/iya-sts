@@ -625,6 +625,10 @@ async function schedules(t) {
       t.equal(queued[0] && queued[0].parameters &&
         queued[0].parameters.who, 'ada',
         'the queued job carries the stored parameter');
+      t.equal(queued[0] && queued[0].queuedBecause, 'schedule',
+        'a scheduled job says it was scheduled');
+      t.equal(jobs.jobView(queued[0], false).queuedBecause, 'schedule',
+        'and its view carries the reason');
       const held = stores.getDefinition(saved.definition.id);
       t.equal(typeof held.lastSlot, 'number',
         'a successful enqueue consumes the slot');
@@ -1267,11 +1271,77 @@ function chrome(t) {
   t.equal(Object.prototype.hasOwnProperty.call(three, 'saveQuery'), false,
     'the Save query box is not part of the document');
 
+  // Why a job is a job.
+  t.check(ReportRuntime.becauseHtml(tr, 'every-person')
+    .indexOf('read every person') >= 0,
+    'an every-person job says it has to read every person');
+  t.check(ReportRuntime.becauseHtml(tr, 'schedule')
+    .indexOf('scheduled run') >= 0, 'a scheduled job says so');
+  t.equal(ReportRuntime.becauseHtml(tr, null), '',
+    'a job that recorded no reason draws no sentence');
+  t.equal(ReportRuntime.becauseHtml(tr, 'other'), '',
+    'an unknown reason draws no sentence');
+
+  // The owner's name, in a process with no directory resolver.
+  t.equal(api.ownerName('urn:uuid:00000000-0000-4000-8000-000000000000'),
+    '', 'a subject nobody can name is shown as it is');
+
+  // The schedule editor: an expression into the controls and back.
+  const weekly = ReportRuntime.scheduleFieldsOf('30 9 * * 1,3');
+  t.equal(weekly.at.slice(11), '09:30', 'the time is read off the cron');
+  t.equal(weekly.days.join(','), '1,3', 'the weekdays are read off the cron');
+  const yearly = ReportRuntime.scheduleFieldsOf('0 6 15 2 *');
+  t.check(/-02-15T06:00$/.test(yearly.at),
+    'a day and month are read off the cron', yearly.at);
+  t.equal(yearly.days.length, 0, 'a yearly cron ticks no weekday');
+  t.equal(ReportRuntime.scheduleFieldsOf('*/5 * * * *').at, '',
+    'an expression the editor cannot draw leaves the controls empty');
+  const editor = ReportRuntime.scheduleEditorHtml(tr, '30 9 * * 1,3');
+  t.check(editor.indexOf('type="datetime-local"') >= 0 &&
+    editor.indexOf('name="scheduleAt"') >= 0,
+    'the editor is a date-time control');
+  t.equal((editor.match(/name="repeatDay"/g) || []).length, 7,
+    'and seven weekday boxes');
+  t.check(editor.indexOf('value="1" checked') >= 0 &&
+    editor.indexOf('value="3" checked') >= 0 &&
+    editor.indexOf('value="2" checked') < 0,
+    'the cron\'s weekdays are ticked and the others are not');
+  t.check(editor.indexOf('every Mon, Wed') >= 0,
+    'the preview names the days in the page\'s language', editor);
+  const weeklyForm = {
+    elements: { scheduleAt: { value: '2026-11-02T09:30' } },
+    querySelectorAll: function () {
+      return [{ value: '1' }, { value: '3' }];
+    }
+  };
+  t.equal(ReportRuntime.scheduleCronOf(weeklyForm), '30 9 * * 1,3',
+    'weekdays and a time compose a weekly cron');
+  const yearlyForm = {
+    elements: { scheduleAt: { value: '2026-02-15T06:00' } },
+    querySelectorAll: function () {
+      return [];
+    }
+  };
+  t.equal(ReportRuntime.scheduleCronOf(yearlyForm), '0 6 15 2 *',
+    'no weekday composes a yearly cron on that date');
+  t.equal(ReportRuntime.scheduleCronOf({ elements: {},
+    querySelectorAll: function () {
+      return [];
+    } }), '', 'no date is no schedule');
+  t.equal(ReportRuntime.schedulePreview(tr, ''), 'No schedule.',
+    'the preview of no schedule');
+  t.check(ReportRuntime.schedulePreview(tr, '*/5 * * * *')
+    .indexOf('*/5 * * * *') >= 0,
+    'an expression the editor cannot draw is shown as it is');
+
   // The OpenAPI document.
   const spec = OpenApi.document(new Catalog());
   t.check(spec.components.schemas.Realms &&
     spec.components.schemas.Index.properties.version,
     'the OpenAPI document carries the realms and the version');
+  t.check(spec.components.schemas.Job.properties.queuedBecause &&
+    spec.components.schemas.Definition.properties.ownerName,
+    'and the job\'s reason and the owner\'s name');
   log.debug("Leaving chrome().");
 }
 

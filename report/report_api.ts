@@ -719,6 +719,43 @@ function reportJobVisible(who: any, job: any): boolean {
   return shared;
 }
 
+// THE OWNER'S NAME (#986): a definition's `owner` is a subject
+// (`urn:uuid:<entryUUID>`), which no reader can place. The page shows the
+// person's display name, or their username, and keeps the subject beside
+// it. The subject resolver (`helpers.nameForSubject()`, filled by the
+// directory) gives the username; the entry gives `displayName` or `cn`.
+// A subject that names nobody here — a deleted person, another realm's —
+// is shown as it is. The directory is reached lazily: by request time it
+// is loaded, and a load-time require of a JavaScript route module would
+// move its routes (root CLAUDE.md, rule 1).
+function reportOwnerName(owner: string): string {
+  log.debug("Entering reportOwnerName().");
+  const helpers = require('../common/helpers');
+  const username = String(helpers.nameForSubject(owner) || '');
+  if (!username) {
+    log.debug("Leaving reportOwnerName(). Nobody.");
+    return '';
+  }
+  let shown = username;
+  const ldap = require('../ldap/ldap_server');
+  const entry = typeof ldap.existingUserEntry === 'function' ?
+    ldap.existingUserEntry(username) : null;
+  const attrs = (entry && entry.attributes) || {};
+  const first = function (name: string): string {
+    const keys = Object.keys(attrs);
+    for (let i = 0; i < keys.length; i++) {
+      if (keys[i].toLowerCase() === name) {
+        const value = attrs[keys[i]];
+        return String((Array.isArray(value) ? value[0] : value) || '');
+      }
+    }
+    return '';
+  };
+  shown = first('displayname') || first('cn') || username;
+  log.debug("Leaving reportOwnerName().");
+  return shown;
+}
+
 function reportDefinitionView(who: any, row: any): any {
   log.debug("Entering reportDefinitionView().");
   const editable = !!row && rights.canEdit(who.subject, who.scope, row);
@@ -726,6 +763,7 @@ function reportDefinitionView(who: any, row: any): any {
     id: row.id,
     name: row.name,
     owner: row.owner,
+    ownerName: reportOwnerName(String(row.owner || '')),
     schedule: row.schedule || '',
     scheduleEnabled: !!row.scheduleEnabled,
     notify: !!row.notify,
@@ -823,7 +861,7 @@ function reportServeSource(res: any, id: string): void {
 }
 
 async function reportAcceptQuery(req: any, res: any, who: any,
-    forceAsync: boolean, definition: any): Promise<void> {
+    forceAsync: boolean, definition: any, because?: string): Promise<void> {
   log.debug("Entering reportAcceptQuery().");
   const posted = reportPosted(req);
   if (posted === false) {
@@ -881,7 +919,8 @@ async function reportAcceptQuery(req: any, res: any, who: any,
       // refusal, which names the fields the store can filter on.
       log.info(errorCodes.tag(read.code) + 'report: an auto-mode query ' +
         'would read every person synchronously; queued as a job instead.');
-      await reportAcceptQuery(req, res, who, true, definition);
+      await reportAcceptQuery(req, res, who, true, definition,
+        'every-person');
       log.debug("Leaving reportAcceptQuery(). Auto became a job.");
       return;
     }
@@ -912,6 +951,20 @@ async function reportAcceptQuery(req: any, res: any, who: any,
     log.debug("Leaving reportAcceptQuery(). Sync.");
     return;
   }
+  // Why this is a job, for the job page (#986): what the caller said, or
+  // read off the plan — the mode asked for a job, the source cannot be
+  // read now, or the limit is above the synchronous cap.
+  let why = because || '';
+  if (!why) {
+    const src = reportValidator().catalog.source(plan.source);
+    if (plan.mode === 'async') {
+      why = 'asked';
+    } else if (src && src.bounded === false) {
+      why = 'source';
+    } else {
+      why = 'limit';
+    }
+  }
   const submitted = jobs.submit({
     owner: who.subject,
     document: document,
@@ -919,6 +972,7 @@ async function reportAcceptQuery(req: any, res: any, who: any,
     definitionId: definition ? definition.id : null,
     definitionName: definition ? definition.name : null,
     notify: false,
+    because: why,
     plan: plan
   });
   if (!submitted.ok) {
@@ -1069,7 +1123,7 @@ async function reportRunSaved(req: any, res: any, who: any,
     log.debug("Leaving reportRunSaved(). Bad JSON.");
     return;
   }
-  await reportAcceptQuery(req, res, who, true, row);
+  await reportAcceptQuery(req, res, who, true, row, 'run');
   log.debug("Leaving reportRunSaved().");
 }
 
@@ -1398,5 +1452,6 @@ export = {
     reportApi.registerRoutes(app);
   },
   realmsView: reportRealmsView,
+  ownerName: reportOwnerName,
   ReportApi: ReportApi
 };

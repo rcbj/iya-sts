@@ -92,7 +92,24 @@ rcbj asked for five things on 2026-10-26, all drawn by
   Run.
 * **Sign out is in the user menu**, which is therefore drawn for every
   signed-in person; the switch group inside it still appears only with
-  `authn.multipleAccounts` on, as before.
+  `authn.multipleAccounts` on, as before. **Every control in the top bar
+  is drawn by one rule** (`.topbar select, button, .usermenu > summary`),
+  after the language chooser came out with the browser's own background
+  and the menu with its own shape.
+* **A job says why it is a job**: `reportSubmit()` records
+  `queuedBecause` (`every-person`, `asked`, `limit`, `source`, `run`,
+  `schedule`), the API sets it from the caller or the plan, `jobView`
+  carries it and `becauseHtml()` draws one sentence. A row queued before
+  the field existed draws nothing.
+* **The owner by name**: `reportOwnerName()` resolves the subject through
+  `helpers.nameForSubject()` and the entry's `displayName` or `cn`, the
+  directory required lazily (rule 1); the subject stays on the API.
+* **The schedule editor**: a `datetime-local` read as UTC and seven
+  weekday boxes compose the five-field cron the API keeps
+  (`scheduleCronOf()`: weekdays → `m h * * d,d`; none → `m h D M *`), and
+  `scheduleFieldsOf()` reads one back where it can; the expression is
+  always shown under the controls. Weekday names are Intl's in the page's
+  language, so they cost no catalog.
 
 The index, the realms view and the version are read once per load
 (`ensureChrome()`), after the token is in hand. `tests/report_query.js`'s

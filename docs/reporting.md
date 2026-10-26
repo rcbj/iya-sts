@@ -61,7 +61,24 @@ a link opens this documentation. At the bottom of the card the service's
 The query form starts with **one filter row**; the `+` beside the last
 row adds another, up to the sixteen an `and` may hold. Rows left blank
 are ignored. The **Save query** box reveals the Name field and the Save
-button; unchecked, the form only runs the query.
+button; unchecked, the form only runs the query. Once it is ticked, Enter
+in the Name box saves.
+
+A **job's page says why the query became a job** (`queuedBecause` on the
+job): `every-person` (an auto-mode query whose filter the directory
+cannot answer from an index, so it has to read every person), `asked`
+(mode `async`, or `POST /report-api/jobs`), `limit` (auto over
+`report.syncMaxRows`), `source` (a source that cannot be read
+synchronously), `run` (a saved definition run by hand) or `schedule`.
+
+A definition's page names its **owner** by display name or username
+(`ownerName`), with the subject kept on the API. Its **schedule** is
+edited as a date-time in UTC and seven weekday boxes: with weekdays
+ticked the definition runs at that time on those days every week; with
+none it runs on that date every year. The sentence under the controls
+says which, and shows the cron expression the API stores, so an
+expression written by hand on the API that the editor cannot draw is
+still seen.
 
 ## The catalog
 

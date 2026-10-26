@@ -193,6 +193,146 @@ function actionsHtml(t: any): string {
     esc(t.text('report.run')) + '</button></div>';
 }
 
+// THE SCHEDULE EDITOR (#986). A definition's schedule is a five-field cron
+// expression in UTC, and the API keeps it that way; what rcbj refused was
+// a free box with no hint of what goes in it. The editor is a date-time
+// (`datetime-local`, read as UTC, which the label says) and seven weekday
+// boxes, and `scheduleCronOf()` composes the expression: the minute and
+// hour from the time; with weekdays ticked, `m h * * d,d` (those days,
+// every week); with none, `m h D M *` (that date, every year, which the
+// preview says). An empty date is no schedule. `scheduleFieldsOf()` reads
+// an expression back into the controls where it can — numeric minute and
+// hour, a weekday list, or a numeric day and month — and the expression
+// itself is always shown under the controls, so one the editor cannot
+// draw (a step, a range, `*` for the minute) is still seen and kept until
+// the controls are touched. Weekday names come from Intl in the page's
+// language, so they cost no catalog.
+const WEEKDAYS = [1, 2, 3, 4, 5, 6, 0];
+
+function pad2(n: number): string {
+  return (n < 10 ? '0' : '') + n;
+}
+
+function weekdayName(locale: string, dow: number): string {
+  // 2026-02-01 is a Sunday; dow 0 is Sunday.
+  const date = new Date(Date.UTC(2026, 1, 1 + dow));
+  try {
+    return new Intl.DateTimeFormat(locale || 'en',
+      { weekday: 'short', timeZone: 'UTC' }).format(date);
+  } catch (e) {
+    return ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][dow];
+  }
+}
+
+function scheduleFieldsOf(cron: string): any {
+  const parts = String(cron || '').trim().split(/\s+/);
+  const out: any = { at: '', days: [] as number[] };
+  if (parts.length !== 5) {
+    return out;
+  }
+  const minute = /^\d{1,2}$/.test(parts[0]) ? Number(parts[0]) : -1;
+  const hour = /^\d{1,2}$/.test(parts[1]) ? Number(parts[1]) : -1;
+  if (minute < 0 || hour < 0) {
+    return out;
+  }
+  const now = new Date();
+  let day = now.getUTCDate();
+  let month = now.getUTCMonth() + 1;
+  if (/^\d{1,2}$/.test(parts[2]) && /^\d{1,2}$/.test(parts[3])) {
+    day = Number(parts[2]);
+    month = Number(parts[3]);
+  }
+  if (parts[4] !== '*') {
+    parts[4].split(',').forEach(function (one: string): void {
+      if (/^\d$/.test(one) && Number(one) <= 7) {
+        out.days.push(Number(one) === 7 ? 0 : Number(one));
+      }
+    });
+  }
+  out.at = now.getUTCFullYear() + '-' + pad2(month) + '-' + pad2(day) +
+    'T' + pad2(hour) + ':' + pad2(minute);
+  return out;
+}
+
+function scheduleCronOf(form: any): string {
+  const at = String((form.elements.scheduleAt &&
+    form.elements.scheduleAt.value) || '');
+  const matched = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(at);
+  if (!matched) {
+    return '';
+  }
+  const days: string[] = [];
+  const boxes = form.querySelectorAll ?
+    form.querySelectorAll('input[name="repeatDay"]:checked') : [];
+  for (let i = 0; i < boxes.length; i++) {
+    days.push(String(boxes[i].value));
+  }
+  const minute = String(Number(matched[5]));
+  const hour = String(Number(matched[4]));
+  if (days.length) {
+    return minute + ' ' + hour + ' * * ' + days.join(',');
+  }
+  return minute + ' ' + hour + ' ' + String(Number(matched[3])) + ' ' +
+    String(Number(matched[2])) + ' *';
+}
+
+function schedulePreview(t: any, cron: string): string {
+  if (!cron) {
+    return t.text('report.scheduleNone');
+  }
+  const fields = scheduleFieldsOf(cron);
+  const parts = cron.split(/\s+/);
+  if (!fields.at) {
+    return t.text('report.scheduleExpression', { cron: cron });
+  }
+  const time = fields.at.slice(11);
+  if (parts[4] !== '*') {
+    const names = fields.days.map(function (dow: number): string {
+      return weekdayName(t.locale, dow);
+    }).join(', ');
+    return t.text('report.scheduleWeekly', { time: time, days: names });
+  }
+  return t.text('report.scheduleYearly', { date: fields.at.slice(0, 10),
+    time: time });
+}
+
+function scheduleEditorHtml(t: any, cron: string): string {
+  const fields = scheduleFieldsOf(cron);
+  const boxes = WEEKDAYS.map(function (dow: number): string {
+    return '<label class="day"><input type="checkbox" name="repeatDay" ' +
+      'value="' + dow + '"' +
+      (fields.days.indexOf(dow) >= 0 ? ' checked' : '') + '> ' +
+      esc(weekdayName(t.locale, dow)) + '</label>';
+  }).join(' ');
+  return '<div class="field"><label>' + esc(t.text('report.runAt')) +
+    '</label><input type="datetime-local" name="scheduleAt" step="60" ' +
+    'value="' + esc(fields.at) + '"></div>' +
+    '<div class="field"><label>' + esc(t.text('report.repeatOn')) +
+    '</label><div class="row days">' + boxes + '</div></div>' +
+    '<p class="sub" data-schedule-preview>' +
+    esc(schedulePreview(t, cron)) + '</p>';
+}
+
+// Why a query is a job (#986), from the job's `queuedBecause`: one
+// sentence per reason the API records, nothing for a job that records
+// none (one queued before the field existed).
+const BECAUSE: Record<string, string> = {
+  'every-person': 'report.because.everyPerson',
+  asked: 'report.because.asked',
+  limit: 'report.because.limit',
+  source: 'report.because.source',
+  run: 'report.because.run',
+  schedule: 'report.because.schedule'
+};
+
+function becauseHtml(t: any, why: any): string {
+  const key = BECAUSE[String(why || '')];
+  if (!key) {
+    return '';
+  }
+  return '<p class="sub because">' + esc(t.text(key)) + '</p>';
+}
+
 // The service version under the card (#986), from the index's `version`.
 function footerHtml(t: any, version: any): string {
   if (!version || !version.version) {
@@ -382,6 +522,59 @@ class ReportRuntime extends SpaClient {
    */
   static actionsHtml(t: any): string {
     return actionsHtml(t);
+  }
+
+  /**
+   * The schedule editor, for a test (#986).
+   *
+   * @param t - the translator
+   * @param cron - the definition's cron expression, or ''
+   * @returns the editor's HTML
+   */
+  static scheduleEditorHtml(t: any, cron: string): string {
+    return scheduleEditorHtml(t, cron);
+  }
+
+  /**
+   * The cron expression a definition form holds, for a test (#986).
+   *
+   * @param form - the form
+   * @returns the expression, or '' for no schedule
+   */
+  static scheduleCronOf(form: any): string {
+    return scheduleCronOf(form);
+  }
+
+  /**
+   * The controls' values for an expression, for a test (#986).
+   *
+   * @param cron - the expression
+   * @returns `{ at, days }`
+   */
+  static scheduleFieldsOf(cron: string): any {
+    return scheduleFieldsOf(cron);
+  }
+
+  /**
+   * The sentence under the editor, for a test (#986).
+   *
+   * @param t - the translator
+   * @param cron - the expression
+   * @returns the sentence
+   */
+  static schedulePreview(t: any, cron: string): string {
+    return schedulePreview(t, cron);
+  }
+
+  /**
+   * Why a job is a job, for a test (#986).
+   *
+   * @param t - the translator
+   * @param why - the job's `queuedBecause`
+   * @returns the sentence's HTML, or ''
+   */
+  static becauseHtml(t: any, why: any): string {
+    return becauseHtml(t, why);
   }
 
   /**
@@ -1174,6 +1367,15 @@ class ReportRuntime extends SpaClient {
       }
       return;
     }
+    if ((name === 'scheduleAt' || name === 'repeatDay') && el.closest) {
+      const form = el.closest('form[data-form="definition"]');
+      const preview = form ? form.querySelector('[data-schedule-preview]') :
+        null;
+      if (preview) {
+        preview.textContent = schedulePreview(this.t, scheduleCronOf(form));
+      }
+      return;
+    }
     if (name === 'realm' && el.closest &&
         el.closest('form[data-form="realm"]')) {
       const form = el.closest('form');
@@ -1205,7 +1407,8 @@ class ReportRuntime extends SpaClient {
     }
     const rows = list.map(function (row: any): string[] {
       return ['<a href="' + esc(BASE + '/definitions/' + row.id) + '">' +
-        esc(row.name) + '</a>', esc(row.owner), esc(row.schedule || '')];
+        esc(row.name) + '</a>', esc(row.ownerName || row.owner),
+        esc(row.schedule || '')];
     });
     this.paint(tableHtml([
       esc(this.t.text('report.name')),
@@ -1238,9 +1441,8 @@ class ReportRuntime extends SpaClient {
       editor = '<form data-form="definition" data-id="' + esc(row.id) + '">' +
         '<div class="field"><label>' + esc(this.t.text('report.name')) +
         '</label><input name="name" value="' + esc(row.name) + '"></div>' +
-        '<div class="field"><label>' + esc(this.t.text('report.schedule')) +
-        '</label><input name="schedule" value="' + esc(row.schedule || '') +
-        '"></div>' +
+        '<h3>' + esc(this.t.text('report.schedule')) + '</h3>' +
+        scheduleEditorHtml(this.t, String(row.schedule || '')) +
         '<div class="field"><label><input type="checkbox" name="enabled"' +
         (row.scheduleEnabled ? ' checked' : '') + '> ' +
         esc(this.t.text('report.enabled')) + '</label></div>' +
@@ -1260,7 +1462,8 @@ class ReportRuntime extends SpaClient {
         esc(this.t.text('report.share')) + '</button></form>';
     }
     this.paint('<h2>' + esc(row.name) + '</h2><p>' +
-      esc(this.t.text('report.owner')) + ' ' + esc(row.owner) + '</p>' +
+      esc(this.t.text('report.owner')) + ' ' +
+      esc(row.ownerName || row.owner) + '</p>' +
       '<form data-form="run" data-id="' + esc(row.id) + '">' +
       '<div class="field"><label>' +
       esc(this.t.text('report.parameters')) +
@@ -1328,7 +1531,8 @@ class ReportRuntime extends SpaClient {
         'data-id="' + esc(job.id) + '" data-format="' + esc(job.format) +
         '">' + esc(this.t.text('report.download')) + '</button>';
     }
-    this.paint('<h2>' + esc(job.id) + '</h2><p>' +
+    this.paint('<h2>' + esc(job.id) + '</h2>' +
+      becauseHtml(this.t, job.queuedBecause) + '<p>' +
       esc(this.t.text('report.status')) + ' ' +
       statusWord(this.t, job.status) + '</p><p>' +
       esc(this.t.text('report.format')) + ' ' +
@@ -1654,7 +1858,7 @@ class ReportRuntime extends SpaClient {
             encodeURIComponent(id), {
             name: String(form.elements.name.value || ''),
             document: row.document,
-            schedule: String(form.elements.schedule.value || ''),
+            schedule: scheduleCronOf(form),
             scheduleEnabled: !!form.elements.enabled.checked,
             notify: !!form.elements.notify.checked
           });

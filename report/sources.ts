@@ -1860,6 +1860,7 @@ async function reportScheduleWork(ctx: any): Promise<any> {
       definitionId: def.id,
       definitionName: def.name,
       notify: !!def.notify,
+      because: 'schedule',
       plan: validated.plan
     });
     if (submitted.ok) {
