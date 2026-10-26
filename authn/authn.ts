@@ -5609,39 +5609,42 @@ class Authn {
   }
 
   // ---------------------------------------------------------------------------
-  // THE SIGN-IN'S RETURN TRIP, CONTINUED THROUGH ANOTHER SCREEN (2026-10-26).
+  // A PRESENTATION CONTINUED THROUGH THE CONSENT SCREEN (2026-10-26).
   //
-  // The flag notePresented() spends assumes the sign-in comes back to the
-  // protocol endpoint ONCE. An OAuth sign-in that needs consent comes back
-  // twice: once from the sign-in screen, which spends the flag, and again
-  // from the consent screen, which then read as single sign-on — CAEP's
-  // `session-presented` and a `session.presented` row on both Authentication
-  // attempts tabs after every first sign-in that asked for consent, with no
-  // second application involved. The authorization endpoint calls this when
-  // the request that spent the flag is sent to the consent screen, so the
-  // trip back from it is the sign-in's too.
+  // An authorization request that needs consent reaches the endpoint twice:
+  // once before the consent screen and once on the way back from it. Both
+  // arrivals are ONE act, but notePresented() saw two. After a sign-in, the
+  // first arrival spent the free presentation and the second read as single
+  // sign-on; after a real single sign-on, the first was reported and the
+  // second was reported again. Either way CAEP's `session-presented` and a
+  // `session.presented` row on both Authentication attempts tabs said
+  // something happened that had not. The authorization endpoint calls this
+  // as it sends a request to the consent screen, whichever arrival that was,
+  // so the trip back is not a presentation of its own: the sign-in's stays
+  // the sign-in's, and a single sign-on is reported once, on the way in.
   //
-  // A person who refuses consent leaves it armed, and their next presentation
-  // of this session goes unreported once. That is the same request coming
-  // back, in practice, and a missed event costs less than a false one.
+  // It arms the same flag startSession() sets. A person who refuses consent
+  // leaves it armed, and their next presentation of this session goes
+  // unreported once. That is the same request coming back, in practice, and
+  // a missed event costs less than a false one.
   // ---------------------------------------------------------------------------
   /**
-   * Re-arms the sign-in's free presentation, because its return trip goes
-   * through another screen (consent) before it reaches the endpoint again.
+   * Holds the next presentation of a session, because the request in flight
+   * goes through the consent screen and comes back to the endpoint.
    *
-   * @param session - the session that was just signed in
+   * @param session - the session the request is answered on
    */
-  holdFirstPresentation(session) {
+  holdPresentation(session) {
     const { log } = this.deps;
-    log.debug("Entering Authn.holdFirstPresentation().");
+    log.debug("Entering Authn.holdPresentation().");
     if (!session) {
-      log.debug("Leaving Authn.holdFirstPresentation(). No session.");
+      log.debug("Leaving Authn.holdPresentation(). No session.");
       return;
     }
     session.firstPresentationIsTheSignIn = true;
     // In the store as well, for notePresented()'s reason (#46).
     this.noteSessionChanged(session);
-    log.debug("Leaving Authn.holdFirstPresentation().");
+    log.debug("Leaving Authn.holdPresentation().");
   }
 
   // ---------------------------------------------------------------------------
@@ -18811,7 +18814,7 @@ export = {
   // require the other way would move every /ssf route.
   setSessionObserver: slot.forward('setSessionObserver'),
   notePresented: slot.forward('notePresented'),
-  holdFirstPresentation: slot.forward('holdFirstPresentation'),
+  holdPresentation: slot.forward('holdPresentation'),
   // The three the protocol-independent logout needs, and the reason each is
   // here rather than reimplemented over there: /logout ends sessions it was not
   // handed a cookie for, so it names them by id — and every one of them still

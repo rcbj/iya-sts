@@ -11373,10 +11373,7 @@ class OAuth2Server {
       // before the consent check on purpose: the session WAS presented and
       // honoured whatever the person then answers about scopes.
       // -------------------------------------------------------------------
-      // False when this request IS the sign-in's return trip: kept, because
-      // the consent screen below sends that trip round once more.
-      const presented = authn.notePresented(session, 'OAuth 2.0 / OIDC', req,
-                                            q.client_id);
+      authn.notePresented(session, 'OAuth 2.0 / OIDC', req, q.client_id);
       // -------------------------------------------------------------------
       // CONSENT, AND IT IS THE LAST THING BETWEEN A SIGNED-IN PERSON AND AN
       // ISSUED CREDENTIAL.
@@ -11519,12 +11516,10 @@ class OAuth2Server {
           }
         });
         const entry = applications.get(String(q.client_id || ''));
-        // The sign-in's return trip goes through the consent screen and back
-        // here, so the arrival from it is still the sign-in and not single
-        // sign-on (`authn.holdFirstPresentation()`'s header).
-        if (!presented) {
-          authn.holdFirstPresentation(session);
-        }
+        // This request comes back here from the consent screen, and that
+        // arrival is this one continued, not a presentation of its own
+        // (`authn.holdPresentation()`'s header).
+        authn.holdPresentation(session);
         log.debug("Leaving the authorization endpoint. " +
                   decision.outstanding.length +
                   " scope(s) need consent first" +

@@ -37,7 +37,10 @@
 // neither Authentication attempts tab. Both screen sign-ins write no such
 // row — the return trip to `/oauth2/authorize` is the sign-in's own — and
 // the single sign-on writes exactly one, on the console's tab and on the
-// person's.
+// person's. Neither screen sign-in's trip back from the consent screen is one
+// either. Last, a single sign-on into a second application of this file's
+// kind, which asks for consent: the visit before the consent screen and the
+// one after it are one act, and write one row.
 // ---------------------------------------------------------------------------
 
 delete process.env.CONFIG_FILE;
@@ -223,7 +226,8 @@ function childMain() {
    * @param jar - the browser's cookies, holding its session
    * @param clientId - the OAuth client id
    * @param redirect - the registered redirect URI
-   * @returns the last location, and whether the sign-in screen was reached
+   * @returns the last location, whether the sign-in screen was reached, and
+   *   whether the consent screen was answered
    */
   async function authorizeOnSession(port, screen, userAgent, jar, clientId,
                                     redirect) {
@@ -237,6 +241,7 @@ function childMain() {
       code_challenge: challenge, code_challenge_method: 'S256'
     }).toString();
     let screened = false;
+    let consented = false;
     for (let i = 0; i < 6 && !/[?&]code=/.test(loc); i++) {
       if (/\/authn\/login/.test(loc)) {
         screened = true;
@@ -245,6 +250,7 @@ function childMain() {
       if (/\/oauth2\/consent/.test(loc)) {
         const allowed = await screen.answerConsent({ port: port, jar: jar,
           userAgent: userAgent, at: pathOf(loc) });
+        consented = true;
         loc = String((allowed.headers && allowed.headers.location) ||
                      allowed.location || '');
         continue;
@@ -256,7 +262,7 @@ function childMain() {
       }
     }
     log.debug("Leaving authorizeOnSession(). " + clientId);
-    return { location: loc, screened: screened };
+    return { location: loc, screened: screened, consented: consented };
   }
 
   /**
@@ -495,6 +501,34 @@ function childMain() {
          'sign-on to sts-admin-console',
          safe(JSON.stringify({ events: userEvents.length,
                                tab: userTab.slice(0, 600) }), PASSWORD));
+
+    const APP2 = tag + '-consent';
+    const REDIRECT2 = 'https://rp2.' + tag + '.example/cb';
+    const created2 = applications.createApplication({
+      identifier: APP2, protocols: ['oauth2', 'oidc'],
+      fields: { oauthClientId: APP2, oauthRedirectUri: [REDIRECT2],
+                oauthGrantType: ['authorization_code'],
+                oauthResponseType: ['code'],
+                oauthAllowedScope: ['openid'],
+                oauthTokenEndpointAuthMethod: 'none' }
+    });
+    const before2 = (await presentedBy(audit, USER)).length;
+    const sso2 = await authorizeOnSession(port, screen, CHROME, signed.jar,
+                                          APP2, REDIRECT2);
+    const after2 = (await presentedBy(audit, USER)).filter(function (row) {
+      return (row.detail || {}).application === APP2;
+    });
+    const total2 = (await presentedBy(audit, USER)).length;
+    note(created2 && created2.ok === true && !sso2.screened &&
+         sso2.consented && /[?&]code=/.test(sso2.location) &&
+         after2.length === 1 &&
+         total2 === before2 + 1,
+         '12. a single sign-on through a consent screen writes one ' +
+         'session.presented row, not one each way',
+         JSON.stringify({ screened: sso2.screened, consented: sso2.consented,
+                          location: sso2.location,
+                          rows: after2.length, before: before2,
+                          total: total2 }));
 
     server.close();
     fs.writeFileSync(OUT, JSON.stringify(findings));
