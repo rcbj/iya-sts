@@ -21,6 +21,8 @@
   "realms.support.federation.note": "Its own relationships — ou=federations is in the realm's directory — and its own in-flight sign-ins, capped per realm so that one realm's flood cannot evict another's. A flow begun in one realm cannot finish at another realm's /federation/acs/{id}: the assertion is verified against the certificate of a relationship in the realm it arrives in.",
   "realms.support.user-portal.family": "User portal",
   "realms.support.user-portal.note": "A person's own account in the realm they are in: the portal signs in through the realm's own authorization server as a client seeded in every realm, and every page reads and writes the person's entry in that realm's directory, held to that realm's password policy.",
+  "realms.support.reporting.family": "Reporting",
+  "realms.support.reporting.note": "The application and its API are reached under the realm path. Definitions and jobs stay in that realm's maps, and a share is a group in that realm's directory.",
   "realms.support.global-logout.family": "Global logout",
   "realms.support.global-logout.note": "It holds no state of its own: /logout, /admin/logout and /admin/sessions read the stores of the realm they are reached in, so a sign-out ends that realm's session and what rides on it, and nothing in another realm.",
   "realms.support.statistics-and-the-audit-log.family": "Statistics and the audit log",

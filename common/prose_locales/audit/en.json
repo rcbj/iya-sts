@@ -396,5 +396,17 @@
   "audit.actions.xacml.pep.disable.label": "A remote PEP was disabled",
   "audit.actions.xacml.pep.forget.label": "A remote PEP was forgotten",
   "audit.actions.xacml.policy.write.label": "An XACML policy was written",
-  "audit.actions.xacml.policy.delete.label": "An XACML policy was deleted"
+  "audit.actions.xacml.policy.delete.label": "An XACML policy was deleted",
+  "audit.actions.report.definition.create.label": "A report definition was created",
+  "audit.actions.report.definition.update.label": "A report definition was updated",
+  "audit.actions.report.definition.share.label": "A report definition was shared with a group",
+  "audit.actions.report.definition.delete.label": "A report definition was deleted",
+  "audit.actions.report.job.submit.label": "A report job was submitted",
+  "audit.actions.report.job.start.label": "A report job started",
+  "audit.actions.report.job.complete.label": "A report job completed",
+  "audit.actions.report.job.fail.label": "A report job failed",
+  "audit.actions.report.job.cancel.label": "A report job was cancelled",
+  "audit.actions.report.notify.label": "A report completion notice was sent",
+  "audit.actions.report.query.label": "A report query was run",
+  "audit.actions.report.job.retrieve.label": "A report result was retrieved"
 }
