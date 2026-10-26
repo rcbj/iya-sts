@@ -456,7 +456,7 @@
     "text": "SCEP（scep/scep_cms.ts）读写的封装：由请求方签名并加密给 RA 的请求，以及由 RA 签名、其中证书加密给请求方的 CertRep。"
   },
   "crypto.families.pki.signs": {
-    "en": "f1ce79cf624ab6f5",
+    "en": "fdcf723f4622f28f",
     "text": "证书。根 CA 为整个服务自签名一次；它为每个信任领域签名一个中间 CA，并为进程签名一个；每个中间 CA 为每个用例签名一个签发 CA；每个签发 CA 签名其用例的叶证书——本服务自己的签名密钥和监听器密钥，以及签发给应用和人员的密钥对。签名算法是为层级结构选定的算法，受颁发者而非主体的密钥族约束，这正是 `common/crypto_impl/x509.js` 自己的文件头花了一整段讨论的错误：以一种摘要导入密钥、却用另一种摘要签名，会生成一个声明的算法与实际签名不一致的证书，而 `openssl verify` 会将其报告为签名错误，却不指明二者中的任何一个。"
   },
   "crypto.families.pki.verifies": {
@@ -484,7 +484,7 @@
     "text": "证书编码"
   },
   "crypto.families.pki.algorithms.0.how": {
-    "en": "d40c79caa059f986",
+    "en": "9c9c3be17d02f8b6",
     "text": "X.509 v3、DER，通过 pkijs 和 asn1js——common/crypto_impl/x509.js，即父项目自己的 PKI 代码，逐字节相同。本服务与该项目的 PKI / X.509 页面使用同一个编码器。"
   },
   "crypto.families.pki.algorithms.1.what": {

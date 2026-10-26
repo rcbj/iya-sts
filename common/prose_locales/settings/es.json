@@ -3088,7 +3088,7 @@
     "text": "Algoritmo de clave predeterminado de la CA"
   },
   "pki.keyAlgorithm|description": {
-    "en": "763204ceb3af08e6",
+    "en": "00e61f4da7498a62",
     "text": "Con qué algoritmo de clave se construye una nueva autoridad de certificación cuando el formulario no indica ninguno: rsa-2048, rsa-3072, rsa-4096, ec-p256, ec-p384, ec-p521 o ed25519, o uno de los identificadores poscuánticos (ML-DSA, SLH-DSA, los compuestos y ML-KEM — que no puede firmar, así que es una clave de sujeto y nunca la de una autoridad). RSA 2048 es el predeterminado porque la HOJA que esta jerarquía existe para emitir firma una aserción de cliente que la biblioteca OAuth de otra persona tiene que verificar, y RS256 es el único algoritmo que tienen todas esas bibliotecas. La lista se lee de common/crypto_impl/key_material.js — el módulo que genera la clave — así que un valor que no conoce se rechaza al construir, con la lista al lado."
   },
   "pki.signatureAlgorithm|label": {
@@ -3128,7 +3128,7 @@
     "text": "Vigencia predeterminada de un par de claves emitido (días)"
   },
   "pki.leafLifetimeDays|description": {
-    "en": "b55ab0b2f1f1f04b",
+    "en": "028d5b5d730c9d23",
     "text": "Cuánto tiempo es válido un certificado de firma emitido a una aplicación cuando el formulario no indica vigencia. Se RECORTA a la caducidad de la propia CA emisora en lugar de rechazarse donde la superaría: la causa habitual es una CA emisora de cinco años en su quinto año, y un operador que pidió un año debería recibir once meses en lugar de un error de aritmética. Las vigencias de los propios niveles vienen de los perfiles de certificado de common/crypto_impl/x509.js — veinte años, diez y cinco — y pueden anularse en el formulario y con las tres filas pki.*LifetimeYears de abajo."
   },
   "pki.rootLifetimeYears|label": {

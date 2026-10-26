@@ -3088,7 +3088,7 @@
     "text": "默认 CA 密钥算法"
   },
   "pki.keyAlgorithm|description": {
-    "en": "763204ceb3af08e6",
+    "en": "00e61f4da7498a62",
     "text": "当表单未指明时，新证书颁发机构所使用的密钥算法：rsa-2048、rsa-3072、rsa-4096、ec-p256、ec-p384、ec-p521 或 ed25519，或某个后量子 id（ML-DSA、SLH-DSA、复合算法以及 ML-KEM——后者不能签名，因此只能作为主体密钥，而绝不能作为颁发机构的密钥）。默认值为 RSA 2048，因为此层级结构所要签发的叶证书会签署客户端断言，而该断言须由别人的 OAuth 库验证，RS256 是每个此类库都支持的唯一算法。该列表读取自 common/crypto_impl/key_material.js——即生成密钥的模块——因此它不认识的值会在构建时被拒绝，并附上该列表。"
   },
   "pki.signatureAlgorithm|label": {
@@ -3128,7 +3128,7 @@
     "text": "签发密钥对的默认有效期（天）"
   },
   "pki.leafLifetimeDays|description": {
-    "en": "b55ab0b2f1f1f04b",
+    "en": "028d5b5d730c9d23",
     "text": "当表单未指明有效期时，签发给应用的签名证书的有效时长。若会超出签发 CA 自身的到期时间，它会被截断到该到期时间，而不是被拒绝：常见原因是五年期签发 CA 已进入第五年，而要求一年有效期的运维人员应当得到十一个月，而不是一个关于算术的错误。各层自身的有效期来自 common/crypto_impl/x509.js 中的证书配置——二十年、十年和五年——可在表单上以及通过下面三行 pki.*LifetimeYears 覆盖。"
   },
   "pki.rootLifetimeYears|label": {

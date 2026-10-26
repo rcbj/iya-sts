@@ -456,7 +456,7 @@
     "text": "L’enveloppe que SCEP (scep/scep_cms.ts) lit et écrit : une requête signée par le demandeur et chiffrée vers la RA, et un CertRep signé par la RA dont le certificat est chiffré vers le demandeur."
   },
   "crypto.families.pki.signs": {
-    "en": "f1ce79cf624ab6f5",
+    "en": "fdcf723f4622f28f",
     "text": "DES CERTIFICATS. La Root se signe elle-même une fois pour le service ; elle signe une Intermediate par domaine de confiance et une pour le processus ; chaque Intermediate signe une Issuing CA par cas d’usage ; et chaque Issuing CA signe les certificats feuilles de son cas d’usage — les propres clés de signature et d’écouteur du service, ainsi que les paires de clés délivrées aux applications et aux personnes. L’algorithme de signature est celui choisi pour la hiérarchie et est contraint par la famille de clé de l’ÉMETTEUR plutôt que par celle du sujet, ce qui est l’erreur à laquelle l’en-tête même de `common/crypto_impl/x509.js` consacre un paragraphe : importer une clé sous un condensé et signer avec un autre produit un certificat dont l’algorithme déclaré et la signature réelle divergent, et `openssl verify` le signale comme une mauvaise signature sans nommer ni l’un ni l’autre."
   },
   "crypto.families.pki.verifies": {
@@ -484,7 +484,7 @@
     "text": "Encodage des certificats"
   },
   "crypto.families.pki.algorithms.0.how": {
-    "en": "d40c79caa059f986",
+    "en": "9c9c3be17d02f8b6",
     "text": "X.509 v3, DER, via pkijs et asn1js — common/crypto_impl/x509.js, le code PKI propre au projet parent, identique octet pour octet. Un seul encodeur pour ce service et pour la page PKI / X.509 de ce projet."
   },
   "crypto.families.pki.algorithms.1.what": {

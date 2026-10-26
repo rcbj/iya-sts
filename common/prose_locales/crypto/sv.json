@@ -456,7 +456,7 @@
     "text": "Kuvertet som SCEP (scep/scep_cms.ts) läser och skriver: en begäran signerad av begäraren och krypterad till RA, och en CertRep signerad av RA vars certifikat är krypterat till begäraren."
   },
   "crypto.families.pki.signs": {
-    "en": "f1ce79cf624ab6f5",
+    "en": "fdcf723f4622f28f",
     "text": "CERTIFIKAT. Rot-CA:n signerar sig själv en gång för tjänsten; den signerar en mellanliggande CA per förtroendesfär och en för processen; varje mellanliggande CA signerar en utfärdande CA per användningsfall; och varje utfärdande CA signerar löven för sitt användningsfall — tjänstens egna signerings- och lyssnarnycklar, och de nyckelpar som utfärdats till applikationer och personer. Signaturalgoritmen är den som valts för hierarkin och begränsas av UTFÄRDARENS nyckelfamilj snarare än subjektets, vilket är misstaget som `common/crypto_impl/x509.js` eget huvud ägnar ett stycke åt: att importera en nyckel under en sammanfattningsalgoritm och signera med en annan producerar ett certifikat vars deklarerade algoritm och faktiska signatur inte stämmer överens, och `openssl verify` rapporterar det som en felaktig signatur utan att namnge någon av dem."
   },
   "crypto.families.pki.verifies": {
@@ -484,7 +484,7 @@
     "text": "Certifikatkodning"
   },
   "crypto.families.pki.algorithms.0.how": {
-    "en": "d40c79caa059f986",
+    "en": "9c9c3be17d02f8b6",
     "text": "X.509 v3, DER, via pkijs och asn1js — common/crypto_impl/x509.js, moderprojektets egen PKI-kod, byte för byte identisk. En kodare för den här tjänsten och för det projektets sida PKI / X.509."
   },
   "crypto.families.pki.algorithms.1.what": {

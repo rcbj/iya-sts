@@ -80,7 +80,7 @@
     "text": "En XML Signature-nyckel. Dess certifikat skrivs på applikationen som en PEM (oauthSamlAssertionCertificate), eftersom SAML saknar JWKS och det som en part registrerar för den profilen ÄR ett certifikat."
   },
   "pki.report.encoder": {
-    "en": "e62315ba46619e60",
+    "en": "67a724697c0f501e",
     "text": "common/crypto_impl/x509.js — moderprojektets egen PKI-kod, byte för byte identisk, ovanpå pkijs och asn1js. En kodare för den här tjänsten och för det projektets PKI / X.509-sida."
   },
   "pki.report.residencyPersisted": {

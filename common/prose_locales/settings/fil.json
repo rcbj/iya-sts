@@ -3088,7 +3088,7 @@
     "text": "Default na key algorithm ng CA"
   },
   "pki.keyAlgorithm|description": {
-    "en": "763204ceb3af08e6",
+    "en": "00e61f4da7498a62",
     "text": "Aling key algorithm ang ginagamit sa pagbuo ng bagong certificate authority kapag walang pinapangalanan ang form: rsa-2048, rsa-3072, rsa-4096, ec-p256, ec-p384, ec-p521 o ed25519, o isa sa mga post-quantum id (ML-DSA, SLH-DSA, ang mga composite at ML-KEM — na hindi nakakapirma, kaya subject key ito at hindi kailanman key ng authority). RSA 2048 ang default dahil ang LEAF na dahilan ng pag-iral ng hierarchy na ito ay pumipirma ng client assertion na kailangang i-verify ng OAuth library ng iba, at RS256 ang iisang algorithm na mayroon ang bawat ganoong library. Binabasa ang listahan mula sa common/crypto_impl/key_material.js — ang module na bumubuo ng key — kaya ang value na hindi nito kilala ay tinatanggihan sa build kasama ang listahan sa tabi nito."
   },
   "pki.signatureAlgorithm|label": {
@@ -3128,7 +3128,7 @@
     "text": "Default na tagal ng iniisyung key pair (araw)"
   },
   "pki.leafLifetimeDays|description": {
-    "en": "b55ab0b2f1f1f04b",
+    "en": "028d5b5d730c9d23",
     "text": "Gaano katagal valid ang signing certificate na iniisyu sa isang application kapag walang tagal na pinapangalanan ang form. KINA-CLAMP ito sa sariling expiry ng Issuing CA sa halip na tanggihan kung lalampas: ang karaniwang dahilan ay isang limang-taong Issuing CA na nasa ikalimang taon nito, at ang operator na humingi ng isang taon ay dapat makakuha ng labing-isang buwan sa halip na error tungkol sa aritmetika. Ang sariling tagal ng mga tier ay galing sa mga certificate profile sa common/crypto_impl/x509.js — dalawampung taon, sampu at lima — at puwedeng i-override sa form at ng tatlong pki.*LifetimeYears row sa ibaba."
   },
   "pki.rootLifetimeYears|label": {

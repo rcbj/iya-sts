@@ -3088,7 +3088,7 @@
     "text": "預設 CA 金鑰演算法"
   },
   "pki.keyAlgorithm|description": {
-    "en": "763204ceb3af08e6",
+    "en": "00e61f4da7498a62",
     "text": "表單未指定時，新憑證授權單位以哪種金鑰演算法建置：rsa-2048、rsa-3072、rsa-4096、ec-p256、ec-p384、ec-p521 或 ed25519，或後量子 ID 之一（ML-DSA、SLH-DSA、複合演算法與 ML-KEM——後者無法簽署，因此只能作為主體金鑰，絕不能作為授權單位的金鑰）。預設為 RSA 2048，因為此階層存在的目的是簽發葉憑證，而葉憑證所簽署的用戶端斷言必須由別人的 OAuth 程式庫驗證，RS256 是每個這類程式庫都具備的唯一演算法。清單讀取自 common/crypto_impl/key_material.js——產生金鑰的模組——因此它不認得的值會在建置時被拒絕，並在旁列出清單。"
   },
   "pki.signatureAlgorithm|label": {
@@ -3128,7 +3128,7 @@
     "text": "簽發之金鑰組的預設有效期（天）"
   },
   "pki.leafLifetimeDays|description": {
-    "en": "b55ab0b2f1f1f04b",
+    "en": "028d5b5d730c9d23",
     "text": "表單未指定有效期時，簽發給應用程式的簽署憑證有效多久。若會超過 Issuing CA 本身的到期時間，則會被「截短」至該時間，而不是被拒絕：常見原因是五年期的 Issuing CA 已進入第五年，要求一年的營運者應該得到十一個月，而不是一則關於算術的錯誤。各層級本身的有效期來自 common/crypto_impl/x509.js 中的憑證設定檔——二十年、十年與五年——可在表單上以及由下方三個 pki.*LifetimeYears 列覆寫。"
   },
   "pki.rootLifetimeYears|label": {

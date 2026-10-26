@@ -3088,7 +3088,7 @@
     "text": "Standardnyckelalgoritm för CA"
   },
   "pki.keyAlgorithm|description": {
-    "en": "763204ceb3af08e6",
+    "en": "00e61f4da7498a62",
     "text": "Vilken nyckelalgoritm en ny certifikatutfärdare byggs med när formuläret inte anger någon: rsa-2048, rsa-3072, rsa-4096, ec-p256, ec-p384, ec-p521 eller ed25519, eller ett av postkvant-id:na (ML-DSA, SLH-DSA, kompositerna och ML-KEM — som inte kan signera, så den är en subjektnyckel och aldrig en utfärdares). RSA 2048 är standard eftersom det LÖV som hierarkin finns till för att utfärda signerar ett klientintyg som någon annans OAuth-bibliotek måste verifiera, och RS256 är den enda algoritm som varje sådant bibliotek har. Listan läses från common/crypto_impl/key_material.js — modulen som genererar nyckeln — så ett värde den inte känner till avvisas vid bygget med listan bredvid."
   },
   "pki.signatureAlgorithm|label": {
@@ -3128,7 +3128,7 @@
     "text": "Standardlivslängd för ett utfärdat nyckelpar (dagar)"
   },
   "pki.leafLifetimeDays|description": {
-    "en": "b55ab0b2f1f1f04b",
+    "en": "028d5b5d730c9d23",
     "text": "Hur länge ett signeringscertifikat som utfärdas till en applikation gäller när formuläret inte anger någon livslängd. Den BEGRÄNSAS till den utfärdande CA:ns egen utgångstid i stället för att avvisas där den skulle gå över: den vanliga orsaken är en utfärdande CA på fem år i sitt femte år, och en operatör som bad om ett år bör få elva månader snarare än ett felmeddelande om aritmetik. Nivåernas egna livslängder kommer från certifikatprofilerna i common/crypto_impl/x509.js — tjugo år, tio och fem — och kan åsidosättas i formuläret och av de tre pki.*LifetimeYears-raderna nedan."
   },
   "pki.rootLifetimeYears|label": {

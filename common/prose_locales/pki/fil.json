@@ -80,7 +80,7 @@
     "text": "Isang XML Signature key. Isinusulat ang certificate nito sa application bilang PEM (oauthSamlAssertionCertificate), dahil walang JWKS ang SAML at ang nire-register ng isang party para sa profile na iyon ay ISANG certificate."
   },
   "pki.report.encoder": {
-    "en": "e62315ba46619e60",
+    "en": "67a724697c0f501e",
     "text": "common/crypto_impl/x509.js — ang sariling PKI code ng parent project, byte-identical, sa ibabaw ng pkijs at asn1js. Iisang encoder para sa serbisyong ito at para sa PKI / X.509 page ng project na iyon."
   },
   "pki.report.residencyPersisted": {

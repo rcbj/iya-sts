@@ -80,7 +80,7 @@
     "text": "XML Signature 金鑰。其憑證會以 PEM（oauthSamlAssertionCertificate）寫入應用程式，因為 SAML 沒有 JWKS，而一方為該設定檔註冊的「就是」憑證。"
   },
   "pki.report.encoder": {
-    "en": "e62315ba46619e60",
+    "en": "67a724697c0f501e",
     "text": "common/crypto_impl/x509.js——上層專案自己的 PKI 程式碼，逐位元組相同，建構於 pkijs 與 asn1js 之上。本服務與該專案的 PKI / X.509 頁面共用同一個編碼器。"
   },
   "pki.report.residencyPersisted": {
