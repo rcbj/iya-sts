@@ -1307,11 +1307,10 @@ class DebuggerServer {
                                                { presented: true,
                                                  scheme: presentation.scheme });
         if (!verdict.ok) {
-          // error-code: none — refuse() marks verdict.code, the STS-DBG code
-          // verifyAccessToken() chose for this failure.
           if (verdict.retryAfterS) {
             res.set('Retry-After', String(verdict.retryAfterS));
           }
+          // error-code: none — refuse() marks the code verifyAccessToken chose.
           self.refuse(req, res, verdict.status, verdict.code, verdict.error,
                       verdict.why,
                       'Bearer error="' + verdict.error + '", scope="' +
@@ -1436,11 +1435,10 @@ class DebuggerServer {
           log.debug("Leaving the debugger gate. Not an administrator.");
           return;
         }
-        // error-code: none — refuse() marks verdict.code, from
-        // verifyAccessToken().
         if (verdict.retryAfterS) {
           res.set('Retry-After', String(verdict.retryAfterS));
         }
+        // error-code: none — refuse() marks the code verifyAccessToken chose.
         self.refuse(req, res, verdict.status, verdict.code, verdict.error,
                     verdict.why);
         log.debug("Leaving the debugger gate. The session's token refused.");

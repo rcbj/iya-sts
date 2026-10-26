@@ -26110,11 +26110,11 @@ class AdminApi {
                     return opaqueAccessToken.noteMiss(req);
                   });
               if (limited) {
-                errorCodes.mark(res, 'STS-OAUTH-0983');
                 res.set('Retry-After', String(limited.retryAfterS));
                 res.set('WWW-Authenticate',
                         'Bearer error="invalid_token", scope="' +
                         scopesWanted + '"');
+                errorCodes.mark(res, 'STS-OAUTH-0983');
                 return self.sendJson(res, 429, { error: 'invalid_token',
                   errors: [
                     'Too many attempts. Wait ' + limited.retryAfterS +

@@ -3775,6 +3775,7 @@ function recordRefusedAuthentication(detail) {
   const address = info.address ? String(info.address) : '';
   const row = audit.audit({
     action: 'authentication.refused',
+    // error-code: none — the caller names the code; this row copies it
     outcome: 'refused',
     errorCode: info.errorCode || '',
     actor: identity.key,
