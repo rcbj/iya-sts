@@ -236,6 +236,15 @@ protocols**: a sign-in at `/saml2/sso` followed by an OIDC authorization request
 reports exactly one presentation between them — the OIDC one, named
 `OAuth 2.0 / OIDC`.
 
+**A consent screen is part of the sign-in too** (2026-10-26). An OAuth sign-in
+that needs consent comes back to `/oauth2/authorize` twice, once from the
+sign-in screen and once from the consent screen, and until then the second
+arrival was reported as `session-presented` after every first sign-in that
+asked for consent. The authorization endpoint now keeps the flag armed when it
+sends the sign-in's return trip to the consent screen, so neither arrival is
+reported. A person who refuses consent leaves it armed, and their next
+presentation of that session is not reported.
+
 Per-protocol edges:
 
 - **OIDC** — `prompt=login` skips the branch entirely (screen → a new session).

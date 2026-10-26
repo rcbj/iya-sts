@@ -5609,6 +5609,42 @@ class Authn {
   }
 
   // ---------------------------------------------------------------------------
+  // THE SIGN-IN'S RETURN TRIP, CONTINUED THROUGH ANOTHER SCREEN (2026-10-26).
+  //
+  // The flag notePresented() spends assumes the sign-in comes back to the
+  // protocol endpoint ONCE. An OAuth sign-in that needs consent comes back
+  // twice: once from the sign-in screen, which spends the flag, and again
+  // from the consent screen, which then read as single sign-on — CAEP's
+  // `session-presented` and a `session.presented` row on both Authentication
+  // attempts tabs after every first sign-in that asked for consent, with no
+  // second application involved. The authorization endpoint calls this when
+  // the request that spent the flag is sent to the consent screen, so the
+  // trip back from it is the sign-in's too.
+  //
+  // A person who refuses consent leaves it armed, and their next presentation
+  // of this session goes unreported once. That is the same request coming
+  // back, in practice, and a missed event costs less than a false one.
+  // ---------------------------------------------------------------------------
+  /**
+   * Re-arms the sign-in's free presentation, because its return trip goes
+   * through another screen (consent) before it reaches the endpoint again.
+   *
+   * @param session - the session that was just signed in
+   */
+  holdFirstPresentation(session) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.holdFirstPresentation().");
+    if (!session) {
+      log.debug("Leaving Authn.holdFirstPresentation(). No session.");
+      return;
+    }
+    session.firstPresentationIsTheSignIn = true;
+    // In the store as well, for notePresented()'s reason (#46).
+    this.noteSessionChanged(session);
+    log.debug("Leaving Authn.holdFirstPresentation().");
+  }
+
+  // ---------------------------------------------------------------------------
   // WRITING THE COOKIE ON A RESPONSE THAT MAY NOT BE EXPRESS'S (2026-09-05).
   //
   // Every caller of `startSession()` handed it an express response until the
@@ -18775,6 +18811,7 @@ export = {
   // require the other way would move every /ssf route.
   setSessionObserver: slot.forward('setSessionObserver'),
   notePresented: slot.forward('notePresented'),
+  holdFirstPresentation: slot.forward('holdFirstPresentation'),
   // The three the protocol-independent logout needs, and the reason each is
   // here rather than reimplemented over there: /logout ends sessions it was not
   // handed a cookie for, so it names them by id — and every one of them still
