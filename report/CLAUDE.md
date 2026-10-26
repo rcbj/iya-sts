@@ -163,6 +163,15 @@ rcbj, 2026-10-26, after seeing #986's page. Four things:
   save queues the most recent PAST occurrence within a minute, and each
   later occurrence follows; a save with Enabled clear keeps the schedule
   and never runs.
+* **`GET /report-api/schedules` (#992)**: `reportSchedulesView(who, query)`
+  — the scheduled definitions the caller may see (`rights.canSee`, so
+  owned and shared for `report:use`, the realm for `report:admin`), each
+  with `jobs.scheduleTimes()`, its last three notes and its five newest
+  jobs whose `queuedBecause` is `schedule`. `?owner=` (a subject or a
+  username through `helpers.subjectForName()`) is an administrator's;
+  `report:use` naming anyone but itself is `STS-REPORT-0038`, refused
+  rather than narrowed, so an answer never means something other than
+  what was asked. No page draws it yet.
 * **The Parameters box explained**: `parametersHelpHtml()` under the Run
   box names the parameters the saved filter holds (`paramNames()` walks
   `param` leaves through `and`, `or` and `not`) or says it holds none and

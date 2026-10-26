@@ -109,6 +109,16 @@ has no stored value, the query no longer validates, or the job could not
 be queued. A schedule that is saved with the Enabled box clear is kept
 and never runs.
 
+**`GET /report-api/schedules`** lists every definition that carries a
+schedule, each with `nextRunAt`, `lastSlotAt`, its last three skip notes
+and its most recent scheduled jobs (at most five, with `jobCount` for the
+total). With `report:use` the list is the definitions you own or are
+shared (`scope: "mine"`); with `report:admin` it is every one in the
+realm (`scope: "realm"`), and `?owner=` narrows it to one owner, given
+as a `urn:uuid:` subject or a username. A `report:use` token that names
+another owner is refused with `forbidden` (403). `page` and `per` page
+it, `per` at most 100.
+
 ### The groups a definition is shared with, and who is emailed
 
 The **Groups emailed the result** pane is a search over the realm's

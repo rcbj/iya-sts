@@ -23637,7 +23637,11 @@ const CODES = [
     summary: 'A report job finished with Notify on, and a group the ' +
       'definition is shared with has no mail attribute, so that group ' +
       'was not sent the notice. The other recipients were.',
-    spec: 'recorded; the job still completed' }
+    spec: 'recorded; the job still completed' },
+  { code: 'STS-REPORT-0038',
+    summary: 'GET /report-api/schedules asked for another account\'s ' +
+      'schedules with a token that holds report:use and not report:admin.',
+    spec: 'forbidden (HTTP 403)' }
   // ===== END ===============================================================
 ];
 

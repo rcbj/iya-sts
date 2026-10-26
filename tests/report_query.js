@@ -525,6 +525,7 @@ function projections(t) {
     '/report-api/catalog/{id}',
     '/report-api/realms',
     '/report-api/groups',
+    '/report-api/schedules',
     '/report-api/queries',
     '/report-api/definitions',
     '/report-api/definitions/{id}',
@@ -637,6 +638,67 @@ async function schedules(t) {
       t.equal(jobs.scheduleTimes({ schedule: '* * * * *',
         scheduleEnabled: false, lastSlot: null }, when).nextRunAt, null,
         'a schedule that is off has no next run');
+
+      // The schedules endpoint (#992): mine, the realm, one owner.
+      const api = require('../report/report_api');
+      stores.putDefinition({
+        id: 'def-other', name: 'theirs', owner: 'urn:uuid:other',
+        // Off, so the second scheduleNow() below still queues nothing;
+        // the list shows a schedule whether or not it is on.
+        document: scheduledDocument(), parameters: { who: 'bea' },
+        schedule: '0 9 * * 1', scheduleEnabled: false, notify: false,
+        groups: [], lastSlot: null, failures: [{ at: when,
+          description: 'A saved parameter was not given.' }],
+        createdAt: 1, modifiedAt: 1
+      });
+      stores.putDefinition({
+        id: 'def-plain', name: 'no schedule', owner: 'urn:uuid:test',
+        document: scheduledDocument(), parameters: { who: 'ada' },
+        schedule: '', scheduleEnabled: false, notify: false, groups: [],
+        lastSlot: null, failures: [], createdAt: 1, modifiedAt: 1
+      });
+      const mine = api.schedulesView({ subject: 'urn:uuid:test',
+        scope: 'report:use' }, {});
+      t.equal(mine.scope, 'mine', 'report:use lists its own');
+      t.equal(mine.schedules.map(function (s) {
+        return s.definition.id;
+      }).join(','), saved.definition.id,
+        'only the caller\'s scheduled definition, not the unscheduled one ' +
+        'and not another owner\'s');
+      t.equal(mine.schedules[0].jobs.length, 1,
+        'with its scheduled job');
+      t.equal(mine.schedules[0].jobs[0].queuedBecause, 'schedule',
+        'which says it was scheduled');
+      t.equal(mine.schedules[0].definition.nextRunAt !== null, true,
+        'and its next run');
+      const realm = api.schedulesView({ subject: 'urn:uuid:admin',
+        scope: 'report:use report:admin' }, {});
+      t.equal(realm.scope, 'realm', 'report:admin lists the realm');
+      t.equal(realm.total, 2, 'both scheduled definitions');
+      t.equal(realm.schedules[0].definition.name, 'theirs',
+        'in name order');
+      t.equal(realm.schedules[0].definition.failures[0].description,
+        'A saved parameter was not given.',
+        'with the notes a skipped run left');
+      const one = api.schedulesView({ subject: 'urn:uuid:admin',
+        scope: 'report:admin' }, { owner: 'urn:uuid:other' });
+      t.equal(one.total, 1, 'an administrator may ask for one owner');
+      t.equal(one.owner, 'urn:uuid:other', 'and the answer names them');
+      const refused = api.schedulesView({ subject: 'urn:uuid:test',
+        scope: 'report:use' }, { owner: 'urn:uuid:other' });
+      t.equal(refused.ok, false, 'report:use may not ask for another owner');
+      t.equal(refused.code, 'STS-REPORT-0038', 'and the refusal is 0038');
+      const self = api.schedulesView({ subject: 'urn:uuid:test',
+        scope: 'report:use' }, { owner: 'urn:uuid:test' });
+      t.equal(self.total, 1, 'naming oneself is allowed');
+      const paged = api.schedulesView({ subject: 'urn:uuid:admin',
+        scope: 'report:admin' }, { per: 1, page: 2 });
+      t.equal(paged.pages === 2 && paged.schedules.length === 1 &&
+        paged.schedules[0].definition.id === saved.definition.id, true,
+        'the list pages');
+      t.equal(api.schedulesView({ subject: 'urn:uuid:admin',
+        scope: 'report:admin' }, { per: 1000 }).per, 100,
+        'per is capped at a hundred');
       t.equal(jobs.jobView(queued[0], false).queuedBecause, 'schedule',
         'and its view carries the reason');
       const held = stores.getDefinition(saved.definition.id);

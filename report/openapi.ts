@@ -176,6 +176,32 @@ class OpenApi {
               }
             })
         },
+        '/report-api/schedules': {
+          get: operation('The scheduled definitions and their runs',
+            'Every definition that carries a schedule, with when it next ' +
+            'runs, the occurrence it last took, the notes a skipped run ' +
+            'left, and its most recent scheduled jobs. A report:use token ' +
+            'sees the definitions it owns or is shared; report:admin sees ' +
+            'every one in the realm and may name one owner with `owner` ' +
+            '(a urn:uuid subject or a username). A report:use token that ' +
+            'names another owner is refused with forbidden (403). Paged; ' +
+            '`per` is at most 100.', {
+              parameters: [
+                { name: 'owner', in: 'query', required: false,
+                  schema: { type: 'string' } },
+                { name: 'page', in: 'query', required: false,
+                  schema: { type: 'integer', minimum: 1 } },
+                { name: 'per', in: 'query', required: false,
+                  schema: { type: 'integer', minimum: 1, maximum: 100 } }
+              ],
+              responses: {
+                '200': answered('The schedules.',
+                  { $ref: '#/components/schemas/SchedulePage' }),
+                '403': answered('Another owner was named without ' +
+                  'report:admin.', { $ref: '#/components/schemas/Error' })
+              }
+            })
+        },
         '/report-api/catalog': {
           get: operation('The report catalog',
             'Every source. Each field has an id, a meaning, a type, ' +
@@ -440,6 +466,48 @@ class OpenApi {
               current: { $ref: '#/components/schemas/Realm' },
               realms: { type: 'array', nullable: true,
                 items: { $ref: '#/components/schemas/Realm' } }
+            }
+          },
+          Schedule: {
+            type: 'object',
+            properties: {
+              definition: {
+                type: 'object',
+                properties: {
+                  id: { type: 'string' },
+                  name: { type: 'string' },
+                  owner: { type: 'string' },
+                  ownerName: { type: 'string' },
+                  schedule: { type: 'string' },
+                  scheduleEnabled: { type: 'boolean' },
+                  notify: { type: 'boolean' },
+                  nextRunAt: { type: 'string', nullable: true },
+                  lastSlotAt: { type: 'string', nullable: true },
+                  failures: { type: 'array', items: { type: 'object',
+                    properties: { at: { type: 'string', nullable: true },
+                      description: { type: 'string' } } } }
+                }
+              },
+              jobs: { type: 'array',
+                description: 'The most recent scheduled jobs, newest first, ' +
+                  'at most five.',
+                items: { $ref: '#/components/schemas/Job' } },
+              jobCount: { type: 'integer',
+                description: 'How many scheduled jobs the definition has ' +
+                  'in all.' }
+            }
+          },
+          SchedulePage: {
+            type: 'object',
+            properties: {
+              scope: { type: 'string', enum: ['mine', 'realm'] },
+              owner: { type: 'string', nullable: true },
+              page: { type: 'integer' },
+              pages: { type: 'integer' },
+              per: { type: 'integer' },
+              total: { type: 'integer' },
+              schedules: { type: 'array',
+                items: { $ref: '#/components/schemas/Schedule' } }
             }
           },
           Group: {
