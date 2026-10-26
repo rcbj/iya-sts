@@ -520,6 +520,26 @@ risk one is only OBSERVED in development (`mode.observesRiskOnly()`,
 `risk.enforceInDevelopment`) — the PEP asks again without the facts and the
 roles decide — and only a risk Deny can be answered by a step-up.
 
+**AND A FOURTH, KEYED ON THE SIGNAL (#503, 2026-10-26).** #499 moved the
+MEDIUM line to 3 and left the factors alone, so a single list signal lifts
+a familiar sign-in to MEDIUM less often: `tor-exit` (×5) from a model score
+of 0.6 where it was 0.2. The ticket offered three ways out, and the one
+taken is a policy rule rather than a rescaling — **the factors are evidence
+about the sign-in and θ is the population's prior odds (Eq. (4)), so raising
+the factors by θ, or raising the HIGH line with the MEDIUM one, would count
+the prior twice**; and what a loaded list says is about the ADDRESS, not
+about this person's habits, which is a decision and therefore policy
+(rcbj's rule). `risk-signal-step-up`, after the two MEDIUM rules: below
+MEDIUM, a signal on `stepUpSignals` (default `tor-exit, reputation,
+operator-deny`; `none` builds no rule) asks for a second factor. A fifth,
+`risk-signal-refuse` after `risk-high`, is built only when `refuseSignals`
+names something, and refuses at any level; it is empty by default for
+#226's reason, and the MEDIUM rules exclude it so the rules stay exclusive.
+The `neverLockOut` applications are stepped up or alarmed on either list,
+never refused, through the same `elevated` test as HIGH. The lists are
+template parameters and not settings, because the rule is the realm's
+issuance document's. `tests/risk_decisions.js` B8–B16.
+
 ## #226: THE DAY RISK LOCKED EVERY ADMINISTRATOR OUT (2026-09-25)
 
 **What happened.** With IPinfo, FireHOL-style block lists and Pwned loaded on
