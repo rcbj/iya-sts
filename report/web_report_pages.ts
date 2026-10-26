@@ -598,6 +598,19 @@ function problemHtml(t: any, text: string): string {
   return '<p class="err">' + esc(text || t.text('report.error')) + '</p>';
 }
 
+// A STATUS MESSAGE IN A BUBBLE AT THE TOP OF THE PAGE (rcbj, 2026-10-26),
+// the console's `.flash`: sticky at the top of the card, `ok` or `err`,
+// with a dismiss. It replaces the note at the foot of a form and the page
+// repaint a refusal used to cause, so a refused save or run leaves the
+// form as it was and says why above it.
+function flashHtml(t: any, kind: string, text: string): string {
+  return '<div class="flash" role="status"><div class="' +
+    (kind === 'ok' ? 'ok' : 'err') + '">' + esc(text) +
+    '<button type="button" class="btn dismiss" data-act="dismiss" ' +
+    'aria-label="' + esc(t.text('report.dismiss')) + '" title="' +
+    esc(t.text('report.dismiss')) + '">&times;</button></div></div>';
+}
+
 function tableHtml(headers: string[], rows: string[][]): string {
   return '<table class="table"><thead><tr>' +
     headers.map(function (header: string): string {
@@ -1202,7 +1215,8 @@ class ReportRuntime extends SpaClient {
    * @param body - a JSON body, or nothing
    * @returns the answer, or null when a sign-in began
    */
-  async call(method: string, path: string, body?: any): Promise<any> {
+  async call(method: string, path: string, body?: any,
+             options?: any): Promise<any> {
     const res = await this.sendOnce(method, this.url(path), body);
     if (res === ABORTED) {
       return null;
@@ -1213,6 +1227,14 @@ class ReportRuntime extends SpaClient {
     }
     const type = String((res.headers && res.headers.get &&
       res.headers.get('Content-Type')) || '');
+    // A RESULT IS BYTES WHATEVER ITS TYPE (`raw`): a JSON-format report
+    // is served as application/json, and reading it as the API's JSON
+    // left `bytes` empty, so Download said only that something went
+    // wrong. A refusal is still read as JSON, for its description.
+    if (options && options.raw && res.status === 200) {
+      const bytes = await res.arrayBuffer();
+      return { status: res.status, bytes: bytes, media: type, res: res };
+    }
     if (type.indexOf('json') >= 0 || type === '') {
       let json: any = null;
       try {
@@ -1601,8 +1623,7 @@ class ReportRuntime extends SpaClient {
       tip(self.t, 'report.tipName') + '>' +
       esc(self.t.text('report.name')) +
       '</label><input name="definitionName"></div>' +
-      actionsHtml(self.t) +
-      '<p class="sub" id="report-note"></p></form>');
+      actionsHtml(self.t) + '</form>');
   }
 
   /**
@@ -1980,7 +2001,7 @@ class ReportRuntime extends SpaClient {
       esc(this.t.text('report.format')) + ' ' +
       formatWord(this.t, job.format) + '</p>' +
       (job.error ? problemHtml(this.t, job.error) : '') +
-      '<p>' + download + '</p><p id="report-note"></p>');
+      '<p>' + download + '</p>');
   }
 
   /**
@@ -1993,16 +2014,15 @@ class ReportRuntime extends SpaClient {
    */
   async download(id: string, format: string): Promise<void> {
     const answer = await this.call('GET', API + '/jobs/' +
-      encodeURIComponent(id) + '/result');
+      encodeURIComponent(id) + '/result', undefined, { raw: true });
     if (!answer) {
       return;
     }
     if (answer.status !== 200 || !answer.bytes) {
-      const note = this.env.document.getElementById('report-note');
-      if (note) {
-        note.textContent = (answer.json && answer.json.error_description) ||
-          this.t.text('report.error');
-      }
+      this.flash('err', (answer.json && (answer.json.error_description ||
+        answer.json.error)) ||
+        this.t.text('report.downloadFailed',
+          { status: String(answer.status || '') }));
       return;
     }
     const blob = new Blob([answer.bytes], {
@@ -2028,9 +2048,15 @@ class ReportRuntime extends SpaClient {
       return;
     }
     if (answer.status === 202 && answer.json && answer.json.job) {
+      const self = this;
+      const jobId = String(answer.json.job.id);
       this.env.history.pushState(null, '', this.prefix + BASE + '/jobs/' +
-        answer.json.job.id);
-      this.route();
+        jobId);
+      this.route().then(function (): void {
+        self.flash('ok', self.t.text('report.queuedAs', { id: jobId }));
+      }, function (): void {
+        return undefined;
+      });
       return;
     }
     if (answer.json && answer.json.rows) {
@@ -2052,8 +2078,42 @@ class ReportRuntime extends SpaClient {
         esc(this.t.text('report.download')) + '</a></p>');
       return;
     }
-    this.paint(problemHtml(this.t, answer.json &&
-      answer.json.error_description));
+    // A refusal keeps the form on the page and says why above it.
+    this.flash('err', (answer.json && (answer.json.error_description ||
+      answer.json.error)) || this.t.text('report.error'));
+  }
+
+  /**
+   * Shows a status message in the bubble at the top of the page, one at a
+   * time; the next replaces it, and a repaint clears it.
+   *
+   * @param kind - 'ok' or 'err'
+   * @param text - the message
+   * @returns nothing
+   */
+  flash(kind: string, text: string): void {
+    const doc = this.env.document;
+    const main = doc.getElementById('report');
+    if (!main) {
+      return;
+    }
+    const old = main.querySelector('.flash');
+    if (old && old.parentNode) {
+      old.parentNode.removeChild(old);
+    }
+    main.insertAdjacentHTML('afterbegin', flashHtml(this.t, kind, text));
+  }
+
+  /**
+   * The status bubble, for a test.
+   *
+   * @param t - the translator
+   * @param kind - 'ok' or 'err'
+   * @param text - the message
+   * @returns the bubble's HTML
+   */
+  static flashHtml(t: any, kind: string, text: string): string {
+    return flashHtml(t, kind, text);
   }
 
   /**
@@ -2144,6 +2204,14 @@ class ReportRuntime extends SpaClient {
         this.route();
         return;
       }
+      if (act === 'dismiss') {
+        event.preventDefault();
+        const bubble = el.closest ? el.closest('.flash') : null;
+        if (bubble && bubble.parentNode) {
+          bubble.parentNode.removeChild(bubble);
+        }
+        return;
+      }
       if (act === 'add-filter') {
         event.preventDefault();
         this.addFilterRow(el);
@@ -2185,12 +2253,19 @@ class ReportRuntime extends SpaClient {
         event.preventDefault();
         const id = String(el.getAttribute('data-id') || '');
         this.call('DELETE', API + '/definitions/' + encodeURIComponent(id))
-          .then(function (answer: any): void {
+          .then(function (answer: any): any {
             if (answer && answer.status === 200) {
               self.env.history.pushState(null, '', self.prefix + BASE +
                 '/definitions');
-              self.route();
+              return self.route().then(function (): void {
+                self.flash('ok', self.t.text('report.deleted'));
+              });
             }
+            if (answer) {
+              self.flash('err', (answer.json &&
+                answer.json.error_description) || self.t.text('report.error'));
+            }
+            return null;
           }, function (): void {
             return undefined;
           });
@@ -2250,15 +2325,19 @@ class ReportRuntime extends SpaClient {
           schedule: '',
           scheduleEnabled: false,
           notify: false
-        }).then(function (answer: any): void {
+        }).then(function (answer: any): any {
           if (answer && answer.json && answer.json.definition) {
             self.env.history.pushState(null, '', self.prefix + BASE +
               '/definitions/' + answer.json.definition.id);
-            self.route();
-            return;
+            return self.route().then(function (): void {
+              self.flash('ok', self.t.text('report.saved'));
+            });
           }
-          self.paint(problemHtml(self.t, answer && answer.json &&
-            answer.json.error_description));
+          if (answer) {
+            self.flash('err', (answer.json && answer.json.error_description) ||
+              self.t.text('report.error'));
+          }
+          return null;
         }, function (): void {
           return undefined;
         });
@@ -2310,16 +2389,26 @@ class ReportRuntime extends SpaClient {
         notify: !!form.elements.notify.checked
       }).then(function (answer: any): any {
         if (!answer || !answer.json || !answer.json.definition) {
-          self.paint(problemHtml(self.t, answer && answer.json &&
-            answer.json.error_description));
+          if (answer) {
+            self.flash('err', (answer.json && answer.json.error_description) ||
+              self.t.text('report.error'));
+          }
           return null;
         }
         return self.call('POST', API + '/definitions/' +
           encodeURIComponent(id) + '/share', { groups: groups });
-      }).then(function (answer: any): void {
-        if (answer) {
-          self.route();
+      }).then(function (answer: any): any {
+        if (!answer) {
+          return null;
         }
+        if (answer.status !== 200) {
+          self.flash('err', (answer.json && answer.json.error_description) ||
+            self.t.text('report.error'));
+          return null;
+        }
+        return self.route().then(function (): void {
+          self.flash('ok', self.t.text('report.saved'));
+        });
       }, function (): void {
         return undefined;
       });

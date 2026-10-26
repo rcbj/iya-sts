@@ -126,5 +126,10 @@
   "nextRunNone": "Walang nakatakdang pagtakbo: naka-off ang iskedyul o walang oras na pinangalanan.",
   "lastSlot": "Huling pagkakataong nakuha: {when} UTC.",
   "scheduleNotes": "Bakit hindi naganap ang isang naka-iskedyul na pagtakbo",
-  "scheduleHow": "Sinusuri ang naka-on na iskedyul nang humigit-kumulang isang beses bawat minuto; ang pinakabagong pagkakataong hindi pa nakuha ay inilalagay sa pila bilang trabaho, ang una sa loob ng isang minuto mula sa pag-save. Bawat pagtakbo ay isang trabaho sa pahina ng Mga Trabaho, na pag-aari mo."
+  "scheduleHow": "Sinusuri ang naka-on na iskedyul nang humigit-kumulang isang beses bawat minuto; ang pinakabagong pagkakataong hindi pa nakuha ay inilalagay sa pila bilang trabaho, ang una sa loob ng isang minuto mula sa pag-save. Bawat pagtakbo ay isang trabaho sa pahina ng Mga Trabaho, na pag-aari mo.",
+  "downloadFailed": "Hindi ma-download ang resulta (HTTP {status}).",
+  "saved": "Na-save.",
+  "deleted": "Nabura ang definition.",
+  "queuedAs": "Nakapila bilang trabaho {id}.",
+  "dismiss": "Isara"
 }

@@ -84,7 +84,11 @@ expression written by hand on the API that the editor cannot draw is
 still seen. Save and Delete are buttons at the foot of the form.
 
 Every field of the application carries a **tooltip** on its label, the
-console's shape, saying what the field is for.
+console's shape, saying what the field is for. The outcome of an act — a
+save, a delete, a query queued as a job, a refused run, a download that
+failed — is shown in a **status bubble** at the top of the page, with a
+dismiss; a refusal leaves the form as it was. A failed download names
+the API's reason, or the HTTP status when it gave none.
 
 **The Parameters box** on a definition's page is for a saved filter that
 names a parameter instead of a value, such as

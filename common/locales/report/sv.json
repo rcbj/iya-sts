@@ -126,5 +126,10 @@
   "nextRunNone": "Ingen körning väntar: schemat är av eller anger ingen tid.",
   "lastSlot": "Senaste tagna tillfälle: {when} UTC.",
   "scheduleNotes": "Varför en schemalagd körning inte skedde",
-  "scheduleHow": "Ett påslaget schema kontrolleras ungefär en gång i minuten; det senaste tillfället som ännu inte tagits ställs i kö som ett jobb, det första inom en minut efter att du sparat. Varje körning är ett jobb på sidan Jobb, som du äger."
+  "scheduleHow": "Ett påslaget schema kontrolleras ungefär en gång i minuten; det senaste tillfället som ännu inte tagits ställs i kö som ett jobb, det första inom en minut efter att du sparat. Varje körning är ett jobb på sidan Jobb, som du äger.",
+  "downloadFailed": "Resultatet kunde inte hämtas (HTTP {status}).",
+  "saved": "Sparat.",
+  "deleted": "Definitionen togs bort.",
+  "queuedAs": "Ställd i kö som jobb {id}.",
+  "dismiss": "Stäng"
 }

@@ -1635,6 +1635,18 @@ function groups(t) {
     idle.indexOf('did not happen') < 0,
     'no schedule says so and lists nothing');
 
+  // The status bubble: the console's flash, ok or err, with a dismiss.
+  const okBubble = ReportRuntime.flashHtml(tr, 'ok', 'Saved.');
+  t.check(okBubble.indexOf('<div class="flash" role="status">') === 0 &&
+    okBubble.indexOf('<div class="ok">Saved.') >= 0 &&
+    okBubble.indexOf('data-act="dismiss"') >= 0,
+    'an ok message is a flash with a dismiss', okBubble);
+  const errBubble = ReportRuntime.flashHtml(tr, 'err', 'a <b>');
+  t.check(errBubble.indexOf('<div class="err">a &lt;b&gt;') >= 0,
+    'an error message is escaped');
+  t.check(tr.text('report.downloadFailed', { status: '410' })
+    .indexOf('HTTP 410') >= 0, 'a failed download names its status');
+
   // The parameters: the names a filter holds, and the sentence under Run.
   t.equal(ReportRuntime.paramNames({ op: 'and', args: [
     { op: 'eq', field: 'username', param: 'who' },

@@ -126,5 +126,10 @@
   "nextRunNone": "Aucune exécution prévue : la planification est désactivée ou ne nomme aucune heure.",
   "lastSlot": "Dernière occurrence prise : {when} UTC.",
   "scheduleNotes": "Pourquoi une exécution planifiée n’a pas eu lieu",
-  "scheduleHow": "Une planification activée est vérifiée environ une fois par minute ; l’occurrence la plus récente non encore prise est mise en file comme travail, la première dans la minute qui suit l’enregistrement. Chaque exécution est un travail sur la page Travaux, dont vous êtes propriétaire."
+  "scheduleHow": "Une planification activée est vérifiée environ une fois par minute ; l’occurrence la plus récente non encore prise est mise en file comme travail, la première dans la minute qui suit l’enregistrement. Chaque exécution est un travail sur la page Travaux, dont vous êtes propriétaire.",
+  "downloadFailed": "Le résultat n’a pas pu être téléchargé (HTTP {status}).",
+  "saved": "Enregistré.",
+  "deleted": "La définition a été supprimée.",
+  "queuedAs": "Mis en file comme travail {id}.",
+  "dismiss": "Fermer"
 }

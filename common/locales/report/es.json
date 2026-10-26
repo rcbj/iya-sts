@@ -126,5 +126,10 @@
   "nextRunNone": "No hay ejecución prevista: la programación está desactivada o no indica hora.",
   "lastSlot": "Última ocurrencia tomada: {when} UTC.",
   "scheduleNotes": "Por qué no ocurrió una ejecución programada",
-  "scheduleHow": "Una programación activada se comprueba más o menos cada minuto; la ocurrencia más reciente aún no tomada se pone en cola como trabajo, la primera en el minuto siguiente al guardado. Cada ejecución es un trabajo en la página Trabajos, del que usted es propietario."
+  "scheduleHow": "Una programación activada se comprueba más o menos cada minuto; la ocurrencia más reciente aún no tomada se pone en cola como trabajo, la primera en el minuto siguiente al guardado. Cada ejecución es un trabajo en la página Trabajos, del que usted es propietario.",
+  "downloadFailed": "No se pudo descargar el resultado (HTTP {status}).",
+  "saved": "Guardado.",
+  "deleted": "La definición se eliminó.",
+  "queuedAs": "En cola como trabajo {id}.",
+  "dismiss": "Cerrar"
 }

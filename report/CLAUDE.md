@@ -172,6 +172,16 @@ rcbj, 2026-10-26, after seeing #986's page. Four things:
   `report:use` naming anyone but itself is `STS-REPORT-0038`, refused
   rather than narrowed, so an answer never means something other than
   what was asked. No page draws it yet.
+* **The status bubble** (rcbj, after Download said only "Something went
+  wrong"): `flash(kind, text)` puts the console's `.flash` — sticky at the
+  top of the card, `ok` or `err`, a dismiss — at the head of `#report`,
+  one at a time, and every act reports there: saved, deleted, queued as a
+  job, a refused run or save (the form stays), a failed download. **The
+  download bug**: `call()` read every `application/json` answer as the
+  API's JSON, so a JSON-format result had no `bytes`; `call(…, { raw:
+  true })` reads a 200 as bytes whatever its type and a refusal as JSON
+  for its description, and the message names the status when there is
+  none.
 * **The Parameters box explained**: `parametersHelpHtml()` under the Run
   box names the parameters the saved filter holds (`paramNames()` walks
   `param` leaves through `and`, `or` and `not`) or says it holds none and

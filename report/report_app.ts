@@ -154,6 +154,19 @@ const REPORT_STYLE = [
   '.field { margin: .5rem 0; }',
   '.field label { display: block; }',
   '.err { color: #a3242c; }',
+  // The status bubble (rcbj, 2026-10-26), the console's `.flash`: sticky at
+  // the top of the card, one message, ok or err, with a dismiss.
+  '.flash { position: sticky; top: 0; z-index: 30; padding-top: 6px;',
+  '  background: #fff; margin: 0 0 .75rem; }',
+  '.flash .ok, .flash .err { display: flex; align-items: center;',
+  '  gap: .75rem; padding: 8px 11px; border-radius: 6px; font-size: .9em;',
+  '  box-shadow: 0 2px 8px rgba(0,0,0,.12); }',
+  '.flash .ok { background: #e8f5e9; border: 1px solid #a5d6a7;',
+  '  color: #1b5e20; }',
+  '.flash .err { background: #fdecea; border: 1px solid #f5c6c2;',
+  '  color: #b00020; }',
+  '.flash .dismiss { margin-left: auto; font-size: 1.2em; line-height: 1;',
+  '  padding: 0 .3rem; color: inherit; }',
   '.sub { color: #5b6070; }',
   // The account menu overlays the page. The panel is out of flow, so
   // opening the <details> does not grow the flex bar.
