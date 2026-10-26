@@ -541,7 +541,12 @@ class StepUp {
     const { log } = this.deps;
     log.debug("Entering StepUp.meets(). requested=" + requested);
     const had = String((facts && facts.acr) || '');
-    if (had && had === requested) {
+    // A session is judged by its latest event, never by an acr string
+    // it carries (#723). The same string on a token — no `events`
+    // array — is that token's evidence and still meets itself.
+    if (had && had === requested &&
+        !(PhishingResistance.isClass(requested) && facts &&
+          Array.isArray(facts.events))) {
       log.debug("Leaving StepUp.meets(). The same value.");
       return true;
     }

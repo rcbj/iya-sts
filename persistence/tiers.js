@@ -365,6 +365,11 @@ const CELL_MINTED = [
   'caep.register', 'cells.deliveries', 'cells.exports', 'cells.projections',
   'claim_attributes.selections', 'consent_screen.pending',
   'credentials.pendingBackupCodes', 'credentials.pendingKeys',
+  // An administrator's enrolment for somebody (#945). Keyed by both
+  // names, so it cannot share pendingKeys, and it is this cell's
+  // ceremony in the same way: the begin and the finish may be two nodes
+  // of this cell, and no other cell's.
+  'credentials.pendingAdminKeys',
   'credentials.pendingTotp', 'delegation.acts', 'devices.challenges',
   // What the Android attestation recheck last covered in this cell (#615).
   'devices.androidRecheck',

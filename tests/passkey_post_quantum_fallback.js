@@ -34,8 +34,9 @@
 //      `webauthn.postQuantumAllowCredentials: list-and-refuse` names both, a
 //      classical assertion is refused after the ceremony (STS-AUTHN-0356, a
 //      `session.refuse` row, NO `session.start` row) and the screen's view
-//      carries the panel's links (registration, no upgrade — #939 is not
-//      built), and the post-quantum key signs in; the profile's row
+//      carries the panel's links (registration, and #939's upgrade while
+//      `webauthn.pqcUpgrade` offers it, which it does by default), and the
+//      post-quantum key signs in; the profile's row
 //      overrides the realm's setting both ways; the question carries the
 //      resolved value; a person holding only classical keys is still told
 //      before the ceremony, with the panel.
@@ -325,12 +326,19 @@ function childMain() {
     passkeyPolicy.save('default', withDefaults());
     config.setOverride('webauthn.pqcAlongsideClassical', true);
     const laneOn = webauthnPolicy.classicalRetryLane('pqc');
+    // #939 offers the upgrade by default (`webauthn.pqcUpgrade`), including
+    // while the two lanes run alongside. Alongside decides where the new
+    // key is written; it does not withdraw the offer.
+    const offeredAlongside = webauthnPolicy.postQuantumUpgradeOffered();
     config.clearOverride('webauthn.pqcAlongsideClassical');
+    const offered = webauthnPolicy.postQuantumUpgradeOffered();
     note(laneOn === 'classical' &&
          webauthnPolicy.classicalRetryLane('classical') === 'classical' &&
-         webauthnPolicy.postQuantumUpgradeOffered() === false,
-         'A4. with both lanes on the retry is made in the classical lane; ' +
-         '#939\'s upgrade is not offered', laneOn);
+         offeredAlongside === true && offered === true,
+         'A4. with both lanes on the retry is made in the classical lane, ' +
+         'and #939\'s upgrade stays offered',
+         JSON.stringify({ lane: laneOn, offeredAlongside: offeredAlongside,
+                          offered: offered }));
 
     // ======================================================================
     // B. /portal/keys.
@@ -506,10 +514,12 @@ function childMain() {
          rows('session.refuse', 'pqf-cat', 'STS-AUTHN-0356') ===
            refusedBefore + 1 &&
          rows('session.start', 'pqf-cat') === startsBefore &&
-         panel && panel.register === '/portal/keys' && panel.upgrade === '',
+         panel && panel.register === '/portal/keys' &&
+         panel.upgrade === '/portal/keys?upgrade=post-quantum',
          'D2. list-and-refuse names both keys; the classical assertion is ' +
          'refused after the ceremony (STS-AUTHN-0356) with no session.start ' +
-         'row, and the screen carries the panel: registration, no upgrade',
+         'row, and the screen carries the panel: registration and #939\'s ' +
+         'upgrade',
          JSON.stringify([listed.allow.length, classicalAnswer.next, panel]));
     const again = await allowOf('pqf-cat');
     const pqAnswer = again.armed.json && again.armed.json.ok

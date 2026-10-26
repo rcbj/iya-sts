@@ -234,9 +234,8 @@ class WebWebAuthn {
                   doc.getElementById('wa-fallback');
     const facts = (said && said.fallback) || {};
     return WebWebAuthn.capabilities(window).then(function (caps: Json) {
-      if (!kind || !block) {
-        return false;
-      }
+      // Reported even when this page shows nothing: an error the guidance
+      // is not for, or a page that drew no #wa-fallback (#943, #944).
       WebWebAuthn.reportCeremonyFailure({
         surface: String((said && said.surface) || ''),
         ceremony: 'create', error: name,
@@ -244,6 +243,9 @@ class WebWebAuthn {
         capabilities: caps, offered: facts.asksPostQuantum === true
           ? 'post-quantum-first' : 'classical',
         retrying: facts.retrying === true }, said && said.report);
+      if (!kind || !block) {
+        return false;
+      }
       const show = function (id: string): void {
         const el = doc.getElementById(id);
         if (el) {

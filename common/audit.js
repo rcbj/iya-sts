@@ -472,6 +472,11 @@ const ACTIONS = [
   { action: 'authn.session.refreshed', category: 'session',
     label: 'A device-bound session\'s cookie was renewed on a proof of its ' +
            'key' },
+  // A BROWSER THAT DECLINED TO BIND (#743). Secure-Session-Skipped is
+  // recorded on the session and is not a failure of the sign-in. A
+  // malformed header is the same action with outcome failure.
+  { action: 'authn.session.binding-skipped', category: 'session',
+    label: 'A sign-on session skipped device binding' },
 
   // THE TWO THE PROTOCOL-INDEPENDENT LOGOUT WRITES, and they are `session`
   // rather than a category of their own because that is what they are ABOUT —
@@ -1183,6 +1188,26 @@ const ACTIONS = [
   { action: 'admin.siop.preferred', category: 'admin',
     label: 'An administrator marked a person\'s proved DID as preferred, ' +
            'or cleared the mark' },
+  // A passkey an administrator enrols (#945) or upgrades (#939), written
+  // by admin-core/admin_actions.ts. The filter has to name each one:
+  // since #86 an action missing here is refused by GET /admin-api/audit.
+  { action: 'admin.passkey.enrolment-started', category: 'authentication',
+    label: 'An administrator started enrolling a passkey for a person' },
+  { action: 'admin.passkey.enrolment-refused', category: 'authentication',
+    label: 'An administrator\'s passkey enrolment for a person was ' +
+           'refused' },
+  { action: 'admin.passkey.enrolled', category: 'authentication',
+    label: 'An administrator enrolled a passkey for a person' },
+  { action: 'admin.passkey.upgrade-started', category: 'authentication',
+    label: 'An administrator started upgrading a person\'s passkey' },
+  { action: 'admin.passkey.upgrade-refused', category: 'authentication',
+    label: 'An administrator\'s passkey upgrade was refused' },
+  { action: 'admin.passkey.upgrade-proved', category: 'authentication',
+    label: 'An administrator proved a person\'s classical passkey' },
+  { action: 'admin.passkey.upgrade-cancelled', category: 'authentication',
+    label: 'An administrator cancelled a person\'s passkey upgrade' },
+  { action: 'admin.passkey.upgraded', category: 'authentication',
+    label: 'An administrator upgraded a person\'s passkey to ML-DSA' },
   // A federation partner's Shared Signals (#153, #373): ssf_transmitters.ts
   // records these through its own `audited()`, three by name and six as
   // 'ssf.signals.' + the stream act — none had a row until the widened
@@ -1330,6 +1355,12 @@ const ACTIONS = [
     label: 'A person started enrolling a security key' },
   { action: 'portal.key.refused', category: 'authentication',
     label: 'A person\'s security key enrolment was refused' },
+  { action: 'portal.key.upgrade-started', category: 'authentication',
+    label: 'A person started upgrading a classical passkey to ML-DSA' },
+  { action: 'portal.key.upgrade-refused', category: 'authentication',
+    label: 'A person\'s passkey upgrade was refused' },
+  { action: 'portal.key.upgraded', category: 'authentication',
+    label: 'A person upgraded a classical passkey to ML-DSA' },
   { action: 'portal.mfa.backup-codes.generated', category: 'authentication',
     label: 'A person generated a set of recovery codes' },
   { action: 'portal.mfa.backup-codes.confirmed', category: 'authentication',

@@ -12423,6 +12423,8 @@ export = {
   ROLES: Credentials.ROLES,
   keyKind: Credentials.keyKind,
   keyAlgorithm: Credentials.keyAlgorithm,
+  // #942: the report names an authenticator model by this string.
+  aaguidString: Credentials.aaguidString,
   // #942: which stored values are keys, for the passkey report.
   keysOfValues: Credentials.keysOfValues,
   attestationAlgorithms: Credentials.attestationAlgorithms,

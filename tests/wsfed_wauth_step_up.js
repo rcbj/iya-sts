@@ -667,6 +667,9 @@ function childMain() {
         return { start: start, mode: '', answer: start, browser: b,
                  pending: pendingOf(start.headers.location) };
       }
+      // takePending() drops the record once the passkey step is minted,
+      // so the class this request armed is read before the ceremony.
+      const pending = pendingOf(start.headers.location);
       const screen = await authnScreen.open({ port: port, jar: b.jar,
         at: String(start.headers.location) });
       const step = await authnScreen.follow({ port: port, jar: b.jar,
@@ -684,7 +687,7 @@ function childMain() {
         .replace(/^https?:\/\/[^/]+/, '');
       const answer = backTo ? await b.go('GET', backTo) : done;
       return { start: start, mode: mode, answer: answer, browser: b,
-               pending: pendingOf(start.headers.location) };
+               pending: pending };
     };
     const beforeN = await codeCount('STS-WSFED-0030');
     const n1 = await passkeyAnswer('wa-phr', PHR);

@@ -1124,6 +1124,20 @@ async function everyReadAnswersAboutThisRealm(doc) {
       await aKeysCertificateChain();
       continue;
     }
+    // GET /passkey-report/export defaults to text/csv (#942). An empty
+    // realm is the header row and nothing else, which httpJson cannot
+    // parse. format=json is the object; this walk drives the default.
+    if (path === "/passkey-report/export") {
+      const exported = await get(path);
+      assert.strictEqual(exported.status, 200,
+        "GET " + api + path + " should answer 200; it answered " +
+        exported.status + " " + String(exported.raw).slice(0, 200));
+      assert.ok(String(exported.raw).indexOf(
+        "username,dn,kind,passkeys,algorithms,lanes,aaguids,models") === 0,
+        "GET " + api + path + " should answer a CSV file; it answered " +
+        String(exported.raw).slice(0, 200));
+      continue;
+    }
     // GET /passkey-report/evidence names one passkey. With neither
     // username nor credentialId the documented refusal is a JSON 400.
     if (path === "/passkey-report/evidence") {

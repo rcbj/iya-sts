@@ -305,8 +305,11 @@ class PasskeyReport {
       applications: function () {
         return require('./applications');
       },
+      // crypto.js is the one place that reads node's CSPRNG (#453).
+      // Lazy, so loading this report does not load the crypto module
+      // before the composition root has built it.
       randomId: function () {
-        return require('crypto').randomBytes(9).toString('base64url');
+        return require('./crypto').randomBytes(9).toString('base64url');
       },
       now: function () {
         return Date.now();

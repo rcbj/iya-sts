@@ -332,7 +332,7 @@ function childMain() {
     const bobCookie = ((bobInstr.credentials || [])[0] || {}).name;
     note(r.status === 200 && (authn.sessionById(bobby.sid).dbsc || {}).id ===
          bobInstr.session_identifier &&
-         !(authn.sessionById(alice.sid) || {}).dbsc &&
+         !deviceBound.isBound(authn.sessionById(alice.sid)) &&
          bobCookie === 'sts_session_bound_' + bobInstr.session_identifier &&
          !!jar[bobCookie] && !jar.sts_session_bound,
          '9b. a registration with one account\'s challenge binds that ' +

@@ -408,7 +408,13 @@ const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
                        'set-service-account', 'rotate-password',
                        'add-service-account-owner',
                        'remove-service-account-owner',
-                       'set-service-account-destination'];
+                       'set-service-account-destination',
+                       // A classical passkey upgraded to ML-DSA (#939).
+                       'begin-passkey-upgrade', 'prove-passkey-upgrade',
+                       'finish-passkey-upgrade', 'cancel-passkey-upgrade',
+                       // An administrator enrols a passkey (#945).
+                       'begin-passkey-enrolment',
+                       'finish-passkey-enrolment'];
 
 // ---------------------------------------------------------------------------
 // WHAT AN ADMINISTRATOR DOES TO SOMEBODY'S CREDENTIALS FROM THEIR PAGE
@@ -4211,10 +4217,28 @@ class AdminActions {
         return this.refused('STS-AUTHN-0446', { ok: false,
                                                 errors: [rpRefusal] });
       }
-      const begun = credentials.beginAdminKeyEnrolment(who, context &&
-        (context as any).admin, {
-        role: String(body.role || 'mfa'), kind: String(body.kind || ''),
-        lane: String(body.lane || '') });
+      // THE SWITCH BEFORE THE MISSING ADMINISTRATOR (#945).
+      // beginAdminKeyEnrolment() names the token's subject first
+      // (STS-AUTHN-0445), so an open call while adminEnrolment is off
+      // would never say so. This door asks the switch first — the order
+      // the operation describes — and uses that method's own sentence.
+      // The constant is not on the credentials module export.
+      passkeyPolicy.select(who, '');
+      let begun;
+      if (!passkeyPolicy.adminEnrolmentAllowed()) {
+        begun = this.refused('STS-AUTHN-0440', { ok: false,
+          reason: 'admin-enrolment',
+          errors: ['This person\'s passkey policy does not let an ' +
+            'administrator enrol a passkey for them (adminEnrolment ' +
+            'is off). Turn it on under Directory → Policies → ' +
+            'Passkeys, or have them create one themselves on their ' +
+            'account page.'] });
+      } else {
+        begun = credentials.beginAdminKeyEnrolment(who, context &&
+          (context as any).admin, {
+          role: String(body.role || 'mfa'), kind: String(body.kind || ''),
+          lane: String(body.lane || '') });
+      }
       if (!begun.ok) {
         auditLog.record({
           category: 'authentication', action: 'admin.passkey.enrolment-refused',

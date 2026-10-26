@@ -706,15 +706,22 @@ function childMain() {
       replaceNew.register(replaceProof.challenge, replaceProof.userHandle),
       { origin: ORIGIN, rpId: RPID });
     const replaceRows = credentials.keysOf('pkl-bob');
+    // #643 stores the classical lane by leaving `lane` off the row.
+    // `keyLane()` is what reads that as classical. #939's replace write
+    // puts the ML-DSA key in that lane; it does not add a second row.
     note(replaceBegin.ok && replaceProof.ok && replaceDone.ok &&
-         replaceDone.mode === 'replace' && replaceRows.length === 1 &&
+         replaceDone.mode === 'replace' &&
+         replaceDone.lane === 'classical' &&
+         replaceRows.length === 1 &&
          replaceRows[0].credentialId === replaceNew.credentialId &&
-         replaceRows[0].lane === 'classical' &&
+         credentials.keyLane(replaceRows[0]) === 'classical' &&
+         replaceRows[0].lane !== 'pqc' &&
          (credentials.keyUpgradeHistory(replaceRows[0]) || {})
            .previousAlgorithm === 'ES256',
          '13c. when the lanes are not alongside, the ML-DSA key replaces ' +
          'the proved classical key in the classical lane',
-         JSON.stringify([replaceDone, replaceRows]));
+         JSON.stringify([replaceDone, replaceRows,
+           credentials.keyLane(replaceRows[0])]));
     server.close();
   })().catch(function (e) {
     note(false, 'the child ran to the end', e && e.stack);

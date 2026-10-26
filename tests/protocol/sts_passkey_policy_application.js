@@ -225,8 +225,12 @@ async function test() {
   });
 
   // What an Add makes of the box, saved as the profile's Save sends it.
+  // The registration rows are sent again: `defaults` is the schema's
+  // built-in values, captured before the first save, and posting those
+  // would replace #940's list with `realm`.
   await saveNamed(defaults, STRICT, { selectApplications: APP + ", " + LONE,
-                                      precedence: 5 });
+    precedence: 5, registrationAlgorithms: "ES256,RS256",
+    registrationMode: "classical-only" });
   const after = (await pageOf(LONE)).page.passkeyPolicies;
   check("D. AN ADDED IDENTIFIER, SAVED, IS READ BACK on that application",
         function () {

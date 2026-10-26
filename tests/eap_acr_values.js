@@ -41,8 +41,8 @@
 //           attestation and BE clear carry `phr` and `phrh`;
 //        4. a password with that person's security key as the step carries
 //           `phr`;
-//        5. a synced passkey carries `phr`, and under `phrh` is refused
-//           unmet_authentication_requirements naming the backup flag;
+//        5. a synced passkey carries `phr`, and under `phrh` the ceremony
+//           is not armed (#739): none of the held keys can earn it;
 //        6. a password-only person under `phr` is not let through on the
 //           password — the screen demands a key — and a password session
 //           returning under the round-trip marker is refused
@@ -632,13 +632,16 @@ function childMain() {
          JSON.stringify(r.claims || r.final.headers));
     r = await signIn('eap-rp', 'eap-carol', 'passkey', carolKey,
                      { acr_values: 'phrh' });
-    note(r.params && r.params.get('error') ===
-         'unmet_authentication_requirements' &&
-         /backup-eligible/.test(String(r.params.get('error_description'))) &&
-         !r.params.get('code'),
-         'E5b. under phrh it is refused unmet_authentication_requirements, ' +
-         'naming the backup flag (STS-OAUTH-0971)',
-         r.final.status + ' ' + String(r.final.headers.location || ''));
+    const e5bWhy = String(((r.final && r.final.errors) ||
+                           (r.final && r.final.json &&
+                            r.final.json.errors) || [])[0] || '');
+    note(r.final.status === 400 && r.final.json &&
+         r.final.json.ok === false && /hardware-protected/.test(e5bWhy) &&
+         !(r.params && r.params.get('code')),
+         'E5b. under phrh a synced passkey is refused before the ' +
+         'ceremony: none of the held keys can earn it, and no code is ' +
+         'issued (STS-AUTHN-0459)',
+         r.final.status + ' ' + e5bWhy);
 
     // 6. A password-only person.
     r = await signIn('eap-rp', 'eap-bob', 'password', null,
@@ -707,11 +710,18 @@ function childMain() {
 function hardwareAllow(t) {
   log.debug("Entering hardwareAllow().");
   t.log.info('=== C8. allowCredentials narrowed for phrh ===');
+  // This section runs in the parent. The directory fills the credential
+  // store's slot when it loads, and nothing above has loaded it, so a
+  // key write is "no credential store" (STS-AUTHN-0059). The HTTP child
+  // loads the stack for the same reason.
+  require(ROOT + '/common/protocol_stack');
   const stats = require('../common/admin_stats');
   const credentials = require('../common/credentials');
+  const ldap = require('../ldap/ldap_server');
   const authn = require('../authn/authn');
   const page = require('../authn/web_authn_mfa');
   const name = 'eap-narrow-' + process.pid;
+  ldap.createUser(name, { invent: false });
   stats.recordAuthentication({ presented: name, protocol: 'test',
                                method: 'a fixture' });
   const hw = name + '-hw';

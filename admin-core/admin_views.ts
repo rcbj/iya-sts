@@ -2607,7 +2607,7 @@ class AdminViews {
       (out as any).named = module.list().filter(function (one) {
         return one.name !== module.DEFAULT_PROFILE;
       }).map(function (one) {
-        return {
+        const row: Record<string, any> = {
           name: one.name, dn: one.dn, description: one.description,
           selectApplications: one.selectApplications || [],
           selectGroups: one.selectGroups || [],
@@ -2623,6 +2623,16 @@ class AdminViews {
                      what: field.what };
           })
         };
+        // #940: the named profile's registration list and mode, as the
+        // policy reads them (JOSE names in order, or [] for the realm's
+        // algorithms). The field table above keeps the stored word.
+        if (typeof module.registrationAlgorithms === 'function') {
+          row.registrationAlgorithms = module.registrationAlgorithms(one);
+        }
+        if (typeof module.registrationMode === 'function') {
+          row.registrationMode = module.registrationMode(one);
+        }
+        return row;
       });
     }
     log.debug("Leaving AdminViews.policyKindMember().");
