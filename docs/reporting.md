@@ -481,9 +481,16 @@ is an empty field. A field is quoted when it contains a comma, a
 quotation mark, CR or LF. A quotation mark inside a quoted field is
 doubled.
 
-**PDF.** PDF 1.4, Helvetica, WinAnsi, US Letter. Forty data rows fit on
-a page. Past `report.pdfMaxRows` or `report.pdfMaxPages` the call is
-refused and asked to use CSV. A character WinAnsi cannot draw is `?`.
+**PDF.** PDF 1.4, Helvetica, WinAnsi, US Letter. A value wraps within
+its column: a long value takes as many lines as it needs, broken at a
+space where one falls within the line, and a line feed in a value starts
+a new line. A cell draws at most 256 bytes; a longer value is cut there
+and ends in `...`. A row is as tall as its tallest cell. Forty lines of
+data fit on a page, so forty single-line rows do; a row that does not
+fit in what is left of a page starts the next page, and a row taller
+than a whole page continues on the next. Past `report.pdfMaxRows`, or
+past `report.pdfMaxPages` for the pages the wrapped rows need, the call
+is refused and asked to use CSV. A character WinAnsi cannot draw is `?`.
 The page names the report, the realm, the language and the time. Those
 words are drawn in English, Spanish, French, German, Filipino and
 Swedish. Chinese is drawn in English, and the page adds
