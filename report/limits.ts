@@ -28,7 +28,7 @@ const log = bunyan.createLogger({ name: 'sts-report-limits' });
 const DEFAULTS: Record<string, number | string> = {
   syncMaxRows: 500,
   syncMaxBytes: 1000000,
-  syncMaxMs: 2000,
+  syncMaxMs: 10000,
   asyncMaxMs: 120000,
   asyncMaxRows: 100000,
   asyncMaxBytes: 32000000,

@@ -176,8 +176,12 @@ function documents(t) {
   t.equal(limits.syncMaxRows(), 5, 'Limits.fixed supplies the sync cap');
   t.equal(limits.asyncMaxMs(), 120000,
     'the async time cap keeps its default');
+  t.equal(limits.syncMaxMs(), 10000,
+    'the sync time cap keeps its default');
   t.equal(Limits.fixed({}).asyncMaxMs(), 120000,
     'Limits.fixed with no override keeps the async time cap');
+  t.equal(Limits.fixed({}).syncMaxMs(), 10000,
+    'Limits.fixed with no override keeps the sync time cap');
   t.equal(limits.usersGroup(), '',
     'a fixed limits object keeps the empty users group');
   log.debug("Leaving documents().");

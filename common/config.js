@@ -18041,7 +18041,7 @@ const SETTINGS = [
                  'over this is refused rather than sent in part.' },
   { key: 'report.syncMaxMs', group: 'Reporting',
     label: 'Synchronous report time cap (milliseconds)',
-    env: 'REPORT_SYNC_MAX_MS', type: 'int', dflt: 2000,
+    env: 'REPORT_SYNC_MAX_MS', type: 'int', dflt: 10000,
     min: 100, max: 30000, runtime: true,
     description: 'How long a synchronous report may run. Past this the ' +
                  'call is refused rather than answered with a partial body.' },

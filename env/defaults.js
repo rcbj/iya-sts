@@ -1469,7 +1469,7 @@ var config = {
   report: {
     syncMaxRows: 500,           // Synchronous report row cap
     syncMaxBytes: 1000000,      // Synchronous report byte cap
-    syncMaxMs: 2000,            // Synchronous report time cap (milliseconds)
+    syncMaxMs: 10000,           // Synchronous report time cap (milliseconds)
     asyncMaxMs: 120000,         // Report job time cap (milliseconds)
     asyncMaxRows: 100000,       // Report job row cap
     asyncMaxBytes: 32000000,    // Report job byte cap
