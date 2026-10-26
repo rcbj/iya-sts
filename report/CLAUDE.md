@@ -49,6 +49,46 @@ and `docs/configuration.md`.
 | `jobs.ts` | Definitions, the queue, and the six scheduler jobs. |
 | `stores.ts` | Realm maps for definitions, jobs and the reporter stamp. Artifact bytes go beside them. |
 
+## The chrome (#986)
+
+rcbj asked for five things on 2026-10-26, all drawn by
+`web_report_pages.ts` from `/report-api` answers, the surface rule:
+
+* **The trust realm**, first in the bar, on the console's switcher shape
+  (`admin-ui/web_shell.ts`'s `realmChooser()`): the label, a select of
+  the realms and a Go button where the service has several, the one
+  realm's name otherwise. `GET /report-api/realms` answers the current
+  realm and, where `realms.active()`, every realm as `{ id, name, prefix }`
+  — the console's shell rows (`admin.ts`, `shellJson()`); it is taken with
+  the report token like every route, and tells a holder nothing the
+  anonymous realm chooser does not. A choice (the select's change, or Go)
+  LEAVES THE PAGE for `<origin><prefix>/report<same path>`: the token in
+  hand is audienced to this realm's `/report-api`, so the other realm's
+  page signs in as any first load does. The console switches in place
+  because its token is the service's; this one is the realm's.
+* **A documentation link** under the bar, `DocLinks.markup()` to
+  `reporting.html` on the site every surface links to.
+* **The version** under the card, from the index's `version` (`GET
+  /report-api` carries `common/version.js`'s `load()` as the console's
+  shell does; `tests/version.js` lists `report_api.ts` among the drawers).
+* **One filter row to begin with**, and the `+` on the last row adds the
+  next: the runtime clones the last row, renames its controls to the next
+  index, empties them and moves the `+`; `queryDocument()` reads rows
+  until the first index with no field control, at most sixteen (an
+  `and`'s cap). Nothing is stored for a template.
+* **A Save query box**: the Name field and the Save button carry
+  `save-only` and `hidden` until it is ticked (`onChange()`); unticked,
+  the form runs and saves nothing.
+* **Sign out is in the user menu**, which is therefore drawn for every
+  signed-in person; the switch group inside it still appears only with
+  `authn.multipleAccounts` on, as before.
+
+The index, the realms view and the version are read once per load
+(`ensureChrome()`), after the token is in hand. `tests/report_query.js`'s
+`chrome()` holds the realm field's two shapes, the footer, a row with and
+without the `+`, and the variable reader over a form double; what it does
+not hold is the browser's cloning and the navigation.
+
 ## The document
 
 A query is a JSON document: `source`, `select`, `where`, `orderBy`,

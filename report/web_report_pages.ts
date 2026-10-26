@@ -23,6 +23,7 @@ import SpaClient = require('../common/web_spa_client');
 import WebI18n = require('../common/web_i18n');
 import WebAccounts = require('../common/web_accounts');
 import WebMessages = require('../common/web_messages');
+import DocLinks = require('../common/web_doc_links');
 
 const CLIENT_ID = 'sts-report';
 const SCOPE = 'openid profile email offline_access report:use report:admin';
@@ -31,6 +32,11 @@ const API = '/report-api';
 const SIGNIN_KEY = 'sts-report-pkce';
 const ACCOUNTS_ID = 'sts-report-accounts';
 const REFRESH_EARLY = 30;
+// The most filter rows the form reads: what an `and` may carry (#986).
+const FILTER_ROWS_MAX = 16;
+// The documentation page for this application (#986), on the site every
+// surface links to (`common/web_doc_links.ts`).
+const DOCS_PAGE = 'reporting.html';
 const NEEDS_SIGN_IN = { needsSignIn: true };
 const ABORTED = { aborted: true };
 
@@ -89,9 +95,11 @@ function navLink(href: string, label: string, current: boolean): string {
     '</a>';
 }
 
-function navHtml(t: any, accounts: string, chooser: string,
+// The bar: the realm field first (#986), the pages, the account menu — which
+// holds Sign out since #986 — and the language chooser.
+function navHtml(t: any, realm: string, accounts: string, chooser: string,
                  path: string): string {
-  return '<div class="bar"><nav class="nav">' +
+  return '<div class="bar">' + realm + '<nav class="nav">' +
     navLink(BASE, t.text('report.catalog'), navCurrent(path, '')) +
     navLink(BASE + '/query', t.text('report.newQuery'),
       navCurrent(path, '/query')) +
@@ -99,10 +107,79 @@ function navHtml(t: any, accounts: string, chooser: string,
       navCurrent(path, '/definitions')) +
     navLink(BASE + '/jobs', t.text('report.jobs'),
       navCurrent(path, '/jobs')) +
-    '<a href="/logout">' + esc(t.text('report.signOut')) + '</a>' +
     '<button type="button" class="btn" data-act="refresh">' +
     esc(t.text('report.refresh')) + '</button>' +
     '</nav>' + accounts + chooser + '</div>';
+}
+
+// One filter row (#986): a field, an operator, a value, and — on the last
+// row only — the + that adds the next. The runtime clones the last row for
+// the next one, so the options are not kept anywhere else.
+function filterRowHtml(t: any, n: number, fieldOptions: string,
+                       last: boolean): string {
+  return '<div class="row filterrow" data-filter-row="' + n + '">' +
+    '<select name="filterField' + n + '">' + fieldOptions + '</select>' +
+    '<select name="filterOp' + n + '">' +
+    '<option value=""></option>' +
+    '<option value="eq">' + esc(t.text('report.opEq')) + '</option>' +
+    '<option value="ne">' + esc(t.text('report.opNe')) + '</option>' +
+    '<option value="contains">' + esc(t.text('report.opContains')) +
+    '</option>' +
+    '<option value="startsWith">' + esc(t.text('report.opStartsWith')) +
+    '</option>' +
+    '<option value="lt">' + esc(t.text('report.opLt')) + '</option>' +
+    '<option value="le">' + esc(t.text('report.opLe')) + '</option>' +
+    '<option value="gt">' + esc(t.text('report.opGt')) + '</option>' +
+    '<option value="ge">' + esc(t.text('report.opGe')) + '</option>' +
+    '<option value="isNull">' + esc(t.text('report.opIsNull')) +
+    '</option></select>' +
+    '<input name="filterValue' + n + '">' +
+    (last ? '<button type="button" class="btn addfilter" ' +
+      'data-act="add-filter" title="' + esc(t.text('report.addFilter')) +
+      '" aria-label="' + esc(t.text('report.addFilter')) + '">+</button>'
+      : '') +
+    '</div>';
+}
+
+// The realm field (#986), on the console's switcher shape
+// (`admin-ui/web_shell.ts`, `realmChooser()`): the label, then a select of
+// the realms and a Go button where the service has several, or the one
+// realm's name where it has not. `view` is `GET /report-api/realms`'s
+// answer; nothing is drawn until it has arrived.
+function realmHtml(t: any, view: any, path: string): string {
+  if (!view || !view.current) {
+    return '';
+  }
+  const current = view.current;
+  const list = Array.isArray(view.realms) ? view.realms : [];
+  const label = '<label for="realmpick">' +
+    esc(t.text('report.trustRealm')) + '</label>';
+  if (list.length < 2) {
+    return '<div class="realmpick">' + label +
+      '<span class="realmname" id="realmpick">' +
+      esc(current.name || current.id || '') + '</span></div>';
+  }
+  const options = list.map(function (realm: any): string {
+    return '<option value="' + esc(realm.id) + '"' +
+      (realm.id === current.id ? ' selected' : '') + '>' +
+      esc(realm.name || realm.id) + '</option>';
+  }).join('');
+  return '<form class="realmpick" data-form="realm">' + label +
+    '<input type="hidden" name="to" value="' + esc(path) + '">' +
+    '<div class="realmpickrow">' +
+    '<select id="realmpick" name="realm">' + options + '</select>' +
+    '<button type="submit" class="btn">' + esc(t.text('report.go')) +
+    '</button></div></form>';
+}
+
+// The service version under the card (#986), from the index's `version`.
+function footerHtml(t: any, version: any): string {
+  if (!version || !version.version) {
+    return '';
+  }
+  return '<p class="foot" title="' + esc(version.buildInfo || '') + '">' +
+    esc(t.text('report.version', { version: String(version.version) })) +
+    '</p>';
 }
 
 function problemHtml(t: any, text: string): string {
@@ -133,7 +210,11 @@ function queryDocument(form: any, locale: any): any {
     selected.push(String(boxes[i].value || ''));
   }
   const filters: any[] = [];
-  for (let n = 0; n < 3; n++) {
+  // As many rows as the form holds (#986): the form starts with one and
+  // the + beside the last adds the next, so the reader stops at the first
+  // index with no field control rather than at a fixed count.
+  for (let n = 0; n < FILTER_ROWS_MAX && form.elements['filterField' + n];
+       n++) {
     const field = String((form.elements['filterField' + n] &&
       form.elements['filterField' + n].value) || '');
     const op = String((form.elements['filterOp' + n] &&
@@ -196,6 +277,8 @@ class ReportRuntime extends SpaClient {
   private i18n: any;
   private t: any;
   private accountsListening: boolean;
+  // The index's version and the realms view, read once per load (#986).
+  private chrome: any;
 
   /**
    * @param env - the browser's objects
@@ -215,6 +298,55 @@ class ReportRuntime extends SpaClient {
     this.t = WebMessages.WebTranslator.fromData(null);
     this.i18n = new WebI18n(env, this, ['report']);
     this.accountsListening = false;
+    this.chrome = null;
+  }
+
+  /**
+   * The query document a form holds, for a test (#986).
+   *
+   * @param form - the form
+   * @param locale - the language tag, or null
+   * @returns the document
+   */
+  static queryDocument(form: any, locale: any): any {
+    return queryDocument(form, locale);
+  }
+
+  /**
+   * One filter row, for a test (#986).
+   *
+   * @param t - the translator
+   * @param n - the row's index
+   * @param fieldOptions - the field options' HTML
+   * @param last - whether the row carries the + that adds the next
+   * @returns the row's HTML
+   */
+  static filterRowHtml(t: any, n: number, fieldOptions: string,
+                       last: boolean): string {
+    return filterRowHtml(t, n, fieldOptions, last);
+  }
+
+  /**
+   * The realm field, for a test (#986).
+   *
+   * @param t - the translator
+   * @param view - `GET /report-api/realms`'s answer
+   * @param path - the page path the switch returns to
+   * @returns the field's HTML
+   */
+  static realmHtml(t: any, view: any, path: string): string {
+    return realmHtml(t, view, path);
+  }
+
+  /**
+   * The footer, for a test (#986).
+   *
+   * @param t - the translator
+   * @param version - the index's `version`
+   * @returns the footer's HTML
+   */
+  static footerHtml(t: any, version: any): string {
+    return footerHtml(t, version);
   }
 
   /**
@@ -529,12 +661,64 @@ class ReportRuntime extends SpaClient {
   paint(body: string): void {
     const accounts = ReportRuntime.accountMenu(this);
     const chooser = this.i18n.chooser(this.t, this.here());
+    const chrome = this.chrome || {};
+    const realm = realmHtml(this.t, chrome.realms, this.here());
+    const docs = DocLinks.markup(DocLinks.abs(DOCS_PAGE),
+      this.t.text('report.docsLink'));
     const html = '<h1>' + esc(this.t.text('report.title')) + '</h1>' +
-      navHtml(this.t, accounts, chooser, this.reportPath()) + body;
+      navHtml(this.t, realm, accounts, chooser, this.reportPath()) + docs +
+      body + footerHtml(this.t, chrome.version);
     const main = this.env.document.getElementById('report');
     if (main) {
       main.innerHTML = html;
     }
+  }
+
+  /**
+   * Reads the index (the version) and the realms once per load, after the
+   * token is in hand (#986). A failure leaves the chrome without them;
+   * nothing else is held up.
+   *
+   * @returns nothing
+   */
+  async ensureChrome(): Promise<void> {
+    if (this.chrome) {
+      return;
+    }
+    const chrome: any = { version: null, realms: null };
+    const index = await this.call('GET', API);
+    if (index && index.json) {
+      chrome.version = index.json.version || null;
+    }
+    const realms = await this.call('GET', API + '/realms');
+    if (realms && realms.json && realms.json.current) {
+      chrome.realms = realms.json;
+    }
+    this.chrome = chrome;
+  }
+
+  /**
+   * Opens another realm's reports application at this page (#986). The
+   * token in hand belongs to this realm, so the other realm's page signs
+   * in as any first load does; the browser leaves this page for it.
+   *
+   * @param realmId - the realm chosen
+   * @param to - the report path and query to open there
+   * @returns nothing
+   */
+  switchRealm(realmId: string, to: string): void {
+    const list = (this.chrome && this.chrome.realms &&
+      this.chrome.realms.realms) || [];
+    const realm = list.filter(function (one: any): boolean {
+      return one.id === realmId;
+    })[0];
+    if (!realm) {
+      return;
+    }
+    const path = String(to || BASE);
+    const where = path.indexOf(BASE) === 0 ? path : BASE;
+    this.env.location.assign(String(this.env.location.origin || '') +
+      String(realm.prefix || '') + where);
   }
 
   /**
@@ -585,18 +769,24 @@ class ReportRuntime extends SpaClient {
    */
   static accountMenu(page: ReportRuntime): string {
     const list = page.accounts;
-    if (!list || !list.enabled) {
-      return '';
-    }
+    const several = !!(list && list.enabled);
     const name = ReportRuntime.accountLabel(page);
     const t = page.t;
+    // Drawn for everybody since #986, because Sign out lives here; the
+    // switch group still appears only with several accounts on.
     return '<details class="usermenu"><summary title="' +
-      esc(t.text('report.accounts.summaryTitle', { user: name })) + '">' +
+      esc(several ? t.text('report.accounts.summaryTitle', { user: name })
+        : name) + '">' +
       esc(name) + '</summary><div class="usermenupanel">' +
       '<p class="usermenuwho">' +
       t.html('report.accounts.who', { user: name }) + '</p>' +
-      '<div id="' + ACCOUNTS_ID + '" class="usermenuaccounts">' +
-      ReportRuntime.accountItems(page) + '</div></div></details>';
+      (several
+        ? '<div id="' + ACCOUNTS_ID + '" class="usermenuaccounts">' +
+          ReportRuntime.accountItems(page) + '</div>'
+        : '') +
+      '<div class="usermenuaccounts usermenusignout">' +
+      '<a class="linklike" href="' + esc(page.prefix + '/logout') + '">' +
+      esc(t.text('report.signOut')) + '</a></div></div></details>';
   }
 
   /**
@@ -831,31 +1021,8 @@ class ReportRuntime extends SpaClient {
         return '<option value="' + esc(field.id) + '">' + esc(field.id) +
           '</option>';
       }).join('');
-    let filters = '';
-    for (let n = 0; n < 3; n++) {
-      filters = filters + '<div class="row"><select name="filterField' + n +
-        '">' + fieldOptions + '</select><select name="filterOp' + n + '">' +
-        '<option value=""></option>' +
-        '<option value="eq">' + esc(self.t.text('report.opEq')) +
-        '</option>' +
-        '<option value="ne">' + esc(self.t.text('report.opNe')) +
-        '</option>' +
-        '<option value="contains">' +
-        esc(self.t.text('report.opContains')) + '</option>' +
-        '<option value="startsWith">' +
-        esc(self.t.text('report.opStartsWith')) + '</option>' +
-        '<option value="lt">' + esc(self.t.text('report.opLt')) +
-        '</option>' +
-        '<option value="le">' + esc(self.t.text('report.opLe')) +
-        '</option>' +
-        '<option value="gt">' + esc(self.t.text('report.opGt')) +
-        '</option>' +
-        '<option value="ge">' + esc(self.t.text('report.opGe')) +
-        '</option>' +
-        '<option value="isNull">' +
-        esc(self.t.text('report.opIsNull')) + '</option></select>' +
-        '<input name="filterValue' + n + '"></div>';
-    }
+    // One row to begin with; the + beside it adds the next (#986).
+    const filters = filterRowHtml(self.t, 0, fieldOptions, true);
     this.paint('<form class="query-form" data-form="query">' +
       '<div class="field"><label>' + esc(self.t.text('report.source')) +
       '</label><select name="source">' + options + '</select></div>' +
@@ -879,13 +1046,92 @@ class ReportRuntime extends SpaClient {
       esc(self.t.text('report.count')) + '</label>' +
       '<select name="groupBy">' + fieldOptions + '</select> ' +
       esc(self.t.text('report.groupBy')) + '</div>' +
-      '<div class="field"><label>' + esc(self.t.text('report.name')) +
+      // Save query (#986): the Name field and the Save button appear only
+      // once the box is ticked; unticked, the form runs and saves nothing.
+      '<div class="field"><label><input type="checkbox" name="saveQuery"> ' +
+      esc(self.t.text('report.saveQuery')) + '</label></div>' +
+      '<div class="field save-only" hidden><label>' +
+      esc(self.t.text('report.name')) +
       '</label><input name="definitionName"></div>' +
       '<div class="actions"><button type="submit" class="btn" ' +
       'name="intent" value="run">' + esc(self.t.text('report.run')) +
-      '</button><button type="submit" class="btn" name="intent" ' +
-      'value="save">' + esc(self.t.text('report.save')) + '</button></div>' +
+      '</button><button type="submit" class="btn save-only" hidden ' +
+      'name="intent" value="save">' + esc(self.t.text('report.save')) +
+      '</button></div>' +
       '<p class="sub" id="report-note"></p></form>');
+  }
+
+  /**
+   * Adds a filter row after the last one (#986): the last row is cloned,
+   * its controls renamed to the next index and emptied, and the + moves
+   * to the new row.
+   *
+   * @param button - the + pressed
+   * @returns nothing
+   */
+  addFilterRow(button: any): void {
+    const row = button && button.closest ? button.closest('.filterrow') :
+      null;
+    const form = row && row.closest ? row.closest('form') : null;
+    if (!row || !form) {
+      return;
+    }
+    const rows = form.querySelectorAll('.filterrow');
+    const n = rows.length;
+    if (n >= FILTER_ROWS_MAX) {
+      return;
+    }
+    const next = row.cloneNode(true);
+    next.setAttribute('data-filter-row', String(n));
+    const controls = next.querySelectorAll('select, input');
+    for (let i = 0; i < controls.length; i++) {
+      const name = String(controls[i].getAttribute('name') || '')
+        .replace(/\d+$/, '');
+      controls[i].setAttribute('name', name + n);
+      if (controls[i].tagName === 'INPUT') {
+        controls[i].value = '';
+      } else {
+        controls[i].selectedIndex = 0;
+      }
+    }
+    const plus = row.querySelector('.addfilter');
+    if (plus && plus.parentNode) {
+      plus.parentNode.removeChild(plus);
+    }
+    row.parentNode.insertBefore(next, row.nextSibling);
+  }
+
+  /**
+   * A control changed (#986): the Save query box shows or hides the Name
+   * field and the Save button; the realm select switches realm.
+   *
+   * @param event - the change
+   * @returns nothing
+   */
+  onChange(event: any): void {
+    const el = event.target;
+    if (!el || !el.getAttribute) {
+      return;
+    }
+    const name = String(el.getAttribute('name') || '');
+    if (name === 'saveQuery') {
+      const form = el.closest ? el.closest('form') : null;
+      const only = form ? form.querySelectorAll('.save-only') : [];
+      for (let i = 0; i < only.length; i++) {
+        if (el.checked) {
+          only[i].removeAttribute('hidden');
+        } else {
+          only[i].setAttribute('hidden', '');
+        }
+      }
+      return;
+    }
+    if (name === 'realm' && el.closest &&
+        el.closest('form[data-form="realm"]')) {
+      const form = el.closest('form');
+      const to = form.elements.to ? String(form.elements.to.value) : '';
+      this.switchRealm(String(el.value || ''), to);
+    }
   }
 
   /**
@@ -1139,6 +1385,7 @@ class ReportRuntime extends SpaClient {
       return;
     }
     await this.hearAccounts();
+    await this.ensureChrome();
     const query = SpaClient.queryOf(this.env.location.search);
     if (path === BASE) {
       await this.drawCatalog();
@@ -1203,6 +1450,11 @@ class ReportRuntime extends SpaClient {
         this.route();
         return;
       }
+      if (act === 'add-filter') {
+        event.preventDefault();
+        this.addFilterRow(el);
+        return;
+      }
       if (act === 'signin') {
         event.preventDefault();
         this.beginSignIn(this.here());
@@ -1265,6 +1517,12 @@ class ReportRuntime extends SpaClient {
       return;
     }
     event.preventDefault();
+    if (kind === 'realm') {
+      this.switchRealm(String((form.elements.realm &&
+        form.elements.realm.value) || ''),
+        String((form.elements.to && form.elements.to.value) || ''));
+      return;
+    }
     if (kind === 'query') {
       const intent = event.submitter && event.submitter.value;
       const document = queryDocument(form, this.t && this.t.locale);
@@ -1375,6 +1633,10 @@ class ReportRuntime extends SpaClient {
     this.env.document.addEventListener('submit', function (event: any):
         void {
       self.onSubmit(event);
+    });
+    this.env.document.addEventListener('change', function (event: any):
+        void {
+      self.onChange(event);
     });
     if (this.env.window) {
       this.env.window.addEventListener('popstate', function (): void {

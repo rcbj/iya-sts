@@ -36,8 +36,15 @@ import Query = require('./query');
 import Catalog = require('./catalog');
 import Limits = require('./limits');
 import OpenApi = require('./openapi');
+import version = require('../common/version');
 
 const log = bunyan.createLogger({ name: 'sts-report-api' });
+
+// The one version source (`common/version.js`, as every surface that draws
+// a version reads it; `tests/version.js` holds the source). The index
+// carries it for the application's footer (#986).
+const APP_VERSION = version.load();
+const APP_BUILD_INFO = version.buildInfo(APP_VERSION);
 
 const BASE = '/report-api';
 
@@ -740,9 +747,48 @@ function reportServeIndex(res: any): void {
   log.debug("Entering reportServeIndex().");
   reportJson(res, 200, {
     service: 'report',
-    catalog: BASE + '/catalog'
+    catalog: BASE + '/catalog',
+    realms: BASE + '/realms',
+    version: {
+      version: APP_VERSION.version,
+      stamped: APP_VERSION.stamped === true,
+      buildInfo: APP_BUILD_INFO
+    }
   });
   log.debug("Leaving reportServeIndex().");
+}
+
+// THE REALMS, FOR THE APPLICATION'S SWITCH (#986): the realm this token's
+// request is in, and — where realms are active — every realm with its id,
+// name and prefix, the rows the console's shell view carries for its own
+// switcher (`admin-ui/admin.ts`, `shellJson()`). The names are what the
+// realm chooser already shows an anonymous visitor, so a report token is
+// not told anything the sign-in page does not say. With realms off the
+// list is null and the application names the realm it is in.
+function reportRealmsView(): any {
+  log.debug("Entering reportRealmsView().");
+  const realms = require('../common/realms');
+  const current = realms.current() || {};
+  const view = {
+    current: {
+      id: String(realms.currentId() || ''),
+      name: String(current.name || ''),
+      prefix: String(realms.currentPrefix() || '')
+    },
+    realms: realms.active()
+      ? realms.list().map(function (one: any): any {
+        return { id: one.id, name: one.name, prefix: realms.prefixOf(one) };
+      })
+      : null
+  };
+  log.debug("Leaving reportRealmsView().");
+  return view;
+}
+
+function reportServeRealms(res: any): void {
+  log.debug("Entering reportServeRealms().");
+  reportJson(res, 200, reportRealmsView());
+  log.debug("Leaving reportServeRealms().");
 }
 
 function reportServeOpenApi(res: any): void {
@@ -1158,6 +1204,8 @@ async function reportRoute(req: any, res: any, who: any): Promise<void> {
     reportServeCatalog(res);
   } else if (a === 'catalog' && b && !c && method === 'GET') {
     reportServeSource(res, b);
+  } else if (a === 'realms' && !b && method === 'GET') {
+    reportServeRealms(res);
   } else if (a === 'queries' && !b && method === 'POST') {
     await reportAcceptQuery(req, res, who, false, null);
   } else if (a === 'definitions' && !b && method === 'GET') {
@@ -1290,6 +1338,9 @@ class ReportApi {
     app.get(BASE + '/catalog/:id', function (req: any, res: any): void {
       reportAnswer(req, res);
     });
+    app.get(BASE + '/realms', function (req: any, res: any): void {
+      reportAnswer(req, res);
+    });
     app.post(BASE + '/queries', function (req: any, res: any): void {
       reportAnswer(req, res);
     });
@@ -1346,5 +1397,6 @@ export = {
   registerRoutes: function (app: any): void {
     reportApi.registerRoutes(app);
   },
+  realmsView: reportRealmsView,
   ReportApi: ReportApi
 };

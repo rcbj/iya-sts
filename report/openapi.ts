@@ -127,7 +127,8 @@ class OpenApi {
       paths: {
         '/report-api': {
           get: operation('The report API index',
-            'Names the catalog address.', {
+            'Names the catalog and realms addresses, and carries the ' +
+            'service version the application draws in its footer.', {
               responses: {
                 '200': answered('The index.',
                   { $ref: '#/components/schemas/Index' })
@@ -140,6 +141,18 @@ class OpenApi {
               responses: {
                 '200': answered('This OpenAPI document.',
                   { type: 'object' })
+              }
+            })
+        },
+        '/report-api/realms': {
+          get: operation('The trust realms',
+            'The realm this request is in, and every realm with its id, ' +
+            'name and path prefix where realms are active (null where ' +
+            'they are not). The application draws its realm field and ' +
+            'switch from it.', {
+              responses: {
+                '200': answered('The realms.',
+                  { $ref: '#/components/schemas/Realms' })
               }
             })
         },
@@ -379,7 +392,34 @@ class OpenApi {
             type: 'object',
             properties: {
               service: { type: 'string', example: 'report' },
-              catalog: { type: 'string' }
+              catalog: { type: 'string' },
+              realms: { type: 'string' },
+              version: {
+                type: 'object',
+                properties: {
+                  version: { type: 'string' },
+                  stamped: { type: 'boolean' },
+                  buildInfo: { type: 'string' }
+                }
+              }
+            }
+          },
+          Realm: {
+            type: 'object',
+            properties: {
+              id: { type: 'string' },
+              name: { type: 'string' },
+              prefix: { type: 'string',
+                description: 'The realm\'s path prefix; empty for the ' +
+                  'default realm.' }
+            }
+          },
+          Realms: {
+            type: 'object',
+            properties: {
+              current: { $ref: '#/components/schemas/Realm' },
+              realms: { type: 'array', nullable: true,
+                items: { $ref: '#/components/schemas/Realm' } }
             }
           },
           Field: {

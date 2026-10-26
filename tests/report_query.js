@@ -523,6 +523,7 @@ function projections(t) {
     '/report-api/openapi.json',
     '/report-api/catalog',
     '/report-api/catalog/{id}',
+    '/report-api/realms',
     '/report-api/queries',
     '/report-api/definitions',
     '/report-api/definitions/{id}',
@@ -1102,6 +1103,142 @@ async function narrowing(t) {
   log.debug("Leaving narrowing().");
 }
 
+// A form double for `queryDocument()`: `elements` by name, no checked
+// field boxes.
+function formDouble(values) {
+  log.debug("Entering formDouble().");
+  const elements = {};
+  Object.keys(values).forEach(function (name) {
+    elements[name] = { value: values[name] };
+  });
+  const form = {
+    elements: elements,
+    querySelectorAll: function () {
+      return [];
+    }
+  };
+  log.debug("Leaving formDouble().");
+  return form;
+}
+
+// A translator over the English report catalog, built as the browser's
+// `WebI18n` builds one (`report.key` → message).
+function englishTranslator() {
+  log.debug("Entering englishTranslator().");
+  const fs = require('fs');
+  const path = require('path');
+  const messages = require('../common/web_messages');
+  const own = JSON.parse(fs.readFileSync(path.join(__dirname, '..',
+    'common', 'locales', 'report', 'en.json'), 'utf8'));
+  const flat = {};
+  Object.keys(own).forEach(function (key) {
+    flat['report.' + key] = own[key];
+  });
+  log.debug("Leaving englishTranslator().");
+  return messages.WebTranslator.fromData({ catalogs: { en: flat },
+    negotiated: { locale: 'en', chain: ['en'], catalog: 'en',
+                  direction: 'ltr', matched: true } });
+}
+
+function chrome(t) {
+  log.debug("Entering chrome().");
+  const ReportRuntime = require('../report/web_report_pages');
+  const api = require('../report/report_api');
+  const OpenApi = require('../report/openapi');
+  const tr = englishTranslator();
+
+  // The realms view, in a process with no realm defined.
+  const view = api.realmsView();
+  t.equal(view.current.id, 'default',
+    'the realms view names the default realm');
+  t.equal(view.current.prefix, '', 'the default realm has no prefix');
+  t.equal(view.realms, null, 'with realms off the list is null');
+
+  // The realm field: one realm is a name; several are a select.
+  const alone = ReportRuntime.realmHtml(tr, view, '/report/jobs');
+  t.check(alone.indexOf('class="realmname"') >= 0 &&
+    alone.indexOf('<select') < 0,
+    'one realm is drawn as its name, with no select', alone);
+  t.check(alone.indexOf('Trust realm') >= 0, 'the field is labelled');
+  const several = ReportRuntime.realmHtml(tr, {
+    current: { id: 'acme', name: 'Acme', prefix: '/realm/acme' },
+    realms: [
+      { id: 'default', name: 'Default', prefix: '' },
+      { id: 'acme', name: 'Acme', prefix: '/realm/acme' },
+      { id: 'beta', name: 'Be<ta', prefix: '/realm/beta' }]
+  }, '/report/jobs');
+  t.check(several.indexOf('data-form="realm"') >= 0,
+    'several realms are a form the runtime handles');
+  t.equal((several.match(/<option /g) || []).length, 3,
+    'one option per realm');
+  t.check(several.indexOf('value="acme" selected') >= 0,
+    'the current realm is selected');
+  t.check(several.indexOf('Be&lt;ta') >= 0 && several.indexOf('Be<ta') < 0,
+    'a realm name is escaped');
+  t.check(several.indexOf('name="to" value="/report/jobs"') >= 0,
+    'the page path rides on the form');
+  t.check(several.indexOf('>Go<') >= 0, 'the Go button is drawn');
+  t.equal(ReportRuntime.realmHtml(tr, null, '/report'), '',
+    'no view yet draws nothing');
+
+  // The footer.
+  const foot = ReportRuntime.footerHtml(tr, { version: '0.1.1', stamped: true,
+    buildInfo: 'built 2026-10-26' });
+  t.check(foot.indexOf('iya-sts version 0.1.1') >= 0,
+    'the footer names the version', foot);
+  t.check(foot.indexOf('title="built 2026-10-26"') >= 0,
+    'the build is the footer\'s title');
+  t.equal(ReportRuntime.footerHtml(tr, null), '',
+    'no version draws no footer');
+
+  // A filter row, with and without the +.
+  const first = ReportRuntime.filterRowHtml(tr, 0, '<option value="a">a' +
+    '</option>', true);
+  t.check(first.indexOf('name="filterField0"') >= 0 &&
+    first.indexOf('name="filterOp0"') >= 0 &&
+    first.indexOf('name="filterValue0"') >= 0,
+    'the first row\'s controls are numbered 0');
+  t.check(first.indexOf('data-act="add-filter"') >= 0,
+    'the last row carries the +');
+  const third = ReportRuntime.filterRowHtml(tr, 2, '', false);
+  t.check(third.indexOf('name="filterField2"') >= 0,
+    'a later row is numbered for its place');
+  t.check(third.indexOf('data-act="add-filter"') < 0,
+    'a row that is not last has no +');
+
+  // The reader takes as many rows as the form holds.
+  const one = ReportRuntime.queryDocument(formDouble({
+    source: 'users', filterField0: 'username', filterOp0: 'eq',
+    filterValue0: 'ada', limit: '10', format: 'json'
+  }), 'en');
+  t.equal(JSON.stringify(one.where),
+    JSON.stringify({ op: 'eq', field: 'username', value: 'ada' }),
+    'one row is one leaf');
+  const three = ReportRuntime.queryDocument(formDouble({
+    source: 'users',
+    filterField0: 'username', filterOp0: 'eq', filterValue0: 'ada',
+    filterField1: '', filterOp1: '', filterValue1: '',
+    filterField2: 'status', filterOp2: 'eq', filterValue2: 'locked',
+    saveQuery: 'on', definitionName: 'who',
+    limit: '10', format: 'json'
+  }), 'en');
+  t.equal(three.where && three.where.op, 'and',
+    'several rows are an and');
+  t.equal(three.where && three.where.args.length, 2,
+    'a blank row in the middle is skipped and the rows after it are read');
+  t.equal(three.where && three.where.args[1].field, 'status',
+    'the third row is read');
+  t.equal(Object.prototype.hasOwnProperty.call(three, 'saveQuery'), false,
+    'the Save query box is not part of the document');
+
+  // The OpenAPI document.
+  const spec = OpenApi.document(new Catalog());
+  t.check(spec.components.schemas.Realms &&
+    spec.components.schemas.Index.properties.version,
+    'the OpenAPI document carries the realms and the version');
+  log.debug("Leaving chrome().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   documents(t);
@@ -1112,12 +1249,13 @@ async function run(t) {
   await budget(t);
   await schedules(t);
   await narrowing(t);
+  chrome(t);
   log.debug("Leaving run().");
 }
 
 module.exports = {
   name: 'report_query',
   describe: 'report documents, formats, issuance, projections, schedules, ' +
-    'indexed lookups',
+    'indexed lookups, the page chrome',
   run: run
 };

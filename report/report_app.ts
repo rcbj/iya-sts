@@ -62,6 +62,31 @@ const REPORT_STYLE = [
   '  gap: .35rem; margin: 0; font-size: .85em; }',
   '.bar .language-chooser button, .bar .language-chooser select {',
   '  font: inherit; }',
+  // The realm field and switch (#986), first in the bar, on the console's
+  // `.realmpick` shape: the label small and above, the select taking the
+  // room so a long realm name is readable, the button taking what it
+  // needs. With one realm the name is text and there is no select.
+  '.realmpick { margin: 0; padding: 0 .35rem 0 0;',
+  '  border-right: 1px solid #c9cad6; }',
+  '.realmpick label { display: block; margin: 0 0 2px; font-size: .7em;',
+  '  text-transform: uppercase; letter-spacing: .06em; color: #8a8a99;',
+  '  font-weight: 700; }',
+  '.realmpickrow { display: flex; gap: 6px; align-items: stretch; }',
+  '.realmpick select { flex: 1 1 auto; min-width: 0; font: inherit;',
+  '  padding: 3px 4px; border: 1px solid #c9c9d4; border-radius: 5px;',
+  '  background: #fff; color: #222; }',
+  '.realmpick button { flex: 0 0 auto; padding: 3px 9px; font: inherit;',
+  '  font-size: .92em; }',
+  '.realmpick .realmname { font-weight: 600; }',
+  // The documentation link under the bar, and the version under the card.
+  '.doclink { margin: -.5rem 0 1rem; font-size: .9em; }',
+  '.foot { margin: .75rem 0 0; color: #6b6f80; font-size: .85em;',
+  '  text-align: right; }',
+  // A filter row and the + that adds the next one (#986).
+  '.filterrow { margin: 0 0 .35rem; }',
+  '.filterrow .addfilter { border: 1px solid #c9cad6; border-radius: 6px;',
+  '  padding: .1rem .55rem; font-weight: 700; line-height: 1.4; }',
+  '.filterrow .addfilter:hover { background: #e7e9f4; }',
   '.table { width: 100%; border-collapse: collapse; }',
   '.table th, .table td { text-align: left; padding: .35rem .5rem;',
   '  border-bottom: 1px solid #d5d5dd; vertical-align: top; }',
@@ -96,7 +121,12 @@ const REPORT_STYLE = [
   '  border-radius:5px;color:#12107c;font:inherit;font-size:.85em;',
   '  cursor:pointer}',
   '.usermenuaccounts button.linklike:hover{background:#eef2fb}',
-  '.usermenuaccounts button span{color:#777;font-size:.9em}'
+  '.usermenuaccounts button span{color:#777;font-size:.9em}',
+  // Sign out, the menu's last item since #986, drawn as the switch
+  // buttons are so the menu reads as one list.
+  '.usermenusignout a.linklike{display:block;padding:6px 8px;',
+  '  color:#3a2e96;text-decoration:none;border-radius:4px}',
+  '.usermenusignout a.linklike:hover{background:#eef2fb}'
 ].join('\n');
 
 /**

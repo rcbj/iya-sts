@@ -43,6 +43,25 @@ A definition or a job you may not see is answered as not found. A job id
 in a URL is not permission to read it. The same token is required for the
 result as for the query that created the job.
 
+## The page
+
+Every report page has the same chrome. At the top of the bar a field
+names the **trust realm** the page is showing; when the service has
+several realms it is a drop-down, and choosing another realm opens that
+realm's reports application at the same page, where you sign in as you
+did here, because a token belongs to the realm that issued it
+(`GET /report-api/realms` is what it reads). Under the bar a link opens
+this documentation. The user menu at the right names the account this
+tab is signed in as and holds **Sign out**; with several accounts on it
+also switches between the browser's signed-in accounts. At the bottom of
+the card the service's **version** is shown, read from the same source
+every other page reads.
+
+The query form starts with **one filter row**; the `+` beside the last
+row adds another, up to the sixteen an `and` may hold. Rows left blank
+are ignored. The **Save query** box reveals the Name field and the Save
+button; unchecked, the form only runs the query.
+
 ## The catalog
 
 `GET /report-api/catalog` lists every source. `GET /report-api/catalog/{id}`
