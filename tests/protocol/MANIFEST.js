@@ -1,0 +1,1828 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: BUSL-1.1
+
+// ===========================================================================
+// MANIFEST.js — protocol jobs and their execution settings.
+//
+// The tests and helpers in tests/protocol/ are maintained by iya-sts. Some
+// began as MIT-licensed copies of id-proto-debugger code; that history and
+// license are retained in REUSE.toml, but there is no source-of-truth checkout,
+// byte comparison or sync operation. The two repositories may change
+// independently. Port a protocol-compatibility change back only when a
+// concrete parent test or wire-compatibility need calls for it.
+//
+// This manifest exists because run-report.js needs an explicit job list and a
+// job/helper split. The split is intentional: inferring jobs from URL options
+// misclassified both helpers and jobs, which silently left some protocol jobs
+// unscheduled. Support-module lists below document the helpers used here; they
+// do not define which repository owns or may edit them.
+// ===========================================================================
+
+const bunyan = require('bunyan');
+const log = bunyan.createLogger({ name: 'MANIFEST',
+  level: process.env.LOG_LEVEL || 'info' });
+
+// ---------------------------------------------------------------------------
+// THE JOBS. Each is spawned as its own process by `tools/run-report.js`, with
+// this directory as its cwd — which is what makes `CONFIG_FILE=./env/local.js`
+// resolve, and what makes each job's `require('./random_username.js')` find the
+// copy beside it rather than one over there.
+//
+// `browser: true` means the job drives Chrome through selenium-webdriver. There
+// are THREE that are coverage of this working tree's own pages, which is why
+// `--no-browser` names them when it leaves them out — and, since #571, the
+// four OpenID conformance drivers whose plans sign somebody in, which play
+// the suite's person in Chrome (`conformance_browser.js`) because the
+// suite's own browser cannot run the scripted sign-in screen. Those stay in
+// their conformance lanes: one Chrome each, one page at a time.
+// `sts_admin_console.js` walks every page; `sts_xacml_editor.js` drives ONE
+// page in depth — the guided policy editor, whose forty forms per render, whose
+// menus and whose nested-form hazard are markup rather than behaviour, and are
+// therefore invisible to the in-process suite that already holds its grammar.
+// They are not redundant: the first would notice the editor page failing to
+// draw, and nothing but the second notices it drawing a menu against the wrong
+// row's path. The third, `sts_portal_device_webauthn.js` (#258), is the
+// portal's: the one scripted step on `/portal/devices`, run by Chrome against
+// a virtual authenticator, which no HTTP job can make.
+//
+// ---------------------------------------------------------------------------
+// `docker: true` MEANS THE JOB NEEDS A REMOTE PEP CONTAINER, AND IT IS A
+// FALLBACK FLAG RATHER THAN A REQUIREMENT. There is ONE such job,
+// `sts_xacml_remote_pep.js`, and the ordinary way it gets its container is that
+// the LAUNCHER brought one up:
+//
+//   * `./local-run-tests.sh` added `--profile xacml` to the project it already
+//     started the service in and published the PEP on a free host port, until
+//     it was removed on 2026-09-16;
+//   * `./run-tests.sh` declares an `xacml-pep` service in
+//     `docker-compose-run-tests.yml`, on the bridge the tests container shares
+//     with the service.
+//
+// Each exports (or exported) `XACML_PEP_URL`, `XACML_PEP_NAME` and
+// `XACML_PEP_REALM`, and the job drives that container over HTTP and shells
+// out to nothing. **THAT IS WHY THE LAUNCHER OWNS IT**: the containerized
+// runner is a container with no docker in it, deliberately, so a job that
+// started its own could never run in the stack that gates this repository.
+//
+// The flag matters only when NEITHER launcher is involved — a bare
+// `node tests/tools/run-report.js`, or a coverage run, both of which drive a
+// service that is a plain process with no compose network to join. There the
+// job builds the image and starts a container itself, which needs a daemon; and
+// where there is none, `tools/run-report.js` reports the job SKIPPED with the
+// reason — amber in the report, `<skipped>` in the JUnit, a line in the summary
+// — instead of failing it or, worse, going green.
+//
+// **THAT SKIP IS A DELIBERATE EXCLUSION AND NOT A CAPABILITY TEST DODGED**,
+// which is the distinction `tests/CLAUDE.md` draws between a skip and a
+// failure, and it is now a narrow one: it is reachable only by driving a
+// service nobody's launcher started, on a machine with no docker.
+// ---------------------------------------------------------------------------
+//
+// Every job listed below is maintained in this repository. Many exercise this
+// service's own console and API; others drive protocol behavior over HTTP or
+// use separate client implementations as interoperability checks. A job stays
+// here because this is the code it tests, not because another checkout owns or
+// schedules it. Changes to wire behavior are ported to id-proto-debugger only
+// when a specific compatibility need is recorded and reviewed.
+// ---------------------------------------------------------------------------
+// WHICH JOBS RUN AT THE SAME TIME (2026-09-26). `tools/run-report.js` runs
+// the protocol jobs in LANES: every job is in lane `main` unless it names
+// another, the lanes run side by side, and a lane runs its jobs one at a
+// time in this file's order. Two keys decide it:
+//
+//   lane: '<name>'     the lane this job runs in. `bulk` holds the three
+//                      directory bulk loads — half the protocol half's time,
+//                      in their own realm-less names, touching nothing the
+//                      other jobs read — so they run beside everything else.
+//                      They stay one lane among themselves because each
+//                      raises `ldap.maxEntries` to what it is about to add,
+//                      and two raising at once can lower each other's.
+//                      In the cluster mode the lane runs LAST instead, after
+//                      every other protocol job (STS_TEST_BULK_LAST,
+//                      tools/modes.sh, 2026-09-27): two nodes on one store
+//                      could not carry both loads within the sign-ins' bounds.
+//                      `conformance`, `conformance-fapi` and
+//                      `conformance-b` hold the OpenID conformance plans
+//                      (about two and a quarter hours one after another, the
+//                      memory mode's long pole): each plan is a throwaway
+//                      realm of its own against the suite's server, with its
+//                      callback listener on an ephemeral port. The OpenID
+//                      Connect job (42 min serially, and it runs its plans
+//                      CONFORMANCE_PLAN_CONCURRENCY at a time) and the FAPI
+//                      job (33 min) each have a lane alone; the other four
+//                      (19 min together) share `conformance-b`. Those times
+//                      are from before 2026-10-23, when every plan of the
+//                      OpenID Connect, Federation, OpenID4VCI and OpenID4VP
+//                      jobs gained a classical twin: about twice as long.
+//   exclusive: true    nothing else in the protocol half runs while this job
+//                      does: every lane drains first, and none starts again
+//                      until it ends. For a job that changes what EVERY other
+//                      job depends on — `revoke-all` (which revokes each
+//                      job's own /admin-api token) and `build-root` (which
+//                      replaces the listener certificate a job's truststore
+//                      was pinned to when it started) — and
+//                      `sts_realm_count_limit.js` (#368), which holds
+//                      realms.maxCount at the live count, so any other job's
+//                      realm create would be refused while it runs.
+//
+// A new job that does any of those of those owes `exclusive: true`; a new job that
+// is long, self-contained and in no way order-dependent may be given a lane.
+// `run-report.js --serial` runs everything one at a time, as before.
+// ---------------------------------------------------------------------------
+const JOBS = [
+  // FIRST, AND ABOUT THE STACK RATHER THAN THE SERVICE (2026-09-14, #46): that
+  // the `cluster` mode's jobs really reach both nodes — both kinds of client,
+  // round robin through the load balancer — and that every other mode's reach
+  // one. A mode that is not what it says would otherwise be reported green by
+  // every job after it. Its header argues why it is local and why it is first.
+  { file: 'sts_cluster_alternation.js',  browser: false },
+  { file: 'sts_main_port_pooling.js',    browser: false },
+  { file: 'sts_realm_listener.js',       browser: false },
+  { file: 'admin_api.js',                browser: false,
+    exclusive: true },
+  { file: 'ldp_vc_issuance.js',          browser: false },
+  { file: 'ldp_vc_refresh.js',           browser: false },
+  // OURS SINCE 2026-10-03 (#186): rcbj's decision that iya-sts moves away
+  // from the parent's copies. Taken from the parent's then-current file and
+  // changed HERE to detect appAllowedToDelegateTo (appTrustedToImpersonate
+  // was merged into appDelegationSemantics). Porting back is decided case by
+  // case; the de-vendoring ticket carries the rest.
+  { file: 'oauth2_sts_endpoints.js',     browser: false },
+  // THE GATE IN FRONT OF THAT API, as opposed to what is behind it
+  // (2026-09-09). `sts_admin_api_operations.js` walks every documented
+  // operation; this one asserts that none of them can be reached
+  // without an access token audienced to this API and carrying the
+  // scope the action needs. Two jobs because they fail for different
+  // reasons: one goes red when an operation drifts from its document,
+  // the other when the surface stops refusing.
+  { file: 'sts_admin_api_auth.js',       browser: false },
+  { file: 'sts_admin_api_operations.js', browser: false,
+    exclusive: true },
+  // THE CONSOLE SIGNS IN AT ONCE AFTER THE ROOT IS REPLACED (#296,
+  // 2026-09-27), and again after a second replacement inside the first
+  // re-issue's claim window — the STS-AUTHN-0208 case. Exclusive, because it
+  // replaces the service Root (and so the listener's certificate) twice,
+  // which a job running beside it would see as a TLS failure.
+  // `local: true`: this repository's console, PKI and authorization server.
+  { file: 'sts_console_after_root.js',   browser: false,
+    exclusive: true },
+  // AN HOUR (2026-09-19): it walks every console page in a real browser, and
+  // against a three-node cluster across the internet (run-suite.sh testidp)
+  // that took longer than the 20-minute default, killed while still passing.
+  { file: 'sts_admin_console.js',        browser: true,
+    timeoutMs: 3600000, exclusive: true },
+  // A TRUST REALM'S OWN ADMINISTRATORS (2026-09-14, #32): the realm chooser,
+  // a realm administrator confined to their realm in the console and through
+  // a realm's own management API token, and the service administrator over
+  // every realm. Its two realms are left standing; it touches the default
+  // realm's roster only when that realm's bootstrap window is closed, and
+  // then revokes what it granted.
+  { file: 'sts_realm_administrators.js', browser: false },
+  // HOW MANY REALMS ONE CLUSTER MAY HOLD (#368): the create past
+  // realms.maxCount is refused (through /admin-api and the console),
+  // lowering the cap removes nothing, and a write of the cap from inside
+  // another realm is refused. EXCLUSIVE: it holds the cap at the live count,
+  // so a parallel lane's realm create would be refused STS-CORE-0161. It
+  // always puts the cap back, and leaves its one realm standing.
+  { file: 'sts_realm_count_limit.js', browser: false,
+    exclusive: true },
+  // THE CONSOLE BEFORE ITS BOOTSTRAP ADMINISTRATOR ARRIVES (#103,
+  // 2026-09-22): development's open window, product's closed one, a
+  // client-certificate sign-in holding no role — and, in product, one naming
+  // `admin` refused and claiming nothing — and the password sign-in that
+  // claims a realm's console. Its realm is left standing; in the default realm
+  // it only signs a certificate holder in, which in product claims nothing.
+  { file: 'sts_console_bootstrap_product.js', browser: false },
+  { file: 'sts_consent.js',              browser: false },
+  // WITHDRAWN MEANS WITHDRAWN (#172, 2026-09-23): a consent withdrawn through
+  // /admin-api, globally and on /portal/consents ends the grant it covered,
+  // a re-consent revives nothing, and oauth2.refreshRequiresConsent refuses a
+  // grant nobody consented to. `local: true`: the register, its operations
+  // and the portal are ours. Its realm is left standing.
+  { file: 'sts_consent_withdrawal.js',   browser: false },
+  { file: 'sts_delegated_permissions_example.js', browser: false },
+  // A SCOPE IS TIED TO THE CLIENT (#110, 2026-09-22): the protected scopes
+  // refused at issuance and re-checked by SCIM, Shared Signals and
+  // /admin-api, registration's `scope` as the declaration, and product mode
+  // holding every other scope to it. `local: true`: the policy is ours. Its
+  // realm is left standing.
+  { file: 'sts_scope_policy.js',         browser: false },
+  // WHO MAY ACT FOR WHOM (#108, 2026-09-23): WS-Trust OnBehalfOf / ActAs and
+  // the RFC 8693 token exchange held to the delegation policy, may_act, the
+  // nested act and the policy resource. `local: true`: the policy is ours.
+  // Its realm is left standing.
+  { file: 'sts_delegation_policy.js',    browser: false },
+  // ASSERTIONS AS RFC 8693 SUBJECT AND ACTOR TOKENS (#114, 2026-10-03): an
+  // RFC 7523 JWT, an RFC 7522 SAML 2.0 and a SAML 1.1 assertion from issuers
+  // declared through /admin-api, exchanged; the replay history shared with
+  // the jwt-bearer grant; oauth2.tokenExchangeAudience's two rules and the
+  // SAML Recipient under forwarding. `local: true`: the feature is ours. Its
+  // realm is left standing.
+  { file: 'sts_token_exchange_assertions.js', browser: false },
+  // WHAT AN EXCHANGE ANSWERS (#156, 2026-10-05): no `"scope": ""`, no
+  // id_token beside a token whose scope names no openid, and the subject's
+  // scope carried forward when the exchange asks for none. `local: true`:
+  // the response is ours. Its realm is left standing.
+  { file: 'sts_token_exchange_response.js', browser: false },
+  // A FOUR-TIER TOKEN-EXCHANGE CHAIN OVER HTTP (#467, 2026-10-06): a web
+  // application, an API gateway, a service bus and a service provider — the
+  // parent's oauth2_delegation_chain.js without its browser — once as an
+  // impersonation (no actor_token) and once as a delegation (each tier's
+  // client_credentials token as actor_token, `act` nested). app1-scope on
+  // every token, every hop naming its target by a registered audience.
+  // The delegation job forks at the bus (#549): esb1 exchanges once for
+  // sp1 and once for sp2, asking for read, write and admin on each — read
+  // and write delegated to it, admin not — and admin must never be issued;
+  // and every token about the person carries roles, groups and a custom
+  // claim.
+  // `local: true`: the scenario is ours. Their entries are left standing.
+  { file: 'sts_token_exchange_chain_impersonation.js', browser: false },
+  { file: 'sts_token_exchange_chain_delegation.js', browser: false },
+  // THE SAME FOUR TIERS IN SAML ASSERTIONS OVER WS-TRUST (#473, 2026-10-06):
+  // a UsernameToken sign-in to the web application, then three RSTs, once
+  // with <wst:OnBehalfOf> (impersonation, no delegate on any assertion) and
+  // once with <wst14:ActAs> (delegation, the SAML Delegation Restriction
+  // naming every requester least to most recent, the web application
+  // first). Every AppliesTo the next tier's registered identifier. `local:
+  // true`: the scenario is ours. Their entries are left standing.
+  { file: 'sts_wstrust_chain_impersonation.js', browser: false },
+  { file: 'sts_wstrust_chain_delegation.js', browser: false },
+  // AND AGAIN WITH JWT RESPONSE TOKENS (#473): every RST asks for
+  // urn:ietf:params:oauth:token-type:jwt and each hop presents the JWT the
+  // last produced. The JWT is held to RFC 9068 (typ at+jwt, its claims,
+  // verified against /oauth2/jwks) and RFC 8693 (act for ActAs, nested,
+  // `iss` in every entry, urn:sts:client: in product; none for
+  // OnBehalfOf). They need #476 and #477.
+  { file: 'sts_wstrust_jwt_chain_impersonation.js', browser: false },
+  { file: 'sts_wstrust_jwt_chain_delegation.js', browser: false },
+  // AND AGAIN WITH SAML 1.1 TOKENS (#487): every RST asks for the SAML Token
+  // Profile's SAML 1.1 type. The assertions carry the application's SAML 1.1
+  // attributes, and an ActAs names no delegate, since SAML 1.1 has no
+  // Delegation Restriction; the chain is in the register.
+  { file: 'sts_wstrust_saml11_chain_impersonation.js', browser: false },
+  { file: 'sts_wstrust_saml11_chain_delegation.js', browser: false },
+  // AND WITH EACH TIER ON A TOKEN IT WAS ISSUED FOR ITSELF (#519): the
+  // OnBehalfOf chain once per token type, each tier's application first
+  // asking, with its own client secret, for a token about itself and for
+  // itself, and presenting THAT in wsse:Security — no service account beside
+  // any application; then the matrix of every requester credential × every
+  // OnBehalfOf input × every issued type (36 RSTs). `local: true`: the
+  // scenario is ours. Its entries are left standing.
+  { file: 'sts_wstrust_own_token_chain.js', browser: false },
+  // AND IN KERBEROS (#486): the same four tiers as service principals,
+  // reached over MS-KKDCP. Impersonation is protocol transition — apigw1's
+  // S4U2Self for a user who signed in to webapp1 without Kerberos, then
+  // S4U2Proxy to esb1 and sp1 — and delegation is bob's own ticket to
+  // webapp1 presented by S4U2Proxy at every hop, the PAC's
+  // S4U_DELEGATION_INFO naming webapp1, apigw1 and esb1 at sp1. `local:
+  // true`: the scenario is ours. Their entries are left standing.
+  { file: 'sts_kerberos_chain_impersonation.js', browser: false },
+  { file: 'sts_kerberos_chain_delegation.js', browser: false },
+  // AND IN GNAP (#497): the same four tiers as GNAP parties. Impersonation
+  // is a trusted client presenting the person's ID Token (issued to it) as
+  // a user assertion, then two RFC 9767 derivations; delegation is the
+  // person approving webapp1's grant, then the same derivations, the
+  // original client traced through the grant every token names. `local:
+  // true`: GNAP exists here and nowhere else. Entries are left standing.
+  { file: 'sts_gnap_chain_impersonation.js', browser: false },
+  { file: 'sts_gnap_chain_delegation.js', browser: false },
+  // LOCALISED (#571, rcbj's decision): it signs in at /authn/login, which
+  // is a static surface over /authn-api since #571, through
+  // `authn_signin.js`; the parent's copy posts the form that is gone.
+  { file: 'sts_dpop.js',                 browser: false },
+  // GNAP (2026-09-12). `local: true` on the second of tests/CLAUDE.md's
+  // reasons: GNAP exists in this repository and nowhere else, so there is no
+  // copy anywhere to sync from. Three jobs because there are three parties —
+  // the client instance (core), the resource server (rs, RFC 9767) and a
+  // Shared Signals receiver (signals) — and each asserts through its own door.
+  // All three drive `gnap_client.js`, a client written from the RFCs with no
+  // code from `gnap/`, and each runs in a throwaway realm it leaves behind.
+  //
+  // `testPeer: true` (#586): since the demonstration resource server became
+  // development only (#585), and was deleted (#593), the resource server
+  // these jobs present tokens at is the TEST PEER's (tests/peer/), and a
+  // run with no peer — an AWS
+  // target — reports the job SKIPPED with that reason, as `conformance` and
+  // `samlPeer` are.
+  { file: 'sts_gnap_core.js',            browser: false,
+    testPeer: true },
+  { file: 'sts_gnap_rs.js',              browser: false,
+    testPeer: true },
+  { file: 'sts_gnap_signals.js',         browser: false,
+    testPeer: true },
+  // #432: the access-token status list from OAuth's side — an RFC 9068
+  // token's status claim, the list fetched, verified and read by the job's
+  // own code, and the bit set by RFC 7009 revocation. `local: true` on the
+  // second question: asserted over HTTP, so written here. GNAP's half is
+  // `sts_gnap_rs.js` section 8.
+  { file: 'sts_access_token_status.js',  browser: false },
+  // #107: a key proved by mutual TLS under the pinned and PKI trust models,
+  // revocation in both, the binding to an application entry, rotation at the
+  // authority, the per-client override and the product default. Presents
+  // client certificates on the main port; the foreign leaf names a CRL this
+  // job serves (test_crl_host.js).
+  { file: 'sts_gnap_mtls.js',            browser: false },
+  // #432 phase 1: GNAP impersonation by user assertion and RFC 9767
+  // derivation asked of #186's delegation policy, in whichever mode the
+  // service is in — product's refusals by their audited codes, development's
+  // "would have been refused" — the act chain on a derived token, the depth
+  // cap, and the acts on /admin-api/delegation. A throwaway realm left behind.
+  { file: 'sts_gnap_delegation.js',      browser: false },
+  { file: 'sts_gnap_catalogue.js',       browser: false },
+  // #432 phase 5: an identifier's owner from a registered resource set
+  // (a non-owner refused on the approval page, a group member approving),
+  // a limit lowered on the page and read off the token by the job, and the
+  // test peer's resource server spending to the limit, refunding a failed
+  // operation and refusing past it (#586: it was the demonstration resource
+  // server's, which is development only since #585). A throwaway realm left
+  // behind. `testPeer: true`, as sts_gnap_core.js is.
+  { file: 'sts_gnap_limits.js',          browser: false,
+    testPeer: true },
+  // #432 phase 6: per-type interaction (never, always, a consent action)
+  // against a client trusted to skip, a remembered approval not standing in
+  // for always, the step-up an mfa type demands and its refusal, and
+  // approval by an absent owner on /portal/ciba while the client polls. A
+  // throwaway realm left behind.
+  { file: 'sts_gnap_interaction.js',     browser: false },
+  // CERTIFICATE ENROLLMENT (2026-09-13): ACME, EST and SCEP, each driven by an
+  // independent client written from its RFC with no code from acme/, est/ or
+  // scep/, each in a throwaway realm it leaves behind.
+  // ===== ACME jobs =====
+  { file: 'sts_acme_enrollment.js',      browser: false },
+  // ===== EST jobs =====
+  { file: 'sts_est_enrollment.js',       browser: false },
+  // ===== SCEP jobs =====
+  // It waits out a sixty-second challenge lifetime for the expiry case, which
+  // is why the watchdog is raised.
+  { file: 'sts_scep_enrollment.js',      browser: false,
+    timeoutMs: 600000 },
+  // The portal's /portal/certificates page: a person's own enrollment
+  // credentials and certificates, driven with two signed-in browsers.
+  { file: 'sts_portal_certificates.js',  browser: false },
+  // AN OWNER ADMINISTERS WHAT THEY OWN (#607): signed in as the portal with
+  // both resources and the owner scopes, the owner token refreshed for
+  // /admin-api; a role, a group, an application and a service account read
+  // and changed within the access-control policy's owner rule, and refused
+  // outside it — a list, another's object, the last owner, an application's
+  // scopes, an administrator's mark, a person taken off everything, and a
+  // person who owns nothing issued no owner scope.
+  { file: 'sts_portal_owner_edits.js',   browser: false },
+  // THE REAL CLIENTS (#207-#211, 2026-09-26): certbot and lego against
+  // ACME, libest's estclient against EST, sscep and micromdm's scepclient
+  // against SCEP — each at the version tests/Dockerfile pins, driven as an
+  // operator would run it, in a throwaway realm (estclient: the default
+  // realm, and a throwaway realm named in the EST label position, #251 —
+  // the one way an EST client can name one). tests/CLAUDE.md, *THE
+  // CERTIFICATE ENROLLMENT CLIENTS*.
+  { file: 'sts_acme_certbot.js',         browser: false,
+    timeoutMs: 900000 },
+  { file: 'sts_acme_lego.js',            browser: false,
+    timeoutMs: 900000 },
+  // `exclusive` since #429: it turns TLS 1.2 on service-wide for its run.
+  { file: 'sts_est_libest.js',           browser: false,
+    timeoutMs: 600000, exclusive: true },
+  { file: 'sts_scep_sscep.js',           browser: false,
+    timeoutMs: 600000 },
+  { file: 'sts_scep_micromdm.js',        browser: false,
+    timeoutMs: 600000 },
+  // And two more SCEP clients (#249, #250): certmonger's daemon and
+  // scep-submit, and jscep through tests/tools/jscep-driver.
+  { file: 'sts_scep_certmonger.js',      browser: false,
+    timeoutMs: 600000 },
+  { file: 'sts_scep_jscep.js',           browser: false,
+    timeoutMs: 600000 },
+  // ssfAllowedEvents (2026-09-12): an application entry limiting which Shared
+  // Signals event types a stream it owns is sent. `local: true` because the
+  // attribute is this repository's own and the assertion spans an /admin-api
+  // write and a protocol delivery.
+  { file: 'sts_ssf_allowed_events.js',   browser: false },
+  // THE SUBJECT'S ISSUER IS THE ONE THE RECEIVER DISCOVERED (#154,
+  // 2026-10-05): an administrator's set-password, disable and enable send
+  // CAEP and RISC events whose iss_sub names the person under the SET's own
+  // iss, read from the realm's SSF configuration at the URL the suite
+  // reaches — on a stream about everybody and on one that added the person
+  // under that issuer. `local: true`: this repository's own transmitter, in
+  // a throwaway realm it leaves behind.
+  { file: 'sts_ssf_subject_issuer.js',   browser: false },
+  // SSF 1.0 FINAL OVER THE WIRE (#144, 2026-09-22): stream ownership (another
+  // receiver's stream is a 404 on all ten endpoints), a Transmitter-Supplied
+  // aud, the RFC 9493 names and the final complex subject, the inserted-path
+  // discovery form, verification, status in section 8.1.5's order, and a
+  // push to the test peer's receiver (/ssf/receive's own checks went with
+  // it, #593). `local: true`: this repository's own transmitter, in a
+  // throwaway realm it leaves behind.
+  { file: 'sts_ssf_conformance.js',      browser: false },
+  // CAEP INTEROPERABILITY PROFILE SCOPE NAMES (#334): ssf.read and
+  // ssf.manage, write includes read, and neither colon name is published,
+  // in a throwaway realm. A client is issued one only while it holds the
+  // matching native role. `local: true`.
+  { file: 'sts_ssf_caep_scopes.js',      browser: false },
+  // OPENID CONNECT CORE OVER THE WIRE (#118, 2026-09-22): the ID Token's
+  // hashes by its alg, errors in the fragment, POST at the authorization
+  // endpoint, openid/prompt/nonce rules, id_token_hint, section 5.4's claims,
+  // the code's bindings in every mode, pairwise subjects and offline_access.
+  // `local: true`: this repository's own authorization server, in a throwaway
+  // realm it leaves behind.
+  { file: 'sts_oidc_core.js',            browser: false },
+  { file: 'sts_discovery_realms.js',     browser: false },
+  // THREE REALMS WHOSE DOMAINS OVERLAP (#85, 2026-09-26): dev.iyasec.io,
+  // test.iyasec.io and prod.iyasec.io, an application and a person in each
+  // under its own dc= RDNs, each person signed in by the authorization code
+  // flow at their own realm, and no realm (nor the default one) knowing
+  // another's person by name, DN or subject, or its application. `local:
+  // true`: this repository's realms, directory and authorization server.
+  // The realms are left standing and a kept stack reuses them.
+  { file: 'sts_realm_overlapping_domains.js', browser: false },
+  // TWO REALMS, TWO UNRELATED DOMAINS (#87, 2026-09-26): an application, a
+  // person and a group in each at exactly the DN expected, each person signed
+  // in by the authorization code flow, the whole of each realm's tree under
+  // its own base with every DN-valued attribute pointing inside it, and
+  // neither realm knowing the other's objects. `local: true`: this
+  // repository's realms, directory and authorization server.
+  { file: 'sts_two_realm_domains.js',    browser: false },
+  // RFC 7009 TOKEN REVOCATION (#102, 2026-09-22): client authentication by
+  // mode, another client's token refused invalid_grant, the token types, an
+  // unknown hint, and a refresh token taking its grant with it. `local:
+  // true`: this repository's own authorization server, in a throwaway realm.
+  { file: 'sts_token_revocation.js',     browser: false },
+  // OPENID CONNECT RP-INITIATED LOGOUT OVER THE WIRE (#124 with #115,
+  // 2026-09-23): refusals as pages, the registered return with state by GET
+  // and POST, each mode's answer for a client that registered none, and a
+  // foreign hint refused. `local: true`: this repository's own OP, in a
+  // throwaway realm it leaves behind.
+  { file: 'sts_rp_initiated_logout.js',  browser: false },
+  // FORM POST RESPONSE MODE's INTERSTITIAL (#126, 2026-09-23): with nobody
+  // signed in, an error for a form_post request offers a FORM POSTing the
+  // fields — and form_post.jwt the one `response` field — never a GET link.
+  // `local: true`: this repository's own authorization server, in a
+  // throwaway realm with RFC 9700 mode on.
+  { file: 'sts_form_post.js',            browser: false },
+  // OPENID CONNECT SESSION MANAGEMENT OVER THE WIRE (#121, 2026-09-23): off
+  // by default, then the discovery member, the OP iframe's narrowed
+  // frame-ancestors and its script, and prompt=none's session_state checked
+  // by section 3's formula. `local: true`: this repository's own OP, in a
+  // throwaway realm it leaves behind.
+  { file: 'sts_session_management.js',  browser: false },
+  { file: 'sts_fapi_baseline.js',        browser: false },
+  { file: 'sts_fapi_advanced.js',        browser: false },
+  { file: 'sts_fapi2.js',                browser: false },
+  { file: 'sts_fapi2_message_signing.js', browser: false },
+  // OPENID CONNECT FRONT-CHANNEL LOGOUT OVER THE WIRE (#122, 2026-09-22):
+  // the discovery member, section 2's origin rule at registration, at
+  // /admin-api and when a sign-out reads a stored URI, the iss of a named
+  // authorization server on the iframe, frame-src, and section 4's return.
+  // `local: true`: this repository's own authorization server, in a
+  // throwaway realm it leaves behind.
+  { file: 'sts_frontchannel_logout.js',  browser: false },
+  // CAEP FROM EVERY DOOR (#145, 2026-09-22): credential-change for a person
+  // created with a password and for a signing key pair (x509 with issuer and
+  // serial), fp_ua on session-established, and token-claims-change for a
+  // SCIM change and a group joined — only for a person holding live tokens.
+  // `local: true`: this repository's own transmitter, in a throwaway realm.
+  { file: 'sts_caep_credential_changes.js', browser: false },
+  // CAEP FROM THE DOORS THAT ARE NOT A DIRECTORY ATTRIBUTE (#238, #243):
+  // token-claims-change for a role given, a group a role names, a
+  // verification recorded (verified_claims), an address SCIM wrote
+  // (email_verified) and a custom claim added (the fan-out), and
+  // assurance-level-change in NIST-IAL. `local: true`: this repository's own
+  // transmitter, in a throwaway realm.
+  { file: 'sts_caep_claims_doors.js', browser: false },
+  // THE HIERARCHY TELLS THE PEOPLE UNDER IT (#244, 2026-09-26): a reissued
+  // Issuing CA orphans a person's key pair (credential-change x509 revoke),
+  // and a revoked Issuing CA walks down to its leaves, with RISC
+  // credential-compromise for keyCompromise. A throwaway realm's
+  // authorities only.
+  { file: 'sts_ca_hierarchy_signals.js', browser: false },
+  // THE OTHER KEYS A RELYING PARTY PINS (#245, 2026-09-26): an OpenID
+  // Federation rotation and emergency, a SPIFFE JWT authority rotation, and
+  // an ordinary krbtgt rotation that keeps nothing, each announced as this
+  // service's own event, in a throwaway realm.
+  { file: 'sts_service_key_signals.js', browser: false },
+  // A DELETED PERSON'S SESSION ENDS WITH THEM (#241, 2026-09-26): SCIM
+  // DELETE, then the same browser's cookie no longer signs in, and a poll
+  // stream holds session-revoked (initiated by admin) and account-purged.
+  // `local: true`: this repository's directory, sessions and transmitter.
+  { file: 'sts_account_delete_sessions.js', browser: false },
+  // AN OAUTH GRANT REVOKED IS CAEP's session-revoked, AND CIBA AND THE
+  // PRE-AUTHORIZED OFFER ARE SESSION-PRESENTED (#239, #240, 2026-09-26):
+  // /oauth2/revoke (user), a refresh replay (risk-level-change and policy),
+  // /admin-api/tokens (admin), a CIBA approval and its tokens on the
+  // approving session, and the OpenID4VCI offer a person makes on
+  // /portal/wallet (#589). `local: true`: this repository's own
+  // transmitter.
+  { file: 'sts_caep_oauth_grants.js',    browser: false },
+  // AN OPENID4VCI PRE-AUTHORIZED CODE NAMES ITS PERSON (#158, 2026-10-05): a
+  // cross-device offer redeemed by an anonymous wallet gives an access token
+  // whose `sub` is the person's ID Token `sub` — in development for an
+  // offer made before the person had an entry — and whose `client_id` is
+  // the anonymous wallet's defined value. `local: true`: this repository's
+  // own credential issuer.
+  { file: 'sts_oid4vci_preauth_subject.js', browser: false },
+  // RISC ON ITS OWN (#146, 2026-09-22): a reset link marked compromised
+  // (account-credential-change-required, recovery-activated,
+  // credential-compromise), a disable's reason, an address recycled, and the
+  // account holder's section 2.8 opt-out on /portal/signals through the
+  // scheduler job. `local: true`: this repository's own transmitter and
+  // portal, in a throwaway realm.
+  { file: 'sts_risc_acts.js',            browser: false },
+  // RISC, THE HOLDER'S CHOICE, SETS AND RECOVERY (#233, #234, #235,
+  // 2026-09-26): a register reset and clear keep a pending and an effective
+  // opt-out; every value of mail, telephoneNumber and mobile compared as a
+  // set over SCIM (a second address, a mobile, a removal, its recycling);
+  // a first and a changed address, an activation link for somebody who
+  // exists and a recovery code spent at sign-in. `local: true`: this
+  // repository's own transmitter, portal and sign-in, in a throwaway realm.
+  { file: 'sts_risc_register_recovery.js', browser: false },
+  // CREDENTIAL SIGNALS FROM THE DOORS #231, #236 AND #237 CLOSED
+  // (2026-09-26): an EAB key, a SCEP challenge and a self-issued subject
+  // made and removed; a key pair revoked for keyCompromise (RISC
+  // credential-compromise x509); and over LDAPS a credential attribute
+  // refused (53) for an administrator, a userPassword delete (revoke) and
+  // pwdReset (account-credential-change-required). `local: true`: this
+  // repository's own transmitter and directory, in a throwaway product realm.
+  { file: 'sts_credential_signals.js',   browser: false },
+  // SHARED SIGNALS ABOUT AN APPLICATION (#221 P5, 2026-10-06): a receiver
+  // adds an application (SSF's complex subject, `application` opaque
+  // client_id) to its poll stream, the application's client secret is
+  // rotated on /admin-api, and ONE credential-change (client-secret, update)
+  // about the application arrives; another application's does not.
+  // `local: true`: this repository's own transmitter and management API, in
+  // a throwaway realm.
+  { file: 'sts_application_signals.js', browser: false },
+  // SERVICE ACCOUNTS (#221 P1, P2, P4): the flag through /admin-api, the
+  // users list's tag and filter, the third policy kind, Rotate now's
+  // refusals and Monitoring → Service accounts. `local: true`: this
+  // repository's own management API, in a throwaway realm.
+  { file: 'sts_service_accounts.js',     browser: false },
+  // THE SCHEDULER (#49, 2026-09-22): Monitoring → Scheduler and GET
+  // /admin-api/scheduler agree, Run now runs once on the leader, a realm's
+  // token is confined, and in the `cluster` mode both nodes name one leader
+  // and a step-down hands it over. `local: true`: this repository's own
+  // /admin and /admin-api.
+  { file: 'sts_scheduler.js',            browser: false },
+  // MONITORING → WORKER POOLS (#327, 2026-09-28): GET /admin-api/worker-pools
+  // answers the request and surface pools with the seven figures, adding
+  // up, drawn by the front process; no post-quantum pool since #363; the
+  // page and its ?format=json agree; a realm's token is refused.
+  // `local: true`: this repository's own /admin and /admin-api.
+  { file: 'sts_worker_pools.js',         browser: false },
+  // MONITORING → NODE HEALTH (#329, 2026-09-28): GET /admin-api/node-health
+  // answers the container's CPU and memory (read, or unavailable in a
+  // sentence) and every process's memory, the totals the rows' sum, the
+  // workers of /admin-api/worker-pools each listed; the page and its
+  // ?format=json; a full garbage collection on demand, front, all and one
+  // thread (#611); a realm's token is refused both. `local: true`: this
+  // repository's own /admin and /admin-api.
+  { file: 'sts_node_health.js',          browser: false },
+  // RISK DATASETS AND THE FAILURE HISTORY (#62 P1, 2026-09-22): an operator
+  // list imported, looked up, refused on a bad SHA-256, replaced and rolled
+  // back — through the balancer in `cluster`, so both nodes follow — and a
+  // refused SCIM Basic password recorded under a digest, never the name.
+  // `local: true`: this repository's own /admin and /admin-api.
+  { file: 'sts_admin_risk.js',           browser: false },
+  // A RISK DATASET UPLOADED AS A FILE (#215): a synthetic .gz and .zip
+  // through the console's multipart form (a real session and CSRF token)
+  // and through POST /admin-api/risk/upload, each watched from loading to
+  // active, and the refusals — over the cap, a zip of two files, a bomb, a
+  // missing token, the wrong body type. `local: true`: this repository's own
+  // /admin and /admin-api.
+  { file: 'sts_admin_risk_upload.js',    browser: false },
+  // GOOGLE'S ANDROID ATTESTATION STATUS LIST (#256): a synthetic list
+  // uploaded through POST /admin-api/risk/upload with no terms to accept,
+  // active with a row per REVOKED or SUSPENDED entry, named by
+  // /admin-api/device-registration's androidStatus on every process; a
+  // document that is not the list refused; a newer list replacing it.
+  // `local: true`: this repository's own /admin-api.
+  { file: 'sts_android_attestation_status.js', browser: false },
+  // MONITORING → GEOLOCATION (#255, 2026-09-26): the live window counting
+  // this job's own sign-in, every window and level in its shape with every
+  // count at or over risk.geoMinimumCount or held back, the four refusals,
+  // and the page — the map inline with no script, the zoom trail, the
+  // outlines credited, ?format=json the API's answer. Loads no dataset.
+  // `local: true`: this repository's own /admin and /admin-api.
+  { file: 'sts_admin_geolocation.js',    browser: false },
+  // EVERY CLOSED SET AN ADMINISTRATOR CAN TYPE INTO (#86, 2026-09-26): each
+  // enum the OpenAPI document declares — request bodies, query parameters —
+  // refused outside its set with the one sentence, and accepted from it
+  // without the operation running; each console control a set is registered
+  // for refused as a real form; each runtime enum setting refused through
+  // both doors. Discovered from the document, never listed. `local: true`:
+  // this repository's own /admin and /admin-api.
+  { file: 'sts_admin_closed_sets.js',    browser: false },
+  // SIGNING KEY ROTATION OVER HTTP (#42/#48, 2026-09-22): the refusals, a
+  // rotation keeping the retired key verifying, the /admin/keys Rotate form,
+  // and an emergency after which an earlier token is refused — in a
+  // throwaway realm, so the emergency signs nobody else out. `local: true`:
+  // this repository's own /admin and /admin-api.
+  { file: 'sts_key_rotation.js',         browser: false },
+  // DATA ENCRYPTION KEY ROTATION (#391 P2): POST /admin-api/encryption's
+  // two acts followed to their runs' ends, or their 400 where the data keys
+  // are derived per run. It rotates one class of the default realm's keys,
+  // which changes nothing another job can see: a value sealed under either
+  // key opens. `local: true`: this repository's own /admin-api. Its own
+  // watchdog (2026-10-13): two whole-store passes may take ten minutes each
+  // on two nodes, past the 300 s default.
+  { file: 'sts_data_keys.js',            browser: false,
+    timeoutMs: 1500000 },
+  { file: 'sts_signer_groups.js',        browser: false },
+  // THE CONSOLE AND THE PORTAL RENEW THEIR TOKENS INSIDE THE SAME SESSION
+  // (2026-09-12). Both surfaces are this repository's own, and section 5 waits
+  // out a sixty-second sign-on session, which is why the watchdog is raised.
+  { file: 'sts_hosted_surface_renewal.js', browser: false,
+    timeoutMs: 420000 },
+  { file: 'sts_jws_verification.js',     browser: false },
+  { file: 'sts_route_inputs.js',         browser: false },
+  { file: 'sts_global_logout.js',        browser: false },
+  // A WATCHDOG OF ITS OWN (2026-09-27): it calls all 766 method/path pairs
+  // and follows every link, and in the cluster mode it runs beside the bulk
+  // loads' lane on two nodes and one postgres — 25 s on 09-24, before the
+  // lanes, then 101 s, 138 s and over 300 s, killed with nothing wrong.
+  // Single-node stays under 30 s.
+  { file: 'sts_metadata.js',             browser: false,
+    timeoutMs: 900000 },
+  // THE DOCUMENTS THEMSELVES, as opposed to the index that lists them
+  // (2026-09-10). `sts_metadata.js` drives /admin/sts-metadata and signs
+  // into the console to do it; this one holds every metadata document the
+  // protocol families publish — nineteen of them — and holds NOTHING ELSE:
+  // no cookie, no Authorization header, no certificate. Two jobs because
+  // they fail for opposite reasons: one goes red when the index and the
+  // router disagree, the other when a document a client must read before it
+  // can authenticate stops answering somebody who cannot yet authenticate.
+  // It is `local: true` on sts_route_inputs.js's argument — its coverage
+  // check reads this working tree's own PROTOCOLS table.
+  { file: 'sts_metadata_anonymous.js',   browser: false },
+  { file: 'sts_portal_sessions.js',      browser: false },
+  { file: 'sts_portal_backup_codes.js',  browser: false },
+  { file: 'sts_portal_directory_attributes.js', browser: false },
+  // RFC 6238, over HTTP. `local: true` on sts_portal_sessions.js's argument —
+  // it drives this service's own /portal, /admin and /admin-api. It is NOT
+  // covered by tests/totp.js beside it and the split is worth knowing: that
+  // file checks the ARITHMETIC against both RFCs' published vectors and sends
+  // no request, and this one computes a code with an implementation of its own
+  // and asserts that the DOORS are wired up. Neither implies the other.
+  { file: 'sts_portal_totp.js',          browser: false },
+  // THE PERSON'S OWN RFC 7523 SIGNING KEY (2026-09-12). `local: true` on the
+  // job above's argument: it drives this repository's own /portal and
+  // /admin-api. It is the SEAM between four modules that are each asserted
+  // apart in process — the page renders and writes, common/pki.js issues,
+  // common/person_assertions.js seals and resolves, and
+  // oauth-oidc/assertion_grant.js verifies — and the one claim none of them
+  // can make alone: the PEM this page shows once obtains a token as its holder
+  // and obtains nothing as anybody else.
+  { file: 'sts_portal_signing_key.js',   browser: false },
+  // THE SECRET STORE (2026-09-12). `local: true`: it drives this repository's
+  // own /admin-api. It asserts the half `openbao/seed.js` cannot — that the
+  // RUNNING SERVICE took the path the store was built for.
+  //
+  // **IT HAS TWO GATES AND THE FIRST VERSION HAD ONE**, which cost two of the
+  // three modes. The DATABASE PASSWORD comes out of the store in EVERY mode,
+  // because the compose file's connection string carries none at all; the
+  // KEY-ENCRYPTION KEY is only read where the keystore is ON. Gating the whole
+  // file on "is anything coming from vault" therefore ran the key half in
+  // `memory` and `postgres` and failed with `no key was read at all` about a
+  // service behaving exactly as those modes define. It skips whole against a
+  // service with no stack behind it, and runs the database half alone where
+  // the keystore is off — saying which it is doing either way.
+  { file: 'sts_secret_store.js',         browser: false },
+  // RFC 7521 / RFC 7523 (2026-09-10). `local: true` on the THIRD argument
+  // `tests/CLAUDE.md` gives and at its plainest: every assertion spans an
+  // AUTHORING door and a PROTOCOL door. A signing key pair does not exist
+  // until `/admin-api/pki` issues one and an assertion issuer is not trusted
+  // until `oauthAssertionIssuer` is written through
+  // `/admin-api/applications` — so there is no question worth asking
+  // `/oauth2/token` until both have been used, which is the shape
+  // `sts_xacml_endpoints.js` has with a repository that starts empty.
+  //
+  // It is NOT covered by `tests/pki.js` or `tests/assertion_grant.js` beside
+  // it, and the split is the usual one: those two assert what the MODULES
+  // decide — the path check, the ninety-six encryption combinations, the
+  // twelve claims that may never reach a token — and send no request, so
+  // neither can see a grant that is registered and unreachable or a key pair
+  // written to the wrong six attributes.
+  // SECTION 13 SINCE 2026-09-11 IS A PERSON AS THE ISSUER, and it is in this
+  // job rather than one of its own because it is the same grant at the same
+  // endpoint with one field different on the issue — a second job would be a
+  // second place to keep the realm, the CA and the signer in step.
+  { file: 'sts_jwt_bearer_grant.js',     browser: false },
+  // RFC 7521 / RFC 7522 (2026-09-11), the SAML 2.0 profile of the same
+  // framework. `local: true` on the job above's argument word for word — the
+  // key pair comes from `/admin-api/pki` and the trust decision from
+  // `/admin-api/applications`, so there is no question worth asking
+  // `/oauth2/token` until both of this repository's own doors have been used.
+  //
+  // AFTER `sts_jwt_bearer_grant.js` on purpose, and it is the ONE ordering
+  // here that is about an assertion rather than about state: section 6 of this
+  // job presents each profile's key pair at the OTHER profile's grant, which
+  // is the claim the whole feature rests on. Reading the JWT job's result
+  // first is what tells a reader of the report that the RFC 7523 half was
+  // already green when the crossing was refused.
+  //
+  // It is NOT covered by `tests/saml_assertion_grant.js` beside it, on the
+  // usual split: that file asserts what the MODULE decides — the eleven items
+  // of section 3 as a table, the two attribute sets read out of the source —
+  // and sends no request, so it cannot see a grant that is registered and
+  // unreachable, a metadata member that promises what the endpoint refuses, or
+  // a console control that issues for the wrong profile.
+  { file: 'sts_saml2_bearer_grant.js',   browser: false },
+  // WHAT A SAML PROVIDER NOBODY REGISTERED CAN CAUSE (#112, 2026-09-23): the
+  // per-provider paths of both profiles are 404 in a product realm and minted
+  // in a development one, and a Metadata Query lookup an anonymous
+  // AuthnRequest starts — against this job's own responder — registers the
+  // entity in development and asks nothing in product with no trust anchor.
+  // `local: true`: this repository's own identity provider and /admin-api,
+  // in two throwaway realms.
+  { file: 'sts_saml_unregistered.js',    browser: false },
+  // WHO MAY START A SAML SIGN-IN, OVER THE WIRE (#715): #711's contract —
+  // SAML 2.0's unsolicited Response and SAML 1.1's TARGET-only link off
+  // until an application or the realm opts in, the service provider's own
+  // start refused per application, the relying party in the logout
+  // inventory, the mechanism re-prompt's one trip — in a realm of its own
+  // in the process's mode, so `single-node` and `cluster` run it in product
+  // with real passwords and registered addresses. `tests/saml_initiation.js`
+  // holds the same in process, and the risk step-up HTTP cannot set up.
+  // `local: true`: this repository's own identity providers and /admin-api.
+  { file: 'sts_idp_initiated_saml.js',   browser: false },
+  // THE CRL AND OCSP ENDPOINTS, AND THE REVOCATION PANE (2026-09-11).
+  // `local: true` on the FIRST of `tests/CLAUDE.md`'s two questions: most of
+  // what it drives is `/admin-api/pki` and a pane on `/admin/pki`, and the
+  // tree that adds a control to that console is the tree that should go red
+  // when the control loses its operation.
+  //
+  // AFTER the two assertion-grant jobs on purpose, and it is an ordering about
+  // STATE: both of those issue key pairs from this hierarchy, so by the time
+  // this job runs each authority has leaves to revoke. Running first would
+  // leave it asserting against whatever the startup happened to certify, which
+  // is fewer certificates and a narrower test for no reason.
+  //
+  // It is NOT covered by `tests/pki_revocation.js` beside it, on the usual
+  // split — that file holds the REGISTER and the two documents, in process,
+  // with an OpenSSL-built request and an OpenSSL verification of the CRL, and
+  // sends no request. Four things only a socket can show: that the four
+  // endpoints answer with NO CREDENTIAL while the console page stays gated
+  // (a revocation list behind an admin gate is a revocation nobody acts on,
+  // and that is one line of middleware away from being true); that the media
+  // types are what a revocation client dispatches on; that the DER survives
+  // the transport rather than arriving stringified, which every in-process
+  // assertion about its structure would still pass; and that the console's
+  // two controls reach the register at all.
+  { file: 'sts_pki_revocation.js',       browser: false },
+  // EVERY REVOCATION ADDRESS EVERY CERTIFICATE NAMES, FOLLOWED AS WRITTEN, IN
+  // EVERY TRUST REALM (2026-09-13). `local: true` on `tests/CLAUDE.md`'s third
+  // kind: whether an address inside a certificate answers from where the
+  // runner stands is decided by how the LAUNCHER published this stack's ports
+  // and told the service which ones it got — `PKI_DISTRIBUTION_PORT`,
+  // `PKI_DISTRIBUTION_LDAP_PORT` or a whole `PKI_DISTRIBUTION_BASE_URL` — and
+  // no copy over there could hold that. The job beside it built its paths by
+  // hand and was green while every certificate named a port nothing answered
+  // on; this one rewrites nothing, and holds each CRL, OCSP answer and
+  // caIssuers certificate to RFC 5280, RFC 4516/4523, RFC 5019 and RFC 6960.
+  // A WATCHDOG OF ITS OWN (2026-09-27): it walks EVERY realm the jobs before
+  // it left standing, so its time grows with the suite — 125 s with 44
+  // realms, 250 s with 64 and over 300 s with 68 in the cluster mode, where
+  // it was killed in section F with nothing wrong.
+  { file: 'sts_pki_distribution_points.js', browser: false,
+    reuseConnections: true, timeoutMs: 900000 },
+  // THE POSTGRESQL METRICS PAGE (2026-09-11). `local: true` on the first of
+  // `tests/CLAUDE.md`'s two questions — it drives `/admin/database` and
+  // `/admin-api/database`, and the tree that adds a page to that console is
+  // the tree that should go red when the page stops answering.
+  //
+  // **IT IS THE ONLY JOB IN EITHER SUITE THAT ASSERTS ANYTHING ABOUT THE
+  // DATABASE'S OWN CATALOG**, and the only one whose subject is a surface
+  // whose SHAPE this repository does not decide: the page draws the columns
+  // PostgreSQL hands back, so what a test can hold is that they arrive and
+  // never which ones. `tests/database_metrics.js` beside it holds everything
+  // that needs no server — every statement a read, the probe table against
+  // the page's sections — and can assert none of this.
+  //
+  // **IT SKIPS RATHER THAN FAILS WHEN `persistence.mode` IS NOT `postgres`,
+  // AND THAT IS A NARROW EXCEPTION THIS SUITE OTHERWISE REFUSES.** The
+  // standing rule is that a job which cannot run FAILS naming what it needed,
+  // because a skip is how a suite comes to report green having driven
+  // nothing. What earns the exception is that this one cannot arrange its own
+  // precondition at all: `persistence.mode` is RESTART-ONLY — the store is
+  // opened before the listener binds — so unlike a job that needs a realm or
+  // a setting, there is no door it could knock on. It says so in the log and
+  // still asserts the no-database sentence on the way past, which is the half
+  // that IS true of a memory-mode service.
+  { file: 'sts_database_metrics.js',     browser: false },
+  // THE TWO SECOND-FACTOR MECHANISM PAGES AND THE ROSTER THAT ABSORBED
+  // /admin/mfa (2026-09-10). `local: true` on sts_portal_totp.js's argument
+  // one step further along: every assertion in it is about this service's own
+  // console or its /admin-api, and the tree that MOVES a control is the tree
+  // that should go red when the control lands nowhere.
+  //
+  // It is NOT covered by tests/webauthn_policy.js beside it and the split is
+  // the usual one: that file asserts what the settings module DECIDES — none
+  // of which is reachable over HTTP — and this one asserts that any of it
+  // reaches a page, an operation and a button. A settings group whose page was
+  // renamed and now has none is invisible in process and obvious in a request.
+  //
+  // AFTER sts_portal_totp.js on purpose: that job enrols an authenticator and
+  // clears it, and this one asserts a clear REFUSES for somebody holding
+  // nothing. Running before it would be asserting against a person this job
+  // created, which is what it does; running after leaves that unchanged and
+  // keeps the two clears in the order a reader of the report expects.
+  { file: 'sts_second_factor_pages.js',  browser: false },
+  // A REAL WEBAUTHN CEREMONY AGAINST THE SIGN-IN SCREEN (2026-09-10), and the
+  // job that proves the two credential stores became one. `local: true` for
+  // sts_consent.js's third reason: the ceremony is a protocol surface and
+  // would sit happily in the parent suite, and what makes the claim worth
+  // anything is reading the credential back out of `GET /admin-api/users` —
+  // this repository's own API, and the register the sign-in screen consults.
+  //
+  // It carries an AUTHENTICATOR of its own — a real P-256 key, real CBOR, a
+  // real signature — rather than importing `authn/webauthn.js`, on
+  // sts_dpop.js's rule: two ends of one exchange from one implementation would
+  // make a shared misunderstanding pass.
+  //
+  // AFTER the pages job because that one asserts a clear REFUSES for somebody
+  // holding nothing, and this one enrols a key and clears it. Reversed, the
+  // pages job would be asserting against this job's person.
+  { file: 'sts_webauthn_second_factor.js', browser: false },
+  // BACKUP KEYS (2026-09-10): two enrolled from /portal/keys, the first taken
+  // away, the second still signing them in. `local: true` on the job above's
+  // argument — the ceremony is driven at this repository's own portal and the
+  // credential is read back out of its own API — and it carries its own
+  // AUTHENTICATOR for `sts_dpop.js`'s reason, three of them in fact: the
+  // original, the backup, and one that is never enrolled.
+  //
+  // AFTER `sts_webauthn_second_factor.js`, which asserts the SIGN-IN door's
+  // enrol-on-first-use path. This one needs `/portal/keys` to be the door and
+  // would otherwise be asserting against a store the other job is still
+  // filling.
+  { file: 'sts_portal_backup_keys.js',   browser: false },
+  // PASSKEYS AS DISCOVERABLE CREDENTIALS (#474): a passkey registered
+  // through an activation link under a minted user handle, then signed in
+  // with and no username — all in a throwaway realm of its own, whose own
+  // passkey policy (#527) allows it, so the change reaches no screen
+  // another lane loads.
+  // `local: true`: this repository's own sign-in screen and API.
+  { file: 'sts_passkey_usernameless.js', browser: false },
+  // A CLASSICAL PASSKEY AND A POST-QUANTUM ONE SIDE BY SIDE (#643): both
+  // enrolled at `/account-api/keys` in a throwaway realm with
+  // `webauthn.pqcAlongsideClassical` on, each lane's handle, algorithms and
+  // name, the Signal API's data per lane, and a usernameless sign-in with
+  // either. A realm of its own, because the switch changes every passkey
+  // enrolment in its realm.
+  // `local: true`: this repository's own portal, sign-in screen and API.
+  { file: 'sts_passkey_dual_lane.js', browser: false },
+  // A POST-QUANTUM PASSKEY REQUIRED (#718): the passkey policy's
+  // postQuantumRequired set through `/admin-api`, then an ES256 key and an
+  // ML-DSA-65 key (no lane on its row) each signing in, the save refused
+  // where no ML-DSA is offered, the portal's and the console's warnings and
+  // enrolment narrowed to ML-DSA. A realm of its own, because the row holds
+  // every passkey in its realm. `local: true`: this repository's own API,
+  // portal and sign-in screen.
+  { file: 'sts_passkey_post_quantum_required.js', browser: false },
+  // AN APPLICATION'S PASSKEY POLICY (#609): the named passkey policies
+  // naming an application, read back through `GET /admin-api/applications`'s
+  // `page.passkeyPolicies` in precedence order with the one that applies
+  // marked, and the policy page's application search over the Applications
+  // list, its Add saved by identifier. `local: true`: this repository's own
+  // API. In a throwaway realm, because named policies change what a sign-in
+  // gets. #940 adds profile registration algorithms and modes, verifies
+  // their ordered save/read, and refuses classical-only beside
+  // postQuantumRequired.
+  { file: 'sts_passkey_policy_application.js', browser: false },
+  // A SECURITY KEY'S ATTESTATION, VERIFIED (#105): keys enrolled at
+  // /portal/keys in a throwaway realm with statements this job makes — an
+  // x5c packed statement under a root minted at run time and configured as
+  // the realm's anchor, a self attestation, a forged one, none — under
+  // require-trusted, an AAGUID allow-list and verify-if-present, and what
+  // each proved read back from /portal/keys, /admin-api/users and the
+  // console. `local: true` on the first question: the portal, the API and
+  // the console are this repository's. After the backup-keys job, for the
+  // same reason that one follows the sign-in job.
+  { file: 'sts_webauthn_attestation.js', browser: false },
+  // THE FIVE PASSWORD-ONLY DOORS AND APP PASSWORDS (#101, 2026-09-22): a
+  // second-factor person's own password refused at an LDAPS bind, a WS-Trust
+  // UsernameToken, SCIM, SSF and EST Basic in product — with a wrong
+  // password's answer, byte for byte — and accepted in development; an app
+  // password made on /portal/app-passwords and on /admin-api accepted only at
+  // its doors, never at the sign-in screen, revoked with a CAEP
+  // credential-change. `local: true` for the ownership reason: the portal
+  // page, the API operations and the five doors are this repository's. In a
+  // throwaway realm, so the settings it moves (authn.passwordAloneDoors) move
+  // nobody else's; it reaches 636 as `sts_ldaps.js` does.
+  { file: 'sts_second_factor_doors.js',  browser: false },
+  { file: 'sts_pki_workbench.js',        browser: false },
+  // AN APPLICATION'S CREDENTIALS (2026-09-13): its key pair replaced by an
+  // issue from this realm's CA or by an uploaded certificate — an external
+  // authority's with its full chain — and its client secret regenerated.
+  // `local: true` on the first of `tests/CLAUDE.md`'s questions: the controls
+  // are this console's and their operations this API's, and the assertion
+  // spans those doors and `/oauth2/token` — the replaced key refused, the
+  // application's own accepted, the old secret refused in RFC 9700 mode.
+  { file: 'sts_application_credentials.js', browser: false },
+  // AN APPLICATION AS AN LDIF FILE (#546): exported from one throwaway
+  // realm without and with its credentials, imported into another, its
+  // client secret getting a token there, and the same file again and one
+  // carrying a derived attribute refused. `local: true` on the first of
+  // `tests/CLAUDE.md`'s questions: the operations are this API's.
+  { file: 'sts_application_ldif.js',     browser: false },
+  // A PERSON'S RFC 7523 AND RFC 7522 KEY PAIRS (2026-09-13), the same
+  // arrangement for the Credentials section of `/admin/users?user=`: issued
+  // and uploaded through `/admin-api/pki` with `target=person`, and used at
+  // `/oauth2/token` — a person's SAML assertion about themselves accepted and
+  // about somebody else refused, the replaced key refused, the held key
+  // accepted, one profile taken off leaving the other.
+  { file: 'sts_user_credentials.js',     browser: false },
+  // OAUTH 2.1 MODE (2026-09-13), on the third reason: the mode is a realm
+  // setting written through `/admin-api/realms/create` and every assertion is
+  // at `/oauth2/*` — a public client with PKCE and no token-request
+  // redirect_uri getting a token where an RFC 9700 realm beside it refuses the
+  // same request, and the refusals 2.1 adds.
+  { file: 'sts_oauth21.js',              browser: false },
+  // THE OAUTH 2.0 / OIDC MONITORING PAGE (2026-09-13), with RFC 9126 pushed
+  // authorization requests as its first section. `local: true` on the first
+  // question and the third reason: the page and its operations are this
+  // console's and this API's, and the assertion that matters spans them and
+  // `/oauth2/par` and `/oauth2/authorize` — a request pushed there is listed
+  // and counted here, and one withdrawn here, through the API or a real
+  // console form, is refused invalid_request_uri there.
+  { file: 'sts_oauth2_monitor.js',       browser: false },
+  // RFC 9470 STEP-UP AUTHENTICATION (2026-09-13), on the third reason: a
+  // resource application's requirement and `oauth2.stepUpAcrValues` are
+  // written through `/admin-api` and counted on the monitor, and every
+  // assertion is at `/oauth2/*` — a one-factor session sent to sign in again
+  // for acr_values=mfa, stepped up with a TOTP code enrolled at
+  // `/portal/mfa`, and the challenge a resource server and UserInfo send.
+  // After the monitor job, in a throwaway realm it leaves standing. The
+  // resource server is the TEST PEER's since #586 (the service's stand-in is
+  // development only, #585), so `testPeer: true`: SKIPPED, with the reason,
+  // in a run with no peer.
+  { file: 'sts_step_up.js',              browser: false,
+    testPeer: true },
+  // FAPI 2.0 HTTP Signatures at the resource servers (#178): a signed
+  // request verified at /scim/v2 in a throwaway realm, its signed answer
+  // verified by the job's own RFC 9421 code with the realm's published key,
+  // the refusals, oauth2.httpSignatures and the client's
+  // oauthHttpSignedRequests, both written through /admin-api.
+  { file: 'sts_fapi_http_signatures.js', browser: false },
+  { file: 'sts_roles.js',              browser: false },
+  { file: 'sts_roles_builtin.js',        browser: false },
+  // OWNED HERE SINCE 2026-10-05, TEMPORARILY (rcbj): rcbj/iya-sts#160 made the
+  // SAML 1.1 responder answer only its own SourceID and send the empty
+  // response for any artifact it does not hand over, and the parent's copy
+  // still resolved a relying party's artifact at the unscoped responder and
+  // expected Requester for a replay. Fixed here first; it goes back to the
+  // parent with rcbj/id-proto-debugger#353, and this flag comes off then.
+  { file: 'sts_saml11.js',               browser: false },
+  // IDENTITY-PROVIDER-INITIATED SIGN-IN OVER THE WIRE (#715): `/launch/{app}`
+  // for SAML 2.0, SAML 1.1, WS-Federation and OpenID Connect, the switches
+  // set through /admin-api, the launch record /oauth2/authorize honours
+  // (across nodes in `cluster`), the launch window waited out, and the links
+  // /admin-api and /account-api carry. `tests/launch.js` is the in-process,
+  // development-only half; this is the product-mode coverage. `local: true`:
+  // the door and every API it is read through are ours. Its realm is left
+  // standing; the one setting it changes it resets.
+  { file: 'sts_idp_initiated_launch.js', browser: false },
+  // Identity-provider-initiated WS-Federation sign-in over the wire (#715):
+  // `/wsfed/initiate/{rp}` off by default, registered relying parties only,
+  // no wreply, the registered reply address with wctx intact, the sign-out
+  // inventory, the realm setting through /admin-api and the entry
+  // overrides, in a throwaway realm in the run's mode — product in
+  // single-node and cluster. `tests/wsfed_initiation.js` is the in-process
+  // half, and holds the risk step-up HTTP cannot set up.
+  { file: 'sts_idp_initiated_wsfed.js',  browser: false },
+  // OWNED HERE SINCE 2026-09-21, when it was a byte-identical copy of the
+  // parent's: its no-certificate case had to stop registering a signing
+  // certificate in development (the service encrypts to one, so the in-clear
+  // check could not pass), and rcbj's rule that day moved the writing of
+  // protocol jobs here. The parent's copy is no longer the source of truth.
+  // The body is still in the parent's style, not this repository's.
+  { file: 'sts_saml_encryption.js',      browser: false },
+  // Signs a UserInfo response and an ID Token with every advertised
+  // algorithm, and one SLH-DSA-SHAKE-128s signature takes 190-310s under the
+  // coverage run's instrumentation (2026-09-15). The job took 434s on a run
+  // that passed and would be past the coverage watchdog's 900s on a runner
+  // twice as slow, which is why it is raised — its own busy window, ten
+  // minutes per request, is what reports a mock that has really stopped.
+  { file: 'sts_userinfo_protected.js',   browser: false,
+    timeoutMs: 1500000 },
+  { file: 'sts_xacml_editor.js',         browser: true },
+  { file: 'sts_xacml_endpoints.js',      browser: false },
+  { file: 'sts_xacml_remote_pep.js',     browser: false,
+    docker: true },
+  // THE SOCKETS AND DOORS A DEPLOYED CLUSTER IS MOST LIKELY TO BREAK
+  // (2026-09-18): every one of these families was covered in process and by
+  // nothing driven over the network, so a stack behind a load balancer said
+  // nothing about them. Each drives its protocol against the address the
+  // service is reached at, in both modes.
+  { file: 'sts_ldaps.js',                browser: false },
+  // WHO MAY READ WHAT OVER LDAPS, PER IDENTITY (#106, 2026-09-23): a product
+  // realm and a development realm, each with people, groups, an application
+  // and an administrator of its own, asked over 636 as a directory client
+  // asks — so both modes are asserted whichever mode the stack runs in.
+  { file: 'sts_ldap_read_authorization.js', browser: false },
+  { file: 'sts_kerberos_spnego.js',      browser: false },
+  // A PASSWORD ALONE IS NO TICKET FOR A TWO-FACTOR ACCOUNT (#173,
+  // 2026-09-22): over TCP 88, the product refusal after the password
+  // verified, RFC 6113 FAST armored by a host's TGT, RFC 6560 OTP with the
+  // password as the PIN and the portal's own once-only step, and the RFC 8129
+  // indicator in the tickets — with real MIT kinit where it is installed.
+  // `local: true`: this repository's KDC, portal and API.
+  { file: 'sts_kerberos_fast_otp.js',    browser: false },
+  // A CERTIFICATE AS THE KERBEROS PRE-AUTHENTICATION (#179, 2026-10-05):
+  // over TCP 88 in both modes, a smart-card logon certificate enrolled over
+  // EST with a key made at run time, then real MIT `kinit -X` (hw-authent),
+  // the password alone refused in product once a second factor is required,
+  // another person's certificate a client name mismatch, and `kinit -n` as
+  // FAST armor for `kinit -T` — the MIT half skipped where kinit or its
+  // PKINIT plugin is absent. `local: true`: this repository's KDC and EST.
+  { file: 'sts_kerberos_pkinit.js',      browser: false },
+  // A PERSON'S KEYTAB (#59, 2026-09-22): from the administrator's reset, a
+  // generated password and /portal/kerberos, each read with `klist -k` and
+  // SIGNED IN WITH by MIT `kinit -k -t` and by `krb5_wire.js` using the
+  // keytab's key — against the KDC at the published address, in both modes.
+  { file: 'sts_kerberos_keytab.js',      browser: false },
+  // #186 (2026-10-03): Kerberos S4U2Self, S4U2Proxy, forwarded TGTs and
+  // PA-S4U-X509-USER over TCP 88, decided by the one delegation policy — the
+  // job builds its own services (create-service) and people, so it runs in
+  // either mode. It replaces, here, the parent's in-process delegation jobs,
+  // which lose their fixture rules without a directory (kerberos/CLAUDE.md).
+  { file: 'sts_kerberos_delegation.js',  browser: false },
+  // A KERBEROS SIGN-OUT OUTLIVES THE NEXT AS EXCHANGE (#111, 2026-09-23):
+  // over TCP 88, a TGT from before a global sign-out refused
+  // KDC_ERR_TGT_REVOKED, a new AS exchange straight after it accepted, the
+  // old TGT and a renewal of it still refused, and restore-kerberos refused
+  // in product — in both modes.
+  { file: 'sts_kerberos_signout.js',     browser: false },
+  // RC4-HMAC AND DIGEST MD5 ARE DEVELOPMENT'S (#182, 2026-09-23): over TCP
+  // 88, an AS-REQ or TGS-REQ offering only rc4-hmac, an RC4 TGS subkey, an
+  // RC4 initiator subkey at the acceptor and RC4 FAST armor refused in
+  // product and working in development; no RC4 key in a product keytab; MIT
+  // kinit restricted to rc4-hmac; krb5.enctypes naming 23 and
+  // scim.digestMd5 refused in a product realm; SCIM Digest MD5 off by
+  // default, and accepted in development only when turned on.
+  { file: 'sts_kerberos_rc4.js',         browser: false },
+  // #169 (2026-09-23): the krbtgt key, in a throwaway realm's KDC over
+  // MS-KKDCP — rotate-krbtgt queued on the scheduler, a TGT outliving it
+  // through the kept kvno, rotate-krbtgt-invalidate refusing every earlier
+  // TGT 44, the scheduler's two jobs, and the console and the API agreeing
+  // on the kvno — in both modes. `local: true`: this repository's KDC,
+  // scheduler and API.
+  { file: 'sts_kerberos_krbtgt_rotation.js', browser: false },
+  // KERBEROS PAC CLIENT CLAIMS (#493): a throwaway realm with
+  // krb5.pacClaims on, its claim set and one service's own row through
+  // /admin-api, and a service ticket for each of two services opened with the
+  // service's keytab — PAC_CLIENT_CLAIMS_INFO decoded by the claim ids the
+  // API names, the service's own row in place of the realm's, none with the
+  // setting off. `local: true`: this repository's KDC and API.
+  { file: 'sts_kerberos_pac_claims.js',  browser: false },
+  // SAMBA'S RAW KERBEROS KDC TESTS (#204, 2026-09-26): python/samba/tests/
+  // krb5 from a pinned Samba built into the tests image (GPL-3.0, never
+  // vendored), every module run unchanged by tests/kerberos-interop/
+  // samba_krb5_driver.py against a throwaway development realm's KDC on TCP
+  // 88 — the AD-only tests skipped by reason, every failure fixed or a
+  // documented exception. `local: true`: this repository's KDC.
+  { file: 'sts_kerberos_samba.js',       browser: false,
+    timeoutMs: 900000 },
+  // KERBEROS TRUSTS OVER /admin-api (#430 Phase 4): two throwaway trust
+  // realms and the seven acts of /admin-api/kerberos/trusts between them —
+  // add, pair, rotate-key with mirror (kvno and grace), disable, enable and
+  // remove — each read back, every read searched for key material, and an
+  // application's Across trusts panel in its applications answer.
+  // `local: true`: this repository's trust records and API.
+  { file: 'sts_kerberos_trusts_api.js',  browser: false },
+  // HEIMDAL'S CLIENT TOOLS BESIDE MIT'S (#205, 2026-09-26): kinit, klist,
+  // kgetcred, kvno, ktutil, gss-token and a Heimdal-GSSAPI curl, built into
+  // the tests image from a pinned commit — AS and TGS per realm (FAST-armored
+  // by Heimdal, hide-client-names), keytabs, FAST, RC4 by mode and SPNEGO at
+  // /authn/spnego, in both modes. `local: true`: this repository's KDC.
+  { file: 'sts_kerberos_heimdal.js',     browser: false },
+  // Both gRPC surfaces over the network. Since #166 (2026-09-23) also the
+  // Workload API's TCP port in product: refused where the network is not
+  // declared to authenticate source addresses, and entries selecting this
+  // job's own peer: address where it is.
+  { file: 'sts_spiffe_grpc.js',          browser: false },
+  // THE SPIFFE BROKER API (#170, 2026-09-23): a development realm and a
+  // product realm's Broker endpoint over mutual TLS — refused without a
+  // broker SVID, the reference refusals with their google.rpc.ErrorInfo, and
+  // a process and a pod reference answered; the broker list through
+  // /admin-api. `local: true`: this repository's endpoint and API.
+  { file: 'sts_spiffe_broker.js',        browser: false },
+  { file: 'sts_oid4vp_wallet.js',        browser: false },
+  // SIOPv2 AS THE RELYING PARTY (#129, 2026-09-23): the Entity
+  // Configuration, a key enrolled by an administrator and by proof, the
+  // self-issued sign-in and its refusals, and the Verifier's form_post.
+  // `local: true`: this repository's own door.
+  { file: 'sts_siop.js',                 browser: false },
+  // THE x509_san_dns AND x509_hash CLIENT IDENTIFIERS (#230, 2026-09-26):
+  // each prefix's Request Object checked as a wallet checks it — the x5c
+  // chain to the service Root, the signature, the dNSName or the hash — a
+  // mismatch refused, the realm's own setting, and the Verifier refusing a
+  // name that is not the Response URI's host. `local: true`: this
+  // repository's Verifier.
+  { file: 'sts_oid4vp_x509.js',          browser: false },
+  // OPENID CONNECT NATIVE SSO AND THE DEVICE REGISTER (#130, 2026-09-23):
+  // the device secret and its ou=devices entry, the section 4 exchange and
+  // its refusals, RFC 8693's token types, a session ending, revocation.
+  // `local: true`: this repository's authorization server and API.
+  { file: 'sts_native_sso.js',           browser: false },
+  // THE DEVICE REGISTER (#164 phase 1, #218, 2026-09-26): a person's and an
+  // application's device registered through /admin-api, the lists and their
+  // filters and paging, keys added and refused, the bound, Monitoring →
+  // Devices, Device registration and /admin/ldap/devices. `local: true`:
+  // this repository's register and API.
+  { file: 'sts_devices.js',              browser: false },
+  // MONITORING → TLS CONNECTION (#597, 2026-10-12): `/tls`,
+  // `/tls/forwarded` and the two open truststore acts unrouted; the console
+  // page and its operation, `GET /admin-api/tls-connection`, describing a
+  // request with no client certificate and its forwarding headers, and one
+  // presenting a certificate whose Root this job added through
+  // `/admin-api/tls/trust/add` (and removes again). `local: true`: this
+  // repository's console and management API.
+  { file: 'sts_tls_connection.js',       browser: false },
+  // MONITORING → PASSKEYS (#942, 2026-10-23): the console page's shell,
+  // `GET /admin-api/passkey-report`'s shape and gate, a group's population
+  // (a person made here, in a group made here, counted and listed as
+  // holding no passkey), the refused filters, the CSV and JSON export, and
+  // Recount now queued on the scheduler. `local: true`: this repository's
+  // console and management API.
+  { file: 'sts_passkey_report.js',       browser: false },
+  // LINKING A WEBAUTHN PLATFORM CREDENTIAL ON /portal/devices, IN A REAL
+  // BROWSER (#258, 2026-10-06): Chrome's virtual authenticators enrol a
+  // roaming key and a platform key on /portal/keys; the roaming one is
+  // passed over and refused when forced; with script blocked the armed
+  // page's real button answers in a sentence and links nothing; the armed
+  // response is `script-src 'self'` with frame-ancestors; the script runs
+  // the ceremony — linked in development, refused in product (an
+  // unattested key, STS-DEVICE-0024) — and in development the device holds
+  // the key and a later WebAuthn sign-in recognises it. `local: true`: the
+  // portal and the API it is read back through are this repository's. AFTER
+  // sts_devices.js, which holds the register this one writes to.
+  { file: 'sts_portal_device_webauthn.js', browser: true },
+  // A TPM KEY ATTESTATION'S FRESHNESS OVER EST (#257, 2026-10-06):
+  // /nonce (draft-ietf-lamps-attestation-freshness section 5.1), a device
+  // enrolment over a fresh TPM2_Certify statement built here, the same
+  // statement replayed (unproven in development, refused in product), and
+  // the nonce request's refusals. `local: true`: this repository's EST
+  // server and device register.
+  { file: 'sts_est_attestation_freshness.js', browser: false },
+  // OPENID CONNECT CIBA (#131, 2026-09-23): the endpoint's refusals, poll
+  // with an approval on /portal/ciba, deny, the user code, and ping and
+  // push in development. `local: true`: this repository's own endpoint.
+  { file: 'sts_ciba.js',                 browser: false },
+  // GRANT MANAGEMENT FOR OAUTH 2.0 AND FAPI-CIBA (#142, 2026-09-24): create,
+  // merge, replace, the grant management API and the console's twin; and
+  // CIBA under a FAPI profile.
+  { file: 'sts_grant_management.js',     browser: false },
+  { file: 'sts_fapi_ciba.js',            browser: false },
+  // OPENID CONNECT CLAIMS AGGREGATION (#147, 2026-09-24): a realm of this
+  // service as the Claims Provider of another — the register, linking on the
+  // portal, aggregated and distributed claims, revocation. `local: true`:
+  // this repository's authorization server, portal and API.
+  { file: 'sts_claims_aggregation.js',   browser: false },
+  // SCIM 2.0 CONFORMANCE (#206, 2026-09-26): python-scim's scim2-tester and
+  // scim2/test-suite, both installed in the tests image, against /scim/v2 of
+  // a throwaway realm; every error and warning fixed or a documented
+  // exception. `local: true`: this repository's SCIM surface.
+  { file: 'sts_scim_conformance.js',     browser: false,
+    timeoutMs: 900000 },
+  // THE OUTBOUND SCIM CLIENT (#552, 2026-10-13): a scim-client in one
+  // throwaway realm provisioning into ANOTHER realm's own /scim/v2 on this
+  // service — OAuth 2.0 client_credentials at the target's token endpoint,
+  // the service's certificate trusted through the client's own CA
+  // certificates (the job's anchor) — a person and a group pushed, a change
+  // and a disable propagated, the queue drained with no dead letter.
+  // `local: true`: this repository's SCIM client and service provider.
+  { file: 'sts_scim_client.js',          browser: false },
+  // TLSFUZZER (#212, 2026-09-26): every applicable tlsfuzzer script, pinned
+  // and fetched into the tests image by tests/tlsfuzzer/build-tlsfuzzer.sh,
+  // against the main HTTPS port and LDAPS 636 through
+  // tests/tlsfuzzer/sts_adapter.py; every failure fixed or a documented
+  // exception in tlsfuzzer_kit.js. `local: true`: this repository's TLS
+  // listeners and their policy (tls/tls_server.js).
+  // EXCLUSIVE SINCE #429: it turns TLS 1.2 on service-wide for its run
+  // (every listener is TLS 1.3 only by default), which no other job may
+  // see half-way through.
+  { file: 'sts_tlsfuzzer.js',            browser: false,
+    timeoutMs: 2700000, exclusive: true },
+  // THE W3C VERIFIABLE CREDENTIALS AND DID TEST SUITES (#194-#199,
+  // 2026-09-26): each Working Group suite, pinned and installed in the tests
+  // image by tests/vc-suites/fetch-suites.sh, run against the W3C VC API
+  // (oid4vc/vc_api.ts) of a throwaway development realm that turns it on
+  // (vcApi.enabled, off by default since #598) — or, for
+  // the DID suite, over fixtures generated from this service's DIDs and
+  // resolver. Every failure fixed or a documented exception. `local: true`:
+  // this repository's oid4vc/ and its test adapter.
+  { file: 'sts_vc_data_model_suite.js',  browser: false,
+    timeoutMs: 900000 },
+  { file: 'sts_vc_di_eddsa_suite.js',    browser: false,
+    timeoutMs: 900000 },
+  { file: 'sts_vc_di_ecdsa_suite.js',    browser: false,
+    timeoutMs: 900000 },
+  { file: 'sts_vc_bitstring_status_suite.js', browser: false,
+    timeoutMs: 900000 },
+  { file: 'sts_vc_jose_cose_suite.js',   browser: false,
+    timeoutMs: 900000 },
+  { file: 'sts_did_test_suite.js',       browser: false,
+    timeoutMs: 900000 },
+  // THE W3C VC API AS A PRODUCT SURFACE (#598, 2026-10-12): off by default
+  // (501), the token in a PRODUCT realm, its own keys (a VC-JOSE-COSE
+  // credential verifies against no key of the realm's JWKS), the options it
+  // refuses, and the status-list publish on /admin-api. `local: true`: this
+  // repository's oid4vc/vc_api.ts.
+  { file: 'sts_vc_api_product.js',       browser: false },
+  // OPENID CONNECT ENTERPRISE EXTENSIONS (#148, 2026-09-26): session_expiry,
+  // tenant and aud_sub in the ID Token, tenant refused for another realm,
+  // domain_hint's home-realm discovery. `local: true`: this repository's
+  // authorization server and API.
+  { file: 'sts_enterprise_extensions.js', browser: false },
+  // A PINNED KEY PAIR SIGNS THE REALM'S ID TOKENS (#263, 2026-09-27): in a
+  // throwaway realm with pki.pinnedSigners on, an RSA key generated at test
+  // time pinned into jose RS256 through /admin-api signs the ID token, which
+  // verifies against its JWKS entry; unpin restores the generated key.
+  // `local: true`: this repository's PKI, authorization server and API.
+  { file: 'sts_pinned_signer.js', browser: false },
+  // THE EPHEMERAL SUBJECT IDENTIFIER (#149, 2026-09-26): one random `sub`
+  // per authentication across the ID Token, UserInfo and a refresh, another
+  // for the next, and an id_token_hint mapped back. `local: true`: this
+  // repository's authorization server.
+  { file: 'sts_ephemeral_subjects.js',   browser: false },
+  // RFC 8628 AND OPENID CONNECT KEY BINDING (#150, 2026-09-26): the device
+  // flow end to end through /portal/device, c_s256, a bound ID Token, its
+  // refresh and section 7, and an ML-DSA-44 DPoP key. `local: true`.
+  { file: 'sts_device_key_binding.js',   browser: false },
+  // OPENID PROVIDER COMMANDS (#151, 2026-09-26): registration, metadata,
+  // account commands, the callback, automatic suspend and reactivate, a
+  // resumed tenant stream and a retried delivery, against the TEST PEER's
+  // relying party since #596 (the service's mock was deleted, #591 P5), so
+  // `testPeer: true`: SKIPPED, with the reason, in a run with no peer.
+  // `local: true`.
+  { file: 'sts_provider_commands.js',    browser: false,
+    testPeer: true },
+  // A FEDERATION PARTNER'S SHARED SIGNALS (#153, 2026-09-26; #373 and #374,
+  // 2026-10-01): one realm's transmitter as the partner, another realm
+  // receiving through federation relationships by poll and push, blocking
+  // the partner's sign-ins of a linked person, and a signals-only (`ssf`)
+  // relationship recording without acting. `local: true`.
+  { file: 'sts_ssf_foreign_receiver.js', browser: false },
+  // THE OPENID FOUNDATION'S CONFORMANCE SUITE (#176, 2026-09-24): FAPI 2.0
+  // Security Profile and Message Signing, FAPI 1.0 Advanced and FAPI-CIBA,
+  // each plan a throwaway realm, every module run, and a FAILED module a
+  // failure. `conformance: true` — like `docker: true`, a DELIBERATE
+  // exclusion the runner reports as SKIPPED with its reason: the suite is
+  // three containers and a JVM, which ./run-tests.sh brings up only in the
+  // modes named by STS_TEST_CONFORMANCE_MODES (`memory` by default) and
+  // hands the job as CONFORMANCE_SUITE_URL. An hour's watchdog: the plans
+  // took about sixteen minutes together on 2026-09-24. `local: true`: this
+  // repository's authorization server.
+  { file: 'sts_fapi_conformance.js',     browser: true,
+    conformance: true, timeoutMs: 3600000, lane: 'conformance-fapi' },
+  // THE SAME SUITE, EVERY OTHER PLAN THAT APPLIES (#187, 2026-09-24): the
+  // OpenID Provider certification profiles, oidcc-test-plan's client
+  // authentication and response-mode variants, and the four logout plans.
+  // `conformance: true` for the FAPI job's reason; the plans share
+  // `conformance_suite.js` (LOCAL_HELPERS) and fail on an unexplained
+  // WARNING as well as a FAILED module. `local: true`: this repository's
+  // OpenID Provider. Every plan also runs as its classical twin since
+  // 2026-10-23 (`conformance_suite.js`, THE CLASSICAL TWINS), which doubled
+  // the plans, so the watchdog went from three hours to four and a half.
+  { file: 'sts_oidcc_conformance.js',    browser: true,
+    conformance: true, timeoutMs: 16200000, lane: 'conformance' },
+  // Shared Signals (#187): the transmitter and CAEP interop plans, push and
+  // poll, the CAEP events emitted by the job as the module asks for them.
+  { file: 'sts_ssf_oidf_conformance.js', browser: false,
+    conformance: true, timeoutMs: 3600000,
+    lane: 'conformance-b' },
+  // OpenID Federation 1.1 (#187): the deployed-entity plan for a Leaf realm
+  // and for the Trust Anchor, and the plan in which the suite plays a whole
+  // federation and a realm is the OpenID Provider that joined it. This job
+  // and the two below run each plan twice since 2026-10-23 (the classical
+  // twins), so their watchdogs went from one hour to two.
+  { file: 'sts_oidfed_conformance.js',   browser: true,
+    conformance: true, timeoutMs: 7200000,
+    lane: 'conformance-b' },
+  // OpenID4VCI 1.0 (#187): the issuer plan wallet-initiated, offered and
+  // pre-authorized, and the HAIP issuer plan; the job plays the issuer's
+  // operator, delivering the offer and the transaction code.
+  { file: 'sts_oid4vci_conformance.js',  browser: true,
+    conformance: true, timeoutMs: 7200000,
+    lane: 'conformance-b' },
+  // OpenID4VP 1.0 (#187): the verifier plan, by direct_post and
+  // direct_post.jwt; the job plays the End-User the Verifier sends to the
+  // wallet, and makes the suite's issuer key at run time.
+  { file: 'sts_oid4vp_conformance.js',   browser: false,
+    conformance: true, timeoutMs: 7200000,
+    lane: 'conformance-b' },
+  // THE SAML INTEROPERABILITY PEERS (#189-#192, 2026-09-24): four independent
+  // SAML service providers, each a second container under the `saml-peers`
+  // compose profile (tests/saml-peers/), each driven by a job of its own
+  // against a development and a product realm, with the peer's own log as the
+  // error-and-warning source. `samlPeer` — like `conformance`, a DELIBERATE
+  // exclusion the runner reports as SKIPPED with its reason where the
+  // launcher brought no peer up (STS_TEST_SAML_PEERS_MODES, `memory` and
+  // `single-node` by default). Keycloak's watchdog covers its JVM starting
+  // when its job hands it the anchor. `local: true`: this repository's
+  // identity providers, and these jobs are written here.
+  { file: 'sts_saml_interop_shibboleth.js', browser: false,
+    samlPeer: 'shibboleth', timeoutMs: 900000 },
+  { file: 'sts_saml_interop_pysaml2.js', browser: false,
+    samlPeer: 'pysaml2', timeoutMs: 900000 },
+  { file: 'sts_saml_interop_simplesamlphp.js', browser: false,
+    samlPeer: 'simplesamlphp', timeoutMs: 900000 },
+  { file: 'sts_saml_interop_keycloak.js', browser: false,
+    samlPeer: 'keycloak', timeoutMs: 1200000 },
+  // OPENID FEDERATION 1.1 (#132, 2026-09-23): the default realm a Trust
+  // Anchor and a throwaway realm its subordinate — Entity Configurations,
+  // fetch, list, resolve, Trust Marks, a registered subordinate and the
+  // keys. `local: true`: this repository's own endpoints.
+  { file: 'sts_oidfed.js',               browser: false },
+  // THE THREE OPENID FEDERATION EXTENSIONS (#135, #136, #137, 2026-09-24):
+  // the Extended Subordinate Listing, suspension and each subordinate's
+  // history, and the Entity Collection with a crawl through /admin-api.
+  { file: 'sts_oidfed_extensions.js',    browser: false },
+  // A STATUS REFERENCE ON EVERY PRESENTED CREDENTIAL (#165, 2026-09-23): a
+  // foreign credential naming none refused unless its issuer is exempted by
+  // certificate thumbprint or the rule is own-only, the ldp_vc query asking
+  // for credentialStatus, and `off` refused and ignored in product.
+  { file: 'sts_oid4vp_status_reference.js', browser: false },
+  { file: 'sts_federation_realms.js',    browser: false },
+  // WHICH PEOPLE A PARTNER MAY ASSERT (#109, 2026-09-22): the subject
+  // policies, the linking sign-in, the administrator refusal, the links set
+  // and removed through /admin-api and SCIM — over HTTP, in either mode.
+  { file: 'sts_federation_subject_policy.js', browser: false },
+  { file: 'sts_federation_consumer.js', browser: false },
+  // A PARTNER'S SIGN-OUT (#167, 2026-09-23): SAML 2.0 Single Logout between
+  // two realms in both directions, a partner written here for every
+  // LogoutRequest refusal and SessionNotOnOrAfter, OpenID Connect
+  // Back-Channel, Front-Channel and RP-Initiated Logout, a WS-Federation
+  // cleanup confirmed in the browser — over HTTP, in either mode.
+  { file: 'sts_federation_signout.js',   browser: false },
+  // A PARTNER'S ENCRYPTED ASSERTION OR ID TOKEN (#168, 2026-09-23): the
+  // published keys, SAML 2.0 EncryptedAssertion/EncryptedID/
+  // EncryptedAttribute from the IdP realm and from an encryptor written here
+  // (RSA-OAEP and ECDH-ES), WS-Federation, a JWE ID Token, every refused
+  // algorithm, plaintext in product, rotation and its grace period.
+  { file: 'sts_federation_encryption.js', browser: false },
+  // EVERY SAML 2.0, SAML 1.1, WS-TRUST AND WS-FEDERATION DOCUMENT THIS
+  // SERVICE EMITS, AGAINST THE PUBLISHED OASIS AND W3C XML SCHEMAS (#188,
+  // 2026-09-24): metadata, Responses on every binding, the ArtifactResponse,
+  // logout in both directions, the SAML 1.1 responder, each WS-Trust
+  // version's answers and faults, the WS-Federation sign-in response, and
+  // the federation module's outbound requests — in a development and a
+  // product realm, validated by `xmllint --nonet` against the schemas the
+  // tests image fetched and pinned (tests/xml-schemas/). `local: true`:
+  // this repository's own documents.
+  { file: 'sts_xml_schema_validation.js', browser: false },
+  // #171 (2026-09-23): the outbound transport policy over HTTP — the write
+  // doors in a product realm, SSF push to this job's own listeners in both
+  // modes (a skip ignored in product, a CA file honoured), the RFC 9728
+  // import under federation's policy, and XACML's in-force view.
+  { file: 'sts_outbound_tls.js',         browser: false },
+  // #104 (2026-09-23): the deliberate defects and the loosening SPIFFE
+  // switches — refused on write in a product realm, and ignored where they
+  // are read once a realm holding them is switched to product (the ID
+  // Token's nonce, a SET's signature, GET /spiffe's view).
+  { file: 'sts_development_only_settings.js', browser: false },
+  // #181 (2026-09-23): six more of that class — the RISC subject type, the
+  // KDC's clock offset, the SAML signature switches, the Workload API header
+  // and the SHA-1 / RSA 1.5 values — refused on write in a product realm
+  // (and on an application's override), ignored where they are read once a
+  // realm holding them is switched; and GET /admin/mode and /admin-api/mode.
+  { file: 'sts_mode_weak_settings.js',   browser: false },
+  // #293 WP1 (2026-10-13): clients an administrator created through
+  // /admin-api, in a development and a product realm — the device grant
+  // for a client declaring it (and refused one that does not), PAR required
+  // on one client's entry, and `id_token token` / `code token` refused in
+  // product (STS-OAUTH-0126).
+  { file: 'sts_admin_client_policies.js', browser: false },
+  // #293 WP4 (2026-10-13): client_secret_jwt issued and (in product)
+  // refused, and RFC 8705's tls_client_auth and self_signed_tls_client_auth
+  // over a real handshake on the main port, for clients created through
+  // /admin-api, in a development and a product realm.
+  { file: 'sts_client_authentication.js', browser: false },
+  // #293 WP2 (2026-10-13): a JAR client created through /admin-api, its
+  // request objects and key set served by this job — registered request_uri
+  // and jwks_uri, the registered algorithm, signed objects required; product
+  // refusing a plain-http request_uri at registration, and the https flow
+  // where a directory is shared with the service.
+  { file: 'sts_jar_admin_client.js',     browser: false },
+  // #293 WP3 (2026-10-13): OpenID Connect Back-Channel Logout delivered to
+  // the test peer's `bcl` role (tests/peer/peer_bcl.js), which verifies each
+  // Logout Token as a relying party must; a product realm refusing the
+  // peer's private address (STS-OAUTH-0534). Needs the peer (`testPeer`).
+  { file: 'sts_backchannel_logout.js',   browser: false,
+    testPeer: true },
+  // SEVERAL SIGNED-IN ACCOUNTS IN ONE BROWSER (#561), over HTTP in a
+  // throwaway realm that inherits the stack's mode, one cookie jar and two
+  // people: both kept live and the picker, login_hint, prompt=select_account
+  // and prompt=none (account_selection_required), SAML 2.0 IsPassive and a
+  // <Subject> hint, WS-Federation, the sign-out's account step, RP-Initiated
+  // Logout by id_token_hint's sid, one account signed out while the other
+  // stays, and forget. `local: true`: the sign-in surface, the picker and
+  // the sign-out are this repository's.
+  { file: 'sts_multi_account.js',        browser: false },
+  // ONE ACCOUNT PER TAB IN THE PORTAL, IN A REAL BROWSER (#561): two Chrome
+  // tabs sharing one cookie jar, a different account in each, a reload
+  // keeping each, and one signed out from its tab leaving the other tab's
+  // working. One browser, serially.
+  { file: 'sts_multi_account_tabs.js',   browser: true },
+  // The mail channel (#63): delivery to the Mailpit the stack runs, a
+  // product realm of its own, verification, a self-service reset, a dead
+  // letter. Skips its delivery sections where there is no catcher.
+  { file: 'sts_mail.js',                 browser: false },
+  // The emailed code and sign-in link (#64): the authentication policy on
+  // the Policies resource, and both mechanisms as a first and a second
+  // factor, in a product realm, delivered to the same catcher.
+  { file: 'sts_email_factor.js',         browser: false },
+  // The language chooser over HTTP in a realm (#539): the action prefixed
+  // once, the 303 to a local return only, the cookie, ui_locales first, and
+  // discovery's ui_locales_supported.
+  { file: 'sts_language_chooser.js',     browser: false },
+  // The prose the server writes into a view (#543): /admin-api translates
+  // a setting's label and description only for a request naming a language,
+  // changes nothing else, and never the OpenAPI document.
+  { file: 'sts_server_prose.js',         browser: false },
+  // #64's addresses: an administrator's verified, a person's own change
+  // pending until its link is followed, and the recovery-code reset.
+  { file: 'sts_email_verification.js',   browser: false },
+  // A person's attributes set, added to and removed from through
+  // /admin-api (#228), in a realm of its own.
+  { file: 'sts_person_attributes.js',    browser: false },
+  // Attribute sources against the stack's real PostgreSQL and MariaDB
+  // (#94, #356): a database, a read-only account and a table of the job's
+  // own, TLS verified against the source's own chain, the password read
+  // from a shared file, a sign-in carrying the attribute claim, and refuse
+  // on failure. A dialect whose URL is unset is skipped; both unset, or no
+  // shared directory, skips the job.
+  { file: 'sts_attribute_sources.js',    browser: false },
+  // Secret push destinations (#221 P3): the register over /admin-api in a
+  // realm of its own — the write credential in no answer and refused by
+  // reveal-secret, and in development a file destination on the shared
+  // directory, test-pushed and read back. Refused in product mode.
+  { file: 'sts_secret_destinations.js',  browser: false },
+  // THIS SERVICE'S POSTGRES PERSISTENCE, ACROSS A REAL RESTART (moved from
+  // the parent project, 2026-10-23): it starts iya-sts processes of its own
+  // against a database it creates in the stack's postgres, restarts them, and
+  // asserts what came back, what did not, coordination on and off, that the
+  // connection is TLS as postgres reports it, that the database's certificate
+  // is verified, and that a missing database stops the start. Skips where no
+  // database is supplied (an AWS target, ./run-coverage.sh).
+  { file: 'sts_persistence_postgres.js', browser: false },
+  // OAuth 2.0 Attestation-Based Client Authentication (#229): a client
+  // attester made at run time, the challenge endpoint, PAR, the code and
+  // refresh token bound to the client instance, the DPoP combined mode and
+  // introspection, in a realm of its own.
+  { file: 'sts_client_attestation.js',   browser: false },
+  { file: 'vc_did.js',                   browser: false },
+  // ---------------------------------------------------------------------
+  // TWO CELLS OF ONE SERVICE (#98, 2026-09-28). Each runs only in the
+  // `cells` mode (`./run-tests.sh --modes=cells`), which hands the runner
+  // both cells by name (STS_TEST_CELL_A_URL, STS_TEST_CELL_B_URL), and
+  // declines to run in every other mode, naming the variable. `local`:
+  // they drive this repository's own `/admin-api` and a stack only this
+  // repository's launcher builds. What they share is cells_kit.js.
+  //
+  //   sts_cells_map.js        each cell reports both, the peer reachable
+  //                           over the channel, a tiered store, no address
+  //   sts_cells_routing.js    a login name is unique across cells (409 at
+  //                           the other), and a creation naming another
+  //                           cell as home is made there (D1)
+  //   sts_cells_traveller.js  a flow started at cell A for a person homed
+  //                           at cell B restarts at home, pinned, and is
+  //                           served there through A — code, tokens, one
+  //                           key set (D8, D9) — and a pushed request made
+  //                           at B is found from A (D10)
+  //   sts_cells_transfer.js   a realm that lists `ca>us` holds the session
+  //                           at A with a projection; a disable at home
+  //                           ends it at A (D4, D6)
+  //   sts_cells_release.js    another cell's residents are refused under
+  //                           the strict default and listed once the realm
+  //                           permits it (D11)
+  //   sts_cells_rehome.js     a person moved from B to A: what they held
+  //                           ended, entryUUID and sub kept, signed in at A;
+  //                           a jurisdiction the realm forbids refused (8.8)
+  //   sts_cells_console.js    an administrator signs in to /admin through
+  //                           cell B, and /admin/cells draws both cells
+  //   sts_cells_ldap.js       a bind at cell B's LDAPS for a person homed
+  //                           at A is verified at home (D2)
+  //   sts_cells_kerberos.js   an AS and a TGS exchange at cell B's TCP 88
+  //                           for a person homed at A are answered at home,
+  //                           a sign-out at A included (#588)
+  //   sts_cells_scim_client.js  one outbound SCIM client across both cells
+  //                           (#553): a refused transfer pushes nothing,
+  //                           both cells' people pushed from home, a group
+  //                           keeping both cells' members, a shared pause, a
+  //                           move that is not a deactivation, and a group
+  //                           deleted only when both cells answer (it cuts
+  //                           and restores the link, so it runs before
+  //                           sts_cells_unreachable.js)
+  //   sts_cells_unreachable.js  cell B cut off from A (tests/tools/
+  //                           cell_link.js): fail-closed refuses a refresh,
+  //                           a sign-in and a bind; fail-open refreshes a
+  //                           held session (D6). Restores the link. LAST of
+  //                           the cells jobs, so a link it failed to
+  //                           restore costs no other
+  // ---------------------------------------------------------------------
+  { file: 'sts_cells_map.js',            browser: false },
+  { file: 'sts_cells_routing.js',        browser: false },
+  { file: 'sts_cells_traveller.js',      browser: false },
+  { file: 'sts_cells_transfer.js',       browser: false },
+  { file: 'sts_cells_release.js',        browser: false },
+  { file: 'sts_cells_rehome.js',         browser: false },
+  { file: 'sts_cells_console.js',        browser: false },
+  { file: 'sts_cells_ldap.js',           browser: false },
+  { file: 'sts_cells_kerberos.js',       browser: false },
+  { file: 'sts_cells_scim_client.js',    browser: false },
+  { file: 'sts_cells_unreachable.js',    browser: false },
+  // ---------------------------------------------------------------------
+  // LAST, ALL THREE OF THEM, AND THE ORDER IS THE WHOLE OF WHY IT IS SAFE
+  // (2026-09-06).
+  //
+  // The three bulk-load jobs put five thousand people, fifty groups and five
+  // thousand memberships EACH into the DEFAULT REALM and delete none of it —
+  // that is what they are for, and their headers argue both halves. Every job
+  // above them therefore runs against the directory it has always run against,
+  // and the one that walks every console page does so before the store has
+  // fifteen thousand rows in it. A job added after this line inherits a large
+  // directory; one added above it does not.
+  //
+  // **THEY DO THE SAME WORK THROUGH THREE DIFFERENT DOORS** — SCIM, the raw
+  // LDAP socket and this service's own management API — and everything they
+  // share is in `bulk_load.js`, so a difference between their numbers is a
+  // difference in the door. Each stamps every name it invents with its own
+  // door (`bulk-scim-…`, `bulk-ldap-…`, `bulk-api-…`), which is what lets
+  // three of them run in one suite against one directory that nothing deletes
+  // from.
+  //
+  // **THE ORDER AMONG THE THREE IS DELIBERATE AND IT IS NOT ALPHABETICAL.**
+  // SCIM first, LDAP second, `/admin-api` last, because each raises
+  // `ldap.maxEntries` for what IT is about to add and the one that runs last
+  // leaves the highest ceiling — so a person poking at the service afterwards
+  // is not up against a full directory. Reversing them works and leaves a
+  // ceiling sized for the smallest of the three runs.
+  //
+  // **AND THEY CARRY A TIMEOUT OF THEIR OWN**, which no other entry here does.
+  // Ten thousand sequential writes take about four minutes against a warm
+  // local service and more in a container on a loaded CI host, against the
+  // runner's 300s default — so without this each would be killed partway
+  // through and reported as a hang rather than as the measurement it is.
+  //
+  // **THE LDAP ONE NEEDS THE DIRECTORY'S OWN SOCKET**, which
+  // `docker-compose.yml` deliberately does not publish. The launchers arrange
+  // it and hand the job `STS_LDAP_URL` — `./run-tests.sh` by putting
+  // the runner on the bridge with the service, and `./local-run-tests.sh`
+  // (removed 2026-09-16) by layering `tests/docker-compose-ldap.yml` with a
+  // free host port. It is NOT
+  // marked `docker: true`: that flag is for a job needing a DAEMON, and this
+  // one needs a port. Run by hand with neither, it FAILS naming the variable
+  // rather than reporting green having driven nothing.
+  { file: 'sts_directory_bulk_load_scim.js', browser: false,
+    timeoutMs: 1800000,
+    reuseConnections: true, lane: 'bulk' },
+  { file: 'sts_directory_bulk_load_ldap.js', browser: false,
+    timeoutMs: 1800000,
+    reuseConnections: true, lane: 'bulk' },
+  { file: 'sts_directory_bulk_load_api.js',  browser: false,
+    timeoutMs: 1800000,
+    reuseConnections: true, lane: 'bulk' },
+  // FIFTY THOUSAND OVER LDAP, and LAST — it leaves the directory an order of
+  // magnitude larger than the three above found it, so every job that walks a
+  // page or reads a register has run before it. It drives
+  // sts_directory_bulk_load_ldap.js's file at a different scale rather than
+  // copying its client; that file argues why. The watchdog is sized for the
+  // failure it exists to report — a quadratic come back — rather than for the
+  // half minute the adds actually take.
+  //
+  // **DISABLED 2026-09-13, TO MAKE THE SUITE FASTER.** Commented out rather
+  // than deleted: the file is kept and nothing else in the suite depends on
+  // it, so putting this entry back is the whole of re-enabling it. While it is
+  // out, nothing holds the LDAP add path to constant time past five thousand.
+  // { file: 'sts_directory_bulk_load_ldap_50k.js', browser: false,
+  //   timeoutMs: 3600000 }
+];
+
+// ---------------------------------------------------------------------------
+// THE HELPERS, and `env/local.js`. None of these is a job; every one of them is
+// reached by a `require` from at least one job above, which is the whole reason
+// it is here. The set was computed as the transitive local-require closure of
+// the copied jobs, not chosen — so a job that grows a new
+// `require('./x.js')` over there arrives here as a MISSING MODULE at load time,
+// which is a failed job with a name in it rather than a silent gap.
+// ---------------------------------------------------------------------------
+const HELPERS = [
+  'browser_flags.js',
+  'expectation.js',
+  'jwt_vc_json_common.js',
+  'module_paths.js',
+  // Required by jwt_vc_json_common.js since the parent's 2026-09-17 copy;
+  // missing here from 5ecc178 until 2026-09-18, which failed every job that
+  // loads that helper with MODULE_NOT_FOUND — exactly what the note above
+  // says a missing helper looks like.
+  'page_load.js',
+  'random_username.js',
+  'wait_for.js',
+  'env/local.js'
+];
+
+// ---------------------------------------------------------------------------
+// THE HELPERS THAT ARE OURS (2026-09-06). Same idea as a job's `local: true`
+// and it needed a list of its own for the same reason: `HELPERS` above is
+// vendored FROM the parent, and a file of ours listed there is reported GONE
+// UPSTREAM by `--vendor-check` for ever — which is a permanent red line about
+// a file that is exactly where it should be.
+//
+// They are still listed rather than merely present, because the reason HELPERS
+// exists at all is the other half of that check: the set was computed as the
+// transitive local-require closure of the jobs, so a job that grows a
+// `require('./x.js')` arrives as a MISSING MODULE at load time rather than as
+// a silent gap. A local helper that nothing lists gets that guarantee from
+// nothing.
+const LOCAL_HELPERS = [
+  // LOCALISED (#571, rcbj's decision): it signs in at /authn/login, a
+  // static surface over /authn-api since #571, through `authn_signin.js`;
+  // it was a copy of the parent's (listed in HELPERS until then).
+  'sts_applications.js',
+  // LOCALISED (#576, on #569's rule): it passes the consent screen, a page
+  // of the sign-in surface over /authn-api/consent since #576, through
+  // `authn_signin.js`; it was a copy of the parent's (listed in HELPERS
+  // until then).
+  'consent_screen.js',
+  // The sign-in screen over `/authn-api` (#571): the shell, the view and
+  // the act, with the CSRF binding — what every job that signs somebody in
+  // at /authn/login goes through since the screen became a static surface.
+  'authn_signin.js',
+  // The wallet's pages over `/authn-api/wallet` (#574): the start, the wait
+  // page's view, the collection and the Digital Credentials API's answer,
+  // with the same binding — what `sts_oid4vp_wallet.js` and `sts_siop.js`
+  // drive since the wallet's pages became routes of the sign-in surface.
+  'wallet_signin.js',
+  // The console's sign-in and a client of the operations its pages are
+  // drawn from (#446). Copied from the parent on 2026-09-06 and written here
+  // since; the static console (#446) made it a different helper from the
+  // parent's, which signs in to a cookie-holding console.
+  'console_signin.js',
+  // The portal's sign-in and a client of the operations its pages are drawn
+  // from (#568): the static portal signs in as the public client
+  // `sts-user-portal` and draws every page from `/account-api`.
+  'portal_signin.js',
+  // What the OpenID conformance suite's drivers share (#187): the suite's
+  // API, a plan run module by module, and the ledger of argued failures and
+  // known warnings. `sts_fapi_conformance.js` keeps its own copy (#176).
+  'conformance_suite.js',
+  // The person in front of the conformance suite (#571, rcbj's decision):
+  // headless Chrome, one per job and one page at a time, opening each
+  // address a module asks a person to visit and signing in on the real
+  // scripted screen, which the suite's own HtmlUnit browser cannot draw.
+  'conformance_browser.js',
+  // A Kerberos client over raw TCP 88 and MS-KKDCP — AS, TGS, the GSS-wrapped
+  // AP-REQ and SPNEGO — for `sts_kerberos_spnego.js` (2026-09-18). It reuses
+  // the service's codec for the encodings and works out key usages and
+  // checksums itself, so the exchange is not the KDC agreeing with itself.
+  // Since #173 it also carries a FAST, OTP and authentication-indicator
+  // client for `sts_kerberos_fast_otp.js`, written apart from the KDC's.
+  'krb5_wire.js',
+  // What the three sts_directory_bulk_load_*.js jobs share, which is
+  // everything except the door.
+  'bulk_load.js',
+  // A SAML 2.0 assertion and an XML Signature, built by this suite's own code
+  // — `sts_saml2_bearer_grant.js` signs with it, and so does the in-process
+  // `tests/saml_assertion_grant.js`, which was the first require from `tests/`
+  // into this directory and argues it at the top of that file (several
+  // in-process files have followed it, here and to the enrollment and GNAP
+  // clients below). There is ONE independent XML Signature implementation here
+  // on purpose: a second copy would be a second place for exclusive
+  // canonicalization to be wrong, which is the one thing a wrong copy would
+  // hide.
+  'saml_xmldsig.js',
+  // GNAP's independent client instance (RFC 9421 signatures, RFC 9530 digests,
+  // detached and attached JWS, the interaction hash) and the resource-owner
+  // harness the three GNAP jobs share. Node built-ins only; nothing from gnap/.
+  'gnap_client.js',
+  'gnap_flow.js',
+  // ACME's independent client (RFC 8555 flattened JWS, RFC 7638, the External
+  // Account Binding MAC, RFC 9773's certificate identifier). Node's crypto, the
+  // vendored PKI encoder for CSRs and pkijs; nothing from acme/.
+  'acme_client.js',
+  // EST's independent client (RFC 7030, RFC 8951): a DER reader, the
+  // certs-only, csrattrs and multipart parsers, and a KEM template CSR.
+  // Node built-ins only; nothing from est/ or common/cert_enrollment.js.
+  'est_client.js',
+  // SCEP's independent client (RFC 8894): node-forge for the PKCS#10, the
+  // self-signed signer and the envelope, forge.asn1 and node's crypto for the
+  // SignedData and the CertRep. Nothing from scep/ or cert_enrollment.js.
+  'scep_client.js',
+  // What the five real-client enrollment jobs share (#207-#211): the
+  // management API, a trust bundle FILE for a client that is not node, a
+  // bounded runner that masks secrets, the portal sign-in under a realm, a
+  // CRL reader and `openssl req` at run time. Nothing from the service.
+  'enroll_clients_kit.js',
+  // tlsfuzzer's PLAN (#212): every script run, not applicable or run as a
+  // refusal, each exception with its reason, and the runner that drives
+  // tests/tlsfuzzer/sts_adapter.py; shared by sts_tlsfuzzer.js and the
+  // in-process tests/tlsfuzzer_debugger.js. Nothing from the service.
+  'tlsfuzzer_kit.js',
+  // A registered OAuth client and a PKCE pair, for the jobs that start an
+  // authorization request: product mode refuses an unknown client_id and a
+  // public client without PKCE (2026-09-18).
+  'oauth_fixtures.js',
+  // What the service under test IS — its mode, its Kerberos realm, its base DN
+  // — read from /admin-api/config rather than assumed (2026-09-18).
+  'service_facts.js',
+  // A CA MADE AT RUN TIME (#171): a listener certificate the service can be
+  // told to trust through a `…CaFile` setting, for the jobs that run a push
+  // or notify listener of their own — product mode ignores every skip of
+  // verification — and the directory shared with the service its certificate
+  // is written to. The vendored PKI encoder; no key material is committed.
+  'outbound_test_ca.js',
+  // A CRL DISTRIBUTION POINT FOR A CA A TEST MADE (#174): an empty list
+  // signed by that CA, served from the job's own process on the address the
+  // service dials a job's listeners at. A product-mode service refuses a
+  // foreign certificate that names no list, so every chain this suite mints
+  // names one — `tests/tools/pep-credential.js` included.
+  'test_crl_host.js',
+  // WHAT THE FOUR SAML INTEROPERABILITY JOBS SHARE (#189-#192): the check
+  // ledger, the management API, a browser that walks the peer's origin and
+  // the service's, and the peer's own log as the error-and-warning source.
+  'saml_peer_kit.js',
+  // A ZIP ARCHIVE BUILT FROM THE FORMAT (#215), for the dataset upload's
+  // tests — `sts_admin_risk_upload.js` and the in-process
+  // `tests/risk_upload.js`: one entry, several, a directory and __MACOSX/
+  // beside the data, a declared size that lies. Node's zlib; nothing from
+  // yauzl, which is the reader under test.
+  'zip_writer.js',
+  // WHAT THE NINE `sts_cells_*.js` JOBS SHARE (#98): each cell's management
+  // API with a token minted at that cell, a cookie jar and a browser that
+  // follows no redirect, a JWT checked against a key set with node's own
+  // crypto, and a bounded wait for the global tier. Nothing from the
+  // service.
+  'cells_kit.js',
+  // WHAT THE TWO TOKEN-EXCHANGE CHAIN JOBS SHARE (#467): the four tiers'
+  // provisioning, a browser's authorization-code walk with a desktop
+  // User-Agent, the client_credentials and exchange requests, introspection,
+  // and the delegation register and graph read back. Nothing from the
+  // service.
+  'token_exchange_chain_kit.js',
+  // WHAT THE FOUR WS-TRUST CHAIN JOBS SHARE (#473): the four tiers and the
+  // requesters' service accounts, the UsernameToken sign-in, the
+  // OnBehalfOf / ActAs requests, an assertion or a JWT read and its
+  // signature verified as a relying party would, and the register read
+  // back. It takes the protocol-independent half from
+  // token_exchange_chain_kit.js.
+  'wstrust_chain_kit.js',
+  // WHAT THE TWO KERBEROS CHAIN JOBS SHARE (#486): the four service
+  // principals and their keys, the S4U2Self and S4U2Proxy requests over
+  // krb5_wire.js, each ticket opened by the tier it is for (the AP-REQ, the
+  // PAC's server signature, S4U_DELEGATION_INFO), and the register read
+  // back. It takes the protocol-independent half from
+  // token_exchange_chain_kit.js.
+  'kerberos_chain_kit.js',
+  // WHAT THE TWO GNAP CHAIN JOBS SHARE (#497): the four GNAP parties and
+  // their keys, the catalogue they declare, the OpenID Connect sign-in, the
+  // user assertion, the approval and the RFC 9767 derivations over
+  // gnap_client.js, each token verified and introspected by its tier, the
+  // original grant, the register and the optional capture. It takes the
+  // protocol-independent half from token_exchange_chain_kit.js.
+  'gnap_chain_kit.js',
+  // THE CHAIN JOBS' OPTIONAL RECORD OF WHAT EACH LAYER WAS ISSUED: off
+  // unless STS_CHAIN_CAPTURE names a directory, then `<job>.json` there with
+  // every token, assertion or ticket, decoded. Required by the three chain
+  // kits above and by the GNAP one. Nothing from the service.
+  'chain_capture.js',
+  // THE TEST PEER, FROM A JOB'S SIDE (#586): whether this run has one, a
+  // tenant configured for a realm, the registrations each role needs, and
+  // the readback of what reached the peer. The peer itself is tests/peer/,
+  // a container of the stack; nothing from the service.
+  'test_peer.js',
+  // Maps a client_credentials application onto SSF_READ and SSF_MANAGE
+  // before a job mints ssf.read or ssf.manage. Idempotent.
+  'ssf_roles.js'
+];
+
+// ---------------------------------------------------------------------------
+// THE WALLET AND CRYPTO MODULES, from client/src/. The first seven are named
+// by a job; the last six are their transitive requires, computed rather than
+// chosen — so a module that grows a new `require('./x.js')` over there arrives
+// here as MODULE_NOT_FOUND at load, which is a failed job with a name in it.
+//
+// The modules the jobs reach in THIS repository — `bbs2023.js` in
+// common/vendored/, `client_auth.js` in oauth-oidc/ — are NOT vendored and
+// must not be: they are the code under test. `run-report.js` points
+// MOCK_STS_DIR at the repository root so `module_paths.js` finds them where
+// they actually live.
+// ---------------------------------------------------------------------------
+const CLIENT_MODULES = [
+  // named directly by a job
+  'did.js',
+  'jose_jwe.js',
+  'jws.js',
+  'metadata_client.js',
+  'pqc.js',
+  'sd_jwt_vc.js',
+  'vci_wallet.js',
+  // reached only through the seven above
+  'crypto_bytes.js',
+  'dpop.js',
+  'op_metadata.js',
+  'pk_encryption.js',
+  'symmetric_crypto.js',
+  'vci_metadata.js'
+];
+
+module.exports = { JOBS: JOBS, HELPERS: HELPERS,
+                   LOCAL_HELPERS: LOCAL_HELPERS,
+                   CLIENT_MODULES: CLIENT_MODULES };

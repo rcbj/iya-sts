@@ -23,8 +23,8 @@
 // drawn, that Allow issues a code and Deny returns `access_denied`, that
 // `prompt=none` answers `consent_required`, that a global consent suppresses
 // the prompt for a real sign-in — all of those are driven against the running
-// service by `tests/vendored/sts_consent.js` and
-// `tests/vendored/sts_admin_api_operations.js`. What is here is the three
+// service by `tests/protocol/sts_consent.js` and
+// `tests/protocol/sts_admin_api_operations.js`. What is here is the three
 // things that CANNOT be:
 //
 //   * **THE VALUE GRAMMAR.** `<when> <scope> <client_id>` is a string rule

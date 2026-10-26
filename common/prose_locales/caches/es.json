@@ -795,6 +795,26 @@
     "en": "3bfa4ec2d7a5b1f4",
     "text": "Hasta que cambia cualquier cosa bajo ou=applications del dominio; la siguiente lectura la vuelve a construir."
   },
+  "caches.store.oauth2.opaque-access-tokens.title": {
+    "en": "f5521031758787e4",
+    "text": "Tokens de acceso opacos"
+  },
+  "caches.store.oauth2.opaque-access-tokens.description": {
+    "en": "03c5375f953a154b",
+    "text": "Las reivindicaciones de cada token de acceso opaco que este dominio ha emitido, indexadas por el SHA-256 de su identificador. El identificador en sí no se guarda."
+  },
+  "caches.store.oauth2.opaque-access-tokens.bound": {
+    "en": "4fdda86dda2da589",
+    "text": "Aplicado: un almacén lleno rechaza la emisión (STS-OAUTH-0979) en lugar de expulsar un token aún vigente. El techo es oauth2.maxOpaqueAccessTokens."
+  },
+  "caches.store.oauth2.opaque-access-tokens.lifetime": {
+    "en": "28035bececff39cc",
+    "text": "Hasta el exp del token de acceso; una fila caducada se borra al leerla y mediante caches.eject-expired."
+  },
+  "caches.store.oauth2.opaque-access-tokens.hitMeaning": {
+    "en": "44484a9bf214d2c8",
+    "text": "un identificador se encontró por su resumen"
+  },
   "caches.store.oauth2.redeemed-codes.title": {
     "en": "d05b2abe4dfcac4c",
     "text": "Códigos de autorización canjeados"

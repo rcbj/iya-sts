@@ -795,6 +795,26 @@
     "en": "3bfa4ec2d7a5b1f4",
     "text": "直到領域的 ou=applications 下有任何變更；下次讀取時會重新建立。"
   },
+  "caches.store.oauth2.opaque-access-tokens.title": {
+    "en": "f5521031758787e4",
+    "text": "不透明存取權杖"
+  },
+  "caches.store.oauth2.opaque-access-tokens.description": {
+    "en": "03c5375f953a154b",
+    "text": "此領域已簽發的每個不透明存取權杖的宣告，以其控制代碼的 SHA-256 為鍵。控制代碼本身不儲存。"
+  },
+  "caches.store.oauth2.opaque-access-tokens.bound": {
+    "en": "4fdda86dda2da589",
+    "text": "強制：存滿時拒絕簽發（STS-OAUTH-0979），而不是逐出一個仍有效的權杖。上限是 oauth2.maxOpaqueAccessTokens。"
+  },
+  "caches.store.oauth2.opaque-access-tokens.lifetime": {
+    "en": "28035bececff39cc",
+    "text": "直到存取權杖的 exp；過期的列在讀取時以及由 caches.eject-expired 刪除。"
+  },
+  "caches.store.oauth2.opaque-access-tokens.hitMeaning": {
+    "en": "44484a9bf214d2c8",
+    "text": "以摘要找到了一個控制代碼"
+  },
   "caches.store.oauth2.redeemed-codes.title": {
     "en": "d05b2abe4dfcac4c",
     "text": "已兌換的授權碼"

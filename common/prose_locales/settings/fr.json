@@ -691,6 +691,22 @@
     "en": "eb2c0a8e31f615d9",
     "text": "Combien de temps vit le cookie dont une session liée à l’appareil a besoin avant que le navigateur doive à nouveau prouver sa clé, et donc combien de temps une paire de cookies copiée continue de fonctionner. Jamais au-delà de la fin de la session elle-même. Lu quand un cookie est émis."
   },
+  "authn.deviceBoundIncludeSite|label": {
+    "en": "dfe9f9439467a7ed",
+    "text": "Limiter une session liée au domaine enregistrable"
+  },
+  "authn.deviceBoundIncludeSite|description": {
+    "en": "431c5a53f269b368",
+    "text": "Désactivé, la valeur par défaut, le cookie d’une session liée à l’appareil est limité à l’hôte, ce que ce service a toujours fait, et scope.include_site est faux. Activé, les instructions posent include_site et le Domain du cookie est le domaine enregistrable de l’hôte qui s’est enregistré (le webauthn.rpId lorsqu’il est un suffixe de l’hôte, sinon les deux dernières étiquettes ; une adresse, localhost ou une seule étiquette n’est pas élargie). L’hôte public du débogueur et l’hôte d’un écouteur personnalisé sous ce domaine sont exclus. Un débogueur sur le même hôte et un autre port ne peut pas être exclu : les cookies ne sont pas limités au port. Les préfixes de chemin de domaine sont la même origine."
+  },
+  "authn.deviceBoundIssuanceWaitS|label": {
+    "en": "c379c77b9ef18c81",
+    "text": "Durée d’attente d’une liaison d’appareil avant une émission (secondes)"
+  },
+  "authn.deviceBoundIssuanceWaitS|description": {
+    "en": "2562f13d1a8d0c51",
+    "text": "Durée pendant laquelle une émission qui exige une session liée à l’appareil attend après que l’enregistrement a été proposé. Lu au moment de l’émission, et non par un minuteur : passé ce délai, le fait de la session est timedout et l’émission est refusée. Zéro signifie que l’attente est déjà écoulée. Une session à laquelle l’enregistrement n’a jamais été proposé n’est pas refusée par l’attente."
+  },
   "authn.maxSessions|label": {
     "en": "5fa1f6294f5a3dc8",
     "text": "Nombre maximal de sessions d’authentification unique par domaine"
@@ -1103,6 +1119,22 @@
     "en": "e35e276b9d933828",
     "text": "Activé, une personne peut détenir à la fois une clé d’accès classique et une clé d’accès post-quantique (ML-DSA), sur le même authentificateur s’il sait créer les deux. Chaque clé d’accès est créée dans une VOIE que la personne choisit : la voie classique demande `webauthn.algorithms` sans ML-DSA (`ES256` et `RS256` s’il n’en reste aucun), la voie post-quantique ne demande que ML-DSA. Chaque voie a son propre identifiant d’utilisateur, de sorte que la seconde clé d’accès ne remplace pas la première sur l’authentificateur, et sa propre liste d’exclusion ; un gestionnaire d’identifiants affiche la clé post-quantique sous un nom qui indique son algorithme — `<username>+ml-dsa` à sa création, `<username>+ml-dsa-65` (par exemple) dès que toutes les clés post-quantiques de la personne utilisent celui-là — qui n’est jamais un nom avec lequel on se connecte. `webauthn.maxKeysPerPerson` compte les deux voies. Ne peut pas être activé tant que `webauthn.pqcOnly` l’est. Désactivé, chaque cérémonie est comme avant, et une clé d’accès post-quantique déjà enregistrée continue de permettre la connexion ; une nouvelle ne peut pas être créée."
   },
+  "webauthn.postQuantumAllowCredentials|label": {
+    "en": "295b04bef9cf50bc",
+    "text": "Clés d’accès qu’une connexion nomme lorsqu’une clé post-quantique est exigée"
+  },
+  "webauthn.postQuantumAllowCredentials|description": {
+    "en": "f34caf08dceeedd3",
+    "text": "Lu seulement tant que la politique des clés d’accès exige une clé d’accès post-quantique à la connexion (`postQuantumRequired`), et seulement lorsque la ligne `postQuantumAllowCredentials` du profil sélectionné vaut `realm`. `narrow` (la valeur par défaut) ne nomme que les clés d’accès post-quantiques (ML-DSA) de la personne dans l’`allowCredentials` de l’étape de clé d’accès, de sorte qu’une clé classique n’est jamais proposée — mais une personne dont l’appareil ne détient que sa clé classique voit le propre message « aucune clé d’accès trouvée » de la plateforme. `list-and-refuse` nomme toutes les clés d’accès qu’elle détient et refuse une clé classique après la cérémonie (STS-AUTHN-0356), avec une page indiquant que l’application exige une clé d’accès post-quantique et où en ajouter une. Le compromis : la personne peut choisir une clé d’accès qui sera refusée. Dans les deux cas, une personne qui ne détient aucune clé d’accès post-quantique en est informée avant toute cérémonie."
+  },
+  "webauthn.pqcUpgrade|label": {
+    "en": "1c2af00d33a75721",
+    "text": "Mettre à niveau une clé d’accès classique vers une clé post-quantique"
+  },
+  "webauthn.pqcUpgrade|description": {
+    "en": "a77cd9a980262260",
+    "text": "Activé (la valeur par défaut), une personne peut mettre à niveau l’une de ses clés d’accès classiques vers une clé post-quantique (ML-DSA) sur /portal/keys : elle utilise la clé d’accès classique une fois, pour montrer qu’elle est la sienne, puis crée la nouvelle, à laquelle seul ML-DSA est proposé. Avec `webauthn.pqcAlongsideClassical` activé, la clé d’accès post-quantique est AJOUTÉE dans sa propre voie et la classique est conservée ; désactivé, la clé d’accès post-quantique REMPLACE la classique sur place, en gardant son nom et en enregistrant quand elle a été mise à niveau et depuis quel algorithme. La clé d’accès classique n’est modifiée qu’une fois la nouvelle vérifiée, de sorte qu’une mise à niveau échouée la laisse telle qu’elle était. La nouvelle clé d’accès satisfait chaque règle qu’un enregistrement satisfait. Désactivé, aucune clé d’accès ne peut être mise à niveau ; une clé d’accès post-quantique peut encore être enregistrée à côté d’une classique là où les clés d’accès peuvent être enregistrées."
+  },
   "webauthn.userVerification|label": {
     "en": "8b134177fe992d91",
     "text": "Vérification de l’utilisateur"
@@ -1134,6 +1166,30 @@
   "webauthn.attestationTrustAnchors|description": {
     "en": "75ff97c509121fb5",
     "text": "Certificats racines auxquels un certificat d’attestation peut remonter, sous forme de lot PEM, EN PLUS de ceux que le FIDO Metadata Service liste pour chaque modèle — une AC d’endossement TPM d’entreprise, la racine d’un fournisseur, la racine d’attestation Android ou Apple, ou une racine de test. Une chaîne qui en atteint une est DE CONFIANCE. Rien n’est fourni : vide ne fait confiance qu’à ce que liste le BLOB MDS actif."
+  },
+  "webauthn.attestationEvidenceTsaUrl|label": {
+    "en": "4dabd3df9187a34f",
+    "text": "URL de l’autorité d’horodatage des preuves de clé d’accès"
+  },
+  "webauthn.attestationEvidenceTsaUrl|description": {
+    "en": "7fa58ac004a9e2e4",
+    "text": "Lorsqu’elle est définie avec les ancres de confiance de la TSA, les attestations de clé d’accès vérifiées reçoivent un EvidenceRecord RFC 4998 dont l’ArchiveTimeStamp initial est un jeton RFC 3161 de cette autorité d’horodatage HTTPS. Vide, l’enregistrement des preuves est désactivé."
+  },
+  "webauthn.attestationEvidenceTsaTrustAnchors|label": {
+    "en": "8c29eb6dc36aa1a9",
+    "text": "Ancres de confiance de la TSA des preuves de clé d’accès (PEM)"
+  },
+  "webauthn.attestationEvidenceTsaTrustAnchors|description": {
+    "en": "7b20573a01a900a7",
+    "text": "Ancres de confiance PEM utilisées pour vérifier le jeton RFC 3161 et le chemin de certificat de sa TSA. L’enregistrement des preuves exige à la fois ce paquet et l’URL de l’autorité d’horodatage."
+  },
+  "webauthn.attestationEvidenceHashAlgorithm|label": {
+    "en": "8c886d89947bce4c",
+    "text": "Algorithme de l’arbre de hachage des preuves de clé d’accès"
+  },
+  "webauthn.attestationEvidenceHashAlgorithm|description": {
+    "en": "ea9f111d1308b528",
+    "text": "Condensé utilisé par les nouveaux enregistrements RFC 4998. Le relever au-dessus de sha256 déclenche le renouvellement de l’arbre de hachage RFC 4998 lors du recomptage quotidien du rapport des clés d’accès, dans une nouvelle ArchiveTimeStampChain."
   },
   "webauthn.attestationAllowedAaguids|label": {
     "en": "1d32f2ee4864d344",
@@ -1274,6 +1330,14 @@
   "keys.offerKemEncryption|description": {
     "en": "16bd897eb9c3284a",
     "text": "Indique si les algorithmes JWE ML-KEM et HPKE (#82 — des drafts, voir keys.encryptionKemAlgs) sont proposés là où ce domaine chiffre POUR une clé que détient un client ou un portefeuille : annoncés dans `userinfo_encryption_alg_values_supported`, `id_token_encryption_alg_values_supported`, `authorization_encryption_alg_values_supported` (JARM), `introspection_encryption_alg_values_supported` et le `credential_response_encryption` d’un émetteur OpenID4VCI, et acceptés lorsqu’un client en enregistre un ou qu’un portefeuille en nomme un. **Désactivé par défaut, et au choix d’un administrateur :** ces algorithmes proviennent d’Internet-Drafts, et un client ou une suite de conformité qui essaie chaque algorithme annoncé en rencontre qu’il ne connaît pas. Un client déjà enregistré pour l’un d’eux conserve son enregistrement ; avec ce paramètre désactivé, sa prochaine réponse chiffrée est refusée, comme pour tout algorithme que ce domaine ne propose pas."
+  },
+  "keys.postQuantumSigning|label": {
+    "en": "34883416ca94e446",
+    "text": "Signature post-quantique"
+  },
+  "keys.postQuantumSigning|description": {
+    "en": "68ffd5da182ec911",
+    "text": "Indique si ce domaine signe, publie et vérifie les algorithmes JWS post-quantiques et composites (ML-DSA, SLH-DSA et les ML-DSA composites). **Activé par défaut.** Désactivé : aucune clé de signature post-quantique ne figure dans `/oauth2/jwks` ni dans le document DID (clés en attente, épinglées et de groupe de signataires comprises) ; aucun algorithme post-quantique ne figure dans une liste `*_alg_values_supported` ou `*_alg_values` des documents de découverte, du serveur d’autorisation, d’OpenID Federation, d’OpenID4VCI et d’OpenID4VP ; un JWS signé avec l’un d’eux est refusé partout où ce domaine en vérifie un ; un client ne peut pas en enregistrer un ; et une signature qui en exigerait encore un — pour un client enregistré pendant que ce paramètre était activé, ou une signature de message HTTP — est refusée plutôt que faite avec une clé que personne ne peut récupérer. Il existe pour les clients et les suites de tests dont les bibliothèques JOSE ne savent pas lire une clé AKP ou ne connaissent pas ces algorithmes, la suite de conformité OpenID parmi elles. **Inchangés :** COSE (clés d’accès), les signatures XML, TLS, les algorithmes de certificat, les clés de chiffrement ML-KEM (`keys.encryptionKemAlgs`), la clé alternative ML-DSA qu’un certificat `hybrid-groups` porte dans `x5c` (les clés ML-DSA nues sont retirées, les certificats ne sont pas réémis), et `oidfed.signingAlg` : un domaine qui nomme une clé de fédération ML-DSA continue d’en signer ses déclarations mais refuse une déclaration ML-DSA qu’on lui demande de vérifier, alors gardez ce paramètre classique ici."
   },
   "keys.kidFormat|label": {
     "en": "67642fcf21c7ca50",
@@ -1883,6 +1947,14 @@
     "en": "e1cb6b236d5adc8b",
     "text": "L’algorithme JWS avec lequel les jetons d’accès (et les jetons d’actualisation) sont signés, par la clé de ce domaine correspondante — chacune est publiée dans le JWKS. default correspond à RS256, et à PS256 avec FAPI 1.0 Advanced, qui refuse aussi tout autre algorithme que PS256 ou ES256. Un serveur d’autorisation nommé peut porter le sien (access_token_signing_alg)."
   },
+  "oauth2.accessTokenFormat|label": {
+    "en": "c7e15a626ed4371b",
+    "text": "Format du jeton d’accès"
+  },
+  "oauth2.accessTokenFormat|description": {
+    "en": "74504b84130dea54",
+    "text": "Indique si un nouveau jeton d’accès est un JWT RFC 9068 (jwt, la valeur par défaut) ou un identifiant opaque de 256 bits (opaque). Les revendications d’un jeton opaque restent dans ce domaine ; les jetons d’actualisation restent des JWT imbriqués et les jetons d’identité restent des JWT. Un jeton déjà émis conserve la forme avec laquelle il a été frappé."
+  },
   "oauth2.jarmResponseLifetimeS|label": {
     "en": "28259a88563d949d",
     "text": "Durée de vie d’une réponse JARM (s)"
@@ -2354,6 +2426,14 @@
   "oauth2.maxRefreshTokenFamilies|description": {
     "en": "331485a9a3ff827c",
     "text": "Combien de jetons d’actualisation le mode RFC 9700 suit pour la rotation et la détection de rejeu. Lorsqu’il est plein, les jetons EXPIRÉS sont oubliés en premier, puis ceux ayant fait l’objet d’une ROTATION (déjà révoqués, si bien que le rejeu de l’un d’eux est toujours refusé — ce qui est perdu, c’est la révocation de toute la famille que ce rejeu déclencherait), et seulement ensuite le plus ancien jeton valide, avec un avertissement. Un jeton valide oublié fonctionne toujours ; sa prochaine rotation démarre une nouvelle famille. Augmentez cette valeur pour un déploiement comptant simultanément davantage de jetons d’actualisation valides."
+  },
+  "oauth2.maxOpaqueAccessTokens|label": {
+    "en": "a0a9d2a5af677a1f",
+    "text": "Jetons d’accès opaques mémorisés (par domaine)"
+  },
+  "oauth2.maxOpaqueAccessTokens|description": {
+    "en": "19042efe72e28cc6",
+    "text": "Combien de jetons d’accès opaques ce domaine retient. Lorsqu’il est plein, les lignes expirées sont retirées et une émission de plus est refusée (STS-OAUTH-0979) plutôt que d’évincer un jeton encore valide. S’applique lorsque oauth2.accessTokenFormat vaut opaque."
   },
   "oauth2.signedMetadataAlgorithm|label": {
     "en": "71fb31f9a62ec657",
@@ -3024,8 +3104,8 @@
     "text": "Algorithme de clé par défaut de l’autorité de certification"
   },
   "pki.keyAlgorithm|description": {
-    "en": "763204ceb3af08e6",
-    "text": "L’algorithme de clé avec lequel une nouvelle autorité de certification est construite lorsque le formulaire n’en indique aucun : rsa-2048, rsa-3072, rsa-4096, ec-p256, ec-p384, ec-p521 ou ed25519, ou l’un des identifiants post-quantiques (ML-DSA, SLH-DSA, les composites et ML-KEM — qui ne peut pas signer, et n’est donc qu’une clé de sujet, jamais celle d’une autorité). RSA 2048 est la valeur par défaut parce que la FEUILLE que cette hiérarchie a pour raison d’émettre signe une assertion client que la bibliothèque OAuth de quelqu’un d’autre doit vérifier, et RS256 est le seul algorithme que possède chacune de ces bibliothèques. La liste est lue depuis common/vendored/key_material.js — le module qui génère la clé — de sorte qu’une valeur qu’il ne connaît pas est refusée à la construction, avec la liste à côté."
+    "en": "00e61f4da7498a62",
+    "text": "L’algorithme de clé avec lequel une nouvelle autorité de certification est construite lorsque le formulaire n’en indique aucun : rsa-2048, rsa-3072, rsa-4096, ec-p256, ec-p384, ec-p521 ou ed25519, ou l’un des identifiants post-quantiques (ML-DSA, SLH-DSA, les composites et ML-KEM — qui ne peut pas signer, et n’est donc qu’une clé de sujet, jamais celle d’une autorité). RSA 2048 est la valeur par défaut parce que la FEUILLE que cette hiérarchie a pour raison d’émettre signe une assertion client que la bibliothèque OAuth de quelqu’un d’autre doit vérifier, et RS256 est le seul algorithme que possède chacune de ces bibliothèques. La liste est lue depuis common/crypto_impl/key_material.js — le module qui génère la clé — de sorte qu’une valeur qu’il ne connaît pas est refusée à la construction, avec la liste à côté."
   },
   "pki.signatureAlgorithm|label": {
     "en": "43cdf39e69d6fdd4",
@@ -3064,8 +3144,8 @@
     "text": "Durée de vie par défaut d’une paire de clés émise (jours)"
   },
   "pki.leafLifetimeDays|description": {
-    "en": "b55ab0b2f1f1f04b",
-    "text": "Durée de validité d’un certificat de signature émis pour une application lorsque le formulaire n’indique aucune durée. Elle est PLAFONNÉE à l’expiration de l’autorité de certification émettrice elle-même plutôt que refusée lorsqu’elle la dépasserait : la cause ordinaire est une autorité de certification émettrice de cinq ans dans sa cinquième année, et un opérateur qui a demandé un an doit obtenir onze mois plutôt qu’une erreur arithmétique. Les durées de vie des niveaux eux-mêmes proviennent des profils de certificat de common/vendored/x509.js — vingt ans, dix et cinq — et peuvent être surchargées dans le formulaire et par les trois lignes pki.*LifetimeYears ci-dessous."
+    "en": "028d5b5d730c9d23",
+    "text": "Durée de validité d’un certificat de signature émis pour une application lorsque le formulaire n’indique aucune durée. Elle est PLAFONNÉE à l’expiration de l’autorité de certification émettrice elle-même plutôt que refusée lorsqu’elle la dépasserait : la cause ordinaire est une autorité de certification émettrice de cinq ans dans sa cinquième année, et un opérateur qui a demandé un an doit obtenir onze mois plutôt qu’une erreur arithmétique. Les durées de vie des niveaux eux-mêmes proviennent des profils de certificat de common/crypto_impl/x509.js — vingt ans, dix et cinq — et peuvent être surchargées dans le formulaire et par les trois lignes pki.*LifetimeYears ci-dessous."
   },
   "pki.rootLifetimeYears|label": {
     "en": "72e3da975d05b214",
@@ -4148,8 +4228,8 @@
     "text": "Préinstaller la console et cette API comme applications"
   },
   "applications.seedInternal|description": {
-    "en": "7092a96534fcb0ca",
-    "text": "Créer au démarrage des entrées d’application pour les surfaces propres à ce service, sous ou=applications avec tout le reste : la CONSOLE D’ADMINISTRATION sur /admin, le PORTAIL UTILISATEUR sur /portal, l’API DE GESTION sur /admin-api et — tant qu’il est intégré — les deux clients du débogueur de protocoles. Elles sont préinstallées comme des enregistrements RFC 7591 COMPLETS plutôt que comme des libellés : la console et le portail comme parties de confiance OpenID Connect confidentielles sur l’octroi par code d’autorisation, cette API comme client OAuth confidentiel sur client_credentials, chacun avec un secret — ce sont donc des clients que l’on peut exercer plutôt que des lignes sur une page. La console et le portail SE CONNECTENT VIA leurs entrées (/admin/callback et /portal/callback) : désactiver ce paramètre, ou supprimer l’une d’elles, laisse donc cette surface incapable de connecter qui que ce soit jusqu’à ce qu’une entrée existe de nouveau. Ce conteneur est le registre — un ldapmodify sur celui-ci est une modification de configuration. ACTIVÉ par défaut. Préinstallées uniquement là où l’identifiant est libre : un opérateur qui en a supprimé une la voit donc rester supprimée jusqu’au prochain redémarrage."
+    "en": "0dcb321977df8ef6",
+    "text": "Crée des entrées d’application pour les surfaces propres à ce service au démarrage, sous ou=applications avec tout le reste : la CONSOLE D’ADMINISTRATION sur /admin, le PORTAIL UTILISATEUR sur /portal, l’application de RAPPORTS sur /report, l’API DE RAPPORTS sur /report-api, l’API DE GESTION sur /admin-api et — tant qu’il est embarqué — les deux clients du débogueur de protocoles. Elles sont semées comme des enregistrements RFC 7591 COMPLETS plutôt que comme des libellés : la console et le portail comme parties de confiance OpenID Connect confidentielles sur le flux de code d’autorisation, cette API comme client OAuth confidentiel sur client_credentials, chacun avec un secret — ce sont donc des clients que l’on peut exercer plutôt que des lignes sur une page. La console et le portail OUVRENT LA SESSION par leurs entrées (/admin/callback et /portal/callback) : désactiver ceci, ou en supprimer une, laisse cette surface incapable de connecter qui que ce soit tant qu’une entrée n’existe pas de nouveau. Ce conteneur est le registre — un ldapmodify dessus est un changement de configuration. ACTIVÉ par défaut. Semées seulement là où l’identifiant est libre : un opérateur qui en a supprimé une la voit rester supprimée jusqu’au prochain redémarrage."
   },
   "applications.seedInternal|restartReason": {
     "en": "ce6b237794aa9252",
@@ -7887,6 +7967,14 @@
     "en": "5525432b1abd613a",
     "text": "Indique si chaque appel à un endpoint de protocole donne lieu à un événement d’audit. Activé par défaut, car « tout ce qu’on a demandé à ce service de faire » est la raison d’être du journal — mais c’est de loin la source la plus bruyante (chaque interrogation de JWKS et chaque récupération de métadonnées en est une) ; le désactiver est donc ce qui donne une page lisible à quelqu’un qui surveille l’annuaire ou la console. Cela n’affecte jamais les cinq autres catégories, et /admin/metrics compte chaque appel dans tous les cas."
   },
+  "audit.authenticationHistoryDays|label": {
+    "en": "bc611d1f003e751a",
+    "text": "Historique d’authentification (jours)"
+  },
+  "audit.authenticationHistoryDays|description": {
+    "en": "4270a8167905dee9",
+    "text": "Combien de jours de connexions évaluées la page Connexions récentes du portail utilisateur liste pour la personne connectée. Chaque domaine fixe le sien, car la valeur est lue dans le domaine ambiant. L’onglet Tentatives d’authentification de la console, sur une personne, liste chaque tentative que le journal d’audit détient encore, le journal entier. Le plafond propre du journal peut encore retirer les lignes plus anciennes."
+  },
   "delegation.maxRecords|label": {
     "en": "25d78cc6c84e920b",
     "text": "Nombre maximal d’actes de délégation conservés"
@@ -10038,6 +10126,110 @@
   "mail.notifyAdministrators|description": {
     "en": "bd3ae7ff26663b42",
     "text": "Lorsque le SERVICE, et non une personne, marque un identifiant comme compromis ou désactive un compte (évaluation des risques), envoyer aussi un courriel à chaque membre de la liste Admin Write du domaine qui possède une adresse."
+  },
+  "report.syncMaxRows|label": {
+    "en": "77fdb27c30eb4bf8",
+    "text": "Plafond de lignes d’un rapport synchrone"
+  },
+  "report.syncMaxRows|description": {
+    "en": "563c41bbaffd74bb",
+    "text": "Le plus grand nombre de lignes qu’un rapport synchrone peut renvoyer. Une limite supérieure est refusée en mode sync et devient une tâche en mode auto."
+  },
+  "report.syncMaxBytes|label": {
+    "en": "f975fe6e57bfae86",
+    "text": "Plafond d’octets d’un rapport synchrone"
+  },
+  "report.syncMaxBytes|description": {
+    "en": "e7c9e919bd0ac8ea",
+    "text": "Le plus grand nombre d’octets qu’un rapport synchrone peut renvoyer. Un résultat au-delà est refusé plutôt qu’envoyé en partie."
+  },
+  "report.syncMaxMs|label": {
+    "en": "ac021c892bcfc370",
+    "text": "Plafond de durée d’un rapport synchrone (millisecondes)"
+  },
+  "report.syncMaxMs|description": {
+    "en": "f6ab877e4526a9f9",
+    "text": "Durée pendant laquelle un rapport synchrone peut s’exécuter. Au-delà, l’appel est refusé plutôt que de recevoir une réponse partielle."
+  },
+  "report.asyncMaxMs|label": {
+    "en": "f0c5ac5e9884050c",
+    "text": "Plafond de durée d’une tâche de rapport (millisecondes)"
+  },
+  "report.asyncMaxMs|description": {
+    "en": "45c7c3ad19fc3c4a",
+    "text": "Durée pendant laquelle une tâche de rapport peut s’exécuter. Au-delà, la tâche échoue plutôt que de stocker un résultat partiel."
+  },
+  "report.asyncMaxRows|label": {
+    "en": "8aca969304d23655",
+    "text": "Plafond de lignes d’une tâche de rapport"
+  },
+  "report.asyncMaxRows|description": {
+    "en": "e5dceb18ca4c26a4",
+    "text": "Le plus grand nombre de lignes qu’une tâche de rapport peut écrire. Une requête qui en demande davantage est refusée dans tous les modes."
+  },
+  "report.asyncMaxBytes|label": {
+    "en": "470a53d032622764",
+    "text": "Plafond d’octets d’une tâche de rapport"
+  },
+  "report.asyncMaxBytes|description": {
+    "en": "91aac7df1ff51b42",
+    "text": "Le plus grand nombre d’octets qu’une tâche de rapport peut stocker. Un résultat au-delà fait échouer la tâche plutôt que d’être tronqué."
+  },
+  "report.pdfMaxRows|label": {
+    "en": "5cf679421e7b7bf3",
+    "text": "Plafond de lignes d’un rapport PDF"
+  },
+  "report.pdfMaxRows|description": {
+    "en": "3b855ef0848c4ad4",
+    "text": "Le plus grand nombre de lignes qu’un rapport PDF peut contenir. Une requête plus grande est refusée et il est demandé d’utiliser CSV."
+  },
+  "report.pdfMaxPages|label": {
+    "en": "050231b3a1524a4b",
+    "text": "Plafond de pages d’un rapport PDF"
+  },
+  "report.pdfMaxPages|description": {
+    "en": "3b065500b4a246a3",
+    "text": "Le plus grand nombre de pages qu’un rapport PDF peut contenir. Au-delà, le résultat est refusé et il est demandé d’utiliser CSV."
+  },
+  "report.maxConcurrentPerRealm|label": {
+    "en": "2e8e9a195cac9a4c",
+    "text": "Tâches de rapport en cours par domaine"
+  },
+  "report.maxConcurrentPerRealm|description": {
+    "en": "7a252c3307b54d2a",
+    "text": "Combien de tâches de rapport un domaine peut avoir en cours à la fois. Une soumission supplémentaire est refusée jusqu’à ce que l’une se termine."
+  },
+  "report.maxConcurrentPerSubject|label": {
+    "en": "3533626b8e0a8d15",
+    "text": "Tâches de rapport en cours par personne"
+  },
+  "report.maxConcurrentPerSubject|description": {
+    "en": "525965a5866fed18",
+    "text": "Combien de tâches de rapport une personne peut avoir en cours à la fois."
+  },
+  "report.artifactRetentionS|label": {
+    "en": "ae014cb5ae4ea837",
+    "text": "Durée de conservation d’un résultat de rapport (secondes)"
+  },
+  "report.artifactRetentionS|description": {
+    "en": "c1e0935d871842f4",
+    "text": "Durée pendant laquelle les octets d’un rapport terminé restent disponibles au téléchargement. Passé ce délai, le résultat a disparu."
+  },
+  "report.jobRetentionS|label": {
+    "en": "117aad13b6fa172e",
+    "text": "Durée de conservation d’une ligne de tâche de rapport (secondes)"
+  },
+  "report.jobRetentionS|description": {
+    "en": "dfada581a8c28ca3",
+    "text": "Durée pendant laquelle la ligne d’une tâche de rapport terminée reste dans la liste. Une tâche encore en cours n’est pas supprimée."
+  },
+  "report.usersGroup|label": {
+    "en": "21554dfaa265b36f",
+    "text": "Qui peut se voir délivrer report:use"
+  },
+  "report.usersGroup|description": {
+    "en": "28068508e0655509",
+    "text": "Le groupe d’annuaire dont les membres peuvent se voir délivrer report:use. Vide : seuls les administrateurs de ce domaine le peuvent. report:admin n’est délivré qu’à ces administrateurs."
   },
   "listenerMain.minVersion|label": {
     "en": "6470c151e28a9ab3",

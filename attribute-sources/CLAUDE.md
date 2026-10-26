@@ -137,7 +137,7 @@ assertion is minted on the next request:
 
 * **`tests/attribute_sources.js` stubs the driver.** It holds everything this
   service decides, and it does not open a database.
-* **`tests/vendored/sts_attribute_sources.js` is the real databases** (#94,
+* **`tests/protocol/sts_attribute_sources.js` is the real databases** (#94,
   MariaDB #356). PostgreSQL on the stack's `postgres`, and MariaDB on the
   stack's `mariadb`, each over TLS the service verifies against the
   certificate the job read off the handshake. The six checks run once per

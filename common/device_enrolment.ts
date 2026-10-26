@@ -758,7 +758,15 @@ class DeviceEnrolment {
             ' (format ' + String(att.format || 'unrecorded') + ').',
         verifiedAt: trusted
           ? new Date(Number(att.checkedAt) || this.deps.now()).toISOString()
-          : '' } }, { deviceId: detail.deviceId, label: detail.label,
+          : '',
+        // An android-key statement's serials and Google's verdict (#903), so
+        // the daily recheck reaches the linked device too; without them a
+        // batch key revoked later left the device attested for good.
+        ...(att.androidRevocation &&
+            Array.isArray(att.androidRevocation.chainSerials)
+          ? { chainSerials: att.androidRevocation.chainSerials,
+              revocation: att.androidRevocation } : {}) } },
+      { deviceId: detail.deviceId, label: detail.label,
                       platform: detail.platform, model: detail.model,
                       os: detail.os }, 'webauthn');
     log.debug("Leaving DeviceEnrolment.finishLink(). ok=" + out.ok);

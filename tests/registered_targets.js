@@ -22,7 +22,8 @@
 //   T2. the definition, in product: a registered application by each of its
 //       four names is a registered target; this service's own resource
 //       servers (the default resource indicator, a named authorization
-//       server's, the realm's /admin-api) are, and the deleted GNAP
+//       server's, the realm's /admin-api, /account-api and /report-api)
+//       are, and the deleted GNAP
 //       demonstration resource server is one in neither mode (#593); an
 //       address nobody registered and one only SEEN are not; in development
 //       nothing is unregistered;
@@ -225,7 +226,8 @@ function definition(t, f) {
   const registered = [API, 'rt-api-client', 'rt-api', BASE_URI,
                       BASE_URI.slice(0, -1)];
   const own = [base + '/resource', base + '/as1/resource',
-               base + '/admin-api'];
+               base + '/admin-api', base + '/account-api',
+               base + '/report-api'];
   // THE GNAP DEMONSTRATION RESOURCE SERVER was deleted by #593, and with it
   // its place among the registered targets, in development too.
   const demoRs = base + '/gnap/rs/resource';
@@ -250,7 +252,8 @@ function definition(t, f) {
   t.check(product.own.length === 0 && product.owners.every(Boolean),
           'T2b. product: this service\'s own resource servers — the default ' +
           'resource indicator, a named authorization server\'s, the realm\'s ' +
-          '/admin-api — are registered targets', JSON.stringify(product));
+          '/admin-api, /account-api and /report-api — are registered targets',
+          JSON.stringify(product));
   t.check(product.demoRs.length === 1 && !demoInDevelopment,
           'T2d. /gnap/rs/resource is a registered target in neither mode: ' +
           'the demonstration resource server was deleted (#593)',
@@ -299,13 +302,16 @@ function authorize(t, f, base) {
           'redirected invalid_target (STS-OAUTH-0950)',
           JSON.stringify(refused));
   const passed = [vet('product', API), vet('product', base + '/resource'),
+                  vet('product', base + '/account-api'),
+                  vet('product', base + '/report-api'),
                   vet('product', undefined),
                   vet('development', NOBODY), vet('development', f.seen)];
   t.check(passed.every(function (r) {
     return r.code !== 'STS-OAUTH-0950';
-  }), 'T3b. a registered application\'s audience and the default resource ' +
-          'indicator pass in product, as does no resource; development ' +
-          'refuses neither', JSON.stringify(passed));
+  }), 'T3b. a registered application\'s audience, the default resource ' +
+          'indicator, /account-api and /report-api pass in product, as ' +
+          'does no resource; development refuses neither',
+          JSON.stringify(passed));
   log.debug("Leaving authorize().");
   return server;
 }
@@ -339,6 +345,8 @@ async function token(t, f, base, server) {
           JSON.stringify(refused));
   const passed = [await ask('product', code(API)),
                   await ask('product', code(base + '/admin-api')),
+                  await ask('product', code(base + '/account-api')),
+                  await ask('product', code(base + '/report-api')),
                   await ask('development', code(NOBODY))];
   t.check(passed.every(function (r) {
     return r.code !== 'STS-OAUTH-0951';

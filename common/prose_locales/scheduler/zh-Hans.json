@@ -287,6 +287,14 @@
     "en": "183fddf95526a70b",
     "text": "移除通过 OpenID Federation Trust Chain 注册且注册已结束的每个客户端（12.3）。每个端点早已将此类客户端视为未知；此作业只是避免条目残留。"
   },
+  "sched.jobs.passkeys.report-recount.title": {
+    "en": "484d9dcdbd9a681e",
+    "text": "通行密钥报告重新计数"
+  },
+  "sched.jobs.passkeys.report-recount.describe": {
+    "en": "049675db215c0863",
+    "text": "为 监控 → 通行密钥 统计领域的通行密钥（#942）：按算法和通道，统计仅持有后量子、仅持有传统或两者皆有的人员，以及哪些验证器型号持有哪些算法。只读取持有通行密钥的人员，每次一页；之后发生的变更会在写入时计入。"
+  },
   "sched.jobs.persistence.minted-expiry-purge.title": {
     "en": "2e5c5abaf78a47c9",
     "text": "过期铸造行清除"
@@ -310,6 +318,54 @@
   "sched.jobs.process.memory-report.describe": {
     "en": "4f2c054a1405a843",
     "text": "在本进程中记录一行日志，包含其角色和内存：常驻内存大小、已用堆和堆总量、堆限制、外部内存和数组缓冲区（#341）。"
+  },
+  "sched.jobs.report.drain.title": {
+    "en": "792c052635196abd",
+    "text": "报表作业"
+  },
+  "sched.jobs.report.drain.describe": {
+    "en": "44526b11fff0c35e",
+    "text": "为本领域认领排队的报表作业，不超过并发上限，并写入每个制品。"
+  },
+  "sched.jobs.report.drain.here.title": {
+    "en": "e650bff45b03631e",
+    "text": "本节点上的报表作业"
+  },
+  "sched.jobs.report.drain.here.describe": {
+    "en": "4ac0b964339af918",
+    "text": "报表节点上的 report.drain 副本。除非本进程持有 ops.reporting，否则它什么也不做。"
+  },
+  "sched.jobs.report.retention.title": {
+    "en": "5d356aad0991d4bf",
+    "text": "报表保留"
+  },
+  "sched.jobs.report.retention.describe": {
+    "en": "820f16dd4154d80e",
+    "text": "删除超过保留期的报表制品，删除超过保留期的已完成作业行，并使围栏已消失的运行中作业失败。"
+  },
+  "sched.jobs.report.retention.here.title": {
+    "en": "65aecca5c6b3edef",
+    "text": "本节点上的报表保留"
+  },
+  "sched.jobs.report.retention.here.describe": {
+    "en": "aacfb1a2f3212be6",
+    "text": "报表节点上的 report.retention 副本。除非本进程持有 ops.reporting，否则它什么也不做。"
+  },
+  "sched.jobs.report.schedule.title": {
+    "en": "63e5ea89789332f4",
+    "text": "报表计划"
+  },
+  "sched.jobs.report.schedule.describe": {
+    "en": "e1706c674f78a995",
+    "text": "为每个到期的报表定义以其所有者的身份加入一个作业，前提是该所有者仍可运行该查询。使用存储的参数默认值。缺失的一项会保留该时段。"
+  },
+  "sched.jobs.report.schedule.here.title": {
+    "en": "a1a815b7c87fc8b6",
+    "text": "本节点上的报表计划"
+  },
+  "sched.jobs.report.schedule.here.describe": {
+    "en": "eea786a826ff1054",
+    "text": "报表节点上的 report.schedule 副本。除非本进程持有 ops.reporting，否则它什么也不做。"
   },
   "sched.jobs.risc.opt-out-effective.title": {
     "en": "04bdbc25402e8321",

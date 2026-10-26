@@ -22,7 +22,7 @@
 // second half of that file's rule and the reason the in-process suite exists.
 // The claim under test is "the key is the same one after a restart", and over
 // HTTP that means launching a service twice against a store you control — which
-// `tests/vendored/` has no way to ask for. Here it is two calls to
+// `tests/protocol/` has no way to ask for. Here it is two calls to
 // `keystore.start()` around a temporary directory.
 //
 // **THE ENCRYPTION IS THE OTHER HALF AND IS PURE**: that a wrong
@@ -225,7 +225,7 @@ async function run(t) {
     const helpers = require('../common/helpers');
     // Required HERE with the two above it, and for their reason: the
     // environment is set a few lines up and these modules read it at load.
-    const bbs2023 = require('../common/vendored/bbs2023.js');
+    const bbs2023 = require('../common/crypto_impl/bbs2023.js');
 
     // **THE ENVIRONMENT LAYER AND NOT `setOverride()`**, and the reason is the
     // thing under test: all three of these are RESTART-ONLY, because the keys
@@ -565,7 +565,7 @@ async function run(t) {
     // created at runtime had FOUR key sets in four processes, three generated
     // within 43ms of each other and each written down, so `/oauth2/jwks`
     // answered a different key per worker. It was found as an "intermittent"
-    // OAEP failure in `tests/vendored/sts_jwt_bearer_grant.js`, which encrypts
+    // OAEP failure in `tests/protocol/sts_jwt_bearer_grant.js`, which encrypts
     // to the key one worker publishes and posts to whichever answers.
     //
     // The winning blob is the held one with a DIFFERENT certificate rather

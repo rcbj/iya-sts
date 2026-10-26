@@ -116,6 +116,7 @@
   "title.users-new": "新建用户",
   "title.vc": "凭证声明",
   "title.vc-monitor": "可验证凭证（监控）",
+  "title.passkey-report": "通行密钥（监控）",
   "title.xacml-editor": "策略编辑器",
   "title.xacml": "XACML",
   "title.xacml-decide": "试做决策",

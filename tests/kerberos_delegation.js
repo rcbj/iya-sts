@@ -11,7 +11,7 @@
 // are decided by the issuance policy from the common controls on the
 // directory's entries — the same rules WS-Trust and the RFC 8693 token
 // exchange are decided by. Driven here through `kdc.handleMessage()` with
-// the local client `tests/vendored/krb5_wire.js`, in development mode,
+// the local client `tests/protocol/krb5_wire.js`, in development mode,
 // where the fixture services' rules are SEEDS for their entries:
 //
 //   A. S4U2SELF: forwardable for a service allowing impersonation, not for
@@ -50,7 +50,7 @@ const principals = require('../kerberos/krb5_principals.js');
 const kdc = require('../kerberos/krb5_kdc.js');
 const kcrypto = require('../kerberos/krb5_crypto.js');
 const kpac = require('../kerberos/krb5_pac.js');
-const wire = require('./vendored/krb5_wire.js');
+const wire = require('./protocol/krb5_wire.js');
 
 const log = require('bunyan').createLogger({ name: 'kerberos_delegation',
   level: process.env.LOG_LEVEL || 'info' });

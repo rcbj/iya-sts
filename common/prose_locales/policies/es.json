@@ -1127,6 +1127,30 @@
     "en": "ba077a59ecf25ecb",
     "text": "`off` (el valor predeterminado) acepta una llave de acceso sea cual sea su algoritmo de firma. `sign-in` solo acepta una llave de acceso POSCUÁNTICA, cuyo algoritmo es ML-DSA-44, ML-DSA-65 o ML-DSA-87 (RFC 9964), cuando inicia la sesión de alguien, como primera credencial o como segundo factor; una clásica aún puede registrarse. `registration-and-sign-in` también rechaza una clásica en el registro, y el registro entonces solo ofrece ML-DSA. Decide el algoritmo, no el carril en que se creó una llave. Se rechaza mientras el dominio no ofrezca ningún ML-DSA (webauthn.algorithms no nombra ninguno, y ni webauthn.pqcOnly ni webauthn.pqcAlongsideClassical está activado)."
   },
+  "passkey.FIELDS.postQuantumAllowCredentials.label": {
+    "en": "295b04bef9cf50bc",
+    "text": "Llaves de acceso que nombra un inicio de sesión cuando se exige una poscuántica"
+  },
+  "passkey.FIELDS.postQuantumAllowCredentials.what": {
+    "en": "af7666466d67e760",
+    "text": "`realm` (el valor predeterminado) sigue el webauthn.postQuantumAllowCredentials del dominio. Solo se lee mientras postQuantumRequired exige una llave de acceso poscuántica al iniciar sesión. `narrow` nombra solo las llaves de acceso poscuánticas (ML-DSA) de la persona en la solicitud del paso de llave de acceso, de modo que nunca se ofrece una clásica, y una persona cuyo dispositivo solo guarda su llave clásica ve el propio mensaje «no se encontró ninguna llave de acceso» de la plataforma. `list-and-refuse` nombra todas las llaves de acceso que tiene y rechaza una clásica después de la ceremonia, con una página que dice que esta aplicación exige una llave de acceso poscuántica y dónde añadir una; la persona puede entonces elegir una llave de acceso que será rechazada. En ambos casos, a una persona que no tiene ninguna llave de acceso poscuántica se le avisa antes de cualquier ceremonia. Si se omite al guardar, se conserva `realm`."
+  },
+  "passkey.FIELDS.registrationAlgorithms.label": {
+    "en": "48d2a5935e526db5",
+    "text": "Algoritmos que ofrece un registro de llave de acceso"
+  },
+  "passkey.FIELDS.registrationAlgorithms.what": {
+    "en": "4ff3748f6cb3a6f1",
+    "text": "`realm` (el valor predeterminado) ofrece el webauthn.algorithms del dominio. Si no, los algoritmos de firma que un registro de llave de acceso ofrece a las personas de este perfil, por orden de preferencia (un autenticador crea el primero que admite), de entre los algoritmos que webauthn.algorithms puede nombrar. La fila siguiente puede restringirla o reordenarla, y una llave de acceso cuyo algoritmo no sea uno de los que ofrece este perfil se rechaza al registrarse. Si se omite en un guardado, se conserva `realm`."
+  },
+  "passkey.FIELDS.registrationMode.label": {
+    "en": "ca3432814ea1b7a3",
+    "text": "Algoritmos poscuánticos en el registro"
+  },
+  "passkey.FIELDS.registrationMode.what": {
+    "en": "1466dbe275c566e7",
+    "text": "`realm` (el valor predeterminado) sigue webauthn.pqcOnly y webauthn.pqcAlongsideClassical. `pq-only` solo ofrece ML-DSA y rechaza un reintento con los algoritmos clásicos. `pq-first` ofrece primero ML-DSA y después los algoritmos clásicos, incluso donde el dominio solo pide ML-DSA. `classical-only` no ofrece ningún ML-DSA ni ninguna llave de acceso poscuántica junto a una clásica, para las personas cuyos dispositivos fallan en un registro ML-DSA. Se rechaza con postQuantumRequired distinto de off o con attestationAlgorithms definido (classical-only), y donde los algoritmos ofrecidos no nombran ningún ML-DSA (pq-only, pq-first). Si se omite en un guardado, se conserva `realm`."
+  },
   "passkey.FIELDS.passkeyHints.label": {
     "en": "7445bda72b06c415",
     "text": "Sugerencias que envía \"Crear una llave de acceso\""
@@ -1199,6 +1223,30 @@
     "en": "bdbb83ca7b2a2c48",
     "text": "`any` DE FORMA PREDETERMINADA EN DESARROLLO, `not-weaker` EN PRODUCTO. Si una forma de volver a la cuenta que no pide ninguna llave de acceso — un enlace de restablecimiento de contraseña, un enlace de activación, un código de recuperación, un código o enlace enviado por correo — restablece el acceso de una persona que tiene una. `any`: de inmediato. `not-weaker`: el primer inicio de sesión posterior que no sea con llave de acceso no llega a ninguna aplicación; la persona registra una llave de acceso que cumpla esta política e inicia sesión con ella. `operator-only`: como not-weaker, y se rechazan las puertas de autoservicio (el formulario de contraseña olvidada, un código de recuperación o un código o enlace enviado por correo al iniciar sesión); solo queda el enlace de restablecimiento, la contraseña generada o el enlace de activación de un administrador. Si se omite al guardar, se mantiene el valor predeterminado integrado."
   },
+  "passkey.FIELDS.attestationAlgorithms.label": {
+    "en": "fe72fed238e39ede",
+    "text": "Algoritmos con los que debe estar firmada la atestación de una clave de acceso"
+  },
+  "passkey.FIELDS.attestationAlgorithms.what": {
+    "en": "cb4ed83be3a69177",
+    "text": "`none` DE FORMA PREDETERMINADA: se acepta una atestación sea cual sea el algoritmo con el que esté firmada. En otro caso, una lista de post-quantum, ml-dsa-44, ml-dsa-65, ml-dsa-87, slh-dsa y composite-ml-dsa: una clave de acceso solo se registra con una atestación DE CONFIANZA que lleve un certificado, cuya firma de la declaración y la firma de cada certificado de su cadena, desde el certificado hoja hasta el ancla de confianza, sean cada una de las que la lista permite (`post-quantum` permite cualquier firma ML-DSA, SLH-DSA o ML-DSA compuesta). Las atestaciones «self» y «none» se rechazan, porque no llevan certificado. Con enforceAttestationAtSignIn activado, cada inicio de sesión somete la clave de acceso a esta regla según lo que su registro dejó constancia, de modo que una clave de acceso registrada antes de la regla deja de funcionar. Es el algoritmo de la atestación, no el de la propia clave de acceso (postQuantumRequired). Si se omite al guardar, se conserva el valor predeterminado integrado."
+  },
+  "passkey.FIELDS.adminEnrolment.label": {
+    "en": "73fd6ffe6660cf3f",
+    "text": "Permitir que un administrador registre una llave de acceso para una persona"
+  },
+  "passkey.FIELDS.adminEnrolment.what": {
+    "en": "9e395e59fd838fcf",
+    "text": "`off` DE FORMA PREDETERMINADA. `on` permite que un administrador que tiene el rol de consola Admin Write registre una llave de acceso para una persona a la que se aplica este perfil, desde la página de la persona en la consola o /admin-api: la ceremonia de registro ocurre en el propio navegador del administrador, contra un autenticador que él tiene (una llave de seguridad para entregarle, por ejemplo), bajo el identificador de usuario de la persona, y se verifica exactamente como el propio registro de la persona: atestación, algoritmos y las reglas de registro de esta política. Nada fabricado en otra parte puede importarse. La llave registra qué administrador la registró y cuándo, y se avisa a la persona. Si se omite al guardar, se mantiene el valor predeterminado integrado."
+  },
+  "passkey.FIELDS.deviceBoundRequired.label": {
+    "en": "19194c290aaa3903",
+    "text": "Exigir una sesión vinculada al dispositivo"
+  },
+  "passkey.FIELDS.deviceBoundRequired.what": {
+    "en": "5098a9645fefe2ff",
+    "text": "DESACTIVADO DE FORMA PREDETERMINADA. Activado, una emisión hacia una aplicación que cubre este perfil espera hasta que la sesión de inicio de sesión esté vinculada a la clave del navegador, y se rechaza cuando el navegador omitió ese registro o la espera transcurrió sin una vinculación. Una sesión a la que nunca se le ofreció el registro no es rechazada por esta fila. Se rechaza mientras authn.deviceBoundSessions está desactivado."
+  },
   "passkey.SCHEMA.objectClasses.stsPasskeyPolicy.what": {
     "en": "44bab556bd6240cc",
     "text": "La clase de este servicio para una política de llaves de acceso: cómo se comportan las llaves de acceso en este dominio. La entrada lleva el nombre del PERFIL (`cn=default`)."
@@ -1239,6 +1287,18 @@
     "en": "ba077a59ecf25ecb",
     "text": "`off` (el valor predeterminado) acepta una llave de acceso sea cual sea su algoritmo de firma. `sign-in` solo acepta una llave de acceso POSCUÁNTICA, cuyo algoritmo es ML-DSA-44, ML-DSA-65 o ML-DSA-87 (RFC 9964), cuando inicia la sesión de alguien, como primera credencial o como segundo factor; una clásica aún puede registrarse. `registration-and-sign-in` también rechaza una clásica en el registro, y el registro entonces solo ofrece ML-DSA. Decide el algoritmo, no el carril en que se creó una llave. Se rechaza mientras el dominio no ofrezca ningún ML-DSA (webauthn.algorithms no nombra ninguno, y ni webauthn.pqcOnly ni webauthn.pqcAlongsideClassical está activado)."
   },
+  "passkey.SCHEMA.attributes.stsPasskeyPostQuantumAllowCredentials.what": {
+    "en": "af7666466d67e760",
+    "text": "`realm` (el valor predeterminado) sigue el webauthn.postQuantumAllowCredentials del dominio. Solo se lee mientras postQuantumRequired exige una llave de acceso poscuántica al iniciar sesión. `narrow` nombra solo las llaves de acceso poscuánticas (ML-DSA) de la persona en la solicitud del paso de llave de acceso, de modo que nunca se ofrece una clásica, y una persona cuyo dispositivo solo guarda su llave clásica ve el propio mensaje «no se encontró ninguna llave de acceso» de la plataforma. `list-and-refuse` nombra todas las llaves de acceso que tiene y rechaza una clásica después de la ceremonia, con una página que dice que esta aplicación exige una llave de acceso poscuántica y dónde añadir una; la persona puede entonces elegir una llave de acceso que será rechazada. En ambos casos, a una persona que no tiene ninguna llave de acceso poscuántica se le avisa antes de cualquier ceremonia. Si se omite al guardar, se conserva `realm`."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyRegistrationAlgorithms.what": {
+    "en": "4ff3748f6cb3a6f1",
+    "text": "`realm` (el valor predeterminado) ofrece el webauthn.algorithms del dominio. Si no, los algoritmos de firma que un registro de llave de acceso ofrece a las personas de este perfil, por orden de preferencia (un autenticador crea el primero que admite), de entre los algoritmos que webauthn.algorithms puede nombrar. La fila siguiente puede restringirla o reordenarla, y una llave de acceso cuyo algoritmo no sea uno de los que ofrece este perfil se rechaza al registrarse. Si se omite en un guardado, se conserva `realm`."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyRegistrationMode.what": {
+    "en": "1466dbe275c566e7",
+    "text": "`realm` (el valor predeterminado) sigue webauthn.pqcOnly y webauthn.pqcAlongsideClassical. `pq-only` solo ofrece ML-DSA y rechaza un reintento con los algoritmos clásicos. `pq-first` ofrece primero ML-DSA y después los algoritmos clásicos, incluso donde el dominio solo pide ML-DSA. `classical-only` no ofrece ningún ML-DSA ni ninguna llave de acceso poscuántica junto a una clásica, para las personas cuyos dispositivos fallan en un registro ML-DSA. Se rechaza con postQuantumRequired distinto de off o con attestationAlgorithms definido (classical-only), y donde los algoritmos ofrecidos no nombran ningún ML-DSA (pq-only, pq-first). Si se omite en un guardado, se conserva `realm`."
+  },
   "passkey.SCHEMA.attributes.stsPasskeyHintsPasskey.what": {
     "en": "2ffa66aabab7a053",
     "text": "Las sugerencias (hints) de WebAuthn (Level 3 sección 5.4.8) que envía *Crear una llave de acceso* del portal, en orden, de entre security-key, client-device y hybrid, o ninguna. Indican al navegador qué forma de crear la llave de acceso ofrecer primero. Una sugerencia no puede contradecir webauthn.authenticatorAttachment: client-device implica platform, y security-key y hybrid implican cross-platform."
@@ -1274,6 +1334,18 @@
   "passkey.SCHEMA.attributes.stsPasskeyRecoveryAssurance.what": {
     "en": "bdbb83ca7b2a2c48",
     "text": "`any` DE FORMA PREDETERMINADA EN DESARROLLO, `not-weaker` EN PRODUCTO. Si una forma de volver a la cuenta que no pide ninguna llave de acceso — un enlace de restablecimiento de contraseña, un enlace de activación, un código de recuperación, un código o enlace enviado por correo — restablece el acceso de una persona que tiene una. `any`: de inmediato. `not-weaker`: el primer inicio de sesión posterior que no sea con llave de acceso no llega a ninguna aplicación; la persona registra una llave de acceso que cumpla esta política e inicia sesión con ella. `operator-only`: como not-weaker, y se rechazan las puertas de autoservicio (el formulario de contraseña olvidada, un código de recuperación o un código o enlace enviado por correo al iniciar sesión); solo queda el enlace de restablecimiento, la contraseña generada o el enlace de activación de un administrador. Si se omite al guardar, se mantiene el valor predeterminado integrado."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyAttestationAlgorithms.what": {
+    "en": "cb4ed83be3a69177",
+    "text": "`none` DE FORMA PREDETERMINADA: se acepta una atestación sea cual sea el algoritmo con el que esté firmada. En otro caso, una lista de post-quantum, ml-dsa-44, ml-dsa-65, ml-dsa-87, slh-dsa y composite-ml-dsa: una clave de acceso solo se registra con una atestación DE CONFIANZA que lleve un certificado, cuya firma de la declaración y la firma de cada certificado de su cadena, desde el certificado hoja hasta el ancla de confianza, sean cada una de las que la lista permite (`post-quantum` permite cualquier firma ML-DSA, SLH-DSA o ML-DSA compuesta). Las atestaciones «self» y «none» se rechazan, porque no llevan certificado. Con enforceAttestationAtSignIn activado, cada inicio de sesión somete la clave de acceso a esta regla según lo que su registro dejó constancia, de modo que una clave de acceso registrada antes de la regla deja de funcionar. Es el algoritmo de la atestación, no el de la propia clave de acceso (postQuantumRequired). Si se omite al guardar, se conserva el valor predeterminado integrado."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyAdminEnrolment.what": {
+    "en": "9e395e59fd838fcf",
+    "text": "`off` DE FORMA PREDETERMINADA. `on` permite que un administrador que tiene el rol de consola Admin Write registre una llave de acceso para una persona a la que se aplica este perfil, desde la página de la persona en la consola o /admin-api: la ceremonia de registro ocurre en el propio navegador del administrador, contra un autenticador que él tiene (una llave de seguridad para entregarle, por ejemplo), bajo el identificador de usuario de la persona, y se verifica exactamente como el propio registro de la persona: atestación, algoritmos y las reglas de registro de esta política. Nada fabricado en otra parte puede importarse. La llave registra qué administrador la registró y cuándo, y se avisa a la persona. Si se omite al guardar, se mantiene el valor predeterminado integrado."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyDeviceBoundRequired.what": {
+    "en": "5098a9645fefe2ff",
+    "text": "DESACTIVADO DE FORMA PREDETERMINADA. Activado, una emisión hacia una aplicación que cubre este perfil espera hasta que la sesión de inicio de sesión esté vinculada a la clave del navegador, y se rechaza cuando el navegador omitió ese registro o la espera transcurrió sin una vinculación. Una sesión a la que nunca se le ofreció el registro no es rechazada por esta fila. Se rechaza mientras authn.deviceBoundSessions está desactivado."
   },
   "passkey.SCHEMA.attributes.stsPasskeySelectApplication.what": {
     "en": "03ba679923c40b45",
@@ -1415,6 +1487,10 @@
     "en": "79742dacfba54ede",
     "text": "solo una llave de acceso poscuántica (ML-DSA) se registra o inicia la sesión de una persona"
   },
+  "passkey.sentences.attestationAlgorithms": {
+    "en": "9e73c79f0de11296",
+    "text": "una clave de acceso solo se registra con una atestación de confianza cuya declaración y cadena de certificados están firmadas con {{algorithms}}"
+  },
   "passkey.sentences.recoveryAny": {
     "en": "7383156c8eb1e363",
     "text": "una recuperación de cuenta restablece el acceso de inmediato, sea cual sea la llave de acceso que tenga la persona"
@@ -1426,6 +1502,30 @@
   "passkey.sentences.recoveryOperatorOnly": {
     "en": "1a8f0b4a3319a435",
     "text": "una persona que tiene una llave de acceso solo recupera su cuenta a través de un administrador, y después no llega a ninguna aplicación hasta que una llave de acceso que cumpla esta política haya iniciado su sesión"
+  },
+  "passkey.sentences.registrationList": {
+    "en": "fec8859790708542",
+    "text": "un registro de llave de acceso ofrece {{algorithms}}, en ese orden, en lugar de la lista del dominio"
+  },
+  "passkey.sentences.registrationPqOnly": {
+    "en": "10bb1b9e748c737c",
+    "text": "un registro de llave de acceso solo ofrece algoritmos poscuánticos (ML-DSA), de entre {{algorithms}}, y ningún reintento clásico"
+  },
+  "passkey.sentences.registrationPqFirst": {
+    "en": "6d255de3f15849dd",
+    "text": "un registro de llave de acceso ofrece primero algoritmos poscuánticos (ML-DSA) y después los clásicos, de entre {{algorithms}}"
+  },
+  "passkey.sentences.registrationClassicalOnly": {
+    "en": "34338f9da2211979",
+    "text": "un registro de llave de acceso solo ofrece algoritmos clásicos, de entre {{algorithms}}: no se crea ninguna llave de acceso poscuántica"
+  },
+  "passkey.sentences.param.realmAlgorithms": {
+    "en": "62dd60f1d67057b4",
+    "text": "el webauthn.algorithms del dominio"
+  },
+  "passkey.sentences.adminEnrolment": {
+    "en": "41023a55f549b1cd",
+    "text": "un administrador puede registrar una llave de acceso para una persona, en el propio navegador del administrador, verificada como lo está la de la persona"
   },
   "kinds.locale.label": {
     "en": "1219a9dcfb9aa19f",

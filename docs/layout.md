@@ -13,7 +13,7 @@ sts_metadata.ts      reads the router to list what everything else registered
 
 common/              config, helpers, the express app, the counters, the audit
                      log, the application registry, the claim catalogues
-common/vendored/     byte-identical copies of the parent project's PKI and
+common/crypto_impl/     byte-identical copies of the parent project's PKI and
                      JSON-LD modules, plus the contexts they read
 oauth-oidc/          the authorization server, RFC 9700 mode, DPoP, mTLS,
                      client authentication, the multi-AS profiles
@@ -56,7 +56,7 @@ after it, so that one sequence decides which handler wins. There is a table of
 the ordering constraints in the root `CLAUDE.md`; each one is a real dependency
 rather than a preference.
 
-**`common/vendored/` is not to be edited.** Those files are byte-identical copies
+**`common/crypto_impl/` is not to be edited.** Those files are byte-identical copies
 of files in the [OAuth2/OIDC Debugger](https://idptools.com), and two of that
 project's tests exist to keep them that way. `contexts/` sits inside that
 directory rather than at the root precisely so that `bbs2023.js` — which resolves
@@ -102,7 +102,7 @@ undocumented, nor be documented and not exist.
 
 What no code here can check is a new console control with **no** row. Nothing in
 this service can see a form appear on a page, so the parity is asserted from
-outside by this repository's own `tests/vendored/admin_api.js`, which reads the facts off
+outside by this repository's own `tests/protocol/admin_api.js`, which reads the facts off
 the *service* rather than off a list in the test.
 
 ## Tests

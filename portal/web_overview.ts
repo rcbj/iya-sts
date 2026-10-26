@@ -252,11 +252,17 @@ class OverviewPages {
                                  : t.html('portal.overview.unstated')) +
       ' (acr ' + esc(signOn.acr) + ')</td></tr>' +
       // Whether the sign-on session is bound to this browser's key (#725).
+      // A skip (#743) names the reason tokens; pending, timedout and none
+      // stay "No".
       '<tr><th>' + t.html('portal.overview.deviceBound') + '</th><td>' +
-      (signOn.deviceBound && signOn.deviceBound.bound
-        ? t.html('portal.overview.deviceBoundYes',
-                 { alg: signOn.deviceBound.alg || '' })
-        : t.html('portal.overview.deviceBoundNo')) + '</td></tr><tr><th>' +
+      (signOn.deviceBound && signOn.deviceBound.fact === 'skipped'
+        ? t.html('portal.overview.deviceBoundSkipped',
+                 { reasons: (signOn.deviceBound.reasons || []).join(', ') })
+        : (signOn.deviceBound && signOn.deviceBound.bound
+          ? t.html('portal.overview.deviceBoundYes',
+                   { alg: signOn.deviceBound.alg || '' })
+          : t.html('portal.overview.deviceBoundNo'))) +
+      '</td></tr><tr><th>' +
       t.html('portal.overview.sessionEnds') + '</th><td>' +
       esc(OverviewPages.iso(view.sessionEnds)) + '</td></tr>' +
       (view.timesSignedIn !== null && view.timesSignedIn !== undefined

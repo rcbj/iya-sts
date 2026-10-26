@@ -29,6 +29,7 @@
 import kit = require('./web_kit');
 import DashboardPage = require('./web_dashboard');
 import WebAccounts = require('../common/web_accounts');
+import DocLinks = require('../common/web_doc_links');
 
 type Json = any;
 
@@ -84,6 +85,11 @@ class WebShell {
       '</div></div>' +
     WebShell.trailBar(page.active, page.up, page.title,
                       shell.navLabels, t) +
+    // A tabbed body carries the link inside each leaf panel (#895). An
+    // untabbed page has nowhere else to put it, so it sits under the trail,
+    // above the banners, on every such page.
+    (DocLinks.holdsTabs(page.inner) ? ''
+      : DocLinks.consoleHtml(DocLinks.forConsolePage(page.active), t)) +
     WebShell.gateBanner(shell, t) +
     WebShell.retiringBanner(shell, t) +
     WebShell.withDerivedTips(page.inner) +
@@ -318,17 +324,19 @@ class WebShell {
   // reason the section is not a crumb: there is no page behind it; what it
   // does is open and close the section.
   //
-  // EVERY SECTION IS CLOSED UNLESS THE READER OPENED IT, AND ONE IS OPEN AT A
-  // TIME (#750, rcbj: "everything collapsed by default and stay collapsed
-  // until the user opens a section. Only one section of the list should be
-  // open at a time"). The list was five sections and some eighty links, and
-  // the page somebody came for was a scroll away. So:
+  // ONE SECTION IS OPEN AT A TIME (#750, rcbj: "Only one section of the list
+  // should be open at a time"). The list was five sections and some eighty
+  // links, and the page somebody came for was a scroll away. A fresh load
+  // opens the section that holds the page; after that a section stays as
+  // the reader left it. So:
   //
-  //   * Nothing opens itself — not even the section holding the page being
-  //     drawn. `page.openSection` is the ONE section drawn open, and it is
-  //     what the runtime remembers the reader opened (`onNavToggle()`), so a
-  //     section stays open as they move from page to page in that tab; a
-  //     fresh load, a new tab or the server-drawn console names none.
+  //   * `page.openSection` is the ONE section drawn open. On a fresh load the
+  //     runtime has no choice yet, so its first drawing passes the section
+  //     that holds the page: a reload of a page already open shows that
+  //     section's list open. After that it is what the reader opened or
+  //     closed (`onNavToggle()`), and a section stays as they left it while
+  //     they move from page to page. The shell still opens only the key it
+  //     is handed; a caller that names none draws every section closed.
   //   * The one-open rule is the browser's: every section's `<details>`
   //     carries the same `name`, which makes them an exclusive group with no
   //     script. A browser that predates `name` gets the same rule from
@@ -491,6 +499,29 @@ class WebShell {
   static sectionPages(section) {
     const pages = WebShell.groupPages(section.items);
     return pages;
+  }
+
+  // The section a page lives in, as `navBar()` keys it. A fresh load has
+  // nothing the reader opened, and the section that holds the page is the
+  // one the list should show open.
+  /**
+   * The sidebar section that holds a page, by its `data-section` key.
+   *
+   * @param sections - the shell answer's sections
+   * @param active - the path of the page being drawn
+   * @returns that section's key, or '' when the page is in none
+   */
+  static sectionKeyOf(sections: Json, active: string): string {
+    const list = sections || [];
+    for (let i = 0; i < list.length; i++) {
+      const pages = WebShell.sectionPages(list[i]);
+      for (let p = 0; p < pages.length; p++) {
+        if (pages[p].path === active) {
+          return WebShell.slugOf(list[i].title);
+        }
+      }
+    }
+    return '';
   }
 
   /**

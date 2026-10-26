@@ -66,7 +66,7 @@ function childMain() {
     const credentials = require(ROOT + '/common/credentials');
     const scheduler = require(ROOT + '/cluster/scheduler');
     const provision = require(ROOT + '/federation/federation_provision');
-    const xmldsig = require(ROOT + '/tests/vendored/saml_xmldsig');
+    const xmldsig = require(ROOT + '/tests/protocol/saml_xmldsig');
     const forge = require('node-forge');
 
     const marks = [];

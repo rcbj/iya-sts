@@ -16,6 +16,7 @@ than living under `oauth-oidc/` where the screen used to be rendered.
 | `device_bound_sessions.ts` | **Device Bound Session Credentials (#725)**: the registration header, `POST /authn/dbsc/register` and `/authn/dbsc/refresh`, and the bound-cookie check `sessionOf()` asks. See *The session bound to a key the browser holds*, below. |
 | `webauthn.js` | The relying party's half of WebAuthn Level 3. |
 | `webauthn_policy.ts` | The ceremony's options, the four policy settings that refuse, and the attestation policy's settings (#105), kept out of `webauthn.js` so that file stays loadable on its own. |
+| `webauthn_ceremonies.ts` | **Every WebAuthn ceremony's audit row, and the algorithm mismatch (#943)**: one `webauthn.ceremony` row per registration and assertion at the four doors that run one, and a `webauthn.algorithm-mismatch` row. A library (rule 3). See *Every ceremony leaves a row*, below. |
 | `webauthn_attestation.ts` | **A registration's attestation statement, verified (#105)**: WebAuthn Level 3 section 7.1 steps 21-25 and all eight section 8 formats, the trust anchors (the realm's and the FIDO Metadata Service's), MDS status reports, revocation, and the record a key carries. A library (rule 3). See *The attestation statement*, below. |
 
 **A THIRD ENDPOINT LIVES IN `/authn/*` AND IS NOT IN THIS DIRECTORY.**
@@ -192,7 +193,7 @@ binding refusal, every act and its next step, the redacted audit row, the
 form POSTs gone); `tests/web_surfaces.js`'s round trip over seven cases in
 `tests/tools/web_surfaces.js`; in process, `tests/tools/authn_screen.js` is
 the walk every in-process test signs in through, and over HTTP every job
-signs in through `tests/vendored/authn_signin.js`.
+signs in through `tests/protocol/authn_signin.js`.
 
 ## THE STEPS AFTER THE SCREEN (#572, #573, 2026-10-12)
 
@@ -311,7 +312,7 @@ binding, each act and its next step, the rate limit, a session refused at
 the end, the redacted audit row); the round trip's step cases in
 `tests/tools/web_surfaces.js`; `tests/tools/authn_screen.js`'s `openStep()`,
 `stepAct()`, `passkeyStep()` and `ignoreOffer()` in process, and
-`tests/vendored/authn_signin.js`'s `step()`, `stepAct()`, `passkeyStep()`
+`tests/protocol/authn_signin.js`'s `step()`, `stepAct()`, `passkeyStep()`
 and `ignoreOffer()` over HTTP; the conformance suite's person presses an
 offered set-up step's Ignore (`conformance_browser.js`).
 
@@ -1346,6 +1347,16 @@ would be several events for one act.
 
 ## It checks no password in development mode (product verifies it)
 
+A password the verifier refuses, a sign-in the rate limit stops, and a
+password the authentication policy will not take as a first factor are
+written by `noteRefusedAuthentication()` as `authentication.refused` (#954).
+A TOTP code, a recovery code and a passkey assertion that did not verify,
+once the owner is known, are written the same way. The row carries the
+reason token and the error code. The password stays off the row.
+`session.refuse`, written when a session is refused after a credential was
+accepted, is a different act and is not written again here.
+`common/CLAUDE.md` (3c) argues the line; the application's tab reads it.
+
 ## TWO KINDS OF BROWSER SESSION, ONE STORE (2026-09-06)
 
 `/admin` and `/portal` are OpenID Connect relying parties of this service's own
@@ -2187,7 +2198,7 @@ issued, and what the session carries is the fact that nobody authenticated.
 The page is markup; the endpoint is the door. A form posted by hand with
 `action=anonymous` while the setting is off must not mint a session that the
 console then lists and that an application's required role is then decided
-against. `tests/vendored/sts_roles_builtin.js` posts exactly that form as its
+against. `tests/protocol/sts_roles_builtin.js` posts exactly that form as its
 sixth mutant.
 
 ### The username in the form is IGNORED, and the principal is stable
@@ -2233,7 +2244,7 @@ So an application whose `appRequiredRole` was `ALL_AUTHENTICATED_USERS`
 configured could never be satisfied by anybody, and the refusal named the
 person and the role and looked entirely deliberate.
 
-**Why it survived:** `tests/vendored/sts_roles.js` narrows an application to a
+**Why it survived:** `tests/protocol/sts_roles.js` narrows an application to a
 CONFIGURED role, and the register answers those the same either way. Only a
 built-in role can see the difference. That is the general lesson rather than a
 detail about this bug — a computed role and a configured one exercise different
@@ -2718,7 +2729,7 @@ session event and the `session.start` row record the key's lane beside its
 algorithm (`credentialLane`).
 
 **Tests**: `tests/passkey_dual_lane.js` (in process, real ES256 and ML-DSA
-ceremonies), and `tests/vendored/sts_passkey_dual_lane.js` over
+ceremonies), and `tests/protocol/sts_passkey_dual_lane.js` over
 `/account-api` and the sign-in screen.
 
 ## A POST-QUANTUM PASSKEY REQUIRED (#718, 2026-10-19)
@@ -2772,8 +2783,91 @@ module does with it:
 
 **Tests**: `tests/passkey_post_quantum_required.js` (in process, real ES256
 and ML-DSA ceremonies), `tests/passkey_xacml.js` section E, and
-`tests/vendored/sts_passkey_post_quantum_required.js` over `/admin-api`,
+`tests/protocol/sts_passkey_post_quantum_required.js` over `/admin-api`,
 `/account-api` and the sign-in screen.
+
+## `phrh` NARROWS THE PASSKEY STEP'S `allowCredentials` (#739, 2026-10-25)
+
+`step_up.phishingClassFor()` is `phrh` only when every producible
+`acr_values` entry is `phrh`, or a required detail acr is `phrh`. `phr phrh`
+is either, and a synced key still answers `phr`, so nothing is narrowed.
+`beginAuthentication({ phishingClass: 'phrh' })` stores it on the pending
+record. `webauthnFacts()` then builds `allow` from keys
+`phishing_resistance.storedKeyEarnsHardware()` accepts (trusted attestation,
+BE recorded clear). A person who holds keys of the step's role and none of
+them qualify is told on the page (`hardwareRefused`, no ceremony button) and
+`mfaWebauthnOptions()` refuses to arm the ceremony (STS-AUTHN-0459, a
+`session.refuse` row). An assertion that names some other key of the role is
+the same code in `finishWebauthn()`: `allowCredentials` is a hint. The
+usernameless sign-in is not this step — its list is empty — and stays
+refused after the ceremony (STS-OAUTH-0971).
+
+**Tests**: `tests/eap_acr_values.js` C1b and C8.
+
+## THE CLASSICAL RETRY OF A REGISTRATION (#944, 2026-10-23)
+
+The offered list is ML-DSA first and a platform may fail the whole
+registration when an authenticator cannot do the first algorithm, rather
+than take the next. The passkey step and `/portal/keys` now offer a retry
+with the classical algorithms only. What holds it together:
+
+* **THE DOOR DECIDES, NOT THE PAGE.** `webauthnPolicy.classicalRetryRefusal(at)`
+  refuses it (`STS-AUTHN-0420`) under `webauthn.pqcOnly` and under a profile
+  requiring a post-quantum passkey at registration, and — `at: 'sign-in'`,
+  the passkey step only — under one requiring it at sign-in, whose new key
+  would be refused at the session's start the moment it was written. Asked
+  by `mfaWebauthnOptions()` (`algorithms: classical` on
+  `…/webauthn/options`) and by `credentials.beginKeyEnrolment()`
+  (`classicalOnly`). `algorithmsOffered(lane, classicalOnly)` IGNORES the
+  flag where the registration-level refusal applies, so a ceremony armed
+  before a setting changed asks for and is held to the realm's own list.
+* **CARRIED, NEVER READ BACK**: `step.classicalOnly` and the pending
+  enrolment's `classicalOnly`, which the finish passes to `algorithmIds()`
+  for section 7.1's offered-algorithm check — an ML-DSA credential answering
+  the retry is `STS-AUTHN-0228`. An ordinary options request after a retry
+  puts the step back on the realm's list. With both lanes on the retry is
+  the classical lane (`classicalRetryLane()`), under its handle.
+* **THE FACTS ARE LANGUAGE-FREE** (`fallback`: `asksPostQuantum`,
+  `classical`, `retrying`) on the step's view, its ceremony and the portal's
+  pending enrolment; the renderers draw the guidance hidden in the page's
+  language and `common/web_webauthn.ts`'s `offerFallback()` shows the part
+  the error is for — `NotSupportedError` plainly, `NotAllowedError` and
+  `UnknownError` (also a cancel, a timeout, anything) worded as "if" — and
+  posts nothing, so the step stays armed. Any other failure is posted as it
+  was (`STS-AUTHN-0022`).
+* **`getClientCapabilities()` HAS NO ALGORITHM MEMBER**, so it cannot choose
+  the algorithms beforehand. It is feature-detected after a failure, shows
+  the hybrid line only where `hybridTransport` is reported, and goes with
+  the failure to `WebWebAuthn.reportCeremonyFailure()` — a NO-OP that #943
+  wires to its ceremony log; this ticket builds no endpoint.
+
+**Tests**: `tests/passkey_post_quantum_fallback.js` sections A-C and E.
+
+## LIST AND REFUSE WHERE A POST-QUANTUM PASSKEY IS REQUIRED (#946, 2026-10-23)
+
+`passkeyPolicy.postQuantumAllowCredentials()` — the profile's row, or the
+realm's `webauthn.postQuantumAllowCredentials` where the row is `realm` —
+chooses how `webauthnFacts()` builds `allowCredentials` while #718's
+requirement applies at sign-in. `narrow` (default) is #718's filter;
+`list-and-refuse` names every key of the role, and a classical assertion
+reaches `startSessionHere()` and is refused there by the existing
+`post-quantum` rule (`STS-AUTHN-0356`) — before any session, event or
+`session.start` row; the counter is spent, as for every verified assertion.
+**A person holding no post-quantum key is still refused before the
+ceremony in both**: no pick of theirs could succeed.
+
+**The panel.** `refusedSession()` passes `postQuantumRequired` to
+`screenRefused()` for 0356, which marks the pending record (cleared by the
+next refusal, the next screen act and Start over); `screenView()` answers
+`postQuantumRequired` as `postQuantumHelp()`'s `{ register, upgrade }` and
+the step's facts carry `postQuantumHelp` beside `postQuantumRefused`.
+`WebAuthnLogin.postQuantumPanel()` draws it on the screen and the step page,
+translated, under the English sentence. `register` is `/portal/keys` where
+passkeys may be registered here; `upgrade` is '' until #939 makes
+`webauthnPolicy.postQuantumUpgradeOffered()` answer true. The usernameless
+sign-in, never narrowable, gets the same panel.
+
+**Tests**: `tests/passkey_post_quantum_fallback.js` section D.
 
 ## THE WEBAUTHN ADDRESS RULES (2026-09-12)
 
@@ -2879,9 +2973,69 @@ header; what a maintainer of THIS directory needs is where it sits:
 
 `tests/webauthn_attestation.js` (with `tests/webauthn_attestation_kit.js`, a
 software authenticator in all eight formats) and
-`tests/vendored/sts_webauthn_attestation.js` are the tests. Not done:
+`tests/protocol/sts_webauthn_attestation.js` are the tests. Not done:
 enterprise attestation (section 5.4.7) has no RP ID allow-list, which the plan
 deferred.
+
+## WHAT AN ATTESTATION IS SIGNED WITH (#941, 2026-10-23)
+
+The attestation record a key carries gains `algorithms`: the statement's
+own signature algorithm by its COSE name, every x5c certificate's leaf
+first, the anchor a trusted path reached, a compound statement's members,
+and `postQuantum` — true only with at least one certificate and every
+signature post-quantum. `webauthn_attestation.ts`'s header argues the
+fields; what this directory needs is where they come from and go:
+
+* **Read off the statement as it arrived** (`algorithmsOf()`), in
+  `assess()` before any branch, so even the policy `off` records them —
+  as the authenticator's claim, beside `verified: false`. The anchor is
+  added once `trustOf()` reached one (it now answers `anchorDer`).
+  A certificate is named by `pki.attestationSignatureAlgorithm()`, which
+  says what its ISSUER signed it with.
+* **One reader**: `recordedAlgorithms()` (and
+  `credentials.attestationAlgorithms()` over it) — what the console's key
+  row, `GET /admin-api/users` and the passkey policy's
+  `attestation-algorithm` facts read. A key from before #941 answers
+  `recorded: false`.
+* **Enforced by the passkey policy's `attestationAlgorithms`**
+  (`common/CLAUDE.md` 3ch): at registration in `credentials.addKey()`
+  (`STS-AUTHN-0411`), at sign-in by `signInVerdict()` only while
+  `enforceAttestationAtSignIn` holds sign-ins to the rules
+  (`STS-AUTHN-0412`, marked and signalled once as 0316 is, in
+  `attestationAtSignIn()`). Set, the row demands trust
+  (`webauthn_policy.attestationSettings()`), so `demandedBy()` names it.
+
+`tests/passkey_attestation_algorithm.js` holds it over an ML-DSA chain
+made at run time with the service's own post-quantum certificate encoder.
+**No real post-quantum authenticator's attestation has been tested.**
+
+## EVERY CEREMONY LEAVES A ROW (#943, 2026-10-23)
+
+`webauthn_ceremonies.ts` writes `webauthn.ceremony` (its header lists the
+twelve detail fields, which are what a realm-wide report reads) at:
+
+* **the passkey step** — `noteStepCeremony()`, at the browser's refusal,
+  the RP ID, enrolment switched off, a check that threw, and
+  `finishWebauthn()`. The parsed credential rides on `body.posted`;
+  `body` is typed `any` for it.
+* **the usernameless sign-in** — `passkeySignIn()` keeps what it learns
+  (credential, owner, key, algorithm) in `passkeyCeremonies`, a WeakMap by
+  response, and `passkeyRefused()` — the one refusal funnel — writes the
+  row; the completed one is written just before `startSession()`.
+* **`/portal/keys` and an activation link** — `credentials.confirmKeyEnrolment()`,
+  reading the pending enrolment's lane BEFORE the check drops it
+  (`opts.door` names `activation`).
+* **not the device link** (`common/device_enrolment.ts`), which is owed.
+
+**The browser's error name comes through the ceremony's own endpoint**: both
+scripts already posted `{ error: e.name, message }` as the credential, so
+no report endpoint was added. Only an allow-listed DOMException name is
+kept, never the message. **The rows are `summarised`** — the request's
+HTTP call row writes the one log line a refusal earns — so no line per
+attempt. **The mismatch** is asked in `startSessionHere()` after the
+passkey policy let the key through (`noteAlgorithmMismatch()`): a
+classical key from a person who holds an ML-DSA one, where post-quantum
+was not required. `tests/webauthn_ceremony_log.js` holds it.
 
 ## `/authn/password-change`: A FORCED PASSWORD CHANGE AT THE SIGN-IN SCREEN (2026-09-13)
 
@@ -2999,7 +3153,7 @@ interleaving. `tests/password_scrypt_off_loop.js` section A.
 * **THE ANSWER IS A WRONG PASSWORD'S, BYTE FOR BYTE**, and it counts against
   every rate limit a wrong password counts against — otherwise it is a
   password oracle. The code rides the verdict to the audit row and the log.
-  `tests/vendored/sts_second_factor_doors.js` compares the two answers as
+  `tests/protocol/sts_second_factor_doors.js` compares the two answers as
   strings at all five doors.
 * **APP PASSWORDS** (`common/app_passwords.ts`, the records in
   `credentials.ts`): generated, shown once, scrypt-hashed on the entry
@@ -3500,3 +3654,75 @@ session, an unknown id leaving it alone, and a browser that never registers
 unchanged. **No test drives a real browser's DBSC** (none in the suite's
 images ships it enabled), and RS256 proofs are covered only by the shared
 verifier.
+
+## Device-bound sessions, four follow-ups (2026-10-25, #743 #742 #741 #740)
+
+The section above is the #725 record. It says federated sessions, site
+scope, `Secure-Session-Skipped` and a policy row that can require binding
+were not built. #743, #742 and #740 build the last three. #741 does not.
+
+**#743.** A browser that declines or fails registration sends
+`Secure-Session-Skipped`, an RFC 9651 list of sf-tokens. The draft names
+`unreachable`, `server_error` and `quota_exceeded`; any well-formed token
+is recorded, with each one's `session_identifier` (`skippedReasons`,
+`skippedIds` on `session.dbsc`). An empty list and an absent header do
+nothing. A non-token member, a `session_identifier` that is not an
+sf-string, or a value that does not parse, is `STS-AUTHN-0460` on the log
+and the audit row, and the session is not marked skipped. A well-formed
+skip is not a failure and burns no code. A session that already has a key
+is not unbound. `noteSkipped()` runs on the session read, ahead of the
+bound-cookie check.
+
+The fact a policy reads is one token, computed from the session rather
+than from the setting: `bound` (a key, even after a later skip),
+`skipped` (the reason tokens sit beside the fact, not in it), `pending`
+(registration was offered and has not completed, been skipped or timed
+out), `timedout` (the offer is older than
+`authn.deviceBoundIssuanceWaitS`; decided at the read, never stored, no
+timer), or `none` (DBSC was not in play for this session). Precedence is
+that order. The wait is strict: at the boundary the fact is still
+`pending`. The console's user page and the portal's Overview say "binding
+skipped" with the reason tokens. The APIs stay language-free; the browser
+translates. `pending`, `timedout` and `none` stay the "No" those pages
+already drew for a session that is not bound.
+
+**#742.** `authn.deviceBoundIncludeSite`, default `false`, read with
+`=== true`. Off, `scope.include_site` is false and the cookie domain is
+`cookieDomainAttribute()`, which is what #725 does. On, the instructions
+set `include_site` and the cookie's Domain is the registrable domain of
+the host that registered: `webauthn.rpId` when that is the host or a
+dotted suffix of it, otherwise the last two labels. There is no
+public-suffix list, so a name under `co.uk` needs `webauthn.rpId`. An
+address, localhost or a single label may still carry `include_site` and
+is not given a Domain it did not already have. Sibling hosts under that
+domain are excluded by a scope rule (`exclude`, path `/`): the debugger's
+public host (`debugger.publicBaseUrl`) and a custom listener's host,
+`publicBaseUrl` and extra hostnames, other than the host that registered.
+The main listener is this origin and is not excluded. A debugger on the
+same host and another port cannot be excluded: cookies are not
+port-scoped (RFC 6265), and a scope rule's domain and path cannot name a
+port. Realm path prefixes are the same origin and need no site scope. No
+`.well-known/device-bound-sessions` document is served. No new timer.
+
+**#741 is not implemented.** The Editor's Draft of 8 September 2026,
+read on 2026-10-25, does not give a stable grammar for reusing one
+session's key at an RP on another origin. The assessment, with the
+sentences that decided it, is in `federation/CLAUDE.md`. The portal and
+the console are this origin and do not need a federated session.
+
+**#740.** `deviceBoundRequired` on a passkey profile, default false,
+optional on a save. Saving it on while `authn.deviceBoundSessions` is
+off is refused (`STS-AUTHN-0461`, recorded, never sent). Saving it off,
+or leaving it out, succeeds while the switch is off. An issuance to an
+application the profile covers, while the feature is on, waits while the
+fact is `pending`: the gate answers `allowed: false` and `deferred: true`,
+with no error code, and that hold is not counted as a refusal. `skipped`
+and `timedout` are refused (`STS-AUTHN-0462`, recorded, never sent; the
+client still sees the issuance denial it already would). `bound` allows.
+`none` — registration was never offered — is not refused by this row,
+and the feature off does not refuse even when a profile still says
+required. The wait is `authn.deviceBoundIssuanceWaitS`, default 60
+seconds, minimum 0, read at the issuance. Zero means the wait has already
+elapsed. The fact inside `common/issuance_gate.js` is computed there.
+That file is in the Kerberos COPY closure and does not require this
+module; the two readings have to stay the same.

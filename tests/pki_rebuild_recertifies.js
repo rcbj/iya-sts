@@ -9,7 +9,7 @@
 // A BRANCH REBUILT UNDER A REALM'S SIGNING KEYS LEAVES THEM PUBLISHING
 // CERTIFICATES FROM THE NEW BRANCH, NOT THE ONE IT REPLACED (2026-09-15, #46).
 //
-// `tests/vendored/sts_pki_distribution_points.js` found it over HTTP: a realm
+// `tests/protocol/sts_pki_distribution_points.js` found it over HTTP: a realm
 // created and then rebuilt with `POST /admin-api/pki/build` published its
 // signing keys' certificates from the SUPERSEDED Issuing CAs, with the old
 // Intermediate in their chain, so `intermediate.crl` was named by the
@@ -59,7 +59,7 @@ const keystore = require('../common/keystore');
 const helpers = require('../common/helpers');
 const realms = require('../common/realms');
 const errorCodes = require('../common/error_codes');
-const x509 = require('../common/vendored/x509');
+const x509 = require('../common/crypto_impl/x509');
 const pkiAdmin = require('../admin-ui/pki_admin');
 const pkiMerge = require('../common/pki_merge');
 const certificateHeader = require('../common/jose_certificate_header');

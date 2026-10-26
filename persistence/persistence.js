@@ -3120,6 +3120,11 @@ function openStore(chosen, resolvedUrl, globalUrls) {
     // load would build their instance first.
     require('../risk/risk_store').setDriver(driver, activeMode);
   }).then(function () {
+    // Report artifact bytes (#956). Definitions and job rows stay in the
+    // realm maps. Required lazily: this file loads before the composition
+    // root, and report/stores must not load the scheduler from here.
+    require('../report/stores').setDriver(driver, activeMode);
+  }).then(function () {
     // ---------------------------------------------------------------------
     // THE KEYSTORE STARTS HERE, BEFORE ANYTHING SEALED IS READ BACK (#222).
     //

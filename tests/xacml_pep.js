@@ -34,7 +34,7 @@
 //
 // This file starts no PEP, registers nothing and makes NO HTTP REQUEST. The
 // deployment — the real container against a running service — is
-// `tests/vendored/sts_xacml_remote_pep.js`.
+// `tests/protocol/sts_xacml_remote_pep.js`.
 // ===========================================================================
 const assert = require('assert');
 const fs = require('fs');

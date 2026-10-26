@@ -15,7 +15,9 @@
 //
 // THE CEREMONY IS THE SAME MARKUP THE SERVER DREW — `#wa-data`, `#wa-go`,
 // `#wa-form` with its hidden `#wa-credential` — and the runtime runs it
-// (`web_portal_webauthn.ts`) and sends `#wa-form` to `/account-api`; the
+// (`web_portal_webauthn.ts`) and sends `#wa-form` to `/account-api`. A
+// registration the guidance shows is reported through that finish without
+// the form being submitted and without the answer being drawn (#961). The
 // Signal API's `#wa-signal` likewise. RENAME is a `<details>` with a form in
 // it, markup that needs nothing more.
 //
@@ -184,7 +186,21 @@ class KeysPages {
       '<tr><th>' + t.html('portal.keys.authenticator') + '</th><td>' +
       KeysPages.attestationText(one.attestation, t) + '</td></tr>' +
       '<tr><th>AAGUID</th><td><code>' + kit.esc(one.aaguid || 'none') +
-      '</code></td></tr></table></details></div><div class="acts">' +
+      '</code></td></tr>' +
+      (one.upgrade && one.upgrade.upgradedAt
+        ? '<tr><th>Post-quantum upgrade</th><td>Upgraded ' +
+          kit.esc(new Date(Number(one.upgrade.upgradedAt)).toISOString()
+            .slice(0, 10)) + ' from <code>' +
+          kit.esc(one.upgrade.previousAlgorithm || '') + '</code> (' +
+          kit.esc(one.upgrade.mode || '') + ')</td></tr>' : '') +
+      '</table></details></div><div class="acts">' +
+      (one.upgradable
+        ? '<form method="post" action="' + PATH + '/upgrade">' +
+          '<input type="hidden" name="action" value="begin">' +
+          '<input type="hidden" name="credentialId" value="' +
+          kit.esc(one.credentialId) + '">' +
+          '<button class="secondary">Upgrade to post-quantum</button>' +
+          '</form>' : '') +
       '<form method="post" action="' + kit.BASE + '/remove-key">' +
       '<input type="hidden" name="credentialId" value="' +
       kit.esc(one.credentialId) + '"><button class="danger" aria-label="' +
@@ -302,7 +318,60 @@ class KeysPages {
       ' data-allow=""' +
       ' data-exclude="' + kit.esc((pending.exclude || []).join(',')) + '"' +
       ' data-options="' + kit.esc(JSON.stringify(pending.options || {})) +
+      // The fallback's facts (#944), for the failure's report.
+      '" data-fallback="' + kit.esc(JSON.stringify(pending.fallback || {})) +
       '" data-mode="create"></div>';
+  }
+
+  // WHEN THE DEVICE CANNOT MAKE THE POST-QUANTUM PASSKEY ASKED FOR (#944):
+  // the guidance, drawn HIDDEN beside the ceremony and shown by
+  // `web_portal_webauthn.ts` (through `common/web_webauthn.ts`'s
+  // `offerFallback()`) only after the registration fails with an error it
+  // is for. Where the account API says the realm allows the classical
+  // retry, a form that begins the enrolment again — the same role, kind
+  // and lane, `algorithms` `classical`, which the API refuses again where
+  // the realm forbids it; where it does not, the sentence that this device
+  // cannot make the passkey this service requires. Nothing for a ceremony
+  // that asks for no ML-DSA, or that is the retry already.
+  /**
+   * The hidden guidance of a registration that may fail on ML-DSA, or ''.
+   *
+   * @param pending - the waiting registration, with its `fallback`
+   * @param t - the translator
+   * @returns the HTML
+   */
+  static fallback(pending: Json, t: Json): string {
+    const f = (pending && pending.fallback) || null;
+    if (!f || f.asksPostQuantum !== true || f.retrying === true) {
+      return '';
+    }
+    const allowed = f.classical === true;
+    return '<div class="warn" id="wa-fallback" hidden>' +
+      '<p id="wa-fallback-unsupported" hidden>' +
+      (allowed ? t.html('portal.key.unsupported')
+               : t.html('portal.key.cannotMake')) + '</p>' +
+      '<p id="wa-fallback-uncertain" hidden>' +
+      (allowed ? t.html('portal.key.maybeUnsupported')
+               : t.html('portal.key.maybeCannotMake')) + '</p>' +
+      '<p id="wa-fallback-hybrid" hidden>' + t.html('portal.key.hybrid') +
+      '</p>' +
+      (allowed
+        ? '<form method="post" action="' + PATH + '" ' +
+          'id="wa-retry-classical-form">' +
+          '<input type="hidden" name="action" value="begin">' +
+          '<input type="hidden" name="role" value="' +
+          kit.esc(pending.role || 'mfa') + '">' +
+          (pending.kind
+            ? '<input type="hidden" name="kind" value="' +
+              kit.esc(pending.kind) + '">' : '') +
+          '<input type="hidden" name="lane" value="' +
+          kit.esc(pending.lane || 'classical') + '">' +
+          '<input type="hidden" name="algorithms" value="classical">' +
+          '<button class="secondary" id="wa-retry-classical">' +
+          t.html('portal.key.retryClassical') + '</button></form>' +
+          '<p class="sub">' + t.html('portal.key.retryClassicalWhat') +
+          '</p>'
+        : '') + '</div>';
   }
 
   // ADDING A KEY: the ceremony while one is waiting, else the form with the
@@ -350,7 +419,8 @@ class KeysPages {
         '</button></form><form method="post" action="' + PATH + '">' +
         '<input type="hidden" name="action" value="cancel">' +
         '<button class="secondary">' + t.html('portal.enrol.cancel') +
-        '</button></form><p class="sub">' +
+        '</button></form>' + KeysPages.fallback(pending, t) +
+        '<p class="sub">' +
         (securityKey
           ? (pending.role === 'primary'
               ? t.html('portal.enrol.creatingKeyPrimary')
@@ -397,6 +467,70 @@ class KeysPages {
           (kind === 'passkey' ? kit.ICONS.passkey : kit.ICONS.securityKey) +
           labels[kind] + '</button>';
       }).join('') + '</div></form>';
+  }
+
+  // THE CLASSICAL KEY UPGRADE (#939): first an assertion by the selected
+  // key, then an ML-DSA-only registration. Each POST is tied to the pending
+  // upgrade id; the ordinary portal WebAuthn runtime handles both phases.
+  /**
+   * The upgrade panel and any ceremony the server has armed.
+   *
+   * @param upgrade - the view's upgrade facts
+   * @param t - the translator
+   * @returns the HTML
+   */
+  static upgradeBlock(upgrade: Json, t: Json): string {
+    const facts = upgrade || {};
+    if (!facts.offered) {
+      return '';
+    }
+    const pending = facts.pending;
+    if (!pending) {
+      return '<section class="passkey-upgrade"><h2>Upgrade a passkey</h2>' +
+        '<p class="note">Prove your existing classical passkey, then ' +
+        'register an ML-DSA passkey. If registration fails, your existing ' +
+        'passkey stays unchanged. Each passkey that can be upgraded has an ' +
+        'Upgrade to post-quantum button.</p></section>';
+    }
+    const proof = pending.phase === 'proof';
+    const mode = proof ? 'get' : 'create';
+    const options = proof
+      ? { rpId: pending.rpId, userVerification: 'required',
+          timeout: 60000 }
+      : (pending.options || {});
+    const data = '<div id="wa-data" data-challenge="' +
+      kit.esc(pending.challenge) + '" data-rpid="' +
+      kit.esc(pending.rpId) + '" data-user="' +
+      kit.esc(pending.user || '') + '" data-userid="' +
+      kit.esc(pending.userHandle || '') + '" data-display="' +
+      kit.esc(pending.display || '') + '" data-allow="' +
+      kit.esc((pending.allow || []).join(',')) + '" data-exclude="' +
+      kit.esc((pending.exclude || []).join(',')) + '" data-options="' +
+      kit.esc(JSON.stringify(options)) + '" data-mode="' + mode + '"' +
+      (proof ? '' : ' data-fallback="' +
+        kit.esc(JSON.stringify(pending.fallback || {})) + '"') +
+      '></div>';
+    const action = proof ? 'prove' : 'finish';
+    return '<section class="passkey-upgrade"><h2>Upgrade ' +
+      kit.esc(pending.name || 'passkey') + '</h2>' +
+      '<p class="note">' + (proof
+        ? 'First, use this classical passkey to prove you hold it.'
+        : 'Now register the post-quantum passkey on the same authenticator.') +
+      '</p>' + data +
+      '<button id="wa-go" type="button">' + (proof
+        ? 'Prove with this passkey' : 'Create post-quantum passkey') +
+      '</button><form method="post" action="' + PATH + '/upgrade" ' +
+      'id="wa-form"><input type="hidden" name="action" value="' + action +
+      '"><input type="hidden" name="upgrade_id" value="' +
+      kit.esc(pending.id) + '">' +
+      '<input type="hidden" name="credential" id="wa-credential">' +
+      '<button class="secondary">' + t.html('portal.key.didNotAsk') +
+      '</button></form>' +
+      (!proof ? KeysPages.fallback(pending, t) : '') +
+      '<form method="post" action="' + PATH + '/upgrade">' +
+      '<input type="hidden" name="action" value="cancel">' +
+      '<button class="secondary">' + t.html('portal.enrol.cancel') +
+      '</button></form></section>';
   }
 
   // THE SIGNAL API'S DATA (#470), read by the runtime: never while a
@@ -473,6 +607,7 @@ class KeysPages {
             : t.html('portal.keys.noneSecond')) + ' ' +
           t.html('portal.keys.lastWayIn') + '</p>'
         : '<p class="note">' + t.html('portal.keys.noneYet') + '</p>') +
+      KeysPages.upgradeBlock(view.upgrade, t) +
       KeysPages.enrolBlock(view, t) + KeysPages.signalBlock(view.signals) +
       '</div>';
   }

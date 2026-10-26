@@ -25,7 +25,7 @@ fails that test in the meantime — which is what happened on 2026-08-25, when a
 logging sweep added `log.debug()` pairs to `krb5_primitives.js`,
 `krb5_asn1.js` and `krb5_messages.js`: 48 lines, no behaviour, and a red test in
 a repository that does not contain them. **A sweep over this repository must
-skip these eight**, the way it already skips `../common/vendored/` and
+skip these eight**, the way it already skips `../common/crypto_impl/` and
 `../spiffe/protos/`.
 
 The fix for a real defect in one of them is to change it in the parent project,
@@ -44,7 +44,7 @@ key in it), `krb5_kdc.js` (AS and TGS, plus `/KdcProxy`; `/krb5/principals` unti
 it is the one that reads as this service's own: `spnego.js` sits beside it and IS
 ours. Like the seven above it is a byte-identical copy of the parent project's
 `common/krb5/krb5_spnego.js`, kept honest by `tests/krb5_codec_sync.js` over
-there. None of the eight is in `../common/vendored/` with the other five copies,
+there. None of the eight is in `../common/crypto_impl/` with the other five copies,
 because they belong to the codec they sit beside and moving them would put the
 whole Kerberos wire format in a directory that has nothing else Kerberos in it.
 **Do not edit any of them here.**
@@ -825,7 +825,7 @@ boundary, the horizon and the merge are functions in files the parent's four
 in-process jobs already load — so the `sts/` COPY set is unchanged. Its tests are
 `tests/kerberos_signout_instant.js` (in process: the arithmetic, the merge, and
 the exchanges in one second and under a clock offset, with its mutants) and
-`tests/vendored/sts_kerberos_signout.js` (over TCP 88, both modes).
+`tests/protocol/sts_kerberos_signout.js` (over TCP 88, both modes).
 
 `signOut()` **creates nothing**: a name nobody has authenticated as has no
 principal here, and stamping one into existence would put an account in the
@@ -1500,7 +1500,7 @@ holds) become the field's choices on the Kerberos sub-tab.
 
 **TESTS**: `tests/kerberos_trusts_admin.js` (in process: the acts and view,
 pairing, rotation with grace across two trust realms, who may, the panel, the
-tab) and `tests/vendored/sts_kerberos_trusts_api.js` (`local: true`, over
+tab) and `tests/protocol/sts_kerberos_trusts_api.js` (`local: true`, over
 HTTP; written and registered, run by the suite). `sts_kerberos_samba.js`
 reads the development trust's partner from the API.
 
@@ -1897,7 +1897,7 @@ pre-authenticating a real AS-REQ; wrong password, nobody, disabled and no-KDC re
 the reset moving the kvno, the old password and the old keytab refused, no forced
 change, the link spent; `random` with no password in the reply; neither/both and a
 policy refusal changing nothing; nothing secret in the audit ring.
-`tests/vendored/sts_kerberos_keytab.js` does it over the wire in both modes — the API,
+`tests/protocol/sts_kerberos_keytab.js` does it over the wire in both modes — the API,
 the portal page and the console form — and signs in with every keytab through **MIT
 `kinit -k -t`** against the published KDC (the tests image installs `krb5-user`).
 
@@ -2004,7 +2004,7 @@ each section; the decisions a reader needs here:
 * **RFC 6560's ASN.1 IS IMPLICIT TAGS** and RFC 6113's, 7751's and 8129's are
   explicit. The codec was written explicit first, the suite's own client agreed,
   and MIT's `kinit` refused the challenge ("ASN.1 structure is missing a required
-  field") — the reason `tests/vendored/sts_kerberos_fast_otp.js` drives real
+  field") — the reason `tests/protocol/sts_kerberos_fast_otp.js` drives real
   `kinit` wherever MIT Kerberos is installed. MIT also sends `iterationCount 0`
   beside a plain OTP value; zero is not read as a hashed OTP.
 * **THE COOKIE** is sealed under the realm's krbtgt key (MIT's private key usage
@@ -2052,7 +2052,7 @@ by hand, `factorsFor()`, and in a product child the refusal decision for all fou
 kinds of person, FAST's armor and refusals, the encrypted challenge and its
 replay, OTP with the portal-spent step refused, a wrong and a missing PIN, a
 foreign nonce, a replayed code, and the indicator through the TGS to the
-acceptor). `tests/vendored/sts_kerberos_fast_otp.js` (`local: true`, over TCP 88,
+acceptor). `tests/protocol/sts_kerberos_fast_otp.js` (`local: true`, over TCP 88,
 both modes: the host armor from a keytab the API hands over, the portal-enrolled
 code, the refusal and PREAUTH_FAILED, FAST and OTP with its own client in
 `krb5_wire.js`, the indicator read with the keytab key, the SPNEGO session's
@@ -2178,7 +2178,7 @@ PKINIT block on `/admin/kerberos`, `status.pkinit` on `GET /admin-api/kerberos`
   * anonymous PKINIT with PA-PKINIT-KX and the TGS refusal;
   * a product child: password alone refused and the certificate admitted
     for a two-factor person, and a keyless person admitted.
-* `tests/vendored/sts_kerberos_pkinit.js` (`local: true`): MIT `kinit -X` and
+* `tests/protocol/sts_kerberos_pkinit.js` (`local: true`): MIT `kinit -X` and
   `kinit -n` / `-T` against the running service. The tests image installs
   `krb5-pkinit`.
 
@@ -2224,8 +2224,8 @@ parent project's `krb5_as_exchange.js`); the setting row marks the ELEMENT
 the checks call `principals.etypePermitted()` and `onlyWithheldEtypes()`.
 
 `tests/mode_rc4_md5.js` (a product child and a development child switched to
-product and back, the clients `tests/vendored/krb5_wire.js`'s over an
-in-process transport) and `tests/vendored/sts_kerberos_rc4.js` (`local: true`,
+product and back, the clients `tests/protocol/krb5_wire.js`'s over an
+in-process transport) and `tests/protocol/sts_kerberos_rc4.js` (`local: true`,
 over TCP 88 in both modes, and MIT `kinit` with `permitted_enctypes =
 rc4-hmac`). `krb5_wire.js` gained `etypes`, `subkeyEtype` and an RC4 PRF for
 them.
@@ -2404,7 +2404,7 @@ creation, a TGT across a rotation, the timing, FAST armor and cookie across one,
 count and lifetime bounds, invalidate with the Shared Signals notice, the doors, no key
 anywhere; a product restart on the same ldif store and KEK — the key, its kept version
 and an old TGT come back; development — the password's krbtgt, a rotation by hand
-keeping it, invalidate). `tests/vendored/sts_kerberos_krbtgt_rotation.js`
+keeping it, invalidate). `tests/protocol/sts_kerberos_krbtgt_rotation.js`
 (`local: true`, a throwaway realm's KDC over MS-KKDCP, both modes: rotate and
 invalidate queued on the scheduler, a TGT across them, the scheduler's two jobs, the
 console and the API agreeing). Untested: two nodes of a cluster racing the first key
@@ -2415,9 +2415,9 @@ sign-out).
 
 ## WHAT SAMBA'S RAW KERBEROS TESTS AND HEIMDAL'S CLIENT FOUND (#204, #205, 2026-09-26)
 
-`tests/vendored/sts_kerberos_samba.js` runs every module of Samba's
+`tests/protocol/sts_kerberos_samba.js` runs every module of Samba's
 `python/samba/tests/krb5` against a development realm's KDC, and
-`tests/vendored/sts_kerberos_heimdal.js` drives Heimdal's client tools through the
+`tests/protocol/sts_kerberos_heimdal.js` drives Heimdal's client tools through the
 `sts_kerberos_*` scenarios (tests/CLAUDE.md, *The Kerberos interoperability
 harnesses*). **Every fix is in `krb5_kdc.js`, `krb5_principals.js` or
 `krb5_fast.ts`; no vendored file changed and no require was added**, so the parent
@@ -2602,7 +2602,7 @@ Tested in process with stubbed routing and channel by `tests/cell_handlers_c.js`
 with the operation's own handler behind a stubbed `call()`: relayed and framed,
 homed here, a router that throws, the UDP size limit on a relayed reply, an
 unreachable home, a geofence, single-cell mode and no router. Over a real
-two-cell stack, `tests/vendored/sts_cells_kerberos.js` (`--modes=cells`, TCP).
+two-cell stack, `tests/protocol/sts_cells_kerberos.js` (`--modes=cells`, TCP).
 
 ---
 
@@ -2688,7 +2688,7 @@ Tests: `tests/pac_claims.js` (in process: the rows, a TGT's claims and
 signatures, carry versus re-evaluation, the override on one SPN only, a krbtgt
 SPN's application ignored, S4U2Self, S4U2Proxy, a cross-realm re-sign byte for
 byte; thirteen mutants, all caught; section G is #498's ticked catalogue, eleven more)
-and `tests/vendored/sts_kerberos_pac_claims.js`
+and `tests/protocol/sts_kerberos_pac_claims.js`
 (over `/KdcProxy` in a throwaway realm, tickets opened with
 `create-service` keytabs). The codec's own tests are in the parent's
 `tests/krb5_pac_layout.js`.

@@ -87,6 +87,14 @@
     "en": "f4b474a8d20ad298",
     "text": "La propia cuenta de una persona en el dominio en el que está: el portal inicia sesión a través del propio servidor de autorización del dominio como un cliente sembrado en todos los dominios, y cada página lee y escribe la entrada de la persona en el directorio de ese dominio, sujeta a la política de contraseñas de ese dominio."
   },
+  "realms.support.reporting.family": {
+    "en": "b1fa104b9bf0635e",
+    "text": "Informes"
+  },
+  "realms.support.reporting.note": {
+    "en": "ca64742fe52ce6b3",
+    "text": "La aplicación y su API se alcanzan bajo la ruta del dominio. Las definiciones y los trabajos permanecen en los mapas de ese dominio, y un recurso compartido es un grupo del directorio de ese dominio."
+  },
   "realms.support.global-logout.family": {
     "en": "1b4192fb739d93e9",
     "text": "Cierre de sesión global"

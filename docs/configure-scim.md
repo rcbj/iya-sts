@@ -13,7 +13,7 @@ given twice: once as steps in the **admin console** and once as
 **Management API** calls.
 
 The values come from this repository's test jobs, and each recipe names the
-job it is taken from. Most are `tests/vendored/` jobs, which run over HTTP
+job it is taken from. Most are `tests/protocol/` jobs, which run over HTTP
 against a service in both development and product mode. A few are
 in-process tests in `tests/`, and the recipe says so. Change the names,
 URLs and secrets to your own.

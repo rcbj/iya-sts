@@ -247,7 +247,13 @@ class WebAuthnMfa {
                  { name: String(v.username) })
         : t.html('authn.webauthn.subSecond', { name: String(v.username) })) +
       '</p>' + WebAuthnMfa.error(ctx, w.problem) +
-      (choosing
+      // NO POST-QUANTUM PASSKEY WHERE ONE IS REQUIRED (#946): the panel —
+      // what the application requires, and where to add one — under the
+      // refusal's own sentence.
+      WebAuthnLogin.postQuantumPanel(w.postQuantumHelp, t) +
+      // NO KEY THAT CAN EARN phrh (#739): the sentence above is the whole
+      // page. A ceremony button would arm a prompt whose answer is refused.
+      (w.hardwareRefused ? '' : (choosing
         // THE CHOICE (#534): a link per passkey, which draws this page again
         // for that one.
         ? '<p>' + t.html('authn.webauthn.choose') + '</p><ul id="wa-choices">' +
@@ -269,7 +275,9 @@ class WebAuthnMfa {
           '<div class="row"><button type="submit" id="wa-go" name="action" ' +
           'value="webauthn">' + (create ? t.html('authn.webauthn.create')
                                         : t.html('authn.webauthn.use')) +
-          '</button></div></form>') +
+          '</button></div>' +
+          (create ? WebAuthnMfa.fallback(w.fallback, t) : '') +
+          '</form>')) +
       WebAuthnMfa.startOver(t) +
       // THE TECHNICAL LINES FOLDED (#470): a person signing in reads the
       // heading, the button and the ways out; somebody debugging opens it.
@@ -298,6 +306,46 @@ class WebAuthnMfa {
         : t.html('authn.webauthn.amrSecond', { name: String(v.username) })) +
       '</div></details><div class="links">' +
       WebAuthnMfa.links(v, t, 'authn.webauthn.backup') + '</div>';
+  }
+
+  // WHEN THE DEVICE CANNOT MAKE THE POST-QUANTUM PASSKEY ASKED FOR (#944):
+  // the guidance, drawn HIDDEN inside the ceremony's form, and shown by the
+  // runtime (`common/web_webauthn.ts`'s `offerFallback()`) only after a
+  // registration fails with an error it is for. Where the server says the
+  // realm allows the classical retry, a second button of the same form —
+  // `action` `webauthn-classical`, which the API is asked again about;
+  // where it does not, the sentence that this device cannot make the
+  // passkey this service requires. Nothing is drawn for a ceremony that
+  // asks for no ML-DSA, or that is the retry already.
+  /**
+   * The hidden guidance of a registration that may fail on ML-DSA, or ''.
+   *
+   * @param f - the step's `fallback` facts
+   * @param t - the translator
+   * @returns the markup
+   */
+  static fallback(f: Json, t: Json): string {
+    if (!f || f.asksPostQuantum !== true || f.retrying === true) {
+      return '';
+    }
+    const allowed = f.classical === true;
+    return '<div class="warn" id="wa-fallback" hidden>' +
+      '<p id="wa-fallback-unsupported" hidden>' +
+      (allowed ? t.html('authn.webauthn.unsupported')
+               : t.html('authn.webauthn.cannotMake')) + '</p>' +
+      '<p id="wa-fallback-uncertain" hidden>' +
+      (allowed ? t.html('authn.webauthn.maybeUnsupported')
+               : t.html('authn.webauthn.maybeCannotMake')) + '</p>' +
+      '<p id="wa-fallback-hybrid" hidden>' + t.html('authn.webauthn.hybrid') +
+      '</p>' +
+      (allowed
+        ? '<div class="row"><button type="submit" class="secondary" ' +
+          'id="wa-retry-classical" name="action" ' +
+          'value="webauthn-classical">' +
+          t.html('authn.webauthn.retryClassical') + '</button></div>' +
+          '<p class="sub">' + t.html('authn.webauthn.retryClassicalWhat') +
+          '</p>'
+        : '') + '</div>';
   }
 
   // WHICH LANE (#643): a classical passkey or a post-quantum one, asked only

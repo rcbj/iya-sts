@@ -1,7 +1,7 @@
 {
   "audit.categories.authentication.what": {
-    "en": "a75d8d51a0eb704d",
-    "text": "某個憑證被「接受」了，可能發生在此處十六個協定家族中的任何一個。它記錄在每個家族都已經會通過的單一匯集點，因此這是一個地方而不是十六個。SCIM 加入得較晚，SPIFFE 更晚。SCIM：其端點接受的方案中有三種——Basic、Digest 與 HOBA——每次請求都出示憑證，接受其中一個即是一次身分驗證。其他三種不會出現在此，因為每一種都是延續在別處記錄的身分驗證：存取權杖在簽發時即被接受，工作階段 Cookie 在其工作階段開始時被接受，而客戶端憑證是每個「連線」一次，而不是每個請求一次。SPIFFE 是第十六個，以三種方式到達此處：在 SPIRE Server API 透過相互 TLS 出示的 X509-SVID（每個連線一次，理由與客戶端憑證相同）、代理程式證明，以及在 ValidateJWTSVID 驗證的 JWT-SVID。「獲簽發」SVID 不在其中。"
+    "en": "8daae95bb7977a6c",
+    "text": "某個憑證被「接受」了，可能發生在此處十六個協定家族中的任何一個。它記錄在每個家族都已經會通過的單一匯集點，因此這是一個地方而不是十六個。SCIM 加入得較晚，SPIFFE 更晚。SCIM：其端點接受的方案中有三種——Basic、Digest 與 HOBA——每次請求都出示憑證，接受其中一個即是一次身分驗證。其他三種不會出現在此，因為每一種都是延續在別處記錄的身分驗證：存取權杖在簽發時即被接受，工作階段 Cookie 在其工作階段開始時被接受，而客戶端憑證是每個「連線」一次，而不是每個請求一次。SPIFFE 是第十六個，以三種方式到達此處：在 SPIRE Server API 透過相互 TLS 出示的 X509-SVID（每個連線一次，理由與客戶端憑證相同）、代理程式證明，以及在 ValidateJWTSVID 驗證的 JWT-SVID。「獲簽發」SVID 不在其中。一次嘗試的拒絕記在接受旁邊，動作為 `authentication.refused`：同樣的詳情，結果為拒絕，並且不移動任何計數器（#954）。應用程式頁面同時列出兩者，以及在點名該應用程式時的 `session.refuse` 和 `session.refused`。"
   },
   "audit.categories.application.what": {
     "en": "8a3b5678fb8d56d1",

@@ -60,7 +60,7 @@ resource that does not exist (which proves the route is registered) from
 Express's own `Cannot GET /path` for an unregistered one.
 
 It also reports **drift**, in six arrays, and this repository's own
-`tests/vendored/sts_metadata.js` fails on all six:
+`tests/protocol/sts_metadata.js` fails on all six:
 
 | Field | Means |
 |---|---|
@@ -182,6 +182,7 @@ them can drift from what the service does:
 | `GET /federation` | Every configured federation relationship in both directions, and the URL to give each partner |
 | `GET /admin/ldap/federations` | The federation register as the directory holds it, with its schema — and the one container here where an `ldapmodify` is a security change |
 | `GET /admin/tls-connection` | Monitoring → TLS connection: the TLS version and cipher of the console's own request, the client certificate its connection presented (verified or not, the identity gate's answer, revocation), and every forwarding header with what was believed of it. Admin Read in both modes; `GET /admin-api/tls-connection` is its management-API twin (#597) |
+| `GET /admin/passkey-report` | Monitoring → Passkeys: who in the realm holds which passkey algorithm — people by kind, passkeys by algorithm and lane, models by algorithm, what each passkey profile asks — and when it was last counted. `GET /admin-api/passkey-report` is its management-API twin (#942) |
 | `GET /admin/tls/trust` | Every client-certificate trust anchor, with where each came from (`tls.trustAnchorsFile` or added at runtime), and the add and remove controls. An admin console page; `GET /admin-api/tls/trust` and `POST /admin-api/tls/trust/{add,remove}` are its management-API twins. An anchor added at runtime is persisted in the default realm's `ou=trustAnchors`; one from the file comes back at every start |
 | `GET /scim` | The SCIM authentication schemes that are switched on |
 | `GET /admin/kerberos/principals` | Who the KDC holds a STORED long-term key for: directory people whose keys were derived from their own password (product mode), and service principals created with a random key — with create, rotate, delete and clear controls. A create or a rotate shows an MIT keytab ONCE — a rotate's carries the previous kvno too. Each row lists the PREVIOUS key versions still accepted for tickets issued under them (kvno, enctypes, expiry; `krb5.retainedKeyVersions`, `krb5.retainedKeyTtlS`), with a Drop previous versions control that ends that window at once. And the KDC's whole database (#595: every principal by its public fields — the salts, enctypes, kvno and flags `/krb5/principals` listed before it was deleted, never a password). And the realm's `krbtgt` key (#169) — where it comes from, its kvno, its last and next rotation, the versions kept — with Rotate the krbtgt key and Rotate and invalidate, both queued on the scheduler and neither showing a key. An admin console page; `GET /admin-api/kerberos/principals` and `POST /admin-api/kerberos/principals/{create-service,rotate-service,delete-service,clear-person-keys,drop-previous-service-keys,drop-previous-person-keys,reset-person-keytab,rotate-krbtgt,rotate-krbtgt-invalidate}` are its twins, and only the create and rotate replies and a person's keytab carry key material |

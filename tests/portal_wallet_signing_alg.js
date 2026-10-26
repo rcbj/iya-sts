@@ -61,7 +61,7 @@ function childMain() {
 
   async function sections(w, note, m) {
     const credentials = require(ROOT + '/common/credentials');
-    const signin = require(ROOT + '/tests/vendored/portal_signin');
+    const signin = require(ROOT + '/tests/protocol/portal_signin');
     const PortalRuntime = require(ROOT + '/portal/web_portal_runtime');
     const stamp = String(process.pid);
     const ALICE = 'pwa-alice-' + stamp;

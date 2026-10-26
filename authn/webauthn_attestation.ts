@@ -287,7 +287,12 @@ class WebauthnAttestation {
       verified: false, trusted: false, anchor: '',
       aaguid: WebauthnAttestation.aaguidString(verdict && verdict.aaguid),
       model: '', certificationLevel: '', mdsStatus: '', mdsVersion: '',
-      checkedAt: this.deps.now()
+      checkedAt: this.deps.now(),
+      // THE ALGORITHMS THE STATEMENT AND ITS CHAIN ARE SIGNED WITH (#941),
+      // read off the statement as it ARRIVED — so under the policy `off`
+      // they are what the authenticator claimed, and `verified` beside
+      // them says so. A trusted chain adds its anchor's below.
+      algorithms: this.algorithmsOf(format, verdict && verdict.attStmt, null)
     };
     if (settings.policy === 'off' && !settings.demandsTrust) {
       log.debug("Leaving WebauthnAttestation.assess(). The policy is off.");
@@ -390,6 +395,13 @@ class WebauthnAttestation {
     }
     recorded.trusted = trust.trusted;
     recorded.anchor = trust.anchor;
+    // THE ANCHOR'S OWN SIGNATURE ALGORITHM (#941), once a path reached one:
+    // "leaf to the anchor", and the anchor is usually not in x5c.
+    if (trust.trusted && trust.anchorDer) {
+      recorded.algorithms = this.algorithmsOf(base.format,
+                                              verdict.attStmt,
+                                              trust.anchorDer);
+    }
     // #256: what Google's status list said of an android-key chain, and its
     // serials, kept for the recheck.
     if (trust.androidRevocation) {
@@ -424,6 +436,34 @@ class WebauthnAttestation {
     if (levelProblem) {
       log.debug("Leaving WebauthnAttestation.assessUnder(). Level.");
       return refuse('STS-AUTHN-0238', levelProblem, recorded);
+    }
+    // RFC 4998 EVIDENCE FOR CLASSICAL ATTESTATIONS (#947). The archive
+    // object binds the exact authenticator bytes to the verification result
+    // this service accepted. An enabled TSA is fail-closed: accepting a key
+    // while silently losing the requested evidence would misstate policy.
+    if (recorded.trusted && recorded.verified &&
+        !WebauthnAttestation.postQuantumAttestation(recorded.algorithms) &&
+        String(require('../common/config').value(
+          'webauthn.attestationEvidenceTsaUrl') || '').trim()) {
+      const raw = Buffer.from(verdict.attestationObjectRaw || []);
+      if (!raw.length) {
+        throw new Error('The raw attestation object was not preserved.');
+      }
+      const resultBytes = Buffer.from(JSON.stringify({
+        fmt: recorded.format, type: recorded.type,
+        verified: recorded.verified, trusted: recorded.trusted,
+        anchor: recorded.anchor, aaguid: recorded.aaguid,
+        algorithms: recorded.algorithms
+      }), 'utf8');
+      const length = Buffer.alloc(8);
+      length.writeUInt32BE(raw.length, 0);
+      length.writeUInt32BE(resultBytes.length, 4);
+      const archiveObject = Buffer.concat([
+        Buffer.from('IYA-PASSKEY-ATTESTATION-EVIDENCE-1\0', 'ascii'),
+        length, raw, resultBytes
+      ]);
+      recorded.evidence = await require('../common/passkey_evidence')
+        .create(archiveObject);
     }
     log.info('webauthn: a ' + base.format + ' attestation verified (' +
              statement.type + ', ' + (recorded.trusted
@@ -515,13 +555,9 @@ class WebauthnAttestation {
         facts.listed = !!listed;
         facts.compromised = !!m.compromised;
         if (listed) {
-          const held = String(m.certificationLevel || '')
-            .replace(/^FIDO_CERTIFIED_?/, '') ||
-            (m.certificationLevel ? 'L1' : 'none');
-          facts.rank = Math.max(0, LEVELS.indexOf(held));
-          facts.fips = (m.statusReports || []).some(function (r: Json) {
-            return /^FIPS140_CERTIFIED_L/.test(String(r.status || ''));
-          });
+          facts.rank = Math.max(0,
+            LEVELS.indexOf(WebauthnAttestation.heldLevel(m)));
+          facts.fips = WebauthnAttestation.fipsCertified(m);
         }
         sentences['attestation-compromised'] = 'The FIDO Metadata Service ' +
           'now reports this passkey\'s model (' + (m.description ||
@@ -562,13 +598,23 @@ class WebauthnAttestation {
     const enforced = given.enforced === undefined ? true
                                                   : given.enforced === true;
     const found = await this.signInFacts(key, enforced);
-    const refused = this.deps.passkeyPolicy.refusalFor('sign-in', {
+    const facts: Json = {
       username: String(given.username || ''),
       attestation: found.facts,
       attestationSettings: found.settings,
       attestationSentences: found.sentences,
       enforceAttestation: enforced
-    });
+    };
+    // THE ALGORITHMS THE KEY'S ATTESTATION WAS SIGNED WITH (#941), as
+    // registration recorded them, and only while the passkey policy holds
+    // sign-ins to the attestation rules: the `attestation-algorithm` group
+    // is carried then and never otherwise, so a realm that does not
+    // enforce at sign-in is not refused by a row it set for registration.
+    if (enforced) {
+      facts.attestationAlgorithms = WebauthnAttestation.recordedAlgorithms(
+        key && key.attestation);
+    }
+    const refused = this.deps.passkeyPolicy.refusalFor('sign-in', facts);
     if (!refused) {
       log.debug("Leaving WebauthnAttestation.signInVerdict(). ok=true");
       return { ok: true };
@@ -577,6 +623,234 @@ class WebauthnAttestation {
               refused.code);
     return errorCodes.mark({ ok: false, why: refused.why,
                              reason: refused.reason }, refused.code);
+  }
+
+  // =========================================================================
+  // THE ALGORITHMS AN ATTESTATION IS SIGNED WITH (#941).
+  //
+  // Until #941 a key's record said whether its statement verified and
+  // chained, and nothing about HOW STRONG the signatures were: no policy
+  // could ask for an ML-DSA chain behind an ML-DSA passkey, and no report
+  // could say how many attestations a quantum adversary could forge. The
+  // record's `algorithms` is
+  //
+  //   statement         the statement's own signature algorithm, by its
+  //                     COSE name (`ML-DSA-65`, `ES256`): `alg` for packed,
+  //                     tpm and android-key; ES256 for fido-u2f, which
+  //                     section 8.6 fixes; the JWS header's `alg` for
+  //                     android-safetynet; '' for apple and none, which
+  //                     carry no signature of their own
+  //   statementCoseAlg  the COSE identifier, or null
+  //   certificates      each certificate of the statement's chain as it
+  //                     arrived, LEAF FIRST, with the algorithm its ISSUER
+  //                     signed it with (`pki.attestationSignatureAlgorithm()`)
+  //   anchor            the anchor a trusted path reached, the same way, or
+  //                     null — "leaf to the anchor", and an anchor is
+  //                     rarely in x5c
+  //   members           a compound statement's members, each with its own
+  //                     format, statement, statementCoseAlg and
+  //                     certificates; [] for any other format
+  //   postQuantum       true only where there is at least one certificate
+  //                     and every statement signature (RFC 9964's ML-DSA)
+  //                     and every certificate signature, the anchor's too,
+  //                     is post-quantum (ML-DSA, SLH-DSA or composite
+  //                     ML-DSA). Self and none attestation carry no
+  //                     certificate and are never post-quantum attestation,
+  //                     whatever the credential's own algorithm.
+  //
+  // READ OFF THE STATEMENT AS IT ARRIVED, never off the verification's
+  // working: the procedures above already checked the statement's
+  // signature with `alg` and the path checked each certificate's, so what
+  // is recorded is what was checked — and under the policy `off`, where
+  // nothing was, the same reading is the authenticator's claim, which the
+  // record's `verified: false` says. Defensive: a statement of the wrong
+  // shape records what can be read and nothing else. At most eight
+  // certificates per chain, as no attestation chain needs more.
+  // =========================================================================
+  /**
+   * Reads the algorithms an attestation statement and its chain are signed
+   * with (#941).
+   *
+   * @param format - the statement's `fmt`
+   * @param attStmt - the decoded statement
+   * @param anchorDer - the anchor a trusted path reached, or null
+   * @returns `{ statement, statementCoseAlg, certificates, anchor, members,
+   *   postQuantum }`
+   */
+  algorithmsOf(format: string, attStmt: Json, anchorDer: Buffer | null):
+      Json {
+    const { log, pki } = this.deps;
+    log.debug("Entering WebauthnAttestation.algorithmsOf(). " + format);
+    const out: Json = { statement: '', statementCoseAlg: null,
+                        certificates: [], anchor: null, members: [],
+                        postQuantum: false };
+    try {
+      if (format === 'compound' && Array.isArray(attStmt)) {
+        out.members = attStmt.slice(0, 4).map((one: Json): Json => {
+          return Object.assign({ format: String((one && one.fmt) || '') },
+            this.memberAlgorithms(String((one && one.fmt) || ''),
+                                  one && one.attStmt));
+        });
+      } else {
+        Object.assign(out, this.memberAlgorithms(format, attStmt));
+      }
+      out.anchor = anchorDer ? pki.attestationSignatureAlgorithm(anchorDer)
+                             : null;
+    } catch (e) {
+      log.debug("Caught in WebauthnAttestation.algorithmsOf(): " +
+                ((e && e.message) || e));
+      // A statement this cannot read is recorded with what was read before
+      // it threw; the verification decides about the statement, not this.
+    }
+    out.postQuantum = WebauthnAttestation.postQuantumAttestation(out);
+    log.debug("Leaving WebauthnAttestation.algorithmsOf(). postQuantum=" +
+              out.postQuantum);
+    return out;
+  }
+
+  // One statement's algorithm and chain, by its format.
+  private memberAlgorithms(format: string, st: Json): Json {
+    const { log, crypto, pki } = this.deps;
+    log.debug("Entering WebauthnAttestation.memberAlgorithms(). " + format);
+    let coseAlg: number = null;
+    let named = '';
+    let chain: Buffer[] = [];
+    const ders = function (list: Json): Buffer[] {
+      log.debug("Entering memberAlgorithms() ders().");
+      log.debug("Leaving memberAlgorithms() ders().");
+      return Array.isArray(list) ? list.filter(function (one: Json): boolean {
+        return Buffer.isBuffer(one) || one instanceof Uint8Array;
+      }).map(function (one: Json): Buffer {
+        return Buffer.from(one);
+      }) : [];
+    };
+    const map = st && typeof st === 'object' && !Array.isArray(st) ? st : {};
+    if (['packed', 'tpm', 'android-key'].indexOf(format) >= 0) {
+      coseAlg = typeof map.alg === 'number' ? map.alg : null;
+      chain = ders(map.x5c);
+    } else if (format === 'fido-u2f') {
+      // Section 8.6: the U2F registration signature is always ES256.
+      coseAlg = -7;
+      chain = ders(map.x5c);
+    } else if (format === 'apple') {
+      chain = ders(map.x5c);
+    } else if (format === 'android-safetynet' && map.response) {
+      let header: Json = null;
+      try {
+        header = JSON.parse(Buffer.from(String(Buffer.from(map.response)
+          .toString('utf8')).split('.')[0], 'base64url').toString('utf8'));
+      } catch (e) {
+        log.debug("Caught in WebauthnAttestation.memberAlgorithms(): " +
+                  ((e && e.message) || e));
+        // Not a JWS: nothing to record of it.
+        header = null;
+      }
+      named = header && typeof header.alg === 'string'
+        ? header.alg.slice(0, 20) : '';
+      chain = header && Array.isArray(header.x5c)
+        ? header.x5c.slice(0, 8).map(function (one: Json): Buffer {
+          return Buffer.from(String(one), 'base64');
+        }) : [];
+    }
+    if (coseAlg !== null) {
+      const spec = crypto.coseSignatureAlg(coseAlg);
+      named = spec ? String(spec.name) : 'COSE ' + coseAlg;
+    }
+    const certificates = chain.slice(0, 8).map(function (der: Buffer): Json {
+      return pki.attestationSignatureAlgorithm(der) ||
+        { algorithm: 'unreadable', oid: '', family: 'unknown',
+          postQuantum: false, composite: false };
+    });
+    log.debug("Leaving WebauthnAttestation.memberAlgorithms(). " +
+              (named || 'no statement signature') + ', ' +
+              certificates.length + ' certificate(s)');
+    return { statement: named, statementCoseAlg: coseAlg,
+             certificates: certificates };
+  }
+
+  /**
+   * Says whether a recorded `algorithms` (#941) is post-quantum
+   * attestation: at least one certificate, and every statement and
+   * certificate signature (the anchor's too) post-quantum.
+   *
+   * @param a - an `algorithms` record
+   * @returns true where it is
+   */
+  static postQuantumAttestation(a: Json): boolean {
+    log.debug("Entering WebauthnAttestation.postQuantumAttestation().");
+    const all = WebauthnAttestation.flatAlgorithms(a);
+    const out = all.certificates.length > 0 &&
+      all.statements.every(function (name: string): boolean {
+        return passkeyPolicy.PasskeyPolicy.isPostQuantum(name);
+      }) &&
+      all.certificates.every(function (one: Json): boolean {
+        return one.postQuantum === true;
+      });
+    log.debug("Leaving WebauthnAttestation.postQuantumAttestation(). " + out);
+    return out;
+  }
+
+  /**
+   * Flattens a recorded `algorithms` (#941): every statement algorithm
+   * named, and every certificate (members' and the anchor's included).
+   *
+   * @param a - an `algorithms` record, or nothing
+   * @returns `{ statements, certificates }`
+   */
+  static flatAlgorithms(a: Json): { statements: string[];
+                                    certificates: Json[] } {
+    log.debug("Entering WebauthnAttestation.flatAlgorithms().");
+    const rec = a && typeof a === 'object' ? a : {};
+    const parts = [rec].concat(Array.isArray(rec.members) ? rec.members : []);
+    const statements: string[] = [];
+    let certificates: Json[] = [];
+    parts.forEach(function (one: Json): void {
+      if (one && one.statement) {
+        statements.push(String(one.statement));
+      }
+      if (one && Array.isArray(one.certificates)) {
+        certificates = certificates.concat(one.certificates);
+      }
+    });
+    if (rec.anchor) {
+      certificates.push(rec.anchor);
+    }
+    log.debug("Leaving WebauthnAttestation.flatAlgorithms().");
+    return { statements: statements, certificates: certificates };
+  }
+
+  /**
+   * The facts the passkey policy's `attestation-algorithm` group (#941) is
+   * decided on, from a key's attestation record: whether the statement was
+   * verified and trusted, and the algorithms it recorded. A key with no
+   * record, or one from before #941, has none, and a rule requiring one
+   * refuses it — an algorithm never recorded is not a post-quantum one.
+   *
+   * @param rec - the key's `attestation` record, or nothing
+   * @returns `{ verified, trusted, recorded, statement, statements,
+   *   certificates, postQuantum }`
+   */
+  static recordedAlgorithms(rec: Json): Json {
+    log.debug("Entering WebauthnAttestation.recordedAlgorithms().");
+    const r = rec && typeof rec === 'object' ? rec : {};
+    const a = r.algorithms && typeof r.algorithms === 'object'
+      ? r.algorithms : null;
+    const all = WebauthnAttestation.flatAlgorithms(a);
+    log.debug("Leaving WebauthnAttestation.recordedAlgorithms(). " +
+              (a ? 'recorded' : 'none'));
+    return {
+      verified: r.verified === true,
+      trusted: r.trusted === true,
+      recorded: !!a,
+      statement: a ? String(a.statement || '') : '',
+      statements: all.statements,
+      certificates: all.certificates.map(function (one: Json): Json {
+        return { algorithm: String((one && one.algorithm) || ''),
+                 family: String((one && one.family) || ''),
+                 postQuantum: !!(one && one.postQuantum === true) };
+      }),
+      postQuantum: !!a && WebauthnAttestation.postQuantumAttestation(a)
+    };
   }
 
   // =========================================================================
@@ -1342,7 +1616,7 @@ class WebauthnAttestation {
     }
     log.debug("Leaving WebauthnAttestation.trustOf(). Trusted, " + anchor +
               ".");
-    return { trusted: true, anchor: anchor, why: '',
+    return { trusted: true, anchor: anchor, why: '', anchorDer: top.der,
              androidRevocation: androidRevocation };
   }
 
@@ -1435,6 +1709,40 @@ class WebauthnAttestation {
 
   // The statuses that make a model compromised, for the sentence.
   /**
+   * The FIDO certification level an MDS model holds (#911): `L1` and up, or
+   * `none`. One reading for registration and sign-in, so that
+   * `attestationMinCertificationLevel` judges a model the same at both.
+   *
+   * @param m - the metadata statement's model
+   * @returns the level
+   */
+  static heldLevel(m: Json): string {
+    helpers.log.debug("Entering WebauthnAttestation.heldLevel().");
+    const level = String((m && m.certificationLevel) || '')
+      .replace(/^FIDO_CERTIFIED_?/, '') ||
+      (m && m.certificationLevel ? 'L1' : 'none');
+    helpers.log.debug("Leaving WebauthnAttestation.heldLevel().");
+    return level;
+  }
+
+  /**
+   * Whether an MDS model reports a FIPS 140 certification (#911), the one
+   * reading `attestationRequireFips` is judged by at registration and
+   * sign-in.
+   *
+   * @param m - the metadata statement's model
+   * @returns true when a status report says FIPS140_CERTIFIED_L*
+   */
+  static fipsCertified(m: Json): boolean {
+    helpers.log.debug("Entering WebauthnAttestation.fipsCertified().");
+    const out = ((m && m.statusReports) || []).some(function (r: Json) {
+      return /^FIPS140_CERTIFIED_L/.test(String(r.status || ''));
+    });
+    helpers.log.debug("Leaving WebauthnAttestation.fipsCertified().");
+    return out;
+  }
+
+  /**
    * Lists the status reports that make a model compromised, for the refusal
    * sentence.
    *
@@ -1483,6 +1791,12 @@ class WebauthnAttestation {
       why.push('the passkey policy binds security-key serials (' +
                settings.enterpriseSerialAttribute + ')');
     }
+    if (settings.attestationAlgorithms &&
+        settings.attestationAlgorithms.length) {
+      why.push('the passkey policy requires an attestation signed with ' +
+               settings.attestationAlgorithms.join(', ') +
+               ' (attestationAlgorithms)');
+    }
     log.debug("Leaving WebauthnAttestation.demandedBy().");
     return why.join('; ');
   }
@@ -1512,9 +1826,7 @@ class WebauthnAttestation {
     }
     const m = listed.model || {};
     if (wantLevel) {
-      const held = String(m.certificationLevel || '')
-        .replace(/^FIDO_CERTIFIED_?/, '') || (m.certificationLevel ? 'L1'
-                                                                    : 'none');
+      const held = WebauthnAttestation.heldLevel(m);
       if (LEVELS.indexOf(held) < LEVELS.indexOf(
             settings.minCertificationLevel)) {
         log.debug("Leaving WebauthnAttestation.levelProblem(). Level.");
@@ -1524,10 +1836,7 @@ class WebauthnAttestation {
                ' (webauthn.attestationMinCertificationLevel).';
       }
     }
-    if (settings.requireFips && !(m.statusReports || []).some(
-          function (r: Json): boolean {
-            return /^FIPS140_CERTIFIED_L/.test(String(r.status || ''));
-          })) {
+    if (settings.requireFips && !WebauthnAttestation.fipsCertified(m)) {
       log.debug("Leaving WebauthnAttestation.levelProblem(). FIPS.");
       return 'The FIDO Metadata Service reports no FIPS 140 certification ' +
              'for this authenticator model, and this realm requires one ' +
@@ -1615,6 +1924,11 @@ export = {
   signInVerdict: slot.forward('signInVerdict'),
   signInFacts: slot.forward('signInFacts'),
   verifyStatement: slot.forward('verifyStatement'),
+  // #941: the algorithms an attestation is signed with, and the facts
+  // the passkey policy's `attestation-algorithm` group reads off a record.
+  algorithmsOf: slot.forward('algorithmsOf'),
+  recordedAlgorithms: WebauthnAttestation.recordedAlgorithms,
+  postQuantumAttestation: WebauthnAttestation.postQuantumAttestation,
   FORMATS: FORMATS,
   sameKey: WebauthnAttestation.sameKey,
   packedCertificateProblem: WebauthnAttestation.packedCertificateProblem,

@@ -3405,10 +3405,10 @@ class SharedSignals {
     // AND IT WAS NOT UNTIL 2026-09-01. It said `"x" is not an action on this
     // resource. The ones that are: …`, which reads perfectly well and is
     // INVISIBLE to the two checks that actually depend on this sentence:
-    // `tests/vendored/admin_api.js` requires /unknown action/i before it will
+    // `tests/protocol/admin_api.js` requires /unknown action/i before it will
     // parse the list — that is the console/API parity check, so /ssf's four
     // actions were being compared against nothing — and
-    // `tests/vendored/sts_admin_api_operations.js` matches `Unknown action "x".
+    // `tests/protocol/sts_admin_api_operations.js` matches `Unknown action "x".
     // <count phrase>: <list>.` across every documented resource, which is what
     // caught it. The lesson is the one `helpers.numberWord()`'s header already
     // states: this sentence is not prose, it is READ, and a handler that writes
@@ -4350,7 +4350,7 @@ class SharedSignals {
     }
     // Spelled the way every other action handler here spells it, with the count
     // from the list rather than from a word typed beside it. That sentence is
-    // READ — `tests/vendored/admin_api.js` requires /unknown action/i before it
+    // READ — `tests/protocol/admin_api.js` requires /unknown action/i before it
     // will parse the list, and `sts_admin_api_operations.js` matches the whole
     // shape — so a handler that writes it its own way turns two checks off with
     // nothing failing.
@@ -5714,7 +5714,7 @@ class SharedSignals {
     }
     // Spelled the way every other action handler here spells it, with the count
     // from the list rather than from a word typed beside it. That sentence is
-    // READ by `tests/vendored/admin_api.js` and by
+    // READ by `tests/protocol/admin_api.js` and by
     // `sts_admin_api_operations.js`, so a handler that writes it its own way
     // turns two checks off with nothing failing.
     log.debug('Leaving SharedSignals.riscAction(). Unknown action.');

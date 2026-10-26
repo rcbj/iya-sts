@@ -263,7 +263,7 @@ function announce() {
   // `/oauth2/jwks` fetch made all eleven keys inside the request, two of them
   // SLH-DSA — 297ms and 2.3s here uninstrumented, 1.9s and 14.7s under
   // NODE_V8_COVERAGE, a 6.4x factor — so under coverage on a two-core CI
-  // runner the first caller waited for the lot. `tests/vendored/
+  // runner the first caller waited for the lot. `tests/protocol/
   // sts_userinfo_protected.js` gives up on a request after 90s and did,
   // intermittently, in about half of the coverage runs on `main`. The
   // service was never wrong; the work was simply in the wrong place.

@@ -12,7 +12,7 @@
 // The whole stack in a child process, on a port of its own, and a person
 // signed in the way the static portal signs in — the code flow with PKCE as
 // the public client `sts-user-portal`, a DPoP-bound token for this realm's
-// `/account-api` (`tests/vendored/portal_signin.js`). Then:
+// `/account-api` (`tests/protocol/portal_signin.js`). Then:
 //
 //   1. THE TABLE: every operation has a unique id; the index and the OpenAPI
 //      document list the same operations; every portal page the bundle draws
@@ -68,7 +68,7 @@ function childMain() {
     const ldap = require(ROOT_DIR + '/ldap/ldap_server');
     const credentials = require(ROOT_DIR + '/common/credentials');
     const errorCodes = require(ROOT_DIR + '/common/error_codes');
-    const signin = require(ROOT_DIR + '/tests/vendored/portal_signin');
+    const signin = require(ROOT_DIR + '/tests/protocol/portal_signin');
 
     const stamp = String(process.pid);
     const ALICE = 'aa-alice-' + stamp;

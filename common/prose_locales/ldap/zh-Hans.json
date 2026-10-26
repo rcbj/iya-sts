@@ -540,8 +540,8 @@
     "text": "此应用请求过的作用域，随其请求累积。是观察到的，从不是声明的：不会据此允许或拒绝任何东西。应用可以被签发什么由 oauthAllowedScope 决定。"
   },
   "applications.schema.attributes.oauthAllowedScope.what": {
-    "en": "f61c0b99f0e3941f",
-    "text": "此客户端可以被签发的作用域——RFC 7591 第 2 节的 `scope`，即“客户端在请求访问令牌时可以使用的列表”。每个值一个作用域令牌。三类作用域以不同方式读取它。\n\n**本服务自己的受保护作用域**——admin:read 和 admin:write（/admin-api）、SCIM 作用域（scim.scopeRead、scim.scopeWrite）、共享信号作用域（ssf.authScopeRead、ssf.authScopeWrite，以及始终存在的 ssf.read 和 ssf.manage）以及调试器权限——只签发给列出它们的客户端，两种模式下都是如此。对共享信号而言，写入包含读取：列出写入作用域也就授权了读取作用域，而只列出读取作用域并不授权写入作用域。每个作用域背后的资源服务器在每次调用时都会再次检查，因此在这里移除一个值会切断已签发的令牌。RFC 7591 注册不能声明它们；由管理员在这里声明。\n\n**其他所有作用域**，在产品模式中，只有在此列出时才会签发——或者在未列出任何内容时，属于默认集合时才签发：openid、profile、email、address、phone、offline_access 以及本领域的 OpenID4VCI 凭据作用域。在开发模式中，任何作用域都会签发。\n\n**指明某个应用或委托权限的作用域**保留其自身的规则（受众，以及 oauthDelegatedPermission），无需列出。\n\n列表之外的作用域会在授权端点和令牌端点被以 invalid_scope 拒绝（RFC 6749 第 3.3 节），并在刷新或令牌交换时被去除。与 oauthScope 不同，后者只是客户端请求过的内容。"
+    "en": "2efedb4db176c20e",
+    "text": "此客户端可以被签发的作用域——RFC 7591 第 2 节的 `scope`，即“客户端在请求访问令牌时可以使用的列表”。每个值一个作用域令牌。三类作用域以不同方式读取它。\n\n**本服务自己的受保护作用域**——admin:read 和 admin:write（/admin-api）、report:use 和 report:admin（/report-api）、SCIM 作用域（scim.scopeRead、scim.scopeWrite）、共享信号作用域（ssf.authScopeRead、ssf.authScopeWrite，以及始终存在的 ssf.read 和 ssf.manage）以及调试器权限——只签发给列出它们的客户端，两种模式下都是如此。对共享信号而言，写入包含读取：列出写入作用域也就授权了读取作用域，而只列出读取作用域并不授权写入作用域。每个作用域背后的资源服务器在每次调用时都会再次检查，因此在这里移除一个值会切断已签发的令牌。RFC 7591 注册不能声明它们；由管理员在这里声明。\n\n**其他所有作用域**，在产品模式中，只有在此列出时才会签发——或者在未列出任何内容时，属于默认集合时才签发：openid、profile、email、address、phone、offline_access 以及本领域的 OpenID4VCI 凭据作用域。在开发模式中，任何作用域都会签发。\n\n**指明某个应用或委托权限的作用域**保留其自身的规则（受众，以及 oauthDelegatedPermission），无需列出。\n\n列表之外的作用域会在授权端点和令牌端点被以 invalid_scope 拒绝（RFC 6749 第 3.3 节），并在刷新或令牌交换时被去除。与 oauthScope 不同，后者只是客户端请求过的内容。"
   },
   "applications.schema.attributes.oauthPermissionBaseUri.what": {
     "en": "a2b16552f308a9b4",
@@ -852,8 +852,8 @@
     "text": "用于 RFC 8705 第 2.2 节 self_signed_tls_client_auth：此客户端进行身份验证所用证书的 DER 的 base64url SHA-256。这是本服务自己的名称，与 RFC 所命名的内容并存：自 2026-09-13 起，当证书是此客户端所注册 jwks 中某个密钥的 x5c[0] 时，它也能认证该客户端（第 2.2.2 节）。可通过 GET /tls/sign-in 获取证书的指纹，或自行计算：openssl x509 -outform DER | openssl dgst -sha256 -binary | base64url。"
   },
   "applications.schema.attributes.oauthConfidential.what": {
-    "en": "ae52d212279d2378",
-    "text": "TRUE/FALSE，即 RFC 9700 模式对它作出的判定——因而决定了是否要求它使用 PKCE，以及是否检查它的密钥。写在这里，以便可以直接读取答案而不必推断。"
+    "en": "11b68b893e67de65",
+    "text": "TRUE 或 FALSE，即令牌端点身份验证方法所作出的判定，由本注册表写入，以便可以直接读取该答案。`none`，或手工创建的应用上没有方法，为 FALSE；任何其他方法为 TRUE。RFC 9700 读取 `oauthTokenEndpointAuthMethod`（`oauth2_bcp.js` 中的 `isConfidential()`），因此不单独编辑此属性。创建时只有在值与判定一致时才能写明它，不一致则被拒绝（`STS-REG-0363`）。一个在创建时既未给出方法也未给出凭据的 OAuth 或 OpenID Connect 应用仍被记录为 `none`。"
   },
   "applications.schema.attributes.samlEntityId.what": {
     "en": "3987c430d22d9352",

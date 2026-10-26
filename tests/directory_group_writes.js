@@ -22,9 +22,9 @@
 // exception it names: a module contract, no port, under a second.
 //
 // The two doors are covered where they live:
-// `tests/vendored/sts_admin_console.js` presses both controls in a browser and
+// `tests/protocol/sts_admin_console.js` presses both controls in a browser and
 // reads the membership back as a resolved DN, and
-// `tests/vendored/sts_directory_bulk_load_api.js` drives the two operations
+// `tests/protocol/sts_directory_bulk_load_api.js` drives the two operations
 // five thousand times. Neither of those can assert what a refusal SAYS.
 // ===========================================================================
 

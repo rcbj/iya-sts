@@ -169,6 +169,11 @@
   "a2.operationalTitle": "Ett operativt attribut. En sökning returnerar det bara när det efterfrågas med namn (RFC 4511 avsnitt 4.5.1.8) — den här listningen visar det alltid.",
   "a2.operational": "(operativt)",
   "a2.tabOverview": "Översikt",
+  "a2.tabAuthentications": "Autentiseringsförsök",
+  "a2.authHeading": "Autentiseringsförsök",
+  "a2.authNote": "Varje försök som granskningsloggen fortfarande har kvar och som namnger det här programmet: en godtagen autentiseringsuppgift (<code>authentication</code>), en avslagen autentiseringsuppgift (<code>authentication.refused</code>) och en session som avslagits för sin inloggning (<code>session.refuse</code>, <code>session.refused</code>). En rad namnger det här programmet när dess <code>client_id</code> eller <code>application</code> är identifieraren eller ett av dess protokollnamn, exakt så som det stavas. Listan är den loggen, högst {max} händelser i en process. {dropped, plural, =0 {Inga har slängts.} other {# äldre händelser har slängts.}}",
+  "a2.authEmpty": "Inget autentiseringsförsök som namnger det här programmet finns i granskningsloggen.",
+  "a2.authOpenLog": "granskningsloggen",
   "a2.whatItIs": "Vad det är",
   "a2.colThing": "Sak",
   "a2.colValue": "Värde",
@@ -826,5 +831,8 @@
   "launch.lead": "Den här länken startar här en {protocol}-inloggning till det här programmet. Användarportalens länk <strong>Logga in</strong> är samma URL, och den fungerar var som helst annars också — ett bokmärke, en intranätsida, ett e-postmeddelande.",
   "launch.off": "Den är <strong>avstängd</strong> för det här programmet, så länken nekas: sätt <code>{attribute}</code> till TRUE nedan, eller slå på <code>{setting}</code> för sfären.",
   "launch.missing": "Den kan inte fungera än: programmet har ingen registrerad <code>{attributes}</code>, så en inloggning som startas här har ingenstans att ta vägen.",
-  "launch.endpoint": "Protokollets egen slutpunkt, för en partner som vill ha den:"
+  "launch.endpoint": "Protokollets egen slutpunkt, för en partner som vill ha den:",
+  "relations.label": "Hur detta skiljer sig från de andra rollinställningarna",
+  "relations.appPerms": "<strong>De roller den här applikationen har som medlem.</strong> Det är samma poster som applikationsraderna under Vem som har den på varje rolls sida: att ge rollen här och att lägga till applikationen på sidan Roller skriver samma sak. Applikationens egna tokens (<code>client_credentials</code>) bär rollerna och kan få det de auktoriserar. För <code>SSF_READ</code> och <code>SSF_MANAGE</code> låter medlemskapet också de personer som loggar in i applikationen få scopet, medan de är med i rollens grupp. Det här är inte Roller en person måste inneha för att använda den, nedan, som bara kräver en roll, och inte en rolls Klienter som ger den, som lånar ut en roll till de personer som loggar in genom en klient.",
+  "relations.required": "<strong>Ett krav för inloggning, inte en tilldelning.</strong> Listan är <code>appRequiredRole</code>, och varje rolls sida visar applikationen under Applikationer som kräver den. En person måste ha en av rollerna, som medlem eller genom en grupp, innan något utfärdas för applikationen. Det lägger inte till något scope eller någon behörighet, och det gör inte applikationen till medlem i rollen. För att applikationens tokens ska bära <code>ssf.read</code>, ge <code>SSF_READ</code> under Applikationsbehörigheter, ovan, och lägg personerna i <code>ssf-read</code>."
 }

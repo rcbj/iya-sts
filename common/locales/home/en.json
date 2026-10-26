@@ -17,6 +17,9 @@
   "portalLabel": "The user portal on this instance",
   "portalNote": "The account pages of whoever is looking at them: how they sign in to this service, what it holds about them, and where it will sign them in.",
   "portalNoRole": "It asks for no role, which is the whole difference from the console above: every page of it is about the person looking at it, so saying who you are is the entire question.",
+  "reportLabel": "Reports on this instance",
+  "reportNote": "The reports a person here may run, and the results of the ones they have already run.",
+  "reportWho": "An administrator may open it. Anyone else may open it only as a member of the realm's report group.",
   "signInProduct": "It asks you to sign in, and this instance is in product mode, so the password is checked against the account.",
   "signInDevelopment": "It asks you to sign in — any username, and no password is checked."
 }

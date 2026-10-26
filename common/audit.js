@@ -200,7 +200,11 @@ const CATEGORIES = [
           'this in three ways: an X509-SVID presented over mutual TLS at the ' +
           'SPIRE Server API (once per connection, for the reason a client ' +
           'certificate is), an agent attesting, and a JWT-SVID verified at ' +
-          'ValidateJWTSVID. Being ISSUED an SVID is not one of them.' },
+          'ValidateJWTSVID. Being ISSUED an SVID is not one of them. A ' +
+          'refusal of an attempt is `authentication.refused` beside the ' +
+          'acceptance: the same detail, outcome refused, and no counter ' +
+          'moved (#954). The application page lists both, and ' +
+          '`session.refuse` and `session.refused` when they name it.' },
   { category: 'session', label: 'Sessions',
     what: 'A browser sign-on session was created or ended. Shared between ' +
           'OAuth 2.0 / OIDC and WS-Federation, so a WS-Federation sign-out ' +
@@ -310,6 +314,13 @@ const CATEGORIES = [
 const ACTIONS = [
   { action: 'authentication', category: 'authentication',
     label: 'A credential was accepted' },
+  // THE ATTEMPT THAT DID NOT GET IN (#954). Recorded beside the acceptance
+  // rather than inside it: recordAuthentication() counts, and a refusal is
+  // not an acceptance. The application's Authentication attempts tab reads
+  // both, plus session.refuse and session.refused when they name the
+  // application. No credential is on the row — the note is a reason token.
+  { action: 'authentication.refused', category: 'authentication',
+    label: 'A credential was refused' },
 
   // ---------------------------------------------------------------------
   // THE USER PORTAL (2026-09-06). The first surface here where a PERSON acts
@@ -461,6 +472,11 @@ const ACTIONS = [
   { action: 'authn.session.refreshed', category: 'session',
     label: 'A device-bound session\'s cookie was renewed on a proof of its ' +
            'key' },
+  // A BROWSER THAT DECLINED TO BIND (#743). Secure-Session-Skipped is
+  // recorded on the session and is not a failure of the sign-in. A
+  // malformed header is the same action with outcome failure.
+  { action: 'authn.session.binding-skipped', category: 'session',
+    label: 'A sign-on session skipped device binding' },
 
   // THE TWO THE PROTOCOL-INDEPENDENT LOGOUT WRITES, and they are `session`
   // rather than a category of their own because that is what they are ABOUT —
@@ -614,6 +630,17 @@ const ACTIONS = [
   { action: 'device.attestation-revoked', category: 'directory',
     label: 'A device key is no longer attested: Google\'s Android ' +
            'attestation status list revokes its chain' },
+  // EVERY WEBAUTHN CEREMONY, AND THE ALGORITHM MISMATCH (#943): one row per
+  // registration or assertion at a door that runs one, successful or not —
+  // what was offered, what was used, which client, how the authenticator
+  // was reached, the browser's error name — and one when a person holding
+  // a post-quantum passkey signed in with a classical one.
+  // `authn/webauthn_ceremonies.ts` writes both and argues the fields.
+  { action: 'webauthn.ceremony', category: 'authentication',
+    label: 'A WebAuthn registration or assertion ran, completed or not' },
+  { action: 'webauthn.algorithm-mismatch', category: 'authentication',
+    label: 'A person holding a post-quantum passkey signed in with a ' +
+           'classical one' },
   { action: 'webauthn.attestation-revoked', category: 'authentication',
     label: 'A security key\'s attestation is no longer trusted: Google\'s ' +
            'Android attestation status list revokes its chain' },
@@ -1161,6 +1188,26 @@ const ACTIONS = [
   { action: 'admin.siop.preferred', category: 'admin',
     label: 'An administrator marked a person\'s proved DID as preferred, ' +
            'or cleared the mark' },
+  // A passkey an administrator enrols (#945) or upgrades (#939), written
+  // by admin-core/admin_actions.ts. The filter has to name each one:
+  // since #86 an action missing here is refused by GET /admin-api/audit.
+  { action: 'admin.passkey.enrolment-started', category: 'authentication',
+    label: 'An administrator started enrolling a passkey for a person' },
+  { action: 'admin.passkey.enrolment-refused', category: 'authentication',
+    label: 'An administrator\'s passkey enrolment for a person was ' +
+           'refused' },
+  { action: 'admin.passkey.enrolled', category: 'authentication',
+    label: 'An administrator enrolled a passkey for a person' },
+  { action: 'admin.passkey.upgrade-started', category: 'authentication',
+    label: 'An administrator started upgrading a person\'s passkey' },
+  { action: 'admin.passkey.upgrade-refused', category: 'authentication',
+    label: 'An administrator\'s passkey upgrade was refused' },
+  { action: 'admin.passkey.upgrade-proved', category: 'authentication',
+    label: 'An administrator proved a person\'s classical passkey' },
+  { action: 'admin.passkey.upgrade-cancelled', category: 'authentication',
+    label: 'An administrator cancelled a person\'s passkey upgrade' },
+  { action: 'admin.passkey.upgraded', category: 'authentication',
+    label: 'An administrator upgraded a person\'s passkey to ML-DSA' },
   // A federation partner's Shared Signals (#153, #373): ssf_transmitters.ts
   // records these through its own `audited()`, three by name and six as
   // 'ssf.signals.' + the stream act — none had a row until the widened
@@ -1308,6 +1355,12 @@ const ACTIONS = [
     label: 'A person started enrolling a security key' },
   { action: 'portal.key.refused', category: 'authentication',
     label: 'A person\'s security key enrolment was refused' },
+  { action: 'portal.key.upgrade-started', category: 'authentication',
+    label: 'A person started upgrading a classical passkey to ML-DSA' },
+  { action: 'portal.key.upgrade-refused', category: 'authentication',
+    label: 'A person\'s passkey upgrade was refused' },
+  { action: 'portal.key.upgraded', category: 'authentication',
+    label: 'A person upgraded a classical passkey to ML-DSA' },
   { action: 'portal.mfa.backup-codes.generated', category: 'authentication',
     label: 'A person generated a set of recovery codes' },
   { action: 'portal.mfa.backup-codes.confirmed', category: 'authentication',
@@ -1423,6 +1476,14 @@ const ACTIONS = [
     label: 'A request did not say which of a browser\'s accounts it was for' },
   { action: 'session.reauthenticate', category: 'session',
     label: 'The same person signed in again on a live session' },
+  // A SESSION THAT ALREADY EXISTED, PRESENTED AND HONOURED: single sign-on.
+  // authn.ts's notePresented() writes it where it reports CAEP's
+  // `session-presented`, so the sign-in's own return trip is not one. It is
+  // an attempt on both Authentication attempts tabs: a person who reached an
+  // application on the session they already held authenticated to nobody,
+  // and without this row that visit was on neither tab.
+  { action: 'session.presented', category: 'session',
+    label: 'An existing sign-on session was presented to an application' },
   { action: 'session.refuse', category: 'session',
     label: 'A session was refused for its sign-in mechanism' },
   { action: 'session.refused', category: 'session',
@@ -1440,7 +1501,31 @@ const ACTIONS = [
   { action: 'xacml.policy.write', category: 'authorization',
     label: 'An XACML policy was written' },
   { action: 'xacml.policy.delete', category: 'authorization',
-    label: 'An XACML policy was deleted' }
+    label: 'An XACML policy was deleted' },
+  { action: 'report.definition.create', category: 'admin',
+    label: 'A report definition was created' },
+  { action: 'report.definition.update', category: 'admin',
+    label: 'A report definition was updated' },
+  { action: 'report.definition.share', category: 'admin',
+    label: 'A report definition was shared with a group' },
+  { action: 'report.definition.delete', category: 'admin',
+    label: 'A report definition was deleted' },
+  { action: 'report.job.submit', category: 'admin',
+    label: 'A report job was submitted' },
+  { action: 'report.job.start', category: 'admin',
+    label: 'A report job started' },
+  { action: 'report.job.complete', category: 'admin',
+    label: 'A report job completed' },
+  { action: 'report.job.fail', category: 'admin',
+    label: 'A report job failed' },
+  { action: 'report.job.cancel', category: 'admin',
+    label: 'A report job was cancelled' },
+  { action: 'report.notify', category: 'admin',
+    label: 'A report completion notice was sent' },
+  { action: 'report.query', category: 'admin',
+    label: 'A report query was run' },
+  { action: 'report.job.retrieve', category: 'admin',
+    label: 'A report result was retrieved' }
 ];
 
 const CATEGORY_OF_ACTION = {};
@@ -2392,6 +2477,132 @@ function list() {
   return out;
 }
 
+// What an application's Authentication attempts tab counts as an attempt
+// (#954). The acceptance and the refusal are the standard authentication
+// event. A session refused after a credential was accepted is a different
+// action and still an attempt at that application, so it is included.
+// session.reauthenticate is the acceptance written a second time and is not.
+// session.presented is an existing session honoured for an application with
+// no credential asked for, which is the one way in that wrote no row these
+// tabs read: it is an attempt that succeeded on the session alone.
+const ATTEMPT_ACTIONS = {
+  'authentication': true,
+  'authentication.refused': true,
+  'session.refuse': true,
+  'session.refused': true,
+  'session.presented': true
+};
+
+// A row names an application when detail.client_id or detail.application is
+// one of the names the caller handed, trimmed and exact. Identifiers are not
+// lower-cased (the registry's own rule). The summary and the target are not
+// read: the target is a session id, and a sentence that happens to contain
+// the name is not the application. Inlined in the filter below: it runs
+// twice per row of the ring, and an Entering line there would be the log.
+/**
+ * Lists the authentication attempts that name one of `names`, newest first.
+ *
+ * The actions are `authentication`, `authentication.refused`,
+ * `session.refuse`, `session.refused` and `session.presented`. A row
+ * matches when
+ * `detail.client_id` or `detail.application`, trimmed, is one of `names`
+ * exactly. The list is this log: a capped ring, the same one `list()` reads.
+ *
+ * @param names - the application's identifier and its protocol names
+ * @returns a copy of the matching rows, newest first
+ */
+function authenticationEventsFor(names) {
+  log.debug("Entering authenticationEventsFor().");
+  const wanted = {};
+  (names || []).forEach(function (one) {
+    const text = String(one == null ? '' : one).trim();
+    if (text) {
+      wanted[text] = true;
+    }
+  });
+  if (!Object.keys(wanted).length) {
+    log.debug("Leaving authenticationEventsFor(). No names.");
+    return [];
+  }
+  const out = list().filter(function (row) {
+    if (!ATTEMPT_ACTIONS[row.action]) {
+      return false;
+    }
+    const detail = row.detail || {};
+    const client = String(detail.client_id == null ? '' :
+                          detail.client_id).trim();
+    const application = String(detail.application == null ? '' :
+                               detail.application).trim();
+    return (client.length > 0 && wanted[client] === true) ||
+           (application.length > 0 && wanted[application] === true);
+  });
+  log.debug("Leaving authenticationEventsFor(). " + out.length +
+            " event(s).");
+  return out;
+}
+
+// A row is one person's attempt when the actor, the form they presented,
+// detail.sub or detail.presented is one of the names the caller handed,
+// trimmed and exact. Names are not lower-cased. The summary and the target
+// are not read: the target is a session id, and a sentence that happens to
+// contain the name is not the person. An e-mail is not a name of its own;
+// identityOf() files the local part as the key and keeps the whole address
+// as the presented form, which is already one of the four fields. Inlined
+// in the filter: it runs once per row of the ring, and an Entering line
+// there would be the log. `since` is a millisecond instant; a finite value
+// above zero keeps rows at or after it. The console's user tab passes none,
+// so it lists the whole capped ring.
+/**
+ * Lists the authentication attempts by one of `names`, newest first.
+ *
+ * The actions are the same five `authenticationEventsFor()` counts. A row
+ * matches when `actor`, `actorForm`, `detail.sub` or `detail.presented`,
+ * trimmed, is one of `names` exactly.
+ *
+ * @param names - the person's key, the forms they were seen under, and
+ *   their subject
+ * @param since - when given and above zero, only rows at or after this
+ *   instant
+ * @returns a copy of the matching rows, newest first
+ */
+function authenticationEventsForPerson(names, since) {
+  log.debug("Entering authenticationEventsForPerson().");
+  const wanted = {};
+  (names || []).forEach(function (one) {
+    const text = String(one == null ? '' : one).trim();
+    if (text) {
+      wanted[text] = true;
+    }
+  });
+  if (!Object.keys(wanted).length) {
+    log.debug("Leaving authenticationEventsForPerson(). No names.");
+    return [];
+  }
+  const from = Number(since);
+  const windowed = isFinite(from) && from > 0;
+  const out = list().filter(function (row) {
+    if (!ATTEMPT_ACTIONS[row.action]) {
+      return false;
+    }
+    if (windowed && !(Number(row.at) >= from)) {
+      return false;
+    }
+    const detail = row.detail || {};
+    const actor = String(row.actor == null ? '' : row.actor).trim();
+    const form = String(row.actorForm == null ? '' : row.actorForm).trim();
+    const sub = String(detail.sub == null ? '' : detail.sub).trim();
+    const presented = String(detail.presented == null ? '' :
+                             detail.presented).trim();
+    return (actor.length > 0 && wanted[actor] === true) ||
+           (form.length > 0 && wanted[form] === true) ||
+           (sub.length > 0 && wanted[sub] === true) ||
+           (presented.length > 0 && wanted[presented] === true);
+  });
+  log.debug("Leaving authenticationEventsForPerson(). " + out.length +
+            " event(s).");
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // THIS PROCESS'S EVENTS, AND EVERY OTHER PROCESS'S, IN ONE LIST.
 //
@@ -2621,6 +2832,8 @@ module.exports = {
   currentAddress: ambientAddress,
   currentRequest: ambientRequest,
   list: list,
+  authenticationEventsFor: authenticationEventsFor,
+  authenticationEventsForPerson: authenticationEventsForPerson,
   summary: summary,
   fresh: fresh,
   PROSE_ROUTES: PROSE_ROUTES,

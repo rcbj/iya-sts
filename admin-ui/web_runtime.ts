@@ -66,6 +66,7 @@ import WebPages = require('./web_pages');
 import WebShell = require('./web_shell');
 import WebForms = require('./web_forms');
 import WebAnswers = require('./web_answers');
+import WebWebAuthn = require('../common/web_webauthn');
 import WebMessages = require('../common/web_messages');
 import WebAccounts = require('../common/web_accounts');
 
@@ -129,14 +130,15 @@ class ConsoleRuntime extends SpaClient {
   // first while one has. Set by an `input` or `change` inside a form, and
   // cleared by every drawing.
   private dirty: boolean;
-  // THE SIDEBAR SECTION THE READER OPENED (#750), by its `data-section`
-  // key, or '' while none is: every drawing draws that one open and every
-  // other closed, so a section opened stays open from page to page in this
-  // tab until the reader closes it or opens another. Held here and nowhere
-  // else — a page is drawn in place, never loaded, so this object outlives
-  // every move between console pages, and a reload, a new tab or a new
-  // sign-in starts with everything closed, which is what was asked for.
-  private openSection: string;
+  // THE SIDEBAR SECTION DRAWN OPEN (#750), by its `data-section` key.
+  // Null until this load chooses: the first drawing opens the section that
+  // holds the page, so a reload shows the list open where the reader is.
+  // After that it is the key they opened, or '' when they closed it, and
+  // every drawing draws that one open and every other closed. Held here and
+  // nowhere else — a page is drawn in place, never loaded, so this object
+  // outlives every move between console pages. A new load has no choice to
+  // restore and derives one from the page.
+  private openSection: string | null;
   // WHAT `GET /admin-api/console` ANSWERED WHEN IT REFUSED THIS TAB'S
   // ACCOUNT (#751): `{ status, json }`, so `route()` draws a page that says
   // so — with the account menu's Switch user group where the setting is on
@@ -171,7 +173,7 @@ class ConsoleRuntime extends SpaClient {
     this.reauth = null;
     this.submitting = null;
     this.dirty = false;
-    this.openSection = '';
+    this.openSection = null;
     this.shellRefusal = null;
   }
 
@@ -1272,6 +1274,16 @@ class ConsoleRuntime extends SpaClient {
                          : ''));
     const shell = this.shell || { gate: null, sections: [], realm: { id: '',
       name: '' }, navLabels: {}, version: {}, persistence: {} };
+    // A RELOAD HAS NO REMEMBERED SECTION. The choice starts unset, so the
+    // first drawing opens the section that holds this page — a reader who
+    // reloaded Directory → Applications is shown Directory open. A toggle
+    // after that records what they opened, or '' when they closed it, and
+    // that is what later drawings use. With no sections in hand yet the
+    // choice waits for a drawing that has them.
+    if (this.openSection === null && Array.isArray(shell.sections) &&
+        shell.sections.length) {
+      this.openSection = WebShell.sectionKeyOf(shell.sections, active);
+    }
     this.env.document.title = title + ' — IYA STS admin';
     this.env.document.body.innerHTML = ConsoleRuntime.realmLinks(
       WebShell.frame(shell, {
@@ -1291,9 +1303,98 @@ class ConsoleRuntime extends SpaClient {
       this.drawReauthBar(this.reauth.message || '');
     }
     this.targetFragment();
+    this.markOpenTabs();
     this.wireCopyButtons();
     this.loadPageScripts();
     this.revealActiveNav();
+  }
+
+  // THE TAB BEING READ, ON THE LINK (2026-10-25).
+  //
+  // The stylesheet names every tab id it knew when it was written and paints
+  // that link while its panel is the `:target`. A tab it does not name — a
+  // custom listener's, whose id is the operator's — shows its panel and
+  // leaves every link looking alike, which is how the Service account
+  // sub-tab read until its id was added (#602). After each draw, and
+  // whenever the fragment changes without a draw, the link whose panel is
+  // the target (or the first, when none in that bar is) gets `tab-current`,
+  // the same fill the stylesheet's own rule uses.
+  /**
+   * Marks the open tab of every tab bar on the page just drawn.
+   *
+   * @returns nothing
+   */
+  markOpenTabs(): void {
+    const doc = this.env.document;
+    if (!doc || typeof doc.querySelectorAll !== 'function' ||
+        typeof doc.querySelector !== 'function' ||
+        typeof doc.getElementById !== 'function') {
+      return;
+    }
+    const target = doc.querySelector(':target');
+    const roots = doc.querySelectorAll('.tabs, .subtabs');
+    const count = roots && typeof roots.length === 'number' ? roots.length
+      : 0;
+    for (let r = 0; r < count; r++) {
+      const kids = roots[r] && roots[r].children;
+      const nKids = kids && typeof kids.length === 'number' ? kids.length
+        : 0;
+      let bar = null;
+      for (let k = 0; k < nKids; k++) {
+        const el = kids[k];
+        if (el && el.classList && el.classList.contains('tabbar')) {
+          bar = el;
+          break;
+        }
+      }
+      if (!bar || !bar.children) {
+        continue;
+      }
+      const links = [];
+      for (let c = 0; c < bar.children.length; c++) {
+        const el = bar.children[c];
+        if (el && String(el.tagName).toUpperCase() === 'A') {
+          links.push(el);
+        }
+      }
+      let current = null;
+      for (let a = 0; a < links.length; a++) {
+        const link = links[a];
+        if (link.classList) {
+          link.classList.remove('tab-current');
+        }
+        if (typeof link.removeAttribute === 'function') {
+          link.removeAttribute('aria-current');
+        }
+        const href = String(typeof link.getAttribute === 'function'
+          ? (link.getAttribute('href') || '') : '');
+        const id = href.charAt(0) === '#' ? href.slice(1) : '';
+        const panel = id ? doc.getElementById(id) : null;
+        if (panel && target && (target === panel ||
+            (typeof panel.contains === 'function' &&
+             panel.contains(target)))) {
+          current = link;
+        }
+      }
+      if (!current) {
+        for (let a = 0; a < links.length; a++) {
+          if (!current || (links[a].classList &&
+                           links[a].classList.contains('first'))) {
+            current = links[a];
+            if (links[a].classList &&
+                links[a].classList.contains('first')) {
+              break;
+            }
+          }
+        }
+      }
+      if (current && current.classList) {
+        current.classList.add('tab-current');
+        if (typeof current.setAttribute === 'function') {
+          current.setAttribute('aria-current', 'true');
+        }
+      }
+    }
   }
 
   // THE ACTIVE TAB IS BROUGHT INTO VIEW IN THE SIDEBAR (2026-10-08). The
@@ -2019,6 +2120,16 @@ class ConsoleRuntime extends SpaClient {
     const fields = ConsoleRuntime.fieldsOf(data);
     const action = Array.isArray(fields.action) ? fields.action[0]
                                                 : String(fields.action || '');
+    if (form && form.getAttribute &&
+        (form.getAttribute('data-admin-passkey-upgrade') === 'true' ||
+         form.getAttribute('data-admin-passkey-enrolment') === 'true')) {
+      if (form.getAttribute('data-admin-passkey-upgrade') === 'true') {
+      await this.adminPasskeyUpgrade(fields);
+      } else {
+      await this.adminPasskeyEnrolment(fields);
+      }
+      return;
+    }
     // ENTER IN A FIELD'S SEARCH BOX SEARCHES (#459). Enter presses the
     // form's first submit button — the hidden default, which is Save — and
     // somebody who typed a name to look for has not asked to save the tab.
@@ -2191,6 +2302,172 @@ class ConsoleRuntime extends SpaClient {
     await this.go(back + (back.indexOf('?') < 0 ? '?' : '&') + key + '=' +
                   encodeURIComponent(message) +
                   String(this.env.location.hash || ''));
+  }
+
+  // The administrator's browser performs both ceremonies; the API validates
+  // each against the pending upgrade, and keeps the classical key until the
+  // ML-DSA registration is verified.
+  /**
+   * Proves and upgrades a person's passkey from the admin console.
+   *
+   * @param fields - the person and classical credential id
+   * @returns nothing
+   */
+  async adminPasskeyUpgrade(fields: Json): Promise<void> {
+    const who = String(fields.user || '');
+    const base = this.here().replace(/([?&])(notice|error)=[^&]*/g, '$1')
+      .replace(/[?&]+$/, '');
+    const report = async (kind: string, message: string) => {
+      await this.go(base + (base.indexOf('?') < 0 ? '?' : '&') + kind + '=' +
+                    encodeURIComponent(message));
+    };
+    let upgradeId = '';
+    try {
+      const begun = await this.apiJson('POST',
+        '/admin-api/users/begin-passkey-upgrade', {
+          user: who, credentialId: String(fields.credentialId || '') });
+      if (!begun) { return; }
+      if (begun.status >= 400 || !begun.json || !begun.json.ok) {
+        throw new Error(((begun.json && begun.json.errors) || []).join(' ') ||
+                        'The upgrade could not be started.');
+      }
+      upgradeId = String(begun.json.upgradeId || '');
+      const proof = begun.json.ceremony;
+      const asserted = await this.env.navigator.credentials.get({ publicKey: {
+        challenge: WebWebAuthn.bytes(proof.challenge), rpId: proof.rpId,
+        allowCredentials: [{ type: 'public-key',
+          id: WebWebAuthn.bytes(proof.allow) }],
+        userVerification: (proof.options && proof.options.userVerification) ||
+                          'preferred' } });
+      if (!asserted) { throw new Error('The passkey did not answer.'); }
+      const proved = await this.apiJson('POST',
+        '/admin-api/users/prove-passkey-upgrade', {
+          user: who, upgradeId: upgradeId,
+          credential: JSON.stringify(WebWebAuthn.asserted(asserted)) });
+      if (!proved) { return; }
+      if (proved.status >= 400 || !proved.json || !proved.json.ok) {
+        throw new Error(((proved.json && proved.json.errors) || []).join(' ') ||
+                        'The passkey proof was refused.');
+      }
+      const registration = proved.json.ceremony;
+      const options: Json = Object.assign({}, registration.options || {});
+      options.challenge = WebWebAuthn.bytes(registration.challenge);
+      options.user = Object.assign({}, registration.user, {
+        id: WebWebAuthn.bytes(registration.user.id) });
+      options.pubKeyCredParams = (options.algorithms || []).map(function (alg) {
+        return { type: 'public-key', alg: alg };
+      });
+      delete options.algorithms;
+      options.excludeCredentials = (registration.exclude || []).map(
+        function (id) { return { type: 'public-key',
+          id: WebWebAuthn.bytes(id) }; });
+      options.extensions = (options.credProps || options.minPinLength)
+        ? Object.assign(options.credProps ? { credProps: true } : {},
+                        options.minPinLength ? { minPinLength: true } : {})
+        : undefined;
+      delete options.credProps;
+      delete options.minPinLength;
+      const made = await this.env.navigator.credentials.create({
+        publicKey: options });
+      if (!made) { throw new Error('The authenticator refused registration.'); }
+      const finished = await this.apiJson('POST',
+        '/admin-api/users/finish-passkey-upgrade', { user: who,
+          upgradeId: upgradeId,
+          credential: JSON.stringify(WebWebAuthn.created(made)) });
+      if (!finished) { return; }
+      if (finished.status >= 400 || !finished.json || !finished.json.ok) {
+        throw new Error(((finished.json && finished.json.errors) || [])
+          .join(' ') || 'The passkey could not be upgraded.');
+      }
+      await report('notice', finished.json.message ||
+        'The passkey was upgraded.');
+    } catch (e) {
+      if (upgradeId) {
+        await this.apiJson('POST', '/admin-api/users/cancel-passkey-upgrade',
+                           { user: who }).catch(function () { return null; });
+      }
+      await report('error', String((e && e.message) || e));
+    }
+  }
+  // AN ADMINISTRATOR'S PASSKEY ENROLMENT (#945) runs the WebAuthn ceremony
+  // in this browser while every API call still goes through the console's
+  // DPoP client. The server binds the one-use challenge to this administrator
+  // and the named person; a browser refusal is sent to finish to spend it.
+  /**
+   * Runs the begin, browser registration and finish steps for a person.
+   *
+   * @param fields - the submitted user and role
+   * @returns nothing
+   */
+  async adminPasskeyEnrolment(fields: Json): Promise<void> {
+    const who = String(fields.user || fields.username || '');
+    const back = this.here().replace(/([?&])(notice|error)=[^&]*/g, '$1')
+      .replace(/[?&]+$/, '');
+    const report = async function (self, kind, message) {
+      const join = back.indexOf('?') < 0 ? '?' : '&';
+      await self.go(back + join + kind + '=' + encodeURIComponent(message));
+    };
+    const begun = await this.apiJson('POST',
+      '/admin-api/users/begin-passkey-enrolment',
+      { user: who, role: String(fields.role || 'mfa'),
+        lane: String(fields.lane || ''), kind: String(fields.kind || '') });
+    if (!begun) {
+      return;
+    }
+    const ceremony = begun.json && begun.json.ceremony;
+    if (begun.status >= 400 || !begun.json || !begun.json.ok || !ceremony) {
+      const errors = begun.json && begun.json.errors;
+      await report(this, 'error', errors && errors[0]
+        ? errors[0] : 'The passkey enrolment could not be started.');
+      return;
+    }
+    let credential: Json;
+    try {
+      if (!this.env.navigator || !this.env.navigator.credentials ||
+          typeof this.env.navigator.credentials.create !== 'function') {
+        throw new Error('This browser cannot create a WebAuthn credential.');
+      }
+      const publicKey: Json = Object.assign({}, ceremony.options || {});
+      publicKey.challenge = WebWebAuthn.bytes(ceremony.challenge);
+      publicKey.rp = publicKey.rp || { id: ceremony.rpId, name: 'Iya STS' };
+      publicKey.user = Object.assign({}, ceremony.user, {
+        id: WebWebAuthn.bytes(ceremony.user.id) });
+      publicKey.pubKeyCredParams = (publicKey.algorithms || []).map(
+        function (alg) { return { type: 'public-key', alg: alg }; });
+      delete publicKey.algorithms;
+      publicKey.excludeCredentials = (ceremony.exclude || []).map(function (id) {
+        return { type: 'public-key', id: WebWebAuthn.bytes(id) };
+      });
+      publicKey.extensions = (publicKey.credProps || publicKey.minPinLength)
+        ? Object.assign(publicKey.credProps ? { credProps: true } : {},
+                        publicKey.minPinLength ? { minPinLength: true } : {})
+        : undefined;
+      delete publicKey.credProps;
+      delete publicKey.minPinLength;
+      const made = await this.env.navigator.credentials.create({
+        publicKey: publicKey });
+      if (!made) {
+        throw new Error('The authenticator did not create a credential.');
+      }
+      credential = WebWebAuthn.created(made);
+    } catch (e) {
+      credential = { error: String((e && e.name) || 'NotAllowedError'),
+        message: String((e && e.message) || 'The authenticator refused.') };
+    }
+    const finished = await this.apiJson('POST',
+      '/admin-api/users/finish-passkey-enrolment', {
+        user: who, enrolmentId: begun.json.enrolmentId,
+        credential: JSON.stringify(credential) });
+    if (!finished) {
+      return;
+    }
+    if (finished.status >= 400 || !finished.json || !finished.json.ok) {
+      const errors = finished.json && finished.json.errors;
+      await report(this, 'error', errors && errors[0]
+        ? errors[0] : 'The passkey could not be registered. Start again.');
+      return;
+    }
+    await report(this, 'notice', 'Passkey enrolled for ' + who + '.');
   }
 
   // A FIELD'S SEARCH (#459): `WebAnswers` reads the press and builds the
@@ -2957,6 +3234,9 @@ class ConsoleRuntime extends SpaClient {
         return self.send(String(method || 'GET'),
                          self.apiOrigin() + String(path), body);
       };
+      this.env.window.addEventListener('hashchange', function () {
+        self.markOpenTabs();
+      });
       this.env.window.addEventListener('popstate', function () {
         // A FRAGMENT'S OWN NAVIGATION — a tab pressed, or targetFragment() —
         // changes neither the path nor the query, and the browser has
@@ -2965,6 +3245,7 @@ class ConsoleRuntime extends SpaClient {
         // and fall back to the first.
         if (self.env.location.pathname + self.env.location.search ===
             self.drawnAt) {
+          self.markOpenTabs();
           return;
         }
         self.prefix = ConsoleRuntime.prefixOf(self.env.location.pathname);

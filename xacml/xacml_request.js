@@ -356,6 +356,54 @@ const VOCABULARY = Object.freeze({
   PASSKEY_ALGORITHM: 'urn:sts:xacml:passkey:algorithm',
   PASSKEY_POST_QUANTUM: 'urn:sts:xacml:passkey:post-quantum',
   PASSKEY_LANE: 'urn:sts:xacml:passkey:lane',
+  // resource: AN UPGRADE OF A CLASSICAL PASSKEY (#939), with the fact group
+  // `upgrade` — true where the registration is the second ceremony of an
+  // upgrade, what its write does (`replace`, the ML-DSA key in the
+  // classical one's place, or `alongside`, beside it in the post-quantum
+  // lane), and the JOSE name of the algorithm of the passkey it upgrades.
+  // Read by no built-in rule: a realm's own rule may forbid upgrades.
+  PASSKEY_UPGRADE: 'urn:sts:xacml:passkey:upgrade',
+  PASSKEY_UPGRADE_MODE: 'urn:sts:xacml:passkey:upgrade-mode',
+  PASSKEY_UPGRADE_PREVIOUS_ALGORITHM:
+    'urn:sts:xacml:passkey:upgrade-previous-algorithm',
+  // resource: WHAT THE KEY'S ATTESTATION WAS SIGNED WITH (#941), with the
+  // fact group `attestation-algorithm` — the statement's own signature
+  // algorithm by its COSE name (`ML-DSA-65`, `ES256`; absent for apple and
+  // none); a bag of every certificate's signature algorithm, leaf first
+  // and the anchor last (`ML-DSA-65`, `sha256-ecdsa`,
+  // `id-MLDSA65-ECDSA-P256-SHA512`); whether ALL of them are post-quantum;
+  // whether the statement was verified and trusted (the `attestation`
+  // group's two facts, sent here too where that group is not); and whether
+  // they satisfy the selected profile's `attestationAlgorithms` list —
+  // computed in ONE place, `passkey_policy.ts`'s `question()`, as
+  // POST_QUANTUM is. The built-in rule reads ATTESTATION_ALGORITHM_ALLOWED
+  // alone; the rest is for a realm's own rules.
+  PASSKEY_ATTESTATION_STATEMENT_ALGORITHM:
+    'urn:sts:xacml:passkey:attestation-statement-algorithm',
+  PASSKEY_ATTESTATION_CERTIFICATE_ALGORITHM:
+    'urn:sts:xacml:passkey:attestation-certificate-algorithm',
+  PASSKEY_ATTESTATION_POST_QUANTUM:
+    'urn:sts:xacml:passkey:attestation-post-quantum',
+  PASSKEY_ATTESTATION_ALGORITHM_ALLOWED:
+    'urn:sts:xacml:passkey:attestation-algorithm-allowed',
+  // resource: WHETHER THE KEY'S ALGORITHM IS ONE THE SELECTED PASSKEY
+  // PROFILE OFFERS AT REGISTRATION (#940), with the fact group
+  // `profile-algorithm`, at register-passkey only — computed in ONE place,
+  // `passkey_policy.ts`'s `question()`, from the algorithm (PASSKEY_ALGORITHM,
+  // sent with the `algorithm` group) and the profile's resolved list, the
+  // policy fact `registrationAlgorithms`. A boolean always sent with its
+  // group, false for anything but true.
+  PASSKEY_PROFILE_ALGORITHM_OFFERED:
+    'urn:sts:xacml:passkey:profile-algorithm-offered',
+  // resource: WHO ENROLLED THE KEY (#945), with the fact group `enrolment`
+  // — sent only for a registration an ADMINISTRATOR ran in their own
+  // browser on the person's behalf: a boolean, true, and the
+  // administrator's username. No built-in rule reads them (the switch is
+  // the passkey policy's `adminEnrolment`, enforced at the writer); they
+  // are there so a realm's own rule can forbid an administrator's
+  // enrolment, or allow it only for some people or some administrators.
+  PASSKEY_ENROLLED_BY_ADMIN: 'urn:sts:xacml:passkey:enrolled-by-admin',
+  PASSKEY_ENROLLED_BY: 'urn:sts:xacml:passkey:enrolled-by',
   // environment: the SELECTED passkey policy profile's rows (#527, #535),
   // each after this prefix under its own name
   // (`urn:sts:xacml:passkey-policy:backupEligibility`).
@@ -724,9 +772,22 @@ class AuthorizationRequest {
   //   attestation { verified, trusted, aaguid, listed, compromised, rank,
   //                 fips, unchecked }          with `attestation`
   //   algorithm, postQuantum, lane            with `algorithm` (#718)
+  //   attestationAlgorithm { verified, trusted, statement, certificates,
+  //                          postQuantum }, attestationAlgorithmAllowed
+  //                                            with `attestation-algorithm`
+  //                                            (#941)
+  //   upgrade { mode, previousAlgorithm }      with `upgrade` (#939)
+  //   policy.attestationAlgorithms             always (#941), a bag
+  //   profileAlgorithmOffered                  with `profile-algorithm`
+  //                                            (#940)
+  //   policy { registrationMode, registrationAlgorithmsFrom }, and
+  //   policy.registrationAlgorithms, a bag     always (#940)
+  //   enrolledByAdmin, enrolledBy              with `enrolment` (#945)
+  //   policy.adminEnrolment                    always (#945)
   //   policy { backupEligibility, enforcePinLength, minPinLength,
   //            pinLengthOnlyIfSupported, enforceAttestationAtSignIn,
-  //            enterpriseSerialAttribute, postQuantumRequired }  always
+  //            enterpriseSerialAttribute, postQuantumRequired,
+  //            postQuantumAllowCredentials (#946) }  always
   //   settings { attestationPolicy, allowedAaguids, requiredRank,
   //              requireFips }                 with `attestation`
   //   recovery { door, at, credential, selfService, covered, pending }
@@ -801,6 +862,50 @@ class AuthorizationRequest {
                     T.BOOLEAN);
       this.resource(V.PASSKEY_LANE, one(given.lane));
     }
+    // WHAT THE ATTESTATION WAS SIGNED WITH (#941). The verdict is sent as
+    // a boolean always with its group, false for anything but true, for
+    // the post-quantum fact's reason: an absent "allowed" must never let a
+    // key through by its silence.
+    if (has('attestation-algorithm')) {
+      const a = given.attestationAlgorithm || {};
+      this.resource(V.PASSKEY_ATTESTATION_STATEMENT_ALGORITHM,
+                    one(a.statement));
+      this.resource(V.PASSKEY_ATTESTATION_CERTIFICATE_ALGORITHM,
+                    (Array.isArray(a.certificates) ? a.certificates : [])
+                      .map(String).filter(Boolean));
+      this.resource(V.PASSKEY_ATTESTATION_POST_QUANTUM,
+                    [a.postQuantum === true], T.BOOLEAN);
+      if (!has('attestation')) {
+        this.resource(V.PASSKEY_ATTESTATION_VERIFIED, [a.verified === true],
+                      T.BOOLEAN);
+        this.resource(V.PASSKEY_ATTESTATION_TRUSTED, [a.trusted === true],
+                      T.BOOLEAN);
+      }
+      this.resource(V.PASSKEY_ATTESTATION_ALGORITHM_ALLOWED,
+                    [given.attestationAlgorithmAllowed === true], T.BOOLEAN);
+    }
+    // AN UPGRADE (#939): true with its group, and what it does.
+    if (has('upgrade')) {
+      const u = given.upgrade || {};
+      this.resource(V.PASSKEY_UPGRADE, [true], T.BOOLEAN);
+      this.resource(V.PASSKEY_UPGRADE_MODE, one(u.mode));
+      this.resource(V.PASSKEY_UPGRADE_PREVIOUS_ALGORITHM,
+                    one(u.previousAlgorithm));
+    }
+    // WHETHER THE PROFILE OFFERS THE KEY'S ALGORITHM (#940), for the
+    // post-quantum fact's reason: false for anything but true, so silence
+    // never lets a key through.
+    if (has('profile-algorithm')) {
+      this.resource(V.PASSKEY_PROFILE_ALGORITHM_OFFERED,
+                    [given.profileAlgorithmOffered === true], T.BOOLEAN);
+    }
+    // WHO ENROLLED IT (#945): an administrator. The boolean is sent as true
+    // with its group, for a realm's own rule.
+    if (has('enrolment')) {
+      this.resource(V.PASSKEY_ENROLLED_BY_ADMIN,
+                    [given.enrolledByAdmin === true], T.BOOLEAN);
+      this.resource(V.PASSKEY_ENROLLED_BY, one(given.enrolledBy));
+    }
     const policy = given.policy || {};
     const P = V.PASSKEY_POLICY_PREFIX;
     this.environment(P + 'backupEligibility', one(policy.backupEligibility));
@@ -816,7 +921,29 @@ class AuthorizationRequest {
                      one(policy.enterpriseSerialAttribute));
     this.environment(P + 'postQuantumRequired',
                      one(policy.postQuantumRequired));
+    // HOW THE PASSKEY STEP NAMED THE KEYS (#946): `narrow` or
+    // `list-and-refuse`, resolved from the realm's setting where the
+    // profile's row is `realm`. Read by no built-in rule.
+    this.environment(P + 'postQuantumAllowCredentials',
+                     one(policy.postQuantumAllowCredentials));
     this.environment(P + 'recoveryAssurance', one(policy.recoveryAssurance));
+    // #945: whether an administrator may enrol a passkey, `off` or `on`.
+    this.environment(P + 'adminEnrolment', one(policy.adminEnrolment));
+    this.environment(P + 'attestationAlgorithms',
+                     (Array.isArray(policy.attestationAlgorithms)
+                       ? policy.attestationAlgorithms : []).map(String));
+    // A POPULATION'S REGISTRATION ALGORITHMS (#940): the profile's mode as
+    // its row says it (`realm`, `pq-only`, `pq-first`, `classical-only`),
+    // the algorithms a registration under it may make as resolved (the
+    // realm's where the profile follows it), and whether those came from
+    // the profile (`profile`) or the realm (`realm`) — the last is what the
+    // built-in `profile-algorithm` rule is gated on.
+    this.environment(P + 'registrationMode', one(policy.registrationMode));
+    this.environment(P + 'registrationAlgorithms',
+                     (Array.isArray(policy.registrationAlgorithms)
+                       ? policy.registrationAlgorithms : []).map(String));
+    this.environment(P + 'registrationAlgorithmsFrom',
+                     one(policy.registrationAlgorithmsFrom));
     const recovery = given.recovery || null;
     if (has('recovery') && recovery) {
       this.resource(V.PASSKEY_RECOVERY_DOOR, one(recovery.door));

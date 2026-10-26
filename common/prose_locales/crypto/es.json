@@ -456,8 +456,8 @@
     "text": "El sobre que SCEP (scep/scep_cms.ts) lee y escribe: una solicitud firmada por el solicitante y cifrada para la RA, y un CertRep firmado por la RA cuyo certificado se cifra para el solicitante."
   },
   "crypto.families.pki.signs": {
-    "en": "f1ce79cf624ab6f5",
-    "text": "CERTIFICADOS. La Root se firma a sí misma una vez para el servicio; firma una Intermediate por dominio de confianza y una para el proceso; cada Intermediate firma una CA emisora por caso de uso; y cada CA emisora firma las hojas de su caso de uso — las claves de firma y de escucha del propio servicio, y los pares de claves emitidos a aplicaciones y personas. El algoritmo de firma es el elegido para la jerarquía y está restringido por la familia de claves del EMISOR y no la del sujeto, que es el error al que la propia cabecera de `common/vendored/x509.js` dedica un párrafo: importar una clave con un digest y firmar con otro produce un certificado cuyo algoritmo declarado y cuya firma real no coinciden, y `openssl verify` lo informa como una firma incorrecta sin nombrar ninguno de los dos."
+    "en": "fdcf723f4622f28f",
+    "text": "CERTIFICADOS. La Root se firma a sí misma una vez para el servicio; firma una Intermediate por dominio de confianza y una para el proceso; cada Intermediate firma una CA emisora por caso de uso; y cada CA emisora firma las hojas de su caso de uso — las claves de firma y de escucha del propio servicio, y los pares de claves emitidos a aplicaciones y personas. El algoritmo de firma es el elegido para la jerarquía y está restringido por la familia de claves del EMISOR y no la del sujeto, que es el error al que la propia cabecera de `common/crypto_impl/x509.js` dedica un párrafo: importar una clave con un digest y firmar con otro produce un certificado cuyo algoritmo declarado y cuya firma real no coinciden, y `openssl verify` lo informa como una firma incorrecta sin nombrar ninguno de los dos."
   },
   "crypto.families.pki.verifies": {
     "en": "e27202f2b20a852a",
@@ -484,8 +484,8 @@
     "text": "Codificación de certificados"
   },
   "crypto.families.pki.algorithms.0.how": {
-    "en": "d40c79caa059f986",
-    "text": "X.509 v3, DER, mediante pkijs y asn1js — common/vendored/x509.js, el propio código PKI del proyecto principal, idéntico byte a byte. Un único codificador para este servicio y para la página PKI / X.509 de ese proyecto."
+    "en": "9c9c3be17d02f8b6",
+    "text": "X.509 v3, DER, mediante pkijs y asn1js — common/crypto_impl/x509.js, el propio código PKI del proyecto principal, idéntico byte a byte. Un único codificador para este servicio y para la página PKI / X.509 de ese proyecto."
   },
   "crypto.families.pki.algorithms.1.what": {
     "en": "1b9e0c9e96801219",
@@ -622,6 +622,62 @@
   "crypto.families.user-portal.algorithms.4.how": {
     "en": "363f58a2eab8e37c",
     "text": "S256"
+  },
+  "crypto.families.reporting.signs": {
+    "en": "8728ccd393fd7e6c",
+    "text": "Nada de lo que emite un informe. El runtime, en el navegador, firma una sola cosa: una prueba DPoP de RFC 9449 (ES256) en cada llamada a `/report-api` y en el endpoint de token, con una clave P-256 que WebCrypto generó como no extraíble para esa carga de página."
+  },
+  "crypto.families.reporting.verifies": {
+    "en": "294c4447e5523292",
+    "text": "CADA LLAMADA A `/report-api`, en su puerta (report/report_api.ts): el token de acceso es un `at+jwt` de RFC 9068 verificado con la clave de firma de ESTE dominio (cualquier generación), con su emisor y su audiencia comprobados, y su vínculo DPoP contrastado con una prueba que la puerta verifica — nunca se acepta como Bearer. El runtime verifica una respuesta de autorización JARM contra el JWKS del dominio cuando el dominio envía una."
+  },
+  "crypto.families.reporting.encrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "Nada."
+  },
+  "crypto.families.reporting.decrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "Nada."
+  },
+  "crypto.families.reporting.hashes": {
+    "en": "2ddfe2e29749ce1c",
+    "text": "SHA-256 de los bytes de un informe terminado, almacenado junto a ellos (`sts_report_artifacts.sha256`) y comprobado cuando se vuelve a leer el resultado. SHA-256 en el navegador para el desafío PKCE S256 y para el `ath` de la prueba DPoP."
+  },
+  "crypto.families.reporting.keys": {
+    "en": "feaa838ac5fb9b97",
+    "text": "Ninguna en el servidor. El par de claves DPoP vive en el navegador: P-256, generado por WebCrypto con su mitad privada no extraíble, conservado en memoria y descartado con la página. Los tokens mismos los firma el servidor de autorización del dominio (la fila de OAuth2 / OIDC)."
+  },
+  "crypto.families.reporting.algorithms.0.what": {
+    "en": "63f37962dc3dfb33",
+    "text": "Token de acceso en /report-api"
+  },
+  "crypto.families.reporting.algorithms.0.how": {
+    "en": "87be1920112e9844",
+    "text": "at+jwt de RFC 9068, verificado con la clave de firma de este dominio, vinculado a DPoP"
+  },
+  "crypto.families.reporting.algorithms.1.what": {
+    "en": "e097c8970e32cda3",
+    "text": "Prueba DPoP (navegador)"
+  },
+  "crypto.families.reporting.algorithms.1.how": {
+    "en": "9bebf9949394145f",
+    "text": "ES256 con una clave P-256 de WebCrypto no extraíble por cada carga de página"
+  },
+  "crypto.families.reporting.algorithms.2.what": {
+    "en": "7e09ecc318c42463",
+    "text": "PKCE"
+  },
+  "crypto.families.reporting.algorithms.2.how": {
+    "en": "363f58a2eab8e37c",
+    "text": "S256"
+  },
+  "crypto.families.reporting.algorithms.3.what": {
+    "en": "80ea1ab36a2e5c55",
+    "text": "Bytes de informe almacenados"
+  },
+  "crypto.families.reporting.algorithms.3.how": {
+    "en": "9d40176053fec31b",
+    "text": "SHA-256, conservado con el artefacto y comprobado al leer"
   },
   "crypto.families.gnap.signs": {
     "en": "ad4b982edb070f2c",

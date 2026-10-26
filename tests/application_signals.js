@@ -50,7 +50,7 @@
 //      an APPLICATION'S DEVICE names its owner with the `application` member.
 //
 // In a child process, because it loads the protocol stack.
-// `tests/vendored/sts_application_signals.js` holds a rotation over the wire.
+// `tests/protocol/sts_application_signals.js` holds a rotation over the wire.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;

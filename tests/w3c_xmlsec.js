@@ -12,7 +12,7 @@
 // `common/crypto.js` is the one place this service signs, verifies, encrypts
 // and decrypts XML (root CLAUDE.md, rule 3r), and until this file nothing
 // held it to anybody's reading but the parent project's xmlsec1 round trip —
-// which is the same engine, `common/vendored/xmldsig.js`, at the other end.
+// which is the same engine, `common/crypto_impl/xmldsig.js`, at the other end.
 // The working groups' own interop cases are documents somebody ELSE signed
 // and encrypted, with their keys and expected results published beside them,
 // and they are the only second opinion there is.
@@ -105,7 +105,7 @@ const TRANSFORM_ENVELOPED = DS + 'enveloped-signature';
 // ---------------------------------------------------------------------------
 // THE EXCEPTIONS: every reason a case is not expected to verify or decrypt,
 // each a deliberate property of this service or a documented limit of the
-// vendored engine it may not edit (common/vendored/CLAUDE.md). A case is
+// vendored engine it may not edit (common/crypto_impl/CLAUDE.md). A case is
 // filed under the FIRST that applies, in this order.
 // ---------------------------------------------------------------------------
 const EXCEPTIONS = {

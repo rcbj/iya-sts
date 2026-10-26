@@ -24,7 +24,11 @@
 //      listed and the all-zero AAGUID are unknown, which decides nothing.
 //   G. STALE past `nextUpdate` and the grace: nothing is known.
 //   H. SCORED: a sign-in with a key whose model is revoked carries
-//      `authenticator-compromised` and is HIGH.
+//      `authenticator-compromised` and is HIGH. A familiar sign-in whose
+//      model scores below 0.2 stays LOW until that signal or
+//      `compromised-device`; the floor, not the factor alone, then makes
+//      it HIGH, and a rescore does the same when the stored score times
+//      50 does not.
 //   I. A BLOB SIGNED UNDER ANOTHER ROOT is refused (STS-RISK-0022) and
 //      recorded as a refused version.
 //   J. THE SIGNATURE OVERRIDE (an upload's checkbox): a BLOB whose
@@ -42,8 +46,8 @@ delete process.env.CONFIG_FILE;
 const nodeCrypto = require('crypto');
 const config = require('../common/config');
 const pki = require('../common/pki');
-const x509 = require('../common/vendored/x509');
-const keyMaterial = require('../common/vendored/key_material');
+const x509 = require('../common/crypto_impl/x509');
+const keyMaterial = require('../common/crypto_impl/key_material');
 const riskStore = require('../risk/risk_store');
 const riskDatasets = require('../risk/risk_datasets');
 const riskTerms = require('../risk/risk_terms');
@@ -251,6 +255,131 @@ async function run(t) {
           JSON.stringify(assessed && { level: assessed.level,
                                        signals: assessed.signals }));
 
+  // A familiar address and browser, and a crowd of other addresses, so the
+  // model scores below 0.2. ×50 of that stays under the HIGH line; H1 has
+  // no history, so its 1 × 50 is HIGH without the floor. No username, so
+  // a compromised device is not also unregistered-device.
+  const highLine = Number(config.value('risk.highScorePercent')) / 100;
+  const familiar = 'urn:uuid:00000000-0000-4000-8000-000000000965';
+  const familiarAddress = '192.0.2.77';
+  const familiarFp = 'fp-965';
+  async function sign(subject, address, fingerprint, extra) {
+    log.debug("Entering sign().");
+    const answer = await riskEngine.assess(Object.assign({
+      realm: '', subject: subject, sessionId: '', door: 'a test',
+      clientId: '', username: '', userAgent: '',
+      context: { address: address, uaFingerprint: fingerprint } },
+      extra || {}));
+    log.debug("Leaving sign().");
+    return answer;
+  }
+  let earlier = 0;
+  while (earlier < 8) {
+    await sign(familiar, familiarAddress, familiarFp);
+    earlier++;
+  }
+  let crowd = 0;
+  while (crowd < 16) {
+    const n = crowd + 1;
+    const tail = ('000000000000' + n).slice(-12);
+    await sign('urn:uuid:00000000-0000-4000-8000-' + tail,
+               '198.51.100.' + n, 'fp-crowd-' + n);
+    crowd++;
+  }
+  const plain = await sign(familiar, familiarAddress, familiarFp);
+  const plainModel = (plain && plain.signals || []).filter(function (s) {
+    return s.signal === 'model';
+  })[0];
+  const modelScore = plainModel ? Number(plainModel.score) : NaN;
+  t.check(plain && plain.level === 'LOW' && modelScore < 0.2 &&
+          modelScore * 50 < highLine &&
+          (plain.signals || []).every(function (s) {
+            return s.signal === 'model';
+          }),
+          'H2. a familiar sign-in, before either signal, is LOW and the ' +
+          'model scores below 0.2, so ×50 stays under the HIGH line',
+          JSON.stringify(plain && { level: plain.level, score: plain.score,
+                                    model: modelScore }));
+  const revokedKey = await sign(familiar, familiarAddress, familiarFp, {
+    context: { address: familiarAddress, uaFingerprint: familiarFp,
+               credential: { kind: 'webauthn', aaguid: REVOKED } } });
+  const revokedModel = (revokedKey && revokedKey.signals || [])
+    .filter(function (s) {
+      return s.signal === 'model';
+    })[0];
+  const revokedModelScore = revokedModel && revokedModel.score;
+  t.check(revokedKey && revokedKey.level === 'HIGH' &&
+          revokedKey.score >= highLine &&
+          typeof revokedModelScore === 'number' &&
+          revokedModelScore < 0.2 &&
+          revokedModelScore * 50 < highLine &&
+          revokedKey.signals.some(function (s) {
+            return s.signal === 'authenticator-compromised';
+          }),
+          'H3. the same sign-in with a revoked model is HIGH: the floor, ' +
+          'not the factor alone, once the model scores below 0.2',
+          JSON.stringify(revokedKey && { level: revokedKey.level,
+                                         score: revokedKey.score,
+                                         model: revokedModelScore }));
+  const device = await riskEngine.assess({
+    realm: '', subject: familiar, sessionId: '', door: 'a test',
+    clientId: '', username: '', userAgent: '',
+    context: { address: familiarAddress, uaFingerprint: familiarFp },
+    registeredDevice: { id: 'dev-965', status: 'compromised',
+                        via: 'webauthn', ownerMatches: true,
+                        compliance: 'compliant' } });
+  const deviceModel = (device && device.signals || []).filter(function (s) {
+    return s.signal === 'model';
+  })[0];
+  const deviceModelScore = deviceModel && deviceModel.score;
+  t.check(device && device.level === 'HIGH' && device.score >= highLine &&
+          typeof deviceModelScore === 'number' &&
+          deviceModelScore < 0.2 &&
+          deviceModelScore * 50 < highLine &&
+          device.signals.some(function (s) {
+            return s.signal === 'compromised-device';
+          }) && !device.signals.some(function (s) {
+            return s.signal === 'compliant-device' ||
+                   s.signal === 'unregistered-device';
+          }),
+          'H4. a compromised device on that same history is HIGH by the ' +
+          'floor, and not also "compliant"',
+          JSON.stringify(device && { level: device.level,
+                                     score: device.score,
+                                     model: deviceModelScore }));
+  const session = {
+    id: 'sess-965',
+    user: { sub: familiar, username: '' },
+    risk: { score: plain.score, level: 'LOW', signals: [],
+            knownContext: true },
+    events: [{ context: { address: familiarAddress,
+      credential: { kind: 'webauthn', aaguid: REVOKED } } }] };
+  const raised = await riskEngine.rescoreSession('', session);
+  t.check(raised && raised.level === 'HIGH' && raised.score >= highLine &&
+          plain.score * 50 < highLine &&
+          raised.signals.indexOf('authenticator-compromised') >= 0,
+          'H5. a rescore whose key the metadata has since marked ' +
+          'compromised reaches HIGH even when the stored score times 50 ' +
+          'does not', JSON.stringify(raised));
+  session.risk = raised;
+  const again = await riskEngine.rescoreSession('', session);
+  t.check(again === null,
+          'H6. the signal held, the score already at the line and nothing ' +
+          'else fresh is not written again', JSON.stringify(again));
+  const heldLow = {
+    id: 'sess-965-held',
+    user: { sub: familiar, username: '' },
+    risk: { score: plain.score, level: 'LOW',
+            signals: ['compromised-device'], knownContext: true },
+    events: [{ context: { address: familiarAddress } }] };
+  const heldRaised = await riskEngine.rescoreSession('', heldLow);
+  t.check(heldRaised && heldRaised.level === 'HIGH' &&
+          heldRaised.score >= highLine &&
+          heldRaised.signals.indexOf('compromised-device') >= 0,
+          'H7. a compromising signal already held, the stored score still ' +
+          'under the line and nothing fresh, is still raised',
+          JSON.stringify(heldRaised));
+
   // --- I. another root -----------------------------------------------------
   const foreign = await riskDatasets.importVersion({ dataset: 'fido.mds3',
     format: 'fido-mds3-jwt', content: blobOf(other, payloadOf(8, now)),
@@ -386,7 +515,8 @@ module.exports = {
   describe: 'the FIDO Metadata Service (#62 P5) with a synthetic BLOB: an ' +
             'entry as rows, the signature and chain verified, a rollback ' +
             'refused, the latest only, a revoked model found by AAGUID, ' +
-            'staleness past nextUpdate, a sign-in with such a key HIGH, ' +
-            'and the administrator\'s signature override',
+            'staleness past nextUpdate, a sign-in with such a key HIGH ' +
+            'even when the model scores below 0.2, and the administrator\'s ' +
+            'signature override',
   run: run
 };

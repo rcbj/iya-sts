@@ -4,8 +4,8 @@
     "text": "Autentisering"
   },
   "audit.categories.authentication.what": {
-    "en": "a75d8d51a0eb704d",
-    "text": "En autentiseringsuppgift GODTOGS, i någon av de sexton protokollfamiljerna här. Registreras i den enda tratt som var och en av dem redan passerar, så det är ett ställe och inte sexton. SCIM anslöt sent och SPIFFE ännu senare. SCIM: tre av de scheman som dess slutpunkter godtar — Basic, Digest och HOBA — presenterar en autentiseringsuppgift vid varje begäran, och att godta en är en autentisering. Dess andra tre syns inte här, eftersom var och en fortsätter en autentisering som registrerats någon annanstans: en åtkomsttoken godtogs när den utfärdades, en sessionscookie när dess session började och ett klientcertifikat en gång per ANSLUTNING snarare än en gång per begäran. SPIFFE är den sextonde och når hit på tre sätt: ett X509-SVID som presenteras över ömsesidig TLS vid SPIRE Server API (en gång per anslutning, av samma skäl som ett klientcertifikat), en agent som attesterar och ett JWT-SVID som verifieras vid ValidateJWTSVID. Att UTFÄRDAS ett SVID är inte ett av dem."
+    "en": "8daae95bb7977a6c",
+    "text": "En autentiseringsuppgift GODTOGS, i någon av de sexton protokollfamiljerna här. Registreras i den enda tratt som var och en av dem redan passerar, så det är ett ställe och inte sexton. SCIM anslöt sent och SPIFFE ännu senare. SCIM: tre av de scheman som dess slutpunkter godtar — Basic, Digest och HOBA — presenterar en autentiseringsuppgift vid varje begäran, och att godta en är en autentisering. Dess andra tre syns inte här, eftersom var och en fortsätter en autentisering som registrerats någon annanstans: en åtkomsttoken godtogs när den utfärdades, en sessionscookie när dess session började och ett klientcertifikat en gång per ANSLUTNING snarare än en gång per begäran. SPIFFE är den sextonde och når hit på tre sätt: ett X509-SVID som presenteras över ömsesidig TLS vid SPIRE Server API (en gång per anslutning, av samma skäl som ett klientcertifikat), en agent som attesterar och ett JWT-SVID som verifieras vid ValidateJWTSVID. Att UTFÄRDAS ett SVID är inte ett av dem. Ett avvisat försök är `authentication.refused` bredvid godkännandet: samma uppgift, utfall avvisat, och ingen räknare flyttas (#954). Applikationssidan listar båda, och `session.refuse` och `session.refused` när de namnger den."
   },
   "audit.categories.session.label": {
     "en": "6fa3cbf451b2a1d5",
@@ -98,6 +98,10 @@
   "audit.actions.authentication.label": {
     "en": "579808c825684965",
     "text": "En autentiseringsuppgift godtogs"
+  },
+  "audit.actions.authentication.refused.label": {
+    "en": "0b0281ef1e0768e4",
+    "text": "En autentiseringsuppgift avvisades"
   },
   "audit.actions.portal.activate.label": {
     "en": "979387f5c20ade32",
@@ -266,6 +270,10 @@
   "audit.actions.authn.session.refreshed.label": {
     "en": "bbbad25d367ffcdf",
     "text": "Kakan för en enhetsbunden session förnyades med ett bevis på dess nyckel"
+  },
+  "audit.actions.authn.session.binding-skipped.label": {
+    "en": "193de5f1ab249962",
+    "text": "En session för enkel inloggning hoppade över enhetsbindningen"
   },
   "audit.actions.logout.global.label": {
     "en": "db32c1466e054343",
@@ -458,6 +466,14 @@
   "audit.actions.device.attestation-revoked.label": {
     "en": "3571d30810b2d9c7",
     "text": "En enhetsnyckel är inte längre attesterad: Googles statuslista för Android-attestering återkallar dess kedja"
+  },
+  "audit.actions.webauthn.ceremony.label": {
+    "en": "49406d0c31568578",
+    "text": "En WebAuthn-registrering eller -assertion kördes, slutförd eller inte"
+  },
+  "audit.actions.webauthn.algorithm-mismatch.label": {
+    "en": "712b402391b059c6",
+    "text": "En person med en postkvantnyckel loggade in med en klassisk nyckel"
   },
   "audit.actions.webauthn.attestation-revoked.label": {
     "en": "0be46b8b29aaf446",
@@ -1059,6 +1075,38 @@
     "en": "3c3a62cf5e46c516",
     "text": "En administratör markerade en persons bevisade DID som föredraget, eller tog bort markeringen"
   },
+  "audit.actions.admin.passkey.enrolment-started.label": {
+    "en": "571c0a6bca1d9163",
+    "text": "En administratör började registrera en nyckel för en person"
+  },
+  "audit.actions.admin.passkey.enrolment-refused.label": {
+    "en": "1853c2bfff1cb208",
+    "text": "En administratörs registrering av en nyckel för en person avvisades"
+  },
+  "audit.actions.admin.passkey.enrolled.label": {
+    "en": "62dfd8780a0a16af",
+    "text": "En administratör registrerade en nyckel för en person"
+  },
+  "audit.actions.admin.passkey.upgrade-started.label": {
+    "en": "85e2c7f2d669f98e",
+    "text": "En administratör började uppgradera en persons nyckel"
+  },
+  "audit.actions.admin.passkey.upgrade-refused.label": {
+    "en": "e1490e5ffb7d9199",
+    "text": "En administratörs uppgradering av en nyckel avvisades"
+  },
+  "audit.actions.admin.passkey.upgrade-proved.label": {
+    "en": "92550d6a5a04ca93",
+    "text": "En administratör bevisade en persons klassiska nyckel"
+  },
+  "audit.actions.admin.passkey.upgrade-cancelled.label": {
+    "en": "3653731050769a1b",
+    "text": "En administratör avbröt uppgraderingen av en persons nyckel"
+  },
+  "audit.actions.admin.passkey.upgraded.label": {
+    "en": "de2f45f4af0eafa5",
+    "text": "En administratör uppgraderade en persons nyckel till ML-DSA"
+  },
   "audit.actions.ssf.signals.discover.label": {
     "en": "55d2d7d9682c339a",
     "text": "En federationspartners Shared Signals-konfiguration upptäcktes"
@@ -1303,6 +1351,18 @@
     "en": "6679aa8b834badee",
     "text": "En persons registrering av en säkerhetsnyckel avvisades"
   },
+  "audit.actions.portal.key.upgrade-started.label": {
+    "en": "dbf67e17e370e57b",
+    "text": "En person började uppgradera en klassisk nyckel till ML-DSA"
+  },
+  "audit.actions.portal.key.upgrade-refused.label": {
+    "en": "704e6bb3a4472960",
+    "text": "En persons uppgradering av en nyckel avvisades"
+  },
+  "audit.actions.portal.key.upgraded.label": {
+    "en": "f16ccefcc9eb6aec",
+    "text": "En person uppgraderade en klassisk nyckel till ML-DSA"
+  },
   "audit.actions.portal.mfa.backup-codes.generated.label": {
     "en": "18ec89def789c4a2",
     "text": "En person genererade en uppsättning återställningskoder"
@@ -1495,6 +1555,10 @@
     "en": "f6867c3c6a1d35bd",
     "text": "Samma person loggade in igen i en levande session"
   },
+  "audit.actions.session.presented.label": {
+    "en": "d1629f19f6dc2282",
+    "text": "En befintlig inloggningssession visades upp för ett program"
+  },
   "audit.actions.session.refuse.label": {
     "en": "c8703bfa89913b23",
     "text": "En session avvisades på grund av sin inloggningsmekanism"
@@ -1530,5 +1594,53 @@
   "audit.actions.xacml.policy.delete.label": {
     "en": "90274c33f8a0cbe3",
     "text": "En XACML-policy togs bort"
+  },
+  "audit.actions.report.definition.create.label": {
+    "en": "8afc9b8a912421fa",
+    "text": "En rapportdefinition skapades"
+  },
+  "audit.actions.report.definition.update.label": {
+    "en": "c00aee36399477bb",
+    "text": "En rapportdefinition uppdaterades"
+  },
+  "audit.actions.report.definition.share.label": {
+    "en": "02777829b1842fad",
+    "text": "En rapportdefinition delades med en grupp"
+  },
+  "audit.actions.report.definition.delete.label": {
+    "en": "eab7ce893f26b998",
+    "text": "En rapportdefinition togs bort"
+  },
+  "audit.actions.report.job.submit.label": {
+    "en": "3a48a543fc6fd27e",
+    "text": "Ett rapportjobb skickades in"
+  },
+  "audit.actions.report.job.start.label": {
+    "en": "c2145542f6189d5c",
+    "text": "Ett rapportjobb startade"
+  },
+  "audit.actions.report.job.complete.label": {
+    "en": "0df392f7d726487c",
+    "text": "Ett rapportjobb slutfördes"
+  },
+  "audit.actions.report.job.fail.label": {
+    "en": "d342e8699921dd5d",
+    "text": "Ett rapportjobb misslyckades"
+  },
+  "audit.actions.report.job.cancel.label": {
+    "en": "0ead0c5eaedc5eb1",
+    "text": "Ett rapportjobb avbröts"
+  },
+  "audit.actions.report.notify.label": {
+    "en": "98a351693fca3699",
+    "text": "Ett meddelande om slutförd rapport skickades"
+  },
+  "audit.actions.report.query.label": {
+    "en": "0de138fe9e778bd8",
+    "text": "En rapportfråga kördes"
+  },
+  "audit.actions.report.job.retrieve.label": {
+    "en": "2f81320658ea37b8",
+    "text": "Ett rapportresultat hämtades"
   }
 }

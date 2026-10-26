@@ -1,0 +1,735 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: BUSL-1.1
+//
+// File: sts_metadata.js
+//
+// GET /admin/sts-metadata — IYA STS's own index of what it offers.
+//
+// IT WAS `GET /sts-metadata` AND IT MOVED INTO THE CONSOLE on 2026-08-24, and
+// since the #446 cutover the console is a static page. Two things follow:
+//
+//   * **The page is its operation's answer, drawn in the browser.** Its data
+//     is `GET /admin-api/sts-metadata`, behind the API's token gate, so this
+//     file signs in as the console does (`console_signin.js`: PKCE, a
+//     DPoP-bound token) and reads that operation — what `?format=json` was —
+//     and draws the page with the console's own renderers.
+//   * **The frame is the console's**, drawn around every page from
+//     `GET /admin-api/console`. That is asserted rather than tolerated —
+//     theConsoleChromeIsThere() below — because "it renders" and "it
+//     renders inside the console" are different claims and only one of them
+//     was asked for.
+//
+// The page lists every endpoint the service registers, the HTTP methods each
+// accepts, and every specification it implements. That list is read from the
+// running Express router rather than from a table kept by hand, and this test
+// is what makes that design worth anything: it fails if the descriptions and
+// the router have drifted in EITHER direction.
+//
+// Why both directions matter, and why a weaker test would be worthless here:
+//
+//   * a route registered and undescribed means the page silently understates
+//     what is callable. The page reports it, and this test fails on it. Adding
+//     an endpoint to this service therefore costs one entry in sts_metadata.js,
+//     which is the point — an index nobody is obliged to update is an index
+//     that lies.
+//   * a description whose path is NOT registered is the more dangerous half:
+//     the page would advertise an endpoint that answers 404. That happens on a
+//     rename, which is exactly when nobody thinks to check the index.
+//
+// It also asserts the things a reader would take on trust: that the methods
+// shown are the methods that actually answer (checked by calling them), that
+// every endpoint names specifications that exist, and that the endpoints the
+// OTHER documents point at are all present here — so the index cannot omit the
+// very endpoints the service's own metadata advertises.
+//
+// Needs the STS mock and nothing else — no browser.
+const assert = require("assert");
+const { Command, Option } = require("commander");
+const common = require("./jwt_vc_json_common.js");
+const consoleSignIn = require("./console_signin.js");
+var appconfig = require(process.env.CONFIG_FILE);
+
+var bunyan = require("bunyan");
+var log = bunyan.createLogger({ name: "sts_metadata",
+                                level: appconfig.LOG_LEVEL || "info" });
+log.info("Log initialized. logLevel=" + log.level());
+
+var stsUrl = process.env.WSTRUST_STS_URL || "https://localhost:8081/sts";
+var issuerBase = process.env.OID4VCI_ISSUER_URL || stsUrl.replace(/\/sts\/?$/,
+    "");
+
+// The name this file signs into the console AS. A name and not a credential:
+// in development mode, which is how the suite runs, no password is checked. It
+// is distinctive so that a row in /admin/audit or an entry in the directory
+// says which test made it.
+const CONSOLE_USER = "sts-metadata-test";
+
+// ---------------------------------------------------------------------------
+// A sign-in as the console. It was three fetches, lifted from
+// tests/vendored/admin_api.js; it is `console_signin.js`'s walk now (below).
+//
+// The role comes from the bootstrap window (`admin-ui/admin_rbac.ts`,
+// `rolesOf()`): until the seeded bootstrap administrator first signs in to the
+// console, whoever signs in holds both roles, while `admin.openWhenEmpty` is on
+// (the default). Once that account has signed in the roster is enforced and
+// this user holds nothing unless granted — so the caller checks the read it
+// makes rather than assuming, and the assertion says which state it met.
+//
+// A gate that answers without a redirect is reported by `console_signin.js`
+// rather than treated as a pass. That was a legitimate state while
+// `admin.authRequired` existed; the setting was removed on 2026-09-06 and the
+// gate cannot be turned off, so today it means something is wrong.
+// ---------------------------------------------------------------------------
+// **THE WALK ITSELF IS IN `console_signin.js`**, and since the #446 cutover
+// it is the static console's: the code flow with PKCE as the public client
+// `sts-admin-console`, and a DPoP-bound token for `/admin-api`. The page is
+// that console drawing `GET /admin-api/sts-metadata`'s answer in the
+// browser, so the client this answers reads the operation and draws the
+// page with the console's own renderers (`console.bundle.js`).
+async function signInToTheConsole() {
+  log.debug("Entering signInToTheConsole().");
+  const consoleClient = await consoleSignIn.signInToTheConsole(issuerBase,
+    CONSOLE_USER, log, { grant: "read" });
+  log.debug("Leaving signInToTheConsole().");
+  return consoleClient;
+}
+
+// Paths that must never be described as spec endpoints, because they are this
+// mock's own inventions for the benefit of tests and the debugger's panes. A
+// reader who mistook one for a standard endpoint would go looking for it in a
+// specification that does not mention it.
+// (The issuer's two readbacks and `/oid4vp/result/:state` left on #594.)
+const NON_SPEC_PATHS = ["/admin/sts-metadata", "/healthcheck"];
+
+async function theDocumentIsServed(consoleClient) {
+  log.debug("Entering theDocumentIsServed().");
+  log.info("=== The document, in both forms ===");
+  // THE PAGE'S OPERATION since the #446 cutover: `GET /admin-api/sts-metadata`
+  // is what the console draws the page from, and what `?format=json` was.
+  const json = await consoleClient.get("/admin/sts-metadata?format=json");
+  assert.ok(json.status === 200,
+            "GET /admin-api/sts-metadata, the page's operation, should " +
+            "answer 200; got " + json.status + ". A 401 or a 403 here is " +
+            "the API's gate on the console's token: " + CONSOLE_USER +
+            " was granted Admin Read for this.");
+  const doc = json.body;
+  assert.ok(doc && Array.isArray(doc.endpoints) && doc.endpoints.length > 20,
+    "the document should list this service's endpoints; got " +
+    (doc && doc.endpoints ? doc.endpoints.length : "none"));
+  assert.ok(Array.isArray(doc.specifications) && doc.specifications.length > 10,
+    "and the specifications it implements.");
+  // `testDouble` FOLLOWS THE MODE (#543's review): it was the literal `true`
+  // and said so in product mode too, where passwords are verified. So the
+  // mode is asked of the service (`GET /admin-api/mode`, the console's
+  // Server mode page) rather than assumed.
+  const modeAnswer = await consoleClient.get("/admin/mode");
+  assert.ok(modeAnswer.status === 200 && modeAnswer.body &&
+            typeof modeAnswer.body.isProduct === "boolean",
+            "GET /admin-api/mode should answer 200 with isProduct; got " +
+            modeAnswer.status);
+  assert.strictEqual(doc.testDouble, !modeAnswer.body.isProduct,
+    "in development mode it must say it is a test double: a page " +
+    "describing this service as an implementation of twenty " +
+    "specifications, without saying it checks no passwords and validates " +
+    "no access tokens, would be the most misleading thing in the " +
+    "repository. In product mode, which checks both, it must not.");
+
+  // THE ADDRESS ANSWERS THE CONSOLE'S DOCUMENT, as HTML: the static console
+  // (#446) — a whole document that loads its one script from this origin.
+  // Fetched directly, because the content type is the thing asserted: a page
+  // served as JSON or text/plain renders as source in a browser.
+  const htmlResponse = await fetch(issuerBase + "/admin/sts-metadata");
+  assert.ok(htmlResponse.ok, "the console's document should answer 200; " +
+            "got " + htmlResponse.status);
+  const contentType = htmlResponse.headers.get("content-type") || "";
+  assert.ok(/text\/html/.test(contentType),
+    "and it should be served as HTML, or a browser shows the source; got " +
+        contentType);
+  const shell = await htmlResponse.text();
+  assert.ok(/^<!DOCTYPE html>/.test(shell.trim()) &&
+            /<script src="\/admin\/console\.js"/.test(shell),
+            "and it should be a whole document loading /admin/console.js.");
+  // THE PAGE ITSELF, drawn from the operation's answer by the console.
+  const drawn = await consoleClient.get("/admin/sts-metadata");
+  const page = drawn.text;
+  assert.ok(/<table/.test(page) && /Specifications implemented/.test(page),
+    "the page should carry the endpoint tables and the specification table.");
+  // The page is markup the console's script puts in place: one that carried
+  // a <script> of its own would run nothing (innerHTML runs none) and would
+  // be a page that quietly does less than it draws.
+  assert.ok(!/<script/i.test(page),
+    "the page must carry no <script> of its own.");
+  log.info("[document] OK — " + doc.endpoints.length + " endpoints, " +
+           doc.protocols.length + " protocol families, " +
+           doc.specifications.length + " specifications, in HTML and JSON.");
+  log.debug("Leaving theDocumentIsServed().");
+  return { doc: doc, page: page, shell: shell };
+}
+
+// ---------------------------------------------------------------------------
+// IT IS A CONSOLE PAGE, WHICH IS A CLAIM ABOUT THE DOCUMENT AND NOT ABOUT THE
+// URL IT IS AT.
+//
+// The page moved into /admin so that it would stop being a cul-de-sac: the
+// whole point is the sidebar, which is how a reader gets from here to the rest
+// of the console and back. Moving the route alone would satisfy every other
+// check in this file and deliver none of that, which is exactly the kind of
+// pass this suite is written to refuse — so the shell is asserted piece by
+// piece: the console's own <title>, the sidebar with OTHER pages in it, this
+// page marked as the one being read, and the breadcrumb.
+//
+// The download control is asserted here too, because it is the one part of the
+// page that a person needs and no other check would notice the loss of: this
+// service serves no script anywhere, so it has to be an <a download>, and an
+// <a> that lost its `download` attribute renders the JSON in the tab instead —
+// which looks like it worked.
+// ---------------------------------------------------------------------------
+async function theConsoleChromeIsThere(page, consoleClient) {
+  log.debug("Entering theConsoleChromeIsThere().");
+  log.info("=== The console's shell around it ===");
+  // THE FRAME IS THE CONSOLE'S SINCE THE #446 CUTOVER: the static console
+  // draws the sidebar, the active item and the breadcrumb in the browser
+  // from `GET /admin-api/console`, around every page. So what is asserted is
+  // that answer — this page among the sections, with the others the move
+  // was for — and the page drawn inside it carrying the download control.
+  const shell = await consoleClient.api("GET", "/admin-api/console");
+  assert.strictEqual(shell.status, 200,
+    "GET /admin-api/console, the frame's answer, should answer 200; got " +
+    shell.status);
+  const sections = JSON.stringify((shell.json || {}).sections || []);
+  ["/admin/sts-metadata", "/admin/metrics", "/admin/tokens", "/admin/audit",
+   "/admin/config", "/admin/rbac"].forEach(function (path) {
+    assert.ok(sections.indexOf('"' + path + '"') !== -1,
+      "the console's sections should hold " + path + ", or the navigation " +
+      "this page was moved for is not there.");
+  });
+  assert.ok(
+    /<a class="btn" href="\/admin\/sts-metadata\?format=json"[^>]*download=/
+      .test(page),
+    "the page should carry a download control for the whole document, and it " +
+    "must be an <a download>: the Content-Security-Policy here is " +
+    "script-src 'none', so anything that had to run to save the file would " +
+    "be a button that does nothing.");
+  log.info("[chrome] OK — the console's sections and the download " +
+           "control.");
+  log.debug("Leaving theConsoleChromeIsThere().");
+}
+
+// ---------------------------------------------------------------------------
+// THE PROTOCOL LIST AT THE TOP, WHICH IS THE ONE PART OF THIS PAGE THAT IS NOT
+// DERIVED — AND SO THE ONE PART THAT CAN LIE.
+//
+// A family reaches the endpoint tables only if it is HTTP, and Kerberos, LDAP
+// and SPIFFE live mostly on raw sockets. So the list is hand-written, and
+// the page reports three kinds of drift about it that this checks are empty: a
+// card naming an endpoint group with no rows, a card citing a specification
+// that does not exist, and — the direction nothing else catches — a group of
+// endpoints no card claims, which is what a new protocol family added
+// without a card looks like.
+//
+// The list moves with the root `sts_metadata.js`'s PROTOCOLS table, and the
+// order here is that table's. **Federation** arrived as the fourteenth on
+// 2026-08-25 (both ends of a federation relationship, in five protocols) and
+// **Shared Signals** as the fifteenth, with the SSF transmitter — when this
+// list was one release behind it, which is exactly the drift this assertion is
+// for and is the reason it is written as a list here rather than read off the
+// page. Adding a name is the whole of the fix — the assertion is
+// deepStrictEqual and so covers the order too, which is deliberate: the page
+// draws the cards in this order and a list that only checked membership would
+// let them be shuffled silently.
+// ---------------------------------------------------------------------------
+function theProtocolListIsHonest(doc, page) {
+  log.debug("Entering theProtocolListIsHonest().");
+  log.info("=== The protocol list ===");
+  const expected = ["OAuth2 / OIDC",
+                    // NOT A PROTOCOL, and it has a card because this page
+                    // refuses to report an endpoint group no card claims —
+                    // paying that here is cheaper than making the rule
+                    // conditional on whether a group is a protocol.
+                    "User portal",
+                    // NOT A PROTOCOL (#956). The reports application has a
+                    // card because the page refuses an endpoint group no
+                    // card claims.
+                    "Reporting",
+                    // GNAP (2026-09-12): an authorization server of its own
+                    // kind, carded beside XACML because both are families a
+                    // client reaches with a credential it already holds.
+                    "GNAP",
+                    "XACML", "Federation",
+                    // OPENID FEDERATION 1.1 (#132, 2026-09-23), beside the
+                    // bilateral family whose name it shares and whose job
+                    // it does not.
+                    "OpenID Federation", "Shared Signals",
+                    "SAML 2.0", "SAML 1.1",
+                    "WS-Federation", "WS-Trust", "Kerberos", "SPNEGO", "SPIFFE",
+                    // THE NINETEENTH (2026-09-10): the certificate authority
+                    // each trust realm holds, whose surface is /admin/pki.
+                    // **It is not the "PKI / X.509" card further down** —
+                    // that one is the TLS group: what a handshake on the main
+                    // port proved, and GET /tls/sign-in (the 8443 and 9443
+                    // listeners it described were deleted on 2026-09-16).
+                    // Two cards, two endpoint groups, similar names: this
+                    // list is deepStrictEqual so reading one as the other
+                    // fails here rather than passing
+                    // for the wrong reason.
+                    "PKI",
+                    // CERTIFICATE ENROLLMENT (2026-09-13), carded beside the
+                    // authority all three issue from.
+                    "ACME", "EST", "SCEP",
+                    "SCIM", "LDAP", "PKI / X.509", "WebAuthn / CTAP",
+                    // THE SECOND SECOND FACTOR (2026-09-10). Beside WebAuthn
+                    // rather than under Protocols on its own, because both
+                    // answer the same endpoint group — Authentication — and
+                    // this list is in the page's order.
+                    "One-time passwords (TOTP)",
+                    // THE THIRD SECOND FACTOR (2026-09-10), beside the other
+                    // two for the same reason and answering the same endpoint
+                    // group. It carried `notAProtocol` until #283: NIST SP
+                    // 800-63B-4 section 3.1.2's look-up secrets are its
+                    // specification, and the card names it.
+                    "Recovery codes",
+                    // THE EMAILED CODE AND LINK (#64): a third credential
+                    // mechanism that is not a protocol, beside the other two.
+                    "Email codes and links",
+                    // DEVICE BOUND SESSION CREDENTIALS (#725): the session
+                    // those mechanisms start, bound to the browser's key;
+                    // the same endpoint group.
+                    "Device Bound Session Credentials",
+                    "Verifiable Credentials (OID4VCI / OID4VP)"];
+  assert.ok(Array.isArray(doc.protocols),
+    "the document should carry the protocol list; it has none.");
+  assert.deepStrictEqual(doc.protocols.map(function (p) { return p.name; }),
+    expected,
+    "the page should name every protocol family this service speaks, in " +
+    "order. A family added to the service and not to that list is the drift " +
+    "this list exists to make visible.");
+  assert.deepStrictEqual(doc.unknownProtocolGroups, [],
+    "these protocol cards name endpoint groups that have no rows on the " +
+    "page, so the card links to a table that is not there: " +
+    JSON.stringify(doc.unknownProtocolGroups));
+  assert.deepStrictEqual(doc.unknownProtocolSpecIds, [],
+    "these protocol cards cite specification ids that no entry in SPECS " +
+    "defines, so the card shows a broken link: " +
+    JSON.stringify(doc.unknownProtocolSpecIds));
+  assert.deepStrictEqual(doc.unclaimedGroups, [],
+    "these endpoint groups are on the page and no protocol card claims " +
+    "them, which is what a new protocol family added to this service without " +
+    "a card at the top of the page looks like: " +
+    JSON.stringify(doc.unclaimedGroups));
+
+  const ids = new Set(doc.specifications.map(function (s) { return s.id; }));
+  let withEndpoints = 0;
+  doc.protocols.forEach(function (p) {
+    assert.ok(p.what && p.what.length > 40, p.name +
+      " should say what this service does with it, in more than a phrase.");
+    // **A CARD MAY NAME NO SPECIFICATION ONLY BY SAYING SO.** Every protocol
+    // family here implements something written down, and a card with an empty
+    // list is either undocumented or invented — which is what this assertion
+    // is for. The exemption is a FIELD on the card (`notAProtocol`) rather
+    // than a name in a list here, so the reason travels with the thing it
+    // excuses and a second one has to be declared deliberately.
+    //
+    // There are two today: the User Portal, which is an application rather
+    // than a protocol and has a card only because this page refuses to report
+    // an endpoint group no card claims; and Email codes and links (#64),
+    // which names its specifications anyway. Recovery codes left the list in
+    // #283: NIST SP 800-63B-4 section 3.1.2 is its specification.
+    assert.ok(Array.isArray(p.specs) && (p.specs.length || p.notAProtocol),
+      p.name + " should name the specifications it implements, or declare " +
+      "`notAProtocol` to say why it names none.");
+    p.specs.forEach(function (id) {
+      assert.ok(ids.has(id), p.name + " cites specification id " + id +
+                ", which the page does not define.");
+    });
+    if (p.endpoints) withEndpoints++;
+    // A family with no endpoint group must say where it is instead, or the
+    // card reads as "this is not implemented". Every card names a group today;
+    // the check stays for the next one that does not.
+    if (!p.groups.length) {
+      assert.ok(p.sockets && p.sockets.length > 10, p.name +
+        " has no endpoint group, so the card must say where the protocol " +
+        "really is. Left blank it reads as a family this service does not " +
+        "speak.");
+    }
+    assert.ok(page.indexOf(">" + p.name + "<") !== -1,
+      p.name + " is in the document and not on the page.");
+  });
+  assert.ok(withEndpoints >= 10,
+    "most families should have endpoints on the page; only " + withEndpoints +
+    " did, which suggests the groups were renamed rather than that the " +
+    "service shrank.");
+  log.info("[protocols] OK — " + doc.protocols.length + " families, " +
+           withEndpoints + " of them with endpoints here, no drift in " +
+           "either direction.");
+  log.debug("Leaving theProtocolListIsHonest().");
+}
+
+// The heart of it: no drift, in either direction.
+function theIndexMatchesTheRouter(doc) {
+  log.debug("Entering theIndexMatchesTheRouter().");
+  log.info("=== The index against the router ===");
+  assert.deepStrictEqual(doc.undocumentedPaths, [],
+    "these routes are REGISTERED but described nowhere in " +
+        "sts/sts_metadata.js, so the page " +
+    "understates what this service offers. Add an ENDPOINTS entry for each: " +
+    JSON.stringify(doc.undocumentedPaths));
+  assert.deepStrictEqual(doc.stalePaths, [],
+    "these paths are DESCRIBED but not registered, so the page advertises " +
+        "endpoints that answer " +
+    "404. Either the route was renamed or the description is stale: " +
+        JSON.stringify(doc.stalePaths));
+  assert.deepStrictEqual(doc.unknownSpecIds, [],
+    "these endpoints reference specification ids that no entry in SPECS " +
+        "defines, so the page shows " +
+    "a broken link where the specification should be: " +
+        JSON.stringify(doc.unknownSpecIds));
+  doc.endpoints.forEach(function (e) {
+    assert.strictEqual(e.documented, true, e.path +
+                       " is listed as undocumented.");
+    assert.ok(e.name && e.name !== "(undocumented)", e.path +
+              " should have a name.");
+    assert.ok(e.description && e.description.length > 20,
+      e.path + " should say what it is, in more than a few words.");
+    assert.ok(Array.isArray(e.methods) && e.methods.length,
+      e.path + " should name at least one HTTP method.");
+  });
+  log.info("[drift] OK — every registered route is described and every " +
+           "description is registered.");
+  log.debug("Leaving theIndexMatchesTheRouter().");
+}
+
+function specificationsAreHonest(doc) {
+  log.debug("Entering specificationsAreHonest().");
+  log.info("=== The specification list ===");
+  const ids = new Set();
+  doc.specifications.forEach(function (s) {
+    assert.ok(s.id && s.name && s.url && s.coverage,
+      "every specification needs an id, a name, a URL and a coverage note: " +
+          JSON.stringify(s));
+    assert.ok(/^https:\/\//.test(s.url), s.id +
+              " should link to the specification over https.");
+    assert.ok(!ids.has(s.id), "duplicate specification id " + s.id);
+    ids.add(s.id);
+    // The coverage note is the honest part. "full" is allowed, but a bare word
+    // is not: what is missing has to be said, or the list overstates.
+    assert.ok(/^(full|partial|minimal)\b/.test(s.coverage),
+      s.id + ' should say how far it goes, starting "full", "partial" or ' +
+          '"minimal": "' +
+      s.coverage.slice(0, 60) + '"');
+    assert.ok(s.coverage.length > 30,
+      s.id + "'s coverage note should say what is and is not implemented.");
+  });
+
+  // A specification nothing references is either an overstatement or a missing
+  // link on an endpoint. Both are worth knowing about.
+  const referenced = new Set();
+  doc.endpoints.forEach(function (e) {
+    (e.specs || []).forEach(function (id) { referenced.add(id); });
+  });
+  const orphans =
+      Array.from(ids).filter(function (id) { return !referenced.has(id); });
+  assert.deepStrictEqual(orphans, [],
+    "these specifications are listed but no endpoint claims to implement " +
+        "them, which means either " +
+    "the claim is idle or an endpoint is missing its link: " +
+        JSON.stringify(orphans));
+
+  // And the non-spec endpoints must not claim a specification.
+  NON_SPEC_PATHS.forEach(function (path) {
+    const entry =
+        doc.endpoints.filter(function (e) { return e.path === path; })[0];
+    if (!entry) return;
+    assert.deepStrictEqual(entry.specs, [],
+      path + " is this mock's own invention and must claim no specification, " +
+          "or a reader will go " +
+      "looking for it in one.");
+  });
+  log.info("[specs] OK — " + doc.specifications.length +
+           " specifications, each with a coverage note, " +
+           "each referenced by an endpoint.");
+  log.debug("Leaving specificationsAreHonest().");
+}
+
+// The methods shown are the methods that answer. Asserted by CALLING them,
+// because a table of methods read off the router is only as true as the
+// router's own idea of what it registered.
+// NO SESSION IS CARRIED HERE, and that is the one deliberate exception to what
+// pathsAreFollowableLinks() does. This function calls EVERY method of every
+// endpoint, POST included, and about a fifth of them are console forms: with a
+// session in hand a bodyless POST /admin/tokens is a real console action
+// against the shared mock rather than a probe, which is a test that changes the
+// service every other job is reading. Unauthenticated, each is refused 401 —
+// which is a handler answering, and a handler answering is the whole of what
+// this check is asking.
+async function theMethodsShownActuallyAnswer(doc) {
+  log.debug("Entering theMethodsShownActuallyAnswer().");
+  log.info("=== The methods, called ===");
+  // Paths with a parameter or a wildcard need a value; paths that change state
+  // or need a body are checked for "not 404/405" rather than for success.
+  const substitutions = { ":client_id": "no-such-client", ":id": "no-such-id",
+      ":state": "no-such-state",
+                          "*": "probe" };
+  let checked = 0;
+  let skipped = 0;
+  for (const e of doc.endpoints) {
+    let path = e.path;
+    // the CORS preflight answers every path
+    if (path === "*") continue;
+    // ---------------------------------------------------------------------
+    // AND THE ONE ENDPOINT THAT IS UNGATED AND DESTRUCTIVE (2026-09-06).
+    //
+    // The block above says no session is carried here so that a bodyless POST
+    // to a console form is refused 401 rather than being a real action against
+    // a mock every other job is reading. **That argument holds for everything
+    // BEHIND A GATE and for nothing in front of one**, and
+    // `POST /tls/trust/clear` is in front of one: it needs no credential, it
+    // succeeds, and it empties the client truststore.
+    //
+    // **THAT BROKE EVERY LATER JOB THAT NEEDS A CLIENT CERTIFICATE TO VERIFY,
+    // AND IT WAS INVISIBLE UNTIL 2026-09-06.** Before that date nothing did:
+    // a certificate was a turnstile, and `/xacml/pep/policies` needed none. It
+    // is load-bearing now — the remote PEP container's pull, its heartbeat and
+    // its PIP queries all resolve a VERIFIED chain to a directory entry — so a
+    // run where this job happened to come first left that container
+    // authenticating as nobody for the rest of the run, reporting
+    // UNABLE_TO_GET_ISSUER_CERT_LOCALLY about an anchor the launcher had
+    // posted correctly before anything started.
+    //
+    // **IT IS A LIST OF ONE AND SHOULD STAY THAT WAY.** The test for adding a
+    // second is not "this changes something" — every POST here changes
+    // something, which is why the walk asserts only that a handler ANSWERED.
+    // It is: *this endpoint needs no credential AND destroys state another job
+    // depends on.* Anything gated is already refused 401, which is a handler
+    // answering and is the whole of what this check asks.
+    // ---------------------------------------------------------------------
+    if (path === "/tls/trust/clear") {
+      skipped++;
+      continue;
+    }
+    Object.keys(substitutions).forEach(function (token) {
+      path = path.replace(token, substitutions[token]);
+    });
+    for (const method of e.methods) {
+      // REDIRECTS ARE NOT FOLLOWED, and that is a correctness point rather
+      // than a tidying one. This check asks whether THIS service's router has
+      // a handler at the path its own index advertises, and a 3xx IS that
+      // handler answering; following it asks the same question of whoever the
+      // Location names, which is a different service. `/issuer/offer` (gone
+      // with #594) was the case that showed it — it 302'd to the wallet — so
+      // with fetch's default redirect handling this probe left the mock
+      // altogether and the verdict came to rest on the debugger's client being
+      // up on port 3000. Against the mock repository's own stack, which is one
+      // container and nothing else, that is ECONNREFUSED; and a run where it
+      // passed was really a run against two services.
+      const r = await common.httpJson(issuerBase + path,
+                                      { method: method, redirect: "manual" });
+      // A 404 is ambiguous and the difference is the whole point of this check:
+      // several of these endpoints answer 404 CORRECTLY for a resource that
+      // does not exist (an unknown offer id, an unknown presentation state),
+      // which proves the route is registered. Express's own 404 for a path with
+      // no route is an HTML page reading "Cannot GET /path" — that one means
+      // the index is advertising something that is not there. Treating them
+      // alike would either fail on healthy endpoints or pass on missing ones.
+      const routeMissing = r.status === 404 &&
+        /^Cannot (GET|POST|PUT|DELETE)/.test(String(r.raw ||
+                                             "").replace(/<[^>]*>/g, ""));
+      assert.ok(!routeMissing,
+        method + " " + path + " is listed on /admin/sts-metadata but no " +
+        "route is registered for it — " +
+        "the service answered Express's own 404. The index is advertising " +
+            "something that is not " +
+        "there.");
+      assert.notStrictEqual(r.status, 405,
+        method + " " + path +
+            " is listed but the service refuses that method.");
+      checked++;
+    }
+  }
+  log.info("[methods] OK — " + checked +
+           " method/path pairs reached a handler" +
+           (skipped ? ", and " + skipped + " ungated destructive one(s) were " +
+                      "deliberately not called" : "") + ".");
+  log.debug("Leaving theMethodsShownActuallyAnswer().");
+}
+
+// The index must not omit the endpoints this service's OTHER documents
+// advertise. Those are discovered by clients, so an index that missed one would
+// be missing exactly the endpoints that matter most.
+// NO DEMONSTRATION IS LEFT (#591, #599). #585 served and listed them only in
+// development, behind a mark on the route and a `demo` flag on the row;
+// #592 to #598 moved every one out of the runtime, and #599 removed the
+// mark, the flag and the document's `demoMarkMismatches` with them. So no
+// row may carry a demonstration member, and a known few former paths are
+// asked directly, since a path the page does not list is a path the method
+// check above never calls.
+async function noDemonstrationIsLeft(doc) {
+  log.debug("Entering noDemonstrationIsLeft().");
+  log.info("=== No demonstration endpoint ===");
+  const flagged = doc.endpoints.filter(function (e) {
+    return Object.prototype.hasOwnProperty.call(e, "demo");
+  });
+  assert.deepStrictEqual(flagged.map(function (e) { return e.path; }), [],
+    "no endpoint row may carry a demonstration flag: the runtime ships no " +
+    "demonstration (#591, #599).");
+  assert.ok(!Object.prototype.hasOwnProperty.call(doc, "demoMarkMismatches"),
+    "the document reports no demonstration mark: there is none (#599).");
+  const probes = [["GET", "/saml2/sp"], ["GET", "/issuer"],
+                  ["GET", "/oid4vp/verifier"], ["GET", "/tls"],
+                  ["POST", "/ssf/receive"], ["GET", "/krb5/principals"],
+                  ["GET", "/krb5/service"], ["GET", "/spnego"],
+                  ["GET", "/spnego/protected"]];
+  for (const probe of probes) {
+    const r = await common.httpJson(issuerBase + probe[1],
+                                    { method: probe[0], redirect: "manual" });
+    const unrouted = r.status === 404 &&
+      new RegExp("Cannot " + probe[0] + " ").test(String(r.raw || "")
+        .replace(/<[^>]*>/g, ""));
+    assert.ok(unrouted, probe[0] + " " + probe[1] + " should answer as an " +
+              "unrouted path (Express's own 404, #591); " +
+              "got " + r.status + " " + String(r.raw || "").slice(0, 80));
+  }
+  log.info("[demos] OK — none listed, and " + probes.length + " probed " +
+           "answer as unrouted paths.");
+  log.debug("Leaving noDemonstrationIsLeft().");
+}
+
+async function theAdvertisedEndpointsAreAllListed(doc) {
+  log.debug("Entering theAdvertisedEndpointsAreAllListed().");
+  log.info("=== Against the service's own discovery documents ===");
+  const listed = new Set(doc.endpoints.map(function (e) { return e.path; }));
+  const as = (await common.httpJson(issuerBase +
+      "/.well-known/oauth-authorization-server")).body || {};
+  const vci = (await common.httpJson(issuerBase +
+      "/.well-known/openid-credential-issuer")).body || {};
+
+  const advertised = [as.authorization_endpoint, as.token_endpoint, as.jwks_uri,
+                      as.registration_endpoint, as.revocation_endpoint,
+                          as.introspection_endpoint,
+                      as.service_documentation, as.op_policy_uri, as.op_tos_uri,
+                      vci.credential_endpoint, vci.nonce_endpoint,
+                          vci.notification_endpoint,
+                      vci.deferred_credential_endpoint];
+  let checked = 0;
+  advertised.filter(Boolean).forEach(function (url) {
+    const path = new URL(url).pathname;
+    assert.ok(listed.has(path),
+      "the service advertises " + url +
+          " in its own metadata, but /admin/sts-metadata does not list " +
+      path + ". The index must not omit an endpoint a client will discover.");
+    checked++;
+  });
+  log.info("[discovery] OK — all " + checked +
+           " endpoints named by the RFC 8414 and OID4VCI " +
+           "metadata are listed.");
+  log.debug("Leaving theAdvertisedEndpointsAreAllListed().");
+}
+
+// The path of each endpoint is a LINK to that path, where that is honest. This
+// checks both halves of "where that is honest", because either half getting it
+// wrong produces a page that lies about what you can click:
+//
+//   * every link must resolve. A link is a promise, and the specific way to
+//     break it here is to link a path the router only answers for POST — the
+//     reader lands on Express's "Cannot GET /oauth2/token", which reads as a
+//     broken service.
+//   * a path that cannot be followed must NOT be linked: no GET, or a route
+//     pattern with a :parameter or a * in it, which is not the address of
+//     anything.
+async function pathsAreFollowableLinks(doc, page) {
+  log.debug("Entering pathsAreFollowableLinks().");
+  log.info("=== The path links ===");
+  let checkedLinks = 0;
+  let checkedPlain = 0;
+
+  for (const e of doc.endpoints) {
+    const followable = e.methods.indexOf("GET") !== -1 &&
+                       e.path.indexOf(":") === -1 && e.path.indexOf("*") === -1;
+    assert.strictEqual(e.linkable, followable,
+      e.path + " (" + e.methods.join(",") + ") is reported linkable=" +
+          e.linkable +
+      " but a browser " + (followable ? "can" : "cannot") + " follow it.");
+
+    // The page must agree with the document about which paths are links.
+    const linked = new RegExp('href="' + e.path.replace(/[.*+?^${}()|[\]\\]/g,
+        "\\$&") +
+                              '"[^>]*><code>').test(page);
+    if (!followable) {
+      assert.strictEqual(linked, false,
+        e.path + " is rendered as a link but cannot be followed — it would " +
+            "404 or is a route pattern.");
+      assert.ok(e.notLinkableBecause,
+        e.path + " should say WHY it is not a link; that reason is the most " +
+            "useful thing on the row.");
+      checkedPlain++;
+      continue;
+    }
+    assert.strictEqual(linked, true, e.path +
+                       " should be rendered as a link on the page.");
+    assert.ok(e.url && e.url.indexOf(e.path) !== -1,
+      e.path + " should carry an absolute url in the JSON form; got " + e.url);
+
+    // And it must actually answer. Anything but Express's own "Cannot GET"
+    // means a handler was reached — 400 and 401 are fine, they are the endpoint
+    // talking.
+    // No session is carried: since the #446 cutover a console page's address
+    // answers the console's document to anybody, and the page's data is its
+    // `/admin-api` operation, which theDocumentIsServed() reads.
+    // Redirects are not followed here either, for the reason
+    // theMethodsShownActuallyAnswer() gives above: a link that 302s off this
+    // service is still this service answering, and chasing it makes the check
+    // depend on a host this job knows nothing about.
+    const r = await common.httpJson(e.url, { redirect: "manual" });
+    const expressMiss = r.status === 404 && /^Cannot GET/.test(String(r.raw ||
+        ""));
+    assert.ok(!expressMiss,
+      "the page links " + e.url + " but nothing answers a GET there: " +
+      String(r.raw || "").slice(0, 80));
+    checkedLinks++;
+  }
+  assert.ok(checkedLinks > 10,
+            "most of this service should be followable; only " + checkedLinks +
+            " was.");
+  assert.ok(checkedPlain > 5,
+    "the POST-only and parameterised paths should still be listed, " +
+        "unlinked; only " +
+    checkedPlain + " were.");
+  log.info("[links] OK — " + checkedLinks + " links all resolve, " +
+           checkedPlain +
+           " unfollowable paths listed with a reason and no link.");
+  log.debug("Leaving pathsAreFollowableLinks().");
+}
+
+async function test() {
+  log.debug("Entering test().");
+  log.info("Running the /admin/sts-metadata checks against " + issuerBase);
+  const consoleClient = await signInToTheConsole();
+  const served = await theDocumentIsServed(consoleClient);
+  const doc = served.doc;
+  await theConsoleChromeIsThere(served.page, consoleClient);
+  theProtocolListIsHonest(doc, served.page);
+  theIndexMatchesTheRouter(doc);
+  specificationsAreHonest(doc);
+  await theMethodsShownActuallyAnswer(doc);
+  await pathsAreFollowableLinks(doc, served.page);
+  await theAdvertisedEndpointsAreAllListed(doc);
+  await noDemonstrationIsLeft(doc);
+  log.info("Test completed successfully.");
+  log.debug("Leaving test().");
+}
+
+const program = new Command();
+program
+  .name("sts_metadata")
+  .description("Verify GET /admin/sts-metadata lists exactly the endpoints " +
+      "the STS registers, and the specs it implements.")
+  // Accepted and ignored: the parent project's run-report.js passes --url to
+  // every job it runs (this repository's hands the URL over in the
+  // environment instead).
+  .addOption(new Option("-u, --url <url>",
+      "base url (unused: this test needs no browser)"))
+  .parse(process.argv);
+
+test().catch(function (e) {
+  log.error(e.stack || e.message);
+  process.exit(1);
+});

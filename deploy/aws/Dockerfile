@@ -53,7 +53,7 @@ RUN curl -fsSL --retry 5 --retry-all-errors --retry-delay 10 \
     && terraform version
 
 # --- Node (the version the suite pins) ---
-ARG NODE_VERSION=24.16.0
+ARG NODE_VERSION=24.22.1
 RUN curl -fsSL --retry 5 --retry-all-errors --retry-delay 10 \
         "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" -o /tmp/node.tar.xz \
     && tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1 \

@@ -324,7 +324,7 @@ class CellsAdmin {
     // names (common/cell_placement.ts, the `selector` row) — and the edge
     // here has already asked the release policy for the cell it came from.
     // It is answered with this cell's residents. Until the `cells` mode's
-    // first run (2026-09-28, tests/vendored/sts_cells_release.js) it was
+    // first run (2026-09-28, tests/protocol/sts_cells_release.js) it was
     // refused as "not another cell", so another cell's residents could not
     // be listed from anywhere, whatever the policy said.
     const from = String(relayedFrom || '');

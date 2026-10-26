@@ -51,8 +51,8 @@ const log = require('bunyan').createLogger({ name: 'scim_monitor',
 // rendering of the numbers rather than the numbers.
 //
 // The page's own rendering is covered where every console page's is:
-// `tests/vendored/sts_admin_console.js` draws all of them in a browser, and
-// `tests/vendored/admin_api.js` holds it to the parity rule.
+// `tests/protocol/sts_admin_console.js` draws all of them in a browser, and
+// `tests/protocol/admin_api.js` holds it to the parity rule.
 // ===========================================================================
 
 // Deleted rather than set, for the reason config_realm_layer.js gives: a

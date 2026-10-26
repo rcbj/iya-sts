@@ -107,6 +107,14 @@
     "en": "54220e44643bd84c",
     "text": "设备合规数据源：通过 POST /admin-api/device-compliance 报告设备合规状态的 MDM 或安全态势数据源，在 /admin-api 上别无其他权限。授权 device:compliance 权限。植入时没有成员：请添加该数据源的应用。"
   },
+  "roles.native.SSF_READ.what": {
+    "en": "0a43e12ff3313079",
+    "text": "Shared Signals 读取。授权 ssf.read 权限。仅当某人属于此角色的组（种子组名为 ssf-read），且其登录的应用程序是此角色的成员时，才会向其签发该权限。仅当应用程序本身是成员时，才会在其自身的令牌上签发该权限。SSF_MANAGE 不授权该权限。"
+  },
+  "roles.native.SSF_MANAGE.what": {
+    "en": "599cadcd7892cdd2",
+    "text": "Shared Signals 写入。授权 ssf.manage 权限。仅当某人属于此角色的组（种子组名为 ssf-manage），且其登录的应用程序是此角色的成员时，才会向其签发该权限。仅当应用程序本身是成员时，才会在其自身的令牌上签发该权限。该权限不授权 ssf.read。"
+  },
   "roles.memberKinds.user.label": {
     "en": "df381eb4bb572daf",
     "text": "人员"

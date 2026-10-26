@@ -23,7 +23,7 @@
 // must be defined before it is granted, that a base URI is normalised, that an
 // ungranted scope is refused with `invalid_scope` when the setting is on — all
 // of those are things a caller can drive against the running service, and
-// `tests/vendored/sts_admin_api_operations.js` drives every one of the five
+// `tests/protocol/sts_admin_api_operations.js` drives every one of the five
 // operations. What is here is the two halves that CANNOT be driven:
 //
 //   * **CHOOSING THE GRAPH.** The states worth asserting are the ones a running
@@ -314,7 +314,7 @@ function run(t) {
   // The third — a resource with permissions and no grants — is reachable over
   // HTTP and is asserted here anyway, because the assertion is that it is IN
   // the answer, and that is a claim about the partition rather than about the
-  // service. `tests/vendored/sts_admin_api_operations.js` drives the operation.
+  // service. `tests/protocol/sts_admin_api_operations.js` drives the operation.
   //
   // The mesh below is deliberately the one shape that tells the two readings
   // apart. `webapp1 -> api1` and `webapp2 -> api1` are two arrows INTO one

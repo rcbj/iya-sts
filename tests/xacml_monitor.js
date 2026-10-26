@@ -52,7 +52,7 @@ const log = require('bunyan').createLogger({ name: 'xacml_monitor',
 // service to assert that adding up is done correctly.
 //
 // The page's own rendering is covered where every console page's is:
-// `tests/vendored/sts_admin_console.js` draws all of them in a browser.
+// `tests/protocol/sts_admin_console.js` draws all of them in a browser.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -141,7 +141,7 @@ module.exports = {
     // obligation it could not discharge (section 7.2) — was asserted on the
     // demonstration PEP's row until #596. The remote PEP reports it on its
     // heartbeat now (`xacmlPepUndischargeable`), and
-    // `tests/vendored/sts_xacml_remote_pep.js` drives it end to end.
+    // `tests/protocol/sts_xacml_remote_pep.js` drives it end to end.
 
     // -------------------------------------------------------------------
     // 3. A DECISION NOBODY HERE ENFORCED IS NOT A REFUSAL, AND THE FOUR

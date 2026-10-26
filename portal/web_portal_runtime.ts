@@ -66,6 +66,7 @@ import PortalPages = require('./web_portal_pages');
 import PortalWebAuthn = require('./web_portal_webauthn');
 import DelegatePages = require('./web_delegate');
 import WebAccounts = require('../common/web_accounts');
+import DocLinks = require('../common/web_doc_links');
 
 type Json = any;
 
@@ -715,7 +716,10 @@ class PortalRuntime extends SpaClient {
     const body = v.page.render(v.json, ctx);
     if ((v.page.access || 'person') !== 'person') {
       const title = v.page.title ? v.page.title(v.json, ctx) : 'IYA STS';
+      // `bare()` stays path-agnostic: a problem page and "not a page" use
+      // it too, and neither is a portal page with documentation (#895).
       this.put(title, PortalShell.bare(
+        DocLinks.portalHtml(DocLinks.forPortalPage(v.page.path), this.t) +
         (flash.error ? '<div class="err">' + kit.esc(flash.error) + '</div>'
                      : '') +
         (flash.message ? '<div class="ok">' + kit.esc(flash.message) +
@@ -920,6 +924,77 @@ class PortalRuntime extends SpaClient {
       return;
     }
     await this.answered(path, answer);
+  }
+
+  // THE GUIDANCE'S REPORT (#961). The same post `submit()` would make — the
+  // operation that mirrors the form, the form's own fields, the DPoP proof
+  // `apiJson()` adds — and then nothing is drawn. `submit()` always calls
+  // `answered()`, which replaces the document when the body carries a view
+  // and asks for the page again when it does not; either one erases the
+  // guidance `offerFallback()` has just shown in place. A missing table or
+  // operation is not said either: a flash and a redraw would take the
+  // guidance away, which is the failure this exists to stop. A `web_` module
+  // logs nothing, so a fetch that throws is held the same way.
+  /**
+   * Posts a form's finish and does not draw what it answered.
+   *
+   * @param form - the ceremony's form
+   * @param body - the fields that replace the form's, the credential
+   * @returns nothing
+   */
+  async reportForm(form: Json, body: Json): Promise<void> {
+    if (!form || !form.getAttribute) {
+      return;
+    }
+    const posted = form.getAttribute('action') || this.here();
+    let target: Json = null;
+    try {
+      target = new URL(posted, this.env.location.href);
+    } catch (e) {
+      // A web_ module logs nothing. Drawing the bad address would replace
+      // the guidance the ceremony has just shown (#961).
+      return;
+    }
+    const path = this.portalPath(target.pathname);
+    const fields = this.formFields(form, null);
+    target.searchParams.forEach(function (value: string, name: string): void {
+      fields[name] = value;
+    });
+    const over = body && typeof body === 'object' ? body : {};
+    Object.keys(over).forEach(function (name: string): void {
+      fields[name] = over[name];
+    });
+    let ready = false;
+    try {
+      ready = await this.ensureFormTable();
+    } catch (e) {
+      // The guidance stays. Saying that the table could not be read would
+      // redraw the page, and this bundle has no logger.
+      return;
+    }
+    if (!ready) {
+      return;
+    }
+    const table = this.formTable;
+    const op = path && table ? table['POST ' + path] : null;
+    if (!op) {
+      return;
+    }
+    const forNobody = op.access !== 'person';
+    try {
+      const answer = forNobody
+        ? await this.publicJson('POST', op.path, fields)
+        : await this.apiJson('POST', op.path, fields);
+      if (!answer) {
+        return;
+      }
+      // Not `answered()` (#961). The finish recorded the refusal. Drawing
+      // it, or asking for the page again, replaces the classical retry.
+    } catch (e) {
+      // The post failed. The guidance is the page the person is looking at;
+      // a web_ module cannot log, and must not draw over it.
+      return;
+    }
   }
 
   /**
@@ -1287,6 +1362,18 @@ class PortalRuntime extends SpaClient {
     }
     PortalWebAuthn.wire(doc, this.env.window || {}, function (form: Json) {
       self.submit(form, null);
+    }, function (form: Json, body: Json): void {
+      // Not submit() (#961). submit() draws the answer, and the guidance
+      // shown in place would be replaced by the page the finish returns.
+      const posted = self.reportForm(form, body);
+      if (posted && typeof posted.then === 'function') {
+        posted.then(function (): void {
+          return undefined;
+        }, function (): void {
+          // reportForm holds its own failures. Still not drawn.
+          return undefined;
+        });
+      }
     });
     PortalRuntime.wireDependentSelects(doc);
     // `/portal/delegate`'s search (2026-10-20): asked through this

@@ -37,6 +37,13 @@
 // portal's own origin and realm prefix, exactly what the page's form posted
 // to before #568.
 //
+// UPGRADING ONE (#939, rule 3ct): `POST /account-api/keys/upgrade`, three
+// steps over `credentials.ts`' upgrade ceremony — `begin` names one of the
+// person's classical passkeys, `prove` answers the assertion that proves
+// they hold it, `finish` answers the ML-DSA registration that follows —
+// and `cancel`. While one is in progress the view's `upgrade.pending` is
+// the ceremony to run, in place of an enrolment's.
+//
 // **THE CREDENTIAL ID IS THE ONE IDENTIFIER THESE OPERATIONS TAKE FROM A
 // BODY, AND THE USERNAME NEVER IS**: `removeKey()` and `renameKey()` look the
 // id up among THIS PERSON's keys — the token's subject — so one belonging to
@@ -63,7 +70,13 @@ const vt = validation.types;
 // nickname form the page opens.
 const KEYS_QUERY = vz.object({
   named: vt.opt(vt.base64url)
-    .describe('The passkey just registered: its rename form is drawn open.')
+    .describe('The passkey just registered: its rename form is drawn open.'),
+  // #946's panel links here when a classical passkey was refused where a
+  // post-quantum one is required (#939): the page then says which of the
+  // person's passkeys can be upgraded.
+  upgrade: vt.opt(vt.oneOf(['post-quantum']))
+    .describe('`post-quantum`: arrived from a refusal that asked for a ' +
+              'post-quantum passkey, so the page leads with the upgrade.')
 });
 
 // ENROLLING ONE (2026-09-10). `credential` is the browser's ceremony result
@@ -87,6 +100,13 @@ const ENROL_KEY_FORM = vz.object({
   lane: vt.opt(vt.oneOf(['classical', 'pqc']))
     .describe('`begin`: `classical` (the default) or `pqc`, where the realm ' +
               'offers a post-quantum passkey beside a classical one.'),
+  // THE CLASSICAL RETRY (#944): after an ML-DSA-first registration failed
+  // on the device, a `begin` with the classical algorithms only. Refused
+  // where the realm forbids a classical passkey (STS-AUTHN-0420).
+  algorithms: vt.opt(vt.oneOf(['classical']))
+    .describe('`begin`: `classical` retries with the classical algorithms ' +
+              'only, where `enrol.pending.fallback.classical` says the ' +
+              'realm allows it.'),
   enrolment_id: vt.opt(vt.base64url)
     .describe('`finish`: the pending enrolment the ceremony answers.'),
   credential: vz.string().max(validation.CAP.TEXT).optional()
@@ -98,6 +118,24 @@ const ENROL_KEY_FORM = vz.object({
 const REMOVE_KEY_FORM = vz.object({
   credentialId: vt.opt(vt.base64url)
     .describe('One of your own passkeys.')
+});
+
+// UPGRADING ONE (#939). `credential` is the browser's ceremony result as
+// JSON, ENROL_KEY_FORM's reason: what is inside it is the verifier's to
+// decide. The credential id is looked up among the caller's own keys.
+const UPGRADE_KEY_FORM = vz.object({
+  action: vt.opt(vt.oneOf(['begin', 'prove', 'finish', 'cancel']))
+    .describe('`begin` names the classical passkey and mints the proof\'s ' +
+              'challenge, `prove` answers it with that passkey, `finish` ' +
+              'answers the post-quantum registration, `cancel` drops the ' +
+              'upgrade.'),
+  credentialId: vt.opt(vt.base64url)
+    .describe('`begin`: one of your own classical passkeys.'),
+  upgrade_id: vt.opt(vt.base64url)
+    .describe('`prove` and `finish`: the upgrade in progress.'),
+  credential: vz.string().max(validation.CAP.TEXT).optional()
+    .describe('`prove` and `finish`: the browser\'s ceremony result, as ' +
+              'JSON.')
 });
 
 // RENAMING ONE (#470). The name's rules (at most 60 characters, no control
@@ -161,9 +199,10 @@ class AccountKeys {
    * One key's row.
    *
    * @param one - the key as `credentials.keysOf()` holds it
+   * @param username - whose key it is, for whether it may be upgraded
    * @returns the row
    */
-  keyRow(one: Json): Json {
+  keyRow(one: Json, username?: string): Json {
     const { log, credentials, passkeyPolicy } = this.deps;
     log.debug("Entering AccountKeys.keyRow().");
     const att = one.attestation || null;
@@ -208,6 +247,14 @@ class AccountKeys {
       // THE LANE IT WAS CREATED IN (#643): `classical` (every key before the
       // lanes) or `pqc`.
       lane: credentials.keyLane(one),
+      // WHETHER IT MAY BE UPGRADED TO AN ML-DSA PASSKEY (#939), by
+      // `credentials.keyUpgradeRefusal()` — the begin's own question, so
+      // the button and the door cannot disagree — and the upgrade history
+      // it carries: on an upgraded key, when and from which algorithm; on
+      // a classical key upgraded beside it, its successor.
+      upgradable: !!username &&
+        credentials.keyUpgradeRefusal(username, one).ok,
+      upgrade: credentials.keyUpgradeHistory(one),
       attestation: att ? {
         verified: !!att.verified, trusted: !!att.trusted,
         model: String(att.model || ''), type: String(att.type || ''),
@@ -242,7 +289,10 @@ class AccountKeys {
     log.debug("Entering AccountKeys.enrolView().");
     const policy: Json = webauthnPolicy.settings();
     const username = caller.username;
-    const pending: Json = credentials.pendingKeyEnrolmentFor(username);
+    // AN UPGRADE IN PROGRESS (#939) shares the pending record and is not an
+    // enrolment: `upgradeView()` draws it.
+    const held: Json = credentials.pendingKeyEnrolmentFor(username);
+    const pending: Json = held && !held.upgrade ? held : null;
     // THE CAP COUNTS BOTH LANES (#643): one total, as `addKey()` holds it.
     const out: Json = { enabled: !!policy.enabled,
                         count: mechanisms.keys.length,
@@ -267,7 +317,20 @@ class AccountKeys {
         userHandle: pending.userHandle || '',
         display: user.displayName,
         exclude: (pending.exclude || []).slice(0),
-        options: webauthnPolicy.creationOptions(rpId, pending.kind, lane)
+        options: webauthnPolicy.creationOptions(rpId, pending.kind, lane,
+                                                pending.classicalOnly ===
+                                                  true),
+        // THE CLASSICAL RETRY (#944): whether this ceremony asks for
+        // ML-DSA, whether a retry with the classical algorithms only may be
+        // offered if the device cannot make it, and whether this IS that
+        // retry. The page draws the guidance from these; the `begin` asks
+        // the realm again.
+        fallback: {
+          asksPostQuantum: webauthnPolicy.asksPostQuantum(lane,
+            pending.classicalOnly === true),
+          classical: pending.classicalOnly !== true &&
+                     webauthnPolicy.classicalFallbackOffered(lane),
+          retrying: pending.classicalOnly === true }
       };
     }
     if (policy.mfaAllowed) {
@@ -279,6 +342,44 @@ class AccountKeys {
     out.kinds = webauthnPolicy.authenticatorKinds();
     log.debug("Leaving AccountKeys.enrolView().");
     return out;
+  }
+
+  // THE CLASSICAL RETRY STAYS (#961) only for the report the guidance sends.
+  // offerFallback() posts the browser error with its own `capabilities`
+  // property — null where the platform reported none, which JSON keeps —
+  // and only when it is about to show the guidance. The ordinary refusal is
+  // `{ error }` with no such property, and that one is abandoned, as on
+  // 2026-09-26: keeping every browser error re-armed the same ceremony on
+  // every reload. The mark is the property, not the error's name. The
+  // ceremony log's declined registration posts `{ error: 'NotAllowedError' }`
+  // with no capabilities through confirmKeyEnrolment(), not this door, and
+  // still records reason `browser`. An upgrade's create phase draws the
+  // guidance with no classical begin and is dropped by confirmKeyUpgrade();
+  // this door is an enrolment, so a record marked upgrade is never kept.
+  // The condition is enrolView()'s: the one that draws `#wa-fallback` with
+  // a classical begin.
+  /**
+   * Whether a browser refusal is the guidance's report of a ceremony whose
+   * classical retry is still offered.
+   *
+   * @param credential - the posted ceremony answer
+   * @param waiting - the pending enrolment, read before the answer
+   * @returns whether the enrolment stays
+   */
+  private keepsClassicalRetry(credential: Json, waiting: Json): boolean {
+    const { log, webauthnPolicy } = this.deps;
+    log.debug("Entering AccountKeys.keepsClassicalRetry().");
+    const held = waiting || {};
+    const reported = !!credential && typeof credential === 'object' &&
+      Object.prototype.hasOwnProperty.call(credential, 'capabilities');
+    const lane = String(held.lane || 'classical');
+    const classicalOnly = held.classicalOnly === true;
+    const offers = reported && !held.upgrade && !!held.id &&
+      !classicalOnly &&
+      webauthnPolicy.asksPostQuantum(lane, classicalOnly) &&
+      webauthnPolicy.classicalFallbackOffered(lane);
+    log.debug("Leaving AccountKeys.keepsClassicalRetry(). " + offers);
+    return offers;
   }
 
   // THE SIGNAL API'S DATA (#470, WebAuthn Level 3 section 5.1.10): every
@@ -332,15 +433,83 @@ class AccountKeys {
     return out;
   }
 
+  // THE UPGRADE (#939): whether the realm offers it and what its write
+  // does here, whether the page was reached from #946's panel, and — while
+  // one is in progress — the ceremony to arm: the proof (an assertion
+  // naming the one classical credential), then the registration (ML-DSA
+  // only, under the lane's handle, the classical credential left out of the
+  // exclude list). Its `fallback` says the device may fail to make ML-DSA
+  // and that NO classical retry is offered: the point is ML-DSA.
+  /**
+   * The upgrade block's view.
+   *
+   * @param caller - the signed-in person
+   * @param keys - the person's keys
+   * @param base - the base the request arrived on
+   * @param asked - whether the page was reached from #946's panel
+   * @returns the block's view
+   */
+  upgradeView(caller: AccountCaller, keys: Json[], base: string,
+              asked: boolean): Json {
+    const { log, credentials, webauthnPolicy, passkeyPolicy, authn } =
+      this.deps;
+    log.debug("Entering AccountKeys.upgradeView().");
+    const username = caller.username;
+    const held: Json = credentials.pendingKeyUpgradeFor(username);
+    const out: Json = { offered: webauthnPolicy.postQuantumUpgradeOffered(),
+                        mode: webauthnPolicy.upgradeMode(),
+                        asked: !!asked, pending: null };
+    if (held) {
+      const rpId = authn.rpIdOf(base);
+      const upgrading = keys.filter(function (one: Json): boolean {
+        return String(one.credentialId) ===
+               String(held.upgrade.credentialId);
+      })[0] || null;
+      const common: Json = {
+        id: held.id, phase: String(held.upgrade.phase),
+        credentialId: String(held.upgrade.credentialId),
+        name: upgrading ? credentials.keyName(upgrading)
+                        : String(held.label || ''),
+        mode: String(held.upgrade.mode), lane: String(held.lane),
+        previousAlgorithm: String(held.upgrade.previousAlgorithm || ''),
+        challenge: held.challenge, rpId: rpId };
+      if (held.upgrade.phase === 'proof') {
+        common.allow = [String(held.upgrade.credentialId)];
+        common.options = webauthnPolicy.requestOptions(rpId);
+      } else {
+        const user = credentials.laneUser(username,
+          passkeyPolicy.displayNameFor(username,
+            String((caller.session.user || {}).name || username)),
+          String(held.lane));
+        common.user = user.name;
+        common.display = user.displayName;
+        common.userHandle = held.userHandle || '';
+        common.exclude = (held.exclude || []).slice(0);
+        common.options = webauthnPolicy.upgradeCreationOptions(rpId,
+                                                               held.kind);
+        // #944's FACTS, read by the same runtime: ML-DSA is asked for, and
+        // no classical retry is offered — `upgrade` says why.
+        common.fallback = { asksPostQuantum: true, classical: false,
+                            retrying: false, upgrade: true };
+      }
+      out.pending = common;
+    }
+    log.debug("Leaving AccountKeys.upgradeView(). " +
+              (held ? String(held.upgrade.phase) : 'nothing pending'));
+    return out;
+  }
+
   /**
    * The page's view.
    *
    * @param caller - the signed-in person
    * @param base - the base the request arrived on
    * @param named - the passkey just registered, or ''
+   * @param asked - `upgrade=post-quantum` (#939): reached from #946's panel
    * @returns the view
    */
-  view(caller: AccountCaller, base: string, named?: string): Json {
+  view(caller: AccountCaller, base: string, named?: string,
+       asked?: boolean): Json {
     const { log, credentials, passkeyPolicy } = this.deps;
     const self = this;
     log.debug("Entering AccountKeys.view().");
@@ -349,6 +518,7 @@ class AccountKeys {
     const mechanisms: Json = credentials.mechanismsFor(caller.username);
     const keys: Json[] = mechanisms.keys || [];
     const enrol = this.enrolView(caller, mechanisms, base);
+    const upgrade = this.upgradeView(caller, keys, base, !!asked);
     const held = keys.some(function (one: Json): boolean {
       return one.credentialId === String(named || '');
     });
@@ -357,12 +527,15 @@ class AccountKeys {
       password: !!mechanisms.password,
       mfaRequired: !!mechanisms.mfaRequired,
       keys: keys.map(function (one: Json): Json {
-        return self.keyRow(one);
+        return self.keyRow(one, caller.username);
       }),
       named: held ? String(named) : '',
       enrol: enrol,
-      // ONE PER LANE (#643); none while a ceremony is armed.
-      signals: enrol.pending ? [] : this.signalView(caller, keys, base)
+      upgrade: upgrade,
+      // ONE PER LANE (#643); none while a ceremony is armed — an upgrade's
+      // included (#939).
+      signals: enrol.pending || upgrade.pending ? []
+        : this.signalView(caller, keys, base)
     };
   }
 
@@ -411,7 +584,9 @@ class AccountKeys {
       const begun: Json = credentials.beginKeyEnrolment(username, {
         role: String(body.role || 'mfa'), kind: String(body.kind || ''),
         // The lane (#643), refused there where the realm does not offer it.
-        lane: String(body.lane || 'classical') });
+        lane: String(body.lane || 'classical'),
+        // The classical retry (#944), refused there where it is forbidden.
+        classicalOnly: String(body.algorithms || '') === 'classical' });
       if (!begun.ok) {
         log.debug("Leaving AccountKeys.enrol(). Refused to start.");
         return refused(400, ctx.errorCodes.codeOf(begun) || 'STS-PORTAL-0033',
@@ -423,6 +598,7 @@ class AccountKeys {
         summary: username + ' started creating a passkey',
         detail: { role: begun.role, kind: begun.kind || 'any',
                   lane: begun.lane || 'classical',
+                  classicalOnly: !!begun.classicalOnly,
                   excluded: begun.exclude.length,
                   address: websecurity.addressOf(req) }
       });
@@ -490,7 +666,19 @@ class AccountKeys {
         // timed out, or has no authenticator of the kind asked for. Keeping
         // the pending enrolment re-armed that same ceremony on every reload,
         // so it is abandoned and the sentence says what to try.
+        // EXCEPT THE REPORT THE GUIDANCE SENDS (#961): that post carries its
+        // own `capabilities` property, and where this enrolment's fallback
+        // offers the classical begin the enrolment stays and the answer
+        // carries no view, so a runtime that drew it would not replace the
+        // ceremony. The refusal is still audited above, as it always was.
         let why = (done.errors || ['The passkey could not be created.'])[0];
+        if (done.reason === 'browser' &&
+            this.keepsClassicalRetry(credential, waiting)) {
+          log.debug("Leaving AccountKeys.enrol(). The browser refused; " +
+                    "the classical retry stays.");
+          return ctx.refuse(res, 400,
+            ctx.errorCodes.codeOf(done) || 'STS-PORTAL-0036', why);
+        }
         if (done.reason === 'browser') {
           credentials.abandonKeyEnrolment(username);
           why += asked === 'security-key'
@@ -544,6 +732,127 @@ class AccountKeys {
     log.debug("Leaving AccountKeys.enrol(). Unknown action.");
     return refused(400, 'STS-PORTAL-0026', 'Unknown action "' + action +
                    '". There are three: begin, finish and cancel.');
+  }
+
+  /**
+   * Proves possession of a passkey and upgrades it to an ML-DSA passkey.
+   *
+   * @param ctx - the account API's helpers
+   * @param req - the request
+   * @param res - the response
+   * @param caller - the signed-in person
+   * @param body - the checked body
+   * @returns the response
+   */
+  async upgrade(ctx: AccountContext, req: Json, res: Json,
+                caller: AccountCaller, body: Json): Promise<unknown> {
+    const { log, credentials, authn, passkeyPolicy } = this.deps;
+    const { audit, websecurity } = ctx;
+    const username = caller.username;
+    const base = ctx.baseUrlOf(req);
+    passkeyPolicy.select(username, '');
+    const action = String(body.action || '');
+    const refused = function (answer: Json): unknown {
+      const code = ctx.errorCodes.codeOf(answer) || 'STS-AUTHN-0450';
+      const why = (answer.errors || ['The passkey could not be upgraded.'])
+        .map(String).join(' ');
+      return ctx.refuse(res, 400, code, why,
+                        { view: this.view(caller, base) });
+    };
+    if (action === 'cancel') {
+      if (!credentials.pendingKeyUpgradeFor(username)) {
+        return refused({ ok: false, errors: ['There is no passkey upgrade ' +
+                                               'in progress.'] });
+      }
+      credentials.abandonKeyEnrolment(username);
+      return ctx.json(res, 200, { ok: true, message: '' });
+    }
+    if (action === 'begin') {
+      const begun: Json = credentials.beginKeyUpgrade(username,
+        String(body.credentialId || ''));
+      if (!begun.ok) {
+        return refused(begun);
+      }
+      audit.record({
+        category: 'authentication', action: 'portal.key.upgrade-started',
+        actor: username, outcome: 'success',
+        summary: username + ' began upgrading a passkey',
+        detail: { role: begun.role, mode: begun.mode, lane: begun.lane,
+                  previousAlgorithm: begun.previousAlgorithm,
+                  address: websecurity.addressOf(req) }
+      });
+      return ctx.json(res, 200, { ok: true, message: '' });
+    }
+    if (action !== 'prove' && action !== 'finish') {
+      return ctx.refuse(res, 400, 'STS-PORTAL-0026',
+        'Unknown upgrade action. Choose begin, prove, finish or cancel.',
+        { view: this.view(caller, base) });
+    }
+    let credential: Json = null;
+    try {
+      credential = JSON.parse(String(body.credential || 'null'));
+    } catch (e) {
+      // A malformed browser answer is passed as no credential; the verifier
+      // returns the ceremony's ordinary refusal and leaves no partial key.
+      credential = null;
+    }
+    const upgradeId = String(body.upgrade_id || '');
+    const opts = { origin: authn.expectedOriginFor(base, credential || {}),
+                   rpId: authn.rpIdOf(base) };
+    let answer: Json;
+    try {
+      answer = action === 'prove'
+        ? await credentials.proveKeyUpgrade(username, upgradeId,
+                                            credential, opts)
+        : await credentials.confirmKeyUpgrade(username, upgradeId,
+                                               credential, opts);
+    } catch (e) {
+      log.debug('Caught in AccountKeys.upgrade(): ' +
+                ((e && e.message) || e));
+      return ctx.refuse(res, 500, 'STS-PORTAL-0036',
+        'The passkey could not be upgraded. Your existing passkey is ' +
+        'unchanged; try again.', { view: this.view(caller, base) });
+    }
+    if (!answer.ok) {
+      audit.record({
+        category: 'authentication', action: 'portal.key.upgrade-refused',
+        errorCode: ctx.errorCodes.codeOf(answer) || 'STS-AUTHN-0458',
+        actor: username, outcome: 'failure',
+        summary: 'a passkey upgrade was not completed',
+        detail: { phase: action, reason: (answer.errors || []).join(' '),
+                  address: websecurity.addressOf(req) }
+      });
+      return refused(answer);
+    }
+    if (action === 'prove') {
+      return ctx.json(res, 200, { ok: true, message: '' });
+    }
+    const enrolled = credentials.keysOf(username).filter(function (one: Json) {
+      return String(one.credentialId) === String(answer.credentialId || '');
+    })[0] || null;
+    const signals = this.deps.accountSignals();
+    signals.credentialChanged({ username: username,
+      credentialType: signals.keyCredentialType(enrolled),
+      fido2Aaguid: String((enrolled && enrolled.aaguid) || ''),
+      friendlyName: String((enrolled && enrolled.label) || ''),
+      changeType: answer.mode === 'replace' ? 'update' : 'create',
+      initiatingEntity: 'user', via: 'portal passkey upgrade',
+      reasonAdmin: username + ' upgraded a classical passkey to ML-DSA.',
+      reasonUser: 'You upgraded a passkey to a post-quantum passkey.' });
+    audit.record({
+      category: 'authentication', action: 'portal.key.upgraded',
+      actor: username, outcome: 'success',
+      summary: username + ' upgraded a passkey to ML-DSA',
+      detail: { mode: answer.mode, lane: answer.lane, role: answer.role,
+        previousAlgorithm: answer.previousAlgorithm,
+        algorithm: answer.algorithm,
+        address: websecurity.addressOf(req) }
+    });
+    log.info('portal: ' + username + ' upgraded a passkey to ML-DSA (' +
+             answer.mode + ').');
+    return ctx.json(res, 200, { ok: true,
+      message: 'Your passkey is now post-quantum.',
+      go: ctx.PORTAL + '/keys' });
   }
 
   /**
@@ -684,14 +993,32 @@ class AccountKeys {
         mirrors: 'POST ' + ctx.PORTAL + '/keys',
         summary: 'Begins, finishes or cancels adding a passkey',
         description: '`begin` mints a challenge and holds it (the policy ' +
-          'and the `lane`, #643, checked at the door); `finish` verifies ' +
-          'the browser\'s registration with the sign-in screen\'s address rules and ' +
+          'and the `lane`, #643, checked at the door; `algorithms: ' +
+          'classical`, #944, the classical retry, refused where the realm ' +
+          'forbids a classical passkey); `finish` verifies the browser\'s ' +
+          'registration with the sign-in screen\'s address rules and ' +
           'answers `go` naming the new passkey; `cancel` drops the waiting ' +
-          'one. A refusal carries the page\'s `view`.',
+          'one. A refusal carries the page\'s `view`, except a browser ' +
+          'error reported with its own `capabilities` property while the ' +
+          'classical retry is offered (#961): that enrolment stays and the ' +
+          'answer carries no view.',
         body: ENROL_KEY_FORM,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return self.enrol(ctx, req, res, caller, input.body);
+        } },
+      { method: 'POST', path: ctx.BASE + '/keys/upgrade',
+        operationId: 'upgradeKey', tag: 'Passkeys', access: 'person',
+        mirrors: 'POST ' + ctx.PORTAL + '/keys/upgrade',
+        summary: 'Upgrade one of your classical passkeys to ML-DSA',
+        description: 'Proves possession with the existing passkey, then ' +
+          'verifies a post-quantum registration before replacing it or ' +
+          'adding the post-quantum lane. A refusal leaves the classical ' +
+          'passkey unchanged.',
+        body: UPGRADE_KEY_FORM,
+        handler: function (req: Json, res: Json, caller: AccountCaller,
+                           input: Json): unknown {
+          return self.upgrade(ctx, req, res, caller, input.body);
         } },
       { method: 'POST', path: ctx.BASE + '/keys/remove',
         operationId: 'removeKey', tag: 'Passkeys', access: 'person',

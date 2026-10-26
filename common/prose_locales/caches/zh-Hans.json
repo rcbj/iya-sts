@@ -795,6 +795,26 @@
     "en": "3bfa4ec2d7a5b1f4",
     "text": "直到该领域 ou=applications 下的任何内容发生变化；之后的下一次读取会重新构建它。"
   },
+  "caches.store.oauth2.opaque-access-tokens.title": {
+    "en": "f5521031758787e4",
+    "text": "不透明访问令牌"
+  },
+  "caches.store.oauth2.opaque-access-tokens.description": {
+    "en": "03c5375f953a154b",
+    "text": "此领域已签发的每个不透明访问令牌的声明，以其句柄的 SHA-256 为键。句柄本身不存储。"
+  },
+  "caches.store.oauth2.opaque-access-tokens.bound": {
+    "en": "4fdda86dda2da589",
+    "text": "强制：存满时拒绝签发（STS-OAUTH-0979），而不是逐出一个仍有效的令牌。上限是 oauth2.maxOpaqueAccessTokens。"
+  },
+  "caches.store.oauth2.opaque-access-tokens.lifetime": {
+    "en": "28035bececff39cc",
+    "text": "直到访问令牌的 exp；过期的行在读取时以及由 caches.eject-expired 删除。"
+  },
+  "caches.store.oauth2.opaque-access-tokens.hitMeaning": {
+    "en": "44484a9bf214d2c8",
+    "text": "凭摘要找到了一个句柄"
+  },
   "caches.store.oauth2.redeemed-codes.title": {
     "en": "d05b2abe4dfcac4c",
     "text": "已兑换的授权码"

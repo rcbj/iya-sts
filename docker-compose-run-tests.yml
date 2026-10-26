@@ -58,10 +58,10 @@
 #   suite's sts_persistence_postgres.js — is still not vendored here, because it
 #   starts one with docker and this container has no docker in it.
 #   NO DOCKER IN THE TESTS CONTAINER, AND THAT NOW COSTS A SECOND JOB. Since
-#   2026-09-06 tests/vendored/sts_xacml_remote_pep.js builds the xacml-pep image
+#   2026-09-06 tests/protocol/sts_xacml_remote_pep.js builds the xacml-pep image
 #   and runs it as a container on the service's network, so it needs a daemon
 #   for the same reason that postgres job does. It is marked `docker: true` in
-#   tests/vendored/MANIFEST.js and tools/run-report.js reports it SKIPPED here,
+#   tests/protocol/MANIFEST.js and tools/run-report.js reports it SKIPPED here,
 #   with the reason and with what is therefore unchecked — amber in the report,
 #   <skipped> in the JUnit, a line in the summary. It is never silently green.
 #   **What is unchecked here is the remote PEP end to end**: what stands on this
@@ -70,7 +70,7 @@
 #   impersonating a PEP), both one-sided by construction.
 #   **THAT SKIP IS NOW THE FALLBACK, NOT THIS STACK'S CASE**: the `xacml-pep`
 #   service below is the container, brought up by the launcher, and the job
-#   drives it over XACML_PEP_URL — tests/vendored/MANIFEST.js's `docker: true`
+#   drives it over XACML_PEP_URL — tests/protocol/MANIFEST.js's `docker: true`
 #   note says when the skip still happens. (./local-run-tests.sh used to be
 #   the only stack that drove the seam; it was removed on 2026-09-16.)
 #
@@ -80,7 +80,7 @@
 #   on the host that runs CI. The two jobs are worth less than that.
 #   NO KEYCLOAK, NO walt.id, NO api, NO client. The vendored protocol jobs are
 #   exactly the ones a LONE mock can satisfy; that is the rule
-#   tests/vendored/MANIFEST.js records and the reason this file has none of the
+#   tests/protocol/MANIFEST.js records and the reason this file has none of the
 #   parent project's third-party services.
 #   NO PUBLISHED PORTS. See below.
 #
@@ -121,8 +121,8 @@ version: '2.4'
 # ---------------------------------------------------------------------------
 x-mirror-contexts: &mirror-contexts
   ubuntu: docker-image://${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/ubuntu:latest
-  "node:24.16.0-bookworm-slim": docker-image://${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/node:24.16.0-bookworm-slim
-  "node:24.16.0-bookworm": docker-image://${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/node:24.16.0-bookworm
+  "node:24.22.1-bookworm-slim": docker-image://${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/node:24.22.1-bookworm-slim
+  "node:24.22.1-bookworm": docker-image://${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/node:24.22.1-bookworm
   "rust:1.97-bookworm": docker-image://${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/rust:1.97-bookworm
   "debian:bookworm-slim": docker-image://${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/debian:bookworm-slim
   "golang:1.26.8-bookworm": docker-image://${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/golang:1.26.8-bookworm
@@ -453,7 +453,7 @@ services:
 
   # ===========================================================================
   # A MAIL CATCHER (#63, 2026-09-22): Mailpit (MIT), which the mail channel's
-  # SMTP transport delivers to in `tests/vendored/sts_mail.js` — and whose
+  # SMTP transport delivers to in `tests/protocol/sts_mail.js` — and whose
   # HTTP API is how that job reads what arrived. It REQUIRES STARTTLS, so a
   # message it holds is one that went over TLS, and it accepts any SMTP AUTH.
   #
@@ -588,7 +588,7 @@ services:
       # ./run-tests.sh RUN GETS: that launcher chooses the file from the
       # log level and passes it in here, which is `info` and env/test.js unless
       # somebody asks for otherwise. The file has to be chosen rather than the
-      # level alone, because the vendored modules under common/vendored/ build
+      # level alone, because the vendored modules under common/crypto_impl/ build
       # their loggers from CONFIG_FILE and never see STS_LOG_LEVEL — the
       # launcher's own THE SERVICE'S LOG LEVEL block argues all of it. This
       # file driven by hand is `info` too since 2026-09-12; STS_LOG_LEVEL=debug
@@ -690,7 +690,7 @@ services:
       # Nor Google's Android attestation status list (#256): the suite dials
       # nothing outside its own network, and the list is held in process and
       # by an upload (tests/attestation_revocation.js,
-      # tests/vendored/sts_android_attestation_status.js).
+      # tests/protocol/sts_android_attestation_status.js).
       - STS_DEVICES_ANDROID_STATUS_URL=${STS_DEVICES_ANDROID_STATUS_URL:-}
       # Every job here comes from ONE /24, and many refuse a password on
       # purpose, so the default network threshold (20 an hour) put the
@@ -828,7 +828,7 @@ services:
       # VERIFIES that listener: product mode ignores every
       # `…SkipTlsVerification`, and a CA file is a path on this container's
       # filesystem. Nothing is committed and no key is ever written here.
-      # tests/vendored/outbound_test_ca.js argues it; the runner mounts the
+      # tests/protocol/outbound_test_ca.js argues it; the runner mounts the
       # same volume below. The cluster file's `sts2` inherits it through
       # `extends`. Read-only on this side.
       - sts-test-shared:/run/sts-test:ro
@@ -836,7 +836,7 @@ services:
       # here the service WRITES to: the runner makes the files, and the
       # service writes a pushed password into one (it never creates a file).
       # Development mode only — product refuses a file destination — so
-      # `tests/vendored/sts_secret_destinations.js` uses it in `memory` mode.
+      # `tests/protocol/sts_secret_destinations.js` uses it in `memory` mode.
       - sts-test-secret-push:/run/sts-test-secret-push
       # WHERE AN UPLOADED RISK DATASET IS WRITTEN WHILE IT IS IMPORTED (#215),
       # at `risk.uploadDirectory`'s default: docker-compose.yml's volume and
@@ -866,7 +866,7 @@ services:
   # THE REMOTE XACML POLICY ENFORCEMENT POINT, AND THE ONLY THING IN THIS FILE
   # THAT IS NOT THE SERVICE OR THE SUITE.
   #
-  # It is here because `tests/vendored/sts_xacml_remote_pep.js` cannot assert
+  # It is here because `tests/protocol/sts_xacml_remote_pep.js` cannot assert
   # what it exists to assert without it: a SECOND CONTAINER, on this network,
   # holding its own copy of the XACML engine, pulling policy from the service
   # above and enforcing it where that service cannot see. The job drives this
@@ -995,14 +995,14 @@ services:
   # THE SUITE. Every job — the in-process half and the protocol half,
   # including the Selenium admin-console one — run by
   # tests/run-tests-in-container.sh against the service above.
-  # NO COUNT IS WRITTEN HERE. tests/vendored/MANIFEST.js and tests/run.js's
+  # NO COUNT IS WRITTEN HERE. tests/protocol/MANIFEST.js and tests/run.js's
   # own discovery are the two answers, and the number that used to be on
   # this line was wrong within a fortnight of being written.
   # ---------------------------------------------------------------------------
   # -------------------------------------------------------------------------
   # THE OPENID FOUNDATION'S CONFORMANCE SUITE (#176, 2026-09-24): its server,
   # its MongoDB and its nginx, from the images the suite publishes, pinned by
-  # tag. tests/vendored/sts_fapi_conformance.js drives it through its API and
+  # tag. tests/protocol/sts_fapi_conformance.js drives it through its API and
   # fails on a FAILED module — rcbj's decision on #142: "a job in
   # ./run-tests.sh that fails when a module fails".
   #
@@ -1130,7 +1130,7 @@ services:
   # pysaml2 (PyPI), SimpleSAMLphp (its release tarball, sha256-pinned) and
   # Keycloak's SAML broker (its official image) — each built from
   # tests/saml-peers/<peer>, each driven by a job of its own
-  # (tests/vendored/sts_saml_interop_*.js) against throwaway realms of the
+  # (tests/protocol/sts_saml_interop_*.js) against throwaway realms of the
   # service above. tests/CLAUDE.md, *THE SAML PEERS*, argues all of it.
   #
   # BEHIND THE `saml-peers` COMPOSE PROFILE, for #176's reason: ./run-tests.sh
@@ -1297,7 +1297,7 @@ services:
       # ---------------------------------------------------------------------
       # THE DIRECTORY'S OWN SOCKET, FOR THE ONE JOB THAT DRIVES IT (2026-09-06).
       #
-      # `tests/vendored/sts_directory_bulk_load_ldap.js` writes five thousand
+      # `tests/protocol/sts_directory_bulk_load_ldap.js` writes five thousand
       # people over RFC 4511 on TCP 389, and this stack publishes NOTHING —
       # which costs it exactly nothing here, because this runner is a container
       # on the bridge with the service and reaches the port directly. That is
@@ -1328,7 +1328,7 @@ services:
       - STS_TEST_REPORT_DIR=${STS_TEST_REPORT_DIR:-}
       # THE BULK LOADS' SIZES, which tests/tools/modes.sh sets for every mode
       # of ./run-tests.sh (2026-09-27). The defaults here are the library's
-      # own (tests/vendored/bulk_load.js), so a run that names no mode — the
+      # own (tests/protocol/bulk_load.js), so a run that names no mode — the
       # coverage run, which shares this file and not modes.sh — is unchanged.
       - BULK_USERS=${STS_TEST_BULK_USERS:-5000}
       - BULK_GROUPS=${STS_TEST_BULK_GROUPS:-50}
@@ -1378,7 +1378,7 @@ services:
       - OUTBOUND_TEST_CA_FILE=${OUTBOUND_TEST_CA_FILE:-/run/sts-test/outbound-test-ca.crt}
       # THE DATABASE AN ATTRIBUTE SOURCE IS TESTED AGAINST (#94): the
       # stack's own postgres, as its superuser, which
-      # `tests/vendored/sts_attribute_sources.js` creates a database, a
+      # `tests/protocol/sts_attribute_sources.js` creates a database, a
       # read-only role and a table of its own in — never the service's
       # schema. `-` rather than `:-`, so an EMPTY value (./run-coverage.sh,
       # which has no postgres) skips the job instead of dialling nothing.
@@ -1388,7 +1388,15 @@ services:
       # half instead of dialling the default. The stack sets it in every
       # mode, memory included.
       - STS_TEST_ATTRIBUTE_MYSQL_URL=${STS_TEST_ATTRIBUTE_MYSQL_URL-mysql://root:sts@mariadb:3306/sts}
-      # THE MAIL CATCHER (#63): where `tests/vendored/sts_mail.js` reads what
+      # THE DATABASE THE PERSISTENCE JOB RESTARTS THE SERVICE AGAINST
+      # (moved from the parent project, 2026-10-23): the stack's postgres as
+      # its superuser, in which `tests/protocol/sts_persistence_postgres.js`
+      # creates a database of its own per run, and the CA directory its
+      # certificate is verified against (`sts-db-ca`, mounted below). `-`
+      # rather than `:-`, so ./run-coverage.sh's empty value skips the job.
+      - STS_TEST_PERSISTENCE_DB_URL=${STS_TEST_PERSISTENCE_DB_URL-postgres://sts:sts@postgres:5432/sts}
+      - STS_TEST_PERSISTENCE_DB_CA=${STS_TEST_PERSISTENCE_DB_CA-/run/secrets/database-ca}
+      # THE MAIL CATCHER (#63): where `tests/protocol/sts_mail.js` reads what
       # arrived, and where it tells the service to deliver — the host, the
       # port and the catcher's certificate AS THE SERVICE SEES IT.
       - MAILPIT_API_URL=${MAILPIT_API_URL:-http://mailpit:8025}
@@ -1490,13 +1498,16 @@ services:
       - sts-test-shared:/run/sts-test
       # A file secret push destination's directory (#221 P3) — see `sts`.
       - sts-test-secret-push:/run/sts-test-secret-push
+      # THE DATABASES' CERTIFICATES, read-only, as `sts` mounts them: what
+      # STS_TEST_PERSISTENCE_DB_CA names.
+      - sts-db-ca:/run/secrets/database-ca:ro
     depends_on:
       # The mail catcher (#63): STARTED, for xacml-pep's reason below — a
       # catcher that will not come up fails sts_mail.js and nothing else.
       mailpit:
         condition: service_started
       # The test peer (#586): STARTED, for the catcher's reason — the jobs
-      # that need it wait for it themselves (tests/vendored/test_peer.js).
+      # that need it wait for it themselves (tests/protocol/test_peer.js).
       test-peer:
         condition: service_started
       sts:

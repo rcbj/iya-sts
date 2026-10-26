@@ -37,7 +37,7 @@
 //     an operation cannot exist and be undocumented, and cannot be documented
 //     and not exist. What no code can check is the direction that matters — a
 //     new console control with no row here — and that is what this
-//     repository's own tests/vendored/admin_api.js (a `local: true` job)
+//     repository's own tests/protocol/admin_api.js (a `local: true` job)
 //     asserts, by walking the console's own NAV and the action names each of
 //     its action handlers accepts.
 //
@@ -632,6 +632,8 @@ interface AdminApiDeps {
     typeof import('../attribute-sources/attribute_sources_api');
   // The secret push destinations' operations (#221 P3).
   loadSecretDestinationsApi(): typeof import('./secret_destinations_api');
+  // Monitoring → Passkeys' operations (#942).
+  loadPasskeyReportApi(): typeof import('./passkey_report_api');
   // The outbound SCIM clients' operations (#552).
   loadScimClientsApi(): typeof import('./scim_clients_api');
   loadProviderCommandsApi(): typeof import('../oauth-oidc/provider_commands_api');
@@ -746,6 +748,9 @@ class AdminApi {
       },
       loadSecretDestinationsApi: function () {
         return require('./secret_destinations_api');
+      },
+      loadPasskeyReportApi: function () {
+        return require('./passkey_report_api');
       },
       loadScimClientsApi: function () {
         return require('./scim_clients_api');
@@ -1559,7 +1564,36 @@ class AdminApi {
               'the first credential or the second factor, and ' +
               '`registration-and-sign-in` refuses a classical one at ' +
               'registration too; refused while the realm offers no ML-DSA ' +
-              '(STS-AUTHN-0357).',
+              '(STS-AUTHN-0357). ' +
+              '`attestationAlgorithms` (`none`, #941, optional) lists the ' +
+              'algorithms a passkey\'s ATTESTATION must be signed with, ' +
+              'statement and every certificate leaf to anchor: ' +
+              '`post-quantum`, `ml-dsa-44`, `ml-dsa-65`, `ml-dsa-87`, ' +
+              '`slh-dsa`, `composite-ml-dsa`; set, it demands a trusted ' +
+              'statement and refuses any other at registration ' +
+              '(STS-AUTHN-0411), and at sign-in while ' +
+              '`enforceAttestationAtSignIn` is on (STS-AUTHN-0412). ' +
+              '`postQuantumAllowCredentials` (`realm`, ' +
+              '#946; optional) chooses how the passkey step names the ' +
+              'keys while one is required: `narrow` the post-quantum ones ' +
+              'only, `list-and-refuse` every one, a classical assertion ' +
+              'then refused after the ceremony with a page saying why, ' +
+              'and `realm` the realm\'s ' +
+              'webauthn.postQuantumAllowCredentials. ' +
+              '`registrationAlgorithms` (`realm`, #940; optional) is the ' +
+              'ordered list a registration offers this profile\'s people ' +
+              'in place of the realm\'s webauthn.algorithms, and ' +
+              '`registrationMode` (`realm`, #940; optional) is `pq-only` ' +
+              '(ML-DSA only, no classical retry), `pq-first` (ML-DSA, then ' +
+              'the classical algorithms, whatever the realm\'s pqcOnly), ' +
+              '`classical-only` (no ML-DSA, no post-quantum lane) or ' +
+              '`realm` (webauthn.pqcOnly and ' +
+              'webauthn.pqcAlongsideClassical); a passkey outside what the ' +
+              'profile offers is refused at registration (STS-AUTHN-0432). ' +
+              'Refused: `classical-only` with `postQuantumRequired` not ' +
+              '`off` or with `attestationAlgorithms` set (STS-AUTHN-0430), ' +
+              'and `pq-only` or `pq-first` where the list offered names no ' +
+              'ML-DSA (STS-AUTHN-0431).',
         example: { allowUsernameless: false, requireUsernameless: false,
                    securityKeyResidentKey: 'required',
                    backupEligibility: 'allow',
@@ -1571,7 +1605,11 @@ class AdminApi {
                    enterpriseSerialAttribute: '',
                    userDisplayName: 'displayName, givenName sn',
                    rpNameExtras: 'none', credentialLabel: '',
-                   aggregateDevices: true, postQuantumRequired: 'off' }
+                   aggregateDevices: true, postQuantumRequired: 'off',
+                   attestationAlgorithms: 'none',
+                   postQuantumAllowCredentials: 'realm',
+                   registrationAlgorithms: 'realm',
+                   registrationMode: 'realm' }
       },
       // #539: the fifth kind, with named profiles chosen by application.
       locale: {
@@ -2816,7 +2854,7 @@ class AdminApi {
             loadScepApi, loadOidfedApi, loadOauth2MonitorApi,
             loadGrantManagementApi, loadClaimsProvidersApi,
             loadAttributeSourcesApi, loadSecretDestinationsApi,
-            loadScimClientsApi,
+            loadPasskeyReportApi, loadScimClientsApi,
             loadProviderCommandsApi, loadSsfTransmittersApi,
             federation } = this.deps;
     const self = this;
@@ -6412,7 +6450,29 @@ class AdminApi {
                      'remembers. OpenAPI cannot spell a parameter whose name ' +
                      'is built at runtime, and a `session-{id}Page` in the ' +
                      'list would generate a client that sends a literal ' +
-                     '`{id}` — so it is here in words instead.\n\nTHE ' +
+                     '`{id}` — so it is here in words instead.\n\n' +
+                     '**The ?user= reply\'s `authenticationEvents`** ' +
+                     '(#955) are the audit log\'s authentication ' +
+                     'attempts by this person, newest first, across ' +
+                     'every application and protocol: ' +
+                     '`authentication`, `authentication.refused`, ' +
+                     '`session.refuse` and `session.refused`. A row is ' +
+                     'this person\'s when its actor, the name they ' +
+                     'presented, `detail.sub` or `detail.presented` is ' +
+                     'their name, a name they have been seen under, or ' +
+                     'their subject, exactly as spelled. Each row is an ' +
+                     'audit event. `authenticationEventsMatched` is how ' +
+                     'many, `authenticationEventsPaging` pages them ' +
+                     'under `authenticationsPage`, ' +
+                     '`authenticationEventsKnownActors` says which ' +
+                     'actors have a user page, and ' +
+                     '`authenticationEventsLog` says how full the audit ' +
+                     'log is. The member is not `authentications`: that ' +
+                     'one is the count. The list holds no more history ' +
+                     'than the audit log does, and nothing in it is a ' +
+                     'credential. Another process\'s rows are read ' +
+                     'before this reply is built when `user` is set, ' +
+                     'the same wait GET /admin-api/audit makes.\n\nTHE ' +
                      'LIST IS CAPPED AND THE COUNT IS NOT (#610). ' +
                      '`directoryPeople` is how many people the realm\'s ' +
                      'directory defines, counted by the directory without ' +
@@ -6462,7 +6522,14 @@ class AdminApi {
                          'carrying `stsServiceAccount`); `person`: ' +
                          'everybody else. Each row says which in ' +
                          '`serviceAccount`, and `serviceAccounts` counts ' +
-                         'them over the whole list.' }
+                         'them over the whole list.' },
+          { name: 'authenticationsPage', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'Which page of `authenticationEvents`, on the ' +
+                         '`?user=` reply only. Named rather than the bare ' +
+                         '`page` so it does not move the session list. ' +
+                         'The member is not `authentications`: that one ' +
+                         'is the count.' }
         ].concat(this.pagingParameters()).concat(this.detailPagingParameters([
           { name: 'sessions',
             description: 'Sign-on session blocks, which default to ' +
@@ -6500,33 +6567,56 @@ class AdminApi {
           { $ref: '#/components/schemas/UserList' },
           { $ref: '#/components/schemas/UserDetail' }
         ] },
-        handler: function (req, res) {
+        handler: function (req, res, next) {
           log.debug("Entering the management API users endpoint.");
           // The person's current risk, read first (#62) — the console's
           // route does the same, so the two answers agree.
           // The list's directory names are asked of the store
           // asynchronously (#616: `usersJsonAsync()`), which held a request
           // worker's event loop for seconds at 200,000 people.
-          return adminViews.riskFor(req.query).then(function (risk) {
-            return adminViews.usersJsonAsync(req, risk);
-          }).then(function (json) {
-            self.sendJson(res, 200, json);
-          }, function (e) {
+          const run = function () {
+            log.debug("Entering run().");
+            return adminViews.riskFor(req.query).then(function (risk) {
+              return adminViews.usersJsonAsync(req, risk);
+            }).then(function (json) {
+              self.sendJson(res, 200, json);
+              log.debug("Leaving run().");
+            }, function (e) {
+              log.debug("Caught in the management API users endpoint: " +
+                        ((e && e.message) || e));
+              // The directory read failed after the handler had already
+              // started: answer 503 here, and do not rethrow, so a
+              // drill-down's fresh() does not also call next().
+              log.error(errorCodes.tag(errorCodes.codeOf(e) ||
+                                       'STS-LDAP-0139') +
+                        'admin-api: the users list ' +
+                        'could not be read from the store: ' +
+                        ((e && e.message) || e));
+              res.setHeader('Retry-After', '5');
+              errorCodes.mark(res, errorCodes.codeOf(e) ||
+                                   'STS-LDAP-0139');
+              self.sendJson(res, 503, { error: 'temporarily_unavailable',
+                error_description: 'The directory could not be read; try ' +
+                  'again shortly.' });
+              log.debug("Leaving run(). The directory could not be read.");
+            });
+          };
+          // The list carries no attempts. The drill-down's do, and they
+          // are the audit log: another worker's rows are noted, not held,
+          // until fresh() — the wait the audit page already makes (#820).
+          const named = req.query && String(req.query.user || '').trim();
+          if (!named) {
+            log.debug("Leaving the management API users endpoint. " +
+                      "The list.");
+            return run();
+          }
+          return audit.fresh().then(run).catch(function (e) {
             log.debug("Caught in the management API users endpoint: " +
                       ((e && e.message) || e));
-            log.error(errorCodes.tag(errorCodes.codeOf(e) ||
-                                     'STS-LDAP-0139') +
-                      'admin-api: the users list ' +
-                      'could not be read from the store: ' +
-                      ((e && e.message) || e));
-            res.setHeader('Retry-After', '5');
-            errorCodes.mark(res, errorCodes.codeOf(e) ||
-                                 'STS-LDAP-0139');
-            self.sendJson(res, 503, { error: 'temporarily_unavailable',
-              error_description: 'The directory could not be read; try ' +
-                'again shortly.' });
+            log.debug("Leaving the management API users endpoint. " +
+                      "fresh().");
+            next(e);
           });
-          log.debug("Leaving the management API users endpoint.");
         } },
 
       // RULE 7 FOR /admin/users/new, and it earns its place beyond the parity
@@ -6772,6 +6862,11 @@ class AdminApi {
             const answered = adminActions.usersAction(request,
                                              { via: 'api',
                                                actor: self.callerNameOf(res),
+                                               // WHO IS ENROLLING A PASSKEY
+                                               // FOR SOMEBODY (#945): the
+                                               // token's subject, a person,
+                                               // or nobody.
+                                               admin: self.callerPersonOf(res),
                                                // The address a password reset
                                                // link is built on (2026-09-13).
                                                base: baseUrlOf(req) });
@@ -7072,7 +7167,7 @@ class AdminApi {
                 // read there and refused HERE — not a member of this schema —
                 // at the cell it was relayed to, so no creation naming
                 // another cell could succeed until the `cells` mode's first
-                // run (2026-09-28, tests/vendored/sts_cells_routing.js).
+                // run (2026-09-28, tests/protocol/sts_cells_routing.js).
                 homeCell: { type: 'string', maxLength: 16,
                             description: 'Only when this service is ' +
                                          'deployed as cells (#98): the id ' +
@@ -7674,7 +7769,10 @@ class AdminApi {
               additionalProperties: false
             },
             responseDescription: 'The keys removed — id, role, label and ' +
-                                 'when enrolled; never a public key.' },
+                                 'when enrolled; never a public key. ' +
+                                 '`sessionsEnded` counts the sessions ' +
+                                 'those keys signed in, which were ended ' +
+                                 '(#963); every other stays.' },
 
           { action: 'disable-mfa', operationId: 'disableUserSecondFactors',
             summary: 'Remove every second factor somebody holds',
@@ -7710,7 +7808,10 @@ class AdminApi {
             },
             responseDescription:
               'What was removed, and whether a second factor ' +
-                                 'is still required of them (`requirement`).' },
+              'is still required of them (`requirement`). ' +
+              '`sessionsEnded` counts the sessions each removed ' +
+              'factor signed in, which were ended (#963); every ' +
+              'other stays.' },
 
           { action: 'require-mfa', operationId: 'requireUserSecondFactor',
             summary: 'Require somebody to sign in with a second factor',
@@ -8596,6 +8697,56 @@ class AdminApi {
             responseDescription: 'What was revoked — its id, name and ' +
                                  'doors; never its hash.' },
 
+          // #939: the administrator proves the existing classical passkey
+          // in their browser before the API arms ML-DSA registration. These
+          // are separate operations because the proof is one-use and the
+          // person must approve each ceremony in the authenticator.
+          { action: 'begin-passkey-upgrade',
+            operationId: 'beginUserPasskeyUpgrade',
+            summary: 'Begin upgrading a person\'s classical passkey',
+            description: 'Mints a one-use assertion challenge for the named ' +
+                         'classical passkey. The passkey must be present in ' +
+                         'the administrator\'s browser to continue.',
+            requestBodyRequired: true,
+            requestBody: { type: 'object', properties: {
+              user: { type: 'string' }, credentialId: { type: 'string' }
+            }, required: ['user', 'credentialId'], additionalProperties: false },
+            responseDescription: 'The upgrade id and assertion ceremony.' },
+          { action: 'prove-passkey-upgrade',
+            operationId: 'proveUserPasskeyUpgrade',
+            summary: 'Prove possession of a person\'s classical passkey',
+            description: 'Verifies the assertion before offering the ' +
+                         'ML-DSA registration ceremony. A refused proof ' +
+                         'leaves the existing key unchanged.',
+            requestBodyRequired: true,
+            requestBody: { type: 'object', properties: {
+              user: { type: 'string' }, upgradeId: { type: 'string' },
+              credential: { type: 'string', maxLength: 65536 }
+            }, required: ['user', 'upgradeId', 'credential'],
+              additionalProperties: false },
+            responseDescription: 'The ML-DSA registration ceremony.' },
+          { action: 'finish-passkey-upgrade',
+            operationId: 'finishUserPasskeyUpgrade',
+            summary: 'Finish upgrading a person\'s passkey',
+            description: 'Verifies and stores the ML-DSA registration, ' +
+                         'preserving the existing key if registration fails.',
+            requestBodyRequired: true,
+            requestBody: { type: 'object', properties: {
+              user: { type: 'string' }, upgradeId: { type: 'string' },
+              credential: { type: 'string', maxLength: 65536 }
+            }, required: ['user', 'upgradeId', 'credential'],
+              additionalProperties: false },
+            responseDescription: 'The upgraded key and both algorithms.' },
+          { action: 'cancel-passkey-upgrade',
+            operationId: 'cancelUserPasskeyUpgrade',
+            summary: 'Cancel a person\'s pending passkey upgrade',
+            description: 'Discards the pending one-use upgrade ceremony.',
+            requestBodyRequired: true,
+            requestBody: { type: 'object', properties: {
+              user: { type: 'string' }
+            }, required: ['user'], additionalProperties: false },
+            responseDescription: 'Whether the pending upgrade was cancelled.' },
+
           { action: 'clear-key', operationId: 'clearUserSecurityKey',
             summary: 'Remove one of somebody\'s security keys',
             description: 'Goes through the same `removeKey()` the person\'s ' +
@@ -8666,7 +8817,122 @@ class AdminApi {
               additionalProperties: false
             },
             responseDescription:
-              'The name the passkey now has, or why it was not renamed.' }
+              'The name the passkey now has, or why it was not renamed.' },
+
+          // #945: AN ADMINISTRATOR ENROLS A PASSKEY ON A PERSON'S BEHALF,
+          // the console's *Enrol a passkey for this person* on their page.
+          // Two acts, the person's own enrolment's two steps; the ceremony
+          // between them runs in the caller's browser.
+          { action: 'begin-passkey-enrolment',
+            operationId: 'beginUserPasskeyEnrolment',
+            summary: 'Begin enrolling a passkey for somebody, in your own ' +
+                     'browser',
+            description: 'Mints a WebAuthn registration challenge bound to ' +
+                         'YOU (the access token\'s subject, which must be a ' +
+                         'person), the person and the lane, held for five ' +
+                         'minutes at most and usable once, and answers the ' +
+                         'ceremony your browser runs (`ceremony`): the ' +
+                         'challenge, the realm\'s RP ID, the PERSON\'s user ' +
+                         'handle (`user.id`, per lane, #643) with their name ' +
+                         'and display name (the passkey policy\'s ' +
+                         'userDisplayName), the credentials to exclude (the ' +
+                         'person\'s keys in that lane) and `options` — the ' +
+                         'algorithms offered in order and the realm\'s ' +
+                         'attestation, user verification, resident key, ' +
+                         'hints and timeout. Every byte string is ' +
+                         'base64url.\n\nRefused unless the person\'s ' +
+                         'passkey policy\'s `adminEnrolment` is `on` ' +
+                         '(STS-AUTHN-0440, off by default), the person is ' +
+                         'in this realm\'s directory (STS-AUTHN-0441), the ' +
+                         'caller is a person (STS-AUTHN-0445), and the role, ' +
+                         'lane and `webauthn.maxKeysPerPerson` allow it. ' +
+                         'There is no import of a registration made ' +
+                         'elsewhere.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                role: { type: 'string', enum: ['primary', 'mfa'],
+                        description: '`mfa` (the default): a second factor ' +
+                                     'beside a password; `primary`: signs ' +
+                                     'them in on its own.' },
+                lane: { type: 'string', enum: ['classical', 'pqc'],
+                        description: 'The lane (#643) where the realm ' +
+                                     'offers both (webauthn.' +
+                                     'pqcAlongsideClassical); the ' +
+                                     'classical one otherwise.' },
+                kind: { type: 'string', enum: ['passkey', 'security-key'],
+                        description: 'Which kind of authenticator to ask ' +
+                                     'for; the realm\'s attachment setting ' +
+                                     'decides either way.' }
+              },
+              required: ['user'],
+              examples: [{ user: 'alice', role: 'mfa',
+                           kind: 'security-key' }],
+              additionalProperties: false
+            },
+            responseDescription: '`enrolmentId`, `expiresAt`, `role`, ' +
+                                 '`lane` and `ceremony`, or why it was not ' +
+                                 'begun.' },
+
+          { action: 'finish-passkey-enrolment',
+            operationId: 'finishUserPasskeyEnrolment',
+            summary: 'Finish enrolling a passkey for somebody',
+            description: 'Verifies what your browser\'s ' +
+                         '`navigator.credentials.create()` produced EXACTLY ' +
+                         'as the person\'s own registration is verified — ' +
+                         'the challenge, the origin and RP ID, user ' +
+                         'verification, the algorithms offered, the ' +
+                         'exclusion, the attestation statement (#105) and ' +
+                         'its algorithms (#941), and the passkey policy\'s ' +
+                         'registration rules (#718 and the rest) — and ' +
+                         'writes the key through the same writer, marked ' +
+                         '`enrolledBy` (you, your token\'s `sub`, and when). ' +
+                         'The enrolment is SPENT by this call whatever it ' +
+                         'answers: a second finish is refused ' +
+                         '(STS-AUTHN-0442, STS-AUTHN-0443).\n\n**Shared ' +
+                         'Signals**: a CAEP `credential-change` (`fido2-*`, ' +
+                         '`create`, initiated by `admin`), and the person is ' +
+                         'sent the security notice `passkey-enrolled`. ' +
+                         'Audited as `admin.passkey.enrolled`.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                enrolmentId: { type: 'string', maxLength: 128,
+                               description: 'The `enrolmentId` the begin ' +
+                                            'answered.' },
+                credential: { type: 'string', maxLength: 65536,
+                              description: 'The browser\'s registration as ' +
+                                           'JSON: `id`, `rawId`, `type`, ' +
+                                           '`authenticatorAttachment`, ' +
+                                           '`clientExtensionResults` and ' +
+                                           '`response` (`clientDataJSON`, ' +
+                                           '`attestationObject`, ' +
+                                           '`transports`), base64url — or ' +
+                                           '`{ error, message }` where the ' +
+                                           'browser refused.' }
+              },
+              required: ['user', 'enrolmentId', 'credential'],
+              examples: [{ user: 'alice', enrolmentId: 'q1w2e3r4',
+                           credential: '{"error":"NotAllowedError",' +
+                                       '"message":"cancelled"}' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The new passkey\'s `credentialId`, ' +
+                                 '`role`, `lane`, how many the person now ' +
+                                 'holds (`held`) and `enrolledBy`, or why ' +
+                                 'it was not registered.' }
         ] },
 
       // ---------------------------------------------------------------------
@@ -13951,6 +14217,27 @@ class AdminApi {
                      'rather than `page`, which is the convention for a ' +
                      'reply holding a list that is not the top-level ' +
                      'one.\n\n**The ?application= reply\'s ' +
+                     '`authenticationEvents`** (#954) are the audit log\'s ' +
+                     'authentication attempts that name this application, ' +
+                     'newest first: `authentication`, ' +
+                     '`authentication.refused`, `session.refuse` and ' +
+                     '`session.refused`, where `detail.client_id` or ' +
+                     '`detail.application` is the identifier or one of the ' +
+                     'entry\'s protocol names, exactly as spelled. Each row ' +
+                     'is an audit event. `authenticationEventsMatched` is ' +
+                     'how many, `authenticationEventsPaging` pages them ' +
+                     'under `authenticationsPage`, ' +
+                     '`authenticationEventsKnownActors` says which actors ' +
+                     'have a user page, and `authenticationEventsLog` says ' +
+                     'how full the audit log is. The member is not ' +
+                     '`authentications`: that one is the count. The list ' +
+                     'holds no more history than the audit log does, and ' +
+                     'nothing in it is a credential. Another process\'s ' +
+                     'rows are read before this reply is built, the same ' +
+                     'wait GET /admin-api/audit makes, so an attempt ' +
+                     'recorded on a different worker is on the list.\n\n' +
+                     '**The ?application= ' +
+                     'reply\'s ' +
                      '`page.passkeyPolicies`** (#609) is what the console ' +
                      'draws as the read-only Passkey policy card of the ' +
                      'Every protocol sub-tab: every named passkey policy of ' +
@@ -14016,16 +14303,41 @@ class AdminApi {
             description: 'Which page of the attribute list, on the ' +
                          '`?application=` reply only. Named rather than the ' +
                          'bare `page` because it moves a list inside the ' +
-                         'reply rather than the reply itself.' }
+                         'reply rather than the reply itself.' },
+          { name: 'authenticationsPage', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'Which page of `authenticationEvents`, on the ' +
+                         '`?application=` reply only. Named rather than the ' +
+                         'bare `page` so it does not move the attribute ' +
+                         'list.' }
         ].concat(this.pagingParameters()),
         responseDescription: 'The matching applications with the paging that ' +
                              'found them, or one application with its ' +
                              'directory entry when `application` was given.',
         responseSchema: { $ref: '#/components/schemas/ApplicationList' },
-        handler: function (req, res) {
+        handler: function (req, res, next) {
           log.debug("Entering the management API applications endpoint.");
-          self.sendJson(res, 200, adminViews.applicationsJson(req));
-          log.debug("Leaving the management API applications endpoint.");
+          const send = function () {
+            log.debug("Entering send().");
+            self.sendJson(res, 200, adminViews.applicationsJson(req));
+            log.debug("Leaving send().");
+            log.debug("Leaving the management API applications endpoint.");
+          };
+          // The list carries no attempts. The drill-down's do, and they
+          // are the audit log: another worker's rows are noted, not held,
+          // until fresh() — the wait the audit page already makes (#820).
+          // Without it the Authentication attempts tab is empty on every
+          // application whenever the sign-in was recorded elsewhere.
+          const one = req.query && req.query.application;
+          if (one === undefined || one === null || String(one) === '') {
+            send();
+            return;
+          }
+          audit.fresh().then(send).catch(function (e) {
+            log.debug("Caught in the management API applications " +
+                      "endpoint: " + ((e && e.message) || e));
+            next(e);
+          });
         } },
 
       // WHAT A CREATE MAY SAY, read off the service. Rule 7 asks for an
@@ -16362,10 +16674,10 @@ class AdminApi {
           //
           // Phase three documented ten of the twenty-nine actions and shipped.
           // Rule 7 says a control added to the console gets an operation in the
-          // same commit, and `tests/vendored/sts_admin_api_operations.js` is
+          // same commit, and `tests/protocol/sts_admin_api_operations.js` is
           // the check — it compares the actions this document DECLARES against
           // the ones the handler's refusal sentence NAMES, in both directions,
-          // because that sentence is what `tests/vendored/admin_api.js`'s
+          // because that sentence is what `tests/protocol/admin_api.js`'s
           // parity check reads to find out what a resource can do. Nineteen
           // actions the sentence named and the document did not meant nineteen
           // console controls that could have lost their operation with nothing
@@ -18163,7 +18475,7 @@ class AdminApi {
       // BECAUSE THE DOCUMENT IS DIFFERENT. `/admin/caep-sessions` is a page of
       // the console and had no operation naming it — the GET above mirrors
       // `/admin/caep`, and one operation cannot mirror two pages. That gap was
-      // invisible until the parity check in tests/vendored/admin_api.js named
+      // invisible until the parity check in tests/protocol/admin_api.js named
       // it.
       //
       // ONE OPERATION ANSWERS BOTH SHAPES, `?session=` deciding which, for the
@@ -19685,7 +19997,7 @@ class AdminApi {
           { action: 'export', operationId: 'exportPkiKeyPair',
             summary: 'Write a key pair out as PEM, DER, a JWK set or a PKCS#12',
             description: 'The same export `/admin/keys` uses ' +
-                         '(`common/vendored/key_material.js`), so a `.p12` ' +
+                         '(`common/crypto_impl/key_material.js`), so a `.p12` ' +
                          'from here imports identically into keytool, ' +
                          'OpenSSL, Windows and macOS.\n\nThe answer is ' +
                          'JSON with the bytes base64’d and named, and the ' +
@@ -20026,7 +20338,7 @@ class AdminApi {
           //
           // They arrived on `/admin/pki` and on `PKI_ACTIONS` and NOT here,
           // which is rule 7 unpaid — and the thing that caught it was not the
-          // parity check: `tests/vendored/sts_admin_api_operations.js` compares
+          // parity check: `tests/protocol/sts_admin_api_operations.js` compares
           // the refusal SENTENCE this endpoint prints for an unknown action
           // against the actions this document declares, and the sentence is
           // generated from `PKI_ACTIONS`. So the console had two controls whose
@@ -20319,7 +20631,7 @@ class AdminApi {
                          'anywhere — which is what makes it the durable half.',
             requestBodyRequired: false,
             // THE EMPTY EXAMPLE IS WHAT DRIVES IT.
-            // `tests/vendored/sts_admin_api_operations.js` replays every POST
+            // `tests/protocol/sts_admin_api_operations.js` replays every POST
             // that carries an example and then asserts that every documented
             // operation was driven by something — so an action taking no
             // parameters and declaring no example is covered by nothing and
@@ -23272,9 +23584,14 @@ class AdminApi {
         handler: function (req, res) {
           log.debug("Entering the management API policies action endpoint.");
           const body = parseBody(req);
+          // THE TOKEN SUBJECT IS THE AUDIT TRAIL (#966), the same subject
+          // the users action passes. `callerNameOf` reads the gate's
+          // verified subject, and '' stays '' when development's open API
+          // has no token.
           const result =
             adminActions.policiesAction(self.withAction(req, body),
-                                        { via: 'api' });
+                                        { via: 'api',
+                                          actor: self.callerNameOf(res) });
           if (!result.ok) {
             errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0060');
           }
@@ -24369,6 +24686,9 @@ class AdminApi {
       // THE SECRET PUSH DESTINATIONS (#221 P3): the register and its four
       // acts, the console's own (`mgmt-api/secret_destinations_api.ts`).
       ...loadSecretDestinationsApi().ROUTES,
+      // MONITORING → PASSKEYS (#942): who holds which passkey algorithm,
+      // its export and its Recount now (`mgmt-api/passkey_report_api.ts`).
+      ...loadPasskeyReportApi().ROUTES,
       // THE OUTBOUND SCIM CLIENTS (#552): Protocols → SCIM → Clients' twin,
       // the clients and their ten acts (`mgmt-api/scim_clients_api.ts`).
       ...loadScimClientsApi().ROUTES,
@@ -24576,7 +24896,7 @@ class AdminApi {
     // form still needs a management GET; for a drawing, that is the
     // operation its data comes from, and the row says so — `drawnOn` is
     // published in the index, where the parity check reads it
-    // (`tests/vendored/admin_api.js`), beside `mirrors`.
+    // (`tests/protocol/admin_api.js`), beside `mirrors`.
     const DRAWN_ON = {
       getDelegation: ['/admin/delegation/map', '/admin/delegation/chain'],
       getPermissions: ['/admin/delegation/allowed',
@@ -25315,6 +25635,31 @@ class AdminApi {
   }
 
   // ---------------------------------------------------------------------------
+  // WHO IS CALLING, AS A PERSON (#945): an administrator's passkey enrolment
+  // records the administrator — the verified token's subject, name and
+  // `sub` — and only a PERSON may be that: a client's own token names an
+  // application, and development's open API names nobody, so both answer
+  // null and the enrolment is refused (STS-AUTHN-0445).
+  // ---------------------------------------------------------------------------
+  /**
+   * Names the person whose access token this request was let in on.
+   *
+   * @param res - the response, whose locals the gate wrote
+   * @returns `{ username, sub }`, or null where the caller is no person
+   */
+  callerPersonOf(res): { username: string; sub: string } | null {
+    const { log } = this.deps;
+    log.debug("Entering AdminApi.callerPersonOf().");
+    const caller = res && res.locals && res.locals.apiCaller;
+    const out = caller && caller.kind === 'person' && caller.name
+      ? { username: String(caller.name), sub: String(caller.sub || '') }
+      : null;
+    log.debug("Leaving AdminApi.callerPersonOf(). " +
+              (out ? out.username : '(nobody)'));
+    return out;
+  }
+
+  // ---------------------------------------------------------------------------
   // THE CONSOLE'S GATE, AS THE TOKEN DECIDED IT (#446).
   //
   // The console's frame says who is signed in and with which roles, and
@@ -25719,6 +26064,71 @@ class AdminApi {
             claims = null;
           }
         }
+        // #501: a handle has no '.'. The default realm is tried first, as
+        // the JWT is, and the ambient realm only when that missed and the
+        // request is under a realm prefix. The first miss is not counted.
+        // A revoked row is refused here: the check below is "revoked OR
+        // the account is disabled", and a revokedAt-only row would pass it.
+        let opaqueAccess = false;
+        if (!claims && String(presented).indexOf('.') < 0) {
+          let found = realms.run(realms.get(realms.DEFAULT_ID),
+            function () {
+              return opaqueAccessToken.lookup(presented);
+            });
+          let heldRealm = realms.DEFAULT_ID;
+          if (found.kind === 'unknown' &&
+              realms.currentId() !== realms.DEFAULT_ID) {
+            found = opaqueAccessToken.lookup(presented);
+            heldRealm = realms.currentId();
+          }
+          if (found.kind === 'active' ||
+              (found.kind === 'inactive' && found.why === 'expired')) {
+            claims = found.claims;
+            opaqueAccess = true;
+            tokenRealm = heldRealm;
+          } else if (found.kind === 'inactive' &&
+                     found.why === 'revoked') {
+            errorCodes.mark(res, 'STS-API-0122');
+            res.set('WWW-Authenticate',
+                    'Bearer error="invalid_token", scope="' +
+                    scopesWanted + '"');
+            return self.sendJson(res, 401, { error: 'invalid_token',
+              errors: [
+                'That access token has been revoked, or the account it ' +
+                'was issued to is disabled.'] });
+          } else if (found.kind === 'unknown') {
+            const defIssues = realms.run(realms.get(realms.DEFAULT_ID),
+              function () {
+                return opaqueAccessToken.issuesOpaque();
+              });
+            const hereIssues = realms.currentId() === realms.DEFAULT_ID
+              ? defIssues : opaqueAccessToken.issuesOpaque();
+            if (defIssues || hereIssues) {
+              const limited = hereIssues
+                ? opaqueAccessToken.noteMiss(req)
+                : realms.run(realms.get(realms.DEFAULT_ID), function () {
+                    return opaqueAccessToken.noteMiss(req);
+                  });
+              if (limited) {
+                res.set('Retry-After', String(limited.retryAfterS));
+                res.set('WWW-Authenticate',
+                        'Bearer error="invalid_token", scope="' +
+                        scopesWanted + '"');
+                errorCodes.mark(res, 'STS-OAUTH-0983');
+                return self.sendJson(res, 429, { error: 'invalid_token',
+                  errors: [
+                    'Too many attempts. Wait ' + limited.retryAfterS +
+                    ' seconds and try again.'] });
+              }
+              errorCodes.mark(res, 'STS-OAUTH-0980');
+              res.set('WWW-Authenticate',
+                      'Bearer error="invalid_token", scope="' +
+                      scopesWanted + '"');
+              return self.sendJson(res, 401, { error: 'invalid_token',
+                errors: ['That access token is not valid.'] });
+            }
+          }
+        }
         if (!claims) {
           errorCodes.mark(res, 'STS-API-0002');
           res.set('WWW-Authenticate',
@@ -25775,18 +26185,24 @@ class AdminApi {
         // is signed with this key, so without the header an ID Token audienced
         // to a client named `…/admin-api` would be an administrative credential
         // here.
-        const typ = jwtAccessToken.typOf(presented);
-        if (!jwtAccessToken.isAccessTokenType(typ)) {
-          errorCodes.mark(res, 'STS-API-0082');
-          res.set('WWW-Authenticate',
-                  'Bearer error="invalid_token", scope="' + scopesWanted + '"');
-          return self.sendJson(res, 401, { error: 'invalid_token', errors: [
-            'RFC 9068 section 4: a JWT access token\'s typ header must be ' +
-            '"at+jwt", and this token\'s is ' +
-            (typ ? '"' + typ + '"' : 'absent') +
-            '. An ID Token or a refresh token is not an access token, and a ' +
-            'token minted before this service issued at+jwt is refused too; ' +
-            'ask /oauth2/token for a new one.'] });
+        // An opaque handle has no JOSE header (#501). Issuer and audience
+        // below still run.
+        if (!opaqueAccess) {
+          const typ = jwtAccessToken.typOf(presented);
+          if (!jwtAccessToken.isAccessTokenType(typ)) {
+            errorCodes.mark(res, 'STS-API-0082');
+            res.set('WWW-Authenticate', 'Bearer error="invalid_token", ' +
+                    'scope="' + scopesWanted + '"');
+            return self.sendJson(res, 401, { error: 'invalid_token',
+              errors: [
+                'RFC 9068 section 4: a JWT access token\'s typ header ' +
+                'must be "at+jwt", and this token\'s is ' +
+                (typ ? '"' + typ + '"' : 'absent') +
+                '. An ID Token or a refresh token is not an access ' +
+                'token, and a token minted before this service issued ' +
+                'at+jwt is refused too; ask /oauth2/token for a new one.']
+            });
+          }
         }
         if (tokenRealm === realms.DEFAULT_ID ? !self.issuerAccepted(claims, req)
                                              : !self.realmIssuerAccepted(claims,
@@ -26156,6 +26572,9 @@ class AdminApi {
           kind: effective.subject.kind === 'application' ? 'application'
                                                          : 'person',
           name: String(effective.subject.name || ''),
+          // The token's own subject (#945), which an administrator's
+          // passkey enrolment records beside the name.
+          sub: String(claims.sub || ''),
           clientId: String(claims.client_id || ''),
           realm: tokenRealm,
           // What the decision above was made on, for `GET /admin-api/me`:
@@ -26315,7 +26734,7 @@ class AdminApi {
         }
         // AN UNKNOWN ACTION WHERE THE HELPERS LEFT (#454): the handler's
         // refusal names every action it carries out, helpers included, and
-        // that sentence is what tests/vendored/admin_api.js reads for the
+        // that sentence is what tests/protocol/admin_api.js reads for the
         // parity — so on the management address it would name four actions
         // the document no longer declares there. The sentence is built here
         // from what this address still declares, in the handler's shape.
@@ -26381,6 +26800,10 @@ import realms = require('../common/realms');
 // the way the other resource servers here read them. A library that registers
 // no route; `oauth2.js` already required it, so this is a cache hit.
 import jwtAccessToken = require('../oauth-oidc/jwt_access_token');
+// Opaque access tokens (#501). A library oauth2 already required, so this
+// is a cache hit. The gate calls it directly: the token check is not a
+// dependency a test's stand-in deps object has to grow.
+import opaqueAccessToken = require('../oauth-oidc/opaque_access_token');
 // RFC 8705 section 3.1 (2026-09-13): a certificate-bound access token is
 // usable only on a connection made with its certificate — the check every
 // other resource server here makes through `dpop.presentedAccessToken()`. A

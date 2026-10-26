@@ -169,6 +169,11 @@
   "a2.operationalTitle": "An operational attribute. A search returns it only when it is asked for by name (RFC 4511 section 4.5.1.8) — this dump shows it always.",
   "a2.operational": "(operational)",
   "a2.tabOverview": "Overview",
+  "a2.tabAuthentications": "Authentication attempts",
+  "a2.authHeading": "Authentication attempts",
+  "a2.authNote": "Every attempt the audit log still holds that names this application: a credential accepted (<code>authentication</code>), a credential refused (<code>authentication.refused</code>), and a session refused for its sign-in (<code>session.refuse</code>, <code>session.refused</code>). A row names this application when its <code>client_id</code> or <code>application</code> is the identifier or one of its protocol names, exactly as spelled. The list is that log, at most {max} events in a process. {dropped, plural, =0 {None have been dropped.} other {# older events have been dropped.}}",
+  "a2.authEmpty": "No authentication attempt naming this application is in the audit log.",
+  "a2.authOpenLog": "the audit log",
   "a2.whatItIs": "What it is",
   "a2.colThing": "Thing",
   "a2.colValue": "Value",
@@ -826,5 +831,8 @@
   "launch.lead": "This link starts a {protocol} sign-in to this application here. The user portal’s <strong>Sign in</strong> link is the same URL, and it works anywhere else too — a bookmark, an intranet page, an email.",
   "launch.off": "It is <strong>off</strong> for this application, so the link is refused: set <code>{attribute}</code> to TRUE below, or turn on <code>{setting}</code> for the realm.",
   "launch.missing": "It cannot work yet: the application has no registered <code>{attributes}</code>, so a sign-in started here has nowhere to go.",
-  "launch.endpoint": "The protocol’s own endpoint, for a partner who wants it:"
+  "launch.endpoint": "The protocol’s own endpoint, for a partner who wants it:",
+  "relations.label": "How this differs from the other role settings",
+  "relations.appPerms": "<strong>The roles this application holds as a member.</strong> These are the same entries as the application rows under Who holds it on each role's page: granting here and adding the application on the Roles page write the same thing. The application's own tokens (<code>client_credentials</code>) carry these roles and may be issued what they authorize. For <code>SSF_READ</code> and <code>SSF_MANAGE</code>, membership also lets the people who sign in to this application be issued the scope, while they are in the role's group. This is not Roles a person must hold to use it, below, which only demands a role, and not a role's Clients that confer it, which lends a role to the people who sign in through a client.",
+  "relations.required": "<strong>A sign-in requirement, not a grant.</strong> This list is <code>appRequiredRole</code>, and each role's page shows this application under Applications that require it. A person must hold one of these roles, as a member or through a group, before anything is issued for this application. It adds no scope and no permission, and it does not make this application a member of the role. For this application's tokens to carry <code>ssf.read</code>, grant <code>SSF_READ</code> under Application permissions, above, and put the people in <code>ssf-read</code>."
 }

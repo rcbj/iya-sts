@@ -14,7 +14,7 @@
 // `common/certificate_details.ts` (the model),
 // `admin-core/certificate_views.ts` (which certificates may be opened) and
 // `admin-ui/certificate_dialog.ts` (the one renderer) — and
-// `tests/vendored/sts_admin_api_operations.js` drives the same answer over
+// `tests/protocol/sts_admin_api_operations.js` drives the same answer over
 // HTTP. What is here is what a request cannot choose:
 //
 //   A. THE FIELDS AGAINST OPENSSL. The model is built on pkijs; node's
@@ -51,7 +51,7 @@ const log = require('bunyan').createLogger({ name: 'certificate_details',
 // encoder — an IMPOSTOR when the subject is somebody else's.
 async function selfSigned(subject) {
   log.debug("Entering selfSigned().");
-  const x509 = require('../common/vendored/x509');
+  const x509 = require('../common/crypto_impl/x509');
   const pair = nodeCrypto.generateKeyPairSync('ec',
                                               { namedCurve: 'prime256v1' });
   const issued = await x509.issueCertificate({

@@ -56,7 +56,7 @@
 // OAuth's prefixed routes are three, so it would match `POST /admin/gnap` and
 // create an authorization server named "admin" on sight. A reserved first
 // segment falls through (`next()`) to whatever else would have answered — in
-// the worst case express's own 404, which `tests/vendored/sts_metadata.js`
+// the worst case express's own 404, which `tests/protocol/sts_metadata.js`
 // reads as unrouted, which it is.
 //
 // ---------------------------------------------------------------------------

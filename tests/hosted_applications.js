@@ -79,6 +79,8 @@ function childMain() {
       '/tls/sign-in': 'authn',
       '/tls/server-certificate': 'tls',
       '/portal/keys': 'portal',
+      '/report': 'report',
+      '/report-api/catalog': 'report',
       '/oauth2/token': 'oauth-oidc',
       '/finance/oauth2/token': 'oauth-oidc',
       '/finance/.well-known/openid-configuration': 'oauth-oidc',

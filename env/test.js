@@ -411,7 +411,7 @@ var config = {
   // --- ACME's refusal throttle ----------------------------------------------
   // THE SAME ONE-ADDRESS PROBLEM AS `security` ABOVE, ONE FAMILY ALONG
   // (2026-09-13). `acme.attemptsPerAddress` counts REFUSED ACME requests from
-  // one address and ships at 120 a window. `tests/vendored/sts_route_inputs.js`
+  // one address and ships at 120 a window. `tests/protocol/sts_route_inputs.js`
   // sends every route a malformed request on purpose, and measured against one
   // instance it leaves 132 refused ACME requests on the runner's address — so
   // the next job to read `/enroll/acme/directory`, `sts_metadata_anonymous.js`,

@@ -41,7 +41,7 @@
 //     which is a property of the source and of no request.
 //
 // The fourth — that the document a running service serves actually says this —
-// is asserted over HTTP by `tests/vendored/sts_admin_api_auth.js`, beside that
+// is asserted over HTTP by `tests/protocol/sts_admin_api_auth.js`, beside that
 // gate's other refusals. Two halves on purpose: this file goes red when the
 // builder stops describing the gate, that one when the served document and the
 // gate disagree.

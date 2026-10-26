@@ -728,7 +728,7 @@ const REALM_BUILDS_ITS_OWN = '. A TRUST REALM may carry it even so: a ' +
 // URIs, OID4VP's `dc sd-jwt` from a form-decoded `+`) both are listed.
 // ---------------------------------------------------------------------------
 
-// common/vendored/key_material.js's keyAlgIds(), in its order.
+// common/crypto_impl/key_material.js's keyAlgIds(), in its order.
 const PKI_KEY_ALGORITHMS = [
   'rsa-2048', 'rsa-3072', 'rsa-4096', 'ec-p256', 'ec-p384', 'ec-p521',
   'ed25519',
@@ -748,7 +748,7 @@ const PKI_KEY_ALGORITHMS = [
   'ml-kem-512', 'ml-kem-768', 'ml-kem-1024'
 ];
 
-// common/vendored/x509.js's SIG_ALGS — every id sigAlg() resolves — in that
+// common/crypto_impl/x509.js's SIG_ALGS — every id sigAlg() resolves — in that
 // module's SIG_ALG_ORDER. The two SHA-1 ids stay: the row's `onlyWhile`
 // makes them development-only, which is a different refusal from this one.
 const PKI_SIGNATURE_ALGORITHMS = [
@@ -2038,6 +2038,36 @@ const SETTINGS = [
                  'before the browser must prove its key again, and so how ' +
                  'long a copied pair of cookies keeps working. Never past ' +
                  'the session\'s own end. Read when a cookie is issued.' },
+  // #742. Off is today's host-only cookie. On, Domain is the registrable
+  // domain. Read where the instructions and the cookie are written.
+  { key: 'authn.deviceBoundIncludeSite', group: 'Web security',
+    label: 'Scope a bound session to the registrable domain',
+    env: 'STS_AUTHN_DEVICE_BOUND_INCLUDE_SITE', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'Off, the default, a device-bound session\'s cookie is ' +
+                 'host-only, which is what this service has always done, ' +
+                 'and scope.include_site is false. On, the instructions ' +
+                 'set include_site and the cookie\'s Domain is the ' +
+                 'registrable domain of the host that registered (the ' +
+                 'webauthn.rpId when that is a suffix of the host, ' +
+                 'otherwise the last two labels; an address, localhost ' +
+                 'or a single label is not widened). The debugger\'s ' +
+                 'public host and a custom listener\'s host under that ' +
+                 'domain are excluded. A debugger on the same host and ' +
+                 'another port cannot be excluded: cookies are not ' +
+                 'port-scoped. Realm path prefixes are the same origin.' },
+  // #740. Read at each issuance. Zero is legal: the wait has elapsed.
+  // There is no timer.
+  { key: 'authn.deviceBoundIssuanceWaitS', group: 'Web security',
+    label: 'How long issuance waits for a device binding (seconds)',
+    env: 'STS_AUTHN_DEVICE_BOUND_ISSUANCE_WAIT_S', type: 'int',
+    dflt: 60, min: 0, max: 86400, runtime: true,
+    description: 'How long an issuance that requires a device-bound ' +
+                 'session waits after registration was offered. Read at ' +
+                 'the issuance, not by a timer: past it the session\'s ' +
+                 'fact is timedout and the issuance is refused. Zero ' +
+                 'means the wait has already elapsed. A session that was ' +
+                 'never offered registration is not refused by the wait.' },
 
   // #345, #350: the sign-on session store's size cap, per realm. At the
   // cap a new row is refused. A subject's own cap is the next two rows.
@@ -2849,6 +2879,57 @@ const SETTINGS = [
                  'ceremony is as it was, and a post-quantum passkey already ' +
                  'registered goes on signing in; a new one cannot be ' +
                  'created.' },
+  // HOW `allowCredentials` IS BUILT WHILE A POST-QUANTUM PASSKEY IS
+  // REQUIRED AT SIGN-IN (#946), per realm; a passkey policy profile's row
+  // of the same name overrides it (`common/passkey_policy.ts`). `narrow` is
+  // what #718 built and stays the default.
+  { key: 'webauthn.postQuantumAllowCredentials', group: 'WebAuthn',
+    label: 'Passkeys a sign-in names where a post-quantum one is required',
+    path: 'webauthn.postQuantumAllowCredentials',
+    env: 'STS_WEBAUTHN_POST_QUANTUM_ALLOW_CREDENTIALS', type: 'enum',
+    enumValues: ['narrow', 'list-and-refuse'], dflt: 'narrow',
+    runtime: true,
+    description: 'Read only while the passkey policy requires a ' +
+                 'post-quantum passkey at sign-in (`postQuantumRequired`), ' +
+                 'and only where the selected profile\'s ' +
+                 '`postQuantumAllowCredentials` row is `realm`. `narrow` ' +
+                 '(the default) names only the person\'s post-quantum ' +
+                 '(ML-DSA) passkeys in the passkey step\'s ' +
+                 '`allowCredentials`, so a classical one is never offered — ' +
+                 'but a person whose device holds only their classical one ' +
+                 'sees the platform\'s own "no passkey found" message. ' +
+                 '`list-and-refuse` names every passkey they hold and ' +
+                 'refuses a classical one after the ceremony ' +
+                 '(STS-AUTHN-0356), with a page saying that the application ' +
+                 'requires a post-quantum passkey and where to add one. The ' +
+                 'trade-off: the person may pick a passkey that will be ' +
+                 'refused. Either way a person holding no post-quantum ' +
+                 'passkey is told before any ceremony.' },
+  // UPGRADING A CLASSICAL PASSKEY TO AN ML-DSA ONE (#939, rule 3ct), per
+  // realm, ON by default: a person's change to their own credential,
+  // proved by that credential, which leaves it as it was if anything
+  // fails. `authn/webauthn_policy.ts` reads it (`upgradeRefusal()`).
+  { key: 'webauthn.pqcUpgrade', group: 'WebAuthn',
+    label: 'Upgrade a classical passkey to a post-quantum one',
+    path: 'webauthn.pqcUpgrade',
+    env: 'STS_WEBAUTHN_PQC_UPGRADE', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'On (the default), a person may upgrade one of their ' +
+                 'classical passkeys to a post-quantum (ML-DSA) one on ' +
+                 '/portal/keys: they use the classical passkey once, to ' +
+                 'show it is theirs, and then create the new one, which is ' +
+                 'offered ML-DSA only. With ' +
+                 '`webauthn.pqcAlongsideClassical` on, the post-quantum ' +
+                 'passkey is ADDED in its own lane and the classical one ' +
+                 'is kept; with it off, the post-quantum passkey REPLACES ' +
+                 'the classical one in place, keeping its name and ' +
+                 'recording when it was upgraded and from which ' +
+                 'algorithm. The classical passkey is changed only once ' +
+                 'the new one has been verified, so a failed upgrade ' +
+                 'leaves it as it was. The new passkey meets every rule a ' +
+                 'registration does. Off, no passkey can be upgraded; a ' +
+                 'post-quantum passkey can still be registered beside a ' +
+                 'classical one where passkeys may be registered.' },
 
   { key: 'webauthn.userVerification', group: 'WebAuthn',
     label: 'User verification', path: 'webauthn.userVerification',
@@ -2946,6 +3027,33 @@ const SETTINGS = [
                  'attestation root, or a test root. A chain that reaches ' +
                  'one is TRUSTED. Nothing is shipped: empty trusts only ' +
                  'what the active MDS BLOB lists.' },
+
+  { key: 'webauthn.attestationEvidenceTsaUrl', group: 'WebAuthn',
+    label: 'Passkey evidence timestamp authority URL',
+    path: 'webauthn.attestationEvidenceTsaUrl',
+    env: 'STS_WEBAUTHN_ATTESTATION_EVIDENCE_TSA_URL', type: 'string',
+    dflt: '', runtime: true,
+    description: 'When set with the TSA trust anchors, verified passkey ' +
+      'attestations receive an RFC 4998 EvidenceRecord whose initial ' +
+      'ArchiveTimeStamp is an RFC 3161 token from this HTTPS timestamp ' +
+      'authority. Empty disables evidence recording.' },
+  { key: 'webauthn.attestationEvidenceTsaTrustAnchors', group: 'WebAuthn',
+    label: 'Passkey evidence TSA trust anchors (PEM)',
+    path: 'webauthn.attestationEvidenceTsaTrustAnchors',
+    env: 'STS_WEBAUTHN_ATTESTATION_TSA_TRUST_ANCHORS', type: 'string',
+    dflt: '', runtime: true,
+    description: 'PEM trust anchors used to verify the RFC 3161 token and ' +
+      'its TSA certificate path. Evidence recording requires both this ' +
+      'bundle and the timestamp authority URL.' },
+  { key: 'webauthn.attestationEvidenceHashAlgorithm', group: 'WebAuthn',
+    label: 'Passkey evidence hash-tree algorithm',
+    path: 'webauthn.attestationEvidenceHashAlgorithm',
+    env: 'STS_WEBAUTHN_ATTESTATION_HASH_ALGORITHM', type: 'enum',
+    enumValues: ['sha256', 'sha384', 'sha512'], dflt: 'sha256',
+    runtime: true,
+    description: 'Digest used by new RFC 4998 records. Raising this from ' +
+      'sha256 triggers RFC 4998 hash-tree renewal on the daily passkey ' +
+      'report recount, into a new ArchiveTimeStampChain.' },
 
   { key: 'webauthn.attestationAllowedAaguids', group: 'WebAuthn',
     label: 'Allowed authenticator models (AAGUIDs)',
@@ -3271,6 +3379,46 @@ const SETTINGS = [
                  'registered for one keeps its registration; with this off ' +
                  'its next encrypted response is refused, as for any ' +
                  'algorithm this realm does not offer.' },
+  // POST-QUANTUM JOSE SIGNING AS A SWITCH (2026-10-23, rcbj). The realm signs,
+  // publishes and verifies the ML-DSA, SLH-DSA and composite ML-DSA JWS
+  // algorithms by default, and a client whose JOSE library cannot parse an
+  // AKP key — the OpenID conformance suite's nimbus is one, and its JWS table
+  // lacks SLH-DSA and the composites — meets keys and list entries it cannot
+  // read. With this off the realm is a CLASSICAL JOSE issuer and verifier,
+  // which is what the conformance jobs' `-cl` twins run to prove compliance
+  // with no post-quantum exemption (`tests/CLAUDE.md`, *The classical
+  // twins*). One reader: `common/crypto.js`'s `postQuantumSigningOn()`, at
+  // request time; `common/helpers.js`'s three filters apply it to a list, a
+  // document and a JWK Set, and `signingKeyFor()` refuses the signature.
+  { key: 'keys.postQuantumSigning', group: 'Key material',
+    label: 'Post-quantum signing',
+    path: 'keys.postQuantumSigning', env: 'STS_KEYS_POST_QUANTUM_SIGNING',
+    type: 'bool', dflt: true, runtime: true,
+    description: 'Whether this realm signs, publishes and verifies the ' +
+                 'post-quantum and composite JWS algorithms (ML-DSA, ' +
+                 'SLH-DSA and the composite ML-DSA ones). **On by ' +
+                 'default.** Off: no post-quantum signing key is in ' +
+                 '`/oauth2/jwks` or the DID document (standby, pinned and ' +
+                 'signer-group keys included); no post-quantum algorithm is ' +
+                 'in any `*_alg_values_supported` or `*_alg_values` list of ' +
+                 'the discovery, authorization server, OpenID Federation, ' +
+                 'OpenID4VCI and OpenID4VP documents; a JWS signed with one ' +
+                 'is refused wherever this realm verifies one; a client may ' +
+                 'not register one; and a signature one would still need — ' +
+                 'for a client registered while this was on, or an HTTP ' +
+                 'message signature — is refused rather than made with a ' +
+                 'key nobody can fetch. It exists for clients and test ' +
+                 'suites whose JOSE libraries cannot parse an AKP key or do ' +
+                 'not know these algorithms, the OpenID conformance suite ' +
+                 'among them. **Not changed:** COSE (passkeys), XML ' +
+                 'signatures, TLS, certificate algorithms, the ML-KEM ' +
+                 'encryption keys (`keys.encryptionKemAlgs`), the ML-DSA ' +
+                 'alternative key a `hybrid-groups` certificate carries in ' +
+                 '`x5c` (the bare ML-DSA keys are dropped, the certificates ' +
+                 'are not reissued), and `oidfed.signingAlg`: a realm that ' +
+                 'names an ML-DSA federation key keeps signing its ' +
+                 'statements with it but refuses an ML-DSA statement it is ' +
+                 'asked to verify, so leave that setting classical here.' },
   { key: 'keys.kidFormat', group: 'Key material',
     label: 'Signed token kid format',
     path: 'keys.kidFormat', env: 'STS_KEYS_KID_FORMAT', type: 'enum',
@@ -4505,6 +4653,22 @@ const SETTINGS = [
                  'or ES256. A named authorization server may carry its own ' +
                  '(access_token_signing_alg).' },
 
+  // OPAQUE ACCESS TOKENS (#501). The default stays an RFC 9068 JWT. `opaque`
+  // makes a NEW access token a 256-bit handle: the claims stay here, the
+  // client carries only the handle, and a resource server resolves it by
+  // presenting it or by introspection. Refresh tokens stay nested JWTs and
+  // ID tokens stay JWTs. A token already issued keeps the shape it had.
+  { key: 'oauth2.accessTokenFormat', group: 'OAuth 2.0 / OIDC',
+    label: 'Access token format',
+    env: 'STS_OAUTH2_ACCESS_TOKEN_FORMAT', type: 'enum',
+    enumValues: ['jwt', 'opaque'],
+    dflt: 'jwt', runtime: true,
+    description: 'Whether a new access token is an RFC 9068 JWT (jwt, the ' +
+                 'default) or a 256-bit opaque handle (opaque). The claims ' +
+                 'of an opaque token stay in this realm; refresh tokens ' +
+                 'stay nested JWTs and ID tokens stay JWTs. A token already ' +
+                 'issued keeps the shape it was minted with.' },
+
   // JARM (#139, #143): how long a JWT-secured authorization response is good
   // for. JARM section 2.1 recommends a short-lived `exp`, ten minutes at most.
   { key: 'oauth2.jarmResponseLifetimeS', group: 'OAuth 2.0 / OIDC',
@@ -5647,6 +5811,18 @@ const SETTINGS = [
                  'family. Raise it for a deployment with more concurrently ' +
                  'live refresh tokens than this.' },
 
+  // How many opaque access tokens one realm remembers (#501). Expired rows
+  // are dropped first. A live one is not evicted: the mint is refused.
+  { key: 'oauth2.maxOpaqueAccessTokens', group: 'OAuth 2.0 / OIDC',
+    label: 'Opaque access tokens remembered (per realm)',
+    env: 'STS_OAUTH2_MAX_OPAQUE_ACCESS_TOKENS', type: 'int',
+    dflt: 100000, min: 16, max: 1000000, runtime: true,
+    description: 'How many opaque access tokens this realm remembers. ' +
+                 'When it is full, expired rows are dropped and a further ' +
+                 'mint is refused (STS-OAUTH-0979) rather than evicting a ' +
+                 'live token. Applies when oauth2.accessTokenFormat is ' +
+                 'opaque.' },
+
   { key: 'oauth2.signedMetadataAlgorithm', group: 'OAuth 2.0 / OIDC',
     label: 'Algorithm signed_metadata is signed with',
     env: 'STS_OAUTH2_SIGNED_METADATA_ALGORITHM', type: 'enum',
@@ -6468,7 +6644,7 @@ const SETTINGS = [
                  'issue signs a client assertion that somebody else\'s OAuth ' +
                  'library has to verify, and RS256 is the one algorithm ' +
                  'every such library has. The list is read from ' +
-                 'common/vendored/key_material.js — the module that ' +
+                 'common/crypto_impl/key_material.js — the module that ' +
                  'generates the key — so a value it does not know is refused ' +
                  'at the build with the list beside it.' },
   { key: 'pki.signatureAlgorithm', group: 'PKI',
@@ -6605,7 +6781,7 @@ const SETTINGS = [
                  'CA in its fifth year, and an operator who asked for a year ' +
                  'should get eleven months rather than an error about ' +
                  'arithmetic. The tiers\' own lifetimes come from the ' +
-                 'certificate profiles in common/vendored/x509.js — twenty ' +
+                 'certificate profiles in common/crypto_impl/x509.js — twenty ' +
                  'years, ten and five — and are overridable on the form and ' +
                  'by the three pki.*LifetimeYears rows below.' },
 
@@ -8440,7 +8616,9 @@ const SETTINGS = [
     description: 'Create application entries for this service\'s own ' +
                  'surfaces when it starts, under ou=applications with ' +
                  'everything else: the ADMIN CONSOLE at /admin, the USER ' +
-                 'PORTAL at /portal, the MANAGEMENT API at /admin-api, and — ' +
+                 'PORTAL at /portal, the REPORTS application at /report, ' +
+                 'the REPORT API at /report-api, the MANAGEMENT API at ' +
+                 '/admin-api, and — ' +
                  'while it is embedded — the protocol debugger\'s two ' +
                  'clients. They are seeded as FULL RFC 7591 registrations ' +
                  'rather than as labels: the console and the portal as ' +
@@ -14830,6 +15008,23 @@ const SETTINGS = [
                  'affects the other five categories, and /admin/metrics ' +
                  'counts every call either way.' },
 
+  // How far back Recent sign-ins looks (#955). The console's user tab
+  // lists the whole audit ring and does not read this: a person asking
+  // "was that me" wants a window, and an operator asking "what did this
+  // account try" wants every row the log still holds. Read per request,
+  // in the ambient realm, so each realm sets its own.
+  { key: 'audit.authenticationHistoryDays', group: 'Audit log',
+    label: 'Authentication history (days)',
+    env: 'AUDIT_AUTHENTICATION_HISTORY_DAYS', type: 'int',
+    dflt: 30, min: 1, max: 3650, runtime: true,
+    description: 'How many days of assessed sign-ins Recent sign-ins on ' +
+                 'the user portal lists for the signed-in person. Each ' +
+                 'realm sets its own, because the value is read in the ' +
+                 'ambient realm. The console\'s Authentication attempts ' +
+                 'tab on a person lists every attempt the audit log still ' +
+                 'holds, the whole log. The log\'s own cap can still drop ' +
+                 'older rows.' },
+
   // --- Delegation ----------------------------------------------------------
   //
   // ONE setting, and the absence of a second is deliberate.
@@ -17826,7 +18021,90 @@ const SETTINGS = [
     description: 'When the SERVICE, not a person, marks a credential ' +
                  'compromised or disables an account (risk scoring), also ' +
                  'mail every member of the realm\'s Admin Write roster that ' +
-                 'has an address.' }
+                 'has an address.' },
+  // -------------------------------------------------------------------------
+  // REPORTING (#956). Realm-overridable because none of these set
+  // perProcess. Read where the question is asked; zero is not a legal
+  // value on these rows, and the readers still do not write `|| default`.
+  // -------------------------------------------------------------------------
+  { key: 'report.syncMaxRows', group: 'Reporting',
+    label: 'Synchronous report row cap',
+    env: 'REPORT_SYNC_MAX_ROWS', type: 'int', dflt: 500,
+    min: 1, max: 10000, runtime: true,
+    description: 'The most rows a synchronous report may return. A larger ' +
+                 'limit is refused in sync mode and becomes a job in auto.' },
+  { key: 'report.syncMaxBytes', group: 'Reporting',
+    label: 'Synchronous report byte cap',
+    env: 'REPORT_SYNC_MAX_BYTES', type: 'int', dflt: 1000000,
+    min: 1024, max: 10000000, runtime: true,
+    description: 'The most bytes a synchronous report may return. A result ' +
+                 'over this is refused rather than sent in part.' },
+  { key: 'report.syncMaxMs', group: 'Reporting',
+    label: 'Synchronous report time cap (milliseconds)',
+    env: 'REPORT_SYNC_MAX_MS', type: 'int', dflt: 10000,
+    min: 100, max: 30000, runtime: true,
+    description: 'How long a synchronous report may run. Past this the ' +
+                 'call is refused rather than answered with a partial body.' },
+  { key: 'report.asyncMaxMs', group: 'Reporting',
+    label: 'Report job time cap (milliseconds)',
+    env: 'REPORT_ASYNC_MAX_MS', type: 'int', dflt: 120000,
+    min: 1000, max: 600000, runtime: true,
+    description: 'How long a report job may run. Past this the job fails ' +
+                 'rather than storing a partial result.' },
+  { key: 'report.asyncMaxRows', group: 'Reporting',
+    label: 'Report job row cap',
+    env: 'REPORT_ASYNC_MAX_ROWS', type: 'int', dflt: 100000,
+    min: 1, max: 1000000, runtime: true,
+    description: 'The most rows a report job may write. A query that asks ' +
+                 'for more is refused in every mode.' },
+  { key: 'report.asyncMaxBytes', group: 'Reporting',
+    label: 'Report job byte cap',
+    env: 'REPORT_ASYNC_MAX_BYTES', type: 'int', dflt: 32000000,
+    min: 1024, max: 256000000, runtime: true,
+    description: 'The most bytes a report job may store. A result over ' +
+                 'this fails the job rather than being truncated.' },
+  { key: 'report.pdfMaxRows', group: 'Reporting',
+    label: 'PDF report row cap',
+    env: 'REPORT_PDF_MAX_ROWS', type: 'int', dflt: 2000,
+    min: 1, max: 100000, runtime: true,
+    description: 'The most rows a PDF report may hold. A larger query is ' +
+                 'refused and asked to use CSV.' },
+  { key: 'report.pdfMaxPages', group: 'Reporting',
+    label: 'PDF report page cap',
+    env: 'REPORT_PDF_MAX_PAGES', type: 'int', dflt: 100,
+    min: 1, max: 1000, runtime: true,
+    description: 'The most pages a PDF report may hold. Past this the ' +
+                 'result is refused and asked to use CSV.' },
+  { key: 'report.maxConcurrentPerRealm', group: 'Reporting',
+    label: 'Report jobs running per realm',
+    env: 'REPORT_MAX_CONCURRENT_PER_REALM', type: 'int', dflt: 2,
+    min: 1, max: 32, runtime: true,
+    description: 'How many report jobs one realm may have running at once. ' +
+                 'A further submission is refused until one finishes.' },
+  { key: 'report.maxConcurrentPerSubject', group: 'Reporting',
+    label: 'Report jobs running per person',
+    env: 'REPORT_MAX_CONCURRENT_PER_SUBJECT', type: 'int', dflt: 1,
+    min: 1, max: 8, runtime: true,
+    description: 'How many report jobs one person may have running at once.' },
+  { key: 'report.artifactRetentionS', group: 'Reporting',
+    label: 'How long a report result is kept (seconds)',
+    env: 'REPORT_ARTIFACT_RETENTION_S', type: 'int', dflt: 86400,
+    min: 60, max: 31536000, runtime: true,
+    description: 'How long a finished report\'s bytes stay available to ' +
+                 'download. After this the result is gone.' },
+  { key: 'report.jobRetentionS', group: 'Reporting',
+    label: 'How long a report job row is kept (seconds)',
+    env: 'REPORT_JOB_RETENTION_S', type: 'int', dflt: 604800,
+    min: 60, max: 31536000, runtime: true,
+    description: 'How long a finished report job\'s row stays in the list. ' +
+                 'A job that is still running is not removed.' },
+  { key: 'report.usersGroup', group: 'Reporting',
+    label: 'Who may be issued report:use',
+    env: 'REPORT_USERS_GROUP', type: 'string', dflt: '',
+    runtime: true,
+    description: 'The directory group whose members may be issued ' +
+                 'report:use. Empty means only this realm\'s administrators ' +
+                 'may. report:admin is issued only to those administrators.' }
 ];
 
 // ---------------------------------------------------------------------------
@@ -18027,8 +18305,8 @@ const REALM_LISTENER_REPLACED = ' It was removed on 2026-10-07 (#472): a ' +
 const PASSKEY = ' decides it now — the passkey policy on Directory → ' +
   'Policies, per realm and inherited from the default realm — POST ' +
   '/admin-api/policies/save-passkey-policy, or the console. Usernameless ' +
-  'sign-in is off by default, and while it is off a security key is asked ' +
-  'for a discoverable credential.';
+  'sign-in is on by default (#910), and where a profile turns it off a ' +
+  'security key is asked for a discoverable credential.';
 
 // What #539's row says when it is still named.
 const LOCALE = ' decides it now — the locale policy on Directory → ' +
@@ -19705,7 +19983,7 @@ function describe(setting) {
     // WHETHER A REALM MAY CARRY IT, reported rather than left to be discovered
     // by a refusal. A management API that describes a setting as `editable`
     // and then refuses it under a realm prefix is telling half the truth, and
-    // it is the half a caller acts on: `tests/vendored/
+    // it is the half a caller acts on: `tests/protocol/
     // sts_admin_api_operations.js` walks this table for a runtime integer to
     // drive a realm override with, and picked `workers.count` (a setting
     // removed by #363) the day it was added — a setting a realm may not

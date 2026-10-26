@@ -85,10 +85,34 @@ only beside its own, and a refresh that ends one account's session leaves the
 others signed in.
 
 **A browser that does not support DBSC ignores the header** and keeps an
-ordinary session. `/admin/sessions` and the portal's Overview say whether a
-session is bound. The challenges and the bound cookie are MACs under a secret
-every node shares, so nothing about them is stored and every node accepts
-what another minted; each challenge is spent once for the whole cluster.
+ordinary session. A browser that declines or fails registration sends
+`Secure-Session-Skipped`. That is recorded on the session, and
+`/admin/sessions` and the portal's Overview say **binding skipped** with the
+reason. A header that is not a list of tokens is recorded and the session
+stays unbound.
+
+**`authn.deviceBoundIncludeSite`** (off by default) sets `scope.include_site`
+and widens the bound cookie's `Domain` to the registrable domain. Off, the
+cookie stays host-only. The debugger's public host and a custom listener's
+host under that domain are excluded. Realm paths are the same origin and need
+no site scope.
+
+**A passkey profile can require a bound session** (`deviceBoundRequired`),
+off by default, and the save is refused while `authn.deviceBoundSessions` is
+off. Issuance to that application waits while registration is still pending
+(`authn.deviceBoundIssuanceWaitS`, 60 seconds, read at the issuance, not by a
+timer) and is refused when the browser skipped registration or the wait has
+elapsed. A session that was never offered registration is not refused. A
+browser that has not been offered the header keeps an ordinary session.
+
+Federated device-bound sessions, where one origin's key is reused at
+another, are not implemented. The draft's well-known document does not yet
+describe one grammar.
+
+`/admin/sessions` and the portal's Overview say whether a session is bound.
+The challenges and the bound cookie are MACs under a secret every node
+shares, so nothing about them is stored and every node accepts what another
+minted; each challenge is spent once for the whole cluster.
 
 ### What the record holds
 

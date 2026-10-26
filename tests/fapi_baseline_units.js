@@ -27,7 +27,7 @@
 //      claim, reused while it is good, issued again before it runs out, and
 //      waited for when another process holds the claim.
 //
-// `tests/vendored/sts_fapi_baseline.js` holds the same rules over the wire.
+// `tests/protocol/sts_fapi_baseline.js` holds the same rules over the wire.
 // ===========================================================================
 
 const childProcess = require('child_process');

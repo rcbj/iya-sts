@@ -47,8 +47,8 @@ const personAssertions = require('../common/person_assertions');
 const samlGrant = require('../oauth-oidc/saml_assertion_grant');
 const assertionGrant = require('../oauth-oidc/assertion_grant');
 const errorCodes = require('../common/error_codes');
-const x509 = require('../common/vendored/x509');
-const keyMaterial = require('../common/vendored/key_material');
+const x509 = require('../common/crypto_impl/x509');
+const keyMaterial = require('../common/crypto_impl/key_material');
 // What fills `person_assertions.setDirectory()`. Without it every person is
 // "not storable" and every assertion below passes for the wrong reason.
 const ldap = require('../ldap/ldap_server');
@@ -57,7 +57,7 @@ const adminViews = require('../admin-core/admin_views');
 const admin = require('../admin-ui/admin');
 // This suite's own XML Signature, for `tests/saml_assertion_grant.js`'s reason:
 // a document built by the module that verifies it proves nothing.
-const signer = require('./vendored/saml_xmldsig.js');
+const signer = require('./protocol/saml_xmldsig.js');
 
 const log = require('bunyan').createLogger({ name: 'person_credentials',
   level: process.env.LOG_LEVEL || 'info' });

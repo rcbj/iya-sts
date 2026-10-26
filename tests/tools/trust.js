@@ -25,7 +25,7 @@
 //                         the runner's own process from inside it, which is why
 //                         this module's callers probe with
 //                         `rejectUnauthorized: false` instead.
-//   STS_SPKI_PIN          the browser jobs. tests/vendored/browser_flags.js
+//   STS_SPKI_PIN          the browser jobs. tests/protocol/browser_flags.js
 //                         already reads exactly this variable and turns it into
 //                         Chrome's --ignore-certificate-errors-spki-list. That
 //                         file is VENDORED from the parent project, whose

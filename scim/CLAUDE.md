@@ -251,7 +251,7 @@ into the LDAP directory, entry for entry, with **no store of its own**.
    copy of each fact" rule is for.
 
    What turned it up was a READER.
-   `tests/vendored/sts_directory_bulk_load_scim.js` builds every resource it
+   `tests/protocol/sts_directory_bulk_load_scim.js` builds every resource it
    sends out of the published mapping rather than out of a copy — a copy in a
    test would drift, and the drift would show up as five thousand creates
    quietly dropping an attribute, which no status code reports. To do that it
@@ -413,7 +413,7 @@ sessions ended, `active: true`) and holds the "not stated" rule directly.
 **By the root `CLAUDE.md`'s rule it belongs in the PARENT project's suite** —
 every assertion below is made by driving the running service over HTTP — and
 the parent now has one (`tests/scim_protocol.js`, which reads each write back
-through the directory); `tests/vendored/MANIFEST.js` does not copy it. What
+through the directory); `tests/protocol/MANIFEST.js` does not copy it. What
 runs here is in-process (`tests/scim_monitor.js`,
 `tests/ssf_spiffe_scim_hardening.js`, `tests/stable_subject.js` section E and
 the cluster jobs named below) plus the `local: true`
@@ -711,7 +711,7 @@ owns the rule.
 
 ## WHAT THE CONFORMANCE HARNESSES FOUND (#206, 2026-09-26)
 
-`tests/vendored/sts_scim_conformance.js` runs python-scim's scim2-tester and
+`tests/protocol/sts_scim_conformance.js` runs python-scim's scim2-tester and
 scim2/test-suite against `/scim/v2` (`tests/CLAUDE.md`, *The SCIM conformance
 harnesses*, has the tools and the exceptions); `tests/scim_conformance_fixes.js`
 holds each fix in process. What they found, and where each fix lives:
@@ -969,7 +969,7 @@ queued would have been dead-lettered at the send (`STS-SCIMC-0001`). The
 scheduled one already asked.
 
 **ONE SERVICE CAN BE ITS OWN SERVICE PROVIDER, AND THAT IS THE OVER-HTTP
-TEST** (`tests/vendored/sts_scim_client.js`, `local: true`): a client in one
+TEST** (`tests/protocol/sts_scim_client.js`, `local: true`): a client in one
 throwaway realm pushing into another realm's `/scim/v2`, with a
 client_credentials token from the target realm's token endpoint and the
 service's own anchor (the job's `NODE_EXTRA_CA_CERTS`) as the client's
@@ -988,7 +988,7 @@ cannot, and the job's failure says so.
 provider (Entra ID, Okta, a SaaS) — the in-process provider is written to
 RFC 7644, and interop beyond it is unproven; the two-cell behaviour over a
 real channel and routing index (`tests/scim_client_cells.js` stubs both;
-`tests/vendored/sts_cells_scim_client.js` is the `--modes=cells` job, not
+`tests/protocol/sts_cells_scim_client.js` is the `--modes=cells` job, not
 yet run when written);
 `web_scim_clients.ts`'s rendering (no in-process renderer test, unlike the
 console's older pages); the deliveries store across a restart and across two

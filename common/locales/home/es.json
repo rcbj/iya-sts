@@ -17,6 +17,9 @@
   "portalLabel": "El portal de usuario de esta instancia",
   "portalNote": "Las páginas de cuenta de quien las está viendo: cómo inicia sesión en este servicio, qué guarda sobre esa persona y dónde la conectará.",
   "portalNoRole": "No pide ningún rol, y esa es toda la diferencia con la consola de arriba: cada una de sus páginas trata de la persona que la está viendo, así que decir quién es usted es la única pregunta.",
+  "reportLabel": "Los informes de esta instancia",
+  "reportNote": "Los informes que una persona aquí puede ejecutar, y los resultados de los que ya ha ejecutado.",
+  "reportWho": "Un administrador puede abrirlo. Cualquier otra persona puede abrirlo solo como miembro del grupo de informes del dominio.",
   "signInProduct": "Le pide iniciar sesión, y esta instancia está en modo producto, así que la contraseña se comprueba con la cuenta.",
   "signInDevelopment": "Le pide iniciar sesión: cualquier nombre de usuario, y no se comprueba ninguna contraseña."
 }

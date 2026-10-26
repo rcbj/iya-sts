@@ -691,6 +691,22 @@
     "en": "eb2c0a8e31f615d9",
     "text": "裝置綁定工作階段所需的 cookie 在瀏覽器必須再次證明其金鑰之前的有效時間，也就是複製的一對 cookie 能繼續使用多久。絕不超過工作階段本身的結束時間。於簽發 cookie 時讀取。"
   },
+  "authn.deviceBoundIncludeSite|label": {
+    "en": "dfe9f9439467a7ed",
+    "text": "將綁定工作階段限定到可註冊網域"
+  },
+  "authn.deviceBoundIncludeSite|description": {
+    "en": "431c5a53f269b368",
+    "text": "關閉為預設。裝置綁定工作階段的 cookie 只屬於主機，這是此服務一直的做法，並且 scope.include_site 為 false。開啟後，指示設定 include_site，cookie 的 Domain 是完成註冊的主機的可註冊網域（當 webauthn.rpId 是該主機的後綴時用它，否則用最後兩個標籤；位址、localhost 或單個標籤不會放寬）。除錯器的公共主機以及該網域下自訂接聽器的主機被排除。同一主機、另一連接埠上的除錯器無法排除：cookie 不按連接埠區分。領域路徑前綴是同一來源。"
+  },
+  "authn.deviceBoundIssuanceWaitS|label": {
+    "en": "c379c77b9ef18c81",
+    "text": "核發等待裝置綁定的時長（秒）"
+  },
+  "authn.deviceBoundIssuanceWaitS|description": {
+    "en": "2562f13d1a8d0c51",
+    "text": "要求裝置綁定工作階段的核發，在提供註冊之後等待多久。在核發時讀取，而不是靠計時器：超過此時長，工作階段的事實為 timedout，核發被拒絕。零表示等待已經結束。從未被提供註冊的工作階段不會因這次等待而被拒絕。"
+  },
   "authn.maxSessions|label": {
     "en": "5fa1f6294f5a3dc8",
     "text": "每個領域的登入工作階段上限"
@@ -1103,6 +1119,22 @@
     "en": "e35e276b9d933828",
     "text": "開啟後，一個人可以同時持有傳統密碼金鑰與後量子（ML-DSA）密碼金鑰，在能同時建立兩者的驗證器上可放在同一裝置。每個密碼金鑰都在此人選擇的「通道」中建立：傳統通道要求去掉 ML-DSA 的 `webauthn.algorithms`（若一個不剩則為 `ES256` 與 `RS256`），後量子通道只要求 ML-DSA。每個通道都有自己的使用者識別碼，因此第二個密碼金鑰不會在驗證器上取代第一個，並有自己的排除清單；憑證管理工具以表明其演算法的名稱顯示後量子密碼金鑰——建立時為 `<username>+ml-dsa`，當此人的所有後量子密碼金鑰都使用同一演算法時為 `<username>+ml-dsa-65`（例如）——這個名稱從不用於登入。`webauthn.maxKeysPerPerson` 計入兩個通道。`webauthn.pqcOnly` 開啟時不能開啟。關閉時，每個儀式都與以前相同，已註冊的後量子密碼金鑰仍可登入；不能再建立新的。"
   },
+  "webauthn.postQuantumAllowCredentials|label": {
+    "en": "295b04bef9cf50bc",
+    "text": "要求後量子密碼金鑰時登入所列出的密碼金鑰"
+  },
+  "webauthn.postQuantumAllowCredentials|description": {
+    "en": "f34caf08dceeedd3",
+    "text": "僅在密碼金鑰原則要求登入時使用後量子密碼金鑰（`postQuantumRequired`）時讀取，且僅當所選設定檔的 `postQuantumAllowCredentials` 列為 `realm` 時。`narrow`（預設值）在密碼金鑰步驟的 `allowCredentials` 中只列出此人的後量子（ML-DSA）密碼金鑰，因此從不提供傳統密碼金鑰——但裝置上只存有其傳統密碼金鑰的人會看到平台自己的「找不到密碼金鑰」訊息。`list-and-refuse` 列出此人持有的每個密碼金鑰，並在儀式結束後拒絕傳統密碼金鑰（STS-AUTHN-0356），同時顯示一個頁面，說明該應用程式要求後量子密碼金鑰以及在哪裡新增。代價是：此人可能選擇一個將被拒絕的密碼金鑰。無論哪種方式，不持有任何後量子密碼金鑰的人都會在任何儀式之前得到告知。"
+  },
+  "webauthn.pqcUpgrade|label": {
+    "en": "1c2af00d33a75721",
+    "text": "將傳統密碼金鑰升級為後量子密碼金鑰"
+  },
+  "webauthn.pqcUpgrade|description": {
+    "en": "a77cd9a980262260",
+    "text": "開啟（預設）時，一個人可以在 /portal/keys 上將自己的一個傳統密碼金鑰升級為後量子（ML-DSA）密碼金鑰：先使用一次傳統密碼金鑰，以證明它屬於自己，然後建立新的，新的只提供 ML-DSA。`webauthn.pqcAlongsideClassical` 開啟時，後量子密碼金鑰被加入自己的通道，傳統密碼金鑰保留；關閉時，後量子密碼金鑰就地取代傳統密碼金鑰，保留其名稱，並記錄何時升級、從哪種演算法升級。傳統密碼金鑰只在新的通過驗證之後才改變，因此失敗的升級讓它保持原樣。新密碼金鑰滿足註冊所滿足的每一條規則。關閉時，任何密碼金鑰都不能升級；在允許註冊密碼金鑰的地方，後量子密碼金鑰仍可以註冊在傳統密碼金鑰旁邊。"
+  },
   "webauthn.userVerification|label": {
     "en": "8b134177fe992d91",
     "text": "使用者驗證"
@@ -1134,6 +1166,30 @@
   "webauthn.attestationTrustAnchors|description": {
     "en": "75ff97c509121fb5",
     "text": "證明憑證可鏈結至的根憑證，以 PEM 套件形式提供，與 FIDO Metadata Service 為各型號列出者「並用」——企業 TPM 背書 CA、廠商的根憑證、Android 或 Apple 證明根憑證，或測試用根憑證。到達其中之一的鏈結即為「受信任」。不隨附任何內容：空白表示只信任目前生效之 MDS BLOB 所列出者。"
+  },
+  "webauthn.attestationEvidenceTsaUrl|label": {
+    "en": "4dabd3df9187a34f",
+    "text": "密碼金鑰證據時間戳記機構 URL"
+  },
+  "webauthn.attestationEvidenceTsaUrl|description": {
+    "en": "7fa58ac004a9e2e4",
+    "text": "與 TSA 信任錨一起設定時，已驗證的密碼金鑰證明會收到一份 RFC 4998 EvidenceRecord，其最初的 ArchiveTimeStamp 是來自該 HTTPS 時間戳記機構的 RFC 3161 權杖。留空則關閉證據記錄。"
+  },
+  "webauthn.attestationEvidenceTsaTrustAnchors|label": {
+    "en": "8c29eb6dc36aa1a9",
+    "text": "密碼金鑰證據 TSA 信任錨（PEM）"
+  },
+  "webauthn.attestationEvidenceTsaTrustAnchors|description": {
+    "en": "7b20573a01a900a7",
+    "text": "用於驗證 RFC 3161 權杖及其 TSA 憑證路徑的 PEM 信任錨。證據記錄同時需要這組錨和時間戳記機構 URL。"
+  },
+  "webauthn.attestationEvidenceHashAlgorithm|label": {
+    "en": "8c886d89947bce4c",
+    "text": "密碼金鑰證據雜湊樹演算法"
+  },
+  "webauthn.attestationEvidenceHashAlgorithm|description": {
+    "en": "ea9f111d1308b528",
+    "text": "新的 RFC 4998 記錄使用的摘要。把它從 sha256 提高會在每日密碼金鑰報告重新計數時觸發 RFC 4998 雜湊樹續期，進入一條新的 ArchiveTimeStampChain。"
   },
   "webauthn.attestationAllowedAaguids|label": {
     "en": "1d32f2ee4864d344",
@@ -1274,6 +1330,14 @@
   "keys.offerKemEncryption|description": {
     "en": "16bd897eb9c3284a",
     "text": "在此領域加密「給」用戶端或錢包所持金鑰的場合，是否提供 ML-KEM 與 HPKE JWE 演算法（#82——草案，請參閱 keys.encryptionKemAlgs）：在 `userinfo_encryption_alg_values_supported`、`id_token_encryption_alg_values_supported`、`authorization_encryption_alg_values_supported`（JARM）、`introspection_encryption_alg_values_supported` 以及 OpenID4VCI 簽發者的 `credential_response_encryption` 中公告，並在用戶端註冊或錢包指名時接受。**預設為關閉，由管理員選擇：**這些演算法出自 Internet-Draft，而嘗試每個公告演算法的用戶端或一致性測試套件會碰上它不認識的演算法。已為其中之一註冊的用戶端會保留其註冊；此設定關閉時，其下一個加密回應會被拒絕，如同此領域不提供的任何演算法。"
+  },
+  "keys.postQuantumSigning|label": {
+    "en": "34883416ca94e446",
+    "text": "後量子簽章"
+  },
+  "keys.postQuantumSigning|description": {
+    "en": "68ffd5da182ec911",
+    "text": "此領域是否簽署、發布並驗證後量子與複合 JWS 演算法（ML-DSA、SLH-DSA 以及複合 ML-DSA 演算法）。**預設為開啟。**關閉時：`/oauth2/jwks` 與 DID 文件中沒有任何後量子簽章金鑰（包括待命、釘選與簽署者群組金鑰）；探索文件、授權伺服器、OpenID Federation、OpenID4VCI 與 OpenID4VP 文件的任何 `*_alg_values_supported` 或 `*_alg_values` 清單中都沒有後量子演算法；以其中之一簽署的 JWS 在此領域驗證 JWS 的任何地方都會被拒絕；用戶端不能註冊其中之一；而仍需要其中之一的簽章——此設定開啟期間註冊的用戶端，或 HTTP 訊息簽章——會被拒絕，而不是用一把無人能取得的金鑰簽署。它是為 JOSE 程式庫無法解析 AKP 金鑰或不認識這些演算法的用戶端與測試套件而設，OpenID 一致性測試套件即為其一。**不受影響：**COSE（通行金鑰）、XML 簽章、TLS、憑證演算法、ML-KEM 加密金鑰（`keys.encryptionKemAlgs`）、`hybrid-groups` 憑證在 `x5c` 中攜帶的 ML-DSA 替代金鑰（單獨的 ML-DSA 金鑰會被移除，憑證不會重新簽發），以及 `oidfed.signingAlg`：指名 ML-DSA 聯盟金鑰的領域仍以它簽署自己的聲明，卻會拒絕要求它驗證的 ML-DSA 聲明，因此請在此將該設定維持為傳統演算法。"
   },
   "keys.kidFormat|label": {
     "en": "67642fcf21c7ca50",
@@ -1883,6 +1947,14 @@
     "en": "e1cb6b236d5adc8b",
     "text": "簽署存取權杖（以及重新整理權杖）所用的 JWS 演算法，由此領域對應該演算法的金鑰簽署——每把金鑰都發佈於 JWKS。default 為 RS256，在 FAPI 1.0 Advanced 下為 PS256，該設定檔也會拒絕 PS256 或 ES256 以外的任何演算法。具名的授權伺服器可帶有自己的值（access_token_signing_alg）。"
   },
+  "oauth2.accessTokenFormat|label": {
+    "en": "c7e15a626ed4371b",
+    "text": "存取權杖格式"
+  },
+  "oauth2.accessTokenFormat|description": {
+    "en": "74504b84130dea54",
+    "text": "新的存取權杖是 RFC 9068 JWT（jwt，預設）還是 256 位元不透明控制代碼（opaque）。不透明權杖的宣告留在此領域；重新整理權杖仍是巢狀 JWT，ID 權杖仍是 JWT。已經簽發的權杖保持其簽發時的形態。"
+  },
   "oauth2.jarmResponseLifetimeS|label": {
     "en": "28259a88563d949d",
     "text": "JARM 回應有效期（秒）"
@@ -2354,6 +2426,14 @@
   "oauth2.maxRefreshTokenFamilies|description": {
     "en": "331485a9a3ff827c",
     "text": "RFC 9700 模式為輪替與重送偵測追蹤多少個重新整理權杖。已滿時，先遺忘「已到期」的，其次是「已輪替」的（已被撤銷，因此重送它們仍會被拒絕——失去的是該重送原本會觸發的整個家族撤銷），最後才是最舊的仍有效者，並發出警告。被遺忘的仍有效權杖仍可運作；其下一次輪替會開始一個新家族。若部署中同時有效的重新整理權杖多於此數，請調高此值。"
+  },
+  "oauth2.maxOpaqueAccessTokens|label": {
+    "en": "a0a9d2a5af677a1f",
+    "text": "記住的不透明存取權杖（每個領域）"
+  },
+  "oauth2.maxOpaqueAccessTokens|description": {
+    "en": "19042efe72e28cc6",
+    "text": "此領域記住多少個不透明存取權杖。存滿時先丟掉過期的列，再拒絕繼續簽發（STS-OAUTH-0979），而不是逐出一個仍有效的權杖。當 oauth2.accessTokenFormat 為 opaque 時適用。"
   },
   "oauth2.signedMetadataAlgorithm|label": {
     "en": "71fb31f9a62ec657",
@@ -3024,8 +3104,8 @@
     "text": "預設 CA 金鑰演算法"
   },
   "pki.keyAlgorithm|description": {
-    "en": "763204ceb3af08e6",
-    "text": "表單未指定時，新憑證授權單位以哪種金鑰演算法建置：rsa-2048、rsa-3072、rsa-4096、ec-p256、ec-p384、ec-p521 或 ed25519，或後量子 ID 之一（ML-DSA、SLH-DSA、複合演算法與 ML-KEM——後者無法簽署，因此只能作為主體金鑰，絕不能作為授權單位的金鑰）。預設為 RSA 2048，因為此階層存在的目的是簽發葉憑證，而葉憑證所簽署的用戶端斷言必須由別人的 OAuth 程式庫驗證，RS256 是每個這類程式庫都具備的唯一演算法。清單讀取自 common/vendored/key_material.js——產生金鑰的模組——因此它不認得的值會在建置時被拒絕，並在旁列出清單。"
+    "en": "00e61f4da7498a62",
+    "text": "表單未指定時，新憑證授權單位以哪種金鑰演算法建置：rsa-2048、rsa-3072、rsa-4096、ec-p256、ec-p384、ec-p521 或 ed25519，或後量子 ID 之一（ML-DSA、SLH-DSA、複合演算法與 ML-KEM——後者無法簽署，因此只能作為主體金鑰，絕不能作為授權單位的金鑰）。預設為 RSA 2048，因為此階層存在的目的是簽發葉憑證，而葉憑證所簽署的用戶端斷言必須由別人的 OAuth 程式庫驗證，RS256 是每個這類程式庫都具備的唯一演算法。清單讀取自 common/crypto_impl/key_material.js——產生金鑰的模組——因此它不認得的值會在建置時被拒絕，並在旁列出清單。"
   },
   "pki.signatureAlgorithm|label": {
     "en": "43cdf39e69d6fdd4",
@@ -3064,8 +3144,8 @@
     "text": "簽發之金鑰組的預設有效期（天）"
   },
   "pki.leafLifetimeDays|description": {
-    "en": "b55ab0b2f1f1f04b",
-    "text": "表單未指定有效期時，簽發給應用程式的簽署憑證有效多久。若會超過 Issuing CA 本身的到期時間，則會被「截短」至該時間，而不是被拒絕：常見原因是五年期的 Issuing CA 已進入第五年，要求一年的營運者應該得到十一個月，而不是一則關於算術的錯誤。各層級本身的有效期來自 common/vendored/x509.js 中的憑證設定檔——二十年、十年與五年——可在表單上以及由下方三個 pki.*LifetimeYears 列覆寫。"
+    "en": "028d5b5d730c9d23",
+    "text": "表單未指定有效期時，簽發給應用程式的簽署憑證有效多久。若會超過 Issuing CA 本身的到期時間，則會被「截短」至該時間，而不是被拒絕：常見原因是五年期的 Issuing CA 已進入第五年，要求一年的營運者應該得到十一個月，而不是一則關於算術的錯誤。各層級本身的有效期來自 common/crypto_impl/x509.js 中的憑證設定檔——二十年、十年與五年——可在表單上以及由下方三個 pki.*LifetimeYears 列覆寫。"
   },
   "pki.rootLifetimeYears|label": {
     "en": "72e3da975d05b214",
@@ -4148,8 +4228,8 @@
     "text": "將主控台與此 API 預先建立為應用程式"
   },
   "applications.seedInternal|description": {
-    "en": "7092a96534fcb0ca",
-    "text": "在啟動時為此服務自己的介面建立應用程式項目，與其他項目一起位於 ou=applications 下：/admin 的「管理主控台」、/portal 的「使用者入口網站」、/admin-api 的「管理 API」，以及——在嵌入時——協定除錯工具的兩個用戶端。它們以「完整」的 RFC 7591 註冊預先建立，而不只是標籤：主控台與入口網站是使用授權碼授與的機密 OpenID Connect 依賴方，此 API 是使用 client_credentials 的機密 OAuth 用戶端，各自擁有密碼——因此它們是可以實際演練的用戶端，而不只是頁面上的列。主控台與入口網站「透過」其項目登入（/admin/callback 與 /portal/callback），因此關閉此設定或刪除其中一個，會讓該介面在項目再次存在之前無法讓任何人登入。此容器就是登錄——對它的 ldapmodify 就是一次組態變更。預設為開啟。只在識別碼未被使用時才預先建立，因此營運者刪除的項目在下次重新啟動前會保持刪除狀態。"
+    "en": "0dcb321977df8ef6",
+    "text": "服務啟動時，為本服務自己的介面建立應用程式項目，與其他所有內容一同放在 ou=applications 之下：位於 /admin 的管理主控台、位於 /portal 的使用者入口網站、位於 /report 的報表應用程式、位於 /report-api 的報表 API、位於 /admin-api 的管理 API，以及——在內嵌期間——協定偵錯工具的兩個用戶端。它們以完整的 RFC 7591 註冊方式植入，而不是標籤：主控台與入口網站是使用授權碼授與的機密 OpenID Connect 依賴方，此 API 是使用 client_credentials 的機密 OAuth 用戶端，每個都有一組秘密——因此它們是可以實際操作的用戶端，而不是頁面上的列。主控台與入口網站透過其項目登入（/admin/callback 與 /portal/callback），所以關閉此項或刪除其中一個，會讓該介面在項目重新存在之前無法讓任何人登入。此容器就是登錄庫——對它執行 ldapmodify 就是一項組態變更。預設為開啟。只在識別碼可用時才植入，因此已刪除其中一個的操作員，在下次重新啟動之前它會維持已刪除。"
   },
   "applications.seedInternal|restartReason": {
     "en": "ce6b237794aa9252",
@@ -7887,6 +7967,14 @@
     "en": "5525432b1abd613a",
     "text": "對協定端點的每次呼叫是否都產生稽核事件。預設開啟，因為「此服務被要求做的一切」正是記錄的重點——但它是迄今最吵雜的來源（每次 JWKS 輪詢與中繼資料擷取都是一筆），因此關閉它是觀察目錄或主控台的人取得可讀頁面的方式。它從不影響其他五個類別，而且 /admin/metrics 無論如何都會計算每次呼叫。"
   },
+  "audit.authenticationHistoryDays|label": {
+    "en": "bc611d1f003e751a",
+    "text": "驗證歷程（天）"
+  },
+  "audit.authenticationHistoryDays|description": {
+    "en": "4270a8167905dee9",
+    "text": "使用者入口網站上的「最近的登入」為已登入的人列出多少天已評估的登入。每個領域各自設定，因為該值在目前領域中讀取。主控台上某人的「驗證嘗試」分頁列出稽核日誌仍保存的每一次嘗試，即整份日誌。日誌自身的上限仍可能丟掉更早的列。"
+  },
   "delegation.maxRecords|label": {
     "en": "25d78cc6c84e920b",
     "text": "保存的最大委派行為數"
@@ -10038,6 +10126,110 @@
   "mail.notifyAdministrators|description": {
     "en": "bd3ae7ff26663b42",
     "text": "當是「服務」而非人員將認證標記為遭入侵或停用帳戶時（風險評分），也寄信給該領域 Admin Write 名冊中每位有位址的成員。"
+  },
+  "report.syncMaxRows|label": {
+    "en": "77fdb27c30eb4bf8",
+    "text": "同步報表列數上限"
+  },
+  "report.syncMaxRows|description": {
+    "en": "563c41bbaffd74bb",
+    "text": "同步報表最多可傳回的列數。較大的上限在 sync 模式下會被拒絕，在 auto 模式下則變成一項工作。"
+  },
+  "report.syncMaxBytes|label": {
+    "en": "f975fe6e57bfae86",
+    "text": "同步報表位元組上限"
+  },
+  "report.syncMaxBytes|description": {
+    "en": "e7c9e919bd0ac8ea",
+    "text": "同步報表最多可傳回的位元組數。超過此值的結果會被拒絕，而不是只送出一部分。"
+  },
+  "report.syncMaxMs|label": {
+    "en": "ac021c892bcfc370",
+    "text": "同步報表時間上限（毫秒）"
+  },
+  "report.syncMaxMs|description": {
+    "en": "f6ab877e4526a9f9",
+    "text": "同步報表可執行的時間長度。超過後呼叫會被拒絕，而不是以不完整的內容回應。"
+  },
+  "report.asyncMaxMs|label": {
+    "en": "f0c5ac5e9884050c",
+    "text": "報表工作時間上限（毫秒）"
+  },
+  "report.asyncMaxMs|description": {
+    "en": "45c7c3ad19fc3c4a",
+    "text": "報表工作可執行的時間長度。超過後工作會失敗，而不是儲存不完整的結果。"
+  },
+  "report.asyncMaxRows|label": {
+    "en": "8aca969304d23655",
+    "text": "報表工作列數上限"
+  },
+  "report.asyncMaxRows|description": {
+    "en": "e5dceb18ca4c26a4",
+    "text": "報表工作最多可寫入的列數。要求更多的查詢在任何模式下都會被拒絕。"
+  },
+  "report.asyncMaxBytes|label": {
+    "en": "470a53d032622764",
+    "text": "報表工作位元組上限"
+  },
+  "report.asyncMaxBytes|description": {
+    "en": "91aac7df1ff51b42",
+    "text": "報表工作最多可儲存的位元組數。超過此值的結果會使工作失敗，而不是被截斷。"
+  },
+  "report.pdfMaxRows|label": {
+    "en": "5cf679421e7b7bf3",
+    "text": "PDF 報表列數上限"
+  },
+  "report.pdfMaxRows|description": {
+    "en": "3b855ef0848c4ad4",
+    "text": "PDF 報表最多可包含的列數。較大的查詢會被拒絕，並要求改用 CSV。"
+  },
+  "report.pdfMaxPages|label": {
+    "en": "050231b3a1524a4b",
+    "text": "PDF 報表頁數上限"
+  },
+  "report.pdfMaxPages|description": {
+    "en": "3b065500b4a246a3",
+    "text": "PDF 報表最多可包含的頁數。超過後結果會被拒絕，並要求改用 CSV。"
+  },
+  "report.maxConcurrentPerRealm|label": {
+    "en": "2e8e9a195cac9a4c",
+    "text": "每個領域執行中的報表工作數"
+  },
+  "report.maxConcurrentPerRealm|description": {
+    "en": "7a252c3307b54d2a",
+    "text": "一個領域可同時執行的報表工作數。在其中一項完成之前，進一步的提交會被拒絕。"
+  },
+  "report.maxConcurrentPerSubject|label": {
+    "en": "3533626b8e0a8d15",
+    "text": "每位人員執行中的報表工作數"
+  },
+  "report.maxConcurrentPerSubject|description": {
+    "en": "525965a5866fed18",
+    "text": "一位人員可同時執行的報表工作數。"
+  },
+  "report.artifactRetentionS|label": {
+    "en": "ae014cb5ae4ea837",
+    "text": "報表結果保留時間（秒）"
+  },
+  "report.artifactRetentionS|description": {
+    "en": "c1e0935d871842f4",
+    "text": "已完成報表的位元組可供下載的時間長度。之後結果即消失。"
+  },
+  "report.jobRetentionS|label": {
+    "en": "117aad13b6fa172e",
+    "text": "報表工作列保留時間（秒）"
+  },
+  "report.jobRetentionS|description": {
+    "en": "dfada581a8c28ca3",
+    "text": "已完成報表工作的列留在清單中的時間長度。仍在執行的工作不會被移除。"
+  },
+  "report.usersGroup|label": {
+    "en": "21554dfaa265b36f",
+    "text": "誰可以獲簽發 report:use"
+  },
+  "report.usersGroup|description": {
+    "en": "28068508e0655509",
+    "text": "其成員可獲簽發 report:use 的目錄群組。留空表示只有此領域的管理員可以。report:admin 只簽發給這些管理員。"
   },
   "listenerMain.minVersion|label": {
     "en": "6470c151e28a9ab3",

@@ -21,7 +21,7 @@
 // The counterpart rule is in admin_api.ts: an /admin control gets an /admin-api
 // operation in the same commit. That one cannot be enforced by construction —
 // nothing can see a form appear on a page — so it is asserted by this
-// repository's own tests/vendored/admin_api.js (a `local: true` job) instead,
+// repository's own tests/protocol/admin_api.js (a `local: true` job) instead,
 // which walks the console's own NAV and action lists and fails on a page or an
 // action with no operation.
 //
@@ -1010,7 +1010,7 @@ const SETTINGS_BLOCK = openObject(
 //
 // Copied instead, this would be the pair of schemas that disagree about
 // `attributeCatalogue` within a month — and this repository's
-// tests/vendored/admin_api.js checks each documented property against a LIVE
+// tests/protocol/admin_api.js checks each documented property against a LIVE
 // reply, so
 // the disagreement would surface as a test failure naming a property rather
 // than as anything pointing here.
@@ -5646,8 +5646,11 @@ const SCHEMAS = {
   DelegationList: openObject(
     'Who acted on whose behalf, newest first, filtered and paged — plus the ' +
     'distinct chains among the match and the configured policy behind the ' +
-    'Kerberos ones.\n\nWalk it with `seq` rather than with `page`: acts are ' +
-    'still being recorded while you page.',
+    'Kerberos ones.\n\nResume by `at`, not by `seq` or by `page` (#465). ' +
+    '`seq` is unique across every process and never reused, and it rises ' +
+    'within each one, but each worker thread numbers from a block of its ' +
+    'own, so the numbers are not one order. "Everything after N" misses a ' +
+    'later act another worker recorded under a lower number.',
     Object.assign({
       held: { type: 'integer',
               description: 'Acts currently held, across every process in ' +
@@ -5682,8 +5685,19 @@ const SCHEMAS = {
                                  'POST /admin-api/config/set.' },
       matched: { type: 'integer' },
       shown: { type: 'integer' },
-      oldestSeq: { type: 'integer' },
-      newestSeq: { type: 'integer' },
+      oldestSeq: {
+        type: 'integer',
+        description: 'The sequence number of the oldest act held, by ' +
+                     'time. Unique across every process and never reused, ' +
+                     'rising within each one; not one order across them, ' +
+                     'so a reader resumes by `at` (#465).'
+      },
+      newestSeq: {
+        type: 'integer',
+        description: 'The sequence number of the newest act held, by ' +
+                     'time. Not a high-water mark: a later act on another ' +
+                     'worker can carry a lower number (#465).'
+      },
       byType: openObject('How many held acts used each mechanism. EVERY ' +
                          'mechanism appears, including the ones at zero, ' +
                          'because "does this server do RBCD" is otherwise ' +
@@ -5912,10 +5926,14 @@ const SCHEMAS = {
 
   AuditList: openObject(
     'What happened here, newest first, filtered and paged. HISTORY where the ' +
-    'rest of this API is STATE.\n\nWalk it with `seq` rather than with ' +
-    '`page`: events are still being recorded while you page, so page 2 taken ' +
-    'a second after page 1 can repeat a row that shifted onto it. The ' +
-    'sequence number cannot do that.',
+    'rest of this API is STATE.\n\nResume by `at`, not by `seq` or by ' +
+    '`page` (#465). `seq` is unique across every process and never reused, ' +
+    'and it rises within each one, but each worker thread numbers from a ' +
+    'block of its own, so the numbers are not one order. "Everything after ' +
+    'N" misses a later event another worker recorded under a lower number. ' +
+    'Page 2 taken a second after page 1 can repeat a row that shifted onto ' +
+    'it; `seq`, never reused, cannot. `dropped` is how many the cap ' +
+    'discarded; a gap in the numbers is not that count.',
     Object.assign({
       held: { type: 'integer',
               description: 'Events currently in the log.' },
@@ -5951,7 +5969,9 @@ const SCHEMAS = {
       },
       newestSeq: { type: 'integer',
                    description: 'The sequence number of the newest event ' +
-                                'held.' },
+                                'held, by time. Not a high-water mark: a ' +
+                                'later event on another worker can carry a ' +
+                                'lower number (#465).' },
       byCategory: openObject('How many held events are in each category.', {}),
       byOutcome: openObject('How many held events had each outcome.', {}),
       byAction: openObject('How many held events had each action. Only ' +

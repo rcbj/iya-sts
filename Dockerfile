@@ -4,8 +4,12 @@
 # iya-sts, IYA STS: every protocol family README.md lists, in one small Node
 # service. See README.md.
 #
-# Pinned to Node 24.16.0 via nvm rather than an official node image, which is what
-# the project this was extracted from does for all of its services.
+# Pinned to Node 24.22.1 via nvm rather than an official node image, which is
+# what the project this was extracted from does for all of its services.
+# 24.22.1 is the 21 October 2026 security release of the 24 line. It fixes
+# CVE-2026-111497, an out-of-bounds write in the bundled Brotli decoder
+# (HTTP2Shell / Node2Shell), plus the other issues in that release.
+# End-of-life Node lines get no fix, so the pin stays on 24.
 
 # ---------------------------------------------------------------------------
 # THE EMBEDDED PROTOCOL DEBUGGER'S BUILT TREE (2026-09-13), TAKEN FROM AN IMAGE
@@ -53,7 +57,7 @@ FROM ${DEBUGGER_IMAGE} AS debugger
 # **AN OFFICIAL NODE IMAGE, UNLIKE THE FINAL STAGE**, which pins node through
 # nvm for the parent project's reason (the header). Nothing from this stage
 # runs: it only produces files, `tsc` is a native binary whose output does not
-# depend on the node beside it, and the version is still 24.16.0.
+# depend on the node beside it, and the version is still 24.22.1.
 #
 # **AND SHIPPED WITHOUT ITS COMMENTS (#365, 2026-09-30)**: `--strip` also
 # takes the comments out of every `.js` left in the tree, compiled or written
@@ -70,7 +74,7 @@ FROM ${DEBUGGER_IMAGE} AS debugger
 # comment stripper uses). Both `node_modules` are
 # removed at the end, so the COPY below cannot replace the final stage's own.
 # ---------------------------------------------------------------------------
-FROM node:24.16.0-bookworm-slim AS typescript
+FROM node:24.22.1-bookworm-slim AS typescript
 WORKDIR /usr/src/sts
 # A C COMPILER, IN THIS STAGE ONLY (#40, 2026-09-21): `build-native.sh`
 # compiles the one native module, spiffe/native/peercred.c (SO_PEERCRED and a
@@ -122,7 +126,7 @@ RUN apt-get -y install curl \
 
 # Install NVM
 ENV NVM_DIR /usr/local/nvm
-ENV NODE_VERSION=24.16.0
+ENV NODE_VERSION=24.22.1
 RUN mkdir -p ${NVM_DIR}
 RUN set -o pipefail && curl -fsSL --retry 5 --retry-all-errors --retry-delay 10 https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.5/install.sh | bash
 
@@ -192,7 +196,7 @@ RUN npm install --omit=dev && npm cache clean --force
 # that does not start rather than a degraded feature, which is the reason to be
 # sure they are here:
 #
-#   common/vendored/contexts  the JSON-LD contexts bbs2023.js loads at module
+#   common/crypto_impl/contexts  the JSON-LD contexts bbs2023.js loads at module
 #                             scope. They are a SIBLING of that module because it
 #                             is a byte-identical copy of the parent project's
 #                             and resolves path.join(__dirname, 'contexts') — so

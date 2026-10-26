@@ -50,8 +50,8 @@ async function inProcess(t) {
   require('../common/i18n');
   const support = require('../common/pqc_support');
   const pqJose = require('../common/pq_jose');
-  const pqcX509 = require('../common/vendored/pqc_x509');
-  const x509 = require('../common/vendored/x509');
+  const pqcX509 = require('../common/crypto_impl/pqc_x509');
+  const x509 = require('../common/crypto_impl/x509');
   const keystore = require('../common/keystore');
   const pki = require('../common/pki');
   const realms = require('../common/realms');

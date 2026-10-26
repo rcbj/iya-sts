@@ -25,7 +25,7 @@
 //      a format left out cannot answer;
 //   5. THE PARENT PROJECT'S WALLET SHAPES: a Key Binding JWT and a VP JWT
 //      built exactly as `client/src/sd_jwt_vp.js` builds them, signed through
-//      the VENDORED `tests/vendored/jws.js` that wallet signs with, sign in;
+//      the VENDORED `tests/protocol/jws.js` that wallet signs with, sign in;
 //      its `ldp_vc` envelope — a bare bbs-2023 derived proof, no holder proof
 //      at all — is refused by name.
 //
@@ -283,7 +283,7 @@ function childMain() {
     // here byte for byte. Both are built with that module below, so this is
     // the parent wallet's signing code and its exact payloads.
     // ==================================================================
-    const vendoredJws = require(ROOT + '/tests/vendored/jws.js');
+    const vendoredJws = require(ROOT + '/tests/protocol/jws.js');
     const parentKey = w.holderKey();
     const parentCred = await w.issue('fmt-alice', parentKey,
                                      { format: 'dc+sd-jwt' });

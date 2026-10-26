@@ -365,6 +365,11 @@ const CELL_MINTED = [
   'caep.register', 'cells.deliveries', 'cells.exports', 'cells.projections',
   'claim_attributes.selections', 'consent_screen.pending',
   'credentials.pendingBackupCodes', 'credentials.pendingKeys',
+  // An administrator's enrolment for somebody (#945). Keyed by both
+  // names, so it cannot share pendingKeys, and it is this cell's
+  // ceremony in the same way: the begin and the finish may be two nodes
+  // of this cell, and no other cell's.
+  'credentials.pendingAdminKeys',
   'credentials.pendingTotp', 'delegation.acts', 'devices.challenges',
   // What the Android attestation recheck last covered in this cell (#615).
   'devices.androidRecheck',
@@ -382,9 +387,18 @@ const CELL_MINTED = [
   'oauth2.claimSourceFlows', 'oauth2.commandAccounts',
   'oauth2.commandCallbacks', 'oauth2.commandDeliveries',
   'oauth2.deviceCodes', 'oauth2.ephemeralSubjects',
+  // An opaque access token's claims (#501), minted in this cell the way an
+  // authorization code is. The handle is stored as a digest.
+  'oauth2.opaqueAccessTokens',
   'oauth2.grantIssued', 'oauth2.grants', 'oauth2_monitor.counters',
   'oauth2.pushedRequests', 'oauth2.redeemedCodes', 'oauth2.tenantCommandRuns',
-  'oidc_rp.flows', 'risc.register', 'saml11_sso.artifacts',
+  'oidc_rp.flows',
+  // The reports application's definitions, jobs and reporter stamp (#956).
+  // A report reads this cell's people and its artifact holds them, so the
+  // job and its definition are this cell's; the stamp names a node, and a
+  // node is a member of one cell.
+  'report.control', 'report.definitions', 'report.jobs',
+  'risc.register', 'saml11_sso.artifacts',
   'saml11_sso.assertionsById', 'saml11_sso.pendingFlows', 'saml2.mdqRefusals',
   'saml2_sso.artifacts', 'saml2_sso.pendingRequests',
   'scep.transactions', 'scheduler.runs', 'scim.digestCounts',

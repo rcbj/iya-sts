@@ -1004,9 +1004,11 @@ function clientIdentifierRefusal(ids) {
 // either, and the requirement rows say so.
 /**
  * The hosted clients allowed to be public clients under a profile that
- * supports none: the admin console and the user portal.
+ * supports none: the admin console, the user portal and the reports
+ * application (#956, the portal's pattern).
  */
-const PUBLIC_CLIENT_EXEMPT = ['sts-admin-console', 'sts-user-portal'];
+const PUBLIC_CLIENT_EXEMPT = ['sts-admin-console', 'sts-user-portal',
+                              'sts-report'];
 
 /**
  * Tells whether a client is the public client the confidential-only profiles

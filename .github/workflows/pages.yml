@@ -110,7 +110,8 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          # 24.22.1 is the 21 October 2026 security release (CVE-2026-111497).
+          node-version: '24.22.1'
 
       - name: Generate the API reference
         run: ./run-jsdoc.sh --no-docker --out=apidocs

@@ -49,7 +49,7 @@ shim) are in git history.
 | `cargo test -p sts-xacml` | The engine against the vendored OASIS suite, case for case as `tests/xacml_conformance.js` holds the service's. |
 | `tests/xacml_pep.js` | The PDP's side (sync token, register, nudge refusals, change observer), the Dockerfile building and stamping the Rust binary, and **the service's `enforce()` against the same `enforcement_cases.json`** — so the two readings of section 7.2 are checked against one expectation. |
 | `tests/xacml_request.js` E | The remote PEP builds through `sts-xacml`'s `AuthorizationRequest`, and every identifier that builder declares is spelt as `xacml_request.js`'s `VOCABULARY` spells it. |
-| `tests/vendored/sts_xacml_remote_pep.js` | **THE DEPLOYMENT**: this image, on the service's own docker network — registering on a later attempt, pulling, deciding out here, converging by polling and by the nudge, the PIP end to end, the HTTPS listener, deciding correctly with the PDP taken away. **The only thing that runs what this Dockerfile produces.** |
+| `tests/protocol/sts_xacml_remote_pep.js` | **THE DEPLOYMENT**: this image, on the service's own docker network — registering on a later attempt, pulling, deciding out here, converging by polling and by the nudge, the PIP end to end, the HTTPS listener, deciding correctly with the PDP taken away. **The only thing that runs what this Dockerfile produces.** |
 
 **THE LAUNCHERS OWN THAT CONTAINER AND THE JOB DRIVES IT**: `./run-tests.sh`
 brings one up beside the service and hands the job `XACML_PEP_URL`,
@@ -67,7 +67,7 @@ answered 200 or 403. Both were deleted, because the runtime ships no
 demonstration code, and `GET /protected` here is the same thing — the request
 through the same builder, `PEP_BIAS` as the PEP-side option, `enforce.rs` as
 the rule — so nothing in this binary changed for it. Its tests moved with it:
-`tests/vendored/sts_xacml_remote_pep.js` section 4b asserts the obligation
+`tests/protocol/sts_xacml_remote_pep.js` section 4b asserts the obligation
 rule here, on policy this container pulled. What is still in the service is
 `enforce()`, for `/admin/xacml/decide`'s what-if under both biases, held with
 `enforce.rs` to `enforcement_cases.json`.
@@ -131,7 +131,7 @@ that was not produced an empty bag. That is an ordinary XACML result and a real
 deployment shape — but it also meant **one policy deciding two ways in two
 enforcement points**, which is exactly the drift a shared repository exists to
 prevent, reappearing one layer down. The PDP permitted people this container
-refused. `tests/vendored/sts_xacml_remote_pep.js` asserted that in both
+refused. `tests/protocol/sts_xacml_remote_pep.js` asserted that in both
 directions and calls the inversion out where it does it.
 
 ### The hard part is that the engine's resolver is synchronous
@@ -217,7 +217,7 @@ request was denied by a policy that was working perfectly.
 `xacml.ts`'s `enforce()` is fifty lines and this PEP does not share it. It is the
 PEP's own decision — the bias and the obligation rule — and a PEP that imported
 the PDP's would be demonstrating that two processes agree because they are one
-program. That is the thing `tests/vendored/sts_dpop.js` refuses to do when it
+program. That is the thing `tests/protocol/sts_dpop.js` refuses to do when it
 writes its
 own DPoP client rather than importing the wallet's.
 
@@ -408,7 +408,7 @@ on 2026-09-16 — the default stays because every launcher, kept stack and
 `XACML_PEP_HTTPS_URL` names it; `PEP_HTTPS_CERT`/`KEY` default EMPTY because a
 default inside `xacml-pep/certs` would invite a private key into the source
 tree; `PEP_HEARTBEAT_INTERVAL_MS` is a substitution because
-`tests/vendored/sts_xacml_remote_pep.js` reads the counters the heartbeat
+`tests/protocol/sts_xacml_remote_pep.js` reads the counters the heartbeat
 carries and cannot wait a minute; and the plain-http `PEP_NOTIFY_URL` is
 refused by the PDP by default (`xacml.pepNotifyAllowHttp`, and always in
 product, #171), so the demonstration converges on its poll.
@@ -463,7 +463,7 @@ anywhere.**
 
 Neither would have been found by anything but running the container against the
 service. **THAT SENTENCE IS THE ARGUMENT FOR
-`tests/vendored/sts_xacml_remote_pep.js`, WHICH DID NOT EXIST WHEN IT WAS
+`tests/protocol/sts_xacml_remote_pep.js`, WHICH DID NOT EXIST WHEN IT WAS
 WRITTEN**: running the container against the service was something a person did
 by hand, and both defects were found by a person doing it. That job now does it
 on every run — and each of those two defects lands squarely in it. The first is

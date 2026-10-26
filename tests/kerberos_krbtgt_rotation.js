@@ -14,7 +14,7 @@
 // entry `krbtgt/<REALM>@<REALM>`, rotated by the `krb5.krbtgt-rotate` job and
 // by hand, with the version a rotation replaces kept for the longest a TGT
 // under it can live. This file holds that in three CHILD PROCESSES, each its
-// own KDC, with `tests/vendored/krb5_wire.js`'s clients over an in-process
+// own KDC, with `tests/protocol/krb5_wire.js`'s clients over an in-process
 // transport that hands each message to `kdc.handleMessage()`:
 //
 //   A. PRODUCT, FIRST START (an ldif store and a key-encryption key file):
@@ -41,7 +41,7 @@
 //      password; "rotate and invalidate" refuses both.
 //
 // The same over the wire, against a running service, is
-// `tests/vendored/sts_kerberos_krbtgt_rotation.js`.
+// `tests/protocol/sts_kerberos_krbtgt_rotation.js`.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -84,7 +84,7 @@ async function child(phase) {
   const kcrypto = require(ROOT + '/kerberos/krb5_crypto.js');
   const prim = require(ROOT + '/kerberos/krb5_primitives.js');
   const asn1 = require(ROOT + '/kerberos/krb5_asn1.js');
-  const wire = require(ROOT + '/tests/vendored/krb5_wire.js');
+  const wire = require(ROOT + '/tests/protocol/krb5_wire.js');
   const msgs = wire.msgs;
   // The two product phases run over an ldif store (the parent sets it), so a
   // restart has something to restore; development runs in memory.

@@ -435,7 +435,7 @@ function childMain() {
     //    THE SIGN-IN (2026-09-18). `autoCreateUser()` returned before its
     //    lookup whenever creation was off, so in product mode a
     //    pre-provisioned person never recorded `federationRelationship` and
-    //    never took the partner's attributes. `tests/vendored/
+    //    never took the partner's attributes. `tests/protocol/
     //    sts_federation_realms.js` found it against a product-mode deployment.
     // =======================================================================
     // In the SERVICE PROVIDER's realm only (set while it is ambient): the

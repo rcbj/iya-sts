@@ -37,7 +37,7 @@
 // by the suite's own names:
 //
 //   * people and groups whose name is a bulk-load job's — `bulk-<door>-…`,
-//     `<door>` one of the four `tests/vendored/bulk_load.js`'s `stampFor()` is
+//     `<door>` one of the four `tests/protocol/bulk_load.js`'s `stampFor()` is
 //     given (`scim`, `ldap`, `ldap50k`, `api`). Found and deleted through SCIM
 //     (`/scim/v2`), which is this service's door for deleting a person or a
 //     group: `/admin-api` has none. The token is the seeded
@@ -59,11 +59,11 @@
 // candidates. `--dry-run` is how to check that before trusting it.
 //
 // THE DEFAULT REALM'S RUNTIME OVERRIDES, through
-// `/admin-api/config/reset`. tests/vendored/admin_api.js requires none to be
+// `/admin-api/config/reset`. tests/protocol/admin_api.js requires none to be
 // in force when it starts, and the store keeps them across a restart: the
 // first reuse of the dev cluster found `groups.claim` from an interrupted run
 // and `ldap.maxEntries`, which the bulk-load jobs raise and leave raised on
-// purpose (tests/vendored/bulk_load.js). Resetting that one lands on the
+// purpose (tests/protocol/bulk_load.js). Resetting that one lands on the
 // nodes' LDAP_MAX_ENTRIES (`ldap_max_entries`, environment/ecs.tf), and is
 // done AFTER the bulk entries are gone so the directory is back under it.
 //
@@ -104,7 +104,7 @@ const log = {
   }
 };
 
-// The doors `tests/vendored/bulk_load.js`'s `stampFor()` is called with —
+// The doors `tests/protocol/bulk_load.js`'s `stampFor()` is called with —
 // `ldap50k` is `sts_directory_bulk_load_ldap_50k.js`'s BULK_DOOR. A door added
 // there has to be added here, or its entries accumulate again.
 const BULK_DOORS = ['scim', 'ldap', 'ldap50k', 'api'];

@@ -35,7 +35,7 @@
 // registers what the answer describes (the tenant's entityID, return
 // addresses, signing certificate, GNAP key, push URL, command endpoint) as
 // an application in that realm through `/admin-api`.
-// `tests/vendored/test_peer.js` is the jobs' side of that. Every key a tenant uses is made when it is first
+// `tests/protocol/test_peer.js` is the jobs' side of that. Every key a tenant uses is made when it is first
 // configured, and kept across a reconfiguration so a registration stays
 // true.
 //

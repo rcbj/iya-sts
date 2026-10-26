@@ -26,8 +26,8 @@
 //     session is sent to the sign-in screen and a caller asking for
 //     `?format=json` is refused 401 rather than redirected. That is a change of
 //     behaviour for anything that fetched the old path unauthenticated, and the
-//     parent project's `tests/vendored/sts_metadata.js` now signs in the way
-//     `tests/vendored/admin_api.js` does.
+//     parent project's `tests/protocol/sts_metadata.js` now signs in the way
+//     `tests/protocol/admin_api.js` does.
 //   * **REQUIRING `admin.js` FROM HERE MOVES NOTHING.** That is the question to
 //     ask of any require in this service, because require order was route
 //     order until #50's R1 (and still is for a JavaScript module, which this
@@ -76,7 +76,7 @@
 //     entry. That is the direction that catches a route being renamed or
 //     removed.
 //
-// `tests/vendored/sts_metadata.js` fails on either, which is what makes the
+// `tests/protocol/sts_metadata.js` fails on either, which is what makes the
 // page's claim to completeness worth something. It is also why the route walk
 // happens per request instead of at require time: at require time the answer
 // would depend on module load order, and a module loaded after this one would
@@ -624,7 +624,7 @@ const SPECS: Spec[] = [
   //     vocabularies spoken over it. CAEP has been here since 2026-09-03 and
   //     RISC since 2026-09-04, so both are in this list now — and neither was
   //     until it was real, because a specification named here and not
-  //     implemented is an IDLE CLAIM and tests/vendored/sts_metadata.js fails
+  //     implemented is an IDLE CLAIM and tests/protocol/sts_metadata.js fails
   //     the page for one.
   { id: 'xacml30', name: 'OASIS XACML 3.0 (core)',
     where: 'OASIS',
@@ -3443,7 +3443,7 @@ const ENDPOINTS: EndpointEntry[] = [
     // rfc3961 belongs here because every message this relays has enc-parts
     // encrypted under that framework by the KDC behind it — and because a
     // specification nothing links to is an IDLE CLAIM, which
-    // tests/vendored/sts_metadata.js fails the page for. It was listed and
+    // tests/protocol/sts_metadata.js fails the page for. It was listed and
     // unlinked when the Kerberos rows were first added.
     // ms-pac since #595: every ticket the KDC behind it issues carries a
     // PAC, and the rows that linked it (`/krb5/principals`,
@@ -4414,9 +4414,10 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/', group: 'Service', name: 'The front page',
     specs: [],
     what: 'What this service is, in one card: the project on GitHub, its ' +
-          'issues, the documentation site, and the two surfaces on this ' +
+          'issues, the documentation site, and the surfaces on this ' +
           'instance that a person rather than a client goes to — the admin ' +
-          'console and the user portal. It lists NO endpoints on purpose — ' +
+          'console, the user portal and reports. It lists NO endpoints on ' +
+          'purpose — ' +
           'this page is the ' +
           'list, it is generated, and a hand-written set of highlights on ' +
           'the front door would be a second copy of it that nothing checks. ' +
@@ -4446,10 +4447,10 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'NON-SPEC (#579). Everything the front page draws, as facts and ' +
           'no words: the name, the version and its build, whether a ' +
           'sign-in checks the password and whether the console is gated, ' +
-          'the logo, and the five links as ids and addresses — the ' +
-          'console\'s and the portal\'s on the listener that answers them ' +
-          '(#472). Public, no-store; it lists no endpoints, as the page ' +
-          'never did.' },
+          'the logo, and the six links as ids and addresses — the ' +
+          'console, the portal and reports, each on the listener that ' +
+          'answers it (#472). Public, no-store; it lists no endpoints, as ' +
+          'the page never did.' },
   { path: '/logo.png', group: 'Service', name: 'The logo on the front page',
     specs: [],
     what: 'The front page\'s logo, `home/assets/logo.png`, read from ' +
@@ -4688,6 +4689,77 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/portal/portal.css', group: 'User portal',
     name: 'The portal\'s stylesheet', specs: [],
     what: 'NON-SPEC. The portal\'s one stylesheet (#568).' },
+  { path: '/report', group: 'Reporting',
+    name: 'The reports application', specs: [],
+    what: 'NON-SPEC. The static reports application (#956). Every path ' +
+          'answers one document, which loads /report/report.js and signs ' +
+          'in as the public client sts-report.' },
+  { path: '/report/*', group: 'Reporting',
+    name: 'A reports page', specs: [],
+    what: 'NON-SPEC. The same document as /report. The script chooses the ' +
+          'page from the path.' },
+  { path: '/report/report.js', group: 'Reporting',
+    name: 'The reports script', specs: [],
+    what: 'NON-SPEC. The reports runtime, built by build-typescript.sh ' +
+          'and served precompressed. Public, like the document.' },
+  { path: '/report/report.css', group: 'Reporting',
+    name: 'The reports stylesheet', specs: [],
+    what: 'NON-SPEC. The reports application\'s one stylesheet (#956).' },
+  { path: '/report-api', group: 'Reporting',
+    name: 'The reports API', specs: [],
+    what: 'NON-SPEC. The index of /report-api. It takes this realm\'s ' +
+          'DPoP-bound token for sts-report, scope report:use or ' +
+          'report:admin.' },
+  { path: '/report-api/openapi.json', group: 'Reporting',
+    name: 'The reports OpenAPI document', specs: [],
+    what: 'NON-SPEC. The API\'s own description. Behind the same token as ' +
+          'the rest of /report-api, and served no-store.' },
+  { path: '/report-api/catalog', group: 'Reporting',
+    name: 'The report catalog', specs: [],
+    what: 'NON-SPEC. The sources a query may name, and each field\'s type ' +
+          'and operators. Credential attributes are absent.' },
+  { path: '/report-api/catalog/:id', group: 'Reporting',
+    name: 'One report source', specs: [],
+    what: 'NON-SPEC. One source from the catalog, by its id.' },
+  { path: '/report-api/queries', group: 'Reporting',
+    name: 'Run a report query', specs: [],
+    what: 'NON-SPEC. A catalog query. A small bounded one answers in the ' +
+          'call; a larger one is queued and answered 202.' },
+  { path: '/report-api/definitions', group: 'Reporting',
+    name: 'Saved report definitions', specs: [],
+    what: 'NON-SPEC. The definitions this token may see: its owner\'s, ' +
+          'those shared with a group it is in, and every one when the ' +
+          'token carries report:admin.' },
+  { path: '/report-api/definitions/:id', group: 'Reporting',
+    name: 'One report definition', specs: [],
+    what: 'NON-SPEC. One definition. An unknown id and one this token may ' +
+          'not see are the same answer.' },
+  { path: '/report-api/definitions/:id/share', group: 'Reporting',
+    name: 'Share a report definition', specs: [],
+    what: 'NON-SPEC. Names the directory groups that may run the ' +
+          'definition and read its results. The owner, or report:admin, ' +
+          'is who may change that list.' },
+  { path: '/report-api/definitions/:id/run', group: 'Reporting',
+    name: 'Run a saved report', specs: [],
+    what: 'NON-SPEC. Queues the definition\'s query as the caller. A ' +
+          'share grants this and the result, not an edit.' },
+  { path: '/report-api/jobs', group: 'Reporting',
+    name: 'Report jobs', specs: [],
+    what: 'NON-SPEC. The jobs this token may see, and the door that ' +
+          'queues one from a query document.' },
+  { path: '/report-api/jobs/:id', group: 'Reporting',
+    name: 'One report job', specs: [],
+    what: 'NON-SPEC. One job. An unknown id and one this token may not ' +
+          'see are the same answer.' },
+  { path: '/report-api/jobs/:id/cancel', group: 'Reporting',
+    name: 'Cancel a report job', specs: [],
+    what: 'NON-SPEC. Asks a queued or running job to stop. The bytes of ' +
+          'one that already finished are left for retention.' },
+  { path: '/report-api/jobs/:id/result', group: 'Reporting',
+    name: 'A report result', specs: [],
+    what: 'NON-SPEC. The stored bytes of a finished job, while ' +
+          'report.artifactRetentionS has not passed. After that the ' +
+          'result is gone.' },
   { path: '/portal/signals/receive', group: 'User portal',
     name: 'The portal\'s Shared Signals receive endpoint',
     specs: ['ssf', 'rfc8935', 'rfc8417'],
@@ -5945,7 +6017,10 @@ const ENDPOINTS: EndpointEntry[] = [
           'here. Besides the paged acts the reply carries `chains` — the ' +
           'distinct (mechanism, initial, intermediary, target) tuples among ' +
           'what matched, one per edge — and `policy`, who may delegate to ' +
-          'whom before anybody has tried. WALK IT BY `seq`. READ ONLY, one ' +
+          'whom before anybody has tried. RESUME BY `at`, not by `seq` ' +
+          '(#465). `seq` is unique and never reused and rises within each ' +
+          'process, but each worker thread numbers from a block of its ' +
+          'own, so it is not one order across them. READ ONLY, one ' +
           'of the two resources here that is: everything on it is an ' +
           'observation or somebody else\'s configuration, so there is ' +
           'nothing to change. Mirrors GET /admin/delegation.' },
@@ -6066,6 +6141,38 @@ const ENDPOINTS: EndpointEntry[] = [
           'remove-destination and test-push (a canary version written to a ' +
           'test secret): the console\'s four acts, each audited. The write ' +
           'credential is taken and never returned.' },
+  { path: '/admin-api/passkey-report', group: 'Management API',
+    name: 'Who holds which passkey algorithm', specs: ['openapi', 'webauthn'],
+    what: 'NON-SPEC (#942). What Monitoring → Passkeys draws: the realm\'s ' +
+          'passkeys by algorithm and lane, its people by kind (post-quantum ' +
+          'only, classical only, both, none), which authenticator models ' +
+          'hold which algorithms, and each passkey profile\'s ' +
+          'postQuantumRequired; filtered by a group, a passkey profile or ' +
+          'an application, with a cursor-paged list of the people behind ' +
+          'any count. The counts are a maintained aggregate — a daily ' +
+          'recount of the holders plus the changes noted as keys are ' +
+          'written — never a scan of the directory per request.' },
+  { path: '/admin-api/passkey-report/export', group: 'Management API',
+    name: 'Export the people behind a passkey count',
+    specs: ['openapi', 'webauthn'],
+    what: 'NON-SPEC (#942). The people one Monitoring → Passkeys count ' +
+          'names, as CSV or JSON, read a page of holders at a time, at most ' +
+          'a hundred thousand rows and said when cut. No key material.' },
+  { path: '/admin-api/passkey-report/evidence', group: 'Management API',
+    name: 'One passkey\'s RFC 4998 evidence record',
+    specs: ['openapi', 'webauthn'],
+    what: 'NON-SPEC (#947). The archived attestation object and its ' +
+          'RFC 4998 EvidenceRecord for one passkey, named by username and ' +
+          'credentialId. The TSA token verifies against the configured ' +
+          'trust anchors. A key enrolled with no TSA, or whose attestation ' +
+          'was not trusted and classical, has no record.' },
+  { path: '/admin-api/passkey-report/:action', group: 'Management API',
+    name: 'Recount the realm\'s passkeys', specs: ['openapi'],
+    what: 'NON-SPEC (#942). recount: queues the passkeys.report-recount job ' +
+          'for this realm on the scheduler\'s leader, which makes a fresh ' +
+          'count of the holders the new baseline. The console\'s one act ' +
+          'on that page; it runs where every job runs, never on the ' +
+          'request.' },
   { path: '/admin-api/scim/clients', group: 'Management API',
     name: 'Outbound SCIM clients', specs: ['openapi', 'rfc7644'],
     what: 'NON-SPEC (#552). What Protocols → SCIM → Clients draws: the ' +
@@ -6236,9 +6343,14 @@ const ENDPOINTS: EndpointEntry[] = [
           'and free text and paged with ?page= and ?per=. NO CREDENTIAL IS ' +
           'EVER IN A ROW — no password, bearer token, assertion or body; a ' +
           'modify names the attributes it changed and never their values. ' +
-          'WALK IT BY `seq` rather than by page: it is monotonic and never ' +
-          'reused, so "everything after 4102" is exact where page 2 taken a ' +
-          'second after page 1 can repeat a row that shifted onto it. READ ' +
+          'RESUME BY `at`, not by `seq` (#465). `seq` is unique across ' +
+          'every process of the service and never reused, and it rises ' +
+          'within each process, but each worker thread numbers from a ' +
+          'block of its own, so the numbers are not one order and ' +
+          '"everything after 4102" misses a later event recorded under a ' +
+          'lower number. `origin` breaks a tie with `seq`. Page 2 taken a ' +
+          'second after page 1 can repeat a row that shifted onto it. ' +
+          'READ ' +
           'ONLY — one of the two resources here that is, the other being ' +
           '/admin-api/delegation. There is no clear operation, because an ' +
           'erase control on an unprotected API would make an audit log ' +
@@ -9464,6 +9576,15 @@ const PROTOCOLS: Protocol[] = [
           '/account-api, the Account API group below: an operation per page ' +
           'and per form, the person always the token\'s subject, described ' +
           'by its own OpenAPI document.' },
+  { name: 'Reporting', groups: ['Reporting'],
+    specs: [],
+    notAProtocol: true,
+    what: 'NOT A PROTOCOL. The reports application (#956): a static page ' +
+          'at /report over /report-api, the public client sts-report, and ' +
+          'a catalog of this realm\'s own records. It signs in in the ' +
+          'browser, holds a DPoP-bound token, and never takes a SQL ' +
+          'string. A saved definition belongs to its owner; a share with ' +
+          'a directory group grants running and reading, not editing.' },
   { name: 'GNAP', groups: ['GNAP'],
     specs: ['rfc9635', 'rfc9767', 'rfc9421', 'rfc9530'],
     what: 'An authorization server for the Grant Negotiation and ' +

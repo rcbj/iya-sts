@@ -149,15 +149,103 @@ class PortalWebAuthn {
   }
 
   /**
+   * The server's fallback facts (#944) a `#wa-data` element carries, as
+   * `data-fallback`; empty where it carries none.
+   *
+   * @param d - the element
+   * @returns the facts
+   */
+  static fallbackOf(d: Json): Json {
+    try {
+      return JSON.parse(d.getAttribute('data-fallback') || '{}') || {};
+    } catch (e) {
+      // Markup this page did not draw: no facts, and the failure is sent.
+      return {};
+    }
+  }
+
+  // THE GUIDANCE'S REPORT (#961). `offerFallback()` calls this only when it
+  // is about to show `#wa-fallback`. The finish must hear the failure — the
+  // ceremony log is that post — and the page must not be replaced: `submit()`
+  // draws whatever the account API answers, and an answer with a view is a
+  // new document in which the guidance was never unhidden. So this does not
+  // write `#wa-credential` and does not hand `#wa-form` to `submit`. The body
+  // is the sign-in screen's: `credential` is the JSON of `{ error,
+  // capabilities }`. `capabilities` is null where the platform reported
+  // none, never left out — `JSON.stringify` drops `undefined`, and a body
+  // with no such property is the ordinary refusal, which is abandoned.
+  // `quiet` is the runtime's post, which carries the same DPoP proof a form
+  // submit would and then ignores the answer. Without it (no runtime) the
+  // post is a fetch of the form's action, also ignored: a `web_` module has
+  // no logger, and drawing or rejecting here would replace the guidance.
+  /**
+   * Reports a registration the guidance is showing, without submitting it.
+   *
+   * @param doc - the document
+   * @param window - the window
+   * @param quiet - the runtime's post, given the form and the body
+   * @param error - the allowlisted browser error
+   * @param capabilities - the platform's booleans, or null
+   * @returns nothing
+   */
+  static reportKept(doc: Json, window: Json,
+                    quiet: ((form: Json, body: Json) => void) | undefined,
+                    error: string, capabilities: Json): void {
+    const form = doc.getElementById('wa-form');
+    if (!form) {
+      return;
+    }
+    const caps = capabilities === undefined ? null : capabilities;
+    const body = { credential: JSON.stringify({ error: error,
+                                                capabilities: caps }) };
+    if (typeof quiet === 'function') {
+      quiet(form, body);
+      return;
+    }
+    const action = form.getAttribute ? String(form.getAttribute('action') ||
+                                              '') : '';
+    if (!action || !window || typeof window.fetch !== 'function') {
+      return;
+    }
+    let posted: Json = null;
+    try {
+      posted = window.fetch(action, {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Accept': 'application/json',
+                   'Content-Type': 'application/json' },
+        body: JSON.stringify(body) });
+    } catch (e) {
+      // A web_ module logs nothing. The guidance is already shown; a throw
+      // here rejects the click, and the browser may replace the page.
+      return;
+    }
+    if (posted && typeof posted.then === 'function') {
+      posted.then(function (): void {
+        return undefined;
+      }, function (): void {
+        // The answer is ignored on purpose (#961). Logging is not available
+        // in this bundle, and there is nothing further to draw.
+        return undefined;
+      });
+    }
+  }
+
+  /**
    * Wires the page just drawn: the signal, and the ceremony button, whose
    * answer goes in `#wa-credential` and whose form is handed to `submit`.
+   * A registration the guidance handles is reported through `quiet` instead,
+   * which must not draw the answer (#961).
    *
    * @param doc - the document
    * @param window - the window
    * @param submit - the runtime's submit, given the form
+   * @param quiet - the runtime's report of a failure the guidance shows,
+   *   given the form and the body; absent, the report is a fetch of the
+   *   form's action whose answer is ignored
    * @returns nothing
    */
-  static wire(doc: Json, window: Json, submit: (form: Json) => void): void {
+  static wire(doc: Json, window: Json, submit: (form: Json) => void,
+              quiet?: (form: Json, body: Json) => void): void {
     PortalWebAuthn.signal(doc.getElementById('wa-signal'), window);
     PortalWebAuthn.signal(doc.getElementById('wa-signal-pqc'), window);
     const d = doc.getElementById('wa-data');
@@ -180,7 +268,29 @@ class PortalWebAuthn {
         }
       };
       PortalWebAuthn.ceremony(d, window.navigator).then(send, function (e) {
-        send({ error: e && e.name, message: e && e.message });
+        // A REGISTRATION THAT ASKED FOR ML-DSA AND FAILED ON THE DEVICE
+        // (#944, #961). The guidance is shown in place. The failure is
+        // reported through the finish, and `#wa-form` is not submitted:
+        // submitting drew the account API's answer over the guidance, and
+        // that answer abandoned the enrolment, so the classical retry was
+        // gone. The report carries its own `capabilities` property, which
+        // is how the finish tells it from the ordinary refusal. An error
+        // the guidance does not handle is still sent as given, and that
+        // one is abandoned.
+        const facts = PortalWebAuthn.fallbackOf(d);
+        const offer = d.getAttribute('data-mode') === 'create'
+          ? WebWebAuthn.offerFallback(doc, window, e,
+              { surface: 'portal', fallback: facts,
+                report: function (error: string, capabilities: Json): void {
+                  PortalWebAuthn.reportKept(doc, window, quiet, error,
+                                            capabilities);
+                } })
+          : Promise.resolve(false);
+        offer.then(function (shown: boolean): void {
+          if (!shown) {
+            send({ error: e && e.name });
+          }
+        });
       });
     });
   }

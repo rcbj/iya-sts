@@ -48,6 +48,13 @@
 //  11. `webauthn.maxKeysPerPerson` counts both lanes.
 //  12. The switch turned off: a post-quantum enrolment is refused, and the
 //      post-quantum key still signs in.
+//  13. A classical passkey proves possession before an ML-DSA registration:
+//      alongside keeps both keys, a refusal leaves the classical one, and
+//      with the lanes off the ML-DSA key replaces it.
+//  14. An administrator's enrolment (#964), with the lanes on: a
+//      self-enrolment begun first is still pending afterwards; the new
+//      key's row and the answer both carry `lane` and `enrolledBy`; the
+//      person's own confirmKeyEnrolment still drops that pending record.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -205,7 +212,7 @@ function childMain() {
                 oauthRedirectUri: [REDIRECT],
                 oauthTokenEndpointAuthMethod: 'none',
                 oauthGrantType: ['authorization_code'] } });
-    ['pkl-alice', 'pkl-bob', 'pkl-legacy'].forEach(function (name) {
+    ['pkl-alice', 'pkl-bob', 'pkl-legacy', 'pkl-upgrade', 'pkl-failure'].forEach(function (name) {
       ldap.createUser(name, { invent: false });
       credentials.setPassword(name, PASSWORD);
     });
@@ -558,6 +565,163 @@ function childMain() {
          '12. switched off, a post-quantum enrolment is refused ' +
          '(STS-AUTHN-0351) and the post-quantum key still signs in',
          JSON.stringify(offAgain) + ' ' + posted.status);
+    // 13. A classical passkey proves possession before an ML-DSA
+    // registration. Both the alongside lane and in-place replacement work;
+    // a failed registration leaves the original classical key unchanged.
+    config.setOverride(ON, true);
+    const upOld = await makeAuthenticator(-7, RPID, ORIGIN);
+    const upSeed = await enrol('pkl-upgrade',
+      { role: 'primary', kind: 'passkey', lane: 'classical' },
+      function (b) { return upOld.register(b.challenge, b.userHandle); });
+    const beginUpgrade = credentials.beginKeyUpgrade('pkl-upgrade',
+      upOld.credentialId);
+    const proveUpgrade = await credentials.proveKeyUpgrade('pkl-upgrade',
+      beginUpgrade.upgradeId, upOld.assert(beginUpgrade.challenge),
+      { origin: ORIGIN, rpId: RPID });
+    const proofView = view('pkl-upgrade').upgrade || {};
+    const proofHtml = keysPages.upgradeBlock(proofView,
+      { html: function (key) { return '[' + key + ']'; } });
+    const upNew = await makeAuthenticator(-49, RPID, ORIGIN);
+    const sideDone = await credentials.confirmKeyUpgrade('pkl-upgrade',
+      beginUpgrade.upgradeId,
+      upNew.register(proveUpgrade.challenge, proveUpgrade.userHandle),
+      { origin: ORIGIN, rpId: RPID });
+    const sideRows = credentials.keysOf('pkl-upgrade');
+    const oldSide = sideRows.filter(function (one) {
+      return one.credentialId === upOld.credentialId;
+    })[0] || {};
+    const newSide = sideRows.filter(function (one) {
+      return one.credentialId === upNew.credentialId;
+    })[0] || {};
+    const sideHistory = credentials.keyUpgradeHistory(newSide) || {};
+    const upgradeOps = new accountKeys.AccountKeys(
+      accountKeys.AccountKeys.defaultDeps()).accountOperations({
+        BASE: '/account-api', PORTAL: '/portal' });
+    note(upSeed.done.ok && beginUpgrade.ok && proveUpgrade.ok &&
+         proofView.pending && proofView.pending.phase === 'registration' &&
+         proofView.pending.options.algorithms.join(',') === '-48,-49,-50' &&
+         proofHtml.indexOf('data-mode="create"') >= 0 &&
+         upgradeOps.some(function (op) {
+           return op.operationId === 'upgradeKey' &&
+                  op.path === '/account-api/keys/upgrade';
+         }) &&
+         sideDone.ok && sideDone.mode === 'alongside' &&
+         sideRows.length === 2 && oldSide.upgradedTo === upNew.credentialId &&
+         sideHistory.previousAlgorithm === 'ES256' &&
+         sideHistory.mode === 'alongside',
+         '13a. the portal exposes an ML-DSA-only upgrade after proof, and ' +
+         'the alongside write records both keys and upgrade history',
+         JSON.stringify([beginUpgrade, proveUpgrade, sideDone, sideHistory]));
+    const failOld = await makeAuthenticator(-7, RPID, ORIGIN);
+    const failSeed = await enrol('pkl-failure',
+      { role: 'primary', kind: 'passkey', lane: 'classical' },
+      function (b) { return failOld.register(b.challenge, b.userHandle); });
+    const failBegin = credentials.beginKeyUpgrade('pkl-failure',
+      failOld.credentialId);
+    const failProof = await credentials.proveKeyUpgrade('pkl-failure',
+      failBegin.upgradeId, failOld.assert(failBegin.challenge),
+      { origin: ORIGIN, rpId: RPID });
+    const failDone = await credentials.confirmKeyUpgrade('pkl-failure',
+      failBegin.upgradeId, { error: 'NotAllowedError' },
+      { origin: ORIGIN, rpId: RPID });
+    const failRows = credentials.keysOf('pkl-failure');
+    note(failSeed.done.ok && failProof.ok && !failDone.ok &&
+         failRows.length === 1 &&
+         failRows[0].credentialId === failOld.credentialId &&
+         !credentials.keyUpgradeHistory(failRows[0]),
+         '13b. a refused ML-DSA registration keeps the classical passkey',
+         JSON.stringify([failDone, failRows]));
+
+    // 14. AN ADMINISTRATOR'S ENROLMENT DOES NOT RUN THE PERSON'S EPILOGUE
+    // (#964). The two doors share verifyKeyRegistration; `written` is the
+    // door's finish. Self-enrolment drops pendingKeys. An administrator's
+    // must not — that record is the person's own ceremony — and must
+    // answer lane and enrolledBy. The credential is the kit's `none`
+    // attestation, the same bytes section 4 registers with, so
+    // verification is not stubbed.
+    const adminPolicy = passkeyPolicy.save('default',
+      Object.assign({}, passkeyPolicy.DEFAULTS, {
+        allowUsernameless: true, adminEnrolment: 'on' }));
+    const kept = 'pkl-kept';
+    ldap.createUser(kept, { invent: false });
+    credentials.setPassword(kept, PASSWORD);
+    const selfBegun = credentials.beginKeyEnrolment(kept, {
+      role: 'mfa', kind: 'passkey', lane: 'pqc' });
+    const admin = { username: 'pkl-operator',
+                    sub: 'urn:uuid:pkl-operator' };
+    const adminBegun = credentials.beginAdminKeyEnrolment(kept, admin, {
+      role: 'mfa', kind: 'passkey', lane: 'pqc' });
+    const adminAuth = await makeAuthenticator(-49, RPID, ORIGIN);
+    const adminDone = adminBegun.ok
+      ? await credentials.confirmAdminKeyEnrolment(kept, admin,
+          adminBegun.enrolmentId,
+          adminAuth.register(adminBegun.challenge,
+                             adminBegun.userHandle),
+          { origin: ORIGIN, rpId: RPID })
+      : adminBegun;
+    const still = credentials.pendingKeyEnrolmentFor(kept);
+    const adminRow = credentials.keysOf(kept).filter(function (one) {
+      return one.credentialId === adminAuth.credentialId;
+    })[0] || {};
+    const by = adminRow.enrolledBy || {};
+    const answered = (adminDone && adminDone.enrolledBy) || {};
+    note(adminPolicy.ok !== false && selfBegun.ok && adminBegun.ok &&
+         adminDone.ok === true && !!still &&
+         still.id === selfBegun.enrolmentId &&
+         adminRow.lane === 'pqc' && by.username === admin.username &&
+         by.sub === admin.sub && by.at > 0 &&
+         adminDone.lane === 'pqc' &&
+         answered.username === admin.username &&
+         answered.sub === admin.sub && answered.at > 0,
+         '14a. an administrator\'s enrolment keeps a pending ' +
+         'self-enrolment, and the key and the answer carry lane and ' +
+         'enrolledBy',
+         JSON.stringify({ policy: adminPolicy.ok, self: selfBegun.ok,
+           begun: adminBegun.ok, done: adminDone,
+           pending: still && still.id,
+           row: { lane: adminRow.lane, enrolledBy: adminRow.enrolledBy } }));
+    const ownAuth = await makeAuthenticator(-49, RPID, ORIGIN);
+    const ownDone = selfBegun.ok
+      ? await credentials.confirmKeyEnrolment(kept, selfBegun.enrolmentId,
+          ownAuth.register(selfBegun.challenge, selfBegun.userHandle),
+          { origin: ORIGIN, rpId: RPID })
+      : selfBegun;
+    note(ownDone.ok === true &&
+         credentials.pendingKeyEnrolmentFor(kept) === null,
+         '14b. the person\'s own confirmKeyEnrolment still drops its ' +
+         'pending record', JSON.stringify(ownDone));
+    // Optional rows left out of a save are kept (#907), so `off` is said.
+    passkeyPolicy.save('default', Object.assign({}, passkeyPolicy.DEFAULTS,
+      { allowUsernameless: true, adminEnrolment: 'off' }));
+    config.clearOverride(ON);
+    const replaceOld = credentials.keysOf('pkl-bob')[0] || {};
+    const replaceBegin = credentials.beginKeyUpgrade('pkl-bob',
+      replaceOld.credentialId);
+    const replaceProof = await credentials.proveKeyUpgrade('pkl-bob',
+      replaceBegin.upgradeId, bobOff.assert(replaceBegin.challenge),
+      { origin: ORIGIN, rpId: RPID });
+    const replaceNew = await makeAuthenticator(-49, RPID, ORIGIN);
+    const replaceDone = await credentials.confirmKeyUpgrade('pkl-bob',
+      replaceBegin.upgradeId,
+      replaceNew.register(replaceProof.challenge, replaceProof.userHandle),
+      { origin: ORIGIN, rpId: RPID });
+    const replaceRows = credentials.keysOf('pkl-bob');
+    // #643 stores the classical lane by leaving `lane` off the row.
+    // `keyLane()` is what reads that as classical. #939's replace write
+    // puts the ML-DSA key in that lane; it does not add a second row.
+    note(replaceBegin.ok && replaceProof.ok && replaceDone.ok &&
+         replaceDone.mode === 'replace' &&
+         replaceDone.lane === 'classical' &&
+         replaceRows.length === 1 &&
+         replaceRows[0].credentialId === replaceNew.credentialId &&
+         credentials.keyLane(replaceRows[0]) === 'classical' &&
+         replaceRows[0].lane !== 'pqc' &&
+         (credentials.keyUpgradeHistory(replaceRows[0]) || {})
+           .previousAlgorithm === 'ES256',
+         '13c. when the lanes are not alongside, the ML-DSA key replaces ' +
+         'the proved classical key in the classical lane',
+         JSON.stringify([replaceDone, replaceRows,
+           credentials.keyLane(replaceRows[0])]));
     server.close();
   })().catch(function (e) {
     note(false, 'the child ran to the end', e && e.stack);

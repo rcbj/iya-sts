@@ -35,14 +35,14 @@ answers well over a hundred endpoints across sixteen protocol families and none
 of them was discoverable from `/`.
 
 So the page is a **signpost**: the logo, the name, the version, one sentence
-about what this service is, the warning that it verifies nothing, and five
-links — the repository, its issues, the documentation site, and the two
-surfaces on this instance that a person rather than a client goes to, `/admin`
-and `/portal`.
+about what this service is, the warning that it verifies nothing, and six
+links — the repository, its issues, the documentation site, and the three
+surfaces on this instance that a person rather than a client goes to, `/admin`,
+`/portal` and `/report`.
 
 **IT LISTS NO ENDPOINTS AND MUST NOT START.** `GET /admin/sts-metadata` builds
 that list by walking the running Express router, so it cannot go stale by
-omission, and this repository's own `tests/vendored/sts_metadata.js` fails on drift in
+omission, and this repository's own `tests/protocol/sts_metadata.js` fails on drift in
 either direction. A hand-written set of highlights here would be a second,
 unchecked copy of it — wrong within a month, on the page most likely to be read
 first and least likely to be re-read. `docs/endpoints.md` makes the same
@@ -52,7 +52,7 @@ The same goes for anything else this service already publishes about itself:
 `GET /oauth2/rfc9700`, `GET /spiffe`, `GET /admin/ldap/service`, `GET /tls`. A summary of one
 of those on the front page is a summary that will disagree with it.
 
-## The five links
+## The six links
 
 Three are written out as constants rather than derived. `package.json` carries no
 `repository` member, and adding one so that this page could compute three URLs
@@ -62,14 +62,17 @@ The documentation URL is GitHub Pages' arrangement of the same repository —
 `baseurl: /iya-sts` — so **changing the repository changes all three and that
 baseurl together**.
 
-The fourth and fifth, `/admin` and `/portal`, are **relative on purpose**. This
-service is reached as localhost, as `sts` on a compose network and through a
-published port; `baseUrlOf()` exists because documents carrying absolute URLs
-have to follow the request, and a same-origin link does not have to know any of
-that. **The one exception is #472's**: where the console or the portal is on a
-listener this request did not arrive on, the view carries that listener's
-advertised base instead (`Home.linkTo()`), since a relative link would land on
-a listener that answers it with a 404.
+The fourth, fifth and sixth, `/admin`, `/portal` and `/report`, are **relative
+on purpose**. This service is reached as localhost, as `sts` on a compose
+network and through a published port; `baseUrlOf()` exists because documents
+carrying absolute URLs have to follow the request, and a same-origin link does
+not have to know any of that. **The one exception is #472's**: where the
+console, the portal or reports is on a listener this request did not arrive on,
+the view carries that listener's advertised base instead (`Home.linkTo()`),
+since a relative link would land on a listener that answers it with a 404.
+Reports is one hosted application with `/report-api`
+(`common/hosted_applications.js`), the same arrangement as the portal and
+`/account-api`, so the two cannot be sent to different listeners.
 
 **`/portal` arrived 2026-09-10 and closed a door that had never been opened.**
 The user portal has existed since 2026-09-06, and the only ways to reach it
@@ -81,11 +84,17 @@ row lists none of the portal's pages, for the endpoint rule one section up:
 so a set of highlights here would be a second copy that goes stale the first
 time a page is added there.
 
-**What a sign-in here MEANS is one sentence shared by both rows**, chosen once
-by `web_home_front.ts`'s `signInMeans()` from the view's
+**`/report` is the sixth link (#956).** It is the reports application, the
+third surface on this instance that a person goes to. The row lists none of
+its pages, for the endpoint rule above. Who may open it — an administrator,
+or a member of the realm's report group — is one sentence on the row;
+`report/CLAUDE.md` (*Who may run one*) is the rule.
+
+**What a sign-in here MEANS is one sentence shared by the three rows**, chosen
+once by `web_home_front.ts`'s `signInMeans()` from the view's
 `mode.verifiesCredentials`, which the server reads per request. What a sign-in
 screen actually CHECKS is a property of `global.mode` —
-`mode.verifiesCredentials()` — rather than of either surface, so a copy on
+`mode.verifiesCredentials()` — rather than of any one surface, so a copy on
 each row would disagree the first time somebody corrected one of them.
 
 **It replaced a clause that was wrong in two ways at once**, and adding the
@@ -110,10 +119,11 @@ defaults and environment variables, four days after the settings stopped
 existing. `tests/readme_settings.js` is the check that would have caught it and
 now does; `tests/CLAUDE.md` carries the argument.
 
-**What the two rows are told apart by is the ROLE, and that is a real
-difference rather than a missing setting.** The console asks for one of two;
-the portal asks for none, because every page of it is about the person looking
-at it, so saying who you are is the entire question.
+**What the console and the portal are told apart by is the ROLE, and that is a
+real difference rather than a missing setting.** The console asks for one of
+two; the portal asks for none, because every page of it is about the person
+looking at it, so saying who you are is the entire question. Reports is told
+apart by who may open it, which is the sentence on its row.
 
 ## The image
 
@@ -130,7 +140,7 @@ at it, so saying who you are is the entire question.
   down, and a missing decoration is the least important thing that could go
   wrong here. With no image the page is drawn without one and the route answers
   **404 in its own words**. That last part is load-bearing for the link check in
-  `tests/vendored/sts_metadata.js`, which fails on Express's `Cannot GET` and passes on an
+  `tests/protocol/sts_metadata.js`, which fails on Express's `Cannot GET` and passes on an
   endpoint answering for itself.
 * **It is this project's own logo (2026-10-01, rcbj)**: `docs/logo.png`, the
   one README.md shows, copied byte for byte (906 × 269, opaque, 22 kB, drawn
@@ -162,7 +172,7 @@ now, by the recipe:
   `app.contentSecurityPolicy()` whatever is asked.
 * **`GET /home-api/front` is the page's view, and it has no words**: the
   name, the version and its build (the tooltip), the mode's two facts, the
-  logo (or `null`, see *The image*), and the five links as `{ id, href,
+  logo (or `null`, see *The image*), and the six links as `{ id, href,
   external }`. `GET /home-api` is the index, `/account-api`'s convention: the
   view's operation `mirrors` `GET /`, and nothing posts. Both `no-store`,
   because the mode and the listeners can change while the process runs.

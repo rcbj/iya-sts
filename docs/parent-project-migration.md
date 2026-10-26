@@ -28,7 +28,7 @@ from what this document prescribed, and somebody reading the old advice would
 
 **1. `tests/Dockerfile` — done as described.** Every `COPY sts/…` line names a
 folder now (`sts/kerberos/krb5_kdc.js`, `sts/common/helpers.js`,
-`sts/common/vendored/bbs2023.js`), and the file's own comment records why: the
+`sts/common/crypto_impl/bbs2023.js`), and the file's own comment records why: the
 subdirectories have to be preserved in the image, because `krb5_kdc.js` requires
 `../common/helpers` and a flattened copy resolves that outside the submodule and
 fails as a missing dependency rather than as a misplaced file. The two modules
@@ -40,7 +40,7 @@ Dockerfile says at each one.
 matters.** This document proposed that callers pass a path with its directory,
 `mockStsModule("kerberos/krb5_kdc.js")`. That is *not* what was built. The
 resolver SEARCHES instead: `mockStsSearchDirs()` walks this service's top-level
-directories plus `common/vendored/`, so `mockStsModule("krb5_kdc.js")` still
+directories plus `common/crypto_impl/`, so `mockStsModule("krb5_kdc.js")` still
 takes a **bare filename** and finds `kerberos/krb5_kdc.js` on its own.
 
 The consequence is the useful half: **the four callers were never edited and
@@ -140,7 +140,7 @@ bump, and after any commit here that adds a require reachable from `krb5_kdc.js`
   its own.
 * **`CONFIG_FILE` and the `KRB5_*` environment variables.** The resolution order
   is the same and the environment still wins over the appconfig file.
-* **Every vendored file, byte for byte.** Nothing in `common/vendored/` or
+* **Every vendored file, byte for byte.** Nothing in `common/crypto_impl/` or
   `kerberos/krb5_spnego.js` was edited for any of this — they were moved, and the
   two byte-compare tests pass against them where they now sit.
 

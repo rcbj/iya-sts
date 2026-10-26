@@ -691,6 +691,22 @@
     "en": "eb2c0a8e31f615d9",
     "text": "Cuánto vive la cookie que necesita una sesión vinculada al dispositivo antes de que el navegador deba volver a demostrar su clave, y por tanto cuánto sigue funcionando un par de cookies copiado. Nunca más allá del final de la propia sesión. Se lee cuando se emite una cookie."
   },
+  "authn.deviceBoundIncludeSite|label": {
+    "en": "dfe9f9439467a7ed",
+    "text": "Limitar una sesión vinculada al dominio registrable"
+  },
+  "authn.deviceBoundIncludeSite|description": {
+    "en": "431c5a53f269b368",
+    "text": "Desactivado, el valor predeterminado, la cookie de una sesión vinculada al dispositivo es solo del host, que es lo que este servicio siempre ha hecho, y scope.include_site es falso. Activado, las instrucciones ponen include_site y el Domain de la cookie es el dominio registrable del host que se registró (el webauthn.rpId cuando es un sufijo del host; si no, las dos últimas etiquetas; una dirección, localhost o una sola etiqueta no se amplía). El host público del depurador y el host de un listener personalizado bajo ese dominio quedan excluidos. Un depurador en el mismo host y otro puerto no puede excluirse: las cookies no se limitan por puerto. Los prefijos de ruta de un dominio son el mismo origen."
+  },
+  "authn.deviceBoundIssuanceWaitS|label": {
+    "en": "c379c77b9ef18c81",
+    "text": "Cuánto espera una emisión un vínculo de dispositivo (segundos)"
+  },
+  "authn.deviceBoundIssuanceWaitS|description": {
+    "en": "2562f13d1a8d0c51",
+    "text": "Cuánto espera una emisión que exige una sesión vinculada al dispositivo después de que se ofreció el registro. Se lee en la emisión, no con un temporizador: pasado ese plazo, el hecho de la sesión es timedout y la emisión se rechaza. Cero significa que la espera ya transcurrió. Una sesión a la que nunca se le ofreció el registro no es rechazada por la espera."
+  },
   "authn.maxSessions|label": {
     "en": "5fa1f6294f5a3dc8",
     "text": "Máximo de sesiones de inicio de sesión único por dominio"
@@ -1103,6 +1119,22 @@
     "en": "e35e276b9d933828",
     "text": "Activada, una persona puede tener a la vez una llave de acceso clásica y una poscuántica (ML-DSA), en el mismo autenticador si puede crear ambas. Cada llave de acceso se crea en una VÍA que la persona elige: la vía clásica solicita `webauthn.algorithms` sin ML-DSA (`ES256` y `RS256` si no queda ninguno), la vía poscuántica solicita solo ML-DSA. Cada vía tiene su propio identificador de usuario, de modo que la segunda llave de acceso no sustituye a la primera en el autenticador, y su propia lista de exclusión; un gestor de credenciales muestra la poscuántica con un nombre que indica su algoritmo —`<username>+ml-dsa` al crearla, `<username>+ml-dsa-65` (por ejemplo) cuando todas las llaves poscuánticas de la persona usan ese— que nunca es un nombre con el que se inicie sesión. `webauthn.maxKeysPerPerson` cuenta ambas vías. No puede activarse mientras `webauthn.pqcOnly` lo esté. Desactivada, cada ceremonia es como antes, y una llave de acceso poscuántica ya registrada sigue iniciando sesión; no se puede crear una nueva."
   },
+  "webauthn.postQuantumAllowCredentials|label": {
+    "en": "295b04bef9cf50bc",
+    "text": "Llaves de acceso que nombra un inicio de sesión cuando se exige una poscuántica"
+  },
+  "webauthn.postQuantumAllowCredentials|description": {
+    "en": "f34caf08dceeedd3",
+    "text": "Solo se lee mientras la política de llaves de acceso exige una llave de acceso poscuántica al iniciar sesión (`postQuantumRequired`), y solo donde la fila `postQuantumAllowCredentials` del perfil seleccionado es `realm`. `narrow` (el valor predeterminado) nombra solo las llaves de acceso poscuánticas (ML-DSA) de la persona en el `allowCredentials` del paso de llave de acceso, de modo que nunca se ofrece una clásica — pero una persona cuyo dispositivo solo guarda su llave clásica ve el propio mensaje «no se encontró ninguna llave de acceso» de la plataforma. `list-and-refuse` nombra todas las llaves de acceso que tiene y rechaza una clásica después de la ceremonia (STS-AUTHN-0356), con una página que dice que la aplicación exige una llave de acceso poscuántica y dónde añadir una. La contrapartida: la persona puede elegir una llave de acceso que será rechazada. En ambos casos, a una persona que no tiene ninguna llave de acceso poscuántica se le avisa antes de cualquier ceremonia."
+  },
+  "webauthn.pqcUpgrade|label": {
+    "en": "1c2af00d33a75721",
+    "text": "Actualizar una llave de acceso clásica a una poscuántica"
+  },
+  "webauthn.pqcUpgrade|description": {
+    "en": "a77cd9a980262260",
+    "text": "Activado (el valor predeterminado), una persona puede actualizar una de sus llaves de acceso clásicas a una poscuántica (ML-DSA) en /portal/keys: usa la llave clásica una vez, para mostrar que es suya, y luego crea la nueva, a la que solo se le ofrece ML-DSA. Con `webauthn.pqcAlongsideClassical` activado, la llave poscuántica se AÑADE en su propia vía y la clásica se conserva; desactivado, la llave poscuántica SUSTITUYE a la clásica en su lugar, conservando su nombre y anotando cuándo se actualizó y desde qué algoritmo. La llave clásica solo cambia una vez verificada la nueva, de modo que una actualización fallida la deja como estaba. La nueva llave cumple cada regla que cumple un registro. Desactivado, ninguna llave puede actualizarse; una llave poscuántica aún puede registrarse junto a una clásica donde se puedan registrar llaves."
+  },
   "webauthn.userVerification|label": {
     "en": "8b134177fe992d91",
     "text": "Verificación del usuario"
@@ -1134,6 +1166,30 @@
   "webauthn.attestationTrustAnchors|description": {
     "en": "75ff97c509121fb5",
     "text": "Certificados raíz a los que puede encadenar un certificado de atestación, como paquete PEM, ADEMÁS de los que el FIDO Metadata Service enumera para cada modelo — una CA corporativa de endoso TPM, la raíz de un fabricante, la raíz de atestación de Android o de Apple, o una raíz de pruebas. Una cadena que llega a una es DE CONFIANZA. No se incluye nada: vacío confía solo en lo que enumera el BLOB de MDS activo."
+  },
+  "webauthn.attestationEvidenceTsaUrl|label": {
+    "en": "4dabd3df9187a34f",
+    "text": "URL de la autoridad de sello de tiempo de las pruebas de llave de acceso"
+  },
+  "webauthn.attestationEvidenceTsaUrl|description": {
+    "en": "7fa58ac004a9e2e4",
+    "text": "Cuando se define junto con las anclas de confianza de la TSA, las atestaciones de llave de acceso verificadas reciben un EvidenceRecord de RFC 4998 cuyo ArchiveTimeStamp inicial es un token de RFC 3161 de esta autoridad de sello de tiempo HTTPS. Vacío desactiva el registro de pruebas."
+  },
+  "webauthn.attestationEvidenceTsaTrustAnchors|label": {
+    "en": "8c29eb6dc36aa1a9",
+    "text": "Anclas de confianza de la TSA de las pruebas de llave de acceso (PEM)"
+  },
+  "webauthn.attestationEvidenceTsaTrustAnchors|description": {
+    "en": "7b20573a01a900a7",
+    "text": "Anclas de confianza PEM usadas para verificar el token de RFC 3161 y la ruta de certificado de su TSA. El registro de pruebas exige tanto este conjunto como la URL de la autoridad de sello de tiempo."
+  },
+  "webauthn.attestationEvidenceHashAlgorithm|label": {
+    "en": "8c886d89947bce4c",
+    "text": "Algoritmo del árbol de hash de las pruebas de llave de acceso"
+  },
+  "webauthn.attestationEvidenceHashAlgorithm|description": {
+    "en": "ea9f111d1308b528",
+    "text": "Resumen que usan los registros nuevos de RFC 4998. Subirlo desde sha256 dispara la renovación del árbol de hash de RFC 4998 en el recuento diario del informe de llaves de acceso, en una nueva ArchiveTimeStampChain."
   },
   "webauthn.attestationAllowedAaguids|label": {
     "en": "1d32f2ee4864d344",
@@ -1274,6 +1330,14 @@
   "keys.offerKemEncryption|description": {
     "en": "16bd897eb9c3284a",
     "text": "Si los algoritmos JWE ML-KEM y HPKE (#82 — borradores, consulte keys.encryptionKemAlgs) se ofrecen cuando este dominio cifra PARA una clave que tiene un cliente o una billetera: anunciados en `userinfo_encryption_alg_values_supported`, `id_token_encryption_alg_values_supported`, `authorization_encryption_alg_values_supported` (JARM), `introspection_encryption_alg_values_supported` y el `credential_response_encryption` de un emisor OpenID4VCI, y aceptados cuando un cliente registra uno o una billetera nombra uno. **Desactivado de forma predeterminada, y decisión de un administrador:** estos algoritmos proceden de Internet-Drafts, y un cliente o una suite de conformidad que prueba cada algoritmo anunciado se encuentra con algunos que no conoce. Un cliente ya registrado para uno conserva su registro; con esto desactivado su siguiente respuesta cifrada se rechaza, como para cualquier algoritmo que este dominio no ofrezca."
+  },
+  "keys.postQuantumSigning|label": {
+    "en": "34883416ca94e446",
+    "text": "Firma poscuántica"
+  },
+  "keys.postQuantumSigning|description": {
+    "en": "68ffd5da182ec911",
+    "text": "Si este dominio firma, publica y verifica los algoritmos JWS poscuánticos y compuestos (ML-DSA, SLH-DSA y los ML-DSA compuestos). **Activado de forma predeterminada.** Desactivado: no hay ninguna clave de firma poscuántica en `/oauth2/jwks` ni en el documento DID (incluidas las claves en espera, fijadas y de grupo de firmantes); ningún algoritmo poscuántico aparece en ninguna lista `*_alg_values_supported` o `*_alg_values` de los documentos de descubrimiento, del servidor de autorización, de OpenID Federation, de OpenID4VCI y de OpenID4VP; un JWS firmado con uno se rechaza dondequiera que este dominio verifique uno; un cliente no puede registrar uno; y una firma que todavía necesitaría uno — para un cliente registrado mientras esto estaba activado, o una firma de mensaje HTTP — se rechaza en lugar de hacerse con una clave que nadie puede obtener. Existe para los clientes y las suites de pruebas cuyas bibliotecas JOSE no pueden leer una clave AKP o no conocen estos algoritmos, entre ellas la suite de conformidad de OpenID. **Sin cambios:** COSE (claves de acceso), las firmas XML, TLS, los algoritmos de certificado, las claves de cifrado ML-KEM (`keys.encryptionKemAlgs`), la clave alternativa ML-DSA que un certificado `hybrid-groups` lleva en `x5c` (las claves ML-DSA sueltas se retiran, los certificados no se vuelven a emitir) y `oidfed.signingAlg`: un dominio que nombra una clave de federación ML-DSA sigue firmando sus declaraciones con ella pero rechaza una declaración ML-DSA que se le pide verificar, así que mantenga ese ajuste clásico aquí."
   },
   "keys.kidFormat|label": {
     "en": "67642fcf21c7ca50",
@@ -1883,6 +1947,14 @@
     "en": "e1cb6b236d5adc8b",
     "text": "El algoritmo JWS con el que se firman los tokens de acceso (y los tokens de actualización), con la clave de este dominio para él — todas se publican en el JWKS. default es RS256, y PS256 con FAPI 1.0 Advanced, que además rechaza todo lo que no sea PS256 o ES256. Un servidor de autorización con nombre puede llevar el suyo propio (access_token_signing_alg)."
   },
+  "oauth2.accessTokenFormat|label": {
+    "en": "c7e15a626ed4371b",
+    "text": "Formato del token de acceso"
+  },
+  "oauth2.accessTokenFormat|description": {
+    "en": "74504b84130dea54",
+    "text": "Indica si un token de acceso nuevo es un JWT de RFC 9068 (jwt, el valor predeterminado) o un identificador opaco de 256 bits (opaque). Las reivindicaciones de un token opaco permanecen en este dominio; los tokens de actualización siguen siendo JWT anidados y los tokens de identidad siguen siendo JWT. Un token ya emitido conserva la forma con la que se acuñó."
+  },
   "oauth2.jarmResponseLifetimeS|label": {
     "en": "28259a88563d949d",
     "text": "Vigencia de la respuesta JARM (s)"
@@ -2354,6 +2426,14 @@
   "oauth2.maxRefreshTokenFamilies|description": {
     "en": "331485a9a3ff827c",
     "text": "A cuántos tokens de actualización hace seguimiento el modo RFC 9700 para la rotación y la detección de repeticiones. Cuando está lleno, se olvidan primero los VENCIDOS, luego los ROTADOS (ya revocados, así que una repetición de uno se sigue rechazando — lo que se pierde es la revocación de toda la familia que esa repetición desencadenaría) y solo entonces el vigente más antiguo, con una advertencia. Uno vigente olvidado sigue funcionando; su siguiente rotación inicia una familia nueva. Auméntelo para un despliegue con más tokens de actualización vigentes a la vez que esta cantidad."
+  },
+  "oauth2.maxOpaqueAccessTokens|label": {
+    "en": "a0a9d2a5af677a1f",
+    "text": "Tokens de acceso opacos recordados (por dominio)"
+  },
+  "oauth2.maxOpaqueAccessTokens|description": {
+    "en": "19042efe72e28cc6",
+    "text": "Cuántos tokens de acceso opacos recuerda este dominio. Cuando está lleno, se descartan las filas caducadas y se rechaza una emisión más (STS-OAUTH-0979) en lugar de expulsar un token aún vigente. Se aplica cuando oauth2.accessTokenFormat es opaque."
   },
   "oauth2.signedMetadataAlgorithm|label": {
     "en": "71fb31f9a62ec657",
@@ -3024,8 +3104,8 @@
     "text": "Algoritmo de clave predeterminado de la CA"
   },
   "pki.keyAlgorithm|description": {
-    "en": "763204ceb3af08e6",
-    "text": "Con qué algoritmo de clave se construye una nueva autoridad de certificación cuando el formulario no indica ninguno: rsa-2048, rsa-3072, rsa-4096, ec-p256, ec-p384, ec-p521 o ed25519, o uno de los identificadores poscuánticos (ML-DSA, SLH-DSA, los compuestos y ML-KEM — que no puede firmar, así que es una clave de sujeto y nunca la de una autoridad). RSA 2048 es el predeterminado porque la HOJA que esta jerarquía existe para emitir firma una aserción de cliente que la biblioteca OAuth de otra persona tiene que verificar, y RS256 es el único algoritmo que tienen todas esas bibliotecas. La lista se lee de common/vendored/key_material.js — el módulo que genera la clave — así que un valor que no conoce se rechaza al construir, con la lista al lado."
+    "en": "00e61f4da7498a62",
+    "text": "Con qué algoritmo de clave se construye una nueva autoridad de certificación cuando el formulario no indica ninguno: rsa-2048, rsa-3072, rsa-4096, ec-p256, ec-p384, ec-p521 o ed25519, o uno de los identificadores poscuánticos (ML-DSA, SLH-DSA, los compuestos y ML-KEM — que no puede firmar, así que es una clave de sujeto y nunca la de una autoridad). RSA 2048 es el predeterminado porque la HOJA que esta jerarquía existe para emitir firma una aserción de cliente que la biblioteca OAuth de otra persona tiene que verificar, y RS256 es el único algoritmo que tienen todas esas bibliotecas. La lista se lee de common/crypto_impl/key_material.js — el módulo que genera la clave — así que un valor que no conoce se rechaza al construir, con la lista al lado."
   },
   "pki.signatureAlgorithm|label": {
     "en": "43cdf39e69d6fdd4",
@@ -3064,8 +3144,8 @@
     "text": "Vigencia predeterminada de un par de claves emitido (días)"
   },
   "pki.leafLifetimeDays|description": {
-    "en": "b55ab0b2f1f1f04b",
-    "text": "Cuánto tiempo es válido un certificado de firma emitido a una aplicación cuando el formulario no indica vigencia. Se RECORTA a la caducidad de la propia CA emisora en lugar de rechazarse donde la superaría: la causa habitual es una CA emisora de cinco años en su quinto año, y un operador que pidió un año debería recibir once meses en lugar de un error de aritmética. Las vigencias de los propios niveles vienen de los perfiles de certificado de common/vendored/x509.js — veinte años, diez y cinco — y pueden anularse en el formulario y con las tres filas pki.*LifetimeYears de abajo."
+    "en": "028d5b5d730c9d23",
+    "text": "Cuánto tiempo es válido un certificado de firma emitido a una aplicación cuando el formulario no indica vigencia. Se RECORTA a la caducidad de la propia CA emisora en lugar de rechazarse donde la superaría: la causa habitual es una CA emisora de cinco años en su quinto año, y un operador que pidió un año debería recibir once meses en lugar de un error de aritmética. Las vigencias de los propios niveles vienen de los perfiles de certificado de common/crypto_impl/x509.js — veinte años, diez y cinco — y pueden anularse en el formulario y con las tres filas pki.*LifetimeYears de abajo."
   },
   "pki.rootLifetimeYears|label": {
     "en": "72e3da975d05b214",
@@ -4148,8 +4228,8 @@
     "text": "Sembrar la consola y esta API como aplicaciones"
   },
   "applications.seedInternal|description": {
-    "en": "7092a96534fcb0ca",
-    "text": "Crea entradas de aplicación para las superficies propias de este servicio al arrancar, bajo ou=applications junto con todo lo demás: la CONSOLA DE ADMINISTRACIÓN en /admin, el PORTAL DE USUARIO en /portal, la API DE GESTIÓN en /admin-api y — mientras esté integrado — los dos clientes del depurador de protocolos. Se siembran como registros COMPLETOS de RFC 7591 y no como etiquetas: la consola y el portal como partes que confían OpenID Connect confidenciales con el grant de código de autorización, esta API como cliente OAuth confidencial con client_credentials, cada uno con un secreto — así que son clientes que pueden ejercitarse y no filas en una página. La consola y el portal INICIAN SESIÓN A TRAVÉS de sus entradas (/admin/callback y /portal/callback), así que desactivar esto, o eliminar una, deja esa superficie sin poder iniciar la sesión de nadie hasta que vuelva a existir una entrada. Este contenedor es el registro — un ldapmodify sobre él es un cambio de configuración. ACTIVADO de forma predeterminada. Solo se siembran donde el identificador está libre, así que si un operador eliminó una, permanece eliminada hasta el siguiente reinicio."
+    "en": "0dcb321977df8ef6",
+    "text": "Crear entradas de aplicación para las superficies propias de este servicio al arrancar, bajo ou=applications junto con todo lo demás: la CONSOLA DE ADMINISTRACIÓN en /admin, el PORTAL DE USUARIO en /portal, la aplicación de INFORMES en /report, la API DE INFORMES en /report-api, la API DE GESTIÓN en /admin-api y — mientras esté integrado — los dos clientes del depurador de protocolos. Se siembran como registros COMPLETOS de RFC 7591 y no como simples etiquetas: la consola y el portal como partes que confían de OpenID Connect confidenciales con el grant de código de autorización, esta API como cliente OAuth confidencial con client_credentials, cada uno con un secreto — de modo que son clientes con los que se puede trabajar y no filas en una página. La consola y el portal INICIAN SESIÓN A TRAVÉS de sus entradas (/admin/callback y /portal/callback), así que desactivar esto, o eliminar una, deja a esa superficie sin poder iniciar sesión a nadie hasta que vuelva a existir una entrada. Este contenedor es el registro — un ldapmodify sobre él es un cambio de configuración. ACTIVADO de forma predeterminada. Se siembra solo donde el identificador está libre, de modo que si un operador eliminó una, sigue eliminada hasta el siguiente reinicio."
   },
   "applications.seedInternal|restartReason": {
     "en": "ce6b237794aa9252",
@@ -7887,6 +7967,14 @@
     "en": "5525432b1abd613a",
     "text": "Si cada llamada a un endpoint de protocolo genera un evento de auditoría. Activado por defecto, porque «todo lo que se pidió a este servicio» es la razón de ser del registro — pero es con diferencia la fuente más ruidosa (cada sondeo de JWKS y cada obtención de metadatos es uno), así que desactivarlo es como alguien que vigila el directorio o la consola obtiene una página legible. Nunca afecta a las otras cinco categorías, y /admin/metrics cuenta cada llamada en cualquier caso."
   },
+  "audit.authenticationHistoryDays|label": {
+    "en": "bc611d1f003e751a",
+    "text": "Historial de autenticación (días)"
+  },
+  "audit.authenticationHistoryDays|description": {
+    "en": "4270a8167905dee9",
+    "text": "Cuántos días de inicios de sesión evaluados lista Inicios de sesión recientes del portal de usuario para la persona que ha iniciado sesión. Cada dominio fija el suyo, porque el valor se lee en el dominio ambiental. La pestaña Intentos de autenticación de la consola, en una persona, lista cada intento que el registro de auditoría aún conserva, el registro entero. El tope propio del registro aún puede descartar las filas más antiguas."
+  },
   "delegation.maxRecords|label": {
     "en": "25d78cc6c84e920b",
     "text": "Máximo de actos de delegación retenidos"
@@ -10038,6 +10126,110 @@
   "mail.notifyAdministrators|description": {
     "en": "bd3ae7ff26663b42",
     "text": "Cuando el SERVICIO, y no una persona, marca una credencial como comprometida o desactiva una cuenta (puntuación de riesgo), envía también un correo a cada miembro de la lista Admin Write del dominio que tenga una dirección."
+  },
+  "report.syncMaxRows|label": {
+    "en": "77fdb27c30eb4bf8",
+    "text": "Límite de filas de un informe síncrono"
+  },
+  "report.syncMaxRows|description": {
+    "en": "563c41bbaffd74bb",
+    "text": "El máximo de filas que puede devolver un informe síncrono. Un límite mayor se rechaza en modo sync y se convierte en un trabajo en auto."
+  },
+  "report.syncMaxBytes|label": {
+    "en": "f975fe6e57bfae86",
+    "text": "Límite de bytes de un informe síncrono"
+  },
+  "report.syncMaxBytes|description": {
+    "en": "e7c9e919bd0ac8ea",
+    "text": "El máximo de bytes que puede devolver un informe síncrono. Un resultado que lo supere se rechaza en lugar de enviarse en parte."
+  },
+  "report.syncMaxMs|label": {
+    "en": "ac021c892bcfc370",
+    "text": "Límite de tiempo de un informe síncrono (milisegundos)"
+  },
+  "report.syncMaxMs|description": {
+    "en": "f6ab877e4526a9f9",
+    "text": "Cuánto tiempo puede ejecutarse un informe síncrono. Pasado este tiempo la llamada se rechaza en lugar de responderse con un cuerpo parcial."
+  },
+  "report.asyncMaxMs|label": {
+    "en": "f0c5ac5e9884050c",
+    "text": "Límite de tiempo de un trabajo de informe (milisegundos)"
+  },
+  "report.asyncMaxMs|description": {
+    "en": "45c7c3ad19fc3c4a",
+    "text": "Cuánto tiempo puede ejecutarse un trabajo de informe. Pasado este tiempo el trabajo falla en lugar de almacenar un resultado parcial."
+  },
+  "report.asyncMaxRows|label": {
+    "en": "8aca969304d23655",
+    "text": "Límite de filas de un trabajo de informe"
+  },
+  "report.asyncMaxRows|description": {
+    "en": "e5dceb18ca4c26a4",
+    "text": "El máximo de filas que puede escribir un trabajo de informe. Una consulta que pida más se rechaza en todos los modos."
+  },
+  "report.asyncMaxBytes|label": {
+    "en": "470a53d032622764",
+    "text": "Límite de bytes de un trabajo de informe"
+  },
+  "report.asyncMaxBytes|description": {
+    "en": "91aac7df1ff51b42",
+    "text": "El máximo de bytes que puede almacenar un trabajo de informe. Un resultado que lo supere hace fallar el trabajo en lugar de truncarse."
+  },
+  "report.pdfMaxRows|label": {
+    "en": "5cf679421e7b7bf3",
+    "text": "Límite de filas de un informe PDF"
+  },
+  "report.pdfMaxRows|description": {
+    "en": "3b855ef0848c4ad4",
+    "text": "El máximo de filas que puede contener un informe PDF. Una consulta mayor se rechaza y se pide usar CSV."
+  },
+  "report.pdfMaxPages|label": {
+    "en": "050231b3a1524a4b",
+    "text": "Límite de páginas de un informe PDF"
+  },
+  "report.pdfMaxPages|description": {
+    "en": "3b065500b4a246a3",
+    "text": "El máximo de páginas que puede contener un informe PDF. Pasado este límite el resultado se rechaza y se pide usar CSV."
+  },
+  "report.maxConcurrentPerRealm|label": {
+    "en": "2e8e9a195cac9a4c",
+    "text": "Trabajos de informe en ejecución por dominio"
+  },
+  "report.maxConcurrentPerRealm|description": {
+    "en": "7a252c3307b54d2a",
+    "text": "Cuántos trabajos de informe puede tener en ejecución a la vez un dominio. Un envío adicional se rechaza hasta que termine uno."
+  },
+  "report.maxConcurrentPerSubject|label": {
+    "en": "3533626b8e0a8d15",
+    "text": "Trabajos de informe en ejecución por persona"
+  },
+  "report.maxConcurrentPerSubject|description": {
+    "en": "525965a5866fed18",
+    "text": "Cuántos trabajos de informe puede tener en ejecución a la vez una persona."
+  },
+  "report.artifactRetentionS|label": {
+    "en": "ae014cb5ae4ea837",
+    "text": "Cuánto tiempo se conserva el resultado de un informe (segundos)"
+  },
+  "report.artifactRetentionS|description": {
+    "en": "c1e0935d871842f4",
+    "text": "Cuánto tiempo siguen disponibles para descargar los bytes de un informe terminado. Pasado este tiempo el resultado desaparece."
+  },
+  "report.jobRetentionS|label": {
+    "en": "117aad13b6fa172e",
+    "text": "Cuánto tiempo se conserva la fila de un trabajo de informe (segundos)"
+  },
+  "report.jobRetentionS|description": {
+    "en": "dfada581a8c28ca3",
+    "text": "Cuánto tiempo permanece en la lista la fila de un trabajo de informe terminado. Un trabajo que sigue en ejecución no se elimina."
+  },
+  "report.usersGroup|label": {
+    "en": "21554dfaa265b36f",
+    "text": "A quién se le puede emitir report:use"
+  },
+  "report.usersGroup|description": {
+    "en": "28068508e0655509",
+    "text": "El grupo del directorio cuyos miembros pueden recibir report:use. Vacío significa que solo pueden los administradores de este dominio. report:admin se emite únicamente a esos administradores."
   },
   "listenerMain.minVersion|label": {
     "en": "6470c151e28a9ab3",

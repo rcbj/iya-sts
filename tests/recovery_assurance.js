@@ -10,8 +10,10 @@
 // The passkey policy's `recoveryAssurance` row (`any`, `not-weaker`,
 // `operator-only`), the `recover-account` rules of the issuance policy that
 // decide it, and the doors that ask: a reset link's spend, the
-// forgot-password request, and the session's start (`startSessionHere()`),
-// where the sign-in screen offers the registration of a passkey instead.
+// forgot-password request, the session's start (`startSessionHere()`),
+// where the sign-in screen offers the registration of a passkey instead,
+// and (#960) an administrator's set-password, keytab reset and LDAP
+// `userPassword` — not a portal change that proved the current one.
 //
 // In a CHILD PROCESS, for `admin_credential_controls.js`'s reason: it loads
 // the whole protocol stack, creates people in the default realm and saves
@@ -22,7 +24,7 @@
 //
 //   A. The row's built-in default is `any` in development and `not-weaker`
 //      in product (rcbj's decision on #724), and a save that leaves the row
-//      out is accepted and keeps the default.
+//      out is accepted and keeps the default, or the value stored (#907).
 //   B. The built-in document's `recover-account` rules and
 //      `common/passkey_rules.js`'s reading of them give one answer —
 //      verdict, code and reason — over a grid of every fact they read.
@@ -34,8 +36,9 @@
 //      password sign-in starts NO session and draws the set-up step, marked
 //      `recovery`, offering only a passkey, whose ceremony is a
 //      REGISTRATION; a session that a passkey did not answer is refused
-//      STS-AUTHN-0381 at `startSession()`; a passkey's is started and
-//      clears the recovery.
+//      STS-AUTHN-0381 at `startSession()`, as is one a key REGISTERED in
+//      the act answered (#901); a passkey's is started and clears the
+//      recovery.
 //   E. A RECOVERY CODE at the second-factor step, for a person holding an
 //      `mfa` passkey, is itself a recovery door: under `not-weaker` it
 //      leads to the same registration (a REGISTRATION although they hold a
@@ -47,6 +50,40 @@
 //   G. /admin-api's save-passkey-policy takes the row (rule 7's parity), a
 //      value outside the three is refused, and a body that leaves it out —
 //      every caller written before it existed — is accepted.
+//   H. AN ADMINISTRATOR'S PASSWORD ON A PASSKEY HOLDER (#960). Under
+//      not-weaker, set-password (generated, and typed) leaves a pending
+//      recovery naming `admin-password`; the password sign-in draws the
+//      set-up step and starts no session; `pwdReset` stays clear and a
+//      session they already held is not ended. Under `any`, the same
+//      action leaves nothing pending and the password signs in. A portal
+//      change that proved the current password, and a self LDAP bind,
+//      note nothing. A non-self LDAP `userPassword` (an unbound bind's
+//      create, and someone else's update) notes `admin-password`; a
+//      revoke does not. `reset-person-keytab` notes the same hold when
+//      this realm's KDC accepts it. A refusal before the password is set
+//      — a realm whose `krb5.enabled` is off, which a new realm is —
+//      leaves no pending recovery, and the password that was stored
+//      still verifies. The default realm's KDC is not switched off.
+//   I. A recovery write that returns false (#962) is not a finished reset
+//      when a hold is required. Under not-weaker, spending an
+//      administrator's link for a passkey holder does not answer success,
+//      leaves the link spendable and leaves no password that signs in
+//      with nothing pending. The same false write still completes a reset
+//      for a person who holds no passkey. reset-password refuses rather
+//      than returning a password. The directory function is restored
+//      before section J. Sections D and H already ran with the real
+//      write.
+//   J. AN ACTIVATION ABANDONED AT THE KEY OR THE APP STEP (#927). Under
+//      not-weaker (product's default), a person who already holds a
+//      passkey, enrolled before the link is issued, is given an
+//      activation link. POST step=setup with a password and key_role=mfa
+//      stops at the key ceremony; a second person, totp=1 and no key
+//      role, stops at the authenticator step. Neither reaches finish().
+//      Each has a pending recovery whose door is activation, the password
+//      verifies in product mode, the link is still outstanding, and a
+//      password sign-in starts no session (the recovery set-up step, and
+//      STS-AUTHN-0381 at startSession()). This section runs after I
+//      restores the real recovery write.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -149,6 +186,17 @@ function childMain() {
            leftOut.profile.sources.recoveryAssurance === 'built-in',
            'A2. a save that leaves the row out is accepted and keeps the ' +
            'built-in default', JSON.stringify(leftOut.errors || []));
+      // #907: left out of a LATER save, a stored row is kept, not deleted.
+      const stored = withRow('operator-only');
+      const resaved = withRow('');
+      note(stored.ok && resaved.ok &&
+           resaved.profile.recoveryAssurance === 'operator-only' &&
+           resaved.profile.sources.recoveryAssurance !== 'built-in',
+           'A2b. a later save that leaves the row out keeps the stored ' +
+           'operator-only rather than deleting it (#907)',
+           JSON.stringify(resaved.profile ? resaved.profile.recoveryAssurance
+                                          : resaved.errors));
+      passkeyPolicy.reset('default');
       const bad = withRow('sometimes');
       note(!bad.ok, 'A3. a value outside the three is refused',
            JSON.stringify(bad.errors || []));
@@ -332,6 +380,18 @@ function childMain() {
            pwDetail.recoveryLimited === true,
            'D4. at startSession() a session a passkey did not answer is ' +
            'refused STS-AUTHN-0381', JSON.stringify(pwDetail));
+      // #901: a key REGISTERED in the act is not a passkey signing them in.
+      const regDetail = { credential: { kind: 'webauthn',
+                                        id: 'ann-new-' + STAMP,
+                                        ceremony: 'registration' } };
+      const reg = authn.startSession(res, ANN, ['hwk', 'user'], 'mfa',
+                                     'a test', regDetail);
+      note(reg === null && regDetail.refusedWith === 'STS-AUTHN-0381' &&
+           !!credentials.recoveryPending(ANN),
+           'D4b. a session a key REGISTERED in the act answered is refused ' +
+           'STS-AUTHN-0381 too, and the recovery stays pending (#901)',
+           JSON.stringify(regDetail.refusedWith || '') + ' ' +
+           JSON.stringify(credentials.recoveryPending(ANN)));
       const keyDetail = { credential: { kind: 'webauthn',
                                         id: 'ann-primary-' + STAMP } };
       const key = authn.startSession(res, ANN, ['hwk', 'user'], 'mfa',
@@ -496,6 +556,685 @@ function childMain() {
            'outside the three, and accepts a body without it',
            JSON.stringify([taken, odd, old]).slice(0, 300));
 
+      // ==================================================================
+      // H. AN ADMINISTRATOR'S PASSWORD ON A PASSKEY HOLDER (#960)
+      //
+      // Section E left the row at operator-only. noteRecovery() writes
+      // for that and for not-weaker, and writes nothing for `any` or for
+      // a person who holds no passkey — so a false return must not fail
+      // the action. A primary key is not a second factor: without the
+      // hold, the password is an ordinary session. D2's set-up step is
+      // what shows the hold. setPassword() itself notes nothing; these
+      // doors do. The portal change and a self LDAP bind prove the
+      // current password and must not.
+      // ==================================================================
+      const stsCrypto = require(ROOT + '/common/crypto');
+      const errorCodes = require(ROOT + '/common/error_codes');
+      const accountApi = require(ROOT + '/account-api/account_api');
+      // A person who holds only a primary passkey.
+      const primaryOnly = function (name) {
+        ldapServer.createUser(name, {});
+        const id = name + '-key-' + STAMP;
+        credentials.addKey(name, { credentialId: id, publicKeyJwk: KEY,
+                                   label: name }, 'primary');
+        return id;
+      };
+      const doorOf = function (name) {
+        const held = credentials.recoveryPending(name);
+        return held && held.door ? held.door : '';
+      };
+      // D2's reading of the password sign-in: the recovery set-up step,
+      // only a passkey, and no session.
+      const recoveryStep = function (page) {
+        const setup = (page && page.view && page.view.setup) || {};
+        const offered = setup.offered || {};
+        return !!(page && page.view && page.view.page === 'setup' &&
+                  setup.recovery === true && offered.webauthn === true &&
+                  offered.totp === false && noSession(page));
+      };
+      // C2's reading: the password went on to the application.
+      const signedIn = function (page) {
+        return !!(page && page.next === 'redirect' && !noSession(page) &&
+                  /rp\.ra\.example|\/oauth2\/authorize/
+                    .test(String(page.location || '')));
+      };
+      // The stored hash. Development's verify() accepts any password but
+      // `invalid`, so a hash is what shows a refused keytab changed
+      // nothing and a portal or LDAP write stored the new one.
+      const passwordHash = function (name) {
+        const view = ldapServer.objectFor(name);
+        const attributes = (view && view.entry && view.entry.attributes) ||
+                           {};
+        const key = Object.keys(attributes).filter(function (one) {
+          return one.toLowerCase() === 'userpassword';
+        })[0];
+        const values = key ? [].concat(attributes[key]) : [];
+        return values.length ? String(values[0]) : '';
+      };
+      const dnOf = function (name) {
+        const view = ldapServer.objectFor(name);
+        return (view && view.entry && view.entry.dn) || '';
+      };
+      // The listeners start from listen(), which this child does not
+      // call. performOperation() is the modify the socket would have
+      // run, hash included, and notePasswordWritten() runs inside it.
+      // boundDn '' is the unbound connection boundDnOf() reports as ''.
+      const ldapModify = function (name, operation, values, boundDn) {
+        return Promise.resolve(ldapServer.performOperation('modify', {
+          dn: dnOf(name),
+          boundDn: boundDn,
+          channel: 'ldap',
+          changes: [{ operation: operation,
+                      modification: { type: 'userPassword',
+                                      values: values } }]
+        }));
+      };
+      const otherDn = 'uid=ra-operator-' + STAMP + ',ou=not-a-person';
+
+      rows('not-weaker');
+      const NONE = 'ra-none-' + STAMP;
+      ldapServer.createUser(NONE, {});
+      const noneSet = actions.usersAction({ action: 'set-password',
+        user: NONE, password: 'None-Pass-960!' }, context);
+      note(noneSet.ok === true &&
+           passkeyPolicy.read().recoveryAssurance === 'not-weaker' &&
+           credentials.recoveryPending(NONE) === null,
+           'H1. under not-weaker, set-password on somebody who holds no ' +
+           'passkey is still ok and notes nothing',
+           JSON.stringify(noneSet.errors || noneSet.ok) + ' ' +
+           JSON.stringify(credentials.recoveryPending(NONE)));
+
+      const GEN = 'ra-gen-' + STAMP;
+      const genKey = primaryOnly(GEN);
+      const heldSession = authn.startSession(res, GEN, ['hwk', 'user'],
+        'mfa', 'a test',
+        { credential: { kind: 'webauthn', id: genKey } });
+      const generated = actions.usersAction({ action: 'set-password',
+        user: GEN, generate: true }, context);
+      const genPage = await signInAt({ username: GEN,
+        password: generated.password });
+      note(generated.ok === true && !!generated.password &&
+           stsCrypto.verifySecret(generated.password,
+                                  passwordHash(GEN)) &&
+           doorOf(GEN) === 'admin-password' &&
+           credentials.passwordResetRequired(GEN) === false &&
+           !!(heldSession && authn.sessionById(heldSession.id)) &&
+           recoveryStep(genPage),
+           'H2. a generated set-password on a primary-passkey holder ' +
+           'notes admin-password, leaves pwdReset clear and the session ' +
+           'they held, and the password sign-in draws the recovery ' +
+           'set-up step and starts no session',
+           JSON.stringify({ ok: generated.ok,
+             door: doorOf(GEN),
+             pwdReset: credentials.passwordResetRequired(GEN),
+             session: !!(heldSession &&
+                         authn.sessionById(heldSession.id)),
+             page: genPage.view && genPage.view.page,
+             next: genPage.next }));
+
+      const TYPED = 'ra-typed-' + STAMP;
+      primaryOnly(TYPED);
+      const typedPw = 'Hal-Typed-960!';
+      const typed = actions.usersAction({ action: 'set-password',
+        user: TYPED, password: typedPw, passwordConfirm: typedPw },
+        context);
+      const typedPage = await signInAt({ username: TYPED,
+        password: typedPw });
+      note(typed.ok === true && typed.password === undefined &&
+           stsCrypto.verifySecret(typedPw, passwordHash(TYPED)) &&
+           doorOf(TYPED) === 'admin-password' &&
+           credentials.passwordResetRequired(TYPED) === false &&
+           recoveryStep(typedPage),
+           'H3. a typed set-password notes the same door, does not echo ' +
+           'the password, leaves pwdReset clear, and the sign-in is the ' +
+           'same limited step',
+           JSON.stringify({ ok: typed.ok, echoed: typed.password,
+             door: doorOf(TYPED),
+             page: typedPage.view && typedPage.view.page,
+             next: typedPage.next }));
+
+      rows('any');
+      const ANYG = 'ra-anyg-' + STAMP;
+      primaryOnly(ANYG);
+      const anyGen = actions.usersAction({ action: 'set-password',
+        user: ANYG, generate: true }, context);
+      const anyGenPage = await signInAt({ username: ANYG,
+        password: anyGen.password });
+      note(anyGen.ok === true &&
+           passkeyPolicy.read().recoveryAssurance === 'any' &&
+           credentials.recoveryPending(ANYG) === null &&
+           signedIn(anyGenPage),
+           'H4. under any, a generated set-password leaves nothing ' +
+           'pending and the password signs in',
+           (anyGenPage.next || anyGenPage.status) + ' ' +
+           String(anyGenPage.location || anyGenPage.text).slice(0, 160));
+
+      const ANYT = 'ra-anyt-' + STAMP;
+      primaryOnly(ANYT);
+      const anyTypedPw = 'Any-Typed-960!';
+      const anyTyped = actions.usersAction({ action: 'set-password',
+        user: ANYT, password: anyTypedPw }, context);
+      const anyTypedPage = await signInAt({ username: ANYT,
+        password: anyTypedPw });
+      note(anyTyped.ok === true &&
+           credentials.recoveryPending(ANYT) === null &&
+           stsCrypto.verifySecret(anyTypedPw, passwordHash(ANYT)) &&
+           signedIn(anyTypedPage),
+           'H5. and a typed one does the same',
+           (anyTypedPage.next || anyTypedPage.status) + ' ' +
+           String(anyTypedPage.location || anyTypedPage.text)
+             .slice(0, 160));
+
+      // Back to not-weaker, so a note these doors must not write would
+      // be visible as the set-up step rather than a session.
+      rows('not-weaker');
+      const PORT = 'ra-port-' + STAMP;
+      primaryOnly(PORT);
+      const portNow = 'Port-Now-960!';
+      const portNext = 'Port-Next-960!';
+      credentials.setPassword(PORT, portNow);
+      const accountOp = accountApi.operations().filter(function (one) {
+        return one.method === 'POST' &&
+               one.path === '/account-api/password';
+      })[0];
+      const pres = { statusCode: 0, body: '' };
+      pres.status = function (s) {
+        pres.statusCode = s;
+        return pres;
+      };
+      pres.set = function () {
+        return pres;
+      };
+      pres.type = function () {
+        return pres;
+      };
+      pres.send = function (b) {
+        pres.body = b;
+        return pres;
+      };
+      const preq = { headers: { host: '127.0.0.1:' + port },
+                     protocol: 'http', method: 'POST', url: '/',
+                     ip: '127.0.0.1',
+                     socket: { remoteAddress: '127.0.0.1' },
+                     connection: { remoteAddress: '127.0.0.1' } };
+      if (accountOp) {
+        await accountOp.handler(preq, pres, {
+          username: PORT, sub: '', realm: realms.DEFAULT_REALM,
+          clientId: 'sts-user-portal', scopes: ['account:manage'] },
+          { body: { current: portNow, next: portNext,
+                    confirm: portNext }, query: {} });
+      }
+      const portBody = json({ text: String(pres.body || '') });
+      const portPage = await signInAt({ username: PORT,
+        password: portNext });
+      note(!!accountOp && pres.statusCode === 200 &&
+           portBody.ok === true &&
+           credentials.recoveryPending(PORT) === null &&
+           stsCrypto.verifySecret(portNext, passwordHash(PORT)) &&
+           signedIn(portPage),
+           'H6. a portal change that proved the current password notes ' +
+           'nothing, and the new password signs in',
+           pres.statusCode + ' ' + String(pres.body).slice(0, 180) +
+           ' ' + (portPage.next || ''));
+
+      const ldapCreate = 'ra-lcreate-' + STAMP;
+      primaryOnly(ldapCreate);
+      const ldapCreatePw = 'Ldap-Create-960!';
+      const created = await ldapModify(ldapCreate, 'replace',
+                                       [ldapCreatePw], '');
+      const createPage = await signInAt({ username: ldapCreate,
+        password: ldapCreatePw });
+      note(created.ok === true &&
+           stsCrypto.verifySecret(ldapCreatePw,
+                                  passwordHash(ldapCreate)) &&
+           doorOf(ldapCreate) === 'admin-password' &&
+           recoveryStep(createPage),
+           'H7. an unbound LDAP modify that creates userPassword notes ' +
+           'admin-password, and that password draws the recovery ' +
+           'set-up step',
+           JSON.stringify({ ok: created.ok, error: created.error,
+             door: doorOf(ldapCreate),
+             page: createPage.view && createPage.view.page }));
+
+      const ldapUp = 'ra-lupdate-' + STAMP;
+      primaryOnly(ldapUp);
+      credentials.setPassword(ldapUp, 'Ldap-Old-960!');
+      const ldapUpPw = 'Ldap-Update-960!';
+      const updated = await ldapModify(ldapUp, 'replace', [ldapUpPw],
+                                       otherDn);
+      const updatePage = await signInAt({ username: ldapUp,
+        password: ldapUpPw });
+      note(updated.ok === true && otherDn !== dnOf(ldapUp) &&
+           stsCrypto.verifySecret(ldapUpPw, passwordHash(ldapUp)) &&
+           doorOf(ldapUp) === 'admin-password' &&
+           recoveryStep(updatePage),
+           'H8. an LDAP update of userPassword by somebody else notes ' +
+           'the same door',
+           JSON.stringify({ ok: updated.ok, error: updated.error,
+             door: doorOf(ldapUp),
+             page: updatePage.view && updatePage.view.page }));
+
+      const ldapSelf = 'ra-lself-' + STAMP;
+      primaryOnly(ldapSelf);
+      credentials.setPassword(ldapSelf, 'Ldap-Self-Old-960!');
+      const selfDn = dnOf(ldapSelf);
+      const ldapSelfPw = 'Ldap-Self-960!';
+      const selfWrote = await ldapModify(ldapSelf, 'replace',
+                                        [ldapSelfPw], selfDn);
+      const selfPage = await signInAt({ username: ldapSelf,
+        password: ldapSelfPw });
+      note(selfWrote.ok === true && selfDn !== '' &&
+           stsCrypto.verifySecret(ldapSelfPw, passwordHash(ldapSelf)) &&
+           credentials.recoveryPending(ldapSelf) === null &&
+           signedIn(selfPage),
+           'H9. a self bind that changes their own password notes ' +
+           'nothing, and the new password signs in',
+           JSON.stringify({ ok: selfWrote.ok, error: selfWrote.error,
+             door: doorOf(ldapSelf), next: selfPage.next }));
+
+      const ldapRev = 'ra-lrevoke-' + STAMP;
+      primaryOnly(ldapRev);
+      credentials.setPassword(ldapRev, 'Ldap-Revoke-960!');
+      const revoked = await ldapModify(ldapRev, 'delete', [], otherDn);
+      note(revoked.ok === true && passwordHash(ldapRev) === '' &&
+           credentials.recoveryPending(ldapRev) === null,
+           'H10. a non-self revoke of userPassword notes nothing',
+           JSON.stringify({ ok: revoked.ok, error: revoked.error,
+             door: doorOf(ldapRev),
+             hash: passwordHash(ldapRev) !== '' }));
+
+      const KIT = 'ra-kit-' + STAMP;
+      primaryOnly(KIT);
+      const kitPw = 'Kit-New-960!';
+      const kit = await actions.kerberosPrincipalsAction({
+        action: 'reset-person-keytab', username: KIT, password: kitPw
+      }, context);
+      const kitPage = kit && kit.ok
+        ? await signInAt({ username: KIT, password: kitPw }) : null;
+      note(!!(kit && kit.ok) && doorOf(KIT) === 'admin-password' &&
+           credentials.passwordResetRequired(KIT) === false &&
+           stsCrypto.verifySecret(kitPw, passwordHash(KIT)) &&
+           !!kitPage && recoveryStep(kitPage),
+           'H11. reset-person-keytab, accepted by this realm\'s KDC, ' +
+           'notes admin-password and the password sign-in is the ' +
+           'recovery set-up step',
+           JSON.stringify({ ok: kit && kit.ok,
+             passwordSet: kit && kit.passwordSet,
+             errors: kit && kit.errors, door: doorOf(KIT),
+             page: kitPage && kitPage.view && kitPage.view.page }));
+
+      // A new realm is seeded with krb5.enabled off, so the register
+      // refuses before setPassword and nothing may be noted. The row is
+      // saved here too: development's built-in value is `any`, and a
+      // realm with no entry of its own inherits the default realm's, so
+      // a read-back that is not not-weaker would make a no-op look like
+      // this refusal. The default realm's KDC stays as it is.
+      const nokdcId = 'ra960-' + STAMP;
+      const nokdcPerson = 'ra-nokdc-' + STAMP;
+      const nokdcOld = 'Nokdc-Old-960!';
+      const made = realms.create({ id: nokdcId, name: 'no kdc',
+        description: 'recovery assurance 960' });
+      let savedOk = false;
+      let assurance = '';
+      let keytabRefusal = null;
+      let hashBefore = '';
+      let hashAfter = '';
+      let pendingAfter = 'not-run';
+      let oldStill = false;
+      if (made.ok) {
+        try {
+          await realms.run(made.realm, async function () {
+            ldapServer.createUser(nokdcPerson, {});
+            credentials.setPassword(nokdcPerson, nokdcOld);
+            credentials.addKey(nokdcPerson, {
+              credentialId: nokdcPerson + '-key-' + STAMP,
+              publicKeyJwk: KEY, label: nokdcPerson }, 'primary');
+            const saved = rows('not-weaker');
+            savedOk = !!(saved && saved.ok);
+            assurance = String((passkeyPolicy.read() || {})
+              .recoveryAssurance || '');
+            hashBefore = passwordHash(nokdcPerson);
+            keytabRefusal = await actions.kerberosPrincipalsAction({
+              action: 'reset-person-keytab', username: nokdcPerson,
+              password: 'Nokdc-New-960!' }, context);
+            hashAfter = passwordHash(nokdcPerson);
+            pendingAfter = credentials.recoveryPending(nokdcPerson);
+            oldStill = stsCrypto.verifySecret(nokdcOld, hashAfter);
+          });
+        } finally {
+          realms.remove(nokdcId);
+        }
+      }
+      note(made.ok === true && savedOk && assurance === 'not-weaker' &&
+           keytabRefusal && keytabRefusal.ok === false &&
+           keytabRefusal.passwordSet !== true &&
+           errorCodes.codeOf(keytabRefusal) === 'STS-KRB-0128' &&
+           pendingAfter === null && hashBefore !== '' &&
+           hashBefore === hashAfter && oldStill === true,
+           'H12. a keytab refused before the password is set, in a new ' +
+           'realm whose KDC is off, leaves no pending recovery and the ' +
+           'password that was stored still verifies',
+           JSON.stringify({ created: made.ok,
+             errors: made.errors, saved: savedOk, assurance: assurance,
+             ok: keytabRefusal && keytabRefusal.ok,
+             passwordSet: keytabRefusal && keytabRefusal.passwordSet,
+             code: keytabRefusal ? errorCodes.codeOf(keytabRefusal) : '',
+             pending: pendingAfter, sameHash: hashBefore === hashAfter,
+             verifies: oldStill }));
+      // ==================================================================
+      // I. A RECOVERY WRITE THAT FAILS IS NOT A FINISHED RESET (#962)
+      //
+      // After D and H, so those real writes are untouched. The stub is
+      // the directory function the child stack holds (the object
+      // setDirectory was given), and it is put back before section J,
+      // which records a recovery for real. errorCodes is the binding
+      // section H made.
+      // ==================================================================
+      rows('not-weaker');
+      const credDir = credentials.directoryInstalled();
+      note(!!credDir && typeof credDir.writeRecoveryPending === 'function',
+           'I0. the directory the stack uses exposes writeRecoveryPending',
+           credDir ? typeof credDir.writeRecoveryPending : 'no directory');
+      if (credDir && typeof credDir.writeRecoveryPending === 'function') {
+        const realRecoveryWrite = credDir.writeRecoveryPending;
+        let recoveryWritesFail = false;
+        let failedWrites = 0;
+        credDir.writeRecoveryPending = function (key, value) {
+          if (recoveryWritesFail) {
+            // The directory could not record the recovery (#962).
+            failedWrites += 1;
+            return false;
+          }
+          return realRecoveryWrite(key, value);
+        };
+        const passwordSignsIn = function (who, password) {
+          // Product mode is the check development mode does not do: a
+          // name signs in there with no stored password. The override
+          // is only around verify, and is cleared before the next HTTP
+          // call, which must stay in development like the rest of this
+          // file.
+          config.setOverride('global.mode', 'product');
+          let verified = { ok: true, reason: 'not-run' };
+          try {
+            verified = credentials.verify(who, password, { via: 'test' });
+          } catch (e) {
+            // A throw is not a sign-in. The finding reports it.
+            verified = { ok: false, reason: String((e && e.message) || e) };
+          } finally {
+            config.clearOverride('global.mode');
+          }
+          return verified;
+        };
+        try {
+          recoveryWritesFail = true;
+          const CARA = 'ra-cara-' + STAMP;
+          ldapServer.createUser(CARA, {});
+          credentials.addKey(CARA, { credentialId: 'cara-primary-' + STAMP,
+            publicKeyJwk: KEY, label: 'cara key' }, 'primary');
+          token = issueLink(CARA);
+          const writesAtSpend = failedWrites;
+          r = await spend(CARA, token, 'Cara-Pass-111!');
+          const failedBody = json(r);
+          note(r.status !== 200 && failedBody.ok !== true &&
+               /not kept/.test(r.text) && /used again/.test(r.text) &&
+               !/STS-AUTHN-0382/.test(r.text) &&
+               failedWrites > writesAtSpend &&
+               !credentials.hasPassword(CARA) &&
+               credentials.recoveryPending(CARA) === null &&
+               credentials.checkPasswordReset(CARA, token).ok === true,
+               'I1. under not-weaker a failed recovery write does not ' +
+               'spend an administrator\'s link, does not answer success, ' +
+               'and does not keep the password',
+               r.status + ' ' + r.text.slice(0, 240));
+          const again = await spend(CARA, token, 'Cara-Pass-111!');
+          const againErrors = (json(again).errors || []).join(' ');
+          note(again.status !== 200 && json(again).ok !== true &&
+               /not kept/.test(againErrors) &&
+               !/not valid/.test(againErrors) &&
+               credentials.checkPasswordReset(CARA, token).ok === true,
+               'I2. the claim was released, so a second spend can still ' +
+               'be attempted and is not the spent-link refusal',
+               again.status + ' ' + againErrors.slice(0, 220));
+          const verified = passwordSignsIn(CARA, 'Cara-Pass-111!');
+          r = await signInAt({ username: CARA, password: 'Cara-Pass-111!' });
+          const ordinary = r.next === 'redirect' && !noSession(r) &&
+            credentials.hasPassword(CARA) &&
+            credentials.recoveryPending(CARA) === null;
+          note(!verified.ok && !credentials.hasPassword(CARA) &&
+               credentials.recoveryPending(CARA) === null && !ordinary,
+               'I3. it does not leave a password that signs in without a ' +
+               'pending recovery',
+               (verified.reason || verified.ok) + ' ' +
+               (r.next || r.status) + ' hasPassword=' +
+               credentials.hasPassword(CARA));
+
+          const PLAIN = 'ra-plain-' + STAMP;
+          ldapServer.createUser(PLAIN, {});
+          token = issueLink(PLAIN);
+          const writesAtPlain = failedWrites;
+          r = await spend(PLAIN, token, 'Plain-Pass-111!');
+          note(r.status === 200 && json(r).ok === true &&
+               credentials.recoveryPending(PLAIN) === null &&
+               credentials.hasPassword(PLAIN) === true &&
+               !credentials.checkPasswordReset(PLAIN, token).ok &&
+               failedWrites === writesAtPlain,
+               'I4. a person with no passkey still completes the reset, ' +
+               'with nothing pending, while the recovery write would ' +
+               'return false',
+               r.status + ' writes=' + failedWrites + ' ' +
+               r.text.slice(0, 160));
+
+          const writesAtReset = failedWrites;
+          const reset = actions.usersAction({ action: 'reset-password',
+                                              user: CARA }, context);
+          const resetText = (reset.errors || []).join(' ');
+          const resetVerified = passwordSignsIn(CARA,
+                                                 String(reset.password || ''));
+          r = await signInAt({ username: CARA,
+                               password: String(reset.password ||
+                                                'Cara-Pass-111!') });
+          const resetOrdinary = r.next === 'redirect' && !noSession(r) &&
+            credentials.hasPassword(CARA) &&
+            credentials.recoveryPending(CARA) === null;
+          note(reset.ok !== true && !reset.password &&
+               errorCodes.codeOf(reset) === 'STS-AUTHN-0382' &&
+               /not kept/.test(resetText) && /not complete/.test(resetText) &&
+               !/STS-AUTHN-0382/.test(resetText) &&
+               failedWrites > writesAtReset &&
+               !resetVerified.ok && !credentials.hasPassword(CARA) &&
+               credentials.recoveryPending(CARA) === null && !resetOrdinary,
+               'I5. reset-password under not-weaker does not return ok ' +
+               'with a password when the recovery write fails, and a ' +
+               'password sign-in is not an ordinary session',
+               JSON.stringify({ ok: reset.ok, password: !!reset.password,
+                                code: errorCodes.codeOf(reset),
+                                next: r.next,
+                                hasPassword: credentials.hasPassword(CARA) })
+                 .slice(0, 240));
+        } finally {
+          recoveryWritesFail = false;
+          credDir.writeRecoveryPending = realRecoveryWrite;
+        }
+
+        // ==================================================================
+        // J. AN ACTIVATION ABANDONED AT THE KEY OR APP STEP (#927)
+        //
+        // After the finally above, so writeRecoveryPending is the
+        // directory's again. finish() records the recovery too, but a
+        // person who stops at the key ceremony or the authenticator step
+        // never reaches it: the password is set and the link is not
+        // consumed (#900). The passkey is enrolled before the link, and
+        // the clock is past that key's enrolledAt, because
+        // noteActivationRecovery requires enrolledAt strictly less than
+        // the issue instant it derives from the link's expiry. The same
+        // millisecond records nothing. The wait is a spin on the clock,
+        // not a timer. Two people: one POST sets the password and draws
+        // one ceremony, and the key step is not the authenticator step.
+        // ==================================================================
+        // The spin is why a key enrolled and a link issued in one
+        // millisecond would record no recovery: the comparison is strict.
+        const pastEnrolment = function (who) {
+          const keys = credentials.keysOf(who) || [];
+          let enrolled = 0;
+          keys.forEach(function (one) {
+            const at = Number(one.enrolledAt || 0);
+            if (at > enrolled) {
+              enrolled = at;
+            }
+          });
+          let spins = 0;
+          while (Date.now() <= enrolled && spins < 10000000) {
+            spins += 1;
+          }
+          return { enrolled: enrolled, now: Date.now(), spins: spins };
+        };
+
+        const activationToken = function (user) {
+          const issued = actions.usersAction({
+            action: 'issue-activation', user: user }, context);
+          const link = String((issued && issued.activationUrl) || '');
+          const found = (link.match(/[?&]token=([^&]+)/) || [])[1] || '';
+          const token = decodeURIComponent(found);
+          const errors = (issued && issued.errors) || [];
+          return { ok: !!(issued && issued.ok === true && token),
+                   token: token, errors: errors };
+        };
+
+        const postActivation = function (user, token, extra) {
+          return request(port, 'POST', '/account-api/activation',
+            Object.assign({ user: user, token: token, step: 'setup' },
+                          extra));
+        };
+
+        // finish() would answer step ready and consume the link. The GET
+        // is the door somebody who abandoned the step uses to come back:
+        // it is still the setup form.
+        const stoppedShort = async function (who, linkToken, posted,
+                                             password, wantStep) {
+          const body = posted ? json(posted) : {};
+          const view = body.view || {};
+          const pending = credentials.activationPending(who);
+          const checked = linkToken
+            ? credentials.checkActivation(who, linkToken)
+            : { ok: false };
+          const verified = passwordSignsIn(who, password);
+          let reopened = null;
+          if (linkToken) {
+            reopened = await request(port, 'GET',
+              '/account-api/activation?user=' + encodeURIComponent(who) +
+              '&token=' + encodeURIComponent(linkToken));
+          }
+          const again = reopened ? json(reopened) : {};
+          const live = !!(reopened && reopened.status === 200 &&
+                          again.step === 'setup');
+          const unfinished = !!(posted && posted.status === 200 &&
+            body.ok === true && view.step === wantStep &&
+            view.step !== 'ready' &&
+            credentials.hasPassword(who) === true &&
+            pending && pending.expired !== true &&
+            checked.ok === true && doorOf(who) === 'activation' &&
+            verified.ok === true && live);
+          return {
+            ok: unfinished,
+            step: String(view.step || ''),
+            status: posted ? posted.status : 0,
+            door: doorOf(who),
+            verified: verified.ok === true,
+            link: checked.ok === true,
+            reopen: reopened ? reopened.status : 0,
+            reopenStep: String(again.step || ''),
+            text: String(posted ? posted.text : '').slice(0, 180)
+          };
+        };
+
+        rows('not-weaker');
+        const jKeyUser = 'ra-jkey-' + STAMP;
+        const jAppUser = 'ra-japp-' + STAMP;
+        const jKeyPass = 'Key-Stop-927!';
+        const jAppPass = 'App-Stop-927!';
+        primaryOnly(jKeyUser);
+        const jKeyClock = pastEnrolment(jKeyUser);
+        const jKeyIssued = activationToken(jKeyUser);
+        let jKeyPosted = null;
+        if (jKeyIssued.ok) {
+          jKeyPosted = await postActivation(jKeyUser, jKeyIssued.token, {
+            password: jKeyPass, confirm: jKeyPass, key_role: 'mfa' });
+        }
+        const jKeyStop = await stoppedShort(jKeyUser, jKeyIssued.token,
+          jKeyPosted, jKeyPass, 'key');
+        note(jKeyClock.enrolled > 0 && jKeyClock.now > jKeyClock.enrolled &&
+             jKeyIssued.ok && jKeyStop.ok,
+             'J1. under not-weaker, stopping at the key ceremony after ' +
+             'the password is set records door activation, leaves the ' +
+             'link outstanding and stores a password that verifies',
+             JSON.stringify({
+               step: jKeyStop.step, door: jKeyStop.door,
+               status: jKeyStop.status, verified: jKeyStop.verified,
+               link: jKeyStop.link, reopen: jKeyStop.reopen,
+               reopenStep: jKeyStop.reopenStep,
+               enrolled: jKeyClock.enrolled, now: jKeyClock.now,
+               issued: jKeyIssued.ok, errors: jKeyIssued.errors,
+               text: jKeyStop.text
+             }).slice(0, 320));
+        r = await signInAt({ username: jKeyUser, password: jKeyPass });
+        note(recoveryStep(r) && !signedIn(r),
+             'J2. that password sign-in draws the recovery set-up step ' +
+             'and starts no session that reaches an application',
+             (r.next || r.status) + ' ' +
+             JSON.stringify(r.view || r.text).slice(0, 240));
+        const jKeyDetail = { credential: { kind: 'password' } };
+        const jKeySession = authn.startSession(res, jKeyUser, ['pwd'], '1',
+                                                'a test', jKeyDetail);
+        note(jKeySession === null &&
+             jKeyDetail.refusedWith === 'STS-AUTHN-0381' &&
+             jKeyDetail.recoveryLimited === true &&
+             doorOf(jKeyUser) === 'activation',
+             'J3. at startSession() that sign-in is refused ' +
+             'STS-AUTHN-0381 and the activation recovery stays pending',
+             JSON.stringify(jKeyDetail) + ' door=' + doorOf(jKeyUser));
+
+        primaryOnly(jAppUser);
+        const jAppClock = pastEnrolment(jAppUser);
+        const jAppIssued = activationToken(jAppUser);
+        let jAppPosted = null;
+        if (jAppIssued.ok) {
+          jAppPosted = await postActivation(jAppUser, jAppIssued.token, {
+            password: jAppPass, confirm: jAppPass, totp: '1' });
+        }
+        const jAppStop = await stoppedShort(jAppUser, jAppIssued.token,
+          jAppPosted, jAppPass, 'totp');
+        note(jAppClock.enrolled > 0 && jAppClock.now > jAppClock.enrolled &&
+             jAppIssued.ok && jAppStop.ok,
+             'J4. under not-weaker, stopping at the authenticator step ' +
+             'after the password is set records door activation, leaves ' +
+             'the link outstanding and stores a password that verifies',
+             JSON.stringify({
+               step: jAppStop.step, door: jAppStop.door,
+               status: jAppStop.status, verified: jAppStop.verified,
+               link: jAppStop.link, reopen: jAppStop.reopen,
+               reopenStep: jAppStop.reopenStep,
+               enrolled: jAppClock.enrolled, now: jAppClock.now,
+               issued: jAppIssued.ok, errors: jAppIssued.errors,
+               text: jAppStop.text
+             }).slice(0, 320));
+        r = await signInAt({ username: jAppUser, password: jAppPass });
+        note(recoveryStep(r) && !signedIn(r),
+             'J5. that password sign-in draws the recovery set-up step ' +
+             'and starts no session that reaches an application',
+             (r.next || r.status) + ' ' +
+             JSON.stringify(r.view || r.text).slice(0, 240));
+        const jAppDetail = { credential: { kind: 'password' } };
+        const jAppSession = authn.startSession(res, jAppUser, ['pwd'], '1',
+                                                'a test', jAppDetail);
+        note(jAppSession === null &&
+             jAppDetail.refusedWith === 'STS-AUTHN-0381' &&
+             jAppDetail.recoveryLimited === true &&
+             doorOf(jAppUser) === 'activation',
+             'J6. at startSession() that sign-in is refused ' +
+             'STS-AUTHN-0381 and the activation recovery stays pending',
+             JSON.stringify(jAppDetail) + ' door=' + doorOf(jAppUser));
+      }
+
       passkeyPolicy.reset('default');
       server.close();
     });
@@ -567,7 +1306,10 @@ module.exports = {
   describe: 'account recovery no weaker than the passkey it replaces: the ' +
             'passkey policy\'s recoveryAssurance, the recover-account ' +
             'rules, the reset link, the forgot-password request, the ' +
-            'recovery code and the sign-in limited to registering a ' +
+            'recovery code, an administrator\'s set-password, keytab and ' +
+            'LDAP password (#960), a recovery that cannot be recorded ' +
+            '(#962), an activation abandoned at the key or authenticator ' +
+            'step (#927), and the sign-in limited to registering a ' +
             'passkey (#724)',
   run: run
 };

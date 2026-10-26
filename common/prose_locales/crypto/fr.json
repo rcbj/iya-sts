@@ -456,8 +456,8 @@
     "text": "L’enveloppe que SCEP (scep/scep_cms.ts) lit et écrit : une requête signée par le demandeur et chiffrée vers la RA, et un CertRep signé par la RA dont le certificat est chiffré vers le demandeur."
   },
   "crypto.families.pki.signs": {
-    "en": "f1ce79cf624ab6f5",
-    "text": "DES CERTIFICATS. La Root se signe elle-même une fois pour le service ; elle signe une Intermediate par domaine de confiance et une pour le processus ; chaque Intermediate signe une Issuing CA par cas d’usage ; et chaque Issuing CA signe les certificats feuilles de son cas d’usage — les propres clés de signature et d’écouteur du service, ainsi que les paires de clés délivrées aux applications et aux personnes. L’algorithme de signature est celui choisi pour la hiérarchie et est contraint par la famille de clé de l’ÉMETTEUR plutôt que par celle du sujet, ce qui est l’erreur à laquelle l’en-tête même de `common/vendored/x509.js` consacre un paragraphe : importer une clé sous un condensé et signer avec un autre produit un certificat dont l’algorithme déclaré et la signature réelle divergent, et `openssl verify` le signale comme une mauvaise signature sans nommer ni l’un ni l’autre."
+    "en": "fdcf723f4622f28f",
+    "text": "DES CERTIFICATS. La Root se signe elle-même une fois pour le service ; elle signe une Intermediate par domaine de confiance et une pour le processus ; chaque Intermediate signe une Issuing CA par cas d’usage ; et chaque Issuing CA signe les certificats feuilles de son cas d’usage — les propres clés de signature et d’écouteur du service, ainsi que les paires de clés délivrées aux applications et aux personnes. L’algorithme de signature est celui choisi pour la hiérarchie et est contraint par la famille de clé de l’ÉMETTEUR plutôt que par celle du sujet, ce qui est l’erreur à laquelle l’en-tête même de `common/crypto_impl/x509.js` consacre un paragraphe : importer une clé sous un condensé et signer avec un autre produit un certificat dont l’algorithme déclaré et la signature réelle divergent, et `openssl verify` le signale comme une mauvaise signature sans nommer ni l’un ni l’autre."
   },
   "crypto.families.pki.verifies": {
     "en": "e27202f2b20a852a",
@@ -484,8 +484,8 @@
     "text": "Encodage des certificats"
   },
   "crypto.families.pki.algorithms.0.how": {
-    "en": "d40c79caa059f986",
-    "text": "X.509 v3, DER, via pkijs et asn1js — common/vendored/x509.js, le code PKI propre au projet parent, identique octet pour octet. Un seul encodeur pour ce service et pour la page PKI / X.509 de ce projet."
+    "en": "9c9c3be17d02f8b6",
+    "text": "X.509 v3, DER, via pkijs et asn1js — common/crypto_impl/x509.js, le code PKI propre au projet parent, identique octet pour octet. Un seul encodeur pour ce service et pour la page PKI / X.509 de ce projet."
   },
   "crypto.families.pki.algorithms.1.what": {
     "en": "1b9e0c9e96801219",
@@ -622,6 +622,62 @@
   "crypto.families.user-portal.algorithms.4.how": {
     "en": "363f58a2eab8e37c",
     "text": "S256"
+  },
+  "crypto.families.reporting.signs": {
+    "en": "8728ccd393fd7e6c",
+    "text": "Rien de ce qu’émet un rapport. Le runtime, dans le navigateur, signe une seule chose : une preuve DPoP RFC 9449 (ES256) sur chaque appel à `/report-api` et au point de terminaison de jeton, avec une clé P-256 que WebCrypto a générée non extractible pour ce chargement de page."
+  },
+  "crypto.families.reporting.verifies": {
+    "en": "294c4447e5523292",
+    "text": "CHAQUE APPEL À `/report-api`, à sa porte (report/report_api.ts) : le jeton d’accès est un `at+jwt` RFC 9068 vérifié avec la clé de signature de CE domaine (toute génération), son émetteur et son audience sont contrôlés, et sa liaison DPoP est confrontée à une preuve que la porte vérifie — jamais accepté comme Bearer. Le runtime vérifie une réponse d’autorisation JARM auprès du JWKS du domaine lorsque celui-ci en envoie une."
+  },
+  "crypto.families.reporting.encrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "Rien."
+  },
+  "crypto.families.reporting.decrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "Rien."
+  },
+  "crypto.families.reporting.hashes": {
+    "en": "2ddfe2e29749ce1c",
+    "text": "SHA-256 des octets d’un rapport terminé, stocké à côté d’eux (`sts_report_artifacts.sha256`) et contrôlé à la relecture du résultat. SHA-256 dans le navigateur pour le défi PKCE S256 et le `ath` de la preuve DPoP."
+  },
+  "crypto.families.reporting.keys": {
+    "en": "feaa838ac5fb9b97",
+    "text": "Aucune côté serveur. La paire de clés DPoP vit dans le navigateur : P-256, générée par WebCrypto avec sa moitié privée non extractible, conservée en mémoire et disparaissant avec la page. Les jetons eux-mêmes sont signés par le serveur d’autorisation du domaine (la ligne OAuth2 / OIDC)."
+  },
+  "crypto.families.reporting.algorithms.0.what": {
+    "en": "63f37962dc3dfb33",
+    "text": "Jeton d’accès à /report-api"
+  },
+  "crypto.families.reporting.algorithms.0.how": {
+    "en": "87be1920112e9844",
+    "text": "RFC 9068 at+jwt, vérifié avec la clé de signature de ce domaine, lié par DPoP"
+  },
+  "crypto.families.reporting.algorithms.1.what": {
+    "en": "e097c8970e32cda3",
+    "text": "Preuve DPoP (navigateur)"
+  },
+  "crypto.families.reporting.algorithms.1.how": {
+    "en": "9bebf9949394145f",
+    "text": "ES256 avec une clé P-256 WebCrypto non extractible par chargement de page"
+  },
+  "crypto.families.reporting.algorithms.2.what": {
+    "en": "7e09ecc318c42463",
+    "text": "PKCE"
+  },
+  "crypto.families.reporting.algorithms.2.how": {
+    "en": "363f58a2eab8e37c",
+    "text": "S256"
+  },
+  "crypto.families.reporting.algorithms.3.what": {
+    "en": "80ea1ab36a2e5c55",
+    "text": "Octets de rapport stockés"
+  },
+  "crypto.families.reporting.algorithms.3.how": {
+    "en": "9d40176053fec31b",
+    "text": "SHA-256, conservé avec l’artefact et contrôlé à la lecture"
   },
   "crypto.families.gnap.signs": {
     "en": "ad4b982edb070f2c",

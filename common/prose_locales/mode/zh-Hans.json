@@ -752,8 +752,8 @@
     "text": "在授权、PAR 和令牌端点，任何绝对 URI 都被接受为资源并成为令牌的 aud；未指明任何资源服务器的 GNAP 位置会被排除在令牌受众之外，但只要令牌中另有内容指明了资源服务器，权限照样授予——访问未指明任何资源服务器的令牌在每种模式下都以 invalid_request 拒绝（STS-GNAP-0904）。"
   },
   "mode.requirements.unregistered-resource-targets.product": {
-    "en": "f943835ab2da2836",
-    "text": "资源（令牌交换除外，其目标属于策略的 unregistered-target）以及 GNAP 访问权限的每个位置都必须指明已注册的目标：本服务自己的资源服务器之一（UserInfo、SCIM、Shared Signals 和 OpenID4VCI 接受的默认资源指示符；/admin-api；/account-api），或事先注册的应用（appRegisteredBy 已设置——被观察到不等于注册），通过其 oauthAudience、权限基础 URI、client_id 或标识符指明——嵌入式调试器的 api 就是其中之一，植入时即已注册。位于已注册资源服务器的 gnapResourceServerUri 处或其下的 GNAP 位置也指明该服务器。否则为 invalid_target：从授权端点重定向，在 PAR 返回 400（STS-OAUTH-0950），在令牌端点于消耗任何内容之前返回 400（STS-OAUTH-0951）；对于 GNAP，请求以 invalid_request 拒绝（STS-GNAP-0903），而不是丢弃该权限。"
+    "en": "5f6d00d42845d0e5",
+    "text": "资源（令牌交换除外，其目标由策略的 unregistered-target 决定）以及 GNAP 访问权限的每个位置，都必须指明已注册的目标：本服务自己的资源服务器之一（UserInfo、SCIM、Shared Signals 和 OpenID4VCI 接受的默认资源标识符；/admin-api；/account-api；/report-api），或预先注册的应用程序（已设置 appRegisteredBy——被发现不等于注册），通过其 oauthAudience、权限基础 URI、client_id 或标识符指明——内嵌调试器的 api 就是其一，已作为已注册种子写入。位于已注册资源服务器的 gnapResourceServerUri 处或其之下的 GNAP 位置同样指明该服务器。否则返回 invalid_target：在授权端点重定向，在 PAR 返回 400 (STS-OAUTH-0950)，在令牌端点于任何内容被消耗之前返回 400 (STS-OAUTH-0951)；对于 GNAP，请求以 invalid_request 被拒绝 (STS-GNAP-0903)，而不是丢弃该权限。"
   },
   "mode.requirements.return-addresses.what": {
     "en": "49ff721244e24e9d",

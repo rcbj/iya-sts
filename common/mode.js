@@ -3173,7 +3173,7 @@ const REQUIREMENTS = [
              'access right must name a registered target: one of this ' +
              'service\'s own resource servers (the default resource ' +
              'indicator UserInfo, SCIM, Shared Signals and OpenID4VCI ' +
-             'accept; /admin-api; /account-api) ' +
+             'accept; /admin-api; /account-api; /report-api) ' +
              'or an application registered ahead of time (appRegisteredBy ' +
              'set — a sighting is not a registration), by its ' +
              'oauthAudience, permission base URI, client_id or identifier ' +

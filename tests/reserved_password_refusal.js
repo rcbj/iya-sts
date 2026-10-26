@@ -14,9 +14,9 @@
 // anything being configured. Both are refused in product too, and that is
 // argued beside the LDAP copy: it can only turn a bind that would have been
 // verified into a refusal, so nobody can HOLD `invalid` as a password. Nothing
-// held either half (#113 item 5): `tests/vendored/sts_xml_schema_validation.js`
+// held either half (#113 item 5): `tests/protocol/sts_xml_schema_validation.js`
 // sends the literal in a UsernameToken but only validates the fault's schema,
-// and `tests/vendored/sts_ldaps.js` binds with a different wrong password.
+// and `tests/protocol/sts_ldaps.js` binds with a different wrong password.
 //
 // In a CHILD PROCESS with the whole stack, one person with a real password:
 //

@@ -9,7 +9,7 @@
 // THE EST ROUTE FUNCTIONS, THE VIEW MODEL AND THE REALM BOUNDARY, WITH NO PORT
 // (2026-09-13).
 //
-// `tests/vendored/sts_est_enrollment.js` drives EST over HTTPS against a
+// `tests/protocol/sts_est_enrollment.js` drives EST over HTTPS against a
 // running service. What is here is what that job cannot choose or cannot see:
 //
 //   * THE ERROR CODE of each refusal — never on the wire, so only a caller
@@ -55,8 +55,9 @@ async function childMain() {
   const credentials = require(path.join(ROOT, 'common', 'credentials'));
   const core = require(path.join(ROOT, 'common', 'cert_enrollment'));
   const monitor = require(path.join(ROOT, 'common', 'enrollment_monitor'));
-  const x509 = require(path.join(ROOT, 'common', 'vendored', 'x509'));
-  const keys = require(path.join(ROOT, 'common', 'vendored', 'key_material'));
+  const x509 = require(path.join(ROOT, 'common', 'crypto_impl', 'x509'));
+  const keys = require(path.join(ROOT, 'common', 'crypto_impl',
+                                 'key_material'));
   const est = require(path.join(ROOT, 'est', 'est'));
   const estConsole = require(path.join(ROOT, 'est', 'est_console'));
   pkijs.setEngine('node', new pkijs.CryptoEngine({ name: 'node',

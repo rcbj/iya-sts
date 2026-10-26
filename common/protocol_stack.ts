@@ -303,6 +303,12 @@ class ProtocolStack {
     this.build('authn/webauthn_attestation',
                require('../authn/webauthn_attestation'),
                'WebauthnAttestation');
+    // #943: the audit rows every WebAuthn ceremony leaves. A library (rule
+    // 3) over the audit log, asked by both ceremony doors and by
+    // `credentials.confirmKeyEnrolment()`, so built before it.
+    this.build('authn/webauthn_ceremonies',
+               require('../authn/webauthn_ceremonies'),
+               'WebauthnCeremonies');
     this.build('common/credentials', require('./credentials'), 'Credentials');
     this.build('common/account_state', require('./account_state'),
                'AccountState');
@@ -562,6 +568,13 @@ class ProtocolStack {
     this.build('oauth-oidc/jwt_access_token',
                require('../oauth-oidc/jwt_access_token'),
                'JwtAccessTokens');
+    // Opaque access tokens (#501). A library: no register() line. Built
+    // here, before dpop and before oauth2's own build, because both call
+    // it. oauth2's require above already loaded the module (and deferred
+    // its instance); this is the install.
+    this.build('oauth-oidc/opaque_access_token',
+               require('../oauth-oidc/opaque_access_token'),
+               'OpaqueAccessToken');
     this.build('oauth-oidc/oauth2_monitor',
                require('../oauth-oidc/oauth2_monitor'),
                'OAuth2Monitor');
@@ -1261,6 +1274,12 @@ class ProtocolStack {
     // is listening and deregisters itself as it stops (`server.js`); a
     // request worker only registers the job.
     require('../cluster/spiffe_targets').ensureJob(jobScheduler);
+    // 18i-report. REPORTING (#956). The module registers its six scheduler
+    // jobs at load, so it belongs after the scheduler is in hand. oauth2
+    // and authn are already loaded, which the API's lazy dependencies need.
+    // The two paths collide with nothing.
+    this.register(app, require('../report/report_app'), 'report/report_app');
+    this.register(app, require('../report/report_api'), 'report/report_api');
     // 18j. RISK SCORING (#62 P1, 2026-09-22): the store, the datasets and
     // the failure history are LIBRARIES (rule 3) that register no route, and
     // then Monitoring → Risk, for 18a's reason — the console's shell and the
@@ -1290,6 +1309,14 @@ class ProtocolStack {
     // route. Here, beside the datasets it reads.
     this.build('common/attestation_revocation',
                require('./attestation_revocation'), 'AttestationRevocation');
+    // 18j-iv. THE PASSKEY REPORT (#942): a library that registers its
+    // recount job when built, and no route. Here, beside the other
+    // libraries a scheduler job owns, and BEFORE `ldap/ldap_server` (21),
+    // whose require fills its directory slot through the facades and whose
+    // two key-writing doors note there — a facade asked before this line
+    // would build a default instance the root could then not install.
+    this.build('common/passkey_report', require('./passkey_report'),
+               'PasskeyReport');
     this.build('risk/risk_engine', require('../risk/risk_engine'),
                'RiskEngine');
     require('../admin-ui/risk_admin');
@@ -1487,6 +1514,11 @@ class ProtocolStack {
     this.build('mgmt-api/secret_destinations_api',
                require('../mgmt-api/secret_destinations_api'),
                'SecretDestinationsApi');
+    // MONITORING -> PASSKEYS' OPERATIONS (#942), spread by
+    // `mgmt-api/admin_api` into its table as the destinations' are.
+    this.build('mgmt-api/passkey_report_api',
+               require('../mgmt-api/passkey_report_api'),
+               'PasskeyReportApi');
     // #552: the outbound SCIM clients' operations; the client itself is built
     // at 22, beside the SCIM server, and reached from here lazily.
     this.build('mgmt-api/scim_clients_api',

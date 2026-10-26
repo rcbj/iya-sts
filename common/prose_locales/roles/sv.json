@@ -107,6 +107,14 @@
     "en": "54220e44643bd84c",
     "text": "Flödet för enhetsefterlevnad: ett MDM- eller posture-flöde som rapporterar en enhets efterlevnad via POST /admin-api/device-compliance, och ingenting annat på /admin-api. Auktoriserar behörigheten device:compliance. Sådd utan medlem: lägg till flödets applikation."
   },
+  "roles.native.SSF_READ.what": {
+    "en": "0a43e12ff3313079",
+    "text": "Shared Signals-läsning. Auktoriserar behörigheten ssf.read. En person får den bara så länge personen tillhör den här rollens grupp, sådd som ssf-read, och programmet personen loggar in i är medlem i rollen. Ett program får den på sin egen token bara så länge det är medlem. SSF_MANAGE auktoriserar den inte."
+  },
+  "roles.native.SSF_MANAGE.what": {
+    "en": "599cadcd7892cdd2",
+    "text": "Shared Signals-skrivning. Auktoriserar behörigheten ssf.manage. En person får den bara så länge personen tillhör den här rollens grupp, sådd som ssf-manage, och programmet personen loggar in i är medlem i rollen. Ett program får den på sin egen token bara så länge det är medlem. Den auktoriserar inte ssf.read."
+  },
   "roles.memberKinds.user.label": {
     "en": "df381eb4bb572daf",
     "text": "en person"

@@ -43,10 +43,10 @@ import LazyModule = require('../common/lazy_module');
 // at its top, and together they are resident memory in every request worker
 // that never issues or verifies a BBS credential. `common/lazy_module.ts`
 // argues it; `common/helpers.js` defers the same file by hand.
-type Bbs2023 = typeof import('../common/vendored/bbs2023.js');
-const bbs2023: Bbs2023 = LazyModule.of('common/vendored/bbs2023.js',
+type Bbs2023 = typeof import('../common/crypto_impl/bbs2023.js');
+const bbs2023: Bbs2023 = LazyModule.of('common/crypto_impl/bbs2023.js',
   function () {
-    return require('../common/vendored/bbs2023.js') as Bbs2023;
+    return require('../common/crypto_impl/bbs2023.js') as Bbs2023;
   }, helpers.log);
 import InstanceSlot = require('../common/instance_slot');
 // The identity registry, for ONE call at the generator endpoint below: a DID
@@ -643,7 +643,16 @@ class VcDid {
                      publicKeyJwk: { kty: 'RSA', use: 'sig', alg: 'RS256',
                                      kid: own.kid, n: jwk.n, e: jwk.e } });
     });
-    const signer = await this.didSignerAsync();
+    // NOT A POST-QUANTUM ONE while `keys.postQuantumSigning` is off
+    // (2026-10-23): the realm then signs nothing with it — didSignerAsync()
+    // would be refused (STS-KEYS-0158) — and publishes it nowhere, so the
+    // document is the RSA key's and the rest below.
+    const credentialAlg = String(this.deps.config.value(
+      'oid4vci.credentialSigningAlgorithm') || 'RS256');
+    const pqOff = stsCrypto.isPqJwsAlg(credentialAlg) &&
+      !stsCrypto.postQuantumSigningOn();
+    const signer = pqOff ? { alg: 'RS256', key: STS.privateKey, kid: STS.kid }
+      : await this.didSignerAsync();
     if (signer.alg !== 'RS256' && signer.kid !== STS.kid) {
       const held = stsKeysFor();
       const extra = (held.extraKeys || []).concat(held.pqKeys || [])

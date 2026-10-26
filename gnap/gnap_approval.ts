@@ -32,6 +32,19 @@
 // such error. `grant.ro.acr` records what was achieved; the issue stage
 // holds every right to it again (`gnap_rights.ts`, STS-GNAP-0891).
 //
+// **interact.acr (#738).** RFC 9635 has no phr field. A client names the
+// short names `phr` and `phrh` — not the EAP URIs — on `interact.acr`, a
+// string or an array. `GnapRequest.interactAcrDemand()` classifies it
+// the way `StepUp.phishingClassFor()` classifies a pure list, and a
+// token that is neither name is not the demand. The floor is what is
+// required: `phrh` only when every token is `phrh`, otherwise `phr`,
+// which a hardware key also meets, so the two together are not both
+// mandatory. One trip, the same `step_up_honoured` return as the
+// catalogue's acr. Still unmet, `request_denied` (STS-GNAP-0905). The
+// XACML fact `urn:sts:xacml:phishing-resistance` is the session's; the
+// issuance gate reads it for a browser kind. This library does not pass
+// it, and does not require `phishing_resistance.ts`.
+//
 // **APPROVAL BY AN ABSENT RESOURCE OWNER (RFC 9635 sections 1.4 and 2.4).**
 // A request whose `user` names a person who is not the one interacting —
 // or who is not there at all, the client offering no interaction — was
@@ -90,6 +103,10 @@ import InstanceSlot = require('../common/instance_slot');
 import store = require('./gnap_store');
 import monitor = require('./gnap_monitor');
 import gnapRights = require('./gnap_rights');
+// #738: interact.acr's classification. A library; requiring it moves no
+// route (it registers nothing) and closes no cycle (it requires none of
+// this family but the schemas).
+import gnapRequest = require('./gnap_request');
 // #432 phase 5: a right's limits as a form the owner can lower here too.
 import LimitsForm = require('../common/limits_form');
 
@@ -212,24 +229,46 @@ class GnapApproval {
   }
 
   /**
-   * Holds a session to every acr value required, and says what the sign-in
-   * screen must demand where it falls short.
+   * Holds a session to every catalogue acr, and to `interact.acr` when
+   * that member is an EAP demand (#738), and says what the sign-in
+   * screen must demand where it falls short. One trip: the caller does
+   * not ask again.
    *
-   * @param acrs - the values, each required
+   * `phr` and `phrh` together mean either class answers, so only the
+   * floor is required — `phrh` when that is the only token, otherwise
+   * `phr`, which a hardware key also meets. Both tokens are not appended:
+   * a catalogue acr is each mandatory, and that would make both mandatory.
+   *
+   * @param acrs - the catalogue values, each required
    * @param session - the sign-on session (its `acr`, `amr`, events)
-   * @returns `{ met, missing, ask, forceMfa, forceKey }` — `ask` the values
-   *   to send the sign-in, the strongest first
+   * @param interactAcr - `request.interact.acr`, or undefined when absent
+   * @returns `{ met, missing, ask, forceMfa, forceKey, phishingClass,
+   *   eapUnmet }` — `ask` the values to send the sign-in, strongest first;
+   *   `phishingClass` is `phrh` or `''`; `eapUnmet` selects STS-GNAP-0905
    */
-  assess(acrs: string[], session: Json): Json {
+  assess(acrs: string[], session: Json, interactAcr?: unknown): Json {
     const { log, rights } = this.deps;
     log.debug("Entering GnapApproval.assess().");
+    const demand = gnapRequest.interactAcrDemand(interactAcr);
     const missing: string[] = rights.unmetAcr(acrs || [], session || {});
-    if (!missing.length) {
+    if (!demand.eap && !missing.length) {
       log.debug("Leaving GnapApproval.assess(). Met.");
       return { met: true, missing: [], ask: [], forceMfa: false,
-               forceKey: false };
+               forceKey: false, phishingClass: '', eapUnmet: false };
     }
     const stepUp = this.deps.stepUp();
+    const floor = demand.phishingClass === 'phrh' ? 'phrh' : 'phr';
+    // Evidence, not the session's acr string: meets() reads the latest
+    // event when `events` is an array (`phishing_resistance.ts`).
+    const eapMet = !demand.eap || !!stepUp.meets(floor, session || {});
+    if (!eapMet && missing.indexOf(floor) < 0) {
+      missing.push(floor);
+    }
+    if (!missing.length) {
+      log.debug("Leaving GnapApproval.assess(). The class is met.");
+      return { met: true, missing: [], ask: [], forceMfa: false,
+               forceKey: false, phishingClass: '', eapUnmet: false };
+    }
     let forceMfa = false;
     let forceKey = false;
     missing.forEach(function (one: string): void {
@@ -237,10 +276,37 @@ class GnapApproval {
       forceMfa = forceMfa || !!screen.forceMfa;
       forceKey = forceKey || !!screen.forceKey;
     });
+    // The class stays required on the sign-in even when this session
+    // already earned it and some other acr is what is missing: a later
+    // sign-in must not replace a phrh event with a password.
+    if (demand.eap) {
+      forceKey = true;
+    }
     const ask = this.strongestFirst(missing);
     log.debug("Leaving GnapApproval.assess(). Missing " + missing.join(' '));
     return { met: false, missing: missing, ask: ask, forceMfa: forceMfa,
-             forceKey: forceKey };
+             forceKey: forceKey,
+             phishingClass: demand.eap ? demand.phishingClass : '',
+             eapUnmet: !eapMet };
+  }
+
+  // The acr the portal's step-up is asked for: the catalogue's, plus the
+  // floor of an interact.acr demand. The portal calls assess() with this
+  // list and no third argument (`portal_ciba.ts`, not edited here), and
+  // it reads the list as each value required, so both tokens are not both
+  // appended. `requiredAcr()` itself stays the catalogue.
+  private acrForPortal(grant: Json): string[] {
+    const { log } = this.deps;
+    log.debug("Entering GnapApproval.acrForPortal().");
+    const out = this.requiredAcr(grant);
+    const interact = grant && grant.request && grant.request.interact;
+    const demand = gnapRequest.interactAcrDemand(interact && interact.acr);
+    const floor = demand.phishingClass === 'phrh' ? 'phrh' : 'phr';
+    if (demand.eap && out.indexOf(floor) < 0) {
+      out.push(floor);
+    }
+    log.debug("Leaving GnapApproval.acrForPortal(). " + out.join(' '));
+    return out;
   }
 
   // The values ordered so that one meeting the first meets the rest where
@@ -465,7 +531,7 @@ class GnapApproval {
                                 (subject.assertionFormats || []).length)),
         requestedBy: grant.ownerApproval.requestedBy || '',
         expiresAt: grant.ownerApproval.expiresAt,
-        acr: self.requiredAcr(grant),
+        acr: self.acrForPortal(grant),
         narrowed: Array.isArray(grant.narrowed) ? grant.narrowed : []
       };
     });
@@ -507,8 +573,8 @@ class GnapApproval {
    * @param selection - `{ approve, ticked, subject }`, and (#432 phase 5)
    *   `req`, the portal's request, and `form`, how its posted limit
    *   controls are read (`common/limits_form.ts`)
-   * @returns `{ ok: true }`, `{ ok: false, stepUp: true, ask }` when the
-   *   session falls short, or `{ ok: false, why, code }`
+   * @returns `{ ok: true, approved, client }`, `{ ok: false, stepUp: true,
+   *   ask }` when the session falls short, or `{ ok: false, why, code }`
    */
   async answer(username: string, session: Json, id: string,
                selection: Json): Promise<Json> {
@@ -524,7 +590,9 @@ class GnapApproval {
     const ticked: string[] = Array.isArray(selection.ticked)
       ? selection.ticked : [];
     if (selection.approve) {
-      const assessed = this.assess(this.requiredAcr(grant, ticked), session);
+      const interact = grant.request && grant.request.interact;
+      const assessed = this.assess(this.requiredAcr(grant, ticked), session,
+                                   interact && interact.acr);
       if (!assessed.met) {
         log.debug("Leaving GnapApproval.answer(). A stronger sign-in.");
         return { ok: false, stepUp: true, ask: assessed.ask,
@@ -592,7 +660,10 @@ class GnapApproval {
       throw e;
     }
     log.debug("Leaving GnapApproval.answer(). Answered.");
-    return { ok: true, approved: !!selection.approve && anything };
+    // The client it was answered for, so the portal's `notePresented()`
+    // names the application on the `session.presented` row.
+    return { ok: true, approved: !!selection.approve && anything,
+             client: String((grant.client || {}).identifier || '') };
   }
 }
 

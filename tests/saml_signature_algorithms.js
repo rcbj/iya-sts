@@ -533,7 +533,7 @@ async function run(t) {
   const pki = require('../common/pki');
   const grant = require('../oauth-oidc/saml_assertion_grant');
   const AUD = 'https://sts.example.test/oauth2/token';
-  const keyMaterial = require('../common/vendored/key_material.js');
+  const keyMaterial = require('../common/crypto_impl/key_material.js');
   const mlDsaId = keyMaterial.POST_QUANTUM_KEY_ALG_ORDER.filter(function (id) {
     return /ml-?dsa/i.test(id) && !/composite|ed25519|ed448|rsa|p256|p384/i
       .test(id);

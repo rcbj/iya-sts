@@ -8,7 +8,7 @@
 // ===========================================================================
 // THE SIGN-IN SCREEN OVER `/authn-api`, FOR AN IN-PROCESS TEST (#571).
 //
-// `tests/vendored/authn_signin.js` is the protocol jobs' helper; this is
+// `tests/protocol/authn_signin.js` is the protocol jobs' helper; this is
 // the same walk for a test that runs the stack in a child process and talks
 // to it over `http` on 127.0.0.1, with its own cookie jar — a plain object,
 // name to value, which this reads and writes in place, as each test's own

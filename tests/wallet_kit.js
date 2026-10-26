@@ -138,7 +138,7 @@ async function boot() {
     stats: require(ROOT + '/common/admin_stats'),
     stsCrypto: require(ROOT + '/common/crypto'),
     pqJose: require(ROOT + '/common/pq_jose'),
-    bbs2023: require(ROOT + '/common/vendored/bbs2023.js'),
+    bbs2023: require(ROOT + '/common/crypto_impl/bbs2023.js'),
     cacheRegistry: require(ROOT + '/common/cache_registry')
   };
   const DEFAULT = m.realms.DEFAULT_REALM;

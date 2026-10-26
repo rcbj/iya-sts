@@ -22,7 +22,7 @@
 // image this repository already builds.
 //
 // **WHICH BUYS THE PROPERTY WORTH HAVING: ONE ENCODER FOR EVERY CERTIFICATE IN
-// THE STACK.** `common/vendored/x509.js` is the parent project's PKI code,
+// THE STACK.** `common/crypto_impl/x509.js` is the parent project's PKI code,
 // byte-identical, and it is what mints this service's own TLS pair, every
 // certificate authority on /admin/pki and every assertion key pair it issues.
 // The secret store's listener is now one more certificate from the same
@@ -43,8 +43,8 @@
 const fs = require('fs');
 const path = require('path');
 
-const x509 = require('../common/vendored/x509');
-const keyMaterial = require('../common/vendored/key_material');
+const x509 = require('../common/crypto_impl/x509');
+const keyMaterial = require('../common/crypto_impl/key_material');
 
 // This script's own logger. Its level is LOG_LEVEL, and info without one.
 const log = require('bunyan').createLogger({ name: 'sts-bao-tls',

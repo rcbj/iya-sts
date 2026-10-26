@@ -456,8 +456,8 @@
     "text": "Ang sobreng binabasa at isinusulat ng SCEP (scep/scep_cms.ts): isang request na pinirmahan ng requester at naka-encrypt para sa RA, at isang CertRep na pinirmahan ng RA na ang certificate ay naka-encrypt para sa requester."
   },
   "crypto.families.pki.signs": {
-    "en": "f1ce79cf624ab6f5",
-    "text": "MGA CERTIFICATE. Pinipirmahan ng Root ang sarili nito nang isang beses para sa serbisyo; pinipirmahan nito ang isang Intermediate bawat trust realm at isa para sa process; pinipirmahan ng bawat Intermediate ang isang Issuing CA bawat use case; at pinipirmahan ng bawat Issuing CA ang mga leaf ng use case nito — ang sariling signing at listener key ng serbisyo, at ang mga key pair na in-issue sa mga application at tao. Ang signature algorithm ay ang piniling para sa hierarchy at nililimitahan ng key family ng ISSUER sa halip na ng subject, na siyang pagkakamaling pinaglalaanan ng isang talata ng sariling header ng `common/vendored/x509.js`: ang pag-import ng key sa ilalim ng isang digest at pagpirma gamit ang iba ay gumagawa ng certificate na hindi tugma ang idineklarang algorithm at ang aktuwal na signature, at iniuulat ito ng `openssl verify` bilang bad signature nang walang pinapangalanan sa dalawa."
+    "en": "fdcf723f4622f28f",
+    "text": "MGA CERTIFICATE. Pinipirmahan ng Root ang sarili nito nang isang beses para sa serbisyo; pinipirmahan nito ang isang Intermediate bawat trust realm at isa para sa process; pinipirmahan ng bawat Intermediate ang isang Issuing CA bawat use case; at pinipirmahan ng bawat Issuing CA ang mga leaf ng use case nito — ang sariling signing at listener key ng serbisyo, at ang mga key pair na in-issue sa mga application at tao. Ang signature algorithm ay ang piniling para sa hierarchy at nililimitahan ng key family ng ISSUER sa halip na ng subject, na siyang pagkakamaling pinaglalaanan ng isang talata ng sariling header ng `common/crypto_impl/x509.js`: ang pag-import ng key sa ilalim ng isang digest at pagpirma gamit ang iba ay gumagawa ng certificate na hindi tugma ang idineklarang algorithm at ang aktuwal na signature, at iniuulat ito ng `openssl verify` bilang bad signature nang walang pinapangalanan sa dalawa."
   },
   "crypto.families.pki.verifies": {
     "en": "e27202f2b20a852a",
@@ -484,8 +484,8 @@
     "text": "Encoding ng certificate"
   },
   "crypto.families.pki.algorithms.0.how": {
-    "en": "d40c79caa059f986",
-    "text": "X.509 v3, DER, sa pamamagitan ng pkijs at asn1js — common/vendored/x509.js, ang sariling PKI code ng parent project, byte-identical. Iisang encoder para sa serbisyong ito at para sa PKI / X.509 page ng proyektong iyon."
+    "en": "9c9c3be17d02f8b6",
+    "text": "X.509 v3, DER, sa pamamagitan ng pkijs at asn1js — common/crypto_impl/x509.js, ang sariling PKI code ng parent project, byte-identical. Iisang encoder para sa serbisyong ito at para sa PKI / X.509 page ng proyektong iyon."
   },
   "crypto.families.pki.algorithms.1.what": {
     "en": "1b9e0c9e96801219",
@@ -622,6 +622,62 @@
   "crypto.families.user-portal.algorithms.4.how": {
     "en": "363f58a2eab8e37c",
     "text": "S256"
+  },
+  "crypto.families.reporting.signs": {
+    "en": "8728ccd393fd7e6c",
+    "text": "Walang pinipirmahan na inilalabas ng isang report. Ang runtime, sa browser, ay pumipirma ng isang bagay: isang RFC 9449 DPoP proof (ES256) sa bawat tawag sa `/report-api` at sa token endpoint, gamit ang P-256 key na ginawa ng WebCrypto bilang non-extractable para sa page load na iyon."
+  },
+  "crypto.families.reporting.verifies": {
+    "en": "294c4447e5523292",
+    "text": "BAWAT TAWAG SA `/report-api`, sa gate nito (report/report_api.ts): ang access token ay isang RFC 9068 `at+jwt` na vine-verify sa ilalim ng signing key ng realm NA ITO (alinmang generation), sinusuri ang issuer at audience nito, at tinutugma ang DPoP binding nito sa isang proof na vine-verify ng gate — hindi kailanman tinatanggap bilang Bearer. Vine-verify ng runtime ang isang JARM authorization response laban sa JWKS ng realm kapag nagpapadala nito ang realm."
+  },
+  "crypto.families.reporting.encrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "Wala."
+  },
+  "crypto.families.reporting.decrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "Wala."
+  },
+  "crypto.families.reporting.hashes": {
+    "en": "2ddfe2e29749ce1c",
+    "text": "SHA-256 ng mga byte ng natapos na report, iniimbak sa tabi ng mga ito (`sts_report_artifacts.sha256`) at sinusuri kapag binasa muli ang resulta. SHA-256 sa browser para sa PKCE S256 challenge at sa `ath` ng DPoP proof."
+  },
+  "crypto.families.reporting.keys": {
+    "en": "feaa838ac5fb9b97",
+    "text": "Wala sa server. Ang DPoP key pair ay nasa browser: P-256, ginawa ng WebCrypto na ang private half ay non-extractable, nakaimbak sa memory at nawawala kasama ng page. Ang mga token mismo ay pinipirmahan ng authorization server ng realm (ang hanay ng OAuth2 / OIDC)."
+  },
+  "crypto.families.reporting.algorithms.0.what": {
+    "en": "63f37962dc3dfb33",
+    "text": "Access token sa /report-api"
+  },
+  "crypto.families.reporting.algorithms.0.how": {
+    "en": "87be1920112e9844",
+    "text": "RFC 9068 at+jwt, vine-verify sa ilalim ng signing key ng realm na ito, DPoP-bound"
+  },
+  "crypto.families.reporting.algorithms.1.what": {
+    "en": "e097c8970e32cda3",
+    "text": "DPoP proof (browser)"
+  },
+  "crypto.families.reporting.algorithms.1.how": {
+    "en": "9bebf9949394145f",
+    "text": "ES256 gamit ang non-extractable na WebCrypto P-256 key bawat page load"
+  },
+  "crypto.families.reporting.algorithms.2.what": {
+    "en": "7e09ecc318c42463",
+    "text": "PKCE"
+  },
+  "crypto.families.reporting.algorithms.2.how": {
+    "en": "363f58a2eab8e37c",
+    "text": "S256"
+  },
+  "crypto.families.reporting.algorithms.3.what": {
+    "en": "80ea1ab36a2e5c55",
+    "text": "Mga naimbak na byte ng report"
+  },
+  "crypto.families.reporting.algorithms.3.how": {
+    "en": "9d40176053fec31b",
+    "text": "SHA-256, itinatago kasama ng artifact at sinusuri sa pagbasa"
   },
   "crypto.families.gnap.signs": {
     "en": "ad4b982edb070f2c",

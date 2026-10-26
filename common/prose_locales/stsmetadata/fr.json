@@ -1064,8 +1064,8 @@
     "text": "Tout ce dont un appelant a besoin pour VÉRIFIER ce service, en PEM : le certificat que présente chaque socket TLS de ce processus — le port principal et l’écouteur LDAPS de l’annuaire sur 636, qui sert ce même certificat et cette même clé plutôt qu’une seconde paire — suivi de la chaîne entre celui-ci et la Root CA propre à ce service, puis cette Root. C’est une décision sur ce qu’un APPELANT doit faire plutôt qu’une paire de clés enregistrée : une ancre couvrant le port principal et 636, c’est UNE récupération, là où deux feraient échouer un ldapsearch avec \"unable to get local issuer certificate\" face à un magasin de confiance construit pour le port HTTPS — une erreur qui ne nomme rien et ressemble à un annuaire défaillant. DEPUIS LE 2026-09-11, LA CHAÎNE ET LA ROOT FIGURENT DANS CE DOCUMENT, car le certificat a cessé d’être auto-signé ce jour-là : OpenSSL prend un certificat final auto-signé dans un magasin de confiance comme une ancre et refuse un certificat certifié ; un appelant épinglant le seul certificat final obtenait donc cette même erreur au sujet d’une Root qu’on ne lui avait jamais donnée. Le CERTIFICAT FINAL EST EN PREMIER, pour un appelant qui ne veut que lui. Il est RÉGÉNÉRÉ À CHAQUE DÉMARRAGE quel que soit le mode (sauf si tls.certificateFile le fournit), comme une clé de signature de développement ; c’est donc une ancre que personne ne peut avoir intégrée en dur et dont aucune copie en cache ne reste valide — d’où Cache-Control: no-store. Il ne publie aucune clé privée. Récupérez-le dans votre propre magasin de confiance plutôt que de désactiver la vérification."
   },
   "stsmetadata.endpoints./.what": {
-    "en": "4c29594ca1759528",
-    "text": "Ce qu’est ce service, en une carte : le projet sur GitHub, ses tickets, le site de documentation, et les deux surfaces de cette instance vers lesquelles va une personne plutôt qu’un client — la console d’administration et le portail utilisateur. Elle ne liste AUCUN point de terminaison, délibérément — cette page est la liste, elle est générée, et une sélection écrite à la main sur la porte d’entrée en serait une seconde copie que rien ne vérifie. C’était un chemin non routé jusqu’au 2026-08-24, si bien que la réponse à la première URL qu’une personne tape était le « Cannot GET / » d’Express. Depuis #579, c’est une surface statique : ceci répond le shell, et /home.js dessine la carte dans la langue du navigateur à partir de /home-api/front."
+    "en": "85b6e9694fbfb459",
+    "text": "Ce qu’est ce service, en une carte : le projet sur GitHub, ses tickets, le site de documentation, et les surfaces de cette instance vers lesquelles va une personne plutôt qu’un client — la console d’administration, le portail utilisateur et les rapports. Elle ne liste AUCUN point de terminaison, délibérément — cette page est la liste, elle est générée, et une sélection écrite à la main sur la porte d’entrée en serait une seconde copie que rien ne vérifie. C’était un chemin non routé jusqu’au 2026-08-24, si bien que la réponse à la première URL qu’une personne tape était le « Cannot GET / » d’Express. Depuis #579, c’est une surface statique : ceci répond le shell, et /home.js dessine la carte dans la langue du navigateur à partir de /home-api/front."
   },
   "stsmetadata.endpoints./home.js.what": {
     "en": "676325f92b405058",
@@ -1080,8 +1080,8 @@
     "text": "NON-SPEC (#579). Les opérations de l’API de la porte d’entrée, chacune avec la page dont elle est la porte (mirrors), comme /account-api liste les siennes. Public et sans langue."
   },
   "stsmetadata.endpoints./home-api/front.what": {
-    "en": "e608f6ceb4c13f9a",
-    "text": "NON-SPEC (#579). Tout ce que dessine la page d’accueil, sous forme de faits et sans mots : le nom, la version et son build, si une connexion vérifie le mot de passe et si la console est protégée, le logo, et les cinq liens sous forme d’identifiants et d’adresses — ceux de la console et du portail sur l’écouteur qui leur répond (#472). Public, no-store ; elle ne liste aucun point de terminaison, comme la page ne l’a jamais fait."
+    "en": "617325f4b1fdbe01",
+    "text": "NON-SPEC (#579). Tout ce que dessine la page d’accueil, sous forme de faits et sans mots : le nom, la version et son build, si une connexion vérifie le mot de passe et si la console est protégée, le logo, et les six liens sous forme d’identifiants et d’adresses — la console, le portail et les rapports, chacun sur l’écouteur qui lui répond (#472). Public, no-store ; elle ne liste aucun point de terminaison, comme la page ne l’a jamais fait."
   },
   "stsmetadata.endpoints./logo.png.what": {
     "en": "3ecb997587060c27",
@@ -1174,6 +1174,74 @@
   "stsmetadata.endpoints./portal/portal.css.what": {
     "en": "69cf245f63b035d1",
     "text": "NON-SPEC. L’unique feuille de style du portail (#568)."
+  },
+  "stsmetadata.endpoints./report.what": {
+    "en": "a9d6c3cc058a3617",
+    "text": "NON-SPEC. L’application de rapports statique (#956). Chaque chemin répond par un seul document, qui charge /report/report.js et ouvre la session en tant que client public sts-report."
+  },
+  "stsmetadata.endpoints./report/*.what": {
+    "en": "0d4a7436bac8a815",
+    "text": "NON-SPEC. Le même document que /report. Le script choisit la page d’après le chemin."
+  },
+  "stsmetadata.endpoints./report/report.js.what": {
+    "en": "06abcdf5598f2576",
+    "text": "NON-SPEC. Le runtime des rapports, construit par build-typescript.sh et servi précompressé. Public, comme le document."
+  },
+  "stsmetadata.endpoints./report/report.css.what": {
+    "en": "aa0e94707e105592",
+    "text": "NON-SPEC. L’unique feuille de style de l’application de rapports (#956)."
+  },
+  "stsmetadata.endpoints./report-api.what": {
+    "en": "7b8038436244d3de",
+    "text": "NON-SPEC. L’index de /report-api. Il prend le jeton DPoP de ce domaine pour sts-report, scope report:use ou report:admin."
+  },
+  "stsmetadata.endpoints./report-api/openapi.json.what": {
+    "en": "0a932f3efc26b3fb",
+    "text": "NON-SPEC. La description propre à l’API. Derrière le même jeton que le reste de /report-api, et servie no-store."
+  },
+  "stsmetadata.endpoints./report-api/catalog.what": {
+    "en": "07eb9bbaa64c98e2",
+    "text": "NON-SPEC. Les sources qu’une requête peut nommer, avec le type et les opérateurs de chaque champ. Les attributs d’identifiants en sont absents."
+  },
+  "stsmetadata.endpoints./report-api/catalog/:id.what": {
+    "en": "4d6e53c9ce4823ca",
+    "text": "NON-SPEC. Une source du catalogue, par son id."
+  },
+  "stsmetadata.endpoints./report-api/queries.what": {
+    "en": "0d15a58a10e2b1ba",
+    "text": "NON-SPEC. Une requête de catalogue. Une petite requête bornée reçoit sa réponse dans l’appel ; une plus grande est mise en file et reçoit 202."
+  },
+  "stsmetadata.endpoints./report-api/definitions.what": {
+    "en": "df098902244cfa53",
+    "text": "NON-SPEC. Les définitions que ce jeton peut voir : celles de son propriétaire, celles partagées avec un groupe dont il fait partie, et toutes quand le jeton porte report:admin."
+  },
+  "stsmetadata.endpoints./report-api/definitions/:id.what": {
+    "en": "74d936b2bb9fff66",
+    "text": "NON-SPEC. Une définition. Un id inconnu et un id que ce jeton ne peut pas voir reçoivent la même réponse."
+  },
+  "stsmetadata.endpoints./report-api/definitions/:id/share.what": {
+    "en": "12d23dbb24cec023",
+    "text": "NON-SPEC. Nomme les groupes d’annuaire qui peuvent exécuter la définition et lire ses résultats. Le propriétaire, ou report:admin, peut modifier cette liste."
+  },
+  "stsmetadata.endpoints./report-api/definitions/:id/run.what": {
+    "en": "991b657f7fe20e17",
+    "text": "NON-SPEC. Met en file la requête de la définition au nom de l’appelant. Un partage accorde cela et le résultat, pas une modification."
+  },
+  "stsmetadata.endpoints./report-api/jobs.what": {
+    "en": "f4e437b96fe383f5",
+    "text": "NON-SPEC. Les tâches que ce jeton peut voir, et la porte qui en met une en file à partir d’un document de requête."
+  },
+  "stsmetadata.endpoints./report-api/jobs/:id.what": {
+    "en": "d69a7d667bd631bf",
+    "text": "NON-SPEC. Une tâche. Un id inconnu et un id que ce jeton ne peut pas voir reçoivent la même réponse."
+  },
+  "stsmetadata.endpoints./report-api/jobs/:id/cancel.what": {
+    "en": "cbc407e431852e06",
+    "text": "NON-SPEC. Demande à une tâche en file ou en cours de s’arrêter. Les octets d’une tâche déjà terminée sont laissés à la rétention."
+  },
+  "stsmetadata.endpoints./report-api/jobs/:id/result.what": {
+    "en": "3b97b9774547de8c",
+    "text": "NON-SPEC. Les octets stockés d’une tâche terminée, tant que report.artifactRetentionS n’est pas écoulé. Passé ce délai, le résultat a disparu."
   },
   "stsmetadata.endpoints./portal/signals/receive.what": {
     "en": "b5f30a87646c3fed",
@@ -1712,8 +1780,8 @@
     "text": "set et remove. set écrit un broker et les types de référence qu’il peut utiliser (pid, k8s, *) dans spiffe.brokers du domaine ; remove le retire, et son appel suivant est refusé avec PERMISSION_DENIED."
   },
   "stsmetadata.endpoints./admin-api/delegation.what": {
-    "en": "bc3ea30406135fc8",
-    "text": "NON-SPEC. Chaque délégation que ce service a effectuée ou REFUSÉE, en JSON : huit mécanismes couvrant Kerberos, WS-Trust et OAuth 2.0 Token Exchange dans un même modèle, chacun nommant l’identité initiale, l’intermédiaire agissant pour elle et la cible atteinte. Filtré par type, mode, résultat, protocole et texte libre, et paginé avec ?page= et ?per=. Lisez `mode` en premier : une `impersonation` ne laisse rien dans le justificatif indiquant qu’un niveau intermédiaire est intervenu ; c’est donc le seul endroit où ce fait figurera jamais. Un acte refusé porte la raison propre du KDC et n’apparaît dans aucune autre ressource ici. Outre les actes paginés, la réponse porte `chains` — les tuples distincts (mécanisme, initial, intermédiaire, cible) parmi les correspondances, un par arête — et `policy`, qui peut déléguer à qui avant que quiconque n’ait essayé. PARCOUREZ-LE PAR `seq`. EN LECTURE SEULE, l’une des deux ressources ici qui le sont : tout ce qu’elle contient est une observation ou la configuration de quelqu’un d’autre ; il n’y a donc rien à modifier. Reflète GET /admin/delegation."
+    "en": "5832fac2dafcfe9d",
+    "text": "NON-SPEC. Chaque délégation que ce service a effectuée ou REFUSÉE, en JSON : huit mécanismes couvrant Kerberos, WS-Trust et OAuth 2.0 Token Exchange dans un même modèle, chacun nommant l’identité initiale, l’intermédiaire agissant pour elle et la cible atteinte. Filtré par type, mode, résultat, protocole et texte libre, et paginé avec ?page= et ?per=. Lisez `mode` en premier : une `impersonation` ne laisse rien dans le justificatif indiquant qu’un niveau intermédiaire est intervenu ; c’est donc le seul endroit où ce fait figurera jamais. Un acte refusé porte la raison propre du KDC et n’apparaît dans aucune autre ressource ici. Outre les actes paginés, la réponse porte `chains` — les tuples distincts (mécanisme, initial, intermédiaire, cible) parmi les correspondances, un par arête — et `policy`, qui peut déléguer à qui avant que quiconque n’ait essayé. REPRENEZ PAR `at`, et non par `seq` (#465). `seq` est unique et n’est jamais réutilisé, et il croît au sein de chaque processus, mais chaque fil d’exécution numérote à partir d’un bloc qui lui est propre, de sorte que ce n’est pas un seul ordre entre eux. EN LECTURE SEULE, l’une des deux ressources ici qui le sont : tout ce qu’elle contient est une observation ou la configuration de quelqu’un d’autre ; il n’y a donc rien à modifier. Reflète GET /admin/delegation."
   },
   "stsmetadata.endpoints./admin-api/delegation/policy.what": {
     "en": "1adbc4bff8b6363e",
@@ -1746,6 +1814,22 @@
   "stsmetadata.endpoints./admin-api/secret-destinations/:action.what": {
     "en": "15a8c6d83ed6bc92",
     "text": "NON-SPEC (#221). add-destination, update-destination, remove-destination et test-push (une version témoin écrite dans un secret de test) : les quatre actions de la console, chacune auditée. Le justificatif d’écriture est reçu et jamais renvoyé."
+  },
+  "stsmetadata.endpoints./admin-api/passkey-report.what": {
+    "en": "d45e78dec310a21d",
+    "text": "NON-SPEC (#942). Ce qu’affiche Supervision → Clés d’accès : les clés d’accès du domaine par algorithme et par voie, ses personnes par type (post-quantique uniquement, classique uniquement, les deux, aucune), quels modèles d’authentificateur détiennent quels algorithmes, et le postQuantumRequired de chaque profil de clé d’accès ; filtré par un groupe, un profil de clé d’accès ou une application, avec une liste paginée par curseur des personnes derrière chaque chiffre. Les chiffres sont un agrégat tenu à jour — un recomptage quotidien des détenteurs plus les changements notés à mesure que les clés sont écrites —, jamais un parcours de l’annuaire à chaque requête."
+  },
+  "stsmetadata.endpoints./admin-api/passkey-report/export.what": {
+    "en": "41f6fbe31db08a88",
+    "text": "NON-SPEC (#942). Les personnes que nomme un chiffre de Supervision → Clés d’accès, en CSV ou en JSON, lues une page de détenteurs à la fois, au plus cent mille lignes, avec mention en cas de coupure. Aucune matière de clé."
+  },
+  "stsmetadata.endpoints./admin-api/passkey-report/evidence.what": {
+    "en": "04273b8322f6ed5c",
+    "text": "NON-SPEC (#947). L’objet d’attestation archivé et son EvidenceRecord RFC 4998 pour une clé d’accès, nommés par le nom d’utilisateur et credentialId. Le jeton de la TSA se vérifie avec les ancres de confiance configurées. Une clé inscrite sans TSA, ou dont l’attestation n’était pas de confiance et était classique, n’a aucun enregistrement."
+  },
+  "stsmetadata.endpoints./admin-api/passkey-report/:action.what": {
+    "en": "cd923c72e2ca4fba",
+    "text": "NON-SPEC (#942). recount : met en file la tâche passkeys.report-recount pour ce domaine auprès du meneur du planificateur, qui fait d’un nouveau comptage des détenteurs la nouvelle base. La seule action de la console sur cette page ; elle s’exécute là où s’exécute toute tâche, jamais dans la requête."
   },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
@@ -1792,8 +1876,8 @@
     "text": "NON-SPEC. La table centrale de toutes les conditions d’échec que ce service peut produire, STS-<SUBSYSTEM>-<NNNN>, en JSON : chaque code avec son sous-système, ce qui a échoué, ce qui est dit au CLIENT dans le vocabulaire de son propre protocole, et le nombre de lignes du journal d’audit conservé qui le portent dans ce domaine — filtrée par sous-système, texte et ?seen=1, paginée avec ?page= et ?per=. UN CODE N’EST JAMAIS ENVOYÉ À UN CLIENT : il figure uniquement sur la ligne d’audit et dans la ligne de journal. EN LECTURE SEULE — la table est dans le code source. Reflète GET /admin/error-codes ; la même table est docs/error-codes.md."
   },
   "stsmetadata.endpoints./admin-api/audit.what": {
-    "en": "ba4fc61236466ead",
-    "text": "NON-SPEC. Ce qui s’est passé ici, dans l’ordre, en JSON : chaque authentification, session d’authentification unique, opération sur l’annuaire LDAP, interaction avec la console, appel à l’API de gestion et appel à un point de terminaison protocolaire, du plus récent au plus ancien, filtré par catégorie, action, résultat, acteur et texte libre, et paginé avec ?page= et ?per=. AUCUN JUSTIFICATIF NE FIGURE JAMAIS DANS UNE LIGNE — aucun mot de passe, jeton porteur, assertion ou corps ; une modification nomme les attributs qu’elle a changés et jamais leurs valeurs. PARCOUREZ-LE PAR `seq` plutôt que par page : il est monotone et jamais réutilisé ; « tout ce qui suit 4102 » est donc exact, là où la page 2 prise une seconde après la page 1 peut répéter une ligne qui s’y est décalée. EN LECTURE SEULE — l’une des deux ressources ici qui le sont, l’autre étant /admin-api/delegation. Il n’existe aucune opération d’effacement, car une commande d’effacement sur une API non protégée rendrait un journal d’audit incapable de répondre à la seule question pour laquelle il existe. Reflète GET /admin/audit."
+    "en": "55d3dcbe157b0e3f",
+    "text": "NON-SPEC. Ce qui s’est passé ici, dans l’ordre, en JSON : chaque authentification, session d’authentification unique, opération sur l’annuaire LDAP, interaction avec la console, appel à l’API de gestion et appel à un point de terminaison protocolaire, du plus récent au plus ancien, filtré par catégorie, action, résultat, acteur et texte libre, et paginé avec ?page= et ?per=. AUCUN JUSTIFICATIF NE FIGURE JAMAIS DANS UNE LIGNE — aucun mot de passe, jeton porteur, assertion ou corps ; une modification nomme les attributs qu’elle a changés et jamais leurs valeurs. REPRENEZ PAR `at`, et non par `seq` (#465). `seq` est unique dans tous les processus du service et n’est jamais réutilisé, et il croît au sein de chaque processus, mais chaque fil d’exécution numérote à partir d’un bloc qui lui est propre, de sorte que les numéros ne forment pas un seul ordre et que « tout ce qui suit 4102 » omet un événement ultérieur enregistré sous un numéro plus petit. `origin` départage avec `seq`. La page 2 prise une seconde après la page 1 peut répéter une ligne qui s’y est décalée. EN LECTURE SEULE — l’une des deux ressources ici qui le sont, l’autre étant /admin-api/delegation. Il n’existe aucune opération d’effacement, car une commande d’effacement sur une API non protégée rendrait un journal d’audit incapable de répondre à la seule question pour laquelle il existe. Reflète GET /admin/audit."
   },
   "stsmetadata.endpoints./admin-api/realms.what": {
     "en": "83f6f516fe05921e",
@@ -3382,6 +3466,10 @@
   "stsmetadata.protocols.User portal.what": {
     "en": "835d40e9ff6eaabb",
     "text": "CE N’EST PAS UN PROTOCOLE, et il a une carte parce que cette page signale tout groupe de points de terminaison qu’aucune carte ne revendique — c’est la règle qui empêche une nouvelle famille d’arriver sans être annoncée, et il vaut mieux en payer le prix ici que de rendre la règle conditionnelle. LA PREMIÈRE SURFACE DE CE SERVICE QUI APPARTIENT À LA PERSONNE QUI LA REGARDE : toute autre page de navigateur ici est destinée à quelqu’un d’autre — l’écran de connexion est une étape du flux d’un autre protocole, l’écran de consentement pose une question et s’en va, /admin est destiné à un opérateur et protégé par deux rôles. C’est ici qu’une personne voit ce que ce fournisseur d’identité sait d’elle et modifie sa manière de s’authentifier : son mot de passe, ses clés de sécurité et, pour chacune, si elle est un identifiant principal ou un second facteur. C’est une APPLICATION DISTINCTE de la console d’administration, qui ne partage avec elle que la session d’authentification unique auprès du serveur d’autorisation de ce service : chacune est un client OAuth public (ici sts-user-portal) qui conserve en mémoire son propre jeton lié par DPoP. /portal/activate en est la moitié non authentifiée, où quelqu’un provisionné via /admin-api ou SCIM utilise un lien d’activation à usage unique et limité dans le temps pour configurer un identifiant — haché au repos comme un mot de passe, soumis à une limitation de débit, consommé lorsque la configuration s’achève plutôt qu’à l’ouverture du lien, et ne connectant jamais personne. DEPUIS #568, C’EST UNE APPLICATION STATIQUE au-dessus de /account-api, le groupe Account API ci-dessous : une opération par page et par formulaire, la personne étant toujours le sujet du jeton, décrite par son propre document OpenAPI."
+  },
+  "stsmetadata.protocols.Reporting.what": {
+    "en": "66663fd63a35a287",
+    "text": "NON PROTOCOLE. L’application de rapports (#956) : une page statique sur /report au-dessus de /report-api, le client public sts-report, et un catalogue des propres enregistrements de ce domaine. Elle ouvre la session dans le navigateur, détient un jeton lié par DPoP et ne prend jamais de chaîne SQL. Une définition enregistrée appartient à son propriétaire ; un partage avec un groupe d’annuaire accorde l’exécution et la lecture, pas la modification."
   },
   "stsmetadata.protocols.GNAP.what": {
     "en": "b938c4cb8feac54d",

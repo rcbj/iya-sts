@@ -94,7 +94,7 @@ const worker = require('../common/request_worker');
 const WorkerChannel = require('../common/worker_channel');
 const principals = require('../kerberos/krb5_principals.js');
 const kdc = require('../kerberos/krb5_kdc.js');
-const wire = require('./vendored/krb5_wire.js');
+const wire = require('./protocol/krb5_wire.js');
 const rpc = require('../spiffe/spiffe_grpc');
 const broker = require('../spiffe/spiffe_broker');
 

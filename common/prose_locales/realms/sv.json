@@ -87,6 +87,14 @@
     "en": "f4b474a8d20ad298",
     "text": "En persons eget konto i den sfär de befinner sig i: portalen loggar in via sfärens egen auktoriseringsserver som en klient sådd i varje sfär, och varje sida läser och skriver personens post i den sfärens katalog, hållen till den sfärens lösenordspolicy."
   },
+  "realms.support.reporting.family": {
+    "en": "b1fa104b9bf0635e",
+    "text": "Rapportering"
+  },
+  "realms.support.reporting.note": {
+    "en": "ca64742fe52ce6b3",
+    "text": "Applikationen och dess API nås under sfärens sökväg. Definitioner och jobb stannar i den sfärens register, och en delning är en grupp i den sfärens katalog."
+  },
   "realms.support.global-logout.family": {
     "en": "1b4192fb739d93e9",
     "text": "Global utloggning"

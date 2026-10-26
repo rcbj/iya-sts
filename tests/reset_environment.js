@@ -39,7 +39,7 @@ const log = require('bunyan').createLogger({ name: 'reset_environment',
 
 const ROOT = path.join(__dirname, '..');
 const reset = require(path.join(ROOT, 'deploy/aws/reset-environment.js'));
-const bulk = require(path.join(ROOT, 'tests/vendored/bulk_load.js'));
+const bulk = require(path.join(ROOT, 'tests/protocol/bulk_load.js'));
 
 function bulkNames(t) {
   log.debug("Entering bulkNames().");

@@ -13,7 +13,7 @@
 // WHY IN PROCESS, WHICH IS THE QUESTION tests/CLAUDE.md ASKS FIRST.
 //
 // The whole flow is asserted over HTTP by
-// `tests/vendored/sts_jwt_bearer_grant.js` — a real assertion at a real token
+// `tests/protocol/sts_jwt_bearer_grant.js` — a real assertion at a real token
 // endpoint, the refusals included. What is HERE is what that job cannot ask.
 //
 //   * **THE ENCRYPTION MATRIX.** RFC 7523 section 3 claim 10 lets an assertion

@@ -23,6 +23,7 @@ import kit = require('./web_kit');
 import ApplicationsPage = require('./web_applications');
 import GroupsPage = require('./web_groups');
 import TokensPage = require('./web_tokens');
+import AuditPage = require('./web_audit');
 
 type Json = any;
 
@@ -1082,6 +1083,9 @@ class UsersPage {
         t.html('consoleUsers.detail.neverHere') + '</td></tr>') +
         '</table>' +
       UsersPage.authenticationTable(t, row, page.maxEventsPerUser) },
+        { id: 'utab-authentications',
+          label: t.text('consoleUsers.detail.tabAuthentications'),
+          html: UsersPage.authenticationsSection(t, params, json) },
         { id: 'utab-activity', label: t.text('consoleUsers.detail.tabActivity'),
           html:
       kit.perPageForm('/admin/users', 'user', key,
@@ -1258,6 +1262,20 @@ class UsersPage {
    */
   static sessionBlock(t, session, tokenPage, back, params) {
     const nav = kit.pageNavPair('/admin/users', params, tokenPage.paging, t);
+    // Binding skipped (#743) names the reason tokens the session stored.
+    // pending, timedout and none stay the same "No" a session that is not
+    // bound has always drawn. The tokens are data; the sentence is the
+    // catalog's.
+    const binding = session.deviceBound || {};
+    const reasons = Array.isArray(binding.reasons)
+      ? binding.reasons.join(', ') : '';
+    const boundLine = binding.fact === 'skipped'
+      ? t.html('consoleUsers.sessionBlock.deviceBoundSkipped',
+               { reasons: reasons })
+      : (binding.bound
+        ? t.html('consoleUsers.sessionBlock.deviceBoundYes',
+                 { alg: binding.alg || '' })
+        : t.html('consoleUsers.sessionBlock.deviceBoundNo'));
     const html = '<h3>' + t.html('consoleUsers.sessionBlock.session') + ' ' +
       kit.shortened(session.id, 12) + ' &mdash; ' +
       '<span class="' + (session.expired ? 'state-expired' : 'state-valid') +
@@ -1282,6 +1300,8 @@ class UsersPage {
       (session.wsfedRealms.length ? kit.esc(session.wsfedRealms.join(', ')) :
        '—') +
       '</td></tr></table>' +
+      '<p>' + t.html('consoleUsers.sessionBlock.deviceBound') + ' ' +
+      boundLine + '</p>' +
       nav.head +
       UsersPage.userTokenTable(t, tokenPage.shown, back,
         t.text('consoleUsers.sessionBlock.nothingIssued')) +
@@ -1453,6 +1473,52 @@ class UsersPage {
             max: maxEvents,
             total: row.eventsForgotten + row.events.length }))
         : '');
+  }
+
+  // THE ATTEMPTS (#955), drawn as the audit log draws one row, the same
+  // table the application's Authentication attempts tab uses. The columns'
+  // words are the audit catalog's. The list is `authenticationEvents` and
+  // not `authentications`, which is the count on the overview.
+  /**
+   * Draws the Authentication attempts tab from the drill-down's answer.
+   *
+   * @param t - the page's translator
+   * @param params - the page's query, carried on the pager
+   * @param json - the `?user=` answer
+   * @returns the section as HTML
+   */
+  static authenticationsSection(t, params, json) {
+    const rows = [].concat(json.authenticationEvents || []);
+    const paging = json.authenticationEventsPaging || { pages: 1, param:
+      'authenticationsPage', noun: 'attempts', page: 1, perPage: 0,
+      firstRow: 0, lastRow: 0, total: 0 };
+    const logInfo = json.authenticationEventsLog ||
+                    { maxEvents: 0, dropped: 0 };
+    const known = json.authenticationEventsKnownActors || {};
+    const nav = kit.pageNavPair('/admin/users', params, paging, t);
+    const body = rows.map(function (event) {
+      return AuditPage.auditRow(event, known, t);
+    }).join('');
+    const head = function (key) {
+      return '<th>' + t.html(key) + '</th>';
+    };
+    return '<h3>' + t.html('consoleUsers.detail.authHeading') + '</h3>' +
+      kit.note(t.html('consoleUsers.detail.authNote', {
+        max: String(logInfo.maxEvents || 0),
+        dropped: Number(logInfo.dropped || 0)
+      })) +
+      '<p class="sub"><a href="/admin/audit">' +
+      t.html('consoleUsers.detail.authOpenLog') + '</a></p>' +
+      nav.head +
+      '<table><tr><th class="num">#</th>' +
+      head('consoleAudit.when') + head('consoleAudit.category') +
+      head('consoleAudit.action') + head('consoleAudit.outcome') +
+      head('consoleAudit.actor') + head('consoleAudit.from') +
+      head('consoleAudit.target') + head('consoleAudit.whatHappened') +
+      head('consoleAudit.detail') + '</tr>' +
+      (body || '<tr><td colspan="10">' +
+        t.html('consoleUsers.detail.authEmpty') + '</td></tr>') +
+      '</table>' + nav.foot;
   }
 
   // -------------------------------------------------------------------------
@@ -1846,6 +1912,9 @@ class UsersPage {
           ? '<div class="note state-invalid passkey-post-quantum-refused">' +
             kit.esc(one.postQuantumRefused) + '</div>' : '') + '</td>' +
         '<td>' + UsersPage.attestationCell(t, one.attestation, one.aaguid) +
+        // WHAT ITS ATTESTATION WAS SIGNED WITH (#941), leaf to anchor.
+        UsersPage.attestationAlgorithmsText(t, one.attestationAlgorithms) +
+        UsersPage.attestationEvidenceLink(t, key, one) +
         '</td>' +
         '<td>' + kit.esc(backup) +
         (Array.isArray(one.transports) && one.transports.length
@@ -1867,10 +1936,32 @@ class UsersPage {
             kit.esc(one.role === 'primary'
               ? t.text('consoleUsers.mfaSection.removePrimaryTitle')
               : t.text('consoleUsers.mfaSection.removeTitle')) + '">' +
-            t.html('consoleUsers.mfaSection.remove') + '</button></form>'
+            t.html('consoleUsers.mfaSection.remove') + '</button></form>' +
+            (keyLive.enabled && !one.algorithm.postQuantum
+              ? '<form method="post" action="/admin/users" ' +
+                'data-admin-passkey-upgrade="true">' +
+                '<input type="hidden" name="action" ' +
+                'value="begin-passkey-upgrade">' +
+                '<input type="hidden" name="user" value="' +
+                kit.esc(key) + '"><input type="hidden" ' +
+                'name="credentialId" value="' +
+                kit.esc(one.credentialId || '') + '"><button title="' +
+                kit.esc(t.text('consoleUsers.mfaSection.enrolTitle')) +
+                '">' + t.html('consoleUsers.mfaSection.upgrade') +
+                '</button></form>' : '')
           : '') + '</td></tr>';
     };
     const allKeys = mfaKeys.concat(primaryKeys);
+    const adminEnrol = state.write && keyLive.enabled
+      ? '<form method="post" action="/admin/users" ' +
+        'data-admin-passkey-enrolment="true"><input type="hidden" ' +
+        'name="action" value="begin-passkey-enrolment">' +
+        '<input type="hidden" name="user" value="' + kit.esc(key) +
+        '"><input type="hidden" name="role" value="mfa">' +
+        '<button title="' + kit.esc(t.text('consoleUsers.mfaSection.enrolTitle')) +
+        '">' + t.html('consoleUsers.mfaSection.enrol') +
+        '</button><p class="note">' +
+        t.html('consoleUsers.mfaSection.enrolTitle') + '</p></form>' : '';
     const keysBlock = '<h3>' + t.html('consoleUsers.mfaSection.keysHeading') +
       '</h3>' +
       (allKeys.length
@@ -1906,7 +1997,7 @@ class UsersPage {
         mfa: keyLive.mfaAllowed ? 'yes' : 'no',
         max: String(keyLive.maxKeysPerPerson) }) +
       '<a href="/admin/webauthn">WebAuthn</a>' +
-      t.html('consoleUsers.mfaSection.realmAllowsAfter'));
+      t.html('consoleUsers.mfaSection.realmAllowsAfter')) + adminEnrol;
 
     // --- the recovery codes
     // --------------------------------------------------- **THE COUNTS AND
@@ -2670,6 +2761,44 @@ class UsersPage {
       (att.model ? ' — ' + kit.esc(att.model) : '') +
       ' <code>' + kit.esc(att.format) + '</code>' +
       UsersPage.androidRevocationText(t, att);
+  }
+
+  // THE ALGORITHMS A KEY'S ATTESTATION WAS SIGNED WITH (#941): the
+  // statement's, then each certificate's from the leaf to the anchor, with
+  // the whole marked post-quantum where every one of them is. Nothing for a
+  // key that recorded none (before #941, or no attestation): the cell
+  // already says "claimed" for those.
+  static attestationAlgorithmsText(t, a) {
+    if (!a || !a.recorded ||
+        (!a.statement && !(a.certificates || []).length)) {
+      return '';
+    }
+    const chain = (a.certificates || []).map(function (one) {
+      return String(one.algorithm || '');
+    }).filter(Boolean);
+    const names = (a.statements && a.statements.length ? a.statements
+                                                     : [])
+      .concat(chain.length ? [chain.join(' \u2192 ')] : []);
+    return '<div class="sub passkey-attestation-algorithms' +
+      (a.postQuantum ? ' state-valid' : '') + '">' +
+      t.html(a.postQuantum
+        ? 'consoleUsers.attestationAlgorithms.postQuantum'
+        : 'consoleUsers.attestationAlgorithms.signedWith') +
+      ' <code>' + kit.esc(names.join('; ')) + '</code></div>';
+  }
+
+  // The complete RFC 4998 record is downloaded through the authenticated
+  // management API, where it is an attachment with no-store headers.
+  static attestationEvidenceLink(t, username, one) {
+    if (!one || !one.attestation || !one.attestation.evidence) {
+      return '';
+    }
+    const href = '/admin-api/passkey-report/evidence?username=' +
+      encodeURIComponent(String(username || '')) + '&credentialId=' +
+      encodeURIComponent(String(one.credentialId || ''));
+    return '<div class="sub passkey-attestation-evidence"><a href="' +
+      kit.esc(href) + '">' +
+      t.html('consoleUsers.attestationEvidence') + '</a></div>';
   }
 
   // What Google's Android attestation status list said of an android-key

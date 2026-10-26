@@ -40,6 +40,16 @@ a page DOES, which did not change:
 API**: no operation takes a username, an id or a DN naming whose account it
 acts on — the person is the token's subject.
 
+### A link to the documentation (#895)
+
+Every portal page links to the public documentation
+(`https://rcbj.github.io/iya-sts/`), chosen by `common/web_doc_links.ts`. A
+signed-in page draws it at the top of `.main`, above a flash
+(`PortalShell.frame()`). A page drawn for nobody — activation, a password
+reset, forgot-password, verify-email — draws the same link in `drawView()`
+before `PortalShell.bare()`. A problem page and "not a page" do not: `bare()`
+stays path-agnostic.
+
 
 ## THE FIRST PAGE IN THIS SERVICE THAT BELONGS TO THE PERSON LOOKING AT IT (2026-09-06)
 
@@ -63,7 +73,7 @@ somebody came for is below the fold of a page about something else.
 | `/portal/keys` | authenticated | **Security keys** — the list, and a Remove per key |
 | `/portal/mfa` | authenticated | **Authenticator app** — the QR code, the typed secret, and the code that confirms it |
 | `/portal/signals` | authenticated | **Security activity** — what this identity provider has said about the person over CAEP and RISC (2026-09-10) |
-| `/portal/sign-ins` | authenticated | **Recent sign-ins** — the person's own risk assessments of thirty days, each with "this was me" / "this wasn't me" (#62 P6, `portal_sign_ins.ts`; `risk/CLAUDE.md` argues what each answer moves) |
+| `/portal/sign-ins` | authenticated | **Recent sign-ins** — the person's own risk assessments of `audit.authenticationHistoryDays` (thirty by default), each naming the application the sign-in was for, with "this was me" / "this wasn't me" (#62 P6, #955, `portal_sign_ins.ts`; `risk/CLAUDE.md` argues what each answer moves) |
 | `/portal/consents` | authenticated | **Consents** — what the person agreed each application may ask for, and a Withdraw per scope and per application that revokes what was issued under it (#172, `portal_consents.ts`); and, under **Administrative consents**, the global consents that answered for them at sign-in, with no button (#537) |
 | `/portal/gnap` | authenticated | **GNAP grants** — the GNAP grants the person is the resource owner of, each with its rights, tokens and why it ended, and a Revoke (#432 phase 7, `portal_gnap.ts`) |
 | `/portal/signing-key` | authenticated | **Signing keys** — RFC 7523 and RFC 7522 key pairs and TLS client certificates (2026-09-12) |
@@ -80,7 +90,7 @@ SOMEBODY A CREDENTIAL rather than taking one. **EIGHT SINCE 2026-09-13** —
 column from it, `headingFor()` titles the page from it, and `paths()` reports it
 to `sts_metadata.ts` — so a page added there appears in the column, in the
 browser tab and in the endpoint list, and one removed leaves none of the three
-behind. `tests/vendored/sts_portal_sessions.js` asserts, for the first four
+behind. `tests/protocol/sts_portal_sessions.js` asserts, for the first four
 (Overview, Applications, Password, Security keys), that its own entry is marked
 `aria-current="page"`.
 
@@ -249,7 +259,7 @@ is that the CALLER may administer this service, and the question this page
 answers is about the SUBJECT — an identity nothing on the request may
 nominate. A token is not a person. The feature is still
 driven by a test, which is what the convention is for:
-`tests/vendored/sts_portal_sessions.js` signs a real browser in and reads the
+`tests/protocol/sts_portal_sessions.js` signs a real browser in and reads the
 page.
 
 ### What the test asserts, and why the decisive one is a TRANSITION
@@ -558,9 +568,30 @@ What that changed, and why each piece is the way it is:
   `begin`'s `classical` default becomes the post-quantum lane
   (`webauthnPolicy.enrolmentLane()`). `authn/CLAUDE.md` (*A post-quantum
   passkey required*) argues the rest.
+* **The classical retry (#944)**: the armed ceremony carries `fallback`
+  (`asksPostQuantum`, `classical`, `retrying`), `#wa-data` carries it as
+  `data-fallback`, and `KeysPages.fallback()` draws the guidance HIDDEN
+  (`#wa-fallback`), shown by `web_portal_webauthn.ts` through
+  `common/web_webauthn.ts`'s `offerFallback()` only after a registration
+  that asked for ML-DSA fails. The failure is posted as the finish's
+  `credential` — `{ error, capabilities }`, `capabilities` null where the
+  platform reported none — and the answer is not drawn (#961). The account
+  API leaves the enrolment and answers no `view` when that object has its
+  own `capabilities` property and the fallback offers the classical begin;
+  without the property, or when the fallback does not offer the retry, the
+  enrolment is abandoned and the page redrawn (2026-09-26). The retry's
+  form (`action` `begin`, the same role, kind and lane, `algorithms`
+  `classical`) replaces the enrolment when it is pressed. `begin` asks
+  `classicalRetryRefusal()` again (`STS-AUTHN-0420`, reason `algorithms`),
+  and the pending record's `classicalOnly` holds the finish to the retry's
+  list. An upgrade's create phase draws the guidance with no classical
+  button and its finish still drops the upgrade. The activation's and the
+  device link's ceremonies draw no guidance, so a failure there is posted
+  as before and abandoned. `authn/CLAUDE.md` (*The classical retry*) argues
+  it.
 
 `tests/passkey_management.js` holds the credential layer, and
-`tests/vendored/sts_portal_backup_keys.js` holds the page over HTTP: the two
+`tests/protocol/sts_portal_backup_keys.js` holds the page over HTTP: the two
 buttons, the groups, rename and Last used.
 
 ### It is held to the same two address rules as the sign-in screen (2026-09-12)
@@ -823,7 +854,7 @@ authorization request and the sign-out's address are the bytes they were.
   (`admin-ui/CLAUDE.md` 8c-iv). Off, still not drawn — and off is no
   longer the default: `authn.multipleAccounts` is on by default since
   2026-10-20 (rcbj, #751; `authn/CLAUDE.md`).
-  `tests/vendored/sts_multi_account_tabs.js` 2a switches a real tab to bob
+  `tests/protocol/sts_multi_account_tabs.js` 2a switches a real tab to bob
   and back to alice from it, nothing typed.
 * **A SWITCH** asks over a form typed in, aborts what is in flight —
   `sendOnce()`, `ownerJson()` (the owner token's requests, #607) and the
@@ -900,7 +931,7 @@ file that got it wrong: `POST /portal/activate` ended by linking to
 `authn.LOGIN_PATH`. **Nothing was broken except one `href`** — the password was
 set, the link was spent, the audit row was written — which is why it survived
 being written directly under an argument saying it could not work, and why the
-guard for it had to be an over-HTTP job (`tests/vendored/sts_portal_sessions.js`)
+guard for it had to be an over-HTTP job (`tests/protocol/sts_portal_sessions.js`)
 rather than anything in process.
 
 **It links to `/portal` now, and the destination is the argument.** That page
@@ -961,7 +992,7 @@ about to change is not.
 |---|---|---|
 | `tests/portal_access.js` | the CREDENTIAL layer: `credentials.removeKey()` looks an id up among the caller's OWN keys | a route that never reaches that function |
 | `tests/access_policy.js` | the POLICY layer: the XACML `access-control` document denies a subject who is not the owner | a handler that hands the PDP the wrong subject |
-| `tests/vendored/sts_portal_sessions.js` | the ROUTE, over HTTP, with two real signed-in browsers | nothing above it — this is the one that sends a request |
+| `tests/protocol/sts_portal_sessions.js` | the ROUTE, over HTTP, with two real signed-in browsers | nothing above it — this is the one that sends a request |
 
 **THE THIRD ONE EXISTS BECAUSE THE FIRST TWO NEVER SEND A REQUEST**, and that is
 not a theoretical gap. It was mutation-tested by making `/portal/password` read
@@ -975,7 +1006,7 @@ was reading `GET /admin-api/audit` back and checking the ACTOR on the
 only the audit row proves the write.** If a handler changes something, assert
 who it was attributed to and not merely what came back.
 
-**`/portal/mfa` HAS ONE OF ITS OWN TOO** (`tests/vendored/sts_portal_totp.js`,
+**`/portal/mfa` HAS ONE OF ITS OWN TOO** (`tests/protocol/sts_portal_totp.js`,
 section 3), and on this page the rule protects something sharper than a leak:
 enrolling for somebody else would leave the attacker HOLDING that account's
 second factor. The decisive assertion is not that the page came back with the
@@ -1088,7 +1119,7 @@ thing this section must not do: **an entry in this directory carries whatever
 anybody put on it**, and this service writes four `sts`-prefixed CREDENTIALS
 onto that same object. A page that printed the entry would print a TOTP shared
 secret the day somebody enrolled an authenticator. That file's header carries
-the argument; `tests/vendored/sts_portal_directory_attributes.js` is where it
+the argument; `tests/protocol/sts_portal_directory_attributes.js` is where it
 is held, and every other assertion in that job passes against the wrong
 implementation.
 
@@ -1163,7 +1194,7 @@ card says what to do with the key it holds — claims and a `kid` for a JWT, an
 assertion. **Three things are shared rather than doubled**: the rate limit
 (a key generation costs the same CPU either way), `pki.personSelfService`, and
 the error codes, none of which named a profile. The nav label is *Signing
-keys*. `tests/vendored/sts_portal_signing_key.js` section 8 is the proof, and
+keys*. `tests/protocol/sts_portal_signing_key.js` section 8 is the proof, and
 its SAN check exists because a JWT leaf written onto the SAML attributes
 verifies exactly like a SAML one — the certificate's subjectAltName is the only
 place the difference shows; five mutants, all caught, that one only after the
@@ -1203,7 +1234,7 @@ and the person.
 nothing in this service opens it again — not this page, not `/admin/pki`, not
 `/admin-api`. The page says so at the moment it shows it, and *generate again*
 is the only answer to having lost it. That is the same position the recovery
-codes reached from the other direction, and `tests/vendored/sts_portal_signing_key.js`
+codes reached from the other direction, and `tests/protocol/sts_portal_signing_key.js`
 asserts it by fetching the page a second time and looking for a PEM block that
 must not be there.
 
@@ -1307,7 +1338,7 @@ What is this page's:
 **NO `/admin-api` MIRROR**, for this page's standing reason: the answer is
 per-person. An operator revokes one on `/admin/pki`'s revocation pane, where it
 is listed like every other leaf of the `tls-client` authority.
-`tests/vendored/sts_portal_signing_key.js` section 9 is the over-HTTP half; the
+`tests/protocol/sts_portal_signing_key.js` section 9 is the over-HTTP half; the
 handshake was `tests/tls_client_certificates.js` in process, because no launcher
 published 9443 to a job — **a certificate now arrives on the port every job
 already uses**, which is the deletion's one gift to this page.
@@ -1484,7 +1515,7 @@ administrator could see or end a GNAP grant. Four things are this page's:
   person, or one with nothing live left (`STS-PORTAL-0163`, 400) — the
   `/portal/keys` credential id's arrangement. `manage-own`, CSRF on the POST,
   and `gnap.grant.revoke` audited with the person as actor:
-  `tests/vendored/sts_gnap_core.js` section 15 asserts the ACTOR, this
+  `tests/protocol/sts_gnap_core.js` section 15 asserts the ACTOR, this
   directory's rule that only the audit row proves the write.
 * **Under cells (#98) it lists this cell's grants**, which is normally all of
   them (a grant moves to its resource owner's home before approval), and says
@@ -1850,7 +1881,7 @@ was), and **a ceremony the browser could not run abandons the pending
 enrolment** and draws the form again with the browser's error: the first
 version defaulted to *Built into this device* and kept the enrolment armed, so
 Linux Firefox — which has nothing built in — could register no key at all and
-never get back to the choice. `tests/vendored/sts_portal_backup_keys.js`
+never get back to the choice. `tests/protocol/sts_portal_backup_keys.js`
 section 1a holds both.
 
 **THE LINK STEP IS A SCRIPTED PAGE, AND ITS OWN ROW IN THE ROOT TABLE.** A
@@ -1869,7 +1900,7 @@ registers it self-asserted. Refusals are `STS-DEVICE-0016`–`0028`; the page
 and the JSON doors never take an identity from the request.
 
 **The scripted link step is driven in a real browser** by
-`tests/vendored/sts_portal_device_webauthn.js` (#258): Chrome's virtual
+`tests/protocol/sts_portal_device_webauthn.js` (#258): Chrome's virtual
 authenticators, the roaming key refused, the page with its script blocked,
 the armed policy, the link, and a later sign-in recognising the device.
 **In product it can only assert the refusal**: Chrome re-mints the virtual
@@ -1972,7 +2003,7 @@ page, each answer carrying the slice and a paging member beside it
 | Page | List | Moves on | Was |
 |---|---|---|---|
 | `/portal/claim-sources` | `providers`, the realm's Claims Providers (`ou=claimproviders` grows with what an operator registers) | `page`; `linked` counts the person's links over every page | the whole register |
-| `/portal/sign-ins` | `rows`, the person's assessed sign-ins of thirty days | `page`; paged IN THE STORE (`limit`/`offset`, `total` from the count), so a page reads twenty rows | the risk engine's default fifty, silently truncated |
+| `/portal/sign-ins` | `rows`, the person's assessed sign-ins of the configured window (`audit.authenticationHistoryDays`, thirty by default), each with the application the sign-in named | `page`; paged IN THE STORE (`limit`/`offset`, `total` from the count), so a page reads twenty rows | the risk engine's default fifty, silently truncated |
 | `/portal/email` | `sent`, the outbox's messages to the person | `sentPage`, beside `sentPaging` — named because the page holds other things than the list | the newest twenty, silently truncated |
 
 `PortalKit.pageNav()` (`web_portal_kit.ts`) draws the control for a list that
@@ -2023,9 +2054,12 @@ three differences:
   person asked for themselves (`stsPasswordResetSource: self`) is refused
   403, `STS-AUTHN-0380`, with its own sentence, and stays unspent; an
   administrator's is not. A spent link then leaves a pending recovery
-  (`credentials.noteRecovery()`), and `/portal/activate`'s finish does the
-  same for somebody who held a passkey before the link was issued. The
-  sign-in after either is held by `authn.ts` (`authn/CLAUDE.md`).
+  (`credentials.noteRecovery()`). Where a hold is required and that write
+  fails (#962, `STS-AUTHN-0382`), the link is not spent and the password is
+  taken off again, so it cannot sign in with nothing pending; the link can
+  be submitted again. `/portal/activate`'s finish does the same for
+  somebody who held a passkey before the link was issued. The sign-in
+  after either is held by `authn.ts` (`authn/CLAUDE.md`).
 
 ## SEVERAL NODES: A LINK IS CLAIMED BEFORE ANYTHING IS SET (2026-09-14, #46)
 
@@ -2147,4 +2181,14 @@ a provider made has no password here, and proving that provider again proves
 the account. The federation module and the directory are reached at request
 time (8a-acct is before 10c and 21). `federation/CLAUDE.md` has the
 federation half.
+
+## A skipped device binding on the Overview (#743, 2026-10-25)
+
+The Overview's "Bound to this browser" row already said yes or no
+(#725). A sign-on whose fact is `skipped` says "binding skipped" and the
+reason tokens the session stored (`overview.deviceBoundSkipped`,
+`{reasons}`, in the seven base catalogs). `fact` and `reasons` are
+language-free on the account answer; the browser translates. `pending`,
+`timedout` and `none` stay "No". The portal is this origin, so it does
+not use a site-scoped or federated DBSC session.
 

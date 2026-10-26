@@ -10,7 +10,7 @@ it covers the relying party (RP) to register, the settings to change, and the
 request the RP then sends. Each recipe is given twice: once as steps in the
 **admin console** and once as **Management API** calls.
 
-The values come from this repository's test jobs in `tests/vendored/`, and
+The values come from this repository's test jobs in `tests/protocol/`, and
 each recipe names the job it is taken from.
 [Configuring OAuth 2.0 grants](configure-oauth2-grants.md#before-you-start)
 explains the shared mechanics: the API token, the `api` shell helper used
@@ -395,7 +395,6 @@ declared for **OpenID Connect**. Then, on its **Configuration** tab's
 api applications/create '{"identifier":"nsso-first","name":"nsso-first",
   "protocols":["oauth2","oidc"],
   "fields":{"oauthClientId":"nsso-first","oauthTokenEndpointAuthMethod":"none",
-            "oauthConfidential":"FALSE",
             "oauthRedirectUri":["https://nsso-first.example.test/cb"],
             "oauthResponseType":["code"],
             "oauthGrantType":["authorization_code","refresh_token",
@@ -403,6 +402,8 @@ api applications/create '{"identifier":"nsso-first","name":"nsso-first",
             "oauthScope":["openid","device_sso"],
             "oauthNativeSso":"TRUE","oauthNativeSsoGroup":"vendor.one"}}'
 ```
+
+The registry writes `oauthConfidential` FALSE from `none`.
 
 Create the second app, `nsso-second`, the same way with the same group. Only
 apps in the same group share sessions.

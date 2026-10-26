@@ -66,7 +66,7 @@
 // since been deleted** is a state no sequence of endpoint calls can produce
 // while still holding the private key that goes with it.
 //
-// The over-HTTP half is section 13 of `tests/vendored/sts_jwt_bearer_grant.js`,
+// The over-HTTP half is section 13 of `tests/protocol/sts_jwt_bearer_grant.js`,
 // which issues through `/admin-api/pki`, signs with an implementation of its
 // own and drives `/oauth2/token`. The two are not substitutes: this one says
 // the rule holds, that one says the doors are wired to it.

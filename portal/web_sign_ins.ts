@@ -8,8 +8,8 @@
 // ---------------------------------------------------------------------------
 // `/portal/sign-ins`, DRAWN IN THE BROWSER (#568), from `GET
 // /account-api/sign-ins` (`portal_sign_ins.ts`): the person's recent
-// sign-ins as the risk engine saw them, two buttons on each one nobody has
-// answered yet.
+// sign-ins as the risk engine saw them, the application each one named,
+// and two buttons on each one nobody has answered yet.
 //
 // A `web_` MODULE: it requires other `web_` modules only and logs nothing.
 // ---------------------------------------------------------------------------
@@ -67,6 +67,7 @@ class SignInsPages {
         t.html('portalSignIns.from') + '</th><th>' +
         t.html('portalSignIns.with') + '</th><th>' +
         t.html('portalSignIns.through') + '</th><th>' +
+        t.html('portalSignIns.application') + '</th><th>' +
         t.html('portalSignIns.risk') + '</th><th>' +
         t.html('portalSignIns.wasItYou') + '</th></tr>' +
         rows.map(function (a: Json): string {
@@ -85,10 +86,13 @@ class SignInsPages {
             ? t.html('portalSignIns.saidYes')
             : a.feedback === 'denied' ? t.html('portalSignIns.saidNo')
             : SignInsPages.answerForms(a.id, t);
+          const application = a.application
+            ? kit.esc(String(a.application)) : '&mdash;';
           return '<tr><td>' + kit.esc(t.date(Number(a.at))) +
             '</td><td>' + kit.esc(where) + '<br><small>' + kit.esc(network) +
             '</small></td><td>' + kit.esc(device) + '</td><td>' +
-            kit.esc(a.door || '') + '</td><td><span style="' + style +
+            kit.esc(a.door || '') + '</td><td>' + application +
+            '</td><td><span style="' + style +
             ';padding:2px 8px;border-radius:10px;font-weight:600">' +
             t.html('portalSignIns.level', { level: String(a.level) }) +
             '</span>' + (a.id && a.id === view.thisSession ? '<br><small>' +

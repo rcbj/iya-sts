@@ -1127,6 +1127,30 @@
     "en": "ba077a59ecf25ecb",
     "text": "`off`（預設值）接受任何簽章演算法的密碼金鑰。`sign-in` 在密碼金鑰讓某人登入時（作為第一憑證或第二因素）只接受後量子密碼金鑰，即演算法為 ML-DSA-44、ML-DSA-65 或 ML-DSA-87（RFC 9964）的密碼金鑰；傳統密碼金鑰仍可註冊。`registration-and-sign-in` 在註冊時也拒絕傳統密碼金鑰，此時註冊只提供 ML-DSA。決定因素是演算法，而不是金鑰建立時所在的通道。當領域不提供任何 ML-DSA 時（webauthn.algorithms 未列出任何 ML-DSA，且 webauthn.pqcOnly 與 webauthn.pqcAlongsideClassical 皆未開啟）將被拒絕。"
   },
+  "passkey.FIELDS.postQuantumAllowCredentials.label": {
+    "en": "295b04bef9cf50bc",
+    "text": "要求後量子密碼金鑰時登入所列出的密碼金鑰"
+  },
+  "passkey.FIELDS.postQuantumAllowCredentials.what": {
+    "en": "af7666466d67e760",
+    "text": "`realm`（預設值）沿用該領域的 webauthn.postQuantumAllowCredentials。僅在 postQuantumRequired 要求登入時使用後量子密碼金鑰時讀取。`narrow` 在密碼金鑰步驟的請求中只列出此人的後量子（ML-DSA）密碼金鑰，因此從不提供傳統密碼金鑰，而裝置上只存有其傳統密碼金鑰的人會看到平台自己的「找不到密碼金鑰」訊息。`list-and-refuse` 列出此人持有的每個密碼金鑰，並在儀式結束後拒絕傳統密碼金鑰，同時顯示一個頁面，說明此應用程式要求後量子密碼金鑰以及在哪裡新增；此人隨後可能選擇一個將被拒絕的密碼金鑰。無論哪種方式，不持有任何後量子密碼金鑰的人都會在任何儀式之前得到告知。儲存時省略，則保留 `realm`。"
+  },
+  "passkey.FIELDS.registrationAlgorithms.label": {
+    "en": "48d2a5935e526db5",
+    "text": "密碼金鑰註冊提供的演算法"
+  },
+  "passkey.FIELDS.registrationAlgorithms.what": {
+    "en": "4ff3748f6cb3a6f1",
+    "text": "`realm`（預設值）提供該領域的 webauthn.algorithms。否則為密碼金鑰註冊向此設定檔的人員提供的簽章演算法，依偏好排序（驗證器建立其支援的第一個），取自 webauthn.algorithms 可列出的演算法。下一列可以縮小或重新排序該清單，且演算法不在此設定檔所提供演算法之列的密碼金鑰在註冊時會被拒絕。儲存時省略，則保留 `realm`。"
+  },
+  "passkey.FIELDS.registrationMode.label": {
+    "en": "ca3432814ea1b7a3",
+    "text": "註冊時的後量子演算法"
+  },
+  "passkey.FIELDS.registrationMode.what": {
+    "en": "1466dbe275c566e7",
+    "text": "`realm`（預設值）沿用 webauthn.pqcOnly 與 webauthn.pqcAlongsideClassical。`pq-only` 只提供 ML-DSA，並拒絕改用傳統演算法重試。`pq-first` 先提供 ML-DSA，再提供傳統演算法，即使領域只要求 ML-DSA 也是如此。`classical-only` 不提供任何 ML-DSA，也不在傳統密碼金鑰之外提供後量子密碼金鑰，適用於裝置無法完成 ML-DSA 註冊的人員。當 postQuantumRequired 不為 off 或已設定 attestationAlgorithms 時（classical-only），以及所提供的演算法未列出任何 ML-DSA 時（pq-only、pq-first），將被拒絕。儲存時省略，則保留 `realm`。"
+  },
   "passkey.FIELDS.passkeyHints.label": {
     "en": "7445bda72b06c415",
     "text": "「Create a passkey」送出的提示"
@@ -1199,6 +1223,30 @@
     "en": "bdbb83ca7b2a2c48",
     "text": "開發模式下預設為 `any`，產品模式下預設為 `not-weaker`。不要求密碼金鑰的帳戶復原方式——密碼重設連結、啟用連結、復原碼、透過電子郵件寄送的代碼或連結——是否為持有密碼金鑰的人恢復存取權限。`any`：立即恢復。`not-weaker`：此後第一次不是透過密碼金鑰的登入不能存取任何應用程式；此人須註冊一個符合此原則的密碼金鑰並用它登入。`operator-only`：同 not-weaker，並且拒絕自助方式（忘記密碼表單、登入時的復原碼或透過電子郵件寄送的代碼或連結）；只剩下管理員的重設連結、產生的密碼或啟用連結。儲存時省略此項，則保留內建預設值。"
   },
+  "passkey.FIELDS.attestationAlgorithms.label": {
+    "en": "fe72fed238e39ede",
+    "text": "通行金鑰證明必須使用的簽章演算法"
+  },
+  "passkey.FIELDS.attestationAlgorithms.what": {
+    "en": "cb4ed83be3a69177",
+    "text": "預設為 `none`：無論證明使用何種演算法簽章都予以接受。否則為一個清單，取值於 post-quantum、ml-dsa-44、ml-dsa-65、ml-dsa-87、slh-dsa 和 composite-ml-dsa：只有當通行金鑰帶有一個攜帶憑證的「受信任」證明，且其聲明簽章以及其憑證鏈中從葉憑證到信任錨點的每張憑證的簽章都是清單允許的演算法時，才會註冊（`post-quantum` 允許任何 ML-DSA、SLH-DSA 或複合 ML-DSA 簽章）。self 和 none 證明因不帶憑證而遭拒絕。開啟 enforceAttestationAtSignIn 後，每次登入都會依據註冊時記錄的內容按此規則檢查通行金鑰，因此在此規則之前註冊的通行金鑰將停止運作。這是證明的演算法，而不是通行金鑰本身的演算法（postQuantumRequired）。儲存時省略此項，則保留內建預設值。"
+  },
+  "passkey.FIELDS.adminEnrolment.label": {
+    "en": "73fd6ffe6660cf3f",
+    "text": "允許管理員為某人註冊密碼金鑰"
+  },
+  "passkey.FIELDS.adminEnrolment.what": {
+    "en": "9e395e59fd838fcf",
+    "text": "預設為 `off`。`on` 允許持有 Admin Write 主控台角色的管理員，為適用此設定檔的人註冊密碼金鑰，從主控台上該人的頁面或 /admin-api：註冊儀式在管理員自己的瀏覽器中進行，對著管理員持有的驗證器（例如一把要交出去的安全金鑰），使用該人的使用者識別碼，並且與該人自己的註冊完全一樣地驗證——證明、演算法和此原則的註冊規則。別處製作的任何東西都不能匯入。金鑰記錄哪位管理員在何時註冊了它，並告知該人。儲存時省略此項，則保留內建預設值。"
+  },
+  "passkey.FIELDS.deviceBoundRequired.label": {
+    "en": "19194c290aaa3903",
+    "text": "要求裝置綁定工作階段"
+  },
+  "passkey.FIELDS.deviceBoundRequired.what": {
+    "en": "5098a9645fefe2ff",
+    "text": "預設關閉。開啟後，向此設定檔所涵蓋的應用程式核發時，會等到登入工作階段綁定到瀏覽器的金鑰；若瀏覽器略過該註冊，或等待結束仍未綁定，則拒絕核發。從未被提供註冊的工作階段不會被此列拒絕。在 authn.deviceBoundSessions 關閉時拒絕。"
+  },
   "passkey.SCHEMA.objectClasses.stsPasskeyPolicy.what": {
     "en": "44bab556bd6240cc",
     "text": "本服務用於密碼金鑰原則的類別：密碼金鑰在此領域中的行為方式。項目以「設定檔」命名（`cn=default`）。"
@@ -1239,6 +1287,18 @@
     "en": "ba077a59ecf25ecb",
     "text": "`off`（預設值）接受任何簽章演算法的密碼金鑰。`sign-in` 在密碼金鑰讓某人登入時（作為第一憑證或第二因素）只接受後量子密碼金鑰，即演算法為 ML-DSA-44、ML-DSA-65 或 ML-DSA-87（RFC 9964）的密碼金鑰；傳統密碼金鑰仍可註冊。`registration-and-sign-in` 在註冊時也拒絕傳統密碼金鑰，此時註冊只提供 ML-DSA。決定因素是演算法，而不是金鑰建立時所在的通道。當領域不提供任何 ML-DSA 時（webauthn.algorithms 未列出任何 ML-DSA，且 webauthn.pqcOnly 與 webauthn.pqcAlongsideClassical 皆未開啟）將被拒絕。"
   },
+  "passkey.SCHEMA.attributes.stsPasskeyPostQuantumAllowCredentials.what": {
+    "en": "af7666466d67e760",
+    "text": "`realm`（預設值）沿用該領域的 webauthn.postQuantumAllowCredentials。僅在 postQuantumRequired 要求登入時使用後量子密碼金鑰時讀取。`narrow` 在密碼金鑰步驟的請求中只列出此人的後量子（ML-DSA）密碼金鑰，因此從不提供傳統密碼金鑰，而裝置上只存有其傳統密碼金鑰的人會看到平台自己的「找不到密碼金鑰」訊息。`list-and-refuse` 列出此人持有的每個密碼金鑰，並在儀式結束後拒絕傳統密碼金鑰，同時顯示一個頁面，說明此應用程式要求後量子密碼金鑰以及在哪裡新增；此人隨後可能選擇一個將被拒絕的密碼金鑰。無論哪種方式，不持有任何後量子密碼金鑰的人都會在任何儀式之前得到告知。儲存時省略，則保留 `realm`。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyRegistrationAlgorithms.what": {
+    "en": "4ff3748f6cb3a6f1",
+    "text": "`realm`（預設值）提供該領域的 webauthn.algorithms。否則為密碼金鑰註冊向此設定檔的人員提供的簽章演算法，依偏好排序（驗證器建立其支援的第一個），取自 webauthn.algorithms 可列出的演算法。下一列可以縮小或重新排序該清單，且演算法不在此設定檔所提供演算法之列的密碼金鑰在註冊時會被拒絕。儲存時省略，則保留 `realm`。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyRegistrationMode.what": {
+    "en": "1466dbe275c566e7",
+    "text": "`realm`（預設值）沿用 webauthn.pqcOnly 與 webauthn.pqcAlongsideClassical。`pq-only` 只提供 ML-DSA，並拒絕改用傳統演算法重試。`pq-first` 先提供 ML-DSA，再提供傳統演算法，即使領域只要求 ML-DSA 也是如此。`classical-only` 不提供任何 ML-DSA，也不在傳統密碼金鑰之外提供後量子密碼金鑰，適用於裝置無法完成 ML-DSA 註冊的人員。當 postQuantumRequired 不為 off 或已設定 attestationAlgorithms 時（classical-only），以及所提供的演算法未列出任何 ML-DSA 時（pq-only、pq-first），將被拒絕。儲存時省略，則保留 `realm`。"
+  },
   "passkey.SCHEMA.attributes.stsPasskeyHintsPasskey.what": {
     "en": "2ffa66aabab7a053",
     "text": "入口網站的 *Create a passkey* 依序送出的 WebAuthn 提示（Level 3 第 5.4.8 節），取自 security-key、client-device 與 hybrid，或 none。它們告訴瀏覽器優先以哪種方式建立密碼金鑰。提示不得與 webauthn.authenticatorAttachment 矛盾：client-device 意味著 platform，security-key 與 hybrid 意味著 cross-platform。"
@@ -1274,6 +1334,18 @@
   "passkey.SCHEMA.attributes.stsPasskeyRecoveryAssurance.what": {
     "en": "bdbb83ca7b2a2c48",
     "text": "開發模式下預設為 `any`，產品模式下預設為 `not-weaker`。不要求密碼金鑰的帳戶復原方式——密碼重設連結、啟用連結、復原碼、透過電子郵件寄送的代碼或連結——是否為持有密碼金鑰的人恢復存取權限。`any`：立即恢復。`not-weaker`：此後第一次不是透過密碼金鑰的登入不能存取任何應用程式；此人須註冊一個符合此原則的密碼金鑰並用它登入。`operator-only`：同 not-weaker，並且拒絕自助方式（忘記密碼表單、登入時的復原碼或透過電子郵件寄送的代碼或連結）；只剩下管理員的重設連結、產生的密碼或啟用連結。儲存時省略此項，則保留內建預設值。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyAttestationAlgorithms.what": {
+    "en": "cb4ed83be3a69177",
+    "text": "預設為 `none`：無論證明使用何種演算法簽章都予以接受。否則為一個清單，取值於 post-quantum、ml-dsa-44、ml-dsa-65、ml-dsa-87、slh-dsa 和 composite-ml-dsa：只有當通行金鑰帶有一個攜帶憑證的「受信任」證明，且其聲明簽章以及其憑證鏈中從葉憑證到信任錨點的每張憑證的簽章都是清單允許的演算法時，才會註冊（`post-quantum` 允許任何 ML-DSA、SLH-DSA 或複合 ML-DSA 簽章）。self 和 none 證明因不帶憑證而遭拒絕。開啟 enforceAttestationAtSignIn 後，每次登入都會依據註冊時記錄的內容按此規則檢查通行金鑰，因此在此規則之前註冊的通行金鑰將停止運作。這是證明的演算法，而不是通行金鑰本身的演算法（postQuantumRequired）。儲存時省略此項，則保留內建預設值。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyAdminEnrolment.what": {
+    "en": "9e395e59fd838fcf",
+    "text": "預設為 `off`。`on` 允許持有 Admin Write 主控台角色的管理員，為適用此設定檔的人註冊密碼金鑰，從主控台上該人的頁面或 /admin-api：註冊儀式在管理員自己的瀏覽器中進行，對著管理員持有的驗證器（例如一把要交出去的安全金鑰），使用該人的使用者識別碼，並且與該人自己的註冊完全一樣地驗證——證明、演算法和此原則的註冊規則。別處製作的任何東西都不能匯入。金鑰記錄哪位管理員在何時註冊了它，並告知該人。儲存時省略此項，則保留內建預設值。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyDeviceBoundRequired.what": {
+    "en": "5098a9645fefe2ff",
+    "text": "預設關閉。開啟後，向此設定檔所涵蓋的應用程式核發時，會等到登入工作階段綁定到瀏覽器的金鑰；若瀏覽器略過該註冊，或等待結束仍未綁定，則拒絕核發。從未被提供註冊的工作階段不會被此列拒絕。在 authn.deviceBoundSessions 關閉時拒絕。"
   },
   "passkey.SCHEMA.attributes.stsPasskeySelectApplication.what": {
     "en": "03ba679923c40b45",
@@ -1415,6 +1487,10 @@
     "en": "79742dacfba54ede",
     "text": "只有後量子（ML-DSA）密碼金鑰能被註冊或讓人登入"
   },
+  "passkey.sentences.attestationAlgorithms": {
+    "en": "9e73c79f0de11296",
+    "text": "只有當證明受信任且其聲明和憑證鏈使用 {{algorithms}} 簽章時，通行金鑰才會註冊"
+  },
   "passkey.sentences.recoveryAny": {
     "en": "7383156c8eb1e363",
     "text": "無論此人持有何種密碼金鑰，帳戶復原都會立即恢復存取權限"
@@ -1426,6 +1502,30 @@
   "passkey.sentences.recoveryOperatorOnly": {
     "en": "1a8f0b4a3319a435",
     "text": "持有密碼金鑰的人只能透過管理員復原帳戶，之後在符合此原則的密碼金鑰讓其登入之前不能存取任何應用程式"
+  },
+  "passkey.sentences.registrationList": {
+    "en": "fec8859790708542",
+    "text": "密碼金鑰註冊依此順序提供 {{algorithms}}，取代該領域的清單"
+  },
+  "passkey.sentences.registrationPqOnly": {
+    "en": "10bb1b9e748c737c",
+    "text": "密碼金鑰註冊只提供後量子（ML-DSA）演算法，取自 {{algorithms}}，且不提供傳統重試"
+  },
+  "passkey.sentences.registrationPqFirst": {
+    "en": "6d255de3f15849dd",
+    "text": "密碼金鑰註冊先提供後量子（ML-DSA）演算法，再提供傳統演算法，取自 {{algorithms}}"
+  },
+  "passkey.sentences.registrationClassicalOnly": {
+    "en": "34338f9da2211979",
+    "text": "密碼金鑰註冊只提供傳統演算法，取自 {{algorithms}}：不會建立後量子密碼金鑰"
+  },
+  "passkey.sentences.param.realmAlgorithms": {
+    "en": "62dd60f1d67057b4",
+    "text": "該領域的 webauthn.algorithms"
+  },
+  "passkey.sentences.adminEnrolment": {
+    "en": "41023a55f549b1cd",
+    "text": "管理員可以在自己的瀏覽器中為某人註冊密碼金鑰，並像該人自己的密碼金鑰一樣加以驗證"
   },
   "kinds.locale.label": {
     "en": "1219a9dcfb9aa19f",

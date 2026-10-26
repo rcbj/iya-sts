@@ -22,8 +22,11 @@
 //     (`password-reset`).
 //   * **ONE SENTENCE FOR EVERY FAILURE** (`RESET_REFUSAL`), so nobody learns
 //     which usernames have a link outstanding.
-//   * **SPENT WHEN THE PASSWORD IS STORED**, not when the link is opened: the
+//   * **SPENT WHEN THE PASSWORD IS KEPT**, not when the link is opened: the
 //     GET spends nothing, so a mail scanner or a prefetch cannot burn it.
+//     The password is kept only once a required recovery hold is recorded
+//     (#962). A failed write gives the claim back and takes the password
+//     off, so the link can be submitted again.
 //   * **IT SIGNS NOBODY IN.** The last step is the ordinary sign-in screen,
 //     reached through `/portal`, which is where a second factor they hold is
 //     asked for.
@@ -33,9 +36,11 @@
 //     the person asked for themselves (`source: self`) is refused
 //     (STS-AUTHN-0380, its own sentence — whoever holds the link has proved
 //     the mailbox already, so there is nothing to hide from them), and an
-//     administrator's is not. A password stored is then a PENDING RECOVERY
-//     on the entry (`credentials.noteRecovery()`), which holds the next
-//     sign-in that is not a passkey (`authn.ts`, STS-AUTHN-0381).
+//     administrator's is not. A password that is kept is then a PENDING
+//     RECOVERY on the entry (`credentials.noteRecovery()`), which holds the
+//     next sign-in that is not a passkey (`authn.ts`, STS-AUTHN-0381).
+//     Where a hold is required and that write fails (STS-AUTHN-0382), the
+//     password is not kept and the link is not spent (#962).
 //
 // It does ONE thing, where the activation form offers a key and an
 // authenticator as well: the person already has their second factors — an
@@ -45,9 +50,12 @@
 //
 // **THE PASSWORD GOES THROUGH `credentials.setPassword()`**, so product mode
 // holds it to the realm's password policy and its history, which carries the
-// password the link removed. `pwdReset` is cleared: a password the person just
-// chose is not one they must change. **CAEP credential-change (`password`,
-// `create`, initiated by the user)** is said when it is stored.
+// password the link removed. `pwdReset` is cleared when the request finishes:
+// a password the person just chose is not one they must change, and a
+// recovery write that fails leaves the flag as it was (#962). **CAEP
+// credential-change (`password`, `create`, initiated by the user)** is said
+// when the request finishes, not when a password was stored and then taken
+// back off.
 //
 // **SEVERAL NODES (#46): THE LINK IS CLAIMED BEFORE ANYTHING IS SET.**
 // `credentials.spendPasswordReset()` claims it in the store; the claim is
@@ -285,7 +293,8 @@ class AccountReset {
   }
 
   /**
-   * POST: checks the link again, claims it, sets the password and spends it.
+   * POST: checks the link again and claims it. The link is spent once the
+   * password is kept, which includes a required recovery hold (#962).
    *
    * @param ctx - the account API's helpers
    * @param req - the request
@@ -349,8 +358,10 @@ class AccountReset {
         'That password is reserved and is refused at every sign-in, so it ' +
         'cannot be yours.', { view: view });
     }
-    // **SPENT IN THE STORE BEFORE THE PASSWORD IS SET**, and given back
-    // unless the password is stored — see `holdLinkClaim()`.
+    // **CLAIMED IN THE STORE BEFORE THE PASSWORD IS SET.** The claim is
+    // given back unless this request finishes — the password stored and,
+    // where a hold is required, the recovery recorded (#962). See
+    // `holdLinkClaim()`.
     const spent = await credentials.spendPasswordReset(username, token);
     if (!spent.ok) {
       audit.record({
@@ -376,12 +387,50 @@ class AccountReset {
                         (set.errors || ['The password could not be set.'])[0],
                         { view: view });
     }
+    // THE RECOVERY BEFORE THE LINK IS SPENT (#962). A false
+    // `noteRecovery()` is success when no hold is required — no passkey,
+    // or the selected `recoveryAssurance` is `any` — and
+    // `recoveryHoldRequired()` is that test, not a second copy of it.
+    // When a hold is required and the write failed, the password just
+    // stored would sign in with nothing pending and the link would be
+    // gone. It is taken off, `LINK_SPENT` stays unset so
+    // `holdLinkClaim()` gives the claim back, and the answer is not
+    // success.
+    const hold = credentials.recoveryHoldRequired(username);
+    const noted = credentials.noteRecovery(username, door);
+    if (hold && !noted) {
+      const removed = credentials.removePassword(username);
+      const removal = removed.ok ? ''
+        : ' Removing the password that was just stored also failed' +
+          ((removed.errors && removed.errors.length)
+            ? ': ' + removed.errors.join(' ') : '') + '.';
+      // The write itself is already logged by setRecoveryPending
+      // (STS-AUTHN-0382). This line is the reset that did not finish,
+      // and the removal when that also failed.
+      log.error(errorCodes.tag('STS-AUTHN-0382') + 'portal: the password ' +
+                'of "' + username + '" was not kept, because the recovery ' +
+                'could not be recorded. The link can be used again.' +
+                removal);
+      audit.record({
+        category: 'authentication',
+        action: 'portal.password-reset.refused',
+        errorCode: 'STS-AUTHN-0382',
+        actor: username, outcome: 'failure',
+        summary: 'a password reset link of ' + username + ' was not spent: ' +
+                 'the recovery could not be recorded, and the password was ' +
+                 'not kept',
+        detail: { door: door, removed: !!(removed.ok && removed.removed),
+                  address: websecurity.addressOf(req) }
+      });
+      log.debug("Leaving AccountReset.spend(). The recovery was not " +
+                "recorded.");
+      return ctx.refuse(res, 500, 'STS-AUTHN-0382',
+        'The password was not kept, because the recovery could not be ' +
+        'recorded. The link can be used again.', { view: view });
+    }
     res[LINK_SPENT] = true;
     credentials.consumePasswordReset(username);
     credentials.setPasswordResetRequired(username, false);
-    // A PENDING RECOVERY (#724), where the person holds a passkey and the
-    // passkey policy holds a recovery to it.
-    credentials.noteRecovery(username, door);
     await websecurity.succeededShared('password-reset', req, username);
     audit.record({
       category: 'authentication', action: 'portal.password-reset',

@@ -55,6 +55,7 @@ import deviceAttestation = require('../common/device_attestation');
 import credentials = require('../common/credentials');
 import webauthnPolicy = require('../authn/webauthn_policy');
 import authn = require('../authn/authn');
+import webauthnCeremonies = require('../authn/webauthn_ceremonies');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
@@ -440,7 +441,11 @@ class PortalDevices {
       const rpRefusal = ran ? authn.rpIdProblem(base) : '';
       let linked: Json = null;
       if (!ran) {
-        deviceEnrolment.abandon(sid, 'webauthn');
+        // A client-side refusal is evidence, not a completed attempt. Keep
+        // the challenge live so the person can retry the link ceremony.
+        if (!(credential && credential.error)) {
+          deviceEnrolment.abandon(sid, 'webauthn');
+        }
         linked = ctx.errorCodes.mark({ ok: false, errors: ['Your browser ' +
           'did not run the ceremony, so nothing was linked. This one step ' +
           'needs a passkey prompt — a passkey signs inside the ' +
@@ -455,6 +460,19 @@ class PortalDevices {
           origin: authn.expectedOriginFor(base, credential),
           rpId: authn.rpIdOf(base) });
       }
+      const assertedId = String((credential &&
+        (credential.rawId || credential.id)) || '');
+      const held = (credentials.keysOf(who) || []).filter(function (key: Json) {
+        return String(key.credentialId) === assertedId;
+      })[0] || null;
+      webauthnCeremonies.record({ ceremony: 'assertion', door: 'portal',
+        username: who, role: String((held && held.role) || ''),
+        lane: held ? credentials.keyLane(held) : '',
+        outcome: linked && linked.ok ? 'success' : 'refused',
+        errorCode: linked && linked.ok ? '' : 'STS-DEVICE-0022',
+        offered: held ? [credentials.keyAlgorithm(held).name] : [],
+        algorithm: held ? credentials.keyAlgorithm(held).name : '',
+        posted: credential || {}, req: req });
       this.audited(ctx, who, 'link', linked, { via: 'webauthn' });
       if (!linked.ok) {
         log.debug("Leaving PortalDevices.act(). Link refused.");

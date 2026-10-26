@@ -203,7 +203,8 @@ by a rule down its left even while it is collapsed. Its five sections:
   lead, notes and tiles on Metadata, each table, chart or list a tab.
 * **Monitoring** — metrics, sessions, tokens, used assertions, delegation,
   the Shared Signals monitors, consent, XACML decisions, GNAP grants, the
-  enrollment monitors, OAuth activity, SCIM metrics, sign-out, the database,
+  enrollment monitors, Verifiable Credentials, passkeys, OAuth activity,
+  SCIM metrics, sign-out, the database,
   encryption, the secret store, caches, the worker pools, node health, the
   scheduler, the mail outbox, risk, the audit log and the error codes.
 * **Server configuration** — trust realms, configuration, mode, persistence,
@@ -329,6 +330,7 @@ here — they are on [Applications](applications.md).
 | Tab | What it holds |
 |---|---|
 | **Overview** | the tiles, the names they were seen under, and every authentication with the method that performed it |
+| **Authentication attempts** | every attempt by this person in the audit log, across every application and protocol: credentials accepted and refused, sessions refused, and an existing session presented to an application for single sign-on (method *existing session*) |
 | **Sessions & tokens** | each sign-on session with the tokens issued on it, the tokens on no session, and the assertions, tickets and credentials |
 | **Attributes** | their attributes as typed fields, one sub-tab per group — Name, Contact, Organization, Address, Identity, Other — each with its own **Save**, and the address on Contact |
 | **Credentials** | sub-tabs for second factors, the password controls, signing key pairs and Kerberos |
@@ -536,10 +538,12 @@ of Admin Write. Each control is an action on `POST /admin/users` and on
   on the person's entry and not shown to the administrator at all. A person may
   also ask for one at `/portal/forgot-password` ([Mail](mail.md)).
 * **Disable passkeys** removes every security key that could sign the person
-  in on its own, leaving their password and second factors. It is offered only
-  while they have a password, so it cannot lock anybody out.
+  in on its own, leaving their password and second factors, and ends the
+  sessions each removed key signed in. Every other session stays. It is
+  offered only while they have a password, so it cannot lock anybody out.
 * **Disable all MFA** removes the authenticator app, every second-factor key and
-  the recovery codes.
+  the recovery codes, and ends the sessions each of those signed in. A session
+  a password alone signed in stays.
 * **Require MFA** / **Stop requiring MFA** marks the person (`stsMfaRequired`),
   so the sign-in screen makes them enrol an authenticator app or a security key
   at `/authn/mfa-setup` before it starts a session. The authentication policy's
@@ -651,6 +655,15 @@ inherited. `POST /admin-api/policies/define-person-attribute` and
 `remove-person-attribute` do the same over the API; a custom attribute cannot be
 removed while anybody holds a value of it or the policy requires it.
 `/admin/users/new` and a person's Attributes tab mark every required field.
+
+**The passkey policy** is described row by row under
+[the passkey policy](authentication.md#the-passkey-policy) and, with recipes, in
+[Passkeys](passkeys.md). One row changes what a person sees at sign-in while a
+post-quantum passkey is required: **Passkeys a sign-in names where a
+post-quantum one is required** (`postQuantumAllowCredentials`, #946) —
+`realm` (follow `webauthn.postQuantumAllowCredentials` on Protocols →
+WebAuthn), `narrow` or `list-and-refuse`
+([Narrow, or list and refuse](passkeys.md#narrow-or-list-and-refuse)).
 
 ### Groups — `/admin/groups`
 
@@ -790,6 +803,25 @@ In an assertion the claim is **one `<Attribute>` with several
 `<AttributeValue>` children**; one element per group with the same name would
 leave a relying party reading the first. The settings are on [LDAP](ldap.md).
 
+### Roles — `/admin/roles`
+
+`/admin/roles` is the realm's role register. The page is tabs. **Metadata**
+lists the built-in roles and who holds each. **Roles** lists the roles that
+have been made, who holds each, and what each authorizes; a name opens
+`/admin/roles?role=<name>`. **Create** makes a role, optionally for one
+application, with a display name and who may hold it (people, applications, or
+both). **Members** adds a holder: a person, a group, or an application. A
+person or a group need not exist yet. **Authorizes** names a permission the
+role grants. That is not Admin roles (`/admin/rbac`), which is who may use the
+console. **Requiring** lists the applications that require the role.
+**Preview** asks what would be issued for an application and a subject.
+**Settings** is the role settings.
+
+A role's own page has two tabs, **Role** and **Owners**. Role shows the role,
+its members, what it authorizes, and its directory entry. Owners finds a
+person or a group. A role can name at most 25 owners, and an owner grants
+nothing by being named.
+
 ### Applications — `/admin/applications`
 
 The other side of `/admin/users`: every OAuth client, OpenID Connect relying
@@ -798,7 +830,11 @@ party, OpenID4VP verifier and Kerberos service, one entry per identifier. It is
 a **registry** that lives in the directory, so an `ldapmodify` there changes
 what the protocol endpoints do. It carries forms to create an application before
 it connects and to change what it is *allowed* to do — never its counters or
-sightings. [Applications](applications.md) documents the page,
+sightings. An application's **Authentication attempts** tab lists the audit
+log's attempts that name it: credentials accepted and refused, sessions
+refused, and a person's existing session presented to it for single sign-on
+(method *existing session*), which asks for no credential and was on neither
+tab before. [Applications](applications.md) documents the page,
 `/admin/applications/new`, the schema and CORS.
 
 ## Monitoring
@@ -1174,6 +1210,82 @@ page is a realm's own, so a realm administrator sees it for their realm. API:
 `GET /admin-api/vc-status` and
 `POST /admin-api/vc-status/{suspend,reinstate,revoke,publish}`.
 
+### Passkeys — `/admin/passkey-report`
+
+Who in this realm holds which kind of passkey, and so how far a move to
+post-quantum passkeys has come. A person's **kind** is the signature
+algorithm of their passkeys, as recorded when each was registered: ML-DSA-44,
+ML-DSA-65 and ML-DSA-87 are post-quantum, everything else (ES256, RS256,
+EdDSA, …) is classical. The lane a passkey was made in
+([side by side](passkeys.md#a-classical-and-a-post-quantum-passkey-side-by-side))
+is shown, but never decides the kind.
+
+* **Metadata** says where the numbers came from: when the realm was last
+  counted, how many passkey holders that count read, and how many changes have
+  been noted since. It carries the filter and **Recount now**.
+* **People** counts everybody in the realm as **post-quantum only**,
+  **classical only**, **both** or **none**, with each kind's share. *Post-quantum
+  only* and *both* are the people who could still sign in with a passkey if
+  classical ones were refused; *classical only* are the people a
+  `postQuantumRequired` rule would refuse.
+* **Algorithms** counts every passkey by algorithm (its JOSE name and COSE
+  number) and lane.
+* **Models** lists each authenticator model by its AAGUID, with its name where
+  one is known, and the algorithms its passkeys use. *Not reported* is the
+  passkeys whose authenticator named no model.
+* **Profiles** shows what each [passkey policy](authentication.md#the-passkey-policy)
+  profile asks (`postQuantumRequired`) and what it selects. A named profile that
+  selects groups has a link to count its population.
+* **Attestation** counts passkeys by the signature algorithm of the
+  attestation certificate (the leaf, #941). A passkey registered before that
+  algorithm was stored, or one whose attestation carried no certificate, is
+  not in the table. ML-DSA-44, ML-DSA-65 and ML-DSA-87 are shown with their
+  COSE identifiers. Other certificate algorithms have none. A row is
+  post-quantum when that certificate's signature is.
+* **List** appears when you click *list them* beside any count: the people
+  behind it, a page at a time, with **Export CSV** and **Export JSON**.
+
+**How the numbers are kept.** The realm is recounted once a day (the
+scheduler job `passkeys.report-recount`, which reads only the people who hold
+a passkey), the first time soon after the service starts; between recounts
+every passkey enrolled, removed or deleted with its person is added as it
+happens. Opening
+the page never reads the directory, however many people it holds. A bulk
+import or a restore of the directory is seen at the next recount — press
+**Recount now** after one. The recount is queued on the scheduler, and
+Monitoring → Scheduler shows the run.
+
+**Filters.** One at a time:
+
+* **Group** (a cn or a DN): the group's members are read and counted. At most
+  50,000 members are read; the page says when a group is larger.
+* **Passkey profile**: the members of the groups a named profile selects. The
+  `default` profile cannot be chosen — it is what applies to everybody no named
+  profile selects.
+* **Application**: anybody may sign in to an application, so the counts are
+  the realm's. The page adds which passkey profile governs the application's
+  sign-ins, and how many group-selected profiles could still win for a person.
+
+**The lists** are read in order from where the page before stopped, so use
+**Next page** rather than typing a page number. A list reads at most 20,000
+people per page; when a filter is rare and the page stopped before it was
+full, it says so — go on to the next page, or narrow the filter. An export
+carries at most 100,000 rows and holds no key material. A cell that a
+spreadsheet would read as a formula is written with an apostrophe in front.
+
+**Reading the move to post-quantum passkeys.** Watch *classical only* fall
+and *post-quantum only* plus *both* rise. Before you set `postQuantumRequired`
+to `sign-in` for a profile, count that profile's population and list its
+*classical only* people: they are the ones who would be refused. See
+[Requiring a post-quantum passkey](passkeys.md#requiring-a-post-quantum-passkey).
+
+The page is a realm's own, so a realm's administrator sees their realm. API:
+`GET /admin-api/passkey-report` (the same answer, with `group`, `profile`,
+`application`, `list`, `page`, `per` and `from`),
+`GET /admin-api/passkey-report/export` and
+`POST /admin-api/passkey-report/recount`; the parameters are in
+`GET /admin-api/openapi.json`.
+
 ### Worker pools — `/admin/worker-pools`
 
 `/admin/worker-pools` shows the two pools of worker threads this node runs
@@ -1323,11 +1435,17 @@ Filtering is by category, action, outcome, actor and free text, and the filter
 vocabulary is read from the table the log records against. The actor filter is
 a **substring**, because the actor on a directory row is a bind DN and on a
 Kerberos row `alice@REALM`; where an identity has been normalised, the row
-carries both the key and the form presented. Paging is `?page=` and `?per=`, but
-**walk the list by `seq`**: it is monotonic and never reused, so "everything
-after 4,102" is exact while the log is still being written. The page's
-operation carries `oldestSeq` and `newestSeq`; a gap between the last `seq` a caller saw
-and `oldestSeq` is how many events the cap discarded.
+carries both the key and the form presented. Paging is `?page=` and `?per=`.
+**Resume by `at`, not by `seq`.** `seq` is unique across every process of the
+service and never reused, and it rises within each process. It is not one
+order across processes: a request worker is a thread with a heap of its own
+and numbers from a block of its own, so an event recorded later on another
+worker can carry a smaller number. "Everything after 4,102" misses that event.
+Read what is new by `at`, with `seq` and `origin` as the tie-break. The
+operation carries `oldestSeq` and `newestSeq`, the numbers of the oldest and
+newest events held by time, and `dropped`, how many the cap discarded. A gap
+in the numbers is unused space in another worker's block, not a count of
+discarded events.
 
 Two things it deliberately does not have:
 
@@ -1761,6 +1879,7 @@ edited on `/admin/rbac`.
 |---|---|---|---|---|
 | `audit.maxEvents` | `AUDIT_MAX_EVENTS` | `5000` | yes | How many audit events are held; the dropped are counted and shown. |
 | `audit.protocolCalls` | `AUDIT_PROTOCOL_CALLS` | `true` | yes | Whether ordinary protocol endpoint calls get an audit row. |
+| `audit.authenticationHistoryDays` | `AUDIT_AUTHENTICATION_HISTORY_DAYS` | `30` | yes | How many days of assessed sign-ins the portal's Recent sign-ins page lists. The console's user Authentication attempts tab lists the whole audit log and does not use this. |
 | `delegation.maxRecords` | `DELEGATION_MAX_RECORDS` | `2000` | yes | How many delegation acts `/admin/delegation` keeps, refusals included. Set on `/admin/delegation-settings`. |
 | `oauth2.delegatedPermissionsEnforced` | `STS_OAUTH2_DELEGATED_PERMISSIONS_ENFORCED` | `false` | yes | In development mode, refuse a permission the client was not granted. Product mode always refuses. |
 | `debugger.enabled` | `STS_DEBUGGER_ENABLED` | `auto` | no | `auto`, `on` or `off`; `auto` serves the debugger in development mode only. |

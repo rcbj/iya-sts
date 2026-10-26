@@ -16,7 +16,7 @@
 //      PAR still required.
 //   E. The Security Profile alone asks none of B-D.
 //
-// `tests/vendored/sts_fapi2_message_signing.js` holds it over the wire.
+// `tests/protocol/sts_fapi2_message_signing.js` holds it over the wire.
 // ===========================================================================
 
 const childProcess = require('child_process');

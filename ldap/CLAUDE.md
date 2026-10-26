@@ -271,7 +271,7 @@ from `listen()`* is the rule this is an instance of.
    because the create succeeds and the fiction is visible only in an
    `ldapsearch`. `invent: false` drops both; the entry then carries its object
    classes, its `uid`, a description and what was typed.
-   `tests/vendored/sts_admin_console.js` reads the entry back and asserts those
+   `tests/protocol/sts_admin_console.js` reads the entry back and asserts those
    five are absent, which is the assertion that whole change rests on.
 
    **IT IS NOT A PROMISE THAT THE ENTRY STAYS EMPTY**, and the page says so
@@ -295,7 +295,7 @@ from `listen()`* is the rule this is an instance of.
    **The reason is worth keeping**: a parity check between the console and
    the management API is SATISFIED EXACTLY WHEN BOTH SIDES ARE MISSING, so it
    reports drift and is silent about absence. What found it was a test that could not be written —
-   `tests/vendored/sts_directory_bulk_load_api.js`, named "through the
+   `tests/protocol/sts_directory_bulk_load_api.js`, named "through the
    management API", two of whose three sections would have had to reach for
    SCIM.
 
@@ -742,6 +742,19 @@ ldif or multi-cell service is unchanged.
   - `attributeSourcePeoplePage()` (#615) is ONE `page()` after a key cursor
     (`DirectoryWindow.pageAfter()`), which `attribute-sources.refresh` asks
     instead of `attributeSourcePeople()`'s list-and-sort of everybody.
+  - **The passkey report's two questions (#942)**: `passkeyScanAsync()`
+    reads the people under `ou=users` after a key cursor — the holders of
+    `stsWebauthnCredential` (`withAttribute`), or every person (`page`) for
+    the list of those holding none — through
+    `DirectoryWindow.rowsAfterAsync()`, one asynchronous question a page,
+    stopping at the caller's read limit or its count of matches, the next
+    cursor the last key READ; `passkeyPopulationAsync()` reads a group's
+    members together (`entriesAtAsync()`), bounded. Outside a window the
+    first walks the realm's Map and sorts once per call, said there. The
+    two writers of `stsWebauthnCredential` and `removePersonEntry()` call
+    `notePasskeysChanged()`, which hands the report the values before and
+    after — **a new door that writes or drops a person's keys owes that
+    call** (`common/CLAUDE.md` 3cs).
   - `personCount()` is the store's count (above); `allPersons()` pages
     `ou=users` alone; `entriesUnder()` pages a windowed container and does NOT cache it.
   - **THE REQUESTS ARE ASYNCHRONOUS WHERE THEY READ MANY ROWS (#616,
@@ -2074,7 +2087,7 @@ nothing on the wire.
   FUNCTIONS. The BER codec, the ldapjs submodule and the search handler's own
   result path were exercised by nothing.
 
-`tests/vendored/sts_directory_bulk_load_ldap.js` supplies both — five thousand
+`tests/protocol/sts_directory_bulk_load_ldap.js` supplies both — five thousand
 entries and a one-level search over them — and found it in the first minute of
 its first run. It is the guard now: the search that reaches the limit must END,
 and its helper carries a deadline of its own so that a recurrence is a named
@@ -2592,7 +2605,7 @@ has to be driven**, which is the thing to remember when the KDC or the gRPC
 surfaces are wired up.
 
 What it does not do is bind 389 or fork a worker. The first is
-`tests/vendored/sts_directory_bulk_load_ldap.js`'s, over a real socket, in three
+`tests/protocol/sts_directory_bulk_load_ldap.js`'s, over a real socket, in three
 stacks — and it is one of the very few jobs that touch this directory's own
 socket at all (`sts_global_logout`'s bind over 389, above, is another).
 
@@ -3107,7 +3120,7 @@ verified simple bind on 389 is a real password in the clear. **LDAPS takes `tls.
 from `tls_server.js`'s `protocolOptions()`, at construction and again in the
 `setSecureContext()` re-key.
 
-**tlsfuzzer runs against 636 (#212).** `tests/vendored/sts_tlsfuzzer.js` runs it with the
+**tlsfuzzer runs against 636 (#212).** `tests/protocol/sts_tlsfuzzer.js` runs it with the
 main port's plan; `tests/CLAUDE.md` (*THE TLS FUZZER*) has the details. The scripts send
 `GET / HTTP/1.0`, and the adapter swaps it for an LDAP BindRequest of the same length,
 which this listener answers in every mode. Three things differ from the main port, and each
@@ -3315,7 +3328,7 @@ unrebuildable error the same way (the original wording stays on the log and
 the `STS-LDAP-0023` audit row). Whoever writes a refusal is writing to the
 client now — the operator's version is `ldapRefusal()`'s summary.
 `tests/ldap_diagnostic_message.js` holds the control, the option and the two
-`createServer()` calls; `tests/vendored/sts_credential_signals.js` asserts over
+`createServer()` calls; `tests/protocol/sts_credential_signals.js` asserts over
 LDAPS that the 53 names `/portal/mfa` and `/portal/keys`.
 
 ## AN ADD UNDER `ou=applications` REGISTERS THE APPLICATION (#504, 2026-10-06)
@@ -3366,7 +3379,7 @@ credentials itself — `_getHandlerChain()` returned a no-op before any route wa
 consulted — so the handler never saw one, and a product-mode anonymous bind
 answered SUCCESS (reads on that connection were still refused 50, so nothing
 leaked). `performOperation()` enters the handler directly, which is why
-`tests/directory_read_security.js` passed; `tests/vendored/sts_ldaps.js` found
+`tests/directory_read_security.js` passed; `tests/protocol/sts_ldaps.js` found
 it over LDAPS against a product-mode deployment. **The fix is in the
 `rcbj/node-ldapjs` fork** — the first change this repository has made to it: a
 `routeAnonymousBinds` server option, off by default (upstream's behaviour),
@@ -3507,7 +3520,7 @@ functions, never a search on the socket.
 `tests/directory_read_authorization.js` holds every row through
 `performOperation()` in both modes, and over a real ldapjs client on a child's
 LDAPS listener in each mode; seven mutants, all caught.
-`tests/vendored/sts_ldap_read_authorization.js` asks the same of a running
+`tests/protocol/sts_ldap_read_authorization.js` asks the same of a running
 service over 636, in a product realm and a development realm.
 
 ## `stsSamlAssertion*`: A PERSON'S RFC 7522 KEY PAIR (2026-09-13)
@@ -3800,7 +3813,7 @@ this JavaScript module registers `/admin/ldap/*` when required.
 
 `tests/person_attribute_editor.js` covers it in process: the list, every mode,
 every code from `STS-LDAP-0102` to `0109`, the formats, untouched neighbours,
-the observer, the view and the page. `tests/vendored/sts_person_attributes.js`
+the observer, the view and the page. `tests/protocol/sts_person_attributes.js`
 covers the API over HTTP in a realm of its own.
 
 ## CELLS: A BIND AS A PERSON HOMED IN ANOTHER CELL (#98, 2026-09-28)

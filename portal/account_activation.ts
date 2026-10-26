@@ -566,7 +566,9 @@ class AccountActivation {
         done = await credentials.confirmKeyEnrolment(username,
           String(body.enrolment_id || ''), ceremony,
           { origin: authn.expectedOriginFor(base, ceremony),
-            rpId: authn.rpIdOf(base) });
+            rpId: authn.rpIdOf(base),
+            // The ceremony's row names this door (#943).
+            door: 'activation' });
       } catch (e) {
         log.debug("Caught in AccountActivation.keyStep(): " +
                   ((e && e.message) || e));
@@ -785,6 +787,12 @@ class AccountActivation {
         return setupRefused(ctx.errorCodes.codeOf(set) || 'STS-PORTAL-0008',
           (set.errors || ['The password could not be set.'])[0]);
       }
+      // THE RECOVERY WITH THE PASSWORD WRITE (#900), as the reset door
+      // records it. finish() records it too, but a person who chose a
+      // passkey or an app beside the password could stop at that step: the
+      // password was set and finish() never ran, so a password-only sign-in
+      // passed the not-weaker rule. Recording it twice is harmless.
+      credentials.noteActivationRecovery(username);
     }
 
     // THE PASSKEY, IF ONE WAS CHOSEN (2026-10-01): the ceremony is drawn and

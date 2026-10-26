@@ -31,7 +31,7 @@
 // `/admin-api/realms`, and the directory half is driven through
 // `performOperation()` — the socket's own handlers without the socket —
 // which is `crl_directory_publication.js`'s arrangement.
-// `tests/vendored/sts_admin_api_operations.js` and `sts_admin_console.js`
+// `tests/protocol/sts_admin_api_operations.js` and `sts_admin_console.js`
 // carry the same claims over HTTP and on the console's form.
 //
 // Every realm this file makes is removed again.

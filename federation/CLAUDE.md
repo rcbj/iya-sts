@@ -975,7 +975,7 @@ is kept once**, because an LDAP attribute's values are a set (RFC 4512 section
 provider send `mail` both as the AD FS claim URI and as the X.500/LDAP profile's
 `urn:oid:0.9.2342.19200300.100.1.3` (Shibboleth reads one, AD FS-configured
 providers the other); a relationship in front of it then wrote `mail: [x, x]`,
-which `tests/vendored/sts_federation_realms.js` caught and
+which `tests/protocol/sts_federation_realms.js` caught and
 `tests/saml_interop_findings.js` (section H) now holds.
 
 ### The username is the one mapping that cannot be got wrong quietly
@@ -1453,7 +1453,7 @@ the custom claims, and **the protocol's own claims are untouched in both
 cases** — that third one is what catches a "simplification" that filters the
 whole payload.
 
-Drive it the way `tests/vendored/sts_dpop.js` is driven: write the partner side rather
+Drive it the way `tests/protocol/sts_dpop.js` is driven: write the partner side rather
 than importing this one. If both ends of the exchange came from this
 implementation, a shared misunderstanding about, say, which element the
 signature covers would pass and interoperate with nobody — and on this surface
@@ -1550,7 +1550,7 @@ cover ML-DSA and SLH-DSA.
 
 `tests/federation_signout.js` holds it in process, in both modes (a genuine
 Logout Token from another realm's OpenID Provider among it);
-`tests/vendored/sts_federation_signout.js` over HTTP.
+`tests/protocol/sts_federation_signout.js` over HTTP.
 
 ## A PARTNER'S ENCRYPTED ASSERTION (#168, 2026-09-23)
 
@@ -1655,7 +1655,7 @@ registration members on the relationship's page.
 encrypted to by ECDH-ES rather than failing into plaintext (`STS-SAML-0012`).
 
 `tests/federation_encryption.js` holds it in process, in both modes;
-`tests/vendored/sts_federation_encryption.js` over HTTP, with an XML
+`tests/protocol/sts_federation_encryption.js` over HTTP, with an XML
 Encryption and JWE implementation of its own.
 
 ## HOME REALM DISCOVERY, and it is NOT in this directory
@@ -1852,7 +1852,7 @@ ended through `authn.endSessionById()`. `account_state.ts`'s arrangement for a
 lock, and for its reason: the consequence must not depend on the door.
 
 `tests/federation_subject_policy.js` holds all of it in process, in both modes;
-`tests/vendored/sts_federation_subject_policy.js` over HTTP.
+`tests/protocol/sts_federation_subject_policy.js` over HTTP.
 
 ## DYNAMIC PROVISIONING, PRE-PROVISIONING, AND WHETHER A PARTNER'S ATTRIBUTES WIN (2026-09-14)
 
@@ -1936,7 +1936,7 @@ holding only `fed:PassiveRequestorEndpoint`. WS-Federation 1.2's schema makes
 `fed:ApplicationServiceEndpoint` REQUIRED (`minOccurs="1"`) and first in that
 type's sequence, so a validating importer refused the document outright. It
 now carries both, naming the relationship's one address, as AD FS's own
-relying-party documents do. `tests/vendored/sts_xml_schema_validation.js`
+relying-party documents do. `tests/protocol/sts_xml_schema_validation.js`
 found it and validates every document this module emits — the SAML 2.0,
 SAML 1.1 and WS-Federation relationship metadata, the outbound AuthnRequest
 on both bindings and the outbound LogoutRequest — against the published
@@ -2237,7 +2237,7 @@ client authentication each takes, PKCE, `/user/emails` failing, the Google
 issuer rules, the collision case (a provider's person named and addressed as
 a local one lands on an entry of their own), the realm switch at every door,
 `fedSubjectClaim`, the provider's MFA claim and the credential fingerprint.
-`tests/vendored/sts_federation_consumer.js` (`local: true`) drives the
+`tests/protocol/sts_federation_consumer.js` (`local: true`) drives the
 category over HTTP between two realms of one service through the
 `generic-oidc` profile. It covers the realm switch at creation and at the
 login endpoint, creation from the profile, the list's category, a newcomer's
@@ -2290,4 +2290,54 @@ Apple requires with a name or address scope, and it is any `oidc`
 relationship's to set. Its answer is a cross-site POST, so a connect's
 binding cookie is `SameSite=None; Secure` there, over https only. Over http
 it fails closed.
+
+## Federated device-bound sessions are not implemented (#741, 2026-10-25)
+
+#725 binds a sign-on session to a key on this origin. The W3C Editor's
+Draft of Device Bound Session Credentials (8 September 2026,
+https://w3c.github.io/webappsec-dbsc/, read 2026-10-25) describes, in
+sections 9.5, 9.6 and 11.6 and in the registration algorithm, reusing one
+session's key at a relying party on another origin. That is not built
+here. The grammar is not stable enough to parse without guessing, and
+section 3.3's own example does not agree with itself.
+
+What was read:
+
+* The document's status is "Don't cite this document other than as work
+  in progress." Section 1 says "Note this is a very early drafting for
+  writing collaboration only." Section 12 says "This is an early draft of
+  the spec."
+* Section 3.3's narrative is "Suppose the owners of `example.com` also
+  run `example.co.uk`." The next sentence is "When extending the DBSC
+  session to `example.com.uk`."
+* Section 9.6's session instructions define `session_identifier`,
+  `refresh_url`, `continue`, `scope`, `credentials` and
+  `allowed_refresh_initiators`. They do not define `provider_key`,
+  `provider_session_id` or `provider_url`. Those names are parameters of
+  the `Secure-Session-Registration` header (section 9.1 and algorithm
+  8.11), not fields of the instructions.
+* Section 11.6 says "This endpoint must serve a JSON-encoded dictionary.
+  Three keys are defined:" `registering_origins`, `relying_origins`, and
+  "`provider_origin` is an optional string." The relying-party example is
+  `"provider_origin": "https://example.com/"` and the example object has
+  trailing commas, so it is not JSON. Algorithm 8.11 step 16 returns
+  failure when the provider document "contains the key `provider_origin`"
+  (16.3) or "does not include the key `relying_origins`" (16.4). Step 21
+  returns failure when the relying party's document "contains the key
+  `relying_origins`" (21.3) or "The value of the key `provider_origin`
+  is not the origin of provider URL" (21.5). The HTML origin of
+  `https://example.com` has no trailing slash, so the 11.6 example
+  `"provider_origin": "https://example.com/"` fails 21.5. 11.6 calls
+  `provider_origin` optional and puts `registering_origins` beside
+  `relying_origins` in one object; 8.11 treats those two keys as
+  belonging to opposite ends. `registering_origins` is the site-scoped
+  registration check (algorithm 8.9 step 11.8), not federation.
+* Section 9.5's `Secure-Session-Skipped` list is a different feature and
+  is parsed (#743). It is not this one.
+
+No `.well-known/device-bound-sessions` document is served, and no
+`provider_*` parameter is accepted. The portal and the console are this
+origin. A later draft that makes 11.6, 9.6 and algorithm 8.11 describe
+one grammar can be scoped to configured federation partners; it must not
+dial a URL a caller supplies.
 

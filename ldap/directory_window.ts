@@ -1210,6 +1210,64 @@ class DirectoryWindow {
     return { rows: out, read: rows.length };
   }
 
+  // ONE PAGE AFTER A CURSOR, FOR THE PASSKEY REPORT (#942, 2026-10-23).
+  // `holdersPageAsync()` pages at an OFFSET, which is the console's page
+  // number and costs the database the rows it skips; the passkey report's
+  // lists are FILTERED (post-quantum only, one algorithm, one model) and its
+  // recount reads every holder once, so both carry a KEY CURSOR instead —
+  // the last key of the page before, as `holdersAsync()` does between its
+  // own pages. One question, asked asynchronously on the read pool:
+  // `withAttribute` for the holders of an attribute (the asked names'
+  // index), or `page` for every entry under the base (the list of people
+  // holding NO passkey, which no index can name). Each row is taken as the
+  // store answered it unless this process holds a newer copy
+  // (`heldOrRow()`), nothing handed out or put in the LRU; what this
+  // process changed and has not written is NOT added — a page of the store
+  // is the store's page, `holdersPageAsync()`'s rule.
+  /**
+   * One page of the windowed entries under a base, in key order after a
+   * cursor: those holding an attribute, or every one.
+   *
+   * @param realmId - the realm id
+   * @param base - the base's normalised DN (a windowed container)
+   * @param attribute - the attribute held, lower-cased as stored; '' for
+   *   every entry under the base
+   * @param after - the last key of the page before, or ''
+   * @param limit - the page size (at most `PAGE`)
+   * @param predicate - the service's own rule, asked of each row
+   * @returns a promise of `{ rows: [{ key, entry }], last, read }`: `last`
+   *   the last key the store answered (the next page's cursor), `read` how
+   *   many rows it answered
+   */
+  async rowsAfterAsync(realmId: string, base: string, attribute: string,
+                       after: string, limit: number,
+                       predicate: (entry: Entry, key: string) => boolean):
+      Promise<{ rows: Array<{ key: string; entry: Entry }>; last: string;
+                read: number }> {
+    log.debug("Entering DirectoryWindow.rowsAfterAsync(). " +
+              (attribute || '(every entry)'));
+    const size = Math.max(1, Math.min(PAGE, Math.floor(Number(limit) || 1)));
+    const rows = (attribute
+      ? await this.askAsync('withAttribute',
+                            [realmId, base, attribute, after || '', size])
+      : await this.askAsync('page', [realmId, base, after || '', size,
+                                     { self: false }])) as Row[] || [];
+    const out: Array<{ key: string; entry: Entry }> = [];
+    rows.forEach((row) => {
+      if (!row || row.key === base || !this.isWindowed(realmId, row.key)) {
+        return;
+      }
+      const entry = this.heldOrRow(realmId, row);
+      if (entry && predicate(entry, row.key)) {
+        out.push({ key: row.key, entry: entry });
+      }
+    });
+    const last = rows.length ? String(rows[rows.length - 1].key) : '';
+    log.debug("Leaving DirectoryWindow.rowsAfterAsync(). " + out.length +
+              ' of ' + rows.length + '.');
+    return { rows: out, last: last, read: rows.length };
+  }
+
   // ---------------------------------------------------------------------
   // THE STORE ASKED WITHOUT HOLDING THE EVENT LOOP (#616, 2026-10-14).
   //

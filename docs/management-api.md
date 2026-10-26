@@ -405,7 +405,7 @@ already written code that assumed it was there. Parity is kept structurally:
   actually uses.
 
 **Nothing in the service can see a form appear on a page**, so parity is also
-checked from outside, by this repository's `tests/vendored/admin_api.js`. It
+checked from outside, by this repository's `tests/protocol/admin_api.js`. It
 reads the facts from the running service rather than from a list in the test:
 the console's page list comes back in `GET /admin-api/status`, and each action
 handler, asked for an action that does not exist, replies with the names of the
@@ -434,6 +434,10 @@ cover:
   its attestation statement proved (format, type, verified, trusted, the
   anchor, the model the FIDO metadata names) — and `GET /admin-api/webauthn`
   reports the attestation policy in force and the FIDO MDS BLOB (#105).
+  `GET /admin-api/passkey-report` counts who holds which passkey algorithm
+  across the realm (post-quantum only, classical only, both, none; by
+  algorithm, lane and model), with the people behind a count, an export and
+  a recount (#942).
 * **Applications and what they are issued.** The application register,
   consent, permissions, roles, delegation and who may delegate (`GET
   /admin-api/delegation/policy`), issued tokens, the claim and SAML
@@ -776,7 +780,7 @@ them on the console or with `POST /admin-api/config/set`.
   OpenAPI for *no credential is needed*, and a client generated from it would
   send none and be refused by every operation.
   `tests/admin_api_document_security.js` and
-  `tests/vendored/sts_admin_api_auth.js` hold the document to the gate from
+  `tests/protocol/sts_admin_api_auth.js` hold the document to the gate from
   both ends.
 * **A test still needs no secret of its own.** The test launchers mint one
   token before any job runs and hand it to every job.

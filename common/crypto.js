@@ -31,7 +31,7 @@
 // ---------------------------------------------------------------------------
 // WHERE THE XML CODE CAME FROM, AND WHY IT IS NOT WRITTEN HERE.
 //
-// `common/vendored/xmldsig.js` is the parent project's own XML security module,
+// `common/crypto_impl/xmldsig.js` is the parent project's own XML security module,
 // copied here byte-identical under the rule that directory already has. It is
 // not a library somebody found: it is the OTHER END of most of these exchanges.
 // The debugger signs, verifies, encrypts and decrypts with it on its WS-Trust,
@@ -60,7 +60,7 @@
 // ---------------------------------------------------------------------------
 // THIS MODULE IS A LEAF AND MUST STAY ONE.
 //
-// It requires npm packages, `./vendored/xmldsig.js`, and `./config` — and
+// It requires npm packages, `./crypto_impl/xmldsig.js`, and `./config` — and
 // `config.js` requires nothing in this repository, so there is no cycle to
 // close and no route order to disturb. It registers no endpoint, exactly like
 // `oauth-oidc/dpop.ts` (rule 3), and it is BELOW `helpers.js` rather than
@@ -147,7 +147,7 @@ if (!global.XMLSerializer) {
   global.XMLSerializer = /** @type {any} */ (xmldom.XMLSerializer);
 }
 /** The vendored XML Signature engine. */
-const xmldsig = require('./vendored/xmldsig.js');
+const xmldsig = require('./crypto_impl/xmldsig.js');
 
 // The namespace URIs this file names. They are also exported by xmldsig.js and
 // are repeated here ONLY as local constants for readability — a caller that
@@ -413,7 +413,7 @@ function signXml(xml, opts) {
 // DigestMethod it has no row for before it ever calls a verifier. The
 // alternative was a second canonicalizing verifier in this file, which is
 // exactly the drift section 1's header exists to prevent; editing the
-// vendored file is forbidden (`common/vendored/CLAUDE.md`). A registered
+// vendored file is forbidden (`common/crypto_impl/CLAUDE.md`). A registered
 // digest row's `md` is a node hash dressed as forge's, because that is the
 // shape the engine calls.
 //
@@ -3241,6 +3241,50 @@ function tokenClockSkew() {
 }
 
 // ---------------------------------------------------------------------------
+// POST-QUANTUM JOSE SIGNING, PER REALM (2026-10-23, rcbj):
+// `keys.postQuantumSigning`.
+//
+// THE ONE READER of the setting, here because this file is where every JWS is
+// verified and it already holds `config` — and it must stay a LEAF, so the
+// filters that apply the answer to a list, a document and a JWK Set live in
+// `helpers.js` and ask this. Read per call, in the ambient realm, never at
+// load: it is a runtime setting, and a realm switched off answers off from
+// its next request.
+//
+// What "post-quantum" means is this file's own table: `family: 'pq'`, which is
+// every algorithm `pq_jose.js` speaks (ML-DSA, SLH-DSA and the composites).
+// The ML-KEM JWE algorithms are not JWS algorithms and are not touched.
+// ---------------------------------------------------------------------------
+/**
+ * Tells whether the ambient realm signs, publishes and verifies the
+ * post-quantum and composite JWS algorithms (`keys.postQuantumSigning`, on by
+ * default).
+ *
+ * @returns false only when the setting is off
+ */
+function postQuantumSigningOn() {
+  log.debug("Entering postQuantumSigningOn().");
+  const on = config.value('keys.postQuantumSigning') !== false;
+  log.debug("Leaving postQuantumSigningOn(). " + on);
+  return on;
+}
+
+/**
+ * Tells whether a JWS algorithm is one of the post-quantum or composite ones
+ * (`family: 'pq'` in `JWS_ALGS`).
+ *
+ * @param alg - a JOSE algorithm name
+ * @returns true for ML-DSA, SLH-DSA and the composite ML-DSA algorithms
+ */
+function isPqJwsAlg(alg) {
+  log.debug("Entering isPqJwsAlg().");
+  const spec = Object.prototype.hasOwnProperty.call(JWS_ALGS, String(alg))
+    ? JWS_ALGS[String(alg)] : null;
+  log.debug("Leaving isPqJwsAlg().");
+  return !!spec && spec.family === 'pq';
+}
+
+// ---------------------------------------------------------------------------
 // VERIFY A JWS. `key` is whatever jsonwebtoken will verify with: this service's
 // own certificate PEM, a client's registered public key, a shared secret.
 //
@@ -3480,6 +3524,19 @@ function prepareVerification(token, key, options) {
     throw new Error('this JWS is signed with "' + header.alg + '" and only ' +
       allowed.join(', ') + ' ' + (allowed.length === 1 ? 'is' : 'are') +
       ' accepted here.');
+  }
+  // A POST-QUANTUM JWS IN A REALM THAT HAS THEM OFF (`keys.postQuantumSigning`,
+  // 2026-10-23) is refused HERE, after the caller's own list and before the
+  // signature: every JOSE verifier in this service comes through this
+  // function, so none of them can accept what the realm no longer publishes
+  // or advertises, whatever list it was handed. The code is marked on the
+  // Error, never put in its message — callers copy the message into an
+  // `error_description`, and a code is never sent (`error_codes.js`, rule 1).
+  if (isPqJwsAlg(header.alg) && !postQuantumSigningOn()) {
+    log.debug('Leaving prepareVerification(). Post-quantum signing is off.');
+    throw errorCodes.mark(new Error('this JWS is signed with "' +
+      header.alg + '", a post-quantum algorithm this realm does not ' +
+      'accept (keys.postQuantumSigning is off).'), 'STS-KEYS-0157');
   }
   const spec = jwsSpec(header.alg);
   const prepared = {
@@ -5606,7 +5663,7 @@ function describeJweKemAlg(alg) {
 // notion of what an `enc` value means. They are together here, over one table,
 // so a third algorithm is one row rather than two edits that have to agree.
 //
-// `common/vendored/jose_jwe.js` is the obvious alternative and is not used
+// `common/crypto_impl/jose_jwe.js` is the obvious alternative and is not used
 // here. This paragraph used to justify that by saying this service used
 // neither ECDH-ES nor the Concat KDF, only RSA-OAEP-256 with AES-GCM — which
 // stopped being true when the table below grew to RFC 7518 section 4 entire
@@ -6845,7 +6902,7 @@ function certificateIdentifiers(pem) {
 // beside a test stack) collide the same way with no restart at all.
 //
 // So the serial is random — 128 bits, the CA/Browser Forum's number, which is
-// also what `common/vendored/x509.js` already mints for every SPIFFE SVID.
+// also what `common/crypto_impl/x509.js` already mints for every SPIFFE SVID.
 //
 // WHAT THE CONSTANT WAS FOR IS KEPT, because it was a real thing rather than
 // laziness: a person looking at a packet capture, or at two PEM files, could
@@ -6903,9 +6960,9 @@ function certificateSerial(prefixHex) {
 // would be inventing a certificate profile language for two users.
 //
 // A THIRD generator is deliberately NOT folded in: `spiffe/spiffe_ca.ts` issues
-// through `common/vendored/x509.js` because **node-forge cannot sign with an EC
+// through `common/crypto_impl/x509.js` because **node-forge cannot sign with an EC
 // key at all** and SPIFFE issues P-256. That is a capability gap, not a
-// duplication, and `common/vendored/CLAUDE.md` records it.
+// duplication, and `common/crypto_impl/CLAUDE.md` records it.
 // ---------------------------------------------------------------------------
 // A forge key pair over an RSA private key given as PEM (PKCS#1 or PKCS#8 —
 // node reads either and forge is handed PKCS#1, which is what it writes).
@@ -7025,7 +7082,7 @@ const ML_DSA_OIDS = {
 // INTERPRETER AND NOT ABOUT THIS SERVICE.
 //
 // ML-DSA reaches node with OpenSSL 3.5, which is node 24 — the version this
-// repository's Dockerfile pins (24.16.0). On anything older
+// repository's Dockerfile pins (24.22.1). On anything older
 // `generateKeyPairSync('ml-dsa-65')` throws `ERR_INVALID_ARG_VALUE: The
 // argument 'type' must be a supported key type`, a sentence that names neither
 // this service, nor the algorithm's real requirement, nor the way out — and it
@@ -7067,7 +7124,7 @@ function mlDsaAvailable() {
                e.message + '). Node ' + process.versions.node +
                ' is linked against OpenSSL ' + process.versions.openssl +
                '; ML-DSA needs OpenSSL 3.5, which is node 24 — this ' +
-               'repository pins 24.16.0 in its Dockerfile. Every ' +
+               'repository pins 24.22.1 in its Dockerfile. Every ' +
                'post-quantum algorithm here needs it since #363, the JOSE ' +
                'ones included (common/pq_native.js).');
     }
@@ -7124,7 +7181,7 @@ function selfSignedMlDsaCertificate(opts) {
                     ' key, so no ML-DSA certificate can be built here. Node ' +
                     process.versions.node + ' is linked against OpenSSL ' +
                     process.versions.openssl + '; ML-DSA needs OpenSSL 3.5, ' +
-                    'which is node 24 — this repository pins 24.16.0, and ' +
+                    'which is node 24 — this repository pins 24.22.1, and ' +
                     'every post-quantum algorithm here needs it (#363).');
   }
   // `any`: the algorithm is a variable, and the overloads want literals.
@@ -8799,7 +8856,7 @@ function decodeStoredSecret(stored) {
 // password policy governs people's passwords and nothing else.
 //
 // **NODE'S OWN ARGON2.** `crypto.argon2()` and `crypto.argon2Sync()` arrived
-// in node 24.7 (the image runs 24.16), so there is no native package to add.
+// in node 24.7 (the image runs 24.22.1), so there is no native package to add.
 // The asynchronous one is a CryptoJob, run on libuv's thread pool like
 // `crypto.scrypt()` — the arrangement #363 gave scrypt. A runtime without it
 // (an older node loading this file in-process) writes scrypt instead, said
@@ -9361,10 +9418,10 @@ function verifySecretAsync(plaintext, stored) {
 // file's kinds of thing — and the TPM structures they are fed are a codec
 // that stays in `spiffe/spiffe_tpm.ts`.
 //
-// It stays a LEAF: `./vendored/pqc_x509` requires only noble, asn1js and
+// It stays a LEAF: `./crypto_impl/pqc_x509` requires only noble, asn1js and
 // other vendored files.
 // ===========================================================================
-const pqcX509 = require('./vendored/pqc_x509');
+const pqcX509 = require('./crypto_impl/pqc_x509');
 
 // The families `verifyRawSignature()` understands.
 /** The families `verifyRawSignature()` understands. */
@@ -10587,11 +10644,26 @@ function tpmParseSignature(bytes) {
       const hash = r.u16();
       const rr = r.sized();
       const ss = r.sized();
+      // DER's INTEGER is MINIMAL (#904): no leading zero byte unless the
+      // next byte's top bit is set, where one is required to keep the value
+      // positive. A zero always put in front made about three genuine
+      // signatures in four invalid DER, which OpenSSL refuses on verify, and
+      // a TPM that zero-pads r or s to the curve size made it worse.
       const integer = function (b) {
         log.debug("Entering integer().");
+        let start = 0;
+        while (start < b.length - 1 && b[start] === 0) {
+          start++;
+        }
+        let body = b.subarray(start);
+        if (!body.length) {
+          body = Buffer.from([0]);
+        }
+        if (body[0] & 0x80) {
+          body = Buffer.concat([Buffer.from([0]), body]);
+        }
         log.debug("Leaving integer().");
-        return new asn1js.Integer({ valueHex: new Uint8Array(
-          Buffer.concat([Buffer.from([0]), b])) });
+        return new asn1js.Integer({ valueHex: new Uint8Array(body) });
       };
       const der = new asn1js.Sequence({ value: [integer(rr), integer(ss)] })
         .toBER(false);
@@ -16781,6 +16853,8 @@ module.exports = {
   jwsSpec: jwsSpec,
   protectedHeaderFor: protectedHeaderFor,
   verifyCompactJws: verifyCompactJws,
+  postQuantumSigningOn: postQuantumSigningOn,
+  isPqJwsAlg: isPqJwsAlg,
   // The byte-level halves of the JOSE doors (#202): what external test
   // vectors are held to. See each function's head.
   jwsSignatureValid: jwsSignatureValid,

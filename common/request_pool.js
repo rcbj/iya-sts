@@ -4797,7 +4797,7 @@ const POOL_COOKIE = 'sts_pool';
 // only. The protocol pool keeps the old name, so every browser and every
 // back channel that already carries `sts_pool` means what it meant.
 //
-// `tests/vendored/sts_metadata_anonymous.js` reads POOL_COOKIE's spelling out
+// `tests/protocol/sts_metadata_anonymous.js` reads POOL_COOKIE's spelling out
 // of this file to exempt it on metadata documents; this one needs no such
 // exemption, because no metadata document is under a surface prefix.
 /**

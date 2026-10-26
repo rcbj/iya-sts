@@ -99,6 +99,7 @@
   "field.attributeName": "un nombre de atributo, o vacío",
   "field.listFrom": "en orden, de entre ",
   "field.listOrNone": ", o none",
+  "field.listOrRealm": ", o realm (la lista del dominio)",
   "field.thisProfile": "este perfil",
   "field.defaultRealmProfile": "el perfil del dominio predeterminado",
   "field.builtIn": "predeterminado integrado",

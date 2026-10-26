@@ -540,8 +540,8 @@
     "text": "此應用程式「要求過」的範圍，隨其要求累積。是觀察所得，從不宣告：它不允許也不拒絕任何東西。應用程式可獲簽發的是 oauthAllowedScope。"
   },
   "applications.schema.attributes.oauthAllowedScope.what": {
-    "en": "f61c0b99f0e3941f",
-    "text": "「此用戶端可獲簽發的範圍」——RFC 7591 section 2 的 `scope`，即「用戶端在要求存取權杖時可使用的清單」。每個值一個範圍權杖。三種範圍以不同方式讀取它。\n\n**本服務自己的受保護範圍**——admin:read 與 admin:write（/admin-api）、SCIM 範圍（scim.scopeRead、scim.scopeWrite）、Shared Signals 範圍（ssf.authScopeRead、ssf.authScopeWrite，以及一律存在的 ssf.read 與 ssf.manage）以及偵錯工具權限——「在兩種模式下」都只簽發給列出它們的用戶端。對共享信號而言，寫入包含讀取：列出寫入範圍也就授權了讀取範圍，而只列出讀取範圍並不授權寫入範圍。每個範圍背後的資源伺服器在每次呼叫時都會再次詢問，因此在此移除一個值會切斷已簽發的權杖。RFC 7591 註冊不得宣告它們；由管理員在此宣告。\n\n**其他每個範圍**，在產品模式下只有列於此處時才會簽發——或者，未列出任何範圍時，屬於預設集合者才會簽發：openid、profile、email、address、phone、offline_access，以及此領域的 OpenID4VCI 憑證範圍。在開發模式下任何範圍都會簽發。\n\n**指名應用程式或委派權限的範圍**遵循其自身的規則（對象，以及 oauthDelegatedPermission），不必列出。\n\n清單之外的範圍在授權與權杖端點會以 invalid_scope 拒絕（RFC 6749 section 3.3），並從重新整理或權杖交換中移除。與 oauthScope 不同，後者只是用戶端要求過的內容。"
+    "en": "2efedb4db176c20e",
+    "text": "此用戶端可獲簽發的範圍——RFC 7591 第 2 節的 `scope`，「用戶端在請求存取權杖時可使用的清單」。每個值一個範圍權杖。三種範圍對它的解讀各不相同。\n\n**本服務自己的受保護範圍**——admin:read 與 admin:write（/admin-api）、report:use 與 report:admin（/report-api）、SCIM 範圍（scim.scopeRead、scim.scopeWrite）、Shared Signals 範圍（ssf.authScopeRead、ssf.authScopeWrite，以及一律包含的 ssf.read 與 ssf.manage）和偵錯工具權限——在兩種模式下都只簽發給列出它們的用戶端。對 Shared Signals 而言，寫入包含讀取：列出寫入範圍也會授權讀取範圍，只列出讀取範圍則不會授權寫入範圍。其背後的資源伺服器在每次呼叫時都會再次詢問，因此在此移除一個值，會讓已簽發的權杖失效。RFC 7591 註冊不得宣告它們；由管理員在此宣告。\n\n**其他所有範圍**，在產品模式下，只有在此列出時才會簽發——或者在沒有列出任何內容時，位於預設集合中才會簽發：openid、profile、email、address、phone、offline_access，以及此領域的 OpenID4VCI 憑證範圍。在開發模式下，任何範圍都會簽發。\n\n**指名某個應用程式或委派權限的範圍**保有自己的規則（受眾與 oauthDelegatedPermission），不需要列出。\n\n清單之外的範圍，在授權與權杖端點會以 invalid_scope 拒絕（RFC 6749 第 3.3 節），並在更新或權杖交換時被移除。有別於 oauthScope，後者只是用戶端所請求的內容。"
   },
   "applications.schema.attributes.oauthPermissionBaseUri.what": {
     "en": "a2b16552f308a9b4",
@@ -852,8 +852,8 @@
     "text": "用於 RFC 8705 第 2.2 節 self_signed_tls_client_auth：此用戶端用以驗證之憑證 DER 的 base64url SHA-256。這是「本服務自己的名稱」，與 RFC 所命名者並存：自 2026-09-13 起，當憑證是其所註冊 jwks 中某把金鑰的 x5c[0] 時，該憑證也能驗證此用戶端（第 2.2.2 節）。可用 GET /tls/sign-in 取得憑證的指紋，或自行計算：openssl x509 -outform DER | openssl dgst -sha256 -binary | base64url。"
   },
   "applications.schema.attributes.oauthConfidential.what": {
-    "en": "ae52d212279d2378",
-    "text": "TRUE/FALSE，即 RFC 9700 模式對它所做的判定——因此也決定是否要求它使用 PKCE，以及是否檢查其密碼。寫在這裡，讓答案可以直接讀取而不必推斷。"
+    "en": "11b68b893e67de65",
+    "text": "TRUE 或 FALSE，即權杖端點驗證方法所做的判定，由本登錄表寫入，以便可以直接讀取該答案。`none`，或在手工建立的應用上沒有方法，為 FALSE；任何其他方法為 TRUE。RFC 9700 讀取 `oauthTokenEndpointAuthMethod`（`oauth2_bcp.js` 中的 `isConfidential()`），因此不單獨編輯此屬性。建立時只有在值與判定一致時才能寫明它，不一致則被拒絕（`STS-REG-0363`）。一個在建立時既未給出方法也未給出憑據的 OAuth 或 OpenID Connect 應用仍被記錄為 `none`。"
   },
   "applications.schema.attributes.samlEntityId.what": {
     "en": "3987c430d22d9352",

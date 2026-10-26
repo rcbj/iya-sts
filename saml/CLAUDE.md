@@ -35,7 +35,7 @@ function of a merged implementation:
 | the relying party names itself | `<saml:Issuer>` on the request | it cannot — `providerId`, the path segment, or GUESSED from the TARGET's origin |
 | a failure goes | to the service provider, as a Response with a status | to a PAGE — there is nothing to answer |
 | Single Logout | both directions | **does not exist in the protocol** |
-| `ForceAuthn`, `IsPassive`, `RequestedAuthnContext` | all three implemented | **no spelling in the protocol** |
+| `ForceAuthn`, `IsPassive`, `RequestedAuthnContext` | all three implemented; the EAP class URIs are #736 | **no spelling in the protocol.** The non-spec `authnContextClassRef` parameter carries those URIs (#736) |
 | the artifact | 44 bytes, type 0x0004, stands for a MESSAGE | 42 bytes, type 0x0001, stands for an ASSERTION |
 | the SOAP endpoint answers | ArtifactResolve | four request types, including an attribute authority |
 
@@ -379,7 +379,7 @@ got exactly right in opposite directions at six call sites.
 
 **ON 2026-08-27 THAT ARGUMENT STOPPED EXISTING, AND THAT — NOT THE LINE COUNT —
 IS WHAT `common/crypto.js` BOUGHT.** Every signer and verifier here now goes
-through one module over `common/vendored/xmldsig.js`, which resolves `ID`,
+through one module over `common/crypto_impl/xmldsig.js`, which resolves `ID`,
 `AssertionID`, `ResponseID` and `RequestID` from the document itself. There is
 no list to be told about, nothing is ever invented, and **there is no longer a
 parameter to get wrong** — `signDocument()` in `saml11_sso.ts` and
@@ -894,7 +894,7 @@ record of the decisions.
   authenticated session (`authn.sessionsOf()`) or with Success and NO assertion,
   and an AttributeQuery omits the AuthenticationStatement
   (`buildSaml11Assertion`'s new `authenticationStatement: false`). The vendored
-  `tests/vendored/sts_saml11.js` asserted the old AuthenticationQuery answer
+  `tests/protocol/sts_saml11.js` asserted the old AuthenticationQuery answer
   about a person who never signed in; the parent has since updated it to ask
   about a user who really signed in.
 * **NO SIGNER PASSED AN ALGORITHM.** `saml.signatureAlgorithm` and
@@ -977,6 +977,40 @@ keeps the session and moves `auth_time` (`authn/CLAUDE.md`), which is what the f
 `AuthnInstant` in the Response comes from. `tests/saml2_force_authn.js` pins all of it
 over HTTP; four mutants, all caught — the cancellation one only after the test asserted
 HOW the cancellation was reported.
+
+## THE EAP PHISHING-RESISTANT CLASSES (#736, 2026-10-25)
+
+A `RequestedAuthnContext` that names the OpenID Connect EAP ACR Values 1.0
+class URIs is the same demand `acr_values=phr` / `phrh` is. The URIs are
+registered by that profile's section 5 (IANA Level of Assurance Profiles),
+and they live on `common/phishing_resistance.ts` — `URI_PHR`, `URI_PHRH` —
+rather than in a second table here:
+
+* `http://schemas.openid.net/pape/policies/2007/06/phishing-resistant` (`phr`)
+* `http://schemas.openid.net/acr/2016/07/phishing-resistant-hardware` (`phrh`)
+
+**Comparison is read as exact, which is the specification's default:** any
+named class can satisfy. `signInFor()` therefore forces a key only when every
+`AuthnContextClassRef` is one of those two URIs, and sets `phishingClass`
+`phrh` only when every one of them is the hardware URI. A list that also
+names `PasswordProtectedTransport`, or any class in `AC_MFA_DEMANDS`, does
+not force the key: that other class can answer the request, and the
+multi-factor demand keeps the behaviour it already had. When the request
+names neither URI, the assertion's `AuthnContextClassRef` is the value
+`authn_context.ts` already produced. When it names one and the session
+earned it, the assertion carries that URI — `phrh` when both were asked and
+both were earned.
+
+An unmet EAP-only list takes the one trip above and then `NoAuthnContext`
+(`STS-SAML-0116`), the same shape as an unmet multi-factor class
+(`STS-SAML-0056`). `IsPassive` still answers `NoPassive` (`STS-SAML-0008`).
+
+**SAML 1.1 has no `RequestedAuthnContext`.** The non-spec
+`authnContextClassRef` parameter is the same device as `format` and
+`profile`: absent, `AuthenticationMethod` is unchanged; present and naming
+only an EAP URI, one trip and then a page (`STS-SAML-0117`), because this
+profile has nowhere to put a status. `tests/eap_acr_values.js` (F) holds the
+leaf, and `tests/saml2_force_authn.js` (7–10) holds both profiles over HTTP.
 
 ---
 
@@ -1282,7 +1316,7 @@ line and the audit row. Until #160 each was `Requester` (or `Responder`) with
 a sentence naming the reason, which neither specification allows. `Requester`
 is kept for a request that is not an artifact resolution at all (not XML, no
 ArtifactResolve or Request, no Artifact). **Owed to the parent project**: its
-`tests/vendored/sts_saml11.js` resolves a per-relying-party artifact at the
+`tests/protocol/sts_saml11.js` resolves a per-relying-party artifact at the
 unscoped `/saml11/responder` and expects a replay to be `samlp:Requester`
 naming the one-shot rule; both now fail here until that copy is changed and
 synced.
@@ -1429,14 +1463,14 @@ whatever entry the Issuer named. Behind `mode.issuesToUnregisteredApplications()
 `tests/unregistered_applications.js` (S1–S5) holds it in both modes.
 
 **The parent project's paired SAML jobs** (decision 2 above) run against a
-development service, where nothing changed. `tests/vendored/sts_saml11.js` (a
+development service, where nothing changed. `tests/protocol/sts_saml11.js` (a
 parent copy) asserts a document is minted for an identifier nobody registered;
 in product that is now a 404, which is owed to the parent.
 
 Tests: `tests/saml_metadata_lifecycle.js` section F (both modes, every
 refusal, the positive product case against a realm anchor — its transport
 stubbed, because product refuses the loopback responder before any
-connection) and `tests/vendored/sts_saml_unregistered.js` over HTTP, in a
+connection) and `tests/protocol/sts_saml_unregistered.js` over HTTP, in a
 product realm and a development realm of one service, with an MDQ responder
 the job serves itself.
 
@@ -1564,7 +1598,7 @@ still denied: `RequestDenied` with `STS-SAML-0112` (risk) or `0100` / `0107`
 `tests/saml_initiation.js` holds all of it over HTTP, risk included (a
 session's risk put in place directly, with `risk.enforceInDevelopment`),
 and runs the risk step-up a second time in product mode (#715).
-**`tests/vendored/sts_idp_initiated_saml.js` is the product-mode
+**`tests/protocol/sts_idp_initiated_saml.js` is the product-mode
 coverage of the rest** (#715): the two switches of both profiles, the
 realm setting, InResponseTo absent, the relying party in the logout
 inventory and the mechanism re-prompt, over the wire in `single-node`
@@ -1575,7 +1609,7 @@ SAML 1.1 flow set the entry's switch on the application they create.
 
 ## EVERY DOCUMENT HERE IS VALIDATED AGAINST THE PUBLISHED SCHEMAS (#188, 2026-09-24)
 
-`tests/vendored/sts_xml_schema_validation.js` makes both profiles emit
+`tests/protocol/sts_xml_schema_validation.js` makes both profiles emit
 everything they emit — the metadata, the Response on each binding with and
 without an EncryptedAssertion, the ArtifactResponse, the error Responses,
 logout in both directions (with an EncryptedID), the federation module's
@@ -1608,7 +1642,7 @@ needs before changing it:
   open XML Encryption. TLS server authentication is a signing use of a key and
   is where every metadata-reading TLS engine looks. Last, so a consumer that
   takes the first signing certificate for XML signatures still takes the XML
-  key (`tests/vendored/sts_xml_schema_validation.js` is one such consumer).
+  key (`tests/protocol/sts_xml_schema_validation.js` is one such consumer).
 * **In BOTH roles**: the IDPSSODescriptor (artifact resolution) and the
   AttributeAuthorityDescriptor (the attribute query), because a service
   provider looks up the keys of the role whose endpoint it is calling.

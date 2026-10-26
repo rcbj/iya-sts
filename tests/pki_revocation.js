@@ -30,7 +30,7 @@
 //
 // The over-HTTP half — the four endpoints answering, the media types, the
 // cache headers, the console pane's two controls — is
-// `tests/vendored/sts_pki_revocation.js`, which is this repository's own and
+// `tests/protocol/sts_pki_revocation.js`, which is this repository's own and
 // drives the container.
 //
 // **THE NEGATIVES ARE MOST OF THIS FILE AND THAT IS DELIBERATE**, for the
@@ -57,7 +57,7 @@ const pki = require('../common/pki');
 const revocation = require('../common/pki_revocation');
 const keystore = require('../common/keystore');
 const helpers = require('../common/helpers');
-const x509 = require('../common/vendored/x509');
+const x509 = require('../common/crypto_impl/x509');
 
 // This file's own logger, for the Entering/Leaving lines and the handled
 // exceptions the code style asks for. Its level is LOG_LEVEL, which is also

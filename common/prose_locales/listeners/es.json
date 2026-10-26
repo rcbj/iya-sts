@@ -147,6 +147,14 @@
     "en": "ae78f5077c808641",
     "text": "Las páginas que pertenecen a la persona que las está mirando, y la API de cuenta de la que se obtienen."
   },
+  "listeners.applications.report.label": {
+    "en": "dacca3cba3f346a4",
+    "text": "Informes"
+  },
+  "listeners.applications.report.what": {
+    "en": "de1ee727530aad18",
+    "text": "Los informes que una persona de aquí puede ejecutar, y la API de la que se dibujan."
+  },
   "listeners.applications.admin-console.label": {
     "en": "ddf870cabeb295ab",
     "text": "Consola de administración"

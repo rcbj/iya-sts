@@ -44,7 +44,7 @@
 // ---------------------------------------------------------------------------
 // THE ENGINE IS THE VENDORED ONE, AND THAT IS THE POINT OF USING IT
 //
-// `common/vendored/x509.js` is the debugger's own PKI code, byte-identical,
+// `common/crypto_impl/x509.js` is the debugger's own PKI code, byte-identical,
 // already in this repository and already the thing `spiffe/spiffe_ca.ts` runs
 // its certificate authority on. Over there it is held to roughly 240
 // certificates by `tests/pki_x509.js` — every key algorithm against every
@@ -113,7 +113,7 @@
 // **`MOCK_STS_DIR` RELOCATES THE ENGINE**, defaulting to two directories up.
 // The containerized launcher runs this file with the repository mounted into an
 // image whose own copy lives elsewhere, which is the same override
-// `tests/vendored/module_paths.js` takes and for the same reason.
+// `tests/protocol/module_paths.js` takes and for the same reason.
 // ===========================================================================
 
 const fs = require('fs');
@@ -131,8 +131,9 @@ const log = require('bunyan').createLogger({ name: 'pep-credential',
 
 const REPO = process.env.MOCK_STS_DIR ||
              path.join(__dirname, '..', '..');
-const x509 = require(path.join(REPO, 'common', 'vendored', 'x509.js'));
-const keys = require(path.join(REPO, 'common', 'vendored', 'key_material.js'));
+const x509 = require(path.join(REPO, 'common', 'crypto_impl', 'x509.js'));
+const keys = require(path.join(REPO, 'common', 'crypto_impl',
+                               'key_material.js'));
 
 const DEFAULT_SUBJECT = 'CN=remote-pep-1,OU=remote-peps,O=iya-sts';
 
@@ -416,7 +417,7 @@ async function issue(spec) {
 
 // ---------------------------------------------------------------------------
 // THE WHOLE CHAIN, IN MEMORY. Exported so that a TEST can mint a credential
-// without writing files — `tests/vendored/sts_xacml_endpoints.js` needs a
+// without writing files — `tests/protocol/sts_xacml_endpoints.js` needs a
 // trusted client certificate to drive the three PEP endpoints at all now that
 // they are gated, and a second implementation of this in that file would be a
 // second reading of how a chain is built.
@@ -428,7 +429,7 @@ async function issue(spec) {
 // and the leaf the Issuing CA's. Where those lists are served is the caller's
 // choice, by `options.crlBase`:
 //
-//   * absent — the default, for a test: `tests/vendored/test_crl_host.js`
+//   * absent — the default, for a test: `tests/protocol/test_crl_host.js`
 //     serves them from THIS process, which is alive while its certificate is
 //     presented;
 //   * a URL — the lists are named `<crlBase>/root.crl` and
@@ -442,7 +443,7 @@ async function mint(opts) {
   log.debug("Entering mint().");
   const options = opts || {};
   const host = options.crlBase === undefined
-    ? require('../vendored/test_crl_host.js') : null;
+    ? require('../protocol/test_crl_host.js') : null;
   const rootList = host ? await host.reserve('root')
     : (options.crlBase ? { url: options.crlBase + '/root.crl' } : null);
   const issuingList = host ? await host.reserve('issuing')
@@ -474,7 +475,7 @@ async function mint(opts) {
     // Fresh for as long as the leaf lives, because nothing re-signs them: the
     // container serving them has no key.
     const days = (options.years || 1) * 366;
-    const lists = require('../vendored/test_crl_host.js');
+    const lists = require('../protocol/test_crl_host.js');
     crls = { 'root.crl': await lists.crlFor(root, { days: days }),
              'issuing.crl': await lists.crlFor(issuing, { days: days }) };
   }
@@ -517,7 +518,7 @@ async function main() {
 
   say(opts, 'Building a Root CA, an Issuing CA and a TLS client certificate ' +
             'for ' + opts.subject + ' on ' + REPO +
-            '/common/vendored/x509.js ' +
+            '/common/crypto_impl/x509.js ' +
             '— the same engine spiffe/spiffe_ca.ts issues X509-SVIDs with.');
 
   // THE LISTS GO WHERE --crl-base SAYS, OR NOWHERE (#174): this process exits

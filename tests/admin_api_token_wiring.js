@@ -35,7 +35,7 @@
 // ---------------------------------------------------------------------------
 // WHAT IT DOES *NOT* TRY TO BE.
 //
-// It is not a test that a token WORKS — `tests/vendored/sts_admin_api_auth.js`
+// It is not a test that a token WORKS — `tests/protocol/sts_admin_api_auth.js`
 // drives the real gate and its refusals, and it already fails loudly on an
 // empty `STS_ADMIN_API_TOKEN`. That job named this bug precisely on the run
 // that found it. What no job could see is the launcher that never gave it one,

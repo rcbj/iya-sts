@@ -330,7 +330,7 @@ function stamp(dir) {
 // **THIS CACHE IS NOT AN OPTIMISATION AND IT WAS ADDED BECAUSE A TEST CAUGHT
 // THE BUG IT PREVENTS.** Several modules call `load()` at require time, and
 // in a CHECKOUT there is no stamp — so each of them computed its own record,
-// stamping the instant IT was required. `tests/vendored/admin_api.js` found
+// stamping the instant IT was required. `tests/protocol/admin_api.js` found
 // the front page reporting `0.1.20260907060910` while `/admin-api` reported
 // `0.1.20260907060911`: one second apart, because `home/home.ts` is required
 // at 6a and `mgmt-api/admin_api.ts` at 19, and the modules between them took a

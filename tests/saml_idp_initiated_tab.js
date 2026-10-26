@@ -15,7 +15,7 @@
 // `/launch/{app}` door asks — one row per application and family, with the
 // `/launch` link, the protocol's own endpoint and what the link lacks; the
 // tab draws it. Held here, in a child process, calling the operation's
-// handler directly (the gate is `tests/vendored/admin_api.js`'s to hold):
+// handler directly (the gate is `tests/protocol/admin_api.js`'s to hold):
 //
 //   a. with both realm settings off (the default), only an entry whose own
 //      override is TRUE is listed, in its family alone; a WS-Federation

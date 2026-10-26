@@ -148,6 +148,12 @@ function productDirectoryHoldsNoDemoData(t) {
   t.check(!!peps && !!users && !peps.member.length && !users.member.length,
           'the two role groups ARE seeded, EMPTY, so admitting somebody is ' +
           'one member added', JSON.stringify({ peps: peps, users: users }));
+  const ssfRead = r.entries['cn=ssf-read,ou=groups,dc=example,dc=com'];
+  const ssfManage = r.entries['cn=ssf-manage,ou=groups,dc=example,dc=com'];
+  t.check(!!ssfRead && !!ssfManage && !ssfRead.member.length &&
+          !ssfManage.member.length,
+          'the Shared Signals role groups ARE seeded, EMPTY',
+          JSON.stringify({ ssfRead: ssfRead, ssfManage: ssfManage }));
   ['dc=example,dc=com', 'ou=users,dc=example,dc=com',
    'ou=groups,dc=example,dc=com',
    'ou=applications,dc=example,dc=com'].forEach(function (dn) {
@@ -192,6 +198,10 @@ function roleGroupsFollowTheSettings(t) {
   t.check(!has(r, 'cn=remote-peps,ou=groups,dc=example,dc=com') &&
           !has(r, 'cn=xacml-users,ou=groups,dc=example,dc=com'),
           'and the literal names are not seeded beside them');
+  t.check(has(r, 'cn=ssf-read,ou=groups,dc=example,dc=com') &&
+          has(r, 'cn=ssf-manage,ou=groups,dc=example,dc=com'),
+          'ssf-read and ssf-manage stay when the settings-named groups ' +
+          'are renamed');
   log.debug("Leaving roleGroupsFollowTheSettings().");
 }
 

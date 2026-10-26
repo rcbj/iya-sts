@@ -63,6 +63,10 @@ interface PolicyModule {
   // A kind whose profiles may be NAMED and selected (#535, the passkey
   // policy): the selectors each named profile carries.
   SELECTORS?: ReadonlyArray<Record<string, any>>;
+  // Population registration algorithms and mode (#940), on the passkey
+  // policy. A kind without them leaves those members off the policies read.
+  registrationAlgorithms?(profile?: Record<string, any> | null): string[];
+  registrationMode?(profile?: Record<string, any> | null): string;
   // A kind with acts of its own beside save and reset (#396, the attribute
   // policy's custom attribute register): each named in the kind's
   // `extraActions`, answered here.

@@ -1068,13 +1068,23 @@ async function run(t) {
             JSON.stringify({ kind: history.kind, every: history.everyMs() }));
     const realmsModule = require(ROOT + '/common/realms');
     const handle = realmsModule.handleFor('scheduler.runs');
+    // The bound the purge keeps for this job under the settings in force:
+    // its last runHistoryCount runs (count + 1 intervals of ten minutes) or
+    // its last runHistoryHours, whichever is longer. A literal here went
+    // stale when the default fell from a day to an hour (#820).
+    const config = require(ROOT + '/common/config');
+    const keepMs = Math.max(
+      Number(config.value('scheduler.runHistoryHours')) * HOUR,
+      (Number(config.value('scheduler.runHistoryCount')) + 1) * 10 * 60000);
+    const runExpiry = handle && typeof handle.expiresAt === 'function'
+      ? handle.expiresAt({ kind: 'run', jobId: 'scheduler.history',
+                           state: 'succeeded', endedAt: 1000 }) : undefined;
     t.check(handle && typeof handle.expiresAt === 'function' &&
             handle.expiresAt({ kind: 'leader', runId: 'leader' }) === null &&
-            handle.expiresAt({ kind: 'run', jobId: 'scheduler.history',
-                               state: 'succeeded', endedAt: 1000 }) >
-              1000 + 24 * HOUR,
+            runExpiry > 1000 + keepMs,
             'the run store declares the #333 expiry, answered by the ' +
-            'scheduler: none for the leader\'s row, past the bound for a run');
+            'scheduler: none for the leader\'s row, past the bound for a run',
+            JSON.stringify({ runExpiry: runExpiry, bound: 1000 + keepMs }));
     const forgotten = [];
     const realForget = mod.scheduler.forgetRealm;
     mod.scheduler.forgetRealm = function (id) {

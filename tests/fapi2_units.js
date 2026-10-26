@@ -23,7 +23,7 @@
 //   I. The metadata: code, PAR required, the 5.4.1 algorithms (DPoP's too).
 //   J. PAR's client authentication and the assertion's string aud.
 //
-// `tests/vendored/sts_fapi2.js` holds it over the wire.
+// `tests/protocol/sts_fapi2.js` holds it over the wire.
 // ===========================================================================
 
 const childProcess = require('child_process');
@@ -143,8 +143,9 @@ function childMain() {
     }), 'STS-OAUTH-0580', 'C. nor is the console with a method the ' +
                           'profile refuses');
     eq(fapi.PUBLIC_CLIENT_EXEMPT.join(','),
-       'sts-admin-console,sts-user-portal',
-       'C. the exemption list is the console and the portal, nothing else');
+       'sts-admin-console,sts-user-portal,sts-report',
+       'C. the exemption list is the console, the portal and the reports ' +
+       'application, nothing else');
 
     // --- D ----------------------------------------------------------------
     const register = function (meta) {

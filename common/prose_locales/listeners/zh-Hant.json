@@ -147,6 +147,14 @@
     "en": "ae78f5077c808641",
     "text": "屬於正在檢視它們之人的頁面，以及這些頁面所依據的帳戶 API。"
   },
+  "listeners.applications.report.label": {
+    "en": "dacca3cba3f346a4",
+    "text": "報表"
+  },
+  "listeners.applications.report.what": {
+    "en": "de1ee727530aad18",
+    "text": "此處的人員可以執行的報表，以及繪製這些報表所用的 API。"
+  },
   "listeners.applications.admin-console.label": {
     "en": "ddf870cabeb295ab",
     "text": "管理主控台"

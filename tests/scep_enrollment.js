@@ -9,7 +9,7 @@
 // SCEP (RFC 8894), IN PROCESS: THE CMS CODEC, THE RA CERTIFICATE, THE HANDLER,
 // THE CONSOLE MODEL AND THE STORES' REALM BOUNDARY (2026-09-13).
 //
-// `tests/vendored/sts_scep_enrollment.js` drives the protocol over HTTP with an
+// `tests/protocol/sts_scep_enrollment.js` drives the protocol over HTTP with an
 // independent client and holds everything a device can see. What is here is
 // the half it cannot:
 //
@@ -30,10 +30,10 @@
 //      reads (the third statement of one shape, see scep_console.js).
 //   5. THE failInfo EVERY CORE CODE MAPS TO.
 //
-// The messages are built with `tests/vendored/scep_client.js` — the protocol
+// The messages are built with `tests/protocol/scep_client.js` — the protocol
 // job's own client — rather than with `scep/scep_cms.ts`, for that job's
 // reason: a codec checked against itself agrees with itself. It is one of the
-// few requires from `tests/` into `tests/vendored/`, and the first of them is
+// few requires from `tests/` into `tests/protocol/`, and the first of them is
 // argued in `tests/saml_assertion_grant.js` on the same ground.
 //
 // The in-process server is `common/app.js` on an ephemeral port; the realm it
@@ -65,7 +65,7 @@ scepModule.registerRoutes(app);
 require('../scep/scep_admin').registerRoutes(app);
 const consoleModel = require('../scep/scep_console');
 const api = require('../scep/scep_api');
-const client = require('./vendored/scep_client');
+const client = require('./protocol/scep_client');
 
 const log = require('bunyan').createLogger({ name: 'scep_enrollment',
   level: process.env.LOG_LEVEL || 'info' });

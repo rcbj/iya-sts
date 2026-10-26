@@ -1127,6 +1127,30 @@
     "en": "ba077a59ecf25ecb",
     "text": "`off`（默认值）接受任何签名算法的通行密钥。`sign-in` 在通行密钥让某人登录时（作为第一凭据或第二因素）只接受后量子通行密钥，即算法为 ML-DSA-44、ML-DSA-65 或 ML-DSA-87（RFC 9964）的通行密钥；经典通行密钥仍可注册。`registration-and-sign-in` 在注册时也拒绝经典通行密钥，此时注册只提供 ML-DSA。决定因素是算法，而不是密钥创建时所在的通道。当领域不提供任何 ML-DSA 时（webauthn.algorithms 未列出任何 ML-DSA，且 webauthn.pqcOnly 和 webauthn.pqcAlongsideClassical 均未开启）将被拒绝。"
   },
+  "passkey.FIELDS.postQuantumAllowCredentials.label": {
+    "en": "295b04bef9cf50bc",
+    "text": "要求后量子通行密钥时登录所列出的通行密钥"
+  },
+  "passkey.FIELDS.postQuantumAllowCredentials.what": {
+    "en": "af7666466d67e760",
+    "text": "`realm`（默认值）沿用该领域的 webauthn.postQuantumAllowCredentials。仅在 postQuantumRequired 要求登录时使用后量子通行密钥时读取。`narrow` 在通行密钥步骤的请求中只列出此人的后量子（ML-DSA）通行密钥，因此从不提供传统通行密钥，而设备上只存有其传统通行密钥的人会看到平台自己的“未找到通行密钥”消息。`list-and-refuse` 列出此人持有的每个通行密钥，并在仪式结束后拒绝传统通行密钥，同时显示一个页面，说明此应用要求后量子通行密钥以及在哪里添加；此人随后可能选择一个将被拒绝的通行密钥。无论哪种方式，不持有任何后量子通行密钥的人都会在任何仪式之前得到告知。保存时省略，则保留 `realm`。"
+  },
+  "passkey.FIELDS.registrationAlgorithms.label": {
+    "en": "48d2a5935e526db5",
+    "text": "通行密钥注册提供的算法"
+  },
+  "passkey.FIELDS.registrationAlgorithms.what": {
+    "en": "4ff3748f6cb3a6f1",
+    "text": "`realm`（默认值）提供该领域的 webauthn.algorithms。否则为通行密钥注册向此配置文件的人员提供的签名算法，按偏好排序（身份验证器创建其支持的第一个），取自 webauthn.algorithms 可列出的算法。下一行可以缩小或重新排序该列表，且算法不在此配置文件所提供算法之列的通行密钥在注册时会被拒绝。保存时省略，则保留 `realm`。"
+  },
+  "passkey.FIELDS.registrationMode.label": {
+    "en": "ca3432814ea1b7a3",
+    "text": "注册时的后量子算法"
+  },
+  "passkey.FIELDS.registrationMode.what": {
+    "en": "1466dbe275c566e7",
+    "text": "`realm`（默认值）沿用 webauthn.pqcOnly 和 webauthn.pqcAlongsideClassical。`pq-only` 只提供 ML-DSA，并拒绝改用经典算法重试。`pq-first` 先提供 ML-DSA，再提供经典算法，即使领域只请求 ML-DSA 也是如此。`classical-only` 不提供任何 ML-DSA，也不在经典通行密钥之外提供后量子通行密钥，适用于设备无法完成 ML-DSA 注册的人员。当 postQuantumRequired 不为 off 或已设置 attestationAlgorithms 时（classical-only），以及所提供的算法未列出任何 ML-DSA 时（pq-only、pq-first），将被拒绝。保存时省略，则保留 `realm`。"
+  },
   "passkey.FIELDS.passkeyHints.label": {
     "en": "7445bda72b06c415",
     "text": "“创建通行密钥”发送的提示"
@@ -1199,6 +1223,30 @@
     "en": "bdbb83ca7b2a2c48",
     "text": "开发模式下默认为 `any`，产品模式下默认为 `not-weaker`。不要求通行密钥的账户恢复方式——密码重置链接、激活链接、恢复代码、通过电子邮件发送的代码或链接——是否为持有通行密钥的人恢复访问权限。`any`：立即恢复。`not-weaker`：此后第一次不是通过通行密钥的登录不能访问任何应用；此人需注册一个符合此策略的通行密钥并用它登录。`operator-only`：同 not-weaker，并且拒绝自助方式（忘记密码表单、登录时的恢复代码或通过电子邮件发送的代码或链接）；只剩下管理员的重置链接、生成的密码或激活链接。保存时省略此项，则保留内置默认值。"
   },
+  "passkey.FIELDS.attestationAlgorithms.label": {
+    "en": "fe72fed238e39ede",
+    "text": "通行密钥证明必须使用的签名算法"
+  },
+  "passkey.FIELDS.attestationAlgorithms.what": {
+    "en": "cb4ed83be3a69177",
+    "text": "默认为 `none`：无论证明使用何种算法签名都予以接受。否则为一个列表，取值于 post-quantum、ml-dsa-44、ml-dsa-65、ml-dsa-87、slh-dsa 和 composite-ml-dsa：只有当通行密钥带有一个携带证书的“受信任”证明，且其声明签名以及其证书链中从叶证书到信任锚的每个证书的签名都是列表允许的算法时，才会注册（`post-quantum` 允许任何 ML-DSA、SLH-DSA 或复合 ML-DSA 签名）。self 和 none 证明因不带证书而被拒绝。开启 enforceAttestationAtSignIn 后，每次登录都会依据注册时记录的内容按此规则检查通行密钥，因此在该规则之前注册的通行密钥将停止工作。这是证明的算法，而不是通行密钥本身的算法（postQuantumRequired）。保存时省略此项，则保留内置默认值。"
+  },
+  "passkey.FIELDS.adminEnrolment.label": {
+    "en": "73fd6ffe6660cf3f",
+    "text": "允许管理员为某人注册通行密钥"
+  },
+  "passkey.FIELDS.adminEnrolment.what": {
+    "en": "9e395e59fd838fcf",
+    "text": "默认为 `off`。`on` 允许持有 Admin Write 控制台角色的管理员，为适用此配置文件的人注册通行密钥，从控制台上该人的页面或 /admin-api：注册仪式在管理员自己的浏览器中进行，对着管理员持有的身份验证器（例如一把要交出去的安全密钥），使用该人的用户句柄，并且与该人自己的注册完全一样地验证——证明、算法和此策略的注册规则。别处制作的任何东西都不能导入。密钥记录哪位管理员在何时注册了它，并告知该人。保存时省略此项，则保留内置默认值。"
+  },
+  "passkey.FIELDS.deviceBoundRequired.label": {
+    "en": "19194c290aaa3903",
+    "text": "要求设备绑定会话"
+  },
+  "passkey.FIELDS.deviceBoundRequired.what": {
+    "en": "5098a9645fefe2ff",
+    "text": "默认关闭。开启后，向此配置文件所覆盖的应用颁发时，会等到登录会话绑定到浏览器的密钥；若浏览器跳过该注册，或等待结束仍未绑定，则拒绝颁发。从未被提供注册的会话不会被此行拒绝。在 authn.deviceBoundSessions 关闭时拒绝。"
+  },
   "passkey.SCHEMA.objectClasses.stsPasskeyPolicy.what": {
     "en": "44bab556bd6240cc",
     "text": "本服务用于通行密钥策略的类：通行密钥在此领域中的行为方式。该条目以配置文件命名（`cn=default`）。"
@@ -1239,6 +1287,18 @@
     "en": "ba077a59ecf25ecb",
     "text": "`off`（默认值）接受任何签名算法的通行密钥。`sign-in` 在通行密钥让某人登录时（作为第一凭据或第二因素）只接受后量子通行密钥，即算法为 ML-DSA-44、ML-DSA-65 或 ML-DSA-87（RFC 9964）的通行密钥；经典通行密钥仍可注册。`registration-and-sign-in` 在注册时也拒绝经典通行密钥，此时注册只提供 ML-DSA。决定因素是算法，而不是密钥创建时所在的通道。当领域不提供任何 ML-DSA 时（webauthn.algorithms 未列出任何 ML-DSA，且 webauthn.pqcOnly 和 webauthn.pqcAlongsideClassical 均未开启）将被拒绝。"
   },
+  "passkey.SCHEMA.attributes.stsPasskeyPostQuantumAllowCredentials.what": {
+    "en": "af7666466d67e760",
+    "text": "`realm`（默认值）沿用该领域的 webauthn.postQuantumAllowCredentials。仅在 postQuantumRequired 要求登录时使用后量子通行密钥时读取。`narrow` 在通行密钥步骤的请求中只列出此人的后量子（ML-DSA）通行密钥，因此从不提供传统通行密钥，而设备上只存有其传统通行密钥的人会看到平台自己的“未找到通行密钥”消息。`list-and-refuse` 列出此人持有的每个通行密钥，并在仪式结束后拒绝传统通行密钥，同时显示一个页面，说明此应用要求后量子通行密钥以及在哪里添加；此人随后可能选择一个将被拒绝的通行密钥。无论哪种方式，不持有任何后量子通行密钥的人都会在任何仪式之前得到告知。保存时省略，则保留 `realm`。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyRegistrationAlgorithms.what": {
+    "en": "4ff3748f6cb3a6f1",
+    "text": "`realm`（默认值）提供该领域的 webauthn.algorithms。否则为通行密钥注册向此配置文件的人员提供的签名算法，按偏好排序（身份验证器创建其支持的第一个），取自 webauthn.algorithms 可列出的算法。下一行可以缩小或重新排序该列表，且算法不在此配置文件所提供算法之列的通行密钥在注册时会被拒绝。保存时省略，则保留 `realm`。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyRegistrationMode.what": {
+    "en": "1466dbe275c566e7",
+    "text": "`realm`（默认值）沿用 webauthn.pqcOnly 和 webauthn.pqcAlongsideClassical。`pq-only` 只提供 ML-DSA，并拒绝改用经典算法重试。`pq-first` 先提供 ML-DSA，再提供经典算法，即使领域只请求 ML-DSA 也是如此。`classical-only` 不提供任何 ML-DSA，也不在经典通行密钥之外提供后量子通行密钥，适用于设备无法完成 ML-DSA 注册的人员。当 postQuantumRequired 不为 off 或已设置 attestationAlgorithms 时（classical-only），以及所提供的算法未列出任何 ML-DSA 时（pq-only、pq-first），将被拒绝。保存时省略，则保留 `realm`。"
+  },
   "passkey.SCHEMA.attributes.stsPasskeyHintsPasskey.what": {
     "en": "2ffa66aabab7a053",
     "text": "门户的 *创建通行密钥* 按顺序发送的 WebAuthn 提示（Level 3 第 5.4.8 节），取自 security-key、client-device 和 hybrid，或不发送。它们告诉浏览器优先采用哪种方式创建通行密钥。提示不得与 webauthn.authenticatorAttachment 相矛盾：client-device 意味着 platform，security-key 和 hybrid 意味着 cross-platform。"
@@ -1274,6 +1334,18 @@
   "passkey.SCHEMA.attributes.stsPasskeyRecoveryAssurance.what": {
     "en": "bdbb83ca7b2a2c48",
     "text": "开发模式下默认为 `any`，产品模式下默认为 `not-weaker`。不要求通行密钥的账户恢复方式——密码重置链接、激活链接、恢复代码、通过电子邮件发送的代码或链接——是否为持有通行密钥的人恢复访问权限。`any`：立即恢复。`not-weaker`：此后第一次不是通过通行密钥的登录不能访问任何应用；此人需注册一个符合此策略的通行密钥并用它登录。`operator-only`：同 not-weaker，并且拒绝自助方式（忘记密码表单、登录时的恢复代码或通过电子邮件发送的代码或链接）；只剩下管理员的重置链接、生成的密码或激活链接。保存时省略此项，则保留内置默认值。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyAttestationAlgorithms.what": {
+    "en": "cb4ed83be3a69177",
+    "text": "默认为 `none`：无论证明使用何种算法签名都予以接受。否则为一个列表，取值于 post-quantum、ml-dsa-44、ml-dsa-65、ml-dsa-87、slh-dsa 和 composite-ml-dsa：只有当通行密钥带有一个携带证书的“受信任”证明，且其声明签名以及其证书链中从叶证书到信任锚的每个证书的签名都是列表允许的算法时，才会注册（`post-quantum` 允许任何 ML-DSA、SLH-DSA 或复合 ML-DSA 签名）。self 和 none 证明因不带证书而被拒绝。开启 enforceAttestationAtSignIn 后，每次登录都会依据注册时记录的内容按此规则检查通行密钥，因此在该规则之前注册的通行密钥将停止工作。这是证明的算法，而不是通行密钥本身的算法（postQuantumRequired）。保存时省略此项，则保留内置默认值。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyAdminEnrolment.what": {
+    "en": "9e395e59fd838fcf",
+    "text": "默认为 `off`。`on` 允许持有 Admin Write 控制台角色的管理员，为适用此配置文件的人注册通行密钥，从控制台上该人的页面或 /admin-api：注册仪式在管理员自己的浏览器中进行，对着管理员持有的身份验证器（例如一把要交出去的安全密钥），使用该人的用户句柄，并且与该人自己的注册完全一样地验证——证明、算法和此策略的注册规则。别处制作的任何东西都不能导入。密钥记录哪位管理员在何时注册了它，并告知该人。保存时省略此项，则保留内置默认值。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyDeviceBoundRequired.what": {
+    "en": "5098a9645fefe2ff",
+    "text": "默认关闭。开启后，向此配置文件所覆盖的应用颁发时，会等到登录会话绑定到浏览器的密钥；若浏览器跳过该注册，或等待结束仍未绑定，则拒绝颁发。从未被提供注册的会话不会被此行拒绝。在 authn.deviceBoundSessions 关闭时拒绝。"
   },
   "passkey.SCHEMA.attributes.stsPasskeySelectApplication.what": {
     "en": "03ba679923c40b45",
@@ -1415,6 +1487,10 @@
     "en": "79742dacfba54ede",
     "text": "只有后量子（ML-DSA）通行密钥能被注册或让人登录"
   },
+  "passkey.sentences.attestationAlgorithms": {
+    "en": "9e73c79f0de11296",
+    "text": "只有当证明受信任且其声明和证书链使用 {{algorithms}} 签名时，通行密钥才会注册"
+  },
   "passkey.sentences.recoveryAny": {
     "en": "7383156c8eb1e363",
     "text": "无论此人持有何种通行密钥，账户恢复都会立即恢复访问权限"
@@ -1426,6 +1502,30 @@
   "passkey.sentences.recoveryOperatorOnly": {
     "en": "1a8f0b4a3319a435",
     "text": "持有通行密钥的人只能通过管理员恢复账户，之后在符合此策略的通行密钥让其登录之前不能访问任何应用"
+  },
+  "passkey.sentences.registrationList": {
+    "en": "fec8859790708542",
+    "text": "通行密钥注册按此顺序提供 {{algorithms}}，取代该领域的列表"
+  },
+  "passkey.sentences.registrationPqOnly": {
+    "en": "10bb1b9e748c737c",
+    "text": "通行密钥注册只提供后量子（ML-DSA）算法，取自 {{algorithms}}，且不提供经典重试"
+  },
+  "passkey.sentences.registrationPqFirst": {
+    "en": "6d255de3f15849dd",
+    "text": "通行密钥注册先提供后量子（ML-DSA）算法，再提供经典算法，取自 {{algorithms}}"
+  },
+  "passkey.sentences.registrationClassicalOnly": {
+    "en": "34338f9da2211979",
+    "text": "通行密钥注册只提供经典算法，取自 {{algorithms}}：不会创建后量子通行密钥"
+  },
+  "passkey.sentences.param.realmAlgorithms": {
+    "en": "62dd60f1d67057b4",
+    "text": "该领域的 webauthn.algorithms"
+  },
+  "passkey.sentences.adminEnrolment": {
+    "en": "41023a55f549b1cd",
+    "text": "管理员可以在自己的浏览器中为某人注册通行密钥，并像该人自己的通行密钥一样加以验证"
   },
   "kinds.locale.label": {
     "en": "1219a9dcfb9aa19f",

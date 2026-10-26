@@ -714,8 +714,11 @@ device; that was the first false positive the test found.
 every live session against the lists and the failure history and RAISES one
 that gained a signal (`rescoreSession()`, `phase: 'rescore'`) — never lowers
 it: a list that rotated an address out is not a reason to trust a session
-more than its sign-in did. The device and the model cannot move without a
-request, which is continuous evaluation's business.
+more than its sign-in did. A session that already holds
+`authenticator-compromised` or `compromised-device` with a score still under
+the HIGH line is raised by the same floor; one already at the line, with
+nothing else fresh, is left unwritten. The device and the model cannot move
+without a request, which is continuous evaluation's business.
 
 ## THE FIDO METADATA (P5, 2026-09-22)
 
@@ -795,10 +798,13 @@ without its icon.
 
 **Scored**: `lookupAuthenticator()` by the AAGUID the WebAuthn ceremony
 recorded on the event; a compromised model is `authenticator-compromised`
-(×50 — HIGH on its own), and the assessment records the BLOB's version and
-the model's certification level. The rescore job checks a live session's key
-the same way, so a BLOB that newly reports a model reaches the sessions
-resting on it. `risk-response`'s default `credentialSignals` include it, and
+(×50 — HIGH on its own). The floor, not the factor alone, is what makes it
+HIGH once a model score is below 0.2 (`floored()`, after the factor product
+and after the known-context cap). The assessment records the BLOB's version
+and the model's certification level. The rescore job checks a live session's
+key the same way, so a BLOB that newly reports a model reaches the sessions
+resting on it, including one whose stored score times 50 stays under that
+line. `risk-response`'s default `credentialSignals` include it, and
 RISC `credential-compromise` then names a FIDO credential. An unlisted
 model, and the all-zero AAGUID of an authenticator that attests nothing, are
 unknown and decide nothing.
@@ -844,7 +850,8 @@ could be `unregistered-device`, and the lowering factors never applied. Now:
   (`deviceSignals()`, the function `assessNow()` uses; `DEVICE_SIGNALS` is
   what it takes off first), takes off `new-device` where the device is the
   person's own, and re-makes the score from the model's own score with the
-  known-context cap and the UNSCORED rule as `assessNow()` applies them. It
+  known-context cap, the floor under a compromising signal and the UNSCORED
+  rule as `assessNow()` applies them. It
   never ADDS `new-device`: the fingerprint was looked up when the sign-in
   was assessed.
 * **One assessment, one history move.** The amendment rewrites the SAME row
@@ -868,7 +875,7 @@ could be `unregistered-device`, and the lowering factors never applied. Now:
 
 | Signal | Factor | When |
 |---|---|---|
-| `compromised-device` | ×50 | the recognised device is marked compromised — HIGH on its own, as `authenticator-compromised` is |
+| `compromised-device` | ×50 | the recognised device is marked compromised — HIGH on its own, as `authenticator-compromised` is. The floor, not the factor alone, is what makes it HIGH once a model score is below 0.2 |
 | `non-compliant-device` | ×3 | the recognised device is `not-compliant` (evidence: not held back for history) |
 | `unregistered-device` | ×2 | no device of the PERSON'S OWN was recognised — none, or somebody else's — and they have registered one (`devices.holdsAny()`, an index lookup) or `devices.expectRegistered` is on; waits for `risk.minimumHistory` |
 | `compliant-attested-device` | ×0.5 | their own device, compliant, attested |
@@ -1175,11 +1182,11 @@ hit the same trap through `request_pool.js` in P0.
   both doors to `active`, the bombs, the ambiguous and corrupt archives, the
   cap and a full disk, the form's CSRF and field order and the route's role
   check, the API's body types, the exemption predicate, both crash jobs, and
-  a `.gz` and `.zip` by path. `tests/vendored/sts_admin_risk_upload.js`
+  a `.gz` and `.zip` by path. `tests/protocol/sts_admin_risk_upload.js`
   (`local: true`) — the same over HTTP in every mode: a `.gz` through the
   API and a `.zip` through the console with a real session and token, a
   realm's upload, and the refusals.
-* `tests/vendored/sts_admin_risk.js` (`local: true`) — over HTTP in every mode,
+* `tests/protocol/sts_admin_risk.js` (`local: true`) — over HTTP in every mode,
   so the postgres driver's SQL answers in `single-node` and `cluster`, and in
   `cluster` a version activated on one node is answered by both.
 * `tests/postgres_schema.js` — the thirteen tables are in both copies of the
@@ -1200,7 +1207,10 @@ hit the same trap through `request_pool.js` in P0.
 * `tests/risk_mds.js` (P5) — a SYNTHETIC BLOB (a root and signer minted in
   the test): an entry as rows, the verification's four refusals, import,
   rollback refused, the latest only, lookup, staleness, a revoked model
-  scored HIGH, and a BLOB under another root refused and recorded.
+  scored HIGH, still HIGH when the model scores below 0.2 (the floor, for
+  that signal and for `compromised-device`) and a rescore reaches that line
+  even when the stored score times 50 does not, and a BLOB under another
+  root refused and recorded.
 * `tests/risk_response.js` (P4) — the `risk-response` policy in both shapes
   and its round trips, its decisions, sessions ended once per assessment,
   development observing, a realm override that disables, CAEP's new act, a
@@ -1210,7 +1220,7 @@ hit the same trap through `request_pool.js` in P0.
   every count of a window, the old and the other realm's left out, the
   signals beside their factors, a series that adds up, the standings, this
   process's counts, and the page without a script.
-  `tests/vendored/sts_admin_risk.js` sections 8 and 9 hold the postgres
+  `tests/protocol/sts_admin_risk.js` sections 8 and 9 hold the postgres
   driver's GROUP BY to the same sums over HTTP.
 * `tests/risk_realm_admin.js` — a realm administrator on both risk pages:
   the gate's refusals and permissions, the realm-only views, and the pages

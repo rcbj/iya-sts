@@ -47,7 +47,7 @@
 //     and which `openssl crl` is then asked to verify, so even that one is read
 //     by an implementation other than the one under test.
 //
-// **MOSTLY NEGATIVES**, for `tests/vendored/sts_dpop.js`'s reason: a
+// **MOSTLY NEGATIVES**, for `tests/protocol/sts_dpop.js`'s reason: a
 // revocation check that answers `good` for a good certificate looks finished
 // and is worth nothing. What it has to get right is `revoked` for a revoked
 // one at every door, `unknown` — and a REFUSAL only under hard-fail — for a
@@ -89,8 +89,8 @@ const CHILD_FLAG = 'STS_REVOCATION_STATUS_CHILD';
 // ---------------------------------------------------------------------------
 async function issue(spec) {
   log.debug("Entering issue().");
-  const x509 = require('../common/vendored/x509');
-  const keys = require('../common/vendored/key_material');
+  const x509 = require('../common/crypto_impl/x509');
+  const keys = require('../common/crypto_impl/key_material');
   const pair = await keys.generateKeyPair('rsa-2048');
   const now = Date.now();
   const extensions = {
@@ -3167,7 +3167,7 @@ async function theRegisteredDoors(t) {
   const assertionGrant = require('../oauth-oidc/assertion_grant');
   const clientAuth = require('../oauth-oidc/client_auth');
   const samlGrant = require('../oauth-oidc/saml_assertion_grant');
-  const signer = require('./vendored/saml_xmldsig.js');
+  const signer = require('./protocol/saml_xmldsig.js');
   const federationSp = require('../federation/federation_sp');
   const vcVerifier = require('../oid4vc/vc_verifier');
   const realm = await secondRealm('rev-doors');

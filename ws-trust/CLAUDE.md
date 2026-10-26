@@ -296,7 +296,7 @@ what to present:**
 
 The answer echoes the request's trust namespace, and until #188 it answered
 every version in 1.3's vocabulary. Validating each answer against its own
-version's published schema (`tests/vendored/sts_xml_schema_validation.js`)
+version's published schema (`tests/protocol/sts_xml_schema_validation.js`)
 found three elements the **2004/04** member submission does not have:
 
 * **Issue is answered with the RSTR itself.** That version's
@@ -693,7 +693,7 @@ names is issued in product**, beside #496's registered applications
 unregistered. Development verifies no credential and enforces none of it.
 
 `tests/wstrust_jwt_claims.js` sections R and S hold it in process in both
-modes; `tests/vendored/sts_wstrust_own_token_chain.js` drives the four-tier
+modes; `tests/protocol/sts_wstrust_own_token_chain.js` drives the four-tier
 chain on each tier's own token in every type, and the 36-request matrix.
 
 ## A SECOND-FACTOR PERSON'S USERNAMETOKEN (2026-09-22, #101)

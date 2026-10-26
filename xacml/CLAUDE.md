@@ -63,7 +63,7 @@ COVER.** Between them the five hold the ENGINE to 455 cases, the store, the PIP,
 the JSON Profile, the editor's grammar and the container's shim — and they make
 NOT ONE HTTP REQUEST, so until these existed every route in `xacml.ts` and
 every form on the five console pages was uncovered. Since 2026-09-05,
-`tests/vendored/`
+`tests/protocol/`
 `sts_xacml_endpoints.js` drives the seven `/xacml` endpoints and
 `sts_xacml_editor.js` drives `/admin/xacml/editor` in a real browser; **since
 2026-09-06 `sts_xacml_remote_pep.js` DRIVES THE `xacml-pep/` IMAGE AS A SECOND
@@ -156,7 +156,7 @@ is the whole design. A certificate this service verified, naming
 `cn=rogue-pep,ou=users,…`, holding `EVERYBODY, ALL_AUTHENTICATED_USERS` and not
 `REMOTE_PEPS`, is refused — and the refusal says the certificate was fine,
 because somebody debugging it otherwise regenerates a certificate that was
-never wrong. `tests/vendored/sts_xacml_endpoints.js` drives exactly that case.
+never wrong. `tests/protocol/sts_xacml_endpoints.js` drives exactly that case.
 
 **IT IS A POLICY DECISION AND NOT A HARD-CODED ROLE TEST.** The requirement
 travels in the REQUEST — `xacml-pep-api` was the first resource that is
@@ -462,7 +462,7 @@ evaluates. **If a function in `xacml_pdp.js` ever asks which syntax a policy
 arrived in, this separation has failed** and the fix belongs in the model
 rather than in the evaluator.
 
-The argument is `common/vendored/xmldsig.js`'s, one layer up: a grammar is a
+The argument is `common/crypto_impl/xmldsig.js`'s, one layer up: a grammar is a
 READING, and three readings are three chances to disagree with the PDP at the
 far end — which for authorization means a decision nobody can reproduce. It is
 also what makes ALFA cheap when it lands: a parser and an emitter, not a second
@@ -992,7 +992,7 @@ would have been unusable by the only caller it was built for, and that is the
 constraint that decided the request shape rather than anything about
 efficiency.
 
-`tests/vendored/sts_xacml_remote_pep.js` section 3 drives the whole path: a
+`tests/protocol/sts_xacml_remote_pep.js` section 3 drives the whole path: a
 policy over `employeeType`, a container asked about `carol` with the request
 asserting NOTHING, and a Permit that can only have come from her entry under
 `ou=users` in this service's embedded directory — beside a name the directory
@@ -1130,7 +1130,7 @@ realm's `pep-tls` Issuing CA.
 `xacml-pep/CLAUDE.md` argues the container's half — why the pair is re-read
 from disk rather than read once — and `tests/pep_listener_certificate.js` (the
 issuing half), `rust/bins/xacml-pep/src/listener.rs`'s test (the reload) and
-section 1b of `tests/vendored/sts_xacml_remote_pep.js` pin both.
+section 1b of `tests/protocol/sts_xacml_remote_pep.js` pin both.
 
 ## What phase five cost outside this directory
 
@@ -1163,7 +1163,7 @@ manifest) and all three of which would have failed the day the defect was made.
    of that table say "nothing" and this one must still carry the fields.
 2. **`/admin/xacml/decide` had no `/admin-api` operation**, which rule 7 requires
    in the same commit as the page. It shipped in phase three without one.
-3. **`tests/vendored/sts_metadata.js`'s protocol list did not name XACML**, so
+3. **`tests/protocol/sts_metadata.js`'s protocol list did not name XACML**, so
    the card added in phase one was never checked against the page.
 4. **The action endpoint answered `{ ok, why }` where every other action
    resource on `/admin-api` answers `{ ok, errors: [...] }`.** That is not a
@@ -1235,7 +1235,7 @@ remote PEP it arrived with.
 
 ## THE THIRTEENTH DEFECT, AND THE ONLY DOOR THAT COULD HAVE SHOWN IT
 
-`tests/vendored/sts_xacml_editor.js` found it on its first run, and it had been
+`tests/protocol/sts_xacml_editor.js` found it on its first run, and it had been
 there since phase three: **every refusal on the three `/admin/xacml` pages
 redirected back to the page with `error=` and nothing in it.**
 
@@ -1250,7 +1250,7 @@ exactly like a control that does nothing.
 been given the translation (`admin_actions.js`'s `xacmlAction()` puts `why`
 into `errors`), so
 every refusal was fully explained there and
-`tests/vendored/sts_admin_api_operations.js` was right to be satisfied. And
+`tests/protocol/sts_admin_api_operations.js` was right to be satisfied. And
 `tests/xacml_pap.js` asserts the refusal the FUNCTION returns, which was correct
 the whole time. The defect lived in the two lines between them, and the only way
 to see it was to press a button in a browser and read the page that came back.
@@ -1473,6 +1473,26 @@ two assertion doors for the attestation rules).
   realm rebuilds its document from the template to be held to the row; a
   document built before #536 answers no passkey verdict and falls to the
   built-in rules as it always did.
+* **#941 ADDED THE ATTESTATION-ALGORITHM RULE, ONE PER ACTION, AFTER THE
+  POST-QUANTUM ONE.** The fact group is `attestation-algorithm`:
+  `urn:sts:xacml:passkey:attestation-statement-algorithm`, a bag
+  `...:attestation-certificate-algorithm` (leaf to anchor),
+  `...:attestation-post-quantum`, and the verdict
+  `...:attestation-algorithm-allowed` that `question()` computed; the
+  attestation group's `verified`/`trusted` facts are sent with it where
+  that group is not. The rule reads ALLOWED and the row
+  `urn:sts:xacml:passkey-policy:attestationAlgorithms` (a bag, empty for
+  none) — at `register-passkey` whenever it is set (0411), at
+  `use-passkey` only with `enforceAttestationAtSignIn` (0412) — and
+  `passkey_rules.js` mirrors it. A document built before #941 carries no
+  such rule, as above.
+* **#946 ADDED ONE POLICY FACT AND NO RULE**:
+  `urn:sts:xacml:passkey-policy:postQuantumAllowCredentials`, `narrow` or
+  `list-and-refuse`, resolved from the realm's setting where the profile's
+  row is `realm`. A classical key refused under `list-and-refuse` is
+  refused by the `post-quantum` rule above, as under `narrow`; the fact is
+  there for a realm's own rule to tell a key picked from a full list from
+  one never offered.
 * **Arranged as the transfer questions are**: `xacml_passkey_verdicts.js`
   serves both the PEP and the gate. A realm's own document decides where it
   carries the obligation; otherwise the built-in document decides. Where
@@ -1668,7 +1688,7 @@ issued, RFC 6749 section 3.3); and the request-stage
 (it tests the environment's grant type), because the exchange stage decides
 it. A question with no `scope-delegated` fact is judged as before.
 `tests/scope_rules_policy.js` section G holds the truth table, and
-`tests/vendored/sts_token_exchange_chain_delegation.js` the chain: esb1
+`tests/protocol/sts_token_exchange_chain_delegation.js` the chain: esb1
 holds read and write on sp1 and sp2 and not admin, asks for all three, and
 admin must never be issued.
 
@@ -1680,7 +1700,7 @@ beside its `authorizing-role` values; **`application-permission-not-authorized`
 drops one no role the subject holds authorizes, in every mode**
 (`STS-OAUTH-0957`). It sits after `scope-not-authorized`, which still decides a
 permission its resource gates. `tests/role_permissions.js` section H and
-`tests/vendored/sts_delegated_permissions_example.js` (an app role over HTTP)
+`tests/protocol/sts_delegated_permissions_example.js` (an app role over HTTP)
 hold it.
 
 **MUTATION-TESTED** (2026-10-03): each of the twenty exchange rules removed
@@ -2345,4 +2365,26 @@ rule names it, so the risk rules decide it as they decide a session, and it
 is the action an operator's rule targets to refuse creation (by category, an
 unverified address, a level) while existing people still sign in.
 `STS-FED-0179` is its refusal.
+
+## A device-bound session an application requires (#740, 2026-10-25)
+
+Two environment attributes, sent only while `authn.deviceBoundSessions`
+is on (`AUTHN_ATTRIBUTE`):
+
+| Attribute | Values |
+|---|---|
+| `urn:sts:xacml:device-bound-session` (`DEVICE_BOUND_SESSION`) | the fact: `bound`, `skipped`, `pending`, `timedout` or `none` |
+| `urn:sts:xacml:device-bound-required` (`DEVICE_BOUND_REQUIRED`) | `true` when the application's passkey profile has `deviceBoundRequired` |
+
+The built-in issuance policy's `device-bound-session` rule denies when
+the requirement is `true` and the fact is `skipped` or `timedout`, with
+the authentication obligation naming `device-bound-session`. A missing
+attribute is an empty bag, and `string-is-in` on one is False, so the
+rule does not fire when the feature is off or the profile does not
+require a binding. `pending` is not that rule: `XacmlRolePep` holds it
+before the policy is asked (`allowed: false`, `deferred: true`, no error
+code, not counted). `skipped` and `timedout` are `STS-AUTHN-0462` there
+too, so an override written without the rule, and `xacml.enabled` off,
+still refuse. `none` and `bound` are not refusals. The fact is computed
+in `common/issuance_gate.js`, which does not require the DBSC module.
 

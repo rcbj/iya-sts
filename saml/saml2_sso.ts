@@ -220,6 +220,8 @@ import applications = require('../common/applications');
 // carries in each mode. Their headers argue them; none can move a route.
 import mode = require('../common/mode');
 import authnContext = require('./authn_context');
+// The EAP class URIs (#736). A leaf; requiring it moves no route.
+import PhishingResistance = require('../common/phishing_resistance');
 import documentSettings = require('./document_settings');
 // The certificate the back channel presents, as a metadata key (#248).
 import listenerKeys = require('./listener_keys');
@@ -352,6 +354,12 @@ const AC_MFA_DEMANDS = [
   'urn:oasis:names:tc:SAML:2.0:ac:classes:SmartcardPKI',
   'http://schemas.microsoft.com/claims/multipleauthn'
 ];
+
+// A RequestedAuthnContext naming the EAP phishing-resistant class URIs is
+// read by common/phishing_resistance.ts (#736), not by a second list here.
+// Comparison defaults to exact, so any named class can satisfy: a list that
+// also names one of the classes above, or any other class, does not force
+// a key. When the request names nothing, the assertion's class is unchanged.
 
 const BASE_PATH = '/saml2';
 
@@ -2189,6 +2197,10 @@ class Saml2Sso {
     log.debug("Entering Saml2Sso.buildAssertionFor(). sp=" + spEntityId);
     const user = session.user;
     const context = this.authnContextFor(session);
+    // The asked EAP class, when the session earned it (#736). '' keeps the
+    // class this assertion has always carried.
+    const askedClass = PhishingResistance.assertionUri(
+      session, request.requestedAuthnContexts);
     const lifetimeMin = Number(this.settingFor(spEntityId,
                                                'saml2.assertionLifetimeMin')) ||
                                                  60;
@@ -2196,7 +2208,7 @@ class Saml2Sso {
     const assertion = buildSamlAssertion(user.username, spEntityId, lifetimeMin,
                                          {
       issuer: idpEntityId,
-      authnContextClassRef: context.classRef,
+      authnContextClassRef: askedClass || context.classRef,
       nameIdFormat: format,
       nameIdValue: this.nameIdValueFor(format, session),
       // saml-profiles-2.0-os section 4.1.4.2: the bearer assertion MUST carry a
@@ -3253,8 +3265,16 @@ class Saml2Sso {
     const wantsMfa = request.requestedAuthnContexts.some(function (ref) {
       return AC_MFA_DEMANDS.indexOf(ref) >= 0;
     });
-    const stale = session && wantsMfa &&
-                  !this.authnContextFor(session).multiFactor;
+    // The EAP classes, from the one leaf (#736). A list that is not only
+    // those URIs is not this demand: another named class can answer it.
+    const eapDemand = PhishingResistance.signInFor(
+      request.requestedAuthnContexts);
+    const readNow = session ? this.authnContextFor(session) : null;
+    const mfaUnmet = !!(session && wantsMfa && readNow &&
+                        !readNow.multiFactor);
+    const eapUnmet = !!(session && !PhishingResistance.eapDemandMet(
+      session, request.requestedAuthnContexts));
+    const stale = mfaUnmet || eapUnmet;
     // ---------------------------------------------------------------------
     // ONE TRIP TO THE SIGN-IN SCREEN PER REQUEST, AND NEVER A SECOND
     // (2026-09-14).
@@ -3321,8 +3341,11 @@ class Saml2Sso {
           destination: acsUrl, inResponseTo: request.id,
           status: STATUS_RESPONDER, subStatus: STATUS_NO_PASSIVE,
           statusMessage: session
-            ? 'The session here has one factor and this request asked for ' +
-              'more, and IsPassive forbids asking for it.'
+            ? (eapUnmet && !mfaUnmet
+              ? 'The session here does not meet the RequestedAuthnContext, ' +
+                'and IsPassive forbids asking for it.'
+              : 'The session here has one factor and this request asked ' +
+                'for more, and IsPassive forbids asking for it.')
             : (accountChoice
               ? 'This request cannot be answered without asking the person ' +
                 'at the browser, and IsPassive forbids asking.'
@@ -3374,7 +3397,11 @@ class Saml2Sso {
         // A RequestedAuthnContext demanding more than one factor takes the
         // opt-out away rather than being refused — what WS-Federation's wauth
         // does with the same demand too. See the note on AC_MFA_DEMANDS.
+        // An EAP-only list forces a key, and a hardware-only list narrows
+        // that key (#736). Either is false when the request did not ask.
         forceMfa: wantsMfa,
+        forceKey: eapDemand.forceKey,
+        phishingClass: eapDemand.phishingClass,
         // WHETHER THE ACCOUNT PICKER COMES FIRST (#561), where the browser
         // holds several accounts: ForceAuthn asks for a fresh
         // authentication, so never — the prompt=login of this protocol.
@@ -3411,8 +3438,11 @@ class Saml2Sso {
           : []).concat(stale
           ? [{ label: 'RequestedAuthnContext',
                value: request.requestedAuthnContexts.join(' '),
-               note: 'more than one factor was asked for and this session ' +
-                     'has one.' }]
+               note: mfaUnmet
+                 ? 'more than one factor was asked for and this session ' +
+                   'has one.'
+                 : 'a phishing-resistant class was required and this ' +
+                   'session has not earned it.' }]
           : [])
       });
       log.debug("Leaving Saml2Sso.singleSignOnChecked(). " +
@@ -3427,30 +3457,34 @@ class Saml2Sso {
     if (returned) {
       const fresh = !!session &&
                     Number(session.authTime || 0) >= Number(held.forcedAt);
-      const contextUnmet = !!session && wantsMfa &&
-                           !this.authnContextFor(session).multiFactor;
+      // Re-read after the trip: the session may be a new authentication.
+      const readBack = session ? this.authnContextFor(session) : null;
+      const mfaUnmetNow = !!session && wantsMfa &&
+                          !(readBack && readBack.multiFactor);
+      const eapUnmetNow = !!session && !PhishingResistance.eapDemandMet(
+        session, request.requestedAuthnContexts);
       const unmet = !session || (request.forceAuthn && !fresh)
-        ? 'authn' : (contextUnmet ? 'context' : '');
+        ? 'authn' : (mfaUnmetNow ? 'context' : (eapUnmetNow ? 'eap' : ''));
       if (unmet) {
-        const why = unmet === 'context'
-          ? 'The person signed in, and the session still does not meet the ' +
-            'RequestedAuthnContext (' +
-              request.requestedAuthnContexts.join(' ') +
-            ').'
-          : (!session
+        const why = unmet === 'authn'
+          ? (!session
             ? 'The person came back from the sign-in screen with no session.'
             : 'ForceAuthn asked for a fresh authentication and the person ' +
               'came back from the sign-in screen without authenticating ' +
-              'again.');
+              'again.')
+          : 'The person signed in, and the session still does not meet the ' +
+            'RequestedAuthnContext (' +
+              request.requestedAuthnContexts.join(' ') +
+            ').';
         log.info('saml2: ' + why + ' Answering "' + spEntityId + '" with a ' +
                  'status rather than sending the person to the sign-in ' +
                  'screen a second time.');
         pendingRequests.delete(String(params.rid || ''));
-        const subStatus = unmet === 'context'
-          ? 'urn:oasis:names:tc:SAML:2.0:status:NoAuthnContext'
-          : 'urn:oasis:names:tc:SAML:2.0:status:AuthnFailed';
-        errorCodes.mark(res, unmet === 'context' ? 'STS-SAML-0056'
-                                                 : 'STS-SAML-0055');
+        const subStatus = unmet === 'authn'
+          ? 'urn:oasis:names:tc:SAML:2.0:status:AuthnFailed'
+          : 'urn:oasis:names:tc:SAML:2.0:status:NoAuthnContext';
+        errorCodes.mark(res, unmet === 'authn' ? 'STS-SAML-0055'
+          : (unmet === 'eap' ? 'STS-SAML-0116' : 'STS-SAML-0056'));
         const refusal = this.buildResponse({
           issuer: idpEntityId, sp: spEntityId,
           destination: acsUrl, inResponseTo: request.id,
@@ -3561,6 +3595,11 @@ class Saml2Sso {
         returnTo: req.path + '?rid=' + encodeURIComponent(again.id),
         hint: String((session.user || {}).username || ''),
         application: spEntityId,
+        // Keep the EAP demand across the mechanism re-prompt (#736): a
+        // password that the service provider allows would otherwise replace
+        // the class the request required, and the return would refuse it.
+        forceKey: eapDemand.forceKey,
+        phishingClass: eapDemand.phishingClass,
         protocol: 'SAML 2.0',
         details: [
           { label: 'Service provider', value: spEntityId,
@@ -3607,7 +3646,7 @@ class Saml2Sso {
     }
 
     pendingRequests.delete(String(params.rid || ''));
-    notePresented(session, 'SAML 2.0', req);
+    notePresented(session, 'SAML 2.0', req, spEntityId);
     this.issueSignInResponse(res, {
            request: request, session: session, spEntityId: spEntityId,
            idpEntityId: idpEntityId,
@@ -3907,7 +3946,7 @@ class Saml2Sso {
       log.debug("Leaving Saml2Sso.unsolicitedSignOn(). RequestDenied.");
       return;
     }
-    notePresented(session, 'SAML 2.0', req);
+    notePresented(session, 'SAML 2.0', req, spEntityId);
     this.issueSignInResponse(res, {
       request: { id: '', nameIdFormat: '', requestedAuthnContexts: [] },
       session: session, spEntityId: spEntityId, idpEntityId: idpEntityId,

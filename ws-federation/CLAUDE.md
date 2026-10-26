@@ -53,7 +53,9 @@ direction on #36 was to take the row off the list, so:
 * **The assertion reports what HAPPENED.** `authnMethodsFor()` reads the
   session after the step-up; a password and a one-time code is
   `multipleauthn`, a password and a key is `multipleauthn` too, a passwordless
-  key alone is `HardwareToken`. Nothing about the request changes the answer.
+  key alone is `HardwareToken`. Nothing about the request changes the answer,
+  except an EAP class the request named and the session earned — the next
+  section.
 * **A HARDWARE demand is met by a key in EITHER role; a MULTI-FACTOR demand
   only by two real factors.** A passwordless key does not answer multi-factor,
   however phishing-resistant it is. **THE SCREEN NOW OFFERS EXACTLY THOSE TWO
@@ -83,6 +85,49 @@ Note also `authnMethodsFor()`, which used to test for `hwk` and call a
 passwordless sign-in a two-factor one. Anything reading `hwk` to mean "two
 factors" is wrong for the reason `../authn/CLAUDE.md` gives; this now tests for
 `hwk` AND `pwd`.
+
+## THE EAP PHISHING-RESISTANT CLASSES (#737, 2026-10-25)
+
+A `wauth` that names the OpenID Connect EAP ACR Values 1.0 class URIs is
+the same demand `acr_values=phr` / `phrh` is, and the same one trip the
+`wauth` step-up above already is. The URIs are registered by that
+profile's section 5 (IANA Level of Assurance Profiles), and they live on
+`common/phishing_resistance.ts` — `URI_PHR`, `URI_PHRH` — rather than in
+a second table here:
+
+* `http://schemas.openid.net/pape/policies/2007/06/phishing-resistant` (`phr`)
+* `http://schemas.openid.net/acr/2016/07/phishing-resistant-hardware` (`phrh`)
+
+**`wauth` is one URI.** `classOfUri()` recognises it. `signInFor()` splits
+on whitespace, so it is not what admits the value: two class URIs in one
+`wauth` stay the unknown-method refusal (`STS-WSFED-0006`). On a value
+that was admitted, `signInFor([wauth])` forces a key only when that one
+URI is an EAP class, and sets `phishingClass` `phrh` only when it is the
+hardware URI. A password, hardware or multi-factor `wauth` is unchanged:
+`forceKey` stays what `screenDemand()` already set and `phishingClass` is
+`''`. `screenDemand()` has no kind for this demand — `'eap'` would force
+neither flag — so the key comes from the leaf.
+
+**ONE attempt, then the refusal**, the marker this profile already uses.
+Still unmet — a password session, a registration ceremony (it earns
+nothing), a software key against `phrh` — is a 400 page,
+`STS-WSFED-0030`, recorded and never sent. The protocol error is the page
+this profile already answers a failed `wauth` with. There is no second
+trip. `wp` stays recorded and unenforced: this profile has no `Is passive`
+reading to add.
+
+**The assertion reports the class only when it was asked and earned.**
+`assertionUri(session, [wauth])` is the SAML 2.0 `AuthnContextClassRef`,
+the SAML 1.1 `AuthenticationMethod` and both `authenticationmethod`
+claims when it returns a URI. The default token is SAML 1.1, so the class
+would otherwise never appear on it, and a SAML 2.0 claim would disagree
+with the statement. When it returns `''`, each of those stays
+`methods.saml2` or `methods.saml11`, which is every request that did not
+name an EAP class and every session that did not earn the one it named.
+The identity-provider-initiated link carries no `wauth`, so its tokens
+are that unchanged path.
+
+`tests/wsfed_wauth_step_up.js` (k–n) holds it.
 
 ## This module no longer owns a sign-in screen, and that was a hole in three features
 
@@ -227,7 +272,7 @@ whose `wtrealm` is not a registered relying party is **a 404 page,
 
 `tests/unregistered_applications.js` (U7) holds it in both modes.
 
-`tests/issuer_names.js` (U4, U5) and `tests/vendored/wstrust_chain_kit.js`
+`tests/issuer_names.js` (U4, U5) and `tests/protocol/wstrust_chain_kit.js`
 (`samlIssuerFor()`, which asks this route for every tier) hold it;
 `sts_metadata_anonymous.js` section 5 holds the 404.
 
@@ -315,7 +360,11 @@ authenticator built in the test) meeting the demand passwordless AND as a
 second factor, a forged marker refused
 `STS-WSFED-0010`, and an unknown method still `STS-WSFED-0006`. Its mutant —
 the marker ignored, so every unmet demand is refused as before — turned eight
-of its assertions red.
+of its assertions red. Cases k–n (#737) hold an EAP class URI: one trip
+and `STS-WSFED-0030` for `phr`, `phishingClass` `phrh` for the hardware
+URI, a password `wauth`, a multi-factor `wauth` and no `wauth` keeping the
+class they already issued, and a passkey assertion carrying the `phr` URI
+on both token types while a request that does not ask does not.
 `tests/wsfed_initiation.js` (#712) holds who may start a sign-in: the link
 off by default, by an entry's override and by the realm setting; the 404 for
 an unregistered relying party; a `wreply` refused; no registered reply
@@ -326,13 +375,13 @@ step-up sent once and refused on a marked return — with the risk put on the
 session object directly rather than scored. It does not complete a stepped-up
 sign-in (the test person holds no second factor).
 The risk step-up runs there a second time in PRODUCT mode (#715).
-**`tests/vendored/sts_idp_initiated_wsfed.js` is the product-mode and
+**`tests/protocol/sts_idp_initiated_wsfed.js` is the product-mode and
 cross-node coverage of the rest** — the same rules over the wire, in a
 throwaway realm in the run's mode, with relying parties and a person with a
 real password made through `/admin-api`, the realm setting set and reset
 there, and the relying party read back from `GET /logout`'s JSON inventory;
 the suite runs it in `memory`, `single-node` and `cluster`. Nothing else here is
-tested but by `tests/vendored/sts_saml11.js`, which posts a sign-in response to
+tested but by `tests/protocol/sts_saml11.js`, which posts a sign-in response to
 the test peer's relying party (the mock relying party that made the rest look
 covered was deleted, #592). What a test would add is the other negatives:
 an altered `wctx`, `wfresh` read as seconds rather than minutes, a SAML 1.1
@@ -345,7 +394,7 @@ working relying party looks finished and proves almost nothing.
 The federation metadata and the sign-in response's `wresult` — SAML 1.1 and
 SAML 2.0 tokens in the 2005/02 and 1.3 wrappers — are validated against the
 published WS-Federation 1.2, WS-Trust and SAML schemas by
-`tests/vendored/sts_xml_schema_validation.js`, in a development and a product
+`tests/protocol/sts_xml_schema_validation.js`, in a development and a product
 realm. Both were valid on the first run.
 
 ## The mock relying party — deleted (#592, 2026-10-12)

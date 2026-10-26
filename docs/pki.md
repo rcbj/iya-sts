@@ -1103,7 +1103,7 @@ other worker issues from.
 
 ## The encoder is the debugger's own, vendored byte-identical
 
-`common/vendored/x509.js` — the same module behind the
+`common/crypto_impl/x509.js` — the same module behind the
 [OAuth2/OIDC Debugger](https://idptools.com)'s *PKI / X.509* workflow page, and
 what `spiffe/spiffe_ca.ts` already issues X509-SVIDs with. So a certificate
 issued here and one issued there are built by **one** encoder, and a difference

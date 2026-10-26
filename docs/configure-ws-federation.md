@@ -223,6 +223,8 @@ sends each of these:
 | `urn:oasis:names:tc:SAML:1.0:am:password` | a password |
 | `http://schemas.microsoft.com/claims/multipleauthn` | two factors: a password and a one-time code, or a password and a security key |
 | `urn:oasis:names:tc:SAML:1.0:am:HardwareToken` | a security key, alone or after a password |
+| `http://schemas.openid.net/pape/policies/2007/06/phishing-resistant` | a passkey (`phr`) |
+| `http://schemas.openid.net/acr/2016/07/phishing-resistant-hardware` | a hardware-protected passkey (`phrh`): trusted attestation, and not eligible for backup |
 
 The password demand also accepts
 `urn:oasis:names:tc:SAML:1.0:am:unspecified`,
@@ -231,7 +233,8 @@ The password demand also accepts
 `http://schemas.xmlsoap.org/ws/2005/05/identity/authenticationmethod/password`
 and
 `http://schemas.microsoft.com/ws/2008/06/identity/authenticationmethod/password`.
-Any other value is refused.
+Any other value is refused. Two class URIs in one `wauth` are refused: the
+parameter is one URI.
 
 A demand the session does not meet sends the person to sign in again with
 that method required, once, in both modes. The assertion then reports what

@@ -105,7 +105,7 @@ STS_ADMIN_API_TOKEN="${TOKEN}" node deploy/aws/reset-environment.js "${URL}" || 
 EXCLUDE="${STS_SUITE_EXCLUDE:-}"
 ONLY="$(EXCLUDE="${EXCLUDE}" node -e '
   const skip = new Set(process.env.EXCLUDE.split(",").filter(Boolean));
-  const jobs = require("./tests/vendored/MANIFEST.js").JOBS
+  const jobs = require("./tests/protocol/MANIFEST.js").JOBS
     .map(function (j) { return j.file; })
     .filter(function (f) { return !skip.has(f); });
   process.stdout.write(jobs.join(","));

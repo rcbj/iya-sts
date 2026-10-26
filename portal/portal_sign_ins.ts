@@ -8,11 +8,12 @@
 // THEM (#62 P6, 2026-09-22).
 //
 // Every sign-in is assessed (`risk/risk_engine.ts`); this page lists the
-// signed-in person's own assessments of the last thirty days — when, from
+// signed-in person's own assessments of the last
+// `audit.authenticationHistoryDays` days (thirty by default) — when, from
 // where (the city and country the datasets named, the network), with what
-// (browser and system), through which door, at what level, and what the
-// issuance policy decided — and puts two buttons on each one nobody has
-// answered yet:
+// (browser and system), through which door, for which application, at what
+// level, and what the issuance policy decided — and puts two buttons on
+// each one nobody has answered yet:
 //
 //   * **"This was me"** is recorded, and is what calibration reads. It lowers
 //     the person's standing only when said from ANOTHER session that is
@@ -49,12 +50,18 @@ const vt = validation.types;
 
 interface PortalSignInsDeps {
   log: { debug(message: string): void };
-  // The risk engine and the realm, asked for when a request arrives.
+  // The risk engine, the realm and the settings, asked for when a request
+  // arrives. `config` is optional so a test that builds the module over a
+  // stub keeps the thirty-day window this page had before the setting.
   riskEngine: () => Json;
   realms: () => Json;
+  config?: () => Json;
 }
 
-// How far back the page looks.
+// How far back the page looks when no settings module was handed in. The
+// same number is `audit.authenticationHistoryDays`'s default, so a realm
+// that has not changed the setting lists the same window this page always
+// listed.
 const DAYS = 30;
 // A PAGE AT A TIME (#313's sweep). Thirty days of sign-ins is as many rows
 // as the person signed in, and the page drew the risk engine's default fifty
@@ -109,27 +116,56 @@ class PortalSignIns {
         helpers.log.debug("Entering realms().");
         helpers.log.debug("Leaving realms().");
         return require('../common/realms');
+      },
+      config: function config() {
+        helpers.log.debug("Entering config().");
+        helpers.log.debug("Leaving config().");
+        return require('../common/config');
       }
     };
   }
 
-  // The person's own assessments of the last DAYS days, newest first, one
-  // page of them, and how many there are in all.
+  /**
+   * How many days of sign-ins this realm's page lists.
+   *
+   * @returns the window, in days
+   */
+  historyDays(): number {
+    const { log } = this.deps;
+    log.debug("Entering PortalSignIns.historyDays().");
+    let days = DAYS;
+    const config = this.deps.config;
+    if (typeof config === 'function') {
+      const read = Number(config().value(
+        'audit.authenticationHistoryDays'));
+      if (isFinite(read) && read >= 1) {
+        days = read;
+      }
+    }
+    log.debug("Leaving PortalSignIns.historyDays(). " + days + ".");
+    return days;
+  }
+
+  // The person's own assessments of the last historyDays() days, newest
+  // first, one page of them, and how many there are in all.
   /**
    * One page of the caller's own assessments.
    *
    * @param caller - the signed-in person
    * @param offset - the first row wanted
+   * @param days - how far back to look
    * @returns `{ total, rows }`
    */
-  async pageOf(caller: AccountCaller, offset: number): Promise<Json> {
+  async pageOf(caller: AccountCaller, offset: number,
+               days: number): Promise<Json> {
     const { log } = this.deps;
     log.debug("Entering PortalSignIns.pageOf(). offset=" + offset);
     let out: Json = { total: 0, rows: [] };
     try {
       const engine = this.deps.riskEngine();
       const view = await engine.view(this.deps.realms().currentId(), {
-        subject: caller.sub, days: DAYS, limit: PER_PAGE, offset: offset });
+        subject: caller.sub, days: days, limit: PER_PAGE,
+        offset: offset });
       const found = view.assessments || {};
       out = { total: Number(found.total) || 0,
               rows: (found.rows || []).filter(function (a: Json): boolean {
@@ -157,18 +193,19 @@ class PortalSignIns {
   async view(caller: AccountCaller, wanted?: number): Promise<Json> {
     const { log } = this.deps;
     log.debug("Entering PortalSignIns.view().");
+    const days = this.historyDays();
     let at = Math.max(1, Number(wanted) || 1);
-    let found = await this.pageOf(caller, (at - 1) * PER_PAGE);
+    let found = await this.pageOf(caller, (at - 1) * PER_PAGE, days);
     const pages = Math.max(1, Math.ceil(found.total / PER_PAGE));
     // PAST THE END, the last page: the total is only known once one page
     // has been asked for, so a stale link costs a second query.
     if (at > pages) {
       at = pages;
-      found = await this.pageOf(caller, (at - 1) * PER_PAGE);
+      found = await this.pageOf(caller, (at - 1) * PER_PAGE, days);
     }
     log.debug("Leaving PortalSignIns.view(). Page " + at + " of " + pages +
               ".");
-    return { days: DAYS,
+    return { days: days,
              thisSession: String((caller.session.risk || {}).assessmentId ||
                                  ''),
              paging: { page: at, pages: pages, per: PER_PAGE,
@@ -178,7 +215,13 @@ class PortalSignIns {
                         country: a.country || '', asOrg: a.asOrg || '',
                         addressPrefix: a.addressPrefix || '',
                         uaFamily: a.uaFamily || '', uaOs: a.uaOs || '',
-                        door: a.door || '', level: a.level || '',
+                        door: a.door || '',
+                        // The application the door named (`clientId` on the
+                        // assessment, the same string an audit row records
+                        // as `application`). Empty when the sign-in named
+                        // none.
+                        application: String(a.clientId || ''),
+                        level: a.level || '',
                         feedback: a.feedback || '' };
              }) };
   }
@@ -225,7 +268,7 @@ class PortalSignIns {
       return ctx.json(res, 200, { ok: true, ended: true,
         message: t.text('portalSignIns.doneDenied',
                         { path: ctx.PORTAL + '/password' }),
-        view: { days: DAYS, thisSession: '', rows: [],
+        view: { days: this.historyDays(), thisSession: '', rows: [],
                 paging: { page: 1, pages: 1, per: PER_PAGE, total: 0 } } });
     }
     log.debug("Leaving PortalSignIns.answer(). Confirmed.");
@@ -249,13 +292,16 @@ class PortalSignIns {
       { method: 'GET', path: ctx.BASE + '/sign-ins',
         operationId: 'getSignIns', tag: 'Recent sign-ins', access: 'person',
         mirrors: 'GET ' + ctx.PORTAL + '/sign-ins',
-        summary: 'Your sign-ins of the last thirty days, as assessed',
+        summary: 'Your assessed sign-ins, with the application of each',
         description: 'One page (`paging`, moved by `page`, newest ' +
           'first) of the assessments of your sign-ins: when, the city, ' +
-          'country and network, the browser and system, the door, the risk ' +
-          'level, and your answer if you gave one. `paging.total` counts ' +
-          'every sign-in of the thirty days. `thisSession` is the ' +
-          'assessment of the session this token was issued on.',
+          'country and network, the browser and system, the door, the ' +
+          'application (the client the sign-in named), the risk level, ' +
+          'and your answer if you gave one. `days` is how far back the ' +
+          'list looks (`audit.authenticationHistoryDays`, thirty by ' +
+          'default, set per realm). `paging.total` counts every sign-in ' +
+          'of that window. `thisSession` is the assessment of the ' +
+          'session this token was issued on.',
         query: PAGE_QUERY,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {

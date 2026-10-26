@@ -15,7 +15,7 @@
 // run out redeems the refresh token and writes the new ones onto THE SAME
 // SESSION. The end-to-end half — a real refresh token grant over the loopback
 // back channel, a page answered 200 on the same cookie — is
-// `tests/vendored/sts_hosted_surface_renewal.js`. What is here is what that job
+// `tests/protocol/sts_hosted_surface_renewal.js`. What is here is what that job
 // cannot choose:
 //
 //   1. WHAT A SESSION IS MADE WITH. A renewable session's expiry is its renewal

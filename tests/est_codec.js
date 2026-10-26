@@ -19,7 +19,7 @@
 // WHY IN PROCESS: every input is chosen — a body that is base64 but not
 // canonical, a certificate whose bytes a re-encoding would change (an ML-DSA
 // key), a boundary — and none of that needs a service. The protocol half is
-// `tests/vendored/sts_est_enrollment.js`.
+// `tests/protocol/sts_est_enrollment.js`.
 //
 // **THE CERTIFICATES MUST SURVIVE BYTE FOR BYTE**, which is the decision the
 // codec's header argues against pkijs's re-encoding, so it is asserted with an
@@ -77,8 +77,9 @@ async function certificatePem(x509, keys, alg, name) {
 async function run(t) {
   log.debug("Entering run().");
   const codec = require(path.join(ROOT, 'est', 'est_codec'));
-  const x509 = require(path.join(ROOT, 'common', 'vendored', 'x509'));
-  const keys = require(path.join(ROOT, 'common', 'vendored', 'key_material'));
+  const x509 = require(path.join(ROOT, 'common', 'crypto_impl', 'x509'));
+  const keys = require(path.join(ROOT, 'common', 'crypto_impl',
+                                 'key_material'));
 
   t.log.info('=== a request body (RFC 8951 section 3) ===');
   const der = nodeCrypto.randomBytes(200);

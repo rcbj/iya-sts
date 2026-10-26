@@ -4,8 +4,8 @@
     "text": "Autenticación"
   },
   "audit.categories.authentication.what": {
-    "en": "a75d8d51a0eb704d",
-    "text": "Se ACEPTÓ una credencial, en cualquiera de las dieciséis familias de protocolos de este servicio. Se registra en el único embudo por el que ya pasan todas ellas, así que es un solo lugar y no dieciséis. SCIM se incorporó tarde y SPIFFE más tarde aún. SCIM: tres de los esquemas que aceptan sus endpoints — Basic, Digest y HOBA — presentan una credencial en cada solicitud, y aceptar una es una autenticación. Los otros tres no aparecen aquí, porque cada uno continúa una autenticación registrada en otro lugar: un token de acceso se aceptó cuando se emitió, una cookie de sesión cuando comenzó su sesión, y un certificado de cliente una vez por CONEXIÓN y no una vez por solicitud. SPIFFE es la decimosexta y llega aquí de tres formas: un X509-SVID presentado por TLS mutuo en la SPIRE Server API (una vez por conexión, por la misma razón que un certificado de cliente), un agente que se atesta y un JWT-SVID verificado en ValidateJWTSVID. Que se le EMITA un SVID no es una de ellas."
+    "en": "8daae95bb7977a6c",
+    "text": "Se ACEPTÓ una credencial, en cualquiera de las dieciséis familias de protocolos de este servicio. Se registra en el único embudo por el que ya pasan todas ellas, así que es un solo lugar y no dieciséis. SCIM se incorporó tarde y SPIFFE más tarde aún. SCIM: tres de los esquemas que aceptan sus endpoints — Basic, Digest y HOBA — presentan una credencial en cada solicitud, y aceptar una es una autenticación. Los otros tres no aparecen aquí, porque cada uno continúa una autenticación registrada en otro lugar: un token de acceso se aceptó cuando se emitió, una cookie de sesión cuando comenzó su sesión, y un certificado de cliente una vez por CONEXIÓN y no una vez por solicitud. SPIFFE es la decimosexta y llega aquí de tres formas: un X509-SVID presentado por TLS mutuo en la SPIRE Server API (una vez por conexión, por la misma razón que un certificado de cliente), un agente que se atesta y un JWT-SVID verificado en ValidateJWTSVID. Que se le EMITA un SVID no es una de ellas. Un rechazo de un intento es `authentication.refused` junto a la aceptación: el mismo detalle, resultado rechazado, y ningún contador se mueve (#954). La página de la aplicación enumera ambos, y `session.refuse` y `session.refused` cuando la nombran."
   },
   "audit.categories.session.label": {
     "en": "6fa3cbf451b2a1d5",
@@ -98,6 +98,10 @@
   "audit.actions.authentication.label": {
     "en": "579808c825684965",
     "text": "Se aceptó una credencial"
+  },
+  "audit.actions.authentication.refused.label": {
+    "en": "0b0281ef1e0768e4",
+    "text": "Se rechazó una credencial"
   },
   "audit.actions.portal.activate.label": {
     "en": "979387f5c20ade32",
@@ -266,6 +270,10 @@
   "audit.actions.authn.session.refreshed.label": {
     "en": "bbbad25d367ffcdf",
     "text": "La cookie de una sesión vinculada al dispositivo se renovó con una prueba de su clave"
+  },
+  "audit.actions.authn.session.binding-skipped.label": {
+    "en": "193de5f1ab249962",
+    "text": "Una sesión de inicio de sesión único omitió la vinculación al dispositivo"
   },
   "audit.actions.logout.global.label": {
     "en": "db32c1466e054343",
@@ -458,6 +466,14 @@
   "audit.actions.device.attestation-revoked.label": {
     "en": "3571d30810b2d9c7",
     "text": "La clave de un dispositivo ya no está atestada: la lista de estado de atestación de Android de Google revoca su cadena"
+  },
+  "audit.actions.webauthn.ceremony.label": {
+    "en": "49406d0c31568578",
+    "text": "Se ejecutó un registro o una aserción WebAuthn, completado o no"
+  },
+  "audit.actions.webauthn.algorithm-mismatch.label": {
+    "en": "712b402391b059c6",
+    "text": "Una persona que tiene una clave de acceso poscuántica inició sesión con una clásica"
   },
   "audit.actions.webauthn.attestation-revoked.label": {
     "en": "0be46b8b29aaf446",
@@ -1059,6 +1075,38 @@
     "en": "3c3a62cf5e46c516",
     "text": "Un administrador marcó como preferido un DID demostrado de una persona, o quitó la marca"
   },
+  "audit.actions.admin.passkey.enrolment-started.label": {
+    "en": "571c0a6bca1d9163",
+    "text": "Un administrador comenzó a registrar una clave de acceso para una persona"
+  },
+  "audit.actions.admin.passkey.enrolment-refused.label": {
+    "en": "1853c2bfff1cb208",
+    "text": "Se rechazó el registro de una clave de acceso que un administrador hacía para una persona"
+  },
+  "audit.actions.admin.passkey.enrolled.label": {
+    "en": "62dfd8780a0a16af",
+    "text": "Un administrador registró una clave de acceso para una persona"
+  },
+  "audit.actions.admin.passkey.upgrade-started.label": {
+    "en": "85e2c7f2d669f98e",
+    "text": "Un administrador comenzó a actualizar la clave de acceso de una persona"
+  },
+  "audit.actions.admin.passkey.upgrade-refused.label": {
+    "en": "e1490e5ffb7d9199",
+    "text": "Se rechazó la actualización de la clave de acceso hecha por un administrador"
+  },
+  "audit.actions.admin.passkey.upgrade-proved.label": {
+    "en": "92550d6a5a04ca93",
+    "text": "Un administrador demostró la clave de acceso clásica de una persona"
+  },
+  "audit.actions.admin.passkey.upgrade-cancelled.label": {
+    "en": "3653731050769a1b",
+    "text": "Un administrador canceló la actualización de la clave de acceso de una persona"
+  },
+  "audit.actions.admin.passkey.upgraded.label": {
+    "en": "de2f45f4af0eafa5",
+    "text": "Un administrador actualizó la clave de acceso de una persona a ML-DSA"
+  },
   "audit.actions.ssf.signals.discover.label": {
     "en": "55d2d7d9682c339a",
     "text": "Se descubrió la configuración de Shared Signals de un socio de federación"
@@ -1303,6 +1351,18 @@
     "en": "6679aa8b834badee",
     "text": "Se rechazó el registro de la llave de seguridad de una persona"
   },
+  "audit.actions.portal.key.upgrade-started.label": {
+    "en": "dbf67e17e370e57b",
+    "text": "Una persona comenzó a actualizar una clave de acceso clásica a ML-DSA"
+  },
+  "audit.actions.portal.key.upgrade-refused.label": {
+    "en": "704e6bb3a4472960",
+    "text": "Se rechazó la actualización de la clave de acceso de una persona"
+  },
+  "audit.actions.portal.key.upgraded.label": {
+    "en": "f16ccefcc9eb6aec",
+    "text": "Una persona actualizó una clave de acceso clásica a ML-DSA"
+  },
   "audit.actions.portal.mfa.backup-codes.generated.label": {
     "en": "18ec89def789c4a2",
     "text": "Una persona generó un conjunto de códigos de recuperación"
@@ -1495,6 +1555,10 @@
     "en": "f6867c3c6a1d35bd",
     "text": "La misma persona volvió a iniciar sesión en una sesión activa"
   },
+  "audit.actions.session.presented.label": {
+    "en": "d1629f19f6dc2282",
+    "text": "Se presentó una sesión de inicio de sesión existente a una aplicación"
+  },
   "audit.actions.session.refuse.label": {
     "en": "c8703bfa89913b23",
     "text": "Se rechazó una sesión por su mecanismo de inicio de sesión"
@@ -1530,5 +1594,53 @@
   "audit.actions.xacml.policy.delete.label": {
     "en": "90274c33f8a0cbe3",
     "text": "Se eliminó una política XACML"
+  },
+  "audit.actions.report.definition.create.label": {
+    "en": "8afc9b8a912421fa",
+    "text": "Se creó una definición de informe"
+  },
+  "audit.actions.report.definition.update.label": {
+    "en": "c00aee36399477bb",
+    "text": "Se actualizó una definición de informe"
+  },
+  "audit.actions.report.definition.share.label": {
+    "en": "02777829b1842fad",
+    "text": "Se compartió una definición de informe con un grupo"
+  },
+  "audit.actions.report.definition.delete.label": {
+    "en": "eab7ce893f26b998",
+    "text": "Se eliminó una definición de informe"
+  },
+  "audit.actions.report.job.submit.label": {
+    "en": "3a48a543fc6fd27e",
+    "text": "Se envió un trabajo de informe"
+  },
+  "audit.actions.report.job.start.label": {
+    "en": "c2145542f6189d5c",
+    "text": "Se inició un trabajo de informe"
+  },
+  "audit.actions.report.job.complete.label": {
+    "en": "0df392f7d726487c",
+    "text": "Se completó un trabajo de informe"
+  },
+  "audit.actions.report.job.fail.label": {
+    "en": "d342e8699921dd5d",
+    "text": "Falló un trabajo de informe"
+  },
+  "audit.actions.report.job.cancel.label": {
+    "en": "0ead0c5eaedc5eb1",
+    "text": "Se canceló un trabajo de informe"
+  },
+  "audit.actions.report.notify.label": {
+    "en": "98a351693fca3699",
+    "text": "Se envió un aviso de finalización de informe"
+  },
+  "audit.actions.report.query.label": {
+    "en": "0de138fe9e778bd8",
+    "text": "Se ejecutó una consulta de informe"
+  },
+  "audit.actions.report.job.retrieve.label": {
+    "en": "2f81320658ea37b8",
+    "text": "Se recuperó el resultado de un informe"
   }
 }

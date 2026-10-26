@@ -780,7 +780,7 @@ is named on the page and the relationship refuses until it is filled.
   WS-Federation `wreqptr` was chosen by a caller and is never followed.
 * **A happy path proves close to nothing here.** This is the surface whose bugs
   are security bugs rather than fidelity bugs, so what matters is the
-  negatives; `tests/vendored/sts_federation_realms.js`,
+  negatives; `tests/protocol/sts_federation_realms.js`,
   `sts_federation_subject_policy.js` and `sts_federation_signout.js` drive most
   of them over HTTP, and `federation/CLAUDE.md` lists the ones still open.
 * **The outbound HTTP-POST binding is a real form with a real button.** A

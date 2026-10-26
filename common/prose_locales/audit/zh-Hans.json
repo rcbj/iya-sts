@@ -4,8 +4,8 @@
     "text": "身份验证"
   },
   "audit.categories.authentication.what": {
-    "en": "a75d8d51a0eb704d",
-    "text": "凭据被接受，可能发生在这里十六个协议族中的任何一个。它在每个协议族都已经经过的唯一汇聚点记录，因此这是一个位置而不是十六个。SCIM 加入得较晚，SPIFFE 则更晚。SCIM：其端点接受的方案中有三种——Basic、Digest 和 HOBA——在每个请求中都出示凭据，接受一次即为一次身份验证。另外三种不会出现在这里，因为每一种都延续了在别处记录的身份验证：访问令牌在签发时被接受，会话 cookie 在其会话开始时被接受，客户端证书则每个连接接受一次，而不是每个请求一次。SPIFFE 是第十六个，以三种方式到达这里：在 SPIRE Server API 上通过双向 TLS 出示的 X509-SVID（每个连接一次，原因与客户端证书相同）、代理的证明，以及在 ValidateJWTSVID 处验证的 JWT-SVID。被签发 SVID 不属于其中。"
+    "en": "8daae95bb7977a6c",
+    "text": "凭据被接受，可能发生在这里十六个协议族中的任何一个。它在每个协议族都已经经过的唯一汇聚点记录，因此这是一个位置而不是十六个。SCIM 加入得较晚，SPIFFE 则更晚。SCIM：其端点接受的方案中有三种——Basic、Digest 和 HOBA——在每个请求中都出示凭据，接受一次即为一次身份验证。另外三种不会出现在这里，因为每一种都延续了在别处记录的身份验证：访问令牌在签发时被接受，会话 cookie 在其会话开始时被接受，客户端证书则每个连接接受一次，而不是每个请求一次。SPIFFE 是第十六个，以三种方式到达这里：在 SPIRE Server API 上通过双向 TLS 出示的 X509-SVID（每个连接一次，原因与客户端证书相同）、代理的证明，以及在 ValidateJWTSVID 处验证的 JWT-SVID。被签发 SVID 不属于其中。一次尝试的拒绝记在接受旁边，动作为 `authentication.refused`：同样的详情，结果为拒绝，并且不移动任何计数器（#954）。应用页面同时列出两者，以及在点名该应用时的 `session.refuse` 和 `session.refused`。"
   },
   "audit.categories.session.label": {
     "en": "6fa3cbf451b2a1d5",
@@ -98,6 +98,10 @@
   "audit.actions.authentication.label": {
     "en": "579808c825684965",
     "text": "凭据被接受"
+  },
+  "audit.actions.authentication.refused.label": {
+    "en": "0b0281ef1e0768e4",
+    "text": "凭据被拒绝"
   },
   "audit.actions.portal.activate.label": {
     "en": "979387f5c20ade32",
@@ -266,6 +270,10 @@
   "audit.actions.authn.session.refreshed.label": {
     "en": "bbbad25d367ffcdf",
     "text": "一个绑定设备的会话的 Cookie 已凭其密钥的证明续期"
+  },
+  "audit.actions.authn.session.binding-skipped.label": {
+    "en": "193de5f1ab249962",
+    "text": "一个单点登录会话跳过了设备绑定"
   },
   "audit.actions.logout.global.label": {
     "en": "db32c1466e054343",
@@ -458,6 +466,14 @@
   "audit.actions.device.attestation-revoked.label": {
     "en": "3571d30810b2d9c7",
     "text": "设备密钥不再被证明：Google 的 Android 证明状态列表吊销了其证书链"
+  },
+  "audit.actions.webauthn.ceremony.label": {
+    "en": "49406d0c31568578",
+    "text": "运行了一次 WebAuthn 注册或断言，无论是否完成"
+  },
+  "audit.actions.webauthn.algorithm-mismatch.label": {
+    "en": "712b402391b059c6",
+    "text": "持有后量子通行密钥的人使用经典通行密钥登录"
   },
   "audit.actions.webauthn.attestation-revoked.label": {
     "en": "0be46b8b29aaf446",
@@ -1059,6 +1075,38 @@
     "en": "3c3a62cf5e46c516",
     "text": "管理员将某人已证明的 DID 标记为首选，或清除了该标记"
   },
+  "audit.actions.admin.passkey.enrolment-started.label": {
+    "en": "571c0a6bca1d9163",
+    "text": "管理员开始为某人注册通行密钥"
+  },
+  "audit.actions.admin.passkey.enrolment-refused.label": {
+    "en": "1853c2bfff1cb208",
+    "text": "管理员为某人注册通行密钥被拒绝"
+  },
+  "audit.actions.admin.passkey.enrolled.label": {
+    "en": "62dfd8780a0a16af",
+    "text": "管理员为某人注册了通行密钥"
+  },
+  "audit.actions.admin.passkey.upgrade-started.label": {
+    "en": "85e2c7f2d669f98e",
+    "text": "管理员开始升级某人的通行密钥"
+  },
+  "audit.actions.admin.passkey.upgrade-refused.label": {
+    "en": "e1490e5ffb7d9199",
+    "text": "管理员的通行密钥升级被拒绝"
+  },
+  "audit.actions.admin.passkey.upgrade-proved.label": {
+    "en": "92550d6a5a04ca93",
+    "text": "管理员证明了某人的经典通行密钥"
+  },
+  "audit.actions.admin.passkey.upgrade-cancelled.label": {
+    "en": "3653731050769a1b",
+    "text": "管理员取消了某人的通行密钥升级"
+  },
+  "audit.actions.admin.passkey.upgraded.label": {
+    "en": "de2f45f4af0eafa5",
+    "text": "管理员将某人的通行密钥升级为 ML-DSA"
+  },
   "audit.actions.ssf.signals.discover.label": {
     "en": "55d2d7d9682c339a",
     "text": "发现了联合伙伴的共享信号配置"
@@ -1303,6 +1351,18 @@
     "en": "6679aa8b834badee",
     "text": "某人的安全密钥注册被拒绝"
   },
+  "audit.actions.portal.key.upgrade-started.label": {
+    "en": "dbf67e17e370e57b",
+    "text": "某人开始将经典通行密钥升级为 ML-DSA"
+  },
+  "audit.actions.portal.key.upgrade-refused.label": {
+    "en": "704e6bb3a4472960",
+    "text": "某人的通行密钥升级被拒绝"
+  },
+  "audit.actions.portal.key.upgraded.label": {
+    "en": "f16ccefcc9eb6aec",
+    "text": "某人将经典通行密钥升级为了 ML-DSA"
+  },
   "audit.actions.portal.mfa.backup-codes.generated.label": {
     "en": "18ec89def789c4a2",
     "text": "某人生成了一组恢复码"
@@ -1495,6 +1555,10 @@
     "en": "f6867c3c6a1d35bd",
     "text": "同一个人在仍有效的会话上再次登录"
   },
+  "audit.actions.session.presented.label": {
+    "en": "d1629f19f6dc2282",
+    "text": "现有的登录会话被出示给某个应用"
+  },
   "audit.actions.session.refuse.label": {
     "en": "c8703bfa89913b23",
     "text": "会话因其登录机制被拒绝"
@@ -1530,5 +1594,53 @@
   "audit.actions.xacml.policy.delete.label": {
     "en": "90274c33f8a0cbe3",
     "text": "删除了 XACML 策略"
+  },
+  "audit.actions.report.definition.create.label": {
+    "en": "8afc9b8a912421fa",
+    "text": "已创建报表定义"
+  },
+  "audit.actions.report.definition.update.label": {
+    "en": "c00aee36399477bb",
+    "text": "已更新报表定义"
+  },
+  "audit.actions.report.definition.share.label": {
+    "en": "02777829b1842fad",
+    "text": "已将报表定义共享给某个组"
+  },
+  "audit.actions.report.definition.delete.label": {
+    "en": "eab7ce893f26b998",
+    "text": "已删除报表定义"
+  },
+  "audit.actions.report.job.submit.label": {
+    "en": "3a48a543fc6fd27e",
+    "text": "已提交报表作业"
+  },
+  "audit.actions.report.job.start.label": {
+    "en": "c2145542f6189d5c",
+    "text": "报表作业已开始"
+  },
+  "audit.actions.report.job.complete.label": {
+    "en": "0df392f7d726487c",
+    "text": "报表作业已完成"
+  },
+  "audit.actions.report.job.fail.label": {
+    "en": "d342e8699921dd5d",
+    "text": "报表作业失败"
+  },
+  "audit.actions.report.job.cancel.label": {
+    "en": "0ead0c5eaedc5eb1",
+    "text": "报表作业已取消"
+  },
+  "audit.actions.report.notify.label": {
+    "en": "98a351693fca3699",
+    "text": "已发送报表完成通知"
+  },
+  "audit.actions.report.query.label": {
+    "en": "0de138fe9e778bd8",
+    "text": "已运行报表查询"
+  },
+  "audit.actions.report.job.retrieve.label": {
+    "en": "2f81320658ea37b8",
+    "text": "已获取报表结果"
   }
 }

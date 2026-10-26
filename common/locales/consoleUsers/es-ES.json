@@ -1,4 +1,5 @@
 {
+  "attestationEvidence": "Descargar evidencia RFC 4998",
   "newUserBody.fillNote": "<strong>Rellenar con datos de ejemplo</strong> pone la persona inventada para el nombre de usuario que ha escrito en los cuadros que ha dejado VACÍOS, y no toca nada de lo que ya ha rellenado. No crea a nadie — vuelve a este formulario con los valores puestos, para editarlos o borrarlos antes de pulsar Crear. <strong>Es la misma persona inventada</strong> que este servicio habría creado por su cuenta, generada a partir del nombre de usuario, así que le muestra lo que habría obtenido y no una segunda ficción. Escriba primero el nombre de usuario: si lo cambia después, la persona de ejemplo es otra. <code>description</code> queda vacío porque ese lo escribe este servicio.",
   "mfaSection.codeParamsAfter": " solo afecta a las inscripciones NUEVAS, porque este servicio no puede llegar al móvil de nadie.",
   "mfaSection.clearTotpTitle": "Borra la inscripción para que esta persona pueda configurar una nueva. Es la ÚNICA forma de recuperarse para alguien que ha perdido su móvil: el secreto está en ese dispositivo y este servicio no puede llegar a él.",

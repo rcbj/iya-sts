@@ -359,6 +359,13 @@ const consent = require('../common/consent');
 // and requires nothing here, so this require can neither move a route nor close
 // a cycle; what crosses is the two functions the slot below installs.
 const credentials = require('../common/credentials');
+// THE PASSKEY REPORT (#942). A LIBRARY (rule 3) that registers no route and
+// requires only leaves (`credentials` above among them), so this require can
+// neither move a route nor close a cycle; it is built by the composition
+// root at 18j-iii, before this module. The two doors that write the keys
+// and the one that deletes a person note what changed through it, and its
+// directory slot is filled below with this module's three questions.
+const passkeyReport = require('../common/passkey_report');
 // The device register (#164), for `/admin/ldap/devices`: its schema and what
 // its entries mean. A library built before this module and loaded by it
 // already through `credentials`' neighbours — a cache hit, which moves no
@@ -1473,6 +1480,8 @@ let groupsVersion = 0;
 // `tests/sign_in_owner_reads.js`.
 // ---------------------------------------------------------------------------
 let serviceAccountsVersion = 0;
+// The user-handle index's own clock (#909); see noteUserHandlesTouched().
+let userHandlesVersion = 0;
 
 // ---------------------------------------------------------------------------
 // WHAT HAS BEEN WRITTEN SINCE AN LDAP ADD ASKED ITS NAMES (#625).
@@ -1560,6 +1569,7 @@ function touchDirectory(dn, after) {
   directoryVersion++;
   noteGroupsTouched(dn, after);
   noteServiceAccountsTouched(dn, after);
+  noteUserHandlesTouched(dn, after);
   // And any add holding names it asked first is told what this write
   // touched (#625).
   noteHeldNamesTouched(dn, after);
@@ -1996,6 +2006,215 @@ async function holdersAsync(kind, attribute, names) {
   log.debug('Leaving holdersAsync(). ' + out.length + ' of ' + seen +
             ' entries walked in memory.');
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// THE PASSKEY REPORT'S QUESTIONS OF THE DIRECTORY (#942, 2026-10-23).
+//
+// `common/passkey_report.ts` counts who holds which kind of passkey, and
+// asks this file two things, both ASYNCHRONOUSLY and neither a walk of
+// `ou=users` in a windowed process:
+//
+//   * **`passkeyScanAsync()`** — the people under `ou=users` in key order
+//     after a cursor: the HOLDERS of `stsWebauthnCredential` (the asked
+//     names' index, `DirectoryWindow.rowsAfterAsync()`'s `withAttribute`)
+//     for the recount, the lists and the export; or every person
+//     (`page`) for the one list no index can name, the people holding NO
+//     passkey. It reads at most `readLimit` entries and stops once the
+//     caller's `accept()` has said yes `wanted` times, handing back the key
+//     of the last entry READ as the next cursor — so a filtered list resumes
+//     where its last page stopped, whatever it rejected.
+//   * **`passkeyPopulationAsync()`** — the members of the groups a filter
+//     names (a group, or a passkey profile's `stsPasskeySelectGroup`), by
+//     cn or DN as `addGroupMember()` resolves one, read together
+//     (`entriesAtAsync()`, five hundred keys a question), at most `limit`.
+//     A member that is not a person here (a nested group, a dangling DN)
+//     is not counted; nothing here walks a group tree.
+//
+// What a value MEANS is the report's (`credentials.keysOfValues()`), the
+// census's division of labour: this file hands the values over raw, with
+// the person's name and DN, and never the whole entry. Outside a window the
+// realm's own Map is walked and sorted once per call — **a walk, said here**,
+// as `credentialTallies()` says it: the in-memory directory keeps no index
+// per attribute.
+// ---------------------------------------------------------------------------
+const PASSKEY_SCAN_PAGE = 500;
+
+// One person as the report is handed them. Called once per entry a scan
+// reads, which is every holder of a realm on a recount: no Entering/Leaving
+// pair, the hot-path exception the code style allows, stated as it requires.
+function passkeyRowOf(stored) {
+  return { id: String(usernameOfEntry(stored) || ''), dn: stored.dn,
+           values: (stored.attributes.stswebauthncredential || []).slice(0) };
+}
+
+/**
+ * The people of the ambient realm after a cursor, in key order — the holders
+ * of `stsWebauthnCredential`, or every person — handed one at a time to
+ * `ask.accept()`.
+ *
+ * @param ask - `{ attribute, after, readLimit, wanted, accept }`:
+ *   `attribute` the held attribute ('' for every person), `after` the cursor
+ *   ('' from the start), `readLimit` the entries to read at most, `wanted`
+ *   how many yeses end the scan, `accept(row)` asked of each person
+ *   (`{ id, dn, values }`), answering whether it counted
+ * @returns a promise of `{ next, read, done }`: `next` the key of the last
+ *   entry read (the next scan's cursor), `done` true once nothing is left
+ */
+async function passkeyScanAsync(ask) {
+  log.debug('Entering passkeyScanAsync().');
+  const a = ask || {};
+  const attribute = String(a.attribute || '').toLowerCase();
+  const readLimit = Math.max(1, Number(a.readLimit) || PASSKEY_SCAN_PAGE);
+  const wanted = Math.max(1, Number(a.wanted) || 1);
+  const accept = typeof a.accept === 'function' ? a.accept
+    : function () { return false; };
+  const base = normalizeDn(usersDn());
+  const suffix = ',' + base;
+  let after = String(a.after || '');
+  let read = 0;
+  let yes = 0;
+  const take = function (stored) {
+    read += 1;
+    const row = passkeyRowOf(stored);
+    if (row.id && accept(row)) {
+      yes += 1;
+    }
+  };
+  if (directoryWindow) {
+    const realmId = realms.currentId();
+    let done = false;
+    while (read < readLimit && yes < wanted) {
+      const size = Math.min(PASSKEY_SCAN_PAGE, readLimit - read);
+      const page = await storeAsked(directoryWindow.rowsAfterAsync(realmId,
+        base, attribute, after, size,
+        function (entry) {
+          return isPersonEntry(entry);
+        }));
+      if (!page.read) {
+        done = true;
+        break;
+      }
+      // The cursor moves past every row the store answered, a person or
+      // not; the yeses are counted on the people.
+      for (const hit of page.rows) {
+        take(hit.entry);
+        if (yes >= wanted) {
+          after = hit.key;
+          break;
+        }
+      }
+      if (yes < wanted) {
+        after = page.last;
+        if (page.read < size) {
+          done = true;
+          break;
+        }
+      }
+    }
+    log.debug('Leaving passkeyScanAsync(). ' + read + ' read, ' + yes +
+              ' kept, asked of the store.');
+    return { next: after, read: read, done: done };
+  }
+  // The realm's own Map, held now: a walk, sorted once.
+  const store = entries.realmMap();
+  const keys = [];
+  let seen = 0;
+  for (const pair of store) {
+    const key = pair[0];
+    const stored = pair[1];
+    if (key !== base && key.endsWith(suffix) && key > after &&
+        isPersonEntry(stored) &&
+        (!attribute ||
+         (Array.isArray(stored.attributes[attribute]) &&
+          stored.attributes[attribute].length > 0))) {
+      keys.push(key);
+    }
+    seen += 1;
+    if (seen % HOLDER_SCAN_SLICE === 0) {
+      await new Promise(function (resolve) {
+        setImmediate(resolve);
+      });
+    }
+  }
+  keys.sort();
+  let at = 0;
+  while (at < keys.length && read < readLimit && yes < wanted) {
+    const stored = store.get(keys[at]);
+    if (stored) {
+      take(stored);
+    }
+    after = keys[at];
+    at += 1;
+  }
+  log.debug('Leaving passkeyScanAsync(). ' + read + ' read, ' + yes +
+            ' kept, of ' + seen + ' entries walked in memory.');
+  return { next: after, read: read, done: at >= keys.length };
+}
+
+/**
+ * The people in the groups a filter names, with their passkey values, read
+ * together and asynchronously.
+ *
+ * @param selectors - group cns or DNs
+ * @param limit - the members to read at most
+ * @returns a promise of `{ groups: [{ asked, dn, found, members }], rows:
+ *   [{ id, dn, values }], members, complete }`: `members` the distinct
+ *   member DNs the groups list, `complete` false when `limit` cut them
+ */
+async function passkeyPopulationAsync(selectors, limit) {
+  log.debug('Entering passkeyPopulationAsync(). ' +
+            (selectors || []).length + ' selector(s).');
+  const cap = Math.max(1, Number(limit) || 1);
+  const groups = [];
+  const wanted = new Set();
+  let members = 0;
+  (selectors || []).forEach(function (one) {
+    const asked = String(one == null ? '' : one).trim();
+    if (!asked) {
+      return;
+    }
+    const dn = DN_SHAPED.test(asked) ? asked : groupDnFor(asked);
+    const stored = getEntry(dn);
+    if (!stored || !groupRuleFor(stored)) {
+      groups.push({ asked: asked, dn: dn, found: false, members: 0 });
+      return;
+    }
+    const keys = memberKeysOf(stored);
+    groups.push({ asked: asked, dn: stored.dn, found: true,
+                  members: keys.length });
+    keys.forEach(function (key) {
+      if (!wanted.has(key)) {
+        members += 1;
+        if (wanted.size < cap) {
+          wanted.add(key);
+        }
+      }
+    });
+  });
+  const list = Array.from(wanted);
+  const rows = [];
+  if (directoryWindow) {
+    const found = await storeAsked(directoryWindow.entriesAtAsync(
+      realms.currentId(), list));
+    list.forEach(function (key) {
+      const stored = found.get(key);
+      if (stored && isPersonEntry(stored)) {
+        rows.push(passkeyRowOf(stored));
+      }
+    });
+  } else {
+    list.forEach(function (key) {
+      const stored = entries.get(key);
+      if (stored && isPersonEntry(stored)) {
+        rows.push(passkeyRowOf(stored));
+      }
+    });
+  }
+  log.debug('Leaving passkeyPopulationAsync(). ' + rows.length + ' of ' +
+            members + ' member(s).');
+  return { groups: groups, rows: rows, members: members,
+           complete: members <= cap };
 }
 
 // ---------------------------------------------------------------------------
@@ -5155,23 +5374,20 @@ realms.onCreate(function (id) {
     // realm whose alice had no birthdate while her credential asserted one is
     // the same disagreement in a new place.
     populateVcAttributes();
-    // AND THE APPLICATIONS THAT ARE THIS PROCESS, filtered to the ones a REALM
-    // needs — which is the user portal's client and nothing else (2026-09-06).
-    // `/portal` is a relying party of this service's own authorization server
-    // and reads the AMBIENT realm's session, so a realm without this entry has
-    // a portal that cannot sign anybody in; the console's client is the
-    // default realm's alone, because its gate accepts that realm's session
-    // wherever it is reached. `applications.js`'s rows carry `realmScope` and
-    // argue all three answers.
+    // AND THE APPLICATIONS THAT ARE THIS PROCESS, filtered to the rows a
+    // realm needs: every row whose realmScope is 'every' — the console, the
+    // portal, the reports client, the report API and the management API.
+    // The debugger's two stay in the default realm. `applications.js`'s rows
+    // carry `realmScope` and argue each one.
     //
     // It is INSIDE the `realms.run()` because the registry writes through the
     // directory slot, which resolves the container from the ambient realm —
     // the same reason `seed()` is in here.
     applications.seedInternalApplications({ scope: 'every' });
-    // THE NATIVE ROLES (#303, #309) — ADMIN_READ and ADMIN_WRITE, each held
-    // by the realm's own management API client, and DEVICE_COMPLIANCE, held
-    // by nobody until an operator adds the MDM feed. After the applications,
-    // whose client they name.
+    // THE NATIVE ROLES (#303, #309) — the console roles, DEVICE_COMPLIANCE,
+    // and SSF_READ and SSF_MANAGE. After the applications, whose client the
+    // console roles name. The SSF groups are created here when missing and
+    // an existing group's members are left as they are.
     roles.seedNativeRoles();
   });
   log.info('ldap: built the "' + id + '" realm\'s subtree at ' +
@@ -7397,7 +7613,7 @@ function autoCreateUser(detail) {
   // partner never recorded `federationRelationship` and never had the
   // partner's attributes refreshed — while `fedUpdateUserAttributes`' schema
   // row says the relationship "is recorded either way" and federation/CLAUDE.md
-  // promises the refresh. `tests/vendored/sts_federation_realms.js` found it
+  // promises the refresh. `tests/protocol/sts_federation_realms.js` found it
   // against a product-mode deployment. Only `applyFederatedAttributes()` runs
   // here: the description notes, the invented credential attributes and the
   // factor flags the branch further down writes belong to a service that
@@ -9776,7 +9992,11 @@ if (typeof roles.setDirectory === 'function') {
       return (groupsOfUser(name).groups || []).map(function (one) {
         return one.cn;
       });
-    }
+    },
+    // Create a group when its DN is missing and leave an existing one
+    // alone, members included. Native-role seeding uses it for ssf-read
+    // and ssf-manage. putEntry would wipe whoever had been added.
+    ensureGroup: ensureGroup
   });
 } else {
   log.warn('ldap: common/roles.js offers no setDirectory(), so ou=roles is ' +
@@ -11493,6 +11713,26 @@ function deriveAndroidMarker(stored) {
   log.debug('Leaving deriveAndroidMarker(). ' + ids.length + '.');
 }
 
+// WHAT A WRITE OF THE KEYS CHANGED, FOR THE PASSKEY REPORT (#942). Both
+// doors above call it with the values before and after, and the person
+// delete (`removePersonEntry()`) with what the entry held and nothing: the
+// report adds the difference to its own tally (`common/passkey_report.ts`
+// argues why that is the aggregate and not a count of the directory). The
+// report never throws into a write, and an older one without the function
+// is simply not told — its next recount puts it right. Called once per write
+// of somebody's keys, a sign-in's counter update at most: no hot path, so
+// the pair is kept.
+function notePasskeysChanged(stored, before, after) {
+  log.debug('Entering notePasskeysChanged().');
+  if (typeof passkeyReport.noteKeysChanged !== 'function') {
+    log.debug('Leaving notePasskeysChanged(). No report to tell.');
+    return;
+  }
+  passkeyReport.noteKeysChanged(before || [], after || [],
+                                usernameOfEntry(stored) || stored.dn);
+  log.debug('Leaving notePasskeysChanged().');
+}
+
 function readWebauthnValues(key) {
   log.debug('Entering readWebauthnValues(). key=' + key);
   const located = locateEntry(String(key || ''));
@@ -11522,7 +11762,12 @@ function writeWebauthnValue(key, value) {
   const have = stored.attributes.stswebauthncredential || [];
   stored.attributes.stswebauthncredential = have.concat([String(value)]);
   deriveAndroidMarker(stored);
-  touchDirectory();
+  notePasskeysChanged(stored, have,
+                      stored.attributes.stswebauthncredential);
+  // The DN it wrote (#908): the counter rewrite runs on every passkey
+  // sign-in, and a write that names nothing makes the next flush diff the
+  // whole directory and invalidates every listing.
+  touchDirectory(stored.dn);
   log.debug('Leaving writeWebauthnValue(). Written to ' + stored.dn + '.');
   return true;
 }
@@ -11537,13 +11782,19 @@ function replaceWebauthnValues(key, values) {
     log.debug('Leaving replaceWebauthnValues(). No entry.');
     return false;
   }
+  const before = (stored.attributes.stswebauthncredential || []).slice(0);
   if (!values || !values.length) {
     delete stored.attributes.stswebauthncredential;
   } else {
     stored.attributes.stswebauthncredential = values.map(String);
   }
   deriveAndroidMarker(stored);
-  touchDirectory();
+  notePasskeysChanged(stored, before,
+                      stored.attributes.stswebauthncredential || []);
+  // The DN it wrote (#908): the counter rewrite runs on every passkey
+  // sign-in, and a write that names nothing makes the next flush diff the
+  // whole directory and invalidates every listing.
+  touchDirectory(stored.dn);
   log.debug('Leaving replaceWebauthnValues(). ' +
             ((values || []).length) + ' key(s) left.');
   return true;
@@ -11571,8 +11822,51 @@ function replaceWebauthnValues(key, values) {
 // expression and so a schema version).
 // ---------------------------------------------------------------------------
 const userHandleIndexes = realms.keyed(function () {
-  return { index: null, version: -1 };
+  return { index: null, dns: null, version: -1, builds: 0 };
 });
+
+// THE INDEX'S OWN CLOCK (#909), as the group index has one (#618). It was
+// `directoryVersion`, which every write in every realm moves — another
+// node's change-log applies and every passkey sign-in's counter rewrite
+// among them — so nearly every unknown handle rebuilt the whole index, and
+// an unauthenticated client could ask for one per request. This one moves
+// only for a write that names no DN, one to an entry the index holds, or
+// one to an entry holding a classical handle (the index walks only those).
+// Declared up beside `groupsVersion`, because touchDirectory() runs during
+// the module's load.
+
+// Whether a write may have changed who holds a user handle. Hot path (every
+// write): no Entering/Leaving pair, the exception the code style allows,
+// stated as it requires.
+function noteUserHandlesTouched(dn, after) {
+  if (!moduleLoaded || dn === undefined || dn === null || dn === '') {
+    userHandlesVersion++;
+    return;
+  }
+  const key = normalizeDn(dn);
+  const cache = userHandleIndexes();
+  if (cache.dns && cache.dns.has(key)) {
+    userHandlesVersion++;
+    return;
+  }
+  let now = after;
+  if (now === undefined) {
+    if (directoryWindow) {
+      const held = directoryWindow.heldIn(realms.currentId(), key);
+      if (!held.known) {
+        userHandlesVersion++;
+        return;
+      }
+      now = held.entry;
+    } else {
+      now = entries.get(key) || null;
+    }
+  }
+  if (now && now.attributes &&
+      String((now.attributes.stswebauthnuserhandle || [])[0] || '')) {
+    userHandlesVersion++;
+  }
+}
 
 // The attribute a lane's handle is stored in: the post-quantum lane's for
 // `pqc`, the classical one's for anything else (no lane is classical).
@@ -11635,8 +11929,9 @@ function webauthnUserHandleHolder(handle) {
       : null;
   };
   let found = wanted && cache.index ? holderAt(cache.index.get(wanted)) : null;
-  if (!found && wanted && cache.version !== directoryVersion) {
+  if (!found && wanted && cache.version !== userHandlesVersion) {
     const index = new Map();
+    const dns = new Set();
     eachHolderOfAny(['stswebauthnuserhandle'], function (stored) {
       if (!isPersonEntry(stored)) {
         return;
@@ -11646,16 +11941,30 @@ function webauthnUserHandleHolder(handle) {
                               [])[0] || '');
         if (value && !index.has(value)) {
           index.set(value, { dn: stored.dn, lane: lane });
+          dns.add(normalizeDn(stored.dn));
         }
       });
     });
     cache.index = index;
-    cache.version = directoryVersion;
+    cache.dns = dns;
+    cache.version = userHandlesVersion;
+    cache.builds++;
     found = holderAt(index.get(wanted));
   }
   log.debug('Leaving webauthnUserHandleHolder(). ' +
             (found ? found.owner + ' (' + found.lane + ')' : 'nobody'));
   return found;
+}
+
+// What the user-handle index has done in the ambient realm, for
+// `tests/user_handle_index_clock.js` (#909): how many times it was built,
+// the clock it is current for, and the clock now.
+function userHandleIndexState() {
+  log.debug("Entering userHandleIndexState().");
+  const cache = userHandleIndexes();
+  log.debug("Leaving userHandleIndexState().");
+  return { builds: cache.builds, version: cache.version,
+           userHandlesVersion: userHandlesVersion };
 }
 
 // The username of the PERSON whose entry holds `handle`, in either lane, or
@@ -12950,6 +13259,23 @@ function writeActivation(key, hash, expires) {
 // `common/credentials.ts` without it costs a warning rather than a service that
 // will not start — and the warning says what is lost, which in product mode is
 // every sign-in.
+// THE PASSKEY REPORT'S SLOT (#942), filled here for rule 3e's two reasons:
+// this module requires the report (its write doors note there), so the
+// report cannot require this one back, and requiring this JavaScript route
+// module from the report's place in the order would drag the
+// `/admin/ldap/*` routes ahead of the console's. Validated whole there.
+if (typeof passkeyReport.setDirectory === 'function') {
+  passkeyReport.setDirectory({
+    scanAsync: passkeyScanAsync,
+    populationAsync: passkeyPopulationAsync,
+    personCount: personCount
+  });
+} else {
+  log.warn(errorCodes.tag('STS-AUTHN-0417') + 'ldap: common/passkey_report ' +
+           'offers no setDirectory(), so Monitoring → Passkeys counts ' +
+           'nothing.');
+}
+
 if (typeof credentials.setDirectory === 'function') {
   credentials.setDirectory({
     readPassword: readStoredPassword,
@@ -15175,7 +15501,7 @@ let secureServer = null;
 // context once and never again, so `POST /admin-api/pki/build-root` left it
 // presenting a leaf under a Root nothing trusted any more while the main port
 // moved on, and an LDAPS client failed with `unable to get local issuer
-// certificate` until a restart (tests/vendored/sts_ldaps.js). Registered on
+// certificate` until a restart (tests/protocol/sts_ldaps.js). Registered on
 // `tlsServer.onServerCertificateChange()`, which fires in the process that
 // holds this socket. `setSecureContext()` applies to the NEXT handshake; a
 // connection already open keeps the context it was made with.
@@ -15275,7 +15601,7 @@ const servers = secureServer ? [plainServer, secureServer] : [plainServer];
 // was consulted — so the bind handler below never saw one, and product mode's
 // refusal of an anonymous bind (48, inappropriateAuthentication,
 // STS-LDAP-0070) never happened: the bind answered success and only the read
-// after it was refused. `tests/vendored/sts_ldaps.js` found it against a
+// after it was refused. `tests/protocol/sts_ldaps.js` found it against a
 // product-mode deployment; nothing in process could, because
 // `performOperation()` enters the handler directly.
 //
@@ -16013,6 +16339,18 @@ function ldapChannelOf(req) {
 // has no business loading at 21 for every process that never writes a
 // password — and a require that moved nothing would still read as if the
 // order mattered.
+//
+// AND THE RECOVERY HOLD (#960), the same way the console's set-password
+// notes it. A create or an update by somebody other than the person —
+// including an unbound connection, whose bound DN `boundDnOf()` reports as
+// '' — is an administrator putting a password on the entry. The person
+// binding as themselves proved the current password, so that change notes
+// nothing, and a revoke is not a password they can next sign in with.
+// `noteRecovery()` writes nothing when they hold no passkey or
+// `recoveryAssurance` is `any`. The require is lazy for the signal's
+// reason: this file already holds `credentials` for the hash itself, and
+// the hold must not be why that require moves. A throw is logged and the
+// write, which the handler has already committed, stands.
 // ---------------------------------------------------------------------------
 function notePasswordWritten(req, dn, username, changeType) {
   log.debug('Entering notePasswordWritten(). ' + changeType + ' ' + dn);
@@ -16030,6 +16368,16 @@ function notePasswordWritten(req, dn, username, changeType) {
   } catch (e) {
     log.debug('Caught in notePasswordWritten(): ' + ((e && e.message) || e));
     // The write stands whether or not a receiver is told.
+  }
+  if (!self && (changeType === 'create' || changeType === 'update')) {
+    try {
+      require('../common/credentials').noteRecovery(String(username || ''),
+                                                    'admin-password');
+    } catch (e) {
+      log.debug('Caught in notePasswordWritten(): ' +
+                ((e && e.message) || e));
+      // The password write stands whether or not the hold was recorded.
+    }
   }
   log.debug('Leaving notePasswordWritten().');
 }
@@ -16679,7 +17027,7 @@ function operationOutcome(operation, req, res, failure) {
     // **NOTHING IN EITHER SUITE WOULD HAVE SEEN IT** for the reason recorded
     // there: `ldap.sizeLimit` is 500 and the seeded directory holds about
     // thirty entries, so the only thing anywhere that reaches this branch is
-    // `tests/vendored/sts_directory_bulk_load_ldap.js` — over a socket, in a
+    // `tests/protocol/sts_directory_bulk_load_ldap.js` — over a socket, in a
     // stack, with operations off.
     // ---------------------------------------------------------------------
     // SPLICED, not read: a streaming search's batch that has not yet run
@@ -17269,7 +17617,7 @@ server.bind('', function (req, res, next) {
   // always; single-cell mode never asks.
   //
   // A PROJECTION IS NOT AN ENTRY THIS CELL HOLDS (2026-09-28,
-  // tests/vendored/sts_cells_unreachable.js). A session exported here puts a
+  // tests/protocol/sts_cells_unreachable.js). A session exported here puts a
   // credential-free copy of its person in this directory
   // (`common/cell_sessions.ts`, origin `projection:<home>`), and asking only
   // whether an entry exists sent a bind as that person to the local verifier
@@ -17428,6 +17776,11 @@ server.bind('', function (req, res, next) {
     protocol: 'ldap',
     method: dn ? (appPassword ? 'simple bind (app password)' : 'simple bind')
       : 'anonymous simple bind',
+    // LDAP's name for the application is the bind DN
+    // (ldapBindDn). An entry that declared this DN lists the bind; one
+    // that did not is unchanged. Not client_id: a bind is not a sighting
+    // this registry counts, and the funnel would count it as one.
+    application: dn || '',
     note: appPassword
       ? 'an app password ("' + appPassword.name + '") was verified'
       : verified ? 'the password was verified' : 'no password was checked'
@@ -22255,13 +22608,13 @@ federation.setDirectory({
   federationIdleCandidates: federationIdleCandidates
 });
 
-// AND THE TWO APPLICATIONS THAT ARE THIS PROCESS, immediately after — because
+// AND THIS SERVICE'S OWN APPLICATIONS, immediately after — because
 // this line is the earliest moment at which there is a container to write into,
 // and the entries have to be there before anything can ask for them.
 //
 // It is here rather than in seed() above for a reason worth keeping: seed()
-// builds the TREE, this module's half of the arrangement, while what these two
-// entries hold is a pair of RFC 7591 registrations, which is that module's
+// builds the TREE, this module's half of the arrangement, while what these
+// entries hold is a set of RFC 7591 registrations, which is that module's
 // half. Writing them up there would mean this file knowing the application
 // schema — the exact division the four functions above exist to avoid — and it
 // could not run there anyway, since the slot they go through is filled on the
@@ -24480,11 +24833,17 @@ function removePersonEntry(stored, door) {
   log.debug('Entering removePersonEntry(). dn=' + stored.dn);
   const goneAttributes = attributeSnapshot(stored);
   const goneName = usernameOfEntry(stored);
+  // The passkeys the person held leave the report with them (#942).
+  const gonePasskeys = (stored.attributes.stswebauthncredential || [])
+    .slice(0);
   const current = indexesCurrent();
   const before = directoryVersion;
   entries.delete(normalizeDn(stored.dn));
   touchDirectory(stored.dn);
   noteIndexesDelete(stored, current);
+  if (gonePasskeys.length) {
+    notePasskeysChanged(stored, gonePasskeys, []);
+  }
   const batch = personBatches.getStore();
   if (batch) {
     batchForgetEntry(batch, normalizeDn(stored.dn), before);
@@ -24950,6 +25309,31 @@ function createGroup(displayName, options) {
            entry: written.entry };
 }
 
+// CREATE THE GROUP WHEN IT IS MISSING, AND NEVER REWRITE ONE THAT IS THERE.
+// Seeding calls this on every start, including after a restore. putEntry
+// would replace the entry and drop the members an operator had added.
+// An empty group is what createGroup() already allows.
+/**
+ * Creates a group when no entry stands at its DN, and reports the existing
+ * one without changing it.
+ *
+ * @param displayName - the group's name
+ * @param options - passed to `createGroup()` when the group is missing
+ * @returns `{ ok: true, existed, dn, group }`, or `createGroup()`'s refusal
+ */
+function ensureGroup(displayName, options) {
+  log.debug('Entering ensureGroup().');
+  const wanted = String(displayName == null ? '' : displayName).trim();
+  const dn = wanted ? groupDnFor(wanted) : '';
+  if (dn && getEntry(dn)) {
+    log.debug('Leaving ensureGroup(). Already there.');
+    return { ok: true, existed: true, dn: dn, group: wanted };
+  }
+  const made = createGroup(wanted, options || {});
+  log.debug('Leaving ensureGroup(). ' + (made.ok ? 'Created.' : 'Refused.'));
+  return made.ok ? Object.assign({ existed: false }, made) : made;
+}
+
 // WHERE A MEMBERSHIP VALUE POINTS, and it is `admin_rbac.js`'s memberValueFor()
 // with one thing added rather than a copy of it: a caller here may name a
 // person OR pass a DN outright, because `POST /admin-api/groups/add-member` is
@@ -25015,7 +25399,7 @@ function memberDnFor(nameOrDn) {
 // the sentence: adding somebody who is already in the group is the state the
 // caller wanted, so it answers ok with `changed: false`. A 400 there would make
 // a script that adds on every run fail on its second one — and the bulk-load
-// jobs in tests/vendored are exactly such a script.
+// jobs in tests/protocol are exactly such a script.
 // ---------------------------------------------------------------------------
 /**
  * Adds a member to a group; adding one already there answers ok with `changed:
@@ -26988,6 +27372,7 @@ module.exports = {
   groupsOfUser: groupsOfUser,
   // The group index's builds and clock, for tests/group_index_clock.js (#618).
   groupIndexState: groupIndexState,
+  userHandleIndexState: userHandleIndexState,
   applicationsDn: applicationsDn,
   spiffeDn: spiffeDn,
   spiffeEntriesDn: spiffeEntriesDn,
@@ -26999,6 +27384,10 @@ module.exports = {
   // inversion applies. See the section above them for the whole argument.
   isPersonEntry: isPersonEntry,
   personCount: personCount,
+  // The passkey report's two questions (#942), for its in-process test;
+  // the report itself reaches them through its slot.
+  passkeyScanAsync: passkeyScanAsync,
+  passkeyPopulationAsync: passkeyPopulationAsync,
   allPersons: allPersons,
   personsHolding: personsHolding,
   // Whether this process holds its people as a window onto the store

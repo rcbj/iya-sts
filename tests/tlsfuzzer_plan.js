@@ -9,14 +9,15 @@
 // THE TLSFUZZER PLAN FOLLOWS THE LISTENER'S CERTIFICATE (#321).
 //
 // sts_tlsfuzzer.js reads the key a listener presents and hands it to
-// tests/vendored/tlsfuzzer_kit.js. This file holds that choice. A tlsfuzzer
+// tests/protocol/tlsfuzzer_kit.js. This file holds that choice. A tlsfuzzer
 // run needs the tests image and a service, and the choice can be asserted
 // without either: which scripts run for RSA and for ECDSA, that an omitted
 // key is RSA, that a curve exception excuses only the curves it names, that
 // a real handshake names the key and the curve, that any other key is
 // declined, and that the adapter retargets TLS 1.2 to the matching ECDHE
-// suite. The map is tests/tlsfuzzer/sts_adapter_map.py, which this file
-// runs; the assertions stay here. It does not run tlsfuzzer.
+// suite. The stale extension probes are decode_error on every listener,
+// including the debugger. The map is tests/tlsfuzzer/sts_adapter_map.py,
+// which this file runs; the assertions stay here. It does not run tlsfuzzer.
 // ===========================================================================
 
 const childProcess = require('child_process');
@@ -28,7 +29,7 @@ const tls = require('tls');
 
 const log = require('bunyan').createLogger({ name: 'tlsfuzzer_plan',
   level: process.env.LOG_LEVEL || 'info' });
-const kit = require('./vendored/tlsfuzzer_kit');
+const kit = require('./protocol/tlsfuzzer_kit');
 
 const EC_SERVER = 'needs an ECDSA server certificate; this listener ' +
   'presents RSA';
@@ -357,6 +358,36 @@ async function run(t) {
     return one.probe === 'connect with sha224+ecdsa only';
   }), 'ECDSA flexibility expects SHA-1 and SHA-224 to be refused');
 
+  const large = entryNamed('test-tls13-large-number-of-extensions.py');
+  const randomProbe = 'unassigned extensions with random payload, ids ' +
+    'in range from 2 to 1047';
+  const emptyProbe = 'empty unassigned extensions, ids in range from ' +
+    '2 to 4119';
+  ['main', 'ldaps', 'debugger'].forEach(function (listener) {
+    const hits = kit.exceptionsFor(large, listener);
+    t.equal(hits.filter(function (one) {
+      return one.probe === randomProbe && one.alert === 'decode_error';
+    }).length, 1, listener + ' expects decode_error for the stale ' +
+      'random payload');
+    t.equal(hits.filter(function (one) {
+      return one.probe === emptyProbe && one.alert === 'decode_error';
+    }).length, 1, listener + ' expects decode_error for the empty ' +
+      'stale chunk');
+  });
+  const drawn = randomProbe + ' ...\n' +
+    'AssertionError: Unexpected message from peer: ' +
+    'Alert(fatal, decode_error)\n';
+  const argued = kit.classify(large, 'debugger', drawn, [randomProbe]);
+  t.equal(argued.unexplained.length, 0,
+          'decode_error on the debugger listener is argued');
+  const otherAlert = randomProbe + ' ...\n' +
+    'AssertionError: Unexpected message from peer: ' +
+    'Alert(fatal, handshake_failure)\n';
+  const finding = kit.classify(large, 'debugger', otherAlert,
+                                [randomProbe]);
+  t.equal(finding.unexplained.length, 1,
+          'a different alert on that probe is still a finding');
+
   const target = { host: '127.0.0.1', port: 443, certificates: {} };
   const ecArgv = kit.argsFor(entryNamed('test-tls13-ecdsa-support.py'),
                               'main', Object.assign({ serverKey: 'ec' },
@@ -406,7 +437,8 @@ module.exports = {
   describe: 'The tlsfuzzer plan follows the certificate the listener ' +
             'presents (#321): the key read from a handshake, RSA by ' +
             'default, the ECDSA-server scripts when the certificate is ' +
-            'ECDSA, a curve exception only for the curves it names, and ' +
-            'the adapter suite that matches the key',
+            'ECDSA, a curve exception only for the curves it names, the ' +
+            'stale extension probes as decode_error on every listener, ' +
+            'and the adapter suite that matches the key',
   run: run
 };

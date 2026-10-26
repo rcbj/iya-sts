@@ -3,7 +3,7 @@
 
 """Run python-scim's scim2-tester against one SCIM base URL, print JSON.
 
-The driver tests/vendored/sts_scim_conformance.js runs (#206). It is this
+The driver tests/protocol/sts_scim_conformance.js runs (#206). It is this
 repository's, not the harness's: scim2-tester's own CLI calls discover()
 BEFORE its checks, so a service whose discovery documents do not compose
 into a coherent description crashes the CLI instead of being reported, and

@@ -29,14 +29,15 @@
 //   F. `revealActiveNav()` scrolls the sidebar's own nav so the active tab
 //      is in its middle after a page is drawn in place, and leaves a page
 //      with no nav or no active tab alone (2026-10-08).
-//   G. THE SIDEBAR'S SECTIONS ARE CLOSED UNTIL THE READER OPENS ONE, AND ONE
-//      IS OPEN AT A TIME (#750): every section is a `<details>` sharing one
-//      `name`, none drawn open on a fresh load — the current page's section
-//      included, which is marked instead — and the one the runtime
-//      remembers opened is drawn open on every page after; `onNavToggle()`
-//      records it, forgets it when it is closed and closes the others where
-//      a browser does not; and `revealActiveNav()` leaves a closed
-//      section's hidden tab alone.
+//   G. THE SIDEBAR'S SECTIONS, ONE OPEN AT A TIME (#750): every section is a
+//      `<details>` sharing one `name`. The shell draws one open only when
+//      handed its key. A fresh runtime has not chosen, and its first drawing
+//      opens the section that holds the page — a reload shows that list
+//      open, a page inside a group included — and remembers it. A section
+//      the reader then closes stays closed on the next drawing.
+//      `onNavToggle()` records an opening, forgets a closing and closes the
+//      others where a browser does not; and `revealActiveNav()` leaves a
+//      closed section's hidden tab alone.
 // ---------------------------------------------------------------------------
 
 delete process.env.CONFIG_FILE;
@@ -411,8 +412,42 @@ function checkNavSections(t) {
           return one.open;
         }) : [];
     } } });
-  t.check(rt.openSection === '',
-          'G4. a runtime starts with no section open', rt.openSection);
+  t.check(rt.openSection === null,
+          'G4. a runtime has not chosen a section yet', rt.openSection);
+  t.check(WebShell.sectionKeyOf(NAV_SHELL.sections, '/admin/users') ===
+          'directory' &&
+          WebShell.sectionKeyOf(NAV_SHELL.sections, '/admin/keys') ===
+          'server-configuration' &&
+          WebShell.sectionKeyOf(NAV_SHELL.sections, '/admin/nope') === '' &&
+          WebShell.sectionKeyOf(null, '/admin/users') === '',
+          'G4a. the section key is the one holding the page, a group ' +
+          'included, and a page in none has none');
+  const body = {};
+  const freshRt = new ConsoleRuntime({
+    location: { pathname: '/admin/users', search: '', hash: '' },
+    document: {
+      body: body,
+      querySelectorAll: function () { return []; },
+      querySelector: function () { return null; },
+      getElementById: function () { return null; }
+    }
+  });
+  freshRt.shell = NAV_SHELL;
+  freshRt.draw('Users', '/admin/users', '<p>x</p>', null);
+  const reloaded = navSections(body.innerHTML);
+  t.check(freshRt.openSection === 'directory' && reloaded.directory.open &&
+          !reloaded.overview.open &&
+          !reloaded['server-configuration'].open,
+          'G4b. a reload opens the section that holds the page',
+          freshRt.openSection + ' ' + JSON.stringify(reloaded));
+  freshRt.onNavToggle(fakeSection('directory', false));
+  freshRt.draw('Users', '/admin/users', '<p>x</p>', null);
+  const stayed = navSections(body.innerHTML);
+  t.check(freshRt.openSection === '' && !stayed.directory.open &&
+          !stayed.overview.open,
+          'G4c. a section the reader closed stays closed on the next ' +
+          'drawing',
+          freshRt.openSection + ' ' + JSON.stringify(stayed));
   rt.onNavToggle(directory);
   t.check(rt.openSection === 'directory' && overview.open === false &&
           directory.open === true,
@@ -500,8 +535,8 @@ module.exports = {
   name: 'console answers',
   describe: 'web_answers.ts draws round trips, secrets shown once and ' +
             'redraws from an answer; shapeFields() keeps the field grid and ' +
-            'carries a checkbox column into its list member; the ' +
-            'sidebar\'s sections are closed until one is opened, one at a ' +
-            'time',
+            'carries a checkbox column into its list member; the sidebar ' +
+            'opens the section that holds the page on a fresh load, and ' +
+            'one section at a time after that',
   run: run
 };

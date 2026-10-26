@@ -80,7 +80,7 @@ fi
 # trees that are not ours. The same exclusions as tsconfig.build.json.
 sources() {
   find . \( -path ./node_modules -o -path ./tests -o -path ./node-ldapjs \
-            -o -path ./xacml-pep -o -path ./common/vendored \
+            -o -path ./xacml-pep -o -path ./common/crypto_impl \
             -o -path ./debugger/embedded -o -path ./.git \) -prune \
          -o -type f -name '*.ts' ! -name '*.d.ts' -print
 }
@@ -205,6 +205,12 @@ bundle_surface "the admin console" admin-ui/web_pages.ts StsConsole \
 # at `/portal/portal.js`.
 bundle_surface "the user portal" portal/web_portal_pages.ts StsPortal \
   portal/portal.bundle.js portal/web_portal.ts portal/portal-spa.js
+
+# THE REPORTS APPLICATION (#956): `report/report.bundle.js` (`StsReport`,
+# `web_report_pages.ts`) and `report/report-spa.js` (`web_report.ts`), served
+# at `/report/report.js`.
+bundle_surface "the report" report/web_report_pages.ts StsReport \
+  report/report.bundle.js report/web_report.ts report/report-spa.js
 
 # THE FRONT DOOR (#579), the first public surface: `home/home.bundle.js`
 # (`StsHome`, `web_home_pages.ts`) and `home/home-spa.js` (`web_home.ts`),

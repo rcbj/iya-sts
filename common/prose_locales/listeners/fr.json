@@ -147,6 +147,14 @@
     "en": "ae78f5077c808641",
     "text": "Les pages qui appartiennent à la personne qui les consulte, et l’API de compte à partir de laquelle elles sont construites."
   },
+  "listeners.applications.report.label": {
+    "en": "dacca3cba3f346a4",
+    "text": "Rapports"
+  },
+  "listeners.applications.report.what": {
+    "en": "de1ee727530aad18",
+    "text": "Les rapports qu’une personne d’ici peut exécuter, et l’API à partir de laquelle ils sont dessinés."
+  },
   "listeners.applications.admin-console.label": {
     "en": "ddf870cabeb295ab",
     "text": "Console d’administration"

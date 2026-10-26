@@ -1064,8 +1064,8 @@
     "text": "Lahat ng kailangan ng caller para I-VERIFY ang serbisyong ito, bilang PEM: ang certificate na ipinapakita ng bawat TLS socket sa process na ito — ang main port at ang LDAPS listener ng directory sa 636, na naghahain ng parehong certificate at key na ito sa halip na ikalawang pares — kasunod ang chain sa pagitan nito at ng sariling Root CA ng serbisyong ito, at ang Root na iyon. Desisyon iyan tungkol sa kung ano ang kailangang gawin ng CALLER at hindi isang na-save na keypair: ang iisang anchor na sumasaklaw sa main port at 636 ay ISANG fetch, samantalang ang dalawa ay magpapabigo sa ldapsearch na may \"unable to get local issuer certificate\" laban sa truststore na binuo para sa HTTPS port — isang error na walang pinangangalanan at mukhang sirang directory. MULA 2026-09-11 NASA DOKUMENTONG ITO ANG CHAIN AT ANG ROOT, dahil hindi na self-signed ang certificate mula noong araw na iyon: tinatanggap ng OpenSSL ang self-signed na leaf sa truststore bilang anchor at tinatanggihan ang certified, kaya ang caller na pinin ang leaf lang ay nakakuha ng parehong error tungkol sa Root na hindi kailanman ibinigay dito. NAUUNA ANG LEAF, para sa caller na iyon lang ang gusto. MULING GINAGAWA ITO SA BAWAT PAG-START sa alinmang mode (maliban kung ibinigay ng tls.certificateFile), gaya ng development signing key, kaya ito ay anchor na walang makakapag-bake in at walang naka-cache na kopya nito ang nananatiling valid — kaya Cache-Control: no-store. Walang inilalathalang private key. I-fetch ito sa sarili mong truststore sa halip na patayin ang verification."
   },
   "stsmetadata.endpoints./.what": {
-    "en": "4c29594ca1759528",
-    "text": "Kung ano ang serbisyong ito, sa iisang card: ang proyekto sa GitHub, ang mga issue nito, ang site ng dokumentasyon, at ang dalawang surface sa instance na ito na pinupuntahan ng isang tao sa halip na ng isang client — ang admin console at ang user portal. SADYANG WALA itong inililistang endpoint — ang page na ito ang listahan, ito ay nabubuo, at ang isang hanay ng mga highlight na isinulat sa kamay sa front door ay magiging pangalawang kopya nito na walang sumusuri. Ito ay isang hindi naka-route na path hanggang 2026-08-24, kaya ang sagot sa unang URL na tina-type ng isang tao ay ang \"Cannot GET /\" ng Express. Mula #579, isa itong static na surface: sinasagot nito ang shell, at iginuguhit ng /home.js ang card sa wika ng browser mula sa /home-api/front."
+    "en": "85b6e9694fbfb459",
+    "text": "Kung ano ang serbisyong ito, sa iisang card: ang proyekto sa GitHub, ang mga issue nito, ang site ng dokumentasyon, at ang mga surface sa instance na ito na pinupuntahan ng isang tao sa halip na ng isang client — ang admin console, ang user portal at ang mga ulat. SADYANG WALA itong inililistang endpoint — ang page na ito ang listahan, ito ay nabubuo, at ang isang hanay ng mga highlight na isinulat sa kamay sa front door ay magiging pangalawang kopya nito na walang sumusuri. Ito ay isang hindi naka-route na path hanggang 2026-08-24, kaya ang sagot sa unang URL na tina-type ng isang tao ay ang \"Cannot GET /\" ng Express. Mula #579, isa itong static na surface: sinasagot nito ang shell, at iginuguhit ng /home.js ang card sa wika ng browser mula sa /home-api/front."
   },
   "stsmetadata.endpoints./home.js.what": {
     "en": "676325f92b405058",
@@ -1080,8 +1080,8 @@
     "text": "NON-SPEC (#579). Ang mga operasyon ng front door API, bawat isa kasama ang page na pinto nito (mirrors), gaya ng paglilista ng /account-api sa sarili nito. Pampubliko at walang wika."
   },
   "stsmetadata.endpoints./home-api/front.what": {
-    "en": "e608f6ceb4c13f9a",
-    "text": "NON-SPEC (#579). Lahat ng iginuguhit ng front page, bilang mga katotohanan at walang mga salita: ang pangalan, ang bersyon at ang build nito, kung sinusuri ng isang sign-in ang password at kung gated ang console, ang logo, at ang limang link bilang mga id at address — ang sa console at sa portal sa listener na sumasagot sa mga ito (#472). Pampubliko, no-store; wala itong inililistang endpoint, gaya ng hindi kailanman ginawa ng page."
+    "en": "617325f4b1fdbe01",
+    "text": "NON-SPEC (#579). Lahat ng iginuguhit ng front page, bilang mga katotohanan at walang mga salita: ang pangalan, ang bersyon at ang build nito, kung sinusuri ng isang sign-in ang password at kung gated ang console, ang logo, at ang anim na link bilang mga id at address — ang console, ang portal at ang mga ulat, bawat isa sa listener na sumasagot dito (#472). Pampubliko, no-store; wala itong inililistang endpoint, gaya ng hindi kailanman ginawa ng page."
   },
   "stsmetadata.endpoints./logo.png.what": {
     "en": "3ecb997587060c27",
@@ -1174,6 +1174,74 @@
   "stsmetadata.endpoints./portal/portal.css.what": {
     "en": "69cf245f63b035d1",
     "text": "NON-SPEC. Ang nag-iisang stylesheet ng portal (#568)."
+  },
+  "stsmetadata.endpoints./report.what": {
+    "en": "a9d6c3cc058a3617",
+    "text": "NON-SPEC. Ang static na reports application (#956). Bawat path ay sumasagot ng isang document, na naglo-load ng /report/report.js at nagsa-sign in bilang public client na sts-report."
+  },
+  "stsmetadata.endpoints./report/*.what": {
+    "en": "0d4a7436bac8a815",
+    "text": "NON-SPEC. Ang parehong document ng /report. Pinipili ng script ang pahina mula sa path."
+  },
+  "stsmetadata.endpoints./report/report.js.what": {
+    "en": "06abcdf5598f2576",
+    "text": "NON-SPEC. Ang reports runtime, binuo ng build-typescript.sh at inihahain na precompressed. Public, tulad ng document."
+  },
+  "stsmetadata.endpoints./report/report.css.what": {
+    "en": "aa0e94707e105592",
+    "text": "NON-SPEC. Ang nag-iisang stylesheet ng reports application (#956)."
+  },
+  "stsmetadata.endpoints./report-api.what": {
+    "en": "7b8038436244d3de",
+    "text": "NON-SPEC. Ang index ng /report-api. Tumatanggap ito ng DPoP-bound na token ng realm na ito para sa sts-report, scope na report:use o report:admin."
+  },
+  "stsmetadata.endpoints./report-api/openapi.json.what": {
+    "en": "0a932f3efc26b3fb",
+    "text": "NON-SPEC. Ang sariling paglalarawan ng API. Nasa likod ng parehong token ng iba pang /report-api, at inihahain na no-store."
+  },
+  "stsmetadata.endpoints./report-api/catalog.what": {
+    "en": "07eb9bbaa64c98e2",
+    "text": "NON-SPEC. Ang mga source na maaaring pangalanan ng isang query, at ang type at mga operator ng bawat field. Wala ang mga credential attribute."
+  },
+  "stsmetadata.endpoints./report-api/catalog/:id.what": {
+    "en": "4d6e53c9ce4823ca",
+    "text": "NON-SPEC. Isang source mula sa catalog, ayon sa id nito."
+  },
+  "stsmetadata.endpoints./report-api/queries.what": {
+    "en": "0d15a58a10e2b1ba",
+    "text": "NON-SPEC. Isang catalog query. Ang maliit at may hangganan ay sinasagot sa mismong tawag; ang mas malaki ay ini-queue at sinasagot ng 202."
+  },
+  "stsmetadata.endpoints./report-api/definitions.what": {
+    "en": "df098902244cfa53",
+    "text": "NON-SPEC. Ang mga definition na maaaring makita ng token na ito: ang sa may-ari nito, ang mga ibinahagi sa group na kinabibilangan nito, at lahat kapag dala ng token ang report:admin."
+  },
+  "stsmetadata.endpoints./report-api/definitions/:id.what": {
+    "en": "74d936b2bb9fff66",
+    "text": "NON-SPEC. Isang definition. Ang hindi kilalang id at ang hindi maaaring makita ng token na ito ay iisang sagot."
+  },
+  "stsmetadata.endpoints./report-api/definitions/:id/share.what": {
+    "en": "12d23dbb24cec023",
+    "text": "NON-SPEC. Pinangangalanan ang mga directory group na maaaring magpatakbo ng definition at bumasa ng mga resulta nito. Ang may-ari, o report:admin, ang maaaring magbago ng listahang iyon."
+  },
+  "stsmetadata.endpoints./report-api/definitions/:id/run.what": {
+    "en": "991b657f7fe20e17",
+    "text": "NON-SPEC. Ini-queue ang query ng definition bilang ang tumawag. Ang share ay nagbibigay nito at ng resulta, hindi ng pag-edit."
+  },
+  "stsmetadata.endpoints./report-api/jobs.what": {
+    "en": "f4e437b96fe383f5",
+    "text": "NON-SPEC. Ang mga job na maaaring makita ng token na ito, at ang pintong nag-queue ng isa mula sa isang query document."
+  },
+  "stsmetadata.endpoints./report-api/jobs/:id.what": {
+    "en": "d69a7d667bd631bf",
+    "text": "NON-SPEC. Isang job. Ang hindi kilalang id at ang hindi maaaring makita ng token na ito ay iisang sagot."
+  },
+  "stsmetadata.endpoints./report-api/jobs/:id/cancel.what": {
+    "en": "cbc407e431852e06",
+    "text": "NON-SPEC. Hinihiling sa naka-queue o tumatakbong job na huminto. Ang mga byte ng natapos na ay iniiwan para sa retention."
+  },
+  "stsmetadata.endpoints./report-api/jobs/:id/result.what": {
+    "en": "3b97b9774547de8c",
+    "text": "NON-SPEC. Ang mga naimbak na byte ng natapos na job, hangga't hindi pa lumilipas ang report.artifactRetentionS. Pagkatapos noon, wala na ang resulta."
   },
   "stsmetadata.endpoints./portal/signals/receive.what": {
     "en": "b5f30a87646c3fed",
@@ -1712,8 +1780,8 @@
     "text": "set at remove. Isinusulat ng set ang isang broker at ang mga reference type na puwede nitong gamitin (pid, k8s, *) sa spiffe.brokers sa realm; inaalis ito ng remove, at tinatanggihan ng PERMISSION_DENIED ang susunod nitong tawag."
   },
   "stsmetadata.endpoints./admin-api/delegation.what": {
-    "en": "bc3ea30406135fc8",
-    "text": "NON-SPEC. Bawat delegation na isinagawa o TINANGGIHAN ng serbisyong ito, bilang JSON: walong mechanism sa Kerberos, WS-Trust at OAuth 2.0 Token Exchange sa iisang model, bawat isa ay nagpapangalan sa unang identity, sa tagapamagitang kumikilos para sa kanila at sa target na naabot. Sinasala ayon sa type, mode, outcome, protocol at free text at naka-page gamit ang ?page= at ?per=. Basahin muna ang `mode`: walang iniiwan ang `impersonation` sa credential na nagsasabing may kasangkot na middle tier, kaya ito lang ang lugar kung saan makikita ang katotohanang iyon. May dala ang tinanggihang act ng sariling dahilan ng KDC at hindi lumilitaw sa anumang ibang resource dito. Bukod sa mga naka-page na act, may dala ang sagot na `chains` — ang magkakaibang (mechanism, initial, intermediary, target) tuple sa mga tumugma, isa bawat edge — at `policy`, kung sino ang puwedeng mag-delegate kanino bago pa may sumubok. LAKARIN ITO AYON SA `seq`. READ ONLY, isa sa dalawang resource dito na ganoon: lahat ng nasa loob nito ay obserbasyon o configuration ng iba, kaya walang mababago. Sinasalamin ang GET /admin/delegation."
+    "en": "5832fac2dafcfe9d",
+    "text": "NON-SPEC. Bawat delegation na isinagawa o TINANGGIHAN ng serbisyong ito, bilang JSON: walong mechanism sa Kerberos, WS-Trust at OAuth 2.0 Token Exchange sa iisang model, bawat isa ay nagpapangalan sa unang identity, sa tagapamagitang kumikilos para sa kanila at sa target na naabot. Sinasala ayon sa type, mode, outcome, protocol at free text at naka-page gamit ang ?page= at ?per=. Basahin muna ang `mode`: walang iniiwan ang `impersonation` sa credential na nagsasabing may kasangkot na middle tier, kaya ito lang ang lugar kung saan makikita ang katotohanang iyon. May dala ang tinanggihang act ng sariling dahilan ng KDC at hindi lumilitaw sa anumang ibang resource dito. Bukod sa mga naka-page na act, may dala ang sagot na `chains` — ang magkakaibang (mechanism, initial, intermediary, target) tuple sa mga tumugma, isa bawat edge — at `policy`, kung sino ang puwedeng mag-delegate kanino bago pa may sumubok. IPAGPATULOY AYON SA `at`, hindi ayon sa `seq` (#465). Natatangi ang `seq` at hindi kailanman ginagamit muli, at tumataas ito sa loob ng bawat proseso, ngunit ang bawat worker thread ay nagbibilang mula sa sarili nitong bloke, kaya hindi ito iisang pagkakasunod-sunod sa kanilang lahat. READ ONLY, isa sa dalawang resource dito na ganoon: lahat ng nasa loob nito ay obserbasyon o configuration ng iba, kaya walang mababago. Sinasalamin ang GET /admin/delegation."
   },
   "stsmetadata.endpoints./admin-api/delegation/policy.what": {
     "en": "1adbc4bff8b6363e",
@@ -1746,6 +1814,22 @@
   "stsmetadata.endpoints./admin-api/secret-destinations/:action.what": {
     "en": "15a8c6d83ed6bc92",
     "text": "NON-SPEC (#221). add-destination, update-destination, remove-destination at test-push (isang canary version na isinulat sa isang test secret): ang apat na act ng console, bawat isa ay ina-audit. Tinatanggap ang write credential at hindi kailanman ibinabalik."
+  },
+  "stsmetadata.endpoints./admin-api/passkey-report.what": {
+    "en": "d45e78dec310a21d",
+    "text": "NON-SPEC (#942). Ang iginuguhit ng Monitoring → Mga passkey: ang mga passkey ng realm ayon sa algorithm at lane, ang mga tao nito ayon sa uri (post-quantum lang, classical lang, pareho, wala), kung aling mga modelo ng authenticator ang may hawak ng aling mga algorithm, at ang postQuantumRequired ng bawat passkey profile; sinasala ayon sa grupo, passkey profile o application, kasama ang listahang naka-page ayon sa cursor ng mga tao sa likod ng anumang bilang. Ang mga bilang ay isang pinapanatiling aggregate — araw-araw na muling pagbilang ng mga may hawak dagdag ang mga pagbabagong naitala habang isinusulat ang mga key — at hindi kailanman pag-scan ng directory sa bawat request."
+  },
+  "stsmetadata.endpoints./admin-api/passkey-report/export.what": {
+    "en": "41f6fbe31db08a88",
+    "text": "NON-SPEC (#942). Ang mga taong pinangangalanan ng isang bilang sa Monitoring → Mga passkey, bilang CSV o JSON, binabasa nang isang page ng mga may hawak sa bawat pagkakataon, hanggang isandaang libong row at sinasabi kapag pinutol. Walang key material."
+  },
+  "stsmetadata.endpoints./admin-api/passkey-report/evidence.what": {
+    "en": "04273b8322f6ed5c",
+    "text": "NON-SPEC (#947). Ang na-archive na attestation object at ang RFC 4998 EvidenceRecord nito para sa isang passkey, na pinangalanan ng username at credentialId. Ang TSA token ay nabe-verify sa mga naka-configure na trust anchor. Ang passkey na nairehistro nang walang TSA, o ang attestation na hindi pinagkakatiwalaan at classical, ay walang tala."
+  },
+  "stsmetadata.endpoints./admin-api/passkey-report/:action.what": {
+    "en": "cd923c72e2ca4fba",
+    "text": "NON-SPEC (#942). recount: inilalagay sa pila ang job na passkeys.report-recount para sa realm na ito sa leader ng scheduler, na ginagawang bagong baseline ang isang bagong bilang ng mga may hawak. Ang nag-iisang aksyon ng console sa page na iyon; tumatakbo ito kung saan tumatakbo ang bawat job, hindi kailanman sa request."
   },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
@@ -1792,8 +1876,8 @@
     "text": "NON-SPEC. Ang sentral na table ng bawat failure condition na kayang gawin ng serbisyong ito, STS-<SUBSYSTEM>-<NNNN>, bilang JSON: bawat code kasama ang subsystem nito, kung ano ang nabigo, kung ano ang sinasabi sa CLIENT sa bokabularyo ng sarili nitong protocol, at ilang row ng hawak na audit log ang may dala nito sa realm na ito — sinasala ayon sa subsystem, text at ?seen=1, naka-page gamit ang ?page= at ?per=. HINDI KAILANMAN IPINAPADALA SA CLIENT ANG CODE: nasa audit row at sa log line lang ito. READ ONLY — source ang table. Sinasalamin ang GET /admin/error-codes; ang parehong table ay docs/error-codes.md."
   },
   "stsmetadata.endpoints./admin-api/audit.what": {
-    "en": "ba4fc61236466ead",
-    "text": "NON-SPEC. Kung ano ang nangyari rito, sunud-sunod, bilang JSON: bawat authentication, sign-on session, LDAP directory operation, interaksyon sa console, tawag sa management API at tawag sa protocol endpoint, pinakabago muna, sinasala ayon sa category, action, outcome, actor at free text at naka-page gamit ang ?page= at ?per=. WALANG CREDENTIAL NA KAILANMAN NASA ROW — walang password, bearer token, assertion o body; pinangangalanan ng modify ang mga attribute na binago nito at hindi kailanman ang mga value nila. LAKARIN ITO AYON SA `seq` sa halip na ayon sa page: monotonic ito at hindi kailanman ginagamit muli, kaya eksakto ang \"lahat pagkatapos ng 4102\" samantalang ang page 2 na kinuha isang segundo pagkatapos ng page 1 ay puwedeng umulit ng row na lumipat dito. READ ONLY — isa sa dalawang resource dito na ganoon, ang isa pa ay /admin-api/delegation. Walang clear operation, dahil ang erase control sa hindi protektadong API ay gagawing hindi masagot ng audit log ang nag-iisang tanong na dahilan ng pag-iral nito. Sinasalamin ang GET /admin/audit."
+    "en": "55d3dcbe157b0e3f",
+    "text": "NON-SPEC. Kung ano ang nangyari rito, sunud-sunod, bilang JSON: bawat authentication, sign-on session, LDAP directory operation, interaksyon sa console, tawag sa management API at tawag sa protocol endpoint, pinakabago muna, sinasala ayon sa category, action, outcome, actor at free text at naka-page gamit ang ?page= at ?per=. WALANG CREDENTIAL NA KAILANMAN NASA ROW — walang password, bearer token, assertion o body; pinangangalanan ng modify ang mga attribute na binago nito at hindi kailanman ang mga value nila. IPAGPATULOY AYON SA `at`, hindi ayon sa `seq` (#465). Natatangi ang `seq` sa bawat proseso ng serbisyo at hindi kailanman ginagamit muli, at tumataas ito sa loob ng bawat proseso, ngunit ang bawat worker thread ay nagbibilang mula sa sarili nitong bloke, kaya ang mga numero ay hindi iisang pagkakasunod-sunod at ang \"lahat pagkatapos ng 4102\" ay nakakaligtaan ng isang mas huling kaganapang naitala sa mas mababang numero. Ang `origin` ang pumapantay sa `seq`. Ang page 2 na kinuha isang segundo pagkatapos ng page 1 ay puwedeng umulit ng row na lumipat dito. READ ONLY — isa sa dalawang resource dito na ganoon, ang isa pa ay /admin-api/delegation. Walang clear operation, dahil ang erase control sa hindi protektadong API ay gagawing hindi masagot ng audit log ang nag-iisang tanong na dahilan ng pag-iral nito. Sinasalamin ang GET /admin/audit."
   },
   "stsmetadata.endpoints./admin-api/realms.what": {
     "en": "83f6f516fe05921e",
@@ -3382,6 +3466,10 @@
   "stsmetadata.protocols.User portal.what": {
     "en": "835d40e9ff6eaabb",
     "text": "HINDI ITO PROTOCOL, at may card ito dahil nag-uulat ang page na ito ng endpoint group na walang card na umaangkin — na siyang patakarang pumipigil sa bagong family na dumating nang walang pasabi, at sulit itong bayaran dito sa halip na gawing kondisyonal ang patakaran. ANG UNANG SURFACE SA SERBISYONG ITO NA PAG-AARI NG TAONG TUMITINGIN DITO: bawat ibang browser page dito ay para sa iba — ang sign-in screen ay isang step sa flow ng ibang protocol, ang consent screen ay nagtatanong ng isang tanong at umaalis, ang /admin ay para sa operator at gated sa dalawang role. Dito nakikita ng tao kung ano ang alam ng identity provider na ito tungkol sa kanila at binabago kung paano sila nag-a-authenticate: ang kanilang password, at ang kanilang mga security key at kung primary credential o second factor ang bawat isa. HIWALAY ITONG APPLICATION mula sa admin console at walang pinaghahatian maliban sa sign-on session sa authorization server ng serbisyong ito: bawat isa ay public OAuth client (sts-user-portal dito) na may hawak ng sarili nitong DPoP-bound na token sa memory. Ang /portal/activate ang unauthenticated na kalahati nito, kung saan ginagamit ng taong na-provision sa pamamagitan ng /admin-api o SCIM ang single-use at may takdang oras na activation link para mag-set up ng credential — naka-hash habang nakaimbak tulad ng password, naka-rate limit, ginagamit kapag natapos ang setup sa halip na kapag binuksan ang link, at hindi kailanman nagsa-sign in ng sinuman. MULA #568 ISA ITONG STATIC APPLICATION sa ibabaw ng /account-api, ang Account API group sa ibaba: isang operation bawat page at bawat form, ang tao ay laging ang subject ng token, inilalarawan ng sarili nitong OpenAPI document."
+  },
+  "stsmetadata.protocols.Reporting.what": {
+    "en": "66663fd63a35a287",
+    "text": "HINDI ISANG PROTOCOL. Ang reports application (#956): isang static na pahina sa /report sa ibabaw ng /report-api, ang public client na sts-report, at isang catalog ng sariling mga record ng realm na ito. Nagsa-sign in ito sa browser, may hawak na DPoP-bound na token, at hindi kailanman tumatanggap ng SQL string. Ang naka-save na definition ay pag-aari ng may-ari nito; ang share sa isang directory group ay nagbibigay ng pagpapatakbo at pagbabasa, hindi ng pag-edit."
   },
   "stsmetadata.protocols.GNAP.what": {
     "en": "b938c4cb8feac54d",

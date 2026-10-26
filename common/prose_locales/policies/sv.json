@@ -1127,6 +1127,30 @@
     "en": "ba077a59ecf25ecb",
     "text": "`off` (standardvärdet) godtar en nyckel oavsett signaturalgoritm. `sign-in` godtar bara en POSTKVANTNYCKEL, en vars algoritm är ML-DSA-44, ML-DSA-65 eller ML-DSA-87 (RFC 9964), när den loggar in någon, som första inloggningsuppgift eller som andra faktor; en klassisk nyckel kan fortfarande registreras. `registration-and-sign-in` nekar en klassisk nyckel även vid registrering, och registreringen erbjuder då bara ML-DSA. Det är algoritmen som avgör, inte det spår nyckeln skapades i. Nekas så länge sfären inte erbjuder någon ML-DSA (webauthn.algorithms namnger ingen, och varken webauthn.pqcOnly eller webauthn.pqcAlongsideClassical är på)."
   },
+  "passkey.FIELDS.postQuantumAllowCredentials.label": {
+    "en": "295b04bef9cf50bc",
+    "text": "Nycklar som en inloggning anger när en postkvantnyckel krävs"
+  },
+  "passkey.FIELDS.postQuantumAllowCredentials.what": {
+    "en": "af7666466d67e760",
+    "text": "`realm` (standard) följer sfärens webauthn.postQuantumAllowCredentials. Läses bara medan postQuantumRequired kräver en postkvantnyckel vid inloggning. `narrow` anger bara personens postkvantnycklar (ML-DSA) i nyckelstegets begäran, så en klassisk nyckel erbjuds aldrig, och en person vars enhet bara har deras klassiska nyckel ser plattformens eget meddelande ”ingen nyckel hittades”. `list-and-refuse` anger varje nyckel personen har och avvisar en klassisk efter ceremonin, med en sida som säger att det här programmet kräver en postkvantnyckel och var man lägger till en; personen kan då välja en nyckel som kommer att avvisas. I båda fallen får en person som inte har någon postkvantnyckel veta det före varje ceremoni. Utelämnad vid en sparning behålls `realm`."
+  },
+  "passkey.FIELDS.registrationAlgorithms.label": {
+    "en": "48d2a5935e526db5",
+    "text": "Algoritmer som en nyckelregistrering erbjuder"
+  },
+  "passkey.FIELDS.registrationAlgorithms.what": {
+    "en": "4ff3748f6cb3a6f1",
+    "text": "`realm` (standardvärdet) erbjuder sfärens webauthn.algorithms. Annars de signaturalgoritmer som en nyckelregistrering erbjuder den här profilens personer, i den ordning de föredras (en autentiserare skapar den första den stöder), bland de algoritmer som webauthn.algorithms kan namnge. Nästa rad kan begränsa eller ordna om listan, och en nyckel vars algoritm inte är en som den här profilen erbjuder nekas när den registreras. Utelämnad vid en sparning behålls `realm`."
+  },
+  "passkey.FIELDS.registrationMode.label": {
+    "en": "ca3432814ea1b7a3",
+    "text": "Postkvantalgoritmer vid registrering"
+  },
+  "passkey.FIELDS.registrationMode.what": {
+    "en": "1466dbe275c566e7",
+    "text": "`realm` (standardvärdet) följer webauthn.pqcOnly och webauthn.pqcAlongsideClassical. `pq-only` erbjuder bara ML-DSA och nekar ett nytt försök med de klassiska algoritmerna. `pq-first` erbjuder ML-DSA först och de klassiska algoritmerna efter, även där sfären bara begär ML-DSA. `classical-only` erbjuder ingen ML-DSA och ingen postkvantnyckel bredvid en klassisk, för personer vars enheter misslyckas med en ML-DSA-registrering. Nekas med postQuantumRequired annat än off eller med attestationAlgorithms angivet (classical-only), och där de erbjudna algoritmerna inte namnger någon ML-DSA (pq-only, pq-first). Utelämnad vid en sparning behålls `realm`."
+  },
   "passkey.FIELDS.passkeyHints.label": {
     "en": "7445bda72b06c415",
     "text": "Tips som ”Skapa en nyckel” skickar"
@@ -1199,6 +1223,30 @@
     "en": "bdbb83ca7b2a2c48",
     "text": "`any` SOM STANDARD I UTVECKLING, `not-weaker` I PRODUKT. Om en väg tillbaka in i kontot som inte kräver någon nyckel — en länk för att återställa lösenordet, en aktiveringslänk, en återställningskod, en kod eller länk som skickats via e-post — återger åtkomsten för en person som har en. `any`: genast. `not-weaker`: den första inloggningen därefter som inte är en nyckelinloggning når inget program; personen registrerar en nyckel som uppfyller den här policyn och loggar in med den. `operator-only`: som not-weaker, och självbetjäningsdörrarna (formuläret för glömt lösenord, en återställningskod eller en kod eller länk via e-post vid inloggning) nekas; bara en administratörs återställningslänk, genererade lösenord eller aktiveringslänk återstår. Utelämnas den vid en sparning behålls det inbyggda standardvärdet."
   },
+  "passkey.FIELDS.attestationAlgorithms.label": {
+    "en": "fe72fed238e39ede",
+    "text": "Algoritmer som en nyckels attestering måste vara signerad med"
+  },
+  "passkey.FIELDS.attestationAlgorithms.what": {
+    "en": "cb4ed83be3a69177",
+    "text": "`none` SOM STANDARD: en attestering godtas oavsett vilken algoritm den är signerad med. Annars en lista av post-quantum, ml-dsa-44, ml-dsa-65, ml-dsa-87, slh-dsa och composite-ml-dsa: en nyckel registreras bara med en BETROD attestering som bär ett certifikat, där utsagans signatur och signaturen på varje certifikat i dess kedja, från lövcertifikatet till förtroendeankaret, var och en är en som listan tillåter (`post-quantum` tillåter varje ML-DSA-, SLH-DSA- eller sammansatt ML-DSA-signatur). Self- och none-attestering avvisas, eftersom de saknar certifikat. Med enforceAttestationAtSignIn påslaget prövas nyckeln mot regeln vid varje inloggning utifrån det som registreringen sparade, så en nyckel registrerad före regeln slutar fungera. Detta gäller attesteringens algoritm, inte nyckelns egen (postQuantumRequired). Utelämnas den vid en sparning behålls det inbyggda standardvärdet."
+  },
+  "passkey.FIELDS.adminEnrolment.label": {
+    "en": "73fd6ffe6660cf3f",
+    "text": "Låt en administratör registrera en nyckel för en person"
+  },
+  "passkey.FIELDS.adminEnrolment.what": {
+    "en": "9e395e59fd838fcf",
+    "text": "`off` SOM STANDARD. `on` låter en administratör som har konsolrollen Admin Write registrera en nyckel för en person som den här profilen gäller, från personens sida i konsolen eller /admin-api: registreringsceremonin körs i administratörens egen webbläsare, mot en autentiserare som administratören har (en säkerhetsnyckel som ska lämnas över, till exempel), under personens användarhandtag, och den verifieras precis som personens egen registrering — attestering, algoritmer och den här policyns registreringsregler. Ingenting som gjorts någon annanstans kan importeras. Nyckeln antecknar vilken administratör som registrerade den och när, och personen får veta det. Utelämnas den vid en sparning behålls det inbyggda standardvärdet."
+  },
+  "passkey.FIELDS.deviceBoundRequired.label": {
+    "en": "19194c290aaa3903",
+    "text": "Kräv en enhetsbunden session"
+  },
+  "passkey.FIELDS.deviceBoundRequired.what": {
+    "en": "5098a9645fefe2ff",
+    "text": "AV SOM STANDARD. På väntar en utfärdning till en tillämpning som den här profilen täcker tills inloggningssessionen är bunden till webbläsarens nyckel, och nekas när webbläsaren hoppade över den registreringen eller väntan löpte ut utan en bindning. En session som aldrig erbjöds registrering nekas inte av den här raden. Nekas medan authn.deviceBoundSessions är av."
+  },
   "passkey.SCHEMA.objectClasses.stsPasskeyPolicy.what": {
     "en": "44bab556bd6240cc",
     "text": "Den här tjänstens klass för en nyckelpolicy: hur nycklar beter sig i den här sfären. Posten namnges efter PROFILEN (`cn=default`)."
@@ -1239,6 +1287,18 @@
     "en": "ba077a59ecf25ecb",
     "text": "`off` (standardvärdet) godtar en nyckel oavsett signaturalgoritm. `sign-in` godtar bara en POSTKVANTNYCKEL, en vars algoritm är ML-DSA-44, ML-DSA-65 eller ML-DSA-87 (RFC 9964), när den loggar in någon, som första inloggningsuppgift eller som andra faktor; en klassisk nyckel kan fortfarande registreras. `registration-and-sign-in` nekar en klassisk nyckel även vid registrering, och registreringen erbjuder då bara ML-DSA. Det är algoritmen som avgör, inte det spår nyckeln skapades i. Nekas så länge sfären inte erbjuder någon ML-DSA (webauthn.algorithms namnger ingen, och varken webauthn.pqcOnly eller webauthn.pqcAlongsideClassical är på)."
   },
+  "passkey.SCHEMA.attributes.stsPasskeyPostQuantumAllowCredentials.what": {
+    "en": "af7666466d67e760",
+    "text": "`realm` (standard) följer sfärens webauthn.postQuantumAllowCredentials. Läses bara medan postQuantumRequired kräver en postkvantnyckel vid inloggning. `narrow` anger bara personens postkvantnycklar (ML-DSA) i nyckelstegets begäran, så en klassisk nyckel erbjuds aldrig, och en person vars enhet bara har deras klassiska nyckel ser plattformens eget meddelande ”ingen nyckel hittades”. `list-and-refuse` anger varje nyckel personen har och avvisar en klassisk efter ceremonin, med en sida som säger att det här programmet kräver en postkvantnyckel och var man lägger till en; personen kan då välja en nyckel som kommer att avvisas. I båda fallen får en person som inte har någon postkvantnyckel veta det före varje ceremoni. Utelämnad vid en sparning behålls `realm`."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyRegistrationAlgorithms.what": {
+    "en": "4ff3748f6cb3a6f1",
+    "text": "`realm` (standardvärdet) erbjuder sfärens webauthn.algorithms. Annars de signaturalgoritmer som en nyckelregistrering erbjuder den här profilens personer, i den ordning de föredras (en autentiserare skapar den första den stöder), bland de algoritmer som webauthn.algorithms kan namnge. Nästa rad kan begränsa eller ordna om listan, och en nyckel vars algoritm inte är en som den här profilen erbjuder nekas när den registreras. Utelämnad vid en sparning behålls `realm`."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyRegistrationMode.what": {
+    "en": "1466dbe275c566e7",
+    "text": "`realm` (standardvärdet) följer webauthn.pqcOnly och webauthn.pqcAlongsideClassical. `pq-only` erbjuder bara ML-DSA och nekar ett nytt försök med de klassiska algoritmerna. `pq-first` erbjuder ML-DSA först och de klassiska algoritmerna efter, även där sfären bara begär ML-DSA. `classical-only` erbjuder ingen ML-DSA och ingen postkvantnyckel bredvid en klassisk, för personer vars enheter misslyckas med en ML-DSA-registrering. Nekas med postQuantumRequired annat än off eller med attestationAlgorithms angivet (classical-only), och där de erbjudna algoritmerna inte namnger någon ML-DSA (pq-only, pq-first). Utelämnad vid en sparning behålls `realm`."
+  },
   "passkey.SCHEMA.attributes.stsPasskeyHintsPasskey.what": {
     "en": "2ffa66aabab7a053",
     "text": "De WebAuthn-tips (hints, Level 3 avsnitt 5.4.8) som portalens *Skapa en nyckel* skickar, i ordning, bland security-key, client-device och hybrid, eller none. De talar om för webbläsaren vilket sätt att skapa nyckeln den ska börja med. Ett tips får inte motsäga webauthn.authenticatorAttachment: client-device innebär platform, security-key och hybrid innebär cross-platform."
@@ -1274,6 +1334,18 @@
   "passkey.SCHEMA.attributes.stsPasskeyRecoveryAssurance.what": {
     "en": "bdbb83ca7b2a2c48",
     "text": "`any` SOM STANDARD I UTVECKLING, `not-weaker` I PRODUKT. Om en väg tillbaka in i kontot som inte kräver någon nyckel — en länk för att återställa lösenordet, en aktiveringslänk, en återställningskod, en kod eller länk som skickats via e-post — återger åtkomsten för en person som har en. `any`: genast. `not-weaker`: den första inloggningen därefter som inte är en nyckelinloggning når inget program; personen registrerar en nyckel som uppfyller den här policyn och loggar in med den. `operator-only`: som not-weaker, och självbetjäningsdörrarna (formuläret för glömt lösenord, en återställningskod eller en kod eller länk via e-post vid inloggning) nekas; bara en administratörs återställningslänk, genererade lösenord eller aktiveringslänk återstår. Utelämnas den vid en sparning behålls det inbyggda standardvärdet."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyAttestationAlgorithms.what": {
+    "en": "cb4ed83be3a69177",
+    "text": "`none` SOM STANDARD: en attestering godtas oavsett vilken algoritm den är signerad med. Annars en lista av post-quantum, ml-dsa-44, ml-dsa-65, ml-dsa-87, slh-dsa och composite-ml-dsa: en nyckel registreras bara med en BETROD attestering som bär ett certifikat, där utsagans signatur och signaturen på varje certifikat i dess kedja, från lövcertifikatet till förtroendeankaret, var och en är en som listan tillåter (`post-quantum` tillåter varje ML-DSA-, SLH-DSA- eller sammansatt ML-DSA-signatur). Self- och none-attestering avvisas, eftersom de saknar certifikat. Med enforceAttestationAtSignIn påslaget prövas nyckeln mot regeln vid varje inloggning utifrån det som registreringen sparade, så en nyckel registrerad före regeln slutar fungera. Detta gäller attesteringens algoritm, inte nyckelns egen (postQuantumRequired). Utelämnas den vid en sparning behålls det inbyggda standardvärdet."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyAdminEnrolment.what": {
+    "en": "9e395e59fd838fcf",
+    "text": "`off` SOM STANDARD. `on` låter en administratör som har konsolrollen Admin Write registrera en nyckel för en person som den här profilen gäller, från personens sida i konsolen eller /admin-api: registreringsceremonin körs i administratörens egen webbläsare, mot en autentiserare som administratören har (en säkerhetsnyckel som ska lämnas över, till exempel), under personens användarhandtag, och den verifieras precis som personens egen registrering — attestering, algoritmer och den här policyns registreringsregler. Ingenting som gjorts någon annanstans kan importeras. Nyckeln antecknar vilken administratör som registrerade den och när, och personen får veta det. Utelämnas den vid en sparning behålls det inbyggda standardvärdet."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyDeviceBoundRequired.what": {
+    "en": "5098a9645fefe2ff",
+    "text": "AV SOM STANDARD. På väntar en utfärdning till en tillämpning som den här profilen täcker tills inloggningssessionen är bunden till webbläsarens nyckel, och nekas när webbläsaren hoppade över den registreringen eller väntan löpte ut utan en bindning. En session som aldrig erbjöds registrering nekas inte av den här raden. Nekas medan authn.deviceBoundSessions är av."
   },
   "passkey.SCHEMA.attributes.stsPasskeySelectApplication.what": {
     "en": "03ba679923c40b45",
@@ -1415,6 +1487,10 @@
     "en": "79742dacfba54ede",
     "text": "bara en postkvantnyckel (ML-DSA) registreras eller loggar in en person"
   },
+  "passkey.sentences.attestationAlgorithms": {
+    "en": "9e73c79f0de11296",
+    "text": "en nyckel registreras bara med en betrodd attestering vars utsaga och certifikatkedja är signerade med {{algorithms}}"
+  },
   "passkey.sentences.recoveryAny": {
     "en": "7383156c8eb1e363",
     "text": "en kontoåterställning återger åtkomsten genast, oavsett vilken nyckel personen har"
@@ -1426,6 +1502,30 @@
   "passkey.sentences.recoveryOperatorOnly": {
     "en": "1a8f0b4a3319a435",
     "text": "en person som har en nyckel återställer sitt konto bara genom en administratör, och når sedan inget program förrän en nyckel som uppfyller den här policyn har loggat in hen"
+  },
+  "passkey.sentences.registrationList": {
+    "en": "fec8859790708542",
+    "text": "en nyckelregistrering erbjuder {{algorithms}}, i den ordningen, i stället för sfärens lista"
+  },
+  "passkey.sentences.registrationPqOnly": {
+    "en": "10bb1b9e748c737c",
+    "text": "en nyckelregistrering erbjuder bara postkvantalgoritmer (ML-DSA), bland {{algorithms}}, och inget klassiskt nytt försök"
+  },
+  "passkey.sentences.registrationPqFirst": {
+    "en": "6d255de3f15849dd",
+    "text": "en nyckelregistrering erbjuder postkvantalgoritmer (ML-DSA) först och de klassiska efter dem, bland {{algorithms}}"
+  },
+  "passkey.sentences.registrationClassicalOnly": {
+    "en": "34338f9da2211979",
+    "text": "en nyckelregistrering erbjuder bara klassiska algoritmer, bland {{algorithms}}: ingen postkvantnyckel skapas"
+  },
+  "passkey.sentences.param.realmAlgorithms": {
+    "en": "62dd60f1d67057b4",
+    "text": "sfärens webauthn.algorithms"
+  },
+  "passkey.sentences.adminEnrolment": {
+    "en": "41023a55f549b1cd",
+    "text": "en administratör får registrera en nyckel för en person, i administratörens egen webbläsare, verifierad som personens egen"
   },
   "kinds.locale.label": {
     "en": "1219a9dcfb9aa19f",

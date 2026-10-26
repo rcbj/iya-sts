@@ -220,7 +220,7 @@ const WST_NS = 'http://docs.oasis-open.org/ws-sx/ws-trust/200512';
 // `RequestedAttachedReference`); and there is no Cancel at all — no
 // CancelTarget and no RequestedTokenCancelled — so a Cancel is refused with
 // the version's own InvalidRequest fault rather than answered in elements
-// the version does not have. tests/vendored/sts_xml_schema_validation.js
+// the version does not have. tests/protocol/sts_xml_schema_validation.js
 // validates each version's answers against its own published schema.
 const WST_2004_04_NS = 'http://schemas.xmlsoap.org/ws/2004/04/trust';
 
@@ -2130,7 +2130,7 @@ class WsTrust {
   // row from, and what the embedded LDAP directory grows a
   // `uid=<name>,ou=users` entry from. A path that accepts a credential without
   // calling it is a person who authenticated here and is in none of the three.
-  private authenticate(doc, jwtIssuer?, base?) {
+  private authenticate(doc, jwtIssuer?, base?, audience?) {
     const { stats, delegation, mode, log } = this.deps;
     log.debug("Entering WsTrust.authenticate().");
     const credential = this.requesterCredential(doc, jwtIssuer, base);
@@ -2143,9 +2143,14 @@ class WsTrust {
     if (credential) {
       // An application (#519) is recorded as a client, which is what keeps
       // the directory from growing a person of its name.
+      // The AppliesTo is WS-Trust's name for the application. The
+      // attempts tab matches wstrustAppliesTo. Not client_id: seen()
+      // records the sighting where the token is issued, and the funnel
+      // would count it again.
       stats.recordAuthentication(Object.assign({
         presented: credential.subject, protocol: 'WS-Trust',
-        method: credential.method, note: credential.note
+        method: credential.method, note: credential.note,
+        application: String(audience || '')
       }, credential.isClient ? { isClient: true } : {}));
     }
     const delegatedBy = this.delegatedSubject(doc, jwtIssuer);
@@ -2303,12 +2308,13 @@ class WsTrust {
   // nobody here, so in product the order only decides whether a refusal
   // leaves a row — and the delegation policy's, the one this was about,
   // no longer does.
-  private recordDelegatedSubject(subject: string): void {
+  private recordDelegatedSubject(subject: string, audience?: string): void {
     const { stats, log } = this.deps;
     log.debug("Entering WsTrust.recordDelegatedSubject().");
     stats.recordAuthentication({
       presented: subject, protocol: 'WS-Trust',
       method: 'OnBehalfOf / ActAs (delegated)',
+      application: String(audience || ''),
       note: 'The requester named this subject; the subject presented ' +
             'nothing. The delegation policy allowed the requester to act ' +
             'for them, or — in development — said it would have refused ' +
@@ -2460,7 +2466,8 @@ class WsTrust {
     // the credential verified twice — a second verification would count a
     // refused password twice and spend a nonce twice.
     const auth: any = options.preAuthenticated ||
-      this.authenticate(doc, jwtIssuer, String(options.base || ''));
+      this.authenticate(doc, jwtIssuer, String(options.base || ''),
+                        audience);
     if (!auth.ok) {
       log.debug("Leaving WsTrust.handleRst(). Authentication failed, " +
                 "answering with a SOAP Fault.");
@@ -2632,7 +2639,7 @@ class WsTrust {
     }
 
     if (auth.delegation) {
-      this.recordDelegatedSubject(String(auth.subject || ''));
+      this.recordDelegatedSubject(String(auth.subject || ''), audience);
     }
 
     // Issue / Renew both mint (or re-mint) a token, for whoever authenticate()
@@ -3093,7 +3100,7 @@ class WsTrust {
   // and a client that re-read it from a proxy would be checking this service's
   // signatures against the certificate of a service that is no longer running.
   // It was the ONE metadata document in this service served without the header,
-  // which tests/vendored/sts_metadata_anonymous.js found by asking the same
+  // which tests/protocol/sts_metadata_anonymous.js found by asking the same
   // question of all nineteen of them at once.
   private stsCertEndpoint(req, res) {
     const { log, STS } = this.deps;
@@ -3421,8 +3428,13 @@ class WsTrust {
                 " operation signs nobody in.");
       return null;
     }
+    const appliesToEl = firstByLocal(doc, 'AppliesTo');
+    const audience = appliesToEl
+      ? (textByLocal(appliesToEl, 'Address') ||
+         String(appliesToEl.textContent || '').trim()) : '';
     const auth: any = this.authenticate(doc,
-      this.oauthIssuer(helpers.baseUrlOf(req)), helpers.baseUrlOf(req));
+      this.oauthIssuer(helpers.baseUrlOf(req)), helpers.baseUrlOf(req),
+      audience);
     if (!auth.ok || !auth.subject || auth.subject === 'anonymous' ||
         auth.kind === 'delegated') {
       log.debug("Leaving WsTrust.doorAssessment(). Nobody signed in.");

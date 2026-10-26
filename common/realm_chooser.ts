@@ -83,7 +83,7 @@ import PageLocale = require('./page_locale');
 
 type Translator = ReturnType<typeof PageLocale.forPage>;
 
-type SurfaceId = 'admin' | 'portal';
+type SurfaceId = 'admin' | 'portal' | 'report';
 
 interface Surface {
   root: string;
@@ -144,14 +144,16 @@ interface CookieResponse {
 }
 
 /**
- * The two surfaces that ask which realm to sign in through, `admin` and
- * `portal`, each with its root path and the words the button uses.
+ * The surfaces that ask which realm to sign in through, `admin`, `portal`
+ * and `report`, each with its root path and the words the button uses.
  */
 const SURFACES: Readonly<Record<SurfaceId, Surface>> = Object.freeze({
   admin: { root: '/admin', label: 'the admin console',
            application: 'sts-admin-console' },
   portal: { root: '/portal', label: 'your account',
-            application: 'sts-user-portal' }
+            application: 'sts-user-portal' },
+  report: { root: '/report', label: 'reports',
+            application: 'sts-report' }
 });
 
 /**
@@ -432,7 +434,8 @@ class RealmChooser {
       PageLocale.forPage({ application: surface.application });
     // Which surface, as the messages' `select` reads it: `surface.label` is
     // English, so the words are chosen in the catalog by the surface's id.
-    const which = surface === SURFACES.portal ? 'portal' : 'admin';
+    const which = surface === SURFACES.portal ? 'portal' :
+      (surface === SURFACES.report ? 'report' : 'admin');
     const action = this.serviceRoot(req) + surface.root;
     const remembered = this.rememberedId(req);
     const control = '<select id="realmchoice" name="realm" autofocus>' +
@@ -478,7 +481,8 @@ class RealmChooser {
     const { log, realms } = this.deps;
     log.debug("Entering RealmChooser.page(). surface=" + surfaceId);
     const surface = SURFACES[surfaceId as SurfaceId] || SURFACES.admin;
-    const which = surface === SURFACES.portal ? 'portal' : 'admin';
+    const which = surface === SURFACES.portal ? 'portal' :
+      (surface === SURFACES.report ? 'report' : 'admin');
     // THE LANGUAGE (#539), as form()'s: the surface is the application.
     const t = PageLocale.forPage({ application: surface.application });
     const style =

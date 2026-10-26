@@ -203,6 +203,13 @@ const ROWS: Row[] = [
   // it acts on is its API's, which goes home.
   { prefix: '/portal', strategy: 'local',
     why: 'the static portal\'s document, script and stylesheet (#568)' },
+  // /report-api is the longer prefix, so it wins for its own paths. /report
+  // does not prefix-match it: the match is the prefix or the prefix plus a
+  // slash, after a trailing slash is stripped.
+  { prefix: '/report-api', strategy: 'local',
+    why: 'the reports API answers where the browser is pinned (#956)' },
+  { prefix: '/report', strategy: 'local',
+    why: 'the static reports document, script and stylesheet (#956)' },
   { prefix: '/portal/signals/receive', strategy: 'local',
     why: 'the portal\'s Shared Signals stream is received where it is ' +
          'delivered' },
@@ -817,7 +824,7 @@ class CellPlacement {
         // pins it home, or its next request reaches the cell it came
         // through, which holds no such sign-in (STS-AUTHN-0003). Found by
         // the `cells` mode's first run (2026-09-28,
-        // tests/vendored/sts_cells_traveller.js).
+        // tests/protocol/sts_cells_traveller.js).
         if (req.stsCellRelay.reason === 'artifact') {
           const row = CellPlacement.rowFor(String(req.path || '/'));
           if (row && row.browser) {

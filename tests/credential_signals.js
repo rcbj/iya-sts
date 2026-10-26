@@ -49,7 +49,7 @@
 //      change step is drawn.
 //
 // Two children, because each loads the whole stack and one of them is in
-// product mode. `tests/vendored/sts_credential_signals.js` holds the parts
+// product mode. `tests/protocol/sts_credential_signals.js` holds the parts
 // that can be driven over the wire against a real stream.
 // ===========================================================================
 
@@ -157,8 +157,8 @@ function childMain() {
         const riskFailures = require(ROOT + '/risk/risk_failures');
         const riskEngine = require(ROOT + '/risk/risk_engine');
         const tlsClient = require(ROOT + '/common/tls_client_certificates');
-        const keyMaterial = require(ROOT + '/common/vendored/key_material');
-        const x509 = require(ROOT + '/common/vendored/x509');
+        const keyMaterial = require(ROOT + '/common/crypto_impl/key_material');
+        const x509 = require(ROOT + '/common/crypto_impl/x509');
         const errorCodes = require(ROOT + '/common/error_codes');
         const audit = require(ROOT + '/common/audit');
 

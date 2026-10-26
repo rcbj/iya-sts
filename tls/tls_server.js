@@ -1385,7 +1385,7 @@ const SERVER_CERTIFICATES = (function buildServerCertificates() {
       return;
     }
     // THE RUNTIME BEFORE THE SPELLING. An ML-DSA certificate needs node's
-    // OpenSSL 3.5 (node 24; this repository's Dockerfile pins 24.16.0), and
+    // OpenSSL 3.5 (node 24; this repository's Dockerfile pins 24.22.1), and
     // this block runs at MODULE TOP LEVEL — so on node 22 a configured
     // `ml-dsa-65` used to throw out of a `require` and take the whole service
     // down before it bound anything, which is the failure the root CLAUDE.md's
@@ -1825,7 +1825,7 @@ function takeIssuedCertificate(record, certPem, chainPem) {
   // So after `POST /admin-api/pki/build-root` they went on presenting a chain
   // under a Root nothing held any more, and every client that re-fetched the
   // anchor failed with `unable to get local issuer certificate` until the
-  // service restarted (tests/vendored/sts_ldaps.js and sts_spiffe_grpc.js,
+  // service restarted (tests/protocol/sts_ldaps.js and sts_spiffe_grpc.js,
   // red in every mode). The log line below said "one anchor covers LDAPS 636"
   // the whole time. The owners of those sockets re-key on this.
   notifyCertificateObservers(record.algorithm);
@@ -2751,7 +2751,7 @@ function trustAnchorPems() {
 // signed by the same Root, and the reconcile answered "already chains" about
 // the stale one.
 //
-// It reached the suite as `tests/vendored/sts_pki_distribution_points.js` in
+// It reached the suite as `tests/protocol/sts_pki_distribution_points.js` in
 // dispatch mode only: *http://…/pki/crl/process/intermediate.crl is named by
 // certificates of two different authorities — CN=sts Intermediate CA
 // (Process), O=sts and CN=sts Intermediate CA (Process), O=sts*. Measured on
@@ -3600,18 +3600,26 @@ realms.onChange(function () {
 // SNI" were RESUMED on the debugger's listener, where with the cache at 0
 // they had full handshakes.
 //
-// So the cache keeps the name with the session and compares. The name a
-// ClientHello OFFERS is known to node before OpenSSL sees the hello — its
-// own ClientHello parser hands it to the socket's `onclienthello` as
-// `hello.servername`, the call that then emits `resumeSession` — but only
-// there; `watchClientHello()` wraps that handler (and `onnewsession`, for
-// the full handshake that makes a session) on every server socket of a
-// listener with a cache, and `offeredHello` carries the name to the two
-// listeners for exactly the length of that SYNCHRONOUS call. A resumption
-// whose name differs in any byte — a different name, an added or missing
-// one, a NUL inside it — is answered "nothing to resume", which is the full
-// handshake the RFC asks for; OpenSSL then judges the name as it judges any
-// full handshake's (a malformed one is refused, unrecognized_name).
+// So the cache keeps the name with the session and compares. Node 24's
+// early ClientHello callback hands `onclienthello` the session id and
+// whether a ticket was offered, and nothing else: `hello.servername` is
+// absent, and `getServername()` is still false while `resumeSession` runs,
+// because OpenSSL parses the name only after the session has been chosen.
+// `installSessionNameSniffer()` therefore reads the name from the raw
+// ClientHello before the TLS engine sees the socket — the same
+// pause-and-unshift `tls/client_hello.ts` uses — and is installed from
+// `attachSessionCache()`, which runs before that module's `install()` and
+// before the PROXY protocol's, so this wrapper is the inner one and reads
+// a hello whose header is already gone. `hello.servername` is still
+// preferred when a node passes it. `watchClientHello()` wraps
+// `onclienthello` and `onnewsession` on every server socket of a listener
+// with a cache, and `offeredHello` carries the name to the two listeners
+// for exactly the length of that SYNCHRONOUS call. A resumption whose name
+// differs in any byte — a different name, an added or missing one, a NUL
+// inside it — is answered "nothing to resume", which is the full handshake
+// the RFC asks for; OpenSSL then judges the name as it judges any full
+// handshake's (a malformed one is refused, unrecognized_name). A hello the
+// sniffer cannot read is not resumed either.
 //
 // FAILING CLOSED: a name the cache does not know (the hook missing, a node
 // that stopped passing `servername`) refuses the resumption rather than
@@ -3633,7 +3641,187 @@ let offeredHello = null;
 /** The servers whose sockets carry `watchClientHello()`. */
 const helloWatchedServers = new WeakSet();
 
+// The name `installSessionNameSniffer()` read, on the raw socket, and the
+// mark that this sniffer has already handed that socket to the TLS engine.
+const SESSION_NAME = Symbol('sts.sessionServerName');
+const SESSION_SEEN = Symbol('sts.sessionNameSeen');
+// The same bounds `tls/client_hello.ts` uses: past either, the bytes are
+// handed to the TLS engine unread and the session is not resumed by ID.
+const SESSION_HELLO_LIMIT = 64 * 1024;
+const SESSION_HELLO_WAIT_MS = 10 * 1000;
+
+/**
+ * `tls/client_hello.ts`'s `parse`, loaded once. Null when it could not be
+ * loaded: every session-ID resumption then fails closed.
+ * @type {((bytes: Buffer) => { state: string,
+ *   hello?: { serverName?: string } })|null}
+ */
+let readClientHello = null;
+
+// Set on a server once `installSessionNameSniffer()` has wrapped its emit.
+const SESSION_SNIFFER = Symbol('sts.sessionNameSniffer');
+
 let clientHelloHookInstalled = false;
+
+/**
+ * Loads `tls/client_hello.ts`'s parser, once. A later listener retries
+ * when the first load found nothing.
+ */
+function loadClientHelloReader() {
+  log.debug('Entering loadClientHelloReader().');
+  if (typeof readClientHello === 'function') {
+    log.debug('Leaving loadClientHelloReader(). Cached.');
+    return;
+  }
+  try {
+    const clientHello = require('./client_hello');
+    if (clientHello && typeof clientHello.parse === 'function') {
+      readClientHello = clientHello.parse;
+    }
+  } catch (e) {
+    log.debug('Caught in loadClientHelloReader(): ' +
+              ((e && e.message) || e));
+  }
+  log.debug('Leaving loadClientHelloReader(). ' +
+            (typeof readClientHello === 'function' ? 'loaded'
+                                                   : 'unavailable'));
+}
+
+// A hot path: once per chunk of every ClientHello on a listener with a
+// cache, and no Entering/Leaving pair here would drown the log. `undefined`
+// asks for more bytes; null is a hello whose name cannot be read.
+function nameOfHello(bytes) {
+  if (typeof readClientHello !== 'function') {
+    return null;
+  }
+  let parsed;
+  try {
+    parsed = readClientHello(bytes);
+  } catch (e) {
+    log.debug('Caught in nameOfHello(): ' + ((e && e.message) || e));
+    return null;
+  }
+  if (!parsed || parsed.state === 'incomplete') {
+    return undefined;
+  }
+  if (parsed.state === 'complete' && parsed.hello &&
+      typeof parsed.hello.serverName === 'string') {
+    return parsed.hello.serverName;
+  }
+  return null;
+}
+
+// A hot path: once per connection, and no Entering/Leaving pair here would
+// drown the log. '' is a hello that offered no name; null was not read.
+function sniffedServerName(raw) {
+  if (!raw || !Object.prototype.hasOwnProperty.call(raw, SESSION_NAME)) {
+    return null;
+  }
+  const name = raw[SESSION_NAME];
+  if (typeof name === 'string') {
+    return name;
+  }
+  return null;
+}
+
+/**
+ * Reads the server name from the raw ClientHello before the TLS engine
+ * takes the socket, and remembers it on the socket for `watchClientHello()`.
+ * Installed inside the JA4 reader's and the PROXY protocol's wrappers, so
+ * both have already returned the bytes. Idempotent per server.
+ *
+ * @param server - the TLS server
+ */
+function installSessionNameSniffer(server) {
+  log.debug('Entering installSessionNameSniffer().');
+  if (!server || typeof server.emit !== 'function' ||
+      server[SESSION_SNIFFER]) {
+    log.debug('Leaving installSessionNameSniffer(). Nothing to do.');
+    return;
+  }
+  server[SESSION_SNIFFER] = true;
+  loadClientHelloReader();
+  const originalEmit = server.emit;
+
+  // A hot path: one connection on every listener with a cache, and no
+  // Entering/Leaving pair on the readers below would drown the log.
+  function capture(socket) {
+    let buffered = Buffer.alloc(0);
+    let finished = false;
+
+    // Hot path: once per connection. See capture().
+    function handOver(name) {
+      if (finished) {
+        return;
+      }
+      finished = true;
+      clearTimeout(timer);
+      socket.removeListener('data', onData);
+      socket.removeListener('error', onDone);
+      socket.removeListener('close', onDone);
+      socket[SESSION_NAME] = typeof name === 'string' ? name : null;
+      socket[SESSION_SEEN] = true;
+      socket.pause();
+      if (buffered.length) {
+        socket.unshift(buffered);
+      }
+      if (!socket.destroyed) {
+        originalEmit.call(server, 'connection', socket);
+      }
+    }
+
+    // Hot path: once per chunk. See capture().
+    function onData(chunk) {
+      if (finished) {
+        return;
+      }
+      buffered = buffered.length ? Buffer.concat([buffered, chunk])
+                                 : chunk;
+      if (buffered.length > SESSION_HELLO_LIMIT) {
+        handOver(null);
+        return;
+      }
+      const name = nameOfHello(buffered);
+      if (name === undefined) {
+        return;
+      }
+      handOver(name);
+    }
+
+    // Hot path: the client went away while the hello was read. See capture().
+    function onDone() {
+      finished = true;
+      clearTimeout(timer);
+      socket.removeListener('data', onData);
+    }
+
+    const timer = setTimeout(function () {
+      if (!finished) {
+        handOver(null);
+      }
+    }, SESSION_HELLO_WAIT_MS);
+    socket.on('data', onData);
+    socket.once('error', onDone);
+    socket.once('close', onDone);
+    // A socket straight from accept is flowing. One handed on by the
+    // PROXY protocol or the JA4 reader is paused, with the hello already
+    // buffered — a data listener alone never makes it flow. resume()
+    // delivers either, and handOver() pauses again before the TLS engine
+    // is given the socket.
+    socket.resume();
+  }
+
+  // Anonymous and unlogged: emit runs for every event the server raises,
+  // and only a first connection is this sniffer's business.
+  server.emit = function (event, socket) {
+    if (event !== 'connection' || !socket || socket[SESSION_SEEN]) {
+      return originalEmit.apply(server, arguments);
+    }
+    capture(socket);
+    return true;
+  };
+  log.debug('Leaving installSessionNameSniffer().');
+}
 
 /**
  * The server name a parsed ClientHello offered, '' for none, null if node
@@ -3667,11 +3855,16 @@ function watchClientHello(handle) {
   if (typeof onHello !== 'function' || typeof onNewSession !== 'function') {
     return;
   }
-  // The name THIS connection's hello offered, for its newSession, which
-  // comes at the end of the full handshake.
-  let offered = null;
+  // The name THIS connection's hello offered, for its resumeSession and
+  // for its newSession at the end of a full handshake. Node 24 leaves the
+  // name off the hello object, so the sniffer's reading is compared unless
+  // the hello carries a name of its own.
+  let offered = sniffedServerName(handle._parentWrap);
   handle.onclienthello = function (hello) {
-    offered = offeredServername(hello);
+    const parsed = offeredServername(hello);
+    if (parsed !== null) {
+      offered = parsed;
+    }
     const outer = offeredHello;
     offeredHello = { servername: offered };
     try {
@@ -3776,7 +3969,9 @@ function attachSessionCache(server, kind, realmId) {
     log.debug('Leaving attachSessionCache(). Not a server.');
     return null;
   }
-  installClientHelloHook();
+  if (installClientHelloHook()) {
+    installSessionNameSniffer(server);
+  }
   helloWatchedServers.add(server);
   const cache = new Map();
   const bounds = function () {
@@ -5044,6 +5239,11 @@ function recordCertificateAuthentication(subject, common, cert, mode,
     presented: subject,
     protocol: 'TLS',
     method: 'client certificate on the main port (' + MAIN_PORT + ')',
+    // The certificate subject, RFC 4514, which is what an application's
+    // oauthTlsClientAuthSubjectDn holds. The attempts tab matches that.
+    // Not client_id: this sighting is the certificate, and the token
+    // endpoint records its own client_id when one authenticated there.
+    application: subject,
     note: 'the chain verified against one of the ' + anchors.length +
       ' anchor(s) in this service\'s truststore, and ' +
       (revocation && revocation.checked

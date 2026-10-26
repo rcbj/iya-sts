@@ -23,6 +23,8 @@ import kit = require('./web_kit');
 import TokenLifetimesPage = require('./web_token_lifetimes');
 import SettingsForms = require('./web_settings');
 import GroupsPage = require('./web_groups');
+import AuditPage = require('./web_audit');
+import DocLinks = require('../common/web_doc_links');
 
 type Json = any;
 
@@ -1328,6 +1330,12 @@ class ApplicationsPage {
         '</td></tr>' +
         '</table>' +
             ApplicationsPage.protocolFamilySection(row, t) },
+        // EVERY ATTEMPT (#954), on every application. Not forFamilies():
+        // a sign-in names an application that has declared no protocol yet,
+        // and an empty list is the honest answer rather than a hidden tab.
+        { id: 'tab-authentications',
+          label: t.text('consoleApplications.a2.tabAuthentications'),
+          html: ApplicationsPage.authenticationsSection(ctx, json) },
         { id: 'tab-config',
           label: t.text('consoleApplications.a2.tabConfig'),
           html: ApplicationsPage.applicationFieldsSection(ctx, row, carryBack,
@@ -1839,7 +1847,12 @@ class ApplicationsPage {
         'aria-hidden="true">' + t.html('consoleApplications.a2.save') +
         '</button>';
     };
+    // These sub-panels are written out, not passed through
+    // `subTabbedPanels()`, so the link has to be put in here (#895). The
+    // SAML families do go through that helper; their group panel is only
+    // the bar, and gets a link only when it has no family panel of its own.
     const familiesPanel = '<div class="subpanel first" id="cfg-families">' +
+      DocLinks.consoleHtml(DocLinks.forConsoleTab('cfg-families'), t) +
       '<h3>' + t.html('consoleApplications.a2.familiesHeading') + '</h3>' +
       kit.note(t.html('consoleApplications.a2.familiesNote')) +
       formOpen('families', null,
@@ -2052,7 +2065,12 @@ class ApplicationsPage {
       // OAuth sub-tab, above the two lists it may use.
       const observedFlows = group.id === 'oauth'
         ? ApplicationsPage.applicationObservedFlows(row, t) : '';
+      const cfgDocs = (group.id === 'saml' && samlFamilyPanels.length)
+        ? ''
+        : DocLinks.consoleHtml(
+            DocLinks.forConsoleTab('cfg-' + group.id), t);
       return '<div class="subpanel" id="cfg-' + kit.esc(group.id) + '">' +
+        cfgDocs +
         launchCard + observedFlows +
         (group.id === 'saml' ? samlPanels :
           (fieldsFirst ? fieldForm + sections : sections + fieldForm)) +
@@ -2134,6 +2152,53 @@ class ApplicationsPage {
   // answer from before it draws nothing.
   // ---------------------------------------------------------------------------
   static readonly OBSERVED_SHOWN = 10;
+
+  // THE ATTEMPTS (#954), drawn as the audit log draws one row, because the
+  // ticket asks for every field of that event. The columns' words are the
+  // audit catalog's: one table, one set of headings. The list is
+  // `authenticationEvents` and not `authentications`, which is the count.
+  /**
+   * Draws the Authentication attempts tab from the drill-down's answer.
+   *
+   * @param ctx - the render context
+   * @param json - the `?application=` answer
+   * @returns the section as HTML
+   */
+  static authenticationsSection(ctx, json) {
+    const t = ctx.t;
+    const rows = [].concat(json.authenticationEvents || []);
+    const paging = json.authenticationEventsPaging || { pages: 1, param:
+      'authenticationsPage', noun: 'attempts', page: 1, perPage: 0,
+      firstRow: 0, lastRow: 0, total: 0 };
+    const logInfo = json.authenticationEventsLog ||
+                    { maxEvents: 0, dropped: 0 };
+    const known = json.authenticationEventsKnownActors || {};
+    const nav = kit.pageNavPair('/admin/applications',
+      kit.pageParamsOf(ctx.query), paging);
+    const body = rows.map(function (event) {
+      return AuditPage.auditRow(event, known, t);
+    }).join('');
+    const head = function (key) {
+      return '<th>' + t.html(key) + '</th>';
+    };
+    return '<h3>' + t.html('consoleApplications.a2.authHeading') + '</h3>' +
+      kit.note(t.html('consoleApplications.a2.authNote', {
+        max: String(logInfo.maxEvents || 0),
+        dropped: Number(logInfo.dropped || 0)
+      })) +
+      '<p class="sub"><a href="/admin/audit">' +
+      t.html('consoleApplications.a2.authOpenLog') + '</a></p>' +
+      nav.head +
+      '<table><tr><th class="num">#</th>' +
+      head('consoleAudit.when') + head('consoleAudit.category') +
+      head('consoleAudit.action') + head('consoleAudit.outcome') +
+      head('consoleAudit.actor') + head('consoleAudit.from') +
+      head('consoleAudit.target') + head('consoleAudit.whatHappened') +
+      head('consoleAudit.detail') + '</tr>' +
+      (body || '<tr><td colspan="10">' +
+        t.html('consoleApplications.a2.authEmpty') + '</td></tr>') +
+      '</table>' + nav.foot;
+  }
 
   /**
    * Draws the Overview's activity rows (#708): authentications, sessions,
@@ -4052,7 +4117,7 @@ class ApplicationsPage {
   // **TWO FORMS PER ROW AND NOT ONE WITH TWO BUTTONS.** Two submit buttons in
   // one form would both have to be named `action`, and `form.elements.action`
   // is then a RadioNodeList whose `.value` is empty — which is how
-  // `tests/vendored/sts_admin_console.js` finds a form, so the pair would read
+  // `tests/protocol/sts_admin_console.js` finds a form, so the pair would read
   // as controls that reach nothing (the trap `/admin/users/new` met). Each form
   // names its verb in one hidden field, so it does one thing however submitted.
   //
@@ -4556,6 +4621,8 @@ class ApplicationsPage {
         t.html('consoleApplications.a3.appPermsNoteB') +
         '<a href="/admin/roles">' + t.html('consoleApplications.a3.roles') +
         '</a>.') +
+      kit.note(t.html('consoleApplications.relations.appPerms'),
+               t.html('consoleApplications.relations.label')) +
       '<table><thead><tr><th>' + t.html('consoleApplications.a3.colRole') +
       '</th><th>' + t.html('consoleApplications.a3.colCarriedIn') +
       '</th><th>' + t.html('consoleApplications.a3.colAuthorizes') +
@@ -4657,6 +4724,8 @@ class ApplicationsPage {
       kit.note(t.html('consoleApplications.a3.requiredNoteA') + '<code>' +
         kit.esc(identifier) + '</code>' +
         t.html('consoleApplications.a3.requiredNoteB')) +
+      kit.note(t.html('consoleApplications.relations.required'),
+               t.html('consoleApplications.relations.label')) +
       '<table><thead><tr><th>' + t.html('consoleApplications.a3.colRole') +
       '</th><th>' + t.html('consoleApplications.a3.colResolvesTo') +
       '</th><th></th></tr>' +

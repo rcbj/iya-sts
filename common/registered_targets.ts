@@ -34,7 +34,8 @@
 //          `adminApi.audience`, or while that is at its default the
 //          configured base and `/admin-api` under this host, and a realm's
 //          own `/admin-api`;
-//        * the account API, `/account-api` (#568).
+//        * the account API, `/account-api` (#568);
+//        * the reports API, `/report-api` (#956).
 //      The GNAP demonstration resource server, `/gnap/rs/resource`, was the
 //      fourth until #593 deleted it.
 //      The embedded debugger's api is not in this list because it needs no
@@ -192,6 +193,15 @@ export = class RegisteredTargets {
       log.debug("Leaving RegisteredTargets.ownResourceServer(). The " +
                 "account API.");
       return 'the account API (/account-api)';
+    }
+    // THE REPORTS API (#956), the reports application's only door: this
+    // realm's `/report-api`, which is what `/report` asks for as its
+    // `resource` and what `report/report_api.ts` accepts as a token's
+    // audience. Compared whole, as the account API is.
+    if (wanted === base + '/report-api') {
+      log.debug("Leaving RegisteredTargets.ownResourceServer(). The " +
+                "reports API.");
+      return 'the reports API (/report-api)';
     }
     log.debug("Leaving RegisteredTargets.ownResourceServer(). None.");
     return '';

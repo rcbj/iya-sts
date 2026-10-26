@@ -534,7 +534,7 @@ function href(path) {
 // and null otherwise — including for a path that opens with the SEGMENT and an
 // undefined realm. That case deliberately falls through to Express's own 404
 // rather than being answered here: `Cannot GET /realm/nope/oauth2/token` is
-// what this repository's own tests/vendored/sts_metadata.js uses to tell an
+// what this repository's own tests/protocol/sts_metadata.js uses to tell an
 // unrouted path from an endpoint legitimately answering 404, and a prettier
 // refusal for unknown realms would break that distinction for every path under
 // the segment. `GET /realms` is where somebody finds out what the realms
@@ -4845,6 +4845,11 @@ function realmSupport() {
             'client seeded in every realm, and every page reads and writes ' +
             'the person\'s entry in that realm\'s directory, held to that ' +
             'realm\'s password policy.' },
+    { family: 'Reporting', state: 'full', by: 'path',
+      cards: ['Reporting'],
+      note: 'The application and its API are reached under the realm ' +
+            'path. Definitions and jobs stay in that realm\'s maps, and a ' +
+            'share is a group in that realm\'s directory.' },
     { family: 'Global logout', state: 'full', by: 'path',
       cards: [],
       note: 'It holds no state of its own: /logout, /admin/logout and ' +

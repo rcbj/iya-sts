@@ -39,7 +39,7 @@
 // IN PROCESS, in a throwaway realm, because it is a truth table over two
 // modes and a directory. The token endpoint is
 // `tests/token_exchange_product.js` and the over-HTTP job
-// `tests/vendored/sts_delegation_policy.js`.
+// `tests/protocol/sts_delegation_policy.js`.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;

@@ -166,6 +166,10 @@ import errorCodes = require('../common/error_codes');
 // the way back is refused rather than sent round again. A library that
 // registers no route.
 import stepUp = require('../oauth-oidc/step_up');
+// The two EAP class URIs a wauth may name (#737). A leaf — bunyan and
+// nothing of this service — so this require closes no cycle and moves no
+// route. The URIs are not copied into a second table here.
+import PhishingResistance = require('../common/phishing_resistance');
 // THE LANGUAGE A PAGE IS DRAWN IN (#539): a library and a leaf, so it moves
 // no route and closes no cycle. Only the pages a PERSON passes through use it
 // — the sign-in response and the sign-out page; refusals stay English.
@@ -241,11 +245,14 @@ const AM_HARDWARE_SAML11 = 'urn:oasis:names:tc:SAML:1.0:am:HardwareToken';
 const AC_UNSPECIFIED_SAML2 =
     'urn:oasis:names:tc:SAML:2.0:ac:classes:unspecified';
 
-// What `wauth` may ask for (13.2.1). A request for anything else is refused
-// rather than quietly answered with a password assertion: `wauth` is how a
-// relying party DEMANDS an authentication type, and an IdP that ignores it lets
-// the demand appear to have been met. A demand in the two lists below that the
-// session does not meet is a STEP-UP since 2026-09-17 (#36) — see signIn().
+// What `wauth` may ask for (13.2.1), besides the two EAP class URIs. A
+// request for anything else is refused rather than quietly answered with a
+// password assertion: `wauth` is how a relying party DEMANDS an authentication
+// type, and an IdP that ignores it lets the demand appear to have been met. A
+// demand in the two lists below that the session does not meet is a STEP-UP
+// since 2026-09-17 (#36) — see signIn(). The EAP URIs are not a third list:
+// they live on common/phishing_resistance.ts and classOfUri() recognises
+// them (#737).
 const WAUTH_PASSWORD = [
   AM_PASSWORD_SAML11,
   'urn:oasis:names:tc:SAML:1.0:am:unspecified',
@@ -854,6 +861,35 @@ class WsFederation {
     return { ok: true };
   }
 
+  // The screen's note for a wauth (#36, #737). The hardware and multi-factor
+  // sentences are the ones this profile has always shown. An EAP class says
+  // a passkey, and the hardware URI says a hardware-protected one.
+  private wauthScreenNote(stepUpNow: boolean, demand: string,
+                          phishingClass: string): string {
+    const { log } = this.deps;
+    log.debug("Entering WsFederation.wauthScreenNote().");
+    let note = 'the authentication method this relying party asked for.';
+    if (demand === 'eap') {
+      const key = phishingClass === 'phrh'
+        ? 'a hardware-protected passkey' : 'a phishing-resistant passkey';
+      note = stepUpNow
+        ? 'the authentication method this relying party asked for, ' +
+          'which your session has not earned — so ' + key +
+          ' is required this time.'
+        : 'the authentication method this relying party asked for: ' +
+          key + ' is required.';
+    } else if (stepUpNow) {
+      note = 'the authentication method this relying party asked for, ' +
+             'which your session does not have — so ' +
+             (demand === 'hardware'
+               ? 'a security key is required this time, on its own or ' +
+                 'after your password.'
+               : 'a second factor is required this time.');
+    }
+    log.debug("Leaving WsFederation.wauthScreenNote().");
+    return note;
+  }
+
   // --- sign-in (13.2.1 -> 13.2.2) -------------------------------------------
   private signIn(req, res, params) {
     const { applications, baseUrlOf, beginAuthentication, errorCodes, log, mode,
@@ -1009,22 +1045,29 @@ class WsFederation {
     }
 
     // wauth: what authentication method the relying party is demanding.
+    // ONE URI (13.2.1). classOfUri() recognises an EAP class on that whole
+    // string (#737). signInFor() splits on whitespace, which would turn two
+    // URIs into a list this parameter does not have, so it is not what
+    // admits the value: a pair of class URIs stays the refusal below.
     const wauth = params.wauth ? String(params.wauth) : '';
     if (wauth && WAUTH_PASSWORD.indexOf(wauth) < 0 &&
         WAUTH_MULTIFACTOR.indexOf(wauth) < 0 &&
-        WAUTH_HARDWARE.indexOf(wauth) < 0) {
+        WAUTH_HARDWARE.indexOf(wauth) < 0 &&
+        !PhishingResistance.classOfUri(wauth)) {
       log.debug("Leaving WsFederation.signIn(). wauth named a method this " +
                 "service cannot perform.");
       errorCodes.mark(res, 'STS-WSFED-0006');
       log.debug("Leaving WsFederation.signIn().");
       return this.wsfedError(res, 400, 'That authentication method is not ' +
                                        'available',
-        'wauth asked for "' + wauth + '". This identity provider can perform ' +
-        'a password sign-in, a sign-in with a security key, and a ' +
-        'multi-factor one — and asks the person for the factor a demand ' +
-        'needs when the browser session does not have it.',
+        'wauth asked for "' + wauth + '". This identity provider can ' +
+        'perform a password sign-in, a sign-in with a security key, a ' +
+        'multi-factor one and a phishing-resistant passkey, and asks the ' +
+        'person for what a demand needs when the session does not have it.',
         '<h2>What it accepts</h2><ul>' +
-        WAUTH_PASSWORD.concat(WAUTH_MULTIFACTOR, WAUTH_HARDWARE).map((v) => {
+        WAUTH_PASSWORD.concat(WAUTH_MULTIFACTOR, WAUTH_HARDWARE, [
+          PhishingResistance.URI_PHR, PhishingResistance.URI_PHRH
+        ]).map((v) => {
           return '<li><code>' + xmlEscape(v) + '</code></li>';
         }).join('') + '</ul><p>It is refused rather than answered with a ' +
         'password assertion on purpose: <code>wauth</code> is how a relying ' +
@@ -1116,15 +1159,45 @@ class WsFederation {
     // for its reason (a demand the screen cannot meet would otherwise loop).
     // The marker can be forged onto a first request, and what that buys is a
     // refusal instead of a sign-in — nothing anybody else would want.
+    //
+    // An EAP class URI (#737) is that same one trip, not a third list. The
+    // URIs live on common/phishing_resistance.ts. signInFor() sets forceKey,
+    // and phishingClass 'phrh' only for the hardware URI. Still unmet is
+    // STS-WSFED-0030, recorded and never sent. assertionUri() puts the
+    // earned class on the token; '' leaves the class the token has always
+    // carried, byte for byte.
     // ---------------------------------------------------------------------
+    const eapSignIn = PhishingResistance.signInFor(wauth ? [wauth] : []);
     const demand = WAUTH_HARDWARE.indexOf(wauth) >= 0 ? 'hardware'
-      : WAUTH_MULTIFACTOR.indexOf(wauth) >= 0 ? 'mfa' : '';
+      : WAUTH_MULTIFACTOR.indexOf(wauth) >= 0 ? 'mfa'
+      : (eapSignIn.eapOnly ? 'eap' : '');
     const stepUpHonoured = String(params[stepUpMarker] || '') === '1';
     const methods = session ? this.authnMethodsFor(session) : null;
     const unmet = !!(session && demand &&
                      (demand === 'hardware' ? !methods.hardwareKey
-                                            : !methods.multiFactor));
+                      : demand === 'mfa' ? !methods.multiFactor
+                      : !PhishingResistance.eapDemandMet(session, [wauth])));
     if (session && fresh.ok && unmet && stepUpHonoured) {
+      if (demand === 'eap') {
+        const which = eapSignIn.phishingClass === 'phrh'
+          ? 'a hardware-protected passkey' : 'a passkey';
+        log.debug("Leaving WsFederation.signIn(). wauth asked for an EAP " +
+                  "class and the session had not earned it after the " +
+                  "step-up.");
+        errorCodes.mark(res, 'STS-WSFED-0030');
+        log.debug("Leaving WsFederation.signIn().");
+        return this.wsfedError(res, 400, 'The class was not earned',
+          'wauth asked for "' + wauth + '". You were asked to sign in ' +
+          'again with ' + which + ', and the session that came back ' +
+          'still had not earned that class. This service will not claim ' +
+          'a class the session did not earn.',
+          '<h2>Two ways forward</h2><ul><li>Start the sign-in again and ' +
+          'use ' + which + '. A person with no key enrolled can add one ' +
+          'at <code>/portal/keys</code>.</li><li>Or ask for what this ' +
+          'session has: <a href="' + PASSIVE_PATH + '?' +
+          xmlEscape(this.requeryString(params, ['wauth', stepUpMarker])) +
+          '">the same request without wauth</a>.</li></ul>');
+      }
       if (demand === 'hardware') {
         log.debug("Leaving WsFederation.signIn(). wauth asked for a hardware " +
                   "token and the session still has none after the step-up.");
@@ -1189,7 +1262,7 @@ class WsFederation {
       // `wfresh` too old never reaches here at all — `fresh.ok` is false and
       // the request goes to the screen, which is a re-authentication too.
       log.debug("The session stands, so the sign-in response goes out now.");
-      notePresented(session, 'WS-Federation', req);
+      notePresented(session, 'WS-Federation', req, realm);
       log.debug("Leaving WsFederation.signIn().");
       return this.issueSignInResponse(req, res, params, session, realm, wreply,
                                       asked.tokenType);
@@ -1239,19 +1312,29 @@ class WsFederation {
     // lacked it (the step-up above) or no session at all — and puts the
     // step-up marker on
     // the return address, so the pass that comes back refuses a demand still
-    // unmet rather than sending the person round again.
+    // unmet rather than sending the person round again. An EAP class
+    // (#737) is that same marker. screenDemand() has no kind for it, so
+    // the key and phishingClass come from signInFor(), above.
     // ---------------------------------------------------------------------
     const back = this.requeryString(params, ['wfresh', stepUpMarker]);
     const returnTo = PASSIVE_PATH + '?' + back +
       (demand ? (back ? '&' : '') + encodeURIComponent(stepUpMarker) + '=1'
               : '');
     if (stepUpNow) {
+      const asked = demand === 'eap'
+        ? (eapSignIn.phishingClass === 'phrh'
+          ? 'a hardware-protected passkey' : 'a phishing-resistant passkey')
+        : (demand === 'hardware' ? 'a security key' : 'a second factor');
       log.info('wsfed: wauth "' + wauth + '" for "' + realm + '" is not met ' +
                'by the session, so the person is sent to sign in again with ' +
-               'a second factor required.');
+               asked + ' required.');
     }
+    // screenDemand('eap') would force neither flag (#737). The key, and
+    // phishingClass 'phrh' only for that URI, come from signInFor(). When
+    // wauth is not an EAP class those are false and '', so forceKey stays
+    // what the hardware demand already set.
     const screen = stepUp.screenDemand(demand === 'hardware' ? 'key'
-                                       : demand);
+                                       : demand === 'eap' ? '' : demand);
     const where = beginAuthentication({
       returnTo: returnTo,
       protocol: 'WS-Federation',
@@ -1267,7 +1350,8 @@ class WsFederation {
                      params.wfresh !== '' ? 'never' : '',
       request: req,
       forceMfa: !!screen.forceMfa,
-      forceKey: !!screen.forceKey,
+      forceKey: eapSignIn.forceKey || !!screen.forceKey,
+      phishingClass: eapSignIn.phishingClass,
       // WHICH RELYING PARTY, so that an entry naming a federation relationship
       // sends the person to that partner instead of to the sign-in screen. It
       // is the raw wtrealm: the registry is keyed by the identifier a protocol
@@ -1289,15 +1373,8 @@ class WsFederation {
           note: 'echoed back byte for byte and never interpreted.' }
       ].concat(wauth
         ? [{ label: 'wauth', value: wauth,
-             note: stepUpNow
-               ? 'the authentication method this relying party asked for, ' +
-                 'which your session does not have — so ' +
-                 (demand === 'hardware'
-                   ? 'a security key is required this time, on its own or ' +
-                     'after your password.'
-                   : 'a second factor is required this time.')
-               : 'the authentication method this relying party asked ' +
-                 'for.' }]
+             note: this.wauthScreenNote(!!stepUpNow, demand,
+                                        eapSignIn.phishingClass) }]
         : []).concat(params.whr
         ? [{ label: 'whr', value: String(params.whr),
              note: 'a home realm was named. It is recorded rather than ' +
@@ -1531,7 +1608,7 @@ class WsFederation {
 
     // SINGLE SIGN-ON, for `signIn()`'s reason: CAEP's `session-presented`
     // is about the session, whichever door presented it.
-    notePresented(session, 'WS-Federation', req);
+    notePresented(session, 'WS-Federation', req, realm);
     log.debug("Leaving WsFederation.initiate(). Issuing.");
     return this.issueSignInResponse(req, res, params, session, realm, wreply,
                                     asked.tokenType,
@@ -1555,6 +1632,14 @@ class WsFederation {
     log.debug("Entering WsFederation.issueSignInResponse(). tokenType=" +
               tokenType);
     const returnPath = (entry && entry.path) || PASSIVE_PATH;
+    // The asked EAP class (#737). wauth is one URI; '' when the request
+    // did not name one — including the identity-provider-initiated link,
+    // which carries no wauth. assertionUri() is '' unless that URI was
+    // asked AND the session earned it, so the flags below stay false and
+    // '' and the assertion keeps the class it has always carried.
+    const wauth = params.wauth ? String(params.wauth) : '';
+    const eapSignIn = PhishingResistance.signInFor(wauth ? [wauth] : []);
+    const askedClass = PhishingResistance.assertionUri(session, [wauth]);
 
     // THE ROLE GATE, first thing in the one funnel every sign-in response goes
     // through — before the registry sighting below, because that call records a
@@ -1602,6 +1687,13 @@ class WsFederation {
         returnTo: returnPath + '?' + back + (back ? '&' : '') +
                   encodeURIComponent(MECHANISM_MARKER) + '=1',
         hint: String((session.user || {}).username || ''),
+        // An EAP wauth stays in force across the re-prompt (#737). A
+        // password the relying party allows would otherwise replace the
+        // class, and the return would refuse it. Both are false and ''
+        // when wauth did not name an EAP class, which is what omitting
+        // them was.
+        forceKey: eapSignIn.forceKey,
+        phishingClass: eapSignIn.phishingClass,
         protocol: 'WS-Federation',
         application: realm,
         details: [
@@ -1645,7 +1737,9 @@ class WsFederation {
                   encodeURIComponent(RISK_MARKER) + '=1',
         hint: String((session.user || {}).username || ''),
         forceMfa: roleAnswer.risk.factor === 'second-factor',
-        forceKey: roleAnswer.risk.factor === 'security-key',
+        forceKey: roleAnswer.risk.factor === 'security-key' ||
+                  eapSignIn.forceKey,
+        phishingClass: eapSignIn.phishingClass,
         protocol: 'WS-Federation',
         application: realm,
         details: [
@@ -1750,11 +1844,15 @@ class WsFederation {
     let assertion;
     if (tokenType === SAML2_TOKEN_TYPE) {
       assertion = buildSamlAssertion(user.username, realm, lifetimeMin, {
-        authnContextClassRef: methods.saml2,
+        // The asked EAP class when the session earned it (#737). '' keeps
+        // methods.saml2, so a request that did not name the class is the
+        // assertion this profile has always issued, byte for byte.
+        authnContextClassRef: askedClass || methods.saml2,
         issuer: issuer,
         // The full claim URI in one Name, which is SAML 2.0's shape, with the
         // NameFormat that says so. SAML 1.1 splits the same URI in two.
-        attributes: this.claimsFor(user, methods.saml2, authnInstant).map(
+        attributes: this.claimsFor(user, askedClass || methods.saml2,
+                                   authnInstant).map(
             (c) => {
           return { name: c.namespace + '/' + c.name,
                    nameFormat: ATTRNAME_FORMAT_URI, value: c.value };
@@ -1765,9 +1863,15 @@ class WsFederation {
         subject: user.username,
         audience: realm,
         lifetimeMin: lifetimeMin,
-        authnMethod: methods.saml11,
+        // The same ''-preserving read on the default token (#737). A SAML
+        // 1.1 AuthenticationMethod stays methods.saml11 unless the request
+        // named a class the session earned — otherwise the class would
+        // never appear on the token this profile issues by default, and
+        // the claim would disagree with it.
+        authnMethod: askedClass || methods.saml11,
         authnInstant: authnInstant,
-        attributes: this.claimsFor(user, methods.saml11, authnInstant),
+        attributes: this.claimsFor(user, askedClass || methods.saml11,
+                                   authnInstant),
         issuer: issuer
       });
     }
@@ -2184,7 +2288,13 @@ class WsFederation {
                  'sign in again with a second factor required, and the ' +
                  'assertion reports the method that actually happened. ' +
                  'Still unmet after that one attempt, the request is ' +
-                 'refused. Any other value is refused rather than answered ' +
+                 'refused. <code>' + PhishingResistance.URI_PHR +
+                 '</code> and <code>' + PhishingResistance.URI_PHRH +
+                 '</code> are a passkey step-up of the same one trip. The ' +
+                 'second is met only when the realm records the key as ' +
+                 'hardware-protected. The assertion carries the class the ' +
+                 'session earned, and otherwise the method it has always ' +
+                 'reported. Any other value is refused rather than answered ' +
                  'with a claim that did not happen.'],
        ['whr', 'The home realm. Recorded and shown on the screen; this ' +
                'service is the only identity provider here, so nothing is ' +

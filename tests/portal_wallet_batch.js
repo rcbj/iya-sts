@@ -83,7 +83,7 @@ function childMain() {
   async function sections(w, note, m) {
     const credentials = require(ROOT + '/common/credentials');
     const audit = require(ROOT + '/common/audit');
-    const signin = require(ROOT + '/tests/vendored/portal_signin');
+    const signin = require(ROOT + '/tests/protocol/portal_signin');
     const stamp = String(process.pid);
     const ALICE = 'pwb-alice-' + stamp;
     const MALLORY = 'pwb-mallory-' + stamp;

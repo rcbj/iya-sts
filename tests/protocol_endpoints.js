@@ -26,7 +26,7 @@
 // WHY IN PROCESS: B needs the router and the ENDPOINTS table of one process
 // side by side, and C needs a realm and a named authorization server created
 // without a console session. The pages themselves are driven over HTTP by
-// `tests/vendored/sts_admin_console.js`; this is the half nothing there asks.
+// `tests/protocol/sts_admin_console.js`; this is the half nothing there asks.
 //
 // It runs in a CHILD, `jose_certificate_header.js`'s arrangement, because it
 // loads the whole protocol stack and a stack loaded into the runner would be

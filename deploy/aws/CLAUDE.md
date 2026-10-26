@@ -75,7 +75,7 @@ in this order:
 1. **every realm but the default one**;
 2. **the bulk-load people and groups in the default realm (#344, 2026-09-29)**
    — about 15,000 entries a run, named `bulk-<door>-…` by
-   `tests/vendored/bulk_load.js`, deleted through SCIM Bulk (`/admin-api` has
+   `tests/protocol/bulk_load.js`, deleted through SCIM Bulk (`/admin-api` has
    no person or group delete) with a token the script mints for the seeded
    `sts-management-api` client, so it needs `STS_ADMIN_API_CLIENT_SECRET` as
    well as the admin token (both runners have it);
@@ -88,7 +88,7 @@ in this order:
    redirecting only to its `http://localhost:9999/callback`). Never a seeded
    one, and never a FIXED identifier (`admin-api-test`, `dpop-test-client`…),
    which the next run finds again rather than adding;
-4. **the default realm's runtime overrides** (`tests/vendored/admin_api.js`
+4. **the default realm's runtime overrides** (`tests/protocol/admin_api.js`
    requires none, and the store keeps them). `ldap.maxEntries`, which the bulk
    loads raise and leave raised, resets to the nodes' `LDAP_MAX_ENTRIES =
    ldap_max_entries` — 50,000 since 2026-09-29, one run's bulk loads beside the

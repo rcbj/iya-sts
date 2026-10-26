@@ -44,7 +44,7 @@
 // entry alone, so the grant keeps the identities it was rotated FROM
 // (`client.keyLineage`, written by `gnap_grants.ts`) and answers to any of
 // them (`grantKeyIdentities()`); the sequence that first found this was
-// `tests/vendored/sts_gnap_core.js` section 9, refused after its rotation. A
+// `tests/protocol/sts_gnap_core.js` section 9, refused after its rotation. A
 // mutual
 // TLS client rotated at its authority has the new thumbprint written to
 // `gnapKeyIdentity` (`placeMtlsCaller()`); both keep their grants, because the

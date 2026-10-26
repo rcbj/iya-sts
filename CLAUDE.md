@@ -62,12 +62,13 @@ directory's `CLAUDE.md` is the documentation of what is in it.
 | Directory | What is in it |
 |---|---|
 | `common/` | Everything more than one family reads: settings, the express app, `crypto.js` (the one place this service signs, verifies, encrypts and decrypts), realms, the registers, `pki.js`, `mode.js`, the error codes, mail, cells, the hosted applications, the static surfaces' `web_*.ts`. `common/CLAUDE.md`. |
-| `common/vendored/` | Byte-identical copies of the parent project's files. **Do not edit them here** (except `pqc.js`, `pqc_x509.js`, `xmldsig.js`). `common/vendored/CLAUDE.md`. |
+| `common/crypto_impl/` | Byte-identical copies of the parent project's files. **Do not edit them here** (except `pqc.js`, `pqc_x509.js`, `xmldsig.js`). `common/crypto_impl/CLAUDE.md`. |
 | `home/` | The front door, `GET /`, and `/home-api`. `home/CLAUDE.md`. |
 | `logout/` | The protocol-independent sign-out at `/logout`, and the one model of a live session. `logout/CLAUDE.md`. |
 | `launch/` | `/launch/{app}`, the one identity-provider-initiated sign-in link per application (#426). `launch/CLAUDE.md`. |
 | `portal/` | The user portal, a static application over `/account-api`. `portal/CLAUDE.md`. |
 | `account-api/` | `/account-api`, the portal's only door. `account-api/CLAUDE.md`. |
+| `report/` | The reports application at `/report` and its API at `/report-api` (#956). `report/CLAUDE.md`. |
 | `oauth-oidc/` | The authorization server and OpenID provider. `oauth-oidc/CLAUDE.md`. |
 | `authn/` | The sign-in service, which **owns the SESSION**, and its static screens over `/authn-api`. `authn/CLAUDE.md`. |
 | `saml/` | SAML 2.0 and SAML 1.1, each a separate identity provider. `saml/CLAUDE.md`. |
@@ -156,6 +157,7 @@ surfaces below are the exceptions, each argued where it lives.
 | `/xacml/pep/*`, `POST /xacml/pip` | a client certificate holding `REMOTE_PEPS` | `xacml/CLAUDE.md` |
 | `GET /xacml`, `POST /xacml/pdp`, `GET /xacml/policies` | a client certificate holding `XACML_USER` | `xacml/CLAUDE.md` |
 | `/account-api` | this realm's DPoP-bound `account:manage` token; the person is always its subject | `account-api/CLAUDE.md` |
+| `/report-api` | this realm's DPoP-bound `report:use` or `report:admin` token, issued to `sts-report` | `report/CLAUDE.md` |
 | `/admin-api` | an access token audienced to it, with the scope the operation needs | `mgmt-api/CLAUDE.md` |
 | `/oauth2/introspect` | client authentication | `oauth-oidc/CLAUDE.md` (3ai) |
 | the debugger listener | a token only console administrators are issued; cannot be turned off | `debugger/CLAUDE.md` |
@@ -309,6 +311,7 @@ holds is the table above; what each module is for is that directory's
    | `authn/authn.ts` | `setSessionObserver`, filled by `ssf/ssf.ts` | `authn/CLAUDE.md`, `ssf/CLAUDE.md` |
    | `common/admin_stats.js` | `setUserObserver` (three kinds of event, still one slot), `setAttributeResolver`, `setGroupResolver`, `setRevocationObserver` (#239, filled by `oauth-oidc/oauth_grant_signals.ts`), `setStatusMarker` (#820, filled by `oauth-oidc/access_token_status.ts`) | `common/CLAUDE.md` |
    | `common/helpers.js` | `setSubjectResolver` (a person's `sub` from their entry's `entryUUID`, and back), filled by `ldap/ldap_server.js` (2026-09-14) | `ldap/CLAUDE.md` |
+| `common/passkey_report.ts` | `setDirectory` (the holder scan, a group population, the people count), filled by `ldap/ldap_server.js` (#942) | `common/CLAUDE.md` (3cs) |
 
    **`setTruststore()` is the one slot not filled by the module that owns what
    it carries** — `common/protocol_stack.ts` fills it, because the owner is first
@@ -520,8 +523,10 @@ preference; this table says what the constraint is and the named file says why.
 | 18g | `admin-ui/caches_admin` | 18a's placement and 18a's reason (#74). | `admin-ui/CLAUDE.md` |
 | 18h | `admin-ui/vc_status_admin` | 18a's placement and 18a's reason, after `oid4vc/vc_status`. | `admin-ui/CLAUDE.md` |
 | 18i | `admin-ui/scheduler_admin` | 18a's placement and 18a's reason (#49); the page asks the scheduler when drawn, so a job registered later still appears. | `cluster/CLAUDE.md` |
+| 18i-report | `report/report_app`, `report/report_api` | After the scheduler is in hand (the module registers its six jobs at load), and after `oauth2` and `authn` (the API's lazy dependencies). The two paths collide with nothing. | `report/CLAUDE.md` |
 | 18j | `risk/risk_store`, `risk_datasets`, `risk_failures`, `risk_upload`, `risk_engine`, then `admin-ui/risk_admin` | 18a's placement and reason (#62): libraries, then the page, after the scheduler. **Nothing requires the libraries earlier** — they are reached lazily. | `risk/CLAUDE.md` |
 | 18j-iii | `common/attestation_revocation` | Inside 18j, after `risk/risk_datasets` (#256). A library: registers scheduler jobs, no route; reached lazily. | `common/CLAUDE.md` (3cf) |
+| 18j-iv | `common/passkey_report` | After 18j-iii, before `ldap/ldap_server` (21), whose require fills its directory slot and whose key-writing doors note there (#942). A library: a scheduler job, no route. | `common/CLAUDE.md` (3cs) |
 | 18j-ii | `admin-ui/geo_map`, then `admin-ui/geolocation_admin` | 18a's placement and reason (#255), after the risk libraries whose assessments it counts. | `admin-ui/CLAUDE.md` |
 | 18k | `admin-ui/mode_admin` | 18a's placement and 18a's reason (#181). | `admin-ui/CLAUDE.md` |
 | 18k-iii | `admin-ui/listeners_admin` | 18a's placement and reason (#423); `tls/tls_server` (20) and `tls/listeners` are reached lazily. Its paths are in `NEVER_DISPATCHED`. | `tls/CLAUDE.md` |
@@ -669,6 +674,8 @@ in every file, including the ones in the source comments. This is the index.
 | 3co | `attribute_policy.ts` (#396): what every person must hold, and a realm's custom attributes | `common/CLAUDE.md`, `ldap/CLAUDE.md` |
 | 3cp | `phishing_resistance.ts` (#723): OpenID Connect EAP's `phr` and `phrh`, earned, requested and required | `common/CLAUDE.md`, `oauth-oidc/CLAUDE.md`, `xacml/CLAUDE.md` |
 | 3cq | `recoveryAssurance` (#724): account recovery no weaker than the passkey it replaces | `common/CLAUDE.md`, `authn/CLAUDE.md`, `xacml/CLAUDE.md` |
+| 3cs | `passkey_report.ts` (#942): who holds which passkey algorithm, kept rather than counted | `common/CLAUDE.md` |
+| 3cw | `opaque_access_token.ts` (#501): opaque OAuth access tokens, off by default | `oauth-oidc/CLAUDE.md` |
 | 3k | SPIFFE's six modules | `spiffe/CLAUDE.md` |
 | 4 | `wsfed.ts` after `authn.js` | `ws-federation/CLAUDE.md` |
 | 5 | `admin.js` after `oauth2.js` | `admin-ui/CLAUDE.md` |
@@ -741,7 +748,7 @@ party; it is off by default (`oauth2.sessionManagement`). `oauth-oidc/CLAUDE.md`
 argues it.
 
 **Do not replace Express's 404 body.** `Cannot GET /path` is how
-`tests/vendored/sts_metadata.js` tells an unrouted path from an endpoint legitimately answering
+`tests/protocol/sts_metadata.js` tells an unrouted path from an endpoint legitimately answering
 404. Fixing the header was the whole fix; a prettier 404 would break that test
 silently.
 
@@ -784,6 +791,7 @@ human-facing page outside `/admin` and `/portal` into one, surface by surface**
 |---|---|---|
 | `/admin`, `/admin/*` — the console (#446) | `/admin/console.js`; `connect-src 'self'` | `admin-ui/CLAUDE.md`, `mgmt-api/CLAUDE.md` |
 | `/portal`, `/portal/*` — the portal (#568) | `/portal/portal.js`; `connect-src 'self'`, `img-src 'self' data:` | `portal/CLAUDE.md`, `account-api/CLAUDE.md` |
+| `/report`, `/report/*` — the reports application (#956) | `/report/report.js`; `connect-src` the sign-in origins, `style-src 'self'` | `report/CLAUDE.md` |
 | `/` — the front door (#579) | `/home.js`; `style-src`, `connect-src` (+ the sign-in origin) | `home/CLAUDE.md` |
 | `/authn/login`, `/authn/select-idp`, `/authn/password-change` (#571) | `/authn/signin.js`; `style-src`, `connect-src` | `authn/CLAUDE.md` |
 | the steps after the screen: `/authn/totp`, `/authn/webauthn`, `/authn/backup-code`, `/authn/password-factor`, `/authn/mfa-setup`, `/authn/email-*` (#572, #573) | `/authn/signin.js`; the same | `authn/CLAUDE.md` |
@@ -840,7 +848,7 @@ had to argue its own case.
 
 `GET /admin/sts-metadata` reads the endpoint list **from the running Express router**, so
 it cannot go stale — but it reports two kinds of drift and this repository's own
-`tests/vendored/sts_metadata.js` fails on both: a route registered and undescribed, and a
+`tests/protocol/sts_metadata.js` fails on both: a route registered and undescribed, and a
 description whose path is not registered (what a rename produces). See
 `docs/endpoints.md`.
 
@@ -863,8 +871,8 @@ card in `sts_metadata.ts`'s `PROTOCOLS`, a row in
 `/admin/crypto-metadata`, checks its family list against `PROTOCOLS` in both
 directions — and the card's name in the `cards` of a row of
 `common/realms.js`'s `realmSupport()`, which is what `/admin/realms` draws as
-*What is separated, and what is shared*. `tests/vendored/sts_metadata.js`
-fails on the first two, `tests/vendored/admin_api.js` on the third and
+*What is separated, and what is shared*. `tests/protocol/sts_metadata.js`
+fails on the first two, `tests/protocol/admin_api.js` on the third and
 `tests/realm_support.js` on the fourth. What nothing checks, and what a
 settings group also owes, is a row in `admin-ui/admin.ts`'s `SETTING_HOMES`;
 `admin-ui/CLAUDE.md` carries that and the second page's argument. **A new
@@ -873,14 +881,15 @@ page under Protocols also owes a row in `admin-core/protocol_endpoints.ts`**
 reason; `tests/protocol_endpoints.js` fails otherwise.
 
 **AND A CARD IS NOT ALWAYS A PROTOCOL, WHICH IS WHY THE COUNT IN THE OVERVIEW
-AND THE COUNT ON THAT PAGE ARE DIFFERENT NUMBERS.** Two cards carry
-`notAProtocol` — the User portal, which is an APPLICATION, and **Email codes and
+AND THE COUNT ON THAT PAGE ARE DIFFERENT NUMBERS.** Three cards carry
+`notAProtocol` — the User portal and Reporting (#956), which are
+applications, and **Email codes and
 links (#64), a credential mechanism that a guideline says is not an
 authenticator at all** (it names NIST SP 800-63B-4 and RFC 8176 anyway).
 **Recovery codes carried it until #283 (2026-10-07)** on the claim that nobody
 wrote a specification for a recovery code; NIST SP 800-63B-4 section 3.1.2's
 *look-up secrets* are one, and the card now names it.
-`tests/vendored/sts_metadata.js` asserts that every card without the marker
+`tests/protocol/sts_metadata.js` asserts that every card without the marker
 names a specification — so the marker is what keeps that rule strict for
 everything it was written for. A card still costs all three things above whether or not it is
 a protocol, because the rule the page enforces is *no endpoint group without a
@@ -918,9 +927,9 @@ design.
 
 **THESE ARE THE PARENT PROJECT'S RULES SINCE 2026-09-12** — its root
 `CLAUDE.md`'s *Style Notes* — adopted here and swept across the tree that day.
-They bind every `.js` file except `common/vendored/`, the eight Kerberos codec
+They bind every `.js` file except `common/crypto_impl/`, the eight Kerberos codec
 copies, the `node-ldapjs` submodule and the non-`local` copies in
-`tests/vendored/`, none of which may be edited here.
+`tests/protocol/`, none of which may be edited here.
 
 * **Every named function is entered and left out loud.** Its first statement
   is `log.debug("Entering NAME().")` and every exit goes through
@@ -1037,7 +1046,7 @@ cannot read its own signing key does not start. `common/CLAUDE.md` argues both
 
 **The cross-cutting rule: every document that carries or describes a key is
 served `Cache-Control: no-store`.** If you add one, it needs that header too —
-`tests/vendored/sts_metadata_anonymous.js` asks it of every metadata document
+`tests/protocol/sts_metadata_anonymous.js` asks it of every metadata document
 and fails until the row is there.
 
 ## Versioning: M.N.O, fixed when an artifact is BUILT
@@ -1073,14 +1082,14 @@ modes are `memory`, `single-node` and `cluster` (a bare run runs all three),
 
 Where a new test goes, asked in this order:
 
-1. **Is it about this service's own `/admin` or `/admin-api`?** Then `tests/vendored/`, `local: true` — an ownership argument, not a capability one.
-2. **Can it be asserted over HTTP against a running service?** Then **`tests/vendored/`, `local: true` — written HERE since 2026-09-21** (rcbj's decision; it was `../id-proto-debugger/tests/`). A protocol job is the only kind an AWS target and the `product` mode can run, so a feature covered only in process is uncovered there.
+1. **Is it about this service's own `/admin` or `/admin-api`?** Then `tests/protocol/`, `local: true` — an ownership argument, not a capability one.
+2. **Can it be asserted over HTTP against a running service?** Then **`tests/protocol/`, `local: true` — written HERE since 2026-09-21** (rcbj's decision; it was `../id-proto-debugger/tests/`). A protocol job is the only kind an AWS target and the `product` mode can run, so a feature covered only in process is uncovered there.
 3. **Otherwise here**: it chooses how the process starts, needs a second container on the service's network, or needs a socket no stack publishes.
 
 **Never edit a vendored copy** — the next
 `node tests/tools/vendor-check.js --sync` overwrites it and the
 fix never reaches the parent. The `local: true` jobs are the inversion, edited
-here only. `tests/vendored/MANIFEST.js` says which is which.
+here only. `tests/protocol/MANIFEST.js` says which is which.
 
 `tests/CLAUDE.md` carries the job table, the launchers, the modes, the image
 mirror, the coverage run and the rules that are not optional there. **What

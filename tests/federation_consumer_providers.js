@@ -931,7 +931,7 @@ function childMain() {
     });
 
     // ===== K. CONNECTED ACCOUNTS, FROM THE PORTAL ===========================
-    const portalSignin = require(ROOT + '/tests/vendored/portal_signin');
+    const portalSignin = require(ROOT + '/tests/protocol/portal_signin');
     const RAE = 'fcp-rae';
     const RAE_PASSWORD = 'Fcp-Rae-' + process.pid + '-Passw0rd!';
     inSp(function () {

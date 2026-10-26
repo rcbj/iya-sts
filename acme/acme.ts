@@ -2522,7 +2522,7 @@ const slot = new InstanceSlot<Acme>(
 //
 // **ONE MIDDLEWARE AFTER THE ROUTES AND NOT A ROUTE PER METHOD**, and the
 // reason is `/admin/sts-metadata`: it reads the router, lists every method a
-// route registers as an endpoint, and `tests/vendored/sts_metadata.js` asserts
+// route registers as an endpoint, and `tests/protocol/sts_metadata.js` asserts
 // that no listed method is refused. A `GET` route whose only job is to refuse
 // would be a listed method answering 405. A middleware registers no route, so
 // the index lists what each resource answers and nothing else.

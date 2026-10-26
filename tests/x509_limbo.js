@@ -144,6 +144,134 @@ function x509Of(pem) {
   }
 }
 
+// Four octets as dotted decimal, the way Node prints an `IP Address`.
+function ipv4Text(bytes) {
+  log.debug("Entering ipv4Text().");
+  const out = [];
+  for (let i = 0; i < bytes.length; i++) {
+    out.push(bytes.charCodeAt(i));
+  }
+  log.debug("Leaving ipv4Text().");
+  return out.join('.');
+}
+
+// Sixteen octets as an RFC 5952 address. One run of zeros, the longest,
+// collapses; a single zero stays. Used only when Node's formatter throws.
+function ipv6Text(bytes) {
+  log.debug("Entering ipv6Text().");
+  const parts = [];
+  for (let i = 0; i < 16; i += 2) {
+    parts.push(((bytes.charCodeAt(i) << 8) | bytes.charCodeAt(i + 1))
+      .toString(16));
+  }
+  let best = -1;
+  let bestLen = 0;
+  let run = -1;
+  let runLen = 0;
+  for (let i = 0; i <= parts.length; i++) {
+    if (i < parts.length && parts[i] === '0') {
+      if (run < 0) {
+        run = i;
+      }
+      runLen++;
+    } else {
+      if (runLen > bestLen) {
+        best = run;
+        bestLen = runLen;
+      }
+      run = -1;
+      runLen = 0;
+    }
+  }
+  let text;
+  if (bestLen > 1) {
+    const head = parts.slice(0, best).join(':');
+    const tail = parts.slice(best + bestLen).join(':');
+    text = (head ? head : '') + '::' + tail;
+  } else {
+    text = parts.join(':');
+  }
+  log.debug("Leaving ipv6Text().");
+  return text;
+}
+
+// DNS and IP names from the subjectAltName extension, read as bytes.
+// `certificateFromPem` parses the public key and throws "OID is not RSA"
+// on every leaf whose subjectAltName Node 24 cannot format (507 of the
+// corpus, all of them an expected FAILURE). The extension is an OCTET
+// STRING of GeneralNames (RFC 5280 4.2.1.6): dNSName is context tag 2 and
+// iPAddress is tag 7. An otherName is not a peer name (RFC 9525).
+function sanTextFromPem(pem) {
+  log.debug("Entering sanTextFromPem().");
+  const forge = require('node-forge');
+  let text = '';
+  try {
+    const b64 = String(pem).replace(/-----[^-]+-----/g, '')
+      .replace(/\s+/g, '');
+    const der = forge.util.decode64(b64);
+    const cert = forge.asn1.fromDer(der);
+    const tbs = cert.value[0];
+    let exts = null;
+    (tbs.value || []).forEach(function (node) {
+      if (node.tagClass === forge.asn1.Class.CONTEXT_SPECIFIC &&
+          node.type === 3 && node.value && node.value[0]) {
+        exts = node.value[0];
+      }
+    });
+    let names = null;
+    ((exts && exts.value) || []).forEach(function (ext) {
+      const kids = ext.value || [];
+      if (!kids[0] || kids[0].type !== forge.asn1.Type.OID) {
+        return;
+      }
+      if (forge.asn1.derToOid(kids[0].value) !== '2.5.29.17') {
+        return;
+      }
+      names = forge.asn1.fromDer(kids[kids.length - 1].value);
+    });
+    const parts = [];
+    ((names && names.value) || []).forEach(function (one) {
+      if (one.tagClass !== forge.asn1.Class.CONTEXT_SPECIFIC) {
+        return;
+      }
+      if (one.type === 2 && one.value) {
+        parts.push('DNS:' + one.value);
+      } else if (one.type === 7 && one.value) {
+        const ip = one.value.length === 4 ? ipv4Text(one.value)
+          : (one.value.length === 16 ? ipv6Text(one.value) : '');
+        if (ip) {
+          parts.push('IP Address:' + ip);
+        }
+      }
+    });
+    text = parts.join(', ');
+  } catch (e) {
+    log.debug("Caught in sanTextFromPem(): " + ((e && e.message) || e));
+    text = '';
+  }
+  log.debug("Leaving sanTextFromPem().");
+  return text;
+}
+
+// Node's subjectAltName text, or DNS and IP names read from the extension
+// when Node's formatter throws. Node 24 throws "Failed to format subject
+// alternative name" on a GeneralName it cannot print, and the getter then
+// yields nothing — including the DNS and IP names beside it.
+function subjectAltNameText(pem, leaf) {
+  log.debug("Entering subjectAltNameText().");
+  try {
+    const san = String(leaf.subjectAltName || '');
+    log.debug("Leaving subjectAltNameText().");
+    return san;
+  } catch (e) {
+    log.debug("Caught in subjectAltNameText(): " +
+              ((e && e.message) || e));
+  }
+  const text = sanTextFromPem(pem);
+  log.debug("Leaving subjectAltNameText().");
+  return text;
+}
+
 // Does the leaf's subjectAltName name the case's expected peer (RFC 9525:
 // DNS-ID and IP-ID only, a wildcard only as the whole left-most label, no
 // common-name fallback)? true when the case names no peer.
@@ -155,7 +283,7 @@ function peerNameMatches(t) {
     return true;
   }
   const leaf = x509Of(t.peer_certificate);
-  const san = leaf ? String(leaf.subjectAltName || '') : '';
+  const san = leaf ? subjectAltNameText(t.peer_certificate, leaf) : '';
   const entries = san ? san.split(/,\s*/) : [];
   let matched = false;
   entries.forEach(function (entry) {

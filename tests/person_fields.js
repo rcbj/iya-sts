@@ -7,7 +7,7 @@
 // tests/person_fields.js — A PERSON'S PAGE AS TABS, AND THEIR ATTRIBUTES AS A
 // TYPED FIELD GRID (rcbj, 2026-10-01).
 //
-// The application page's model for a person: seven tabs, the Attributes tab
+// The application page's model for a person: nine tabs, the Attributes tab
 // one sub-tab per group of `ldap/person_editor.ts`'s FIELD_GROUPS with its
 // own Save (`update-fields`, which `POST /admin-api/users/update-fields`
 // calls too), and `/admin/users/new` drawing the same fields.
@@ -26,7 +26,7 @@
 //      present and absent cleared.
 //   D. A create takes the grid's attributes, a list included, and holds them
 //      to the editor's rules (a bad country code refused, STS-LDAP-0106).
-//   E. The page: seven tabs in order, the Credentials and Attributes
+//   E. The page: nine tabs in order, the Credentials and Attributes
 //      sub-tabs, each group a form posting to /admin/users/edit with its own
 //      Save and `present`, an example as each box's placeholder, the
 //      address form on Contact, and the one-attribute forms on Directory
@@ -223,7 +223,8 @@ function childMain() {
       const drawn = await drawer.draw('/admin/users', { user: 'pf-alice' });
       const inner = String(drawn.html || '');
       // GNAP grants (#432 phase 7) joined after Federation links.
-      const tabs = ['utab-overview', 'utab-activity', 'utab-attributes',
+      const tabs = ['utab-overview', 'utab-authentications',
+                    'utab-activity', 'utab-attributes',
                     'utab-credentials', 'utab-federation', 'utab-gnap',
                     'utab-entry', 'utab-signout'];
       const at = tabs.map(function (id) {
@@ -236,11 +237,11 @@ function childMain() {
       note(inOrder &&
              /<nav class="tabbar" aria-label="Sections of this page">/.test(
                inner),
-           'E. eight tabs, in order', JSON.stringify(at));
+           'E. nine tabs, in order', JSON.stringify(at));
       ['ucred-factors', 'ucred-password', 'ucred-keys']
         .forEach(function (id) {
-          note(inner.indexOf('id="' + id + '"') > at[3] &&
-                 inner.indexOf('id="' + id + '"') < at[4],
+          note(inner.indexOf('id="' + id + '"') > at[4] &&
+                 inner.indexOf('id="' + id + '"') < at[5],
                'E. the Credentials tab holds the ' + id + ' sub-tab');
         });
       // THE SUB-TAB BEING READ IS MARKED (#602): the stylesheet names each
@@ -264,6 +265,74 @@ function childMain() {
       note(subLinks.indexOf('ucred-service') >= 0 && unmarked.length === 0,
            'E. every sub-tab of the person page is marked when it is read',
            JSON.stringify({ subLinks: subLinks, unmarked: unmarked }));
+      const here = 'background:#12107c;color:#fff;font-weight:700;' +
+        'border-color:#12107c';
+      const fills = function (selector) {
+        const at = css.indexOf(selector);
+        const brace = at < 0 ? -1 : css.indexOf('{', at);
+        return brace >= 0 &&
+          css.slice(brace, brace + here.length + 1) === '{' + here;
+      };
+      note(css.indexOf('.tabbar a.tab-current{' + here + '}') >= 0 &&
+             fills('a.first') &&
+             fills('a[href="#tab-authentications"]') &&
+             fills('>.subbar a[href="#passkey-sub-named"]'),
+           'E. the tab being read is filled in the brand colour');
+      // A tab whose id the stylesheet cannot name (a custom listener's)
+      // is still the one marked, by the runtime rather than by a selector.
+      const Runtime = require(ROOT + '/admin-ui/web_runtime');
+      const cls = function () {
+        const set = {};
+        return {
+          contains: function (c) { return !!set[c]; },
+          add: function (c) { set[c] = true; },
+          remove: function (c) { delete set[c]; }
+        };
+      };
+      const node = function (tag, attrs, children) {
+        return {
+          tagName: tag, classList: cls(), attrs: attrs || {},
+          children: children || [],
+          getAttribute: function (name) {
+            return this.attrs[name] || null;
+          },
+          setAttribute: function (name, value) {
+            this.attrs[name] = value;
+          },
+          removeAttribute: function (name) { delete this.attrs[name]; },
+          contains: function (other) {
+            const self = this;
+            if (other === self) {
+              return true;
+            }
+            return self.children.some(function (child) {
+              return child === other ||
+                (child.contains && child.contains(other));
+            });
+          }
+        };
+      };
+      const firstPanel = node('SECTION', { id: 'tab-listeners' }, []);
+      const custom = node('SECTION', { id: 'tab-custom-edge' }, []);
+      const linkFirst = node('A', { href: '#tab-listeners' }, []);
+      const linkCustom = node('A', { href: '#tab-custom-edge' }, []);
+      linkFirst.classList.add('first');
+      const bar = node('NAV', {}, [linkFirst, linkCustom]);
+      bar.classList.add('tabbar');
+      const root = node('DIV', {}, [bar, firstPanel, custom]);
+      const byId = { 'tab-listeners': firstPanel,
+                     'tab-custom-edge': custom };
+      const rt = Object.create(Runtime.prototype);
+      rt.env = { document: {
+        querySelectorAll: function () { return [root]; },
+        querySelector: function () { return custom; },
+        getElementById: function (id) { return byId[id] || null; }
+      } };
+      rt.markOpenTabs();
+      note(linkCustom.classList.contains('tab-current') &&
+             linkCustom.attrs['aria-current'] === 'true' &&
+             !linkFirst.classList.contains('tab-current'),
+           'E. a tab the stylesheet does not name is still the one marked');
       const writable = /action="\/admin\/users\/edit#ufg-name"/.test(inner);
       if (writable) {
         ['name', 'contact', 'organization', 'address', 'identity']
@@ -271,7 +340,7 @@ function childMain() {
             const formAt = inner.indexOf('action="/admin/users/edit#ufg-' +
                                          g + '"');
             note(formAt > inner.indexOf('id="ufg-' + g + '"') &&
-                   formAt > at[2] && formAt < at[3],
+                   formAt > at[3] && formAt < at[4],
                  'E. the ' + g + ' group is a form on the Attributes tab');
           });
         // OPEN (#446 cleanup): this branch runs for the first time now that
@@ -292,10 +361,11 @@ function childMain() {
         note(mail > inner.indexOf('id="ufg-contact"') &&
                mail < inner.indexOf('id="ufg-organization"'),
              'E. the address form is on the Contact sub-tab');
-        // The Directory entry tab is the seventh (`at[6]`) since GNAP grants
-        // took the sixth (#432 phase 7).
-        note(inner.indexOf('value="set-attribute"') > at[6] &&
-               inner.indexOf('value="set-attribute"') < at[7],
+        // The Directory entry tab is the eighth (`at[7]`) since
+        // Authentication attempts took the second (#955) and GNAP grants
+        // took the seventh (#432 phase 7).
+        note(inner.indexOf('value="set-attribute"') > at[7] &&
+               inner.indexOf('value="set-attribute"') < at[8],
              'E. the one-attribute forms are on the Directory entry tab');
       } else {
         note(/needs <strong>Admin Write<\/strong>/.test(inner),

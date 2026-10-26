@@ -691,6 +691,22 @@
     "en": "eb2c0a8e31f615d9",
     "text": "Hur länge den cookie som en enhetsbunden session behöver lever innan webbläsaren måste bevisa sin nyckel igen, och därmed hur länge ett kopierat cookiepar fortsätter att fungera. Aldrig längre än sessionens eget slut. Läses när en cookie utfärdas."
   },
+  "authn.deviceBoundIncludeSite|label": {
+    "en": "dfe9f9439467a7ed",
+    "text": "Begränsa en bunden session till den registrerbara domänen"
+  },
+  "authn.deviceBoundIncludeSite|description": {
+    "en": "431c5a53f269b368",
+    "text": "Av, standardvärdet, är kakan för en enhetsbunden session bara för värden, vilket är vad den här tjänsten alltid har gjort, och scope.include_site är falskt. På sätter instruktionerna include_site och kakans Domain är den registrerbara domänen för värden som registrerade sig (webauthn.rpId när det är ett suffix till värden, annars de två sista etiketterna; en adress, localhost eller en enda etikett vidgas inte). Felsökarens publika värd och en anpassad lyssnares värd under den domänen undantas. En felsökare på samma värd och en annan port kan inte undantas: kakor är inte portavgränsade. Sökvägsprefix för en domän är samma ursprung."
+  },
+  "authn.deviceBoundIssuanceWaitS|label": {
+    "en": "c379c77b9ef18c81",
+    "text": "Hur länge en utfärdning väntar på en enhetsbindning (sekunder)"
+  },
+  "authn.deviceBoundIssuanceWaitS|description": {
+    "en": "2562f13d1a8d0c51",
+    "text": "Hur länge en utfärdning som kräver en enhetsbunden session väntar efter att registrering erbjöds. Läses vid utfärdningen, inte av en timer: efter det är sessionens faktum timedout och utfärdningen nekas. Noll betyder att väntan redan har löpt ut. En session som aldrig erbjöds registrering nekas inte av väntan."
+  },
   "authn.maxSessions|label": {
     "en": "5fa1f6294f5a3dc8",
     "text": "Högsta antal inloggningssessioner per sfär"
@@ -1103,6 +1119,22 @@
     "en": "e35e276b9d933828",
     "text": "På kan en person ha en klassisk nyckel och en postkvantnyckel (ML-DSA) samtidigt, på samma autentiserare om den kan skapa båda. Varje nyckel skapas i ett SPÅR som personen väljer: det klassiska spåret begär `webauthn.algorithms` utan ML-DSA (`ES256` och `RS256` om inget återstår), postkvantspåret begär bara ML-DSA. Varje spår har sitt eget användarhandtag, så att den andra nyckeln inte ersätter den första på autentiseraren, och sin egen exkluderingslista; en lösenordshanterare visar postkvantnyckeln under ett namn som anger dess algoritm — `<username>+ml-dsa` när den skapas, `<username>+ml-dsa-65` (till exempel) när alla personens postkvantnycklar använder just den — som aldrig är ett namn någon loggar in med. `webauthn.maxKeysPerPerson` räknar båda spåren. Kan inte vara på medan `webauthn.pqcOnly` är det. Av är varje ceremoni som förut, och en redan registrerad postkvantnyckel fortsätter att logga in; en ny kan inte skapas."
   },
+  "webauthn.postQuantumAllowCredentials|label": {
+    "en": "295b04bef9cf50bc",
+    "text": "Nycklar som en inloggning anger när en postkvantnyckel krävs"
+  },
+  "webauthn.postQuantumAllowCredentials|description": {
+    "en": "f34caf08dceeedd3",
+    "text": "Läses bara medan nyckelpolicyn kräver en postkvantnyckel vid inloggning (`postQuantumRequired`), och bara där den valda profilens rad `postQuantumAllowCredentials` är `realm`. `narrow` (standard) anger bara personens postkvantnycklar (ML-DSA) i nyckelstegets `allowCredentials`, så en klassisk nyckel erbjuds aldrig — men en person vars enhet bara har deras klassiska nyckel ser plattformens eget meddelande ”ingen nyckel hittades”. `list-and-refuse` anger varje nyckel personen har och avvisar en klassisk efter ceremonin (STS-AUTHN-0356), med en sida som säger att programmet kräver en postkvantnyckel och var man lägger till en. Avvägningen: personen kan välja en nyckel som kommer att avvisas. I båda fallen får en person som inte har någon postkvantnyckel veta det före varje ceremoni."
+  },
+  "webauthn.pqcUpgrade|label": {
+    "en": "1c2af00d33a75721",
+    "text": "Uppgradera en klassisk nyckel till en postkvantnyckel"
+  },
+  "webauthn.pqcUpgrade|description": {
+    "en": "a77cd9a980262260",
+    "text": "På (standardvärdet) kan en person uppgradera en av sina klassiska nycklar till en postkvantnyckel (ML-DSA) på /portal/keys: personen använder den klassiska nyckeln en gång, för att visa att den är hens, och skapar sedan den nya, som bara erbjuds ML-DSA. Med `webauthn.pqcAlongsideClassical` på LÄGGS postkvantnyckeln TILL i ett eget spår och den klassiska behålls; av ERSÄTTER postkvantnyckeln den klassiska på plats, behåller dess namn och antecknar när den uppgraderades och från vilken algoritm. Den klassiska nyckeln ändras först när den nya har verifierats, så en misslyckad uppgradering lämnar den som den var. Den nya nyckeln uppfyller varje regel som en registrering uppfyller. Av kan ingen nyckel uppgraderas; en postkvantnyckel kan fortfarande registreras bredvid en klassisk där nycklar får registreras."
+  },
   "webauthn.userVerification|label": {
     "en": "8b134177fe992d91",
     "text": "Användarverifiering"
@@ -1134,6 +1166,30 @@
   "webauthn.attestationTrustAnchors|description": {
     "en": "75ff97c509121fb5",
     "text": "Rotcertifikat som ett attesteringscertifikat får kedja till, som ett PEM-paket, VID SIDAN AV dem som FIDO Metadata Service listar för varje modell — en företags-CA för TPM-endorsement, en leverantörs rot, Androids eller Apples attesteringsrot, eller en testrot. En kedja som når en av dem är BETRODD. Inget levereras: tomt litar bara på det som den aktiva MDS BLOB listar."
+  },
+  "webauthn.attestationEvidenceTsaUrl|label": {
+    "en": "4dabd3df9187a34f",
+    "text": "URL till tidsstämpelmyndigheten för nyckelbevis"
+  },
+  "webauthn.attestationEvidenceTsaUrl|description": {
+    "en": "7fa58ac004a9e2e4",
+    "text": "När den anges tillsammans med TSA:ns förtroendeankare får verifierade nyckelattesteringar en EvidenceRecord enligt RFC 4998 vars första ArchiveTimeStamp är en RFC 3161-token från den här HTTPS-tidsstämpelmyndigheten. Tom stänger av bevisregistreringen."
+  },
+  "webauthn.attestationEvidenceTsaTrustAnchors|label": {
+    "en": "8c29eb6dc36aa1a9",
+    "text": "TSA-förtroendeankare för nyckelbevis (PEM)"
+  },
+  "webauthn.attestationEvidenceTsaTrustAnchors|description": {
+    "en": "7b20573a01a900a7",
+    "text": "PEM-förtroendeankare som används för att verifiera RFC 3161-token och dess TSA-certifikatsökväg. Bevisregistrering kräver både det här knippet och tidsstämpelmyndighetens URL."
+  },
+  "webauthn.attestationEvidenceHashAlgorithm|label": {
+    "en": "8c886d89947bce4c",
+    "text": "Hashträdets algoritm för nyckelbevis"
+  },
+  "webauthn.attestationEvidenceHashAlgorithm|description": {
+    "en": "ea9f111d1308b528",
+    "text": "Kondensat som nya RFC 4998-poster använder. Att höja det från sha256 utlöser RFC 4998-förnyelse av hashträdet vid den dagliga omräkningen av nyckelrapporten, i en ny ArchiveTimeStampChain."
   },
   "webauthn.attestationAllowedAaguids|label": {
     "en": "1d32f2ee4864d344",
@@ -1274,6 +1330,14 @@
   "keys.offerKemEncryption|description": {
     "en": "16bd897eb9c3284a",
     "text": "Om ML-KEM- och HPKE-JWE-algoritmerna (#82 — utkast, se keys.encryptionKemAlgs) erbjuds där den här sfären krypterar TILL en nyckel som en klient eller plånbok har: annonserade i `userinfo_encryption_alg_values_supported`, `id_token_encryption_alg_values_supported`, `authorization_encryption_alg_values_supported` (JARM), `introspection_encryption_alg_values_supported` och en OpenID4VCI-utfärdares `credential_response_encryption`, och godtagna när en klient registrerar en eller en plånbok namnger en. **Av som standard, och ett val för administratören:** dessa algoritmer kommer från Internet-Drafts, och en klient eller en konformitetssvit som provar varje annonserad algoritm möter sådana den inte känner till. En klient som redan registrerats för en behåller sin registrering; med detta av vägras dess nästa krypterade svar, som för varje algoritm som sfären inte erbjuder."
+  },
+  "keys.postQuantumSigning|label": {
+    "en": "34883416ca94e446",
+    "text": "Postkvantsäker signering"
+  },
+  "keys.postQuantumSigning|description": {
+    "en": "68ffd5da182ec911",
+    "text": "Om den här sfären signerar, publicerar och verifierar de postkvantsäkra och sammansatta JWS-algoritmerna (ML-DSA, SLH-DSA och de sammansatta ML-DSA-algoritmerna). **På som standard.** Av: ingen postkvantsäker signeringsnyckel finns i `/oauth2/jwks` eller i DID-dokumentet (vänte-, fästa och signerargruppsnycklar inräknade); ingen postkvantsäker algoritm finns i någon `*_alg_values_supported`- eller `*_alg_values`-lista i discovery-, auktoriseringsserver-, OpenID Federation-, OpenID4VCI- och OpenID4VP-dokumenten; en JWS signerad med en sådan vägras överallt där sfären verifierar en; en klient får inte registrera en; och en signatur som fortfarande skulle kräva en — för en klient som registrerades medan detta var på, eller en HTTP-meddelandesignatur — vägras i stället för att göras med en nyckel som ingen kan hämta. Den finns för klienter och testsviter vars JOSE-bibliotek inte kan tolka en AKP-nyckel eller inte känner till dessa algoritmer, bland dem OpenID-konformitetssviten. **Oförändrat:** COSE (passkeys), XML-signaturer, TLS, certifikatalgoritmer, ML-KEM-krypteringsnycklarna (`keys.encryptionKemAlgs`), den alternativa ML-DSA-nyckel som ett `hybrid-groups`-certifikat bär i `x5c` (de fristående ML-DSA-nycklarna tas bort, certifikaten utfärdas inte på nytt), och `oidfed.signingAlg`: en sfär som namnger en ML-DSA-federationsnyckel fortsätter att signera sina utsagor med den men vägrar en ML-DSA-utsaga som den ombeds verifiera, så behåll den inställningen klassisk här."
   },
   "keys.kidFormat|label": {
     "en": "67642fcf21c7ca50",
@@ -1883,6 +1947,14 @@
     "en": "e1cb6b236d5adc8b",
     "text": "JWS-algoritmen som åtkomsttokener (och uppdateringstokener) signeras med, med den här sfärens nyckel för den — varenda en publiceras i JWKS. default är RS256, och PS256 under FAPI 1.0 Advanced, som också vägrar allt utom PS256 eller ES256. En namngiven auktoriseringsserver kan bära sin egen (access_token_signing_alg)."
   },
+  "oauth2.accessTokenFormat|label": {
+    "en": "c7e15a626ed4371b",
+    "text": "Format för åtkomsttoken"
+  },
+  "oauth2.accessTokenFormat|description": {
+    "en": "74504b84130dea54",
+    "text": "Om en ny åtkomsttoken är en RFC 9068 JWT (jwt, standardvärdet) eller ett ogenomskinligt handtag på 256 bitar (opaque). Anspråken för en ogenomskinlig token stannar i denna sfär; uppdateringstoken förblir nästlade JWT och ID-token förblir JWT. En token som redan utfärdats behåller den form den präglades med."
+  },
   "oauth2.jarmResponseLifetimeS|label": {
     "en": "28259a88563d949d",
     "text": "Livslängd för JARM-svar (s)"
@@ -2354,6 +2426,14 @@
   "oauth2.maxRefreshTokenFamilies|description": {
     "en": "331485a9a3ff827c",
     "text": "Hur många uppdateringstokener RFC 9700-läget spårar för rotation och upptäckt av återuppspelning. När den är full glöms UTGÅNGNA först, sedan ROTERADE (redan återkallade, så en återuppspelning av en sådan vägras fortfarande — det som förloras är återkallelsen av hela familjen som återuppspelningen skulle utlösa), och först därefter den äldsta levande, med en varning. En levande som glömts fungerar fortfarande; dess nästa rotation startar en ny familj. Höj värdet för en driftsättning med fler samtidigt levande uppdateringstokener än så här."
+  },
+  "oauth2.maxOpaqueAccessTokens|label": {
+    "en": "a0a9d2a5af677a1f",
+    "text": "Ogenomskinliga åtkomsttoken som sparas (per sfär)"
+  },
+  "oauth2.maxOpaqueAccessTokens|description": {
+    "en": "19042efe72e28cc6",
+    "text": "Hur många ogenomskinliga åtkomsttoken denna sfär sparar. När det är fullt tas utgångna rader bort och ytterligare utfärdande nekas (STS-OAUTH-0979) i stället för att vräka en giltig token. Gäller när oauth2.accessTokenFormat är opaque."
   },
   "oauth2.signedMetadataAlgorithm|label": {
     "en": "71fb31f9a62ec657",
@@ -3024,8 +3104,8 @@
     "text": "Standardnyckelalgoritm för CA"
   },
   "pki.keyAlgorithm|description": {
-    "en": "763204ceb3af08e6",
-    "text": "Vilken nyckelalgoritm en ny certifikatutfärdare byggs med när formuläret inte anger någon: rsa-2048, rsa-3072, rsa-4096, ec-p256, ec-p384, ec-p521 eller ed25519, eller ett av postkvant-id:na (ML-DSA, SLH-DSA, kompositerna och ML-KEM — som inte kan signera, så den är en subjektnyckel och aldrig en utfärdares). RSA 2048 är standard eftersom det LÖV som hierarkin finns till för att utfärda signerar ett klientintyg som någon annans OAuth-bibliotek måste verifiera, och RS256 är den enda algoritm som varje sådant bibliotek har. Listan läses från common/vendored/key_material.js — modulen som genererar nyckeln — så ett värde den inte känner till avvisas vid bygget med listan bredvid."
+    "en": "00e61f4da7498a62",
+    "text": "Vilken nyckelalgoritm en ny certifikatutfärdare byggs med när formuläret inte anger någon: rsa-2048, rsa-3072, rsa-4096, ec-p256, ec-p384, ec-p521 eller ed25519, eller ett av postkvant-id:na (ML-DSA, SLH-DSA, kompositerna och ML-KEM — som inte kan signera, så den är en subjektnyckel och aldrig en utfärdares). RSA 2048 är standard eftersom det LÖV som hierarkin finns till för att utfärda signerar ett klientintyg som någon annans OAuth-bibliotek måste verifiera, och RS256 är den enda algoritm som varje sådant bibliotek har. Listan läses från common/crypto_impl/key_material.js — modulen som genererar nyckeln — så ett värde den inte känner till avvisas vid bygget med listan bredvid."
   },
   "pki.signatureAlgorithm|label": {
     "en": "43cdf39e69d6fdd4",
@@ -3064,8 +3144,8 @@
     "text": "Standardlivslängd för ett utfärdat nyckelpar (dagar)"
   },
   "pki.leafLifetimeDays|description": {
-    "en": "b55ab0b2f1f1f04b",
-    "text": "Hur länge ett signeringscertifikat som utfärdas till en applikation gäller när formuläret inte anger någon livslängd. Den BEGRÄNSAS till den utfärdande CA:ns egen utgångstid i stället för att avvisas där den skulle gå över: den vanliga orsaken är en utfärdande CA på fem år i sitt femte år, och en operatör som bad om ett år bör få elva månader snarare än ett felmeddelande om aritmetik. Nivåernas egna livslängder kommer från certifikatprofilerna i common/vendored/x509.js — tjugo år, tio och fem — och kan åsidosättas i formuläret och av de tre pki.*LifetimeYears-raderna nedan."
+    "en": "028d5b5d730c9d23",
+    "text": "Hur länge ett signeringscertifikat som utfärdas till en applikation gäller när formuläret inte anger någon livslängd. Den BEGRÄNSAS till den utfärdande CA:ns egen utgångstid i stället för att avvisas där den skulle gå över: den vanliga orsaken är en utfärdande CA på fem år i sitt femte år, och en operatör som bad om ett år bör få elva månader snarare än ett felmeddelande om aritmetik. Nivåernas egna livslängder kommer från certifikatprofilerna i common/crypto_impl/x509.js — tjugo år, tio och fem — och kan åsidosättas i formuläret och av de tre pki.*LifetimeYears-raderna nedan."
   },
   "pki.rootLifetimeYears|label": {
     "en": "72e3da975d05b214",
@@ -4148,8 +4228,8 @@
     "text": "Förinstallera konsolen och detta API som applikationer"
   },
   "applications.seedInternal|description": {
-    "en": "7092a96534fcb0ca",
-    "text": "Skapa applikationsposter för den här tjänstens egna ytor när den startar, under ou=applications med allt annat: ADMINISTRATÖRSKONSOLEN på /admin, ANVÄNDARPORTALEN på /portal, HANTERINGS-API:ET på /admin-api och — medan den är inbäddad — protokolldebuggerns två klienter. De förinstalleras som FULLSTÄNDIGA RFC 7591-registreringar snarare än som etiketter: konsolen och portalen som konfidentiella OpenID Connect-förlitande parter med authorization code-grantet, detta API som en konfidentiell OAuth-klient med client_credentials, var och en med en hemlighet — så att de är klienter som kan testas snarare än rader på en sida. Konsolen och portalen LOGGAR IN GENOM sina poster (/admin/callback och /portal/callback), så att stänga av detta, eller ta bort en, lämnar den ytan oförmögen att logga in någon tills en post finns igen. Den här behållaren är registret — en ldapmodify av den är en konfigurationsändring. PÅSLAGET som standard. Förinstalleras bara där identifieraren är ledig, så en post som en operatör har tagit bort förblir borttagen till nästa omstart."
+    "en": "0dcb321977df8ef6",
+    "text": "Skapa applikationsposter för den här tjänstens egna ytor när den startar, under ou=applications tillsammans med allt annat: ADMINKONSOLEN på /admin, ANVÄNDARPORTALEN på /portal, RAPPORTAPPLIKATIONEN på /report, RAPPORT-API:T på /report-api, HANTERINGS-API:T på /admin-api och — medan den är inbäddad — felsökarens två klienter. De seedas som FULLSTÄNDIGA RFC 7591-registreringar och inte som etiketter: konsolen och portalen som konfidentiella OpenID Connect-förlitande parter med authorization code-flödet, det här API:t som en konfidentiell OAuth-klient med client_credentials, var och en med en hemlighet — så de är klienter som kan prövas och inte rader på en sida. Konsolen och portalen LOGGAR IN GENOM sina poster (/admin/callback och /portal/callback), så att stänga av detta, eller ta bort en, lämnar ytan oförmögen att logga in någon tills en post finns igen. Den här containern är registret — en ldapmodify av den är en konfigurationsändring. PÅ som standard. Seedas bara där identifieraren är ledig, så en operatör som tog bort en får den att förbli borttagen till nästa omstart."
   },
   "applications.seedInternal|restartReason": {
     "en": "ce6b237794aa9252",
@@ -7887,6 +7967,14 @@
     "en": "5525432b1abd613a",
     "text": "Om varje anrop till en protokollslutpunkt får en granskningshändelse. På som standard, eftersom \"allt som den här tjänsten ombads göra\" är loggens poäng — men det är den överlägset mest brusiga källan (varje JWKS-avfrågning och metadatahämtning är en), så att stänga av det är hur någon som bevakar katalogen eller konsolen får en läsbar sida. Det påverkar aldrig de andra fem kategorierna, och /admin/metrics räknar varje anrop i båda fallen."
   },
+  "audit.authenticationHistoryDays|label": {
+    "en": "bc611d1f003e751a",
+    "text": "Autentiseringshistorik (dagar)"
+  },
+  "audit.authenticationHistoryDays|description": {
+    "en": "4270a8167905dee9",
+    "text": "Hur många dagar av bedömda inloggningar Senaste inloggningar på användarportalen listar för den inloggade personen. Varje sfär sätter sin egen, eftersom värdet läses i den omgivande sfären. Konsolens flik Autentiseringsförsök för en person listar varje försök som granskningsloggen fortfarande har, hela loggen. Loggens eget tak kan fortfarande ta bort äldre rader."
+  },
   "delegation.maxRecords|label": {
     "en": "25d78cc6c84e920b",
     "text": "Högsta antal lagrade delegeringshandlingar"
@@ -10038,6 +10126,110 @@
   "mail.notifyAdministrators|description": {
     "en": "bd3ae7ff26663b42",
     "text": "När TJÄNSTEN, inte en person, markerar en inloggningsuppgift som komprometterad eller inaktiverar ett konto (riskbedömning), skicka även e-post till varje medlem i sfärens Admin Write-förteckning som har en adress."
+  },
+  "report.syncMaxRows|label": {
+    "en": "77fdb27c30eb4bf8",
+    "text": "Radgräns för synkron rapport"
+  },
+  "report.syncMaxRows|description": {
+    "en": "563c41bbaffd74bb",
+    "text": "Det högsta antal rader en synkron rapport får returnera. En större gräns vägras i läget sync och blir ett jobb i auto."
+  },
+  "report.syncMaxBytes|label": {
+    "en": "f975fe6e57bfae86",
+    "text": "Bytegräns för synkron rapport"
+  },
+  "report.syncMaxBytes|description": {
+    "en": "e7c9e919bd0ac8ea",
+    "text": "Det högsta antal bytes en synkron rapport får returnera. Ett resultat över detta vägras i stället för att skickas delvis."
+  },
+  "report.syncMaxMs|label": {
+    "en": "ac021c892bcfc370",
+    "text": "Tidsgräns för synkron rapport (millisekunder)"
+  },
+  "report.syncMaxMs|description": {
+    "en": "f6ab877e4526a9f9",
+    "text": "Hur länge en synkron rapport får köras. Efter detta vägras anropet i stället för att besvaras med en ofullständig kropp."
+  },
+  "report.asyncMaxMs|label": {
+    "en": "f0c5ac5e9884050c",
+    "text": "Tidsgräns för rapportjobb (millisekunder)"
+  },
+  "report.asyncMaxMs|description": {
+    "en": "45c7c3ad19fc3c4a",
+    "text": "Hur länge ett rapportjobb får köras. Efter detta misslyckas jobbet i stället för att lagra ett ofullständigt resultat."
+  },
+  "report.asyncMaxRows|label": {
+    "en": "8aca969304d23655",
+    "text": "Radgräns för rapportjobb"
+  },
+  "report.asyncMaxRows|description": {
+    "en": "e5dceb18ca4c26a4",
+    "text": "Det högsta antal rader ett rapportjobb får skriva. En fråga som ber om fler vägras i varje läge."
+  },
+  "report.asyncMaxBytes|label": {
+    "en": "470a53d032622764",
+    "text": "Bytegräns för rapportjobb"
+  },
+  "report.asyncMaxBytes|description": {
+    "en": "91aac7df1ff51b42",
+    "text": "Det högsta antal bytes ett rapportjobb får lagra. Ett resultat över detta låter jobbet misslyckas i stället för att trunkeras."
+  },
+  "report.pdfMaxRows|label": {
+    "en": "5cf679421e7b7bf3",
+    "text": "Radgräns för PDF-rapport"
+  },
+  "report.pdfMaxRows|description": {
+    "en": "3b855ef0848c4ad4",
+    "text": "Det högsta antal rader en PDF-rapport får innehålla. En större fråga vägras och uppmanas använda CSV."
+  },
+  "report.pdfMaxPages|label": {
+    "en": "050231b3a1524a4b",
+    "text": "Sidgräns för PDF-rapport"
+  },
+  "report.pdfMaxPages|description": {
+    "en": "3b065500b4a246a3",
+    "text": "Det högsta antal sidor en PDF-rapport får innehålla. Efter detta vägras resultatet och uppmanas använda CSV."
+  },
+  "report.maxConcurrentPerRealm|label": {
+    "en": "2e8e9a195cac9a4c",
+    "text": "Körande rapportjobb per sfär"
+  },
+  "report.maxConcurrentPerRealm|description": {
+    "en": "7a252c3307b54d2a",
+    "text": "Hur många rapportjobb en sfär får ha igång samtidigt. En ytterligare inskickning vägras tills ett är klart."
+  },
+  "report.maxConcurrentPerSubject|label": {
+    "en": "3533626b8e0a8d15",
+    "text": "Körande rapportjobb per person"
+  },
+  "report.maxConcurrentPerSubject|description": {
+    "en": "525965a5866fed18",
+    "text": "Hur många rapportjobb en person får ha igång samtidigt."
+  },
+  "report.artifactRetentionS|label": {
+    "en": "ae014cb5ae4ea837",
+    "text": "Hur länge ett rapportresultat sparas (sekunder)"
+  },
+  "report.artifactRetentionS|description": {
+    "en": "c1e0935d871842f4",
+    "text": "Hur länge en färdig rapports bytes förblir tillgängliga för nedladdning. Därefter är resultatet borta."
+  },
+  "report.jobRetentionS|label": {
+    "en": "117aad13b6fa172e",
+    "text": "Hur länge en rapportjobbrad sparas (sekunder)"
+  },
+  "report.jobRetentionS|description": {
+    "en": "dfada581a8c28ca3",
+    "text": "Hur länge ett färdigt rapportjobbs rad stannar i listan. Ett jobb som fortfarande körs tas inte bort."
+  },
+  "report.usersGroup|label": {
+    "en": "21554dfaa265b36f",
+    "text": "Vem som kan få report:use utfärdad"
+  },
+  "report.usersGroup|description": {
+    "en": "28068508e0655509",
+    "text": "Kataloggruppen vars medlemmar kan få report:use utfärdad. Tom betyder att bara den här sfärens administratörer kan det. report:admin utfärdas bara till dessa administratörer."
   },
   "listenerMain.minVersion|label": {
     "en": "6470c151e28a9ab3",

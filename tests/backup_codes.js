@@ -47,7 +47,7 @@
 // `/portal/mfa`; the third claim's interesting case is a directory write
 // that FAILS, which no HTTP request can ask for.
 //
-// The over-HTTP half is `tests/vendored/sts_portal_backup_codes.js`, which
+// The over-HTTP half is `tests/protocol/sts_portal_backup_codes.js`, which
 // drives the portal and the sign-in door with a code it reads off the page.
 // The two are not substitutes: this one says the rules hold, and that one says
 // the doors are wired up.

@@ -114,10 +114,10 @@ import LazyModule = require('../common/lazy_module');
 // at its top, and together they are resident memory in every request worker
 // that never issues or verifies a BBS credential. `common/lazy_module.ts`
 // argues it; `common/helpers.js` defers the same file by hand.
-type Bbs2023 = typeof import('../common/vendored/bbs2023.js');
-const bbs2023: Bbs2023 = LazyModule.of('common/vendored/bbs2023.js',
+type Bbs2023 = typeof import('../common/crypto_impl/bbs2023.js');
+const bbs2023: Bbs2023 = LazyModule.of('common/crypto_impl/bbs2023.js',
   function () {
-    return require('../common/vendored/bbs2023.js') as Bbs2023;
+    return require('../common/crypto_impl/bbs2023.js') as Bbs2023;
   }, helpers.log);
 import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
@@ -1724,7 +1724,7 @@ class VcVerifier {
       // `typ` goes in the PROTECTED HEADER (RFC 9101 section 10.8, explicit
       // typing), where a strict wallet looks for it; until 2026-09-18 it was
       // only a payload claim and the header said "JWT", which
-      // `tests/vendored/sts_oid4vp_wallet.js` found. The payload claim went
+      // `tests/protocol/sts_oid4vp_wallet.js` found. The payload claim went
       // on 2026-09-26 (#187): OpenID4VP defines no `typ` parameter, and the
       // conformance suite reported it as one the Verifier made up. The token
       // registry is told the kind out of band (REQUEST_OBJECT_KIND).
@@ -1763,11 +1763,16 @@ class VcVerifier {
   private vpFormatsSupported(): any {
     const { log, vcDataIntegrity } = this.deps;
     log.debug("Entering VcVerifier.vpFormatsSupported().");
+    // The classical ones alone while `keys.postQuantumSigning` is off
+    // (2026-10-23): every place this object is published — the request's
+    // `client_metadata`, the verifier metadata, the Entity Configuration —
+    // reads it here, and the verification refuses the rest anyway.
+    const algs = helpers.offeredJwsAlgs(ALL_ALGS);
     log.debug("Leaving VcVerifier.vpFormatsSupported().");
     return {
-      'dc+sd-jwt': { 'sd-jwt_alg_values': ALL_ALGS,
-                     'kb-jwt_alg_values': ALL_ALGS },
-      'jwt_vc_json': { alg_values: ALL_ALGS },
+      'dc+sd-jwt': { 'sd-jwt_alg_values': algs,
+                     'kb-jwt_alg_values': algs },
+      'jwt_vc_json': { alg_values: algs },
       'ldp_vc': { proof_type_values: ['DataIntegrityProof'],
                   cryptosuite_values: ['bbs-2023'].concat(
                     vcDataIntegrity.SUPPORTED_CRYPTOSUITES) }

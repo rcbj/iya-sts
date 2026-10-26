@@ -512,6 +512,24 @@ const PASSKEY_ATTRIBUTE = {
   ALGORITHM: xacmlRequest.VOCABULARY.PASSKEY_ALGORITHM,
   POST_QUANTUM: xacmlRequest.VOCABULARY.PASSKEY_POST_QUANTUM,
   LANE: xacmlRequest.VOCABULARY.PASSKEY_LANE,
+  // What the key's attestation was signed with (#941). The built-in rule
+  // reads ATTESTATION_ALGORITHM_ALLOWED alone.
+  ATTESTATION_STATEMENT_ALGORITHM:
+    xacmlRequest.VOCABULARY.PASSKEY_ATTESTATION_STATEMENT_ALGORITHM,
+  ATTESTATION_CERTIFICATE_ALGORITHM:
+    xacmlRequest.VOCABULARY.PASSKEY_ATTESTATION_CERTIFICATE_ALGORITHM,
+  ATTESTATION_POST_QUANTUM:
+    xacmlRequest.VOCABULARY.PASSKEY_ATTESTATION_POST_QUANTUM,
+  ATTESTATION_ALGORITHM_ALLOWED:
+    xacmlRequest.VOCABULARY.PASSKEY_ATTESTATION_ALGORITHM_ALLOWED,
+  // Whether the selected profile offers the key's algorithm at
+  // registration (#940).
+  PROFILE_ALGORITHM_OFFERED:
+    xacmlRequest.VOCABULARY.PASSKEY_PROFILE_ALGORITHM_OFFERED,
+  // Who enrolled the key (#945): an administrator, on the person's behalf.
+  // No built-in rule reads them; a realm's own rule may.
+  ENROLLED_BY_ADMIN: xacmlRequest.VOCABULARY.PASSKEY_ENROLLED_BY_ADMIN,
+  ENROLLED_BY: xacmlRequest.VOCABULARY.PASSKEY_ENROLLED_BY,
   ATTESTATION_POLICY: xacmlRequest.VOCABULARY.SETTING_PREFIX +
                       'webauthn.attestationPolicy',
   ALLOWED_AAGUIDS: xacmlRequest.VOCABULARY.SETTING_PREFIX +
@@ -525,7 +543,8 @@ const PASSKEY_ATTRIBUTE = {
   VERDICTS: ['allow', 'refuse'],
   // The fact groups a question may carry.
   GROUPS: ['backup-eligible', 'pin-length', 'serial', 'attestation',
-           'algorithm', 'recovery'],
+           'algorithm', 'attestation-algorithm', 'profile-algorithm',
+           'enrolment', 'recovery', 'upgrade'],
   // The reasons the built-in rules give, and the code each records, per
   // action. A door words its refusal by the reason.
   REASONS: {
@@ -541,6 +560,11 @@ const PASSKEY_ATTRIBUTE = {
     'attestation-level': { register: '', use: 'STS-AUTHN-0316' },
     'attestation-fips': { register: '', use: 'STS-AUTHN-0316' },
     'post-quantum': { register: 'STS-AUTHN-0355', use: 'STS-AUTHN-0356' },
+    // #941: the algorithms the attestation was signed with.
+    'attestation-algorithm': { register: 'STS-AUTHN-0411',
+                               use: 'STS-AUTHN-0412' },
+    // #940: an algorithm the selected profile does not offer.
+    'profile-algorithm': { register: 'STS-AUTHN-0432', use: '' },
     // #724: a RECOVER_ACTION question records the `use` column.
     'recovery-self-service': { register: '', use: 'STS-AUTHN-0380' },
     'recovery-enrol-first': { register: '', use: 'STS-AUTHN-0381' }
@@ -699,9 +723,18 @@ const AUTHN_ATTRIBUTE = {
   // issuance the gate described: the four browser kinds.
   PHISHING_RESISTANCE: 'urn:sts:xacml:phishing-resistance',
   // An assignment on the authentication obligation (#723) naming WHAT the
-  // authentication lacked — `phishing-resistant` or `hardware-protected` —
-  // so the refusal the PEP writes says that, and not the role sentence.
-  REFUSAL: 'urn:sts:xacml:authentication-refusal'
+  // authentication lacked — `phishing-resistant`, `hardware-protected` or
+  // `device-bound-session` (#740) — so the refusal the PEP writes says
+  // that, and not the role sentence.
+  REFUSAL: 'urn:sts:xacml:authentication-refusal',
+  // THE DEVICE-BOUND SESSION (#740). The fact token (`bound`, `skipped`,
+  // `pending`, `timedout`, `none`) and whether the application's passkey
+  // profile requires a bound session (`true` only when it does). The PEP
+  // sends both only while `authn.deviceBoundSessions` is on. A missing
+  // attribute is an empty bag, and string-is-in on one is False, so a
+  // rule about them does not fire when the feature is off.
+  DEVICE_BOUND_SESSION: 'urn:sts:xacml:device-bound-session',
+  DEVICE_BOUND_REQUIRED: 'urn:sts:xacml:device-bound-required'
 };
 
 // ---------------------------------------------------------------------------
@@ -1687,6 +1720,43 @@ const TEMPLATES: TemplateRow[] = [
       }
 
       // -------------------------------------------------------------------
+      // A DEVICE-BOUND SESSION THE APPLICATION REQUIRES (#740). The
+      // requirement attribute is sent only while the feature is on and the
+      // passkey profile requires a binding, and the fact is the session's.
+      // This rule refuses `skipped` and `timedout`. `pending` is held by
+      // the PEP before the policy is asked, and `none` and `bound` are not
+      // refusals. A missing attribute is an empty bag, so the rule is
+      // inapplicable when the feature is off or the profile does not
+      // require one. The authentication obligation, so a refusal is not
+      // waived with the role question.
+      // -------------------------------------------------------------------
+      riskRules.push({
+        id: options.idBase + ':rule:device-bound-session',
+        effect: model.EFFECT.DENY,
+        description: 'Refuse an issuance an application requires to be ' +
+                     'device-bound when registration was skipped or the ' +
+                     'wait elapsed without a binding.',
+        target: null,
+        condition: B.apply(F1 + 'and', [
+          B.apply(F1 + 'string-is-in', [
+            B.value(TYPE.STRING, 'true'),
+            B.designator(env, AUTHN_ATTRIBUTE.DEVICE_BOUND_REQUIRED,
+                         TYPE.STRING)]),
+          B.apply(F1 + 'or', [
+            B.apply(F1 + 'string-is-in', [
+              B.value(TYPE.STRING, 'skipped'),
+              B.designator(env, AUTHN_ATTRIBUTE.DEVICE_BOUND_SESSION,
+                           TYPE.STRING)]),
+            B.apply(F1 + 'string-is-in', [
+              B.value(TYPE.STRING, 'timedout'),
+              B.designator(env, AUTHN_ATTRIBUTE.DEVICE_BOUND_SESSION,
+                           TYPE.STRING)])])
+        ]),
+        obligations: lacked('device-bound-session'),
+        advice: []
+      });
+
+      // -------------------------------------------------------------------
       // THE REGISTERED DEVICE (#164 decision 3, phase 6). Two Deny rules,
       // each APPLICABLE ONLY WHILE THE REQUEST'S REQUIREMENT BAG NAMES IT —
       // the realm's settings, which the PEP puts there — so switching one
@@ -2658,6 +2728,53 @@ const TEMPLATES: TemplateRow[] = [
                not(fact(R2, PK.POST_QUANTUM, true)),
                stages.length > 1 ? anyOf(stages) : stages[0]]));
       };
+      // AN ATTESTATION NOT SIGNED WITH WHAT THE PROFILE'S
+      // attestationAlgorithms LISTS (#941), after the post-quantum rule at
+      // each action: at register-passkey whenever the list is set, and at
+      // use-passkey only while enforceAttestationAtSignIn holds sign-ins to
+      // the attestation rules, by what registration recorded. On the one
+      // computed fact, ALLOWED, which question() decided and which is
+      // always sent with its group; a question without the group never
+      // trips it.
+      const attestationAlgorithmRule = function (action: string): any {
+        log.debug("Entering attestationAlgorithmRule().");
+        const listed = sizeIs('string-bag-size',
+                              strBag(env, pkSetting('attestationAlgorithms')),
+                              'integer-greater-than');
+        const held = action === PK.REGISTER_ACTION ? [listed]
+          : [listed, fact(env, pkSetting('enforceAttestationAtSignIn'),
+                          true)];
+        log.debug("Leaving attestationAlgorithmRule().");
+        return pkRule(action, 'attestation-algorithm',
+          'Refuse a passkey whose attestation is not a trusted one signed, ' +
+          'statement and every certificate of its chain, with an ' +
+          'algorithm the passkey policy\'s attestationAlgorithms allows ' +
+          (action === PK.REGISTER_ACTION
+            ? '(#941).'
+            : ', while sign-ins are held to the attestation rules (#941).'),
+          and([carries('attestation-algorithm')].concat(held).concat([
+            not(fact(R2, PK.ATTESTATION_ALGORITHM_ALLOWED, true))])));
+      };
+      // A PASSKEY WHOSE ALGORITHM THE SELECTED PROFILE DOES NOT OFFER
+      // (#940), at register-passkey only, after the attestation-algorithm
+      // rule: on the one computed fact, OFFERED, which question() decided
+      // from the profile's resolved list. Only where the profile gives its
+      // population registration rows of its own (`registrationAlgorithmsFrom`
+      // `profile`): under the realm's settings the ceremony's own
+      // offered-algorithm check is the rule, as it always was, and a key
+      // written by value is not newly refused.
+      const profileAlgorithmRule = function (): any {
+        log.debug("Entering profileAlgorithmRule().");
+        log.debug("Leaving profileAlgorithmRule().");
+        return pkRule(PK.REGISTER_ACTION, 'profile-algorithm',
+          'Refuse a passkey whose signature algorithm is not one the ' +
+          'selected passkey policy profile offers at registration ' +
+          '(registrationAlgorithms and registrationMode, #940).',
+          and([carries('profile-algorithm'),
+               stringIs(env, pkSetting('registrationAlgorithmsFrom'),
+                        'profile'),
+               not(fact(R2, PK.PROFILE_ALGORITHM_OFFERED, true))]));
+      };
       const passkeyRules: any[] = decidePasskeys ? [
         backupRule(PK.REGISTER_ACTION),
         pinRule(PK.REGISTER_ACTION),
@@ -2675,6 +2792,8 @@ const TEMPLATES: TemplateRow[] = [
                       'integer-greater-than'),
                not(fact(R2, PK.SERIAL_HELD, true))])),
         postQuantumRule(PK.REGISTER_ACTION),
+        attestationAlgorithmRule(PK.REGISTER_ACTION),
+        profileAlgorithmRule(),
         { id: options.idBase + ':rule:passkey-register-allowed',
           effect: model.EFFECT.PERMIT,
           description: 'Register every other passkey.',
@@ -2722,6 +2841,7 @@ const TEMPLATES: TemplateRow[] = [
                fact(R2, PK.MODEL_LISTED, true),
                not(fact(R2, PK.FIPS, true))])),
         postQuantumRule(PK.USE_ACTION),
+        attestationAlgorithmRule(PK.USE_ACTION),
         { id: options.idBase + ':rule:passkey-use-allowed',
           effect: model.EFFECT.PERMIT,
           description: 'Let every other passkey sign somebody in.',

@@ -140,6 +140,8 @@ import gnapRights = require('./gnap_rights');
 // #432 phase 6: the step-up an approval needs, and approval by an absent
 // resource owner. A library.
 import gnapApproval = require('./gnap_approval');
+// #738: interact.acr's classification. Registers nothing; no cycle.
+import gnapRequest = require('./gnap_request');
 // THE LANGUAGE A PAGE IS DRAWN IN (#539), and the realm prefix the language
 // chooser posts under.
 import realms = require('../common/realms');
@@ -907,6 +909,18 @@ class GnapInteract {
     return grant;
   }
 
+  // The client's interact.acr, or undefined when that member was not
+  // sent (#738). Classification is GnapRequest.interactAcrDemand().
+  private interactAcrOf(grant: any): any {
+    const { log } = this.deps;
+    log.debug("Entering GnapInteract.interactAcrOf().");
+    const interact = grant && grant.request && grant.request.interact;
+    const acr = interact ? interact.acr : undefined;
+    log.debug("Leaving GnapInteract.interactAcrOf(). " +
+              (acr === undefined ? 'absent' : 'sent'));
+    return acr;
+  }
+
   // -------------------------------------------------------------------------
   // #432 PHASE 6, IN TWO CALLS FROM THE APPROVAL ROUTES (`gnap_approval.ts`
   // argues both). `beforeApproval()` decides SYNCHRONOUSLY whether it
@@ -916,10 +930,12 @@ class GnapInteract {
   //   * the person here is not the user the request named, and approval by
   //     an absent owner is on: the grant goes to that owner's portal and the
   //     interaction finishes (`grants.forwardToOwner()`);
-  //   * the session does not meet every acr the requested rights need: the
-  //     person signs in again, once, with what the screen must demand — and
-  //     back here still short, the request is refused `request_denied`
-  //     (`grants.refuseUnmetStepUp()`, STS-GNAP-0899).
+  //   * the session does not meet every acr the requested rights need, or
+  //     an interact.acr demand (#738): the person signs in again, once,
+  //     with what the screen must demand — and back here still short, the
+  //     request is refused `request_denied` (`grants.refuseUnmetStepUp()`,
+  //     STS-GNAP-0899, or STS-GNAP-0905 when interact.acr is what came
+  //     back unmet). One trip for both; the return marker covers both.
   // -------------------------------------------------------------------------
   private beforeApproval(req: Req, res: Res, grant: any, session: any,
                          honoured: boolean): boolean {
@@ -965,7 +981,8 @@ class GnapInteract {
       log.debug("Leaving GnapInteract.beforeApproval(). To the owner.");
       return true;
     }
-    const assessed = approval.assess(approval.requiredAcr(grant), session);
+    const assessed = approval.assess(approval.requiredAcr(grant), session,
+                                     this.interactAcrOf(grant));
     if (assessed.met) {
       log.debug("Leaving GnapInteract.beforeApproval(). Nothing to do.");
       return false;
@@ -979,6 +996,7 @@ class GnapInteract {
         application: grant.client.identifier,
         hint: session.user.username,
         forceMfa: !!assessed.forceMfa, forceKey: !!assessed.forceKey,
+        phishingClass: assessed.phishingClass || '',
         details: [
           { label: 'Application',
             value: (grant.client.display && grant.client.display.name) ||
@@ -990,13 +1008,18 @@ class GnapInteract {
       log.debug("Leaving GnapInteract.beforeApproval(). Stepping up.");
       return true;
     }
+    // 0905 when the class is what came back unmet, including when a
+    // catalogue acr is unmet on the same return. 0899 when only the
+    // catalogue is short: interact.acr was absent, mixed, or already met.
+    const code = assessed.eapUnmet ? 'STS-GNAP-0905' : 'STS-GNAP-0899';
     this.claimDecision(res, grant).then(function (claimed) {
       if (!claimed) {
         return undefined;
       }
-      return grants.refuseUnmetStepUp(req, grant, session, assessed.missing)
+      return grants.refuseUnmetStepUp(req, grant, session, assessed.missing,
+                                      code)
         .then(function (finished: any) {
-          errorCodes.mark(res, 'STS-GNAP-0899');
+          errorCodes.mark(res, code);
           return self.afterDecision(res, grant, finished);
         });
     }).catch(function (e) {
@@ -1021,7 +1044,7 @@ class GnapInteract {
     const { log, approval } = this.deps;
     log.debug("Entering GnapInteract.stepUpOwed().");
     const assessed = approval.assess(approval.requiredAcr(grant, ticked),
-                                     session);
+                                     session, this.interactAcrOf(grant));
     if (assessed.met) {
       log.debug("Leaving GnapInteract.stepUpOwed(). Met.");
       return false;
@@ -1184,7 +1207,8 @@ class GnapInteract {
     if (!session ||
         (grant.userHint && String(grant.userHint).toLowerCase() !== present &&
          approval.available()) ||
-        !approval.assess(approval.requiredAcr(grant), session).met ||
+        !approval.assess(approval.requiredAcr(grant), session,
+                         this.interactAcrOf(grant)).met ||
         grants.rememberedFor(grant, session.user.username)) {
       this.toPage(res, grant);
       log.debug("Leaving GnapInteract.apiApprovalView(). The page's GET " +
@@ -1386,23 +1410,40 @@ class GnapInteract {
       self.hintAccountFor(req, grant);
       const session = authn.sessionOf(req);
       if (!session) {
-        log.debug("Leaving GET /gnap/approve. To the sign-in screen.");
-        return res.set('Cache-Control', 'no-store')
-                  .redirect(303, authn.beginAuthentication({
+        // No session yet, so this is the first sign-in, not the step-up
+        // return: step_up_honoured stays off, or an eap-met session that
+        // is still short of another acr would be refused with no second
+        // trip. forceKey only when interact.acr is a demand; phishingClass
+        // is '' otherwise, which is what a sign-in with no class stores.
+        const demand = gnapRequest.interactAcrDemand(
+          self.interactAcrOf(grant));
+        const details = [
+          { label: 'Application',
+            value: (grant.client.display && grant.client.display.name) ||
+                   grant.client.identifier },
+          { label: 'Protocol', value: 'GNAP (RFC 9635)' }
+        ];
+        if (demand.eap) {
+          details.push({ label: 'Sign-in level needed',
+                         value: demand.tokens.join(' ') });
+        }
+        const signIn: any = {
           returnTo: '/gnap/approve/' + grant.interaction.approvalId,
           protocol: 'GNAP',
           application: grant.client.identifier,
           hint: grant.userHint || '',
-          details: [
-            { label: 'Application',
-              value: (grant.client.display && grant.client.display.name) ||
-              grant.client.identifier },
-            { label: 'Protocol', value: 'GNAP (RFC 9635)' }
-          ]
-        }));
+          phishingClass: demand.phishingClass || '',
+          details: details
+        };
+        if (demand.forceKey) {
+          signIn.forceKey = true;
+        }
+        log.debug("Leaving GET /gnap/approve. To the sign-in screen.");
+        return res.set('Cache-Control', 'no-store')
+                  .redirect(303, authn.beginAuthentication(signIn));
       }
       // An EXISTING session is being honoured: CAEP session-presented.
-      notePresented(session, 'GNAP', req);
+      notePresented(session, 'GNAP', req, grant.client.identifier);
       self.noteAccountFor(grant, session);
       // #432 phase 6: another person's grant goes to its owner's portal, and
       // a session short of the rights' acr is stepped up — both before the

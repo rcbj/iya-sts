@@ -29,7 +29,7 @@
 // answering, and a response served inside that window carries a key set the
 // service is about to disown.
 //
-// It reached the suite as `tests/vendored/sts_jwt_bearer_grant.js` section 7:
+// It reached the suite as `tests/protocol/sts_jwt_bearer_grant.js` section 7:
 // an RSA public key read from `/oauth2/jwks` on one worker, an assertion
 // encrypted to it, and a token request decrypted on another — **`oaep
 // decoding error`**, which names nothing and looks like a broken JWE.

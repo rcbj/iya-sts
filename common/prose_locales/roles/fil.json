@@ -107,6 +107,14 @@
     "en": "54220e44643bd84c",
     "text": "Ang device compliance feed: isang MDM o posture feed na nag-uulat ng compliance ng isang device sa pamamagitan ng POST /admin-api/device-compliance, at wala nang iba sa /admin-api. Nag-a-authorize ng device:compliance permission. Naka-seed nang walang miyembro: idagdag ang application ng feed."
   },
+  "roles.native.SSF_READ.what": {
+    "en": "0a43e12ff3313079",
+    "text": "Pagbasa ng Shared Signals. Nagbibigay ng pahintulot na ssf.read. Natatanggap ito ng isang tao habang kabilang siya sa grupo ng tungkuling ito, na inihasik bilang ssf-read, at miyembro ng tungkuling ito ang aplikasyon na pinapasukan niya. Natatanggap ito ng isang aplikasyon sa sarili nitong token habang miyembro ito. Hindi ito pinahihintulutan ng SSF_MANAGE."
+  },
+  "roles.native.SSF_MANAGE.what": {
+    "en": "599cadcd7892cdd2",
+    "text": "Pagsulat ng Shared Signals. Nagbibigay ng pahintulot na ssf.manage. Natatanggap ito ng isang tao habang kabilang siya sa grupo ng tungkuling ito, na inihasik bilang ssf-manage, at miyembro ng tungkuling ito ang aplikasyon na pinapasukan niya. Natatanggap ito ng isang aplikasyon sa sarili nitong token habang miyembro ito. Hindi nito pinahihintulutan ang ssf.read."
+  },
   "roles.memberKinds.user.label": {
     "en": "df381eb4bb572daf",
     "text": "isang tao"

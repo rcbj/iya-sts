@@ -45,7 +45,7 @@
 //      failed download STS-RISK-0027.
 //
 // The console, `/portal/keys` and `/admin-api` drawing it are asserted over
-// HTTP by `tests/vendored/sts_webauthn_attestation.js`.
+// HTTP by `tests/protocol/sts_webauthn_attestation.js`.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;

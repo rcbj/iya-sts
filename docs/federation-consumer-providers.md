@@ -46,7 +46,7 @@ an application registered at each provider, with its credentials.
 
 The *Tested* column says how each profile is exercised by
 `tests/federation_consumer_providers.js` and
-`tests/vendored/sts_federation_consumer.js`:
+`tests/protocol/sts_federation_consumer.js`:
 
 * **Sign-in** means a full sign-in through a server that behaves the way the
   provider documents: the authorization request, the token request with the

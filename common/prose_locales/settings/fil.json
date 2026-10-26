@@ -691,6 +691,22 @@
     "en": "eb2c0a8e31f615d9",
     "text": "Gaano katagal nabubuhay ang cookie na kailangan ng isang device-bound session bago kailangang patunayan muli ng browser ang key nito, at kaya gaano katagal patuloy na gumagana ang isang kinopyang pares ng cookie. Hindi lalampas sa sariling katapusan ng session. Binabasa kapag nag-issue ng cookie."
   },
+  "authn.deviceBoundIncludeSite|label": {
+    "en": "dfe9f9439467a7ed",
+    "text": "I-scope ang bound na session sa registrable domain"
+  },
+  "authn.deviceBoundIncludeSite|description": {
+    "en": "431c5a53f269b368",
+    "text": "Naka-off, ang default, host-only ang cookie ng isang device-bound na session, na siyang palaging ginagawa ng serbisyong ito, at false ang scope.include_site. Kapag naka-on, itinatakda ng mga tagubilin ang include_site at ang Domain ng cookie ay ang registrable domain ng host na nagrehistro (ang webauthn.rpId kapag suffix ito ng host, kung hindi ay ang huling dalawang label; ang isang address, ang localhost o isang label ay hindi pinalalawak). Hindi kasama ang public host ng debugger at ang host ng isang custom na listener sa ilalim ng domain na iyon. Ang debugger sa parehong host at ibang port ay hindi maaaring hindi isama: ang mga cookie ay hindi naka-scope sa port. Ang mga path prefix ng realm ay iisang origin."
+  },
+  "authn.deviceBoundIssuanceWaitS|label": {
+    "en": "c379c77b9ef18c81",
+    "text": "Gaano katagal maghihintay ang issuance ng device binding (segundo)"
+  },
+  "authn.deviceBoundIssuanceWaitS|description": {
+    "en": "2562f13d1a8d0c51",
+    "text": "Gaano katagal maghihintay ang isang issuance na nangangailangan ng device-bound na session pagkatapos ihandog ang pagrehistro. Binabasa sa issuance, hindi ng isang timer: lampas dito, timedout ang fact ng session at tinatanggihan ang issuance. Ang zero ay nangangahulugang lumipas na ang paghihintay. Ang session na hindi kailanman inalok ng pagrehistro ay hindi tinatanggihan ng paghihintay."
+  },
   "authn.maxSessions|label": {
     "en": "5fa1f6294f5a3dc8",
     "text": "Pinakamaraming sign-on session bawat realm"
@@ -1103,6 +1119,22 @@
     "en": "e35e276b9d933828",
     "text": "Kapag naka-on, maaaring sabay na hawakan ng isang tao ang isang classical na passkey at isang post-quantum (ML-DSA) na passkey, sa iisang authenticator kung kaya nitong gawin ang dalawa. Bawat passkey ay ginagawa sa isang LANE na pinipili ng tao: humihiling ang classical na lane ng `webauthn.algorithms` nang walang ML-DSA (`ES256` at `RS256` kung wala nang matitira), at ML-DSA lamang ang hinihiling ng post-quantum na lane. May sariling user handle ang bawat lane, kaya hindi pinapalitan ng pangalawang passkey ang una sa authenticator, at may sariling exclude list; ipinapakita ng credential manager ang post-quantum sa isang pangalang nagsasabi ng algorithm nito — `<username>+ml-dsa` kapag ginawa, `<username>+ml-dsa-65` (halimbawa) kapag iisang algorithm na ang gamit ng lahat ng post-quantum na passkey ng tao — na hindi kailanman pangalang ginagamit sa pag-sign in. Binibilang ng `webauthn.maxKeysPerPerson` ang dalawang lane. Hindi maaaring naka-on habang naka-on ang `webauthn.pqcOnly`. Kapag naka-off, gaya ng dati ang bawat ceremony, at patuloy na nakakapag-sign in ang post-quantum na passkey na naka-register na; hindi na makakagawa ng bago."
   },
+  "webauthn.postQuantumAllowCredentials|label": {
+    "en": "295b04bef9cf50bc",
+    "text": "Mga passkey na pinapangalanan ng sign-in kapag kailangan ang post-quantum"
+  },
+  "webauthn.postQuantumAllowCredentials|description": {
+    "en": "f34caf08dceeedd3",
+    "text": "Binabasa lamang habang hinihingi ng passkey policy ang post-quantum na passkey sa sign-in (`postQuantumRequired`), at kapag `realm` lamang ang row na `postQuantumAllowCredentials` ng napiling profile. Ang `narrow` (ang default) ay pinapangalanan lamang ang mga post-quantum (ML-DSA) na passkey ng tao sa `allowCredentials` ng passkey step, kaya hindi kailanman inaalok ang classical — pero ang taong ang device ay may hawak lamang ng kanyang classical na passkey ay makakakita ng sariling mensahe ng platform na \"walang nahanap na passkey\". Ang `list-and-refuse` ay pinapangalanan ang bawat passkey na hawak niya at tinatanggihan ang classical pagkatapos ng ceremony (STS-AUTHN-0356), na may page na nagsasabing kailangan ng application ang post-quantum na passkey at kung saan magdadagdag nito. Ang kapalit: maaaring pumili ang tao ng passkey na tatanggihan. Alinman dito, ang taong walang hawak na post-quantum na passkey ay sinasabihan bago ang anumang ceremony."
+  },
+  "webauthn.pqcUpgrade|label": {
+    "en": "1c2af00d33a75721",
+    "text": "I-upgrade ang classical na passkey sa post-quantum"
+  },
+  "webauthn.pqcUpgrade|description": {
+    "en": "a77cd9a980262260",
+    "text": "Kapag naka-on (ang default), maaaring i-upgrade ng isang tao ang isa sa kanyang classical na passkey sa post-quantum (ML-DSA) sa /portal/keys: ginamit niya ang classical na passkey nang isang beses, para ipakita na kanya ito, at saka ginawa ang bago, na inaalok lang ng ML-DSA. Kapag naka-on ang `webauthn.pqcAlongsideClassical`, IDINAGDAG ang post-quantum na passkey sa sarili nitong lane at pinananatili ang classical; kapag naka-off, PINAPALITAN ng post-quantum na passkey ang classical sa lugar, pinapanatili ang pangalan nito at itinatala kung kailan ito na-upgrade at mula sa aling algorithm. Binabago lang ang classical na passkey kapag na-verify na ang bago, kaya ang bigong upgrade ay iniiwan ito kung ano ito. Tinutugunan ng bagong passkey ang bawat panuntunang tinutugunan ng isang pagrehistro. Kapag naka-off, walang passkey na maaaring i-upgrade; maaari pa ring irehistro ang post-quantum na passkey sa tabi ng classical kung saan maaaring magrehistro ng mga passkey."
+  },
   "webauthn.userVerification|label": {
     "en": "8b134177fe992d91",
     "text": "User verification"
@@ -1134,6 +1166,30 @@
   "webauthn.attestationTrustAnchors|description": {
     "en": "75ff97c509121fb5",
     "text": "Mga root certificate na puwedeng pag-chain-an ng isang attestation certificate, bilang PEM bundle, KATABI ng mga inililista ng FIDO Metadata Service para sa bawat model — isang corporate TPM endorsement CA, root ng isang vendor, ang Android o Apple attestation root, o isang test root. PINAGKAKATIWALAAN ang chain na umaabot sa isa. Walang kasamang naka-ship: ang walang laman ay nagtitiwala lang sa inililista ng aktibong MDS BLOB."
+  },
+  "webauthn.attestationEvidenceTsaUrl|label": {
+    "en": "4dabd3df9187a34f",
+    "text": "URL ng timestamp authority ng passkey evidence"
+  },
+  "webauthn.attestationEvidenceTsaUrl|description": {
+    "en": "7fa58ac004a9e2e4",
+    "text": "Kapag itinakda kasama ng mga trust anchor ng TSA, ang mga na-verify na passkey attestation ay tumatanggap ng RFC 4998 EvidenceRecord na ang unang ArchiveTimeStamp ay isang RFC 3161 token mula sa HTTPS timestamp authority na ito. Walang laman ang nagpapasara ng pagtatala ng evidence."
+  },
+  "webauthn.attestationEvidenceTsaTrustAnchors|label": {
+    "en": "8c29eb6dc36aa1a9",
+    "text": "Mga trust anchor ng TSA ng passkey evidence (PEM)"
+  },
+  "webauthn.attestationEvidenceTsaTrustAnchors|description": {
+    "en": "7b20573a01a900a7",
+    "text": "Mga PEM trust anchor na ginagamit para i-verify ang RFC 3161 token at ang certificate path ng TSA nito. Ang pagtatala ng evidence ay nangangailangan ng bundle na ito at ng URL ng timestamp authority."
+  },
+  "webauthn.attestationEvidenceHashAlgorithm|label": {
+    "en": "8c886d89947bce4c",
+    "text": "Algorithm ng hash tree ng passkey evidence"
+  },
+  "webauthn.attestationEvidenceHashAlgorithm|description": {
+    "en": "ea9f111d1308b528",
+    "text": "Digest na ginagamit ng mga bagong tala ng RFC 4998. Ang pagtataas nito mula sa sha256 ay nagti-trigger ng pag-renew ng hash tree ng RFC 4998 sa araw-araw na muling pagbilang ng passkey report, sa isang bagong ArchiveTimeStampChain."
   },
   "webauthn.attestationAllowedAaguids|label": {
     "en": "1d32f2ee4864d344",
@@ -1274,6 +1330,14 @@
   "keys.offerKemEncryption|description": {
     "en": "16bd897eb9c3284a",
     "text": "Kung iniaalok ang mga ML-KEM at HPKE JWE algorithm (#82 — mga draft, tingnan ang keys.encryptionKemAlgs) kung saan nag-e-encrypt ang realm na ito PARA SA key na hawak ng isang client o wallet: ina-advertise sa `userinfo_encryption_alg_values_supported`, `id_token_encryption_alg_values_supported`, `authorization_encryption_alg_values_supported` (JARM), `introspection_encryption_alg_values_supported` at sa `credential_response_encryption` ng isang OpenID4VCI issuer, at tinatanggap kapag nag-register ng isa ang client o nagpangalan ng isa ang wallet. **Naka-off bilang default, at pagpapasya ng administrator:** mula sa mga Internet-Draft ang mga algorithm na ito, at ang client o conformance suite na sumusubok sa bawat ina-advertise na algorithm ay makakatagpo ng mga hindi nito alam. Ang client na naka-register na para sa isa ay nananatili ang registration nito; kapag naka-off ito, tatanggihan ang susunod nitong encrypted na response, gaya ng sa anumang algorithm na hindi iniaalok ng realm na ito."
+  },
+  "keys.postQuantumSigning|label": {
+    "en": "34883416ca94e446",
+    "text": "Post-quantum na pagpirma"
+  },
+  "keys.postQuantumSigning|description": {
+    "en": "68ffd5da182ec911",
+    "text": "Kung pumipirma, naglalathala at nagve-verify ang realm na ito ng mga post-quantum at composite na JWS algorithm (ML-DSA, SLH-DSA at ang mga composite na ML-DSA). **Naka-on bilang default.** Kapag naka-off: walang post-quantum na signing key sa `/oauth2/jwks` o sa DID document (kasama ang mga standby, naka-pin at signer-group na key); walang post-quantum na algorithm sa anumang `*_alg_values_supported` o `*_alg_values` na listahan ng mga dokumento ng discovery, authorization server, OpenID Federation, OpenID4VCI at OpenID4VP; tinatanggihan ang JWS na pinirmahan gamit ang isa saanman nagve-verify ang realm na ito; hindi makakapag-register ng isa ang client; at ang pirmang mangangailangan pa ng isa — para sa client na nag-register habang naka-on ito, o isang HTTP message signature — ay tinatanggihan sa halip na gawin gamit ang key na walang makakakuha. Para ito sa mga client at test suite na hindi kayang basahin ng mga JOSE library ang isang AKP key o hindi alam ang mga algorithm na ito, kabilang ang OpenID conformance suite. **Hindi nagbabago:** COSE (mga passkey), mga XML signature, TLS, mga algorithm ng certificate, ang mga ML-KEM encryption key (`keys.encryptionKemAlgs`), ang alternatibong ML-DSA key na dala ng isang `hybrid-groups` certificate sa `x5c` (inaalis ang mga hiwalay na ML-DSA key, hindi muling ini-issue ang mga certificate), at ang `oidfed.signingAlg`: ang realm na nagpapangalan ng ML-DSA federation key ay patuloy na pumipirma ng mga statement nito gamit iyon pero tinatanggihan ang ML-DSA statement na hinihiling na i-verify nito, kaya panatilihing classical ang setting na iyon dito."
   },
   "keys.kidFormat|label": {
     "en": "67642fcf21c7ca50",
@@ -1883,6 +1947,14 @@
     "en": "e1cb6b236d5adc8b",
     "text": "Ang JWS algorithm na ipinipirma sa mga access token (at refresh token), gamit ang key ng realm na ito para rito — bawat isa ay inilalathala sa JWKS. Ang default ay RS256, at PS256 sa ilalim ng FAPI 1.0 Advanced, na tumatanggi rin sa anumang hindi PS256 o ES256. Ang pinangalanang authorization server ay puwedeng may sarili (access_token_signing_alg)."
   },
+  "oauth2.accessTokenFormat|label": {
+    "en": "c7e15a626ed4371b",
+    "text": "Format ng access token"
+  },
+  "oauth2.accessTokenFormat|description": {
+    "en": "74504b84130dea54",
+    "text": "Kung ang bagong access token ay isang RFC 9068 JWT (jwt, ang default) o isang 256-bit na opaque na handle (opaque). Nanatili sa realm na ito ang mga claim ng isang opaque na token; nananatiling nested na JWT ang mga refresh token at JWT ang mga ID token. Pinapanatili ng token na naibigay na ang anyo kung saan ito na-mint."
+  },
   "oauth2.jarmResponseLifetimeS|label": {
     "en": "28259a88563d949d",
     "text": "Lifetime ng JARM response (s)"
@@ -2354,6 +2426,14 @@
   "oauth2.maxRefreshTokenFamilies|description": {
     "en": "331485a9a3ff827c",
     "text": "Ilang refresh token ang sinusubaybayan ng RFC 9700 mode para sa rotation at replay detection. Kapag puno na, kinakalimutan muna ang mga EXPIRED, saka ang mga NA-ROTATE (revoked na, kaya tinatanggihan pa rin ang replay ng isa — ang nawawala ay ang revocation ng buong family na pasisimulan sana ng replay na iyon), at saka lang ang pinakalumang buhay, nang may warning. Gumagana pa rin ang buhay na nakalimutan; ang susunod nitong rotation ay magsisimula ng bagong family. Taasan ito para sa deployment na may mas maraming sabay-sabay na buhay na refresh token kaysa rito."
+  },
+  "oauth2.maxOpaqueAccessTokens|label": {
+    "en": "a0a9d2a5af677a1f",
+    "text": "Mga opaque na access token na naaalala (bawat realm)"
+  },
+  "oauth2.maxOpaqueAccessTokens|description": {
+    "en": "19042efe72e28cc6",
+    "text": "Ilan ang opaque na access token na naaalala ng realm na ito. Kapag puno na, tinatanggal ang mga expired na row at tinatanggihan ang karagdagang mint (STS-OAUTH-0979) sa halip na paalisin ang isang buhay na token. Nalalapat kapag opaque ang oauth2.accessTokenFormat."
   },
   "oauth2.signedMetadataAlgorithm|label": {
     "en": "71fb31f9a62ec657",
@@ -3024,8 +3104,8 @@
     "text": "Default na key algorithm ng CA"
   },
   "pki.keyAlgorithm|description": {
-    "en": "763204ceb3af08e6",
-    "text": "Aling key algorithm ang ginagamit sa pagbuo ng bagong certificate authority kapag walang pinapangalanan ang form: rsa-2048, rsa-3072, rsa-4096, ec-p256, ec-p384, ec-p521 o ed25519, o isa sa mga post-quantum id (ML-DSA, SLH-DSA, ang mga composite at ML-KEM — na hindi nakakapirma, kaya subject key ito at hindi kailanman key ng authority). RSA 2048 ang default dahil ang LEAF na dahilan ng pag-iral ng hierarchy na ito ay pumipirma ng client assertion na kailangang i-verify ng OAuth library ng iba, at RS256 ang iisang algorithm na mayroon ang bawat ganoong library. Binabasa ang listahan mula sa common/vendored/key_material.js — ang module na bumubuo ng key — kaya ang value na hindi nito kilala ay tinatanggihan sa build kasama ang listahan sa tabi nito."
+    "en": "00e61f4da7498a62",
+    "text": "Aling key algorithm ang ginagamit sa pagbuo ng bagong certificate authority kapag walang pinapangalanan ang form: rsa-2048, rsa-3072, rsa-4096, ec-p256, ec-p384, ec-p521 o ed25519, o isa sa mga post-quantum id (ML-DSA, SLH-DSA, ang mga composite at ML-KEM — na hindi nakakapirma, kaya subject key ito at hindi kailanman key ng authority). RSA 2048 ang default dahil ang LEAF na dahilan ng pag-iral ng hierarchy na ito ay pumipirma ng client assertion na kailangang i-verify ng OAuth library ng iba, at RS256 ang iisang algorithm na mayroon ang bawat ganoong library. Binabasa ang listahan mula sa common/crypto_impl/key_material.js — ang module na bumubuo ng key — kaya ang value na hindi nito kilala ay tinatanggihan sa build kasama ang listahan sa tabi nito."
   },
   "pki.signatureAlgorithm|label": {
     "en": "43cdf39e69d6fdd4",
@@ -3064,8 +3144,8 @@
     "text": "Default na tagal ng iniisyung key pair (araw)"
   },
   "pki.leafLifetimeDays|description": {
-    "en": "b55ab0b2f1f1f04b",
-    "text": "Gaano katagal valid ang signing certificate na iniisyu sa isang application kapag walang tagal na pinapangalanan ang form. KINA-CLAMP ito sa sariling expiry ng Issuing CA sa halip na tanggihan kung lalampas: ang karaniwang dahilan ay isang limang-taong Issuing CA na nasa ikalimang taon nito, at ang operator na humingi ng isang taon ay dapat makakuha ng labing-isang buwan sa halip na error tungkol sa aritmetika. Ang sariling tagal ng mga tier ay galing sa mga certificate profile sa common/vendored/x509.js — dalawampung taon, sampu at lima — at puwedeng i-override sa form at ng tatlong pki.*LifetimeYears row sa ibaba."
+    "en": "028d5b5d730c9d23",
+    "text": "Gaano katagal valid ang signing certificate na iniisyu sa isang application kapag walang tagal na pinapangalanan ang form. KINA-CLAMP ito sa sariling expiry ng Issuing CA sa halip na tanggihan kung lalampas: ang karaniwang dahilan ay isang limang-taong Issuing CA na nasa ikalimang taon nito, at ang operator na humingi ng isang taon ay dapat makakuha ng labing-isang buwan sa halip na error tungkol sa aritmetika. Ang sariling tagal ng mga tier ay galing sa mga certificate profile sa common/crypto_impl/x509.js — dalawampung taon, sampu at lima — at puwedeng i-override sa form at ng tatlong pki.*LifetimeYears row sa ibaba."
   },
   "pki.rootLifetimeYears|label": {
     "en": "72e3da975d05b214",
@@ -4148,8 +4228,8 @@
     "text": "I-seed ang console at ang API na ito bilang mga application"
   },
   "applications.seedInternal|description": {
-    "en": "7092a96534fcb0ca",
-    "text": "Gumawa ng mga application entry para sa sariling mga surface ng serbisyong ito kapag nagsisimula ito, sa ilalim ng ou=applications kasama ng lahat ng iba: ang ADMIN CONSOLE sa /admin, ang USER PORTAL sa /portal, ang MANAGEMENT API sa /admin-api, at — habang naka-embed ito — ang dalawang client ng protocol debugger. Sine-seed ang mga ito bilang BUONG RFC 7591 registration sa halip na mga label: ang console at ang portal bilang mga confidential na OpenID Connect relying party sa authorization code grant, ang API na ito bilang confidential na OAuth client sa client_credentials, bawat isa ay may secret — kaya mga client sila na masusubukan sa halip na mga row sa isang pahina. NAGSA-SIGN IN SA PAMAMAGITAN ng kanilang mga entry ang console at ang portal (/admin/callback at /portal/callback), kaya ang pag-off dito, o pagbura sa isa, ay nag-iiwan sa surface na iyon na hindi makapag-sign in ng sinuman hanggang may entry ulit. Ang container na ito ang registry — ang ldapmodify nito ay pagbabago ng configuration. NAKA-ON bilang default. Sine-seed lang kung saan bakante ang identifier, kaya ang operator na nagbura ng isa ay mananatili itong burado hanggang sa susunod na restart."
+    "en": "0dcb321977df8ef6",
+    "text": "Gumawa ng mga application entry para sa sariling mga surface ng serbisyong ito kapag nagsimula ito, sa ilalim ng ou=applications kasama ng lahat ng iba pa: ang ADMIN CONSOLE sa /admin, ang USER PORTAL sa /portal, ang REPORTS application sa /report, ang REPORT API sa /report-api, ang MANAGEMENT API sa /admin-api, at — habang naka-embed — ang dalawang client ng protocol debugger. Sine-seed ang mga ito bilang BUONG RFC 7591 registration sa halip na mga label: ang console at ang portal bilang confidential OpenID Connect relying party sa authorization code grant, ang API na ito bilang confidential OAuth client sa client_credentials, bawat isa ay may secret — kaya mga client sila na maaaring subukan sa halip na mga row sa isang pahina. Ang console at ang portal ay NAGSA-SIGN IN SA PAMAMAGITAN ng mga entry nila (/admin/callback at /portal/callback), kaya ang pag-off nito, o pagbura sa isa, ay nag-iiwan sa surface na iyon na hindi makapag-sign in ng sinuman hanggang may entry muli. Ang container na ito ang registry — ang ldapmodify nito ay pagbabago ng configuration. NAKA-ON bilang default. Sine-seed lamang kung libre ang identifier, kaya ang operator na nagbura ng isa ay mananatili itong binura hanggang sa susunod na restart."
   },
   "applications.seedInternal|restartReason": {
     "en": "ce6b237794aa9252",
@@ -7887,6 +7967,14 @@
     "en": "5525432b1abd613a",
     "text": "Kung nagkakaroon ng audit event ang bawat tawag sa isang protocol endpoint. Naka-on bilang default, dahil ang \"lahat ng hiniling na gawin ng serbisyong ito\" ang punto ng log — pero ito ang pinakamaingay na pinagmulan sa lahat (isa ang bawat JWKS poll at metadata fetch), kaya ang pag-off dito ang paraan para makakuha ng nababasang page ang taong nagbabantay sa directory o sa console. Hindi nito kailanman naaapektuhan ang ibang limang kategorya, at binibilang ng /admin/metrics ang bawat tawag alinman dito."
   },
+  "audit.authenticationHistoryDays|label": {
+    "en": "bc611d1f003e751a",
+    "text": "Kasaysayan ng pagpapatotoo (mga araw)"
+  },
+  "audit.authenticationHistoryDays|description": {
+    "en": "4270a8167905dee9",
+    "text": "Ilang araw ng nasuring pag-sign-in ang inililista ng Mga kamakailang pag-sign-in sa portal ng user para sa taong naka-sign-in. Itinatakda ng bawat realm ang sarili nito, dahil binabasa ang halaga sa ambient na realm. Inililista ng tab na Mga pagtatangka sa pagpapatotoo ng console, sa isang tao, ang bawat pagtatangka na hawak pa ng audit log, ang buong log. Maaari pa ring alisin ng sariling kisame ng log ang mas lumang mga row."
+  },
   "delegation.maxRecords|label": {
     "en": "25d78cc6c84e920b",
     "text": "Pinakamaraming delegation act na hawak"
@@ -10038,6 +10126,110 @@
   "mail.notifyAdministrators|description": {
     "en": "bd3ae7ff26663b42",
     "text": "Kapag ang SERBISYO, hindi isang tao, ang nagmarka ng credential bilang compromised o nag-disable ng account (risk scoring), padalhan din ng mail ang bawat member ng Admin Write roster ng realm na may address."
+  },
+  "report.syncMaxRows|label": {
+    "en": "77fdb27c30eb4bf8",
+    "text": "Cap ng row ng synchronous na report"
+  },
+  "report.syncMaxRows|description": {
+    "en": "563c41bbaffd74bb",
+    "text": "Ang pinakamaraming row na maaaring ibalik ng isang synchronous na report. Ang mas malaking limit ay tinatanggihan sa sync mode at nagiging job sa auto."
+  },
+  "report.syncMaxBytes|label": {
+    "en": "f975fe6e57bfae86",
+    "text": "Cap ng byte ng synchronous na report"
+  },
+  "report.syncMaxBytes|description": {
+    "en": "e7c9e919bd0ac8ea",
+    "text": "Ang pinakamaraming byte na maaaring ibalik ng isang synchronous na report. Ang resultang lampas dito ay tinatanggihan sa halip na ipadala nang bahagya."
+  },
+  "report.syncMaxMs|label": {
+    "en": "ac021c892bcfc370",
+    "text": "Cap ng oras ng synchronous na report (millisecond)"
+  },
+  "report.syncMaxMs|description": {
+    "en": "f6ab877e4526a9f9",
+    "text": "Gaano katagal maaaring tumakbo ang isang synchronous na report. Kapag lumampas dito, tinatanggihan ang tawag sa halip na sagutin ng bahagyang body."
+  },
+  "report.asyncMaxMs|label": {
+    "en": "f0c5ac5e9884050c",
+    "text": "Cap ng oras ng report job (millisecond)"
+  },
+  "report.asyncMaxMs|description": {
+    "en": "45c7c3ad19fc3c4a",
+    "text": "Gaano katagal maaaring tumakbo ang isang report job. Kapag lumampas dito, nabibigo ang job sa halip na mag-imbak ng bahagyang resulta."
+  },
+  "report.asyncMaxRows|label": {
+    "en": "8aca969304d23655",
+    "text": "Cap ng row ng report job"
+  },
+  "report.asyncMaxRows|description": {
+    "en": "e5dceb18ca4c26a4",
+    "text": "Ang pinakamaraming row na maaaring isulat ng isang report job. Ang query na humihingi ng higit pa ay tinatanggihan sa bawat mode."
+  },
+  "report.asyncMaxBytes|label": {
+    "en": "470a53d032622764",
+    "text": "Cap ng byte ng report job"
+  },
+  "report.asyncMaxBytes|description": {
+    "en": "91aac7df1ff51b42",
+    "text": "Ang pinakamaraming byte na maaaring iimbak ng isang report job. Ang resultang lampas dito ay nagpapabigo sa job sa halip na putulin."
+  },
+  "report.pdfMaxRows|label": {
+    "en": "5cf679421e7b7bf3",
+    "text": "Cap ng row ng PDF report"
+  },
+  "report.pdfMaxRows|description": {
+    "en": "3b855ef0848c4ad4",
+    "text": "Ang pinakamaraming row na maaaring laman ng isang PDF report. Ang mas malaking query ay tinatanggihan at hinihilingang gumamit ng CSV."
+  },
+  "report.pdfMaxPages|label": {
+    "en": "050231b3a1524a4b",
+    "text": "Cap ng pahina ng PDF report"
+  },
+  "report.pdfMaxPages|description": {
+    "en": "3b065500b4a246a3",
+    "text": "Ang pinakamaraming pahina na maaaring laman ng isang PDF report. Kapag lumampas dito, tinatanggihan ang resulta at hinihilingang gumamit ng CSV."
+  },
+  "report.maxConcurrentPerRealm|label": {
+    "en": "2e8e9a195cac9a4c",
+    "text": "Mga report job na tumatakbo bawat realm"
+  },
+  "report.maxConcurrentPerRealm|description": {
+    "en": "7a252c3307b54d2a",
+    "text": "Ilang report job ang maaaring sabay na tumatakbo sa isang realm. Ang karagdagang pagsusumite ay tinatanggihan hanggang may matapos."
+  },
+  "report.maxConcurrentPerSubject|label": {
+    "en": "3533626b8e0a8d15",
+    "text": "Mga report job na tumatakbo bawat tao"
+  },
+  "report.maxConcurrentPerSubject|description": {
+    "en": "525965a5866fed18",
+    "text": "Ilang report job ang maaaring sabay na tumatakbo para sa isang tao."
+  },
+  "report.artifactRetentionS|label": {
+    "en": "ae014cb5ae4ea837",
+    "text": "Gaano katagal itinatago ang resulta ng report (segundo)"
+  },
+  "report.artifactRetentionS|description": {
+    "en": "c1e0935d871842f4",
+    "text": "Gaano katagal nananatiling maida-download ang mga byte ng natapos na report. Pagkatapos nito, wala na ang resulta."
+  },
+  "report.jobRetentionS|label": {
+    "en": "117aad13b6fa172e",
+    "text": "Gaano katagal itinatago ang row ng report job (segundo)"
+  },
+  "report.jobRetentionS|description": {
+    "en": "dfada581a8c28ca3",
+    "text": "Gaano katagal nananatili sa listahan ang row ng natapos na report job. Ang job na tumatakbo pa ay hindi inaalis."
+  },
+  "report.usersGroup|label": {
+    "en": "21554dfaa265b36f",
+    "text": "Sino ang maaaring ma-issue-han ng report:use"
+  },
+  "report.usersGroup|description": {
+    "en": "28068508e0655509",
+    "text": "Ang directory group na ang mga miyembro ay maaaring ma-issue-han ng report:use. Ang walang laman ay nangangahulugang mga administrator lang ng realm na ito ang maaari. Ang report:admin ay ini-issue lamang sa mga administrator na iyon."
   },
   "listenerMain.minVersion|label": {
     "en": "6470c151e28a9ab3",

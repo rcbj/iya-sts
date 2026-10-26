@@ -328,7 +328,7 @@ costs the rest of the service nothing.
 
 ## Not done, said plainly
 
-* **No over-HTTP job** in `tests/vendored/` drives the full browser sign-in
+* **No over-HTTP job** in `tests/protocol/` drives the full browser sign-in
   through a real embedded tree, because no launcher yet builds the debugger
   image; the parent project's own suite still runs against its standalone client
   and api.

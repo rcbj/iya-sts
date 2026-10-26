@@ -11,7 +11,7 @@
 // this process may trust each other's Kerberos through a record on each side.
 // Driven here through `kdc.handleMessage()` — the door both sockets and
 // `/KdcProxy` reach, which ROUTES by the Kerberos realm name — with the local
-// client `tests/vendored/krb5_wire.js`, in development mode:
+// client `tests/protocol/krb5_wire.js`, in development mode:
 //
 //   A. THE STORE: the development trust with PARTNER.COM seeded as a record
 //      in the default realm's directory, the trustedDomain mirror an
@@ -55,7 +55,7 @@ const principals = require('../kerberos/krb5_principals.js');
 const kdc = require('../kerberos/krb5_kdc.js');
 const kcrypto = require('../kerberos/krb5_crypto.js');
 const trusts = require('../kerberos/krb5_trusts');
-const wire = require('./vendored/krb5_wire.js');
+const wire = require('./protocol/krb5_wire.js');
 const grants = require('./tools/cross_realm_grants');
 
 const log = require('bunyan').createLogger({ name: 'kerberos_trusts',

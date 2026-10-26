@@ -15,7 +15,7 @@ same commit that changes the decision it records.
 | Remote XACML PEP (`xacml-pep/`) | Node container | **Rust**, `xacml-pep` binary, same container contract |
 | Admin console `/admin`, user portal `/portal` | Node, in the service process, calling ~73 modules in process | **TypeScript single-page applications**, compiled to static files when the image is built, **served by the runtime**, talking to it **only through the management API** (owner, 2026-10-05). No Node process at runtime. **The console's source and build stay Node.js / TypeScript for good, and it is converted on the Node service first (#446)** |
 | Embedded debugger (`debugger/`) | Parent project's build output served by Node | **Unchanged.** It is another project's artifact. The runtime starts it as a child process, as today. |
-| `tests/vendored/` (the protocol half of the suite) | Runs against a URL | **Unchanged.** It is the oracle for equivalent behaviour. |
+| `tests/protocol/` (the protocol half of the suite) | Runs against a URL | **Unchanged.** It is the oracle for equivalent behaviour. |
 
 ### The requirements this design must meet (from #444)
 
@@ -144,7 +144,7 @@ its absence:
 
 ### 3.1 How progress is measured
 
-The protocol suite (`tests/vendored/`) drives a service over HTTP, raw TCP and
+The protocol suite (`tests/protocol/`) drives a service over HTTP, raw TCP and
 gRPC at a URL. **Each phase runs the suite against the Rust image**, and a
 phase is done when the jobs for the families it moved pass there. The jobs not
 yet ported fail against the Rust image, and the number passing is the progress
@@ -310,7 +310,7 @@ sleep loop outside `sts-cluster`.
 (`mgmt-api/admin_api.ts` plus ten feature-local `*_api.ts` tables), each
 calling the same `admin-core` action or view function the console calls. Rule
 7 (a console control has an API operation in the same commit) is enforced
-from outside by `tests/vendored/admin_api.js`, `sts_admin_api_operations.js`
+from outside by `tests/protocol/admin_api.js`, `sts_admin_api_operations.js`
 and `sts_admin_console.js`. **The console's WRITES are already clean**: 31
 actions take `(body, actor)` and are shared with the API.
 
@@ -421,7 +421,7 @@ in CMS, RS1 unless `webauthn.insecureAlgorithms`, SHA-1 in XML unless
 | **JWE key management** | RSA-OAEP, RSA-OAEP-256; ECDH-ES(+A128/192/256KW) on P-256/384/521; A128/192/256KW; A128/192/256GCMKW; PBES2-HS256/384/512; `dir`; ML-KEM-512/768/1024(+KW); HPKE-0..16 and the `-KE` forms | `openssl` for RSA, ECDH, AES-KW, PBKDF2; `openssl` HPKE (`OSSL_HPKE_*`, 3.2+) for the DHKEM suites; ML-KEM through `openssl`; X-Wing and the ML-KEM hybrids composed in `sts-crypto` |
 | **JWE content** | A128/192/256GCM, A128CBC-HS256, A192CBC-HS384, A256CBC-HS512; `zip` | `openssl` ciphers; `flate2` for `zip` |
 | **HPKE internals** | DHKEM P-256/384/521, X25519, X448; ML-KEM-512/768/1024, MLKEM768-P256, MLKEM1024-P384, MLKEM768-X25519; HKDF-SHA256/384/512, SHAKE128/256, TurboSHAKE128/256; AES-128/256-GCM, ChaCha20Poly1305, export-only; base and psk | `openssl` where it has the suite; the `sha3` crate for SHAKE and TurboSHAKE (OpenSSL has no TurboSHAKE); the KEM combiners composed in `sts-crypto` |
-| **XML-DSig** | RSA PKCS#1 v1.5 (SHA-1/224/256/384/512, RIPEMD-160); RSASSA-PSS (MGF1 over SHA-1/2/3, RIPEMD-160); ECDSA (SHA-1/2/3, RIPEMD-160) with the product curve list including brainpool; EdDSA Ed25519/Ed448; DSA-SHA1/256; ML-DSA-44/65/87 and all 12 SLH-DSA sets (draft-eastlake-rfc9231bis); digests SHA-1/2/3, RIPEMD-160; exclusive and inclusive C14N 1.0 with and without comments; enveloped, base64, XPath, XPath Filter 2 | **A port of this repository's own `common/vendored/xmldsig.js`** (it is ours since #363) onto `libxml` (libxml2: the DOM, XPath and `xmlC14NExecute` for both C14N 1.0 forms), with signature methods from the `sts-crypto` registry. `libxmlsec1` is not used: it knows none of the post-quantum URIs |
+| **XML-DSig** | RSA PKCS#1 v1.5 (SHA-1/224/256/384/512, RIPEMD-160); RSASSA-PSS (MGF1 over SHA-1/2/3, RIPEMD-160); ECDSA (SHA-1/2/3, RIPEMD-160) with the product curve list including brainpool; EdDSA Ed25519/Ed448; DSA-SHA1/256; ML-DSA-44/65/87 and all 12 SLH-DSA sets (draft-eastlake-rfc9231bis); digests SHA-1/2/3, RIPEMD-160; exclusive and inclusive C14N 1.0 with and without comments; enveloped, base64, XPath, XPath Filter 2 | **A port of this repository's own `common/crypto_impl/xmldsig.js`** (it is ours since #363) onto `libxml` (libxml2: the DOM, XPath and `xmlC14NExecute` for both C14N 1.0 forms), with signature methods from the `sts-crypto` registry. `libxmlsec1` is not used: it knows none of the post-quantum URIs |
 | **XML-Enc** | AES-128/192/256-GCM and -CBC (3DES read by the engine); RSA-OAEP-MGF1P, RSA-OAEP (xenc11, SHA-1/256/384/512), RSA-1_5 by mode; ECDH-ES with ConcatKDF on P-256/384/521 with AES-KW; the engine's ML-KEM and FrodoKEM methods | The same port; ciphers from `openssl`. **FrodoKEM has no OpenSSL implementation**: `oqs` (liboqs) is the candidate, and the decision is recorded in phase 4 |
 | **Post-quantum primitives** | ML-DSA-44/65/87; all 12 SLH-DSA sets; ML-KEM-512/768/1024; hedged and pure only | `openssl` (3.5), as today. RustCrypto `ml-dsa`, `slh-dsa` and `ml-kem` run as the second implementation in the cross-check tests, never in the service |
 | **Composite and hybrid** | 18 X.509 composites (draft-ietf-lamps-pq-composite-sigs-19, OIDs 1.3.6.1.5.5.7.6.37–54); X-Wing; QSF hybrids ML-KEM-768 + P-256/P-384/X25519, ML-KEM-1024 + P-384/P-521/X448; ITU-T X.509 9.8 alternative keys across a chain | Composed in `sts-crypto` and `sts-pki` from `openssl` halves; X-Wing from `openssl` ML-KEM-768 and X25519 with the `sha3` combiner |
@@ -478,7 +478,7 @@ the vectors are checked in.
 * **The error-code table and every code in it.** The 57 suite files that
   assert codes keep asserting them.
 * **The protocol suite.** Phases add Rust tests. They never edit a
-  `tests/vendored/` copy, and they make a `local: true` job pass, never change
+  `tests/protocol/` copy, and they make a `local: true` job pass, never change
   its assertion to suit Rust.
 * **The containers seen from outside**: `iya-sts` and `xacml-pep` keep their
   names, ports, health checks and environment. The service image gains a
@@ -530,7 +530,7 @@ The order follows dependency: nothing is ported before what it calls.
 | Phase | What moves | Why here |
 |---|---|---|
 | **0** | This document | |
-| **1** | **The workspace and its conventions; `sts-xacml` (the engine, held to the vendored OASIS suite, 454/455 today); the `xacml-pep` binary replacing the Node container.** | The PEP is the one component that can be replaced END TO END with no coexistence machinery: it is already a separate container with an HTTP contract (`/xacml/pep/*`, `POST /xacml/pip`, mTLS), and `tests/vendored/sts_xacml_remote_pep.js` already holds that container to it. It proves the conventions on something real, and the engine crate is reused by the runtime in phase 6 |
+| **1** | **The workspace and its conventions; `sts-xacml` (the engine, held to the vendored OASIS suite, 454/455 today); the `xacml-pep` binary replacing the Node container.** | The PEP is the one component that can be replaced END TO END with no coexistence machinery: it is already a separate container with an HTTP contract (`/xacml/pep/*`, `POST /xacml/pip`, mTLS), and `tests/protocol/sts_xacml_remote_pep.js` already holds that container to it. It proves the conventions on something real, and the engine crate is reused by the runtime in phase 6 |
 | **2** | `sts-core` (settings, error codes, mode, logging), `sts-crypto` complete with the vector tests, `sts-pki`. | Every family depends on them. Nothing in production calls them yet |
 | **3** | `sts-store` (memory, ldif, postgres), `sts-cluster` (membership, leases, fencing, claims, `Scheduler`), `sts-cache`, `sts-http`, the `sts-runtime` binary and image, realms, and the `/admin-api` operations every suite job sets itself up with (realms, users, groups, applications, settings). | Every later phase's suite jobs stand on these |
 | **4** | First families, the self-contained ones: `pki` (revocation and `/crypto/metadata`), `oidfed`, `ssf`, `scim`, `xacml` (the PDP side), the enrollment trio. Each with its jobs, caches and `/admin-api` operations. The portal pages of each family switch to API calls in Node in the same phase; the console's pages switch under #446, on its own schedule. | Small surfaces, few session interactions |

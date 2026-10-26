@@ -106,6 +106,7 @@ import config = require('./config');
 import stsCrypto = require('./crypto');
 import pki = require('./pki');
 import errorCodes = require('./error_codes');
+import mode = require('./mode');
 import webauthnCodec = require('../authn/webauthn');
 
 type Json = any;
@@ -146,6 +147,7 @@ interface DeviceAttestationDeps {
   stsCrypto: typeof stsCrypto;
   pki: typeof pki;
   errorCodes: typeof errorCodes;
+  mode: typeof mode;
   webauthnCodec: typeof webauthnCodec;
   now: () => number;
   // Google's Android attestation status list (#256), reached lazily: it
@@ -193,7 +195,8 @@ class DeviceAttestation {
     helpers.log.debug("Entering DeviceAttestation.defaultDeps().");
     helpers.log.debug("Leaving DeviceAttestation.defaultDeps().");
     return { log: helpers.log, config: config, stsCrypto: stsCrypto,
-             pki: pki, errorCodes: errorCodes, webauthnCodec: webauthnCodec,
+             pki: pki, errorCodes: errorCodes, mode: mode,
+             webauthnCodec: webauthnCodec,
              now: Date.now,
              revocation: function (): Json {
                return require('./attestation_revocation');
@@ -239,7 +242,9 @@ class DeviceAttestation {
   }
 
   // The chain `leaf` then `rest` against `anchors` (`pki.deviceAttestation-
-  // Anchors()`'s answer). `{ ok, anchor }` or `{ ok: false, why }`.
+  // Anchors()`'s answer). `{ ok, anchor, chain }` or `{ ok: false, why }`;
+  // `chain` is the DER of the path that VERIFIED, leaf first, which is what
+  // a revocation check must read (#902) rather than what the caller sent.
   private async chainOf(leaf: Buffer, rest: Buffer[],
                         anchors: Json): Promise<Json> {
     const { log, pki } = this.deps;
@@ -257,7 +262,10 @@ class DeviceAttestation {
     const top = path.chain[path.chain.length - 1];
     log.debug("Leaving DeviceAttestation.chainOf(). Anchored.");
     return { ok: true, anchor: String((top.x509 && top.x509.subject) || '')
-      .replace(/\n/g, ', ') + ' (' + anchors.source + ')' };
+      .replace(/\n/g, ', ') + ' (' + anchors.source + ')',
+             chain: path.chain.map(function (one: Json): Buffer {
+               return one.der;
+             }) };
   }
 
   // =========================================================================
@@ -440,12 +448,14 @@ class DeviceAttestation {
         'android-key-attestation', said + ', which verified and does NOT ' +
         'chain to a trusted root: ' + chain.why + '.') };
     }
-    // GOOGLE'S STATUS LIST (#256): every certificate of the chain asked
-    // about. A revoked or suspended one, or an unchecked chain where the
+    // GOOGLE'S STATUS LIST (#256): every certificate of the VERIFIED path
+    // asked about (#902). The x5c as sent could carry junk ahead of a revoked
+    // certificate, which the path builder skips by issuer name and the
+    // status check, reading at most ten, would never reach. A revoked or suspended one, or an unchecked chain where the
     // realm requires a check in product, leaves the key self-asserted; the
     // chain's serials and the answer are kept for the recheck.
     const revocation = this.deps.revocation();
-    const verdict = await revocation.consult(ders);
+    const verdict = await revocation.consult(chain.chain);
     const untrusted = revocation.untrusts(verdict);
     if (untrusted) {
       log.info(this.deps.errorCodes.tag(verdict.status === 'unchecked'
@@ -760,6 +770,14 @@ class DeviceAttestation {
       return falsified('the signature\'s hash algorithm is not one this ' +
                        'service ' +
                   'verifies');
+    }
+    // SHA-1 only where broken algorithms are (#905), as WebAuthn refuses RS1
+    // outside development: a product realm must not count a key attested on
+    // the strength of a SHA-1 signature.
+    if (scheme.hash === 'sha1' && !this.deps.mode.usesBrokenAlgorithms()) {
+      log.debug("Leaving DeviceAttestation.tpmCertify(). SHA-1 refused.");
+      return falsified('the TPMS_ATTEST is signed with SHA-1, which this ' +
+                       'service accepts only in development mode');
     }
     let ak: Buffer | null = null;
     for (const der of certs) {

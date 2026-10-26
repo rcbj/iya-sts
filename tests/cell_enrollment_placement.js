@@ -446,8 +446,9 @@ async function run(t) {
   const jws = require(path.join(ROOT, 'acme', 'acme_jws'));
   const store = require(path.join(ROOT, 'acme', 'acme_store'));
   const acme = require(path.join(ROOT, 'acme', 'acme'));
-  const x509 = require(path.join(ROOT, 'common', 'vendored', 'x509'));
-  const keys = require(path.join(ROOT, 'common', 'vendored', 'key_material'));
+  const x509 = require(path.join(ROOT, 'common', 'crypto_impl', 'x509'));
+  const keys = require(path.join(ROOT, 'common', 'crypto_impl',
+                                 'key_material'));
   const restore = installWorld(cells, keystore, cellLocator);
   try {
     checkCredentialIds(t, core, cellLocator);

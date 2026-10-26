@@ -13,7 +13,7 @@ settings are read only at startup, and those recipes use environment
 variables instead.
 
 **The values come from this repository's own test jobs**, and each recipe
-names the job it is taken from. Jobs in `tests/vendored/` run over HTTP
+names the job it is taken from. Jobs in `tests/protocol/` run over HTTP
 against a running service in both modes; files directly in `tests/` run the
 service in process. Change the names, ports and certificates to your own.
 

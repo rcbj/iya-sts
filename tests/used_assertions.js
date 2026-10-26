@@ -28,8 +28,8 @@
 //   F. the three verifiers hold no cache of their own any more.
 //
 // What an over-HTTP job holds instead is the whole path through the token
-// endpoint: `tests/vendored/sts_jwt_bearer_grant.js` and
-// `tests/vendored/sts_saml2_bearer_grant.js`.
+// endpoint: `tests/protocol/sts_jwt_bearer_grant.js` and
+// `tests/protocol/sts_saml2_bearer_grant.js`.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;

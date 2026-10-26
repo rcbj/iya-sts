@@ -215,6 +215,7 @@ const STYLE =
   '.side{flex:0 0 13rem;position:sticky;top:1rem}' +
   '.side .card{padding:16px 14px;margin-bottom:0}' +
   '.main{flex:1 1 28rem;min-width:0}' +
+  '.doclink{margin:0 0 12px;font-size:.92em}' +
   'nav ul{list-style:none;margin:0;padding:0}' +
   '.navsec{margin:0 0 14px}.navsec:last-child{margin-bottom:0}' +
   '.navhead{margin:0 0 5px;font-size:.7em;text-transform:uppercase;' +

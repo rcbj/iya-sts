@@ -86,7 +86,7 @@ function childMain() {
     // found whose console JSON carried `settings` and whose operation did
     // not (`/admin/attribute-sources`): a table like that agrees with the
     // page module and proves nothing about the API. The gate is not in the
-    // way here; it is `tests/vendored/admin_api.js`'s to hold.
+    // way here; it is `tests/protocol/admin_api.js`'s to hold.
     function apiAnswer(operation, query) {
       return new Promise(function (resolve, reject) {
         const entry = adminApi.ROUTES.filter(function (one) {
@@ -769,7 +769,11 @@ function childMain() {
       '/admin-api/users/update-fields': ['group', 'view'],
       '/admin-api/applications/update-fields': ['group', 'view'],
       '/admin-api/users/create': ['view'],
-      '/admin-api/applications/create': ['view']
+      '/admin-api/applications/create': ['view'],
+      // Directory → Policies' New passkey profile (#841). The hidden
+      // field tells a refused create apart from a save of a stored
+      // profile; web_answers.ts reads it and the API does not take it.
+      '/admin-api/policies/save-passkey-policy': ['newProfile']
     };
     // AND A FIELD'S SEARCH (#459, #461): its box, its page and its people
     // / applications toggle are read by the runtime's round trip and never

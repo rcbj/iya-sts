@@ -247,7 +247,7 @@ estclient -e -s host -p 8081 -o out -y web.csr --path-seg tls-server -u alice -h
 ```
 
 Things to know, each found by the suite's run of it
-(`tests/vendored/sts_est_libest.js`):
+(`tests/protocol/sts_est_libest.js`):
 
 * **It reaches another realm through the label** (#251): estclient builds its
   URL as `https://host:port/.well-known/est[/label]/op` and accepts ONE label

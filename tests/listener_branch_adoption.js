@@ -9,7 +9,7 @@
 // THE LISTENER IS RE-ISSUED UNDER THE PROCESS BRANCH THIS PROCESS HOLDS, AND
 // THE FRONT PROCESS NEVER BUILDS THAT BRANCH BESIDE A WORKER (2026-09-13).
 //
-// `tests/vendored/sts_pki_distribution_points.js` failed in `dispatch` mode
+// `tests/protocol/sts_pki_distribution_points.js` failed in `dispatch` mode
 // only, on the last two full runs:
 //
 //   http://localhost:18082/pki/crl/process/intermediate.crl is named by

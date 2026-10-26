@@ -747,6 +747,10 @@ async function acceptInRealm(tokenBytes, opts) {
   if (!opts || opts.record !== false) {
     stats.recordAuthentication({
       presented: clientName, protocol: 'Kerberos v5', method: via,
+      // The service principal, as seen() files it below. The attempts
+      // tab matches krb5ServicePrincipalName. Not client_id, which the
+      // funnel would count a second time.
+      application: presented + '@' + apReq.ticket.realm,
       note: 'The ticket was for ' + wanted + ' and decrypted under this ' +
             'service\'s own key (' + ticketProfile.name + ').' +
             (mutualWanted ? '' : ' Mutual authentication was not requested, ' +

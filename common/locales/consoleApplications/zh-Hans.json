@@ -169,6 +169,11 @@
   "a2.operationalTitle": "操作属性。只有按名称请求时，搜索才会返回它（RFC 4511 第 4.5.1.8 节）——此列表总是显示它。",
   "a2.operational": "（操作属性）",
   "a2.tabOverview": "概览",
+  "a2.tabAuthentications": "认证尝试",
+  "a2.authHeading": "认证尝试",
+  "a2.authNote": "审计日志中仍保留的、指名此应用程序的每一次尝试：接受的凭据（<code>authentication</code>）、拒绝的凭据（<code>authentication.refused</code>），以及因其登录而被拒绝的会话（<code>session.refuse</code>、<code>session.refused</code>）。一行指名此应用程序，是当其 <code>client_id</code> 或 <code>application</code> 与标识符或其某个协议名称完全一致时。这份列表就是该日志，一个进程中至多 {max} 条事件。{dropped, plural, =0 {没有丢弃任何事件。} other {已丢弃 # 条更早的事件。}}",
+  "a2.authEmpty": "审计日志中没有指名此应用程序的认证尝试。",
+  "a2.authOpenLog": "审计日志",
   "a2.whatItIs": "是什么",
   "a2.colThing": "项目",
   "a2.colValue": "值",
@@ -826,5 +831,8 @@
   "launch.lead": "此链接在这里发起对该应用的 {protocol} 登录。用户门户的<strong>登录</strong>链接就是同一个 URL，它在其他任何地方也可以使用——书签、内网页面或电子邮件。",
   "launch.off": "该应用的此功能已<strong>关闭</strong>，因此该链接会被拒绝：请在下方将 <code>{attribute}</code> 设为 TRUE，或为该领域开启 <code>{setting}</code>。",
   "launch.missing": "它目前还无法使用：该应用没有已注册的 <code>{attributes}</code>，因此在这里发起的登录无处可去。",
-  "launch.endpoint": "该协议自身的端点，供需要它的合作方使用："
+  "launch.endpoint": "该协议自身的端点，供需要它的合作方使用：",
+  "relations.label": "它与其他角色设置有何不同",
+  "relations.appPerms": "<strong>此应用作为成员持有的角色。</strong>这些与每个角色页面“谁持有它”下的应用行是同一批条目：在此处授予与在“角色”页面添加该应用写入的是同一内容。应用自己的令牌（<code>client_credentials</code>）携带这些角色，并可获得它们所授权的内容。对于 <code>SSF_READ</code> 和 <code>SSF_MANAGE</code>，成员关系还允许登录此应用的人员在属于该角色的组时获得该 scope。这不同于下方的“使用它所需持有的角色”（它只是要求一个角色），也不同于角色的“授予它的客户端”（它把角色借给通过某客户端登录的人员）。",
+  "relations.required": "<strong>登录要求，而非授予。</strong>此列表即 <code>appRequiredRole</code>，每个角色的页面都会在“要求它的应用程序”下显示此应用。人员必须以成员身份或通过组持有其中一个角色，才会为此应用签发任何内容。它不添加 scope 或权限，也不会让此应用成为该角色的成员。若要让此应用的令牌携带 <code>ssf.read</code>，请在上方“应用权限”下授予 <code>SSF_READ</code>，并把相关人员加入 <code>ssf-read</code>。"
 }

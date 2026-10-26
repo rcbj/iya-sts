@@ -184,10 +184,10 @@ import LazyModule = require('../common/lazy_module');
 // at its top, and together they are resident memory in every request worker
 // that never issues or verifies a BBS credential. `common/lazy_module.ts`
 // argues it; `common/helpers.js` defers the same file by hand.
-type Bbs2023 = typeof import('../common/vendored/bbs2023.js');
-const bbs2023: Bbs2023 = LazyModule.of('common/vendored/bbs2023.js',
+type Bbs2023 = typeof import('../common/crypto_impl/bbs2023.js');
+const bbs2023: Bbs2023 = LazyModule.of('common/crypto_impl/bbs2023.js',
   function () {
-    return require('../common/vendored/bbs2023.js') as Bbs2023;
+    return require('../common/crypto_impl/bbs2023.js') as Bbs2023;
   }, helpers.log);
 import config = require('../common/config');
 // The signer groups' table (#68), a leaf: the model and the group ids.
@@ -279,7 +279,7 @@ import ssfAuth = require('../ssf/ssf_auth');
 // `keyMaterial()` below is this file's REPORT on the keys and this is the
 // thing that EXPORTS them — two different jobs that would otherwise share a
 // name three hundred lines apart.
-import keystore = require('../common/vendored/key_material.js');
+import keystore = require('../common/crypto_impl/key_material.js');
 // THE CERTIFICATE AUTHORITY'S OWN REPORT. A LIBRARY (rule 3) requiring
 // `config`, `crypto`, `keystore`, `realms` and the two vendored PKI modules —
 // it registers no route, so this require can move nothing and close nothing.
@@ -1218,7 +1218,7 @@ class CryptoMetadata {
         return require('../est/est_codec');
       },
       loadEstKeyMaterial: function () {
-        return require('../common/vendored/key_material');
+        return require('../common/crypto_impl/key_material');
       },
       loadScepCms: function () {
         return require('../scep/scep_cms');
@@ -1344,7 +1344,7 @@ class CryptoMetadata {
       // signing key pair to an APPLICATION (or a person) and hands both halves
       // over.
       //
-      // The algorithm tables are read from `common/vendored/x509.js` — the
+      // The algorithm tables are read from `common/crypto_impl/x509.js` — the
       // module that performs the encoding — through `common/pki.js`'s
       // `report()`, which is this page's rule applied to its newest family: a
       // list written out here would describe something this service does not do
@@ -1365,7 +1365,7 @@ class CryptoMetadata {
                'algorithm is the one chosen for the hierarchy and is ' +
                'constrained by the ISSUER\'s key family rather than the ' +
                'subject\'s, which is the mistake ' +
-               '`common/vendored/x509.js`\'s own header spends a paragraph ' +
+               '`common/crypto_impl/x509.js`\'s own header spends a paragraph ' +
                'on: importing a key under one digest and signing with ' +
                'another produces a certificate whose declared algorithm and ' +
                'actual signature disagree, and `openssl verify` reports it ' +
@@ -1431,7 +1431,7 @@ class CryptoMetadata {
           return [
             { what: 'Certificate encoding',
               how: 'X.509 v3, DER, through pkijs and asn1js — ' +
-                   'common/vendored/x509.js, the parent project\'s own PKI ' +
+                   'common/crypto_impl/x509.js, the parent project\'s own PKI ' +
                    'code, byte-identical. One encoder for this service and ' +
                    'for that project\'s PKI / X.509 page.' },
             // THE TWO LISTS ARE IDENTIFIERS, so they are `values` — chips the
@@ -1626,6 +1626,51 @@ class CryptoMetadata {
               how: 'ES256 with a non-extractable WebCrypto P-256 key per ' +
                    'page load' },
             { what: 'PKCE', how: 'S256' }
+          ];
+        }
+      },
+      // REPORTING (#956) mints nothing. The browser signs the DPoP proof,
+      // the gate verifies the access token, and a stored result is named
+      // by the SHA-256 of its bytes.
+      {
+        name: 'Reporting',
+        signs: 'Nothing a report issues. The runtime, in the browser, ' +
+               'signs one thing: an RFC 9449 DPoP proof (ES256) on every ' +
+               '`/report-api` call and at the token endpoint, with a P-256 ' +
+               'key WebCrypto generated non-extractable for that page load.',
+        verifies: 'EVERY `/report-api` CALL, at its gate ' +
+                  '(report/report_api.ts): the access token is an RFC 9068 ' +
+                  '`at+jwt` verified under THIS realm\'s signing key (any ' +
+                  'generation), its issuer and audience checked, and its ' +
+                  'DPoP binding matched by a proof the gate verifies — ' +
+                  'never accepted as Bearer. The runtime verifies a JARM ' +
+                  'authorization response against the realm\'s JWKS where ' +
+                  'the realm sends one.',
+        encrypts: 'Nothing.',
+        decrypts: 'Nothing.',
+        keys: 'None on the server. The DPoP key pair lives in the ' +
+              'browser: P-256, generated by WebCrypto with its private ' +
+              'half non-extractable, held in memory and gone with the ' +
+              'page. The tokens themselves are signed by the realm\'s ' +
+              'authorization server (the OAuth2 / OIDC row).',
+        hashes: 'SHA-256 of a finished report\'s bytes, stored beside ' +
+                'them (`sts_report_artifacts.sha256`) and checked when the ' +
+                'result is read back. SHA-256 in the browser for the PKCE ' +
+                'S256 challenge and the DPoP proof\'s `ath`.',
+        envelopes: [],
+        algorithms: function () {
+          log.debug("Entering algorithms().");
+          log.debug("Leaving algorithms().");
+          return [
+            { what: 'Access token at /report-api',
+              how: 'RFC 9068 at+jwt, verified under this realm\'s signing ' +
+                   'key, DPoP-bound' },
+            { what: 'DPoP proof (browser)',
+              how: 'ES256 with a non-extractable WebCrypto P-256 key per ' +
+                   'page load' },
+            { what: 'PKCE', how: 'S256' },
+            { what: 'Stored report bytes',
+              how: 'SHA-256, kept with the artifact and checked on read' }
           ];
         }
       },
@@ -1926,7 +1971,7 @@ class CryptoMetadata {
             // `encryptJweCompact()` encrypt to a recipient's published key and
             // hold no shared secret with it, which is the argument
             // `JWE_ASYMMETRIC_ALGS` exists to carry. `userinfo_encryption_alg_
-            // values_supported` never moved, and `tests/vendored/admin_api.js`
+            // values_supported` never moved, and `tests/protocol/admin_api.js`
             // is what compared the two.
             ['JWE key management (out)', helpers.offeredJweAlgs()],
             ['JWE key management (in)',
@@ -4077,7 +4122,7 @@ class CryptoMetadata {
   // stronger requirement than any other read on this console — because this is
   // the one page where reading IS taking.
   //
-  // **THE EXPORT IS `common/vendored/key_material.js`'s, NOT A SECOND ONE.**
+  // **THE EXPORT IS `common/crypto_impl/key_material.js`'s, NOT A SECOND ONE.**
   // That is the debugger's own keystore code, vendored here, and it already
   // does the four formats with a password: PEM, DER, JWK and PKCS#12. Writing a
   // second exporter beside it would be the thing this repository argues against

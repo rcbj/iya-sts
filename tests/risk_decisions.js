@@ -177,6 +177,9 @@ function childMain() {
          'mfa-mechanism,risk-high,risk-medium-key,' +
          'risk-medium-second-factor,risk-protected-key,' +
          'risk-protected-second-factor,' +
+         // #740: a device-bound session the application requires. Always
+         // in the document; a missing attribute makes it inapplicable.
+         'device-bound-session,' +
          'native-sso-not-enabled-refused,native-sso-not-enabled-dropped,' +
          'protected-undeclared-refused,protected-undeclared-dropped,' +
          'undeclared-refused,undeclared-dropped,permission-not-granted,' +
@@ -202,6 +205,10 @@ function childMain() {
          'passkey-register-serial-missing,passkey-register-serial-not-held,' +
          // #718's post-quantum rule, one per stage.
          'passkey-register-post-quantum,' +
+         // #941's attestation-algorithm rule, one per stage.
+         'passkey-register-attestation-algorithm,' +
+         // #940's profile-algorithm rule, at registration only.
+         'passkey-register-profile-algorithm,' +
          'passkey-register-allowed,' +
          'passkey-use-backup-eligible,passkey-use-pin-length,' +
          'passkey-use-attestation-unchecked,' +
@@ -209,6 +216,7 @@ function childMain() {
          'passkey-use-attestation-untrusted,passkey-use-attestation-aaguid,' +
          'passkey-use-attestation-unlisted,passkey-use-attestation-level,' +
          'passkey-use-attestation-fips,passkey-use-post-quantum,' +
+         'passkey-use-attestation-algorithm,' +
          'passkey-use-allowed,' +
          // #724's recovery rules: the two refusals of `recover-account`
          // and its allow.
@@ -244,15 +252,20 @@ function childMain() {
         decideScopes: 'no', decideTransfers: 'no', decideExchanges: 'no',
         decideGnapRights: 'no', decidePasskeys: 'no' },
       { name: 'role-issuance' });
-    note(rolesOnly.ok && rolesOnly.policy.rules.length === 1 &&
+    const rolesIds = (rolesOnly.policy && rolesOnly.policy.rules || [])
+      .map(function (rule) { return rule.id.split(':rule:')[1]; });
+    note(rolesOnly.ok && rolesIds.join(',') ===
+         'device-bound-session,holds-a-required-role' &&
          /deny-unless-permit$/.test(rolesOnly.policy.combiningAlgId),
          'A2. decideRisk: no (and decideDevices, decideProtocols, ' +
          'decideAuthnMechanisms (#457), decideMfaMechanisms (#475), ' +
          'decideScopes and ' +
          'decideTransfers, decideExchanges, decideGnapRights and ' +
          'decidePasskeys: no, #164, #304, #98, #186, #432 and #536) builds ' +
-         'the ' +
-         'roles-only document it was');
+         'the roles-only document, plus #740\'s device-bound rule, under ' +
+         'deny-unless-permit',
+         rolesIds.join(',') + ' ' +
+         (rolesOnly.policy || {}).combiningAlgId);
     const request = rolePep.buildRequest({
       application: CLIENT, kind: 'start-session',
       subject: { kind: 'user', name: 'rd-unit', authenticated: true },
@@ -444,7 +457,7 @@ function childMain() {
 
     const kdc = require(ROOT + '/kerberos/krb5_kdc.js');
     const principals = require(ROOT + '/kerberos/krb5_principals.js');
-    const wire = require(ROOT + '/tests/vendored/krb5_wire.js');
+    const wire = require(ROOT + '/tests/protocol/krb5_wire.js');
     const inproc = { label: 'in-process', send: function (bytes) {
       return kdc.handleMessage(bytes);
     } };
@@ -708,9 +721,10 @@ function childMain() {
          // rules of #432, the sign-in mechanism rule of #457, the
          // second-factor rule of #475, the fifteen passkey rules of
          // #536, #718's two post-quantum passkey rules, the five
-         // Kerberos-trust exchange rules of #430 Phase 3 and #724's three
-         // recovery rules.
-         unprotectedPolicy.policy.rules.length === 90,
+         // Kerberos-trust exchange rules of #430 Phase 3, #724's three
+         // recovery rules, #941's two attestation-algorithm rules,
+         // #940's profile-algorithm rule and #740's device-bound rule.
+         unprotectedPolicy.policy.rules.length === 94,
          'I5. neverLockOut none puts the console under the three rules, ' +
          'and HIGH refuses it', plain.decision);
 

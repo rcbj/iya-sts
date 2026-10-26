@@ -45,7 +45,7 @@
 // another trust realm of this service on the same origin, signing in THERE
 // overwrites the person's cookie for this realm, and the callback met a
 // browser with no session here: every such link was refused STS-PORTAL-0300
-// (`tests/vendored/sts_claims_aggregation.js` found it). A cookie scoped to
+// (`tests/protocol/sts_claims_aggregation.js` found it). A cookie scoped to
 // this realm's callback path is overwritten by nothing the provider does.
 // ===========================================================================
 

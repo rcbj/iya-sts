@@ -1064,8 +1064,8 @@
     "text": "Todo lo que un llamador necesita para VERIFICAR este servicio, en PEM: el certificado que presenta cada socket TLS de este proceso (el puerto principal y la escucha LDAPS del directorio en 636, que sirve este mismo certificado y clave en lugar de un segundo par), seguido de la cadena entre él y la CA raíz propia de este servicio, y esa raíz. Es una decisión sobre lo que tiene que hacer un LLAMADOR y no un par de claves guardado: un ancla que cubre el puerto principal y 636 es UNA descarga, mientras que dos harían que un ldapsearch fallara con \"unable to get local issuer certificate\" contra un almacén de confianza creado para el puerto HTTPS, un error que no nombra nada y parece un directorio averiado. DESDE EL 2026-09-11 LA CADENA Y LA RAÍZ ESTÁN EN ESTE DOCUMENTO, porque ese día el certificado dejó de ser autofirmado: OpenSSL acepta una hoja autofirmada en un almacén de confianza como ancla y rechaza una certificada, así que un llamador que fijaba solo la hoja recibía ese mismo error sobre una raíz que nunca se le había dado. LA HOJA VA PRIMERO, para un llamador que solo quiera esa. Se REGENERA EN CADA ARRANQUE en cualquier modo (a menos que tls.certificateFile la proporcione), como una clave de firma de desarrollo, así que es un ancla que nadie puede tener incrustada y ninguna copia en caché sigue siendo válida; de ahí Cache-Control: no-store. No publica ninguna clave privada. Descárguela en su propio almacén de confianza en lugar de desactivar la verificación."
   },
   "stsmetadata.endpoints./.what": {
-    "en": "4c29594ca1759528",
-    "text": "Qué es este servicio, en una tarjeta: el proyecto en GitHub, sus incidencias, el sitio de documentación y las dos superficies de esta instancia a las que va una persona y no un cliente — la consola de administración y el portal de usuario. NO lista ningún endpoint, a propósito — esta página es la lista, se genera, y una selección escrita a mano en la puerta principal sería una segunda copia que nada comprueba. Fue una ruta sin enrutar hasta el 2026-08-24, así que la respuesta a la primera URL que escribe una persona era el \"Cannot GET /\" de Express. Desde #579 es una superficie estática: esto responde el shell, y /home.js dibuja la tarjeta en el idioma del navegador a partir de /home-api/front."
+    "en": "85b6e9694fbfb459",
+    "text": "Qué es este servicio, en una tarjeta: el proyecto en GitHub, sus incidencias, el sitio de documentación y las superficies de esta instancia a las que va una persona y no un cliente — la consola de administración, el portal de usuario y los informes. NO lista ningún endpoint, a propósito — esta página es la lista, se genera, y una selección escrita a mano en la puerta principal sería una segunda copia que nada comprueba. Fue una ruta sin enrutar hasta el 2026-08-24, así que la respuesta a la primera URL que escribe una persona era el \"Cannot GET /\" de Express. Desde #579 es una superficie estática: esto responde el shell, y /home.js dibuja la tarjeta en el idioma del navegador a partir de /home-api/front."
   },
   "stsmetadata.endpoints./home.js.what": {
     "en": "676325f92b405058",
@@ -1080,8 +1080,8 @@
     "text": "NON-SPEC (#579). Las operaciones de la API de la puerta principal, cada una con la página de la que es la puerta (mirrors), como /account-api lista las suyas. Público y sin idioma."
   },
   "stsmetadata.endpoints./home-api/front.what": {
-    "en": "e608f6ceb4c13f9a",
-    "text": "NON-SPEC (#579). Todo lo que dibuja la página de inicio, como hechos y sin palabras: el nombre, la versión y su compilación, si un inicio de sesión comprueba la contraseña y si la consola está protegida, el logotipo, y los cinco enlaces como identificadores y direcciones — los de la consola y del portal en la escucha que los responde (#472). Público, no-store; no lista ningún endpoint, como la página nunca lo hizo."
+    "en": "617325f4b1fdbe01",
+    "text": "NON-SPEC (#579). Todo lo que dibuja la página de inicio, como hechos y sin palabras: el nombre, la versión y su compilación, si un inicio de sesión comprueba la contraseña y si la consola está protegida, el logotipo, y los seis enlaces como identificadores y direcciones — la consola, el portal y los informes, cada uno en la escucha que lo responde (#472). Público, no-store; no lista ningún endpoint, como la página nunca lo hizo."
   },
   "stsmetadata.endpoints./logo.png.what": {
     "en": "3ecb997587060c27",
@@ -1174,6 +1174,74 @@
   "stsmetadata.endpoints./portal/portal.css.what": {
     "en": "69cf245f63b035d1",
     "text": "NO ESTÁNDAR. La única hoja de estilos del portal (#568)."
+  },
+  "stsmetadata.endpoints./report.what": {
+    "en": "a9d6c3cc058a3617",
+    "text": "NO ES UN ENDPOINT DE LA ESPECIFICACIÓN. La aplicación estática de informes (#956). Cada ruta responde un solo documento, que carga /report/report.js e inicia sesión como el cliente público sts-report."
+  },
+  "stsmetadata.endpoints./report/*.what": {
+    "en": "0d4a7436bac8a815",
+    "text": "NO ES UN ENDPOINT DE LA ESPECIFICACIÓN. El mismo documento que /report. El script elige la página según la ruta."
+  },
+  "stsmetadata.endpoints./report/report.js.what": {
+    "en": "06abcdf5598f2576",
+    "text": "NO ES UN ENDPOINT DE LA ESPECIFICACIÓN. El runtime de informes, construido por build-typescript.sh y servido precomprimido. Público, como el documento."
+  },
+  "stsmetadata.endpoints./report/report.css.what": {
+    "en": "aa0e94707e105592",
+    "text": "NO ES UN ENDPOINT DE LA ESPECIFICACIÓN. La única hoja de estilos de la aplicación de informes (#956)."
+  },
+  "stsmetadata.endpoints./report-api.what": {
+    "en": "7b8038436244d3de",
+    "text": "NO ES UN ENDPOINT DE LA ESPECIFICACIÓN. El índice de /report-api. Acepta el token de este dominio vinculado a DPoP para sts-report, con scope report:use o report:admin."
+  },
+  "stsmetadata.endpoints./report-api/openapi.json.what": {
+    "en": "0a932f3efc26b3fb",
+    "text": "NO ES UN ENDPOINT DE LA ESPECIFICACIÓN. La descripción propia de la API. Detrás del mismo token que el resto de /report-api, y servida con no-store."
+  },
+  "stsmetadata.endpoints./report-api/catalog.what": {
+    "en": "07eb9bbaa64c98e2",
+    "text": "NO ES UN ENDPOINT DE LA ESPECIFICACIÓN. Las fuentes que puede nombrar una consulta, y el tipo y los operadores de cada campo. Los atributos de credenciales están ausentes."
+  },
+  "stsmetadata.endpoints./report-api/catalog/:id.what": {
+    "en": "4d6e53c9ce4823ca",
+    "text": "NO ES UN ENDPOINT DE LA ESPECIFICACIÓN. Una fuente del catálogo, por su id."
+  },
+  "stsmetadata.endpoints./report-api/queries.what": {
+    "en": "0d15a58a10e2b1ba",
+    "text": "NO ES UN ENDPOINT DE LA ESPECIFICACIÓN. Una consulta de catálogo. Una pequeña y acotada se responde en la propia llamada; una mayor se pone en cola y se responde 202."
+  },
+  "stsmetadata.endpoints./report-api/definitions.what": {
+    "en": "df098902244cfa53",
+    "text": "NO ES UN ENDPOINT DE LA ESPECIFICACIÓN. Las definiciones que este token puede ver: las de su propietario, las compartidas con un grupo al que pertenece, y todas cuando el token lleva report:admin."
+  },
+  "stsmetadata.endpoints./report-api/definitions/:id.what": {
+    "en": "74d936b2bb9fff66",
+    "text": "NO ES UN ENDPOINT DE LA ESPECIFICACIÓN. Una definición. Un id desconocido y uno que este token no puede ver reciben la misma respuesta."
+  },
+  "stsmetadata.endpoints./report-api/definitions/:id/share.what": {
+    "en": "12d23dbb24cec023",
+    "text": "NO ES UN ENDPOINT DE LA ESPECIFICACIÓN. Nombra los grupos del directorio que pueden ejecutar la definición y leer sus resultados. El propietario, o report:admin, es quien puede cambiar esa lista."
+  },
+  "stsmetadata.endpoints./report-api/definitions/:id/run.what": {
+    "en": "991b657f7fe20e17",
+    "text": "NO ES UN ENDPOINT DE LA ESPECIFICACIÓN. Pone en cola la consulta de la definición como el llamante. Compartir concede esto y el resultado, no la edición."
+  },
+  "stsmetadata.endpoints./report-api/jobs.what": {
+    "en": "f4e437b96fe383f5",
+    "text": "NO ES UN ENDPOINT DE LA ESPECIFICACIÓN. Los trabajos que este token puede ver, y la puerta que pone en cola uno a partir de un documento de consulta."
+  },
+  "stsmetadata.endpoints./report-api/jobs/:id.what": {
+    "en": "d69a7d667bd631bf",
+    "text": "NO ES UN ENDPOINT DE LA ESPECIFICACIÓN. Un trabajo. Un id desconocido y uno que este token no puede ver reciben la misma respuesta."
+  },
+  "stsmetadata.endpoints./report-api/jobs/:id/cancel.what": {
+    "en": "cbc407e431852e06",
+    "text": "NO ES UN ENDPOINT DE LA ESPECIFICACIÓN. Pide a un trabajo en cola o en ejecución que se detenga. Los bytes de uno que ya terminó se dejan para la retención."
+  },
+  "stsmetadata.endpoints./report-api/jobs/:id/result.what": {
+    "en": "3b97b9774547de8c",
+    "text": "NO ES UN ENDPOINT DE LA ESPECIFICACIÓN. Los bytes almacenados de un trabajo terminado, mientras no haya pasado report.artifactRetentionS. Después el resultado desaparece."
   },
   "stsmetadata.endpoints./portal/signals/receive.what": {
     "en": "b5f30a87646c3fed",
@@ -1712,8 +1780,8 @@
     "text": "set y remove. set escribe un broker y los tipos de referencia que puede usar (pid, k8s, *) en spiffe.brokers del dominio; remove lo quita, y su siguiente llamada se rechaza con PERMISSION_DENIED."
   },
   "stsmetadata.endpoints./admin-api/delegation.what": {
-    "en": "bc3ea30406135fc8",
-    "text": "NO ESTÁNDAR. Cada delegación que este servicio ha realizado o RECHAZADO, como JSON: ocho mecanismos en Kerberos, WS-Trust y OAuth 2.0 Token Exchange en un solo modelo, cada uno nombrando la identidad inicial, el intermediario que actúa en su nombre y el destino alcanzado. Filtrado por tipo, modo, resultado, protocolo y texto libre, y paginado con ?page= y ?per=. Lea primero `mode`: una `impersonation` no deja nada en la credencial que diga que intervino un nivel intermedio, así que este es el único lugar donde ese hecho constará jamás. Un acto rechazado lleva el motivo propio del KDC y no aparece en ningún otro recurso de aquí. Además de los actos paginados, la respuesta lleva `chains` (las tuplas distintas (mecanismo, inicial, intermediario, destino) entre lo que coincidió, una por arista) y `policy`, quién puede delegar en quién antes de que nadie lo haya intentado. RECÓRRALO POR `seq`. DE SOLO LECTURA, uno de los dos recursos de aquí que lo son: todo lo que contiene es una observación o la configuración de otro, así que no hay nada que cambiar. Refleja GET /admin/delegation."
+    "en": "5832fac2dafcfe9d",
+    "text": "NO ESTÁNDAR. Cada delegación que este servicio ha realizado o RECHAZADO, como JSON: ocho mecanismos en Kerberos, WS-Trust y OAuth 2.0 Token Exchange en un solo modelo, cada uno nombrando la identidad inicial, el intermediario que actúa en su nombre y el destino alcanzado. Filtrado por tipo, modo, resultado, protocolo y texto libre, y paginado con ?page= y ?per=. Lea primero `mode`: una `impersonation` no deja nada en la credencial que diga que intervino un nivel intermedio, así que este es el único lugar donde ese hecho constará jamás. Un acto rechazado lleva el motivo propio del KDC y no aparece en ningún otro recurso de aquí. Además de los actos paginados, la respuesta lleva `chains` (las tuplas distintas (mecanismo, inicial, intermediario, destino) entre lo que coincidió, una por arista) y `policy`, quién puede delegar en quién antes de que nadie lo haya intentado. REANUDE POR `at`, no por `seq` (#465). `seq` es único y nunca se reutiliza, y crece dentro de cada proceso, pero cada hilo de trabajo numera desde un bloque propio, así que no es un orden entre ellos. DE SOLO LECTURA, uno de los dos recursos de aquí que lo son: todo lo que contiene es una observación o la configuración de otro, así que no hay nada que cambiar. Refleja GET /admin/delegation."
   },
   "stsmetadata.endpoints./admin-api/delegation/policy.what": {
     "en": "1adbc4bff8b6363e",
@@ -1746,6 +1814,22 @@
   "stsmetadata.endpoints./admin-api/secret-destinations/:action.what": {
     "en": "15a8c6d83ed6bc92",
     "text": "NO ESTÁNDAR (#221). add-destination, update-destination, remove-destination y test-push (una versión canario escrita en un secreto de prueba): los cuatro actos de la consola, cada uno auditado. La credencial de escritura se recibe y nunca se devuelve."
+  },
+  "stsmetadata.endpoints./admin-api/passkey-report.what": {
+    "en": "d45e78dec310a21d",
+    "text": "NO ESTÁNDAR (#942). Lo que dibuja Supervisión → Llaves de acceso: las llaves de acceso del dominio por algoritmo y carril, sus personas por tipo (solo poscuántica, solo clásica, ambas, ninguna), qué modelos de autenticador tienen qué algoritmos y el postQuantumRequired de cada perfil de llaves de acceso; filtrado por un grupo, un perfil de llaves de acceso o una aplicación, con una lista paginada por cursor de las personas detrás de cualquier cifra. Las cifras son un agregado mantenido —un recuento diario de los titulares más los cambios anotados a medida que se escriben las llaves—, nunca un recorrido del directorio por solicitud."
+  },
+  "stsmetadata.endpoints./admin-api/passkey-report/export.what": {
+    "en": "41f6fbe31db08a88",
+    "text": "NO ESTÁNDAR (#942). Las personas que nombra una cifra de Supervisión → Llaves de acceso, en CSV o JSON, leídas una página de titulares a la vez, como máximo cien mil filas, indicando cuándo se cortó. Ningún material de clave."
+  },
+  "stsmetadata.endpoints./admin-api/passkey-report/evidence.what": {
+    "en": "04273b8322f6ed5c",
+    "text": "NON-SPEC (#947). El objeto de atestación archivado y su EvidenceRecord RFC 4998 de una llave de acceso, nombrados por el nombre de usuario y credentialId. El token de la TSA se verifica con las anclas de confianza configuradas. Una llave inscrita sin TSA, o cuya atestación no era de confianza y era clásica, no tiene registro."
+  },
+  "stsmetadata.endpoints./admin-api/passkey-report/:action.what": {
+    "en": "cd923c72e2ca4fba",
+    "text": "NO ESTÁNDAR (#942). recount: pone en cola el trabajo passkeys.report-recount para este dominio en el líder del planificador, que hace de un recuento nuevo de los titulares la nueva base. La única acción de la consola en esa página; se ejecuta donde se ejecuta todo trabajo, nunca en la solicitud."
   },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
@@ -1792,8 +1876,8 @@
     "text": "NO ESTÁNDAR. La tabla central de cada condición de fallo que puede producir este servicio, STS-<SUBSYSTEM>-<NNNN>, como JSON: cada código con su subsistema, lo que falló, lo que se le dice al CLIENTE en el vocabulario de su propio protocolo y en cuántas filas del registro de auditoría mantenido aparece en este dominio; filtrado por subsistema, texto y ?seen=1, y paginado con ?page= y ?per=. UN CÓDIGO NUNCA SE ENVÍA A UN CLIENTE: está solo en la fila de auditoría y en la línea de registro. DE SOLO LECTURA: la tabla es código fuente. Refleja GET /admin/error-codes; la misma tabla es docs/error-codes.md."
   },
   "stsmetadata.endpoints./admin-api/audit.what": {
-    "en": "ba4fc61236466ead",
-    "text": "NO ESTÁNDAR. Lo que ocurrió aquí, en orden, como JSON: cada autenticación, sesión de inicio de sesión, operación del directorio LDAP, interacción con la consola, llamada a la API de gestión y llamada a un endpoint de protocolo, de la más reciente a la más antigua, filtrado por categoría, acción, resultado, actor y texto libre, y paginado con ?page= y ?per=. NUNCA HAY UNA CREDENCIAL EN UNA FILA (ninguna contraseña, token bearer, aserción ni cuerpo); una modificación nombra los atributos que cambió y nunca sus valores. RECÓRRALO POR `seq` en lugar de por página: es monótono y nunca se reutiliza, así que \"todo lo posterior a 4102\" es exacto, mientras que la página 2 tomada un segundo después de la página 1 puede repetir una fila que se desplazó a ella. DE SOLO LECTURA: uno de los dos recursos de aquí que lo son, junto con /admin-api/delegation. No hay operación de vaciado, porque un control de borrado en una API sin protección dejaría a un registro de auditoría incapaz de responder la única pregunta para la que existe. Refleja GET /admin/audit."
+    "en": "55d3dcbe157b0e3f",
+    "text": "NO ESTÁNDAR. Lo que ocurrió aquí, en orden, como JSON: cada autenticación, sesión de inicio de sesión, operación del directorio LDAP, interacción con la consola, llamada a la API de gestión y llamada a un endpoint de protocolo, de la más reciente a la más antigua, filtrado por categoría, acción, resultado, actor y texto libre, y paginado con ?page= y ?per=. NUNCA HAY UNA CREDENCIAL EN UNA FILA (ninguna contraseña, token bearer, aserción ni cuerpo); una modificación nombra los atributos que cambió y nunca sus valores. REANUDE POR `at`, no por `seq` (#465). `seq` es único en todos los procesos del servicio y nunca se reutiliza, y crece dentro de cada proceso, pero cada hilo de trabajo numera desde un bloque propio, así que los números no son un orden y \"todo lo posterior a 4102\" omite un evento posterior anotado con un número menor. `origin` desempata con `seq`. La página 2 tomada un segundo después de la página 1 puede repetir una fila que se desplazó a ella. DE SOLO LECTURA: uno de los dos recursos de aquí que lo son, junto con /admin-api/delegation. No hay operación de vaciado, porque un control de borrado en una API sin protección dejaría a un registro de auditoría incapaz de responder la única pregunta para la que existe. Refleja GET /admin/audit."
   },
   "stsmetadata.endpoints./admin-api/realms.what": {
     "en": "83f6f516fe05921e",
@@ -3382,6 +3466,10 @@
   "stsmetadata.protocols.User portal.what": {
     "en": "835d40e9ff6eaabb",
     "text": "NO ES UN PROTOCOLO, y tiene una tarjeta porque esta página informa de cualquier grupo de endpoints que ninguna tarjeta reclame, que es la regla que impide que una familia nueva llegue sin anunciarse, y merece la pena pagarla aquí en lugar de hacer la regla condicional. LA PRIMERA SUPERFICIE DE ESTE SERVICIO QUE PERTENECE A LA PERSONA QUE LA MIRA: todas las demás páginas de navegador de aquí son para otra persona: la pantalla de inicio de sesión es un paso en el flujo de otro protocolo, la pantalla de consentimiento hace una pregunta y se va, /admin es para un operador y está protegida por dos roles. Aquí es donde una persona ve lo que este proveedor de identidad sabe de ella y cambia cómo se autentica: su contraseña, sus llaves de seguridad y si cada una es una credencial principal o un segundo factor. Es una APLICACIÓN SEPARADA de la consola de administración y no comparte con ella nada más que la sesión de inicio de sesión en el servidor de autorización de este servicio: cada una es un cliente OAuth público (aquí sts-user-portal) que guarda en memoria su propio token vinculado a DPoP. /portal/activate es su mitad sin autenticación, donde alguien aprovisionado mediante /admin-api o SCIM gasta un enlace de activación de un solo uso y tiempo limitado para configurar una credencial: guardado con hash como una contraseña, con límite de frecuencia, gastado cuando termina la configuración y no cuando se abre el enlace, y sin iniciar nunca la sesión de nadie. DESDE #568 ES UNA APLICACIÓN ESTÁTICA sobre /account-api, el grupo Account API de más abajo: una operación por página y por formulario, siendo la persona siempre el sujeto del token, descrita por su propio documento OpenAPI."
+  },
+  "stsmetadata.protocols.Reporting.what": {
+    "en": "66663fd63a35a287",
+    "text": "NO ES UN PROTOCOLO. La aplicación de informes (#956): una página estática en /report sobre /report-api, el cliente público sts-report y un catálogo de los registros propios de este dominio. Inicia sesión en el navegador, conserva un token vinculado a DPoP y nunca acepta una cadena SQL. Una definición guardada pertenece a su propietario; compartirla con un grupo del directorio concede ejecutar y leer, no editar."
   },
   "stsmetadata.protocols.GNAP.what": {
     "en": "b938c4cb8feac54d",

@@ -116,7 +116,7 @@ at 18 or later.
 
 The in-process suite passed unchanged — it does not drive either surface over
 HTTP, so it could not have caught what was wrong. The first run of
-`tests/vendored/sts_admin_api_operations.js` failed with
+`tests/protocol/sts_admin_api_operations.js` failed with
 
 ```
 POST /applications/__no_such_action__ should be refused 400; it answered 500
@@ -268,7 +268,7 @@ that meant one thing in the page's scope and another in the layer's:
   which reaches a caller as a string.
 
 **None of these was found by reading and none by `npm test`.**
-`tests/vendored/sts_admin_api_operations.js` and `sts_admin_console.js` found
+`tests/protocol/sts_admin_api_operations.js` and `sts_admin_console.js` found
 every one. That is the whole argument for running the owned jobs against a
 change of this shape — see `tests/CLAUDE.md`.
 

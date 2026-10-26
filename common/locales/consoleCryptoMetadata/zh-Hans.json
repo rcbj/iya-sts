@@ -225,7 +225,7 @@
   "defensible": "之所以说得过去，是因为这些密钥的性质：启动时生成，只保存在内存中，进程退出即失效，而且什么也不保护 — 本信任领域处于开发模式，不检查任何密码，也不验证任何不是它自己签发的令牌。",
   "notPersistedProduct": "这些密钥在启动时生成，只保存在内存中，进程退出即失效 — 本信任领域的存储不保留其签名密钥。但本信任领域处于产品模式，会验证每个密码和每个令牌，因此在那之前，在这里交出的密钥所签署的内容会被依赖方信任：请把它当作它本来就是的现用签名密钥来对待。",
   "needsWrite": "它需要 <strong>Admin Write</strong>，这比此控制台上任何其他读取操作的要求都高，因为在这里，读取就是拿走。",
-  "exporter": "<strong>导出器是调试器自己的，以内置方式引入。</strong><code>common/vendored/key_material.js</code> 以带密码的方式处理四种格式 — PEM、DER、JWK 和 PKCS#12 — 也正是调试器的 PKI 页面一直在使用的代码。在它旁边再放一个导出器，只会是更差的副本。",
+  "exporter": "<strong>导出器是调试器自己的，以内置方式引入。</strong><code>common/crypto_impl/key_material.js</code> 以带密码的方式处理四种格式 — PEM、DER、JWK 和 PKCS#12 — 也正是调试器的 PKI 页面一直在使用的代码。在它旁边再放一个导出器，只会是更差的副本。",
   "theKeyPairs": "密钥对",
   "thFormats": "格式",
   "notMadeYet": "尚未生成",

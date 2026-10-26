@@ -9,7 +9,7 @@
 // ASKING FOR MORE THAN EITHER SPECIFICATION REQUIRES (#34, 2026-09-15).
 //
 // `oauth-oidc/sender_constraints.js` argues the design; this is what holds it.
-// The claim worth testing is not "DPoP works" — `tests/vendored/sts_dpop.js`
+// The claim worth testing is not "DPoP works" — `tests/protocol/sts_dpop.js`
 // does that — but the five settings' own behaviour, and in particular the
 // three things a reader of the code would have to take on trust:
 //
@@ -250,8 +250,9 @@ function checkTheExemption(t) {
             'parties (' + clientId + ')', hosted.join(', '));
   });
   t.equal(sc.MTLS_EXEMPT_CLIENTS.slice().sort().join(','),
-          'sts-admin-console,sts-user-portal',
-          '2b. and the list is the console and the portal, nothing else');
+          'sts-admin-console,sts-report,sts-user-portal',
+          '2b. and the list is the console, the reports application and ' +
+          'the portal, nothing else');
   t.equal(sc.mtlsExemptClient('sts-debugger-ui'), false,
           '2c. THE DEBUGGER IS NOT EXEMPT — it is an ordinary client of this ' +
           'authorization server, configured to meet whatever the realm it ' +
@@ -264,9 +265,10 @@ function checkTheExemption(t) {
   // THE ADMIN CONSOLE AS A PUBLIC CLIENT (#446), AND THE PORTAL (#568):
   // DPoP-bound by a rule about those two clients, with every setting off.
   t.equal(sc.DPOP_BOUND_PUBLIC_CLIENTS.join(','),
-          'sts-admin-console,sts-user-portal',
+          'sts-admin-console,sts-user-portal,sts-report',
           '2e-i. the clients DPoP-bound as public clients are the admin ' +
-          'console and the user portal, nothing else');
+          'console, the user portal and the reports application, nothing ' +
+          'else');
   t.check(hosted.indexOf(sc.DPOP_BOUND_PUBLIC_CLIENTS[0]) >= 0,
           '2e-ii. and it is one of this service\'s own surfaces');
   t.equal(sc.dpopBoundPublicClient('sts-admin-console', 'none'), true,

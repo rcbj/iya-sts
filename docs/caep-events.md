@@ -214,6 +214,17 @@ presents its credential again (*Sessions that are not a browser's*, below):
 All of them go through `authn.notePresented()`, which is protocol-independent: the
 event names the **session**, and `via` records which door it came back through.
 
+**Each one is also an audit row, `session.presented`**, written where the event
+is sent and nowhere else, so the two are always the same count. The row names
+the person, the protocol and — where the door has one — the application the
+session was presented to: the `client_id`, the service provider's entityID, the
+SAML 1.1 relying party, the `wtrealm`, or the GNAP client. Its method is
+*existing session*. It is what puts single sign-on on the console's
+**Authentication attempts** tabs, for the application and for the person; an
+OpenID4VCI offer names no application, so its row is on the person's tab only.
+The SCIM and SPIRE re-presentations below are not browser sign-ins and write no
+such row.
+
 **The first presentation of a brand-new session is swallowed.** Every sign-in
 here ends with the browser returning to the endpoint that sent it away, which is
 technically a presentation — so without this rule the simplest possible flow
@@ -224,6 +235,16 @@ presentation, so it is exact rather than a time window, and it is spent **across
 protocols**: a sign-in at `/saml2/sso` followed by an OIDC authorization request
 reports exactly one presentation between them — the OIDC one, named
 `OAuth 2.0 / OIDC`.
+
+**The trip back from a consent screen is not a presentation of its own**
+(2026-10-26). An authorization request that needs consent reaches
+`/oauth2/authorize` twice, before the consent screen and after it. Until then
+the second arrival was reported as well: after a first sign-in it read as
+single sign-on, and a real single sign-on was reported twice. The
+authorization endpoint now holds the next presentation as it sends a request
+to the consent screen, so a sign-in reports none and a single sign-on reports
+one. A person who refuses consent leaves it held, and their next presentation
+of that session is not reported.
 
 Per-protocol edges:
 

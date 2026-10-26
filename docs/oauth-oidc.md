@@ -9,8 +9,9 @@ iya-sts is a full **OAuth 2.0 authorization server**
 provider** ([OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0.html)),
 with the extensions around them: discovery, PKCE, dynamic registration, token
 exchange, pushed and JWT-secured authorization requests, rich authorization
-requests, introspection, revocation, JWT access tokens and both OpenID Connect
-logout notifications. Every trust realm is its own authorization server, with
+requests, introspection, revocation, JWT access tokens (opaque handles are
+off by default) and both OpenID Connect logout notifications. Every trust
+realm is its own authorization server, with
 its own issuer, keys, clients, codes and tokens, and one realm (or one process)
 can publish several named authorization servers side by side.
 
@@ -215,7 +216,7 @@ every grant but the token exchange (whose targets are RFC 8693's, below). A
 registered target is one of this service's own resource servers — the
 default resource indicator `<base>/resource` (or a named authorization
 server's), which UserInfo, SCIM, Shared Signals and OpenID4VCI accept;
-`<base>/admin-api`; `<base>/account-api` — or an
+`<base>/admin-api`; `<base>/account-api`; `<base>/report-api` — or an
 application registered through the console, `/admin-api`,
 `POST /oauth2/register`, an LDAP add or an OpenID Federation, named by its
 audience, permission base URI, `client_id` or identifier. The embedded
@@ -618,6 +619,16 @@ it is the client itself. Two kinds of scope are gated:
   `ADMIN_READ` and `ADMIN_WRITE` roles. A person holds those through the
   console's Admin Read and Admin Write groups, and an application by being a
   member of the role ([Management API](management-api.md)).
+* **`ssf.read` and `ssf.manage`**, always. They are authorized by the ordinary
+  native roles `SSF_READ` and `SSF_MANAGE`. A person is issued one only while
+  they belong to that role's group (`ssf-read` or `ssf-manage`, unless an
+  administrator changes the group) and the application they are signing in to
+  is a member of the role. An application's own token (`client_credentials`)
+  is issued one only while the application is a member. A direct user member
+  and a client that confers the role do not stand in for the group.
+  `SSF_MANAGE` does not authorize `ssf.read`. Declaring the scope, including a
+  write declaration covering a read request, is still required and is a
+  separate gate.
 * **An application permission its resource opts in.** List the permission's
   name in `oauthRoleGatedPermission` on the resource application. Then name the
   full permission (base URI + name) on a role, with the `add-permission` action
@@ -1193,6 +1204,34 @@ derived from the same table, so what is advertised is what is accepted.
   `kid`s whatever it says, so a verifier follows the `kid` and a cached JWKS
   never changes shape.
 
+#### Post-quantum signing, switched off
+
+**`keys.postQuantumSigning`** (Key material, per realm, **on by default**)
+turns the eleven post-quantum algorithms off in one realm, for a client whose
+JOSE library rejects a JWK Set containing an `AKP` key or a metadata list
+naming an algorithm it does not know. With it off, the realm is a classical
+JOSE issuer and verifier:
+
+* `/oauth2/jwks` carries no post-quantum signing key — the per-algorithm keys,
+  their standby and retired generations, pinned keys and a signer group's bare
+  ML-DSA key all leave together. The ML-KEM decryption keys
+  (`keys.encryptionKemAlgs`, `use: "enc"`) stay.
+* No algorithm list of the OpenID Connect Discovery, RFC 8414, OpenID
+  Federation, OpenID4VCI or OpenID4VP documents names one, and nor does the
+  DID document's key list.
+* A JWS signed with one is refused wherever the realm verifies one: request
+  objects, client assertions, DPoP proofs, key proofs, presentations,
+  federation statements.
+* A client cannot register one, and a client that registered one while the
+  setting was on is refused the response it would need signed, rather than
+  sent a signature made with a key the realm no longer publishes.
+
+Passkeys (COSE), XML signatures, TLS and certificates are not affected; a
+`hybrid-groups` certificate still carries its ML-DSA alternative key in
+`x5c`. The OpenID conformance jobs run every plan twice, once in a realm with
+the setting on and once with it off, so the second run is the evidence of a
+clean result with no post-quantum exemption.
+
 ### Custom claims — `/admin/claims`
 
 **Protocols → OAuth2 / OIDC → Custom claims** says what to add to every access
@@ -1259,8 +1298,8 @@ Rotation with replay detection belongs to [OAuth security](oauth-security.md).
 
 ### JWT access tokens (RFC 9068)
 
-Every access token is a [RFC 9068](https://www.rfc-editor.org/rfc/rfc9068) JWT
-access token, **in every mode**: header `typ: at+jwt`, the seven required claims,
+The default access token is a [RFC 9068](https://www.rfc-editor.org/rfc/rfc9068)
+JWT, **in every mode**: header `typ: at+jwt`, the seven required claims,
 `username` for a person, and `auth_time`, `amr` and `acr` where an
 authentication is behind the grant. The `profile`, `email`, `address` and
 `phone` claims — `preferred_username` among them — are UserInfo's (OIDC Core
@@ -1294,6 +1333,17 @@ for (`PS256`, `ES256`, `EdDSA` and the rest of the RSA and elliptic-curve
 table), and a named authorization server can set its own
 `access_token_signing_alg`. Under FAPI 1.0 Advanced the default is **PS256**,
 and anything other than PS256 or ES256 is replaced by it.
+
+`oauth2.accessTokenFormat=opaque` switches the access token only. The token
+endpoint returns a 256-bit handle, this realm keeps the claims, and a resource
+server resolves the handle through introspection or by presenting it to a
+resource server here. Refresh tokens stay nested JWTs. ID tokens stay JWTs.
+An outstanding JWT keeps verifying if the setting changes, and an outstanding
+handle keeps resolving until it expires. A handle has no JOSE header, so a
+resource server here does not apply the `typ` check to it; the issuer and the
+audience still have to match. `oauth2.maxOpaqueAccessTokens`
+(100000 per realm) is how many handles are remembered; a further mint is
+refused when that store is full, rather than forgetting a live token.
 
 ### Token exchange (RFC 8693)
 
@@ -2093,6 +2143,8 @@ on [OAuth security](oauth-security.md#configuration).
 | `oauth2.maxSignedMetadataEntries` | `STS_OAUTH2_MAX_SIGNED_METADATA_ENTRIES` | `64` | yes | How many distinct signed metadata documents are cached (the key includes the Host the request arrived on). |
 | `oauth2.signedMetadataCertificateHeader` | `STS_OAUTH2_SIGNED_METADATA_CERTIFICATE_HEADER` | `x5u` | yes | Whether `signed_metadata` names its signing certificate chain: `x5u`, `x5c`, `both` or `none`. |
 | `oauth2.accessTokenSigningAlg` | `STS_OAUTH2_ACCESS_TOKEN_SIGNING_ALG` | `default` | yes | The JWS algorithm of access and refresh tokens. `default` is RS256, or PS256 under FAPI 1.0 Advanced. |
+| `oauth2.accessTokenFormat` | `STS_OAUTH2_ACCESS_TOKEN_FORMAT` | `jwt` | yes | `jwt` (the default) or `opaque`. Opaque returns a 256-bit handle and keeps the claims in this realm. Refresh tokens and ID tokens stay JWTs. |
+| `oauth2.maxOpaqueAccessTokens` | `STS_OAUTH2_MAX_OPAQUE_ACCESS_TOKENS` | `100000` | yes | How many opaque access tokens this realm remembers. A full store refuses the next mint rather than evicting a live token. |
 | `oauth2.jarmResponseLifetimeS` | `STS_OAUTH2_JARM_RESPONSE_LIFETIME_S` | `600` | yes | The `exp` of a JARM response, in seconds after it is signed (at most 600). |
 | `oauth2.eddsaCurve` | `STS_OAUTH2_EDDSA_CURVE` | `Ed25519` | yes | Which Edwards curve an `EdDSA` signature uses; both keys are published in the JWKS under different kids. |
 | `oauth2.basicAuthRealm` | `STS_OAUTH2_BASIC_AUTH_REALM` | `sts` | yes | The `realm` in the `WWW-Authenticate: Basic` challenge the token endpoint sends on a failed `client_secret_basic`. |

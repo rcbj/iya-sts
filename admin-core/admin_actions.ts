@@ -131,7 +131,7 @@
 // thirty comment-interleaved lines. The symptom was a 500 with
 // `numberWord is not defined` on exactly one refusal path — which is the kind
 // of thing only a test that drives the surface can find, and
-// tests/vendored/sts_admin_api_operations.js did, on the first run after.
+// tests/protocol/sts_admin_api_operations.js did, on the first run after.
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 // A policy save's or reset's message is filled from `policy_kinds.ts`'s
@@ -293,7 +293,7 @@ const FORM_FURNITURE = {
 
 // BUILT FROM THE SWITCH BELOW RATHER THAN TYPED, for the reason
 // APPLICATION_ACTIONS gives at its own site: this repository's own
-// tests/vendored/admin_api.js READS the refusal sentence to check that every
+// tests/protocol/admin_api.js READS the refusal sentence to check that every
 // console action has an /admin-api operation, so a list that is short by one is
 // a list that turns the parity check off for that action.
 /**
@@ -354,7 +354,7 @@ const USER_FIELD_PREFIX = 'field.';
 // ---------------------------------------------------------------------------
 // The actions this resource accepts, built from the switch below rather than
 // typed — the same arrangement MFA_ACTIONS had on the page this absorbed, and
-// for the same reason: `tests/vendored/sts_admin_api_operations.js` reads the
+// for the same reason: `tests/protocol/sts_admin_api_operations.js` reads the
 // refusal sentence to discover what to check for, so a list that is short by
 // one turns the parity check off for that action.
 /**
@@ -408,7 +408,13 @@ const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
                        'set-service-account', 'rotate-password',
                        'add-service-account-owner',
                        'remove-service-account-owner',
-                       'set-service-account-destination'];
+                       'set-service-account-destination',
+                       // A classical passkey upgraded to ML-DSA (#939).
+                       'begin-passkey-upgrade', 'prove-passkey-upgrade',
+                       'finish-passkey-upgrade', 'cancel-passkey-upgrade',
+                       // An administrator enrols a passkey (#945).
+                       'begin-passkey-enrolment',
+                       'finish-passkey-enrolment'];
 
 // ---------------------------------------------------------------------------
 // WHAT AN ADMINISTRATOR DOES TO SOMEBODY'S CREDENTIALS FROM THEIR PAGE
@@ -423,9 +429,12 @@ const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
 //                          everything, so the link is their way back.
 //   disable-primary-keys   every PRIMARY security key off, so passkeys no
 //                          longer sign them in; refused where that leaves no
-//                          way in.
+//                          way in. The sessions each removed key signed in
+//                          end (#963); every other session stays.
 //   disable-mfa            every second factor off: authenticator app, `mfa`
-//                          keys, recovery codes.
+//                          keys, recovery codes. The sessions each removed
+//                          factor signed in end (#963); a session only a
+//                          password signed in stays.
 //   require-mfa            a second factor required of them at the sign-in
 //   stop-requiring-mfa     screen, and the requirement taken away.
 //
@@ -654,9 +663,9 @@ const SAML11_RP_KIND = saml11.RP_KIND;
 // The two acts, through the one switch that has them — **BEHIND A GUARD OF ITS
 // OWN, and that guard is not ceremony.**
 //
-// `tests/vendored/sts_admin_api_operations.js` compares an action resource's
+// `tests/protocol/sts_admin_api_operations.js` compares an action resource's
 // REFUSAL SENTENCE against the operations the OpenAPI document declares for it,
-// in both directions, because `tests/vendored/admin_api.js`'s parity check
+// in both directions, because `tests/protocol/admin_api.js`'s parity check
 // reads that sentence to discover what to look for. A bare delegation to
 // `usersAction()` therefore answered `/admin-api/mfa/no-such-action` by naming
 // all five actions the USERS resource had then — so this resource claimed to
@@ -674,7 +683,7 @@ const MFA_ACTIONS = ['clear-totp', 'clear-key', 'clear-email-factor'];
 
 // BUILT FROM THE SWITCH BELOW RATHER THAN TYPED, for the reason
 // PERMISSION_ACTIONS gives at its own site: this repository's own
-// tests/vendored/admin_api.js READS the refusal sentence to check that every
+// tests/protocol/admin_api.js READS the refusal sentence to check that every
 // console action has an /admin-api operation, so a list that is short by one is
 // a list that turns the parity check off for that action.
 /**
@@ -685,7 +694,7 @@ const CONSENT_ACTIONS = ['grant-global-consent', 'revoke-global-consent',
                          'forget-user-consent'];
 
 // BUILT FROM THE SWITCH BELOW RATHER THAN TYPED, for CONSENT_ACTIONS' reason:
-// this repository's own tests/vendored/admin_api.js READS the refusal sentence
+// this repository's own tests/protocol/admin_api.js READS the refusal sentence
 // to check that every console action has an /admin-api operation, so a list
 // that is short by one turns the parity check off for that action.
 /**
@@ -2134,7 +2143,7 @@ class AdminActions {
   // what `respondToAction()` draws on a console page. **EVERY OTHER ACTION
   // RESOURCE ON `/admin-api` ANSWERS `{ ok, errors: [...] }`** — ssf,
   // permissions, realms, spiffe — and
-  // `tests/vendored/sts_admin_api_operations.js` reads that array on every one
+  // `tests/protocol/sts_admin_api_operations.js` reads that array on every one
   // of them: it walks every documented POST resource, sends an unknown action,
   // and requires the refusal SENTENCE to name the actions, because
   // `admin_api.js`'s parity check reads that same sentence to find out what
@@ -2299,6 +2308,65 @@ class AdminActions {
     return answer;
   }
 
+  // THE END OF AN ADMINISTRATOR'S PASSKEY ENROLMENT (#945): the audit row
+  // either way, and on success what the person is told — a CAEP
+  // credential-change (`create`, initiated by `admin`), which is also what
+  // queues the security notice mail (`mail_uses.ts`'s `fromAccountSignal()`,
+  // the path an administrator's password reset takes) — so a person who
+  // did not expect a key on their account hears of it at once.
+  private adminKeyEnrolled(who, done, ctx) {
+    const { log, credentials, auditLog, accountSignals } = this.deps;
+    log.debug("Entering AdminActions.adminKeyEnrolled().");
+    if (!done || !done.ok) {
+      auditLog.record({
+        category: 'authentication', action: 'admin.passkey.enrolment-refused',
+        errorCode: errorCodes.codeOf(done) || 'STS-AUTHN-0447',
+        actor: ctx.actor, target: who, outcome: 'failure',
+        summary: 'a passkey enrolment for ' + who + ' was not completed',
+        detail: { username: who, via: ctx.via, stage: 'finish',
+                  reason: (done && done.reason) || '',
+                  errors: (done && done.errors) || [] } });
+      log.debug("Leaving AdminActions.adminKeyEnrolled(). Refused.");
+      return this.refusedBy('STS-AUTHN-0447', done || { ok: false,
+        errors: ['The passkey could not be registered. Start again.'] });
+    }
+    const enrolled = credentials.keysOf(who).filter(function (one) {
+      return one.credentialId === String(done.credentialId || '');
+    })[0] || null;
+    accountSignals.credentialChanged({ username: who,
+      credentialType: accountSignals.keyCredentialType(enrolled),
+      fido2Aaguid: String((enrolled && enrolled.aaguid) || ''),
+      friendlyName: String((enrolled && enrolled.label) || ''),
+      changeType: 'create', initiatingEntity: 'admin', via: ctx.via,
+      reasonAdmin: 'An administrator (' + (ctx.actor || 'unnamed') +
+                   ') enrolled a ' + done.role + ' passkey for ' + who + '.',
+      reasonUser: 'An administrator enrolled a passkey on your account.' });
+    const algorithm = credentials.keyAlgorithm(enrolled || {});
+    auditLog.record({
+      category: 'authentication', action: 'admin.passkey.enrolled',
+      actor: ctx.actor, target: who, outcome: 'success',
+      summary: 'enrolled a "' + done.role + '" passkey for ' + who,
+      detail: { username: who, via: ctx.via, role: done.role,
+                lane: credentials.keyLane(enrolled || {}),
+                algorithm: algorithm.text || algorithm.name || '',
+                credentialId: String(done.credentialId || ''),
+                aaguid: String((enrolled && enrolled.aaguid) || ''),
+                enrolledBy: (done.enrolledBy || {}).username || '',
+                held: done.held } });
+    log.info('admin: ' + (ctx.actor || 'an unnamed caller') + ' (' +
+             ctx.via + ') enrolled a "' + done.role + '" passkey for "' +
+             who + '", who now holds ' + done.held + '.');
+    log.debug("Leaving AdminActions.adminKeyEnrolled(). Enrolled.");
+    return { ok: true, username: who, role: done.role, lane: done.lane,
+             credentialId: String(done.credentialId || ''),
+             held: done.held, enrolledBy: done.enrolledBy || null,
+             message: 'A ' + (done.role === 'primary' ? 'passwordless'
+                                                      : 'second-factor') +
+                      ' passkey is enrolled for ' + who + ', marked as ' +
+                      'enrolled by an administrator. They have been told; ' +
+                      'hand the authenticator over.' };
+  }
+
   // A PERSON WHOSE SESSIONS AN ADMINISTRATOR ENDED IS TOLD BY MAIL (#63): a
   // security notice they cannot decline. Only here, at the administrator's
   // two doors — a person's own sign-out tells nobody, and a reset or a
@@ -2342,13 +2410,17 @@ class AdminActions {
 
   // ---------------------------------------------------------------------------
   // THE SESSIONS A REMOVED CREDENTIAL SIGNED IN (#722): ended, through the
-  // logout model's `endFactorSessions()`, by each of the four removals below
-  // — a security key, the authenticator app, the recovery codes and the
-  // emailed second factor. Only those sessions: unlike a password reset
-  // (`signOutEverywhere()`), a removal leaves every session the credential
-  // did not authenticate alone. Answered as a count for the result and the
-  // audit row; a process with no logout model ends nothing and says so
-  // (STS-ADMIN-0870), and nothing here undoes the removal.
+  // logout model's `endFactorSessions()`, by each of the four per-credential
+  // removals — a security key, the authenticator app, the recovery codes and
+  // the emailed second factor — and by the two bulk disables (#963).
+  // `disable-primary-keys` asks once per primary key it removed;
+  // `disable-mfa` asks once per mfa key it removed, and once for the
+  // authenticator app and once for the recovery codes when those went.
+  // Only the sessions that credential authenticated: unlike a password
+  // reset (`signOutEverywhere()`), a removal leaves every session the
+  // credential did not authenticate alone. Answered as a count for the
+  // result and the audit row; a process with no logout model ends nothing
+  // and says so (STS-ADMIN-0870), and nothing here undoes the removal.
   // ---------------------------------------------------------------------------
   private endFactorSessions(who, factor, ctx, what) {
     const { log, errorCodes } = this.deps;
@@ -2386,8 +2458,33 @@ class AdminActions {
     return words;
   }
 
+  // One act that removed several credentials (#963). Each factor is one
+  // call to `endFactorSessions()` and the counts are added, so the result
+  // and the audit row carry one number the way one `clear-key` does. An
+  // empty list is still one call, with no factor: that call matches
+  // nothing and adds nothing, and it is not a sign-out of every session.
+  // A process with no logout model answers 0 (STS-ADMIN-0870); the
+  // removal has already been written and is not undone.
+  private sumFactorSessions(who, factors, ctx, what) {
+    const { log } = this.deps;
+    log.debug("Entering AdminActions.sumFactorSessions().");
+    const list = (factors && factors.length) ? factors : [null];
+    let sessionsEnded = 0;
+    let failed = 0;
+    const self = this;
+    list.forEach(function (factor) {
+      const ended = self.endFactorSessions(who, factor, ctx, what);
+      sessionsEnded += Number(ended && ended.sessionsEnded) || 0;
+      failed += Number(ended && ended.failed) || 0;
+    });
+    log.debug("Leaving AdminActions.sumFactorSessions(). " +
+              sessionsEnded + " ended, " + failed + " failed.");
+    return { sessionsEnded: sessionsEnded, failed: failed };
+  }
+
   private credentialAdminAction(action, body, ctx) {
-    const { log, credentials, auditLog, accountSignals } = this.deps;
+    const { log, credentials, auditLog, accountSignals, errorCodes } =
+      this.deps;
     log.debug("Entering AdminActions.credentialAdminAction(). action=" +
               action);
     if (CREDENTIAL_ADMIN_ACTIONS.indexOf(action) < 0) {
@@ -2418,15 +2515,48 @@ class AdminActions {
                   "password was refused.");
         return this.refusedBy('STS-ADMIN-0780', set);
       }
+      // THE RECOVERY BEFORE THE RESET IS FINISHED (#962). A false
+      // `noteRecovery()` is success when no hold is required — no passkey,
+      // or the selected `recoveryAssurance` is `any` — and
+      // `recoveryHoldRequired()` is that test, not a second copy of it.
+      // When a hold is required and the write failed, the password just
+      // stored would sign in with nothing pending. It is taken off, the
+      // outstanding link is left, nobody is signed out, and the generated
+      // password is not returned: the reset did not happen.
+      const hold = credentials.recoveryHoldRequired(who);
+      const noted = credentials.noteRecovery(who, 'admin-password');
+      if (hold && !noted) {
+        const removed = credentials.removePassword(who);
+        const removal = removed.ok ? ''
+          : ' Removing the password that was just stored also failed' +
+            ((removed.errors && removed.errors.length)
+              ? ': ' + removed.errors.join(' ') : '') + '.';
+        // The write itself is already logged by setRecoveryPending
+        // (STS-AUTHN-0382). This line is the reset that did not finish,
+        // and the removal when that also failed.
+        log.error(errorCodes.tag('STS-AUTHN-0382') + 'admin: the password ' +
+                  'of "' + who + '" was not kept and the reset is not ' +
+                  'complete.' + removal);
+        auditLog.record({
+          category: 'admin', action: 'admin.password.reset',
+          errorCode: 'STS-AUTHN-0382', actor: ctx.actor, target: who,
+          outcome: 'failure',
+          summary: 'an administrator\'s password reset of ' + who +
+                   ' was not completed: the recovery could not be recorded',
+          detail: { username: who, via: ctx.via,
+                    removed: !!(removed.ok && removed.removed) }
+        });
+        log.debug("Leaving AdminActions.credentialAdminAction(). The " +
+                  "recovery was not recorded.");
+        return this.refused('STS-AUTHN-0382', { ok: false, errors: [
+          'The password was not kept and the reset is not complete.'] });
+      }
       const forced = credentials.setPasswordResetRequired(who, true);
       // A LINK OUTSTANDING IS SPENT BY THIS: the administrator has just decided
       // what the password is, and a link left behind would let whoever holds it
-      // replace that decision.
+      // replace that decision. Only once the recovery, where one is required,
+      // has been recorded (#962).
       credentials.consumePasswordReset(who);
-      // AN OPERATOR'S RECOVERY (#724): for a person holding a passkey, the
-      // sign-in this password leads to is held by the passkey policy's
-      // recoveryAssurance until a passkey signs them in.
-      credentials.noteRecovery(who, 'admin-password');
       const signedOut = this.signOutEverywhere(who, ctx, 'a password reset');
       audited('admin.password.reset',
               'an administrator reset the password of ' + who,
@@ -2565,18 +2695,20 @@ class AdminActions {
 
     if (action === 'disable-primary-keys') {
       const result = credentials.removePrimaryKeys(who);
-      audited('admin.mfa.primary-keys.removed',
-              (result.ok ? 'removed' : 'could not remove') + ' the primary ' +
-              'security keys of ' + who,
-              { removed: (result.removed || []).length,
-                errors: result.ok ? undefined : (result.errors || []) },
-              result.ok ? 'success' : 'failure');
+      // A refusal leaves the keys where they are, so no session ends.
+      // `removed` is absent on that answer (`removePrimaryKeys()`).
       if (!result.ok) {
+        audited('admin.mfa.primary-keys.removed',
+                'could not remove the primary security keys of ' + who,
+                { removed: (result.removed || []).length,
+                  errors: result.errors || [] },
+                'failure');
         log.debug("Leaving AdminActions.credentialAdminAction(). Keys " +
                   "refused.");
         return this.refusedBy('STS-ADMIN-0783', result);
       }
-      result.removed.forEach(function (one) {
+      const removed = result.removed || [];
+      removed.forEach(function (one) {
         accountSignals.credentialChanged({ username: who,
           credentialType: accountSignals.keyCredentialType(one),
           fido2Aaguid: String((one && one.aaguid) || ''),
@@ -2586,29 +2718,42 @@ class AdminActions {
           reasonUser: 'A security key that signed you in without a password ' +
                       'was removed from your account.' });
       });
+      // THE SESSIONS EACH REMOVED PRIMARY KEY SIGNED IN END (#963), and no
+      // other: a password session, and a session an mfa key signed in,
+      // stay. An empty list is still asked — `sumFactorSessions()` calls
+      // once with no factor, which matches nothing — and a missing
+      // sign-out module answers 0 (STS-ADMIN-0870) without putting the
+      // keys back. The CAEP deletes above are unchanged.
+      const ended = this.sumFactorSessions(who, removed.map(function (one) {
+        return { kind: 'webauthn',
+                 credentialId: String((one && one.credentialId) || '') };
+      }), ctx, 'a security key');
+      audited('admin.mfa.primary-keys.removed',
+              'removed the primary security keys of ' + who,
+              { removed: removed.length,
+                sessionsEnded: ended.sessionsEnded,
+                failed: ended.failed },
+              'success');
       log.debug("Leaving AdminActions.credentialAdminAction(). " +
                 "disable-primary-keys.");
-      return { ok: true, username: who, removed: result.removed,
-               message: result.removed.length + ' primary security key(s) of ' +
+      return { ok: true, username: who, removed: removed,
+               sessionsEnded: ended.sessionsEnded,
+               failed: ended.failed,
+               message: removed.length + ' primary security key(s) of ' +
                         who + ' removed. They sign in with their password ' +
                         'now; a key they hold as a second factor is ' +
-                        'untouched.' };
+                        'untouched.' + this.sessionsEndedSentence(ended) };
     }
 
     if (action === 'disable-mfa') {
       const result = credentials.removeSecondFactors(who);
       const removed = result.removed || { totp: false, keys: [],
                                           backupCodes: false };
-      audited('admin.mfa.disabled',
-              (result.ok ? 'disabled' : 'could not disable') + ' every ' +
-              'second factor of ' + who,
-              { totp: removed.totp, keys: removed.keys.length,
-                backupCodes: removed.backupCodes,
-                errors: result.ok ? undefined : (result.errors || []) },
-              result.ok ? 'success' : 'failure');
       // SAID FOR WHATEVER WENT, even on a write that failed part way: those
       // credentials are gone, and a receiver not told would go on trusting
-      // them.
+      // them. Sessions wait for a removal that finished: a partial write
+      // is a refusal, and a factor that is still there must not lose the
+      // sessions it signed in.
       if (removed.totp) {
         accountSignals.credentialChanged({ username: who,
           credentialType: accountSignals.TOTP_CREDENTIAL_TYPE,
@@ -2618,7 +2763,7 @@ class AdminActions {
           reasonUser: 'Your authenticator app was removed from your ' +
                       'account.' });
       }
-      removed.keys.forEach(function (one) {
+      (removed.keys || []).forEach(function (one) {
         accountSignals.credentialChanged({ username: who,
           credentialType: accountSignals.keyCredentialType(one),
           fido2Aaguid: String((one && one.aaguid) || ''),
@@ -2633,17 +2778,55 @@ class AdminActions {
                        who + ', recovery codes included.' });
       }
       if (!result.ok) {
+        audited('admin.mfa.disabled',
+                'could not disable every second factor of ' + who,
+                { totp: removed.totp, keys: (removed.keys || []).length,
+                  backupCodes: removed.backupCodes,
+                  errors: result.errors || [] },
+                'failure');
         log.debug("Leaving AdminActions.credentialAdminAction(). Second " +
                   "factors refused.");
         return this.refusedBy('STS-ADMIN-0784', result);
       }
+      // THE SESSIONS EACH REMOVED FACTOR SIGNED IN END (#963). A factor
+      // that was not held is not asked, so its sessions — there are none
+      // of its own — stay. The mfa-key list is asked even when empty: that
+      // call names no credential and adds nothing. The counts are one
+      // number, as one `clear-totp` reports one.
+      const keysEnded = this.sumFactorSessions(who,
+        (removed.keys || []).map(function (one) {
+          return { kind: 'webauthn',
+                   credentialId: String((one && one.credentialId) || '') };
+        }), ctx, 'a security key');
+      const totpEnded = removed.totp
+        ? this.endFactorSessions(who, { kind: 'totp' }, ctx,
+                                 'the authenticator app')
+        : { sessionsEnded: 0, failed: 0 };
+      const codesEnded = removed.backupCodes
+        ? this.endFactorSessions(who, { kind: 'backup-code' }, ctx,
+                                 'the recovery codes')
+        : { sessionsEnded: 0, failed: 0 };
+      const ended = {
+        sessionsEnded: keysEnded.sessionsEnded + totpEnded.sessionsEnded +
+                       codesEnded.sessionsEnded,
+        failed: keysEnded.failed + totpEnded.failed + codesEnded.failed
+      };
+      audited('admin.mfa.disabled',
+              'disabled every second factor of ' + who,
+              { totp: removed.totp, keys: (removed.keys || []).length,
+                backupCodes: removed.backupCodes,
+                sessionsEnded: ended.sessionsEnded,
+                failed: ended.failed },
+              'success');
       const requirement = credentials.mfaRequirementFor(who);
       log.debug("Leaving AdminActions.credentialAdminAction(). disable-mfa.");
       return { ok: true, username: who, removed: removed,
                requirement: requirement,
+               sessionsEnded: ended.sessionsEnded,
+               failed: ended.failed,
                message: 'Every second factor of ' + who + ' was removed (' +
                         'authenticator app: ' + (removed.totp ? 'yes' : 'no') +
-                        ', security keys: ' + removed.keys.length +
+                        ', security keys: ' + (removed.keys || []).length +
                         ', recovery codes: ' +
                         (removed.backupCodes ? 'yes' : 'no') + '). ' +
                         (requirement.required
@@ -2652,7 +2835,8 @@ class AdminActions {
                               : 'by the realm') +
                             '), so their next sign-in asks them to enrol ' +
                             'a new one.'
-                          : 'A password alone signs them in now.') };
+                          : 'A password alone signs them in now.') +
+                        this.sessionsEndedSentence(ended) };
     }
 
     if (action === 'create-app-password') {
@@ -3316,9 +3500,149 @@ class AdminActions {
     // the door. `base` (2026-09-13) is the address the request arrived on,
     // realm prefix included, so a password reset link can be handed back WHOLE
     // — the one thing an administrator does with it is send it to somebody.
-    const ctx = { via: (context || {}).via || 'console',
-                  actor: (context || {}).actor || String(body.actor || ''),
-                  base: String((context || {}).base || '') };
+    //
+    // AN OWN `actor` IS THE ACTOR EVEN WHEN IT IS EMPTY (#966). The management
+    // API always passes the verified token's subject, and '' means nobody was
+    // authenticated. Falling through to `body.actor` on that empty subject is
+    // how a name the request nominated reached the row. A caller that OMITS
+    // the property — an in-process call that still puts the name in the
+    // body — keeps today's `body.actor` fallback. The federation-unlink
+    // test is the one caller that passes `actor: ''` on purpose; its body
+    // names nobody, so that row stays empty.
+    const given = context || {};
+    const actorNamed = Object.prototype.hasOwnProperty.call(given, 'actor');
+    const ctx = { via: given.via || 'console',
+                  actor: actorNamed ? String(given.actor || '')
+                                    : String(body.actor || ''),
+                  base: String(given.base || '') };
+
+    // AN ADMINISTRATOR UPGRADES A PERSON'S CLASSICAL PASSKEY (#939). The
+    // assertion and ML-DSA registration both run in the operator's browser;
+    // credentials.ts spends the proof before issuing the registration
+    // challenge and preserves the old key until that registration verifies.
+    if (['begin-passkey-upgrade', 'prove-passkey-upgrade',
+         'finish-passkey-upgrade', 'cancel-passkey-upgrade']
+          .indexOf(action) >= 0) {
+      const who = String(body.user || body.username || '').trim();
+      if (!who) {
+        return this.refused('STS-ADMIN-0518', { ok: false,
+          errors: ['Name the person whose passkey is being upgraded.'] });
+      }
+      const authn = require('../authn/authn');
+      const webauthnPolicy = require('../authn/webauthn_policy');
+      const passkeyPolicy = require('../common/passkey_policy');
+      const rpId = ctx.base ? authn.rpIdOf(ctx.base) : '';
+      const audit = function (name, outcome, detail) {
+        auditLog.record({ category: 'authentication', action: name,
+          actor: ctx.actor, target: who, outcome: outcome,
+          summary: 'administrator ' + (outcome === 'success' ?
+            'advanced' : 'could not advance') + ' a passkey upgrade for ' +
+            who, detail: Object.assign({ username: who, via: ctx.via },
+                                       detail || {}) });
+      };
+      if (action === 'cancel-passkey-upgrade') {
+        const pending = credentials.pendingKeyUpgradeFor(who);
+        if (!pending || (body.upgradeId &&
+            String(body.upgradeId) !== String(pending.id))) {
+          return this.refused('STS-AUTHN-0454', { ok: false,
+            errors: ['There is no matching passkey upgrade in progress.'] });
+        }
+        credentials.abandonKeyEnrolment(who);
+        audit('admin.passkey.upgrade-cancelled', 'success', {});
+        return { ok: true, message: 'The pending passkey upgrade was cancelled.' };
+      }
+      if (action === 'begin-passkey-upgrade') {
+        const rpRefusal = ctx.base ? authn.rpIdProblem(ctx.base) : '';
+        if (rpRefusal) {
+          return this.refused('STS-AUTHN-0446', { ok: false,
+            errors: [rpRefusal] });
+        }
+        const begun = passkeyPolicy.withSelection(who, '', function () {
+          return credentials.beginKeyUpgrade(who,
+            String(body.credentialId || ''));
+        });
+        if (!begun.ok) {
+          audit('admin.passkey.upgrade-refused', 'failure',
+            { stage: 'begin', errors: begun.errors || [] });
+          return this.refusedBy('STS-AUTHN-0450', begun);
+        }
+        audit('admin.passkey.upgrade-started', 'success', {
+          stage: 'begin', mode: begun.mode, lane: begun.lane,
+          previousAlgorithm: begun.previousAlgorithm });
+        return { ok: true, upgradeId: begun.upgradeId,
+          ceremony: { challenge: begun.challenge, rpId: rpId,
+            allow: begun.credentialId,
+            options: { userVerification:
+              webauthnPolicy.settings().userVerification } } };
+      }
+      let posted: any = null;
+      try {
+        posted = typeof body.credential === 'string'
+          ? JSON.parse(body.credential || 'null') : body.credential;
+      } catch (e) { posted = null; }
+      const upgradeId = String(body.upgradeId || body.upgrade_id || '');
+      if (action === 'prove-passkey-upgrade') {
+        const checked = passkeyPolicy.withSelection(who, '', function () {
+          return credentials.proveKeyUpgrade(who, upgradeId, posted, {
+            origin: authn.expectedOriginFor(ctx.base, posted || {}),
+            rpId: rpId });
+        });
+        const self = this;
+        return Promise.resolve(checked).then(function (proven) {
+          if (!proven.ok) {
+            audit('admin.passkey.upgrade-refused', 'failure',
+              { stage: 'proof', errors: proven.errors || [] });
+            return self.refusedBy('STS-AUTHN-0455', proven);
+          }
+          const options = passkeyPolicy.withSelection(who, '', function () {
+            const pending = credentials.pendingKeyUpgradeFor(who);
+            return webauthnPolicy.upgradeCreationOptions(rpId,
+              pending ? pending.kind : '');
+          });
+          const display = passkeyPolicy.withSelection(who, '', function () {
+            return passkeyPolicy.displayNameFor(who, who);
+          });
+          const user = credentials.laneUser(who, display, proven.lane);
+          audit('admin.passkey.upgrade-proved', 'success',
+            { stage: 'proof', lane: proven.lane });
+          return { ok: true, ceremony: { challenge: proven.challenge,
+            rpId: rpId, user: { id: proven.userHandle, name: user.name,
+                                displayName: user.displayName },
+            exclude: proven.exclude, options: options } };
+        });
+      }
+      const self = this;
+      const finishing = passkeyPolicy.withSelection(who, '', function () {
+        return credentials.confirmKeyUpgrade(who, upgradeId, posted, {
+          origin: authn.expectedOriginFor(ctx.base, posted || {}), rpId: rpId });
+      });
+      return Promise.resolve(finishing).then(function (done) {
+        if (!done.ok) {
+          audit('admin.passkey.upgrade-refused', 'failure',
+            { stage: 'registration', errors: done.errors || [] });
+          return self.refusedBy('STS-AUTHN-0458', done);
+        }
+        const enrolled = credentials.keysOf(who).filter(function (one) {
+          return String(one.credentialId) === String(done.credentialId);
+        })[0] || null;
+        accountSignals.credentialChanged({ username: who,
+          credentialType: accountSignals.keyCredentialType(enrolled),
+          fido2Aaguid: String((enrolled && enrolled.aaguid) || ''),
+          friendlyName: String((enrolled && enrolled.label) || ''),
+          changeType: done.mode === 'replace' ? 'update' : 'create',
+          initiatingEntity: 'admin', via: 'admin passkey upgrade',
+          reasonAdmin: ctx.actor + ' upgraded a classical passkey for ' + who,
+          reasonUser: 'An administrator upgraded one of your passkeys.' });
+        audit('admin.passkey.upgraded', 'success', { stage: 'registration',
+          mode: done.mode, lane: done.lane,
+          previousAlgorithm: done.previousAlgorithm,
+          algorithm: done.algorithm });
+        return { ok: true, message: 'The passkey was upgraded.',
+          credentialId: done.credentialId, mode: done.mode,
+          previousAlgorithm: done.previousAlgorithm,
+          algorithm: done.algorithm, lane: done.lane };
+      });
+    }
 
     // DISABLE OR ENABLE AN ACCOUNT (2026-09-17, #36 follow-up). One call into
     // `common/account_state.ts`, which writes the lock and — for a disable —
@@ -3501,12 +3825,17 @@ class AdminActions {
     // refusal lives, and an operator must not be able to do what the person
     // themselves is stopped from doing.
     //
-    // **THERE IS NO ENROL BESIDE THEM AND THERE CANNOT BE.** Enrolling an
-    // authenticator means being shown a shared secret, and an administrative
-    // door that handed one out would mint a working second factor for any
-    // account. A WebAuthn ceremony happens in the person's own browser against
-    // their own authenticator, and this console is not that browser. Both are
-    // `/portal`, or an activation link, which is itself a credential.
+    // **THERE IS NO ENROL OF AN AUTHENTICATOR APP BESIDE THEM AND THERE
+    // CANNOT BE.** Enrolling one means being shown a shared secret, and an
+    // administrative door that handed one out would mint a working second
+    // factor for any account. A PASSKEY is the one exception since #945,
+    // and it is not that door: the ceremony runs in the administrator's own
+    // browser against an authenticator THEY hold and hand over, nothing
+    // secret is shown, the passkey policy must allow it (`adminEnrolment`,
+    // off by default), the key records who enrolled it and the person is
+    // told — `begin-passkey-enrolment` below. The person's own authenticator
+    // is still enrolled where the person is: `/portal`, or an activation
+    // link, which is itself a credential.
     // ---------------------------------------------------------------------
     if (action === 'clear-totp') {
       const who = String(body.user || body.username || '').trim();
@@ -3843,6 +4172,195 @@ class AdminActions {
         : this.refusedBy('STS-ADMIN-0850', result);
     }
 
+    // ---------------------------------------------------------------------
+    // AN ADMINISTRATOR ENROLS A PASSKEY ON SOMEBODY'S BEHALF (#945, rule
+    // 3cv). Two acts, as the person's own enrolment is two steps: `begin`
+    // mints a challenge bound to this administrator, the person and the
+    // lane and answers the ceremony to run (`ceremony`); the console runs
+    // it in the ADMINISTRATOR'S browser — `navigator.credentials.create()`
+    // under the person's user handle, the realm's RP ID — and `finish`
+    // posts what the browser produced, verified exactly as the person's own
+    // registration is and written through the same writer, marked
+    // `enrolledBy`. rcbj's decision on the ticket: no import of a
+    // registration produced elsewhere, so there is no third act.
+    //
+    // The header above this block's siblings said there could be no enrol
+    // here, because "this console is not that browser". That was an
+    // argument about the PERSON'S authenticator, and it still holds: the
+    // administrator cannot touch it. What changed is the case: a key the
+    // organisation issues, which the administrator holds, registers in the
+    // administrator's browser and is handed over — and the person is told
+    // (CAEP and a security notice), the key says who enrolled it, and the
+    // passkey policy must allow it (`adminEnrolment`, off by default).
+    //
+    // THE ADMINISTRATOR IS THE TOKEN'S SUBJECT, never a body field: the API
+    // hands `admin` over from what its gate verified (`callerPersonOf()`),
+    // so an enrolment cannot be recorded against a name a caller chose.
+    // ---------------------------------------------------------------------
+    if (action === 'begin-passkey-enrolment') {
+      const who = String(body.user || body.username || '').trim();
+      if (!who) {
+        log.debug("Leaving AdminActions.usersAction(). No person named.");
+        return this.refused('STS-ADMIN-0518', { ok: false, errors: ['Name ' +
+          'the person the passkey is for, in `user`.'] });
+      }
+      const authn = require('../authn/authn');
+      const webauthnPolicy = require('../authn/webauthn_policy');
+      const passkeyPolicy = require('../common/passkey_policy');
+      // THE SAME ADDRESS RULE THE PERSON'S OWN CEREMONY APPLIES: an RP ID
+      // that does not fit the address the console is on is refused before
+      // anybody touches a key, rather than replaced.
+      const rpRefusal = ctx.base ? authn.rpIdProblem(ctx.base) : '';
+      if (rpRefusal) {
+        log.debug("Leaving AdminActions.usersAction(). The RP ID does not " +
+                  "fit.");
+        return this.refused('STS-AUTHN-0446', { ok: false,
+                                                errors: [rpRefusal] });
+      }
+      // THE SWITCH BEFORE THE MISSING ADMINISTRATOR (#945).
+      // beginAdminKeyEnrolment() names the token's subject first
+      // (STS-AUTHN-0445), so an open call while adminEnrolment is off
+      // would never say so. This door asks the switch first — the order
+      // the operation describes — and uses that method's own sentence.
+      // The constant is not on the credentials module export.
+      passkeyPolicy.select(who, '');
+      let begun;
+      if (!passkeyPolicy.adminEnrolmentAllowed()) {
+        begun = this.refused('STS-AUTHN-0440', { ok: false,
+          reason: 'admin-enrolment',
+          errors: ['This person\'s passkey policy does not let an ' +
+            'administrator enrol a passkey for them (adminEnrolment ' +
+            'is off). Turn it on under Directory → Policies → ' +
+            'Passkeys, or have them create one themselves on their ' +
+            'account page.'] });
+      } else {
+        begun = credentials.beginAdminKeyEnrolment(who, context &&
+          (context as any).admin, {
+          role: String(body.role || 'mfa'), kind: String(body.kind || ''),
+          lane: String(body.lane || '') });
+      }
+      if (!begun.ok) {
+        auditLog.record({
+          category: 'authentication', action: 'admin.passkey.enrolment-refused',
+          errorCode: errorCodes.codeOf(begun) || 'STS-AUTHN-0440',
+          actor: ctx.actor, target: who, outcome: 'failure',
+          summary: 'could not start enrolling a passkey for ' + who,
+          detail: { username: who, via: ctx.via, stage: 'begin',
+                    reason: begun.reason || '',
+                    errors: begun.errors || [] } });
+        log.debug("Leaving AdminActions.usersAction(). The begin was " +
+                  "refused.");
+        return this.refusedBy('STS-AUTHN-0440', begun);
+      }
+      const rpId = authn.rpIdOf(ctx.base);
+      // THE OPTIONS THE PERSON'S OWN CEREMONY IS ARMED WITH (the realm's
+      // attestation, user verification, resident key, hints, timeout), with
+      // THE ALGORITHMS THE PENDING RECORD CARRIES — the one call site
+      // `credentials.adminEnrolmentAlgorithms()` answered, and the list the
+      // finish is held to.
+      const options = webauthnPolicy.creationOptions(rpId, begun.kind,
+                                                     begun.lane, false);
+      options.algorithms = begun.algorithms.slice();
+      // THE NAME THE PROMPT SHOWS (#533): the person's, by the passkey
+      // policy's userDisplayName, the post-quantum lane's naming ML-DSA
+      // (#643) — the person's own prompt's name, on the administrator's
+      // screen.
+      const display = passkeyPolicy.withSelection(who, '', function () {
+        return passkeyPolicy.displayNameFor(who, who);
+      });
+      const user = credentials.laneUser(who, display, begun.lane);
+      auditLog.record({
+        category: 'authentication', action: 'admin.passkey.enrolment-started',
+        actor: ctx.actor, target: who, outcome: 'success',
+        summary: 'started enrolling a "' + begun.role + '" passkey for ' + who,
+        detail: { username: who, via: ctx.via, role: begun.role,
+                  lane: begun.lane, kind: begun.kind || 'any',
+                  excluded: begun.exclude.length } });
+      log.info('admin: ' + (ctx.actor || 'an unnamed caller') + ' (' +
+               ctx.via + ') started enrolling a "' + begun.role +
+               '" passkey for "' + who + '".');
+      log.debug("Leaving AdminActions.usersAction(). begin-passkey-" +
+                "enrolment minted a challenge.");
+      return { ok: true, username: who, enrolmentId: begun.enrolmentId,
+               role: begun.role, lane: begun.lane, kind: begun.kind,
+               expiresAt: begun.expiresAt,
+               // WHAT THE CONSOLE'S SCRIPT HANDS
+               // `navigator.credentials.create()`, every byte string as
+               // base64url: the challenge, the person's user handle and
+               // the keys excluded.
+               ceremony: { challenge: begun.challenge, rpId: rpId,
+                           user: { id: begun.userHandle, name: user.name,
+                                   displayName: user.displayName },
+                           exclude: begun.exclude.slice(),
+                           options: options },
+               message: 'A passkey enrolment for ' + who + ' is waiting ' +
+                        'for your authenticator until ' + begun.expiresAt +
+                        '.' };
+    }
+
+    if (action === 'finish-passkey-enrolment') {
+      const who = String(body.user || body.username || '').trim();
+      if (!who) {
+        log.debug("Leaving AdminActions.usersAction(). No person named.");
+        return this.refused('STS-ADMIN-0518', { ok: false, errors: ['Name ' +
+          'the person the passkey is for, in `user`.'] });
+      }
+      const admin = context && (context as any).admin;
+      let posted: any = null;
+      try {
+        posted = typeof body.credential === 'string'
+          ? JSON.parse(body.credential || 'null')
+          : (body.credential && typeof body.credential === 'object'
+            ? body.credential : null);
+      } catch (e) {
+        log.debug("Caught in AdminActions.usersAction(): " +
+                  ((e && e.message) || e));
+        // Not JSON: a hand-made request, answered below.
+        posted = null;
+      }
+      if (!posted || typeof posted !== 'object') {
+        // SPENT ALL THE SAME: a finish is single use whatever it carries.
+        const by = credentials.enrolledByOf(admin);
+        if (by) {
+          credentials.abandonAdminKeyEnrolment(by.username, who);
+        }
+        log.debug("Leaving AdminActions.usersAction(). No ceremony result.");
+        return this.refused('STS-AUTHN-0448', { ok: false, errors: ['No ' +
+          'ceremony result was sent: `credential` is the browser\'s ' +
+          'registration as JSON. A passkey is created by a browser, and ' +
+          'there is no form that can do it. Start again.'] });
+      }
+      const authn = require('../authn/authn');
+      const rpRefusal = ctx.base ? authn.rpIdProblem(ctx.base) : '';
+      if (rpRefusal) {
+        const by = credentials.enrolledByOf(admin);
+        if (by) {
+          credentials.abandonAdminKeyEnrolment(by.username, who);
+        }
+        log.debug("Leaving AdminActions.usersAction(). The RP ID does not " +
+                  "fit.");
+        return this.refused('STS-AUTHN-0446', { ok: false,
+                                                errors: [rpRefusal] });
+      }
+      const self = this;
+      log.debug("Leaving AdminActions.usersAction(). finish-passkey-" +
+                "enrolment answers when the verification settles.");
+      return credentials.confirmAdminKeyEnrolment(who, admin,
+        String(body.enrolmentId || body.enrolment_id || ''), posted,
+        { origin: authn.expectedOriginFor(ctx.base, posted),
+          rpId: authn.rpIdOf(ctx.base) }).then(function (done) {
+        return self.adminKeyEnrolled(who, done, ctx);
+      }, function (e) {
+        log.debug("Caught in AdminActions.usersAction(): " +
+                  ((e && e.message) || e));
+        log.error(errorCodes.tag('STS-AUTHN-0447') + 'admin: finishing a ' +
+                  'passkey enrolment for ' + who + ' threw: ' +
+                  ((e && e.message) || e));
+        return self.refused('STS-AUTHN-0447', { ok: false, errors: ['The ' +
+          'passkey could not be registered. Start again.'] });
+      });
+    }
+
     // SET A PASSWORD ON SOMEBODY WHO IS ALREADY HERE (2026-09-06).
     //
     // **IT EXISTED IN PROSE BEFORE IT EXISTED IN CODE**, which is the reason it
@@ -3853,9 +4371,16 @@ class AdminActions {
     // ever written. Somebody following either instruction got a 404 naming an
     // endpoint this service documents.
     //
-    // It is `credentials.setPassword()` and nothing else: hashed there, never
-    // here, and never written as an attribute — which is also why
-    // `userPassword` is refused by the attribute door on `create`.
+    // It is `credentials.setPassword()`: hashed there, never here, and never
+    // written as an attribute — which is also why `userPassword` is refused
+    // by the attribute door on `create`. It does NOT set `pwdReset` and it
+    // does NOT sign the person out, which is what `reset-password` does
+    // besides the password. What it shares with that door, since #960, is
+    // the recovery note: a passkey holder's next password sign-in is held
+    // by `recoveryAssurance` until a passkey signs them in.
+    // `noteRecovery()` writes nothing when they hold no passkey or the row
+    // is `any`, and a failed write is already logged (STS-AUTHN-0382).
+    // Either way this action still answers that the password was set.
     if (action === 'set-password') {
       const who = String(body.user || body.username || '').trim();
       if (!who) {
@@ -3892,13 +4417,19 @@ class AdminActions {
                   "refused.");
         return this.refusedBy('STS-ADMIN-0525', set);
       }
+      // A passkey holder's recovery, noted the way `reset-password` notes
+      // it (#960). False — no passkey, assurance `any`, or a write already
+      // logged — does not fail the action: the password is set either way.
+      credentials.noteRecovery(who, 'admin-password');
       accountSignals.credentialChanged({ username: who,
         credentialType: 'password', changeType: 'update', via: ctx.via,
         reasonAdmin: 'An administrator set the password of ' + who + '.',
         reasonUser: 'Your password was changed by an administrator.' });
       auditLog.record({
         category: 'authentication', action: 'password.set',
-        actor: (body.actor || ''), target: who, outcome: 'success',
+        // THE SUBJECT THE CALLER PASSED (#966), which for this API is the
+        // verified token. The three create rows below record `ctx.actor` too.
+        actor: ctx.actor, target: who, outcome: 'success',
         summary: 'a password was set for ' + who + ' by an administrator',
         // NO PASSWORD AND NO HASH IN THE AUDIT ROW, generated or typed. The row
         // records that it happened and by which door; the value existed in one
@@ -4015,7 +4546,8 @@ class AdminActions {
         } else {
           auditLog.record({
             category: 'admin', action: 'admin.service-account.set',
-            actor: (body.actor || ''), target: result.username,
+            // `ctx.actor`: the subject the caller passed (#966).
+            actor: ctx.actor, target: result.username,
             outcome: 'success',
             summary: result.username + ' was created as a service account',
             detail: { owners: (((flagged as any).account || {}).owners ||
@@ -4047,7 +4579,8 @@ class AdminActions {
           } else {
             auditLog.record({
               category: 'authentication', action: 'password.set',
-              actor: (body.actor || ''), target: result.username,
+              // `ctx.actor`: the subject the caller passed (#966).
+              actor: ctx.actor, target: result.username,
               outcome: 'success',
               summary: 'a password was set for ' + result.username +
                        ' as they were created',
@@ -4082,7 +4615,8 @@ class AdminActions {
         } else {
           auditLog.record({
             category: 'authentication', action: 'activation.issued',
-            actor: (body.actor || ''), target: result.username,
+            // `ctx.actor`: the subject the caller passed (#966).
+            actor: ctx.actor, target: result.username,
             outcome: 'success',
             summary: 'an activation link was issued for ' + result.username +
                      ' as they were created',
@@ -4530,6 +5064,46 @@ class AdminActions {
         changes.push({ attribute: name, values: valuesOf(given[name]) });
       }
     });
+    // oauthConfidential IS THE DETERMINATION THE METHODS MAKE (#466). The
+    // field grid no longer edits it. A body that still names it is checked
+    // against the methods THIS body leaves — the methods it posts when it
+    // posts them, otherwise the ones on the entry — before any attribute is
+    // written. Checking each write against the entry as it stands would
+    // refuse a save that changes the method and the flag together, because
+    // the flag would be compared with the old method. A value that agrees
+    // is taken out of the list and written afterwards from the methods, so
+    // a stale flag heals. The refusal is returned here so it keeps
+    // STS-REG-0363; the batch's own code (STS-ADMIN-0836) would hide it.
+    let syncConfidential = false;
+    const confidentialChange = changes.filter(function (change) {
+      return change.attribute === 'oauthConfidential';
+    })[0];
+    if (confidentialChange) {
+      const methodChange = changes.filter(function (change) {
+        return change.attribute === 'oauthTokenEndpointAuthMethod';
+      })[0];
+      const projected = methodChange ? methodChange.values
+        : valuesOf(entry.fields.oauthTokenEndpointAuthMethod);
+      const determination = applications.oauthConfidentialOf({
+        registered: !!entry.registered,
+        fields: { oauthTokenEndpointAuthMethod: projected }
+      });
+      const statedValues = confidentialChange.values;
+      const problem = statedValues.length === 1
+        ? applications.confidentialDisagreement(statedValues[0],
+                                                determination)
+        : (statedValues.length
+          ? applications.confidentialDisagreement(statedValues.join(' '),
+                                                  determination)
+          : applications.confidentialClearSentence());
+      if (problem) {
+        log.debug("Leaving AdminActions.updateApplicationFields(). " +
+                  "oauthConfidential disagrees.");
+        return this.refused('STS-REG-0363', { ok: false, errors: [problem] });
+      }
+      syncConfidential = true;
+      changes.splice(changes.indexOf(confidentialChange), 1);
+    }
     const changed = [];
     const errors = [];
     changes.forEach(function (change) {
@@ -4640,6 +5214,12 @@ class AdminActions {
         errors: (changed.length
           ? ['Saved ' + changed.join(', ') + '; the rest was refused:']
           : []).concat(errors) });
+    }
+    if (syncConfidential) {
+      const synced = applications.writeOauthConfidential(identifier);
+      if (synced && synced.changed) {
+        changed.push('oauthConfidential');
+      }
     }
     log.debug("Leaving AdminActions.updateApplicationFields(). " +
               changed.length + " attribute(s) changed.");
@@ -6115,7 +6695,7 @@ class AdminActions {
     // is that it was typed and went stale: `refresh-metadata` was added on
     // 2026-08-27 and this sentence still said "The six are" and named six. That
     // is not a cosmetic drift — this repository's own
-    // tests/vendored/admin_api.js READS this sentence to check that every
+    // tests/protocol/admin_api.js READS this sentence to check that every
     // console action has an /admin-api operation, so an action missing from it
     // is an action the parity check cannot see, and the API could lose the
     // operation entirely with nothing failing. A generated list cannot be short
@@ -7235,7 +7815,13 @@ class AdminActions {
               (body.action || '(none)'));
     const action = String(body.action || '');
     const ctx = context || {};
-    const actor = String(ctx.actor || body.actor || '');
+    // AN OWN `actor` IS THE SUBJECT EVEN WHEN IT IS EMPTY (#966), the same
+    // rule as `usersAction`. The policies route passes the token's subject,
+    // and '' means nobody was authenticated. A caller that omits the
+    // property — an in-process save that passes only `{ via }` — still
+    // records `body.actor`.
+    const actor = Object.prototype.hasOwnProperty.call(ctx, 'actor')
+      ? String(ctx.actor || '') : String(body.actor || '');
     const found = policyKinds.forAction(action);
     if (!found) {
       const known = policyKinds.actions();
@@ -8704,9 +9290,9 @@ class AdminActions {
     if (SIGNALS_CONSOLE_ACTIONS.indexOf(action) < 0) {
       // THE SENTENCE IS THE HOUSE SHAPE — `Unknown action "x". <prose>: a, b.`
       // — AND IT IS READ RATHER THAN BEING STYLE.
-      // `tests/vendored/sts_admin_api_operations.js` matches exactly that out
+      // `tests/protocol/sts_admin_api_operations.js` matches exactly that out
       // of `errors` on every action resource this API declares, and
-      // `tests/vendored/admin_api.js` reads the same sentence to check that
+      // `tests/protocol/admin_api.js` reads the same sentence to check that
       // every console action has an operation over there. This handler phrased
       // it its own way — `"x" is not one of clear.` — which parses as neither,
       // so it turned the parity check off for this resource with nothing
@@ -8835,8 +9421,8 @@ class AdminActions {
     const actor = String((context || {}).actor || '');
     const via = String((context || {}).via || 'console');
     if (TRUSTSTORE_ACTIONS.indexOf(action) < 0) {
-      // THE HOUSE SENTENCE, which `tests/vendored/sts_admin_api_operations.js`
-      // and `tests/vendored/admin_api.js` both READ — see signalsAction() above
+      // THE HOUSE SENTENCE, which `tests/protocol/sts_admin_api_operations.js`
+      // and `tests/protocol/admin_api.js` both READ — see signalsAction() above
       // for what a different phrasing silently turns off.
       log.debug("Leaving AdminActions.truststoreAction(). Unknown action.");
       return this.refused('STS-ADMIN-0500',
@@ -9636,7 +10222,11 @@ class AdminActions {
   //      one, the history is kept, and the observer derives the new keys at
   //      the next kvno. A generated one (`random`) is drawn against the same
   //      policy and NEVER SHOWN: the keytab is then the only credential that
-  //      opens the account until somebody sets a password again.
+  //      opens the account until somebody sets a password again. A passkey
+  //      holder's recovery is noted here too, as `reset-password` notes it
+  //      (#960), once that set has succeeded and before the keytab is asked
+  //      for — so a keytab that then fails has still recorded the hold.
+  //      Step 1's refusal is before any of this and notes nothing.
   //   3. What a reset does to the rest of the account, as `reset-password`
   //      does it: an outstanding reset link is spent (the administrator has
   //      just decided what the password is), they are signed out of
@@ -9680,6 +10270,11 @@ class AdminActions {
                 "refused.");
       return this.refusedBy('STS-ADMIN-0802', set);
     }
+    // Noted before the keytab is built (#960). A later failure still
+    // reports `passwordSet`, and the hold is already on the entry. False
+    // — no passkey, assurance `any`, or a write already logged — leaves
+    // the reset as it was.
+    credentials.noteRecovery(who, 'admin-password');
     credentials.setPasswordResetRequired(who, false);
     credentials.consumePasswordReset(who);
     const signedOut = this.signOutEverywhere(who, ctx,
@@ -9776,8 +10371,8 @@ class AdminActions {
         return self.refusedBy('STS-ADMIN-0602', answer);
       });
     } else {
-      // THE HOUSE SENTENCE, which `tests/vendored/sts_admin_api_operations.js`
-      // and `tests/vendored/admin_api.js` both READ.
+      // THE HOUSE SENTENCE, which `tests/protocol/sts_admin_api_operations.js`
+      // and `tests/protocol/admin_api.js` both READ.
       log.debug("Leaving AdminActions.kerberosPrincipalsAction(). Unknown " +
                 "action.");
       return this.refused('STS-ADMIN-0602', { ok: false,

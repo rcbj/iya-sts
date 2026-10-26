@@ -115,7 +115,8 @@ function homeCases(root) {
       { id: 'docs', href: 'https://rcbj.github.io/iya-sts/',
         external: true },
       { id: 'console', href: consoleHref, external: false },
-      { id: 'portal', href: '/portal', external: false }
+      { id: 'portal', href: '/portal', external: false },
+      { id: 'report', href: '/report', external: false }
     ];
   };
   const development = { name: 'IYA STS', version: '0.9.20261012',

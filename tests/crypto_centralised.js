@@ -64,7 +64,7 @@ const SKIP_DIRS = new Set(['node_modules', '.git', '.terraform', 'coverage',
                            '__pycache__']);
 const SKIP_PATHS = ['.claude', 'node-ldapjs', 'debugger/embedded', 'tests',
                     'deploy', 'docs', 'rust', 'data', 'apidocs',
-                    'common/vendored', 'companion'];
+                    'common/crypto_impl', 'companion'];
 
 // The files that ARE the common module.
 const THE_MODULE = ['common/crypto.js', 'common/pq_native.js',
@@ -120,7 +120,7 @@ const NODE_CRYPTO = [
 // Matched on the SPECIFIER of a require or a dynamic import, never on a bare
 // string: gnap/token_biscuit.ts and token_zcap.ts still NAME their packages,
 // for the version they report on the console. The `@digitalbazaar` packages
-// are the zcap and Ed25519 ones; the BBS suite is common/vendored's
+// are the zcap and Ed25519 ones; the BBS suite is common/crypto_impl's
 // (bbs2023.js), which is not walked.
 const TOKEN_LIBRARIES = [
   new RegExp('(?:require|import)\\s*\\(\\s*[\'"](?:macaroon|' +

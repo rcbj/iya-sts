@@ -36,7 +36,7 @@
 //     hundred.
 //
 // The AP-REQs below are built here, against the acceptor's own key, with the
-// vendored codec — the same shape `tests/vendored/krb5_drive.js` sends — so the
+// vendored codec — the same shape `tests/protocol/krb5_drive.js` sends — so the
 // acceptor runs every one of its checks rather than a stub of them.
 // ===========================================================================
 

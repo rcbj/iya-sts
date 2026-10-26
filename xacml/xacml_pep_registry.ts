@@ -585,7 +585,7 @@ class PepRegistry {
   //
   // It cost somebody real time, and the case is worth writing down because
   // nothing about it looks like a mistake from either end.
-  // `tests/vendored/sts_xacml_remote_pep.js` drives the `xacml-pep/`
+  // `tests/protocol/sts_xacml_remote_pep.js` drives the `xacml-pep/`
   // container against a THROWAWAY REALM (`XACML_PEP_REALM`, `pep-e2e` by
   // default), so a registration made by a passing suite has never been in the
   // default realm and never will be — while the default realm's page said, in

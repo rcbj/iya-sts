@@ -39,7 +39,7 @@
 //
 // Every GET also answers `?format=json`, and every POST answers JSON when it
 // was sent JSON. That is not decoration: this repository's own
-// `tests/vendored/admin_api.js` and its siblings drive the console over HTTP
+// `tests/protocol/admin_api.js` and its siblings drive the console over HTTP
 // with no browser, and a console reachable only by clicking is a console no
 // test can assert against.
 //
@@ -1413,7 +1413,7 @@ const SECTIONS = [
       //   * **`GET /admin-api/users/new` STAYS.** Rule 7 requires an
       //     operation for every console PAGE and says nothing against one for
       //     a drill-down; the catalogue it publishes is what a script builds
-      //     a create from, and `tests/vendored/bulk_load.js` reads it.
+      //     a create from, and `tests/protocol/bulk_load.js` reads it.
       //     Deleting a working operation to tidy a table would be a
       //     regression dressed as consistency.
       // -------------------------------------------------------------------
@@ -2069,6 +2069,22 @@ const SECTIONS = [
                'at <code>/authn/wallet</code>. What the lists are built with ' +
                'is on <a href="/admin/vc">Protocols &rarr; Verifiable ' +
                'Credentials</a>.' },
+      // PASSKEYS (#942), filed here by the console's rule: it REPORTS who
+      // holds what, where Protocols → WebAuthn and Directory → Policies say
+      // what the realm offers and asks. Drawn by the static console
+      // (`admin-ui/web_passkey_report.ts`) from `GET
+      // /admin-api/passkey-report`. Realm-scoped, so a realm's own
+      // administrator reads their realm's.
+      { path: '/admin/passkey-report', label: 'Passkeys',
+        blurb: 'Who in this realm holds which kind of passkey: the people ' +
+               'holding post-quantum only, classical only, both or none, ' +
+               'every algorithm in each lane, which authenticator models ' +
+               'hold which algorithms, and what each passkey profile asks ' +
+               '&mdash; filtered by a group, a passkey profile or an ' +
+               'application, with the people behind every count and an ' +
+               'export. The counts are kept as passkeys are written and ' +
+               'recounted daily, never a scan per page. Recount now is the ' +
+               'one control.' },
       // THE AUTHORIZATION SERVER'S OWN TRAFFIC (2026-09-13), filed here and
       // not under Protocols beside `/admin/oauth2` for the XACML monitor's
       // reason: that page is what the server is CONFIGURED to do and this is
@@ -2788,22 +2804,24 @@ type RouteApp = typeof app;
  * It decides nothing; the actions live in admin-core.
  */
 
-const APPLICATION_TAB_IDS = ['tab-overview', 'tab-config', 'tab-credentials',
-  'tab-origins', 'tab-signals', 'tab-statements', 'tab-addresses',
+const APPLICATION_TAB_IDS = ['tab-overview', 'tab-authentications',
+  'tab-config', 'tab-credentials', 'tab-origins', 'tab-access-types',
+  'tab-scope-claims', 'tab-signals', 'tab-statements', 'tab-addresses',
   'tab-permissions', 'tab-roles', 'tab-owners', 'tab-metadata', 'tab-entry',
   'cfg-saml2', 'cfg-saml11',
   'tab-import-export', 'tab-remove'];
 
 // A PERSON'S PAGE AS TABS (rcbj, 2026-10-01), the application page's model:
-// seven tabs, the Attributes tab one sub-tab per field group (ufg-<group>,
-// each with its own Save) and the Credentials tab one per kind of credential.
+// nine tabs (Authentication attempts, #955, after Overview), the Attributes
+// tab one sub-tab per field group (ufg-<group>, each with its own Save) and
+// the Credentials tab one per kind of credential.
 // A group's page (#603): Group, then Owners.
 const GROUP_TAB_IDS = ['gtab-group', 'gtab-owners'];
 // A role's page (#604): Role, then Owners.
 const ROLE_TAB_IDS = ['rtab-role', 'rtab-owners'];
-const USER_TAB_IDS = ['utab-overview', 'utab-activity', 'utab-attributes',
-  'utab-credentials', 'utab-federation', 'utab-gnap', 'utab-entry',
-  'utab-signout'];
+const USER_TAB_IDS = ['utab-overview', 'utab-authentications',
+  'utab-activity', 'utab-attributes', 'utab-credentials', 'utab-federation',
+  'utab-gnap', 'utab-entry', 'utab-signout'];
 // `ucred-service` (#221's Service account sub-tab) was missing until #602,
 // so that one sub-tab never showed as the one being read;
 // `tests/person_fields.js` now holds every sub-tab the page draws to this
@@ -2820,6 +2838,15 @@ const USER_SUB_TAB_IDS = ['ucred-factors', 'ucred-password', 'ucred-service',
 // the tab being read.
 const CERT_TAB_IDS = ['cert-tab-metadata', 'cert-tab-acme', 'cert-tab-est',
   'cert-tab-scep', 'cert-tab-spiffe'];
+// The passkey policy's three sub-tabs (`web_policies.ts`). A sub-tab whose
+// id is not named here shows its panel and never lights its link.
+const POLICY_SUB_TAB_IDS = ['passkey-sub-default', 'passkey-sub-named',
+  'passkey-sub-new'];
+// A built-in listener with settings of its own (`listeners_admin.ts`): those
+// with a group and TLS or HTTP. A custom listener's id is the operator's,
+// so it is not named here; the runtime marks that link itself.
+const LISTENER_TAB_IDS = ['tab-main', 'tab-ldaps', 'tab-debugger',
+  'tab-revocation', 'tab-spiffe-server', 'tab-spiffe-broker', 'tab-cell'];
 const CERT_SUB_TAB_IDS = ['cert-spiffe-overview', 'cert-spiffe-entries',
   'cert-spiffe-agents', 'cert-spiffe-brokers', 'cert-acme-ca',
   'cert-acme-profiles', 'cert-acme-eab', 'cert-acme-accounts',
@@ -3535,6 +3562,11 @@ class AdminConsole {
   stylesheet(): string {
     const { log, applications } = this.deps;
     log.debug("Entering AdminConsole.stylesheet().");
+    // The tab being read. The same solid fill as `nav .here` and
+    // `.pagenav .here`: a white chip on `#f6f6fa` was not readable as
+    // "this one".
+    const tabHere = 'background:#12107c;color:#fff;font-weight:700;' +
+      'border-color:#12107c';
     const css = 'body{font-family:system-ui,-apple-system,"Segoe ' +
       'UI",Arial,sans-serif;background:#f4f4f7;margin:0;padding:2rem ' +
       '1rem;color:#222;line-height:1.45}' +
@@ -3602,6 +3634,7 @@ class AdminConsole {
       // without it every page's breadcrumb trail sits up against its heading.
       '.pagehead{display:flex;flex-wrap:wrap;gap:10px;align-items:baseline;' +
       'justify-content:space-between;margin:0 0 14px}' +
+      '.doclink{margin:0 0 12px;font-size:.92em}' +
       '.pagehead h1{margin:0}' +
       // The controls at the right-hand end of that row. `align-items:baseline`
       // again, because a <button> and an <a class=btn> are different boxes and
@@ -4459,6 +4492,10 @@ class AdminConsole {
       'border:1px solid #d5d5dd;border-bottom:0;border-radius:6px 6px 0 0;' +
       'background:#f6f6fa;color:#12107c;text-decoration:none;' +
       'font-size:.9em}.subbar a{font-size:.85em;padding:4px 10px}' +
+      // The runtime's mark (`markOpenTabs()`), for a tab this sheet does
+      // not name — a custom listener's. The `:has()` rules below paint the
+      // ones it does name, in this same fill.
+      '.tabbar a.tab-current{' + tabHere + '}' +
       '.tabpanel,.subpanel{scroll-margin-top:1rem}' +
       '@supports selector(:has(*)){' +
       '.tabs>.tabpanel,.subtabs>.subpanel{display:none}' +
@@ -4470,8 +4507,7 @@ class AdminConsole {
       ':target))>.subpanel.first{display:block}' +
       '.tabs:not(:has(>.tabpanel:target,>.tabpanel :target))>.tabbar ' +
       'a.first,.subtabs:not(:has(>.subpanel:target,>.subpanel :target))>' +
-      '.subbar a.first{background:#fff;font-weight:700;' +
-      'border-color:#12107c}' +
+      '.subbar a.first{' + tabHere + '}' +
       // The tab being read, one rule per tab: a selector cannot compare a
       // link's href with the id that is targeted, so the ids are named.
       APPLICATION_TAB_IDS.concat(applications.FIELD_GROUPS.map(function (g) {
@@ -4495,26 +4531,27 @@ class AdminConsole {
        'kerberos-tab-trusts',
        'scim-tab-metadata', 'server', 'clients', 'policies-tab-metadata',
        'tab-password', 'tab-authn', 'tab-serviceAccount', 'tab-passkey',
-       'tab-locale', 'tab-profiles', 'listeners-tab-metadata',
+       'tab-locale', 'tab-attributes', 'tab-profiles',
+       'listeners-tab-metadata',
        'tab-listeners', 'tab-custom', 'tab-applications', 'tab-defaults'],
+      LISTENER_TAB_IDS, POLICY_SUB_TAB_IDS,
       CERT_TAB_IDS, CERT_SUB_TAB_IDS,
       WebPagesTable.PROTOCOL_TAB_IDS).map(function (id) {
         const sub = id.indexOf('cfg-') === 0 ||
           USER_SUB_TAB_IDS.indexOf(id) >= 0 ||
-          CERT_SUB_TAB_IDS.indexOf(id) >= 0;
+          CERT_SUB_TAB_IDS.indexOf(id) >= 0 ||
+          POLICY_SUB_TAB_IDS.indexOf(id) >= 0;
         const outer = sub ? '.subtabs' : '.tabs';
         const bar = sub ? '.subbar' : '.tabbar';
         return outer + ':has(#' + id + ':target,#' + id + ' :target)>' + bar +
           ' a[href="#' + id + '"]';
-      }).join(',') + '{background:#fff;font-weight:700;' +
-      'border-color:#12107c}}' +
+      }).join(',') + '{' + tabHere + '}}' +
       ['json', 'table', 'fields'].map(function (tab) {
         return '#prm-tab-' + tab + ':checked~.prm-panel-' + tab +
                '{display:block}' +
                '#prm-tab-' + tab + ':checked~.prm-tablist label[for="prm-tab-' +
                tab +
-               '"]{background:#fff;border-color:#d5d5dd;font-weight:600;' +
-               'margin-bottom:-1px}' +
+               '"]{' + tabHere + ';margin-bottom:-1px}' +
                '#prm-tab-' + tab + ':focus-visible~.prm-tablist ' +
                'label[for="prm-tab-' + tab + '"]{outline:2px solid #12107c}';
       }).join('');
@@ -4919,7 +4956,7 @@ class AdminConsole {
   // back in for somebody who has locked themselves out of the console, which is
   // a state `admin.openWhenEmpty: false` makes reachable. `mgmt-api/CLAUDE.md`
   // argues both halves. It is also why this gate does not break this
-  // repository's own `tests/vendored/admin_api.js`.
+  // repository's own `tests/protocol/admin_api.js`.
   //
   // **A REFUSAL IS A PAGE AND NOT A BARE STATUS.** 403 with an empty body is
   // the single least useful thing this could answer: the reader is signed in,
@@ -8775,6 +8812,9 @@ const SETTING_HOMES = [
   // CSRF scheme are facts about the PROCESS and every browser-facing surface
   // shares them.
   { group: 'Web security', pages: ['/admin/config'] },
+  // REPORTING (#956). The application is not a console page. The caps are
+  // process settings, drawn on /admin/config with the other process facts.
+  { group: 'Reporting', pages: ['/admin/config'] },
 
   { group: 'Trust realms', pages: ['/admin/realms'] },
   { group: 'OAuth 2.0 / OIDC', pages: ['/admin/oauth2'] },
@@ -9174,7 +9214,7 @@ const PORTAL_PATH = '/portal';
 // **THERE IS NO SCRIPT AND THERE MUST NOT BE ONE**, which is why this is not a
 // type-ahead. `script-src 'none'` holds over the whole service (common/app.js)
 // and the parent suite asserts it against this console's live headers
-// (tests/vendored/admin_api.js) — so there is no keystroke handler, no fetch
+// (tests/protocol/admin_api.js) — so there is no keystroke handler, no fetch
 // and no debounce to build one out of, and anything written as though there
 // were would be a control that silently does nothing rather than one that half
 // works. What a browser gives for free is a GET form submitted by the Enter
@@ -9381,7 +9421,7 @@ let logoutReader = null;
 // reads as a management API that is working and is not. It was four until
 // phase five, which added TWO — `peps` for the remote PEP register, and
 // `decide`, which `/admin/xacml/decide` had needed since phase three and had
-// silently gone without (rule 7; `tests/vendored/admin_api.js` reads the
+// silently gone without (rule 7; `tests/protocol/admin_api.js` reads the
 // console's OWN page list rather than a list in the test, which is why the
 // omission was catchable at all). Both went into THIS set rather than into
 // slots of their own because it is the same module filling it and a second
@@ -9390,7 +9430,7 @@ let logoutReader = null;
 // `actionNames` is one more, outside the validated list (`xacmlActionNames()`
 // below answers `[]` without it), and is not decoration. The refusal sentence
 // for an unknown action names every action and counts them, and that sentence
-// is READ by `tests/vendored/admin_api.js` — so the API has to be able to ask
+// is READ by `tests/protocol/admin_api.js` — so the API has to be able to ask
 // the module what its actions are rather than keeping a second list that
 // could disagree.
 // ---------------------------------------------------------------------------
@@ -10886,7 +10926,7 @@ const consoleExports = {
   // The sign-out page's view and its four actions, for admin_api.js. Rule 7:
   // the API calls exactly these, so an action added to that switch is most of
   // adding it there — and the refusal sentence that names the four is what the
-  // repository's own tests/vendored/admin_api.js reads to check the parity.
+  // repository's own tests/protocol/admin_api.js reads to check the parity.
   jtiFrom: jtiFrom,
   // The four action functions. admin_api.js calls exactly these — it decides
   // nothing about a revocation or a claim that this console does not — which is

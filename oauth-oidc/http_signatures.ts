@@ -267,7 +267,7 @@ class HttpSignatures {
   // record — `{ source, kid, jwk, key }`, `key` a node KeyObject — so the JWK
   // is its `jwk` member; reading the record as the JWK lost the key's `alg`
   // (every signed request was refused STS-KEYS-0133) and handed the record on
-  // as the key. Found by tests/vendored/sts_fapi_http_signatures.js on its
+  // as the key. Found by tests/protocol/sts_fapi_http_signatures.js on its
   // first run (2026-10-05).
   private keysOf(fields: Json): Json[] {
     const { log, keysForParty } = this.deps;

@@ -546,6 +546,7 @@ class PoliciesPage {
     // Only the passkey policy's forms search (#609).
     const searching = kind.id === 'passkey';
     const drafts = (state && state.policyDrafts) || {};
+    const saveErrors = (state && state.policySaveErrors) || {};
     const finds = (state && state.finds) || {};
     const appsRow = function (named, prefix, key) {
       const input = '<input type="text" id="' +
@@ -589,9 +590,21 @@ class PoliciesPage {
       const key = PoliciesPage.searchKeyOf(kind.id, adding ? '' : stored.name);
       const named = searching ? PoliciesPage.withDraft(stored, drafts[key])
                               : stored;
-      return '<form method="post" action="/admin/policies">' +
+      // A refused create (#841) is drawn on this form. The hidden field is
+      // what tells a Save apart from a save of a stored profile whose name
+      // the reader happened to type.
+      const refused = adding ? saveErrors[key] : null;
+      const refusal = refused && refused.length
+        ? kit.warn(refused.map(function (one) {
+          return kit.esc(one);
+        }).join(' '), 'That was refused')
+        : '';
+      return refusal + '<form method="post" action="/admin/policies">' +
         '<input type="hidden" name="action" value="' +
         kit.esc(kind.actions[0]) + '">' +
+        (adding && searching
+          ? '<input type="hidden" name="newProfile" value="1">'
+          : '') +
         // THE DEFAULT BUTTON, first in the form (#609), for the application
         // grid's reason: Enter in a box presses the first submit button,
         // which would otherwise be the search's Find. Enter in the search
@@ -927,13 +940,17 @@ class PoliciesPage {
         t.html('consolePolicies.field.attributeName') + '</span>';
     } else if (field.type === 'list') {
       // AN ORDERED LIST (#531): typed, comma-separated, or `none`. A list of
-      // checkboxes could not say the order, which is the point of one.
+      // checkboxes could not say the order, which is the point of one. A
+      // row whose empty list is the REALM'S (#940, `registrationAlgorithms`)
+      // says `realm` instead.
       control = '<input type="text" id="' + kit.esc(id) + '" name="' +
         kit.esc(field.key) + '" value="' + kit.esc(field.value) + '"' + off +
         hint + '> <span class="sub">' +
         t.html('consolePolicies.field.listFrom') +
         kit.esc((field.values || []).join(', ')) +
-        t.html('consolePolicies.field.listOrNone') + '</span>';
+        t.html(field.empty === 'realm' ? 'consolePolicies.field.listOrRealm'
+                                       : 'consolePolicies.field.listOrNone') +
+        '</span>';
     } else {
       control = '<input type="number" id="' + kit.esc(id) + '" name="' +
         kit.esc(field.key) + '" min="' + kit.esc(field.min) + '" max="' +

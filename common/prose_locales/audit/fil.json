@@ -4,8 +4,8 @@
     "text": "Authentication"
   },
   "audit.categories.authentication.what": {
-    "en": "a75d8d51a0eb704d",
-    "text": "May TINANGGAP na credential, sa alinman sa labing-anim na protocol family dito. Itinatala ito sa iisang funnel na dinadaanan na ng bawat isa sa kanila, kaya isang lugar ito at hindi labing-anim. Huling sumali ang SCIM at mas huli pa ang SPIFFE. SCIM: tatlo sa mga scheme na tinatanggap ng mga endpoint nito — Basic, Digest at HOBA — ay nagpapakita ng credential sa bawat request, at ang pagtanggap sa isa ay isang authentication. Hindi lumalabas dito ang tatlo pa nito, dahil ipinagpapatuloy ng bawat isa ang authentication na naitala sa ibang lugar: tinanggap ang access token noong na-issue ito, ang session cookie noong nagsimula ang session nito, at ang client certificate isang beses bawat CONNECTION sa halip na isang beses bawat request. Ang SPIFFE ang ikalabing-anim at umaabot dito sa tatlong paraan: isang X509-SVID na ipinakita sa mutual TLS sa SPIRE Server API (isang beses bawat connection, sa parehong dahilan ng client certificate), isang agent na nag-a-attest, at isang JWT-SVID na na-verify sa ValidateJWTSVID. Hindi kabilang dito ang ma-ISSUE-han ng SVID."
+    "en": "8daae95bb7977a6c",
+    "text": "May TINANGGAP na credential, sa alinman sa labing-anim na protocol family dito. Itinatala ito sa iisang funnel na dinadaanan na ng bawat isa sa kanila, kaya isang lugar ito at hindi labing-anim. Huling sumali ang SCIM at mas huli pa ang SPIFFE. SCIM: tatlo sa mga scheme na tinatanggap ng mga endpoint nito — Basic, Digest at HOBA — ay nagpapakita ng credential sa bawat request, at ang pagtanggap sa isa ay isang authentication. Hindi lumalabas dito ang tatlo pa nito, dahil ipinagpapatuloy ng bawat isa ang authentication na naitala sa ibang lugar: tinanggap ang access token noong na-issue ito, ang session cookie noong nagsimula ang session nito, at ang client certificate isang beses bawat CONNECTION sa halip na isang beses bawat request. Ang SPIFFE ang ikalabing-anim at umaabot dito sa tatlong paraan: isang X509-SVID na ipinakita sa mutual TLS sa SPIRE Server API (isang beses bawat connection, sa parehong dahilan ng client certificate), isang agent na nag-a-attest, at isang JWT-SVID na na-verify sa ValidateJWTSVID. Hindi kabilang dito ang ma-ISSUE-han ng SVID. Ang pagtanggi sa isang pagtatangka ay `authentication.refused` sa tabi ng pagtanggap: ang parehong detalye, tinanggihan ang resulta, at walang counter na ginagalaw (#954). Inililista ng pahina ng application ang dalawa, at ang `session.refuse` at `session.refused` kapag pinangalanan nila ito."
   },
   "audit.categories.session.label": {
     "en": "6fa3cbf451b2a1d5",
@@ -98,6 +98,10 @@
   "audit.actions.authentication.label": {
     "en": "579808c825684965",
     "text": "May credential na tinanggap"
+  },
+  "audit.actions.authentication.refused.label": {
+    "en": "0b0281ef1e0768e4",
+    "text": "May credential na tinanggihan"
   },
   "audit.actions.portal.activate.label": {
     "en": "979387f5c20ade32",
@@ -266,6 +270,10 @@
   "audit.actions.authn.session.refreshed.label": {
     "en": "bbbad25d367ffcdf",
     "text": "Na-renew ang cookie ng isang device-bound session sa patunay ng key nito"
+  },
+  "audit.actions.authn.session.binding-skipped.label": {
+    "en": "193de5f1ab249962",
+    "text": "Nilaktawan ng isang sign-on session ang pagkakatali sa device"
   },
   "audit.actions.logout.global.label": {
     "en": "db32c1466e054343",
@@ -458,6 +466,14 @@
   "audit.actions.device.attestation-revoked.label": {
     "en": "3571d30810b2d9c7",
     "text": "Hindi na attested ang isang device key: binabawi ng Android attestation status list ng Google ang chain nito"
+  },
+  "audit.actions.webauthn.ceremony.label": {
+    "en": "49406d0c31568578",
+    "text": "Tumakbo ang isang WebAuthn na pagrehistro o assertion, natapos man o hindi"
+  },
+  "audit.actions.webauthn.algorithm-mismatch.label": {
+    "en": "712b402391b059c6",
+    "text": "Nag-sign in gamit ang classical na passkey ang taong may post-quantum na passkey"
   },
   "audit.actions.webauthn.attestation-revoked.label": {
     "en": "0be46b8b29aaf446",
@@ -1059,6 +1075,38 @@
     "en": "3c3a62cf5e46c516",
     "text": "Minarkahan ng isang administrator na gusto ang isang pinatunayang DID ng isang tao, o inalis ang marka"
   },
+  "audit.actions.admin.passkey.enrolment-started.label": {
+    "en": "571c0a6bca1d9163",
+    "text": "Nagsimula ang isang administrator na mag-enrol ng passkey para sa isang tao"
+  },
+  "audit.actions.admin.passkey.enrolment-refused.label": {
+    "en": "1853c2bfff1cb208",
+    "text": "Tinanggihan ang pag-enrol ng passkey ng isang administrator para sa isang tao"
+  },
+  "audit.actions.admin.passkey.enrolled.label": {
+    "en": "62dfd8780a0a16af",
+    "text": "Nag-enrol ang isang administrator ng passkey para sa isang tao"
+  },
+  "audit.actions.admin.passkey.upgrade-started.label": {
+    "en": "85e2c7f2d669f98e",
+    "text": "Nagsimula ang isang administrator na i-upgrade ang passkey ng isang tao"
+  },
+  "audit.actions.admin.passkey.upgrade-refused.label": {
+    "en": "e1490e5ffb7d9199",
+    "text": "Tinanggihan ang pag-upgrade ng passkey ng isang administrator"
+  },
+  "audit.actions.admin.passkey.upgrade-proved.label": {
+    "en": "92550d6a5a04ca93",
+    "text": "Pinatunayan ng isang administrator ang classical na passkey ng isang tao"
+  },
+  "audit.actions.admin.passkey.upgrade-cancelled.label": {
+    "en": "3653731050769a1b",
+    "text": "Kinansela ng isang administrator ang pag-upgrade ng passkey ng isang tao"
+  },
+  "audit.actions.admin.passkey.upgraded.label": {
+    "en": "de2f45f4af0eafa5",
+    "text": "In-upgrade ng isang administrator ang passkey ng isang tao sa ML-DSA"
+  },
   "audit.actions.ssf.signals.discover.label": {
     "en": "55d2d7d9682c339a",
     "text": "Natuklasan ang Shared Signals configuration ng isang federation partner"
@@ -1303,6 +1351,18 @@
     "en": "6679aa8b834badee",
     "text": "Tinanggihan ang security key enrolment ng isang tao"
   },
+  "audit.actions.portal.key.upgrade-started.label": {
+    "en": "dbf67e17e370e57b",
+    "text": "May taong nagsimulang i-upgrade ang isang classical na passkey sa ML-DSA"
+  },
+  "audit.actions.portal.key.upgrade-refused.label": {
+    "en": "704e6bb3a4472960",
+    "text": "Tinanggihan ang pag-upgrade ng passkey ng isang tao"
+  },
+  "audit.actions.portal.key.upgraded.label": {
+    "en": "f16ccefcc9eb6aec",
+    "text": "In-upgrade ng isang tao ang isang classical na passkey sa ML-DSA"
+  },
   "audit.actions.portal.mfa.backup-codes.generated.label": {
     "en": "18ec89def789c4a2",
     "text": "May taong gumawa ng isang set ng recovery code"
@@ -1495,6 +1555,10 @@
     "en": "f6867c3c6a1d35bd",
     "text": "Muling nag-sign in ang parehong tao sa isang buhay na session"
   },
+  "audit.actions.session.presented.label": {
+    "en": "d1629f19f6dc2282",
+    "text": "May umiiral na sign-on session na iniharap sa isang application"
+  },
   "audit.actions.session.refuse.label": {
     "en": "c8703bfa89913b23",
     "text": "May session na tinanggihan dahil sa sign-in mechanism nito"
@@ -1530,5 +1594,53 @@
   "audit.actions.xacml.policy.delete.label": {
     "en": "90274c33f8a0cbe3",
     "text": "May XACML policy na binura"
+  },
+  "audit.actions.report.definition.create.label": {
+    "en": "8afc9b8a912421fa",
+    "text": "Ginawa ang isang report definition"
+  },
+  "audit.actions.report.definition.update.label": {
+    "en": "c00aee36399477bb",
+    "text": "In-update ang isang report definition"
+  },
+  "audit.actions.report.definition.share.label": {
+    "en": "02777829b1842fad",
+    "text": "Ibinahagi ang isang report definition sa isang group"
+  },
+  "audit.actions.report.definition.delete.label": {
+    "en": "eab7ce893f26b998",
+    "text": "Binura ang isang report definition"
+  },
+  "audit.actions.report.job.submit.label": {
+    "en": "3a48a543fc6fd27e",
+    "text": "Isinumite ang isang report job"
+  },
+  "audit.actions.report.job.start.label": {
+    "en": "c2145542f6189d5c",
+    "text": "Nagsimula ang isang report job"
+  },
+  "audit.actions.report.job.complete.label": {
+    "en": "0df392f7d726487c",
+    "text": "Natapos ang isang report job"
+  },
+  "audit.actions.report.job.fail.label": {
+    "en": "d342e8699921dd5d",
+    "text": "Nabigo ang isang report job"
+  },
+  "audit.actions.report.job.cancel.label": {
+    "en": "0ead0c5eaedc5eb1",
+    "text": "Kinansela ang isang report job"
+  },
+  "audit.actions.report.notify.label": {
+    "en": "98a351693fca3699",
+    "text": "Ipinadala ang abiso ng pagkatapos ng isang report"
+  },
+  "audit.actions.report.query.label": {
+    "en": "0de138fe9e778bd8",
+    "text": "Pinatakbo ang isang report query"
+  },
+  "audit.actions.report.job.retrieve.label": {
+    "en": "2f81320658ea37b8",
+    "text": "Kinuha ang resulta ng isang report"
   }
 }

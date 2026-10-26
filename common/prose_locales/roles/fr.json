@@ -107,6 +107,14 @@
     "en": "54220e44643bd84c",
     "text": "Le flux de conformité des appareils : un flux MDM ou de posture qui signale la conformité d’un appareil via POST /admin-api/device-compliance, et rien d’autre sur /admin-api. Autorise la permission device:compliance. Amorcé sans membre : ajoutez l’application du flux."
   },
+  "roles.native.SSF_READ.what": {
+    "en": "0a43e12ff3313079",
+    "text": "Lecture Shared Signals. Autorise la permission ssf.read. Une personne ne la reçoit que tant qu'elle appartient au groupe de ce rôle, amorcé sous le nom ssf-read, et que l'application à laquelle elle se connecte est membre de ce rôle. Une application ne la reçoit sur son propre jeton que tant qu'elle en est membre. SSF_MANAGE ne l'autorise pas."
+  },
+  "roles.native.SSF_MANAGE.what": {
+    "en": "599cadcd7892cdd2",
+    "text": "Écriture Shared Signals. Autorise la permission ssf.manage. Une personne ne la reçoit que tant qu'elle appartient au groupe de ce rôle, amorcé sous le nom ssf-manage, et que l'application à laquelle elle se connecte est membre de ce rôle. Une application ne la reçoit sur son propre jeton que tant qu'elle en est membre. Elle n'autorise pas ssf.read."
+  },
   "roles.memberKinds.user.label": {
     "en": "df381eb4bb572daf",
     "text": "une personne"

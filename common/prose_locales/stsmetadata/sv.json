@@ -1064,8 +1064,8 @@
     "text": "Allt som en anropare behöver för att VERIFIERA den här tjänsten, som PEM: certifikatet som varje TLS-socket i den här processen visar upp — huvudporten och katalogens LDAPS-lyssnare på 636, som serverar samma certifikat och nyckel snarare än ett andra par — följt av kedjan mellan det och den här tjänstens egen rot-CA, och den roten. Det är ett beslut om vad en ANROPARE måste göra snarare än ett sparat nyckelpar: ett ankare som täcker huvudporten och 636 är EN hämtning, där två skulle få en ldapsearch att misslyckas med \"unable to get local issuer certificate\" mot ett förtroendelager byggt för HTTPS-porten — ett fel som inte namnger något och läses som en trasig katalog. SEDAN 2026-09-11 FINNS KEDJAN OCH ROTEN I DET HÄR DOKUMENTET, eftersom certifikatet slutade vara självsignerat den dagen: OpenSSL tar ett självsignerat löv i ett förtroendelager som ett ankare och nekar ett certifierat, så en anropare som fäste enbart lövet fick samma fel om en rot den aldrig hade fått. LÖVET KOMMER FÖRST, för en anropare som bara vill ha det. Det GENERERAS OM VID VARJE START i båda lägena (om inte tls.certificateFile tillhandahåller det), som en signeringsnyckel i utvecklingsläge, så det är ett ankare som ingen kan ha byggt in och ingen cachad kopia av det förblir giltig — därav Cache-Control: no-store. Det publicerar ingen privat nyckel. Hämta det till ditt eget förtroendelager i stället för att stänga av verifieringen."
   },
   "stsmetadata.endpoints./.what": {
-    "en": "4c29594ca1759528",
-    "text": "Vad den här tjänsten är, i ett kort: projektet på GitHub, dess ärenden, dokumentationssajten och de två ytor på den här instansen som en människa snarare än en klient går till — administrationskonsolen och användarportalen. Den listar AVSIKTLIGT INGA slutpunkter — den här sidan är listan, den genereras, och ett handskrivet urval på ytterdörren vore en andra kopia av den som ingenting kontrollerar. Det var en odirigerad sökväg fram till 2026-08-24, så svaret på den första URL en människa skriver var Express \"Cannot GET /\". Sedan #579 är den en statisk yta: detta besvarar skalet, och /home.js ritar kortet på webbläsarens språk utifrån /home-api/front."
+    "en": "85b6e9694fbfb459",
+    "text": "Vad den här tjänsten är, i ett kort: projektet på GitHub, dess ärenden, dokumentationssajten och de ytor på den här instansen som en människa snarare än en klient går till — administrationskonsolen, användarportalen och rapporterna. Den listar AVSIKTLIGT INGA slutpunkter — den här sidan är listan, den genereras, och ett handskrivet urval på ytterdörren vore en andra kopia av den som ingenting kontrollerar. Det var en odirigerad sökväg fram till 2026-08-24, så svaret på den första URL en människa skriver var Express \"Cannot GET /\". Sedan #579 är den en statisk yta: detta besvarar skalet, och /home.js ritar kortet på webbläsarens språk utifrån /home-api/front."
   },
   "stsmetadata.endpoints./home.js.what": {
     "en": "676325f92b405058",
@@ -1080,8 +1080,8 @@
     "text": "NON-SPEC (#579). Ytterdörrens API-operationer, var och en med den sida den är dörren till (mirrors), så som /account-api listar sina egna. Offentlig och språkfri."
   },
   "stsmetadata.endpoints./home-api/front.what": {
-    "en": "e608f6ceb4c13f9a",
-    "text": "NON-SPEC (#579). Allt som startsidan ritar, som fakta och inga ord: namnet, versionen och dess build, om en inloggning kontrollerar lösenordet och om konsolen är skyddad, logotypen och de fem länkarna som id:n och adresser — konsolens och portalens på den lyssnare som besvarar dem (#472). Offentlig, no-store; den listar inga slutpunkter, precis som sidan aldrig gjorde."
+    "en": "617325f4b1fdbe01",
+    "text": "NON-SPEC (#579). Allt som startsidan ritar, som fakta och inga ord: namnet, versionen och dess build, om en inloggning kontrollerar lösenordet och om konsolen är skyddad, logotypen och de sex länkarna som id:n och adresser — konsolen, portalen och rapporterna, var och en på den lyssnare som besvarar den (#472). Offentlig, no-store; den listar inga slutpunkter, precis som sidan aldrig gjorde."
   },
   "stsmetadata.endpoints./logo.png.what": {
     "en": "3ecb997587060c27",
@@ -1174,6 +1174,74 @@
   "stsmetadata.endpoints./portal/portal.css.what": {
     "en": "69cf245f63b035d1",
     "text": "ICKE-SPEC. Portalens enda stilmall (#568)."
+  },
+  "stsmetadata.endpoints./report.what": {
+    "en": "a9d6c3cc058a3617",
+    "text": "NON-SPEC. Den statiska rapportapplikationen (#956). Varje sökväg besvaras med ett dokument, som läser in /report/report.js och loggar in som den publika klienten sts-report."
+  },
+  "stsmetadata.endpoints./report/*.what": {
+    "en": "0d4a7436bac8a815",
+    "text": "NON-SPEC. Samma dokument som /report. Skriptet väljer sida utifrån sökvägen."
+  },
+  "stsmetadata.endpoints./report/report.js.what": {
+    "en": "06abcdf5598f2576",
+    "text": "NON-SPEC. Rapportkörmiljön, byggd av build-typescript.sh och serverad förkomprimerad. Publik, precis som dokumentet."
+  },
+  "stsmetadata.endpoints./report/report.css.what": {
+    "en": "aa0e94707e105592",
+    "text": "NON-SPEC. Rapportapplikationens enda stilmall (#956)."
+  },
+  "stsmetadata.endpoints./report-api.what": {
+    "en": "7b8038436244d3de",
+    "text": "NON-SPEC. Indexet för /report-api. Det tar den här sfärens DPoP-bundna token för sts-report, scope report:use eller report:admin."
+  },
+  "stsmetadata.endpoints./report-api/openapi.json.what": {
+    "en": "0a932f3efc26b3fb",
+    "text": "NON-SPEC. API:ts egen beskrivning. Bakom samma token som resten av /report-api, och serverad no-store."
+  },
+  "stsmetadata.endpoints./report-api/catalog.what": {
+    "en": "07eb9bbaa64c98e2",
+    "text": "NON-SPEC. De källor en fråga får namnge, samt varje fälts typ och operatorer. Credential-attribut saknas."
+  },
+  "stsmetadata.endpoints./report-api/catalog/:id.what": {
+    "en": "4d6e53c9ce4823ca",
+    "text": "NON-SPEC. En källa ur katalogen, via sitt id."
+  },
+  "stsmetadata.endpoints./report-api/queries.what": {
+    "en": "0d15a58a10e2b1ba",
+    "text": "NON-SPEC. En katalogfråga. En liten begränsad besvaras i anropet; en större köas och besvaras med 202."
+  },
+  "stsmetadata.endpoints./report-api/definitions.what": {
+    "en": "df098902244cfa53",
+    "text": "NON-SPEC. De definitioner den här token får se: ägarens, de som delats med en grupp den ingår i, och samtliga när token bär report:admin."
+  },
+  "stsmetadata.endpoints./report-api/definitions/:id.what": {
+    "en": "74d936b2bb9fff66",
+    "text": "NON-SPEC. En definition. Ett okänt id och ett som den här token inte får se ger samma svar."
+  },
+  "stsmetadata.endpoints./report-api/definitions/:id/share.what": {
+    "en": "12d23dbb24cec023",
+    "text": "NON-SPEC. Namnger de kataloggrupper som får köra definitionen och läsa dess resultat. Ägaren, eller report:admin, är den som får ändra den listan."
+  },
+  "stsmetadata.endpoints./report-api/definitions/:id/run.what": {
+    "en": "991b657f7fe20e17",
+    "text": "NON-SPEC. Köar definitionens fråga som anroparen. En delning ger detta och resultatet, inte redigering."
+  },
+  "stsmetadata.endpoints./report-api/jobs.what": {
+    "en": "f4e437b96fe383f5",
+    "text": "NON-SPEC. De jobb den här token får se, och dörren som köar ett från ett frågedokument."
+  },
+  "stsmetadata.endpoints./report-api/jobs/:id.what": {
+    "en": "d69a7d667bd631bf",
+    "text": "NON-SPEC. Ett jobb. Ett okänt id och ett som den här token inte får se ger samma svar."
+  },
+  "stsmetadata.endpoints./report-api/jobs/:id/cancel.what": {
+    "en": "cbc407e431852e06",
+    "text": "NON-SPEC. Ber ett köat eller körande jobb att stanna. Bytes från ett som redan blivit färdigt lämnas åt lagringstiden."
+  },
+  "stsmetadata.endpoints./report-api/jobs/:id/result.what": {
+    "en": "3b97b9774547de8c",
+    "text": "NON-SPEC. De lagrade bytes för ett färdigt jobb, så länge report.artifactRetentionS inte har passerat. Därefter är resultatet borta."
   },
   "stsmetadata.endpoints./portal/signals/receive.what": {
     "en": "b5f30a87646c3fed",
@@ -1712,8 +1780,8 @@
     "text": "set och remove. set skriver en mäklare och de referenstyper den får använda (pid, k8s, *) till spiffe.brokers i sfären; remove tar bort den, och dess nästa anrop nekas med PERMISSION_DENIED."
   },
   "stsmetadata.endpoints./admin-api/delegation.what": {
-    "en": "bc3ea30406135fc8",
-    "text": "ICKE-SPEC. Varje delegering som den här tjänsten har utfört eller NEKAT, som JSON: åtta mekanismer över Kerberos, WS-Trust och OAuth 2.0 Token Exchange i en modell, var och en med den ursprungliga identiteten, mellanhanden som agerar för den och det mål som nåddes. Filtrerad efter typ, läge, utfall, protokoll och fritext och sidindelad med ?page= och ?per=. Läs `mode` först: en `impersonation` lämnar ingenting i inloggningsuppgiften som säger att ett mellanled var inblandat, så detta är det enda ställe där det faktumet någonsin kommer att finnas. En nekad handling bär KDC:ns eget skäl och förekommer inte i någon annan resurs här. Utöver de sidindelade handlingarna bär svaret `chains` — de distinkta tuplerna (mekanism, ursprunglig, mellanhand, mål) bland det som matchade, en per kant — och `policy`, vem som får delegera till vem innan någon har försökt. GÅ IGENOM DEN EFTER `seq`. ENDAST LÄSNING, en av de två resurserna här som är det: allt i den är en observation eller någon annans konfiguration, så det finns ingenting att ändra. Speglar GET /admin/delegation."
+    "en": "5832fac2dafcfe9d",
+    "text": "ICKE-SPEC. Varje delegering som den här tjänsten har utfört eller NEKAT, som JSON: åtta mekanismer över Kerberos, WS-Trust och OAuth 2.0 Token Exchange i en modell, var och en med den ursprungliga identiteten, mellanhanden som agerar för den och det mål som nåddes. Filtrerad efter typ, läge, utfall, protokoll och fritext och sidindelad med ?page= och ?per=. Läs `mode` först: en `impersonation` lämnar ingenting i inloggningsuppgiften som säger att ett mellanled var inblandat, så detta är det enda ställe där det faktumet någonsin kommer att finnas. En nekad handling bär KDC:ns eget skäl och förekommer inte i någon annan resurs här. Utöver de sidindelade handlingarna bär svaret `chains` — de distinkta tuplerna (mekanism, ursprunglig, mellanhand, mål) bland det som matchade, en per kant — och `policy`, vem som får delegera till vem innan någon har försökt. ÅTERUPPTA EFTER `at`, inte efter `seq` (#465). `seq` är unik och återanvänds aldrig och stiger inom varje process, men varje arbetstråd numrerar från ett eget block, så den är inte en enda ordning mellan dem. ENDAST LÄSNING, en av de två resurserna här som är det: allt i den är en observation eller någon annans konfiguration, så det finns ingenting att ändra. Speglar GET /admin/delegation."
   },
   "stsmetadata.endpoints./admin-api/delegation/policy.what": {
     "en": "1adbc4bff8b6363e",
@@ -1746,6 +1814,22 @@
   "stsmetadata.endpoints./admin-api/secret-destinations/:action.what": {
     "en": "15a8c6d83ed6bc92",
     "text": "ICKE-SPEC (#221). add-destination, update-destination, remove-destination och test-push (en kanarieversion skriven till en testhemlighet): konsolens fyra handlingar, var och en granskad. Skrivbehörighetsuppgiften tas emot och returneras aldrig."
+  },
+  "stsmetadata.endpoints./admin-api/passkey-report.what": {
+    "en": "d45e78dec310a21d",
+    "text": "ICKE-SPEC (#942). Det som Övervakning → Nycklar ritar: sfärens nycklar per algoritm och spår, dess personer per sort (endast postkvant, endast klassisk, båda, ingen), vilka autentiserarmodeller som har vilka algoritmer och varje nyckelprofils postQuantumRequired; filtrerat per grupp, nyckelprofil eller applikation, med en markörsidad lista över personerna bakom varje siffra. Siffrorna är ett aggregat som hålls aktuellt — en daglig omräkning av innehavarna plus de ändringar som noteras när nycklar skrivs — aldrig en genomsökning av katalogen per begäran."
+  },
+  "stsmetadata.endpoints./admin-api/passkey-report/export.what": {
+    "en": "41f6fbe31db08a88",
+    "text": "ICKE-SPEC (#942). De personer som en siffra på Övervakning → Nycklar avser, som CSV eller JSON, lästa en sida innehavare åt gången, högst hundratusen rader och med besked om de kapats. Inget nyckelmaterial."
+  },
+  "stsmetadata.endpoints./admin-api/passkey-report/evidence.what": {
+    "en": "04273b8322f6ed5c",
+    "text": "NON-SPEC (#947). Det arkiverade attesteringsobjektet och dess RFC 4998 EvidenceRecord för en nyckel, namngivna med användarnamn och credentialId. TSA-token verifieras mot de konfigurerade förtroendeankarna. En nyckel som registrerades utan TSA, eller vars attestering inte var betrodd och var klassisk, har ingen post."
+  },
+  "stsmetadata.endpoints./admin-api/passkey-report/:action.what": {
+    "en": "cd923c72e2ca4fba",
+    "text": "ICKE-SPEC (#942). recount: köar jobbet passkeys.report-recount för den här sfären hos schemaläggarens ledare, som gör en ny räkning av innehavarna till den nya baslinjen. Konsolens enda åtgärd på den sidan; den körs där varje jobb körs, aldrig i begäran."
   },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
@@ -1792,8 +1876,8 @@
     "text": "ICKE-SPEC. Den centrala tabellen över varje felvillkor som den här tjänsten kan framställa, STS-<SUBSYSTEM>-<NNNN>, som JSON: varje kod med sitt delsystem, vad som misslyckades, vad KLIENTEN får veta i sitt eget protokolls vokabulär, och på hur många rader den förekommer i den hållna granskningsloggen i den här sfären — filtrerad efter delsystem, text och ?seen=1, sidindelad med ?page= och ?per=. EN KOD SKICKAS ALDRIG TILL EN KLIENT: den finns endast på granskningsraden och i loggraden. ENDAST LÄSNING — tabellen är källkod. Speglar GET /admin/error-codes; samma tabell är docs/error-codes.md."
   },
   "stsmetadata.endpoints./admin-api/audit.what": {
-    "en": "ba4fc61236466ead",
-    "text": "ICKE-SPEC. Vad som hänt här, i ordning, som JSON: varje autentisering, inloggningssession, LDAP-katalogoperation, konsolinteraktion, anrop till hanterings-API:t och anrop till protokollslutpunkter, nyast först, filtrerad efter kategori, åtgärd, utfall, aktör och fritext och sidindelad med ?page= och ?per=. INGEN INLOGGNINGSUPPGIFT FINNS NÅGONSIN PÅ EN RAD — inget lösenord, ingen bärartoken, inget intyg och ingen kropp; en modify namnger de attribut den ändrade och aldrig deras värden. GÅ IGENOM DEN EFTER `seq` snarare än efter sida: den är monoton och återanvänds aldrig, så \"allt efter 4102\" är exakt, medan sida 2 hämtad en sekund efter sida 1 kan upprepa en rad som förskjutits dit. ENDAST LÄSNING — en av de två resurserna här som är det, den andra är /admin-api/delegation. Det finns ingen rensningsoperation, eftersom en raderingskontroll på ett oskyddat API skulle göra en granskningslogg oförmögen att besvara den enda fråga den finns för. Speglar GET /admin/audit."
+    "en": "55d3dcbe157b0e3f",
+    "text": "ICKE-SPEC. Vad som hänt här, i ordning, som JSON: varje autentisering, inloggningssession, LDAP-katalogoperation, konsolinteraktion, anrop till hanterings-API:t och anrop till protokollslutpunkter, nyast först, filtrerad efter kategori, åtgärd, utfall, aktör och fritext och sidindelad med ?page= och ?per=. INGEN INLOGGNINGSUPPGIFT FINNS NÅGONSIN PÅ EN RAD — inget lösenord, ingen bärartoken, inget intyg och ingen kropp; en modify namnger de attribut den ändrade och aldrig deras värden. ÅTERUPPTA EFTER `at`, inte efter `seq` (#465). `seq` är unik i tjänstens alla processer och återanvänds aldrig, och den stiger inom varje process, men varje arbetstråd numrerar från ett eget block, så talen är inte en enda ordning och \"allt efter 4102\" missar en senare händelse som en annan arbetare antecknat under ett lägre tal. `origin` avgör vid lika `seq`. Sida 2 hämtad en sekund efter sida 1 kan upprepa en rad som förskjutits dit. ENDAST LÄSNING — en av de två resurserna här som är det, den andra är /admin-api/delegation. Det finns ingen rensningsoperation, eftersom en raderingskontroll på ett oskyddat API skulle göra en granskningslogg oförmögen att besvara den enda fråga den finns för. Speglar GET /admin/audit."
   },
   "stsmetadata.endpoints./admin-api/realms.what": {
     "en": "83f6f516fe05921e",
@@ -3382,6 +3466,10 @@
   "stsmetadata.protocols.User portal.what": {
     "en": "835d40e9ff6eaabb",
     "text": "INTE ETT PROTOKOLL, och den har ett kort eftersom den här sidan rapporterar en slutpunktsgrupp som inget kort gör anspråk på — vilket är regeln som hindrar en ny familj från att dyka upp oanmäld, och det är värt att betala för det här snarare än att göra regeln villkorlig. DEN FÖRSTA YTAN I DEN HÄR TJÄNSTEN SOM TILLHÖR PERSONEN SOM TITTAR PÅ DEN: varje annan webbläsarsida här är till för någon annan — inloggningsskärmen är ett steg i ett annat protokolls flöde, samtyckesskärmen ställer en fråga och försvinner, /admin är till för en operatör och är grindad på två roller. Det är här en person ser vad den här identitetsleverantören vet om dem och ändrar hur de autentiserar sig: sitt lösenord, och sina säkerhetsnycklar och om var och en är en primär autentiseringsuppgift eller en andra faktor. Det är en SEPARAT APPLIKATION från administratörskonsolen och delar ingenting med den utom inloggningssessionen hos den här tjänstens auktoriseringsserver: var och en är en publik OAuth-klient (sts-user-portal här) som håller sin egen DPoP-bundna token i minnet. /portal/activate är dess oautentiserade halva, där någon som provisionerats via /admin-api eller SCIM förbrukar en tidsbegränsad aktiveringslänk för engångsbruk för att skapa en autentiseringsuppgift — hashad i vila som ett lösenord, hastighetsbegränsad, förbrukad när inställningen slutförs snarare än när länken öppnas, och loggar aldrig in någon. SEDAN #568 ÄR DET EN STATISK APPLIKATION ovanpå /account-api, gruppen Account API nedan: en operation per sida och per formulär, personen alltid tokenets subjekt, beskriven av sitt eget OpenAPI-dokument."
+  },
+  "stsmetadata.protocols.Reporting.what": {
+    "en": "66663fd63a35a287",
+    "text": "INTE ETT PROTOKOLL. Rapportapplikationen (#956): en statisk sida på /report över /report-api, den publika klienten sts-report, och en katalog över den här sfärens egna poster. Den loggar in i webbläsaren, håller en DPoP-bunden token och tar aldrig emot en SQL-sträng. En sparad definition tillhör sin ägare; en delning med en katalogrupp ger rätt att köra och läsa, inte att redigera."
   },
   "stsmetadata.protocols.GNAP.what": {
     "en": "b938c4cb8feac54d",

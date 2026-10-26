@@ -21,7 +21,7 @@
 //      refusals: fewer than 128 bits, an alphabet with a repeat, and
 //      `genId()`'s shape.
 //   2. **THE SOURCE.** Every `.js` and `.ts` the service runs from — not the
-//      vendored copies, which may not be edited here, and not the tests — is
+//      source, and not the tests — is
 //      read with comments and strings blanked, and must hold none of the
 //      shapes in FORBIDDEN: `Math.random(`, `forge.random`, `forge.prng`,
 //      `pseudoRandomBytes`, forge's own envelope and key encryption, an
@@ -35,7 +35,7 @@
 //   3. **FORGE'S GENERATOR IS NODE'S** (the second pass of #65). The
 //      literal `forge.random` was gone and forge went on drawing from its
 //      own Fortuna INSIDE the library — the blinding of every RSA signature
-//      `vendored/xmldsig.js` makes, OAEP seeds, PKCS#1 v1.5 padding. The
+//      `crypto_impl/xmldsig.js` makes, OAEP seeds, PKCS#1 v1.5 padding. The
 //      source cannot see that, so this watches node's `randomBytes` while
 //      forge signs and encrypts, and fails if forge drew without it.
 //   4. **THE OLDER XML KEY TRANSPORTS ARE NODE'S**: `rsa-oaep-mgf1p` and
@@ -60,7 +60,7 @@ const log = require('bunyan').createLogger({ name: 'random_values',
 
 // What is not the service's own source — no_periodic_timers.js's list.
 const SKIP = new RegExp('(^|/)(node_modules|tests|coverage|debugger/embedded|' +
-                        'common/vendored|node-ldapjs|deploy|xacml-pep|docs|' +
+                        'node-ldapjs|deploy|xacml-pep|docs|' +
                         '\\.claude|types|companion)(/|$)');
 
 // GNAP's user-code alphabet (gnap/gnap_grants.ts), the one that was biased.
@@ -106,22 +106,18 @@ const SECOND_GENERATORS = new RegExp('^(?:generate-password|randomstring|' +
 // `js/insecure-randomness`) follows a value from a test's `Math.random()` —
 // a realm id, a username suffix — into the service code it is handed to,
 // and reports the SERVICE line. Sixteen alerts on `ldap/ldap_server.js` were
-// that, every one with its source in a file under tests/. The parent
-// project's copies (`MANIFEST.allFiles()`) are not ours to edit and are
-// left out; everything else under tests/vendored/ is ours.
+// that, every one with its source in a file under tests/. All test code here
+// is maintained independently; its license may remain MIT, but its
+// random-value behavior is still part of this repository's review.
 function testFiles() {
   log.debug('Entering testFiles().');
-  const manifest = require('./vendored/MANIFEST.js');
-  const theirs = new Set(manifest.allFiles().map(function (f) {
-    return 'tests/vendored/' + f.rel;
-  }));
   const out = [];
   const visit = function (dir) {
     fs.readdirSync(dir, { withFileTypes: true }).forEach(function (entry) {
       const full = path.join(dir, entry.name);
       const rel = path.relative(ROOT, full).split(path.sep).join('/');
       if (/(^|\/)(node_modules|report|coverage)(\/|$)/.test(rel) ||
-          theirs.has(rel) || rel === 'tests/random_values.js') {
+          rel === 'tests/random_values.js') {
         return;
       }
       if (entry.isDirectory()) {
@@ -237,6 +233,12 @@ function findingsIn(rel, src) {
   }
   const rsaCalls = /\.(?:en|de)crypt\s*\(/g;
   while ((r = rsaCalls.exec(s))) {
+    // WebCrypto's crypto.subtle.encrypt({ name: 'RSA-OAEP' }) is node's
+    // own RSA, not forge. The scheme name is the same string.
+    const before = s.slice(Math.max(0, r.index - 24), r.index);
+    if (/\bsubtle\s*$/.test(before)) {
+      continue;
+    }
     const args = kept.slice(r.index, r.index + 240);
     if (/['"](?:RSAES-PKCS1-V1_5|RSA-OAEP)['"]/.test(args)) {
       out.push(lineOf(r.index) + 'an RSA encrypt or decrypt by forge — ' +
@@ -374,6 +376,9 @@ function run(t) {
     ['import { nanoid } from "nanoid";', true],
     ['k = key.decrypt(wrapped.toString(\'binary\'), \'RSAES-PKCS1-V1_5\');', true],
     ['w = pub.encrypt(k, \'RSA-OAEP\', { md: sha1 });', true],
+    // WebCrypto names the same scheme. jose_jwe.js wraps a CEK this way.
+    ['await crypto.subtle.encrypt({ name: \'RSA-OAEP\' }, k, d);', false],
+    ['await crypto.subtle.decrypt({ name: \'RSA-OAEP\' }, k, d);', false],
     ['// Math.random() and forge.random, A[b[i] % A.length]', false],
     ['s = "it was Math.random() until #65";', false],
     ['s = "require(\'uuid\')";', false],

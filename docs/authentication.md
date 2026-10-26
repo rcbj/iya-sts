@@ -216,6 +216,28 @@ whose statement nothing verified is shown as *claimed*: a client that believed
 this service's word on an unverified statement would have learned something
 false about a real device.
 
+ML-DSA passkey creation and assertion support depends on the browser,
+operating system and authenticator, and is not implied by ordinary WebAuthn
+support. See the dated [ML-DSA browser and authenticator compatibility
+snapshot](passkeys.md#which-browsers-and-authenticators-can-make-an-ml-dsa-passkey)
+before requiring post-quantum passkeys for a population.
+
+**Optional long-term evidence for trusted classical attestations (#947).**
+Configure `webauthn.attestationEvidenceTsaUrl` with an HTTPS RFC 3161 timestamp
+authority and `webauthn.attestationEvidenceTsaTrustAnchors` with its PEM trust
+anchors. The service then archives the exact attestation bytes together with
+the verification result in an RFC 4998 EvidenceRecord. The TSA token's
+signature, message imprint, certificate path and critical
+`id-kp-timeStamping` purpose are verified before registration succeeds. This
+feature is off when the TSA URL is empty; when enabled, a TSA failure refuses
+the registration. It applies to newly registered trusted classical
+attestations, not post-quantum or untrusted statements. Daily passkey report
+recounts renew timestamps; setting
+`webauthn.attestationEvidenceHashAlgorithm` to `sha384` or `sha512` requests
+hash-tree renewal into a new chain. Admins can export a record from the
+person's passkey page or the evidence export endpoint documented in
+[Passkeys and WebAuthn](passkeys.md#rfc-4998-evidence-for-classical-attestations).
+
 **A classical passkey and a post-quantum one, side by side**
 (`webauthn.pqcAlongsideClassical`, off by default, per realm). An
 authenticator replaces a passkey it already holds for this service when it
@@ -237,6 +259,15 @@ setting cannot be on together with `webauthn.pqcOnly` (`STS-AUTHN-0353`).
 Turned off, a post-quantum passkey already held goes on signing in and no
 new one can be created (`STS-AUTHN-0351`). Few authenticators make ML-DSA
 passkeys yet.
+
+**Upgrading a classical passkey** (`webauthn.pqcUpgrade`, on by default, per
+realm). A person who already holds a classical passkey can move it to ML-DSA
+on `/portal/keys`, and an administrator can run the same ceremony from the
+person's page. With `webauthn.pqcAlongsideClassical` on, the ML-DSA passkey
+is added beside the classical one; with it off, the ML-DSA passkey replaces
+the classical one once the new registration has been verified. Off, no
+passkey can be upgraded (`STS-AUTHN-0450`). See
+[Passkeys](passkeys.md#upgrading-a-classical-passkey).
 
 **`webauthn.userVerification` is the one ceremony option
 that is enforced**, because the UV flag sits inside the bytes the authenticator
@@ -262,7 +293,11 @@ and writes a flag on the entry that already exists (see [LDAP](ldap.md)).
 * an activation link;
 * the sign-in screen's second-factor box, which enrols on first use, but only
   for somebody who holds **no** second factor yet. Otherwise anybody who knew
-  the password could register their own authenticator.
+  the password could register their own authenticator;
+* an administrator's browser, when the person's passkey policy has
+  `adminEnrolment` on (off by default). The console's **Enrol** button
+  registers an `mfa` passkey. See
+  [Passkeys](passkeys.md#an-administrator-enrols-a-passkey).
 
 A person removes a key on `/portal/keys`, and an operator on the person's
 `/admin/users` page (`POST /admin-api/users/clear-key`).
@@ -352,6 +387,12 @@ row says `disallow`. See [XACML](xacml.md).
 | `aggregateDevices` | on | A person's passkeys are one sign-in choice; off, one per passkey (below). |
 | `enterpriseSerialAttribute` | empty | The attribute of a person's entry holding the serials of the security keys issued to them; set, a key registers only if its enterprise attestation names one of them (below). |
 | `postQuantumRequired` | `off` | `sign-in` accepts only a **post-quantum** (ML-DSA) passkey at sign-in; `registration-and-sign-in` refuses a classical one at registration too (below). |
+| `attestationAlgorithms` | `none` | The algorithms a passkey's **attestation** must be signed with — the statement and every certificate of its chain, leaf to anchor: a list of `post-quantum`, `ml-dsa-44`, `ml-dsa-65`, `ml-dsa-87`, `slh-dsa`, `composite-ml-dsa`. Set, it requires a trusted attestation (below). |
+| `postQuantumAllowCredentials` | `realm` | While a post-quantum passkey is required at sign-in: `narrow` names only the person's post-quantum passkeys, `list-and-refuse` names every one and refuses a classical one after the prompt with a page saying why, `realm` follows `webauthn.postQuantumAllowCredentials` (below). |
+| `registrationAlgorithms` | `realm` | The signature algorithms a registration for this profile's people offers, in order. `realm` follows `webauthn.algorithms`. A passkey whose algorithm is not one the profile offers is refused (`STS-AUTHN-0432`). |
+| `registrationMode` | `realm` | `realm` follows `webauthn.pqcOnly` and `webauthn.pqcAlongsideClassical`. `pq-only` offers only ML-DSA and refuses a classical retry. `pq-first` offers ML-DSA first and the classical algorithms after it, even where the realm requests ML-DSA only. `classical-only` offers no ML-DSA (below). |
+| `adminEnrolment` | `off` | `on` lets an administrator holding Admin Write enrol a passkey for a person this profile applies to, in the administrator's browser (below). |
+| `deviceBoundRequired` | off | On, an issuance to an application this profile covers waits until the sign-on session is bound to the browser's key. Refused while `authn.deviceBoundSessions` is off (`STS-AUTHN-0461`). |
 | `recoveryAssurance` | `any` in development, `not-weaker` in product | Whether recovering an account without its passkey restores access at once (`any`), only once a new passkey has signed the person in (`not-weaker`), or only through an administrator and then only that way (`operator-only`) (below). |
 
 **Both portal buttons ask for a discoverable credential by default.** *Create
@@ -465,13 +506,26 @@ does so, and that key counts as post-quantum.
   (with `webauthn.pqcAlongsideClassical` on, only the post-quantum kind).
 
 While it is required at sign-in, the passkey step asks the authenticator only
-for the person's post-quantum passkeys, and a person holding none is told so
-before any prompt appears. A sign-in with no username cannot be narrowed that
-way, so it is refused after the prompt. `/portal/keys` and the console mark a
+for the person's post-quantum passkeys (`narrow`, the default), and a person
+holding none is told so before any prompt appears. Under `narrow` a person
+whose device holds only their classical passkey sees the browser's own "no
+passkey found" message. With `postQuantumAllowCredentials` (or the realm's
+`webauthn.postQuantumAllowCredentials`) set to `list-and-refuse`, the step
+names every passkey instead, and a classical one picked is refused after the
+prompt (`STS-AUTHN-0356`) with a page that says the application requires a
+post-quantum passkey and links to adding one; the trade-off is that the
+person may pick a passkey that will be refused. A refused passkey starts no
+session and records no authentication. A sign-in with no username cannot be
+narrowed either way, so it is refused after the prompt, with the same page. `/portal/keys` and the console mark a
 classical passkey that no longer signs its owner in, and the first time each
 one is refused a CAEP `credential-change` is sent. Like every row, it can be
 set on a named policy, so a single application or group can require
 post-quantum passkeys while the rest of the realm does not.
+
+**Who would be refused** is on **Monitoring → Passkeys**
+([admin console](admin-console.md#passkeys--adminpasskey-report)): the people
+holding classical passkeys only, across the realm or in one group or one
+policy's population, listed and exported. Check it before turning the row on.
 
 A save that requires it is **refused while the realm offers no ML-DSA**
 (`STS-AUTHN-0357`): with `webauthn.algorithms` naming none, and neither
@@ -479,9 +533,89 @@ A save that requires it is **refused while the realm offers no ML-DSA**
 register a passkey that satisfies it. If `webauthn.algorithms` changes
 afterwards, registration offers all three ML-DSA algorithms anyway.
 
+**When a device cannot make the ML-DSA passkey asked for** (#944), the
+passkey step and `/portal/keys` say so in the person's language and, where a
+classical passkey is allowed, offer **Try again with a classical passkey**.
+The retry is refused (`STS-AUTHN-0420`) when the profile's
+`registrationMode` is `pq-only`, when that row is `realm` and
+`webauthn.pqcOnly` is on, under `registration-and-sign-in`, and at the
+sign-in step under `sign-in`. `pq-first` still offers the retry where the
+realm requests ML-DSA only. See
+[Passkeys](passkeys.md#when-the-device-cannot-make-an-ml-dsa-passkey).
+
 A realm that keeps an issuance policy of its own, built from the
-`role-issuance` template before this row existed, decides passkeys with that
-document: rebuild it from the template for the realm to be held to the row.
+`role-issuance` template before the post-quantum row existed, decides
+passkeys with that document: rebuild it from the template for the realm
+to be held to the row.
+
+**Algorithms a registration offers** (`registrationAlgorithms`,
+`registrationMode`). `realm`, the default of both, follows the realm:
+`webauthn.algorithms`, and `webauthn.pqcOnly` with
+`webauthn.pqcAlongsideClassical`. A profile can name its own ordered list,
+from the algorithms `webauthn.algorithms` may name, and a mode:
+
+* `pq-only` offers only ML-DSA, and refuses a retry with the classical
+  algorithms (`STS-AUTHN-0420`).
+* `pq-first` offers ML-DSA first and the classical algorithms after it,
+  even where the realm requests ML-DSA only.
+* `classical-only` offers no ML-DSA, for people whose devices fail an
+  ML-DSA registration. A post-quantum lane is refused (`STS-AUTHN-0433`).
+  A passkey already registered in that lane goes on signing in.
+
+A save is refused when `classical-only` is combined with
+`postQuantumRequired` other than `off`, or with `attestationAlgorithms`
+set (`STS-AUTHN-0430`), and when `pq-only` or `pq-first` would offer no
+ML-DSA (`STS-AUTHN-0431`). A passkey whose algorithm is not one the
+profile offers is refused at the write (`STS-AUTHN-0432`). Left out of a
+save, `realm` is kept.
+
+**An administrator enrols a passkey** (`adminEnrolment`). Off by default.
+`on` lets an administrator holding the Admin Write console role enrol a
+passkey for a person this profile applies to, from the person's page or
+`POST /admin-api/users/begin-passkey-enrolment`. The ceremony runs in the
+administrator's browser, against an authenticator they hold, under the
+person's user handle, and is verified as the person's own registration.
+Nothing made elsewhere can be imported. The key records who enrolled it
+and when, and the person is told. While the row is off the ceremony is
+refused (`STS-AUTHN-0440`), including when the row is turned off during
+the ceremony. See
+[Passkeys](passkeys.md#an-administrator-enrols-a-passkey).
+
+**A device-bound session** (`deviceBoundRequired`). Off by default. On, an
+issuance to an application this profile covers waits until the sign-on
+session is bound to the browser's key, and is refused when the browser
+skipped that registration or the wait elapsed without a binding. A session
+that was never offered registration is not refused by this row. A save is
+refused while `authn.deviceBoundSessions` is off (`STS-AUTHN-0461`). See
+[Sessions](sessions.md#binding-the-cookie-to-the-browser-device-bound-session-credentials).
+
+**A post-quantum attestation required** (`attestationAlgorithms`). This is
+about the passkey's **attestation** — the authenticator's signed statement
+about what made the key, and the certificate chain behind it — not the
+passkey's own algorithm, which `postQuantumRequired` covers. Every
+registration records what its attestation was signed with: the statement's
+algorithm, and the algorithm each certificate of the chain was signed with,
+from the leaf to the trust anchor. An ML-DSA passkey whose attestation chain
+ends in an ECDSA root is only as strong as that root.
+
+- `none`, the default, accepts an attestation whatever it is signed with.
+- A list — `post-quantum` (any ML-DSA, SLH-DSA or composite ML-DSA
+  signature), `ml-dsa-44`, `ml-dsa-65`, `ml-dsa-87`, `slh-dsa`,
+  `composite-ml-dsa` — registers a passkey only when its attestation is
+  **trusted** (it chains to a root in `webauthn.attestationTrustAnchors` or
+  the FIDO metadata) and every one of those signatures is one the list
+  allows (`STS-AUTHN-0411`). A passkey with `none` or self attestation has
+  no certificate and is refused. Like an AAGUID list, setting it asks the
+  browser for direct attestation, so synced passkeys, which send none, are
+  refused.
+- With `enforceAttestationAtSignIn` on, every sign-in holds the passkey to
+  the list by what its registration recorded (`STS-AUTHN-0412`). A passkey
+  registered before this service recorded attestation algorithms recorded
+  none, and stops signing in.
+
+Few authenticators sign their attestation with a post-quantum algorithm yet.
+Look at what the passkeys a realm already holds were attested with (the
+person's console page, or `GET /admin-api/users?user=`) before requiring it.
 
 **The attestation rules at sign-in** (`enforceAttestationAtSignIn`). The
 `webauthn.attestation*` settings — the attestation policy, the list of
@@ -991,10 +1125,15 @@ See [What is not checked](what-is-not-checked.md).
 | `webauthn.insecureAlgorithms` | `STS_WEBAUTHN_INSECURE_ALGORITHMS` | `false` | yes | Development mode only: also request and accept SHA-1's `RS1` (-65535), offered last. Off, `RS1` is neither requested nor accepted even where `webauthn.algorithms` names it, and a key enrolled with it is refused at sign-in (`STS-AUTHN-0294`). Cannot be set in product mode. |
 | `webauthn.pqcOnly` | `STS_WEBAUTHN_PQC_ONLY` | `false` | yes | Request only ML-DSA-44/65/87 (whichever `webauthn.algorithms` names, all three where it names none); a new passkey made with another algorithm is refused at registration. A classical key already enrolled goes on signing in. |
 | `webauthn.pqcAlongsideClassical` | `STS_WEBAUTHN_PQC_ALONGSIDE_CLASSICAL` | `false` | yes | Let a person hold a classical and a post-quantum (ML-DSA) passkey at once, choosing the kind when creating one (see above). Refused beside `webauthn.pqcOnly`. |
+| `webauthn.postQuantumAllowCredentials` | `STS_WEBAUTHN_POST_QUANTUM_ALLOW_CREDENTIALS` | `narrow` | yes | Read while a passkey policy requires a post-quantum passkey at sign-in and the profile's own row is `realm`. `narrow` names only the person's ML-DSA passkeys; `list-and-refuse` names every passkey and refuses a classical one after the ceremony (`STS-AUTHN-0356`). |
+| `webauthn.pqcUpgrade` | `STS_WEBAUTHN_PQC_UPGRADE` | `true` | yes | On, a person may upgrade a classical passkey to ML-DSA on `/portal/keys`, and an administrator from the person's page. Off, no passkey can be upgraded (`STS-AUTHN-0450`). See [Passkeys](passkeys.md#upgrading-a-classical-passkey). |
 | `webauthn.userVerification` | `STS_WEBAUTHN_USER_VERIFICATION` | `required` | yes | Whether the authenticator must verify the person; `required` is enforced. |
 | `webauthn.attestation` | `STS_WEBAUTHN_ATTESTATION` | `direct` | yes | The attestation conveyance asked for at registration. Whether a statement is verified is `webauthn.attestationPolicy`'s decision, not this setting's ([WebAuthn](#webauthn), above). |
 | `webauthn.attestationPolicy` | `STS_WEBAUTHN_ATTESTATION_POLICY` | `by-mode` | yes | What a registration's attestation statement must be: `verify-if-present` verifies every statement and refuses one that does not verify (`none`, self attestation and an unknown chain are accepted and recorded); `require-trusted` refuses anything that does not chain to an anchor, so no synced passkey; `off` verifies nothing (development only; product reads it as `by-mode`). `by-mode` is `verify-if-present` in product mode and `off` in development. |
 | `webauthn.attestationTrustAnchors` | `STS_WEBAUTHN_ATTESTATION_TRUST_ANCHORS` | *(empty)* | yes | Root certificates (a PEM bundle) an attestation certificate may chain to, beside those the FIDO Metadata Service lists; empty trusts only what the active MDS BLOB lists. |
+| `webauthn.attestationEvidenceTsaUrl` | `STS_WEBAUTHN_ATTESTATION_EVIDENCE_TSA_URL` | *(empty)* | yes | HTTPS RFC 3161 timestamp authority for optional RFC 4998 evidence records. Empty disables evidence recording; when enabled, TSA failure refuses registration of an eligible attestation. |
+| `webauthn.attestationEvidenceTsaTrustAnchors` | `STS_WEBAUTHN_ATTESTATION_TSA_TRUST_ANCHORS` | *(empty)* | yes | PEM trust anchors for validating timestamp tokens and their TSA certificate path. |
+| `webauthn.attestationEvidenceHashAlgorithm` | `STS_WEBAUTHN_ATTESTATION_HASH_ALGORITHM` | `sha256` | yes | Digest for new evidence records; `sha384` or `sha512` triggers RFC 4998 hash-tree renewal during the daily passkey report recount. |
 | `webauthn.attestationAllowedAaguids` | `STS_WEBAUTHN_ATTESTATION_ALLOWED_AAGUIDS` | *(empty: any model)* | yes | The authenticator models (AAGUIDs, comma-separated) a key may be registered from. Set, it requires a trusted attestation whatever the policy says. |
 | `webauthn.attestationMinCertificationLevel` | `STS_WEBAUTHN_ATTESTATION_MIN_CERTIFICATION` | `none` | yes | The least FIDO certification level (`L1` to `L3plus`) a model must hold, from MDS status reports; anything but `none` requires a trusted attestation from a model MDS lists. |
 | `webauthn.attestationRequireFips` | `STS_WEBAUTHN_ATTESTATION_REQUIRE_FIPS` | `false` | yes | Refuse a model MDS does not report as FIPS 140 certified; on, it requires a trusted attestation from a model MDS lists. |

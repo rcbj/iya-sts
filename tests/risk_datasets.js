@@ -11,7 +11,7 @@
 //
 // `risk/risk_store.ts` answers the same methods from maps when there is no
 // database, and those are the ones driven here; the postgres driver's SQL is
-// driven by `tests/vendored/sts_admin_risk.js` against a real database in the
+// driven by `tests/protocol/sts_admin_risk.js` against a real database in the
 // single-node and cluster modes. What this file holds:
 //
 //   A. The address arithmetic every lookup rests on — a range from a single

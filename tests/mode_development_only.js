@@ -41,7 +41,7 @@
 //   C. `mode.report()` carries the new requirements.
 //
 // The SPIRE Server API's `local` socket is `spiffe_local_socket.js`; the same
-// refusals over HTTP are `tests/vendored/sts_development_only_settings.js`.
+// refusals over HTTP are `tests/protocol/sts_development_only_settings.js`.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;

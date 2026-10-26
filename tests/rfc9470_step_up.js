@@ -30,7 +30,7 @@
 //           application, a token for another audience, a token this service
 //           did not sign. Since #593 deleted the service's own stand-in
 //           (`/oauth2/step-up/resource/{application}`; the test peer plays
-//           it over HTTP, `tests/vendored/sts_step_up.js`) it is a STUB this
+//           it over HTTP, `tests/protocol/sts_step_up.js`) it is a STUB this
 //           file serves on the same app, built on what the stand-in was built
 //           on: `dpop.presentedAccessToken()`'s `audience`,
 //           `requireVerified` and `stepUp` options and the entry's

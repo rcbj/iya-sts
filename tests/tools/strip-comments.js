@@ -54,7 +54,7 @@
 // in its fork), `tests` and `xacml-pep` (removed from the service image
 // anyway), `deploy`, `docs` and `openbao` (never run by the service), and
 // `debugger/embedded` (another project's build output, copied into the image
-// after this runs). The vendored copies — `common/vendored/` and the eight
+// after this runs). The vendored copies — `common/crypto_impl/` and the eight
 // Kerberos codec files — ARE stripped, in the image only: what may not be
 // edited is the repository's copy, and that one is untouched.
 //

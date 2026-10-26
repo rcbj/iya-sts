@@ -9,7 +9,7 @@
 // The main port asks every handshake for a client certificate (RFC 8705,
 // certificate sign-in, the remote PEP) and requires none; LDAPS does not ask
 // at all — a bind is how a directory client says who it is. Nothing held that
-// (#113 item 14): `tests/vendored/tlsfuzzer_kit.js` only skips its
+// (#113 item 14): `tests/protocol/tlsfuzzer_kit.js` only skips its
 // CertificateRequest probes for LDAPS. A listener that started asking would
 // put a certificate prompt in front of every LDAP client holding one, and a
 // strict client could refuse to bind.

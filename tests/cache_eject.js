@@ -128,6 +128,8 @@ function childMain() {
       // The access-token status list's rows and signed lists, and the
       // revoked biscuits' identifiers (#432): each until its token expires.
       'oauth2.access-token-status', 'oauth2.access-token-status-lists',
+      // Opaque access-token rows (#501), each until the token's exp.
+      'oauth2.opaque-access-tokens',
       'gnap.biscuit-revocations',
       // A resource server's owner lookups (#432 phase 5), each for
       // gnap.ownerLookupCacheS.
@@ -144,7 +146,7 @@ function childMain() {
       return !/^test\./.test(n);
     });
     note(JSON.stringify(ejecting) === JSON.stringify(expected),
-         'B1. exactly the forty-two stores whose entries expire eject them',
+         'B1. exactly the forty-three stores whose entries expire eject them',
          JSON.stringify({ missing: expected.filter(function (n) {
            return ejecting.indexOf(n) < 0;
          }), extra: ejecting.filter(function (n) {

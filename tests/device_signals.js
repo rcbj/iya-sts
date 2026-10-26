@@ -269,10 +269,18 @@ function childMain() {
       const medium = devices.setRiskLevel(id, 'MEDIUM', 'UNAPPROVED_SOFTWARE');
       const high = devices.setRiskLevel(id, 'HIGH', 'MALWARE');
       const riskSets = ofType(await drain(), CAEP + 'risk-level-change', id);
-      const r1 = riskSets[0] ? riskSets[0].events[CAEP +
-                                                'risk-level-change'] : {};
-      const r2 = riskSets[1] ? riskSets[1].events[CAEP +
-                                                'risk-level-change'] : {};
+      // The two SETs are told apart by their level, not their position: a
+      // poll answers the queued sets in no promised order (RFC 8936), and
+      // both carry the same second as their event_timestamp.
+      const riskEvents = riskSets.map(function (set) {
+        return set.events[CAEP + 'risk-level-change'];
+      });
+      const r1 = riskEvents.filter(function (e) {
+        return e.current_level === 'MEDIUM';
+      })[0] || {};
+      const r2 = riskEvents.filter(function (e) {
+        return e.current_level === 'HIGH';
+      })[0] || {};
       note(medium.ok && high.ok && riskSets.length === 2 &&
            r1.principal === 'DEVICE' && r1.current_level === 'MEDIUM' &&
            !('previous_level' in r1) &&

@@ -190,6 +190,11 @@ interface IssuanceQuestion {
   // EAP ACR Values 1.0's `phr` and `phrh` earned, or [`none`], sent by the
   // gate on every browser issuance. See `common/phishing_resistance.ts`.
   phishingResistance?: string[] | null;
+  // THE DEVICE-BOUND SESSION (#740): `bound`, `skipped`, `pending`,
+  // `timedout` or `none`, computed by `issuance_gate.js` from the session.
+  // Absent is `none`. The PEP holds `pending` and refuses `skipped` and
+  // `timedout` when the application's passkey profile requires a binding.
+  deviceBoundSession?: string;
   // WHO MAY ACT FOR WHOM (#186): present, this is the exchange question
   // `issuance_gate.checkExchange()` asks, answered with a verdict
   // (`decideExchange()`).
@@ -318,6 +323,10 @@ interface IssuanceAnswer {
   exchange?: Record<string, any> | null;
   // The per-right verdicts, for a GNAP right question (#432).
   gnapRights?: Array<Record<string, any>>;
+  // A device-bound registration that has been offered and has not finished
+  // (#740). Not a refusal and not an error code: issuance waits. `skipped`
+  // and `timedout` are ordinary refusals and do not set this.
+  deferred?: boolean;
 }
 
 // Which document decides: `policy` when one does, `why` when none can.
@@ -333,7 +342,8 @@ interface XacmlRolePepDeps {
   config: { value(key: string): any };
   audit: { audit(row: object): unknown;
            failure(code: string, row: object): unknown };
-  errorCodes: { tag(code: string): string };
+  errorCodes: { tag(code: string): string;
+                mark<T>(target: T, code: string): T };
   applications: { requiredRolesOf(application: any): string[];
                   requiresNarrowedRoles(application: any): boolean };
   roles: { rolesOf(subject: any): string[];
@@ -508,7 +518,7 @@ class XacmlRolePep {
   // The two alternatives were both worse. Seeding on `realms.onChange` puts a
   // policy in every realm's repository, which changes what `/xacml/policies`
   // answers, what a remote PEP pulls and what every count in
-  // `tests/vendored/sts_xacml_endpoints.js` asserts — for a document that has
+  // `tests/protocol/sts_xacml_endpoints.js` asserts — for a document that has
   // nothing to do with anybody else's boundary. Falling back to the DEFAULT
   // realm's copy couples two realms, which is the one thing the realm design
   // does not do.
@@ -682,6 +692,7 @@ class XacmlRolePep {
     this.mechanismAttributes(req, asked);
     this.mfaAttributes(req, asked);
     this.phishingAttributes(req, asked);
+    this.deviceBoundAttributes(req, asked);
     this.deviceAttributes(req, asked);
     // THE PROTOCOL DECLARATION, only where the gate named both halves: the
     // declaration on the resource (it is a fact about the application), the
@@ -834,6 +845,57 @@ class XacmlRolePep {
     log.debug("Leaving XacmlRolePep.phishingAttributes().");
   }
 
+  // THE DEVICE-BOUND SESSION (#740), sent only while the feature is on, so
+  // a rule about it is inapplicable when the feature is off. The fact is
+  // the gate's token. The requirement is `true` only when the profile
+  // requires a bound session.
+  private deviceBoundAttributes(req: any, asked: IssuanceQuestion): void {
+    const { log, config } = this.deps;
+    log.debug("Entering XacmlRolePep.deviceBoundAttributes().");
+    if (config.value('authn.deviceBoundSessions') !== true) {
+      log.debug("Leaving XacmlRolePep.deviceBoundAttributes(). Off.");
+      return;
+    }
+    const fact = String(asked.deviceBoundSession || 'none');
+    req.environment(AUTHN.DEVICE_BOUND_SESSION, [fact]);
+    if (asked.application &&
+        this.deviceBoundRequiredOf(String(asked.application))) {
+      req.environment(AUTHN.DEVICE_BOUND_REQUIRED, ['true']);
+    }
+    log.debug("Leaving XacmlRolePep.deviceBoundAttributes().");
+  }
+
+  // Whether the application's passkey profile requires a device-bound
+  // session. The policy module is required here, not at load: it requires
+  // the issuance gate, and a top-level require from this file could close
+  // that cycle. A directory that cannot be read is treated as not required,
+  // so a failure there does not become a refusal.
+  private deviceBoundRequiredOf(application: string): boolean {
+    const { log, config } = this.deps;
+    log.debug("Entering XacmlRolePep.deviceBoundRequiredOf().");
+    if (config.value('authn.deviceBoundSessions') !== true || !application) {
+      log.debug("Leaving XacmlRolePep.deviceBoundRequiredOf(). No.");
+      return false;
+    }
+    try {
+      const policy = require('../common/passkey_policy');
+      const name = policy.selectionFor('', application);
+      const profile = policy.read(name);
+      const required = !!(profile && profile.deviceBoundRequired === true);
+      log.debug("Leaving XacmlRolePep.deviceBoundRequiredOf(). " +
+                required);
+      return required;
+    } catch (e) {
+      // Unreadable is not required. Refusing every issuance because the
+      // profile could not be read would brick the protocols this gate sits
+      // in front of.
+      log.debug("Caught in XacmlRolePep.deviceBoundRequiredOf(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving XacmlRolePep.deviceBoundRequiredOf(). Unreadable.");
+      return false;
+    }
+  }
+
   // -------------------------------------------------------------------------
   // THE REGISTERED DEVICE AS ENVIRONMENT ATTRIBUTES (#164 decision 3, phase
   // 6) — `xacml_templates.ts`'s DEVICE_ATTRIBUTE. Sent only where the gate
@@ -912,10 +974,11 @@ class XacmlRolePep {
     })[0] : null;
     const said = hit ? String(hit.lexical !== undefined ? hit.lexical
                                                         : hit.value) : '';
+    const known = said === 'phishing-resistant' ||
+      said === 'hardware-protected' || said === 'device-bound-session';
     log.debug("Leaving XacmlRolePep.authenticationRefusalOf(). " +
-              (said || 'none'));
-    return said === 'phishing-resistant' || said === 'hardware-protected'
-      ? said : null;
+              (known ? said : 'none'));
+    return known ? said : null;
   }
 
   // The risk obligation on a Deny, read: `{ action, factor }`, or null when
@@ -1047,6 +1110,17 @@ class XacmlRolePep {
     if (asked.gnapRightQuestion) {
       log.debug('Leaving XacmlRolePep.decideNow(). A GNAP right question.');
       return this.decideGnapRights(asked);
+    }
+
+    // BEFORE the policy, and before `xacml.enabled` being off (#740): a
+    // repository override written without the device-bound rule, and a
+    // realm that does not evaluate XACML, still hold a pending registration
+    // and still refuse a skipped or timed-out one. A pending hold is not
+    // counted as a refusal.
+    const binding = this.deviceBoundGate(asked);
+    if (binding) {
+      log.debug('Leaving XacmlRolePep.decideNow(). Device-bound session.');
+      return binding;
     }
 
     if (config.value('xacml.enabled') === false) {
@@ -1411,12 +1485,17 @@ class XacmlRolePep {
     // cover the question, and an Indeterminate is a policy that could not be
     // evaluated.
     const why = this.reasonFor(answer, held, required, asked);
+    // The built-in device-bound rule (#740), when the early gate did not
+    // already answer it: the same operator code, recorded and never sent.
+    const deviceBoundRefusal =
+      this.authenticationRefusalOf(answer) === 'device-bound-session';
     if (!dryRun) {
       audit.audit({
         action: 'xacml.issuance.refused',
-        errorCode: answer.decision === model.DECISION.DENY ? 'STS-XACML-0039'
+        errorCode: deviceBoundRefusal ? 'STS-AUTHN-0462'
+          : (answer.decision === model.DECISION.DENY ? 'STS-XACML-0039'
           : (answer.decision === model.DECISION.NOT_APPLICABLE
-              ? 'STS-XACML-0040' : 'STS-XACML-0041'),
+              ? 'STS-XACML-0040' : 'STS-XACML-0041')),
         actor: subject.name || '',
         protocol: 'XACML',
         detail: answer.decision + ' for ' + (asked.kind || 'an issuance') +
@@ -1428,8 +1507,59 @@ class XacmlRolePep {
              (asked.kind || 'an issuance') + ' for "' +
              asked.application + '" to "' + (subject.name || 'nobody') +
              '" — ' + answer.decision + '. ' + why);
+    const refusal = this.refused(why, answer.decision, held, required,
+                                 answer);
     log.debug('Leaving XacmlRolePep.decideNow(). ' + answer.decision + '.');
-    return this.refused(why, answer.decision, held, required, answer);
+    return deviceBoundRefusal
+      ? errorCodes.mark(refusal, 'STS-AUTHN-0462') : refusal;
+  }
+
+  // A device-bound session the application requires (#740), decided before
+  // the policy is asked. The feature off, a fact other than pending /
+  // skipped / timedout, no application, or a profile that does not require
+  // one: not this gate's, and the caller goes on. `pending` is a hold
+  // (`deferred`, no error code, not counted). `skipped` and `timedout` are
+  // STS-AUTHN-0462, recorded and never sent.
+  private deviceBoundGate(asked: IssuanceQuestion): IssuanceAnswer | null {
+    const { log, config, audit, errorCodes } = this.deps;
+    log.debug("Entering XacmlRolePep.deviceBoundGate().");
+    if (config.value('authn.deviceBoundSessions') !== true) {
+      log.debug("Leaving XacmlRolePep.deviceBoundGate(). Feature off.");
+      return null;
+    }
+    const fact = String(asked.deviceBoundSession || 'none');
+    if (fact !== 'pending' && fact !== 'skipped' && fact !== 'timedout') {
+      log.debug("Leaving XacmlRolePep.deviceBoundGate(). " + fact);
+      return null;
+    }
+    if (!asked.application ||
+        !this.deviceBoundRequiredOf(String(asked.application))) {
+      log.debug("Leaving XacmlRolePep.deviceBoundGate(). Not required.");
+      return null;
+    }
+    if (fact === 'pending') {
+      log.debug("Leaving XacmlRolePep.deviceBoundGate(). Pending.");
+      return { allowed: false, deferred: true, decision: 'Deny',
+               why: 'The application requires a device-bound session, and ' +
+                    'registration for this one has not finished.',
+               roles: [], required: [],
+               policy: this.issuancePolicyName() };
+    }
+    const why = 'The application requires a device-bound session, and ' +
+      'this one ' + (fact === 'skipped' ? 'was skipped.'
+                                         : 'was not bound in time.');
+    if (!dryRun) {
+      audit.audit({
+        action: 'xacml.issuance.refused', errorCode: 'STS-AUTHN-0462',
+        actor: String(asked.subject && asked.subject.name || ''),
+        protocol: 'XACML',
+        detail: fact + ' for ' + (asked.kind || 'an issuance') + ' to "' +
+                asked.application + '": ' + why
+      });
+    }
+    log.debug("Leaving XacmlRolePep.deviceBoundGate(). Refused.");
+    return errorCodes.mark(this.refused(why, 'Deny', [], [], null),
+                           'STS-AUTHN-0462');
   }
 
   // -------------------------------------------------------------------------
@@ -1629,6 +1759,13 @@ class XacmlRolePep {
     // role sentence would tell somebody who holds every role that they
     // hold every role.
     const lacked = this.authenticationRefusalOf(answer);
+    if (lacked === 'device-bound-session') {
+      const fact = String(asked.deviceBoundSession || '');
+      log.debug("Leaving XacmlRolePep.reasonFor(). Device-bound.");
+      return 'The application requires a device-bound session, and this ' +
+        'one ' + (fact === 'skipped' ? 'was skipped.'
+                                      : 'was not bound in time.');
+    }
     if (lacked) {
       log.debug("Leaving XacmlRolePep.reasonFor(). The authentication.");
       return '"' + asked.application + '" requires ' +

@@ -197,7 +197,7 @@ stack — collide the same way with no restart at all.
 The serial is now 128 bits of randomness with the caller's byte in FRONT of it,
 so `03…` still says which of this service's certificates a capture is looking
 at. `certificateSerial()` in `common/crypto.js` is where that is argued, and it
-is the same 128-bit serial `common/vendored/x509.js` has always minted for a
+is the same 128-bit serial `common/crypto_impl/x509.js` has always minted for a
 SPIFFE SVID. The signing key's certificate (`'02'`, `common/helpers.js`) and
 the ML-DSA one (`'04'`, below) were changed with it — neither is met in a
 browser, so neither showed the failure, and leaving them constant would have
@@ -495,7 +495,7 @@ the same argument at greater length.
 
 **IT NEEDS NODE 24, AND ASKING FOR IT ON AN OLDER ONE NO LONGER STOPS THE
 SERVICE.** ML-DSA reaches node with OpenSSL 3.5, which is node 24 — the version
-the Dockerfile pins (24.16.0). On node 22 `generateKeyPairSync('ml-dsa-65')`
+the Dockerfile pins (24.22.1). On node 22 `generateKeyPairSync('ml-dsa-65')`
 throws `ERR_INVALID_ARG_VALUE`, and until 2026-09-01 that throw came out of the
 certificate block at this module's TOP LEVEL: a `require` that throws takes the
 whole process down where a route could not, so a developer on node 22 who set
@@ -850,7 +850,7 @@ same reason `tests/tls_trust_anchor.js`'s first section forks.
 
 The protocol half pinned the service's certificate ONCE, at run start, which was
 right for as long as this certificate could only change when the process did.
-`tests/vendored/sts_admin_api_operations.js` drives every declared operation of
+`tests/protocol/sts_admin_api_operations.js` drives every declared operation of
 the management API, `build-root` among them, so **every job after it lost its
 anchor**: twenty-nine failures per mode in `memory` and `postgres`, each naming
 a certificate and none naming a cause, on a service that was answering
@@ -859,7 +859,7 @@ protocol job now; `tests/CLAUDE.md` carries that half.
 
 ## "STILL CHAINS TO THE ROOT" WAS NOT CURRENT, AND THE FRONT PROCESS BUILT A BRANCH BESIDE A WORKER (2026-09-13)
 
-`tests/vendored/sts_pki_distribution_points.js` failed in `dispatch` mode only:
+`tests/protocol/sts_pki_distribution_points.js` failed in `dispatch` mode only:
 *`…/pki/crl/process/intermediate.crl` is named by certificates of two different
 authorities — CN=sts Intermediate CA (Process), O=sts and CN=sts Intermediate CA
 (Process), O=sts*. Read off the kept stack, not guessed: the handshake and
@@ -937,7 +937,7 @@ behind.** `applyAnchors()` reaches only the listeners registered through
 `trustClientCertificatesOn()`. LDAPS 636 (`ldap/ldap_server.js`) and every
 realm's SPIRE Server API (`spiffe/spiffe_server.ts`) set their context ONCE,
 when they bound, so after a Root replacement both presented a chain under a
-Root nothing held, and `tests/vendored/sts_ldaps.js` and `sts_spiffe_grpc.js`
+Root nothing held, and `tests/protocol/sts_ldaps.js` and `sts_spiffe_grpc.js`
 failed with `unable to get local issuer certificate` in every mode, until a
 restart. This module's own log line said "one anchor covers LDAPS 636" the
 whole time.
@@ -1015,7 +1015,7 @@ argument. The short version:
   handshake on one node and checks the other node's signature against the
   first node's key fails. That is tlsfuzzer's different-SNI probe and the
   TLS 1.2-ticket-as-PSK probe, both recorded as cluster-only exceptions
-  (`perNodeKey`, `clustered: true`) in `tests/vendored/tlsfuzzer_kit.js`.
+  (`perNodeKey`, `clustered: true`) in `tests/protocol/tlsfuzzer_kit.js`.
 * **Codes.** `STS-TLS-0036` is a key that could not be applied;
   `STS-TLS-0037` is a stored key that is not 48 bytes.
 
@@ -1294,7 +1294,7 @@ change re-applies it to every registered listener (the main port among them),
 ECDHE AES-GCM suites for TLS 1.2 — with `honorCipherOrder`, so the server's order wins and
 TLS 1.3 is what a modern client gets. It is the FAPI 2.0 Security Profile's section 5.2.2,
 made every listener's default rather than a FAPI switch, because a cipher suite belongs to
-the socket and a profile to a realm; `tests/vendored/sts_fapi2.js` proves the handshakes (TLS
+the socket and a profile to a realm; `tests/protocol/sts_fapi2.js` proves the handshakes (TLS
 1.3 preferred, a TLS 1.2 GCM suite accepted, a CBC suite refused). The floor is still node's
 TLSv1.2, which FAPI 2.0 allows. **A cipher list that builds no context is
 FATAL at require time**: found later it would be a TypeError from `createServer()`, or a
@@ -1418,13 +1418,18 @@ Pooling settings on each HTTP/HTTPS listener tab."
     no name and only notes a mismatch) nor node's `resumeSession` event (it
     passes the ID alone) does it, so tlsfuzzer's
     `test-invalid-server-name-extension-resumption.py` failed on the
-    debugger's listener the day the size went to 2048. The name a hello
-    offers is known only to node's `onclienthello` handler, so
-    `installClientHelloHook()` wraps `TLSSocket.prototype._init` once and,
-    for the servers `attachSessionCache()` registered, wraps each socket's
-    `onclienthello` and `onnewsession` (`watchClientHello()`); the cache keeps
-    the name with the session and compares it byte for byte. It FAILS
-    CLOSED: a name it cannot see refuses the resumption, and a node with no
+    debugger's listener the day the size went to 2048. Node 24's
+    `onclienthello` carries the session id and the ticket flag only —
+    `hello.servername` is absent, and `getServername()` is still false
+    while `resumeSession` runs — so `installSessionNameSniffer()` reads
+    the name from the raw ClientHello before the TLS engine (the
+    pause-and-unshift `client_hello.ts` uses). `installClientHelloHook()`
+    still wraps `TLSSocket.prototype._init` once and, for the servers
+    `attachSessionCache()` registered, wraps each socket's `onclienthello`
+    and `onnewsession` (`watchClientHello()`), preferring
+    `hello.servername` when a node passes it. The cache keeps the name
+    with the session and compares it byte for byte. It FAILS CLOSED: a
+    name it cannot see refuses the resumption, and a node with no
     `_init` is logged as STS-TLS-0046 and resumes nothing by ID.
     `tests/listener_tls_policy.js` L5c holds it. **TLS 1.2 TICKETS are not
     covered**: node resumes a ticket inside OpenSSL with no event, and
@@ -1516,9 +1521,9 @@ the table.
 ## WHAT tlsfuzzer FOUND (2026-09-26, #212)
 
 tlsfuzzer runs against all three listeners that present this module's
-certificate: the main port and LDAPS from `tests/vendored/sts_tlsfuzzer.js`,
+certificate: the main port and LDAPS from `tests/protocol/sts_tlsfuzzer.js`,
 and the debugger's from `tests/tlsfuzzer_debugger.js`. Both run the plan in
-`tests/vendored/tlsfuzzer_kit.js`, which records every exception with its
+`tests/protocol/tlsfuzzer_kit.js`, which records every exception with its
 reason; `tests/CLAUDE.md` (*THE TLS FUZZER*) says how it runs. It found four
 things in this module's policy, all fixed here.
 
@@ -1585,7 +1590,19 @@ is Node/OpenSSL behaviour this service cannot configure, and each is also on
 * a lazy KeyUpdate answer;
 * OpenSSL checking `legacy_record_version`;
 * the hybrid and compressed-point leniency;
-* no ALPN on LDAPS.
+* no ALPN on LDAPS;
+* an empty body of an extension the script still calls unassigned
+  (`emptyAssignedExtension`,
+  `test-tls13-large-number-of-extensions.py`): the first chunk is ids 2
+  through 4119, which includes extensions IANA has assigned and OpenSSL
+  implements, so RFC 8446 section 4.2 requires decode_error. Later chunks
+  are ids nobody has assigned and are ignored.
+* a random body of that same stale range (`randomAssignedExtension`, the
+  probe whose ids run from 2 through 1047, which still includes
+  `compress_certificate`). The same decode_error, on every listener. The
+  script draws 20 probes, so the failure shows up on whichever listener
+  drew the probe, and a listener that did not draw it reports the
+  exception as not seen.
 
 One TOOL entry sits beside them, `h2Preface` (2026-10-19): since #703 a TLS
 1.2 resumption that offers only `h2` after a full handshake on `http/1.1`
@@ -1920,7 +1937,7 @@ its development-mode test control are history.
 `tests/tls_connection_page.js` drives the operation over a real TLS listener
 in a child (no certificate, an untrusted one, a trusted one, the proxy
 settings both ways, the page drawn and escaped, the pin);
-`tests/vendored/sts_tls_connection.js` (local) asks a running service, in every
+`tests/protocol/sts_tls_connection.js` (local) asks a running service, in every
 mode; `tests/diagnostic_pages.js` holds the old paths unrouted.
 
 ## Several accounts in one browser (#561, 2026-10-19)

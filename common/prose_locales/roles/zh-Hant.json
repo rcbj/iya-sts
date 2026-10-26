@@ -107,6 +107,14 @@
     "en": "54220e44643bd84c",
     "text": "裝置合規性摘要：透過 POST /admin-api/device-compliance 回報裝置合規性的 MDM 或態勢摘要，且不涉及 /admin-api 上的其他任何東西。授權 device:compliance 權限。植入時沒有成員：請加入摘要的應用程式。"
   },
+  "roles.native.SSF_READ.what": {
+    "en": "0a43e12ff3313079",
+    "text": "Shared Signals 讀取。授權 ssf.read 權限。僅當某人屬於此角色的群組（種子群組名為 ssf-read），且其登入的應用程式是此角色的成員時，才會向其簽發該權限。僅當應用程式本身是成員時，才會在其自身的權杖上簽發該權限。SSF_MANAGE 不授權該權限。"
+  },
+  "roles.native.SSF_MANAGE.what": {
+    "en": "599cadcd7892cdd2",
+    "text": "Shared Signals 寫入。授權 ssf.manage 權限。僅當某人屬於此角色的群組（種子群組名為 ssf-manage），且其登入的應用程式是此角色的成員時，才會向其簽發該權限。僅當應用程式本身是成員時，才會在其自身的權杖上簽發該權限。該權限不授權 ssf.read。"
+  },
   "roles.memberKinds.user.label": {
     "en": "df381eb4bb572daf",
     "text": "一個人"

@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4587** of them, in **47** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4673** of them, in **48** subsystems.
 
 ## Where a code appears
 
@@ -51,23 +51,23 @@ is an ordinary outcome.
 
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 19
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
-* [Service core (`STS-CORE`)](#sts-core) — 94
+* [Service core (`STS-CORE`)](#sts-core) — 95
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 51
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 87
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 32
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 20
-* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 145
+* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 147
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 206
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 56
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 343
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 724
-* [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 115
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 381
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 730
+* [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 117
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 33
-* [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 29
+* [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 30
 * [Federation (`STS-FED`)](#sts-fed) — 171
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 242
@@ -83,7 +83,7 @@ is an ordinary outcome.
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 48
 * [Mail (`STS-MAIL`)](#sts-mail) — 40
 * [Languages and locales (`STS-I18N`)](#sts-i18n) — 12
-* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 355
+* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 356
 * [Device register (`STS-DEVICE`)](#sts-device) — 52
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 29
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 98
@@ -94,8 +94,9 @@ is an ordinary outcome.
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 19
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 13
 * [Identity-provider-initiated sign-in (`STS-LAUNCH`)](#sts-launch) — 7
-* [Registries (`STS-REG`)](#sts-reg) — 180
+* [Registries (`STS-REG`)](#sts-reg) — 181
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
+* [Reporting (`STS-REPORT`)](#sts-report) — 34
 
 ## STS-HTTP
 
@@ -245,6 +246,7 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | `STS-CORE-0160` | A garbage collection was asked for on Monitoring → Node Health with an action the operation does not have, or a target that is neither `all`, `front`, nor the threadId of a ready worker thread of this node (#611). Nothing was collected. | HTTP 400 for an unknown action or a malformed target, 404 for a thread this node does not have |
 | `STS-CORE-0161` | A trust realm was not created because this cluster already holds realms.maxCount of them, the default realm included (#368). A realm read back from the store or another process is not refused for this, so a restart of a registry that is already over the cap still comes up. Lowering the cap does not remove realms. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-CORE-0162` | realms.maxCount was set or cleared while a trust realm other than the default was ambient (#368). The limit is process-wide and only a service administrator in the default realm may change it. The other realms.* settings stay settable process-wide from inside a realm. | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-CORE-0163` | Another process claimed a trust realm's signer-group keys (keys.signerModel hybrid-groups) and they did not arrive within the wait, so this process made them itself; the cluster may hold two sets until one is replaced. | none — logged; group signatures go on |
 
 ## STS-WORKER
 
@@ -722,6 +724,8 @@ Raised from: common/crypto.js, common/pq_jose.js, common/keystore.js, common/sec
 | `STS-KEYS-0154` | A response signature covers a ;req component, and no request message was given to read it from (RFC 9421 section 2.4). | the caller's: a signing resource server's defect, logged; a client verifying a response refuses it |
 | `STS-KEYS-0155` | This runtime has no argon2 (node before 24.7), so a new password was hashed with scrypt at the password policy's scrypt parameters instead of argon2id. Logged once per process. | — |
 | `STS-KEYS-0156` | A stored argon2id password hash could not be computed here — no argon2 in this runtime, or parameters outside the bounds this service computes — and was treated as no match. | — |
+| `STS-KEYS-0157` | A JWS signed with a post-quantum or composite algorithm (ML-DSA, SLH-DSA, composite ML-DSA) was presented to a realm whose keys.postQuantumSigning is off, and was refused before its signature was checked. | the caller's refusal: each protocol answers it as it answers a JWS whose algorithm it does not accept (invalid_request_object, invalid_client, invalid_grant, invalid_dpop_proof, invalid_proof and the like) |
+| `STS-KEYS-0158` | A signature with a post-quantum or composite JWS algorithm was asked of a realm whose keys.postQuantumSigning is off — a client registered for one while it was on, a configured credential, metadata or HTTP message signature algorithm — and was refused rather than made with a key the realm no longer publishes. | the caller's: the response that needed the signature fails as it does for an algorithm this realm holds no key for |
 
 ## STS-PKI
 
@@ -1529,6 +1533,44 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0408` | A sign-in could not be offered device binding: the response object takes no header. The session stands, unbound. | — |
 | `STS-AUTHN-0409` | A password that verified could not be re-hashed under the password policy's algorithm and parameters, or the new hash could not be written (#847). The sign-in stands; the next verified sign-in tries again. | — |
 | `STS-AUTHN-0410` | The credentials of the rows a users list shows could not be read together (#820): the store refused (it was unavailable, or the request's directory budget was spent), so those rows are drawn with their factors unknown rather than as holding none; or the read threw otherwise, and each row was asked on its own instead. | none — logged; the page is drawn |
+| `STS-AUTHN-0411` | A passkey was not registered: its attestation is not a trusted one whose statement and every certificate of its chain, leaf to anchor, are signed with an algorithm the selected passkey policy profile's attestationAlgorithms allows (#941) — or it carried no certificate (self or none attestation). Asked where every key is written, so the sign-in screen, /portal/keys and an activation link all refuse it. | the ceremony's page, drawn again with the reason |
+| `STS-AUTHN-0412` | A passkey did not sign anybody in: while the passkey policy holds sign-ins to the attestation rules (enforceAttestationAtSignIn), the algorithms its registration recorded for its attestation are not what the selected profile's attestationAlgorithms allows (#941), or it recorded none (a key registered before #941, or with no trusted attestation). Recorded on a session.refuse row. | the sign-in screen or the step's page, drawn again with the reason |
+| `STS-AUTHN-0413` | A change to a person's passkeys could not be noted in the passkey report (#942). The write it describes stands; the report is short of it until the next recount. | none — logged; the write is unaffected |
+| `STS-AUTHN-0414` | The passkey report's recount (passkeys.report-recount) failed part-way: the directory could not be read. The baseline it would have replaced is kept; the run is recorded as failed. | none — the scheduler records the run as failed |
+| `STS-AUTHN-0415` | The passkey report, a list behind one of its counts or its export could not be read: the directory refused (503) or the read threw (500). | HTTP 503 or 500 from /admin-api/passkey-report |
+| `STS-AUTHN-0416` | A passkey report filter was refused: two filters at once, a passkey profile this realm does not have (or the default profile, which selects nobody by group), or an application it does not have. | HTTP 400 from /admin-api/passkey-report |
+| `STS-AUTHN-0417` | The passkey report's directory slot was offered without one of its three functions, so nothing was installed and the report counts nothing. | none — logged at startup |
+| `STS-AUTHN-0418` | A Monitoring → Passkeys action was refused: an action that does not exist, or a recount the scheduler could not queue. | HTTP 400 from POST /admin-api/passkey-report/{action} |
+| `STS-AUTHN-0419` | An RFC 4998 passkey evidence record could not be renewed; the previous record remains stored and the failure is logged for retry on the next daily passkey report recount. | none — logged; no credential or prior evidence record is changed |
+| `STS-AUTHN-0420` | A passkey registration asked to be retried with the classical algorithms only (#944) — the retry offered after an ML-DSA-first registration failed on the device — where the realm forbids a classical passkey: webauthn.pqcOnly is on (where the passkey policy profile follows the realm), the profile's registrationMode is pq-only (#940), its postQuantumRequired is registration-and-sign-in, or, at the sign-in step, it requires a post-quantum passkey to sign in. Refused before the ceremony is armed; nothing is written. | HTTP 400 (the sign-in API and the account API) |
+| `STS-AUTHN-0421` | A passkey evidence export did not name both a username and a credential id. | HTTP 400 from GET /admin-api/passkey-report/evidence |
+| `STS-AUTHN-0422` | The named passkey has no RFC 4998 evidence record to export. | HTTP 404 from GET /admin-api/passkey-report/evidence |
+| `STS-AUTHN-0430` | A passkey policy profile was not saved: its registrationMode is classical-only (#940) and its postQuantumRequired is not off, which a classical passkey can never satisfy, or its attestationAlgorithms lists post-quantum attestation algorithms, which admits only authenticators a classical-only population does not hold. Nothing is written. | HTTP 400 from POST /admin-api/policies/save-passkey-policy |
+| `STS-AUTHN-0431` | A passkey policy profile was not saved: its registrationMode is pq-only or pq-first (#940) and the algorithms it would offer — its registrationAlgorithms, or the realm's webauthn.algorithms where it lists none — name no ML-DSA algorithm, so the mode would ask for what the list never offers. Nothing is written. | HTTP 400 from POST /admin-api/policies/save-passkey-policy |
+| `STS-AUTHN-0432` | A passkey was not registered: its signature algorithm is not one the selected passkey policy profile offers at registration (its registrationAlgorithms and registrationMode, #940), decided by the issuance policy's profile-algorithm rule at credentials.addKey(), the one writer, whichever door made the key. Applies only to a profile that sets either row; one following the realm is held by the ceremony's offered-algorithm check (STS-AUTHN-0228). Nothing is written. | HTTP 400 (the sign-in API and the account API); the passkey step and /portal/keys draw the sentence |
+| `STS-AUTHN-0433` | A passkey enrolment asked for the post-quantum lane (#643) where the selected passkey policy profile's registrationMode is classical-only (#940), which makes no post-quantum passkey. Refused before the ceremony is armed and again at the write; a post-quantum passkey already registered goes on signing in. | HTTP 400 (the sign-in API and the account API) |
+| `STS-AUTHN-0440` | An administrator's passkey enrolment for a person was refused: the person's passkey policy profile does not allow one (adminEnrolment is off, the default). Asked when the ceremony is begun and again where the key is written, so a switch turned off during the ceremony refuses it too. | HTTP 400 from /admin-api/users/{begin,finish}-passkey-enrolment |
+| `STS-AUTHN-0441` | An administrator's passkey enrolment named nobody this realm's directory holds. Refused in every mode: development's creating a person at their first sign-in is not something an administrator's act on a name may do. | HTTP 400 from /admin-api/users/begin-passkey-enrolment |
+| `STS-AUTHN-0442` | An administrator's passkey enrolment was finished with none in progress for that administrator and person: it expired (five minutes at most), it was already finished or refused (it is single use), or another administrator began it. | HTTP 400 from /admin-api/users/finish-passkey-enrolment |
+| `STS-AUTHN-0443` | An administrator's passkey enrolment was finished with the id of another enrolment, or its challenge had already been answered (a replay, or two requests racing on two nodes). Nothing was registered and the enrolment is spent. | HTTP 400 from /admin-api/users/finish-passkey-enrolment |
+| `STS-AUTHN-0444` | Whether an administrator's passkey enrolment challenge had already been answered could not be asked of the cluster's claims store, so the enrolment was refused rather than risk a second use. | HTTP 400 from /admin-api/users/finish-passkey-enrolment |
+| `STS-AUTHN-0445` | An administrator's passkey enrolment named no administrator: the request carried no access token whose subject is a person (development's open /admin-api, or a client's own token), and a key so enrolled must record who enrolled it. | HTTP 400 from /admin-api/users/{begin,finish}-passkey-enrolment |
+| `STS-AUTHN-0446` | An administrator's passkey enrolment was finished on an address whose host is not one this realm's RP ID fits (webauthn.rpId), the rule the person's own ceremony applies. | HTTP 400 from /admin-api/users/finish-passkey-enrolment |
+| `STS-AUTHN-0447` | An administrator's passkey enrolment could not be finished: the verification or the write threw. | HTTP 500 from /admin-api/users/finish-passkey-enrolment |
+| `STS-AUTHN-0448` | An administrator's passkey enrolment was finished with no ceremony result: `credential` is absent or is not JSON. The browser's own refusal (a cancelled prompt, an authenticator that cannot do what was asked) arrives as JSON and is recorded as the person's own is (STS-AUTHN-0022). | HTTP 400 from /admin-api/users/finish-passkey-enrolment |
+| `STS-AUTHN-0450` | A passkey upgrade to a post-quantum (ML-DSA) one was refused before it began: the realm does not offer it (webauthn.pqcUpgrade is off, or WebAuthn is), the verifier knows no ML-DSA, or — with both lanes on — the post-quantum lane is not offered. Nothing was changed. | HTTP 400 from POST /account-api/keys/upgrade |
+| `STS-AUTHN-0451` | A passkey upgrade named a credential id that is not one of the caller's own passkeys. Nothing was changed. | HTTP 400 from POST /account-api/keys/upgrade |
+| `STS-AUTHN-0452` | A passkey upgrade named a passkey that is already post-quantum (ML-DSA): there is nothing to upgrade. | HTTP 400 from POST /account-api/keys/upgrade |
+| `STS-AUTHN-0453` | A passkey upgrade named a classical passkey that was already upgraded with a post-quantum passkey beside it, and that post-quantum passkey is still held. Remove it first to upgrade again. | HTTP 400 from POST /account-api/keys/upgrade |
+| `STS-AUTHN-0454` | A passkey upgrade's proof or registration arrived with no upgrade in progress: it expired, it was cancelled, another enrolment replaced it, or it names a different upgrade than the one in progress. Nothing was changed. | HTTP 400 from POST /account-api/keys/upgrade |
+| `STS-AUTHN-0455` | A passkey upgrade's proof of possession was refused before it was checked: the browser ran no assertion (it reported an error or posted nothing), or the assertion was made with a different credential than the passkey being upgraded. The upgrade is dropped; the classical passkey is unchanged. | HTTP 400 from POST /account-api/keys/upgrade |
+| `STS-AUTHN-0456` | A passkey upgrade's steps arrived out of order: a registration before the proof of possession, a second proof, or an upgrade in progress finished through the ordinary enrolment's finish (or an ordinary enrolment through the upgrade's). Nothing was changed. | HTTP 400 from POST /account-api/keys or /account-api/keys/upgrade |
+| `STS-AUTHN-0457` | A passkey upgrade's new post-quantum passkey verified, but the classical passkey it upgrades was removed or upgraded by another request since the proof of possession, so nothing was written. | HTTP 400 from POST /account-api/keys/upgrade |
+| `STS-AUTHN-0458` | A passkey upgrade's registration was not completed by the browser: it reported an error, or posted no credential. No classical retry is offered for an upgrade, whose point is ML-DSA; the upgrade is dropped and the classical passkey is unchanged. | HTTP 400 from POST /account-api/keys/upgrade |
+| `STS-AUTHN-0459` | A sign-in that must earn phrh (OpenID Connect EAP ACR Values 1.0) reached the passkey step, and none of the keys held for that step's role has recorded evidence that can earn it: trusted attestation and backup eligibility clear. Said before the ceremony is armed, and again if an assertion names some other key of the role. A discoverable sign-in cannot be narrowed this way and is refused afterwards (STS-OAUTH-0971). | HTTP 400 from the passkey step when acr_values or a required detail acr is phrh |
+| `STS-AUTHN-0460` | A Secure-Session-Skipped header was not an RFC 9651 list of sf-tokens, or a session_identifier in it was not an sf-string. Recorded on the log and the audit row. The request continues and the session is not marked skipped (#743). | log and audit; the request is not refused |
+| `STS-AUTHN-0461` | A passkey policy save was refused: it requires a device-bound session (deviceBoundRequired) while authn.deviceBoundSessions is off, so no browser would be offered the registration the requirement asks for (#740). | HTTP 400 (management API) |
+| `STS-AUTHN-0462` | An issuance was refused: the application's passkey profile requires a device-bound session and the session's fact is skipped or timedout. A fact that is still pending is a hold, not this refusal, and a session that was never offered registration is not this refusal (#740). | the issuance site's existing denial (the code is recorded, not sent) |
 
 ## STS-OAUTH
 
@@ -2262,6 +2304,12 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0976` | The did claim was left out: the person's account is disabled (#693). | none: the claim is absent (logged) |
 | `STS-OAUTH-0977` | A claim named did from another layer — a configured or typed claim, a claims request (OIDC Core 5.5) or a Claims Provider — was removed from an ID Token or UserInfo response: the name is the DID claim's, released only by its own rules (#693). | none: the claim is absent (logged) |
 | `STS-OAUTH-0978` | The access-token status list could not be told that a token was revoked or un-revoked (#820): its bit in the store of revoked bits was not written. The revocation itself stands, and introspection refuses the token; only the published list is behind until the token is revoked again or expires. | none — the revocation is not undone |
+| `STS-OAUTH-0979` | An opaque access token was not minted: the realm's store was already at oauth2.maxOpaqueAccessTokens after expired rows were dropped, and a live token was not evicted to make room (#501). | none — the mint throws; no token is issued |
+| `STS-OAUTH-0980` | A presented access token has no "." and is not a handle this realm stored, while the realm issues opaque access tokens. The refusal is generic and carries no part of what was presented (#501). | HTTP 401 invalid_token |
+| `STS-OAUTH-0981` | A presented opaque access token is past its exp. The row is deleted. The refusal names the time and no part of the handle (#501). | HTTP 401 invalid_token |
+| `STS-OAUTH-0982` | A presented opaque access token has been revoked, either on its stored row or in the token register (#501). | HTTP 401 invalid_token |
+| `STS-OAUTH-0983` | Too many presented strings that are not stored opaque access tokens arrived from one address. Further misses wait (#501). A known token, a JWT and a success are not counted. | HTTP 429 invalid_token, Retry-After |
+| `STS-OAUTH-0984` | An opaque access token was not minted: three fresh 256-bit handles each collided with a digest already stored (#501). | none — the mint throws; no token is issued |
 
 ## STS-SAML
 
@@ -2386,6 +2434,8 @@ Raised from: saml/.
 | `STS-SAML-0113` | A SAML 1.1 sign-in started here — /saml11/sso with a TARGET and no shire — was refused: saml11.idpInitiatedSso is off for that relying party (the realm default, off, unless saml11IdpInitiatedSso on its entry turns it on). #711. | HTTP 403 page |
 | `STS-SAML-0114` | A SAML 1.1 sign-in the relying party started — a request carrying shire, the Shibboleth 1.3 AuthnRequest profile — was refused: saml11.spInitiatedSso is off for that relying party (saml11SpInitiatedSso FALSE on its entry, or the realm setting). The request is unsigned, so this closes a door rather than proving where a request came from. #711. | HTTP 403 page |
 | `STS-SAML-0115` | A SAML 1.1 flow came back from its one trip to the sign-in screen and the issuance policy still asked for a step-up on the session's risk; it is not sent round again. #711. | HTTP 403 page |
+| `STS-SAML-0116` | A SAML 2.0 AuthnRequest named only the EAP phishing-resistant class URIs (phr, or only phrh) and the session still had not earned the class after the one trip to the sign-in screen. NoAuthnContext, not a second trip. A list that also names some other class is not this refusal. #736. | Responder / NoAuthnContext |
+| `STS-SAML-0117` | A SAML 1.1 sign-in carried the non-spec authnContextClassRef parameter naming only an EAP phishing-resistant class, and the session still had not earned it after the one trip to the sign-in screen. A page, because this profile has no status to carry. #736. | HTTP 403 page |
 
 ## STS-WSTRUST
 
@@ -2466,6 +2516,7 @@ Raised from: ws-federation/.
 | `STS-WSFED-0027` | An identity-provider-initiated sign-in to a relying party with no usable registered wsfedReplyUrl: none, only observed ones, or a first one that is not an absolute http(s) URL (#712). | HTTP 400 error page |
 | `STS-WSFED-0028` | A wsignin1.0 from a relying party for which a sign-in it starts is turned off: wsfed.spInitiatedSso, or wsfedSpInitiatedSso on its entry, is FALSE (#426, #712). | HTTP 403 error page (the profile defines no error response) |
 | `STS-WSFED-0029` | An identity-provider-initiated sign-in back from its one step-up on risk (sts_risk_retry=1) was still denied on risk by the issuance policy, and was refused rather than sent round again (#712). | HTTP 403 error page |
+| `STS-WSFED-0030` | A wsignin1.0 named an EAP phishing-resistant class URI as wauth (phr, or only phrh) and the session still had not earned that class after the one trip to the sign-in screen. A page, because this profile has no status to carry. Two class URIs in one wauth stay the unknown-method refusal (#737). | HTTP 400 error page |
 
 ## STS-FED
 
@@ -4282,6 +4333,7 @@ Raised from: gnap/.
 | `STS-GNAP-0902` | Product mode: a GNAP request was proved with a key, or named an instance identifier, belonging to an application nobody registered (no appRegisteredBy; an entry created on first sight in development is not a registration) (#496). | invalid_client or invalid_resource_server (HTTP 401, RFC 9635 section 2.3.3) |
 | `STS-GNAP-0903` | Product mode: a GNAP access right named a location that is no registered resource server — none of this service's own, no registered application by audience, permission base URI, client_id or identifier, and not at or under a registered GNAP resource server's gnapResourceServerUri — so the request was refused rather than the right dropped (#505). | invalid_request (HTTP 400, RFC 9635 sections 3.6 and 8) |
 | `STS-GNAP-0904` | A GNAP access token request's access named no resource server — no registered reference, no location at or under a registered resource server's gnapResourceServerUri, no type a registered resource server declares, and not this service's own Shared Signals transmitter — so the token would have been for nobody in particular and the request was refused, in every mode. The default audience (the demonstration resource server) went with it (#593). | invalid_request (HTTP 400, RFC 9635 sections 3.6 and 8) |
+| `STS-GNAP-0905` | A GNAP grant's interact.acr named only phr, or only phrh, and the session still had not earned that class after the one interaction. A list that also names some other token is not this refusal (#738). | RFC 9635 section 3.6 (request_denied, HTTP 403), at the next continuation |
 
 ## STS-DEVICE
 
@@ -4465,8 +4517,8 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0073` | A change nudge was not sent because the PEP's notify URL is plain http and the realm is in product mode, whatever xacml.pepNotifyAllowHttp says (#171). | — |
 | `STS-XACML-0074` | Product mode ignored xacml.pepNotifySkipTlsVerification: a nudge verifies the PEP's certificate whatever it says. Logged once per process (#171). | none — a warning in the log |
 | `STS-XACML-0075` | A write put a person or a group on ADMIN_READ or ADMIN_WRITE; their people are the console roster's, granted on /admin/rbac, and only an application is added on the role (#303). | none (a console or management API refusal, HTTP 400) |
-| `STS-XACML-0076` | A delete named a native role — ADMIN_READ, ADMIN_WRITE or DEVICE_COMPLIANCE — which every realm keeps (#303, #309). | none (a console or management API refusal, HTTP 400) |
-| `STS-XACML-0077` | A native role (ADMIN_READ, ADMIN_WRITE or DEVICE_COMPLIANCE) could not be seeded in a realm; no machine client can be issued its permission there until it exists (#303, #309). | none — a warning in the log |
+| `STS-XACML-0076` | A delete named a native role — ADMIN_READ, ADMIN_WRITE, DEVICE_COMPLIANCE, SSF_READ or SSF_MANAGE — which every realm keeps (#303, #309). | none (a console or management API refusal, HTTP 400) |
+| `STS-XACML-0077` | A native role (ADMIN_READ, ADMIN_WRITE, DEVICE_COMPLIANCE, SSF_READ or SSF_MANAGE) could not be seeded in a realm; no machine client can be issued its permission there until it exists (#303, #309). | none — a warning in the log |
 | `STS-XACML-0078` | Neither the issuance policy nor the built-in one it falls back to gave a verdict on a requested scope — a defect; a scope gated by role was dropped and an ungated one kept (#304). | none — a warning in the log |
 | `STS-XACML-0079` | The built-in issuance policy could not be evaluated for the per-scope question in a process with no issuance PEP — a defect; scopes gated by role were dropped and the rest kept (#304, #305). | none — an error in the log |
 | `STS-XACML-0080` | A write named an application's role that is not <role>@<application>, or used a native or built-in role's name for one (#310). | none (a console or management API refusal, HTTP 400) |
@@ -4739,11 +4791,11 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0818` | A set-aud-sub act named a person with no entry in this realm, or the directory would not write it (#148). | none (a console or management API refusal, HTTP 400) |
 | `STS-ADMIN-0819` | set-attribute, add-attribute or remove-attribute was refused and ldap/person_editor.ts named no more specific reason (#228). | HTTP 400 (API) or a 303 with error= |
 | `STS-ADMIN-0820` *(retired)* | A console form POST held a value outside the closed set the mirroring /admin-api operation's enum declares (#86). | HTTP 400 page |
-| `STS-ADMIN-0821` | A permission gated by role — admin:read, admin:write, or an application permission its resource lists in oauthRoleGatedPermission — was asked for on behalf of a person or an application no held role authorizes it for (for a person's console roles: no Admin Read or Admin Write, not signed in, or the bootstrap administrator before its claim), and was left off the tokens (#302, #303). | none — the token is issued without that scope (RFC 6749 section 3.3) |
+| `STS-ADMIN-0821` | A permission gated by role — admin:read, admin:write, ssf.read, ssf.manage, or an application permission its resource lists in oauthRoleGatedPermission — was asked for on behalf of a person or an application no held role authorizes it for (for a person's console roles: no Admin Read or Admin Write, not signed in, or the bootstrap administrator before its claim), and was left off the tokens (#302, #303). | none — the token is issued without that scope (RFC 6749 section 3.3) |
 | `STS-ADMIN-0822` | Every scope a request asked for was a permission gated by role that the subject's roles do not authorize, so nothing was left to issue (#302, #303). | invalid_scope (RFC 6749 sections 4.1.2.1 and 5.2) |
-| `STS-ADMIN-0823` | add-permission or remove-permission named a native role — ADMIN_READ, ADMIN_WRITE or DEVICE_COMPLIANCE — whose permission is fixed (#303, #309). | none (a console or management API refusal, HTTP 400) |
+| `STS-ADMIN-0823` | add-permission or remove-permission named a native role — ADMIN_READ, ADMIN_WRITE, DEVICE_COMPLIANCE, SSF_READ or SSF_MANAGE — whose permission is fixed (#303, #309). | none (a console or management API refusal, HTTP 400) |
 | `STS-ADMIN-0824` | add-permission or remove-permission named no permission (#303). | none (a console or management API refusal, HTTP 400) |
-| `STS-ADMIN-0825` | add-permission named a native permission (admin:read, admin:write, device:compliance), which only its native role authorizes (#303, #309). | none (a console or management API refusal, HTTP 400) |
+| `STS-ADMIN-0825` | add-permission named a native permission (admin:read, admin:write, device:compliance, ssf.read, ssf.manage), which only its native role authorizes (#303, #309). | none (a console or management API refusal, HTTP 400) |
 | `STS-ADMIN-0826` | add-permission named a permission no application in the realm defines; a permission must be defined before a role can authorize it (#303). | none (a console or management API refusal, HTTP 400) |
 | `STS-ADMIN-0827` | add-permission named a permission the role already authorizes (#303). | none (a console or management API refusal, HTTP 400) |
 | `STS-ADMIN-0828` | remove-permission named a permission the role does not authorize (#303). | none (a console or management API refusal, HTTP 400) |
@@ -5250,6 +5302,7 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0360` | An application was not created: a client secret lifetime was given with no new client secret for it to apply to — oauthClientSecret empty, or a whole record carrying its own expiry (#394). | none (a console or management API refusal, HTTP 400) |
 | `STS-REG-0361` | A value was added to oauthScope by hand: it records the scopes a client ASKED FOR, written as requests arrive, and what it may be issued is oauthAllowedScope. A remove is allowed (#708). | none (a console or management API refusal, HTTP 400) |
 | `STS-REG-0362` | An application's krb5S4uSelfRealm was given a Kerberos realm none of this realm's trusts accepts tickets from (#430). | none (a refused administrative change) |
+| `STS-REG-0363` | oauthConfidential was given a value the token endpoint authentication method does not make, or was asked to be edited on its own. The registry writes the flag from the method: none, or no method on an application created by hand, is FALSE, and any other method is TRUE. A supplied value that disagrees is refused, and the attribute is not edited on its own (#466). | none (a console or management API refusal, HTTP 400) |
 
 ## STS-DBG
 
@@ -5287,6 +5340,49 @@ Raised from: debugger/, and the debugger scope rule in oauth-oidc/oauth2.ts.
 | `STS-DBG-0031` | A DPoP-bound access token (cnf.jkt) was presented to the debugger as a Bearer token. | invalid_token (HTTP 401) |
 | `STS-DBG-0032` | A DPoP proof presented to the debugger did not verify, and the proof check reported no code of its own. | invalid_dpop_proof (HTTP 401) |
 | `STS-DBG-0033` | Product mode: the debugger permission was refused to the bootstrap administrator because it has not yet claimed the console with its password; until it has, its roles are honoured at the console alone, from a password sign-in (#103). | none at issuance (the scope is left off); HTTP 403 at the debugger |
+
+## STS-REPORT
+
+**Reporting.** The reports application at /report and its API at /report-api: catalog queries, saved definitions, jobs and stored results (#956).
+
+Raised from: report/.
+
+| Code | What failed | Client sees |
+|---|---|---|
+| `STS-REPORT-0001` | A report query named a source the catalog does not publish. | unknown_source (HTTP 404) |
+| `STS-REPORT-0002` | A report query named a field the source does not publish. | unknown_field (HTTP 400) |
+| `STS-REPORT-0003` | A report query used an operator, an aggregate or a format the catalog does not allow. | unsupported_operation or unsupported_format (HTTP 400) |
+| `STS-REPORT-0004` | A report query document is not the shape this service accepts. | invalid_query (HTTP 400) |
+| `STS-REPORT-0005` | A report asks for more than its mode allows, or a synchronous run exceeded its time. | result_too_large (HTTP 400) |
+| `STS-REPORT-0006` | The reports API was called with no access token. | HTTP 401 |
+| `STS-REPORT-0007` | The access token presented to the reports API did not verify. | invalid_token (HTTP 401) |
+| `STS-REPORT-0008` | The access token presented to the reports API has expired. | invalid_token (HTTP 401) |
+| `STS-REPORT-0009` | The token presented to the reports API is not an access token. | invalid_token (HTTP 401) |
+| `STS-REPORT-0010` | The access token presented to the reports API was issued by another issuer. | invalid_token (HTTP 401) |
+| `STS-REPORT-0011` | The access token is not audienced to this realm's reports API. | invalid_token (HTTP 403) |
+| `STS-REPORT-0012` | The access token is revoked, or the account is disabled. | invalid_token (HTTP 401) |
+| `STS-REPORT-0013` | The sign-on session the access token came from has ended. | invalid_token (HTTP 401) |
+| `STS-REPORT-0014` | A certificate-bound access token was presented to the reports API without that certificate. | invalid_token (HTTP 401) |
+| `STS-REPORT-0015` | A DPoP-bound token was sent to the reports API as Bearer, or the proof was refused and named no code of its own. | invalid_token or invalid_dpop_proof (HTTP 401) |
+| `STS-REPORT-0016` | The access token presented to the reports API names no person. | forbidden (HTTP 403) |
+| `STS-REPORT-0017` | The token lacks report:use or report:admin, or the client no longer declares the scope. | insufficient_scope or forbidden (HTTP 403) |
+| `STS-REPORT-0018` | This account may not use reports in this realm. | forbidden (HTTP 403) |
+| `STS-REPORT-0019` | No such report definition, including one the caller may not see. | not_found (HTTP 404) |
+| `STS-REPORT-0020` | No such report job, including one the caller may not see. | job_not_found (HTTP 404) |
+| `STS-REPORT-0021` | The report job has not finished, so its result is not ready. | job_not_ready (HTTP 409) |
+| `STS-REPORT-0022` | The report result is past its retention and is gone. | result_expired (HTTP 410) |
+| `STS-REPORT-0023` | This realm or this person already has as many report jobs running as the setting allows. | too_many_jobs (HTTP 429) |
+| `STS-REPORT-0024` | A report source was unavailable, or the report could not be completed. | unavailable (HTTP 500) |
+| `STS-REPORT-0025` | A running report job's process fence is gone, so the job is failed rather than resumed after a restart. | recorded; the job fails |
+| `STS-REPORT-0027` | A report completion notice could not be sent. The job still completed. | recorded |
+| `STS-REPORT-0028` | A scheduled report's owner may no longer run it, so this occurrence did not run. | recorded |
+| `STS-REPORT-0029` | The report job completed but its stored bytes are gone. | result_expired (HTTP 410) |
+| `STS-REPORT-0030` | A report definition was refused for its name, query, schedule or owner. | invalid_query (HTTP 400) |
+| `STS-REPORT-0031` | A share of a report definition was refused. | HTTP 400 |
+| `STS-REPORT-0032` | A report job was cancelled before it finished. | recorded |
+| `STS-REPORT-0033` | A method other than GET or HEAD was sent to the reports document. | HTTP 404 |
+| `STS-REPORT-0034` | A report job exceeded its time and was failed rather than returned in part. | result_too_large on the job; the submission already answered |
+| `STS-REPORT-0035` | A scheduled report names a parameter and stores no value for it, so this occurrence did not run and the slot was kept. | recorded |
 
 ## Adding a code
 

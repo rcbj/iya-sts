@@ -41,8 +41,8 @@
 //           attestation and BE clear carry `phr` and `phrh`;
 //        4. a password with that person's security key as the step carries
 //           `phr`;
-//        5. a synced passkey carries `phr`, and under `phrh` is refused
-//           unmet_authentication_requirements naming the backup flag;
+//        5. a synced passkey carries `phr`, and under `phrh` the ceremony
+//           is not armed (#739): none of the held keys can earn it;
 //        6. a password-only person under `phr` is not let through on the
 //           password — the screen demands a key — and a password session
 //           returning under the round-trip marker is refused
@@ -126,6 +126,16 @@ function evidence(t) {
           'A5. a password, a one-time code, an emailed code or link, a ' +
           'recovery code, a wallet, a Kerberos ticket and an anonymous ' +
           'session earn nothing, whatever amr says', nothing.join(', '));
+  t.check(pr.storedKeyEarnsHardware({
+            attestation: { trusted: true }, backupEligible: false }) === true &&
+          pr.storedKeyEarnsHardware({
+            attestation: { trusted: true }, backupEligible: true }) === false &&
+          pr.storedKeyEarnsHardware({
+            attestation: { trusted: false }, backupEligible: false }) ===
+            false &&
+          pr.storedKeyEarnsHardware({ backupEligible: false }) === false,
+          'A8. a stored key can earn phrh only when its attestation is ' +
+          'trusted and BE was recorded clear');
   t.check(of({ authority: 'federation', acr: 'phrh' }) === 'phr phrh' &&
           of({ authority: 'federation', acr: 'phr' }) === 'phr' &&
           of({ authority: 'federation', acr: 'mfa', amr: ['hwk'] }) === '',
@@ -141,6 +151,76 @@ function evidence(t) {
           pr.factOf(['phr']).join() === 'phr',
           'A8. the XACML fact is never empty: none when nothing was earned');
   log.debug("Leaving evidence().");
+}
+
+// ---------------------------------------------------------------------------
+// F. THE CLASS URIs SAML AND WS-FEDERATION NAME (#736). The mapping lives on
+// the leaf. A list of only those URIs is a key demand; phrh alone narrows
+// it; any other class beside them is not this demand. The assertion URI is
+// the strongest asked class the session earned, or '' so the caller keeps
+// its own vocabulary.
+// ---------------------------------------------------------------------------
+function classUris(t) {
+  log.debug("Entering classUris().");
+  t.log.info('=== F. the SAML and WS-Federation class URIs (#736) ===');
+  const pr = require('../common/phishing_resistance');
+  const phr = pr.URI_PHR;
+  const phrh = pr.URI_PHRH;
+  const ppt =
+    'urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport';
+  const hardware = { events: [event({ credential: {
+    kind: 'webauthn', ceremony: 'assertion',
+    attestationTrusted: true, backupEligible: false } })] };
+  const synced = { events: [event({ credential: {
+    kind: 'webauthn', ceremony: 'assertion',
+    attestationTrusted: true, backupEligible: true } })] };
+  const password = { events: [event({
+    credential: { kind: 'password' } })] };
+  const onlyPhr = pr.signInFor([phr]);
+  const onlyHardware = pr.signInFor([phrh]);
+  const either = pr.signInFor([phr, phrh]);
+  const mixed = pr.signInFor([ppt, phrh]);
+  t.check(pr.classOfUri(phr) === 'phr' &&
+          pr.classOfUri(phrh) === 'phrh' &&
+          pr.classOfUri(ppt) === '' &&
+          pr.classOfUri('  ' + phr + '  ') === 'phr' &&
+          pr.uriOfClass('phrh') === phrh &&
+          pr.uriOfClass('mfa') === '',
+          'F1. the two EAP class URIs map to phr and phrh, and nothing else');
+  t.check(onlyPhr.eapOnly === true && onlyPhr.forceKey === true &&
+          onlyPhr.phishingClass === '' &&
+          onlyHardware.forceKey === true &&
+          onlyHardware.phishingClass === 'phrh' &&
+          either.forceKey === true && either.phishingClass === '' &&
+          mixed.eapOnly === false && mixed.forceKey === false &&
+          mixed.phishingClass === '' &&
+          pr.signInFor([]).eapOnly === false &&
+          pr.signInFor(null).forceKey === false,
+          'F2. a key is forced only when every class is an EAP URI, and ' +
+          'phrh is required only when it is the only class');
+  t.check(pr.eapDemandMet(hardware, [phrh]) === true &&
+          pr.eapDemandMet(synced, [phrh]) === false &&
+          pr.eapDemandMet(synced, [phr]) === true &&
+          pr.eapDemandMet(synced, [phr, phrh]) === true &&
+          pr.eapDemandMet(password, [ppt, phr]) === true &&
+          pr.eapDemandMet(password, [phr]) === false &&
+          pr.eapDemandMet(null, []) === true,
+          'F3. phrh is met only by hardware evidence; a mixed list is not ' +
+          'this demand, and an empty list is not one either');
+  t.check(pr.assertionUri(hardware, [phr, phrh]) === phrh &&
+          pr.assertionUri(synced, [phr, phrh]) === phr &&
+          pr.assertionUri(synced, [phrh]) === '' &&
+          pr.assertionUri(password, [phr]) === '' &&
+          pr.assertionUri(hardware, []) === '' &&
+          pr.assertionUri(hardware, [ppt]) === '',
+          'F4. the assertion carries the strongest asked class that was ' +
+          'earned, and the caller\'s own class when nothing was asked');
+  t.check(pr.uriList(phr + ' ' + phrh).join() === (phr + ',' + phrh) &&
+          pr.uriList([phr, phrh]).length === 2 &&
+          pr.uriList('').length === 0,
+          'F5. a whitespace-separated parameter and a repeated one are one ' +
+          'list');
+  log.debug("Leaving classUris().");
 }
 
 // ---------------------------------------------------------------------------
@@ -186,6 +266,13 @@ function meetsAndRefusals(t) {
           !stepUp.demandsSecondFactor(['phr']),
           'C1. phr / phrh alone demand a key (alone or after a password) and ' +
           'not a second factor; phr mfa demands neither');
+  t.check(stepUp.phishingClassFor(['phrh'], []) === 'phrh' &&
+          stepUp.phishingClassFor(['phr', 'phrh'], []) === '' &&
+          stepUp.phishingClassFor(['phrh', 'mfa'], []) === '' &&
+          stepUp.phishingClassFor(['phr'], ['phrh']) === 'phrh' &&
+          stepUp.phishingClassFor([], []) === '',
+          'C1b. the passkey step narrows only when phrh is the only answer, ' +
+          'or a detail requires it; phr phrh is either');
   t.check(stepUp.SUPPORTED.indexOf('phr') === 3 &&
           stepUp.SUPPORTED.indexOf('phrh') === 4,
           'C2. both are published after the ladder',
@@ -545,13 +632,16 @@ function childMain() {
          JSON.stringify(r.claims || r.final.headers));
     r = await signIn('eap-rp', 'eap-carol', 'passkey', carolKey,
                      { acr_values: 'phrh' });
-    note(r.params && r.params.get('error') ===
-         'unmet_authentication_requirements' &&
-         /backup-eligible/.test(String(r.params.get('error_description'))) &&
-         !r.params.get('code'),
-         'E5b. under phrh it is refused unmet_authentication_requirements, ' +
-         'naming the backup flag (STS-OAUTH-0971)',
-         r.final.status + ' ' + String(r.final.headers.location || ''));
+    const e5bWhy = String(((r.final && r.final.errors) ||
+                           (r.final && r.final.json &&
+                            r.final.json.errors) || [])[0] || '');
+    note(r.final.status === 400 && r.final.json &&
+         r.final.json.ok === false && /hardware-protected/.test(e5bWhy) &&
+         !(r.params && r.params.get('code')),
+         'E5b. under phrh a synced passkey is refused before the ' +
+         'ceremony: none of the held keys can earn it, and no code is ' +
+         'issued (STS-AUTHN-0459)',
+         r.final.status + ' ' + e5bWhy);
 
     // 6. A password-only person.
     r = await signIn('eap-rp', 'eap-bob', 'password', null,
@@ -616,6 +706,118 @@ function childMain() {
   });
 }
 
+// The passkey step's allow list when the sign-in must earn phrh (#739).
+function hardwareAllow(t) {
+  log.debug("Entering hardwareAllow().");
+  t.log.info('=== C8. allowCredentials narrowed for phrh ===');
+  // This section runs in the parent. The directory fills the credential
+  // store's slot when it loads (`credentials.setDirectory()` at require),
+  // and nothing above has loaded it, so the ldap require below is what
+  // makes a key write possible (STS-AUTHN-0059). The protocol stack is
+  // not loaded here: an earlier section has already built
+  // oauth2_monitor's default instance, and loading the stack then
+  // throws "an instance is already installed". The HTTP child is a fresh
+  // process and loads the stack itself.
+  const stats = require('../common/admin_stats');
+  const credentials = require('../common/credentials');
+  const ldap = require('../ldap/ldap_server');
+  const authn = require('../authn/authn');
+  const page = require('../authn/web_authn_mfa');
+  const name = 'eap-narrow-' + process.pid;
+  ldap.createUser(name, { invent: false });
+  stats.recordAuthentication({ presented: name, protocol: 'test',
+                               method: 'a fixture' });
+  const hw = name + '-hw';
+  const synced = name + '-sync';
+  const key = function (id, eligible) {
+    log.debug("Entering key().");
+    log.debug("Leaving key().");
+    return credentials.addKey(name, {
+      credentialId: id,
+      publicKeyJwk: { kty: 'EC', crv: 'P-256', x: id, y: 'b' },
+      signCount: 0, backupEligible: eligible,
+      attestation: { trusted: true, format: 'packed' }
+    }, 'mfa');
+  };
+  const wrote = key(hw, false);
+  const wroteSync = key(synced, true);
+  t.check(wrote.ok === true && wroteSync.ok === true,
+          'C8. both keys are stored',
+          JSON.stringify([wrote.errors, wroteSync.errors]));
+  const req = { headers: { host: 'localhost' }, socket: {} };
+  const answer = function (mfaId) {
+    log.debug("Entering answer().");
+    const out = { status: 0, body: null };
+    const res = {
+      status: function (n) {
+        out.status = n;
+        return res;
+      },
+      type: function () {
+        return res;
+      },
+      set: function () {
+        return res;
+      },
+      send: function (text) {
+        out.body = JSON.parse(text);
+        return res;
+      }
+    };
+    authn.mfaWebauthnOptions(req, res, mfaId, '');
+    log.debug("Leaving answer().");
+    return out;
+  };
+  const step = function (phishingClass) {
+    log.debug("Entering step().");
+    const id = authn.mintMfaStep({
+      username: name, passwordless: false, factor: 'webauthn',
+      authn: { phishingClass: phishingClass, application: '',
+               protocol: 'test' } });
+    log.debug("Leaving step().");
+    return id;
+  };
+  try {
+    const open = answer(step(''));
+    const openAllow = (open.body && open.body.allow) || [];
+    t.check(open.status === 200 && openAllow.indexOf(hw) >= 0 &&
+            openAllow.indexOf(synced) >= 0,
+            'C8. with nothing asking for phrh, both keys are offered',
+            JSON.stringify(open));
+    const narrow = answer(step('phrh'));
+    const narrowAllow = (narrow.body && narrow.body.allow) || [];
+    t.check(narrow.status === 200 && narrowAllow.indexOf(hw) >= 0 &&
+            narrowAllow.indexOf(synced) < 0,
+            'C8. acr phrh offers only the key whose record can earn it',
+            JSON.stringify(narrow.body));
+    credentials.removeKey(name, hw);
+    const none = answer(step('phrh'));
+    t.check(none.status === 400 && none.body && none.body.ok === false &&
+            /hardware-protected/.test(String((none.body.errors || [])[0])),
+            'C8. when none of the held keys can earn phrh, the ceremony is ' +
+            'not armed', JSON.stringify(none.body));
+    const drawn = page.webauthn({
+      id: 'step', username: name, passwordless: false,
+      webauthn: { mode: 'get', hardwareRefused: { code: 'STS-AUTHN-0459' },
+                  problem: 'none of the passkeys held can earn it',
+                  challenge: 'c', rpId: 'localhost',
+                  userVerification: 'required', algorithms: [] } },
+      { t: { html: function (k) {
+               return String(k);
+             },
+             text: function (k) {
+               return String(k);
+             } }, error: '' });
+    t.check(drawn.indexOf('id="wa-go"') < 0 &&
+            drawn.indexOf('none of the passkeys held can earn it') >= 0,
+            'C8. the passkey step says so and does not offer the ceremony');
+  } finally {
+    credentials.removeKey(name, hw);
+    credentials.removeKey(name, synced);
+  }
+  log.debug("Leaving hardwareAllow().");
+}
+
 function overHttp(t) {
   log.debug("Entering overHttp().");
   t.log.info('=== E. over HTTP ===');
@@ -661,7 +863,9 @@ module.exports = {
   run: async function (t) {
     log.debug("Entering run().");
     evidence(t);
+    classUris(t);
     meetsAndRefusals(t);
+    hardwareAllow(t);
     issuancePolicy(t);
     overHttp(t);
     log.debug("Leaving run().");

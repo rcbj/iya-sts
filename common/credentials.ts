@@ -166,6 +166,10 @@ import webauthnVerifier = require('../authn/webauthn');
 // `webauthn_policy`, `crypto`, `pki` and `error_codes`, and the FIDO metadata
 // and revocation lazily — none of which requires this file.
 import webauthnAttestation = require('../authn/webauthn_attestation');
+// EVERY CEREMONY'S AUDIT ROW (#943): `confirmKeyEnrolment()` is where
+// /portal/keys and an activation link verify a registration. A library over
+// the audit log and the passkey policy; it requires nothing back here.
+import webauthnCeremonies = require('../authn/webauthn_ceremonies');
 // THE ERROR CODES (2026-09-12). A LEAF that requires nothing, so it cannot
 // close a cycle from here — which is why it is this and not `audit.js`, which
 // this file must not reach. Every refusal below RETURNS a verdict to a caller
@@ -382,6 +386,28 @@ const pendingKeys = realms.map({ persist: 'credentials.pendingKeys',
                                  // #333: the ceremony's `expires`, ms.
                                  expiresAt: realms.expiryField('expires', 1) });
 
+// AN ADMINISTRATOR'S PENDING ENROLMENTS ON SOMEBODY'S BEHALF (#945), a store
+// of their own and NOT `pendingKeys`: that one is keyed by the person, so an
+// administrator beginning a ceremony for alice would have replaced the one
+// alice had armed on `/portal/keys` herself, and alice's `finish` would have
+// answered the administrator's challenge. Keyed by the ADMINISTRATOR AND THE
+// PERSON (`adminEnrolmentKey()`), so the challenge is bound to both, and
+// carrying the lane, so it is bound to that too. Persisted for
+// `pendingKeys`' reason: the begin and the finish can land on two nodes.
+const pendingAdminKeys = realms.map({
+  persist: 'credentials.pendingAdminKeys', retain: 'age',
+  // #333: the ceremony's `expires`, ms.
+  expiresAt: realms.expiryField('expires', 1) });
+
+// The key an administrator's pending enrolment for a person is held under
+// (#945): both names, lower case, joined by a character neither may hold.
+function adminEnrolmentKey(admin: unknown, username: unknown): string {
+  helpers.log.debug("Entering adminEnrolmentKey().");
+  helpers.log.debug("Leaving adminEnrolmentKey().");
+  return String(admin || '').trim().toLowerCase() + '\n' +
+         String(username || '').trim().toLowerCase();
+}
+
 /**
  * The one place a presented password is verified, and the store of every
  * credential a person holds on their own entry: the password, security
@@ -502,6 +528,97 @@ class Credentials {
              insecure: webauthnVerifier.INSECURE_COSE_ALGS
                .indexOf(coseAlg) >= 0,
              lane: Credentials.keyLane(k) };
+  }
+
+  // THE ALGORITHMS ONE STORED KEY'S ATTESTATION WAS SIGNED WITH (#941), in
+  // the one shape every reader takes: the console's key rows, `GET
+  // /admin-api/users`, the passkey policy's `attestation-algorithm`
+  // facts, and a realm-wide report of how strong a realm's attestations
+  // are. The record `authn/webauthn_attestation.ts` wrote is the source
+  // (`attestation.algorithms`, its header argues the fields); this is
+  // `recordedAlgorithms()`'s reading of it — `verified`, `trusted`,
+  // `recorded` (false for a key registered before #941, or by a door that
+  // verified nothing), the `statement` algorithm, every `statements` and
+  // `certificates` entry (leaf first, the anchor last, a compound's
+  // members flattened) and `postQuantum`, true only where every one of
+  // them is. A key with no attestation record answers `recorded: false`.
+  /**
+   * Reads the algorithms one stored key's attestation was signed with
+   * (#941).
+   *
+   * @param key - the stored WebAuthn key
+   * @returns `{ verified, trusted, recorded, statement, statements,
+   *   certificates, postQuantum }`
+   */
+  static attestationAlgorithms(key: any): any {
+    helpers.log.debug("Entering Credentials.attestationAlgorithms().");
+    const out = webauthnAttestation.recordedAlgorithms(
+      (key || {}).attestation);
+    helpers.log.debug("Leaving Credentials.attestationAlgorithms(). " +
+                      (out.recorded ? 'recorded' : 'none'));
+    return out;
+  }
+
+  /** Renews due RFC 4998 passkey evidence records for one directory entry. */
+  async renewAttestationEvidence(username: string,
+                                 targetAlgorithm?: string): Promise<number> {
+    const { log, errorCodes } = this.deps;
+    const directory = this.directory;
+    const name = String(username || '').trim();
+    log.debug('Entering Credentials.renewAttestationEvidence().');
+    if (!directory || typeof directory.readWebauthn !== 'function' ||
+        typeof directory.replaceWebauthn !== 'function') {
+      log.debug('Leaving Credentials.renewAttestationEvidence(). No store.');
+      return 0;
+    }
+    const raw = directory.readWebauthn(name) || [];
+    const evidence = require('./passkey_evidence');
+    let changed = 0;
+    const kept: string[] = [];
+    const rank: { [key: string]: number } = {
+      sha256: 1, sha384: 2, sha512: 3
+    };
+    for (let i = 0; i < raw.length; i += 1) {
+      let one: any;
+      try {
+        one = JSON.parse(raw[i]);
+      } catch (e) {
+        // A value this service cannot parse is outside evidence renewal's
+        // ownership. Preserve it exactly, as keysOfValues() does for reads.
+        kept.push(raw[i]);
+        continue;
+      }
+      const evidenceRecord = one && one.attestation &&
+        one.attestation.evidence;
+      const current = evidenceRecord &&
+        (evidenceRecord.hashAlgorithm || 'sha256');
+      const migrate = !!targetAlgorithm && rank[targetAlgorithm] >
+        (rank[current] || 1);
+      if (one && one.credentialId && evidenceRecord &&
+          (Number(evidenceRecord.renewAfter || 0) <= Date.now() || migrate)) {
+        one.attestation.evidence = migrate
+          ? await evidence.renewHashTree(evidenceRecord, targetAlgorithm)
+          : await evidence.renew(evidenceRecord, Date.now());
+        kept.push(JSON.stringify(one));
+        changed += 1;
+      } else {
+        kept.push(raw[i]);
+      }
+    }
+    if (changed) {
+      try {
+        if (!directory.replaceWebauthn(name, kept)) {
+          throw new Error('The person no longer has a directory entry.');
+        }
+      } catch (e) {
+        log.error(errorCodes.tag('STS-AUTHN-0419') + 'credentials: renewed ' +
+                  'passkey evidence for ' + name + ' could not be stored: ' +
+                  ((e && e.message) || e));
+        throw e;
+      }
+    }
+    log.debug('Leaving Credentials.renewAttestationEvidence(). ' + changed);
+    return changed;
   }
 
   // WHAT KIND OF AUTHENTICATOR ONE STORED KEY IS, IN A PERSON'S WORDS
@@ -887,7 +1004,7 @@ class Credentials {
   // created. A store with no writer looks exactly like a store nobody uses.
   //
   // `authn/authn.ts` writes here now — its own header carries the argument —
-  // and `tests/vendored/sts_webauthn_second_factor.js` drives a real ceremony
+  // and `tests/protocol/sts_webauthn_second_factor.js` drives a real ceremony
   // and reads the key back out of `GET /admin-api/users`, which is the
   // assertion that would have caught it.
   //
@@ -976,6 +1093,20 @@ class Credentials {
     log.debug('Leaving Credentials.setDirectory(). Credentials are backed ' +
               'by the directory.');
     return true;
+  }
+
+  /**
+   * The directory hooks the slot holds, so a test that wraps one function
+   * can put that same function back. Nothing in the service calls this:
+   * the slot is filled once, at the directory's require.
+   *
+   * @returns the hooks, or null when none are installed
+   */
+  directoryInstalled() {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.directoryInstalled().");
+    log.debug("Leaving Credentials.directoryInstalled().");
+    return this.directory;
   }
 
   // ---------------------------------------------------------------------------
@@ -2924,10 +3055,32 @@ class Credentials {
   // and both must agree about which values are keys at all.
   private keysFromValues(raw, username) {
     const { log } = this.deps;
-    const { WEBAUTHN_ATTRIBUTE } = Credentials;
     log.debug('Entering Credentials.keysFromValues().');
+    const out = Credentials.keysOfValues(raw, username);
+    log.debug('Leaving Credentials.keysFromValues(). ' + out.length + '.');
+    return out;
+  }
+
+  // THE SAME RULE FOR A CALLER WITH NO INSTANCE IN HAND (#942): the passkey
+  // report (`common/passkey_report.ts`) is handed a person's raw values by
+  // the directory, at the two doors that write them and a page at a time by
+  // its recount, and must count exactly the values `keysOf()` calls keys —
+  // a second parse there would be a second answer to "which values are
+  // keys". `keysFromValues()` above is this, so the two cannot drift.
+  /**
+   * Reads a person's stored `stsWebauthnCredential` values as keys: each
+   * value that is JSON this service wrote, with a credential id and a public
+   * key. Anything else is skipped with a warning.
+   *
+   * @param raw - the attribute's values, as the directory holds them
+   * @param username - whose they are, for the warning
+   * @returns the parsed keys
+   */
+  static keysOfValues(raw: unknown, username: unknown): any[] {
+    helpers.log.debug('Entering Credentials.keysOfValues().');
+    const { WEBAUTHN_ATTRIBUTE } = Credentials;
     const out = [];
-    (raw || []).forEach((value) => {
+    (Array.isArray(raw) ? raw : []).forEach((value) => {
       try {
         const parsed = JSON.parse(value);
         if (parsed && parsed.credentialId && parsed.publicKeyJwk) {
@@ -2936,12 +3089,13 @@ class Credentials {
       } catch (e) {
         // A value some other client wrote. Skipped with a warning rather than
         // throwing: one malformed key must not stop the others being usable.
-        log.warn('credentials: a ' + WEBAUTHN_ATTRIBUTE + ' value on ' +
-                 username + ' is not JSON this service wrote and is being ' +
-                 'ignored: ' + e.message);
+        helpers.log.warn('credentials: a ' + WEBAUTHN_ATTRIBUTE + ' value ' +
+                         'on ' + String(username) + ' is not JSON this ' +
+                         'service wrote and is being ignored: ' + e.message);
       }
     });
-    log.debug('Leaving Credentials.keysFromValues(). ' + out.length + '.');
+    helpers.log.debug('Leaving Credentials.keysOfValues(). ' + out.length +
+                      '.');
     return out;
   }
 
@@ -3411,9 +3565,12 @@ class Credentials {
    * @param username - the person
    * @param credential - what the ceremony produced
    * @param role - `primary` or `mfa`
+   * @param opts - `upgrade` (#939): `{ credentialId, mode }`, the classical
+   *   passkey this key upgrades and what the write does to it — `replace`
+   *   puts this key in its place, `alongside` keeps it beside this one
    * @returns `{ ok: true, username, role, … }`, or a refusal
    */
-  addKey(username, credential, role) {
+  addKey(username, credential, role, opts?) {
     const { log, backupCodes, webauthnPolicy, errorCodes } = this.deps;
     const { ROLES } = Credentials;
     const directory = this.directory;
@@ -3485,6 +3642,21 @@ class Credentials {
     if (!this.deps.passkeyPolicy.hasSelection()) {
       this.deps.passkeyPolicy.select(name, '');
     }
+    // AN ADMINISTRATOR'S ENROLMENT (#945), refused HERE, the one writer, while
+    // the person's passkey policy does not allow it (`adminEnrolment` off,
+    // the default) — whatever door began it and however long ago, so a
+    // switch turned off while the administrator was touching the key
+    // refuses it. Only a record `enrolledByOf()` accepts says an
+    // administrator enrolled the key; anything else is no such claim.
+    const enrolledBy = Credentials.enrolledByOf((credential || {}).enrolledBy);
+    if (enrolledBy && !this.deps.passkeyPolicy.adminEnrolmentAllowed()) {
+      log.info('credentials: a passkey ' + enrolledBy.username + ' enrolled ' +
+               'for ' + name + ' was NOT written: the passkey policy does ' +
+               'not let an administrator enrol one (adminEnrolment off).');
+      log.debug("Leaving Credentials.addKey(). Administrator enrolment off.");
+      return coded('STS-AUTHN-0440', { ok: false, reason: 'admin-enrolment',
+               errors: [Credentials.ADMIN_ENROLMENT_OFF] });
+    }
     // ONE QUESTION TO THE ISSUANCE POLICY (#536): the key's BE flag, the
     // minimum PIN length it reported (#529), the device serial its
     // trusted attestation named (#532), and its signature algorithm with
@@ -3494,6 +3666,9 @@ class Credentials {
     // ceremony's, else what `keyAlgorithm()` reads off the key itself, so
     // a key written by value is held to a post-quantum requirement too;
     // whether it IS post-quantum is the question's to say, not this door's.
+    // The same fact holds it to the algorithms the person's passkey profile
+    // offers at registration (#940, the `profile-algorithm` group), whichever
+    // door made it.
     const given = credential || {};
     const facts: Record<string, any> = {
       username: name,
@@ -3502,18 +3677,69 @@ class Credentials {
       algorithm: Credentials.keyAlgorithm({
         algorithm: given.algorithm, coseAlg: given.coseAlg,
         publicKeyJwk: given.publicKeyJwk }).name,
-      lane: lane
+      lane: lane,
+      // AND WHAT ITS ATTESTATION WAS SIGNED WITH (#941), as the verifier
+      // recorded it: always carried, so a key written by value with no
+      // attestation (an import, a test) is held to a profile's
+      // attestationAlgorithms too — it recorded none, which satisfies no
+      // list. Whether they satisfy it is the question's to say.
+      attestationAlgorithms: webauthnAttestation.recordedAlgorithms(
+        given.attestation)
     };
     if (typeof given.backupEligible === 'boolean') {
       facts.backupEligible = given.backupEligible;
+    }
+    // AN UPGRADE (#939): the classical passkey it upgrades, looked up NOW
+    // among this person's keys — the entry as it is at the write, not as
+    // it was at the proof — and its algorithm sent to the policy beside
+    // what the write will do. Gone since the proof, nothing is written:
+    // the classical key it was to replace or annotate is not there to be
+    // left untouched, and a key added "beside" a key nobody holds is an
+    // ordinary registration nobody began.
+    const upgrade = opts && opts.upgrade ? opts.upgrade : null;
+    const upgrading = upgrade ? this.keysOf(name).filter(function (one) {
+      return String(one.credentialId) === String(upgrade.credentialId);
+    })[0] || null : null;
+    if (upgrade && (!upgrading ||
+                    Credentials.keyAlgorithm(upgrading).postQuantum ||
+                    (upgrade.mode === 'alongside' &&
+                     upgrading.upgradedTo &&
+                     this.keysOf(name).some(function (one) {
+                       return String(one.credentialId) ===
+                              String(upgrading.upgradedTo);
+                     })))) {
+      log.info('credentials: the passkey upgrade of ' + name + ' found ' +
+               'the classical passkey gone or already upgraded at the ' +
+               'write; nothing was written.');
+      log.debug("Leaving Credentials.addKey(). The upgraded key is gone.");
+      return coded('STS-AUTHN-0457', { ok: false, reason: 'upgrade',
+               errors: ['The passkey you were upgrading was removed or ' +
+                        'upgraded by another request since you used it, ' +
+                        'so nothing was changed.'] });
+    }
+    if (upgrading) {
+      facts.upgrade = { mode: upgrade.mode,
+                        previousAlgorithm:
+                          Credentials.keyAlgorithm(upgrading).name };
+    }
+    // WHO ENROLLED IT (#945): an administrator, on the person's behalf, in
+    // the administrator's browser — told to the issuance policy as a fact
+    // (the `enrolment` group), so a realm can forbid it by its own rule.
+    // The person's own enrolment carries none, as before.
+    if (enrolledBy) {
+      facts.enrolledBy = enrolledBy;
     }
     const synced = this.deps.passkeyPolicy.refusalFor('registration', facts);
     if (synced) {
       const reason = synced.reason === 'pin-length' ? 'pin-length'
         : (synced.reason === 'backup-eligible' ? 'backup-eligible'
           : (synced.reason === 'post-quantum' ? 'post-quantum'
-            : (/^serial-/.test(synced.reason) ? 'device-serial'
-                                              : 'passkey-policy')));
+            : (synced.reason === 'attestation-algorithm'
+              ? 'attestation-algorithm'
+              // #940: an algorithm the person's profile does not offer.
+              : (synced.reason === 'profile-algorithm' ? 'profile-algorithm'
+                : (/^serial-/.test(synced.reason) ? 'device-serial'
+                                                  : 'passkey-policy')))));
       log.info('credentials: a passkey was NOT enrolled for ' + name +
                ' (' + synced.code + ', ' + reason + '): ' + synced.why);
       log.debug("Leaving Credentials.addKey(). Refused by the passkey " +
@@ -3547,7 +3773,11 @@ class Credentials {
                         'with the original.'] });
     }
     const cap = webauthnPolicy.settings().maxKeysPerPerson;
-    if (held.length >= cap) {
+    // AN UPGRADE IN PLACE (#939) ADDS NO KEY: the one it replaces is not
+    // counted, so a person at the cap may still upgrade. Beside it, it is
+    // one more key, and counted.
+    const replacing = !!(upgrading && upgrade.mode === 'replace');
+    if (held.length - (replacing ? 1 : 0) >= cap) {
       log.info('credentials: ' + name + ' already holds ' + held.length +
                ' security key(s) and webauthn.maxKeysPerPerson is ' + cap +
                ', so another was not enrolled.');
@@ -3633,12 +3863,39 @@ class Credentials {
       // records and what `keyLane()` reads as classical. So with the switch
       // off a row is written exactly as it was.
       lane: lane === 'pqc' ? 'pqc' : undefined,
+      // WHO ENROLLED IT, WHERE AN ADMINISTRATOR DID (#945): `{ username,
+      // sub, at }` — the administrator's name and token subject and when —
+      // for the key lists to say "enrolled by an administrator" and the
+      // audit to be read against. Absent for the person's own enrolment,
+      // which is every key before #945.
+      enrolledBy: enrolledBy || undefined,
       // Who made or holds it, and which source said so (`keyProvider()`).
       provider: String(credential.provider || '').slice(0, 120),
       providerSource: ['mds', 'table'].indexOf(
         String(credential.providerSource || '')) >= 0
         ? String(credential.providerSource) : ''
     };
+    // THE UPGRADE'S HISTORY (#939), on the new key: when, from which
+    // algorithm and which credential, and what the write did. In place the
+    // key keeps the name and the enrolment date of the one it replaces —
+    // it is that passkey, made stronger — and beside it, the name only.
+    if (upgrading) {
+      const before = Credentials.keyAlgorithm(upgrading);
+      const extra: Record<string, any> = record;
+      extra.upgradedAt = record.enrolledAt;
+      extra.previousAlgorithm = before.name;
+      extra.previousCoseAlg = before.coseAlg || null;
+      extra.previousCredentialId = String(upgrading.credentialId);
+      extra.upgradeMode = upgrade.mode === 'alongside' ? 'alongside'
+                                                       : 'replace';
+      record.label = String(Credentials.keyName(upgrading) || '')
+        .slice(0, 60);
+      if (replacing) {
+        record.enrolledAt = Number(upgrading.enrolledAt) || record.enrolledAt;
+        // ITS LAST USE STAYS ITS OWN: the proof was a use of the classical
+        // key, and this one has not signed anybody in yet.
+      }
+    }
     if (!record.label) {
       // THE PASSKEY POLICY'S LABEL FIRST (#533), with {provider} and {kind}
       // filled in; else the provider's or the group's name, as before.
@@ -3650,7 +3907,26 @@ class Credentials {
     }
     let written = false;
     try {
-      written = directory.writeWebauthn(name, JSON.stringify(record));
+      // AN UPGRADE IS ONE WRITE OF THE WHOLE SET (#939), so the classical
+      // key is changed in the same act that adds the new one and never
+      // before it: in place, the new key where the old one was; beside it,
+      // the old one marked with its successor and the new one appended.
+      // Every other row is written back as it was read, at the write.
+      written = upgrading
+        ? directory.replaceWebauthn(name, this.keysOf(name).map(
+            function (one) {
+              if (String(one.credentialId) !==
+                  String(upgrading.credentialId)) {
+                return JSON.stringify(one);
+              }
+              if (replacing) {
+                return JSON.stringify(record);
+              }
+              return JSON.stringify(Object.assign({}, one, {
+                upgradedTo: record.credentialId,
+                upgradedAt: (record as Record<string, any>).upgradedAt }));
+            }).concat(replacing ? [] : [JSON.stringify(record)])) !== false
+        : directory.writeWebauthn(name, JSON.stringify(record));
     } catch (e) {
       log.error(errorCodes.tag('STS-AUTHN-0068') +
                 'credentials: writing a security key for ' + name + ' threw: ' +
@@ -3799,10 +4075,11 @@ class Credentials {
    * @param username - the person
    * @param credential - what the ceremony produced
    * @param role - `primary` or `mfa`
+   * @param opts - as `addKey()`'s: `upgrade` (#939)
    * @returns a promise of `addKey()`'s answer, or a refusal (`duplicate`,
    *   `store`)
    */
-  addKeyClaimed(username, credential, role) {
+  addKeyClaimed(username, credential, role, opts?) {
     const { log, realms, errorCodes, claims } = this.deps;
     const {
       WEBAUTHN_REGISTRATION_SCOPE,
@@ -3814,7 +4091,7 @@ class Credentials {
     if (!credentialId) {
       log.debug("Leaving Credentials.addKeyClaimed(). No id to claim; " +
                 "addKey() decides.");
-      return Promise.resolve(this.addKey(username, credential, role));
+      return Promise.resolve(this.addKey(username, credential, role, opts));
     }
     const name = String(username || '').trim();
     log.debug("Leaving Credentials.addKeyClaimed(). Claiming the " +
@@ -3842,7 +4119,7 @@ class Credentials {
           errors: ['The security key could not be registered just now. Try ' +
                    'again.'] });
       }
-      const stored = this.addKey(username, credential, role);
+      const stored = this.addKey(username, credential, role, opts);
       if (!stored.ok) {
         claims.release(claimed.handle);
       }
@@ -4212,6 +4489,67 @@ class Credentials {
     return out;
   }
 
+  // ONE WRITE OF ONE KEY (#929). The five writers below each used to read
+  // the list, find the key, maybe change it and write every key back.
+  // `noteKeyUsed()` runs on every passkey sign-in, so this adds no store
+  // read: `keysOf()` once, with the username the caller passes (four of
+  // them pass it raw; `renameKey()` has already trimmed), and
+  // `replaceWebauthn` only when `mutate` says the row changed. A write of
+  // a mark that was already there is what sent CAEP credential-change a
+  // second time (#910). No store means the keys are not read. `mutate` is
+  // handed the object already in the list, so the written values include
+  // the change.
+  /**
+   * Rewrites one of a person's keys when `mutate` says it changed.
+   *
+   * @param username - as the caller passes it to `keysOf`
+   * @param credentialId - the key's credential id
+   * @param mutate - given the key already in the list; returns true when
+   *   that object changed and should be written
+   * @returns `{ reason }` of `no-store`, `missing` or `unchanged`, or
+   *   `{ reason: 'written', result, found }`, or
+   *   `{ reason: 'threw', error }`
+   */
+  private rewriteKey(username, credentialId, mutate) {
+    const { log } = this.deps;
+    const directory = this.directory;
+    log.debug('Entering Credentials.rewriteKey().');
+    if (!directory || typeof directory.replaceWebauthn !== 'function') {
+      log.debug('Leaving Credentials.rewriteKey(). No store.');
+      return { reason: 'no-store' };
+    }
+    const keys = this.keysOf(username);
+    const found = keys.filter((one) => {
+      return one.credentialId === String(credentialId);
+    })[0];
+    if (!found) {
+      log.debug('Leaving Credentials.rewriteKey(). No key.');
+      return { reason: 'missing' };
+    }
+    // False, including a refusal to touch a mark already stored: the write
+    // is what a second CAEP credential-change would follow (#910).
+    if (!mutate(found)) {
+      log.debug('Leaving Credentials.rewriteKey(). Nothing changed.');
+      return { reason: 'unchanged' };
+    }
+    try {
+      const result = directory.replaceWebauthn(
+        String(username || '').trim(), keys.map((one) => {
+          return JSON.stringify(one);
+        }));
+      log.debug('Leaving Credentials.rewriteKey(). Written.');
+      return { reason: 'written', result: result, found: found };
+    } catch (e) {
+      log.debug('Caught in Credentials.rewriteKey(): ' +
+                ((e && e.message) || e));
+      // The writer logs its own code. A failed counter must not undo a
+      // sign-in that already succeeded, and a failed mark must not look
+      // like one that was recorded.
+      log.debug('Leaving Credentials.rewriteKey(). Threw.');
+      return { reason: 'threw', error: e };
+    }
+  }
+
   /**
    * Makes a WebAuthn credential's `android-key` attestation untrusted because
    * Google's status list revokes or suspends a certificate of its chain.
@@ -4223,38 +4561,36 @@ class Credentials {
    */
   untrustKeyAttestation(username, credentialId, revocation) {
     const { log, errorCodes } = this.deps;
-    const directory = this.directory;
     log.debug('Entering Credentials.untrustKeyAttestation().');
-    if (!directory || typeof directory.replaceWebauthn !== 'function') {
+    const outcome = this.rewriteKey(username, credentialId, (found) => {
+      if (!found.attestation || found.attestation.trusted !== true) {
+        return false;
+      }
+      found.attestation = Object.assign({}, found.attestation, {
+        trusted: false, anchor: '',
+        androidRevocation: Object.assign({},
+          found.attestation.androidRevocation || {}, revocation || {}) });
+      return true;
+    });
+    if (outcome.reason === 'no-store') {
       log.debug('Leaving Credentials.untrustKeyAttestation(). No store.');
       return false;
     }
-    const keys = this.keysOf(username);
-    const found = keys.filter(function (one) {
-      return one.credentialId === String(credentialId);
-    })[0];
-    if (!found || !found.attestation || found.attestation.trusted !== true) {
-      log.debug('Leaving Credentials.untrustKeyAttestation(). Nothing to do.');
-      return false;
-    }
-    found.attestation = Object.assign({}, found.attestation, {
-      trusted: false, anchor: '',
-      androidRevocation: Object.assign({},
-        found.attestation.androidRevocation || {}, revocation || {}) });
-    try {
-      const written = !!directory.replaceWebauthn(
-        String(username || '').trim(), keys.map(function (one) {
-          return JSON.stringify(one);
-        }));
-      log.debug('Leaving Credentials.untrustKeyAttestation(). ' + written);
-      return written;
-    } catch (e) {
+    if (outcome.reason === 'threw') {
       log.error(errorCodes.tag('STS-AUTHN-0296') + 'credentials: the ' +
                 'revoked attestation of a security key of ' + username +
-                ' could not be recorded: ' + e.message);
+                ' could not be recorded: ' + outcome.error.message);
       log.debug('Leaving Credentials.untrustKeyAttestation(). Threw.');
       return false;
     }
+    if (outcome.reason !== 'written') {
+      log.debug('Leaving Credentials.untrustKeyAttestation(). ' +
+                'Nothing to do.');
+      return false;
+    }
+    const written = !!outcome.result;
+    log.debug('Leaving Credentials.untrustKeyAttestation(). ' + written);
+    return written;
   }
 
   // A KEY THE ATTESTATION RULES NOW REFUSE AT SIGN-IN (#530): marked on its
@@ -4272,40 +4608,41 @@ class Credentials {
    */
   noteKeyAttestationRefused(username, credentialId, code, why) {
     const { log, errorCodes } = this.deps;
-    const directory = this.directory;
     log.debug('Entering Credentials.noteKeyAttestationRefused().');
-    if (!directory || typeof directory.replaceWebauthn !== 'function') {
+    const outcome = this.rewriteKey(username, credentialId, (found) => {
+      // Compared as it is stored, truncated (#910): an untruncated reason
+      // over 500 characters never matched, so every attempt rewrote the key
+      // and sent CAEP credential-change again. Returning false is what
+      // stops that second write.
+      if (found.attestationRefused &&
+          found.attestationRefused.why ===
+            String(why || '').slice(0, 500)) {
+        return false;
+      }
+      found.attestationRefused = { code: String(code || ''),
+                                   why: String(why || '').slice(0, 500),
+                                   at: Date.now() };
+      return true;
+    });
+    if (outcome.reason === 'no-store') {
       log.debug('Leaving Credentials.noteKeyAttestationRefused(). No store.');
       return false;
     }
-    const keys = this.keysOf(username);
-    const found = keys.filter(function (one) {
-      return one.credentialId === String(credentialId);
-    })[0];
-    if (!found || (found.attestationRefused &&
-                   found.attestationRefused.why === String(why || ''))) {
+    if (outcome.reason === 'threw') {
+      log.error(errorCodes.tag('STS-AUTHN-0318') + 'credentials: the ' +
+                'refused attestation of a passkey of ' + username +
+                ' could not be recorded: ' + outcome.error.message);
+      log.debug('Leaving Credentials.noteKeyAttestationRefused(). Threw.');
+      return false;
+    }
+    if (outcome.reason !== 'written') {
       log.debug('Leaving Credentials.noteKeyAttestationRefused(). ' +
                 'Nothing new.');
       return false;
     }
-    found.attestationRefused = { code: String(code || ''),
-                                 why: String(why || '').slice(0, 500),
-                                 at: Date.now() };
-    try {
-      const written = !!directory.replaceWebauthn(
-        String(username || '').trim(), keys.map(function (one) {
-          return JSON.stringify(one);
-        }));
-      log.debug('Leaving Credentials.noteKeyAttestationRefused(). ' +
-                written);
-      return written;
-    } catch (e) {
-      log.error(errorCodes.tag('STS-AUTHN-0318') + 'credentials: the ' +
-                'refused attestation of a passkey of ' + username +
-                ' could not be recorded: ' + e.message);
-      log.debug('Leaving Credentials.noteKeyAttestationRefused(). Threw.');
-      return false;
-    }
+    const written = !!outcome.result;
+    log.debug('Leaving Credentials.noteKeyAttestationRefused(). ' + written);
+    return written;
   }
 
   // A KEY THE ISSUANCE POLICY'S PASSKEY RULES NOW REFUSE AT SIGN-IN, BY
@@ -4329,41 +4666,42 @@ class Credentials {
    */
   noteKeyPolicyRefused(username, credentialId, reason, code, why) {
     const { log, errorCodes } = this.deps;
-    const directory = this.directory;
     log.debug('Entering Credentials.noteKeyPolicyRefused(). ' + reason);
-    if (!directory || typeof directory.replaceWebauthn !== 'function') {
+    const which = String(reason || '');
+    const outcome = this.rewriteKey(username, credentialId, (found) => {
+      // `&&` binds tighter than `?:`, which is the reading the old line
+      // had: an object already stored, otherwise none. An empty reason is
+      // nothing new, and the keys are still read — the old door read them
+      // before it noticed the reason.
+      const held = found.policyRefused &&
+        typeof found.policyRefused === 'object' ? found.policyRefused : {};
+      if (!which || (held[which] &&
+                     held[which].why === String(why || '').slice(0, 500))) {
+        return false;
+      }
+      found.policyRefused = Object.assign({}, held, {
+        [which]: { code: String(code || ''),
+                   why: String(why || '').slice(0, 500), at: Date.now() } });
+      return true;
+    });
+    if (outcome.reason === 'no-store') {
       log.debug('Leaving Credentials.noteKeyPolicyRefused(). No store.');
       return false;
     }
-    const keys = this.keysOf(username);
-    const found = keys.filter(function (one) {
-      return one.credentialId === String(credentialId);
-    })[0];
-    const which = String(reason || '');
-    const held = found && found.policyRefused &&
-      typeof found.policyRefused === 'object' ? found.policyRefused : {};
-    if (!found || !which ||
-        (held[which] && held[which].why === String(why || '').slice(0, 500))) {
-      log.debug('Leaving Credentials.noteKeyPolicyRefused(). Nothing new.');
-      return false;
-    }
-    found.policyRefused = Object.assign({}, held, {
-      [which]: { code: String(code || ''),
-                 why: String(why || '').slice(0, 500), at: Date.now() } });
-    try {
-      const written = !!directory.replaceWebauthn(
-        String(username || '').trim(), keys.map(function (one) {
-          return JSON.stringify(one);
-        }));
-      log.debug('Leaving Credentials.noteKeyPolicyRefused(). ' + written);
-      return written;
-    } catch (e) {
+    if (outcome.reason === 'threw') {
       log.error(errorCodes.tag('STS-AUTHN-0318') + 'credentials: the ' +
                 'refusal of a passkey of ' + username + ' (' + which + ') ' +
-                'could not be recorded: ' + e.message);
+                'could not be recorded: ' + outcome.error.message);
       log.debug('Leaving Credentials.noteKeyPolicyRefused(). Threw.');
       return false;
     }
+    if (outcome.reason !== 'written') {
+      log.debug('Leaving Credentials.noteKeyPolicyRefused(). Nothing new.');
+      return false;
+    }
+    const written = !!outcome.result;
+    log.debug('Leaving Credentials.noteKeyPolicyRefused(). ' + written);
+    return written;
   }
 
   // Update the signature counter after a successful assertion. WebAuthn's
@@ -4382,47 +4720,41 @@ class Credentials {
    */
   noteKeyUsed(username, credentialId, signCount, flags?) {
     const { log, errorCodes } = this.deps;
-    const directory = this.directory;
     log.debug('Entering Credentials.noteKeyUsed().');
-    if (!directory || typeof directory.replaceWebauthn !== 'function') {
-      log.debug("Leaving Credentials.noteKeyUsed().");
-      return false;
-    }
-    const keys = this.keysOf(username);
-    const found = keys.filter((one) => {
-      return one.credentialId === String(credentialId);
-    })[0];
-    if (!found) {
-      log.debug("Leaving Credentials.noteKeyUsed().");
-      return false;
-    }
-    found.signCount = Number(signCount || 0);
-    found.lastUsedAt = Date.now();
-    // THE BACKUP STATE CAN CHANGE AFTER ENROLMENT (WebAuthn Level 3 section
-    // 6.1.3: BS "can change over time"), so each assertion's is kept — and BE
-    // for a key enrolled before #470 kept it, since BE never changes and an
-    // assertion carries it too.
-    if (flags && typeof flags.bs === 'boolean') {
-      found.backupState = flags.bs;
-    }
-    if (flags && typeof flags.be === 'boolean' &&
-        typeof found.backupEligible !== 'boolean') {
-      found.backupEligible = flags.be;
-    }
-    try {
-      log.debug("Leaving Credentials.noteKeyUsed().");
-      return directory.replaceWebauthn(String(username || '').trim(),
-        keys.map((one) => { return JSON.stringify(one); }));
-    } catch (e) {
-      // The assertion already succeeded; failing to record the counter must not
-      // undo it. Logged, because a counter that stops advancing is a replay
-      // defence that stops defending.
+    const outcome = this.rewriteKey(username, credentialId, (found) => {
+      found.signCount = Number(signCount || 0);
+      found.lastUsedAt = Date.now();
+      // THE BACKUP STATE CAN CHANGE AFTER ENROLMENT (WebAuthn Level 3
+      // section 6.1.3: BS "can change over time"), so each assertion's is
+      // kept — and BE for a key enrolled before #470 kept it, since BE
+      // never changes and an assertion carries it too.
+      if (flags && typeof flags.bs === 'boolean') {
+        found.backupState = flags.bs;
+      }
+      if (flags && typeof flags.be === 'boolean' &&
+          typeof found.backupEligible !== 'boolean') {
+        found.backupEligible = flags.be;
+      }
+      return true;
+    });
+    if (outcome.reason === 'threw') {
+      // The assertion already succeeded; failing to record the counter
+      // must not undo it. Logged, because a counter that stops advancing
+      // is a replay defence that stops defending.
       log.error(errorCodes.tag('STS-AUTHN-0038') +
                 'credentials: the signature counter for ' + username +
-                ' could not be recorded: ' + e.message);
+                ' could not be recorded: ' + outcome.error.message);
       log.debug("Leaving Credentials.noteKeyUsed().");
       return false;
     }
+    if (outcome.reason === 'written') {
+      // The directory's own answer, not `!!` of it: a caller that recorded
+      // the counter reads whatever `replaceWebauthn` returned.
+      log.debug("Leaving Credentials.noteKeyUsed().");
+      return outcome.result;
+    }
+    log.debug("Leaving Credentials.noteKeyUsed().");
+    return false;
   }
 
   // ---------------------------------------------------------------------------
@@ -4635,7 +4967,7 @@ class Credentials {
     // It surfaced through the door it costs most at: `POST
     // /admin-api/users/clear-key`, which `admin-ui/CLAUDE.md` calls the way
     // back for somebody who lost their key.
-    // `tests/vendored/sts_webauthn_second_factor.js` found it in its first run,
+    // `tests/protocol/sts_webauthn_second_factor.js` found it in its first run,
     // in the section after the one that made keys reachable at all.
     //
     // **THE PERSON MAY STILL BE UNABLE TO SIGN IN AFTERWARDS**, and that is not
@@ -4707,6 +5039,8 @@ class Credentials {
     const directory = this.directory;
     const coded = this.coded.bind(this);
     log.debug('Entering Credentials.renameKey().');
+    // The store is asked before the label, as it always was: no store and
+    // a label that is not a name is still "no store" (STS-AUTHN-0059).
     if (!directory || typeof directory.replaceWebauthn !== 'function') {
       log.debug("Leaving Credentials.renameKey(). No store.");
       return coded('STS-AUTHN-0059', { ok: false, errors: ['No credential ' +
@@ -4721,29 +5055,38 @@ class Credentials {
           'name is at most 60 characters, with no control characters.'] });
     }
     const name = String(username || '').trim();
-    const keys = this.keysOf(name);
-    const found = keys.filter((one) => {
-      return one.credentialId === String(credentialId);
-    })[0];
-    if (!found) {
+    let previous = '';
+    // The name is already trimmed, and that is what `keysOf` is given —
+    // the other four writers pass the raw username. A found key is always
+    // written, even when the label is the one already stored: the old door
+    // wrote on every hit. An empty name puts the default back.
+    const outcome = this.rewriteKey(name, credentialId, (found) => {
+      previous = Credentials.keyName(found);
+      found.label = wanted || Credentials.defaultKeyName(found);
+      return true;
+    });
+    if (outcome.reason === 'missing') {
       log.debug("Leaving Credentials.renameKey(). Not theirs.");
       return coded('STS-AUTHN-0299', { ok: false, errors: ['No passkey of ' +
           'that id is registered for ' + name + '.'] });
     }
-    const previous = Credentials.keyName(found);
-    found.label = wanted || Credentials.defaultKeyName(found);
-    try {
-      directory.replaceWebauthn(name, keys.map((one) => {
-        return JSON.stringify(one);
-      }));
-    } catch (e) {
+    if (outcome.reason === 'threw') {
       log.debug("Leaving Credentials.renameKey(). The store threw.");
       return coded('STS-AUTHN-0068', { ok: false, errors: ['The credential ' +
-          'store refused the write: ' + e.message] });
+          'store refused the write: ' + outcome.error.message] });
+    }
+    if (outcome.reason === 'no-store') {
+      // The store was present above. This is it having gone between the
+      // check and the write: the same refusal. 'unchanged' is not this
+      // answer — a found key's mutation returns true, so it always writes,
+      // and a key that is theirs must not be reported as no store.
+      log.debug("Leaving Credentials.renameKey(). No store.");
+      return coded('STS-AUTHN-0059', { ok: false, errors: ['No credential ' +
+          'store is installed.'] });
     }
     log.info('credentials: a passkey of ' + name + ' was renamed.');
     log.debug("Leaving Credentials.renameKey().");
-    return { ok: true, label: found.label, previous: previous };
+    return { ok: true, label: outcome.found.label, previous: previous };
   }
 
   // ===========================================================================
@@ -5814,11 +6157,14 @@ class Credentials {
   // So a caller that can wait asks for EVERY shown row at once: the
   // directory's `credentialRowsAsync()` reads each name by the census's
   // resolution, asynchronously and a page at a time, and hands the values
-  // back raw; this file interprets them with the SAME functions the one-name
-  // path uses — `keysFromValues()`, `totpStatusFromValue()`,
-  // `backupCodesFromValue()`, `backupCodeStatusOfHeld()` and the mail
-  // factor's `heldOfAttributes()` — so a row is the row `factorHolderRow()`
-  // gives, member for member. `tests/users_page_rows_async.js` compares them.
+  // back raw. `interpretValues()` reads them ONCE — `keysFromValues()`,
+  // `totpStatusFromValue()` and the mail factor's `heldOfAttributes()` —
+  // and returns the census facts `factsFromValues()` returns, so a shown
+  // row does not parse the keys or the authenticator a second time (#820,
+  // #929). Recovery codes are read only for the row
+  // (`backupCodesFromValue()`, `backupCodeStatusOfHeld()`); the census does
+  // not start computing them. A row is the row `factorHolderRow()` gives,
+  // member for member. `tests/users_page_rows_async.js` compares them.
   //
   // **A REFUSAL IS UNKNOWN, NOT NONE**: where the store could not be read
   // (unavailable, or the budget spent) every row is answered null — drawn
@@ -5897,47 +6243,32 @@ class Credentials {
     return out;
   }
 
-  // One roster row from the values the directory handed over, by
-  // `mechanismsFor()`'s rules — `raw` null is a name that finds no entry,
-  // which holds nothing, as `mechanismsFor()` answers for one. Called once
-  // per shown row.
+  // One roster row from the values the directory handed over. The eight
+  // facts and the authenticator come from `interpretValues()`, read once;
+  // the row adds only what the census does not carry (`totpDetail`, the
+  // recovery-code count, `recoveryAdvised`). Called once per shown row
+  // (#820), so this must not parse the keys or the authenticator again.
+  // `raw` null finds no entry and holds nothing, as `mechanismsFor()`
+  // answers for one.
   private factorHolderRowFromValues(row, raw, name, mailFactor) {
     const { log, backupCodes } = this.deps;
     log.debug('Entering Credentials.factorHolderRowFromValues().');
-    const values = raw || {};
-    const keys = this.keysFromValues(values.webauthn || [], name);
-    const primaryKeys = keys.filter((one) => {
-      return one.role === 'primary';
-    }).length;
-    const mfaKeys = keys.filter((one) => {
-      return one.role === 'mfa';
-    }).length;
-    const authenticator = this.totpStatusFromValue(values.totp || '', name);
-    const totpEnrolled = !!authenticator;
-    let mailHeld = '';
-    if (mailFactor && values.mail &&
-        typeof mailFactor.heldOfAttributes === 'function') {
-      try {
-        mailHeld = mailFactor.heldOfAttributes(values.mail) || '';
-      } catch (e) {
-        log.debug('Caught in Credentials.factorHolderRowFromValues(): ' +
-                  ((e && e.message) || e));
-        // Not held, for `mailFactorOf()`'s reason.
-        mailHeld = '';
-      }
-    }
-    const held = this.backupCodesFromValue(values.backupCodes || '', name);
-    const password = !!values.password;
+    const read = this.interpretValues(raw, name, mailFactor, true);
+    const facts = read.facts;
+    const authenticator = read.authenticator;
+    const held = read.held;
+    const mfaKeys = facts.mfaKeys;
+    const totpEnrolled = facts.totp;
     log.debug('Leaving Credentials.factorHolderRowFromValues().');
     return {
       username: row.username,
       inDirectory: row.inDirectory,
       known: row.known,
-      password: password,
-      primaryKeys: primaryKeys,
+      password: facts.password,
+      primaryKeys: facts.primaryKeys,
       mfaKeys: mfaKeys,
       totp: totpEnrolled,
-      totpUsable: totpEnrolled && !authenticator.unusable,
+      totpUsable: facts.totpUsable,
       // `mechanismsFor()`'s `totpDetail`, member for member.
       totpDetail: totpEnrolled
         ? { enrolledAt: authenticator.enrolledAt || 0,
@@ -5953,11 +6284,9 @@ class Credentials {
       backupCodes: this.backupCodeStatusOfHeld(held),
       recoveryAdvised: backupCodes.offered() &&
                        (mfaKeys > 0 || totpEnrolled) && !held,
-      mfaRequired: mfaKeys > 0 || totpEnrolled || !!mailHeld,
-      secondFactor: mfaKeys > 0 ? 'webauthn' :
-                    (totpEnrolled ? 'totp' :
-                     (mailHeld ? 'email-' + mailHeld : '')),
-      usable: password || primaryKeys > 0
+      mfaRequired: facts.mfaRequired,
+      secondFactor: facts.secondFactor,
+      usable: facts.usable
     };
   }
 
@@ -6469,12 +6798,29 @@ class Credentials {
     };
   }
 
-  // One person's census facts from the raw values the directory handed over.
-  // `raw` is null for a name that finds no entry, which answers what
-  // `mechanismsFor()` answers for one: nothing held.
-  private factsFromValues(raw, name, mailFactor) {
+  // ONE PARSE OF A PERSON'S CREDENTIAL VALUES (#929). The census
+  // (`factsFromValues()`) and a shown row (`factorHolderRowFromValues()`)
+  // each used to parse the keys, the authenticator and the mailed factor
+  // and then compute the same eight facts. The Users page builds a row for
+  // every person it shows (#820), so a second parse there is the cost this
+  // removes. Recovery codes are read only when the caller asks: the census
+  // does not carry them and must not start computing them. `raw` null is a
+  // name that finds no entry, which holds nothing, as `mechanismsFor()`
+  // answers for one.
+  /**
+   * Interprets one person's raw credential values into the census facts,
+   * the authenticator record and, when asked, the held recovery codes.
+   *
+   * @param raw - the directory's values, or null
+   * @param name - the person
+   * @param mailFactor - the mailed-factor module, or null
+   * @param withBackup - whether to read the recovery codes
+   * @returns `{ facts, authenticator, held }`; `held` is null when the
+   *   recovery codes were not asked for
+   */
+  private interpretValues(raw, name, mailFactor, withBackup) {
     const { log } = this.deps;
-    log.debug('Entering Credentials.factsFromValues().');
+    log.debug('Entering Credentials.interpretValues().');
     const values = raw || {};
     const keys = this.keysFromValues(values.webauthn || [], name);
     const primaryKeys = keys.filter((one) => {
@@ -6491,27 +6837,45 @@ class Credentials {
       try {
         mailHeld = mailFactor.heldOfAttributes(values.mail) || '';
       } catch (e) {
-        log.debug('Caught in Credentials.factsFromValues(): ' +
+        log.debug('Caught in Credentials.interpretValues(): ' +
                   ((e && e.message) || e));
         // Not held, for `mailFactorOf()`'s reason.
         mailHeld = '';
       }
     }
     const password = !!values.password;
-    log.debug('Leaving Credentials.factsFromValues().');
+    // Only a roster row asks. The census's callers (`censusFacts()`,
+    // `factorCountsOf()`) pass false, so they do not open the codes.
+    const held = withBackup ?
+      this.backupCodesFromValue(values.backupCodes || '', name) : null;
+    log.debug('Leaving Credentials.interpretValues().');
     return {
-      password: password,
-      primaryKeys: primaryKeys,
-      mfaKeys: mfaKeys,
-      totp: totpEnrolled,
-      totpUsable: totpEnrolled && !authenticator.unusable,
-      // `mechanismsFor()`'s two lines, read against the same three facts.
-      mfaRequired: mfaKeys > 0 || totpEnrolled || !!mailHeld,
-      secondFactor: mfaKeys > 0 ? 'webauthn' :
-                    (totpEnrolled ? 'totp' :
-                     (mailHeld ? 'email-' + mailHeld : '')),
-      usable: password || primaryKeys > 0
+      facts: {
+        password: password,
+        primaryKeys: primaryKeys,
+        mfaKeys: mfaKeys,
+        totp: totpEnrolled,
+        totpUsable: totpEnrolled && !authenticator.unusable,
+        // `mechanismsFor()`'s two lines, read against the same three facts.
+        mfaRequired: mfaKeys > 0 || totpEnrolled || !!mailHeld,
+        secondFactor: mfaKeys > 0 ? 'webauthn' :
+                      (totpEnrolled ? 'totp' :
+                       (mailHeld ? 'email-' + mailHeld : '')),
+        usable: password || primaryKeys > 0
+      },
+      authenticator: authenticator,
+      held: held
     };
+  }
+
+  // The census's facts: `interpretValues()`'s object and nothing else.
+  // Recovery codes are not read here.
+  private factsFromValues(raw, name, mailFactor) {
+    const { log } = this.deps;
+    log.debug('Entering Credentials.factsFromValues().');
+    const facts = this.interpretValues(raw, name, mailFactor, false).facts;
+    log.debug('Leaving Credentials.factsFromValues().');
+    return facts;
   }
 
   // ---------------------------------------------------------------------------
@@ -8883,8 +9247,9 @@ class Credentials {
    * be, refusing anything knowable before the person touches their key.
    *
    * @param username - the person
-   * @param opts - `role` (`mfa` by default), `kind`, and `lane` (#643:
-   *   `classical` by default, or `pqc`)
+   * @param opts - `role` (`mfa` by default), `kind`, `lane` (#643:
+   *   `classical` by default, or `pqc`), and `classicalOnly` (#944: the
+   *   classical retry of a registration that failed on the device)
    * @returns `{ ok: true, enrolmentId, challenge, … }`, or a refusal
    */
   beginKeyEnrolment(username, opts?) {
@@ -8923,7 +9288,25 @@ class Credentials {
     if (!this.deps.passkeyPolicy.hasSelection()) {
       this.deps.passkeyPolicy.select(name, '');
     }
-    const lane = webauthnPolicy.enrolmentLane(String(options.lane || ''));
+    let lane = webauthnPolicy.enrolmentLane(String(options.lane || ''));
+    // THE CLASSICAL RETRY (#944), refused here — not only on the page that
+    // offers it — where the realm forbids a classical passkey (pqcOnly, or
+    // a post-quantum passkey required at registration): STS-AUTHN-0420.
+    // Allowed, it is carried on the pending record, so the finish holds the
+    // credential to the retry's list, and it is made in the classical lane
+    // while both lanes are on.
+    const classicalOnly = options.classicalOnly === true;
+    if (classicalOnly) {
+      const retryAllowed = webauthnPolicy.classicalRetryRefusal();
+      if (!retryAllowed.ok) {
+        log.debug('Leaving Credentials.beginKeyEnrolment(). The classical ' +
+                  'retry is refused here.');
+        return coded(errorCodes.codeOf(retryAllowed) || 'STS-AUTHN-0420',
+                     { ok: false, reason: 'algorithms',
+                       errors: [retryAllowed.why] });
+      }
+      lane = webauthnPolicy.classicalRetryLane(lane);
+    }
     const laneAllowed = webauthnPolicy.laneRefusal(lane);
     if (!laneAllowed.ok) {
       log.debug('Leaving Credentials.beginKeyEnrolment(). The lane is not ' +
@@ -8977,6 +9360,13 @@ class Credentials {
       role: role,
       kind: kind,
       lane: lane,
+      // The classical retry (#944): the algorithms less ML-DSA.
+      classicalOnly: classicalOnly,
+      // WHAT THIS CEREMONY OFFERS (#940), under the person's passkey
+      // profile as selected above: the finish holds the credential to it as
+      // well as to what is offered then (`heldToOffer()`), so neither a
+      // client nor a profile changed in between widens it.
+      offered: webauthnPolicy.algorithmIds(lane, classicalOnly),
       // NO LABEL (#470): the key takes its provider's or its group's name, and
       // the page asks for a nickname once it is registered.
       label: '',
@@ -9009,7 +9399,7 @@ class Credentials {
     log.debug('Leaving Credentials.beginKeyEnrolment(). Challenge minted ' +
               'and held.');
     return { ok: true, enrolmentId: record.id, challenge: record.challenge,
-             role: role, kind: kind, lane: lane,
+             role: role, kind: kind, lane: lane, classicalOnly: classicalOnly,
              exclude: record.exclude.slice(),
              userHandle: record.userHandle,
              expiresAt: new Date(record.expires).toISOString() };
@@ -9060,15 +9450,49 @@ class Credentials {
    * @param username - the person
    * @param enrolmentId - the pending enrolment's id
    * @param credential - what the browser posted
-   * @param opts - `origin` and `rpId`, what the browser was talking to
+   * @param opts - `origin` and `rpId`, what the browser was talking to,
+   *   and `door` (#943), `portal` or `activation`, for the ceremony's row
    * @returns a promise of `addKey()`'s answer, or a refusal
    */
   confirmKeyEnrolment(username, enrolmentId, credential, opts?) {
     const { log } = this.deps;
     log.debug("Entering Credentials.confirmKeyEnrolment().");
+    // THE CEREMONY'S ROW (#943), however it ends: the pending enrolment is
+    // read FIRST, because a completed one is dropped — its lane is what the
+    // credential's algorithm was held to (`expectedAlgorithms`).
+    const name = String(username || '').trim();
+    const held = this.pendingKeyEnrolmentFor(name) || null;
+    const door = (opts || {}).door === 'activation' ? 'activation' : 'portal';
+    const note = (answer, threw?) => {
+      log.debug("Entering confirmKeyEnrolment() note().");
+      const key = answer && answer.ok ? this.keysOf(name).filter(
+        function (one) {
+          return String(one.credentialId) ===
+                 String(answer.credentialId || '');
+        })[0] || null : null;
+      webauthnCeremonies.record({
+        ceremony: 'registration', door: door, username: name,
+        role: String((answer && answer.role) || (held && held.role) || ''),
+        lane: String((held && held.lane) || 'classical'),
+        outcome: answer && answer.ok ? 'success' : 'refused',
+        errorCode: answer && answer.ok ? ''
+          : String(this.deps.errorCodes.codeOf(answer) ||
+                   (threw ? 'STS-AUTHN-0027' : '')),
+        offered: this.deps.webauthnPolicy.algorithmIds(
+          (held && held.lane) || 'classical'),
+        algorithm: key ? Credentials.keyAlgorithm(key).name : '',
+        posted: credential, attestation: key ? key.attestation : null });
+      log.debug("Leaving confirmKeyEnrolment() note().");
+    };
     log.debug("Leaving Credentials.confirmKeyEnrolment().");
     return Promise.resolve().then(() => {
       return this.checkKeyEnrolment(username, enrolmentId, credential, opts);
+    }).then(function (answer) {
+      note(answer);
+      return answer;
+    }, function (e) {
+      note(null, true);
+      throw e;
     });
   }
 
@@ -9088,6 +9512,17 @@ class Credentials {
     // THE ID IS CHECKED, so that a ceremony begun in one tab cannot be finished
     // with the challenge of another. It is the same rule the sign-in screen's
     // `mfa_id` follows.
+    // AN UPGRADE IN PROGRESS (#939) IS NOT AN ENROLMENT: it is finished
+    // through `confirmKeyUpgrade()`, whose write replaces or annotates the
+    // classical key. Finished here it would add a key without the proof of
+    // possession the upgrade's first step asks for.
+    if (held.upgrade) {
+      log.debug('Leaving Credentials.checkKeyEnrolment(). An upgrade, not ' +
+                'an enrolment.');
+      return coded('STS-AUTHN-0456', { ok: false, reason: 'mismatch',
+               errors: ['A passkey upgrade is in progress, not a new ' +
+                        'passkey. Finish or cancel the upgrade.'] });
+    }
     if (String(enrolmentId || '') !== held.id) {
       log.debug('Leaving Credentials.checkKeyEnrolment(). A different ' +
                 'enrolment.');
@@ -9095,6 +9530,31 @@ class Credentials {
                errors: ['That enrolment is not the one in progress. Start ' +
                         'again.'] });
     }
+    log.debug('Leaving Credentials.checkKeyEnrolment(). Verifying the ' +
+              'registration.');
+    return this.verifyKeyRegistration(name, held, credential, options,
+      (stored) => {
+        return this.keyEnrolmentWritten(name, held, stored);
+      });
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE VERIFICATION BOTH REGISTRATION CEREMONIES SHARE (#945): the person's
+  // own (`checkKeyEnrolment()`, above) and an administrator's on their behalf
+  // (`checkAdminKeyEnrolment()`, below). Everything from the browser's answer
+  // to the write is ONE copy, so an administrator's enrolment is verified
+  // exactly as self-enrolment is — the challenge, the origin and RP ID, user
+  // verification, the algorithms the lane offered (#643, #944), the
+  // exclusion, the attestation statement (#105) and its algorithms (#941),
+  // and then `addKeyClaimed()` and so `addKey()`, the one writer, where the
+  // passkey policy and the issuance policy decide (#536, #718). `held` is the
+  // pending record either door minted; `written` turns the claimed write's
+  // answer into the door's.
+  // ---------------------------------------------------------------------------
+  private verifyKeyRegistration(name, held, credential, options, written) {
+    const { log, webauthnPolicy, webauthnVerifier } = this.deps;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.verifyKeyRegistration().");
     if (!credential || !credential.response ||
         !credential.response.attestationObject) {
       // The browser reports one error for a declined prompt, a missing
@@ -9103,11 +9563,17 @@ class Credentials {
       const said = credential && credential.error
         ? credential.error + ': ' + (credential.message || '')
         : 'the browser sent no credential';
-      log.debug('Leaving Credentials.checkKeyEnrolment(). No credential.');
+      log.debug('Leaving Credentials.verifyKeyRegistration(). No credential.');
       return coded('STS-AUTHN-0022',
                    { ok: false, reason: 'browser', errors: [said] });
     }
 
+    // THE PERSON'S PASSKEY PROFILE (#940) where the door selected none, as
+    // the begin selected it, so the list now is read under the profile the
+    // ceremony was armed under.
+    if (!this.deps.passkeyPolicy.hasSelection()) {
+      this.deps.passkeyPolicy.select(name, '');
+    }
     let verdict;
     try {
       verdict = webauthnVerifier.verifyRegistration({
@@ -9122,10 +9588,16 @@ class Credentials {
         // ENROLMENT WAS BEGUN IN (#643), so an ML-DSA key answering the
         // classical lane, or a classical key the post-quantum one, is refused
         // as an algorithm that was not offered (STS-AUTHN-0228).
-        expectedAlgorithms: webauthnPolicy.algorithmIds(held.lane)
+        // The classical retry's list where it was begun as one (#944).
+        // And no wider than what the begin offered under the person's
+        // passkey profile (#940), whatever the browser posted.
+        expectedAlgorithms: webauthnPolicy.heldToOffer(
+          webauthnPolicy.algorithmIds(held.lane, held.classicalOnly === true),
+          held.offered)
       });
     } catch (e) {
-      log.debug('Leaving Credentials.checkKeyEnrolment(). Verification threw.');
+      log.debug('Leaving Credentials.verifyKeyRegistration(). Verification ' +
+                'threw.');
       return coded('STS-AUTHN-0027', { ok: false, reason: 'invalid',
                errors: ['The registration could not be checked: ' +
                         e.message] });
@@ -9133,7 +9605,8 @@ class Credentials {
     if (!verdict.ok) {
       log.info('credentials: a security key enrolment for ' + name +
                ' did not verify — ' + (verdict.failed || []).join('; '));
-      log.debug('Leaving Credentials.checkKeyEnrolment(). It did not verify.');
+      log.debug('Leaving Credentials.verifyKeyRegistration(). It did not ' +
+                'verify.');
       return coded(webauthnPolicy.failureCodeFor(verdict),
                    { ok: false, reason: 'invalid',
                errors: ['The registration did not verify — ' +
@@ -9149,7 +9622,8 @@ class Credentials {
     if (held.exclude.indexOf(String(verdict.credentialId)) >= 0) {
       log.info('credentials: ' + name + ' presented an authenticator that is ' +
                'already enrolled. Refused as a duplicate.');
-      log.debug('Leaving Credentials.checkKeyEnrolment(). Already enrolled.');
+      log.debug('Leaving Credentials.verifyKeyRegistration(). Already ' +
+                'enrolled.');
       return coded('STS-AUTHN-0095', { ok: false, reason: 'duplicate',
                errors: ['That authenticator is already enrolled. Use a ' +
                         'DIFFERENT one — a backup on the same device is lost ' +
@@ -9161,7 +9635,7 @@ class Credentials {
     // function answers a promise now — see `addKeyClaimed()`. A refused
     // statement is refused like a ceremony that did not verify, and the
     // pending enrolment is kept, as for a refused write below.
-    log.debug('Leaving Credentials.checkKeyEnrolment(). Verifying the ' +
+    log.debug('Leaving Credentials.verifyKeyRegistration(). Verifying the ' +
               'attestation, then writing through the claim.');
     return this.deps.webauthnAttestation.assess(verdict).then((attested) => {
       if (!attested.ok) {
@@ -9174,35 +9648,56 @@ class Credentials {
       }
       return Credentials.keyProviderFor(verdict.aaguid,
         attested.attestation).then((named) => {
-      return this.addKeyClaimed(name, {
-        provider: named.provider,
-        providerSource: named.providerSource,
-        credentialId: verdict.credentialId,
-        publicKeyJwk: verdict.publicKeyJwk,
-        signCount: verdict.signCount,
-        label: held.label || undefined,
-        attachment: credential.authenticatorAttachment || null,
-        userVerified: !!(verdict.flags && verdict.flags.uv),
-        aaguid: verdict.aaguid || null,
-        algorithm: verdict.algorithm || null,
-        coseAlg: verdict.coseAlg || null,
-        attestation: attested.attestation,
-        // #470: what the passkey pages group and describe the key by.
-        backupEligible: !!(verdict.flags && verdict.flags.be),
-        backupState: !!(verdict.flags && verdict.flags.bs),
-        transports: Credentials.transportsOf(credential),
-        discoverable: Credentials.discoverableOf(credential),
-        // CTAP 2.1's minPinLength, as the key reported it (#529).
-        minPinLength: Credentials.reportedMinPinLength(verdict),
-        // The handle the page created it under (#474), and its lane (#643),
-        // both off the pending record.
-        userHandle: held.userHandle,
-        lane: held.lane || 'classical'
-      }, held.role).then((stored) => {
-        return this.keyEnrolmentWritten(name, held, stored);
+      return this.addKeyClaimed(name,
+        Credentials.registeredKey(verdict, credential, attested, named, held),
+        held.role).then((stored) => {
+        // THE DOOR'S EPILOGUE (#964), not keyEnrolmentWritten here: an
+        // administrator's enrolment must keep the person's pending record
+        // and answer lane and enrolledBy. Self-enrolment passes that
+        // function; the administrator's door passes its own.
+        return written(stored);
       });
       });
     });
+  }
+
+  // WHAT A VERIFIED REGISTRATION HANDS THE ONE WRITER, `addKey()`: the
+  // verifier's verdict, the browser's reports, the attestation's record and
+  // the provider's name, and what the pending record carried. One builder
+  // for the enrolment's finish and the upgrade's (#939), so the two write
+  // the same row for the same ceremony.
+  private static registeredKey(verdict, credential, attested, named,
+                               held): Record<string, any> {
+    helpers.log.debug("Entering Credentials.registeredKey().");
+    helpers.log.debug("Leaving Credentials.registeredKey().");
+    return {
+      provider: named.provider,
+      providerSource: named.providerSource,
+      credentialId: verdict.credentialId,
+      publicKeyJwk: verdict.publicKeyJwk,
+      signCount: verdict.signCount,
+      label: held.label || undefined,
+      attachment: credential.authenticatorAttachment || null,
+      userVerified: !!(verdict.flags && verdict.flags.uv),
+      aaguid: verdict.aaguid || null,
+      algorithm: verdict.algorithm || null,
+      coseAlg: verdict.coseAlg || null,
+      attestation: attested.attestation,
+      // #470: what the passkey pages group and describe the key by.
+      backupEligible: !!(verdict.flags && verdict.flags.be),
+      backupState: !!(verdict.flags && verdict.flags.bs),
+      transports: Credentials.transportsOf(credential),
+      discoverable: Credentials.discoverableOf(credential),
+      // CTAP 2.1's minPinLength, as the key reported it (#529).
+      minPinLength: Credentials.reportedMinPinLength(verdict),
+      // The handle the page created it under (#474), and its lane (#643),
+      // both off the pending record.
+      userHandle: held.userHandle,
+      lane: held.lane || 'classical',
+      // WHO ENROLLED IT, where an administrator did (#945): off the pending
+      // record that door minted, never off the browser's answer.
+      enrolledBy: held.enrolledBy || undefined
+    };
   }
 
   // The end of `confirmKeyEnrolment()`, once the claimed write has answered.
@@ -9230,7 +9725,1062 @@ class Credentials {
              held: this.keysOf(name).length };
   }
 
+  // ===========================================================================
+  // UPGRADING A CLASSICAL PASSKEY TO AN ML-DSA ONE (#939, 2026-10-23; rule
+  // 3ct).
+  //
+  // A person with a classical passkey and an authenticator that can make an
+  // ML-DSA one could register a second passkey (two rows for one device) or
+  // remove the classical one and register again (locked out if the new
+  // registration fails after the removal). The upgrade is three steps on
+  // the ONE pending record an enrolment uses (`pendingKeys`, persisted and
+  // per realm, so a ceremony begun on one node is finished on another), with
+  // `upgrade` on it — so beginning an ordinary enrolment drops an upgrade in
+  // progress and the reverse, and `checkKeyEnrolment()` refuses to finish an
+  // upgrade as an enrolment (STS-AUTHN-0456):
+  //
+  //   1. `beginKeyUpgrade()` refuses whatever it can know before a ceremony
+  //      (`keyUpgradeRefusal()`, and the issuance policy asked with the
+  //      `upgrade` fact group), and mints an ASSERTION challenge bound to
+  //      this upgrade and this one credential.
+  //   2. `proveKeyUpgrade()` verifies an assertion BY THAT CREDENTIAL over
+  //      that challenge — proof of possession, fresh, and spent across the
+  //      cluster like a sign-in's (`spendAssertion()`: the challenge claimed
+  //      once, the counter advanced) — and only then mints the REGISTRATION
+  //      challenge, with an exclude list that leaves the classical
+  //      credential out so the same authenticator may answer.
+  //   3. `confirmKeyUpgrade()` verifies the registration against ML-DSA
+  //      only (`webauthnPolicy.upgradeAlgorithmIds()`, section 7.1's
+  //      offered-algorithm check), its attestation as any registration's,
+  //      and hands the key to `addKeyClaimed()` with `upgrade`, whose ONE
+  //      write of the whole set replaces the classical row (`replace`) or
+  //      marks it with its successor and appends the new one
+  //      (`alongside`). Every registration rule applies — the passkey
+  //      policy's post-quantum and attestation-algorithm rows (#718, #941)
+  //      among them — and the classical row is touched by nothing before
+  //      that write, so any refusal leaves it as it was.
+  //
+  // **THE DEVICE IS NOT THIS SERVICE'S TO PROTECT, AND IT IS SAID**: in
+  // place, the registration is made under the classical lane's user handle,
+  // so an authenticator replaces the classical credential it holds as soon
+  // as it makes the new one — before this service has seen the answer. A
+  // write refused after that (the cap reached in another tab, a policy row
+  // changed mid-ceremony) leaves the classical row here and no classical
+  // credential on that device; the person signs in with another passkey or
+  // another way, and upgrades again. Every check that can be made before
+  // the ceremony is made before it for that reason. A key registered before
+  // #474 has no minted handle, and its upgrade is made under the one the
+  // person holds now, which a device keeps beside the old credential.
+  //
+  // **NO SESSION ENDS**: the classical key that signed sessions in is
+  // replaced by its own holder, who just proved possession of it — #722's
+  // removal ends sessions so that somebody removing a key they do not
+  // recognise signs out whoever enrolled it, and nobody here is a stranger
+  // to the key.
+  // ===========================================================================
+
+  /**
+   * The upgrade history one stored key carries (#939), or null: on a key
+   * that IS an upgrade, when, from which algorithm and credential, and
+   * what the write did; on a classical key upgraded beside it, which key
+   * succeeded it and when.
+   *
+   * @param key - the stored WebAuthn key
+   * @returns `{ upgradedAt, mode, previousAlgorithm, previousCredentialId,
+   *   upgradedTo }`, or null for a key no upgrade touched
+   */
+  static keyUpgradeHistory(key: any): { upgradedAt: number; mode: string;
+                                        previousAlgorithm: string;
+                                        previousCredentialId: string;
+                                        upgradedTo: string } | null {
+    helpers.log.debug("Entering Credentials.keyUpgradeHistory().");
+    const k = key || {};
+    if (!k.upgradedAt && !k.upgradedTo && !k.previousCredentialId) {
+      helpers.log.debug("Leaving Credentials.keyUpgradeHistory(). None.");
+      return null;
+    }
+    const out = {
+      upgradedAt: Number(k.upgradedAt) || 0,
+      mode: k.previousCredentialId
+        ? (k.upgradeMode === 'alongside' ? 'alongside' : 'replace') : '',
+      previousAlgorithm: String(k.previousAlgorithm || ''),
+      previousCredentialId: String(k.previousCredentialId || ''),
+      upgradedTo: String(k.upgradedTo || '') };
+    helpers.log.debug("Leaving Credentials.keyUpgradeHistory().");
+    return out;
+  }
+
+  /**
+   * Decides whether one of a person's keys may be upgraded to an ML-DSA
+   * one (#939), by everything knowable without the issuance policy: the
+   * realm offers it, the key is theirs and classical, it has no
+   * post-quantum successor still held, its role may still be enrolled,
+   * and — beside it — the cap leaves room.
+   *
+   * @param username - the person
+   * @param key - one of their stored keys, or null for an id that named
+   *   none of theirs
+   * @returns `{ ok: true }`, or a refusal carrying its code
+   */
+  keyUpgradeRefusal(username, key) {
+    const { log, webauthnPolicy, errorCodes } = this.deps;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.keyUpgradeRefusal().");
+    const realm = webauthnPolicy.upgradeRefusal();
+    if (!realm.ok) {
+      log.debug("Leaving Credentials.keyUpgradeRefusal(). Not offered.");
+      return coded(errorCodes.codeOf(realm) || 'STS-AUTHN-0450',
+                   { ok: false, reason: 'upgrade', errors: [realm.why] });
+    }
+    if (!key) {
+      log.debug("Leaving Credentials.keyUpgradeRefusal(). Not theirs.");
+      return coded('STS-AUTHN-0451', { ok: false, reason: 'upgrade',
+               errors: ['No passkey of that id is registered for ' +
+                        String(username || '') + '.'] });
+    }
+    if (Credentials.keyAlgorithm(key).postQuantum) {
+      log.debug("Leaving Credentials.keyUpgradeRefusal(). Already " +
+                "post-quantum.");
+      return coded('STS-AUTHN-0452', { ok: false, reason: 'upgrade',
+               errors: ['That passkey is already post-quantum (' +
+                        Credentials.keyAlgorithm(key).name + '); there is ' +
+                        'nothing to upgrade.'] });
+    }
+    const held = this.keysOf(username);
+    if (key.upgradedTo && held.some(function (one) {
+      return String(one.credentialId) === String(key.upgradedTo);
+    })) {
+      log.debug("Leaving Credentials.keyUpgradeRefusal(). Upgraded " +
+                "already.");
+      return coded('STS-AUTHN-0453', { ok: false, reason: 'upgrade',
+               errors: ['That passkey was already upgraded: its ' +
+                        'post-quantum passkey is beside it. Remove that one ' +
+                        'first to upgrade again.'] });
+    }
+    const role = webauthnPolicy.roleAllowed(key.role);
+    if (!role.ok) {
+      log.debug("Leaving Credentials.keyUpgradeRefusal(). The role is not " +
+                "allowed.");
+      return coded(errorCodes.codeOf(role) || 'STS-AUTHN-0044',
+                   { ok: false, reason: 'upgrade', errors: [role.why] });
+    }
+    if (webauthnPolicy.upgradeMode() === 'alongside' &&
+        held.length >= webauthnPolicy.settings().maxKeysPerPerson) {
+      log.debug("Leaving Credentials.keyUpgradeRefusal(). At the cap.");
+      return coded('STS-AUTHN-0067', { ok: false, reason: 'upgrade',
+               errors: ['You already hold ' + held.length + ' passkey(s), ' +
+                        'the most this realm allows, and the upgrade adds ' +
+                        'one beside this passkey. Remove one first.'] });
+    }
+    log.debug("Leaving Credentials.keyUpgradeRefusal(). Allowed.");
+    return { ok: true };
+  }
+
+  /**
+   * The person's keys an upgrade may be begun for (#939), by
+   * `keyUpgradeRefusal()`.
+   *
+   * @param username - the person
+   * @returns the stored keys, possibly none
+   */
+  upgradableKeysOf(username) {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.upgradableKeysOf().");
+    const out = this.keysOf(username).filter((one) => {
+      return this.keyUpgradeRefusal(username, one).ok;
+    });
+    log.debug("Leaving Credentials.upgradableKeysOf(). " + out.length);
+    return out;
+  }
+
+  /**
+   * The upgrade in progress (#939), if the pending record is one.
+   *
+   * @param username - the person
+   * @returns the pending record, or null
+   */
+  pendingKeyUpgradeFor(username) {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.pendingKeyUpgradeFor().");
+    const held = this.pendingKeyEnrolmentFor(username);
+    log.debug("Leaving Credentials.pendingKeyUpgradeFor().");
+    return held && held.upgrade ? held : null;
+  }
+
+  /**
+   * Begins the upgrade of one of a person's classical passkeys to an
+   * ML-DSA one (#939): refuses what it can before any ceremony and mints
+   * the assertion challenge the classical key proves possession over.
+   *
+   * @param username - the person
+   * @param credentialId - the classical passkey's credential id, looked up
+   *   among this person's keys
+   * @returns `{ ok: true, upgradeId, challenge, credentialId, mode, lane,
+   *   expiresAt }`, or a refusal
+   */
+  beginKeyUpgrade(username, credentialId) {
+    const { log, webauthnPolicy, crypto } = this.deps;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.beginKeyUpgrade().");
+    const name = String(username || '').trim();
+    if (!this.deps.passkeyPolicy.hasSelection()) {
+      this.deps.passkeyPolicy.select(name, '');
+    }
+    const directory = this.directory;
+    if (!directory || typeof directory.replaceWebauthn !== 'function') {
+      log.debug("Leaving Credentials.beginKeyUpgrade(). No store.");
+      return coded('STS-AUTHN-0059', { ok: false, errors: ['No credential ' +
+                   'store is installed, so no passkey can be upgraded.'] });
+    }
+    const key = this.keysOf(name).filter(function (one) {
+      return String(one.credentialId) === String(credentialId || '');
+    })[0] || null;
+    const refused = this.keyUpgradeRefusal(name, key);
+    if (!refused.ok) {
+      log.debug("Leaving Credentials.beginKeyUpgrade(). Refused.");
+      return refused;
+    }
+    const mode = webauthnPolicy.upgradeMode();
+    const previousAlgorithm = Credentials.keyAlgorithm(key).name;
+    // THE ISSUANCE POLICY, ASKED BEFORE ANY CEREMONY with what is known
+    // now: that this is an upgrade, what it does and from which
+    // algorithm. No built-in rule refuses on it; a realm's own rule that
+    // forbids upgrades is met here rather than after two ceremonies. The
+    // new key's own facts are asked at the write, as any registration's.
+    const policy = this.deps.passkeyPolicy.refusalFor('registration',
+      { username: name, upgrade: { mode: mode,
+                                   previousAlgorithm: previousAlgorithm } });
+    if (policy) {
+      log.debug("Leaving Credentials.beginKeyUpgrade(). The policy " +
+                "refused it.");
+      return coded(policy.code, { ok: false, reason: 'upgrade',
+                                  errors: [policy.why] });
+    }
+    this.sweepPendingKeys();
+    const record = {
+      id: crypto.randomBytes(24).toString('base64url'),
+      username: name,
+      // THE PROOF'S CHALLENGE, an assertion's, replaced by the
+      // registration's once the proof is in.
+      challenge: crypto.randomBytes(32).toString('base64url'),
+      role: String(key.role || 'mfa'),
+      // The kind of authenticator the classical key is on, so the
+      // registration asks for the same kind (`creationOptions()`).
+      kind: Credentials.keyGroup(key) === 'security-key' ? 'security-key'
+                                                         : 'passkey',
+      lane: webauthnPolicy.upgradeLane(),
+      classicalOnly: false,
+      // ITS NAME, which the upgraded key keeps.
+      label: String(Credentials.keyName(key) || '').slice(0, 60),
+      userHandle: '',
+      exclude: [],
+      upgrade: { credentialId: String(key.credentialId), mode: mode,
+                 phase: 'proof', previousAlgorithm: previousAlgorithm,
+                 provenAt: 0 },
+      expires: Date.now() + this.keyEnrolmentTtlMs()
+    };
+    pendingKeys.set(name.toLowerCase(), record);
+    log.info('credentials: ' + name + ' began upgrading a ' +
+             previousAlgorithm + ' passkey to a post-quantum one (' + mode +
+             ').');
+    log.debug("Leaving Credentials.beginKeyUpgrade(). The proof's " +
+              "challenge is minted and held.");
+    return { ok: true, upgradeId: record.id, challenge: record.challenge,
+             credentialId: record.upgrade.credentialId, mode: mode,
+             lane: record.lane, role: record.role,
+             previousAlgorithm: previousAlgorithm,
+             expiresAt: new Date(record.expires).toISOString() };
+  }
+
+  // The pending upgrade a step answers, or the refusal that says why
+  // there is none to answer: nothing pending (0425), another one (0425),
+  // or the step out of order (0427).
+  private upgradeInHand(name, upgradeId, phase) {
+    const { log } = this.deps;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.upgradeInHand(). " + phase);
+    const held = this.pendingKeyEnrolmentFor(name);
+    if (!held || !held.upgrade || String(upgradeId || '') !== held.id) {
+      log.debug("Leaving Credentials.upgradeInHand(). None in progress.");
+      return { held: null, refused: coded('STS-AUTHN-0454',
+        { ok: false, reason: 'expired',
+          errors: ['That passkey upgrade is not the one in progress, or it ' +
+                   'has expired. Your passkey is unchanged; start again.'] }) };
+    }
+    if (held.upgrade.phase !== phase) {
+      log.debug("Leaving Credentials.upgradeInHand(). Out of order.");
+      return { held: null, refused: coded('STS-AUTHN-0456',
+        { ok: false, reason: 'mismatch',
+          errors: [phase === 'proof'
+            ? 'This passkey has already been used for this upgrade; create ' +
+              'the post-quantum passkey now.'
+            : 'Use your passkey first, to show it is yours, before the ' +
+              'post-quantum passkey is created.'] }) };
+    }
+    log.debug("Leaving Credentials.upgradeInHand().");
+    return { held: held, refused: null };
+  }
+
+  /**
+   * The upgrade's proof of possession (#939): verifies an assertion by the
+   * classical passkey over the challenge `beginKeyUpgrade()` minted,
+   * spends it across the cluster, and mints the registration's challenge.
+   * A refused proof drops the upgrade; the passkey is unchanged.
+   *
+   * @param username - the person
+   * @param upgradeId - the upgrade in progress
+   * @param assertion - what the browser posted
+   * @param opts - `origin` and `rpId`, what the browser was talking to
+   * @returns a promise of `{ ok: true, challenge, userHandle, exclude,
+   *   lane }`, or a refusal
+   */
+  proveKeyUpgrade(username, upgradeId, assertion, opts?) {
+    const { log, webauthnPolicy, webauthnVerifier, errorCodes } = this.deps;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.proveKeyUpgrade().");
+    const name = String(username || '').trim();
+    const options = opts || {};
+    const inHand = this.upgradeInHand(name, upgradeId, 'proof');
+    if (!inHand.held) {
+      log.debug("Leaving Credentials.proveKeyUpgrade(). Nothing to prove.");
+      return Promise.resolve(inHand.refused);
+    }
+    const held = inHand.held;
+    const key = this.keysOf(name).filter(function (one) {
+      return String(one.credentialId) === String(held.upgrade.credentialId);
+    })[0] || null;
+    // THE CEREMONY'S ROW (#943), however it ends: an assertion at the
+    // upgrade's door, by the key being upgraded.
+    const note = (answer, algorithm?) => {
+      log.debug("Entering proveKeyUpgrade() note().");
+      webauthnCeremonies.record({
+        ceremony: 'assertion', door: 'upgrade', username: name,
+        role: String(held.role || ''),
+        lane: key ? Credentials.keyLane(key) : 'classical',
+        outcome: answer && answer.ok ? 'success' : 'refused',
+        errorCode: answer && answer.ok ? ''
+          : String(errorCodes.codeOf(answer) || ''),
+        offered: key ? [Credentials.keyAlgorithm(key).name] : [],
+        algorithm: String(algorithm || ''), posted: assertion });
+      log.debug("Leaving proveKeyUpgrade() note().");
+      return answer;
+    };
+    const dropped = (code, why) => {
+      log.debug("Entering proveKeyUpgrade() dropped().");
+      this.abandonKeyEnrolment(name);
+      log.debug("Leaving proveKeyUpgrade() dropped().");
+      return note(coded(code, { ok: false, reason: 'proof', errors: [why] }));
+    };
+    if (!key) {
+      log.debug("Leaving Credentials.proveKeyUpgrade(). The key is gone.");
+      return Promise.resolve(dropped('STS-AUTHN-0457', 'The passkey you ' +
+        'were upgrading is no longer registered, so nothing was changed.'));
+    }
+    const response = assertion && assertion.response;
+    if (!assertion || assertion.error || !response ||
+        !response.authenticatorData || !response.signature) {
+      log.debug("Leaving Credentials.proveKeyUpgrade(). No assertion.");
+      return Promise.resolve(dropped('STS-AUTHN-0455',
+        (assertion && assertion.error
+          ? 'Your browser did not use the passkey (' + assertion.error +
+            '). '
+          : 'Your browser did not use the passkey. ') +
+        'Nothing was changed; start the upgrade again when you are ready.'));
+    }
+    if (String(assertion.rawId || assertion.id || '') !==
+        String(key.credentialId)) {
+      log.debug("Leaving Credentials.proveKeyUpgrade(). Another key.");
+      return Promise.resolve(dropped('STS-AUTHN-0455', 'That was a ' +
+        'different passkey from the one you are upgrading. Nothing was ' +
+        'changed; start again and use the passkey you chose.'));
+    }
+    let verdict;
+    try {
+      verdict = webauthnVerifier.verifyAssertion({
+        authenticatorData: response.authenticatorData,
+        clientDataJSON: response.clientDataJSON,
+        signature: response.signature,
+        publicKeyJwk: key.publicKeyJwk,
+        expectedChallenge: held.challenge,
+        expectedOrigin: String(options.origin || ''),
+        expectedRpId: String(options.rpId || ''),
+        requireUserVerification: webauthnPolicy.requireUserVerification(),
+        previousSignCount: key.signCount,
+        allowInsecure: webauthnPolicy.insecureAlgorithmsAllowed()
+      });
+    } catch (e) {
+      log.debug("Caught in Credentials.proveKeyUpgrade(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving Credentials.proveKeyUpgrade(). It threw.");
+      return Promise.resolve(dropped('STS-AUTHN-0027', 'The passkey could ' +
+        'not be checked: ' + ((e && e.message) || e) + '. Nothing was ' +
+        'changed.'));
+    }
+    if (Credentials.clonedKeyVerdict(verdict)) {
+      this.noteKeyCloned(name, key.credentialId, 'signature counter ' +
+                         verdict.signCount + ', last recorded ' +
+                         key.signCount + ' (a passkey upgrade)');
+    }
+    if (!verdict.ok) {
+      log.debug("Leaving Credentials.proveKeyUpgrade(). It did not verify.");
+      return Promise.resolve(dropped(webauthnPolicy.failureCodeFor(verdict),
+        'The passkey did not verify — ' + (verdict.failed || []).join('; ') +
+        '. Nothing was changed.'));
+    }
+    log.debug("Leaving Credentials.proveKeyUpgrade(). Spending the proof.");
+    return this.spendAssertion({
+      username: name, credentialId: key.credentialId,
+      signCount: verdict.signCount, flags: verdict.flags,
+      challenge: held.challenge, ttlMs: this.keyEnrolmentTtlMs()
+    }).then((spent) => {
+      if (!spent.ok) {
+        return dropped(errorCodes.codeOf(spent) || 'STS-AUTHN-0182',
+          'The passkey could not be accepted just now (' +
+          String(spent.detail || spent.reason) + '). Nothing was changed.');
+      }
+      // THE REGISTRATION'S CHALLENGE, ITS HANDLE AND ITS EXCLUDE LIST, now
+      // and not at the begin: only a proven upgrade may arm a ceremony
+      // that, in place, replaces the classical credential on the device.
+      // The handle is the lane's — the classical key's own in place, so
+      // the device replaces it; the post-quantum lane's beside it, so it
+      // does not. The exclude list is the lane's keys LESS the classical
+      // one, so the authenticator that holds it may answer.
+      const lane = String(held.lane || 'classical');
+      const own = Credentials.isUserHandle(key.userHandle) && lane !==
+        'pqc' ? String(key.userHandle) : '';
+      held.userHandle = own ||
+        this.userHandleOf(name, { mint: true, lane: lane }) ||
+        this.newUserHandle();
+      held.exclude = this.keysOf(name).filter(function (one) {
+        return Credentials.keyLane(one) === lane &&
+               String(one.credentialId) !== String(key.credentialId);
+      }).map(function (one) {
+        return String(one.credentialId);
+      });
+      held.challenge = this.deps.crypto.randomBytes(32).toString('base64url');
+      held.upgrade.phase = 'registration';
+      held.upgrade.provenAt = Date.now();
+      held.expires = Date.now() + this.keyEnrolmentTtlMs();
+      pendingKeys.set(name.toLowerCase(), held);
+      log.info('credentials: ' + name + ' proved possession of the passkey ' +
+               'being upgraded; the post-quantum registration is armed.');
+      note({ ok: true }, String(verdict.algorithm ||
+                                Credentials.keyAlgorithm(key).name));
+      return { ok: true, challenge: held.challenge,
+               userHandle: held.userHandle, exclude: held.exclude.slice(),
+               lane: lane };
+    });
+  }
+
+  /**
+   * The upgrade's registration (#939): verifies the new passkey against
+   * ML-DSA only and its attestation, and writes it — in place of the
+   * classical key, or beside it — in one write. Any refusal leaves the
+   * classical key as it was.
+   *
+   * @param username - the person
+   * @param upgradeId - the upgrade in progress
+   * @param credential - what the browser posted
+   * @param opts - `origin` and `rpId`, what the browser was talking to
+   * @returns a promise of `{ ok: true, credentialId, previousCredentialId,
+   *   previousAlgorithm, algorithm, mode, lane, held }`, or a refusal
+   */
+  confirmKeyUpgrade(username, upgradeId, credential, opts?) {
+    const { log, webauthnPolicy, errorCodes } = this.deps;
+    log.debug("Entering Credentials.confirmKeyUpgrade().");
+    const name = String(username || '').trim();
+    const inHand = this.upgradeInHand(name, upgradeId, 'registration');
+    if (!inHand.held) {
+      log.debug("Leaving Credentials.confirmKeyUpgrade(). Nothing to " +
+                "confirm.");
+      return Promise.resolve(inHand.refused);
+    }
+    const held = inHand.held;
+    const note = (answer, threw?) => {
+      log.debug("Entering confirmKeyUpgrade() note().");
+      const key = answer && answer.ok ? this.keysOf(name).filter(
+        function (one) {
+          return String(one.credentialId) ===
+                 String(answer.credentialId || '');
+        })[0] || null : null;
+      webauthnCeremonies.record({
+        ceremony: 'registration', door: 'upgrade', username: name,
+        role: String(held.role || ''), lane: String(held.lane || ''),
+        outcome: answer && answer.ok ? 'success' : 'refused',
+        errorCode: answer && answer.ok ? ''
+          : String(errorCodes.codeOf(answer) ||
+                   (threw ? 'STS-AUTHN-0027' : '')),
+        offered: webauthnPolicy.upgradeAlgorithmIds(),
+        algorithm: key ? Credentials.keyAlgorithm(key).name : '',
+        posted: credential, attestation: key ? key.attestation : null });
+      log.debug("Leaving confirmKeyUpgrade() note().");
+    };
+    log.debug("Leaving Credentials.confirmKeyUpgrade().");
+    return Promise.resolve().then(() => {
+      return this.checkKeyUpgrade(name, held, credential, opts || {});
+    }).then(function (answer) {
+      note(answer);
+      return answer;
+    }, function (e) {
+      note(null, true);
+      throw e;
+    });
+  }
+
+  private checkKeyUpgrade(name, held, credential, options) {
+    const { log, webauthnPolicy, webauthnVerifier } = this.deps;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.checkKeyUpgrade().");
+    if (!credential || credential.error || !credential.response ||
+        !credential.response.attestationObject) {
+      // THE BROWSER COULD NOT MAKE IT, and nothing classical is offered
+      // instead (#944's retry is not an upgrade's): the upgrade is dropped,
+      // so the page offers the passkey's Upgrade again rather than a
+      // ceremony against a challenge it has spent its patience on.
+      this.abandonKeyEnrolment(name);
+      log.debug("Leaving Credentials.checkKeyUpgrade(). No credential.");
+      return coded('STS-AUTHN-0458', { ok: false, reason: 'browser',
+        errors: [(credential && credential.error
+          ? 'Your browser did not create the post-quantum passkey (' +
+            credential.error + '). '
+          : 'Your browser did not create the post-quantum passkey. ') +
+          'Your passkey is unchanged.'] });
+    }
+    let verdict;
+    try {
+      verdict = webauthnVerifier.verifyRegistration({
+        attestationObject: credential.response.attestationObject,
+        clientDataJSON: credential.response.clientDataJSON,
+        expectedChallenge: held.challenge,
+        expectedOrigin: String(options.origin || ''),
+        expectedRpId: String(options.rpId || ''),
+        requireUserVerification: webauthnPolicy.requireUserVerification(),
+        // ML-DSA ONLY: a classical credential answering an upgrade is
+        // section 7.1's algorithm that was not offered (STS-AUTHN-0228).
+        expectedAlgorithms: webauthnPolicy.upgradeAlgorithmIds()
+      });
+    } catch (e) {
+      log.debug("Caught in Credentials.checkKeyUpgrade(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving Credentials.checkKeyUpgrade(). It threw.");
+      return coded('STS-AUTHN-0027', { ok: false, reason: 'invalid',
+               errors: ['The registration could not be checked: ' +
+                        ((e && e.message) || e) + '. Your passkey is ' +
+                        'unchanged.'] });
+    }
+    if (!verdict.ok) {
+      log.debug("Leaving Credentials.checkKeyUpgrade(). It did not verify.");
+      return coded(webauthnPolicy.failureCodeFor(verdict),
+                   { ok: false, reason: 'invalid',
+               errors: ['The post-quantum passkey did not verify — ' +
+                        (verdict.failed || []).join('; ') + '. Your ' +
+                        'passkey is unchanged.'] });
+    }
+    // THE EXCLUSION, as an enrolment checks it, and the classical
+    // credential itself: an authenticator answering with the key being
+    // upgraded made nothing new.
+    if (held.exclude.indexOf(String(verdict.credentialId)) >= 0 ||
+        String(verdict.credentialId) === String(held.upgrade.credentialId)) {
+      log.debug("Leaving Credentials.checkKeyUpgrade(). Already enrolled.");
+      return coded('STS-AUTHN-0095', { ok: false, reason: 'duplicate',
+               errors: ['That authenticator is already enrolled. Your ' +
+                        'passkey is unchanged.'] });
+    }
+    log.debug("Leaving Credentials.checkKeyUpgrade(). Verifying the " +
+              "attestation, then writing through the claim.");
+    return this.deps.webauthnAttestation.assess(verdict).then((attested) => {
+      if (!attested.ok) {
+        return coded(this.deps.errorCodes.codeOf(attested) ||
+                     'STS-AUTHN-0241',
+                     { ok: false, reason: 'attestation',
+                       errors: [attested.why + ' Your passkey is ' +
+                                'unchanged.'] });
+      }
+      return Credentials.keyProviderFor(verdict.aaguid,
+        attested.attestation).then((named) => {
+        return this.addKeyClaimed(name,
+          Credentials.registeredKey(verdict, credential, attested, named,
+                                    held),
+          held.role, { upgrade: { credentialId: held.upgrade.credentialId,
+                                  mode: held.upgrade.mode } });
+      }).then((stored) => {
+        return this.keyUpgradeWritten(name, held, stored);
+      });
+    });
+  }
+
+  // The end of `confirmKeyUpgrade()`, once the claimed write has answered.
+  private keyUpgradeWritten(name, held, stored) {
+    const { log, errorCodes } = this.deps;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.keyUpgradeWritten().");
+    if (!stored.ok) {
+      // KEPT, AS A REFUSED ENROLMENT IS, unless the classical key is what
+      // went (0428): the proof stands and a reason that may go away (the
+      // cap in another tab) need not cost the person their proof. The
+      // classical row was not written either way.
+      if (errorCodes.codeOf(stored) === 'STS-AUTHN-0457') {
+        this.abandonKeyEnrolment(name);
+      }
+      log.debug("Leaving Credentials.keyUpgradeWritten(). Refused.");
+      return coded(errorCodes.codeOf(stored) || 'STS-AUTHN-0068',
+                   { ok: false, reason: stored.reason || 'refused',
+                     errors: (stored.errors || []).map(function (one) {
+                       return String(one) + ' Your passkey is unchanged.';
+                     }) });
+    }
+    this.abandonKeyEnrolment(name);
+    const now = this.keysOf(name).filter(function (one) {
+      return String(one.credentialId) === String(stored.credentialId);
+    })[0] || {};
+    log.info('credentials: ' + name + ' upgraded a ' +
+             held.upgrade.previousAlgorithm + ' passkey to ' +
+             Credentials.keyAlgorithm(now).name + ' (' + held.upgrade.mode +
+             ').');
+    log.debug("Leaving Credentials.keyUpgradeWritten(). Upgraded.");
+    return { ok: true, username: name, role: held.role,
+             credentialId: stored.credentialId,
+             previousCredentialId: held.upgrade.credentialId,
+             previousAlgorithm: held.upgrade.previousAlgorithm,
+             algorithm: Credentials.keyAlgorithm(now).name,
+             mode: held.upgrade.mode, lane: String(held.lane || 'classical'),
+             held: this.keysOf(name).length };
+  }
+
   // ---------------------------------------------------------------------------
+
+  // ===========================================================================
+
+  // AN ADMINISTRATOR ENROLS A PASSKEY ON SOMEBODY'S BEHALF (#945, rule 3cv).
+  //
+  // rcbj's decision on the ticket: **a registration ceremony run in the
+  // ADMINISTRATOR'S browser, for the PERSON's user handle and lane, with the
+  // attestation verified as for self-enrolment — and no import of a
+  // registration produced elsewhere.** The case is a hardware authenticator
+  // an organisation hands out already registered (an ML-DSA security key,
+  // say): the administrator plugs it in at the console, the ceremony runs
+  // there against the realm's RP ID, and the credential is created under the
+  // person's own handle, so it signs the person in exactly as one they made
+  // themselves would. Nothing is imported: the attestation statement is the
+  // authenticator's, verified here, and an operator cannot type a key in.
+  //
+  // THE SAME TWO STEPS AS THE PERSON'S OWN, with these differences, each a
+  // reason rather than a preference:
+  //
+  //   * **THE CHALLENGE IS BOUND TO THE ADMINISTRATOR, THE PERSON AND THE
+  //     LANE** — held in `pendingAdminKeys` under both names, so it neither
+  //     replaces nor answers a ceremony the person armed themselves, and one
+  //     administrator cannot finish another's.
+  //   * **SHORT-LIVED**: `ADMIN_ENROLMENT_TTL_MS`, five minutes, or the
+  //     person's own TTL where that is shorter. The administrator is at the
+  //     console with the key in hand; "long enough to find it in a drawer"
+  //     is the person's reason and not theirs.
+  //   * **SINGLE USE, WHATEVER THE OUTCOME.** The finish takes the pending
+  //     record before it verifies anything and claims the challenge across
+  //     the cluster (`ADMIN_ENROLMENT_SCOPE`), so a second finish — a replay,
+  //     a double click, a second node — finds nothing (STS-AUTHN-0442) or a
+  //     spent challenge (STS-AUTHN-0443). The person's own pending record is
+  //     kept on a refused write so they need not start again; an operator's
+  //     act on somebody else's account starts again instead.
+  //   * **THE PERSON MUST EXIST IN THIS REALM, IN EVERY MODE**
+  //     (STS-AUTHN-0441): development creates a person at their first
+  //     sign-in, and an administrator's act on a name nobody holds would
+  //     create one. The directory is the realm's (the ambient realm), so a
+  //     realm administrator reaches their own realm's people and nobody
+  //     else's (#32).
+  //   * **THE PASSKEY POLICY MUST ALLOW IT**: the person's profile's
+  //     `adminEnrolment`, `off` by default (STS-AUTHN-0440), asked at the
+  //     begin as a courtesy and at `addKey()`, the one writer, as the
+  //     enforcement — beside the console role the API's gate already asks
+  //     for (Admin Write, `admin:write`).
+  //   * **THE KEY RECORDS WHO DID IT**: `enrolledBy { username, sub, at }`,
+  //     drawn as "enrolled by an administrator" on the console, the API and
+  //     the person's own passkey page, and told to the issuance policy as a
+  //     fact (the `enrolment` group) so a realm can forbid it by policy.
+  //
+  // What the ceremony offers is ONE CALL SITE, `adminEnrolmentAlgorithms()`:
+  // the pending record carries the list, the options are built from it, and
+  // the verifier holds the credential to it.
+  // ===========================================================================
+  /** The claim scope an administrator's enrolment challenge is spent under. */
+  static readonly ADMIN_ENROLMENT_SCOPE = 'authn.webauthn-admin-enrolment';
+  /** The longest an administrator's enrolment challenge is held. */
+  static readonly ADMIN_ENROLMENT_TTL_MS = 5 * 60 * 1000;
+  /** The refusal while the passkey policy's `adminEnrolment` is off. */
+  static readonly ADMIN_ENROLMENT_OFF = 'This person\'s passkey policy does ' +
+    'not let an administrator enrol a passkey for them (adminEnrolment is ' +
+    'off). Turn it on under Directory → Policies → Passkeys, or have them ' +
+    'create one themselves on their account page.';
+
+  /**
+   * Reads an `enrolledBy` record (#945): `{ username, sub, at }`, the
+   * administrator's name and token subject and when, each bounded. Anything
+   * that names no administrator is not one.
+   *
+   * @param raw - what a key or a pending record carries
+   * @returns the record, or null
+   */
+  static enrolledByOf(raw: unknown): { username: string; sub: string;
+                                       at: number } | null {
+    helpers.log.debug("Entering Credentials.enrolledByOf().");
+    const given: any = raw && typeof raw === 'object' ? raw : null;
+    const clean = function (value: unknown): string {
+      helpers.log.debug("Entering enrolledByOf() clean().");
+      helpers.log.debug("Leaving enrolledByOf() clean().");
+      return String(value || '').trim()
+        .replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 256);
+    };
+    const username = given ? clean(given.username) : '';
+    if (!username) {
+      helpers.log.debug("Leaving Credentials.enrolledByOf(). None.");
+      return null;
+    }
+    const at = Number(given.at);
+    helpers.log.debug("Leaving Credentials.enrolledByOf().");
+    return { username: username, sub: clean(given.sub),
+             at: Number.isFinite(at) && at > 0 ? Math.floor(at) : 0 };
+  }
+
+  // THE ALGORITHMS AN ADMINISTRATOR'S CEREMONY OFFERS (#945), IN ORDER — THE
+  // ONE CALL SITE. The realm's list for the lane (`webauthn_policy.ts`'s
+  // `algorithmIds()`, the same the person's own ceremony offers); a
+  // per-population registration list (#940) replaces THIS LINE and nothing
+  // else, because the pending record carries what it answers, the console's
+  // options are built from that, and the verifier holds the credential to it.
+  private adminEnrolmentAlgorithms(lane: string): number[] {
+    const { log, webauthnPolicy } = this.deps;
+    log.debug("Entering Credentials.adminEnrolmentAlgorithms().");
+    const out = webauthnPolicy.algorithmIds(lane, false);
+    log.debug("Leaving Credentials.adminEnrolmentAlgorithms().");
+    return Array.isArray(out) ? out.slice() : [];
+  }
+
+  /**
+   * Mints the challenge of a passkey registration an administrator runs in
+   * their own browser on a person's behalf (#945), refusing anything
+   * knowable before the authenticator is touched.
+   *
+   * @param username - the person the passkey is for
+   * @param admin - `{ username, sub }`: the administrator
+   * @param opts - `role` (`mfa` by default), `kind` and `lane`
+   * @returns `{ ok: true, enrolmentId, challenge, role, kind, lane,
+   *   userHandle, exclude, algorithms, expiresAt }`, or a refusal
+   */
+  beginAdminKeyEnrolment(username, admin, opts?) {
+    const { log, webauthnPolicy, errorCodes, crypto } = this.deps;
+    const { ROLES } = Credentials;
+    const directory = this.directory;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.beginAdminKeyEnrolment().");
+    const name = String(username || '').trim();
+    const options = opts || {};
+    const by = Credentials.enrolledByOf(admin);
+    if (!by) {
+      log.debug("Leaving Credentials.beginAdminKeyEnrolment(). No " +
+                "administrator.");
+      return coded('STS-AUTHN-0445', { ok: false, reason: 'admin',
+               errors: ['An administrator\'s enrolment names the ' +
+                        'administrator, and this request names nobody: it ' +
+                        'carried no access token whose subject is a ' +
+                        'person. Sign in to the console and try again.'] });
+    }
+    if (!directory || typeof directory.writeWebauthn !== 'function') {
+      log.debug("Leaving Credentials.beginAdminKeyEnrolment(). No store.");
+      return coded('STS-AUTHN-0059', { ok: false, errors: ['No credential ' +
+                                   'store is installed, so a security key ' +
+                                   'cannot be enrolled.'] });
+    }
+    // THE PERSON, IN THIS REALM, IN EVERY MODE — see the header.
+    if (!name || !this.entryExists(name)) {
+      log.debug("Leaving Credentials.beginAdminKeyEnrolment(). Nobody " +
+                "of that name here.");
+      return coded('STS-AUTHN-0441', { ok: false, reason: 'person',
+               errors: ['There is nobody called "' + name.slice(0, 80) +
+                        '" in this realm\'s directory, so there is nobody ' +
+                        'to enrol a passkey for.'] });
+    }
+    // THE PERSON'S PASSKEY POLICY (#535), which every check below reads,
+    // and its switch, asked first so the answer names the switch.
+    this.deps.passkeyPolicy.select(name, '');
+    if (!this.deps.passkeyPolicy.adminEnrolmentAllowed()) {
+      log.debug("Leaving Credentials.beginAdminKeyEnrolment(). The switch " +
+                "is off.");
+      return coded('STS-AUTHN-0440', { ok: false, reason: 'admin-enrolment',
+               errors: [Credentials.ADMIN_ENROLMENT_OFF] });
+    }
+    const role = String(options.role || 'mfa');
+    if (ROLES.indexOf(role) < 0) {
+      log.debug("Leaving Credentials.beginAdminKeyEnrolment(). Not a role.");
+      return coded('STS-AUTHN-0066', { ok: false, errors: ['A security key ' +
+                                   'is either "primary" or "mfa". ' +
+                                   '"' + role + '" is neither.'] });
+    }
+    const allowed = webauthnPolicy.roleAllowed(role);
+    if (!allowed.ok) {
+      log.debug("Leaving Credentials.beginAdminKeyEnrolment(). The role is " +
+                "not allowed here.");
+      return coded(errorCodes.codeOf(allowed) || 'STS-AUTHN-0044',
+                   { ok: false, errors: [allowed.why] });
+    }
+    // THE LANE (#643), as the person's own ceremony chooses it — including
+    // #718's answer of the post-quantum lane where only its key would be
+    // taken.
+    const lane = webauthnPolicy.enrolmentLane(String(options.lane || ''));
+    const laneAllowed = webauthnPolicy.laneRefusal(lane);
+    if (!laneAllowed.ok) {
+      log.debug("Leaving Credentials.beginAdminKeyEnrolment(). The lane is " +
+                "not offered here.");
+      return coded(errorCodes.codeOf(laneAllowed) || 'STS-AUTHN-0351',
+                   { ok: false, reason: 'lane', errors: [laneAllowed.why] });
+    }
+    const held = this.keysOf(name);
+    const cap = webauthnPolicy.settings().maxKeysPerPerson;
+    if (held.length >= cap) {
+      log.debug("Leaving Credentials.beginAdminKeyEnrolment(). At the cap.");
+      return coded('STS-AUTHN-0067', { ok: false,
+               errors: [name + ' already holds ' + held.length + ' security ' +
+                        'key(s), which is the most this realm allows ' +
+                        '(webauthn.maxKeysPerPerson). Remove one first.'] });
+    }
+    this.sweepPendingAdminKeys();
+    const kind = webauthnPolicy.authenticatorKinds()
+      .indexOf(String(options.kind || '')) >= 0 ? String(options.kind) : '';
+    const record = {
+      id: crypto.randomBytes(24).toString('base64url'),
+      username: name,
+      admin: by.username,
+      challenge: crypto.randomBytes(32).toString('base64url'),
+      role: role,
+      kind: kind,
+      lane: lane,
+      label: '',
+      // THE PERSON'S HANDLE IN THE LANE (#474, #643), minted now if they hold
+      // none: the credential is created under it, so it is theirs on the
+      // authenticator as one they made would be.
+      userHandle: this.userHandleOf(name, { mint: true, lane: lane }) ||
+                  this.newUserHandle(),
+      // Every key they hold in this lane, as the person's own ceremony
+      // excludes them.
+      exclude: held.filter((one) => {
+        return Credentials.keyLane(one) === lane;
+      }).map((one) => { return one.credentialId; }),
+      // WHAT THE CEREMONY OFFERS, the one call site's answer, carried so the
+      // options and the verifier cannot disagree.
+      offered: this.adminEnrolmentAlgorithms(lane),
+      enrolledBy: { username: by.username, sub: by.sub, at: 0 },
+      expires: Date.now() + Math.min(this.keyEnrolmentTtlMs(),
+                                     Credentials.ADMIN_ENROLMENT_TTL_MS)
+    };
+    pendingAdminKeys.set(adminEnrolmentKey(by.username, name), record);
+    log.info('credentials: ' + by.username + ' started enrolling a "' +
+             role + '" passkey for ' + name +
+             (lane !== 'classical' ? ' in the ' + lane + ' lane' : '') +
+             ', in their own browser. ' + record.exclude.length +
+             ' authenticator(s) already enrolled are excluded.');
+    log.debug("Leaving Credentials.beginAdminKeyEnrolment(). Challenge " +
+              "minted and held.");
+    return { ok: true, enrolmentId: record.id, challenge: record.challenge,
+             role: role, kind: kind, lane: lane,
+             userHandle: record.userHandle, exclude: record.exclude.slice(),
+             algorithms: record.offered.slice(),
+             expiresAt: new Date(record.expires).toISOString() };
+  }
+
+  // The administrators' pending records past their time, dropped as they
+  // are read — the read is where an expired one must not be answered.
+  private sweepPendingAdminKeys() {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.sweepPendingAdminKeys().");
+    const now = Date.now();
+    pendingAdminKeys.forEach((value, key) => {
+      if (!value || value.expires < now) {
+        pendingAdminKeys.delete(key);
+      }
+    });
+    log.debug("Leaving Credentials.sweepPendingAdminKeys().");
+  }
+
+  /**
+   * Returns an administrator's pending enrolment for a person (#945), if
+   * one is held and has not expired.
+   *
+   * @param admin - the administrator's username
+   * @param username - the person
+   * @returns the pending record, or null
+   */
+  pendingAdminKeyEnrolment(admin, username) {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.pendingAdminKeyEnrolment().");
+    this.sweepPendingAdminKeys();
+    const held = pendingAdminKeys.get(adminEnrolmentKey(admin, username));
+    log.debug("Leaving Credentials.pendingAdminKeyEnrolment().");
+    return held || null;
+  }
+
+  /**
+   * Forgets an administrator's pending enrolment for a person (#945).
+   *
+   * @param admin - the administrator's username
+   * @param username - the person
+   */
+  abandonAdminKeyEnrolment(admin, username) {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.abandonAdminKeyEnrolment().");
+    pendingAdminKeys.delete(adminEnrolmentKey(admin, username));
+    log.debug("Leaving Credentials.abandonAdminKeyEnrolment().");
+  }
+
+  /**
+   * Verifies the registration an administrator's browser produced for a
+   * person (#945) exactly as the person's own is verified, and only then
+   * writes the key, marked `enrolledBy`. The pending record is spent first,
+   * whatever the outcome.
+   *
+   * @param username - the person
+   * @param admin - `{ username, sub }`: the administrator finishing it
+   * @param enrolmentId - the pending enrolment's id
+   * @param credential - what the browser posted
+   * @param opts - `origin` and `rpId`, what the browser was talking to
+   * @returns a promise of `{ ok: true, username, role, credentialId, held,
+   *   lane, enrolledBy }`, or a refusal
+   */
+  confirmAdminKeyEnrolment(username, admin, enrolmentId, credential, opts?) {
+    const { log } = this.deps;
+    log.debug("Entering Credentials.confirmAdminKeyEnrolment().");
+    const name = String(username || '').trim();
+    const by = Credentials.enrolledByOf(admin);
+    const held = by ? this.pendingAdminKeyEnrolment(by.username, name) : null;
+    // THE CEREMONY'S ROW (#943), however it ends, at the administrator's
+    // door: the person is the actor, as for every ceremony row, and the
+    // role is the key's — who ran it is the door's to say, and
+    // `admin.passkey.enrolled` names the administrator.
+    const note = (answer, threw?) => {
+      log.debug("Entering confirmAdminKeyEnrolment() note().");
+      const key = answer && answer.ok ? this.keysOf(name).filter(
+        function (one) {
+          return String(one.credentialId) ===
+                 String(answer.credentialId || '');
+        })[0] || null : null;
+      webauthnCeremonies.record({
+        ceremony: 'registration', door: 'admin-enrolment', username: name,
+        role: String((held && held.role) || ''),
+        lane: String((held && held.lane) || 'classical'),
+        outcome: answer && answer.ok ? 'success' : 'refused',
+        errorCode: answer && answer.ok ? ''
+          : String(this.deps.errorCodes.codeOf(answer) ||
+                   (threw ? 'STS-AUTHN-0447' : '')),
+        offered: (held && held.offered) || [],
+        algorithm: key ? Credentials.keyAlgorithm(key).name : '',
+        posted: credential, attestation: key ? key.attestation : null });
+      log.debug("Leaving confirmAdminKeyEnrolment() note().");
+    };
+    log.debug("Leaving Credentials.confirmAdminKeyEnrolment().");
+    return Promise.resolve().then(() => {
+      return this.checkAdminKeyEnrolment(name, by, held, enrolmentId,
+                                         credential, opts || {});
+    }).then(function (answer) {
+      note(answer);
+      return answer;
+    }, function (e) {
+      note(null, true);
+      throw e;
+    });
+  }
+
+  private checkAdminKeyEnrolment(name, by, held, enrolmentId, credential,
+                                 options) {
+    const { log, realms, errorCodes, claims } = this.deps;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.checkAdminKeyEnrolment().");
+    if (!by) {
+      log.debug("Leaving Credentials.checkAdminKeyEnrolment(). No " +
+                "administrator.");
+      return coded('STS-AUTHN-0445', { ok: false, reason: 'admin',
+               errors: ['An administrator\'s enrolment names the ' +
+                        'administrator, and this request names nobody.'] });
+    }
+    if (!held) {
+      log.debug("Leaving Credentials.checkAdminKeyEnrolment(). Nothing " +
+                "pending.");
+      return coded('STS-AUTHN-0442', { ok: false, reason: 'expired',
+               errors: ['There is no enrolment of yours in progress for ' +
+                        name.slice(0, 80) + ': it expired, it was already ' +
+                        'finished, or it was begun by another ' +
+                        'administrator. Start again.'] });
+    }
+    // SPENT NOW, WHATEVER FOLLOWS — see the header.
+    this.abandonAdminKeyEnrolment(by.username, name);
+    if (String(enrolmentId || '') !== String(held.id)) {
+      log.debug("Leaving Credentials.checkAdminKeyEnrolment(). A different " +
+                "enrolment.");
+      return coded('STS-AUTHN-0443', { ok: false, reason: 'mismatch',
+               errors: ['That enrolment is not the one in progress, so ' +
+                        'nothing was registered and the one in progress ' +
+                        'is cancelled. Start again.'] });
+    }
+    log.debug("Leaving Credentials.checkAdminKeyEnrolment(). Claiming the " +
+              "challenge.");
+    return claims.claim({
+      scope: Credentials.ADMIN_ENROLMENT_SCOPE, value: String(held.challenge),
+      ttlMs: Credentials.ADMIN_ENROLMENT_TTL_MS, realm: realms.currentId()
+    }).then((claimed) => {
+      if (!claimed.ok && claimed.reason === 'used') {
+        log.warn('credentials: an administrator\'s passkey enrolment for ' +
+                 name + ' was REFUSED: its challenge had already been ' +
+                 'answered, by another node or a request racing this one.');
+        return coded('STS-AUTHN-0443', { ok: false, reason: 'replay',
+          errors: ['That enrolment has already been answered. Start ' +
+                   'again.'] });
+      }
+      if (!claimed.ok) {
+        log.error(errorCodes.tag('STS-AUTHN-0444') + 'credentials: whether ' +
+                  'the challenge of an administrator\'s passkey enrolment ' +
+                  'for ' + name + ' was already answered could not be asked ' +
+                  '(' + (claimed.why || claimed.reason) + '), so it was ' +
+                  'refused.');
+        return coded('STS-AUTHN-0444', { ok: false, reason: 'store',
+          errors: ['The passkey could not be registered just now. Start ' +
+                   'again.'] });
+      }
+      // THE PERSON'S PASSKEY POLICY (#535), which the shared verification
+      // and the writer read.
+      this.deps.passkeyPolicy.select(name, '');
+      const pending = Object.assign({}, held, {
+        enrolledBy: { username: by.username,
+                      sub: by.sub || String((held.enrolledBy || {}).sub || ''),
+                      at: Date.now() } });
+      return this.verifyKeyRegistration(name, pending, credential, options,
+        (stored) => {
+          return this.adminKeyEnrolmentWritten(name, pending, stored);
+        });
+    });
+  }
+
+  // The end of `confirmAdminKeyEnrolment()`, once the claimed write has
+  // answered. Nothing to keep: the pending record was spent at the start.
+  private adminKeyEnrolmentWritten(name, held, stored) {
+    const { log, errorCodes } = this.deps;
+    const coded = this.coded.bind(this);
+    log.debug("Entering Credentials.adminKeyEnrolmentWritten().");
+    if (!stored.ok) {
+      log.debug("Leaving Credentials.adminKeyEnrolmentWritten(). The store " +
+                "refused it.");
+      return coded(errorCodes.codeOf(stored) || 'STS-AUTHN-0068',
+                   { ok: false, reason: stored.reason || 'refused',
+                     errors: stored.errors });
+    }
+    log.info('credentials: ' + held.enrolledBy.username + ' enrolled a "' +
+             held.role + '" passkey for ' + name + '. They now hold ' +
+             this.keysOf(name).length + '.');
+    log.debug("Leaving Credentials.adminKeyEnrolmentWritten(). Enrolled.");
+    return { ok: true, username: name, role: held.role,
+             credentialId: stored.credentialId, lane: held.lane,
+             enrolledBy: held.enrolledBy,
+             held: this.keysOf(name).length };
+  }
+
+  // ---------------------------------------------------------------------------
+
   // THE ACTIVATION LINK (2026-09-06). HOW SOMEBODY WHO WAS PROVISIONED COMES TO
   // HOLD A CREDENTIAL.
   //
@@ -9850,9 +11400,13 @@ class Credentials {
   holdsPasskey(username) {
     const { log } = this.deps;
     log.debug("Entering Credentials.holdsPasskey().");
-    const held = this.mechanismsFor(String(username || '').trim());
-    const out = !!held && (Number(held.primaryKeys || 0) +
-                           Number(held.mfaKeys || 0)) > 0;
+    // The keys themselves (#911), not mechanismsFor(): that is nine store
+    // reads and a TOTP unseal for a yes/no asked on every second-factor
+    // step and recovery door. Same answer — a key's role is primary or mfa.
+    const out = this.keysOf(String(username || '').trim())
+      .some(function (one) {
+        return one.role === 'primary' || one.role === 'mfa';
+      });
     log.debug("Leaving Credentials.holdsPasskey(). " + out);
     return out;
   }
@@ -9924,29 +11478,53 @@ class Credentials {
   }
 
   /**
+   * Whether a recovery has to be recorded before a reset can stand (#962).
+   * The same test `noteRecovery()` uses, so a caller that treats a false
+   * `noteRecovery()` as a failed reset does not invent a second rule: a
+   * person who holds a passkey, and the passkey policy selected for them
+   * is not `any`. No passkey, and `any`, are not a failed write — nothing
+   * was supposed to be written, and a later change of the row does not
+   * reach back to a recovery made while it allowed one.
+   *
+   * @param username - the person
+   * @returns true when a pending recovery has to be written
+   */
+  recoveryHoldRequired(username) {
+    const { log, passkeyPolicy } = this.deps;
+    log.debug("Entering Credentials.recoveryHoldRequired().");
+    const name = String(username || '').trim();
+    if (!name || !this.holdsPasskey(name)) {
+      log.debug("Leaving Credentials.recoveryHoldRequired(). Holds no " +
+                "passkey.");
+      return false;
+    }
+    if (!passkeyPolicy.hasSelection()) {
+      passkeyPolicy.select(name, '');
+    }
+    const required = passkeyPolicy.recoveryAssurance() !== 'any';
+    log.debug("Leaving Credentials.recoveryHoldRequired(). " + required);
+    return required;
+  }
+
+  /**
    * Records that a recovery door restored access (#724), where it matters:
-   * the person holds a passkey and the passkey policy selected for them
-   * holds a recovery to it (`recoveryAssurance` not `any`). Under `any`
-   * nothing is written, so a later change of the row does not reach back to
-   * a recovery made while it allowed one.
+   * `recoveryHoldRequired()` — the person holds a passkey and the passkey
+   * policy selected for them holds a recovery to it (`recoveryAssurance`
+   * not `any`). Under `any`, and for a person who holds no passkey, nothing
+   * is written and false is not a failed write. A false return when a hold
+   * WAS required is the directory write failing (`setRecoveryPending`,
+   * STS-AUTHN-0382); the caller decides what that does to the reset.
    *
    * @param username - the person
    * @param door - the recovery door (`passkey_policy.ts`'s RECOVERY_DOORS)
    * @returns true when a pending recovery was written
    */
   noteRecovery(username, door) {
-    const { log, passkeyPolicy } = this.deps;
+    const { log } = this.deps;
     log.debug("Entering Credentials.noteRecovery(). door=" + door);
     const name = String(username || '').trim();
-    if (!name || !this.holdsPasskey(name)) {
-      log.debug("Leaving Credentials.noteRecovery(). Holds no passkey.");
-      return false;
-    }
-    if (!passkeyPolicy.hasSelection()) {
-      passkeyPolicy.select(name, '');
-    }
-    if (passkeyPolicy.recoveryAssurance() === 'any') {
-      log.debug("Leaving Credentials.noteRecovery(). The policy allows any.");
+    if (!this.recoveryHoldRequired(name)) {
+      log.debug("Leaving Credentials.noteRecovery(). No hold is required.");
       return false;
     }
     const written = this.setRecoveryPending(name, String(door || ''));
@@ -10845,6 +12423,12 @@ export = {
   ROLES: Credentials.ROLES,
   keyKind: Credentials.keyKind,
   keyAlgorithm: Credentials.keyAlgorithm,
+  // #942: the report names an authenticator model by this string.
+  aaguidString: Credentials.aaguidString,
+  // #942: which stored values are keys, for the passkey report.
+  keysOfValues: Credentials.keysOfValues,
+  attestationAlgorithms: Credentials.attestationAlgorithms,
+  renewAttestationEvidence: slot.forward('renewAttestationEvidence'),
   // #470: the passkey pages' group, provider and name for a stored key.
   keyGroup: Credentials.keyGroup,
   keyProvider: Credentials.keyProvider,
@@ -10880,6 +12464,23 @@ export = {
   pendingKeyEnrolmentFor: slot.forward('pendingKeyEnrolmentFor'),
   abandonKeyEnrolment: slot.forward('abandonKeyEnrolment'),
   confirmKeyEnrolment: slot.forward('confirmKeyEnrolment'),
+  // Upgrading a classical passkey to an ML-DSA one (#939).
+  keyUpgradeHistory: Credentials.keyUpgradeHistory,
+  keyUpgradeRefusal: slot.forward('keyUpgradeRefusal'),
+  upgradableKeysOf: slot.forward('upgradableKeysOf'),
+  pendingKeyUpgradeFor: slot.forward('pendingKeyUpgradeFor'),
+  beginKeyUpgrade: slot.forward('beginKeyUpgrade'),
+  proveKeyUpgrade: slot.forward('proveKeyUpgrade'),
+  confirmKeyUpgrade: slot.forward('confirmKeyUpgrade'),
+  // AN ADMINISTRATOR'S ENROLMENT ON SOMEBODY'S BEHALF (#945): the same two
+  // steps, bound to the administrator and the person, and `enrolledBy`.
+  beginAdminKeyEnrolment: slot.forward('beginAdminKeyEnrolment'),
+  pendingAdminKeyEnrolment: slot.forward('pendingAdminKeyEnrolment'),
+  abandonAdminKeyEnrolment: slot.forward('abandonAdminKeyEnrolment'),
+  confirmAdminKeyEnrolment: slot.forward('confirmAdminKeyEnrolment'),
+  enrolledByOf: Credentials.enrolledByOf,
+  ADMIN_ENROLMENT_SCOPE: Credentials.ADMIN_ENROLMENT_SCOPE,
+  ADMIN_ENROLMENT_TTL_MS: Credentials.ADMIN_ENROLMENT_TTL_MS,
   addKeyClaimed: slot.forward('addKeyClaimed'),
   noteKeyUsed: slot.forward('noteKeyUsed'),
   androidAttestedCredentials: slot.forward('androidAttestedCredentials'),
@@ -10903,6 +12504,7 @@ export = {
   PASSWORD_ATTRIBUTE: Credentials.PASSWORD_ATTRIBUTE,
   RESERVED_REFUSAL: Credentials.RESERVED_REFUSAL,
   setDirectory: slot.forward('setDirectory'),
+  directoryInstalled: slot.forward('directoryInstalled'),
   addDirectoryHooks: slot.forward('addDirectoryHooks'),
   // The plaintext-password observer (2026-09-12) — see the block above it.
   setPasswordObserver: slot.forward('setPasswordObserver'),
@@ -10935,6 +12537,7 @@ export = {
   holdsPasskey: slot.forward('holdsPasskey'),
   recoveryPending: slot.forward('recoveryPending'),
   setRecoveryPending: slot.forward('setRecoveryPending'),
+  recoveryHoldRequired: slot.forward('recoveryHoldRequired'),
   noteRecovery: slot.forward('noteRecovery'),
   noteActivationRecovery: slot.forward('noteActivationRecovery'),
   passwordResetPending: slot.forward('passwordResetPending'),

@@ -860,9 +860,10 @@ events, and every other process read, opened and parsed it: about 5,000 rows
 a minute in each of 8081's nine processes under a password load, for a page
 nobody had open. Now:
 - the applier NOTES another process's change (`contributionStale()`);
-- the audit and error-code operations wait for `audit.fresh()`, which reads
-  every noted row in one batch (`refreshContributions()`, through
-  `readContributions()`);
+- the audit and error-code operations, and the application drill-down
+  (`GET /admin-api/applications?application=`, whose Authentication attempts
+  tab is this log), wait for `audit.fresh()`, which reads every noted row in
+  one batch (`refreshContributions()`, through `readContributions()`);
 - a segment rewritten thirty times between two pages is read once;
 - past 5,000 noted rows for a store, the refresh runs on its own, so a
   process whose page is never drawn stays bounded;
@@ -1178,8 +1179,11 @@ nothing) — **plus, since 2026-10-02, what mine added: an attribute only mine
 holds and a list value theirs lacks** (`mergeCreations()`; two nodes seeding a
 realm's role group lost a grant's member otherwise); a change to an entry
 deleted elsewhere is dropped
-(`STS-STORE-0053`). A new row is `INSERT … ON CONFLICT DO NOTHING`, and losing
-that race locks the row and merges again. The driver answers `{ outcomes }` —
+(`STS-STORE-0053`). A new row is inserted in that same key order. A merged
+insert that meets a row committed between the lock and the insert is not
+locked inside the flush: after the flush commits, each such row is merged
+in a transaction that locks only that row (#447). The driver answers
+`{ outcomes }` —
 what the store decided that this process does not hold — and
 `applyDirectoryOutcomes()` puts each into the live directory with the journal
 suppressed and the shadow set to the STORED row; a local write made while the

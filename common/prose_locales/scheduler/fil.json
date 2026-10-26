@@ -287,6 +287,14 @@
     "en": "183fddf95526a70b",
     "text": "Inaalis ang bawat client na nakarehistro sa pamamagitan ng OpenID Federation Trust Chain na natapos na ang registration (12.3). Sinasagot na ng bawat endpoint ang ganitong client bilang hindi kilala; pinipigilan lang nito na manatili ang entry."
   },
+  "sched.jobs.passkeys.report-recount.title": {
+    "en": "484d9dcdbd9a681e",
+    "text": "Muling pagbilang ng ulat ng passkey"
+  },
+  "sched.jobs.passkeys.report-recount.describe": {
+    "en": "049675db215c0863",
+    "text": "Binibilang ang mga passkey ng realm para sa Monitoring → Mga passkey (#942): ayon sa algorithm at lane, ang mga taong may hawak na post-quantum lang, classical lang o pareho, at kung aling mga modelo ng authenticator ang may hawak ng aling mga algorithm. Binabasa lang ang mga taong may hawak ng passkey, isang page sa bawat pagkakataon; idinadagdag ang mga pagbabagong ginawa pagkatapos nito habang isinusulat ang mga ito."
+  },
   "sched.jobs.persistence.minted-expiry-purge.title": {
     "en": "2e5c5abaf78a47c9",
     "text": "Pag-purge ng mga expired na minted row"
@@ -310,6 +318,54 @@
   "sched.jobs.process.memory-report.describe": {
     "en": "4f2c054a1405a843",
     "text": "Nagla-log, sa process na ito, ng isang linya na may role at memory nito: resident size, heap na nagamit at kabuuan, ang heap limit, external memory at array buffers (#341)."
+  },
+  "sched.jobs.report.drain.title": {
+    "en": "792c052635196abd",
+    "text": "Mga report job"
+  },
+  "sched.jobs.report.drain.describe": {
+    "en": "44526b11fff0c35e",
+    "text": "Kinukuha ang mga naka-queue na report job para sa realm na ito, hanggang sa mga concurrency cap, at isinusulat ang bawat artifact."
+  },
+  "sched.jobs.report.drain.here.title": {
+    "en": "e650bff45b03631e",
+    "text": "Mga report job sa node na ito"
+  },
+  "sched.jobs.report.drain.here.describe": {
+    "en": "4ac0b964339af918",
+    "text": "Ang kopya ng reporting node ng report.drain. Walang ginagawa maliban kung hawak ng process na ito ang ops.reporting."
+  },
+  "sched.jobs.report.retention.title": {
+    "en": "5d356aad0991d4bf",
+    "text": "Retention ng report"
+  },
+  "sched.jobs.report.retention.describe": {
+    "en": "820f16dd4154d80e",
+    "text": "Binubura ang mga report artifact na lampas na sa retention nila, tinatanggal ang mga row ng natapos na job na lampas na sa retention nila, at pinapabigo ang tumatakbong job na wala na ang fence."
+  },
+  "sched.jobs.report.retention.here.title": {
+    "en": "65aecca5c6b3edef",
+    "text": "Retention ng report sa node na ito"
+  },
+  "sched.jobs.report.retention.here.describe": {
+    "en": "aacfb1a2f3212be6",
+    "text": "Ang kopya ng reporting node ng report.retention. Walang ginagawa maliban kung hawak ng process na ito ang ops.reporting."
+  },
+  "sched.jobs.report.schedule.title": {
+    "en": "63e5ea89789332f4",
+    "text": "Mga iskedyul ng report"
+  },
+  "sched.jobs.report.schedule.describe": {
+    "en": "e1706c674f78a995",
+    "text": "Nag-e-enqueue ng job para sa bawat report definition na due na, bilang may-ari nito, hangga't kaya pa ng may-ari na patakbuhin ang query. Ginagamit ang mga naka-store na default ng parameter. Ang kulang ay nagpapanatili sa slot."
+  },
+  "sched.jobs.report.schedule.here.title": {
+    "en": "a1a815b7c87fc8b6",
+    "text": "Mga iskedyul ng report sa node na ito"
+  },
+  "sched.jobs.report.schedule.here.describe": {
+    "en": "eea786a826ff1054",
+    "text": "Ang kopya ng reporting node ng report.schedule. Walang ginagawa maliban kung hawak ng process na ito ang ops.reporting."
   },
   "sched.jobs.risc.opt-out-effective.title": {
     "en": "04bdbc25402e8321",

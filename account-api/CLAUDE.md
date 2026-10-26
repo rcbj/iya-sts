@@ -165,7 +165,7 @@ not one.
 
 ## TESTS
 
-`tests/vendored/portal_signin.js` signs in as the portal (PKCE, DPoP) and is a
+`tests/protocol/portal_signin.js` signs in as the portal (PKCE, DPoP) and is a
 client of these operations — `page()`, `draw()`, `act()`, `api()`, and
 `nobody()` for a link's.
 

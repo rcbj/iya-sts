@@ -17,6 +17,9 @@
   "portalLabel": "Användarportalen på den här instansen",
   "portalNote": "Kontosidorna för den som tittar på dem: hur hen loggar in i tjänsten, vad tjänsten har om hen och var den loggar in hen.",
   "portalNoRole": "Den kräver ingen roll, och det är hela skillnaden mot konsolen ovan: varje sida handlar om den som tittar på den, så att säga vem du är är hela frågan.",
+  "reportLabel": "Rapporter på den här instansen",
+  "reportNote": "De rapporter en person här får köra, och resultaten av dem som redan har körts.",
+  "reportWho": "En administratör kan öppna den. Någon annan kan öppna den bara som medlem i domänens rapportgrupp.",
   "signInProduct": "Du ombeds logga in, och den här instansen är i produktläge, så lösenordet kontrolleras mot kontot.",
   "signInDevelopment": "Du ombeds logga in — vilket användarnamn som helst, och inget lösenord kontrolleras."
 }

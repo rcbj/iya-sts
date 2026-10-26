@@ -37,7 +37,7 @@
 // the process starts in, so it is a CHILD with `STS_MODE=product`, as in
 // `kerberos_person_keys.js`; and what the TGS copies into a service ticket is
 // sealed under a key only the inside can hold. The protocol half, over TCP 88
-// against a running service, is `tests/vendored/sts_kerberos_fast_otp.js`.
+// against a running service, is `tests/protocol/sts_kerberos_fast_otp.js`.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
