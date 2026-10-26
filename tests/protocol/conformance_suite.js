@@ -323,6 +323,16 @@ async function runModule(planId, module, onWaiting) {
       }
     }
     if (Date.now() > deadline) {
+      // WHAT IT WAS WAITING ON, before it is stopped: a hang is otherwise
+      // a bare TIMED OUT. oidcc-claims-essential timed out once in
+      // t-jwt-cl on 2026-10-26 with nothing in either log to say why.
+      const runner = (await suite("GET", "api/runner/" + id)).body || {};
+      const held = runner.browser || {};
+      log.info("  " + module.testModule + " timed out " + info.status +
+               (info.status === "WAITING" ? "" : " (not waiting)") +
+               "; the browser was asked for " +
+               JSON.stringify(held.urls || []) + " and visited " +
+               JSON.stringify(held.visited || []));
       await suite("DELETE", "api/runner/" + id);
       // Until the suite has finished stopping it, so the next creation does
       // not meet the stop (see the creation above). Thirty seconds at most.
@@ -374,7 +384,17 @@ async function runPlan(planName, variant, configuration, label, onWaiting) {
   const results = [];
   const modules = created.body.modules || [];
   for (let i = 0; i < modules.length; i++) {
-    const got = await runModule(created.body.id, modules[i], onWaiting);
+    let got = await runModule(created.body.id, modules[i], onWaiting);
+    // ONE MORE RUN FOR A MODULE THAT TIMED OUT (2026-10-26). The one hang
+    // seen, in one plan of twenty-four, left nothing on the service and no
+    // error from the browser, so it is taken to be the suite's or the
+    // browser's; a module that hangs again is reported as it was. A FAILED
+    // or a WARNING is never run again: those are verdicts.
+    if (got.status === "TIMED OUT") {
+      log.info("  " + label + " " + got.module + ": TIMED OUT; running " +
+               "it once more.");
+      got = await runModule(created.body.id, modules[i], onWaiting);
+    }
     log.info("  " + label + " " + got.module + ": " +
              (got.result || got.status) +
              (got.failures.length ? " — " + got.failures[0].src + ": " +
