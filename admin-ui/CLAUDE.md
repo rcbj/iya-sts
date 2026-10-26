@@ -7749,7 +7749,9 @@ page now is. He chose:
 `USER_TAB_IDS`, with no script:
 * **Overview**: the tiles, the names seen and the authentications.
 * **Authentication attempts** (#955): the audit log's attempts by this
-  person, across every application and protocol, including refusals.
+  person, across every application and protocol, including refusals and
+  `session.presented`, an existing session honoured for single sign-on
+  (`common/CLAUDE.md`, the refusal paragraph).
   The overview's authentication table stays the identity register's
   acceptances.
 * **Sessions & tokens**.

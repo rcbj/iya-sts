@@ -1503,6 +1503,10 @@
     "en": "f6867c3c6a1d35bd",
     "text": "同一个人在仍有效的会话上再次登录"
   },
+  "audit.actions.session.presented.label": {
+    "en": "d1629f19f6dc2282",
+    "text": "现有的登录会话被出示给某个应用"
+  },
   "audit.actions.session.refuse.label": {
     "en": "c8703bfa89913b23",
     "text": "会话因其登录机制被拒绝"

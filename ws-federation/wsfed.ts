@@ -1262,7 +1262,7 @@ class WsFederation {
       // `wfresh` too old never reaches here at all — `fresh.ok` is false and
       // the request goes to the screen, which is a re-authentication too.
       log.debug("The session stands, so the sign-in response goes out now.");
-      notePresented(session, 'WS-Federation', req);
+      notePresented(session, 'WS-Federation', req, realm);
       log.debug("Leaving WsFederation.signIn().");
       return this.issueSignInResponse(req, res, params, session, realm, wreply,
                                       asked.tokenType);
@@ -1608,7 +1608,7 @@ class WsFederation {
 
     // SINGLE SIGN-ON, for `signIn()`'s reason: CAEP's `session-presented`
     // is about the session, whichever door presented it.
-    notePresented(session, 'WS-Federation', req);
+    notePresented(session, 'WS-Federation', req, realm);
     log.debug("Leaving WsFederation.initiate(). Issuing.");
     return this.issueSignInResponse(req, res, params, session, realm, wreply,
                                     asked.tokenType,

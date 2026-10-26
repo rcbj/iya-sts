@@ -214,6 +214,17 @@ presents its credential again (*Sessions that are not a browser's*, below):
 All of them go through `authn.notePresented()`, which is protocol-independent: the
 event names the **session**, and `via` records which door it came back through.
 
+**Each one is also an audit row, `session.presented`**, written where the event
+is sent and nowhere else, so the two are always the same count. The row names
+the person, the protocol and — where the door has one — the application the
+session was presented to: the `client_id`, the service provider's entityID, the
+SAML 1.1 relying party, the `wtrealm`, or the GNAP client. Its method is
+*existing session*. It is what puts single sign-on on the console's
+**Authentication attempts** tabs, for the application and for the person; an
+OpenID4VCI offer names no application, so its row is on the person's tab only.
+The SCIM and SPIRE re-presentations below are not browser sign-ins and write no
+such row.
+
 **The first presentation of a brand-new session is swallowed.** Every sign-in
 here ends with the browser returning to the endpoint that sent it away, which is
 technically a presentation — so without this rule the simplest possible flow

@@ -400,7 +400,8 @@ class PortalCiba {
       // The SIGN-ON session, by the name every profile's call uses
       // (`tests/caep_presented_every_protocol.js` reads it).
       const session = signOn;
-      authn.notePresented(session, 'OpenID Connect CIBA', req);
+      authn.notePresented(session, 'OpenID Connect CIBA', req,
+                          record ? record.clientId : '');
     }
     log.debug("Leaving PortalCiba.answer(). Answered.");
     return ctx.json(res, 200, { ok: true,
@@ -463,7 +464,7 @@ class PortalCiba {
                         answered.why);
     }
     if (answered.approved && signOn.id) {
-      authn.notePresented(signOn, 'GNAP', req);
+      authn.notePresented(signOn, 'GNAP', req, answered.client);
     }
     log.debug("Leaving PortalCiba.answerGnap(). Answered.");
     const t = ctx.translatorFor(who);

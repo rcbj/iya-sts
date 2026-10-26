@@ -1503,6 +1503,10 @@
     "en": "f6867c3c6a1d35bd",
     "text": "La même personne s’est reconnectée sur une session active"
   },
+  "audit.actions.session.presented.label": {
+    "en": "d1629f19f6dc2282",
+    "text": "Une session d’authentification existante a été présentée à une application"
+  },
   "audit.actions.session.refuse.label": {
     "en": "c8703bfa89913b23",
     "text": "Une session a été refusée en raison de son mécanisme de connexion"

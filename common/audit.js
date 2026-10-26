@@ -1445,6 +1445,14 @@ const ACTIONS = [
     label: 'A request did not say which of a browser\'s accounts it was for' },
   { action: 'session.reauthenticate', category: 'session',
     label: 'The same person signed in again on a live session' },
+  // A SESSION THAT ALREADY EXISTED, PRESENTED AND HONOURED: single sign-on.
+  // authn.ts's notePresented() writes it where it reports CAEP's
+  // `session-presented`, so the sign-in's own return trip is not one. It is
+  // an attempt on both Authentication attempts tabs: a person who reached an
+  // application on the session they already held authenticated to nobody,
+  // and without this row that visit was on neither tab.
+  { action: 'session.presented', category: 'session',
+    label: 'An existing sign-on session was presented to an application' },
   { action: 'session.refuse', category: 'session',
     label: 'A session was refused for its sign-in mechanism' },
   { action: 'session.refused', category: 'session',
@@ -2443,11 +2451,15 @@ function list() {
 // event. A session refused after a credential was accepted is a different
 // action and still an attempt at that application, so it is included.
 // session.reauthenticate is the acceptance written a second time and is not.
+// session.presented is an existing session honoured for an application with
+// no credential asked for, which is the one way in that wrote no row these
+// tabs read: it is an attempt that succeeded on the session alone.
 const ATTEMPT_ACTIONS = {
   'authentication': true,
   'authentication.refused': true,
   'session.refuse': true,
-  'session.refused': true
+  'session.refused': true,
+  'session.presented': true
 };
 
 // A row names an application when detail.client_id or detail.application is
@@ -2460,7 +2472,8 @@ const ATTEMPT_ACTIONS = {
  * Lists the authentication attempts that name one of `names`, newest first.
  *
  * The actions are `authentication`, `authentication.refused`,
- * `session.refuse` and `session.refused`. A row matches when
+ * `session.refuse`, `session.refused` and `session.presented`. A row
+ * matches when
  * `detail.client_id` or `detail.application`, trimmed, is one of `names`
  * exactly. The list is this log: a capped ring, the same one `list()` reads.
  *
@@ -2511,7 +2524,7 @@ function authenticationEventsFor(names) {
 /**
  * Lists the authentication attempts by one of `names`, newest first.
  *
- * The actions are the same four `authenticationEventsFor()` counts. A row
+ * The actions are the same five `authenticationEventsFor()` counts. A row
  * matches when `actor`, `actorForm`, `detail.sub` or `detail.presented`,
  * trimmed, is one of `names` exactly.
  *

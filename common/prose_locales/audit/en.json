@@ -375,6 +375,7 @@
   "audit.actions.account.forget.label": "A browser forgot a signed-out account",
   "audit.actions.account.ambiguous.label": "A request did not say which of a browser's accounts it was for",
   "audit.actions.session.reauthenticate.label": "The same person signed in again on a live session",
+  "audit.actions.session.presented.label": "An existing sign-on session was presented to an application",
   "audit.actions.session.refuse.label": "A session was refused for its sign-in mechanism",
   "audit.actions.session.refused.label": "A hosted surface refused a session",
   "audit.actions.ssf.event.act.label": "A received Security Event was acted on",

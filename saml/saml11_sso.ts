@@ -2358,7 +2358,7 @@ class Saml11Sso {
     }
 
     pendingFlows.delete(String(params.fid || ''));
-    notePresented(session, 'SAML 1.1', req);
+    notePresented(session, 'SAML 1.1', req, rpId);
     this.issueSignIn(res, req, {
       session: session, rpId: rpId, providerId: providerId, acsUrl: acsUrl,
       profile: wanted.profile, target: String(carried.TARGET || ''),

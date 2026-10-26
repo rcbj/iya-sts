@@ -5536,10 +5536,21 @@ class Authn {
   // that is supposed to mean "single sign-on happened" would mean nothing. The
   // flag is set by startSession() and spent here, so it is exact rather than a
   // time window: a session created by this service is presented once for free.
+  //
+  // **AND IT IS AN AUDIT ROW, `session.presented`, WHERE IT IS REPORTED.** The
+  // Authentication attempts tabs (#954, #955) read the audit log's credential
+  // rows, and single sign-on presents no credential, so a person who reached
+  // an application on the session they already held appeared on neither the
+  // application's tab nor their own. `application` is the protocol's name for
+  // who the session was presented to — a client_id, an entityID, a wtrealm,
+  // a GNAP client — and is what the application's tab matches; a caller with
+  // no such name passes none, and the row is then on the person's tab only.
+  // Written here and nowhere else, so it is exactly as often as the CAEP
+  // event: the sign-in's own return trip writes no row, as it emits no event.
   // ---------------------------------------------------------------------------
   /**
    * Reports a session presented again for single sign-on (CAEP
-   * `session-presented`).
+   * `session-presented`), and writes the `session.presented` audit row.
    *
    * The first presentation of a brand-new session is the sign-in itself and is
    * not reported.
@@ -5547,10 +5558,12 @@ class Authn {
    * @param session - the session
    * @param via - the protocol it was presented to
    * @param req - the request
+   * @param application - the protocol's name for the application it was
+   *   presented to, when the caller has one
    * @returns true when it was reported
    */
-  notePresented(session, via, req) {
-    const { log } = this.deps;
+  notePresented(session, via, req, application?) {
+    const { log, audit } = this.deps;
     log.debug("Entering Authn.notePresented().");
     if (!session) {
       log.debug("Leaving Authn.notePresented(). No session.");
@@ -5565,7 +5578,31 @@ class Authn {
                 "trip.");
       return false;
     }
-    this.notifySession('presented', session, { via: via || 'OAuth 2.0 / OIDC',
+    const protocol = via || 'OAuth 2.0 / OIDC';
+    const user = session.user || {};
+    const username = String(user.username || '');
+    const named = String(application || '');
+    // No credential was presented, so `method` says what was instead. The
+    // session's own amr and acr are what the application was given, and are
+    // copied so the row reads as the tab's other rows do.
+    audit.audit({
+      action: 'session.presented',
+      actor: username,
+      protocol: protocol,
+      channel: 'http',
+      target: String(session.id || ''),
+      summary: username + '\'s existing session ' + session.id +
+               ' was presented through ' + protocol +
+               (named ? ' to ' + named : ''),
+      detail: Object.assign(this.attemptFacts(named, 'existing session'), {
+        presented: username,
+        sub: String(user.sub || ''),
+        sessionId: String(session.id || ''),
+        amr: (session.amr || []).join(', '),
+        acr: String(session.acr || '')
+      })
+    });
+    this.notifySession('presented', session, { via: protocol,
       req: req || null });
     log.debug("Leaving Authn.notePresented(). Reported.");
     return true;

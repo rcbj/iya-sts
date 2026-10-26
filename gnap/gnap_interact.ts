@@ -1443,7 +1443,7 @@ class GnapInteract {
                   .redirect(303, authn.beginAuthentication(signIn));
       }
       // An EXISTING session is being honoured: CAEP session-presented.
-      notePresented(session, 'GNAP', req);
+      notePresented(session, 'GNAP', req, grant.client.identifier);
       self.noteAccountFor(grant, session);
       // #432 phase 6: another person's grant goes to its owner's portal, and
       // a session short of the rights' acr is stepped up — both before the

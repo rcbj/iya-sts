@@ -3646,7 +3646,14 @@ with `Cannot find module` naming a file the operator never mentioned.
    `session.refuse` and `session.refused` when `detail.client_id` or
    `detail.application` is the identifier or one of `identifiersOf()`'s
    values, through `authenticationEventsFor()`. `session.reauthenticate` is
-   the acceptance written a second time and is not in that list. The sign-in
+   the acceptance written a second time and is not in that list.
+   **`session.presented` is (2026-10-26)**: `authn.notePresented()` writes it
+   where it reports CAEP's `session-presented`, naming the application the
+   door passes as its fourth argument, because single sign-on presents no
+   credential and so wrote no row either tab read — a person who reached an
+   application on the session they held was on neither. Its `method` is
+   `existing session`. `report/sources.ts`'s `authActivity` keeps its own
+   four-action list and does not include it. The sign-in
    screen calls the refusal line; it does not call `audit()` itself. A door
    that knows its protocol's identifier passes it as `application` — a
    Kerberos service principal, an LDAP bind DN, a client-certificate
