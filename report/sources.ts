@@ -28,6 +28,31 @@
 //
 // Credential attributes are not read. They are not fields, and this file
 // does not name them.
+//
+// A FILTER THE STORE CAN ANSWER IS ASKED OF THE STORE (#985). On the 8081
+// installation, fifty million people, `username equals rcbj` walked every
+// one of them — the group index first, then every page of `ou=users`, one
+// `existingUserEntry()` per person, the filter applied only in
+// `Rows.take()`, which keeps paging past a row that does not match — and
+// met the ten-second cap every time; a job would have met the two-minute
+// one. The directory already answers the question the walk was asking: the
+// keyed digests `name_keys`, `mail_keys` and `uuid_keys` and the trigram
+// index over the RDN value (`persistence/directory_queries.js`), which
+// sign-in and `/portal/delegate` use. So `reportReadUsers()` reads the
+// plan's `where` first (`reportIndexedLookups()`): a leaf on an indexed
+// field and operator (the catalog's `indexed` list), one arm of an `and`,
+// or every arm of an `or` names the CANDIDATES, resolved through the
+// directory's own lookups (`reportCandidates()`), and only those rows are
+// offered — every other term still applies in `Rows.take()`, so the answer
+// is the walk's. `contains` and `startsWith` on `username` are the trigram
+// index's superset (lower-cased, three characters or more), narrowed in
+// process; a needle the store answers at its cap is not trusted to be
+// whole and falls back. A filter the store cannot answer, with the
+// directory windowed and the read synchronous, is REFUSED before the walk
+// starts (`STS-REPORT-0036`, `reportUnboundedFilter()`), and `mode: auto`
+// turns that refusal into a job (`report_api.ts`); a walk that the limit
+// bounds — no filter, no order, no count — still runs. The memory directory
+// is in process and small by construction, so it walks as it always did.
 // ---------------------------------------------------------------------------
 
 import bunyan = require('bunyan');
@@ -47,6 +72,25 @@ const FENCE_GONE = 'STS-REPORT-0025';
 let reportReader: ((plan: any, take: (row: any) => boolean,
   control: any) => Promise<void> | void) | null = null;
 const reportFences = new Set<string>();
+
+// The directory this file reads: `ldap/ldap_server.js`, required when first
+// asked, or the double a test installs (#985). Nothing else installs one.
+let reportDirectory: any = null;
+
+// How many store questions one filter may become (an `or` of lookups), the
+// shortest substring the trigram index is asked, how many rows a substring
+// or a mail lookup is asked for — an answer that fills it is not whole, and
+// the read falls back — and the one refusal this file adds.
+const INDEX_LOOKUP_CAP = 16;
+const NEEDLE_MIN = 3;
+const CANDIDATE_CAP = 1000;
+const UNBOUNDED_FILTER = 'STS-REPORT-0036';
+
+interface Lookup {
+  field: string;
+  op: string;
+  values: string[];
+}
 
 const MECHANISMS = [
   { id: 'password', kind: 'both', primary: 'passwordPrimary',
@@ -77,6 +121,19 @@ function reportInstallReader(fn: typeof reportReader): void {
   log.debug("Entering reportInstallReader().");
   reportReader = fn;
   log.debug("Leaving reportInstallReader().");
+}
+
+function reportInstallDirectory(directory: any): void {
+  log.debug("Entering reportInstallDirectory().");
+  reportDirectory = directory || null;
+  log.debug("Leaving reportInstallDirectory().");
+}
+
+function reportLdap(): any {
+  log.debug("Entering reportLdap().");
+  const ldap = reportDirectory || require('../ldap/ldap_server');
+  log.debug("Leaving reportLdap().");
+  return ldap;
 }
 
 function reportProcessToken(): string {
@@ -449,7 +506,7 @@ async function reportOffer(row: any, rows: any, control: any):
 async function reportEachEntry(parent: string, onEntry: (entry: any,
     dn: string) => Promise<boolean> | boolean): Promise<void> {
   log.debug("Entering reportEachEntry().");
-  const ldap = require('../ldap/ldap_server');
+  const ldap = reportLdap();
   const held: Array<{ entry: any; dn: string }> = [];
   ldap.entries.forEach(function (entry: any, dn: string): void {
     if (reportUnder(String(dn), parent)) {
@@ -476,7 +533,7 @@ async function reportEachEntry(parent: string, onEntry: (entry: any,
 async function reportRdnPages(parent: string, onRow: (row: any) =>
     Promise<boolean> | boolean): Promise<void> {
   log.debug("Entering reportRdnPages().");
-  const ldap = require('../ldap/ldap_server');
+  const ldap = reportLdap();
   const realms = require('../common/realms');
   const window = ldap.directoryWindow;
   let cursor = '';
@@ -508,7 +565,7 @@ async function reportRdnPages(parent: string, onRow: (row: any) =>
 
 async function reportGroupIndex(): Promise<any> {
   log.debug("Entering reportGroupIndex().");
-  const ldap = require('../ldap/ldap_server');
+  const ldap = reportLdap();
   const parent = ldap.groupsDn();
   const byUser: Record<string, string[]> = {};
   const groups: any[] = [];
@@ -554,7 +611,7 @@ async function reportGroupIndex(): Promise<any> {
 async function reportEachUser(onUser: (entry: any, dn: string) =>
     Promise<boolean> | boolean): Promise<void> {
   log.debug("Entering reportEachUser().");
-  const ldap = require('../ldap/ldap_server');
+  const ldap = reportLdap();
   if (!ldap.directoryIsWindowed()) {
     await reportEachEntry(ldap.usersDn(), async function (entry: any,
         dn: string): Promise<boolean> {
@@ -596,27 +653,351 @@ async function reportEachUser(onUser: (entry: any, dn: string) =>
   log.debug("Leaving reportEachUser(). Guard.");
 }
 
+function reportUserRow(entry: any, names: string[]): any {
+  log.debug("Entering reportUserRow().");
+  // pwdAccountLockedTime is the administrative disable and any other
+  // lock. The catalog calls both locked. This read does not ask
+  // account_state, which would walk the directory a second time.
+  const locked = reportAttr(entry, 'pwdAccountLockedTime');
+  const row = {
+    username: reportAttr(entry, 'uid'),
+    status: locked ? 'locked' : 'active',
+    createdAt: reportLdapTime(reportAttr(entry, 'createTimestamp')),
+    modifiedAt: reportLdapTime(reportAttr(entry, 'modifyTimestamp')),
+    entryUuid: reportAttr(entry, 'entryUUID'),
+    mail: reportAttr(entry, 'mail'),
+    displayName: reportAttr(entry, 'displayName') ||
+      reportAttr(entry, 'cn'),
+    memberOf: names.join(', ')
+  };
+  log.debug("Leaving reportUserRow().");
+  return row;
+}
+
+// ---------------------------------------------------------------------------
+// THE INDEXED LOOKUPS OF A FILTER (#985): the store questions whose union
+// holds every row the filter can match, or null when none can be named. A
+// leaf on an indexed field and operator is one lookup (`eq` and `in` are an
+// exact lookup over the values; `contains` and `startsWith` on `username`
+// are the trigram index's substring, lower-cased, which is a SUPERSET of
+// either — `Rows.take()` still applies the leaf). An `and` is the lookups
+// of any ONE of its arms, since every match satisfies every arm, and an
+// exact arm is preferred to a substring one. An `or` is the lookups of
+// EVERY arm, or null if one arm has none. A `not`, an `isNull`, a `ne`, a
+// filter on a sealed field, a needle under three characters: null. Bounded
+// in lookups, so no filter becomes an unbounded number of questions. The
+// same shape `ldap_server.js`'s `indexedLookupsOf()` gives an LDAP search.
+// ---------------------------------------------------------------------------
+function reportLeafLookup(node: any, indexedOf: (field: string) => string[]):
+    Lookup | null {
+  log.debug("Entering reportLeafLookup().");
+  const field = String(node.field || '');
+  const op = String(node.op || '');
+  const allowed = indexedOf(field);
+  if (allowed.indexOf(op) < 0) {
+    log.debug("Leaving reportLeafLookup(). Not indexed.");
+    return null;
+  }
+  if (op === 'eq' || op === 'in') {
+    const list = op === 'in' ? (Array.isArray(node.value) ? node.value :
+      []) : [node.value];
+    const values: string[] = [];
+    for (let i = 0; i < list.length; i++) {
+      if (typeof list[i] !== 'string' || !list[i].trim()) {
+        log.debug("Leaving reportLeafLookup(). Not a name.");
+        return null;
+      }
+      values.push(list[i]);
+    }
+    if (!values.length) {
+      log.debug("Leaving reportLeafLookup(). Empty.");
+      return null;
+    }
+    log.debug("Leaving reportLeafLookup(). Exact.");
+    return { field: field, op: 'eq', values: values };
+  }
+  if (op === 'contains' || op === 'startsWith') {
+    const needle = typeof node.value === 'string' ?
+      node.value.trim().toLowerCase() : '';
+    if (needle.length < NEEDLE_MIN) {
+      log.debug("Leaving reportLeafLookup(). Short.");
+      return null;
+    }
+    log.debug("Leaving reportLeafLookup(). Substring.");
+    return { field: field, op: 'contains', values: [needle] };
+  }
+  log.debug("Leaving reportLeafLookup(). Operator.");
+  return null;
+}
+
+function reportExactOnly(lookups: Lookup[]): boolean {
+  log.debug("Entering reportExactOnly().");
+  const exact = lookups.every(function (one: Lookup): boolean {
+    return one.op === 'eq';
+  });
+  log.debug("Leaving reportExactOnly().");
+  return exact;
+}
+
+function reportIndexedLookups(node: any,
+    indexedOf: (field: string) => string[], depth: number):
+    Lookup[] | null {
+  log.debug("Entering reportIndexedLookups().");
+  if (!node || typeof node !== 'object' || depth > 4) {
+    log.debug("Leaving reportIndexedLookups(). None.");
+    return null;
+  }
+  if (node.op === 'and') {
+    const args = Array.isArray(node.args) ? node.args : [];
+    let best: Lookup[] | null = null;
+    for (let i = 0; i < args.length; i++) {
+      const arm = reportIndexedLookups(args[i], indexedOf, depth + 1);
+      if (arm && (!best || (reportExactOnly(arm) &&
+          !reportExactOnly(best)))) {
+        best = arm;
+      }
+    }
+    log.debug("Leaving reportIndexedLookups(). And.");
+    return best;
+  }
+  if (node.op === 'or') {
+    const args = Array.isArray(node.args) ? node.args : [];
+    let all: Lookup[] = [];
+    for (let i = 0; i < args.length; i++) {
+      const arm = reportIndexedLookups(args[i], indexedOf, depth + 1);
+      if (!arm) {
+        log.debug("Leaving reportIndexedLookups(). Or, an arm walks.");
+        return null;
+      }
+      all = all.concat(arm);
+    }
+    if (!all.length || all.length > INDEX_LOOKUP_CAP) {
+      log.debug("Leaving reportIndexedLookups(). Or, too many.");
+      return null;
+    }
+    log.debug("Leaving reportIndexedLookups(). Or.");
+    return all;
+  }
+  if (node.op === 'not') {
+    log.debug("Leaving reportIndexedLookups(). Not.");
+    return null;
+  }
+  const leaf = reportLeafLookup(node, indexedOf);
+  log.debug("Leaving reportIndexedLookups().");
+  return leaf ? [leaf] : null;
+}
+
+// The entries one lookup names, through the directory's own doors — the
+// same ones a sign-in and a SCIM read use, so the answer is theirs: a name
+// through `existingUserEntriesAsync()` (`byName`, or the in-memory
+// username index), a UUID through `entriesByUuidsAsync()`, an address
+// through the window's `byMail`, a substring through the trigram index.
+// Null means the store could not answer it whole — a memory directory asked
+// a substring or an address (it has no index for either, and is small), or
+// an answer that filled the cap — and the caller walks instead.
+async function reportLookupEntries(lookup: Lookup, ldap: any):
+    Promise<any[] | null> {
+  log.debug("Entering reportLookupEntries(). " + lookup.field + ' ' +
+    lookup.op);
+  const found: any[] = [];
+  if (lookup.field === 'username' && lookup.op === 'eq') {
+    const entries = await ldap.existingUserEntriesAsync(lookup.values);
+    (entries || []).forEach(function (entry: any): void {
+      if (entry) {
+        found.push(entry);
+      }
+    });
+    log.debug("Leaving reportLookupEntries(). By name.");
+    return found;
+  }
+  if (lookup.field === 'entryUuid' && lookup.op === 'eq') {
+    const map = await ldap.entriesByUuidsAsync(lookup.values);
+    if (map && typeof map.forEach === 'function') {
+      map.forEach(function (entry: any): void {
+        if (entry) {
+          found.push(entry);
+        }
+      });
+    }
+    log.debug("Leaving reportLookupEntries(). By UUID.");
+    return found;
+  }
+  if (!ldap.directoryIsWindowed() || !ldap.directoryWindow) {
+    log.debug("Leaving reportLookupEntries(). No index in memory.");
+    return null;
+  }
+  const realms = require('../common/realms');
+  const realmId = realms.currentId();
+  if (lookup.field === 'mail' && lookup.op === 'eq') {
+    for (let i = 0; i < lookup.values.length; i++) {
+      const wanted = lookup.values[i].trim().toLowerCase();
+      const hits = await ldap.directoryWindow.findWindowedAsync(realmId,
+        'byMail', [realmId, wanted, CANDIDATE_CAP],
+        function (entry: any): boolean {
+          return reportAttrList(entry, 'mail').some(function (one: string):
+              boolean {
+            return one.toLowerCase() === wanted;
+          });
+        });
+      if (hits.length >= CANDIDATE_CAP) {
+        log.debug("Leaving reportLookupEntries(). Mail at the cap.");
+        return null;
+      }
+      hits.forEach(function (hit: any): void {
+        found.push(hit.entry);
+      });
+    }
+    log.debug("Leaving reportLookupEntries(). By mail.");
+    return found;
+  }
+  if (lookup.field === 'username' && lookup.op === 'contains') {
+    const parent = String(ldap.usersDn() || '').toLowerCase();
+    const page = await ldap.directoryWindow.uidContainsAsync(realmId,
+      parent, lookup.values[0], CANDIDATE_CAP);
+    if (!page || page.asked >= CANDIDATE_CAP) {
+      log.debug("Leaving reportLookupEntries(). Substring at the cap.");
+      return null;
+    }
+    page.rows.forEach(function (row: any): void {
+      if (row && row.entry) {
+        found.push(row.entry);
+      }
+    });
+    log.debug("Leaving reportLookupEntries(). By substring.");
+    return found;
+  }
+  log.debug("Leaving reportLookupEntries(). Unknown.");
+  return null;
+}
+
+// The candidates of a filter: every lookup's entries, each person once,
+// projections and entries with no `uid` left out as the walk leaves them.
+// Null when any lookup could not be answered whole.
+async function reportCandidates(lookups: Lookup[], ldap: any):
+    Promise<any[] | null> {
+  log.debug("Entering reportCandidates(). " + lookups.length +
+    ' lookup(s).');
+  const parent = String(ldap.usersDn() || '').toLowerCase();
+  const seen = new Set<string>();
+  const out: any[] = [];
+  for (let i = 0; i < lookups.length; i++) {
+    const entries = await reportLookupEntries(lookups[i], ldap);
+    if (!entries) {
+      log.debug("Leaving reportCandidates(). Not whole.");
+      return null;
+    }
+    for (let k = 0; k < entries.length; k++) {
+      const entry = entries[k];
+      const dn = String((entry && entry.dn) || '').toLowerCase();
+      const origin = String((entry && entry.origin) || '');
+      if (!dn || seen.has(dn) || origin.indexOf('projection') === 0 ||
+          !reportAttr(entry, 'uid') || !reportUnder(dn, parent)) {
+        continue;
+      }
+      seen.add(dn);
+      out.push(entry);
+    }
+  }
+  log.debug("Leaving reportCandidates(). " + out.length + '.');
+  return out;
+}
+
+// The names of the groups that LIST this person, from the directory's own
+// group index (`groupsOfUser()`, what every token's groups claim reads)
+// rather than from a pass over every group: a candidate's row needs its
+// groups, not the realm's. A group the person only claims through their
+// own `memberOf` is left out, as the walk's index leaves it out.
+function reportGroupNamesOf(ldap: any, entry: any): string[] {
+  log.debug("Entering reportGroupNamesOf().");
+  const names: string[] = [];
+  const username = reportAttr(entry, 'uid');
+  if (username && typeof ldap.groupsOfUser === 'function') {
+    const answer = ldap.groupsOfUser(username) || {};
+    (answer.groups || []).forEach(function (group: any): void {
+      const listed = Array.isArray(group.via) ? group.via.length > 0 :
+        !group.viaMemberOf;
+      if (listed && group.cn && names.indexOf(group.cn) < 0) {
+        names.push(group.cn);
+      }
+    });
+  }
+  log.debug("Leaving reportGroupNamesOf().");
+  return names;
+}
+
+// Whether the plan has to see every person to answer: a filter the store
+// did not narrow (the limit cannot stop a walk that finds nothing), an
+// order (the heap needs the last row), or a count. A plain unordered read
+// with no filter stops at its limit, and may walk.
+function reportMustVisitEverybody(plan: any): boolean {
+  log.debug("Entering reportMustVisitEverybody().");
+  const must = !!(plan && (plan.where != null ||
+    (Array.isArray(plan.orderBy) && plan.orderBy.length) ||
+    plan.aggregate === 'count'));
+  log.debug("Leaving reportMustVisitEverybody().");
+  return must;
+}
+
+function reportUnboundedFilter(catalog: any): any {
+  log.debug("Entering reportUnboundedFilter().");
+  const src = catalog.source('users') || { fields: [] };
+  const named = (src.fields || []).filter(function (field: any): boolean {
+    return Array.isArray(field.indexed) && field.indexed.length > 0;
+  }).map(function (field: any): string {
+    return field.id + ' (' + field.indexed.join(', ') + ')';
+  });
+  log.warn(errorCodes.tag(UNBOUNDED_FILTER) +
+    'report: a synchronous users query names no filter the directory ' +
+    'can answer with an index, and the directory is windowed; refused ' +
+    'rather than read row by row.');
+  log.debug("Leaving reportUnboundedFilter().");
+  return {
+    ok: false,
+    code: UNBOUNDED_FILTER,
+    error: 'result_too_large',
+    unbounded: true,
+    description: 'This query would read every person. Filter on ' +
+      named.join(', ') + ', or run it as a job.'
+  };
+}
+
 async function reportReadUsers(rows: any, control: any): Promise<void> {
   log.debug("Entering reportReadUsers().");
+  const ldap = reportLdap();
+  const plan = (rows && rows.plan) || {};
+  const catalog = new Catalog();
+  const lookups = reportIndexedLookups(plan.where, function (field: string):
+      string[] {
+    return catalog.indexedFor('users', field);
+  }, 0);
+  const candidates = lookups ? await reportCandidates(lookups, ldap) : null;
+  if (candidates) {
+    for (let i = 0; i < candidates.length; i++) {
+      const entry = candidates[i];
+      const keep = await reportOffer(reportUserRow(entry,
+        reportGroupNamesOf(ldap, entry)), rows, control);
+      if (keep === false) {
+        log.debug("Leaving reportReadUsers(). Stopped.");
+        return;
+      }
+      if (i % PAGE === PAGE - 1) {
+        await Promise.resolve();
+      }
+    }
+    log.debug("Leaving reportReadUsers(). Indexed.");
+    return;
+  }
+  if (control && control.execution === 'sync' &&
+      ldap.directoryIsWindowed() && reportMustVisitEverybody(plan)) {
+    control.unbounded = reportUnboundedFilter(catalog);
+    log.debug("Leaving reportReadUsers(). Unbounded.");
+    return;
+  }
   const index = await reportGroupIndex();
   await reportEachUser(async function (entry: any, dn: string):
       Promise<boolean> {
     const names = index.byUser[String(dn).toLowerCase()] || [];
-    // pwdAccountLockedTime is the administrative disable and any other
-    // lock. The catalog calls both locked. This read does not ask
-    // account_state, which would walk the directory a second time.
-    const locked = reportAttr(entry, 'pwdAccountLockedTime');
-    return reportOffer({
-      username: reportAttr(entry, 'uid'),
-      status: locked ? 'locked' : 'active',
-      createdAt: reportLdapTime(reportAttr(entry, 'createTimestamp')),
-      modifiedAt: reportLdapTime(reportAttr(entry, 'modifyTimestamp')),
-      entryUuid: reportAttr(entry, 'entryUUID'),
-      mail: reportAttr(entry, 'mail'),
-      displayName: reportAttr(entry, 'displayName') ||
-        reportAttr(entry, 'cn'),
-      memberOf: names.join(', ')
-    }, rows, control);
+    return reportOffer(reportUserRow(entry, names), rows, control);
   });
   log.debug("Leaving reportReadUsers().");
 }
@@ -1030,6 +1411,10 @@ async function reportReadWork(plan: any, control: any): Promise<any> {
     }, held);
   } else {
     await reportReadSource(plan, rows, held);
+  }
+  if (held.unbounded) {
+    log.debug("Leaving reportReadWork(). Unbounded.");
+    return held.unbounded;
   }
   if (reportOverBudget(held)) {
     if (held.execution === 'async') {
@@ -1568,6 +1953,8 @@ function reportPastTheGate(kind: string, a?: any, b?: any): any {
 export = {
   reportGateOne: reportGateOne,
   installReader: reportInstallReader,
+  installDirectory: reportInstallDirectory,
+  indexedLookups: reportIndexedLookups,
   abandonFences: reportAbandonFences,
   processToken: reportProcessToken,
   fenceGone: reportFenceGone,

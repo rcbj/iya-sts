@@ -392,7 +392,14 @@ class OpenApi {
               filter: { type: 'boolean' },
               sort: { type: 'boolean' },
               group: { type: 'boolean' },
-              operators: { type: 'array', items: { type: 'string' } }
+              operators: { type: 'array', items: { type: 'string' } },
+              indexed: { type: 'array', items: { type: 'string' },
+                description: 'The operators the directory answers with ' +
+                  'an index, so a filter using one of them reads only the ' +
+                  'rows it names. A users query whose filter uses none, ' +
+                  'with an order or a count, or on a sealed field, reads ' +
+                  'every person: refused in sync mode (result_too_large), ' +
+                  'a job in auto mode.' }
             }
           },
           Source: {

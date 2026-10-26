@@ -372,7 +372,10 @@ function reportPublicSource(src: any): any {
       filter: field.filter,
       sort: field.sort,
       group: field.group,
-      operators: Catalog.operatorsFor(field.type)
+      operators: Catalog.operatorsFor(field.type),
+      // The operators the store answers with an index (#985); the page and
+      // the OpenAPI document show them, and `sources.ts` decides on them.
+      indexed: Array.isArray(field.indexed) ? field.indexed.slice() : []
     };
   });
   const out = {
@@ -823,6 +826,19 @@ async function reportAcceptQuery(req: any, res: any, who: any,
       }
     };
     const read = await sources.reportGateOne('read', plan, control);
+    if (read && !read.ok && read.unbounded && plan.mode === 'auto' &&
+        !forceAsync) {
+      // THE READER REFUSED TO SCAN A WINDOWED DIRECTORY SYNCHRONOUSLY
+      // (#985), and `auto` means "a job when it cannot be answered now":
+      // the same document is accepted again as a job, under the job's
+      // caps. Nothing is recorded as refused. `mode: sync` keeps the
+      // refusal, which names the fields the store can filter on.
+      log.info(errorCodes.tag(read.code) + 'report: an auto-mode query ' +
+        'would read every person synchronously; queued as a job instead.');
+      await reportAcceptQuery(req, res, who, true, definition);
+      log.debug("Leaving reportAcceptQuery(). Auto became a job.");
+      return;
+    }
     if (!read || !read.ok) {
       if (read && read.code) {
         reportApplyRefusal(res, who, read, plan, 'query');

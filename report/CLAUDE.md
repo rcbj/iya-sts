@@ -39,7 +39,7 @@ and `docs/configuration.md`.
 | `report_app.ts` | The shell, the script and the stylesheet. A non-GET is 404 with `STS-REPORT-0033`. |
 | `report_api.ts` | `/report-api`. Every route, including the catalog and the OpenAPI document, takes the token below. |
 | `web_report.ts`, `web_report_pages.ts` | The browser runtime and the four pages (catalog, query, definitions, jobs). |
-| `catalog.ts` | The ten sources and their fields. Credential attribute ids are absent, so they cannot be named. |
+| `catalog.ts` | The ten sources and their fields, and which operators the store indexes (`indexed`, #985). Credential attribute ids are absent, so they cannot be named. |
 | `openapi.ts` | `GET /report-api/openapi.json`. Every released route, built from the catalog that is loaded. |
 | `query.ts` | Validates one JSON document and decides sync or async. It sends no HTTP response. |
 | `limits.ts` | The caps, read when asked. `Limits.fixed` is what a test passes. |
@@ -90,6 +90,69 @@ form does not offer it; a caller sends an array of one to fifty values.
 `users.status` is `locked` when `pwdAccountLockedTime` is set. That value
 is the administrative disable and any other lock. The users reader does
 not call `account_state.isDisabled`. A scheduled run does not either.
+
+## A filter the store can answer is asked of the store (#985)
+
+On 2026-10-26, on the 8081 installation with about fifty million people,
+`username equals rcbj` with the default limit hit `STS-REPORT-0005` every
+time: `reportReadUsers()` built the group index, paged every person,
+fetched each entry again with `existingUserEntry()`, and applied the
+filter only in `Rows.take()`, which keeps paging past a row that does not
+match. A job would have met `STS-REPORT-0034` the same way.
+
+**The directory already answers the question, and the rule is to ask
+it.** A person's attributes are one sealed AES-GCM value in the store, so
+nothing can filter on most of them there; beside the sealed value the row
+keeps keyed digests of `uid`, `mail` and `entryUUID` with GIN indexes, and
+the RDN value — the `uid`, in the clear, lower-cased — with a trigram
+index (`persistence/directory_queries.js`, `sts_ldap_entries_uid_trgm`,
+2026-10-20 for `/portal/delegate`). The catalog says which operators each
+field is indexed for (`FieldSpec.indexed`; `username` for `eq`, `in`,
+`contains`, `startsWith`; `mail` and `entryUuid` for `eq`, `in`; nothing
+else), `/report-api/catalog` and the OpenAPI document publish it, and the
+source page draws it as the Indexed column with one explaining sentence.
+`Catalog.operatorsFor()` still offers `contains` on every string field: a
+filter on a sealed field is applied in process, after the indexed one has
+named the candidates.
+
+`reportIndexedLookups()` reads the plan's `where` the way
+`ldap_server.js`'s `indexedLookupsOf()` reads an LDAP filter: a leaf on an
+indexed field and operator is one lookup (`eq`/`in` exact; `contains` and
+`startsWith` on `username` the trigram SUPERSET, lower-cased, three
+characters or more), an `and` is the lookups of ONE arm (an exact arm
+preferred to a substring one), an `or` the lookups of EVERY arm or
+nothing, at most sixteen; `not`, `ne`, `isNull` and a sealed field name
+nothing. `reportCandidates()` resolves them through the directory's own
+doors — `existingUserEntriesAsync()` (`byName`, or the in-memory username
+index), `entriesByUuidsAsync()`, the window's `byMail` and
+`uidContainsAsync()` — each person once, projections and entries with no
+`uid` left out as the walk leaves them, and offers only those rows;
+`Rows.take()` applies the whole filter, so the answer is the walk's. The
+groups of a candidate come from `groupsOfUser()` (the group index every
+token reads), listed-by-the-group only, not from a pass over `ou=groups`.
+A lookup the store could not answer whole — a memory directory asked a
+substring or an address, or an answer that filled `CANDIDATE_CAP` — falls
+back to the walk.
+
+**A synchronous read that would have to see everybody on a windowed
+directory is refused BEFORE the walk starts**: no indexed lookup, and a
+filter, an order or a count (`reportMustVisitEverybody()`;
+`STS-REPORT-0036`, public token `result_too_large`, the description
+naming the indexed fields from the catalog). A plain unordered read with
+no filter stops at its limit and still walks. `report_api.ts` turns the
+refusal of a `mode: auto` query into a job — `auto` means "a job when it
+cannot be answered now" — and records no refusal; `mode: sync` keeps it.
+A job (`execution: 'async'`) is never refused here; `report.asyncMaxMs`
+bounds it. The memory directory walks as it always did: it is in process
+and small by construction.
+
+The directory is reached through `reportLdap()`, which answers the double
+a test installs with `installDirectory()` or `ldap/ldap_server.js`.
+`tests/report_query.js`'s `narrowing()` drives the planner, every lookup
+door, the refusal, the auto/async distinction and the memory fallback
+against a counted double. **What it does not hold**: a real windowed
+directory, which needs a postgres store; `report_api.ts`'s auto-to-job
+turn; and the timing on 8081.
 
 ## Who may run one
 
@@ -180,10 +243,11 @@ document is not written on the row.
 
 `tests/report_query.js` holds the document, the three formats, the fixed
 limits (including `asyncMaxMs`), issuance narrowing, an in-memory
-artifact, the two added sources' row projections, the OpenAPI paths, and
-an in-memory schedule that uses stored parameter defaults. It does not
-open a listener. A refusal's HTTP status, the DPoP gate and a scheduled
-run against a directory are not asserted here.
+artifact, the two added sources' row projections, the OpenAPI paths, an
+in-memory schedule that uses stored parameter defaults, and the indexed
+lookups against a directory double (#985). It does not open a listener. A
+refusal's HTTP status, the DPoP gate and a scheduled run against a
+directory are not asserted here.
 
 ## The sources
 

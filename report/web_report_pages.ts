@@ -751,25 +751,47 @@ class ReportRuntime extends SpaClient {
     const src = answer.json.source;
     const yes = esc(this.t.text('report.yes'));
     const no = esc(this.t.text('report.no'));
+    const t = this.t;
+    // The Indexed column (#985) names the operators the directory answers
+    // without reading every row, in the words the filter form uses; a
+    // field with none shows a dash. The page explains the column once,
+    // and only where a field carries one.
+    const opWords: Record<string, string> = {
+      eq: 'report.opEq', ne: 'report.opNe', contains: 'report.opContains',
+      startsWith: 'report.opStartsWith', in: 'report.opIn',
+      lt: 'report.opLt', le: 'report.opLe', gt: 'report.opGt',
+      ge: 'report.opGe', isNull: 'report.opIsNull'
+    };
+    let anyIndexed = false;
     const rows = (src.fields || []).map(function (field: any): string[] {
+      const indexed = Array.isArray(field.indexed) ? field.indexed : [];
+      if (indexed.length) {
+        anyIndexed = true;
+      }
       return [esc(field.id), esc(field.type),
         esc(field.meaning || ''),
         field.filter ? yes : no,
         field.sort ? yes : no,
-        field.group ? yes : no];
+        field.group ? yes : no,
+        indexed.length ? esc(indexed.map(function (op: string): string {
+          return opWords[op] ? t.text(opWords[op]) : op;
+        }).join(', ')) : '&mdash;'];
     });
     const kept = src.retention ? '<p class="sub">' +
       esc(src.retention) + '</p>' : '';
+    const indexedNote = anyIndexed ? '<p class="sub">' +
+      esc(t.text('report.indexedNote')) + '</p>' : '';
     this.paint('<p><a href="' + esc(BASE + '/query?source=' + src.id) +
       '">' + esc(this.t.text('report.newQuery')) + '</a></p>' +
-      '<h2>' + esc(src.id) + '</h2>' + kept +
+      '<h2>' + esc(src.id) + '</h2>' + kept + indexedNote +
       tableHtml([
         esc(this.t.text('report.fields')),
         esc(this.t.text('report.type')),
         esc(this.t.text('report.meaning')),
         esc(this.t.text('report.filter')),
         esc(this.t.text('report.sort')),
-        esc(this.t.text('report.groupBy'))
+        esc(this.t.text('report.groupBy')),
+        esc(this.t.text('report.indexed'))
       ], rows));
   }
 

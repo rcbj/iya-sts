@@ -73,6 +73,30 @@ one is `unknown_field`.
 `members` can be selected and cannot be filtered, sorted or grouped.
 `entryUuid` and `memberOf` can be filtered and cannot be sorted.
 
+### Indexed filters
+
+A field also says which operators the directory answers with an index
+(`indexed`, shown as the Indexed column on a source's page). A filter
+using one of them reads only the rows it names, however large the
+directory. A person's attributes are stored as one sealed value, so the
+directory can filter on very few of them: `username` for `eq`, `in`,
+`contains` and `startsWith` (the substring needs three characters or
+more), and `mail` and `entryUuid` for `eq` and `in`. Every other field of
+`users` is filtered after the rows are read.
+
+A `users` query is answered from the index when its filter is an indexed
+leaf, an `and` with an indexed arm (the other arms are applied to the
+rows found), or an `or` whose every arm is indexed, up to sixteen lookups.
+A `not`, `ne` or `isNull` never narrows.
+
+On a directory held in a database, a `users` query whose filter the index
+cannot answer, or that sorts or counts, has to read every person. Such a
+query is refused in `sync` mode with `result_too_large` and a sentence
+naming the indexed fields, and in `auto` mode it becomes a job and
+answers `202` with the job. A query with no filter, no order and no
+count stops at its limit and is answered now. The in-memory directory of
+a service with no database is small and is always read in full.
+
 ### `users`
 
 The directory as it is now. Not a history of accounts. `status` `locked`
@@ -81,12 +105,12 @@ or any other lock. `active` is the other value.
 
 | Field | Type | Meaning | Filter | Sort | Group |
 |---|---|---|---|---|---|
-| `username` | string | The directory uid. | yes | yes | no |
+| `username` | string | The directory uid. Indexed: `eq`, `in`, `contains`, `startsWith`. | yes | yes | no |
 | `status` | string | `locked` when `pwdAccountLockedTime` is set; `active` otherwise. | yes | yes | yes |
 | `createdAt` | timestamp | When the directory created the entry. | yes | yes | no |
 | `modifiedAt` | timestamp | When the directory last changed the entry. | yes | yes | no |
-| `entryUuid` | string | The entryUUID. | yes | no | no |
-| `mail` | string | The mail attribute. | yes | yes | no |
+| `entryUuid` | string | The entryUUID. Indexed: `eq`, `in`. | yes | no | no |
+| `mail` | string | The mail attribute. Indexed: `eq`, `in`. | yes | yes | no |
 | `displayName` | string | `displayName`, or `cn` when `displayName` is empty. | yes | yes | no |
 | `memberOf` | string | The names of the groups that list this person, joined. | yes | no | no |
 
@@ -253,7 +277,10 @@ the limit is at most `report.syncMaxRows`. Otherwise it is a job.
 `mode: sync` over that cap, or with no limit that fits, is
 `result_too_large`. Over `report.asyncMaxRows` is `result_too_large` in
 every mode. PDF over `report.pdfMaxRows` or `report.pdfMaxPages` is the
-same refusal, and the sentence names CSV.
+same refusal, and the sentence names CSV. A `users` query on a directory
+held in a database that would have to read every person (see *Indexed
+filters*) is `result_too_large` in `sync` mode and a job in `auto` mode,
+whatever its limit.
 
 ### Examples
 
@@ -504,7 +531,7 @@ is recorded and logged. It is not in the body.
 | `unsupported_operation` | 400 | The operator, the aggregate or the filter is not allowed on that field. |
 | `unsupported_format` | 400 | The format is not `json`, `csv` or `pdf`. |
 | `invalid_query` | 400 | The document, the parameter bag, the share list or the definition is the wrong shape. A SQL string, an offset and a second source land here. |
-| `result_too_large` | 400 | The row cap, the byte cap, the synchronous time cap, or a PDF over its cap. On a **job**, the same token means the job passed `report.asyncMaxMs` or could not store the bytes. The HTTP status of the original submission was already 202. |
+| `result_too_large` | 400 | The row cap, the byte cap, the synchronous time cap, a PDF over its cap, or a synchronous `users` query that would have to read every person of a directory held in a database (see *Indexed filters*; in `auto` mode that query is a job instead). On a **job**, the same token means the job passed `report.asyncMaxMs` or could not store the bytes. The HTTP status of the original submission was already 202. |
 | `invalid_token` | 401 | No token, a token that did not verify, an expired token, a token that is not an access token, the wrong issuer, a revoked token, a disabled account, a session that has ended, or a certificate-bound token without that certificate. |
 | `invalid_dpop_proof` | 401 | A DPoP-bound token sent as Bearer, or a proof this service refused. |
 | `invalid_token` | 403 | The token is not audienced to this realm's `/report-api`. |
