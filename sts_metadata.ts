@@ -4721,6 +4721,12 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/report-api/catalog/:id', group: 'Reporting',
     name: 'One report source', specs: [],
     what: 'NON-SPEC. One source from the catalog, by its id.' },
+  { path: '/report-api/realms', group: 'Reporting',
+    name: 'The trust realms, for the reports application', specs: [],
+    what: 'NON-SPEC. The realm this request is in and, where realms are ' +
+          'active, every realm with its id, name and path prefix (#986): ' +
+          'what the application\'s realm field and switch are drawn from. ' +
+          'Behind the same token as the rest of /report-api.' },
   { path: '/report-api/queries', group: 'Reporting',
     name: 'Run a report query', specs: [],
     what: 'NON-SPEC. A catalog query. A small bounded one answers in the ' +

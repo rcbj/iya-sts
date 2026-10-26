@@ -149,6 +149,12 @@ function reportSubmit(spec: any): any {
     source: plan.source,
     fields: (plan.fields || []).slice(),
     format: plan.format,
+    // WHY THIS IS A JOB (#986): `every-person` (an auto-mode query the
+    // reader refused to run synchronously, #985), `asked` (mode async,
+    // or POST /jobs), `limit` (auto over report.syncMaxRows), `source` (a
+    // source that cannot be read synchronously), `run` (a saved
+    // definition run by hand) or `schedule`. The job page says it.
+    queuedBecause: String(spec.because || 'asked'),
     status: 'queued',
     submittedAt: now,
     startedAt: null,
@@ -513,7 +519,8 @@ function reportJobView(job: any, full: boolean): any {
     definitionId: job.definitionId || null,
     definitionName: job.definitionName || null,
     source: job.source,
-    fields: (job.fields || []).slice()
+    fields: (job.fields || []).slice(),
+    queuedBecause: job.queuedBecause || null
   };
   if (full) {
     view.query = stores.copy(job.document);

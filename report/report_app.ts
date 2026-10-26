@@ -58,10 +58,53 @@ const REPORT_STYLE = [
   '.nav a:hover, .nav .btn:hover { background: #e7e9f4; }',
   '.nav a[aria-current="page"] { background: #fff; color: #12107c;',
   '  box-shadow: inset 0 0 0 1px #c9cad6; font-weight: 600; }',
-  '.bar .language-chooser { display: flex; align-items: center;',
-  '  gap: .35rem; margin: 0; font-size: .85em; }',
-  '.bar .language-chooser button, .bar .language-chooser select {',
-  '  font: inherit; }',
+  // The top bar (#986): a bar like the navigation bar below it, smaller
+  // and right-justified, holding the controls about the reader — the
+  // realm field, the language chooser, the user menu. EVERY CONTROL IN IT
+  // IS DRAWN ALIKE (rcbj, 2026-10-26: the language chooser had the
+  // browser's own background and the user menu its own shape): one rule
+  // gives the selects, the buttons and the menu's summary the same box.
+  '.topbar { display: flex; justify-content: flex-end; flex-wrap: wrap;',
+  '  gap: 1rem; align-items: center; margin: 0 0 .45rem;',
+  '  padding: .3rem .45rem; font-size: .85em;',
+  '  background: #f7f8fc; border: 1px solid #c9cad6;',
+  '  border-radius: 8px; }',
+  '.topbar select, .topbar button, .topbar .usermenu > summary {',
+  '  font: inherit; padding: 2px 8px; border: 1px solid #c9c9d4;',
+  '  border-radius: 5px; background: #fff; color: #222;',
+  '  line-height: 1.4; }',
+  '.topbar button { cursor: pointer; }',
+  '.topbar button:hover, .topbar .usermenu > summary:hover {',
+  '  background: #eef2fb; }',
+  '.topbar label { color: #8a8a99; font-weight: 700; font-size: .85em;',
+  '  text-transform: uppercase; letter-spacing: .06em; }',
+  '.topbar .language-chooser { display: flex; align-items: center;',
+  '  gap: .35rem; margin: 0; }',
+  '.topbar .usermenu { margin-left: 0; }',
+  // The realm field and switch (#986), on the console's `.realmpick`
+  // shape made inline: the label before the control, the select taking
+  // what a realm name needs, the Go button beside it. With one realm the
+  // name is text and there is no select.
+  '.realmpick { margin: 0; display: flex; align-items: center;',
+  '  gap: .35rem; }',
+  '.realmpickrow { display: flex; gap: 6px; align-items: center; }',
+  '.realmpick .realmname { font-weight: 600; }',
+  // The documentation link under the bar, and the version under the card.
+  '.doclink { margin: -.5rem 0 1rem; font-size: .9em; }',
+  '.foot { margin: .75rem 0 0; color: #6b6f80; font-size: .85em;',
+  '  text-align: right; }',
+  // Save is first in the document so that Enter saves when the Save query
+  // box is ticked, and drawn after Run (`web_report_pages.ts`,
+  // `actionsHtml()`).
+  '.actions .save-only { order: 2; }',
+  // The schedule editor's weekday boxes (#986), one row.
+  '.days label.day { display: inline-flex; gap: .25rem;',
+  '  align-items: center; }',
+  // A filter row and the + that adds the next one (#986).
+  '.filterrow { margin: 0 0 .35rem; }',
+  '.filterrow .addfilter { border: 1px solid #c9cad6; border-radius: 6px;',
+  '  padding: .1rem .55rem; font-weight: 700; line-height: 1.4; }',
+  '.filterrow .addfilter:hover { background: #e7e9f4; }',
   '.table { width: 100%; border-collapse: collapse; }',
   '.table th, .table td { text-align: left; padding: .35rem .5rem;',
   '  border-bottom: 1px solid #d5d5dd; vertical-align: top; }',
@@ -72,14 +115,13 @@ const REPORT_STYLE = [
   // The account menu overlays the page. The panel is out of flow, so
   // opening the <details> does not grow the flex bar.
   '.usermenu{position:relative;margin-left:auto}',
+  // Its box — border, padding, background — is the top bar's rule above,
+  // so it matches the selects beside it.
   '.usermenu>summary{cursor:pointer;list-style:none;',
-  '  display:inline-flex;gap:.4em;align-items:center;',
-  '  border:1px solid #d5d5dd;border-radius:6px;',
-  '  padding:4px 10px;background:#fff;color:#333;font-size:.85em}',
+  '  display:inline-flex;gap:.4em;align-items:center}',
   '.usermenu>summary::-webkit-details-marker{display:none}',
   '.usermenu>summary::after{content:"\\25be";color:#888;',
   '  font-size:.9em}',
-  '.usermenu>summary:hover{background:#f4f6fb}',
   '.usermenu[open]>summary{background:#eef2fb;',
   '  border-color:#c3d0ea;color:#12107c}',
   '.usermenupanel{position:absolute;right:0;top:calc(100% + 6px);',
@@ -96,7 +138,12 @@ const REPORT_STYLE = [
   '  border-radius:5px;color:#12107c;font:inherit;font-size:.85em;',
   '  cursor:pointer}',
   '.usermenuaccounts button.linklike:hover{background:#eef2fb}',
-  '.usermenuaccounts button span{color:#777;font-size:.9em}'
+  '.usermenuaccounts button span{color:#777;font-size:.9em}',
+  // Sign out, the menu's last item since #986, drawn as the switch
+  // buttons are so the menu reads as one list.
+  '.usermenusignout a.linklike{display:block;padding:6px 8px;',
+  '  color:#3a2e96;text-decoration:none;border-radius:4px}',
+  '.usermenusignout a.linklike:hover{background:#eef2fb}'
 ].join('\n');
 
 /**

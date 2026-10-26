@@ -523,6 +523,7 @@ function projections(t) {
     '/report-api/openapi.json',
     '/report-api/catalog',
     '/report-api/catalog/{id}',
+    '/report-api/realms',
     '/report-api/queries',
     '/report-api/definitions',
     '/report-api/definitions/{id}',
@@ -624,6 +625,10 @@ async function schedules(t) {
       t.equal(queued[0] && queued[0].parameters &&
         queued[0].parameters.who, 'ada',
         'the queued job carries the stored parameter');
+      t.equal(queued[0] && queued[0].queuedBecause, 'schedule',
+        'a scheduled job says it was scheduled');
+      t.equal(jobs.jobView(queued[0], false).queuedBecause, 'schedule',
+        'and its view carries the reason');
       const held = stores.getDefinition(saved.definition.id);
       t.equal(typeof held.lastSlot, 'number',
         'a successful enqueue consumes the slot');
@@ -1102,6 +1107,244 @@ async function narrowing(t) {
   log.debug("Leaving narrowing().");
 }
 
+// A form double for `queryDocument()`: `elements` by name, no checked
+// field boxes.
+function formDouble(values) {
+  log.debug("Entering formDouble().");
+  const elements = {};
+  Object.keys(values).forEach(function (name) {
+    elements[name] = { value: values[name] };
+  });
+  const form = {
+    elements: elements,
+    querySelectorAll: function () {
+      return [];
+    }
+  };
+  log.debug("Leaving formDouble().");
+  return form;
+}
+
+// A translator over the English report catalog, built as the browser's
+// `WebI18n` builds one (`report.key` → message).
+function englishTranslator() {
+  log.debug("Entering englishTranslator().");
+  const fs = require('fs');
+  const path = require('path');
+  const messages = require('../common/web_messages');
+  const own = JSON.parse(fs.readFileSync(path.join(__dirname, '..',
+    'common', 'locales', 'report', 'en.json'), 'utf8'));
+  const flat = {};
+  Object.keys(own).forEach(function (key) {
+    flat['report.' + key] = own[key];
+  });
+  log.debug("Leaving englishTranslator().");
+  return messages.WebTranslator.fromData({ catalogs: { en: flat },
+    negotiated: { locale: 'en', chain: ['en'], catalog: 'en',
+                  direction: 'ltr', matched: true } });
+}
+
+function chrome(t) {
+  log.debug("Entering chrome().");
+  const ReportRuntime = require('../report/web_report_pages');
+  const api = require('../report/report_api');
+  const OpenApi = require('../report/openapi');
+  const tr = englishTranslator();
+
+  // The realms view, in a process with no realm defined.
+  const view = api.realmsView();
+  t.equal(view.current.id, 'default',
+    'the realms view names the default realm');
+  t.equal(view.current.prefix, '', 'the default realm has no prefix');
+  t.equal(view.realms, null, 'with realms off the list is null');
+
+  // The realm field: one realm is a name; several are a select.
+  const alone = ReportRuntime.realmHtml(tr, view, '/report/jobs');
+  t.check(alone.indexOf('class="realmname"') >= 0 &&
+    alone.indexOf('<select') < 0,
+    'one realm is drawn as its name, with no select', alone);
+  t.check(alone.indexOf('Trust realm') >= 0, 'the field is labelled');
+  const several = ReportRuntime.realmHtml(tr, {
+    current: { id: 'acme', name: 'Acme', prefix: '/realm/acme' },
+    realms: [
+      { id: 'default', name: 'Default', prefix: '' },
+      { id: 'acme', name: 'Acme', prefix: '/realm/acme' },
+      { id: 'beta', name: 'Be<ta', prefix: '/realm/beta' }]
+  }, '/report/jobs');
+  t.check(several.indexOf('data-form="realm"') >= 0,
+    'several realms are a form the runtime handles');
+  t.equal((several.match(/<option /g) || []).length, 3,
+    'one option per realm');
+  t.check(several.indexOf('value="acme" selected') >= 0,
+    'the current realm is selected');
+  t.check(several.indexOf('Be&lt;ta') >= 0 && several.indexOf('Be<ta') < 0,
+    'a realm name is escaped');
+  t.check(several.indexOf('name="to" value="/report/jobs"') >= 0,
+    'the page path rides on the form');
+  t.check(several.indexOf('>Go<') >= 0, 'the Go button is drawn');
+  t.equal(ReportRuntime.realmHtml(tr, null, '/report'), '',
+    'no view yet draws nothing');
+
+  // The two bars: the reader's controls above, right-justified; the pages
+  // below.
+  const bars = ReportRuntime.navHtml(tr, '<i>REALM</i>', '<i>MENU</i>',
+    '<i>LANG</i>', '/report/jobs');
+  const top = bars.indexOf('<div class="topbar">');
+  const main = bars.indexOf('<div class="bar">');
+  t.check(top === 0 && main > top, 'the top bar comes before the nav bar');
+  const topHtml = bars.slice(top, main);
+  t.check(topHtml.indexOf('REALM') >= 0 && topHtml.indexOf('LANG') >= 0 &&
+    topHtml.indexOf('MENU') >= 0,
+    'the top bar holds the realm field, the language chooser and the menu');
+  t.check(topHtml.indexOf('REALM') < topHtml.indexOf('LANG') &&
+    topHtml.indexOf('LANG') < topHtml.indexOf('MENU'),
+    'in that order');
+  t.check(bars.slice(main).indexOf('REALM') < 0 &&
+    bars.slice(main).indexOf('data-act="refresh"') >= 0 &&
+    bars.slice(main).indexOf('/logout') < 0,
+    'the nav bar holds the pages and Refresh, and no Sign out');
+
+  // The buttons: Save first in the document, disabled and hidden until
+  // the Save query box is ticked, so Enter runs until then and saves after.
+  const actions = ReportRuntime.actionsHtml(tr);
+  const saveAt = actions.indexOf('value="save"');
+  const runAt = actions.indexOf('value="run"');
+  t.check(saveAt >= 0 && runAt > saveAt,
+    'the Save button comes before Run in the document');
+  const saveTag = actions.slice(actions.lastIndexOf('<button', saveAt),
+    saveAt);
+  t.check(saveTag.indexOf(' disabled') >= 0 && saveTag.indexOf(' hidden') >= 0,
+    'the Save button starts disabled as well as hidden', saveTag);
+  t.check(saveTag.indexOf('save-only') >= 0,
+    'the Save button is one the Save query box reveals');
+  const runTag = actions.slice(actions.lastIndexOf('<button', runAt), runAt);
+  t.check(runTag.indexOf('disabled') < 0 && runTag.indexOf('hidden') < 0,
+    'the Run button is the default button until then');
+
+  // The footer.
+  const foot = ReportRuntime.footerHtml(tr, { version: '0.1.1', stamped: true,
+    buildInfo: 'built 2026-10-26' });
+  t.check(foot.indexOf('iya-sts version 0.1.1') >= 0,
+    'the footer names the version', foot);
+  t.check(foot.indexOf('title="built 2026-10-26"') >= 0,
+    'the build is the footer\'s title');
+  t.equal(ReportRuntime.footerHtml(tr, null), '',
+    'no version draws no footer');
+
+  // A filter row, with and without the +.
+  const first = ReportRuntime.filterRowHtml(tr, 0, '<option value="a">a' +
+    '</option>', true);
+  t.check(first.indexOf('name="filterField0"') >= 0 &&
+    first.indexOf('name="filterOp0"') >= 0 &&
+    first.indexOf('name="filterValue0"') >= 0,
+    'the first row\'s controls are numbered 0');
+  t.check(first.indexOf('data-act="add-filter"') >= 0,
+    'the last row carries the +');
+  const third = ReportRuntime.filterRowHtml(tr, 2, '', false);
+  t.check(third.indexOf('name="filterField2"') >= 0,
+    'a later row is numbered for its place');
+  t.check(third.indexOf('data-act="add-filter"') < 0,
+    'a row that is not last has no +');
+
+  // The reader takes as many rows as the form holds.
+  const one = ReportRuntime.queryDocument(formDouble({
+    source: 'users', filterField0: 'username', filterOp0: 'eq',
+    filterValue0: 'ada', limit: '10', format: 'json'
+  }), 'en');
+  t.equal(JSON.stringify(one.where),
+    JSON.stringify({ op: 'eq', field: 'username', value: 'ada' }),
+    'one row is one leaf');
+  const three = ReportRuntime.queryDocument(formDouble({
+    source: 'users',
+    filterField0: 'username', filterOp0: 'eq', filterValue0: 'ada',
+    filterField1: '', filterOp1: '', filterValue1: '',
+    filterField2: 'status', filterOp2: 'eq', filterValue2: 'locked',
+    saveQuery: 'on', definitionName: 'who',
+    limit: '10', format: 'json'
+  }), 'en');
+  t.equal(three.where && three.where.op, 'and',
+    'several rows are an and');
+  t.equal(three.where && three.where.args.length, 2,
+    'a blank row in the middle is skipped and the rows after it are read');
+  t.equal(three.where && three.where.args[1].field, 'status',
+    'the third row is read');
+  t.equal(Object.prototype.hasOwnProperty.call(three, 'saveQuery'), false,
+    'the Save query box is not part of the document');
+
+  // Why a job is a job.
+  t.check(ReportRuntime.becauseHtml(tr, 'every-person')
+    .indexOf('read every person') >= 0,
+    'an every-person job says it has to read every person');
+  t.check(ReportRuntime.becauseHtml(tr, 'schedule')
+    .indexOf('scheduled run') >= 0, 'a scheduled job says so');
+  t.equal(ReportRuntime.becauseHtml(tr, null), '',
+    'a job that recorded no reason draws no sentence');
+  t.equal(ReportRuntime.becauseHtml(tr, 'other'), '',
+    'an unknown reason draws no sentence');
+
+  // The owner's name, in a process with no directory resolver.
+  t.equal(api.ownerName('urn:uuid:00000000-0000-4000-8000-000000000000'),
+    '', 'a subject nobody can name is shown as it is');
+
+  // The schedule editor: an expression into the controls and back.
+  const weekly = ReportRuntime.scheduleFieldsOf('30 9 * * 1,3');
+  t.equal(weekly.at.slice(11), '09:30', 'the time is read off the cron');
+  t.equal(weekly.days.join(','), '1,3', 'the weekdays are read off the cron');
+  const yearly = ReportRuntime.scheduleFieldsOf('0 6 15 2 *');
+  t.check(/-02-15T06:00$/.test(yearly.at),
+    'a day and month are read off the cron', yearly.at);
+  t.equal(yearly.days.length, 0, 'a yearly cron ticks no weekday');
+  t.equal(ReportRuntime.scheduleFieldsOf('*/5 * * * *').at, '',
+    'an expression the editor cannot draw leaves the controls empty');
+  const editor = ReportRuntime.scheduleEditorHtml(tr, '30 9 * * 1,3');
+  t.check(editor.indexOf('type="datetime-local"') >= 0 &&
+    editor.indexOf('name="scheduleAt"') >= 0,
+    'the editor is a date-time control');
+  t.equal((editor.match(/name="repeatDay"/g) || []).length, 7,
+    'and seven weekday boxes');
+  t.check(editor.indexOf('value="1" checked') >= 0 &&
+    editor.indexOf('value="3" checked') >= 0 &&
+    editor.indexOf('value="2" checked') < 0,
+    'the cron\'s weekdays are ticked and the others are not');
+  t.check(editor.indexOf('every Mon, Wed') >= 0,
+    'the preview names the days in the page\'s language', editor);
+  const weeklyForm = {
+    elements: { scheduleAt: { value: '2026-11-02T09:30' } },
+    querySelectorAll: function () {
+      return [{ value: '1' }, { value: '3' }];
+    }
+  };
+  t.equal(ReportRuntime.scheduleCronOf(weeklyForm), '30 9 * * 1,3',
+    'weekdays and a time compose a weekly cron');
+  const yearlyForm = {
+    elements: { scheduleAt: { value: '2026-02-15T06:00' } },
+    querySelectorAll: function () {
+      return [];
+    }
+  };
+  t.equal(ReportRuntime.scheduleCronOf(yearlyForm), '0 6 15 2 *',
+    'no weekday composes a yearly cron on that date');
+  t.equal(ReportRuntime.scheduleCronOf({ elements: {},
+    querySelectorAll: function () {
+      return [];
+    } }), '', 'no date is no schedule');
+  t.equal(ReportRuntime.schedulePreview(tr, ''), 'No schedule.',
+    'the preview of no schedule');
+  t.check(ReportRuntime.schedulePreview(tr, '*/5 * * * *')
+    .indexOf('*/5 * * * *') >= 0,
+    'an expression the editor cannot draw is shown as it is');
+
+  // The OpenAPI document.
+  const spec = OpenApi.document(new Catalog());
+  t.check(spec.components.schemas.Realms &&
+    spec.components.schemas.Index.properties.version,
+    'the OpenAPI document carries the realms and the version');
+  t.check(spec.components.schemas.Job.properties.queuedBecause &&
+    spec.components.schemas.Definition.properties.ownerName,
+    'and the job\'s reason and the owner\'s name');
+  log.debug("Leaving chrome().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   documents(t);
@@ -1112,12 +1355,13 @@ async function run(t) {
   await budget(t);
   await schedules(t);
   await narrowing(t);
+  chrome(t);
   log.debug("Leaving run().");
 }
 
 module.exports = {
   name: 'report_query',
   describe: 'report documents, formats, issuance, projections, schedules, ' +
-    'indexed lookups',
+    'indexed lookups, the page chrome',
   run: run
 };

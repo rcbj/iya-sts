@@ -283,7 +283,8 @@ function run(t) {
   // The portal's version is `/account-api`'s to answer since #568.
   const drawers = ['home/home.ts', 'admin-ui/admin.ts',
                    'account-api/account_api.ts',
-                   'mgmt-api/admin_api.ts', 'sts_metadata.ts'];
+                   'mgmt-api/admin_api.ts', 'sts_metadata.ts',
+                   'report/report_api.ts'];
   drawers.forEach(function (rel) {
     const src = codeOf(rel);
     t.check(/require\((['"])[^'"]*common\/version\1\)/.test(src),

@@ -43,6 +43,43 @@ A definition or a job you may not see is answered as not found. A job id
 in a URL is not permission to read it. The same token is required for the
 result as for the query that created the job.
 
+## The page
+
+Every report page has the same chrome. A small right-justified bar at
+the top holds the controls about you: a field naming the **trust realm**
+the page is showing (when the service has several realms it is a
+drop-down, and choosing another realm opens that realm's reports
+application at the same page, where you sign in as you did here, because
+a token belongs to the realm that issued it; `GET /report-api/realms` is
+what it reads), the language chooser, and the user menu, which names the
+account this tab is signed in as and holds **Sign out** (with several
+accounts on it also switches between the browser's signed-in accounts).
+Under it the navigation bar holds the pages and Refresh, and under that
+a link opens this documentation. At the bottom of the card the service's
+**version** is shown, read from the same source every other page reads.
+
+The query form starts with **one filter row**; the `+` beside the last
+row adds another, up to the sixteen an `and` may hold. Rows left blank
+are ignored. The **Save query** box reveals the Name field and the Save
+button; unchecked, the form only runs the query. Once it is ticked, Enter
+in the Name box saves.
+
+A **job's page says why the query became a job** (`queuedBecause` on the
+job): `every-person` (an auto-mode query whose filter the directory
+cannot answer from an index, so it has to read every person), `asked`
+(mode `async`, or `POST /report-api/jobs`), `limit` (auto over
+`report.syncMaxRows`), `source` (a source that cannot be read
+synchronously), `run` (a saved definition run by hand) or `schedule`.
+
+A definition's page names its **owner** by display name or username
+(`ownerName`), with the subject kept on the API. Its **schedule** is
+edited as a date-time in UTC and seven weekday boxes: with weekdays
+ticked the definition runs at that time on those days every week; with
+none it runs on that date every year. The sentence under the controls
+says which, and shows the cron expression the API stores, so an
+expression written by hand on the API that the editor cannot draw is
+still seen.
+
 ## The catalog
 
 `GET /report-api/catalog` lists every source. `GET /report-api/catalog/{id}`
