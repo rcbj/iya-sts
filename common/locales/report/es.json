@@ -42,5 +42,18 @@
   "sort": "Orden",
   "source": "Fuente",
   "status": "Estado",
-  "title": "Informes"
+  "title": "Informes",
+  "type": "Tipo",
+  "meaning": "Significado",
+  "yes": "Sí",
+  "no": "No",
+  "opEq": "es igual a",
+  "opNe": "no es igual a",
+  "opContains": "contiene",
+  "opStartsWith": "empieza por",
+  "opLt": "menor que",
+  "opLe": "como máximo",
+  "opGt": "mayor que",
+  "opGe": "como mínimo",
+  "opIsNull": "está vacío"
 }

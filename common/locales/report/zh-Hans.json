@@ -42,5 +42,18 @@
   "sort": "排序",
   "source": "来源",
   "status": "状态",
-  "title": "报表"
+  "title": "报表",
+  "type": "类型",
+  "meaning": "含义",
+  "yes": "是",
+  "no": "否",
+  "opEq": "等于",
+  "opNe": "不等于",
+  "opContains": "包含",
+  "opStartsWith": "开头是",
+  "opLt": "小于",
+  "opLe": "至多",
+  "opGt": "大于",
+  "opGe": "至少",
+  "opIsNull": "为空"
 }

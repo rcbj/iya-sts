@@ -9,9 +9,12 @@
 // DEFINITIONS, JOBS AND THE SIX SCHEDULER ROWS (#956).
 //
 // A definition stores the same document a query posts, plus a name, an
-// owner, the groups it is shared with, and an optional cron schedule in
-// UTC. The schedule sits beside the document: the document's validator
-// rejects a key it does not know, and a schedule is not a filter.
+// owner, the groups it is shared with, an optional cron schedule in UTC,
+// and the parameter values a schedule runs with. The schedule sits beside
+// the document: the document's validator rejects a key it does not know,
+// and a schedule is not a filter. A save may still be checked with a
+// dummy of a missing parameter's type. That dummy is not stored, and a
+// schedule does not run on it.
 //
 // Three cluster jobs do the work when this process is not clustered, or
 // when no reporting node holds `ops.reporting`. Three per-process twins do
@@ -198,6 +201,88 @@ function reportParams(node: any, into: any[]): void {
   log.debug("Leaving reportParams().");
 }
 
+function reportParameterNames(document: any): string[] {
+  log.debug("Entering reportParameterNames().");
+  const found: any[] = [];
+  reportParams(document && document.where, found);
+  const names: string[] = [];
+  found.forEach(function (item: any): void {
+    if (names.indexOf(item.name) < 0) {
+      names.push(item.name);
+    }
+  });
+  log.debug("Leaving reportParameterNames().");
+  return names;
+}
+
+function reportParamValue(value: any): boolean {
+  log.debug("Entering reportParamValue().");
+  if (value == null || typeof value === 'boolean') {
+    log.debug("Leaving reportParamValue(). Scalar.");
+    return true;
+  }
+  if (typeof value === 'number') {
+    log.debug("Leaving reportParamValue(). Number.");
+    return Number.isFinite(value);
+  }
+  if (typeof value === 'string') {
+    log.debug("Leaving reportParamValue(). String.");
+    return value.length <= 200;
+  }
+  if (!Array.isArray(value) || value.length < 1 || value.length > 32) {
+    log.debug("Leaving reportParamValue(). Not a list.");
+    return false;
+  }
+  for (let i = 0; i < value.length; i++) {
+    const one = value[i];
+    if (one != null && typeof one !== 'string' && typeof one !== 'number' &&
+        typeof one !== 'boolean') {
+      log.debug("Leaving reportParamValue(). Nested.");
+      return false;
+    }
+    if (typeof one === 'string' && one.length > 200) {
+      log.debug("Leaving reportParamValue(). Long.");
+      return false;
+    }
+    if (typeof one === 'number' && !Number.isFinite(one)) {
+      log.debug("Leaving reportParamValue(). Not finite.");
+      return false;
+    }
+  }
+  log.debug("Leaving reportParamValue().");
+  return true;
+}
+
+// The caller's values, or false when the bag is not one this service stores.
+// A dummy used only to type-check a save is not this function.
+function reportStoredParameters(given: any): any {
+  log.debug("Entering reportStoredParameters().");
+  if (given == null) {
+    log.debug("Leaving reportStoredParameters(). None.");
+    return null;
+  }
+  if (typeof given !== 'object' || Array.isArray(given)) {
+    log.debug("Leaving reportStoredParameters(). Not a bag.");
+    return false;
+  }
+  const keys = Object.keys(given);
+  if (keys.length > 32) {
+    log.debug("Leaving reportStoredParameters(). Too many.");
+    return false;
+  }
+  const bag: any = {};
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i];
+    if (!key || key.length > 64 || !reportParamValue(given[key])) {
+      log.debug("Leaving reportStoredParameters(). Value.");
+      return false;
+    }
+    bag[key] = stores.copy(given[key]);
+  }
+  log.debug("Leaving reportStoredParameters().");
+  return bag;
+}
+
 function reportDummy(type: string): any {
   log.debug("Entering reportDummy().");
   let value: any = 'x';
@@ -255,8 +340,9 @@ function reportCronOk(expr: string): boolean {
 
 /**
  * Creates or replaces a definition. Parameters in the document are checked
- * against the caller's examples or a dummy of the field's type, and the
- * stored document still names the parameter.
+ * against the caller's values or a dummy of the field's type. The dummy
+ * is not stored. The stored document still names the parameter, and
+ * `parameters` on the row is the bag a schedule will run with.
  *
  * @param spec - the posted definition
  * @returns the stored row, or a refusal
@@ -296,11 +382,26 @@ function reportSave(spec: any): any {
   }
   const now = Date.now();
   const previous = spec.id ? stores.getDefinition(spec.id) : null;
+  // Undefined keeps the values already stored. Null clears them. A bag is
+  // stored as given. The dummy bag above is only the type check.
+  let parameters: any = null;
+  if (spec.parameters === undefined) {
+    parameters = previous && previous.parameters ?
+      stores.copy(previous.parameters) : null;
+  } else {
+    parameters = reportStoredParameters(spec.parameters);
+    if (parameters === false) {
+      log.debug("Leaving reportSave(). Parameters.");
+      return reportRefuse('STS-REPORT-0030', 'invalid_query',
+        'Parameters are names and values.');
+    }
+  }
   const row = {
     id: previous ? previous.id : stores.newId(),
     name: name,
     owner: previous ? previous.owner : spec.owner,
     document: stores.copy(spec.document),
+    parameters: parameters,
     schedule: schedule,
     scheduleEnabled: !!spec.scheduleEnabled,
     notify: !!spec.notify,
@@ -561,7 +662,8 @@ function reportRegister(): void {
     id: 'report.schedule',
     title: 'Report schedules',
     describe: 'Enqueues a job for each due report definition, as its ' +
-      'owner, while that owner can still run the query.',
+      'owner, while that owner can still run the query. Stored ' +
+      'parameter defaults are used. A missing one keeps the slot.',
     owner: 'report/jobs.ts',
     kind: 'cluster',
     scope: 'realm',
@@ -679,5 +781,6 @@ export = {
   retainNow: reportRetainNow,
   scheduleNow: reportScheduleNow,
   abandonFences: reportAbandonFences,
-  iso: reportIso
+  iso: reportIso,
+  parameterNames: reportParameterNames
 };

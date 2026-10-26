@@ -33,9 +33,12 @@ const CREDENTIALS = ['userPassword', 'unicodePwd', 'ntPassword', 'krb5Key',
   'clientSecret'];
 
 // Low-cardinality enumerations a count may group by. A username is not one
-// of them, and neither is a member list.
+// of them, and neither is a member list. `day` and `mechanism` are the
+// authentication-activity counts. `dialect`, `mode` and `onFailure` are the
+// attribute-source register.
 const GROUPABLE = ['status', 'enabled', 'type', 'protocol', 'category',
-  'action', 'outcome', 'format', 'family', 'application'];
+  'action', 'outcome', 'format', 'family', 'application', 'day',
+  'mechanism', 'dialect', 'mode', 'onFailure'];
 
 // Scalars a filter may name and a sort may not. `members` is not in this
 // list because it cannot be filtered either.
@@ -51,6 +54,7 @@ const OPERATORS = {
 interface FieldSpec {
   id: string;
   type: string;
+  meaning: string;
   filter: boolean;
   sort: boolean;
   group: boolean;
@@ -60,14 +64,18 @@ interface SourceSpec {
   id: string;
   bounded: boolean;
   retention: string;
+  // Offset is not a query key. A second source is not either.
+  paging: string;
+  relationships: string[];
   fields: FieldSpec[];
 }
 
-function field(id: string, type: string): FieldSpec {
+function field(id: string, type: string, meaning: string): FieldSpec {
   log.debug("Entering field().");
   const spec = {
     id: id,
     type: type,
+    meaning: meaning,
     filter: id !== 'members',
     sort: UNSORTABLE.indexOf(id) < 0,
     group: GROUPABLE.indexOf(id) >= 0
@@ -83,6 +91,8 @@ function source(id: string, retention: string,
     id: id,
     bounded: true,
     retention: retention,
+    paging: 'limit',
+    relationships: [],
     fields: fields
   };
   log.debug("Leaving source().");
@@ -93,44 +103,130 @@ function standardSources(): SourceSpec[] {
   log.debug("Entering standardSources().");
   const sources = [
     source('users',
-      'The directory as it is now. Not a history of accounts.',
-      [field('username', 'string'), field('status', 'string'),
-       field('createdAt', 'timestamp'), field('modifiedAt', 'timestamp'),
-       field('entryUuid', 'string'), field('mail', 'string'),
-       field('displayName', 'string'), field('memberOf', 'string')]),
+      'The directory as it is now. Not a history of accounts. status ' +
+      'locked means pwdAccountLockedTime is set.',
+      [field('username', 'string', 'The directory uid.'),
+       field('status', 'string',
+         'locked when pwdAccountLockedTime is set, which is an ' +
+         'administrative disable or any other lock; active otherwise.'),
+       field('createdAt', 'timestamp',
+         'When the directory created the entry.'),
+       field('modifiedAt', 'timestamp',
+         'When the directory last changed the entry.'),
+       field('entryUuid', 'string',
+         'The entryUUID. It can be filtered and cannot be sorted.'),
+       field('mail', 'string', 'The mail attribute.'),
+       field('displayName', 'string',
+         'displayName, or cn when displayName is empty.'),
+       field('memberOf', 'string',
+         'The names of the groups that list this person, joined.')]),
     source('groups',
       'The directory as it is now. member lists are selected, not filtered.',
-      [field('name', 'string'), field('description', 'string'),
-       field('memberCount', 'number'), field('members', 'string')]),
+      [field('name', 'string', 'The group cn.'),
+       field('description', 'string', 'The description attribute.'),
+       field('memberCount', 'number', 'How many members the group lists.'),
+       field('members', 'string',
+         'Member names, joined. Selected, not filtered or sorted.')]),
     source('applications',
       'The realm\'s configured applications, as they are now.',
-      [field('id', 'string'), field('name', 'string'),
-       field('status', 'string'), field('enabled', 'boolean')]),
+      [field('id', 'string', 'The application identifier.'),
+       field('name', 'string', 'The application name.'),
+       field('status', 'string',
+         'active when the application is registered and enabled; ' +
+         'disabled otherwise.'),
+       field('enabled', 'boolean',
+         'Whether the application is registered and enabled.')]),
     source('federation',
       'The realm\'s configured federation relationships, as they are now.',
-      [field('id', 'string'), field('partner', 'string'),
-       field('protocol', 'string'), field('enabled', 'boolean')]),
+      [field('id', 'string', 'The relationship id.'),
+       field('partner', 'string', 'The partner name.'),
+       field('protocol', 'string', 'The protocol the relationship speaks.'),
+       field('enabled', 'boolean', 'Whether the relationship is enabled.')]),
     source('authMechanisms',
-      'The realm\'s authentication policy, as it is now.',
-      [field('id', 'string'), field('type', 'string'),
-       field('enabled', 'boolean'), field('application', 'string')]),
+      'The realm authentication policy, one row per mechanism with ' +
+      'application realm, plus one row per mechanism an application ' +
+      'lists. An application that lists none inherits the realm policy ' +
+      'and adds no row. Not a count of sign-ins. Non-browser doors are ' +
+      'outside appAuthnMechanism.',
+      [field('id', 'string',
+         'The mechanism id. Realm rows use the policy names. An ' +
+         'application row uses the value it lists.'),
+       field('type', 'string',
+         'both, primary, second or other for a realm row. primary for ' +
+         'appAuthnMechanism and second for appMfaMechanism.'),
+       field('enabled', 'boolean',
+         'For a realm row, whether that policy flag is on. For an ' +
+         'application row, true because the application lists it; a ' +
+         'listed second factor the realm has switched off stays off ' +
+         'at sign-in.'),
+       field('application', 'string',
+         'realm, or the application identifier when the row comes from ' +
+         'that application\'s list.')]),
     source('auditEvents',
       'The audit ring still held in this process, newest first, capped by ' +
       'audit.maxEvents (5000 unless an operator set another cap). Not a ' +
       'warehouse of sign-ins.',
-      [field('timestamp', 'timestamp'), field('category', 'string'),
-       field('action', 'string'), field('outcome', 'string'),
-       field('actor', 'string')]),
+      [field('timestamp', 'timestamp', 'When the event was recorded.'),
+       field('category', 'string', 'The audit category.'),
+       field('action', 'string', 'The audit action.'),
+       field('outcome', 'string', 'The audit outcome.'),
+       field('actor', 'string', 'The account name on the audit row.')]),
+    source('authActivity',
+      'Sign-in attempts still in the same audit ring as auditEvents, ' +
+      'capped by audit.maxEvents. Not a warehouse of sign-ins. A session ' +
+      'id, an address, a note and a presented credential are not fields.',
+      [field('timestamp', 'timestamp', 'When the attempt was recorded.'),
+       field('day', 'string',
+         'The UTC calendar day of timestamp, yyyy-mm-dd, so a count ' +
+         'can group events per day.'),
+       field('outcome', 'string',
+         'The audit outcome, such as success or refused.'),
+       field('mechanism', 'string',
+         'detail.method when the audit row has one, otherwise ' +
+         'detail.amr.'),
+       field('actor', 'string', 'The account name on the audit row.'),
+       field('application', 'string',
+         'detail.application, or detail.client_id when the row has ' +
+         'no application.'),
+       field('protocol', 'string', 'The protocol on the audit row.')]),
     source('serviceMetrics',
-      'A live snapshot of the service counters. Not a time series.',
-      [field('name', 'string'), field('value', 'number'),
-       field('family', 'string')]),
+      'Numeric leaves of a live service-counter snapshot. Not a time ' +
+      'series. Route rows, token kinds and other lists are not leaves, ' +
+      'so they are not here. /admin/metrics and /admin-api/metrics stay.',
+      [field('name', 'string',
+         'family.leaf, the snapshot member and the number under it.'),
+       field('value', 'number', 'The number at the moment of the read.'),
+       field('family', 'string',
+         'The snapshot member the leaf was read from, such as calls ' +
+         'or tokens.')]),
     source('reportJobs',
       'Report jobs this realm still holds. Artifacts age out on their own ' +
       'retention; the job row ages out later.',
-      [field('id', 'string'), field('status', 'string'),
-       field('format', 'string'), field('submittedAt', 'timestamp'),
-       field('completedAt', 'timestamp'), field('byteSize', 'number')])
+      [field('id', 'string', 'The job id. It is not an authorization.'),
+       field('status', 'string',
+         'queued, running, completed, failed, cancelled or expired.'),
+       field('format', 'string', 'json, csv or pdf.'),
+       field('submittedAt', 'timestamp', 'When the job was queued.'),
+       field('completedAt', 'timestamp',
+         'When the job finished, or null while it has not.'),
+       field('byteSize', 'number',
+         'The stored artifact size, or null before it exists.')]),
+    source('attributeSources',
+      'The attribute-source register as it is now. Connection details ' +
+      'and secrets are not fields. This source does not run SQL and ' +
+      'does not read the remote table. Values those sources write are ' +
+      'already on directory entries.',
+      [field('id', 'string', 'The source id.'),
+       field('dialect', 'string', 'postgres or mysql, as configured.'),
+       field('database', 'string', 'The database name. Not the host.'),
+       field('table', 'string', 'The table the lookup reads.'),
+       field('keyAttribute', 'string',
+         'The directory attribute the lookup key is taken from.'),
+       field('mode', 'string',
+         'The refresh modes, joined, such as sign-in or schedule.'),
+       field('onFailure', 'string',
+         'keep or refuse, as the source is configured.'),
+       field('enabled', 'boolean', 'Whether the source is enabled.')])
   ];
   log.debug("Leaving standardSources().");
   return sources;
@@ -143,7 +239,7 @@ class Catalog {
   sources: SourceSpec[];
 
   /**
-   * @param sources - a test's own sources; omitted, the eight standard ones
+   * @param sources - a test's own sources; omitted, the standard ones
    */
   constructor(sources?: SourceSpec[]) {
     log.debug("Entering Catalog().");

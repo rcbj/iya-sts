@@ -18043,6 +18043,12 @@ const SETTINGS = [
     min: 100, max: 30000, runtime: true,
     description: 'How long a synchronous report may run. Past this the ' +
                  'call is refused rather than answered with a partial body.' },
+  { key: 'report.asyncMaxMs', group: 'Reporting',
+    label: 'Report job time cap (milliseconds)',
+    env: 'REPORT_ASYNC_MAX_MS', type: 'int', dflt: 120000,
+    min: 1000, max: 600000, runtime: true,
+    description: 'How long a report job may run. Past this the job fails ' +
+                 'rather than storing a partial result.' },
   { key: 'report.asyncMaxRows', group: 'Reporting',
     label: 'Report job row cap',
     env: 'REPORT_ASYNC_MAX_ROWS', type: 'int', dflt: 100000,

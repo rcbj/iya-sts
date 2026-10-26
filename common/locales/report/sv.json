@@ -42,5 +42,18 @@
   "sort": "Sortering",
   "source": "Källa",
   "status": "Status",
-  "title": "Rapporter"
+  "title": "Rapporter",
+  "type": "Typ",
+  "meaning": "Betydelse",
+  "yes": "Ja",
+  "no": "Nej",
+  "opEq": "lika med",
+  "opNe": "inte lika med",
+  "opContains": "innehåller",
+  "opStartsWith": "börjar med",
+  "opLt": "mindre än",
+  "opLe": "högst",
+  "opGt": "större än",
+  "opGe": "minst",
+  "opIsNull": "är tomt"
 }

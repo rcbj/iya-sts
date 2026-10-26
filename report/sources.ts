@@ -241,6 +241,32 @@ function reportTooSlow(): any {
   };
 }
 
+function reportJobTooSlow(): any {
+  log.debug("Entering reportJobTooSlow().");
+  log.warn(errorCodes.tag('STS-REPORT-0034') +
+    'report: a job exceeded its time cap.');
+  log.debug("Leaving reportJobTooSlow().");
+  return {
+    ok: false,
+    code: 'STS-REPORT-0034',
+    error: 'result_too_large',
+    description: 'The report job took too long and was stopped. ' +
+      'Nothing was returned in part.'
+  };
+}
+
+function reportOverBudget(held: any): boolean {
+  log.debug("Entering reportOverBudget().");
+  if (held && held.timedOut) {
+    log.debug("Leaving reportOverBudget(). Marked.");
+    return true;
+  }
+  const over = !!(held && held.budgetMs > 0 && held.startedMs &&
+    Date.now() - held.startedMs > held.budgetMs);
+  log.debug("Leaving reportOverBudget().");
+  return over;
+}
+
 function reportAudit(info: any): void {
   log.debug("Entering reportAudit().");
   try {
@@ -567,6 +593,9 @@ async function reportReadUsers(rows: any, control: any): Promise<void> {
   await reportEachUser(async function (entry: any, dn: string):
       Promise<boolean> {
     const names = index.byUser[String(dn).toLowerCase()] || [];
+    // pwdAccountLockedTime is the administrative disable and any other
+    // lock. The catalog calls both locked. This read does not ask
+    // account_state, which would walk the directory a second time.
     const locked = reportAttr(entry, 'pwdAccountLockedTime');
     return reportOffer({
       username: reportAttr(entry, 'uid'),
@@ -650,27 +679,214 @@ async function reportReadFederation(rows: any, control: any):
   log.debug("Leaving reportReadFederation().");
 }
 
-async function reportReadMechanisms(rows: any, control: any):
-    Promise<void> {
-  log.debug("Entering reportReadMechanisms().");
-  const policyApi = require('../common/authn_policy');
-  const policy = policyApi.read();
+function reportListed(value: any): string[] {
+  log.debug("Entering reportListed().");
+  if (value == null || value === '') {
+    log.debug("Leaving reportListed(). Empty.");
+    return [];
+  }
+  const list = Array.isArray(value) ? value : [value];
+  const out: string[] = [];
+  for (let i = 0; i < list.length; i++) {
+    const text = String(list[i] || '').trim();
+    if (text && out.indexOf(text) < 0) {
+      out.push(text);
+    }
+  }
+  log.debug("Leaving reportListed().");
+  return out;
+}
+
+/**
+ * Realm policy rows, then one row per mechanism an application lists.
+ * An empty list adds nothing: that application inherits the realm policy.
+ *
+ * @param policy - `authn_policy.read()`
+ * @param applications - `applications.list()`
+ * @returns catalog rows
+ */
+function reportMechanismRows(policy: any, applications: any[]): any[] {
+  log.debug("Entering reportMechanismRows().");
+  const rows: any[] = [];
+  const held = policy && typeof policy === 'object' ? policy : {};
   for (let i = 0; i < MECHANISMS.length; i++) {
     const mech = MECHANISMS[i];
-    const primary = mech.primary ? reportFlag(policy[mech.primary]) : false;
-    const second = mech.second ? reportFlag(policy[mech.second]) : false;
-    const keep = await reportOffer({
+    const primary = mech.primary ? reportFlag(held[mech.primary]) : false;
+    const second = mech.second ? reportFlag(held[mech.second]) : false;
+    rows.push({
       id: mech.id,
       type: mech.kind,
       enabled: primary || second,
       application: 'realm'
-    }, rows, control);
+    });
+  }
+  const apps = Array.isArray(applications) ? applications : [];
+  for (let a = 0; a < apps.length; a++) {
+    const view = apps[a] || {};
+    const id = String(view.identifier || view.clientId || view.id || '');
+    if (!id) {
+      continue;
+    }
+    const fields = view.fields || {};
+    const primary = reportListed(fields.appAuthnMechanism);
+    const second = reportListed(fields.appMfaMechanism);
+    for (let p = 0; p < primary.length; p++) {
+      rows.push({
+        id: primary[p],
+        type: 'primary',
+        enabled: true,
+        application: id
+      });
+    }
+    for (let s = 0; s < second.length; s++) {
+      rows.push({
+        id: second[s],
+        type: 'second',
+        enabled: true,
+        application: id
+      });
+    }
+  }
+  log.debug("Leaving reportMechanismRows().");
+  return rows;
+}
+
+async function reportReadMechanisms(rows: any, control: any):
+    Promise<void> {
+  log.debug("Entering reportReadMechanisms().");
+  const policyApi = require('../common/authn_policy');
+  const applications = require('../common/applications');
+  const flat = reportMechanismRows(policyApi.read(), applications.list());
+  for (let i = 0; i < flat.length; i++) {
+    const keep = await reportOffer(flat[i], rows, control);
     if (keep === false) {
       log.debug("Leaving reportReadMechanisms(). Stopped.");
       return;
     }
   }
   log.debug("Leaving reportReadMechanisms().");
+}
+
+function reportUtcDay(iso: string | null): string {
+  log.debug("Entering reportUtcDay().");
+  const text = String(iso || '');
+  const day = /^\d{4}-\d{2}-\d{2}/.test(text) ? text.slice(0, 10) : '';
+  log.debug("Leaving reportUtcDay().");
+  return day;
+}
+
+const ATTEMPTS: Record<string, boolean> = {
+  'authentication': true,
+  'authentication.refused': true,
+  'session.refuse': true,
+  'session.refused': true
+};
+
+/**
+ * Sign-in attempts projected from audit rows. Session ids, addresses,
+ * notes and presented credentials are not copied.
+ *
+ * @param events - `audit.list()`, newest first
+ * @returns catalog rows
+ */
+function reportActivityRows(events: any[]): any[] {
+  log.debug("Entering reportActivityRows().");
+  const out: any[] = [];
+  const list = Array.isArray(events) ? events : [];
+  for (let i = 0; i < list.length; i++) {
+    const event = list[i] || {};
+    if (!ATTEMPTS[String(event.action || '')]) {
+      continue;
+    }
+    const detail = event.detail && typeof event.detail === 'object' ?
+      event.detail : {};
+    const method = detail.method ? String(detail.method) : '';
+    const amr = detail.amr ? String(detail.amr) : '';
+    const application = detail.application ? String(detail.application) :
+      (detail.client_id ? String(detail.client_id) : '');
+    const when = reportAuditTime(event.at);
+    out.push({
+      timestamp: when,
+      day: reportUtcDay(when),
+      outcome: event.outcome || '',
+      mechanism: method || amr,
+      actor: event.actor || '',
+      application: application,
+      protocol: event.protocol || ''
+    });
+  }
+  log.debug("Leaving reportActivityRows().");
+  return out;
+}
+
+async function reportReadActivity(rows: any, control: any): Promise<void> {
+  log.debug("Entering reportReadActivity().");
+  const audit = require('../common/audit');
+  const config = require('../common/config');
+  const cap = Number(config.value('audit.maxEvents'));
+  const limit = Number.isFinite(cap) && cap > 0 ? cap : 5000;
+  const flat = reportActivityRows(audit.list().slice(0, limit));
+  for (let i = 0; i < flat.length; i++) {
+    const keep = await reportOffer(flat[i], rows, control);
+    if (keep === false) {
+      log.debug("Leaving reportReadActivity(). Stopped.");
+      return;
+    }
+    if (i % PAGE === PAGE - 1) {
+      await Promise.resolve();
+    }
+  }
+  log.debug("Leaving reportReadActivity().");
+}
+
+/**
+ * The attribute-source register, without connection material or secrets.
+ * The report does not run SQL and does not read the remote table.
+ *
+ * @param definitions - `AttributeSources.list()`
+ * @returns catalog rows
+ */
+function reportAttributeSourceRows(definitions: any[]): any[] {
+  log.debug("Entering reportAttributeSourceRows().");
+  const out: any[] = [];
+  const list = Array.isArray(definitions) ? definitions : [];
+  for (let i = 0; i < list.length; i++) {
+    const src = list[i];
+    if (!src || typeof src !== 'object') {
+      continue;
+    }
+    const refresh = Array.isArray(src.refresh) ?
+      src.refresh.map(function (one: any): string {
+        return String(one);
+      }).join(',') : String(src.refresh || '');
+    out.push({
+      id: String(src.id || ''),
+      dialect: String(src.dialect || ''),
+      database: String(src.database || ''),
+      table: String(src.table || ''),
+      keyAttribute: String(src.keyAttribute || ''),
+      mode: refresh,
+      onFailure: String(src.onFailure || ''),
+      enabled: src.enabled === true || src.enabled === 'true'
+    });
+  }
+  log.debug("Leaving reportAttributeSourceRows().");
+  return out;
+}
+
+async function reportReadAttributeSources(rows: any, control: any):
+    Promise<void> {
+  log.debug("Entering reportReadAttributeSources().");
+  const sourcesApi = require('../attribute-sources/attribute_sources');
+  const flat = reportAttributeSourceRows(sourcesApi.list());
+  for (let i = 0; i < flat.length; i++) {
+    const keep = await reportOffer(flat[i], rows, control);
+    if (keep === false) {
+      log.debug("Leaving reportReadAttributeSources(). Stopped.");
+      return;
+    }
+  }
+  log.debug("Leaving reportReadAttributeSources().");
 }
 
 async function reportReadAudit(rows: any, control: any): Promise<void> {
@@ -783,10 +999,14 @@ async function reportReadSource(plan: any, rows: any, control: any):
     await reportReadMechanisms(rows, control);
   } else if (source === 'auditEvents') {
     await reportReadAudit(rows, control);
+  } else if (source === 'authActivity') {
+    await reportReadActivity(rows, control);
   } else if (source === 'serviceMetrics') {
     await reportReadMetrics(rows, control);
   } else if (source === 'reportJobs') {
     await reportReadJobRows(rows, control);
+  } else if (source === 'attributeSources') {
+    await reportReadAttributeSources(rows, control);
   }
   log.debug("Leaving reportReadSource().");
 }
@@ -802,9 +1022,11 @@ async function reportReadWork(plan: any, control: any): Promise<any> {
   } else {
     await reportReadSource(plan, rows, held);
   }
-  if (held.timedOut || (held.budgetMs > 0 && held.startedMs &&
-      Date.now() - held.startedMs > held.budgetMs && held.execution ===
-      'sync')) {
+  if (reportOverBudget(held)) {
+    if (held.execution === 'async') {
+      log.debug("Leaving reportReadWork(). Job timed out.");
+      return reportJobTooSlow();
+    }
     log.debug("Leaving reportReadWork(). Timed out.");
     return reportTooSlow();
   }
@@ -992,7 +1214,8 @@ async function reportRunOne(job: any, ctx: any): Promise<void> {
   const plan = validated.plan;
   const control: any = {
     startedMs: Date.now(),
-    budgetMs: plan.execution === 'sync' ? limits.syncMaxMs() : 0,
+    budgetMs: plan.execution === 'sync' ? limits.syncMaxMs() :
+      limits.asyncMaxMs(),
     execution: plan.execution,
     cancelled: function (): boolean {
       const current = stores.getJob(job.id);
@@ -1191,23 +1414,44 @@ async function reportScheduleWork(ctx: any): Promise<any> {
       return job.definitionId === def.id &&
         (job.status === 'queued' || job.status === 'running');
     });
-    def.lastSlot = slot;
+    // A run that is already queued consumed this occurrence. A missing
+    // parameter does not: the next pass can run once the values exist.
     if (busy) {
+      def.lastSlot = slot;
       stores.putDefinition(def);
       continue;
     }
     const rightsOf = rights.mayUse(def.owner, 'report:use');
     if (!rightsOf.ok) {
+      def.lastSlot = slot;
       reportNoteFailure(def, 'The owner can no longer run reports.');
       stores.putDefinition(def);
       log.warn(errorCodes.tag('STS-REPORT-0028') +
         'report: a schedule was skipped because its owner lost report:use.');
       continue;
     }
+    const names = jobsApi.parameterNames(def.document);
+    const bag = def.parameters && typeof def.parameters === 'object' &&
+      !Array.isArray(def.parameters) ? def.parameters : null;
+    let missing = false;
+    for (let n = 0; n < names.length; n++) {
+      if (!bag || !Object.prototype.hasOwnProperty.call(bag, names[n])) {
+        missing = true;
+      }
+    }
+    if (missing) {
+      reportNoteFailure(def, 'A saved parameter was not given.');
+      stores.putDefinition(def);
+      log.warn(errorCodes.tag('STS-REPORT-0035') +
+        'report: a schedule was skipped because a parameter has no value.');
+      continue;
+    }
     const Query = require('./query');
     const query = new Query({ catalog: new Catalog(), limits: new Limits() });
-    const validated = query.validate(def.document, null);
+    const validated = query.validate(def.document,
+      names.length ? bag : null);
     if (!validated.ok) {
+      def.lastSlot = slot;
       reportNoteFailure(def, validated.description || 'The query is no ' +
         'longer valid.');
       stores.putDefinition(def);
@@ -1215,22 +1459,23 @@ async function reportScheduleWork(ctx: any): Promise<any> {
         'report: a schedule was skipped because its query no longer runs.');
       continue;
     }
-    stores.putDefinition(def);
     const submitted = jobsApi.submit({
       owner: def.owner,
       document: def.document,
-      parameters: null,
+      parameters: names.length ? bag : null,
       definitionId: def.id,
       definitionName: def.name,
       notify: !!def.notify,
       plan: validated.plan
     });
     if (submitted.ok) {
+      def.lastSlot = slot;
+      stores.putDefinition(def);
       enqueued += 1;
     } else {
       reportNoteFailure(def, submitted.description || 'The job was not ' +
         'queued.');
-      stores.putDefinition(stores.getDefinition(def.id) || def);
+      stores.putDefinition(def);
     }
   }
   log.debug("Leaving reportScheduleWork().");
@@ -1322,6 +1567,9 @@ export = {
   stampReporter: reportStampReporter,
   clearReporter: reportClearReporter,
   metricRows: reportMetricRows,
+  mechanismRows: reportMechanismRows,
+  activityRows: reportActivityRows,
+  attributeSourceRows: reportAttributeSourceRows,
   notice: reportNotice,
   read: reportReadWork
 };

@@ -9,12 +9,14 @@
 // THE REPORT DOCUMENT, THE THREE FORMATS, AND WHO MAY BE ISSUED A SCOPE
 // (#956).
 //
-// In process, because the decisions are on the document and on the scope
-// string. Nothing here opens a listener: the HTTP status of a refusal, the
-// DPoP gate and a scheduled run against a directory are not this file.
-// `Limits.fixed` is the caps, so the test does not read `report.*` to
-// decide a query. Issuance narrowing does read the two admin group names
-// and `report.usersGroup`, and puts them back.
+// In process, because the decisions are on the document, the scope string,
+// the row projections and an in-memory schedule. Nothing here opens a
+// listener: the HTTP status of a refusal, the DPoP gate and a scheduled
+// run against a directory are not this file. `Limits.fixed` is the caps,
+// so the test does not read `report.*` to decide a query. Issuance
+// narrowing does read the two admin group names and `report.usersGroup`,
+// and puts them back. The schedule uses the in-memory definition store
+// and an injected rights checker, and it does not drain the job it queues.
 // ---------------------------------------------------------------------------
 
 delete process.env.CONFIG_FILE;
@@ -115,6 +117,14 @@ function documents(t) {
   t.equal(extra.error, 'invalid_query', 'an unknown key is invalid_query');
   t.equal(extra.code, 'STS-REPORT-0004', 'an unknown key is 0004');
 
+  const offset = ask(people({ offset: 1 }));
+  t.equal(offset.error, 'invalid_query', 'an offset is an unknown key');
+  t.equal(offset.code, 'STS-REPORT-0004', 'an offset is 0004');
+
+  const filipino = ask(people({ locale: 'fil' }));
+  t.equal(filipino.ok, true, 'fil is a language tag');
+  t.equal(filipino.plan.locale, 'fil', 'the plan keeps the language');
+
   const like = ask(people({
     where: { op: 'like', field: 'username', value: 'a' }
   }));
@@ -164,6 +174,10 @@ function documents(t) {
     'the PDF refusal names CSV', pdfRows.description);
 
   t.equal(limits.syncMaxRows(), 5, 'Limits.fixed supplies the sync cap');
+  t.equal(limits.asyncMaxMs(), 120000,
+    'the async time cap keeps its default');
+  t.equal(Limits.fixed({}).asyncMaxMs(), 120000,
+    'Limits.fixed with no override keeps the async time cap');
   t.equal(limits.usersGroup(), '',
     'a fixed limits object keeps the empty users group');
   log.debug("Leaving documents().");
@@ -198,6 +212,29 @@ function formats(t) {
   const japaneseText = japanese.ok ? japanese.body.toString('utf8') : '';
   t.check(japaneseText.indexOf('Requested language: ja') >= 0,
     'another language is named on the page', japaneseText.slice(0, 120));
+
+  const filipino = Formats.pdf(
+    { source: 'users', fields: ['username'], locale: 'fil' },
+    rows(1), { realm: 'default', when: 't' }, 1);
+  const filipinoText = filipino.ok ? filipino.body.toString('utf8') : '';
+  t.check(filipinoText.indexOf('Ulat') >= 0,
+    'Filipino chrome is drawn for fil', filipinoText.slice(0, 80));
+  t.check(filipinoText.indexOf('Requested language') < 0,
+    'fil is a language the page can draw');
+
+  const swedish = Formats.pdf(
+    { source: 'users', fields: ['username'], locale: 'sv' },
+    rows(1), { realm: 'default', when: 't' }, 1);
+  const swedishText = swedish.ok ? swedish.body.toString('utf8') : '';
+  t.check(swedishText.indexOf('Rapport') >= 0,
+    'Swedish chrome is drawn for sv', swedishText.slice(0, 80));
+
+  const chinese = Formats.pdf(
+    { source: 'users', fields: ['username'], locale: 'zh-Hans' },
+    rows(1), { realm: 'default', when: 't' }, 1);
+  const chineseText = chinese.ok ? chinese.body.toString('utf8') : '';
+  t.check(chineseText.indexOf('Requested language: zh-Hans') >= 0,
+    'Chinese is named and drawn in English', chineseText.slice(0, 160));
 
   const csv = Formats.csv(
     { source: 'users', fields: ['username', 'mail'], locale: null },
@@ -321,17 +358,339 @@ function artifacts(t) {
   return stored;
 }
 
+function projections(t) {
+  log.debug("Entering projections().");
+  const sources = require('../report/sources');
+  const OpenApi = require('../report/openapi');
+  const catalog = new Catalog();
+  const listed = catalog.list();
+  t.equal(listed.length, 10, 'the catalog has ten sources');
+  const ids = listed.map(function (src) {
+    return src.id;
+  });
+  t.check(ids.indexOf('authActivity') >= 0, 'authActivity is a source');
+  t.check(ids.indexOf('attributeSources') >= 0,
+    'attributeSources is a source');
+  t.check(catalog.field('users', 'userPassword') == null,
+    'userPassword is still not a field');
+  const status = catalog.field('users', 'status');
+  t.check(status && status.meaning.indexOf('pwdAccountLockedTime') >= 0,
+    'locked means pwdAccountLockedTime is set',
+    status && status.meaning);
+  for (let i = 0; i < listed.length; i++) {
+    t.equal(listed[i].paging, 'limit',
+      listed[i].id + ' pages by limit');
+    t.equal(listed[i].relationships.length, 0,
+      listed[i].id + ' has no relationships');
+    for (let f = 0; f < listed[i].fields.length; f++) {
+      t.check(!!listed[i].fields[f].meaning,
+        listed[i].id + '.' + listed[i].fields[f].id + ' has a meaning');
+    }
+  }
+
+  const at = Date.parse('2026-10-25T12:00:00.000Z');
+  const attempts = sources.activityRows([{
+    action: 'authentication',
+    outcome: 'success',
+    actor: 'ada',
+    protocol: 'oidc',
+    at: at,
+    detail: {
+      method: 'passkey',
+      amr: 'pop',
+      application: 'portal',
+      sessionId: 'secret-session',
+      note: 'secret-note'
+    }
+  }, {
+    action: 'authentication.refused',
+    outcome: 'refused',
+    actor: 'bea',
+    at: at,
+    detail: { amr: 'pwd' }
+  }, {
+    action: 'session.reauthenticate',
+    at: at,
+    detail: { method: 'passkey' }
+  }]);
+  t.equal(attempts.length, 2, 'a reauthentication is not an attempt');
+  t.equal(attempts[0].mechanism, 'passkey',
+    'mechanism is detail.method when it is present');
+  t.equal(attempts[0].application, 'portal', 'application is copied');
+  t.equal(attempts[0].day, '2026-10-25', 'day is the UTC calendar day');
+  t.equal(attempts[0].timestamp, '2026-10-25T12:00:00.000Z',
+    'the audit time is an ISO string');
+  t.equal(Object.prototype.hasOwnProperty.call(attempts[0], 'sessionId'),
+    false, 'a session id is not a field');
+  t.equal(Object.prototype.hasOwnProperty.call(attempts[0], 'note'),
+    false, 'a note is not a field');
+  t.equal(attempts[1].mechanism, 'pwd',
+    'mechanism falls back to detail.amr');
+  t.equal(attempts[1].application, '',
+    'a row with neither application nor client id is blank');
+
+  const mechs = sources.mechanismRows({ passwordPrimary: true }, [{
+    identifier: 'empty-app',
+    fields: {}
+  }, {
+    identifier: 'portal',
+    fields: {
+      appAuthnMechanism: ['webauthn'],
+      appMfaMechanism: ['totp']
+    }
+  }]);
+  let realm = 0;
+  let password = null;
+  let primary = null;
+  let second = null;
+  for (let m = 0; m < mechs.length; m++) {
+    const row = mechs[m];
+    if (row.application === 'realm') {
+      realm += 1;
+      if (row.id === 'password') {
+        password = row;
+      }
+    }
+    if (row.application === 'portal' && row.type === 'primary') {
+      primary = row;
+    }
+    if (row.application === 'portal' && row.type === 'second') {
+      second = row;
+    }
+  }
+  t.equal(realm, 11, 'every realm mechanism is one row');
+  t.equal(mechs.length, 13,
+    'an empty application list adds nothing, and two listed values do');
+  t.equal(password && password.enabled, true,
+    'a realm flag that is on is enabled');
+  t.equal(primary && primary.id, 'webauthn',
+    'a listed primary mechanism is a row');
+  t.equal(primary && primary.enabled, true,
+    'a listed primary mechanism is enabled');
+  t.equal(second && second.id, 'totp',
+    'a listed second factor is a row');
+  t.equal(second && second.type, 'second',
+    'appMfaMechanism is type second');
+
+  const attrs = sources.attributeSourceRows([{
+    id: 'hr',
+    dialect: 'postgres',
+    database: 'people',
+    table: 'staff',
+    keyAttribute: 'uid',
+    refresh: ['sign-in', 'schedule'],
+    onFailure: 'keep',
+    enabled: true,
+    host: 'db.example',
+    port: 5432,
+    user: 'reader',
+    passwordRef: 'secret',
+    caCertificates: 'CERT'
+  }]);
+  t.equal(attrs.length, 1, 'one definition is one row');
+  t.equal(attrs[0].id, 'hr', 'the source id is kept');
+  t.equal(attrs[0].dialect, 'postgres', 'the dialect is kept');
+  t.equal(attrs[0].database, 'people', 'the database name is kept');
+  t.equal(attrs[0].table, 'staff', 'the table is kept');
+  t.equal(attrs[0].keyAttribute, 'uid', 'the key attribute is kept');
+  t.equal(attrs[0].mode, 'sign-in,schedule',
+    'refresh modes are joined');
+  t.equal(attrs[0].onFailure, 'keep', 'onFailure is kept');
+  t.equal(attrs[0].enabled, true, 'enabled stays a boolean');
+  const dropped = ['host', 'port', 'user', 'passwordRef', 'caCertificates'];
+  for (let d = 0; d < dropped.length; d++) {
+    t.equal(Object.prototype.hasOwnProperty.call(attrs[0], dropped[d]),
+      false, dropped[d] + ' is not a field');
+  }
+
+  const spec = OpenApi.document(catalog);
+  t.equal(spec.openapi, '3.0.3', 'the document is OpenAPI 3.0.3');
+  const paths = [
+    '/report-api',
+    '/report-api/openapi.json',
+    '/report-api/catalog',
+    '/report-api/catalog/{id}',
+    '/report-api/queries',
+    '/report-api/definitions',
+    '/report-api/definitions/{id}',
+    '/report-api/definitions/{id}/share',
+    '/report-api/definitions/{id}/run',
+    '/report-api/jobs',
+    '/report-api/jobs/{id}',
+    '/report-api/jobs/{id}/cancel',
+    '/report-api/jobs/{id}/result'
+  ];
+  for (let p = 0; p < paths.length; p++) {
+    t.check(Object.prototype.hasOwnProperty.call(spec.paths, paths[p]),
+      paths[p] + ' is in the document');
+  }
+  log.debug("Leaving projections().");
+}
+
+async function budget(t) {
+  log.debug("Entering budget().");
+  const sources = require('../report/sources');
+  const plan = {
+    source: 'users',
+    select: ['username'],
+    fields: ['username'],
+    where: null,
+    orderBy: [],
+    limit: 1,
+    aggregate: null,
+    groupBy: []
+  };
+  sources.installReader(function () {
+    return Promise.resolve();
+  });
+  try {
+    const slow = await sources.read(plan, {
+      startedMs: 1,
+      budgetMs: 5,
+      execution: 'async'
+    });
+    t.equal(slow.ok, false, 'an async read past its budget fails');
+    t.equal(slow.code, 'STS-REPORT-0034', 'the async time cap is 0034');
+    t.equal(slow.error, 'result_too_large',
+      'the public token stays result_too_large');
+    const sync = await sources.read(plan, {
+      startedMs: 1,
+      budgetMs: 5,
+      execution: 'sync'
+    });
+    t.equal(sync.code, 'STS-REPORT-0005',
+      'the same clock on a synchronous read is 0005');
+  } finally {
+    sources.installReader(null);
+    log.debug("Leaving budget().");
+  }
+}
+
+function scheduledDocument() {
+  log.debug("Entering scheduledDocument().");
+  const document = {
+    source: 'users',
+    select: ['username'],
+    where: { op: 'eq', field: 'username', param: 'who' },
+    limit: 1,
+    mode: 'async',
+    format: 'json'
+  };
+  log.debug("Leaving scheduledDocument().");
+  return document;
+}
+
+async function schedules(t) {
+  log.debug("Entering schedules().");
+  require('../common/config');
+  const stores = require('../report/stores');
+  const rights = require('../report/rights');
+  const jobs = require('../report/jobs');
+  const when = Date.parse('2026-10-25T12:00:30Z');
+  stores.resetForTests();
+  rights.installChecker(function () {
+    return { ok: true, username: 'ada' };
+  });
+  try {
+    const saved = jobs.save({
+      owner: 'urn:uuid:test',
+      name: 'who',
+      document: scheduledDocument(),
+      schedule: '* * * * *',
+      scheduleEnabled: true,
+      parameters: { who: 'ada' }
+    });
+    t.equal(saved.ok, true, saved.ok ?
+      'a parameterised definition is stored' :
+      'a parameterised definition is stored: ' + saved.description);
+    if (saved.ok) {
+      const first = await jobs.scheduleNow(when);
+      t.equal(first.enqueued, 1, 'a due definition with a value is queued');
+      const queued = stores.listJobs();
+      t.equal(queued.length, 1, 'one job was queued');
+      t.equal(queued[0] && queued[0].parameters &&
+        queued[0].parameters.who, 'ada',
+        'the queued job carries the stored parameter');
+      const held = stores.getDefinition(saved.definition.id);
+      t.equal(typeof held.lastSlot, 'number',
+        'a successful enqueue consumes the slot');
+      const again = await jobs.scheduleNow(when);
+      t.equal(again.enqueued, 0, 'the same occurrence is not queued twice');
+    }
+
+    stores.resetForTests();
+    const missing = jobs.save({
+      owner: 'urn:uuid:test',
+      name: 'who',
+      document: scheduledDocument(),
+      schedule: '* * * * *',
+      scheduleEnabled: true
+    });
+    t.equal(missing.ok, true, missing.ok ?
+      'a save without values still type-checks' :
+      'a save without values still type-checks: ' + missing.description);
+    if (missing.ok) {
+      t.equal(missing.definition.parameters, null,
+        'the type-check dummy is not stored');
+      const skipped = await jobs.scheduleNow(when);
+      t.equal(skipped.enqueued, 0, 'a missing parameter is not queued');
+      const held = stores.getDefinition(missing.definition.id);
+      t.equal(held.lastSlot, null,
+        'a missing parameter does not consume the slot');
+      t.check(held.failures && held.failures.length >= 1,
+        'the skip is noted on the definition');
+      const note = held.failures[held.failures.length - 1];
+      t.equal(note.description, 'A saved parameter was not given.',
+        'the note names the missing parameter');
+    }
+
+    stores.resetForTests();
+    stores.putDefinition({
+      id: 'def-bad',
+      name: 'bad',
+      owner: 'urn:uuid:test',
+      document: {
+        source: 'users',
+        select: ['no-such-field'],
+        limit: 1,
+        mode: 'async'
+      },
+      parameters: null,
+      schedule: '* * * * *',
+      scheduleEnabled: true,
+      notify: false,
+      groups: [],
+      lastSlot: null,
+      failures: [],
+      createdAt: 1,
+      modifiedAt: 1
+    });
+    const refused = await jobs.scheduleNow(when);
+    t.equal(refused.enqueued, 0, 'an invalid query is not queued');
+    const bad = stores.getDefinition('def-bad');
+    t.equal(typeof bad.lastSlot, 'number',
+      'a query that no longer validates consumes the slot');
+  } finally {
+    rights.installChecker(null);
+    stores.resetForTests();
+    log.debug("Leaving schedules().");
+  }
+}
+
 async function run(t) {
   log.debug("Entering run().");
   documents(t);
   formats(t);
   rightsOf(t);
   await artifacts(t);
+  projections(t);
+  await budget(t);
+  await schedules(t);
   log.debug("Leaving run().");
 }
 
 module.exports = {
   name: 'report_query',
-  describe: 'report documents, formats, issuance narrowing, artifacts',
+  describe: 'report documents, formats, issuance, projections, schedules',
   run: run
 };

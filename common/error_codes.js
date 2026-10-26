@@ -23608,7 +23608,15 @@ const CODES = [
   { code: 'STS-REPORT-0033',
     summary: 'A method other than GET or HEAD was sent to the reports ' +
       'document.',
-    spec: 'HTTP 404' }
+    spec: 'HTTP 404' },
+  { code: 'STS-REPORT-0034',
+    summary: 'A report job exceeded its time and was failed rather than ' +
+      'returned in part.',
+    spec: 'result_too_large on the job; the submission already answered' },
+  { code: 'STS-REPORT-0035',
+    summary: 'A scheduled report names a parameter and stores no value ' +
+      'for it, so this occurrence did not run and the slot was kept.',
+    spec: 'recorded' }
   // ===== END ===============================================================
 ];
 

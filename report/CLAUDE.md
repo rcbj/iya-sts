@@ -20,7 +20,8 @@ and `docs/configuration.md`.
 | `report_app.ts` | The shell, the script and the stylesheet. A non-GET is 404 with `STS-REPORT-0033`. |
 | `report_api.ts` | `/report-api`. Every route, including the catalog and the OpenAPI document, takes the token below. |
 | `web_report.ts`, `web_report_pages.ts` | The browser runtime and the four pages (catalog, query, definitions, jobs). |
-| `catalog.ts` | The eight sources and their fields. Credential attribute ids are absent, so they cannot be named. |
+| `catalog.ts` | The ten sources and their fields. Credential attribute ids are absent, so they cannot be named. |
+| `openapi.ts` | `GET /report-api/openapi.json`. Every released route, built from the catalog that is loaded. |
 | `query.ts` | Validates one JSON document and decides sync or async. It sends no HTTP response. |
 | `limits.ts` | The caps, read when asked. `Limits.fixed` is what a test passes. |
 | `formats.ts` | JSON, RFC 4180 CSV, and a PDF 1.4 file in Helvetica WinAnsi. |
@@ -49,11 +50,27 @@ source, or over that cap, is `result_too_large` (`STS-REPORT-0005`). Over
 `invalid_query`. PDF over `report.pdfMaxRows` is refused with the CSV
 sentence. `truncated` is always false: a body over `report.syncMaxBytes`
 or a sync call over `report.syncMaxMs` is refused rather than sent in
-part.
+part. A job over `report.asyncMaxMs` fails the same public token,
+`result_too_large`, under `STS-REPORT-0034`. The submission has already
+answered. Nothing is stored in part.
 
-PDF chrome exists in English, Spanish, French and German. Any other
-language is drawn in English, and the page says which language was asked
-for. Column headers stay the catalog field ids.
+PDF chrome exists in English, Spanish, French, German, Filipino and
+Swedish. Helvetica WinAnsi can draw those. Chinese is drawn in English,
+and the page says which language was asked for (`Requested language:
+zh-Hans`, or `zh-Hant`). Column headers stay the catalog field ids. The
+browser puts the signed-in user's language on the document when it is
+built or saved. A later run of that definition posts parameters only, so
+the stored document is what the job is drawn in. The API does not fill
+the language in, and its errors stay English.
+
+Every standard source says `paging: limit` and `relationships: []`. An
+`offset`, a second source and a SQL statement are `invalid_query`. There
+is no join. The `in` operator is on string and number fields. The query
+form does not offer it; a caller sends an array of one to fifty values.
+
+`users.status` is `locked` when `pwdAccountLockedTime` is set. That value
+is the administrative disable and any other lock. The users reader does
+not call `account_state.isDisabled`. A scheduled run does not either.
 
 ## Who may run one
 
@@ -79,6 +96,18 @@ A scheduled run asks the same question of the definition's owner. It does
 not ask `account_state.isDisabled`: that read walks the directory, and a
 job must not.
 
+The definition stores `parameters`, the values that schedule runs with.
+A save may still be type-checked with a dummy of a missing parameter.
+That dummy is not stored, and a schedule does not run on it. A parameter
+the document names and the bag does not hold is `STS-REPORT-0035`: the
+occurrence is noted and `lastSlot` stays where it was, so the next pass
+can run once the value is saved. An owner who lost `report:use`, and a
+query that no longer validates, do consume the slot (`STS-REPORT-0028`).
+A submit that fails, including `too_many_jobs`, does not. A busy
+definition (a queued or running job of its own) does. A manual run posts
+a parameter object. A key in that body overrides the stored default. An
+empty body uses the stored defaults.
+
 ## The six jobs, and the lease
 
 Registered at load, after the scheduler is in hand (`common/protocol_stack.ts`,
@@ -88,7 +117,7 @@ Registered at load, after the scheduler is in hand (`common/protocol_stack.ts`,
 |---|---|---|
 | `report.drain` | cluster, realm, **front**, 2 s | Claims queued jobs up to the running caps and writes each artifact. |
 | `report.retention` | cluster, realm, **front**, 60 s | Drops artifacts and finished rows past their retention, and fails a running job whose fence is gone. |
-| `report.schedule` | cluster, realm, **front**, 60 s | Enqueues each due definition as its owner, while that owner can still run it. |
+| `report.schedule` | cluster, realm, **front**, 60 s | Enqueues each due definition as its owner, while that owner can still run it, using the stored parameter defaults. |
 | `report.drain.here`, `report.retention.here`, `report.schedule.here` | per-process, realm, quiet | The same three bodies, only while this process holds `ops.reporting`. |
 
 The fence is a set in this process, which is why the three cluster jobs
@@ -131,6 +160,27 @@ document is not written on the row.
 ## What the tests hold
 
 `tests/report_query.js` holds the document, the three formats, the fixed
-limits, issuance narrowing and an in-memory artifact. It does not open a
-listener. A refusal's HTTP status, the DPoP gate and a scheduled run
-against a directory are not asserted here.
+limits (including `asyncMaxMs`), issuance narrowing, an in-memory
+artifact, the two added sources' row projections, the OpenAPI paths, and
+an in-memory schedule that uses stored parameter defaults. It does not
+open a listener. A refusal's HTTP status, the DPoP gate and a scheduled
+run against a directory are not asserted here.
+
+## The sources
+
+The ten sources are `users`, `groups`, `applications`, `federation`,
+`authMechanisms`, `auditEvents`, `authActivity`, `serviceMetrics`,
+`reportJobs` and `attributeSources`. `authMechanisms` is the realm policy
+(application `realm`) plus one row per value an application lists in
+`appAuthnMechanism` or `appMfaMechanism`. An empty list inherits the
+realm policy and adds no row. `authActivity` is the four attempt actions
+still in the audit ring (`authentication`, `authentication.refused`,
+`session.refuse`, `session.refused`). `mechanism` is `detail.method`, or
+`detail.amr` when the row has no method. A session id, an address, a note
+and a presented credential are not fields. `attributeSources` is the
+register. It does not run SQL and it does not read the remote table.
+Connection details and secrets are not fields. `serviceMetrics` is one
+level of numeric leaves from `admin_stats.snapshot({ withoutUsers: true })`.
+It is not a time series, and it is not the per-route or per-kind tables.
+`/admin/metrics` and `/admin-api/metrics` stay. `docs/reporting.md` is
+the migration note.

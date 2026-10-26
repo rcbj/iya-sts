@@ -2705,6 +2705,7 @@ members of that directory group.
 | `report.syncMaxRows` | `REPORT_SYNC_MAX_ROWS` | `500` | yes | The most rows a synchronous report may return. A larger limit is refused in sync mode and becomes a job in auto. |
 | `report.syncMaxBytes` | `REPORT_SYNC_MAX_BYTES` | `1000000` | yes | The most bytes a synchronous report may return. A result over this is refused rather than sent in part. |
 | `report.syncMaxMs` | `REPORT_SYNC_MAX_MS` | `2000` | yes | How long a synchronous report may run. Past this the call is refused rather than answered with a partial body. |
+| `report.asyncMaxMs` | `REPORT_ASYNC_MAX_MS` | `120000` | yes | How long a report job may run. Past this the job fails rather than storing a partial result. |
 | `report.asyncMaxRows` | `REPORT_ASYNC_MAX_ROWS` | `100000` | yes | The most rows a report job may write. A query that asks for more is refused in every mode. |
 | `report.asyncMaxBytes` | `REPORT_ASYNC_MAX_BYTES` | `32000000` | yes | The most bytes a report job may store. A result over this fails the job rather than being truncated. |
 | `report.pdfMaxRows` | `REPORT_PDF_MAX_ROWS` | `2000` | yes | The most rows a PDF report may hold. A larger query is refused and asked to use CSV. |
