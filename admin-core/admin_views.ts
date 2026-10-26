@@ -11271,6 +11271,66 @@ class AdminViews {
     };
   }
 
+  // THE AUTHENTICATION ATTEMPTS FOR ONE PERSON (#955).
+  //
+  // The same list an application's tab reads, selected by who tried rather
+  // than by which application. The names are the page's key, the record's
+  // name, the subject's urn, and every form the register has seen them
+  // under: an acceptance stores the key as the actor and the subject in
+  // detail.sub, and a session refused before a subject was known stores
+  // the username as the actor. The whole capped ring is listed. The
+  // portal's window is a different question and is not applied here.
+  //
+  // The member the caller publishes is `authenticationEvents` and not
+  // `authentications`. The view already publishes `authentications` as the
+  // COUNT, and the tiles read it.
+  /**
+   * Lists one person's authentication attempts from the audit log.
+   *
+   * @param req - the request, whose query pages the list
+   * @param key - the person, as the page was asked for them
+   * @param row - the person's registry view
+   * @returns the rows shown, the paging, the match count, the actors this
+   *   console can link, and how full the audit log is
+   */
+  userAuthenticationEvents(req, key, row) {
+    const { log, auditLog, subjectForName } = this.deps;
+    log.debug("Entering AdminViews.userAuthenticationEvents().");
+    const names = [String(key || ''), String((row && row.name) || ''),
+                   String((row && row.key) || '')];
+    const subject = subjectForName(key);
+    if (subject) {
+      names.push(String(subject));
+    }
+    ((row && row.forms) || []).forEach(function (form) {
+      names.push(String((form && form.form) || ''));
+    });
+    const events = auditLog.authenticationEventsForPerson(names);
+    const paged = this.pagedRows((req && req.query) || {}, events, {
+      name: 'authentications', noun: 'attempts'
+    });
+    const known = this.knownUserKeys();
+    const knownActors: Record<string, boolean> = {};
+    paged.shown.forEach(function (event) {
+      if (event.actor && known[event.actor]) {
+        knownActors[event.actor] = true;
+      }
+    });
+    const summary = auditLog.summary();
+    log.debug("Leaving AdminViews.userAuthenticationEvents(). " +
+              paged.shown.length + " of " + events.length + ".");
+    return {
+      events: paged.shown,
+      paging: this.pagingJson(paged.paging),
+      matched: events.length,
+      knownActors: knownActors,
+      log: {
+        held: summary.held, recorded: summary.recorded,
+        dropped: summary.dropped, maxEvents: summary.maxEvents
+      }
+    };
+  }
+
   // The application drill-down: the entry, its attributes as a paged list, and
   // the delegated permissions it holds and exposes.
   /**
@@ -14440,6 +14500,10 @@ class AdminViews {
     // `/portal/gnap`. Revoked with POST /admin-api/gnap/revoke-grant naming
     // the grant and this person.
     const gnapGrants = this.gnapGrantsOf(req.query, key);
+    // Their authentication attempts (#955), the audit log's rows for this
+    // person across every application and protocol. Read once, for the
+    // page and this reply.
+    const attempts = this.userAuthenticationEvents(req, key, row);
     log.debug("Leaving AdminViews.userDetailJson().");
     const answer = {
       detail: detail, row: row, sessionRows: sessionRows, live: live,
@@ -14525,7 +14589,15 @@ class AdminViews {
           // /admin-api/gnap/revoke-grant { grant, user }.
           gnapGrants: gnapGrants.rows,
           gnapGrantsPaging: gnapGrants.paging,
-          gnapGrantsCells: gnapGrants.cells
+          gnapGrantsCells: gnapGrants.cells,
+          // THE ATTEMPTS (#955). Not `authentications`: that member is the
+          // count the tiles read. The rows are the audit log's, paged under
+          // authenticationsPage so they do not move the session list.
+          authenticationEvents: attempts.events,
+          authenticationEventsPaging: attempts.paging,
+          authenticationEventsMatched: attempts.matched,
+          authenticationEventsKnownActors: attempts.knownActors,
+          authenticationEventsLog: attempts.log
       };
       }())
     };

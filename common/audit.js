@@ -2473,6 +2473,68 @@ function authenticationEventsFor(names) {
   return out;
 }
 
+// A row is one person's attempt when the actor, the form they presented,
+// detail.sub or detail.presented is one of the names the caller handed,
+// trimmed and exact. Names are not lower-cased. The summary and the target
+// are not read: the target is a session id, and a sentence that happens to
+// contain the name is not the person. An e-mail is not a name of its own;
+// identityOf() files the local part as the key and keeps the whole address
+// as the presented form, which is already one of the four fields. Inlined
+// in the filter: it runs once per row of the ring, and an Entering line
+// there would be the log. `since` is a millisecond instant; a finite value
+// above zero keeps rows at or after it. The console's user tab passes none,
+// so it lists the whole capped ring.
+/**
+ * Lists the authentication attempts by one of `names`, newest first.
+ *
+ * The actions are the same four `authenticationEventsFor()` counts. A row
+ * matches when `actor`, `actorForm`, `detail.sub` or `detail.presented`,
+ * trimmed, is one of `names` exactly.
+ *
+ * @param names - the person's key, the forms they were seen under, and
+ *   their subject
+ * @param since - when given and above zero, only rows at or after this
+ *   instant
+ * @returns a copy of the matching rows, newest first
+ */
+function authenticationEventsForPerson(names, since) {
+  log.debug("Entering authenticationEventsForPerson().");
+  const wanted = {};
+  (names || []).forEach(function (one) {
+    const text = String(one == null ? '' : one).trim();
+    if (text) {
+      wanted[text] = true;
+    }
+  });
+  if (!Object.keys(wanted).length) {
+    log.debug("Leaving authenticationEventsForPerson(). No names.");
+    return [];
+  }
+  const from = Number(since);
+  const windowed = isFinite(from) && from > 0;
+  const out = list().filter(function (row) {
+    if (!ATTEMPT_ACTIONS[row.action]) {
+      return false;
+    }
+    if (windowed && !(Number(row.at) >= from)) {
+      return false;
+    }
+    const detail = row.detail || {};
+    const actor = String(row.actor == null ? '' : row.actor).trim();
+    const form = String(row.actorForm == null ? '' : row.actorForm).trim();
+    const sub = String(detail.sub == null ? '' : detail.sub).trim();
+    const presented = String(detail.presented == null ? '' :
+                             detail.presented).trim();
+    return (actor.length > 0 && wanted[actor] === true) ||
+           (form.length > 0 && wanted[form] === true) ||
+           (sub.length > 0 && wanted[sub] === true) ||
+           (presented.length > 0 && wanted[presented] === true);
+  });
+  log.debug("Leaving authenticationEventsForPerson(). " + out.length +
+            " event(s).");
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // THIS PROCESS'S EVENTS, AND EVERY OTHER PROCESS'S, IN ONE LIST.
 //
@@ -2703,6 +2765,7 @@ module.exports = {
   currentRequest: ambientRequest,
   list: list,
   authenticationEventsFor: authenticationEventsFor,
+  authenticationEventsForPerson: authenticationEventsForPerson,
   summary: summary,
   fresh: fresh,
   PROSE_ROUTES: PROSE_ROUTES,

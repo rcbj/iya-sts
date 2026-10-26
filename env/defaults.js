@@ -1174,8 +1174,9 @@ var config = {
 
   // --- Audit log -------------------------------------------------------
   audit: {
-    maxEvents: 5000,     // Maximum events held
-    protocolCalls: true  // Record protocol endpoint calls
+    maxEvents: 5000,                // Maximum events held
+    protocolCalls: true,            // Record protocol endpoint calls
+    authenticationHistoryDays: 30   // Authentication history (days)
   },
 
   // --- Delegation ------------------------------------------------------

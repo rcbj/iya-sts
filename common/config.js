@@ -15006,6 +15006,23 @@ const SETTINGS = [
                  'affects the other five categories, and /admin/metrics ' +
                  'counts every call either way.' },
 
+  // How far back Recent sign-ins looks (#955). The console's user tab
+  // lists the whole audit ring and does not read this: a person asking
+  // "was that me" wants a window, and an operator asking "what did this
+  // account try" wants every row the log still holds. Read per request,
+  // in the ambient realm, so each realm sets its own.
+  { key: 'audit.authenticationHistoryDays', group: 'Audit log',
+    label: 'Authentication history (days)',
+    env: 'AUDIT_AUTHENTICATION_HISTORY_DAYS', type: 'int',
+    dflt: 30, min: 1, max: 3650, runtime: true,
+    description: 'How many days of assessed sign-ins Recent sign-ins on ' +
+                 'the user portal lists for the signed-in person. Each ' +
+                 'realm sets its own, because the value is read in the ' +
+                 'ambient realm. The console\'s Authentication attempts ' +
+                 'tab on a person lists every attempt the audit log still ' +
+                 'holds, the whole log. The log\'s own cap can still drop ' +
+                 'older rows.' },
+
   // --- Delegation ----------------------------------------------------------
   //
   // ONE setting, and the absence of a second is deliberate.

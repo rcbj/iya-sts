@@ -23,6 +23,7 @@ import kit = require('./web_kit');
 import ApplicationsPage = require('./web_applications');
 import GroupsPage = require('./web_groups');
 import TokensPage = require('./web_tokens');
+import AuditPage = require('./web_audit');
 
 type Json = any;
 
@@ -1082,6 +1083,9 @@ class UsersPage {
         t.html('consoleUsers.detail.neverHere') + '</td></tr>') +
         '</table>' +
       UsersPage.authenticationTable(t, row, page.maxEventsPerUser) },
+        { id: 'utab-authentications',
+          label: t.text('consoleUsers.detail.tabAuthentications'),
+          html: UsersPage.authenticationsSection(t, params, json) },
         { id: 'utab-activity', label: t.text('consoleUsers.detail.tabActivity'),
           html:
       kit.perPageForm('/admin/users', 'user', key,
@@ -1469,6 +1473,52 @@ class UsersPage {
             max: maxEvents,
             total: row.eventsForgotten + row.events.length }))
         : '');
+  }
+
+  // THE ATTEMPTS (#955), drawn as the audit log draws one row, the same
+  // table the application's Authentication attempts tab uses. The columns'
+  // words are the audit catalog's. The list is `authenticationEvents` and
+  // not `authentications`, which is the count on the overview.
+  /**
+   * Draws the Authentication attempts tab from the drill-down's answer.
+   *
+   * @param t - the page's translator
+   * @param params - the page's query, carried on the pager
+   * @param json - the `?user=` answer
+   * @returns the section as HTML
+   */
+  static authenticationsSection(t, params, json) {
+    const rows = [].concat(json.authenticationEvents || []);
+    const paging = json.authenticationEventsPaging || { pages: 1, param:
+      'authenticationsPage', noun: 'attempts', page: 1, perPage: 0,
+      firstRow: 0, lastRow: 0, total: 0 };
+    const logInfo = json.authenticationEventsLog ||
+                    { maxEvents: 0, dropped: 0 };
+    const known = json.authenticationEventsKnownActors || {};
+    const nav = kit.pageNavPair('/admin/users', params, paging, t);
+    const body = rows.map(function (event) {
+      return AuditPage.auditRow(event, known, t);
+    }).join('');
+    const head = function (key) {
+      return '<th>' + t.html(key) + '</th>';
+    };
+    return '<h3>' + t.html('consoleUsers.detail.authHeading') + '</h3>' +
+      kit.note(t.html('consoleUsers.detail.authNote', {
+        max: String(logInfo.maxEvents || 0),
+        dropped: Number(logInfo.dropped || 0)
+      })) +
+      '<p class="sub"><a href="/admin/audit">' +
+      t.html('consoleUsers.detail.authOpenLog') + '</a></p>' +
+      nav.head +
+      '<table><tr><th class="num">#</th>' +
+      head('consoleAudit.when') + head('consoleAudit.category') +
+      head('consoleAudit.action') + head('consoleAudit.outcome') +
+      head('consoleAudit.actor') + head('consoleAudit.from') +
+      head('consoleAudit.target') + head('consoleAudit.whatHappened') +
+      head('consoleAudit.detail') + '</tr>' +
+      (body || '<tr><td colspan="10">' +
+        t.html('consoleUsers.detail.authEmpty') + '</td></tr>') +
+      '</table>' + nav.foot;
   }
 
   // -------------------------------------------------------------------------

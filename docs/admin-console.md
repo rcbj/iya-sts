@@ -1874,6 +1874,7 @@ edited on `/admin/rbac`.
 |---|---|---|---|---|
 | `audit.maxEvents` | `AUDIT_MAX_EVENTS` | `5000` | yes | How many audit events are held; the dropped are counted and shown. |
 | `audit.protocolCalls` | `AUDIT_PROTOCOL_CALLS` | `true` | yes | Whether ordinary protocol endpoint calls get an audit row. |
+| `audit.authenticationHistoryDays` | `AUDIT_AUTHENTICATION_HISTORY_DAYS` | `30` | yes | How many days of assessed sign-ins the portal's Recent sign-ins page lists. The console's user Authentication attempts tab lists the whole audit log and does not use this. |
 | `delegation.maxRecords` | `DELEGATION_MAX_RECORDS` | `2000` | yes | How many delegation acts `/admin/delegation` keeps, refusals included. Set on `/admin/delegation-settings`. |
 | `oauth2.delegatedPermissionsEnforced` | `STS_OAUTH2_DELEGATED_PERMISSIONS_ENFORCED` | `false` | yes | In development mode, refuse a permission the client was not granted. Product mode always refuses. |
 | `debugger.enabled` | `STS_DEBUGGER_ENABLED` | `auto` | no | `auto`, `on` or `off`; `auto` serves the debugger in development mode only. |

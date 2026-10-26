@@ -2338,6 +2338,7 @@ above.
 |---|---|---|---|---|
 | `audit.maxEvents` | `AUDIT_MAX_EVENTS` | `5000` | yes | How many audit events /admin/audit keeps before the oldest are dropped. What was dropped is COUNTED and shown, so a truncated log says it was truncated rather than implying the cap is all there ever was. |
 | `audit.protocolCalls` | `AUDIT_PROTOCOL_CALLS` | `true` | yes | Whether every call into a protocol endpoint gets an audit event. |
+| `audit.authenticationHistoryDays` | `AUDIT_AUTHENTICATION_HISTORY_DAYS` | `30` | yes | How many days of assessed sign-ins Recent sign-ins on the user portal lists for the signed-in person. Each realm sets its own, because the value is read in the ambient realm. The console's Authentication attempts tab on a person lists every attempt the audit log still holds and does not use this window. The log's own cap can still drop older rows. |
 
 ### Delegation
 

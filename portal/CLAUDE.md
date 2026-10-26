@@ -73,7 +73,7 @@ somebody came for is below the fold of a page about something else.
 | `/portal/keys` | authenticated | **Security keys** — the list, and a Remove per key |
 | `/portal/mfa` | authenticated | **Authenticator app** — the QR code, the typed secret, and the code that confirms it |
 | `/portal/signals` | authenticated | **Security activity** — what this identity provider has said about the person over CAEP and RISC (2026-09-10) |
-| `/portal/sign-ins` | authenticated | **Recent sign-ins** — the person's own risk assessments of thirty days, each with "this was me" / "this wasn't me" (#62 P6, `portal_sign_ins.ts`; `risk/CLAUDE.md` argues what each answer moves) |
+| `/portal/sign-ins` | authenticated | **Recent sign-ins** — the person's own risk assessments of `audit.authenticationHistoryDays` (thirty by default), each naming the application the sign-in was for, with "this was me" / "this wasn't me" (#62 P6, #955, `portal_sign_ins.ts`; `risk/CLAUDE.md` argues what each answer moves) |
 | `/portal/consents` | authenticated | **Consents** — what the person agreed each application may ask for, and a Withdraw per scope and per application that revokes what was issued under it (#172, `portal_consents.ts`); and, under **Administrative consents**, the global consents that answered for them at sign-in, with no button (#537) |
 | `/portal/gnap` | authenticated | **GNAP grants** — the GNAP grants the person is the resource owner of, each with its rights, tokens and why it ended, and a Revoke (#432 phase 7, `portal_gnap.ts`) |
 | `/portal/signing-key` | authenticated | **Signing keys** — RFC 7523 and RFC 7522 key pairs and TLS client certificates (2026-09-12) |
@@ -2003,7 +2003,7 @@ page, each answer carrying the slice and a paging member beside it
 | Page | List | Moves on | Was |
 |---|---|---|---|
 | `/portal/claim-sources` | `providers`, the realm's Claims Providers (`ou=claimproviders` grows with what an operator registers) | `page`; `linked` counts the person's links over every page | the whole register |
-| `/portal/sign-ins` | `rows`, the person's assessed sign-ins of thirty days | `page`; paged IN THE STORE (`limit`/`offset`, `total` from the count), so a page reads twenty rows | the risk engine's default fifty, silently truncated |
+| `/portal/sign-ins` | `rows`, the person's assessed sign-ins of the configured window (`audit.authenticationHistoryDays`, thirty by default), each with the application the sign-in named | `page`; paged IN THE STORE (`limit`/`offset`, `total` from the count), so a page reads twenty rows | the risk engine's default fifty, silently truncated |
 | `/portal/email` | `sent`, the outbox's messages to the person | `sentPage`, beside `sentPaging` — named because the page holds other things than the list | the newest twenty, silently truncated |
 
 `PortalKit.pageNav()` (`web_portal_kit.ts`) draws the control for a list that
