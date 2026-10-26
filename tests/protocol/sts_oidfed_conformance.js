@@ -253,10 +253,16 @@ async function test() {
                       ((e && e.message) || e));
       continue;
     }
+    // The Leaf's classical twin stays under the default realm (the header),
+    // so the suite still reads that realm's Entity Configuration —
+    // post-quantum algorithms and AKP keys — while it checks the Leaf.
+    // Those conditions stay argued here. The Trust Anchor's twin and the
+    // joined twin are the classical proof, and they drop the entries.
+    const pqOnly = (plan.classical && plan.leaf) ? [] : PQ_ONLY;
     const judged = oidf.judge(plan.key, ran,
-                              oidf.ledgerFor(plan, EXPECTED, PQ_ONLY),
-                              oidf.ledgerFor(plan, KNOWN_WARNINGS, PQ_ONLY),
-                              oidf.ledgerFor(plan, KNOWN_FAILURES, PQ_ONLY));
+                              oidf.ledgerFor(plan, EXPECTED, pqOnly),
+                              oidf.ledgerFor(plan, KNOWN_WARNINGS, pqOnly),
+                              oidf.ledgerFor(plan, KNOWN_FAILURES, pqOnly));
     log.info("  " + plan.key + ": " + JSON.stringify(judged.counts) +
              ", plan " + oidf.SUITE + "plan-detail.html?plan=" + ran.planId);
     judged.unexplained.forEach(function (line) {

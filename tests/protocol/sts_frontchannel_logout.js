@@ -444,7 +444,10 @@ async function test() {
   page = out.text;
   check("no refresh, and the link is still drawn", function () {
     assert.ok(page.indexOf('http-equiv="refresh"') < 0, page.slice(0, 800));
-    assert.ok(page.indexOf('<a href="' + POST_LOGOUT + '">') >= 0);
+    // The href is escaped the way the page writes every return address
+    // (`xmlEscape`), so `&` in the query is `&amp;` in the markup.
+    assert.ok(page.indexOf('<a href="' +
+      POST_LOGOUT.replace(/&/g, "&amp;") + '">') >= 0, page.slice(0, 800));
   });
   await ok(realmApi + "/config/reset",
            { key: "oauth2.frontchannelLogoutWaitS" }, "cleared the wait");

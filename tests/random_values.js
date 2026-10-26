@@ -233,6 +233,12 @@ function findingsIn(rel, src) {
   }
   const rsaCalls = /\.(?:en|de)crypt\s*\(/g;
   while ((r = rsaCalls.exec(s))) {
+    // WebCrypto's crypto.subtle.encrypt({ name: 'RSA-OAEP' }) is node's
+    // own RSA, not forge. The scheme name is the same string.
+    const before = s.slice(Math.max(0, r.index - 24), r.index);
+    if (/\bsubtle\s*$/.test(before)) {
+      continue;
+    }
     const args = kept.slice(r.index, r.index + 240);
     if (/['"](?:RSAES-PKCS1-V1_5|RSA-OAEP)['"]/.test(args)) {
       out.push(lineOf(r.index) + 'an RSA encrypt or decrypt by forge — ' +
@@ -370,6 +376,9 @@ function run(t) {
     ['import { nanoid } from "nanoid";', true],
     ['k = key.decrypt(wrapped.toString(\'binary\'), \'RSAES-PKCS1-V1_5\');', true],
     ['w = pub.encrypt(k, \'RSA-OAEP\', { md: sha1 });', true],
+    // WebCrypto names the same scheme. jose_jwe.js wraps a CEK this way.
+    ['await crypto.subtle.encrypt({ name: \'RSA-OAEP\' }, k, d);', false],
+    ['await crypto.subtle.decrypt({ name: \'RSA-OAEP\' }, k, d);', false],
     ['// Math.random() and forge.random, A[b[i] % A.length]', false],
     ['s = "it was Math.random() until #65";', false],
     ['s = "require(\'uuid\')";', false],

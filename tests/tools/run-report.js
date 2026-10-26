@@ -253,7 +253,7 @@ const log = bunyan.createLogger({ name: 'run-report',
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const TESTS_DIR = path.join(REPO_ROOT, 'tests');
-const VENDORED_DIR = path.join(TESTS_DIR, 'vendored');
+const VENDORED_DIR = path.join(TESTS_DIR, 'protocol');
 // A filesystem-safe ISO stamp, the parent project's shape: 2026-08-28T17-45-00.
 const RUN_ID = new Date().toISOString().replace(/:/g, '-').replace(/\..+$/, '');
 
@@ -656,6 +656,13 @@ function runJob(job, opts) {
   return new Promise(function (resolve) {
     const started = Date.now();
     const stream = fs.createWriteStream(job.logFile, { flags: 'a' });
+    // A spawn that fails (a missing cwd is reported as ENOENT on node)
+    // ends this stream from the error handler, and the close handler ends
+    // it again. The second end is an error event; unhandled, it kills
+    // every other job in the run.
+    stream.on('error', function (e) {
+      log.debug("Caught in runJob(): " + ((e && e.message) || e));
+    });
     stream.write('# ' + job.name + '\n# ' + job.cmd.join(' ') +
                  '\n# cwd=' + job.cwd + '\n\n');
     const child = spawn(job.cmd[0], job.cmd.slice(1), {
