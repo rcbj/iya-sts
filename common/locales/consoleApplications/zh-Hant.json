@@ -831,5 +831,8 @@
   "launch.lead": "此連結會在這裡發起對該應用程式的 {protocol} 登入。使用者入口網站的<strong>登入</strong>連結就是同一個 URL，它在其他任何地方也能使用——書籤、內部網路頁面或電子郵件。",
   "launch.off": "此應用程式的這項功能已<strong>關閉</strong>，因此該連結會被拒絕：請在下方將 <code>{attribute}</code> 設為 TRUE，或為該領域開啟 <code>{setting}</code>。",
   "launch.missing": "它目前還無法運作：該應用程式沒有已註冊的 <code>{attributes}</code>，因此在這裡發起的登入無處可去。",
-  "launch.endpoint": "該協定本身的端點，供需要它的合作夥伴使用："
+  "launch.endpoint": "該協定本身的端點，供需要它的合作夥伴使用：",
+  "relations.label": "它與其他角色設定有何不同",
+  "relations.appPerms": "<strong>此應用程式作為成員持有的角色。</strong>這些與每個角色頁面「誰持有它」下的應用程式列是同一批條目：在此處授予與在「角色」頁面新增該應用程式寫入的是同一內容。應用程式自己的權杖（<code>client_credentials</code>）攜帶這些角色，並可取得它們所授權的內容。對於 <code>SSF_READ</code> 和 <code>SSF_MANAGE</code>，成員關係還允許登入此應用程式的人員在屬於該角色的群組時取得該 scope。這不同於下方的「使用它所需持有的角色」（它只是要求一個角色），也不同於角色的「授予它的用戶端」（它把角色借給透過某用戶端登入的人員）。",
+  "relations.required": "<strong>登入要求，而非授予。</strong>此清單即 <code>appRequiredRole</code>，每個角色的頁面都會在「要求它的應用程式」下顯示此應用程式。人員必須以成員身分或透過群組持有其中一個角色，才會為此應用程式簽發任何內容。它不新增 scope 或權限，也不會讓此應用程式成為該角色的成員。若要讓此應用程式的權杖攜帶 <code>ssf.read</code>，請在上方「應用程式權限」下授予 <code>SSF_READ</code>，並把相關人員加入 <code>ssf-read</code>。"
 }

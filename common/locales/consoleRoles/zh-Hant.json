@@ -147,5 +147,10 @@
   "detail.entryHeading": "它的目錄項目",
   "detail.editOnList": "成員、權限和授予它的用戶端在「角色」頁面的「您建立的角色」中變更。",
   "owners.lead": "對此角色負責的人員和群組。在下方尋找一個並按 <strong>新增</strong>，或用 <strong>移除</strong> 刪除一個：每次按下即刻儲存。擁有者不授予任何權限：此服務中沒有任何部分讀取它來做決定。",
-  "owners.leadRead": "對此角色負責的人員和群組，來自其 <code>owner</code> 值。擁有者不授予任何權限。"
+  "owners.leadRead": "對此角色負責的人員和群組，來自其 <code>owner</code> 值。擁有者不授予任何權限。",
+  "relations.label": "它與其他角色設定有何不同",
+  "relations.give": "<strong>此表單新增成員：即持有該角色的對象。</strong>人員寫入 <code>roleMemberUser</code>，群組寫入 <code>roleMemberGroup</code>（群組的成員透過該群組持有角色），應用程式寫入 <code>roleMemberApplication</code>。角色頁面在「誰持有它」下列出它們，應用程式頁面在「角色」分頁的「應用程式權限」下列出它自己的角色。另有兩項設定會提到角色，但不會讓任何對象成為成員。應用程式的「使用它所需持有的角色」（<code>appRequiredRole</code>）要求先持有該角色才會簽發任何內容。「授予它的用戶端」中的用戶端把角色借給透過它登入的人員，且僅限該用戶端的權杖。<code>SSF_READ</code> 和 <code>SSF_MANAGE</code> 更嚴格：只有當人員屬於該角色的群組、且其登入的應用程式是該角色的應用程式成員時，才會簽發相應的 scope，因此在這裡直接新增的人員不算數。",
+  "relations.holds": "<strong>成員：誰持有此角色。</strong>人員直接持有，群組的成員透過群組持有，應用程式以其自身身分持有。應用程式成員自己的權杖（<code>client_credentials</code>）攜帶該角色，並可取得它所授權的內容。對於 <code>SSF_READ</code> 和 <code>SSF_MANAGE</code>，應用程式成員同時也是其登入可取得該 scope 的應用程式：只有當人員屬於該角色的群組、且其登入的應用程式列在此處時，才能取得 <code>ssf.read</code>。成員可在「角色」頁面新增，應用程式也可在其自身頁面的「角色」分頁「應用程式權限」下新增；兩者寫入同一條目。下方的「授予它的用戶端」和「要求它的應用程式」不是成員。",
+  "relations.conferred": "<strong>把此角色借給透過它們登入的人員的用戶端。</strong>這是角色上的 <code>roleConferredBy</code>。透過此處所列用戶端登入的人員，在該用戶端的權杖上持有該角色，不涉及其他權杖，用於判斷這些權杖可攜帶哪些受控權限。這不是成員關係：該用戶端自己的 <code>client_credentials</code> 權杖不持有該角色，也不滿足應用程式所要求的角色。<code>SSF_READ</code> 和 <code>SSF_MANAGE</code> 忽略此設定。",
+  "relations.required": "<strong>在簽發任何內容之前要求此角色的應用程式。</strong>每個應用程式都在其 <code>appRequiredRole</code> 中指定此角色，該設定位於應用程式頁面的「角色」分頁「使用它所需持有的角色」下。不持有應用程式所要求的任何角色的人，得不到該應用程式的權杖、斷言或工作階段。要求一個角色不會授予任何東西：它不新增 scope 或權限，也不會讓應用程式成為成員。若要讓某應用程式的登入取得 <code>ssf.read</code>，請在「誰持有它」下將其新增為應用程式。"
 }
