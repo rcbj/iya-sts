@@ -83,6 +83,20 @@ says which, and shows the cron expression the API stores, so an
 expression written by hand on the API that the editor cannot draw is
 still seen. Save and Delete are buttons at the foot of the form.
 
+Every field of the application carries a **tooltip** on its label, the
+console's shape, saying what the field is for.
+
+**The Parameters box** on a definition's page is for a saved filter that
+names a parameter instead of a value, such as
+`{ "op": "eq", "field": "username", "param": "who" }`. The definition
+stores a default for it, and a run fills it from the JSON object typed
+in the box, for example `{"who": "rcbj"}`; a key given there overrides
+the stored default for that run only, and an empty box uses the defaults.
+The sentence under the box names the parameters the filter holds, or
+says that it holds none, in which case the box is ignored. The query form
+writes values, not parameters, so a definition made on the page names
+none unless its document is edited through the API.
+
 ### The groups a definition is shared with, and who is emailed
 
 The **Groups emailed the result** pane is a search over the realm's

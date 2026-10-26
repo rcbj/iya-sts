@@ -150,9 +150,20 @@ rcbj, 2026-10-26, after seeing #986's page. Four things:
   group's DN in the detail), and the others are still sent to. The
   owner's notice is unchanged. A group's address is set on the console's
   group page or at its create (`ldap/CLAUDE.md`).
+* **A tooltip on every field** (rcbj, the same day), the console's shape:
+  `tip(t, key)` puts a `title` on the field's label from a `report.tip*`
+  sentence (`admin-ui/web_kit.ts`'s `tip()` is the model). A new field
+  owes a `tipX` key in the seven base catalogs.
+* **The Parameters box explained**: `parametersHelpHtml()` under the Run
+  box names the parameters the saved filter holds (`paramNames()` walks
+  `param` leaves through `and`, `or` and `not`) or says it holds none and
+  the box is ignored, then gives the shape and one example. The query
+  form writes values, never parameters, so a page-made definition names
+  none; a parameterised one is written through the API.
 * `tests/report_query.js`'s `groups()` holds the search's paging and
   matching, the recipients split, the form's prefill in every shape, the
-  JSON ride-back, and the pane's markup; `tests/mail.js` the group
+  JSON ride-back, the pane's markup, the tooltips and the parameters
+  sentence; `tests/mail.js` the group
   recipient; `tests/directory_group_writes.js` the address on the entry.
   Not held in process: the browser's Add/Remove and search, and a notice
   sent to a real transport.

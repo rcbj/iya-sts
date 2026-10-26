@@ -100,8 +100,13 @@ const REPORT_STYLE = [
   // THE DEFINITION EDITOR (#989): two columns — the query on the left, the
   // schedule, the notice and the groups on the right — and real buttons at
   // the foot. One column under 48rem.
+  // The two columns are the same height (rcbj, 2026-10-26: "even"): the
+  // grid stretches both sections, and each is a bordered panel so the
+  // shared height is seen rather than inferred from the taller one.
   '.editor { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem;',
-  '  align-items: start; }',
+  '  align-items: stretch; }',
+  '.editor > section { border: 1px solid #d5d5dd; border-radius: 8px;',
+  '  padding: .75rem 1rem; background: #fafafc; min-width: 0; }',
   '@media (max-width: 48rem) { .editor { grid-template-columns: 1fr; } }',
   '.editor h3 { margin: .25rem 0 .5rem; font-size: 1.05rem; }',
   '.editor .field { margin: .4rem 0; }',

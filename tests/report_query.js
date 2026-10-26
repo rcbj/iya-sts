@@ -1518,6 +1518,47 @@ function groups(t) {
   t.check(spec.components.schemas.GroupPage &&
     spec.paths['/report-api/groups'],
     'the OpenAPI document carries the group search');
+
+  // A tooltip on every field, the console's shape: a title on the label.
+  const labelled = (fresh.match(/<label[^>]*>/g) || []);
+  const untitled = labelled.filter(function (one) {
+    return one.indexOf(' title="') < 0 && one.indexOf('name="field"') < 0;
+  });
+  t.check(labelled.length >= 8, 'the query form labels its fields',
+    String(labelled.length));
+  t.equal(untitled.filter(function (one) {
+    return !/^<label>$/.test(one);
+  }).length, 0, 'every labelled control carries a tooltip', untitled.join(' '));
+  t.check(fresh.indexOf('title="The catalog source the report reads') >= 0,
+    'the tooltip is the catalog\'s sentence');
+  const sched = ReportRuntime.scheduleEditorHtml(tr, '');
+  t.check(sched.indexOf('<label title="The time of day, in UTC') >= 0 &&
+    sched.indexOf('<label title="The weekdays the schedule repeats') >= 0,
+    'the schedule editor\'s two labels carry theirs');
+  const realmField = ReportRuntime.realmHtml(tr,
+    { current: { id: 'default', name: 'Default', prefix: '' }, realms: null },
+    '/report');
+  t.check(realmField.indexOf(
+    'title="The trust realm this page is showing') >= 0,
+    'the realm field carries its tooltip');
+
+  // The parameters: the names a filter holds, and the sentence under Run.
+  t.equal(ReportRuntime.paramNames({ op: 'and', args: [
+    { op: 'eq', field: 'username', param: 'who' },
+    { op: 'or', args: [{ op: 'eq', field: 'status', param: 'state' },
+      { op: 'eq', field: 'username', param: 'who' }] },
+    { op: 'not', arg: { op: 'eq', field: 'mail', param: 'addr' } }]
+  }).join(','), 'who,state,addr', 'every parameter a filter names, once');
+  t.equal(ReportRuntime.paramNames({ op: 'eq', field: 'a', value: 'b' })
+    .length, 0, 'a value is not a parameter');
+  const helpNamed = ReportRuntime.parametersHelpHtml(tr, { where:
+    { op: 'eq', field: 'username', param: 'who' } });
+  t.check(helpNamed.indexOf('This definition names: who.') >= 0 &&
+    helpNamed.indexOf('{&quot;who&quot;: &quot;rcbj&quot;}') >= 0,
+    'the sentence names the parameters and shows the example', helpNamed);
+  t.check(ReportRuntime.parametersHelpHtml(tr, { where: null })
+    .indexOf('names no parameter, so the box is ignored') >= 0,
+    'a definition with none says the box is ignored');
   log.debug("Leaving groups().");
 }
 

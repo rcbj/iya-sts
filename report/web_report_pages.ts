@@ -89,6 +89,50 @@ function navCurrent(path: string, suffix: string): boolean {
   return here === href || here.indexOf(href + '/') === 0;
 }
 
+// A TOOLTIP ON EVERY FIELD (rcbj, 2026-10-26), the console's shape: a
+// `title` on the field's label (`admin-ui/web_kit.ts`, `tip()`), from the
+// `report.tip*` sentences, so the browser shows it on hover and a reader
+// of the markup finds it on the control it explains.
+function tip(t: any, key: string): string {
+  const text = t.text(key);
+  return text && text !== key ? ' title="' + esc(text) + '"' : '';
+}
+
+// The parameters a saved filter names (`param` leaves), for the sentence
+// under the Run box (#989's follow-up): a run fills them from the JSON
+// object typed there; a definition naming none ignores the box.
+function paramNames(node: any, into?: string[]): string[] {
+  const out = into || [];
+  if (!node || typeof node !== 'object') {
+    return out;
+  }
+  if (node.op === 'and' || node.op === 'or') {
+    (node.args || []).forEach(function (arg: any): void {
+      paramNames(arg, out);
+    });
+  } else if (node.op === 'not') {
+    paramNames(node.arg, out);
+  } else if (typeof node.param === 'string' && node.param &&
+             out.indexOf(node.param) < 0) {
+    out.push(node.param);
+  }
+  return out;
+}
+
+function parametersHelpHtml(t: any, document: any): string {
+  const names = paramNames(document && document.where);
+  const named = names.length
+    ? t.text('report.parametersNamed', { names: names.join(', ') })
+    : t.text('report.parametersNone');
+  // The two JSON examples ride in as values: a brace in a catalog message
+  // is a parameter to the message format, so they cannot be written there.
+  return '<p class="sub params-help">' + esc(named) + ' ' +
+    esc(t.text('report.parametersHelp', {
+      leaf: '{"op": "eq", "field": "username", "param": "who"}',
+      example: '{"who": "rcbj"}'
+    })) + '</p>';
+}
+
 function navLink(href: string, label: string, current: boolean): string {
   return '<a href="' + esc(href) + '"' +
     (current ? ' aria-current="page"' : '') + '>' + esc(label) +
@@ -242,30 +286,38 @@ function queryFormHtml(t: any, sources: any[], document: any): string {
       (format === value ? ' selected' : '') + '>' + esc(t.text(key)) +
       '</option>';
   };
-  return '<div class="field"><label>' + esc(t.text('report.source')) +
+  return '<div class="field"><label' + tip(t, 'report.tipSource') + '>' +
+    esc(t.text('report.source')) +
     '</label><select name="source">' + options + '</select></div>' +
-    '<div class="field"><label>' + esc(t.text('report.fields')) +
+    '<div class="field"><label' + tip(t, 'report.tipFields') + '>' +
+    esc(t.text('report.fields')) +
     '</label><div class="row">' + checks + '</div></div>' +
-    '<div class="field"><label>' + esc(t.text('report.filter')) +
+    '<div class="field"><label' + tip(t, 'report.tipFilter') + '>' +
+    esc(t.text('report.filter')) +
     '</label>' + filters + kept + '</div>' +
-    '<div class="field"><label>' + esc(t.text('report.sort')) +
+    '<div class="field"><label' + tip(t, 'report.tipSort') + '>' +
+    esc(t.text('report.sort')) +
     '</label><div class="row"><select name="sortField">' + sortOptions +
     '</select><select name="sortDir"><option value="asc"' +
     (order && order.dir !== 'desc' ? ' selected' : '') + '>' +
     esc(t.text('report.ascending')) + '</option><option value="desc"' +
     (order && order.dir === 'desc' ? ' selected' : '') + '>' +
     esc(t.text('report.descending')) + '</option></select></div></div>' +
-    '<div class="field"><label>' + esc(t.text('report.limit')) +
+    '<div class="field"><label' + tip(t, 'report.tipLimit') + '>' +
+    esc(t.text('report.limit')) +
     '</label><input name="limit" value="' +
     esc(String(doc.limit || 100)) + '"></div>' +
-    '<div class="field"><label>' + esc(t.text('report.format')) +
+    '<div class="field"><label' + tip(t, 'report.tipFormat') + '>' +
+    esc(t.text('report.format')) +
     '</label><select name="format">' + formatOption('json', 'report.json') +
     formatOption('csv', 'report.csv') + formatOption('pdf', 'report.pdf') +
     '</select></div>' +
-    '<div class="field"><label><input type="checkbox" name="counted"' +
+    '<div class="field"><label' + tip(t, 'report.tipCount') + '>' +
+    '<input type="checkbox" name="counted"' +
     (counted ? ' checked' : '') + '> ' + esc(t.text('report.count')) +
-    '</label><select name="groupBy">' + groupOptions + '</select> ' +
-    esc(t.text('report.groupBy')) + '</div>';
+    '</label><label' + tip(t, 'report.tipGroupBy') + '>' +
+    '<select name="groupBy">' + groupOptions + '</select> ' +
+    esc(t.text('report.groupBy')) + '</label></div>';
 }
 
 // THE GROUP PANE (#989): one page of the search's hits, five at most, each
@@ -324,8 +376,8 @@ function realmHtml(t: any, view: any, path: string): string {
   }
   const current = view.current;
   const list = Array.isArray(view.realms) ? view.realms : [];
-  const label = '<label for="realmpick">' +
-    esc(t.text('report.trustRealm')) + '</label>';
+  const label = '<label for="realmpick"' + tip(t, 'report.tipTrustRealm') +
+    '>' + esc(t.text('report.trustRealm')) + '</label>';
   if (list.length < 2) {
     return '<div class="realmpick">' + label +
       '<span class="realmname" id="realmpick">' +
@@ -473,10 +525,12 @@ function scheduleEditorHtml(t: any, cron: string): string {
       (fields.days.indexOf(dow) >= 0 ? ' checked' : '') + '> ' +
       esc(weekdayName(t.locale, dow)) + '</label>';
   }).join(' ');
-  return '<div class="field"><label>' + esc(t.text('report.runAt')) +
+  return '<div class="field"><label' + tip(t, 'report.tipRunAt') + '>' +
+    esc(t.text('report.runAt')) +
     '</label><input type="datetime-local" name="scheduleAt" step="60" ' +
     'value="' + esc(fields.at) + '"></div>' +
-    '<div class="field"><label>' + esc(t.text('report.repeatOn')) +
+    '<div class="field"><label' + tip(t, 'report.tipRepeatOn') + '>' +
+    esc(t.text('report.repeatOn')) +
     '</label><div class="row days">' + boxes + '</div></div>' +
     '<p class="sub" data-schedule-preview>' +
     esc(schedulePreview(t, cron)) + '</p>';
@@ -661,6 +715,27 @@ class ReportRuntime extends SpaClient {
    */
   static queryFormHtml(t: any, sources: any[], document: any): string {
     return queryFormHtml(t, sources, document);
+  }
+
+  /**
+   * The parameters a filter names, for a test.
+   *
+   * @param where - the filter
+   * @returns the parameter names, each once
+   */
+  static paramNames(where: any): string[] {
+    return paramNames(where);
+  }
+
+  /**
+   * The sentence under the Run box, for a test.
+   *
+   * @param t - the translator
+   * @param document - the saved document
+   * @returns the sentence's HTML
+   */
+  static parametersHelpHtml(t: any, document: any): string {
+    return parametersHelpHtml(t, document);
   }
 
   /**
@@ -1480,9 +1555,11 @@ class ReportRuntime extends SpaClient {
       '</div>' +
       // Save query (#986): the Name field and the Save button appear only
       // once the box is ticked; unticked, the form runs and saves nothing.
-      '<div class="field"><label><input type="checkbox" name="saveQuery"> ' +
+      '<div class="field"><label' + tip(self.t, 'report.tipSaveQuery') +
+      '><input type="checkbox" name="saveQuery"> ' +
       esc(self.t.text('report.saveQuery')) + '</label></div>' +
-      '<div class="field save-only" hidden><label>' +
+      '<div class="field save-only" hidden><label' +
+      tip(self.t, 'report.tipName') + '>' +
       esc(self.t.text('report.name')) +
       '</label><input name="definitionName"></div>' +
       actionsHtml(self.t) +
@@ -1657,22 +1734,26 @@ class ReportRuntime extends SpaClient {
       editor = '<form data-form="definition" data-id="' + esc(row.id) + '">' +
         '<div class="editor"><section>' +
         '<h3>' + esc(t.text('report.queryHeading')) + '</h3>' +
-        '<div class="field"><label>' + esc(t.text('report.name')) +
+        '<div class="field"><label' + tip(t, 'report.tipName') + '>' +
+        esc(t.text('report.name')) +
         '</label><input name="name" value="' + esc(row.name) + '"></div>' +
         '<div data-query-block>' +
         queryFormHtml(t, sources, row.document || {}) + '</div>' +
         '</section><section>' +
         '<h3>' + esc(t.text('report.settingsHeading')) + '</h3>' +
         scheduleEditorHtml(t, String(row.schedule || '')) +
-        '<div class="field"><label><input type="checkbox" name="enabled"' +
+        '<div class="field"><label' + tip(t, 'report.tipEnabled') + '>' +
+        '<input type="checkbox" name="enabled"' +
         (row.scheduleEnabled ? ' checked' : '') + '> ' +
         esc(t.text('report.enabled')) + '</label></div>' +
-        '<div class="field"><label><input type="checkbox" name="notify"' +
+        '<div class="field"><label' + tip(t, 'report.tipNotify') + '>' +
+        '<input type="checkbox" name="notify"' +
         (row.notify ? ' checked' : '') + '> ' +
         esc(t.text('report.notify')) + '</label></div>' +
         '<h3>' + esc(t.text('report.groupsHeading')) + '</h3>' +
         '<div class="groups-pane">' +
-        '<div class="field"><label>' + esc(t.text('report.groupSearch')) +
+        '<div class="field"><label' + tip(t, 'report.tipGroupSearch') + '>' +
+        esc(t.text('report.groupSearch')) +
         '</label><div class="row"><input type="search" name="groupQuery">' +
         '<button type="button" class="btn small" data-act="group-search">' +
         esc(t.text('report.search')) + '</button></div></div>' +
@@ -1693,11 +1774,13 @@ class ReportRuntime extends SpaClient {
       esc(this.t.text('report.owner')) + ' ' +
       esc(row.ownerName || row.owner) + '</p>' +
       '<form data-form="run" data-id="' + esc(row.id) + '">' +
-      '<div class="row"><label>' +
+      '<div class="row"><label' + tip(this.t, 'report.tipParameters') + '>' +
       esc(this.t.text('report.parameters')) +
-      '</label><textarea name="parameters" rows="1"></textarea>' +
+      '</label><textarea name="parameters" rows="1" placeholder="' +
+      esc('{"who": "rcbj"}') + '"></textarea>' +
       '<button class="button secondary" type="submit">' +
-      esc(this.t.text('report.run')) + '</button></div></form>' + editor);
+      esc(this.t.text('report.run')) + '</button></div>' +
+      parametersHelpHtml(this.t, row.document) + '</form>' + editor);
     if (row.editable) {
       await this.searchGroups('', 1);
     }
