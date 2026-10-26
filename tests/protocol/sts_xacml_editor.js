@@ -521,6 +521,42 @@ async function throughTheSwitcher(driver, path) {
 // `until.stalenessOf()`: a probe that lands while Chrome tears a document
 // down answers "Node with given id does not belong to the document", which
 // means the same thing here.
+// HOW LONG A PRESSED FORM'S PAGE HAS TO BE REPLACED (2026-10-26). It was
+// fifteen seconds, the tightest bound in this file and shorter than the
+// twenty waitForDrawn() then gives the drawing. On 2026-10-26, in memory
+// mode with four conformance lanes beside it, form 22 ("A condition, added
+// once") was not replaced within the fifteen. Nothing on either side says
+// why: a successful edit writes no line in the service log.
+const REPLACED_MS = 45000;
+
+// What the browser showed when a pressed form's page was never replaced, so
+// the next such failure says whether the request went out. Read only once
+// the wait has failed: getting the browser log empties it, and the job's
+// last section asserts that log is clean.
+async function pageEvidence(driver) {
+  log.debug("Entering pageEvidence().");
+  const shown = await driver.executeScript(`
+    const strip = document.querySelector('.strip, .notice, .error, ' +
+                                          '[role=status], [role=alert]');
+    return { url: location.href, readyState: document.readyState,
+             strip: strip ? strip.textContent.trim().slice(0, 300) : '' };
+  `).catch(function (e) {
+    log.debug("Caught in pageEvidence(): " + ((e && e.message) || e));
+    return { error: String((e && e.message) || e) };
+  });
+  const logged = await driver.manage().logs().get("browser")
+    .catch(function (e) {
+      log.debug("Caught in pageEvidence(): " + ((e && e.message) || e));
+      return [];
+    });
+  const out = JSON.stringify(shown) + "; the browser logged " +
+    JSON.stringify(logged.slice(-5).map(function (entry) {
+      return (entry.level && entry.level.name) + " " + entry.message;
+    }));
+  log.debug("Leaving pageEvidence().");
+  return out;
+}
+
 async function replaced(driver, element, what) {
   log.debug("Entering replaced().");
   await driver.wait(async function () {
@@ -536,7 +572,12 @@ async function replaced(driver, element, what) {
       }
       throw e;
     }
-  }, 15000, what + " never replaced the page it was pressed on");
+  }, REPLACED_MS, what + " never replaced the page it was pressed on")
+    .catch(async function (e) {
+      log.debug("Caught in replaced(): " + ((e && e.message) || e));
+      throw new Error(((e && e.message) || e) + ". The page: " +
+                      await pageEvidence(driver));
+    });
   log.debug("Leaving replaced().");
 }
 
@@ -749,8 +790,12 @@ async function submitForm(driver, index, values) {
       }
       throw e;
     }
-  }, 15000, "form " + index + " was submitted and the page it was on was " +
-            "never replaced");
+  }, REPLACED_MS, "form " + index + " was submitted and the page it was on " +
+                 "was never replaced").catch(async function (e) {
+    log.debug("Caught in submitForm(): " + ((e && e.message) || e));
+    throw new Error(((e && e.message) || e) + ". The page: " +
+                    await pageEvidence(driver));
+  });
   // AND DRAWN AGAIN (#446): the console sends the form to its /admin-api
   // operation and draws the page it came from in place, with the answer's
   // `?notice=` or `?error=` on its URL.
