@@ -210,6 +210,93 @@ function formats(t) {
   t.equal(two.ok, false, '41 rows need a second page');
   t.equal(two.reason, 'pages', 'the page cap names pages');
 
+  // A CELL WRAPS WITHIN ITS COLUMN (#993). The drawn strings are read back
+  // out of the content streams: every `(...) Tj`, unescaped.
+  const drawn = function (result) {
+    const text = result.ok ? result.body.toString('latin1') : '';
+    const out = [];
+    const re = /\(((?:\\.|[^\\)])*)\) Tj/g;
+    let m = re.exec(text);
+    while (m) {
+      out.push(m[1].replace(/\\(.)/g, '$1'));
+      m = re.exec(text);
+    }
+    return out;
+  };
+  const meta = { realm: 'default', when: 't' };
+  const sentence = 'one two three four five six seven eight nine ten ' +
+    'eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen ' +
+    'nineteen twenty twentyone twentytwo twentythree twentyfour ' +
+    'twentyfive twentysix twentyseven twentyeight twentynine thirty';
+  const wrapped = Formats.pdf(plan, [{ username: sentence }], meta, 1);
+  const pieces = drawn(wrapped).filter(function (one) {
+    return /^one |^twenty|^thirty/.test(one) || sentence.indexOf(one) >= 0;
+  }).filter(function (one) { return one !== 'username'; });
+  t.check(wrapped.ok && pieces.length >= 2 &&
+          pieces.join(' ') === sentence,
+    'a long value is drawn whole, on more than one line, broken at ' +
+    'spaces (#993)', JSON.stringify(pieces));
+  t.check(pieces.every(function (one) { return one.length <= 134; }),
+    'no line is wider than the column', JSON.stringify(pieces));
+
+  const tall = rows(39).concat([{ username: sentence }]);
+  t.equal(Formats.pdf(plan, tall, meta, 1).ok, false,
+    '39 short rows and one two-line row need a second page');
+  t.equal(Formats.pdf(plan, tall, meta, 2).ok, true,
+    'and fit on two');
+  const split = Formats.pdf(plan, rows(39).concat([{ username: sentence }])
+    .concat(rows(1)), meta, 2);
+  const splitText = split.ok ? split.body.toString('latin1') : '';
+  // The page number is the last string of a page's stream, so the first
+  // page ends at `Page 1/2` and the two-line row must come after it.
+  const lastShort = splitText.indexOf('(u38) Tj');
+  const page1End = splitText.indexOf('(Page 1/2) Tj');
+  const page2End = splitText.indexOf('(Page 2/2) Tj');
+  const twoLine = splitText.indexOf('(one two');
+  t.check(split.ok && lastShort >= 0 && lastShort < page1End &&
+          page1End < twoLine && twoLine < page2End,
+    'a row that does not fit in what is left of a page starts the next ' +
+    'page whole, rather than being split',
+    [lastShort, page1End, twoLine, page2End].join());
+
+  const long = new Array(301).join('q');
+  const cut = Formats.pdf(plan, [{ username: long }], meta, 1);
+  const cutText = cut.ok ? cut.body.toString('latin1') : '';
+  t.equal((cutText.match(/q/g) || []).length, 253,
+    'a value over 256 bytes is cut to 253 characters');
+  t.check(cutText.indexOf('qqq...) Tj') >= 0,
+    'and ends in ... inside the 256', cutText.slice(-400));
+  t.equal(Formats.cellBytes(), 256, 'the cap is 256 bytes');
+
+  const many = [];
+  for (let i = 0; i < 30; i++) {
+    many.push('f' + i);
+  }
+  const narrow = { source: 'users', fields: many, locale: 'en' };
+  const wide = {};
+  wide.f0 = long;
+  t.equal(Formats.pdf(narrow, [wide], meta, 2).ok, false,
+    'a 256-byte cell in a column three characters wide is taller than ' +
+    'two pages');
+  const spilled = Formats.pdf(narrow, [wide], meta, 3);
+  const spilledText = spilled.ok ? spilled.body.toString('latin1') : '';
+  t.check(spilled.ok && (spilledText.match(/q/g) || []).length === 253 &&
+          spilledText.indexOf('(Page 3/3) Tj') >= 0,
+    'and is drawn whole across three pages rather than cut at a foot',
+    (spilledText.match(/q/g) || []).length);
+  const blank = Formats.pdf(plan, [{ username: '' }, { username: null }],
+    meta, 1);
+  t.check(blank.ok && (drawn(blank).filter(function (one) {
+    return one === '';
+  }).length === 0),
+    'a blank cell draws nothing and still takes its row');
+  const lf = drawn(Formats.pdf(plan, [{ username: 'first\nsecond' }],
+    meta, 1));
+  t.check(lf.indexOf('first') >= 0 && lf.indexOf('second') >= 0 &&
+          lf.indexOf('first\nsecond') < 0,
+    'a line feed in a value breaks the line', JSON.stringify(lf));
+  t.equal(Formats.rowsPerPage(), 40, 'forty single-line rows fill a page');
+
   const german = Formats.pdf(
     { source: 'users', fields: ['username'], locale: 'de' },
     rows(1), { realm: 'default', when: 't' }, 1);

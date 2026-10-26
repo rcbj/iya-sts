@@ -43,7 +43,7 @@ and `docs/configuration.md`.
 | `openapi.ts` | `GET /report-api/openapi.json`. Every released route, built from the catalog that is loaded. |
 | `query.ts` | Validates one JSON document and decides sync or async. It sends no HTTP response. |
 | `limits.ts` | The caps, read when asked. `Limits.fixed` is what a test passes. |
-| `formats.ts` | JSON, RFC 4180 CSV, and a PDF 1.4 file in Helvetica WinAnsi. |
+| `formats.ts` | JSON, RFC 4180 CSV, and a PDF 1.4 file in Helvetica WinAnsi. A PDF cell wraps within its column, up to 256 bytes, and a row is as tall as its tallest cell (#993); the file's header argues the pagination. |
 | `rows.ts`, `sources.ts`, `executor.ts` | Reading one source, bounded, and writing the artifact. |
 | `rights.ts` | Who may be issued the two scopes, and who may see or edit a row. |
 | `jobs.ts` | Definitions, the queue, and the six scheduler jobs. |
@@ -219,6 +219,17 @@ or a sync call over `report.syncMaxMs` is refused rather than sent in
 part. A job over `report.asyncMaxMs` fails the same public token,
 `result_too_large`, under `STS-REPORT-0034`. The submission has already
 answered. Nothing is stored in part.
+
+**A PDF cell wrapped, and the page cap moved with it (#993, 2026-10-26).**
+rcbj: a PDF from the jobs tab cut every value at its column's edge. A
+cell is now laid out on as many lines as its column needs, capped at 256
+WinAnsi bytes and ending in `...` when cut, and a page holds forty LINES
+rather than forty rows, so `report.pdfMaxPages` is checked against the
+pages the layout needs. A row that fits is never split; one taller than
+a page continues on the next, because a row cut at the page's foot is
+the same clipping seen from below. The layout is a character count over
+Helvetica's average advance (the file carries no metrics), the heuristic
+`clip()` already used. `tests/report_query.js` `formats()` holds it.
 
 PDF chrome exists in English, Spanish, French, German, Filipino and
 Swedish. Helvetica WinAnsi can draw those. Chinese is drawn in English,
