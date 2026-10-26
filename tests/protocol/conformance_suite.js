@@ -280,7 +280,20 @@ async function runModule(planId, module, onWaiting) {
             encodeURIComponent(planId) +
             (module.variant ? "&variant=" +
              encodeURIComponent(JSON.stringify(module.variant)) : "");
-  const created = await suite("POST", "api/runner?" + q);
+  let created = await suite("POST", "api/runner?" + q);
+  // THE SUITE'S OWN RACE (2026-10-26): a module stopped for its deadline
+  // below is still being stopped when the next one is created, and the
+  // runner can answer that creation with "setStatus() called but status is
+  // the same: INTERRUPTED -> INTERRUPTED". t-jwt-cl lost every module after
+  // one timed out that way. The stop is waited on below, and a creation that
+  // still meets it is made again once.
+  if (created.status !== 201 && created.status !== 200 &&
+      /setStatus\(\) called/.test(created.raw)) {
+    log.info("The suite was still stopping a module; creating " +
+             module.testModule + " again.");
+    await waitMs(5000);
+    created = await suite("POST", "api/runner?" + q);
+  }
   assert.ok(created.status === 201 || created.status === 200,
             "creating " + module.testModule + ": " + created.raw.slice(0, 300));
   const id = created.body.id;
@@ -311,6 +324,15 @@ async function runModule(planId, module, onWaiting) {
     }
     if (Date.now() > deadline) {
       await suite("DELETE", "api/runner/" + id);
+      // Until the suite has finished stopping it, so the next creation does
+      // not meet the stop (see the creation above). Thirty seconds at most.
+      for (let i = 0; i < 15; i++) {
+        const now = (await suite("GET", "api/info/" + id)).body || {};
+        if (now.status === "INTERRUPTED" || now.status === "FINISHED") {
+          break;
+        }
+        await waitMs(2000);
+      }
       info = Object.assign({}, info, { status: "TIMED OUT" });
       break;
     }
