@@ -200,8 +200,17 @@ async function test() {
   log.info("=== c. a group's population ===");
   const person = "pkr-http-" + STAMP;
   const group = "pkr-http-group-" + STAMP;
+  // The attributes are what the realm's attribute policy (#396) requires of
+  // every person in product mode; `invent: false` fills none of them, so the
+  // create was refused (400) in the single-node mode until 2026-10-26.
   const madePerson = await send("POST", "/admin-api/users/create",
-                                { json: { username: person, invent: false } });
+                                { json: { username: person, invent: false,
+                                          attributes: {
+                                            cn: "Passkey Report " + person,
+                                            givenName: "Passkey",
+                                            sn: person,
+                                            mail: person +
+                                                  "@passkey-report.test" } } });
   const madeGroup = await send("POST", "/admin-api/groups/create",
                                { json: { group: group } });
   const joined = await send("POST", "/admin-api/groups/add-member",
