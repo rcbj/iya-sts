@@ -4766,7 +4766,10 @@ class AdminActions {
               'directory client',
         channel: 'console',
         actor: String(body.actor || ''),
-        members: members
+        members: members,
+        // The group's own email address (#989), where a report shared
+        // with it is sent; optional, checked by the directory.
+        mail: String(body.mail || '').trim()
       });
       if (!result.ok) {
         log.debug("Leaving AdminActions.groupsAction(). create refused.");
@@ -4815,6 +4818,26 @@ class AdminActions {
       return result;
     }
 
+    // A GROUP'S EMAIL ADDRESS (#989): set or cleared from the group page's
+    // form and `POST /admin-api/groups/set-mail`, both reaching the
+    // directory's one setter, which owns the shape rule and the refusals.
+    if (action === 'set-mail') {
+      const group = String(body.group || '').trim();
+      const address = String(body.mail || '').trim();
+      const result = groupWriter.setGroupMail(group, address, {
+        origin: 'console',
+        channel: 'console',
+        actor: String(body.actor || '')
+      });
+      if (!result.ok) {
+        log.debug("Leaving AdminActions.groupsAction(). set-mail refused.");
+        return this.refusedBy('STS-ADMIN-0896', result);
+      }
+      log.debug("Leaving AdminActions.groupsAction(). set-mail " +
+                (result.changed ? "changed." : "already so."));
+      return result;
+    }
+
     // A GROUP'S OWNERS (#603): one added or taken off at a time, written at
     // once — the group page's Owners tab, and its two operations. Who may
     // be an owner and every refusal are ldap_server.js's.
@@ -4841,8 +4864,9 @@ class AdminActions {
     log.debug("Leaving AdminActions.groupsAction(). Unknown action.");
     return this.refused('STS-ADMIN-0500',
                    { ok: false, errors: ['Unknown action "' + action + '". ' +
-                                 'The four are: create, add-member, ' +
-                                 'add-owner, remove-owner. Removing ' +
+                                 'The five are: create, add-member, ' +
+                                 'set-mail, add-owner, remove-owner. ' +
+                                 'Removing ' +
                                  'a member is /admin/rbac for the two ' +
                                  'console roles, and an ldapmodify or a SCIM ' +
                                  'PATCH ' +

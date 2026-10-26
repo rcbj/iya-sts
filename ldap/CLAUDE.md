@@ -1038,6 +1038,24 @@ service. Both are SEALED on the entry since 2026-10-01 wherever the process
 holds a durable key-encryption key (`federation.js`'s `sealClientSecret()`),
 and in the clear without one.
 
+## A GROUP'S OWN EMAIL ADDRESS (#989, 2026-10-26)
+
+A group entry may carry one `mail` value: the address a report definition
+shared with the group sends its result notices to (`report/CLAUDE.md`).
+`createGroup()` takes it as `opts.mail`, and `setGroupMail(group, mail,
+options)` sets or clears it afterwards — the group page's *Email address*
+form and `POST /admin-api/groups/set-mail` both reach it through the
+`setGroupWriter()` slot, whose member list grew by one. The shape rule
+(`GROUP_MAIL_SHAPE`: one local part, one `@`, a domain with a dot, no
+whitespace) is this file's and refuses with `STS-LDAP-0177`; it is
+deliberately not the mail channel's `addressProblem()`, which this file
+would otherwise require for one regular expression. The write leaves the
+operational three out for `addGroupMember()`'s reason, touches nothing
+else on the entry, and is idempotent. The mail channel reads the address
+back through the `groupEntry(dn)` hook beside `personEntry` in the
+`mailChannel.setDirectory()` filler. `tests/directory_group_writes.js`
+section 6.
+
 ## `ou=devices`: A DEVICE IS AN ENTRY (2026-09-23, #130)
 
 rcbj's direction: devices are first-class objects in this directory, linked

@@ -4727,6 +4727,12 @@ const ENDPOINTS: EndpointEntry[] = [
           'active, every realm with its id, name and path prefix (#986): ' +
           'what the application\'s realm field and switch are drawn from. ' +
           'Behind the same token as the rest of /report-api.' },
+  { path: '/report-api/groups', group: 'Reporting',
+    name: 'The group search, for the reports application', specs: [],
+    what: 'NON-SPEC. The realm\'s groups whose name or DN contains q, five ' +
+          'a page, each with its own mail attribute (#989): the definition ' +
+          'page\'s pane. A definition\'s groups are who is emailed its ' +
+          'result. Behind the same token as the rest of /report-api.' },
   { path: '/report-api/queries', group: 'Reporting',
     name: 'Run a report query', specs: [],
     what: 'NON-SPEC. A catalog query. A small bounded one answers in the ' +

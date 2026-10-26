@@ -823,6 +823,17 @@ function reportRealmsView(): any {
   return view;
 }
 
+// THE GROUP SEARCH (#989): the definition page's pane, five a page, over
+// the realm's resident groups, each with its own address so the page can
+// say which groups a notice could reach.
+function reportServeGroups(req: any, res: any): void {
+  log.debug("Entering reportServeGroups().");
+  const query = (req && req.query) || {};
+  reportJson(res, 200, sources.groupSearch(String(query.q || ''),
+    Number(query.page || 1)));
+  log.debug("Leaving reportServeGroups().");
+}
+
 function reportServeRealms(res: any): void {
   log.debug("Entering reportServeRealms().");
   reportJson(res, 200, reportRealmsView());
@@ -1260,6 +1271,8 @@ async function reportRoute(req: any, res: any, who: any): Promise<void> {
     reportServeSource(res, b);
   } else if (a === 'realms' && !b && method === 'GET') {
     reportServeRealms(res);
+  } else if (a === 'groups' && !b && method === 'GET') {
+    reportServeGroups(req, res);
   } else if (a === 'queries' && !b && method === 'POST') {
     await reportAcceptQuery(req, res, who, false, null);
   } else if (a === 'definitions' && !b && method === 'GET') {
@@ -1393,6 +1406,9 @@ class ReportApi {
       reportAnswer(req, res);
     });
     app.get(BASE + '/realms', function (req: any, res: any): void {
+      reportAnswer(req, res);
+    });
+    app.get(BASE + '/groups', function (req: any, res: any): void {
       reportAnswer(req, res);
     });
     app.post(BASE + '/queries', function (req: any, res: any): void {

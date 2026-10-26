@@ -199,8 +199,12 @@ interface Message {
 interface SendRequest {
   // A person in the ambient realm, by username…
   username?: string;
-  // …or the realm's Admin Write roster, each member with an address.
+  // …or the realm's Admin Write roster, each member with an address…
   toAdministrators?: boolean;
+  // …or a GROUP of this realm by DN (#989), whose own `mail` attribute is
+  // the address. The address comes from the directory, never from the
+  // request, so the channel's rule holds.
+  groupDn?: string;
   template: string;
   values?: Json;
   // name → a PATH on this service (header point 6).
@@ -214,6 +218,8 @@ interface SendRequest {
 interface Directory {
   personEntry: (username: string) => Json;
   personByMail: (address: string) => string;
+  // A group of this realm by DN, `{ dn, attributes }`, or null (#989).
+  groupEntry?: (dn: string) => Json;
   writeMailFlag: (username: string, name: string, value: unknown) => boolean;
   personExists?: (username: string) => boolean;
   // #64: `mail` itself, by an administrator or a completed change.
@@ -726,6 +732,49 @@ class Mail {
    * @param username - the person
    * @returns the category ids
    */
+  /**
+   * A group of this realm as a recipient (#989): its DN as the key, its
+   * `mail` attribute as the address, its `cn` as the name. Null where the
+   * directory offers no group hook or holds no such group; a group with
+   * no address has `address: ''`, which `queueOne()` refuses.
+   *
+   * @param dn - the group's DN
+   * @returns the recipient, or null
+   */
+  groupRecipient(dn: string): Json {
+    const { log } = this.deps;
+    log.debug("Entering Mail.groupRecipient().");
+    const entry = directory && typeof directory.groupEntry === 'function' &&
+      dn ? directory.groupEntry(String(dn)) : null;
+    if (!entry) {
+      log.debug("Leaving Mail.groupRecipient(). None.");
+      return null;
+    }
+    const attrs = entry.attributes || {};
+    const first = function (name: string): string {
+      const keys = Object.keys(attrs);
+      for (let i = 0; i < keys.length; i++) {
+        if (keys[i].toLowerCase() === name.toLowerCase()) {
+          const values = attrs[keys[i]] || [];
+          return values.length ? String(values[0]) : '';
+        }
+      }
+      return '';
+    };
+    const address = first('mail').trim();
+    log.debug("Leaving Mail.groupRecipient().");
+    return {
+      username: String(dn),
+      address: address,
+      // A group's address is the operator's to set; there is nothing to
+      // verify it against, and a notice is sent to it as given.
+      verified: !!address,
+      language: '',
+      name: first('cn') || String(dn),
+      group: true
+    };
+  }
+
   declined(username: string): string[] {
     const { log, realms } = this.deps;
     log.debug("Entering Mail.declined(). " + username);
@@ -1069,8 +1118,18 @@ class Mail {
         return out;
       }
       let names: string[] = [];
+      let group: Json = null;
       if (req.toAdministrators) {
         names = deps.administrators();
+      } else if (req.groupDn) {
+        // THE GROUP IS RESOLVED ONCE, HERE (#989), and queued under its DN
+        // as the recipient key, so the dedup window, the ceilings and the
+        // outbox rows name the group. A group with no entry or no address
+        // is refused with the codes a person's missing entry or address
+        // takes; the report channel checks the address first and records
+        // its own code, so this is the backstop.
+        group = this.groupRecipient(String(req.groupDn));
+        names = [String(req.groupDn)];
       } else if (req.username) {
         names = [String(req.username)];
       }
@@ -1096,7 +1155,9 @@ class Mail {
         return out;
       }
       names.forEach(function (name) {
-        const one = self.queueOne(req, spec, name, base);
+        const one = group
+          ? self.queueOne(req, spec, name, base, undefined, group)
+          : self.queueOne(req, spec, name, base);
         if (one.refused) {
           out.refused.push(one.refused);
         } else if (one.duplicate) {
@@ -1349,11 +1410,12 @@ class Mail {
   // One recipient: every check, then the row. `former` is
   // `sendToFormerAddress()`'s address, and only that.
   private queueOne(req: SendRequest, spec: Json, username: string,
-                   base: string, former?: string): Json {
+                   base: string, former?: string, group?: Json): Json {
     const { log, realms, audit, now } = this.deps;
     log.debug("Entering Mail.queueOne(). " + username);
     const realmId = realms.currentId();
-    const found = this.recipient(username);
+    // A group recipient (#989) arrives resolved; `username` is its DN.
+    const found = group || this.recipient(username);
     const who = found && former
       ? Object.assign({}, found, { address: former }) : found;
     if (!who) {

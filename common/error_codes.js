@@ -14188,6 +14188,10 @@ const CODES = [
       'code of its own: a fault in this service, answered as one and ' +
       'logged with the stack, never a "try again shortly".',
     spec: 'HTTP 500 (server_error)' },
+  { code: 'STS-LDAP-0177',
+    summary: 'A group\'s mail address was refused: the value given to ' +
+      'the console or the management API is not an email address.',
+    spec: 'a console/API refusal' },
   // ===== ATTR ==============================================================
   { code: 'STS-ATTR-0001',
     summary: 'An attribute source\'s driver (or Knex) is not installed: the ' +
@@ -21428,6 +21432,10 @@ const CODES = [
       'the dashboard); the clients counted are the holders this process ' +
       'holds (#820).',
     spec: 'logged; the page answers' },
+  { code: 'STS-ADMIN-0896',
+    summary: 'Setting or clearing a group\'s mail address was refused by ' +
+      'the directory; the refusal carries the directory\'s own code.',
+    spec: 'HTTP 400' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',
@@ -23624,7 +23632,12 @@ const CODES = [
       'can answer with an index, and the directory is windowed, so it ' +
       'was refused rather than read person by person; in auto mode it ' +
       'became a job.',
-    spec: 'result_too_large (HTTP 400)' }
+    spec: 'result_too_large (HTTP 400)' },
+  { code: 'STS-REPORT-0037',
+    summary: 'A report job finished with Notify on, and a group the ' +
+      'definition is shared with has no mail attribute, so that group ' +
+      'was not sent the notice. The other recipients were.',
+    spec: 'recorded; the job still completed' }
   // ===== END ===============================================================
 ];
 

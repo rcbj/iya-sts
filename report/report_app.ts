@@ -97,6 +97,44 @@ const REPORT_STYLE = [
   // box is ticked, and drawn after Run (`web_report_pages.ts`,
   // `actionsHtml()`).
   '.actions .save-only { order: 2; }',
+  // THE DEFINITION EDITOR (#989): two columns — the query on the left, the
+  // schedule, the notice and the groups on the right — and real buttons at
+  // the foot. One column under 48rem.
+  '.editor { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem;',
+  '  align-items: start; }',
+  '@media (max-width: 48rem) { .editor { grid-template-columns: 1fr; } }',
+  '.editor h3 { margin: .25rem 0 .5rem; font-size: 1.05rem; }',
+  '.editor .field { margin: .4rem 0; }',
+  '.foot-actions { display: flex; gap: .75rem; justify-content: flex-end;',
+  '  margin: 1rem 0 0; padding-top: .75rem; border-top: 1px solid #d5d5dd; }',
+  '.button { font: inherit; padding: .4rem .9rem; border-radius: 6px;',
+  '  border: 1px solid #3a2e96; background: #3a2e96; color: #fff;',
+  '  cursor: pointer; }',
+  '.button:hover { background: #2d2378; }',
+  '.button.secondary { background: #fff; color: #3a2e96; }',
+  '.button.secondary:hover { background: #e7e9f4; }',
+  '.button.danger { background: #fff; color: #a3242c; border-color: #a3242c; }',
+  '.button.danger:hover { background: #fbeaec; }',
+  // The group search and its results (#989): a box, a result row with an
+  // Add, a pager under five rows, and the chosen groups as a list with a
+  // Remove beside each.
+  '.groups-pane .results { margin: .35rem 0; border: 1px solid #d5d5dd;',
+  '  border-radius: 6px; }',
+  '.groups-pane .results .hit { display: flex; gap: .5rem;',
+  '  align-items: center; padding: .3rem .5rem;',
+  '  border-bottom: 1px solid #eee; }',
+  '.groups-pane .results .hit:last-child { border-bottom: 0; }',
+  '.groups-pane .hit .who { flex: 1 1 auto; min-width: 0; }',
+  '.groups-pane .hit .mail { color: #5b6070; font-size: .85em; }',
+  '.groups-pane .pager { display: flex; gap: .5rem; align-items: center;',
+  '  font-size: .85em; color: #5b6070; }',
+  '.groups-pane .chosen { list-style: none; margin: .35rem 0 0; padding: 0; }',
+  '.groups-pane .chosen li { display: flex; gap: .5rem; align-items: center;',
+  '  padding: .25rem 0; }',
+  '.groups-pane .chosen .who { flex: 1 1 auto; min-width: 0; }',
+  '.btn.small { border: 1px solid #c9cad6; border-radius: 6px;',
+  '  padding: .1rem .55rem; font-size: .9em; }',
+  '.btn.small:hover { background: #e7e9f4; }',
   // The schedule editor's weekday boxes (#986), one row.
   '.days label.day { display: inline-flex; gap: .25rem;',
   '  align-items: center; }',

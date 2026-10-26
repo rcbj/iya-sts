@@ -72,13 +72,34 @@ cannot answer from an index, so it has to read every person), `asked`
 synchronously), `run` (a saved definition run by hand) or `schedule`.
 
 A definition's page names its **owner** by display name or username
-(`ownerName`), with the subject kept on the API. Its **schedule** is
+(`ownerName`), with the subject kept on the API. Its **query is edited
+with the New Query form's own controls**, filled from the saved
+document; a filter the rows cannot draw (an `or`, a `not`, an `in`) is
+shown as JSON and kept until a row is filled in. Its **schedule** is
 edited as a date-time in UTC and seven weekday boxes: with weekdays
 ticked the definition runs at that time on those days every week; with
 none it runs on that date every year. The sentence under the controls
 says which, and shows the cron expression the API stores, so an
 expression written by hand on the API that the editor cannot draw is
-still seen.
+still seen. Save and Delete are buttons at the foot of the form.
+
+### The groups a definition is shared with, and who is emailed
+
+The **Groups emailed the result** pane is a search over the realm's
+groups (`GET /report-api/groups?q=&page=`, five a page, with Previous
+and Next), an Add beside each hit, and the chosen groups in a list with a
+Remove beside each. Save sends the list to the share endpoint. Members of
+those groups may run the definition and read its result, as before.
+
+**Since #989 those groups are also who is emailed.** When a job of the
+definition finishes with Notify on, the owner's notice is sent as before
+and each shared group is sent one at the group's own email address, the
+`mail` attribute of the group entry, which the console's group page sets
+(*Email address*, or `POST /admin-api/groups/set-mail`; a create may give
+it too). **A shared group with no address is an error of its own**,
+`STS-REPORT-0037`: logged, written on the audit row as `report.notify`
+with outcome `error`, and shown as *no email address* beside the group in
+the pane. The other recipients are still sent to.
 
 ## The catalog
 

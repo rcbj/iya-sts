@@ -672,12 +672,22 @@ issued. It lists every group with what it is made of, and `?group=<dn>` drills
 into one: every attribute the entry holds, operational ones included, and every
 member resolved to the entry it names.
 
-**Two controls.** **Create a group** is below the list's table: it puts a
+**Three controls.** **Create a group** is below the list's table: it puts a
 `groupOfNames` at `cn=<name>,ou=groups` and takes members one per line or
 comma-separated, each a user name or any DN (a group can hold another group,
-and no user name names one). **Add a member** is on the drill-down; a create
-lands you on the group it just made. `POST /admin-api/groups/create` and
-`POST /admin-api/groups/add-member` are the same acts.
+and no user name names one), and an optional **email address**, the group's
+own `mail` attribute. **Add a member** and **Email address** are on the
+drill-down; a create lands you on the group it just made.
+`POST /admin-api/groups/create`, `POST /admin-api/groups/add-member` and
+`POST /admin-api/groups/set-mail` are the same acts.
+
+**The email address is where a report shared with the group is sent.** A
+report definition shared with the group (the reports application,
+[Reports](reporting.md)) emails its result notices to this address when a
+job of it finishes with Notify on; a shared group with no address is
+written up as `STS-REPORT-0037` when a notice is due. The box takes one
+address, `local-part@domain`; an emptied box removes the attribute. Nothing
+else reads it.
 
 Three behaviours are the directory being consistent with itself:
 

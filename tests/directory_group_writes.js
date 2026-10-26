@@ -33,6 +33,7 @@ delete process.env.CONFIG_FILE;
 
 const realms = require('../common/realms');
 const dir = require('../ldap/ldap_server');
+const errorCodes = require('../common/error_codes');
 
 // This file's own logger, for the Entering/Leaving lines and the handled
 // exceptions the code style asks for. Its level is LOG_LEVEL, which is also
@@ -294,6 +295,71 @@ function checkWhatIsNotWritten(t) {
   log.debug("Leaving checkWhatIsNotWritten().");
 }
 
+// ---------------------------------------------------------------------------
+// 6. THE GROUP'S OWN EMAIL ADDRESS (#989).
+//
+// `mail` on the group entry, where a report definition shared with the
+// group sends its result notices: given at the create, or set and cleared
+// through `setGroupMail()`, which the group page's form and
+// `POST /admin-api/groups/set-mail` both reach. The shape rule and the
+// refusals are the directory's.
+// ---------------------------------------------------------------------------
+function checkTheGroupMail(t) {
+  log.debug("Entering checkTheGroupMail().");
+  t.log.info('the group\'s own email address');
+
+  withRealm(t, 'dgw-mail', function () {
+    const made = dir.createGroup('dgw-reporters',
+      { origin: 'test', mail: 'reporters@example.com' });
+    t.equal(made.ok, true, '6a. a create may give the address');
+    const read = dir.readGroupEntry(made.dn);
+    t.equal(((read.attributes.mail || [])[0]) || '', 'reporters@example.com',
+      '6b. and the entry carries it as mail');
+
+    const bad = dir.createGroup('dgw-bad-mail',
+      { origin: 'test', mail: 'not an address' });
+    t.equal(bad.ok, false, '6c. a value that is not an address is refused');
+    t.equal(errorCodes.codeOf(bad), 'STS-LDAP-0177',
+      '6d. with its own code');
+    t.equal(dir.readGroupEntry(dir.groupDnFor('dgw-bad-mail')), null,
+      '6e. and nothing was created');
+
+    const plain = dir.createGroup('dgw-plain', { origin: 'test' });
+    const set = dir.setGroupMail('dgw-plain', 'plain@example.com',
+      { origin: 'test' });
+    t.equal(set.ok && set.changed, true,
+      '6f. setGroupMail() writes the address by cn');
+    t.equal(((dir.readGroupEntry(plain.dn).attributes.mail || [])[0]) || '',
+      'plain@example.com', '6g. and it reads back');
+    const again = dir.setGroupMail(plain.dn, 'plain@example.com',
+      { origin: 'test' });
+    t.check(again.ok && again.changed === false,
+      '6h. the same address again changes nothing, by DN');
+    const replaced = dir.setGroupMail(plain.dn, 'other@example.com',
+      { origin: 'test' });
+    t.equal(replaced.changed, true, '6i. another address replaces it');
+    const members = dir.readGroupEntry(plain.dn).attributes;
+    t.equal(((members.mail || [])[0]) || '', 'other@example.com',
+      '6j. one value, the new one');
+    t.check((members.objectClass || members.objectclass || []).length > 0 &&
+      (members.description || []).length > 0,
+      '6k. the rest of the entry is untouched');
+    const cleared = dir.setGroupMail(plain.dn, '', { origin: 'test' });
+    t.equal(cleared.ok && cleared.changed, true, '6l. an empty value clears it');
+    t.equal(Object.prototype.hasOwnProperty.call(
+      dir.readGroupEntry(plain.dn).attributes, 'mail'), false,
+      '6m. and the attribute is gone');
+    const refused = dir.setGroupMail('dgw-plain', 'nope', { origin: 'test' });
+    t.equal(errorCodes.codeOf(refused), 'STS-LDAP-0177',
+      '6n. a bad address is refused at the setter too');
+    const missing = dir.setGroupMail('dgw-no-such', 'x@example.com',
+      { origin: 'test' });
+    t.equal(errorCodes.codeOf(missing), 'STS-LDAP-0050',
+      '6o. a group that is not there is refused');
+  });
+  log.debug("Leaving checkTheGroupMail().");
+}
+
 function run(t) {
   log.debug("Entering run().");
   checkTheNameRules(t);
@@ -301,6 +367,7 @@ function run(t) {
   checkWhereTheValuePoints(t);
   checkIdempotenceAndRefusals(t);
   checkWhatIsNotWritten(t);
+  checkTheGroupMail(t);
   log.debug("Leaving run().");
 }
 

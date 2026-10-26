@@ -156,6 +156,26 @@ class OpenApi {
               }
             })
         },
+        '/report-api/groups': {
+          get: operation('Search the realm\'s groups',
+            'The groups of this realm whose name or DN contains `q` ' +
+            '(case-insensitive; empty matches every group), five a page ' +
+            'in name order, each with its own `mail` attribute or an ' +
+            'empty string. The definition page builds its share list from ' +
+            'it; a definition\'s groups are who is emailed its result, at ' +
+            'that address (#989).', {
+              parameters: [
+                { name: 'q', in: 'query', required: false,
+                  schema: { type: 'string' } },
+                { name: 'page', in: 'query', required: false,
+                  schema: { type: 'integer', minimum: 1 } }
+              ],
+              responses: {
+                '200': answered('One page of groups.',
+                  { $ref: '#/components/schemas/GroupPage' })
+              }
+            })
+        },
         '/report-api/catalog': {
           get: operation('The report catalog',
             'Every source. Each field has an id, a meaning, a type, ' +
@@ -420,6 +440,27 @@ class OpenApi {
               current: { $ref: '#/components/schemas/Realm' },
               realms: { type: 'array', nullable: true,
                 items: { $ref: '#/components/schemas/Realm' } }
+            }
+          },
+          Group: {
+            type: 'object',
+            properties: {
+              dn: { type: 'string' },
+              name: { type: 'string', description: 'The cn.' },
+              mail: { type: 'string',
+                description: 'The group\'s own address, or empty.' }
+            }
+          },
+          GroupPage: {
+            type: 'object',
+            properties: {
+              q: { type: 'string' },
+              page: { type: 'integer' },
+              pages: { type: 'integer' },
+              per: { type: 'integer', example: 5 },
+              total: { type: 'integer' },
+              groups: { type: 'array',
+                items: { $ref: '#/components/schemas/Group' } }
             }
           },
           Field: {

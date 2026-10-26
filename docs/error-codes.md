@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4674** of them, in **48** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4677** of them, in **48** subsystems.
 
 ## Where a code appears
 
@@ -71,7 +71,7 @@ is an ordinary outcome.
 * [Federation (`STS-FED`)](#sts-fed) — 171
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 242
-* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 130
+* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 131
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
 * [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 34
@@ -88,7 +88,7 @@ is an ordinary outcome.
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 29
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 98
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 244
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 245
 * [Management API (`STS-API`)](#sts-api) — 86
 * [User portal (`STS-PORTAL`)](#sts-portal) — 107
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 19
@@ -96,7 +96,7 @@ is an ordinary outcome.
 * [Identity-provider-initiated sign-in (`STS-LAUNCH`)](#sts-launch) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 181
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
-* [Reporting (`STS-REPORT`)](#sts-report) — 35
+* [Reporting (`STS-REPORT`)](#sts-report) — 36
 
 ## STS-HTTP
 
@@ -3163,6 +3163,7 @@ Raised from: ldap/, persistence/bulk_import.js (STS-LDAP-0150 to 0161).
 | `STS-LDAP-0174` | A custom attribute was not removed: the realm defines none by that name (#396). | HTTP 400 (console and API) |
 | `STS-LDAP-0175` | A console or management-API request (#359) had already spent ldap.workerDirectoryBudgetMs waiting on synchronous directory reads, so the next question was refused and not asked. One slow question still fails as STS-LDAP-0130 when it exceeds its own timeout first. A request outside /admin and /admin-api has no such budget. | HTTP 503 with Retry-After; an LDAP operation answers unavailable (52) |
 | `STS-LDAP-0176` | GET /admin-api/ldap/devices or /admin-api/rbac failed to draw its page with something other than a store it could not read (#359: STS-LDAP-0130, 0131, 0139 and 0175 are the 503s) and with no code of its own: a fault in this service, answered as one and logged with the stack, never a "try again shortly". | HTTP 500 (server_error) |
+| `STS-LDAP-0177` | A group's mail address was refused: the value given to the console or the management API is not an email address. | a console/API refusal |
 
 ## STS-ATTR
 
@@ -4836,6 +4837,7 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0872` | set-preferred-self-issued-subject was refused: the subject is not enrolled for the person, was enrolled by value (unproven), is a JWK thumbprint rather than a DID, or the directory did not store the change (#693). | HTTP 400 (API) |
 | `STS-ADMIN-0890` | The token register could not be read from the store for Monitoring → Tokens; the list drawn is what the answering process holds, and the answer says so (`coverage.unread`) (#820). | logged; the page answers |
 | `STS-ADMIN-0895` | The token holders that are clients could not be read from the store's `client` index for the user counts (Monitoring → Metrics, the dashboard); the clients counted are the holders this process holds (#820). | logged; the page answers |
+| `STS-ADMIN-0896` | Setting or clearing a group's mail address was refused by the directory; the refusal carries the directory's own code. | HTTP 400 |
 
 ## STS-API
 
@@ -5384,6 +5386,7 @@ Raised from: report/.
 | `STS-REPORT-0034` | A report job exceeded its time and was failed rather than returned in part. | result_too_large on the job; the submission already answered |
 | `STS-REPORT-0035` | A scheduled report names a parameter and stores no value for it, so this occurrence did not run and the slot was kept. | recorded |
 | `STS-REPORT-0036` | A synchronous users report names no filter the directory can answer with an index, and the directory is windowed, so it was refused rather than read person by person; in auto mode it became a job. | result_too_large (HTTP 400) |
+| `STS-REPORT-0037` | A report job finished with Notify on, and a group the definition is shared with has no mail attribute, so that group was not sent the notice. The other recipients were. | recorded; the job still completed |
 
 ## Adding a code
 

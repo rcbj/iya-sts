@@ -117,6 +117,46 @@ The index, the realms view and the version are read once per load
 without the `+`, and the variable reader over a form double; what it does
 not hold is the browser's cloning and the navigation.
 
+## The definition page, and who is emailed (#989)
+
+rcbj, 2026-10-26, after seeing #986's page. Four things:
+
+* **The query is edited with the New Query form's own controls.**
+  `queryFormHtml(t, sources, document)` draws both pages; the definition
+  page fills it from the saved document (source, fields, filter rows,
+  sort, limit, format, count and group-by), and Save reads the document
+  off the form with `queryDocument()` as New Query does. A filter the
+  rows cannot draw — an `or`, a `not`, an `in`, a value that is not a
+  string or number — is shown as JSON and rides back on a hidden
+  `whereJson` until a row is filled in (`whereLeaves()` decides). A
+  change of source redraws the query block empty for the new fields.
+* **The groups pane**: `GET /report-api/groups?q=&page=` is
+  `sources.groupSearch()`, a case-insensitive substring over the realm's
+  resident groups (`allGroupEntries()`), five a page in name order, each
+  with its own `mail`. The page draws the hits with an Add each and a
+  Previous/Next pager, and the chosen groups as a list of hidden
+  `group` inputs with a Remove each; Save posts the definition, then the
+  list to the share endpoint. Enter in the search box searches (a
+  keydown handler), not saves. Save and Delete are real buttons at the
+  foot, in a two-column `.editor`.
+* **The shared groups are emailed the result.** `reportNotify()` calls
+  `reportNotifyGroups()` first: `reportGroupRecipients()` splits the
+  definition's groups into those with a `mail` attribute and those
+  without; each of the first is sent the `report-ready` notice through
+  the mail channel's new group recipient (`groupDn`, resolved by the
+  directory, `common/CLAUDE.md` 3ba), with a dedup key per job and group;
+  each of the second is **`STS-REPORT-0037`**, logged with `log.error`
+  and written on the audit row (`report.notify`, outcome `error`, the
+  group's DN in the detail), and the others are still sent to. The
+  owner's notice is unchanged. A group's address is set on the console's
+  group page or at its create (`ldap/CLAUDE.md`).
+* `tests/report_query.js`'s `groups()` holds the search's paging and
+  matching, the recipients split, the form's prefill in every shape, the
+  JSON ride-back, and the pane's markup; `tests/mail.js` the group
+  recipient; `tests/directory_group_writes.js` the address on the entry.
+  Not held in process: the browser's Add/Remove and search, and a notice
+  sent to a real transport.
+
 ## The document
 
 A query is a JSON document: `source`, `select`, `where`, `orderBy`,
