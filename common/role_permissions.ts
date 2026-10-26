@@ -631,7 +631,11 @@ class RolePermissions {
   // An application's own token needs no group.
   private ssfRoleStands(role: string, value: string, who: Subject,
                         clientId: string): boolean {
-    return this.ssfRoleCheck(role, value, who, clientId).stands;
+    const { log } = this.deps;
+    log.debug("Entering RolePermissions.ssfRoleStands().");
+    const stands = this.ssfRoleCheck(role, value, who, clientId).stands;
+    log.debug("Leaving RolePermissions.ssfRoleStands(). " + stands);
+    return stands;
   }
 
   // ssfRoleStands()'s answer with the reason a role does not stand, for the
@@ -718,17 +722,21 @@ class RolePermissions {
   // value. An SSF permission names the half of its role that is missing.
   private whyRemoved(value: string, held: Held, who: Subject,
                      clientId: string): string {
-    const { roles } = this.deps;
+    const { log, roles } = this.deps;
+    log.debug("Entering RolePermissions.whyRemoved().");
     const name = String(who.name || '').trim();
     const nobody = !name ||
       (who.kind !== 'application' && who.authenticated === false);
     if (held.why && nobody) {
+      log.debug("Leaving RolePermissions.whyRemoved(). Nobody " +
+                "authenticated.");
       return held.why;
     }
     const onRoster = roles.CONSOLE_ROLES.some(function (row: any) {
       return row.permission === value;
     });
     if (onRoster && held.why) {
+      log.debug("Leaving RolePermissions.whyRemoved(). The roster.");
       return held.why;
     }
     const ssf = roles.NATIVE_ROLES.filter(function (row: any) {
@@ -738,9 +746,11 @@ class RolePermissions {
     if (ssf) {
       const check = this.ssfRoleCheck(ssf.name, value, who, clientId);
       if (!check.stands) {
+        log.debug("Leaving RolePermissions.whyRemoved(). An SSF role.");
         return check.why;
       }
     }
+    log.debug("Leaving RolePermissions.whyRemoved(). No role.");
     return (name || 'an unnamed subject') + ' holds no role authorizing ' +
       value + (held.configured.length
         ? ' (holds ' + held.configured.join(', ') + ')' : '');
