@@ -392,7 +392,13 @@ const CELL_MINTED = [
   'oauth2.opaqueAccessTokens',
   'oauth2.grantIssued', 'oauth2.grants', 'oauth2_monitor.counters',
   'oauth2.pushedRequests', 'oauth2.redeemedCodes', 'oauth2.tenantCommandRuns',
-  'oidc_rp.flows', 'risc.register', 'saml11_sso.artifacts',
+  'oidc_rp.flows',
+  // The reports application's definitions, jobs and reporter stamp (#956).
+  // A report reads this cell's people and its artifact holds them, so the
+  // job and its definition are this cell's; the stamp names a node, and a
+  // node is a member of one cell.
+  'report.control', 'report.definitions', 'report.jobs',
+  'risc.register', 'saml11_sso.artifacts',
   'saml11_sso.assertionsById', 'saml11_sso.pendingFlows', 'saml2.mdqRefusals',
   'saml2_sso.artifacts', 'saml2_sso.pendingRequests',
   'scep.transactions', 'scheduler.runs', 'scim.digestCounts',
