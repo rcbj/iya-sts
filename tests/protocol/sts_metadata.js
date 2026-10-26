@@ -247,6 +247,10 @@ function theProtocolListIsHonest(doc, page) {
                     // paying that here is cheaper than making the rule
                     // conditional on whether a group is a protocol.
                     "User portal",
+                    // NOT A PROTOCOL (#956). The reports application has a
+                    // card because the page refuses an endpoint group no
+                    // card claims.
+                    "Reporting",
                     // GNAP (2026-09-12): an authorization server of its own
                     // kind, carded beside XACML because both are families a
                     // client reaches with a credential it already holds.

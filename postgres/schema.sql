@@ -1131,6 +1131,17 @@ CREATE TABLE IF NOT EXISTS sts_cell_routing (
   written_at bigint NOT NULL,
   PRIMARY KEY (realm, kind, digest));
 
+-- A finished report's bytes (#956, schema version 26). The definition and
+-- the job row stay in the realm maps; this table is only the artifact.
+CREATE TABLE IF NOT EXISTS sts_report_artifacts (
+  realm      text   NOT NULL,
+  job_id     text   NOT NULL,
+  bytes      bytea  NOT NULL,
+  sha256     text   NOT NULL,
+  media_type text   NOT NULL,
+  created_at bigint NOT NULL,
+  PRIMARY KEY (realm, job_id));
+
 CREATE TABLE IF NOT EXISTS sts_schema (
   version int PRIMARY KEY,
   applied_at timestamptz NOT NULL DEFAULT now());
@@ -1138,7 +1149,7 @@ CREATE TABLE IF NOT EXISTS sts_schema (
 -- WHAT VERSION OF THE ABOVE THIS IS. The driver writes the same row on open()
 -- and `tests/postgres_schema.js` checks that this number is its SCHEMA_VERSION,
 -- so the two cannot disagree about which schema is on disk.
-INSERT INTO sts_schema (version) VALUES (25) ON CONFLICT (version) DO NOTHING;
+INSERT INTO sts_schema (version) VALUES (26) ON CONFLICT (version) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
 -- THE APPLICATION ROLE: READ AND WRITE THE ROWS, AND NOTHING ELSE.

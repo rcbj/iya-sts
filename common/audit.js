@@ -1493,7 +1493,31 @@ const ACTIONS = [
   { action: 'xacml.policy.write', category: 'authorization',
     label: 'An XACML policy was written' },
   { action: 'xacml.policy.delete', category: 'authorization',
-    label: 'An XACML policy was deleted' }
+    label: 'An XACML policy was deleted' },
+  { action: 'report.definition.create', category: 'admin',
+    label: 'A report definition was created' },
+  { action: 'report.definition.update', category: 'admin',
+    label: 'A report definition was updated' },
+  { action: 'report.definition.share', category: 'admin',
+    label: 'A report definition was shared with a group' },
+  { action: 'report.definition.delete', category: 'admin',
+    label: 'A report definition was deleted' },
+  { action: 'report.job.submit', category: 'admin',
+    label: 'A report job was submitted' },
+  { action: 'report.job.start', category: 'admin',
+    label: 'A report job started' },
+  { action: 'report.job.complete', category: 'admin',
+    label: 'A report job completed' },
+  { action: 'report.job.fail', category: 'admin',
+    label: 'A report job failed' },
+  { action: 'report.job.cancel', category: 'admin',
+    label: 'A report job was cancelled' },
+  { action: 'report.notify', category: 'admin',
+    label: 'A report completion notice was sent' },
+  { action: 'report.query', category: 'admin',
+    label: 'A report query was run' },
+  { action: 'report.job.retrieve', category: 'admin',
+    label: 'A report result was retrieved' }
 ];
 
 const CATEGORY_OF_ACTION = {};

@@ -60,7 +60,8 @@ const CHECKED_DIRS = ['account-api', 'acme', 'admin-core', 'admin-ui',
                       'common', 'debugger', 'est', 'federation', 'gnap',
                       'home', 'kerberos', 'ldap', 'logout', 'mgmt-api',
                       'oauth-oidc', 'oid4vc', 'oidfed', 'persistence', 'pki',
-                      'portal', 'risk', 'saml', 'scep', 'scim', 'spiffe',
+                      'portal', 'report', 'risk', 'saml', 'scep', 'scim',
+                      'spiffe',
                       'ssf', 'tls', 'ws-federation', 'ws-trust', 'xacml'];
 const CHECKED_FILES = ['server.js'];
 const ROOT_SOURCES = ['sts_metadata.ts'];

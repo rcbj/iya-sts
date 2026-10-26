@@ -18019,7 +18019,90 @@ const SETTINGS = [
     description: 'When the SERVICE, not a person, marks a credential ' +
                  'compromised or disables an account (risk scoring), also ' +
                  'mail every member of the realm\'s Admin Write roster that ' +
-                 'has an address.' }
+                 'has an address.' },
+  // -------------------------------------------------------------------------
+  // REPORTING (#956). Realm-overridable because none of these set
+  // perProcess. Read where the question is asked; zero is not a legal
+  // value on these rows, and the readers still do not write `|| default`.
+  // -------------------------------------------------------------------------
+  { key: 'report.syncMaxRows', group: 'Reporting',
+    label: 'Synchronous report row cap',
+    env: 'REPORT_SYNC_MAX_ROWS', type: 'int', dflt: 500,
+    min: 1, max: 10000, runtime: true,
+    description: 'The most rows a synchronous report may return. A larger ' +
+                 'limit is refused in sync mode and becomes a job in auto.' },
+  { key: 'report.syncMaxBytes', group: 'Reporting',
+    label: 'Synchronous report byte cap',
+    env: 'REPORT_SYNC_MAX_BYTES', type: 'int', dflt: 1000000,
+    min: 1024, max: 10000000, runtime: true,
+    description: 'The most bytes a synchronous report may return. A result ' +
+                 'over this is refused rather than sent in part.' },
+  { key: 'report.syncMaxMs', group: 'Reporting',
+    label: 'Synchronous report time cap (milliseconds)',
+    env: 'REPORT_SYNC_MAX_MS', type: 'int', dflt: 2000,
+    min: 100, max: 30000, runtime: true,
+    description: 'How long a synchronous report may run. Past this the ' +
+                 'call is refused rather than answered with a partial body.' },
+  { key: 'report.asyncMaxMs', group: 'Reporting',
+    label: 'Report job time cap (milliseconds)',
+    env: 'REPORT_ASYNC_MAX_MS', type: 'int', dflt: 120000,
+    min: 1000, max: 600000, runtime: true,
+    description: 'How long a report job may run. Past this the job fails ' +
+                 'rather than storing a partial result.' },
+  { key: 'report.asyncMaxRows', group: 'Reporting',
+    label: 'Report job row cap',
+    env: 'REPORT_ASYNC_MAX_ROWS', type: 'int', dflt: 100000,
+    min: 1, max: 1000000, runtime: true,
+    description: 'The most rows a report job may write. A query that asks ' +
+                 'for more is refused in every mode.' },
+  { key: 'report.asyncMaxBytes', group: 'Reporting',
+    label: 'Report job byte cap',
+    env: 'REPORT_ASYNC_MAX_BYTES', type: 'int', dflt: 32000000,
+    min: 1024, max: 256000000, runtime: true,
+    description: 'The most bytes a report job may store. A result over ' +
+                 'this fails the job rather than being truncated.' },
+  { key: 'report.pdfMaxRows', group: 'Reporting',
+    label: 'PDF report row cap',
+    env: 'REPORT_PDF_MAX_ROWS', type: 'int', dflt: 2000,
+    min: 1, max: 100000, runtime: true,
+    description: 'The most rows a PDF report may hold. A larger query is ' +
+                 'refused and asked to use CSV.' },
+  { key: 'report.pdfMaxPages', group: 'Reporting',
+    label: 'PDF report page cap',
+    env: 'REPORT_PDF_MAX_PAGES', type: 'int', dflt: 100,
+    min: 1, max: 1000, runtime: true,
+    description: 'The most pages a PDF report may hold. Past this the ' +
+                 'result is refused and asked to use CSV.' },
+  { key: 'report.maxConcurrentPerRealm', group: 'Reporting',
+    label: 'Report jobs running per realm',
+    env: 'REPORT_MAX_CONCURRENT_PER_REALM', type: 'int', dflt: 2,
+    min: 1, max: 32, runtime: true,
+    description: 'How many report jobs one realm may have running at once. ' +
+                 'A further submission is refused until one finishes.' },
+  { key: 'report.maxConcurrentPerSubject', group: 'Reporting',
+    label: 'Report jobs running per person',
+    env: 'REPORT_MAX_CONCURRENT_PER_SUBJECT', type: 'int', dflt: 1,
+    min: 1, max: 8, runtime: true,
+    description: 'How many report jobs one person may have running at once.' },
+  { key: 'report.artifactRetentionS', group: 'Reporting',
+    label: 'How long a report result is kept (seconds)',
+    env: 'REPORT_ARTIFACT_RETENTION_S', type: 'int', dflt: 86400,
+    min: 60, max: 31536000, runtime: true,
+    description: 'How long a finished report\'s bytes stay available to ' +
+                 'download. After this the result is gone.' },
+  { key: 'report.jobRetentionS', group: 'Reporting',
+    label: 'How long a report job row is kept (seconds)',
+    env: 'REPORT_JOB_RETENTION_S', type: 'int', dflt: 604800,
+    min: 60, max: 31536000, runtime: true,
+    description: 'How long a finished report job\'s row stays in the list. ' +
+                 'A job that is still running is not removed.' },
+  { key: 'report.usersGroup', group: 'Reporting',
+    label: 'Who may be issued report:use',
+    env: 'REPORT_USERS_GROUP', type: 'string', dflt: '',
+    runtime: true,
+    description: 'The directory group whose members may be issued ' +
+                 'report:use. Empty means only this realm\'s administrators ' +
+                 'may. report:admin is issued only to those administrators.' }
 ];
 
 // ---------------------------------------------------------------------------

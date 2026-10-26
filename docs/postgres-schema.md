@@ -51,6 +51,7 @@ which shape is on disk.
 | 12 | the column `sts_minted.expires_at` and its partial index `sts_minted_expires` (#333) |
 | 13 | six generated lookup columns on `sts_ldap_entries` and seven indexes over them (#349) |
 | 19 | the counters sharded (`shard` in the keys of `sts_ldap_counts` and `sts_ldap_dek_counts`), a BRIN in place of the btree on `sts_minted.written_at`, fillfactor 80 on `sts_minted`, autovacuum settings on `sts_changes` and `sts_ldap_entries`, and the `pg_stat_statements` extension (#630). Run `postgres/schema.sql` again as the owner to upgrade |
+| 26 | `sts_report_artifacts`: the bytes of a finished report (#956). Definitions and job rows stay in the realm maps |
 
 ### The application role
 
@@ -97,7 +98,7 @@ unqualified table names.
                                 ──────────              sts_cluster_counters
  bookkeeping                    sts_changes             sts_cluster_windows
  ───────────                    sts_change_readers      sts_node_snapshots
- sts_schema                                             risk scoring: 14 × sts_risk_*
+ sts_schema                     sts_report_artifacts    risk scoring: 14 × sts_risk_*
 ```
 
 There are no foreign keys. Every table is keyed by what its readers look up,
@@ -523,6 +524,14 @@ Only `address_prefix` is stored in the clear, and it is the network, not the
 host. The full address is sealed like any minted row.
 
 ---
+
+## `sts_report_artifacts`
+
+The bytes of a finished report (#956). The primary key is `(realm, job_id)`.
+`bytes` is the document, `sha256` its digest, `media_type` the format's type,
+and `created_at` is bigint milliseconds. Definitions and job rows stay in the
+realm maps, not in this table. [Reports](reporting.md) says how long a result
+stays available.
 
 ## `sts_schema`
 

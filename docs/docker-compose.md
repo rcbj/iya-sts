@@ -233,6 +233,15 @@ when the wallet is not at `http://localhost:3000`. Otherwise the portal's
 Credential Offer and a verification's wallet link send the browser to the
 wrong place, and the symptom looks like an unrelated timeout.
 
+`STS_REPORT_NODE` is not in the file. Set it to the string `true` only on a
+service that should hold the lease `ops.reporting`. Do not add it to the
+default `sts` service. Any other value leaves the lease unoffered. With the
+cluster off, `report.drain`, `report.retention` and `report.schedule` run on
+the front process and no lease is taken. In a cluster those three run on a
+front that does not hold the lease and sees no other reporter still live.
+The three `.here` jobs run only in the process that holds `ops.reporting`.
+[Reports](reporting.md) says what that lease runs.
+
 ## The companion (development only)
 
 The service ships no demonstration pages. The OpenID4VC issuer and verifier a

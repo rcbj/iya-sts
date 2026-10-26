@@ -13136,8 +13136,8 @@ class Authn {
     const clientId = String((req.query && req.query.client_id) ||
                             (form && form.client_id) || '');
     const surface = ({ 'sts-admin-console': '/admin',
-                       'sts-user-portal': '/portal' } as Record<string,
-                                                                 string>)[
+                       'sts-user-portal': '/portal',
+                       'sts-report': '/report' } as Record<string, string>)[
       clientId];
     log.debug("Leaving Authn.restartOrigin().");
     if (surface) {

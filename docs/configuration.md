@@ -2692,6 +2692,31 @@ a field, read through `common/secrets.js` — never a value here), the outbox th
 | `mail.securityNotices` | `STS_MAIL_SECURITY_NOTICES` | `true` | yes | Tell a person, at the address on their entry, when their account is disabled, their sessions are ended by an administrator, their password is changed or reset, their credential is marked compromised or recovery is started. |
 | `mail.notifyAdministrators` | `STS_MAIL_NOTIFY_ADMINISTRATORS` | `true` | yes | When the SERVICE, not a person, marks a credential compromised or disables an account (risk scoring), also mail every member of the realm's Admin Write roster that has an address. |
 
+### Reporting
+
+The caps on the reports application (#956). A trust realm may override any of
+them. Server configuration (`/admin/config`) draws the group; the application
+itself is `/report`, and [Reports](reporting.md) is the operator's guide.
+`report:admin` is issued only to this realm's administrators. `report:use` is
+issued to those administrators and, when `report.usersGroup` names one, to
+members of that directory group.
+
+| Setting | Environment | Default | Change while running | What it does |
+|---|---|---|---|---|
+| `report.syncMaxRows` | `REPORT_SYNC_MAX_ROWS` | `500` | yes | The most rows a synchronous report may return. A larger limit is refused in sync mode and becomes a job in auto. |
+| `report.syncMaxBytes` | `REPORT_SYNC_MAX_BYTES` | `1000000` | yes | The most bytes a synchronous report may return. A result over this is refused rather than sent in part. |
+| `report.syncMaxMs` | `REPORT_SYNC_MAX_MS` | `2000` | yes | How long a synchronous report may run. Past this the call is refused rather than answered with a partial body. |
+| `report.asyncMaxMs` | `REPORT_ASYNC_MAX_MS` | `120000` | yes | How long a report job may run. Past this the job fails rather than storing a partial result. |
+| `report.asyncMaxRows` | `REPORT_ASYNC_MAX_ROWS` | `100000` | yes | The most rows a report job may write. A query that asks for more is refused in every mode. |
+| `report.asyncMaxBytes` | `REPORT_ASYNC_MAX_BYTES` | `32000000` | yes | The most bytes a report job may store. A result over this fails the job rather than being truncated. |
+| `report.pdfMaxRows` | `REPORT_PDF_MAX_ROWS` | `2000` | yes | The most rows a PDF report may hold. A larger query is refused and asked to use CSV. |
+| `report.pdfMaxPages` | `REPORT_PDF_MAX_PAGES` | `100` | yes | The most pages a PDF report may hold. Past this the result is refused and asked to use CSV. |
+| `report.maxConcurrentPerRealm` | `REPORT_MAX_CONCURRENT_PER_REALM` | `2` | yes | How many report jobs one realm may have running at once. A further submission is refused until one finishes. |
+| `report.maxConcurrentPerSubject` | `REPORT_MAX_CONCURRENT_PER_SUBJECT` | `1` | yes | How many report jobs one person may have running at once. |
+| `report.artifactRetentionS` | `REPORT_ARTIFACT_RETENTION_S` | `86400` | yes | How long a finished report's bytes stay available to download. After this the result is gone. |
+| `report.jobRetentionS` | `REPORT_JOB_RETENTION_S` | `604800` | yes | How long a finished report job's row stays in the list. A job that is still running is not removed. |
+| `report.usersGroup` | `REPORT_USERS_GROUP` | *(empty)* | yes | The directory group whose members may be issued report:use. Empty means only this realm's administrators may. report:admin is issued only to those administrators. |
+
 ### Cluster
 
 Several containers against one PostgreSQL store (`cluster/CLAUDE.md`). Most of

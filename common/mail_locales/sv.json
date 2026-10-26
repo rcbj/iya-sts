@@ -70,6 +70,11 @@
       "text": "Öppna den här länken I DEN WEBBLÄSARE DÄR DU BÖRJADE LOGGA IN, inom {{minutes}} minuter, för att slutföra inloggningen på {{service}} som {{username}}:\n\n{{signin}}\n\nDen fungerar en gång, och bara i den webbläsaren.\n\nOm du inte håller på att logga in kan du strunta i det här meddelandet: länken kan inte logga in någon annan.\n",
       "html": "<p>För att slutföra inloggningen på {{service}} som <strong>{{username}}</strong>, <a href=\"{{signin}}\">öppna den här länken</a> i den webbläsare där du började logga in, inom {{minutes}} minuter.</p><p>Den fungerar en gång, och bara i den webbläsaren.</p><p>Om du inte håller på att logga in kan du strunta i det här meddelandet: länken kan inte logga in någon annan.</p>"
     },
+    "report-ready": {
+      "subject": "Din {{service}}-rapport är {{status}}",
+      "text": "Rapporten {{definition}} för {{username}} är {{status}}.\n\nÖppna den:\n\n{{report}}\n",
+      "html": "<p>Rapporten <strong>{{definition}}</strong> för {{username}} är {{status}}.</p><p><a href=\"{{report}}\">Öppna den</a>.</p>"
+    },
     "reset-refused-attempt": {
       "subject": "Någon försökte återställa ditt lösenord för {{service}}",
       "text": "{{when}} bad någon om att lösenordet för kontot {{username}} skulle återställas, angav den här adressen och lämnade en återställningskod som inte är någon av dina. Ingenting ändrades och ingen återställningslänk skickades.\n\nOm det var du, försök igen med en oanvänd återställningskod. Om det inte var du känner någon till ditt kontonamn och din adress; kontakta den som administrerar ditt konto.\n",
