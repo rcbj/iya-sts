@@ -48,8 +48,9 @@
 //      markup. Since #961 a portal create whose guidance is shown reports
 //      the finish without submitting `#wa-form`, and the account API leaves
 //      that enrolment; an error the guidance does not handle still submits
-//      and abandons it, and the same report while the retry is not offered
-//      is still abandoned.
+//      and abandons it. That submit carries only the error name. The quiet
+//      report still carries the platform's capabilities. The same report
+//      while the retry is not offered is still abandoned.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -746,17 +747,24 @@ function childMain() {
            credential: keptBody && keptBody.credential,
            hidden: kept.fallback.hidden, field: kept.credential.value }));
     const dropped = await drivePortalCreate('SecurityError');
-    const droppedCredential = parseReport(dropped.credential.value);
-    note(dropped.submitted.length === 1 && dropped.reported.length === 0 &&
-         droppedCredential.error === 'SecurityError' &&
-         !Object.prototype.hasOwnProperty.call(droppedCredential,
+    const droppedField = parseReport(dropped.credential.value);
+    const droppedReport = dropped.reported[0] && dropped.reported[0].body;
+    const droppedQuiet = parseReport(droppedReport &&
+                                     droppedReport.credential);
+    note(dropped.submitted.length === 1 && dropped.reported.length === 1 &&
+         droppedField.error === 'SecurityError' &&
+         !Object.prototype.hasOwnProperty.call(droppedField,
                                                 'capabilities') &&
+         droppedQuiet.capabilities &&
+         droppedQuiet.capabilities.hybridTransport === true &&
          dropped.fallback.hidden === true,
          'E5. an error the guidance does not handle still submits the ' +
-         'finish form, with no capabilities property',
+         'finish form, with no capabilities on the field, and the quiet ' +
+         'report carries hybridTransport',
          JSON.stringify({ submitted: dropped.submitted.length,
            reported: dropped.reported.length,
            field: dropped.credential.value,
+           quiet: droppedReport && droppedReport.credential,
            hidden: dropped.fallback.hidden }));
 
     // The runtime's quiet post is not submit(): an answer that carries a

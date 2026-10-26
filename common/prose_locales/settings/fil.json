@@ -1947,6 +1947,14 @@
     "en": "e1cb6b236d5adc8b",
     "text": "Ang JWS algorithm na ipinipirma sa mga access token (at refresh token), gamit ang key ng realm na ito para rito — bawat isa ay inilalathala sa JWKS. Ang default ay RS256, at PS256 sa ilalim ng FAPI 1.0 Advanced, na tumatanggi rin sa anumang hindi PS256 o ES256. Ang pinangalanang authorization server ay puwedeng may sarili (access_token_signing_alg)."
   },
+  "oauth2.accessTokenFormat|label": {
+    "en": "c7e15a626ed4371b",
+    "text": "Format ng access token"
+  },
+  "oauth2.accessTokenFormat|description": {
+    "en": "74504b84130dea54",
+    "text": "Kung ang bagong access token ay isang RFC 9068 JWT (jwt, ang default) o isang 256-bit na opaque na handle (opaque). Nanatili sa realm na ito ang mga claim ng isang opaque na token; nananatiling nested na JWT ang mga refresh token at JWT ang mga ID token. Pinapanatili ng token na naibigay na ang anyo kung saan ito na-mint."
+  },
   "oauth2.jarmResponseLifetimeS|label": {
     "en": "28259a88563d949d",
     "text": "Lifetime ng JARM response (s)"
@@ -2418,6 +2426,14 @@
   "oauth2.maxRefreshTokenFamilies|description": {
     "en": "331485a9a3ff827c",
     "text": "Ilang refresh token ang sinusubaybayan ng RFC 9700 mode para sa rotation at replay detection. Kapag puno na, kinakalimutan muna ang mga EXPIRED, saka ang mga NA-ROTATE (revoked na, kaya tinatanggihan pa rin ang replay ng isa — ang nawawala ay ang revocation ng buong family na pasisimulan sana ng replay na iyon), at saka lang ang pinakalumang buhay, nang may warning. Gumagana pa rin ang buhay na nakalimutan; ang susunod nitong rotation ay magsisimula ng bagong family. Taasan ito para sa deployment na may mas maraming sabay-sabay na buhay na refresh token kaysa rito."
+  },
+  "oauth2.maxOpaqueAccessTokens|label": {
+    "en": "a0a9d2a5af677a1f",
+    "text": "Mga opaque na access token na naaalala (bawat realm)"
+  },
+  "oauth2.maxOpaqueAccessTokens|description": {
+    "en": "19042efe72e28cc6",
+    "text": "Ilan ang opaque na access token na naaalala ng realm na ito. Kapag puno na, tinatanggal ang mga expired na row at tinatanggihan ang karagdagang mint (STS-OAUTH-0979) sa halip na paalisin ang isang buhay na token. Nalalapat kapag opaque ang oauth2.accessTokenFormat."
   },
   "oauth2.signedMetadataAlgorithm|label": {
     "en": "71fb31f9a62ec657",
@@ -7950,6 +7966,14 @@
   "audit.protocolCalls|description": {
     "en": "5525432b1abd613a",
     "text": "Kung nagkakaroon ng audit event ang bawat tawag sa isang protocol endpoint. Naka-on bilang default, dahil ang \"lahat ng hiniling na gawin ng serbisyong ito\" ang punto ng log — pero ito ang pinakamaingay na pinagmulan sa lahat (isa ang bawat JWKS poll at metadata fetch), kaya ang pag-off dito ang paraan para makakuha ng nababasang page ang taong nagbabantay sa directory o sa console. Hindi nito kailanman naaapektuhan ang ibang limang kategorya, at binibilang ng /admin/metrics ang bawat tawag alinman dito."
+  },
+  "audit.authenticationHistoryDays|label": {
+    "en": "bc611d1f003e751a",
+    "text": "Kasaysayan ng pagpapatotoo (mga araw)"
+  },
+  "audit.authenticationHistoryDays|description": {
+    "en": "4270a8167905dee9",
+    "text": "Ilang araw ng nasuring pag-sign-in ang inililista ng Mga kamakailang pag-sign-in sa portal ng user para sa taong naka-sign-in. Itinatakda ng bawat realm ang sarili nito, dahil binabasa ang halaga sa ambient na realm. Inililista ng tab na Mga pagtatangka sa pagpapatotoo ng console, sa isang tao, ang bawat pagtatangka na hawak pa ng audit log, ang buong log. Maaari pa ring alisin ng sariling kisame ng log ang mas lumang mga row."
   },
   "delegation.maxRecords|label": {
     "en": "25d78cc6c84e920b",

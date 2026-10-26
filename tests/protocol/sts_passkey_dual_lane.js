@@ -514,7 +514,10 @@ async function test() {
       role: "mfa", kind: "passkey" });
   const personAdmin = await consoleSignin.signInToTheConsole(base, ADMIN,
     log, { grant: "write" });
-  const adminPage = await personAdmin.page("/admin/users", { user: PERSON });
+  // The console is a static application: page() is the API answer the
+  // page is drawn from, and the enrolment control is markup
+  // (`data-admin-passkey-enrolment`), so the assertion reads draw().
+  const adminPage = await personAdmin.draw("/admin/users", { user: PERSON });
   const adminBegin = await personAdmin.api("POST",
     "/admin-api/users/begin-passkey-enrolment", { user: PERSON,
       lane: "pqc", role: "mfa", kind: "passkey" });
@@ -539,7 +542,7 @@ async function test() {
       JSON.stringify(enabledAdminEnrolment.body).slice(0, 300));
     assert.strictEqual(appCallerAfterEnable.status, 400,
       JSON.stringify(appCallerAfterEnable.body).slice(0, 300));
-    assert.ok(/data-admin-passkey-enrolment/.test(adminPage.text || ""),
+    assert.ok(/data-admin-passkey-enrolment/.test(adminPage.html || ""),
       "the person's admin detail page did not draw the enrollment control");
     assert.strictEqual(adminBegin.status, 200,
       JSON.stringify(adminBegin.json).slice(0, 300));

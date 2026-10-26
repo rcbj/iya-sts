@@ -67,6 +67,7 @@
   "audit.actions.session.renew.label": "A hosted surface renewed its tokens within the same session",
   "audit.actions.authn.session.bound.label": "A sign-on session was bound to a key its browser holds",
   "audit.actions.authn.session.refreshed.label": "A device-bound session's cookie was renewed on a proof of its key",
+  "audit.actions.authn.session.binding-skipped.label": "A sign-on session skipped device binding",
   "audit.actions.logout.global.label": "Everything held for one identity was ended, across every protocol",
   "audit.actions.logout.selective.label": "Named sessions or credentials were ended for one identity",
   "audit.actions.logout.backchannel.label": "A back-channel Logout Token reached a relying party, or finally did not",

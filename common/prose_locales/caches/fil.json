@@ -795,6 +795,26 @@
     "en": "3bfa4ec2d7a5b1f4",
     "text": "Hanggang may magbago sa ilalim ng ou=applications ng realm; pagkatapos ay muli itong bubuuin ng susunod na read."
   },
+  "caches.store.oauth2.opaque-access-tokens.title": {
+    "en": "f5521031758787e4",
+    "text": "Mga opaque na access token"
+  },
+  "caches.store.oauth2.opaque-access-tokens.description": {
+    "en": "03c5375f953a154b",
+    "text": "Ang mga claim ng bawat opaque na access token na inisyu ng realm na ito, na naka-key sa SHA-256 ng handle nito. Hindi iniimbak ang handle mismo."
+  },
+  "caches.store.oauth2.opaque-access-tokens.bound": {
+    "en": "4fdda86dda2da589",
+    "text": "Ipinapatupad: tumatanggi ang punong store sa pag-mint (STS-OAUTH-0979) sa halip na paalisin ang isang buhay na token. Ang kisame ay oauth2.maxOpaqueAccessTokens."
+  },
+  "caches.store.oauth2.opaque-access-tokens.lifetime": {
+    "en": "28035bececff39cc",
+    "text": "Hanggang sa exp ng access token; tinatanggal ang expired na row kapag binasa at ng caches.eject-expired."
+  },
+  "caches.store.oauth2.opaque-access-tokens.hitMeaning": {
+    "en": "44484a9bf214d2c8",
+    "text": "natagpuan ang isang handle sa pamamagitan ng digest nito"
+  },
   "caches.store.oauth2.redeemed-codes.title": {
     "en": "d05b2abe4dfcac4c",
     "text": "Mga na-redeem na authorization code"

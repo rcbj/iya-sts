@@ -1947,6 +1947,14 @@
     "en": "e1cb6b236d5adc8b",
     "text": "L’algorithme JWS avec lequel les jetons d’accès (et les jetons d’actualisation) sont signés, par la clé de ce domaine correspondante — chacune est publiée dans le JWKS. default correspond à RS256, et à PS256 avec FAPI 1.0 Advanced, qui refuse aussi tout autre algorithme que PS256 ou ES256. Un serveur d’autorisation nommé peut porter le sien (access_token_signing_alg)."
   },
+  "oauth2.accessTokenFormat|label": {
+    "en": "c7e15a626ed4371b",
+    "text": "Format du jeton d’accès"
+  },
+  "oauth2.accessTokenFormat|description": {
+    "en": "74504b84130dea54",
+    "text": "Indique si un nouveau jeton d’accès est un JWT RFC 9068 (jwt, la valeur par défaut) ou un identifiant opaque de 256 bits (opaque). Les revendications d’un jeton opaque restent dans ce domaine ; les jetons d’actualisation restent des JWT imbriqués et les jetons d’identité restent des JWT. Un jeton déjà émis conserve la forme avec laquelle il a été frappé."
+  },
   "oauth2.jarmResponseLifetimeS|label": {
     "en": "28259a88563d949d",
     "text": "Durée de vie d’une réponse JARM (s)"
@@ -2418,6 +2426,14 @@
   "oauth2.maxRefreshTokenFamilies|description": {
     "en": "331485a9a3ff827c",
     "text": "Combien de jetons d’actualisation le mode RFC 9700 suit pour la rotation et la détection de rejeu. Lorsqu’il est plein, les jetons EXPIRÉS sont oubliés en premier, puis ceux ayant fait l’objet d’une ROTATION (déjà révoqués, si bien que le rejeu de l’un d’eux est toujours refusé — ce qui est perdu, c’est la révocation de toute la famille que ce rejeu déclencherait), et seulement ensuite le plus ancien jeton valide, avec un avertissement. Un jeton valide oublié fonctionne toujours ; sa prochaine rotation démarre une nouvelle famille. Augmentez cette valeur pour un déploiement comptant simultanément davantage de jetons d’actualisation valides."
+  },
+  "oauth2.maxOpaqueAccessTokens|label": {
+    "en": "a0a9d2a5af677a1f",
+    "text": "Jetons d’accès opaques mémorisés (par domaine)"
+  },
+  "oauth2.maxOpaqueAccessTokens|description": {
+    "en": "19042efe72e28cc6",
+    "text": "Combien de jetons d’accès opaques ce domaine retient. Lorsqu’il est plein, les lignes expirées sont retirées et une émission de plus est refusée (STS-OAUTH-0979) plutôt que d’évincer un jeton encore valide. S’applique lorsque oauth2.accessTokenFormat vaut opaque."
   },
   "oauth2.signedMetadataAlgorithm|label": {
     "en": "71fb31f9a62ec657",
@@ -7950,6 +7966,14 @@
   "audit.protocolCalls|description": {
     "en": "5525432b1abd613a",
     "text": "Indique si chaque appel à un endpoint de protocole donne lieu à un événement d’audit. Activé par défaut, car « tout ce qu’on a demandé à ce service de faire » est la raison d’être du journal — mais c’est de loin la source la plus bruyante (chaque interrogation de JWKS et chaque récupération de métadonnées en est une) ; le désactiver est donc ce qui donne une page lisible à quelqu’un qui surveille l’annuaire ou la console. Cela n’affecte jamais les cinq autres catégories, et /admin/metrics compte chaque appel dans tous les cas."
+  },
+  "audit.authenticationHistoryDays|label": {
+    "en": "bc611d1f003e751a",
+    "text": "Historique d’authentification (jours)"
+  },
+  "audit.authenticationHistoryDays|description": {
+    "en": "4270a8167905dee9",
+    "text": "Combien de jours de connexions évaluées la page Connexions récentes du portail utilisateur liste pour la personne connectée. Chaque domaine fixe le sien, car la valeur est lue dans le domaine ambiant. L’onglet Tentatives d’authentification de la console, sur une personne, liste chaque tentative que le journal d’audit détient encore, le journal entier. Le plafond propre du journal peut encore retirer les lignes plus anciennes."
   },
   "delegation.maxRecords|label": {
     "en": "25d78cc6c84e920b",

@@ -1947,6 +1947,14 @@
     "en": "e1cb6b236d5adc8b",
     "text": "JWS-algoritmen som åtkomsttokener (och uppdateringstokener) signeras med, med den här sfärens nyckel för den — varenda en publiceras i JWKS. default är RS256, och PS256 under FAPI 1.0 Advanced, som också vägrar allt utom PS256 eller ES256. En namngiven auktoriseringsserver kan bära sin egen (access_token_signing_alg)."
   },
+  "oauth2.accessTokenFormat|label": {
+    "en": "c7e15a626ed4371b",
+    "text": "Format för åtkomsttoken"
+  },
+  "oauth2.accessTokenFormat|description": {
+    "en": "74504b84130dea54",
+    "text": "Om en ny åtkomsttoken är en RFC 9068 JWT (jwt, standardvärdet) eller ett ogenomskinligt handtag på 256 bitar (opaque). Anspråken för en ogenomskinlig token stannar i denna sfär; uppdateringstoken förblir nästlade JWT och ID-token förblir JWT. En token som redan utfärdats behåller den form den präglades med."
+  },
   "oauth2.jarmResponseLifetimeS|label": {
     "en": "28259a88563d949d",
     "text": "Livslängd för JARM-svar (s)"
@@ -2418,6 +2426,14 @@
   "oauth2.maxRefreshTokenFamilies|description": {
     "en": "331485a9a3ff827c",
     "text": "Hur många uppdateringstokener RFC 9700-läget spårar för rotation och upptäckt av återuppspelning. När den är full glöms UTGÅNGNA först, sedan ROTERADE (redan återkallade, så en återuppspelning av en sådan vägras fortfarande — det som förloras är återkallelsen av hela familjen som återuppspelningen skulle utlösa), och först därefter den äldsta levande, med en varning. En levande som glömts fungerar fortfarande; dess nästa rotation startar en ny familj. Höj värdet för en driftsättning med fler samtidigt levande uppdateringstokener än så här."
+  },
+  "oauth2.maxOpaqueAccessTokens|label": {
+    "en": "a0a9d2a5af677a1f",
+    "text": "Ogenomskinliga åtkomsttoken som sparas (per sfär)"
+  },
+  "oauth2.maxOpaqueAccessTokens|description": {
+    "en": "19042efe72e28cc6",
+    "text": "Hur många ogenomskinliga åtkomsttoken denna sfär sparar. När det är fullt tas utgångna rader bort och ytterligare utfärdande nekas (STS-OAUTH-0979) i stället för att vräka en giltig token. Gäller när oauth2.accessTokenFormat är opaque."
   },
   "oauth2.signedMetadataAlgorithm|label": {
     "en": "71fb31f9a62ec657",
@@ -7950,6 +7966,14 @@
   "audit.protocolCalls|description": {
     "en": "5525432b1abd613a",
     "text": "Om varje anrop till en protokollslutpunkt får en granskningshändelse. På som standard, eftersom \"allt som den här tjänsten ombads göra\" är loggens poäng — men det är den överlägset mest brusiga källan (varje JWKS-avfrågning och metadatahämtning är en), så att stänga av det är hur någon som bevakar katalogen eller konsolen får en läsbar sida. Det påverkar aldrig de andra fem kategorierna, och /admin/metrics räknar varje anrop i båda fallen."
+  },
+  "audit.authenticationHistoryDays|label": {
+    "en": "bc611d1f003e751a",
+    "text": "Autentiseringshistorik (dagar)"
+  },
+  "audit.authenticationHistoryDays|description": {
+    "en": "4270a8167905dee9",
+    "text": "Hur många dagar av bedömda inloggningar Senaste inloggningar på användarportalen listar för den inloggade personen. Varje sfär sätter sin egen, eftersom värdet läses i den omgivande sfären. Konsolens flik Autentiseringsförsök för en person listar varje försök som granskningsloggen fortfarande har, hela loggen. Loggens eget tak kan fortfarande ta bort äldre rader."
   },
   "delegation.maxRecords|label": {
     "en": "25d78cc6c84e920b",

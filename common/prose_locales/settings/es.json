@@ -1947,6 +1947,14 @@
     "en": "e1cb6b236d5adc8b",
     "text": "El algoritmo JWS con el que se firman los tokens de acceso (y los tokens de actualización), con la clave de este dominio para él — todas se publican en el JWKS. default es RS256, y PS256 con FAPI 1.0 Advanced, que además rechaza todo lo que no sea PS256 o ES256. Un servidor de autorización con nombre puede llevar el suyo propio (access_token_signing_alg)."
   },
+  "oauth2.accessTokenFormat|label": {
+    "en": "c7e15a626ed4371b",
+    "text": "Formato del token de acceso"
+  },
+  "oauth2.accessTokenFormat|description": {
+    "en": "74504b84130dea54",
+    "text": "Indica si un token de acceso nuevo es un JWT de RFC 9068 (jwt, el valor predeterminado) o un identificador opaco de 256 bits (opaque). Las reivindicaciones de un token opaco permanecen en este dominio; los tokens de actualización siguen siendo JWT anidados y los tokens de identidad siguen siendo JWT. Un token ya emitido conserva la forma con la que se acuñó."
+  },
   "oauth2.jarmResponseLifetimeS|label": {
     "en": "28259a88563d949d",
     "text": "Vigencia de la respuesta JARM (s)"
@@ -2418,6 +2426,14 @@
   "oauth2.maxRefreshTokenFamilies|description": {
     "en": "331485a9a3ff827c",
     "text": "A cuántos tokens de actualización hace seguimiento el modo RFC 9700 para la rotación y la detección de repeticiones. Cuando está lleno, se olvidan primero los VENCIDOS, luego los ROTADOS (ya revocados, así que una repetición de uno se sigue rechazando — lo que se pierde es la revocación de toda la familia que esa repetición desencadenaría) y solo entonces el vigente más antiguo, con una advertencia. Uno vigente olvidado sigue funcionando; su siguiente rotación inicia una familia nueva. Auméntelo para un despliegue con más tokens de actualización vigentes a la vez que esta cantidad."
+  },
+  "oauth2.maxOpaqueAccessTokens|label": {
+    "en": "a0a9d2a5af677a1f",
+    "text": "Tokens de acceso opacos recordados (por dominio)"
+  },
+  "oauth2.maxOpaqueAccessTokens|description": {
+    "en": "19042efe72e28cc6",
+    "text": "Cuántos tokens de acceso opacos recuerda este dominio. Cuando está lleno, se descartan las filas caducadas y se rechaza una emisión más (STS-OAUTH-0979) en lugar de expulsar un token aún vigente. Se aplica cuando oauth2.accessTokenFormat es opaque."
   },
   "oauth2.signedMetadataAlgorithm|label": {
     "en": "71fb31f9a62ec657",
@@ -7950,6 +7966,14 @@
   "audit.protocolCalls|description": {
     "en": "5525432b1abd613a",
     "text": "Si cada llamada a un endpoint de protocolo genera un evento de auditoría. Activado por defecto, porque «todo lo que se pidió a este servicio» es la razón de ser del registro — pero es con diferencia la fuente más ruidosa (cada sondeo de JWKS y cada obtención de metadatos es uno), así que desactivarlo es como alguien que vigila el directorio o la consola obtiene una página legible. Nunca afecta a las otras cinco categorías, y /admin/metrics cuenta cada llamada en cualquier caso."
+  },
+  "audit.authenticationHistoryDays|label": {
+    "en": "bc611d1f003e751a",
+    "text": "Historial de autenticación (días)"
+  },
+  "audit.authenticationHistoryDays|description": {
+    "en": "4270a8167905dee9",
+    "text": "Cuántos días de inicios de sesión evaluados lista Inicios de sesión recientes del portal de usuario para la persona que ha iniciado sesión. Cada dominio fija el suyo, porque el valor se lee en el dominio ambiental. La pestaña Intentos de autenticación de la consola, en una persona, lista cada intento que el registro de auditoría aún conserva, el registro entero. El tope propio del registro aún puede descartar las filas más antiguas."
   },
   "delegation.maxRecords|label": {
     "en": "25d78cc6c84e920b",

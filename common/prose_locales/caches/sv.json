@@ -795,6 +795,26 @@
     "en": "3bfa4ec2d7a5b1f4",
     "text": "Tills något under sfärens ou=applications ändras; nästa läsning bygger det då på nytt."
   },
+  "caches.store.oauth2.opaque-access-tokens.title": {
+    "en": "f5521031758787e4",
+    "text": "Ogenomskinliga åtkomsttoken"
+  },
+  "caches.store.oauth2.opaque-access-tokens.description": {
+    "en": "03c5375f953a154b",
+    "text": "Anspråken för varje ogenomskinlig åtkomsttoken denna sfär har utfärdat, nycklade med SHA-256 av dess handtag. Själva handtaget lagras inte."
+  },
+  "caches.store.oauth2.opaque-access-tokens.bound": {
+    "en": "4fdda86dda2da589",
+    "text": "Upprätthållen: ett fullt förråd nekar utfärdandet (STS-OAUTH-0979) i stället för att vräka en giltig token. Taket är oauth2.maxOpaqueAccessTokens."
+  },
+  "caches.store.oauth2.opaque-access-tokens.lifetime": {
+    "en": "28035bececff39cc",
+    "text": "Tills åtkomsttokens exp; en utgången rad tas bort när den läses och av caches.eject-expired."
+  },
+  "caches.store.oauth2.opaque-access-tokens.hitMeaning": {
+    "en": "44484a9bf214d2c8",
+    "text": "ett handtag hittades via sitt kondensat"
+  },
   "caches.store.oauth2.redeemed-codes.title": {
     "en": "d05b2abe4dfcac4c",
     "text": "Inlösta auktoriseringskoder"

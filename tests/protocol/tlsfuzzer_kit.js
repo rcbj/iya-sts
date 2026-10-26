@@ -299,6 +299,12 @@ const WHY = {
     "empty body. RFC 8446 section 4.2 requires decode_error when an " +
     "implementation parses an extension whose body does not match; " +
     "later chunks are ids nobody has assigned and are ignored" },
+  randomAssignedExtension: { why: "openssl", reason: "the same stale " +
+    "range, on the random-payload probe: ids 2 through 1047 include " +
+    "extensions IANA has since assigned, and a random body does not " +
+    "match their structure. RFC 8446 section 4.2 requires decode_error. " +
+    "LDAPS, node's TLS on 636, sends it. The main and debugger " +
+    "listeners did not this run, so the exception names ldaps only" },
   cipherOrder: { why: "design", reason: "honorCipherOrder: the SERVER's " +
     "BCP 195 order wins, which puts AES-128-GCM before AES-256-GCM for TLS " +
     "1.2 where the probe expects the client's first choice" }
@@ -768,7 +774,10 @@ const PLAN = [
     args: ["--supgroup"],
     exceptions: [ex("empty unassigned extensions, ids in range from " +
                     "2 to 4119", "decode_error",
-                    "emptyAssignedExtension")] },
+                    "emptyAssignedExtension"),
+                 ex("unassigned extensions with random payload, ids in " +
+                    "range from 2 to 1047", "decode_error",
+                    "randomAssignedExtension", { on: ["ldaps"] })] },
   { script: "test-tls13-legacy-version.py",
     serverKey: "rsa", skip: RSA_SERVER,
     exceptions: [ex("version (3, 0)", "handshake_failure",

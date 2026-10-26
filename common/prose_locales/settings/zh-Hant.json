@@ -1947,6 +1947,14 @@
     "en": "e1cb6b236d5adc8b",
     "text": "簽署存取權杖（以及重新整理權杖）所用的 JWS 演算法，由此領域對應該演算法的金鑰簽署——每把金鑰都發佈於 JWKS。default 為 RS256，在 FAPI 1.0 Advanced 下為 PS256，該設定檔也會拒絕 PS256 或 ES256 以外的任何演算法。具名的授權伺服器可帶有自己的值（access_token_signing_alg）。"
   },
+  "oauth2.accessTokenFormat|label": {
+    "en": "c7e15a626ed4371b",
+    "text": "存取權杖格式"
+  },
+  "oauth2.accessTokenFormat|description": {
+    "en": "74504b84130dea54",
+    "text": "新的存取權杖是 RFC 9068 JWT（jwt，預設）還是 256 位元不透明控制代碼（opaque）。不透明權杖的宣告留在此領域；重新整理權杖仍是巢狀 JWT，ID 權杖仍是 JWT。已經簽發的權杖保持其簽發時的形態。"
+  },
   "oauth2.jarmResponseLifetimeS|label": {
     "en": "28259a88563d949d",
     "text": "JARM 回應有效期（秒）"
@@ -2418,6 +2426,14 @@
   "oauth2.maxRefreshTokenFamilies|description": {
     "en": "331485a9a3ff827c",
     "text": "RFC 9700 模式為輪替與重送偵測追蹤多少個重新整理權杖。已滿時，先遺忘「已到期」的，其次是「已輪替」的（已被撤銷，因此重送它們仍會被拒絕——失去的是該重送原本會觸發的整個家族撤銷），最後才是最舊的仍有效者，並發出警告。被遺忘的仍有效權杖仍可運作；其下一次輪替會開始一個新家族。若部署中同時有效的重新整理權杖多於此數，請調高此值。"
+  },
+  "oauth2.maxOpaqueAccessTokens|label": {
+    "en": "a0a9d2a5af677a1f",
+    "text": "記住的不透明存取權杖（每個領域）"
+  },
+  "oauth2.maxOpaqueAccessTokens|description": {
+    "en": "19042efe72e28cc6",
+    "text": "此領域記住多少個不透明存取權杖。存滿時先丟掉過期的列，再拒絕繼續簽發（STS-OAUTH-0979），而不是逐出一個仍有效的權杖。當 oauth2.accessTokenFormat 為 opaque 時適用。"
   },
   "oauth2.signedMetadataAlgorithm|label": {
     "en": "71fb31f9a62ec657",
@@ -7950,6 +7966,14 @@
   "audit.protocolCalls|description": {
     "en": "5525432b1abd613a",
     "text": "對協定端點的每次呼叫是否都產生稽核事件。預設開啟，因為「此服務被要求做的一切」正是記錄的重點——但它是迄今最吵雜的來源（每次 JWKS 輪詢與中繼資料擷取都是一筆），因此關閉它是觀察目錄或主控台的人取得可讀頁面的方式。它從不影響其他五個類別，而且 /admin/metrics 無論如何都會計算每次呼叫。"
+  },
+  "audit.authenticationHistoryDays|label": {
+    "en": "bc611d1f003e751a",
+    "text": "驗證歷程（天）"
+  },
+  "audit.authenticationHistoryDays|description": {
+    "en": "4270a8167905dee9",
+    "text": "使用者入口網站上的「最近的登入」為已登入的人列出多少天已評估的登入。每個領域各自設定，因為該值在目前領域中讀取。主控台上某人的「驗證嘗試」分頁列出稽核日誌仍保存的每一次嘗試，即整份日誌。日誌自身的上限仍可能丟掉更早的列。"
   },
   "delegation.maxRecords|label": {
     "en": "25d78cc6c84e920b",

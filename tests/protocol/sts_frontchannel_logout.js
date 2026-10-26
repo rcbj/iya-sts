@@ -446,8 +446,11 @@ async function test() {
     assert.ok(page.indexOf('http-equiv="refresh"') < 0, page.slice(0, 800));
     // The href is escaped the way the page writes every return address
     // (`xmlEscape`), so `&` in the query is `&amp;` in the markup.
+    // `withLogoutState` replaces `state`: the registered address carries
+    // `state=stale`, and the page's link carries the sign-out's state.
     assert.ok(page.indexOf('<a href="' +
-      POST_LOGOUT.replace(/&/g, "&amp;") + '">') >= 0, page.slice(0, 800));
+      POST_LOGOUT.replace(/state=stale/, "state=frontchannel-state")
+        .replace(/&/g, "&amp;") + '">') >= 0, page.slice(0, 800));
   });
   await ok(realmApi + "/config/reset",
            { key: "oauth2.frontchannelLogoutWaitS" }, "cleared the wait");

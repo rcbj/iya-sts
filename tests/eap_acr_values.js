@@ -711,10 +711,13 @@ function hardwareAllow(t) {
   log.debug("Entering hardwareAllow().");
   t.log.info('=== C8. allowCredentials narrowed for phrh ===');
   // This section runs in the parent. The directory fills the credential
-  // store's slot when it loads, and nothing above has loaded it, so a
-  // key write is "no credential store" (STS-AUTHN-0059). The HTTP child
-  // loads the stack for the same reason.
-  require(ROOT + '/common/protocol_stack');
+  // store's slot when it loads (`credentials.setDirectory()` at require),
+  // and nothing above has loaded it, so the ldap require below is what
+  // makes a key write possible (STS-AUTHN-0059). The protocol stack is
+  // not loaded here: an earlier section has already built
+  // oauth2_monitor's default instance, and loading the stack then
+  // throws "an instance is already installed". The HTTP child is a fresh
+  // process and loads the stack itself.
   const stats = require('../common/admin_stats');
   const credentials = require('../common/credentials');
   const ldap = require('../ldap/ldap_server');

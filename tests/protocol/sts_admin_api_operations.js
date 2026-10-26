@@ -5375,7 +5375,23 @@ const NOT_DRIVEN_HERE = {
   "POST /encryption/count-data-keys": "sts_data_keys.js drives it and " +
     "reads the counts it left",
   "POST /encryption/rotate-kek": "sts_data_keys.js asserts the 400 every " +
-    "stack here gives, and follows the run where the key is in a KMS"
+    "stack here gives, and follows the run where the key is in a KMS",
+  // #939: a proof-first passkey upgrade. begin, prove and finish are two
+  // authenticator ceremonies, driven by sts_passkey_dual_lane.js with a
+  // person-bound console token. A walk that replays an example has no
+  // ceremony to sign. Cancel is the console abandoning a ceremony it
+  // already began (admin-ui/web_runtime.ts); that job finishes the
+  // upgrade rather than cancelling it, and this file has no upgrade to
+  // abandon.
+  "POST /users/begin-passkey-upgrade": "sts_passkey_dual_lane.js drives " +
+    "it, and signs the assertion the begin minted",
+  "POST /users/prove-passkey-upgrade": "sts_passkey_dual_lane.js drives " +
+    "it with the assertion from begin",
+  "POST /users/finish-passkey-upgrade": "sts_passkey_dual_lane.js drives " +
+    "it with the ML-DSA registration the prove offered",
+  "POST /users/cancel-passkey-upgrade": "admin-ui/web_runtime.ts calls " +
+    "it when the browser ceremony throws after begin; " +
+    "sts_passkey_dual_lane.js finishes the upgrade instead"
 };
 
 function everyDocumentedOperationWasDriven(doc) {

@@ -795,6 +795,26 @@
     "en": "3bfa4ec2d7a5b1f4",
     "text": "Jusqu’à ce que quoi que ce soit change sous ou=applications du domaine ; la lecture suivante la reconstruit alors."
   },
+  "caches.store.oauth2.opaque-access-tokens.title": {
+    "en": "f5521031758787e4",
+    "text": "Jetons d’accès opaques"
+  },
+  "caches.store.oauth2.opaque-access-tokens.description": {
+    "en": "03c5375f953a154b",
+    "text": "Les revendications de chaque jeton d’accès opaque que ce domaine a émis, indexées par le SHA-256 de son identifiant. L’identifiant lui-même n’est pas conservé."
+  },
+  "caches.store.oauth2.opaque-access-tokens.bound": {
+    "en": "4fdda86dda2da589",
+    "text": "Appliquée : un magasin plein refuse l’émission (STS-OAUTH-0979) plutôt que d’évincer un jeton encore valide. Le plafond est oauth2.maxOpaqueAccessTokens."
+  },
+  "caches.store.oauth2.opaque-access-tokens.lifetime": {
+    "en": "28035bececff39cc",
+    "text": "Jusqu’à l’exp du jeton d’accès ; une ligne expirée est supprimée à la lecture et par caches.eject-expired."
+  },
+  "caches.store.oauth2.opaque-access-tokens.hitMeaning": {
+    "en": "44484a9bf214d2c8",
+    "text": "un identifiant a été trouvé par son condensé"
+  },
   "caches.store.oauth2.redeemed-codes.title": {
     "en": "d05b2abe4dfcac4c",
     "text": "Codes d’autorisation échangés"

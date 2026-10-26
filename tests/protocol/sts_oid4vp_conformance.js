@@ -34,7 +34,10 @@
 // `<key>-cl`, in a realm with `keys.postQuantumSigning` off, judged with the
 // post-quantum ledger entries (PQ_ONLY) removed — the proof of compliance
 // with no post-quantum exemption (`conformance_suite.js`, THE CLASSICAL
-// TWINS).
+// TWINS). A `direct_post.jwt` twin also offers only ECDH-ES
+// (`oid4vp.responseEncryptionKeyAlgs`): the default still publishes
+// HPKE-10-KE, an AKP key, and the suite warns WarnOnUnusableJwksKeys,
+// which the twin's ledger no longer excuses.
 //
 // OWNED HERE (local: true): this repository's Verifier.
 // ---------------------------------------------------------------------------
@@ -147,7 +150,7 @@ async function prepare(plan) {
   const wallet = oidf.SUITE + "test/a/" + alias + "/authorize";
   const key = await oidf.selfSignedKey("conformance issuer " + TAG);
   const id = ("vp-" + plan.key + "-" + TAG).slice(0, 31).replace(/-+$/, "");
-  const realm = await oidf.makeRealm(root, id, "Conformance " + plan.name, [
+  const settings = [
     ["oid4vp.walletUrl", wallet], ["oid4vp.walletPresentationPath", ""],
     ["oid4vp.trustedIssuerCertificates", key.pem],
     ["oid4vp.expectedVct", VCT],
@@ -156,7 +159,14 @@ async function prepare(plan) {
     // still need theirs).
     ["oid4vp.requireStatusReference", "own-only"],
     ["federation.outboundCaFile", oidf.suiteCaFile()]]
-    .concat(plan.settings || []));
+    .concat(plan.settings || []);
+  // See the header: signing post-quantum off does not drop the encrypted
+  // response's HPKE-10-KE key. ECDH-ES is the key HAIP requires.
+  if (plan.classical && plan.responseMode === "direct_post.jwt") {
+    settings.push(["oid4vp.responseEncryptionKeyAlgs", "ECDH-ES"]);
+  }
+  const realm = await oidf.makeRealm(root, id, "Conformance " + plan.name,
+                                     settings);
   let client = { client_id: "redirect_uri:" + realm.base + "/oid4vp/response" };
   if (plan.prefix) {
     // #230: the Verifier's own certificate, and the anchor the suite checks

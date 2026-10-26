@@ -566,9 +566,12 @@ async function provisionWallet(issuerBase, options) {
     oauthGrantType: [].concat(opts.grantTypes ||
         ["urn:ietf:params:oauth:grant-type:pre-authorized_code"]),
     // A wallet holds no secret: it is a public client in the RFC 7591 sense
-    // and `none` is that sentence in the registry's own vocabulary.
-    oauthTokenEndpointAuthMethod: "none",
-    oauthConfidential: "FALSE"
+    // and `none` is that sentence in the registry's own vocabulary. The
+    // registry derives `oauthConfidential` FALSE from that method. Naming
+    // the derived attribute on an update is refused (STS-REG-0363): it is
+    // not in the editable table, and WALLET_CLIENT_ID is one entry every
+    // OID4VC job reconciles.
+    oauthTokenEndpointAuthMethod: "none"
   };
   if (opts.redirectUris && opts.redirectUris.length) {
     fields.oauthRedirectUri = [].concat(opts.redirectUris);

@@ -1947,6 +1947,14 @@
     "en": "e1cb6b236d5adc8b",
     "text": "访问令牌（以及刷新令牌）签名所用的 JWS 算法，由此领域对应该算法的密钥签名——每个密钥都发布在 JWKS 中。default 为 RS256，在 FAPI 1.0 Advanced 下为 PS256，后者还会拒绝 PS256 或 ES256 以外的任何算法。已命名的授权服务器可以携带自己的值（access_token_signing_alg）。"
   },
+  "oauth2.accessTokenFormat|label": {
+    "en": "c7e15a626ed4371b",
+    "text": "访问令牌格式"
+  },
+  "oauth2.accessTokenFormat|description": {
+    "en": "74504b84130dea54",
+    "text": "新的访问令牌是 RFC 9068 JWT（jwt，默认）还是 256 位不透明句柄（opaque）。不透明令牌的声明留在此领域；刷新令牌仍是嵌套 JWT，ID 令牌仍是 JWT。已经签发的令牌保持其签发时的形态。"
+  },
   "oauth2.jarmResponseLifetimeS|label": {
     "en": "28259a88563d949d",
     "text": "JARM 响应有效期（秒）"
@@ -2418,6 +2426,14 @@
   "oauth2.maxRefreshTokenFamilies|description": {
     "en": "331485a9a3ff827c",
     "text": "RFC 9700 模式为轮换和重放检测而跟踪的刷新令牌数量。已满时，先遗忘已过期的，再遗忘已轮换的（它们已被吊销，因此对其重放仍会被拒绝——失去的是该重放本应触发的整个家族吊销），最后才遗忘最旧的有效令牌，并发出警告。被遗忘的有效令牌仍然可用；其下一次轮换会开始一个新家族。对于同时有效的刷新令牌多于此数量的部署，请调高此值。"
+  },
+  "oauth2.maxOpaqueAccessTokens|label": {
+    "en": "a0a9d2a5af677a1f",
+    "text": "记住的不透明访问令牌（每个领域）"
+  },
+  "oauth2.maxOpaqueAccessTokens|description": {
+    "en": "19042efe72e28cc6",
+    "text": "此领域记住多少个不透明访问令牌。存满时先丢掉过期的行，再拒绝继续签发（STS-OAUTH-0979），而不是逐出一个仍有效的令牌。当 oauth2.accessTokenFormat 为 opaque 时适用。"
   },
   "oauth2.signedMetadataAlgorithm|label": {
     "en": "71fb31f9a62ec657",
@@ -7950,6 +7966,14 @@
   "audit.protocolCalls|description": {
     "en": "5525432b1abd613a",
     "text": "每次调用协议端点是否都生成一个审计事件。默认开启，因为“本服务被要求做的一切”正是日志的意义所在——但这是迄今为止最嘈杂的来源（每次 JWKS 轮询和元数据获取都算一个），因此关闭它可以让关注目录或控制台的人得到一个可读的页面。它从不影响其他五个类别，无论如何 /admin/metrics 都会统计每次调用。"
+  },
+  "audit.authenticationHistoryDays|label": {
+    "en": "bc611d1f003e751a",
+    "text": "身份验证历史（天）"
+  },
+  "audit.authenticationHistoryDays|description": {
+    "en": "4270a8167905dee9",
+    "text": "用户门户上的“最近的登录”为已登录的人列出多少天已评估的登录。每个领域各自设置，因为该值在当前领域中读取。控制台上某人的“身份验证尝试”选项卡列出审计日志仍保存的每一次尝试，即整份日志。日志自身的上限仍可能丢掉更早的行。"
   },
   "delegation.maxRecords|label": {
     "en": "25d78cc6c84e920b",

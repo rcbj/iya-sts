@@ -271,6 +271,10 @@
     "en": "bbbad25d367ffcdf",
     "text": "La cookie de una sesión vinculada al dispositivo se renovó con una prueba de su clave"
   },
+  "audit.actions.authn.session.binding-skipped.label": {
+    "en": "193de5f1ab249962",
+    "text": "Una sesión de inicio de sesión único omitió la vinculación al dispositivo"
+  },
   "audit.actions.logout.global.label": {
     "en": "db32c1466e054343",
     "text": "Se terminó todo lo que se tenía para una identidad, en todos los protocolos"

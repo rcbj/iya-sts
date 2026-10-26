@@ -249,7 +249,11 @@ async function test() {
     assert.strictEqual(strict.registrationMode, "classical-only");
   });
   const conflict = await call("POST", "/policies/save-passkey-policy",
+    // A named profile with no application and no group is refused before
+    // the mode is read (`checkSelectors`). Naming APP is what lets the
+    // classical-only / post-quantum-required conflict be the 400.
     Object.assign({ profile: "conflict-" + TAG }, defaults, {
+      selectApplications: APP,
       registrationAlgorithms: "ES256", registrationMode: "classical-only",
       postQuantumRequired: "registration-and-sign-in" }));
   check("CLASSICAL-ONLY CANNOT BE SAVED BESIDE A POST-QUANTUM REQUIRED " +

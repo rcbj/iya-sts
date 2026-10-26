@@ -271,6 +271,10 @@
     "en": "bbbad25d367ffcdf",
     "text": "一个绑定设备的会话的 Cookie 已凭其密钥的证明续期"
   },
+  "audit.actions.authn.session.binding-skipped.label": {
+    "en": "193de5f1ab249962",
+    "text": "一个单点登录会话跳过了设备绑定"
+  },
   "audit.actions.logout.global.label": {
     "en": "db32c1466e054343",
     "text": "一个身份持有的一切在所有协议中均被结束"

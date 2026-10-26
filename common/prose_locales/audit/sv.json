@@ -271,6 +271,10 @@
     "en": "bbbad25d367ffcdf",
     "text": "Kakan för en enhetsbunden session förnyades med ett bevis på dess nyckel"
   },
+  "audit.actions.authn.session.binding-skipped.label": {
+    "en": "193de5f1ab249962",
+    "text": "En session för enkel inloggning hoppade över enhetsbindningen"
+  },
   "audit.actions.logout.global.label": {
     "en": "db32c1466e054343",
     "text": "Allt som hölls för en identitet avslutades, i varje protokoll"
