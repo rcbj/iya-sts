@@ -1597,6 +1597,12 @@ is Node/OpenSSL behaviour this service cannot configure, and each is also on
   through 4119, which includes extensions IANA has assigned and OpenSSL
   implements, so RFC 8446 section 4.2 requires decode_error. Later chunks
   are ids nobody has assigned and are ignored.
+* a random body of that same stale range (`randomAssignedExtension`, the
+  probe whose ids run from 2 through 1047, which still includes
+  `compress_certificate`). The same decode_error, on every listener. The
+  script draws 20 probes, so the failure shows up on whichever listener
+  drew the probe, and a listener that did not draw it reports the
+  exception as not seen.
 
 One TOOL entry sits beside them, `h2Preface` (2026-10-19): since #703 a TLS
 1.2 resumption that offers only `h2` after a full handshake on `http/1.1`
