@@ -13,11 +13,12 @@
 // its header. A null is an empty field. An empty result is the header and
 // nothing else. PDF is a real PDF 1.4 file in Helvetica with WinAnsi, a
 // table of the same ids, and a header that names the report, the realm, the
-// language and the time. The chrome words exist in English, Spanish, French
-// and German, which are the languages Helvetica can draw. Any other
-// language is drawn in English and the page says which language was asked
-// for. The numbers are the table. There is no chart, and there is no new
-// dependency to draw one.
+// language and the time. The chrome words exist in English, Spanish,
+// French, German, Filipino and Swedish, which are the languages Helvetica
+// WinAnsi can draw. Chinese is not among them: a zh-Hans or zh-Hant report
+// is drawn in English and the page says which language was asked for. The
+// numbers are the table. There is no chart, and there is no new dependency
+// to draw one.
 // ---------------------------------------------------------------------------
 
 import bunyan = require('bunyan');
@@ -48,7 +49,11 @@ const CHROME: Record<string, Chrome> = {
   fr: { title: 'Rapport', realm: 'Domaine', language: 'Langue',
         generated: 'G\u00e9n\u00e9r\u00e9', page: 'Page' },
   de: { title: 'Bericht', realm: 'Bereich', language: 'Sprache',
-        generated: 'Erstellt', page: 'Seite' }
+        generated: 'Erstellt', page: 'Seite' },
+  fil: { title: 'Ulat', realm: 'Saklaw', language: 'Wika',
+         generated: 'Nilikha', page: 'Pahina' },
+  sv: { title: 'Rapport', realm: 'Omr\u00e5de', language: 'Spr\u00e5k',
+        generated: 'Skapad', page: 'Sida' }
 };
 
 interface PlanLike {

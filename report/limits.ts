@@ -23,12 +23,13 @@ import bunyan = require('bunyan');
 const log = bunyan.createLogger({ name: 'sts-report-limits' });
 
 // The same numbers the settings rows default to. `Limits.fixed` fills from
-// here so a test that names one cap does not have to name the other eleven,
+// here so a test that names one cap does not have to name the other twelve,
 // and does not have to load the configuration.
 const DEFAULTS: Record<string, number | string> = {
   syncMaxRows: 500,
   syncMaxBytes: 1000000,
   syncMaxMs: 2000,
+  asyncMaxMs: 120000,
   asyncMaxRows: 100000,
   asyncMaxBytes: 32000000,
   pdfMaxRows: 2000,
@@ -124,6 +125,13 @@ class Limits {
     log.debug("Entering Limits.syncMaxMs().");
     log.debug("Leaving Limits.syncMaxMs().");
     return Number(this.pick('syncMaxMs'));
+  }
+
+  /** @returns report.asyncMaxMs */
+  asyncMaxMs(): number {
+    log.debug("Entering Limits.asyncMaxMs().");
+    log.debug("Leaving Limits.asyncMaxMs().");
+    return Number(this.pick('asyncMaxMs'));
   }
 
   /** @returns report.asyncMaxRows */

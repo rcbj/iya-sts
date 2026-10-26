@@ -35,6 +35,7 @@ import executor = require('./executor');
 import Query = require('./query');
 import Catalog = require('./catalog');
 import Limits = require('./limits');
+import OpenApi = require('./openapi');
 
 const log = bunyan.createLogger({ name: 'sts-report-api' });
 
@@ -331,6 +332,26 @@ function reportIdOk(id: string): boolean {
   return ok;
 }
 
+function reportMergedParameters(stored: any, posted: any): any {
+  log.debug("Entering reportMergedParameters().");
+  const bag: any = {};
+  let any = false;
+  if (stored && typeof stored === 'object' && !Array.isArray(stored)) {
+    Object.keys(stored).forEach(function (key: string): void {
+      bag[key] = stored[key];
+      any = true;
+    });
+  }
+  if (posted && typeof posted === 'object' && !Array.isArray(posted)) {
+    Object.keys(posted).forEach(function (key: string): void {
+      bag[key] = posted[key];
+      any = true;
+    });
+  }
+  log.debug("Leaving reportMergedParameters().");
+  return any ? bag : null;
+}
+
 function reportValidator(): any {
   log.debug("Entering reportValidator().");
   const made = new Query({
@@ -347,6 +368,7 @@ function reportPublicSource(src: any): any {
     return {
       id: field.id,
       type: field.type,
+      meaning: field.meaning || '',
       filter: field.filter,
       sort: field.sort,
       group: field.group,
@@ -357,6 +379,9 @@ function reportPublicSource(src: any): any {
     id: src.id,
     bounded: src.bounded,
     retention: src.retention,
+    paging: src.paging || 'limit',
+    relationships: Array.isArray(src.relationships) ?
+      src.relationships.slice() : [],
     fields: fields
   };
   log.debug("Leaving reportPublicSource().");
@@ -680,6 +705,7 @@ function reportDefinitionView(who: any, row: any): any {
   };
   if (editable) {
     view.document = stores.copy(row.document);
+    view.parameters = row.parameters ? stores.copy(row.parameters) : null;
     view.groups = (row.groups || []).slice();
     view.failures = (row.failures || []).slice();
   }
@@ -698,23 +724,9 @@ function reportServeIndex(res: any): void {
 
 function reportServeOpenApi(res: any): void {
   log.debug("Entering reportServeOpenApi().");
-  reportJson(res, 200, {
-    openapi: '3.0.3',
-    info: { title: 'IYA STS reports', version: '1' },
-    paths: {
-      '/report-api': { get: { summary: 'The report API index' } },
-      '/report-api/catalog': { get: { summary: 'The report catalog' } },
-      '/report-api/queries': { post: { summary: 'Run a query' } },
-      '/report-api/definitions': {
-        get: { summary: 'List definitions' },
-        post: { summary: 'Create a definition' }
-      },
-      '/report-api/jobs': {
-        get: { summary: 'List jobs' },
-        post: { summary: 'Queue a job' }
-      }
-    }
-  });
+  // The catalog is the field reference. This document names the routes
+  // and points at it, so a new field is not written twice.
+  reportJson(res, 200, OpenApi.document(new Catalog()));
   log.debug("Leaving reportServeOpenApi().");
 }
 
@@ -755,7 +767,7 @@ async function reportAcceptQuery(req: any, res: any, who: any,
   }
   const wrapped = definition ? {
     document: stores.copy(definition.document),
-    parameters: posted
+    parameters: reportMergedParameters(definition.parameters, posted)
   } : reportDocumentOf(posted);
   if (!wrapped) {
     reportQueryRefused(who, null, 'STS-REPORT-0004');

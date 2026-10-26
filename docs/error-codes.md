@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4671** of them, in **48** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4673** of them, in **48** subsystems.
 
 ## Where a code appears
 
@@ -96,7 +96,7 @@ is an ordinary outcome.
 * [Identity-provider-initiated sign-in (`STS-LAUNCH`)](#sts-launch) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 181
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
-* [Reporting (`STS-REPORT`)](#sts-report) — 32
+* [Reporting (`STS-REPORT`)](#sts-report) — 34
 
 ## STS-HTTP
 
@@ -5381,6 +5381,8 @@ Raised from: report/.
 | `STS-REPORT-0031` | A share of a report definition was refused. | HTTP 400 |
 | `STS-REPORT-0032` | A report job was cancelled before it finished. | recorded |
 | `STS-REPORT-0033` | A method other than GET or HEAD was sent to the reports document. | HTTP 404 |
+| `STS-REPORT-0034` | A report job exceeded its time and was failed rather than returned in part. | result_too_large on the job; the submission already answered |
+| `STS-REPORT-0035` | A scheduled report names a parameter and stores no value for it, so this occurrence did not run and the slot was kept. | recorded |
 
 ## Adding a code
 

@@ -42,5 +42,18 @@
   "sort": "Sort",
   "source": "Source",
   "status": "Status",
-  "title": "Reports"
+  "title": "Reports",
+  "type": "Type",
+  "meaning": "Meaning",
+  "yes": "Yes",
+  "no": "No",
+  "opEq": "equals",
+  "opNe": "does not equal",
+  "opContains": "contains",
+  "opStartsWith": "starts with",
+  "opLt": "less than",
+  "opLe": "at most",
+  "opGt": "greater than",
+  "opGe": "at least",
+  "opIsNull": "is empty"
 }

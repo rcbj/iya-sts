@@ -42,5 +42,18 @@
   "sort": "Tri",
   "source": "Source",
   "status": "État",
-  "title": "Rapports"
+  "title": "Rapports",
+  "type": "Type",
+  "meaning": "Signification",
+  "yes": "Oui",
+  "no": "Non",
+  "opEq": "égal à",
+  "opNe": "différent de",
+  "opContains": "contient",
+  "opStartsWith": "commence par",
+  "opLt": "inférieur à",
+  "opLe": "au plus",
+  "opGt": "supérieur à",
+  "opGe": "au moins",
+  "opIsNull": "est vide"
 }

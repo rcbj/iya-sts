@@ -100,7 +100,10 @@ function tableHtml(headers: string[], rows: string[][]): string {
     }).join('') + '</tbody></table>';
 }
 
-function queryDocument(form: any): any {
+// The chosen language is part of the document. A saved definition keeps
+// it, and a later run posts parameters only, so the stored document is
+// what the job is drawn in. The API does not fill the language in.
+function queryDocument(form: any, locale: any): any {
   const source = String((form.elements.source &&
     form.elements.source.value) || '');
   const selected: string[] = [];
@@ -155,6 +158,11 @@ function queryDocument(form: any): any {
   if (counted) {
     document.aggregate = 'count';
     document.groupBy = group ? [group] : [];
+  }
+  const tag = typeof locale === 'string' ? locale : '';
+  if (tag && tag.length <= 35 &&
+      /^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$/.test(tag)) {
+    document.locale = tag;
   }
   return document;
 }
@@ -542,18 +550,24 @@ class ReportRuntime extends SpaClient {
       return;
     }
     const src = answer.json.source;
+    const yes = esc(this.t.text('report.yes'));
+    const no = esc(this.t.text('report.no'));
     const rows = (src.fields || []).map(function (field: any): string[] {
       return [esc(field.id), esc(field.type),
-        field.filter ? esc('yes') : esc('no'),
-        field.sort ? esc('yes') : esc('no'),
-        field.group ? esc('yes') : esc('no')];
+        esc(field.meaning || ''),
+        field.filter ? yes : no,
+        field.sort ? yes : no,
+        field.group ? yes : no];
     });
+    const kept = src.retention ? '<p class="sub">' +
+      esc(src.retention) + '</p>' : '';
     this.paint('<p><a href="' + esc(BASE + '/query?source=' + src.id) +
       '">' + esc(this.t.text('report.newQuery')) + '</a></p>' +
-      '<h2>' + esc(src.id) + '</h2>' +
+      '<h2>' + esc(src.id) + '</h2>' + kept +
       tableHtml([
         esc(this.t.text('report.fields')),
-        esc(this.t.text('report.format')),
+        esc(this.t.text('report.type')),
+        esc(this.t.text('report.meaning')),
         esc(this.t.text('report.filter')),
         esc(this.t.text('report.sort')),
         esc(this.t.text('report.groupBy'))
@@ -601,12 +615,24 @@ class ReportRuntime extends SpaClient {
       filters = filters + '<div class="row"><select name="filterField' + n +
         '">' + fieldOptions + '</select><select name="filterOp' + n + '">' +
         '<option value=""></option>' +
-        '<option value="eq">eq</option><option value="ne">ne</option>' +
-        '<option value="contains">contains</option>' +
-        '<option value="startsWith">startsWith</option>' +
-        '<option value="lt">lt</option><option value="le">le</option>' +
-        '<option value="gt">gt</option><option value="ge">ge</option>' +
-        '<option value="isNull">isNull</option></select>' +
+        '<option value="eq">' + esc(self.t.text('report.opEq')) +
+        '</option>' +
+        '<option value="ne">' + esc(self.t.text('report.opNe')) +
+        '</option>' +
+        '<option value="contains">' +
+        esc(self.t.text('report.opContains')) + '</option>' +
+        '<option value="startsWith">' +
+        esc(self.t.text('report.opStartsWith')) + '</option>' +
+        '<option value="lt">' + esc(self.t.text('report.opLt')) +
+        '</option>' +
+        '<option value="le">' + esc(self.t.text('report.opLe')) +
+        '</option>' +
+        '<option value="gt">' + esc(self.t.text('report.opGt')) +
+        '</option>' +
+        '<option value="ge">' + esc(self.t.text('report.opGe')) +
+        '</option>' +
+        '<option value="isNull">' +
+        esc(self.t.text('report.opIsNull')) + '</option></select>' +
         '<input name="filterValue' + n + '"></div>';
     }
     this.paint('<form class="query-form" data-form="query">' +
@@ -1005,7 +1031,7 @@ class ReportRuntime extends SpaClient {
     event.preventDefault();
     if (kind === 'query') {
       const intent = event.submitter && event.submitter.value;
-      const document = queryDocument(form);
+      const document = queryDocument(form, this.t && this.t.locale);
       if (intent === 'save') {
         this.call('POST', API + '/definitions', {
           name: String((form.elements.definitionName &&

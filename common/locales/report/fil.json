@@ -42,5 +42,18 @@
   "sort": "Ayusin",
   "source": "Pinagmulan",
   "status": "Katayuan",
-  "title": "Mga ulat"
+  "title": "Mga ulat",
+  "type": "Uri",
+  "meaning": "Kahulugan",
+  "yes": "Oo",
+  "no": "Hindi",
+  "opEq": "katumbas ng",
+  "opNe": "hindi katumbas ng",
+  "opContains": "naglalaman ng",
+  "opStartsWith": "nagsisimula sa",
+  "opLt": "mas mababa sa",
+  "opLe": "hindi hihigit sa",
+  "opGt": "mas mataas sa",
+  "opGe": "hindi bababa sa",
+  "opIsNull": "walang laman"
 }
