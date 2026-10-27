@@ -654,6 +654,29 @@ async function reportEachUser(onUser: (entry: any, dn: string) =>
   log.debug("Leaving reportEachUser(). Guard.");
 }
 
+// How many second-factor credentials an entry holds (#1019): passkeys
+// enrolled in the mfa role, authenticator apps and mail factors, each
+// credential counted once. Recovery codes and app passwords are not
+// factors; a primary passkey is not a second one.
+function reportSecondFactors(entry: any): number {
+  log.debug("Entering reportSecondFactors().");
+  const keys = reportAttrList(entry, 'stsWebauthnCredential');
+  let n = 0;
+  if (keys.length) {
+    const credentials = require('../common/credentials');
+    credentials.keysOfValues(keys, reportAttr(entry, 'uid')).forEach(
+      function (key: any): void {
+        if (String(key.role || 'mfa') === 'mfa') {
+          n += 1;
+        }
+      });
+  }
+  n += reportAttrList(entry, 'stsTotpCredential').length;
+  n += reportAttrList(entry, 'stsMailFactor').length;
+  log.debug("Leaving reportSecondFactors(). " + n + '.');
+  return n;
+}
+
 function reportUserRow(entry: any, names: string[]): any {
   log.debug("Entering reportUserRow().");
   // pwdAccountLockedTime is the administrative disable and any other
@@ -669,7 +692,19 @@ function reportUserRow(entry: any, names: string[]): any {
     mail: reportAttr(entry, 'mail'),
     displayName: reportAttr(entry, 'displayName') ||
       reportAttr(entry, 'cn'),
-    memberOf: names.join(', ')
+    memberOf: names.join(', '),
+    // WHAT THE PERSON CAN SIGN IN WITH, AND HAS (#1019, rcbj: account for
+    // username/password): whether a password is set, how many second
+    // factors the entry holds (`reportSecondFactors()`), the RFC 8176
+    // methods they have used and their last multi-factor sign-in — the
+    // credentialHolders source's common columns, on the person's own row,
+    // so `hasPassword equals true` and `factors equals 0` is "password
+    // only". None is indexed: a job on a large directory.
+    hasPassword: reportAttrList(entry, 'userPassword').length > 0,
+    factors: reportSecondFactors(entry),
+    methodsUsed: reportAttrList(entry, 'authnMethod').join(', '),
+    mfaLastAuthTime: reportLdapTime(reportAttr(entry, 'mfaLastAuthTime')) ||
+      reportIso(Date.parse(reportAttr(entry, 'mfaLastAuthTime')))
   };
   log.debug("Leaving reportUserRow().");
   return row;
@@ -1035,10 +1070,17 @@ const MECHANISM_TABLE = [
   { id: 'totp', attribute: 'stsTotpCredential', role: 'mfa' },
   { id: 'emailFactor', attribute: 'stsMailFactor', role: 'mfa' },
   { id: 'certificate', attribute: 'stsEnrolledCertificate', role: 'primary' },
-  { id: 'kerberos', attribute: 'stsKrb5Keys', role: 'primary' }
+  { id: 'kerberos', attribute: 'stsKrb5Keys', role: 'primary' },
+  // The password (#1019, rcbj: "what about username password
+  // authentication"): a primary mechanism like the others, but the one the
+  // store does not index by holder — nearly everyone has one — so its count
+  // comes from the realm's counter (`holderCountAsync`) and a list of its
+  // holders is the population, refused unless narrowed by memberOf. Its
+  // row never carries the hash: the scheme is the algorithm.
+  { id: 'password', attribute: 'userPassword', role: 'primary' }
 ];
 const HOLDER_FIELDS = ['uid', 'displayname', 'cn', 'authnmethod',
-  'mfalastauthtime'];
+  'mfalastauthtime', 'pwdchangedtime'];
 const GROUP_MEMBERS_MAX = 50000;
 
 function reportParsedValues(values: string[]): any[] {
@@ -1138,6 +1180,26 @@ function reportHolderRows(entry: any, mechanism: any, ldap: any): any[] {
     });
     log.debug("Leaving reportHolderRows(). Passkeys, " + out.length +
       ' role(s).');
+    return out;
+  }
+  if (mechanism.id === 'password') {
+    // THE PASSWORD ROW CARRIES NO HASH (#1019): the stored value is the
+    // hash, `{SCHEME}…`, and only the scheme is read, as the algorithm;
+    // the enrolment is the directory's pwdChangedTime, where it is kept.
+    values.forEach(function (value: string, i: number): void {
+      const scheme = /^\{([^}]+)\}/.exec(String(value || ''));
+      out.push(Object.assign({}, common, {
+        role: mechanism.role,
+        credentials: values.length,
+        credentialId: String(i + 1),
+        algorithm: scheme ? scheme[1] : '',
+        lane: '',
+        enrolledAt: reportLdapTime(reportAttr(entry, 'pwdChangedTime')) ||
+          null,
+        lastUsedAt: null
+      }));
+    });
+    log.debug("Leaving reportHolderRows(). " + out.length + ' password.');
     return out;
   }
   // Every other mechanism: one row per attribute value, which is one

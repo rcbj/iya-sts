@@ -226,6 +226,33 @@ GROUPABLE list and `rows.ts`'s `LIST_FIELDS` (a single value needs no
 splitting); `lane` is enumerated (#1007). Nothing changed in what is
 read: the same holders, the same entries, more rows out of each.
 
+## Passwords in the reports (#1019)
+
+rcbj, 2026-10-27: "what about username password authentication?" Three
+answers, one commit:
+
+* **`password` is the sixth mechanism** (`MECHANISM_TABLE`, attribute
+  `userPassword`, role primary; `HOLDER_MECHANISMS` too). Its holder
+  COUNT comes from the realm's counter — `ldap_server.js`'s
+  `holderCountAsync()` asks `DirectoryWindow.countHoldingAsync()` for
+  `userpassword` (`directory_queries.js`'s `COUNTED_ATTRIBUTES`,
+  `countHolding`), never the asked-names index, which does not carry it
+  and would scan the realm. On 8081 that is 1,000,023 of 50 million, the
+  same people as the Kerberos keys (a password derives them), so a list
+  is refused as over the cap and runs only narrowed by `memberOf`. **A
+  password row never carries the hash**: `reportHolderRows()` reads the
+  `{SCHEME}` prefix as the algorithm and `pwdChangedTime` as the
+  enrolment, and the test asserts the hash is nowhere in the row.
+* **`users` gains `hasPassword`, `factors`, `methodsUsed`,
+  `mfaLastAuthTime`** (`reportUserRow()`; `reportSecondFactors()` counts
+  mfa-role passkeys, authenticator apps and mail factors — recovery codes
+  and app passwords are not factors, a primary passkey is not a second
+  one). None is indexed, so a filter on them is a job on a windowed
+  directory; "password only" is `hasPassword` true and `factors` 0.
+* **`methodsUsed` on `users`** answers who has signed in with a password
+  (`pwd`), compared value by value (`LIST_FIELDS` already names it). On
+  8081 no entry carries `authnMethod` yet: the load sign-ins predate it.
+
 ## A trash can on every filter row (#1017)
 
 rcbj, 2026-10-27. `filterRowHtml()` draws a `remove-filter` button

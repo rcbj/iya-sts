@@ -53,7 +53,7 @@ const CREDENTIALS = ['userPassword', 'unicodePwd', 'ntPassword', 'krb5Key',
 const GROUPABLE = ['status', 'enabled', 'type', 'protocol', 'category',
   'action', 'outcome', 'format', 'family', 'application', 'day',
   'mechanism', 'dialect', 'mode', 'onFailure', 'role', 'algorithm',
-  'lane'];
+  'lane', 'factors', 'hasPassword'];
 
 // Scalars a filter may name and a sort may not. `members` is not in this
 // list because it cannot be filtered either.
@@ -84,7 +84,7 @@ interface FieldSpec {
 // `MECHANISM_TABLE` order; `tests/report_query.js` holds the two lists equal,
 // because the catalog cannot require `sources.ts` (it requires the catalog).
 const HOLDER_MECHANISMS = ['passkey', 'totp', 'emailFactor', 'certificate',
-  'kerberos'];
+  'kerberos', 'password'];
 const HOLDER_ROLES = ['primary', 'mfa'];
 
 // The operators the store answers with an index, per field of `users`. No
@@ -168,7 +168,18 @@ function standardSources(): SourceSpec[] {
        field('displayName', 'string',
          'displayName, or cn when displayName is empty.'),
        field('memberOf', 'string',
-         'The names of the groups that list this person, joined.')]),
+         'The names of the groups that list this person, joined.'),
+       field('hasPassword', 'boolean',
+         'Whether a password is set on the entry (#1019).'),
+       field('factors', 'number',
+         'How many second-factor credentials the person holds: passkeys ' +
+         'enrolled as a second factor, authenticator apps and mail ' +
+         'factors. hasPassword true and factors 0 is a password alone.'),
+       field('methodsUsed', 'string',
+         'The RFC 8176 methods the person has ever signed in with here ' +
+         '(pwd, hwk, otp, ...), joined; compared value by value.'),
+       field('mfaLastAuthTime', 'timestamp',
+         'When the person last completed a multi-factor sign-in.')]),
     source('groups',
       'The directory as it is now. member lists are selected, not filtered.',
       [field('name', 'string', 'The group cn.'),
@@ -273,7 +284,10 @@ function standardSources(): SourceSpec[] {
        field('displayName', 'string',
          'displayName, or cn when displayName is empty.'),
        field('mechanism', 'string',
-         'passkey, totp, emailFactor, certificate or kerberos.',
+         'passkey, totp, emailFactor, certificate, kerberos or password ' +
+         '(the password is counted from the realm\'s counter and listed ' +
+         'only narrowed by memberOf; its row carries the hash scheme, ' +
+         'never the hash).',
          HOLDER_INDEXED.mechanism, HOLDER_MECHANISMS),
        field('role', 'string',
          'primary (signs the person in on its own) or mfa (a second ' +
