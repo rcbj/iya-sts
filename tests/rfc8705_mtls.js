@@ -823,7 +823,17 @@ function childMain() {
 
     // The gate's half: a token for a certificate client that carries no
     // cnf, minted past the funnel as one issued before this rule would be.
-    config.setOverride('adminApi.authRequired', true);
+    // The gate is turned on for the one request and off again, because the
+    // audit read that proves the code (`codeCount()`) goes through it
+    // without a token.
+    const gated = async function (urlPath, opts) {
+      config.setOverride('adminApi.authRequired', true);
+      try {
+        return await request('GET', urlPath, opts);
+      } finally {
+        config.setOverride('adminApi.authRequired', false);
+      }
+    };
     const oauth2 = require(ROOT_DIR + '/oauth-oidc/oauth2');
     const realms = require(ROOT_DIR + '/common/realms');
     const mintUnbound = function (clientId) {
@@ -834,16 +844,16 @@ function childMain() {
       });
     };
     const unboundImpl = await mintUnbound('mtls-impl');
-    r = await raises('STS-API-0137', '/admin-api', function () {
-      return request('GET', '/admin-api/status', {
+    r = await raises('STS-API-0137', '', function () {
+      return gated('/admin-api/status', {
         headers: { authorization: 'Bearer ' + unboundImpl } });
     });
     note(r.status === 401 && r.json.error === 'invalid_token' && r.coded,
          '3m5. /admin-api refuses an unbound token issued to a ' +
          'tls_client_auth client: 401 invalid_token, STS-API-0137',
          r.text.slice(0, 300));
-    r = await raises('STS-API-0137', '/admin-api', function () {
-      return request('GET', '/admin-api/status', {
+    r = await raises('STS-API-0137', '', function () {
+      return gated('/admin-api/status', {
         headers: { authorization: 'Bearer ' + unboundImpl },
         tls: impl.tls });
     });
@@ -852,16 +862,16 @@ function childMain() {
          'certificate too: the TOKEN is not bound', r.text.slice(0, 300));
     create('mtls-later', {});
     const unboundLater = await mintUnbound('mtls-later');
-    r = await raises('STS-API-0137', '/admin-api', function () {
-      return request('GET', '/admin-api/status', {
+    r = await raises('STS-API-0137', '', function () {
+      return gated('/admin-api/status', {
         headers: { authorization: 'Bearer ' + unboundLater } });
     });
     const laterBefore = !r.coded;
     applications.updateApplication('mtls-later', { mode: 'set',
       attribute: 'oauthTlsClientCertificateBoundAccessTokens',
       value: 'TRUE' });
-    r = await raises('STS-API-0137', '/admin-api', function () {
-      return request('GET', '/admin-api/status', {
+    r = await raises('STS-API-0137', '', function () {
+      return gated('/admin-api/status', {
         headers: { authorization: 'Bearer ' + unboundLater } });
     });
     note(laterBefore && r.status === 401 && r.coded,
@@ -872,12 +882,11 @@ function childMain() {
       form: { grant_type: 'client_credentials', scope: 'admin:read',
               resource: apiResource } });
     const plainAdmin = r.json && r.json.access_token;
-    r = await request('GET', '/admin-api/status', {
+    r = await gated('/admin-api/status', {
       headers: { authorization: 'Bearer ' + plainAdmin } });
     note(r.status === 200 && !claimsOf(plainAdmin).cnf,
          '3m8. a client that declares no certificate is unaffected: its ' +
          'unbound /admin-api token is answered', r.text.slice(0, 200));
-    config.setOverride('adminApi.authRequired', false);
     const mixedView = await api('/applications?application=mtls-mixed');
     const laterView = await api('/applications?application=mtls-later');
     const viewOf = function (v) {
