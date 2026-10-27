@@ -1034,6 +1034,30 @@ what somebody just typed, beside the one-time value itself, a second opaque
 string is noise a reader has to work out. `/admin/ldap/directory` still shows
 both in full, because what THAT page is for is exactly what the store holds.
 
+### The username is the `uid` cell, and required fields are outlined (#1066)
+
+rcbj: the simplified view had no `uid` box, and nothing showed which fields the
+policy requires. **The username box MOVED into the grid; it was not copied
+there.** It is `UsersPage.newUserUidCell()`, the first cell of the Name group in
+both views. It still posts `username` and never `field.uid`, because a second
+box would let one form create `uid=alice` whose uid says `bob`, which is why the
+grid left `uid` out until then. With it, the grid moved to the top of the form,
+where *Who they are* was.
+
+**A field the attribute policy requires carries `fg-required`.** That is a red
+rule and an asterisk, drawn by the shared `fieldGridCell()`, so a person's
+Attributes tab outlines the same fields. The cell says *required* in words as
+well, so the colour is never the only sign. The tile counts
+`requiredAttributes` (`uid`, `cn` and `sn` always, then the realm's own); it was
+a constant 1. **Every refusal on a Directory → Users page or tab floats**
+(rcbj). It goes through `WebKit.refusalBanner()`: the application pages'
+`kit.flash()` warning, a heading and the reasons as a list. That covers a
+create, a Fill, the Service account tab's owners and destination, and the shared
+owner-protection block, so the Groups, Roles and Applications Owners tabs float
+too. A refusal that comes back as `?error=` already floated, through
+`ConsoleRuntime.draw()`. **A new in-place refusal on these pages uses the
+helper, not `kit.warn()`.**
+
 ### Two forms post `action=create` and only one carries it as a button
 
 Worth knowing before editing that form. `action=create` is a HIDDEN FIELD and

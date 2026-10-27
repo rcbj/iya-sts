@@ -693,10 +693,15 @@ class WebAnswers {
     const errors = (answer && answer.errors) ||
       (answer && answer.why ? [String(answer.why)] : []);
     if (page === '/admin/users/new' && !ok) {
+      // THE REFUSAL FLOATS (#1066), in the sticky banner the application
+      // screens use (`kit.flash()`), so it stays in view over a form a
+      // reader has scrolled down; a `warn()` at the top of the body was
+      // off-screen from the Create button that caused it. In English, as
+      // every refusal is (#539).
       return { json: WebAnswers.newUserAgain(json, fields,
                                              WebAnswers.one(fields, 'view')),
-               banner: kit.warn('<strong>Nobody was created.</strong> ' +
-                                kit.esc(errors.join(' ') || 'Refused.')) };
+               banner: kit.refusalBanner(errors.length ? errors
+                 : ['Refused.'], 'Nobody was created.') };
     }
     if (page === '/admin/users/edit' && !ok) {
       const out = WebAnswers.copy(json);
@@ -973,8 +978,9 @@ class WebAnswers {
     if (!answer || !answer.invented) {
       return { json: WebAnswers.newUserAgain(json, fields,
                                              WebAnswers.one(fields, 'view')),
-               banner: kit.warn(kit.esc((answer && answer.inventRefused) ||
-                 'Nothing was filled in.')) };
+               // A refused Fill floats like a refused create (#1066).
+               banner: kit.refusalBanner([(answer && answer.inventRefused) ||
+                 'Nothing was filled in.'], 'Nothing was filled in.') };
     }
     const posted = kit.gridValuesFromDraft(fields, json.longTextAttributes);
     const merged = {};

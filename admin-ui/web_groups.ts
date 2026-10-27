@@ -659,8 +659,9 @@ class GroupsPage {
         '" formnovalidate' + kit.tip(tipText) +
         (off ? ' disabled' : '') + '>' + kit.esc(label) + '</button>';
     };
-    const said = (drawn.error && drawn.error.length
-      ? kit.warn(kit.esc(drawn.error.join(' '))) : '') +
+    // A refusal floats (#1066): this block is on a person's Service
+    // account tab as well as the Groups, Roles and Applications Owners tabs.
+    const said = kit.refusalBanner(drawn.error) +
       (drawn.notice ? kit.note(kit.esc(drawn.notice)) : '');
     const removeOf = function (one) {
       if (!write) {
@@ -830,8 +831,9 @@ class GroupsPage {
     const o = opts || {};
     const anchor = '#' + (o.id || 'owners') + '-protection';
     const drawn = (o.state && o.state.ownerProtection) || {};
-    const said = (drawn.error && drawn.error.length
-      ? kit.warn(kit.esc(drawn.error.join(' '))) : '') +
+    // A refusal floats (#1066): this block is on a person's Service
+    // account tab as well as the Groups, Roles and Applications Owners tabs.
+    const said = kit.refusalBanner(drawn.error) +
       (drawn.notice ? kit.note(kit.esc(drawn.notice)) : '');
     const mark = 'an administrator closed it to its owners';
     const others = (ownership.reasons || []).filter(function (one) {

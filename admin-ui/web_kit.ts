@@ -1951,7 +1951,11 @@ class WebKit {
         ? ' fg-search-open' : '') +
       (conditional
         ? ' ' + WebKit.esc(WebKit.familyClasses(row.families)) : '') +
-      (opts.views && !row.simple ? ' fg-adv' : '') + '"' +
+      (opts.views && !row.simple ? ' fg-adv' : '') +
+      // A FIELD THE ATTRIBUTE POLICY REQUIRES (#1066) is outlined, as well as
+      // saying "required" in words below its name, so the boxes that must
+      // be filled are found at a glance.
+      (row.required ? ' fg-required' : '') + '"' +
       (searchKind ? ' tabindex="-1"' : '') + '>' +
       // A label names one control; a list and a radio group are several, so
       // their name is a heading of the cell rather than a label.
@@ -2382,6 +2386,32 @@ class WebKit {
    */
   static flash(html) {
     return html ? '<div class="flash" role="status">' + html + '</div>' : '';
+  }
+
+  /**
+   * Draws a refusal in the floating banner, the shape the application pages
+   * use: a heading and the reasons as a list (#1066).
+   *
+   * @param errors - the reasons, in the server's words
+   * @param title - optional; the heading, English as every refusal is (#539)
+   * @returns the banner as HTML, or '' when there is no reason
+   */
+  static refusalBanner(errors, title?) {
+    const reasons = [].concat(errors == null ? [] : errors)
+      .map(String).filter(function (one) {
+        return one !== '';
+      });
+    if (!reasons.length) {
+      return '';
+    }
+    // FLOATING, NOT IN PLACE (#1066): `flash()` is sticky at the top of the
+    // panel it is drawn in, so the reason stays in view over a long form.
+    // A `warn()` beside the control scrolled away from whoever pressed it.
+    return WebKit.flash('<div class="warn"><strong>' +
+      WebKit.esc(title || 'That was refused.') + '</strong><ul>' +
+      reasons.map(function (one) {
+        return '<li>' + WebKit.esc(one) + '</li>';
+      }).join('') + '</ul></div>');
   }
 
   // Drawn by `web_scim.ts` (#446).
