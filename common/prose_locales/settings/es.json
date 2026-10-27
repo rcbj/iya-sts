@@ -7067,6 +7067,14 @@
     "en": "34a196af42de2673",
     "text": "Si los endpoints de SSF aceptan HTTP Basic además de tokens de acceso de OAuth 2.0, y lo publican en authorization_schemes. En desarrollo pasa cualquier nombre de usuario con cualquier contraseña salvo «invalid»; en modo producto la contraseña se verifica contra el userPassword con hash de la persona. En cualquier caso un principal Basic tiene ambos ámbitos, porque Basic no lleva ninguno — así que un despliegue que quiera ssf.read y ssf.manage aplicados a todo llamante desactiva esto."
   },
+  "ssf.authClientCert|label": {
+    "en": "ad5fbafbb2ac1812",
+    "text": "Ofrecer certificados de cliente TLS"
+  },
+  "ssf.authClientCert|description": {
+    "en": "73d4ba2aa33adad2",
+    "text": "Indica si los endpoints SSF aceptan un receptor autenticado por el certificado de cliente TLS de su conexión, sin encabezado Authorization, y publican urn:ietf:rfc:8705 en authorization_schemes. Solo se acepta un certificado que este dominio emitió a una aplicación y que la aplicación aún conserva; el receptor es esa aplicación y es dueño de los flujos que crea, y tiene los ámbitos de Shared Signals que declara su oauthAllowedScope y que autorizan sus roles SSF_READ y SSF_MANAGE."
+  },
   "ssf.internalReceivers|label": {
     "en": "8eca3281fa7a4ef7",
     "text": "Registrar la consola y el portal como receptores"

@@ -7067,6 +7067,14 @@
     "en": "34a196af42de2673",
     "text": "Om SSF-slutpunkterna accepterar HTTP Basic bredvid OAuth 2.0-åtkomsttokener, och publicerar det i authorization_schemes. I utvecklingsläge godtas vilket användarnamn som helst med vilket lösenord som helst utom \"invalid\"; i produktläge verifieras lösenordet mot personens hashade userPassword. I båda fallen har en Basic-principal båda omfången, eftersom Basic inte bär något — så en driftsättning som vill att ssf.read och ssf.manage upprätthålls för varje anropare stänger av detta."
   },
+  "ssf.authClientCert|label": {
+    "en": "ad5fbafbb2ac1812",
+    "text": "Erbjud TLS-klientcertifikat"
+  },
+  "ssf.authClientCert|description": {
+    "en": "73d4ba2aa33adad2",
+    "text": "Om SSF-slutpunkterna accepterar en mottagare som autentiseras med TLS-klientcertifikatet på sin anslutning, utan Authorization-huvud, och publicerar urn:ietf:rfc:8705 i authorization_schemes. Endast ett certifikat som denna sfär har utfärdat till en applikation, och som applikationen fortfarande innehar, godtas; mottagaren är den applikationen och äger de strömmar den skapar, och den innehar de Shared Signals-omfång som dess oauthAllowedScope deklarerar och som dess roller SSF_READ och SSF_MANAGE auktoriserar."
+  },
   "ssf.internalReceivers|label": {
     "en": "8eca3281fa7a4ef7",
     "text": "Registrera konsolen och portalen som mottagare"

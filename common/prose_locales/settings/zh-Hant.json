@@ -7067,6 +7067,14 @@
     "en": "34a196af42de2673",
     "text": "SSF 端點是否在 OAuth 2.0 存取權杖之外也接受 HTTP Basic，並在 authorization_schemes 中發布。在開發模式下，任何使用者名稱搭配 \"invalid\" 以外的任何密碼都能通過；在產品模式下，密碼會依該人員雜湊後的 userPassword 驗證。無論哪種情況，Basic 主體都擁有兩個範圍，因為 Basic 不攜帶任何範圍——因此要對每個呼叫者強制執行 ssf.read 與 ssf.manage 的部署應關閉此項。"
   },
+  "ssf.authClientCert|label": {
+    "en": "ad5fbafbb2ac1812",
+    "text": "提供 TLS 用戶端憑證"
+  },
+  "ssf.authClientCert|description": {
+    "en": "73d4ba2aa33adad2",
+    "text": "SSF 端點是否接受透過其連線上的 TLS 用戶端憑證進行驗證、且不帶 Authorization 標頭的接收方，並在 authorization_schemes 中發布 urn:ietf:rfc:8705。只接受此領域核發給某個應用程式且該應用程式仍持有的憑證；接收方即該應用程式，擁有其建立的串流，並持有其 oauthAllowedScope 所宣告、且其 SSF_READ 與 SSF_MANAGE 角色所授權的 Shared Signals 範圍。"
+  },
   "ssf.internalReceivers|label": {
     "en": "8eca3281fa7a4ef7",
     "text": "將主控台與入口網站註冊為接收端"

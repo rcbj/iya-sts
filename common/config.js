@@ -13472,6 +13472,26 @@ const SETTINGS = [
                  'wants ssf.read and ssf.manage enforced for every caller ' +
                  'turns this off.' },
 
+  // A RECEIVER AUTHENTICATED BY ITS TLS CLIENT CERTIFICATE (#1049, part of
+  // #520). On by default, as `ssf.authBasic` is, because rcbj's decision on
+  // #520 was that these endpoints accept it, and because what it accepts is
+  // narrow: a certificate this realm's own authority issued to an
+  // application, still held by it, held to that application's declared
+  // scopes and its SSF roles. `ssf/ssf_auth.ts` argues it.
+  { key: 'ssf.authClientCert', group: 'SSF',
+    label: 'Offer TLS client certificates',
+    env: 'STS_SSF_AUTH_CLIENT_CERT', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'Whether the SSF endpoints accept a receiver authenticated ' +
+                 'by the TLS client certificate on its connection, with no ' +
+                 'Authorization header, and publish urn:ietf:rfc:8705 in ' +
+                 'authorization_schemes. Only a certificate this realm ' +
+                 'issued to an application, which the application still ' +
+                 'holds, is taken; the receiver is that application and ' +
+                 'owns the streams it creates, and it holds the Shared ' +
+                 'Signals scopes its oauthAllowedScope declares and its ' +
+                 'SSF_READ and SSF_MANAGE roles authorize.' },
+
   // -------------------------------------------------------------------------
   // THIS SERVICE'S OWN TWO SURFACES AS RECEIVERS (2026-09-10).
   //
