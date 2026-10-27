@@ -933,6 +933,9 @@ function directoryDouble(windowed) {
       key('mfa', 'ES256', -7, 'classical', 3000, 4000)],
     stsTotpCredential: [JSON.stringify({ algorithm: 'SHA1', digits: 6,
       enrolledAt: 1500, lastUsedAt: 7000 })],
+    // A password too (#1019): its hash must never reach a row.
+    userPassword: ['{SSHA}c2VjcmV0aGFzaA=='],
+    pwdChangedTime: ['20261020100000Z'],
     authnMethod: ['pwd', 'hwk', 'otp'],
     mfaLastAuthTime: ['2026-10-20T10:00:00.000Z'] });
   const bea = person('bea', { pwdAccountLockedTime: ['20261001120000Z'],
@@ -1239,13 +1242,20 @@ async function narrowing(t) {
       execution: execution || 'sync'
     });
   };
-  const selectAll = ['username', 'status', 'mail', 'memberOf'];
+  const selectAll = ['username', 'status', 'mail', 'memberOf', 'hasPassword',
+    'factors', 'methodsUsed'];
   try {
     reset();
     const one = await read({ select: selectAll,
       where: { op: 'eq', field: 'username', value: 'ada' }, limit: 5 });
     t.equal(one.ok, true, 'username equals is answered');
     t.equal(names(one).join(','), 'ada', 'username equals names the person');
+    // The person's own credential facts (#1019): a password, two second
+    // factors (the mfa passkey and the authenticator app; the primary
+    // passkeys are not second factors), the methods used.
+    t.equal(one.rows[0].hasPassword, true, 'ada has a password');
+    t.equal(one.rows[0].factors, 2, 'and two second factors');
+    t.equal(one.rows[0].methodsUsed, 'pwd, hwk, otp', 'and her methods');
     t.equal(one.rows[0].memberOf, 'staff, ops',
       'the row carries the groups that list the person, from the index');
     t.equal(calls.byName, 1, 'one name lookup');
@@ -2380,8 +2390,9 @@ async function holders(t) {
     t.equal((staffOnly.rows || []).map(function (row) {
       return row.username + '/' + row.mechanism + '/' + row.role;
     }).sort().join(','),
-      'ada/passkey/mfa,ada/passkey/primary,ada/passkey/primary,ada/totp/mfa',
-      'every credential of every member');
+      'ada/passkey/mfa,ada/passkey/primary,ada/passkey/primary,' +
+      'ada/password/primary,ada/totp/mfa',
+      'every credential of every member, the password among them');
 
     reset();
     const counted = await read({ source: 'credentialHolders',
@@ -2410,11 +2421,27 @@ async function holders(t) {
     const asJob = await read({ source: 'credentialHolders',
       select: fields, limit: 10 }, 'async');
     t.equal(asJob.ok, true, 'as a job it reads every mechanism\'s holders');
-    t.equal((asJob.rows || []).length, 5,
-      'ada three passkeys and one authenticator app, bea one passkey');
-    t.equal(calls.holders, 5, 'one holders lookup per mechanism');
-    t.equal(calls.holderCount, 5, 'after one count per mechanism');
-    t.equal(calls.holdersStop, 5, 'and each read carries a stop');
+    t.equal((asJob.rows || []).length, 6,
+      'ada three passkeys, an authenticator app and a password, bea one ' +
+      'passkey');
+    t.equal(calls.holders, 6, 'one holders lookup per mechanism');
+    t.equal(calls.holderCount, 6, 'after one count per mechanism');
+    t.equal(calls.holdersStop, 6, 'and each read carries a stop');
+
+    // THE PASSWORD MECHANISM (#1019): one row per password, the hash
+    // scheme as its algorithm and never the hash, pwdChangedTime as its
+    // enrolment.
+    reset();
+    const passwords = await read({ source: 'credentialHolders',
+      select: fields, limit: 5,
+      where: { op: 'eq', field: 'mechanism', value: 'password' } });
+    t.equal((passwords.rows || []).map(label).join(','), 'ada/primary',
+      'a password is one primary row for its holder');
+    t.equal(passwords.rows[0].algorithm, 'SSHA', 'with its hash scheme');
+    t.equal(passwords.rows[0].enrolledAt, '2026-10-20T10:00:00Z',
+      'and pwdChangedTime as its enrolment');
+    t.check(JSON.stringify(passwords.rows).indexOf('c2VjcmV0') < 0,
+      'and the hash is nowhere in the row');
 
     // THE COUNT COMES FIRST, AND IS BOUNDED (#1002, 8081's million Kerberos
     // keys): the store is asked for no more than the cap plus one, so the

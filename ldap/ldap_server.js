@@ -2048,9 +2048,23 @@ async function holderCountAsync(kind, attribute, upTo) {
     log.debug('Leaving holderCountAsync(). Not counted: in memory.');
     return null;
   }
+  const held = String(attribute || '').toLowerCase();
+  if (held === 'userpassword') {
+    // THE PASSWORD IS COUNTED, NOT INDEXED (#1019): nearly everyone holds
+    // one, so the store keeps no index of its holders and the asked-names
+    // walk would scan the realm; it keeps a COUNTER instead
+    // (`directory_queries.js`'s COUNTED_ATTRIBUTES, `countHolding`), one
+    // row read. `upTo` bounds the answer as it bounds the indexed count.
+    const counted = await storeAsked(directoryWindow.countHoldingAsync(
+      realms.currentId(), normalizeDn(container), held));
+    const holding = Number((counted && counted.holding) || 0);
+    const most = Math.floor(Number(upTo) || 0);
+    const bounded = most > 0 ? Math.min(holding, most) : holding;
+    log.debug('Leaving holderCountAsync(). ' + bounded + ' (counter).');
+    return bounded;
+  }
   const n = await storeAsked(directoryWindow.countHoldersAsync(
-    realms.currentId(), normalizeDn(container),
-    String(attribute || '').toLowerCase(), upTo));
+    realms.currentId(), normalizeDn(container), held, upTo));
   log.debug('Leaving holderCountAsync(). ' + n + '.');
   return n;
 }

@@ -244,6 +244,16 @@ or any other lock. `active` is the other value.
 | `mail` | string | The mail attribute. Indexed: `eq`, `in`. | yes | yes | no |
 | `displayName` | string | `displayName`, or `cn` when `displayName` is empty. | yes | yes | no |
 | `memberOf` | string | The names of the groups that list this person, joined. | yes | no | no |
+| `hasPassword` | boolean | Whether a password is set on the entry. | yes | yes | yes |
+| `factors` | number | How many second-factor credentials the person holds: passkeys enrolled as a second factor, authenticator apps, mail factors. `hasPassword` true and `factors` 0 is a password alone. | yes | yes | yes |
+| `methodsUsed` | string | The RFC 8176 methods the person has signed in with here (`pwd`, `hwk`, `otp`, …), joined; compared value by value. | yes | yes | no |
+| `mfaLastAuthTime` | timestamp | When the person last completed a multi-factor sign-in. | yes | yes | no |
+
+None of the four is indexed: a filter on them reads every person, so on
+a large directory it is a job (`mode: auto`), best narrowed by
+`memberOf`. "Who has only a password" is `hasPassword` equals `true` and
+`factors` equals `0`; "who has signed in with a password" is
+`methodsUsed` equals `pwd`.
 
 ### `groups`
 
@@ -391,6 +401,15 @@ is sealed: the rows are read from the holders' own entries, as the users
 page's census reads them. Recovery codes and app passwords are not
 listed, because their attributes are not in that index.
 
+**The password is the one mechanism counted rather than indexed.**
+Nearly everyone holds one, so the directory keeps no index of its
+holders; it keeps a counter per realm, and that is what a count by
+`mechanism` reads for `password`, instantly. A list of password holders
+is the population, so it is refused like any read over the cap and runs
+only narrowed by `memberOf`. A password row carries the hash scheme (for
+example `SSHA`) as its `algorithm` and `pwdChangedTime` as its
+`enrolledAt`, and never the hash.
+
 **The holders are counted before they are read.** A mechanism nearly
 everyone holds is the population under another name: on a service where
 every person has a password, every person also holds Kerberos keys, so
@@ -417,7 +436,7 @@ Monitoring → Passkeys.
 |---|---|---|---|---|---|
 | `username` | string | The directory uid. | yes | yes | no |
 | `displayName` | string | `displayName`, or `cn`. | yes | yes | no |
-| `mechanism` | string | `passkey`, `totp`, `emailFactor`, `certificate` or `kerberos`; enumerated, a dropdown on the page. Indexed: `eq`, `in`. | yes | yes | yes |
+| `mechanism` | string | `passkey`, `totp`, `emailFactor`, `certificate`, `kerberos` or `password`; enumerated, a dropdown on the page. Indexed: `eq`, `in`. | yes | yes | yes |
 | `role` | string | `primary` or `mfa`; enumerated. | yes | yes | yes |
 | `credentials` | number | How many credentials of this mechanism and role the person holds; the same on each of their rows. | yes | yes | no |
 | `credentialId` | string | This credential's own id (a passkey's credential id). | yes | yes | no |
