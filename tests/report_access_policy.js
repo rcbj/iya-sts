@@ -380,14 +380,17 @@ function childMain() {
       return call(port, 'POST', '/report-api/definitions/' + id + '/run',
                   token, {});
     };
+    // A saved definition's run is queued as a job (202), by `run`'s
+    // reason in `reportAcceptQuery()`.
     r = await run(tShared, D1);
-    note(r.status === 200,
+    note(r.status === 202 || r.status === 200,
          'C19. the shared group\'s member runs it (`run`, the share\'s ' +
          'other act)', brief(r));
     r = await run(tOut, D1);
     note(r.status === 404, 'C20. an outsider may not run it', brief(r));
     r = await run(tApp, D2);
-    note(r.status === 200, 'C21. an application runs its own', brief(r));
+    note(r.status === 202 || r.status === 200,
+         'C21. an application runs its own', brief(r));
 
     const names = async function (token) {
       const listed = await call(port, 'GET', '/report-api/definitions',
