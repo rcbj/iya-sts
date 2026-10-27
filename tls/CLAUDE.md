@@ -622,9 +622,10 @@ it **refuses every connection**, which is worse than no pin because it reads as
 a broken server.
 
 **`serverCertificate()` ANSWERS BOTH QUESTIONS NOW.** `chainPem` is what the
-certificate TRAVELS WITH (the Issuing CA and the Intermediate, leaf-first and
-without the Root, as RFC 5246 section 7.4.2 asks); `trustAnchorPem` is what a
-caller VERIFIES it against. `trustAnchorPems()` answers the Root when this
+certificate is STORED with (the Issuing CA and the Intermediate, leaf-first and
+without the Root); `trustAnchorPem` is what a caller VERIFIES it against. What
+a socket SENDS is neither of them since #1064 — see *Every listener presents
+the Root*, below. `trustAnchorPems()` answers the Root when this
 service has one and the self-signed certificate when it does not — which is
 what `tls.certificateFile` and any process that never runs `pki.start()`
 (`npm test`, every in-process job) leave behind. **The invariant is that the
@@ -652,6 +653,50 @@ about. It re-reads the record and calls `setSecureContext()` on the way into
 `tests/tls_trust_anchor.js` pins all of it, and pins it as a HANDSHAKE: every
 version of that test which compared subjects and issuers passed on a truststore
 OpenSSL would refuse, which is precisely the state this service was in.
+
+## Every listener presents the Root (#1064, 2026-10-27)
+
+**Every TLS listener this service owns sends four certificates: leaf, Issuing
+CA, Intermediate, Root.** Until #1064 it sent three. RFC 8446 section 4.4.2
+(RFC 5246 section 7.4.2 before it) allows either, and leaving the Root out was
+the old reading of "it is the anchor; relying on it having been sent is the
+mistake". What that reading missed is what a client SHOWS. Every Root this
+service builds is `CN=sts Root CA, O=sts`, and a fresh install builds a new
+one. So a client never handed the current Root completed the path from the
+Intermediate's issuer NAME against whatever same-named Root it already held.
+A Windows user reported it as "the Issuing CA and the Intermediate differ
+between installs but the Root is the same". Six fresh installs on two machines
+each had a Root of their own; the name was the only thing shared.
+
+**Sending the Root trusts nothing** (RFC 5280 section 6.1: the anchor is the
+relying party's input), so this changes what a client can display and nothing
+it accepts.
+
+* **One function builds every socket's bundle: `presentedBundlePem()`**
+  (`tls_server.js`). It is used by `secureContextOptions()` (the main port and
+  the debugger), `server.js` at the main port's creation, `tls/listeners.js`
+  (custom and realm listeners), `ldap/ldap_server.js` (LDAPS: ldapjs passes
+  `certificate` to `tls.createServer()` as `cert` unchanged, so the fork needs
+  nothing), `common/cell_channel.ts` (the channel between cells, server side)
+  and `spiffe/spiffe_grpc.ts` (`presentedChainPem()`, both of its contexts).
+  A new listener takes its bundle from there, never from
+  `[cert].concat(chainPem)`.
+* **The chain in it comes from `common/pki.js` `chainThroughRoot()`**, the one
+  place any reported chain is completed (`common/CLAUDE.md`). Its candidates
+  are the service Root and `trustAnchorPems()`, so a supplied
+  `tls.certificateFile` whose file carried its Root now SENDS that Root
+  (`splitSuppliedBundle()` used to keep it out of `chainPem`, and still does).
+  A file with no Root in it is sent as it is.
+* **`chainPem` is unchanged.** It is what a certificate is stored with, and the
+  workers' pin, `anchorSigns()` and every "an empty chain means self-signed"
+  check here read it.
+* **Not changed:** a CLIENT certificate this service presents when it dials
+  out (the inter-cell client side, the SCIM client's mutual TLS). Those are
+  not listeners.
+
+`tests/tls_presented_root.js` holds it as a handshake: four certificates
+arrive, the last one this process's Root by fingerprint, and a client trusting
+that Root alone verifies.
 
 ## THE PUBLISHED ANCHOR MUST SIGN THE PUBLISHED CHAIN (2026-09-11)
 

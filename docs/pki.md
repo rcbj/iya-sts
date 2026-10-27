@@ -877,6 +877,36 @@ way; an older one, or an expired one, answers 404. RFC 7515 requires the `x5u` f
 `global.https` off the address is `http://` and a strict verifier will not follow
 it.
 
+### Every chain this service reports ends with the Root
+
+The Root is sent, last, after the certificate and the CAs between it and the
+Root, wherever this service hands out one of its own certificates:
+
+| Where | What carries the chain |
+|---|---|
+| Every TLS handshake | the listener's certificate list ([Configure TLS → What the handshake sends](configure-tls.md#what-the-handshake-sends)) |
+| A JWT's header | `x5c`, and the document `x5u` names |
+| Every published JWK | `x5c`: the realm JWKS (current, next and retired keys), pinned and grouped signers, an issued key pair's `oauthAssertionJwks`, and the crypto metadata document |
+| Every XML signature | `ds:KeyInfo` → `ds:X509Data`: SAML 2.0 and SAML 1.1 assertions and messages, WS-Federation and WS-Trust tokens, a federation relationship's requests and logout messages |
+| Every metadata document | each `md:KeyDescriptor`, signing and encryption: SAML 2.0, WS-Federation, a federation relationship's own metadata |
+
+The signer's own certificate is always **first**. Many verifiers take the
+first `X509Certificate` in `X509Data` as the signer's; XML Signature 1.1
+section 4.5.4 allows several certificates there, in any order.
+
+Sending the Root does not make anybody trust it: a relying party trusts only
+the Roots it already holds (RFC 5280 section 6.1). It is there so that a
+reader can see *which* Root the chain ends at. Every install's Root has the
+same name, `CN=sts Root CA, O=sts`, so the name alone does not tell two
+installs apart. The thumbprint does.
+
+**Four signed objects leave the Root out of `x5c`.** HAIP 1.0 forbids it in
+three (sections 5, 6.1 and 6.1.1): an OpenID4VCI credential, a Token Status
+List token, and a signed OpenID4VP Request Object. The OpenID4VCI trusted list
+follows the same rule, because its reader takes the list only from a signer
+whose chain ends under a list-operator CA it already holds. Their `x5c` ends at
+the Intermediate. The `x5u` chain document still ends with the Root.
+
 ### The `kid` can be the key's thumbprint instead
 
 The `x5c` and `x5u` headers name the **certificate**. The `kid` beside them

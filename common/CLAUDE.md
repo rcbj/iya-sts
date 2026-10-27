@@ -8165,6 +8165,55 @@ verification path in the same act. `tests/pki.js` asserts that, the ciphertext
 at rest, the PEM at the surface, that an unrelated edit to the same entry does
 not rewrite the key in the clear, and the double-seal refusal.
 
+### 3w, CONTINUED: EVERY REPORTED CHAIN ENDS WITH THE ROOT, AND ONE FUNCTION SAYS SO (#1064, 2026-10-27)
+
+**`chainThroughRoot(certificatePem, chainPem, opts)` is the one place a chain
+this service reports about its OWN certificates is completed.** It returns
+the leaf, the stored chain, and the Root that signs the chain's top, checked
+by SIGNATURE (the two Roots it has to tell apart have the same subject). It
+takes PEM or bare base64. Where no candidate signs the top (a drifted
+hierarchy, an uploaded chain under a foreign Root), the chain comes back as
+stored, without a Root. A certificate with no chain comes back alone.
+`opts.anchors` adds candidates (a TLS listener's supplied anchor), and
+`opts.withoutRoot` leaves the Root off. **`withoutRoot` is for HAIP 1.0 and
+nothing else**: sections 5, 6.1 and 6.1.1 forbid the trust anchor in the
+`x5c` of a credential, a Status List Token and a signed OpenID4VP request.
+Its callers state that at the call site.
+
+**WHY.** Every Root is `CN=sts Root CA, O=sts` and a fresh install builds a new
+one, so a reader never handed the current Root matched the top certificate's
+issuer NAME to an older Root it already held: "the Root is the same on every
+install", reported from Windows, when it never was. Sending the Root trusts
+nothing (RFC 5280 section 6.1); it lets a reader show the thumbprint.
+
+**`chainPem` keeps its meaning everywhere: what a certificate is STORED with,
+no Root.** Only the REPORTING sites go through this function. Each has one
+writer for its format:
+
+| Format | Writer | Readers it serves |
+|---|---|---|
+| a TLS socket's `cert` bundle | `tls/tls_server.js` `presentedBundlePem()` | every listener (`tls/CLAUDE.md`, *Every listener presents the Root*) |
+| a JOSE header `x5c` | `common/jose_certificate_header.js` `chainPemsOf()`, its memo kept | every token's `x5c`; `withoutAnchor` rows unchanged |
+| a published JWK `x5c` | `helpers.x5cOf()` | the realm JWKS and its standby keys, pinned and grouped signers, `pki.js`'s certified key pairs, `/crypto/metadata` |
+| an XML `ds:X509Data` | `helpers.x509DataXml()`, `helpers.xmlSignerKeyInfo(view)` | every XML signature's KeyInfo (handed to `crypto.js` `signXml()` as `keyInfoXml` by the seven signers), every metadata KeyDescriptor, signing and encryption |
+| PEM text | `chainThroughRoot()` itself | the remote PEP's `fullChainPem`, the console's `-chain.pem` download |
+
+**`crypto.js` does not complete chains, because it is a leaf (3r)**: a signer
+passes the finished `ds:X509Data` as `keyInfoXml`. The vendored `xmldsig.js`
+is unchanged (rcbj's D8): `signEnveloped()` wraps a caller's `keyInfoXml`, and
+the general engine's `buildKeyInfo()` takes it as is and AHEAD of its `none`
+check, so `signXml()` wraps it on that path and passes nothing when
+`includeKeyInfo` is false. **The signer's own certificate stays FIRST** in
+every X509Data: XML Signature 1.1 section 4.5.4 sets no order, but this
+service's verifier and xml-crypto's `getCertFromKeyInfo` take the first.
+
+**Outside it, on purpose**: the SPIFFE trust bundle (its `x5c` IS the
+anchors), the SAML EncryptedKey's KeyInfo (the RECIPIENT's certificate, whose
+chain this service does not hold), a client certificate this service presents
+when dialling out, and the enrollment protocols' issued chains (ACME, EST,
+SCEP), which answer what each protocol asks. `tests/tls_presented_root.js`
+holds the function and every format.
+
 ## 3ab. `person_assertions.js`: a PERSON as an RFC 7523 issuer, and the one refusal it exists for
 
 Added 2026-09-11. `oauth-oidc/assertion_grant.js` accepted an assertion grant
