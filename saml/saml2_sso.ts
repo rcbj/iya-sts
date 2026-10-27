@@ -1607,6 +1607,8 @@ class Saml2Sso {
       privateKeyPem: STS.xmlSigner.privateKeyPem,
       privateKey: STS.xmlSigner.privateKey,
       certPem: STS.xmlSigner.certPem,
+      // The chain through the service Root in KeyInfo (#1064).
+      keyInfoXml: helpers.xmlSignerKeyInfo(STS.xmlSigner),
       sigAlg: how.sigAlg,
       c14nAlg: how.c14nAlg,
       placement: placement === 'prepend'
@@ -5612,10 +5614,11 @@ class Saml2Sso {
       // goes to it while something encrypted to a retired one still opens.
       if (use === 'signing') {
         return helpers.ownXmlSigningCertificates().map(function (one: any) {
+          // The certificate, its chain and the service Root (#1064):
+          // helpers.x509DataXml(), the one writer of an X509Data here.
           return '<md:KeyDescriptor use="signing"><ds:KeyInfo xmlns:ds="' +
-            NS_DS + '"><ds:X509Data><ds:X509Certificate>' +
-            stsCrypto.stripPem(one.certPem) + '</ds:X509Certificate>' +
-            '</ds:X509Data></ds:KeyInfo></md:KeyDescriptor>';
+            NS_DS + '">' + helpers.x509DataXml(one.certPem, one.chainPem) +
+            '</ds:KeyInfo></md:KeyDescriptor>';
         }).join('');
       }
       // ENCRYPTION: the realm's XML key — or, where an xml key is PINNED
@@ -5623,9 +5626,8 @@ class Saml2Sso {
       // once it signs (helpers.ownXmlEncryptionCertificates()).
       return helpers.ownXmlEncryptionCertificates().map(function (one: any) {
         return '<md:KeyDescriptor use="' + use + '"><ds:KeyInfo xmlns:ds="' +
-          NS_DS + '"><ds:X509Data><ds:X509Certificate>' +
-          stsCrypto.stripPem(one.certPem) + '</ds:X509Certificate>' +
-          '</ds:X509Data></ds:KeyInfo></md:KeyDescriptor>';
+          NS_DS + '">' + helpers.x509DataXml(one.certPem, one.chainPem) +
+          '</ds:KeyInfo></md:KeyDescriptor>';
       }).join('');
     };
 

@@ -270,8 +270,8 @@ function directChildByLocal(parent, localName, namespaceUri) {
  * Signs one XML document with an enveloped signature, exclusive c14n.
  *
  * @param xml - the document
- * @param opts - `privateKeyPem` or `privateKey`, `certPem`, `refUri`,
- *   `placement`, `sigAlg`, `includeKeyInfo` and `what`
+ * @param opts - `privateKeyPem` or `privateKey`, `certPem`, `keyInfoXml`,
+ *   `refUri`, `placement`, `sigAlg`, `includeKeyInfo` and `what`
  * @returns the signed document
  */
 function signXml(xml, opts) {
@@ -330,6 +330,16 @@ function signXml(xml, opts) {
   //     raw r||s XML Signature 1.1 section 6.4.3 specifies, which node's
   //     `ieee-p1363` encoding produces.
   // -------------------------------------------------------------------
+  // -------------------------------------------------------------------
+  // THE SIGNER'S CHAIN IN KeyInfo (#1064). `keyInfoXml` is the
+  // `ds:X509Data` a signer hands over — `helpers.xmlSignerKeyInfo()`, the
+  // leaf, its chain and the service Root — because this module is a LEAF
+  // (rule 3r) and cannot reach the PKI to complete a chain itself. Without
+  // it the signature carries the certificate alone, as it always did. A
+  // post-quantum signature has no certificate profile and takes none.
+  // -------------------------------------------------------------------
+  const chainKeyInfo = options.includeKeyInfo === false ? ''
+    : String(options.keyInfoXml || '');
   const method = XML_SIGNATURE_METHODS[options.sigAlg] || null;
   const pqMethod = xmldsig.SIG_METHODS[options.sigAlg] &&
     xmldsig.SIG_METHODS[options.sigAlg].postQuantum
@@ -362,6 +372,11 @@ function signXml(xml, opts) {
       sigAlg: options.sigAlg,
       c14nAlg: options.c14nAlg || xmldsig.C14N_EXCLUSIVE,
       keyInfo: options.includeKeyInfo === false ? 'none' : 'x509',
+      // The general engine's buildKeyInfo() answers a caller's keyInfoXml
+      // AS IS and ahead of its `none` check, so it goes in wrapped, and only
+      // when KeyInfo is wanted at all.
+      keyInfoXml: chainKeyInfo
+        ? '<ds:KeyInfo>' + chainKeyInfo + '</ds:KeyInfo>' : undefined,
       certPem: options.certPem,
       refUri: refUri,
       placement: options.placement || PLACEMENT.AFTER_ISSUER,
@@ -377,6 +392,9 @@ function signXml(xml, opts) {
   const signed = xmldsig.signEnveloped(xml, {
     privateKeyPem: options.privateKeyPem,
     certPem: options.certPem,
+    // signEnveloped() wraps a caller's keyInfoXml in ds:KeyInfo itself, and
+    // writes the bare certificate where there is none.
+    keyInfoXml: chainKeyInfo || undefined,
     placement: options.placement || PLACEMENT.AFTER_ISSUER,
     refUri: refUri,
     sigAlg: options.sigAlg,

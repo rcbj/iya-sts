@@ -2412,8 +2412,23 @@ function chainPemFor(realmId) {
 function chainThroughRoot(certificatePem, chainPem, opts) {
   log.debug("Entering chainThroughRoot().");
   const options = opts || {};
-  const leaf = String(certificatePem || '');
-  const chain = (chainPem || []).filter(function (pem) {
+  // A PEM or the bare base64 of a DER, which is how a federation
+  // relationship's encryption rows and a cluster's listener leaves hold them;
+  // answered as PEM either way.
+  const asPem = function (text) {
+    log.debug("Entering asPem().");
+    const value = String(text || '').trim();
+    if (!value || value.indexOf('-----BEGIN') >= 0) {
+      log.debug("Leaving asPem(). Already PEM, or nothing.");
+      return value ? String(text) : '';
+    }
+    log.debug("Leaving asPem(). Wrapped.");
+    return '-----BEGIN CERTIFICATE-----\n' +
+      (value.replace(/\s+/g, '').match(/.{1,64}/g) || []).join('\n') +
+      '\n-----END CERTIFICATE-----\n';
+  };
+  const leaf = asPem(certificatePem);
+  const chain = (chainPem || []).map(asPem).filter(function (pem) {
     return !!pem && pem !== leaf;
   });
   const pems = leaf ? [leaf].concat(chain) : chain.slice();
@@ -2887,8 +2902,10 @@ async function issueSigningKeyPair(realmId, opts) {
   // leaf, so dropping its first member drops the ISSUING CA — and an `x5c`
   // missing the certificate that signed the leaf is a chain nothing can build
   // a path from. `tests/pki.js` counts the members for exactly that reason.
-  publicJwk.x5c = [stsCrypto.stripPem(issued.pem)]
-    .concat(chainPemFor(id).map(stsCrypto.stripPem));
+  // And the Root after them since #1064 — chainThroughRoot(), the one place
+  // a reported chain is completed.
+  publicJwk.x5c = chainThroughRoot(issued.pem, chainPemFor(id))
+    .map(stsCrypto.stripPem);
   publicJwk['x5t#S256'] = stsCrypto.certificateThumbprint(issued.pem,
                                                           { format:
                                                               'base64url' });
@@ -5583,8 +5600,10 @@ async function registerCertificate(realmId, opts) {
   if (jwsAlg) {
     publicJwk.alg = jwsAlg;
   }
-  publicJwk.x5c = [stsCrypto.stripPem(leaf.pem)]
-    .concat(storedChain.map(stsCrypto.stripPem));
+  // Through the service Root where it signs the stored chain (#1064); an
+  // uploaded chain under a foreign Root is reported as it came.
+  publicJwk.x5c = chainThroughRoot(leaf.pem, storedChain)
+    .map(stsCrypto.stripPem);
   publicJwk['x5t#S256'] = stsCrypto.certificateThumbprint(leaf.pem,
                                                           { format:
                                                               'base64url' });

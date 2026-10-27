@@ -124,6 +124,8 @@ interface PepTlsDeps {
     describeCertificate(held: any): any;
     issueTlsServerKeyPair(scope: string, useCase: string,
                           options: object): Promise<any>;
+    chainThroughRoot(certificatePem: string, chainPem: string[],
+                     opts?: object): string[];
   };
   peps: { read(name: string): PepRowNames | null };
   isIP(host: string): number;
@@ -410,11 +412,13 @@ class PepTls {
                             : '') + '.' });
     // WHAT node's `cert` option wants: the leaf FOLLOWED BY the chain, so the
     // PEP sends its Issuing CA and the realm Intermediate and a client
-    // holding only the service Root can build the path. The Root is left
-    // out, for `certify()`'s reason — it is the anchor, and relying on it
-    // having been sent is the mistake.
-    const fullChainPem = [issued.certificatePem]
-      .concat(issued.chainPem || [])
+    // holding only the service Root can build the path — and, since #1064,
+    // the Root after them, as every TLS listener this service certifies
+    // presents it (pki.chainThroughRoot(), the one place a reported chain is
+    // completed, says why). Sending it trusts nothing: the client's anchor
+    // is still its own.
+    const fullChainPem = pki.chainThroughRoot(issued.certificatePem,
+                                              issued.chainPem || [])
       .map(function (one) {
         return String(one).replace(/\s*$/, '\n');
       }).join('');

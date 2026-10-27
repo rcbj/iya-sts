@@ -3420,14 +3420,6 @@ class OAuth2Server {
     log.debug("Entering OAuth2Server.sendJwks().");
     try {
       const pub = forge.pki.certificateFromPem(STS.certPem).publicKey;
-      // The base64 of a PEM's DER, for `x5c` — which is base64 and NOT
-      // base64url (RFC 7517 section 4.7 is explicit, and a base64url `x5c`
-      // parses as garbage in every library that reads it).
-      const forX5c = function (pem) {
-        log.debug("Entering forX5c().");
-        log.debug("Leaving forX5c().");
-        return String(pem).replace(/-----[^-]+-----/g, '').replace(/\s+/g, '');
-      };
 
       const b64u = function (hex) {
         log.debug("Entering b64u().");
@@ -3498,7 +3490,9 @@ class OAuth2Server {
           // local issuer certificate`, which names nothing. `certChainPem` is
           // empty while a key is still self-signed, so this is byte for byte
           // what it always was on a service whose hierarchy has not been built.
-          x5c: [STS.certB64].concat((STS.certChainPem || []).map(forX5c))
+          // And through the service Root since #1064: helpers.x5cOf(), the
+          // one writer of a published JWK's `x5c`, says why.
+          x5c: helpers.x5cOf(STS.certPem, STS.certChainPem || [])
         // The whole key list and not STS.extraKeys: the post-quantum keys are
         // made on FIRST USE (see helpers.js), and the call above is what brings
         // them into being. That makes the first JWKS fetch on a realm slow —
@@ -3520,8 +3514,8 @@ class OAuth2Server {
                 .export({ format: 'jwk' });
               return { kty: 'RSA', use: 'sig', kid: one.kid, n: jwk.n,
                        e: jwk.e,
-                       x5c: [forX5c(one.certPem)].concat(
-                         (one.chainPem || []).map(forX5c)) };
+                       x5c: helpers.x5cOf(one.certPem,
+                                          one.chainPem || []) };
             }))
           .concat(helpers.standbyOf(STS).filter(function (one: any): boolean {
             return one.kind !== 'rsa' && one.useCase === 'jose' &&

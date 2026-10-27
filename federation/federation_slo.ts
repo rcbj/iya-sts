@@ -1374,6 +1374,8 @@ class FederationSlo {
         privateKeyPem: STS.xmlSigner.privateKeyPem,
         privateKey: STS.xmlSigner.privateKey,
         certPem: STS.xmlSigner.certPem,
+        // The chain through the service Root in KeyInfo (#1064).
+        keyInfoXml: helpers.xmlSignerKeyInfo(STS.xmlSigner),
         sigAlg: how.sigAlg, c14nAlg: how.c14nAlg,
         placement: stsCrypto.PLACEMENT.AFTER_ISSUER, refUri: '#' + built.id,
         what: 'federated SAML 2.0 ' + field

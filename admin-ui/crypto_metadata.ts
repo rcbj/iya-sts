@@ -4498,9 +4498,10 @@ class CryptoMetadata {
       const files = [{ name: row.alg.toLowerCase() + '-public.jwk.json',
                        data: text, mime: 'application/jwk+json' }];
       // AND THE CERTIFICATE THIS REALM'S JOSE ISSUING CA ISSUED OVER IT
-      // (2026-09-13), leaf first with the chain under it and without the Root —
-      // public, and the one thing about this key a relying party could not get
-      // from the JWKS.
+      // (2026-09-13), leaf first with the chain under it and — since #1064 —
+      // the service Root last, from pki.chainThroughRoot(), the one place a
+      // reported chain is completed. Public, and the one thing about this
+      // key a relying party could not get from the JWKS.
       let held = null;
       try {
         held = stsPki.publishedCertificateFor(
@@ -4513,7 +4514,8 @@ class CryptoMetadata {
       }
       if (held) {
         files.push({ name: row.alg.toLowerCase() + '-chain.pem',
-                     data: [held.certificatePem].concat(held.chainPem).join(''),
+                     data: stsPki.chainThroughRoot(held.certificatePem,
+                       held.chainPem || []).join(''),
                      mime: 'application/x-pem-file' });
       }
       log.debug("Leaving CryptoMetadata.exportKey(). An AKP public JWK.");

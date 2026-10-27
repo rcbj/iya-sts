@@ -484,16 +484,13 @@ function chainPemsOf(pki, record) {
     chainsCount.hit();
   } else {
     chainsCount.miss();
-    let underRoot = false;
-    try {
-      const last = crypto.parseCertificate(pems[pems.length - 1]);
-      const anchor = crypto.parseCertificate(rootPem);
-      underRoot = last.issuer === anchor.subject &&
-                  last.verify(anchor.publicKey);
-    } catch (e) {
-      log.debug("Caught in chainPemsOf(): " + ((e && e.message) || e));
-      underRoot = false;
-    }
+    // THE ANSWER IS `pki.chainThroughRoot()`'S (#1064), the one place a
+    // reported chain is completed; this memo only keeps a token's signing
+    // path from checking a signature per token.
+    const full = pki.chainThroughRoot(record.certificatePem,
+                                      record.chainPem || []);
+    const underRoot = full.length > pems.length &&
+                      full[full.length - 1] === rootPem;
     if (!underRoot) {
       log.debug('The "' + record.slot + '" certificate\'s stored chain does ' +
                 'not end under the current Root; it is published without ' +
