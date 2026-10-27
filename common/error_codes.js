@@ -6955,6 +6955,18 @@ const CODES = [
       'sign-in is a linking one, the application names the mechanisms it ' +
       'allows, or a security key or passkey is demanded (#1051).',
     spec: 'the sign-in screen again (/authn-api answers next: refused)' },
+  { code: 'STS-AUTHN-0468',
+    summary: 'Continue with your certificate was refused at the sign-in ' +
+      'screen: the certificate is from an outside certificate authority ' +
+      'and is not stored in userCertificate on any account of the realm ' +
+      '(#1061).',
+    spec: 'the sign-in screen again (/authn-api answers next: refused)' },
+  { code: 'STS-AUTHN-0469',
+    summary: 'Continue with your certificate was refused at the sign-in ' +
+      'screen: the certificate is from an outside certificate authority ' +
+      'and is stored in userCertificate on more than one account of the ' +
+      'realm (#1061).',
+    spec: 'the sign-in screen again (/authn-api answers next: refused)' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
@@ -11205,6 +11217,20 @@ const CODES = [
       'mode (#1046).',
     spec: 'SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 ' +
       'section 11' },
+  { code: 'STS-WSTRUST-0038',
+    summary: 'The TLS client certificate on the connection, the requester\'s ' +
+      'only credential, is from an outside certificate authority and is ' +
+      'not stored in userCertificate on any entry of the realm. Every ' +
+      'mode (#1061).',
+    spec: 'SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 ' +
+      'section 11' },
+  { code: 'STS-WSTRUST-0039',
+    summary: 'The TLS client certificate on the connection, the requester\'s ' +
+      'only credential, is from an outside certificate authority and is ' +
+      'stored in userCertificate on more than one entry of the realm. ' +
+      'Every mode (#1061).',
+    spec: 'SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 ' +
+      'section 11' },
   { code: 'STS-WSFED-0001',
     summary: 'A wsignin1.0 request carried wreqptr, which this service ' +
       'refuses to dereference (fetching a URL from a query parameter ' +
@@ -14296,8 +14322,9 @@ const CODES = [
       'client certificate verified against an anchor in the client ' +
       'truststore but was not issued by this service; a certificate ' +
       'from an outside certificate authority binds nobody to the ' +
-      'directory (#1047).',
-    spec: 'LDAP result code 49, invalidCredentials' },
+      'directory (#1047). Retired by #1061: such a certificate binds as ' +
+      'the one entry storing it, else STS-LDAP-0192 or STS-LDAP-0193.',
+    spec: 'LDAP result code 49, invalidCredentials', retired: true },
   { code: 'STS-LDAP-0183',
     summary: 'A SASL EXTERNAL bind was refused because the connection\'s ' +
       'client certificate was issued by this service but is not a ' +
@@ -14346,6 +14373,20 @@ const CODES = [
       'and bindDnFromHandler server options, so a SASL EXTERNAL ' +
       'bind cannot be decoded and its connection is closed (#1047).',
     spec: 'none — logged at startup' },
+  { code: 'STS-LDAP-0192',
+    summary: 'A SASL EXTERNAL bind was refused because the connection\'s ' +
+      'client ' +
+      'certificate is from an outside certificate authority and is not ' +
+      'stored in userCertificate on any person entry of the bind\'s ' +
+      'realm (#1061).',
+    spec: 'LDAP result code 49, invalidCredentials' },
+  { code: 'STS-LDAP-0193',
+    summary: 'A SASL EXTERNAL bind was refused because the connection\'s ' +
+      'client ' +
+      'certificate is from an outside certificate authority and is ' +
+      'stored in userCertificate on more than one entry of the bind\'s ' +
+      'realm (#1061).',
+    spec: 'LDAP result code 49, invalidCredentials' },
   // ===== ATTR ==============================================================
   { code: 'STS-ATTR-0001',
     summary: 'An attribute source\'s driver (or Knex) is not installed: the ' +
@@ -14908,6 +14949,17 @@ const CODES = [
       'was presented at /scim/v2, and the application does not declare the ' +
       'SCIM scope the operation needs in its oauthAllowedScope (#1048).',
     spec: 'HTTP 403 (SCIM Error)' },
+  { code: 'STS-SCIM-0084',
+    summary: 'A verified TLS client certificate from an outside certificate ' +
+      'authority was not taken as a SCIM credential: it is not stored ' +
+      'in userCertificate on any entry of the realm (#1061). The ' +
+      'request is decided as if no certificate had been presented.',
+    spec: 'audit row; HTTP 401 when no other scheme authenticates' },
+  { code: 'STS-SCIM-0085',
+    summary: 'A verified TLS client certificate from an outside certificate ' +
+      'authority was not taken as a SCIM credential: it is stored in ' +
+      'userCertificate on more than one entry of the realm (#1061).',
+    spec: 'audit row; HTTP 401 when no other scheme authenticates' },
   // ===== SPIFFE ============================================================
   { code: 'STS-SPIFFE-0001',
     summary: 'A SPIFFE gRPC handler failed with something that was not a ' +
@@ -15900,6 +15952,19 @@ const CODES = [
       'section 3).',
     spec: 'logged; the connection is closed; the client\'s next connection ' +
       'is a full handshake' },
+  { code: 'STS-TLS-0054',
+    summary: 'GET /tls/sign-in started no session for a verified client ' +
+      'certificate from an outside certificate authority that is not ' +
+      'stored in userCertificate on any entry of the realm; an outside ' +
+      'certificate names only the entry it is stored on, never its ' +
+      'common name or subject (#1061).',
+    spec: 'HTTP 200, session.started false' },
+  { code: 'STS-TLS-0055',
+    summary: 'GET /tls/sign-in started no session for a verified client ' +
+      'certificate from an outside certificate authority that is stored ' +
+      'in userCertificate on more than one entry of the realm, so it ' +
+      'names nobody (#1061).',
+    spec: 'HTTP 200, session.started false' },
   // ===== VC ================================================================
   { code: 'STS-VC-0001',
     summary: 'An oid4vci encryption setting names no content encryption ' +
@@ -17232,6 +17297,16 @@ const CODES = [
     summary: 'A TLS client certificate presented alone to a Shared Signals ' +
       'endpoint was refused on revocation (#1049); the certificate\'s own ' +
       'code is on the audit row beside it.',
+    spec: 'HTTP 401 {err: authentication_failed} with WWW-Authenticate' },
+  { code: 'STS-SSF-0151',
+    summary: 'A TLS client certificate presented alone to a Shared Signals ' +
+      'endpoint is from an outside certificate authority and is not ' +
+      'stored in userCertificate on any entry of the realm (#1061).',
+    spec: 'HTTP 401 {err: authentication_failed} with WWW-Authenticate' },
+  { code: 'STS-SSF-0152',
+    summary: 'A TLS client certificate presented alone to a Shared Signals ' +
+      'endpoint is from an outside certificate authority and is stored ' +
+      'in userCertificate on more than one entry of the realm (#1061).',
     spec: 'HTTP 401 {err: authentication_failed} with WWW-Authenticate' },
   // ===== RISK ==============================================================
   { code: 'STS-RISK-0001',
@@ -20401,6 +20476,33 @@ const CODES = [
     summary: 'Taking an owner off a role was refused: the value is not one ' +
       'of the role\'s owners (#604).',
     spec: 'HTTP 400 (API) or a refusal on the role page' },
+  { code: 'STS-XACML-0177',
+    summary: 'The access policy refused a request to GET /xacml, POST ' +
+      '/xacml/pdp or GET /xacml/policies: the client certificate ' +
+      'verified and is from an outside certificate authority that is ' +
+      'not stored in userCertificate on any entry of the realm, so it ' +
+      'resolved to nobody (#1061).',
+    spec: 'HTTP 403 access_denied' },
+  { code: 'STS-XACML-0178',
+    summary: 'The access policy refused a request to GET /xacml, POST ' +
+      '/xacml/pdp or GET /xacml/policies: the client certificate ' +
+      'verified and is from an outside certificate authority that is ' +
+      'stored in userCertificate on more than one entry of the realm ' +
+      '(#1061).',
+    spec: 'HTTP 403 access_denied' },
+  { code: 'STS-XACML-0179',
+    summary: 'The access policy refused a remote PEP request (/xacml/pep/*, ' +
+      'POST /xacml/pip): the client certificate verified and is from an ' +
+      'outside certificate authority that is not stored in ' +
+      'userCertificate on any entry of the realm, so it resolved to ' +
+      'nobody (#1061).',
+    spec: 'HTTP 403 access_denied' },
+  { code: 'STS-XACML-0180',
+    summary: 'The access policy refused a remote PEP request (/xacml/pep/*, ' +
+      'POST /xacml/pip): the client certificate verified and is from an ' +
+      'outside certificate authority that is stored in userCertificate ' +
+      'on more than one entry of the realm (#1061).',
+    spec: 'HTTP 403 access_denied' },
   // ===== XPEP ==============================================================
   { code: 'STS-XPEP-0001',
     summary: 'The error-code registry could not be loaded from ./error_codes ' +
@@ -21642,6 +21744,26 @@ const CODES = [
     summary: 'Setting or clearing a group\'s mail address was refused by ' +
       'the directory; the refusal carries the directory\'s own code.',
     spec: 'HTTP 400' },
+  { code: 'STS-ADMIN-0897',
+    summary: 'Storing a certificate on a person\'s entry was refused: ' +
+      'what was ' +
+      'given is not one PEM or base64 DER X.509 certificate (#1061).',
+    spec: 'HTTP 400 (API) or a refusal on the person\'s page' },
+  { code: 'STS-ADMIN-0898',
+    summary: 'Storing or removing a certificate was refused: the person ' +
+      'named ' +
+      'has no entry in this realm, and none is created (#1061).',
+    spec: 'HTTP 400 (API) or a refusal on the person\'s page' },
+  { code: 'STS-ADMIN-0899',
+    summary: 'Storing a certificate on a person\'s entry was refused: ' +
+      'the same ' +
+      'certificate is already stored on another entry of the realm, and ' +
+      'a certificate stored on two entries names nobody (#1061).',
+    spec: 'HTTP 400 (API) or a refusal on the person\'s page' },
+  { code: 'STS-ADMIN-0900',
+    summary: 'Removing a stored certificate was refused: the person\'s entry ' +
+      'stores no certificate with that SHA-256 (#1061).',
+    spec: 'HTTP 400 (API) or a refusal on the person\'s page' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',

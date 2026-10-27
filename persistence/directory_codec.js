@@ -72,10 +72,28 @@ const DIGEST_LABEL = 'directory-index';
 // the callers keep the rows under `ou=devices`. A row written before #636
 // carries none of the four until it is next written, and nothing migrates
 // it (rcbj: every install is rebuilt).
+//
+// **AND ONE DERIVED KEY: `usercertificatesha256` (#1061, 2026-10-27).** A
+// certificate from an outside authority is an identity only when it is the
+// very certificate stored in `userCertificate` (RFC 4523) on exactly one
+// entry, and the question is asked on every handshake that presents one. The
+// value as written is a base64 DER of a kilobyte or more, so it is not
+// indexed as itself: `indexOf()` keys each stored certificate by the SHA-256
+// of its DER (`certificateDigestsOf()`), and `byAttribute()` is asked for
+// that digest. No attribute of that name is ever on an entry — it exists only
+// as an index key — and no schema version moves, because `value_keys` is
+// written by the service. An entry written before this carries no key until
+// it is next written; storing the certificate IS a write (no migration, by
+// rcbj's decision on #1061).
 const VALUE_INDEXED = ['uid', 'didsubject', 'spiffesubject', 'x509subject',
                        'federationlink', 'stsdevicekeythumbprint',
                        'stsdevicesecrethash', 'stsdevicecredentialid',
-                       'owner'];
+                       'owner', 'usercertificatesha256'];
+
+// The attribute names a stored certificate is held under: RFC 4523's type with
+// RFC 4522's `;binary` transfer option (what an LDAP client and this service
+// write, base64), and the bare type a hand-written entry may carry.
+const CERTIFICATE_ATTRIBUTES = ['usercertificate;binary', 'usercertificate'];
 
 // THE OBJECT CLASSES `class_keys` HOLDS: THE GROUP CLASSES, AND ONLY THOSE
 // (#618 phase 2, schema version 18). `classesUnder()` is the one question
@@ -152,6 +170,56 @@ function valuesOf(attrs, name) {
   return out;
 }
 
+/**
+ * The DER bytes of one stored `userCertificate` value: base64 of the DER (what
+ * the `;binary` option carries), or a PEM block. null for anything else.
+ *
+ * @param value - the stored value
+ * @returns the DER, or null
+ */
+function certificateDerOf(value) {
+  log.debug("Entering certificateDerOf().");
+  const text = String(value == null ? '' : value);
+  const pem = /-----BEGIN CERTIFICATE-----([\s\S]*?)-----END CERTIFICATE-----/
+    .exec(text);
+  const body = (pem ? pem[1] : text).replace(/\s+/g, '');
+  if (!body || !/^[A-Za-z0-9+/]+={0,2}$/.test(body)) {
+    log.debug("Leaving certificateDerOf(). Not base64.");
+    return null;
+  }
+  const der = Buffer.from(body, 'base64');
+  // A DER certificate is a SEQUENCE; anything else is not one, and keying it
+  // would only make a lookup answer an entry for something that cannot be
+  // presented.
+  log.debug("Leaving certificateDerOf().");
+  return der.length > 16 && der[0] === 0x30 ? der : null;
+}
+
+/**
+ * The SHA-256 digests, lower-case hex, of the certificates an entry stores in
+ * `userCertificate` (either spelling), each once.
+ *
+ * @param attrs - the entry's attributes, plaintext
+ * @returns the digests
+ */
+function certificateDigestsOf(attrs) {
+  log.debug("Entering certificateDigestsOf().");
+  const out = [];
+  CERTIFICATE_ATTRIBUTES.forEach(function (name) {
+    valuesOf(attrs, name).forEach(function (one) {
+      const der = certificateDerOf(one);
+      if (der) {
+        const hex = require('../common/crypto').digest('sha256', der, 'hex');
+        if (out.indexOf(hex) < 0) {
+          out.push(hex);
+        }
+      }
+    });
+  });
+  log.debug("Leaving certificateDigestsOf(). " + out.length + ".");
+  return out;
+}
+
 function lowered(list) {
   log.debug("Entering lowered().");
   log.debug("Leaving lowered().");
@@ -182,7 +250,9 @@ function indexOf(attrs) {
   };
   const valueKeys = [];
   VALUE_INDEXED.forEach(function (name) {
-    unique(valuesOf(a, name)).forEach(function (one) {
+    const values = name === 'usercertificatesha256'
+      ? certificateDigestsOf(a) : unique(valuesOf(a, name));
+    values.forEach(function (one) {
       valueKeys.push(lookupOf('attr:' + name, one));
     });
   });
@@ -453,6 +523,9 @@ module.exports = {
   LABEL: LABEL,
   VALUE_INDEXED: VALUE_INDEXED,
   CLASS_INDEXED: CLASS_INDEXED,
+  CERTIFICATE_ATTRIBUTES: CERTIFICATE_ATTRIBUTES,
+  certificateDerOf: certificateDerOf,
+  certificateDigestsOf: certificateDigestsOf,
   create: create,
   // The same, for the postgres driver, whose own factory is `create()`: a
   // `create(` in its body reads to tests/no_periodic_timers.js as the

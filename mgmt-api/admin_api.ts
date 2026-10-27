@@ -6667,6 +6667,36 @@ class AdminApi {
           log.debug("Leaving the management API app-passwords endpoint.");
         } },
 
+      // STORED CERTIFICATES, ONE PERSON'S (#1061). The list the Stored
+      // certificates block on /admin/users draws.
+      { method: 'GET', path: BASE + '/users/certificates', tag: 'Users',
+        operationId: 'getUserCertificates',
+        summary: 'The certificates stored on one person\'s entry ' +
+                 '(userCertificate)',
+        description: 'Each certificate stored in the person\'s ' +
+                     '`userCertificate`: the SHA-256 of its DER, its ' +
+                     'subject, issuer, serial and validity. A certificate ' +
+                     'from an outside certificate authority signs its ' +
+                     'holder in only as the one entry storing it (#1061).',
+        mirrors: 'GET /admin/users',
+        parameters: [
+          { name: 'user', in: 'query', required: true,
+            schema: { type: 'string' },
+            description: 'The person, as /admin-api/users names them.' }
+        ],
+        responseDescription: 'The stored certificates.',
+        handler: function (req, res) {
+          log.debug("Entering the management API certificates endpoint.");
+          const answer = adminActions.storedCertificatesOf(
+            String((req.query || {}).user || ''));
+          if (!answer.ok) {
+            errorCodes.mark(res, errorCodes.codeOf(answer) ||
+                                 'STS-API-0030');
+          }
+          self.sendJson(res, answer.ok ? 200 : 400, answer);
+          log.debug("Leaving the management API certificates endpoint.");
+        } },
+
       // DEVICES, ONE PERSON'S (#130). The list the Devices block on
       // /admin/users draws.
       { method: 'GET', path: BASE + '/users/devices', tag: 'Users',
@@ -8263,6 +8293,72 @@ class AdminApi {
               additionalProperties: false
             },
             responseDescription: 'What was removed.' },
+
+          { action: 'add-certificate', operationId: 'addUserCertificate',
+            summary: 'Store a certificate on somebody\'s entry, so an ' +
+                     'outside certificate authority\'s certificate signs ' +
+                     'them in',
+            description: 'Stores one X.509 certificate in the person\'s ' +
+                         '`userCertificate` (RFC 4523; written as ' +
+                         '`userCertificate;binary`). A certificate from an ' +
+                         'outside certificate authority — one trusted ' +
+                         'through the Client Truststores — is an identity ' +
+                         'at a door that reads a client certificate as a ' +
+                         'person (/tls/sign-in, the sign-in screen, SCIM, ' +
+                         'the XACML gates, Shared Signals, WS-Trust, LDAP ' +
+                         'SASL EXTERNAL) only while it is stored, byte for ' +
+                         'byte, on exactly one entry of the realm: never ' +
+                         'by its common name or subject (#1061). Refused ' +
+                         'when it is already stored on another entry ' +
+                         '(STS-ADMIN-0899) or the person has no entry ' +
+                         '(STS-ADMIN-0898). A renewed certificate is ' +
+                         'stored again.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                certificate: { type: 'string',
+                               description: 'The leaf, as one PEM block ' +
+                                            'or base64 DER.' }
+              },
+              required: ['user', 'certificate'],
+              examples: [{ user: 'alice',
+                           certificate: '-----BEGIN CERTIFICATE-----\n' +
+                                        'MIIC...\n-----END CERTIFICATE-----' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The certificates the entry stores now.' },
+
+          { action: 'remove-certificate',
+            operationId: 'removeUserCertificate',
+            summary: 'Take a stored certificate off somebody\'s entry',
+            description: 'Removes one certificate from the person\'s ' +
+                         '`userCertificate`, named by the SHA-256 of its ' +
+                         'DER (as GET /admin-api/users/certificates lists ' +
+                         'it). From then on it signs nobody in (#1061).',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                sha256: { type: 'string',
+                          description: 'The SHA-256 of the certificate\'s ' +
+                                       'DER, hex.' }
+              },
+              required: ['user', 'sha256'],
+              examples: [{ user: 'alice', sha256: '0'.repeat(64) }],
+              additionalProperties: false
+            },
+            responseDescription: 'The certificates the entry stores now.' },
 
           { action: 'enrol-self-issued-subject',
             operationId: 'enrolUserSelfIssuedSubject',

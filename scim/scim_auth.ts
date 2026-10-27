@@ -645,7 +645,8 @@ interface ScimAuthDeps {
   scopePolicy: typeof scopePolicy;
   // `common/tls_client_certificates.js`, required when first asked for — see
   // attemptClientCertificate().
-  loadTlsClientCertificates(): { checkSocket(socket: any): any };
+  loadTlsClientCertificates(): { checkSocket(socket: any,
+                                             options?: any): any };
   digestNonces: ChallengeStore;
   digestCounts: ChallengeStore;
   hobaChallenges: ChallengeStore;
@@ -2613,13 +2614,36 @@ class ScimAuth {
     // `mtls.peerVerified()` does.
     let gate = null;
     try {
-      gate = loadTlsClientCertificates().checkSocket(socket);
+      // `stored` (#1061): an outside authority's certificate is the one entry
+      // storing it in `userCertificate`, or nobody.
+      gate = loadTlsClientCertificates().checkSocket(socket,
+                                                     { stored: true });
     } catch (e) {
       // No certificate authority in this process, so nothing here was issued by
       // one and there is nothing to refuse.
       log.debug("Caught in ScimAuth.attemptClientCertificate(): " +
                 ((e && e.message) || e));
       gate = null;
+    }
+    // AN OUTSIDE AUTHORITY'S CERTIFICATE NOT STORED ON EXACTLY ONE ENTRY
+    // (#1061, rcbj 2026-10-27). It was filed under its subject DN, and any
+    // certificate an anchor somebody added would chain to could name any
+    // subject. Now it is NOT THIS CREDENTIAL, for the reason an unverified
+    // one above is not, and the refusal of the CERTIFICATE is recorded under
+    // its own code so an operator finds it rather than inferring it from a
+    // 401.
+    if (gate && !gate.ok && (gate.error === 'NOT_STORED' ||
+                             gate.error === 'STORED_TWICE')) {
+      audit.failure(gate.error === 'STORED_TWICE' ? 'STS-SCIM-0085'
+                                                  : 'STS-SCIM-0084', {
+        protocol: 'SCIM', channel: 'http', target: req.originalUrl || req.url,
+        summary: 'a verified client certificate was not accepted as a SCIM ' +
+                 'credential: ' + gate.why,
+        outcome: 'refused'
+      });
+      log.debug("Leaving ScimAuth.attemptClientCertificate(). An outside " +
+                "certificate, not stored on one entry.");
+      return null;
     }
     if (gate && !gate.ok) {
       log.info('scim: a verified client certificate was not taken as a SCIM ' +
@@ -2661,6 +2685,23 @@ class ScimAuth {
         application: application,
         note: 'a TLS client certificate this realm issued to the ' +
               'application ' + application +
+              (certificate.fingerprint256 ?
+               ' (' + certificate.fingerprint256 + ')' : '')
+      };
+    }
+    // AN OUTSIDE AUTHORITY'S CERTIFICATE IS THE PERSON IT IS STORED ON
+    // (#1061): named as Basic names them, by their username, since the entry
+    // and not the certificate's subject is who it is.
+    if (identity && identity.accepted && identity.stored === true &&
+        identity.username) {
+      const person = String(identity.username);
+      log.debug("Leaving ScimAuth.attemptClientCertificate(). The person " +
+                person + ", whose entry stores the certificate.");
+      return {
+        ok: true, scheme: 'clientcert', principal: person, isClient: false,
+        scopes: '',
+        note: 'a client certificate from an outside certificate authority, ' +
+              'stored on ' + String(identity.dn || person) +
               (certificate.fingerprint256 ?
                ' (' + certificate.fingerprint256 + ')' : '')
       };

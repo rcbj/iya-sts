@@ -206,7 +206,7 @@ interface WsTrustDeps {
   // and the revocation walk, which a process that never presents one has
   // no reason to load, and `scim_auth.ts` reaches it the same way.
   loadTlsClientCertificates: () => {
-    checkSocket(socket: any): any;
+    checkSocket(socket: any, options?: any): any;
     stillHeld(identity: any): boolean;
   };
 }
@@ -1550,10 +1550,12 @@ class WsTrust {
   // the holder's record still lists it, which is RFC 8705's implicit
   // mapping's rule at the token endpoint. Nothing is read off a CN, so:
   //
-  //   * a chain to an anchor somebody installed (/admin-api/tls/trust) is
-  //     "not ours" to the gate, and is NOT this credential: SCIM files such a
-  //     certificate under its subject DN and `/tls/sign-in` under its CN,
-  //     and either here would be the second mapping the rule forbids;
+  //   * a chain to an anchor somebody installed (/admin-api/tls/trust) — an
+  //     OUTSIDE authority — is, since #1061 (rcbj 2026-10-27), the one entry
+  //     of this realm storing it byte for byte in `userCertificate`, and
+  //     then exactly what a certificate issued here to that entry is; stored
+  //     on no entry it is a fault (`STS-WSTRUST-0038`), and on more than one
+  //     (`0039`). Until #1061 it was not this credential;
   //   * an unverified certificate is not this credential either — the port
   //     asks without requiring, and the request may carry no other.
   //
@@ -1611,7 +1613,7 @@ class WsTrust {
     let gates: any = null;
     try {
       gates = loadTlsClientCertificates();
-      gate = gates.checkSocket(socket);
+      gate = gates.checkSocket(socket, { stored: true });
     } catch (e) {
       log.debug("Caught in WsTrust.connectionCertificate(): " +
                 ((e && e.message) || e));
@@ -1624,7 +1626,15 @@ class WsTrust {
       return null;
     }
     const identity = gate.identity || {};
-    if (gate.ok && !identity.issuedHere) {
+    if (!gate.ok && (gate.error === 'NOT_STORED' ||
+                     gate.error === 'STORED_TWICE')) {
+      log.debug("Leaving WsTrust.connectionCertificate(). An outside " +
+                "certificate, not stored on one entry.");
+      return refused(gate.error === 'STORED_TWICE' ? 'STS-WSTRUST-0039'
+                                                   : 'STS-WSTRUST-0038',
+                     String(gate.why || gate.error) + '.');
+    }
+    if (gate.ok && !identity.issuedHere && !identity.accepted) {
       log.info('wstrust: a verified TLS client certificate from an anchor ' +
                'this service did not issue is not a WS-Trust credential; ' +
                'only one a realm\'s TLS client or enrollment Issuing CA ' +
@@ -1657,11 +1667,17 @@ class WsTrust {
              isClient: isClient,
              method: 'a TLS client certificate',
              certificateSerial: String(identity.serialHex || ''),
-             note: 'The TLS client certificate on the connection verified, ' +
-                   'was not refused on revocation, and was issued to the ' +
-                   identity.kind + ' "' + name + '" by the "' +
-                   String((identity.authority && identity.authority.ca) ||
-                          '') + '" Issuing CA of this realm.' };
+             note: identity.stored === true
+               ? 'The TLS client certificate on the connection verified, ' +
+                 'was not refused on revocation, and is from an outside ' +
+                 'certificate authority, stored in userCertificate on the ' +
+                 identity.kind + ' "' + name + '" (' +
+                 String(identity.dn || '') + ').'
+               : 'The TLS client certificate on the connection verified, ' +
+                 'was not refused on revocation, and was issued to the ' +
+                 identity.kind + ' "' + name + '" by the "' +
+                 String((identity.authority && identity.authority.ca) ||
+                        '') + '" Issuing CA of this realm.' };
   }
 
   // The identifier of an assertion presented as the requester's credential

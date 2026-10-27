@@ -206,7 +206,7 @@ interface SsfAuthDeps {
   // roles that authorize a Shared Signals scope) and `common/audit.js`,
   // required when first asked for. See attemptClientCertificate().
   loadTlsClientCertificates(): {
-    checkSocket(socket: any): any;
+    checkSocket(socket: any, options?: any): any;
     stillHeld(identity: any): boolean;
   };
   loadRolePermissions(): {
@@ -990,9 +990,12 @@ class SsfAuth {
   // two. Nothing here reads a subject DN or a CN. So, from that gate:
   //
   //   * a chain through no authority this process holds (an anchor somebody
-  //     installed at /admin-api/tls/trust) names nobody here, and is NOT
-  //     THIS CREDENTIAL — the request is decided as if no certificate had
-  //     been presented;
+  //     installed at /admin-api/tls/trust) is, since #1061 (rcbj
+  //     2026-10-27), the ONE entry of this realm storing it, byte for byte,
+  //     in `userCertificate` — an application's entry is that application,
+  //     held to everything below like one this realm issued; stored on no
+  //     entry it is refused STS-SSF-0151, and on more than one STS-SSF-0152.
+  //     (Until then it named nobody here and was not this credential.)
   //   * a certificate this service issued that the gate refuses (not from a
   //     realm's TLS client or enrollment Issuing CA, no clientAuth, not
   //     exactly one urn:sts: name, ANOTHER REALM'S authority — the realm
@@ -1086,7 +1089,8 @@ class SsfAuth {
     }
     let gate: any = null;
     try {
-      gate = loadTlsClientCertificates().checkSocket(socket);
+      gate = loadTlsClientCertificates().checkSocket(socket,
+                                                     { stored: true });
     } catch (e) {
       // No certificate authority in this process, so nothing here was
       // issued by one and nothing names an application.
@@ -1095,7 +1099,24 @@ class SsfAuth {
       gate = null;
     }
     const identity = (gate && gate.identity) || {};
-    if (!gate || (gate.ok && !identity.issuedHere)) {
+    if (gate && !gate.ok && (gate.error === 'NOT_STORED' ||
+                             gate.error === 'STORED_TWICE')) {
+      const twice = gate.error === 'STORED_TWICE';
+      log.debug("Leaving SsfAuth.attemptClientCertificate(). An outside " +
+                "certificate, not stored on one entry.");
+      return decides ? this.refusal(twice ? 'STS-SSF-0152' : 'STS-SSF-0151',
+        401, 'The TLS client certificate on this connection is from an ' +
+        'outside certificate authority and ' + (twice
+          ? 'is stored on more than one entry here, so it names no ' +
+            'receiver. Store it on the application\'s entry alone.'
+          : 'is not stored on any entry here. An outside certificate ' +
+            'authenticates a receiver only when it is stored, byte for ' +
+            'byte, in userCertificate on that application\'s entry; a ' +
+            'renewed certificate is stored again.') +
+        ' Or present an access token.',
+        { 'WWW-Authenticate': this.challenges(req) }) : null;
+    }
+    if (!gate || (gate.ok && !identity.issuedHere && !identity.accepted)) {
       log.debug("Leaving SsfAuth.attemptClientCertificate(). Not a " +
                 "certificate this service issued.");
       return null;
@@ -1172,8 +1193,9 @@ class SsfAuth {
       principal: identifier, scopes: scopes, err: '', description: '',
       headers: {},
       owner: { kind: 'application', name: identifier },
-      note: 'TLS client certificate (serial ' +
-            String(identity.serialHex || '') + ', ' +
+      note: 'TLS client certificate (' + (identity.stored === true
+        ? 'SHA-256 ' + String(identity.fingerprint || '')
+        : 'serial ' + String(identity.serialHex || '')) + ', ' +
             String(identity.why || 'issued by this realm') + ')' };
   }
 

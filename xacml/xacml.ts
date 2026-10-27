@@ -250,6 +250,9 @@ interface CallerIdentity {
   why: string;
   revocationRefused?: boolean;
   revocation?: any;
+  // An outside authority's certificate stored on no entry ('NOT_STORED') or
+  // on several ('STORED_TWICE'), so its `dn` is empty (#1061).
+  unmapped?: string;
 }
 
 // What `xacmlAccess()` and `pepAccess()` answer.
@@ -318,6 +321,10 @@ interface XacmlSurfaceDeps {
   monitor: typeof monitor;
   roles: typeof roles;
   accessGate: typeof accessGate;
+  // `common/tls_client_certificates.js`, the one mapping from a verified
+  // certificate to an entry (#1061), required when a certificate is read.
+  loadTlsClientCertificates(): { checkSocket(socket: any,
+                                             options?: any): any };
   // Required at the moment a nudge is due, never at load.
   loadBarrier(): Barrier;
   loadPersistence(): CommitWaiter;
@@ -433,6 +440,9 @@ class XacmlSurface {
       monitor: monitor,
       roles: roles,
       accessGate: accessGate,
+      loadTlsClientCertificates: function () {
+        return require('../common/tls_client_certificates');
+      },
       loadBarrier: function (): Barrier {
         return require('../cluster/cluster_barrier');
       },
@@ -565,6 +575,9 @@ class XacmlSurface {
                       errorCodes.codeOf(identity.revocation) || 'STS-PKI-0118');
     } else if (!identity.verified) {
       errorCodes.mark(res, 'STS-XACML-0004');
+    } else if (identity.unmapped) {
+      errorCodes.mark(res, identity.unmapped === 'STORED_TWICE'
+        ? 'STS-XACML-0178' : 'STS-XACML-0177');
     } else if (held.indexOf(XACML_USER_ROLE) < 0) {
       errorCodes.mark(res, 'STS-XACML-0005');
     } else {
@@ -575,7 +588,9 @@ class XacmlSurface {
       ' The XACML endpoints are reached by presenting a client certificate ' +
       'this service VERIFIES — the issuing CA goes in with ' +
       trustAnchorDoor() + ' — ' +
-      'whose subject resolves to a directory entry that is a member of the ' +
+      'and that is STORED, byte for byte, in userCertificate on the ' +
+      'caller\'s directory entry (one this service issued names its ' +
+      'person instead), an entry that is a member of the ' +
       'group named by roles.xacmlUserGroup ("' +
       String(config.value('roles.xacmlUserGroup') || '') +
       '"), which is what ' +
@@ -583,7 +598,10 @@ class XacmlSurface {
       'group from the one /xacml/pep/* requires (roles.remotePepGroup), on ' +
       'purpose: those endpoints hand out the documents this service enforces ' +
       'its own access with. This caller ' +
-      (identity.verified
+      (identity.verified && identity.unmapped
+        ? 'presented a certificate that VERIFIED and resolved to no ' +
+          'entry: ' + identity.why + '.'
+        : identity.verified
         ? 'presented a certificate that VERIFIED, resolved to "' + name +
           '", and holds ' + (held.length ? held.join(', ') : 'no role') + '.'
         : (identity.authenticated
@@ -893,7 +911,39 @@ class XacmlSurface {
     // register's slot — this service already has exactly one answer to "what
     // identity is this certificate" and a second one written here would be how
     // a PEP ends up filed under two names on two pages.
-    const named = peps.certificateIdentity(certificate);
+    let named = peps.certificateIdentity(certificate);
+    // AN OUTSIDE AUTHORITY'S CERTIFICATE IS THE ENTRY IT IS STORED ON (#1061,
+    // rcbj 2026-10-27). `certificatePlan()` names an entry from the
+    // certificate's common name — and for a certificate THIS service issued
+    // that is the person's own name, which its authority wrote, so it stays.
+    // An outside authority could write anybody's, so its certificate is,
+    // byte for byte, the one entry of this realm storing it in
+    // `userCertificate`, through the one mapping every door asks; stored on
+    // no entry or on several, it resolves to NO name, and the policy below
+    // refuses a caller with none.
+    let unmapped = '';
+    if (verdict.verified) {
+      let gate: any = null;
+      try {
+        gate = this.deps.loadTlsClientCertificates()
+          .checkSocket(req.socket, { stored: true });
+      } catch (e) {
+        log.debug('Caught in XacmlSurface.callerIdentity(): ' +
+                  ((e && e.message) || e));
+        gate = null;
+      }
+      const found = gate && gate.identity;
+      if (found && !found.issuedHere && found.outside === true) {
+        if (found.accepted && found.dn) {
+          named = { dn: String(found.dn),
+                    commonName: String(found.username || ''),
+                    subject: named.subject };
+        } else {
+          unmapped = String(found.error || 'NOT_STORED');
+          named = { dn: '', commonName: '', subject: named.subject };
+        }
+      }
+    }
     const identity = {
       authenticated: true,
       verified: verdict.verified,
@@ -910,8 +960,17 @@ class XacmlSurface {
       // certificate-bound token with, so the two spellings cannot drift.
       thumbprint: mtls.presentedThumbprint(req),
       dn: named.dn,
-      commonName: named.commonName
+      commonName: named.commonName,
+      unmapped: unmapped || undefined
     };
+    if (unmapped) {
+      identity.why = 'the certificate is from an outside certificate ' +
+        'authority and is ' + (unmapped === 'STORED_TWICE'
+          ? 'stored on more than one entry here, so it names nobody'
+          : 'not stored in userCertificate on any entry here (an outside ' +
+            'certificate names only the entry it is stored on; a renewed ' +
+            'one is stored again)');
+    }
     log.debug('Leaving XacmlSurface.callerIdentity(). dn=' + identity.dn);
     return identity;
   }
@@ -997,6 +1056,9 @@ class XacmlSurface {
                       errorCodes.codeOf(identity.revocation) || 'STS-PKI-0118');
     } else if (!identity.verified) {
       errorCodes.mark(res, 'STS-XACML-0008');
+    } else if (identity.unmapped) {
+      errorCodes.mark(res, identity.unmapped === 'STORED_TWICE'
+        ? 'STS-XACML-0180' : 'STS-XACML-0179');
     } else if (held.indexOf(REMOTE_PEP_ROLE) < 0) {
       errorCodes.mark(res, 'STS-XACML-0009');
     } else {
@@ -1006,14 +1068,17 @@ class XacmlSurface {
       'The access policy refused this request. ' + policy.why +
       ' A remote Policy Enforcement Point reaches these endpoints by ' +
       'presenting a client certificate this service VERIFIES — the issuing ' +
-      'CA goes in with ' + trustAnchorDoor() + ' — whose subject resolves ' +
-      'to a ' +
-      'directory entry that is a member of the group named by ' +
+      'CA goes in with ' + trustAnchorDoor() + ' — and that is STORED, ' +
+      'byte for byte, in userCertificate on the PEP\'s directory entry, ' +
+      'an entry that is a member of the group named by ' +
       'roles.remotePepGroup ("' +
       String(config.value('roles.remotePepGroup') || '') +
       '"), which is what ' +
       'grants the built-in ' + REMOTE_PEP_ROLE + ' role. This caller ' +
-      (identity.verified
+      (identity.verified && identity.unmapped
+        ? 'presented a certificate that VERIFIED and resolved to no ' +
+          'entry: ' + identity.why + '.'
+        : identity.verified
         ? 'presented a certificate that VERIFIED, resolved to "' + name +
           '", and holds ' + (held.length ? held.join(', ') : 'no role') + '.'
         : (identity.authenticated
