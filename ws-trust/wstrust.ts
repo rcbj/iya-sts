@@ -437,7 +437,8 @@ class WsTrust {
   //     optional and which a delegated JWT could only copy from a token it
   //     cannot see the authentication of. `amr` is the same for a delegated
   //     token, and is carried since #1046 for a token about the requester,
-  //     whose authentication this STS did see (below). `iss` is the realm's OAuth issuer
+  //     whose authentication this STS did see (below). `iss` is the
+  //     realm's OAuth issuer
   //     (below), which is also every SAML Issuer since #523. `exp` is the lifetime the RSTR's wst:Lifetime states, so the
   //     two cannot disagree.
   // ---------------------------------------------------------------------------
