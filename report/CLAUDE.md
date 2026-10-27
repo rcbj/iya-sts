@@ -210,6 +210,21 @@ rows-per-page select — every page a link under the list's own path with
 moves to page one through the location (`onChange()`, `data-pager-path`).
 `tests/report_query.js` holds both views' paging and the pager's markup.
 
+## The Sort box, and Group by behind Count (#1008)
+
+rcbj, 2026-10-27: a checkbox labelled Sort that reveals the sort field
+and the ascending/descending selects, "and the same for group by". The
+Save query box's shape (#986): `sortQuery` ticks, `.sort-only` carries
+`hidden` until it does, `onChange()` toggles the attribute, and
+`queryDocument()` writes no `orderBy` while the box is unticked, whatever
+the hidden selects hold (a form without the box — an older test double —
+sorts as before). A saved order draws the box ticked and the selects
+shown. **Group by is gated by the existing Count box**, not a box of its
+own: the API refuses a `groupBy` without a count, so Count is its natural
+gate; `.count-only` is the Group by label, and a saved count draws it
+shown. The labels reuse `report.sort` and `report.count`, so no catalog
+changed.
+
 ## An enumerated field's filter value is a dropdown (#1007)
 
 rcbj, 2026-10-27: "mechanism equals" on credentialHolders should offer

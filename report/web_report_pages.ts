@@ -322,9 +322,15 @@ function queryFormHtml(t: any, sources: any[], document: any): string {
     '<div class="field"><label' + tip(t, 'report.tipFilter') + '>' +
     esc(t.text('report.filter')) +
     '</label>' + filters + kept + '</div>' +
+    // THE SORT BOX (#1008, rcbj): a checkbox labelled Sort, and the field
+    // and direction selects shown only while it is ticked (`onChange()`),
+    // the Save query box's shape. A saved document with an order draws it
+    // ticked; unticked, the document carries no orderBy.
     '<div class="field"><label' + tip(t, 'report.tipSort') + '>' +
-    esc(t.text('report.sort')) +
-    '</label><div class="row"><select name="sortField">' + sortOptions +
+    '<input type="checkbox" name="sortQuery"' + (order ? ' checked' : '') +
+    '> ' + esc(t.text('report.sort')) +
+    '</label><div class="row sort-only"' + (order ? '' : ' hidden') +
+    '><select name="sortField">' + sortOptions +
     '</select><select name="sortDir"><option value="asc"' +
     (order && order.dir !== 'desc' ? ' selected' : '') + '>' +
     esc(t.text('report.ascending')) + '</option><option value="desc"' +
@@ -339,10 +345,14 @@ function queryFormHtml(t: any, sources: any[], document: any): string {
     '</label><select name="format">' + formatOption('json', 'report.json') +
     formatOption('csv', 'report.csv') + formatOption('pdf', 'report.pdf') +
     '</select></div>' +
+    // THE GROUP BY SELECT SHOWS WHILE COUNT IS TICKED (#1008, "the same for
+    // group by"): a group-by without a count is refused by the API, so the
+    // Count box is its gate; a saved count draws it shown.
     '<div class="field"><label' + tip(t, 'report.tipCount') + '>' +
     '<input type="checkbox" name="counted"' +
     (counted ? ' checked' : '') + '> ' + esc(t.text('report.count')) +
-    '</label><label' + tip(t, 'report.tipGroupBy') + '>' +
+    '</label><label class="count-only"' + (counted ? '' : ' hidden') +
+    tip(t, 'report.tipGroupBy') + '>' +
     '<select name="groupBy">' + groupOptions + '</select> ' +
     esc(t.text('report.groupBy')) + '</label></div>';
 }
@@ -775,8 +785,11 @@ function queryDocument(form: any, locale: any): any {
       filters.push({ op: op, field: field, value: value });
     }
   }
-  const sort = String((form.elements.sortField &&
-    form.elements.sortField.value) || '');
+  // The Sort box (#1008): unticked, no order, whatever the hidden selects
+  // hold. A form without the box (an older test double) sorts as before.
+  const sorting = !form.elements.sortQuery || !!form.elements.sortQuery.checked;
+  const sort = sorting ? String((form.elements.sortField &&
+    form.elements.sortField.value) || '') : '';
   const dir = String((form.elements.sortDir &&
     form.elements.sortDir.value) || 'asc');
   const limit = Number(form.elements.limit && form.elements.limit.value);
@@ -1854,6 +1867,21 @@ class ReportRuntime extends SpaClient {
       return;
     }
     const name = String(el.getAttribute('name') || '');
+    if (name === 'sortQuery' || name === 'counted') {
+      // The Sort box shows the sort selects, the Count box the Group by
+      // select (#1008): the Save query box's mechanism, below.
+      const form = el.closest ? el.closest('form') : null;
+      const gated = form ? form.querySelectorAll(
+        name === 'sortQuery' ? '.sort-only' : '.count-only') : [];
+      for (let i = 0; i < gated.length; i++) {
+        if (el.checked) {
+          gated[i].removeAttribute('hidden');
+        } else {
+          gated[i].setAttribute('hidden', '');
+        }
+      }
+      return;
+    }
     if (name === 'saveQuery') {
       const form = el.closest ? el.closest('form') : null;
       const only = form ? form.querySelectorAll('.save-only') : [];
