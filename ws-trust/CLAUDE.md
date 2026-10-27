@@ -200,7 +200,7 @@ fault. Each refusal names its code at the place it refuses:
 |---|---|---|
 | `InvalidScope` | `0030` (#496: product, an `AppliesTo` that resolves to no registered application) | 1.3 section 4.1 calls `wsp:AppliesTo` "the scope for which this security token is desired", so an AppliesTo this STS serves nobody under is section 11's "The request scope is invalid" — the exact sentence, where InvalidRequest would have been true and said less |
 | `InvalidRequest` | `0031` (#496: product, an RST that issues and carries no `AppliesTo`, or an empty one), `0001` (not well-formed, qualified with 1.3's namespace: there is no document to read the request's own off), `0008` and a delegated token's `0004` / `0005` / `0007` (the token inside `OnBehalfOf` / `ActAs`), a delegated JWT's `0026` / `0028` (#477), `0012` (`?encrypt=1` with no recipient certificate), `0021`, `0025` | the REQUEST carries, or lacks, something that makes it unanswerable. A delegated token that does not verify is not FailedAuthentication: the requester did authenticate |
-| `FailedAuthentication` | `0002`, `0003`, the requester's own `0004` / `0005` / `0007` and its own JWT's `0026` / `0028` (#519), `0009`, `0010` | the requester did not authenticate. One fault for a wrong password and an unknown user, the enumeration rule `requesterCredential()` states |
+| `FailedAuthentication` | `0002`, `0003`, the requester's own `0004` / `0005` / `0007` and its own JWT's `0026` / `0028` (#519), `0009`, `0010`, the connection's certificate's `0034`–`0037` (#1046) | the requester did not authenticate. One fault for a wrong password and an unknown user, the enumeration rule `requesterCredential()` states |
 | `ExpiredData` | `0006`, in either seat, and a JWT's `0027` in either seat (#477, #519) | "The request data is out-of-date" is the more exact answer for an expired assertion than FailedAuthentication or InvalidRequest. `checkedAssertion()` returns it; the seat supplies the code for its other refusals |
 | `RequestFailed` | `0011` and `STS-CORE-0121` (the role gate), `0013` (encryption to the certificate failed), `0017` (a JWT about nobody), `0018`–`0024` (the delegation policy), `STS-CELL-0124` / `0125` (a delegated subject's home cell) | the request was understood and authenticated, and could not be done |
 
@@ -411,9 +411,10 @@ SAML assertion are WS-Trust's and SAML's, as before.
   * on the application's GET view.
 
   All four carry the one list (rule 7). The write still stands.
-* **No `auth_time`, `acr` or `amr`.** RFC 9068 section 2.2.1 makes them
+* **No `auth_time` or `acr`.** RFC 9068 section 2.2.1 makes them
   optional, and a delegated JWT could only copy them from an
-  authentication it never saw.
+  authentication it never saw. **`amr` is carried since #1046 on a token
+  about the requester** (see that section); a delegated one still has none.
 * ~~`iss` is `wstrust.issuer`~~ **Reversed by #480 (rcbj: "Realm's OAuth
   issuer").** `iss` is the realm's OAuth 2.0 issuer, the one
   `/.well-known/oauth-authorization-server` publishes at the request's base
@@ -619,7 +620,7 @@ SAML 2.0, SAML 1.1 and JWT:
 
 | Seat | What it takes |
 |---|---|
-| the requester's credential, `wsse:Security` | a UsernameToken; an assertion this STS issued (either SAML version); **a JWT this STS issued (#519)**, in the `wsse:BinarySecurityToken` this STS's own RSTR carries one in |
+| the requester's credential, `wsse:Security` | a UsernameToken; an assertion this STS issued (either SAML version); **a JWT this STS issued (#519)**, in the `wsse:BinarySecurityToken` this STS's own RSTR carries one in; and, when none of those is there, **the connection's TLS client certificate (#1046)** |
 | `<wst:OnBehalfOf>` / `<wst14:ActAs>` | an assertion (either version); a JWT (#477) |
 | `wst:TokenType` | SAML 2.0, SAML 1.1 (#487), JWT (#476) |
 
@@ -695,6 +696,75 @@ unregistered. Development verifies no credential and enforces none of it.
 `tests/wstrust_jwt_claims.js` sections R and S hold it in process in both
 modes; `tests/protocol/sts_wstrust_own_token_chain.js` drives the four-tier
 chain on each tier's own token in every type, and the 36-request matrix.
+
+## THE REQUESTER'S TLS CLIENT CERTIFICATE, A FOURTH CREDENTIAL (#1046, 2026-10-27)
+
+From #520 (rcbj, 2026-10-27: every candidate door is a yes but ACME). The
+certificate is a FOURTH ROW of the requester's seat above, read by
+`requesterCredential()` on the same path as the three message credentials,
+not beside them: `connectionCertificate()` answers null, a refusal or a
+credential exactly as they do, and everything after (`authenticate()`'s
+recording, the delegation policy's requester, `doorAssessment()`, the
+session, the token) reads the answer without knowing which it was.
+
+* **ASKED LAST.** A UsernameToken, an assertion or a JWT in `wsse:Security`
+  names the requester explicitly; the main port asks every connection for a
+  certificate and requires none, so a client that happens to hold one is
+  still the party its message names.
+* **ONE MAPPING.** `common/tls_client_certificates.js`'s `checkSocket()`
+  (an identity in THIS realm: a realm's TLS client or enrollment Issuing
+  CA, clientAuth, exactly one `urn:sts:person:` or `urn:sts:application:`,
+  the holder resolved through a rename) and `stillHeld()` (RFC 8705's
+  implicit-mapping rule: the holder's record still lists it). **A chain to
+  an anchor installed at `/admin-api/tls/trust` is NOT a credential here**:
+  the gate has no opinion about it, and SCIM's subject DN or `/tls/sign-in`'s
+  CN would be a second mapping. An unverified certificate is not one either.
+* **A VERIFIED CERTIFICATE THAT IS REFUSED IS A FAULT IN EVERY MODE**,
+  `wst:FailedAuthentication`: revoked (`req.certificateRevocation`,
+  `STS-WSTRUST-0034`), not an identity here — another realm's authority, a
+  key pair that is not a TLS client certificate, a holder gone (`0035`) —
+  no longer held (`0036`), a disabled person (`0037`, `credentials
+  .accountDisabled()`). There is no `mode.js` question: the handshake
+  verified the chain and development has nothing it could believe instead,
+  every other door on this gate answers the same in both modes, and
+  answering `anonymous` for a credential just refused is what the reserved
+  password `invalid` exists to prevent.
+* **WHAT THE TOKEN SAYS.** `authnContextOf()`: `TLSClient` (the
+  handshake's certificate — `X509` names a message-level signature);
+  SAML 1.1's `urn:ietf:rfc:2246`; and `amrOf()`, the one reading the
+  session, the door's risk facts and the JWT share: `swk` (RFC 8176, what
+  `/tls/sign-in` says — this service cannot know the key is in hardware).
+  **The JWT carries `amr` since this ticket**, for a token about the
+  requester only: `["swk"]`, or `["pwd"]` for a UsernameToken — the
+  authentication this STS saw. A delegated token and one issued on an
+  assertion or a JWT carry none (#476's reason, which still holds for them).
+* **AN APPLICATION'S CERTIFICATE IS THE APPLICATION, AND SIGNS NOBODY IN**:
+  `isClient`, its own token (`urn:sts:client:` subject, its own
+  `client_id`), and no session — `/tls/sign-in`'s rule for the same
+  certificate. A person's starts a session with `["swk"]`.
+* **`wstrust.acceptClientCertificate`**, on by default as
+  `scim.authClientCert` is, turns the credential off; it is a WS-Trust
+  setting, so `/admin/wstrust` and `GET /admin-api/wstrust` both show it
+  (rule 7).
+* **IN CELLS**, a request whose connection carries a verified certificate
+  and whose message names no requester is served WHERE IT ARRIVED
+  (`homeNameOf()`'s `certificateOnConnection`): the certificate is the
+  socket's, and a relayed request has no socket to present it on. A
+  delegation from such a requester is therefore not relayed to the
+  delegated subject's home either.
+
+**NOT BUILT, AND RECORDED ON #1046 AS A FOLLOW-UP: a WS-Security X.509
+`BinarySecurityToken` with a signature over the request.** Nothing here
+verifies a message signature — `?encrypt=1` reads an `X509Certificate` out of
+the request only as an encryption recipient — and verifying one is its own
+piece: the `wsse:SecurityTokenReference` to the token, the signed parts
+(`soap:Body`, `wsu:Timestamp`, the `wsu:Id` references xml-crypto
+mishandles), the timestamp's freshness and replay, and then the same
+`identityOf()` over the token's certificate. Half of it would be a
+certificate that authenticates because it was present, so none of it is
+here.
+
+`tests/wstrust_client_certificate.js` holds it in process, both modes.
 
 ## A SECOND-FACTOR PERSON'S USERNAMETOKEN (2026-09-22, #101)
 
