@@ -101,6 +101,7 @@
   "tipFormat": "JSON, CSV (RFC 4180) ou PDF. Un PDF a son propre plafond de lignes ; demandez du CSV pour plus.",
   "tipCount": "Compter les lignes correspondantes au lieu de les lister, un nombre par valeur du champ de regroupement.",
   "tipGroupBy": "Le champ à faible cardinalité par lequel un comptage est regroupé, comme status ou protocol.",
+  "tipAnchor": "Sur cette source, le premier filtre doit nommer un champ indexé ; les autres champs affinent cette lecture.",
   "tipSaveQuery": "Conserver cette requête comme définition nommée, que vous pourrez relancer, planifier et partager. Cochée, la case Nom et le bouton Enregistrer apparaissent.",
   "tipName": "Le nom sous lequel la définition est listée.",
   "tipRunAt": "L’heure, en UTC, à laquelle une exécution planifiée démarre ; la date sert quand aucun jour n’est coché.",

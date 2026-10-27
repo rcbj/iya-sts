@@ -2257,10 +2257,43 @@ class VcIssuer {
     return null;
   }
 
+  // THE CHANNEL A CREDENTIAL REQUEST CAME BY (#1021): a browser sends an
+  // Origin header on a cross-origin POST and a native wallet sends none, so
+  // `web` is a web wallet and `app` a native one. Nothing the wallet says
+  // about itself is read; the header is the browser's. The reports draw it.
+  static channelOf(req: any): string {
+    const log = helpers.log;
+    log.debug("Entering VcIssuer.channelOf().");
+    const origin = String((req && req.headers && req.headers.origin) || '');
+    const channel = origin && origin !== 'null' ? 'web' : 'app';
+    log.debug("Leaving VcIssuer.channelOf(). " + channel);
+    return channel;
+  }
+
+  // The holder key's algorithm, as the passkey report names one (#1021).
+  static holderAlgOf(jwk: any): string {
+    const log = helpers.log;
+    log.debug("Entering VcIssuer.holderAlgOf().");
+    let name = '';
+    try {
+      const credentials = require('../common/credentials');
+      name = jwk ? String(credentials.Credentials.keyAlgorithm(
+        { publicKeyJwk: jwk }).name || '') : '';
+    } catch (e) {
+      // A key the passkey namer does not know (an unusual curve): the row
+      // says nothing rather than something wrong.
+      log.debug("Caught in VcIssuer.holderAlgOf(): " +
+        ((e && (e as any).message) || e));
+      name = '';
+    }
+    log.debug("Leaving VcIssuer.holderAlgOf(). " + name);
+    return name;
+  }
+
   private rememberIssued(issued: any[], holderJwks: any[], configId: string,
                          subject: string, attestations?: any[],
                          notificationId?: string,
-                         holderKids?: string[]): void {
+                         holderKids?: string[], channel?: string): void {
     // ONE ROW PER CREDENTIAL FOR THE JOSE FORMATS, one row per holder key and
     // person for ldp_vc — `vc_issued.ts` argues the two kinds. Each row
     // carries the credential's issued-register handle and status-list entry,
@@ -2302,6 +2335,8 @@ class VcIssuer {
                                attestations[i].userAuthentication) || [],
           notificationId: notificationId || '',
           holderDid: holderDid,
+          holderAlg: VcIssuer.holderAlgOf(holderJwks[i]),
+          channel: channel || '',
           // ONE CAEP credential-change per issuance (#670): the copies of
           // a batch are one credential to the person.
           announce: i === 0
@@ -3589,7 +3624,7 @@ class VcIssuer {
       const notificationId = this.newNotificationId();
       this.rememberIssued(issued, holderJwks, requestedConfigId,
                           signInSubject, attestations, notificationId,
-                          bindKids);
+                          bindKids, VcIssuer.channelOf(req));
       const response = {
         credentials: issued.map((b) => {
           return {credential: b.credential };
@@ -3720,7 +3755,7 @@ class VcIssuer {
       this.rememberIssued(issued, holderKeys, deferredConfigId,
                           String(record.signInSubject || ''),
                           record.attestations || [], notificationId,
-                          deferredKids);
+                          deferredKids, VcIssuer.channelOf(req));
       const response = {
         credentials: issued.map((b) => {
           return {credential: b.credential };

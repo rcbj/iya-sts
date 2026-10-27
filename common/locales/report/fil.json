@@ -101,6 +101,7 @@
   "tipFormat": "JSON, CSV (RFC 4180) o PDF. May sariling limitasyon sa row ang PDF; humingi ng CSV para sa mas marami.",
   "tipCount": "Bilangin ang mga tumutugmang row sa halip na ilista, isang bilang bawat value ng group field.",
   "tipGroupBy": "Ang field na mababa ang cardinality na pinagpapangkat ng bilang, gaya ng status o protocol.",
+  "tipAnchor": "Sa source na ito, dapat pangalanan ng unang filter ang isang indexed field; pinapaliit ng ibang field ang pagbasang iyon.",
   "tipSaveQuery": "Itago ang query na ito bilang pinangalanang definition na mapapatakbo muli, mai-iskedyul at maibabahagi. Kapag may tsek, lilitaw ang kahon ng Pangalan at ang button na I-save.",
   "tipName": "Ang pangalan kung saan nakalista ang definition.",
   "tipRunAt": "Ang oras ng araw, sa UTC, kung kailan nagsisimula ang naka-iskedyul na pagtakbo; ginagamit ang petsa kapag walang araw na may tsek.",

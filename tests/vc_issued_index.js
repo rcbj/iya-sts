@@ -274,6 +274,18 @@ async function run(t) {
           '5. a realm marked by the -v1 scan is indexed once more, which ' +
           'gives back a key an older reader pruned',
           JSON.stringify(pruned.subjectIndex.get(aliceKey)));
+
+  // THE REPORTS' TWO FIELDS (#1021): the holder key's algorithm and the
+  // channel the request came by are kept on the copy, and read back.
+  const walletRow = r.issued.record({ credential: 'cred-wallet.payload.sig',
+    format: 'dc+sd-jwt', configId: 'IdentityCredential', subject: ALICE,
+    holderJwk: holderJwk(), expiresAt: Date.now() + 3600 * 1000,
+    holderAlg: 'ES256', channel: 'web' });
+  const walletCopy = r.issued.rowByKey(walletRow);
+  t.check(!!walletCopy && walletCopy.credentials[0].holderAlg === 'ES256' &&
+          walletCopy.credentials[0].channel === 'web',
+          'a copy keeps its holder algorithm and channel (#1021)',
+          JSON.stringify(walletCopy && walletCopy.credentials[0]));
   log.debug("Leaving run().");
 }
 

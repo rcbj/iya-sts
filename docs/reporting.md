@@ -213,8 +213,23 @@ using one of them reads only the rows it names, however large the
 directory. A person's attributes are stored as one sealed value, so the
 directory can filter on very few of them: `username` for `eq`, `in`,
 `contains` and `startsWith` (the substring needs three characters or
-more), and `mail` and `entryUuid` for `eq` and `in`. Every other field of
-`users` is filtered after the rows are read.
+more), `mail` and `entryUuid` for `eq` and `in`, and `memberOf` for `eq`
+and `in` through the group's own member list. Every other field of
+`users` is filtered after the rows are read. **Every source uses every
+index the store has for its fields**: `credentialHolders` the same four
+and its `mechanism`, `groups` its `name`; a field the directory indexes
+is never filtered row by row where the index could have named the rows.
+
+**A filter on `users` or `credentialHolders` has to name an indexed
+field.** These two sources read the directory, and on a directory held in
+a database a filter on any other field alone would read every person. Such
+a filter is refused when the query is accepted, in every mode, as
+`invalid_query` with the indexed fields named: the first condition of an
+`and`, or every arm of an `or`, has to be one of them, and the other
+conditions narrow that read. On the page the first filter row of these
+sources offers only the indexed fields; the rows the `+` adds offer every
+field. A small directory held in memory is not held to this. A query with
+no filter still stops at its limit.
 
 A `users` query is answered from the index when its filter is an indexed
 leaf, an `and` with an indexed arm (the other arms are applied to the
@@ -244,7 +259,7 @@ or any other lock. `active` is the other value.
 | `entryUuid` | string | The entryUUID. Indexed: `eq`, `in`. | yes | no | no |
 | `mail` | string | The mail attribute. Indexed: `eq`, `in`. | yes | yes | no |
 | `displayName` | string | `displayName`, or `cn` when `displayName` is empty. | yes | yes | no |
-| `memberOf` | string | The names of the groups that list this person, joined. | yes | no | no |
+| `memberOf` | string | The names of the groups that list this person, joined. Indexed: `eq`, `in` (the group's member list). | yes | no | no |
 | `hasPassword` | boolean | Whether a password is set on the entry. | yes | yes | yes |
 | `factors` | number | How many second-factor credentials the person holds: passkeys enrolled as a second factor, authenticator apps, mail factors. `hasPassword` true and `factors` 0 is a password alone. | yes | yes | yes |
 | `methodsUsed` | string | The RFC 8176 methods the person has signed in with here (`pwd`, `hwk`, `otp`, …), joined; compared value by value. | yes | yes | no |
@@ -405,6 +420,24 @@ codes counted, the hash scheme as its algorithm and its generation as
 the attribute in the index). App passwords are not listed, because their
 attribute is not in that index.
 
+**Wallets.** `verifiableCredential` is every credential this realm
+issued and still remembers, read from the issuer's register rather than
+the directory: one row per kind of copy a person holds — the copies that
+share a credential type (`credentialId`), `format`, holder-key
+`algorithm`, `lane` and `channel` are one row with `credentials` their
+number, so a batch that bound four keys to four copies of one credential
+is one row saying 4, while an ES256 copy and an ML-DSA copy are two. The
+`channel` is `web` when the wallet's request carried a browser Origin,
+`app` otherwise. A copy the holder removed is left out. `selfIssued` is every
+DID or key a person enrolled, one row each, with the channel the
+enrolment recorded (`web`, `app`, `dc_api`, or `admin` for one an
+administrator entered) and the key's algorithm, read off a `did:jwk` or
+`did:key`, else the algorithm the proof was signed with. A count grouped
+by `channel` and `algorithm` is how many wallet credentials there are of
+each kind; add `memberOf` for one community. A credential issued or a
+subject enrolled before this was recorded has no channel and, for a
+`did:web`, no algorithm.
+
 **The password is the one mechanism counted rather than indexed.**
 Nearly everyone holds one, so the directory keeps no index of its
 holders; it keeps a counter per realm, and that is what a count by
@@ -441,12 +474,14 @@ Monitoring → Passkeys.
 |---|---|---|---|---|---|
 | `username` | string | The directory uid. | yes | yes | no |
 | `displayName` | string | `displayName`, or `cn`. | yes | yes | no |
-| `mechanism` | string | `passkey`, `totp`, `emailFactor`, `certificate`, `kerberos`, `password` or `recoveryCodes`; enumerated, a dropdown on the page. Indexed: `eq`, `in`. | yes | yes | yes |
+| `mechanism` | string | `passkey`, `totp`, `emailFactor`, `certificate`, `kerberos`, `password`, `recoveryCodes`, `selfIssued` or `verifiableCredential`; enumerated, a dropdown on the page. Indexed: `eq`, `in`. | yes | yes | yes |
 | `role` | string | `primary`, `mfa` or `recovery`; enumerated. | yes | yes | yes |
 | `credentials` | number | How many credentials of this mechanism and role the person holds; the same on each of their rows. | yes | yes | no |
 | `credentialId` | string | This credential's own id (a passkey's credential id). | yes | yes | no |
 | `algorithm` | string | This credential's signature algorithm (a passkey's JOSE name, such as `ES256` or `ML-DSA-65`). | yes | yes | yes |
-| `lane` | string | A passkey's lane, `classical` or `pqc`; enumerated. Empty for the other mechanisms. | yes | yes | yes |
+| `lane` | string | A passkey's or a wallet key's lane, `classical` or `pqc`; enumerated. Empty for the other mechanisms. | yes | yes | yes |
+| `channel` | string | Where a wallet credential came from: `web` (a web wallet), `app` (a native wallet), `dc_api` (the browser's Digital Credentials API) or `admin` (entered by an administrator); enumerated. Empty for the other mechanisms. | yes | yes | yes |
+| `format` | string | A verifiable credential's format: `dc+sd-jwt`, `jwt_vc_json` or `ldp_vc`. Empty for the other mechanisms. | yes | yes | yes |
 | `enrolledAt` | timestamp | When this credential was enrolled, where recorded. | yes | yes | no |
 | `lastUsedAt` | timestamp | When this credential was last used, where recorded. | yes | yes | no |
 | `methodsUsed` | string | The RFC 8176 methods the person has ever signed in with here. | yes | yes | no |

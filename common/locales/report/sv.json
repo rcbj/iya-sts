@@ -101,6 +101,7 @@
   "tipFormat": "JSON, CSV (RFC 4180) eller PDF. En PDF har ett eget radtak; be om CSV för fler.",
   "tipCount": "Räkna de matchande raderna i stället för att lista dem, ett tal per värde i gruppfältet.",
   "tipGroupBy": "Fältet med låg kardinalitet som en räkning grupperas efter, som status eller protocol.",
+  "tipAnchor": "På den här källan måste det första filtret namnge ett indexerat fält; de övriga fälten avgränsar den läsningen.",
   "tipSaveQuery": "Spara frågan som en namngiven definition att köra igen, schemalägga och dela. Markerad visas rutan Namn och knappen Spara.",
   "tipName": "Namnet definitionen listas under.",
   "tipRunAt": "Tiden på dagen, i UTC, då en schemalagd körning startar; datumet används när ingen veckodag är markerad.",

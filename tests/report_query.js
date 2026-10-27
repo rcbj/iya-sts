@@ -943,9 +943,21 @@ function directoryDouble(windowed) {
       total: 2, remaining: 1, generatedAt: 4000, lastUsedAt: 8000 })],
     pwdChangedTime: ['20261020100000Z'],
     authnMethod: ['pwd', 'hwk', 'otp'],
+    // A self-issued subject proved with a web wallet (#1021): a did:web,
+    // whose key the DID does not spell, so the proof's algorithm is kept.
+    stsSelfIssuedSubject: [JSON.stringify({ subject: 'did:web:ada.example',
+      label: 'w', enrolledAt: '2026-10-10T10:00:00.000Z', by: 'self (SIOPv2)',
+      proof: 'wallet', provedAt: '2026-10-11T10:00:00.000Z',
+      pinnedKeys: ['tp1'], location: { kind: 'web',
+        value: 'https://wallet.example/' }, keyAlg: 'ES256' })],
     mfaLastAuthTime: ['2026-10-20T10:00:00.000Z'] });
   const bea = person('bea', { pwdAccountLockedTime: ['20261001120000Z'],
-    stsWebauthnCredential: [key('mfa', 'ES256', -7, 'classical', 100, 200)]
+    stsWebauthnCredential: [key('mfa', 'ES256', -7, 'classical', 100, 200)],
+    // A subject an administrator entered by value (#1021): channel admin,
+    // no proof, no algorithm the record or the DID gives.
+    stsSelfIssuedSubject: [JSON.stringify({ subject: 'did:web:bea.example',
+      label: 'a', enrolledAt: '2026-10-12T10:00:00.000Z', by: 'admin',
+      proof: 'admin', location: { kind: 'admin', value: '' } })]
   });
   const cy = person('cy');
   const xbea = person('xbea');
@@ -1158,8 +1170,8 @@ async function narrowing(t) {
     'entryUuid is indexed for equality');
   t.equal(catalog.indexedFor('users', 'displayName').length, 0,
     'a sealed field is indexed for nothing');
-  t.equal(catalog.indexedFor('groups', 'name').length, 0,
-    'no other source carries a mark');
+  t.equal(catalog.indexedFor('groups', 'name').join(','), 'eq,in',
+    'a group is read by its name (rcbj, 2026-10-27)');
   t.equal(catalog.indexedFor('users', 'userPassword').length, 0,
     'a credential id is indexed for nothing');
   const spec = OpenApi.document(catalog);
@@ -1280,10 +1292,12 @@ async function narrowing(t) {
     const short = await read({
       where: { op: 'contains', field: 'username', value: 'ad' }, limit: 5 });
     t.equal(short.ok, false, 'a short substring cannot be answered now');
-    t.equal(short.code, 'STS-REPORT-0036', 'the unbounded filter is 0036');
-    t.equal(short.error, 'result_too_large',
-      'the public token is result_too_large');
-    t.equal(short.unbounded, true, 'the refusal says it is unbounded');
+    // Since 2026-10-27 (the anchor rule) a filter with no indexed anchor is
+    // invalid_query in every mode, not a result_too_large that auto mode
+    // would have turned into a job that read everybody.
+    t.equal(short.code, 'STS-REPORT-0040', 'the unanchored filter is 0040');
+    t.equal(short.error, 'invalid_query', 'the public token is invalid_query');
+    t.equal(!!short.unbounded, false, 'and it is not offered as a job');
     t.check(short.description.indexOf('username (eq, in, contains, ' +
       'startsWith)') >= 0 && short.description.indexOf('mail (eq, in)') >= 0 &&
       short.description.indexOf('entryUuid (eq, in)') >= 0,
@@ -1352,15 +1366,21 @@ async function narrowing(t) {
     reset();
     const sealed = await read({
       where: { op: 'contains', field: 'displayName', value: 'A' }, limit: 5 });
-    t.equal(sealed.code, 'STS-REPORT-0036',
-      'a sealed-field filter is refused synchronously on a window');
+    t.equal(sealed.code, 'STS-REPORT-0040',
+      'a sealed-field filter alone is refused on a window (the anchor rule)');
     const sealedJob = await read({
       where: { op: 'contains', field: 'displayName', value: 'A' }, limit: 5 },
       'async');
-    t.equal(sealedJob.ok, true, 'the same filter runs as a job');
-    t.check(calls.walk >= 1, 'the job walked the people');
-    t.equal(names(sealedJob).join(','), 'ada,bea,xbea',
-      'the walk answers the sealed-field filter');
+    t.equal(sealedJob.code, 'STS-REPORT-0040',
+      'and as a job too: it would have read everybody');
+    t.equal(calls.walk, 0, 'nothing walked for either');
+    const sealedAnchored = await read({
+      where: { op: 'and', args: [
+        { op: 'contains', field: 'displayName', value: 'A' },
+        { op: 'in', field: 'username', value: ['ada', 'bea', 'xbea'] }] },
+      limit: 5 });
+    t.equal(names(sealedAnchored).join(','), 'ada,bea,xbea',
+      'anchored by the names, the sealed-field filter narrows the lookup');
 
     reset();
     const plain = await read({ limit: 2 });
@@ -1734,7 +1754,8 @@ function groups(t) {
   const catalog = new Catalog();
   const spec = OpenApi.document(catalog);
   const cat = { sources: catalog.list().map(function (src) {
-    return { id: src.id, fields: src.fields };
+    return { id: src.id, fields: src.fields, anchored: src.anchored === true,
+      retention: src.retention };
   }) };
   const filled = ReportRuntime.queryFormHtml(tr, cat.sources, {
     source: 'users',
@@ -1798,6 +1819,27 @@ function groups(t) {
     JSON.stringify(['primary', 'mfa', 'recovery']), 'and the three roles');
   t.equal(catalog.field('users', 'username').values, undefined,
     'an open field has no values');
+  // EVERY INDEX AVAILABLE ON EVERY SOURCE (rcbj, 2026-10-27, after a
+  // username filter on credentialHolders was refused as too large): a
+  // field whose name the directory indexes — the person's name, mail and
+  // UUID, a group's member list, a group's own name — declares that index
+  // on whichever source carries it, so the reader asks the store and a
+  // new source cannot forget one quietly.
+  const INDEX_CAPABLE = { username: ['eq', 'in'], mail: ['eq', 'in'],
+    entryUuid: ['eq', 'in'], memberOf: ['eq', 'in'] };
+  catalog.list().forEach(function (src) {
+    (src.fields || []).forEach(function (f) {
+      const wanted = f.id === 'name' && src.id === 'groups' ? ['eq', 'in']
+        : INDEX_CAPABLE[f.id];
+      if (!wanted) {
+        return;
+      }
+      t.check(wanted.every(function (op) {
+        return (f.indexed || []).indexOf(op) >= 0;
+      }), src.id + '.' + f.id + ' declares its store index (' +
+        wanted.join(', ') + ')', JSON.stringify(f.indexed));
+    });
+  });
   const published = api.publicSource(catalog.source('credentialHolders'));
   t.equal(JSON.stringify(published.fields.filter(function (f) {
     return f.id === 'mechanism';
@@ -1883,6 +1925,42 @@ function groups(t) {
     } };
   live.onChange({ target: fieldSelect });
   t.equal(swapped, '', 'a text box that stays one is not redrawn');
+
+  // THE FIRST ROW OF AN ANCHORED SOURCE OFFERS THE INDEXED FIELDS (rcbj,
+  // 2026-10-27), with the full list in a template for the + to clone; the
+  // source's own sentence sits under the Source select.
+  const anchoredForm = ReportRuntime.queryFormHtml(tr, cat.sources,
+    { source: 'credentialHolders' });
+  const firstField = /<select name="filterField0"[^>]*>([^]*?)<\/select>/
+    .exec(anchoredForm);
+  t.check(!!firstField && firstField[1].indexOf('value="mechanism"') >= 0 &&
+    firstField[1].indexOf('value="username"') >= 0 &&
+    firstField[1].indexOf('value="memberOf"') >= 0 &&
+    firstField[1].indexOf('value="role"') < 0 &&
+    firstField[1].indexOf('value="algorithm"') < 0,
+    'the first filter row of credentialHolders offers only indexed fields',
+    firstField && firstField[1]);
+  t.check(/<select name="filterField0" title="On this source the first filter/
+    .test(anchoredForm), 'and says why');
+  t.check(/<template data-field-options>[^]*value="role"[^]*<\/template>/
+    .test(anchoredForm), 'the full list rides in a template for the +');
+  t.check(anchoredForm.indexOf('<p class="sub" data-source-help>Who holds ' +
+    'which authentication credential') >= 0,
+    'the source\'s sentence is under the select', anchoredForm.slice(0, 600));
+  const usersFirst = /<select name="filterField0"[^>]*>([^]*?)<\/select>/
+    .exec(ReportRuntime.queryFormHtml(tr, cat.sources, { source: 'users' }));
+  t.check(!!usersFirst && usersFirst[1].indexOf('value="status"') < 0 &&
+    usersFirst[1].indexOf('value="memberOf"') >= 0,
+    'users is anchored too: status is not a first filter, memberOf is');
+  const groupsFirst = /<select name="filterField0"[^>]*>([^]*?)<\/select>/
+    .exec(ReportRuntime.queryFormHtml(tr, cat.sources, { source: 'groups' }));
+  t.check(!!groupsFirst && groupsFirst[1].indexOf('value="description"') >= 0,
+    'a source not read from the directory offers every field');
+  const savedWide = ReportRuntime.queryFormHtml(tr, cat.sources, {
+    source: 'users', select: ['username'],
+    where: { op: 'eq', field: 'status', value: 'locked' } });
+  t.check(/<select name="filterField0"[^>]*>[^]*?<option value="status" selected>/
+    .test(savedWide), 'a saved first row keeps a field the list lacks');
 
   // THE OPERATOR LIST FOLLOWS THE FIELD (#1022): three operators over an
   // enumerated field, the full list otherwise, the select saying which it
@@ -2376,6 +2454,32 @@ async function holders(t) {
   const sources = require('../report/sources');
   const built = directoryDouble(true);
   sources.installDirectory(built.ldap);
+  // THE ISSUED-CREDENTIAL REGISTER'S DOUBLE (#1021): ada holds two copies
+  // of one credential — an ES256 key from a web wallet, an ML-DSA-65 key
+  // from a native one — and a copy she removed, which is left out.
+  const adaSubject = 'urn:uuid:11111111-1111-4111-8111-111111111111';
+  sources.installIssuedRegister({
+    rowsForSubject: function () {
+      return [{ key: 'row-ada', subject: adaSubject, jkt: 'k1',
+        format: 'dc+sd-jwt', configId: 'IdentityCredential',
+        credentials: [
+          { artifactKey: 'a1', issuedAt: 1700000000000, expiresAt: 0,
+            holderAlg: 'ES256', channel: 'web', walletEventAt: 1700000500000 },
+          { artifactKey: 'a2', issuedAt: 1700001000000, expiresAt: 0,
+            holderAlg: 'ML-DSA-65', channel: 'app', walletEventAt: 0 },
+          { artifactKey: 'a3', issuedAt: 1700002000000, expiresAt: 0,
+            holderAlg: 'ES256', channel: 'web', removedAt: 1700003000000 },
+          // A second live ES256 copy from the web wallet (rcbj, 2026-10-27:
+          // a batch bound four keys to four copies): one row with the
+          // two, not two rows each saying two.
+          { artifactKey: 'a4', issuedAt: 1699999000000, expiresAt: 0,
+            holderAlg: 'ES256', channel: 'web', walletEventAt: 1700000900000 }]
+      }];
+    },
+    nameForSubject: function (subject) {
+      return subject === adaSubject ? 'ada' : '';
+    }
+  });
   const calls = built.calls;
   const reset = function () {
     Object.keys(calls).forEach(function (key) {
@@ -2473,9 +2577,11 @@ async function holders(t) {
       return row.username + '/' + row.mechanism + '/' + row.role;
     }).sort().join(','),
       'ada/passkey/mfa,ada/passkey/primary,ada/passkey/primary,' +
-      'ada/password/primary,ada/recoveryCodes/recovery,ada/totp/mfa',
-      'every credential of every member, the password and the codes among ' +
-      'them');
+      'ada/password/primary,ada/recoveryCodes/recovery,' +
+      'ada/selfIssued/primary,ada/totp/mfa,ada/verifiableCredential/primary,' +
+      'ada/verifiableCredential/primary',
+      'every credential of every member, the password, the codes and the ' +
+      'wallet\'s among them');
 
     reset();
     const counted = await read({ source: 'credentialHolders',
@@ -2502,14 +2608,161 @@ async function holders(t) {
     t.check(everybody.description.indexOf('mechanism (eq, in)') >= 0,
       'and the refusal names the indexed fields', everybody.description);
     const asJob = await read({ source: 'credentialHolders',
-      select: fields, limit: 10 }, 'async');
+      select: fields, limit: 20 }, 'async');
     t.equal(asJob.ok, true, 'as a job it reads every mechanism\'s holders');
-    t.equal((asJob.rows || []).length, 7,
-      'ada three passkeys, an authenticator app, a password and a code ' +
-      'set, bea one passkey');
-    t.equal(calls.holders, 7, 'one holders lookup per mechanism');
-    t.equal(calls.holderCount, 7, 'after one count per mechanism');
-    t.equal(calls.holdersStop, 7, 'and each read carries a stop');
+    t.equal((asJob.rows || []).length, 11,
+      'ada three passkeys, an authenticator app, a password, a code set, ' +
+      'a self-issued subject and two credentials; bea a passkey and a ' +
+      'subject');
+    t.equal(calls.holders, 8, 'one holders lookup per entry mechanism');
+    t.equal(calls.holderCount, 8, 'after one count per entry mechanism');
+    t.equal(calls.holdersStop, 8, 'and each read carries a stop');
+
+    // THE PERSON NAMED (rcbj, 2026-10-27): `username equals ada` reads her
+    // entry through the name index and every mechanism of hers, no holders
+    // read, no refusal.
+    reset();
+    const adaOnly = await read({ source: 'credentialHolders',
+      select: fields, limit: 20,
+      where: { op: 'eq', field: 'username', value: 'ada' } });
+    t.equal(adaOnly.ok, true, 'a person named is read', adaOnly.description);
+    t.equal(calls.byName, 1, 'through one name lookup');
+    t.equal(calls.holders, 0, 'and no holders read');
+    t.equal((adaOnly.rows || []).map(function (row) {
+      return row.mechanism;
+    }).sort().join(','),
+      'passkey,passkey,passkey,password,recoveryCodes,selfIssued,totp,' +
+      'verifiableCredential,verifiableCredential',
+      'every credential of hers, every mechanism');
+    reset();
+    const adaPasskeys = await read({ source: 'credentialHolders',
+      select: fields, limit: 20,
+      where: { op: 'and', args: [
+        { op: 'eq', field: 'username', value: 'ada' },
+        { op: 'eq', field: 'mechanism', value: 'passkey' }] } });
+    t.equal((adaPasskeys.rows || []).length, 3,
+      'a person and a mechanism: her passkeys only');
+    t.equal(calls.holders, 0, 'still no holders read');
+    reset();
+    const byUuid = await read({ source: 'credentialHolders',
+      select: fields.concat(['mail', 'entryUuid']), limit: 20,
+      where: { op: 'eq', field: 'entryUuid',
+        value: '11111111-1111-4111-8111-111111111111' } });
+    t.equal(calls.byUuid, 1, 'a UUID reads through the UUID index');
+    t.check((byUuid.rows || []).length > 0 &&
+      byUuid.rows[0].mail === 'ada@example.com' &&
+      byUuid.rows[0].entryUuid === '11111111-1111-4111-8111-111111111111',
+      'and the row carries the person\'s mail and UUID');
+    // THE ANCHOR RULE (rcbj, 2026-10-27): on a windowed directory a filter
+    // that names no indexed field is refused at acceptance, in every mode,
+    // naming the indexed fields; anchored by an "and" arm it runs; an "or"
+    // with an unanchored arm is refused; a group lookup anchors too.
+    reset();
+    const unanchored = await read({ source: 'credentialHolders',
+      select: fields, limit: 5,
+      where: { op: 'eq', field: 'role', value: 'primary' } });
+    t.equal(unanchored.code, 'STS-REPORT-0040',
+      'role alone is refused on a windowed directory');
+    t.equal(unanchored.error, 'invalid_query', 'as invalid_query');
+    t.check(unanchored.description.indexOf('username (eq, in, contains, ' +
+      'startsWith)') >= 0 && unanchored.description.indexOf(
+      'mechanism (eq, in)') >= 0, 'naming the indexed fields',
+      unanchored.description);
+    const unanchoredJob = await read({ source: 'credentialHolders',
+      select: fields, limit: 5,
+      where: { op: 'eq', field: 'role', value: 'primary' } }, 'async');
+    t.equal(unanchoredJob.code, 'STS-REPORT-0040',
+      'and as a job as well: it would never finish');
+    const orArm = await read({ source: 'credentialHolders',
+      select: fields, limit: 5,
+      where: { op: 'or', args: [
+        { op: 'eq', field: 'username', value: 'ada' },
+        { op: 'eq', field: 'role', value: 'primary' }] } });
+    t.equal(orArm.code, 'STS-REPORT-0040',
+      'an or with an unanchored arm is refused');
+    const andArm = await read({ source: 'credentialHolders',
+      select: fields, limit: 20,
+      where: { op: 'and', args: [
+        { op: 'eq', field: 'role', value: 'primary' },
+        { op: 'eq', field: 'username', value: 'ada' }] } });
+    t.equal(andArm.ok, true, 'an and with an indexed arm runs');
+    reset();
+    const usersUnanchored = await read({ source: 'users',
+      select: ['username', 'status'], limit: 5,
+      where: { op: 'eq', field: 'status', value: 'locked' } });
+    t.equal(usersUnanchored.code, 'STS-REPORT-0040',
+      'the users source is held to the same rule');
+    const usersByGroup = await read({ source: 'users',
+      select: ['username', 'status'], limit: 5,
+      where: { op: 'and', args: [
+        { op: 'eq', field: 'status', value: 'locked' },
+        { op: 'eq', field: 'memberOf', value: 'staff' }] } });
+    t.equal(usersByGroup.ok, true, 'a group anchors a users filter');
+    t.equal(calls.groupRead, 1, 'through the group\'s member list');
+    t.equal(calls.walk, 0, 'and no walk');
+    reset();
+    const groupByName = await read({ source: 'groups',
+      select: ['name', 'memberCount', 'members'], limit: 5,
+      where: { op: 'eq', field: 'name', value: 'staff' } });
+    t.equal(JSON.stringify(groupByName.rows),
+      '[{"name":"staff","memberCount":1,"members":"ada"}]',
+      'a group named is read by its DN');
+    t.equal(calls.groupList || 0, 0, 'without listing the groups');
+
+    // THE WALLET MECHANISMS (#1021): a verifiable credential per issued
+    // copy, from the register, with its channel, algorithm, lane and
+    // format; a self-issued subject per enrolled DID, with the channel the
+    // enrolment recorded and the key's algorithm.
+    reset();
+    const issued = await read({ source: 'credentialHolders',
+      select: fields.concat(['channel', 'format']), limit: 5,
+      where: { op: 'eq', field: 'mechanism', value: 'verifiableCredential' }
+    });
+    t.equal(calls.holders, 0, 'the register, not the directory index');
+    t.equal((issued.rows || []).map(function (row) {
+      return row.username + '/' + row.channel + '/' + row.algorithm + '/' +
+        row.lane + '/' + row.format;
+    }).sort().join(','),
+      'ada/app/ML-DSA-65/pqc/dc+sd-jwt,ada/web/ES256/classical/dc+sd-jwt',
+      'one row per KIND of live copy, with channel, algorithm, lane and ' +
+      'format');
+    const webRow = issued.rows.filter(function (row) {
+      return row.channel === 'web';
+    })[0];
+    t.equal(webRow.credentials, 2,
+      'the two ES256 web copies are one row counting two');
+    t.equal(issued.rows.filter(function (row) {
+      return row.channel === 'app';
+    })[0].credentials, 1, 'and the ML-DSA-65 app copy is a row of one');
+    t.equal(webRow.credentialId, 'IdentityCredential',
+      'named by the credential type');
+    t.equal(webRow.enrolledAt, '2023-11-14T21:56:40.000Z',
+      'issued when the group\'s earliest copy was');
+    t.equal(webRow.lastUsedAt, '2023-11-14T22:28:20.000Z',
+      'the group\'s latest wallet report is the last use');
+    reset();
+    const selfIssued = await read({ source: 'credentialHolders',
+      select: fields.concat(['channel']), limit: 5,
+      where: { op: 'eq', field: 'mechanism', value: 'selfIssued' } });
+    t.equal((selfIssued.rows || []).map(function (row) {
+      return row.username + '/' + row.channel + '/' + row.algorithm + '/' +
+        row.credentialId;
+    }).sort().join(','),
+      'ada/web/ES256/did:web:ada.example,bea/admin//did:web:bea.example',
+      'a self-issued subject row per enrolment, with its channel');
+    t.equal(selfIssued.rows.filter(function (row) {
+      return row.username === 'ada';
+    })[0].enrolledAt, '2026-10-11T10:00:00.000Z',
+      'proved when the enrolment says');
+    reset();
+    const byChannel = await read({ source: 'credentialHolders',
+      select: ['channel'], aggregate: 'count', groupBy: ['channel'],
+      limit: 5, where: { op: 'in', field: 'mechanism',
+        value: ['verifiableCredential', 'selfIssued'] } });
+    t.equal(JSON.stringify((byChannel.rows || []).map(function (row) {
+      return row.channel + '=' + row.count;
+    }).sort()), JSON.stringify(['admin=1', 'app=1', 'web=2']),
+      'the census counts wallet credentials by channel');
 
     // THE RECOVERY CODE SET (#1024): one row, the unused codes counted, the
     // hash scheme as its algorithm, never a hash or a code.
@@ -2616,6 +2869,7 @@ async function holders(t) {
     t.equal((fewAgain.rows || []).length, 0, 'nobody here holds one');
   } finally {
     sources.installDirectory(null);
+    sources.installIssuedRegister(null);
   }
   log.debug("Leaving holders().");
 }

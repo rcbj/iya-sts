@@ -53,7 +53,7 @@ const CREDENTIALS = ['userPassword', 'unicodePwd', 'ntPassword', 'krb5Key',
 const GROUPABLE = ['status', 'enabled', 'type', 'protocol', 'category',
   'action', 'outcome', 'format', 'family', 'application', 'day',
   'mechanism', 'dialect', 'mode', 'onFailure', 'role', 'algorithm',
-  'lane', 'factors', 'hasPassword'];
+  'lane', 'factors', 'hasPassword', 'channel', 'format'];
 
 // Scalars a filter may name and a sort may not. `members` is not in this
 // list because it cannot be filtered either.
@@ -84,15 +84,28 @@ interface FieldSpec {
 // `MECHANISM_TABLE` order; `tests/report_query.js` holds the two lists equal,
 // because the catalog cannot require `sources.ts` (it requires the catalog).
 const HOLDER_MECHANISMS = ['passkey', 'totp', 'emailFactor', 'certificate',
-  'kerberos', 'password', 'recoveryCodes'];
+  'kerberos', 'password', 'recoveryCodes', 'selfIssued',
+  'verifiableCredential'];
 const HOLDER_ROLES = ['primary', 'mfa', 'recovery'];
+// Where a wallet credential came from (#1021): a web wallet, a native wallet
+// app, the browser's Digital Credentials API, or an administrator's hand.
+const HOLDER_CHANNELS = ['web', 'app', 'dc_api', 'admin'];
 
 // The operators the store answers with an index, per field of `users`. No
 // other source reads the directory row by row, so no other source has a row.
 const INDEXED: Record<string, string[]> = {
   username: ['eq', 'in', 'contains', 'startsWith'],
   mail: ['eq', 'in'],
-  entryUuid: ['eq', 'in']
+  entryUuid: ['eq', 'in'],
+  // A group's member list is an index of who is in it (rcbj, 2026-10-27:
+  // "use every index available on every source"): `memberOf` equals a
+  // group name reads the group and fetches its members by name.
+  memberOf: ['eq', 'in']
+};
+
+// The groups source's own lookups: a group by its name is one read.
+const GROUP_INDEXED: Record<string, string[]> = {
+  name: ['eq', 'in']
 };
 
 // The `credentialHolders` source's indexed fields (#1002): a mechanism is
@@ -100,12 +113,24 @@ const INDEXED: Record<string, string[]> = {
 // group is its members; neither reads the population.
 const HOLDER_INDEXED: Record<string, string[]> = {
   mechanism: ['eq', 'in'],
-  memberOf: ['eq', 'in']
+  memberOf: ['eq', 'in'],
+  // The person's own keys (rcbj, 2026-10-27: `username equals rcbj` on
+  // this source was refused as too large — it read every mechanism's
+  // holders): the users source's lookups, through the same doors.
+  username: INDEXED.username,
+  mail: INDEXED.mail,
+  entryUuid: INDEXED.entryUuid
 };
 
 interface SourceSpec {
   id: string;
   bounded: boolean;
+  // A DIRECTORY-BACKED SOURCE (rcbj, 2026-10-27: a filter on a field the
+  // store cannot answer "will never work given the constraints"): a filter
+  // on it has to name an indexed field — a leaf of an `and`, every arm of
+  // an `or` — and the page offers only those in a first filter row. The
+  // other fields narrow an indexed read; alone they would read everybody.
+  anchored?: boolean;
   retention: string;
   // Offset is not a query key. A second source is not either.
   paging: string;
@@ -133,9 +158,9 @@ function field(id: string, type: string, meaning: string,
 }
 
 function source(id: string, retention: string,
-                fields: FieldSpec[]): SourceSpec {
+                fields: FieldSpec[], anchored?: boolean): SourceSpec {
   log.debug("Entering source().");
-  const spec = {
+  const spec: SourceSpec = {
     id: id,
     bounded: true,
     retention: retention,
@@ -143,6 +168,9 @@ function source(id: string, retention: string,
     relationships: [],
     fields: fields
   };
+  if (anchored) {
+    spec.anchored = true;
+  }
   log.debug("Leaving source().");
   return spec;
 }
@@ -168,7 +196,8 @@ function standardSources(): SourceSpec[] {
        field('displayName', 'string',
          'displayName, or cn when displayName is empty.'),
        field('memberOf', 'string',
-         'The names of the groups that list this person, joined.'),
+         'The names of the groups that list this person, joined.',
+         INDEXED.memberOf),
        field('hasPassword', 'boolean',
          'Whether a password is set on the entry (#1019).'),
        field('factors', 'number',
@@ -179,10 +208,10 @@ function standardSources(): SourceSpec[] {
          'The RFC 8176 methods the person has ever signed in with here ' +
          '(pwd, hwk, otp, ...), joined; compared value by value.'),
        field('mfaLastAuthTime', 'timestamp',
-         'When the person last completed a multi-factor sign-in.')]),
+         'When the person last completed a multi-factor sign-in.')], true),
     source('groups',
       'The directory as it is now. member lists are selected, not filtered.',
-      [field('name', 'string', 'The group cn.'),
+      [field('name', 'string', 'The group cn.', GROUP_INDEXED.name),
        field('description', 'string', 'The description attribute.'),
        field('memberCount', 'number', 'How many members the group lists.'),
        field('members', 'string',
@@ -280,15 +309,23 @@ function standardSources(): SourceSpec[] {
       'memberOf to read only those holders; a query naming neither reads ' +
       'every holder of every mechanism and runs as a job. Count with ' +
       'groupBy mechanism, role, algorithms or lanes for the census.',
-      [field('username', 'string', 'The directory uid.'),
+      [field('username', 'string', 'The directory uid.',
+         HOLDER_INDEXED.username),
+       field('mail', 'string', 'The mail attribute.', HOLDER_INDEXED.mail),
+       field('entryUuid', 'string',
+         'The entryUUID. It can be filtered and cannot be sorted.',
+         HOLDER_INDEXED.entryUuid),
        field('displayName', 'string',
          'displayName, or cn when displayName is empty.'),
        field('mechanism', 'string',
-         'passkey, totp, emailFactor, certificate, kerberos, password or ' +
-         'recoveryCodes (the password is counted from the realm\'s ' +
-         'counter and listed only narrowed by memberOf; its row carries ' +
-         'the hash scheme, never the hash; a recovery code set is one ' +
-         'row, its codes counted, never shown).',
+         'passkey, totp, emailFactor, certificate, kerberos, password, ' +
+         'recoveryCodes, verifiableCredential or selfIssued (the password ' +
+         'is counted from the realm\'s counter and listed only narrowed ' +
+         'by memberOf; its row carries the hash scheme, never the hash; a ' +
+         'recovery code set is one row, its codes counted, never shown; a ' +
+         'verifiable credential is one this realm issued, read from its ' +
+         'register; a self-issued subject is a DID or key the person ' +
+         'enrolled with a wallet).',
          HOLDER_INDEXED.mechanism, HOLDER_MECHANISMS),
        field('role', 'string',
          'primary (signs the person in on its own), mfa (a second ' +
@@ -305,8 +342,17 @@ function standardSources(): SourceSpec[] {
          'This credential\'s signature algorithm: a passkey\'s JOSE name ' +
          '(ES256, ML-DSA-65), an authenticator app\'s HMAC algorithm.'),
        field('lane', 'string',
-         'A passkey\'s lane, classical or pqc; empty for the others.',
-         undefined, ['classical', 'pqc']),
+         'A passkey\'s or a wallet key\'s lane, classical or pqc; empty ' +
+         'for the others.', undefined, ['classical', 'pqc']),
+       field('channel', 'string',
+         'Where a wallet credential came from (#1021): web (a web ' +
+         'wallet), app (a native wallet), dc_api (the browser\'s Digital ' +
+         'Credentials API) or admin (enrolled by an administrator). Empty ' +
+         'for the other mechanisms, and for a credential recorded before ' +
+         'the channel was kept.', undefined, HOLDER_CHANNELS),
+       field('format', 'string',
+         'A verifiable credential\'s format: dc+sd-jwt, jwt_vc_json or ' +
+         'ldp_vc. Empty for the other mechanisms.'),
        field('enrolledAt', 'timestamp',
          'When this credential was enrolled, where it records it.'),
        field('lastUsedAt', 'timestamp',
@@ -318,7 +364,7 @@ function standardSources(): SourceSpec[] {
          'When the person last completed a multi-factor sign-in.'),
        field('memberOf', 'string',
          'The names of the groups that list this person, joined.',
-         HOLDER_INDEXED.memberOf)]),
+         HOLDER_INDEXED.memberOf)], true),
     source('attributeSources',
       'The attribute-source register as it is now. Connection details ' +
       'and secrets are not fields. This source does not run SQL and ' +

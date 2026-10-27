@@ -23669,7 +23669,13 @@ const CODES = [
       'members) than its execution\'s row cap allows, so it was refused ' +
       'before the first page was read (#1002); synchronously, under the ' +
       'job cap, it becomes a job in auto mode.',
-    spec: 'result_too_large (HTTP 400)' }
+    spec: 'result_too_large (HTTP 400)' },
+  { code: 'STS-REPORT-0040',
+    summary: 'A filter on a directory-backed report source (users, ' +
+      'credentialHolders) named no field the directory indexes, so it ' +
+      'would have read every person; refused at acceptance, naming the ' +
+      'indexed fields, in every mode (rcbj, 2026-10-27).',
+    spec: 'invalid_query (HTTP 400)' }
   // ===== END ===============================================================
 ];
 
