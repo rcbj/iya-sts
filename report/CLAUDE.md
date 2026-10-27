@@ -236,6 +236,11 @@ read from what the directory keeps already:
   and a maintained per-role aggregate — `passkey_report.ts` keeps
   algorithm, lane and model facets but not role, so the census is the
   engine's count+groupBy over this source.
+* **Changing the source redraws the query block on BOTH pages** (rcbj,
+  2026-10-27): `onChange()` redrew it only inside the definition form, so
+  on New Query the field boxes and the filter dropdown kept the first
+  source's fields, and `mechanism` was nowhere to be picked. Now any form
+  holding `[data-query-block]` is redrawn for the chosen source.
 * **A list field is compared value by value** (found on 8081 the same
   night: `memberOf` equals `group1` found rcbj through the group and then
   dropped the row, because the row says "group1, ssf-manage, ssf-read").

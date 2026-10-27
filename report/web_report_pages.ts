@@ -1700,10 +1700,14 @@ class ReportRuntime extends SpaClient {
       }
       return;
     }
-    if (name === 'source' && el.closest &&
-        el.closest('form[data-form="definition"]')) {
-      // Another source on the definition page (#989): the query block is
-      // drawn again for its fields, empty, as the New Query page starts.
+    if (name === 'source' && el.closest && el.closest('form') &&
+        el.closest('form').querySelector('[data-query-block]')) {
+      // Another source, on the definition page (#989) AND on the New Query
+      // page (rcbj, 2026-10-27: it redrew only the definition page, so the
+      // field boxes and the filter dropdown kept the first source's fields
+      // and `mechanism` was nowhere to be picked for credentialHolders):
+      // the query block is drawn again for the chosen source's fields,
+      // empty, as the New Query page starts.
       const block = el.closest('form').querySelector('[data-query-block]');
       if (block) {
         block.innerHTML = queryFormHtml(this.t, this.catalogSources,
