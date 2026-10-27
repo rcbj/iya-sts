@@ -432,17 +432,27 @@ async function childBody() {
           'T5. stored on two entries it starts nothing (STS-TLS-0055)',
           r.text.slice(0, 400));
   twice(false);
+  // A STORED CERTIFICATE WHOSE CRL CANNOT BE FETCHED, under hard-fail: its
+  // revocation status cannot be established, so it is refused on
+  // revocation — before the stored entry is asked about.
+  const unreachable = await outsideCa.mint({ subject: 'CN=scfrank,O=Outside',
+                                             crlBase: 'http://127.0.0.1:9' });
+  tls.addAnchors(unreachable.anchorPem);
+  ldap.changeStoredCertificate('person', 'scfrank',
+                               { add: derOf(unreachable) });
   config.setOverride('pki.revocationCheck', 'hard-fail');
   try {
-    r = await request(port, 'GET', '/tls/sign-in', first, {});
+    r = await request(port, 'GET', '/tls/sign-in', unreachable, {});
   } finally {
     config.clearOverride('pki.revocationCheck');
   }
   t.check(r.json && r.json.signedIn === false &&
           r.json.session.refusedOnRevocation === true,
-          'T6. the stored certificate refused on revocation (hard-fail, a ' +
-          'certificate naming no CRL) starts nothing — revocation comes ' +
-          'first', r.text.slice(0, 400));
+          'T6. a stored certificate refused on revocation (hard-fail, its ' +
+          'CRL unreachable) starts nothing — revocation comes first',
+          r.text.slice(0, 400));
+  ldap.changeStoredCertificate('person', 'scfrank',
+                               { remove: shaOf(unreachable) });
 
   // -------------------------------------------------------------------------
   // U. THE SIGN-IN SCREEN, in a realm whose entry stores the certificate

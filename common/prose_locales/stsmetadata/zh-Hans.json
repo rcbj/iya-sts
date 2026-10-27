@@ -200,8 +200,8 @@
     "text": "minimal：树、根 DSE 和 namingContexts 是真实的；架构则完全不存在。不强制任何 objectClass，不按语法或匹配规则检查任何属性，也没有子架构子条目——因此条目可以携带客户端愿意发送的任何属性，而真实的目录会拒绝。仍有三条结构规则得到执行，因为缺少它们会让客户端学到错误的东西：add 需要其父条目存在，delete 需要叶条目，没有值的属性不存在。"
   },
   "stsmetadata.specs.rfc4513.coverage": {
-    "en": "14991528f7d8f8e0",
-    "text": "partial：此处具备的部分是“传输”而不是身份验证：简单 bind（第 5.1 节），以及在 636 请求客户端证书期间，使用本服务颁发给某人的证书进行的 SASL EXTERNAL（第 5.2.1.2 节）；没有其他 SASL 机制，因此没有 DIGEST-MD5。在开发模式下它不对任何人进行身份验证，因为除字面密码“invalid”外每次 bind 都会成功，636 上的 TLS 带来的，是为一个本来就不会被检查的密码提供机密性；对必须证明自己能使用 LDAPS 的客户端来说这值得拥有，也值得明说，以免有人把 TLS 当作身份验证；在产品模式下，人员的密码会被验证，并且只能通过 636。“未”实现 StartTLS（第 3 节）：它是一个扩展操作，而本服务所基于的 ldapjs 子模块一个扩展操作都没有实现，本存储库也不修补该子模块。值得了解本文档实际标准化的是两者中的哪一个——StartTLS 在本文档中；ldaps:// 是它未予处理的事实标准方案，这就是为什么没有任何 RFC 定义每个客户端都在使用的东西。证书由本服务自己的根证书签发，每次启动时重新生成（除非 tls.certificateFile 提供了证书），并与主端口共享，因此客户端每次运行都要验证它：请从 GET /tls/server-certificate 获取证书链，而不要动用 LDAPTLS_REQCERT=never，后者还会掩盖此处唯一值得检查的东西。在“产品”模式下，简单 bind “确实”会被验证，这使得 389 成为明文传输的密码：ldap.plainListener 可关闭该监听器，并且在它开启期间服务会在启动时发出警告。第 6.1 节：“读取敏感信息时应始终应用访问控制”——产品模式会这样做，按绑定的身份进行（ldap/directory_read_policy.ts）。"
+    "en": "ffd676cfc6a6acde",
+    "text": "partial：此处具备的部分是“传输”而不是身份验证：简单 bind（第 5.1 节），以及在 636 请求客户端证书期间，使用本服务颁发给某人的证书、或逐字节存储在恰好一个人员条目的 userCertificate 中的外部证书进行的 SASL EXTERNAL（第 5.2.1.2 节）；没有其他 SASL 机制，因此没有 DIGEST-MD5。在开发模式下它不对任何人进行身份验证，因为除字面密码“invalid”外每次 bind 都会成功，636 上的 TLS 带来的，是为一个本来就不会被检查的密码提供机密性；对必须证明自己能使用 LDAPS 的客户端来说这值得拥有，也值得明说，以免有人把 TLS 当作身份验证；在产品模式下，人员的密码会被验证，并且只能通过 636。“未”实现 StartTLS（第 3 节）：它是一个扩展操作，而本服务所基于的 ldapjs 子模块一个扩展操作都没有实现，本存储库也不修补该子模块。值得了解本文档实际标准化的是两者中的哪一个——StartTLS 在本文档中；ldaps:// 是它未予处理的事实标准方案，这就是为什么没有任何 RFC 定义每个客户端都在使用的东西。证书由本服务自己的根证书签发，每次启动时重新生成（除非 tls.certificateFile 提供了证书），并与主端口共享，因此客户端每次运行都要验证它：请从 GET /tls/server-certificate 获取证书链，而不要动用 LDAPTLS_REQCERT=never，后者还会掩盖此处唯一值得检查的东西。在“产品”模式下，简单 bind “确实”会被验证，这使得 389 成为明文传输的密码：ldap.plainListener 可关闭该监听器，并且在它开启期间服务会在启动时发出警告。第 6.1 节：“读取敏感信息时应始终应用访问控制”——产品模式会这样做，按绑定的身份进行（ldap/directory_read_policy.ts）。"
   },
   "stsmetadata.specs.rfc4514.coverage": {
     "en": "d74d5f5a23a41bdb",
@@ -232,8 +232,8 @@
     "text": "partial：响应程序应尽的部分。明文 HTTP（第 5 节）——响应程序在 `pki.httpPort` 以及 TLS 主端口上应答，证书指明明文端口；附加 base64 请求的 GET；任何 GeneralizedTime 中都没有小数秒（第 2.2.4 节）；响应程序 ID 按密钥哈希给出（第 2.2.2 节）；对其无权威的请求返回 `unauthorized`（第 2.2.3 节）；以及第 6.2 节的缓存标头——max-age 不晚于 nextUpdate、Last-Modified、Expires 和强 ETag，权威应答上从不使用 no-cache 或 no-store。未完成：响应按请求签名，而不是预先生成（第 2.2.1 节建议在高流量时预先生成），并且对携带 nonce 的请求的应答被标记为 private，而不是从缓存提供。"
   },
   "stsmetadata.specs.ws-trust.coverage": {
-    "en": "c17ea82057db227d",
-    "text": "partial：基于 SOAP 1.1 和 1.2 的 Issue、Renew、Validate 和 Cancel。请求签名不会被验证。OnBehalfOf 和 ActAs 由签发策略决定（#186，令牌交换和 Kerberos S4U 共用的规则）——OnBehalfOf 请求的是模拟身份，ActAs 请求的是委托，条目的委托语义必须允许它，AppliesTo 必须是委托关系所允许的已注册应用，个人请求方需要 delegation.actorRole——在产品模式下以 wst:RequestFailed 故障（第 11 节）拒绝；同时出现两个元素则为 wst:InvalidRequest；开发模式记录本应被拒绝的内容。在产品模式下（2026-09-12），每个操作都需要凭据——针对目录验证的 UsernameToken，或由本 STS 签名且处于其 Conditions 之内的 SAML 断言——而 OnBehalfOf/ActAs 需要请求方自己的凭据，以及其中的此类断言；开发模式一概不要求，一如既往。在两种模式下，请求的 wst:Lifetime 都会被限制（wstrust.maxTokenLifetimeMin），所签发断言的 AuthnContext 指明的是所用凭据，而不是密码。若请求方的 wsse:Security 不携带任何凭据，则在两种模式下均以连接上的 TLS 客户端证书认证请求方，前提是该证书由本领域颁发给某个人或某个应用程序（#1046）。"
+    "en": "cafeffef561dcd9a",
+    "text": "partial：基于 SOAP 1.1 和 1.2 的 Issue、Renew、Validate 和 Cancel。请求签名不会被验证。OnBehalfOf 和 ActAs 由签发策略决定（#186，令牌交换和 Kerberos S4U 共用的规则）——OnBehalfOf 请求的是模拟身份，ActAs 请求的是委托，条目的委托语义必须允许它，AppliesTo 必须是委托关系所允许的已注册应用，个人请求方需要 delegation.actorRole——在产品模式下以 wst:RequestFailed 故障（第 11 节）拒绝；同时出现两个元素则为 wst:InvalidRequest；开发模式记录本应被拒绝的内容。在产品模式下（2026-09-12），每个操作都需要凭据——针对目录验证的 UsernameToken，或由本 STS 签名且处于其 Conditions 之内的 SAML 断言——而 OnBehalfOf/ActAs 需要请求方自己的凭据，以及其中的此类断言；开发模式一概不要求，一如既往。在两种模式下，请求的 wst:Lifetime 都会被限制（wstrust.maxTokenLifetimeMin），所签发断言的 AuthnContext 指明的是所用凭据，而不是密码。若请求方的 wsse:Security 不携带任何凭据，则在两种模式下均以连接上的 TLS 客户端证书认证请求方，前提是该证书由本领域颁发给某个人或某个应用程序（#1046），或者来自外部证书颁发机构并存储在其恰好一个条目的 userCertificate 中（#1061）。"
   },
   "stsmetadata.specs.wss-username.coverage": {
     "en": "397e6a07a7980365",
@@ -1056,8 +1056,8 @@
     "text": "RFC 7486 第 7 节。表单编码的 POST，携带 pub=<PEM public key> 和（本服务自己的参数）username=<who it is for>，以 201 和 Hobareg: regok 头部应答。刻意不经身份验证：这是调用方获得凭据的方式，因此要求凭据才能访问它，将使任何尚未拥有其他凭据的人都无法使用该方案。任何人都可以为任何名称注册任何密钥——随后签名会被真正验证，这才是使该方案值得实现的那一半。该密钥以 hobaPublicKey 的形式落在此人自己位于 ou=users 下的条目上，因此 ldapsearch 和 /admin/users 都会显示它。GET 描述该端点，因为对浏览器返回 404 的 well-known 路径与无人实现的路径无法区分。"
   },
   "stsmetadata.endpoints./tls/sign-in.what": {
-    "en": "7335cf97f459114d",
-    "text": "经过验证的客户端证书成为会话（2026-09-05），自 2026-09-16 起位于此端口——它曾是访问任一已删除 TLS 监听器的副作用，这意味着加载一个诊断页面就会让你登录。它应答收到了什么、是否通过验证、令牌端点会将令牌绑定到的指纹、吊销检查发现了什么，以及是否启动了会话。它在握手时不拒绝任何人，也无法拒绝：无法验证的证书、本服务签发但不是 TLS 客户端身份的证书，以及应用的证书（RFC 8705 凭据，而不是人）都会以 200 应答，不建立会话，并说明原因。"
+    "en": "b9f18166e17e9c9d",
+    "text": "经过验证的客户端证书成为会话（2026-09-05），自 2026-09-16 起位于此端口——它曾是访问任一已删除 TLS 监听器的副作用，这意味着加载一个诊断页面就会让你登录。它应答收到了什么、是否通过验证、令牌端点会将令牌绑定到的指纹、吊销检查发现了什么，以及是否启动了会话。它在握手时不拒绝任何人，也无法拒绝：无法验证的证书、本服务签发但不是 TLS 客户端身份的证书、未逐字节存储在本领域恰好一个条目的 userCertificate 中的外部证书颁发机构证书（从不按通用名称匹配），以及应用的证书（RFC 8705 凭据，而不是人）都会以 200 应答，不建立会话，并说明原因。"
   },
   "stsmetadata.endpoints./tls/server-certificate.what": {
     "en": "54631edee4eb2352",
@@ -2736,8 +2736,8 @@
     "text": "NON-SPEC（#571）。在 authn.unauthenticatedSessions 开启时。"
   },
   "stsmetadata.endpoints./authn-api/pending/:id/certificate.what": {
-    "en": "e25acdfdf4c8d737",
-    "text": "NON-SPEC (#1051)。连接上的 TLS 客户端证书作为第一因素，amr [\"swk\"]：因吊销、被身份关卡、因属于另一领域的颁发机构或属于某个应用的证书而被拒绝，与 GET /tls/sign-in 的拒绝方式相同；然后是认证策略、风险，以及需要时的第二因素。"
+    "en": "ff1fb299d130d818",
+    "text": "NON-SPEC (#1051)。连接上的 TLS 客户端证书作为第一因素，amr [\"swk\"]：因吊销、被身份关卡、因属于另一领域的颁发机构、因外部证书未存储在恰好一个条目上、或因属于某个应用的证书而被拒绝，与 GET /tls/sign-in 的拒绝方式相同；然后是认证策略、风险，以及需要时的第二因素。"
   },
   "stsmetadata.endpoints./authn-api/pending/:id/email.what": {
     "en": "f654c3c6f076950a",

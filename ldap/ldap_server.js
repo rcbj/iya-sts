@@ -12236,10 +12236,13 @@ function certificateHolders(sha256) {
         return getEntry(dn);
       }).filter(holds);
   };
-  let hits = resident();
-  const listed = cache.index ? (cache.index.get(wanted) || []).length : -1;
-  if ((!cache.index || hits.length !== listed || !hits.length) &&
-      cache.version !== certificatesVersion) {
+  // REBUILT WHENEVER ITS CLOCK MOVED, and not only on a miss as the
+  // user-handle index is: that one asks for THE holder, this one for HOW MANY
+  // — a second entry gaining the certificate leaves the first hit good and
+  // the answer wrong. The clock moves only for a write to a holder or an
+  // unnamed write, so a sign-in's own writes still do not rebuild it.
+  let hits = [];
+  if (!cache.index || cache.version !== certificatesVersion) {
     const index = new Map();
     const dns = new Set();
     const visit = function (stored) {
@@ -12262,8 +12265,8 @@ function certificateHolders(sha256) {
     cache.dns = dns;
     cache.version = certificatesVersion;
     cache.builds++;
-    hits = resident();
   }
+  hits = resident();
   hits.forEach(add);
   const out = Array.from(found.values()).slice(0, 3);
   log.debug('Leaving certificateHolders(). ' + out.length + '.');

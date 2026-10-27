@@ -6600,8 +6600,8 @@
     "text": "提供 TLS 客户端证书方式"
   },
   "scim.authClientCert|description": {
-    "en": "5e038e5e7c37b74a",
-    "text": "双向 TLS，RFC 7644 第 2 节指明的第一个方案。仅当请求通过 TLS 到达，且其证书能依据客户端信任库验证时才适用（/admin/tls/trust），因此仅在 global.https 开启时适用。这是本服务中客户端证书第一次成为凭据而不仅是观察结果的地方。本领域签发给某个应用的证书只能做该应用的 oauthAllowedScope 所声明的事：读取需要读取范围，写入需要写入范围，每次请求都会检查（STS-SCIM-0083）。个人的证书，或来自他人添加的信任锚的证书，可以读写目录。"
+    "en": "0a6d722dc96ad17f",
+    "text": "双向 TLS，RFC 7644 第 2 节指明的第一个方案。仅当请求通过 TLS 到达，且其证书能依据客户端信任库验证时才适用（/admin/tls/trust），因此仅在 global.https 开启时适用。这是本服务中客户端证书第一次成为凭据而不仅是观察结果的地方。本领域签发给某个应用的证书只能做该应用的 oauthAllowedScope 所声明的事：读取需要读取范围，写入需要写入范围，每次请求都会检查（STS-SCIM-0083）。个人的证书——本领域颁发的，或来自外部证书颁发机构并存储在该人条目的 userCertificate 中的（#1061）——可以读写目录。"
   },
   "scimClient.attempts|label": {
     "en": "babe2e714439f7c0",

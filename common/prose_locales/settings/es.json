@@ -6600,8 +6600,8 @@
     "text": "Ofrecer certificados de cliente TLS"
   },
   "scim.authClientCert|description": {
-    "en": "5e038e5e7c37b74a",
-    "text": "TLS mutuo, el primer esquema que nombra RFC 7644 sección 2. Se aplica solo cuando la solicitud llegó por TLS con un certificado que se VERIFICÓ contra el almacén de confianza de clientes (/admin/tls/trust), así que solo cuando global.https está activado. Fue el primer lugar de este servicio en que un certificado de cliente era una CREDENCIAL y no una observación. Un certificado que este dominio emitió a una APLICACIÓN solo puede hacer lo que declara el oauthAllowedScope de esa aplicación: el ámbito de lectura para leer y el de escritura para escribir, consultado en cada solicitud (STS-SCIM-0083). El certificado de una persona, o uno de un ancla que alguien añadió, puede leer y escribir en el directorio."
+    "en": "0a6d722dc96ad17f",
+    "text": "TLS mutuo, el primer esquema que nombra RFC 7644 sección 2. Se aplica solo cuando la solicitud llegó por TLS con un certificado que se VERIFICÓ contra el almacén de confianza de clientes (/admin/tls/trust), así que solo cuando global.https está activado. Fue el primer lugar de este servicio en que un certificado de cliente era una CREDENCIAL y no una observación. Un certificado que este dominio emitió a una APLICACIÓN solo puede hacer lo que declara el oauthAllowedScope de esa aplicación: el ámbito de lectura para leer y el de escritura para escribir, consultado en cada solicitud (STS-SCIM-0083). El certificado de una persona —emitido por este dominio, o de una autoridad de certificación externa y almacenado en userCertificate en la entrada de esa persona (#1061)— puede leer y escribir en el directorio."
   },
   "scimClient.attempts|label": {
     "en": "babe2e714439f7c0",

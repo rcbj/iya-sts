@@ -80,16 +80,16 @@
     "text": "強制要求（`ldap.ldapsRequireClientCertificate` 已開啟）：沒有經用戶端信任庫驗證之憑證的連線在交握時被拒絕。連線隨後可以使用 SASL EXTERNAL 繫結，或如以往使用密碼繫結。"
   },
   "ldap.service.sentences.certificateBindRule": {
-    "en": "dd7c73ea70d88839",
-    "text": "SASL EXTERNAL 將連線繫結為憑證所核發對象的人員項目，且只有本服務核發給在該領域中擁有項目之人員的憑證才能繫結：已撤銷的、其他領域的、應用程式的，或來自透過 /admin/tls/trust 信任之外部憑證授權單位的憑證都會被拒絕（外部授權單位的憑證暫不接受用於 LDAP 繫結）。授權身分僅在指向同一項目時才被接受。"
+    "en": "c26bf08affa27730",
+    "text": "SASL EXTERNAL 會將連線繫結為憑證所屬的人員項目：本服務核發給在該領域有項目之人員的憑證，或透過 /admin/tls/trust 受信任之外部憑證授權單位的憑證，且該憑證逐位元組儲存在該領域恰好一個人員項目的 userCertificate 中。已撤銷的、其他領域的、應用程式的憑證，以及未儲存在任何項目上或儲存在多個項目上的外部憑證都會被拒絕，且不會讀取一般名稱或主體。授權身分只有在指向同一項目時才會被接受。"
   },
   "ldap.service.sentences.certificateSource": {
     "en": "a969a038097605ed",
     "text": "與主連接埠（{{port}}）提供的憑證與金鑰相同。它是{{provenance}}：GET /tls/server-certificate 會以 PEM 提供它。兩個通訊端只需一個錨點，這就是它們共用它的原因。"
   },
   "ldap.service.sentences.autoCreateRule": {
-    "en": "7e10a7e3ec45179d",
-    "text": "項目 uid=<name>,{{usersDn}} 會在 <name> 第一次透過「任何」協定向本服務驗證身分時出現。LDAP 繫結不會植入項目（它出示的是 DN，而不是使用者名稱），OAuth 用戶端也不會。經驗證的 TLS「用戶端憑證」是唯一本身已經是 DN 的身分：其項目保留主體自己的葉 RDN——CN=alice,O=Example 對應 cn=alice,{{usersDn}}——若整個主體已位於 {{baseDn}} 之下則保留整個主體，而完整的主體、簽發者、序號與有效期間以 x509* 屬性存放在項目上，這些是本服務自己的名稱，不是結構描述。「去中心化識別碼」是第三種形式，既不是名稱也不是 DN：簽發憑證的 did:jwk 主體、向 OID4VP Verifier 出示的任何 DID。其項目位於 uid=did-<DID 之 SHA-256 的 12 個十六進位字元>,{{usersDn}}——完整寫出的 did:jwk 是長達數百個字元的 DN，大部分是金鑰資料——識別碼本身則完整保存在項目上的 didSubject 中，其方法則保存在 didMethod 中。請以 didSubject 而非 uid 搜尋該人：在這些項目上 uid 是摘要，didSubject 才是身分。"
+    "en": "6ddfd5c3a5e8025c",
+    "text": "項目 uid=<name>,{{usersDn}} 會在 <name> 第一次透過「任何」協定向本服務驗證身分時出現。LDAP 繫結不會植入項目（它出示的是 DN，而不是使用者名稱），OAuth 用戶端也不會。經驗證的 TLS「用戶端憑證」不會建立任何項目：本服務簽發的憑證指向一個已有項目的人員，而外部憑證授權單位的憑證就是在 userCertificate 中儲存它的那個項目，否則不指向任何人——其一般名稱與主體從不被當作名稱讀取。「去中心化識別碼」是另一種形式，既不是名稱也不是 DN：簽發憑證的 did:jwk 主體、向 OID4VP Verifier 出示的任何 DID。其項目位於 uid=did-<DID 之 SHA-256 的 12 個十六進位字元>,{{usersDn}}——完整寫出的 did:jwk 是長達數百個字元的 DN，大部分是金鑰資料——識別碼本身則完整保存在項目上的 didSubject 中，其方法則保存在 didMethod 中。請以 didSubject 而非 uid 搜尋該人：在這些項目上 uid 是摘要，didSubject 才是身分。"
   },
   "ldap.spiffe.sourceOfTruth": {
     "en": "b1ca8ee3d774cf2d",
