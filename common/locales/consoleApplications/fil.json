@@ -387,6 +387,8 @@
   "a2.boundIs": " ay ",
   "a2.boundYes": ": nagdeklara ang application na ito ng mga bound token, kaya tinatanggihan sa bawat mode ang token request nito na walang client certificate.",
   "a2.boundNo": ": ang token request na walang certificate ay makakakuha ng hindi nakataling token.",
+  "a2.adminApiBoundYes": "Dahil dito, ang mga access token nito para sa <code>/admin-api</code> ay inilalabas lamang na nakatali sa TLS client certificate nito, at tinatanggihan ng <code>/admin-api</code>, sa bawat mode, ang alinman sa mga token nito na hindi nakatali o iniharap nang wala ang certificate na iyon. Ang mga scope nito pa rin ang nagpapasya kung ano ang magagawa ng isang nakataling token.",
+  "a2.adminApiBoundNo": "Wala itong idinedeklarang certificate, kaya ang mga access token nito para sa <code>/admin-api</code> ay nakatali lamang kapag nagharap ito ng certificate o ng DPoP proof. Kapag nagdeklara ito ng paraang gumagamit ng certificate o ng mga nakataling token, tatanggapin lamang ng <code>/admin-api</code> ang mga token nito na nakatali sa certificate nito.",
   "a2.unreadable": "hindi mabasa: ",
   "a2.issuedBy": "inilabas ng ",
   "a2.selfSigned": " (self-signed)",

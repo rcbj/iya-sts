@@ -55,6 +55,14 @@
 //           certificate is bound to it, answered with it and refused without;
 //        l. an application's certificate at `GET /tls/sign-in` starts no
 //           browser session in the application's name.
+//        m. #1050: a client that declares a certificate (a certificate
+//           method among several, or the section 3.4 flag) is issued an
+//           `/admin-api` token only bound — refused one at the token
+//           endpoint without a certificate and in an implicit response — and
+//           `/admin-api` refuses its token that is not bound, including one
+//           minted before the client declared; a client that declares none,
+//           and a token for another resource, are unaffected; and the
+//           application's Credentials say so (rule 7).
 //
 // Every refusal is asserted by its protocol error AND by its STS code, read
 // back off `/admin-api/audit`, because a code is recorded and never sent.
@@ -767,6 +775,192 @@ function childMain() {
          '3k3. and refuses it without the certificate: 401 invalid_token, ' +
          'STS-API-0110', r.text.slice(0, 300));
 
+    // --- m. /admin-api tokens for a client that declares a certificate (#1050)
+    // Issued only bound, and accepted only bound. The paths that were open:
+    // a client declaring a certificate method BESIDE a secret, sending the
+    // secret with no certificate; the implicit response; and a token issued
+    // unbound before the rule or under a declaration made since.
+    const apiResource = 'https://127.0.0.1:' + port + '/admin-api';
+    const MIXED_SECRET = 'mixed-' + crypto.randomBytes(12).toString('hex');
+    create('mtls-mixed', {
+      oauthTokenEndpointAuthMethod: ['tls_client_auth', 'client_secret_basic'],
+      oauthClientSecret: MIXED_SECRET });
+    const mixedBasic = 'Basic ' + Buffer.from('mtls-mixed:' + MIXED_SECRET)
+      .toString('base64');
+    const mixedToken = function (form, tlsOpts) {
+      return request('POST', '/oauth2/token', {
+        headers: { authorization: mixedBasic },
+        form: Object.assign({ grant_type: 'client_credentials' }, form),
+        tls: tlsOpts });
+    };
+    r = await raises('STS-OAUTH-0489', '/oauth2/token', function () {
+      return mixedToken({ resource: apiResource });
+    });
+    note(refused(r, 400, 'invalid_request') && r.coded &&
+         /management API/.test(r.json.error_description || ''),
+         '3m1. a client declaring tls_client_auth beside a secret, sending ' +
+         'the secret with no certificate, is refused an /admin-api token: ' +
+         'STS-OAUTH-0489', JSON.stringify(r.json));
+    r = await mixedToken({ resource: apiResource }, selfTls);
+    note(r.status === 200 && claimsOf(r.json.access_token).cnf &&
+         claimsOf(r.json.access_token).cnf['x5t#S256'] ===
+           thumb(read(M.selfCert)),
+         '3m2. and given one bound to the certificate when it presents one',
+         JSON.stringify(r.json).slice(0, 300));
+    r = await mixedToken({});
+    note(r.status === 200 && !claimsOf(r.json.access_token).cnf,
+         '3m3. a token for any other resource is still issued to it unbound',
+         JSON.stringify(r.json).slice(0, 300));
+    r = await raises('STS-OAUTH-0487', '/oauth2/token', function () {
+      return token({ grant_type: 'password', client_id: 'mtls-bound-public',
+                     username: 'mtls-alice', password: 'anything',
+                     resource: apiResource });
+    });
+    note(refused(r, 400, 'invalid_request') && r.coded,
+         '3m4. a client that declared bound tokens is refused one with no ' +
+         'certificate (already closed, STS-OAUTH-0487)',
+         JSON.stringify(r.json));
+
+    // The gate's half: a token for a certificate client that carries no
+    // cnf, minted past the funnel as one issued before this rule would be.
+    config.setOverride('adminApi.authRequired', true);
+    const oauth2 = require(ROOT_DIR + '/oauth-oidc/oauth2');
+    const realms = require(ROOT_DIR + '/common/realms');
+    const mintUnbound = function (clientId) {
+      return realms.run(realms.DEFAULT_REALM, function () {
+        return oauth2.accessTokenAsync('https://127.0.0.1:' + port, {
+          audience: apiResource, scope: 'admin:read', client_id: clientId,
+          grant: 'client_credentials', username: clientId, sub: clientId });
+      });
+    };
+    const unboundImpl = await mintUnbound('mtls-impl');
+    r = await raises('STS-API-0137', '/admin-api', function () {
+      return request('GET', '/admin-api/status', {
+        headers: { authorization: 'Bearer ' + unboundImpl } });
+    });
+    note(r.status === 401 && r.json.error === 'invalid_token' && r.coded,
+         '3m5. /admin-api refuses an unbound token issued to a ' +
+         'tls_client_auth client: 401 invalid_token, STS-API-0137',
+         r.text.slice(0, 300));
+    r = await raises('STS-API-0137', '/admin-api', function () {
+      return request('GET', '/admin-api/status', {
+        headers: { authorization: 'Bearer ' + unboundImpl },
+        tls: impl.tls });
+    });
+    note(r.status === 401 && r.coded,
+         '3m6. and on a connection made with that client\'s own ' +
+         'certificate too: the TOKEN is not bound', r.text.slice(0, 300));
+    create('mtls-later', {});
+    const unboundLater = await mintUnbound('mtls-later');
+    r = await raises('STS-API-0137', '/admin-api', function () {
+      return request('GET', '/admin-api/status', {
+        headers: { authorization: 'Bearer ' + unboundLater } });
+    });
+    const laterBefore = !r.coded;
+    applications.updateApplication('mtls-later', { mode: 'set',
+      attribute: 'oauthTlsClientCertificateBoundAccessTokens',
+      value: 'TRUE' });
+    r = await raises('STS-API-0137', '/admin-api', function () {
+      return request('GET', '/admin-api/status', {
+        headers: { authorization: 'Bearer ' + unboundLater } });
+    });
+    note(laterBefore && r.status === 401 && r.coded,
+         '3m7. a declaration made after the token was minted takes the ' +
+         'unbound token away: STS-API-0137', r.text.slice(0, 300));
+    r = await request('POST', '/oauth2/token', {
+      headers: { authorization: adminBasic },
+      form: { grant_type: 'client_credentials', scope: 'admin:read',
+              resource: apiResource } });
+    const plainAdmin = r.json && r.json.access_token;
+    r = await request('GET', '/admin-api/status', {
+      headers: { authorization: 'Bearer ' + plainAdmin } });
+    note(r.status === 200 && !claimsOf(plainAdmin).cnf,
+         '3m8. a client that declares no certificate is unaffected: its ' +
+         'unbound /admin-api token is answered', r.text.slice(0, 200));
+    config.setOverride('adminApi.authRequired', false);
+    const mixedView = await api('/applications?application=mtls-mixed');
+    const laterView = await api('/applications?application=mtls-later');
+    const viewOf = function (v) {
+      return (v.json && v.json.credentials && v.json.credentials.mtls) || {};
+    };
+    note(viewOf(mixedView).adminApiBound === true &&
+         viewOf(laterView).adminApiBound === true &&
+         viewOf(await api('/applications?application=mtls-dn-wrong'))
+           .adminApiBound === true,
+         '3m9. the application\'s Credentials say its /admin-api tokens are ' +
+         'certificate-bound (rule 7)',
+         JSON.stringify(viewOf(mixedView)).slice(0, 300));
+
+    // The implicit response, on a plain listener of the same app: the token
+    // would be minted on the browser's connection, which no certificate of
+    // the client's is on.
+    const http = require('http');
+    const plain = http.createServer(app);
+    await new Promise(function (r2) { plain.listen(0, '127.0.0.1', r2); });
+    const plainPort = plain.address().port;
+    const screen = require(ROOT_DIR + '/tests/tools/authn_screen');
+    const IMPLICIT_CB = 'https://mtls-implicit.example/cb';
+    create('mtls-implicit', { oauthTokenEndpointAuthMethod: 'tls_client_auth',
+                              oauthRedirectUri: [IMPLICIT_CB] });
+    const jar = {};
+    const browse = function (urlPath) {
+      return new Promise(function (resolve) {
+        const headers = {};
+        if (Object.keys(jar).length) {
+          headers.cookie = Object.keys(jar).map(function (k) {
+            return k + '=' + jar[k];
+          }).join('; ');
+        }
+        http.get({ host: '127.0.0.1', port: plainPort,
+                   path: urlPath.replace(/^https?:\/\/[^/]+/, ''),
+                   headers: headers }, function (res) {
+          (res.headers['set-cookie'] || []).forEach(function (line) {
+            const pair = line.split(';')[0];
+            jar[pair.slice(0, pair.indexOf('='))] =
+              pair.slice(pair.indexOf('=') + 1);
+          });
+          res.resume();
+          res.on('end', function () {
+            resolve({ status: res.statusCode, headers: res.headers });
+          });
+        });
+      });
+    };
+    const implicitAsk = function (resource) {
+      return '/oauth2/authorize?' + new URLSearchParams({
+        client_id: 'mtls-implicit', response_type: 'token',
+        redirect_uri: IMPLICIT_CB, state: 'st-1050',
+        resource: resource }).toString();
+    };
+    const plainApi = 'http://127.0.0.1:' + plainPort + '/admin-api';
+    const implicitBefore = await codeCount('STS-OAUTH-0490');
+    const first = await browse(implicitAsk(plainApi));
+    let landed = first;
+    if (first.status === 302 &&
+        /\/authn\/login/.test(String(first.headers.location || ''))) {
+      const posted = await screen.submit({ port: plainPort, jar: jar,
+        at: String(first.headers.location),
+        fields: { action: 'login', username: 'mtls-alice',
+                  password: 'anything' } });
+      const back = String(posted.headers.location || '');
+      landed = back ? await browse(back) : posted;
+    }
+    const implicitAt = String((landed.headers && landed.headers.location) ||
+                              '');
+    note(landed.status === 302 && implicitAt.indexOf(IMPLICIT_CB) === 0 &&
+         /error=invalid_request/.test(implicitAt) &&
+         !/access_token=/.test(implicitAt) &&
+         (await codeCount('STS-OAUTH-0490')) > implicitBefore,
+         '3m10. an implicit response carrying an /admin-api token for a ' +
+         'tls_client_auth client is refused: invalid_request, STS-OAUTH-0490',
+         landed.status + ' ' + implicitAt.slice(0, 300));
+    landed = await browse(implicitAsk('https://mtls-implicit.example/api'));
+    const otherAt = String((landed.headers && landed.headers.location) || '');
+    note(landed.status === 302 && /access_token=/.test(otherAt),
+         '3m11. and the same client\'s implicit token for another resource ' +
+         'is still issued', landed.status + ' ' + otherAt.slice(0, 200));
+    plain.close();
+
     // --- l. an application's certificate at GET /tls/sign-in -----------------
     // It was 9443 until 2026-09-16; that listener is gone and the sign-in it
     // performed is a route on the main port, which this listener stands in
@@ -922,7 +1116,8 @@ module.exports = {
             'application and by each of the five registered subjects, ' +
             'self_signed_tls_client_auth, the declaration held in every mode, ' +
             'certificate-bound tokens at the resource server and ' +
-            'introspection, section 7.1 refresh, registration, and the ' +
-            'Credentials door',
+            'introspection, section 7.1 refresh, registration, the ' +
+            'Credentials door, and /admin-api tokens bound for a client that ' +
+            'declares a certificate (#1050)',
   run: run
 };

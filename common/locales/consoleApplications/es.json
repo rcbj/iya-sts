@@ -387,6 +387,8 @@
   "a2.boundIs": " es ",
   "a2.boundYes": ": esta aplicación declaró tokens vinculados, así que una solicitud de token suya sin certificado de cliente se rechaza en todos los modos.",
   "a2.boundNo": ": una solicitud de token sin certificado recibe un token no vinculado.",
+  "a2.adminApiBoundYes": "Por eso, sus tokens de acceso para <code>/admin-api</code> se emiten solo vinculados a su certificado de cliente TLS, y <code>/admin-api</code> rechaza, en todos los modos, cualquiera de sus tokens que no esté vinculado o que se presente sin ese certificado. Sus ámbitos siguen decidiendo qué puede hacer un token vinculado.",
+  "a2.adminApiBoundNo": "No declara ningún certificado, así que sus tokens de acceso para <code>/admin-api</code> solo se vinculan cuando presenta un certificado o una prueba DPoP. Declarar un método por certificado o tokens vinculados hace que <code>/admin-api</code> acepte sus tokens solo vinculados a su certificado.",
   "a2.unreadable": "ilegible: ",
   "a2.issuedBy": "emitido por ",
   "a2.selfSigned": " (autofirmado)",
