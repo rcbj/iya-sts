@@ -188,24 +188,45 @@ function filterValueHtml(n: number, fields: any[], fieldId: string,
     (value ? ' value="' + esc(value) + '"' : '') + '>';
 }
 
+// THE OPERATOR SELECT (#1022, rcbj: over `mechanism`, only equals, does not
+// equal and is empty). An enumerated field (one with `values`, #1007) gets
+// those three; every other field gets the full list. The select says which
+// list it holds (`data-ops`), so a field change redraws it only when the
+// list changes (`redrawFilterRow()`); an operator the new list lacks is
+// dropped to the empty choice.
+const ENUM_OPS = ['eq', 'ne', 'isNull'];
+
+function isEnumerated(fields: any[], fieldId: string): boolean {
+  const spec = (fields || []).filter(function (field: any): boolean {
+    return field && field.id === fieldId;
+  })[0];
+  return !!(spec && Array.isArray(spec.values) && spec.values.length);
+}
+
+function opSelectHtml(t: any, n: number, enumerated: boolean,
+                      chosen: string): string {
+  const all = [['eq', 'opEq'], ['ne', 'opNe'], ['contains', 'opContains'],
+    ['startsWith', 'opStartsWith'], ['lt', 'opLt'], ['le', 'opLe'],
+    ['gt', 'opGt'], ['ge', 'opGe'], ['isNull', 'opIsNull']];
+  const offered = enumerated ? all.filter(function (pair: string[]): boolean {
+    return ENUM_OPS.indexOf(pair[0]) >= 0;
+  }) : all;
+  return '<select name="filterOp' + n + '" data-ops="' +
+    (enumerated ? 'enum' : 'all') + '">' +
+    '<option value=""></option>' +
+    offered.map(function (pair: string[]): string {
+      return '<option value="' + pair[0] + '"' +
+        (pair[0] === chosen ? ' selected' : '') + '>' +
+        esc(t.text('report.' + pair[1])) + '</option>';
+    }).join('') + '</select>';
+}
+
 function filterRowHtml(t: any, n: number, fieldOptions: string,
-                       last: boolean, valueControl?: string): string {
+                       last: boolean, valueControl?: string,
+                       opSelect?: string): string {
   return '<div class="row filterrow" data-filter-row="' + n + '">' +
     '<select name="filterField' + n + '">' + fieldOptions + '</select>' +
-    '<select name="filterOp' + n + '">' +
-    '<option value=""></option>' +
-    '<option value="eq">' + esc(t.text('report.opEq')) + '</option>' +
-    '<option value="ne">' + esc(t.text('report.opNe')) + '</option>' +
-    '<option value="contains">' + esc(t.text('report.opContains')) +
-    '</option>' +
-    '<option value="startsWith">' + esc(t.text('report.opStartsWith')) +
-    '</option>' +
-    '<option value="lt">' + esc(t.text('report.opLt')) + '</option>' +
-    '<option value="le">' + esc(t.text('report.opLe')) + '</option>' +
-    '<option value="gt">' + esc(t.text('report.opGt')) + '</option>' +
-    '<option value="ge">' + esc(t.text('report.opGe')) + '</option>' +
-    '<option value="isNull">' + esc(t.text('report.opIsNull')) +
-    '</option></select>' +
+    (opSelect || opSelectHtml(t, n, false, '')) +
     (valueControl || '<input name="filterValue' + n + '">') +
     // A trash can on every row (#1017): removes the row, or empties the
     // last one left, so the form always has a row (`removeFilterRow()`).
@@ -260,14 +281,13 @@ function filterRowsHtml(t: any, fieldOptions: string, leaves: any[],
   }
   return leaves.map(function (leaf: any, n: number): string {
     const value = leaf.op === 'isNull' ? '' : String(leaf.value);
+    const field = String(leaf.field);
     const row = filterRowHtml(t, n, fieldOptions, n === leaves.length - 1,
-      filterValueHtml(n, fields, String(leaf.field), String(leaf.op),
-        value));
+      filterValueHtml(n, fields, field, String(leaf.op), value),
+      opSelectHtml(t, n, isEnumerated(fields, field), String(leaf.op)));
     return row
       .replace('<option value="' + esc(leaf.field) + '">',
-        '<option value="' + esc(leaf.field) + '" selected>')
-      .replace('<option value="' + esc(leaf.op) + '">',
-        '<option value="' + esc(leaf.op) + '" selected>');
+        '<option value="' + esc(leaf.field) + '" selected>');
   }).join('');
 }
 
@@ -1899,15 +1919,15 @@ class ReportRuntime extends SpaClient {
   }
 
   /**
-   * Draws a filter row's value control again for its field and operator
-   * (#1007).
+   * Draws a filter row's operator select and value control again for its
+   * field and operator (#1007, #1022).
    *
    * @param row - the `.filterrow` element
    * @param form - the form it is in
    * @param n - the row's index
    * @returns nothing
    */
-  redrawFilterValue(row: any, form: any, n: number): void {
+  redrawFilterRow(row: any, form: any, n: number): void {
     if (!row || !form || !row.querySelector) {
       return;
     }
@@ -1925,8 +1945,22 @@ class ReportRuntime extends SpaClient {
         fields = src.fields || [];
       }
     });
-    const html = filterValueHtml(n, fields, String(fieldEl.value || ''),
-      String(opEl.value || ''), String(valueEl.value || ''));
+    const fieldId = String(fieldEl.value || '');
+    const enumerated = isEnumerated(fields, fieldId);
+    let op = String(opEl.value || '');
+    const holds = String((opEl.getAttribute && opEl.getAttribute('data-ops'))
+      || 'all');
+    if ((holds === 'enum') !== enumerated) {
+      // The field's operator list changed (#1022): the select is drawn
+      // again with the list the field takes, keeping the operator when the
+      // new list still offers it.
+      if (enumerated && ENUM_OPS.indexOf(op) < 0) {
+        op = '';
+      }
+      opEl.outerHTML = opSelectHtml(this.t, n, enumerated, op);
+    }
+    const html = filterValueHtml(n, fields, fieldId, op,
+      String(valueEl.value || ''));
     const wasBox = String(valueEl.tagName || '').toUpperCase() === 'INPUT';
     if (wasBox && html.indexOf('<input') === 0) {
       return;
@@ -1998,11 +2032,12 @@ class ReportRuntime extends SpaClient {
     }
     const filterControl = /^filter(Field|Op)(\d+)$/.exec(name);
     if (filterControl && el.closest) {
-      // The row's field or operator changed (#1007): its value control is
-      // drawn again — a dropdown of the field's values under equals or not
-      // equals, a text box otherwise. A text box stays as it is when it
-      // would be a text box again, so what was typed is kept.
-      this.redrawFilterValue(el.closest('.filterrow'), el.closest('form'),
+      // The row's field or operator changed (#1007, #1022): its operator
+      // select is drawn again when the field's list of operators changed,
+      // and its value control — a dropdown of the field's values under
+      // equals or not equals, a text box otherwise. A text box stays as it
+      // is when it would be a text box again, so what was typed is kept.
+      this.redrawFilterRow(el.closest('.filterrow'), el.closest('form'),
         Number(filterControl[2]));
       return;
     }

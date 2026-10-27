@@ -182,8 +182,9 @@ A field has an id, a type (`string`, `number`, `timestamp` or `boolean`),
 an English meaning, and whether it can be filtered, sorted or grouped. A
 field that can hold only certain values lists them as `values`, and the
 page draws a dropdown of them in a filter row under `equals` and `not
-equals` (a text box under the other operators). `credentialHolders`'
-`mechanism` and `role` are the first.
+equals`, and offers only `equals`, `does not equal` and `is empty` as the
+row's operators. `credentialHolders`' `mechanism`, `role` and `lane` are
+the first.
 Grouping is only with `aggregate: "count"`. The operators depend on the
 type, not on the source:
 

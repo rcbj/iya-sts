@@ -293,6 +293,18 @@ rule for every gated control, and `.row label` is inline-flex so a box
 and its text sit on the row. The labels reuse `report.sort`,
 `report.count` and `report.groupBy`, so no catalog changed.
 
+## An enumerated field offers three operators (#1022)
+
+rcbj, 2026-10-27: over `mechanism`, only equals, does not equal and is
+empty. `opSelectHtml(t, n, enumerated, chosen)` draws the operator select
+with `ENUM_OPS` for an enumerated field (#1007's `values`) and the full
+list otherwise, and marks which it holds (`data-ops`); `redrawFilterRow()`
+redraws it on a field change only when the list changes, keeping the
+operator when the new list still offers it and dropping it to the empty
+choice otherwise, before drawing the value control for that operator. A
+saved row is drawn with its field's list. The API still validates the
+operator: the short list is a convenience, not the gate.
+
 ## An enumerated field's filter value is a dropdown (#1007)
 
 rcbj, 2026-10-27: "mechanism equals" on credentialHolders should offer
@@ -306,7 +318,7 @@ schema, so a client can draw the same choice. The page's
 values with an empty first choice under `eq`, `ne` or no operator yet,
 and the text box otherwise; `filterRowsHtml()` draws a saved row the same
 way; `onChange()` on `filterFieldN`/`filterOpN` calls
-`redrawFilterValue()`, which replaces the control through `outerHTML`
+`redrawFilterRow()`, which replaces the control through `outerHTML`
 (a text box that would be a text box again is left alone, keeping what
 was typed); `addFilterRow()` gives the clone a text box, since its field
 is unchosen. `queryDocument()` reads `filterValueN` by name, so a select
