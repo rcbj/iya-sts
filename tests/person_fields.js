@@ -439,10 +439,23 @@ function childMain() {
         return new RegExp('id="fgc-' + attribute +
                           '" class="fg-cell[^"]*fg-required').test(simple);
       };
-      note(outlined('cn') && outlined('sn') && !outlined('mail') &&
-             !outlined('givenName'),
+      // Against the policy in force: the sections above add to it.
+      const policy = (newUserForm.requiredAttributes || [])
+        .map(function (one) {
+          return one.toLowerCase();
+        });
+      const wrong = (newUserForm.fieldRows || []).filter(function (row) {
+        return row.simple && outlined(row.attribute) !==
+          (policy.indexOf(row.attribute.toLowerCase()) >= 0);
+      }).map(function (row) {
+        return row.attribute;
+      });
+      note(outlined('cn') && outlined('sn') && wrong.length === 0 &&
+             (newUserForm.fieldRows || []).some(function (row) {
+               return row.simple && !outlined(row.attribute);
+             }),
            'G. the fields the attribute policy requires are outlined, and ' +
-           'no other');
+           'no other', policy.join(',') + ' | wrong: ' + wrong.join(','));
       note((newUserForm.requiredAttributes || []).length >= 3 &&
              simple.indexOf('<div class="n">' +
                newUserForm.requiredAttributes.length +
