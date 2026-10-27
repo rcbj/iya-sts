@@ -10223,14 +10223,6 @@
     "en": "dfada581a8c28ca3",
     "text": "Hur länge ett färdigt rapportjobbs rad stannar i listan. Ett jobb som fortfarande körs tas inte bort."
   },
-  "report.usersGroup|label": {
-    "en": "21554dfaa265b36f",
-    "text": "Vem som kan få report:use utfärdad"
-  },
-  "report.usersGroup|description": {
-    "en": "28068508e0655509",
-    "text": "Kataloggruppen vars medlemmar kan få report:use utfärdad. Tom betyder att bara den här sfärens administratörer kan det. report:admin utfärdas bara till dessa administratörer."
-  },
   "listenerMain.minVersion|label": {
     "en": "6470c151e28a9ab3",
     "text": "Huvudport: lägsta TLS-version"

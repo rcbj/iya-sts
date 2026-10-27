@@ -157,7 +157,7 @@ surfaces below are the exceptions, each argued where it lives.
 | `/xacml/pep/*`, `POST /xacml/pip` | a client certificate holding `REMOTE_PEPS` | `xacml/CLAUDE.md` |
 | `GET /xacml`, `POST /xacml/pdp`, `GET /xacml/policies` | a client certificate holding `XACML_USER` | `xacml/CLAUDE.md` |
 | `/account-api` | this realm's DPoP-bound `account:manage` token; the person is always its subject | `account-api/CLAUDE.md` |
-| `/report-api` | this realm's DPoP-bound `report:use` or `report:admin` token, issued to `sts-report` | `report/CLAUDE.md` |
+| `/report-api` | this realm's `report:use` or `report:admin` token (DPoP-bound from `sts-report`), its subject holding REPORT_USE or REPORT_ADMIN now, and the access-control policy per definition and job (#1030) | `report/CLAUDE.md` |
 | `/admin-api` | an access token audienced to it, with the scope the operation needs | `mgmt-api/CLAUDE.md` |
 | `/oauth2/introspect` | client authentication | `oauth-oidc/CLAUDE.md` (3ai) |
 | the debugger listener | a token only console administrators are issued; cannot be turned off | `debugger/CLAUDE.md` |

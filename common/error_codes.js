@@ -20112,14 +20112,15 @@ const CODES = [
     spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-XACML-0076',
     summary: 'A delete named a native role — ADMIN_READ, ADMIN_WRITE, ' +
-      'DEVICE_COMPLIANCE, SSF_READ or SSF_MANAGE — which every realm keeps ' +
-      '(#303, #309).',
+      'ADMIN_CONSOLE, DEVICE_COMPLIANCE, SSF_READ, SSF_MANAGE, REPORT_USE ' +
+      'or REPORT_ADMIN — which every realm keeps (#303, #309, #1030).',
     spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-XACML-0077',
-    summary: 'A native role (ADMIN_READ, ADMIN_WRITE, DEVICE_COMPLIANCE, ' +
-      'SSF_READ or SSF_MANAGE) could not be seeded in a realm; no machine ' +
-      'client can be issued its permission there until it exists (#303, ' +
-      '#309).',
+    summary: 'A native role (ADMIN_READ, ADMIN_WRITE, ADMIN_CONSOLE, ' +
+      'DEVICE_COMPLIANCE, SSF_READ, SSF_MANAGE, REPORT_USE or REPORT_ADMIN) ' +
+      'or one of its seeded groups could not be seeded in a realm; no ' +
+      'machine client can be issued its permission there until it exists ' +
+      '(#303, #309, #1030).',
     spec: 'none — a warning in the log' },
   { code: 'STS-XACML-0078',
     summary: 'Neither the issuance policy nor the built-in one it falls back ' +
@@ -21243,8 +21244,9 @@ const CODES = [
     spec: 'invalid_scope (RFC 6749 sections 4.1.2.1 and 5.2)' },
   { code: 'STS-ADMIN-0823',
     summary: 'add-permission or remove-permission named a native role — ' +
-      'ADMIN_READ, ADMIN_WRITE, DEVICE_COMPLIANCE, SSF_READ or ' +
-      'SSF_MANAGE — whose permission is fixed (#303, #309).',
+      'ADMIN_READ, ADMIN_WRITE, ADMIN_CONSOLE, DEVICE_COMPLIANCE, SSF_READ, ' +
+      'SSF_MANAGE, REPORT_USE or REPORT_ADMIN — whose permission is fixed ' +
+      '(#303, #309, #1030).',
     spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-ADMIN-0824',
     summary: 'add-permission or remove-permission named no permission ' +
@@ -23587,14 +23589,19 @@ const CODES = [
       'the proof was refused and named no code of its own.',
     spec: 'invalid_token or invalid_dpop_proof (HTTP 401)' },
   { code: 'STS-REPORT-0016',
-    summary: 'The access token presented to the reports API names no person.',
-    spec: 'forbidden (HTTP 403)' },
+    summary: 'The access token presented to the reports API names no ' +
+      'person. Retired by #1030 (2026-10-27): an application holding ' +
+      'REPORT_USE or REPORT_ADMIN is a caller, confined to what it defined.',
+    spec: 'forbidden (HTTP 403)', retired: true },
   { code: 'STS-REPORT-0017',
     summary: 'The token lacks report:use or report:admin, or the client no ' +
       'longer declares the scope.',
     spec: 'insufficient_scope or forbidden (HTTP 403)' },
   { code: 'STS-REPORT-0018',
-    summary: 'This account may not use reports in this realm.',
+    summary: 'The token carries report:use or report:admin and no role its ' +
+      'subject holds NOW authorizes it (held ∩ carried, #1030): REPORT_USE ' +
+      'or REPORT_ADMIN was taken from the person or the application after ' +
+      'the token was minted.',
     spec: 'forbidden (HTTP 403)' },
   { code: 'STS-REPORT-0019',
     summary: 'No such report definition, including one the caller may not see.',
@@ -23694,7 +23701,14 @@ const CODES = [
     summary: 'A stored report would not open under the data keys this ' +
       'process holds (a destroyed or foreign key), so it was answered as ' +
       'gone (#1033).',
-    spec: 'none (the result is answered as not found)' }
+    spec: 'none (the result is answered as not found)' },
+  { code: 'STS-REPORT-0044',
+    summary: 'The access-control policy refused a report API request ' +
+      '(#1030): the subject holds no report role for the API, or the ' +
+      'definition or job is not its own, not shared with a group it is ' +
+      'in, and it is not a report administrator — an application reaches ' +
+      'only what it defined. A hidden row is answered not_found.',
+    spec: 'forbidden (HTTP 403), or not_found (HTTP 404) for one row' }
   // ===== END ===============================================================
 ];
 

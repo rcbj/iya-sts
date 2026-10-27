@@ -2388,3 +2388,47 @@ too, so an override written without the rule, and `xacml.enabled` off,
 still refuse. `none` and `bound` are not refusals. The fact is computed
 in `common/issuance_gate.js`, which does not require the DBSC module.
 
+
+## `access-control` has a third rule: the report API's rows (#1030, 2026-10-27)
+
+rcbj: it was an absolute mistake that the report API's authorization
+decisions bypassed the PDP. `report/rights.ts` decided who may see, run,
+edit and delete a definition or a job with `if`s over the token's scope
+string and a group's member list; it asks the gate now, on the resource
+`report-api` (`common/access_gate.ts`), and decides nothing. The
+arrangement is the owner rule's, read the other way round:
+
+* **The owner is the FIRST rule's.** The gate puts the row's stored owner
+  in `resource-owner` and the token's `sub` as the subject-id — a
+  `urn:uuid:` person or a client — so `may-reach-it` permits an owner their
+  own row exactly as it permits a person their portal account. A question
+  about the API itself carries no owner and is the first rule's any-one:
+  REPORT_USE or REPORT_ADMIN, held now and carried (held ∩ carried,
+  `role_permissions.effectiveRoles()`, as the management API).
+* **The third rule, `:rule:report-administrators-and-shares`**, TARGETED
+  at resource-id `report-api` so no other surface's question trips it,
+  conjoins: authenticated; holding a required role; `subject-kind` is
+  `user`; and either REPORT_ADMIN among the roles, or the action among
+  `reportSharedActions` (`read, run`) AND `any-of-any` over
+  `urn:sts:xacml:owner-identity` (the PIP's answer for the person, the
+  owner rule's) and `urn:sts:xacml:report-shared-group` (the DNs the
+  definition is shared with — a job's, its definition's — as
+  `Ownership.dnKey()` compares one). `urn:sts:xacml:report-object-kind`
+  says `definition` or `job`, for a realm's own rule.
+  `permitReportSharing: no` builds the document without it.
+* **An application reaches only what it defined** (rcbj's decision 4): the
+  `subject-kind` conjunct keeps it out of the third rule whatever role it
+  holds, and the first rule permits it its own rows.
+* **Two things the PEP learned for it** (`xacml_access_pep.ts`): the
+  subject's `kind` is sent as `urn:sts:xacml:subject-kind` only when the
+  caller gives one, so every other surface's request is unchanged; and a
+  subject marked `effective` has its register roles LEFT OUT of the union
+  — the built-ins alone are read, from the kind — because unioning them
+  back would hand a `report:use` token REPORT_ADMIN for a subject who also
+  holds it. `label` names the subject in the refusal and the audit row
+  where `name` is an identifier.
+* **The vocabulary is this service's own**, as the owner rule's is; the
+  remote PEP carries none of it, as it carries no passkey vocabulary.
+
+`tests/report_access_policy.js` holds it end to end; `tests/access_policy.js`
+is untouched, which is the claim that the other surfaces are.

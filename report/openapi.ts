@@ -114,10 +114,17 @@ class OpenApi {
       info: {
         title: 'IYA STS reports',
         version: '1',
-        description: 'The reports API. Every operation takes a DPoP-bound ' +
-          'access token for the public client sts-report, resource this ' +
-          'realm\'s /report-api, scope report:use or report:admin, sent ' +
-          'as Authorization: DPoP. A job id is not an authorization: ' +
+        description: 'The reports API. Every operation takes an access ' +
+          'token for this realm\'s /report-api carrying report:use or ' +
+          'report:admin — the public client sts-report\'s, DPoP-bound and ' +
+          'sent as Authorization: DPoP, or an application\'s own ' +
+          '(client_credentials) where the application is a member of ' +
+          'REPORT_USE or REPORT_ADMIN and declares the scope. The scopes ' +
+          'are the permissions of those two roles; the access-control ' +
+          'policy decides every definition and job: an owner their own, a ' +
+          'report administrator every one, a shared group\'s member reading ' +
+          'and running one shared with them, an application only what it ' +
+          'defined. A job id is not an authorization: ' +
           'retrieving a result takes the same token. Paths are after the ' +
           'realm prefix; the default realm has none. The catalog is the ' +
           'field reference. A query names one source. An offset, a second ' +

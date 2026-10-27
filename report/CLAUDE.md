@@ -12,15 +12,14 @@ a DPoP-bound token in memory, and draws every page from `/report-api`.
 In product that `resource` is a registered target because `/report-api`
 is one of this service's own resource servers
 (`common/registered_targets.ts`), compared whole, as `/account-api` is.
-Each realm is also seeded with `sts-report-api`, the application that
-defines `report:use` and `report:admin` (`oauthPermission`, base this
-realm's `/report-api`). `sts-report` holds both as delegated permissions
-and declares the same two words on its registration `scope` and
+`sts-report` declares the two words on its registration `scope` and
 `oauthGlobalConsent`, which is how `admin:read` and `admin:write` sit on
-`sts-admin-console`. The browser asks for the words. A start that finds
-`sts-report` already present adds a missing grant and a missing declared
-scope, and does not rewrite consent, redirects or secrets.
-`common/applications.js` seeds both, in every realm.
+`sts-admin-console`, and the browser asks for the words. **Until #1030
+(2026-10-27) a resource application `sts-report-api` defined the two as
+delegated permissions and `sts-report` held the grant**; the bare words
+with `resource` never consult a grant, so it decided nothing and both
+are gone (*Who may run one*, below). `common/applications.js` seeds
+`sts-report`, in every realm.
 With `authn.multipleAccounts` on, the account control is the console's
 menu: the summary is the account this tab is, and the panel lists the
 browser's other signed-in accounts as switch buttons, plus a sign-in as
@@ -45,7 +44,7 @@ and `docs/configuration.md`.
 | `limits.ts` | The caps, read when asked. `Limits.fixed` is what a test passes. |
 | `formats.ts` | JSON, RFC 4180 CSV, and a PDF 1.4 file in Helvetica WinAnsi. A PDF cell wraps within its column, up to 256 bytes, and a row is as tall as its tallest cell (#993); the file's header argues the pagination. |
 | `rows.ts`, `sources.ts`, `executor.ts` | Reading one source, bounded, and writing the artifact. |
-| `rights.ts` | Who may be issued the two scopes, and who may see or edit a row. |
+| `rights.ts` | The caller as held ∩ carried, and every question about the API, a definition or a job put to `common/access_gate.ts`. It decides nothing (#1030). |
 | `jobs.ts` | Definitions, the queue, and the six scheduler jobs. |
 | `stores.ts` | Realm maps for definitions, jobs and the reporter stamp. Artifact bytes go beside them. |
 
@@ -668,29 +667,76 @@ against a counted double. **What it does not hold**: a real windowed
 directory, which needs a postgres store; `report_api.ts`'s auto-to-job
 turn; and the timing on 8081.
 
-## Who may run one
+## Who may run one — roles, and the PDP (#1030, 2026-10-27)
 
-`report:admin` sees every definition and every job in the realm.
-`report:use` sees the rows it owns, and the rows shared with a directory
-group it belongs to. A share is run and retrieve. Edit and delete stay
-with the owner and with `report:admin`. An unknown id and a forbidden id
-are the same answer: `not_found` / "No such definition." for a definition
-(`STS-REPORT-0019`), `job_not_found` for a job (`STS-REPORT-0020`).
+**Until #1030 this family decided its own authorization in TypeScript**,
+three ways at once, and rcbj called it what it was: a departure from the
+norms every other surface keeps. A resource application defined the two
+scopes as delegated permissions the browser never consulted; who may be
+issued them was a group check in `rights.ts` (`report.usersGroup`, plus
+the console administrators) rather than a role; and which rows a token
+may see was `canSee()` / `canEdit()` / `jobVisible()` — `if`s over the
+scope string and a group's member list — where every other access
+decision goes through `common/access_gate.ts` to the PDP (the directive
+of 2026-09-05). All three are gone; this is what stands:
 
-Issuance narrows, and only removes. `oauth2` calls `reportNarrowScope` at
-both issuance sites, lazily, and returns before reading
-`report.usersGroup` when the scope being issued names neither report
-scope. An application subject (`client_credentials`) keeps neither. A
-person in Admin Read or Admin Write keeps `report:admin` when they asked,
-and keeps `report:use` when they asked, even when `report.usersGroup` is
-empty. Anyone else keeps `report:use` only as a member of that group, and
-never `report:admin`. Empty `report.usersGroup` therefore means only
-administrators are issued `report:use`. The membership probe is
-`(username, groupKey)` with the raw group name, not a DN.
+* **Two native roles** (`common/roles.js`): REPORT_USE authorizes
+  `report:use`, REPORT_ADMIN `report:admin`, each seeded in every realm
+  with its group (`report-users`, `report-admins`) on `roleMemberGroup`,
+  the SSF roles' shape. A person holds one through the group or as a
+  direct member; an application as a member. Nothing asks whether the
+  application a person signs in to is a member: `sts-report` declares the
+  scopes (#110), as the console declares the admin ones. **A console
+  administrator is not a report administrator by holding the roster**
+  (rcbj: the report groups are the basis); add them to `report-admins`.
+  `report.usersGroup` is retired.
+* **Issuance** is `common/role_permissions.ts`'s with every other gated
+  permission: narrowed at the authorization endpoint and in `tokenSet()`,
+  `invalid_scope` when nothing is left, STS-ADMIN-0821 on the audit row.
+  An application that is a member is issued the scope on
+  `client_credentials`.
+* **The caller** (`rights.callerOf()`) is held ∩ carried
+  (`role_permissions.effectiveRoles()`), the management API's reading:
+  the roles the subject holds NOW in this realm, less any whose
+  permission the token does not carry. A role taken away after the token
+  was minted refuses the next call (STS-REPORT-0018).
+* **Every question goes to the gate** on the resource `report-api`
+  (`rights.ts`, `reportDecide()`): once per call for the API itself —
+  holding a report role, the first rule's any-one — and once per
+  definition or job where it is reached, with the row's owner as the
+  question's `owner` (so the first rule permits the owner exactly as it
+  permits a person their portal account: the token's `sub` against the
+  stored owner) and the row in `reportObject` (its kind, the DNs it is
+  shared with, the person) for the access-control document's THIRD rule,
+  `report-administrators-and-shares` (`xacml/CLAUDE.md`): a PERSON holding
+  REPORT_ADMIN on any row; a person holding a report role on a row shared
+  with a group they are in — the PIP's `owner-identity`, never a member
+  list read here — for the actions `reportSharedActions` lists (`read`,
+  `run`). **An application holding either role is an owner and nothing
+  else** (rcbj's decision 4): it reaches, runs, edits and deletes only what
+  it defined. `canSee` is `read`, `canRun` is `run` (a share's other act),
+  `canEdit` is `write` (change, share, delete; everything about a job and
+  stopping it), `canSeeJob` is `read` on the job with its definition's
+  shares. A hidden row is still `not_found` (`STS-REPORT-0019`,
+  `STS-REPORT-0020`); a refusal of the API itself is `STS-REPORT-0044`.
+  A list is one decision per row.
+* **A scheduled run** asks the same question of the definition's owner
+  (`rights.ownerMayRun()`): the owner's roles now (`heldRoles()`, by
+  `ownerKind`, which a definition and a job record since #1030) and `run`
+  on the definition; refused, the slot is consumed (STS-REPORT-0028). It
+  does not ask `account_state.isDisabled`: that read walks the directory,
+  and a job must not. `installOwnerCheck()` is the one test seam.
+* **`rights.isAdmin(who)`** — a person holding REPORT_ADMIN — is what the
+  API answers as `scope: realm` and what lets `GET /schedules` name
+  another owner (STS-REPORT-0038); the rows it lists are still decided
+  one by one.
 
-A scheduled run asks the same question of the definition's owner. It does
-not ask `account_state.isDisabled`: that read walks the directory, and a
-job must not.
+`tests/report_access_policy.js` holds it in a child process with the
+whole stack: the roles and groups, issuance to a member and not to an
+outsider, an application's `client_credentials` token, and the policy
+over HTTP for an owner, a report administrator, a shared group's member,
+an outsider, an application on its own rows and on a person's, a
+withdrawn role, and `permitReportSharing: no`.
 
 The definition stores `parameters`, the values that schedule runs with.
 A save may still be type-checked with a dummy of a missing parameter.
@@ -766,12 +812,14 @@ document is not written on the row.
 ## What the tests hold
 
 `tests/report_query.js` holds the document, the three formats, the fixed
-limits (including `asyncMaxMs`), issuance narrowing, an in-memory
+limits (including `asyncMaxMs`), an in-memory
 artifact, the two added sources' row projections, the OpenAPI paths, an
-in-memory schedule that uses stored parameter defaults, and the indexed
+in-memory schedule that uses stored parameter defaults (with the access
+PEP installed, so the views are the policy's), and the indexed
 lookups against a directory double (#985). It does not open a listener. A
 refusal's HTTP status, the DPoP gate and a scheduled run against a
-directory are not asserted here.
+directory are not asserted here; issuance and the policy's every case are
+`tests/report_access_policy.js`'s (#1030).
 
 ## The sources
 

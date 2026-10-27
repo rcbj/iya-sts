@@ -5485,10 +5485,11 @@ realms.onCreate(function (id) {
     // directory slot, which resolves the container from the ambient realm —
     // the same reason `seed()` is in here.
     applications.seedInternalApplications({ scope: 'every' });
-    // THE NATIVE ROLES (#303, #309) — the console roles, DEVICE_COMPLIANCE,
-    // and SSF_READ and SSF_MANAGE. After the applications, whose client the
-    // console roles name. The SSF groups are created here when missing and
-    // an existing group's members are left as they are.
+    // THE NATIVE ROLES (#303, #309, #1030) — the console roles,
+    // DEVICE_COMPLIANCE, SSF_READ and SSF_MANAGE, REPORT_USE and
+    // REPORT_ADMIN. After the applications, whose client the console roles
+    // name. The SSF and report groups are created here when missing and an
+    // existing group's members are left as they are.
     roles.seedNativeRoles();
   });
   log.info('ldap: built the "' + id + '" realm\'s subtree at ' +

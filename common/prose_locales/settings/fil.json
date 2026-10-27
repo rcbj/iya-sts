@@ -10223,14 +10223,6 @@
     "en": "dfada581a8c28ca3",
     "text": "Gaano katagal nananatili sa listahan ang row ng natapos na report job. Ang job na tumatakbo pa ay hindi inaalis."
   },
-  "report.usersGroup|label": {
-    "en": "21554dfaa265b36f",
-    "text": "Sino ang maaaring ma-issue-han ng report:use"
-  },
-  "report.usersGroup|description": {
-    "en": "28068508e0655509",
-    "text": "Ang directory group na ang mga miyembro ay maaaring ma-issue-han ng report:use. Ang walang laman ay nangangahulugang mga administrator lang ng realm na ito ang maaari. Ang report:admin ay ini-issue lamang sa mga administrator na iyon."
-  },
   "listenerMain.minVersion|label": {
     "en": "6470c151e28a9ab3",
     "text": "Main port: pinakamababang TLS version"

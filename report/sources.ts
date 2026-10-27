@@ -3014,7 +3014,9 @@ async function reportScheduleWork(ctx: any): Promise<any> {
       stores.putDefinition(def);
       continue;
     }
-    const rightsOf = rights.mayUse(def.owner, 'report:use');
+    // THE OWNER'S OWN QUESTION, TO THE POLICY (#1030): the roles the owner
+    // holds now, and `run` on this definition.
+    const rightsOf = rights.ownerMayRun(def);
     if (!rightsOf.ok) {
       def.lastSlot = slot;
       reportNoteFailure(def, 'The owner can no longer run reports.');
@@ -3054,6 +3056,7 @@ async function reportScheduleWork(ctx: any): Promise<any> {
     }
     const submitted = jobsApi.submit({
       owner: def.owner,
+      ownerKind: def.ownerKind,
       document: def.document,
       parameters: names.length ? bag : null,
       definitionId: def.id,

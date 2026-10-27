@@ -22,14 +22,17 @@
 //   * NATIVE permissions of this service, named in its own convention rather
 //     than as base + name (rcbj's decision 1 on #303): `admin:read` and
 //     `admin:write`, authorized by the two console roles ADMIN_READ and
-//     ADMIN_WRITE, and `ssf.read` and `ssf.manage`, authorized by the
-//     ordinary native roles SSF_READ and SSF_MANAGE. Always gated — the
-//     management API and the transmitter are this service's own resources
-//     and they opted in by being written this way. SSF_READ and SSF_MANAGE
-//     are not the console roster: a person is issued one only while they
-//     belong to the role's group and the application is a member, and an
-//     application's own token only while the application is a member.
-//     SSF_MANAGE does not authorize `ssf.read`.
+//     ADMIN_WRITE, `ssf.read` and `ssf.manage`, authorized by the
+//     ordinary native roles SSF_READ and SSF_MANAGE, and since #1030
+//     `report:use` and `report:admin`, authorized by REPORT_USE and
+//     REPORT_ADMIN. Always gated — the management API, the transmitter and
+//     the report API are this service's own resources and they opted in by
+//     being written this way. SSF_READ and SSF_MANAGE are not the console
+//     roster: a person is issued one only while they belong to the role's
+//     group and the application is a member, and an application's own
+//     token only while the application is a member. SSF_MANAGE does not
+//     authorize `ssf.read`. The report roles are held through their groups
+//     or as a member, with no condition on the application (`roles.js`).
 //   * APPLICATION permissions — a resource's `oauthPermissionBaseUri` +
 //     `oauthPermission` name — gated only where that resource lists the name
 //     in `oauthRoleGatedPermission`. Every other scope, `openid` and a

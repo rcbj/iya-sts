@@ -180,7 +180,18 @@ const RESOURCE = {
   // purpose — when the scope would be issued and on every call the api's
   // gate forwards — because a role revoked after a token was minted must stop
   // working before the token runs out.
-  DEBUGGER: 'protocol-debugger'
+  DEBUGGER: 'protocol-debugger',
+  // THE REPORT API (#1030, 2026-10-27), the ninth resource, and the first
+  // whose rows are decided one at a time: `report/rights.ts` asks once for
+  // the API — holding REPORT_USE or REPORT_ADMIN, the first rule's any-one
+  // — and once per definition or job, with the row's owner in `owner` and
+  // the row in `reportObject`, so the first rule permits the OWNER (the
+  // same comparison that reaches a person their portal account) and the
+  // access-control document's third rule permits a report administrator on
+  // any row and a shared group's member on a read or a run. An application
+  // holding a report role is an owner and nothing else. Until #1030 every
+  // one of those decisions was an `if` in `report/rights.ts`.
+  REPORT_API: 'report-api'
 };
 
 // THE ACTIONS. Deliberately coarse — `read` and `write` are what the console's
@@ -198,7 +209,12 @@ const RESOURCE = {
 const ACTION = {
   READ: 'read',
   WRITE: 'write',
-  MANAGE_OWN: 'manage-own'
+  MANAGE_OWN: 'manage-own',
+  // RUNNING A SAVED REPORT DEFINITION (#1030): neither a read of the row
+  // nor a change to it, and the one act a share grants beside reading —
+  // which is why it is a word of its own rather than `read` with a note. A
+  // realm's override narrows or widens it through `reportSharedActions`.
+  RUN: 'run'
 };
 
 // The person a decision is about — the SECURITY CONTEXT's, never the
@@ -209,6 +225,20 @@ interface AccessSubject {
   roles?: string[];
   sub?: string;
   sessionId?: string | null;
+  // `user` or `application` (#1030): sent to the policy as
+  // `urn:sts:xacml:subject-kind` when given, and never otherwise, so a
+  // surface that does not say keeps the request it always made.
+  kind?: string;
+  // The roles given ARE the decision's roles (#1030): a resource server
+  // that computed held ∩ carried from a verified token says so, and the
+  // PEP then consults the register for the built-in roles alone, rather
+  // than unioning in a register role the token does not carry — which
+  // would make a `report:use` token a report administrator's because its
+  // subject also holds REPORT_ADMIN.
+  effective?: boolean;
+  // What to call the subject in a refusal and an audit row where `name` is
+  // an identifier (a `urn:uuid:` subject, #1030).
+  label?: string;
   [key: string]: unknown;
 }
 
@@ -221,8 +251,25 @@ interface AccessRequest {
   requiredRoles?: string[];
   requiredAllRoles?: string[];
   ownedObject?: OwnedObject | null;
+  reportObject?: ReportObject | null;
   context?: Record<string, unknown>;
   [key: string]: unknown;
+}
+
+// A report definition or job the question is about (#1030). `owner` goes in
+// the request as `owner` too (the first rule's comparison); this carries
+// what the third rule reads beside it.
+interface ReportObject {
+  // `definition` or `job`.
+  kind: string;
+  // The row's owner as stored: the token subject that made it.
+  owner: string;
+  // The group DNs the definition is shared with (a job's, its
+  // definition's), each as `common/ownership.ts`'s `dnKey()` compares one.
+  groups?: string[];
+  // The PERSON the token is for, by username, for the PIP's owner identity;
+  // empty for an application's own token.
+  person: string;
 }
 
 // The object an owner would administer (#607). See `check()`.

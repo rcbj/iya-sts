@@ -10223,14 +10223,6 @@
     "en": "dfada581a8c28ca3",
     "text": "已完成报表作业的行在列表中保留多久。仍在运行的作业不会被移除。"
   },
-  "report.usersGroup|label": {
-    "en": "21554dfaa265b36f",
-    "text": "谁可以被签发 report:use"
-  },
-  "report.usersGroup|description": {
-    "en": "28068508e0655509",
-    "text": "其成员可以被签发 report:use 的目录组。为空表示只有本领域的管理员可以。report:admin 只签发给这些管理员。"
-  },
   "listenerMain.minVersion|label": {
     "en": "6470c151e28a9ab3",
     "text": "主端口：最低 TLS 版本"
