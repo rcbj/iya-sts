@@ -226,20 +226,28 @@ GROUPABLE list and `rows.ts`'s `LIST_FIELDS` (a single value needs no
 splitting); `lane` is enumerated (#1007). Nothing changed in what is
 read: the same holders, the same entries, more rows out of each.
 
-## The Sort box, and Group by behind Count (#1008)
+## The Sort row and the Group by box (#1008, #1013)
 
 rcbj, 2026-10-27: a checkbox labelled Sort that reveals the sort field
-and the ascending/descending selects, "and the same for group by". The
-Save query box's shape (#986): `sortQuery` ticks, `.sort-only` carries
-`hidden` until it does, `onChange()` toggles the attribute, and
-`queryDocument()` writes no `orderBy` while the box is unticked, whatever
-the hidden selects hold (a form without the box — an older test double —
-sorts as before). A saved order draws the box ticked and the selects
-shown. **Group by is gated by the existing Count box**, not a box of its
-own: the API refuses a `groupBy` without a count, so Count is its natural
-gate; `.count-only` is the Group by label, and a saved count draws it
-shown. The labels reuse `report.sort` and `report.count`, so no catalog
-changed.
+and the ascending/descending selects, "and the same for group by"; then,
+seeing it on 8081: the three sort controls on ONE row, the selects really
+hidden, and a Group by box of its own. The Save query box's shape (#986):
+`sortQuery` ticks, the two `.sort-only` selects carry `hidden` until it
+does, `onChange()` toggles the attribute, and `queryDocument()` writes no
+`orderBy` while the box is unticked, whatever the hidden selects hold (a
+form without the box — an older test double — sorts as before). The
+Count row is the Count box, the `groupByQuery` box and the `.group-only`
+select; a ticked Group by with a field is a count whether or not Count is
+ticked, because the API refuses a group-by without one. A saved order or
+group draws its box ticked and its select shown.
+
+**Why the selects stayed in view at first (#1013)**: `.row { display:
+flex }` and `.field label { display: block }` outrank the browser's
+`[hidden] { display: none }`, so the attribute hid nothing they styled.
+`report_app.ts` now carries `[hidden] { display: none !important }`, one
+rule for every gated control, and `.row label` is inline-flex so a box
+and its text sit on the row. The labels reuse `report.sort`,
+`report.count` and `report.groupBy`, so no catalog changed.
 
 ## An enumerated field's filter value is a dropdown (#1007)
 

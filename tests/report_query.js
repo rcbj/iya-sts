@@ -1873,18 +1873,38 @@ function groups(t) {
     source: 'users', select: ['username'],
     orderBy: [{ field: 'mail', dir: 'desc' }],
     aggregate: 'count', groupBy: ['status'] });
+  // #1013: the three sort controls on one row, each select hidden on its
+  // own; a Group by box of its own gating the group select.
   t.check(sorted.indexOf('name="sortQuery" checked') >= 0 &&
-    sorted.indexOf('<div class="row sort-only"><select name="sortField">') >= 0,
+    sorted.indexOf('<select name="sortField" class="sort-only">') >= 0 &&
+    sorted.indexOf('<select name="sortDir" class="sort-only">') >= 0,
     'a saved order ticks Sort and shows the selects', sorted);
-  t.check(sorted.indexOf('<label class="count-only" title=') >= 0 &&
-    sorted.indexOf('class="count-only" hidden') < 0,
-    'a saved count shows Group by');
+  t.check(/<div class="row"><label[^>]*><input type="checkbox" name="sortQuery"[^]*?<select name="sortField"[^]*?<select name="sortDir"[^]*?<\/select><\/div>/.test(sorted),
+    'the box and the two selects share one row');
+  t.check(sorted.indexOf('name="groupByQuery" checked') >= 0 &&
+    sorted.indexOf('<select name="groupBy" class="group-only">') >= 0,
+    'a saved group ticks Group by and shows its select');
   const unsorted = ReportRuntime.queryFormHtml(tr, cat.sources, null);
   t.check(unsorted.indexOf('name="sortQuery">') >= 0 &&
-    unsorted.indexOf('<div class="row sort-only" hidden>') >= 0,
-    'a fresh form has Sort unticked and the selects hidden', unsorted);
-  t.check(unsorted.indexOf('<label class="count-only" hidden') >= 0,
-    'and Group by hidden behind Count');
+    unsorted.indexOf(
+      '<select name="sortField" class="sort-only" hidden>') >= 0 &&
+    unsorted.indexOf('<select name="sortDir" class="sort-only" hidden>') >= 0,
+    'a fresh form has Sort unticked and both selects hidden', unsorted);
+  t.check(unsorted.indexOf('name="groupByQuery">') >= 0 &&
+    unsorted.indexOf('<select name="groupBy" class="group-only" hidden>') >= 0,
+    'and Group by unticked with its select hidden');
+  const grouped = formDouble({ source: 'users', groupBy: 'status',
+    limit: '10', format: 'json' });
+  grouped.elements.groupByQuery = { checked: false };
+  const ungroupedDoc = ReportRuntime.queryDocument(grouped, 'en');
+  t.check(ungroupedDoc.aggregate === undefined &&
+    ungroupedDoc.groupBy === undefined,
+    'Group by unticked carries no group and no count');
+  grouped.elements.groupByQuery.checked = true;
+  const groupedDoc = ReportRuntime.queryDocument(grouped, 'en');
+  t.check(groupedDoc.aggregate === 'count' &&
+    JSON.stringify(groupedDoc.groupBy) === '["status"]',
+    'ticked with a field, it is a count by that field', groupedDoc);
   const notSorting = ReportRuntime.queryDocument(formDouble({
     source: 'users', sortField: 'mail', sortDir: 'desc', limit: '10',
     format: 'json' }), 'en');
@@ -1933,16 +1953,16 @@ function groups(t) {
   sortBox.checked = false;
   gating.onChange({ target: sortBox });
   t.check('hidden' in gatedAttrs, 'and unticking hides them');
-  const countBox = {
+  const groupByBox = {
     checked: true,
     getAttribute: function (name) {
-      return name === 'name' ? 'counted' : null;
+      return name === 'name' ? 'groupByQuery' : null;
     },
     closest: sortBox.closest
   };
-  gating.onChange({ target: countBox });
-  t.check(askedFor === '.count-only' && !('hidden' in gatedAttrs),
-    'ticking Count shows Group by');
+  gating.onChange({ target: groupByBox });
+  t.check(askedFor === '.group-only' && !('hidden' in gatedAttrs),
+    'ticking Group by shows its select');
   const fresh = ReportRuntime.queryFormHtml(tr, cat.sources, null);
   t.check(fresh.indexOf('name="filterField0"') >= 0 &&
     fresh.indexOf('name="limit" value="100"') >= 0,
