@@ -152,7 +152,8 @@ the pane. The other recipients are still sent to.
 
 **Sort and Group by are behind checkboxes.** Tick **Sort** to choose the
 field and the direction on the same row; unticked, the query carries no
-order. Tick **Group by** to choose the group field; a group-by is always
+order. Tick **Group by**, on its own row under Count, to choose the group
+field; a group-by is always
 a count, so it counts whether or not **Count** is ticked. A saved
 definition with an order or a group opens with the boxes ticked and the
 choices shown.
