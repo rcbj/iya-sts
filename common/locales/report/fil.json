@@ -64,6 +64,7 @@
   "version": "Bersyon ng iya-sts {version}",
   "docsLink": "Dokumentasyon",
   "addFilter": "Magdagdag ng filter",
+  "removeFilter": "Alisin ang filter na ito",
   "saveQuery": "I-save ang query",
   "because.everyPerson": "Inilagay sa pila ang query na ito bilang trabaho dahil hindi masasagot ng index ng directory ang filter nito, kaya kailangang basahin ang bawat tao. Agad na sinasagot ang filter sa username, mail o entryUuid.",
   "because.asked": "Inilagay sa pila ang query na ito bilang trabaho dahil hiniling nitong tumakbo nang ganoon.",

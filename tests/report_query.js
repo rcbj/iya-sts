@@ -1966,6 +1966,93 @@ function groups(t) {
   gating.onChange({ target: groupByBox });
   t.check(askedFor === '.group-only' && !('hidden' in gatedAttrs),
     'ticking Group by shows its select');
+  // A TRASH CAN ON EVERY FILTER ROW (#1017): the button is drawn on each
+  // row; the runtime removes the row, renumbers the rest and moves the +
+  // to the new last row; the only row left is emptied instead.
+  const trashRow = ReportRuntime.filterRowHtml(tr, 1, '<option></option>',
+    true);
+  t.check(trashRow.indexOf('data-act="remove-filter" title="Remove this ' +
+    'filter"') >= 0 && trashRow.indexOf('data-act="add-filter"') >
+    trashRow.indexOf('data-act="remove-filter"'),
+    'a row carries the trash can before the +', trashRow);
+  const makeControl = function (name) {
+    const attrs = { name: name };
+    return { tagName: name.indexOf('filterValue') === 0 ? 'INPUT' : 'SELECT',
+      value: 'x', selectedIndex: 3,
+      getAttribute: function (k) {
+        return attrs[k] == null ? null : attrs[k];
+      },
+      setAttribute: function (k, v) {
+        attrs[k] = v;
+      } };
+  };
+  const makeRow = function (n, plus) {
+    const attrs = { 'data-filter-row': String(n) };
+    const controls = ['filterField', 'filterOp', 'filterValue'].map(
+      function (p) {
+        return makeControl(p + n);
+      });
+    const row = {
+      controls: controls, plus: plus, removed: false, appended: '',
+      setAttribute: function (k, v) {
+        attrs[k] = v;
+      },
+      getAttribute: function (k) {
+        return attrs[k];
+      },
+      querySelectorAll: function () {
+        return controls;
+      },
+      querySelector: function (selector) {
+        if (selector === '.addfilter') {
+          return row.plus ? {} : null;
+        }
+        const m = /\[name="([^"]+)"\]/.exec(selector);
+        return m ? controls.filter(function (c) {
+          return c.getAttribute('name') === m[1];
+        })[0] || null : null;
+      },
+      insertAdjacentHTML: function (where, html) {
+        row.appended = html;
+        row.plus = true;
+      },
+      closest: function (selector) {
+        return selector === '.filterrow' ? row
+          : (selector === 'form' ? trashForm : null);
+      }
+    };
+    row.parentNode = { removeChild: function () {
+      row.removed = true;
+    } };
+    return row;
+  };
+  const trashRows = [makeRow(0, false), makeRow(1, false), makeRow(2, true)];
+  const trashForm = {
+    querySelectorAll: function () {
+      return trashRows.filter(function (r) {
+        return !r.removed;
+      });
+    }
+  };
+  const bin = Object.create(ReportRuntime.prototype);
+  bin.t = tr;
+  const trashButton = function (row) {
+    return { closest: row.closest };
+  };
+  bin.removeFilterRow(trashButton(trashRows[2]));
+  t.check(trashRows[2].removed && trashRows[1].plus &&
+    trashRows[1].appended.indexOf('data-act="add-filter"') >= 0,
+    'removing the last row moves the + to the row before it');
+  bin.removeFilterRow(trashButton(trashRows[0]));
+  t.check(trashRows[0].removed &&
+    trashRows[1].getAttribute('data-filter-row') === '0' &&
+    trashRows[1].controls[0].getAttribute('name') === 'filterField0' &&
+    trashRows[1].controls[2].getAttribute('name') === 'filterValue0',
+    'removing the first row renumbers the one left to zero');
+  bin.removeFilterRow(trashButton(trashRows[1]));
+  t.check(!trashRows[1].removed && trashRows[1].controls[2].value === '' &&
+    trashRows[1].controls[0].selectedIndex === 0,
+    'the only row left is emptied, not removed');
   const fresh = ReportRuntime.queryFormHtml(tr, cat.sources, null);
   t.check(fresh.indexOf('name="filterField0"') >= 0 &&
     fresh.indexOf('name="limit" value="100"') >= 0,

@@ -64,6 +64,7 @@
   "version": "iya-sts 版本 {version}",
   "docsLink": "文件",
   "addFilter": "新增篩選條件",
+  "removeFilter": "移除此篩選條件",
   "saveQuery": "儲存查詢",
   "because.everyPerson": "此查詢已排入工作佇列，因為目錄無法透過索引回答其篩選條件，必須讀取每個人。依 username、mail 或 entryUuid 篩選可立即得到回答。",
   "because.asked": "此查詢已排入工作佇列，因為它要求以工作方式執行。",

@@ -64,6 +64,7 @@
   "version": "versión de iya-sts {version}",
   "docsLink": "Documentación",
   "addFilter": "Añadir un filtro",
+  "removeFilter": "Quitar este filtro",
   "saveQuery": "Guardar la consulta",
   "because.everyPerson": "Esta consulta se puso en cola como trabajo porque su filtro no puede responderse desde un índice del directorio, así que hay que leer a cada persona. Un filtro por username, mail o entryUuid se responde al instante.",
   "because.asked": "Esta consulta se puso en cola como trabajo porque pidió ejecutarse así.",

@@ -226,6 +226,18 @@ GROUPABLE list and `rows.ts`'s `LIST_FIELDS` (a single value needs no
 splitting); `lane` is enumerated (#1007). Nothing changed in what is
 read: the same holders, the same entries, more rows out of each.
 
+## A trash can on every filter row (#1017)
+
+rcbj, 2026-10-27. `filterRowHtml()` draws a `remove-filter` button
+(U+1F5D1) on every row before the `+`; `removeFilterRow()` removes the
+row, renumbers the rows left (`data-filter-row` and the three control
+names, as `addFilterRow()` names a clone) and, when the removed row
+carried the `+`, appends one to the new last row
+(`addFilterButtonHtml()`); the only row left is emptied instead, its
+value control a text box again, so `queryDocument()` always finds row
+zero. One prose key, `report.removeFilter`, in the seven catalogs.
+`tests/report_query.js` drives the three cases on a DOM double.
+
 ## The Sort row and the Group by box (#1008, #1013)
 
 rcbj, 2026-10-27: a checkbox labelled Sort that reveals the sort field

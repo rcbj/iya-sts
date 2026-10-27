@@ -64,6 +64,7 @@
   "version": "iya-sts 版本 {version}",
   "docsLink": "文档",
   "addFilter": "添加筛选条件",
+  "removeFilter": "删除此筛选条件",
   "saveQuery": "保存查询",
   "because.everyPerson": "此查询被排入作业队列，因为目录无法通过索引回答其筛选条件，必须读取每个人。按 username、mail 或 entryUuid 筛选可立即得到回答。",
   "because.asked": "此查询被排入作业队列，因为它请求以作业方式运行。",
