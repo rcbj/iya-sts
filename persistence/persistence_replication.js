@@ -874,6 +874,23 @@ function createReplication(label) {
     log.debug("Leaving deferForRealm(). " + deferredRows.size + " held.");
   }
 
+  // Drops the held rows of a realm this process has just removed on another
+  // node's word (2026-10-27): they arrived behind the removal and will never
+  // apply, and the ten-minute drop would otherwise report each one
+  // (STS-STORE-0088 232 times for the scheduler job's throwaway realm).
+  function forgetDeferred(realmId) {
+    log.debug("Entering forgetDeferred(). " + realmId);
+    let dropped = 0;
+    deferredRows.forEach(function (held, id) {
+      if (held.row.realm === String(realmId)) {
+        deferredRows.delete(id);
+        dropped += 1;
+      }
+    });
+    log.debug("Leaving forgetDeferred(). " + dropped + " dropped.");
+    return dropped;
+  }
+
   // Applies every held row whose realm is defined here now, one after
   // another, and drops the ones that waited too long.
   function applyDeferredRows(applyOne) {
@@ -2159,6 +2176,7 @@ function createReplication(label) {
     start: start,
     stop: stop,
     syncNow: syncNow,
+    forgetDeferred: forgetDeferred,
     supports: supports,
     pull: pull,
     wake: wake,

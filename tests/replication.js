@@ -364,6 +364,16 @@ async function run(t) {
           '5c2. the realm row of a page is applied first, the page\'s own ' +
           'row of that realm after it, and the held row last');
   realms.remove('early-realm');
+  early.write('them', 'directory', 'early-realm', 'cn=third');
+  await replication.pull();
+  t.equal(replication.forgetDeferred('early-realm'), 1,
+          '5c3. a realm removed here on another node\'s word drops its ' +
+          'held rows, which arrived behind the removal');
+  early.write('them', 'realms', '', 'early-realm');
+  await replication.pull();
+  t.equal(appliedEarly.length, 2, '5c4. and a dropped row is not applied ' +
+          'when the realm is defined again');
+  realms.remove('early-realm');
 
   // -------------------------------------------------------------------------
   // 6. AN UNKNOWN KIND IS SKIPPED RATHER THAN FATAL.

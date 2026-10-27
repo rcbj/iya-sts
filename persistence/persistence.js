@@ -4166,6 +4166,9 @@ function applyRealmsChange() {
         log.info('persistence: the "' + id + '" realm was removed by another ' +
                  'node; removing it here.');
         realms.remove(id);
+        if (typeof replication.forgetDeferred === 'function') {
+          replication.forgetDeferred(id);
+        }
         // Its directory is gone from the store with it, so its shadow goes
         // too — and without this the next full walk would find the realm's
         // rows remembered and the realm absent.
