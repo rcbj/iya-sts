@@ -256,6 +256,37 @@ function create(tier) {
   const codec = {
     tier: codecTier,
     /**
+     * Makes each realm's `directory` data encryption key ahead of a flush
+     * that will seal entries of it (2026-10-27): the flush waits for the
+     * queued key rows BEFORE it writes, and a key first made by a seal
+     * inside the write was queued after that wait, so its row commits after
+     * the entries sealed under it and every other process's change-log
+     * reader drops them (STS-STORE-0042/0072). `keystore.ensureDek()`.
+     *
+     * @param realmIds - the realms whose entries are about to be sealed
+     * @returns how many realms hold a key now
+     */
+    prepareKeys: function (realmIds) {
+      log.debug("Entering codec.prepareKeys().");
+      if (!sealing()) {
+        log.debug("Leaving codec.prepareKeys(). Not sealing.");
+        return 0;
+      }
+      const ks = keystore();
+      if (!ks || typeof ks.ensureDek !== 'function') {
+        log.debug("Leaving codec.prepareKeys(). No keystore.");
+        return 0;
+      }
+      let held = 0;
+      (realmIds || []).forEach(function (realmId) {
+        if (ks.ensureDek(LABEL, codecTier, { realm: String(realmId || '') })) {
+          held += 1;
+        }
+      });
+      log.debug("Leaving codec.prepareKeys(). " + held);
+      return held;
+    },
+    /**
      * The `attrs` column value for an entry: the sealed blob (a JSON string)
      * or the attributes themselves.
      */

@@ -200,6 +200,11 @@ function createReplication(label) {
   // How long syncNow() may spend reaching its guarantee. See step() in
   // syncNow().
   const SYNC_DEADLINE_MS = 4600;
+  // How many times a change sealed under a data key this process does not
+  // hold yet is tried again after the key rows are read again, and the
+  // pause between (2026-10-27; applyRows()).
+  const SEALED_ROW_RETRIES = 5;
+  const SEALED_ROW_RETRY_PAUSE_MS = 200;
   // How many pulls have STARTED, and the start number of the newest one that
   // FINISHED. See syncNow(): a barrier waits for a pull that began after it
   // read
@@ -970,14 +975,45 @@ function createReplication(label) {
               return Promise.reject(err);
             }
           }
+          // AND NOT ONCE BUT A FEW TIMES, A PAUSE BETWEEN (2026-10-27): the
+          // key's row may be a transaction still committing when the first
+          // re-read runs — the full run on 086c421b dropped a new realm's
+          // role groups that way in hundreds of realms (STS-STORE-0042) —
+          // and a dropped directory row is never applied again. Bounded: a
+          // row sealed under a key this process will never hold is still
+          // reported, after SEALED_ROW_RETRIES. A loop, not a chain
+          // (tests/no_periodic_timers.js).
+          const keyedRetries = async function () {
+            log.debug("Entering keyedRetries().");
+            let last = null;
+            for (let i = 0; i < SEALED_ROW_RETRIES; i++) {
+              await require('../common/keystore').refreshDekRows();
+              try {
+                const out = await once();
+                log.debug("Leaving keyedRetries(). Applied.");
+                return out;
+              } catch (err) {
+                if (errorCodes.codeOf(err) !== 'STS-STORE-0072') {
+                  throw err;
+                }
+                last = err;
+              }
+              if (i + 1 < SEALED_ROW_RETRIES) {
+                await new Promise(function (resolve) {
+                  setTimeout(resolve, SEALED_ROW_RETRY_PAUSE_MS);
+                });
+              }
+            }
+            log.debug("Leaving keyedRetries(). Still sealed.");
+            throw last;
+          };
           return once().catch(function (err) {
             if (errorCodes.codeOf(err) !== 'STS-STORE-0072') {
               throw err;
             }
             log.debug("Caught in applyRows(): " + ((err && err.message) ||
                                                     err));
-            return require('../common/keystore').refreshDekRows()
-              .then(once);
+            return keyedRetries();
           }).catch(failed);
         });
       });

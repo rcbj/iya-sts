@@ -1358,6 +1358,20 @@ postgres driver writes and reads every entry through it.
 * **The keystore starts before the directory is restored** (see
   `persistence.js`): a blob cannot be opened before the key-encryption key is
   read.
+* **A REALM'S `directory` KEY IS MADE BEFORE THE FLUSH WAITS FOR THE KEY ROWS
+  (2026-10-27).** `flush()` waited for `keystore.settleDeks()` and then
+  sealed inside `saveDirectory()` — where a NEW realm's key was first made,
+  so its row was queued after the wait and committed after the entries
+  sealed under it. Every other process's change-log reader met the entries
+  first, re-read the key rows once, still lacked the key and dropped them for
+  good (STS-STORE-0042 over STS-STORE-0072): a new realm's role groups, in
+  hundreds of realms of the full run on 086c421b, which is how the console
+  roster and the scheduler's job lists read differently per process.
+  `flush()` now asks the driver's codec to `prepareKeys()` for every realm
+  with an upsert (`keystore.ensureDek()`) before the settle. And the reader
+  (`persistence_replication.js`) tries a sealed row up to five more times, a
+  pause between, after re-reading the keys, before it reports the drop — the
+  key's transaction may still be committing. `tests/replication.js` 5b.
 * `cell_convert.js` opens the source entries to plan them (a group's members
   split between tiers) and seals what it writes for the tier it writes to.
 * A file (ldif) store is not sealed.
