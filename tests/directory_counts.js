@@ -344,9 +344,20 @@ async function theUpgrades(t) {
             step.name, '');
   });
   const none = await runOpen(function () { return false; }, true);
-  t.check(!everyStatement.some(function (sql) {
+  // A step may reuse one of SCHEMA_OBJECTS' own statements (#1024, #1028:
+  // the asked-names index is dropped and CREATEd again by the schema's own
+  // text), and open() sends those for an object the double reports absent
+  // whatever is owed; only a step's OWN statements must stay unsent.
+  const schemaOwn = postgres.SCHEMA_OBJECTS.map(function (object) {
+    return object.statement;
+  });
+  const owedOnly = everyStatement.filter(function (sql) {
+    return schemaOwn.indexOf(sql) < 0;
+  });
+  t.check(!owedOnly.some(function (sql) {
     return none.indexOf(sql) >= 0;
-  }), 'E4. a store owed nothing is sent none of it');
+  }), 'E4. a store owed nothing is sent none of it (a step\'s own ' +
+      'statements; one it shares with the schema goes with the schema)');
   t.check(steps.filter(function (s) { return !s.advisory; }).map(
     function (s) { return s.name; }).sort().join(',') ===
     ['sts_ldap_count_deltas_fold', 'sts_ldap_count_fold',
