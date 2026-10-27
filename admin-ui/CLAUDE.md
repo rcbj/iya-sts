@@ -258,6 +258,18 @@ It also reads the SESSION store, which `../authn/authn.ts` owns.
    form on either of those pages needs `carryBack` in it**, or an edit made
    through it silently costs the reader their place in the list.
 
+   **A PAGE SHOWN ONCE GETS AN `up` TOO (#1068).** A generated password, a
+   keytab, a new realm's credentials: `WebAnswers.once()` draws them in place,
+   and with no `up` the section was the last crumb, which is never a link. So
+   the page after Create user had no way back to Users. `ConsoleRuntime` now
+   hands the shell `once.up || { href: active, leaf: title }`. A page about a
+   person (a create, a credential reset) answers
+   `WebAnswers.personTrail()`, whose `via` puts the person between the section
+   and the leaf. `via` is a list of `{ label, href }` crumbs that
+   `trailBar()` draws as links; the leaf after them still is not a link. Every
+   value such a page shows once goes through `WebAnswers.secretBlock()`, which
+   puts `WebKit.copyButton()` under it.
+
    **A NEW DRILL-DOWN NEEDS `up` AND NOTHING CAN CHECK THAT IT HAS ONE**, the same
    gap rule 7 describes: no code here can see a page appear. The four are
    `?user=`, `?group=`, `?application=` and `?profile=`, and every branch of those

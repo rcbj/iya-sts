@@ -114,6 +114,39 @@ function checkOnce(t) {
           created.html.indexOf('$scrypt$x') < 0,
           'C2. a created person\'s activation link is the absolute one the ' +
           'operation built, and the verifier is named, not printed');
+  // #1068: the page after a create leads back. Its trail is Admin console
+  // › Users › bo › User created, Users and bo links and the leaf not one;
+  // the activation link and a generated password each carry a Copy button.
+  const crumbs = WebShell.trailBar(created.active, created.up,
+                                   created.title, { '/admin/users': 'Users' });
+  const madePassword = WebAnswers.once('/admin/users/new', 'create', {},
+    { ok: true, username: 'cy', dn: 'uid=cy,ou=users', message: 'Made.',
+      password: 'Gen-2!pass', entry: { attributes: {} } }, env);
+  t.check(created.up && created.up.href === '/admin/users' &&
+          /<a href="\/admin\/users"[^>]*>Users<\/a>/.test(crumbs) &&
+          /<a href="\/admin\/users\?user=bo"[^>]*>bo<\/a>/.test(crumbs) &&
+          /<span class="leaf"[^>]*>[^<]+<\/span><\/p>$/.test(crumbs) &&
+          /class="copybtn" hidden data-copy="https:\/\/public\.test\/portal\/activate\?t=1"/
+            .test(created.html) &&
+          /class="copybtn" hidden data-copy="Gen-2!pass"/
+            .test(madePassword.html) &&
+          /class="copybtn" hidden data-copy="Generated-1!"/.test(reset.html) &&
+          reset.up && reset.up.via.length === 1 &&
+          reset.up.via[0].href === '/admin/users?user=ann',
+          'C2b. the page after a create leads back to Users and to the ' +
+          'person, and each value shown once has a Copy button', crumbs);
+  // Every other page shown once links back to its section (#1068): the
+  // runtime hands the shell an `up` whatever `once()` answered.
+  const runtimeSource = require('fs').readFileSync(
+    require('path').join(__dirname, '..', 'admin-ui', 'web_runtime.ts'),
+    'utf8');
+  t.check(/once\.up \|\| \{ href: once\.active, leaf: once\.title \}/
+            .test(runtimeSource) &&
+          /<a href="\/admin\/kerberos\/principals"/.test(
+            WebShell.trailBar('/admin/kerberos/principals',
+              { href: '/admin/kerberos/principals', leaf: 'Keytab' },
+              'Keytab', { '/admin/kerberos/principals': 'Principals' })),
+          'C2c. every page shown once links back to its section');
   const keytab = WebAnswers.once('/admin/kerberos/principals', 'create',
     {}, { ok: true, principal: 'HTTP/x@R', kvno: 2, etypes: [18],
           keytab: 'BQIAAA', keytabFilename: 'x.keytab', message: 'Made.' },

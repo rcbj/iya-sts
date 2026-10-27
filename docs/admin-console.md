@@ -507,7 +507,9 @@ missing selected attribute on every person.
 
 A generated password or link is shown in the body of the page that comes back,
 never in a redirect, because a secret in a URL is a secret in the browser's
-history and every proxy log. Issuing another activation link invalidates the
+history and every proxy log. It has a **Copy** button under it. That page's
+breadcrumb trail reads *Admin console › Users › (the new username) › User
+created*, so the users list and the new person's page are each one click away. Issuing another activation link invalidates the
 first, which is also how a lost one is replaced.
 
 **The catalogue is not the whole schema.** It is the twenty-seven claim-bearing

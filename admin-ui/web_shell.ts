@@ -618,6 +618,16 @@ class WebShell {
                         ? t.text('console.shell.backToFiltered',
                                  { label: label })
                         : t.text('console.shell.backTo', { label: label }) });
+        // CRUMBS BETWEEN THE SECTION AND THE LEAF (#1068): a page reached from
+        // a drill-down names it, such as the person a one-time page is about.
+        // Each is a link to a real page; the leaf below is not.
+        (Array.isArray(up.via) ? up.via : []).forEach(function (one) {
+          if (one && one.label && one.href) {
+            crumbs.push({ label: WebShell.shortCrumb(one.label),
+                          href: String(one.href),
+                          title: String(one.label) });
+          }
+        });
         crumbs.push({ label: WebShell.shortCrumb(up.leaf || title),
                       title: String(up.leaf || title) });
       } else {
