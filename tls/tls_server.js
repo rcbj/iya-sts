@@ -3651,8 +3651,10 @@ realms.onChange(function () {
 // longer), and where minted state persists it is also a replicated shared
 // store (`tls.ticketNames`, `tls.presentedChains`'s arrangement) so a
 // ticket sealed under the cluster's shared key is known on the node that
-// did not make it. Nothing waits for a row: a mismatch must close at once,
-// and a row still in flight costs one full handshake. TLS 1.3 is left
+// did not make it. A mismatch closes at once; a session with NO record on
+// this node waits for one read barrier (`persistence.syncNow()`) and is
+// judged again, because behind a balancer that row is simply still
+// replicating (2026-10-27, the cluster mode's tlsfuzzer). TLS 1.3 is left
 // alone on purpose: RFC 8446 section 4.2.11 removes the server's check and
 // section 4.6.1 puts it on the client, and OpenSSL resumes a TLS 1.3 PSK
 // under another name (same probe). tests/listener_tls_policy.js L5d.
@@ -4276,27 +4278,69 @@ function attachSessionCache(server, kind, realmId) {
       }
       return;
     }
+    const judge = function (madeUnder) {
+      if (madeUnder === null || offered === null) {
+        // Fails CLOSED, as the session-ID cache does: a session this
+        // process cannot vouch for is not answered under a name nobody
+        // compared.
+        log.info(errorCodes.tag('STS-TLS-0053') + 'tls: a ' + kind +
+                 ' TLS 1.2 session was resumed by ticket whose server ' +
+                 'name this node does not know (' + (madeUnder === null
+                   ? 'no record of the session'
+                   : 'the hello\'s name was not read') + '); the ' +
+                 'connection is closed (RFC 6066 section 3).');
+        socket.destroy();
+        return;
+      }
+      if (madeUnder !== offered) {
+        log.info(errorCodes.tag('STS-TLS-0052') + 'tls: a ' + kind +
+                 ' TLS 1.2 session made under ' + JSON.stringify(madeUnder) +
+                 ' was resumed by ticket under ' + JSON.stringify(offered) +
+                 '; the connection is closed (RFC 6066 section 3).');
+        socket.destroy();
+      }
+    };
     const madeUnder = key ? recordedTicketName(ticketNames, key, ttlMs)
                           : null;
-    if (madeUnder === null || offered === null) {
-      // Fails CLOSED, as the session-ID cache does: a session this process
-      // cannot vouch for is not answered under a name nobody compared.
-      log.info(errorCodes.tag('STS-TLS-0053') + 'tls: a ' + kind +
-               ' TLS 1.2 session was resumed by ticket whose server name ' +
-               'this node does not know (' + (madeUnder === null
-                 ? 'no record of the session'
-                 : 'the hello\'s name was not read') + '); the ' +
-               'connection is closed (RFC 6066 section 3).');
-      socket.destroy();
+    if (madeUnder !== null || offered === null || !key) {
+      judge(madeUnder);
       return;
     }
-    if (madeUnder !== offered) {
-      log.info(errorCodes.tag('STS-TLS-0052') + 'tls: a ' + kind +
-               ' TLS 1.2 session made under ' + JSON.stringify(madeUnder) +
-               ' was resumed by ticket under ' + JSON.stringify(offered) +
-               '; the connection is closed (RFC 6066 section 3).');
-      socket.destroy();
+    // NO RECORD HERE YET: ONE READ BARRIER BEFORE THE VERDICT (2026-10-27).
+    // Behind a balancer the ticket was made on another node seconds or
+    // milliseconds ago, and its `tls.ticketNames` row is still on the
+    // change log this node has not pulled — the cluster mode's tlsfuzzer
+    // (test-session-ticket-resumption over sts-lb) closed every such
+    // resumption, which is every quick reconnect a real client makes. The
+    // socket is held (an explicit pause survives the HTTP server's own
+    // 'data' listener), everything committed before this moment is pulled
+    // (`persistence.syncNow()`, bounded by its own deadline; a memory
+    // store answers at once with nothing to pull), and the record is read
+    // again. A mismatch still closes without waiting, above.
+    socket.pause();
+    let barrier = null;
+    try {
+      barrier = require('../persistence/persistence').syncNow();
+    } catch (e) {
+      log.debug('Caught in the ticket-name check: ' +
+                ((e && e.message) || e));
+      barrier = null;
     }
+    Promise.resolve(barrier).then(function () {
+      return null;
+    }, function (e) {
+      log.debug('Caught in the ticket-name check\'s barrier: ' +
+                ((e && e.message) || e));
+      return null;
+    }).then(function () {
+      if (socket.destroyed) {
+        return;
+      }
+      judge(recordedTicketName(ticketNames, key, ttlMs));
+      if (!socket.destroyed) {
+        socket.resume();
+      }
+    });
   });
   sessionCaches.push({ kind: kind, realm: realmId || null, cache: cache,
                        ticketNames: ticketNames });

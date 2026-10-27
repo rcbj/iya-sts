@@ -653,7 +653,19 @@ async function thePasswordClaimsIt(created, visitorClient) {
         }).sort(), ["read", "write"]);
       assert.strictEqual(reply.body.you.viaEmptyRoster, false);
     });
-  const roster = await api("GET", R + "/admin-api/rbac");
+  // READ AGAIN FOR A MOMENT (cluster, 2026-10-27): the claim is written on
+  // the node the sign-in landed on and reaches the others through the
+  // change log, so a roster read through the balancer may be a pull
+  // behind. A bounded wait, never an unbounded one.
+  let roster = await api("GET", R + "/admin-api/rbac");
+  for (let attempt = 0; attempt < 40; attempt++) {
+    if (roster.body && roster.body.bootstrap &&
+        roster.body.bootstrap.claimedAt) {
+      break;
+    }
+    await new Promise(function (r) { setTimeout(r, 500); });
+    roster = await api("GET", R + "/admin-api/rbac");
+  }
   check("and its arrival claimed the realm's console", function () {
     assert.ok(roster.body.bootstrap.claimedAt,
               JSON.stringify(roster.body.bootstrap));

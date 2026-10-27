@@ -1454,8 +1454,11 @@ Pooling settings on each HTTP/HTTPS listener tab."
     longer), and a replicated shared store `tls.ticketNames`
     (`tls.presentedChains`'s shape, a CELL-tier store) carries it to the
     other nodes for a ticket sealed under the cluster's shared key.
-    Nothing waits for a row: a mismatch has to close at once, and a row
-    still replicating costs one full handshake. The four options the
+    A mismatch closes at once; a resumed session this node has NO record
+    of is held through one read barrier (`persistence.syncNow()`) and
+    judged again (2026-10-27): behind a balancer the row is still
+    replicating, and the cluster mode's tlsfuzzer showed that closing at
+    once closed every quick reconnect through `sts-lb`. The four options the
     ticket listed, and why this one: turning TLS 1.2 tickets off
     (`SSL_OP_NO_TICKET`) also makes TLS 1.3 tickets STATEFUL, so every
     TLS 1.3 resumption would go through the per-process cache and die

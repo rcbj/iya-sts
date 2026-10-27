@@ -313,11 +313,16 @@ async function test() {
                  "/caches", "/node-health", "/worker-pools",
                  "/sts-metadata"];
   for (const page of PAGES) {
+    // EACH BODY IS READ BEFORE THE NEXT FETCH (2026-10-27): with two
+    // responses open at once the first sat unread while the second was
+    // fetched, and when its socket was closed under it (the cluster mode's
+    // balancer) node's own undici died on `assert(!this.paused)` and took
+    // the job with it — an internal assertion no catch reaches.
     const en = await fetch(api + page, { headers: { Accept:
       "application/json", "Accept-Language": "en" } });
+    const enBody = await en.text();
     const fr = await fetch(api + page, { headers: { Accept:
       "application/json", "Accept-Language": "fr" } });
-    const enBody = await en.text();
     const frBody = await fr.text();
     if (en.status !== 200 || fr.status !== 200) {
       // A page this stack does not draw (no database, no directory) is

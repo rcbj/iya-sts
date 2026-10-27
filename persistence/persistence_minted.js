@@ -3713,7 +3713,13 @@ function restore() {
 
       // The index of every indexed on-demand store still read back whole is
       // filed by a scheduler job, after the start (see the backfill above).
-      if (!process.env.STS_REQUEST_WORKER && backfillOwed().length) {
+      // REGISTERED ON EVERY FRONT PROCESS WITH AN ON-DEMAND STORE, not only
+      // where a backfill is owed (2026-10-27): a cluster job runs on the
+      // LEADER, so a job one node alone registered never ran unless that
+      // node led, and the nodes' job lists disagreed (sts_scheduler's page
+      // and API read through the balancer). The run itself asks
+      // `backfillOwed()` and does nothing when nothing is.
+      if (!process.env.STS_REQUEST_WORKER && onDemandActive()) {
         ensureIndexBackfillJob();
       }
       log.debug('Leaving restore(). ' + restored + ' row(s).');

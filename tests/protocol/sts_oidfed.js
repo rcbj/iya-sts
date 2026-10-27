@@ -444,13 +444,32 @@ async function test() {
     .federation_fetch_endpoint;
 
   log.info("=== 2. fetch ===");
-  let r = await hop("GET", fetchAt + "?sub=" + encodeURIComponent(leafId));
   // THE REALM'S KEYS AS THEY ARE NOW (2026-10-23). A `next` key is minted
   // ahead and published at once (oidfed/federation_keys.ts), so the
   // realm's Entity Configuration read at the start may predate a key the
   // statement now pins (the full run, cluster). The statement is compared
-  // with the configuration read beside it.
-  const leafNow = await configurationOf(base);
+  // with the configuration read beside it — AND BOTH ARE READ AGAIN FOR A
+  // MOMENT when they disagree (2026-10-27): through the balancer the two
+  // reads land on two nodes, and the node answering one may be a pull
+  // behind the node that minted the key. A bounded wait.
+  let r = await hop("GET", fetchAt + "?sub=" + encodeURIComponent(leafId));
+  let leafNow = await configurationOf(base);
+  for (let attempt = 0; attempt < 40; attempt++) {
+    let agree = false;
+    try {
+      agree = r.status === 200 && JSON.stringify(partsOf(r.text).claims.jwks)
+        === JSON.stringify(leafNow.parts.claims.jwks);
+    } catch (e) {
+      log.debug("Caught comparing the keys: " + ((e && e.message) || e));
+      agree = false;
+    }
+    if (agree) {
+      break;
+    }
+    await new Promise(function (resolve) { setTimeout(resolve, 500); });
+    r = await hop("GET", fetchAt + "?sub=" + encodeURIComponent(leafId));
+    leafNow = await configurationOf(base);
+  }
   check("the statement about the realm, signed by the anchor, pinning the " +
         "realm's keys", function () {
     assert.strictEqual(r.status, 200, r.text.slice(0, 300));
