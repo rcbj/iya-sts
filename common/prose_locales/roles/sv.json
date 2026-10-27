@@ -116,12 +116,12 @@
     "text": "Shared Signals-skrivning. Auktoriserar behörigheten ssf.manage. En person får den bara så länge personen tillhör den här rollens grupp, sådd som ssf-manage, och programmet personen loggar in i är medlem i rollen. Ett program får den på sin egen token bara så länge det är medlem. Den auktoriserar inte ssf.read."
   },
   "roles.native.REPORT_USE.what": {
-    "en": "ff8791d63417ab91",
-    "text": "Rapporter, som användare. Auktoriserar behörigheten report:use: rapportapplikationen och /report-api för de definitioner och jobb som innehavaren äger eller har fått delade, enligt vad åtkomstkontrollpolicyn beslutar. En person innehar den via rollens grupp, som seedas som report-users, eller som direkt medlem; en applikation innehar den som medlem och utfärdas den på sin egen token, och når bara de definitioner och jobb den själv definierat."
+    "en": "3dc6cff824e184e8",
+    "text": "Rapporter, som användare. Auktoriserar behörigheten report:use: rapportapplikationen och /report-api för de definitioner och jobb som innehavaren äger eller har fått delade, enligt vad åtkomstkontrollpolicyn beslutar. En person innehar den via rollens grupp, som seedas som report-users, som direkt medlem, eller på konsolens roster (Admin Read eller Admin Write); en applikation innehar den som medlem och utfärdas den på sin egen token, och når bara de definitioner och jobb den själv definierat."
   },
   "roles.native.REPORT_ADMIN.what": {
-    "en": "6a2dfae09f5ecba4",
-    "text": "Rapporter, som administratör. Auktoriserar behörigheten report:admin: varje definition och varje jobb i realmen, enligt vad åtkomstkontrollpolicyn beslutar. En person innehar den via rollens grupp, som seedas som report-admins, eller som direkt medlem; en applikation som innehar den når ändå bara det den själv definierat. Den auktoriserar inte report:use: en token begär de scope den behöver."
+    "en": "d17c8f34f20ced92",
+    "text": "Rapporter, som administratör. Auktoriserar behörigheten report:admin: varje definition och varje jobb i realmen, enligt vad åtkomstkontrollpolicyn beslutar. En person innehar den via rollens grupp, som seedas som report-admins, som direkt medlem, eller som Admin Write på konsolens roster; en applikation som innehar den når ändå bara det den själv definierat. Den auktoriserar inte report:use: en token begär de scope den behöver."
   },
   "roles.memberKinds.user.label": {
     "en": "df381eb4bb572daf",

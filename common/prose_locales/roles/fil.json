@@ -116,12 +116,12 @@
     "text": "Pagsulat ng Shared Signals. Nagbibigay ng pahintulot na ssf.manage. Natatanggap ito ng isang tao habang kabilang siya sa grupo ng tungkuling ito, na inihasik bilang ssf-manage, at miyembro ng tungkuling ito ang aplikasyon na pinapasukan niya. Natatanggap ito ng isang aplikasyon sa sarili nitong token habang miyembro ito. Hindi nito pinahihintulutan ang ssf.read."
   },
   "roles.native.REPORT_USE.what": {
-    "en": "ff8791d63417ab91",
-    "text": "Mga ulat, bilang user. Nagpapahintulot sa permission na report:use: ang reports application at /report-api para sa mga definition at job na pag-aari ng may hawak o ibinahagi sa kanya, ayon sa pasya ng access-control policy. Hawak ito ng isang tao sa pamamagitan ng grupo ng role na ito, na na-seed bilang report-users, o bilang direktang miyembro; hawak ito ng isang application bilang miyembro at ibinibigay ito sa sarili nitong token, na umaabot lamang sa mga definition at job na ito mismo ang nagtakda."
+    "en": "3dc6cff824e184e8",
+    "text": "Mga ulat, bilang user. Nagpapahintulot sa permission na report:use: ang reports application at /report-api para sa mga definition at job na pag-aari ng may hawak o ibinahagi sa kanya, ayon sa pasya ng access-control policy. Hawak ito ng isang tao sa pamamagitan ng grupo ng role na ito, na na-seed bilang report-users, bilang direktang miyembro, o sa roster ng console (Admin Read o Admin Write); hawak ito ng isang application bilang miyembro at ibinibigay ito sa sarili nitong token, na umaabot lamang sa mga definition at job na ito mismo ang nagtakda."
   },
   "roles.native.REPORT_ADMIN.what": {
-    "en": "6a2dfae09f5ecba4",
-    "text": "Mga ulat, bilang administrator. Nagpapahintulot sa permission na report:admin: bawat definition at bawat job sa realm, ayon sa pasya ng access-control policy. Hawak ito ng isang tao sa pamamagitan ng grupo ng role na ito, na na-seed bilang report-admins, o bilang direktang miyembro; ang isang application na may hawak nito ay umaabot pa rin lamang sa itinakda nito mismo. Hindi nito pinapahintulutan ang report:use: humihingi ang isang token ng mga scope na kailangan nito."
+    "en": "d17c8f34f20ced92",
+    "text": "Mga ulat, bilang administrator. Nagpapahintulot sa permission na report:admin: bawat definition at bawat job sa realm, ayon sa pasya ng access-control policy. Hawak ito ng isang tao sa pamamagitan ng grupo ng role na ito, na na-seed bilang report-admins, bilang direktang miyembro, o bilang Admin Write sa roster ng console; ang isang application na may hawak nito ay umaabot pa rin lamang sa itinakda nito mismo. Hindi nito pinapahintulutan ang report:use: humihingi ang isang token ng mga scope na kailangan nito."
   },
   "roles.memberKinds.user.label": {
     "en": "df381eb4bb572daf",

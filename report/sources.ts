@@ -360,7 +360,12 @@ function reportAudit(info: any): void {
 function reportActor(job: any): string {
   log.debug("Entering reportActor().");
   const helpers = require('../common/helpers');
-  const name = String(helpers.nameForSubject(job && job.owner) || '');
+  const rights = require('./rights');
+  // An owner from another realm (#1038) is named in THEIR realm.
+  const name = String(rights.inOwnerRealm(
+    String((job && job.ownerRealm) || ''), function (): string {
+      return helpers.nameForSubject(job && job.owner) || '';
+    }) || '');
   log.debug("Leaving reportActor().");
   return name || String((job && job.owner) || '');
 }
@@ -2802,9 +2807,21 @@ function reportNotify(job: any): void {
     return;
   }
   const mail = require('../common/mail');
+  const rights = require('./rights');
+  const realms = require('../common/realms');
   let sent: any = null;
   try {
-    sent = mail.send(reportNotice(job, username));
+    // AN OWNER FROM ANOTHER REALM (#1038) is mailed from THEIR realm, where
+    // their entry and address are, with a link back to this realm's job.
+    const ownerRealm = String(job.ownerRealm || '');
+    const notice = reportNotice(job, username);
+    if (ownerRealm && ownerRealm !== realms.currentId()) {
+      notice.links.report = String(realms.currentPrefix() || '') +
+        notice.links.report;
+    }
+    sent = rights.inOwnerRealm(ownerRealm, function (): any {
+      return mail.send(notice);
+    });
   } catch (e) {
     log.debug("Caught in reportNotify(): " + ((e && e.message) || e));
     log.warn(errorCodes.tag('STS-REPORT-0027') +
@@ -3189,6 +3206,7 @@ async function reportScheduleWork(ctx: any): Promise<any> {
     const submitted = jobsApi.submit({
       owner: def.owner,
       ownerKind: def.ownerKind,
+      ownerRealm: String(def.ownerRealm || ''),
       document: def.document,
       parameters: names.length ? bag : null,
       definitionId: def.id,

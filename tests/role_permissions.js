@@ -467,8 +467,10 @@ function pipRoles(t, names) {
     }).sort().join(',');
   };
   t.equal(answer(request(names.writer)),
-          ['ADMIN_READ', 'ADMIN_WRITE'].join(','),
-          'F1. a person\'s configured roles, the console ones from the roster');
+          ['ADMIN_READ', 'ADMIN_WRITE', 'REPORT_ADMIN', 'REPORT_USE']
+            .join(','),
+          'F1. a person\'s configured roles, the console ones from the ' +
+          'roster, and the report roles Admin Write brings (#1038)');
   t.equal(answer(request(MACHINE, 'application')),
           ['ADMIN_READ', 'DEVICE_COMPLIANCE', 'rp-readers-' + RUN].sort()
             .join(','),

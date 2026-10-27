@@ -23708,7 +23708,14 @@ const CODES = [
       'definition or job is not its own, not shared with a group it is ' +
       'in, and it is not a report administrator — an application reaches ' +
       'only what it defined. A hidden row is answered not_found.',
-    spec: 'forbidden (HTTP 403), or not_found (HTTP 404) for one row' }
+    spec: 'forbidden (HTTP 403), or not_found (HTTP 404) for one row' },
+  { code: 'STS-REPORT-0045',
+    summary: 'A token the default realm issued was presented to another ' +
+      'realm\'s report API and its subject is not a service ' +
+      'administrator — a person holding Admin Read or Admin Write on the ' +
+      'default realm\'s console roster now — so it was refused: only a ' +
+      'service administrator reaches every realm\'s reports (#1038).',
+    spec: 'forbidden (HTTP 403)' }
   // ===== END ===============================================================
 ];
 

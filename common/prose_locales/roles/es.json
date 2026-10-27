@@ -116,12 +116,12 @@
     "text": "Escritura de Shared Signals. Autoriza el permiso ssf.manage. Una persona lo recibe solo mientras pertenece al grupo de este rol, sembrado como ssf-manage, y la aplicación en la que inicia sesión es miembro de este rol. Una aplicación lo recibe en su propio token solo mientras es miembro. No autoriza ssf.read."
   },
   "roles.native.REPORT_USE.what": {
-    "en": "ff8791d63417ab91",
-    "text": "Informes, como usuario. Autoriza el permiso report:use: la aplicación de informes y /report-api para las definiciones y los trabajos que el titular posee o que se le comparten, según decida la política de control de acceso. Una persona lo tiene a través del grupo de este rol, sembrado como report-users, o como miembro directo; una aplicación lo tiene como miembro y lo recibe en su propio token, alcanzando solo las definiciones y los trabajos que ella definió."
+    "en": "3dc6cff824e184e8",
+    "text": "Informes, como usuario. Autoriza el permiso report:use: la aplicación de informes y /report-api para las definiciones y los trabajos que el titular posee o que se le comparten, según decida la política de control de acceso. Una persona lo tiene a través del grupo de este rol, sembrado como report-users, como miembro directo, o en la lista de la consola (Admin Read o Admin Write); una aplicación lo tiene como miembro y lo recibe en su propio token, alcanzando solo las definiciones y los trabajos que ella definió."
   },
   "roles.native.REPORT_ADMIN.what": {
-    "en": "6a2dfae09f5ecba4",
-    "text": "Informes, como administrador. Autoriza el permiso report:admin: cada definición y cada trabajo del dominio, según decida la política de control de acceso. Una persona lo tiene a través del grupo de este rol, sembrado como report-admins, o como miembro directo; una aplicación que lo tiene sigue alcanzando solo lo que ella definió. No autoriza report:use: un token pide los ámbitos que necesita."
+    "en": "d17c8f34f20ced92",
+    "text": "Informes, como administrador. Autoriza el permiso report:admin: cada definición y cada trabajo del dominio, según decida la política de control de acceso. Una persona lo tiene a través del grupo de este rol, sembrado como report-admins, como miembro directo, o como Admin Write en la lista de la consola; una aplicación que lo tiene sigue alcanzando solo lo que ella definió. No autoriza report:use: un token pide los ámbitos que necesita."
   },
   "roles.memberKinds.user.label": {
     "en": "df381eb4bb572daf",

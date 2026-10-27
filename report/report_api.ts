@@ -89,7 +89,8 @@ function reportHttpStatus(code: string): number {
   } else if (code === 'STS-REPORT-0023') {
     status = 429;
   } else if (code === 'STS-REPORT-0011' || code === 'STS-REPORT-0016' ||
-      code === 'STS-REPORT-0017' || code === 'STS-REPORT-0018') {
+      code === 'STS-REPORT-0017' || code === 'STS-REPORT-0018' ||
+      code === 'STS-REPORT-0044' || code === 'STS-REPORT-0045') {
     status = 403;
   } else if (code === 'STS-REPORT-0006' || code === 'STS-REPORT-0007' ||
       code === 'STS-REPORT-0008' || code === 'STS-REPORT-0009' ||
@@ -439,9 +440,68 @@ function reportAudienceOk(audiences: any, base: string): boolean {
   return ok;
 }
 
+// ---------------------------------------------------------------------------
+// A SERVICE ADMINISTRATOR'S TOKEN IN ANOTHER REALM (#1038, 2026-10-27).
+//
+// rcbj: "The admin user for the default domain should have /report access
+// in all realms." The default realm's console roster is the service roster
+// (`admin-ui/CLAUDE.md` 8d), and `/admin-api` already believes a token the
+// default realm issued under every realm's prefix. This is the same
+// arrangement for the report API, narrowed to the one caller it is for:
+//
+//   * A JWT that does NOT verify under the ambient realm's key and DOES
+//     under the default realm's, presented under another realm's prefix,
+//     is checked WHOLE in the default realm — issuer, audience (the
+//     default realm's `/report-api`, which is what the reports app's
+//     realm switcher keeps), revocation, the sign-on session, the sender
+//     constraint, the client's declaration and the roles, held ∩ carried,
+//     all the default realm's — by the same code that checks any token.
+//   * Then its subject must be a PERSON on the default realm's console
+//     roster now (`rights.serviceAdministrator()`), or it is refused
+//     (STS-REPORT-0045): a member of the default realm's `report-users`
+//     reaches the default realm's reports and nobody else's.
+//   * The caller carries `realm` = the default realm's id, so every row it
+//     makes records `ownerRealm` and its groups are not read here
+//     (`rights.ts`).
+//
+// An opaque handle is not tried across realms: it is looked up in the
+// realm it was issued in, which the handle does not say.
+// ---------------------------------------------------------------------------
+function reportServiceToken(token: string): boolean {
+  log.debug("Entering reportServiceToken().");
+  const realms = require('../common/realms');
+  const helpers = require('../common/helpers');
+  if (realms.currentId() === realms.DEFAULT_ID ||
+      String(token || '').indexOf('.') < 0) {
+    log.debug("Leaving reportServiceToken(). Not a crossing.");
+    return false;
+  }
+  try {
+    helpers.verifyOwnJws(token);
+    log.debug("Leaving reportServiceToken(). This realm's own.");
+    return false;
+  } catch (err) {
+    // Not this realm's key: asked of the default realm's below.
+    log.debug("Caught in reportServiceToken(): " +
+      ((err && err.message) || err));
+  }
+  let ours = false;
+  try {
+    realms.run(realms.get(realms.DEFAULT_ID), function (): void {
+      helpers.verifyOwnJws(token);
+    });
+    ours = true;
+  } catch (err) {
+    log.debug("Caught in reportServiceToken(): " +
+      ((err && err.message) || err));
+    ours = false;
+  }
+  log.debug("Leaving reportServiceToken(). " + ours);
+  return ours;
+}
+
 function reportAuthenticate(req: any, res: any): any {
   log.debug("Entering reportAuthenticate().");
-  const deps = reportDepsOf();
   const presentation = reportPresented(req);
   if (!presentation.token) {
     reportUnauthenticated(res, 'STS-REPORT-0006', 'invalid_token',
@@ -450,214 +510,38 @@ function reportAuthenticate(req: any, res: any): any {
     log.debug("Leaving reportAuthenticate(). No token.");
     return null;
   }
-  let claims: any = null;
-  let opaqueAccess = false;
-  try {
-    claims = deps.helpers.verifyOwnJws(presentation.token);
-  } catch (err) {
-    log.debug("Caught in reportAuthenticate(): " +
-      ((err && err.message) || err));
-    claims = null;
-  }
-  if (!claims && presentation.token.indexOf('.') < 0) {
-    const found = deps.opaque.lookup(presentation.token);
-    if (found.kind === 'active' ||
-        (found.kind === 'inactive' && found.why === 'expired')) {
-      claims = found.claims;
-      opaqueAccess = true;
-    } else if (found.kind === 'inactive' && found.why === 'revoked') {
-      reportUnauthenticated(res, 'STS-REPORT-0012', 'invalid_token',
-        'That access token has been revoked, or the account it was ' +
-        'issued to is disabled.');
-      log.debug("Leaving reportAuthenticate(). Revoked handle.");
-      return null;
-    } else if (found.kind === 'unknown' && deps.opaque.issuesOpaque()) {
-      const limited = deps.opaque.noteMiss(req);
-      if (limited) {
-        res.set('Retry-After', String(limited.retryAfterS));
-        reportSend(res, 429, 'STS-OAUTH-0983', 'invalid_token',
-          'Too many attempts. Wait ' + limited.retryAfterS +
-          ' seconds and try again.');
-        log.debug("Leaving reportAuthenticate(). Too many handles.");
-        return null;
-      }
-      reportUnauthenticated(res, 'STS-OAUTH-0980', 'invalid_token',
-        'That access token is not valid.');
-      log.debug("Leaving reportAuthenticate(). Unknown handle.");
-      return null;
-    }
-  }
-  if (!claims) {
-    reportUnauthenticated(res, 'STS-REPORT-0007', 'invalid_token',
-      'That access token was not issued by this realm, or its ' +
-      'signature does not verify.');
-    log.debug("Leaving reportAuthenticate(). Does not verify.");
-    return null;
-  }
-  const now = Math.floor(Date.now() / 1000);
-  if (claims.exp && Number(claims.exp) <= now) {
-    reportUnauthenticated(res, 'STS-REPORT-0008', 'invalid_token',
-      'That access token has expired.');
-    log.debug("Leaving reportAuthenticate(). Expired.");
-    return null;
-  }
-  if (!opaqueAccess) {
-    const typ = deps.jwt.typOf(presentation.token);
-    if (!deps.jwt.isAccessTokenType(typ)) {
-      reportUnauthenticated(res, 'STS-REPORT-0009', 'invalid_token',
-        'That token is not an access token.');
-      log.debug("Leaving reportAuthenticate(). Not an access token.");
-      return null;
-    }
-  }
-  const base = deps.helpers.baseUrlOf(req);
-  if (!deps.jwt.isHostedIssuer(claims.iss, base)) {
-    reportUnauthenticated(res, 'STS-REPORT-0010', 'invalid_token',
-      'That access token was issued by another authorization server.');
-    log.debug("Leaving reportAuthenticate(). Another issuer.");
-    return null;
-  }
-  const audiences = Array.isArray(claims.aud) ? claims.aud :
-    (claims.aud === undefined || claims.aud === null ? [] : [claims.aud]);
-  if (!reportAudienceOk(audiences, base)) {
-    reportForbidden(res, 'STS-REPORT-0011', 'invalid_token',
-      'That access token is not for this API.');
-    log.debug("Leaving reportAuthenticate(). Another audience.");
-    return null;
-  }
-  const person = String(claims.username ||
-    deps.helpers.nameForSubject(claims.sub) || '');
-  if ((claims.jti && deps.stats.isRevoked(String(claims.jti))) ||
-      (person && deps.accountState.isDisabled(person))) {
-    reportUnauthenticated(res, 'STS-REPORT-0012', 'invalid_token',
-      'That access token has been revoked, or the account it was ' +
-      'issued to is disabled.');
-    log.debug("Leaving reportAuthenticate(). Revoked or disabled.");
-    return null;
-  }
-  const sid = claims.jti ? String(deps.stats.sessionIdOfJti(
-    String(claims.jti)) || '') : '';
-  if (sid && !deps.oauth2.sessionIsLive(sid)) {
-    reportUnauthenticated(res, 'STS-REPORT-0013', 'invalid_token',
-      'That access token was issued on a sign-on session that has ' +
-      'ended.');
-    log.debug("Leaving reportAuthenticate(). Session ended.");
-    return null;
-  }
-  const certificateProblem = deps.mtls.checkBinding(claims, req, true);
-  if (certificateProblem) {
-    reportUnauthenticated(res, 'STS-REPORT-0014', 'invalid_token',
-      certificateProblem.description);
-    log.debug("Leaving reportAuthenticate(). Certificate binding.");
-    return null;
-  }
-  const boundJkt = deps.dpop.jktOf(claims);
-  let proofOk = false;
-  if (boundJkt) {
-    if (presentation.scheme !== 'dpop') {
-      reportUnauthenticated(res, 'STS-REPORT-0015', 'invalid_token',
-        'That access token is DPoP-bound, so it must be sent as DPoP.');
-      log.debug("Leaving reportAuthenticate(). Sent as Bearer.");
-      return null;
-    }
-    const checked = deps.dpop.verifyProof(req.headers.dpop, {
-      htm: req.method,
-      htu: deps.dpop.htuOf(req),
-      accessToken: presentation.token,
-      expectedJkt: boundJkt,
-      req: req
+  const realms = require('../common/realms');
+  let who: any = null;
+  if (reportServiceToken(presentation.token)) {
+    who = realms.run(realms.get(realms.DEFAULT_ID), function (): any {
+      return reportAuthenticateToken(req, res, presentation);
     });
-    if (!checked.ok) {
-      if (checked.needNonce) {
-        res.set('DPoP-Nonce', deps.dpop.issueNonce());
-        res.set('WWW-Authenticate', 'DPoP error="use_dpop_nonce"');
-        reportSend(res, reportHttpStatus('STS-REPORT-0015'),
-          checked.errorCode || 'STS-REPORT-0015', 'use_dpop_nonce',
-          checked.description);
-        log.debug("Leaving reportAuthenticate(). Nonce wanted.");
-        return null;
-      }
-      reportUnauthenticated(res,
-        checked.errorCode || 'STS-REPORT-0015', 'invalid_dpop_proof',
-        checked.description);
-      log.debug("Leaving reportAuthenticate(). Proof refused.");
+    if (!who) {
+      log.debug("Leaving reportAuthenticate(). The default realm refused.");
       return null;
     }
-    proofOk = true;
+    if (who.kind !== 'user' || !rights.serviceAdministrator(who.username)) {
+      reportForbidden(res, 'STS-REPORT-0045', 'forbidden',
+        'That access token was issued by the default realm. It reaches ' +
+        'another realm\'s reports only for a service administrator: a ' +
+        'person holding Admin Read or Admin Write on the default realm\'s ' +
+        'console roster. Sign in to this realm\'s reports instead.');
+      log.debug("Leaving reportAuthenticate(). Not a service " +
+                "administrator.");
+      return null;
+    }
+    who.realm = realms.DEFAULT_ID;
+  } else {
+    who = reportAuthenticateToken(req, res, presentation);
+    if (!who) {
+      log.debug("Leaving reportAuthenticate(). Refused.");
+      return null;
+    }
   }
-  const issuedTo = String(claims.client_id || '');
-  let entry: any = {};
-  try {
-    entry = deps.applications.clientConfigOf(issuedTo) || {};
-  } catch (err) {
-    log.debug("Caught in reportAuthenticate(): " +
-      ((err && err.message) || err));
-    entry = {};
-  }
-  const clientBound = deps.sender.dpopBoundPublicClient(issuedTo,
-    entry.token_endpoint_auth_method);
-  const thumb = deps.mtls.boundThumbprintOf(claims);
-  const required = deps.sender.accessTokenRefusal({
-    where: 'the report API',
-    clientBound: clientBound,
-    boundJkt: boundJkt,
-    proofOk: proofOk,
-    boundThumbprint: thumb,
-    certificate: !!deps.mtls.peerCertificate(req),
-    certificateMatches: !!thumb && deps.mtls.peerVerified(req) &&
-      deps.mtls.presentedThumbprint(req) === thumb,
-    mtlsAvailable: deps.mtls.available()
-  });
-  if (required) {
-    reportUnauthenticated(res, required.errorCode, required.error,
-      required.description);
-    log.debug("Leaving reportAuthenticate(). Sender constraint.");
-    return null;
-  }
-  // A CLIENT'S OWN TOKEN IS A CALLER SINCE #1030: an application holding
-  // REPORT_USE or REPORT_ADMIN as a member is issued the scope on
-  // client_credentials and reaches only what it defined, as the policy
-  // decides. (STS-REPORT-0016 refused it until then.)
-  if (!claims.sub) {
-    reportForbidden(res, 'STS-REPORT-0017', 'forbidden',
-      'That access token names no subject.');
-    log.debug("Leaving reportAuthenticate(). No subject.");
-    return null;
-  }
-  const carried = String(claims.scope || '').split(/\s+/).filter(
+  const carried = String(who.scope || '').split(/\s+/).filter(
     function (part: string): boolean {
       return part.length > 0;
     });
-  const wantsUse = carried.indexOf('report:use') >= 0;
-  const wantsAdmin = carried.indexOf('report:admin') >= 0;
-  if (!wantsUse && !wantsAdmin) {
-    res.set('WWW-Authenticate',
-      'DPoP error="insufficient_scope", scope="' + SCOPE_CHALLENGE + '"');
-    reportForbidden(res, 'STS-REPORT-0017', 'insufficient_scope',
-      'That access token does not carry report:use or report:admin.');
-    log.debug("Leaving reportAuthenticate(). No report scope.");
-    return null;
-  }
-  if ((wantsUse && !deps.scopes.declares(issuedTo, 'report:use')) ||
-      (wantsAdmin && !deps.scopes.declares(issuedTo, 'report:admin'))) {
-    reportForbidden(res, 'STS-REPORT-0017', 'forbidden',
-      'The client this token was issued to no longer declares that ' +
-      'report scope.');
-    log.debug("Leaving reportAuthenticate(). Undeclared.");
-    return null;
-  }
-  // HELD ∩ CARRIED (#1030), the management API's reading: the roles the
-  // subject holds NOW in this realm, less any whose permission the token
-  // does not carry. A role taken away after the token was minted refuses
-  // the call at once.
-  const caller = rights.callerOf(claims, carried);
-  if (!caller.ok) {
-    reportForbidden(res, caller.code, caller.error || 'forbidden',
-      caller.description);
-    log.debug("Leaving reportAuthenticate(). A role was withdrawn.");
-    return null;
-  }
-  const who = caller.who;
   // AND THE POLICY, FOR THE API ITSELF: holding a report role, as the
   // access-control document's first rule reads it. Every definition and
   // job is asked about again, one row at a time, where it is reached.
@@ -678,6 +562,223 @@ function reportAuthenticate(req: any, res: any): any {
   }
   log.debug("Leaving reportAuthenticate().");
   return who;
+}
+
+// The token's own checks, in the realm they are asked in: the ambient one,
+// or the default realm's for a service administrator's token (above).
+function reportAuthenticateToken(req: any, res: any, presentation: any):
+    any {
+  log.debug("Entering reportAuthenticateToken().");
+  const deps = reportDepsOf();
+  let claims: any = null;
+  let opaqueAccess = false;
+  try {
+    claims = deps.helpers.verifyOwnJws(presentation.token);
+  } catch (err) {
+    log.debug("Caught in reportAuthenticateToken(): " +
+      ((err && err.message) || err));
+    claims = null;
+  }
+  if (!claims && presentation.token.indexOf('.') < 0) {
+    const found = deps.opaque.lookup(presentation.token);
+    if (found.kind === 'active' ||
+        (found.kind === 'inactive' && found.why === 'expired')) {
+      claims = found.claims;
+      opaqueAccess = true;
+    } else if (found.kind === 'inactive' && found.why === 'revoked') {
+      reportUnauthenticated(res, 'STS-REPORT-0012', 'invalid_token',
+        'That access token has been revoked, or the account it was ' +
+        'issued to is disabled.');
+      log.debug("Leaving reportAuthenticateToken(). Revoked handle.");
+      return null;
+    } else if (found.kind === 'unknown' && deps.opaque.issuesOpaque()) {
+      const limited = deps.opaque.noteMiss(req);
+      if (limited) {
+        res.set('Retry-After', String(limited.retryAfterS));
+        reportSend(res, 429, 'STS-OAUTH-0983', 'invalid_token',
+          'Too many attempts. Wait ' + limited.retryAfterS +
+          ' seconds and try again.');
+        log.debug("Leaving reportAuthenticateToken(). Too many handles.");
+        return null;
+      }
+      reportUnauthenticated(res, 'STS-OAUTH-0980', 'invalid_token',
+        'That access token is not valid.');
+      log.debug("Leaving reportAuthenticateToken(). Unknown handle.");
+      return null;
+    }
+  }
+  if (!claims) {
+    reportUnauthenticated(res, 'STS-REPORT-0007', 'invalid_token',
+      'That access token was not issued by this realm, or its ' +
+      'signature does not verify.');
+    log.debug("Leaving reportAuthenticateToken(). Does not verify.");
+    return null;
+  }
+  const now = Math.floor(Date.now() / 1000);
+  if (claims.exp && Number(claims.exp) <= now) {
+    reportUnauthenticated(res, 'STS-REPORT-0008', 'invalid_token',
+      'That access token has expired.');
+    log.debug("Leaving reportAuthenticateToken(). Expired.");
+    return null;
+  }
+  if (!opaqueAccess) {
+    const typ = deps.jwt.typOf(presentation.token);
+    if (!deps.jwt.isAccessTokenType(typ)) {
+      reportUnauthenticated(res, 'STS-REPORT-0009', 'invalid_token',
+        'That token is not an access token.');
+      log.debug("Leaving reportAuthenticateToken(). Not an access token.");
+      return null;
+    }
+  }
+  const base = deps.helpers.baseUrlOf(req);
+  if (!deps.jwt.isHostedIssuer(claims.iss, base)) {
+    reportUnauthenticated(res, 'STS-REPORT-0010', 'invalid_token',
+      'That access token was issued by another authorization server.');
+    log.debug("Leaving reportAuthenticateToken(). Another issuer.");
+    return null;
+  }
+  const audiences = Array.isArray(claims.aud) ? claims.aud :
+    (claims.aud === undefined || claims.aud === null ? [] : [claims.aud]);
+  if (!reportAudienceOk(audiences, base)) {
+    reportForbidden(res, 'STS-REPORT-0011', 'invalid_token',
+      'That access token is not for this API.');
+    log.debug("Leaving reportAuthenticateToken(). Another audience.");
+    return null;
+  }
+  const person = String(claims.username ||
+    deps.helpers.nameForSubject(claims.sub) || '');
+  if ((claims.jti && deps.stats.isRevoked(String(claims.jti))) ||
+      (person && deps.accountState.isDisabled(person))) {
+    reportUnauthenticated(res, 'STS-REPORT-0012', 'invalid_token',
+      'That access token has been revoked, or the account it was ' +
+      'issued to is disabled.');
+    log.debug("Leaving reportAuthenticateToken(). Revoked or disabled.");
+    return null;
+  }
+  const sid = claims.jti ? String(deps.stats.sessionIdOfJti(
+    String(claims.jti)) || '') : '';
+  if (sid && !deps.oauth2.sessionIsLive(sid)) {
+    reportUnauthenticated(res, 'STS-REPORT-0013', 'invalid_token',
+      'That access token was issued on a sign-on session that has ' +
+      'ended.');
+    log.debug("Leaving reportAuthenticateToken(). Session ended.");
+    return null;
+  }
+  const certificateProblem = deps.mtls.checkBinding(claims, req, true);
+  if (certificateProblem) {
+    reportUnauthenticated(res, 'STS-REPORT-0014', 'invalid_token',
+      certificateProblem.description);
+    log.debug("Leaving reportAuthenticateToken(). Certificate binding.");
+    return null;
+  }
+  const boundJkt = deps.dpop.jktOf(claims);
+  let proofOk = false;
+  if (boundJkt) {
+    if (presentation.scheme !== 'dpop') {
+      reportUnauthenticated(res, 'STS-REPORT-0015', 'invalid_token',
+        'That access token is DPoP-bound, so it must be sent as DPoP.');
+      log.debug("Leaving reportAuthenticateToken(). Sent as Bearer.");
+      return null;
+    }
+    const checked = deps.dpop.verifyProof(req.headers.dpop, {
+      htm: req.method,
+      htu: deps.dpop.htuOf(req),
+      accessToken: presentation.token,
+      expectedJkt: boundJkt,
+      req: req
+    });
+    if (!checked.ok) {
+      if (checked.needNonce) {
+        res.set('DPoP-Nonce', deps.dpop.issueNonce());
+        res.set('WWW-Authenticate', 'DPoP error="use_dpop_nonce"');
+        reportSend(res, reportHttpStatus('STS-REPORT-0015'),
+          checked.errorCode || 'STS-REPORT-0015', 'use_dpop_nonce',
+          checked.description);
+        log.debug("Leaving reportAuthenticateToken(). Nonce wanted.");
+        return null;
+      }
+      reportUnauthenticated(res,
+        checked.errorCode || 'STS-REPORT-0015', 'invalid_dpop_proof',
+        checked.description);
+      log.debug("Leaving reportAuthenticateToken(). Proof refused.");
+      return null;
+    }
+    proofOk = true;
+  }
+  const issuedTo = String(claims.client_id || '');
+  let entry: any = {};
+  try {
+    entry = deps.applications.clientConfigOf(issuedTo) || {};
+  } catch (err) {
+    log.debug("Caught in reportAuthenticateToken(): " +
+      ((err && err.message) || err));
+    entry = {};
+  }
+  const clientBound = deps.sender.dpopBoundPublicClient(issuedTo,
+    entry.token_endpoint_auth_method);
+  const thumb = deps.mtls.boundThumbprintOf(claims);
+  const required = deps.sender.accessTokenRefusal({
+    where: 'the report API',
+    clientBound: clientBound,
+    boundJkt: boundJkt,
+    proofOk: proofOk,
+    boundThumbprint: thumb,
+    certificate: !!deps.mtls.peerCertificate(req),
+    certificateMatches: !!thumb && deps.mtls.peerVerified(req) &&
+      deps.mtls.presentedThumbprint(req) === thumb,
+    mtlsAvailable: deps.mtls.available()
+  });
+  if (required) {
+    reportUnauthenticated(res, required.errorCode, required.error,
+      required.description);
+    log.debug("Leaving reportAuthenticateToken(). Sender constraint.");
+    return null;
+  }
+  // A CLIENT'S OWN TOKEN IS A CALLER SINCE #1030: an application holding
+  // REPORT_USE or REPORT_ADMIN as a member is issued the scope on
+  // client_credentials and reaches only what it defined, as the policy
+  // decides. (STS-REPORT-0016 refused it until then.)
+  if (!claims.sub) {
+    reportForbidden(res, 'STS-REPORT-0017', 'forbidden',
+      'That access token names no subject.');
+    log.debug("Leaving reportAuthenticateToken(). No subject.");
+    return null;
+  }
+  const carried = String(claims.scope || '').split(/\s+/).filter(
+    function (part: string): boolean {
+      return part.length > 0;
+    });
+  const wantsUse = carried.indexOf('report:use') >= 0;
+  const wantsAdmin = carried.indexOf('report:admin') >= 0;
+  if (!wantsUse && !wantsAdmin) {
+    res.set('WWW-Authenticate',
+      'DPoP error="insufficient_scope", scope="' + SCOPE_CHALLENGE + '"');
+    reportForbidden(res, 'STS-REPORT-0017', 'insufficient_scope',
+      'That access token does not carry report:use or report:admin.');
+    log.debug("Leaving reportAuthenticateToken(). No report scope.");
+    return null;
+  }
+  if ((wantsUse && !deps.scopes.declares(issuedTo, 'report:use')) ||
+      (wantsAdmin && !deps.scopes.declares(issuedTo, 'report:admin'))) {
+    reportForbidden(res, 'STS-REPORT-0017', 'forbidden',
+      'The client this token was issued to no longer declares that ' +
+      'report scope.');
+    log.debug("Leaving reportAuthenticateToken(). Undeclared.");
+    return null;
+  }
+  // HELD ∩ CARRIED (#1030), the management API's reading: the roles the
+  // subject holds NOW in this realm, less any whose permission the token
+  // does not carry. A role taken away after the token was minted refuses
+  // the call at once.
+  const caller = rights.callerOf(claims, carried);
+  if (!caller.ok) {
+    reportForbidden(res, caller.code, caller.error || 'forbidden',
+      caller.description);
+    log.debug("Leaving reportAuthenticateToken(). A role was withdrawn.");
+    return null;
+  }
+  log.debug("Leaving reportAuthenticateToken().");
+  return caller.who;
 }
 
 function reportParts(req: any): string[] {
@@ -755,8 +856,16 @@ function reportJobVisible(who: any, job: any): boolean {
 // is shown as it is. The directory is reached lazily: by request time it
 // is loaded, and a load-time require of a JavaScript route module would
 // move its routes (root CLAUDE.md, rule 1).
-function reportOwnerName(owner: string): string {
+function reportOwnerName(owner: string, ownerRealm?: string): string {
   log.debug("Entering reportOwnerName().");
+  // An owner from another realm (#1038) is named in THEIR realm.
+  if (ownerRealm) {
+    const named = rights.inOwnerRealm(ownerRealm, function (): string {
+      return reportOwnerName(owner);
+    });
+    log.debug("Leaving reportOwnerName(). In " + ownerRealm + '.');
+    return named;
+  }
   const helpers = require('../common/helpers');
   const username = String(helpers.nameForSubject(owner) || '');
   if (!username) {
@@ -790,7 +899,8 @@ function reportDefinitionView(who: any, row: any): any {
     id: row.id,
     name: row.name,
     owner: row.owner,
-    ownerName: reportOwnerName(String(row.owner || '')),
+    ownerName: reportOwnerName(String(row.owner || ''),
+      String(row.ownerRealm || '')),
     schedule: row.schedule || '',
     scheduleEnabled: !!row.scheduleEnabled,
     // When the schedule next runs and which occurrence it last took, so
@@ -931,7 +1041,8 @@ function reportSchedulesView(who: any, query: any): any {
           id: row.id,
           name: row.name,
           owner: row.owner,
-          ownerName: reportOwnerName(String(row.owner || '')),
+          ownerName: reportOwnerName(String(row.owner || ''),
+      String(row.ownerRealm || '')),
           schedule: row.schedule,
           scheduleEnabled: !!row.scheduleEnabled,
           notify: !!row.notify,
@@ -1128,6 +1239,7 @@ async function reportAcceptQuery(req: any, res: any, who: any,
   const submitted = jobs.submit({
     owner: who.subject,
     ownerKind: who.kind,
+    ownerRealm: who.realm || '',
     document: document,
     parameters: wrapped.parameters,
     definitionId: definition ? definition.id : null,
@@ -1222,6 +1334,7 @@ function reportCreateDefinition(req: any, res: any, who: any,
     name: posted.name,
     owner: who.subject,
     ownerKind: who.kind,
+    ownerRealm: who.realm || '',
     document: posted.document,
     schedule: posted.schedule,
     scheduleEnabled: posted.scheduleEnabled,

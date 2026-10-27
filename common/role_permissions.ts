@@ -32,7 +32,8 @@
 //     group and the application is a member, and an application's own
 //     token only while the application is a member. SSF_MANAGE does not
 //     authorize `ssf.read`. The report roles are held through their groups
-//     or as a member, with no condition on the application (`roles.js`).
+//     or as a member, with no condition on the application (`roles.js`),
+//     and since #1038 by a person on the console roster (`heldRoles()`).
 //   * APPLICATION permissions — a resource's `oauthPermissionBaseUri` +
 //     `oauthPermission` name — gated only where that resource lists the name
 //     in `oauthRoleGatedPermission`. Every other scope, `openid` and a
@@ -174,6 +175,16 @@ interface Narrowed {
  * in `oauthRoleGatedPermission`.
  */
 class RolePermissions {
+  /**
+   * The report roles a console roster entry carries (#1038): each pair is a
+   * roster key (`read`, `write`) and a role it brings.
+   */
+  static readonly REPORT_ROLES_OF_ROSTER = Object.freeze([
+    { consoleRole: 'write', role: 'REPORT_ADMIN' },
+    { consoleRole: 'write', role: 'REPORT_USE' },
+    { consoleRole: 'read', role: 'REPORT_USE' }
+  ]);
+
   /**
    * Builds the instance over its dependencies.
    *
@@ -435,6 +446,22 @@ class RolePermissions {
           roles.CONSOLE_ROLES.forEach(function (row) {
             if (roster[row.consoleRole] === true) {
               configured.push(row.name);
+            }
+          });
+          // THE REPORT ROLES COME WITH THE ROSTER (#1038, rcbj 2026-10-27:
+          // "The admin user for the default domain should have /report
+          // access in all realms. The realm admins should have report
+          // access in their realms."). This reverses #1030's "a console
+          // administrator is NOT a report administrator by holding the
+          // console roster": Admin Write holds REPORT_ADMIN and
+          // REPORT_USE, Admin Read holds REPORT_USE, in the realm whose
+          // roster says so — the groups still grant them to anybody else.
+          // A service administrator's reach into OTHER realms is the
+          // report API's (`report/report_api.ts`), as `/admin-api`'s is.
+          RolePermissions.REPORT_ROLES_OF_ROSTER.forEach(function (pair) {
+            if (roster[pair.consoleRole] === true &&
+                configured.indexOf(pair.role) < 0) {
+              configured.push(pair.role);
             }
           });
           if (!roster.read) {
@@ -1016,10 +1043,21 @@ class RolePermissions {
       log.debug("Leaving RolePermissions.effectiveRoles(). " +
                 effective.length + " configured, " + withdrawn.length +
                 " withdrawn.");
+      // `held.why` is about the console roster, so it explains a withdrawn
+      // admin:read or admin:write and nothing else — `whyRemoved()`'s rule.
+      // Since #1038 the roster is closed in more of the cases a report scope
+      // is asked in, and its sentence named the wrong reason for one.
+      const rosterScope = withdrawn.some(function (one) {
+        return roles.CONSOLE_ROLES.some(function (row: any) {
+          return row.permission === one;
+        });
+      });
+      const why = held.why && (rosterScope ||
+        !String(subject.name || '').trim())
+        ? held.why
+        : subject.name + ' holds no role authorizing ' + withdrawn.join(', ');
       return { roles: builtIn.concat(effective), withdrawn: withdrawn,
-               why: held.why || (subject.name + ' holds no role authorizing ' +
-                                 withdrawn.join(', ')),
-               subject: subject };
+               why: why, subject: subject };
     });
   }
 }

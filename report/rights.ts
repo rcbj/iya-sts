@@ -46,6 +46,17 @@
 //   * **A scheduled run** asks the same question of the definition's owner
 //     (`ownerMayRun()`): the roles that owner holds now, and `run` on the
 //     definition.
+//   * **A SERVICE ADMINISTRATOR IN ANOTHER REALM (#1038).** The default
+//     realm's console roster is the service roster, and rcbj's rule is that
+//     its administrators reach every realm's reports, as `/admin-api` lets
+//     them reach every realm's console. The report API accepts their
+//     default-realm token under another realm's prefix
+//     (`report_api.ts`), the caller's roles are the default realm's, and
+//     `realm` on the caller says so. `serviceAdministrator()` is the one
+//     question that crossing asks — Admin Read or Admin Write on the
+//     default realm's roster, now — and a definition or job such a caller
+//     makes records `ownerRealm`, so its schedule, its owner's name and its
+//     notice are asked in the realm the owner's identity lives in.
 //
 // A hidden row is answered `not_found` by the API, as before, so a job id
 // in a URL is still not permission to read it.
@@ -86,6 +97,12 @@ interface ReportCaller {
   scope: string;
   /** The client the token was issued to. */
   clientId: string;
+  /**
+   * The realm the caller's identity is in, when it is not the realm the
+   * request is in: the default realm's id for a service administrator
+   * reaching another realm (#1038), '' otherwise.
+   */
+  realm: string;
 }
 
 let ownerCheck: ((definition: any) => any) | null = null;
@@ -109,6 +126,61 @@ function reportUsername(subject: string): string {
   const name = String(helpers.nameForSubject(subject) || '');
   log.debug("Leaving reportUsername().");
   return name;
+}
+
+/**
+ * Runs `fn` in the realm a row's owner lives in (#1038): the named realm
+ * when it is defined and is not the ambient one, the ambient realm
+ * otherwise.
+ *
+ * @param ownerRealm - the row's `ownerRealm`, '' for this realm
+ * @param fn - what to run
+ * @returns what `fn` returns
+ */
+function reportInOwnerRealm<T>(ownerRealm: string, fn: () => T): T {
+  log.debug("Entering reportInOwnerRealm().");
+  const realms = require('../common/realms');
+  const id = String(ownerRealm || '');
+  const realm = id && id !== realms.currentId() ? realms.get(id) : null;
+  log.debug("Leaving reportInOwnerRealm(). " + (realm ? id : 'here'));
+  return realm ? realms.run(realm, fn) : fn();
+}
+
+/**
+ * Whether a person is a service administrator now: Admin Read or Admin
+ * Write on the DEFAULT realm's console roster (#1038). Asked of a
+ * default-realm caller reaching another realm's reports, and of the owner
+ * of a definition made that way when its schedule runs.
+ *
+ * @param username - the person's username in the default realm
+ * @returns true for a service administrator
+ */
+function reportServiceAdministrator(username: string): boolean {
+  log.debug("Entering reportServiceAdministrator().");
+  const name = String(username || '').trim();
+  if (!name) {
+    log.debug("Leaving reportServiceAdministrator(). Nobody.");
+    return false;
+  }
+  const realms = require('../common/realms');
+  const rolePermissions = require('../common/role_permissions');
+  let held: any = { configured: [] };
+  try {
+    held = rolePermissions.heldRoles({ kind: 'user', name: name,
+                                       authenticated: true },
+                                     realms.DEFAULT_ID);
+  } catch (e) {
+    // A roster that cannot be read makes nobody a service administrator:
+    // the crossing it would open is the wider one.
+    log.debug("Caught in reportServiceAdministrator(): " +
+              ((e && e.message) || e));
+    held = { configured: [] };
+  }
+  const configured = (held.configured || []).map(String);
+  const yes = configured.indexOf('ADMIN_READ') >= 0 ||
+    configured.indexOf('ADMIN_WRITE') >= 0;
+  log.debug("Leaving reportServiceAdministrator(). " + yes);
+  return yes;
 }
 
 // A client's own subject, as `oauth2.ts` mints it: the bare client_id, or
@@ -199,7 +271,8 @@ function reportCallerOf(claims: any, carried: string[]): any {
     kind: kind,
     roles: (effective.roles || []).map(String),
     scope: scopes.join(' '),
-    clientId: String(c.client_id || '')
+    clientId: String(c.client_id || ''),
+    realm: ''
   };
   log.debug("Leaving reportCallerOf(). " + kind + ' ' + who.username);
   return { ok: true, who: who };
@@ -217,7 +290,11 @@ function reportDecide(who: ReportCaller, action: string, object: any): any {
       .map(function (one: any): string {
         return ownership.dnKey(one);
       }).filter(Boolean),
-    person: who.kind === 'user' ? who.username : ''
+    // The PIP reads the person's groups by USERNAME in the ambient realm,
+    // so a caller from another realm (#1038) names nobody here: `admin` in
+    // the default realm and `admin` in this one are two people, and the
+    // second one's shares are not the first one's.
+    person: who.kind === 'user' && !who.realm ? who.username : ''
   } : null;
   const answer = accessGate.check({
     resource: accessGate.RESOURCE.REPORT_API,
@@ -380,8 +457,16 @@ function reportOwnerMayRun(definition: any): any {
   const def = definition || {};
   const kind = def.ownerKind === 'application' ? 'application' : 'user';
   const owner = String(def.owner || '');
+  // AN OWNER FROM ANOTHER REALM (#1038) is a service administrator who
+  // defined this here: their name and roles are the default realm's, and
+  // they keep the crossing only while they are still on its roster.
+  const realms = require('../common/realms');
+  const ownerRealm = String(def.ownerRealm || '');
+  const crossing = !!ownerRealm && ownerRealm !== realms.currentId();
   const name = kind === 'application' ? reportClientIdOf(owner)
-                                      : reportUsername(owner);
+    : reportInOwnerRealm(ownerRealm, function (): string {
+      return reportUsername(owner);
+    });
   const refusal = {
     ok: false,
     code: 'STS-REPORT-0028',
@@ -392,11 +477,19 @@ function reportOwnerMayRun(definition: any): any {
     log.debug("Leaving reportOwnerMayRun(). Nobody.");
     return refusal;
   }
+  if (crossing && (kind !== 'user' ||
+      ownerRealm !== realms.DEFAULT_ID ||
+      !reportServiceAdministrator(name))) {
+    log.debug("Leaving reportOwnerMayRun(). No longer a service " +
+              "administrator.");
+    return refusal;
+  }
   const rolePermissions = require('../common/role_permissions');
   let held: any = { all: [] };
   try {
     held = rolePermissions.heldRoles({ kind: kind, name: name,
-                                       authenticated: true });
+                                       authenticated: true },
+                                     crossing ? ownerRealm : undefined);
   } catch (e) {
     // A register that cannot be read holds the owner no role: the safe
     // direction, since the run would read what the owner may no longer.
@@ -405,7 +498,8 @@ function reportOwnerMayRun(definition: any): any {
   }
   const who: ReportCaller = {
     subject: owner, username: name, kind: kind,
-    roles: (held.all || []).map(String), scope: '', clientId: ''
+    roles: (held.all || []).map(String), scope: '', clientId: '',
+    realm: crossing ? ownerRealm : ''
   };
   const answer = reportDecide(who, 'run', reportDefinitionObject(def));
   if (!answer.allowed) {
@@ -430,5 +524,7 @@ export = {
   canSeeJob: reportCanSeeJob,
   ownerMayRun: reportOwnerMayRun,
   username: reportUsername,
-  clientIdOf: reportClientIdOf
+  clientIdOf: reportClientIdOf,
+  inOwnerRealm: reportInOwnerRealm,
+  serviceAdministrator: reportServiceAdministrator
 };
