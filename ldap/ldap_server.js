@@ -1482,6 +1482,9 @@ let groupsVersion = 0;
 let serviceAccountsVersion = 0;
 // The user-handle index's own clock (#909); see noteUserHandlesTouched().
 let userHandlesVersion = 0;
+// The stored-certificate index's own clock (#1061), the same arrangement; see
+// noteCertificatesTouched().
+let certificatesVersion = 0;
 
 // ---------------------------------------------------------------------------
 // WHAT HAS BEEN WRITTEN SINCE AN LDAP ADD ASKED ITS NAMES (#625).
@@ -1570,6 +1573,7 @@ function touchDirectory(dn, after) {
   noteGroupsTouched(dn, after);
   noteServiceAccountsTouched(dn, after);
   noteUserHandlesTouched(dn, after);
+  noteCertificatesTouched(dn, after);
   // And any add holding names it asked first is told what this write
   // touched (#625).
   noteHeldNamesTouched(dn, after);
@@ -12103,6 +12107,305 @@ function webauthnUserHandleOwner(handle) {
 }
 
 // ---------------------------------------------------------------------------
+// A CERTIFICATE STORED ON AN ENTRY, AND THE ENTRY A PRESENTED ONE IS (#1061,
+// rcbj 2026-10-27).
+//
+// A certificate from an OUTSIDE authority — one somebody trusted through the
+// Client Truststores — is an identity only when it is, byte for byte, a leaf
+// stored in `userCertificate` (RFC 4523 section 2.1) on EXACTLY ONE entry of
+// the realm. It is never matched by its common name or subject, and no entry
+// is created or seeded from it. `common/tls_client_certificates.js`'s
+// `identityOf()` asks; this answers who holds it, through certificate
+// enrollment's slot (`certificateHolders`, below), because that is already the
+// slot that hands the certificate code the entry a certificate is on.
+//
+// **STORED AS RFC 4522 SAYS**: `userCertificate;binary`, base64 of the DER,
+// which is what an LDAP client writing the attribute sends and what an
+// `ldapsearch` hands back as a certificate. A value under the bare type is
+// read too (base64 or PEM), so an entry written by hand is not silently
+// unlike one written here.
+//
+// **FOUND THROUGH AN INDEX, NEVER A WALK OF THE PEOPLE.** In a windowed
+// process (#349 — 8081's millions) the store answers: `value_keys` holds the
+// SHA-256 of every stored certificate's DER under `usercertificatesha256`
+// (`persistence/directory_codec.js`), one GIN probe. The resident half (the
+// applications, and every entry of a whole directory) is the user-handle
+// index's arrangement: built from the holders of the attribute, checked rather
+// than kept (a hit is read back from its entry), on its own clock, which moves
+// only for a write naming no DN, a write to an entry the index holds, or one
+// to an entry holding a certificate. So a sign-in's own writes do not rebuild
+// it, and an unknown certificate presented twice costs one walk of the
+// holders at most.
+// ---------------------------------------------------------------------------
+const CERTIFICATE_ATTRIBUTES = ['usercertificate;binary', 'usercertificate'];
+
+const certificateIndexes = realms.keyed(function () {
+  return { index: null, dns: null, version: -1, builds: 0 };
+});
+
+// Whether an entry stores a certificate under either spelling.
+function storesCertificate(stored) {
+  log.debug("Entering storesCertificate().");
+  const attrs = (stored && stored.attributes) || {};
+  log.debug("Leaving storesCertificate().");
+  return CERTIFICATE_ATTRIBUTES.some(function (name) {
+    return (attrs[name] || []).length > 0;
+  });
+}
+
+// Whether a write may have changed who stores a certificate. Hot path (every
+// write): no Entering/Leaving pair, the exception the code style allows,
+// stated as it requires — `noteUserHandlesTouched()`'s shape.
+function noteCertificatesTouched(dn, after) {
+  if (!moduleLoaded || dn === undefined || dn === null || dn === '') {
+    certificatesVersion++;
+    return;
+  }
+  const key = normalizeDn(dn);
+  const cache = certificateIndexes();
+  if (cache.dns && cache.dns.has(key)) {
+    certificatesVersion++;
+    return;
+  }
+  let now = after;
+  if (now === undefined) {
+    if (directoryWindow) {
+      const held = directoryWindow.heldIn(realms.currentId(), key);
+      if (!held.known) {
+        certificatesVersion++;
+        return;
+      }
+      now = held.entry;
+    } else {
+      now = entries.get(key) || null;
+    }
+  }
+  const attrs = (now && now.attributes) || {};
+  if ((attrs['usercertificate;binary'] || []).length ||
+      (attrs.usercertificate || []).length) {
+    certificatesVersion++;
+  }
+}
+
+// The SHA-256 digests of the certificates an entry stores — the codec's own
+// reading, so the index the store keeps and the one kept here cannot differ.
+function certificateDigestsOfEntry(stored) {
+  log.debug("Entering certificateDigestsOfEntry().");
+  const out = stored && stored.attributes
+    ? require('../persistence/directory_codec')
+      .certificateDigestsOf(stored.attributes) : [];
+  log.debug("Leaving certificateDigestsOfEntry(). " + out.length + ".");
+  return out;
+}
+
+// What an entry holding a certificate IS, for the identity it answers: a
+// person (named as a simple bind names them), an application (by its
+// identifier), or another entry, which is no identity.
+function certificateHolderOf(stored) {
+  log.debug("Entering certificateHolderOf().");
+  const dn = String(stored.dn);
+  if (isPersonEntry(stored)) {
+    log.debug("Leaving certificateHolderOf(). A person.");
+    return { kind: 'person', dn: dn,
+             id: String((stored.attributes.uid || [])[0] ||
+                        usernameOfEntry(stored)) };
+  }
+  const identifier = (stored.attributes.appidentifier || [])[0];
+  if (identifier && isUnder(dn, applicationsDn())) {
+    log.debug("Leaving certificateHolderOf(). An application.");
+    return { kind: 'application', dn: dn, id: String(identifier) };
+  }
+  log.debug("Leaving certificateHolderOf(). Another entry.");
+  return { kind: 'entry', dn: dn, id: dn };
+}
+
+/**
+ * The entries of the ambient realm that store a certificate whose DER has
+ * this SHA-256, each `{ kind, id, dn }` — person, application, or another
+ * entry. At most three are answered: the caller asks whether there is exactly
+ * one.
+ *
+ * @param sha256 - the digest of the certificate's DER, hex
+ * @returns the holders, each once
+ */
+function certificateHolders(sha256) {
+  log.debug('Entering certificateHolders().');
+  const wanted = String(sha256 || '').toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(wanted)) {
+    log.debug('Leaving certificateHolders(). Not a digest.');
+    return [];
+  }
+  const holds = function (stored) {
+    return !!stored && certificateDigestsOfEntry(stored).indexOf(wanted) >= 0;
+  };
+  const found = new Map();
+  const add = function (stored) {
+    const key = normalizeDn(stored.dn);
+    if (!found.has(key)) {
+      found.set(key, certificateHolderOf(stored));
+    }
+  };
+  // THE WINDOWED HALF: the people and devices, asked of the store's index.
+  (windowedFind('byAttribute', ['usercertificatesha256', wanted, 3],
+                holds) || []).forEach(add);
+  // THE RESIDENT HALF (everything, outside a window): the checked index.
+  const cache = certificateIndexes();
+  const resident = function () {
+    return ((cache.index && cache.index.get(wanted)) || [])
+      .map(function (dn) {
+        return getEntry(dn);
+      }).filter(holds);
+  };
+  // REBUILT WHENEVER ITS CLOCK MOVED, and not only on a miss as the
+  // user-handle index is: that one asks for THE holder, this one for HOW MANY
+  // — a second entry gaining the certificate leaves the first hit good and
+  // the answer wrong. The clock moves only for a write to a holder or an
+  // unnamed write, so a sign-in's own writes still do not rebuild it.
+  let hits = [];
+  if (!cache.index || cache.version !== certificatesVersion) {
+    const index = new Map();
+    const dns = new Set();
+    const visit = function (stored) {
+      if (!storesCertificate(stored)) {
+        return;
+      }
+      certificateDigestsOfEntry(stored).forEach(function (one) {
+        const list = index.get(one) || [];
+        list.push(stored.dn);
+        index.set(one, list);
+      });
+      dns.add(normalizeDn(stored.dn));
+    };
+    if (directoryWindow) {
+      directoryWindow.eachResident(realms.currentId(), visit);
+    } else {
+      eachEntryInRealm(visit);
+    }
+    cache.index = index;
+    cache.dns = dns;
+    cache.version = certificatesVersion;
+    cache.builds++;
+  }
+  hits = resident();
+  hits.forEach(add);
+  const out = Array.from(found.values()).slice(0, 3);
+  log.debug('Leaving certificateHolders(). ' + out.length + '.');
+  return out;
+}
+
+// What the stored-certificate index has done in the ambient realm, for the
+// tests: `userHandleIndexState()`'s shape.
+function certificateIndexState() {
+  log.debug("Entering certificateIndexState().");
+  const cache = certificateIndexes();
+  log.debug("Leaving certificateIndexState().");
+  return { builds: cache.builds, version: cache.version,
+           certificatesVersion: certificatesVersion };
+}
+
+// The entry a person's or an application's stored certificates are on.
+function certificateEntryFor(kind, id) {
+  log.debug("Entering certificateEntryFor(). " + kind + " " + id);
+  const stored = kind === 'application'
+    ? applicationEntry(String(id || ''))
+    : (locateEntry(String(id || '')).stored || null);
+  log.debug("Leaving certificateEntryFor(). " + (stored ? 'Found.' : 'None.'));
+  return stored && (kind === 'application' || isPersonEntry(stored))
+    ? stored : null;
+}
+
+/**
+ * The certificates stored on a person's (or an application's) entry, each
+ * `{ sha256, der }`, in the order stored.
+ *
+ * @param kind - 'person' or 'application'
+ * @param id - the username or the application's identifier
+ * @returns the certificates, or null when there is no such entry
+ */
+function storedCertificatesOf(kind, id) {
+  log.debug("Entering storedCertificatesOf().");
+  const stored = certificateEntryFor(kind, id);
+  if (!stored) {
+    log.debug("Leaving storedCertificatesOf(). No entry.");
+    return null;
+  }
+  const codec = require('../persistence/directory_codec');
+  const out = [];
+  CERTIFICATE_ATTRIBUTES.forEach(function (name) {
+    (stored.attributes[name] || []).forEach(function (value) {
+      const der = codec.certificateDerOf(value);
+      if (der) {
+        out.push({ der: der,
+                   sha256: require('../common/crypto')
+                     .digest('sha256', der, 'hex') });
+      }
+    });
+  });
+  log.debug("Leaving storedCertificatesOf(). " + out.length + ".");
+  return { dn: String(stored.dn), certificates: out };
+}
+
+/**
+ * Stores one certificate on a person's (or an application's) entry, under
+ * `userCertificate;binary`, or takes one off by the SHA-256 of its DER. The
+ * entry is never created here.
+ *
+ * @param kind - 'person' or 'application'
+ * @param id - the username or the application's identifier
+ * @param change - `{ add: <DER Buffer> }` or `{ remove: <sha256 hex> }`
+ * @returns `{ ok, dn, changed }`, or `{ ok: false }` for no such entry
+ */
+function changeStoredCertificate(kind, id, change) {
+  log.debug("Entering changeStoredCertificate(). " + kind + " " + id);
+  const stored = certificateEntryFor(kind, id);
+  if (!stored) {
+    log.debug("Leaving changeStoredCertificate(). No entry.");
+    return { ok: false };
+  }
+  const codec = require('../persistence/directory_codec');
+  const digestOf = function (value) {
+    const der = codec.certificateDerOf(value);
+    return der ? require('../common/crypto').digest('sha256', der, 'hex') : '';
+  };
+  let changed = false;
+  if (change && change.add) {
+    const base64 = Buffer.from(change.add).toString('base64');
+    const wanted = digestOf(base64);
+    const have = stored.attributes['usercertificate;binary'] || [];
+    const already = CERTIFICATE_ATTRIBUTES.some(function (name) {
+      return (stored.attributes[name] || []).some(function (value) {
+        return digestOf(value) === wanted;
+      });
+    });
+    if (!already) {
+      stored.attributes['usercertificate;binary'] = have.concat([base64]);
+      changed = true;
+    }
+  } else if (change && change.remove) {
+    const gone = String(change.remove).toLowerCase();
+    CERTIFICATE_ATTRIBUTES.forEach(function (name) {
+      const have = stored.attributes[name] || [];
+      const kept = have.filter(function (value) {
+        return digestOf(value) !== gone;
+      });
+      if (kept.length !== have.length) {
+        changed = true;
+        if (kept.length) {
+          stored.attributes[name] = kept;
+        } else {
+          delete stored.attributes[name];
+        }
+      }
+    });
+  }
+  if (changed) {
+    touchDirectory(stored.dn);
+  }
+  log.debug("Leaving changeStoredCertificate(). changed=" + changed);
+  return { ok: true, dn: String(stored.dn), changed: changed };
+}
+
+// ---------------------------------------------------------------------------
 // THE AUTHENTICATOR APP'S SHARED SECRET (2026-09-10).
 //
 // **SINGLE-VALUED, WHERE THE SECURITY KEY BESIDE IT IS MULTI-VALUED.** A
@@ -14819,6 +15122,17 @@ if (typeof certEnrollment.setDirectory === 'function') {
       log.debug('Leaving holders(). ' + out.length + '.');
       return out;
     },
+    // THE ENTRIES A PRESENTED CERTIFICATE IS STORED ON (#1061), for
+    // `tls_client_certificates.js`'s `identityOf()`: `[{ kind, id, dn }]`
+    // in the ambient realm, by the SHA-256 of the DER — see
+    // `certificateHolders()`. On this slot rather than one of its own,
+    // because this is the slot that already answers "which entry is this
+    // certificate on" for the enrollment authorities (`findEnrolled()`), and
+    // a second slot from this file to the certificate code would be a second
+    // answer to that question; a new one would pass rule 3e's test for the
+    // same reason this one did (a require from there to here drags every
+    // `/admin/ldap/*` route forward) and add nothing but an indirection.
+    certificateHolders: certificateHolders,
     // `holders()` WITH THE VALUES, in the same walk and the same order
     // (#352, 2026-09-29): `[{ id, values }]`. The enrollment listings asked
     // `holders()` for the ids and then `read()` for each — a second lookup
@@ -17723,10 +18037,16 @@ require('../common/cell_channel').registerOp('ldap-bind', answerCellBind);
 // verified certificate can be that are NOT that, each refused with its own
 // code:
 //
-//   * a certificate from an anchor somebody added (`/admin/tls/trust`):
-//     `issuedHere: false`, and rcbj's decision is that it binds nobody
-//     until an entry can say ahead of time which certificate is its own —
-//     a follow-up, not this ticket (STS-LDAP-0182);
+//   * a certificate from an anchor somebody added (`/admin/tls/trust`), an
+//     OUTSIDE authority's: since #1061 (rcbj 2026-10-27) it binds as the
+//     ONE person entry of the bind's realm storing it, byte for byte, in
+//     `userCertificate` — that is how an entry says ahead of time which
+//     certificate is its own. Stored on no entry it is refused
+//     STS-LDAP-0192, on more than one STS-LDAP-0193. (Until #1061 every
+//     such certificate was refused, STS-LDAP-0182, now retired.) An empty
+//     bind with no authzId is in the default realm, since an outside
+//     certificate names no realm; another realm's person sends
+//     `dn:<their DN>`;
 //   * an APPLICATION's certificate: only a person binds to this directory
 //     (#106's rule for a simple bind, `nonPersonBindRefusal()`), and an
 //     application's entry is not one (STS-LDAP-0185);
@@ -17952,20 +18272,28 @@ function externalBind(req, res, next) {
   let gate = null;
   try {
     gates = require('../common/tls_client_certificates');
-    gate = gates.checkSocket(certificateShim(certificate));
+    gate = gates.checkSocket(certificateShim(certificate), { stored: true });
   } catch (e) {
     log.debug("Caught in externalBind(): " + ((e && e.message) || e));
     gate = null;
   }
   const identity = (gate && gate.identity) || {};
-  if (!gate || (gate.ok && !identity.issuedHere)) {
-    log.debug("Leaving externalBind(). Not issued here.");
-    return refuse('STS-LDAP-0182', 'the certificate verified against an ' +
-      'anchor in the client truststore but was not issued by this ' +
-      'service, and a certificate from an outside certificate authority ' +
-      'does not bind anybody to this directory',
-      new ldap.InvalidCredentialsError('this client certificate was not ' +
-        'issued by this service, and only one it issued binds here'));
+  if (gate && !gate.ok && gate.error === 'STORED_TWICE') {
+    log.debug("Leaving externalBind(). Stored on more than one entry.");
+    return refuse('STS-LDAP-0193', String(gate.why || gate.error),
+      new ldap.InvalidCredentialsError('this client certificate is stored ' +
+        'on more than one entry, so it names nobody'));
+  }
+  if (!gate || (gate.ok && !identity.issuedHere && !identity.accepted) ||
+      (!gate.ok && gate.error === 'NOT_STORED')) {
+    log.debug("Leaving externalBind(). An outside certificate stored on " +
+              "no entry.");
+    return refuse('STS-LDAP-0192', String((gate && gate.why) ||
+      'the certificate was not issued by this service and is not stored ' +
+      'in userCertificate on any entry of this realm'),
+      new ldap.InvalidCredentialsError('this client certificate is not ' +
+        'stored on any entry here; an outside certificate binds only as ' +
+        'the entry it is stored on'));
   }
   if (!gate.ok) {
     if (gate.error === 'OTHER_REALM') {
@@ -18002,7 +18330,10 @@ function externalBind(req, res, next) {
       new ldap.InvalidCredentialsError('the client certificate is no longer ' +
         'on its holder\'s record'));
   }
-  const entry = existingUserEntry(identity.username);
+  // A STORED certificate's entry is the one it was found on (#1061); a
+  // certificate issued here names its person by name.
+  const entry = identity.stored === true ? getEntry(String(identity.dn))
+                                         : existingUserEntry(identity.username);
   if (!entry) {
     log.debug("Leaving externalBind(). No entry.");
     return refuse('STS-LDAP-0187', 'it names "' + identity.username +
@@ -18050,19 +18381,30 @@ function externalBind(req, res, next) {
     summary: 'a SASL EXTERNAL bind as ' + entryDn + ' succeeded',
     detail: { mechanism: 'EXTERNAL',
               certificateSerial: String(identity.serialHex || ''),
-              authority: String((identity.authority &&
-                                 identity.authority.ca) || ''),
+              certificateSha256: identity.stored === true
+                ? String(identity.fingerprint || '') : undefined,
+              authority: identity.stored === true ? 'outside'
+                : String((identity.authority && identity.authority.ca) ||
+                         ''),
               authzId: authz.raw || undefined,
-              note: 'the TLS client certificate on the connection verified, ' +
-                    'was not refused on revocation, and was issued to "' +
-                    identity.username + '" by this realm\'s Issuing CA' }
+              note: identity.stored === true
+                ? 'the TLS client certificate on the connection verified, ' +
+                  'was not refused on revocation, and is from an outside ' +
+                  'certificate authority, stored in userCertificate on ' +
+                  entryDn
+                : 'the TLS client certificate on the connection verified, ' +
+                  'was not refused on revocation, and was issued to "' +
+                  identity.username + '" by this realm\'s Issuing CA' }
   });
   stats.recordAuthentication({
     presented: entryDn,
     protocol: 'ldap',
     method: 'SASL EXTERNAL (TLS client certificate)',
     application: '',
-    note: 'a TLS client certificate issued to ' + identity.username
+    note: identity.stored === true
+      ? 'an outside certificate authority\'s certificate stored on ' +
+        identity.username
+      : 'a TLS client certificate issued to ' + identity.username
   });
   if (req.connection) {
     req.connection.stsBoundAt = Date.now();
@@ -20571,25 +20913,26 @@ const SERVICE_SENTENCES = Object.freeze({
     'the handshake. A connection may then bind with SASL EXTERNAL, or with ' +
     'a password as before.',
   certificateBindRule: 'SASL EXTERNAL binds the connection as the person ' +
-    'entry the certificate was issued to, and only a certificate this ' +
-    'service issued to a person who has an entry in that realm binds: ' +
-    'revoked, another realm\'s, an application\'s, or one from an outside ' +
-    'certificate authority trusted through /admin/tls/trust is refused ' +
-    '(outside-CA certificates are not accepted for LDAP binds yet). An ' +
-    'authorization identity is honoured only when it names that same entry.',
+    'entry the certificate belongs to: one this service issued to a person ' +
+    'who has an entry in that realm, or one from an outside certificate ' +
+    'authority trusted through /admin/tls/trust that is stored, byte for ' +
+    'byte, in userCertificate on exactly one person entry of that realm. ' +
+    'Revoked, another realm\'s, an application\'s, an outside certificate ' +
+    'stored on no entry or on more than one is refused, and nothing is ' +
+    'read off a common name or subject. An authorization identity is ' +
+    'honoured only when it names that same entry.',
   certificateSource: 'the same certificate and key the main port ' +
     '({{port}}) serves. It is {{provenance}}: GET /tls/server-certificate ' +
     'hands it out in PEM. One anchor for both sockets is why they share it.',
   autoCreateRule: 'an entry uid=<name>,{{usersDn}} appears the first ' +
     'time <name> authenticates to this service through ANY protocol. An ' +
     'LDAP bind does not seed one (it presents a DN, not a user name) and ' +
-    'neither does an OAuth client. A verified TLS CLIENT CERTIFICATE is ' +
-    'the one identity that is already a DN: its entry keeps the subject\'s ' +
-    'own leaf RDN — cn=alice,{{usersDn}} for CN=alice,O=Example — or the ' +
-    'whole subject where that already lies under {{baseDn}}, and the ' +
-    'full subject, issuer, serial and validity are on the entry as x509* ' +
-    'attributes, which are this service\'s own names and not schema. A ' +
-    'DECENTRALIZED IDENTIFIER is the third shape and is neither a name nor ' +
+    'neither does an OAuth client. A verified TLS CLIENT CERTIFICATE ' +
+    'seeds nothing: one this service issued names a person who already ' +
+    'has an entry, and one from an outside certificate authority is the ' +
+    'entry it is stored on in userCertificate, or nobody — its common ' +
+    'name and subject are never read as a name. A ' +
+    'DECENTRALIZED IDENTIFIER is another shape and is neither a name nor ' +
     'a DN: an issued credential\'s did:jwk subject, whatever DID presents ' +
     'to the OID4VP Verifier. Its entry goes ' +
     'at uid=did-<12 hex of the SHA-256 of the DID>,{{usersDn}} — a ' +
@@ -20743,7 +21086,9 @@ function description(req) {
       saslExternal: {
         available: ldapsClientAuth !== 'none',
         mechanisms: SASL_MECHANISMS.slice(0),
-        outsideCertificateAuthorities: false,
+        // Since #1061: an outside authority's certificate binds as the
+        // one person entry storing it in userCertificate.
+        outsideCertificateAuthorities: true,
         rule: SERVICE_SENTENCES.certificateBindRule
       },
       clientCertificates: serverProse.fill(
@@ -28229,6 +28574,13 @@ module.exports = {
   // The group index's builds and clock, for tests/group_index_clock.js (#618).
   groupIndexState: groupIndexState,
   userHandleIndexState: userHandleIndexState,
+  // A CERTIFICATE STORED ON AN ENTRY (#1061): who stores one, what an entry
+  // stores, the one writer the console and /admin-api go through, and the
+  // index's state for the tests.
+  certificateHolders: certificateHolders,
+  storedCertificatesOf: storedCertificatesOf,
+  changeStoredCertificate: changeStoredCertificate,
+  certificateIndexState: certificateIndexState,
   applicationsDn: applicationsDn,
   spiffeDn: spiffeDn,
   spiffeEntriesDn: spiffeEntriesDn,

@@ -259,7 +259,9 @@ ServiceProviderConfig together. To exercise a client's scope handling, turn
 off everything but tokens, because only tokens carry scopes. A TLS client
 certificate this realm issued to an **application** is held to the SCIM
 scopes that application's `oauthAllowedScope` declares (see below). Every
-other accepted credential may both read and write.
+other accepted credential may both read and write. A certificate from an
+outside certificate authority is accepted only as the one entry storing it in
+`userCertificate` ([TLS](tls.md#a-certificate-from-an-outside-certificate-authority)).
 
 ### An application's certificate, held to what it declares
 

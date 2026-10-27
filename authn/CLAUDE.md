@@ -212,7 +212,11 @@ completes the pending sign-in on it.
   `GET /tls/sign-in` runs (`tls/CLAUDE.md`, *The sign-in screen asks the same
   questions*): revocation, the identity gate, an application's certificate
   refused, the name it signs in — and, the one difference, the realm is the
-  pending sign-in's, so another realm's authority is refused. Reached
+  pending sign-in's, so another realm's authority is refused. Since #1061 a
+  certificate from an outside authority is the person whose entry stores it
+  in `userCertificate` and nobody else (`common/CLAUDE.md` 3ag): stored on
+  no entry it is refused `STS-AUTHN-0468`, on several `0469`, and the offer
+  is not drawn; its CN is never the name on the button. Reached
   through `deps.certificateDoor()`, which answers that module only where it
   is already loaded: a require from here (#8) would drag a JavaScript route
   module's `/tls*` views forward and close a cycle.

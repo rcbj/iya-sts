@@ -147,7 +147,7 @@ Four links, and each is checked by the module that owns it:
 | # | The question | Answered by |
 |---|---|---|
 | 1 | Did the certificate build a path to an anchor in this service's truststore? | `oauth-oidc/mtls.js`'s `peerVerified()`, over the truststore `POST /admin-api/tls/trust/add` fills — and the MAIN listener joined that truststore the same day, which is what made the question answerable at all |
-| 2 | Which directory entry is that? | `xacml_pep_registry.ts`'s `certificateIdentity()`, across the slot `ldap_server.js` fills — the same lookup `GET /tls/sign-in` gets (it was a certificate arriving on 8443 or 9443 until both listeners were deleted on 2026-09-16), so one certificate is one person however it turns up |
+| 2 | Which directory entry is that? | For a certificate THIS service issued, `xacml_pep_registry.ts`'s `certificateIdentity()`, across the slot `ldap_server.js` fills (`certificatePlan()`'s CN, which this service's authority wrote as the username). **For one from an outside authority, since #1061, the entry STORING it** in `userCertificate`, through `tls_client_certificates.checkSocket(req.socket, { stored: true })` in `callerIdentity()` — the one mapping every door asks (`common/CLAUDE.md` 3ag) — and NO name when no entry or several store it (`unmapped`, `dn` empty, so link 3 has nobody to ask and the policy refuses; marked `STS-XACML-0177`/`0178` at the XACML gate, `0179`/`0180` at the PEP gate). The subject DN an outside authority wrote is no longer read |
 | 3 | What roles does that entry hold? | `common/roles.js`, with the groups LEFT UNRESOLVED so it reads them from the directory. `REMOTE_PEPS` was the first built-in role held through a GROUP rather than computed from what the party is; `XACML_USER` is the second, and the two are deliberately separate |
 | 4 | Does the policy allow it? | `common/access_gate.ts` → `xacml_access_pep.ts`, on resource `xacml-pep-api` or `xacml-api` — the same embedded PEP and the same `access-control` document that decide the console and the management API |
 
@@ -157,6 +157,13 @@ is the whole design. A certificate this service verified, naming
 `REMOTE_PEPS`, is refused — and the refusal says the certificate was fine,
 because somebody debugging it otherwise regenerates a certificate that was
 never wrong. `tests/protocol/sts_xacml_endpoints.js` drives exactly that case.
+
+**EVERY CERTIFICATE THESE GATES MEET IN THE SUITE IS AN OUTSIDE ONE**
+(`tests/tools/pep-credential.js`'s chain), so since #1061 every job that
+presents one has to store the leaf on its entry first, and the launchers the
+remote PEP's. The not-stored and stored-twice refusals over the wire are held
+only by the protocol jobs (`sts_xacml_endpoints`, `sts_xacml_remote_pep`,
+`sts_xacml_editor`), which need a stack and were not run in #1061's session.
 
 **IT IS A POLICY DECISION AND NOT A HARD-CODED ROLE TEST.** The requirement
 travels in the REQUEST — `xacml-pep-api` was the first resource that is

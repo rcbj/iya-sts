@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4727** of them, in **48** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4746** of them, in **48** subsystems.
 
 ## Where a code appears
 
@@ -63,32 +63,32 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 386
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 388
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 732
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 117
-* [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 37
+* [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 39
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 30
 * [Federation (`STS-FED`)](#sts-fed) — 171
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 242
-* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 145
+* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 147
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
 * [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 34
-* [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 78
+* [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 80
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 151
-* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 53
+* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 55
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 138
-* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 129
+* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 131
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 48
 * [Mail (`STS-MAIL`)](#sts-mail) — 40
 * [Languages and locales (`STS-I18N`)](#sts-i18n) — 12
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 356
 * [Device register (`STS-DEVICE`)](#sts-device) — 52
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 29
-* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 98
+* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 102
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 245
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 249
 * [Management API (`STS-API`)](#sts-api) — 87
 * [User portal (`STS-PORTAL`)](#sts-portal) — 107
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 19
@@ -1577,6 +1577,8 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0465` | Continue with your certificate was refused at the sign-in screen: the identity gate does not accept the certificate as a person here — one of this service's that is not a TLS client identity, or one issued by another realm's authority (#1051). | the sign-in screen again (/authn-api answers next: refused) |
 | `STS-AUTHN-0466` | Continue with your certificate was refused at the sign-in screen: the certificate was issued to an application, which authenticates at the token endpoint (RFC 8705) and signs nobody in (#1051). | the sign-in screen again (/authn-api answers next: refused) |
 | `STS-AUTHN-0467` | Continue with your certificate was refused at the sign-in screen: it is not taken at this sign-in — the authentication policy does not accept a certificate as a first factor, the sign-in is a linking one, the application names the mechanisms it allows, or a security key or passkey is demanded (#1051). | the sign-in screen again (/authn-api answers next: refused) |
+| `STS-AUTHN-0468` | Continue with your certificate was refused at the sign-in screen: the certificate is from an outside certificate authority and is not stored in userCertificate on any account of the realm (#1061). | the sign-in screen again (/authn-api answers next: refused) |
+| `STS-AUTHN-0469` | Continue with your certificate was refused at the sign-in screen: the certificate is from an outside certificate authority and is stored in userCertificate on more than one account of the realm (#1061). | the sign-in screen again (/authn-api answers next: refused) |
 
 ## STS-OAUTH
 
@@ -2490,6 +2492,8 @@ Raised from: ws-trust/.
 | `STS-WSTRUST-0035` | The TLS client certificate on the connection, the requester's only credential, was issued by this service and is not an identity in this realm: another realm's authority, a key pair that is not a TLS client certificate, or a holder whose entry is gone (common/tls_client_certificates.js). Every mode (#1046). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
 | `STS-WSTRUST-0036` | The TLS client certificate on the connection, the requester's only credential, is no longer listed on the record of the person or application it was issued to. Every mode (#1046). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
 | `STS-WSTRUST-0037` | The TLS client certificate on the connection, the requester's only credential, names a person whose account is disabled. Every mode (#1046). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0038` | The TLS client certificate on the connection, the requester's only credential, is from an outside certificate authority and is not stored in userCertificate on any entry of the realm. Every mode (#1061). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0039` | The TLS client certificate on the connection, the requester's only credential, is from an outside certificate authority and is stored in userCertificate on more than one entry of the realm. Every mode (#1061). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
 
 ## STS-WSFED
 
@@ -3180,7 +3184,7 @@ Raised from: ldap/, persistence/bulk_import.js (STS-LDAP-0150 to 0161).
 | `STS-LDAP-0179` | A SASL EXTERNAL bind arrived on an LDAPS connection that carries no client certificate that verified against the client truststore — at the defaults LDAPS asks for none (ldap.ldapsDisableOptionalClientCertificate) (#1047). | LDAP result code 48, inappropriateAuthentication (RFC 4513 section 5.2.1.2) |
 | `STS-LDAP-0180` | A SASL EXTERNAL bind arrived on the plain LDAP listener, which has no TLS and so no client certificate (#1047). | LDAP result code 48, inappropriateAuthentication |
 | `STS-LDAP-0181` | A SASL EXTERNAL bind was refused because the connection's client certificate was refused on revocation, or its revocation status could not be established (#1047). | LDAP result code 49, invalidCredentials |
-| `STS-LDAP-0182` | A SASL EXTERNAL bind was refused because the connection's client certificate verified against an anchor in the client truststore but was not issued by this service; a certificate from an outside certificate authority binds nobody to the directory (#1047). | LDAP result code 49, invalidCredentials |
+| `STS-LDAP-0182` *(retired)* | A SASL EXTERNAL bind was refused because the connection's client certificate verified against an anchor in the client truststore but was not issued by this service; a certificate from an outside certificate authority binds nobody to the directory (#1047). Retired by #1061: such a certificate binds as the one entry storing it, else STS-LDAP-0192 or STS-LDAP-0193. | LDAP result code 49, invalidCredentials |
 | `STS-LDAP-0183` | A SASL EXTERNAL bind was refused because the connection's client certificate was issued by this service but is not a TLS client identity (no clientAuth, no single urn:sts:person: name, a realm that is gone) (#1047). | LDAP result code 49, invalidCredentials |
 | `STS-LDAP-0184` | A SASL EXTERNAL bind was refused because the connection's client certificate was issued by another trust realm's authority than the realm the bind is in (#1047). | LDAP result code 49, invalidCredentials |
 | `STS-LDAP-0185` | A SASL EXTERNAL bind was refused because the connection's client certificate was issued to an application; only a person binds to this directory (#1047). | LDAP result code 49, invalidCredentials |
@@ -3190,6 +3194,8 @@ Raised from: ldap/, persistence/bulk_import.js (STS-LDAP-0150 to 0161).
 | `STS-LDAP-0189` | A SASL EXTERNAL bind was refused because its authorization identity (dn: or u:) did not name the entry the certificate was issued to, or was in neither form (#1047). | LDAP result code 50, insufficientAccessRights (RFC 4513 section 5.2.1.8) |
 | `STS-LDAP-0190` | A SASL EXTERNAL bind was refused because its bind name was not empty and did not name the entry the certificate was issued to (#1047). | LDAP result code 49, invalidCredentials |
 | `STS-LDAP-0191` | The node-ldapjs in use does not support the saslMechanisms and bindDnFromHandler server options, so a SASL EXTERNAL bind cannot be decoded and its connection is closed (#1047). | none — logged at startup |
+| `STS-LDAP-0192` | A SASL EXTERNAL bind was refused because the connection's client certificate is from an outside certificate authority and is not stored in userCertificate on any person entry of the bind's realm (#1061). | LDAP result code 49, invalidCredentials |
+| `STS-LDAP-0193` | A SASL EXTERNAL bind was refused because the connection's client certificate is from an outside certificate authority and is stored in userCertificate on more than one entry of the bind's realm (#1061). | LDAP result code 49, invalidCredentials |
 
 ## STS-ATTR
 
@@ -3369,6 +3375,8 @@ Raised from: scim/.
 | `STS-SCIM-0081` | A PUT, PATCH or DELETE carried an If-Match other than *, and this service keeps no entity-tags, so no version can match it (RFC 9110 section 13.1.1); nothing was changed (#206). | HTTP 412 (SCIM Error, RFC 7644 sections 3.12 and 3.14) |
 | `STS-SCIM-0082` | A filter ordered (gt, ge, lt, le) a boolean or binary attribute, which RFC 7644 section 3.4.2.2 refuses (#206). | HTTP 400 invalidFilter (SCIM Error) |
 | `STS-SCIM-0083` | A TLS client certificate this realm issued to an application was presented at /scim/v2, and the application does not declare the SCIM scope the operation needs in its oauthAllowedScope (#1048). | HTTP 403 (SCIM Error) |
+| `STS-SCIM-0084` | A verified TLS client certificate from an outside certificate authority was not taken as a SCIM credential: it is not stored in userCertificate on any entry of the realm (#1061). The request is decided as if no certificate had been presented. | audit row; HTTP 401 when no other scheme authenticates |
+| `STS-SCIM-0085` | A verified TLS client certificate from an outside certificate authority was not taken as a SCIM credential: it is stored in userCertificate on more than one entry of the realm (#1061). | audit row; HTTP 401 when no other scheme authenticates |
 
 ## STS-SPIFFE
 
@@ -3591,6 +3599,8 @@ Raised from: tls/.
 | `STS-TLS-0051` *(retired)* | A browser's POST /tls/trust or /tls/trust/clear carried no X-CSRF-Token, or not the token of the /tls page's own cookie (sts_tls_page), which the page's shell carries (#583). Retired by #597, with both routes. | — |
 | `STS-TLS-0052` | A TLS 1.2 session resumed by session ticket was offered under a server name other than the one it was made under (#507). RFC 6066 section 3 forbids accepting the resumption; node resumes a ticket inside OpenSSL with no event to refuse it in, so the listener compares the name after the handshake, against the name it recorded under a digest of the session's master secret, and closes the connection. | logged; the connection is closed; the client's next connection is a full handshake |
 | `STS-TLS-0053` | A TLS 1.2 session was resumed by session ticket and this node has no record of the server name it was made under (#507): the record aged out or was evicted, the ticket was sealed under the cluster's shared key by a node whose row has not replicated here yet, or the hello's name could not be read. The connection is closed, because a name nobody compared is not vouched for (RFC 6066 section 3). | logged; the connection is closed; the client's next connection is a full handshake |
+| `STS-TLS-0054` | GET /tls/sign-in started no session for a verified client certificate from an outside certificate authority that is not stored in userCertificate on any entry of the realm; an outside certificate names only the entry it is stored on, never its common name or subject (#1061). | HTTP 200, session.started false |
+| `STS-TLS-0055` | GET /tls/sign-in started no session for a verified client certificate from an outside certificate authority that is stored in userCertificate on more than one entry of the realm, so it names nobody (#1061). | HTTP 200, session.started false |
 
 ## STS-VC
 
@@ -3876,6 +3886,8 @@ Raised from: ssf/.
 | `STS-SSF-0148` | A TLS client certificate this realm issued to an application was presented to a Shared Signals endpoint after the application's record stopped listing it (#1049). | HTTP 401 {err: authentication_failed} with WWW-Authenticate |
 | `STS-SSF-0149` | An application authenticated to a Shared Signals endpoint by its TLS client certificate holds no permission the operation needs (#1049): its oauthAllowedScope declares none, or its SSF_READ and SSF_MANAGE roles authorize none of what it declares. | HTTP 403 {err: access_denied} with WWW-Authenticate |
 | `STS-SSF-0150` | A TLS client certificate presented alone to a Shared Signals endpoint was refused on revocation (#1049); the certificate's own code is on the audit row beside it. | HTTP 401 {err: authentication_failed} with WWW-Authenticate |
+| `STS-SSF-0151` | A TLS client certificate presented alone to a Shared Signals endpoint is from an outside certificate authority and is not stored in userCertificate on any entry of the realm (#1061). | HTTP 401 {err: authentication_failed} with WWW-Authenticate |
+| `STS-SSF-0152` | A TLS client certificate presented alone to a Shared Signals endpoint is from an outside certificate authority and is stored in userCertificate on more than one entry of the realm (#1061). | HTTP 401 {err: authentication_failed} with WWW-Authenticate |
 
 ## STS-RISK
 
@@ -4574,6 +4586,10 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0174` | Adding an owner to a role was refused: the value names no person and no group in this realm (#604). | HTTP 400 (API) or a refusal on the role page |
 | `STS-XACML-0175` | Adding an owner to a role was refused: the role already names the most owners a role may (#604). | HTTP 400 (API) or a refusal on the role page |
 | `STS-XACML-0176` | Taking an owner off a role was refused: the value is not one of the role's owners (#604). | HTTP 400 (API) or a refusal on the role page |
+| `STS-XACML-0177` | The access policy refused a request to GET /xacml, POST /xacml/pdp or GET /xacml/policies: the client certificate verified and is from an outside certificate authority that is not stored in userCertificate on any entry of the realm, so it resolved to nobody (#1061). | HTTP 403 access_denied |
+| `STS-XACML-0178` | The access policy refused a request to GET /xacml, POST /xacml/pdp or GET /xacml/policies: the client certificate verified and is from an outside certificate authority that is stored in userCertificate on more than one entry of the realm (#1061). | HTTP 403 access_denied |
+| `STS-XACML-0179` | The access policy refused a remote PEP request (/xacml/pep/*, POST /xacml/pip): the client certificate verified and is from an outside certificate authority that is not stored in userCertificate on any entry of the realm, so it resolved to nobody (#1061). | HTTP 403 access_denied |
+| `STS-XACML-0180` | The access policy refused a remote PEP request (/xacml/pep/*, POST /xacml/pip): the client certificate verified and is from an outside certificate authority that is stored in userCertificate on more than one entry of the realm (#1061). | HTTP 403 access_denied |
 
 ## STS-XPEP
 
@@ -4871,6 +4887,10 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0890` | The token register could not be read from the store for Monitoring → Tokens; the list drawn is what the answering process holds, and the answer says so (`coverage.unread`) (#820). | logged; the page answers |
 | `STS-ADMIN-0895` | The token holders that are clients could not be read from the store's `client` index for the user counts (Monitoring → Metrics, the dashboard); the clients counted are the holders this process holds (#820). | logged; the page answers |
 | `STS-ADMIN-0896` | Setting or clearing a group's mail address was refused by the directory; the refusal carries the directory's own code. | HTTP 400 |
+| `STS-ADMIN-0897` | Storing a certificate on a person's entry was refused: what was given is not one PEM or base64 DER X.509 certificate (#1061). | HTTP 400 (API) or a refusal on the person's page |
+| `STS-ADMIN-0898` | Storing or removing a certificate was refused: the person named has no entry in this realm, and none is created (#1061). | HTTP 400 (API) or a refusal on the person's page |
+| `STS-ADMIN-0899` | Storing a certificate on a person's entry was refused: the same certificate is already stored on another entry of the realm, and a certificate stored on two entries names nobody (#1061). | HTTP 400 (API) or a refusal on the person's page |
+| `STS-ADMIN-0900` | Removing a stored certificate was refused: the person's entry stores no certificate with that SHA-256 (#1061). | HTTP 400 (API) or a refusal on the person's page |
 
 ## STS-API
 

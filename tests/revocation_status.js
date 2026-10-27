@@ -3595,6 +3595,24 @@ async function theMainPort(t, minted) {
     server.listen(0, '127.0.0.1', resolve);
   });
   const port = server.address().port;
+  // BOTH LEAVES STORED ON AN ENTRY (#1061): an outside authority's
+  // certificate is an identity only as the one entry storing it, so the
+  // SCIM door below would refuse an unstored good one for that reason —
+  // and the revoked one is stored too, so its refusal is revocation's.
+  const ldap = require('../ldap/ldap_server');
+  const derOfPem = function (pem) {
+    log.debug("Entering derOfPem().");
+    log.debug("Leaving derOfPem().");
+    return new nodeCrypto.X509Certificate(pem).raw;
+  };
+  [['rev-foreign-good', minted.good], ['rev-foreign-bad', minted.revoked]]
+    .forEach(function (pair) {
+      if (!ldap.existingUserEntry(pair[0])) {
+        ldap.createUser(pair[0], { invent: false });
+      }
+      ldap.changeStoredCertificate('person', pair[0],
+                                   { add: derOfPem(pair[1].pem) });
+    });
   try {
     const good = await handshake(port,
                                  { cert: minted.good.pem + minted.issuing.pem,
@@ -3620,7 +3638,8 @@ async function theMainPort(t, minted) {
     t.check(good.body.scimScheme === 'clientcert' &&
             bad.body.scimScheme !== 'clientcert',
             'SCIM\'s client-certificate scheme accepts the good certificate ' +
-            'and does NOT accept the revoked one as a credential',
+            '(stored on its entry, #1061) and does NOT accept the revoked ' +
+            'one, stored too, as a credential',
             JSON.stringify({ good: good.body.scimScheme,
                              bad: bad.body.scimScheme }));
     t.check(good.body.clientAuthOk === true &&
@@ -3668,6 +3687,19 @@ async function childBody() {
   const tls = require('../tls/tls_server');
   const app = require('../common/app');
   tls.truststore.add(root.pem, { by: 'revocation_status test' });
+  // EACH LEAF STORED ON ITS PERSON'S ENTRY (#1061): an outside authority's
+  // certificate signs in only as the one entry storing it. The good one's
+  // holder is signed in; the revoked one, stored as well, is refused on
+  // revocation and not for being stored nowhere.
+  const ldap = require('../ldap/ldap_server');
+  [['rev-listener-good', good], ['rev-listener-bad', bad]]
+    .forEach(function (pair) {
+      if (!ldap.existingUserEntry(pair[0])) {
+        ldap.createUser(pair[0], { invent: false });
+      }
+      ldap.changeStoredCertificate('person', pair[0], { add:
+        new (require('crypto').X509Certificate)(pair[1].pem).raw });
+    });
   // THE MAIN PORT'S POSTURE, BUILT HERE. A client certificate is asked for and
   // never required, so nothing is refused by the handshake and every refusal
   // below is one this service made after OpenSSL was satisfied — which is the

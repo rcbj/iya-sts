@@ -107,8 +107,9 @@ check and the refusals are the same at every door:
 
 Because a create goes through the directory's own door, it also gets the
 directory's *fold*: a new name lands on the entry that is already this person's
-under a different naming attribute (a client certificate's `cn=rcbj,ou=users`,
-say) rather than creating a second object for one person. The create writes one
+under a different naming attribute (an older `cn=rcbj,ou=users` made from a
+client certificate before #1061, say) rather than creating a second object for
+one person. The create writes one
 `user.create` audit row naming SCIM as the protocol; SCIM itself records only
 updates and deletes, so one act is never counted twice.
 
@@ -202,7 +203,7 @@ disappears from both.
 | HTTP Digest ([RFC 7616](https://www.rfc-editor.org/rfc/rfc7616)) | `httpdigest` | SHA-256 or SHA-512-256, with the `-sess` variants; MD5 only where `scim.digestMd5` turns it on, in development mode |
 | HOBA ([RFC 7486](https://www.rfc-editor.org/rfc/rfc7486)) | `hoba` | An RSA/SHA-256 signature over the server's challenge, by a key registered at `POST /.well-known/hoba/register` |
 | Session cookie | `httpcookie` | The browser sign-on session from `/authn/login`, consulted only when there is no `Authorization` header |
-| TLS client certificate | `tlsclientauth` | A certificate that verified against the client truststore on the main port (needs `global.https`). One this realm issued to an application is that application, held to the SCIM scopes it declares |
+| TLS client certificate | `tlsclientauth` | A certificate that verified against the client truststore on the main port (needs `global.https`). One this realm issued to an application is that application, held to the SCIM scopes it declares. One from an outside certificate authority is the person or application whose entry stores it in `userCertificate`, and nobody else ([TLS](tls.md#a-certificate-from-an-outside-certificate-authority)) |
 
 The ServiceProviderConfig publishes all seven rows, and three of them have no
 canonical `type`: RFC 7643 section 5 gives `authenticationSchemes.type` five
@@ -221,7 +222,13 @@ application's `oauthAllowedScope`, asked on every request: an application
 declaring neither is refused `403` (`STS-SCIM-0083`), one declaring only
 `scim:read` may only read, and removing a declaration cuts the certificate
 off at once. Every other scheme, a person's certificate among them, may both
-read and write. To exercise a client's scope handling, turn the other five off. After the
+read and write. **A certificate from an outside certificate authority** is
+taken only as the one entry storing it, byte for byte, in `userCertificate`:
+stored on no entry (`STS-SCIM-0084`) or on more than one (`STS-SCIM-0085`) it
+is not a SCIM credential, and the refusal is on the audit log. SCIM does not
+write `userCertificate`: `x509Certificates` is not published (#206), so store
+the certificate from the console, `POST /admin-api/users/add-certificate`, or
+LDAP. To exercise a client's scope handling, turn the other five off. After the
 scope check, the [XACML](xacml.md) access gate decides. It permits by default,
 and its refusal says that the credential was accepted.
 

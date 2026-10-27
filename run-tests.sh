@@ -1553,6 +1553,10 @@ mintAdminApiToken()
 # one job asserts what an unauthenticated PEP cannot do, and the rest of the
 # suite has no opinion about this certificate at all.
 # ---------------------------------------------------------------------------
+# THE LEAF IS NOT STORED ON AN ENTRY HERE (#1061): an outside certificate is
+# an identity only once it is stored in userCertificate on its entry, and the
+# PEP's entry is in the realm sts_xacml_remote_pep creates later. That job
+# reads pep.crt beside XACML_PEP_SERVER_CERT_DIR and stores it itself.
 mintThePepCredential()
 {
   rm -rf "${XACML_PEP_CERT_DIR}"

@@ -14703,6 +14703,11 @@ class AdminViews {
         inventsClaimValues: mode.inventsClaimValues(),
         devices: this.devicesJson({ user: key }),
         selfIssued: this.selfIssuedSubjectsJson({ user: key }),
+        // The certificates stored on the entry (#1061), as
+        // `GET /admin-api/users/certificates` answers them. Required when
+        // drawn: `admin_actions.ts` is this module's other half and requires
+        // what this one does, so the require moves nothing.
+        certificates: require('./admin_actions').storedCertificatesOf(key),
         // The address and the emailed second factor (#64), and the account
         // ids clients know them by (#148).
         mail: {

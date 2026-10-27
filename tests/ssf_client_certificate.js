@@ -261,6 +261,69 @@ function refused(t) {
   log.debug("Leaving refused().");
 }
 
+// AN OUTSIDE AUTHORITY'S CERTIFICATE (#1061): the gate asked with
+// `{ stored: true }` answers the application whose entry stores it, or
+// NOT_STORED / STORED_TWICE. The real gate's answers are held in
+// tests/stored_certificates.js; this holds what the door does with each.
+function outside(t) {
+  log.debug("Entering outside().");
+  t.log.info('=== 5. an outside certificate, stored or not (#1061) ===');
+  let asked = null;
+  const realGate = fakeGate.checkSocket;
+  fakeGate.checkSocket = function (socket, options) {
+    asked = options || null;
+    return socket.gate;
+  };
+  try {
+    const stored = { ok: true, identity: { issuedHere: false,
+      outside: true, accepted: true, stored: true, kind: 'application',
+      username: MANAGE, dn: 'cn=' + MANAGE + ',ou=applications',
+      fingerprint: 'ab'.repeat(32), why: 'stored on its entry' } };
+    const asStored = gate.authenticate(request(stored), 'write');
+    t.check(asStored.ok && asStored.scheme === 'clientcert' &&
+            asStored.principal === MANAGE && asked && asked.stored === true,
+            '5a. an outside certificate stored on an application\'s entry ' +
+            'is that application, asked of the gate with { stored: true }',
+            JSON.stringify(asStored));
+    const storedReader = JSON.parse(JSON.stringify(stored));
+    storedReader.identity.username = READ;
+    const readerWrite = gate.authenticate(request(storedReader), 'write');
+    t.check(!readerWrite.ok && readerWrite.errorCode === 'STS-SSF-0149',
+            '5b. and is held to what that application declares and holds',
+            JSON.stringify(readerWrite));
+    const none = { ok: false, error: 'NOT_STORED',
+      why: 'the certificate is from an outside certificate authority and ' +
+           'is not stored in userCertificate on any entry',
+      identity: { issuedHere: false, outside: true, accepted: false,
+                  error: 'NOT_STORED' } };
+    const asNone = gate.authenticate(request(none), 'read');
+    t.check(!asNone.ok && asNone.status === 401 &&
+            asNone.errorCode === 'STS-SSF-0151' &&
+            /not stored on any entry/.test(asNone.description),
+            '5c. one stored on no entry is STS-SSF-0151 — never matched by ' +
+            'its subject', JSON.stringify(asNone));
+    const twice = { ok: false, error: 'STORED_TWICE', why: 'two entries',
+      identity: { issuedHere: false, outside: true, accepted: false,
+                  error: 'STORED_TWICE' } };
+    const asTwice = gate.authenticate(request(twice), 'read');
+    t.check(!asTwice.ok && asTwice.errorCode === 'STS-SSF-0152',
+            '5d. one stored on more than one entry is STS-SSF-0152',
+            JSON.stringify(asTwice));
+    const person = { ok: true, identity: { issuedHere: false,
+      outside: true, accepted: true, stored: true, kind: 'person',
+      username: 'somebody', dn: 'uid=somebody,ou=users' } };
+    const asPerson = gate.authenticate(request(person), 'read');
+    t.check(!asPerson.ok && asPerson.errorCode === 'STS-SSF-0147',
+            '5e. one stored on a PERSON\'s entry is STS-SSF-0147: a ' +
+            'receiver is an application', JSON.stringify(asPerson));
+    t.check(gate.authenticate(request(none), 'none').ok,
+            '5f. none of them is refused on an endpoint that needs nothing');
+  } finally {
+    fakeGate.checkSocket = realGate;
+  }
+  log.debug("Leaving outside().");
+}
+
 function run(t) {
   log.debug("Entering run().");
   setUp(t);
@@ -268,6 +331,7 @@ function run(t) {
   accepted(t);
   notThisCredential(t);
   refused(t);
+  outside(t);
   log.debug("Leaving run().");
 }
 
@@ -275,6 +339,7 @@ module.exports = {
   name: 'ssf_client_certificate',
   describe: 'Shared Signals: a receiver authenticated by its TLS client ' +
             'certificate, as its application, held to its declared scopes ' +
-            'and SSF roles (#1049)',
+            'and SSF roles (#1049); an outside certificate only as the ' +
+            'application storing it (#1061)',
   run: run
 };

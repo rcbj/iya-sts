@@ -90,7 +90,7 @@ All the inetOrgPerson attributes (RFC 2798, RFC 4519) can be stored, and
 |---|---|
 | `uid`, `cn`, `sn`, `givenName`, `displayName`, `mail` | the person. In development mode an auto-created entry gets invented values; product mode invents none |
 | `userPassword` | **scrypt hash** (`$scrypt$N$r$p$salt$hash`), hashed on every write including an LDAP modify. Withheld from reads in product mode |
-| `userCertificate` | standard, but not what this service writes for a presented certificate (see `x509*`) |
+| `userCertificate` | RFC 4523, stored as `userCertificate;binary` (base64 DER). A certificate from an outside certificate authority is an identity only as the one entry storing it here, byte for byte ([TLS](tls.md#a-certificate-from-an-outside-certificate-authority)). Written by **Stored certificates** on a person's console page, `POST /admin-api/users/add-certificate` and `remove-certificate`, or an LDAP modify. Looked up by the SHA-256 of the DER, which the store indexes |
 | `title`, `employeeType`, `telephoneNumber`, `mobile`, `street`, `l`, `st`, `postalCode`, `c`, `postalAddress`, `o`, `ou`, `departmentNumber`, `employeeNumber`, `preferredLanguage`, `labeledURI`, `manager` | released as claims (`oid4vc/vc_claims.ts`) and mapped by SCIM (`scim/scim_map.ts`) |
 | `schacDateOfBirth`, `schacCountryOfCitizenship`, `schacPersonalTitle` | SCHAC names, released as `birthdate`, `nationalities`, `title` |
 | `salutation`, `birthFamilyName`, `birthGivenName`, `birthMiddleName`, `alsoKnownAs`, `placeOfBirthCountry`, `placeOfBirthRegion`, `placeOfBirthLocality` | this service's own, for Identity Assurance claims |
@@ -150,7 +150,7 @@ uploaded instead.
 | Attribute | Meaning |
 |---|---|
 | `authnMethod`, `mfaAuthenticated`, `mfaLastAuthTime` | how they last authenticated, where the protocol said. `mfaLastAuthTime` is never cleared |
-| `x509subject`, `x509issuer`, `x509serialNumber`, `x509notBefore`, `x509notAfter`, `x509fingerprint256` | a verified client certificate, or an issued X509-SVID |
+| `x509subject`, `x509issuer`, `x509serialNumber`, `x509notBefore`, `x509notAfter`, `x509fingerprint256` | a verified client certificate this service issued, or an issued X509-SVID. Entries made from an outside certificate's subject before #1061 keep theirs; none is made now |
 | `x509svidsIssued`, `x509firstIssued`, `x509lastIssued` | X509-SVIDs only: how many have been issued, and since when |
 | `didSubject`, `didMethod` | the DID this entry is. The entry is found by `didSubject` |
 | `spiffeSubject`, `spiffePath`, `spiffeTrustDomain` | the SPIFFE ID that authenticated. **These are not the same as `spiffeId`** on a registration entry |

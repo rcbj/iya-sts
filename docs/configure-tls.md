@@ -287,24 +287,37 @@ that it signs nobody in.
 Taken from `sts_main_port_pooling.js`, which mints a Root, an Issuing CA and a
 leaf `CN=pooling-<stamp>,O=iya-sts tests`, and signs it in.
 
-1. Create the person the certificate's common name names. Product mode
-   requires it; development mode creates the entry otherwise.
+1. Create the person the certificate is to sign in, in both modes. The
+   certificate's common name is not read: the entry can be called anything.
    ```bash
    api users/create '{"username":"pooling-1","invent":false,"credential":"generate",
      "attributes":{"givenName":"Pooling","sn":"pooling-1","mail":"pooling-1@pooling.test"}}'
    ```
-2. Add your Root to the truststore, as in
+2. Store the leaf on that entry, byte for byte. Only the leaf: its authority
+   goes in the truststore in the next step. In the console this is **Users →**
+   the person **→ Stored certificates**.
+   ```bash
+   api users/add-certificate "$(jq -n --rawfile pem pooling-1.pem \
+     '{user:"pooling-1", certificate:$pem}')"
+   ```
+   A certificate stored on no entry, or on more than one, signs nobody in
+   (`STS-TLS-0054`, `STS-TLS-0055`), and a renewed certificate is stored
+   again. [TLS](tls.md#a-certificate-from-an-outside-certificate-authority)
+   has the whole rule.
+3. Add your Root to the truststore, as in
    [Trust a CA for client certificates](#trust-a-ca-for-client-certificates).
    In product mode the certificates must name a CRL or OCSP responder the
    service can reach (the job serves a CRL for its CA).
-3. Present the certificate:
+4. Present the certificate:
    ```bash
    curl -s --cacert sts-chain.pem --cert pooling-1.pem --key pooling-1.key \
      -c cookies.txt "$BASE/tls/sign-in" | jq '{signedIn, clientCertificate}'
    ```
 
 The cookie jar now holds the `sts_session` cookie. A certificate from an
-anchor you added signs in to the **default realm**, as its common name.
+anchor you added signs in to the realm of the request (`/realm/<id>/tls/sign-in`
+for another realm, whose entry must then store it) as the person whose entry
+stores it.
 
 ### On the sign-in screen
 
@@ -318,7 +331,10 @@ application, after a second factor if the request or your account needs two.
 The button appears only when:
 
 * the certificate verified and names a **person** in the realm the sign-in is
-  for. A certificate from another realm's CA is not offered there;
+  for: one this realm's CA issued to them, or one from an outside authority
+  stored on their entry (`STS-AUTHN-0468` when it is stored on no entry,
+  `STS-AUTHN-0469` on more than one). A certificate from another realm's CA
+  is not offered there;
 * the realm's authentication policy (**Directory → Policies**,
   **Authentication policy** tab, or `GET /admin-api/policies`) has **TLS
   client certificate — as a first factor** on, which it is by default;
@@ -331,7 +347,7 @@ The button appears only when:
 The button is a convenience, not the check: the service checks the
 certificate again when it is pressed, including its revocation. A refusal
 is shown on the screen and recorded under `STS-AUTHN-0463` to
-`STS-AUTHN-0467` ([error codes](error-codes.md)). The button's operation is
+`STS-AUTHN-0469` ([error codes](error-codes.md)). The button's operation is
 `POST /authn-api/pending/{id}/certificate`.
 
 ### What signs nobody in
@@ -342,7 +358,11 @@ is shown on the screen and recorded under `STS-AUTHN-0463` to
 * **Any other certificate this service issued that is not a TLS client
   certificate**, such as an RFC 7523 signing key. It chains to the same Root,
   and is answered with `refusedAsIdentity`.
-* **A revoked certificate**, answered with `refusedOnRevocation`.
+* **A revoked certificate**, answered with `refusedOnRevocation`, stored on
+  an entry or not.
+* **A certificate from an outside authority stored on no entry, or on more
+  than one**, answered with `refusedAsStored` (`NOT_STORED` or
+  `STORED_TWICE`). Its common name and subject are never read.
 
 ## RFC 8705 `tls_client_auth`: the TLS side
 

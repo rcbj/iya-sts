@@ -107,8 +107,13 @@ or a requirement for two asks for a second one afterwards. It is offered only
 where the authentication policy accepts a TLS client certificate as a first
 factor, and not on a linking sign-in, for an application that names the
 sign-in mechanisms it allows, or where a security key or passkey is demanded.
-A revoked certificate, an application's certificate and a certificate from
-another realm's authority are refused, and the screen says why. See
+A certificate from an outside certificate authority names the person only
+when it is stored, byte for byte, in `userCertificate` on their entry and no
+other ([TLS](tls.md#a-certificate-from-an-outside-certificate-authority));
+its common name is never read. A revoked certificate, an application's
+certificate, a certificate from another realm's authority and an outside one
+stored on no entry (`STS-AUTHN-0468`) or on several (`STS-AUTHN-0469`) are
+refused, and the screen says why. See
 [Sign in with a client certificate](configure-tls.md#sign-in-with-a-client-certificate).
 
 With `authn.unauthenticatedSessions` on, a third button, **Continue without

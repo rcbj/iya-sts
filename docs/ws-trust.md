@@ -150,15 +150,19 @@ modes, when all of these hold:
 * this realm issued it to a person or an application — a TLS client
   certificate from the user portal (*Signing key*) or an application's
   *Credentials* section, or one enrolled over [ACME, EST or SCEP](pki.md);
-  the person or application it names is the requester;
+  the person or application it names is the requester — **or** it is from an
+  outside certificate authority in the truststore and is stored byte for
+  byte in `userCertificate` on exactly one person's or application's entry,
+  which is the requester ([TLS](tls.md#a-certificate-from-an-outside-certificate-authority));
 * it is not revoked, and its holder's record still lists it;
 * for a person, the account is not disabled.
 
 A certificate that verified and fails one of these is refused with
 `wst:FailedAuthentication` (`STS-WSTRUST-0034` to `0037`) rather than
-treated as no credential. A certificate from an anchor somebody added at
-`/admin/tls/trust` is not mapped to anybody here and is ignored, as is one
-that did not verify. A UsernameToken, an assertion or a JWT in the message
+treated as no credential, and so is one from an anchor somebody added at
+`/admin/tls/trust` that is stored on no entry (`STS-WSTRUST-0038`) or on
+more than one (`STS-WSTRUST-0039`); its common name and subject are never
+read. One that did not verify is ignored. A UsernameToken, an assertion or a JWT in the message
 always wins: the certificate is asked only when the message carries none.
 
 The token issued says a certificate was used: `TLSClient` as a SAML 2.0

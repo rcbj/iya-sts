@@ -78,18 +78,29 @@ certificate** — in the optional or the required mode above — because only th
 can a connection carry one. At the defaults 636 asks for nothing, and an
 EXTERNAL bind is refused as having no certificate.
 
-Only a certificate **this service issued to a person** binds: a TLS client
-certificate from the person's portal (`/portal/signing-key`), or one enrolled
-over ACME, EST or SCEP, naming the person in its `urn:sts:person:`
-subjectAltName. The person's entry must already exist; none is created. These
-are refused, each with its own error code:
+Two kinds of certificate bind, both to a **person's entry that already
+exists** — none is created:
+
+* one **this service issued to a person**: a TLS client certificate from the
+  person's portal (`/portal/signing-key`), or one enrolled over ACME, EST or
+  SCEP, naming the person in its `urn:sts:person:` subjectAltName;
+* one from an **outside certificate authority** trusted through
+  `/admin/tls/trust`, **stored byte for byte in `userCertificate` on exactly
+  one person entry** of the bind's realm. Its common name and subject are
+  never read. Store it on the person's console page (**Stored
+  certificates**), with `POST /admin-api/users/add-certificate`, or with an
+  LDAP modify of `userCertificate;binary`; a renewed certificate is stored
+  again. [TLS](tls.md#a-certificate-from-an-outside-certificate-authority)
+  has the whole rule.
+
+These are refused, each with its own error code:
 
 | Refused | Result code |
 |---|---|
 | a mechanism other than EXTERNAL | 7 authMethodNotSupported |
 | EXTERNAL on the plain listener (389), or no verified certificate on the connection | 48 inappropriateAuthentication |
 | a revoked certificate | 49 invalidCredentials |
-| a certificate from an outside certificate authority trusted through `/admin/tls/trust` — **not accepted for LDAP binds yet** | 49 |
+| a certificate from an outside certificate authority stored on no entry of the realm (`STS-LDAP-0192`), or on more than one (`STS-LDAP-0193`) | 49 |
 | a certificate issued in another trust realm, or one that is not a TLS client identity | 49 |
 | an application's certificate (only a person binds to the directory) | 49 |
 | a certificate no longer on its holder's record, a person with no entry, a disabled account | 49 |
@@ -98,7 +109,9 @@ are refused, each with its own error code:
 The bind name should be empty. An authorization identity, if one is sent, must
 be `dn:` followed by that person's entry or `u:` followed by their user name.
 The connection's realm is the realm whose Issuing CA signed the certificate,
-unless the bind names one.
+unless the bind names one. A certificate from an outside authority names no
+realm, so its bind is in the **default realm** unless the authorization
+identity is `dn:` followed by the person's entry in another realm.
 
 OpenLDAP's tools send it like this, with the certificate and key the portal
 handed out:

@@ -110,6 +110,29 @@ const anchors = require("../tools/pep-credential.js");
 // The two scenario CAs this job posts. Removed when it finishes, pass or
 // fail (#335). The truststore is service-wide and holds 32. tests/CLAUDE.md.
 const addedAnchors = [];
+// Certificates this job stored on default-realm entries (#1061), taken off
+// when it finishes.
+const storedHere = [];
+
+// The verbs `pep-credential.js`'s `storeOnEntry()` and `forgetStored()` ask
+// for: this job's own `postJson()`, and a GET of the same shape.
+const storeVerbs = {
+  get: async function (url) {
+    const r = await fetch(url);
+    const text = await r.text();
+    let body = null;
+    try {
+      body = JSON.parse(text);
+    } catch (e) {
+      log.debug("Caught in storeVerbs.get(): " + ((e && e.message) || e));
+      body = null;
+    }
+    return { status: r.status, body: body, text: text };
+  },
+  post: function (url, payload) {
+    return postJson(url, payload);
+  }
+};
 const fixtures = require("./oauth_fixtures.js");
 
 var appconfig;
@@ -741,6 +764,12 @@ async function x509(username) {
                                             installed.body || "")
       .slice(0, 200));
   addedAnchors.push(pki.caPem);
+  // STORED ON THE PERSON'S ENTRY (#1061, rcbj 2026-10-27): an outside
+  // authority's certificate signs in only as the one entry storing it in
+  // `userCertificate`, never by its CN — which this leaf carries as
+  // `username`, and which is no longer what makes it this person.
+  storedHere.push(await anchors.storeOnEntry(storeVerbs, base, "", username,
+                                             pki.certPem));
 
   // **THE MAIN PORT, SINCE 2026-09-16.** This dialled `STS_MTLS_PORT` (9443),
   // the listener that required a client certificate at the handshake; it and
@@ -1473,12 +1502,18 @@ program
 base = String(program.opts().url || base).replace(/\/+$/, "");
 
 test().then(function () {
-  return anchors.settleAnchors(base, addedAnchors, null);
+  return anchors.forgetStored(storeVerbs, base, storedHere)
+    .then(function () {
+      return anchors.settleAnchors(base, addedAnchors, null);
+    });
 }, function (e) {
   // Cleanup still runs, and the original failure is passed through
   // settleAnchors(), which rethrows it.
   log.debug("Caught in test(): " + ((e && e.message) || e));
-  return anchors.settleAnchors(base, addedAnchors, e);
+  return anchors.forgetStored(storeVerbs, base, storedHere)
+    .then(function () {
+      return anchors.settleAnchors(base, addedAnchors, e);
+    });
 }).catch(function (e) {
   log.error(e.stack || e.message);
   process.exit(1);

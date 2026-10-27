@@ -10344,9 +10344,54 @@ because a leaf failing two at once hid two deleted checks in the first round:
 * for `tls-client`, that name is also the CN, which `issue()` writes from one
   username.
 
-A chain through NO held authority answers `issuedHere: false` and every door
-treats it exactly as before — that is an anchor somebody installed through
-`/admin-api/tls/trust`.
+A chain through NO held authority answers `issuedHere: false` — an anchor
+somebody installed through `/admin-api/tls/trust`, an OUTSIDE authority — and
+since #1061 it is an identity only as the entry STORING it (below).
+
+**AN OUTSIDE CERTIFICATE IS THE ONE ENTRY STORING IT (#1061, rcbj
+2026-10-27).** Until then every door that met one read a name off it — the CN
+at `/tls/sign-in` (and the handshake SEEDED `cn=<CN>,ou=users` through
+`certificatePlan()`), the RFC 4514 subject at SCIM, `certificatePlan()`'s CN at
+the XACML gates — and any authority an operator trusted could therefore name
+anybody. rcbj's rule, whole: it verifies against the truststore, passes
+revocation, and is byte for byte (the SHA-256 of its DER) a leaf stored in
+`userCertificate` (RFC 4523) on EXACTLY ONE entry of the request's realm. Never
+by CN or subject; no entry created or seeded; stored on two, refused; renewed,
+stored again. What carries it:
+
+* **ONE MAPPING, OPTED INTO.** `identityOf(input, { stored: true, realm })`
+  and `checkSocket(socket, { stored: true })` answer an outside leaf with
+  `storedIdentityOf()`: `outside: true`, and either `accepted`, `stored`,
+  `kind` (`person` or `application`), `username`, `dn`, `fingerprint`, or
+  `error` `NOT_STORED` / `STORED_TWICE`. `checkSocket()` turns the refusal into
+  `{ ok: false, error }`, so a door that checks `gate.ok` refuses it, and each
+  door marks its own two codes. Asked per call and never memoised (the memo
+  still says WHETHER a leaf is outside) — `currentHolderOf()`'s reason.
+  `stillHeld()` answers true for a stored identity: the lookup that made it one
+  is that question.
+* **WHO DOES NOT ASK.** RFC 8705 client authentication at the token endpoint
+  keeps the client's registered `tls_client_auth` metadata (rcbj on #1061), and
+  GNAP's key proof and the certificate-bound token read a certificate as a KEY,
+  not a person. Neither passes `stored`, so neither pays for the lookup nor sees
+  its answer; `mtls.js`, `client_auth.js` and `gnap/` are unchanged. PKINIT
+  (`kerberos/krb5_pkinit.ts`) is not a TLS door and binds by RFC 4556's
+  `id-pkinit-san`, which is not a CN match; it was left as it is.
+* **THE DIRECTORY THROUGH AN EXISTING SLOT.** `cert_enrollment.ts`'s
+  `certificateHolders(sha256)` forwards to `certificateHolders` on the
+  directory slot `ldap/ldap_server.js` already fills for this module's
+  `findEnrolled()` — the slot that answers "which entry is this certificate
+  on". A slot of its own would have passed rule 3e's test the same way (a
+  require of the JavaScript `ldap_server.js` drags its routes forward) and
+  added only an indirection, so none was added. The member is OPTIONAL in
+  `setDirectory()`: a test's stub without it maps no outside certificate to
+  anybody.
+* **THE ADMIN DOORS** (`admin-core/admin_actions.ts`): `add-certificate` and
+  `remove-certificate` on the Users resource and `storedCertificatesOf()` for
+  `GET /admin-api/users/certificates`. Storing refuses a certificate already on
+  ANOTHER entry (`STS-ADMIN-0899`) rather than creating the two-holder state
+  every door would then refuse with nothing on either page saying why; LDAP can
+  still create it, and the doors refuse it then. Each change says CAEP
+  credential-change `x509`.
 
 **THE REALM IS THE ISSUING CA'S.** A socket has no path to carry a realm, so
 `identityOf()` answers the realm of the authority that signed the leaf, and

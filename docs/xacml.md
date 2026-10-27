@@ -318,7 +318,11 @@ Every `/xacml` endpoint requires a client certificate on the main port. A
 caller is admitted through a chain of four checks:
 
 1. the certificate is **verified** against this service's truststore;
-2. its subject DN resolves to a **directory entry**;
+2. it resolves to a **directory entry**: one this service issued names its
+   person; one from your own CA is the entry that stores it, byte for byte, in
+   `userCertificate`, and nobody when no entry or several do
+   (`STS-XACML-0177` to `0180`) — its common name and subject are never read
+   ([TLS](tls.md#a-certificate-from-an-outside-certificate-authority));
 3. that entry holds the **role** the endpoint requires;
 4. the **access policy** permits it.
 

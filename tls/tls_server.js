@@ -2374,12 +2374,15 @@ function issuedClientCertificateReport() {
 
 // The identity gate for whatever this socket presented — see the block above.
 // `{ issuedHere: false }` when nothing verified or it was not issued here.
-function issuedIdentityOf(socket) {
+// With `options.stored` (#1061) an outside authority's certificate is
+// resolved to the one entry storing it, in the ambient realm — what every
+// sign-in asks; the connection page and the handshake's recording do not.
+function issuedIdentityOf(socket, options) {
   log.debug("Entering issuedIdentityOf().");
   let identity = { issuedHere: false, accepted: false };
   try {
     identity = require('../common/tls_client_certificates').identityOf(
-      revocationStatus.fromSocket(socket));
+      revocationStatus.fromSocket(socket), options);
   } catch (e) {
     // No certificate authority in this process: nothing here was issued by
     // one, so the gate has nothing to say.
@@ -5261,7 +5264,22 @@ function certificateRefusal(socket, mode, revocation, identity) {
   // an authority that does not issue TLS client identities. See
   // `issuedClientCertificateAnchor()` for why that Root is trusted at all and
   // why trusting it is not trusting everything under it.
-  const gated = identity || issuedIdentityOf(socket);
+  const gated = identity || issuedIdentityOf(socket, { stored: true });
+  // AN OUTSIDE AUTHORITY'S CERTIFICATE NOT STORED ON EXACTLY ONE ENTRY
+  // (#1061, rcbj 2026-10-27). Until then such a certificate signed in by its
+  // common name, and seeded a directory entry for it; now it is the one entry
+  // storing it in `userCertificate`, or nobody.
+  if (!gated.issuedHere && gated.outside === true && !gated.accepted) {
+    log.info('tls: a verified client certificate from an outside ' +
+             'certificate authority on the ' + mode + ' listener started ' +
+             'no session: ' + gated.why + '.');
+    log.debug('Leaving certificateRefusal(). An outside certificate, ' +
+              'not stored on one entry.');
+    return { gated: gated, refusal: { started: false,
+                                      refusedAsStored: String(gated.error),
+             why: 'the certificate verified and is NOT AN IDENTITY here: ' +
+                  gated.why } };
+  }
   if (gated.issuedHere && !gated.accepted) {
     log.info('tls: a verified client certificate on the ' + mode + ' ' +
              'listener was issued by this service and is not a TLS client ' +
@@ -5280,7 +5298,7 @@ function certificateRefusal(socket, mode, revocation, identity) {
   // identifier happened to be a person's username signed in AS that person.
   // It became reachable by anybody holding such a certificate the day the
   // application Credentials section started issuing them.
-  if (gated.issuedHere && gated.accepted && gated.kind === 'application') {
+  if (gated.accepted && gated.kind === 'application') {
     log.info('tls: a verified client certificate on the ' + mode + ' ' +
              'listener was issued to the application ' + gated.username +
              ', which authenticates at the token endpoint (RFC 8705) and ' +
@@ -5487,17 +5505,22 @@ function certificatePeer(socket, gated) {
     ? String(Array.isArray(cert.subject.CN) ? cert.subject.CN[0] :
              cert.subject.CN)
     : '';
-  // THE IDENTITY THE ISSUING AUTHORITY WROTE, where this service issued it:
-  // the `urn:sts:person:` (or application) name, which is what an enrolled
-  // certificate is mapped to its entry by. Otherwise the common name, as it
-  // has been since 2026-09-05.
-  const username = (gated && gated.accepted && gated.username) ||
-                   common || subject;
+  // THE IDENTITY THE GATE ANSWERED, AND NOTHING ELSE (#1061): the
+  // `urn:sts:person:` name this service's own authority wrote, or the entry
+  // an outside authority's certificate is stored on. It was the common name,
+  // else the subject, from 2026-09-05 until rcbj's decision on #1061 — a name
+  // a certificate carries is a name its issuer chose, and an outside issuer
+  // could choose anybody's.
+  const username = gated && gated.accepted ? String(gated.username || '')
+                                           : '';
   if (!username) {
-    log.debug('Leaving certificatePeer(). The subject is empty.');
+    log.debug('Leaving certificatePeer(). Not an identity here.');
     return { ok: false,
-             why: 'the certificate names nobody: it has neither a common ' +
-                  'name nor a subject' };
+             why: 'the certificate (' + (common || subject || 'no subject') +
+                  ') names nobody here: an outside certificate authority\'s ' +
+                  'certificate names only the one entry it is stored on ' +
+                  '(userCertificate), and nothing is read off its common ' +
+                  'name or subject' };
   }
   log.debug('Leaving certificatePeer(). ' + username);
   return { ok: true, cert: cert, subject: subject, username: username };
@@ -5570,16 +5593,16 @@ function screenCertificateOffer(req) {
   }
   let checked = null;
   try {
-    checked = require('../common/tls_client_certificates').checkSocket(socket);
+    checked = require('../common/tls_client_certificates')
+      .checkSocket(socket, { stored: true });
   } catch (e) {
     log.debug('Caught in screenCertificateOffer(): ' +
               ((e && e.message) || e));
     checked = null;
   }
   const identity = checked ? checked.identity : null;
-  if (!checked || !checked.ok ||
-      (identity && identity.issuedHere &&
-       (!identity.accepted || identity.kind === 'application'))) {
+  if (!checked || !checked.ok || !identity || !identity.accepted ||
+      identity.kind === 'application') {
     log.debug('Leaving screenCertificateOffer(). Not a person here.');
     return null;
   }
@@ -5617,11 +5640,32 @@ function screenCertificateHolder(req) {
     let checked = null;
     try {
       checked = require('../common/tls_client_certificates')
-        .checkSocket(socket);
+        .checkSocket(socket, { stored: true });
     } catch (e) {
       log.debug('Caught in screenCertificateHolder(): ' +
                 ((e && e.message) || e));
       checked = null;
+    }
+    // AN OUTSIDE AUTHORITY'S CERTIFICATE (#1061) continues only as the one
+    // entry it is stored on — refused after revocation, which
+    // `certificateRefusal()` below would otherwise report first.
+    if (checked && !checked.ok && !(revocation && revocation.refused) &&
+        (checked.error === 'NOT_STORED' ||
+         checked.error === 'STORED_TWICE')) {
+      log.info('tls: the sign-in screen refused a client certificate from ' +
+               'an outside certificate authority: ' + checked.why);
+      log.debug('Leaving screenCertificateHolder(). An outside ' +
+                'certificate, not stored on one entry.');
+      return checked.error === 'STORED_TWICE'
+        ? { ok: false, code: 'STS-AUTHN-0469',
+            why: 'Your certificate is stored on more than one account ' +
+                 'here, so it cannot say which one is yours. Ask an ' +
+                 'administrator to store it on yours alone.' }
+        : { ok: false, code: 'STS-AUTHN-0468',
+            why: 'Your certificate is not stored on any account here, so ' +
+                 'it cannot sign you in. Ask an administrator to store it ' +
+                 'on your account (a renewed certificate is stored again), ' +
+                 'or sign in another way.' };
     }
     if (checked && !checked.ok && checked.error === 'OTHER_REALM') {
       log.info('tls: the sign-in screen refused a client certificate from ' +
@@ -5771,6 +5815,18 @@ function recordClientCertificate(socket, mode, revocation) {
   // an application in the register of people.
   if (gated.issuedHere && gated.accepted && gated.kind === 'application') {
     log.debug('Leaving recordClientCertificate(). An application.');
+    return null;
+  }
+  // AN OUTSIDE AUTHORITY'S CERTIFICATE IS NOT RECORDED HERE (#1061). Until
+  // rcbj's decision it was recorded under its subject, and the observer
+  // SEEDED a directory entry for it (`certificatePlan()`) — an entry created
+  // out of a name somebody else's authority chose. It is an identity now
+  // only as the one entry storing it, in a realm, and a handshake has no
+  // realm: `GET /tls/sign-in` and every other door resolve it where the
+  // request names one, and the sign-in they start is the authentication.
+  if (!gated.issuedHere) {
+    log.debug('Leaving recordClientCertificate(). An outside certificate; ' +
+              'its doors resolve it.');
     return null;
   }
   let cert = null;
@@ -6259,17 +6315,14 @@ function placeCertificateSignIn(req, res) {
     log.debug('Leaving placeCertificateSignIn(). Here.');
     return Promise.resolve(false);
   }
-  const identity = issuedIdentityOf(req.socket);
+  const identity = issuedIdentityOf(req.socket, { stored: true });
   let name = '';
   let held = false;
   try {
-    const cert = req.socket.getPeerCertificate();
-    const common = cert && cert.subject && cert.subject.CN
-      ? String(Array.isArray(cert.subject.CN) ? cert.subject.CN[0] :
-               cert.subject.CN)
-      : '';
-    name = (identity && identity.accepted && identity.username) || common ||
-           (cert && cert.subject ? dnRfc4514(cert.subject) : '');
+    // THE GATE'S NAME ONLY (#1061): an outside certificate is the entry it
+    // is stored on, and one stored nowhere is answered here, refused.
+    name = identity && identity.accepted ? String(identity.username || '')
+                                         : '';
     // With several accounts on (#561) "held" is the CERTIFICATE'S account
     // live in this browser's set, for `startCertificateSessionIn()`'s
     // reason: the browser's other accounts are not this person, and one
@@ -6307,9 +6360,16 @@ function answerCertificateSignIn(req, res) {
   log.debug('Entering answerCertificateSignIn().');
   clusterBarrier.middleware()(req, res, function () {
     checkedSocket(req.socket).then(function (revocation) {
-      const identity = issuedIdentityOf(req.socket);
+      const identity = issuedIdentityOf(req.socket, { stored: true });
       const session = startCertificateSession(req, res, 'optional', revocation,
                                               identity);
+      // AN OUTSIDE CERTIFICATE STORED ON NO ENTRY, OR ON SEVERAL (#1061):
+      // the answer is still 200 with `session.started` false, as every
+      // refusal of this route's is, and the condition is recorded.
+      if (session.refusedAsStored) {
+        errorCodes.mark(res, session.refusedAsStored === 'STORED_TWICE'
+          ? 'STS-TLS-0055' : 'STS-TLS-0054');
+      }
       const presented = !!(req.socket && req.socket.getPeerCertificate &&
                            req.socket.getPeerCertificate().raw &&
                            req.socket.getPeerCertificate().raw.length);

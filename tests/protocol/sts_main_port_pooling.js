@@ -383,6 +383,15 @@ async function resumption() {
   assert.strictEqual(made.status, 200,
     "POST /admin-api/users/create answered " + made.status + " " +
     made.text.slice(0, 200));
+  // AND THE CERTIFICATE STORED ON THAT ENTRY (#1061, rcbj 2026-10-27): an
+  // outside authority's leaf signs in only as the one entry storing it in
+  // `userCertificate`, never by its CN.
+  const stored = await post("/admin-api/users/add-certificate",
+                            { user: "pooling-" + STAMP,
+                              certificate: pki.leaf.pem });
+  assert.strictEqual(stored.status, 200,
+    "POST /admin-api/users/add-certificate answered " + stored.status + " " +
+    stored.text.slice(0, 200));
   const added = await post("/admin-api/tls/trust/add",
                            { certificates: pki.anchorPem });
   assert.strictEqual(added.status, 200,

@@ -157,8 +157,18 @@ into the LDAP directory, entry for entry, with **no store of its own**.
      `oauthAllowedScope`, and the ticket kept that rule; the access gate
      above the scope check is where a deployment narrows a person;
    * **a certificate from an anchor somebody added** (`issuedHere: false`)
-     names no entry, so there is no application to read a declaration from;
-     it keeps the subject-DN principal and the old rule;
+     kept the subject-DN principal until #1061. Since then the gate is asked
+     `{ stored: true }` (`common/CLAUDE.md` 3ag): stored on an application's
+     entry it IS that application and is held to the declarations above;
+     stored on a person's it is that person, principal their username as
+     Basic names them, and may do both; stored on no entry (`STS-SCIM-0084`)
+     or several (`0085`) it is NOT THIS CREDENTIAL — audited, then the request
+     is decided as if no certificate came, an unverified certificate's rule.
+     The subject-DN principal is now reached only by a person's certificate
+     this service issued. **SCIM writes no certificate**: `x509Certificates`
+     is unpublished (#206, scimmy's empty `canonicalValues`), so a stored
+     certificate is put on the entry by the console, `/admin-api` or LDAP,
+     and adding the member is a separate piece;
    * **no mode predicate**: the tie is a policy in both modes, as #110's is;
    * **no `stillHeld()`**: revocation is the door's question already, and
      withdrawing the declaration (or deleting the application, which leaves

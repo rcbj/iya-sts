@@ -1159,7 +1159,9 @@ const SPECS: Spec[] = [
               'than the authentication: simple bind (section 5.1) and, ' +
               'while 636 asks for a client certificate, SASL EXTERNAL ' +
               '(section 5.2.1.2) with a certificate this service issued ' +
-              'to a person; no other SASL mechanism, so no DIGEST-MD5. ' +
+              'to a person, or an outside one stored in userCertificate ' +
+              'on exactly one person entry; no other SASL mechanism, so ' +
+              'no DIGEST-MD5. ' +
               'In development mode it authenticates nobody, ' +
               'since every bind succeeds except the literal password ' +
               '"invalid", and what TLS on 636 adds is confidentiality for a ' +
@@ -1356,7 +1358,9 @@ const SPECS: Spec[] = [
               'requester whose wsse:Security carries no credential is ' +
               'authenticated, in both modes, by the TLS client certificate ' +
               'on the connection where this realm issued it to a person or ' +
-              'an application (#1046).' },
+              'an application (#1046), or where it is from an outside ' +
+              'certificate authority and stored in userCertificate on ' +
+              'exactly one of their entries (#1061).' },
   { id: 'wss-username', name: 'WS-Security UsernameToken Profile 1.1',
     where: 'OASIS wss',
     url: 'https://docs.oasis-open.org/wss/v1.1/wss-v1.1-spec-os-UsernameTokenProfile.pdf',
@@ -4390,9 +4394,11 @@ const ENDPOINTS: EndpointEntry[] = [
           'revocation found, and whether a session was started. It refuses ' +
           'nobody at the handshake and cannot: a certificate that does not ' +
           'verify, one this service issued that is not a TLS client ' +
-          'identity, and an application\'s certificate (an RFC 8705 ' +
-          'credential, not a person) are each answered 200 with no session ' +
-          'and the reason.' },
+          'identity, one from an outside certificate authority that is not ' +
+          'stored in userCertificate on exactly one entry of the realm ' +
+          '(never matched by its common name), and an application\'s ' +
+          'certificate (an RFC 8705 credential, not a person) are each ' +
+          'answered 200 with no session and the reason.' },
   { path: '/tls/server-certificate', group: 'TLS', name: 'The server ' +
       'certificate (PEM)',
     specs: ['rfc5280'],
@@ -8333,7 +8339,8 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'NON-SPEC (#1051). The TLS client certificate on the ' +
           'connection as a first factor, amr ["swk"]: refused on ' +
           'revocation, by the identity gate, for another realm\'s ' +
-          'authority or an application\'s certificate, as GET /tls/sign-in ' +
+          'authority, an outside certificate not stored on exactly one ' +
+          'entry, or an application\'s certificate, as GET /tls/sign-in ' +
           'refuses it; then the authentication policy, the risk and a ' +
           'second factor where one is needed.' },
   { path: '/authn-api/pending/:id/email', group: 'Authentication',

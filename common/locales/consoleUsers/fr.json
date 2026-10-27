@@ -875,5 +875,17 @@
   "personFieldsSection.policyRequired": " La politique d’attributs du domaine l’exige.",
   "newUserBody.requiredEnforced": "Toute personne de ce domaine doit avoir <strong>{list}</strong>, et une création sans l’un d’eux est refusée ; chacun de ces champs ci-dessous est marqué obligatoire, et un <code>cn</code> laissé vide est formé du prénom et du nom. La liste est celle de la ",
   "newUserBody.requiredNotEnforced": "La politique d’attributs du domaine nomme <strong>{list}</strong> ; elle n’est pas appliquée en mode développement, donc une création sans eux est acceptée ici. La liste est celle de la ",
-  "newUserBody.requiredPolicy": "politique d’attributs"
+  "newUserBody.requiredPolicy": "politique d’attributs",
+  "mfaSection.certificatesHeading": "Certificats enregistrés",
+  "mfaSection.certificatesLead": "Un certificat d’une autorité de certification externe — approuvée par les magasins de confiance clients — ne connecte cette personne que tant qu’il est enregistré ici, dans <code>userCertificate</code>, octet pour octet, et sur aucune autre entrée du domaine. Rien n’est lu dans le nom commun ou le sujet d’un certificat, et un certificat renouvelé doit être enregistré de nouveau. La révocation est toujours vérifiée.",
+  "mfaSection.certThSubject": "Sujet",
+  "mfaSection.certThIssuer": "Émetteur",
+  "mfaSection.certThValidity": "Validité",
+  "mfaSection.certExpired": "expiré",
+  "mfaSection.certRemoveTip": "Retirer ce certificat de l’entrée. Dès lors, il ne connecte plus personne.",
+  "mfaSection.certAddLabel": "Certificat (PEM ou DER en base64)",
+  "mfaSection.certAddTip": "Un seul certificat feuille. L’autorité qui l’a délivré va dans les magasins de confiance clients, pas ici.",
+  "mfaSection.certAdd": "Enregistrer",
+  "mfaSection.certAddTitle": "Enregistrer ce certificat sur l’entrée",
+  "mfaSection.certNeedsWrite": "Enregistrer ou retirer un certificat nécessite <strong>Admin Write</strong>."
 }

@@ -875,5 +875,17 @@
   "personFieldsSection.policyRequired": " La política de atributos del dominio lo exige.",
   "newUserBody.requiredEnforced": "Toda persona de este dominio debe tener <strong>{list}</strong>, y se rechaza una creación sin alguno de ellos; cada uno de esos campos abajo está marcado como obligatorio, y un <code>cn</code> vacío se forma con el nombre y el apellido. La lista es la de la ",
   "newUserBody.requiredNotEnforced": "La política de atributos del dominio nombra <strong>{list}</strong>; no se aplica en modo de desarrollo, así que aquí se acepta una creación sin ellos. La lista es la de la ",
-  "newUserBody.requiredPolicy": "política de atributos"
+  "newUserBody.requiredPolicy": "política de atributos",
+  "mfaSection.certificatesHeading": "Certificados almacenados",
+  "mfaSection.certificatesLead": "Un certificado de una autoridad de certificación externa —de confianza a través de los almacenes de confianza de clientes— solo inicia la sesión de esta persona mientras esté almacenado aquí, en <code>userCertificate</code>, byte a byte, y en ninguna otra entrada del dominio. No se lee nada del nombre común ni del sujeto de un certificado, y un certificado renovado se almacena de nuevo. La revocación se sigue comprobando.",
+  "mfaSection.certThSubject": "Sujeto",
+  "mfaSection.certThIssuer": "Emisor",
+  "mfaSection.certThValidity": "Validez",
+  "mfaSection.certExpired": "caducado",
+  "mfaSection.certRemoveTip": "Quitar este certificado de la entrada. A partir de entonces no inicia la sesión de nadie.",
+  "mfaSection.certAddLabel": "Certificado (PEM o DER en base64)",
+  "mfaSection.certAddTip": "Un único certificado final. La autoridad que lo emitió va en los almacenes de confianza de clientes, no aquí.",
+  "mfaSection.certAdd": "Almacenar",
+  "mfaSection.certAddTitle": "Almacenar este certificado en la entrada",
+  "mfaSection.certNeedsWrite": "Almacenar o quitar uno requiere <strong>Admin Write</strong>."
 }
