@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4688** of them, in **48** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4692** of them, in **48** subsystems.
 
 ## Where a code appears
 
@@ -66,7 +66,7 @@ is an ordinary outcome.
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 381
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 730
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 117
-* [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 33
+* [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 37
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 30
 * [Federation (`STS-FED`)](#sts-fed) — 171
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
@@ -2479,6 +2479,10 @@ Raised from: ws-trust/.
 | `STS-WSTRUST-0031` | Product mode: an RST asked for a token and carried no AppliesTo, so it names no application a token could be for; refused before anything was issued or recorded (#496). | SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 section 11 |
 | `STS-WSTRUST-0032` | Product mode: a SAML assertion or JWT presented as the requester's credential is addressed neither to its holder (an audience the holder's application registers) nor to this IdP (its WS-Trust issuer name, SAML entityID, OAuth issuer or /sts address) (#519). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
 | `STS-WSTRUST-0033` | An OnBehalfOf or ActAs request was refused because the verified JWT inside the element carries a may_act claim (RFC 8693 section 4.4) naming a party other than the requester. Held in every mode, as the token exchange holds it (STS-OAUTH-0620) (#747). | SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0034` | The TLS client certificate on the connection, the requester's only credential, verified and was refused on revocation (pki.revocationCheck). Every mode (#1046). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0035` | The TLS client certificate on the connection, the requester's only credential, was issued by this service and is not an identity in this realm: another realm's authority, a key pair that is not a TLS client certificate, or a holder whose entry is gone (common/tls_client_certificates.js). Every mode (#1046). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0036` | The TLS client certificate on the connection, the requester's only credential, is no longer listed on the record of the person or application it was issued to. Every mode (#1046). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0037` | The TLS client certificate on the connection, the requester's only credential, names a person whose account is disabled. Every mode (#1046). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
 
 ## STS-WSFED
 

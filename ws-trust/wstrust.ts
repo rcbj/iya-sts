@@ -200,6 +200,15 @@ interface WsTrustDeps {
   hasSubjectResolver: Helpers['hasSubjectResolver'];
   userFor: Helpers['userFor'];
   scopePolicy: typeof scopePolicy;
+  // #1046: the one mapping from a verified TLS client certificate to a
+  // directory entry, `common/tls_client_certificates.js`. A LOADER, called
+  // when a request carries a certificate: that module requires `pki.js`
+  // and the revocation walk, which a process that never presents one has
+  // no reason to load, and `scim_auth.ts` reaches it the same way.
+  loadTlsClientCertificates: () => {
+    checkSocket(socket: any): any;
+    stillHeld(identity: any): boolean;
+  };
 }
 
 // The express app's registration methods, as `registerRoutes()` uses them.
@@ -317,7 +326,10 @@ class WsTrust {
       subjectForName: helpers.subjectForName,
       hasSubjectResolver: helpers.hasSubjectResolver,
       userFor: helpers.userFor,
-      scopePolicy: scopePolicy
+      scopePolicy: scopePolicy,
+      loadTlsClientCertificates: function () {
+        return require('../common/tls_client_certificates');
+      }
     };
   }
 
@@ -421,14 +433,16 @@ class WsTrust {
   //     first application in a WS-Trust chain is in it because it made the
   //     first ActAs itself.
   //   * EXCEPTIONS with no WS-Trust source: `scope` (an RST asks for none),
-  //     and `auth_time` / `acr` / `amr`, which RFC 9068 section 2.2.1 makes
+  //     and `auth_time` / `acr`, which RFC 9068 section 2.2.1 makes
   //     optional and which a delegated JWT could only copy from a token it
-  //     cannot see the authentication of. `iss` is the realm's OAuth issuer
+  //     cannot see the authentication of. `amr` is the same for a delegated
+  //     token, and is carried since #1046 for a token about the requester,
+  //     whose authentication this STS did see (below). `iss` is the realm's OAuth issuer
   //     (below), which is also every SAML Issuer since #523. `exp` is the lifetime the RSTR's wst:Lifetime states, so the
   //     two cannot disagree.
   // ---------------------------------------------------------------------------
   private buildJwt(subject, audience, lifetimeMin, delegates?, requester?,
-                   application?, jwtIssuer?) {
+                   application?, jwtIssuer?, amr?: string[]) {
     const {
       config, log, logArtifact, randomId, signJwtAs, subjectForName,
       delegationPolicy
@@ -482,6 +496,15 @@ class WsTrust {
     const scope = this.configuredScope(application);
     if (scope) {
       claims.scope = scope;
+    }
+    // #1046: `amr` (RFC 9068 section 2.2.1, RFC 8176) for a token about the
+    // requester, from the authentication this STS saw: `swk` for a TLS client
+    // certificate, `pwd` for a UsernameToken. A delegated token and one
+    // issued on an assertion or a JWT carry none — the first could only copy
+    // it from an authentication it never saw, the second is an earlier
+    // sign-in's evidence (handleRst() passes nothing for either).
+    if (Array.isArray(amr) && amr.length) {
+      claims.amr = amr.slice();
     }
     // #186: the parties that acted, as RFC 8693 section 4.1's `act` — the
     // most recent outermost, each earlier one nested beneath it — which is
@@ -884,11 +907,13 @@ class WsTrust {
    * @param jwtIssuer - #480, #523: the realm's one issuer at the request's
    * base — a JWT's `iss` and a SAML assertion's Issuer; the ambient
    * request's or the process's base when absent
+   * @param amr - #1046: the RFC 8176 methods of the requester's own
+   * authentication, for a JWT about the requester; none when absent
    * @returns the token's XML, its reference, its token type and its id
    */
   buildToken(tokenType, subject, audience, lifetimeMin,
                       authnContextClassRef, delegates?, requester?,
-                      application?, jwtIssuer?) {
+                      application?, jwtIssuer?, amr?: string[]) {
     const { buildSamlAssertion, authnContext, log, xmlEscape } = this.deps;
     log.debug("Entering WsTrust.buildToken(). tokenType=" + tokenType + ", " +
         "subject=" +
@@ -896,7 +921,8 @@ class WsTrust {
     if (tokenType === JWT_TOKEN_TYPE) {
       const forApp = application || this.appliesToApplication(audience);
       const built = this.buildJwt(subject, audience, lifetimeMin,
-                                  delegates, requester, forApp, jwtIssuer);
+                                  delegates, requester, forApp, jwtIssuer,
+                                  amr);
       const token = { xml: '<wsse:BinarySecurityToken ' +
         'xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd" ' +
         'ValueType="urn:ietf:params:oauth:token-type:jwt">' + built.token +
@@ -983,8 +1009,13 @@ class WsTrust {
     const { buildSaml11Assertion, authnContext, log, xmlEscape } = this.deps;
     log.debug("Entering WsTrust.buildSaml11Token().");
     const samlApp = application || this.appliesToApplication(audience);
+    // #1046: a TLS client certificate is SAML 1.1 section 7.1's
+    // `urn:ietf:rfc:2246`, "SSL/TLS Certificate Based Client
+    // Authentication".
     const method = authnContextClassRef === authnContext.AC_PASSWORD_PROTECTED
-      ? authnContext.AM_PASSWORD : authnContext.AM_UNSPECIFIED;
+      ? authnContext.AM_PASSWORD
+      : (authnContextClassRef === authnContext.AC_TLS_CLIENT
+        ? authnContext.AM_TLS_CLIENT : authnContext.AM_UNSPECIFIED);
     const assertion = buildSaml11Assertion({
       subject: subject, audience: audience, lifetimeMin: lifetimeMin,
       authnMethod: method, application: samlApp,
@@ -1308,7 +1339,14 @@ class WsTrust {
   // except an EXPIRED assertion, which is `wst:ExpiredData`, "The request
   // data is out-of-date", the more exact of the two. The same fault for a
   // wrong password and an unknown user is the enumeration rule below.
-  private requesterCredential(doc, jwtIssuer?, base?): any {
+  //
+  // THE CONNECTION'S TLS CLIENT CERTIFICATE IS THE FOURTH CREDENTIAL (#1046),
+  // and the LAST asked: a UsernameToken, an assertion or a JWT in the
+  // message names the requester explicitly, and the main port asks every
+  // connection for a certificate without requiring one, so a client that
+  // happens to hold one is still the party its message says it is. See
+  // connectionCertificate().
+  private requesterCredential(doc, jwtIssuer?, base?, connection?): any {
     const { credentials, mode, log, firstByLocal, textByLocal } = this.deps;
     log.debug("Entering WsTrust.requesterCredential().");
     const scope = this.credentialScope(doc);
@@ -1482,8 +1520,147 @@ class WsTrust {
                  : 'The JWT is not verified in development mode; its sub is ' +
                    'read and believed.' };
     }
+    const certificate = this.connectionCertificate(connection);
+    if (certificate) {
+      log.debug("Leaving WsTrust.requesterCredential(). The connection's " +
+                "client certificate" +
+                (certificate.ok ? ", for " + certificate.subject : '') + ".");
+      return certificate;
+    }
     log.debug("Leaving WsTrust.requesterCredential(). Nothing was presented.");
     return null;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE REQUESTER AUTHENTICATED BY ITS TLS CLIENT CERTIFICATE (#1046, from
+  // #520; rcbj 2026-10-27).
+  //
+  // `connection` is `{ socket, revocation }`: the request's socket (a request
+  // worker's shim for a dispatched one, which `revocation_status.fromSocket()`
+  // reads the same way) and `req.certificateRevocation`, the verdict
+  // `common/app.js` computed before any route. null answers "no certificate
+  // credential here", which is a different answer from a refusal.
+  //
+  // ONE MAPPING, NOT A SECOND (#520's rule): the certificate is a requester
+  // only where `common/tls_client_certificates.js`'s `checkSocket()` says
+  // it is an identity in THIS realm — issued by a realm's TLS client or
+  // enrollment Issuing CA, with clientAuth, naming exactly one
+  // `urn:sts:person:` or `urn:sts:application:` — and `stillHeld()` says
+  // the holder's record still lists it, which is RFC 8705's implicit
+  // mapping's rule at the token endpoint. Nothing is read off a CN, so:
+  //
+  //   * a chain to an anchor somebody installed (/admin-api/tls/trust) is
+  //     "not ours" to the gate, and is NOT this credential: SCIM files such a
+  //     certificate under its subject DN and `/tls/sign-in` under its CN,
+  //     and either here would be the second mapping the rule forbids;
+  //   * an unverified certificate is not this credential either — the port
+  //     asks without requiring, and the request may carry no other.
+  //
+  // A CERTIFICATE THAT VERIFIED AND IS REFUSED IS A FAULT, IN EVERY MODE,
+  // rather than "nothing presented": revoked (`STS-WSTRUST-0034`), issued
+  // here and not an identity in this realm (`0035` — another realm's
+  // authority, a key pair that is not a TLS client certificate, a holder
+  // gone), no longer on its holder's record (`0036`), or a disabled person
+  // (`0037`). Development checks nothing it could believe instead — the
+  // handshake verified the chain, and every other door that reads this gate
+  // (SCIM, XACML, `/tls/sign-in`, RFC 8705) holds the same answers in both
+  // modes — so there is no `mode.js` question here. Answering `anonymous`
+  // for a credential this service has just refused would be the outcome
+  // the reserved password `invalid` exists to prevent.
+  //
+  // `wstrust.acceptClientCertificate` (on by default, as
+  // `scim.authClientCert` is) turns the whole credential off; the console's
+  // WS-Trust page and `GET /admin-api/wstrust` show it, as settings.
+  // ---------------------------------------------------------------------------
+  private connectionCertificate(connection?): any {
+    const { config, credentials, errorCodes, loadTlsClientCertificates,
+            log } = this.deps;
+    log.debug("Entering WsTrust.connectionCertificate().");
+    const socket = connection ? connection.socket : null;
+    if (!socket || typeof socket.getPeerCertificate !== 'function' ||
+        socket.authorized !== true) {
+      log.debug("Leaving WsTrust.connectionCertificate(). No verified " +
+                "certificate on this connection.");
+      return null;
+    }
+    if (config.value('wstrust.acceptClientCertificate') === false) {
+      log.debug("Leaving WsTrust.connectionCertificate(). " +
+                "wstrust.acceptClientCertificate is off.");
+      return null;
+    }
+    const refused = function (code: string, reason: string): any {
+      log.debug("Entering refused(). " + code);
+      log.info(errorCodes.tag(code) + 'wstrust: the TLS client certificate ' +
+               'on this connection was refused as the requester\'s ' +
+               'credential: ' + reason);
+      log.debug("Leaving refused().");
+      return { ok: false, errorCode: code,
+               trustFault: 'FailedAuthentication',
+               reason: 'The TLS client certificate presented on this ' +
+                       'connection was refused: ' + reason };
+    };
+    const revocation = connection.revocation || null;
+    if (revocation && revocation.refused) {
+      log.debug("Leaving WsTrust.connectionCertificate(). Refused on " +
+                "revocation.");
+      return refused('STS-WSTRUST-0034', 'it was refused on revocation (' +
+                     String(revocation.why || 'revoked') + ').');
+    }
+    let gate: any = null;
+    let gates: any = null;
+    try {
+      gates = loadTlsClientCertificates();
+      gate = gates.checkSocket(socket);
+    } catch (e) {
+      log.debug("Caught in WsTrust.connectionCertificate(): " +
+                ((e && e.message) || e));
+      // No certificate authority in this process, so nothing on this socket
+      // was issued by one and there is no identity to map it to.
+      gate = null;
+    }
+    if (!gate) {
+      log.debug("Leaving WsTrust.connectionCertificate(). No gate.");
+      return null;
+    }
+    const identity = gate.identity || {};
+    if (gate.ok && !identity.issuedHere) {
+      log.info('wstrust: a verified TLS client certificate from an anchor ' +
+               'this service did not issue is not a WS-Trust credential; ' +
+               'only one a realm\'s TLS client or enrollment Issuing CA ' +
+               'issued maps to a directory entry.');
+      log.debug("Leaving WsTrust.connectionCertificate(). Not ours.");
+      return null;
+    }
+    if (!gate.ok) {
+      log.debug("Leaving WsTrust.connectionCertificate(). Not an identity " +
+                "here.");
+      return refused('STS-WSTRUST-0035', String(gate.why || gate.error) +
+                     '.');
+    }
+    if (!gates.stillHeld(identity)) {
+      log.debug("Leaving WsTrust.connectionCertificate(). No longer held.");
+      return refused('STS-WSTRUST-0036', 'it was issued to the ' +
+                     identity.kind + ' "' + identity.username + '", whose ' +
+                     'record no longer lists it.');
+    }
+    const name = String(identity.username);
+    const isClient = identity.kind === 'application';
+    if (!isClient && credentials.accountDisabled(name)) {
+      log.debug("Leaving WsTrust.connectionCertificate(). Disabled.");
+      return refused('STS-WSTRUST-0037', 'it names "' + name + '", whose ' +
+                     'account is disabled.');
+    }
+    log.debug("Leaving WsTrust.connectionCertificate(). The " +
+              identity.kind + " " + name + ".");
+    return { ok: true, subject: name, kind: 'certificate',
+             isClient: isClient,
+             method: 'a TLS client certificate',
+             certificateSerial: String(identity.serialHex || ''),
+             note: 'The TLS client certificate on the connection verified, ' +
+                   'was not refused on revocation, and was issued to the ' +
+                   identity.kind + ' "' + name + '" by the "' +
+                   String((identity.authority && identity.authority.ca) ||
+                          '') + '" Issuing CA of this realm.' };
   }
 
   // The identifier of an assertion presented as the requester's credential
@@ -2130,10 +2307,14 @@ class WsTrust {
   // row from, and what the embedded LDAP directory grows a
   // `uid=<name>,ou=users` entry from. A path that accepts a credential without
   // calling it is a person who authenticated here and is in none of the three.
-  private authenticate(doc, jwtIssuer?, base?, audience?) {
+  // `connection` (#1046) is the request's `{ socket, revocation }`, for the
+  // TLS client certificate — the fourth credential; absent, as from an
+  // in-process caller of handleRst(), there is none.
+  private authenticate(doc, jwtIssuer?, base?, audience?, connection?) {
     const { stats, delegation, mode, log } = this.deps;
     log.debug("Entering WsTrust.authenticate().");
-    const credential = this.requesterCredential(doc, jwtIssuer, base);
+    const credential = this.requesterCredential(doc, jwtIssuer, base,
+                                                connection);
     if (credential && !credential.ok) {
       log.debug("Leaving WsTrust.authenticate(). The credential was refused.");
       return { ok: false, reason: credential.reason,
@@ -2175,9 +2356,10 @@ class WsTrust {
                reason: 'This request delegates (<wst:' + delegatedBy.element +
                        '>) and presents no credential of its own. In product ' +
                        'mode the requester must authenticate — a WS-Security ' +
-                       'UsernameToken, or a SAML assertion or JWT this ' +
-                       'security token service issued — before a token about ' +
-                       'somebody else is issued to it.' };
+                       'UsernameToken, a SAML assertion or JWT this ' +
+                       'security token service issued, or a TLS client ' +
+                       'certificate this realm issued — before a token ' +
+                       'about somebody else is issued to it.' };
     }
     if (delegated) {
       // THE DELEGATED SUBJECT IS NOT RECORDED HERE (#183). It used to be,
@@ -2232,7 +2414,11 @@ class WsTrust {
     if (credential) {
       log.debug("Leaving WsTrust.authenticate(). Accepted for " +
                 credential.subject + ".");
-      return { ok: true, subject: credential.subject, kind: credential.kind };
+      // #1046: `isClient` so an application's certificate signs nobody in
+      // (handleRst()'s `signIn`), as `/tls/sign-in` starts no session for
+      // one.
+      return { ok: true, subject: credential.subject, kind: credential.kind,
+               isClient: !!credential.isClient };
     }
     // PRODUCT: NO CREDENTIAL, NO TOKEN (2026-09-12). Everything below this line
     // is development's — and it is also what made a Renew with no credential
@@ -2250,7 +2436,9 @@ class WsTrust {
                        'WS-Trust operation requires one in the wsse:Security ' +
                        'header — a WS-Security UsernameToken verified ' +
                        'against the directory, or a SAML assertion or JWT ' +
-                       'this security token service issued.' };
+                       'this security token service issued — or a TLS ' +
+                       'client certificate this realm issued on the ' +
+                       'connection.' };
     }
     // No credential — lenient (anonymous), so a "None" credential still issues.
     //
@@ -2277,12 +2465,19 @@ class WsTrust {
   //   SAML assertion   PreviousSession — "authenticated to an authentication
   //                    authority at some point in the past", which is precisely
   //                    what an assertion presented as a credential proves
+  //   TLS client cert  TLSClient (#1046) — the HANDSHAKE's certificate, which
+  //                    is what that class names; X509 is a signature at the
+  //                    message level, which is not what was verified
   //   OnBehalfOf/ActAs unspecified: the subject presented nothing here
   //   nothing          unspecified
   // ---------------------------------------------------------------------------
   private authnContextOf(auth) {
     const { authnContext, log } = this.deps;
     log.debug("Entering WsTrust.authnContextOf().");
+    if (auth && auth.kind === 'certificate') {
+      log.debug("Leaving WsTrust.authnContextOf(). TLSClient.");
+      return authnContext.AC_TLS_CLIENT;
+    }
     if (auth && auth.kind === 'password') {
       log.debug("Leaving WsTrust.authnContextOf().");
       return authnContext.AC_PASSWORD_PROTECTED;
@@ -2293,6 +2488,24 @@ class WsTrust {
     }
     log.debug("Leaving WsTrust.authnContextOf().");
     return authnContext.AC_UNSPECIFIED;
+  }
+
+  // THE RFC 8176 METHODS OF THE REQUESTER'S OWN AUTHENTICATION (#1046), in
+  // the one place the session, the door's risk facts and a JWT about the
+  // requester read them: `pwd` for a UsernameToken, `swk` for a TLS client
+  // certificate — RFC 8176's software-secured key, which is what
+  // `/tls/sign-in` says, since this service cannot know the key is in
+  // hardware — and none for an assertion or a JWT, which is evidence of an
+  // earlier sign-in rather than of a credential presented now.
+  private amrOf(auth): string[] {
+    const { log } = this.deps;
+    log.debug("Entering WsTrust.amrOf().");
+    const kind = auth ? String(auth.kind || '') : '';
+    const out = kind === 'certificate' ? ['swk']
+      : (kind === 'assertion' || kind === 'none' || kind === 'delegated'
+        ? [] : ['pwd']);
+    log.debug("Leaving WsTrust.amrOf(). " + out.join(','));
+    return out;
   }
 
   // THE DELEGATED SUBJECT ON /admin/users (#183), once the delegation policy
@@ -2330,7 +2543,9 @@ class WsTrust {
    *
    * @param rawBody - the request body
    * @param contentType - the request's content type
-   * @param options - `encrypt`, to encrypt an issued assertion
+   * @param options - `encrypt`, to encrypt an issued assertion; and
+   * `connection` (#1046), the request's `{ socket, revocation }`, whose
+   * verified TLS client certificate is the requester's fourth credential
    * @returns the HTTP status, the SOAP version, the envelope body and, where
    * issued, the sign-in to record
    */
@@ -2467,7 +2682,7 @@ class WsTrust {
     // refused password twice and spend a nonce twice.
     const auth: any = options.preAuthenticated ||
       this.authenticate(doc, jwtIssuer, String(options.base || ''),
-                        audience);
+                        audience, options.connection);
     if (!auth.ok) {
       log.debug("Leaving WsTrust.handleRst(). Authentication failed, " +
                 "answering with a SOAP Fault.");
@@ -2763,7 +2978,8 @@ class WsTrust {
       : (auth.kind === 'none' ? '' : String(auth.subject || ''));
     const tok = this.buildToken(tokenType, subject, audience, lifetimeMin,
                            this.authnContextOf(auth), delegates, requester,
-                           undefined, jwtIssuer);
+                           undefined, jwtIssuer,
+                           auth.kind === 'delegated' ? [] : this.amrOf(auth));
 
     // Optional encryption (?encrypt=1): encrypt the SAML assertion to the
     // recipient certificate carried in the request's WS-Security signature
@@ -3054,11 +3270,16 @@ class WsTrust {
     // THE AMR SAYS WHICH CREDENTIAL IT WAS. `pwd` for a UsernameToken, as
     // before; nothing for a SAML assertion, which is evidence of an earlier
     // sign-in elsewhere rather than of a password presented now.
+    //
+    // #1046: `swk` for a TLS client certificate (amrOf()), and no session for
+    // an APPLICATION's certificate — it is a client credential and not a
+    // sign-in, `/tls/sign-in`'s rule for the same certificate.
     const signIn = auth.subject && auth.subject !== 'anonymous' &&
-                   auth.kind !== 'delegated'
+                   auth.kind !== 'delegated' &&
+                   !(auth.kind === 'certificate' && auth.isClient)
       ? { username: auth.subject, method: auth.method || 'WS-Trust',
           via: 'WS-Trust ' + op,
-          amr: auth.kind === 'assertion' ? [] : ['pwd'] }
+          amr: this.amrOf(auth) }
       : null;
 
     if (op === 'renew') {
@@ -3162,8 +3383,13 @@ class WsTrust {
     // THE PERSON'S HOME CELL (#98 D10), before anything is read, verified,
     // recorded or spent: see homeNameOf(). Single-cell mode goes straight
     // on, as it always did.
+    // #1046: a request whose only requester credential is the connection's
+    // TLS client certificate is served where it arrived — the certificate
+    // is the SOCKET's, and a relayed request carries no socket to present
+    // it on — so homeNameOf() is told not to fall back to the delegated
+    // subject's home.
     const home = read.ok && cells.isMulti() && !req.stsCellRelay
-      ? this.homeNameOf(read.value) : '';
+      ? this.homeNameOf(read.value, this.verifiedOnConnection(req)) : '';
     // THE DELEGATED SUBJECT, when it is somebody other than the person the
     // request is served for: see delegatedHere().
     const delegated = read.ok && cells.isMulti()
@@ -3290,7 +3516,7 @@ class WsTrust {
   // is unknown to the routing index, and the request is served where it
   // arrived — the answer it always had.
   // ---------------------------------------------------------------------------
-  private homeNameOf(doc): string {
+  private homeNameOf(doc, certificateOnConnection?: boolean): string {
     const { firstByLocal, log, textByLocal } = this.deps;
     log.debug("Entering WsTrust.homeNameOf().");
     const nameOf = function (el): string {
@@ -3329,9 +3555,28 @@ class WsTrust {
       log.debug("Leaving WsTrust.homeNameOf(). The requester's JWT.");
       return this.nameOfSubject(sub) || '';
     }
+    if (certificateOnConnection) {
+      log.debug("Leaving WsTrust.homeNameOf(). The connection's " +
+                "certificate: served here.");
+      return '';
+    }
     log.debug("Leaving WsTrust.homeNameOf(). The delegated subject.");
     return nameOf(firstByLocal(doc, 'OnBehalfOf') ||
                   firstByLocal(doc, 'ActAs'));
+  }
+
+  // Whether this request's connection carries a VERIFIED TLS client
+  // certificate (#1046), for homeNameOf(): the cheap half of
+  // connectionCertificate()'s question, and enough to keep the request
+  // where its socket is.
+  private verifiedOnConnection(req): boolean {
+    const { config, log } = this.deps;
+    log.debug("Entering WsTrust.verifiedOnConnection().");
+    const socket = req ? (req.socket || req.connection || null) : null;
+    const yes = !!socket && socket.authorized === true &&
+      config.value('wstrust.acceptClientCertificate') !== false;
+    log.debug("Leaving WsTrust.verifiedOnConnection(). " + yes);
+    return yes;
   }
 
   // ---------------------------------------------------------------------------
@@ -3434,7 +3679,7 @@ class WsTrust {
          String(appliesToEl.textContent || '').trim()) : '';
     const auth: any = this.authenticate(doc,
       this.oauthIssuer(helpers.baseUrlOf(req)), helpers.baseUrlOf(req),
-      audience);
+      audience, this.connectionOf(req));
     if (!auth.ok || !auth.subject || auth.subject === 'anonymous' ||
         auth.kind === 'delegated') {
       log.debug("Leaving WsTrust.doorAssessment(). Nobody signed in.");
@@ -3450,7 +3695,7 @@ class WsTrust {
         return { auth: auth };
       }
       const facts = engine.factsOf(engine.riskOf(assessment),
-        auth.kind === 'assertion' ? [] : ['pwd'], '1');
+        this.amrOf(auth), '1');
       log.debug("Leaving WsTrust.doorAssessment(). " + assessment.level);
       return { auth: auth, username: username, assessment: assessment,
                facts: facts };
@@ -3464,6 +3709,19 @@ class WsTrust {
     }
   }
 
+  // THE CONNECTION A REQUEST ARRIVED ON (#1046), as the requester's fourth
+  // credential reads it: the socket — a request worker's shim for a
+  // dispatched request, read the same way — and the revocation verdict
+  // `common/app.js` computed for its certificate before any route.
+  private connectionOf(req): any {
+    const { log } = this.deps;
+    log.debug("Entering WsTrust.connectionOf().");
+    const socket = req ? (req.socket || req.connection || null) : null;
+    log.debug("Leaving WsTrust.connectionOf().");
+    return { socket: socket,
+             revocation: req ? (req.certificateRevocation || null) : null };
+  }
+
   private stsEndpointNow(req, res, door?: any) {
     const { authn, errorCodes, log } = this.deps;
     log.debug("Entering the WS-Trust STS endpoint.");
@@ -3473,6 +3731,7 @@ class WsTrust {
       let issuanceAnswer: any = null;
       const result = this.handleRst(req.body || '', contentType,
         { encrypt: encrypt, base: helpers.baseUrlOf(req),
+          connection: this.connectionOf(req),
           preAuthenticated: door ? door.auth : null,
           doorRisk: door && door.facts
             ? { username: door.username, facts: door.facts } : null,

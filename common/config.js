@@ -9786,6 +9786,27 @@ const SETTINGS = [
     'the certificate chain of the key that signed it. A SAML assertion ' +
     'carries its certificate in its own XML Signature and is not affected.'),
 
+  // THE REQUESTER'S TLS CLIENT CERTIFICATE (#1046, from #520): the fourth
+  // credential beside a UsernameToken, an assertion and a JWT, on by default
+  // as `scim.authClientCert` is. ws-trust/CLAUDE.md argues it.
+  { key: 'wstrust.acceptClientCertificate', group: 'WS-Trust',
+    label: 'Accept the TLS client certificate as the requester\'s credential',
+    env: 'STS_WSTRUST_ACCEPT_CLIENT_CERTIFICATE', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'Whether a request to /sts whose wsse:Security header ' +
+                 'carries no credential authenticates its requester by the ' +
+                 'TLS client certificate on the connection. Only a ' +
+                 'certificate that verified at the handshake and that this ' +
+                 'realm issued to a person or an application (a TLS client ' +
+                 'certificate from the user portal or the application\'s ' +
+                 'Credentials, or one enrolled over ACME, EST or SCEP) is a ' +
+                 'credential, in both modes; a revoked one, one from another ' +
+                 'realm and one its holder no longer holds are refused with ' +
+                 'wst:FailedAuthentication. The issued token says a ' +
+                 'certificate was used: TLSClient in a SAML 2.0 assertion, ' +
+                 'urn:ietf:rfc:2246 in a SAML 1.1 one, amr swk in a JWT. ' +
+                 'Off, the certificate is ignored here.' },
+
   // WHO MAY START A SIGN-IN (#426, #710), the WS-Federation pair. A
   // wsignin1.0 at /wsfed is the relying party's (WS-Federation 1.2 section
   // 13.2.1); /wsfed/initiate/{rp} is this identity provider's, posting to the

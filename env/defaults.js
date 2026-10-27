@@ -749,10 +749,11 @@ var config = {
 
   // --- WS-Trust --------------------------------------------------------
   wstrust: {
-    tokenLifetimeMin: 60,        // Token lifetime (minutes)
-    maxTokenLifetimeMin: 1440,   // Longest lifetime a request may ask for (minutes)
-    jwtAlgorithm: "RS256",       // JWT signature algorithm
-    jwtCertificateHeader: "x5u"  // JWT certificate header
+    tokenLifetimeMin: 60,          // Token lifetime (minutes)
+    maxTokenLifetimeMin: 1440,     // Longest lifetime a request may ask for (minutes)
+    jwtAlgorithm: "RS256",         // JWT signature algorithm
+    jwtCertificateHeader: "x5u",   // JWT certificate header
+    acceptClientCertificate: true  // Accept the TLS client certificate as the requester's credential
   },
 
   // --- WS-Federation ---------------------------------------------------
@@ -1478,8 +1479,7 @@ var config = {
     maxConcurrentPerRealm: 2,   // Report jobs running per realm
     maxConcurrentPerSubject: 1, // Report jobs running per person
     artifactRetentionS: 86400,  // How long a report result is kept (seconds)
-    jobRetentionS: 604800,      // How long a report job row is kept (seconds)
-    usersGroup: ""              // Who may be issued report:use
+    jobRetentionS: 604800       // How long a report job row is kept (seconds)
   },
 
   // --- Listener: Main port ---------------------------------------------
