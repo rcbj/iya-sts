@@ -279,7 +279,15 @@ CREATE INDEX IF NOT EXISTS sts_ldap_entries_values ON sts_ldap_entries USING gin
 -- still holds all its classes, which answers the same question). They
 -- replace the two below, which indexed every name and every class of every
 -- entry — about nineteen GIN entries a person insert that narrowed nothing.
-CREATE INDEX IF NOT EXISTS sts_ldap_entries_asked_names ON sts_ldap_entries USING gin ((jsonb_path_query_array(attr_names, '$[*] ? (@ == "federationlink" || @ == "hobapublickey" || @ == "memberof" || @ == "oauthconsent" || @ == "stsacmeeabkey" || @ == "stsandroidattestedcredential" || @ == "stsassertionissuer" || @ == "stsassertionjwks" || @ == "stscertificatehostname" || @ == "stsclaimsourcetokens" || @ == "stsdefaultdelegationsemantics" || @ == "stsdelegationsemantics" || @ == "stsdeviceandroidkey" || @ == "stsdevicekey" || @ == "stsenrolledcertificate" || @ == "stsenrolledprivatekey" || @ == "stskrb5keyinfo" || @ == "stskrb5keys" || @ == "stsmailfactor" || @ == "stsmayact" || @ == "stsnotdelegated" || @ == "stssamlassertioncertificate" || @ == "stssamlassertionissuer" || @ == "stsscepchallenge" || @ == "stsselfissuedsubject" || @ == "stsserviceaccount" || @ == "ststotpcredential" || @ == "stswebauthncredential" || @ == "stswebauthnuserhandle")'))) WITH (fastupdate = off) WHERE attr_names ?| ARRAY['federationlink', 'hobapublickey', 'memberof', 'oauthconsent', 'stsacmeeabkey', 'stsandroidattestedcredential', 'stsassertionissuer', 'stsassertionjwks', 'stscertificatehostname', 'stsclaimsourcetokens', 'stsdefaultdelegationsemantics', 'stsdelegationsemantics', 'stsdeviceandroidkey', 'stsdevicekey', 'stsenrolledcertificate', 'stsenrolledprivatekey', 'stskrb5keyinfo', 'stskrb5keys', 'stsmailfactor', 'stsmayact', 'stsnotdelegated', 'stssamlassertioncertificate', 'stssamlassertionissuer', 'stsscepchallenge', 'stsselfissuedsubject', 'stsserviceaccount', 'ststotpcredential', 'stswebauthncredential', 'stswebauthnuserhandle'];
+-- THE ASKED NAMES GREW (#1024, schema version 27): `stsbackupcodes` joined
+-- them, so an index built before answers "nobody" for that name through
+-- the index. It is dropped here and built again by the CREATE below, which
+-- is the driver's advisory upgrade step `sts_ldap_entries_asked_names_v27`
+-- for a role that owns the table. On a large store the build takes minutes
+-- and locks writes; `CREATE INDEX CONCURRENTLY` under another name, a
+-- DROP and a RENAME do the same without the lock, outside a transaction.
+DROP INDEX IF EXISTS sts_ldap_entries_asked_names;
+CREATE INDEX IF NOT EXISTS sts_ldap_entries_asked_names ON sts_ldap_entries USING gin ((jsonb_path_query_array(attr_names, '$[*] ? (@ == "federationlink" || @ == "hobapublickey" || @ == "memberof" || @ == "oauthconsent" || @ == "stsacmeeabkey" || @ == "stsandroidattestedcredential" || @ == "stsassertionissuer" || @ == "stsassertionjwks" || @ == "stsbackupcodes" || @ == "stscertificatehostname" || @ == "stsclaimsourcetokens" || @ == "stsdefaultdelegationsemantics" || @ == "stsdelegationsemantics" || @ == "stsdeviceandroidkey" || @ == "stsdevicekey" || @ == "stsenrolledcertificate" || @ == "stsenrolledprivatekey" || @ == "stskrb5keyinfo" || @ == "stskrb5keys" || @ == "stsmailfactor" || @ == "stsmayact" || @ == "stsnotdelegated" || @ == "stssamlassertioncertificate" || @ == "stssamlassertionissuer" || @ == "stsscepchallenge" || @ == "stsselfissuedsubject" || @ == "stsserviceaccount" || @ == "ststotpcredential" || @ == "stswebauthncredential" || @ == "stswebauthnuserhandle")'))) WITH (fastupdate = off) WHERE attr_names ?| ARRAY['federationlink', 'hobapublickey', 'memberof', 'oauthconsent', 'stsacmeeabkey', 'stsandroidattestedcredential', 'stsassertionissuer', 'stsassertionjwks', 'stsbackupcodes', 'stscertificatehostname', 'stsclaimsourcetokens', 'stsdefaultdelegationsemantics', 'stsdelegationsemantics', 'stsdeviceandroidkey', 'stsdevicekey', 'stsenrolledcertificate', 'stsenrolledprivatekey', 'stskrb5keyinfo', 'stskrb5keys', 'stsmailfactor', 'stsmayact', 'stsnotdelegated', 'stssamlassertioncertificate', 'stssamlassertionissuer', 'stsscepchallenge', 'stsselfissuedsubject', 'stsserviceaccount', 'ststotpcredential', 'stswebauthncredential', 'stswebauthnuserhandle'];
 CREATE INDEX IF NOT EXISTS sts_ldap_entries_group_classes ON sts_ldap_entries USING gin (class_keys) WITH (fastupdate = off) WHERE class_keys <> '[]'::jsonb;
 DROP INDEX IF EXISTS sts_ldap_entries_attr_names;
 DROP INDEX IF EXISTS sts_ldap_entries_classes;
@@ -1149,7 +1157,7 @@ CREATE TABLE IF NOT EXISTS sts_schema (
 -- WHAT VERSION OF THE ABOVE THIS IS. The driver writes the same row on open()
 -- and `tests/postgres_schema.js` checks that this number is its SCHEMA_VERSION,
 -- so the two cannot disagree about which schema is on disk.
-INSERT INTO sts_schema (version) VALUES (26) ON CONFLICT (version) DO NOTHING;
+INSERT INTO sts_schema (version) VALUES (27) ON CONFLICT (version) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
 -- THE APPLICATION ROLE: READ AND WRITE THE ROWS, AND NOTHING ELSE.

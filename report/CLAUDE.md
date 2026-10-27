@@ -376,8 +376,16 @@ read from what the directory keeps already:
   passes `{ stop }` to `holdersAsync()`, which `DirectoryWindow` asks
   between pages and the in-memory walk between slices, so the budget or a
   cancellation ends the store's paging with a thrown `stopped` error.
-* **Not here**: recovery codes and app passwords, whose attributes are
-  outside the asked-names index (a store index change, its own ticket);
+* **Recovery codes are here since #1024** (rcbj, 2026-10-27: "similar
+  searches on backup codes"): `recoveryCodes`, attribute `stsBackupCodes`,
+  role `recovery`, one row per set — the unused codes counted (the stored
+  `remaining` when the set is sealed under another key), `scrypt` or
+  `plain` as the algorithm, `generatedAt` and `lastUsedAt` — and never a
+  code or a hash. It took the store index change #1002 deferred:
+  `stsbackupcodes` joined `ASKED_ATTRIBUTES`, which is schema version 27
+  and a rebuild of `sts_ldap_entries_asked_names`
+  (`persistence_postgres.js`'s advisory step `_v27`, `postgres/schema.sql`).
+  **Not here**: app passwords, whose attribute is still outside the index;
   and a maintained per-role aggregate — `passkey_report.ts` keeps
   algorithm, lane and model facets but not role, so the census is the
   engine's count+groupBy over this source.

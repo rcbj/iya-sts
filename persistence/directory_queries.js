@@ -807,7 +807,8 @@ function page(realm, baseKey, afterKey, limit, options) {
 const ASKED_ATTRIBUTES = Object.freeze([
   'federationlink', 'hobapublickey', 'memberof', 'oauthconsent',
   'stsacmeeabkey', 'stsandroidattestedcredential', 'stsassertionissuer',
-  'stsassertionjwks', 'stscertificatehostname', 'stsclaimsourcetokens',
+  'stsassertionjwks', 'stsbackupcodes', 'stscertificatehostname',
+  'stsclaimsourcetokens',
   'stsdefaultdelegationsemantics', 'stsdelegationsemantics',
   'stsdeviceandroidkey', 'stsdevicekey', 'stsenrolledcertificate',
   'stsenrolledprivatekey', 'stskrb5keyinfo', 'stskrb5keys', 'stsmailfactor',
