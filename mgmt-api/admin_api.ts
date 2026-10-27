@@ -2538,7 +2538,10 @@ class AdminApi {
         operationId: 'getWsTrustSettings',
         summary: 'The security token service\'s own settings',
         description: 'The `wstrust.*` settings: the token lifetime and its ' +
-                     'ceiling, and the JWT signing algorithm. Who a token ' +
+                     'ceiling, the JWT signing algorithm, and whether the ' +
+                     'TLS client certificate on the connection is accepted ' +
+                     'as the requester\'s credential ' +
+                     '(`wstrust.acceptClientCertificate`, #1046). Who a token ' +
                      'says issued it is not a setting (#523): it is the ' +
                      'realm\'s OAuth issuer, a JWT\'s `iss` and an ' +
                      'assertion\'s Issuer alike.\n\n' +
