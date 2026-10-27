@@ -2499,13 +2499,14 @@ class CryptoMetadata {
                 'sent already hashed, which cannot be held to the password ' +
                 'policy; development keeps one as given, which is how a ' +
                 'directory moves between two instances.',
-        whatItDoesNot: 'It answers NO SASL MECHANISM — the root DSE omits ' +
-                       '`supportedSASLMechanisms` rather than publishing it ' +
+        whatItDoesNot: 'It answers ONE SASL MECHANISM, EXTERNAL, and only ' +
+                       'while 636 asks for a client certificate — the root ' +
+                       'DSE publishes `supportedSASLMechanisms` then and ' +
+                       'omits it otherwise rather than publishing it ' +
                        'empty, because an LDAP attribute always has at least ' +
                        'one value and an empty one is not a weaker claim, it ' +
-                       'is a malformed one. So no GSSAPI bind, no EXTERNAL ' +
-                       'bind, and no StartTLS: 636 is TLS from the first ' +
-                       'byte.',
+                       'is a malformed one. So no GSSAPI bind, and no ' +
+                       'StartTLS: 636 is TLS from the first byte.',
         envelopes: ['tls'],
         algorithms: function () {
           log.debug("Entering algorithms().");

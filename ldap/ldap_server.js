@@ -15824,6 +15824,32 @@ function saslExternalSupported(ldapServer) {
 
 servers.forEach(saslExternalSupported);
 
+// An attribute map without the attributes whose value is undefined: the
+// root DSE publishes an attribute it has no value for by leaving it out.
+function withoutAbsent(attributes) {
+  log.debug("Entering withoutAbsent().");
+  const out = {};
+  Object.keys(attributes).forEach(function (name) {
+    if (attributes[name] !== undefined) {
+      out[name] = attributes[name];
+    }
+  });
+  log.debug("Leaving withoutAbsent().");
+  return out;
+}
+
+// Whether a SASL EXTERNAL bind can succeed at all now: 636 asks for a client
+// certificate (#423's pair, optional or required), which is the only way a
+// connection comes to carry one.
+function saslExternalOffered() {
+  log.debug("Entering saslExternalOffered().");
+  const policy = secureServer ? ldapsPolicy() : null;
+  const offered = !!policy && !!policy.clientAuth &&
+                  policy.clientAuth !== 'none';
+  log.debug("Leaving saslExternalOffered(). " + offered);
+  return offered;
+}
+
 // THE MECHANISM node-ldapjs REFUSED ITSELF (7), recorded here: the library
 // answers before any handler runs, so this is the one refusal of a bind the
 // handler never sees.
@@ -19834,7 +19860,7 @@ server.search('', function (req, res, next) {
     if (scope === 'base') {
       res.send(toSearchEntry({
         dn: '',
-        attributes: {
+        attributes: withoutAbsent({
           objectclass: ['top', 'LDAProotDSE'],
           // EVERY REALM'S BASE, not just ROOT_DN, and this changed on
           // 2026-08-25 with the search scoping below. A search from ROOT_DN
@@ -19847,19 +19873,28 @@ server.search('', function (req, res, next) {
           namingcontexts: namingContexts(),
           supportedldapversion: ['3'],
           vendorname: ['IYA STS (ldapjs, unmodified, pinned as a submodule)'],
-          // supportedControl, supportedExtension and supportedSASLMechanisms
-          // are absent rather than empty, and the difference is the point: an
-          // LDAP attribute always has at least one value (RFC 4511 section
-          // 4.1.7), so "this server supports no controls" is said by not
-          // publishing the attribute. Sending it empty is not a weaker claim,
-          // it is a malformed one.
+          // supportedControl and supportedExtension are absent rather than
+          // empty, and the difference is the point: an LDAP attribute always
+          // has at least one value (RFC 4511 section 4.1.7), so "this server
+          // supports no controls" is said by not publishing the attribute.
+          // Sending it empty is not a weaker claim, it is a malformed one.
+          // supportedSASLMechanisms is EXTERNAL exactly while 636 asks for a
+          // client certificate (#1047), and absent otherwise, for the same
+          // reason: at the defaults no connection can use it.
+          supportedsaslmechanisms: saslExternalOffered()
+            ? SASL_MECHANISMS.slice(0) : undefined,
           description: [(mode.verifiesCredentials()
                           ? 'Binds are verified, and a read requires one. '
                           : 'Every bind succeeds except the password ' +
                             '"invalid". ') +
                         'This directory has no schema and answers no ' +
-                        'controls, extended operations or SASL mechanisms.']
-        }
+                        'controls or extended operations' +
+                        (saslExternalOffered()
+                          ? '; SASL EXTERNAL binds over LDAPS with a ' +
+                            'client certificate this service issued.'
+                          : ', and no SASL mechanism while LDAPS asks for ' +
+                            'no client certificate.')]
+        })
       }, req.attributes, res.messageId));
       // Recorded like any other search, and it earns its row: a client that
       // does not yet know the base DN asks for the root DSE FIRST, so this is

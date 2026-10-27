@@ -1236,8 +1236,8 @@
     "text": "`userPassword` lagras som en scrypt-hash i BÅDA lägena, genom crypto.hashSecret(), vilken dörr som än skrev det — en LDAP-add eller -modify inräknad. Produktläget avvisar ett värde som skickas redan hashat, eftersom det inte kan hållas mot lösenordspolicyn; utvecklingsläget behåller det som det gavs, vilket är hur en katalog flyttas mellan två instanser."
   },
   "crypto.families.ldap.whatItDoesNot": {
-    "en": "b5fd76f7abc4adab",
-    "text": "Den svarar på INGEN SASL-MEKANISM — rot-DSE utelämnar `supportedSASLMechanisms` snarare än att publicera det tomt, eftersom ett LDAP-attribut alltid har minst ett värde och ett tomt inte är ett svagare påstående, utan ett missbildat. Alltså ingen GSSAPI-bind, ingen EXTERNAL-bind och ingen StartTLS: 636 är TLS från första byten."
+    "en": "4b8955de2d74cab1",
+    "text": "Den svarar på EN SASL-MEKANISM, EXTERNAL, och bara så länge 636 begär ett klientcertifikat — rot-DSE publicerar då `supportedSASLMechanisms` och utelämnar det annars snarare än att publicera det tomt, eftersom ett LDAP-attribut alltid har minst ett värde och ett tomt inte är ett svagare påstående, utan ett missbildat. Alltså ingen GSSAPI-bind och ingen StartTLS: 636 är TLS från första byten."
   },
   "crypto.families.ldap.algorithms.0.what": {
     "en": "896a443631bae685",

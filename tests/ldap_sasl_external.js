@@ -56,7 +56,6 @@ const tls = require('tls');
 
 const ROOT = path.join(__dirname, '..');
 const CHILD_FLAG = 'STS_LDAP_SASL_EXTERNAL_CHILD';
-const MARK = 'LDAP-SASL-EXTERNAL-CHILD ';
 
 const log = require('bunyan').createLogger({
   name: 'ldap_sasl_external',
@@ -71,7 +70,8 @@ function recorder() {
     check: function (ok, what, detail) {
       log.debug("Entering check().");
       rows.push({ ok: !!ok, what: what,
-                  detail: detail === undefined ? '' : String(detail) });
+                  detail: detail === undefined ? ''
+                    : String(detail).slice(0, 2000) });
       log.debug("Leaving check().");
       return !!ok;
     }
@@ -581,7 +581,10 @@ function spawnChild(which, env) {
       clean[key] = process.env[key];
     }
   });
-  Object.assign(clean, env, { LSE_MODE: which, LOG_LEVEL: 'fatal',
+  const out = path.join(os.tmpdir(), 'lse-' + process.pid + '-' + which +
+                        '-' + Date.now() + '.json');
+  Object.assign(clean, env, { LSE_MODE: which, LSE_OUT: out,
+                              LOG_LEVEL: 'fatal',
                               STS_LOG_LEVEL: 'fatal', STS_HOST: '127.0.0.1',
                               LDAP_PORT: '0', LDAPS_PORT: '0' });
   clean[CHILD_FLAG] = '1';
@@ -589,17 +592,22 @@ function spawnChild(which, env) {
     cwd: ROOT, env: clean, encoding: 'utf8', timeout: 300000,
     maxBuffer: 64 * 1024 * 1024
   });
-  const line = String(result.stdout || '').split('\n').filter(function (one) {
-    return one.indexOf(MARK) === 0;
-  })[0];
-  if (!line) {
+  let rows = null;
+  try {
+    rows = JSON.parse(fs.readFileSync(out, 'utf8'));
+    fs.unlinkSync(out);
+  } catch (e) {
+    log.debug("Caught in spawnChild(): " + ((e && e.message) || e));
+    rows = null;
+  }
+  if (!rows) {
     log.debug("Leaving spawnChild(). No result.");
     return { error: 'the ' + which + ' child produced no result (exit ' +
                     result.status + '): ' +
                     String(result.stderr || '').slice(-1500) };
   }
   log.debug("Leaving spawnChild().");
-  return { rows: JSON.parse(line.slice(MARK.length)) };
+  return { rows: rows };
 }
 
 function run(t) {
@@ -624,7 +632,7 @@ function run(t) {
 
 if (process.env[CHILD_FLAG] === '1' && require.main === module) {
   childBody().then(function (rows) {
-    process.stdout.write('\n' + MARK + JSON.stringify(rows) + '\n');
+    fs.writeFileSync(process.env.LSE_OUT, JSON.stringify(rows));
     process.exit(0);
   }, function (e) {
     process.stderr.write('child failed: ' + String((e && e.stack) || e) +
