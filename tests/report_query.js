@@ -464,10 +464,12 @@ function projections(t) {
   const OpenApi = require('../report/openapi');
   const catalog = new Catalog();
   const listed = catalog.list();
-  t.equal(listed.length, 10, 'the catalog has ten sources');
+  t.equal(listed.length, 11, 'the catalog has eleven sources');
   const ids = listed.map(function (src) {
     return src.id;
   });
+  t.check(ids.indexOf('credentialHolders') >= 0,
+    'credentialHolders is a source');
   t.check(ids.indexOf('authActivity') >= 0, 'authActivity is a source');
   t.check(ids.indexOf('attributeSources') >= 0,
     'attributeSources is a source');
@@ -915,9 +917,27 @@ function person(uid, extra) {
  */
 function directoryDouble(windowed) {
   log.debug("Entering directoryDouble().");
+  const key = function (role, alg, cose, lane, enrolledAt, lastUsedAt) {
+    return JSON.stringify({ credentialId: 'c-' + role + '-' + cose,
+      publicKeyJwk: { kty: 'EC' }, role: role, algorithm: alg,
+      coseAlg: cose, lane: lane, enrolledAt: enrolledAt,
+      lastUsedAt: lastUsedAt });
+  };
   const ada = person('ada', {
-    entryUUID: ['11111111-1111-4111-8111-111111111111'] });
-  const bea = person('bea', { pwdAccountLockedTime: ['20261001120000Z'] });
+    entryUUID: ['11111111-1111-4111-8111-111111111111'],
+    // Two passkeys as a primary mechanism (one post-quantum) and one as a
+    // second factor; an authenticator app; a sign-in history (#1002).
+    stsWebauthnCredential: [
+      key('primary', 'ES256', -7, 'classical', 1000, 5000),
+      key('primary', 'ML-DSA-65', -49, 'pqc', 2000, 9000),
+      key('mfa', 'ES256', -7, 'classical', 3000, 4000)],
+    stsTotpCredential: [JSON.stringify({ algorithm: 'SHA1', digits: 6,
+      enrolledAt: 1500, lastUsedAt: 7000 })],
+    authnMethod: ['pwd', 'hwk', 'otp'],
+    mfaLastAuthTime: ['2026-10-20T10:00:00.000Z'] });
+  const bea = person('bea', { pwdAccountLockedTime: ['20261001120000Z'],
+    stsWebauthnCredential: [key('mfa', 'ES256', -7, 'classical', 100, 200)]
+  });
   const cy = person('cy');
   const xbea = person('xbea');
   const people = [ada, bea, cy, xbea];
@@ -976,6 +996,44 @@ function directoryDouble(windowed) {
         })[0] || null);
       });
       return Promise.resolve(out);
+    },
+    // The holders of an attribute (#1002): the people whose entry carries
+    // it, with the attributes asked for, raw.
+    holdersAsync: function (kind, attribute, names) {
+      calls.holders = (calls.holders || 0) + 1;
+      const held = String(attribute).toLowerCase();
+      const out = [];
+      people.forEach(function (one) {
+        const attrs = {};
+        Object.keys(one.attributes).forEach(function (k) {
+          attrs[k.toLowerCase()] = one.attributes[k].slice();
+        });
+        if (!attrs[held] || !attrs[held].length) {
+          return;
+        }
+        const picked = {};
+        (names || [held]).forEach(function (n) {
+          if (attrs[n]) {
+            picked[n] = attrs[n];
+          }
+        });
+        out.push({ id: one.attributes.uid[0], dn: one.dn,
+          attributes: picked });
+      });
+      return Promise.resolve(out);
+    },
+    groupDnFor: function (cn) {
+      return 'cn=' + cn + ',' + GROUPS_DN;
+    },
+    readGroupEntry: function (dn) {
+      calls.groupRead = (calls.groupRead || 0) + 1;
+      if (String(dn).toLowerCase() !== staff.dn.toLowerCase()) {
+        return null;
+      }
+      return { dn: staff.dn, attributes: staff.attributes,
+        members: staff.attributes.member.map(function (one) {
+          return { value: one, dn: one, present: true };
+        }) };
     },
     allGroupEntries: function () {
       calls.groupList = (calls.groupList || 0) + 1;
@@ -1811,6 +1869,121 @@ function groups(t) {
   log.debug("Leaving groups().");
 }
 
+async function holders(t) {
+  log.debug("Entering holders().");
+  const sources = require('../report/sources');
+  const built = directoryDouble(true);
+  sources.installDirectory(built.ldap);
+  const calls = built.calls;
+  const reset = function () {
+    Object.keys(calls).forEach(function (key) {
+      calls[key] = 0;
+    });
+  };
+  const read = function (document, execution) {
+    const asked = ask(document);
+    if (!asked.ok) {
+      return Promise.resolve(asked);
+    }
+    return sources.read(asked.plan, { startedMs: Date.now(),
+      budgetMs: 5000, execution: execution || 'sync' });
+  };
+  const fields = ['username', 'mechanism', 'role', 'credentials',
+    'algorithms', 'lanes', 'enrolledAt', 'lastUsedAt', 'methodsUsed',
+    'memberOf'];
+  try {
+    reset();
+    const passkeys = await read({ source: 'credentialHolders',
+      select: fields, limit: 5,
+      where: { op: 'eq', field: 'mechanism', value: 'passkey' } });
+    t.equal(passkeys.ok, true, 'the passkey holders are read',
+      passkeys.description);
+    t.equal(calls.holders, 1, 'through one holders lookup');
+    t.equal(calls.walk, 0, 'and no walk of the people');
+    const rows = passkeys.rows || [];
+    const label = function (row) {
+      return row.username + '/' + row.role;
+    };
+    t.equal(rows.map(label).sort().join(','), 'ada/mfa,ada/primary,bea/mfa',
+      'one row per person per role held');
+    const adaPrimary = rows.filter(function (row) {
+      return row.username === 'ada' && row.role === 'primary';
+    })[0];
+    t.equal(adaPrimary && adaPrimary.credentials, 2,
+      'two primary passkeys are counted');
+    t.equal(adaPrimary && adaPrimary.algorithms, 'ES256, ML-DSA-65',
+      'their algorithms, distinct and sorted');
+    t.equal(adaPrimary && adaPrimary.lanes, 'classical, pqc',
+      'and their lanes');
+    t.equal(adaPrimary && adaPrimary.enrolledAt,
+      '1970-01-01T00:00:01.000Z', 'the earliest enrolment');
+    t.equal(adaPrimary && adaPrimary.lastUsedAt,
+      '1970-01-01T00:00:09.000Z', 'the latest use');
+    t.equal(adaPrimary && adaPrimary.methodsUsed, 'pwd, hwk, otp',
+      'the methods the person has used');
+    t.equal(adaPrimary && adaPrimary.memberOf, 'staff',
+      'the groups that list the person');
+    const adaMfa = rows.filter(function (row) {
+      return row.username === 'ada' && row.role === 'mfa';
+    })[0];
+    t.equal(adaMfa && adaMfa.credentials, 1, 'one second-factor passkey');
+
+    reset();
+    const totp = await read({ source: 'credentialHolders',
+      select: fields, limit: 5,
+      where: { op: 'eq', field: 'mechanism', value: 'totp' } });
+    t.equal((totp.rows || []).map(label).join(','), 'ada/mfa',
+      'an authenticator app is one mfa row');
+    t.equal(totp.rows[0].algorithms, 'SHA1', 'with its algorithm');
+
+    reset();
+    const primaryOnly = await read({ source: 'credentialHolders',
+      select: fields, limit: 5,
+      where: { op: 'and', args: [
+        { op: 'eq', field: 'mechanism', value: 'passkey' },
+        { op: 'eq', field: 'role', value: 'primary' }] } });
+    t.equal((primaryOnly.rows || []).map(label).join(','), 'ada/primary',
+      'the role filter applies to the holders read');
+
+    reset();
+    const staffOnly = await read({ source: 'credentialHolders',
+      select: fields, limit: 10,
+      where: { op: 'eq', field: 'memberOf', value: 'staff' } });
+    t.equal(calls.groupRead, 1, 'a group filter reads the group');
+    t.equal(calls.holders, 0, 'and not the holders');
+    t.equal((staffOnly.rows || []).map(function (row) {
+      return row.username + '/' + row.mechanism + '/' + row.role;
+    }).sort().join(','), 'ada/passkey/mfa,ada/passkey/primary,ada/totp/mfa',
+      'every mechanism of every member');
+
+    reset();
+    const counted = await read({ source: 'credentialHolders',
+      select: ['role'], aggregate: 'count', groupBy: ['role'], limit: 5,
+      where: { op: 'eq', field: 'mechanism', value: 'passkey' } });
+    t.equal(JSON.stringify((counted.rows || []).map(function (row) {
+      return row.role + '=' + row.count;
+    }).sort()), JSON.stringify(['mfa=2', 'primary=1']),
+      'the census is a count by role');
+
+    reset();
+    const everybody = await read({ source: 'credentialHolders',
+      select: fields, limit: 5 });
+    t.equal(everybody.code, 'STS-REPORT-0036',
+      'no mechanism and no group is refused synchronously on a window');
+    t.check(everybody.description.indexOf('mechanism (eq, in)') >= 0,
+      'and the refusal names the indexed fields', everybody.description);
+    const asJob = await read({ source: 'credentialHolders',
+      select: fields, limit: 10 }, 'async');
+    t.equal(asJob.ok, true, 'as a job it reads every mechanism\'s holders');
+    t.equal((asJob.rows || []).length, 4,
+      'ada twice for passkeys, once for totp, bea once');
+    t.equal(calls.holders, 5, 'one holders lookup per mechanism');
+  } finally {
+    sources.installDirectory(null);
+  }
+  log.debug("Leaving holders().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   documents(t);
@@ -1823,12 +1996,13 @@ async function run(t) {
   await narrowing(t);
   chrome(t);
   groups(t);
+  await holders(t);
   log.debug("Leaving run().");
 }
 
 module.exports = {
   name: 'report_query',
   describe: 'report documents, formats, issuance, projections, schedules, ' +
-    'indexed lookups, the page chrome, the groups',
+    'indexed lookups, the page chrome, the groups, the credential holders',
   run: run
 };

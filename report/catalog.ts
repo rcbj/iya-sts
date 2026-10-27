@@ -52,7 +52,8 @@ const CREDENTIALS = ['userPassword', 'unicodePwd', 'ntPassword', 'krb5Key',
 // attribute-source register.
 const GROUPABLE = ['status', 'enabled', 'type', 'protocol', 'category',
   'action', 'outcome', 'format', 'family', 'application', 'day',
-  'mechanism', 'dialect', 'mode', 'onFailure'];
+  'mechanism', 'dialect', 'mode', 'onFailure', 'role', 'algorithms',
+  'lanes'];
 
 // Scalars a filter may name and a sort may not. `members` is not in this
 // list because it cannot be filtered either.
@@ -81,6 +82,14 @@ const INDEXED: Record<string, string[]> = {
   username: ['eq', 'in', 'contains', 'startsWith'],
   mail: ['eq', 'in'],
   entryUuid: ['eq', 'in']
+};
+
+// The `credentialHolders` source's indexed fields (#1002): a mechanism is
+// the holders of its attribute through the store's asked-names index, and a
+// group is its members; neither reads the population.
+const HOLDER_INDEXED: Record<string, string[]> = {
+  mechanism: ['eq', 'in'],
+  memberOf: ['eq', 'in']
 };
 
 interface SourceSpec {
@@ -237,6 +246,48 @@ function standardSources(): SourceSpec[] {
          'When the job finished, or null while it has not.'),
        field('byteSize', 'number',
          'The stored artifact size, or null before it exists.')]),
+    source('credentialHolders',
+      'Who holds which authentication credential, as the directory is ' +
+      'now: one row per person, per mechanism, per role (#1002). A ' +
+      'passkey\'s role is the one chosen at its enrolment, primary or ' +
+      'mfa; an authenticator app and an emailed code are mfa; a ' +
+      'certificate and a Kerberos key are primary. Filter on mechanism or ' +
+      'memberOf to read only those holders; a query naming neither reads ' +
+      'every holder of every mechanism and runs as a job. Count with ' +
+      'groupBy mechanism, role, algorithms or lanes for the census.',
+      [field('username', 'string', 'The directory uid.'),
+       field('displayName', 'string',
+         'displayName, or cn when displayName is empty.'),
+       field('mechanism', 'string',
+         'passkey, totp, emailFactor, certificate or kerberos.',
+         HOLDER_INDEXED.mechanism),
+       field('role', 'string',
+         'primary (signs the person in on its own) or mfa (a second ' +
+         'factor after a password). A passkey\'s is the one chosen at ' +
+         'enrolment and enforced at sign-in.'),
+       field('credentials', 'number',
+         'How many credentials of this mechanism and role the person ' +
+         'holds.'),
+       field('algorithms', 'string',
+         'The signature algorithms of those credentials, distinct, ' +
+         'joined: a passkey\'s JOSE name (ES256, ML-DSA-65), an ' +
+         'authenticator app\'s HMAC algorithm.'),
+       field('lanes', 'string',
+         'A passkey\'s lanes (classical, pqc), distinct, joined.'),
+       field('enrolledAt', 'timestamp',
+         'When the earliest of those credentials was enrolled, where the ' +
+         'credential records it.'),
+       field('lastUsedAt', 'timestamp',
+         'When the latest of those credentials was last used, where the ' +
+         'credential records it.'),
+       field('methodsUsed', 'string',
+         'The RFC 8176 methods the person has ever signed in with here ' +
+         '(authnMethod), joined.'),
+       field('mfaLastAuthTime', 'timestamp',
+         'When the person last completed a multi-factor sign-in.'),
+       field('memberOf', 'string',
+         'The names of the groups that list this person, joined.',
+         HOLDER_INDEXED.memberOf)]),
     source('attributeSources',
       'The attribute-source register as it is now. Connection details ' +
       'and secrets are not fields. This source does not run SQL and ' +

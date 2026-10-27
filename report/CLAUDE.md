@@ -39,7 +39,7 @@ and `docs/configuration.md`.
 | `report_app.ts` | The shell, the script and the stylesheet. A non-GET is 404 with `STS-REPORT-0033`. |
 | `report_api.ts` | `/report-api`. Every route, including the catalog and the OpenAPI document, takes the token below. |
 | `web_report.ts`, `web_report_pages.ts` | The browser runtime and the four pages (catalog, query, definitions, jobs). |
-| `catalog.ts` | The ten sources and their fields, and which operators the store indexes (`indexed`, #985). Credential attribute ids are absent, so they cannot be named. |
+| `catalog.ts` | The eleven sources and their fields, and which operators the store indexes (`indexed`, #985). Credential attribute ids are absent, so they cannot be named. |
 | `openapi.ts` | `GET /report-api/openapi.json`. Every released route, built from the catalog that is loaded. |
 | `query.ts` | Validates one JSON document and decides sync or async. It sends no HTTP response. |
 | `limits.ts` | The caps, read when asked. `Limits.fixed` is what a test passes. |
@@ -209,6 +209,33 @@ rows-per-page select — every page a link under the list's own path with
 `?page=&per=`, so the back button and a shared address work; the select
 moves to page one through the location (`onChange()`, `data-pager-path`).
 `tests/report_query.js` holds both views' paging and the pager's markup.
+
+## `credentialHolders`: who holds which credential (#1002)
+
+rcbj, 2026-10-27: who has a passkey as a primary mechanism, who as a
+second factor, with what algorithm and how many — generic over mechanisms
+and communities, "without changing what fields are encrypted or adding
+significant overhead". One row per person, per mechanism, per role,
+read from what the directory keeps already:
+
+* **A passkey's role is data, not a derivation** — the key's own `role`
+  (`primary` | `mfa`, `Credentials.ROLES`), chosen at enrolment and
+  enforced at sign-in; its algorithm and lane are `keyAlgorithm()`'s.
+  The other mechanisms (`MECHANISM_TABLE`: totp, emailFactor,
+  certificate, kerberos) have one role each.
+* **The indexed reads**: `mechanism` → `holdersAsync('person', attribute,
+  names)`, the store's asked-names index, bounded by holders; `memberOf` →
+  the group's `uid=` members by `existingUserEntriesAsync()`. The group
+  wins when both are named; the mechanism filter still applies in
+  `Rows.take()`. A query naming neither is unbounded in the catalog's
+  sense (every mechanism's holders): refused synchronously on a windowed
+  directory (`STS-REPORT-0036`), a job otherwise.
+* **Not here**: recovery codes and app passwords, whose attributes are
+  outside the asked-names index (a store index change, its own ticket);
+  and a maintained per-role aggregate — `passkey_report.ts` keeps
+  algorithm, lane and model facets but not role, so the census is the
+  engine's count+groupBy over this source.
+* `tests/report_query.js`'s `holders()` drives it against the double.
 
 ## The document
 
@@ -423,7 +450,7 @@ directory are not asserted here.
 
 ## The sources
 
-The ten sources are `users`, `groups`, `applications`, `federation`,
+The eleven sources are `users`, `groups`, `applications`, `federation`,
 `authMechanisms`, `auditEvents`, `authActivity`, `serviceMetrics`,
 `reportJobs` and `attributeSources`. `authMechanisms` is the realm policy
 (application `realm`) plus one row per value an application lists in
