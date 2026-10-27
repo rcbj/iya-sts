@@ -398,6 +398,9 @@ function reportPublicSource(src: any): any {
     paging: src.paging || 'limit',
     relationships: Array.isArray(src.relationships) ?
       src.relationships.slice() : [],
+    // A directory-backed source (rcbj, 2026-10-27): a filter has to name
+    // an indexed field, and the page offers only those in a first row.
+    anchored: src.anchored === true,
     fields: fields
   };
   log.debug("Leaving reportPublicSource().");

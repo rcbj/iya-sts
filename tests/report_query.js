@@ -1170,8 +1170,8 @@ async function narrowing(t) {
     'entryUuid is indexed for equality');
   t.equal(catalog.indexedFor('users', 'displayName').length, 0,
     'a sealed field is indexed for nothing');
-  t.equal(catalog.indexedFor('groups', 'name').length, 0,
-    'no other source carries a mark');
+  t.equal(catalog.indexedFor('groups', 'name').join(','), 'eq,in',
+    'a group is read by its name (rcbj, 2026-10-27)');
   t.equal(catalog.indexedFor('users', 'userPassword').length, 0,
     'a credential id is indexed for nothing');
   const spec = OpenApi.document(catalog);
@@ -1292,10 +1292,12 @@ async function narrowing(t) {
     const short = await read({
       where: { op: 'contains', field: 'username', value: 'ad' }, limit: 5 });
     t.equal(short.ok, false, 'a short substring cannot be answered now');
-    t.equal(short.code, 'STS-REPORT-0036', 'the unbounded filter is 0036');
-    t.equal(short.error, 'result_too_large',
-      'the public token is result_too_large');
-    t.equal(short.unbounded, true, 'the refusal says it is unbounded');
+    // Since 2026-10-27 (the anchor rule) a filter with no indexed anchor is
+    // invalid_query in every mode, not a result_too_large that auto mode
+    // would have turned into a job that read everybody.
+    t.equal(short.code, 'STS-REPORT-0040', 'the unanchored filter is 0040');
+    t.equal(short.error, 'invalid_query', 'the public token is invalid_query');
+    t.equal(!!short.unbounded, false, 'and it is not offered as a job');
     t.check(short.description.indexOf('username (eq, in, contains, ' +
       'startsWith)') >= 0 && short.description.indexOf('mail (eq, in)') >= 0 &&
       short.description.indexOf('entryUuid (eq, in)') >= 0,
@@ -1364,15 +1366,21 @@ async function narrowing(t) {
     reset();
     const sealed = await read({
       where: { op: 'contains', field: 'displayName', value: 'A' }, limit: 5 });
-    t.equal(sealed.code, 'STS-REPORT-0036',
-      'a sealed-field filter is refused synchronously on a window');
+    t.equal(sealed.code, 'STS-REPORT-0040',
+      'a sealed-field filter alone is refused on a window (the anchor rule)');
     const sealedJob = await read({
       where: { op: 'contains', field: 'displayName', value: 'A' }, limit: 5 },
       'async');
-    t.equal(sealedJob.ok, true, 'the same filter runs as a job');
-    t.check(calls.walk >= 1, 'the job walked the people');
-    t.equal(names(sealedJob).join(','), 'ada,bea,xbea',
-      'the walk answers the sealed-field filter');
+    t.equal(sealedJob.code, 'STS-REPORT-0040',
+      'and as a job too: it would have read everybody');
+    t.equal(calls.walk, 0, 'nothing walked for either');
+    const sealedAnchored = await read({
+      where: { op: 'and', args: [
+        { op: 'contains', field: 'displayName', value: 'A' },
+        { op: 'in', field: 'username', value: ['ada', 'bea', 'xbea'] }] },
+      limit: 5 });
+    t.equal(names(sealedAnchored).join(','), 'ada,bea,xbea',
+      'anchored by the names, the sealed-field filter narrows the lookup');
 
     reset();
     const plain = await read({ limit: 2 });
@@ -1746,7 +1754,8 @@ function groups(t) {
   const catalog = new Catalog();
   const spec = OpenApi.document(catalog);
   const cat = { sources: catalog.list().map(function (src) {
-    return { id: src.id, fields: src.fields };
+    return { id: src.id, fields: src.fields, anchored: src.anchored === true,
+      retention: src.retention };
   }) };
   const filled = ReportRuntime.queryFormHtml(tr, cat.sources, {
     source: 'users',
@@ -1810,6 +1819,27 @@ function groups(t) {
     JSON.stringify(['primary', 'mfa', 'recovery']), 'and the three roles');
   t.equal(catalog.field('users', 'username').values, undefined,
     'an open field has no values');
+  // EVERY INDEX AVAILABLE ON EVERY SOURCE (rcbj, 2026-10-27, after a
+  // username filter on credentialHolders was refused as too large): a
+  // field whose name the directory indexes — the person's name, mail and
+  // UUID, a group's member list, a group's own name — declares that index
+  // on whichever source carries it, so the reader asks the store and a
+  // new source cannot forget one quietly.
+  const INDEX_CAPABLE = { username: ['eq', 'in'], mail: ['eq', 'in'],
+    entryUuid: ['eq', 'in'], memberOf: ['eq', 'in'] };
+  catalog.list().forEach(function (src) {
+    (src.fields || []).forEach(function (f) {
+      const wanted = f.id === 'name' && src.id === 'groups' ? ['eq', 'in']
+        : INDEX_CAPABLE[f.id];
+      if (!wanted) {
+        return;
+      }
+      t.check(wanted.every(function (op) {
+        return (f.indexed || []).indexOf(op) >= 0;
+      }), src.id + '.' + f.id + ' declares its store index (' +
+        wanted.join(', ') + ')', JSON.stringify(f.indexed));
+    });
+  });
   const published = api.publicSource(catalog.source('credentialHolders'));
   t.equal(JSON.stringify(published.fields.filter(function (f) {
     return f.id === 'mechanism';
@@ -1895,6 +1925,42 @@ function groups(t) {
     } };
   live.onChange({ target: fieldSelect });
   t.equal(swapped, '', 'a text box that stays one is not redrawn');
+
+  // THE FIRST ROW OF AN ANCHORED SOURCE OFFERS THE INDEXED FIELDS (rcbj,
+  // 2026-10-27), with the full list in a template for the + to clone; the
+  // source's own sentence sits under the Source select.
+  const anchoredForm = ReportRuntime.queryFormHtml(tr, cat.sources,
+    { source: 'credentialHolders' });
+  const firstField = /<select name="filterField0"[^>]*>([^]*?)<\/select>/
+    .exec(anchoredForm);
+  t.check(!!firstField && firstField[1].indexOf('value="mechanism"') >= 0 &&
+    firstField[1].indexOf('value="username"') >= 0 &&
+    firstField[1].indexOf('value="memberOf"') >= 0 &&
+    firstField[1].indexOf('value="role"') < 0 &&
+    firstField[1].indexOf('value="algorithm"') < 0,
+    'the first filter row of credentialHolders offers only indexed fields',
+    firstField && firstField[1]);
+  t.check(/<select name="filterField0" title="On this source the first filter/
+    .test(anchoredForm), 'and says why');
+  t.check(/<template data-field-options>[^]*value="role"[^]*<\/template>/
+    .test(anchoredForm), 'the full list rides in a template for the +');
+  t.check(anchoredForm.indexOf('<p class="sub" data-source-help>Who holds ' +
+    'which authentication credential') >= 0,
+    'the source\'s sentence is under the select', anchoredForm.slice(0, 600));
+  const usersFirst = /<select name="filterField0"[^>]*>([^]*?)<\/select>/
+    .exec(ReportRuntime.queryFormHtml(tr, cat.sources, { source: 'users' }));
+  t.check(!!usersFirst && usersFirst[1].indexOf('value="status"') < 0 &&
+    usersFirst[1].indexOf('value="memberOf"') >= 0,
+    'users is anchored too: status is not a first filter, memberOf is');
+  const groupsFirst = /<select name="filterField0"[^>]*>([^]*?)<\/select>/
+    .exec(ReportRuntime.queryFormHtml(tr, cat.sources, { source: 'groups' }));
+  t.check(!!groupsFirst && groupsFirst[1].indexOf('value="description"') >= 0,
+    'a source not read from the directory offers every field');
+  const savedWide = ReportRuntime.queryFormHtml(tr, cat.sources, {
+    source: 'users', select: ['username'],
+    where: { op: 'eq', field: 'status', value: 'locked' } });
+  t.check(/<select name="filterField0"[^>]*>[^]*?<option value="status" selected>/
+    .test(savedWide), 'a saved first row keeps a field the list lacks');
 
   // THE OPERATOR LIST FOLLOWS THE FIELD (#1022): three operators over an
   // enumerated field, the full list otherwise, the select saying which it
@@ -2551,6 +2617,97 @@ async function holders(t) {
     t.equal(calls.holders, 8, 'one holders lookup per entry mechanism');
     t.equal(calls.holderCount, 8, 'after one count per entry mechanism');
     t.equal(calls.holdersStop, 8, 'and each read carries a stop');
+
+    // THE PERSON NAMED (rcbj, 2026-10-27): `username equals ada` reads her
+    // entry through the name index and every mechanism of hers, no holders
+    // read, no refusal.
+    reset();
+    const adaOnly = await read({ source: 'credentialHolders',
+      select: fields, limit: 20,
+      where: { op: 'eq', field: 'username', value: 'ada' } });
+    t.equal(adaOnly.ok, true, 'a person named is read', adaOnly.description);
+    t.equal(calls.byName, 1, 'through one name lookup');
+    t.equal(calls.holders, 0, 'and no holders read');
+    t.equal((adaOnly.rows || []).map(function (row) {
+      return row.mechanism;
+    }).sort().join(','),
+      'passkey,passkey,passkey,password,recoveryCodes,selfIssued,totp,' +
+      'verifiableCredential,verifiableCredential',
+      'every credential of hers, every mechanism');
+    reset();
+    const adaPasskeys = await read({ source: 'credentialHolders',
+      select: fields, limit: 20,
+      where: { op: 'and', args: [
+        { op: 'eq', field: 'username', value: 'ada' },
+        { op: 'eq', field: 'mechanism', value: 'passkey' }] } });
+    t.equal((adaPasskeys.rows || []).length, 3,
+      'a person and a mechanism: her passkeys only');
+    t.equal(calls.holders, 0, 'still no holders read');
+    reset();
+    const byUuid = await read({ source: 'credentialHolders',
+      select: fields.concat(['mail', 'entryUuid']), limit: 20,
+      where: { op: 'eq', field: 'entryUuid',
+        value: '11111111-1111-4111-8111-111111111111' } });
+    t.equal(calls.byUuid, 1, 'a UUID reads through the UUID index');
+    t.check((byUuid.rows || []).length > 0 &&
+      byUuid.rows[0].mail === 'ada@example.com' &&
+      byUuid.rows[0].entryUuid === '11111111-1111-4111-8111-111111111111',
+      'and the row carries the person\'s mail and UUID');
+    // THE ANCHOR RULE (rcbj, 2026-10-27): on a windowed directory a filter
+    // that names no indexed field is refused at acceptance, in every mode,
+    // naming the indexed fields; anchored by an "and" arm it runs; an "or"
+    // with an unanchored arm is refused; a group lookup anchors too.
+    reset();
+    const unanchored = await read({ source: 'credentialHolders',
+      select: fields, limit: 5,
+      where: { op: 'eq', field: 'role', value: 'primary' } });
+    t.equal(unanchored.code, 'STS-REPORT-0040',
+      'role alone is refused on a windowed directory');
+    t.equal(unanchored.error, 'invalid_query', 'as invalid_query');
+    t.check(unanchored.description.indexOf('username (eq, in, contains, ' +
+      'startsWith)') >= 0 && unanchored.description.indexOf(
+      'mechanism (eq, in)') >= 0, 'naming the indexed fields',
+      unanchored.description);
+    const unanchoredJob = await read({ source: 'credentialHolders',
+      select: fields, limit: 5,
+      where: { op: 'eq', field: 'role', value: 'primary' } }, 'async');
+    t.equal(unanchoredJob.code, 'STS-REPORT-0040',
+      'and as a job as well: it would never finish');
+    const orArm = await read({ source: 'credentialHolders',
+      select: fields, limit: 5,
+      where: { op: 'or', args: [
+        { op: 'eq', field: 'username', value: 'ada' },
+        { op: 'eq', field: 'role', value: 'primary' }] } });
+    t.equal(orArm.code, 'STS-REPORT-0040',
+      'an or with an unanchored arm is refused');
+    const andArm = await read({ source: 'credentialHolders',
+      select: fields, limit: 20,
+      where: { op: 'and', args: [
+        { op: 'eq', field: 'role', value: 'primary' },
+        { op: 'eq', field: 'username', value: 'ada' }] } });
+    t.equal(andArm.ok, true, 'an and with an indexed arm runs');
+    reset();
+    const usersUnanchored = await read({ source: 'users',
+      select: ['username', 'status'], limit: 5,
+      where: { op: 'eq', field: 'status', value: 'locked' } });
+    t.equal(usersUnanchored.code, 'STS-REPORT-0040',
+      'the users source is held to the same rule');
+    const usersByGroup = await read({ source: 'users',
+      select: ['username', 'status'], limit: 5,
+      where: { op: 'and', args: [
+        { op: 'eq', field: 'status', value: 'locked' },
+        { op: 'eq', field: 'memberOf', value: 'staff' }] } });
+    t.equal(usersByGroup.ok, true, 'a group anchors a users filter');
+    t.equal(calls.groupRead, 1, 'through the group\'s member list');
+    t.equal(calls.walk, 0, 'and no walk');
+    reset();
+    const groupByName = await read({ source: 'groups',
+      select: ['name', 'memberCount', 'members'], limit: 5,
+      where: { op: 'eq', field: 'name', value: 'staff' } });
+    t.equal(JSON.stringify(groupByName.rows),
+      '[{"name":"staff","memberCount":1,"members":"ada"}]',
+      'a group named is read by its DN');
+    t.equal(calls.groupList || 0, 0, 'without listing the groups');
 
     // THE WALLET MECHANISMS (#1021): a verifiable credential per issued
     // copy, from the register, with its channel, algorithm, lane and

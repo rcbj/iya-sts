@@ -223,9 +223,10 @@ function opSelectHtml(t: any, n: number, enumerated: boolean,
 
 function filterRowHtml(t: any, n: number, fieldOptions: string,
                        last: boolean, valueControl?: string,
-                       opSelect?: string): string {
+                       opSelect?: string, fieldTip?: string): string {
   return '<div class="row filterrow" data-filter-row="' + n + '">' +
-    '<select name="filterField' + n + '">' + fieldOptions + '</select>' +
+    '<select name="filterField' + n + '"' + (fieldTip || '') + '>' +
+    fieldOptions + '</select>' +
     (opSelect || opSelectHtml(t, n, false, '')) +
     (valueControl || '<input name="filterValue' + n + '">') +
     // A trash can on every row (#1017): removes the row, or empties the
@@ -275,16 +276,24 @@ function whereLeaves(where: any): any[] | null {
 }
 
 function filterRowsHtml(t: any, fieldOptions: string, leaves: any[],
-                        fields: any[]): string {
+                        fields: any[], firstOptions?: string,
+                        firstTip?: string): string {
+  const first = firstOptions || fieldOptions;
   if (!leaves.length) {
-    return filterRowHtml(t, 0, fieldOptions, true);
+    return filterRowHtml(t, 0, first, true, undefined, undefined, firstTip);
   }
   return leaves.map(function (leaf: any, n: number): string {
     const value = leaf.op === 'isNull' ? '' : String(leaf.value);
     const field = String(leaf.field);
-    const row = filterRowHtml(t, n, fieldOptions, n === leaves.length - 1,
+    // A saved first row whose field the indexed list lacks (saved before
+    // the rule, or through the API) still shows its field: the list is
+    // widened to the full one for that row rather than losing the choice.
+    const options = n === 0 && first.indexOf('value="' + esc(field) + '"') < 0
+      ? fieldOptions : (n === 0 ? first : fieldOptions);
+    const row = filterRowHtml(t, n, options, n === leaves.length - 1,
       filterValueHtml(n, fields, field, String(leaf.op), value),
-      opSelectHtml(t, n, isEnumerated(fields, field), String(leaf.op)));
+      opSelectHtml(t, n, isEnumerated(fields, field), String(leaf.op)),
+      n === 0 ? firstTip : '');
     return row
       .replace('<option value="' + esc(leaf.field) + '">',
         '<option value="' + esc(leaf.field) + '" selected>');
@@ -316,13 +325,30 @@ function queryFormHtml(t: any, sources: any[], document: any): string {
       esc(field.id) + '"' + (on ? ' checked' : '') + '> ' + esc(field.id) +
       '</label>';
   }).join(' ');
-  const fieldOptions = '<option value=""></option>' +
-    fields.map(function (field: any): string {
-      return '<option value="' + esc(field.id) + '">' + esc(field.id) +
-        '</option>';
-    }).join('');
+  const optionsOf = function (list: any[]): string {
+    return '<option value=""></option>' +
+      list.map(function (field: any): string {
+        return '<option value="' + esc(field.id) + '">' + esc(field.id) +
+          '</option>';
+      }).join('');
+  };
+  const fieldOptions = optionsOf(fields);
+  // AN ANCHORED SOURCE (rcbj, 2026-10-27: a field the store cannot answer
+  // "shouldn't be exposed as a valid search parameter"): the FIRST filter
+  // row offers only the indexed fields, with a tooltip saying why; the rows
+  // after it offer every field, since they narrow the indexed read. The
+  // full list rides in a template for the + to clone from.
+  const anchored = !!(current && sources.some(function (src: any): boolean {
+    return src.id === current && src.anchored === true;
+  }));
+  const firstOptions = anchored ? optionsOf(fields.filter(
+    function (field: any): boolean {
+      return Array.isArray(field.indexed) && field.indexed.length > 0;
+    })) : fieldOptions;
   const leaves = whereLeaves(doc.where);
-  const filters = filterRowsHtml(t, fieldOptions, leaves || [], fields);
+  const filters = filterRowsHtml(t, fieldOptions, leaves || [], fields,
+    firstOptions, anchored ? tip(t, 'report.tipAnchor') : '') +
+    '<template data-field-options>' + fieldOptions + '</template>';
   const kept = leaves ? '' :
     '<input type="hidden" name="whereJson" value="' +
     esc(JSON.stringify(doc.where)) + '">' +
@@ -344,7 +370,14 @@ function queryFormHtml(t: any, sources: any[], document: any): string {
   };
   return '<div class="field"><label' + tip(t, 'report.tipSource') + '>' +
     esc(t.text('report.source')) +
-    '</label><select name="source">' + options + '</select></div>' +
+    '</label><select name="source">' + options + '</select>' +
+    // WHAT THE SOURCE IS (rcbj, 2026-10-27: "clarify what each data source
+    // on the new query screen represents"): the catalog's own sentence for
+    // the chosen source, under the select, redrawn with the block.
+    '<p class="sub" data-source-help>' + esc(String((sources.filter(
+      function (src: any): boolean {
+        return src.id === current;
+      })[0] || {}).retention || '')) + '</p></div>' +
     '<div class="field"><label' + tip(t, 'report.tipFields') + '>' +
     esc(t.text('report.fields')) +
     '</label><div class="row">' + checks + '</div></div>' +
@@ -1840,6 +1873,15 @@ class ReportRuntime extends SpaClient {
     }
     const next = row.cloneNode(true);
     next.setAttribute('data-filter-row', String(n));
+    // The clone offers every field (rcbj, 2026-10-27): the first row of an
+    // anchored source lists only the indexed ones, and the rows after it
+    // narrow that read, so they take the full list from the template.
+    const template = form.querySelector('template[data-field-options]');
+    const fieldSel = next.querySelector('select[name^="filterField"]');
+    if (template && fieldSel) {
+      fieldSel.innerHTML = template.innerHTML;
+      fieldSel.removeAttribute('title');
+    }
     const controls = next.querySelectorAll('select, input');
     for (let i = 0; i < controls.length; i++) {
       const name = String(controls[i].getAttribute('name') || '')

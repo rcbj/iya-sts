@@ -846,6 +846,30 @@ async function reportLookupEntries(lookup: Lookup, ldap: any):
     log.debug("Leaving reportLookupEntries(). By name.");
     return found;
   }
+  if (lookup.field === 'memberOf' && lookup.op === 'eq') {
+    // A GROUP'S MEMBER LIST IS AN INDEX (rcbj, 2026-10-27): the group is
+    // read by its name and its members fetched by theirs, so a filter on
+    // memberOf costs the group's size and never the population.
+    const names: string[] = [];
+    lookup.values.forEach(function (selector: string): void {
+      reportGroupMemberNames(selector, ldap).forEach(
+        function (name: string): void {
+          if (names.indexOf(name) < 0) {
+            names.push(name);
+          }
+        });
+    });
+    const members = names.length
+      ? await ldap.existingUserEntriesAsync(names) : [];
+    (members || []).forEach(function (entry: any): void {
+      if (entry) {
+        found.push(entry);
+      }
+    });
+    log.debug("Leaving reportLookupEntries(). " + found.length +
+      ' member(s).');
+    return found;
+  }
   if (lookup.field === 'entryUuid' && lookup.op === 'eq') {
     const map = await ldap.entriesByUuidsAsync(lookup.values);
     if (map && typeof map.forEach === 'function') {
@@ -1249,6 +1273,8 @@ function reportHolderCommon(entry: any, mechanism: any, ldap: any): any {
     mfaLastAuthTime: reportLdapTime(reportAttr(entry, 'mfaLastAuthTime')) ||
       reportIso(Date.parse(reportAttr(entry, 'mfaLastAuthTime'))),
     memberOf: reportGroupNamesOf(ldap, entry).join(', '),
+    mail: reportAttr(entry, 'mail'),
+    entryUuid: reportAttr(entry, 'entryUUID'),
     channel: '',
     format: ''
   };
@@ -1592,6 +1618,15 @@ async function reportReadCredentialHolders(rows: any, control: any):
   const groups = lookups.filter(function (one: Lookup): boolean {
     return one.field === 'memberOf';
   });
+  // THE PERSON NAMED (rcbj, 2026-10-27: `username equals rcbj` was refused
+  // as too large, because the reader knew only mechanism and memberOf and
+  // read every mechanism's holders). A username, mail or entryUuid lookup
+  // names the entries through the users source's doors
+  // (`reportCandidates()`), and every mechanism of those people is read.
+  const people = lookups.filter(function (one: Lookup): boolean {
+    return one.field === 'username' || one.field === 'mail' ||
+      one.field === 'entryUuid';
+  });
   const mechanisms = lookups.filter(function (one: Lookup): boolean {
     return one.field === 'mechanism';
   });
@@ -1607,7 +1642,7 @@ async function reportReadCredentialHolders(rows: any, control: any):
       boolean {
     return wantedIds.indexOf(m.id) >= 0;
   }) : MECHANISM_TABLE;
-  if (!groups.length && !mechanisms.length && control &&
+  if (!groups.length && !mechanisms.length && !people.length && control &&
       control.execution === 'sync' && ldap.directoryIsWindowed()) {
     control.unbounded = reportUnboundedFilter(catalog, 'credentialHolders');
     log.debug("Leaving reportReadCredentialHolders(). Unbounded.");
@@ -1635,7 +1670,27 @@ async function reportReadCredentialHolders(rows: any, control: any):
   });
   const context = { issuedBySubject: wantsRegister
     ? reportIssuedRows().bySubject : new Map<string, any[]>() };
-  if (groups.length) {
+  // The people named come first: the narrowest read there is. A lookup the
+  // store could not answer whole (a substring on a memory directory, an
+  // answer that filled the candidate cap) is null, and the read goes on to
+  // the group or the mechanisms, or is refused as unbounded when it has
+  // neither to go on to.
+  const named = people.length ? await reportCandidates(people, ldap) : null;
+  if (people.length && named === null && !groups.length &&
+      !mechanisms.length) {
+    control.unbounded = reportUnboundedFilter(catalog, 'credentialHolders');
+    log.debug("Leaving reportReadCredentialHolders(). Not whole.");
+    return;
+  }
+  if (named) {
+    if (named.length > cap) {
+      control.unbounded = reportTooManyHolders(named.length, cap, execution,
+        'people');
+      log.debug("Leaving reportReadCredentialHolders(). Too many people.");
+      return;
+    }
+    named.forEach(take);
+  } else if (groups.length) {
     // The community first: its members by name, counted against the cap
     // before any is read, then each one's mechanisms.
     let names: string[] = [];
@@ -1750,6 +1805,46 @@ async function reportReadCredentialHolders(rows: any, control: any):
 
 async function reportReadGroups(rows: any, control: any): Promise<void> {
   log.debug("Entering reportReadGroups().");
+  // A GROUP NAMED IS ONE READ (rcbj, 2026-10-27, "every index available on
+  // every source"): `name equals` or `in` reads each group by its DN and
+  // offers it, without listing the realm's groups.
+  const plan = (rows && rows.plan) || {};
+  const catalog = new Catalog();
+  const lookups = reportIndexedLookups(plan.where, function (field: string):
+      string[] {
+    return catalog.indexedFor('groups', field);
+  }, 0) || [];
+  if (lookups.length) {
+    const ldap = reportLdap();
+    const seen: string[] = [];
+    for (let l = 0; l < lookups.length; l++) {
+      for (let v = 0; v < lookups[l].values.length; v++) {
+        const wanted = String(lookups[l].values[v] || '').trim();
+        if (!wanted || seen.indexOf(wanted.toLowerCase()) >= 0) {
+          continue;
+        }
+        seen.push(wanted.toLowerCase());
+        const dn = ldap.groupDnFor(wanted);
+        const group = dn ? ldap.readGroupEntry(dn) : null;
+        if (!group) {
+          continue;
+        }
+        const members = reportGroupMemberNames(wanted, ldap);
+        const keep = await reportOffer({
+          name: wanted,
+          description: reportAttr(group, 'description'),
+          memberCount: members.length,
+          members: members.join(', ')
+        }, rows, control);
+        if (keep === false) {
+          log.debug("Leaving reportReadGroups(). Stopped.");
+          return;
+        }
+      }
+    }
+    log.debug("Leaving reportReadGroups(). " + seen.length + ' named.');
+    return;
+  }
   const index = await reportGroupIndex();
   for (let i = 0; i < index.groups.length; i++) {
     const group = index.groups[i];
@@ -2149,8 +2244,65 @@ async function reportReadSource(plan: any, rows: any, control: any):
   log.debug("Leaving reportReadSource().");
 }
 
+// THE ANCHOR RULE (rcbj, 2026-10-27: "if there aren't indexes of fields we
+// could search on … these shouldn't be exposed as valid search parameters
+// because the queries will never work given the constraints we've
+// defined"). On a directory held in a database, a filter on `users` or
+// `credentialHolders` that names no indexed field would read every person:
+// synchronously that was `result_too_large` after a long wait, as a job it
+// ran into the time cap. It is now refused at acceptance, in every mode,
+// as `invalid_query` with the indexed fields named — the same planner
+// (`reportIndexedLookups()`) decides, so what it refuses is exactly what the
+// reader could not have narrowed. A memory directory is small by
+// construction and is not held to it; a query with no filter still stops at
+// its limit. The page offers only the indexed fields in a first filter row.
+function reportAnchorRefusal(plan: any): any {
+  log.debug("Entering reportAnchorRefusal().");
+  const catalog = new Catalog();
+  const src = plan && plan.source ? catalog.source(plan.source) : null;
+  if (!src || !src.anchored || !plan.where) {
+    log.debug("Leaving reportAnchorRefusal(). Not anchored, or no filter.");
+    return null;
+  }
+  const ldap = reportLdap();
+  if (!ldap.directoryIsWindowed()) {
+    log.debug("Leaving reportAnchorRefusal(). In memory.");
+    return null;
+  }
+  const lookups = reportIndexedLookups(plan.where, function (field: string):
+      string[] {
+    return catalog.indexedFor(String(plan.source), field);
+  }, 0);
+  if (lookups && lookups.length) {
+    log.debug("Leaving reportAnchorRefusal(). Anchored.");
+    return null;
+  }
+  const named = (src.fields || []).filter(function (field: any): boolean {
+    return Array.isArray(field.indexed) && field.indexed.length > 0;
+  }).map(function (field: any): string {
+    return field.id + ' (' + field.indexed.join(', ') + ')';
+  });
+  log.warn(errorCodes.tag('STS-REPORT-0040') +
+    'report: a ' + plan.source + ' filter names no indexed field; refused ' +
+    'rather than read person by person.');
+  log.debug("Leaving reportAnchorRefusal(). Refused.");
+  return {
+    ok: false,
+    code: 'STS-REPORT-0040',
+    error: 'invalid_query',
+    description: 'A filter on ' + plan.source + ' has to name an indexed ' +
+      'field, as a condition of an "and" or in every arm of an "or": ' +
+      named.join(', ') + '. The other fields narrow that read.'
+  };
+}
+
 async function reportReadWork(plan: any, control: any): Promise<any> {
   log.debug("Entering reportReadWork().");
+  const anchor = reportAnchorRefusal(plan);
+  if (anchor) {
+    log.debug("Leaving reportReadWork(). Not anchored.");
+    return anchor;
+  }
   const rows = new Rows(plan, reportTypes(plan));
   const held = control || {};
   if (reportReader) {

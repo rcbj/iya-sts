@@ -101,6 +101,7 @@
   "tipFormat": "JSON, CSV (RFC 4180) or PDF. A PDF has a row cap of its own; ask for CSV for more.",
   "tipCount": "Count the matching rows instead of listing them, one number per value of the group field.",
   "tipGroupBy": "The low-cardinality field a count is grouped by, such as status or protocol.",
+  "tipAnchor": "On this source the first filter has to name an indexed field; the other fields narrow that read.",
   "tipSaveQuery": "Keep this query as a named definition you can run again, schedule and share. Ticked, the Name box and the Save button appear.",
   "tipName": "The name the definition is listed under.",
   "tipRunAt": "The time of day, in UTC, a scheduled run starts; the date is used when no weekday is ticked.",

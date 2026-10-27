@@ -213,8 +213,23 @@ using one of them reads only the rows it names, however large the
 directory. A person's attributes are stored as one sealed value, so the
 directory can filter on very few of them: `username` for `eq`, `in`,
 `contains` and `startsWith` (the substring needs three characters or
-more), and `mail` and `entryUuid` for `eq` and `in`. Every other field of
-`users` is filtered after the rows are read.
+more), `mail` and `entryUuid` for `eq` and `in`, and `memberOf` for `eq`
+and `in` through the group's own member list. Every other field of
+`users` is filtered after the rows are read. **Every source uses every
+index the store has for its fields**: `credentialHolders` the same four
+and its `mechanism`, `groups` its `name`; a field the directory indexes
+is never filtered row by row where the index could have named the rows.
+
+**A filter on `users` or `credentialHolders` has to name an indexed
+field.** These two sources read the directory, and on a directory held in
+a database a filter on any other field alone would read every person. Such
+a filter is refused when the query is accepted, in every mode, as
+`invalid_query` with the indexed fields named: the first condition of an
+`and`, or every arm of an `or`, has to be one of them, and the other
+conditions narrow that read. On the page the first filter row of these
+sources offers only the indexed fields; the rows the `+` adds offer every
+field. A small directory held in memory is not held to this. A query with
+no filter still stops at its limit.
 
 A `users` query is answered from the index when its filter is an indexed
 leaf, an `and` with an indexed arm (the other arms are applied to the
@@ -244,7 +259,7 @@ or any other lock. `active` is the other value.
 | `entryUuid` | string | The entryUUID. Indexed: `eq`, `in`. | yes | no | no |
 | `mail` | string | The mail attribute. Indexed: `eq`, `in`. | yes | yes | no |
 | `displayName` | string | `displayName`, or `cn` when `displayName` is empty. | yes | yes | no |
-| `memberOf` | string | The names of the groups that list this person, joined. | yes | no | no |
+| `memberOf` | string | The names of the groups that list this person, joined. Indexed: `eq`, `in` (the group's member list). | yes | no | no |
 | `hasPassword` | boolean | Whether a password is set on the entry. | yes | yes | yes |
 | `factors` | number | How many second-factor credentials the person holds: passkeys enrolled as a second factor, authenticator apps, mail factors. `hasPassword` true and `factors` 0 is a password alone. | yes | yes | yes |
 | `methodsUsed` | string | The RFC 8176 methods the person has signed in with here (`pwd`, `hwk`, `otp`, …), joined; compared value by value. | yes | yes | no |

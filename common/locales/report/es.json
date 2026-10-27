@@ -101,6 +101,7 @@
   "tipFormat": "JSON, CSV (RFC 4180) o PDF. Un PDF tiene su propio tope de filas; pida CSV para más.",
   "tipCount": "Contar las filas coincidentes en vez de listarlas, un número por valor del campo de agrupación.",
   "tipGroupBy": "El campo de baja cardinalidad por el que se agrupa un recuento, como status o protocol.",
+  "tipAnchor": "En esta fuente el primer filtro debe nombrar un campo indexado; los demás campos acotan esa lectura.",
   "tipSaveQuery": "Guardar esta consulta como una definición con nombre que podrá volver a ejecutar, programar y compartir. Marcada, aparecen la casilla Nombre y el botón Guardar.",
   "tipName": "El nombre con el que se lista la definición.",
   "tipRunAt": "La hora, en UTC, a la que empieza una ejecución programada; la fecha se usa cuando no hay ningún día marcado.",

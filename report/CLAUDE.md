@@ -226,6 +226,52 @@ GROUPABLE list and `rows.ts`'s `LIST_FIELDS` (a single value needs no
 splitting); `lane` is enumerated (#1007). Nothing changed in what is
 read: the same holders, the same entries, more rows out of each.
 
+## Every index on every source, and the anchor rule (rcbj, 2026-10-27)
+
+Three sentences from rcbj the morning the credentialHolders source was
+refused for `username equals rcbj`: "use every index available on every
+source option"; "username is available on every source option, so apply
+the same index across every source type"; and "if there aren't indexes
+of fields we could search on, create them; otherwise these shouldn't be
+exposed as valid search parameters because the queries will never work
+given the constraints we've defined." What that became:
+
+* **Every field the directory indexes declares it, on every source that
+  carries the field** (`catalog.ts`): `username` (eq, in, contains,
+  startsWith), `mail` and `entryUuid` (eq, in) on `users` AND
+  `credentialHolders`; `memberOf` (eq, in) on both — a group's member
+  list is an index of who is in it, read through `reportGroupMemberNames()`
+  and `existingUserEntriesAsync()` in `reportLookupEntries()`; `name` (eq,
+  in) on `groups`, read by DN in `reportReadGroups()` without listing the
+  realm's groups. `tests/report_query.js` holds the rule for every source:
+  a field named `username`, `mail`, `entryUuid` or `memberOf`, or a
+  group's `name`, declares its index wherever it appears, so a new source
+  cannot leave one out quietly.
+* **THE ANCHOR RULE**: a source read from the directory is `anchored`
+  (`users`, `credentialHolders`; published on the catalog and in the
+  OpenAPI `Source` schema). On a windowed directory a filter on it that
+  names no indexed field — the planner's own test, `reportIndexedLookups()`
+  returning nothing — is refused at acceptance, in EVERY mode, as
+  `invalid_query` with the indexed fields named (`STS-REPORT-0040`,
+  `reportAnchorRefusal()` at the head of `reportReadWork()`), where it was
+  `result_too_large` after a wait synchronously and a time-capped job
+  otherwise. An `and` is anchored by one indexed arm, an `or` only by
+  every arm. A memory directory is not held to it. A query with no filter
+  still stops at its limit.
+* **The page follows**: the first filter row of an anchored source offers
+  only the indexed fields, with `report.tipAnchor` on the select; the rows
+  the `+` adds take the full list from a `<template data-field-options>`,
+  because they narrow the indexed read; a saved first row whose field is
+  not indexed (saved before, or through the API) keeps its field by
+  widening its own list.
+* **Not created**: an index for `status`, `displayName`, `createdAt` or a
+  credential's role, algorithm, lane or channel. `status` is an asked name
+  away (`pwdaccountlockedtime`, another schema version); `createdAt` and
+  `modifiedAt` are plain columns a btree would serve; `displayName` is
+  sealed and would need a keyed digest as `name_keys` has; a credential's
+  facts are inside the sealed value and cannot be indexed without changing
+  what is encrypted, which rcbj ruled out. Each is a ticket of its own.
+
 ## The wallet mechanisms (#1021)
 
 rcbj, 2026-10-27: how many people hold verifiable credentials from a web
@@ -400,13 +446,17 @@ read from what the directory keeps already:
   enforced at sign-in; its algorithm and lane are `keyAlgorithm()`'s.
   The other mechanisms (`MECHANISM_TABLE`: totp, emailFactor,
   certificate, kerberos) have one role each.
-* **The indexed reads**: `mechanism` → `holdersAsync('person', attribute,
-  names)`, the store's asked-names index, bounded by holders; `memberOf` →
-  the group's `uid=` members by `existingUserEntriesAsync()`. The group
-  wins when both are named; the mechanism filter still applies in
-  `Rows.take()`. A query naming neither is unbounded in the catalog's
-  sense (every mechanism's holders): refused synchronously on a windowed
-  directory (`STS-REPORT-0036`), a job otherwise.
+* **The indexed reads**: `username`, `mail`, `entryUuid` → the users
+  source's `reportCandidates()` (rcbj, 2026-10-27: `username equals rcbj`
+  was refused as too large until this, the reader knowing only the two
+  below), the person's entry and every mechanism of theirs; `mechanism` →
+  `holdersAsync('person', attribute, names)`, the store's asked-names
+  index, bounded by holders; `memberOf` → the group's `uid=` members by
+  `existingUserEntriesAsync()`. The person wins over the group, the group
+  over the mechanism, when more than one is named; every filter still
+  applies in `Rows.take()`. A query naming none is unbounded in the
+  catalog's sense (every mechanism's holders): refused synchronously on a
+  windowed directory (`STS-REPORT-0036`), a job otherwise.
 * **Counted before read, and stopped with the budget** (found on 8081 the
   night it shipped): every person with a password holds `stsKrb5Keys`, so
   the Kerberos mechanism's holders were a million people, and a query
@@ -559,7 +609,11 @@ refusal of a `mode: auto` query into a job — `auto` means "a job when it
 cannot be answered now" — and records no refusal; `mode: sync` keeps it.
 A job (`execution: 'async'`) is never refused here; `report.asyncMaxMs`
 bounds it. The memory directory walks as it always did: it is in process
-and small by construction.
+and small by construction. **Since 2026-10-27 a FILTER with no indexed
+anchor never gets this far**: `reportAnchorRefusal()` refuses it at
+acceptance in every mode (`STS-REPORT-0040`, *Every index on every
+source*, below); what remains of this paragraph's job path is the
+filterless ordered or counted read.
 
 The directory is reached through `reportLdap()`, which answers the double
 a test installs with `installDirectory()` or `ldap/ldap_server.js`.

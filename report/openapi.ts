@@ -577,6 +577,13 @@ class OpenApi {
             type: 'object',
             properties: {
               id: { type: 'string', enum: names },
+              anchored: { type: 'boolean',
+                description: 'True for a source read from the directory ' +
+                  '(users, credentialHolders): a filter on it has to name ' +
+                  'a field whose `indexed` list holds the operator — a ' +
+                  'leaf of an and, or every arm of an or — or it is ' +
+                  'refused as invalid_query; the other fields narrow an ' +
+                  'indexed read.' },
               bounded: { type: 'boolean' },
               retention: { type: 'string' },
               paging: { type: 'string', enum: ['limit'] },
