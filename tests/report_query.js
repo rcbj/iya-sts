@@ -1863,8 +1863,12 @@ function groups(t) {
       swapped = html;
     } };
   live.onChange({ target: fieldSelect });
-  t.equal(swapped, '<input name="filterValue0" value="passkey">',
-    'choosing contains swaps the dropdown back, keeping the value');
+  // #1022: contains is not offered over an enumerated field, so the
+  // operator drops to the empty choice and the value stays a dropdown.
+  t.check(swapped.indexOf('<select name="filterValue0">') === 0 &&
+    swapped.indexOf('<option value="passkey" selected>') >= 0,
+    'an operator the field does not offer is dropped; the dropdown stays',
+    swapped);
   swapped = '';
   controls.filterField0.value = 'username';
   controls.filterValue0 = { tagName: 'INPUT', value: 'typed',
@@ -1873,6 +1877,78 @@ function groups(t) {
     } };
   live.onChange({ target: fieldSelect });
   t.equal(swapped, '', 'a text box that stays one is not redrawn');
+
+  // THE OPERATOR LIST FOLLOWS THE FIELD (#1022): three operators over an
+  // enumerated field, the full list otherwise, the select saying which it
+  // holds; a field change redraws it only when the list changes.
+  const enumRow = ReportRuntime.filterRowHtml(tr, 0, '<option></option>',
+    true);
+  t.check(enumRow.indexOf('<select name="filterOp0" data-ops="all">') >= 0 &&
+    enumRow.indexOf('<option value="contains">') >= 0,
+    'a fresh row offers every operator');
+  const enumSaved = ReportRuntime.queryFormHtml(tr, cat.sources, {
+    source: 'credentialHolders', select: ['username'],
+    where: { op: 'ne', field: 'mechanism', value: 'totp' } });
+  const enumOpSelect = /<select name="filterOp0" data-ops="enum">([^]*?)<\/select>/
+    .exec(enumSaved);
+  t.check(!!enumOpSelect &&
+    (enumOpSelect[1].match(/<option value="[a-zA-Z]+"/g) || []).length === 3 &&
+    enumOpSelect[1].indexOf('<option value="ne" selected>') >= 0 &&
+    enumOpSelect[1].indexOf('value="contains"') < 0,
+    'a saved mechanism row offers equals, does not equal and is empty',
+    enumSaved);
+  let opSwapped = '';
+  const opControls = {
+    'filterField0': { value: 'mechanism' },
+    'filterOp0': { value: 'startsWith',
+      getAttribute: function (k) {
+        return k === 'data-ops' ? 'all' : null;
+      },
+      set outerHTML(html) {
+        opSwapped = html;
+      } },
+    'filterValue0': { tagName: 'INPUT', value: '',
+      set outerHTML(html) {
+        swapped = html;
+      } }
+  };
+  const opRow = {
+    querySelector: function (selector) {
+      const m = /\[name="([^"]+)"\]/.exec(selector);
+      return m ? opControls[m[1]] || null : null;
+    }
+  };
+  const opFieldSelect = {
+    getAttribute: function (name) {
+      return name === 'name' ? 'filterField0' : null;
+    },
+    closest: function (selector) {
+      return selector === '.filterrow' ? opRow
+        : (selector === 'form' ? holderForm : null);
+    }
+  };
+  swapped = '';
+  live.onChange({ target: opFieldSelect });
+  t.check(opSwapped.indexOf('<select name="filterOp0" data-ops="enum">') === 0 &&
+    opSwapped.indexOf('selected') < 0 && opSwapped.indexOf('startsWith') < 0,
+    'choosing mechanism redraws the operators, dropping startsWith', opSwapped);
+  t.check(swapped.indexOf('<select name="filterValue0">') === 0,
+    'and the value becomes the dropdown');
+  opSwapped = '';
+  opControls.filterOp0 = { value: 'eq',
+    getAttribute: function (k) {
+      return k === 'data-ops' ? 'enum' : null;
+    },
+    set outerHTML(html) {
+      opSwapped = html;
+    } };
+  live.onChange({ target: opFieldSelect });
+  t.equal(opSwapped, '', 'an enumerated field again leaves the select alone');
+  opControls.filterField0.value = 'username';
+  live.onChange({ target: opFieldSelect });
+  t.check(opSwapped.indexOf('data-ops="all"') >= 0 &&
+    opSwapped.indexOf('<option value="eq" selected>') >= 0,
+    'an open field brings the full list back, keeping equals', opSwapped);
   t.check(holderFields.length > 0, 'the holder fields were found');
 
   // THE SORT BOX, AND GROUP BY BEHIND COUNT (#1008): the selects are hidden
