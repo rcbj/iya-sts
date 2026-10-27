@@ -283,6 +283,11 @@ const CHANGE_ROWS_PER_STATEMENT = 5000;
 // locked` is a holders read. The asked index is rebuilt again (the same
 // advisory step, now looking for the newest name).
 const SCHEMA_VERSION = 28;
+// How many times a directory flush re-reads the data-key rows and tries
+// again when a locked row is sealed under a key this process does not hold
+// yet, and the pause between tries (2026-10-27; saveDirectory()).
+const SEALED_FLUSH_RETRIES = 5;
+const SEALED_FLUSH_RETRY_PAUSE_MS = 200;
 
 // THE DATABASE'S CLOCK, in the milliseconds every cluster table stores. See the
 // cluster block in SCHEMA_OBJECTS for why no process's own clock is used.
@@ -6159,21 +6164,44 @@ function create(options) {
       // (2026-10-02)** — the ordinary cause is a realm another worker thread
       // created a moment ago, whose `directory` key this thread has not read.
       // `keystore.writeAfterDeks()` does the same for its own rows.
-      const attempt = function (again) {
-        outcomes.length = 0;
-        pendingLost.length = 0;
-        return withTransaction(transactionBody).then(function () {
-          return mergeLostRows(pendingLost);
-        }).catch(function (e) {
-          if (!again || errorCodes.codeOf(e) !== 'STS-STORE-0072') {
-            throw e;
+      // A ROW SEALED UNDER A DATA KEY THIS PROCESS DOES NOT HOLD YET is read
+      // again after the key rows are re-read — up to SEALED_FLUSH_RETRIES
+      // times, a pause between (2026-10-27; it was once): two processes
+      // seeding one new realm each make a key for it, and the other's key
+      // row may be a transaction still committing when the first re-read
+      // runs. A flush that gave up answered the request that caused it 503
+      // (STS-STORE-0066, sts_kerberos_rc4's realm create in the single-node
+      // mode). A loop, not a chain (tests/no_periodic_timers.js).
+      const attempt = async function () {
+        log.debug("Entering attempt().");
+        let last = null;
+        for (let i = 0; i <= SEALED_FLUSH_RETRIES; i++) {
+          outcomes.length = 0;
+          pendingLost.length = 0;
+          try {
+            await withTransaction(transactionBody);
+            const merged = await mergeLostRows(pendingLost);
+            log.debug("Leaving attempt().");
+            return merged;
+          } catch (e) {
+            if (i === SEALED_FLUSH_RETRIES ||
+                errorCodes.codeOf(e) !== 'STS-STORE-0072') {
+              log.debug("Leaving attempt(). Failed.");
+              throw e;
+            }
+            log.debug("Caught in saveDirectory(): " +
+                      ((e && e.message) || e));
+            last = e;
+            await require('../common/keystore').refreshDekRows();
+            if (i > 0) {
+              await new Promise(function (resolve) {
+                setTimeout(resolve, SEALED_FLUSH_RETRY_PAUSE_MS);
+              });
+            }
           }
-          log.debug("Caught in saveDirectory(): " + ((e && e.message) || e));
-          return require('../common/keystore').refreshDekRows()
-            .then(function () {
-              return attempt(false);
-            });
-        });
+        }
+        log.debug("Leaving attempt(). Exhausted.");
+        throw last;
       };
       const transactionBody = function (client) {
         let chain = Promise.resolve();
@@ -6389,7 +6417,7 @@ function create(options) {
           }));
         });
       };
-      return attempt(true).then(function () {
+      return attempt().then(function () {
         log.debug('Leaving the postgres driver saveDirectory(). ' +
                   change.upserts.length + ' upsert(s), ' +
                   change.deletes.length + ' delete(s), ' + outcomes.length +
