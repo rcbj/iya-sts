@@ -690,8 +690,11 @@ function flashHtml(t: any, kind: string, text: string): string {
     esc(t.text('report.dismiss')) + '">&times;</button></div></div>';
 }
 
+// Every table sits in `.tablewrap`, which scrolls sideways when the table is
+// wider than the card (rcbj, 2026-10-27: a credentialHolders result with
+// twelve columns ran off the page), and a cell may break a long value.
 function tableHtml(headers: string[], rows: string[][]): string {
-  return '<table class="table"><thead><tr>' +
+  return '<div class="tablewrap"><table class="table"><thead><tr>' +
     headers.map(function (header: string): string {
       return '<th>' + header + '</th>';
     }).join('') + '</tr></thead><tbody>' +
@@ -699,7 +702,7 @@ function tableHtml(headers: string[], rows: string[][]): string {
       return '<tr>' + row.map(function (cell: string): string {
         return '<td>' + cell + '</td>';
       }).join('') + '</tr>';
-    }).join('') + '</tbody></table>';
+    }).join('') + '</tbody></table></div>';
 }
 
 // The chosen language is part of the document. A saved definition keeps

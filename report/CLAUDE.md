@@ -248,6 +248,10 @@ read from what the directory keeps already:
   and a maintained per-role aggregate — `passkey_report.ts` keeps
   algorithm, lane and model facets but not role, so the census is the
   engine's count+groupBy over this source.
+* **A wide result scrolls inside its card** (rcbj, 2026-10-27, running
+  this source with every field): `tableHtml()` wraps every table in
+  `.tablewrap` (`overflow-x: auto`), a cell may break a long value and a
+  heading stays on one line. Nothing is dropped or truncated to fit.
 * `tests/report_query.js`'s `holders()` drives it against the double.
 
 ## The document
