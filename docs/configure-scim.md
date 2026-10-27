@@ -256,8 +256,37 @@ All six of RFC 7644 section 2's schemes are on by default: OAuth tokens
 (Bearer and DPoP), Basic, Digest, HOBA, the session cookie and a TLS client
 certificate. A scheme turned off disappears from the challenges and from the
 ServiceProviderConfig together. To exercise a client's scope handling, turn
-off everything but tokens, because only tokens carry scopes. Every other
-accepted credential may both read and write.
+off everything but tokens, because only tokens carry scopes. A TLS client
+certificate this realm issued to an **application** is held to the SCIM
+scopes that application's `oauthAllowedScope` declares (see below). Every
+other accepted credential may both read and write.
+
+### An application's certificate, held to what it declares
+
+A provisioning client can authenticate with a TLS client certificate issued
+to its application, with no token. The certificate carries no scopes, so the
+application's `oauthAllowedScope` stands in for them, on every request:
+`scim:read` to read and `scim:write` to write. An application that declares
+neither is refused `403` (`STS-SCIM-0083`), one that declares only
+`scim:read` may only read, and removing a value cuts the certificate off at
+once. A person's certificate is not affected.
+
+1. On the application's page, use **Add to** on `oauthAllowedScope`:
+   `scim:read`, and `scim:write` if it writes.
+2. Issue the certificate on the same page (**Issue a TLS client
+   certificate**), and install it in the client.
+3. Call `/scim/v2` over HTTPS on the main port with it.
+
+**API:**
+```bash
+api applications/add '{"application":"<id>","attribute":"oauthAllowedScope","value":"scim:read"}'
+api applications/add '{"application":"<id>","attribute":"oauthAllowedScope","value":"scim:write"}'
+api applications/issue-tls-client-certificate '{"application":"<id>","password":"<file password>"}'
+```
+
+A SCIM client of this service's own (`/admin/scim/clients`) whose
+certificate was issued here and that provisions into this same realm is such
+an application, and needs the declaration too.
 
 **Console:** on **Protocols → SCIM**, **Server** tab, turn off the rows you do
 not want (**Offer HTTP Basic**, **Offer HTTP Digest**, **Offer HOBA**, **Offer
