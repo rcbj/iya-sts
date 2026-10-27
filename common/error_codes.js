@@ -8565,6 +8565,21 @@ const CODES = [
       'method did not authenticate by certificate and no more specific ' +
       'reason was recorded; refused in every mode.',
     spec: 'invalid_client (HTTP 401)' },
+  // #1050 (2026-10-27): an /admin-api access token for a client that
+  // declared a certificate is bound to one or not issued.
+  { code: 'STS-OAUTH-0489',
+    summary: 'An access token for /admin-api was asked of the token ' +
+      'endpoint by a client declaring tls_client_auth, ' +
+      'self_signed_tls_client_auth or tls_client_certificate_bound_access_' +
+      'tokens, with no client certificate to bind it to (or minted on no ' +
+      'connection, a CIBA push); refused in every mode.',
+    spec: 'invalid_request (HTTP 400)' },
+  { code: 'STS-OAUTH-0490',
+    summary: 'An implicit or hybrid authorization response would have ' +
+      'carried an /admin-api access token for a client declaring a ' +
+      'certificate, which the browser\'s connection can never bind; ' +
+      'refused in every mode.',
+    spec: 'invalid_request (redirected error)' },
   // RFC 9470 (2026-09-13): step-up authentication. `oauth-oidc/step_up.ts`
   // decides; the authorization endpoint and `dpop.presentedAccessToken()`
   // answer. Block reserved at 0500..0529.
@@ -21878,6 +21893,13 @@ const CODES = [
       'did:web enrolment, which fetches the DID document) failed inside ' +
       'this service; the log says why (#693).',
     spec: 'HTTP 500' },
+  // #1050 (2026-10-27): the other end of STS-OAUTH-0489.
+  { code: 'STS-API-0137',
+    summary: 'An /admin-api access token issued to a client that declares ' +
+      'tls_client_auth, self_signed_tls_client_auth or tls_client_' +
+      'certificate_bound_access_tokens carries no cnf x5t#S256 (RFC 8705): ' +
+      'such a client\'s tokens are accepted only certificate-bound.',
+    spec: 'invalid_token (HTTP 401)' },
   { code: 'STS-PORTAL-0001',
     summary: 'A user portal request\'s query string or form body did not ' +
       'match the shape its route accepts, and was refused before ' +
