@@ -53,6 +53,7 @@
   "on": "activé",
   "whatItsScopesSay": "ce que disent ses portées",
   "everything": "tout",
+  "applicationDeclares": "celui d’une application : ce qu’elle déclare ; celui d’une personne : tout",
   "rowAnonymous": "Rien (un appel de découverte ouvert, ou l’authentification désactivée)",
   "rowRefused": "Refusé avant l’exécution de tout gestionnaire",
   "authentication": "Authentification",

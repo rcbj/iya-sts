@@ -284,16 +284,20 @@
     "text": "本服务已有的浏览器登录会话——由 /authn/login 建立、与 WS-Federation 共享的那个——之所以在这里提供，是因为 section 2 提到了它：\"clients may assert HTTP cookies over TLS that contain an authentication state understood by the SCIM service provider\"。正是它使本服务页面上的 SCIM 调用无需第二个凭据即可工作。它没有质询：服务器无法在 WWW-Authenticate 中请求 cookie，因此有就使用，从不强求。"
   },
   "auth.schemes.clientcert": {
-    "en": "2d55447d0d4792ee",
-    "text": "双向 TLS，RFC 7644 section 2 提到的第一种方案。只有当本请求通过 TLS 到达，且所带证书能对照客户端信任库（/admin/tls/trust）中的信任锚验证通过时才可用——因此在主端口上，只有当它以 HTTPS 绑定时才可用（global.https，由 oauth2.rfc9700 开启）。身份是 RFC 4514 形式的主体，与 /admin/users 和目录用来归档证书的字符串相同。这里不会再次记录它：tls_server.js 有意按连接记录一次证书，按请求计数会从另一端抵消这一设计。"
+    "en": "795d25379373b103",
+    "text": "双向 TLS，RFC 7644 section 2 提到的第一种方案。只有当本请求通过 TLS 到达，且所带证书能对照客户端信任库（/admin/tls/trust）中的信任锚验证通过时才可用——因此在主端口上，只有当它以 HTTPS 绑定时才可用（global.https，由 oauth2.rfc9700 开启）。身份是 RFC 4514 形式的主体，与 /admin/users 和目录用来归档证书的字符串相同。这里不会再次记录它：tls_server.js 有意按连接记录一次证书，按请求计数会从另一端抵消这一设计。本领域签发给某个应用的证书即代表该应用，且只能做其 oauthAllowedScope 所声明的事：读取需要读取范围，写入需要写入范围，每次请求都会重新检查，因此两者都未声明的应用会被拒绝（STS-SCIM-0083）。个人的证书，或来自他人添加的信任锚的证书，可以读写。"
   },
   "auth.policy.oauth": {
     "en": "25657a7b65df5ecd",
     "text": "OAuth 凭据——Bearer 或 DPoP 访问令牌——可以做其范围所允许的事：\"{{read}}\" 用于读取，\"{{write}}\" 用于写入。两者互不隐含，以便本服务能够真正产生只读凭据，供检验客户端的处理。"
   },
   "auth.policy.others": {
-    "en": "e23c0683e2f710ad",
-    "text": "其他每种方案都可以读写。Basic、Digest、HOBA、会话 cookie 和客户端证书不携带范围，因此对它们的策略就是整个界面。这一点值得多读一遍：无法获得范围的调用方可以改用 Basic，这正是每种方案都有自己开关的原因——检验范围处理的部署会关闭其他五种方案。"
+    "en": "d754835a0e2987d3",
+    "text": "其他每种方案都可以读写。Basic、Digest、HOBA、会话 cookie 和个人的客户端证书不携带范围，因此对它们的策略就是整个界面。这一点值得多读一遍：无法获得范围的调用方可以改用 Basic，这正是每种方案都有自己开关的原因——检验范围处理的部署会关闭其他五种方案。"
+  },
+  "auth.policy.certificate": {
+    "en": "113cbb3081d556a7",
+    "text": "应用的证书受其声明的范围约束（#1048）。本领域签发给应用的 TLS 客户端证书不携带范围，因此它可以做的是该应用的 oauthAllowedScope 在上述两个范围中所声明的事，每次请求都会重新检查：两者都未声明的应用会被拒绝，只声明读取范围的只能读取，撤销一项声明会立即切断该证书（STS-SCIM-0083）。"
   },
   "auth.policy.rfc": {
     "en": "01badc7fa9089572",

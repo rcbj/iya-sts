@@ -14753,6 +14753,11 @@ const CODES = [
     summary: 'A filter ordered (gt, ge, lt, le) a boolean or binary ' +
       'attribute, which RFC 7644 section 3.4.2.2 refuses (#206).',
     spec: 'HTTP 400 invalidFilter (SCIM Error)' },
+  { code: 'STS-SCIM-0083',
+    summary: 'A TLS client certificate this realm issued to an application ' +
+      'was presented at /scim/v2, and the application does not declare the ' +
+      'SCIM scope the operation needs in its oauthAllowedScope (#1048).',
+    spec: 'HTTP 403 (SCIM Error)' },
   // ===== SPIFFE ============================================================
   { code: 'STS-SPIFFE-0001',
     summary: 'A SPIFFE gRPC handler failed with something that was not a ' +

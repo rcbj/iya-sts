@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4688** of them, in **48** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4689** of them, in **48** subsystems.
 
 ## Where a code appears
 
@@ -75,7 +75,7 @@ is an ordinary outcome.
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
 * [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 34
-* [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 77
+* [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 78
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 151
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 53
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 138
@@ -3343,6 +3343,7 @@ Raised from: scim/.
 | `STS-SCIM-0080` | A request named a path under /scim/v2 that is no SCIM endpoint; it is answered in the SCIM Error schema rather than by express as an HTML page (#206). | HTTP 404 (SCIM Error, RFC 7644 section 3.12) |
 | `STS-SCIM-0081` | A PUT, PATCH or DELETE carried an If-Match other than *, and this service keeps no entity-tags, so no version can match it (RFC 9110 section 13.1.1); nothing was changed (#206). | HTTP 412 (SCIM Error, RFC 7644 sections 3.12 and 3.14) |
 | `STS-SCIM-0082` | A filter ordered (gt, ge, lt, le) a boolean or binary attribute, which RFC 7644 section 3.4.2.2 refuses (#206). | HTTP 400 invalidFilter (SCIM Error) |
+| `STS-SCIM-0083` | A TLS client certificate this realm issued to an application was presented at /scim/v2, and the application does not declare the SCIM scope the operation needs in its oauthAllowedScope (#1048). | HTTP 403 (SCIM Error) |
 
 ## STS-SPIFFE
 

@@ -53,6 +53,7 @@
   "on": "on",
   "whatItsScopesSay": "what its scopes say",
   "everything": "everything",
+  "applicationDeclares": "an application's: what it declares; a person's: everything",
   "rowAnonymous": "Nothing (an open discovery call, or authentication turned off)",
   "rowRefused": "Refused before any handler ran",
   "authentication": "Authentication",

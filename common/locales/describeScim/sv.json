@@ -30,6 +30,7 @@
   "off": "av",
   "scopes": "scopes",
   "everything": "allt",
+  "applicationDeclares": "en applikations: det den deklarerar; en persons: allt",
   "scopesText": "De två OAuth-scopen är <code>{read}</code> och <code>{write}</code>, publicerade i <code>scopes_supported</code> i båda upptäcktsdokumenten. Digest erbjuder {algorithms}. HOBA-nycklar registreras på <code>{hoba}</code>.",
   "policy": "Åtkomstpolicyn",
   "endpoints": "Slutpunkter",

@@ -53,6 +53,7 @@
   "on": "på",
   "whatItsScopesSay": "det dess scopes anger",
   "everything": "allt",
+  "applicationDeclares": "en applikations: det den deklarerar; en persons: allt",
   "rowAnonymous": "Inget (ett öppet upptäcktsanrop, eller autentisering avstängd)",
   "rowRefused": "Nekad innan någon hanterare kördes",
   "authentication": "Autentisering",
