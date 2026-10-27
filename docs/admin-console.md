@@ -475,11 +475,10 @@ value.**
 required; it is the only place a `uid` is typed. **Every field in the grid
 that the realm's attribute policy (*Directory → Policies → Attribute policy*,
 below) requires is outlined in red and marked *required*:** `cn` and `sn`
-always, and whatever the realm adds.
-Those fields are drawn in the simplified view as well. The *required* tile
-counts them, with the username. In product mode a create without one is
-refused; in development
-mode the policy is shown and not enforced. A `cn` left empty is made from the
+always, and whatever the realm adds. Those fields are drawn in the simplified
+view as well. The *required* tile counts them, with the username. In product
+mode a create without one is refused; in development mode the policy is shown
+and not enforced. A `cn` left empty is made from the
 given name and surname. **A refused create keeps every box as you typed it**.
 **On every Directory → Users page and tab, a refusal floats in the banner at
 the top of the window**, as on the application pages. That covers a create, a
