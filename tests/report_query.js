@@ -952,6 +952,7 @@ function directoryDouble(windowed) {
         value: 'https://wallet.example/' }, keyAlg: 'ES256' })],
     mfaLastAuthTime: ['2026-10-20T10:00:00.000Z'] });
   const bea = person('bea', { pwdAccountLockedTime: ['20261001120000Z'],
+    createTimestamp: ['20260901120000Z'],
     stsWebauthnCredential: [key('mfa', 'ES256', -7, 'classical', 100, 200)],
     // A subject an administrator entered by value (#1021): channel admin,
     // no proof, no algorithm the record or the DID gives.
@@ -959,7 +960,7 @@ function directoryDouble(windowed) {
       label: 'a', enrolledAt: '2026-10-12T10:00:00.000Z', by: 'admin',
       proof: 'admin', location: { kind: 'admin', value: '' } })]
   });
-  const cy = person('cy');
+  const cy = person('cy', { createTimestamp: ['20261015120000Z'] });
   const xbea = person('xbea');
   const people = [ada, bea, cy, xbea];
   const staff = {
@@ -1007,6 +1008,26 @@ function directoryDouble(windowed) {
       return Promise.resolve(names.map(function (name) {
         return byName[String(name).toLowerCase()] || null;
       }));
+    },
+    // The people created or changed in a span (#1028): the directory's
+    // date B-trees, here the generalized-time attributes compared as
+    // numbers; null when not windowed, as the directory answers in memory.
+    entriesByTimeRangeAsync: function (column, lo, hi, cap) {
+      calls.range = (calls.range || 0) + 1;
+      if (!windowed) {
+        return Promise.resolve(null);
+      }
+      const attr = column === 'modified' ? 'modifyTimestamp'
+        : 'createTimestamp';
+      const msOf = function (gt) {
+        const m = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})Z$/.exec(gt);
+        return m ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]) : 0;
+      };
+      const hits = people.filter(function (one) {
+        const at = msOf(String((one.attributes[attr] || [''])[0]));
+        return at && (!lo || at >= lo) && (!hi || at < hi);
+      });
+      return Promise.resolve(hits.length >= cap ? null : hits);
     },
     entriesByUuidsAsync: function (uuids) {
       calls.byUuid++;
@@ -1214,7 +1235,7 @@ async function narrowing(t) {
   t.equal(plan({ op: 'not', arg: { op: 'eq', field: 'username',
     value: 'ada' } }), null, 'not is not a lookup');
   const andOne = plan({ op: 'and', args: [
-    { op: 'eq', field: 'status', value: 'locked' },
+    { op: 'eq', field: 'displayName', value: 'ADA' },
     { op: 'eq', field: 'username', value: 'ada' }] });
   t.equal(andOne && andOne.length === 1 && andOne[0].field, 'username',
     'an and is the lookups of its indexed arm');
@@ -1230,7 +1251,7 @@ async function narrowing(t) {
     'an or of indexed arms is the union of their lookups');
   t.equal(plan({ op: 'or', args: [
     { op: 'eq', field: 'username', value: 'ada' },
-    { op: 'eq', field: 'status', value: 'locked' }] }), null,
+    { op: 'eq', field: 'displayName', value: 'ADA' }] }), null,
     'an or with a sealed arm is not a lookup');
   const many = [];
   for (let i = 0; i < 17; i++) {
@@ -1374,6 +1395,38 @@ async function narrowing(t) {
     t.equal(sealedJob.code, 'STS-REPORT-0040',
       'and as a job too: it would have read everybody');
     t.equal(calls.walk, 0, 'nothing walked for either');
+    // A DATE RANGE IS AN INDEXED READ (#1028): one bound is a span open on
+    // the other side; two bounds on the same date are one span; the lock
+    // is a holders read; `active` anchors nothing.
+    reset();
+    const since = await read({
+      where: { op: 'ge', field: 'createdAt', value: '2026-10-01T00:00:00Z' },
+      limit: 10 });
+    t.equal(since.ok, true, 'a creation date bound is read', since.description);
+    t.equal(calls.range, 1, 'through the date index');
+    t.equal(calls.walk, 0, 'and no walk');
+    t.equal(names(since).join(','), 'ada,cy,xbea',
+      'the people created since the bound');
+    reset();
+    const between = await read({
+      where: { op: 'and', args: [
+        { op: 'ge', field: 'createdAt', value: '2026-10-01T00:00:00Z' },
+        { op: 'lt', field: 'createdAt', value: '2026-10-10T00:00:00Z' }] },
+      limit: 10 });
+    t.equal(calls.range, 1, 'two bounds on one date are one span');
+    t.equal(names(between).join(','), 'ada,xbea',
+      'the people created in the span');
+    reset();
+    const lockedOnly = await read({
+      where: { op: 'eq', field: 'status', value: 'locked' }, limit: 10 });
+    t.equal(lockedOnly.ok, true, 'the locked are read',
+      lockedOnly.description);
+    t.equal(calls.holders, 1, 'through the lock\'s holders index');
+    t.equal(names(lockedOnly).join(','), 'bea', 'bea is locked');
+    const activeOnly = await read({
+      where: { op: 'eq', field: 'status', value: 'active' }, limit: 10 });
+    t.equal(activeOnly.code, 'STS-REPORT-0040',
+      'active alone anchors nothing: it is everybody else');
     const sealedAnchored = await read({
       where: { op: 'and', args: [
         { op: 'contains', field: 'displayName', value: 'A' },
@@ -1826,11 +1879,14 @@ function groups(t) {
   // on whichever source carries it, so the reader asks the store and a
   // new source cannot forget one quietly.
   const INDEX_CAPABLE = { username: ['eq', 'in'], mail: ['eq', 'in'],
-    entryUuid: ['eq', 'in'], memberOf: ['eq', 'in'] };
+    entryUuid: ['eq', 'in'], memberOf: ['eq', 'in'], status: ['eq'],
+    createdAt: ['lt', 'le', 'gt', 'ge'], modifiedAt: ['lt', 'le', 'gt', 'ge'] };
   catalog.list().forEach(function (src) {
     (src.fields || []).forEach(function (f) {
+      // The directory's indexes bind the sources that read the directory;
+      // a register in memory is bounded and needs none.
       const wanted = f.id === 'name' && src.id === 'groups' ? ['eq', 'in']
-        : INDEX_CAPABLE[f.id];
+        : (src.anchored ? INDEX_CAPABLE[f.id] : null);
       if (!wanted) {
         return;
       }
@@ -1949,9 +2005,11 @@ function groups(t) {
     'the source\'s sentence is under the select', anchoredForm.slice(0, 600));
   const usersFirst = /<select name="filterField0"[^>]*>([^]*?)<\/select>/
     .exec(ReportRuntime.queryFormHtml(tr, cat.sources, { source: 'users' }));
-  t.check(!!usersFirst && usersFirst[1].indexOf('value="status"') < 0 &&
-    usersFirst[1].indexOf('value="memberOf"') >= 0,
-    'users is anchored too: status is not a first filter, memberOf is');
+  t.check(!!usersFirst && usersFirst[1].indexOf('value="displayName"') < 0 &&
+    usersFirst[1].indexOf('value="memberOf"') >= 0 &&
+    usersFirst[1].indexOf('value="createdAt"') >= 0,
+    'users is anchored: displayName is not a first filter; memberOf and ' +
+    'createdAt are');
   const groupsFirst = /<select name="filterField0"[^>]*>([^]*?)<\/select>/
     .exec(ReportRuntime.queryFormHtml(tr, cat.sources, { source: 'groups' }));
   t.check(!!groupsFirst && groupsFirst[1].indexOf('value="description"') >= 0,
@@ -2689,13 +2747,13 @@ async function holders(t) {
     reset();
     const usersUnanchored = await read({ source: 'users',
       select: ['username', 'status'], limit: 5,
-      where: { op: 'eq', field: 'status', value: 'locked' } });
+      where: { op: 'eq', field: 'displayName', value: 'ADA' } });
     t.equal(usersUnanchored.code, 'STS-REPORT-0040',
       'the users source is held to the same rule');
     const usersByGroup = await read({ source: 'users',
       select: ['username', 'status'], limit: 5,
       where: { op: 'and', args: [
-        { op: 'eq', field: 'status', value: 'locked' },
+        { op: 'eq', field: 'displayName', value: 'ADA' },
         { op: 'eq', field: 'memberOf', value: 'staff' }] } });
     t.equal(usersByGroup.ok, true, 'a group anchors a users filter');
     t.equal(calls.groupRead, 1, 'through the group\'s member list');

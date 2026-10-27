@@ -214,7 +214,10 @@ directory. A person's attributes are stored as one sealed value, so the
 directory can filter on very few of them: `username` for `eq`, `in`,
 `contains` and `startsWith` (the substring needs three characters or
 more), `mail` and `entryUuid` for `eq` and `in`, and `memberOf` for `eq`
-and `in` through the group's own member list. Every other field of
+and `in` through the group's own member list, `status` for `eq` `locked`
+through the lock's holders, and `createdAt` and `modifiedAt` for the four
+range operators through a B-tree over each column (schema version 28; two
+bounds on one date are read as one span). Every other field of
 `users` is filtered after the rows are read. **Every source uses every
 index the store has for its fields**: `credentialHolders` the same four
 and its `mechanism`, `groups` its `name`; a field the directory indexes

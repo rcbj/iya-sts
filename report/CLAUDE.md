@@ -264,13 +264,22 @@ given the constraints we've defined." What that became:
   because they narrow the indexed read; a saved first row whose field is
   not indexed (saved before, or through the API) keeps its field by
   widening its own list.
-* **Not created**: an index for `status`, `displayName`, `createdAt` or a
-  credential's role, algorithm, lane or channel. `status` is an asked name
-  away (`pwdaccountlockedtime`, another schema version); `createdAt` and
-  `modifiedAt` are plain columns a btree would serve; `displayName` is
-  sealed and would need a keyed digest as `name_keys` has; a credential's
-  facts are inside the sealed value and cannot be indexed without changing
-  what is encrypted, which rcbj ruled out. Each is a ticket of its own.
+* **Created by #1028 (schema version 28)**: `status equals locked` is a
+  holders read (`pwdaccountlockedtime` joined the asked names;
+  `LOCK_ATTRIBUTE`, `USER_FIELDS` for what the row needs), and
+  `createdAt` / `modifiedAt` take the four range operators through two
+  B-trees over the directory's own generalized-time text columns, led by
+  realm and parent over each realm's `ou=users` (`sts_ldap_entries_created`,
+  `_modified`; `directory_queries.js`'s `createdBetween` / `modifiedBetween`,
+  `ldap_server.js`'s `entriesByTimeRangeAsync()`). The planner turns a
+  bound into a `range` lookup — `le` and `gt` moved a second to the
+  statement's inclusive-low, exclusive-high form — and two bounds on one
+  date in an `and` into ONE span, so "between" is one index read.
+  `active` anchors nothing: it is everybody else.
+* **Not created**: an index for `displayName` (sealed; it would need a
+  keyed digest as `name_keys` has) or a credential's role, algorithm, lane
+  or channel (inside the sealed value; indexing them would change what is
+  encrypted, which rcbj ruled out). Those stay narrowing fields.
 
 ## The wallet mechanisms (#1021)
 

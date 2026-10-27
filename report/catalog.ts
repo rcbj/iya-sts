@@ -100,7 +100,14 @@ const INDEXED: Record<string, string[]> = {
   // A group's member list is an index of who is in it (rcbj, 2026-10-27:
   // "use every index available on every source"): `memberOf` equals a
   // group name reads the group and fetches its members by name.
-  memberOf: ['eq', 'in']
+  memberOf: ['eq', 'in'],
+  // #1028: the lock is an asked name (`status equals locked` is a holders
+  // read; `active` is the complement and anchors nothing), and the two
+  // dates are B-trees over the directory's own columns, so a range on
+  // either reads the span.
+  status: ['eq'],
+  createdAt: ['lt', 'le', 'gt', 'ge'],
+  modifiedAt: ['lt', 'le', 'gt', 'ge']
 };
 
 // The groups source's own lookups: a group by its name is one read.
@@ -184,11 +191,13 @@ function standardSources(): SourceSpec[] {
       [field('username', 'string', 'The directory uid.', INDEXED.username),
        field('status', 'string',
          'locked when pwdAccountLockedTime is set, which is an ' +
-         'administrative disable or any other lock; active otherwise.'),
+         'administrative disable or any other lock; active otherwise. ' +
+         'Indexed for locked only: active is everybody else.',
+         INDEXED.status, ['active', 'locked']),
        field('createdAt', 'timestamp',
-         'When the directory created the entry.'),
+         'When the directory created the entry.', INDEXED.createdAt),
        field('modifiedAt', 'timestamp',
-         'When the directory last changed the entry.'),
+         'When the directory last changed the entry.', INDEXED.modifiedAt),
        field('entryUuid', 'string',
          'The entryUUID. It can be filtered and cannot be sorted.',
          INDEXED.entryUuid),
