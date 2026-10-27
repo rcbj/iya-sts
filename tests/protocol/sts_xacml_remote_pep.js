@@ -294,13 +294,13 @@ const PEP_NAME = (LAUNCHER_STARTED_IT
 // THE TWO PEOPLE THE POLICY DECIDES ABOUT, created by `createThePeople()` in
 // this realm rather than seeded (2026-09-12) — see that function.
 //
-// **THE LAUNCHERS' PEP IDENTITY IS STILL A SEED**, and that is recorded rather
-// than changed: when a launcher owns the container, PEP_NAME is the seeded
-// `remote-pep-1` in the seeded `remote-peps` group, and product mode seeds
-// neither. The self-started path already creates both, in
-// `provisionTheContainersIdentity()`; the launcher path would need the same two
-// writes made before the container's first registration attempt, which is the
-// launcher's to arrange.
+// **THE LAUNCHERS' PEP IDENTITY IS NO LONGER A SEED (#1061).** When a
+// launcher owns the container, PEP_NAME is `remote-pep-1`, and this job now
+// makes its entry in the run's realm, STORES the launcher's leaf on it and
+// puts it in `remote-peps` (`admit()`), as the self-started path does in
+// `provisionTheContainersIdentity()`: an outside certificate names only the
+// entry storing it, so the seeded `cn=remote-pep-1` group member no longer
+// admits anything. The container retries its registration until then.
 const ADMIN_PERSON = "pep-admin-person";
 const STAFF_PERSON = "pep-staff-person";
 
@@ -929,6 +929,13 @@ async function mintTheContainersCredential() {
   // is — the service holds only the root, so a container sending the leaf
   // alone presents a chain that cannot be built.
   fs.writeFileSync(path.join(dir, "pep.crt"), cred.certPem, { mode: 0o644 });
+  // AND STORED ON THE ENTRY `provisionTheContainersIdentity()` made (#1061,
+  // rcbj 2026-10-27). An outside authority's certificate is the one entry of
+  // this realm storing it in `userCertificate`, never its CN, so a container
+  // whose leaf is stored nowhere authenticates as nobody however well it
+  // verifies.
+  await credentials.storeOnEntry({ get: get, post: postJson }, base,
+                                 "/realm/" + REALM, PEP_NAME, cred.leaf.pem);
   // 0644 AND NOT 0600, deliberately: the mount is read-only and the process
   // inside that image is not this user, so a key only this user can read is a
   // container that starts and quietly has no certificate.
@@ -2979,18 +2986,51 @@ function cleanUpTheCertificates() {
 // `remote-pep-1`, which the self-started path provisions for itself
 // (provisionTheContainersIdentity()). sts_xacml_endpoints.js's admit()
 // argues the DN; in development both writes change nothing.
-async function admit(commonName, group) {
+// **AND SINCE #1061 THE MEMBER IS THE ENTRY STORING THE CERTIFICATE.** These
+// are outside authorities' certificates, which name nobody by their CN any
+// more: `admit()` makes the entry where it is missing, STORES the leaf on it
+// (`pep-credential.js`'s `storeOnEntry()`), and adds that entry by name —
+// where it used to add a `cn=<CN>` DN that need not exist.
+async function admit(commonName, group, leafPem) {
   log.debug("Entering admit(). " + commonName + " " + group);
-  const where = await get(api("/groups"));
-  assert.ok(where.status === 200 && where.body && where.body.usersDn,
-    "GET /admin-api/groups in " + REALM + " answered " + where.status);
-  const member = "cn=" + commonName + "," + where.body.usersDn;
+  await credentials.storeOnEntry({ get: get, post: postJson }, base,
+                                 "/realm/" + REALM, commonName, leafPem);
+  const member = commonName;
   const joined = await postJson(api("/groups/add-member"),
                                 { group: group, member: member });
   assert.ok(joined.status === 200 && joined.body && joined.body.ok,
     "adding " + member + " to " + group + " answered " + joined.status +
     " " + String(joined.text).slice(0, 300));
   log.debug("Leaving admit().");
+}
+
+// THE LAUNCHER'S LEAF (#1061), which this job has to store on the PEP's entry
+// because the launcher minted it before this job created the realm the entry
+// is in. `XACML_PEP_CERT_PEM` when a launcher exports it; otherwise the file
+// both launchers mount, `pep.crt` beside the server pair's directory —
+// `XACML_PEP_SERVER_CERT_DIR`'s parent — whose first block is the leaf.
+function launcherLeafPem() {
+  log.debug("Entering launcherLeafPem().");
+  let pem = String(process.env.XACML_PEP_CERT_PEM || "");
+  if (pem.indexOf("BEGIN CERTIFICATE") < 0 &&
+      process.env.XACML_PEP_SERVER_CERT_DIR) {
+    const file = path.join(path.dirname(
+      String(process.env.XACML_PEP_SERVER_CERT_DIR)), "pep.crt");
+    try {
+      pem = fs.readFileSync(file, "utf8");
+    } catch (e) {
+      log.debug("Caught in launcherLeafPem(): " + ((e && e.message) || e));
+      pem = "";
+    }
+  }
+  assert.ok(pem.indexOf("BEGIN CERTIFICATE") >= 0,
+    "the launcher's PEP certificate is neither in XACML_PEP_CERT_PEM nor at " +
+    "pep.crt beside XACML_PEP_SERVER_CERT_DIR (" +
+    String(process.env.XACML_PEP_SERVER_CERT_DIR || "unset") + "). Since " +
+    "#1061 an outside certificate is an identity only once it is stored on " +
+    "its entry, so without it the container authenticates as nobody.");
+  log.debug("Leaving launcherLeafPem().");
+  return pem;
 }
 
 async function test() {
@@ -3034,9 +3074,9 @@ async function test() {
   await createTheRealm();
   try {
     await createThePeople();
-    await admit("xacml-user-1", "xacml-users");
+    await admit("xacml-user-1", "xacml-users", xacmlUser.leaf.pem);
     if (LAUNCHER_STARTED_IT) {
-      await admit(PEP_NAME, "remote-peps");
+      await admit(PEP_NAME, "remote-peps", launcherLeafPem());
     }
     // THE TWO THINGS THE CONTAINER NEEDS BEFORE IT CAN SETTLE, in this order
     // and both before anything is asserted about it.

@@ -443,7 +443,8 @@ and the credential catalogue, less what has a door of its own or is not text:
 | `userPassword` | the password controls on the same page, or `POST /admin-api/users/set-password`, which hashes it |
 | `mail` | **Set the address**, in the same section (`POST /admin-api/users/set-mail`), which marks the address verified and tells the former one |
 | `uid`, and the attribute the entry's DN is named by | nothing: a rename is not an attribute edit |
-| the certificates, photographs, `audio`, `userPKCS12` | an LDAP client: their values are binary |
+| `userCertificate` | **Stored certificates** on the Credentials tab (Factors) |
+| the other certificates, photographs, `audio`, `userPKCS12` | an LDAP client: their values are binary |
 | group memberships, credentials, what sign-ins record | Groups, the credential controls |
 
 **What a value must look like.** `cn` and `sn` can never be emptied (RFC 4519
@@ -557,6 +558,17 @@ of Admin Write. Each control is an action on `POST /admin/users` and on
   ticked and shows it once. `POST /admin-api/users/create-app-password` and
   `revoke-app-password`, and `GET /admin-api/users/app-passwords` (paged), are
   the same acts. See [Authentication](authentication.md#the-password-only-doors-and-app-passwords).
+* **Stored certificates** lists the certificates stored in the person's
+  `userCertificate` — subject, issuer, validity and SHA-256 — with
+  **Remove** per row, and a box to paste one more (PEM) and **Store** it. A
+  certificate from an outside certificate authority in the client
+  truststore signs its holder in only while it is stored on their entry and
+  no other ([TLS](tls.md#a-certificate-from-an-outside-certificate-authority)).
+  A certificate already stored on another entry is refused
+  (`STS-ADMIN-0899`), as is anything that is not one X.509 certificate
+  (`STS-ADMIN-0897`). `POST /admin-api/users/add-certificate` and
+  `remove-certificate`, and `GET /admin-api/users/certificates`, are the same
+  acts; each sends a CAEP `credential-change` of type `x509`.
 
 Every one of them sends Shared Signals to the streams that asked: a CAEP
 `credential-change` for each credential created, updated or removed, a RISC

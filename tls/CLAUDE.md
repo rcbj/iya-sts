@@ -389,7 +389,8 @@ restart-only, on by default. Four things are this directory's:
   wraps `startCertificateSessionIn()` and the authentication recording in
   `realms.run()` of the realm whose Issuing CA signed the leaf, and the session's
   username is the leaf's `urn:sts:person:` name. A certificate from an anchor
-  somebody installed is unchanged: default realm, common name.
+  somebody installed signs in, since #1061, in the REQUEST's realm as the
+  entry storing it (below); it was default realm and common name until then.
 * **THE CONTEXT IS RE-APPLIED WHEN THE CERTIFICATE IS CERTIFIED.** A listener
   is created before the certificate authority starts, so the Root was not there
   to add; `onCertified` calls `applyAnchors()`, which re-applies it to every
@@ -2008,7 +2009,8 @@ functions `GET /tls/sign-in` runs:
   certificate of this service's that is not an identity, an application's
   certificate, in that order — and **`certificatePeer()`** — the certificate
   read off the socket (none on a resumed session) and the name it signs in:
-  the gate's `urn:sts:` name, else the common name, else the subject. Both
+  the gate's name and nothing else since #1061 (it fell back to the common
+  name, then the subject, until then). Both
   were moved out of `startCertificateSession()` and
   `startCertificateSessionIn()` unchanged; `GET /tls/sign-in` answers exactly
   what it did.
@@ -2031,3 +2033,38 @@ functions `GET /tls/sign-in` runs:
   close a cycle, since it requires `authn`. No slot was added: nothing here
   needs filling at load, and every process that serves the screen has the
   composition root's copy long before a request arrives.
+
+## A CERTIFICATE FROM AN OUTSIDE AUTHORITY IS THE ENTRY STORING IT (#1061, 2026-10-27)
+
+The rule and its one mapping are `common/CLAUDE.md` 3ag. What is this
+module's:
+
+* **EVERY SIGN-IN ASKS WITH `{ stored: true }`.** `issuedIdentityOf(socket,
+  options)` passes it through; `GET /tls/sign-in` (`answerCertificateSignIn()`
+  and the cell placement `placeCertificateSignIn()`), `certificateRefusal()`'s
+  default, `screenCertificateOffer()` and `screenCertificateHolder()` all ask
+  it. `certificateRefusal()` gained a fifth refusal, FIRST after revocation:
+  an outside certificate stored on no entry or several, reported as
+  `session.refusedAsStored` (`NOT_STORED` / `STORED_TWICE`) and marked
+  `STS-TLS-0054` / `0055` on the 200; the screen's are `STS-AUTHN-0468` /
+  `0469`, and it reports revocation first when both apply. An application's
+  refusal now holds for a STORED application's certificate too
+  (`gated.accepted && kind === 'application'`, no `issuedHere`).
+* **`certificatePeer()` READS NO NAME OFF THE CERTIFICATE.** It answers only
+  the gate's `username`; with no accepted identity it refuses, naming the CN in
+  the sentence and nothing else. An outside issuer could write anybody's CN.
+* **THE HANDSHAKE NO LONGER RECORDS AN OUTSIDE CERTIFICATE.**
+  `recordClientCertificate()` returns before recording when `!issuedHere`: it
+  used to file the subject and the observer SEEDED `cn=<CN>,ou=users` through
+  `certificatePlan()` — an entry made out of a name somebody else's authority
+  chose. A handshake has no realm to look the stored entry up in, so the door
+  that signs the holder in records the authentication instead. The connection
+  page (`/admin/tls-connection`) still calls `issuedIdentityOf()` WITHOUT
+  `stored`: it describes what arrived, and reports an outside certificate as
+  `issuedHere: false` as before.
+* **WHAT HAS NO IN-PROCESS TEST**: a stored outside certificate over a real
+  HTTP request to `/tls/sign-in` is held only by the protocol jobs that
+  present one (`sts_tls_connection`, `sts_main_port_pooling`,
+  `sts_global_logout`), which need a stack; they were not run in #1061's
+  session.
+

@@ -1512,9 +1512,15 @@ reader of this file needs:
 * **One mapping, not a new one.** `common/tls_client_certificates.js`'s
   `checkSocket()` (the realm boundary included) and `stillHeld()`, the two
   questions RFC 8705's implicit mapping and GNAP's PKI trust model ask.
-  Nothing here reads a DN or a CN, so a certificate from an anchor somebody
-  installed at `/admin-api/tls/trust` names NOBODY here and is ignored, where
-  SCIM's `clientcert` would take its subject DN.
+  Nothing here reads a DN or a CN. A certificate from an anchor somebody
+  installed at `/admin-api/tls/trust` named nobody here and was ignored until
+  #1061; since then it is asked `{ stored: true }` and is the application
+  whose entry stores it in `userCertificate` (`common/CLAUDE.md` 3ag), held
+  to everything below like one this realm issued, and refused STS-SSF-0151
+  (stored on no entry) or 0152 (on more than one). Stored on a PERSON it is
+  0147, as a person's issued certificate is. The positive outside case over
+  the wire (`sts_ssf_client_certificate`) needs a stack and was not run in
+  #1061's session.
 * **Only with no Authorization header**, SCIM's rule; a header is the
   caller choosing its credential, and a certificate-bound token already
   reaches its binding through the OAuth attempt.

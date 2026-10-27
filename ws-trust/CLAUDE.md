@@ -716,9 +716,15 @@ session, the token) reads the answer without knowing which it was.
   CA, clientAuth, exactly one `urn:sts:person:` or `urn:sts:application:`,
   the holder resolved through a rename) and `stillHeld()` (RFC 8705's
   implicit-mapping rule: the holder's record still lists it). **A chain to
-  an anchor installed at `/admin-api/tls/trust` is NOT a credential here**:
-  the gate has no opinion about it, and SCIM's subject DN or `/tls/sign-in`'s
-  CN would be a second mapping. An unverified certificate is not one either.
+  an anchor installed at `/admin-api/tls/trust` was NOT a credential here
+  until #1061**; since then the gate is asked `{ stored: true }` and such a
+  certificate is the person or application whose entry stores it in
+  `userCertificate` (`common/CLAUDE.md` 3ag), a requester exactly as an issued
+  one is (`stillHeld()` answers true for a stored identity). Stored on no
+  entry it is a fault, `STS-WSTRUST-0038`; on more than one, `0039`. Still
+  nothing is read off a CN or a subject. An unverified certificate is not a
+  credential. The stored case is held in process by
+  `tests/wstrust_client_certificate.js`; no protocol job presents one.
 * **A VERIFIED CERTIFICATE THAT IS REFUSED IS A FAULT IN EVERY MODE**,
   `wst:FailedAuthentication`: revoked (`req.certificateRevocation`,
   `STS-WSTRUST-0034`), not an identity here — another realm's authority, a

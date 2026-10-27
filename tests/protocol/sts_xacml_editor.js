@@ -1907,12 +1907,20 @@ async function theRealmIsLeftBehind() {
 // mode seeds `xacml-users` empty, so the policy read-back was a 403 and the
 // repository's `root` came back undefined. sts_xacml_endpoints.js's admit()
 // argues the DN and why the write changes nothing in development.
+//
+// **AND SINCE #1061 THE CERTIFICATE IS STORED ON THE ENTRY IT IS.** The leaf
+// is an outside authority's, which names nobody by its CN any more: it is the
+// one entry of the realm storing it in `userCertificate`. So the entry is
+// made where it is missing, the leaf stored on it, and that entry — by name,
+// not a `cn=` DN that need not exist — is the member.
 async function admitTheCertificate() {
   log.debug("Entering admitTheCertificate().");
-  const where = await json(api("/groups"));
-  assert.ok(where.status === 200 && where.body && where.body.usersDn,
-    "GET /admin-api/groups in " + REALM + " answered " + where.status);
-  const member = "cn=xacml-user-1," + where.body.usersDn;
+  await credentials.storeOnEntry({ get: json, post: function (url, body) {
+    return json(url, { method: "POST",
+                       headers: { "Content-Type": "application/json" },
+                       body: JSON.stringify(body || {}) });
+  } }, base, "/realm/" + REALM, "xacml-user-1", xacmlUser.leaf.pem);
+  const member = "xacml-user-1";
   const joined = await apiPost("/realm/" + REALM +
                                "/admin-api/groups/add-member",
                                { group: "xacml-users", member: member });

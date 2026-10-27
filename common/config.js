@@ -12761,8 +12761,10 @@ const SETTINGS = [
                  'only what that application\'s oauthAllowedScope ' +
                  'declares: the read scope to read and the write scope to ' +
                  'write, asked on every request (STS-SCIM-0083). A ' +
-                 'person\'s certificate, or one from an anchor somebody ' +
-                 'added, may read and write the directory.' },
+                 'person\'s certificate — one this realm issued, or one ' +
+                 'from an outside certificate authority stored in ' +
+                 'userCertificate on that person\'s entry (#1061) — may ' +
+                 'read and write the directory.' },
 
   // ---------------------------------------------------------------------
   // THE OUTBOUND SCIM CLIENT (#552): how pushes to a remote SCIM service

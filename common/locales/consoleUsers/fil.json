@@ -875,5 +875,17 @@
   "personFieldsSection.policyRequired": " Kailangan ito ng attribute policy ng realm.",
   "newUserBody.requiredEnforced": "Dapat may <strong>{list}</strong> ang bawat tao sa realm na ito, at tinatanggihan ang paggawa nang wala ang isa sa mga ito; minarkahang kailangan ang bawat ganoong field sa ibaba, at ang <code>cn</code> na iniwang walang laman ay bubuuin mula sa pangalan at apelyido. Ang listahan ay mula sa ",
   "newUserBody.requiredNotEnforced": "Pinangangalanan ng attribute policy ng realm ang <strong>{list}</strong>; hindi ito ipinatutupad sa development mode, kaya tinatanggap dito ang paggawa nang wala ang mga ito. Ang listahan ay mula sa ",
-  "newUserBody.requiredPolicy": "attribute policy"
+  "newUserBody.requiredPolicy": "attribute policy",
+  "mfaSection.certificatesHeading": "Mga nakaimbak na sertipiko",
+  "mfaSection.certificatesLead": "Ang sertipiko mula sa isang panlabas na certificate authority — na pinagkakatiwalaan sa pamamagitan ng mga Client Truststore — ay nagsa-sign in sa taong ito habang nakaimbak lamang ito rito, sa <code>userCertificate</code>, byte por byte, at sa walang ibang entry ng realm. Walang binabasa mula sa common name o subject ng sertipiko, at iniimbak muli ang na-renew na sertipiko. Sinusuri pa rin ang revocation.",
+  "mfaSection.certThSubject": "Subject",
+  "mfaSection.certThIssuer": "Nag-isyu",
+  "mfaSection.certThValidity": "Bisa",
+  "mfaSection.certExpired": "expired na",
+  "mfaSection.certRemoveTip": "Alisin ang sertipikong ito sa entry. Mula noon, wala na itong isa-sign in.",
+  "mfaSection.certAddLabel": "Sertipiko (PEM o base64 DER)",
+  "mfaSection.certAddTip": "Isang leaf na sertipiko. Ang authority na nag-isyu nito ay inilalagay sa mga Client Truststore, hindi rito.",
+  "mfaSection.certAdd": "Iimbak",
+  "mfaSection.certAddTitle": "Iimbak ang sertipikong ito sa entry",
+  "mfaSection.certNeedsWrite": "Kailangan ng <strong>Admin Write</strong> para mag-imbak o mag-alis nito."
 }

@@ -27,11 +27,17 @@
 //         bind name naming bob (49, 0190), no certificate (48, 0179), a
 //         mechanism other than EXTERNAL (7, 0178), EXTERNAL on 389 (48,
 //         0180), an application's certificate (49, 0185), a certificate
-//         from an OUTSIDE authority trusted through the truststore even
-//         when it names alice (49, 0182), another realm's certificate held
+//         from an OUTSIDE authority trusted through the truststore that is
+//         stored on no entry, even when it names alice (49, 0192; it was
+//         0182 until #1061), another realm's certificate held
 //         against this realm's DN (49, 0184), a person with no entry (49,
 //         0187), a disabled person (49, 0188), a revoked certificate (49,
 //         0181);
+//      A2b an outside authority's certificate STORED in userCertificate on
+//         frank's entry binds as frank (#1061), with his u: authzId and not
+//         alice's (50, 0189); a renewed certificate with the same subject is
+//         refused until stored (49, 0192), and one stored on two entries is
+//         refused (49, 0193);
 //      A3 the bind as a request worker runs it: the operation's shape
 //         carries the certificate, `performOperation()` binds, and the
 //         outcome names the DN `applyOperationResult()` hands node-ldapjs.
@@ -310,6 +316,9 @@ async function childBody() {
   ldap.createUser('lsecarol', { invent: false });
   ldap.createUser('lsedave', { invent: false });
   ldap.createUser('lseerin', { invent: false });
+  // frank holds no certificate this service issued: an outside one is
+  // stored on his entry (#1061).
+  ldap.createUser('lsefrank', { invent: false });
   const svc = applications.createApplication({ identifier: 'lsesvc',
     protocols: ['wstrust'], fields: { oauthClientId: 'lsesvc' } });
   t.check(svc && svc.ok, 'precondition: an application exists',
@@ -356,7 +365,7 @@ async function childBody() {
   const expectedMode = which === 'defaults' ? 'none' : which;
   t.check(view.clientCertificateMode === expectedMode &&
           view.saslExternal.available === (expectedMode !== 'none') &&
-          view.saslExternal.outsideCertificateAuthorities === false &&
+          view.saslExternal.outsideCertificateAuthorities === true &&
           /SASL EXTERNAL/.test(view.clientCertificates) &&
           /outside/.test(view.saslExternal.rule),
           'the service page says 636 is in "' + expectedMode + '" mode and ' +
@@ -462,17 +471,58 @@ async function childBody() {
             'STS-LDAP-0180', brief(plainAnswer));
     await refused('A2. an application\'s certificate', issued.svc, 49,
                   'STS-LDAP-0185');
+    // AN OUTSIDE AUTHORITY'S CERTIFICATE (#1061): it binds as the one
+    // person entry storing it in userCertificate, and as nobody else — not
+    // as alice, whom its CN and urn:sts:person: name.
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lse-'));
+    const dir2 = fs.mkdtempSync(path.join(os.tmpdir(), 'lse-'));
     try {
       const outside = outsideCertificate(dir, 'lsealice');
-      const added = tlsServer.addAnchors(outside.caPem);
-      t.check(added && added.added === 1,
-              'precondition: an outside authority is in the truststore',
+      const renewed = outsideCertificate(dir2, 'lsealice');
+      const added = tlsServer.addAnchors(outside.caPem + renewed.caPem);
+      t.check(added && added.added === 2,
+              'precondition: two outside authorities are in the truststore',
               JSON.stringify(added));
       await refused('A2. a certificate from an outside authority, naming ' +
-                    'alice', outside, 49, 'STS-LDAP-0182');
+                    'alice and stored on no entry', outside, 49,
+                    'STS-LDAP-0192');
+      const nodeCryptoOut = require('crypto');
+      const outsideDer = new nodeCryptoOut.X509Certificate(outside.cert).raw;
+      const stored = ldap.changeStoredCertificate('person', 'lsefrank',
+                                                  { add: outsideDer });
+      t.check(stored && stored.ok && stored.changed,
+              'precondition: the outside certificate is stored on frank',
+              JSON.stringify(stored));
+      const frankDn = ldap.existingUserEntry('lsefrank').dn;
+      let viaStored = await bindOnce(port, outside, 'EXTERNAL');
+      const boundAs = ldap.boundConnections().map(function (row) {
+        return String(row.dn || '').toLowerCase();
+      });
+      viaStored.conn.end();
+      t.check(viaStored.answer.status === 0,
+              'A2b. stored on frank\'s entry, it binds — as frank',
+              brief(viaStored.answer));
+      t.check(boundAs.indexOf(frankDn.toLowerCase()) >= 0,
+              'A2b. the connection is bound as frank\'s entry, not alice\'s',
+              JSON.stringify(ldap.boundConnections()));
+      viaStored = await bindOnce(port, outside, 'EXTERNAL', 'u:lsefrank');
+      viaStored.conn.end();
+      t.check(viaStored.answer.status === 0,
+              'A2b. with frank\'s own u: authzId', brief(viaStored.answer));
+      await refused('A2b. the stored certificate with an authzId naming ' +
+                    'alice', outside, 50, 'STS-LDAP-0189',
+                    { authzId: 'u:lsealice' });
+      await refused('A2b. a renewed certificate with the same subject, not ' +
+                    'stored', renewed, 49, 'STS-LDAP-0192');
+      ldap.changeStoredCertificate('person', 'lsebob', { add: outsideDer });
+      await refused('A2b. the certificate stored on two entries', outside,
+                    49, 'STS-LDAP-0193');
+      ldap.changeStoredCertificate('person', 'lsebob',
+        { remove: nodeCryptoOut.createHash('sha256').update(outsideDer)
+          .digest('hex') });
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
+      fs.rmSync(dir2, { recursive: true, force: true });
     }
     await refused('A2. another realm\'s certificate held to this realm\'s ' +
                   'DN', issued.other, 49, 'STS-LDAP-0184',

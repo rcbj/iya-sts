@@ -380,11 +380,13 @@ The metadata document lists the schemes it accepts in
   names, or an object of type `ssf` with the action the call needs, so that a
   GNAP web application can own a stream itself. See [GNAP](gnap.md).
 * **TLS client certificate** (`urn:ietf:rfc:8705`): the certificate on the
-  connection, sent with no `Authorization` header. Only a certificate this
-  realm issued to an application (on the application's Credentials section,
-  or through `POST /admin-api/applications/issue-tls-client-certificate`)
-  is taken, and only while the application still holds it and it is not
-  revoked. The receiver is that application: it owns the streams it creates
+  connection, sent with no `Authorization` header. Only a certificate that
+  names an application is taken: one this realm issued to it (on the
+  application's Credentials section, or through
+  `POST /admin-api/applications/issue-tls-client-certificate`) while the
+  application still holds it, or one from an outside certificate authority
+  stored byte for byte in `userCertificate` on that application's entry and
+  on no other ([TLS](tls.md#a-certificate-from-an-outside-certificate-authority)). Either is refused when revoked. The receiver is that application: it owns the streams it creates
   under its identifier, exactly as a GNAP token for it would, and reaches no
   other receiver's. It holds what a token for the application would be
   issued: the Shared Signals scopes its `oauthAllowedScope` declares and its
@@ -393,7 +395,9 @@ The metadata document lists the schemes it accepts in
   holds and a revoked one are refused with 401 (`STS-SSF-0147`, `0148`,
   `0150`); an application whose declarations and roles authorize nothing
   the call needs gets 403 (`STS-SSF-0149`). A certificate from an authority
-  you added to the truststore names nobody here and is ignored.
+  you added to the truststore that is stored on no entry is refused 401
+  (`STS-SSF-0151`), and one stored on more than one (`STS-SSF-0152`); its
+  common name and subject are never read.
   `ssf.authClientCert` turns the scheme off.
 
 `ssf.read` lets a caller read a stream, its status and the poll queue.

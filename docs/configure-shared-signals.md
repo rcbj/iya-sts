@@ -148,7 +148,11 @@ still declares a scope that grants what the call needs: withdraw
 password works while `ssf.authBasic` is on (the default); Basic carries no
 scope, so it gets both. A GNAP access token works too, see [GNAP](gnap.md).
 So does the receiver's TLS client certificate, with no `Authorization`
-header, when this realm issued it to the receiver's application:
+header, when this realm issued it to the receiver's application (below), or
+when it is from an outside certificate authority in the truststore and is
+stored byte for byte in `userCertificate` on the application's entry alone
+(an LDAP modify of `userCertificate;binary` on `ou=applications`; see
+[TLS](tls.md#a-certificate-from-an-outside-certificate-authority)):
 ```bash
 api applications/issue-tls-client-certificate '{"application":"ssf-conf-a",
   "password":"<a PKCS#12 password>","keyAlg":"ec-p256"}'

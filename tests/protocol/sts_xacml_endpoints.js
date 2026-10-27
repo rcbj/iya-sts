@@ -446,6 +446,12 @@ var rogue = null;     // verified, and in no group
 // ---------------------------------------------------------------------------
 // verified, in cn=xacml-users — XACML_USER and not REMOTE_PEPS
 var xacmlUser = null;
+// VERIFIED AND STORED NOWHERE (#1061): the fourth, for the refusal an outside
+// certificate meets when no entry stores it.
+var unstored = null;
+// What this run stored on entries, for `forgetStored()` at the end: the
+// default realm outlives the job.
+const storedHere = [];
 
 async function mintTheCredentials() {
   log.debug("Entering mintTheCredentials().");
@@ -455,7 +461,11 @@ async function mintTheCredentials() {
     subject: "CN=" + ROGUE_CN + ",OU=remote-peps,O=iya-sts tests" });
   xacmlUser = await credentials.mint({
     subject: "CN=" + XACML_USER_CN + ",OU=xacml-users,O=iya-sts tests" });
-  for (const one of [trusted, rogue, xacmlUser]) {
+  // ITS CN IS THE ADMITTED PEP'S (#1061): if a common name still named an
+  // entry this certificate would be admitted. Stored nowhere, it is nobody.
+  unstored = await credentials.mint({
+    subject: "CN=" + PEP_CN + ",OU=remote-peps,O=iya-sts tests" });
+  for (const one of [trusted, rogue, xacmlUser, unstored]) {
     const posted = await credentials.trustAnchor(base, one.anchorPem);
     assert.ok(posted.ok, "POST /admin-api/tls/trust/add should accept the " +
       "Root CA this " +
@@ -1306,10 +1316,31 @@ async function registeringAPep() {
       "this needs to know the handshake is not the problem — otherwise they " +
       "regenerate a certificate that was never wrong. It says: " +
       rogueTried.body.error_description);
-    assert.ok(String(rogueTried.body.error_description)
-                .indexOf("cn=" + ROGUE_CN.toLowerCase()) > 0,
+    // The entry STORING the certificate (#1061), which this job made with
+    // `/admin-api/users/create` — so `uid=`, where the CN-named seed was
+    // `cn=`. Either attribute: what is asserted is WHICH entry.
+    assert.ok(new RegExp("(cn|uid)=" + ROGUE_CN.toLowerCase() + ",")
+                .test(String(rogueTried.body.error_description)
+                  .toLowerCase()),
       "and it should name the entry the certificate resolved to, which is " +
       "what somebody adds to the group: " + rogueTried.body.error_description);
+  });
+
+  // ---- AN OUTSIDE CERTIFICATE STORED ON NO ENTRY (#1061) -------------------
+  // Same authority shape, same CN as the admitted PEP, and stored nowhere:
+  // until #1061 its common name made it remote-pep-1; now it resolves to
+  // nobody and the refusal says why (STS-XACML-0179, recorded, never sent).
+  const unstoredTried = await pepPost("/xacml/pep/register", {}, unstored);
+  check("a VERIFIED certificate stored on no entry is refused, whatever " +
+        "its CN says", function () {
+    assert.strictEqual(unstoredTried.status, 403,
+      "this certificate verifies and carries CN=" + PEP_CN + ", the admitted " +
+      "PEP's name, but no entry stores it; it must be refused. It answered " +
+      unstoredTried.status + " " + String(unstoredTried.text).slice(0, 300));
+    assert.ok(String(unstoredTried.body.error_description)
+                .indexOf("not stored") > 0,
+      "the refusal should say the certificate is stored on no entry: " +
+      unstoredTried.body.error_description);
   });
 
   const rogueRead = await pepGet("/xacml/pep/policies", rogue);
@@ -2261,6 +2292,14 @@ async function thePipAnswersInXacmlsOwnXml() {
 // THE RUN.
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
+// **AND SINCE #1061 (rcbj 2026-10-27) THE MEMBER IS THE ENTRY THE CERTIFICATE
+// IS STORED ON.** These certificates are an outside authority's, and such a
+// certificate names nobody by its CN any more: it is the one entry of the
+// realm storing it in `userCertificate`. So `admit()` makes the entry where
+// it is missing, STORES the leaf on it, and adds that entry to the group by
+// name — no longer a `cn=<CN>` DN that need not exist. The text below is the
+// arrangement it replaced.
+// ---------------------------------------------------------------------------
 // THE TWO CERTIFICATE IDENTITIES, ADMITTED BY THE WRITE A DEPLOYMENT MAKES
 // (2026-09-21). They were admitted by a SEED: development puts
 // `cn=xacml-user-1` in `xacml-users` and `cn=remote-pep-1` in `remote-peps` in
@@ -2275,13 +2314,13 @@ async function thePipAnswersInXacmlsOwnXml() {
 // too, because sections 9 and 10 read it with the same certificate; that
 // brings product to the state development starts in.
 // ---------------------------------------------------------------------------
-async function admit(prefix, commonName, group) {
+async function admit(prefix, commonName, group, minted) {
   log.debug("Entering admit(). " + prefix + " " + commonName + " " + group);
-  const where = await get(base + prefix + "/admin-api/groups");
-  assert.ok(where.status === 200 && where.body && where.body.usersDn,
-    "GET " + prefix + "/admin-api/groups should name the realm's usersDn; " +
-    "it answered " + where.status + " " + String(where.text).slice(0, 200));
-  const member = "cn=" + commonName + "," + where.body.usersDn;
+  if (minted) {
+    storedHere.push(await credentials.storeOnEntry({ get: get,
+      post: postJson }, base, prefix, commonName, minted.leaf.pem));
+  }
+  const member = commonName;
   const joined = await postJson(base + prefix + "/admin-api/groups/add-member",
                                 { group: group, member: member });
   assert.ok(joined.status === 200 && joined.body && joined.body.ok,
@@ -2294,9 +2333,13 @@ async function admit(prefix, commonName, group) {
 
 async function admitTheCertificates() {
   log.debug("Entering admitTheCertificates().");
-  await admit("/realm/" + REALM, XACML_USER_CN, "xacml-users");
-  await admit("", XACML_USER_CN, "xacml-users");
-  await admit("/realm/" + REALM, PEP_CN, "remote-peps");
+  await admit("/realm/" + REALM, XACML_USER_CN, "xacml-users", xacmlUser);
+  await admit("", XACML_USER_CN, "xacml-users", xacmlUser);
+  await admit("/realm/" + REALM, PEP_CN, "remote-peps", trusted);
+  // THE ROGUE IS STORED AND ADMITTED NOWHERE (#1061): stored, so it is
+  // somebody; in no group, so it holds nothing — section 7's case.
+  storedHere.push(await credentials.storeOnEntry({ get: get,
+    post: postJson }, base, "/realm/" + REALM, ROGUE_CN, rogue.leaf.pem));
   log.debug("Leaving admitTheCertificates().");
 }
 
@@ -2362,13 +2405,26 @@ program
   .parse(process.argv);
 base = String(program.opts().url || base).replace(/\/+$/, "");
 
+// The stored certificates come off first (#1061), whatever the verdict:
+// `forgetStored()` never throws.
+function forgetTheStored() {
+  log.debug("Entering forgetTheStored().");
+  log.debug("Leaving forgetTheStored().");
+  return credentials.forgetStored({ get: get, post: postJson }, base,
+                                  storedHere);
+}
+
 test().then(function () {
-  return credentials.settleAnchors(base, addedAnchors, null);
+  return forgetTheStored().then(function () {
+    return credentials.settleAnchors(base, addedAnchors, null);
+  });
 }, function (e) {
   // Cleanup still runs, and the original failure is passed through
   // settleAnchors(), which rethrows it.
   log.debug("Caught in test(): " + ((e && e.message) || e));
-  return credentials.settleAnchors(base, addedAnchors, e);
+  return forgetTheStored().then(function () {
+    return credentials.settleAnchors(base, addedAnchors, e);
+  });
 }).catch(function (e) {
   log.error(e.stack || e.message);
   process.exit(1);

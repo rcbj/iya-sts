@@ -738,17 +738,21 @@ const SCHEME_DESCRIPTIONS = Object.freeze({
     'that VERIFIED against an anchor in the client truststore ' +
     '(/admin/tls/trust) — so on ' +
     'the main port only when it is bound as HTTPS (global.https, which ' +
-    'oauth2.rfc9700 turns on). The identity is the subject in RFC 4514 ' +
-    'form, which is the same string /admin/users and the directory ' +
-    'already file a certificate under. It is not recorded again here: ' +
+    'oauth2.rfc9700 turns on). A certificate from an outside ' +
+    'certificate authority (an anchor somebody added) is the person or ' +
+    'application whose entry stores it, byte for byte, in ' +
+    'userCertificate, and nothing else: stored on no entry or on several, ' +
+    'it is not this credential (STS-SCIM-0084, STS-SCIM-0085). A ' +
+    'person\'s certificate this realm issued is filed under its subject ' +
+    'in RFC 4514 form. It is not recorded again here: ' +
     'tls_server.js records a certificate once per CONNECTION on ' +
     'purpose, and counting it per request would undo that from the ' +
     'other end. A certificate this realm issued to an APPLICATION is ' +
     'that application, and may do only what its oauthAllowedScope ' +
     'declares: the read scope to read and the write scope to write, ' +
     'asked on every request, so one that declares neither is refused ' +
-    '(STS-SCIM-0083). A person\'s certificate, or one from an anchor ' +
-    'somebody added, may do both.'
+    '(STS-SCIM-0083). A person\'s certificate, issued here or stored ' +
+    'on their entry, may do both.'
 });
 
 // Why an ON `scim.authDigest` is not an offered scheme in product mode.

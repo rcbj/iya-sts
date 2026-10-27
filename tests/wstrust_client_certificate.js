@@ -26,7 +26,12 @@
 //      the revoked one in development too;
 //   E. not this credential: an unverified certificate, and any certificate
 //      with `wstrust.acceptClientCertificate` off — product then refuses
-//      for want of a credential (0010).
+//      for want of a credential (0010);
+//   F. an outside authority's certificate (#1061): refused stored on no
+//      entry (0038) though its CN names a person, accepted as the person
+//      whose entry stores it, a renewed one with the same subject refused,
+//      the stored one refused on revocation (0034), and refused stored on
+//      two entries (0039).
 //
 // `STS-WSTRUST-0036` (the holder's record no longer lists the certificate)
 // is `stillHeld()`'s answer, held by `certificate_holder_rename.js` and
@@ -336,6 +341,57 @@ async function childBody() {
   t.check(r.status === 200 && />anonymous</.test(r.body),
           'E3. development, with no credential it can use, is anonymous as ' +
           'before', brief(r));
+
+  // -------------------------------------------------------------------------
+  // F. AN OUTSIDE AUTHORITY'S CERTIFICATE (#1061): the one entry storing it
+  // -------------------------------------------------------------------------
+  const outsideCa = require(ROOT + '/tests/tools/pep-credential.js');
+  const first = await outsideCa.mint({ subject: 'CN=wccdave,O=Outside',
+                                       crlBase: '' });
+  const renewed = await outsideCa.mint({ subject: 'CN=wccdave,O=Outside',
+                                         crlBase: '' });
+  ldap.createUser('wccdave', { invent: false });
+  const derOf = function (pem) {
+    log.debug("Entering derOf().");
+    log.debug("Leaving derOf().");
+    return new nodeCrypto.X509Certificate(pem).raw;
+  };
+  const outsideConn = function (minted, revocation) {
+    log.debug("Entering outsideConn().");
+    log.debug("Leaving outsideConn().");
+    return { socket: socketFor(minted.leaf.pem, [minted.issuing.pem]),
+             revocation: revocation || null };
+  };
+  r = ask('product', {}, outsideConn(first));
+  t.check(failed(r, 'STS-WSTRUST-0038') && !/>wccdave</.test(r.body),
+          'F1. an outside certificate stored on no entry is ' +
+          'STS-WSTRUST-0038, though its CN names a person who exists',
+          brief(r));
+  const stored = ldap.changeStoredCertificate('person', 'wccdave',
+                                              { add: derOf(first.leaf.pem) });
+  t.check(stored.ok && stored.changed,
+          'precondition: the certificate is stored on wccdave',
+          JSON.stringify(stored));
+  r = ask('product', {}, outsideConn(first));
+  t.check(r.status === 200 && />wccdave</.test(r.body) &&
+          /TLSClient/.test(r.body) && r.signIn &&
+          r.signIn.username === 'wccdave',
+          'F2. stored on wccdave\'s entry, it authenticates wccdave',
+          brief(r));
+  r = ask('product', {}, outsideConn(renewed));
+  t.check(failed(r, 'STS-WSTRUST-0038'),
+          'F3. a renewed certificate with the same subject is not the one ' +
+          'stored: STS-WSTRUST-0038 until it is stored too', brief(r));
+  r = ask('product', {}, outsideConn(first, revoked));
+  t.check(failed(r, 'STS-WSTRUST-0034'),
+          'F4. the stored certificate refused on revocation is ' +
+          'STS-WSTRUST-0034', brief(r));
+  ldap.changeStoredCertificate('person', 'wccbob',
+                               { add: derOf(first.leaf.pem) });
+  r = ask('product', {}, outsideConn(first));
+  t.check(failed(r, 'STS-WSTRUST-0039'),
+          'F5. stored on two entries it names nobody: STS-WSTRUST-0039',
+          brief(r));
   log.debug("Leaving childBody().");
   return t.rows;
 }

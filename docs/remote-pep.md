@@ -96,14 +96,21 @@ who and the group says whether**:
    in a PEM file named by `tls.trustAnchorsFile`, read at startup. An anchor
    added at runtime is written to `ou=trustAnchors` in the default realm's
    directory, so it survives a restart wherever the directory is persisted.
-2. **A subject DN that resolves to a directory entry.** A certificate resolving
-   to no entry is an unauthenticated caller however well it verifies.
+2. **That certificate, stored on the PEP's directory entry.** The leaf is
+   stored byte for byte in the entry's `userCertificate` — the person page's
+   **Stored certificates**, or `POST /admin-api/users/add-certificate` — and
+   on no other entry. Its common name and subject are never read. A
+   certificate stored on no entry resolves to nobody and is refused
+   (`STS-XACML-0179`), and one stored on two entries too (`STS-XACML-0180`).
+   A renewed certificate is stored again ([TLS](tls.md#a-certificate-from-an-outside-certificate-authority)).
 3. **That entry in the group `roles.remotePepGroup` names** — `remote-peps` by
    default, which is what grants the built-in `REMOTE_PEPS` role.
 
 `cn=remote-pep-1` and `cn=remote-peps` are **seeded in every realm** with the
-first already a member of the second, so using that common name costs you only
-step 1. A second enforcement point needs its own entry and its own membership.
+first already a member of the second, so using that entry costs you steps 1
+and 2: the certificate is minted outside this service, so no seed can store
+it. A second enforcement point needs its own entry, its stored certificate and
+its own membership.
 **In development mode.** In product mode the group (named by
 `roles.remotePepGroup`) is seeded EMPTY and `cn=remote-pep-1` is not seeded at all —
 a predictable identity printed in this repository is not a grant a deployment should
@@ -129,6 +136,22 @@ so set `STS_ADMIN_API_TOKEN` to a management API token first, and it verifies
 the service's certificate on that call, so node must trust the service's Root
 (for example through `NODE_EXTRA_CA_CERTS`). It writes `pep.crt` (the leaf **followed by** the issuing CA),
 `pep.key`, `ca.crt` and `chain.txt`, and prints the leaf's DN as its last line.
+
+**Then store the leaf on the PEP's entry**, in the realm it will pull from —
+the first certificate in `pep.crt`, not the issuing CA after it. The tool
+does it when given `--store-on=<username>` (and `--realm=<id>` for a realm
+other than the default), through the same API call as by hand:
+
+```bash
+openssl x509 -in /tmp/pep-certs/pep.crt -out /tmp/pep-certs/pep-leaf.crt
+api users/add-certificate "$(jq -n --rawfile pem /tmp/pep-certs/pep-leaf.crt \
+  '{user:"remote-pep-1", certificate:$pem}')"
+```
+
+Until it is stored, the PEP's certificate verifies and is still refused
+(`STS-XACML-0179`). A deployment upgraded from a version that matched the
+PEP by its common name stores it **before** the upgrade, or the PEP is cut off
+until it does; nothing migrates it.
 
 To hand these to the compose service:
 
@@ -460,10 +483,10 @@ cargo run --manifest-path rust/Cargo.toml --release -p xacml-pep
 **The policy repository and the directory are both per realm**, so the policies
 it pulls, the group membership that admits it and the attributes its PIP queries
 resolve are all that realm's. `cn=remote-pep-1` and `cn=remote-peps` are seeded
-in every realm; a PEP under a different common name needs its entry and its
-membership created **in the realm it will pull from**, and a certificate that
-works against the default realm authenticates to no entry in `acme` if that name
-is not there.
+in every realm; a PEP's entry, its **stored certificate** and its membership
+are needed **in the realm it will pull from**, and a certificate stored on an
+entry of the default realm authenticates to no entry in `acme` unless it is
+stored there too.
 
 ## What guards this
 

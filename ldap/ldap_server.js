@@ -20909,7 +20909,7 @@ const SERVICE_SENTENCES = Object.freeze({
     'has an entry, and one from an outside certificate authority is the ' +
     'entry it is stored on in userCertificate, or nobody — its common ' +
     'name and subject are never read as a name. A ' +
-    'DECENTRALIZED IDENTIFIER is the third shape and is neither a name nor ' +
+    'DECENTRALIZED IDENTIFIER is another shape and is neither a name nor ' +
     'a DN: an issued credential\'s did:jwk subject, whatever DID presents ' +
     'to the OID4VP Verifier. Its entry goes ' +
     'at uid=did-<12 hex of the SHA-256 of the DID>,{{usersDn}} — a ' +

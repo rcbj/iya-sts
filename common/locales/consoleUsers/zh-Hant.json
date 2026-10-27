@@ -875,5 +875,17 @@
   "personFieldsSection.policyRequired": " 此領域的屬性原則要求它。",
   "newUserBody.requiredEnforced": "此領域中每個人都必須持有 <strong>{list}</strong>，缺少其中任何一項的建立都會被拒絕；下方每個這樣的欄位都標示為必填，留空的 <code>cn</code> 會由名字和姓氏組成。該清單來自",
   "newUserBody.requiredNotEnforced": "此領域的屬性原則列出 <strong>{list}</strong>；開發模式下不強制執行，因此這裡接受缺少它們的建立。該清單來自",
-  "newUserBody.requiredPolicy": "屬性原則"
+  "newUserBody.requiredPolicy": "屬性原則",
+  "mfaSection.certificatesHeading": "已儲存的憑證",
+  "mfaSection.certificatesLead": "來自外部憑證授權單位（透過用戶端信任存放區受信任）的憑證，只有在它逐位元組儲存於此處的 <code>userCertificate</code> 中、且未儲存在該領域的任何其他項目上時，才能讓此人登入。不會讀取憑證的一般名稱或主體；續期的憑證需要重新儲存。仍會檢查撤銷狀態。",
+  "mfaSection.certThSubject": "主體",
+  "mfaSection.certThIssuer": "簽發者",
+  "mfaSection.certThValidity": "有效期間",
+  "mfaSection.certExpired": "已過期",
+  "mfaSection.certRemoveTip": "從項目中移除此憑證。此後它不能讓任何人登入。",
+  "mfaSection.certAddLabel": "憑證（PEM 或 base64 DER）",
+  "mfaSection.certAddTip": "一張葉憑證。簽發它的授權單位應放入用戶端信任存放區，而不是這裡。",
+  "mfaSection.certAdd": "儲存",
+  "mfaSection.certAddTitle": "將此憑證儲存到項目上",
+  "mfaSection.certNeedsWrite": "儲存或移除憑證需要 <strong>Admin Write</strong>。"
 }

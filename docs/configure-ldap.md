@@ -494,8 +494,18 @@ says who it is. Two settings in the **Listener: LDAPS** group change that:
 | `ldap.ldapsDisableOptionalClientCertificate` | `true` | Off asks every connection for a certificate and requires none. |
 | `ldap.ldapsRequireClientCertificate` | `false` | On refuses at the handshake any connection without a certificate that chains to the client truststore. Wins over the row above. |
 
-A certificate presented to 636 is verified but **binds nobody**. There is no
-SASL EXTERNAL. The bind still decides who the connection is.
+A certificate presented to 636 is verified, and binds only through **SASL
+EXTERNAL** (`ldapsearch -Y EXTERNAL`): as the person this service issued it
+to, or — for one from an outside certificate authority — as the one person
+entry that stores it in `userCertificate`. See [LDAP](ldap.md), *Binding with
+a client certificate*. A simple bind still decides who the connection is.
+
+To store an outside certificate on the person first:
+
+```bash
+api users/add-certificate "$(jq -n --rawfile pem ldaps-run1.pem \
+  '{user:"ldaps-run1", certificate:$pem}')"
+```
 
 **Console:** on **Server configuration → Listeners**, change the row in the
 **Listener: LDAPS** group and click **Save Listener: LDAPS**.

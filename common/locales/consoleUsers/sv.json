@@ -875,5 +875,17 @@
   "personFieldsSection.policyRequired": " Sfärens attributpolicy kräver det.",
   "newUserBody.requiredEnforced": "Varje person i den här sfären måste ha <strong>{list}</strong>, och att skapa en person utan något av dem nekas; varje sådant fält nedan är markerat som obligatoriskt, och ett tomt <code>cn</code> bildas av förnamn och efternamn. Listan kommer från ",
   "newUserBody.requiredNotEnforced": "Sfärens attributpolicy anger <strong>{list}</strong>; den tillämpas inte i utvecklingsläge, så att skapa en person utan dem godtas här. Listan kommer från ",
-  "newUserBody.requiredPolicy": "attributpolicyn"
+  "newUserBody.requiredPolicy": "attributpolicyn",
+  "mfaSection.certificatesHeading": "Lagrade certifikat",
+  "mfaSection.certificatesLead": "Ett certifikat från en extern certifikatutfärdare — betrodd genom klientförtroendelagren — loggar in den här personen bara så länge det är lagrat här, i <code>userCertificate</code>, byte för byte, och på ingen annan post i domänen. Inget läses ur ett certifikats vanliga namn eller subjekt, och ett förnyat certifikat lagras på nytt. Återkallelse kontrolleras fortfarande.",
+  "mfaSection.certThSubject": "Subjekt",
+  "mfaSection.certThIssuer": "Utfärdare",
+  "mfaSection.certThValidity": "Giltighet",
+  "mfaSection.certExpired": "har gått ut",
+  "mfaSection.certRemoveTip": "Ta bort certifikatet från posten. Därefter loggar det inte in någon.",
+  "mfaSection.certAddLabel": "Certifikat (PEM eller base64-kodad DER)",
+  "mfaSection.certAddTip": "Ett enda lövcertifikat. Utfärdaren som utfärdade det läggs i klientförtroendelagren, inte här.",
+  "mfaSection.certAdd": "Lagra",
+  "mfaSection.certAddTitle": "Lagra certifikatet på posten",
+  "mfaSection.certNeedsWrite": "Att lagra eller ta bort ett kräver <strong>Admin Write</strong>."
 }

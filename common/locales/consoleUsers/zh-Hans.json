@@ -875,5 +875,17 @@
   "personFieldsSection.policyRequired": " 此领域的属性策略要求它。",
   "newUserBody.requiredEnforced": "此领域中每个人都必须持有 <strong>{list}</strong>，缺少其中任何一项的创建都会被拒绝；下方每个这样的字段都标记为必填，留空的 <code>cn</code> 会由名字和姓氏组成。该列表来自",
   "newUserBody.requiredNotEnforced": "此领域的属性策略列出 <strong>{list}</strong>；开发模式下不强制执行，因此这里接受缺少它们的创建。该列表来自",
-  "newUserBody.requiredPolicy": "属性策略"
+  "newUserBody.requiredPolicy": "属性策略",
+  "mfaSection.certificatesHeading": "已存储的证书",
+  "mfaSection.certificatesLead": "来自外部证书颁发机构（通过客户端信任存储受信任）的证书，只有在它逐字节存储于此处的 <code>userCertificate</code> 中、且未存储在该领域的任何其他条目上时，才能让此人登录。不会读取证书的通用名称或主题；续期的证书需要重新存储。仍会检查吊销状态。",
+  "mfaSection.certThSubject": "主题",
+  "mfaSection.certThIssuer": "颁发者",
+  "mfaSection.certThValidity": "有效期",
+  "mfaSection.certExpired": "已过期",
+  "mfaSection.certRemoveTip": "从条目中移除此证书。此后它不能让任何人登录。",
+  "mfaSection.certAddLabel": "证书（PEM 或 base64 DER）",
+  "mfaSection.certAddTip": "一张叶证书。颁发它的机构应放入客户端信任存储，而不是这里。",
+  "mfaSection.certAdd": "存储",
+  "mfaSection.certAddTitle": "将此证书存储到条目上",
+  "mfaSection.certNeedsWrite": "存储或移除证书需要 <strong>Admin Write</strong>。"
 }

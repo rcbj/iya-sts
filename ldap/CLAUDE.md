@@ -3795,9 +3795,15 @@ changing it; the block headed *THE CERTIFICATE BIND* above `server.bind` in
   is refused; nothing is read off a CN or subject and no entry is created.
   An APPLICATION's certificate is refused (`0185`) by #106's rule that only a
   person binds. **A certificate from an outside authority trusted through
-  `/admin/tls/trust` (`issuedHere: false`) is refused (`0182`)** — rcbj
-  wants such a certificate to bind only an entry configured for it ahead of
-  time, and how is a follow-up ticket, not this one. The authzId (section
+  `/admin/tls/trust` (`issuedHere: false`) was refused (`0182`, retired)
+  until #1061**, which is how such an entry is now "configured ahead of
+  time": the gate is asked `{ stored: true }`, and the certificate binds as
+  the one PERSON entry of the bind's realm storing it in `userCertificate`
+  (`common/CLAUDE.md` 3ag) — `getEntry(identity.dn)`, not a name lookup.
+  Stored on no entry it is `0192`, on more than one `0193`; stored on an
+  application it is `0185` like an application's issued certificate. The
+  root DSE's `tls.saslExternal.outsideCertificateAuthorities` is `true`
+  since. The authzId (section
   5.2.1.8) is honoured only as `dn:` or `u:` naming the same entry (`0189`,
   50); a non-empty bind name is held to the same (`0190`). Each other refusal
   has its own code, `0178`–`0188`. It is the same in both modes and has no
@@ -3805,7 +3811,10 @@ changing it; the block headed *THE CERTIFICATE BIND* above `server.bind` in
 * **THE REALM** of an EXTERNAL bind with no name is the authzId's `dn:`
   where one is sent, else the realm whose Issuing CA signed the certificate
   — `externalBindRealmDn()`, which the realm wrapper asks when the DN is
-  empty. A certificate held against another realm's DN is `0184`.
+  empty. A certificate held against another realm's DN is `0184`. **An
+  outside certificate names no realm**, so its empty bind is in the DEFAULT
+  realm; a person of another realm sends `dn:<their DN>`, and the store is
+  looked up in that realm.
 * **THE SOCKET IS THE FRONT PROCESS'S, THE DECISION IS WHEREVER THE BIND
   RUNS.** `withConnectionCertificate()`, the bind's outermost wrapper, reads
   the certificate (`revocation_status.fromSocket()`) and awaits its
@@ -4003,3 +4012,47 @@ this directory's:
 * **`peopleMissing()` IS A WALK**, said at the function: no index records
   what an entry LACKS. It answers null in a windowed process, where the
   directory is in the store, and the page gives the RFC 4515 filter instead.
+
+## `userCertificate`: WHAT AN OUTSIDE CERTIFICATE IS STORED IN, AND HOW IT IS FOUND (#1061, 2026-10-27)
+
+The rule is `common/CLAUDE.md` 3ag. This file owns where the certificate is
+and how a presented one finds it:
+
+* **STORED AS RFC 4522 SAYS**, `userCertificate;binary`, base64 DER — what
+  `@ldapjs/attribute` hands a handler for a `;binary` type and what an
+  `ldapsearch` reads back as a certificate. The bare type is read too (base64
+  or PEM), so a hand-written entry is not silently unlike one written here.
+  `changeStoredCertificate()` is the one writer the console and `/admin-api`
+  use (never creates an entry, touches the DN it wrote);
+  `storedCertificatesOf()` reads; an LDAP modify writes the same attribute
+  under product mode's write authorization. **It is deliberately NOT in
+  `CREDENTIAL_ATTRIBUTE_DOORS`** — rcbj named LDAP as a door for it, and
+  #237's reason for refusing a credential over the socket (its door signals
+  and checks what LDAP cannot) does not apply to a public certificate.
+* **FOUND BY AN INDEX, NEVER A WALK OF THE PEOPLE** (`certificateHolders()`,
+  offered on certificate enrollment's slot). In a windowed process the store
+  answers: `persistence/directory_codec.js` writes a DERIVED value key,
+  `usercertificatesha256` = the SHA-256 of each stored DER, into
+  `value_keys`, and `byAttribute` asks it — one GIN probe, no schema version
+  (the column is the service's), and an entry written before #1061 has no key
+  until it is next written, which storing the certificate is. The resident
+  half (applications; everything, outside a window) is the user-handle
+  index's arrangement: built from the holders, CHECKED (a hit is read back
+  and its digest recomputed), on its own clock `certificatesVersion`, moved by
+  `noteCertificatesTouched()` from `touchDirectory()` only for a write naming
+  no DN, one to an entry the index holds, or one to an entry now storing a
+  certificate — so a sign-in's own writes do not rebuild it.
+  `certificateIndexState()` exposes it for the tests.
+* **WHAT A HOLDER IS**: under `ou=users`, a person (by `uid`, else the RDN
+  value); under `ou=applications` with an `appIdentifier`, that
+  application; anything else, an entry that is no identity, which the gate
+  refuses as `NOT_STORED` (but counts towards "stored twice"). At most three
+  are answered: the caller asks only whether there is exactly one.
+* **NO ENTRY IS SEEDED FROM AN OUTSIDE CERTIFICATE ANY MORE**:
+  `tls_server.js` no longer records one at the handshake, so
+  `certificatePlan()`'s `cn=<CN>,ou=users` placement is reached only by a
+  certificate this service issued (whose person exists) and by the XACML
+  registry's naming of one (`certificateIdentity()`, which writes nothing).
+  Entries it seeded before stay, and sign nobody in unless the certificate is
+  stored on them.
+

@@ -1341,6 +1341,12 @@ postgres driver writes and reads every entry through it.
   column and its index are unchanged, only what the service writes into
   them, and a row written before is not rewritten (it is found again once
   next written).
+* **AND ONE DERIVED KEY SINCE #1061 (2026-10-27): `usercertificatesha256`**,
+  the SHA-256 of each certificate stored in `userCertificate` (either
+  spelling; `certificateDigestsOf()`), not the base64 value itself, which is
+  a kilobyte. No attribute of that name exists on any entry; it is an index
+  key only, and the same no-schema-version reasoning holds. Why a presented
+  certificate is looked up by it is `ldap/CLAUDE.md`, *`userCertificate`*.
 * **A QUERY IS KEYED AND OPENED ON THE THREAD THAT HOLDS THE KEYS.** The
   windowed directory's bridge thread builds a statement and shapes its rows
   with no keystore, so `persistence.js` wraps the bridge: `keyArgs()` before

@@ -7100,6 +7100,20 @@ never ride a redirect's query string. The three settings are in the existing
 *Second-factor requirement* group, so `SETTING_HOMES` gained no row.
 `authn/CLAUDE.md` owns the rule; `mgmt-api/CLAUDE.md` has the API twin.
 
+## A PERSON'S STORED CERTIFICATES ON `/admin/users` (#1061, 2026-10-27)
+
+A **Stored certificates** block on the person's Credentials tab lists what
+their entry stores in `userCertificate` (`GET /admin-api/users/certificates`:
+SHA-256, subject, issuer, serial, validity, expired), with **Remove** per row
+(`remove-certificate`, by SHA-256) and a PEM box with **Store**
+(`add-certificate`) — the same `usersAction()` acts the API reaches, so rule 7
+holds by construction; Admin Write for either. It exists because a
+certificate from an outside authority signs its holder in only while it is
+stored on their entry and no other (`common/CLAUDE.md` 3ag), so this is where
+an operator says ahead of time which certificate is whose. The Attributes
+tab's editor still does not offer `userCertificate`: its value is binary, and
+this block is its door. `mgmt-api/CLAUDE.md` has the API twin.
+
 ## `/admin/mail` AND `/admin/mail/outbox`: THE MAIL CHANNEL'S TWO PAGES (2026-09-22, #63)
 
 One module, `mail_admin.ts`, filed in two sections by the console's filing

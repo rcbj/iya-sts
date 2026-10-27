@@ -2033,6 +2033,22 @@ unpaged in `factors.appPasswords` (bounded by `appPasswords.maxPerPerson`,
 at most fifty), the precedent `admin_views.ts` sets for a list that cannot
 grow past fifty.
 
+## STORED CERTIFICATES (#1061, 2026-10-27)
+
+Two more users actions — `add-certificate` (`user`, `certificate`: one PEM
+block or base64 DER, the leaf only) and `remove-certificate` (`user`,
+`sha256`) — through `admin-core/admin_actions.ts`'s
+`storedCertificateAction()`, each audited (`certificate.stored`,
+`certificate.unstored`) and a CAEP `credential-change` of type `x509`; and
+`GET /admin-api/users/certificates?user=` (`storedCertificatesOf()`),
+mirroring the Stored certificates block on the person's `/admin/users` page.
+Refusals: not one certificate `STS-ADMIN-0897`, no such person `0898` (no
+entry is created), already stored on another entry `0899`, not stored here
+`0900`. Why the doors need it is `common/CLAUDE.md` 3ag. The OpenAPI rows are
+in the `POST /users/:action` table; the rule-7 parity job
+(`sts_admin_api_operations`) needs a stack and was not run in #1061's
+session.
+
 ## A REALM'S OWN TOKEN (2026-09-14, #32)
 
 A trust realm has administrators of its own (`admin-ui/CLAUDE.md` 8d), and rule 7

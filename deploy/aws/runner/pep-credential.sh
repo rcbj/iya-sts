@@ -13,6 +13,12 @@
 # Root through POST /admin-api/tls/trust/add), and leave them on the task's shared volume at
 # /shared/pep, with server/ made for the listener pair the job writes later.
 #
+# THE LEAF IS NOT STORED ON AN ENTRY HERE (#1061). An outside authority's
+# certificate is an identity only while it is stored in userCertificate on
+# the PEP's entry, and that entry lives in the realm sts_xacml_remote_pep
+# creates later; the job reads /shared/pep/pep.crt (beside
+# XACML_PEP_SERVER_CERT_DIR) and stores it itself before admitting the PEP.
+#
 # A FAILURE IS NOT THE RUN'S: the PEP starts without a certificate, every
 # /xacml/pep call it makes is refused, and sts_xacml_remote_pep says so. The
 # container exits 0 either way so the PEP's `COMPLETE` dependency is met.
