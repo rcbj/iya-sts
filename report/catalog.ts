@@ -52,8 +52,8 @@ const CREDENTIALS = ['userPassword', 'unicodePwd', 'ntPassword', 'krb5Key',
 // attribute-source register.
 const GROUPABLE = ['status', 'enabled', 'type', 'protocol', 'category',
   'action', 'outcome', 'format', 'family', 'application', 'day',
-  'mechanism', 'dialect', 'mode', 'onFailure', 'role', 'algorithms',
-  'lanes'];
+  'mechanism', 'dialect', 'mode', 'onFailure', 'role', 'algorithm',
+  'lane'];
 
 // Scalars a filter may name and a sort may not. `members` is not in this
 // list because it cannot be filtered either.
@@ -281,19 +281,20 @@ function standardSources(): SourceSpec[] {
          'enrolment and enforced at sign-in.', undefined, HOLDER_ROLES),
        field('credentials', 'number',
          'How many credentials of this mechanism and role the person ' +
-         'holds.'),
-       field('algorithms', 'string',
-         'The signature algorithms of those credentials, distinct, ' +
-         'joined: a passkey\'s JOSE name (ES256, ML-DSA-65), an ' +
-         'authenticator app\'s HMAC algorithm.'),
-       field('lanes', 'string',
-         'A passkey\'s lanes (classical, pqc), distinct, joined.'),
+         'holds; the same on each of their rows (#1011).'),
+       field('credentialId', 'string',
+         'This credential\'s own id: a passkey\'s credential id, or what ' +
+         'the stored value names itself (#1011, one row per credential).'),
+       field('algorithm', 'string',
+         'This credential\'s signature algorithm: a passkey\'s JOSE name ' +
+         '(ES256, ML-DSA-65), an authenticator app\'s HMAC algorithm.'),
+       field('lane', 'string',
+         'A passkey\'s lane, classical or pqc; empty for the others.',
+         undefined, ['classical', 'pqc']),
        field('enrolledAt', 'timestamp',
-         'When the earliest of those credentials was enrolled, where the ' +
-         'credential records it.'),
+         'When this credential was enrolled, where it records it.'),
        field('lastUsedAt', 'timestamp',
-         'When the latest of those credentials was last used, where the ' +
-         'credential records it.'),
+         'When this credential was last used, where it records it.'),
        field('methodsUsed', 'string',
          'The RFC 8176 methods the person has ever signed in with here ' +
          '(authnMethod), joined.'),

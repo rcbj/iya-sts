@@ -48,14 +48,15 @@ function stamp(value: unknown): number | null {
 }
 
 // THE FIELDS THAT ARE A LIST DRAWN AS ONE STRING (#1002, found on 8081): a
-// person's groups, a credential set's algorithms and lanes, the methods a
-// person has used are joined with ', ' into the row. `eq`, `ne` and `in` on
+// person's groups and the methods a person has used are joined with ', '
+// into the row (a credential's algorithm and lane were, until #1011 made a
+// credential a row of its own). `eq`, `ne` and `in` on
 // one of them are asked of EACH value, not of the joined string — a person
 // in three groups is in each of them, and the indexed read of a group's
 // members found rcbj in group1 only for the row filter to drop the row
 // because "group1, ssf-manage, ssf-read" is not "group1". `contains` and
 // `startsWith` keep working on the joined string.
-const LIST_FIELDS = ['memberOf', 'algorithms', 'lanes', 'methodsUsed'];
+const LIST_FIELDS = ['memberOf', 'methodsUsed'];
 
 function partsOf(field: string, value: unknown): unknown[] {
   log.debug("Entering partsOf().");

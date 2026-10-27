@@ -1105,6 +1105,14 @@ function reportHolderRows(entry: any, mechanism: any, ldap: any): any[] {
     memberOf: reportGroupNamesOf(ldap, entry).join(', ')
   };
   const out: any[] = [];
+  // ONE ROW PER CREDENTIAL (#1011, rcbj: "a separate row for each passkey
+  // + algorithm; the reports we need require this granular data"). Until
+  // then a row was a person's credentials of one mechanism and role, with
+  // the algorithms joined into one string, so a count by algorithm counted
+  // people and a mixed holder was one row. Now each credential is a row
+  // with its own algorithm, lane, id and dates; `credentials` is still the
+  // person's count of that mechanism and role, the same on each of their
+  // rows, so a count grouped by username is still how many each holds.
   if (mechanism.id === 'passkey') {
     const credentials = require('../common/credentials');
     const keys = credentials.keysOfValues(values, username);
@@ -1115,55 +1123,40 @@ function reportHolderRows(entry: any, mechanism: any, ldap: any): any[] {
     });
     Object.keys(byRole).sort().forEach(function (role: string): void {
       const held = byRole[role];
-      const algorithms: string[] = [];
-      const lanes: string[] = [];
       held.forEach(function (key: any): void {
         const alg = credentials.Credentials.keyAlgorithm(key);
-        if (algorithms.indexOf(alg.name) < 0) {
-          algorithms.push(alg.name);
-        }
-        if (alg.lane && lanes.indexOf(alg.lane) < 0) {
-          lanes.push(alg.lane);
-        }
+        out.push(Object.assign({}, common, {
+          role: role,
+          credentials: held.length,
+          credentialId: String(key.credentialId || ''),
+          algorithm: String(alg.name || ''),
+          lane: String(alg.lane || ''),
+          enrolledAt: reportMinIso([key.enrolledAt]),
+          lastUsedAt: reportMaxIso([key.lastUsedAt])
+        }));
       });
-      out.push(Object.assign({}, common, {
-        role: role,
-        credentials: held.length,
-        algorithms: algorithms.sort().join(', '),
-        lanes: lanes.sort().join(', '),
-        enrolledAt: reportMinIso(held.map(function (k: any): any {
-          return k.enrolledAt;
-        })),
-        lastUsedAt: reportMaxIso(held.map(function (k: any): any {
-          return k.lastUsedAt;
-        }))
-      }));
     });
     log.debug("Leaving reportHolderRows(). Passkeys, " + out.length +
       ' role(s).');
     return out;
   }
+  // Every other mechanism: one row per attribute value, which is one
+  // credential (an authenticator app, an enrolled certificate, a mail
+  // factor, a Kerberos key set), with what the value records.
   const parsed = reportParsedValues(values);
-  const algorithms: string[] = [];
-  parsed.forEach(function (one: any): void {
-    const name = String(one.algorithm || one.enctype || '');
-    if (name && algorithms.indexOf(name) < 0) {
-      algorithms.push(name);
-    }
+  parsed.forEach(function (one: any, i: number): void {
+    out.push(Object.assign({}, common, {
+      role: mechanism.role,
+      credentials: values.length,
+      credentialId: String(one.id || one.credentialId || one.serial ||
+        one.kvno || (i + 1)),
+      algorithm: String(one.algorithm || one.enctype || ''),
+      lane: '',
+      enrolledAt: reportMinIso([one.enrolledAt]),
+      lastUsedAt: reportMaxIso([one.lastUsedAt])
+    }));
   });
-  out.push(Object.assign({}, common, {
-    role: mechanism.role,
-    credentials: values.length,
-    algorithms: algorithms.sort().join(', '),
-    lanes: '',
-    enrolledAt: reportMinIso(parsed.map(function (one: any): any {
-      return one.enrolledAt;
-    })),
-    lastUsedAt: reportMaxIso(parsed.map(function (one: any): any {
-      return one.lastUsedAt;
-    }))
-  }));
-  log.debug("Leaving reportHolderRows().");
+  log.debug("Leaving reportHolderRows(). " + out.length + ' row(s).');
   return out;
 }
 
