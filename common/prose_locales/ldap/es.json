@@ -67,9 +67,21 @@
     "en": "55b2bbab540dbbb4",
     "text": "no hay dominios de confianza definidos, así que hay un solo contexto ({{root}}) y una búsqueda de subárbol desde él responde sobre todo el almacén"
   },
-  "ldap.service.sentences.clientCertificates": {
-    "en": "18c68f9d37420f1c",
-    "text": "nunca se solicitan. Esta escucha demuestra el SERVIDOR al cliente y nada más; un certificado de cliente que se le ofrezca no se pide y no sería un inicio de sesión si se pidiera. El puerto principal ({{port}}) es donde se piden y leen los certificados de cliente."
+  "ldap.service.sentences.clientCertificatesNone": {
+    "en": "e871e2b9901509f2",
+    "text": "no se solicitan: `ldap.ldapsDisableOptionalClientCertificate` está activado, así que LDAPS no envía ningún CertificateRequest y un bind por certificado (SASL EXTERNAL) se rechaza por falta de certificado. Desactive ese ajuste para pedir uno a cada conexión (opcional), o active `ldap.ldapsRequireClientCertificate` para exigirlo; cualquiera de los dos hace que SASL EXTERNAL esté disponible. El puerto principal ({{port}}) solicita certificados de cliente según sus propios ajustes."
+  },
+  "ldap.service.sentences.clientCertificatesOptional": {
+    "en": "872d11f2c2ff8a31",
+    "text": "se solicitan y no se exigen (opcional: `ldap.ldapsDisableOptionalClientCertificate` está desactivado). Una conexión que presente uno que se verifique contra el almacén de confianza de clientes puede hacer bind con SASL EXTERNAL; una sin certificado hace bind con contraseña como antes."
+  },
+  "ldap.service.sentences.clientCertificatesRequired": {
+    "en": "d4476c20b14dd318",
+    "text": "se exigen (`ldap.ldapsRequireClientCertificate` está activado): una conexión sin un certificado que se verifique contra el almacén de confianza de clientes se rechaza en el protocolo de enlace. Una conexión puede entonces hacer bind con SASL EXTERNAL, o con contraseña como antes."
+  },
+  "ldap.service.sentences.certificateBindRule": {
+    "en": "dd7c73ea70d88839",
+    "text": "SASL EXTERNAL vincula la conexión a la entrada de la persona a quien se emitió el certificado, y solo hace bind un certificado que este servicio emitió a una persona con una entrada en ese dominio: se rechaza uno revocado, de otro dominio, de una aplicación o de una autoridad de certificación externa de confianza mediante /admin/tls/trust (los certificados de una autoridad externa aún no se aceptan para binds LDAP). Una identidad de autorización solo se respeta cuando nombra esa misma entrada."
   },
   "ldap.service.sentences.certificateSource": {
     "en": "a969a038097605ed",

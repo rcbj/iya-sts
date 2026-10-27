@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4713** of them, in **48** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4727** of them, in **48** subsystems.
 
 ## Where a code appears
 
@@ -71,7 +71,7 @@ is an ordinary outcome.
 * [Federation (`STS-FED`)](#sts-fed) — 171
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 242
-* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 131
+* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 145
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
 * [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 34
@@ -3176,6 +3176,20 @@ Raised from: ldap/, persistence/bulk_import.js (STS-LDAP-0150 to 0161).
 | `STS-LDAP-0175` | A console or management-API request (#359) had already spent ldap.workerDirectoryBudgetMs waiting on synchronous directory reads, so the next question was refused and not asked. One slow question still fails as STS-LDAP-0130 when it exceeds its own timeout first. A request outside /admin and /admin-api has no such budget. | HTTP 503 with Retry-After; an LDAP operation answers unavailable (52) |
 | `STS-LDAP-0176` | GET /admin-api/ldap/devices or /admin-api/rbac failed to draw its page with something other than a store it could not read (#359: STS-LDAP-0130, 0131, 0139 and 0175 are the 503s) and with no code of its own: a fault in this service, answered as one and logged with the stack, never a "try again shortly". | HTTP 500 (server_error) |
 | `STS-LDAP-0177` | A group's mail address was refused: the value given to the console or the management API is not an email address. | a console/API refusal |
+| `STS-LDAP-0178` | A SASL bind named a mechanism other than EXTERNAL; this directory accepts SASL EXTERNAL only (#1047). | LDAP result code 7, authMethodNotSupported (RFC 4511 section 4.2.2) |
+| `STS-LDAP-0179` | A SASL EXTERNAL bind arrived on an LDAPS connection that carries no client certificate that verified against the client truststore — at the defaults LDAPS asks for none (ldap.ldapsDisableOptionalClientCertificate) (#1047). | LDAP result code 48, inappropriateAuthentication (RFC 4513 section 5.2.1.2) |
+| `STS-LDAP-0180` | A SASL EXTERNAL bind arrived on the plain LDAP listener, which has no TLS and so no client certificate (#1047). | LDAP result code 48, inappropriateAuthentication |
+| `STS-LDAP-0181` | A SASL EXTERNAL bind was refused because the connection's client certificate was refused on revocation, or its revocation status could not be established (#1047). | LDAP result code 49, invalidCredentials |
+| `STS-LDAP-0182` | A SASL EXTERNAL bind was refused because the connection's client certificate verified against an anchor in the client truststore but was not issued by this service; a certificate from an outside certificate authority binds nobody to the directory (#1047). | LDAP result code 49, invalidCredentials |
+| `STS-LDAP-0183` | A SASL EXTERNAL bind was refused because the connection's client certificate was issued by this service but is not a TLS client identity (no clientAuth, no single urn:sts:person: name, a holder or realm that is gone) (#1047). | LDAP result code 49, invalidCredentials |
+| `STS-LDAP-0184` | A SASL EXTERNAL bind was refused because the connection's client certificate was issued by another trust realm's authority than the realm the bind is in (#1047). | LDAP result code 49, invalidCredentials |
+| `STS-LDAP-0185` | A SASL EXTERNAL bind was refused because the connection's client certificate was issued to an application; only a person binds to this directory (#1047). | LDAP result code 49, invalidCredentials |
+| `STS-LDAP-0186` | A SASL EXTERNAL bind was refused because the connection's client certificate is no longer on its holder's record (#1047). | LDAP result code 49, invalidCredentials |
+| `STS-LDAP-0187` | A SASL EXTERNAL bind was refused because the person the connection's client certificate was issued to has no entry in the realm's directory; none is created (#1047). | LDAP result code 49, invalidCredentials |
+| `STS-LDAP-0188` | A SASL EXTERNAL bind was refused because the person the connection's client certificate names has a disabled account (#1047). | LDAP result code 49, invalidCredentials |
+| `STS-LDAP-0189` | A SASL EXTERNAL bind was refused because its authorization identity (dn: or u:) did not name the entry the certificate was issued to, or was in neither form (#1047). | LDAP result code 50, insufficientAccessRights (RFC 4513 section 5.2.1.8) |
+| `STS-LDAP-0190` | A SASL EXTERNAL bind was refused because its bind name was not empty and did not name the entry the certificate was issued to (#1047). | LDAP result code 49, invalidCredentials |
+| `STS-LDAP-0191` | The node-ldapjs in use does not support the saslMechanisms and bindDnFromHandler server options, so a SASL EXTERNAL bind cannot be decoded and its connection is closed (#1047). | none — logged at startup |
 
 ## STS-ATTR
 

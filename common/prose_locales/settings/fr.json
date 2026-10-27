@@ -5004,16 +5004,16 @@
     "text": "LDAPS : ne pas demander de certificat client"
   },
   "ldap.ldapsDisableOptionalClientCertificate|description": {
-    "en": "7e1993d7f889bc3c",
-    "text": "LDAPS n’envoie pas de CertificateRequest. ACTIVÉ par défaut, ce qu’a toujours fait LDAPS : un bind est la manière dont un client d’annuaire dit qui il est, et une demande de certificat devant chaque client qui en détient un est une surprise. Désactivé, un certificat est demandé à chaque connexion sans qu’aucun ne soit exigé ; un certificat présenté est vérifié par rapport au magasin de confiance client mais n’effectue le bind de personne (il n’y a pas de SASL EXTERNAL ici)."
+    "en": "7c1815ed4a7499c4",
+    "text": "LDAPS n’envoie aucun CertificateRequest. ACTIVÉ par défaut, ce que LDAPS a toujours fait : un bind est la façon dont un client d’annuaire dit qui il est, et une demande de certificat devant chaque client qui en détient un est une surprise. Désactivé, chaque connexion est invitée à présenter un certificat et aucune n’y est tenue ; un certificat présenté est vérifié par rapport au magasin de confiance client, et une connexion portant un certificat que ce service a délivré à une personne peut se lier en tant que cette personne avec SASL EXTERNAL."
   },
   "ldap.ldapsRequireClientCertificate|label": {
     "en": "eff4646ac01e4612",
     "text": "LDAPS : exiger un certificat client"
   },
   "ldap.ldapsRequireClientCertificate|description": {
-    "en": "2c73995bcc16b3fa",
-    "text": "LDAPS refuse, lors de la poignée de main, toute connexion qui ne présente pas de certificat client se rattachant au magasin de confiance client — une seconde barrière devant le bind, qui continue de décider de l’identité de la connexion. L’emporte sur l’interrupteur ci-dessus. Désactivé par défaut."
+    "en": "cfadc0b97c1bfaa8",
+    "text": "LDAPS refuse, lors de la négociation, toute connexion qui ne présente pas de certificat client remontant au magasin de confiance client — une seconde barrière devant le bind, qui décide toujours qui est la connexion : un mot de passe, ou SASL EXTERNAL avec un certificat que ce service a délivré à une personne. Prévaut sur l’option ci-dessus. Désactivé par défaut."
   },
   "debugger.disableOptionalClientCertificate|label": {
     "en": "df19c772421bba66",

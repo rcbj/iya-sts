@@ -1185,6 +1185,9 @@ class LdapPage {
       t.html('consoleLdap.service.fetchItEnd')) +
       kit.note(kit.esc(info.tls.clientCertificates) + ' ' +
       t.html('consoleLdap.service.noStartTls')) +
+      // WHO A CERTIFICATE BIND BINDS (#1047), beside whether 636 asks.
+      (info.tls.saslExternal && info.tls.saslExternal.rule
+        ? kit.note(kit.esc(info.tls.saslExternal.rule)) : '') +
       '<h2>' + t.html('consoleLdap.service.schemaHeading') + '</h2>' +
       kit.note(kit.esc(info.schema)) +
       '<h2>' + t.html('consoleLdap.service.enforceHeading') + '</h2>' +

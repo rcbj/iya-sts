@@ -14270,6 +14270,82 @@ const CODES = [
     summary: 'A group\'s mail address was refused: the value given to ' +
       'the console or the management API is not an email address.',
     spec: 'a console/API refusal' },
+  { code: 'STS-LDAP-0178',
+    summary: 'A SASL bind named a mechanism other than EXTERNAL; this ' +
+      'directory accepts SASL EXTERNAL only (#1047).',
+    spec: 'LDAP result code 7, authMethodNotSupported (RFC 4511 ' +
+      'section 4.2.2)' },
+  { code: 'STS-LDAP-0179',
+    summary: 'A SASL EXTERNAL bind arrived on an LDAPS connection that ' +
+      'carries no client certificate that verified against the ' +
+      'client truststore — at the defaults LDAPS asks for none ' +
+      '(ldap.ldapsDisableOptionalClientCertificate) (#1047).',
+    spec: 'LDAP result code 48, inappropriateAuthentication (RFC 4513 ' +
+      'section 5.2.1.2)' },
+  { code: 'STS-LDAP-0180',
+    summary: 'A SASL EXTERNAL bind arrived on the plain LDAP listener, ' +
+      'which has no TLS and so no client certificate (#1047).',
+    spec: 'LDAP result code 48, inappropriateAuthentication' },
+  { code: 'STS-LDAP-0181',
+    summary: 'A SASL EXTERNAL bind was refused because the connection\'s ' +
+      'client certificate was refused on revocation, or its ' +
+      'revocation status could not be established (#1047).',
+    spec: 'LDAP result code 49, invalidCredentials' },
+  { code: 'STS-LDAP-0182',
+    summary: 'A SASL EXTERNAL bind was refused because the connection\'s ' +
+      'client certificate verified against an anchor in the client ' +
+      'truststore but was not issued by this service; a certificate ' +
+      'from an outside certificate authority binds nobody to the ' +
+      'directory (#1047).',
+    spec: 'LDAP result code 49, invalidCredentials' },
+  { code: 'STS-LDAP-0183',
+    summary: 'A SASL EXTERNAL bind was refused because the connection\'s ' +
+      'client certificate was issued by this service but is not a ' +
+      'TLS client identity (no clientAuth, no single ' +
+      'urn:sts:person: name, a holder or realm that is gone) ' +
+      '(#1047).',
+    spec: 'LDAP result code 49, invalidCredentials' },
+  { code: 'STS-LDAP-0184',
+    summary: 'A SASL EXTERNAL bind was refused because the connection\'s ' +
+      'client certificate was issued by another trust realm\'s ' +
+      'authority than the realm the bind is in (#1047).',
+    spec: 'LDAP result code 49, invalidCredentials' },
+  { code: 'STS-LDAP-0185',
+    summary: 'A SASL EXTERNAL bind was refused because the connection\'s ' +
+      'client certificate was issued to an application; only a ' +
+      'person binds to this directory (#1047).',
+    spec: 'LDAP result code 49, invalidCredentials' },
+  { code: 'STS-LDAP-0186',
+    summary: 'A SASL EXTERNAL bind was refused because the connection\'s ' +
+      'client certificate is no longer on its holder\'s record ' +
+      '(#1047).',
+    spec: 'LDAP result code 49, invalidCredentials' },
+  { code: 'STS-LDAP-0187',
+    summary: 'A SASL EXTERNAL bind was refused because the person the ' +
+      'connection\'s client certificate was issued to has no entry ' +
+      'in the realm\'s directory; none is created (#1047).',
+    spec: 'LDAP result code 49, invalidCredentials' },
+  { code: 'STS-LDAP-0188',
+    summary: 'A SASL EXTERNAL bind was refused because the person the ' +
+      'connection\'s client certificate names has a disabled ' +
+      'account (#1047).',
+    spec: 'LDAP result code 49, invalidCredentials' },
+  { code: 'STS-LDAP-0189',
+    summary: 'A SASL EXTERNAL bind was refused because its authorization ' +
+      'identity (dn: or u:) did not name the entry the certificate ' +
+      'was issued to, or was in neither form (#1047).',
+    spec: 'LDAP result code 50, insufficientAccessRights (RFC 4513 ' +
+      'section 5.2.1.8)' },
+  { code: 'STS-LDAP-0190',
+    summary: 'A SASL EXTERNAL bind was refused because its bind name was ' +
+      'not empty and did not name the entry the certificate was ' +
+      'issued to (#1047).',
+    spec: 'LDAP result code 49, invalidCredentials' },
+  { code: 'STS-LDAP-0191',
+    summary: 'The node-ldapjs in use does not support the saslMechanisms ' +
+      'and bindDnFromHandler server options, so a SASL EXTERNAL ' +
+      'bind cannot be decoded and its connection is closed (#1047).',
+    spec: 'none — logged at startup' },
   // ===== ATTR ==============================================================
   { code: 'STS-ATTR-0001',
     summary: 'An attribute source\'s driver (or Knex) is not installed: the ' +

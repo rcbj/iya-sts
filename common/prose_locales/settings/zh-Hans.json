@@ -5004,16 +5004,16 @@
     "text": "LDAPS：不请求客户端证书"
   },
   "ldap.ldapsDisableOptionalClientCertificate|description": {
-    "en": "7e1993d7f889bc3c",
-    "text": "LDAPS 不发送 CertificateRequest。默认打开，这也是 LDAPS 一贯的做法：绑定是目录客户端表明身份的方式，而在每个持有证书的客户端面前弹出证书提示会令人意外。关闭时会向每个连接请求证书但不强制要求；出示的证书会对照客户端信任库进行验证，但不会绑定任何人（此处没有 SASL EXTERNAL）。"
+    "en": "7c1815ed4a7499c4",
+    "text": "LDAPS 不发送 CertificateRequest。默认开启，这正是 LDAPS 一贯的做法：绑定是目录客户端表明身份的方式，在每个持有证书的客户端前弹出证书提示会令人意外。关闭后会向每个连接请求证书但不强制；出示的证书会针对客户端信任库进行验证，携带本服务颁发给某人的证书的连接可以使用 SASL EXTERNAL 以该人员身份绑定。"
   },
   "ldap.ldapsRequireClientCertificate|label": {
     "en": "eff4646ac01e4612",
     "text": "LDAPS：要求客户端证书"
   },
   "ldap.ldapsRequireClientCertificate|description": {
-    "en": "2c73995bcc16b3fa",
-    "text": "LDAPS 在握手时拒绝每一个未出示链接到客户端信任库的客户端证书的连接——这是绑定之前的第二道关卡，连接的身份仍由绑定决定。优先于上面的开关。默认关闭。"
+    "en": "cfadc0b97c1bfaa8",
+    "text": "LDAPS 在握手时拒绝每个未出示链接到客户端信任库的客户端证书的连接——这是绑定之前的第二道关卡，绑定仍决定连接是谁：密码，或使用本服务颁发给某人的证书进行 SASL EXTERNAL。优先于上面的开关。默认关闭。"
   },
   "debugger.disableOptionalClientCertificate|label": {
     "en": "df19c772421bba66",

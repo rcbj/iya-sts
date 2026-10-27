@@ -10237,8 +10237,9 @@ const SETTINGS = [
                  'client holding one is a surprise. Off asks every ' +
                  'connection for a certificate and requires none; a ' +
                  'certificate presented is verified against the client ' +
-                 'truststore but does not bind anybody (there is no SASL ' +
-                 'EXTERNAL here).' },
+                 'truststore, and a connection carrying one this service ' +
+                 'issued to a person may bind as that person with SASL ' +
+                 'EXTERNAL.' },
   { key: 'ldap.ldapsRequireClientCertificate',
     group: 'Listener: LDAPS',
     label: 'LDAPS: require a client certificate',
@@ -10247,8 +10248,9 @@ const SETTINGS = [
     description: 'LDAPS refuses, at the handshake, every connection that ' +
                  'does not present a client certificate chaining to the ' +
                  'client truststore — a second gate in front of the bind, ' +
-                 'which still decides who the connection is. Wins over the ' +
-                 'toggle above. Off by default.' },
+                 'which still decides who the connection is: a password, ' +
+                 'or SASL EXTERNAL with a certificate this service issued ' +
+                 'to a person. Wins over the toggle above. Off by default.' },
   { key: 'debugger.disableOptionalClientCertificate',
     group: 'Listener: Protocol debugger',
     label: 'Debugger: do not ask for a client certificate',

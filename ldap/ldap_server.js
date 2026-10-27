@@ -15550,6 +15550,11 @@ populateVcAttributes();
 // handlers reach it because they were never scoped to a base in the first
 // place.
 // ---------------------------------------------------------------------------
+// The one SASL mechanism this directory accepts (#1047): EXTERNAL, RFC 4513
+// section 5.2.1.2, the identity the TLS layer established. Any other is
+// answered authMethodNotSupported (7) by node-ldapjs itself.
+const SASL_MECHANISMS = ['EXTERNAL'];
+
 // ---------------------------------------------------------------------------
 // TWO SERVERS, ONE SET OF HANDLERS.
 //
@@ -15576,9 +15581,14 @@ populateVcAttributes();
 // worth more than a TypeError out of a constructor, which is the same trade
 // every listen path here makes.
 // ---------------------------------------------------------------------------
+// `saslMechanisms` and `bindDnFromHandler` (#1047): SASL EXTERNAL reaches
+// the bind handler, which names the entry the connection is bound as. See
+// THE CERTIFICATE BIND, above the bind handler. On 389 it is refused there.
 const plainServer = ldap.createServer({ log: log,
                                        routeAnonymousBinds: true,
-                                       encodeErrorMessage: true });
+                                       encodeErrorMessage: true,
+                                       saslMechanisms: SASL_MECHANISMS,
+                                       bindDnFromHandler: true });
 
 // The TLS protocol policy, asked of the module that states it. An older copy of
 // `tls_server.js` without the function gets node's defaults, which is what
@@ -15687,6 +15697,8 @@ if (serverCertificate && serverCertificate.certPem &&
     log: log,
     routeAnonymousBinds: true,
     encodeErrorMessage: true,
+    saslMechanisms: SASL_MECHANISMS,
+    bindDnFromHandler: true,
     certificate: serverCertificate.certPem,
     key: serverCertificate.privateKeyPem,
     ca: tlsServer.clientTruststoreOptions(ldapsPolicy()).ca
@@ -15780,6 +15792,56 @@ function diagnosticMessagesEncoded(ldapServer) {
 
 servers.forEach(diagnosticMessagesEncoded);
 
+// ---------------------------------------------------------------------------
+// A SASL BIND REACHES THE BIND HANDLER, AND THE HANDLER NAMES WHO IS BOUND
+// (#1047, 2026-10-27).
+//
+// node-ldapjs could not decode a SASL bind at all — `@ldapjs/messages`
+// threw on the sasl choice and the connection was destroyed — and it bound
+// a connection as the request's NAME, which for SASL EXTERNAL is empty. The
+// fork's third and fourth changes: `saslMechanisms` decodes the bind, keeps
+// it out of the anonymous-bind shortcut and answers any mechanism not listed
+// with authMethodNotSupported (7); `bindDnFromHandler` lets the handler set
+// `res.bindDN`. Both are ASKED of each server, as the two options above
+// are, because an older submodule ignores them: it would close every
+// connection that tried a certificate bind (STS-LDAP-0191).
+// ---------------------------------------------------------------------------
+function saslExternalSupported(ldapServer) {
+  log.debug("Entering saslExternalSupported().");
+  const supported = !!(ldapServer &&
+                       Array.isArray(ldapServer._saslMechanisms) &&
+                       ldapServer._saslMechanisms.indexOf('EXTERNAL') >= 0 &&
+                       ldapServer._bindDnFromHandler === true);
+  if (!supported) {
+    log.warn(errorCodes.tag('STS-LDAP-0191') + 'ldap: this node-ldapjs does ' +
+             'not support saslMechanisms and bindDnFromHandler, so a SASL ' +
+             'EXTERNAL bind cannot be decoded and its connection is closed. ' +
+             'Update the node-ldapjs submodule.');
+  }
+  log.debug("Leaving saslExternalSupported(). " + supported);
+  return supported;
+}
+
+servers.forEach(saslExternalSupported);
+
+// THE MECHANISM node-ldapjs REFUSED ITSELF (7), recorded here: the library
+// answers before any handler runs, so this is the one refusal of a bind the
+// handler never sees.
+servers.forEach(function (one) {
+  one.on('saslMechanismNotSupported', function (req) {
+    log.debug("Entering the saslMechanismNotSupported listener.");
+    const mechanism = String((req && req.mechanism) || '');
+    log.info('ldap: a SASL bind naming the mechanism "' + mechanism +
+             '" was answered authMethodNotSupported (7); only EXTERNAL is ' +
+             'accepted.');
+    ldapRefusal(req, 'STS-LDAP-0178', 'a SASL bind naming the mechanism "' +
+      mechanism + '" was refused with authMethodNotSupported (7); this ' +
+      'directory accepts SASL EXTERNAL only',
+      new ldap.AuthMethodNotSupportedError(), mechanism);
+    log.debug("Leaving the saslMechanismNotSupported listener.");
+  });
+});
+
 // The eight operations and unbind. Written out rather than read off ldapjs's
 // prototype, because that would fan out `listen`, `close` and `address` too —
 // and those three must stay per-server: each listener has its own port, its own
@@ -15821,10 +15883,50 @@ function inRealmOfRequest(handler) {
   log.debug("Leaving inRealmOfRequest().");
   return function (req, res, next) {
     const dn = req && req.dn ? req.dn.toString() : '';
-    return inRealmOf(dn, function () {
+    return inRealmOf(dn || externalBindRealmDn(req), function () {
       return handler(req, res, next);
     });
   };
+}
+
+// ---------------------------------------------------------------------------
+// WHICH REALM A SASL EXTERNAL BIND WITH NO NAME IS IN (#1047). RFC 4513
+// section 5.2.1.2 has the name empty, so the DN cannot pick the realm. An
+// authzId `dn:` names one, as a DN does; otherwise it is the realm whose
+// Issuing CA signed the certificate — the answer `GET /tls/sign-in` gives
+// for the same reason (a socket has no path). '' for anything else, which
+// is the default realm, where the handler refuses what it finds.
+// ---------------------------------------------------------------------------
+function externalBindRealmDn(req) {
+  log.debug("Entering externalBindRealmDn().");
+  if (!req || req.authentication !== 'sasl') {
+    log.debug("Leaving externalBindRealmDn(). Not a SASL bind.");
+    return '';
+  }
+  const authz = authzIdOf(req);
+  if (authz.kind === 'dn' && authz.value) {
+    log.debug("Leaving externalBindRealmDn(). The authzId's DN.");
+    return authz.value;
+  }
+  const external = req.stsExternal || {};
+  if (!external.certificate || external.certificate.verified !== true) {
+    log.debug("Leaving externalBindRealmDn(). No verified certificate.");
+    return '';
+  }
+  let identity = null;
+  try {
+    identity = require('../common/tls_client_certificates')
+      .identityOf(external.certificate);
+  } catch (e) {
+    log.debug("Caught in externalBindRealmDn(): " + ((e && e.message) || e));
+    identity = null;
+  }
+  if (!identity || !identity.accepted || !realms.get(identity.realm)) {
+    log.debug("Leaving externalBindRealmDn(). Not an identity here.");
+    return '';
+  }
+  log.debug("Leaving externalBindRealmDn(). The issuing realm's.");
+  return realmBaseDn(identity.realm);
 }
 
 // ---------------------------------------------------------------------------
@@ -15961,6 +16063,13 @@ OPERATIONS.forEach(function (operation) {
     // cannot both succeed. See `claimingTheAdd()`.
     if (operation === 'add') {
       args[args.length - 1] = claimingTheAdd(args[args.length - 1]);
+    }
+    // AND FOR A BIND, THE CONNECTION'S CERTIFICATE (#1047): read off the
+    // socket, and its revocation asked, in the process that holds it,
+    // before the bind runs here or in a worker. See
+    // `withConnectionCertificate()`.
+    if (operation === 'bind') {
+      args[args.length - 1] = withConnectionCertificate(args[args.length - 1]);
     }
     servers.forEach(function (one) {
       one[operation].apply(one, args);
@@ -16838,6 +16947,18 @@ function operationRequest(operation, req) {
   if (operation === 'bind') {
     shape.credentials = req.credentials === undefined ? '' :
                         String(req.credentials);
+    // A SASL BIND'S MECHANISM, ITS CREDENTIALS AND THE CONNECTION'S
+    // CERTIFICATE (#1047): the certificate is a fact about a socket only
+    // this process holds, read by `withConnectionCertificate()`, so it
+    // travels as the bound DN does.
+    if (req.authentication === 'sasl') {
+      shape.sasl = {
+        mechanism: String(req.mechanism || ''),
+        credentials: Buffer.isBuffer(req.saslCredentials)
+          ? req.saslCredentials.toString('base64') : null,
+        external: externalShape(req.stsExternal)
+      };
+    }
   } else if (operation === 'add') {
     shape.attributes = plainAttributes(req.attributes);
   } else if (operation === 'modify') {
@@ -16899,6 +17020,13 @@ function operationContext(operation, shape) {
   };
   if (operation === 'bind') {
     req.credentials = shape.credentials || '';
+    if (shape.sasl) {
+      req.authentication = 'sasl';
+      req.mechanism = String(shape.sasl.mechanism || '');
+      req.saslCredentials = typeof shape.sasl.credentials === 'string'
+        ? Buffer.from(shape.sasl.credentials, 'base64') : null;
+      req.stsExternal = externalFromShape(shape.sasl.external);
+    }
   } else if (operation === 'add') {
     req.attributes = shape.attributes || [];
   } else if (operation === 'modify') {
@@ -17178,7 +17306,11 @@ function operationOutcome(operation, req, res, failure) {
   log.debug('Leaving operationOutcome(). ' + rest.length +
             ' entry/entries' + (res.collected.emitted
     ? ', ' + res.collected.emitted + ' sent ahead.' : '.'));
-  return { ok: true, entries: rest, endArg: res.collected.endArg };
+  // THE DN A CERTIFICATE BIND NAMED (#1047): set by the handler on the
+  // response, and set by `applyOperationResult()` on the real one, where
+  // node-ldapjs reads it.
+  return { ok: true, entries: rest, endArg: res.collected.endArg,
+           bindDN: typeof res.bindDN === 'string' ? res.bindDN : undefined };
 }
 
 // SEARCH ENTRIES A WORKER COLLECTED, WRITTEN TO THE REAL RESPONSE: at the end
@@ -17241,6 +17373,9 @@ function applyOperationResult(operation, req, res, next, result) {
     // bound DN only once the handler chain has returned.
     if (req.connection) {
       req.connection.stsBoundAt = Date.now();
+    }
+    if (typeof result.bindDN === 'string') {
+      res.bindDN = result.bindDN;
     }
     publishConnectionsSoon();
   }
@@ -17517,9 +17652,384 @@ function answerCellBind(body, ctx) {
 
 require('../common/cell_channel').registerOp('ldap-bind', answerCellBind);
 
+// ---------------------------------------------------------------------------
+// THE CERTIFICATE BIND: SASL EXTERNAL OVER LDAPS (#1047, from #520; rcbj
+// 2026-10-27).
+//
+// RFC 4513 section 5.2.1.2: a client that presented a certificate in the
+// TLS handshake binds with the SASL mechanism EXTERNAL, and the server binds
+// the connection as the identity that certificate establishes. There is NO
+// SETTING of its own, which was rcbj's decision: a connection carries a
+// verified certificate only when 636 asks for one — #423's pair,
+// `ldap.ldapsDisableOptionalClientCertificate` off (optional) or
+// `ldap.ldapsRequireClientCertificate` on (required) — and the bind is
+// available exactly then. At the defaults 636 asks for nothing, every
+// EXTERNAL bind is refused as "no certificate on the connection", and
+// nothing that was true before is different.
+//
+// ONE MAPPING, NOT A SECOND (#520's rule): the certificate is an entry only
+// where `common/tls_client_certificates.js` says it is an identity in THIS
+// realm (`checkSocket()`, which is `identityOf()` under the ambient realm),
+// issued to a PERSON — `urn:sts:person:<name>` in its subjectAltName, which
+// is the same name a simple bind's entry has — whose record still lists it
+// (`stillHeld()`) and whose entry EXISTS. Nothing is read off a CN or a
+// subject, and no entry is ever created from a certificate. Three things a
+// verified certificate can be that are NOT that, each refused with its own
+// code:
+//
+//   * a certificate from an anchor somebody added (`/admin/tls/trust`):
+//     `issuedHere: false`, and rcbj's decision is that it binds nobody
+//     until an entry can say ahead of time which certificate is its own —
+//     a follow-up, not this ticket (STS-LDAP-0182);
+//   * an APPLICATION's certificate: only a person binds to this directory
+//     (#106's rule for a simple bind, `nonPersonBindRefusal()`), and an
+//     application's entry is not one (STS-LDAP-0185);
+//   * another realm's (STS-LDAP-0184), or one issued here for something
+//     other than a TLS client identity (STS-LDAP-0183).
+//
+// THE AUTHZID (section 5.2.1.8) is honoured only when it names the SAME
+// entry — `dn:<that entry's DN>` or `u:<that person's name>` — so it can
+// restate who is binding and never change it; anything else is 50
+// (STS-LDAP-0189). A non-empty bind NAME is held to the same rule
+// (STS-LDAP-0190).
+//
+// IT IS THE SAME IN BOTH MODES. Development mode's "every bind succeeds" is
+// about a PASSWORD nobody checks; here the handshake has verified the chain
+// and every other door that reads this gate (SCIM, WS-Trust, `/tls/sign-in`,
+// RFC 8705) holds the same answers in both modes. No failed-bind rate limit
+// either: there is nothing to guess.
+//
+// WHERE EACH HALF RUNS. The socket is the front process's, so
+// `withConnectionCertificate()` — the outermost wrapper of the bind, in the
+// process that holds it — reads the certificate off it and asks for its
+// revocation verdict, and the two travel to a request worker in the
+// operation's shape (`operationRequest()`), as the bound DN does. The
+// decision is `externalBind()`, wherever the bind runs; the DN it binds is
+// `res.bindDN`, which node-ldapjs reads (`bindDnFromHandler`) and
+// `applyOperationResult()` carries back from a worker.
+// ---------------------------------------------------------------------------
+/**
+ * Wraps the bind handler so that a SASL bind carries the connection's
+ * certificate and its revocation verdict, read in the process holding the
+ * socket.
+ *
+ * @param handler - the bind handler as the fan-out has it so far
+ * @returns the wrapped handler
+ */
+function withConnectionCertificate(handler) {
+  log.debug("Entering withConnectionCertificate().");
+  log.debug("Leaving withConnectionCertificate().");
+  return function (req, res, next) {
+    if (!req || req.authentication !== 'sasl') {
+      return handler(req, res, next);
+    }
+    let input = null;
+    let status = null;
+    try {
+      status = require('../common/revocation_status');
+      input = status.fromSocket(req.connection);
+    } catch (e) {
+      log.debug("Caught in withConnectionCertificate(): " +
+                ((e && e.message) || e));
+      input = null;
+    }
+    if (!input || input.verified !== true || !status) {
+      req.stsExternal = { certificate: input, revocation: null };
+      return handler(req, res, next);
+    }
+    return Promise.resolve(status.verdictFor(input)).then(function (verdict) {
+      req.stsExternal = {
+        certificate: input,
+        revocation: verdict ? { refused: !!verdict.refused,
+                                why: String(verdict.why || ''),
+                                code: verdict.refused
+                                  ? status.codeOf(verdict) : '' } : null
+      };
+      return handler(req, res, next);
+    }, function (e) {
+      // A verdict that could not be reached is not "not revoked": the bind
+      // is refused as revoked would be, naming why.
+      log.warn(errorCodes.tag('STS-LDAP-0181') + 'ldap: the revocation ' +
+               'status of the certificate on a SASL EXTERNAL bind could not ' +
+               'be established: ' + ((e && e.message) || e));
+      req.stsExternal = {
+        certificate: input,
+        revocation: { refused: true, code: '',
+                      why: 'its revocation status could not be established' }
+      };
+      return handler(req, res, next);
+    });
+  };
+}
+
+// The certificate and verdict as a request worker receives them: the
+// certificates as base64, everything else as it is.
+function externalShape(external) {
+  log.debug("Entering externalShape().");
+  if (!external) {
+    log.debug("Leaving externalShape(). Nothing.");
+    return null;
+  }
+  const cert = external.certificate;
+  log.debug("Leaving externalShape().");
+  return {
+    certificate: cert && cert.leaf ? {
+      leaf: Buffer.from(cert.leaf).toString('base64'),
+      chain: (cert.chain || []).map(function (one) {
+        return Buffer.from(one).toString('base64');
+      }),
+      verified: cert.verified === true
+    } : null,
+    revocation: external.revocation || null
+  };
+}
+
+function externalFromShape(shape) {
+  log.debug("Entering externalFromShape().");
+  if (!shape) {
+    log.debug("Leaving externalFromShape(). Nothing.");
+    return null;
+  }
+  const cert = shape.certificate;
+  log.debug("Leaving externalFromShape().");
+  return {
+    certificate: cert && cert.leaf ? {
+      leaf: Buffer.from(String(cert.leaf), 'base64'),
+      chain: (cert.chain || []).map(function (one) {
+        return Buffer.from(String(one), 'base64');
+      }),
+      verified: cert.verified === true
+    } : null,
+    revocation: shape.revocation || null
+  };
+}
+
+// THE AUTHZID A SASL EXTERNAL BIND CARRIES (RFC 4513 section 5.2.1.8):
+// `{ kind: 'none' }` for no credentials or empty ones, `dn` or `u` with the
+// value, and `invalid` for anything else.
+function authzIdOf(req) {
+  log.debug("Entering authzIdOf().");
+  const raw = req && Buffer.isBuffer(req.saslCredentials)
+    ? req.saslCredentials.toString('utf8') : '';
+  if (!raw) {
+    log.debug("Leaving authzIdOf(). None.");
+    return { kind: 'none', value: '', raw: '' };
+  }
+  if (raw.indexOf('dn:') === 0) {
+    log.debug("Leaving authzIdOf(). A DN.");
+    return { kind: 'dn', value: raw.slice(3), raw: raw };
+  }
+  if (raw.indexOf('u:') === 0) {
+    log.debug("Leaving authzIdOf(). A user name.");
+    return { kind: 'u', value: raw.slice(2), raw: raw };
+  }
+  log.debug("Leaving authzIdOf(). Neither form.");
+  return { kind: 'invalid', value: '', raw: raw };
+}
+
+// A socket `revocation_status.fromSocket()` reads as it reads a request
+// worker's shim: the leaf, the chain as base64, and whether it verified.
+function certificateShim(certificate) {
+  log.debug("Entering certificateShim().");
+  log.debug("Leaving certificateShim().");
+  return {
+    authorized: certificate.verified === true,
+    getPeerCertificate: function () {
+      return { raw: certificate.leaf,
+               issuerChain: (certificate.chain || []).map(function (one) {
+                 return one.toString('base64');
+               }) };
+    }
+  };
+}
+
+/**
+ * Answers a SASL bind: EXTERNAL binds the connection as the person entry
+ * the connection's verified certificate was issued to, or is refused with
+ * the code for why.
+ *
+ * @param req - the ldapjs request (or a worker's rebuilt one)
+ * @param res - the response
+ * @param next - the handler chain's next
+ * @returns what `next()` returns
+ */
+function externalBind(req, res, next) {
+  log.debug("Entering externalBind().");
+  const name = req.dn ? req.dn.toString() : '';
+  const mechanism = String(req.mechanism || '');
+  const refuse = function (code, summary, err, target) {
+    log.debug("Entering refuse(). " + code);
+    log.info('ldap: a SASL EXTERNAL bind was refused (' + code + '): ' +
+             summary);
+    log.debug("Leaving refuse().");
+    return next(ldapRefusal(req, code, 'a SASL EXTERNAL bind was refused: ' +
+                            summary, coded(code, err), target || name));
+  };
+  if (mechanism !== 'EXTERNAL') {
+    // node-ldapjs answers every other mechanism itself (`saslMechanisms`);
+    // this is the same answer for a submodule that did not.
+    log.debug("Leaving externalBind(). Not EXTERNAL.");
+    return refuse('STS-LDAP-0178', 'the mechanism "' + mechanism + '" is ' +
+      'not supported', new ldap.AuthMethodNotSupportedError(
+        'SASL mechanism "' + mechanism + '" is not supported; use EXTERNAL'),
+      mechanism);
+  }
+  if (ldapChannelOf(req) !== 'ldaps') {
+    log.debug("Leaving externalBind(). The plain listener.");
+    return refuse('STS-LDAP-0180', 'it arrived on the plain listener, ' +
+      'where there is no TLS and so no client certificate',
+      new ldap.InappropriateAuthenticationError('SASL EXTERNAL needs a ' +
+        'client certificate, and this listener has no TLS; use LDAPS'));
+  }
+  const external = req.stsExternal || {};
+  const certificate = external.certificate;
+  if (!certificate || !certificate.leaf || certificate.verified !== true) {
+    log.debug("Leaving externalBind(). No verified certificate.");
+    return refuse('STS-LDAP-0179', certificate && certificate.leaf
+      ? 'the client certificate on the connection did not verify against ' +
+        'the client truststore'
+      : 'the connection carries no client certificate (LDAPS asks for one ' +
+        'only when ldap.ldapsDisableOptionalClientCertificate is off or ' +
+        'ldap.ldapsRequireClientCertificate is on)',
+      new ldap.InappropriateAuthenticationError('SASL EXTERNAL needs a ' +
+        'client certificate that verifies, and this connection has none'));
+  }
+  const revocation = external.revocation;
+  if (revocation && revocation.refused) {
+    log.debug("Leaving externalBind(). Revoked.");
+    return refuse('STS-LDAP-0181', 'the certificate was refused on ' +
+      'revocation (' + String(revocation.why || 'revoked') + ')',
+      new ldap.InvalidCredentialsError('the client certificate was ' +
+        'refused on revocation'));
+  }
+  let gates = null;
+  let gate = null;
+  try {
+    gates = require('../common/tls_client_certificates');
+    gate = gates.checkSocket(certificateShim(certificate));
+  } catch (e) {
+    log.debug("Caught in externalBind(): " + ((e && e.message) || e));
+    gate = null;
+  }
+  const identity = (gate && gate.identity) || {};
+  if (!gate || (gate.ok && !identity.issuedHere)) {
+    log.debug("Leaving externalBind(). Not issued here.");
+    return refuse('STS-LDAP-0182', 'the certificate verified against an ' +
+      'anchor in the client truststore but was not issued by this ' +
+      'service, and a certificate from an outside certificate authority ' +
+      'does not bind anybody to this directory',
+      new ldap.InvalidCredentialsError('this client certificate was not ' +
+        'issued by this service, and only one it issued binds here'));
+  }
+  if (!gate.ok) {
+    if (gate.error === 'OTHER_REALM') {
+      log.debug("Leaving externalBind(). Another realm's.");
+      return refuse('STS-LDAP-0184', String(gate.why || gate.error),
+        new ldap.InvalidCredentialsError('the client certificate was issued ' +
+          'in another trust realm'));
+    }
+    log.debug("Leaving externalBind(). Not an identity.");
+    return refuse('STS-LDAP-0183', String(gate.why || gate.error),
+      new ldap.InvalidCredentialsError('the client certificate is not an ' +
+        'identity this directory can bind'));
+  }
+  if (identity.kind !== 'person') {
+    log.debug("Leaving externalBind(). An application's.");
+    return refuse('STS-LDAP-0185', 'the certificate was issued to the ' +
+      'application "' + identity.username + '", and only a person binds ' +
+      'to this directory',
+      new ldap.InvalidCredentialsError('the client certificate names an ' +
+        'application; only a person binds to this directory'));
+  }
+  if (!gates.stillHeld(identity)) {
+    log.debug("Leaving externalBind(). No longer held.");
+    return refuse('STS-LDAP-0186', 'it was issued to "' + identity.username +
+      '", whose record no longer lists it',
+      new ldap.InvalidCredentialsError('the client certificate is no longer ' +
+        'on its holder\'s record'));
+  }
+  const entry = existingUserEntry(identity.username);
+  if (!entry) {
+    log.debug("Leaving externalBind(). No entry.");
+    return refuse('STS-LDAP-0187', 'it names "' + identity.username +
+      '", who has no entry in this realm\'s directory; none is created',
+      new ldap.InvalidCredentialsError('the person this client certificate ' +
+        'was issued to has no entry in this directory'));
+  }
+  const entryDn = String(entry.dn);
+  if (credentials.accountDisabled(identity.username)) {
+    log.debug("Leaving externalBind(). Disabled.");
+    return refuse('STS-LDAP-0188', 'it names "' + identity.username +
+      '", whose account is disabled',
+      new ldap.InvalidCredentialsError('this account is disabled'), entryDn);
+  }
+  if (name && normalizeDn(name) !== normalizeDn(entryDn)) {
+    log.debug("Leaving externalBind(). The name is somebody else.");
+    return refuse('STS-LDAP-0190', 'the bind name "' + name + '" is not ' +
+      'the entry the certificate names (' + entryDn + ')',
+      new ldap.InvalidCredentialsError('the bind name is not the entry this ' +
+        'client certificate was issued to; send an empty name'));
+  }
+  const authz = authzIdOf(req);
+  if (authz.kind !== 'none') {
+    const sameEntry = authz.kind === 'dn'
+      ? !!authz.value && normalizeDn(authz.value) === normalizeDn(entryDn)
+      : authz.kind === 'u'
+        ? (function () {
+          const named = existingUserEntry(authz.value);
+          return !!named && normalizeDn(named.dn) === normalizeDn(entryDn);
+        }())
+        : false;
+    if (!sameEntry) {
+      log.debug("Leaving externalBind(). The authzId is somebody else.");
+      return refuse('STS-LDAP-0189', 'the authorization identity "' +
+        authz.raw + '" is not ' + entryDn + ', which the certificate names',
+        new ldap.InsufficientAccessRightsError('the authorization identity ' +
+          'may only name the entry this client certificate was issued to'),
+        entryDn);
+    }
+  }
+  auditLdap(req, {
+    action: 'directory.bind',
+    actor: consoleKeyFor(entryDn, entry), actorForm: entryDn,
+    target: entryDn,
+    summary: 'a SASL EXTERNAL bind as ' + entryDn + ' succeeded',
+    detail: { mechanism: 'EXTERNAL',
+              certificateSerial: String(identity.serialHex || ''),
+              authority: String((identity.authority &&
+                                 identity.authority.ca) || ''),
+              authzId: authz.raw || undefined,
+              note: 'the TLS client certificate on the connection verified, ' +
+                    'was not refused on revocation, and was issued to "' +
+                    identity.username + '" by this realm\'s Issuing CA' }
+  });
+  stats.recordAuthentication({
+    presented: entryDn,
+    protocol: 'ldap',
+    method: 'SASL EXTERNAL (TLS client certificate)',
+    application: '',
+    note: 'a TLS client certificate issued to ' + identity.username
+  });
+  if (req.connection) {
+    req.connection.stsBoundAt = Date.now();
+  }
+  publishConnectionsSoon();
+  res.bindDN = entryDn;
+  res.end();
+  log.debug("Leaving externalBind(). Bound as " + entryDn + ".");
+  return next();
+}
+
 // --- bind ------------------------------------------------------------------
 server.bind('', function (req, res, next) {
   log.debug('Entering the LDAP bind handler.');
+  // A SASL BIND IS A CERTIFICATE BIND (#1047), and none of what follows —
+  // a password, its rate limit, the refusals that come before one is read —
+  // applies to it.
+  if (req.authentication === 'sasl') {
+    log.debug('Leaving the LDAP bind handler. A SASL bind.');
+    return externalBind(req, res, next);
+  }
   const dn = req.dn ? req.dn.toString() : '';
   // NAMED `credentials_value` AND NOT `credentials` since 2026-09-06: the
   // module now requires `common/credentials.ts` under that name, and a local
@@ -19976,10 +20486,34 @@ const SERVICE_SENTENCES = Object.freeze({
     'the DN out names the realm',
   searchScopeOne: 'no trust realms are defined, so there is one context ' +
     '({{root}}) and a subtree search from it answers about the whole store',
-  clientCertificates: 'never requested. This listener proves the SERVER ' +
-    'to the client and nothing more; a client certificate offered to it ' +
-    'is not asked for and would not be a login if it were. The main ' +
-    'port ({{port}}) is where client certificates are asked for and read.',
+  // WHETHER 636 ASKS FOR A CLIENT CERTIFICATE, AND SO WHETHER A CERTIFICATE
+  // BIND IS AVAILABLE (#1047): one sentence per mode of #423's pair. Each
+  // says the same rule — SASL EXTERNAL is available exactly when 636 asks —
+  // and which certificates bind.
+  clientCertificatesNone: 'not asked for: ' +
+    '`ldap.ldapsDisableOptionalClientCertificate` is on, so LDAPS sends no ' +
+    'CertificateRequest and a certificate bind (SASL EXTERNAL) is refused ' +
+    'for want of a certificate. Turn that setting off to ask every ' +
+    'connection for one (optional), or turn ' +
+    '`ldap.ldapsRequireClientCertificate` on to require one; either makes ' +
+    'SASL EXTERNAL available. The main port ({{port}}) asks for client ' +
+    'certificates on its own settings.',
+  clientCertificatesOptional: 'asked for and not required (optional: ' +
+    '`ldap.ldapsDisableOptionalClientCertificate` is off). A connection ' +
+    'that presents one which verifies against the client truststore may ' +
+    'bind with SASL EXTERNAL; one without binds with a password as before.',
+  clientCertificatesRequired: 'required ' +
+    '(`ldap.ldapsRequireClientCertificate` is on): a connection without a ' +
+    'certificate that verifies against the client truststore is refused at ' +
+    'the handshake. A connection may then bind with SASL EXTERNAL, or with ' +
+    'a password as before.',
+  certificateBindRule: 'SASL EXTERNAL binds the connection as the person ' +
+    'entry the certificate was issued to, and only a certificate this ' +
+    'service issued to a person who has an entry in that realm binds: ' +
+    'revoked, another realm\'s, an application\'s, or one from an outside ' +
+    'certificate authority trusted through /admin/tls/trust is refused ' +
+    '(outside-CA certificates are not accepted for LDAP binds yet). An ' +
+    'authorization identity is honoured only when it names that same entry.',
   certificateSource: 'the same certificate and key the main port ' +
     '({{port}}) serves. It is {{provenance}}: GET /tls/server-certificate ' +
     'hands it out in PEM. One anchor for both sockets is why they share it.',
@@ -20065,6 +20599,10 @@ function description(req) {
   // presented to is that module's to decide, and a second copy here would be
   // a second thing to keep right.
   const tlsPorts = tlsServer.ports();
+  // 'none', 'optional' or 'required': #423's pair, read as 636 reads it.
+  const ldapsPolicyNow = ldapsPolicy();
+  const ldapsClientAuth = String((ldapsPolicyNow &&
+                                  ldapsPolicyNow.clientAuth) || 'none');
   const out = {
     url: 'ldap://' + host + ':' + boundPort,
     port: boundPort,
@@ -20119,8 +20657,8 @@ function description(req) {
     persistence: persistence.status(),
     // This was `false` and it is now the whole answer, because one boolean had
     // to stand for three different facts and got at least one of them wrong for
-    // any reader: LDAPS is here, StartTLS is not, and no CLIENT certificate is
-    // ever asked for on either transport.
+    // any reader: LDAPS is here, StartTLS is not, and whether a CLIENT
+    // certificate is asked for on 636 is #423's pair (never on 389).
     tls: {
       ldaps: !!secureServer,
       port: secureServer ? boundTlsPort : null,
@@ -20136,8 +20674,22 @@ function description(req) {
       // submodule. LDAPS is also the one of the pair no RFC defines — RFC 4513
       // standardised StartTLS and left ldaps:// as the de-facto scheme.
       startTls: false,
+      // WHETHER 636 ASKS, AND SO WHETHER A CERTIFICATE BIND IS AVAILABLE
+      // (#1047, rule 7): the mode of #423's pair, and the sentence for it.
+      clientCertificateMode: ldapsClientAuth,
+      saslExternal: {
+        available: ldapsClientAuth !== 'none',
+        mechanisms: SASL_MECHANISMS.slice(0),
+        outsideCertificateAuthorities: false,
+        rule: SERVICE_SENTENCES.certificateBindRule
+      },
       clientCertificates: serverProse.fill(
-        SERVICE_SENTENCES.clientCertificates, { port: tlsPorts.main }),
+        ldapsClientAuth === 'required'
+          ? SERVICE_SENTENCES.clientCertificatesRequired
+          : ldapsClientAuth === 'optional'
+            ? SERVICE_SENTENCES.clientCertificatesOptional
+            : SERVICE_SENTENCES.clientCertificatesNone,
+        { port: tlsPorts.main }),
       certificate: {
         subject: serverCertificate ? serverCertificate.subject : '',
         names: serverCertificate ? serverCertificate.names : [],
