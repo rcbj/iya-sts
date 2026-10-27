@@ -477,6 +477,18 @@ each kind; add `memberOf` for one community. A credential issued or a
 subject enrolled before this was recorded has no channel and, for a
 `did:web`, no algorithm.
 
+**Signing keys, enrollment credentials and certificates.**
+`jwtSigningKey` and `samlSigningKey` are a person's RFC 7523 and RFC 7522
+key pairs (role `signer`): one row each, with the kid or thumbprint, the
+certificate's key algorithm, and whether it was issued here or uploaded;
+the private half is never read. `acmeAccountKey` and `scepChallenge` are
+the credentials ACME and SCEP authenticate an enrollment with (role
+`enrollment`), with their id, profile and creation; the key and the
+challenge are never read. EST has no credential of its own. `certificate`
+is every certificate issued through ACME, EST or SCEP, a TLS client
+certificate included: its serial, the issuing protocol as `channel`, its
+profile as `format`, and its key algorithm.
+
 **The password is the one mechanism counted rather than indexed.**
 Nearly everyone holds one, so the directory keeps no index of its
 holders; it keeps a counter per realm, and that is what a count by
@@ -513,14 +525,14 @@ Monitoring → Passkeys.
 |---|---|---|---|---|---|
 | `username` | string | The directory uid. | yes | yes | no |
 | `displayName` | string | `displayName`, or `cn`. | yes | yes | no |
-| `mechanism` | string | `passkey`, `totp`, `emailFactor`, `certificate`, `kerberos`, `password`, `recoveryCodes`, `selfIssued` or `verifiableCredential`; enumerated, a dropdown on the page. Indexed: `eq`, `in`. | yes | yes | yes |
-| `role` | string | `primary`, `mfa` or `recovery`; enumerated. | yes | yes | yes |
+| `mechanism` | string | `passkey`, `totp`, `emailFactor`, `certificate`, `kerberos`, `password`, `recoveryCodes`, `jwtSigningKey`, `samlSigningKey`, `acmeAccountKey`, `scepChallenge`, `selfIssued` or `verifiableCredential`; enumerated, a dropdown on the page. Indexed: `eq`, `in`. | yes | yes | yes |
+| `role` | string | `primary`, `mfa`, `recovery`, `signer` (a signing key pair) or `enrollment` (an ACME or SCEP enrollment credential); enumerated. | yes | yes | yes |
 | `credentials` | number | How many credentials of this mechanism and role the person holds; the same on each of their rows. | yes | yes | no |
 | `credentialId` | string | This credential's own id (a passkey's credential id). | yes | yes | no |
 | `algorithm` | string | This credential's signature algorithm (a passkey's JOSE name, such as `ES256` or `ML-DSA-65`). | yes | yes | yes |
 | `lane` | string | A passkey's or a wallet key's lane, `classical` or `pqc`; enumerated. Empty for the other mechanisms. | yes | yes | yes |
-| `channel` | string | Where a wallet credential came from: `web` (a web wallet), `app` (a native wallet), `dc_api` (the browser's Digital Credentials API) or `admin` (entered by an administrator); enumerated. Empty for the other mechanisms. | yes | yes | yes |
-| `format` | string | A verifiable credential's format: `dc+sd-jwt`, `jwt_vc_json` or `ldp_vc`. Empty for the other mechanisms. | yes | yes | yes |
+| `channel` | string | Where the credential came from: a wallet credential's `web`, `app`, `dc_api` or `admin`; a certificate's or enrollment credential's protocol, `acme`, `est` or `scep`; a signing key pair `issued` here or `uploaded`; enumerated. Empty where nothing was recorded. | yes | yes | yes |
+| `format` | string | What kind it is within its mechanism: a verifiable credential's format, a certificate's or enrollment credential's profile (`tls-client`, `server`, `device`, …), a signing key's `RFC 7523` or `RFC 7522`. | yes | yes | yes |
 | `enrolledAt` | timestamp | When this credential was enrolled, where recorded. | yes | yes | no |
 | `lastUsedAt` | timestamp | When this credential was last used, where recorded. | yes | yes | no |
 | `methodsUsed` | string | The RFC 8176 methods the person has ever signed in with here. | yes | yes | no |

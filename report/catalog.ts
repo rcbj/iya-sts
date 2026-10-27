@@ -84,12 +84,15 @@ interface FieldSpec {
 // `MECHANISM_TABLE` order; `tests/report_query.js` holds the two lists equal,
 // because the catalog cannot require `sources.ts` (it requires the catalog).
 const HOLDER_MECHANISMS = ['passkey', 'totp', 'emailFactor', 'certificate',
-  'kerberos', 'password', 'recoveryCodes', 'selfIssued',
-  'verifiableCredential'];
-const HOLDER_ROLES = ['primary', 'mfa', 'recovery'];
+  'kerberos', 'password', 'recoveryCodes', 'jwtSigningKey', 'samlSigningKey',
+  'acmeAccountKey', 'scepChallenge', 'selfIssued', 'verifiableCredential'];
+const HOLDER_ROLES = ['primary', 'mfa', 'recovery', 'signer', 'enrollment'];
 // Where a wallet credential came from (#1021): a web wallet, a native wallet
 // app, the browser's Digital Credentials API, or an administrator's hand.
-const HOLDER_CHANNELS = ['web', 'app', 'dc_api', 'admin'];
+// Since #1036 also the enrollment protocol that issued a certificate or
+// that a credential is for, and where a signing key pair came from.
+const HOLDER_CHANNELS = ['web', 'app', 'dc_api', 'admin', 'acme', 'est',
+  'scep', 'issued', 'uploaded'];
 
 // The operators the store answers with an index, per field of `users`. No
 // other source reads the directory row by row, so no other source has a row.
@@ -353,20 +356,24 @@ function standardSources(): SourceSpec[] {
          'the stored value names itself (#1011, one row per credential).'),
        field('algorithm', 'string',
          'This credential\'s signature algorithm: a passkey\'s JOSE name ' +
-         '(ES256, ML-DSA-65), an authenticator app\'s HMAC algorithm.'),
+         '(ES256, ML-DSA-65), an authenticator app\'s HMAC algorithm, a ' +
+         'certificate\'s or signing key\'s key (RSA-2048, P-256, ' +
+         'Ed25519, ML-DSA-44).'),
        field('lane', 'string',
          'A passkey\'s or a wallet key\'s lane, classical or pqc; empty ' +
          'for the others.', undefined, ['classical', 'pqc']),
        field('channel', 'string',
-         'Where a wallet credential came from (#1021): web (a web ' +
-         'wallet), app (a native wallet), dc_api (the browser\'s Digital ' +
-         'Credentials API) or admin (enrolled by an administrator). Empty ' +
-         'for the other mechanisms, and for a credential recorded before ' +
-         'the channel was kept.', undefined, HOLDER_CHANNELS),
+         'Where the credential came from: for a wallet credential (#1021) ' +
+         'web, app, dc_api or admin; for a certificate or an enrollment ' +
+         'credential (#1036) the protocol, acme, est or scep; for a ' +
+         'signing key pair issued (here) or uploaded. Empty where nothing ' +
+         'was recorded.', undefined, HOLDER_CHANNELS),
        field('format', 'string',
-         'A verifiable credential\'s format: dc+sd-jwt, jwt_vc_json or ' +
-         'ldp_vc. Empty for the other mechanisms.', undefined,
-         ['dc+sd-jwt', 'jwt_vc_json', 'ldp_vc']),
+         'What kind of credential it is within its mechanism: a verifiable ' +
+         'credential\'s format (dc+sd-jwt, jwt_vc_json, ldp_vc), a ' +
+         'certificate\'s or enrollment credential\'s profile (tls-client, ' +
+         'server, device, …), a signing key\'s profile (RFC 7523, RFC ' +
+         '7522).'),
        field('enrolledAt', 'timestamp',
          'When this credential was enrolled, where it records it.'),
        field('lastUsedAt', 'timestamp',
