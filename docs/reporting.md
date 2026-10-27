@@ -150,6 +150,12 @@ it too). **A shared group with no address is an error of its own**,
 with outcome `error`, and shown as *no email address* beside the group in
 the pane. The other recipients are still sent to.
 
+**Sort and Group by are behind checkboxes.** Tick **Sort** to choose the
+field and the direction; unticked, the query carries no order. The
+**Group by** choice appears when **Count** is ticked, because a group-by
+is always a count. A saved definition with an order or a count opens
+with the boxes ticked and the choices shown.
+
 **The result of Run is paged on the page.** Every row the query
 returned is kept in the browser and shown fifty at a time, with the same
 pager the Definitions and Jobs lists use above and below the table:

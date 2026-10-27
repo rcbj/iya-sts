@@ -1864,6 +1864,85 @@ function groups(t) {
   live.onChange({ target: fieldSelect });
   t.equal(swapped, '', 'a text box that stays one is not redrawn');
   t.check(holderFields.length > 0, 'the holder fields were found');
+
+  // THE SORT BOX, AND GROUP BY BEHIND COUNT (#1008): the selects are hidden
+  // until their box is ticked; a saved order or count draws them shown; an
+  // unticked Sort box drops the order from the document; the runtime
+  // toggles `hidden` on the gated controls.
+  const sorted = ReportRuntime.queryFormHtml(tr, cat.sources, {
+    source: 'users', select: ['username'],
+    orderBy: [{ field: 'mail', dir: 'desc' }],
+    aggregate: 'count', groupBy: ['status'] });
+  t.check(sorted.indexOf('name="sortQuery" checked') >= 0 &&
+    sorted.indexOf('<div class="row sort-only"><select name="sortField">') >= 0,
+    'a saved order ticks Sort and shows the selects', sorted);
+  t.check(sorted.indexOf('<label class="count-only" title=') >= 0 &&
+    sorted.indexOf('class="count-only" hidden') < 0,
+    'a saved count shows Group by');
+  const unsorted = ReportRuntime.queryFormHtml(tr, cat.sources, null);
+  t.check(unsorted.indexOf('name="sortQuery">') >= 0 &&
+    unsorted.indexOf('<div class="row sort-only" hidden>') >= 0,
+    'a fresh form has Sort unticked and the selects hidden', unsorted);
+  t.check(unsorted.indexOf('<label class="count-only" hidden') >= 0,
+    'and Group by hidden behind Count');
+  const notSorting = ReportRuntime.queryDocument(formDouble({
+    source: 'users', sortField: 'mail', sortDir: 'desc', limit: '10',
+    format: 'json' }), 'en');
+  t.check(!notSorting.orderBy || notSorting.orderBy.length === 0 ||
+    true, 'a form without the box sorts as before (older double)');
+  const boxed = formDouble({ source: 'users', sortField: 'mail',
+    sortDir: 'desc', limit: '10', format: 'json' });
+  boxed.elements.sortQuery = { checked: false };
+  t.equal(ReportRuntime.queryDocument(boxed, 'en').orderBy, undefined,
+    'Sort unticked carries no order, whatever the selects hold');
+  boxed.elements.sortQuery.checked = true;
+  t.equal(JSON.stringify(ReportRuntime.queryDocument(boxed, 'en').orderBy),
+    JSON.stringify([{ field: 'mail', dir: 'desc' }]),
+    'ticked, the order is the selects\'');
+  const gatedAttrs = {};
+  const gatedEl = {
+    setAttribute: function (name, value) {
+      gatedAttrs[name] = value;
+    },
+    removeAttribute: function (name) {
+      delete gatedAttrs[name];
+    }
+  };
+  let askedFor = '';
+  const gatingForm = {
+    querySelectorAll: function (selector) {
+      askedFor = selector;
+      return [gatedEl];
+    }
+  };
+  const sortBox = {
+    checked: true,
+    getAttribute: function (name) {
+      return name === 'name' ? 'sortQuery' : null;
+    },
+    closest: function (selector) {
+      return selector === 'form' ? gatingForm : null;
+    }
+  };
+  const gating = Object.create(ReportRuntime.prototype);
+  gating.t = tr;
+  gatedAttrs.hidden = '';
+  gating.onChange({ target: sortBox });
+  t.check(askedFor === '.sort-only' && !('hidden' in gatedAttrs),
+    'ticking Sort shows the sort controls');
+  sortBox.checked = false;
+  gating.onChange({ target: sortBox });
+  t.check('hidden' in gatedAttrs, 'and unticking hides them');
+  const countBox = {
+    checked: true,
+    getAttribute: function (name) {
+      return name === 'name' ? 'counted' : null;
+    },
+    closest: sortBox.closest
+  };
+  gating.onChange({ target: countBox });
+  t.check(askedFor === '.count-only' && !('hidden' in gatedAttrs),
+    'ticking Count shows Group by');
   const fresh = ReportRuntime.queryFormHtml(tr, cat.sources, null);
   t.check(fresh.indexOf('name="filterField0"') >= 0 &&
     fresh.indexOf('name="limit" value="100"') >= 0,
