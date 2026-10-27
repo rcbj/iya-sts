@@ -14302,7 +14302,7 @@ const CODES = [
     summary: 'A SASL EXTERNAL bind was refused because the connection\'s ' +
       'client certificate was issued by this service but is not a ' +
       'TLS client identity (no clientAuth, no single ' +
-      'urn:sts:person: name, a holder or realm that is gone) ' +
+      'urn:sts:person: name, a realm that is gone) ' +
       '(#1047).',
     spec: 'LDAP result code 49, invalidCredentials' },
   { code: 'STS-LDAP-0184',

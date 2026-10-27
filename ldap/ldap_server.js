@@ -17954,6 +17954,14 @@ function externalBind(req, res, next) {
         new ldap.InvalidCredentialsError('the client certificate was issued ' +
           'in another trust realm'));
     }
+    if (gate.error === 'HOLDER_GONE') {
+      // The person it was issued to has no entry any more: the register
+      // records their subject, and the directory no longer answers it.
+      log.debug("Leaving externalBind(). The holder's entry is gone.");
+      return refuse('STS-LDAP-0187', String(gate.why || gate.error),
+        new ldap.InvalidCredentialsError('the person this client ' +
+          'certificate was issued to has no entry in this directory'));
+    }
     log.debug("Leaving externalBind(). Not an identity.");
     return refuse('STS-LDAP-0183', String(gate.why || gate.error),
       new ldap.InvalidCredentialsError('the client certificate is not an ' +
