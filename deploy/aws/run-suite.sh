@@ -85,6 +85,12 @@ set -euo pipefail
 ENVIRONMENT="${1:?usage: deploy/aws/run-suite.sh <environment>}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "${ROOT}"
+
+# Linux, or Windows under Cygwin (#512): hostPath() for each path docker.exe
+# and aws.exe are handed, and the shims that take the CR off what they print.
+# See its header.
+# shellcheck source=../../tests/tools/host-platform.sh
+. "${ROOT}/tests/tools/host-platform.sh"
 REPORT_DIR="${STS_SUITE_REPORT_DIR:-${ROOT}/tests/report/aws-${ENVIRONMENT}}"
 RUN_ID="$(date -u +%Y-%m-%dT%H-%M-%S)"
 CALLBACK_JOBS="sts_xacml_remote_pep.js,sts_gnap_core.js"
@@ -381,7 +387,7 @@ else
 say "$(echo "${ONLY}" | tr ',' '\n' | wc -l) job(s) here; ${CALLBACK_JOBS} in the callback task."
 set +e
 docker run --rm --network host \
-  -v "${REPORT_DIR}:/report" \
+  -v "$(hostPath "${REPORT_DIR}"):/report" \
   -e STS_ADMIN_API_CLIENT_SECRET="${CLIENT_SECRET}" \
   -e URL="${URL}" \
   -e KEEP="${STS_SUITE_KEEP_REALMS:-}" \
@@ -522,7 +528,7 @@ then
     CB_DIR="${REPORT_DIR}/callbacks-${RUN_ID}"
     mkdir -p "${CB_DIR}"
     if aws s3 cp "s3://${BUCKET}/${ENVIRONMENT}/${RUN_ID}/report.tar.gz" \
-         "${CB_DIR}/report.tar.gz" --only-show-errors;
+         "$(hostPath "${CB_DIR}/report.tar.gz")" --only-show-errors;
     then
       tar -C "${CB_DIR}" -xzf "${CB_DIR}/report.tar.gz"
       rm -f "${CB_DIR}/report.tar.gz"
@@ -534,7 +540,7 @@ then
         ln -sfn "${LOCAL_RUN}" "${REPORT_DIR}/latest"
       elif [ -n "${LOCAL_RUN}" ] && [ -d "${LOCAL_RUN}" ];
       then
-        docker run --rm -v "${REPORT_DIR}:/report" "${TESTS_IMAGE}" \
+        docker run --rm -v "$(hostPath "${REPORT_DIR}"):/report" "${TESTS_IMAGE}" \
           node tests/tools/merge-report.js \
             --into="/report/$(basename "${LOCAL_RUN}")" \
             --from="/report/callbacks-${RUN_ID}/latest" --label=callbacks || true
@@ -556,7 +562,7 @@ then
     console.log("run-suite: " + JSON.stringify(count));
     s.jobs.filter(function (j) { return j.status !== "passed"; })
       .forEach(function (j) { console.log("  " + j.status + "  " + j.name); });
-  ' "${LOCAL_RUN}/summary.json" || true
+  ' "$(hostPath "${LOCAL_RUN}/summary.json")" || true
   say "report: ${LOCAL_RUN}/report.html"
 fi
 if [ "${LOCAL_RC}" != "0" ] || [ "${CALLBACK_RC}" != "0" ];

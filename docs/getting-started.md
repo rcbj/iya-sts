@@ -28,6 +28,50 @@ git submodule update --init --recursive
 through the [OAuth2/OIDC Debugger](https://idptools.com), where it is itself a
 submodule: a plain `--init` there stops one level short of this one.
 
+## On Windows, under Cygwin
+
+The scripts you run from a checkout work in a [Cygwin](https://cygwin.com)
+shell on Windows the same way they work on Linux. That covers
+`./run-tests.sh`, `./run-coverage.sh`, `./run-jsdoc.sh`,
+`./docker-npm-test.sh`, `./clean.sh`, the `deploy/*/terraform-local.sh` and
+`deploy/*/bootstrap-state.sh` launchers, and the scripts in `utilities/`.
+Everything they build and run is still a Linux container. What you need:
+
+* **Docker Desktop**, running, with `docker.exe` on your Windows `PATH`. A
+  Cygwin shell inherits that `PATH`.
+* **Cygwin's own** `bash`, `git`, `coreutils`, `sed`, `curl` and `jq`
+  packages. Install the Windows versions of node, the AWS CLI, gcloud and
+  az, the ones each project ships for Windows. The scripts convert paths
+  for them and remove the CRLF line endings they print.
+* **A checkout with LF line endings.** The repository's `.gitattributes` turns
+  line-ending conversion off, so a clone made with Git for Windows (whose
+  default is `core.autocrlf=true`) still has the LF endings the scripts and
+  images need. A checkout made before that file existed may have CRLF
+  endings. Commit or stash your work, then refresh the checkout with
+  `git rm -r --cached -q . && git reset --hard`.
+
+Three things behave differently on Windows:
+
+* **AWS sessions are passed as a snapshot.** On Linux,
+  `deploy/aws/terraform-local.sh` serves your `aws login` or SSO session to
+  the container as it refreshes. Docker Desktop's containers cannot reach
+  that endpoint, so on Windows the container gets the session as it stands
+  when the run starts. An apply can outlive that session. For a long one,
+  export the deployer user's key as `AWS_ACCESS_KEY_ID` and
+  `AWS_SECRET_ACCESS_KEY`.
+* **The Azure CLI's token cache must be plain JSON.** On Windows the Azure
+  CLI encrypts its token cache for your account by default, and the
+  container cannot read it. `deploy/azure/terraform-local.sh` stops and
+  tells you to run
+  `az config set core.encrypt_token_cache=false && az login`.
+* **No `sudo`, and no file ownership to fix.** If Docker Desktop is not
+  running, a script says so instead of trying `sudo`. Files a container
+  writes into your checkout are owned by you, so the `--user` and
+  chown-back steps that Linux needs are skipped.
+
+Git Bash (MSYS) is detected and handled the same way, but Cygwin is the
+supported shell.
+
 ## Run it
 ```docker-compose up```
 

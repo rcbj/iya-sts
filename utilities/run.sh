@@ -6,5 +6,7 @@
 #   COUNT=10000 ./run.sh     a smaller run
 # Safe to stop with Ctrl-C and run again: it resumes from load-users.state.json.
 cd "$(dirname "$0")" || exit 1
-export NODE_EXTRA_CA_CERTS="${NODE_EXTRA_CA_CERTS:-$PWD/ca.pem}"
+# hostPath(): node.exe reads C:/..., not /cygdrive/c/... (#512).
+. ../tests/tools/host-platform.sh
+export NODE_EXTRA_CA_CERTS="${NODE_EXTRA_CA_CERTS:-$(hostPath "$PWD/ca.pem")}"
 exec node load-users.js "$@" 2>&1 | tee -a load-users.log

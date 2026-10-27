@@ -107,6 +107,11 @@ set -u -o pipefail
 CURRENT_DIR="$(cd "$(dirname "$(realpath "$0")")" && pwd)"
 cd "${CURRENT_DIR}" || exit 1
 
+# Linux, or Windows under Cygwin (#512): hostPath(), hostOpen() and the shims
+# that take the CR off what docker prints. See its header.
+# shellcheck source=tests/tools/host-platform.sh
+. "${CURRENT_DIR}/tests/tools/host-platform.sh"
+
 ONLY=""
 PROTOCOL="on"
 PARENT=""
@@ -566,7 +571,7 @@ else
   fi
 
   docker_compose -f "${COMPOSE_FILE}" run --rm --no-deps \
-    -v "${COVERAGE_DIR}:/usr/src/sts/coverage" \
+    -v "$(hostPath "${COVERAGE_DIR}"):/usr/src/sts/coverage" \
     "${RUN_ENV[@]}" \
     tests node tests/tools/run-report.js ${ARGS[@]+"${ARGS[@]}"}
   RC=$?
@@ -593,17 +598,25 @@ else
   # comment exists to prevent: without the mount, `chown` cheerfully succeeds
   # against the image's OWN empty /usr/src/sts/coverage and the host directory
   # stays root-owned, with nothing said.
-  docker_compose -f "${COMPOSE_FILE}" run --rm --no-deps \
-    -v "${COVERAGE_DIR}:/usr/src/sts/coverage" \
-    --entrypoint chown tests -R "$(id -u):$(id -g)" \
-    /usr/src/sts/coverage /usr/src/sts/tests/report > /dev/null 2>&1 || true
+  #
+  # NOT ON WINDOWS (#512): Docker Desktop writes the host's files as the
+  # Windows user whatever the container ran as, so there is nothing to hand
+  # back, and Cygwin's uid is no user the image has.
+  if [ "${HOST_WINDOWS}" != "1" ];
+  then
+    docker_compose -f "${COMPOSE_FILE}" run --rm --no-deps \
+      -v "$(hostPath "${COVERAGE_DIR}"):/usr/src/sts/coverage" \
+      --entrypoint chown tests -R "$(id -u):$(id -g)" \
+      /usr/src/sts/coverage /usr/src/sts/tests/report > /dev/null 2>&1 || true
+  fi
 
   # The network `run` created, and nothing else — this project has its own
   # name, so `down` here can never reach the stack ./run-tests.sh or a
   # `docker compose up` in this directory is holding.
   docker_compose -f "${COMPOSE_FILE}" down --remove-orphans > /dev/null 2>&1 || true
 
-  if [ -n "$(find "${COVERAGE_DIR}" -user root -print -quit 2>/dev/null)" ];
+  if [ "${HOST_WINDOWS}" != "1" ] &&
+     [ -n "$(find "${COVERAGE_DIR}" -user root -print -quit 2>/dev/null)" ];
   then
     echo ""
     echo "Some of ./coverage is still owned by root — the chown-back container"
@@ -625,13 +638,13 @@ then
       console.log("           " + s.linesPct + "% of lines in the " + s.files +
                   " files loaded, " + s.functionsPct + "% of functions; " +
                   s.neverLoaded + " file(s) loaded by nothing.");
-    ' "${COVERAGE_DIR}/summary.json"
+    ' "$(hostPath "${COVERAGE_DIR}/summary.json")"
   fi
   if [ "${OPEN}" = "1" ];
   then
     # Best effort: a headless machine has no opener, and failing to open the
     # report must not change the exit code of the run it describes.
-    (xdg-open "${COVERAGE_DIR}/index.html" > /dev/null 2>&1 &) || true
+    (hostOpen "${COVERAGE_DIR}/index.html" > /dev/null 2>&1 &) || true
   fi
 else
   echo "No coverage report was written; see the run output above."

@@ -4,10 +4,23 @@
 # soak-check.sh — one hourly stability reading for the 1M-session soak on 8081
 # (rcbj, 2026-10-22). Prints only summaries; never secrets.
 cd "$(dirname "$0")"
+# HOST_WINDOWS and the docker shim under Cygwin, nothing on Linux (#512).
+. ../../tests/tools/host-platform.sh
+
+# Every running process as "pid ... command line". Cygwin's ps has no -o and
+# never sees a native node.exe's arguments, so on Windows they come from WMI.
+commandLines() {
+  if [ "$HOST_WINDOWS" = 1 ]; then
+    powershell.exe -NoProfile -Command 'Get-CimInstance Win32_Process |
+      ForEach-Object { "$($_.ProcessId) $($_.CommandLine)" }' | tr -d '\r'
+  else
+    ps -eo pid,etime,rss,args
+  fi
+}
 # --brief: one line, OK or ALERT with the reason; the full reading otherwise.
 if [ "$1" = "--brief" ]; then
   why=""
-  ps -eo args | grep -q "[s]essions.js" || why="$why script-not-running;"
+  commandLines | grep -q "[s]essions.js" || why="$why script-not-running;"
   last=$(grep "last 60 s" sessions.log | tail -1)
   age=$(( $(date +%s) - $(date -d "$(echo "$last" | cut -c1-19)" +%s 2>/dev/null || echo 0) ))
   [ "$age" -gt 300 ] && why="$why no-minute-line-for-${age}s;"
@@ -23,7 +36,7 @@ if [ "$1" = "--brief" ]; then
 fi
 echo "=== $(date -u +%FT%TZ) soak check ==="
 echo "-- script process:"
-ps -eo pid,etime,rss,args | grep "[s]essions.js" | cut -c1-80 || echo "NOT RUNNING"
+commandLines | grep "[s]essions.js" | cut -c1-80 || echo "NOT RUNNING"
 echo "-- last two minute lines:"
 grep "last 60 s" sessions.log | tail -2 | cut -c1-330
 echo "-- failure lines in the last hour of sessions.log:"

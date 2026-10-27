@@ -80,6 +80,12 @@ set -euo pipefail
 IMAGE_NAME="${IMAGE_NAME:-iya-sts-terraform}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
+# Linux, or Windows under Cygwin (#512): hostPath() for each path docker.exe
+# is handed, and the shims that take the CR off what docker and the cloud
+# CLIs print. See its header.
+# shellcheck source=../../tests/tools/host-platform.sh
+. "${REPO_ROOT}/tests/tools/host-platform.sh"
+
 TF_ENV="${TF_ENV:-${1:-dev}}"
 TF_ACTION="${TF_ACTION:-${2:-plan}}"
 TF_STACK="${TF_STACK:-environment}"
@@ -88,7 +94,9 @@ if [ -n "${DOCKER:-}" ]; then
   read -r -a DOCKER_CMD <<< "${DOCKER}"
 elif docker info >/dev/null 2>&1; then
   DOCKER_CMD=(docker)
-elif command -v sudo >/dev/null 2>&1; then
+elif [ "${HOST_WINDOWS}" != "1" ] && command -v sudo >/dev/null 2>&1; then
+  # Not on Windows, which has no sudo: a daemon that does not answer there
+  # is Docker Desktop not running.
   DOCKER_CMD=(sudo docker)
 else
   echo "ERROR: docker is required and not reachable." >&2
@@ -117,7 +125,6 @@ else
     echo "ERROR: no AWS_* credentials in the environment and no AWS CLI to resolve a session." >&2
     exit 1
   }
-  echo "==> Serving your AWS session to the container as it refreshes${AWS_PROFILE:+ (profile: ${AWS_PROFILE})}" >&2
   # Fail here, naming the fix, rather than inside the container naming a
   # credentials endpoint.
   if ! aws configure export-credentials --format process >/dev/null 2>&1;
@@ -126,6 +133,25 @@ else
     echo "       or export the deployer user's key as AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY." >&2
     exit 1
   fi
+fi
+# ON WINDOWS THE SESSION GOES AS A SNAPSHOT, the arrangement before
+# 2026-09-18 (#512). The live endpoint needs the container on the host's
+# network to reach 127.0.0.1, and Docker Desktop's containers are in its VM:
+# the host is host.docker.internal there, and the SDKs refuse a plain-http
+# credentials URI that is not a loopback address. So the session is resolved
+# once, and an apply that outlives it fails as it used to — which is why the
+# deployer user's key in AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY, which the
+# entrypoint exchanges for a four-hour role session, is the way to run a long
+# one from Windows.
+if [ ! -s "${CREDS_ENV_FILE}" ] && [ "${HOST_WINDOWS}" = "1" ];
+then
+  echo "==> Windows: handing the container a snapshot of your AWS session; a long apply may outlive it" >&2
+  aws configure export-credentials --format env-no-export |
+    grep -E '^AWS_(ACCESS_KEY_ID|SECRET_ACCESS_KEY|SESSION_TOKEN)=' \
+    > "${CREDS_ENV_FILE}"
+elif [ ! -s "${CREDS_ENV_FILE}" ];
+then
+  echo "==> Serving your AWS session to the container as it refreshes${AWS_PROFILE:+ (profile: ${AWS_PROFILE})}" >&2
   command -v node >/dev/null 2>&1 || {
     echo "ERROR: node is needed on the host to serve a refreshing session (host-credentials.js)." >&2
     exit 1
@@ -136,7 +162,7 @@ else
   head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' > "${CREDS_TOKEN_FILE}"
   # A coprocess: this shell holds its stdin, so it exits when the launcher
   # does, however the launcher ends.
-  coproc HOST_CREDS { exec node "${REPO_ROOT}/deploy/aws/host-credentials.js" "${CREDS_TOKEN_FILE}"; }
+  coproc HOST_CREDS { exec node "$(hostPath "${REPO_ROOT}/deploy/aws/host-credentials.js")" "$(hostPath "${CREDS_TOKEN_FILE}")"; }
   CREDS_PORT=""
   read -r -t 20 CREDS_PORT <&"${HOST_CREDS[0]}" || true
   [ -n "${CREDS_PORT}" ] || { echo "ERROR: host-credentials.js did not start." >&2; exit 1; }
@@ -205,14 +231,16 @@ then
   mkdir -p "${REPORT_DIR}"
   # The container runs as uid 10001, which is not you.
   chmod 0777 "${REPORT_DIR}"
-  REPORT_ARGS=(-v "${REPORT_DIR}:/workspace/report")
+  REPORT_ARGS=(-v "$(hostPath "${REPORT_DIR}"):/workspace/report")
   for v in STS_SUITE_EXCLUDE STS_SUITE_ONLY STS_SUITE_KEEP_REALMS STS_SUITE_JOB_TIMEOUT_MS; do
     [ -z "${!v:-}" ] || REPORT_ARGS+=(-e "${v}=${!v}")
   done
 fi
 
 echo "==> Building ${IMAGE_NAME}" >&2
-"${DOCKER_CMD[@]}" build -q -t "${IMAGE_NAME}" -f "${REPO_ROOT}/deploy/aws/Dockerfile" "${REPO_ROOT}" >/dev/null
+"${DOCKER_CMD[@]}" build -q -t "${IMAGE_NAME}" \
+  -f "$(hostPath "${REPO_ROOT}/deploy/aws/Dockerfile")" \
+  "$(hostPath "${REPO_ROOT}")" >/dev/null
 
 # Named, in the background, and waited for, so that an interrupt here can be
 # relayed to it: a foreground `docker run` is a child bash will not interrupt,
@@ -226,7 +254,7 @@ relay() {
 }
 trap relay INT TERM
 "${DOCKER_CMD[@]}" run --rm --name "${CONTAINER_NAME}" \
-  --env-file "${CREDS_ENV_FILE}" \
+  --env-file "$(hostPath "${CREDS_ENV_FILE}")" \
   "${NETWORK_ARGS[@]}" \
   -e AWS_REGION="${AWS_REGION:-us-west-2}" \
   -e TF_STACK="${TF_STACK}" \
