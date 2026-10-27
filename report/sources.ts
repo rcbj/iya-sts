@@ -1082,10 +1082,114 @@ const MECHANISM_TABLE = [
   // one attribute value per person. The asked-names index carries the name
   // since schema version 27, so the holders are an indexed read like the
   // others. A row is the set, its codes counted and never shown.
-  { id: 'recoveryCodes', attribute: 'stsBackupCodes', role: 'recovery' }
+  { id: 'recoveryCodes', attribute: 'stsBackupCodes', role: 'recovery' },
+  // THE WALLET MECHANISMS (#1021, rcbj: credentials from a web wallet, from
+  // a native wallet, and self-issued subjects, by algorithm). A self-issued
+  // subject is a DID or key the person proved with a wallet (SIOPv2), on
+  // the entry as `stsSelfIssuedSubject` — an asked name, so an indexed read
+  // like the others. A verifiable credential this realm issued is NOT on
+  // the entry: it is a row of `oid4vc/vc_issued.ts`'s register, so the
+  // holders come from the register (`register: true`, `reportIssuedRows()`),
+  // bounded by the credentials issued and never by the population.
+  { id: 'selfIssued', attribute: 'stsSelfIssuedSubject', role: 'primary' },
+  { id: 'verifiableCredential', attribute: '', role: 'primary',
+    register: true }
 ];
+
+// The issued-credential register, for a test to replace (#1021): what the
+// report reads is `rowsForSubject(null)` — every live row of the realm —
+// and `nameForSubject(subject)`, the directory's name for a `urn:uuid:`.
+let reportIssuedRegister: any = null;
+
+function reportInstallIssuedRegister(register: any): void {
+  log.debug("Entering reportInstallIssuedRegister().");
+  reportIssuedRegister = register || null;
+  log.debug("Leaving reportInstallIssuedRegister().");
+}
+
+function reportRegister(): any {
+  log.debug("Entering reportRegister().");
+  const register = reportIssuedRegister || require('../oid4vc/vc_issued');
+  log.debug("Leaving reportRegister().");
+  return register;
+}
+
+// Every live row of the register, filed by subject (#1021): one read per
+// report, bounded by the credentials this realm has issued and still
+// remembers, which is what a wallet-credential census is about.
+function reportIssuedRows(): { bySubject: Map<string, any[]> } {
+  log.debug("Entering reportIssuedRows().");
+  const register = reportRegister();
+  const bySubject = new Map<string, any[]>();
+  const rows = typeof register.rowsForSubject === 'function'
+    ? register.rowsForSubject(null) || [] : [];
+  rows.forEach(function (row: any): void {
+    const subject = String((row && row.subject) || '');
+    if (!subject) {
+      return;
+    }
+    bySubject.set(subject, (bySubject.get(subject) || []).concat([row]));
+  });
+  log.debug("Leaving reportIssuedRows(). " + bySubject.size +
+    ' subject(s).');
+  return { bySubject: bySubject };
+}
+
+// The directory's name for a register subject (`urn:uuid:<entryUUID>`), or
+// '' — the test's register may answer it itself.
+function reportNameForSubject(subject: string): string {
+  log.debug("Entering reportNameForSubject().");
+  const register = reportRegister();
+  let name = '';
+  if (register && typeof register.nameForSubject === 'function') {
+    name = String(register.nameForSubject(subject) || '');
+  } else {
+    const helpers = require('../common/helpers');
+    name = String(helpers.nameForSubject(subject) || '');
+  }
+  log.debug("Leaving reportNameForSubject(). " + (name ? 'named' : 'none'));
+  return name;
+}
+
+// A wallet key's algorithm and lane (#1021): from the name the passkey
+// report gives a key, or from a DID that spells its key (did:jwk, did:key).
+function reportKeyLane(algorithm: string): string {
+  log.debug("Entering reportKeyLane().");
+  const lane = !algorithm ? '' :
+    (/ML-DSA|SLH-DSA|ML-KEM/i.test(algorithm) ? 'pqc' : 'classical');
+  log.debug("Leaving reportKeyLane(). " + lane);
+  return lane;
+}
+
+function reportDidAlgorithm(subject: string): string {
+  log.debug("Entering reportDidAlgorithm().");
+  let name = '';
+  try {
+    const di = require('../oid4vc/vc_data_integrity');
+    const credentials = require('../common/credentials');
+    let jwk: any = null;
+    if (/^did:jwk:/.test(subject)) {
+      jwk = di.jwkOfDidJwk(subject);
+    } else if (/^did:key:/.test(subject)) {
+      jwk = di.jwkOfMultikey(subject.slice('did:key:'.length));
+    }
+    name = jwk ? String(credentials.Credentials.keyAlgorithm(
+      { publicKeyJwk: jwk }).name || '') : '';
+  } catch (e) {
+    // A DID that does not decode, or a key the namer does not know: the
+    // row says nothing rather than something wrong.
+    log.debug("Caught in reportDidAlgorithm(): " + ((e && e.message) || e));
+    name = '';
+  }
+  log.debug("Leaving reportDidAlgorithm(). " + name);
+  return name;
+}
+// `entryuuid` is here for the register read (#1021): a credential's subject
+// is `urn:uuid:<entryUUID>`, and an entry the asked-names read handed back
+// without it would show none of the person's wallet credentials when
+// another mechanism's read found the entry first.
 const HOLDER_FIELDS = ['uid', 'displayname', 'cn', 'authnmethod',
-  'mfalastauthtime', 'pwdchangedtime'];
+  'mfalastauthtime', 'pwdchangedtime', 'entryuuid'];
 const GROUP_MEMBERS_MAX = 50000;
 
 function reportParsedValues(values: string[]): any[] {
@@ -1134,24 +1238,108 @@ function reportMinIso(stamps: any[]): string | null {
 
 // The rows one person contributes for one mechanism: a passkey holder has
 // one per role held; every other mechanism one row.
-function reportHolderRows(entry: any, mechanism: any, ldap: any): any[] {
+// What every row of a person says, whatever the mechanism (#1002, #1021).
+function reportHolderCommon(entry: any, mechanism: any, ldap: any): any {
+  log.debug("Entering reportHolderCommon().");
+  const common = {
+    username: reportAttr(entry, 'uid'),
+    displayName: reportAttr(entry, 'displayName') || reportAttr(entry, 'cn'),
+    mechanism: mechanism.id,
+    methodsUsed: reportAttrList(entry, 'authnMethod').join(', '),
+    mfaLastAuthTime: reportLdapTime(reportAttr(entry, 'mfaLastAuthTime')) ||
+      reportIso(Date.parse(reportAttr(entry, 'mfaLastAuthTime'))),
+    memberOf: reportGroupNamesOf(ldap, entry).join(', '),
+    channel: '',
+    format: ''
+  };
+  log.debug("Leaving reportHolderCommon().");
+  return common;
+}
+
+// THE VERIFIABLE CREDENTIALS A PERSON HOLDS (#1021): the register's rows
+// for their subject, one report row per issued copy — its format, the
+// holder key's algorithm and lane, the channel it was issued over, when it
+// was issued and when the wallet last reported on it. A copy the holder
+// removed on /portal/wallet is left out. `credentials` is the person's
+// copies, the same on each row.
+function reportIssuedRowsFor(entry: any, mechanism: any, ldap: any,
+                             context: any): any[] {
+  log.debug("Entering reportIssuedRowsFor().");
+  const subject = 'urn:uuid:' + reportAttr(entry, 'entryUUID');
+  const bySubject: Map<string, any[]> = (context &&
+    context.issuedBySubject) || new Map();
+  const rows = bySubject.get(subject) || [];
+  const copies: any[] = [];
+  rows.forEach(function (row: any): void {
+    [].concat(row.credentials || []).forEach(function (one: any): void {
+      if (one && !one.removedAt) {
+        copies.push({ row: row, one: one });
+      }
+    });
+  });
+  const common = reportHolderCommon(entry, mechanism, ldap);
+  const out = copies.map(function (copy: any): any {
+    const alg = String(copy.one.holderAlg || '');
+    return Object.assign({}, common, {
+      role: mechanism.role,
+      credentials: copies.length,
+      credentialId: String(copy.one.artifactKey || copy.row.key || ''),
+      algorithm: alg,
+      lane: reportKeyLane(alg),
+      channel: String(copy.one.channel || ''),
+      format: String(copy.row.format || ''),
+      enrolledAt: reportMinIso([copy.one.issuedAt]),
+      lastUsedAt: reportMaxIso([copy.one.walletEventAt])
+    });
+  });
+  log.debug("Leaving reportIssuedRowsFor(). " + out.length + '.');
+  return out;
+}
+
+function reportHolderRows(entry: any, mechanism: any, ldap: any,
+                          context?: any): any[] {
   log.debug("Entering reportHolderRows(). " + mechanism.id);
+  if (mechanism.register) {
+    const issued = reportIssuedRowsFor(entry, mechanism, ldap, context);
+    log.debug("Leaving reportHolderRows(). Register.");
+    return issued;
+  }
   const values = reportAttrList(entry, mechanism.attribute);
   if (!values.length) {
     log.debug("Leaving reportHolderRows(). None.");
     return [];
   }
   const username = reportAttr(entry, 'uid');
-  const common = {
-    username: username,
-    displayName: reportAttr(entry, 'displayName') || reportAttr(entry, 'cn'),
-    mechanism: mechanism.id,
-    methodsUsed: reportAttrList(entry, 'authnMethod').join(', '),
-    mfaLastAuthTime: reportLdapTime(reportAttr(entry, 'mfaLastAuthTime')) ||
-      reportIso(Date.parse(reportAttr(entry, 'mfaLastAuthTime'))),
-    memberOf: reportGroupNamesOf(ldap, entry).join(', ')
-  };
+  const common = reportHolderCommon(entry, mechanism, ldap);
   const out: any[] = [];
+  if (mechanism.id === 'selfIssued') {
+    // A SELF-ISSUED SUBJECT (#1021): one row per enrolled DID or key, the
+    // channel the enrolment recorded (`location.kind`, #693; `admin` for
+    // one an administrator entered), the key's algorithm — what the DID
+    // spells, else what the proof was signed with — and when it was proved
+    // or entered.
+    reportParsedValues(values).forEach(function (one: any): void {
+      const subject = String(one.subject || '');
+      const location = one.location && typeof one.location === 'object'
+        ? one.location : null;
+      const channel = location && location.kind ? String(location.kind)
+        : (one.proof === 'admin' ? 'admin' : '');
+      const alg = reportDidAlgorithm(subject) || String(one.keyAlg || '');
+      out.push(Object.assign({}, common, {
+        role: mechanism.role,
+        credentials: values.length,
+        credentialId: subject,
+        algorithm: alg,
+        lane: reportKeyLane(alg),
+        channel: channel,
+        enrolledAt: reportMinIso([Date.parse(String(one.provedAt ||
+          one.enrolledAt || ''))]),
+        lastUsedAt: null
+      }));
+    });
+    log.debug("Leaving reportHolderRows(). " + out.length + ' subject(s).');
+    return out;
+  }
   // ONE ROW PER CREDENTIAL (#1011, rcbj: "a separate row for each passkey
   // + algorithm; the reports we need require this granular data"). Until
   // then a row was a person's credentials of one mechanism and role, with
@@ -1286,6 +1474,8 @@ async function reportMechanismHolders(mechanism: any, ldap: any,
   const holders = await ldap.holdersAsync('person', mechanism.attribute,
     MECHANISM_TABLE.map(function (m: any): string {
       return String(m.attribute).toLowerCase();
+    }).filter(function (name: string): boolean {
+      return name !== '';
     }).concat(HOLDER_FIELDS), stop ? { stop: stop } : undefined);
   const entries = (holders || []).map(reportHolderEntry);
   log.debug("Leaving reportMechanismHolders(). " + entries.length + '.');
@@ -1419,6 +1609,14 @@ async function reportReadCredentialHolders(rows: any, control: any):
       entries.push(entry);
     }
   };
+  // The register's rows, read once when a wallet-credential mechanism is
+  // asked for (#1021): the row builder reads a person's credentials off
+  // them, and the holders read lists their subjects' entries.
+  const wantsRegister = table.some(function (m: any): boolean {
+    return !!m.register;
+  });
+  const context = { issuedBySubject: wantsRegister
+    ? reportIssuedRows().bySubject : new Map<string, any[]>() };
   if (groups.length) {
     // The community first: its members by name, counted against the cap
     // before any is read, then each one's mechanisms.
@@ -1453,6 +1651,12 @@ async function reportReadCredentialHolders(rows: any, control: any):
     let holders = 0;
     let counted = false;
     for (let m = 0; m < table.length && holders <= cap; m++) {
+      if (table[m].register) {
+        // The register's subjects are its holders: counted in hand.
+        counted = true;
+        holders += context.issuedBySubject.size;
+        continue;
+      }
       const n = await ldap.holderCountAsync('person', table[m].attribute,
         cap + 1);
       if (typeof n === 'number') {
@@ -1469,6 +1673,26 @@ async function reportReadCredentialHolders(rows: any, control: any):
     const stop = reportHoldersStop(control);
     try {
       for (let m = 0; m < table.length; m++) {
+        if (table[m].register) {
+          // The register's subjects, named and fetched as a group's
+          // members are (#1021).
+          const names: string[] = [];
+          context.issuedBySubject.forEach(function (rows: any[],
+                                                    subject: string): void {
+            const name = reportNameForSubject(subject);
+            if (name && names.indexOf(name) < 0) {
+              names.push(name);
+            }
+          });
+          const found = names.length
+            ? await ldap.existingUserEntriesAsync(names) : [];
+          (found || []).forEach(function (entry: any): void {
+            if (entry) {
+              take(entry);
+            }
+          });
+          continue;
+        }
         (await reportMechanismHolders(table[m], ldap, stop)).forEach(take);
       }
     } catch (e: any) {
@@ -1490,7 +1714,7 @@ async function reportReadCredentialHolders(rows: any, control: any):
   }
   for (let i = 0; i < entries.length; i++) {
     for (let m = 0; m < table.length; m++) {
-      const made = reportHolderRows(entries[i], table[m], ldap);
+      const made = reportHolderRows(entries[i], table[m], ldap, context);
       for (let r = 0; r < made.length; r++) {
         const keep = await reportOffer(made[r], rows, control);
         if (keep === false) {
@@ -2627,6 +2851,8 @@ export = {
   reportGateOne: reportGateOne,
   installReader: reportInstallReader,
   installDirectory: reportInstallDirectory,
+  // The issued-credential register a test installs (#1021).
+  installIssuedRegister: reportInstallIssuedRegister,
   // The mechanism ids, for the test that holds the catalog's enumeration
   // (#1007) equal to the table (the catalog cannot require this module).
   mechanismIds: function (): string[] {

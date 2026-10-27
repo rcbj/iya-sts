@@ -226,6 +226,45 @@ GROUPABLE list and `rows.ts`'s `LIST_FIELDS` (a single value needs no
 splitting); `lane` is enumerated (#1007). Nothing changed in what is
 read: the same holders, the same entries, more rows out of each.
 
+## The wallet mechanisms (#1021)
+
+rcbj, 2026-10-27: how many people hold verifiable credentials from a web
+wallet, from a native wallet, and self-issued subjects from either, and
+the algorithm of each. Two mechanisms, two different reads:
+
+* **`verifiableCredential` is READ FROM THE REGISTER**, not the entry:
+  the credentials this realm issued live in `oid4vc/vc_issued.ts`'s
+  store, keyed by credential, so `reportIssuedRows()` takes every live
+  row (`rowsForSubject(null)`), files them by subject, counts the
+  subjects as the holders, names them (`helpers.nameForSubject`) and
+  fetches the entries by name as a group's members are fetched. The
+  mechanism carries `register: true`; the attribute-driven doors skip it.
+  One report row per live copy (`reportIssuedRowsFor()`): `format` from
+  the row, `algorithm` and `channel` from the copy — **two new fields the
+  issuer records** (`Issued.holderAlg`, the holder JWK named as the
+  passkey report names a key; `Issued.channel`, `VcIssuer.channelOf(req)`:
+  `web` when the credential request carried a browser Origin, `app`
+  otherwise — a browser must send one on a cross-origin POST and a native
+  wallet sends none; nothing the wallet says about itself is read).
+  Deferred issuance reads the deferred request's Origin the same way. A
+  copy before #1021 has neither. A test installs a register double with
+  `sources.installIssuedRegister()`.
+* **`selfIssued` is the `stsSelfIssuedSubject` attribute**, an asked
+  name, so an indexed read like the others; one row per enrolled value.
+  The channel is #693's `location.kind` (`web`, `app`, `dc_api`; `admin`
+  for a value entered by value). The algorithm is what the DID spells —
+  `did:jwk` through `jwkOfDidJwk()`, `did:key` through `jwkOfMultikey()`,
+  then `Credentials.keyAlgorithm()` — else **`keyAlg`, a new field the
+  enrolment records**: `siop.verifyIdToken()` now answers the proof's
+  header `alg`, `vc_verifier.ts` carries it on the outcome and
+  `vc_signin.ts` hands it to `siop.enrol()`, which keeps it on the value.
+  A did:web enrolled before has none.
+* **`channel` and `format` are catalog fields** (`channel` enumerated:
+  `HOLDER_CHANNELS`), empty on every other mechanism's row, so a count by
+  `channel` is a wallet census and the other mechanisms stay as they were.
+  `reportHolderCommon()` is the one place a row's common columns are
+  built, so both reads say the same about the person.
+
 ## Passwords in the reports (#1019)
 
 rcbj, 2026-10-27: "what about username password authentication?" Three

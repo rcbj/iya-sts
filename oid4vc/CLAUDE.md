@@ -499,6 +499,31 @@ NOT possible: a trusted issuer CERTIFICATE with a post-quantum key (node reads
 no ML-DSA certificate into a `KeyObject` here), and an ldp_vc holder key of any
 other post-quantum kind, because no cryptosuite defines one.
 
+### What the reports read off this family (#1021, 2026-10-27)
+
+rcbj asked how many people hold credentials from a web wallet, from a
+native wallet, and self-issued subjects from either, by algorithm; the
+reports application's `credentialHolders` source answers it
+(`report/CLAUDE.md`), and this family records three things for it,
+each where the fact is known:
+
+* **`Issued.holderAlg`** — the holder key's algorithm as
+  `Credentials.keyAlgorithm()` names a passkey's (ES256, EdDSA,
+  ML-DSA-65), read off the holder JWK at `rememberIssued()`.
+* **`Issued.channel`** — `VcIssuer.channelOf(req)`: `web` when the
+  credential (or deferred) request carried a browser `Origin` header, `app`
+  otherwise. A browser must send one on a cross-origin POST and a native
+  wallet sends none; nothing the wallet says about itself is read, and
+  the value is a note for the reports, never a gate.
+* **A self-issued value's `keyAlg`** — `verifyIdToken()` answers the
+  proof's header `alg`; the sign-in's enrolment hands it to `enrol()` as
+  `options.keyAlg`, kept on the value beside `location`. A did:jwk and a
+  did:key spell their key; this is for the did:web and the thumbprint,
+  which do not.
+
+A row or value written before carries none of the three, and the report
+says nothing for it rather than something wrong.
+
 ### A wallet is a factor
 
 A presentation proves possession of one key, and #38 answered that by

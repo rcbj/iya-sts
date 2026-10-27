@@ -53,7 +53,7 @@ const CREDENTIALS = ['userPassword', 'unicodePwd', 'ntPassword', 'krb5Key',
 const GROUPABLE = ['status', 'enabled', 'type', 'protocol', 'category',
   'action', 'outcome', 'format', 'family', 'application', 'day',
   'mechanism', 'dialect', 'mode', 'onFailure', 'role', 'algorithm',
-  'lane', 'factors', 'hasPassword'];
+  'lane', 'factors', 'hasPassword', 'channel', 'format'];
 
 // Scalars a filter may name and a sort may not. `members` is not in this
 // list because it cannot be filtered either.
@@ -84,8 +84,12 @@ interface FieldSpec {
 // `MECHANISM_TABLE` order; `tests/report_query.js` holds the two lists equal,
 // because the catalog cannot require `sources.ts` (it requires the catalog).
 const HOLDER_MECHANISMS = ['passkey', 'totp', 'emailFactor', 'certificate',
-  'kerberos', 'password', 'recoveryCodes'];
+  'kerberos', 'password', 'recoveryCodes', 'selfIssued',
+  'verifiableCredential'];
 const HOLDER_ROLES = ['primary', 'mfa', 'recovery'];
+// Where a wallet credential came from (#1021): a web wallet, a native wallet
+// app, the browser's Digital Credentials API, or an administrator's hand.
+const HOLDER_CHANNELS = ['web', 'app', 'dc_api', 'admin'];
 
 // The operators the store answers with an index, per field of `users`. No
 // other source reads the directory row by row, so no other source has a row.
@@ -284,11 +288,14 @@ function standardSources(): SourceSpec[] {
        field('displayName', 'string',
          'displayName, or cn when displayName is empty.'),
        field('mechanism', 'string',
-         'passkey, totp, emailFactor, certificate, kerberos, password or ' +
-         'recoveryCodes (the password is counted from the realm\'s ' +
-         'counter and listed only narrowed by memberOf; its row carries ' +
-         'the hash scheme, never the hash; a recovery code set is one ' +
-         'row, its codes counted, never shown).',
+         'passkey, totp, emailFactor, certificate, kerberos, password, ' +
+         'recoveryCodes, verifiableCredential or selfIssued (the password ' +
+         'is counted from the realm\'s counter and listed only narrowed ' +
+         'by memberOf; its row carries the hash scheme, never the hash; a ' +
+         'recovery code set is one row, its codes counted, never shown; a ' +
+         'verifiable credential is one this realm issued, read from its ' +
+         'register; a self-issued subject is a DID or key the person ' +
+         'enrolled with a wallet).',
          HOLDER_INDEXED.mechanism, HOLDER_MECHANISMS),
        field('role', 'string',
          'primary (signs the person in on its own), mfa (a second ' +
@@ -305,8 +312,17 @@ function standardSources(): SourceSpec[] {
          'This credential\'s signature algorithm: a passkey\'s JOSE name ' +
          '(ES256, ML-DSA-65), an authenticator app\'s HMAC algorithm.'),
        field('lane', 'string',
-         'A passkey\'s lane, classical or pqc; empty for the others.',
-         undefined, ['classical', 'pqc']),
+         'A passkey\'s or a wallet key\'s lane, classical or pqc; empty ' +
+         'for the others.', undefined, ['classical', 'pqc']),
+       field('channel', 'string',
+         'Where a wallet credential came from (#1021): web (a web ' +
+         'wallet), app (a native wallet), dc_api (the browser\'s Digital ' +
+         'Credentials API) or admin (enrolled by an administrator). Empty ' +
+         'for the other mechanisms, and for a credential recorded before ' +
+         'the channel was kept.', undefined, HOLDER_CHANNELS),
+       field('format', 'string',
+         'A verifiable credential\'s format: dc+sd-jwt, jwt_vc_json or ' +
+         'ldp_vc. Empty for the other mechanisms.'),
        field('enrolledAt', 'timestamp',
          'When this credential was enrolled, where it records it.'),
        field('lastUsedAt', 'timestamp',

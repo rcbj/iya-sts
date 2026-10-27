@@ -943,9 +943,21 @@ function directoryDouble(windowed) {
       total: 2, remaining: 1, generatedAt: 4000, lastUsedAt: 8000 })],
     pwdChangedTime: ['20261020100000Z'],
     authnMethod: ['pwd', 'hwk', 'otp'],
+    // A self-issued subject proved with a web wallet (#1021): a did:web,
+    // whose key the DID does not spell, so the proof's algorithm is kept.
+    stsSelfIssuedSubject: [JSON.stringify({ subject: 'did:web:ada.example',
+      label: 'w', enrolledAt: '2026-10-10T10:00:00.000Z', by: 'self (SIOPv2)',
+      proof: 'wallet', provedAt: '2026-10-11T10:00:00.000Z',
+      pinnedKeys: ['tp1'], location: { kind: 'web',
+        value: 'https://wallet.example/' }, keyAlg: 'ES256' })],
     mfaLastAuthTime: ['2026-10-20T10:00:00.000Z'] });
   const bea = person('bea', { pwdAccountLockedTime: ['20261001120000Z'],
-    stsWebauthnCredential: [key('mfa', 'ES256', -7, 'classical', 100, 200)]
+    stsWebauthnCredential: [key('mfa', 'ES256', -7, 'classical', 100, 200)],
+    // A subject an administrator entered by value (#1021): channel admin,
+    // no proof, no algorithm the record or the DID gives.
+    stsSelfIssuedSubject: [JSON.stringify({ subject: 'did:web:bea.example',
+      label: 'a', enrolledAt: '2026-10-12T10:00:00.000Z', by: 'admin',
+      proof: 'admin', location: { kind: 'admin', value: '' } })]
   });
   const cy = person('cy');
   const xbea = person('xbea');
@@ -2376,6 +2388,27 @@ async function holders(t) {
   const sources = require('../report/sources');
   const built = directoryDouble(true);
   sources.installDirectory(built.ldap);
+  // THE ISSUED-CREDENTIAL REGISTER'S DOUBLE (#1021): ada holds two copies
+  // of one credential — an ES256 key from a web wallet, an ML-DSA-65 key
+  // from a native one — and a copy she removed, which is left out.
+  const adaSubject = 'urn:uuid:11111111-1111-4111-8111-111111111111';
+  sources.installIssuedRegister({
+    rowsForSubject: function () {
+      return [{ key: 'row-ada', subject: adaSubject, jkt: 'k1',
+        format: 'dc+sd-jwt', configId: 'IdentityCredential',
+        credentials: [
+          { artifactKey: 'a1', issuedAt: 1700000000000, expiresAt: 0,
+            holderAlg: 'ES256', channel: 'web', walletEventAt: 1700000500000 },
+          { artifactKey: 'a2', issuedAt: 1700001000000, expiresAt: 0,
+            holderAlg: 'ML-DSA-65', channel: 'app', walletEventAt: 0 },
+          { artifactKey: 'a3', issuedAt: 1700002000000, expiresAt: 0,
+            holderAlg: 'ES256', channel: 'web', removedAt: 1700003000000 }]
+      }];
+    },
+    nameForSubject: function (subject) {
+      return subject === adaSubject ? 'ada' : '';
+    }
+  });
   const calls = built.calls;
   const reset = function () {
     Object.keys(calls).forEach(function (key) {
@@ -2473,9 +2506,11 @@ async function holders(t) {
       return row.username + '/' + row.mechanism + '/' + row.role;
     }).sort().join(','),
       'ada/passkey/mfa,ada/passkey/primary,ada/passkey/primary,' +
-      'ada/password/primary,ada/recoveryCodes/recovery,ada/totp/mfa',
-      'every credential of every member, the password and the codes among ' +
-      'them');
+      'ada/password/primary,ada/recoveryCodes/recovery,' +
+      'ada/selfIssued/primary,ada/totp/mfa,ada/verifiableCredential/primary,' +
+      'ada/verifiableCredential/primary',
+      'every credential of every member, the password, the codes and the ' +
+      'wallet\'s among them');
 
     reset();
     const counted = await read({ source: 'credentialHolders',
@@ -2502,14 +2537,60 @@ async function holders(t) {
     t.check(everybody.description.indexOf('mechanism (eq, in)') >= 0,
       'and the refusal names the indexed fields', everybody.description);
     const asJob = await read({ source: 'credentialHolders',
-      select: fields, limit: 10 }, 'async');
+      select: fields, limit: 20 }, 'async');
     t.equal(asJob.ok, true, 'as a job it reads every mechanism\'s holders');
-    t.equal((asJob.rows || []).length, 7,
-      'ada three passkeys, an authenticator app, a password and a code ' +
-      'set, bea one passkey');
-    t.equal(calls.holders, 7, 'one holders lookup per mechanism');
-    t.equal(calls.holderCount, 7, 'after one count per mechanism');
-    t.equal(calls.holdersStop, 7, 'and each read carries a stop');
+    t.equal((asJob.rows || []).length, 11,
+      'ada three passkeys, an authenticator app, a password, a code set, ' +
+      'a self-issued subject and two credentials; bea a passkey and a ' +
+      'subject');
+    t.equal(calls.holders, 8, 'one holders lookup per entry mechanism');
+    t.equal(calls.holderCount, 8, 'after one count per entry mechanism');
+    t.equal(calls.holdersStop, 8, 'and each read carries a stop');
+
+    // THE WALLET MECHANISMS (#1021): a verifiable credential per issued
+    // copy, from the register, with its channel, algorithm, lane and
+    // format; a self-issued subject per enrolled DID, with the channel the
+    // enrolment recorded and the key's algorithm.
+    reset();
+    const issued = await read({ source: 'credentialHolders',
+      select: fields.concat(['channel', 'format']), limit: 5,
+      where: { op: 'eq', field: 'mechanism', value: 'verifiableCredential' }
+    });
+    t.equal(calls.holders, 0, 'the register, not the directory index');
+    t.equal((issued.rows || []).map(function (row) {
+      return row.username + '/' + row.channel + '/' + row.algorithm + '/' +
+        row.lane + '/' + row.format;
+    }).sort().join(','),
+      'ada/app/ML-DSA-65/pqc/dc+sd-jwt,ada/web/ES256/classical/dc+sd-jwt',
+      'one row per live copy, with channel, algorithm, lane and format');
+    t.equal(issued.rows[0].credentials, 2, 'two live copies counted');
+    t.equal(issued.rows.filter(function (row) {
+      return row.channel === 'web';
+    })[0].lastUsedAt, '2023-11-14T22:21:40.000Z',
+      'the wallet\'s last report is the last use');
+    reset();
+    const selfIssued = await read({ source: 'credentialHolders',
+      select: fields.concat(['channel']), limit: 5,
+      where: { op: 'eq', field: 'mechanism', value: 'selfIssued' } });
+    t.equal((selfIssued.rows || []).map(function (row) {
+      return row.username + '/' + row.channel + '/' + row.algorithm + '/' +
+        row.credentialId;
+    }).sort().join(','),
+      'ada/web/ES256/did:web:ada.example,bea/admin//did:web:bea.example',
+      'a self-issued subject row per enrolment, with its channel');
+    t.equal(selfIssued.rows.filter(function (row) {
+      return row.username === 'ada';
+    })[0].enrolledAt, '2026-10-11T10:00:00.000Z',
+      'proved when the enrolment says');
+    reset();
+    const byChannel = await read({ source: 'credentialHolders',
+      select: ['channel'], aggregate: 'count', groupBy: ['channel'],
+      limit: 5, where: { op: 'in', field: 'mechanism',
+        value: ['verifiableCredential', 'selfIssued'] } });
+    t.equal(JSON.stringify((byChannel.rows || []).map(function (row) {
+      return row.channel + '=' + row.count;
+    }).sort()), JSON.stringify(['admin=1', 'app=1', 'web=2']),
+      'the census counts wallet credentials by channel');
 
     // THE RECOVERY CODE SET (#1024): one row, the unused codes counted, the
     // hash scheme as its algorithm, never a hash or a code.
@@ -2616,6 +2697,7 @@ async function holders(t) {
     t.equal((fewAgain.rows || []).length, 0, 'nobody here holds one');
   } finally {
     sources.installDirectory(null);
+    sources.installIssuedRegister(null);
   }
   log.debug("Leaving holders().");
 }

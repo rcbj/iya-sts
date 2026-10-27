@@ -227,6 +227,15 @@ async function prerequisites(t, expect) {
           }).join() === daveDid,
           '10d. enrolled as proved, its key pinned, and a proven subject',
           JSON.stringify(daveIn));
+  // The proof's algorithm is kept on the value (#1021), for the reports.
+  const daveAlg = siop.enrol('siop-dave', daveDid, 'w', 'self (SIOPv2)',
+    { proof: siop.PROOF_WALLET, pinnedKeys: [proved.keyThumbprint],
+      keyAlg: 'ES256' });
+  t.check(daveAlg.ok && siop.list('siop-dave').filter(function (one) {
+            return one.subject === daveDid;
+          })[0].keyAlg === 'ES256',
+          '10d-ii. an enrolment keeps the algorithm the proof was signed with',
+          JSON.stringify(daveAlg));
   const daveSignIn = await stubbed.verifyIdToken(tokenFor(davePair, daveDid),
                                                  expect);
   t.check(daveSignIn.ok && stubbed.signInOutcome(daveSignIn).username ===

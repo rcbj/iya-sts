@@ -4226,7 +4226,8 @@ class VcVerifier {
                     username: String(record.signIn.enrol.username),
                     subject: idv.subject, enrol: true,
                     pinnedKeys: idv.keyThumbprint ? [idv.keyThumbprint]
-                                                  : [] };
+                                                  : [],
+                    alg: String(idv.alg || '') };
       } else {
         outcome = siop.signInOutcome(idv);
       }

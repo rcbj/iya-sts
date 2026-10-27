@@ -669,7 +669,8 @@ class Siop {
   enrol(username: unknown, subject: unknown, label: unknown,
         by: unknown, options?: { proof?: string;
                                  pinnedKeys?: string[];
-                                 location?: Json }): Json {
+                                 location?: Json;
+                                 keyAlg?: string }): Json {
     const { log, credentials } = this.deps;
     log.debug("Entering Siop.enrol(). user=" + username);
     const opts = options || {};
@@ -705,6 +706,12 @@ class Siop {
       proof: proof };
     if (proof === PROOF_WALLET) {
       record.provedAt = new Date().toISOString();
+    }
+    // THE KEY'S ALGORITHM (#1021), for the reports: a did:jwk and a did:key
+    // spell their key, a did:web and a thumbprint do not, so the algorithm
+    // the proof was signed with is kept on the value where a proof gave it.
+    if (opts.keyAlg) {
+      record.keyAlg = String(opts.keyAlg).slice(0, 32);
     }
     // WHERE IT CAME FROM (2026-10-20): what the proof's caller observed,
     // checked; an administrator's value says so. Written afresh on every
@@ -1191,7 +1198,7 @@ class Siop {
     };
     const out: Json = { ok: false, checks: checks, subject: '', jwk: null,
                         keyThumbprint: '', claims: null, errorCode: '',
-                        reason: '' };
+                        reason: '', alg: '' };
     const text = typeof token === 'string' ? token.trim() : '';
     let header: Json = null;
     let claims: Json = null;
@@ -1313,6 +1320,9 @@ class Siop {
     out.ok = allOk;
     out.subject = subject;
     out.jwk = jwk;
+    // The algorithm the proof was signed with (#1021): what an enrolment
+    // records as the key's, for a did:web whose key the DID does not spell.
+    out.alg = String((header && header.alg) || '');
     out.claims = claims;
     log.debug("Leaving Siop.verifyIdToken(). ok=" + allOk);
     return out;
