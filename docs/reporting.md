@@ -151,10 +151,11 @@ with outcome `error`, and shown as *no email address* beside the group in
 the pane. The other recipients are still sent to.
 
 **Sort and Group by are behind checkboxes.** Tick **Sort** to choose the
-field and the direction; unticked, the query carries no order. The
-**Group by** choice appears when **Count** is ticked, because a group-by
-is always a count. A saved definition with an order or a count opens
-with the boxes ticked and the choices shown.
+field and the direction on the same row; unticked, the query carries no
+order. Tick **Group by** to choose the group field; a group-by is always
+a count, so it counts whether or not **Count** is ticked. A saved
+definition with an order or a group opens with the boxes ticked and the
+choices shown.
 
 **The result of Run is paged on the page.** Every row the query
 returned is kept in the browser and shown fifty at a time, with the same

@@ -173,6 +173,12 @@ const REPORT_STYLE = [
   '.table td { overflow-wrap: anywhere; }',
   '.field { margin: .5rem 0; }',
   '.field label { display: block; }',
+  // THE `hidden` ATTRIBUTE WINS (#1013): the rules above and `.row`'s flex
+  // set `display`, which outranks the browser's own `[hidden] { display:
+  // none }`, so the Sort selects stayed in view with the box unticked
+  // (rcbj, 2026-10-27). One rule, so every gated control hides.
+  '[hidden] { display: none !important; }',
+  '.row label { display: inline-flex; align-items: center; gap: .3rem; }',
   '.err { color: #a3242c; }',
   // The status bubble (rcbj, 2026-10-26), the console's `.flash`: sticky at
   // the top of the card, one message, ok or err, with a dismiss.
