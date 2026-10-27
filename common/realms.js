@@ -3104,11 +3104,13 @@ class IndexedMap extends Map {
  * @param {any} [options]
  * @returns {Map<any, any> & { realmMap: (id?: any) => Map<any, any>,
  *   lookup: (indexKey: string) => any[], onDemandLive: () => boolean,
+ *   lookupEntries: (indexKey: string) =>
+ *     { key: any, origin: string, own: boolean, value: any }[],
  *   scan: (fn: (value: any, key: any) => void) => void,
  *   scanAsync: (fn: (value: any, key: any) => void) => Promise<void>,
  *   warm: (keys: any[]) => Promise<void>, peek: (k: any) => any,
  *   lookupEntriesAsync: (indexKey: string) =>
- *     Promise<{ key: any, value: any }[]>,
+ *     Promise<{ key: any, origin?: string, own?: boolean, value: any }[]>,
  *   newestAsync: (limit: number) =>
  *     Promise<{ key: any, value: any }[] | null>,
  *   countAsync: () => Promise<number | null>,
@@ -3435,6 +3437,33 @@ function map(options) {
     return found.value;
   }
 
+  // The keys held here that are filed under an index value.
+  function heldUnder(target, indexKey) {
+    log.debug("Entering heldUnder().");
+    let held = [];
+    if (typeof target.lookup === 'function') {
+      held = target.lookup(indexKey);
+    } else if (indexBy) {
+      // An on-demand store: a walk of what is held — the bounded cache
+      // when live, the whole store until then, which is what the callers
+      // did before #820 (`membersOf()` walked every token at a revoke).
+      target.forEach(function (value, key) {
+        let keys = [];
+        try {
+          keys = indexBy(value, key) || [];
+        } catch (e) {
+          log.debug("Caught in heldUnder(): " + ((e && e.message) || e));
+          keys = [];
+        }
+        if (keys.indexOf(indexKey) >= 0) {
+          held.push(key);
+        }
+      });
+    }
+    log.debug("Leaving heldUnder(). " + held.length + " key(s).");
+    return held;
+  }
+
   const facade = {
     // The keys of the ambient realm's records filed under one index key
     // (`options.indexBy`, #766); empty for a store that has no index. On
@@ -3443,26 +3472,7 @@ function map(options) {
     lookup: function (indexKey) {
       log.debug("Entering lookup().");
       const target = per();
-      let held = [];
-      if (typeof target.lookup === 'function') {
-        held = target.lookup(indexKey);
-      } else if (indexBy) {
-        // An on-demand store: a walk of what is held — the bounded cache
-        // when live, the whole store until then, which is what the callers
-        // did before #820 (`membersOf()` walked every token at a revoke).
-        target.forEach(function (value, key) {
-          let keys = [];
-          try {
-            keys = indexBy(value, key) || [];
-          } catch (e) {
-            log.debug("Caught in lookup(): " + ((e && e.message) || e));
-            keys = [];
-          }
-          if (keys.indexOf(indexKey) >= 0) {
-            held.push(key);
-          }
-        });
-      }
+      const held = heldUnder(target, indexKey);
       if (!demandOn() || typeof onDemandReader.byIndex !== 'function') {
         log.debug("Leaving lookup().");
         return held;
@@ -3471,6 +3481,13 @@ function map(options) {
       const out = new Set(held);
       (onDemandReader.byIndex(handleName, realmId, indexKey) || [])
         .forEach(function (row) {
+          // ANOTHER PROCESS'S ROW of a `merge: 'own'` store (#1001) is not
+          // a key of this Map: it cannot be `get()`, and cached under the
+          // bare key it would be written back under THIS origin. It is
+          // answered by `lookupEntries()` below, never here.
+          if (row.own === false) {
+            return;
+          }
           if (onDemandReader.journalled(handleName, realmId, row.key)) {
             if (target.has(row.key)) {
               out.add(row.key);
@@ -3485,6 +3502,62 @@ function map(options) {
       demandTrim(realmId, target);
       log.debug("Leaving lookup(). " + out.size + " key(s).");
       return Array.from(out);
+    },
+    // EVERY ROW FILED UNDER AN INDEX VALUE, WITH WHOSE IT IS (#1001,
+    // 2026-10-27). `lookup()` answers KEYS, which is the whole answer for a
+    // store with one row per key. A `merge: 'own'` store on demand
+    // (`admin_stats.users`) has a row per PROCESS for one key, and a reader
+    // that wants the person wants all of them: this process's — held, or
+    // read from the index and held, as `lookup()` does — and every other
+    // origin's, read and handed over with its origin and NOT cached. An
+    // entry is `{ key, origin, own, value }`; `origin` is '' for this
+    // process's row. Synchronous, for the request paths that ask (a sign-in
+    // count, `knownUser()`); a console page that can wait has
+    // `lookupEntriesAsync()`.
+    lookupEntries: function (indexKey) {
+      log.debug("Entering lookupEntries().");
+      const target = per();
+      const out = [];
+      const seen = new Set();
+      heldUnder(target, indexKey).forEach(function (key) {
+        seen.add(key);
+        out.push({ key: key, origin: '', own: true, value: target.get(key) });
+      });
+      if (!demandOn() || typeof onDemandReader.byIndex !== 'function') {
+        log.debug("Leaving lookupEntries(). Held only.");
+        return out;
+      }
+      const realmId = partitionId(currentId());
+      (onDemandReader.byIndex(handleName, realmId, indexKey) || [])
+        .forEach(function (row) {
+          if (row.own === false) {
+            out.push({ key: row.key, origin: String(row.origin || ''),
+                       own: false, value: row.value });
+            return;
+          }
+          if (seen.has(row.key)) {
+            return;
+          }
+          if (onDemandReader.journalled(handleName, realmId, row.key)) {
+            // A write of this key is pending: the Map's value is the truth
+            // and the store's row is behind it (or it is deleted).
+            if (target.has(row.key)) {
+              seen.add(row.key);
+              out.push({ key: row.key, origin: '', own: true,
+                         value: target.get(row.key) });
+            }
+            return;
+          }
+          if (!target.has(row.key)) {
+            target.set(row.key, row.value);
+          }
+          seen.add(row.key);
+          out.push({ key: row.key, origin: '', own: true,
+                     value: target.get(row.key) });
+        });
+      demandTrim(realmId, target);
+      log.debug("Leaving lookupEntries(). " + out.length + " row(s).");
+      return out;
     },
     // THE ROWS A REQUEST IS ABOUT TO ASK FOR, READ IN ONE ASYNCHRONOUS BATCH
     // (2026-10-21): a refresh knows its token's jti, family and register
@@ -3685,17 +3758,27 @@ function map(options) {
       const realmId = partitionId(currentId());
       const rows = await onDemandReader.byIndexAsync(handleName, realmId,
                                                      indexKey);
+      // ANOTHER PROCESS'S ROWS of a `merge: 'own'` store (#1001) are handed
+      // over as they are, each with its origin, beside this process's; a
+      // held row is the fresher only for THIS process's own row.
+      const foreign = [];
       (rows || []).forEach(function (row) {
+        if (row.own === false) {
+          foreign.push({ key: row.key, origin: String(row.origin || ''),
+                         own: false, value: row.value });
+          return;
+        }
         if (out.has(row.key) ||
             onDemandReader.journalled(handleName, realmId, row.key)) {
           return;
         }
         out.set(row.key, row.value);
       });
-      log.debug("Leaving lookupEntriesAsync(). " + out.size + " row(s).");
+      log.debug("Leaving lookupEntriesAsync(). " + (out.size +
+                foreign.length) + " row(s).");
       return Array.from(out, function (e) {
-        return { key: e[0], value: e[1] };
-      });
+        return { key: e[0], origin: '', own: true, value: e[1] };
+      }).concat(foreign);
     },
     // The newest rows of the ambient realm, highest `sortBy` first, as
     // `[{ key, value }]`: the store's newest `limit` and every held row

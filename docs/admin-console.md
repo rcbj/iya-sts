@@ -1791,16 +1791,20 @@ mode does not check. A realm in product mode does not show it.
 
 ## What the console keeps
 
-The registries behind these pages are **bounded**: the most recent 5,000
-tokens and 5,000 other artifacts, 500 call paths, and 2,000 identities keeping
-their 50 most recent authentications each (capped per person, because a test
-loop signing one name in a thousand times is normal). What was dropped is
-counted and shown. In product mode on a postgres store each process's share
-of the identity register is written down after every sign-in, so a person's
-authentication count and recent events survive a restart and are summed
-across the request workers and the nodes of a cluster; an identity that fell
-past the cap and signs in again starts a new record at one. The revoked-jti set is **not** capped and is kept apart from
-the token records, so a token whose record has aged out stays revoked. The
+The registries behind these pages are **bounded in memory**: the most recent
+5,000 tokens and 5,000 other artifacts, 500 call paths, and 2,000 identities
+keeping their 50 most recent authentications each (capped per person,
+because a test loop signing one name in a thousand times is normal). What was
+dropped is counted and shown. **In product mode on a postgres store the
+identity register is read from the store**: each process writes its share of
+a person's record after every sign-in, and a person's page, their count on
+the user portal and whether they are known are read back from the store —
+every process's share and every restart's, summed — so the 2,000 bounds only
+what a process keeps in memory, and nothing is lost when a record leaves it.
+The whole-register figures on this page (how many identities, how many
+sign-ins in all) are then what the process holds, and the page says so. The
+revoked-jti set is **not** capped and is kept apart from the token records,
+so a token whose record has aged out stays revoked. The
 audit log is capped by `audit.maxEvents` and the delegation acts by
 `delegation.maxRecords`.
 
