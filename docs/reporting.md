@@ -150,6 +150,14 @@ it too). **A shared group with no address is an error of its own**,
 with outcome `error`, and shown as *no email address* beside the group in
 the pane. The other recipients are still sent to.
 
+**The result of Run is paged on the page.** Every row the query
+returned is kept in the browser and shown fifty at a time, with the same
+pager the Definitions and Jobs lists use above and below the table:
+first, previous, a window of page numbers, next, last, a "rows N–M of T"
+line and a rows-per-page choice (25, 50, 100 or 200). Turning a page or
+changing the size redraws from what came back and asks the service
+nothing; the query's `limit` still decides how many rows that is.
+
 ## The catalog
 
 `GET /report-api/catalog` lists every source. `GET /report-api/catalog/{id}`
