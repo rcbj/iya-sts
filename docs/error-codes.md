@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4692** of them, in **48** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4700** of them, in **48** subsystems.
 
 ## Where a code appears
 
@@ -79,7 +79,7 @@ is an ordinary outcome.
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 151
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 53
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 138
-* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 125
+* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 129
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 48
 * [Mail (`STS-MAIL`)](#sts-mail) — 40
 * [Languages and locales (`STS-I18N`)](#sts-i18n) — 12
@@ -3851,6 +3851,10 @@ Raised from: ssf/.
 | `STS-SSF-0144` | The internal poll (#771) could not collect a surface's Security Event Tokens in a realm: the request failed or was refused. They stay queued on the stream and the next run tries again. | none — logged once per change of outcome |
 | `STS-SSF-0145` | A poll for one of this service's own receiver streams presented the wrong authorization header, or none (#771). Only this service's own receivers hold the credential. | RFC 8935 section 2.4 shape, err access_denied (HTTP 401) |
 | `STS-SSF-0146` | A Security Event Token was pushed to one of this service's own receive endpoints while its stream is delivered by poll (#771). Nothing is agreed to be pushed there. | RFC 8935 section 2.4 shape, err invalid_request (HTTP 400) |
+| `STS-SSF-0147` | A TLS client certificate presented alone to a Shared Signals endpoint was not taken as a receiver (#1049): this service issued it, and it is not an identity here, is another realm's, or names a person rather than an application. | HTTP 401 {err: authentication_failed} with WWW-Authenticate |
+| `STS-SSF-0148` | A TLS client certificate this realm issued to an application was presented to a Shared Signals endpoint after the application's record stopped listing it (#1049). | HTTP 401 {err: authentication_failed} with WWW-Authenticate |
+| `STS-SSF-0149` | An application authenticated to a Shared Signals endpoint by its TLS client certificate holds no permission the operation needs (#1049): its oauthAllowedScope declares none, or its SSF_READ and SSF_MANAGE roles authorize none of what it declares. | HTTP 403 {err: access_denied} with WWW-Authenticate |
+| `STS-SSF-0150` | A TLS client certificate presented alone to a Shared Signals endpoint was refused on revocation (#1049); the certificate's own code is on the audit row beside it. | HTTP 401 {err: authentication_failed} with WWW-Authenticate |
 
 ## STS-RISK
 

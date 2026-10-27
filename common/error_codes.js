@@ -17087,6 +17087,28 @@ const CODES = [
       'own receive endpoints while its stream is delivered by poll (#771). ' +
       'Nothing is agreed to be pushed there.',
     spec: 'RFC 8935 section 2.4 shape, err invalid_request (HTTP 400)' },
+  { code: 'STS-SSF-0147',
+    summary: 'A TLS client certificate presented alone to a Shared Signals ' +
+      'endpoint was not taken as a receiver (#1049): this service issued ' +
+      'it, and it is not an identity here, is another realm\'s, or names a ' +
+      'person rather than an application.',
+    spec: 'HTTP 401 {err: authentication_failed} with WWW-Authenticate' },
+  { code: 'STS-SSF-0148',
+    summary: 'A TLS client certificate this realm issued to an application ' +
+      'was presented to a Shared Signals endpoint after the application\'s ' +
+      'record stopped listing it (#1049).',
+    spec: 'HTTP 401 {err: authentication_failed} with WWW-Authenticate' },
+  { code: 'STS-SSF-0149',
+    summary: 'An application authenticated to a Shared Signals endpoint by ' +
+      'its TLS client certificate holds no permission the operation needs ' +
+      '(#1049): its oauthAllowedScope declares none, or its SSF_READ and ' +
+      'SSF_MANAGE roles authorize none of what it declares.',
+    spec: 'HTTP 403 {err: access_denied} with WWW-Authenticate' },
+  { code: 'STS-SSF-0150',
+    summary: 'A TLS client certificate presented alone to a Shared Signals ' +
+      'endpoint was refused on revocation (#1049); the certificate\'s own ' +
+      'code is on the audit row beside it.',
+    spec: 'HTTP 401 {err: authentication_failed} with WWW-Authenticate' },
   // ===== RISK ==============================================================
   { code: 'STS-RISK-0001',
     summary: 'A dataset import was refused before anything was loaded: the ' +

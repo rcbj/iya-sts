@@ -7075,6 +7075,14 @@
     "en": "34a196af42de2673",
     "text": "Kung tumatanggap ang mga SSF endpoint ng HTTP Basic katabi ng mga OAuth 2.0 access token, at inilalathala ito sa authorization_schemes. Sa development, pumapasa ang anumang username na may anumang password maliban sa \"invalid\"; sa product mode, vine-verify ang password laban sa naka-hash na userPassword ng tao. Alinman dito, hawak ng Basic principal ang parehong scope, dahil walang dalang scope ang Basic — kaya ang deployment na gustong ipatupad ang ssf.read at ssf.manage para sa bawat caller ay ino-off ito."
   },
+  "ssf.authClientCert|label": {
+    "en": "ad5fbafbb2ac1812",
+    "text": "Mag-alok ng mga TLS client certificate"
+  },
+  "ssf.authClientCert|description": {
+    "en": "73d4ba2aa33adad2",
+    "text": "Kung tumatanggap ang mga SSF endpoint ng receiver na na-authenticate sa pamamagitan ng TLS client certificate sa koneksyon nito, nang walang Authorization header, at kung inilalathala ang urn:ietf:rfc:8705 sa authorization_schemes. Tanging certificate na inisyu ng realm na ito sa isang application, at hawak pa ng application, ang tinatanggap; ang receiver ay ang application na iyon at may-ari ng mga stream na nililikha nito, at hawak nito ang mga Shared Signals scope na idinedeklara ng oauthAllowedScope nito at pinahihintulutan ng mga role nitong SSF_READ at SSF_MANAGE."
+  },
   "ssf.internalReceivers|label": {
     "en": "7e760a8d68a5e030",
     "text": "Irehistro ang console, ang portal at ang mga ulat bilang mga receiver"

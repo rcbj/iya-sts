@@ -7075,6 +7075,14 @@
     "en": "34a196af42de2673",
     "text": "Indique si les endpoints SSF acceptent HTTP Basic à côté des jetons d’accès OAuth 2.0, et le publient dans authorization_schemes. En développement, n’importe quel nom d’utilisateur avec n’importe quel mot de passe sauf « invalid » passe ; en mode produit, le mot de passe est vérifié par rapport au userPassword haché de la personne. Dans les deux cas, un principal Basic détient les deux portées, car Basic n’en porte aucune — un déploiement qui veut que ssf.read et ssf.manage soient appliqués à chaque appelant désactive donc ce paramètre."
   },
+  "ssf.authClientCert|label": {
+    "en": "ad5fbafbb2ac1812",
+    "text": "Proposer les certificats client TLS"
+  },
+  "ssf.authClientCert|description": {
+    "en": "73d4ba2aa33adad2",
+    "text": "Indique si les endpoints SSF acceptent un récepteur authentifié par le certificat client TLS de sa connexion, sans en-tête Authorization, et publient urn:ietf:rfc:8705 dans authorization_schemes. Seul un certificat que ce royaume a délivré à une application, et que l’application détient toujours, est accepté ; le récepteur est cette application et possède les flux qu’il crée, et il détient les portées Shared Signals que son oauthAllowedScope déclare et que ses rôles SSF_READ et SSF_MANAGE autorisent."
+  },
   "ssf.internalReceivers|label": {
     "en": "7e760a8d68a5e030",
     "text": "Enregistrer la console, le portail et les rapports comme récepteurs"

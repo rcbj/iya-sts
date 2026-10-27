@@ -1045,6 +1045,7 @@ var config = {
     deadLetterMaxPerStream: 1000,                                                                                                                         // Dead letters per stream
     deadLetterSweepS: 60,                                                                                                                                 // Dead-letter sweep interval (seconds)
     authBasic: true,                                                                                                                                      // Offer HTTP Basic
+    authClientCert: true,                                                                                                                                 // Offer TLS client certificates
     internalReceivers: true,                                                                                                                              // Register the console and the portal as receivers; restart to apply
     internalPollMs: 1000,                                                                                                                                 // Console and portal poll interval (milliseconds)
     maxStreams: 25,                                                                                                                                       // Streams per receiver
