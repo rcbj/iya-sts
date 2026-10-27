@@ -53,6 +53,11 @@ set -u -o pipefail
 CURRENT_DIR="$(cd "$(dirname "$(realpath "$0")")" && pwd)"
 cd "${CURRENT_DIR}" || exit 1
 
+# Linux, or Windows under Cygwin (#512): hostPath(), hostOpen(),
+# HOST_USER_ARGS and the docker shim. See its header.
+# shellcheck source=tests/tools/host-platform.sh
+. "${CURRENT_DIR}/tests/tools/host-platform.sh"
+
 OUT="${CURRENT_DIR}/apidocs"
 WHERE="auto"
 OPEN=0
@@ -110,7 +115,7 @@ runOnHost()
     return 1
   }
   (cd "${TOOLS}" && node_modules/.bin/typedoc --options typedoc.json \
-                                              --out "${OUT}")
+                                              --out "$(hostPath "${OUT}")")
   local rc=$?
   echo "Leaving runOnHost(). typedoc exited ${rc}."
   return ${rc}
@@ -123,10 +128,10 @@ runInDocker()
   # checkout, which is read-only: nothing this run does reaches the tree but
   # the pages themselves.
   docker run --rm \
-    --user "$(id -u):$(id -g)" \
+    ${HOST_USER_ARGS[@]+"${HOST_USER_ARGS[@]}"} \
     -e HOME=/tmp -e npm_config_cache=/tmp/npm-cache \
-    -v "${CURRENT_DIR}:/src:ro" \
-    -v "${OUT}:/out" \
+    -v "$(hostPath "${CURRENT_DIR}"):/src:ro" \
+    -v "$(hostPath "${OUT}"):/out" \
     -w /tmp \
     "${IMAGE}" \
     sh -c 'set -e
@@ -164,5 +169,5 @@ echo "API reference: ${OUT}/index.html ($(find "${OUT}" -name '*.html' |
   wc -l) pages)"
 if [ "${OPEN}" = "1" ];
 then
-  xdg-open "${OUT}/index.html" >/dev/null 2>&1 || true
+  hostOpen "${OUT}/index.html" >/dev/null 2>&1 || true
 fi

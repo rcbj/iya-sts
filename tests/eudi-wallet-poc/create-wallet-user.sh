@@ -6,6 +6,9 @@
 # path as ../create-rcbj-apps-8081.sh. Safe to run again: an existing user is
 # left alone.
 set -euo pipefail
+# Under Cygwin (#512), the shim that takes the CR off what docker.exe prints,
+# so the secret read back from it is the secret; nothing on Linux.
+. "$(dirname "$0")/../tools/host-platform.sh"
 BASE="${STS_BASE:-https://localhost:8081}"
 NAME="${WALLET_USER:-walletuser1}"
 

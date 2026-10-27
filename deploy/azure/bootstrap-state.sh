@@ -38,6 +38,11 @@
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
+# Under Cygwin (#512), the shims that take the CR off what the cloud CLI
+# prints, so an id read back from it compares; nothing on Linux.
+# shellcheck source=../../tests/tools/host-platform.sh
+. "$(dirname "${BASH_SOURCE[0]}")/../../tests/tools/host-platform.sh"
+
 SUBSCRIPTION="${AZURE_SUBSCRIPTION_ID:-$(az account show --query id -o tsv 2> /dev/null)}"
 [ -n "${SUBSCRIPTION}" ] || {
   echo "ERROR: set AZURE_SUBSCRIPTION_ID (or az account set --subscription <id>)." >&2

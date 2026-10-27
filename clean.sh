@@ -31,28 +31,26 @@ set -u
 # On Windows under Cygwin the CLI is Docker Desktop's docker.exe, and two
 # things differ from Linux. It prints ids with CRLF line endings, so every
 # id read back from it would carry a trailing \r and docker would answer
-# "No such container: <id>" for each one -- `ids` strips them. And there is
-# no sudo: a daemon that does not answer is Docker Desktop not running, not
-# a socket permission problem, so it is reported instead of retried.
-case "$(uname -s)" in
-  CYGWIN*|MINGW*|MSYS*) WINDOWS=1 ;;
-  *) WINDOWS=0 ;;
-esac
+# "No such container: <id>" for each one. And there is no sudo: a daemon
+# that does not answer is Docker Desktop not running, not a socket
+# permission problem, so it is reported instead of retried. This was the
+# first script fixed for both (2026-10-07); since #512 every launcher needs
+# the same, so tests/tools/host-platform.sh holds it once: HOST_WINDOWS, and
+# a `docker` first on PATH that runs docker.exe with the CRs removed.
+# shellcheck source=tests/tools/host-platform.sh
+. "$(dirname "$0")/tests/tools/host-platform.sh"
 
-if command -v docker > /dev/null 2>&1; then
-  DOCKER="docker"
-elif command -v docker.exe > /dev/null 2>&1; then
-  DOCKER="docker.exe"
-else
+if ! command -v docker > /dev/null 2>&1; then
   echo "clean.sh: no docker (or docker.exe) on PATH." >&2
   exit 1
 fi
+DOCKER="docker"
 
 # The `rcbj` account is in the `docker` group on this machine, so sudo is only
 # needed where the socket is not readable. Probe once rather than prompting for
 # a password on every run.
 if ! $DOCKER info > /dev/null 2>&1; then
-  if [ "$WINDOWS" = 1 ] || ! command -v sudo > /dev/null 2>&1; then
+  if [ "$HOST_WINDOWS" = 1 ] || ! command -v sudo > /dev/null 2>&1; then
     echo "clean.sh: the docker daemon does not answer -- is Docker" \
       "Desktop running?" >&2
     exit 1
@@ -60,12 +58,8 @@ if ! $DOCKER info > /dev/null 2>&1; then
   DOCKER="sudo $DOCKER"
 fi
 
-ids() {
-  $DOCKER "$@" | tr -d '\r'
-}
-
 echo "== containers =="
-containers=$(ids ps -aq)
+containers=$($DOCKER ps -aq)
 if [ -n "$containers" ]; then
   $DOCKER stop $containers
   $DOCKER rm --force $containers
@@ -78,14 +72,14 @@ echo "== images =="
 # tagged images too, children before parents.
 $DOCKER image prune --all --force
 # Anything an in-flight container held on to during the prune.
-images=$(ids images -q | sort -u)
+images=$($DOCKER images -q | sort -u)
 if [ -n "$images" ]; then
   $DOCKER rmi --force $images
 fi
 
 echo "== volumes =="
 $DOCKER volume prune --all --force
-volumes=$(ids volume ls -q)
+volumes=$($DOCKER volume ls -q)
 if [ -n "$volumes" ]; then
   $DOCKER volume rm --force $volumes
 fi

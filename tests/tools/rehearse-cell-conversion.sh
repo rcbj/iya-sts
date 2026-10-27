@@ -50,6 +50,10 @@ set -u -o pipefail
 ROOT="$(cd "$(dirname "$(realpath "$0")")/../.." && pwd)"
 cd "${ROOT}" || exit 1
 
+# Linux, or Windows under Cygwin (#512): hostPath() and the docker shim.
+# shellcheck source=host-platform.sh
+. "${ROOT}/tests/tools/host-platform.sh"
+
 BUILD=1
 KEEP=0
 for arg in "$@"; do
@@ -236,7 +240,7 @@ messages() {
       } catch (e) {
         // Not a log line: compose'"'"'s own output.
       }
-    }' "$1" "$2" 2>/dev/null || grep -a "$2" "$1"
+    }' "$(hostPath "$1")" "$2" 2>/dev/null || grep -a "$2" "$1"
 }
 
 waitHealthy() {
@@ -258,8 +262,8 @@ runner() {
   local files=("${BASE_FILES[@]}")
   [ "${mode}" = "cells" ] && files=("${CELL_FILES[@]}")
   docker compose -p "${PROJECT}" "${files[@]}" run --rm --no-deps -T \
-    -v "${OUT}:/rehearse" \
-    -v "${ROOT}/tests/tools/rehearse-cell-conversion.js:/usr/src/sts/tests/tools/rehearse-cell-conversion.js:ro" \
+    -v "$(hostPath "${OUT}"):/rehearse" \
+    -v "$(hostPath "${ROOT}")/tests/tools/rehearse-cell-conversion.js:/usr/src/sts/tests/tools/rehearse-cell-conversion.js:ro" \
     -e ADMIN_API_CLIENT_SECRET -e STS_TEST_CELL_A_URL=https://sts:8081 \
     -e STS_TEST_CELL_B_URL=https://sts2:8081 \
     -e NODE_OPTIONS="--require /usr/src/sts/tests/tools/browser-user-agent.js" \
