@@ -231,7 +231,7 @@ function standardSources(): SourceSpec[] {
        field('name', 'string', 'The application name.'),
        field('status', 'string',
          'active when the application is registered and enabled; ' +
-         'disabled otherwise.'),
+         'disabled otherwise.', undefined, ['active', 'disabled']),
        field('enabled', 'boolean',
          'Whether the application is registered and enabled.')]),
     source('federation',
@@ -251,7 +251,8 @@ function standardSources(): SourceSpec[] {
          'application row uses the value it lists.'),
        field('type', 'string',
          'both, primary, second or other for a realm row. primary for ' +
-         'appAuthnMechanism and second for appMfaMechanism.'),
+         'appAuthnMechanism and second for appMfaMechanism.', undefined,
+         ['both', 'primary', 'second', 'other']),
        field('enabled', 'boolean',
          'For a realm row, whether that policy flag is on. For an ' +
          'application row, true because the application lists it; a ' +
@@ -302,8 +303,11 @@ function standardSources(): SourceSpec[] {
       'retention; the job row ages out later.',
       [field('id', 'string', 'The job id. It is not an authorization.'),
        field('status', 'string',
-         'queued, running, completed, failed, cancelled or expired.'),
-       field('format', 'string', 'json, csv or pdf.'),
+         'queued, running, completed, failed, cancelled or expired.',
+         undefined, ['queued', 'running', 'completed', 'failed',
+           'cancelled', 'expired']),
+       field('format', 'string', 'json, csv or pdf.', undefined,
+         ['json', 'csv', 'pdf']),
        field('submittedAt', 'timestamp', 'When the job was queued.'),
        field('completedAt', 'timestamp',
          'When the job finished, or null while it has not.'),
@@ -361,7 +365,8 @@ function standardSources(): SourceSpec[] {
          'the channel was kept.', undefined, HOLDER_CHANNELS),
        field('format', 'string',
          'A verifiable credential\'s format: dc+sd-jwt, jwt_vc_json or ' +
-         'ldp_vc. Empty for the other mechanisms.'),
+         'ldp_vc. Empty for the other mechanisms.', undefined,
+         ['dc+sd-jwt', 'jwt_vc_json', 'ldp_vc']),
        field('enrolledAt', 'timestamp',
          'When this credential was enrolled, where it records it.'),
        field('lastUsedAt', 'timestamp',
@@ -380,7 +385,8 @@ function standardSources(): SourceSpec[] {
       'does not read the remote table. Values those sources write are ' +
       'already on directory entries.',
       [field('id', 'string', 'The source id.'),
-       field('dialect', 'string', 'postgres or mysql, as configured.'),
+       field('dialect', 'string', 'postgres or mysql, as configured.',
+         undefined, ['postgres', 'mysql']),
        field('database', 'string', 'The database name. Not the host.'),
        field('table', 'string', 'The table the lookup reads.'),
        field('keyAttribute', 'string',
@@ -388,7 +394,8 @@ function standardSources(): SourceSpec[] {
        field('mode', 'string',
          'The refresh modes, joined, such as sign-in or schedule.'),
        field('onFailure', 'string',
-         'keep or refuse, as the source is configured.'),
+         'keep or refuse, as the source is configured.', undefined,
+         ['keep', 'refuse']),
        field('enabled', 'boolean', 'Whether the source is enabled.')])
   ];
   log.debug("Leaving standardSources().");

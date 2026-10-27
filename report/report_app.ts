@@ -96,7 +96,7 @@ const REPORT_STYLE = [
   // Save is first in the document so that Enter saves when the Save query
   // box is ticked, and drawn after Run (`web_report_pages.ts`,
   // `actionsHtml()`).
-  '.actions .save-only { order: 2; }',
+  '.actions .save-only, .foot-actions .save-only { order: 2; }',
   // THE DEFINITION EDITOR (#989): two columns — the query on the left, the
   // schedule, the notice and the groups on the right — and real buttons at
   // the foot. One column under 48rem.

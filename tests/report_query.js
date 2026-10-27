@@ -1622,6 +1622,9 @@ function chrome(t) {
   const runAt = actions.indexOf('value="run"');
   t.check(saveAt >= 0 && runAt > saveAt,
     'the Save button comes before Run in the document');
+  t.check(actions.indexOf('<div class="foot-actions">') === 0 &&
+    (actions.match(/class="button/g) || []).length === 2,
+    'Run and Save are the definition page\'s buttons (#1028)', actions);
   const saveTag = actions.slice(actions.lastIndexOf('<button', saveAt),
     saveAt);
   t.check(saveTag.indexOf(' disabled') >= 0 && saveTag.indexOf(' hidden') >= 0,
@@ -1911,7 +1914,8 @@ function groups(t) {
     where: { op: 'and', args: [
       { op: 'eq', field: 'mechanism', value: 'passkey' },
       { op: 'contains', field: 'memberOf', value: 'staff' }] } });
-  t.check(enumerated.indexOf('<select name="filterValue0"><option value="">' +
+  t.check(enumerated.indexOf('<select name="filterValue0" ' +
+    'data-type="string"><option value="">' +
     '</option><option value="passkey" selected>passkey</option>' +
     '<option value="totp">totp</option>') >= 0,
     'a saved mechanism equals passkey is a dropdown with passkey chosen',
@@ -1957,7 +1961,8 @@ function groups(t) {
   live.t = tr;
   live.catalogSources = cat.sources;
   live.onChange({ target: fieldSelect });
-  t.check(swapped.indexOf('<select name="filterValue0">') === 0 &&
+  t.check(swapped.indexOf('<select name="filterValue0" ' +
+    'data-type="string">') === 0 &&
     swapped.indexOf('<option value="kerberos">') >= 0,
     'choosing mechanism swaps the text box for the dropdown', swapped);
   swapped = '';
@@ -1969,7 +1974,8 @@ function groups(t) {
   live.onChange({ target: fieldSelect });
   // #1022: contains is not offered over an enumerated field, so the
   // operator drops to the empty choice and the value stays a dropdown.
-  t.check(swapped.indexOf('<select name="filterValue0">') === 0 &&
+  t.check(swapped.indexOf('<select name="filterValue0" ' +
+    'data-type="string">') === 0 &&
     swapped.indexOf('<option value="passkey" selected>') >= 0,
     'an operator the field does not offer is dropped; the dropdown stays',
     swapped);
@@ -2025,14 +2031,15 @@ function groups(t) {
   // holds; a field change redraws it only when the list changes.
   const enumRow = ReportRuntime.filterRowHtml(tr, 0, '<option></option>',
     true);
-  t.check(enumRow.indexOf('<select name="filterOp0" data-ops="all">') >= 0 &&
-    enumRow.indexOf('<option value="contains">') >= 0,
-    'a fresh row offers every operator');
+  t.check(enumRow.indexOf('<select name="filterOp0" ' +
+    'data-ops="eq,ne,contains,startsWith,isNull">') >= 0,
+    'a fresh row offers the text operators');
   const enumSaved = ReportRuntime.queryFormHtml(tr, cat.sources, {
     source: 'credentialHolders', select: ['username'],
     where: { op: 'ne', field: 'mechanism', value: 'totp' } });
-  const enumOpSelect = /<select name="filterOp0" data-ops="enum">([^]*?)<\/select>/
-    .exec(enumSaved);
+  const enumOpSelect =
+    /<select name="filterOp0" data-ops="eq,ne,isNull">([^]*?)<\/select>/
+      .exec(enumSaved);
   t.check(!!enumOpSelect &&
     (enumOpSelect[1].match(/<option value="[a-zA-Z]+"/g) || []).length === 3 &&
     enumOpSelect[1].indexOf('<option value="ne" selected>') >= 0 &&
@@ -2071,15 +2078,20 @@ function groups(t) {
   };
   swapped = '';
   live.onChange({ target: opFieldSelect });
-  t.check(opSwapped.indexOf('<select name="filterOp0" data-ops="enum">') === 0 &&
-    opSwapped.indexOf('selected') < 0 && opSwapped.indexOf('startsWith') < 0,
-    'choosing mechanism redraws the operators, dropping startsWith', opSwapped);
-  t.check(swapped.indexOf('<select name="filterValue0">') === 0,
+  // #1028: on credentialHolders' first row mechanism's index answers
+  // equals only, so that is the list.
+  t.check(opSwapped.indexOf('<select name="filterOp0" data-ops="eq">') ===
+    0 && opSwapped.indexOf('selected') < 0 &&
+    opSwapped.indexOf('startsWith') < 0,
+    'choosing mechanism redraws the operators, dropping startsWith',
+    opSwapped);
+  t.check(swapped.indexOf('<select name="filterValue0" ' +
+    'data-type="string">') === 0,
     'and the value becomes the dropdown');
   opSwapped = '';
   opControls.filterOp0 = { value: 'eq',
     getAttribute: function (k) {
-      return k === 'data-ops' ? 'enum' : null;
+      return k === 'data-ops' ? 'eq' : null;
     },
     set outerHTML(html) {
       opSwapped = html;
@@ -2088,9 +2100,57 @@ function groups(t) {
   t.equal(opSwapped, '', 'an enumerated field again leaves the select alone');
   opControls.filterField0.value = 'username';
   live.onChange({ target: opFieldSelect });
-  t.check(opSwapped.indexOf('data-ops="all"') >= 0 &&
+  t.check(opSwapped.indexOf('data-ops="eq,contains,startsWith"') >= 0 &&
     opSwapped.indexOf('<option value="eq" selected>') >= 0,
-    'an open field brings the full list back, keeping equals', opSwapped);
+    'an open indexed field brings its indexed operators, keeping equals',
+    opSwapped);
+
+  // ONE RULE FOR EVERY FILTER ROW (#1028): the kind decides the operators
+  // and the control; the control carries the type; the form sends typed
+  // values; the buttons are the definition page's.
+  const jobFields = cat.sources.filter(function (src) {
+    return src.id === 'reportJobs';
+  })[0].fields;
+  t.check(ReportRuntime.filterValueHtml(0, jobFields, 'status', 'eq', '')
+    .indexOf('<option value="cancelled">') >= 0,
+    'a finite string field is a dropdown of its values');
+  const appFields = cat.sources.filter(function (src) {
+    return src.id === 'applications';
+  })[0].fields;
+  t.check(ReportRuntime.filterValueHtml(0, appFields, 'enabled', 'eq',
+    'true').indexOf('data-type="boolean"><option value=""></option>' +
+    '<option value="true" selected>') >= 0,
+    'a boolean is a true/false dropdown');
+  t.check(ReportRuntime.filterValueHtml(0, jobFields, 'submittedAt', 'ge',
+    '2026-10-27T09:30:00.000Z') === '<input type="datetime-local" ' +
+    'name="filterValue0" data-type="timestamp" title="UTC" ' +
+    'value="2026-10-27T09:30">', 'a timestamp is a date-time picker in UTC');
+  t.check(ReportRuntime.filterValueHtml(0, jobFields, 'byteSize', 'gt', '5')
+    .indexOf('<input type="number" name="filterValue0" data-type="number"') ===
+    0, 'a number is a number box');
+  const typedForm = formDouble({ source: 'reportJobs', format: 'json',
+    filterField0: 'submittedAt', filterOp0: 'ge',
+    filterValue0: '2026-10-27T09:30', filterField1: 'byteSize',
+    filterOp1: 'gt', filterValue1: '5', filterField2: 'status',
+    filterOp2: 'eq', filterValue2: 'failed' });
+  typedForm.elements.filterValue0.getAttribute = function () {
+    return 'timestamp';
+  };
+  typedForm.elements.filterValue1.getAttribute = function () {
+    return 'number';
+  };
+  const typedDoc = ReportRuntime.queryDocument(typedForm, 'en');
+  t.equal(JSON.stringify(typedDoc.where.args.map(function (leaf) {
+    return leaf.value;
+  })), JSON.stringify(['2026-10-27T09:30:00.000Z', 5, 'failed']),
+    'the form sends a UTC time, a number and a string');
+  const createdOps = /<select name="filterOp0" data-ops="([^"]*)"/.exec(
+    ReportRuntime.queryFormHtml(tr, cat.sources, { source: 'users',
+      select: ['username'],
+      where: { op: 'ge', field: 'createdAt',
+        value: '2026-10-01T00:00:00Z' } }));
+  t.equal(createdOps && createdOps[1], 'ge,gt,le,lt',
+    'a users first row on createdAt offers the indexed range operators');
   t.check(holderFields.length > 0, 'the holder fields were found');
 
   // THE SORT BOX, AND GROUP BY BEHIND COUNT (#1008): the selects are hidden

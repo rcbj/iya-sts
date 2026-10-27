@@ -162,62 +162,123 @@ function navHtml(t: any, realm: string, accounts: string, chooser: string,
 // One filter row (#986): a field, an operator, a value, and — on the last
 // row only — the + that adds the next. The runtime clones the last row for
 // the next one, so the options are not kept anywhere else.
-// THE VALUE CONTROL OF A FILTER ROW (#1007, rcbj: "mechanism equals" on
-// credentialHolders should offer the possible values). A field the catalog
-// enumerates (`values`) under equals, not equals, or no operator yet is a
-// dropdown of those values with an empty first choice; every other field
-// and operator keeps the text box. The control is redrawn when the row's
-// field or operator changes (`onChange()`), and a saved document's row is
-// drawn the same way.
+// ONE RULE FOR EVERY FILTER ROW (#1007, #1022, #1028; rcbj: "as
+// cookie-cutter as possible"). A field's KIND decides its operators and
+// its value control, and the catalog decides the kind:
+//
+//   * `choice` — the catalog lists its values (`values`, 20 or fewer) or
+//     it is a boolean: equals, does not equal, is empty; a dropdown.
+//   * `time`   — a timestamp: after, on or after, before, on or before, is
+//     empty; a date-time picker read as UTC, as the schedule editor's.
+//   * `number` — the six comparisons and is empty; a number box.
+//   * `text`   — equals, does not equal, contains, starts with, is empty;
+//     a text box.
+//
+// On a directory-backed source (`anchored`) the FIRST row offers only the
+// indexed fields (#1027) and, of a field's operators, only those its index
+// answers, so the row a user starts from can never ask for a scan. The
+// value control carries `data-type`, and `queryDocument()` sends a number
+// as a number, a boolean as a boolean and a picked time as UTC ISO text.
+const CHOICE_MAX = 20;
+const ENUM_OPS = ['eq', 'ne', 'isNull'];
+const OPS_OF: Record<string, string[]> = {
+  choice: ENUM_OPS,
+  time: ['ge', 'gt', 'le', 'lt', 'isNull'],
+  number: ['eq', 'ne', 'lt', 'le', 'gt', 'ge', 'isNull'],
+  text: ['eq', 'ne', 'contains', 'startsWith', 'isNull']
+};
+const OP_LABEL: Record<string, string> = {
+  eq: 'opEq', ne: 'opNe', contains: 'opContains', startsWith: 'opStartsWith',
+  lt: 'opLt', le: 'opLe', gt: 'opGt', ge: 'opGe', isNull: 'opIsNull'
+};
+
+function fieldSpecOf(fields: any[], fieldId: string): any {
+  return (fields || []).filter(function (field: any): boolean {
+    return field && field.id === fieldId;
+  })[0] || null;
+}
+
+function choicesOf(spec: any): string[] | null {
+  if (!spec) {
+    return null;
+  }
+  if (spec.type === 'boolean') {
+    return ['true', 'false'];
+  }
+  return Array.isArray(spec.values) && spec.values.length &&
+    spec.values.length <= CHOICE_MAX ? spec.values : null;
+}
+
+function kindOf(spec: any): string {
+  if (choicesOf(spec)) {
+    return 'choice';
+  }
+  if (spec && spec.type === 'timestamp') {
+    return 'time';
+  }
+  return spec && spec.type === 'number' ? 'number' : 'text';
+}
+
+function isEnumerated(fields: any[], fieldId: string): boolean {
+  return kindOf(fieldSpecOf(fields, fieldId)) === 'choice';
+}
+
+// The operators a row offers: the kind's, and on an anchoring first row
+// only those the field's index answers.
+function opsFor(spec: any, anchorRow: boolean): string[] {
+  const ops = OPS_OF[kindOf(spec)];
+  if (!anchorRow || !spec) {
+    return ops;
+  }
+  const indexed: string[] = Array.isArray(spec.indexed) ? spec.indexed : [];
+  return ops.filter(function (op: string): boolean {
+    return indexed.indexOf(op) >= 0;
+  });
+}
+
+// A UTC ISO time as a `datetime-local` value (minutes), or ''.
+function pickerValueOf(value: string): string {
+  const at = Date.parse(String(value || ''));
+  return Number.isFinite(at) ? new Date(at).toISOString().slice(0, 16) : '';
+}
+
 function filterValueHtml(n: number, fields: any[], fieldId: string,
                          op: string, value: string): string {
-  const spec = (fields || []).filter(function (field: any): boolean {
-    return field && field.id === fieldId;
-  })[0];
-  const values = spec && Array.isArray(spec.values) && spec.values.length
-    ? spec.values : null;
+  const spec = fieldSpecOf(fields, fieldId);
+  const kind = kindOf(spec);
+  const type = spec ? String(spec.type || 'string') : 'string';
+  const choices = choicesOf(spec);
   const chosen = String(op || '');
-  if (values && (chosen === '' || chosen === 'eq' || chosen === 'ne')) {
-    return '<select name="filterValue' + n + '"><option value=""></option>' +
-      values.map(function (one: string): string {
+  if (choices && (chosen === '' || chosen === 'eq' || chosen === 'ne')) {
+    return '<select name="filterValue' + n + '" data-type="' + esc(type) +
+      '"><option value=""></option>' +
+      choices.map(function (one: string): string {
         return '<option value="' + esc(one) + '"' +
           (one === value ? ' selected' : '') + '>' + esc(one) + '</option>';
       }).join('') + '</select>';
+  }
+  if (kind === 'time') {
+    const picked = pickerValueOf(value);
+    return '<input type="datetime-local" name="filterValue' + n +
+      '" data-type="timestamp" title="UTC"' +
+      (picked ? ' value="' + esc(picked) + '"' : '') + '>';
+  }
+  if (kind === 'number') {
+    return '<input type="number" name="filterValue' + n +
+      '" data-type="number"' + (value ? ' value="' + esc(value) + '"' : '') +
+      '>';
   }
   return '<input name="filterValue' + n + '"' +
     (value ? ' value="' + esc(value) + '"' : '') + '>';
 }
 
-// THE OPERATOR SELECT (#1022, rcbj: over `mechanism`, only equals, does not
-// equal and is empty). An enumerated field (one with `values`, #1007) gets
-// those three; every other field gets the full list. The select says which
-// list it holds (`data-ops`), so a field change redraws it only when the
-// list changes (`redrawFilterRow()`); an operator the new list lacks is
-// dropped to the empty choice.
-const ENUM_OPS = ['eq', 'ne', 'isNull'];
-
-function isEnumerated(fields: any[], fieldId: string): boolean {
-  const spec = (fields || []).filter(function (field: any): boolean {
-    return field && field.id === fieldId;
-  })[0];
-  return !!(spec && Array.isArray(spec.values) && spec.values.length);
-}
-
-function opSelectHtml(t: any, n: number, enumerated: boolean,
+function opSelectHtml(t: any, n: number, ops: string[],
                       chosen: string): string {
-  const all = [['eq', 'opEq'], ['ne', 'opNe'], ['contains', 'opContains'],
-    ['startsWith', 'opStartsWith'], ['lt', 'opLt'], ['le', 'opLe'],
-    ['gt', 'opGt'], ['ge', 'opGe'], ['isNull', 'opIsNull']];
-  const offered = enumerated ? all.filter(function (pair: string[]): boolean {
-    return ENUM_OPS.indexOf(pair[0]) >= 0;
-  }) : all;
-  return '<select name="filterOp' + n + '" data-ops="' +
-    (enumerated ? 'enum' : 'all') + '">' +
-    '<option value=""></option>' +
-    offered.map(function (pair: string[]): string {
-      return '<option value="' + pair[0] + '"' +
-        (pair[0] === chosen ? ' selected' : '') + '>' +
-        esc(t.text('report.' + pair[1])) + '</option>';
+  return '<select name="filterOp' + n + '" data-ops="' + ops.join(',') +
+    '">' + '<option value=""></option>' +
+    ops.map(function (op: string): string {
+      return '<option value="' + op + '"' + (op === chosen ? ' selected' :
+        '') + '>' + esc(t.text('report.' + OP_LABEL[op])) + '</option>';
     }).join('') + '</select>';
 }
 
@@ -227,7 +288,7 @@ function filterRowHtml(t: any, n: number, fieldOptions: string,
   return '<div class="row filterrow" data-filter-row="' + n + '">' +
     '<select name="filterField' + n + '"' + (fieldTip || '') + '>' +
     fieldOptions + '</select>' +
-    (opSelect || opSelectHtml(t, n, false, '')) +
+    (opSelect || opSelectHtml(t, n, OPS_OF.text, '')) +
     (valueControl || '<input name="filterValue' + n + '">') +
     // A trash can on every row (#1017): removes the row, or empties the
     // last one left, so the form always has a row (`removeFilterRow()`).
@@ -290,9 +351,18 @@ function filterRowsHtml(t: any, fieldOptions: string, leaves: any[],
     // widened to the full one for that row rather than losing the choice.
     const options = n === 0 && first.indexOf('value="' + esc(field) + '"') < 0
       ? fieldOptions : (n === 0 ? first : fieldOptions);
+    // The operators the kind takes, narrowed to the indexed ones on an
+    // anchoring first row (`firstTip` is drawn only there); a saved
+    // operator the list lacks widens it to the kind's, so it is not lost.
+    const spec = fieldSpecOf(fields, field);
+    let ops = opsFor(spec, n === 0 && !!firstTip);
+    if (ops.indexOf(String(leaf.op)) < 0) {
+      ops = OPS_OF[kindOf(spec)].indexOf(String(leaf.op)) >= 0
+        ? OPS_OF[kindOf(spec)] : ops.concat([String(leaf.op)]);
+    }
     const row = filterRowHtml(t, n, options, n === leaves.length - 1,
       filterValueHtml(n, fields, field, String(leaf.op), value),
-      opSelectHtml(t, n, isEnumerated(fields, field), String(leaf.op)),
+      opSelectHtml(t, n, ops, String(leaf.op)),
       n === 0 ? firstTip : '');
     return row
       .replace('<option value="' + esc(leaf.field) + '">',
@@ -516,12 +586,16 @@ function realmHtml(t: any, view: any, path: string): string {
 // the Save query box is clear — a hidden button is still a default button;
 // a disabled one is not — and `.actions .save-only { order: 2 }` puts it
 // after Run for the eye. With the box ticked, Enter saves; Run still runs.
+// THE NEW QUERY PAGE'S BUTTONS (rcbj, 2026-10-27: "replace the Run and Save
+// links with buttons matching the Definitions → Definition tab"): the
+// definition page's `.foot-actions` with `.button`s, Save first in the
+// document and drawn after Run (`order`), for the Enter reason above.
 function actionsHtml(t: any): string {
-  return '<div class="actions">' +
-    '<button type="submit" class="btn save-only" hidden disabled ' +
+  return '<div class="foot-actions">' +
+    '<button type="submit" class="button save-only" hidden disabled ' +
     'name="intent" value="save">' + esc(t.text('report.save')) +
     '</button>' +
-    '<button type="submit" class="btn" name="intent" value="run">' +
+    '<button type="submit" class="button" name="intent" value="run">' +
     esc(t.text('report.run')) + '</button></div>';
 }
 
@@ -848,15 +922,30 @@ function queryDocument(form: any, locale: any): any {
       form.elements['filterField' + n].value) || '');
     const op = String((form.elements['filterOp' + n] &&
       form.elements['filterOp' + n].value) || '');
-    const value = String((form.elements['filterValue' + n] &&
-      form.elements['filterValue' + n].value) || '');
+    const valueEl = form.elements['filterValue' + n];
+    const value = String((valueEl && valueEl.value) || '');
     if (!field || !op) {
       continue;
     }
     if (op === 'isNull') {
       filters.push({ op: 'isNull', field: field });
     } else if (value) {
-      filters.push({ op: op, field: field, value: value });
+      // THE VALUE IN ITS FIELD'S TYPE (#1028): the control says the type
+      // (`data-type`), so a number is sent as a number, a boolean as a
+      // boolean, and a picked date-time — read as UTC, as the schedule
+      // editor's — as ISO text; the API refused the strings before.
+      const type = valueEl && valueEl.getAttribute ?
+        String(valueEl.getAttribute('data-type') || '') : '';
+      let typed: any = value;
+      if (type === 'number' && Number.isFinite(Number(value))) {
+        typed = Number(value);
+      } else if (type === 'boolean') {
+        typed = value === 'true';
+      } else if (type === 'timestamp' &&
+          /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value)) {
+        typed = value + ':00.000Z';
+      }
+      filters.push({ op: op, field: field, value: typed });
     }
   }
   // The Sort box (#1008): unticked, no order, whatever the hidden selects
@@ -1982,29 +2071,34 @@ class ReportRuntime extends SpaClient {
     const sourceId = String((form.elements && form.elements.source &&
       form.elements.source.value) || '');
     let fields: any[] = [];
+    let anchored = false;
     (this.catalogSources || []).forEach(function (src: any): void {
       if (src && src.id === sourceId) {
         fields = src.fields || [];
+        anchored = src.anchored === true;
       }
     });
     const fieldId = String(fieldEl.value || '');
-    const enumerated = isEnumerated(fields, fieldId);
+    const ops = opsFor(fieldSpecOf(fields, fieldId), anchored && n === 0);
     let op = String(opEl.value || '');
     const holds = String((opEl.getAttribute && opEl.getAttribute('data-ops'))
-      || 'all');
-    if ((holds === 'enum') !== enumerated) {
-      // The field's operator list changed (#1022): the select is drawn
-      // again with the list the field takes, keeping the operator when the
-      // new list still offers it.
-      if (enumerated && ENUM_OPS.indexOf(op) < 0) {
+      || '');
+    if (holds !== ops.join(',')) {
+      // The field's operator list changed (#1022, #1028): the select is
+      // drawn again with the list the field takes, keeping the operator
+      // when the new list still offers it.
+      if (ops.indexOf(op) < 0) {
         op = '';
       }
-      opEl.outerHTML = opSelectHtml(this.t, n, enumerated, op);
+      opEl.outerHTML = opSelectHtml(this.t, n, ops, op);
     }
     const html = filterValueHtml(n, fields, fieldId, op,
       String(valueEl.value || ''));
-    const wasBox = String(valueEl.tagName || '').toUpperCase() === 'INPUT';
-    if (wasBox && html.indexOf('<input') === 0) {
+    // A plain text box that would be a plain text box again is left alone,
+    // so what was typed is kept; any other change of kind redraws.
+    const wasPlain = String(valueEl.tagName || '').toUpperCase() ===
+      'INPUT' && !(valueEl.getAttribute && valueEl.getAttribute('type'));
+    if (wasPlain && html.indexOf('<input name=') === 0) {
       return;
     }
     valueEl.outerHTML = html;

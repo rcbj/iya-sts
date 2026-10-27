@@ -154,6 +154,14 @@ the pane. The other recipients are still sent to.
 trash can beside a row removes it. The last row left is emptied rather
 than removed, so there is always one.
 
+**Each filter row fits its field.** A field with a short list of values
+(20 or fewer, true/false included) is a dropdown and offers equals, does
+not equal and is empty; a date is a date-time picker in UTC with before
+and after; a number offers the six comparisons; text offers equals, does
+not equal, contains and starts with. On `users` and `credentialHolders`
+the first row offers only the indexed fields and, for each, only the
+operators its index answers.
+
 **Sort and Group by are behind checkboxes.** Tick **Sort** to choose the
 field and the direction on the same row; unticked, the query carries no
 order. Tick **Group by**, on its own row under Count, to choose the group
