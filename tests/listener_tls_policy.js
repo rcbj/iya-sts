@@ -47,7 +47,8 @@
 //   K. a listener's own client truststore (its anchors file);
 //   L. the TLS session cache per listener (#429), and a session ID resumed
 //      only under the server name it was made under (L5c, RFC 6066
-//      section 3).
+//      section 3); a TLS 1.2 TICKET resumed under another name closed
+//      after the handshake, and a TLS 1.3 one left alone (L5d, L5e; #507).
 // And TLS 1.3 by default (#429): A1 asserts TLS 1.2 refused untouched.
 // ===========================================================================
 
@@ -643,6 +644,36 @@ function childMain() {
          'section 3: a full handshake instead), and is still resumed under ' +
          '"localhost"', tail(underOther) + ' | ' + tail(underNone) + ' | ' +
          tail(underOwn));
+    // #507: a TLS 1.2 TICKET (no -no_ticket) made under "localhost" is
+    // resumed by OpenSSL under "other.localhost" with no event node could
+    // refuse it in, so the listener closes the connection after the
+    // handshake: s_client reads the handshake as Reused and gets no answer.
+    // Under its own name the ticket is resumed AND answered, and under no
+    // name it is closed too (a different name is a different name). TLS
+    // 1.3 is left to RFC 8446 section 4.2.11: resumed and answered under
+    // either name, the client being the one the RFC binds.
+    const tkOut = sessFile('l5d');
+    const tkMade = await probe(mainPort, { version: '1.2', sessOut: tkOut });
+    const tkOther = await probe(mainPort, { version: '1.2', sessIn: tkOut,
+                                            servername: 'other.localhost' });
+    const tkNone = await probe(mainPort, { version: '1.2', sessIn: tkOut,
+                                           servername: '' });
+    const tkOwn = await probe(mainPort, { version: '1.2', sessIn: tkOut });
+    note(tkMade.accepted && !tkMade.reused && tkOther.reused &&
+         !tkOther.accepted && tkNone.reused && !tkNone.accepted &&
+         tkOwn.reused && tkOwn.accepted,
+         'L5d. a TLS 1.2 session TICKET made under "localhost" is resumed ' +
+         'under "other.localhost" or no name by OpenSSL and the connection ' +
+         'is then closed unanswered (RFC 6066 section 3, #507), and is ' +
+         'resumed and answered under "localhost"',
+         tail(tkOther) + ' | ' + tail(tkNone) + ' | ' + tail(tkOwn));
+    const t13Out = sessFile('l5e');
+    await probe(mainPort, { version: '1.3', sessOut: t13Out });
+    const t13Other = await probe(mainPort, { version: '1.3', sessIn: t13Out,
+                                             servername: 'other.localhost' });
+    note(t13Other.reused && t13Other.accepted,
+         'L5e. a TLS 1.3 ticket is resumed and answered under another name: ' +
+         'RFC 8446 section 4.2.11 leaves that to the client', tail(t13Other));
     // From here the service-wide cache is OFF, so L6 can show a listener's
     // own size against one that inherits none.
     config.setOverride('tls.sessionCacheSize', '0');

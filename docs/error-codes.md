@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4673** of them, in **48** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4675** of them, in **48** subsystems.
 
 ## Where a code appears
 
@@ -77,7 +77,7 @@ is an ordinary outcome.
 * [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 34
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 77
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 151
-* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 51
+* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 53
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 138
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 125
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 48
@@ -3561,6 +3561,8 @@ Raised from: tls/.
 | `STS-TLS-0049` *(retired)* | A browser's POST /tls/trust or /tls/trust/clear (one carrying an Origin) was not JSON: the /tls page sends its two acts as JSON (#583). A request with no Origin is a script's and is not asked. Retired by #597, with both routes. | — |
 | `STS-TLS-0050` *(retired)* | A browser's POST /tls/trust or /tls/trust/clear carried an Origin this service does not answer on: it was not sent by the /tls page (#583). Retired by #597, with both routes. | — |
 | `STS-TLS-0051` *(retired)* | A browser's POST /tls/trust or /tls/trust/clear carried no X-CSRF-Token, or not the token of the /tls page's own cookie (sts_tls_page), which the page's shell carries (#583). Retired by #597, with both routes. | — |
+| `STS-TLS-0052` | A TLS 1.2 session resumed by session ticket was offered under a server name other than the one it was made under (#507). RFC 6066 section 3 forbids accepting the resumption; node resumes a ticket inside OpenSSL with no event to refuse it in, so the listener compares the name after the handshake, against the name it recorded under a digest of the session's master secret, and closes the connection. | logged; the connection is closed; the client's next connection is a full handshake |
+| `STS-TLS-0053` | A TLS 1.2 session was resumed by session ticket and this node has no record of the server name it was made under (#507): the record aged out or was evicted, the ticket was sealed under the cluster's shared key by a node whose row has not replicated here yet, or the hello's name could not be read. The connection is closed, because a name nobody compared is not vouched for (RFC 6066 section 3). | logged; the connection is closed; the client's next connection is a full handshake |
 
 ## STS-VC
 
