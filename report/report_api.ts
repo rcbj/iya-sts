@@ -614,10 +614,14 @@ function reportAuthenticate(req: any, res: any): any {
     log.debug("Leaving reportAuthenticate(). Sender constraint.");
     return null;
   }
-  if (!person || !claims.sub || String(claims.sub) === issuedTo) {
-    reportForbidden(res, 'STS-REPORT-0016', 'forbidden',
-      'That access token names no person.');
-    log.debug("Leaving reportAuthenticate(). No person.");
+  // A CLIENT'S OWN TOKEN IS A CALLER SINCE #1030: an application holding
+  // REPORT_USE or REPORT_ADMIN as a member is issued the scope on
+  // client_credentials and reaches only what it defined, as the policy
+  // decides. (STS-REPORT-0016 refused it until then.)
+  if (!claims.sub) {
+    reportForbidden(res, 'STS-REPORT-0017', 'forbidden',
+      'That access token names no subject.');
+    log.debug("Leaving reportAuthenticate(). No subject.");
     return null;
   }
   const carried = String(claims.scope || '').split(/\s+/).filter(
@@ -642,20 +646,36 @@ function reportAuthenticate(req: any, res: any): any {
     log.debug("Leaving reportAuthenticate(). Undeclared.");
     return null;
   }
-  const allowed = rights.mayUse(String(claims.sub),
-    String(claims.scope || ''));
-  if (!allowed.ok) {
-    reportForbidden(res, 'STS-REPORT-0018',
-      allowed.error || 'forbidden', allowed.description);
-    log.debug("Leaving reportAuthenticate(). Not a report user.");
+  // HELD ∩ CARRIED (#1030), the management API's reading: the roles the
+  // subject holds NOW in this realm, less any whose permission the token
+  // does not carry. A role taken away after the token was minted refuses
+  // the call at once.
+  const caller = rights.callerOf(claims, carried);
+  if (!caller.ok) {
+    reportForbidden(res, caller.code, caller.error || 'forbidden',
+      caller.description);
+    log.debug("Leaving reportAuthenticate(). A role was withdrawn.");
     return null;
   }
-  const who = {
-    subject: String(claims.sub),
-    username: allowed.username || person || String(claims.sub),
-    scope: String(claims.scope || ''),
-    clientId: issuedTo
-  };
+  const who = caller.who;
+  // AND THE POLICY, FOR THE API ITSELF: holding a report role, as the
+  // access-control document's first rule reads it. Every definition and
+  // job is asked about again, one row at a time, where it is reached.
+  const policy = rights.mayReach(who, req.method);
+  if (!policy.allowed) {
+    log.info('report-api: the access policy refused ' + req.method + ' ' +
+             (req.originalUrl || req.url) + ' for ' + who.username + '. ' +
+             policy.why);
+    reportForbidden(res, 'STS-REPORT-0041', 'forbidden',
+      'The access policy refused this request. ' + policy.why +
+      ' This token carries ' + (carried.join(', ') || '(none)') +
+      ', which is the role(s) ' + (who.roles.length ? who.roles.join(', ')
+                                                     : '(none)') +
+      '. The report API needs REPORT_USE or REPORT_ADMIN; the document is ' +
+      'on /admin/xacml and xacml.enforceAccess turns the layer off.');
+    log.debug("Leaving reportAuthenticate(). The policy refused.");
+    return null;
+  }
   log.debug("Leaving reportAuthenticate().");
   return who;
 }
@@ -716,16 +736,14 @@ function reportJobVisible(who: any, job: any): boolean {
     log.debug("Leaving reportJobVisible(). None.");
     return false;
   }
-  if (rights.isAdmin(who.scope) || job.owner === who.subject) {
-    log.debug("Leaving reportJobVisible(). Owner.");
-    return true;
-  }
+  // THE POLICY DECIDES (#1030): the job's owner through the first rule, a
+  // report administrator or a shared group's member — through the
+  // definition the job ran — through the third.
   const definition = job.definitionId ?
     stores.getDefinition(job.definitionId) : null;
-  const shared = !!definition && rights.canSee(who.subject, who.scope,
-    definition);
+  const visible = rights.canSeeJob(who, job, definition);
   log.debug("Leaving reportJobVisible().");
-  return shared;
+  return visible;
 }
 
 // THE OWNER'S NAME (#986): a definition's `owner` is a subject
@@ -767,7 +785,7 @@ function reportOwnerName(owner: string): string {
 
 function reportDefinitionView(who: any, row: any): any {
   log.debug("Entering reportDefinitionView().");
-  const editable = !!row && rights.canEdit(who.subject, who.scope, row);
+  const editable = !!row && rights.canEdit(who, row);
   const view: any = {
     id: row.id,
     name: row.name,
@@ -868,7 +886,7 @@ function reportOwnerAsked(asked: string): string {
 function reportSchedulesView(who: any, query: any): any {
   log.debug("Entering reportSchedulesView().");
   const q = query || {};
-  const admin = rights.isAdmin(who.scope);
+  const admin = rights.isAdmin(who);
   const ownerAsked = reportOwnerAsked(q.owner);
   if (ownerAsked && !admin && ownerAsked !== who.subject) {
     log.debug("Leaving reportSchedulesView(). Another owner, refused.");
@@ -883,7 +901,7 @@ function reportSchedulesView(who: any, query: any): any {
     if (ownerAsked && row.owner !== ownerAsked) {
       return false;
     }
-    return rights.canSee(who.subject, who.scope, row);
+    return rights.canSee(who, row);
   });
   rows.sort(function (left: any, right: any): number {
     return String(left.name).localeCompare(String(right.name));
@@ -1109,6 +1127,7 @@ async function reportAcceptQuery(req: any, res: any, who: any,
   }
   const submitted = jobs.submit({
     owner: who.subject,
+    ownerKind: who.kind,
     document: document,
     parameters: wrapped.parameters,
     definitionId: definition ? definition.id : null,
@@ -1154,7 +1173,7 @@ function reportDefinitionsView(who: any, query: any): any {
   log.debug("Entering reportDefinitionsView().");
   const rows = stores.listDefinitions().filter(function (row: any):
       boolean {
-    return rights.canSee(who.subject, who.scope, row);
+    return rights.canSee(who, row);
   });
   rows.sort(function (left: any, right: any): number {
     return String(left.name).localeCompare(String(right.name));
@@ -1192,7 +1211,7 @@ function reportCreateDefinition(req: any, res: any, who: any,
   }
   if (id) {
     const existing = stores.getDefinition(id);
-    if (!existing || !rights.canEdit(who.subject, who.scope, existing)) {
+    if (!existing || !rights.canEdit(who, existing)) {
       reportMissingDefinition(res);
       log.debug("Leaving reportCreateDefinition(). Not editable.");
       return;
@@ -1202,6 +1221,7 @@ function reportCreateDefinition(req: any, res: any, who: any,
     id: id || null,
     name: posted.name,
     owner: who.subject,
+    ownerKind: who.kind,
     document: posted.document,
     schedule: posted.schedule,
     scheduleEnabled: posted.scheduleEnabled,
@@ -1222,7 +1242,7 @@ function reportCreateDefinition(req: any, res: any, who: any,
 function reportServeDefinition(res: any, who: any, id: string): void {
   log.debug("Entering reportServeDefinition().");
   const row = reportIdOk(id) ? stores.getDefinition(id) : null;
-  if (!row || !rights.canSee(who.subject, who.scope, row)) {
+  if (!row || !rights.canSee(who, row)) {
     reportMissingDefinition(res);
     log.debug("Leaving reportServeDefinition(). Hidden.");
     return;
@@ -1234,7 +1254,7 @@ function reportServeDefinition(res: any, who: any, id: string): void {
 function reportDeleteDefinition(res: any, who: any, id: string): void {
   log.debug("Entering reportDeleteDefinition().");
   const row = reportIdOk(id) ? stores.getDefinition(id) : null;
-  if (!row || !rights.canEdit(who.subject, who.scope, row)) {
+  if (!row || !rights.canEdit(who, row)) {
     reportMissingDefinition(res);
     log.debug("Leaving reportDeleteDefinition(). Hidden.");
     return;
@@ -1253,7 +1273,7 @@ function reportSharePosted(req: any, res: any, who: any, id: string):
     void {
   log.debug("Entering reportSharePosted().");
   const row = reportIdOk(id) ? stores.getDefinition(id) : null;
-  if (!row || !rights.canEdit(who.subject, who.scope, row)) {
+  if (!row || !rights.canEdit(who, row)) {
     reportMissingDefinition(res);
     log.debug("Leaving reportSharePosted(). Hidden.");
     return;
@@ -1286,7 +1306,8 @@ async function reportRunSaved(req: any, res: any, who: any,
     id: string): Promise<void> {
   log.debug("Entering reportRunSaved().");
   const row = reportIdOk(id) ? stores.getDefinition(id) : null;
-  if (!row || !rights.canSee(who.subject, who.scope, row)) {
+  // `run`, the act a share grants beside reading (#1030).
+  if (!row || !rights.canRun(who, row)) {
     reportMissingDefinition(res);
     log.debug("Leaving reportRunSaved(). Hidden.");
     return;
@@ -1366,7 +1387,9 @@ function reportServeJob(res: any, who: any, id: string): void {
     log.debug("Leaving reportServeJob(). Hidden.");
     return;
   }
-  const full = rights.isAdmin(who.scope) || job.owner === who.subject;
+  // Everything about the job for whoever may stop it — its owner or a
+  // report administrator — as the policy decides (#1030).
+  const full = rights.canEdit(who, { kind: 'job', owner: job.owner });
   reportJson(res, 200, { job: jobs.jobView(job, full) });
   log.debug("Leaving reportServeJob().");
 }

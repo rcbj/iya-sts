@@ -10223,14 +10223,6 @@
     "en": "dfada581a8c28ca3",
     "text": "Cuánto tiempo permanece en la lista la fila de un trabajo de informe terminado. Un trabajo que sigue en ejecución no se elimina."
   },
-  "report.usersGroup|label": {
-    "en": "21554dfaa265b36f",
-    "text": "A quién se le puede emitir report:use"
-  },
-  "report.usersGroup|description": {
-    "en": "28068508e0655509",
-    "text": "El grupo del directorio cuyos miembros pueden recibir report:use. Vacío significa que solo pueden los administradores de este dominio. report:admin se emite únicamente a esos administradores."
-  },
   "listenerMain.minVersion|label": {
     "en": "6470c151e28a9ab3",
     "text": "Puerto principal: versión mínima de TLS"

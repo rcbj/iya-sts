@@ -2697,9 +2697,10 @@ a field, read through `common/secrets.js` — never a value here), the outbox th
 The caps on the reports application (#956). A trust realm may override any of
 them. Server configuration (`/admin/config`) draws the group; the application
 itself is `/report`, and [Reports](reporting.md) is the operator's guide.
-`report:admin` is issued only to this realm's administrators. `report:use` is
-issued to those administrators and, when `report.usersGroup` names one, to
-members of that directory group.
+Who is issued `report:use` and `report:admin` is not a setting: the native
+roles `REPORT_USE` and `REPORT_ADMIN`, held through the seeded groups
+`report-users` and `report-admins` or as a member, decide it
+([Reports](reporting.md#who-can-open-it)).
 
 | Setting | Environment | Default | Change while running | What it does |
 |---|---|---|---|---|
@@ -2715,7 +2716,6 @@ members of that directory group.
 | `report.maxConcurrentPerSubject` | `REPORT_MAX_CONCURRENT_PER_SUBJECT` | `1` | yes | How many report jobs one person may have running at once. |
 | `report.artifactRetentionS` | `REPORT_ARTIFACT_RETENTION_S` | `86400` | yes | How long a finished report's bytes stay available to download. After this the result is gone. |
 | `report.jobRetentionS` | `REPORT_JOB_RETENTION_S` | `604800` | yes | How long a finished report job's row stays in the list. A job that is still running is not removed. |
-| `report.usersGroup` | `REPORT_USERS_GROUP` | *(empty)* | yes | The directory group whose members may be issued report:use. Empty means only this realm's administrators may. report:admin is issued only to those administrators. |
 
 ### Cluster
 

@@ -2555,8 +2555,6 @@
   "report.artifactRetentionS|description": "How long a finished report's bytes stay available to download. After this the result is gone.",
   "report.jobRetentionS|label": "How long a report job row is kept (seconds)",
   "report.jobRetentionS|description": "How long a finished report job's row stays in the list. A job that is still running is not removed.",
-  "report.usersGroup|label": "Who may be issued report:use",
-  "report.usersGroup|description": "The directory group whose members may be issued report:use. Empty means only this realm's administrators may. report:admin is issued only to those administrators.",
   "listenerMain.minVersion|label": "Main port: minimum TLS version",
   "listenerMain.minVersion|description": "For the Main port listener alone: tls.minVersion. inherit, the default, follows tls.minVersion; anything else decides for this listener only. The lowest protocol version LDAPS and the main HTTPS port will negotiate. TLSv1.2 is node's own default and the floor FAPI 2.0 allows (TLS 1.3 is preferred whenever a client offers it); TLSv1.3 refuses every client that cannot speak it, which is the setting a deployment usually wants and a debugger of old clients usually does not. The two older values exist so a client's downgrade handling can be exercised, and need an OpenSSL security level that still allows them.",
   "listenerMain.minVersion|restartReason": "the TLS contexts are built when the listeners are created",

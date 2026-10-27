@@ -13,10 +13,11 @@
 // the row projections and an in-memory schedule. Nothing here opens a
 // listener: the HTTP status of a refusal, the DPoP gate and a scheduled
 // run against a directory are not this file. `Limits.fixed` is the caps,
-// so the test does not read `report.*` to decide a query. Issuance
-// narrowing does read the two admin group names and `report.usersGroup`,
-// and puts them back. The schedule uses the in-memory definition store
-// and an injected rights checker, and it does not drain the job it queues.
+// so the test does not read `report.*` to decide a query. Who may be
+// issued the two scopes, and who may reach a row, is the policy's since
+// #1030 (`tests/report_access_policy.js`); the schedule here uses the
+// in-memory definition store with the access PEP installed and an injected
+// owner check, and it does not drain the job it queues.
 //
 // THE INDEXED LOOKUPS (#985, `narrowing()`) are driven against a directory
 // DOUBLE installed through `sources.installDirectory()`, which counts each
@@ -191,8 +192,6 @@ function documents(t) {
     'Limits.fixed with no override keeps the async time cap');
   t.equal(Limits.fixed({}).syncMaxMs(), 10000,
     'Limits.fixed with no override keeps the sync time cap');
-  t.equal(limits.usersGroup(), '',
-    'a fixed limits object keeps the empty users group');
   log.debug("Leaving documents().");
 }
 
@@ -349,83 +348,6 @@ function formats(t) {
   t.equal(json.source, 'users', 'JSON names the source');
   t.equal(json.rows[0].username, 'ada', 'JSON keeps the row');
   log.debug("Leaving formats().");
-}
-
-function rightsOf(t) {
-  log.debug("Entering rightsOf().");
-  const config = require('../common/config');
-  const rights = require('../report/rights');
-  let calls = 0;
-  try {
-    const readSet = config.setOverride('admin.readGroup', 'admin-read');
-    const writeSet = config.setOverride('admin.writeGroup', 'admin-write');
-    t.equal(readSet.ok, true, 'admin.readGroup accepts the test value');
-    t.equal(writeSet.ok, true, 'admin.writeGroup accepts the test value');
-    config.clearOverride('report.usersGroup');
-    rights.installMemberProbe(function () {
-      calls += 1;
-      return false;
-    });
-    const untouched = rights.reportNarrowScope('openid profile',
-      { kind: 'user', name: 'ada' });
-    t.equal(untouched, 'openid profile',
-      'a scope with neither report scope is returned as it was');
-    t.equal(calls, 0, 'that return does not ask about membership');
-
-    calls = 0;
-    const client = rights.reportNarrowScope(
-      'openid report:use report:admin',
-      { kind: 'application', name: 'other' });
-    t.equal(client, 'openid',
-      'an application subject keeps neither report scope');
-    t.equal(calls, 0, 'an application subject is not a group member');
-
-    rights.installMemberProbe(function (username, group) {
-      calls += 1;
-      return username === 'ada' && group === 'admin-read';
-    });
-    calls = 0;
-    const admin = rights.reportNarrowScope(
-      'openid report:use report:admin',
-      { kind: 'user', name: 'ada' });
-    t.equal(admin, 'openid report:use report:admin',
-      'an administrator who asked keeps both');
-
-    rights.installMemberProbe(function () {
-      return false;
-    });
-    const outsider = rights.reportNarrowScope(
-      'openid report:use report:admin',
-      { kind: 'user', name: 'bea' });
-    t.equal(outsider, 'openid',
-      'with no users group, a non-administrator keeps neither');
-
-    const groupSet = config.setOverride('report.usersGroup', 'reporters');
-    t.equal(groupSet.ok, true, 'report.usersGroup accepts the test value');
-    rights.installMemberProbe(function (username, group) {
-      return username === 'bea' && group === 'reporters';
-    });
-    const member = rights.reportNarrowScope(
-      'openid report:use report:admin',
-      { kind: 'user', name: 'bea' });
-    t.equal(member, 'openid report:use',
-      'a member of the users group keeps report:use only');
-
-    rights.installMemberProbe(function () {
-      return false;
-    });
-    const missed = rights.reportNarrowScope(
-      'openid report:use',
-      { kind: 'user', name: 'cy' });
-    t.equal(missed, 'openid',
-      'someone outside the users group loses report:use');
-  } finally {
-    config.clearOverride('admin.readGroup');
-    config.clearOverride('admin.writeGroup');
-    config.clearOverride('report.usersGroup');
-    rights.installMemberProbe(null);
-    log.debug("Leaving rightsOf().");
-  }
 }
 
 function artifacts(t) {
@@ -693,10 +615,32 @@ async function schedules(t) {
   const jobs = require('../report/jobs');
   const when = Date.parse('2026-10-25T12:00:30Z');
   stores.resetForTests();
-  rights.installChecker(function () {
+  // THE ACCESS PEP DECIDES THE VIEWS (#1030): requiring it installs the
+  // gate's decider, as `tests/access_policy.js` does, and the owner check
+  // is injected so the schedule needs no directory behind the store.
+  const config = require('../common/config');
+  const gate = require('../common/access_gate');
+  require('../xacml/xacml_access_pep');
+  config.setOverride('xacml.enforceAccess', 'true');
+  rights.installOwnerCheck(function () {
     return { ok: true, username: 'ada' };
   });
+  // A caller as `rights.callerOf()` answers one: a person holding the
+  // roles given, decided on those roles alone.
+  const person = function (subject, roles) {
+    return { subject: subject, username: subject.replace(/^urn:uuid:/, ''),
+             kind: 'user', roles: ['EVERYBODY', 'ALL_AUTHENTICATED_USERS']
+               .concat(roles), scope: roles.map(function (one) {
+                 return one === 'REPORT_ADMIN' ? 'report:admin'
+                                               : 'report:use';
+               }).join(' '), clientId: 'test' };
+  };
+  const USER = person('urn:uuid:test', ['REPORT_USE']);
+  const ADMIN = person('urn:uuid:admin', ['REPORT_USE', 'REPORT_ADMIN']);
+  const ADMIN_ONLY = person('urn:uuid:admin', ['REPORT_ADMIN']);
   try {
+    t.check(gate.deciderInstalled(), 'precondition: the access PEP is ' +
+      'installed, so the views below are the policy\'s');
     const saved = jobs.save({
       owner: 'urn:uuid:test',
       name: 'who',
@@ -746,8 +690,7 @@ async function schedules(t) {
         schedule: '', scheduleEnabled: false, notify: false, groups: [],
         lastSlot: null, failures: [], createdAt: 1, modifiedAt: 1
       });
-      const mine = api.schedulesView({ subject: 'urn:uuid:test',
-        scope: 'report:use' }, {});
+      const mine = api.schedulesView(USER, {});
       t.equal(mine.scope, 'mine', 'report:use lists its own');
       t.equal(mine.schedules.map(function (s) {
         return s.definition.id;
@@ -760,8 +703,7 @@ async function schedules(t) {
         'which says it was scheduled');
       t.equal(mine.schedules[0].definition.nextRunAt !== null, true,
         'and its next run');
-      const realm = api.schedulesView({ subject: 'urn:uuid:admin',
-        scope: 'report:use report:admin' }, {});
+      const realm = api.schedulesView(ADMIN, {});
       t.equal(realm.scope, 'realm', 'report:admin lists the realm');
       t.equal(realm.total, 2, 'both scheduled definitions');
       t.equal(realm.schedules[0].definition.name, 'theirs',
@@ -769,28 +711,23 @@ async function schedules(t) {
       t.equal(realm.schedules[0].definition.failures[0].description,
         'A saved parameter was not given.',
         'with the notes a skipped run left');
-      const one = api.schedulesView({ subject: 'urn:uuid:admin',
-        scope: 'report:admin' }, { owner: 'urn:uuid:other' });
+      const one = api.schedulesView(ADMIN_ONLY, { owner: 'urn:uuid:other' });
       t.equal(one.total, 1, 'an administrator may ask for one owner');
       t.equal(one.owner, 'urn:uuid:other', 'and the answer names them');
-      const refused = api.schedulesView({ subject: 'urn:uuid:test',
-        scope: 'report:use' }, { owner: 'urn:uuid:other' });
+      const refused = api.schedulesView(USER, { owner: 'urn:uuid:other' });
       t.equal(refused.ok, false, 'report:use may not ask for another owner');
       t.equal(refused.code, 'STS-REPORT-0038', 'and the refusal is 0038');
-      const self = api.schedulesView({ subject: 'urn:uuid:test',
-        scope: 'report:use' }, { owner: 'urn:uuid:test' });
+      const self = api.schedulesView(USER, { owner: 'urn:uuid:test' });
       t.equal(self.total, 1, 'naming oneself is allowed');
-      const paged = api.schedulesView({ subject: 'urn:uuid:admin',
-        scope: 'report:admin' }, { per: 1, page: 2 });
+      const paged = api.schedulesView(ADMIN_ONLY, { per: 1, page: 2 });
       t.equal(paged.pages === 2 && paged.schedules.length === 1 &&
         paged.schedules[0].definition.id === saved.definition.id, true,
         'the list pages');
-      t.equal(api.schedulesView({ subject: 'urn:uuid:admin',
-        scope: 'report:admin' }, { per: 1000 }).per, 100,
+      t.equal(api.schedulesView(ADMIN_ONLY, { per: 1000 }).per, 100,
         'per is capped at a hundred');
 
       // The two lists in numbered pages (#997): three definitions, one job.
-      const admin = { subject: 'urn:uuid:admin', scope: 'report:admin' };
+      const admin = ADMIN_ONLY;
       const allDefs = api.definitionsView(admin, {});
       t.equal(allDefs.total, 3, 'every definition is counted');
       t.equal(allDefs.per === 50 && allDefs.page === 1 &&
@@ -804,8 +741,7 @@ async function schedules(t) {
         'a page past the end is the last');
       t.equal(api.definitionsView(admin, { per: 999 }).per, 200,
         'per is capped at two hundred');
-      const own = api.definitionsView({ subject: 'urn:uuid:test',
-        scope: 'report:use' }, {});
+      const own = api.definitionsView(USER, {});
       t.equal(own.total, 2, 'report:use counts only what it may see');
       const jobPage = api.jobsView(admin, { per: 1 });
       t.equal(jobPage.total === 1 && jobPage.pages === 1 &&
@@ -878,7 +814,8 @@ async function schedules(t) {
     t.equal(typeof bad.lastSlot, 'number',
       'a query that no longer validates consumes the slot');
   } finally {
-    rights.installChecker(null);
+    rights.installOwnerCheck(null);
+    config.clearOverride('xacml.enforceAccess');
     stores.resetForTests();
     log.debug("Leaving schedules().");
   }
@@ -2878,7 +2815,6 @@ async function run(t) {
   log.debug("Entering run().");
   documents(t);
   formats(t);
-  rightsOf(t);
   await artifacts(t);
   projections(t);
   await budget(t);

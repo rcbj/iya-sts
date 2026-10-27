@@ -673,7 +673,39 @@ const NATIVE_ROLES = CONSOLE_ROLES.concat([
           'group, seeded as ssf-manage, and the application they are ' +
           'signing in to is a member of this role. An application is issued ' +
           'it on its own token only while it is a member. It does not ' +
-          'authorize ssf.read.' }
+          'authorize ssf.read.' },
+  // THE TWO REPORT ROLES (#1030, 2026-10-27). Who may be issued `report:use`
+  // and `report:admin` was a group check written into `report/rights.ts`
+  // (`report.usersGroup`, plus the console administrators) rather than a
+  // role, which is the arrangement every other native permission left
+  // behind with #303. They are ordinary native roles now, in the SSF roles'
+  // shape with one difference: a person holds one through its group (or as
+  // a direct member) and an APPLICATION holds one by being a member, and
+  // nothing asks whether the application a person signs in to is a member
+  // — the two scopes are declared on `sts-report` (#110), as the admin
+  // scopes are on the console, and that declaration is the client's half.
+  // A console administrator is NOT a report administrator by holding the
+  // console roster (rcbj: the report groups are the basis); add them to
+  // `report-admins`. What a holder may reach is the access-control policy's
+  // report rules (`xacml/xacml_templates.ts`), never these rows.
+  { name: 'REPORT_USE', consoleRole: '', permission: 'report:use',
+    groupSettings: [], seedApplications: [], seedGroups: ['report-users'],
+    what: 'Reports, as a user. Authorizes the report:use permission: the ' +
+          'reports application and /report-api for the definitions and ' +
+          'jobs the holder owns or is shared, as the access-control ' +
+          'policy decides. A person holds it through this role\'s group, ' +
+          'seeded as report-users, or as a direct member; an application ' +
+          'holds it as a member and is issued it on its own token, ' +
+          'reaching only the definitions and jobs it defined.' },
+  { name: 'REPORT_ADMIN', consoleRole: '', permission: 'report:admin',
+    groupSettings: [], seedApplications: [], seedGroups: ['report-admins'],
+    what: 'Reports, as an administrator. Authorizes the report:admin ' +
+          'permission: every definition and every job in the realm, as the ' +
+          'access-control policy decides. A person holds it through this ' +
+          'role\'s group, seeded as report-admins, or as a direct member; ' +
+          'an application holding it still reaches only what it defined. ' +
+          'It does not authorize report:use: a token asks for the scopes ' +
+          'it needs.' }
 ]);
 
 function nativeRoleFor(name) {

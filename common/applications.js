@@ -20131,34 +20131,6 @@ function debuggerApplications() {
 const HOSTED_SURFACE_CLIENT_IDS = Object.freeze(['sts-admin-console',
   'sts-user-portal', 'sts-report', 'sts-debugger-ui']);
 
-// The report API's audience for the ambient realm: the reports surface's
-// base plus `/report-api`, which is the `resource` the browser sends and
-// the audience `report/report_api.ts` accepts. A custom listener moves it
-// with the reports application, the same call the client's redirect uses.
-function reportApiAudience() {
-  log.debug("Entering reportApiAudience().");
-  const audience = helpers.rebaseTo(internalBaseUrl(), 'report') +
-                   '/report-api';
-  log.debug("Leaving reportApiAudience(). " + audience);
-  return audience;
-}
-
-// The two delegated permissions the report API defines, as a client asks
-// for them: the permission base (the audience, with the separator
-// `permissionBaseOf()` adds) plus `report:use` or `report:admin`. The words
-// alone are what `sts-report` declares and what the browser sends; these
-// identifiers are the grant.
-function reportDelegatedPermissionIds() {
-  log.debug("Entering reportDelegatedPermissionIds().");
-  const prefix = permissionBaseOf(reportApiAudience());
-  const ids = ['report:use', 'report:admin'].map(function (name) {
-    return prefix + name;
-  });
-  log.debug("Leaving reportDelegatedPermissionIds(). " + ids.length +
-            " id(s).");
-  return ids;
-}
-
 // The rows, built fresh on each call because each carries a credential that is
 // generated rather than declared — a registration access token, and a client
 // secret for the management API alone: the three hosted surfaces authenticate
@@ -20312,63 +20284,18 @@ function internalApplications() {
         // private_key_jwt while the server signed in for it.
         token_endpoint_auth_method: 'none'
       } },
-    // THE REPORT API (#956), in every realm for the console's reason: the
-    // API answers on that realm's path, so the application that defines
-    // its permissions has to be in that realm. It signs nobody in. It
-    // exists to DEFINE `report:use` and `report:admin`, which `sts-report`
-    // below is granted. The permission base is this realm's `/report-api`
-    // (a trailing separator, so base + name is one identifier). The
-    // audience without that separator is what the browser sends as
-    // `resource`.
-    { identifier: 'sts-report-api',
-      name: 'Report API',
-      kinds: ['oauth2-client'],
-      protocols: ['OAuth 2.0'],
-      realmScope: 'every',
-      description: 'seeded at startup: this service\'s own report API at ' +
-                   '/report-api (applications.seedInternal)',
-      attributes: {
-        appAllowedProtocol: ['oauth2'],
-        oauthAudience: reportApiAudience(),
-        oauthPermissionBaseUri: permissionBaseOf(reportApiAudience()),
-        oauthPermission: [
-          'report:use|Run the reports this person may see',
-          'report:admin|Administer every report in this realm']
-      },
-      // A resource server authenticates at no endpoint here, so the
-      // registration names no grant and no redirect: the row exists to
-      // define the permissions, which is what makes the reports client's
-      // grant of them a grant of something. The debugger's api is the
-      // same shape; this one is in every realm because each realm has
-      // the API.
-      registration: {
-        client_id: 'sts-report-api',
-        client_name: 'Report API',
-        client_id_issued_at: issued,
-        client_secret: randomId(24),
-        client_secret_expires_at: 0,
-        registration_access_token: randomId(24),
-        registration_client_uri: helpers.rebaseTo(base, 'oauth-oidc') +
-                                 '/oauth2/register/sts-report-api',
-        client_uri: reportApiAudience(),
-        application_type: 'web',
-        redirect_uris: [],
-        grant_types: [],
-        response_types: [],
-        scope: '',
-        token_endpoint_auth_method: 'client_secret_basic'
-      } },
     // THE REPORTS APPLICATION (#956). The portal's pattern: a static
     // application signing in in the browser as the public client
     // `sts-report`, PKCE, every token DPoP-bound. `/report` reads the
     // ambient realm's session, so a realm without this entry could not
     // sign anybody in. The two report scopes are declared here, as
-    // `admin:read` and `admin:write` are declared on the console, and
-    // narrowed at issuance (`report/rights.ts`): `report:use` for the
-    // configured group and for administrators, `report:admin` only for
-    // an administrator. The same two are granted as delegated permissions
-    // of `sts-report-api`, the row above: the API defines them, and this
-    // client holds the grant.
+    // `admin:read` and `admin:write` are declared on the console, and the
+    // native roles REPORT_USE and REPORT_ADMIN decide at issuance who is
+    // issued them (`common/roles.js`, `common/role_permissions.ts`). Until
+    // #1030 (2026-10-27) a resource application `sts-report-api` DEFINED
+    // the two as delegated permissions and this client was granted them:
+    // the browser asks for the bare words with `resource`, which never
+    // consults a grant, so the grant decided nothing and both are gone.
     { identifier: 'sts-report',
       name: 'Reports',
       kinds: ['oauth2-client', 'oidc-relying-party'],
@@ -20377,7 +20304,6 @@ function internalApplications() {
       description: 'seeded at startup: this service\'s own reports at ' +
                    '/report (applications.seedInternal)',
       attributes: { appAllowedProtocol: ['oauth2', 'oidc'],
-                    oauthDelegatedPermission: reportDelegatedPermissionIds(),
                     oauthGlobalConsent: ['openid', 'profile', 'email',
                                          'offline_access', 'report:use',
                                          'report:admin'] },
@@ -20556,9 +20482,8 @@ function seedInternalApplications(options) {
   // this is the process starting up and 'every' when a trust realm is being
   // built, and each row says which realms it belongs in — see the rows
   // themselves, where the answers are argued separately rather than
-  // together. A realm gets the console, the portal, the reports client,
-  // the report API and the management API. The debugger's two stay in the
-  // default realm.
+  // together. A realm gets the console, the portal, the reports client
+  // and the management API. The debugger's two stay in the default realm.
   const wanted = String((options || {}).scope || 'default');
   const rows = internalApplications().filter(function (one) {
     return wanted === 'default' || one.realmScope === 'every';
@@ -20572,79 +20497,8 @@ function seedInternalApplications(options) {
            (wanted === 'default' ? '' : ' into this realm') +
            '. They are ORDINARY entries — edit one, or delete it, and it ' +
            'stays that way until a restart.');
-  // After the loop, so a report API just written is visible to
-  // forPermission(). A known sts-report is not rewritten by the seed.
-  ensureReportClientMapping();
   log.debug("Leaving seedInternalApplications(). " + made + " created.");
   return made;
-}
-
-// seedInternalApplication leaves a known identifier as it is. That is right
-// for a redirect or a secret an operator changed, and wrong for the two
-// permissions the report API defines: an install that already has
-// sts-report would keep a client that never holds the grant the new
-// sts-report-api exists to give it. The words stay on oauthAllowedScope,
-// which is how admin:read and admin:write sit on the console — the browser
-// asks for the words — and the grant is the mapping from the API onto this
-// client. oauthGlobalConsent is left alone: an operator who withdrew it
-// meant it. A grant an operator removed comes back on the next start, the
-// same way a deleted built-in application comes back from reseed.
-function ensureReportClientMapping() {
-  log.debug("Entering ensureReportClientMapping().");
-  const api = load('sts-report-api');
-  const client = load('sts-report');
-  if (!api.known || !client.known) {
-    log.debug("Leaving ensureReportClientMapping(). One of the two is " +
-              "absent.");
-    return false;
-  }
-  const defined = reportDelegatedPermissionIds().filter(function (id) {
-    const found = forPermission(id);
-    return !!found;
-  });
-  if (!defined.length) {
-    log.warn(errorCodes.tag('STS-REG-0016') +
-             'applications: the report API defines neither report ' +
-             'permission, so sts-report was not granted them.');
-    log.debug("Leaving ensureReportClientMapping(). Nothing is defined.");
-    return false;
-  }
-  const record = client.record;
-  let changed = false;
-  defined.forEach(function (id) {
-    if (setField(record, 'oauthDelegatedPermission', id)) {
-      changed = true;
-    }
-  });
-  ['report:use', 'report:admin'].forEach(function (scope) {
-    if (setField(record, 'oauthAllowedScope', scope)) {
-      changed = true;
-    }
-  });
-  if (!changed) {
-    log.debug("Leaving ensureReportClientMapping(). Already mapped.");
-    return false;
-  }
-  if (!save(record, { quiet: true })) {
-    log.warn(errorCodes.tag('STS-REG-0020') +
-             'applications: sts-report was not granted the report API\'s ' +
-             'delegated permissions — the directory would not take the ' +
-             'write.');
-    log.debug("Leaving ensureReportClientMapping(). The write was refused.");
-    return false;
-  }
-  audit.audit({
-    action: 'application.update', actor: '', protocol: 'internal',
-    channel: 'internal', target: 'sts-report',
-    summary: 'Application "sts-report" was granted the report API\'s ' +
-             'delegated permissions',
-    detail: { identifier: 'sts-report',
-              attribute: 'oauthDelegatedPermission', seeded: true }
-  });
-  log.info('applications: sts-report was granted the report API\'s ' +
-           'delegated permissions.');
-  log.debug("Leaving ensureReportClientMapping(). Written.");
-  return true;
 }
 
 // THE CONSOLE'S PROSE (#543 phase 2b). The `/admin-api` routes whose

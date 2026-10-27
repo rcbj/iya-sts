@@ -12,10 +12,9 @@ PostgreSQL or to an operator's attribute-source database.
 
 Open `/report` — the front page links to it — and sign in. The browser uses the public client
 `sts-report` (PKCE S256, a DPoP-bound token, `resource` this realm's
-`/report-api`). Each realm also has `sts-report-api`, the application for
-that API. It exposes `report:use` and `report:admin`. Those two are granted
-to `sts-report`, and `sts-report` declares them, the same way the admin
-console declares `admin:read` and `admin:write`. The words on the page come from the signed-in user's
+`/report-api`). `sts-report` declares `report:use` and `report:admin`,
+the same way the admin console declares `admin:read` and `admin:write`;
+who is issued them is decided by two roles, below. The words on the page come from the signed-in user's
 language. The API stays language-free, and every error sentence is
 English. When several accounts in one browser are enabled, the page uses
 the same account switcher as the portal.
@@ -27,21 +26,49 @@ prose. The [endpoint list](endpoints.md) names the paths.
 
 ## Who can open it
 
-- **`report:admin`** is issued only to this realm's administrators (Admin
-  Read or Admin Write). An administrator sees every definition and every
-  job in the realm, and can edit and delete any definition.
-- **`report:use`** is issued to those administrators, and to members of
-  the directory group named by `report.usersGroup`. When that setting is
-  empty, only the administrators are issued it. An application (a
-  `client_credentials` subject) is issued neither scope.
+Two roles decide it, seeded in every realm and listed on
+Directory → Roles (`/admin/roles`), the way `admin:read` and `admin:write`
+are decided by `ADMIN_READ` and `ADMIN_WRITE`:
 
-You see the definitions you own. Sharing a definition with a directory
-group lets members of that group run it and download the result. The
-share body is `{ "groups": ["cn=reporters,ou=groups,…"] }`: each value is
-a group DN in this realm. Sharing does not let them edit or delete it.
+- **`REPORT_USE`** authorizes `report:use`. A person holds it by being in
+  the group `report-users`, or as a direct member of the role; an
+  application holds it by being a member of the role.
+- **`REPORT_ADMIN`** authorizes `report:admin`. A person holds it through
+  `report-admins`, or as a direct member. It does not imply `report:use`:
+  the page asks for both and is issued what the person holds.
+
+Both groups are created empty. A console administrator is not a report
+administrator by being one: add them to `report-admins`. A token is
+issued only the report scopes its subject's roles authorize, and every
+call to `/report-api` asks again, so a person taken out of the group is
+refused at once, before their token expires.
+
+What a holder may reach is the access-control policy's decision
+([XACML](xacml.md#the-embedded-peps-this-services-own-issuance-and-access)),
+asked for every definition and every job:
+
+- **The owner** of a definition or a job sees, runs, changes, shares and
+  deletes it.
+- **A report administrator** (a person holding `REPORT_ADMIN`) sees,
+  runs, changes and deletes every definition and every job in the realm.
+- **A member of a group a definition is shared with** (a person holding
+  `REPORT_USE`) may read it, run it, and download the result of a run —
+  the actions the policy's `reportSharedActions` lists; editing, sharing
+  and deleting stay with the owner and the administrators. The share body
+  is `{ "groups": ["cn=reporters,ou=groups,…"] }`: each value is a group
+  DN in this realm.
+- **An application** (a `client_credentials` token for a client that is a
+  member of `REPORT_USE` or `REPORT_ADMIN` and declares the scope) reaches
+  only the definitions and jobs it defined itself, whichever role it
+  holds. It may save definitions, run them, queue queries and download
+  its own results.
+
 A definition or a job you may not see is answered as not found. A job id
 in a URL is not permission to read it. The same token is required for the
-result as for the query that created the job.
+result as for the query that created the job. A realm that wants
+something else — a helpdesk group that may read everything, shares that
+may edit — writes an override of `access-control` into its own policies
+(`/admin/xacml/policies`); the built-in rules are documented there.
 
 ## The page
 
@@ -108,7 +135,8 @@ so the first run follows within a minute of saving an enabled schedule
 whose expression has any past occurrence, and later runs follow each
 occurrence. The definition page says when the next run is due and which
 occurrence was last taken, and lists the reasons a scheduled run did not
-happen (`failures` on the API): the owner lost `report:use`, a parameter
+happen (`failures` on the API): the owner may no longer run it (their report
+role was taken away, or the policy refuses), a parameter
 has no stored value, the query no longer validates, or the job could not
 be queued. A schedule that is saved with the Enabled box clear is kept
 and never runs.

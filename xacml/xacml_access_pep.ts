@@ -112,6 +112,10 @@ interface AccessQuestion {
     kind: string; id: string; action: string; requiredRole: string;
     attributes?: string[]; person: string;
   } | null;
+  // A report definition or job (#1030): `common/access_gate.ts`.
+  reportObject?: {
+    kind: string; owner: string; groups?: string[]; person: string;
+  } | null;
 }
 
 // What a decision answers.
@@ -360,7 +364,14 @@ class XacmlAccessPep {
     // owner rather than an owner called ''.
     const req = new AuthorizationRequest({ includeInResult: true,
                                            dropEmpty: true })
-      .principal(subject.name || '')
+      // THE KIND IS SENT ONLY WHEN THE CALLER SAID (#1030): the report gate
+      // does, because its third rule reads it; every other surface's
+      // request is attribute for attribute what it was.
+      .principal(subject.name || '',
+                 subject.kind === undefined || subject.kind === null
+                   ? undefined
+                   : (subject.kind === 'application' ? 'application'
+                                                     : 'user'))
       .roles(held)
       .subject(ATTRIBUTE.AUTHENTICATED,
                [subject.authenticated === false ? 'false' : 'true'],
@@ -387,6 +398,16 @@ class XacmlAccessPep {
                   (owned.attributes || []).map(String))
         .action(ATTRIBUTE.ADMIN_ACTION, [String(owned.action || '')])
         .subject(ATTRIBUTE.OWNER_SUBJECT, [String(owned.person || '')]);
+    }
+    // THE REPORT RULE'S QUESTION (#1030): the row's kind and the groups it
+    // is shared with, and the person for the PIP's owner identity. The
+    // row's owner is in `owner` above, the first rule's comparison.
+    const row = asked.reportObject;
+    if (row && row.kind) {
+      req.resource(ATTRIBUTE.REPORT_OBJECT_KIND, [String(row.kind)])
+        .resource(ATTRIBUTE.REPORT_SHARED_GROUP,
+                  (row.groups || []).map(String))
+        .subject(ATTRIBUTE.OWNER_SUBJECT, [String(row.person || '')]);
     }
     req.category(model.CATEGORY.ENVIRONMENT);
     log.debug("Leaving XacmlAccessPep.buildRequest().");
@@ -453,9 +474,18 @@ class XacmlAccessPep {
     // The roles this person holds — the register's, plus the six computed
     // built-ins. The SAME function the issuance PEP calls, so "holds a role"
     // means one thing in this service.
+    //
+    // **UNLESS THE CALLER SAYS THE ROLES IT GIVES ARE THE DECISION'S**
+    // (`effective`, #1030): a resource server holding a verified token
+    // computed held ∩ carried (`role_permissions.effectiveRoles()`), and
+    // unioning the register's answer back in would hand a `report:use`
+    // token REPORT_ADMIN because its subject also holds that. Then only the
+    // built-in roles are read here — from the kind and whether anybody
+    // authenticated, with no name, so no register role is resolved.
+    const kind = subject.kind === 'application' ? 'application' : 'user';
     const held = roles.rolesOf({
-      kind: 'user',
-      name: subject.name || '',
+      kind: kind,
+      name: subject.effective === true ? '' : (subject.name || ''),
       authenticated: subject.authenticated !== false,
       groups: subject.groups || []
     });
@@ -526,9 +556,10 @@ class XacmlAccessPep {
 
     // The three refusals mean different things to whoever has to fix one, so
     // the sentence says which — the same division the issuance PEP makes.
-    const who = subject.name
-      ? '"' + subject.name + '"' + (subject.authenticated === false
-          ? ' (who did not authenticate)' : '')
+    const who = (subject.label || subject.name)
+      ? '"' + (subject.label || subject.name) + '"' +
+        (subject.authenticated === false ? ' (who did not authenticate)'
+                                         : '')
       : 'an unauthenticated caller';
     const what = asked.action + ' on ' + asked.resource +
                  (asked.owner ? ', owned by "' + asked.owner + '"' : '');
@@ -573,7 +604,7 @@ class XacmlAccessPep {
     audit.audit({
       action: 'xacml.access.refused',
       errorCode: refusalCode,
-      actor: subject.name || '',
+      actor: subject.label || subject.name || '',
       protocol: 'XACML',
       detail: answer.decision + ' for ' + what + ': ' + why
     });

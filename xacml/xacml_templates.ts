@@ -285,7 +285,23 @@ const ISSUANCE_ATTRIBUTE = {
   OWNER_SUBJECT: 'urn:sts:xacml:owner-subject',
   // On the SUBJECT, FROM THE PIP: the person's own DN and every group they
   // are in, compared as OBJECT_OWNER is.
-  OWNER_IDENTITY: 'urn:sts:xacml:owner-identity'
+  OWNER_IDENTITY: 'urn:sts:xacml:owner-identity',
+  // -------------------------------------------------------------------------
+  // THE REPORT RULE'S VOCABULARY (#1030, 2026-10-27): a definition or a job
+  // of `/report-api`, decided one row at a time. The row's OWNER travels as
+  // `resource-owner` (OWNER above) and is compared with `subject-id`, which
+  // `report/rights.ts` sets to the token's `sub` — a `urn:uuid:` person or
+  // a client — so the first rule permits the owner exactly as it permits a
+  // person their own portal account. These two are what the third rule
+  // reads beside it; the subject's groups come from the PIP as
+  // OWNER_IDENTITY, looked up by OWNER_SUBJECT (the person by username).
+  // -------------------------------------------------------------------------
+  // On the RESOURCE: `definition` or `job`.
+  REPORT_OBJECT_KIND: 'urn:sts:xacml:report-object-kind',
+  // On the RESOURCE: the group DNs the definition is shared with (a job's,
+  // its definition's), compared as OBJECT_OWNER is. Empty for a row shared
+  // with nobody, and for a question about the API rather than a row.
+  REPORT_SHARED_GROUP: 'urn:sts:xacml:report-shared-group'
 };
 
 // ---------------------------------------------------------------------------
@@ -4066,7 +4082,11 @@ const TEMPLATES: TemplateRow[] = [
           'OWNER_WRITE may administer, through the management API, a role, ' +
           'group, service account or application they own, within the ' +
           'actions listed for its kind, never one closed to its owners and ' +
-          'never removing its last owner.',
+          'never removing its last owner. Since #1030 a third rule decides ' +
+          'the report API\'s rows: a report administrator reaches any ' +
+          'definition or job, a report user one shared with a group they ' +
+          'are in, for the listed actions; an owner reaches their own ' +
+          'through the first rule, and an application only those.',
     parameters: [
       { name: 'permitOwner',
         label: 'Permit a subject to act on a resource they own',
@@ -4152,7 +4172,30 @@ const TEMPLATES: TemplateRow[] = [
               'and update-fields are permitted only when EVERY attribute ' +
               'they write is listed. Leave out what turns an application ' +
               'into a bigger credential: its scopes, roles, grant types, ' +
-              'keys and delegation.' }
+              'keys and delegation.' },
+      // THE REPORT RULE (#1030): a report administrator on any row, and a
+      // shared group's member on the listed actions. An owner needs none of
+      // it — the first rule permits them — and an application is never a
+      // report administrator nor a group's member here, so it reaches only
+      // what it owns whatever role it holds (rcbj's decision 4 on #1030).
+      { name: 'permitReportSharing',
+        label: 'Permit report administrators and shared groups on the ' +
+               'report API',
+        dflt: 'yes', type: 'string',
+        help: 'yes or no. The THIRD rule (#1030): a PERSON holding ' +
+              'REPORT_ADMIN reaches every report definition and job in the ' +
+              'realm, and a person holding REPORT_USE reaches one shared ' +
+              'with a group they are in, for the actions listed below. An ' +
+              'owner reaches their own rows through the first rule whatever ' +
+              'this says, and an application holding either role reaches ' +
+              'only what it defined. No leaves every row to its owner.' },
+      { name: 'reportSharedActions',
+        label: 'What a shared group\'s member may do with a definition',
+        dflt: 'read, run', type: 'list',
+        help: 'Comma- or newline-separated: `read` (see the definition and ' +
+              'its jobs, download a result), `run` (run it), `write` ' +
+              '(change, share or delete it, which the default leaves to ' +
+              'the owner and a report administrator).' }
     ],
     build: function (answers, options) {
       log.debug('Entering buildAccessControl().');
@@ -4416,6 +4459,82 @@ const TEMPLATES: TemplateRow[] = [
                            TYPE.STRING)]),
             B.value(TYPE.INTEGER, '1')])])
       ];
+      // ---------------------------------------------------------------------
+      // THE THIRD RULE: REPORT ADMINISTRATORS AND SHARED GROUPS (#1030).
+      //
+      // Until #1030 `report/rights.ts` decided this with an `if`: an
+      // administrator sees everything, an owner their own, a shared group's
+      // member what was shared. The owner is the first rule's business — the
+      // report gate puts the row's owner in `resource-owner` and the token's
+      // subject in `subject-id` — and this rule is the other two sentences,
+      // TARGETED at the report API so that no other surface's question can
+      // trip it, and conjoined so that each narrows:
+      //   * the subject authenticated, and holding a role the resource
+      //     requires (REPORT_USE or REPORT_ADMIN, the gate's any-one);
+      //   * the subject a PERSON (`subject-kind` is `user`) — an application
+      //     holding a report role is an owner and nothing else, which is
+      //     rcbj's decision 4: it reaches, runs, edits and deletes only what
+      //     it defined;
+      //   * and then EITHER REPORT_ADMIN among its roles, OR the action one
+      //     of `reportSharedActions` AND a group among the row's shared
+      //     groups that the PIP says the person is in (`owner-identity`
+      //     against `report-shared-group`, the owner rule's comparison).
+      // A question about the API rather than a row carries no shared group,
+      // so the second arm is false for it, and the first rule decides it.
+      // ---------------------------------------------------------------------
+      const permitReportSharing = B.yes(given.permitReportSharing, true);
+      const sharedActions = listedOr('reportSharedActions', 'read, run');
+      const isAPerson = B.apply(F1 + 'string-is-in', [
+        B.value(TYPE.STRING, 'user'),
+        B.designator(model.CATEGORY.ACCESS_SUBJECT,
+                     ISSUANCE_ATTRIBUTE.SUBJECT_KIND, TYPE.STRING)]);
+      const isReportAdmin = B.apply(F1 + 'string-is-in', [
+        B.value(TYPE.STRING, 'REPORT_ADMIN'),
+        B.designator(model.CATEGORY.ACCESS_SUBJECT, ISSUANCE_ATTRIBUTE.ROLE,
+                     TYPE.STRING)]);
+      const sharedWithTheirGroup = B.apply(F1 + 'and', [
+        sharedActions.length
+          ? B.apply(F3 + 'any-of-any', [
+            { kind: 'function', functionId: F1 + 'string-equal' },
+            B.designator(model.CATEGORY.ACTION, model.ATTRIBUTE.ACTION_ID,
+                         TYPE.STRING),
+            stringBag(sharedActions)])
+          : B.value(TYPE.BOOLEAN, 'false'),
+        B.apply(F3 + 'any-of-any', [
+          { kind: 'function', functionId: F1 + 'string-equal' },
+          B.designator(model.CATEGORY.ACCESS_SUBJECT,
+                       ISSUANCE_ATTRIBUTE.OWNER_IDENTITY, TYPE.STRING),
+          B.designator(R, ISSUANCE_ATTRIBUTE.REPORT_SHARED_GROUP,
+                       TYPE.STRING)])]);
+      const reportRule = {
+        id: options.idBase + ':rule:report-administrators-and-shares',
+        effect: model.EFFECT.PERMIT,
+        description: 'Permit a PERSON holding REPORT_ADMIN any report ' +
+                     'definition or job of the realm, and a person holding ' +
+                     'a report role the actions ' +
+                     (sharedActions.join(', ') || '(none)') + ' on one ' +
+                     'shared with a group they are in (#1030). An owner ' +
+                     'reaches their own through the first rule; an ' +
+                     'application reaches only what it defined.',
+        // `report-api` is `common/access_gate.ts`'s RESOURCE.REPORT_API,
+        // which the report gate sends as the resource-id; written out
+        // because this file may not require that module's dependents.
+        target: B.targetOf([[
+          B.match(F1 + 'string-equal', B.value(TYPE.STRING, 'report-api'),
+                  B.designator(R, model.ATTRIBUTE.RESOURCE_ID,
+                               TYPE.STRING))]]),
+        condition: B.apply(F1 + 'and', [
+          B.apply(F3 + 'any-of', [
+            { kind: 'function', functionId: F1 + 'boolean-equal' },
+            B.value(TYPE.BOOLEAN, 'true'),
+            B.designator(model.CATEGORY.ACCESS_SUBJECT,
+                         ISSUANCE_ATTRIBUTE.AUTHENTICATED, TYPE.BOOLEAN)]),
+          holdsRequiredRole,
+          isAPerson,
+          B.apply(F1 + 'or', [isReportAdmin, sharedWithTheirGroup])]),
+        obligations: [], advice: []
+      };
+
       const ownerRule = {
         id: options.idBase + ':rule:owner-administers-what-they-own',
         effect: model.EFFECT.PERMIT,
@@ -4460,6 +4579,12 @@ const TEMPLATES: TemplateRow[] = [
                          'administer what they own through the management ' +
                          'API, within the actions its kind allows'
                        : '') +
+                     (permitReportSharing
+                       ? '. A third rule (#1030) permits a report ' +
+                         'administrator any report definition or job, and ' +
+                         'a shared group\'s member the listed actions on ' +
+                         'one shared with them'
+                       : '') +
                      '. Everything else is denied: the combining algorithm ' +
                      'is deny-unless-permit, so an access decision does not ' +
                      'depend on a PEP\'s bias.',
@@ -4482,7 +4607,8 @@ const TEMPLATES: TemplateRow[] = [
           target: null,
           condition: condition,
           obligations: [], advice: []
-        }].concat(permitOwnerAdministration ? [ownerRule] : []),
+        }].concat(permitOwnerAdministration ? [ownerRule] : [])
+          .concat(permitReportSharing ? [reportRule] : []),
         obligations: [], advice: []
       };
     }

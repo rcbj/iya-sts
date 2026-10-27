@@ -5571,13 +5571,10 @@ class OAuth2Server {
         self.issuanceSubjectOf(opts),
         { clientId: opts.client_id, grant: opts.grant });
     }
-    // REPORT SCOPES ARE A GROUP'S, AND AN ADMINISTRATOR'S (#956). Every
-    // grant mints through here, so a refresh, an exchange and
-    // client_credentials all lose `report:use` and `report:admin` when the
-    // subject may not hold them. Asked lazily: this module is loaded long
-    // before the report library.
-    opts.scope = require('../report/rights').reportNarrowScope(opts.scope,
-      self.issuanceSubjectOf(opts));
+    // (The report scopes were narrowed here by `report/rights.ts`'s own
+    // group check until #1030; `report:use` and `report:admin` are the
+    // native roles REPORT_USE and REPORT_ADMIN's permissions now, and the
+    // role narrowing below decides them with every other gated one.)
     // A GATED PERMISSION GOES WITH THE SUBJECT'S ROLES (#302, #303), here for
     // the debugger permission's reason: every grant mints through this
     // function, so a refresh after a role was revoked, a token exchange, a
@@ -8605,7 +8602,6 @@ class OAuth2Server {
     let scope = debuggerAccess.narrowScope(
       self.offlineAccessScope(String(query.scope || ''), query, types, user),
       person, { clientId: query.client_id, grant: 'authorization_code' });
-    scope = require('../report/rights').reportNarrowScope(scope, person);
     const out: Json = {};
     const parsedDetails = self.parseAuthorizationDetails(
       query.authorization_details, { clientId: query.client_id, req: req });

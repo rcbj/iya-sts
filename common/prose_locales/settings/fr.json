@@ -10223,14 +10223,6 @@
     "en": "dfada581a8c28ca3",
     "text": "Durée pendant laquelle la ligne d’une tâche de rapport terminée reste dans la liste. Une tâche encore en cours n’est pas supprimée."
   },
-  "report.usersGroup|label": {
-    "en": "21554dfaa265b36f",
-    "text": "Qui peut se voir délivrer report:use"
-  },
-  "report.usersGroup|description": {
-    "en": "28068508e0655509",
-    "text": "Le groupe d’annuaire dont les membres peuvent se voir délivrer report:use. Vide : seuls les administrateurs de ce domaine le peuvent. report:admin n’est délivré qu’à ces administrateurs."
-  },
   "listenerMain.minVersion|label": {
     "en": "6470c151e28a9ab3",
     "text": "Port principal : version TLS minimale"

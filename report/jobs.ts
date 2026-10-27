@@ -141,6 +141,9 @@ function reportSubmit(spec: any): any {
   const job = {
     id: stores.newId(),
     owner: spec.owner,
+    // `user` or `application` (#1030): which kind of subject owns it, so
+    // the policy and the schedule can resolve the owner's roles.
+    ownerKind: spec.ownerKind === 'application' ? 'application' : 'user',
     document: stores.copy(spec.document),
     parameters: spec.parameters ? stores.copy(spec.parameters) : null,
     definitionId: spec.definitionId || null,
@@ -437,6 +440,8 @@ function reportSave(spec: any): any {
     id: previous ? previous.id : stores.newId(),
     name: name,
     owner: previous ? previous.owner : spec.owner,
+    ownerKind: previous ? (previous.ownerKind || 'user')
+      : (spec.ownerKind === 'application' ? 'application' : 'user'),
     document: stores.copy(spec.document),
     parameters: parameters,
     schedule: schedule,

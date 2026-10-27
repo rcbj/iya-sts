@@ -284,7 +284,10 @@ console's client, `sts-admin-console`, on everybody who signs in to the console 
 groups `ssf-read` and `ssf-manage` are stored on `roleMemberGroup`, created empty when missing and never
 overwritten. A person is issued the scope only while they belong to the role's group and the application is a
 member; an application's own token needs the application to be a member. `SSF_MANAGE` does not authorize
-`ssf.read`. None of the six can be
+`ssf.read`. Two more, `REPORT_USE` and `REPORT_ADMIN` (#1030), authorize `report:use` and `report:admin`
+through the groups `report-users` and `report-admins`, stored and seeded the same way; a person is issued the
+scope while they are in the group or a direct member, and an application while it is a member, with no
+condition on the application the person signs in to. None of the eight can be
 deleted, and their permissions are fixed. A role only applications may hold, and the two console roles, cannot be
 conferred. The service also computes eight
 built-in roles that are not stored: EVERYBODY, ALL_AUTHENTICATED_USERS, ALL_UNAUTHENTICATED_USERS,

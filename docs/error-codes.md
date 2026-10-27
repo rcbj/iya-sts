@@ -96,7 +96,7 @@ is an ordinary outcome.
 * [Identity-provider-initiated sign-in (`STS-LAUNCH`)](#sts-launch) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 181
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
-* [Reporting (`STS-REPORT`)](#sts-report) — 39
+* [Reporting (`STS-REPORT`)](#sts-report) — 40
 
 ## STS-HTTP
 
@@ -4520,8 +4520,8 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0073` | A change nudge was not sent because the PEP's notify URL is plain http and the realm is in product mode, whatever xacml.pepNotifyAllowHttp says (#171). | — |
 | `STS-XACML-0074` | Product mode ignored xacml.pepNotifySkipTlsVerification: a nudge verifies the PEP's certificate whatever it says. Logged once per process (#171). | none — a warning in the log |
 | `STS-XACML-0075` | A write put a person or a group on ADMIN_READ or ADMIN_WRITE; their people are the console roster's, granted on /admin/rbac, and only an application is added on the role (#303). | none (a console or management API refusal, HTTP 400) |
-| `STS-XACML-0076` | A delete named a native role — ADMIN_READ, ADMIN_WRITE, DEVICE_COMPLIANCE, SSF_READ or SSF_MANAGE — which every realm keeps (#303, #309). | none (a console or management API refusal, HTTP 400) |
-| `STS-XACML-0077` | A native role (ADMIN_READ, ADMIN_WRITE, DEVICE_COMPLIANCE, SSF_READ or SSF_MANAGE) could not be seeded in a realm; no machine client can be issued its permission there until it exists (#303, #309). | none — a warning in the log |
+| `STS-XACML-0076` | A delete named a native role — ADMIN_READ, ADMIN_WRITE, ADMIN_CONSOLE, DEVICE_COMPLIANCE, SSF_READ, SSF_MANAGE, REPORT_USE or REPORT_ADMIN — which every realm keeps (#303, #309, #1030). | none (a console or management API refusal, HTTP 400) |
+| `STS-XACML-0077` | A native role (ADMIN_READ, ADMIN_WRITE, ADMIN_CONSOLE, DEVICE_COMPLIANCE, SSF_READ, SSF_MANAGE, REPORT_USE or REPORT_ADMIN) or one of its seeded groups could not be seeded in a realm; no machine client can be issued its permission there until it exists (#303, #309, #1030). | none — a warning in the log |
 | `STS-XACML-0078` | Neither the issuance policy nor the built-in one it falls back to gave a verdict on a requested scope — a defect; a scope gated by role was dropped and an ungated one kept (#304). | none — a warning in the log |
 | `STS-XACML-0079` | The built-in issuance policy could not be evaluated for the per-scope question in a process with no issuance PEP — a defect; scopes gated by role were dropped and the rest kept (#304, #305). | none — an error in the log |
 | `STS-XACML-0080` | A write named an application's role that is not <role>@<application>, or used a native or built-in role's name for one (#310). | none (a console or management API refusal, HTTP 400) |
@@ -4796,7 +4796,7 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0820` *(retired)* | A console form POST held a value outside the closed set the mirroring /admin-api operation's enum declares (#86). | HTTP 400 page |
 | `STS-ADMIN-0821` | A permission gated by role — admin:read, admin:write, ssf.read, ssf.manage, or an application permission its resource lists in oauthRoleGatedPermission — was asked for on behalf of a person or an application no held role authorizes it for (for a person's console roles: no Admin Read or Admin Write, not signed in, or the bootstrap administrator before its claim), and was left off the tokens (#302, #303). | none — the token is issued without that scope (RFC 6749 section 3.3) |
 | `STS-ADMIN-0822` | Every scope a request asked for was a permission gated by role that the subject's roles do not authorize, so nothing was left to issue (#302, #303). | invalid_scope (RFC 6749 sections 4.1.2.1 and 5.2) |
-| `STS-ADMIN-0823` | add-permission or remove-permission named a native role — ADMIN_READ, ADMIN_WRITE, DEVICE_COMPLIANCE, SSF_READ or SSF_MANAGE — whose permission is fixed (#303, #309). | none (a console or management API refusal, HTTP 400) |
+| `STS-ADMIN-0823` | add-permission or remove-permission named a native role — ADMIN_READ, ADMIN_WRITE, ADMIN_CONSOLE, DEVICE_COMPLIANCE, SSF_READ, SSF_MANAGE, REPORT_USE or REPORT_ADMIN — whose permission is fixed (#303, #309, #1030). | none (a console or management API refusal, HTTP 400) |
 | `STS-ADMIN-0824` | add-permission or remove-permission named no permission (#303). | none (a console or management API refusal, HTTP 400) |
 | `STS-ADMIN-0825` | add-permission named a native permission (admin:read, admin:write, device:compliance, ssf.read, ssf.manage), which only its native role authorizes (#303, #309). | none (a console or management API refusal, HTTP 400) |
 | `STS-ADMIN-0826` | add-permission named a permission no application in the realm defines; a permission must be defined before a role can authorize it (#303). | none (a console or management API refusal, HTTP 400) |
@@ -5368,9 +5368,9 @@ Raised from: report/.
 | `STS-REPORT-0013` | The sign-on session the access token came from has ended. | invalid_token (HTTP 401) |
 | `STS-REPORT-0014` | A certificate-bound access token was presented to the reports API without that certificate. | invalid_token (HTTP 401) |
 | `STS-REPORT-0015` | A DPoP-bound token was sent to the reports API as Bearer, or the proof was refused and named no code of its own. | invalid_token or invalid_dpop_proof (HTTP 401) |
-| `STS-REPORT-0016` | The access token presented to the reports API names no person. | forbidden (HTTP 403) |
+| `STS-REPORT-0016` *(retired)* | The access token presented to the reports API names no person. Retired by #1030 (2026-10-27): an application holding REPORT_USE or REPORT_ADMIN is a caller, confined to what it defined. | forbidden (HTTP 403) |
 | `STS-REPORT-0017` | The token lacks report:use or report:admin, or the client no longer declares the scope. | insufficient_scope or forbidden (HTTP 403) |
-| `STS-REPORT-0018` | This account may not use reports in this realm. | forbidden (HTTP 403) |
+| `STS-REPORT-0018` | The token carries report:use or report:admin and no role its subject holds NOW authorizes it (held ∩ carried, #1030): REPORT_USE or REPORT_ADMIN was taken from the person or the application after the token was minted. | forbidden (HTTP 403) |
 | `STS-REPORT-0019` | No such report definition, including one the caller may not see. | not_found (HTTP 404) |
 | `STS-REPORT-0020` | No such report job, including one the caller may not see. | job_not_found (HTTP 404) |
 | `STS-REPORT-0021` | The report job has not finished, so its result is not ready. | job_not_ready (HTTP 409) |
@@ -5392,6 +5392,7 @@ Raised from: report/.
 | `STS-REPORT-0038` | GET /report-api/schedules asked for another account's schedules with a token that holds report:use and not report:admin. | forbidden (HTTP 403) |
 | `STS-REPORT-0039` | A credentialHolders query would read more holders (or group members) than its execution's row cap allows, so it was refused before the first page was read (#1002); synchronously, under the job cap, it becomes a job in auto mode. | result_too_large (HTTP 400) |
 | `STS-REPORT-0040` | A filter on a directory-backed report source (users, credentialHolders) named no field the directory indexes, so it would have read every person; refused at acceptance, naming the indexed fields, in every mode (rcbj, 2026-10-27). | invalid_query (HTTP 400) |
+| `STS-REPORT-0041` | The access-control policy refused a report API request (#1030): the subject holds no report role for the API, or the definition or job is not its own, not shared with a group it is in, and it is not a report administrator — an application reaches only what it defined. A hidden row is answered not_found. | forbidden (HTTP 403), or not_found (HTTP 404) for one row |
 
 ## Adding a code
 

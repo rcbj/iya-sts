@@ -18097,14 +18097,11 @@ const SETTINGS = [
     env: 'REPORT_JOB_RETENTION_S', type: 'int', dflt: 604800,
     min: 60, max: 31536000, runtime: true,
     description: 'How long a finished report job\'s row stays in the list. ' +
-                 'A job that is still running is not removed.' },
-  { key: 'report.usersGroup', group: 'Reporting',
-    label: 'Who may be issued report:use',
-    env: 'REPORT_USERS_GROUP', type: 'string', dflt: '',
-    runtime: true,
-    description: 'The directory group whose members may be issued ' +
-                 'report:use. Empty means only this realm\'s administrators ' +
-                 'may. report:admin is issued only to those administrators.' }
+                 'A job that is still running is not removed.' }
+  // `report.usersGroup` was here until #1030 (2026-10-27): who may be
+  // issued `report:use` is the native role REPORT_USE now, held through
+  // the seeded group `report-users` or as a member (`common/roles.js`),
+  // and `report:admin` is REPORT_ADMIN's, through `report-admins`.
 ];
 
 // ---------------------------------------------------------------------------

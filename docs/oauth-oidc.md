@@ -619,6 +619,10 @@ it is the client itself. Two kinds of scope are gated:
   `ADMIN_READ` and `ADMIN_WRITE` roles. A person holds those through the
   console's Admin Read and Admin Write groups, and an application by being a
   member of the role ([Management API](management-api.md)).
+* **`report:use` and `report:admin`**, always. They are authorized by the
+  native roles `REPORT_USE` and `REPORT_ADMIN`: a person through the groups
+  `report-users` and `report-admins` or as a direct member, an application
+  (`client_credentials`) as a member ([Reports](reporting.md#who-can-open-it)).
 * **`ssf.read` and `ssf.manage`**, always. They are authorized by the ordinary
   native roles `SSF_READ` and `SSF_MANAGE`. A person is issued one only while
   they belong to that role's group (`ssf-read` or `ssf-manage`, unless an

@@ -10223,14 +10223,6 @@
     "en": "dfada581a8c28ca3",
     "text": "已完成報表工作的列留在清單中的時間長度。仍在執行的工作不會被移除。"
   },
-  "report.usersGroup|label": {
-    "en": "21554dfaa265b36f",
-    "text": "誰可以獲簽發 report:use"
-  },
-  "report.usersGroup|description": {
-    "en": "28068508e0655509",
-    "text": "其成員可獲簽發 report:use 的目錄群組。留空表示只有此領域的管理員可以。report:admin 只簽發給這些管理員。"
-  },
   "listenerMain.minVersion|label": {
     "en": "6470c151e28a9ab3",
     "text": "主連接埠：最低 TLS 版本"
