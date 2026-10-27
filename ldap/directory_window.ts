@@ -1180,10 +1180,16 @@ class DirectoryWindow {
    * @returns a promise of the count (0 before `attach()`)
    */
   async countHoldersAsync(realmId: string, base: string,
-                          attribute: string): Promise<number> {
+                          attribute: string, upTo?: number): Promise<number> {
     log.debug("Entering DirectoryWindow.countHoldersAsync(). " + attribute);
-    const n = Number(await this.askAsync('countWithAttribute',
-      [realmId, base, attribute])) || 0;
+    // `upTo` (#1002) bounds the count: the store counts no further than
+    // that many, so "more than my cap?" costs the cap and not the holders.
+    const most = Math.floor(Number(upTo) || 0);
+    const n = most > 0
+      ? Number(await this.askAsync('countWithAttributeUpTo',
+          [realmId, base, attribute, most])) || 0
+      : Number(await this.askAsync('countWithAttribute',
+          [realmId, base, attribute])) || 0;
     log.debug("Leaving DirectoryWindow.countHoldersAsync(). " + n + '.');
     return n;
   }

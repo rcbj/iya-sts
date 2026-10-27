@@ -2033,9 +2033,11 @@ async function holdersAsync(kind, attribute, names, control) {
 // a million of them, and a report asking for the Kerberos mechanism's
 // holders read them all. In memory the answer is null — not counted — and
 // the caller reads, because a realm held in memory is small by design.
-async function holderCountAsync(kind, attribute) {
+// `upTo` bounds the count (the store counts no further than that many), so
+// "more than my cap?" costs the cap and not the population.
+async function holderCountAsync(kind, attribute, upTo) {
   log.debug('Entering holderCountAsync(). kind=' + kind + ' attribute=' +
-            attribute);
+            attribute + ' upTo=' + upTo);
   const container = kind === 'person' ? usersDn()
     : (kind === 'device' ? devicesDn() : '');
   if (!container) {
@@ -2048,7 +2050,7 @@ async function holderCountAsync(kind, attribute) {
   }
   const n = await storeAsked(directoryWindow.countHoldersAsync(
     realms.currentId(), normalizeDn(container),
-    String(attribute || '').toLowerCase()));
+    String(attribute || '').toLowerCase(), upTo));
   log.debug('Leaving holderCountAsync(). ' + n + '.');
   return n;
 }

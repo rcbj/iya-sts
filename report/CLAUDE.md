@@ -235,10 +235,12 @@ read from what the directory keeps already:
   the Kerberos mechanism's holders were a million people, and a query
   naming it — or no mechanism, as a job — read them all, a page at a
   time, for minutes after the client gave up. `ldap_server.js`'s
-  `holderCountAsync()` (the store's `countWithAttribute`, nothing opened)
-  is asked first; over `report.syncMaxRows` / `report.asyncMaxRows` the
-  read is refused, `STS-REPORT-0039`, as an unbounded refusal when a job
-  would still fit (so `auto` queues one) and flat otherwise. A group's
+  `holderCountAsync()` (the store's `countWithAttributeUpTo`, the count
+  of the first cap+1 holders, nothing opened — the WHOLE count of 8081's
+  million took a minute) is asked first; over `report.syncMaxRows` /
+  `report.asyncMaxRows` the read is refused, `STS-REPORT-0039`, as an
+  unbounded refusal synchronously (so `auto` queues a job, which counts
+  again against its own cap) and flat in a job. A group's
   member names are counted against the same cap. The read that starts
   passes `{ stop }` to `holdersAsync()`, which `DirectoryWindow` asks
   between pages and the in-memory walk between slices, so the budget or a
@@ -248,6 +250,13 @@ read from what the directory keeps already:
   and a maintained per-role aggregate — `passkey_report.ts` keeps
   algorithm, lane and model facets but not role, so the census is the
   engine's count+groupBy over this source.
+* **A list field is compared value by value** (found on 8081 the same
+  night: `memberOf` equals `group1` found rcbj through the group and then
+  dropped the row, because the row says "group1, ssf-manage, ssf-read").
+  `rows.ts`'s `LIST_FIELDS` (`memberOf`, `algorithms`, `lanes`,
+  `methodsUsed`) are split on ', ' for `eq`, `ne` and `in`; `contains`
+  and `startsWith` keep the joined string. This mends the users source's
+  `memberOf` filter for anyone in more than one group, too.
 * **A wide result scrolls inside its card** (rcbj, 2026-10-27, running
   this source with every field): `tableHtml()` wraps every table in
   `.tablewrap` (`overflow-x: auto`), a cell may break a long value and a

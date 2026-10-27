@@ -1069,6 +1069,33 @@ function countWithAttribute(realm, baseKey, attribute) {
 }
 
 /**
+ * How many entries under a base hold an attribute, counted no further than
+ * `limit` (#1002): the count of the first `limit` holders, so the answer is
+ * `limit` when at least that many hold it. A caller asking "more than my
+ * cap?" pays for the cap and not for the holders — on 8081 the whole count
+ * of a million Kerberos key holders took a minute, and the question was
+ * whether there were more than five hundred.
+ *
+ * @param realm - the realm id
+ * @param baseKey - the base's normalised DN
+ * @param attribute - the attribute name, lower-cased as stored
+ * @param limit - count no further than this many (at least 1)
+ * @returns the statement; its one row's `n` is the bounded count
+ */
+function countWithAttributeUpTo(realm, baseKey, attribute, limit) {
+  log.debug("Entering countWithAttributeUpTo().");
+  const name = String(attribute).toLowerCase();
+  const most = Math.max(1, Math.floor(Number(limit) || 0));
+  log.debug("Leaving countWithAttributeUpTo().");
+  return { text: 'SELECT count(*)::bigint AS n FROM (SELECT 1 AS one FROM ' +
+                 'sts_ldap_entries WHERE realm = $1 AND ' +
+                 underClause(2, 5, false) + ' AND ' + holdsClause(name, 3) +
+                 ' LIMIT $4) AS held',
+           values: [String(realm), String(baseKey), name, most,
+                    suffixLength(baseKey)] };
+}
+
+/**
  * One page of the entries under a base that hold an attribute, in key
  * order, after skipping `offset` of them.
  *
@@ -1378,7 +1405,7 @@ function answerOf(name, rows) {
   log.debug("Entering answerOf().");
   const list = Array.isArray(rows) ? rows : [];
   if (name === 'count' || name === 'realmCount' || name === 'rdnCount' ||
-      name === 'countWithAttribute') {
+      name === 'countWithAttribute' || name === 'countWithAttributeUpTo') {
     log.debug("Leaving answerOf(). A count.");
     return Number((list[0] || {}).n || 0);
   }
@@ -1450,6 +1477,7 @@ const QUERIES = {
   hasChild: hasChild,
   withAttribute: withAttribute,
   countWithAttribute: countWithAttribute,
+  countWithAttributeUpTo: countWithAttributeUpTo,
   withAttributeAt: withAttributeAt,
   withNames: withNames,
   anyWithAttribute: anyWithAttribute,
@@ -1512,6 +1540,7 @@ module.exports = {
   hasChild: hasChild,
   withAttribute: withAttribute,
   countWithAttribute: countWithAttribute,
+  countWithAttributeUpTo: countWithAttributeUpTo,
   withAttributeAt: withAttributeAt,
   withNames: withNames,
   anyWithAttribute: anyWithAttribute,

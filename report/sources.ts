@@ -1229,30 +1229,34 @@ function reportGroupMemberNames(selector: string, ldap: any): string[] {
 // a query naming it, or naming no mechanism, read them all, and went on
 // reading them a page at a time for minutes after the client gave up. The
 // store counts the holders of an attribute through the same index that
-// lists them (`holderCountAsync`, nothing opened), so the count comes first:
-// over the execution's row cap (`report.syncMaxRows`, `report.asyncMaxRows`)
-// the read is refused as `result_too_large` — synchronously, when a job
-// could still fit, as an UNBOUNDED refusal, which `auto` mode turns into a
-// job. The same cap bounds a group's members. And the read that does start
-// carries `stop`, so the store's paging ends with the budget or a
-// cancellation rather than with the last holder.
+// lists them (`holderCountAsync`, nothing opened), so the count comes first,
+// AND IT IS BOUNDED: the store counts no further than the cap plus one (a
+// whole count of 8081's million took a minute, and the question is only
+// "more than the cap?"). Over the execution's row cap (`report.syncMaxRows`,
+// `report.asyncMaxRows`) the read is refused as `result_too_large` —
+// synchronously as an UNBOUNDED refusal, which `auto` mode turns into a job,
+// and the job counts again against its own, larger cap. The same cap bounds
+// a group's members. And the read that does start carries `stop`, so the
+// store's paging ends with the budget or a cancellation rather than with
+// the last holder.
 function reportTooManyHolders(n: number, cap: number, execution: string,
-                              what: string, jobCap: number): any {
+                              what: string): any {
   log.debug("Entering reportTooManyHolders().");
+  const said = n > cap ? 'more than ' + cap : String(n);
   log.warn(errorCodes.tag(TOO_MANY_HOLDERS) +
-    'report: a credentialHolders query would read ' + n + ' ' + what +
+    'report: a credentialHolders query would read ' + said + ' ' + what +
     ', over the ' + execution + ' cap of ' + cap + '; refused before the ' +
     'first page was read.');
-  const fits = execution === 'sync' && n <= jobCap;
+  const sync = execution === 'sync';
   log.debug("Leaving reportTooManyHolders().");
   return {
     ok: false,
     code: TOO_MANY_HOLDERS,
     error: 'result_too_large',
-    unbounded: fits,
-    description: 'This query would read ' + n + ' ' + what + ', more than ' +
-      (execution === 'sync' ? 'a synchronous query' : 'a job') +
-      ' may read (' + cap + '). ' + (fits ? 'Run it as a job, or n' : 'N') +
+    unbounded: sync,
+    description: 'This query would read ' + said + ' ' + what + ', more ' +
+      'than ' + (sync ? 'a synchronous query' : 'a job') + ' may read (' +
+      cap + '). ' + (sync ? 'Run it as a job, or n' : 'N') +
       'arrow it: filter on a mechanism fewer people hold, or on memberOf.'
   };
 }
@@ -1309,7 +1313,6 @@ async function reportReadCredentialHolders(rows: any, control: any):
     'sync';
   const cap = execution === 'sync' ? limits.syncMaxRows() :
     limits.asyncMaxRows();
-  const jobCap = limits.asyncMaxRows();
   let entries: any[] = [];
   const seen = new Set<string>();
   const take = function (entry: any): void {
@@ -1335,7 +1338,7 @@ async function reportReadCredentialHolders(rows: any, control: any):
     });
     if (names.length > cap) {
       control.unbounded = reportTooManyHolders(names.length, cap, execution,
-        'group members', jobCap);
+        'group members');
       log.debug("Leaving reportReadCredentialHolders(). Too many members.");
       return;
     }
@@ -1348,11 +1351,13 @@ async function reportReadCredentialHolders(rows: any, control: any):
     });
   } else {
     // The holders, counted first where the store can count (a windowed
-    // directory; in memory the answer is null and the walk is the count).
+    // directory; in memory the answer is null and the walk is the count),
+    // each mechanism no further than one past the cap.
     let holders = 0;
     let counted = false;
-    for (let m = 0; m < table.length; m++) {
-      const n = await ldap.holderCountAsync('person', table[m].attribute);
+    for (let m = 0; m < table.length && holders <= cap; m++) {
+      const n = await ldap.holderCountAsync('person', table[m].attribute,
+        cap + 1);
       if (typeof n === 'number') {
         counted = true;
         holders += n;
@@ -1360,7 +1365,7 @@ async function reportReadCredentialHolders(rows: any, control: any):
     }
     if (counted && holders > cap) {
       control.unbounded = reportTooManyHolders(holders, cap, execution,
-        'credential holders', jobCap);
+        'credential holders');
       log.debug("Leaving reportReadCredentialHolders(). Too many holders.");
       return;
     }
