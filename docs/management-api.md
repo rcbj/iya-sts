@@ -268,6 +268,15 @@ refusal:
   `oauth2.accessTokenRequireDpop` and `oauth2.accessTokenRequireMtls` apply
   here as they do at every other resource server in the service
   ([OAuth security](oauth-security.md)).
+* **A certificate binding, if its client declares a certificate.** A token
+  issued to a client whose entry declares `tls_client_auth`,
+  `self_signed_tls_client_auth` or
+  `tls_client_certificate_bound_access_tokens` is refused with 401
+  `invalid_token` unless it is certificate-bound, in every mode. Such a client
+  is issued an `/admin-api` token only over mutual TLS, so ask
+  `/oauth2/token` with its certificate and call the API on a connection made
+  with the same one ([OAuth 2.0 and OpenID Connect](oauth-oidc.md)). Only
+  the binding is new: the token's scopes still decide what it may do.
 * **The scope the method needs.** The scopes become the built-in `ADMIN_READ`
   and `ADMIN_WRITE` roles, and the XACML `access-control` policy decides
   whether that role is enough. A read-only token that tries a `POST` gets a
