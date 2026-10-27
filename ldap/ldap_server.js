@@ -28255,6 +28255,9 @@ module.exports = {
   operationContext: operationContext,
   performOperation: performOperation,
   applyOperationResult: applyOperationResult,
+  // `/admin/ldap/service`'s answer, for tests/ldap_sasl_external.js (#1047),
+  // which reads what it says about 636's client certificates in each mode.
+  ldapServiceView: ldapServiceView,
   ldapErrorNamed: ldapErrorNamed,
   // The live connections, and the only sign-out LDAP has. Read by
   // ../logout/logout.ts, which requires this module in the ordinary direction:
