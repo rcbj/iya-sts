@@ -92,9 +92,9 @@ the name and a random part to the password.
 
 **Console:**
 1. On **Directory → Users**, under **Create a user**, click **Create ›**.
-2. Under **What is known about them**, set **`uid`** (the username) to `ldaps-run1`, and fill in **Common name** (`cn`) `LDAPS ldaps-run1`, **Given name** `LDAPS`, **Surname** `ldaps-run1`, **Display name** `LDAPS ldaps-run1` and **Email address** `ldaps-run1@ldaps.test`.
+2. Under **Who they are**, set **Username** to `ldaps-run1`.
 3. Under **How they get in**, choose **A password I type**, and type the password in **Password** and **Again**.
-4. Check that every field outlined in red (the attribute policy's required fields) has a value.
+4. Under **What is known about them**, fill in **Common name** (`cn`) `LDAPS ldaps-run1`, **Given name** `LDAPS`, **Surname** `ldaps-run1`, **Display name** `LDAPS ldaps-run1` and **Email address** `ldaps-run1@ldaps.test`.
 5. Click **Create the user**.
 
 **API:**

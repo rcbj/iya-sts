@@ -420,21 +420,16 @@ function childMain() {
              /name="field\.carLicense\.0" value=""/.test(switched),
            'G. switching view keeps what was typed and gives a new list ' +
            'field a box');
-      // #1066: the username is the `uid` cell, first in the Name group in
-      // both views and still the one box it is typed in; every field the
+      // #1066: the username stays the one box at the top of the form, ahead
+      // of the grid; `uid` gets no cell of its own; every field the
       // attribute policy requires is outlined; the tile counts them.
-      const uidCell = function (html) {
+      const usernameOnTop = function (html) {
         return (html.match(/name="username"/g) || []).length === 1 &&
-          /id="fgc-uid" class="fg-cell fg-required"/.test(html) &&
-          html.indexOf('id="fgc-uid"') < html.indexOf('id="fgc-cn"') &&
-          html.indexOf('id="fgc-uid"') <
-            html.indexOf('name="credential"') &&
-          !/name="field\.uid/.test(html);
+          html.indexOf('id="new-username"') < html.indexOf('id="fgc-cn"') &&
+          !/id="fgc-uid"/.test(html) && !/name="field\.uid/.test(html);
       };
-      note(uidCell(simple) && uidCell(advanced),
-           'G. uid is a cell in both views, ahead of cn, holding the one ' +
-           'username box', simple.slice(simple.indexOf('fgc-uid') - 40,
-                                       simple.indexOf('fgc-uid') + 400));
+      note(usernameOnTop(simple) && usernameOnTop(advanced),
+           'G. the username is the one box at the top, and uid has no cell');
       const outlined = function (attribute) {
         return new RegExp('id="fgc-' + attribute +
                           '" class="fg-cell[^"]*fg-required').test(simple);
