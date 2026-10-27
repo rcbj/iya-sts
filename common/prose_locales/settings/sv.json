@@ -7340,8 +7340,8 @@
     "text": "Uppladdningskatalog för datamängder"
   },
   "risk.uploadDirectory|description": {
-    "en": "347858cd0224743e",
-    "text": "Där en uppladdad datamängdsfil skrivs medan den importeras, och tas bort ifrån när importen avslutas hur den än avslutas. En relativ sökväg löses mot den här paketroten, som persistence.dataDir. Ge den en egen volym med plats för den största fil du kommer att ladda upp — komprimerad; inget uppackat skrivs — eftersom en uppladdning avvisas när katalogens lediga utrymme inte räcker. Varje stack som det här repositoryt levererar monterar en här."
+    "en": "ddab5a9b7f3d0a2a",
+    "text": "Var en uppladdad datamängdsfil skrivs medan den importeras, och var ett rapportjobb byggs innan det lagras; varje fil tas bort när dess import eller jobb avslutas, hur det än avslutas. En relativ sökväg tolkas mot detta pakets rot, som persistence.dataDir. Ge den en egen volym med plats för den största fil du kommer att ladda upp — komprimerad; inget uppackat skrivs — och för report.asyncMaxBytes per rapportjobb som körs samtidigt, eftersom en uppladdning eller ett jobb avvisas när katalogens lediga utrymme inte räcker. Varje stack som detta arkiv levererar monterar en här."
   },
   "risk.uploadMaxBytes|label": {
     "en": "959b6b79f9136a03",
@@ -7380,8 +7380,8 @@
     "text": "Intervall för uppstädning av uppladdningar (sekunder)"
   },
   "risk.uploadSweepS|description": {
-    "en": "d2ecf2ff3686662e",
-    "text": "Hur ofta varje process håller de uppladdningsfiler den importerar färska och tar bort kvarlevorna efter en process som har stannat (risk.upload-cleanup), och hur ofta jobbet risk.stalled-imports letar efter en övergiven version. Håll det väl under risk.importStallMinutes."
+    "en": "66b5d1a088266f41",
+    "text": "Hur ofta varje process håller de uppladdade filer den importerar och de rapporter den bygger färska och tar bort det som en stoppad process lämnat kvar (risk.upload-cleanup, report.build-cleanup), och hur ofta jobbet risk.stalled-imports letar efter en övergiven version. Håll den långt under risk.importStallMinutes."
   },
   "risk.datasetShrinkLimitPercent|label": {
     "en": "46aea694920bebd6",

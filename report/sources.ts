@@ -3189,7 +3189,11 @@ async function reportRunOne(job: any, ctx: any): Promise<void> {
   }
   const realms = require('../common/realms');
   const current = realms.current();
-  const finished = executor.finish(plan, read.rows, limits, {
+  // BUILT ON DISK, STORED IN PIECES, AND THE FILE REMOVED HOWEVER IT ENDS
+  // (#1045): the render goes to a build file in the staging directory,
+  // the store reads it back a piece at a time, and the `finally` removes
+  // it whether the job completed, was refused or threw.
+  const finished = await executor.finishToFile(plan, read.rows, limits, {
     realm: current && current.name ? current.name : realms.currentId(),
     when: new Date().toISOString()
   });
@@ -3199,23 +3203,39 @@ async function reportRunOne(job: any, ctx: any): Promise<void> {
     log.debug("Leaving reportRunOne(). Format refused.");
     return;
   }
-  const crypto = require('../common/crypto');
-  const sha = crypto.digest('sha256', finished.body, 'hex');
+  const sha = finished.sha256;
   try {
-    await stores.putArtifact(stored.id, finished.body, sha, finished.media);
+    await stores.putArtifactFile(stored.id, finished.file, sha,
+      finished.media);
   } catch (e: any) {
     // NOT STORED UNSEALED (#1033): a report that could not be sealed is a
-    // failed job, said with the store's code, never a clear-text row.
+    // failed job, said with the store's code, never a clear-text row. A
+    // build file that could not be read back is the staging directory's
+    // failure (STS-REPORT-0050), and a database that would not take the
+    // pieces is its own (STS-REPORT-0053, #1045) — until then every
+    // failure here read as "could not be sealed".
     log.debug("Caught in reportRunOne(): " + ((e && e.message) || e));
-    reportFailJob(stored, 'unavailable',
-      String((e && e.code) || 'STS-REPORT-0042'));
+    const code = e && typeof e.code === 'string' &&
+      e.code.indexOf('STS-') === 0 ? e.code : (e && e.syscall ?
+        'STS-REPORT-0050' : 'STS-REPORT-0053');
+    if (code === 'STS-REPORT-0050') {
+      log.error(errorCodes.tag('STS-REPORT-0050') + 'report: a build ' +
+        'file could not be read back to be stored: ' +
+        ((e && e.message) || e));
+    } else if (code === 'STS-REPORT-0053') {
+      log.error(errorCodes.tag('STS-REPORT-0053') + 'report: the store ' +
+        'would not take a finished report: ' + ((e && e.message) || e));
+    }
+    reportFailJob(stored, 'unavailable', code);
     log.debug("Leaving reportRunOne(). Not stored.");
     return;
+  } finally {
+    await finished.file.remove();
   }
   stored.status = 'completed';
   stored.error = null;
   stored.completedAt = Date.now();
-  stored.byteSize = finished.body.length;
+  stored.byteSize = finished.bytes;
   stored.sha256 = sha;
   stored.mediaType = finished.media;
   reportFences.delete(stored.id);

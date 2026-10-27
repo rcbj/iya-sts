@@ -319,6 +319,14 @@
     "en": "4f2c054a1405a843",
     "text": "在本进程中记录一行日志，包含其角色和内存：常驻内存大小、已用堆和堆总量、堆限制、外部内存和数组缓冲区（#341）。"
   },
+  "sched.jobs.report.build-cleanup.title": {
+    "en": "e5bd8efc07f0b31b",
+    "text": "报告构建清理"
+  },
+  "sched.jobs.report.build-cleanup.describe": {
+    "en": "203d8d2e97c041e2",
+    "text": "在每个进程中：刷新此进程正在构建的报告文件，并从 risk.uploadDirectory 中删除在 report.asyncMaxMs 加十五分钟内没有任何存活进程触及的报告构建文件——即在构建中途停止的进程留下的文件。"
+  },
   "sched.jobs.report.drain.title": {
     "en": "792c052635196abd",
     "text": "报表作业"

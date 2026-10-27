@@ -7340,8 +7340,8 @@
     "text": "Directorio de subida de conjuntos de datos"
   },
   "risk.uploadDirectory|description": {
-    "en": "347858cd0224743e",
-    "text": "Dónde se escribe un archivo de conjunto de datos subido mientras se importa, y de dónde se elimina cuando termina la importación, termine como termine. Una ruta relativa se resuelve respecto a la raíz de este paquete, como persistence.dataDir. Asígnele un volumen propio con espacio para el archivo más grande que vaya a subir — comprimido; no se escribe nada descomprimido —, ya que se rechaza una subida cuando el espacio libre del directorio no puede contenerla. Toda pila que distribuye este repositorio monta uno aquí."
+    "en": "ddab5a9b7f3d0a2a",
+    "text": "Dónde se escribe un archivo de conjunto de datos subido mientras se importa, y dónde se construye un trabajo de informe antes de almacenarse; cada archivo se elimina cuando termina su importación o su trabajo, termine como termine. Una ruta relativa se resuelve respecto a la raíz de este paquete, como persistence.dataDir. Dele un volumen propio con espacio para el archivo más grande que vaya a subir —comprimido; no se escribe nada descomprimido— y para report.asyncMaxBytes por cada trabajo de informe que se ejecute a la vez, ya que una subida o un trabajo se rechaza cuando el espacio libre del directorio no puede contenerlo. Cada pila que distribuye este repositorio monta uno aquí."
   },
   "risk.uploadMaxBytes|label": {
     "en": "959b6b79f9136a03",
@@ -7380,8 +7380,8 @@
     "text": "Intervalo de limpieza de subidas (segundos)"
   },
   "risk.uploadSweepS|description": {
-    "en": "d2ecf2ff3686662e",
-    "text": "Con qué frecuencia cada proceso mantiene actualizados los archivos subidos que está importando y elimina los restos de un proceso que se detuvo (risk.upload-cleanup), y con qué frecuencia el trabajo risk.stalled-imports busca una versión abandonada. Manténgalo bastante por debajo de risk.importStallMinutes."
+    "en": "66b5d1a088266f41",
+    "text": "Con qué frecuencia cada proceso mantiene al día los archivos subidos que está importando y los informes que está construyendo, y elimina los restos de un proceso que se detuvo (risk.upload-cleanup, report.build-cleanup), y con qué frecuencia el trabajo risk.stalled-imports busca una versión abandonada. Manténgala muy por debajo de risk.importStallMinutes."
   },
   "risk.datasetShrinkLimitPercent|label": {
     "en": "46aea694920bebd6",

@@ -7340,8 +7340,8 @@
     "text": "数据集上传目录"
   },
   "risk.uploadDirectory|description": {
-    "en": "347858cd0224743e",
-    "text": "上传的数据集文件在导入期间写入的位置，无论导入以何种方式结束，结束时都会从中删除。相对路径依据此软件包根目录解析，与 persistence.dataDir 相同。请为其提供单独的卷，空间足以容纳您要上传的最大文件——压缩后的大小；不会写入任何解压后的内容——因为当目录的可用空间无法容纳上传时，上传会被拒绝。本代码库随附的每个栈都在此处挂载了一个卷。"
+    "en": "ddab5a9b7f3d0a2a",
+    "text": "上传的数据集文件在导入期间写入的位置，也是报告作业在存储之前构建的位置；每个文件在其导入或作业结束时（无论以何种方式结束）都会被删除。相对路径以此软件包根目录为基准解析，与 persistence.dataDir 相同。请为它提供专用卷，空间足以容纳您将上传的最大文件——压缩后的大小；不会写入任何解压内容——以及每个同时运行的报告作业所需的 report.asyncMaxBytes，因为当目录的可用空间不足以容纳时，上传或作业会被拒绝。此存储库附带的每个堆栈都会在此挂载一个卷。"
   },
   "risk.uploadMaxBytes|label": {
     "en": "959b6b79f9136a03",
@@ -7380,8 +7380,8 @@
     "text": "上传清理间隔（秒）"
   },
   "risk.uploadSweepS|description": {
-    "en": "d2ecf2ff3686662e",
-    "text": "每个进程刷新其正在导入的上传文件并删除已停止进程的残留文件（risk.upload-cleanup）的频率，以及 risk.stalled-imports 作业查找被放弃版本的频率。请使其远小于 risk.importStallMinutes。"
+    "en": "66b5d1a088266f41",
+    "text": "每个进程多久刷新一次其正在导入的上传文件和正在构建的报告，并删除已停止进程留下的残留文件（risk.upload-cleanup、report.build-cleanup），以及 risk.stalled-imports 作业多久查找一次被放弃的版本。请将其保持在远低于 risk.importStallMinutes 的值。"
   },
   "risk.datasetShrinkLimitPercent|label": {
     "en": "46aea694920bebd6",

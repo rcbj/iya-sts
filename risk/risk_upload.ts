@@ -77,6 +77,7 @@ import config = require('../common/config');
 import stsCrypto = require('../common/crypto');
 import errorCodes = require('../common/error_codes');
 import InstanceSlot = require('../common/instance_slot');
+import StagingDirectory = require('../common/staging_directory');
 import riskDatasets = require('./risk_datasets');
 import RiskExpand = require('./risk_expand');
 
@@ -89,14 +90,10 @@ config.registerLogger(log);
 
 type Json = any;
 
-// The package root, which a relative `risk.uploadDirectory` is resolved
-// against — as `persistence.dataDir` is, for its reason: the working
-// directory is whatever the process was started in.
-const ROOT = path.join(__dirname, '..');
-
-// Free space the directory must keep beyond the upload itself: a disk left
-// with nothing is a disk the next log line cannot be written to.
-const RESERVE_BYTES = 16 * 1024 * 1024;
+// Free space the directory must keep beyond the upload itself. The
+// directory, and this reserve, are `common/staging_directory.ts`'s since
+// #1045: a report being built is staged in the same place.
+const RESERVE_BYTES = StagingDirectory.RESERVE_BYTES;
 
 // The fields an upload may carry, whichever door it came through. The
 // console's form adds `csrf_token`, which the door checks.
@@ -220,9 +217,7 @@ class RiskUpload {
       freeBytes: function (dir: string): Promise<number> {
         log.debug("Entering freeBytes().");
         log.debug("Leaving freeBytes().");
-        return fs.promises.statfs(dir).then(function (s: Json): number {
-          return Number(s.bavail) * Number(s.bsize);
-        });
+        return StagingDirectory.freeBytes(dir);
       },
       scheduler: function (): Json {
         return require('../cluster/scheduler');
@@ -240,9 +235,9 @@ class RiskUpload {
   directory(): string {
     const { log, config } = this.deps;
     log.debug("Entering RiskUpload.directory().");
-    const dir = String(config.value('risk.uploadDirectory') || '');
+    const dir = StagingDirectory.directory(config);
     log.debug("Leaving RiskUpload.directory().");
-    return path.resolve(ROOT, dir || './data/risk-uploads');
+    return dir;
   }
 
   // A refusal, coded.
@@ -297,8 +292,7 @@ class RiskUpload {
     }
     const dir = this.directory();
     try {
-      await fs.promises.mkdir(dir, { recursive: true, mode: 0o700 });
-      await fs.promises.access(dir, fs.constants.W_OK);
+      await StagingDirectory.prepare(dir);
     } catch (e) {
       log.error(errorCodes.tag('STS-RISK-0030') + 'risk: the upload ' +
                 'directory ' + dir + ' cannot be written: ' +

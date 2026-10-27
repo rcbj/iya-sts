@@ -50,7 +50,10 @@ directory is `/usr/src/sts/data/risk-uploads`, and each node has an Amazon EBS
 volume of its own mounted there:
 
 - **gp3, 10 GiB by default**, five times the largest upload the service
-  accepts (`risk.uploadMaxBytes`, 2 GiB). An upload the volume has no room for
+  accepts (`risk.uploadMaxBytes`, 2 GiB). The same volume holds each
+  [report](reporting.md#where-a-job-is-built) job while it is built, up to
+  `report.asyncMaxBytes` (32 MB) per running job, and deletes it once the
+  report is in the database. An upload the volume has no room for
   is refused before it is stored. Change it with the Terraform variables
   `risk_upload_volume_gib`, `risk_upload_volume_throughput` and
   `risk_upload_volume_iops`; if you raise `risk.uploadMaxBytes` (through

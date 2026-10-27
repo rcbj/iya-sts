@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4708** of them, in **48** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4713** of them, in **48** subsystems.
 
 ## Where a code appears
 
@@ -96,7 +96,7 @@ is an ordinary outcome.
 * [Identity-provider-initiated sign-in (`STS-LAUNCH`)](#sts-launch) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 181
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
-* [Reporting (`STS-REPORT`)](#sts-report) — 47
+* [Reporting (`STS-REPORT`)](#sts-report) — 52
 
 ## STS-HTTP
 
@@ -5418,6 +5418,11 @@ Raised from: report/.
 | `STS-REPORT-0046` | A users report with an order or a count and no filter would read more people than a job may (report.asyncMaxRows), counted from the directory first, so it was refused at once rather than run as a job that reached report.asyncMaxMs (#1040). | result_too_large (HTTP 400) |
 | `STS-REPORT-0047` | The reports application's Shared Signals receive endpoint refused a pushed Security Event Token that carried no more specific code of its own (receivers off, no stream, wrong bearer token, empty or malformed token, wrong audience, or an unverified signature) (#1042). | HTTP 4xx/5xx per RFC 8935, as the receiver decided |
 | `STS-REPORT-0048` | A scheduled report, or a queued job, belongs to a person whose account is disabled, so it was not run (#1042): a disabled account stops its owner's schedules as it stops their sign-ins. | none (the occurrence is consumed; the job fails as forbidden) |
+| `STS-REPORT-0049` | A report job could not be built: the staging directory (risk.uploadDirectory) has less free space than the job's byte cap (report.asyncMaxBytes) and the reserve an upload keeps, so nothing was written and the job failed (#1045). | none (the job fails as unavailable) |
+| `STS-REPORT-0050` | A report job could not be built: the staging directory (risk.uploadDirectory) cannot be made or written, a build file could not be created, written (a disk that filled) or read back, so the job failed and its partial file was removed (#1045). | none (the job fails as unavailable) |
+| `STS-REPORT-0051` | A stored report has a piece that is missing or will not open under the keys this process holds, its piece marker cannot be read, or its download did not match its digest: refused as gone before the answer began, or the response was cut part-way rather than completed (#1045). | result_expired (HTTP 410) before the answer; otherwise none (the connection is closed) |
+| `STS-REPORT-0052` | A report build file was left in the staging directory: one that could not be removed when its job ended, or a leftover the report.build-cleanup job removed (or could not) because no live process held it (#1045). | none (a warning) |
+| `STS-REPORT-0053` | The store would not take a finished report (the database refused or went away while its pieces were written), so the job failed and nothing of it was kept (#1045). Until #1045 this read as STS-REPORT-0042, could not be sealed. | none (the job fails as unavailable) |
 
 ## Adding a code
 

@@ -19,12 +19,24 @@
 //
 // The reporting node's heartbeat is one key, `reporter`, written on the
 // default realm so a caller in another realm still sees the same stamp.
+//
+// SINCE #1045 A JOB'S ARTIFACT IS STORED IN PIECES. It comes from a build
+// file in the staging directory (`staging.ts`), read a piece at a time.
+// Each piece is sealed on its own and written in one transaction to
+// `sts_report_artifact_pieces`, when the driver has the two piece methods.
+// The `sts_report_artifacts` row then holds a marker naming the count and
+// the size. A download opens the pieces one at a time (`openArtifact()`),
+// so no step holds more than a piece or two of a report. A row written
+// before #1045 holds the whole body, sealed or in the clear. It is still
+// read, as one piece, until its retention ends: no migration, by rcbj's
+// rule for 8081.
 // ---------------------------------------------------------------------------
 
 import bunyan = require('bunyan');
 import realms = require('../common/realms');
 import helpers = require('../common/helpers');
 import errorCodes = require('../common/error_codes');
+import Staging = require('./staging');
 
 const log = bunyan.createLogger({ name: 'sts-report-stores' });
 
@@ -231,6 +243,205 @@ function reportOpenBytes(stored: any): Buffer | null {
   return Buffer.from(String(opened), 'base64');
 }
 
+// THE MARKER A PIECED ARTIFACT'S ROW HOLDS (#1045): the piece count and
+// the size, in the clear, because neither says anything about what the
+// report lists. A sealed body starts `$aesgcm$`, a clear one (before
+// #1033) with the report itself, which no format starts with `$pieces$`.
+const PIECES_PREFIX = '$pieces$1:';
+
+// A piece names its job and its place: the plaintext sealed is
+// `{"j":<job>,"s":<number>,"b":<base64>}`. A piece moved to another job's
+// rows, or to another place in its own, opens and is refused.
+function reportSealPiece(jobId: string, seq: number, bytes: Buffer):
+    Buffer | null {
+  log.debug("Entering reportSealPiece().");
+  const keystore = require('../common/keystore');
+  if (!keystore.sealed()) {
+    log.debug("Leaving reportSealPiece(). No key-encryption key.");
+    return null;
+  }
+  const sealed = keystore.seal(JSON.stringify({ j: jobId, s: seq,
+    b: bytes.toString('base64') }), SEALED_LABEL);
+  log.debug("Leaving reportSealPiece().");
+  return sealed ? Buffer.from(String(sealed), 'utf8') : null;
+}
+
+function reportOpenPiece(jobId: string, seq: number, stored: any): Buffer {
+  log.debug("Entering reportOpenPiece().");
+  const keystore = require('../common/keystore');
+  const opened = stored ? keystore.open(Buffer.from(stored).toString('utf8'),
+    SEALED_LABEL) : null;
+  let piece: any = null;
+  try {
+    piece = opened === null || opened === undefined ? null :
+      JSON.parse(String(opened));
+  } catch (e: any) {
+    log.debug("Caught in reportOpenPiece(): " + ((e && e.message) || e));
+    // Not a piece's plaintext: refused below like any other.
+    piece = null;
+  }
+  if (!piece || piece.j !== jobId || piece.s !== seq ||
+      typeof piece.b !== 'string') {
+    const refused: any = new Error('A stored piece of the report is ' +
+      'missing or would not open.');
+    refused.code = 'STS-REPORT-0051';
+    log.debug("Leaving reportOpenPiece(). Refused.");
+    throw refused;
+  }
+  log.debug("Leaving reportOpenPiece().");
+  return Buffer.from(piece.b, 'base64');
+}
+
+function reportPiecedDriver(): boolean {
+  log.debug("Entering reportPiecedDriver().");
+  const pieced = !!driver &&
+    typeof driver.putReportArtifactPieces === 'function' &&
+    typeof driver.getReportArtifactPiece === 'function';
+  log.debug("Leaving reportPiecedDriver(). " + pieced);
+  return pieced;
+}
+
+function reportNotSealed(): Error {
+  log.debug("Entering reportNotSealed().");
+  log.error(errorCodes.tag('STS-REPORT-0042') +
+    'report: a finished report could not be sealed (no key-encryption ' +
+    'key); it is not written in the clear.');
+  const refused: any = new Error('The report could not be stored ' +
+    'encrypted, so it was not stored.');
+  refused.code = 'STS-REPORT-0042';
+  log.debug("Leaving reportNotSealed().");
+  return refused;
+}
+
+/**
+ * Stores a finished build file (#1045). With a pieced driver it is read and
+ * sealed a piece at a time; otherwise it is read whole, for the driver
+ * without the piece methods and for the memory map. The file stays the
+ * caller's to remove.
+ *
+ * @param jobId - the job
+ * @param file - the finished build file
+ * @param sha256 - its digest
+ * @param mediaType - its media type
+ */
+async function reportPutArtifactFile(jobId: string,
+    file: InstanceType<typeof Staging.StagedReport>, sha256: string,
+    mediaType: string): Promise<void> {
+  log.debug("Entering reportPutArtifactFile().");
+  if (!reportPiecedDriver()) {
+    const whole = await file.whole();
+    await reportPutArtifact(jobId, whole, sha256, mediaType);
+    log.debug("Leaving reportPutArtifactFile(). Whole.");
+    return;
+  }
+  const keystore = require('../common/keystore');
+  if (!keystore.sealed()) {
+    log.debug("Leaving reportPutArtifactFile(). Not sealed.");
+    throw reportNotSealed();
+  }
+  const realm = reportRealm();
+  const sealedPieces = async function* (): AsyncGenerator<Buffer> {
+    log.debug("Entering sealedPieces().");
+    let seq = 0;
+    for await (const piece of file.pieces()) {
+      const sealed = reportSealPiece(jobId, seq, piece);
+      if (!sealed) {
+        throw reportNotSealed();
+      }
+      seq += 1;
+      yield sealed;
+    }
+    log.debug("Leaving sealedPieces(). " + seq + " pieces.");
+  };
+  await driver.putReportArtifactPieces({
+    realm: realm,
+    jobId: jobId,
+    sha256: sha256,
+    mediaType: mediaType,
+    size: file.bytes,
+    createdAt: Date.now(),
+    prefix: PIECES_PREFIX
+  }, sealedPieces());
+  log.debug("Leaving reportPutArtifactFile(). Pieces.");
+}
+
+/**
+ * A stored artifact, ready to be read a piece at a time (#1045): its digest,
+ * its media type, its size where it is known, and `pieces()`, which opens
+ * each in turn and throws (STS-REPORT-0051) on one that is missing or will
+ * not open. Null when there is no artifact, or a whole one will not open.
+ *
+ * @param jobId - the job
+ * @returns the artifact, or null
+ */
+async function reportOpenArtifact(jobId: string): Promise<any> {
+  log.debug("Entering reportOpenArtifact().");
+  const realm = reportRealm();
+  const one = function (bytes: Buffer): () => AsyncGenerator<Buffer> {
+    return async function* (): AsyncGenerator<Buffer> {
+      yield bytes;
+    };
+  };
+  if (!driver) {
+    const found = memoryArtifacts.get(artifactKey(realm, jobId)) || null;
+    log.debug("Leaving reportOpenArtifact(). Memory.");
+    return found ? {
+      sha256: found.sha256,
+      mediaType: found.mediaType,
+      createdAt: found.createdAt,
+      size: found.bytes.length,
+      pieces: one(Buffer.from(found.bytes))
+    } : null;
+  }
+  const found = await driver.getReportArtifact({ realm: realm,
+    jobId: jobId });
+  if (!found) {
+    log.debug("Leaving reportOpenArtifact(). None.");
+    return null;
+  }
+  const raw = Buffer.from(found.bytes);
+  const head = raw.subarray(0, PIECES_PREFIX.length).toString('utf8');
+  if (head !== PIECES_PREFIX) {
+    const opened = reportOpenBytes(raw);
+    log.debug("Leaving reportOpenArtifact(). Whole.");
+    return opened ? {
+      sha256: found.sha256,
+      mediaType: found.mediaType,
+      createdAt: Number(found.createdAt),
+      size: opened.length,
+      pieces: one(opened)
+    } : null;
+  }
+  const fields = raw.subarray(PIECES_PREFIX.length).toString('utf8')
+    .split(':');
+  const count = Number(fields[0]);
+  const size = Number(fields[1]);
+  if (!Number.isInteger(count) || count < 0 || !Number.isFinite(size) ||
+      !reportPiecedDriver()) {
+    log.error(errorCodes.tag('STS-REPORT-0051') + 'report: a stored ' +
+      'report\'s piece marker cannot be read here; it is answered as gone.');
+    log.debug("Leaving reportOpenArtifact(). Marker.");
+    return null;
+  }
+  const reader = driver;
+  log.debug("Leaving reportOpenArtifact(). " + count + " pieces.");
+  return {
+    sha256: found.sha256,
+    mediaType: found.mediaType,
+    createdAt: Number(found.createdAt),
+    size: size,
+    pieces: async function* (): AsyncGenerator<Buffer> {
+      log.debug("Entering reportOpenArtifact().pieces().");
+      for (let seq = 0; seq < count; seq++) {
+        const stored = await reader.getReportArtifactPiece({ realm: realm,
+          jobId: jobId, seq: seq });
+        yield reportOpenPiece(jobId, seq, stored);
+      }
+      log.debug("Leaving reportOpenArtifact().pieces().");
+    }
+  };
+}
+
 function reportPutArtifact(jobId: string, bytes: Buffer, sha256: string,
                            mediaType: string): Promise<void> {
   log.debug("Entering reportPutArtifact().");
@@ -248,14 +459,8 @@ function reportPutArtifact(jobId: string, bytes: Buffer, sha256: string,
   if (driver) {
     const sealed = reportSealBytes(bytes);
     if (!sealed) {
-      log.error(errorCodes.tag('STS-REPORT-0042') +
-        'report: a finished report could not be sealed (no key-encryption ' +
-        'key); it is not written in the clear.');
-      const refused: any = new Error('The report could not be stored ' +
-        'encrypted, so it was not stored.');
-      refused.code = 'STS-REPORT-0042';
       log.debug("Leaving reportPutArtifact(). Not sealed.");
-      return Promise.reject(refused);
+      return Promise.reject(reportNotSealed());
     }
     row.bytes = sealed;
     out = Promise.resolve(driver.putReportArtifact(row)).then(function ():
@@ -275,38 +480,42 @@ function reportPutArtifact(jobId: string, bytes: Buffer, sha256: string,
   return out;
 }
 
-function reportGetArtifact(jobId: string): Promise<any> {
+/**
+ * A stored artifact whole: `openArtifact()` with its pieces put together.
+ * For tests and small reports; a download reads the pieces.
+ *
+ * @param jobId - the job
+ * @returns `{ bytes, sha256, mediaType, createdAt }`, or null
+ */
+async function reportGetArtifact(jobId: string): Promise<any> {
   log.debug("Entering reportGetArtifact().");
-  const realm = reportRealm();
-  if (!driver) {
-    const found = memoryArtifacts.get(artifactKey(realm, jobId)) || null;
-    log.debug("Leaving reportGetArtifact(). Memory.");
-    return Promise.resolve(found ? {
-      bytes: Buffer.from(found.bytes),
-      sha256: found.sha256,
-      mediaType: found.mediaType,
-      createdAt: found.createdAt
-    } : null);
+  const opened = await reportOpenArtifact(jobId);
+  if (!opened) {
+    log.debug("Leaving reportGetArtifact(). None.");
+    return null;
   }
-  return Promise.resolve(driver.getReportArtifact({
-    realm: realm,
-    jobId: jobId
-  })).then(function (found: any): any {
-    log.debug("Leaving reportGetArtifact(). Stored.");
-    if (!found) {
-      return null;
+  const parts: Buffer[] = [];
+  try {
+    for await (const piece of opened.pieces()) {
+      parts.push(piece);
     }
-    const opened = reportOpenBytes(found.bytes);
-    if (!opened) {
-      return null;
-    }
-    return {
-      bytes: opened,
-      sha256: found.sha256,
-      mediaType: found.mediaType,
-      createdAt: Number(found.createdAt)
-    };
-  });
+  } catch (e: any) {
+    log.debug("Caught in reportGetArtifact(): " + ((e && e.message) || e));
+    // A piece missing or unopenable: answered as gone, as a whole row
+    // that will not open is.
+    log.error(errorCodes.tag('STS-REPORT-0051') + 'report: a stored ' +
+      'report has a piece that is missing or would not open; it is ' +
+      'answered as gone.');
+    log.debug("Leaving reportGetArtifact(). A piece failed.");
+    return null;
+  }
+  log.debug("Leaving reportGetArtifact().");
+  return {
+    bytes: Buffer.concat(parts),
+    sha256: opened.sha256,
+    mediaType: opened.mediaType,
+    createdAt: opened.createdAt
+  };
 }
 
 function reportDeleteArtifact(jobId: string): Promise<void> {
@@ -370,6 +579,8 @@ export = {
   controlSet: reportControlSet,
   controlDelete: reportControlDelete,
   putArtifact: reportPutArtifact,
+  putArtifactFile: reportPutArtifactFile,
+  openArtifact: reportOpenArtifact,
   getArtifact: reportGetArtifact,
   deleteArtifact: reportDeleteArtifact,
   newId: reportNewId,

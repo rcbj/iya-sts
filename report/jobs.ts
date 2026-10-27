@@ -39,6 +39,7 @@ import sources = require('./sources');
 import Catalog = require('./catalog');
 import Limits = require('./limits');
 import Query = require('./query');
+import Staging = require('./staging');
 
 const log = bunyan.createLogger({ name: 'sts-report-jobs' });
 
@@ -794,6 +795,9 @@ function reportRegister(): void {
       return Promise.resolve(out);
     }
   });
+  // The staged build files' clean-up (#1045), in every process: any of
+  // them may be the one `report.drain` runs a job in.
+  Staging.ReportStaging.registerJobs(schedulerMod);
   log.debug("Leaving reportRegister().");
 }
 

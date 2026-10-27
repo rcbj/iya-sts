@@ -319,6 +319,14 @@
     "en": "4f2c054a1405a843",
     "text": "Nagla-log, sa process na ito, ng isang linya na may role at memory nito: resident size, heap na nagamit at kabuuan, ang heap limit, external memory at array buffers (#341)."
   },
+  "sched.jobs.report.build-cleanup.title": {
+    "en": "e5bd8efc07f0b31b",
+    "text": "Paglilinis ng pagbuo ng report"
+  },
+  "sched.jobs.report.build-cleanup.describe": {
+    "en": "203d8d2e97c041e2",
+    "text": "Sa bawat proseso: pinapanatiling bago ang mga report file na binubuo ng prosesong ito, at binubura mula sa risk.uploadDirectory ang isang pagbuo ng report na hindi nagalaw ng anumang buhay na proseso sa loob ng report.asyncMaxMs at labinlimang minuto — ang naiwan ng prosesong huminto sa gitna ng pagbuo."
+  },
   "sched.jobs.report.drain.title": {
     "en": "792c052635196abd",
     "text": "Mga report job"
