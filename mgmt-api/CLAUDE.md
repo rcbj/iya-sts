@@ -716,6 +716,35 @@ console is reached in. Making the explorer mint and prove a DPoP key in the
 browser would be a second implementation of RFC 9449 in a page that exists to
 show what an operation returns.
 
+## A CLIENT THAT DECLARES A CERTIFICATE IS ANSWERED ONLY ON A BOUND TOKEN (#1050, 2026-10-27)
+
+rcbj's decision on #520 for this door: **certificate-bound tokens only, no
+bare certificate as a credential.** A certificate presented with no token
+still authenticates nothing here, and that is deliberate: the gate's
+questions — which realm, which scopes, which roles held now, which session —
+are all answered off a token, and a second credential beside it would be a
+second gate that drifted from the first.
+
+What was added is one refusal, after the `x5t#S256` check (`STS-API-0110`),
+which holds a token that IS bound: a token that is NOT bound, issued to a
+client whose entry declares `tls_client_auth` or `self_signed_tls_client_auth`
+among its methods, or `tls_client_certificate_bound_access_tokens`, is 401
+`invalid_token`, `STS-API-0137`, in every mode. The declaration is
+`mtls.certificateDeclaration()`, read NOW in the realm that issued the token
+(as `clientBound` is below it), so a token minted before the rule — or before
+the client declared — stops working at once. Its scopes, roles and owner
+rules still decide what a bound token may do; this decides only whether the
+token is a credential here at all.
+
+The issuing half is `oauth-oidc/CLAUDE.md` 3an (`STS-OAUTH-0489`, `0490`),
+which also lists which paths were already closed and which were open — the
+only real one being a client declaring a certificate method beside a secret,
+since 2026-10-01. Rule 7: the application's Credentials section says it
+(`credentials.mtls.adminApiBound` on `GET /admin-api/applications?application=`,
+a sentence under *Certificate-bound access tokens* on the console page).
+`/admin/api-explorer` is unaffected: it mints for `sts-admin-console`, which
+declares no certificate.
+
 ## `/admin-api/logout` — four operations, and one that differs from its console form
 
 The sign-out resource mirrors `/admin/logout` and calls the same two functions

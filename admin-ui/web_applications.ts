@@ -2944,7 +2944,13 @@ class ApplicationsPage {
       t.html('consoleApplications.a2.boundIs') + '<code>' +
       (state.boundTokens ? 'TRUE' : 'FALSE') + '</code>' + (state.boundTokens
         ? t.html('consoleApplications.a2.boundYes')
-        : t.html('consoleApplications.a2.boundNo')));
+        : t.html('consoleApplications.a2.boundNo'))) +
+      // #1050: the management API's rule for this application, which the
+      // reply of `GET /admin-api/applications?application=` carries as
+      // `credentials.mtls.adminApiBound`.
+      kit.note(state.adminApiBound
+        ? t.html('consoleApplications.a2.adminApiBoundYes')
+        : t.html('consoleApplications.a2.adminApiBoundNo'));
     return html;
   }
 

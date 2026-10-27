@@ -980,6 +980,35 @@ so must `admin-ui/admin.ts`.
    never `cnf`. UserInfo, the credential endpoints, SCIM and SSF already did,
    through `dpop.presentedAccessToken()`.
 
+   **AN `/admin-api` TOKEN FOR A CLIENT THAT DECLARED A CERTIFICATE IS BOUND
+   OR NOT ISSUED (#1050, 2026-10-27).** rcbj's decision on #520: "bound
+   tokens only, no bare certificate as a credential" — a certificate is
+   never a credential AT the management API, but a client that declares one
+   (`mtls.certificateDeclaration()`: a certificate method AMONG its methods,
+   or the section 3.4 flag) gets tokens for it only bound. What was already
+   closed: a client whose only method is a certificate one cannot
+   authenticate without one, at every grant, since `declaredRefusal()`; the
+   section 3.4 client is refused without a certificate (`0487`); a bound
+   refresh token keeps its binding (7.1 above); and a bound token is held to
+   its certificate at the gate (`STS-API-0110`). What was OPEN, and is closed
+   by `oauth2.adminApiBindingRefusal()` in `tokenSet()` (every grant at the
+   token endpoint, token exchange and refresh included, and the CIBA push):
+   **a client declaring a certificate method BESIDE a secret** (2026-10-01),
+   which `declaredRefusal()` rightly holds to the secret it sent, so it was
+   minted an unbound administrative token (`STS-OAUTH-0489`); **the CIBA
+   push**, minted on no connection; and **the implicit and hybrid
+   responses**, minted at the authorization endpoint on the browser's
+   connection, refused there before the code (`STS-OAUTH-0490`). "For the
+   management API" is `RegisteredTargets.namesManagementApi()` — the API's
+   own `namesThisApi()` where there is a request, and `<base>/admin-api` or
+   the configured `adminApi.audience` where there is none. A token for any
+   other resource is untouched: binding stays the client's choice there, and
+   the rule is the one resource server where a stolen token administers the
+   service. **The gate holds the other end** (`STS-API-0137`,
+   `mgmt-api/CLAUDE.md`), reading the declaration NOW, so a token issued
+   before the rule or before the declaration is refused too. In every mode,
+   for `declaredRefusal()`'s reason. `tests/rfc8705_mtls.js` section m.
+
    **NOT DONE**: `mtls_endpoint_aliases`; a certificate from a proxy header (3f);
    the debugger listener does not ask for a client certificate, so a bound token
    is refused there rather than usable. `tests/rfc8705_mtls.js` holds it — 72

@@ -387,6 +387,8 @@
   "a2.boundIs": " 为 ",
   "a2.boundYes": "：此应用声明了绑定令牌，因此其不带客户端证书的令牌请求在所有模式下都会被拒绝。",
   "a2.boundNo": "：不带证书的令牌请求会得到未绑定的令牌。",
+  "a2.adminApiBoundYes": "因此，它用于 <code>/admin-api</code> 的访问令牌只会绑定到其 TLS 客户端证书后签发；在任何模式下，<code>/admin-api</code> 都会拒绝其未绑定的令牌，或未使用该证书出示的令牌。绑定令牌能做什么仍由其范围决定。",
+  "a2.adminApiBoundNo": "它没有声明证书，因此它用于 <code>/admin-api</code> 的访问令牌只有在出示证书或 DPoP 证明时才会被绑定。声明证书认证方法或绑定令牌后，<code>/admin-api</code> 只接受绑定到其证书的令牌。",
   "a2.unreadable": "无法读取：",
   "a2.issuedBy": "签发者 ",
   "a2.selfSigned": "（自签名）",

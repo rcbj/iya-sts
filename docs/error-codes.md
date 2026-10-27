@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4700** of them, in **48** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4703** of them, in **48** subsystems.
 
 ## Where a code appears
 
@@ -64,7 +64,7 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 381
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 730
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 732
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 117
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 37
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 30
@@ -89,7 +89,7 @@ is an ordinary outcome.
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 98
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 245
-* [Management API (`STS-API`)](#sts-api) — 86
+* [Management API (`STS-API`)](#sts-api) — 87
 * [User portal (`STS-PORTAL`)](#sts-portal) — 107
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 19
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 13
@@ -1960,6 +1960,8 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0486` | A tls_client_auth client presented a verified certificate this realm did not issue to it, and registers no certificate subject to match it against. | invalid_client (HTTP 401) |
 | `STS-OAUTH-0487` | A client that registered tls_client_certificate_bound_access_tokens made a token request on a connection with no client certificate (RFC 8705 section 3.4), refused in every mode. | invalid_request (HTTP 400) |
 | `STS-OAUTH-0488` | A client declaring an RFC 8705 certificate authentication method did not authenticate by certificate and no more specific reason was recorded; refused in every mode. | invalid_client (HTTP 401) |
+| `STS-OAUTH-0489` | An access token for /admin-api was asked of the token endpoint by a client declaring tls_client_auth, self_signed_tls_client_auth or tls_client_certificate_bound_access_tokens, with no client certificate to bind it to (or minted on no connection, a CIBA push); refused in every mode. | invalid_request (HTTP 400) |
+| `STS-OAUTH-0490` | An implicit or hybrid authorization response would have carried an /admin-api access token for a client declaring a certificate, which the browser's connection can never bind; refused in every mode. | invalid_request (redirected error) |
 | `STS-OAUTH-0500` | An authorization request's acr_values were not met by the authentication performed after the person was sent to sign in again (RFC 9470 section 5); refused in every mode. | unmet_authentication_requirements (redirected error) |
 | `STS-OAUTH-0501` | An authorization request's max_age was still not met on the return from the sign-in it was sent to — the sign-in did not start a new authentication. | unmet_authentication_requirements (redirected error) |
 | `STS-OAUTH-0502` | The session did not meet an authorization request's acr_values or max_age, and prompt=none forbids sending the person to sign in again. | login_required (redirected error) |
@@ -4945,6 +4947,7 @@ Raised from: mgmt-api/.
 | `STS-API-0134` | A request to close an object to its owners, or open it again, named no kind of the four or no object (#607). | HTTP 400 |
 | `STS-API-0135` | A Kerberos trusts action through POST /admin-api/kerberos/trusts/{action} threw inside this service; the log says why (#430). | HTTP 500 |
 | `STS-API-0136` | A management API users action that answers later (a by-value did:web enrolment, which fetches the DID document) failed inside this service; the log says why (#693). | HTTP 500 |
+| `STS-API-0137` | An /admin-api access token issued to a client that declares tls_client_auth, self_signed_tls_client_auth or tls_client_certificate_bound_access_tokens carries no cnf x5t#S256 (RFC 8705): such a client's tokens are accepted only certificate-bound. | invalid_token (HTTP 401) |
 
 ## STS-PORTAL
 

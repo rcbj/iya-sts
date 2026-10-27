@@ -387,6 +387,8 @@
   "a2.boundIs": " vaut ",
   "a2.boundYes": " : cette application a déclaré des jetons liés, donc une requête de jeton de sa part sans certificat client est refusée dans tous les modes.",
   "a2.boundNo": " : une requête de jeton sans certificat obtient un jeton non lié.",
+  "a2.adminApiBoundYes": "De ce fait, ses jetons d’accès pour <code>/admin-api</code> ne sont émis que liés à son certificat client TLS, et <code>/admin-api</code> refuse, dans tous les modes, un de ses jetons qui n’est pas lié ou qui est présenté sans ce certificat. Ses portées décident toujours de ce qu’un jeton lié peut faire.",
+  "a2.adminApiBoundNo": "Elle ne déclare aucun certificat, donc ses jetons d’accès pour <code>/admin-api</code> ne sont liés que lorsqu’elle présente un certificat ou une preuve DPoP. Déclarer une méthode par certificat ou des jetons liés fait que <code>/admin-api</code> n’accepte ses jetons que liés à son certificat.",
   "a2.unreadable": "illisible : ",
   "a2.issuedBy": "émis par ",
   "a2.selfSigned": " (autosigné)",

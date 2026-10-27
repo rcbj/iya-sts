@@ -26292,6 +26292,43 @@ class AdminApi {
             errors: [certificateProblem.description] });
         }
         // ---------------------------------------------------------------------
+        // AND A CLIENT THAT DECLARED A CERTIFICATE IS HELD TO ONE HERE (#1050,
+        // rcbj's decision on #520: "bound tokens only, no bare certificate as
+        // a credential"). The check above holds a token that IS bound; this
+        // one refuses a token that is NOT, when the client it was issued to
+        // declares `tls_client_auth`, `self_signed_tls_client_auth` (among
+        // its methods) or `tls_client_certificate_bound_access_tokens` —
+        // read NOW, in the realm that issued it, so a declaration added after
+        // the token was minted takes it away. The token endpoint no longer
+        // issues one (`oauth2.adminApiBindingRefusal()`, STS-OAUTH-0489/0490);
+        // this is the other end, for a token issued before that rule, or
+        // under a declaration since made, or by a door nobody has found. Its
+        // scopes still decide what a bound token may do — this decides only
+        // whether it is a credential here at all. In every mode: the client
+        // asked for it.
+        // ---------------------------------------------------------------------
+        if (!mtls.boundThumbprintOf(claims)) {
+          const holder = String(claims.client_id || '');
+          const declaration = holder
+            ? realms.run(realms.get(tokenRealm), function () {
+                return mtls.certificateDeclaration(
+                  applications.clientConfigOf(holder));
+              })
+            : '';
+          if (declaration) {
+            errorCodes.mark(res, 'STS-API-0137');
+            res.set('WWW-Authenticate', 'Bearer error="invalid_token", ' +
+                    'scope="' + scopesWanted + '"');
+            return self.sendJson(res, 401, { error: 'invalid_token', errors: [
+              'RFC 8705: client "' + holder + '" declares ' + declaration +
+              ', so this API accepts its access tokens only bound to its ' +
+              'TLS client certificate (cnf["x5t#S256"]), and this one is ' +
+              'not bound. Ask /oauth2/token for a new one over mutual TLS ' +
+              'and present it on a connection made with the same ' +
+              'certificate.'] });
+          }
+        }
+        // ---------------------------------------------------------------------
         // RFC 9449 SECTION 7, AND THE SAME HOLE ONE CONSTRAINT ALONG (#34,
         // 2026-09-15). The check above was added for RFC 8705 and the DPoP one
         // beside it was never written, so a token carrying `cnf.jkt` — a token

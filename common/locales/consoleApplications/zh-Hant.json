@@ -387,6 +387,8 @@
   "a2.boundIs": " 為 ",
   "a2.boundYes": "：此應用程式宣告了繫結權杖，因此其不帶用戶端憑證的權杖請求在所有模式下都會被拒絕。",
   "a2.boundNo": "：不帶憑證的權杖請求會得到未繫結的權杖。",
+  "a2.adminApiBoundYes": "因此，它用於 <code>/admin-api</code> 的存取權杖只會繫結到其 TLS 用戶端憑證後簽發；在任何模式下，<code>/admin-api</code> 都會拒絕其未繫結的權杖，或未使用該憑證出示的權杖。繫結權杖能做什麼仍由其範圍決定。",
+  "a2.adminApiBoundNo": "它沒有宣告憑證，因此它用於 <code>/admin-api</code> 的存取權杖只有在出示憑證或 DPoP 證明時才會被繫結。宣告憑證驗證方法或繫結權杖後，<code>/admin-api</code> 只接受繫結到其憑證的權杖。",
   "a2.unreadable": "無法讀取：",
   "a2.issuedBy": "簽發者 ",
   "a2.selfSigned": "（自我簽署）",

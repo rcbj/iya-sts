@@ -387,6 +387,8 @@
   "a2.boundIs": " is ",
   "a2.boundYes": ": this application declared bound tokens, so a token request from it with no client certificate is refused in every mode.",
   "a2.boundNo": ": a token request with no certificate gets an unbound token.",
+  "a2.adminApiBoundYes": "Because of that, its access tokens for <code>/admin-api</code> are issued only bound to its TLS client certificate, and <code>/admin-api</code> refuses one of its tokens that is not bound, or presented without that certificate, in every mode. Its scopes still decide what a bound token may do.",
+  "a2.adminApiBoundNo": "It declares no certificate, so its access tokens for <code>/admin-api</code> are bound only when it presents a certificate or a DPoP proof. Declaring a certificate method or bound tokens makes <code>/admin-api</code> accept its tokens only bound to its certificate.",
   "a2.unreadable": "unreadable: ",
   "a2.issuedBy": "issued by ",
   "a2.selfSigned": " (self-signed)",

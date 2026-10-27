@@ -12347,6 +12347,8 @@ class AdminViews {
     const certificate = methods.filter(function (m) {
       return mtls.CERTIFICATE_METHODS.indexOf(m) >= 0;
     })[0] || '';
+    const boundTokens = one(applications.TLS_BOUND_TOKENS_ATTRIBUTE)
+      .toUpperCase() === 'TRUE';
     log.debug("Leaving AdminViews.applicationMtlsState(). " + held.length +
               " held.");
     return {
@@ -12365,9 +12367,13 @@ class AdminViews {
         return s.member;
       }),
       boundTokensAttribute: applications.TLS_BOUND_TOKENS_ATTRIBUTE,
-      boundTokens: one(applications.TLS_BOUND_TOKENS_ATTRIBUTE)
-        .toUpperCase() ===
-                   'TRUE',
+      boundTokens: boundTokens,
+      // #1050 (rule 7, the console's half of what `/admin-api`'s gate and
+      // `mtls.certificateDeclaration()` decide): whether this application's
+      // access tokens for the management API are issued and accepted only
+      // bound to its certificate — a certificate method among its methods,
+      // or the section 3.4 flag.
+      adminApiBound: !!certificate || boundTokens,
       selfSignedThumbprint: one('oauthTlsClientCertificateThumbprint'),
       bindingAvailable: mtls.available(),
       caAvailable: !!caAvailable,

@@ -387,6 +387,8 @@
   "a2.boundIs": " är ",
   "a2.boundYes": ": applikationen har deklarerat bundna token, så en tokenbegäran från den utan klientcertifikat nekas i alla lägen.",
   "a2.boundNo": ": en tokenbegäran utan certifikat får en obunden token.",
+  "a2.adminApiBoundYes": "Därför utfärdas dess åtkomsttoken för <code>/admin-api</code> bara bundna till dess TLS-klientcertifikat, och <code>/admin-api</code> avvisar i alla lägen ett av dess token som inte är bundet eller som visas utan det certifikatet. Dess scope avgör fortfarande vad ett bundet token får göra.",
+  "a2.adminApiBoundNo": "Den deklarerar inget certifikat, så dess åtkomsttoken för <code>/admin-api</code> binds bara när den visar ett certifikat eller ett DPoP-bevis. Om den deklarerar en certifikatmetod eller bundna token accepterar <code>/admin-api</code> dess token bara bundna till dess certifikat.",
   "a2.unreadable": "oläsbart: ",
   "a2.issuedBy": "utfärdat av ",
   "a2.selfSigned": " (självsignerat)",
