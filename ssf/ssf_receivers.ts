@@ -1409,7 +1409,19 @@ class SsfReceivers {
       //   and signing them out of the page they did it on is the opposite of
       //   what OWASP ASVS 3.3 asks (keep the session that made the change).
       //   An administrator's or a policy's change still ends them.
+      // * a `credential-change` whose `change_type` is `create` ADDED a
+      //   credential — a person created with a password, a passkey enrolled,
+      //   an app password or a client secret made — and took nothing away,
+      //   so no session rests on a credential that stopped being one. Ending
+      //   on it was what run #4 of 2026-10-27 measured once #1042 gave the
+      //   reaction teeth: a suite job creates a person with a password and
+      //   signs them in within the same second, the signal is delivered a
+      //   moment later, and "the same second is ended" (below) ended the
+      //   sign-in the credential was made FOR. An `update`, a `revoke` and a
+      //   `delete` still end them — those are a credential replaced or
+      //   taken away.
       const initiator = String(body.initiating_entity || '');
+      const changeType = String(body.change_type || '');
       const subjectSession = ((entry.claims && entry.claims.sub_id) || {})
         .session;
       const revokedSession = family === 'caep' &&
@@ -1438,6 +1450,9 @@ class SsfReceivers {
       } else if (family === 'caep' && short === 'credential-change' &&
                  initiator === 'user') {
         skip = 'the person\'s own change';
+      } else if (family === 'caep' && short === 'credential-change' &&
+                 changeType === 'create') {
+        skip = 'a credential added, which takes nothing away';
       }
       (decided.reactions || []).forEach(function (reaction: string): void {
         if (skip) {

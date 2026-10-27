@@ -629,7 +629,13 @@ rules read for a token:
   directory's mail index gives a name), fail-closed as the portal's page is;
 * a `session-revoked` naming a session reaches only tokens issued on it
   (`record.sessionId`);
-* a token issued after the event's second is left alone.
+* a token issued after the event's second is left alone;
+* and a `credential-change` whose `change_type` is `create` reaches no
+  token and no session (2026-10-27, run #4 of the suite): a credential
+  ADDED takes nothing away, and the suite's own habit — create a person
+  with a password, sign them in within the same second — met the delivery
+  a moment later and "the same second is ended". `update`, `revoke` and
+  `delete` still end them. `tests/signal_response.js` E4b and G1b.
 
 **FOUND THROUGH THE INDEX, NEVER A WALK** (`tokenKeysNamed()`): the token
 register's `u:` and `s:` keys for every identifier the SET spells, and for

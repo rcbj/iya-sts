@@ -263,6 +263,26 @@ function childMain() {
     note(endedOf(byAdmin) === 1,
          'E4. an administrator\'s credential-change still ends the ' +
          'person\'s console session', JSON.stringify(byAdmin.entry.reactions));
+    // E4b (2026-10-27): a credential ADDED takes nothing away. A person
+    // created with a password and signed in within the same second lost
+    // that sign-in to the signal's delivery a moment later (run #4).
+    derived('sr-erin', 'sso-parent-2b');
+    const added = pushAbout('credential-change',
+      { format: 'iss_sub', iss: record.iss, sub: erin },
+      { initiating_entity: 'admin', credential_type: 'password',
+        change_type: 'create' });
+    note(endedOf(added) === 0 && !!(added.entry.reactions[0] || {}).skipped,
+         'E4b. a credential an administrator ADDED (change_type create) ' +
+         'ends nothing: nothing was taken away',
+         JSON.stringify(added.entry.reactions));
+    const swept = pushAbout('credential-change',
+      { format: 'iss_sub', iss: record.iss, sub: erin },
+      { initiating_entity: 'admin', credential_type: 'password',
+        change_type: 'update' });
+    note(endedOf(swept) === 1,
+         'E4c. and the session E4b left standing was there to end: an ' +
+         'update by an administrator ends it',
+         JSON.stringify(swept.entry.reactions));
     // E5 (2026-09-24): a session begun AFTER the event's second is not
     // about it — delivery is asynchronous, and the person may already have
     // signed in again with the new password. One begun within it is still
@@ -322,6 +342,14 @@ function childMain() {
          JSON.stringify([g1.entry.reactions, stats.isRevoked(erinConsole),
                          stats.isRevoked(erinPortal),
                          stats.isRevoked(frankConsole)]));
+    const g1bToken = token('sr-erin', 'sts-admin-console');
+    const g1b = pushAbout('credential-change',
+      { format: 'iss_sub', iss: record.iss, sub: erin },
+      { initiating_entity: 'admin', credential_type: 'password',
+        change_type: 'create' });
+    note(revokedOf(g1b) === 0 && !stats.isRevoked(g1bToken),
+         'G1b. a credential ADDED (change_type create) revokes no token',
+         JSON.stringify(g1b.entry.reactions));
     const g2Token = token('sr-erin', 'sts-admin-console');
     const g2 = pushAbout('credential-change',
       { format: 'iss_sub', iss: record.iss, sub: erin },
