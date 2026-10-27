@@ -323,7 +323,7 @@ var config = {
     fanout: "/scim,/xacml,/admin-api,/account-api",                // Dispatched paths with no session affinity; restart to apply
     surfaceCount: 0,                                               // Hosted-surface worker processes; restart to apply
     surfaces: "/admin,/portal",                                    // Paths handled by the hosted-surface workers; restart to apply
-    batch: "/scim,/admin/signals/receive,/portal/signals/receive", // Batch traffic paths
+    batch: "/scim,/admin/signals/receive,/portal/signals/receive,/report/signals/receive", // Batch traffic paths
     batchWorkerShare: 50,                                          // Share of workers batch traffic may use (%)
     batchConcurrency: 8,                                           // Batch requests in flight per lane worker
     batchQueueLimit: 5000,                                         // Batch requests waiting

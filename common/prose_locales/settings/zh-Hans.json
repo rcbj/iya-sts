@@ -7068,16 +7068,16 @@
     "text": "SSF 端点是否在 OAuth 2.0 访问令牌之外还接受 HTTP Basic，并在 authorization_schemes 中发布它。在开发模式下，任何用户名配合除 \"invalid\" 以外的任何密码均可通过；在产品模式下，密码会依据该人员经过哈希的 userPassword 进行验证。无论哪种情况，Basic 主体都同时拥有两个范围，因为 Basic 不携带范围——因此希望对每个调用方都强制执行 ssf.read 和 ssf.manage 的部署应关闭此项。"
   },
   "ssf.internalReceivers|label": {
-    "en": "8eca3281fa7a4ef7",
-    "text": "将控制台和门户注册为接收方"
+    "en": "7e760a8d68a5e030",
+    "text": "将控制台、门户和报表注册为接收方"
   },
   "ssf.internalReceivers|description": {
-    "en": "1a148e2b3a63a17d",
-    "text": "本服务是否为其自身的管理控制台和用户门户预置 Shared Signals 流，使两者各自接收每个 CAEP 和 RISC 事件——每隔 ssf.internalPollMs 通过 RFC 8936 轮询从本服务自己的 /ssf/poll 收取（#771）——并在 /admin/signals 和 /portal/signals 上显示收到的内容。它们是普通的流——在 /admin/ssf 上暂停、缩小或删除其中一个，它会保持该状态直到重启。"
+    "en": "0a23fbb0f030f814",
+    "text": "此服务是否为其自身的管理控制台、用户门户和报表应用程序 (#1042) 创建 Shared Signals 流，使每个都能接收每个 CAEP 和 RISC 事件——每隔 ssf.internalPollMs 通过 RFC 8936 轮询从此服务自己的 /ssf/poll 收取 (#771)——并在 /admin/signals、/portal/signals 和 /report/signals 显示收到的内容。它们是普通的流——在 /admin/ssf 暂停、收窄或删除其中一个，它会保持该状态直到重启。"
   },
   "ssf.internalReceivers|restartReason": {
-    "en": "75c18a7223a2e0a3",
-    "text": "这两个流在 require ssf/ssf.ts 时以及构建每个领域时预置，因此原地关闭此项会留下已存在的流，而开启也不会创建任何流"
+    "en": "eb2b8e34bd6ee85c",
+    "text": "这三个流在加载 ssf/ssf.ts 时以及构建每个领域时创建，因此在运行中关闭此项会保留已有的流，而开启此项不会创建任何流"
   },
   "ssf.internalPollMs|label": {
     "en": "245d4495769ca599",
@@ -7156,8 +7156,8 @@
     "text": "保留的已接收事件数"
   },
   "ssf.maxReceivedEvents|description": {
-    "en": "2c503bd8b26764ea",
-    "text": "本服务自己的每个接收方（控制台的和门户的）在其收件箱中保留多少个已投递的 SET，按领域计；超过此数量时丢弃最旧的。"
+    "en": "4c285fbb0b900559",
+    "text": "此服务自己的每个接收方（控制台、门户和报表应用程序）在其收件箱中按领域保留的已送达 SET 数量；超过后丢弃最旧的。"
   },
   "ssf.maxStreamLogEntries|label": {
     "en": "468201e24a40cdc6",
@@ -7232,12 +7232,12 @@
     "text": "对联合合作方 Shared Signals 的一次请求——发现、其令牌端点、流管理、一次轮询——允许花费的时长。"
   },
   "ssf.actOnSignalsInDevelopment|label": {
-    "en": "563f14910995d99d",
-    "text": "开发模式下控制台和门户对收到的信号采取行动"
+    "en": "aa195c1cd8a0152a",
+    "text": "此服务自己的应用程序在开发模式下对收到的信号采取行动"
   },
   "ssf.actOnSignalsInDevelopment|description": {
-    "en": "551c98310bd92f77",
-    "text": "对于本服务自身的控制台或门户收到的、或联合合作方发送的（#373、#374）经验证的事件，产品模式始终执行信号响应策略所允许的操作——结束该界面上其所指明人员的会话（#62）。开发模式只记录它本会执行的操作而不实际执行，除非开启此项。无论此项如何，都绝不会对未经验证的事件采取行动。"
+    "en": "2389ab3a9223bf66",
+    "text": "生产模式始终对此服务的控制台、门户或报表应用程序收到的已验证事件执行 signal-response 策略所允许的操作——撤销该应用程序自己的客户端为所指人员持有的令牌（#1042；在应用程序不再创建依赖方会话之前，它结束的是这些会话，#62）——或对联合伙伴发送的事件执行相应操作 (#373, #374)。开发模式记录它本会执行的操作而不执行，除非开启此项。无论此项如何设置，未验证的事件都不会被处理。"
   },
   "ssf.signalsRevokeGrants|label": {
     "en": "a0ded7c93cee0e93",

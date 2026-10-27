@@ -7068,16 +7068,16 @@
     "text": "SSF 端點是否在 OAuth 2.0 存取權杖之外也接受 HTTP Basic，並在 authorization_schemes 中發布。在開發模式下，任何使用者名稱搭配 \"invalid\" 以外的任何密碼都能通過；在產品模式下，密碼會依該人員雜湊後的 userPassword 驗證。無論哪種情況，Basic 主體都擁有兩個範圍，因為 Basic 不攜帶任何範圍——因此要對每個呼叫者強制執行 ssf.read 與 ssf.manage 的部署應關閉此項。"
   },
   "ssf.internalReceivers|label": {
-    "en": "8eca3281fa7a4ef7",
-    "text": "將主控台與入口網站註冊為接收端"
+    "en": "7e760a8d68a5e030",
+    "text": "將控制台、入口網站和報表註冊為接收方"
   },
   "ssf.internalReceivers|description": {
-    "en": "1a148e2b3a63a17d",
-    "text": "此服務是否為其「自己的」管理主控台與使用者入口網站植入 Shared Signals 串流，使兩者各自接收每個 CAEP 與 RISC 事件——每隔 ssf.internalPollMs 透過 RFC 8936 輪詢從本服務自己的 /ssf/poll 收取（#771）——並在 /admin/signals 與 /portal/signals 上繪製所收到的內容。它們是「一般」串流——在 /admin/ssf 暫停、縮減或刪除其中一個，它會保持該狀態直到重新啟動。"
+    "en": "0a23fbb0f030f814",
+    "text": "此服務是否為其自身的管理控制台、使用者入口網站和報表應用程式 (#1042) 建立 Shared Signals 串流，使每個都能接收每個 CAEP 和 RISC 事件——每隔 ssf.internalPollMs 透過 RFC 8936 輪詢從此服務自己的 /ssf/poll 收取 (#771)——並在 /admin/signals、/portal/signals 和 /report/signals 顯示收到的內容。它們是一般的串流——在 /admin/ssf 暫停、縮小範圍或刪除其中一個，它會維持該狀態直到重新啟動。"
   },
   "ssf.internalReceivers|restartReason": {
-    "en": "75c18a7223a2e0a3",
-    "text": "兩個串流在 require ssf/ssf.ts 時植入，並在建構每個領域時再次植入，因此就地關閉此項會留下已存在的串流，而開啟它也不會建立任何串流"
+    "en": "eb2b8e34bd6ee85c",
+    "text": "這三個串流在載入 ssf/ssf.ts 時以及建立每個領域時建立，因此在執行中關閉此項會保留既有的串流，而開啟此項不會建立任何串流"
   },
   "ssf.internalPollMs|label": {
     "en": "245d4495769ca599",
@@ -7156,8 +7156,8 @@
     "text": "保留的已接收事件數"
   },
   "ssf.maxReceivedEvents|description": {
-    "en": "2c503bd8b26764ea",
-    "text": "本服務自己的每個接收者（主控台的與入口網站的）在其收件匣中保留多少個已傳遞的 SET，依領域計；超過此數時會捨棄最舊的。"
+    "en": "4c285fbb0b900559",
+    "text": "此服務自己的每個接收方（控制台、入口網站和報表應用程式）在其收件匣中依領域保留的已送達 SET 數量；超過後捨棄最舊的。"
   },
   "ssf.maxStreamLogEntries|label": {
     "en": "468201e24a40cdc6",
@@ -7232,12 +7232,12 @@
     "text": "對聯盟合作夥伴之 Shared Signals 的單一要求——探索、其權杖端點、串流管理、輪詢——可花費多久。"
   },
   "ssf.actOnSignalsInDevelopment|label": {
-    "en": "563f14910995d99d",
-    "text": "主控台與入口網站在開發模式下依收到的訊號採取行動"
+    "en": "aa195c1cd8a0152a",
+    "text": "此服務自己的應用程式在開發模式下對收到的訊號採取動作"
   },
   "ssf.actOnSignalsInDevelopment|description": {
-    "en": "551c98310bd92f77",
-    "text": "對於此服務自己的主控台或入口網站收到的已驗證事件，產品模式一律執行訊號回應原則所允許的動作——結束該介面上其所指名之人員的工作階段（#62）——對聯盟合作夥伴送來的事件亦然（#373、#374）。開發模式只記錄它原本會做的事而不採取任何行動，除非開啟此項。不論此處為何，未經驗證的事件絕不會被據以行動。"
+    "en": "2389ab3a9223bf66",
+    "text": "生產模式一律對此服務的控制台、入口網站或報表應用程式收到的已驗證事件執行 signal-response 原則所允許的動作——撤銷該應用程式自己的用戶端為所指人員持有的權杖（#1042；在應用程式不再建立信賴方工作階段之前，它結束的是這些工作階段，#62）——或對聯合夥伴傳送的事件執行相應動作 (#373, #374)。開發模式記錄它本會執行的動作而不執行，除非開啟此項。無論此項如何設定，未驗證的事件都不會被處理。"
   },
   "ssf.signalsRevokeGrants|label": {
     "en": "a0ded7c93cee0e93",

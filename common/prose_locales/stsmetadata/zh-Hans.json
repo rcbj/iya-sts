@@ -1151,6 +1151,18 @@
     "en": "fb526fdd286ba6e8",
     "text": "非规范。对每个控制台路径返回与 /admin 相同的文档（#446）：路径指明页面，由浏览器读取，因此深层链接和历史记录都能正常工作。/admin/callback 是登录带着代码返回的地方；提供它时会像依赖方那样在控制台的客户端条目上注册该回调（在开发模式下自动学习，在产品模式下除非已注册否则拒绝）。"
   },
+  "stsmetadata.endpoints./admin/signals/receive.what": {
+    "en": "cd68dd8169303f3e",
+    "text": "RFC 8935 第 2.1 节推送交付，用于被改回推送的控制台流（种子流自 #771 起采用轮询）。#446 切换随服务器渲染页面一起删除了它，#1042 将其恢复：它是门户端点的孪生端点，检查方式相同——以恒定时间比对控制台自身流的持有者令牌，然后是 `aud`，再是签名——并且出于同样的原因不做速率限制。"
+  },
+  "stsmetadata.endpoints./admin/signals/receive.effect": {
+    "en": "7414efe71859a097",
+    "text": "记录交付给管理控制台的 Security Event Token"
+  },
+  "stsmetadata.endpoints./admin/signals/receive.coverage": {
+    "en": "bbcf002898339fc9",
+    "text": "full：对 RFC 8935 第 2.1 节的接收，与 /portal/signals/receive 相同。"
+  },
   "stsmetadata.endpoints./admin/console.js.what": {
     "en": "6f4d5410ba7dfbfb",
     "text": "非规范。静态控制台（#446）：其运行时和每个页面的渲染器都在一个文件中，由 build-typescript.sh 构建。与文档一样公开：其中没有任何秘密。"
@@ -1174,6 +1186,18 @@
   "stsmetadata.endpoints./portal/portal.css.what": {
     "en": "69cf245f63b035d1",
     "text": "非规范。门户唯一的样式表（#568）。"
+  },
+  "stsmetadata.endpoints./report/signals/receive.what": {
+    "en": "02a6b59dd686363c",
+    "text": "RFC 8935 第 2.1 节推送交付，用于被改回推送的报表流（#1042；种子流采用轮询，与控制台和门户的相同）。检查方式与 /portal/signals/receive 相同。"
+  },
+  "stsmetadata.endpoints./report/signals/receive.effect": {
+    "en": "6c9147c359daab5f",
+    "text": "记录交付给报表应用程序的 Security Event Token"
+  },
+  "stsmetadata.endpoints./report/signals/receive.coverage": {
+    "en": "bbcf002898339fc9",
+    "text": "full：对 RFC 8935 第 2.1 节的接收，与 /portal/signals/receive 相同。"
   },
   "stsmetadata.endpoints./report.what": {
     "en": "a9d6c3cc058a3617",
@@ -1210,6 +1234,10 @@
   "stsmetadata.endpoints./report-api/realms.what": {
     "en": "94cf90a7c7b10a68",
     "text": "NON-SPEC。此请求所在的领域，以及在启用领域时，每个领域及其 id、名称和路径前缀（#986）：应用的领域字段和切换器即由此绘制。与 /report-api 的其余部分使用同一令牌。"
+  },
+  "stsmetadata.endpoints./report-api/signals.what": {
+    "en": "f00e66637d8d4146",
+    "text": "非规范。报表应用程序作为此服务自身发送方的接收方 (#1042) 所收到的内容：报表管理员可看到领域中的每个信号，其他人只能看到与自己有关的信号。与 /report-api 其余部分使用同一令牌。"
   },
   "stsmetadata.endpoints./report-api/groups.what": {
     "en": "339c957fd31d0c51",

@@ -183,6 +183,29 @@ class OpenApi {
               }
             })
         },
+        '/report-api/signals': {
+          get: operation('This application\'s Shared Signals inbox',
+            'The CAEP and RISC events this application\'s own stream ' +
+            'delivered in this realm, newest first, twenty a page by default (#1042). ' +
+            'report:admin sees every one (`scope` realm); anybody else ' +
+            'sees only the events about themselves (`scope` own), and an ' +
+            'application sees none. Each row says what this application ' +
+            'did with it: the sessions it ended and the tokens of its own ' +
+            'client it revoked for the person named, or why it did ' +
+            'nothing. `receiving` is false, with `why`, when nothing can ' +
+            'arrive. `per` is at most 100.', {
+              parameters: [
+                { name: 'page', in: 'query', required: false,
+                  schema: { type: 'integer', minimum: 1 } },
+                { name: 'per', in: 'query', required: false,
+                  schema: { type: 'integer', minimum: 1, maximum: 100 } }
+              ],
+              responses: {
+                '200': answered('One page of the inbox.',
+                  { type: 'object' })
+              }
+            })
+        },
         '/report-api/schedules': {
           get: operation('The scheduled definitions and their runs',
             'Every definition that carries a schedule, with when it next ' +

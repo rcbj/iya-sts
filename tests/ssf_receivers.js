@@ -102,9 +102,14 @@ function run(t) {
   // -----------------------------------------------------------------------
   t.log.info('A. the two surfaces, and what tells them apart');
   // -----------------------------------------------------------------------
-  t.equal(receivers.SURFACES.length, 2,
-          'there are exactly two internal receivers: the admin console and ' +
-          'the user portal');
+  t.equal(receivers.SURFACES.length, 3,
+          'there are exactly three internal receivers: the admin console, ' +
+          'the user portal and, since #1042, the reports application');
+  t.equal(receivers.surfaceOf(receivers.REPORT).sees, 'own',
+          'the reports application shows a report user only the signals ' +
+          'about them; its API widens it for a report administrator');
+  t.equal(receivers.surfaceOf(receivers.REPORT).audience, 'sts-report',
+          'its stream is addressed to the reports application\'s client');
   t.equal(receivers.surfaceOf(receivers.ADMIN).sees, 'all',
           'the console sees every signal delivered in the realm it is reading');
   t.equal(receivers.surfaceOf(receivers.PORTAL).sees, 'own',

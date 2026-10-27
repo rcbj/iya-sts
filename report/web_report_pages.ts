@@ -154,6 +154,8 @@ function navHtml(t: any, realm: string, accounts: string, chooser: string,
       navCurrent(path, '/definitions')) +
     navLink(BASE + '/jobs', t.text('report.jobs'),
       navCurrent(path, '/jobs')) +
+    navLink(BASE + '/signals', t.text('report.signals'),
+      navCurrent(path, '/signals')) +
     '<button type="button" class="btn" data-act="refresh">' +
     esc(t.text('report.refresh')) + '</button>' +
     '</nav></div>';
@@ -2540,6 +2542,71 @@ class ReportRuntime extends SpaClient {
   }
 
   /**
+   * Draws this application's Shared Signals inbox (#1042): what its own
+   * stream delivered, and what it did with each signal.
+   *
+   * @param query - the page's query
+   * @returns nothing
+   */
+  async drawSignals(query: any): Promise<void> {
+    const answer = await this.call('GET', API + '/signals' +
+      pageQuery(query));
+    if (!answer) {
+      return;
+    }
+    const json = answer.json || {};
+    const list = json.rows;
+    if (!Array.isArray(list)) {
+      this.paint(problemHtml(this.t, json.error_description));
+      return;
+    }
+    const t = this.t;
+    let head = '<p class="sub">' + esc(t.text(json.scope === 'realm'
+      ? 'report.signalsRealm' : 'report.signalsOwn')) + '</p>';
+    if (!json.receiving) {
+      head += '<p class="err">' + esc(t.text('report.signalsOff')) +
+        '</p>' + (Array.isArray(json.why) && json.why.length
+        ? '<ul>' + json.why.map(function (one: any): string {
+          return '<li>' + esc(String(one)) + '</li>';
+        }).join('') + '</ul>' : '');
+    }
+    if (!list.length) {
+      this.paint(head + '<p class="sub">' +
+        esc(t.text('report.signalsNone')) + '</p>');
+      return;
+    }
+    const rows = list.map(function (row: any): string[] {
+      const done = (row.reactions || []).map(function (r: any): string {
+        if (r.failed) {
+          return t.text('report.signalsFailed');
+        }
+        if (r.skipped) {
+          return t.text('report.signalsSkipped', { why: r.skipped });
+        }
+        if (r.observed) {
+          return t.text('report.signalsObserved');
+        }
+        return t.text('report.signalsActed', {
+          sessions: String(Number(r.ended) || 0),
+          tokens: String(Number(r.revoked) || 0) });
+      }).join(' ');
+      return [esc(String(row.at || '')), esc(String(row.name || '')),
+        esc(String(row.vocabulary || '')), esc(String(row.subject || '')),
+        esc(t.text(row.verified ? 'report.yes' : 'report.no')),
+        esc(done || t.text('report.signalsNothing'))];
+    });
+    const pager = pagerHtml(t, BASE + '/signals', json);
+    this.paint(head + pager + tableHtml([
+      esc(t.text('report.signalsAt')),
+      esc(t.text('report.signalsEvent')),
+      esc(t.text('report.signalsVocabulary')),
+      esc(t.text('report.signalsSubject')),
+      esc(t.text('report.signalsVerified')),
+      esc(t.text('report.signalsDone'))
+    ], rows) + pager);
+  }
+
+  /**
    * Draws one job.
    *
    * @param id - the job id
@@ -2770,6 +2837,10 @@ class ReportRuntime extends SpaClient {
     }
     if (path === BASE + '/jobs') {
       await this.drawJobs(query);
+      return;
+    }
+    if (path === BASE + '/signals') {
+      await this.drawSignals(query);
       return;
     }
     if (path.indexOf(BASE + '/jobs/') === 0) {

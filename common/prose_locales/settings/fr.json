@@ -7068,16 +7068,16 @@
     "text": "Indique si les endpoints SSF acceptent HTTP Basic à côté des jetons d’accès OAuth 2.0, et le publient dans authorization_schemes. En développement, n’importe quel nom d’utilisateur avec n’importe quel mot de passe sauf « invalid » passe ; en mode produit, le mot de passe est vérifié par rapport au userPassword haché de la personne. Dans les deux cas, un principal Basic détient les deux portées, car Basic n’en porte aucune — un déploiement qui veut que ssf.read et ssf.manage soient appliqués à chaque appelant désactive donc ce paramètre."
   },
   "ssf.internalReceivers|label": {
-    "en": "8eca3281fa7a4ef7",
-    "text": "Enregistrer la console et le portail comme récepteurs"
+    "en": "7e760a8d68a5e030",
+    "text": "Enregistrer la console, le portail et les rapports comme récepteurs"
   },
   "ssf.internalReceivers|description": {
-    "en": "1a148e2b3a63a17d",
-    "text": "Indique si ce service crée un flux Shared Signals pour sa PROPRE console d’administration et son portail utilisateur, afin que chacun reçoive chaque événement CAEP et RISC — en les collectant par interrogation RFC 8936 sur le /ssf/poll de ce service toutes les ssf.internalPollMs (#771) — et affiche ce qui est arrivé sur /admin/signals et /portal/signals. Ce sont des flux ORDINAIRES — mettez-en un en pause, restreignez-le ou supprimez-le sur /admin/ssf et il le reste jusqu’à un redémarrage."
+    "en": "0a23fbb0f030f814",
+    "text": "Indique si ce service crée un flux Shared Signals pour sa PROPRE console d’administration, son portail utilisateur et son application de rapports (#1042), afin que chacun reçoive chaque événement CAEP et RISC — en les collectant par interrogation RFC 8936 depuis le /ssf/poll de ce service toutes les ssf.internalPollMs (#771) — et affiche ce qui est arrivé sur /admin/signals, /portal/signals et /report/signals. Ce sont des flux ORDINAIRES : mettez-en un en pause, restreignez-le ou supprimez-le sur /admin/ssf et il reste ainsi jusqu’à un redémarrage."
   },
   "ssf.internalReceivers|restartReason": {
-    "en": "75c18a7223a2e0a3",
-    "text": "les deux flux sont créés au chargement de ssf/ssf.ts, puis de nouveau à la construction de chaque domaine ; le désactiver à chaud laisserait donc les flux déjà existants, et l’activer n’en créerait aucun"
+    "en": "eb2b8e34bd6ee85c",
+    "text": "les trois flux sont créés au chargement de ssf/ssf.ts et de nouveau à la construction de chaque domaine ; désactiver ce réglage à chaud laisserait les flux existants, et l’activer n’en créerait aucun"
   },
   "ssf.internalPollMs|label": {
     "en": "245d4495769ca599",
@@ -7156,8 +7156,8 @@
     "text": "Événements reçus conservés"
   },
   "ssf.maxReceivedEvents|description": {
-    "en": "2c503bd8b26764ea",
-    "text": "Le nombre de SET remis que chacun des récepteurs propres à ce service (celui de la console et celui du portail) conserve dans sa boîte de réception, par domaine de confiance ; au-delà, les plus anciens sont abandonnés."
+    "en": "4c285fbb0b900559",
+    "text": "Nombre de SET reçus que chacun des récepteurs propres à ce service (celui de la console, celui du portail et celui de l’application de rapports) conserve dans sa boîte de réception, par domaine ; les plus anciens sont supprimés au-delà."
   },
   "ssf.maxStreamLogEntries|label": {
     "en": "468201e24a40cdc6",
@@ -7232,12 +7232,12 @@
     "text": "La durée maximale d’une requête vers les Shared Signals d’un partenaire de fédération — découverte, son endpoint de jeton, gestion de flux, interrogation."
   },
   "ssf.actOnSignalsInDevelopment|label": {
-    "en": "563f14910995d99d",
-    "text": "La console et le portail agissent sur les signaux reçus en développement"
+    "en": "aa195c1cd8a0152a",
+    "text": "Les applications propres à ce service agissent sur les signaux reçus en développement"
   },
   "ssf.actOnSignalsInDevelopment|description": {
-    "en": "551c98310bd92f77",
-    "text": "Le mode produit fait toujours ce que permet la politique de réponse aux signaux pour un événement vérifié que reçoit la console ou le portail propre à ce service — mettre fin aux sessions de cette interface pour la personne qu’il nomme (#62) — ou qu’envoie un partenaire de fédération (#373, #374). Le développement enregistre ce qu’il aurait fait et ne fait rien, sauf si ce paramètre est activé. Un événement non vérifié n’entraîne jamais d’action, quelle que soit cette valeur."
+    "en": "2389ab3a9223bf66",
+    "text": "Le mode production fait toujours ce que la politique signal-response autorise avec un événement vérifié reçu par la console, le portail ou l’application de rapports de ce service — il révoque les jetons que le client de cette application détient pour la personne nommée (#1042 ; il mettait fin aux sessions de partie de confiance jusqu’à ce que les applications cessent d’en créer, #62) — ou envoyé par un partenaire de fédération (#373, #374). Le développement enregistre ce qu’il aurait fait et ne fait rien, sauf si ce réglage est activé. Un événement non vérifié n’est jamais traité, quoi qu’indique ce réglage."
   },
   "ssf.signalsRevokeGrants|label": {
     "en": "a0ded7c93cee0e93",

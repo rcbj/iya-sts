@@ -4232,7 +4232,8 @@ const SETTINGS = [
   { key: 'workers.batch', group: 'Global',
     label: 'Batch traffic paths',
     env: 'STS_WORKERS_BATCH', type: 'string',
-    dflt: '/scim,/admin/signals/receive,/portal/signals/receive',
+    dflt: '/scim,/admin/signals/receive,/portal/signals/receive,' +
+          '/report/signals/receive',
     runtime: true, perProcess: true,
     description: 'A comma-separated list of path prefixes whose requests are ' +
                  'BATCH traffic: routed only to a share of each pool\'s ' +
@@ -13485,19 +13486,21 @@ const SETTINGS = [
   // setting names.
   // -------------------------------------------------------------------------
   { key: 'ssf.internalReceivers', group: 'SSF',
-    label: 'Register the console and the portal as receivers',
+    label: 'Register the console, the portal and reports as receivers',
     env: 'STS_SSF_INTERNAL_RECEIVERS', type: 'bool', dflt: true,
     runtime: false,
-    restartReason: 'the two streams are seeded as ssf/ssf.ts is required and ' +
+    restartReason: 'the three streams are seeded as ssf/ssf.ts is required ' +
+                   'and ' +
                    'again as each realm is built, so turning this off in ' +
                    'place would leave the streams that already exist and ' +
                    'turning it on would create none',
     description: 'Whether this service seeds a Shared Signals stream for its ' +
-                 'OWN admin console and user portal, so that each takes ' +
-                 'delivery of every CAEP and RISC event — collecting them ' +
-                 'over RFC 8936 poll from this service\'s own /ssf/poll ' +
-                 'every ssf.internalPollMs (#771) — and draws what arrived ' +
-                 'at /admin/signals and /portal/signals. They are ORDINARY ' +
+                 'OWN admin console, user portal and reports application ' +
+                 '(#1042), so that each takes delivery of every CAEP and ' +
+                 'RISC event — collecting them over RFC 8936 poll from this ' +
+                 'service\'s own /ssf/poll every ssf.internalPollMs (#771) — ' +
+                 'and draws what arrived at /admin/signals, /portal/signals ' +
+                 'and /report/signals. They are ORDINARY ' +
                  'streams — pause one, narrow it or delete it at /admin/ssf ' +
                  'and it stays that way until a restart.' },
 
@@ -13611,8 +13614,9 @@ const SETTINGS = [
     env: 'STS_SSF_MAX_RECEIVED_EVENTS', type: 'int', dflt: 200, min: 1,
     max: 10000, runtime: true,
     description: 'How many delivered SETs each of this service\'s own ' +
-                 'receivers (the console\'s and the portal\'s) keeps in its ' +
-                 'inbox, per realm; the oldest are dropped past this.' },
+                 'receivers (the console\'s, the portal\'s and the reports ' +
+                 'application\'s) keeps in its inbox, per realm; the oldest ' +
+                 'are dropped past this.' },
 
   { key: 'ssf.maxStreamLogEntries', group: 'SSF', label: 'Log lines per stream',
     env: 'STS_SSF_MAX_STREAM_LOG_ENTRIES', type: 'int', dflt: 200, min: 1,
@@ -13700,13 +13704,17 @@ const SETTINGS = [
                  'management, a poll — may take.' },
 
   { key: 'ssf.actOnSignalsInDevelopment', group: 'SSF',
-    label: 'The console and portal act on received signals in development',
+    label: 'This service\'s own applications act on received signals in ' +
+           'development',
     env: 'STS_SSF_ACT_ON_SIGNALS_IN_DEVELOPMENT', type: 'bool', dflt: false,
     runtime: true,
     description: 'Product mode always does what the signal-response policy ' +
-                 'permits with a verified event this service\'s own console ' +
-                 'or portal receives — ends that surface\'s own sessions for ' +
-                 'the person it names (#62) — or a federation partner ' +
+                 'permits with a verified event this service\'s own console, ' +
+                 'portal or reports application receives — revokes the ' +
+                 'tokens that application\'s own client holds for the ' +
+                 'person it names (#1042; it ended relying-party sessions ' +
+                 'until the applications stopped making them, #62) — or a ' +
+                 'federation partner ' +
                  'sends (#373, #374). Development records what it would ' +
                  'have done and does nothing, unless this is on. An ' +
                  'unverified event is never acted on, whatever this says.' },

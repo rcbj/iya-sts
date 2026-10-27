@@ -1100,6 +1100,64 @@ function reportServeGroups(req: any, res: any): void {
   log.debug("Leaving reportServeGroups().");
 }
 
+// THIS APPLICATION'S SHARED SIGNALS INBOX (#1042): what its own stream
+// delivered in the realm, as `ssf/ssf_receivers.ts` recorded it. A report
+// ADMINISTRATOR sees every signal, as an administrator does on the console;
+// anybody else sees the signals about themselves (the receiver's `own`, the
+// portal's fail-closed rule), and an application, which is nobody, sees none.
+// The person is their username, their subject and their address, which the
+// directory is asked for — what the portal reads off its session.
+const SIGNALS_PER_PAGE = 20;
+
+async function reportServeSignals(req: any, res: any, who: any):
+    Promise<void> {
+  log.debug("Entering reportServeSignals().");
+  const signals = require('../ssf/ssf_receivers');
+  const everyone = rights.isAdmin(who);
+  let person: any = null;
+  if (!everyone) {
+    person = who && who.kind === 'user'
+      ? { username: String(who.username || ''),
+          sub: String(who.subject || ''),
+          mail: await sources.personMail(String(who.username || '')) }
+      : { username: '', sub: '', mail: '' };
+  }
+  const view = signals.view(signals.REPORT, { person: person });
+  const rows: any[] = view.received || [];
+  const query = (req && req.query) || {};
+  const wantedPer = Math.floor(Number(query.per || SIGNALS_PER_PAGE));
+  const per = Number.isFinite(wantedPer) && wantedPer >= 1
+    ? Math.min(wantedPer, 100) : SIGNALS_PER_PAGE;
+  const pages = Math.max(1, Math.ceil(rows.length / per));
+  const asked = Math.floor(Number(query.page || 1));
+  const page = Math.min(Math.max(1, Number.isFinite(asked) ? asked : 1),
+    pages);
+  const status: any = view.status || {};
+  reportJson(res, 200, {
+    scope: everyone ? 'realm' : 'own',
+    receiving: !(status.why && status.why.length),
+    why: Array.isArray(status.why) ? status.why : [],
+    total: rows.length,
+    page: page,
+    pages: pages,
+    per: per,
+    rows: rows.slice((page - 1) * per, page * per)
+      .map(function (row: any): any {
+        return { at: row.at, name: row.name, vocabulary: row.vocabulary,
+                 type: (row.types || [])[0] || '', subject: row.subject,
+                 verified: !!row.verified,
+                 reactions: (row.reactions || []).map(function (r: any):
+                     any {
+                   return { failed: !!r.failed, skipped: r.skipped || '',
+                            observed: !!r.observed,
+                            ended: Number(r.ended || 0),
+                            revoked: Number(r.revoked || 0) };
+                 }) };
+      })
+  });
+  log.debug("Leaving reportServeSignals(). " + rows.length + " held.");
+}
+
 function reportServeRealms(res: any): void {
   log.debug("Entering reportServeRealms().");
   reportJson(res, 200, reportRealmsView());
@@ -1605,6 +1663,8 @@ async function reportRoute(req: any, res: any, who: any): Promise<void> {
     reportServeRealms(res);
   } else if (a === 'groups' && !b && method === 'GET') {
     reportServeGroups(req, res);
+  } else if (a === 'signals' && !b && method === 'GET') {
+    await reportServeSignals(req, res, who);
   } else if (a === 'schedules' && !b && method === 'GET') {
     reportServeSchedules(req, res, who);
   } else if (a === 'queries' && !b && method === 'POST') {
@@ -1743,6 +1803,9 @@ class ReportApi {
       reportAnswer(req, res);
     });
     app.get(BASE + '/groups', function (req: any, res: any): void {
+      reportAnswer(req, res);
+    });
+    app.get(BASE + '/signals', function (req: any, res: any): void {
       reportAnswer(req, res);
     });
     app.get(BASE + '/schedules', function (req: any, res: any): void {

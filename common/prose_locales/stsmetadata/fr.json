@@ -1151,6 +1151,18 @@
     "en": "fb526fdd286ba6e8",
     "text": "NON-SPEC. Le même document que /admin, pour chaque chemin de la console (#446) : le chemin nomme la page et le navigateur le lit ; un lien profond et l’historique fonctionnent donc. /admin/callback est l’endroit où une connexion revient avec un code ; le servir enregistre le callback sur l’entrée client de la console comme le faisait la partie de confiance (appris en mode développement, refusé en mode produit sauf s’il est enregistré)."
   },
+  "stsmetadata.endpoints./admin/signals/receive.what": {
+    "en": "cd68dd8169303f3e",
+    "text": "LIVRAISON PAR PUSH, RFC 8935 SECTION 2.1, pour un flux de la console remis en push (celui qui est créé est interrogé depuis #771). La bascule #446 l’a supprimé avec les pages rendues côté serveur et #1042 l’a rétabli : le jumeau de celui du portail, vérifié de la même manière — le jeton porteur du propre flux de la console en temps constant, l’`aud`, puis la signature — et sans limitation de débit, pour la même raison."
+  },
+  "stsmetadata.endpoints./admin/signals/receive.effect": {
+    "en": "7414efe71859a097",
+    "text": "enregistre un Security Event Token remis à la console d’administration"
+  },
+  "stsmetadata.endpoints./admin/signals/receive.coverage": {
+    "en": "bbcf002898339fc9",
+    "text": "full pour la réception selon la section 2.1 de la RFC 8935, comme /portal/signals/receive."
+  },
   "stsmetadata.endpoints./admin/console.js.what": {
     "en": "6f4d5410ba7dfbfb",
     "text": "NON-SPEC. La console statique (#446) : son environnement d’exécution et le moteur de rendu de chaque page dans un seul fichier, construit par build-typescript.sh. Public, comme le document : rien de ce qu’il contient n’est secret."
@@ -1174,6 +1186,18 @@
   "stsmetadata.endpoints./portal/portal.css.what": {
     "en": "69cf245f63b035d1",
     "text": "NON-SPEC. L’unique feuille de style du portail (#568)."
+  },
+  "stsmetadata.endpoints./report/signals/receive.what": {
+    "en": "02a6b59dd686363c",
+    "text": "LIVRAISON PAR PUSH, RFC 8935 SECTION 2.1, pour un flux de rapports remis en push (#1042 ; celui qui est créé est interrogé, comme ceux de la console et du portail). Vérifié comme /portal/signals/receive."
+  },
+  "stsmetadata.endpoints./report/signals/receive.effect": {
+    "en": "6c9147c359daab5f",
+    "text": "enregistre un Security Event Token remis à l’application de rapports"
+  },
+  "stsmetadata.endpoints./report/signals/receive.coverage": {
+    "en": "bbcf002898339fc9",
+    "text": "full pour la réception selon la section 2.1 de la RFC 8935, comme /portal/signals/receive."
   },
   "stsmetadata.endpoints./report.what": {
     "en": "a9d6c3cc058a3617",
@@ -1210,6 +1234,10 @@
   "stsmetadata.endpoints./report-api/realms.what": {
     "en": "94cf90a7c7b10a68",
     "text": "NON-SPEC. Le domaine dans lequel se trouve cette requête et, lorsque les domaines sont actifs, chaque domaine avec son identifiant, son nom et son préfixe de chemin (#986) : ce dont sont tirés le champ et le sélecteur de domaine de l’application. Derrière le même jeton que le reste de /report-api."
+  },
+  "stsmetadata.endpoints./report-api/signals.what": {
+    "en": "f00e66637d8d4146",
+    "text": "HORS SPÉCIFICATION. Ce qu’a reçu l’application de rapports, récepteur du propre émetteur de ce service (#1042) : chaque signal du domaine pour un administrateur des rapports, seulement les signaux qui le concernent pour quiconque d’autre. Derrière le même jeton que le reste de /report-api."
   },
   "stsmetadata.endpoints./report-api/groups.what": {
     "en": "339c957fd31d0c51",

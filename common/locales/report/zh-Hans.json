@@ -141,5 +141,21 @@
   "pager.where": "第 {page} 页，共 {pages} 页 — 第 {first}–{last} 行，共 {total} 行",
   "perPage.label": "每页行数",
   "perPage.rows": "{n} 行",
-  "tipPerPage": "每页显示多少行。更改后从第一页开始。"
+  "tipPerPage": "每页显示多少行。更改后从第一页开始。",
+  "signals": "信号",
+  "signalsRealm": "此领域中传送到报表应用程序的所有 Shared Signals 事件，最新的在前。",
+  "signalsOwn": "与您有关的 Shared Signals 事件，最新的在前。",
+  "signalsOff": "目前无法接收任何内容：",
+  "signalsNone": "尚未收到任何信号。",
+  "signalsAt": "接收时间",
+  "signalsEvent": "事件",
+  "signalsVocabulary": "词汇表",
+  "signalsSubject": "主体",
+  "signalsVerified": "已验证",
+  "signalsDone": "执行的操作",
+  "signalsActed": "结束了 {sessions} 个会话，撤销了 {tokens} 个令牌。",
+  "signalsSkipped": "无操作：{why}。",
+  "signalsObserved": "无操作：开发模式仅作观察。",
+  "signalsFailed": "无法对其执行操作。",
+  "signalsNothing": "无操作：策略未要求任何响应。"
 }

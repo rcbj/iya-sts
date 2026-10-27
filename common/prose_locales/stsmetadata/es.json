@@ -1151,6 +1151,18 @@
     "en": "fb526fdd286ba6e8",
     "text": "NO ESTÁNDAR. El mismo documento que /admin, para cada ruta de la consola (#446): la ruta nombra la página y el navegador la lee, así que un enlace profundo y el historial funcionan. /admin/callback es adonde vuelve un inicio de sesión con un código; servirlo registra la devolución de llamada en la entrada de cliente de la consola como lo hacía la parte que confía (aprendida en modo desarrollo, rechazada en modo producto a menos que esté registrada)."
   },
+  "stsmetadata.endpoints./admin/signals/receive.what": {
+    "en": "cd68dd8169303f3e",
+    "text": "ENTREGA PUSH, RFC 8935 SECCIÓN 2.1, para un flujo de la consola devuelto a push (el creado se sondea desde #771). El cambio #446 lo eliminó con las páginas generadas en el servidor y #1042 lo restableció: el gemelo del del portal, comprobado igual —el token portador del propio flujo de la consola en tiempo constante, el `aud` y luego la firma— y sin límite de tasa, por la misma razón."
+  },
+  "stsmetadata.endpoints./admin/signals/receive.effect": {
+    "en": "7414efe71859a097",
+    "text": "registra un Security Event Token entregado a la consola de administración"
+  },
+  "stsmetadata.endpoints./admin/signals/receive.coverage": {
+    "en": "bbcf002898339fc9",
+    "text": "full para la recepción de la RFC 8935 sección 2.1, como /portal/signals/receive."
+  },
   "stsmetadata.endpoints./admin/console.js.what": {
     "en": "6f4d5410ba7dfbfb",
     "text": "NO ESTÁNDAR. La consola estática (#446): su entorno de ejecución y el renderizador de cada página en un solo archivo, construido por build-typescript.sh. Público, como el documento: nada en él es secreto."
@@ -1174,6 +1186,18 @@
   "stsmetadata.endpoints./portal/portal.css.what": {
     "en": "69cf245f63b035d1",
     "text": "NO ESTÁNDAR. La única hoja de estilos del portal (#568)."
+  },
+  "stsmetadata.endpoints./report/signals/receive.what": {
+    "en": "02a6b59dd686363c",
+    "text": "ENTREGA PUSH, RFC 8935 SECCIÓN 2.1, para un flujo de informes devuelto a push (#1042; el creado se sondea, como los de la consola y el portal). Se comprueba como /portal/signals/receive."
+  },
+  "stsmetadata.endpoints./report/signals/receive.effect": {
+    "en": "6c9147c359daab5f",
+    "text": "registra un Security Event Token entregado a la aplicación de informes"
+  },
+  "stsmetadata.endpoints./report/signals/receive.coverage": {
+    "en": "bbcf002898339fc9",
+    "text": "full para la recepción de la RFC 8935 sección 2.1, como /portal/signals/receive."
   },
   "stsmetadata.endpoints./report.what": {
     "en": "a9d6c3cc058a3617",
@@ -1210,6 +1234,10 @@
   "stsmetadata.endpoints./report-api/realms.what": {
     "en": "94cf90a7c7b10a68",
     "text": "NO ES UN ENDPOINT DE LA ESPECIFICACIÓN. El dominio en el que está esta petición y, cuando los dominios están activos, cada dominio con su id, su nombre y su prefijo de ruta (#986): de donde se extraen el campo y el selector de dominio de la aplicación. Tras el mismo token que el resto de /report-api."
+  },
+  "stsmetadata.endpoints./report-api/signals.what": {
+    "en": "f00e66637d8d4146",
+    "text": "FUERA DE ESPECIFICACIÓN. Lo que ha recibido la aplicación de informes, receptora del propio transmisor de este servicio (#1042): todas las señales del dominio para un administrador de informes y, para cualquier otro, solo las señales sobre sí mismo. Detrás del mismo token que el resto de /report-api."
   },
   "stsmetadata.endpoints./report-api/groups.what": {
     "en": "339c957fd31d0c51",

@@ -3,13 +3,13 @@ title: Signals received
 nav_order: 12
 ---
 
-# The console and the portal are Shared Signals receivers
+# The console, the portal and the reports application are Shared Signals receivers
 
 This service is a Shared Signals **transmitter**: something happens, it builds a
 Security Event Token, and it delivers it to whichever receivers agreed a stream
-that covers it. Two of those receivers are **this service's own
-two applications** — the admin console at `/admin` and the user portal at
-`/portal`.
+that covers it. Three of those receivers are **this service's own
+applications** — the admin console at `/admin`, the user portal at `/portal`
+and the reports application at `/report`.
 
 Each has a stream of its own, seeded when the service starts, asking for **every
 CAEP event type and every RISC event type**. Each collects what its stream
@@ -21,9 +21,11 @@ page:
 |---|---|---|
 | `/admin/signals` | an operator | every event delivered in the trust realm being read |
 | `/portal/signals` | a person | only the events whose subject is them |
+| `/report/signals` | a report administrator | every event delivered to the reports application in the realm |
+| `/report/signals` | anybody else who may use reports | only the events whose subject is them |
 
 There is nothing to configure to get this. If you sign in to this service and
-then open either page, what you did is on it.
+then open any of these pages, what you did is on it.
 
 ## Why this is a real receiver and not a page reading a log
 
@@ -52,9 +54,10 @@ in `setErrs` (RFC 8936 section 2.2) so that it leaves the queue.
 SET to the receiver's own endpoint, one request each. Under a load of password
 changes — each one sends CAEP `credential-change` to both surfaces — that was
 two loopback requests per change. A SET now waits up to one poll interval
-before either surface sees it and acts on it. The two receive endpoints,
-`/admin/signals/receive` and `/portal/signals/receive`, still take a push for a
-stream an operator sets back to push at `/admin/ssf`.
+before a surface sees it and acts on it. The three receive endpoints,
+`/admin/signals/receive`, `/portal/signals/receive` and
+`/report/signals/receive`, still take a push for a stream an operator sets back
+to push at `/admin/ssf`.
 
 What a row keeps is the SET's header and claims and the verdict on it, with
 the SET itself named by `tokenDigest`, its SHA-256 in base64url. The signed
@@ -139,16 +142,28 @@ could empty it. The console has one for its own inbox, and it drops only what is
 held — the stream goes on delivering, and the audit log's record of every
 delivery cannot be cleared at all.
 
-## What the console and the portal do with a signal
+## What the three applications do with a signal
 
-A receiver acts on what it is told. When the console or the portal receives an
-event, it can end **its own** sessions for the person the event names:
+A receiver acts on what it is told. When the console, the portal or the reports
+application receives an event, it can end **what it holds** for the person the
+event names. All three are applications that run in the browser and hold an
+access token their own client was issued, so what each one ends is that
+token:
 
-- the console signs that person out of the console;
-- the portal signs that person out of the portal.
+- the console revokes the tokens `sts-admin-console` holds for that person, so
+  their next console action is refused and the console signs them in again;
+- the portal does the same with `sts-user-portal`'s;
+- the reports application does the same with `sts-report`'s.
+
+Two things narrow it. A CAEP `session-revoked` that names a sign-on session
+reaches only the tokens issued on that session. A token issued after the event
+happened is left alone, because it was issued to somebody who had already
+signed in again.
 
 It never ends the identity provider's session. That session belongs to the
-transmitter, which has usually ended it already.
+transmitter, which has usually ended it already. And it never touches another
+application's tokens: the portal receiving an event revokes nothing the console
+holds.
 
 The `signal-response` XACML policy decides which events do this. By default
 they are:
@@ -170,31 +185,36 @@ These rules can't be relaxed by any policy:
   else happens.
 - **Who the event is about is decided the same way the portal's page decides
   it**, and it fails closed: an identifier this service can't match to the
-  person holding a session ends nothing.
+  person a token was issued to revokes nothing.
 - **Development mode records what it would have done** and ends nothing,
   unless `ssf.actOnSignalsInDevelopment` is on. Product mode acts.
 
-Each row on `/admin/signals` and `/portal/signals` says what was done with
-that event.
+Each row on `/admin/signals`, `/portal/signals` and `/report/signals` says
+what was done with that event: how many tokens were revoked, or why nothing
+was.
 
 ## Settings
 
 | Setting | Default | What it does |
 |---|---|---|
-| `ssf.internalReceivers` | `true` | seed the two streams. Restart to apply |
-| `ssf.actOnSignalsInDevelopment` | `false` | end the surfaces' own sessions on a received signal in development mode too; product always does |
-| `xacml.signalResponsePolicy` | `signal-response` | the policy asked which received events end them |
-| `ssf.internalPollMs` | `1000` | how often the two collect what their streams hold (the `ssf.internal-poll` scheduler job); 0 turns it off |
+| `ssf.internalReceivers` | `true` | seed the three streams. Restart to apply |
+| `ssf.actOnSignalsInDevelopment` | `false` | revoke the applications' own tokens on a received signal in development mode too; product always does |
+| `xacml.signalResponsePolicy` | `signal-response` | the policy asked which received events revoke them |
+| `ssf.internalPollMs` | `1000` | how often the three collect what their streams hold (the `ssf.internal-poll` scheduler job); 0 turns it off |
 | `ssf.pollMaxEvents` | `20` | the most SETs one poll answers |
 | `ssf.maxReceivedEvents` | `200` | how many delivered events each inbox keeps, per realm |
 
 `ssf.pushDelivery`, `ssf.pushAllowedHosts`, `ssf.pushAllowHttp` and
-`ssf.pushSkipTlsVerification` do **not** apply to these two: a poll is not a
+`ssf.pushSkipTlsVerification` do **not** apply to these three: a poll is not a
 push, the address is this process's own, computed rather than named by anybody,
 and a request that does not leave the host is not a Security Event Token in
 transit. Every other receiver is bound by them.
 
-## Over the management API
+## Over the APIs
+
+`GET /report-api/signals` is the reports application's page as JSON: every
+event for a report administrator (`scope` `realm`), and otherwise only the
+events about the caller (`scope` `own`).
 
 `GET /admin-api/signals` is the console's page as JSON — the stream's state, the
 reasons nothing would arrive, and the delivered events — and `POST

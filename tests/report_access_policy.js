@@ -341,6 +341,45 @@ function childMain() {
     note(r.status === 200, 'C4. an application\'s own token reaches the ' +
          'API (STS-REPORT-0016 is retired)', brief(r));
 
+    // --- the reports application's Shared Signals inbox (#1042) -----------
+    // A signal about the owner, delivered to this application's own stream
+    // as its poll takes one; a report administrator sees the realm's inbox,
+    // the owner sees their own signal, another report user sees none of it,
+    // and an application, which is nobody, sees none.
+    const receivers = require(ROOT_DIR + '/ssf/ssf_receivers');
+    const ssfEvents = require(ROOT_DIR + '/ssf/ssf_events');
+    receivers.seedStreams();
+    const reportStream = receivers.streamFor(receivers.REPORT);
+    const delivered = reportStream ? receivers.acceptPolled(receivers.REPORT,
+      ssfEvents.signSetSync(ssfEvents.buildSet({
+        uri: ssfEvents.CAEP_PREFIX + 'session-established',
+        issuer: reportStream.iss, audience: 'sts-report',
+        subject: { format: 'iss_sub', iss: reportStream.iss,
+                   sub: subjectOf(OWNER) },
+        payload: { event_timestamp: Math.floor(Date.now() / 1000) } })))
+      : null;
+    note(delivered && delivered.status === 202 && delivered.entry.verified,
+         'precondition: a signal about the owner reached the reports ' +
+         'application\'s stream', JSON.stringify(delivered &&
+           [delivered.status, delivered.body]));
+    r = await call(port, 'GET', '/report-api/signals', tAdmin);
+    note(r.status === 200 && r.json && r.json.scope === 'realm' &&
+         r.json.total >= 1,
+         'C32. a report administrator sees every signal the reports ' +
+         'application received in the realm', brief(r));
+    r = await call(port, 'GET', '/report-api/signals', tOwner);
+    note(r.status === 200 && r.json && r.json.scope === 'own' &&
+         r.json.total === 1 &&
+         /session-established$/.test(String(r.json.rows[0].type)),
+         'C33. a report user sees the signal about themselves', brief(r));
+    r = await call(port, 'GET', '/report-api/signals', tOut);
+    const appSignals = await call(port, 'GET', '/report-api/signals', tApp);
+    note(r.status === 200 && r.json && r.json.scope === 'own' &&
+         r.json.total === 0 && appSignals.status === 200 &&
+         appSignals.json && appSignals.json.total === 0,
+         'C34. another report user sees none of it, and nor does an ' +
+         'application', brief(r) + ' | ' + brief(appSignals));
+
     const document = { source: 'users', select: ['username'], limit: 3 };
     const define = async function (token, name) {
       const made = await call(port, 'POST', '/report-api/definitions', token,

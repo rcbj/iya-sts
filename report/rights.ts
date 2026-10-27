@@ -442,8 +442,10 @@ function reportCanSeeJob(who: ReportCaller, job: any,
  * Whether a definition's owner may still run it, for the schedule: the
  * roles that owner holds now, and `run` on the definition.
  *
- * It does not ask `account_state.isDisabled`: that read walks the
- * directory, and a job must not.
+ * It does not ask whether a person owner's account is disabled: that is
+ * a read of their entry, which the scheduler and the runner make through the
+ * directory's asynchronous door (`sources.ts`'s `reportOwnerDisabled()`,
+ * #1042), and this function is synchronous.
  * @param definition - the definition, with `owner` and `ownerKind`
  * @returns `{ ok: true, username }` or a refusal carrying STS-REPORT-0028
  */

@@ -141,5 +141,21 @@
   "pager.where": "página {page} de {pages} — filas {first}–{last} de {total}",
   "perPage.label": "Filas por página",
   "perPage.rows": "{n} filas",
-  "tipPerPage": "Cuántas filas muestra una página. Cambiarlo vuelve a la primera página."
+  "tipPerPage": "Cuántas filas muestra una página. Cambiarlo vuelve a la primera página.",
+  "signals": "Señales",
+  "signalsRealm": "Todos los eventos de Shared Signals entregados a la aplicación de informes en este dominio, del más reciente al más antiguo.",
+  "signalsOwn": "Los eventos de Shared Signals sobre usted, del más reciente al más antiguo.",
+  "signalsOff": "En este momento no puede llegar nada:",
+  "signalsNone": "No ha llegado ninguna señal.",
+  "signalsAt": "Recibido",
+  "signalsEvent": "Evento",
+  "signalsVocabulary": "Vocabulario",
+  "signalsSubject": "Sujeto",
+  "signalsVerified": "Verificado",
+  "signalsDone": "Qué se hizo",
+  "signalsActed": "{sessions} sesión(es) finalizada(s), {tokens} token(s) revocado(s).",
+  "signalsSkipped": "Nada: {why}.",
+  "signalsObserved": "Nada: el modo de desarrollo solo observa.",
+  "signalsFailed": "No se pudo actuar sobre él.",
+  "signalsNothing": "Nada: la política no pide ninguna reacción."
 }
