@@ -306,6 +306,34 @@ leaf `CN=pooling-<stamp>,O=iya-sts tests`, and signs it in.
 The cookie jar now holds the `sts_session` cookie. A certificate from an
 anchor you added signs in to the **default realm**, as its common name.
 
+### On the sign-in screen
+
+The certificate is also offered on the sign-in screen that every browser
+protocol sends people to. Present it to the main port (choose it when the
+browser asks) and, wherever an application sends you to sign in, the screen
+shows **Continue as *name* with your certificate** above the emailed-code
+buttons. Pressing it signs you in with the certificate and returns you to the
+application, after a second factor if the request or your account needs two.
+
+The button appears only when:
+
+* the certificate verified and names a **person** in the realm the sign-in is
+  for. A certificate from another realm's CA is not offered there;
+* the realm's authentication policy (**Directory → Policies**,
+  **Authentication policy** tab, or `GET /admin-api/policies`) has **TLS
+  client certificate — as a first factor** on, which it is by default;
+* the application does not restrict sign-in mechanisms
+  (`appAuthnMechanism`): a certificate is not one of the mechanisms an
+  application can name;
+* the sign-in is not linking a federated account, and no security key or
+  passkey is demanded.
+
+The button is a convenience, not the check: the service checks the
+certificate again when it is pressed, including its revocation. A refusal
+is shown on the screen and recorded under `STS-AUTHN-0463` to
+`STS-AUTHN-0467` ([error codes](error-codes.md)). The button's operation is
+`POST /authn-api/pending/{id}/certificate`.
+
 ### What signs nobody in
 
 * **An application's TLS client certificate.** It authenticates the

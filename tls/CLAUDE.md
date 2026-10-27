@@ -1994,3 +1994,40 @@ session per person per browser, however many fetches; the answer says which
 cell placement's `held` (`placeCertificateSignIn()`) asks the same question.
 Off, the function is what it was. The design is `authn/CLAUDE.md`, *Several
 signed-in accounts in one browser*.
+
+## THE SIGN-IN SCREEN ASKS THE SAME QUESTIONS (#1051, 2026-10-27)
+
+rcbj's decision on #520: every browser protocol reaches `authn/`'s sign-in
+screen, so the certificate on the connection is offered THERE, once —
+"Continue as <name> with your certificate" — rather than by each protocol.
+The screen is `authn/`'s (`authn/CLAUDE.md`, *The certificate on the
+connection*); what it asks of the certificate is this module's, in the same
+functions `GET /tls/sign-in` runs:
+
+* **`certificateRefusal()`** — nothing verified, refused on revocation, a
+  certificate of this service's that is not an identity, an application's
+  certificate, in that order — and **`certificatePeer()`** — the certificate
+  read off the socket (none on a resumed session) and the name it signs in:
+  the gate's `urn:sts:` name, else the common name, else the subject. Both
+  were moved out of `startCertificateSession()` and
+  `startCertificateSessionIn()` unchanged; `GET /tls/sign-in` answers exactly
+  what it did.
+* **`screenCertificateOffer(req)`** is the view's: synchronous, no revocation
+  asked, nothing logged above debug — a person's name or null.
+  **`screenCertificateHolder(req)`** is the act's: `checkedSocket()`'s
+  verdict, then those two functions, answering the holder (with
+  `recordVerification()`, the #127 identity verification `GET /tls/sign-in`
+  records once its session starts) or a refusal with its STS-AUTHN-0463..0466
+  code and an English sentence for the screen.
+* **TWO DIFFERENCES, BOTH FORCED.** The realm is the PENDING SIGN-IN'S, not
+  the certificate's — the protocol that sent the person decided it — so
+  `tls_client_certificates.checkSocket()` refuses a certificate from another
+  realm's authority (STS-AUTHN-0465), as every main-port door with an ambient
+  realm does; and there is no "already signed in on this browser" answer,
+  since a person at the screen is not signed in for this request.
+* **`authn.ts` reaches this module only where it is already loaded**
+  (`certificateDoor()` reads `require.cache`): this is a JavaScript route
+  module, #20, and a require from #8 would drag its `/tls*` views forward and
+  close a cycle, since it requires `authn`. No slot was added: nothing here
+  needs filling at load, and every process that serves the screen has the
+  composition root's copy long before a request arrives.

@@ -137,6 +137,7 @@ foundation (`common/CLAUDE.md` 3cl), and the sign-in screen is the largest:
 | `GET /authn-api/pending/{id}` | the screen's view, `csrf`, `uiLocales`, a locked person's `preferredLanguage` |
 | `GET /authn-api/pending/{id}/partners` | the chooser's view, the list resolved again; `go` to the screen with fewer than two |
 | `POST …/password`, `…/cancel`, `…/anonymous`, `…/email`, `…/passkey/options`, `…/passkey` | the screen's acts, each a closed (`.strict()`) body; `…/passkey/options` (which mints a challenge and names nobody) is counted per address on a `passkey-options` budget of its own since 2026-10-12, 429 with `Retry-After` past it (`STS-AUTHN-0332`, `tests/authn_api.js` 5i-ii) |
+| `POST …/certificate` | "Continue as <name> with your certificate" (#1051): the TLS client certificate on the connection as a first factor, where the view's `certificate` offers it — *The certificate on the connection*, below |
 | `GET`/`POST /authn-api/password-change/{id}` | the forced change's view and act |
 | `GET /authn-api/pending/{id}/accounts`, `POST …/accounts/select`, `…/another`, `…/forget`, `GET /authn-api/accounts` | the account picker's view and acts, and a browser's account list (#561): *Several signed-in accounts in one browser*, below |
 
@@ -194,6 +195,57 @@ form POSTs gone); `tests/web_surfaces.js`'s round trip over seven cases in
 `tests/tools/web_surfaces.js`; in process, `tests/tools/authn_screen.js` is
 the walk every in-process test signs in through, and over HTTP every job
 signs in through `tests/protocol/authn_signin.js`.
+
+## THE CERTIFICATE ON THE CONNECTION (#1051, 2026-10-27)
+
+**rcbj's decision on #520**: every browser protocol — SAML 2.0 and 1.1 SSO,
+WS-Federation, the OIDC authorization endpoint, GNAP's interaction — reaches
+this screen, so a TLS client certificate is offered HERE, once, and no
+protocol endpoint changed. Where the connection presented a certificate the
+identity gate accepts for the realm of the pending sign-in, the view carries
+`certificate: { name, mfaNote }` and the screen draws "Continue as <name>
+with your certificate" (`kc-certificate`, a button of the form, so it
+carries Remember this browser); `POST /authn-api/pending/{id}/certificate`
+completes the pending sign-in on it.
+
+* **THE CERTIFICATE'S QUESTIONS ARE `tls/tls_server.js`'s**, in the functions
+  `GET /tls/sign-in` runs (`tls/CLAUDE.md`, *The sign-in screen asks the same
+  questions*): revocation, the identity gate, an application's certificate
+  refused, the name it signs in — and, the one difference, the realm is the
+  pending sign-in's, so another realm's authority is refused. Reached
+  through `deps.certificateDoor()`, which answers that module only where it
+  is already loaded: a require from here (#8) would drag a JavaScript route
+  module's `/tls*` views forward and close a cycle.
+* **THE EVENT IS `GET /tls/sign-in`'s**: `amr ["swk"]`, `acr "1"`,
+  credential kind `certificate` with the certificate's thumbprint, and the
+  #127 identity verification once the person is through. One factor.
+* **THE REST IS A FIRST FACTOR'S, the emailed one's shape**
+  (`certificateSignIn()`): a person homed in another cell restarted there
+  (where the screen offers the certificate again); the risk assessed; a
+  second factor asked for where one is needed —
+  `beginSecondFactorAfterWallet()` with `first: 'certificate'`, so a
+  password, an app, a key or an email can follow it — and otherwise the
+  session, `refusedSession()` and back to the caller. The authentication
+  policy's `certificatePrimary` is asked at the door and again at
+  `startSession()` (`authnPolicyRefusal()` already mapped kind
+  `certificate`).
+* **NOT OFFERED, AND REFUSED THE SAME WAY (`certificateNotHere()`,
+  STS-AUTHN-0467)**: the policy does not take a certificate as a first
+  factor; a linking sign-in (#109, it rests on the password); an application
+  that names its mechanisms (#457 — a certificate is not among the ones an
+  application can name, `common/authn_mechanisms.ts`, so a session it made
+  would be re-prompted); a security key or passkey demanded, or the passkey
+  policy's username-less requirement (#608). Under `forceMfa` it IS offered,
+  with the note that a second factor follows.
+* **THE VIEW IS NOT THE ENFORCEMENT**: every check is made again at the act,
+  on the act's own connection. A refusal draws the screen again with the
+  sentence and keeps the pending sign-in: no certificate (0463), revoked
+  (0464), not a person here or another realm's (0465), an application's
+  (0466), not taken here (0467).
+
+**Tests**: `tests/authn_certificate_signin.js`, over a real handshake.
+**Not yet tested**: a second factor after the certificate, and the cell
+restart; both are the paths the emailed first factor already exercises.
 
 ## THE STEPS AFTER THE SCREEN (#572, #573, 2026-10-12)
 
