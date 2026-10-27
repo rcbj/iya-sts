@@ -317,6 +317,25 @@ given the constraints we've defined." What that became:
   or channel (inside the sealed value; indexing them would change what is
   encrypted, which rcbj ruled out). Those stay narrowing fields.
 
+## Signing keys, enrollment credentials and certificates (#1036)
+
+rcbj, 2026-10-27: `username = rcbj` showed no TLS client certificates,
+signer certificates, ACME, EST or SCEP credentials. Four mechanisms, all
+asked names already (no index change): `jwtSigningKey`
+(`stsAssertionJwks`, read with `stsAssertionCertificate`/`Kid`/`KeySource`)
+and `samlSigningKey` (`stsSamlAssertionCertificate`, with its thumbprint and
+key source), role `signer`, algorithm from the certificate's key
+(`reportCertKeyAlg()`, through `common/crypto.js`'s `parseCertificate()`);
+`acmeAccountKey` (`stsAcmeEabKey`) and `scepChallenge` (`stsScepChallenge`),
+role `enrollment`, one row per value — neither the sealed HMAC key nor the
+challenge digest is read. EST authenticates with a password or a client
+certificate and keeps no credential. `certificate` rows now read
+`cert_enrollment.ts`'s record: `serialHex`, `family` (acme/est/scep) as
+`channel`, `profile` as `format`, `keyAlg`, `issuedAt`; a TLS client
+certificate is one of these. `channel`'s enumeration grew the protocols and
+`issued`/`uploaded`; `format` is open now (profiles are many).
+`HOLDER_FIELDS` carries the signing keys' public attributes.
+
 ## The wallet mechanisms (#1021)
 
 rcbj, 2026-10-27: how many people hold verifiable credentials from a web
