@@ -3362,6 +3362,46 @@ function userRecord(identity) {
 }
 
 // ---------------------------------------------------------------------------
+// AN EDIT IN PLACE REACHES THE JOURNAL ONLY IF THE KEY IS SET AGAIN (#999,
+// 2026-10-27).
+//
+// `users` is `realms.map({ persist })`, and that facade journals a `set()`, a
+// `delete()` and a `clear()` — nothing else. A record here is MUTATED where it
+// stands: `recordAuthentication()` increments `authentications`, pushes the
+// event, moves `lastAt` and bumps the protocol and method counts, and
+// `noteKnownIdentity()` writes `knownBy`. Until #999 the only `set()` was the
+// one in `userRecord()` at creation, so the row the store held was the record
+// as it stood at the first flush after that — one authentication — and it was
+// never rewritten. On 8081 (product, postgres, two request workers) an account
+// with sixty-two accepted credentials read `authentications: 1` with
+// `firstAt === lastAt`, twelve days old; the audit rows' `authenticationsSoFar`
+// climbed within each worker's life and read 2 again after every restart,
+// because the restart restored the frozen row, and the OTHER worker read the
+// same frozen row through the fan-in (`everyUserRecord()`). `sts_changes` held
+// six rows for this store in two days, all creations. Development mode on the
+// memory store never restarts and never persists, which is why #672's tests
+// passed while the deployed portal still said 1.
+//
+// This is persistence/CLAUDE.md's mutable-row rule, which `ssf/caep.ts` and
+// `ssf/risc.ts` answer with a `touch()`: re-set the key after the edit, so the
+// journal names it and the next flush writes the record as it NOW stands. One
+// call per sign-in rather than one per field, because the flush reads the
+// value when it takes the journal and every edit above has happened by then.
+// The cost is one `minted-own` change row per sign-in — a row the read barrier
+// never waits on (persistence_postgres.js, *What a reader actually has to
+// wait for*) and that #618 phase 2's accounting already prices; what it buys
+// is a count that survives a restart and reaches the other workers.
+//
+// The eviction past `MAX_USERS` is unchanged: a record evicted and made again
+// starts at one, and the row written then says so.
+// ---------------------------------------------------------------------------
+function touchUserRecord(record) {
+  log.debug("Entering touchUserRecord().");
+  users.set(record.key, record);
+  log.debug("Leaving touchUserRecord().");
+}
+
+// ---------------------------------------------------------------------------
 // SOMEBODY WHO EXISTS AND HAS NOT AUTHENTICATED HERE, ADDED 2026-08-27 FOR
 // PERSISTENCE, AND THE DISTINCTION IT DRAWS IS THE WHOLE POINT OF IT.
 //
@@ -3442,6 +3482,7 @@ function noteKnownIdentity(name, how) {
   // persistent store, `created` because somebody made the person by hand.
   // userRows() reads it and nothing else does.
   record.knownBy = how === 'restored' ? 'restored' : 'created';
+  touchUserRecord(record);
   log.debug("Leaving noteKnownIdentity().");
   return record;
 }
@@ -3637,6 +3678,9 @@ function recordAuthentication(detail) {
     record.events.shift();
     record.eventsForgotten++;
   }
+  // Every edit above happened in place; this is what reaches the store
+  // (#999, `touchUserRecord()`).
+  touchUserRecord(record);
   // AT info ON THE FIRST AUTHENTICATION AND EVERY HUNDREDTH (2026-09-21),
   // at debug otherwise. It was info on every one, and a SCIM caller
   // authenticates on every request: a bulk load of five thousand people wrote

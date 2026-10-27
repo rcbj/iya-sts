@@ -1795,7 +1795,11 @@ The registries behind these pages are **bounded**: the most recent 5,000
 tokens and 5,000 other artifacts, 500 call paths, and 2,000 identities keeping
 their 50 most recent authentications each (capped per person, because a test
 loop signing one name in a thousand times is normal). What was dropped is
-counted and shown. The revoked-jti set is **not** capped and is kept apart from
+counted and shown. In product mode on a postgres store each process's share
+of the identity register is written down after every sign-in, so a person's
+authentication count and recent events survive a restart and are summed
+across the request workers and the nodes of a cluster; an identity that fell
+past the cap and signs in again starts a new record at one. The revoked-jti set is **not** capped and is kept apart from
 the token records, so a token whose record has aged out stays revoked. The
 audit log is capped by `audit.maxEvents` and the delegation acts by
 `delegation.maxRecords`.
