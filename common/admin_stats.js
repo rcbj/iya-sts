@@ -7818,6 +7818,19 @@ function tokensOnDemand() {
   return tokens.onDemandLive();
 }
 
+/**
+ * Whether the identity register is read on demand (#1001), so that a page
+ * walking `userRows()` sees only what this process holds and has to ask the
+ * index for the people it shows (`userRowsOfAsync()`).
+ *
+ * @returns true while the users store is on demand
+ */
+function usersOnDemand() {
+  log.debug("Entering usersOnDemand().");
+  log.debug("Leaving usersOnDemand().");
+  return users.onDemandLive();
+}
+
 // ---------------------------------------------------------------------------
 // Sessions derived from what was issued.
 //
@@ -8335,5 +8348,6 @@ module.exports = {
   snapshot: snapshot,
   setStatusMarker: setStatusMarker,
   revokeWhereAsync: revokeWhereAsync,
-  tokensOnDemand: tokensOnDemand
+  tokensOnDemand: tokensOnDemand,
+  usersOnDemand: usersOnDemand
 };

@@ -13429,8 +13429,21 @@ class AdminViews {
         withDn.push(at);
       }
     });
-    const onDemand = typeof stats.tokensOnDemand === 'function' &&
-      stats.tokensOnDemand() && typeof stats.userRowsOfAsync === 'function';
+    // THE REGISTER'S OWN FACTS FOR THE SHOWN ROWS, FROM THE INDEX (#1001;
+    // 2026-10-27). On demand, `userRows()` — what `peopleRows()` folds the
+    // directory's people into — is what THIS process holds, so a person
+    // created or signed in on another node (or another worker) is a
+    // `directory` row here: `knownBy: 'directory'`, no sign-ins, nothing.
+    // The cluster mode's sts_admin_api_operations read a person it had just
+    // created as never seen. `userRowsOfAsync()` asks the index, which holds
+    // every origin's row for a person, so the shown rows are upgraded from
+    // it below — the population is not: a page of rows is a few index reads,
+    // the whole population would be thousands.
+    const usersOnDemand = typeof stats.usersOnDemand === 'function' &&
+      stats.usersOnDemand();
+    const onDemand = ((typeof stats.tokensOnDemand === 'function' &&
+      stats.tokensOnDemand()) || usersOnDemand) &&
+      typeof stats.userRowsOfAsync === 'function';
     const answers = await Promise.all([
       typeof credentials.factorHolderRowsAsync === 'function'
         ? credentials.factorHolderRowsAsync(holders)
@@ -13462,8 +13475,27 @@ class AdminViews {
     });
     const own = answers[2];
     if (own) {
+      // What the register says about a person, carried over whole when the
+      // index knows one this process's own walk did not (above); `factors`,
+      // `inDirectory`, `key` and `name` are the directory's and stay.
+      const REGISTER_FACTS = ['authenticated', 'authentications', 'events',
+                              'eventsForgotten', 'firstAt', 'forms',
+                              'isClient', 'knownBy', 'lastActivityAt',
+                              'lastAt', 'protocols', 'realms',
+                              'artifactKinds', 'artifacts'];
       shown.forEach(function (row, at) {
-        if (own[at] && own[at].tokens) {
+        if (!own[at]) {
+          return;
+        }
+        if (usersOnDemand && row && row.knownBy === 'directory' &&
+            own[at].knownBy && own[at].knownBy !== 'directory') {
+          REGISTER_FACTS.forEach(function (name) {
+            if (own[at][name] !== undefined) {
+              row[name] = own[at][name];
+            }
+          });
+        }
+        if (own[at].tokens) {
           row.tokens = own[at].tokens;
         }
       });
