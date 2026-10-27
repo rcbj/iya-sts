@@ -1391,6 +1391,16 @@ postgres driver writes and reads every entry through it.
   (STS-STORE-0088: a realm removed elsewhere before its rows arrived).
   `tests/replication.js` 5c, `tests/cluster_lww_stores.js` (whose double's
   registry read had silently stopped matching the driver's statement).
+  **And a replica no longer SEEDS the realm it just learnt of** (the same
+  day, run #4): with the realm row applied ahead of its directory rows,
+  `ldap_server.js`'s builder seeded an empty tree milliseconds before the
+  creator's rows arrived — STS-STORE-0052 for every seeded entry on every
+  replica, and a write made on the replica's losing copy was lost
+  (`sts_worker_pools` regenerated sts-management-api's secret there). So
+  `restoreRealms(rows, true)` creates the realm `replicated: true`,
+  `realms.create()` hands its builders `{ restored, replicated }`, and the
+  directory's builder stands aside for a replicated realm.
+  `tests/realm_replicated_seed.js`.
 * `cell_convert.js` opens the source entries to plan them (a group's members
   split between tiers) and seals what it writes for the tier it writes to.
 * A file (ldif) store is not sealed.

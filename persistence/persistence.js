@@ -3417,7 +3417,11 @@ function restoreRealms(rows, replicated) {
       overrides: row.overrides || {},
       // Told so, for the watchers that must not treat a realm another process
       // made — or the last run made — as one made here. `pki.js` is why.
-      restored: true
+      restored: true,
+      // And told it REPLICATED, for the directory's builder: a realm another
+      // process made has its subtree on the way in the same change log, and
+      // seeding it here raced those rows (2026-10-27).
+      replicated: !!replicated
     });
     if (!result.ok) {
       // Reported and skipped rather than fatal: one unrestorable realm must

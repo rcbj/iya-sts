@@ -525,6 +525,12 @@ seeds no demonstration data — the bind account, alice, bob, carol and the two
 groups, under the realm's own base. A realm is a whole logical copy of this
 service, and one whose `ldapsearch` taught less than the default's would not be.
 `realms.onRemove()` purges the subtree, for the reason every other store purges.
+**Not for a realm that REPLICATED** (2026-10-27): the builder's third
+argument says where the realm came from, and one another process made has
+its subtree on the way in the same change log, so seeding it here raced
+those rows (STS-STORE-0052 per entry on every replica, and a write on the
+losing copy lost). The builder's own comment and `persistence/CLAUDE.md`
+carry it; `tests/realm_replicated_seed.js` holds it.
 
 ### `const entries = realms.map()`, and why it is not a subtree of one Map
 

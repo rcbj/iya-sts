@@ -1292,7 +1292,8 @@ function create(spec) {
   // AFTER the row is written, because a builder may want to read the realm
   // back through get() — and because a builder that throws must leave a realm
   // that exists rather than half of one. See onCreate() above.
-  built(realm);
+  built(realm, { restored: !!(spec && spec.restored),
+                 replicated: !!(spec && spec.replicated) });
   // And after the builders, so that a watcher writing the registry down does
   // it once the realm is whole. See onChange() above.
   // `restored` rides along for a watcher that must tell a realm somebody
@@ -1939,7 +1940,10 @@ const builders = [];
 /**
  * Registers a builder that runs when a realm is created.
  *
- * @param fn - called with `(id, realm)`
+ * @param fn - called with `(id, realm, origin)`; `origin` is
+ *   `{ restored, replicated }` — `restored` for a realm read back from the
+ *   store or learnt from another process, `replicated` for the second kind
+ *   only, whose rows are on their way (`ldap_server.js`'s builder)
  */
 function onCreate(fn) {
   log.debug("Entering onCreate().");
@@ -1947,11 +1951,11 @@ function onCreate(fn) {
   log.debug("Leaving onCreate().");
 }
 
-function built(realm) {
+function built(realm, origin) {
   log.debug("Entering built(). id=" + realm.id);
   builders.forEach(function (build) {
     try {
-      build(realm.id, realm);
+      build(realm.id, realm, origin || {});
     } catch (e) {
       log.warn(errorCodes.tag('STS-CORE-0019') +
                'realms: a store could not build itself for "' + realm.id +

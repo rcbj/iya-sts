@@ -5469,8 +5469,28 @@ seed();
 // outside acme — see the note above the admin_rbac setDirectory() install
 // further down.
 // ---------------------------------------------------------------------------
-realms.onCreate(function (id) {
+// **NOT FOR A REALM THAT REPLICATED (2026-10-27).** A realm another process
+// made arrives through the change log as its row AND its subtree — the
+// containers, the seeded people, the internal applications, the native
+// roles — written by the process that built it. Since d49cd337 a replica
+// applies the realm row BEFORE that page's directory rows (a row of an
+// undefined realm was dropped, then held), so a seed here ran against an
+// empty tree a few milliseconds ahead of the creator's rows: STS-STORE-0052
+// for every seeded entry on every replica (3,026 in a single-node run, 6,700
+// per cluster node), and — the one that cost a job — a write made on the
+// replica's LOSING copy before the merge threw it away: `sts_worker_pools`
+// regenerated sts-management-api's secret on such a copy and the token
+// endpoint, reading the kept copy, refused the new secret. A replica
+// therefore builds nothing and waits for the rows; the process that made
+// the realm, and a process restoring the store at startup, seed as before.
+realms.onCreate(function (id, realm, origin) {
   log.debug('Entering the realm directory builder. id=' + id);
+  if (origin && origin.replicated) {
+    log.info('ldap: the "' + id + '" realm replicated from another ' +
+             'process; its subtree arrives with it and is not seeded here.');
+    log.debug('Leaving the realm directory builder. Replicated.');
+    return;
+  }
   realms.run(realms.get(id), function () {
     seed();
     // The vc-attribute sweep, for the reason it is run once after the default
