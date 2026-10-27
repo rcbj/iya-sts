@@ -147,6 +147,17 @@ still declares a scope that grants what the call needs: withdraw
 **Other ways to authenticate.** HTTP Basic with a directory person's name and
 password works while `ssf.authBasic` is on (the default); Basic carries no
 scope, so it gets both. A GNAP access token works too, see [GNAP](gnap.md).
+So does the receiver's TLS client certificate, with no `Authorization`
+header, when this realm issued it to the receiver's application:
+```bash
+api applications/issue-tls-client-certificate '{"application":"ssf-conf-a",
+  "password":"<a PKCS#12 password>","keyAlg":"ec-p256"}'
+```
+The application must also be a member of `SSF_READ` or `SSF_MANAGE`, as it
+must to be issued a token, and the receiver presents the certificate and its
+key on every call (`curl --cert chain.pem --key key.pem ...`). It owns its
+streams as `ssf-conf-a`. See
+[Shared Signals](shared-signals.md#authentication-four-schemes-two-scopes).
 A stream created with a person's own credential carries only events about
 that person while `ssf.personStreamsSelfOnly` is on (the default).
 

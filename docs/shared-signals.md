@@ -361,7 +361,7 @@ the composite ML-DSA algorithms). A SET has `typ: secevent+jwt`.
 `ssf.setCertificateHeader` controls whether it carries the signing key's
 certificate chain, as `x5u` (the default), `x5c`, both, or neither.
 
-### Authentication: three schemes, two scopes
+### Authentication: four schemes, two scopes
 
 The metadata document lists the schemes it accepts in
 `authorization_schemes`:
@@ -379,6 +379,22 @@ The metadata document lists the schemes it accepts in
 * **GNAP**: a key-bound GNAP access token whose access includes one of those
   names, or an object of type `ssf` with the action the call needs, so that a
   GNAP web application can own a stream itself. See [GNAP](gnap.md).
+* **TLS client certificate** (`urn:ietf:rfc:8705`): the certificate on the
+  connection, sent with no `Authorization` header. Only a certificate this
+  realm issued to an application (on the application's Credentials section,
+  or through `POST /admin-api/applications/issue-tls-client-certificate`)
+  is taken, and only while the application still holds it and it is not
+  revoked. The receiver is that application: it owns the streams it creates
+  under its identifier, exactly as a GNAP token for it would, and reaches no
+  other receiver's. It holds what a token for the application would be
+  issued: the Shared Signals scopes its `oauthAllowedScope` declares and its
+  `SSF_READ` and `SSF_MANAGE` roles authorize, asked again on every call. A
+  person's certificate, another realm's, one the application no longer
+  holds and a revoked one are refused with 401 (`STS-SSF-0147`, `0148`,
+  `0150`); an application whose declarations and roles authorize nothing
+  the call needs gets 403 (`STS-SSF-0149`). A certificate from an authority
+  you added to the truststore names nobody here and is ignored.
+  `ssf.authClientCert` turns the scheme off.
 
 `ssf.read` lets a caller read a stream, its status and the poll queue.
 `ssf.manage` is the write scope: it is needed to create, change or delete a
@@ -637,6 +653,7 @@ types from what a stream may ask for.
 | `ssf.deadLetterMaxPerStream` | `STS_SSF_DEAD_LETTER_MAX_PER_STREAM` | `1000` | yes | The most dead letters one stream keeps. The oldest is dropped first. |
 | `ssf.deadLetterSweepS` | `STS_SSF_DEAD_LETTER_SWEEP_S` | `60` | yes | How often expired dead letters are deleted, due probes are sent and the summary is logged. |
 | `ssf.authBasic` | `STS_SSF_AUTH_BASIC` | `true` | yes | Whether HTTP Basic is accepted and advertised. |
+| `ssf.authClientCert` | `STS_SSF_AUTH_CLIENT_CERT` | `true` | yes | Whether a receiver's TLS client certificate is accepted and `urn:ietf:rfc:8705` advertised. |
 | `ssf.internalReceivers` | `STS_SSF_INTERNAL_RECEIVERS` | `true` | **no** | Seeds the console's and the portal's own receiver streams. |
 | `ssf.maxStreams` | `STS_SSF_MAX_STREAMS` | `25` | yes | Streams per receiver in a realm. A create past the limit is refused with 403, and the refusal names this setting. The console's and portal's own streams do not count. |
 | `ssf.inactivityTimeoutS` | `STS_SSF_INACTIVITY_TIMEOUT_S` | `0` | yes | SSF 1.0 section 8.1.1's `inactivity_timeout`: a stream whose receiver has made no management call about it (and, for a poll stream, no poll) for this long is dealt with as `ssf.inactivityAction` says. `0`, the default, is no timeout. It is off by default because a push receiver never calls back. |

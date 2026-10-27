@@ -1353,7 +1353,7 @@ SSF" from "the path is wrong".
 
 ---
 
-## THREE SCHEMES AND TWO SCOPES
+## FOUR SCHEMES AND TWO SCOPES
 
 SSF 1.0 section 8 requires these endpoints to be protected and — unlike RFC
 7644, which names six schemes and leaves it there — has the transmitter
@@ -1444,6 +1444,52 @@ registered subject scope that only takes events away. GNAP now also emits a
 `ownerPersonCovers()` already refuses such a subject on a person's stream, and
 the internal receivers match a GNAP session id against no session of theirs.
 `gnap/CLAUDE.md` argues it.
+
+**A FOURTH SCHEME SINCE 2026-10-27: THE RECEIVER'S TLS CLIENT CERTIFICATE
+(#1049, part of #520).** rcbj's decision on #520: stream management and poll
+accept a receiver authenticated by its certificate, resolved to the
+receiver's APPLICATION by the identity gate, beside its bearer token.
+`ssf_auth.ts`'s `attemptClientCertificate()` carries the argument; what a
+reader of this file needs:
+
+* **One mapping, not a new one.** `common/tls_client_certificates.js`'s
+  `checkSocket()` (the realm boundary included) and `stillHeld()`, the two
+  questions RFC 8705's implicit mapping and GNAP's PKI trust model ask.
+  Nothing here reads a DN or a CN, so a certificate from an anchor somebody
+  installed at `/admin-api/tls/trust` names NOBODY here and is ignored, where
+  SCIM's `clientcert` would take its subject DN.
+* **Only with no Authorization header**, SCIM's rule; a header is the
+  caller choosing its credential, and a certificate-bound token already
+  reaches its binding through the OAuth attempt.
+* **The principal is the application's identifier** — what a GNAP token for
+  it owns as and what `findSsfOwner()` finds an entry by. A stream made with
+  a client_credentials token is owned by the client_id, so the two reach the
+  same streams where the client_id is the identifier, the usual
+  registration, and not otherwise. That was chosen over "the client_id when
+  there is exactly one", which would have made `ssfAllowedEvents` and
+  `ssfReceiverId` stop finding the entry for an application whose client_id
+  differs.
+* **Its scopes are what a token would be issued, asked on every call**:
+  the SSF names its `oauthAllowedScope` declares LITERALLY, through
+  `role_permissions.ts`'s `narrowScope()` (SSF_READ, SSF_MANAGE, the
+  issuance policy), then write includes read. Literally, because the implied
+  `ssf.read` of a manage-only declaration is a name SSF_MANAGE does not
+  authorize, and asking for it would audit STS-ADMIN-0821 on every poll.
+* **Refused in both modes**, only where the endpoint needs a permission:
+  STS-SSF-0147 (issued here and not an application of this realm, a
+  person's included), 0148 (no longer held), 0149 (403, nothing authorized),
+  0150 (revoked; the certificate's own code audited beside it). A wrong
+  credential is a refusal like Basic's reserved password; development's
+  turnstile is for a request that presents nothing.
+* **`authorization_schemes` publishes `urn:ietf:rfc:8705`**, the URN SSF
+  1.0's own transmitter configuration example lists beside RFC 6749.
+  `ssf.authClientCert` (on, as `ssf.authBasic` is) removes both.
+
+`tests/ssf_client_certificate.js` holds every branch;
+`tests/protocol/sts_ssf_client_certificate.js` the wire. No console page or
+`/admin-api` operation was added: `/admin/ssf` draws the setting and
+`GET /admin-api/ssf`'s `authentication.schemes` says whether the scheme is
+offered (rule 7).
 
 ## `ssfAllowedEvents`: THE ONE PLACE AN APPLICATION ENTRY LIMITS A STREAM (2026-09-12)
 
