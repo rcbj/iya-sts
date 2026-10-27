@@ -1034,15 +1034,13 @@ what somebody just typed, beside the one-time value itself, a second opaque
 string is noise a reader has to work out. `/admin/ldap/directory` still shows
 both in full, because what THAT page is for is exactly what the store holds.
 
-### The username is the `uid` cell, and required fields are outlined (#1066)
+### Required fields are outlined, and every refusal floats (#1066)
 
-rcbj: the simplified view had no `uid` box, and nothing showed which fields the
-policy requires. **The username box MOVED into the grid; it was not copied
-there.** It is `UsersPage.newUserUidCell()`, the first cell of the Name group in
-both views. It still posts `username` and never `field.uid`, because a second
-box would let one form create `uid=alice` whose uid says `bob`, which is why the
-grid left `uid` out until then. With it, the grid moved to the top of the form,
-where *Who they are* was.
+**The username box stays at the top of the form, and `uid` gets no cell in the
+grid.** rcbj first asked for a `uid` cell in the simplified view, then
+withdrew it: the username at the top IS the `uid`, and the note under it says
+so. That note also stopped calling the username *the only required field*,
+because the attribute policy always requires `cn` and `sn` as well.
 
 **A field the attribute policy requires carries `fg-required`.** That is a red
 rule and an asterisk, drawn by the shared `fieldGridCell()`, so a person's

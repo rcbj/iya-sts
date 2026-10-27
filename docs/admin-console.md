@@ -430,8 +430,8 @@ an attribute that holds several, and **Remove from** takes one value off.
 `attributeEditor`, with what each attribute holds, its group and an example.
 
 **Creating a person** (`/admin/users/new`) draws the same fields under the
-same group headings, in a simplified view (the username, names and contact
-details) and an advanced view (every field). A value a create writes is held
+same group headings, in a simplified view (names and contact details) and an
+advanced view (every field). A value a create writes is held
 to the same rules as an edit.
 
 **What may be changed** is the person schema — `person`,
@@ -471,14 +471,14 @@ can carry — the same catalogue *Credential claims* chooses from, so a value ty
 here is the value an issued credential asserts. **An empty box records no
 value.**
 
-**The username is the `uid` box**, the first field of the *Name* group, in
-both views. It is the only place the username is typed, so one form cannot
-name two different uids. **Every field the realm's attribute policy
-(*Directory → Policies → Attribute policy*, below) requires is outlined in red
-and marked *required*:** `uid`, `cn` and `sn` always, and whatever the realm adds.
-Those fields are drawn in the simplified view as well. The *required* tile
-counts them. In product mode a create without one is refused; in development
-mode the policy is shown and not enforced. A `cn` left empty is made from the
+**The username, at the top of the form, is the entry's `uid`** and is always
+required; it is the only place a `uid` is typed. **Every field in the grid
+that the realm's attribute policy (*Directory → Policies → Attribute policy*,
+below) requires is outlined in red and marked *required*:** `cn` and `sn`
+always, and whatever the realm adds. Those fields are drawn in the simplified
+view as well. The *required* tile counts them, with the username. In product
+mode a create without one is refused; in development mode the policy is shown
+and not enforced. A `cn` left empty is made from the
 given name and surname. **A refused create keeps every box as you typed it**.
 **On every Directory → Users page and tab, a refusal floats in the banner at
 the top of the window**, as on the application pages. That covers a create, a
