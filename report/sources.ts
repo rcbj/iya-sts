@@ -1230,6 +1230,19 @@ const MECHANISM_TABLE = [
   // since schema version 27, so the holders are an indexed read like the
   // others. A row is the set, its codes counted and never shown.
   { id: 'recoveryCodes', attribute: 'stsBackupCodes', role: 'recovery' },
+  // THE KEYS A PERSON SIGNS WITH AND ENROLLS WITH (#1036, rcbj: "signer
+  // certificates, ACME, EST and SCEP credentials"). A person's RFC 7523
+  // JWT key pair and RFC 7522 SAML key pair (`common/person_assertions.js`),
+  // role `signer`; an ACME External Account Binding key and a SCEP challenge
+  // (`common/cert_enrollment.ts`), role `enrollment` — the credentials those
+  // protocols authenticate a request with. EST has none of its own: it takes
+  // the person's password or a client certificate. Each is an asked name,
+  // so an indexed read; no secret half reaches a row.
+  { id: 'jwtSigningKey', attribute: 'stsAssertionJwks', role: 'signer' },
+  { id: 'samlSigningKey', attribute: 'stsSamlAssertionCertificate',
+    role: 'signer' },
+  { id: 'acmeAccountKey', attribute: 'stsAcmeEabKey', role: 'enrollment' },
+  { id: 'scepChallenge', attribute: 'stsScepChallenge', role: 'enrollment' },
   // THE WALLET MECHANISMS (#1021, rcbj: credentials from a web wallet, from
   // a native wallet, and self-issued subjects, by algorithm). A self-issued
   // subject is a DID or key the person proved with a wallet (SIOPv2), on
@@ -1336,7 +1349,59 @@ function reportDidAlgorithm(subject: string): string {
 // without it would show none of the person's wallet credentials when
 // another mechanism's read found the entry first.
 const HOLDER_FIELDS = ['uid', 'displayname', 'cn', 'authnmethod',
-  'mfalastauthtime', 'pwdchangedtime', 'entryuuid'];
+  'mfalastauthtime', 'pwdchangedtime', 'entryuuid',
+  // The signing keys' public facts (#1036), read beside their asked name.
+  'stsassertioncertificate', 'stsassertionkid', 'stsassertionkeysource',
+  'stssamlassertionthumbprint', 'stssamlassertionkeysource'];
+
+// A certificate's key algorithm, named as a report would (#1036): RSA with
+// its size, an EC curve by its JOSE name, EdDSA and the post-quantum keys by
+// their own; '' when the PEM will not parse.
+function reportCertKeyAlg(pem: string): string {
+  log.debug("Entering reportCertKeyAlg().");
+  let name = '';
+  try {
+    const crypto = require('../common/crypto');
+    const key = crypto.parseCertificate(String(pem)).publicKey;
+    const type = String(key.asymmetricKeyType || '');
+    const details: any = key.asymmetricKeyDetails || {};
+    const curves: Record<string, string> = { prime256v1: 'P-256',
+      secp384r1: 'P-384', secp521r1: 'P-521', secp256k1: 'secp256k1' };
+    if (type === 'rsa' || type === 'rsa-pss') {
+      name = 'RSA-' + String(details.modulusLength || '');
+    } else if (type === 'ec') {
+      name = curves[String(details.namedCurve)] ||
+        String(details.namedCurve || 'EC');
+    } else if (type === 'ed25519' || type === 'ed448') {
+      name = type === 'ed25519' ? 'Ed25519' : 'Ed448';
+    } else {
+      name = type.toUpperCase();
+    }
+  } catch (e) {
+    // Not a certificate this runtime can read (a composite key, say): the
+    // row says nothing rather than something wrong.
+    log.debug("Caught in reportCertKeyAlg(): " + ((e && e.message) || e));
+    name = '';
+  }
+  log.debug("Leaving reportCertKeyAlg(). " + name);
+  return name;
+}
+
+// A certificate's notBefore, as ISO, or null.
+function reportCertIssuedAt(pem: string): string | null {
+  log.debug("Entering reportCertIssuedAt().");
+  let out: string | null = null;
+  try {
+    const crypto = require('../common/crypto');
+    out = reportIso(Date.parse(crypto.parseCertificate(String(pem))
+      .validFrom));
+  } catch (e) {
+    log.debug("Caught in reportCertIssuedAt(): " + ((e && e.message) || e));
+    out = null;
+  }
+  log.debug("Leaving reportCertIssuedAt().");
+  return out;
+}
 const GROUP_MEMBERS_MAX = 50000;
 
 function reportParsedValues(values: string[]): any[] {
@@ -1540,6 +1605,73 @@ function reportHolderRows(entry: any, mechanism: any, ldap: any,
     });
     log.debug("Leaving reportHolderRows(). Passkeys, " + out.length +
       ' role(s).');
+    return out;
+  }
+  if (mechanism.id === 'jwtSigningKey' || mechanism.id === 'samlSigningKey') {
+    // A SIGNING KEY PAIR (#1036): one row, its certificate's key algorithm,
+    // its kid or thumbprint, where the pair came from as the channel
+    // (`issued` here or `uploaded`), and the certificate's notBefore. The
+    // private half is sealed on the entry and never read here.
+    const jwt = mechanism.id === 'jwtSigningKey';
+    const pem = jwt ? reportAttr(entry, 'stsAssertionCertificate')
+      : values[0];
+    out.push(Object.assign({}, common, {
+      role: mechanism.role,
+      credentials: 1,
+      credentialId: jwt ? reportAttr(entry, 'stsAssertionKid')
+        : reportAttr(entry, 'stsSamlAssertionThumbprint'),
+      algorithm: reportCertKeyAlg(pem),
+      lane: reportKeyLane(reportCertKeyAlg(pem)),
+      channel: reportAttr(entry, jwt ? 'stsAssertionKeySource'
+        : 'stsSamlAssertionKeySource'),
+      format: jwt ? 'RFC 7523' : 'RFC 7522',
+      enrolledAt: reportCertIssuedAt(pem),
+      lastUsedAt: null
+    }));
+    log.debug("Leaving reportHolderRows(). Signing key.");
+    return out;
+  }
+  if (mechanism.id === 'acmeAccountKey' || mechanism.id === 'scepChallenge') {
+    // AN ENROLLMENT CREDENTIAL (#1036): one row per ACME EAB key or SCEP
+    // challenge, its id, its creation, and whether it was spent; the HMAC
+    // key is sealed and the challenge is only a digest, and neither is read.
+    const acme = mechanism.id === 'acmeAccountKey';
+    reportParsedValues(values).forEach(function (one: any): void {
+      out.push(Object.assign({}, common, {
+        role: mechanism.role,
+        credentials: values.length,
+        credentialId: String((acme ? one.kid : one.id) || ''),
+        algorithm: acme ? 'HS256' : '',
+        lane: '',
+        channel: acme ? 'acme' : 'scep',
+        format: String(one.profile || ''),
+        enrolledAt: reportMinIso([Date.parse(String(one.createdAt || ''))]),
+        lastUsedAt: reportMaxIso([Date.parse(String(one.usedAt || ''))])
+      }));
+    });
+    log.debug("Leaving reportHolderRows(). Enrollment credentials.");
+    return out;
+  }
+  if (mechanism.id === 'certificate') {
+    // AN ENROLLED CERTIFICATE (#1036): one row per certificate, its serial,
+    // the protocol that issued it (acme, est, scep) as the channel, its
+    // profile (tls-client, server, device, …) as the format, its key
+    // algorithm and its issuance. A TLS client certificate is one of these.
+    reportParsedValues(values).forEach(function (one: any): void {
+      const alg = String(one.keyAlg || '');
+      out.push(Object.assign({}, common, {
+        role: mechanism.role,
+        credentials: values.length,
+        credentialId: String(one.serialHex || ''),
+        algorithm: alg,
+        lane: reportKeyLane(alg),
+        channel: String(one.family || ''),
+        format: String(one.profile || ''),
+        enrolledAt: reportMinIso([Date.parse(String(one.issuedAt || ''))]),
+        lastUsedAt: null
+      }));
+    });
+    log.debug("Leaving reportHolderRows(). Certificates.");
     return out;
   }
   if (mechanism.id === 'recoveryCodes') {

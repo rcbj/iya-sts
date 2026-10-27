@@ -942,6 +942,22 @@ function directoryDouble(windowed) {
       { hash: '$scrypt$16384$8$1$c2FsdA==$Y29kZXR3bw==', usedAt: 8000 }],
       total: 2, remaining: 1, generatedAt: 4000, lastUsedAt: 8000 })],
     pwdChangedTime: ['20261020100000Z'],
+    // Signing keys and enrollment credentials (#1036): a JWT key pair
+    // (its certificate is not a real PEM here, so no algorithm), an ACME
+    // EAB key, a SCEP challenge, and an EST-issued TLS client certificate.
+    stsAssertionJwks: ['{"keys":[]}'],
+    stsAssertionCertificate: ['not a certificate'],
+    stsAssertionKid: ['ada-kid-1'],
+    stsAssertionKeySource: ['issued'],
+    stsAcmeEabKey: [JSON.stringify({ kid: 'eab-1', hmacKey: '$aesgcm$2$x',
+      createdAt: '2026-10-01T00:00:00.000Z', expiresAt: '2026-11-01T00:00:00Z'
+    })],
+    stsScepChallenge: [JSON.stringify({ id: 'scep-1', sha256: 'abc',
+      profile: 'device', createdAt: '2026-10-02T00:00:00.000Z', usedAt: null
+    })],
+    stsEnrolledCertificate: [JSON.stringify({ serialHex: '0a1b',
+      family: 'est', profile: 'tls-client', keyAlg: 'ES256',
+      issuedAt: '2026-10-03T00:00:00.000Z' })],
     authnMethod: ['pwd', 'hwk', 'otp'],
     // A self-issued subject proved with a web wallet (#1021): a did:web,
     // whose key the DID does not spell, so the proof's algorithm is kept.
@@ -1894,7 +1910,8 @@ function groups(t) {
     JSON.stringify(sources.mechanismIds()),
     'the catalog enumerates the mechanisms as the table has them');
   t.equal(JSON.stringify(catalog.field('credentialHolders', 'role').values),
-    JSON.stringify(['primary', 'mfa', 'recovery']), 'and the three roles');
+    JSON.stringify(['primary', 'mfa', 'recovery', 'signer', 'enrollment']),
+    'and the five roles');
   t.equal(catalog.field('users', 'username').values, undefined,
     'an open field has no values');
   // EVERY INDEX AVAILABLE ON EVERY SOURCE (rcbj, 2026-10-27, after a
@@ -2709,15 +2726,18 @@ async function holders(t) {
 
     reset();
     const staffOnly = await read({ source: 'credentialHolders',
-      select: fields, limit: 10,
+      select: fields, limit: 20,
       where: { op: 'eq', field: 'memberOf', value: 'staff' } });
     t.equal(calls.groupRead, 1, 'a group filter reads the group');
     t.equal(calls.holders, 0, 'and not the holders');
     t.equal((staffOnly.rows || []).map(function (row) {
       return row.username + '/' + row.mechanism + '/' + row.role;
     }).sort().join(','),
+      'ada/acmeAccountKey/enrollment,ada/certificate/primary,' +
+      'ada/jwtSigningKey/signer,' +
       'ada/passkey/mfa,ada/passkey/primary,ada/passkey/primary,' +
       'ada/password/primary,ada/recoveryCodes/recovery,' +
+      'ada/scepChallenge/enrollment,' +
       'ada/selfIssued/primary,ada/totp/mfa,ada/verifiableCredential/primary,' +
       'ada/verifiableCredential/primary',
       'every credential of every member, the password, the codes and the ' +
@@ -2750,13 +2770,13 @@ async function holders(t) {
     const asJob = await read({ source: 'credentialHolders',
       select: fields, limit: 20 }, 'async');
     t.equal(asJob.ok, true, 'as a job it reads every mechanism\'s holders');
-    t.equal((asJob.rows || []).length, 11,
+    t.equal((asJob.rows || []).length, 15,
       'ada three passkeys, an authenticator app, a password, a code set, ' +
       'a self-issued subject and two credentials; bea a passkey and a ' +
       'subject');
-    t.equal(calls.holders, 8, 'one holders lookup per entry mechanism');
-    t.equal(calls.holderCount, 8, 'after one count per entry mechanism');
-    t.equal(calls.holdersStop, 8, 'and each read carries a stop');
+    t.equal(calls.holders, 12, 'one holders lookup per entry mechanism');
+    t.equal(calls.holderCount, 12, 'after one count per entry mechanism');
+    t.equal(calls.holdersStop, 12, 'and each read carries a stop');
 
     // THE PERSON NAMED (rcbj, 2026-10-27): `username equals ada` reads her
     // entry through the name index and every mechanism of hers, no holders
@@ -2771,8 +2791,9 @@ async function holders(t) {
     t.equal((adaOnly.rows || []).map(function (row) {
       return row.mechanism;
     }).sort().join(','),
-      'passkey,passkey,passkey,password,recoveryCodes,selfIssued,totp,' +
-      'verifiableCredential,verifiableCredential',
+      'acmeAccountKey,certificate,jwtSigningKey,' +
+      'passkey,passkey,passkey,password,recoveryCodes,scepChallenge,' +
+      'selfIssued,totp,verifiableCredential,verifiableCredential',
       'every credential of hers, every mechanism');
     reset();
     const adaPasskeys = await read({ source: 'credentialHolders',
@@ -2848,6 +2869,53 @@ async function holders(t) {
       '[{"name":"staff","memberCount":1,"members":"ada"}]',
       'a group named is read by its DN');
     t.equal(calls.groupList || 0, 0, 'without listing the groups');
+
+    // SIGNING KEYS, ENROLLMENT CREDENTIALS AND CERTIFICATES (#1036): each a
+    // row with its id, its source or protocol, its profile, and no secret.
+    const kinds = ['jwtSigningKey', 'acmeAccountKey', 'scepChallenge',
+      'certificate'];
+    for (let k = 0; k < kinds.length; k++) {
+      reset();
+      const got = await read({ source: 'credentialHolders',
+        select: fields.concat(['channel', 'format']), limit: 5,
+        where: { op: 'eq', field: 'mechanism', value: kinds[k] } });
+      t.equal((got.rows || []).length, 1, kinds[k] + ': one row for ada',
+        got.description || JSON.stringify(got.rows));
+    }
+    reset();
+    const enrolled = await read({ source: 'credentialHolders',
+      select: fields.concat(['channel', 'format']), limit: 20,
+      where: { op: 'and', args: [
+        { op: 'eq', field: 'username', value: 'ada' },
+        { op: 'in', field: 'mechanism', value: ['jwtSigningKey',
+          'acmeAccountKey', 'scepChallenge', 'certificate'] }] } });
+    const byMech = {};
+    (enrolled.rows || []).forEach(function (row) {
+      byMech[row.mechanism] = row;
+    });
+    t.check(byMech.jwtSigningKey && byMech.jwtSigningKey.role === 'signer' &&
+      byMech.jwtSigningKey.credentialId === 'ada-kid-1' &&
+      byMech.jwtSigningKey.channel === 'issued' &&
+      byMech.jwtSigningKey.format === 'RFC 7523',
+      'a JWT signing key: its kid, issued here, RFC 7523',
+      JSON.stringify(byMech.jwtSigningKey));
+    t.check(byMech.acmeAccountKey && byMech.acmeAccountKey.role ===
+      'enrollment' && byMech.acmeAccountKey.credentialId === 'eab-1' &&
+      byMech.acmeAccountKey.channel === 'acme' &&
+      byMech.acmeAccountKey.algorithm === 'HS256',
+      'an ACME EAB key: its kid, HS256, for acme');
+    t.check(byMech.scepChallenge && byMech.scepChallenge.channel === 'scep' &&
+      byMech.scepChallenge.format === 'device',
+      'a SCEP challenge: for scep, its profile');
+    t.check(byMech.certificate && byMech.certificate.channel === 'est' &&
+      byMech.certificate.format === 'tls-client' &&
+      byMech.certificate.algorithm === 'ES256' &&
+      byMech.certificate.credentialId === '0a1b',
+      'an EST-issued TLS client certificate: its serial, protocol, profile ' +
+      'and key', JSON.stringify(byMech.certificate));
+    t.check(JSON.stringify(enrolled.rows).indexOf('$aesgcm$') < 0 &&
+      JSON.stringify(enrolled.rows).indexOf('"abc"') < 0,
+      'no sealed key or challenge digest in a row');
 
     // THE WALLET MECHANISMS (#1021): a verifiable credential per issued
     // copy, from the register, with its channel, algorithm, lane and
