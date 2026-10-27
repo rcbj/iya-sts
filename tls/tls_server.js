@@ -197,6 +197,10 @@ const authn = require('../authn/authn');
 // ordinary routes and mark the response.
 const audit = require('../common/audit');
 const errorCodes = require('../common/error_codes');
+// #507: the master-secret digest a TLS 1.2 ticket's name is kept under,
+// and the room-maker for its replicated store (rule 3ap).
+const crypto = require('crypto');
+const cacheRegistry = require('../common/cache_registry');
 // The PROXY protocol v2 reader was required here until 2026-09-16 and is not
 // any more: it was installed on this module's two listeners, and with those
 // deleted the only installs are `server.js`'s on the main port and the
@@ -3626,9 +3630,31 @@ realms.onChange(function () {
 // skipping the comparison, so the failure mode is a full handshake.
 // tests/listener_tls_policy.js L5 resumes one, so that state is not silent.
 //
-// Tickets are NOT covered: node resumes a ticket inside OpenSSL with no
-// event, and OpenSSL makes the same TLS 1.2 non-check there. Recorded on
-// tls/CLAUDE.md, *The session cache and the server name*.
+// A TLS 1.2 TICKET IS HELD TO THE SAME RULE, AFTER THE HANDSHAKE (#507,
+// 2026-10-26). Node resumes a ticket inside OpenSSL with no event, OpenSSL
+// makes the same TLS 1.2 non-check there, and nothing node exposes carries
+// the name a ticket was made under: `servername` is false after a TLS 1.2
+// hit and the session's DER holds no name, with or without an SNI
+// callback (shown by hand against a bare node server, 2026-10-26). What a
+// resumed TLS 1.2 session DOES keep is the master secret of the session it
+// resumes. So `rememberTicketName()` records, at the end of every full TLS
+// 1.2 handshake, the server name the hello offered under a digest of that
+// session's master secret (read from `getSession()`), and
+// `checkResumedName()` looks the digest up on every resumed TLS 1.2
+// connection and CLOSES the connection when the name differs
+// (STS-TLS-0052) or is one this process never recorded (STS-TLS-0053).
+// Closed, not resumed afresh: by `secureConnection` the handshake is over,
+// and a client answered under the wrong name is the thing the RFC forbids.
+// The record is per listener and per process, bounded by
+// TICKET_NAME_ENTRIES and the listener's sessionTimeoutS (a ticket lives no
+// longer), and where minted state persists it is also a replicated shared
+// store (`tls.ticketNames`, `tls.presentedChains`'s arrangement) so a
+// ticket sealed under the cluster's shared key is known on the node that
+// did not make it. Nothing waits for a row: a mismatch must close at once,
+// and a row still in flight costs one full handshake. TLS 1.3 is left
+// alone on purpose: RFC 8446 section 4.2.11 removes the server's check and
+// section 4.6.1 puts it on the client, and OpenSSL resumes a TLS 1.3 PSK
+// under another name (same probe). tests/listener_tls_policy.js L5d.
 // ---------------------------------------------------------------------------
 
 /**
@@ -3649,6 +3675,57 @@ const SESSION_SEEN = Symbol('sts.sessionNameSeen');
 // handed to the TLS engine unread and the session is not resumed by ID.
 const SESSION_HELLO_LIMIT = 64 * 1024;
 const SESSION_HELLO_WAIT_MS = 10 * 1000;
+// The TLS 1.2 ticket names a listener remembers (#507): one per full TLS
+// 1.2 handshake, the oldest forgotten past this. Its own bound rather than
+// sessionCacheSize, because a size of 0 means "resume by ticket only" and
+// must not become "close every resumed TLS 1.2 connection".
+const TICKET_NAME_ENTRIES = 4096;
+// The replicated half (#507): a row per full TLS 1.2 handshake, aged out
+// at the listener's session lifetime, so a node that did not make a ticket
+// still knows the name it was made under. `tls.presentedChains`'s shape.
+const ticketNamesShared = realms.sharedMap({
+  persist: 'tls.ticketNames',
+  retain: 'age',
+  scope: 'shared',
+  expiresAt: realms.expiryField('until', 1)
+});
+const TICKET_NAME_SHARED_ENTRIES = 4096;
+// Rule 3ap: the replicated half describes itself to /admin/caches; each
+// listener's own record is reported beside its session cache.
+cacheRegistry.register({
+  name: 'tls.ticket-names',
+  title: 'TLS 1.2 ticket names, for resumed sessions',
+  description: 'The server name a full TLS 1.2 handshake was made under, ' +
+    'keyed by a digest of the session\'s master secret, compared when ' +
+    'that session is RESUMED by ticket (#507, RFC 6066 section 3): node ' +
+    'resumes a ticket inside OpenSSL with no event, and OpenSSL does not ' +
+    'compare the name. A resumption under another name, or one no record ' +
+    'vouches for, is closed after the handshake. Each listener keeps its ' +
+    'own copy as well, bounded the same way.',
+  owner: 'tls/tls_server.js',
+  scope: 'process',
+  persisted: true,
+  maxEntries: function () {
+    return TICKET_NAME_SHARED_ENTRIES;
+  },
+  bound: 'Enforced: ' + TICKET_NAME_SHARED_ENTRIES + ' sessions; expired ' +
+    'rows go first, then the oldest.',
+  lifetime: function () {
+    return 'Shared by every node and replicated: the listener\'s session ' +
+      'lifetime (tls.sessionTimeoutS), which is as long as a ticket lives.';
+  },
+  entries: function () {
+    const out = [];
+    ticketNamesShared.forEach(function (row, key) {
+      const until = row && Number(row.until) > 0 ? Number(row.until) : null;
+      out.push({ key: 'master-secret sha256 ' + String(key).slice(0, 16) +
+                      '\u2026 (' + (row && typeof row.servername === 'string'
+                        ? (row.servername || 'no name') : '?') + ')',
+                 validUntil: until, basis: 'content-keyed' });
+    });
+    return out;
+  }
+});
 
 /**
  * `tls/client_hello.ts`'s `parse`, loaded once. Null when it could not be
@@ -3954,6 +4031,156 @@ function sameServerName(held, offered) {
 }
 
 /**
+ * The server name a connection's ClientHello offered, as the sniffer read
+ * it off the raw socket, else as OpenSSL reports it (a full handshake's
+ * `servername`; after a TLS 1.2 hit OpenSSL reports none). '' is a hello
+ * that offered no name; null is a name nobody read.
+ *
+ * @param socket - the TLS socket
+ * @returns the name, '' or null
+ */
+// A hot path: once per TLS 1.2 connection, and no Entering/Leaving pair
+// here would tell a reader anything but would drown the log.
+function helloServerName(socket) {
+  const raw = socket && socket._parent;
+  const sniffed = sniffedServerName(raw);
+  if (sniffed !== null) {
+    return sniffed;
+  }
+  if (socket && typeof socket.servername === 'string') {
+    return socket.servername;
+  }
+  return null;
+}
+
+/**
+ * A digest of the master secret of the session a socket is on, read from
+ * OpenSSL's serialized SSL_SESSION (`getSession()`): SEQUENCE { version,
+ * sslVersion, cipher, sessionId, masterKey, ... }, the fifth element. The
+ * same across a TLS 1.2 resumption, which is what makes it the key the
+ * ticket's name is kept under. Never the secret itself: the digest is all
+ * that is held or replicated.
+ *
+ * @param socket - the TLS socket
+ * @returns the hex digest, or null where the session could not be read
+ */
+// A hot path, as above.
+function masterSecretDigest(socket) {
+  let der = null;
+  try {
+    der = socket && typeof socket.getSession === 'function'
+      ? socket.getSession() : null;
+  } catch (e) {
+    log.debug('Caught in masterSecretDigest(): ' + ((e && e.message) || e));
+    return null;
+  }
+  if (!der || !der.length || der[0] !== 0x30) {
+    return null;
+  }
+  const tlv = function (off) {
+    if (off + 2 > der.length) {
+      return null;
+    }
+    const tag = der[off];
+    let len = der[off + 1];
+    let p = off + 2;
+    if (len & 0x80) {
+      const n = len & 0x7f;
+      len = 0;
+      for (let i = 0; i < n; i++) {
+        if (p >= der.length) {
+          return null;
+        }
+        len = len * 256 + der[p++];
+      }
+    }
+    if (p + len > der.length) {
+      return null;
+    }
+    return { tag: tag, start: p, end: p + len };
+  };
+  const seq = tlv(0);
+  if (!seq) {
+    return null;
+  }
+  let p = seq.start;
+  let fifth = null;
+  for (let i = 0; i < 5 && p < seq.end; i++) {
+    const t = tlv(p);
+    if (!t) {
+      return null;
+    }
+    fifth = t;
+    p = t.end;
+  }
+  if (!fifth || fifth.tag !== 0x04 || fifth.end - fifth.start < 16) {
+    return null;
+  }
+  return crypto.createHash('sha256')
+    .update(der.subarray(fifth.start, fifth.end)).digest('hex');
+}
+
+/**
+ * Records the name a full TLS 1.2 handshake was made under (#507), in the
+ * listener's own record and, where minted state persists, in the
+ * replicated store.
+ *
+ * @param record - the listener's Map
+ * @param key - the master-secret digest
+ * @param name - the server name the hello offered ('' for none)
+ * @param ttlMs - the listener's session lifetime
+ */
+// A hot path, as above.
+function rememberTicketName(record, key, name, ttlMs) {
+  const now = Date.now();
+  record.delete(key);
+  record.set(key, { servername: name, at: now });
+  while (record.size > TICKET_NAME_ENTRIES) {
+    record.delete(record.keys().next().value);
+  }
+  try {
+    ticketNamesShared.delete(key);
+    cacheRegistry.makeRoom(ticketNamesShared, TICKET_NAME_SHARED_ENTRIES, {
+      expired: function (row) {
+        return !row || Number(row.until) <= now;
+      }
+    });
+    ticketNamesShared.set(key, { servername: name, until: now + ttlMs });
+  } catch (e) {
+    log.debug('Caught in rememberTicketName(): ' + ((e && e.message) || e));
+  }
+}
+
+/**
+ * The name a resumed TLS 1.2 session was made under (#507): the listener's
+ * own record first, then the replicated store. Null where neither knows.
+ *
+ * @param record - the listener's Map
+ * @param key - the master-secret digest
+ * @param ttlMs - the listener's session lifetime
+ * @returns the name, or null
+ */
+// A hot path, as above.
+function recordedTicketName(record, key, ttlMs) {
+  const now = Date.now();
+  const own = record.get(key);
+  if (own && now - own.at <= ttlMs && typeof own.servername === 'string') {
+    return own.servername;
+  }
+  let shared = null;
+  try {
+    shared = ticketNamesShared.get(key);
+  } catch (e) {
+    log.debug('Caught in recordedTicketName(): ' + ((e && e.message) || e));
+  }
+  if (shared && Number(shared.until) > now &&
+      typeof shared.servername === 'string') {
+    return shared.servername;
+  }
+  return null;
+}
+
+/**
  * Attaches a session-ID cache to a TLS server, bounded by the listener's
  * policy, and resuming a session only under the server name it was made
  * under.
@@ -4014,7 +4241,65 @@ function attachSessionCache(server, kind, realmId) {
     cache.delete(key);
     done(null, null);
   });
-  sessionCaches.push({ kind: kind, realm: realmId || null, cache: cache });
+  // THE TLS 1.2 TICKET'S NAME (#507; the block above the sniffer). First
+  // among the listeners, so a connection resumed under another name is
+  // closed before node's HTTP server, the connection observer or anything
+  // else reads it, which is `refuseNonNistCurveCertificatesOn()`'s
+  // arrangement for a chain it refuses.
+  const ticketNames = new Map();
+  server.prependListener('secureConnection', function (socket) {
+    let protocol = null;
+    try {
+      protocol = typeof socket.getProtocol === 'function'
+        ? socket.getProtocol() : null;
+    } catch (e) {
+      log.debug('Caught in the ticket-name check: ' +
+                ((e && e.message) || e));
+    }
+    if (protocol !== 'TLSv1.2' || socket.destroyed) {
+      return;
+    }
+    const ttlMs = bounds().ttlMs;
+    const key = masterSecretDigest(socket);
+    const offered = helloServerName(socket);
+    let reused = false;
+    try {
+      reused = typeof socket.isSessionReused === 'function' &&
+               socket.isSessionReused();
+    } catch (e) {
+      log.debug('Caught in the ticket-name check: ' +
+                ((e && e.message) || e));
+    }
+    if (!reused) {
+      if (key && offered !== null) {
+        rememberTicketName(ticketNames, key, offered, ttlMs);
+      }
+      return;
+    }
+    const madeUnder = key ? recordedTicketName(ticketNames, key, ttlMs)
+                          : null;
+    if (madeUnder === null || offered === null) {
+      // Fails CLOSED, as the session-ID cache does: a session this process
+      // cannot vouch for is not answered under a name nobody compared.
+      log.info(errorCodes.tag('STS-TLS-0053') + 'tls: a ' + kind +
+               ' TLS 1.2 session was resumed by ticket whose server name ' +
+               'this node does not know (' + (madeUnder === null
+                 ? 'no record of the session'
+                 : 'the hello\'s name was not read') + '); the ' +
+               'connection is closed (RFC 6066 section 3).');
+      socket.destroy();
+      return;
+    }
+    if (madeUnder !== offered) {
+      log.info(errorCodes.tag('STS-TLS-0052') + 'tls: a ' + kind +
+               ' TLS 1.2 session made under ' + JSON.stringify(madeUnder) +
+               ' was resumed by ticket under ' + JSON.stringify(offered) +
+               '; the connection is closed (RFC 6066 section 3).');
+      socket.destroy();
+    }
+  });
+  sessionCaches.push({ kind: kind, realm: realmId || null, cache: cache,
+                       ticketNames: ticketNames });
   log.debug('Leaving attachSessionCache().');
   return cache;
 }

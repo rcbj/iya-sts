@@ -1431,11 +1431,44 @@ Pooling settings on each HTTP/HTTPS listener tab."
     with the session and compares it byte for byte. It FAILS CLOSED: a
     name it cannot see refuses the resumption, and a node with no
     `_init` is logged as STS-TLS-0046 and resumes nothing by ID.
-    `tests/listener_tls_policy.js` L5c holds it. **TLS 1.2 TICKETS are not
-    covered**: node resumes a ticket inside OpenSSL with no event, and
-    OpenSSL resumes a ticket offered under another name (shown by hand
-    against a bare node server, 2026-10-07); that is unchanged by this and
-    open.
+    `tests/listener_tls_policy.js` L5c holds it.
+  - **A TLS 1.2 TICKET is held to the same rule after the handshake
+    (#507, 2026-10-26).** Node resumes a ticket inside OpenSSL with no
+    event, OpenSSL resumes one offered under another name, and nothing
+    node exposes carries the name a ticket was made under: `servername`
+    is false after a TLS 1.2 hit and the session's DER holds no name,
+    with or without an SNI callback answering a context (shown by hand
+    against a bare node server, 2026-10-26). What a resumed TLS 1.2
+    session keeps is the MASTER SECRET of the session it resumes, so
+    `attachSessionCache()` records, at the end of every full TLS 1.2
+    handshake, the hello's name under a SHA-256 of that secret (read
+    from `getSession()`'s SSL_SESSION), and on every resumed TLS 1.2
+    connection looks it up and CLOSES the connection when the name
+    differs (`STS-TLS-0052`) or this node has no record
+    (`STS-TLS-0053`). Closed rather than resumed afresh: by
+    `secureConnection` the handshake is over, and the connection is
+    closed before node's HTTP server or anything else reads it
+    (`prependListener`, `refuseNonNistCurveCertificatesOn()`'s
+    arrangement). The record is per listener and per process, bounded by
+    4096 entries and the listener's `sessionTimeoutS` (a ticket lives no
+    longer), and a replicated shared store `tls.ticketNames`
+    (`tls.presentedChains`'s shape, a CELL-tier store) carries it to the
+    other nodes for a ticket sealed under the cluster's shared key.
+    Nothing waits for a row: a mismatch has to close at once, and a row
+    still replicating costs one full handshake. The four options the
+    ticket listed, and why this one: turning TLS 1.2 tickets off
+    (`SSL_OP_NO_TICKET`) also makes TLS 1.3 tickets STATEFUL, so every
+    TLS 1.3 resumption would go through the per-process cache and die
+    with it across nodes; node exposes no ticket callback to carry the
+    name in; and no hook permits a full-handshake fallback after OpenSSL
+    has accepted the ticket. **TLS 1.3 is left alone on purpose**: RFC
+    8446 section 4.2.11 removes the server's check ("the server does not
+    need to" compare) and section 4.6.1 binds the CLIENT to the same SNI,
+    and OpenSSL resumes a TLS 1.3 PSK under another name (same probe).
+    **Not on the SPIFFE listeners**, for the session cache's reason: grpc-js
+    owns those servers and `attachSessionCache()` never sees them; they
+    are TLS 1.3 only in practice. `tests/listener_tls_policy.js` L5d and
+    L5e hold both.
 * **Connection pooling is four settings, all runtime, on the HTTP
   listeners only** (main, the debugger, the plain-HTTP revocation listener,
   and a realm's own): `http.keepAliveTimeoutS` (60; it replaced

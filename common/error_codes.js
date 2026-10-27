@@ -15721,6 +15721,26 @@ const CODES = [
       '(sts_tls_page), which the page\'s shell carries (#583). Retired by ' +
       '#597, with both routes.',
     spec: '', retired: true },
+  { code: 'STS-TLS-0052',
+    summary: 'A TLS 1.2 session resumed by session ticket was offered ' +
+      'under a server name other than the one it was made under (#507). ' +
+      'RFC 6066 section 3 forbids accepting the resumption; node resumes a ' +
+      'ticket inside OpenSSL with no event to refuse it in, so the listener ' +
+      'compares the name after the handshake, against the name it recorded ' +
+      'under a digest of the session\'s master secret, and closes the ' +
+      'connection.',
+    spec: 'logged; the connection is closed; the client\'s next connection ' +
+      'is a full handshake' },
+  { code: 'STS-TLS-0053',
+    summary: 'A TLS 1.2 session was resumed by session ticket and this node ' +
+      'has no record of the server name it was made under (#507): the ' +
+      'record aged out or was evicted, the ticket was sealed under the ' +
+      'cluster\'s shared key by a node whose row has not replicated here ' +
+      'yet, or the hello\'s name could not be read. The connection is ' +
+      'closed, because a name nobody compared is not vouched for (RFC 6066 ' +
+      'section 3).',
+    spec: 'logged; the connection is closed; the client\'s next connection ' +
+      'is a full handshake' },
   // ===== VC ================================================================
   { code: 'STS-VC-0001',
     summary: 'An oid4vci encryption setting names no content encryption ' +
