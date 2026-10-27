@@ -1168,6 +1168,19 @@ async function everyReadAnswersAboutThisRealm(doc) {
         String(unknown.raw).slice(0, 200));
       continue;
     }
+    // GET /users/certificates names one person (#1061), as
+    // /passkey-report/evidence names one passkey: with no `user` the
+    // documented refusal is a JSON 400 ("Name the person in `user`").
+    if (path === "/users/certificates") {
+      const nobody = await get(path);
+      assert.strictEqual(nobody.status, 400,
+        "GET " + api + path + " without a person should answer 400; it " +
+        "answered " + nobody.status + " " + String(nobody.raw).slice(0, 200));
+      assert.strictEqual(typeof nobody.body, "object",
+        "GET " + api + path + "'s 400 should be a JSON object; it was " +
+        String(nobody.raw).slice(0, 200));
+      continue;
+    }
     const reply = await get(path);
     assert.strictEqual(reply.status, 200,
       "GET " + api + path + " should answer 200; it answered " + reply.status +

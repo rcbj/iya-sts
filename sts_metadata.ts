@@ -5703,6 +5703,15 @@ const ENDPOINTS: EndpointEntry[] = [
           'Native SSO secret and whether that secret\'s session is live. ' +
           'POST /admin-api/users/remove-device removes one. Mirrors the ' +
           'Devices block on the person\'s /admin/users page.' },
+  { path: '/admin-api/users/certificates', group: 'Management API',
+    name: 'One person\'s stored certificates', specs: ['rfc5280'],
+    what: 'NON-SPEC (#1061). Each certificate stored in the person\'s ' +
+          'userCertificate: the SHA-256 of its DER, its subject, issuer, ' +
+          'serial and validity. A certificate from an outside authority ' +
+          'signs its holder in only as the one entry storing it; POST ' +
+          '/admin-api/users/add-certificate stores one and ' +
+          '/remove-certificate takes it away. Mirrors the Stored ' +
+          'certificates block on the person\'s /admin/users page.' },
   { path: '/admin-api/devices', group: 'Management API',
     name: 'The device register', specs: ['oidc-native-sso', 'openapi'],
     what: 'NON-SPEC (#164, #218). GET /admin/devices over JSON: every ' +
