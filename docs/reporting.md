@@ -406,9 +406,10 @@ Nearly everyone holds one, so the directory keeps no index of its
 holders; it keeps a counter per realm, and that is what a count by
 `mechanism` reads for `password`, instantly. A list of password holders
 is the population, so it is refused like any read over the cap and runs
-only narrowed by `memberOf`. A password row carries the hash scheme (for
-example `SSHA`) as its `algorithm` and `pwdChangedTime` as its
-`enrolledAt`, and never the hash.
+only narrowed by `memberOf`. A password row carries the hash scheme as
+its `algorithm` (`scrypt` or `argon2id` for a password this service set,
+the braced scheme of an imported hash such as `SSHA`) and
+`pwdChangedTime` as its `enrolledAt`, and never the hash.
 
 **The holders are counted before they are read.** A mechanism nearly
 everyone holds is the population under another name: on a service where

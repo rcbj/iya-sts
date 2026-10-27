@@ -934,7 +934,7 @@ function directoryDouble(windowed) {
     stsTotpCredential: [JSON.stringify({ algorithm: 'SHA1', digits: 6,
       enrolledAt: 1500, lastUsedAt: 7000 })],
     // A password too (#1019): its hash must never reach a row.
-    userPassword: ['{SSHA}c2VjcmV0aGFzaA=='],
+    userPassword: ['$scrypt$16384$8$1$c2FsdA==$c2VjcmV0aGFzaA=='],
     pwdChangedTime: ['20261020100000Z'],
     authnMethod: ['pwd', 'hwk', 'otp'],
     mfaLastAuthTime: ['2026-10-20T10:00:00.000Z'] });
@@ -2437,7 +2437,22 @@ async function holders(t) {
       where: { op: 'eq', field: 'mechanism', value: 'password' } });
     t.equal((passwords.rows || []).map(label).join(','), 'ada/primary',
       'a password is one primary row for its holder');
-    t.equal(passwords.rows[0].algorithm, 'SSHA', 'with its hash scheme');
+    t.equal(passwords.rows[0].algorithm, 'scrypt', 'with its hash scheme');
+    // An imported hash names its scheme in braces (#1019).
+    const beaEntry = built.people.filter(function (one) {
+      return one.attributes.uid[0] === 'bea';
+    })[0];
+    beaEntry.attributes.userPassword = ['{SSHA}c2VjcmV0aGFzaA=='];
+    reset();
+    const imported = await read({ source: 'credentialHolders',
+      select: fields, limit: 5,
+      where: { op: 'eq', field: 'mechanism', value: 'password' } });
+    t.equal((imported.rows || []).filter(function (row) {
+      return row.username === 'bea';
+    })[0].algorithm, 'SSHA', 'an imported {SCHEME} hash names its scheme');
+    t.check(JSON.stringify(imported.rows).indexOf('c2VjcmV0') < 0,
+      'and neither hash is in a row');
+    delete beaEntry.attributes.userPassword;
     t.equal(passwords.rows[0].enrolledAt, '2026-10-20T10:00:00Z',
       'and pwdChangedTime as its enrolment');
     t.check(JSON.stringify(passwords.rows).indexOf('c2VjcmV0') < 0,
