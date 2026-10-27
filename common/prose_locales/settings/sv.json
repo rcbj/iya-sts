@@ -6592,8 +6592,8 @@
     "text": "Erbjud TLS-klientcertifikat"
   },
   "scim.authClientCert|description": {
-    "en": "be5e7d5ccffce8c1",
-    "text": "Ömsesidig TLS, det första schema som RFC 7644 avsnitt 2 nämner. Det gäller bara där begäran kom över TLS med ett certifikat som VERIFIERADES mot klientens förtroendelager (/admin/tls/trust), alltså bara när global.https är på. Det var den första platsen i den här tjänsten där ett klientcertifikat var en INLOGGNINGSUPPGIFT snarare än en observation; här autentiserar det någon som sedan får skriva till katalogen."
+    "en": "5e038e5e7c37b74a",
+    "text": "Ömsesidig TLS, det första schema som RFC 7644 avsnitt 2 nämner. Det gäller bara där begäran kom över TLS med ett certifikat som VERIFIERADES mot klientens förtroendelager (/admin/tls/trust), alltså bara när global.https är på. Det var den första platsen i den här tjänsten där ett klientcertifikat var en INLOGGNINGSUPPGIFT snarare än en observation. Ett certifikat som den här sfären utfärdat till en APPLIKATION får bara göra det som applikationens oauthAllowedScope deklarerar: läsomfånget för att läsa och skrivomfånget för att skriva, kontrollerat vid varje begäran (STS-SCIM-0083). En persons certifikat, eller ett från ett ankare någon har lagt till, får läsa och skriva i katalogen."
   },
   "scimClient.attempts|label": {
     "en": "babe2e714439f7c0",

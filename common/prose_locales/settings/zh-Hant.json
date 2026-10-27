@@ -6592,8 +6592,8 @@
     "text": "提供 TLS 用戶端憑證"
   },
   "scim.authClientCert|description": {
-    "en": "be5e7d5ccffce8c1",
-    "text": "相互 TLS，RFC 7644 第 2 節指名的第一種機制。它只適用於透過 TLS 抵達、且憑證已依用戶端信任存放區（/admin/tls/trust）「驗證」的要求，因此只在 global.https 開啟時適用。這是此服務中用戶端憑證第一次成為「認證」而非觀察結果的地方；在這裡，它驗證的人隨後便可寫入目錄。"
+    "en": "5e038e5e7c37b74a",
+    "text": "相互 TLS，RFC 7644 第 2 節指名的第一種機制。它只適用於透過 TLS 抵達、且憑證已依用戶端信任存放區（/admin/tls/trust）「驗證」的要求，因此只在 global.https 開啟時適用。這是此服務中用戶端憑證第一次成為「認證」而非觀察結果的地方。本領域簽發給某個應用程式的憑證只能做該應用程式的 oauthAllowedScope 所宣告的事：讀取需要讀取範圍，寫入需要寫入範圍，每次請求都會檢查（STS-SCIM-0083）。個人的憑證，或來自他人新增之錨點的憑證，可以讀寫目錄。"
   },
   "scimClient.attempts|label": {
     "en": "babe2e714439f7c0",

@@ -351,7 +351,7 @@ address on the strength of it.
 | `scim.maxHobaChallenges` | `SCIM_MAX_HOBA_CHALLENGES` | `2000` | yes | How many issued HOBA challenges are remembered. |
 | `scim.maxHobaSeen` | `SCIM_MAX_HOBA_SEEN` | `5000` | yes | How many accepted HOBA triples are remembered for replay detection; evicting one also forgets its challenge. |
 | `scim.authCookie` | `SCIM_AUTH_COOKIE` | `true` | yes | Accept the browser sign-on session cookie. |
-| `scim.authClientCert` | `SCIM_AUTH_CLIENT_CERT` | `true` | yes | Accept a TLS client certificate that verified against the client truststore. |
+| `scim.authClientCert` | `SCIM_AUTH_CLIENT_CERT` | `true` | yes | Accept a TLS client certificate that verified against the client truststore. An application's certificate is held to the SCIM scopes the application declares. |
 
 `ldap.maxEntries` is the cap a SCIM create runs out of, because SCIM has no
 store of its own.
