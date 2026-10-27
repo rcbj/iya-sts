@@ -148,9 +148,15 @@ const REPORT_STYLE = [
   '.filterrow .addfilter { border: 1px solid #c9cad6; border-radius: 6px;',
   '  padding: .1rem .55rem; font-weight: 700; line-height: 1.4; }',
   '.filterrow .addfilter:hover { background: #e7e9f4; }',
+  // A wide result scrolls inside its card rather than off the page (rcbj,
+  // 2026-10-27): the wrapper scrolls sideways, a cell may break a long
+  // value, and a heading stays on one line so the columns keep their names.
+  '.tablewrap { overflow-x: auto; max-width: 100%; }',
   '.table { width: 100%; border-collapse: collapse; }',
   '.table th, .table td { text-align: left; padding: .35rem .5rem;',
   '  border-bottom: 1px solid #d5d5dd; vertical-align: top; }',
+  '.table th { white-space: nowrap; }',
+  '.table td { overflow-wrap: anywhere; }',
   '.field { margin: .5rem 0; }',
   '.field label { display: block; }',
   '.err { color: #a3242c; }',
