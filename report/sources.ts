@@ -1117,6 +1117,22 @@ function reportUnboundedFilter(catalog: any, sourceId?: string): any {
   };
 }
 
+function reportTooManyCandidates(catalog: any): any {
+  log.debug("Entering reportTooManyCandidates().");
+  log.warn(errorCodes.tag('STS-REPORT-0041') +
+    'report: an indexed filter matched more people than one read may take ' +
+    '(' + CANDIDATE_CAP + '); refused rather than read person by person.');
+  log.debug("Leaving reportTooManyCandidates().");
+  return {
+    ok: false,
+    code: 'STS-REPORT-0041',
+    error: 'result_too_large',
+    description: 'The filter matches more than ' + CANDIDATE_CAP +
+      ' people. Narrow it: a shorter date span, a longer name, or add a ' +
+      'group (memberOf).'
+  };
+}
+
 async function reportReadUsers(rows: any, control: any): Promise<void> {
   log.debug("Entering reportReadUsers().");
   const ldap = reportLdap();
@@ -1127,6 +1143,17 @@ async function reportReadUsers(rows: any, control: any): Promise<void> {
     return catalog.indexedFor('users', field);
   }, 0);
   const candidates = lookups ? await reportCandidates(lookups, ldap) : null;
+  // A LOOKUP TOO LARGE TO ANSWER WHOLE NEVER BECOMES A WALK (#1028, rcbj:
+  // "users shouldn't run into queries that require full table scans"): on
+  // a windowed directory, an indexed filter whose answer filled the
+  // candidate cap (a date span of more than a thousand people, say) is
+  // refused as too large, asking for a narrower filter, rather than read
+  // by paging every person.
+  if (lookups && !candidates && ldap.directoryIsWindowed()) {
+    control.unbounded = reportTooManyCandidates(catalog);
+    log.debug("Leaving reportReadUsers(). Lookup not whole.");
+    return;
+  }
   if (candidates) {
     for (let i = 0; i < candidates.length; i++) {
       const entry = candidates[i];

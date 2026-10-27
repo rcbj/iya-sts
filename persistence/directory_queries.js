@@ -971,9 +971,15 @@ function countHolding(realm, baseKey, attribute) {
 // one realm's `ou=users` in one span are read in order and nothing else is
 // touched. `lo` is inclusive and `hi` exclusive, both in that format; the
 // caller spells a `<=` as the next second's `<`.
+// THE STATEMENT REPEATS THE INDEX'S CONDITION (`USERS_PARENT`), found on
+// 8081: PostgreSQL uses a partial index only when it can prove the query
+// implies the index's WHERE, and it cannot prove `parent_key = $2` implies
+// `parent_key LIKE 'ou=users,%'`, so without it the plan was a sequential
+// scan of fifty million rows (cost 11.3M; with it, 8.6).
 function timeBetween(column, realm, parentKey, lo, hi, limit) {
   return { text: 'SELECT ' + COLUMNS + ' FROM sts_ldap_entries WHERE ' +
-                 'realm = $1 AND parent_key = $2 AND ' + column +
+                 'realm = $1 AND parent_key = $2 AND ' + USERS_PARENT +
+                 ' AND ' + column +
                  ' >= $3 AND ' + column + ' < $4 ORDER BY ' + column +
                  ', dn_key LIMIT $5',
            values: [String(realm), String(parentKey), String(lo || ''),

@@ -1414,6 +1414,27 @@ async function narrowing(t) {
         { op: 'lt', field: 'createdAt', value: '2026-10-10T00:00:00Z' }] },
       limit: 10 });
     t.equal(calls.range, 1, 'two bounds on one date are one span');
+    // The statement repeats the partial index's condition (found on 8081:
+    // without it PostgreSQL scanned every row), and a span too large to
+    // answer whole is refused, never walked.
+    const dq = require('../persistence/directory_queries');
+    t.check(dq.createdBetween('default', 'ou=users,dc=x', '', '', 10).text
+      .indexOf(dq.USERS_PARENT) >= 0 &&
+      dq.modifiedBetween('default', 'ou=users,dc=x', '', '', 10).text
+        .indexOf(dq.USERS_PARENT) >= 0,
+      'the range statements repeat the partial index\'s condition');
+    const realRange = built.ldap.entriesByTimeRangeAsync;
+    built.ldap.entriesByTimeRangeAsync = function () {
+      return Promise.resolve(null);
+    };
+    reset();
+    const wide = await read({
+      where: { op: 'ge', field: 'createdAt', value: '2020-01-01T00:00:00Z' },
+      limit: 10 }, 'async');
+    built.ldap.entriesByTimeRangeAsync = realRange;
+    t.equal(wide.code, 'STS-REPORT-0041',
+      'a span past the cap is refused as too large, even as a job');
+    t.equal(calls.walk, 0, 'and nobody is walked');
     t.equal(names(between).join(','), 'ada,xbea',
       'the people created in the span');
     reset();
@@ -1454,8 +1475,9 @@ async function narrowing(t) {
     reset();
     const capped = await read({
       where: { op: 'contains', field: 'username', value: 'full' }, limit: 5 });
-    t.equal(capped.code, 'STS-REPORT-0036',
-      'a substring the store answers at its cap is not trusted whole');
+    t.equal(capped.code, 'STS-REPORT-0041',
+      'a substring the store answers at its cap is not trusted whole, and ' +
+      'is refused rather than walked (#1028)');
     t.equal(calls.contains, 1, 'the store was asked once');
   } finally {
     sources.installDirectory(null);

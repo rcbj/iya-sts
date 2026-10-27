@@ -23675,7 +23675,12 @@ const CODES = [
       'credentialHolders) named no field the directory indexes, so it ' +
       'would have read every person; refused at acceptance, naming the ' +
       'indexed fields, in every mode (rcbj, 2026-10-27).',
-    spec: 'invalid_query (HTTP 400)' }
+    spec: 'invalid_query (HTTP 400)' },
+  { code: 'STS-REPORT-0041',
+    summary: 'An indexed report filter on users matched more people than ' +
+      'one read may take (the candidate cap), so it was refused rather ' +
+      'than read person by person (#1028).',
+    spec: 'result_too_large (HTTP 400)' }
   // ===== END ===============================================================
 ];
 
