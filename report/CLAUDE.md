@@ -261,6 +261,51 @@ rule, driven by the catalog:
 * **Run and Save are the definition page's buttons**: `.foot-actions`
   with `.button`s; Save stays first in the document for the Enter reason.
 
+## Every source run against 8081 (#1040, 2026-10-27)
+
+rcbj asked for every query the generator can make, run against 8081
+(about a million people) with results. Anchored, every source answers in
+under 100 ms. Six things were wrong, and each is fixed where it lives:
+
+* **The audit sources read one process's ring.** `reportAuditEvents()`
+  awaits `audit.fresh()` (#820) before `audit.list()`, as the console's
+  audit operations do; `authActivity` had answered nothing while the next
+  request's `auditEvents` held six sign-ins. A failing `fresh()` fails the
+  read.
+* **`credentialHolders` asks each kind of lookup on its own**
+  (`lookupsOf()`: people, `memberOf`, `mechanism`). One planner call keeps
+  ONE arm of an `and`, so `mechanism = password` AND `memberOf = ssf-read`
+  kept the mechanism and was refused as a million holders; and an `or` of
+  a mechanism and a group read the group's people only, dropping rows.
+* **The password's census is its counter.** A count grouped by
+  `mechanism` alone, filtered on nothing but mechanisms
+  (`reportOnlyMechanisms()`), takes the password's row from
+  `holderCountAsync()`'s counter through `Rows.takeCounted()` and reads the
+  other mechanisms as before. `docs/reporting.md` had promised it since
+  #1019 and nothing did it.
+* **A first page answers a read that wants any rows.** A lookup at
+  `CANDIDATE_CAP` hands back its first page when the plan has no order and
+  no count (`PartialLookup`; `entriesByTimeRangeAsync()`'s `partial`), and
+  the read answers when its limit is met there; one that offers the whole
+  page without filling it is refused `STS-REPORT-0041` as before, because
+  the rows it lacks may be past the page.
+* **Everybody is counted before they are read.** A filterless ordered or
+  counted `users` read on a windowed directory asks `personCount()` (a
+  counter row) and over `report.asyncMaxRows` is refused at once,
+  `STS-REPORT-0046`, flat (not `unbounded`, so `auto` queues nothing); it
+  had run two minutes as a job into `report.asyncMaxMs`.
+* **The catalog says what anchors.** `status` carries `indexedValues:
+  ['locked']`, the refusals name it (`Catalog.indexedPhrases()`, `status
+  (eq locked)`), and the page's anchored first row offers `locked` alone;
+  a field that cannot be filtered (`groups.members`) publishes no
+  operators.
+
+Left as they are: `federation` and `attributeSources` are empty on 8081
+because nothing is configured, and `credentialHolders` with no filter is
+refused because the Kerberos keys' holders are the population.
+`tests/report_query.js` holds each (`narrowing()`, `holders()`,
+`auditFresh()`).
+
 ## Every index on every source, and the anchor rule (rcbj, 2026-10-27)
 
 Three sentences from rcbj the morning the credentialHolders source was

@@ -383,13 +383,19 @@ function reportPublicSource(src: any): any {
       filter: field.filter,
       sort: field.sort,
       group: field.group,
-      operators: Catalog.operatorsFor(field.type),
+      // None for a field that cannot be filtered (#1040: `groups.members`
+      // listed six, and a filter on it is refused).
+      operators: field.filter ? Catalog.operatorsFor(field.type) : [],
       // The operators the store answers with an index (#985); the page and
       // the OpenAPI document show them, and `sources.ts` decides on them.
       indexed: Array.isArray(field.indexed) ? field.indexed.slice() : [],
       // Every value an enumerated field can hold (#1007), for the page's
       // dropdown; absent (dropped by JSON) for an open field.
-      values: Array.isArray(field.values) ? field.values.slice() : undefined
+      values: Array.isArray(field.values) ? field.values.slice() : undefined,
+      // The values whose equality the index answers, when only some are
+      // (#1040); absent otherwise.
+      indexedValues: Array.isArray(field.indexedValues) ?
+        field.indexedValues.slice() : undefined
     };
   });
   const out = {

@@ -23715,7 +23715,13 @@ const CODES = [
       'administrator — a person holding Admin Read or Admin Write on the ' +
       'default realm\'s console roster now — so it was refused: only a ' +
       'service administrator reaches every realm\'s reports (#1038).',
-    spec: 'forbidden (HTTP 403)' }
+    spec: 'forbidden (HTTP 403)' },
+  { code: 'STS-REPORT-0046',
+    summary: 'A users report with an order or a count and no filter would ' +
+      'read more people than a job may (report.asyncMaxRows), counted ' +
+      'from the directory first, so it was refused at once rather than ' +
+      'run as a job that reached report.asyncMaxMs (#1040).',
+    spec: 'result_too_large (HTTP 400)' }
   // ===== END ===============================================================
 ];
 

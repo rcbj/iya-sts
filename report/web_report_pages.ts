@@ -242,13 +242,20 @@ function pickerValueOf(value: string): string {
   return Number.isFinite(at) ? new Date(at).toISOString().slice(0, 16) : '';
 }
 
+// On an anchoring first row a field whose index answers only some values
+// (#1040: `status`, indexed for `locked`) offers only those for equals, so
+// the row a user starts from cannot pick `active` and be refused.
 function filterValueHtml(n: number, fields: any[], fieldId: string,
-                         op: string, value: string): string {
+                         op: string, value: string,
+                         anchorRow?: boolean): string {
   const spec = fieldSpecOf(fields, fieldId);
   const kind = kindOf(spec);
   const type = spec ? String(spec.type || 'string') : 'string';
-  const choices = choicesOf(spec);
   const chosen = String(op || '');
+  const only = anchorRow && spec && chosen === 'eq' &&
+    Array.isArray(spec.indexedValues) && spec.indexedValues.length ?
+    spec.indexedValues : null;
+  const choices = only || choicesOf(spec);
   if (choices && (chosen === '' || chosen === 'eq' || chosen === 'ne')) {
     return '<select name="filterValue' + n + '" data-type="' + esc(type) +
       '"><option value=""></option>' +
@@ -361,7 +368,8 @@ function filterRowsHtml(t: any, fieldOptions: string, leaves: any[],
         ? OPS_OF[kindOf(spec)] : ops.concat([String(leaf.op)]);
     }
     const row = filterRowHtml(t, n, options, n === leaves.length - 1,
-      filterValueHtml(n, fields, field, String(leaf.op), value),
+      filterValueHtml(n, fields, field, String(leaf.op), value,
+        n === 0 && !!firstTip),
       opSelectHtml(t, n, ops, String(leaf.op)),
       n === 0 ? firstTip : '');
     return row
@@ -1200,8 +1208,9 @@ class ReportRuntime extends SpaClient {
    * @returns the row's HTML
    */
   static filterValueHtml(n: number, fields: any[], fieldId: string,
-                         op: string, value: string): string {
-    return filterValueHtml(n, fields, fieldId, op, value);
+                         op: string, value: string,
+                         anchorRow?: boolean): string {
+    return filterValueHtml(n, fields, fieldId, op, value, anchorRow);
   }
 
   static filterRowHtml(t: any, n: number, fieldOptions: string,
@@ -2166,7 +2175,7 @@ class ReportRuntime extends SpaClient {
       opEl.outerHTML = opSelectHtml(this.t, n, ops, op);
     }
     const html = filterValueHtml(n, fields, fieldId, op,
-      String(valueEl.value || ''));
+      String(valueEl.value || ''), anchored && n === 0);
     // A plain text box that would be a plain text box again is left alone,
     // so what was typed is kept; any other change of kind redraws.
     const wasPlain = String(valueEl.tagName || '').toUpperCase() ===

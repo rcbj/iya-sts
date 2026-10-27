@@ -574,6 +574,11 @@ class OpenApi {
                   'with an order or a count, or on a sealed field, reads ' +
                   'every person: refused in sync mode (result_too_large), ' +
                   'a job in auto mode.' },
+              indexedValues: { type: 'array', items: { type: 'string' },
+                description: 'The values whose equality the index ' +
+                  'answers, when it answers only some: users status is ' +
+                  'indexed for locked, and active is everybody else. ' +
+                  'Absent when every value is answered.' },
               values: { type: 'array', items: { type: 'string' },
                 description: 'Every value the field can hold, when it is ' +
                   'an enumeration; the page draws a dropdown of them for ' +

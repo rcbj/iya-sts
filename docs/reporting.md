@@ -279,21 +279,33 @@ a filter is refused when the query is accepted, in every mode, as
 `and`, or every arm of an `or`, has to be one of them, and the other
 conditions narrow that read. On the page the first filter row of these
 sources offers only the indexed fields; the rows the `+` adds offer every
-field. A small directory held in memory is not held to this. A query with
-no filter still stops at its limit.
+field. `status` is indexed for `locked` only (`active` is everybody
+else), so that first row offers `locked` alone; the catalog says so as
+the field's `indexedValues`. A small directory held in memory is not
+held to this. A query with no filter still stops at its limit.
 
 A `users` query is answered from the index when its filter is an indexed
 leaf, an `and` with an indexed arm (the other arms are applied to the
 rows found), or an `or` whose every arm is indexed, up to sixteen lookups.
 A `not`, `ne` or `isNull` never narrows.
 
-On a directory held in a database, a `users` query whose filter the index
-cannot answer, or that sorts or counts, has to read every person. Such a
-query is refused in `sync` mode with `result_too_large` and a sentence
-naming the indexed fields, and in `auto` mode it becomes a job and
-answers `202` with the job. A query with no filter, no order and no
-count stops at its limit and is answered now. The in-memory directory of
-a service with no database is small and is always read in full.
+A lookup that matches more than a thousand people (a long date span, a
+short name) is not read whole. A query with no order and no count is
+answered from the first thousand when its limit is met there, since any
+rows that match are a correct answer; otherwise, and for an ordered or
+counted query, it is refused with `result_too_large` and a sentence
+asking for a narrower filter.
+
+On a directory held in a database, a `users` query with no filter that
+sorts or counts has to read every person. The people are counted first:
+over `report.asyncMaxRows` the query is refused at once with
+`result_too_large`, in every mode, rather than queued as a job that would
+run into `report.asyncMaxMs`. Under it, the query is refused in `sync`
+mode with a sentence naming the indexed fields, and in `auto` mode it
+becomes a job and answers `202` with the job. A query with no filter, no
+order and no count stops at its limit and is answered now. The in-memory
+directory of a service with no database is small and is always read in
+full.
 
 ### `users`
 
@@ -371,8 +383,11 @@ count of sign-ins. Non-browser doors are outside `appAuthnMechanism`.
 
 ### `auditEvents`
 
-The audit ring still held in this process, newest first, capped by
-`audit.maxEvents` (5000 unless an operator set another cap). Not a
+The audit rings still held by the service's processes, newest first,
+each capped by `audit.maxEvents` (5000 unless an operator set another
+cap). Every process keeps its own ring, and a report waits for the
+other processes' rows before it reads, as the console's audit page does,
+so the answer does not depend on which process served it. Not a
 warehouse of sign-ins.
 
 | Field | Type | Meaning | Filter | Sort | Group |
@@ -506,7 +521,14 @@ Nearly everyone holds one, so the directory keeps no index of its
 holders; it keeps a counter per realm, and that is what a count by
 `mechanism` reads for `password`, instantly. A list of password holders
 is the population, so it is refused like any read over the cap and runs
-only narrowed by `memberOf`. A password row carries the hash scheme as
+only narrowed by `memberOf`, for example `mechanism` equals `password`
+and `memberOf` equals a group. The counter answers a count grouped by
+`mechanism` alone whose filter names only mechanisms; a count grouped by
+anything else reads the holders. Each kind of filter narrows the read
+only where the whole filter says it may: in an `and` the person, the
+group and the mechanisms each narrow it, and an `or` of a mechanism and
+a group narrows nothing, so it is refused as unbounded rather than read
+as the group alone. A password row carries the hash scheme as
 its `algorithm` (`scrypt` or `argon2id` for a password this service set,
 the braced scheme of an imported hash such as `SSHA`) and
 `pwdChangedTime` as its `enrolledAt`, and never the hash.
