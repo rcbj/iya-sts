@@ -1415,6 +1415,34 @@ function createReplication(label) {
   // single-process deployment can be told it is one rather than being shown an
   // empty fan-in it has to interpret.
   /**
+   * Returns every other process's rows of a store in one realm, each with
+   * the origin that wrote it (#1001: the index backfill files a per-origin
+   * store's foreign rows under their own stored names).
+   *
+   * @param handle - the store's handle
+   * @param realmId - the realm; undefined means the ambient realm
+   * @returns `[{ key, origin, value }]`
+   */
+  function remoteContributions(handle, realmId) {
+    log.debug("Entering remoteContributions().");
+    const out = [];
+    const byRealm = contributions.get(handle);
+    const byKey = byRealm
+      ? byRealm.get(String(realmId === undefined
+                           ? realms.currentId() : (realmId || '')))
+      : undefined;
+    if (byKey) {
+      byKey.forEach(function (byOrigin, key) {
+        byOrigin.forEach(function (value, from) {
+          out.push({ key: key, origin: from, value: value });
+        });
+      });
+    }
+    log.debug("Leaving remoteContributions(). " + out.length + " row(s).");
+    return out;
+  }
+
+  /**
    * Returns every other process that has contributed a row.
    * @returns the origins, as an array of strings
    */
@@ -2028,6 +2056,7 @@ function createReplication(label) {
     contributionCounts: contributionCounts,
     pruneFanIn: pruneFanIn,
     remoteRows: remoteRows,
+    remoteContributions: remoteContributions,
     remoteSegmentedRows: remoteSegmentedRows,
     remoteKeys: remoteKeys,
     origins: origins,

@@ -320,8 +320,11 @@ restart restored the frozen row, and the other worker read the same row
 through the fan-in; the portal's "Times you have signed in" and the
 console's user page both draw it. `touchUserRecord()` in `admin_stats.js`
 re-sets the key after the edits, at one `minted-own` change row per
-sign-in; `tests/user_register_journal.js` holds it against the journal. The same day added `vc_offers.deferredAccessTokens`
-(keyed by a digest of the token, never the token) and moved
+sign-in; `tests/user_register_journal.js` holds it against the journal.
+#1001 then put the store on demand, so the rewritten row is what a reader
+gets back (below, *A PER-ORIGIN STORE ON DEMAND*). The same day added
+`vc_offers.deferredAccessTokens` (keyed by a digest of the token, never the
+token) and moved
 `spiffe.recordedConnections` from `scope: 'shared'` to a realm's partition — see
 `common/CLAUDE.md`'s table of the seven stores that sweep converted.
 **A JOURNAL AND NOT THE DIFF NEXT DOOR**, and the two arguments are opposite and
@@ -2142,7 +2145,27 @@ memory mode, development, and every in-process test.
   revoke-all, by kind and by user (`revokeWhereAsync()`, which also yields
   every 500 revocations), so the process answers others meanwhile.
 
-The stores on demand: `oauth2_bcp.refreshTokens` and `oauth2_bcp.grantTokens`
+**A PER-ORIGIN STORE ON DEMAND (#1001, 2026-10-27).** `admin_stats.users`
+is the first store that is both `merge: 'own'` and `onDemand`, and the reader
+had three things to learn (`persistence_minted.js`, *A PER-ORIGIN ROW ON
+DEMAND*): a read of a bare key asks for `<key>.<origin>`, this process's own
+row (`onDemandRead()` applies `storedKey()`, as `onDemandReadMany()` did);
+an index answers every origin's row for the person, each split into key,
+origin and `own`, and the facade's new `lookupEntries()` /
+`lookupEntriesAsync()` hand another origin's rows over WITHOUT caching them
+(a foreign row cached under the bare key would be written back under this
+origin at the next flush; `lookup()` skips them); and another process's
+change to such a row is neither fanned in nor held (`applyChange()`,
+`prefetch()`) — the index is where a reader finds it, and the fan-in would
+have grown with every sign-in anywhere once #999 rewrote the row per
+sign-in. The index backfill files the held-whole start's fanned-in foreign
+rows too (`replication.remoteContributions()`), under their own stored
+names, or a lookup would answer only this process's share. The cap bounds
+the cache and deletes nothing. `tests/user_register_on_demand.js` and
+`tests/on_demand_store.js` D13–D14.
+
+The stores on demand: `admin_stats.users` (#1001, per origin, filed by the
+person, sorted by `lastAt`), `oauth2_bcp.refreshTokens` and `oauth2_bcp.grantTokens`
 (filed by family), `oauth2_bcp.refreshFamilies`, key-resident
 `admin_stats.revokedJtis`, `authn.accountSets` (after its legacy
 expiries; `authn/account_sets.ts` argues the expiry), and

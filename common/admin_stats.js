@@ -1704,7 +1704,9 @@ function knownUser(username) {
   // Another node, or this one before a restart, may be the process that saw
   // them — see everyUserRecord().
   log.debug("Leaving knownUser().");
-  return !!users.get(identity.key) || everyUserRecord().has(identity.key);
+  // One person's rows, never every record built to find them (#1001).
+  return !!users.get(identity.key) ||
+         everyUserRecord(identity.key).has(identity.key);
 }
 
 /**
@@ -2688,7 +2690,50 @@ const SUBJECT_PREFIX = LEGACY_SUBJECT_PREFIX;
 // into, and here each realm has a store of its own, so a shared cap would let a
 // busy realm evict a quiet realm's people.
 // local name -> the record below
-const users = realms.map({ persist: 'admin_stats.users', merge: 'own' });
+//
+// **READ FROM THE STORE, NOT FROM A 2,000-RECORD WINDOW (#1001, 2026-10-27;
+// rcbj: "It has to be able to go back to the database and pull the
+// original / permanent data").** Until #1001 this Map was the register: capped
+// at `MAX_USERS` identities per realm and process, evicting the FIRST SEEN,
+// and the eviction was a journalled DELETE, so the row left the store too and
+// a person who signed in again started at one. On 8081 a million load people
+// had cycled through the 2,000 slots and every real person's count was
+// whatever had happened since their record was last made. Now the store is
+// `onDemand` (#820's machinery): the 2,000 is the bound of an in-memory
+// CACHE, nothing is deleted on eviction, and a record not held is read back
+// from `sts_minted` when the person next signs in (`userRecord()` →
+// `users.get()`) or a page asks (`everyUserRecord()` → `lookupEntries()`).
+// Filed under the person's key (`indexBy`), so one lookup answers EVERY
+// origin's row for them — each process's share, and each restart's — and
+// sorted by `lastAt`. Still `merge: 'own'`: a write here is an increment,
+// which is `persistence/CLAUDE.md`'s test for a per-origin row; what #1001
+// taught the on-demand reader about per-origin rows is argued in
+// `persistence_minted.js` (*A PER-ORIGIN ROW ON DEMAND*).
+//
+// What stays bounded: the events on a row (`MAX_EVENTS_PER_USER`, the 50
+// most recent per origin — the audit log is the history, #955), and what a
+// WHOLE-register reader sees on demand, which is what this process holds
+// (`userRows()`, `userCountsResolved()`, `collectUserKeys()` — the hybrid
+// rcbj chose for the token register on #820, said with `heldOnly`). In
+// memory mode, development, and until the index backfill has marked the
+// store complete, it is an ordinary Map with the old cap, as before.
+const users = realms.map({
+  persist: 'admin_stats.users', merge: 'own',
+  onDemand: { maxEntries: MAX_USERS },
+  // The person's key, which never changes on a record once written
+  // (`realms.map()`'s rule for an index; a rename makes a new record).
+  // A hot path (every row a flush writes for this store): no
+  // Entering/Leaving pair.
+  indexBy: function (record, key) {
+    return key === undefined || key === null || key === '' ? []
+      : [String(key)];
+  },
+  // A hot path, as above.
+  sortBy: function (record) {
+    const at = record ? Number(record.lastAt || record.firstAt) : 0;
+    return at > 0 ? at : null;
+  }
+});
 
 // Does this identity begin `<attributetype>=`? That is the one shape
 // identityOf() below must not split at an '@'. Deliberately strict — a type is
@@ -3263,6 +3308,40 @@ function everyUserRecord(onlyKey) {
   log.debug("Entering everyUserRecord().");
   const merged = new Map();
   const wanted = onlyKey === undefined ? null : String(onlyKey);
+  // ON DEMAND (#1001): one person's rows — this process's and every other
+  // origin's — come from the index, and nothing is fanned in to memory; the
+  // whole register is what this process holds.
+  if (users.onDemandLive()) {
+    if (wanted === null) {
+      users.forEach(function (record) {
+        merged.set(record.key, copyOfUserRecord(record));
+      });
+      log.debug("Leaving everyUserRecord(). " + merged.size +
+                " held record(s).");
+      return merged;
+    }
+    // The users page read its shown rows' entries together, off the event
+    // loop (`userRowsOfAsync()`); a request path asks the bridge.
+    const entries = preloadedUserEntries && preloadedUserEntries.has(wanted)
+      ? preloadedUserEntries.get(wanted) : users.lookupEntries(wanted);
+    entries.forEach(function (entry) {
+      const value = entry.value;
+      if (!value || typeof value !== 'object') {
+        return;
+      }
+      const theirs = Object.assign({}, value, { key: wanted,
+                                                name: value.name || wanted });
+      const mine = merged.get(wanted);
+      if (mine) {
+        foldUserRecord(mine, theirs);
+      } else {
+        merged.set(wanted, copyOfUserRecord(theirs));
+      }
+    });
+    log.debug("Leaving everyUserRecord(). " + merged.size +
+              " record(s) from the index.");
+    return merged;
+  }
   users.forEach(function (record) {
     if (wanted !== null && record.key !== wanted) {
       return;
@@ -3337,7 +3416,10 @@ function userRecord(identity) {
     log.debug("Leaving userRecord().");
     return record;
   }
-  if (users.size >= MAX_USERS) {
+  // ON DEMAND (#1001) the cache evicts and deletes nothing: the record is
+  // in the store and comes back when asked for. The eviction below is the
+  // held-whole register's, memory mode's and development's.
+  if (!users.onDemandLive() && users.size >= MAX_USERS) {
     // Map iterates in insertion order, so the first key is the least recently
     // FIRST SEEN — not the least recently active. Chosen because it needs no
     // sweep and because a registry of 2,000 distinct usernames on a mock is
@@ -5414,6 +5496,8 @@ function recordsHeldBy(name) {
 // asynchronously.
 // ---------------------------------------------------------------------------
 let preloadedHeld = null;
+// The users page's register entries per shown key (#1001), the same way.
+let preloadedUserEntries = null;
 
 // The candidate records filed under one person by the register's index —
 // by each name and by the subject — read asynchronously. Unfiltered: the
@@ -5465,6 +5549,24 @@ async function userRowsOfAsync(keys) {
   });
   let held = null;
   const also = [];
+  // THE REGISTER ON DEMAND (#1001): each shown row's register entries —
+  // every origin's — read together on the read pool rather than one
+  // synchronous index read per row inside the request.
+  let entries = null;
+  if (users.onDemandLive() && list.length) {
+    const answers = await Promise.all(list.map(function (key) {
+      return users.lookupEntriesAsync(key).catch(function (e) {
+        log.debug("Caught in userRowsOfAsync(): " + ((e && e.message) || e));
+        return null;
+      });
+    }));
+    entries = new Map();
+    list.forEach(function (key, i) {
+      if (answers[i]) {
+        entries.set(key, answers[i]);
+      }
+    });
+  }
   if (tokens.onDemandLive() && list.length) {
     await warmPeopleAsync(list);
     const answers = await Promise.all(list.map(recordsHeldByAsync));
@@ -5478,12 +5580,14 @@ async function userRowsOfAsync(keys) {
   }
   const rows = await withSubjectsResolvedAsync(function () {
     preloadedHeld = held;
+    preloadedUserEntries = entries;
     try {
       return list.map(function (key) {
         return buildUserRowsResolved(key)[0] || null;
       });
     } finally {
       preloadedHeld = null;
+      preloadedUserEntries = null;
     }
   }, also);
   log.debug("Leaving userRowsOfAsync().");
@@ -7197,7 +7301,7 @@ function userKeys() {
  */
 function userKeyTest() {
   log.debug("Entering userKeyTest().");
-  if (!tokens.onDemandLive()) {
+  if (!tokens.onDemandLive() && !users.onDemandLive()) {
     log.debug("Leaving userKeyTest(). Held whole.");
     return null;
   }
@@ -7210,8 +7314,13 @@ function userKeyTest() {
     if (!k) {
       return false;
     }
+    // `users.has()` reads this process's own row from the store on demand
+    // (#1001), and the index answers every other origin's.
     if (users.has(k) || tokenHolders.has(k) ||
-        replication.remoteRows('admin_stats.users', undefined, k).length) {
+        (users.onDemandLive()
+          ? users.lookupEntries(k).length
+          : replication.remoteRows('admin_stats.users', undefined, k)
+              .length)) {
       return true;
     }
     if (artifactKeys === null) {
@@ -7234,14 +7343,18 @@ function collectUserKeys() {
   users.forEach(function (record) {
     keys.add(record.key);
   });
-  replication.remoteKeys('admin_stats.users').forEach(function (key) {
-    replication.remoteRows('admin_stats.users', undefined, key)
-      .forEach(function (value) {
-        if (value && typeof value === 'object') {
-          keys.add(value.key || key);
-        }
-      });
-  });
+  // Nothing is fanned in while the register is on demand (#1001): the keys
+  // are what this process holds, and `userKeyTest()` answers one key.
+  if (!users.onDemandLive()) {
+    replication.remoteKeys('admin_stats.users').forEach(function (key) {
+      replication.remoteRows('admin_stats.users', undefined, key)
+        .forEach(function (value) {
+          if (value && typeof value === 'object') {
+            keys.add(value.key || key);
+          }
+        });
+    });
+  }
   // `rowFor()`'s rule: the key is `identityOf()` of what it is handed, and an
   // empty one files nothing.
   const add = function (value) {
@@ -8000,13 +8113,18 @@ function snapshot(opts) {
     // Counted, not listed: the whole list is what /admin/users is for, and
     // repeating it inside every metrics reply would make the two disagree the
     // first time one of them changed.
+    // `heldOnly` (#1001): the register is on demand, and these are the
+    // records this process holds; a person's own figure is read from the
+    // store by `userDetail()`.
     users: userCounts ? {
              known: userCounts.known, cap: MAX_USERS,
+             heldOnly: users.onDemandLive(),
              forgotten: nums.usersForgotten + alsoElsewhere('usersForgotten'),
              authenticatedHere: userCounts.authenticatedHere,
              clients: userCounts.clients,
              authentications: userCounts.authentications } : {
              known: knownUsers.length, cap: MAX_USERS,
+             heldOnly: users.onDemandLive(),
              forgotten: nums.usersForgotten + alsoElsewhere('usersForgotten'),
              authenticatedHere: knownUsers.filter(
                  function (r) { return r.authenticated; }).length,

@@ -197,7 +197,7 @@ let origin = '';
 // The stores already told that a NUL key is kept in memory only.
 const nulKeyWarned = new Set();
 
-function storedKey(row, key) {
+function storedKey(row, key, whose) {
   log.debug("Entering storedKey().");
   if (row.merge !== 'own') {
     log.debug("Leaving storedKey().");
@@ -205,7 +205,41 @@ function storedKey(row, key) {
   }
   log.debug("Leaving storedKey().");
   return Buffer.from(String(key), 'utf8').toString('base64url') + '.' +
-         Buffer.from(String(origin), 'utf8').toString('base64url');
+         Buffer.from(String(whose === undefined ? origin : whose), 'utf8')
+           .toString('base64url');
+}
+
+// ---------------------------------------------------------------------------
+// A PER-ORIGIN ROW ON DEMAND (#1001, 2026-10-27).
+//
+// `admin_stats.users` is the first store that is both `merge: 'own'` and
+// `onDemand`. Its rows are filed under `<key>.<origin>` (`storedKey()`), so
+// three things the on-demand reader did for a one-row-per-key store are
+// wrong for it: a read of a bare key misses this process's own row (the
+// stored name carries the origin — `onDemandRead()` applies `storedKey()`,
+// as `onDemandReadMany()` always did); an index answers EVERY origin's row
+// for the person, and the facade must know which is this process's (its
+// cache) and which is another's (read, folded, never cached — a foreign
+// row cached under the bare key would be written back under THIS origin at
+// the next flush); and another process's change to such a row is not held
+// here at all (`applyChange()`, `prefetch()`), because the fan-in grew with
+// every sign-in anywhere once #999 rewrote the row per sign-in, and the
+// index is where a reader finds it.
+// ---------------------------------------------------------------------------
+/**
+ * Whether a stored name of a `merge: 'own'` store names another process's
+ * row.
+ *
+ * @param declared - the store
+ * @param split - `splitKey()`'s answer for the stored name
+ * @returns true for another origin's row
+ */
+function foreignRow(declared, split) {
+  log.debug("Entering foreignRow().");
+  const foreign = !!declared && declared.merge === 'own' &&
+    !!split.origin && split.origin !== origin;
+  log.debug("Leaving foreignRow().");
+  return foreign;
 }
 
 // ---------------------------------------------------------------------------
@@ -917,6 +951,11 @@ function prefetch(changes) {
                                       splitKey(declared, parsed.storedName))) {
       return;
     }
+    if (declared && declared.onDemand && demandLiveFor(parsed.handle) &&
+        foreignRow(declared, splitKey(declared, parsed.storedName))) {
+      // #1001: see applyChange().
+      return;
+    }
     if (declared && declared.onDemand && !declared.keysResident &&
         demandLiveFor(parsed.handle)) {
       const name = splitKey(declared, parsed.storedName).key;
@@ -1115,6 +1154,12 @@ function applyChange(change) {
   // A KEY-RESIDENT store's row IS read, held or not (#820 part 2): its
   // digests are kept exact, and only the row says whether this was a write
   // or a delete. `applyLocally()` files the digest and holds nothing new.
+  if (store.onDemand && demandLiveFor(handle) && foreignRow(store, split)) {
+    // Another process's row of a per-origin store on demand (#1001): read
+    // from the index when a reader asks, never held here.
+    log.debug("Leaving applyChange(). On demand, another origin's row.");
+    return Promise.resolve(true);
+  }
   if (store.onDemand && !store.keysResident && demandLiveFor(handle)) {
     const local = store.read(change.realm, split.key);
     if (!local || !local.present) {
@@ -2305,25 +2350,36 @@ async function backfillMintedIndexes() {
       if (!partition) {
         continue;
       }
-      for (const entry of partition.entries()) {
-        const lookups = lookupsFor(declared, declared.handle, realmId,
-                                   entry[0], entry[1]) || [];
-        if (lookups.length) {
-          const key = keyColumnOf(declared.handle, realmId,
-                                  storedKey(declared, entry[0]));
-          lookups.forEach(function (indexKey) {
-            batch.push({ handle: declared.handle, realm: realmId,
-                         indexKey: indexKey, key: key });
-          });
+      // And, for a `merge: 'own'` store, every other origin's rows the
+      // held-whole start fanned in (#1001): each is a row of its own in
+      // the store, filed under its own stored name, or a lookup would
+      // answer only this process's share of a person.
+      const foreign = declared.merge === 'own'
+        ? replication.remoteContributions(declared.handle, realmId) : [];
+      const walk = function* () {
+        for (const e of partition.entries()) {
+          yield { key: e[0], value: e[1], origin: undefined };
         }
+        for (const c of foreign) {
+          yield { key: c.key, value: c.value, origin: c.origin };
+        }
+      };
+      for (const entry of walk()) {
+        const column = keyColumnOf(declared.handle, realmId,
+                                   storedKey(declared, entry.key,
+                                             entry.origin));
+        const lookups = lookupsFor(declared, declared.handle, realmId,
+                                   entry.key, entry.value) || [];
+        lookups.forEach(function (indexKey) {
+          batch.push({ handle: declared.handle, realm: realmId,
+                       indexKey: indexKey, key: column });
+        });
         // The row's sort value, filed the same way (2026-10-22, #820).
-        const sortAt = sortAtFor(declared, entry[1], entry[0]);
+        const sortAt = sortAtFor(declared, entry.value, entry.key);
         if (sortAt !== null) {
           batch.push({ handle: declared.handle, realm: realmId,
                        indexKey: require('./minted_queries').SORT_INDEX_KEY,
-                       key: keyColumnOf(declared.handle, realmId,
-                                        storedKey(declared, entry[0])),
-                       sortAt: sortAt });
+                       key: column, sortAt: sortAt });
         }
         if (++inBatch >= BACKFILL_BATCH) {
           await flushBatch();
@@ -2504,10 +2560,14 @@ function onDemandRead(handle, realmId, name) {
     log.debug("Leaving onDemandRead(). No bridge.");
     return { present: false };
   }
+  // The row's stored name: for a `merge: 'own'` store THIS process's row,
+  // `<name>.<origin>` (#1001).
+  const declared = realms.handleFor(handle);
+  const stored = declared ? storedKey(declared, name) : name;
   let answer = null;
   try {
     answer = bridge.query('minted.read',
-      [handle, realmId, keyColumnOf(handle, realmId, name)]);
+      [handle, realmId, keyColumnOf(handle, realmId, stored)]);
   } catch (e) {
     log.error(errorCodes.tag('STS-STORE-0084') + 'persistence: an on-demand "' +
               handle + '" row could not be read: ' + ((e && e.message) || e));
@@ -2565,14 +2625,7 @@ function onDemandByIndex(handle, realmId, value) {
     log.debug("Leaving onDemandByIndex(). Failed.");
     return [];
   }
-  const out = [];
-  rows.forEach(function (row) {
-    const name = nameOfRow({ key: row.key, keySealed: row.keySealed });
-    const opened = name === null ? undefined : openedBody(handle, row.body);
-    if (opened !== undefined) {
-      out.push({ key: name, value: opened });
-    }
-  });
+  const out = openedRows(handle, rows, false);
   log.debug("Leaving onDemandByIndex(). " + out.length + " row(s).");
   return out;
 }
@@ -2689,14 +2742,25 @@ function mintedQueryAsync(name, args) {
 // body will not open is left out, as a read leaves it.
 function openedRows(handle, rows, split) {
   log.debug("Entering openedRows(). " + handle);
-  const declared = split ? realms.handleFor(handle) : null;
+  const store = realms.handleFor(handle);
+  // A `merge: 'own'` store's names are split whatever the caller asked
+  // (#1001): the bare name is `<key>.<origin>`, which no caller files
+  // anything under, and the origin says whose row it is.
+  const own = !!store && store.merge === 'own';
+  const declared = split || own ? store : null;
   const out = [];
   (rows || []).forEach(function (row) {
     const name = nameOfRow({ key: row.key, keySealed: row.keySealed });
     const opened = name === null ? undefined : openedBody(handle, row.body);
     if (opened !== undefined) {
-      out.push({ key: declared ? splitKey(declared, name).key : name,
-                 value: opened });
+      const parts = declared ? splitKey(declared, name)
+        : { key: name, origin: '' };
+      const entry = { key: parts.key, value: opened };
+      if (own) {
+        entry.origin = parts.origin;
+        entry.own = !foreignRow(store, parts);
+      }
+      out.push(entry);
     }
   });
   log.debug("Leaving openedRows(). " + out.length + " row(s).");
@@ -3914,6 +3978,16 @@ module.exports = {
   // The key column a name is filed under, and a stored row's name (#222):
   // for the tests, which look rows up by the name they wrote.
   keyColumnOf: keyColumnOf,
+  // The on-demand reader's two synchronous doors and the bridge they ask,
+  // for the tests (#1001): a per-origin store's rows are named with their
+  // origin, and that is asserted against a stand-in bridge.
+  onDemandRead: onDemandRead,
+  onDemandByIndex: onDemandByIndex,
+  setDemandBridge: function (bridge) {
+    log.debug("Entering setDemandBridge().");
+    demandBridge = bridge || null;
+    log.debug("Leaving setDemandBridge().");
+  },
   journalled: journalled,
   nameOfRow: nameOfRow,
   backfillSessionIndex: backfillSessionIndex,
