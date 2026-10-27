@@ -64,6 +64,7 @@
   "version": "iya-sts version {version}",
   "docsLink": "Documentation",
   "addFilter": "Ajouter un filtre",
+  "removeFilter": "Supprimer ce filtre",
   "saveQuery": "Enregistrer la requête",
   "because.everyPerson": "Cette requête a été mise en file comme travail parce que son filtre ne peut pas être résolu par un index de l’annuaire : il faut lire chaque personne. Un filtre sur username, mail ou entryUuid est résolu immédiatement.",
   "because.asked": "Cette requête a été mise en file comme travail parce qu’elle a demandé à s’exécuter ainsi.",

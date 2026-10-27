@@ -207,11 +207,20 @@ function filterRowHtml(t: any, n: number, fieldOptions: string,
     '<option value="isNull">' + esc(t.text('report.opIsNull')) +
     '</option></select>' +
     (valueControl || '<input name="filterValue' + n + '">') +
-    (last ? '<button type="button" class="btn addfilter" ' +
-      'data-act="add-filter" title="' + esc(t.text('report.addFilter')) +
-      '" aria-label="' + esc(t.text('report.addFilter')) + '">+</button>'
-      : '') +
+    // A trash can on every row (#1017): removes the row, or empties the
+    // last one left, so the form always has a row (`removeFilterRow()`).
+    '<button type="button" class="btn removefilter" ' +
+    'data-act="remove-filter" title="' + esc(t.text('report.removeFilter')) +
+    '" aria-label="' + esc(t.text('report.removeFilter')) +
+    '">\u{1F5D1}</button>' +
+    (last ? addFilterButtonHtml(t) : '') +
     '</div>';
+}
+
+function addFilterButtonHtml(t: any): string {
+  return '<button type="button" class="btn addfilter" ' +
+    'data-act="add-filter" title="' + esc(t.text('report.addFilter')) +
+    '" aria-label="' + esc(t.text('report.addFilter')) + '">+</button>';
 }
 
 // THE QUERY FORM, SHARED (#989). The New Query page and the definition
@@ -1837,6 +1846,59 @@ class ReportRuntime extends SpaClient {
   }
 
   /**
+   * Removes a filter row (#1017, rcbj: a trash can beside each row). The
+   * last row left is emptied rather than removed, so the form always has
+   * one; the rows that remain are renumbered in order, and the + moves to
+   * the new last row when the removed one carried it.
+   *
+   * @param button - the trash can pressed
+   * @returns nothing
+   */
+  removeFilterRow(button: any): void {
+    const row = button && button.closest ? button.closest('.filterrow') :
+      null;
+    const form = row && row.closest ? row.closest('form') : null;
+    if (!row || !form) {
+      return;
+    }
+    const before = form.querySelectorAll('.filterrow');
+    if (before.length <= 1) {
+      // The only row: emptied, its value control a text box again.
+      const controls = row.querySelectorAll('select, input');
+      for (let i = 0; i < controls.length; i++) {
+        if (controls[i].tagName === 'INPUT') {
+          controls[i].value = '';
+        } else {
+          controls[i].selectedIndex = 0;
+        }
+      }
+      const valueEl = row.querySelector('[name="filterValue0"]');
+      if (valueEl && valueEl.tagName === 'SELECT') {
+        valueEl.outerHTML = filterValueHtml(0, [], '', '', '');
+      }
+      return;
+    }
+    const hadPlus = !!row.querySelector('.addfilter');
+    row.parentNode.removeChild(row);
+    const rows = form.querySelectorAll('.filterrow');
+    for (let n = 0; n < rows.length; n++) {
+      rows[n].setAttribute('data-filter-row', String(n));
+      const controls = rows[n].querySelectorAll('select, input');
+      for (let i = 0; i < controls.length; i++) {
+        const name = String(controls[i].getAttribute('name') || '')
+          .replace(/\d+$/, '');
+        controls[i].setAttribute('name', name + n);
+      }
+    }
+    if (hadPlus && rows.length) {
+      const last = rows[rows.length - 1];
+      if (!last.querySelector('.addfilter')) {
+        last.insertAdjacentHTML('beforeend', addFilterButtonHtml(this.t));
+      }
+    }
+  }
+
+  /**
    * Draws a filter row's value control again for its field and operator
    * (#1007).
    *
@@ -2511,6 +2573,11 @@ class ReportRuntime extends SpaClient {
       if (act === 'add-filter') {
         event.preventDefault();
         this.addFilterRow(el);
+        return;
+      }
+      if (act === 'remove-filter') {
+        event.preventDefault();
+        this.removeFilterRow(el);
         return;
       }
       if (act === 'group-search' || act === 'group-page') {

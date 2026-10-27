@@ -148,6 +148,10 @@ const REPORT_STYLE = [
   '.filterrow .addfilter { border: 1px solid #c9cad6; border-radius: 6px;',
   '  padding: .1rem .55rem; font-weight: 700; line-height: 1.4; }',
   '.filterrow .addfilter:hover { background: #e7e9f4; }',
+  // The trash can beside every filter row (#1017), the + button's shape.
+  '.filterrow .removefilter { border: 1px solid #c9cad6; border-radius: 6px;',
+  '  padding: .1rem .45rem; line-height: 1.4; }',
+  '.filterrow .removefilter:hover { background: #f7e4e6; }',
   // The pager (#997), the console's: links either side of a window of
   // numbers, the current page marked, the ends greyed when there is no
   // further page, and a rows-per-page choice on the same line.

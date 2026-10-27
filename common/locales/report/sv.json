@@ -64,6 +64,7 @@
   "version": "iya-sts version {version}",
   "docsLink": "Dokumentation",
   "addFilter": "Lägg till ett filter",
+  "removeFilter": "Ta bort det här filtret",
   "saveQuery": "Spara frågan",
   "because.everyPerson": "Frågan ställdes i kö som ett jobb eftersom dess filter inte kan besvaras från ett index i katalogen, så varje person måste läsas. Ett filter på username, mail eller entryUuid besvaras direkt.",
   "because.asked": "Frågan ställdes i kö som ett jobb eftersom den bad om att köras så.",

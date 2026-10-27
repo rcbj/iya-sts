@@ -64,6 +64,7 @@
   "version": "iya-sts version {version}",
   "docsLink": "Documentation",
   "addFilter": "Add a filter",
+  "removeFilter": "Remove this filter",
   "saveQuery": "Save query",
   "because.everyPerson": "This query was queued as a job because its filter is not one the directory can answer from an index, so it has to read every person. A filter on username, mail or entryUuid is answered at once.",
   "because.asked": "This query was queued as a job because it asked to run as one.",

@@ -150,6 +150,10 @@ it too). **A shared group with no address is an error of its own**,
 with outcome `error`, and shown as *no email address* beside the group in
 the pane. The other recipients are still sent to.
 
+**Filter rows come and go.** The `+` on the last row adds a row; the
+trash can beside a row removes it. The last row left is emptied rather
+than removed, so there is always one.
+
 **Sort and Group by are behind checkboxes.** Tick **Sort** to choose the
 field and the direction on the same row; unticked, the query carries no
 order. Tick **Group by**, on its own row under Count, to choose the group
