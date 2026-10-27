@@ -1655,6 +1655,10 @@
     "en": "f3efcad394d83c8d",
     "text": "NON-SPEC (#130). Les entrées de la personne dans ou=devices : identifiant, DN, libellé, les applications qui ont utilisé chacune, si elle détient un secret Native SSO et si la session de ce secret est active. POST /admin-api/users/remove-device en supprime une. Reflète le bloc Devices de la page /admin/users de la personne."
   },
+  "stsmetadata.endpoints./admin-api/users/certificates.what": {
+    "en": "e6213352c307d2b7",
+    "text": "HORS SPÉCIFICATION (#1061). Chaque certificat enregistré dans le userCertificate de la personne : le SHA-256 de son DER, son sujet, son émetteur, son numéro de série et sa validité. Un certificat d’une autorité externe ne connecte son titulaire qu’en tant que l’unique entrée qui l’enregistre ; POST /admin-api/users/add-certificate en enregistre un et /remove-certificate le retire. Reflète le bloc Certificats enregistrés de la page /admin/users de la personne."
+  },
   "stsmetadata.endpoints./admin-api/devices.what": {
     "en": "44c53b68d1ed9a1d",
     "text": "NON-SPEC (#164, #218). GET /admin/devices en JSON : chaque appareil du domaine, paginé (devicesPaging) et filtré par q, ownerKind, owner, application, compliance, attestation, keyKind et status ; ?device= désigne un appareil, trouvé ou non."

@@ -1655,6 +1655,10 @@
     "en": "f3efcad394d83c8d",
     "text": "非规范（#130）。此人在 ou=devices 中的条目：id、DN、标签、使用过每个设备的应用、它是否持有 Native SSO 密钥，以及该密钥的会话是否活动。POST /admin-api/users/remove-device 删除一个。对应此人 /admin/users 页面上的“设备”块。"
   },
+  "stsmetadata.endpoints./admin-api/users/certificates.what": {
+    "en": "e6213352c307d2b7",
+    "text": "非规范（#1061）。存储在此人 userCertificate 中的每个证书：其 DER 的 SHA-256、主体、颁发者、序列号和有效期。来自外部机构的证书只能以存储它的唯一条目的身份让其持有者登录；POST /admin-api/users/add-certificate 存储一个证书，/remove-certificate 将其移除。与此人 /admin/users 页面上的“已存储证书”区块一致。"
+  },
   "stsmetadata.endpoints./admin-api/devices.what": {
     "en": "44c53b68d1ed9a1d",
     "text": "非规范（#164、#218）。以 JSON 形式提供的 GET /admin/devices：领域中的每个设备，分页显示（devicesPaging），并可按 q、ownerKind、owner、application、compliance、attestation、keyKind 和 status 过滤；?device= 获取单个设备，无论是否找到。"

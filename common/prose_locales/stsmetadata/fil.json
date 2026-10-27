@@ -1655,6 +1655,10 @@
     "en": "f3efcad394d83c8d",
     "text": "NON-SPEC (#130). Ang mga entry ng tao sa ou=devices: id, DN, label, ang mga application na gumamit ng bawat isa, kung may hawak itong Native SSO secret at kung live ang session ng secret na iyon. Inaalis ng POST /admin-api/users/remove-device ang isa. Sinasalamin ang Devices block sa /admin/users page ng tao."
   },
+  "stsmetadata.endpoints./admin-api/users/certificates.what": {
+    "en": "e6213352c307d2b7",
+    "text": "NON-SPEC (#1061). Bawat certificate na nakaimbak sa userCertificate ng tao: ang SHA-256 ng DER nito, ang subject, issuer, serial at validity nito. Ang isang certificate mula sa isang panlabas na authority ay nagsa-sign in sa may-hawak nito bilang ang nag-iisang entry lamang na nag-iimbak nito; ang POST /admin-api/users/add-certificate ay nag-iimbak ng isa at ang /remove-certificate ay nag-aalis nito. Sumasalamin sa bloke ng Stored certificates sa pahinang /admin/users ng tao."
+  },
   "stsmetadata.endpoints./admin-api/devices.what": {
     "en": "44c53b68d1ed9a1d",
     "text": "NON-SPEC (#164, #218). GET /admin/devices sa JSON: bawat device sa realm, naka-page (devicesPaging) at sinasala ayon sa q, ownerKind, owner, application, compliance, attestation, keyKind at status; ang ?device= ay iisang device, nahanap man o hindi."

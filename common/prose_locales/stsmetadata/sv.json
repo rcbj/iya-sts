@@ -1655,6 +1655,10 @@
     "en": "f3efcad394d83c8d",
     "text": "ICKE-SPEC (#130). Personens poster i ou=devices: id, DN, etikett, de applikationer som använt var och en, om den har en Native SSO-hemlighet och om den hemlighetens session är levande. POST /admin-api/users/remove-device tar bort en. Speglar blocket Enheter på personens /admin/users-sida."
   },
+  "stsmetadata.endpoints./admin-api/users/certificates.what": {
+    "en": "e6213352c307d2b7",
+    "text": "UTANFÖR SPECIFIKATION (#1061). Varje certifikat som lagras i personens userCertificate: SHA-256 av dess DER, dess subjekt, utfärdare, serienummer och giltighet. Ett certifikat från en extern utfärdare loggar in sin innehavare endast som den enda post som lagrar det; POST /admin-api/users/add-certificate lagrar ett och /remove-certificate tar bort det. Speglar blocket Lagrade certifikat på personens /admin/users-sida."
+  },
   "stsmetadata.endpoints./admin-api/devices.what": {
     "en": "44c53b68d1ed9a1d",
     "text": "ICKE-SPEC (#164, #218). GET /admin/devices som JSON: varje enhet i sfären, sidindelad (devicesPaging) och filtrerad efter q, ownerKind, owner, application, compliance, attestation, keyKind och status; ?device= är en enhet, hittad eller inte."

@@ -201,6 +201,7 @@
   "endpoints.route./admin-api/applications/:action.name": "Application actions",
   "endpoints.route./admin-api/users/app-passwords.name": "One person's app passwords",
   "endpoints.route./admin-api/users/devices.name": "One person's devices",
+  "endpoints.route./admin-api/users/certificates.name": "One person's stored certificates",
   "endpoints.route./admin-api/devices.name": "The device register",
   "endpoints.route./admin-api/devices/:action.name": "Device register actions",
   "endpoints.route./admin-api/device-compliance.name": "The device compliance feed (MDM / posture)",

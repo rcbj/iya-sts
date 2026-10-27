@@ -807,6 +807,10 @@
     "en": "cbd7e46575f64db6",
     "text": "Los dispositivos de una persona"
   },
+  "endpoints.route./admin-api/users/certificates.name": {
+    "en": "12293a2c63e7d8fb",
+    "text": "Los certificados almacenados de una persona"
+  },
   "endpoints.route./admin-api/devices.name": {
     "en": "2785787c7598b5f2",
     "text": "El registro de dispositivos"

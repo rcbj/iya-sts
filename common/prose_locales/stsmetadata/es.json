@@ -1655,6 +1655,10 @@
     "en": "f3efcad394d83c8d",
     "text": "NO ESTÁNDAR (#130). Las entradas de la persona en ou=devices: id, DN, etiqueta, las aplicaciones que usaron cada una, si tiene un secreto de Native SSO y si la sesión de ese secreto está activa. POST /admin-api/users/remove-device elimina una. Refleja el bloque Devices de la página /admin/users de la persona."
   },
+  "stsmetadata.endpoints./admin-api/users/certificates.what": {
+    "en": "e6213352c307d2b7",
+    "text": "NO ESPECIFICADO (#1061). Cada certificado almacenado en el userCertificate de la persona: el SHA-256 de su DER, su sujeto, emisor, serie y validez. Un certificado de una autoridad externa inicia la sesión de su titular solo como la única entrada que lo almacena; POST /admin-api/users/add-certificate almacena uno y /remove-certificate lo retira. Refleja el bloque Certificados almacenados de la página /admin/users de la persona."
+  },
   "stsmetadata.endpoints./admin-api/devices.what": {
     "en": "44c53b68d1ed9a1d",
     "text": "NO ESTÁNDAR (#164, #218). GET /admin/devices sobre JSON: cada dispositivo del dominio, paginado (devicesPaging) y filtrado por q, ownerKind, owner, application, compliance, attestation, keyKind y status; ?device= es un dispositivo, encontrado o no."

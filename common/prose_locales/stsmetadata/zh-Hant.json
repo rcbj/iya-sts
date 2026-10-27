@@ -1655,6 +1655,10 @@
     "en": "f3efcad394d83c8d",
     "text": "非規格端點（#130）。此人在 ou=devices 中的項目：id、DN、標籤、使用過各裝置的應用程式、是否持有 Native SSO 密碼，以及該密碼的工作階段是否有效。POST /admin-api/users/remove-device 會移除一個。對應此人 /admin/users 頁面上的裝置區塊。"
   },
+  "stsmetadata.endpoints./admin-api/users/certificates.what": {
+    "en": "e6213352c307d2b7",
+    "text": "非規範（#1061）。儲存在此人 userCertificate 中的每個憑證：其 DER 的 SHA-256、主體、簽發者、序號與有效期。來自外部機構的憑證只能以儲存它的唯一項目的身分讓其持有者登入；POST /admin-api/users/add-certificate 儲存一個憑證，/remove-certificate 將其移除。與此人 /admin/users 頁面上的「已儲存憑證」區塊一致。"
+  },
   "stsmetadata.endpoints./admin-api/devices.what": {
     "en": "44c53b68d1ed9a1d",
     "text": "非規格端點（#164、#218）。以 JSON 提供的 GET /admin/devices：領域中的每個裝置，分頁（devicesPaging），並可依 q、ownerKind、owner、application、compliance、attestation、keyKind 與 status 篩選；?device= 為單一裝置，無論是否找到。"

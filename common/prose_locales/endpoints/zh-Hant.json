@@ -807,6 +807,10 @@
     "en": "cbd7e46575f64db6",
     "text": "單一個人的裝置"
   },
+  "endpoints.route./admin-api/users/certificates.name": {
+    "en": "12293a2c63e7d8fb",
+    "text": "一個人的已儲存憑證"
+  },
   "endpoints.route./admin-api/devices.name": {
     "en": "2785787c7598b5f2",
     "text": "裝置登錄"

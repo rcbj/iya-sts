@@ -807,6 +807,10 @@
     "en": "cbd7e46575f64db6",
     "text": "单个人的设备"
   },
+  "endpoints.route./admin-api/users/certificates.name": {
+    "en": "12293a2c63e7d8fb",
+    "text": "一个人的已存储证书"
+  },
   "endpoints.route./admin-api/devices.name": {
     "en": "2785787c7598b5f2",
     "text": "设备登记册"
