@@ -241,8 +241,11 @@ answers, one commit:
   same people as the Kerberos keys (a password derives them), so a list
   is refused as over the cap and runs only narrowed by `memberOf`. **A
   password row never carries the hash**: `reportHolderRows()` reads the
-  `{SCHEME}` prefix as the algorithm and `pwdChangedTime` as the
-  enrolment, and the test asserts the hash is nowhere in the row.
+  scheme as the algorithm — `$scrypt$`/`$argon2id$`, this service's own
+  stored forms (`common/crypto.js`), or an imported `{SCHEME}` — and
+  `pwdChangedTime` as the enrolment, and the test asserts neither hash is
+  in a row. (The first probe on 8081 drew an empty algorithm: the parser
+  knew only the braced form.)
 * **`users` gains `hasPassword`, `factors`, `methodsUsed`,
   `mfaLastAuthTime`** (`reportUserRow()`; `reportSecondFactors()` counts
   mfa-role passkeys, authenticator apps and mail factors — recovery codes

@@ -1184,15 +1184,19 @@ function reportHolderRows(entry: any, mechanism: any, ldap: any): any[] {
   }
   if (mechanism.id === 'password') {
     // THE PASSWORD ROW CARRIES NO HASH (#1019): the stored value is the
-    // hash, `{SCHEME}…`, and only the scheme is read, as the algorithm;
-    // the enrolment is the directory's pwdChangedTime, where it is kept.
+    // hash and only its scheme is read, as the algorithm — this service's
+    // own `$scrypt$…` and `$argon2id$…` (`common/crypto.js`'s
+    // `encodeStoredSecret`, `encodeArgon2Secret`), or an imported
+    // `{SCHEME}…`; the enrolment is the directory's pwdChangedTime.
     values.forEach(function (value: string, i: number): void {
-      const scheme = /^\{([^}]+)\}/.exec(String(value || ''));
+      const text = String(value || '');
+      const dollar = /^\$([a-z0-9-]+)\$/i.exec(text);
+      const braced = /^\{([^}]+)\}/.exec(text);
       out.push(Object.assign({}, common, {
         role: mechanism.role,
         credentials: values.length,
         credentialId: String(i + 1),
-        algorithm: scheme ? scheme[1] : '',
+        algorithm: dollar ? dollar[1] : (braced ? braced[1] : ''),
         lane: '',
         enrolledAt: reportLdapTime(reportAttr(entry, 'pwdChangedTime')) ||
           null,
