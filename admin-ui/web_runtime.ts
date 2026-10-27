@@ -2263,7 +2263,12 @@ class ConsoleRuntime extends SpaClient {
                  this.env.location.origin }, this.t);
     if (once) {
       this.view = null;
-      this.draw(once.title, once.active, once.html, null, '');
+      // ITS TRAIL LEADS BACK (#1068). With no `up` the section was the last
+      // crumb, which is never a link, so the page had no way back to the
+      // section it was reached from. The section is a link now, and a page
+      // about a person names that person too (`WebAnswers.personTrail()`).
+      this.draw(once.title, once.active, once.html,
+                once.up || { href: once.active, leaf: once.title }, '');
       return;
     }
     // A REDRAW FROM THE ANSWER: a refused create or edit with every box as
