@@ -1579,8 +1579,14 @@ class SpiffeCa {
         return false;
       }
       waited = true;
+      // NOT unref'd (#1059): this timer is AWAITED, so it is what keeps the
+      // operation alive. Unref'd, node exits in the middle of the wait
+      // whenever nothing else holds the loop: a served process always has
+      // its listeners, but a script or a shared-process test run does not,
+      // and `tests/run.js` ended with exit 0 and no summary that way. The
+      // wait is bounded by SPIFFE_BRANCH_WAIT_MS, so nothing is held past it.
       await new Promise(function (resolve) {
-        setTimeout(resolve, 250).unref();
+        setTimeout(resolve, 250);
       });
     }
   }
