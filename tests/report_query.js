@@ -1899,6 +1899,70 @@ function groups(t) {
   t.check(only.indexOf('<a ') < 0 && only.indexOf('rows 1–3 of 3') >= 0,
     'one page draws no links, only the where line and the size');
 
+  // THE RESULT OF RUN IS PAGED IN THE BROWSER (#1005): the same pager over
+  // rows already in hand, its links going nowhere, handled in memory. The
+  // runtime is driven as the browser would, on an instance made without
+  // its constructor, with a paint that keeps what was drawn.
+  const heldPager = ReportRuntime.pagerHtml(tr, '/report/query',
+    { page: 2, pages: 3, per: 50, total: 120 }, true);
+  t.check(heldPager.indexOf(
+    'href="#" data-act="result-page" data-page="3"') >= 0 &&
+    heldPager.indexOf('href="/report/query') < 0,
+    'a held pager links to nowhere and names the page', heldPager);
+  t.check(heldPager.indexOf('name="per" data-result-pager=""') >= 0 &&
+    heldPager.indexOf('data-pager-path') < 0,
+    'its rows-per-page select is marked for the held result');
+  let painted = '';
+  const runtime = Object.create(ReportRuntime.prototype);
+  runtime.t = tr;
+  runtime.lastRun = null;
+  runtime.resultPer = 50;
+  runtime.paint = function (html) {
+    painted = html;
+  };
+  const many = [];
+  for (let i = 1; i <= 120; i++) {
+    many.push({ username: 'u' + i, role: i % 2 ? 'primary' : 'mfa' });
+  }
+  runtime.showRun({ status: 200, json: { fields: ['username', 'role'],
+    rows: many } });
+  t.equal((painted.match(/<tr><td>/g) || []).length, 50,
+    'Run draws the first fifty rows, not every row');
+  t.check(painted.indexOf('rows 1–50 of 120') >= 0 &&
+    painted.indexOf('<td>u1</td>') >= 0 && painted.indexOf('<td>u51</td>') < 0,
+    'with the where line and the first page\'s rows', painted.slice(0, 400));
+  t.equal((painted.match(/class="pager"/g) || []).length, 2,
+    'a pager above and below the table');
+  const link = {
+    getAttribute: function (name) {
+      return name === 'data-act' ? 'result-page' :
+        (name === 'data-page' ? '3' : null);
+    }
+  };
+  let prevented = 0;
+  runtime.accounts = null;
+  runtime.onClick({ target: link, preventDefault: function () {
+    prevented++;
+  } });
+  t.equal(prevented, 1, 'a page link is handled, not followed');
+  t.check(painted.indexOf('rows 101–120 of 120') >= 0 &&
+    painted.indexOf('<td>u101</td>') >= 0 &&
+    painted.indexOf('<td>u100</td>') < 0,
+    'and the third page is drawn from memory', painted.slice(0, 300));
+  const perSelect = {
+    value: '200',
+    getAttribute: function (name) {
+      return name === 'name' ? 'per'
+        : (name === 'data-result-pager' ? '' : null);
+    }
+  };
+  runtime.onChange({ target: perSelect });
+  t.equal((painted.match(/<tr><td>/g) || []).length, 120,
+    'two hundred a page draws every row on page one');
+  t.check(painted.indexOf('rows 1–120 of 120') >= 0 &&
+    painted.indexOf('<option value="200" selected>') >= 0,
+    'and the select keeps the choice');
+
   // The status bubble: the console's flash, ok or err, with a dismiss.
   const okBubble = ReportRuntime.flashHtml(tr, 'ok', 'Saved.');
   t.check(okBubble.indexOf('<div class="flash" role="status">') === 0 &&

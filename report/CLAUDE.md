@@ -210,6 +210,22 @@ rows-per-page select — every page a link under the list's own path with
 moves to page one through the location (`onChange()`, `data-pager-path`).
 `tests/report_query.js` holds both views' paging and the pager's markup.
 
+## The result of Run is paged in the browser (#1005)
+
+rcbj, 2026-10-27. `showRun()` drew the first fifty rows of a synchronous
+answer and dropped the rest without a word. Now it keeps the answer
+(`lastRun`: the fields and every row) and `drawRunResult(page)` paints a
+slice with `pagerHtml(…, held = true)` above and below: #997's pager with
+links that go nowhere — `data-act="result-page"` and the page number,
+handled in `onClick()` — and a rows-per-page select marked
+`data-result-pager`, handled in `onChange()` (the choice, `resultPer`,
+is kept for the tab's next Run). **The location does not change**: a
+route would draw the query form again and lose the rows, so this pager
+is the one place the page turns without `pushState`. Both Run buttons
+(New Query, and a definition's) go through `showRun()`, so both are
+paged. `tests/report_query.js`'s `chrome()` drives `showRun()`,
+a page link and a size change on a constructor-less instance.
+
 ## `credentialHolders`: who holds which credential (#1002)
 
 rcbj, 2026-10-27: who has a passkey as a primary mechanism, who as a

@@ -615,13 +615,23 @@ function pageQuery(query: any): string {
   return parts.length ? '?' + parts.join('&') : '';
 }
 
+// A pager over rows the browser already HOLDS (#1005: the result of Run) is
+// the same markup with links that go nowhere: `data-act="result-page"` and
+// the page number, handled in `onClick()`, and a rows-per-page select marked
+// `data-result-pager`, handled in `onChange()`. The location does not
+// change, because the rows are in memory and a route would draw the form
+// again and lose them.
 function pagerLink(path: string, page: number, per: number,
-                   label: string, title?: string): string {
+                   label: string, title?: string, held?: boolean): string {
+  if (held) {
+    return '<a href="#" data-act="result-page" data-page="' + page + '"' +
+      (title ? ' title="' + esc(title) + '"' : '') + '>' + label + '</a>';
+  }
   return '<a href="' + esc(path + '?page=' + page + '&per=' + per) + '"' +
     (title ? ' title="' + esc(title) + '"' : '') + '>' + label + '</a>';
 }
 
-function pagerHtml(t: any, path: string, pg: any): string {
+function pagerHtml(t: any, path: string, pg: any, held?: boolean): string {
   const page = Number(pg.page) || 1;
   const pages = Math.max(1, Number(pg.pages) || 1);
   const per = Number(pg.per) || 50;
@@ -633,8 +643,8 @@ function pagerHtml(t: any, path: string, pg: any): string {
   const out: string[] = [];
   if (pages > 1) {
     if (page > 1) {
-      out.push(pagerLink(path, 1, per, first));
-      out.push(pagerLink(path, page - 1, per, prev));
+      out.push(pagerLink(path, 1, per, first, undefined, held));
+      out.push(pagerLink(path, page - 1, per, prev, undefined, held));
     } else {
       out.push('<span class="off">' + first + '</span>');
       out.push('<span class="off">' + prev + '</span>');
@@ -643,11 +653,11 @@ function pagerHtml(t: any, path: string, pg: any): string {
     const to = Math.min(pages, Math.max(page + 3, 7));
     for (let n = from; n <= to; n++) {
       out.push(n === page ? '<span class="here">' + n + '</span>'
-        : pagerLink(path, n, per, String(n)));
+        : pagerLink(path, n, per, String(n), undefined, held));
     }
     if (page < pages) {
-      out.push(pagerLink(path, page + 1, per, next));
-      out.push(pagerLink(path, pages, per, last));
+      out.push(pagerLink(path, page + 1, per, next, undefined, held));
+      out.push(pagerLink(path, pages, per, last, undefined, held));
     } else {
       out.push('<span class="off">' + next + '</span>');
       out.push('<span class="off">' + last + '</span>');
@@ -664,7 +674,8 @@ function pagerHtml(t: any, path: string, pg: any): string {
     });
   out.push('<label class="perpage"' + tip(t, 'report.tipPerPage') + '>' +
     esc(t.text('report.perPage.label')) +
-    ' <select name="per" data-pager-path="' + esc(path) + '">' +
+    ' <select name="per" ' + (held ? 'data-result-pager=""'
+      : 'data-pager-path="' + esc(path) + '"') + '>' +
     choices.map(function (n: number): string {
       return '<option value="' + n + '"' + (n === per ? ' selected' : '') +
         '>' + esc(t.text('report.perPage.rows', { n: String(n) })) +
@@ -804,6 +815,11 @@ class ReportRuntime extends SpaClient {
   private catalogSources: any[];
   // The group search's last query, for the pager (#989).
   private groupQuery: string;
+  // The last Run's answer, paged in the browser (#1005): its fields and
+  // every row that came back, and the rows-per-page choice, kept across
+  // runs in this tab.
+  private lastRun: any;
+  private resultPer: number;
 
   /**
    * @param env - the browser's objects
@@ -826,6 +842,8 @@ class ReportRuntime extends SpaClient {
     this.chrome = null;
     this.catalogSources = [];
     this.groupQuery = '';
+    this.lastRun = null;
+    this.resultPer = 50;
   }
 
   /**
@@ -1779,6 +1797,13 @@ class ReportRuntime extends SpaClient {
       }
       return;
     }
+    if (name === 'per' && el.getAttribute('data-result-pager') != null) {
+      // Rows per page of the held result (#1005): page one at the new
+      // size, from memory; the choice is kept for the next Run in this tab.
+      this.resultPer = Number(el.value) || 50;
+      this.drawRunResult(1);
+      return;
+    }
     if (name === 'per' && el.getAttribute('data-pager-path')) {
       // The rows-per-page choice (#997) moves to page one at the new size,
       // through the location, as a pager link does.
@@ -2158,15 +2183,11 @@ class ReportRuntime extends SpaClient {
       return;
     }
     if (answer.json && answer.json.rows) {
-      const fields = answer.json.fields || [];
-      const rows = (answer.json.rows || []).slice(0, 50).map(
-        function (row: any): string[] {
-          return fields.map(function (field: string): string {
-            const value = row[field];
-            return esc(value == null ? '' : String(value));
-          });
-        });
-      this.paint(tableHtml(fields.map(esc), rows));
+      // Every row that came back is kept and paged here (#1005); until
+      // then the first fifty were drawn and the rest silently dropped.
+      this.lastRun = { fields: answer.json.fields || [],
+                       rows: answer.json.rows || [] };
+      this.drawRunResult(1);
       return;
     }
     if (answer.bytes) {
@@ -2179,6 +2200,34 @@ class ReportRuntime extends SpaClient {
     // A refusal keeps the form on the page and says why above it.
     this.flash('err', (answer.json && (answer.json.error_description ||
       answer.json.error)) || this.t.text('report.error'));
+  }
+
+  /**
+   * Draws one page of the last Run's rows, with the pager above and below
+   * (#1005, rcbj: page the result of Run as the lists are paged). The rows
+   * are in hand, so a page is a slice and no request is made.
+   *
+   * @param page - the page to draw, clamped to what there is
+   * @returns nothing
+   */
+  drawRunResult(page: number): void {
+    const held = this.lastRun || { fields: [], rows: [] };
+    const per = PER_CHOICES.indexOf(this.resultPer) >= 0 ? this.resultPer
+      : 50;
+    const total = held.rows.length;
+    const pages = Math.max(1, Math.ceil(total / per));
+    const at = Math.min(pages, Math.max(1, Math.floor(Number(page) || 1)));
+    const fields: string[] = held.fields;
+    const rows = held.rows.slice((at - 1) * per, at * per).map(
+      function (row: any): string[] {
+        return fields.map(function (field: string): string {
+          const value = row[field];
+          return esc(value == null ? '' : String(value));
+        });
+      });
+    const pager = pagerHtml(this.t, BASE + '/query',
+      { page: at, pages: pages, per: per, total: total }, true);
+    this.paint(pager + tableHtml(fields.map(esc), rows) + pager);
   }
 
   /**
@@ -2210,8 +2259,8 @@ class ReportRuntime extends SpaClient {
    * @param pg - `{ page, pages, per, total }` from the API
    * @returns the pager's HTML
    */
-  static pagerHtml(t: any, path: string, pg: any): string {
-    return pagerHtml(t, path, pg);
+  static pagerHtml(t: any, path: string, pg: any, held?: boolean): string {
+    return pagerHtml(t, path, pg, held);
   }
 
   /**
@@ -2312,6 +2361,12 @@ class ReportRuntime extends SpaClient {
       if (act === 'refresh') {
         event.preventDefault();
         this.route();
+        return;
+      }
+      if (act === 'result-page') {
+        // A page of the held result (#1005): drawn from memory, no route.
+        event.preventDefault();
+        this.drawRunResult(Number(el.getAttribute('data-page') || 1));
         return;
       }
       if (act === 'dismiss') {
