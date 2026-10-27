@@ -85,6 +85,7 @@ const INDEX_LOOKUP_CAP = 16;
 const NEEDLE_MIN = 3;
 const CANDIDATE_CAP = 1000;
 const UNBOUNDED_FILTER = 'STS-REPORT-0036';
+const TOO_MANY_HOLDERS = 'STS-REPORT-0039';
 
 interface Lookup {
   field: string;
@@ -1176,8 +1177,8 @@ function reportHolderEntry(holder: any): any {
   return entry;
 }
 
-async function reportMechanismHolders(mechanism: any, ldap: any):
-    Promise<any[]> {
+async function reportMechanismHolders(mechanism: any, ldap: any,
+                                      stop?: () => string): Promise<any[]> {
   log.debug("Entering reportMechanismHolders(). " + mechanism.id);
   // Unguarded, as the other doors above are: a directory without the door
   // throws, and the run fails out loud rather than listing nobody. EVERY
@@ -1188,26 +1189,25 @@ async function reportMechanismHolders(mechanism: any, ldap: any):
   const holders = await ldap.holdersAsync('person', mechanism.attribute,
     MECHANISM_TABLE.map(function (m: any): string {
       return String(m.attribute).toLowerCase();
-    }).concat(HOLDER_FIELDS));
+    }).concat(HOLDER_FIELDS), stop ? { stop: stop } : undefined);
   const entries = (holders || []).map(reportHolderEntry);
   log.debug("Leaving reportMechanismHolders(). " + entries.length + '.');
   return entries;
 }
 
-// The members of a group, as entries: the group's member DNs, the person's
-// name read off each `uid=` RDN, fetched by name. A member named otherwise
-// (a group, a certificate's `cn=` entry) is left out: the row needs a person.
-// The group is named by its `cn`, as the row's `memberOf` names it — the
-// same spelling the filter is then checked against in `Rows.take()`; a DN
-// here would find the members and match no row.
-async function reportGroupMemberEntries(selector: string, ldap: any):
-    Promise<any[]> {
-  log.debug("Entering reportGroupMemberEntries(). " + selector);
+// The members of a group, by name: the group's member DNs, the person's name
+// read off each `uid=` RDN. A member named otherwise (a group, a
+// certificate's `cn=` entry) is left out: the row needs a person. The group
+// is named by its `cn`, as the row's `memberOf` names it — the same spelling
+// the filter is then checked against in `Rows.take()`; a DN here would find
+// the members and match no row.
+function reportGroupMemberNames(selector: string, ldap: any): string[] {
+  log.debug("Entering reportGroupMemberNames(). " + selector);
   const wanted = String(selector || '').trim();
   const dn = wanted ? ldap.groupDnFor(wanted) : '';
   const group = dn ? ldap.readGroupEntry(dn) : null;
   if (!group) {
-    log.debug("Leaving reportGroupMemberEntries(). No such group.");
+    log.debug("Leaving reportGroupMemberNames(). No such group.");
     return [];
   }
   const names: string[] = [];
@@ -1219,14 +1219,55 @@ async function reportGroupMemberEntries(selector: string, ldap: any):
         names.push(matched[1]);
       }
     });
-  const entries = names.length ?
-    await ldap.existingUserEntriesAsync(names) : [];
-  const found = (entries || []).filter(function (entry: any): boolean {
-    return !!entry;
-  });
-  log.debug("Leaving reportGroupMemberEntries(). " + found.length + ' of ' +
-    names.length + '.');
-  return found;
+  log.debug("Leaving reportGroupMemberNames(). " + names.length + '.');
+  return names;
+}
+
+// THE READ IS REFUSED BEFORE ITS FIRST PAGE WHEN IT CANNOT FIT (#1002, found
+// on 8081): every person with a password there holds `stsKrb5Keys`, so the
+// Kerberos mechanism's holders ARE the population — a million entries — and
+// a query naming it, or naming no mechanism, read them all, and went on
+// reading them a page at a time for minutes after the client gave up. The
+// store counts the holders of an attribute through the same index that
+// lists them (`holderCountAsync`, nothing opened), so the count comes first:
+// over the execution's row cap (`report.syncMaxRows`, `report.asyncMaxRows`)
+// the read is refused as `result_too_large` — synchronously, when a job
+// could still fit, as an UNBOUNDED refusal, which `auto` mode turns into a
+// job. The same cap bounds a group's members. And the read that does start
+// carries `stop`, so the store's paging ends with the budget or a
+// cancellation rather than with the last holder.
+function reportTooManyHolders(n: number, cap: number, execution: string,
+                              what: string, jobCap: number): any {
+  log.debug("Entering reportTooManyHolders().");
+  log.warn(errorCodes.tag(TOO_MANY_HOLDERS) +
+    'report: a credentialHolders query would read ' + n + ' ' + what +
+    ', over the ' + execution + ' cap of ' + cap + '; refused before the ' +
+    'first page was read.');
+  const fits = execution === 'sync' && n <= jobCap;
+  log.debug("Leaving reportTooManyHolders().");
+  return {
+    ok: false,
+    code: TOO_MANY_HOLDERS,
+    error: 'result_too_large',
+    unbounded: fits,
+    description: 'This query would read ' + n + ' ' + what + ', more than ' +
+      (execution === 'sync' ? 'a synchronous query' : 'a job') +
+      ' may read (' + cap + '). ' + (fits ? 'Run it as a job, or n' : 'N') +
+      'arrow it: filter on a mechanism fewer people hold, or on memberOf.'
+  };
+}
+
+function reportHoldersStop(control: any): () => string {
+  log.debug("Entering reportHoldersStop().");
+  const stop = function (): string {
+    if (control && typeof control.cancelled === 'function' &&
+        control.cancelled()) {
+      return 'cancelled';
+    }
+    return reportOverBudget(control) ? 'budget' : '';
+  };
+  log.debug("Leaving reportHoldersStop().");
+  return stop;
 }
 
 async function reportReadCredentialHolders(rows: any, control: any):
@@ -1263,6 +1304,12 @@ async function reportReadCredentialHolders(rows: any, control: any):
     log.debug("Leaving reportReadCredentialHolders(). Unbounded.");
     return;
   }
+  const limits = new Limits();
+  const execution = control && control.execution === 'async' ? 'async' :
+    'sync';
+  const cap = execution === 'sync' ? limits.syncMaxRows() :
+    limits.asyncMaxRows();
+  const jobCap = limits.asyncMaxRows();
   let entries: any[] = [];
   const seen = new Set<string>();
   const take = function (entry: any): void {
@@ -1273,16 +1320,70 @@ async function reportReadCredentialHolders(rows: any, control: any):
     }
   };
   if (groups.length) {
-    // The community first: its members, then each one's mechanisms.
-    for (let g = 0; g < groups.length; g++) {
-      for (let v = 0; v < groups[g].values.length; v++) {
-        (await reportGroupMemberEntries(groups[g].values[v], ldap))
-          .forEach(take);
+    // The community first: its members by name, counted against the cap
+    // before any is read, then each one's mechanisms.
+    let names: string[] = [];
+    groups.forEach(function (one: Lookup): void {
+      one.values.forEach(function (selector: string): void {
+        reportGroupMemberNames(selector, ldap).forEach(
+          function (name: string): void {
+            if (names.indexOf(name) < 0) {
+              names.push(name);
+            }
+          });
+      });
+    });
+    if (names.length > cap) {
+      control.unbounded = reportTooManyHolders(names.length, cap, execution,
+        'group members', jobCap);
+      log.debug("Leaving reportReadCredentialHolders(). Too many members.");
+      return;
+    }
+    const found = names.length ? await ldap.existingUserEntriesAsync(names) :
+      [];
+    (found || []).forEach(function (entry: any): void {
+      if (entry) {
+        take(entry);
+      }
+    });
+  } else {
+    // The holders, counted first where the store can count (a windowed
+    // directory; in memory the answer is null and the walk is the count).
+    let holders = 0;
+    let counted = false;
+    for (let m = 0; m < table.length; m++) {
+      const n = await ldap.holderCountAsync('person', table[m].attribute);
+      if (typeof n === 'number') {
+        counted = true;
+        holders += n;
       }
     }
-  } else {
-    for (let m = 0; m < table.length; m++) {
-      (await reportMechanismHolders(table[m], ldap)).forEach(take);
+    if (counted && holders > cap) {
+      control.unbounded = reportTooManyHolders(holders, cap, execution,
+        'credential holders', jobCap);
+      log.debug("Leaving reportReadCredentialHolders(). Too many holders.");
+      return;
+    }
+    const stop = reportHoldersStop(control);
+    try {
+      for (let m = 0; m < table.length; m++) {
+        (await reportMechanismHolders(table[m], ldap, stop)).forEach(take);
+      }
+    } catch (e: any) {
+      if (!(e && e.stopped)) {
+        log.debug("Caught in reportReadCredentialHolders(): " +
+          ((e && e.message) || e));
+        throw e;
+      }
+      // The budget (or a cancellation) ended the store's paging; the
+      // caller reads the budget off `control` as it does for a row-by-row
+      // read that ran out of time.
+      log.debug("Caught in reportReadCredentialHolders(): " + e.message);
+      if (stop() === 'budget') {
+        control.timedOut = true;
+      }
+      log.debug("Leaving reportReadCredentialHolders(). Stopped.");
+      return;
     }
   }
   for (let i = 0; i < entries.length; i++) {

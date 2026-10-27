@@ -928,6 +928,7 @@ function directoryDouble(windowed) {
         description: ['the ' + name] } };
   });
   const allGroups = [staff].concat(moreGroups);
+  const holderCounts = {};
   const calls = { byName: 0, byUuid: 0, byMail: 0, contains: 0, walk: 0,
     groups: 0, groupPages: 0 };
   const byName = {};
@@ -971,8 +972,29 @@ function directoryDouble(windowed) {
     },
     // The holders of an attribute (#1002): the people whose entry carries
     // it, with the attributes asked for, raw.
-    holdersAsync: function (kind, attribute, names) {
+    // How many hold it (#1002): a test's own number when it set one on
+    // `holderCounts`, else the people holding it; null when not windowed,
+    // as the directory answers in memory.
+    holderCountAsync: function (kind, attribute) {
+      calls.holderCount = (calls.holderCount || 0) + 1;
+      const held = String(attribute).toLowerCase();
+      if (Object.prototype.hasOwnProperty.call(holderCounts, held)) {
+        return Promise.resolve(holderCounts[held]);
+      }
+      if (!windowed) {
+        return Promise.resolve(null);
+      }
+      return Promise.resolve(people.filter(function (one) {
+        return Object.keys(one.attributes).some(function (k) {
+          return k.toLowerCase() === held && one.attributes[k].length;
+        });
+      }).length);
+    },
+    holdersAsync: function (kind, attribute, names, control) {
       calls.holders = (calls.holders || 0) + 1;
+      if (control && typeof control.stop === 'function') {
+        calls.holdersStop = (calls.holdersStop || 0) + 1;
+      }
       const held = String(attribute).toLowerCase();
       const out = [];
       people.forEach(function (one) {
@@ -1063,7 +1085,8 @@ function directoryDouble(windowed) {
     }
   };
   log.debug("Leaving directoryDouble().");
-  return { ldap: ldap, calls: calls, people: people };
+  return { ldap: ldap, calls: calls, people: people,
+           holderCounts: holderCounts };
 }
 
 function names(result) {
@@ -1921,6 +1944,48 @@ async function holders(t) {
     t.equal((asJob.rows || []).length, 4,
       'ada twice for passkeys, once for totp, bea once');
     t.equal(calls.holders, 5, 'one holders lookup per mechanism');
+    t.equal(calls.holderCount, 5, 'after one count per mechanism');
+    t.equal(calls.holdersStop, 5, 'and each read carries a stop');
+
+    // THE COUNT COMES FIRST (#1002, 8081's million Kerberos keys): over the
+    // synchronous cap and under the job cap the refusal is unbounded, so
+    // auto mode queues a job; over the job cap it is flat; a job over its
+    // own cap is refused too. Nothing is read in any of the three.
+    built.holderCounts.stskrb5keys = 10000;
+    reset();
+    const manySync = await read({ source: 'credentialHolders',
+      select: fields, limit: 5,
+      where: { op: 'eq', field: 'mechanism', value: 'kerberos' } });
+    t.equal(manySync.code, 'STS-REPORT-0039',
+      'ten thousand holders are refused synchronously');
+    t.equal(manySync.unbounded, true, 'as an unbounded refusal (a job fits)');
+    t.equal(manySync.error, 'result_too_large', 'and result_too_large');
+    t.equal(calls.holders, 0, 'with no holder read');
+    t.check(manySync.description.indexOf('10000') >= 0,
+      'saying how many', manySync.description);
+    built.holderCounts.stskrb5keys = 200000;
+    reset();
+    const tooManyEven = await read({ source: 'credentialHolders',
+      select: fields, limit: 5,
+      where: { op: 'eq', field: 'mechanism', value: 'kerberos' } });
+    t.equal(tooManyEven.code, 'STS-REPORT-0039',
+      'two hundred thousand are refused synchronously');
+    t.equal(!!tooManyEven.unbounded, false,
+      'and not as unbounded: a job would not fit either');
+    reset();
+    const tooManyJob = await read({ source: 'credentialHolders',
+      select: fields, limit: 5,
+      where: { op: 'eq', field: 'mechanism', value: 'kerberos' } }, 'async');
+    t.equal(tooManyJob.code, 'STS-REPORT-0039',
+      'and a job over its own cap is refused before it reads');
+    t.equal(calls.holders, 0, 'nothing read for it');
+    delete built.holderCounts.stskrb5keys;
+    reset();
+    const fewAgain = await read({ source: 'credentialHolders',
+      select: fields, limit: 5,
+      where: { op: 'eq', field: 'mechanism', value: 'kerberos' } });
+    t.equal(fewAgain.ok, true, 'the count back under the cap, it reads');
+    t.equal((fewAgain.rows || []).length, 0, 'nobody here holds one');
   } finally {
     sources.installDirectory(null);
   }

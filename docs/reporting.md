@@ -356,6 +356,18 @@ is sealed: the rows are read from the holders' own entries, as the users
 page's census reads them. Recovery codes and app passwords are not
 listed, because their attributes are not in that index.
 
+**The holders are counted before they are read.** A mechanism nearly
+everyone holds is the population under another name: on a service where
+every person has a password, every person also holds Kerberos keys, so
+`mechanism` equals `kerberos` names a million people. The store counts
+the holders through the index that lists them, and a count over the
+execution's row cap (`report.syncMaxRows` synchronously,
+`report.asyncMaxRows` in a job) is refused as `result_too_large` before
+the first entry is opened; synchronously, when a job could still fit, it
+becomes a job in `auto` mode. A `memberOf` filter's members are counted
+the same way. The read that does start stops with the query's time cap
+or its cancellation, not with its last holder.
+
 **The census is a count.** `aggregate: "count"` with `groupBy`
 `mechanism`, `role`, `algorithms` or `lanes` answers how many people hold
 a passkey as a primary mechanism, how many as a second factor, how many
