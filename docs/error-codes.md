@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4683** of them, in **48** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4685** of them, in **48** subsystems.
 
 ## Where a code appears
 
@@ -96,7 +96,7 @@ is an ordinary outcome.
 * [Identity-provider-initiated sign-in (`STS-LAUNCH`)](#sts-launch) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 181
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
-* [Reporting (`STS-REPORT`)](#sts-report) — 40
+* [Reporting (`STS-REPORT`)](#sts-report) — 42
 
 ## STS-HTTP
 
@@ -5393,6 +5393,8 @@ Raised from: report/.
 | `STS-REPORT-0039` | A credentialHolders query would read more holders (or group members) than its execution's row cap allows, so it was refused before the first page was read (#1002); synchronously, under the job cap, it becomes a job in auto mode. | result_too_large (HTTP 400) |
 | `STS-REPORT-0040` | A filter on a directory-backed report source (users, credentialHolders) named no field the directory indexes, so it would have read every person; refused at acceptance, naming the indexed fields, in every mode (rcbj, 2026-10-27). | invalid_query (HTTP 400) |
 | `STS-REPORT-0041` | An indexed report filter on users matched more people than one read may take (the candidate cap), so it was refused rather than read person by person (#1028). | result_too_large (HTTP 400) |
+| `STS-REPORT-0042` | A finished report could not be sealed under the key hierarchy (no key-encryption key is held), so it was not stored; the job failed rather than write the report in the clear (#1033). | none (the job fails with unavailable) |
+| `STS-REPORT-0043` | A stored report would not open under the data keys this process holds (a destroyed or foreign key), so it was answered as gone (#1033). | none (the result is answered as not found) |
 
 ## Adding a code
 

@@ -3014,12 +3014,70 @@ async function holders(t) {
   log.debug("Leaving holders().");
 }
 
+// A FINISHED REPORT IS STORED SEALED (#1033, rcbj: "reports need to be
+// stored encrypted"): with a database attached, no key-encryption key means
+// the report is refused, not written in the clear; with one, the stored
+// row is the sealed envelope, holds none of the report's text, and reads
+// back as the report.
+async function sealedArtifacts(t) {
+  log.debug("Entering sealedArtifacts().");
+  const stores = require('../report/stores');
+  const keystore = require('../common/keystore');
+  const cryptoMod = require('crypto');
+  const rows = new Map();
+  const db = {
+    putReportArtifact: function (row) {
+      rows.set(row.realm + '|' + row.jobId, Object.assign({}, row));
+      return Promise.resolve();
+    },
+    getReportArtifact: function (key) {
+      return Promise.resolve(rows.get(key.realm + '|' + key.jobId) || null);
+    },
+    deleteReportArtifact: function (key) {
+      rows.delete(key.realm + '|' + key.jobId);
+      return Promise.resolve();
+    }
+  };
+  const report = Buffer.from('username,mail\nada,ada@example.com\n', 'utf8');
+  stores.setDriver(db, 'test');
+  try {
+    if (!keystore.sealed()) {
+      let refused = null;
+      try {
+        await stores.putArtifact('job-clear', report, 'x', 'text/csv');
+      } catch (e) {
+        refused = e;
+      }
+      t.check(!!refused && refused.code === 'STS-REPORT-0042' &&
+        rows.size === 0,
+        'without a key-encryption key a report is refused, not stored');
+    }
+    t.check(keystore.useEphemeralKek(cryptoMod.randomBytes(32)
+      .toString('hex')), 'a key-encryption key is installed');
+    await stores.putArtifact('job-sealed', report, 'x', 'text/csv');
+    const stored = Array.from(rows.values())[0];
+    const text = Buffer.from(stored.bytes).toString('utf8');
+    t.check(text.indexOf('$aesgcm$') === 0,
+      'the stored row is the sealed envelope', text.slice(0, 20));
+    t.check(text.indexOf('ada@example.com') < 0 &&
+      text.indexOf(report.toString('base64')) < 0,
+      'and holds none of the report');
+    const back = await stores.getArtifact('job-sealed');
+    t.equal(back && back.bytes.toString('utf8'), report.toString('utf8'),
+      'and reads back as the report');
+  } finally {
+    stores.clearDriver();
+  }
+  log.debug("Leaving sealedArtifacts().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   documents(t);
   formats(t);
   rightsOf(t);
   await artifacts(t);
+  await sealedArtifacts(t);
   projections(t);
   await budget(t);
   await schedules(t);

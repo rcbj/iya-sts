@@ -747,6 +747,16 @@ written with `realms.run(null, …)` so every realm sees one stamp. Artifact
 bytes are `sts_report_artifacts` (schema version 26) when the driver has
 `putReportArtifact`, `getReportArtifact` and `deleteReportArtifact`.
 Otherwise they stay in a map in this process, keyed by realm and job id.
+**The bytes are SEALED since #1033** (rcbj: "reports need to be stored
+encrypted"): `stores.ts`'s `reportSealBytes()` seals the base64 of the
+report with `keystore.seal(…, 'report-artifact')` — the realm's data key of
+that class, wrapped under the key-encryption key — and the `bytea` column
+holds the envelope's UTF-8; `reportOpenBytes()` opens it on read, passes a
+pre-#1033 clear row through until its retention ends, and answers a row
+that will not open as gone (`STS-REPORT-0043`). **Without a key-encryption
+key the report is refused, never written in the clear**
+(`STS-REPORT-0042`); `reportRunOne()` fails the job with that code. The
+in-process map is never written anywhere and stays plain.
 `persistence.js` installs the driver lazily and does not require
 `report/jobs`. A delete removes the memory copy as well as the row.
 

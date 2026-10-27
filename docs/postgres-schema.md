@@ -161,15 +161,16 @@ are a plain SHA-256, and the rows that exist only as keyed digests
 | `sts_risk_failures` | `address_sealed` | `name_hmac` (keyed) | everything else |
 | `sts_risk_session_context` | — | `ua_hash` (SHA-256) | everything else |
 | the other eleven `sts_risk_*` tables | — | — | every column (public datasets, counts and scores) |
-| `sts_report_artifacts` | — | — | every column, **including `bytes`, the finished report** |
+| `sts_report_artifacts` | `bytes` (since #1033) | `sha256` | `realm`, `job_id`, `media_type`, `created_at` |
 | `sts_schema` | — | — | every column |
 
 Two things on that list deserve an operator's attention:
 
-* **A finished report is stored in the clear.** `sts_report_artifacts.bytes`
-  is the document as it was downloaded, and a report can list people. Treat
-  the table like the reports themselves, and see [Reports](reporting.md) for
-  how long one is kept.
+* **A finished report is stored sealed** (since #1033), because a report
+  can list people. Without a key-encryption key the service refuses to
+  store one rather than write it in the clear, and the job fails. A row
+  written before #1033 stays in the clear until its retention ends; see
+  [Reports](reporting.md) for how long one is kept.
 * **The directory's names are in the clear.** A person's DN, and so their
   login name (`uid`), is readable in `dn`, `dn_key` and `rdn_value`, because
   every cross-entry reference in the directory is a DN. Their attributes
@@ -192,7 +193,7 @@ Two things on that list deserve an operator's attention:
                                                                  risk scoring: 14 × sts_risk_*
  bookkeeping                         reports
  ───────────                         ───────
- sts_schema                          sts_report_artifacts (clear)
+ sts_schema                          sts_report_artifacts (sealed)
 ```
 
 There are no foreign keys. Every table is keyed by what its readers look up,
@@ -743,8 +744,8 @@ rows stay in the realm maps (`sts_minted`, sealed), not in this table.
 |---|---|---|---|
 | `realm` | text | clear | the trust realm |
 | `job_id` | text | clear | the report job |
-| `bytes` | bytea | **clear** | the finished document (CSV, PDF, …) as downloaded. **Not encrypted**, and a report can list people |
-| `sha256` | text | clear | the SHA-256 of `bytes`, for integrity |
+| `bytes` | bytea | **sealed (AES-GCM)** | the finished document (CSV, PDF, …), sealed under the realm's `report-artifact` data key and stored as the envelope's bytes. Since #1033; a row from before stays in the clear until its retention ends. Without a key-encryption key no report is stored |
+| `sha256` | text | digest | the SHA-256 of the report as downloaded, for integrity; not reversible |
 | `media_type` | text | clear | the format's media type |
 | `created_at` | bigint | clear | milliseconds |
 

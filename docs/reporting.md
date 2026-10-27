@@ -862,6 +862,13 @@ What to check when a schedule does nothing:
 
 ## Security
 
+**A finished report is stored encrypted.** The result a job writes to the
+database is sealed under the realm's data key for reports, which is itself
+wrapped by the service's key-encryption key; the database never holds a
+report in the clear. A service with no key-encryption key does not store
+reports in a database at all: the job fails and says why. See
+[PostgreSQL schema](postgres-schema.md) for what else is sealed.
+
 Send `Authorization: DPoP` and the proof. The token is for `sts-report`,
 audienced to this realm's `/report-api`, with `report:use` or
 `report:admin`. Paths sit after the realm prefix. The default realm has
