@@ -230,7 +230,17 @@ class AccountOverview {
                                          signOn.deviceBound.reasons)
                     ? signOn.deviceBound.reasons.map(String) : [] } },
       sessionEnds: Number(caller.session.expires || 0),
-      timesSignedIn: detail ? Number(detail.authentications || 0) : null,
+      // HOW MANY TIMES THIS PROCESS HAS SEEN THEM AUTHENTICATE (#672).
+      // `userDetail()` answers `{ user, tokens, artifacts }`, and the count
+      // is `user.authentications` — the row `/admin/users` draws. From the
+      // portal's first day (2026-09-06) until #672 this read
+      // `detail.authentications`, a member that shape never had, so the page
+      // said 0 for everybody while the console said the true figure; the
+      // console's user page reads `detail.user`, which is why it was right.
+      // `null` with no row, as before: the page then draws no figure rather
+      // than a zero it cannot stand behind.
+      timesSignedIn: detail && detail.user
+        ? Number(detail.user.authentications || 0) : null,
       directory: entry ? inetOrgPerson.describe(entry.attributes) : null,
       mechanisms: {
         password: !!mechanisms.password,
