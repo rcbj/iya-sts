@@ -197,9 +197,10 @@ const authn = require('../authn/authn');
 // ordinary routes and mark the response.
 const audit = require('../common/audit');
 const errorCodes = require('../common/error_codes');
-// #507: the master-secret digest a TLS 1.2 ticket's name is kept under,
-// and the room-maker for its replicated store (rule 3ap).
-const crypto = require('crypto');
+// #507: the master-secret digest a TLS 1.2 ticket's name is kept under is
+// `stsCrypto.sha256Hex()` (every digest goes through common/crypto.js,
+// tests/crypto_centralised.js), and this is the room-maker for its
+// replicated store (rule 3ap).
 const cacheRegistry = require('../common/cache_registry');
 // The PROXY protocol v2 reader was required here until 2026-09-16 and is not
 // any more: it was installed on this module's two listeners, and with those
@@ -4116,8 +4117,7 @@ function masterSecretDigest(socket) {
   if (!fifth || fifth.tag !== 0x04 || fifth.end - fifth.start < 16) {
     return null;
   }
-  return crypto.createHash('sha256')
-    .update(der.subarray(fifth.start, fifth.end)).digest('hex');
+  return stsCrypto.sha256Hex(der.subarray(fifth.start, fifth.end));
 }
 
 /**

@@ -1451,6 +1451,22 @@
     "en": "7e34d7e487ace8d1",
     "text": "不过期：替换签发 CA 会改变键。满时一次性清空整个记忆表。"
   },
+  "caches.store.tls.ticket-names.title": {
+    "en": "45b312c79e1fc669",
+    "text": "TLS 1.2 票据名称，用于恢复的会话"
+  },
+  "caches.store.tls.ticket-names.description": {
+    "en": "57d1e55a310de728",
+    "text": "完整 TLS 1.2 握手所使用的服务器名称，以该会话主密钥的摘要为键，在该会话通过票据恢复时进行比较（#507，RFC 6066 第 3 节）：node 在 OpenSSL 内部恢复票据而不触发任何事件，OpenSSL 也不比较名称。在另一名称下的恢复，或没有任何记录为其担保的恢复，会在握手后被关闭。每个监听器也保留自己的副本，并以同样的方式设限。"
+  },
+  "caches.store.tls.ticket-names.bound": {
+    "en": "fbeee6f2caab2df9",
+    "text": "强制：4096 个会话；先清除已过期的行，然后是最旧的行。"
+  },
+  "caches.store.tls.ticket-names.lifetime": {
+    "en": "f016ce1d11af0c30",
+    "text": "由每个节点共享并复制：监听器的会话生存期（tls.sessionTimeoutS），即票据的生存期。"
+  },
   "caches.store.vc-api.issued.title": {
     "en": "146ad69e9e6c821f",
     "text": "带状态的 VC-API 凭据"

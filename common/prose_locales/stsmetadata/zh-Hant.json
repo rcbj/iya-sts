@@ -1207,6 +1207,18 @@
     "en": "4d6e53c9ce4823ca",
     "text": "NON-SPEC。依其 id 取得目錄中的單一來源。"
   },
+  "stsmetadata.endpoints./report-api/realms.what": {
+    "en": "94cf90a7c7b10a68",
+    "text": "NON-SPEC。此要求所在的領域，以及在啟用領域時，每個領域及其 id、名稱和路徑前置詞（#986）：應用程式的領域欄位與切換器即由此繪製。與 /report-api 的其餘部分使用同一權杖。"
+  },
+  "stsmetadata.endpoints./report-api/groups.what": {
+    "en": "339c957fd31d0c51",
+    "text": "NON-SPEC。領域中名稱或 DN 包含 q 的群組，每頁五個，各自帶有自己的 mail 屬性（#989）：定義頁面的窗格。定義的群組即其結果的電子郵件收件者。與 /report-api 的其餘部分使用同一權杖。"
+  },
+  "stsmetadata.endpoints./report-api/schedules.what": {
+    "en": "6db4cff36d4beb56",
+    "text": "NON-SPEC。每個帶有排程的定義，及其下一次執行、上一次執行的時點、略過說明和最近的排程工作（#992）。report:use 看到自己的和共用的；report:admin 看到整個領域，並可按名稱查看某一位擁有者的。與 /report-api 的其餘部分使用同一權杖。"
+  },
   "stsmetadata.endpoints./report-api/queries.what": {
     "en": "0d15a58a10e2b1ba",
     "text": "NON-SPEC。目錄查詢。小而有界的查詢在該次呼叫中回應；較大的則排入佇列並回應 202。"

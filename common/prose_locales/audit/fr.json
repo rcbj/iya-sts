@@ -1239,6 +1239,10 @@
     "en": "872bbc2dca2a5974",
     "text": "Un groupe a été fermé à ses propriétaires, ou leur a été rouvert"
   },
+  "audit.actions.group.set-mail.label": {
+    "en": "39413bc03154f800",
+    "text": "Un groupe a reçu une adresse, ou son adresse lui a été retirée"
+  },
   "audit.actions.krb5.keytab.person.label": {
     "en": "7f9ec638380e53d7",
     "text": "Le keytab d’une personne a été créé à partir d’un mot de passe fourni"

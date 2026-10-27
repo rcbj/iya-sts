@@ -1207,6 +1207,18 @@
     "en": "4d6e53c9ce4823ca",
     "text": "NO ES UN ENDPOINT DE LA ESPECIFICACIÓN. Una fuente del catálogo, por su id."
   },
+  "stsmetadata.endpoints./report-api/realms.what": {
+    "en": "94cf90a7c7b10a68",
+    "text": "NO ES UN ENDPOINT DE LA ESPECIFICACIÓN. El dominio en el que está esta petición y, cuando los dominios están activos, cada dominio con su id, su nombre y su prefijo de ruta (#986): de donde se extraen el campo y el selector de dominio de la aplicación. Tras el mismo token que el resto de /report-api."
+  },
+  "stsmetadata.endpoints./report-api/groups.what": {
+    "en": "339c957fd31d0c51",
+    "text": "NO ES UN ENDPOINT DE LA ESPECIFICACIÓN. Los grupos del dominio cuyo nombre o DN contiene q, cinco por página, cada uno con su propio atributo mail (#989): el panel de la página de definición. Los grupos de una definición son a quienes se envía por correo su resultado. Tras el mismo token que el resto de /report-api."
+  },
+  "stsmetadata.endpoints./report-api/schedules.what": {
+    "en": "6db4cff36d4beb56",
+    "text": "NO ES UN ENDPOINT DE LA ESPECIFICACIÓN. Cada definición que lleva una programación, con su próxima ejecución, la ocurrencia que tomó por última vez, sus notas de omisión y sus trabajos programados recientes (#992). report:use ve las suyas y las compartidas; report:admin todo el dominio, y un propietario por nombre. Tras el mismo token que el resto de /report-api."
+  },
   "stsmetadata.endpoints./report-api/queries.what": {
     "en": "0d15a58a10e2b1ba",
     "text": "NO ES UN ENDPOINT DE LA ESPECIFICACIÓN. Una consulta de catálogo. Una pequeña y acotada se responde en la propia llamada; una mayor se pone en cola y se responde 202."

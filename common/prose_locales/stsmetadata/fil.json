@@ -1207,6 +1207,18 @@
     "en": "4d6e53c9ce4823ca",
     "text": "NON-SPEC. Isang source mula sa catalog, ayon sa id nito."
   },
+  "stsmetadata.endpoints./report-api/realms.what": {
+    "en": "94cf90a7c7b10a68",
+    "text": "NON-SPEC. Ang realm kung nasaan ang request na ito at, kapag aktibo ang mga realm, bawat realm kasama ang id, pangalan at path prefix nito (#986): kung saan iginuguhit ang realm field at switch ng application. Nasa likod ng parehong token gaya ng iba pang bahagi ng /report-api."
+  },
+  "stsmetadata.endpoints./report-api/groups.what": {
+    "en": "339c957fd31d0c51",
+    "text": "NON-SPEC. Ang mga grupo ng realm na ang pangalan o DN ay naglalaman ng q, lima bawat pahina, bawat isa may sariling mail attribute (#989): ang pane ng pahina ng definition. Ang mga grupo ng isang definition ang pinapadalhan ng email ng resulta nito. Nasa likod ng parehong token gaya ng iba pang bahagi ng /report-api."
+  },
+  "stsmetadata.endpoints./report-api/schedules.what": {
+    "en": "6db4cff36d4beb56",
+    "text": "NON-SPEC. Bawat definition na may iskedyul, kasama ang susunod na pagtakbo nito, ang okasyong huli nitong kinuha, ang mga skip note nito at ang mga kamakailang naka-iskedyul na job nito (#992). Nakikita ng report:use ang sarili at ibinahaging definition; ng report:admin ang buong realm, at isang may-ari ayon sa pangalan. Nasa likod ng parehong token gaya ng iba pang bahagi ng /report-api."
+  },
   "stsmetadata.endpoints./report-api/queries.what": {
     "en": "0d15a58a10e2b1ba",
     "text": "NON-SPEC. Isang catalog query. Ang maliit at may hangganan ay sinasagot sa mismong tawag; ang mas malaki ay ini-queue at sinasagot ng 202."

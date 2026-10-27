@@ -1207,6 +1207,18 @@
     "en": "4d6e53c9ce4823ca",
     "text": "NON-SPEC. En källa ur katalogen, via sitt id."
   },
+  "stsmetadata.endpoints./report-api/realms.what": {
+    "en": "94cf90a7c7b10a68",
+    "text": "NON-SPEC. Sfären som denna begäran befinner sig i och, där sfärer är aktiva, varje sfär med sitt id, namn och sökvägsprefix (#986): det som applikationens sfärfält och sfärväxling ritas från. Bakom samma token som resten av /report-api."
+  },
+  "stsmetadata.endpoints./report-api/groups.what": {
+    "en": "339c957fd31d0c51",
+    "text": "NON-SPEC. Sfärens grupper vars namn eller DN innehåller q, fem per sida, var och en med sitt eget mail-attribut (#989): definitionssidans panel. En definitions grupper är de som får dess resultat med e-post. Bakom samma token som resten av /report-api."
+  },
+  "stsmetadata.endpoints./report-api/schedules.what": {
+    "en": "6db4cff36d4beb56",
+    "text": "NON-SPEC. Varje definition som bär ett schema, med sin nästa körning, den förekomst den senast tog, sina överhoppningsanteckningar och sina senaste schemalagda jobb (#992). report:use ser sina egna och delade; report:admin hela sfären, och en ägare vid namn. Bakom samma token som resten av /report-api."
+  },
   "stsmetadata.endpoints./report-api/queries.what": {
     "en": "0d15a58a10e2b1ba",
     "text": "NON-SPEC. En katalogfråga. En liten begränsad besvaras i anropet; en större köas och besvaras med 202."

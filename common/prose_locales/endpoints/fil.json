@@ -459,6 +459,18 @@
     "en": "f4a97ac800f661e8",
     "text": "Isang report source"
   },
+  "endpoints.route./report-api/realms.name": {
+    "en": "c555ac10c13fd091",
+    "text": "Ang mga trust realm, para sa reports application"
+  },
+  "endpoints.route./report-api/groups.name": {
+    "en": "e30ed85f8fa2f141",
+    "text": "Ang paghahanap ng grupo, para sa reports application"
+  },
+  "endpoints.route./report-api/schedules.name": {
+    "en": "25a6618403794275",
+    "text": "Ang mga naka-iskedyul na report definition"
+  },
   "endpoints.route./report-api/queries.name": {
     "en": "ba718855c8f4548d",
     "text": "Magpatakbo ng report query"

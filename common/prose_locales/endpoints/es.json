@@ -459,6 +459,18 @@
     "en": "f4a97ac800f661e8",
     "text": "Una fuente de informes"
   },
+  "endpoints.route./report-api/realms.name": {
+    "en": "c555ac10c13fd091",
+    "text": "Los dominios de confianza, para la aplicación de informes"
+  },
+  "endpoints.route./report-api/groups.name": {
+    "en": "e30ed85f8fa2f141",
+    "text": "La búsqueda de grupos, para la aplicación de informes"
+  },
+  "endpoints.route./report-api/schedules.name": {
+    "en": "25a6618403794275",
+    "text": "Las definiciones de informe programadas"
+  },
   "endpoints.route./report-api/queries.name": {
     "en": "ba718855c8f4548d",
     "text": "Ejecutar una consulta de informe"

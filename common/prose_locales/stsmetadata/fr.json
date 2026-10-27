@@ -1207,6 +1207,18 @@
     "en": "4d6e53c9ce4823ca",
     "text": "NON-SPEC. Une source du catalogue, par son id."
   },
+  "stsmetadata.endpoints./report-api/realms.what": {
+    "en": "94cf90a7c7b10a68",
+    "text": "NON-SPEC. Le domaine dans lequel se trouve cette requête et, lorsque les domaines sont actifs, chaque domaine avec son identifiant, son nom et son préfixe de chemin (#986) : ce dont sont tirés le champ et le sélecteur de domaine de l’application. Derrière le même jeton que le reste de /report-api."
+  },
+  "stsmetadata.endpoints./report-api/groups.what": {
+    "en": "339c957fd31d0c51",
+    "text": "NON-SPEC. Les groupes du domaine dont le nom ou le DN contient q, cinq par page, chacun avec son propre attribut mail (#989) : le volet de la page de définition. Les groupes d’une définition sont ceux à qui son résultat est envoyé par courriel. Derrière le même jeton que le reste de /report-api."
+  },
+  "stsmetadata.endpoints./report-api/schedules.what": {
+    "en": "6db4cff36d4beb56",
+    "text": "NON-SPEC. Chaque définition qui porte une planification, avec sa prochaine exécution, l’occurrence qu’elle a prise en dernier, ses notes d’omission et ses travaux planifiés récents (#992). report:use voit les siennes et celles partagées ; report:admin tout le domaine, et un propriétaire par son nom. Derrière le même jeton que le reste de /report-api."
+  },
   "stsmetadata.endpoints./report-api/queries.what": {
     "en": "0d15a58a10e2b1ba",
     "text": "NON-SPEC. Une requête de catalogue. Une petite requête bornée reçoit sa réponse dans l’appel ; une plus grande est mise en file et reçoit 202."

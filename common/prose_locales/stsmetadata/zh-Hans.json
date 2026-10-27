@@ -1207,6 +1207,18 @@
     "en": "4d6e53c9ce4823ca",
     "text": "NON-SPEC。目录中的单个数据源，按其 id 指定。"
   },
+  "stsmetadata.endpoints./report-api/realms.what": {
+    "en": "94cf90a7c7b10a68",
+    "text": "NON-SPEC。此请求所在的领域，以及在启用领域时，每个领域及其 id、名称和路径前缀（#986）：应用的领域字段和切换器即由此绘制。与 /report-api 的其余部分使用同一令牌。"
+  },
+  "stsmetadata.endpoints./report-api/groups.what": {
+    "en": "339c957fd31d0c51",
+    "text": "NON-SPEC。领域中名称或 DN 包含 q 的组，每页五个，各自带有自己的 mail 属性（#989）：定义页面的面板。定义的组即其结果的电子邮件收件人。与 /report-api 的其余部分使用同一令牌。"
+  },
+  "stsmetadata.endpoints./report-api/schedules.what": {
+    "en": "6db4cff36d4beb56",
+    "text": "NON-SPEC。每个带有计划的定义，及其下一次运行、上一次执行的时点、跳过说明和最近的计划作业（#992）。report:use 看到自己的和共享的；report:admin 看到整个领域，并可按名称查看某一位所有者的。与 /report-api 的其余部分使用同一令牌。"
+  },
   "stsmetadata.endpoints./report-api/queries.what": {
     "en": "0d15a58a10e2b1ba",
     "text": "NON-SPEC。目录查询。小而有界的查询在调用中直接应答；较大的查询会排队并以 202 应答。"

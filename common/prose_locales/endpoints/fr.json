@@ -459,6 +459,18 @@
     "en": "f4a97ac800f661e8",
     "text": "Une source de rapport"
   },
+  "endpoints.route./report-api/realms.name": {
+    "en": "c555ac10c13fd091",
+    "text": "Les domaines de confiance, pour l’application de rapports"
+  },
+  "endpoints.route./report-api/groups.name": {
+    "en": "e30ed85f8fa2f141",
+    "text": "La recherche de groupes, pour l’application de rapports"
+  },
+  "endpoints.route./report-api/schedules.name": {
+    "en": "25a6618403794275",
+    "text": "Les définitions de rapport planifiées"
+  },
   "endpoints.route./report-api/queries.name": {
     "en": "ba718855c8f4548d",
     "text": "Exécuter une requête de rapport"

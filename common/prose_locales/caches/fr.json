@@ -1451,6 +1451,22 @@
     "en": "7e34d7e487ace8d1",
     "text": "Aucune expiration : une Issuing CA remplacée change la clé. Une fois plein, le mémo entier est vidé d’un coup."
   },
+  "caches.store.tls.ticket-names.title": {
+    "en": "45b312c79e1fc669",
+    "text": "Noms de ticket TLS 1.2, pour les sessions reprises"
+  },
+  "caches.store.tls.ticket-names.description": {
+    "en": "57d1e55a310de728",
+    "text": "Le nom de serveur sous lequel une négociation TLS 1.2 complète a eu lieu, indexé par un condensé du secret maître de la session, comparé lorsque cette session est REPRISE par ticket (#507, RFC 6066 section 3) : node reprend un ticket dans OpenSSL sans aucun événement, et OpenSSL ne compare pas le nom. Une reprise sous un autre nom, ou qu’aucun enregistrement ne garantit, est fermée après la négociation. Chaque écouteur conserve aussi sa propre copie, bornée de la même façon."
+  },
+  "caches.store.tls.ticket-names.bound": {
+    "en": "fbeee6f2caab2df9",
+    "text": "Appliquée : 4096 sessions ; les lignes expirées partent d’abord, puis les plus anciennes."
+  },
+  "caches.store.tls.ticket-names.lifetime": {
+    "en": "f016ce1d11af0c30",
+    "text": "Partagée par chaque nœud et répliquée : la durée de vie de session de l’écouteur (tls.sessionTimeoutS), soit la durée de vie d’un ticket."
+  },
   "caches.store.vc-api.issued.title": {
     "en": "146ad69e9e6c821f",
     "text": "Justificatifs VC-API avec statut"

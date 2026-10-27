@@ -1451,6 +1451,22 @@
     "en": "7e34d7e487ace8d1",
     "text": "Walang expiry: binabago ng napalitang Issuing CA ang key. Kapag puno, inaalisan ng laman ang buong memo nang sabay-sabay."
   },
+  "caches.store.tls.ticket-names.title": {
+    "en": "45b312c79e1fc669",
+    "text": "Mga pangalan ng TLS 1.2 ticket, para sa mga ipinagpatuloy na session"
+  },
+  "caches.store.tls.ticket-names.description": {
+    "en": "57d1e55a310de728",
+    "text": "Ang pangalan ng server kung saan ginawa ang isang buong TLS 1.2 handshake, naka-key sa isang digest ng master secret ng session, at ikinukumpara kapag IPINAGPATULOY ang session na iyon sa pamamagitan ng ticket (#507, RFC 6066 seksyon 3): ipinagpapatuloy ng node ang ticket sa loob ng OpenSSL nang walang anumang event, at hindi ikinukumpara ng OpenSSL ang pangalan. Ang pagpapatuloy sa ibang pangalan, o isang walang rekord na nagpapatunay, ay isinasara pagkatapos ng handshake. Nagtatabi rin ang bawat listener ng sarili nitong kopya, may hangganan sa parehong paraan."
+  },
+  "caches.store.tls.ticket-names.bound": {
+    "en": "fbeee6f2caab2df9",
+    "text": "Ipinapatupad: 4096 session; unang inaalis ang mga expired na row, pagkatapos ang pinakaluma."
+  },
+  "caches.store.tls.ticket-names.lifetime": {
+    "en": "f016ce1d11af0c30",
+    "text": "Ibinabahagi sa bawat node at nire-replicate: ang session lifetime ng listener (tls.sessionTimeoutS), na kasinghaba ng buhay ng isang ticket."
+  },
   "caches.store.vc-api.issued.title": {
     "en": "146ad69e9e6c821f",
     "text": "Mga VC-API credential na may status"

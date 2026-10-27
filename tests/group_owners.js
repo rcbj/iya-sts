@@ -26,7 +26,7 @@
 //      reported, never dropped.
 //   B. THE ACTS: `add-owner` and `remove-owner` through `groupsAction()`
 //      answer the owners as they now stand, a refusal carries its codes,
-//      and the unknown-action sentence names all four actions.
+//      and the unknown-action sentence names all five actions.
 //   C. THE CONSOLE'S HELPERS: the tab's Find is a search on its own route
 //      only; an act draws the page again in place with the answer's owners
 //      and the search kept; a refusal says why and changes nothing.
@@ -220,12 +220,12 @@ async function theActs(t) {
             // The directory's own code wins (`refusedBy()`): it names the
             // condition, where STS-ADMIN-0852 names only the door.
             errorCodes.codeOf(refused) === 'STS-LDAP-0135' &&
-            /create, add-member, add-owner, remove-owner/.test(
+            /create, add-member, set-mail, add-owner, remove-owner/.test(
               (unknown.errors || []).join(' ')),
             'B1. the two acts answer the owners as they now stand, a ' +
             'refusal carries the directory\'s code, and the refusal ' +
             'sentence names all ' +
-            'four actions',
+            'five actions (set-mail since #989)',
             JSON.stringify({ added: added, removed: removed,
                              refused: refused, unknown: unknown })
               .slice(0, 600));

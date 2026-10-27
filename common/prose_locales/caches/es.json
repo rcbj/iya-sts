@@ -1451,6 +1451,22 @@
     "en": "7e34d7e487ace8d1",
     "text": "Sin caducidad: una CA emisora reemplazada cambia la clave. Cuando está llena, toda la memoria se vacía de una vez."
   },
+  "caches.store.tls.ticket-names.title": {
+    "en": "45b312c79e1fc669",
+    "text": "Nombres de ticket TLS 1.2, para sesiones reanudadas"
+  },
+  "caches.store.tls.ticket-names.description": {
+    "en": "57d1e55a310de728",
+    "text": "El nombre de servidor bajo el que se hizo una negociación TLS 1.2 completa, indexado por un resumen del secreto maestro de la sesión y comparado cuando esa sesión se REANUDA por ticket (#507, RFC 6066 sección 3): node reanuda un ticket dentro de OpenSSL sin ningún evento, y OpenSSL no compara el nombre. Una reanudación bajo otro nombre, o que ningún registro avale, se cierra tras la negociación. Cada escucha conserva además su propia copia, acotada del mismo modo."
+  },
+  "caches.store.tls.ticket-names.bound": {
+    "en": "fbeee6f2caab2df9",
+    "text": "Aplicado: 4096 sesiones; primero salen las filas caducadas y después las más antiguas."
+  },
+  "caches.store.tls.ticket-names.lifetime": {
+    "en": "f016ce1d11af0c30",
+    "text": "Compartida por todos los nodos y replicada: la vida de sesión de la escucha (tls.sessionTimeoutS), que es lo que vive un ticket."
+  },
   "caches.store.vc-api.issued.title": {
     "en": "146ad69e9e6c821f",
     "text": "Credenciales de VC-API con estado"
