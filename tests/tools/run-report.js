@@ -1569,7 +1569,12 @@ const UNIT_ALONE = new Set([
   // The outbound SCIM client's pacing (S3: requests 250 ms apart, a gap no
   // shorter than 200 ms) read one gap of 199 ms under the pool in the
   // cluster mode of the full run on 71607cbd (2026-10-27); alone it holds.
-  'scim_client'
+  'scim_client',
+  // Its C2 counts change-log nudges against 25 ms windows; beside four
+  // other files on a loaded host the windows drift and the count is one
+  // over the ceiling (the single-node mode of the run on d49cd337: 11 for
+  // a ceiling of 10). Alone it holds.
+  'notify_after_commit'
 ]);
 
 async function runScheduled(jobs, runOne, opts) {

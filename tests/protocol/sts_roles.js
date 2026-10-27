@@ -535,11 +535,13 @@ async function anUnconfiguredRealmRefusesNobody() {
     const wanted = { ADMIN_READ: "admin:read", ADMIN_WRITE: "admin:write",
                      DEVICE_COMPLIANCE: "device:compliance",
                      ADMIN_CONSOLE: "admin:console",
-                     SSF_READ: "ssf.read", SSF_MANAGE: "ssf.manage" };
+                     SSF_READ: "ssf.read", SSF_MANAGE: "ssf.manage",
+                     REPORT_USE: "report:use", REPORT_ADMIN: "report:admin" };
     register.body.roles.forEach(function (row) {
       const unheld = row.name === "DEVICE_COMPLIANCE" ||
                      row.name === "ADMIN_CONSOLE" ||
-                     row.name === "SSF_READ" || row.name === "SSF_MANAGE";
+                     row.name === "SSF_READ" || row.name === "SSF_MANAGE" ||
+                     row.name === "REPORT_USE" || row.name === "REPORT_ADMIN";
       assert.ok(row.native === true && row.console === !unheld &&
                 (unheld ? row.applications.length === 0
                         : row.applications.indexOf("sts-management-api") >=
@@ -550,12 +552,17 @@ async function anUnconfiguredRealmRefusesNobody() {
                  (row.groups || []).indexOf("ssf-read") >= 0) &&
                 (row.name !== "SSF_MANAGE" ||
                  (row.groups || []).indexOf("ssf-manage") >= 0) &&
+                (row.name !== "REPORT_USE" ||
+                 (row.groups || []).indexOf("report-users") >= 0) &&
+                (row.name !== "REPORT_ADMIN" ||
+                 (row.groups || []).indexOf("report-admins") >= 0) &&
                 row.permissions.length === 1 &&
                 row.permissions[0] === wanted[row.name],
                 "each authorizes its own native permission; the console " +
                 "roles are held by sts-management-api, and " +
-                "DEVICE_COMPLIANCE, ADMIN_CONSOLE, SSF_READ and SSF_MANAGE " +
-                "by no application: " + JSON.stringify(row));
+                "DEVICE_COMPLIANCE, ADMIN_CONSOLE, SSF_READ, SSF_MANAGE, " +
+                "REPORT_USE and REPORT_ADMIN by no application: " +
+                JSON.stringify(row));
     });
   });
   check("and the built-in ones are there anyway", function () {
