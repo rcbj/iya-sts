@@ -1884,6 +1884,9 @@ function groups(t) {
   t.check(sorted.indexOf('name="groupByQuery" checked') >= 0 &&
     sorted.indexOf('<select name="groupBy" class="group-only">') >= 0,
     'a saved group ticks Group by and shows its select');
+  // #1015: Group by on a row of its own, right after the Count row.
+  t.check(/name="counted"[^>]*> Count<\/label><\/div><\/div><div class="field"><div class="row"><label[^>]*><input type="checkbox" name="groupByQuery"/.test(sorted),
+    'Group by is the row after Count', sorted);
   const unsorted = ReportRuntime.queryFormHtml(tr, cat.sources, null);
   t.check(unsorted.indexOf('name="sortQuery">') >= 0 &&
     unsorted.indexOf(

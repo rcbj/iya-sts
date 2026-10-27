@@ -239,7 +239,9 @@ form without the box — an older test double — sorts as before). The
 Count row is the Count box, the `groupByQuery` box and the `.group-only`
 select; a ticked Group by with a field is a count whether or not Count is
 ticked, because the API refuses a group-by without one. A saved order or
-group draws its box ticked and its select shown.
+group draws its box ticked and its select shown. **Group by is a row of
+its own** (#1015, rcbj), below Count and above the Save query box, which
+the page draws after the query block.
 
 **Why the selects stayed in view at first (#1013)**: `.row { display:
 flex }` and `.field label { display: block }` outrank the browser's

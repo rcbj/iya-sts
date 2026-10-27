@@ -348,16 +348,21 @@ function queryFormHtml(t: any, sources: any[], document: any): string {
     '</label><select name="format">' + formatOption('json', 'report.json') +
     formatOption('csv', 'report.csv') + formatOption('pdf', 'report.pdf') +
     '</select></div>' +
-    // THE COUNT ROW (#1008, #1013, "the same for group by"): the Count box,
-    // a Group by box of its own, and the group field select, hidden until
-    // Group by is ticked. A group-by is a count, so a ticked Group by with
-    // a field counts whether or not Count is ticked (`queryDocument()`); a
-    // saved count with a group draws both ticked.
+    // THE COUNT ROW, THEN THE GROUP BY ROW (#1008, #1013, #1015, "the same
+    // for group by"; then rcbj: Group by on a row of its own, below Count
+    // and above Save query): the Count box alone; under it the Group by box,
+    // its label and the group field select, hidden until the box is ticked.
+    // A group-by is a count, so a ticked Group by with a field counts
+    // whether or not Count is ticked (`queryDocument()`); a saved count
+    // with a group draws both ticked. The Save query box follows this block
+    // on the page, so this row sits above it.
     '<div class="field"><div class="row"><label' +
     tip(t, 'report.tipCount') + '>' +
     '<input type="checkbox" name="counted"' +
     (counted ? ' checked' : '') + '> ' + esc(t.text('report.count')) +
-    '</label><label' + tip(t, 'report.tipGroupBy') + '>' +
+    '</label></div></div>' +
+    '<div class="field"><div class="row"><label' +
+    tip(t, 'report.tipGroupBy') + '>' +
     '<input type="checkbox" name="groupByQuery"' + (group ? ' checked' : '') +
     '> ' + esc(t.text('report.groupBy')) + '</label>' +
     '<select name="groupBy" class="group-only"' + (group ? '' : ' hidden') +
