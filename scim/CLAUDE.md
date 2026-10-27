@@ -114,7 +114,9 @@ into the LDAP directory, entry for entry, with **no store of its own**.
    implemented rather than approximated: a provider SHALL indicate its schemes
    in `WWW-Authenticate` (every 401 carries one header per offered scheme), and
    a provider MUST be able to map an authenticated client to an access control
-   policy (two OAuth scopes, with every other scheme granting both). The section
+   policy (two OAuth scopes, with an application's certificate held to what
+   the application declares of them since #1048, and every other scheme
+   granting both). The section
    NAMES six schemes and all six are here. It defines no credential of its own.
 
    **THE BEARER CHECK IS `dpop.presentedAccessToken()` THROUGH A CAPTURING
@@ -134,6 +136,41 @@ into the LDAP directory, entry for entry, with **no store of its own**.
    scope handling turns the other five off. `scim:read` and `scim:write` do NOT
    imply one another, deliberately, so that a read-only provisioning credential
    is something this service can produce.
+
+   **AN APPLICATION'S CERTIFICATE IS HELD TO ITS DECLARED SCOPES (#1048,
+   2026-10-27, rcbj's decision on #520).** Until then a verified certificate
+   could both read and write whoever it named. Now, where
+   `common/tls_client_certificates.js`'s `identityOf()` — reached through
+   `checkSocket()`, which has already held the realm boundary and after
+   `app.js`'s revocation verdict — says this realm issued the leaf to an
+   APPLICATION, the caller IS that application: principal and `clientId` its
+   registry identifier, `isClient` true, as a `client_credentials` token's
+   caller is named by its client_id. `settleDecision()` then asks
+   `scopePolicy.declares()` of the application's `oauthAllowedScope` for the
+   scope the operation needs, the same question #110 asks of a token's
+   client, and refuses 403 `STS-SCIM-0083` without a challenge (a certificate
+   is asked for by the handshake, and the credential WAS accepted). So an
+   application that declares neither is refused even a read, one declaring
+   only `scim:read` may only read, and removing a value cuts the certificate
+   off on its next request. What did NOT change, and why:
+   * **a person's certificate may still do both.** A person has no
+     `oauthAllowedScope`, and the ticket kept that rule; the access gate
+     above the scope check is where a deployment narrows a person;
+   * **a certificate from an anchor somebody added** (`issuedHere: false`)
+     names no entry, so there is no application to read a declaration from;
+     it keeps the subject-DN principal and the old rule;
+   * **no mode predicate**: the tie is a policy in both modes, as #110's is;
+   * **no `stillHeld()`**: revocation is the door's question already, and
+     withdrawing the declaration (or deleting the application, which leaves
+     `allowedScopesOf()` nothing to answer) is the operator's lever.
+   The scheme row carries `applicationScoped`, which `describe()` copies, so
+   `GET /scim`, `/admin/scim` (the "may do" column) and `GET /admin-api/scim`
+   say it beside the description the ServiceProviderConfig publishes, and the
+   policy gained `POLICY.certificate`. **A SCIM client of this service's own**
+   (`scim_client.ts`'s `issue-certificate`) issues an APPLICATION certificate,
+   so one provisioning into the same realm by certificate now needs its entry
+   to declare the scopes. `tests/scim_application_certificate.js` holds all of
+   it over real handshakes.
 
    **TWO SCHEMES REALLY VERIFY SOMETHING AND IT IS THE KERBEROS ARGUMENT BOTH
    TIMES.** Digest hashes the password into the response, so a server accepting

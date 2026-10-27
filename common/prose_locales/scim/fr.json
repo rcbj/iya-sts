@@ -284,16 +284,20 @@
     "text": "La session d’authentification unique du navigateur dont ce service dispose déjà — celle qu’établit /authn/login et que partage WS-Federation —, proposée ici parce que la section 2 la nomme : « clients may assert HTTP cookies over TLS that contain an authentication state understood by the SCIM service provider ». C’est ce qui permet à un appel SCIM depuis une page de ce service de fonctionner sans second identifiant. Il n’y a pas de défi pour elle : un serveur ne peut pas demander un cookie dans WWW-Authenticate ; elle est donc utilisée lorsqu’elle est présente et jamais exigée."
   },
   "auth.schemes.clientcert": {
-    "en": "2d55447d0d4792ee",
-    "text": "TLS mutuel, le premier schéma que nomme RFC 7644 section 2. Disponible uniquement là où cette requête est arrivée par TLS avec un certificat VÉRIFIÉ par rapport à une ancre du magasin de confiance client (/admin/tls/trust) — donc sur le port principal uniquement lorsqu’il est lié en HTTPS (global.https, qu’active oauth2.rfc9700). L’identité est le sujet sous forme RFC 4514, qui est la même chaîne sous laquelle /admin/users et l’annuaire classent déjà un certificat. Il n’est pas consigné à nouveau ici : tls_server.js consigne délibérément un certificat une fois par CONNEXION, et le compter par requête annulerait cela par l’autre bout."
+    "en": "795d25379373b103",
+    "text": "TLS mutuel, le premier schéma que nomme RFC 7644 section 2. Disponible uniquement là où cette requête est arrivée par TLS avec un certificat VÉRIFIÉ par rapport à une ancre du magasin de confiance client (/admin/tls/trust) — donc sur le port principal uniquement lorsqu’il est lié en HTTPS (global.https, qu’active oauth2.rfc9700). L’identité est le sujet sous forme RFC 4514, qui est la même chaîne sous laquelle /admin/users et l’annuaire classent déjà un certificat. Il n’est pas consigné à nouveau ici : tls_server.js consigne délibérément un certificat une fois par CONNEXION, et le compter par requête annulerait cela par l’autre bout. Un certificat que ce domaine a émis pour une APPLICATION est cette application, et ne peut faire que ce que déclare son oauthAllowedScope : le scope de lecture pour lire et le scope d’écriture pour écrire, vérifié à chaque requête, de sorte qu’une application qui ne déclare ni l’un ni l’autre est refusée (STS-SCIM-0083). Le certificat d’une personne, ou un certificat issu d’une ancre que quelqu’un a ajoutée, peut faire les deux."
   },
   "auth.policy.oauth": {
     "en": "25657a7b65df5ecd",
     "text": "Un identifiant OAuth — un jeton d’accès Bearer ou DPoP — peut faire ce que disent ses scopes : « {{read}} » pour lire et « {{write}} » pour écrire. Aucun n’implique l’autre, afin que la gestion par un client d’un identifiant en lecture seule soit quelque chose que ce service peut réellement produire."
   },
   "auth.policy.others": {
-    "en": "e23c0683e2f710ad",
-    "text": "TOUS LES AUTRES SCHÉMAS PEUVENT FAIRE LES DEUX. Basic, Digest, HOBA, un cookie de session et un certificat client ne portent aucun scope ; la politique qui les concerne est donc toute la surface. Cela vaut la peine d’être relu : un appelant qui ne peut pas obtenir de scope peut utiliser Basic à la place, c’est pourquoi chaque schéma a son propre interrupteur — un déploiement qui éprouve la gestion des scopes désactive les cinq autres."
+    "en": "d754835a0e2987d3",
+    "text": "TOUS LES AUTRES SCHÉMAS PEUVENT FAIRE LES DEUX. Basic, Digest, HOBA, un cookie de session et le certificat client d’une personne ne portent aucun scope ; la politique qui les concerne est donc toute la surface. Cela vaut la peine d’être relu : un appelant qui ne peut pas obtenir de scope peut utiliser Basic à la place, c’est pourquoi chaque schéma a son propre interrupteur — un déploiement qui éprouve la gestion des scopes désactive les cinq autres."
+  },
+  "auth.policy.certificate": {
+    "en": "113cbb3081d556a7",
+    "text": "LE CERTIFICAT D’UNE APPLICATION EST TENU À SES SCOPES DÉCLARÉS (#1048). Un certificat client TLS que ce domaine a émis pour une application ne porte aucun scope ; il peut donc faire ce que l’oauthAllowedScope de cette application déclare parmi les deux ci-dessus, vérifié à chaque requête : une application qui ne déclare aucun des deux est refusée, une qui ne déclare que le scope de lecture ne peut que lire, et retirer une déclaration coupe aussitôt le certificat (STS-SCIM-0083)."
   },
   "auth.policy.rfc": {
     "en": "01badc7fa9089572",

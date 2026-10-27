@@ -6592,8 +6592,8 @@
     "text": "Mag-alok ng TLS client certificate"
   },
   "scim.authClientCert|description": {
-    "en": "be5e7d5ccffce8c1",
-    "text": "Mutual TLS, ang unang scheme na pinapangalanan ng RFC 7644 section 2. Nalalapat lang ito kung saan dumating ang request sa TLS na may certificate na NA-VERIFY laban sa client truststore (/admin/tls/trust), kaya kapag naka-on lang ang global.https. Ito ang unang lugar sa serbisyong ito kung saan naging CREDENTIAL ang client certificate sa halip na obserbasyon; dito, nag-a-authenticate ito ng isang tao na pagkatapos ay maaaring sumulat sa directory."
+    "en": "5e038e5e7c37b74a",
+    "text": "Mutual TLS, ang unang scheme na pinapangalanan ng RFC 7644 section 2. Nalalapat lang ito kung saan dumating ang request sa TLS na may certificate na NA-VERIFY laban sa client truststore (/admin/tls/trust), kaya kapag naka-on lang ang global.https. Ito ang unang lugar sa serbisyong ito kung saan naging CREDENTIAL ang client certificate sa halip na obserbasyon. Ang certificate na inisyu ng realm na ito sa isang APPLICATION ay magagawa lang ang idinedeklara ng oauthAllowedScope ng application na iyon: ang read scope para magbasa at ang write scope para magsulat, tinatanong sa bawat request (STS-SCIM-0083). Ang certificate ng isang tao, o mula sa anchor na idinagdag ng iba, ay puwedeng magbasa at sumulat sa directory."
   },
   "scimClient.attempts|label": {
     "en": "babe2e714439f7c0",

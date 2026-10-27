@@ -30,6 +30,7 @@
   "off": "naka-off",
   "scopes": "mga scope",
   "everything": "lahat",
+  "applicationDeclares": "sa isang application: ang idinedeklara nito; sa isang tao: lahat",
   "scopesText": "Ang dalawang OAuth scope ay <code>{read}</code> at <code>{write}</code>, na inilalathala sa <code>scopes_supported</code> sa parehong discovery document. Nag-aalok ang Digest ng {algorithms}. Nire-register ang mga HOBA key sa <code>{hoba}</code>.",
   "policy": "Ang access control policy",
   "endpoints": "Mga endpoint",

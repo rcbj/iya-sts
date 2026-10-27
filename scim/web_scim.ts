@@ -374,8 +374,12 @@ class ScimPage {
             '</span>') +
         '<div class="sub"><code>' + kit.esc(row.setting) +
         '</code></div></td>' +
+        // An application's certificate is held to what the application
+        // declares (#1048); everybody else's certificate may do both.
         '<td>' + (row.scoped ? t.html('consoleScim.whatItsScopesSay') :
-                  t.html('consoleScim.everything')) + '</td>' +
+                  row.applicationScoped
+                    ? t.html('consoleScim.applicationDeclares')
+                    : t.html('consoleScim.everything')) + '</td>' +
         '<td class="num">' + (counts[row.id] || 0) + '</td></tr>';
     }).join('');
     const extra = ['anonymous', 'refused'].map(function (name) {

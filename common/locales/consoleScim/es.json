@@ -53,6 +53,7 @@
   "on": "activado",
   "whatItsScopesSay": "lo que digan sus ámbitos",
   "everything": "todo",
+  "applicationDeclares": "el de una aplicación: lo que declare; el de una persona: todo",
   "rowAnonymous": "Nada (una llamada de descubrimiento abierta o la autenticación desactivada)",
   "rowRefused": "Rechazado antes de que se ejecutara ningún controlador",
   "authentication": "Autenticación",

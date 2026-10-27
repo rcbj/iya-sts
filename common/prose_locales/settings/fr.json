@@ -6592,8 +6592,8 @@
     "text": "Proposer les certificats client TLS"
   },
   "scim.authClientCert|description": {
-    "en": "be5e7d5ccffce8c1",
-    "text": "TLS mutuel, le premier schéma que nomme RFC 7644 section 2. Il ne s’applique que lorsque la requête est arrivée par TLS avec un certificat VÉRIFIÉ par rapport au magasin de confiance client (/admin/tls/trust), donc uniquement lorsque global.https est activé. C’était le premier endroit de ce service où un certificat client était un IDENTIFIANT plutôt qu’une observation ; ici, il authentifie quelqu’un qui peut ensuite écrire dans l’annuaire."
+    "en": "5e038e5e7c37b74a",
+    "text": "TLS mutuel, le premier schéma que nomme RFC 7644 section 2. Il ne s’applique que lorsque la requête est arrivée par TLS avec un certificat VÉRIFIÉ par rapport au magasin de confiance client (/admin/tls/trust), donc uniquement lorsque global.https est activé. C’était le premier endroit de ce service où un certificat client était un IDENTIFIANT plutôt qu’une observation . Un certificat que ce domaine a émis pour une APPLICATION ne peut faire que ce que déclare l’oauthAllowedScope de cette application : le scope de lecture pour lire et le scope d’écriture pour écrire, vérifié à chaque requête (STS-SCIM-0083). Le certificat d’une personne, ou un certificat issu d’une ancre que quelqu’un a ajoutée, peut lire et écrire dans l’annuaire."
   },
   "scimClient.attempts|label": {
     "en": "babe2e714439f7c0",

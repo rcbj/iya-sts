@@ -30,6 +30,7 @@
   "off": "désactivé",
   "scopes": "portées",
   "everything": "tout",
+  "applicationDeclares": "celui d’une application : ce qu’elle déclare ; celui d’une personne : tout",
   "scopesText": "Les deux portées OAuth sont <code>{read}</code> et <code>{write}</code>, publiées dans <code>scopes_supported</code> dans les deux documents de découverte. Digest propose {algorithms}. Les clés HOBA sont enregistrées à <code>{hoba}</code>.",
   "policy": "La politique de contrôle d'accès",
   "endpoints": "Points de terminaison",

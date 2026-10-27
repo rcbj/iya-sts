@@ -12733,9 +12733,13 @@ const SETTINGS = [
                  'certificate that VERIFIED against the client truststore ' +
                  '(/admin/tls/trust), so only when global.https is on. It was the ' +
                  'first place in this service where a client certificate ' +
-                 'was a CREDENTIAL rather than an observation; here it ' +
-                 'authenticates somebody who may then write to the ' +
-                 'directory.' },
+                 'was a CREDENTIAL rather than an observation. A ' +
+                 'certificate this realm issued to an APPLICATION may do ' +
+                 'only what that application\'s oauthAllowedScope ' +
+                 'declares: the read scope to read and the write scope to ' +
+                 'write, asked on every request (STS-SCIM-0083). A ' +
+                 'person\'s certificate, or one from an anchor somebody ' +
+                 'added, may read and write the directory.' },
 
   // ---------------------------------------------------------------------
   // THE OUTBOUND SCIM CLIENT (#552): how pushes to a remote SCIM service

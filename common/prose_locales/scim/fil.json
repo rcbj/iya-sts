@@ -284,16 +284,20 @@
     "text": "Ang browser sign-on session na mayroon na ang serbisyong ito — ang itinatatag ng /authn/login at ibinabahagi ng WS-Federation — iniaalok dito dahil pinangangalanan ito ng section 2: \"clients may assert HTTP cookies over TLS that contain an authentication state understood by the SCIM service provider\". Ito ang nagpapagana sa SCIM call mula sa pahina ng serbisyong ito nang walang ikalawang credential. Walang challenge para dito: hindi makakahingi ng cookie ang server sa WWW-Authenticate, kaya ginagamit ito kapag naroon at hindi kailanman hinihingi."
   },
   "auth.schemes.clientcert": {
-    "en": "2d55447d0d4792ee",
-    "text": "Mutual TLS, ang unang scheme na pinangangalanan ng RFC 7644 section 2. Available lang kung saan dumating ang request na ito sa TLS na may certificate na NA-VERIFY laban sa anchor sa client truststore (/admin/tls/trust) — kaya sa main port lang kapag naka-bind ito bilang HTTPS (global.https, na ino-on ng oauth2.rfc9700). Ang identity ay ang subject sa anyong RFC 4514, na siyang parehong string na pinag-file-an na ng /admin/users at ng directory ng certificate. Hindi ito itinatala ulit dito: sinasadyang itinatala ng tls_server.js ang certificate nang isang beses bawat CONNECTION, at ang pagbilang nito bawat request ay magpapawalang-bisa niyon mula sa kabilang dulo."
+    "en": "795d25379373b103",
+    "text": "Mutual TLS, ang unang scheme na pinangangalanan ng RFC 7644 section 2. Available lang kung saan dumating ang request na ito sa TLS na may certificate na NA-VERIFY laban sa anchor sa client truststore (/admin/tls/trust) — kaya sa main port lang kapag naka-bind ito bilang HTTPS (global.https, na ino-on ng oauth2.rfc9700). Ang identity ay ang subject sa anyong RFC 4514, na siyang parehong string na pinag-file-an na ng /admin/users at ng directory ng certificate. Hindi ito itinatala ulit dito: sinasadyang itinatala ng tls_server.js ang certificate nang isang beses bawat CONNECTION, at ang pagbilang nito bawat request ay magpapawalang-bisa niyon mula sa kabilang dulo. Ang certificate na inisyu ng realm na ito sa isang APPLICATION ay ang application na iyon, at magagawa lang nito ang idinedeklara ng oauthAllowedScope nito: ang read scope para magbasa at ang write scope para magsulat, tinatanong sa bawat request, kaya tinatanggihan ang isang walang idinedeklara sa dalawa (STS-SCIM-0083). Ang certificate ng isang tao, o mula sa anchor na idinagdag ng iba, ay puwedeng gumawa ng dalawa."
   },
   "auth.policy.oauth": {
     "en": "25657a7b65df5ecd",
     "text": "Ang OAuth credential — Bearer o DPoP access token — ay puwedeng gawin ang sinasabi ng mga scope nito: \"{{read}}\" para magbasa at \"{{write}}\" para magsulat. Hindi ipinapahiwatig ng isa ang isa pa, para kayang ibigay talaga ng serbisyong ito ang paghawak ng client sa read-only credential."
   },
   "auth.policy.others": {
-    "en": "e23c0683e2f710ad",
-    "text": "PUWEDENG GAWIN NG BAWAT IBANG SCHEME ANG DALAWA. Walang dalang scope ang Basic, Digest, HOBA, session cookie at client certificate, kaya ang policy para sa kanila ay ang buong surface. Sulit itong basahin nang dalawang beses: ang tumatawag na hindi makakuha ng scope ay puwedeng gumamit na lang ng Basic, kaya may sariling switch ang bawat scheme — ino-off ng deployment na sumusubok sa paghawak ng scope ang lima pa."
+    "en": "d754835a0e2987d3",
+    "text": "PUWEDENG GAWIN NG BAWAT IBANG SCHEME ANG DALAWA. Walang dalang scope ang Basic, Digest, HOBA, session cookie at ang client certificate ng isang tao, kaya ang policy para sa kanila ay ang buong surface. Sulit itong basahin nang dalawang beses: ang tumatawag na hindi makakuha ng scope ay puwedeng gumamit na lang ng Basic, kaya may sariling switch ang bawat scheme — ino-off ng deployment na sumusubok sa paghawak ng scope ang lima pa."
+  },
+  "auth.policy.certificate": {
+    "en": "113cbb3081d556a7",
+    "text": "ANG CERTIFICATE NG ISANG APPLICATION AY NAKATALI SA MGA IDINEKLARANG SCOPE NITO (#1048). Walang dalang scope ang TLS client certificate na inisyu ng realm na ito sa isang application, kaya magagawa nito ang idinedeklara ng oauthAllowedScope ng application na iyon sa dalawang nasa itaas, tinatanong sa bawat request: tinatanggihan ang walang idinedeklara sa dalawa, ang nagdedeklara lang ng read scope ay makakabasa lang, at ang pag-alis ng deklarasyon ay agad na pumuputol sa certificate (STS-SCIM-0083)."
   },
   "auth.policy.rfc": {
     "en": "01badc7fa9089572",

@@ -30,6 +30,7 @@
   "off": "关闭",
   "scopes": "范围",
   "everything": "全部",
+  "applicationDeclares": "应用的：其声明的；个人的：全部",
   "scopesText": "两个 OAuth 范围是 <code>{read}</code> 和 <code>{write}</code>，发布在两个发现文档的 <code>scopes_supported</code> 中。Digest 提供 {algorithms}。HOBA 密钥在 <code>{hoba}</code> 注册。",
   "policy": "访问控制策略",
   "endpoints": "端点",

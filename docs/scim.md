@@ -202,7 +202,7 @@ disappears from both.
 | HTTP Digest ([RFC 7616](https://www.rfc-editor.org/rfc/rfc7616)) | `httpdigest` | SHA-256 or SHA-512-256, with the `-sess` variants; MD5 only where `scim.digestMd5` turns it on, in development mode |
 | HOBA ([RFC 7486](https://www.rfc-editor.org/rfc/rfc7486)) | `hoba` | An RSA/SHA-256 signature over the server's challenge, by a key registered at `POST /.well-known/hoba/register` |
 | Session cookie | `httpcookie` | The browser sign-on session from `/authn/login`, consulted only when there is no `Authorization` header |
-| TLS client certificate | `tlsclientauth` | A certificate that verified against the client truststore on the main port (needs `global.https`) |
+| TLS client certificate | `tlsclientauth` | A certificate that verified against the client truststore on the main port (needs `global.https`). One this realm issued to an application is that application, held to the SCIM scopes it declares |
 
 The ServiceProviderConfig publishes all seven rows, and three of them have no
 canonical `type`: RFC 7643 section 5 gives `authenticationSchemes.type` five
@@ -215,8 +215,13 @@ first thing a SCIM client reads.
 
 **The access policy.** Only the OAuth schemes carry scopes. `scim:read` reads
 and `scim:write` writes, and **neither implies the other**. A wrong scope is
-`403` with `error="insufficient_scope"`. Every other scheme may both read and
-write. To exercise a client's scope handling, turn the other five off. After the
+`403` with `error="insufficient_scope"`. **A TLS client certificate this realm
+issued to an application** is held to the same two scopes through the
+application's `oauthAllowedScope`, asked on every request: an application
+declaring neither is refused `403` (`STS-SCIM-0083`), one declaring only
+`scim:read` may only read, and removing a declaration cuts the certificate
+off at once. Every other scheme, a person's certificate among them, may both
+read and write. To exercise a client's scope handling, turn the other five off. After the
 scope check, the [XACML](xacml.md) access gate decides. It permits by default,
 and its refusal says that the credential was accepted.
 
@@ -256,6 +261,7 @@ certificate continues an authentication already recorded elsewhere.
 | send a filter the server cannot evaluate | `400 invalidFilter` — "no results" and "I could not read your filter" are different answers, and a client can only act on the second |
 | send nothing | `401` with every offered challenge |
 | use a token with the wrong scope | `403 insufficient_scope` |
+| present an application's certificate for an operation whose scope the application does not declare | `403` |
 | use a token this service did not issue, or a revoked one | `401` — a scope on a token nobody verified is a permission its holder wrote for themselves |
 | use Basic with the password `invalid` | `401` |
 | use Digest with a wrong password, a stale nonce or a repeated `nc` | `401`, three ways |
@@ -345,7 +351,7 @@ address on the strength of it.
 | `scim.maxHobaChallenges` | `SCIM_MAX_HOBA_CHALLENGES` | `2000` | yes | How many issued HOBA challenges are remembered. |
 | `scim.maxHobaSeen` | `SCIM_MAX_HOBA_SEEN` | `5000` | yes | How many accepted HOBA triples are remembered for replay detection; evicting one also forgets its challenge. |
 | `scim.authCookie` | `SCIM_AUTH_COOKIE` | `true` | yes | Accept the browser sign-on session cookie. |
-| `scim.authClientCert` | `SCIM_AUTH_CLIENT_CERT` | `true` | yes | Accept a TLS client certificate that verified against the client truststore. |
+| `scim.authClientCert` | `SCIM_AUTH_CLIENT_CERT` | `true` | yes | Accept a TLS client certificate that verified against the client truststore. An application's certificate is held to the SCIM scopes the application declares. |
 
 `ldap.maxEntries` is the cap a SCIM create runs out of, because SCIM has no
 store of its own.

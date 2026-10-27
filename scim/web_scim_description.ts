@@ -84,7 +84,9 @@ class WebScimDescription {
                      : t.html('describeScim.off')) +
         ' <span class="sub">(' + D.code(row.setting) + ')</span></td><td>' +
         (row.scoped ? t.html('describeScim.scopes')
-                    : t.html('describeScim.everything')) + '</td><td>' +
+                    : row.applicationScoped
+                      ? t.html('describeScim.applicationDeclares')
+                      : t.html('describeScim.everything')) + '</td><td>' +
         esc(row.spec) + '</td></tr><tr><td colspan="5" class="sub">' +
         esc(row.description) + '</td></tr>';
     }).join('');

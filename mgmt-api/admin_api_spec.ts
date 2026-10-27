@@ -4926,7 +4926,15 @@ const SCHEMAS = {
               scoped: { type: 'boolean',
                         description: 'Whether it carries OAuth scopes. Only ' +
                                      'the two token schemes do; every other ' +
-                                     'accepted credential may do both.' },
+                                     'accepted credential may do both, ' +
+                                     'except as applicationScoped says.' },
+              applicationScoped: { type: 'boolean',
+                                   description: 'Whether a credential of ' +
+                                     'this scheme that names an APPLICATION ' +
+                                     'is held to the SCIM scopes that ' +
+                                     'application declares in its ' +
+                                     'oauthAllowedScope (#1048). True for ' +
+                                     'the TLS client certificate.' },
               recorded: { type: 'boolean',
                           description: 'Whether accepting it reaches ' +
                                        'recordAuthentication(). True for the ' +
