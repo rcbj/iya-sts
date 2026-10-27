@@ -1951,7 +1951,11 @@ class WebKit {
         ? ' fg-search-open' : '') +
       (conditional
         ? ' ' + WebKit.esc(WebKit.familyClasses(row.families)) : '') +
-      (opts.views && !row.simple ? ' fg-adv' : '') + '"' +
+      (opts.views && !row.simple ? ' fg-adv' : '') +
+      // A FIELD THE ATTRIBUTE POLICY REQUIRES (#1066) is outlined, as well as
+      // saying "required" in words below its name, so the boxes that must
+      // be filled are found at a glance.
+      (row.required ? ' fg-required' : '') + '"' +
       (searchKind ? ' tabindex="-1"' : '') + '>' +
       // A label names one control; a list and a radio group are several, so
       // their name is a heading of the cell rather than a label.

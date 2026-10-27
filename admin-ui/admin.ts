@@ -4378,6 +4378,13 @@ class AdminConsole {
       'background:#fbfbfd;min-width:0}' +
       '.fg-name{display:block;font-weight:600;overflow-wrap:anywhere}' +
       '.fg-for{display:block;color:#666;font-size:.78em;margin:.1em 0 .4em}' +
+      // A FIELD THE REALM'S ATTRIBUTE POLICY REQUIRES (#1066): a red rule
+      // down its left and a red asterisk after its name. The words
+      // "required" are in the cell as well, so the colour is never the
+      // only sign.
+      '.fg-cell.fg-required{border-color:#e8b4b0;border-left:4px solid ' +
+      '#b00020;background:#fffafa}' +
+      '.fg-required .fg-name::after{content:" *";color:#b00020}' +
       '.fg-cell input[type=text],.fg-cell input[type=number],' +
       '.fg-cell select,.fg-cell textarea{width:100%;box-sizing:border-box;' +
       'min-height:0}' +

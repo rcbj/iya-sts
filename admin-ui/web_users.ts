@@ -638,7 +638,10 @@ class UsersPage {
       inner = '<div class="tiles">' +
           kit.tile(UsersPage.newUserFieldRows(json, 'advanced').length,
                     t.text('consoleUsers.newUserBody.tileFields')) +
-          kit.tile(1, t.text('consoleUsers.newUserBody.tileRequired')) +
+          // WHAT THE ATTRIBUTE POLICY REQUIRES (#1066): uid, cn and sn
+          // always, and the realm's own; it was a constant 1, the username.
+          kit.tile((json.requiredAttributes || []).length || 1,
+                   t.text('consoleUsers.newUserBody.tileRequiredPolicy')) +
           kit.tile(json.credentials.length,
                    t.text('consoleUsers.newUserBody.tileWaysIn')) +
           kit.tile(development ? t.text('consoleUsers.newUserBody.yes')
@@ -661,16 +664,53 @@ class UsersPage {
         t.html('consoleUsers.newUserBody.emptyAfter')) +
 
         '<form method="post" action="/admin/users/new" class="newapp"><input ' +
-        'type="hidden" name="action" value="create"><h2>' +
-        t.html('consoleUsers.newUserBody.whoHeading') + '</h2><div ' +
-        'class="formrow"><label for="new-username">' +
-        t.html('consoleUsers.newUserBody.username') + '</label><input ' +
-        'type="text" id="new-username" name="username" size="28" ' +
-        'maxlength="256" required ' +
-        'value="' + kit.esc(username) + '" placeholder="' +
-        kit.esc(t.text('consoleUsers.newUserBody.usernameHint')) +
-        '"></div>' +
-        kit.note(t.html('consoleUsers.newUserBody.onlyRequired')) +
+        'type="hidden" name="action" value="create">' +
+
+        // THE FIELD GRID (rcbj, 2026-10-01): the same typed fields, under the
+        // same group headings, as a person's Attributes tab, drawn from
+        // `ldap/person_editor.ts` and the credential catalogue — so this form
+        // and the tab cannot offer different attributes, and a create holds
+        // every value to the rules an edit does. The simplified view is the
+        // names and contact details somebody creating a person usually has; the
+        // advanced view is every field. The switch, "+" and the bin are submit
+        // buttons that redraw this form with everything typed kept.
+        '<h2>' + (view === 'advanced'
+          ? t.html('consoleUsers.newUserBody.everythingHeading')
+          : t.html('consoleUsers.newUserBody.whatHeading')) + '</h2>' +
+        kit.note(t.html('consoleUsers.newUserBody.gridBefore') +
+        '<a href="/admin/vc">' +
+        t.html('consoleUsers.newUserBody.credentialClaims') + '</a>' +
+        t.html('consoleUsers.newUserBody.gridAfter')) +
+        // THE USERNAME IS THE `uid` CELL (#1066): the first box of the Name
+        // group, in both views, and still the one box it is typed in.
+        kit.note(t.html('consoleUsers.newUserBody.uidBox')) +
+        // WHAT A CREATE MUST CARRY (#396): the realm's attribute policy,
+        // each field it names marked "required" in the grid below. The list
+        // is the view's; the link is markup a message cannot carry.
+        (json.requiredAttributes && json.requiredAttributes.length
+          ? kit.note(t.html(json.requiredEnforced
+              ? 'consoleUsers.newUserBody.requiredEnforced'
+              : 'consoleUsers.newUserBody.requiredNotEnforced',
+              { list: json.requiredAttributes.join(', ') }) +
+              '<a href="/admin/policies#attributes">' +
+              t.html('consoleUsers.newUserBody.requiredPolicy') + '</a>.')
+          : '') +
+        '<input type="hidden" name="view" value="' + kit.esc(view) + '">' +
+        '<div class="formrow fg-view"><span class="sub">' +
+        (view === 'advanced'
+          ? t.html('consoleUsers.newUserBody.advancedView')
+          : t.html('consoleUsers.newUserBody.simpleView')) +
+        '</span><button type="submit" class="secondary" name="switchview" ' +
+        'value="' + (view === 'advanced' ? 'simple' : 'advanced') +
+        '" formaction="/admin/users/new" formnovalidate' +
+        kit.tip(t.text('consoleUsers.newUserBody.switchTip')) + '>' +
+        (view === 'advanced'
+          ? t.html('consoleUsers.newUserBody.showSimple')
+          : t.html('consoleUsers.newUserBody.showAdvanced')) +
+        '</button></div>' +
+        UsersPage.newUserFieldGrid(t, json, view, gridValues,
+          given.draft || null, username) +
+
 
         '<h2>' + t.html('consoleUsers.newUserBody.howHeading') + '</h2>' +
         '<table><tr><th>' + t.html('consoleUsers.newUserBody.thChoose') +
@@ -737,51 +777,6 @@ class UsersPage {
         'href="/admin/policies#serviceAccount">' +
         t.html('consoleUsers.newUserBody.saPolicy') + '</a>' +
         t.html('consoleUsers.newUserBody.saAfter')) +
-
-        // THE FIELD GRID (rcbj, 2026-10-01): the same typed fields, under the
-        // same group headings, as a person's Attributes tab, drawn from
-        // `ldap/person_editor.ts` and the credential catalogue — so this form
-        // and the tab cannot offer different attributes, and a create holds
-        // every value to the rules an edit does. The simplified view is the
-        // names and contact details somebody creating a person usually has; the
-        // advanced view is every field. The switch, "+" and the bin are submit
-        // buttons that redraw this form with everything typed kept.
-        '<h2>' + (view === 'advanced'
-          ? t.html('consoleUsers.newUserBody.everythingHeading')
-          : t.html('consoleUsers.newUserBody.whatHeading')) + '</h2>' +
-        kit.note(t.html('consoleUsers.newUserBody.gridBefore') +
-        '<a href="/admin/vc">' +
-        t.html('consoleUsers.newUserBody.credentialClaims') + '</a>' +
-        t.html('consoleUsers.newUserBody.gridAfter')) +
-        (development
-          ? kit.note(t.html('consoleUsers.newUserBody.uidNote'))
-          : '') +
-        // WHAT A CREATE MUST CARRY (#396): the realm's attribute policy,
-        // each field it names marked "required" in the grid below. The list
-        // is the view's; the link is markup a message cannot carry.
-        (json.requiredAttributes && json.requiredAttributes.length
-          ? kit.note(t.html(json.requiredEnforced
-              ? 'consoleUsers.newUserBody.requiredEnforced'
-              : 'consoleUsers.newUserBody.requiredNotEnforced',
-              { list: json.requiredAttributes.join(', ') }) +
-              '<a href="/admin/policies#attributes">' +
-              t.html('consoleUsers.newUserBody.requiredPolicy') + '</a>.')
-          : '') +
-        '<input type="hidden" name="view" value="' + kit.esc(view) + '">' +
-        '<div class="formrow fg-view"><span class="sub">' +
-        (view === 'advanced'
-          ? t.html('consoleUsers.newUserBody.advancedView')
-          : t.html('consoleUsers.newUserBody.simpleView')) +
-        '</span><button type="submit" class="secondary" name="switchview" ' +
-        'value="' + (view === 'advanced' ? 'simple' : 'advanced') +
-        '" formaction="/admin/users/new" formnovalidate' +
-        kit.tip(t.text('consoleUsers.newUserBody.switchTip')) + '>' +
-        (view === 'advanced'
-          ? t.html('consoleUsers.newUserBody.showSimple')
-          : t.html('consoleUsers.newUserBody.showAdvanced')) +
-        '</button></div>' +
-        UsersPage.newUserFieldGrid(t, json, view, gridValues,
-          given.draft || null) +
 
         // TWO SUBMITS, AND ONLY ONE OF THEM CARRIES A NAME. `action=create` is
         // a
@@ -896,9 +891,10 @@ class UsersPage {
    *   list the form did not draw before (a first draw, or a field the view
    *   switch has just added) gets one empty box, which a create reads as no
    *   value; a list the form did draw keeps its boxes as posted
+   * @param username - optional; the username, drawn in the `uid` cell
    * @returns the grid as HTML
    */
-  static newUserFieldGrid(t, json, view, values, draft) {
+  static newUserFieldGrid(t, json, view, values, draft, username?) {
     const rows = UsersPage.newUserFieldRows(json, view);
     // ONE BOX FOR A LIST ON THE FIRST DRAW: cn, sn and the telephone numbers
     // are multi-valued in their RFCs, and a form showing only "+" for the
@@ -930,12 +926,39 @@ class UsersPage {
       }
       return '<div class="fg-group"><h3' + kit.tip(group.what) + '>' +
         kit.esc(group.label) + '</h3><div class="fg">' +
+        (group.id === 'name' ? UsersPage.newUserUidCell(t, username) : '') +
         mine.map(function (row) {
           return kit.fieldGridCell(row, values,
                                     { redraw: '/admin/users/new' }, t);
         }).join('') + '</div></div>';
     }).join('');
     return html;
+  }
+
+  /**
+   * Draws the `uid` cell at the head of `/admin/users/new`'s Name group: the
+   * username box (#1066).
+   *
+   * @param t - the page's translator
+   * @param username - the username typed so far
+   * @returns the cell as HTML
+   */
+  static newUserUidCell(t, username) {
+    // THE USERNAME IS `uid`, AND IT IS STILL ONE BOX (#1066). The grid did
+    // not draw `uid` because the username box at the top of the form IS
+    // it: a second box would let one form create `uid=alice` whose uid
+    // says `bob`. So the box moved into the grid rather than being copied
+    // into it. It posts `username`, as it always did, and not `field.uid`,
+    // so the create reads it exactly as before. The attribute policy
+    // always requires `uid`, so it is drawn required in both views.
+    return '<div id="fgc-uid" class="fg-cell fg-required"><label ' +
+      'class="fg-name" for="new-username"><code>uid</code></label>' +
+      '<span class="fg-for">' + t.html('consoleUsers.newUserBody.username') +
+      t.html('consoleKit.grid.required') + '</span><input type="text" ' +
+      'id="new-username" name="username" maxlength="256" required ' +
+      'aria-required="true" value="' + kit.esc(username || '') +
+      '" placeholder="' +
+      kit.esc(t.text('consoleUsers.newUserBody.usernameHint')) + '"></div>';
   }
 
   /**

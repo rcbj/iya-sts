@@ -430,9 +430,9 @@ an attribute that holds several, and **Remove from** takes one value off.
 `attributeEditor`, with what each attribute holds, its group and an example.
 
 **Creating a person** (`/admin/users/new`) draws the same fields under the
-same group headings, in a simplified view (names and contact details) and an
-advanced view (every field). A value a create writes is held to the same
-rules as an edit.
+same group headings, in a simplified view (the username, names and contact
+details) and an advanced view (every field). A value a create writes is held
+to the same rules as an edit.
 
 **What may be changed** is the person schema — `person`,
 `organizationalPerson`, `inetOrgPerson` and the Identity Assurance claims —
@@ -468,8 +468,20 @@ verification lapse for it.
 The list page has one control: a name, and a button to **`/admin/users/new`**,
 where the person is described. It is a box for every attribute a person here
 can carry — the same catalogue *Credential claims* chooses from, so a value typed
-here is the value an issued credential asserts. **Only the username is
-required, and an empty box records no value.**
+here is the value an issued credential asserts. **An empty box records no
+value.**
+
+**The username is the `uid` box**, the first field of the *Name* group, in
+both views. It is the only place the username is typed, so one form cannot
+name two different uids. **Every field the realm's attribute policy
+(*Directory → Policies → Attribute policy*, below) requires is outlined in red
+and marked *required*:** `uid`, `cn` and `sn` always, and whatever the realm adds.
+Those fields are drawn in the simplified view as well. The *required* tile
+counts them. In product mode a create without one is refused; in development
+mode the policy is shown and not enforced. A `cn` left empty is made from the
+given name and surname. **A refused create keeps every box as you typed it**,
+and the reasons float in the banner at the top of the window, as on the
+application pages.
 
 **Fill with example data** writes what this service would invent into the
 boxes you left empty, touching nothing you filled in and creating nobody. It is
@@ -666,7 +678,8 @@ required. They belong to the realm (`ou=attributeDefinitions`) and are not
 inherited. `POST /admin-api/policies/define-person-attribute` and
 `remove-person-attribute` do the same over the API; a custom attribute cannot be
 removed while anybody holds a value of it or the policy requires it.
-`/admin/users/new` and a person's Attributes tab mark every required field.
+`/admin/users/new` and a person's Attributes tab outline every required field
+in red and mark it *required*.
 
 **The passkey policy** is described row by row under
 [the passkey policy](authentication.md#the-passkey-policy) and, with recipes, in

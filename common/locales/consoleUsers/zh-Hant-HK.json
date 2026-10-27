@@ -35,7 +35,7 @@
   "newUserBody.tileExample": "提供範例數據",
   "newUserBody.notSecondStore": "<strong>這不是第二個儲存區。</strong>表單將 <code>action=create</code> 提交到本頁，本頁呼叫的函數與 <code>POST /admin-api/users/create</code>、SCIM 建立以及在 <code>ou=users</code> 下的 <code>ldapadd</code> 所呼叫的相同——因此用戶名稱可以是什麼，以及拒絕已存在的名稱，在每個入口都代表同一件事。它所遵守的規則是<strong>每人一個項目</strong>，無論是哪種通訊協定帶來的、其項目碰巧以哪個屬性命名。",
   "newUserBody.username": "用戶名稱",
-  "newUserBody.uidNote": "<strong><code>uid</code> 不在此清單中，這並非遺漏。</strong>它就是用戶名稱，在頂端只詢問一次；若再給它一個方塊，就會讓一個表單建立出 uid 寫著 <code>bob</code> 的 <code>uid=alice</code>。",
+  "newUserBody.uidBox": "<strong>用戶名稱就是 <code>uid</code>，即下方的第一個方塊，一律為必填。</strong>屬性原則要求的每個欄位都以紅色標示並註明必填。它是他們在登入畫面輸入的字串、簽發給他們之每個權杖的 <code>sub</code>、項目上的 <code>uid</code>，也是項目本身的名稱。它不能是 DN、<code>did:</code>、SPIFFE 身分，也不能包含 RFC 4514 在 DN 中保留的字元（<code>, = + &lt; &gt; # ; \" \\</code>）——這些是以「出示」而非「建立」方式進入此目錄之項目的名稱，拒絕訊息會說明您送出的是哪一種。大小寫從不合併：本服務中沒有任何地方把 <code>Alice</code> 和 <code>alice</code> 視為同一個人。",
   "newUserBody.createUser": "建立用戶",
   "newUserBody.fill": "填入範例數據",
   "newUserBody.fillNote": "<strong>填入範例數據</strong>會把您輸入之用戶名稱對應的虛構人員，填入您留空的方塊，不會動到您已填寫的任何內容。它不會建立任何人——您會回到此表單，值已填入，可在按下「建立」之前編輯或清除。<strong>它就是本服務自己會虛構的同一個人</strong>，以用戶名稱為種子，因此顯示的是您原本會得到的內容，而不是第二個虛構。請先輸入用戶名稱：之後再更改，範例人員就會是另一個人。<code>description</code> 保持空白，因為本服務會自己寫入它。",

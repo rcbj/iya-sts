@@ -158,8 +158,10 @@ function checkRedraws(t) {
     { ok: false, errors: ['The name is taken.'] }, { fields: [] });
   t.check(refused && /Nobody was created/.test(refused.banner) &&
           /The name is taken/.test(refused.banner) &&
-          refused.json.prefill.draft['field.cn.0'] === 'Ann',
-          'D1. a refused create comes back with its reasons and its boxes');
+          refused.json.prefill.draft['field.cn.0'] === 'Ann' &&
+          /^<div class="flash"/.test(refused.banner),
+          'D1. a refused create comes back with its reasons and its boxes, ' +
+          'the reasons in the floating banner (#1066)');
   const pane = WebAnswers.redraw('/admin/pki/certificate', 'generate-keys',
     {}, { ok: true, why: 'Generated.', workbench: { draft: { a: 1 } } },
     { workbench: { draft: {} }, persons: [] });
