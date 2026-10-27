@@ -131,5 +131,13 @@
   "saved": "已保存。",
   "deleted": "定义已删除。",
   "queuedAs": "已排入作业 {id}。",
-  "dismiss": "关闭"
+  "dismiss": "关闭",
+  "pager.first": "« 首页",
+  "pager.prev": "‹ 上一页",
+  "pager.next": "下一页 ›",
+  "pager.last": "末页 »",
+  "pager.where": "第 {page} 页，共 {pages} 页 — 第 {first}–{last} 行，共 {total} 行",
+  "perPage.label": "每页行数",
+  "perPage.rows": "{n} 行",
+  "tipPerPage": "每页显示多少行。更改后从第一页开始。"
 }

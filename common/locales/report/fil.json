@@ -131,5 +131,13 @@
   "saved": "Na-save.",
   "deleted": "Nabura ang definition.",
   "queuedAs": "Nakapila bilang trabaho {id}.",
-  "dismiss": "Isara"
+  "dismiss": "Isara",
+  "pager.first": "« una",
+  "pager.prev": "‹ nakaraan",
+  "pager.next": "susunod ›",
+  "pager.last": "huli »",
+  "pager.where": "pahina {page} ng {pages} — mga row {first}–{last} ng {total}",
+  "perPage.label": "Mga row bawat pahina",
+  "perPage.rows": "{n} row",
+  "tipPerPage": "Ilang row ang ipinapakita ng isang pahina. Ang pagbabago nito ay nagsisimula sa unang pahina."
 }

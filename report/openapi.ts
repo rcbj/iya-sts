@@ -251,7 +251,15 @@ class OpenApi {
           get: operation('List definitions',
             'The caller\'s own definitions, those shared with a group ' +
             'the caller belongs to, and every definition when the token ' +
-            'has report:admin.', {
+            'has report:admin. In name order, numbered pages: `page` and ' +
+            '`per` (50 unless given, at most 200); the answer carries ' +
+            'page, pages, per and total beside the rows.', {
+              parameters: [
+                { name: 'page', in: 'query', required: false,
+                  schema: { type: 'integer', minimum: 1 } },
+                { name: 'per', in: 'query', required: false,
+                  schema: { type: 'integer', minimum: 1, maximum: 200 } }
+              ],
               responses: {
                 '200': answered('The definitions.',
                   { $ref: '#/components/schemas/DefinitionList' })
@@ -341,20 +349,30 @@ class OpenApi {
         },
         '/report-api/jobs': {
           get: operation('List jobs',
-            'Newest first. after is the previous page\'s next id. A job ' +
-            'id in the list is not permission to read a job the token ' +
-            'cannot see.', {
+            'Newest first, in numbered pages: `page` and `per` (50 unless ' +
+            'given, at most 200), with page, pages, per and total beside ' +
+            'the rows. A caller may page by cursor instead: `after` is the ' +
+            'previous page\'s next id and `limit` its size. A job id in ' +
+            'the list is not permission to read a job the token cannot ' +
+            'see.', {
               parameters: [{
+                name: 'page', in: 'query', required: false,
+                schema: { type: 'integer', minimum: 1 }
+              }, {
+                name: 'per', in: 'query', required: false,
+                schema: { type: 'integer', minimum: 1, maximum: 200 }
+              }, {
                 name: 'after',
                 in: 'query',
                 required: false,
-                description: 'The last id of the previous page.',
+                description: 'The last id of the previous page, for a ' +
+                  'cursor walk; page and per are then ignored.',
                 schema: { type: 'string' }
               }, {
                 name: 'limit',
                 in: 'query',
                 required: false,
-                description: 'How many jobs to return.',
+                description: 'How many jobs a cursor page returns.',
                 schema: { type: 'integer' }
               }],
               responses: {
@@ -681,7 +699,11 @@ class OpenApi {
             type: 'object',
             properties: {
               definitions: { type: 'array',
-                items: { $ref: '#/components/schemas/Definition' } }
+                items: { $ref: '#/components/schemas/Definition' } },
+              page: { type: 'integer' },
+              pages: { type: 'integer' },
+              per: { type: 'integer' },
+              total: { type: 'integer' }
             }
           },
           ShareWrite: {
@@ -733,7 +755,12 @@ class OpenApi {
             properties: {
               jobs: { type: 'array',
                 items: { $ref: '#/components/schemas/Job' } },
-              next: { type: 'string', nullable: true }
+              next: { type: 'string', nullable: true },
+              page: { type: 'integer',
+                description: 'Absent on a cursor page.' },
+              pages: { type: 'integer' },
+              per: { type: 'integer' },
+              total: { type: 'integer' }
             }
           }
         }

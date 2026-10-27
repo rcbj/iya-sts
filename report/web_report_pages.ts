@@ -594,6 +594,85 @@ function footerHtml(t: any, version: any): string {
     '</p>';
 }
 
+// THE PAGER (#997), the console's `pageNavPair()` and `perPageForm()` in
+// one line: first and previous, a window of up to seven page numbers with
+// the current one marked, next and last, then "page x of y — rows a–b of
+// n", and a rows-per-page select that moves to page one. Every page is a
+// link under the list's own path with `?page=&per=`, so a page can be
+// linked to and the back button works; the select navigates on change.
+const PER_CHOICES = [25, 50, 100, 200];
+
+// The page and size a route's query asks for, as the API's query string.
+function pageQuery(query: any): string {
+  const q = query || {};
+  const parts: string[] = [];
+  if (q.page) {
+    parts.push('page=' + encodeURIComponent(String(q.page)));
+  }
+  if (q.per) {
+    parts.push('per=' + encodeURIComponent(String(q.per)));
+  }
+  return parts.length ? '?' + parts.join('&') : '';
+}
+
+function pagerLink(path: string, page: number, per: number,
+                   label: string, title?: string): string {
+  return '<a href="' + esc(path + '?page=' + page + '&per=' + per) + '"' +
+    (title ? ' title="' + esc(title) + '"' : '') + '>' + label + '</a>';
+}
+
+function pagerHtml(t: any, path: string, pg: any): string {
+  const page = Number(pg.page) || 1;
+  const pages = Math.max(1, Number(pg.pages) || 1);
+  const per = Number(pg.per) || 50;
+  const total = Number(pg.total) || 0;
+  const first = esc(t.text('report.pager.first'));
+  const prev = esc(t.text('report.pager.prev'));
+  const next = esc(t.text('report.pager.next'));
+  const last = esc(t.text('report.pager.last'));
+  const out: string[] = [];
+  if (pages > 1) {
+    if (page > 1) {
+      out.push(pagerLink(path, 1, per, first));
+      out.push(pagerLink(path, page - 1, per, prev));
+    } else {
+      out.push('<span class="off">' + first + '</span>');
+      out.push('<span class="off">' + prev + '</span>');
+    }
+    const from = Math.max(1, Math.min(page - 3, pages - 6));
+    const to = Math.min(pages, Math.max(page + 3, 7));
+    for (let n = from; n <= to; n++) {
+      out.push(n === page ? '<span class="here">' + n + '</span>'
+        : pagerLink(path, n, per, String(n)));
+    }
+    if (page < pages) {
+      out.push(pagerLink(path, page + 1, per, next));
+      out.push(pagerLink(path, pages, per, last));
+    } else {
+      out.push('<span class="off">' + next + '</span>');
+      out.push('<span class="off">' + last + '</span>');
+    }
+  }
+  const firstRow = total ? (page - 1) * per + 1 : 0;
+  const lastRow = Math.min(total, page * per);
+  out.push('<span class="where">' + esc(t.text('report.pager.where', {
+    page: String(page), pages: String(pages), first: String(firstRow),
+    last: String(lastRow), total: String(total) })) + '</span>');
+  const choices = PER_CHOICES.indexOf(per) >= 0 ? PER_CHOICES.slice()
+    : PER_CHOICES.concat([per]).sort(function (a, b) {
+      return a - b;
+    });
+  out.push('<label class="perpage"' + tip(t, 'report.tipPerPage') + '>' +
+    esc(t.text('report.perPage.label')) +
+    ' <select name="per" data-pager-path="' + esc(path) + '">' +
+    choices.map(function (n: number): string {
+      return '<option value="' + n + '"' + (n === per ? ' selected' : '') +
+        '>' + esc(t.text('report.perPage.rows', { n: String(n) })) +
+        '</option>';
+    }).join('') + '</select></label>');
+  return '<div class="pager">' + out.join('') + '</div>';
+}
+
 function problemHtml(t: any, text: string): string {
   return '<p class="err">' + esc(text || t.text('report.error')) + '</p>';
 }
@@ -1697,6 +1776,15 @@ class ReportRuntime extends SpaClient {
       }
       return;
     }
+    if (name === 'per' && el.getAttribute('data-pager-path')) {
+      // The rows-per-page choice (#997) moves to page one at the new size,
+      // through the location, as a pager link does.
+      const path = String(el.getAttribute('data-pager-path') || BASE);
+      this.env.history.pushState(null, '', this.prefix + path +
+        '?page=1&per=' + encodeURIComponent(String(el.value || '')));
+      this.route();
+      return;
+    }
     if (name === 'source' && el.closest &&
         el.closest('form[data-form="definition"]')) {
       // Another source on the definition page (#989): the query block is
@@ -1730,8 +1818,9 @@ class ReportRuntime extends SpaClient {
    *
    * @returns nothing
    */
-  async drawDefinitions(): Promise<void> {
-    const answer = await this.call('GET', API + '/definitions');
+  async drawDefinitions(query: any): Promise<void> {
+    const answer = await this.call('GET', API + '/definitions' +
+      pageQuery(query));
     if (!answer) {
       return;
     }
@@ -1751,11 +1840,12 @@ class ReportRuntime extends SpaClient {
         esc(row.name) + '</a>', esc(row.ownerName || row.owner),
         esc(row.schedule || '')];
     });
-    this.paint(tableHtml([
+    const pager = pagerHtml(this.t, BASE + '/definitions', answer.json);
+    this.paint(pager + tableHtml([
       esc(this.t.text('report.name')),
       esc(this.t.text('report.owner')),
       esc(this.t.text('report.schedule'))
-    ], rows));
+    ], rows) + pager);
   }
 
   /**
@@ -1940,8 +2030,8 @@ class ReportRuntime extends SpaClient {
    *
    * @returns nothing
    */
-  async drawJobs(): Promise<void> {
-    const answer = await this.call('GET', API + '/jobs');
+  async drawJobs(query: any): Promise<void> {
+    const answer = await this.call('GET', API + '/jobs' + pageQuery(query));
     if (!answer) {
       return;
     }
@@ -1962,12 +2052,13 @@ class ReportRuntime extends SpaClient {
         esc(job.id) + '</a>', statusWord(self.t, job.status),
         formatWord(self.t, job.format), esc(job.submittedAt || '')];
     });
-    this.paint(tableHtml([
+    const pager = pagerHtml(this.t, BASE + '/jobs', answer.json);
+    this.paint(pager + tableHtml([
       esc(this.t.text('report.jobs')),
       esc(this.t.text('report.status')),
       esc(this.t.text('report.format')),
       esc(this.t.text('report.result'))
-    ], rows));
+    ], rows) + pager);
   }
 
   /**
@@ -2105,6 +2196,18 @@ class ReportRuntime extends SpaClient {
   }
 
   /**
+   * The pager, for a test (#997).
+   *
+   * @param t - the translator
+   * @param path - the list's path
+   * @param pg - `{ page, pages, per, total }` from the API
+   * @returns the pager's HTML
+   */
+  static pagerHtml(t: any, path: string, pg: any): string {
+    return pagerHtml(t, path, pg);
+  }
+
+  /**
    * The status bubble, for a test.
    *
    * @param t - the translator
@@ -2155,7 +2258,7 @@ class ReportRuntime extends SpaClient {
       return;
     }
     if (path === BASE + '/definitions') {
-      await this.drawDefinitions();
+      await this.drawDefinitions(query);
       return;
     }
     if (path.indexOf(BASE + '/definitions/') === 0) {
@@ -2164,7 +2267,7 @@ class ReportRuntime extends SpaClient {
       return;
     }
     if (path === BASE + '/jobs') {
-      await this.drawJobs();
+      await this.drawJobs(query);
       return;
     }
     if (path.indexOf(BASE + '/jobs/') === 0) {

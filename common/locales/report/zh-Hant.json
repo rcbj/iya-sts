@@ -131,5 +131,13 @@
   "saved": "已儲存。",
   "deleted": "定義已刪除。",
   "queuedAs": "已排入工作 {id}。",
-  "dismiss": "關閉"
+  "dismiss": "關閉",
+  "pager.first": "« 首頁",
+  "pager.prev": "‹ 上一頁",
+  "pager.next": "下一頁 ›",
+  "pager.last": "末頁 »",
+  "pager.where": "第 {page} 頁，共 {pages} 頁 — 第 {first}–{last} 列，共 {total} 列",
+  "perPage.label": "每頁列數",
+  "perPage.rows": "{n} 列",
+  "tipPerPage": "每頁顯示多少列。變更後從第一頁開始。"
 }

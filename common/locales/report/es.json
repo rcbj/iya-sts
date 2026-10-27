@@ -131,5 +131,13 @@
   "saved": "Guardado.",
   "deleted": "La definición se eliminó.",
   "queuedAs": "En cola como trabajo {id}.",
-  "dismiss": "Cerrar"
+  "dismiss": "Cerrar",
+  "pager.first": "« primera",
+  "pager.prev": "‹ anterior",
+  "pager.next": "siguiente ›",
+  "pager.last": "última »",
+  "pager.where": "página {page} de {pages} — filas {first}–{last} de {total}",
+  "perPage.label": "Filas por página",
+  "perPage.rows": "{n} filas",
+  "tipPerPage": "Cuántas filas muestra una página. Cambiarlo vuelve a la primera página."
 }
