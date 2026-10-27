@@ -330,16 +330,28 @@ async function aRealmTokenIsRefused() {
   const secret = regenerated.body && regenerated.body.clientSecret;
   assert.ok(secret, "precondition: regenerating the realm's " +
     "sts-management-api secret answered " + regenerated.status);
-  const minted = await call("POST", base + R + "/oauth2/token", {
-    headers: { "Content-Type": "application/x-www-form-urlencoded",
-               Authorization: "Basic " +
-                 Buffer.from("sts-management-api:" + secret)
-                   .toString("base64") },
-    body: new URLSearchParams({ grant_type: "client_credentials",
-                                scope: "admin:read admin:write",
-                                resource: base + R + "/admin-api" })
-      .toString()
-  });
+  // ASKED AGAIN FOR A MOMENT (cluster, 2026-10-27): the secret was written
+  // on the node the regenerate landed on, sealed under the new realm's data
+  // key, and the token request may land on the other node, which reads the
+  // key rows again in the background when a value names a key it does not
+  // hold yet — so its first answer can be invalid_client. A bounded wait.
+  let minted = null;
+  for (let attempt = 0; attempt < 20; attempt++) {
+    minted = await call("POST", base + R + "/oauth2/token", {
+      headers: { "Content-Type": "application/x-www-form-urlencoded",
+                 Authorization: "Basic " +
+                   Buffer.from("sts-management-api:" + secret)
+                     .toString("base64") },
+      body: new URLSearchParams({ grant_type: "client_credentials",
+                                  scope: "admin:read admin:write",
+                                  resource: base + R + "/admin-api" })
+        .toString()
+    });
+    if (minted.status !== 401) {
+      break;
+    }
+    await new Promise(function (resolve) { setTimeout(resolve, 500); });
+  }
   const token = minted.body && minted.body.access_token;
   assert.ok(token, "precondition: the realm's token endpoint answered " +
             minted.status + " " + minted.text.slice(0, 200));
