@@ -210,6 +210,22 @@ rows-per-page select — every page a link under the list's own path with
 moves to page one through the location (`onChange()`, `data-pager-path`).
 `tests/report_query.js` holds both views' paging and the pager's markup.
 
+## One row per credential (#1011)
+
+rcbj, 2026-10-27: "the algorithms field is a comma-separated list; I
+need a separate row for each passkey + algorithm — the reports we need
+require this granular data." A `credentialHolders` row was a person's
+credentials of one mechanism and role with the algorithms joined, so a
+count by algorithm counted people. Now `reportHolderRows()` makes a row
+per credential — a passkey per key, another mechanism per attribute value
+— with `credentialId`, a single `algorithm` and `lane`, and its own
+`enrolledAt`/`lastUsedAt`; `credentials` stays the person's count of that
+mechanism and role on each of their rows, so grouping by `username` still
+answers how many each holds. `algorithms`/`lanes` left the catalog, the
+GROUPABLE list and `rows.ts`'s `LIST_FIELDS` (a single value needs no
+splitting); `lane` is enumerated (#1007). Nothing changed in what is
+read: the same holders, the same entries, more rows out of each.
+
 ## The Sort box, and Group by behind Count (#1008)
 
 rcbj, 2026-10-27: a checkbox labelled Sort that reveals the sort field

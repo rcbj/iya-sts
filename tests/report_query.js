@@ -2189,8 +2189,8 @@ async function holders(t) {
       budgetMs: 5000, execution: execution || 'sync' });
   };
   const fields = ['username', 'mechanism', 'role', 'credentials',
-    'algorithms', 'lanes', 'enrolledAt', 'lastUsedAt', 'methodsUsed',
-    'memberOf'];
+    'credentialId', 'algorithm', 'lane', 'enrolledAt', 'lastUsedAt',
+    'methodsUsed', 'memberOf'];
   try {
     reset();
     const passkeys = await read({ source: 'credentialHolders',
@@ -2204,21 +2204,34 @@ async function holders(t) {
     const label = function (row) {
       return row.username + '/' + row.role;
     };
-    t.equal(rows.map(label).sort().join(','), 'ada/mfa,ada/primary,bea/mfa',
-      'one row per person per role held');
-    const adaPrimary = rows.filter(function (row) {
+    // ONE ROW PER CREDENTIAL (#1011): ada's two primary passkeys are two
+    // rows, each with its own algorithm, lane, id and dates, and each
+    // saying she holds two.
+    t.equal(rows.map(label).sort().join(','),
+      'ada/mfa,ada/primary,ada/primary,bea/mfa',
+      'one row per credential, named by its holder and role');
+    const adaPrimaries = rows.filter(function (row) {
       return row.username === 'ada' && row.role === 'primary';
-    })[0];
+    }).sort(function (a, b) {
+      return a.algorithm < b.algorithm ? -1 : 1;
+    });
+    const adaPrimary = adaPrimaries[0];
+    t.equal(adaPrimaries.length, 2, 'two primary passkeys are two rows');
     t.equal(adaPrimary && adaPrimary.credentials, 2,
-      'two primary passkeys are counted');
-    t.equal(adaPrimary && adaPrimary.algorithms, 'ES256, ML-DSA-65',
-      'their algorithms, distinct and sorted');
-    t.equal(adaPrimary && adaPrimary.lanes, 'classical, pqc',
-      'and their lanes');
+      'each saying the person holds two');
+    t.equal(adaPrimaries.map(function (row) {
+      return row.algorithm;
+    }).join(','), 'ES256,ML-DSA-65', 'each with its own algorithm');
+    t.equal(adaPrimaries.map(function (row) {
+      return row.lane;
+    }).join(','), 'classical,pqc', 'and its own lane');
+    t.equal(adaPrimaries.map(function (row) {
+      return row.credentialId;
+    }).join(','), 'c-primary--7,c-primary--49', 'and its own id');
     t.equal(adaPrimary && adaPrimary.enrolledAt,
-      '1970-01-01T00:00:01.000Z', 'the earliest enrolment');
-    t.equal(adaPrimary && adaPrimary.lastUsedAt,
-      '1970-01-01T00:00:09.000Z', 'the latest use');
+      '1970-01-01T00:00:01.000Z', 'its own enrolment');
+    t.equal(adaPrimaries[1] && adaPrimaries[1].lastUsedAt,
+      '1970-01-01T00:00:09.000Z', 'and its own last use');
     t.equal(adaPrimary && adaPrimary.methodsUsed, 'pwd, hwk, otp',
       'the methods the person has used');
     t.equal(adaPrimary && adaPrimary.memberOf, 'staff, ops',
@@ -2234,7 +2247,9 @@ async function holders(t) {
       where: { op: 'eq', field: 'mechanism', value: 'totp' } });
     t.equal((totp.rows || []).map(label).join(','), 'ada/mfa',
       'an authenticator app is one mfa row');
-    t.equal(totp.rows[0].algorithms, 'SHA1', 'with its algorithm');
+    t.equal(totp.rows[0].algorithm, 'SHA1', 'with its algorithm');
+    t.equal(totp.rows[0].credentialId, '1',
+      'and a value naming nothing is numbered');
 
     reset();
     const primaryOnly = await read({ source: 'credentialHolders',
@@ -2242,7 +2257,8 @@ async function holders(t) {
       where: { op: 'and', args: [
         { op: 'eq', field: 'mechanism', value: 'passkey' },
         { op: 'eq', field: 'role', value: 'primary' }] } });
-    t.equal((primaryOnly.rows || []).map(label).join(','), 'ada/primary',
+    t.equal((primaryOnly.rows || []).map(label).join(','),
+      'ada/primary,ada/primary',
       'the role filter applies to the holders read');
 
     reset();
@@ -2253,8 +2269,9 @@ async function holders(t) {
     t.equal(calls.holders, 0, 'and not the holders');
     t.equal((staffOnly.rows || []).map(function (row) {
       return row.username + '/' + row.mechanism + '/' + row.role;
-    }).sort().join(','), 'ada/passkey/mfa,ada/passkey/primary,ada/totp/mfa',
-      'every mechanism of every member');
+    }).sort().join(','),
+      'ada/passkey/mfa,ada/passkey/primary,ada/passkey/primary,ada/totp/mfa',
+      'every credential of every member');
 
     reset();
     const counted = await read({ source: 'credentialHolders',
@@ -2262,8 +2279,16 @@ async function holders(t) {
       where: { op: 'eq', field: 'mechanism', value: 'passkey' } });
     t.equal(JSON.stringify((counted.rows || []).map(function (row) {
       return row.role + '=' + row.count;
-    }).sort()), JSON.stringify(['mfa=2', 'primary=1']),
-      'the census is a count by role');
+    }).sort()), JSON.stringify(['mfa=2', 'primary=2']),
+      'the census counts credentials by role');
+    reset();
+    const byAlgorithm = await read({ source: 'credentialHolders',
+      select: ['algorithm'], aggregate: 'count', groupBy: ['algorithm'],
+      limit: 5, where: { op: 'eq', field: 'mechanism', value: 'passkey' } });
+    t.equal(JSON.stringify((byAlgorithm.rows || []).map(function (row) {
+      return row.algorithm + '=' + row.count;
+    }).sort()), JSON.stringify(['ES256=3', 'ML-DSA-65=1']),
+      'and by algorithm, one count per passkey');
 
     reset();
     const everybody = await read({ source: 'credentialHolders',
@@ -2275,8 +2300,8 @@ async function holders(t) {
     const asJob = await read({ source: 'credentialHolders',
       select: fields, limit: 10 }, 'async');
     t.equal(asJob.ok, true, 'as a job it reads every mechanism\'s holders');
-    t.equal((asJob.rows || []).length, 4,
-      'ada twice for passkeys, once for totp, bea once');
+    t.equal((asJob.rows || []).length, 5,
+      'ada three passkeys and one authenticator app, bea one passkey');
     t.equal(calls.holders, 5, 'one holders lookup per mechanism');
     t.equal(calls.holderCount, 5, 'after one count per mechanism');
     t.equal(calls.holdersStop, 5, 'and each read carries a stop');

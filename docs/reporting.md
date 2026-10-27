@@ -366,7 +366,9 @@ entries, which is what `users` reads.
 ### `credentialHolders`
 
 Who holds which authentication credential, as the directory is now: one
-row per person, per mechanism, per role. A passkey's role is the one
+row per credential — a passkey, an authenticator app, an enrolled
+certificate, a mail factor, a Kerberos key set — with the person who
+holds it, its mechanism and role, and its own algorithm. A passkey's role is the one
 chosen at its enrolment, `primary` (it signs the person in on its own)
 or `mfa` (a second factor after a password), which the service enforces
 at sign-in; an authenticator app and an emailed code are `mfa`; a
@@ -397,11 +399,13 @@ its own cap. A `memberOf` filter's members are counted the same way. The
 read that does start stops with the query's time cap or its
 cancellation, not with its last holder.
 
-**The census is a count.** `aggregate: "count"` with `groupBy`
-`mechanism`, `role`, `algorithms` or `lanes` answers how many people hold
-a passkey as a primary mechanism, how many as a second factor, how many
-by algorithm, and so on; add a `memberOf` filter for one community. The
-maintained per-realm passkey aggregate stays on Monitoring → Passkeys.
+**The census is a count of credentials.** `aggregate: "count"` with
+`groupBy` `mechanism`, `role`, `algorithm` or `lane` answers how many
+passkeys are enrolled as a primary mechanism, how many as a second
+factor, how many of each algorithm, and so on; group by `username` for
+how many each person holds, and add a `memberOf` filter for one
+community. The maintained per-realm passkey aggregate stays on
+Monitoring → Passkeys.
 
 | Field | Type | Meaning | Filter | Sort | Group |
 |---|---|---|---|---|---|
@@ -409,22 +413,23 @@ maintained per-realm passkey aggregate stays on Monitoring → Passkeys.
 | `displayName` | string | `displayName`, or `cn`. | yes | yes | no |
 | `mechanism` | string | `passkey`, `totp`, `emailFactor`, `certificate` or `kerberos`; enumerated, a dropdown on the page. Indexed: `eq`, `in`. | yes | yes | yes |
 | `role` | string | `primary` or `mfa`; enumerated. | yes | yes | yes |
-| `credentials` | number | How many credentials of this mechanism and role the person holds. | yes | yes | no |
-| `algorithms` | string | The credentials' signature algorithms, distinct, joined (a passkey's JOSE name). | yes | yes | yes |
-| `lanes` | string | A passkey's lanes, distinct, joined. | yes | yes | yes |
-| `enrolledAt` | timestamp | The earliest enrolment, where recorded. | yes | yes | no |
-| `lastUsedAt` | timestamp | The latest use, where recorded. | yes | yes | no |
+| `credentials` | number | How many credentials of this mechanism and role the person holds; the same on each of their rows. | yes | yes | no |
+| `credentialId` | string | This credential's own id (a passkey's credential id). | yes | yes | no |
+| `algorithm` | string | This credential's signature algorithm (a passkey's JOSE name, such as `ES256` or `ML-DSA-65`). | yes | yes | yes |
+| `lane` | string | A passkey's lane, `classical` or `pqc`; enumerated. Empty for the other mechanisms. | yes | yes | yes |
+| `enrolledAt` | timestamp | When this credential was enrolled, where recorded. | yes | yes | no |
+| `lastUsedAt` | timestamp | When this credential was last used, where recorded. | yes | yes | no |
 | `methodsUsed` | string | The RFC 8176 methods the person has ever signed in with here. | yes | yes | no |
 | `mfaLastAuthTime` | timestamp | When the person last completed a multi-factor sign-in. | yes | yes | no |
 | `memberOf` | string | The groups that list this person, by name (`cn`), joined. Indexed: `eq`, `in`, each value a group's name. | yes | no | no |
 
-Everyone with a passkey as a primary mechanism, with its algorithms and
-how many:
+Every passkey enrolled as a primary mechanism, with its holder, its
+algorithm and how many that person holds:
 
 ```json
 {
   "source": "credentialHolders",
-  "select": ["username", "displayName", "algorithms", "lanes", "credentials"],
+  "select": ["username", "displayName", "algorithm", "lane", "credentials"],
   "where": { "op": "and", "args": [
     { "op": "eq", "field": "mechanism", "value": "passkey" },
     { "op": "eq", "field": "role", "value": "primary" } ] },
@@ -432,14 +437,14 @@ how many:
 }
 ```
 
-How many hold a passkey, by role and algorithm:
+How many passkeys there are, by role and algorithm:
 
 ```json
 {
   "source": "credentialHolders",
   "where": { "op": "eq", "field": "mechanism", "value": "passkey" },
   "aggregate": "count",
-  "groupBy": ["role", "algorithms"]
+  "groupBy": ["role", "algorithm"]
 }
 ```
 
@@ -470,7 +475,7 @@ bag is supplied beside a saved definition, not inside an ad hoc document
 that already has `source`.
 
 A field that is a list drawn as one string — `memberOf`, and the
-`credentialHolders` source's `algorithms`, `lanes` and `methodsUsed` —
+`credentialHolders` source's `methodsUsed` —
 is compared value by value under `eq`, `ne` and `in`: a person in three
 groups matches `memberOf` equals any one of them. `contains` and
 `startsWith` look at the joined string.
