@@ -1236,8 +1236,8 @@
     "text": "Naka-store ang `userPassword` bilang scrypt hash sa PAREHONG mode, sa pamamagitan ng crypto.hashSecret(), alinmang pinto ang sumulat nito — kasama ang LDAP add o modify. Tinatanggihan ng product mode ang value na ipinadalang naka-hash na, na hindi masusukat sa password policy; pinapanatili ito ng development gaya ng ibinigay, na siyang paraan ng paglipat ng directory sa pagitan ng dalawang instance."
   },
   "crypto.families.ldap.whatItDoesNot": {
-    "en": "b5fd76f7abc4adab",
-    "text": "Wala itong sinasagot na SASL MECHANISM — inaalis ng root DSE ang `supportedSASLMechanisms` sa halip na ilathala itong walang laman, dahil laging may kahit isang value ang isang LDAP attribute at ang walang laman ay hindi mas mahinang claim, malformed ito. Kaya walang GSSAPI bind, walang EXTERNAL bind, at walang StartTLS: TLS ang 636 mula sa unang byte."
+    "en": "4b8955de2d74cab1",
+    "text": "ISANG SASL MECHANISM lang ang sinasagot nito, ang EXTERNAL, at habang humihingi lamang ang 636 ng client certificate — inilalathala noon ng root DSE ang `supportedSASLMechanisms` at inaalis ito kung hindi, sa halip na ilathala itong walang laman, dahil laging may kahit isang value ang isang LDAP attribute at ang walang laman ay hindi mas mahinang claim, malformed ito. Kaya walang GSSAPI bind, at walang StartTLS: TLS ang 636 mula sa unang byte."
   },
   "crypto.families.ldap.algorithms.0.what": {
     "en": "896a443631bae685",

@@ -1639,17 +1639,9 @@
     "en": "66b6d169a977d0ba",
     "text": "LDAPS：不要求客戶端證書"
   },
-  "ldap.ldapsDisableOptionalClientCertificate|description": {
-    "en": "7e1993d7f889bc3c",
-    "text": "LDAPS 不傳送 CertificateRequest。預設為開啟，這是 LDAPS 一直以來的做法：繫結是目錄客戶端表明自己身分的方式，而在每個持有證書的客戶端面前跳出證書提示會令人意外。關閉時會向每個連線要求證書但不強制；出示的證書會對照客戶端信任儲存區驗證，但不會繫結任何人（此處沒有 SASL EXTERNAL）。"
-  },
   "ldap.ldapsRequireClientCertificate|label": {
     "en": "eff4646ac01e4612",
     "text": "LDAPS：要求客戶端證書"
-  },
-  "ldap.ldapsRequireClientCertificate|description": {
-    "en": "2c73995bcc16b3fa",
-    "text": "LDAPS 在交握時拒絕每個未出示鏈結到客戶端信任儲存區之客戶端證書的連線——這是繫結前方的第二道關卡，而繫結仍決定連線的身分。優先於上方的切換。預設為關閉。"
   },
   "debugger.disableOptionalClientCertificate|label": {
     "en": "df19c772421bba66",

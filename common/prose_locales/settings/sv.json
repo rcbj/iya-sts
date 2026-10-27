@@ -5004,16 +5004,16 @@
     "text": "LDAPS: fråga inte efter ett klientcertifikat"
   },
   "ldap.ldapsDisableOptionalClientCertificate|description": {
-    "en": "7e1993d7f889bc3c",
-    "text": "LDAPS skickar ingen CertificateRequest. PÅSLAGET som standard, vilket är vad LDAPS alltid har gjort: en bind är hur en katalogklient säger vem den är, och en certifikatfråga framför varje klient som har ett är en överraskning. Avstängt ber varje anslutning om ett certifikat och kräver inget; ett presenterat certifikat verifieras mot förtroendelagret för klienter men binder ingen (det finns ingen SASL EXTERNAL här)."
+    "en": "7c1815ed4a7499c4",
+    "text": "LDAPS skickar ingen CertificateRequest. PÅ som standard, vilket är vad LDAPS alltid gjort: en bindning är hur en katalogklient säger vem den är, och en certifikatfråga framför varje klient som har ett är en överraskning. Av ber varje anslutning om ett certifikat och kräver inget; ett uppvisat certifikat verifieras mot klientens förtroendelager, och en anslutning med ett som denna tjänst utfärdat till en person kan binda som den personen med SASL EXTERNAL."
   },
   "ldap.ldapsRequireClientCertificate|label": {
     "en": "eff4646ac01e4612",
     "text": "LDAPS: kräv ett klientcertifikat"
   },
   "ldap.ldapsRequireClientCertificate|description": {
-    "en": "2c73995bcc16b3fa",
-    "text": "LDAPS avvisar, vid handskakningen, varje anslutning som inte presenterar ett klientcertifikat som kedjar till förtroendelagret för klienter — en andra spärr framför bind, som fortfarande avgör vem anslutningen är. Har företräde framför växeln ovan. Avstängt som standard."
+    "en": "cfadc0b97c1bfaa8",
+    "text": "LDAPS avvisar vid handskakningen varje anslutning som inte visar upp ett klientcertifikat som kedjar till klientens förtroendelager — en andra spärr framför bindningen, som fortfarande avgör vem anslutningen är: ett lösenord, eller SASL EXTERNAL med ett certifikat som denna tjänst utfärdat till en person. Går före växeln ovan. Av som standard."
   },
   "debugger.disableOptionalClientCertificate|label": {
     "en": "df19c772421bba66",

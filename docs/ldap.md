@@ -29,9 +29,11 @@ place and rolling back on failure is the same thing written so that a bug leaves
 half a change behind. `deleteOldRdn` on a
 modifyDN is honoured, as RFC 4511 section 4.9 requires.
 
-There is no StartTLS, no SASL and no extended operation. The directory is built
-on the [`rcbj/node-ldapjs`](https://github.com/rcbj/node-ldapjs) fork, and ldapjs
-implements none of those. LDAPS on 636 is the encrypted way in.
+There is no StartTLS and no extended operation, and the one SASL mechanism is
+EXTERNAL, over LDAPS (see *Binding with a client certificate*, below). The
+directory is built on the [`rcbj/node-ldapjs`](https://github.com/rcbj/node-ldapjs)
+fork, and ldapjs implements none of the rest. LDAPS on 636 is the encrypted way
+in.
 
 ### Two sockets, one directory
 
@@ -60,14 +62,57 @@ re-issued, for example after a new Root is built on `/admin/pki`.
 proves the *server* to the client and nothing more. Two settings in the
 **Listener: LDAPS** group on `/admin/listeners` change what it asks for:
 `ldap.ldapsDisableOptionalClientCertificate` (on by default) off asks every
-connection for a certificate and requires none, and
+connection for a certificate and requires none (optional), and
 `ldap.ldapsRequireClientCertificate` (off by default) on refuses at the
-handshake a connection without one that chains to the client truststore.
-Either way a certificate is not a login: there is no SASL EXTERNAL, and the
-bind still decides who the connection is. Signing in with a client
-certificate is the main HTTPS port's business (`GET /tls/sign-in`, see
-[TLS](tls.md)). `/admin/ldap/service` says this, so nobody has to work out why
-the certificate they configured was never sent.
+handshake a connection without one that chains to the client truststore
+(required). `/admin/ldap/service` says which of the three is in force, and
+whether a certificate bind is available.
+
+### Binding with a client certificate
+
+A connection that presented a client certificate may bind with **SASL
+EXTERNAL** (RFC 4513 section 5.2.1.2): the bind carries no password, and the
+connection is bound as the person the certificate was issued to. There is no
+setting of its own. It is available **exactly when 636 asks for a
+certificate** — in the optional or the required mode above — because only then
+can a connection carry one. At the defaults 636 asks for nothing, and an
+EXTERNAL bind is refused as having no certificate.
+
+Only a certificate **this service issued to a person** binds: a TLS client
+certificate from the person's portal (`/portal/signing-key`), or one enrolled
+over ACME, EST or SCEP, naming the person in its `urn:sts:person:`
+subjectAltName. The person's entry must already exist; none is created. These
+are refused, each with its own error code:
+
+| Refused | Result code |
+|---|---|
+| a mechanism other than EXTERNAL | 7 authMethodNotSupported |
+| EXTERNAL on the plain listener (389), or no verified certificate on the connection | 48 inappropriateAuthentication |
+| a revoked certificate | 49 invalidCredentials |
+| a certificate from an outside certificate authority trusted through `/admin/tls/trust` — **not accepted for LDAP binds yet** | 49 |
+| a certificate issued in another trust realm, or one that is not a TLS client identity | 49 |
+| an application's certificate (only a person binds to the directory) | 49 |
+| a certificate no longer on its holder's record, a person with no entry, a disabled account | 49 |
+| an authorization identity that names anybody else | 50 insufficientAccessRights |
+
+The bind name should be empty. An authorization identity, if one is sent, must
+be `dn:` followed by that person's entry or `u:` followed by their user name.
+The connection's realm is the realm whose Issuing CA signed the certificate,
+unless the bind names one.
+
+OpenLDAP's tools send it like this, with the certificate and key the portal
+handed out:
+
+```bash
+LDAPTLS_CACERT=/tmp/sts.pem LDAPTLS_CERT=alice.crt LDAPTLS_KEY=alice.key \
+  ldapwhoami -H ldaps://localhost:636 -Y EXTERNAL
+```
+
+`ldapwhoami` itself is an extended operation this directory does not answer,
+so it reports an error after the bind has succeeded; `ldapsearch -Y EXTERNAL`
+shows the bind by what it may read. The bind behaves the same in both modes:
+the handshake has verified the certificate, and nothing is left unchecked in
+development.
 
 **TLS does not make a bind checked.** What 636 adds is that the password is not
 on the wire in the clear. In development mode it is still not verified — "it is

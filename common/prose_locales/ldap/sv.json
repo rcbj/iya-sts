@@ -67,9 +67,21 @@
     "en": "55b2bbab540dbbb4",
     "text": "inga förtroendesfärer är definierade, så det finns en kontext ({{root}}) och en subtree-sökning från den svarar om hela lagret"
   },
-  "ldap.service.sentences.clientCertificates": {
-    "en": "18c68f9d37420f1c",
-    "text": "begärs aldrig. Den här lyssnaren bevisar SERVERN för klienten och inget mer; ett klientcertifikat som erbjuds till den efterfrågas inte och skulle inte vara en inloggning om det vore det. Huvudporten ({{port}}) är där klientcertifikat efterfrågas och läses."
+  "ldap.service.sentences.clientCertificatesNone": {
+    "en": "e871e2b9901509f2",
+    "text": "begärs inte: `ldap.ldapsDisableOptionalClientCertificate` är på, så LDAPS skickar ingen CertificateRequest och en certifikatbindning (SASL EXTERNAL) avvisas i brist på certifikat. Stäng av den inställningen för att be varje anslutning om ett (valfritt), eller slå på `ldap.ldapsRequireClientCertificate` för att kräva ett; båda gör SASL EXTERNAL tillgängligt. Huvudporten ({{port}}) begär klientcertifikat enligt sina egna inställningar."
+  },
+  "ldap.service.sentences.clientCertificatesOptional": {
+    "en": "872d11f2c2ff8a31",
+    "text": "begärs men krävs inte (valfritt: `ldap.ldapsDisableOptionalClientCertificate` är av). En anslutning som visar upp ett som verifieras mot klientens förtroendelager kan binda med SASL EXTERNAL; en utan binder med lösenord som förut."
+  },
+  "ldap.service.sentences.clientCertificatesRequired": {
+    "en": "d4476c20b14dd318",
+    "text": "krävs (`ldap.ldapsRequireClientCertificate` är på): en anslutning utan ett certifikat som verifieras mot klientens förtroendelager avvisas vid handskakningen. En anslutning kan sedan binda med SASL EXTERNAL, eller med lösenord som förut."
+  },
+  "ldap.service.sentences.certificateBindRule": {
+    "en": "dd7c73ea70d88839",
+    "text": "SASL EXTERNAL binder anslutningen som den personpost certifikatet utfärdades till, och bara ett certifikat som denna tjänst utfärdat till en person med en post i den sfären binder: ett återkallat, en annan sfärs, en applikations eller ett från en extern certifikatutfärdare som betros via /admin/tls/trust avvisas (certifikat från externa utfärdare godtas ännu inte för LDAP-bindningar). En auktoriseringsidentitet respekteras bara när den namnger samma post."
   },
   "ldap.service.sentences.certificateSource": {
     "en": "a969a038097605ed",

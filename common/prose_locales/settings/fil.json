@@ -5004,16 +5004,16 @@
     "text": "LDAPS: huwag humingi ng client certificate"
   },
   "ldap.ldapsDisableOptionalClientCertificate|description": {
-    "en": "7e1993d7f889bc3c",
-    "text": "Walang ipinapadalang CertificateRequest ang LDAPS. NAKA-ON bilang default, na siyang palaging ginagawa ng LDAPS: ang bind ang paraan ng directory client para sabihin kung sino ito, at ang certificate prompt sa harap ng bawat client na may hawak nito ay sorpresa. Kapag naka-off, humihingi ng certificate sa bawat connection at walang hinihinging sapilitan; vine-verify ang ipinakitang certificate laban sa client truststore pero walang bina-bind na sinuman (walang SASL EXTERNAL dito)."
+    "en": "7c1815ed4a7499c4",
+    "text": "Walang ipinapadalang CertificateRequest ang LDAPS. NAKA-ON bilang default, na siyang laging ginagawa ng LDAPS: ang bind ang paraan ng directory client para sabihin kung sino ito, at nakagugulat ang paghingi ng certificate sa bawat client na mayroon nito. Kapag naka-off, humihingi ito ng certificate sa bawat koneksyon at walang kinakailangan; ang ipinakitang certificate ay pinapatunayan laban sa client truststore, at ang koneksyong may dalang certificate na ibinigay ng serbisyong ito sa isang tao ay maaaring mag-bind bilang taong iyon gamit ang SASL EXTERNAL."
   },
   "ldap.ldapsRequireClientCertificate|label": {
     "en": "eff4646ac01e4612",
     "text": "LDAPS: kailanganin ang client certificate"
   },
   "ldap.ldapsRequireClientCertificate|description": {
-    "en": "2c73995bcc16b3fa",
-    "text": "Tinatanggihan ng LDAPS, sa handshake, ang bawat connection na hindi nagpapakita ng client certificate na kumakadena sa client truststore — pangalawang gate sa harap ng bind, na siya pa ring nagpapasya kung sino ang connection. Nananaig sa toggle sa itaas. Naka-off bilang default."
+    "en": "cfadc0b97c1bfaa8",
+    "text": "Tinatanggihan ng LDAPS, sa handshake, ang bawat koneksyong hindi nagpapakita ng client certificate na umaabot sa client truststore — pangalawang harang bago ang bind, na siya pa ring nagpapasya kung sino ang koneksyon: password, o SASL EXTERNAL na may certificate na ibinigay ng serbisyong ito sa isang tao. Nangingibabaw sa toggle sa itaas. Naka-off bilang default."
   },
   "debugger.disableOptionalClientCertificate|label": {
     "en": "df19c772421bba66",

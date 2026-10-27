@@ -1236,8 +1236,8 @@
     "text": "在两种模式下，`userPassword` 都通过 crypto.hashSecret() 存储为 scrypt 哈希，无论由哪个入口写入——包括 LDAP add 或 modify。产品模式拒绝已经哈希过的值，因为这种值无法受密码策略约束；开发模式则按原样保存，目录正是借此在两个实例之间迁移的。"
   },
   "crypto.families.ldap.whatItDoesNot": {
-    "en": "b5fd76f7abc4adab",
-    "text": "它不响应任何 SASL 机制——根 DSE 省略 `supportedSASLMechanisms`，而不是将其发布为空，因为 LDAP 属性总是至少有一个值，空值并不是更弱的声明，而是格式错误的声明。因此没有 GSSAPI 绑定、没有 EXTERNAL 绑定，也没有 StartTLS：636 从第一个字节起就是 TLS。"
+    "en": "4b8955de2d74cab1",
+    "text": "它只响应一种 SASL 机制，即 EXTERNAL，并且仅在 636 请求客户端证书期间——此时根 DSE 发布 `supportedSASLMechanisms`，否则将其省略，而不是将其发布为空，因为 LDAP 属性总是至少有一个值，空值并不是更弱的声明，而是格式错误的声明。因此没有 GSSAPI 绑定，也没有 StartTLS：636 从第一个字节起就是 TLS。"
   },
   "crypto.families.ldap.algorithms.0.what": {
     "en": "896a443631bae685",

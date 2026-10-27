@@ -1109,7 +1109,8 @@ const SPECS: Spec[] = [
               '(sizeLimitExceeded), 11 (adminLimitExceeded), 16 ' +
               '(noSuchAttribute), 32 (noSuchObject), 49 ' +
               '(invalidCredentials), 66 (notAllowedOnNonLeaf) and 68 ' +
-              '(entryAlreadyExists) all reachable on both. No SASL, no ' +
+              '(entryAlreadyExists) all reachable on both. No SASL ' +
+              'mechanism but EXTERNAL (RFC 4513, below), no ' +
               'StartTLS, no controls (so no paged results and no sorting), ' +
               'no extended operations and no referrals. StartTLS is named ' +
               'twice there on purpose: it IS an extended operation (section ' +
@@ -1155,9 +1156,11 @@ const SPECS: Spec[] = [
     where: 'IETF',
     url: 'https://www.rfc-editor.org/rfc/rfc4513',
     coverage: 'partial, and the part that is here is the TRANSPORT rather ' +
-              'than the authentication: simple bind (section 5.1) is the ' +
-              'only method offered — no SASL, so no EXTERNAL and no ' +
-              'DIGEST-MD5. In development mode it authenticates nobody, ' +
+              'than the authentication: simple bind (section 5.1) and, ' +
+              'while 636 asks for a client certificate, SASL EXTERNAL ' +
+              '(section 5.2.1.2) with a certificate this service issued ' +
+              'to a person; no other SASL mechanism, so no DIGEST-MD5. ' +
+              'In development mode it authenticates nobody, ' +
               'since every bind succeeds except the literal password ' +
               '"invalid", and what TLS on 636 adds is confidentiality for a ' +
               'password that was never going to be checked, which is worth ' +

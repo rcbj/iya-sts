@@ -2174,7 +2174,9 @@ red.
 **The fork is `rcbj/node-ldapjs` and it is ours to change (2026-09-18)** —
 the first change is the `routeAnonymousBinds` server option
 (the bind refusals, below), the second `encodeErrorMessage`, which
-sends a refusal's text as its diagnosticMessage (#261). A change goes in THE FORK, never as a
+sends a refusal's text as its diagnosticMessage (#261), and the third and
+fourth `saslMechanisms` and `bindDnFromHandler` (#1047, *SASL EXTERNAL*,
+below). A change goes in THE FORK, never as a
 patch from this repository into the library: an option whose default is
 upstream's behaviour, a test in the fork's own `test/` (tap), a line in its
 `docs/`, a commit pushed to `rcbj/node-ldapjs`, and the submodule pin bumped
@@ -2219,8 +2221,9 @@ mode.
 * **The LDAP directory takes that further: EVERY BIND SUCCEEDS**, any DN and any
   password, anonymous included — **on LDAPS (636) exactly as on the plain port**,
   since the two listeners share one set of handlers. TLS there keeps the password off
-  the wire and does not make it checked, and a client certificate is never even asked
-  for on that socket. The single exception is the literal password
+  the wire and does not make it checked, and a client certificate is not asked
+  for on that socket by default (a SASL EXTERNAL bind, which IS checked in
+  both modes, is below). The single exception is the literal password
   `invalid`, which is refused with `LDAP_INVALID_CREDENTIALS` (49). That exception
   is not a softening; it is what keeps result code 49 reachable, and 49 is the code
   an LDAP client's error handling is built around. The directory is also
@@ -3379,7 +3382,7 @@ where a seen-only one is refused.
 from: it records the DN a successful bind handler named on the connection
 (`conn.ldap.bindDN`, `cn=anonymous` until then) and leaves every rule after that
 to these handlers. It has no access control, no attribute visibility, no StartTLS
-on the server side, no SASL and no limit on guesses. The section above is the
+on the server side, no SASL beyond decoding it (#1047) and no limit on guesses. The section above is the
 write half; this is the rest, and the block headed *THE DIRECTORY'S READ AND BIND
 SECURITY* in `ldap_server.js` argues each rule where it is enforced. Five
 `common/mode.js` predicates decide whether each asks at all, and all five are
@@ -3770,6 +3773,67 @@ the handler), a SCIM create of a User or a Group, and `POST
   subject there; a single process keeps random values.
   `directory_create_claims.ts`'s header has it, and
   `tests/cluster_autocreate_subject.js` holds both halves.
+
+## SASL EXTERNAL: A PERSON BOUND BY THE CERTIFICATE THIS SERVICE ISSUED (#1047, 2026-10-27)
+
+**RFC 4513 section 5.2.1.2 over LDAPS, and the decisions are rcbj's on #1047
+and #520.** A SASL EXTERNAL bind binds the connection as the person entry a
+verified TLS client certificate names. Four things are worth knowing before
+changing it; the block headed *THE CERTIFICATE BIND* above `server.bind` in
+`ldap_server.js` argues each where it is enforced.
+
+* **There is no setting of its own.** A connection carries a verified
+  certificate only when 636 asks for one — #423's pair, optional
+  (`ldap.ldapsDisableOptionalClientCertificate` off) or required
+  (`ldap.ldapsRequireClientCertificate` on) — and the bind is available
+  exactly then. A switch `ldap.clientCertificates` was proposed and dropped:
+  it could only ever have refused something the pair had already made
+  possible. At the defaults nothing asks, every EXTERNAL bind is refused as
+  having no certificate (`STS-LDAP-0179`), and #418's posture
+  (`tests/ldaps_no_certificate_request.js`) is untouched.
+  `/admin/ldap/service` and `/admin-api/ldap/service` publish the mode
+  (`tls.clientCertificateMode`), whether the bind is available
+  (`tls.saslExternal`) and a sentence per mode — rule 7.
+* **ONLY A CERTIFICATE THIS SERVICE ISSUED, TO A PERSON WHO HAS AN ENTRY.**
+  `common/tls_client_certificates.js`'s `checkSocket()` (its `identityOf()`
+  under the bind's realm) decides; the name is the `urn:sts:person:`
+  subjectAltName; `stillHeld()` and revocation are asked; a disabled account
+  is refused; nothing is read off a CN or subject and no entry is created.
+  An APPLICATION's certificate is refused (`0185`) by #106's rule that only a
+  person binds. **A certificate from an outside authority trusted through
+  `/admin/tls/trust` (`issuedHere: false`) is refused (`0182`)** — rcbj
+  wants such a certificate to bind only an entry configured for it ahead of
+  time, and how is a follow-up ticket, not this one. The authzId (section
+  5.2.1.8) is honoured only as `dn:` or `u:` naming the same entry (`0189`,
+  50); a non-empty bind name is held to the same (`0190`). Each other refusal
+  has its own code, `0178`–`0188`. It is the same in both modes and has no
+  rate limit: the handshake verified the chain, and nothing is guessed.
+* **THE REALM** of an EXTERNAL bind with no name is the authzId's `dn:`
+  where one is sent, else the realm whose Issuing CA signed the certificate
+  — `externalBindRealmDn()`, which the realm wrapper asks when the DN is
+  empty. A certificate held against another realm's DN is `0184`.
+* **THE SOCKET IS THE FRONT PROCESS'S, THE DECISION IS WHEREVER THE BIND
+  RUNS.** `withConnectionCertificate()`, the bind's outermost wrapper, reads
+  the certificate (`revocation_status.fromSocket()`) and awaits its
+  revocation verdict in the process holding the socket; both travel in the
+  dispatched bind's shape (`sasl.external`, base64), and `externalBind()`
+  decides from them in a worker exactly as in process. The bound DN comes
+  back as the outcome's `bindDN`, which `applyOperationResult()` sets on the
+  real response as `res.bindDN` for node-ldapjs to bind
+  (`bindDnFromHandler`) — without that option the connection would be bound
+  as the request's empty name, i.e. anonymous.
+
+**The fork's half**: node-ldapjs could not decode a SASL bind at all —
+`@ldapjs/messages`' BindRequest throws on the sasl choice and the connection
+was destroyed. `saslMechanisms` makes the fork's parser decode it
+(`lib/messages/sasl_bind.js`, without touching `@ldapjs/messages`), routes a
+listed mechanism to the bind handlers with `req.authentication`,
+`req.mechanism` and `req.saslCredentials`, never lets it match the
+anonymous-bind shortcut, and answers any other mechanism 7 itself, emitting
+`saslMechanismNotSupported` (recorded here as `0178`). Both servers are asked
+whether the options took (`STS-LDAP-0191`). `tests/ldap_sasl_external.js`
+holds the service over real handshakes in the three modes; the fork's
+`test/sasl_bind.test.js` holds the options.
 
 ## A SECOND-FACTOR PERSON'S BIND, AND `stsAppPassword` (2026-09-22, #101)
 

@@ -500,7 +500,10 @@ the recorded identity and the request are what get refused. See [PKI](pki.md).
   setting" warning at startup rather than a silent no-op.
 * **Client certificates on LDAPS by default.** Port 636 asks for none until
   `ldap.ldapsDisableOptionalClientCertificate` is turned off (see *The
-  listeners* above).
+  listeners* above). Once it asks, a person's certificate this service
+  issued binds an LDAP connection with SASL EXTERNAL; one from an outside
+  certificate authority does not yet ([LDAP](ldap.md), *Binding with a client
+  certificate*).
 
 ## Development and product mode
 

@@ -5004,16 +5004,16 @@
     "text": "LDAPS: no pedir certificado de cliente"
   },
   "ldap.ldapsDisableOptionalClientCertificate|description": {
-    "en": "7e1993d7f889bc3c",
-    "text": "LDAPS no envía CertificateRequest. ACTIVADO de forma predeterminada, que es lo que LDAPS siempre hizo: un bind es la forma en que un cliente de directorio dice quién es, y una solicitud de certificado delante de todo cliente que tenga uno es una sorpresa. Desactivado pide un certificado a cada conexión y no exige ninguno; un certificado presentado se verifica contra el almacén de confianza de clientes pero no hace bind de nadie (aquí no hay SASL EXTERNAL)."
+    "en": "7c1815ed4a7499c4",
+    "text": "LDAPS no envía ningún CertificateRequest. ACTIVADO por defecto, que es lo que LDAPS siempre hizo: un bind es la forma en que un cliente de directorio dice quién es, y pedir un certificado a todo cliente que tenga uno es una sorpresa. Desactivado, pide un certificado a cada conexión y no exige ninguno; un certificado presentado se verifica contra el almacén de confianza de clientes, y una conexión que lleve uno que este servicio emitió a una persona puede hacer bind como esa persona con SASL EXTERNAL."
   },
   "ldap.ldapsRequireClientCertificate|label": {
     "en": "eff4646ac01e4612",
     "text": "LDAPS: exigir un certificado de cliente"
   },
   "ldap.ldapsRequireClientCertificate|description": {
-    "en": "2c73995bcc16b3fa",
-    "text": "LDAPS rechaza, en el handshake, toda conexión que no presente un certificado de cliente que encadene con el almacén de confianza de clientes — una segunda barrera delante del bind, que sigue decidiendo quién es la conexión. Prevalece sobre el interruptor de arriba. Desactivado de forma predeterminada."
+    "en": "cfadc0b97c1bfaa8",
+    "text": "LDAPS rechaza, en el protocolo de enlace, toda conexión que no presente un certificado de cliente que encadene al almacén de confianza de clientes: una segunda barrera delante del bind, que sigue decidiendo quién es la conexión: una contraseña, o SASL EXTERNAL con un certificado que este servicio emitió a una persona. Prevalece sobre la opción anterior. Desactivado por defecto."
   },
   "debugger.disableOptionalClientCertificate|label": {
     "en": "df19c772421bba66",

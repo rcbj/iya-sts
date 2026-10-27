@@ -5004,16 +5004,16 @@
     "text": "LDAPS：不要求用戶端憑證"
   },
   "ldap.ldapsDisableOptionalClientCertificate|description": {
-    "en": "7e1993d7f889bc3c",
-    "text": "LDAPS 不傳送 CertificateRequest。預設為開啟，這是 LDAPS 一直以來的做法：繫結是目錄用戶端表明自己身分的方式，而在每個持有憑證的用戶端面前跳出憑證提示會令人意外。關閉時會向每個連線要求憑證但不強制；出示的憑證會對照用戶端信任儲存區驗證，但不會繫結任何人（此處沒有 SASL EXTERNAL）。"
+    "en": "7c1815ed4a7499c4",
+    "text": "LDAPS 不傳送 CertificateRequest。預設開啟，這正是 LDAPS 一貫的做法：繫結是目錄用戶端表明身分的方式，在每個持有憑證的用戶端前跳出憑證提示會令人意外。關閉後會向每個連線要求憑證但不強制；出示的憑證會針對用戶端信任庫進行驗證，攜帶本服務核發給某人之憑證的連線可以使用 SASL EXTERNAL 以該人員身分繫結。"
   },
   "ldap.ldapsRequireClientCertificate|label": {
     "en": "eff4646ac01e4612",
     "text": "LDAPS：要求用戶端憑證"
   },
   "ldap.ldapsRequireClientCertificate|description": {
-    "en": "2c73995bcc16b3fa",
-    "text": "LDAPS 在交握時拒絕每個未出示鏈結到用戶端信任儲存區之用戶端憑證的連線——這是繫結前方的第二道關卡，而繫結仍決定連線的身分。優先於上方的切換。預設為關閉。"
+    "en": "cfadc0b97c1bfaa8",
+    "text": "LDAPS 在交握時拒絕每個未出示鏈結至用戶端信任庫之用戶端憑證的連線——這是繫結之前的第二道關卡，繫結仍決定連線是誰：密碼，或使用本服務核發給某人的憑證進行 SASL EXTERNAL。優先於上面的切換開關。預設關閉。"
   },
   "debugger.disableOptionalClientCertificate|label": {
     "en": "df19c772421bba66",

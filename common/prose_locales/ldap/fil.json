@@ -67,9 +67,21 @@
     "en": "55b2bbab540dbbb4",
     "text": "walang trust realm na naka-define, kaya iisa ang context ({{root}}) at ang subtree search mula rito ay sumasagot tungkol sa buong store"
   },
-  "ldap.service.sentences.clientCertificates": {
-    "en": "18c68f9d37420f1c",
-    "text": "hindi kailanman hinihingi. Pinatutunayan lang ng listener na ito ang SERVER sa client at wala nang iba; ang client certificate na iniaalok dito ay hindi hinihingi at hindi magiging login kahit hingin. Ang main port ({{port}}) ang lugar kung saan hinihingi at binabasa ang mga client certificate."
+  "ldap.service.sentences.clientCertificatesNone": {
+    "en": "e871e2b9901509f2",
+    "text": "hindi hinihingi: naka-on ang `ldap.ldapsDisableOptionalClientCertificate`, kaya walang ipinapadalang CertificateRequest ang LDAPS at tinatanggihan ang certificate bind (SASL EXTERNAL) dahil walang certificate. I-off ang setting na iyon para humingi ng isa sa bawat koneksyon (opsyonal), o i-on ang `ldap.ldapsRequireClientCertificate` para hingin ito; alinman ay nagpapagana sa SASL EXTERNAL. Humihingi ang pangunahing port ({{port}}) ng client certificate ayon sa sarili nitong mga setting."
+  },
+  "ldap.service.sentences.clientCertificatesOptional": {
+    "en": "872d11f2c2ff8a31",
+    "text": "hinihingi at hindi kinakailangan (opsyonal: naka-off ang `ldap.ldapsDisableOptionalClientCertificate`). Ang koneksyong nagpapakita ng isa na napatunayan laban sa client truststore ay maaaring mag-bind gamit ang SASL EXTERNAL; ang walang certificate ay nagba-bind gamit ang password gaya ng dati."
+  },
+  "ldap.service.sentences.clientCertificatesRequired": {
+    "en": "d4476c20b14dd318",
+    "text": "kinakailangan (naka-on ang `ldap.ldapsRequireClientCertificate`): tinatanggihan sa handshake ang koneksyong walang certificate na napatunayan laban sa client truststore. Maaari nang mag-bind ang koneksyon gamit ang SASL EXTERNAL, o gamit ang password gaya ng dati."
+  },
+  "ldap.service.sentences.certificateBindRule": {
+    "en": "dd7c73ea70d88839",
+    "text": "Ibina-bind ng SASL EXTERNAL ang koneksyon bilang entry ng taong pinagbigyan ng certificate, at tanging certificate na ibinigay ng serbisyong ito sa taong may entry sa realm na iyon ang nagba-bind: tinatanggihan ang binawi, ang sa ibang realm, ang sa application, o ang mula sa panlabas na certificate authority na pinagkakatiwalaan sa /admin/tls/trust (hindi pa tinatanggap ang mga certificate mula sa panlabas na authority para sa LDAP bind). Iginagalang lamang ang authorization identity kapag pinangangalanan nito ang parehong entry."
   },
   "ldap.service.sentences.certificateSource": {
     "en": "a969a038097605ed",

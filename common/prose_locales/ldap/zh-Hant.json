@@ -67,9 +67,21 @@
     "en": "55b2bbab540dbbb4",
     "text": "未定義任何信任領域，因此只有一個內容（{{root}}），從它進行的子樹搜尋回答的是整個存放區"
   },
-  "ldap.service.sentences.clientCertificates": {
-    "en": "18c68f9d37420f1c",
-    "text": "從不要求。此接聽程式只向用戶端證明「伺服器」，別無其他；向它提供的用戶端憑證不會被要求，即使被要求也不會成為登入。主連接埠（{{port}}）才是要求並讀取用戶端憑證的地方。"
+  "ldap.service.sentences.clientCertificatesNone": {
+    "en": "e871e2b9901509f2",
+    "text": "不要求：`ldap.ldapsDisableOptionalClientCertificate` 已開啟，因此 LDAPS 不傳送 CertificateRequest，憑證繫結（SASL EXTERNAL）因沒有憑證而被拒絕。關閉該設定即可向每個連線要求憑證（選用），或開啟 `ldap.ldapsRequireClientCertificate` 以強制要求憑證；兩者都會使 SASL EXTERNAL 可用。主連接埠（{{port}}）依其自身設定要求用戶端憑證。"
+  },
+  "ldap.service.sentences.clientCertificatesOptional": {
+    "en": "872d11f2c2ff8a31",
+    "text": "會要求但不強制（選用：`ldap.ldapsDisableOptionalClientCertificate` 已關閉）。出示經用戶端信任庫驗證之憑證的連線可以使用 SASL EXTERNAL 繫結；沒有憑證的連線仍如以往使用密碼繫結。"
+  },
+  "ldap.service.sentences.clientCertificatesRequired": {
+    "en": "d4476c20b14dd318",
+    "text": "強制要求（`ldap.ldapsRequireClientCertificate` 已開啟）：沒有經用戶端信任庫驗證之憑證的連線在交握時被拒絕。連線隨後可以使用 SASL EXTERNAL 繫結，或如以往使用密碼繫結。"
+  },
+  "ldap.service.sentences.certificateBindRule": {
+    "en": "dd7c73ea70d88839",
+    "text": "SASL EXTERNAL 將連線繫結為憑證所核發對象的人員項目，且只有本服務核發給在該領域中擁有項目之人員的憑證才能繫結：已撤銷的、其他領域的、應用程式的，或來自透過 /admin/tls/trust 信任之外部憑證授權單位的憑證都會被拒絕（外部授權單位的憑證暫不接受用於 LDAP 繫結）。授權身分僅在指向同一項目時才被接受。"
   },
   "ldap.service.sentences.certificateSource": {
     "en": "a969a038097605ed",

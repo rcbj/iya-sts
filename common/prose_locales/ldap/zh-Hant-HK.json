@@ -15,10 +15,6 @@
     "en": "a41fc8c3be6cf1bc",
     "text": "在 ou=users 下新增用戶名稱已存在的項目會得到 LDAP_ENTRY_ALREADY_EXISTS (68)，並指名持有它的項目。每人一個項目：用戶名稱是項目命名 RDN 的值以及它攜帶的任何 uid，因此 uid=rcbj 與 cn=rcbj 是同一個人，只能有其中一個存在。這與主控台和 POST /admin-api/users/create 給出的拒絕相同，也與此處每個協定在驗證某人身分時所歸併的規則相同"
   },
-  "ldap.service.sentences.clientCertificates": {
-    "en": "18c68f9d37420f1c",
-    "text": "從不要求。此接聽程式只向客戶端證明「伺服器」，別無其他；向它提供的客戶端證書不會被要求，即使被要求也不會成為登入。主連接埠（{{port}}）才是要求並讀取客戶端證書的地方。"
-  },
   "ldap.service.sentences.certificateSource": {
     "en": "a969a038097605ed",
     "text": "與主連接埠（{{port}}）提供的證書與金鑰相同。它是{{provenance}}：GET /tls/server-certificate 會以 PEM 提供它。兩個通訊端只需一個錨點，這就是它們共用它的原因。"
