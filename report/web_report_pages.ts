@@ -162,8 +162,34 @@ function navHtml(t: any, realm: string, accounts: string, chooser: string,
 // One filter row (#986): a field, an operator, a value, and — on the last
 // row only — the + that adds the next. The runtime clones the last row for
 // the next one, so the options are not kept anywhere else.
+// THE VALUE CONTROL OF A FILTER ROW (#1007, rcbj: "mechanism equals" on
+// credentialHolders should offer the possible values). A field the catalog
+// enumerates (`values`) under equals, not equals, or no operator yet is a
+// dropdown of those values with an empty first choice; every other field
+// and operator keeps the text box. The control is redrawn when the row's
+// field or operator changes (`onChange()`), and a saved document's row is
+// drawn the same way.
+function filterValueHtml(n: number, fields: any[], fieldId: string,
+                         op: string, value: string): string {
+  const spec = (fields || []).filter(function (field: any): boolean {
+    return field && field.id === fieldId;
+  })[0];
+  const values = spec && Array.isArray(spec.values) && spec.values.length
+    ? spec.values : null;
+  const chosen = String(op || '');
+  if (values && (chosen === '' || chosen === 'eq' || chosen === 'ne')) {
+    return '<select name="filterValue' + n + '"><option value=""></option>' +
+      values.map(function (one: string): string {
+        return '<option value="' + esc(one) + '"' +
+          (one === value ? ' selected' : '') + '>' + esc(one) + '</option>';
+      }).join('') + '</select>';
+  }
+  return '<input name="filterValue' + n + '"' +
+    (value ? ' value="' + esc(value) + '"' : '') + '>';
+}
+
 function filterRowHtml(t: any, n: number, fieldOptions: string,
-                       last: boolean): string {
+                       last: boolean, valueControl?: string): string {
   return '<div class="row filterrow" data-filter-row="' + n + '">' +
     '<select name="filterField' + n + '">' + fieldOptions + '</select>' +
     '<select name="filterOp' + n + '">' +
@@ -180,7 +206,7 @@ function filterRowHtml(t: any, n: number, fieldOptions: string,
     '<option value="ge">' + esc(t.text('report.opGe')) + '</option>' +
     '<option value="isNull">' + esc(t.text('report.opIsNull')) +
     '</option></select>' +
-    '<input name="filterValue' + n + '">' +
+    (valueControl || '<input name="filterValue' + n + '">') +
     (last ? '<button type="button" class="btn addfilter" ' +
       'data-act="add-filter" title="' + esc(t.text('report.addFilter')) +
       '" aria-label="' + esc(t.text('report.addFilter')) + '">+</button>'
@@ -218,20 +244,21 @@ function whereLeaves(where: any): any[] | null {
   return null;
 }
 
-function filterRowsHtml(t: any, fieldOptions: string, leaves: any[]): string {
+function filterRowsHtml(t: any, fieldOptions: string, leaves: any[],
+                        fields: any[]): string {
   if (!leaves.length) {
     return filterRowHtml(t, 0, fieldOptions, true);
   }
   return leaves.map(function (leaf: any, n: number): string {
-    const row = filterRowHtml(t, n, fieldOptions, n === leaves.length - 1);
     const value = leaf.op === 'isNull' ? '' : String(leaf.value);
+    const row = filterRowHtml(t, n, fieldOptions, n === leaves.length - 1,
+      filterValueHtml(n, fields, String(leaf.field), String(leaf.op),
+        value));
     return row
       .replace('<option value="' + esc(leaf.field) + '">',
         '<option value="' + esc(leaf.field) + '" selected>')
       .replace('<option value="' + esc(leaf.op) + '">',
-        '<option value="' + esc(leaf.op) + '" selected>')
-      .replace('<input name="filterValue' + n + '">',
-        '<input name="filterValue' + n + '" value="' + esc(value) + '">');
+        '<option value="' + esc(leaf.op) + '" selected>');
   }).join('');
 }
 
@@ -266,7 +293,7 @@ function queryFormHtml(t: any, sources: any[], document: any): string {
         '</option>';
     }).join('');
   const leaves = whereLeaves(doc.where);
-  const filters = filterRowsHtml(t, fieldOptions, leaves || []);
+  const filters = filterRowsHtml(t, fieldOptions, leaves || [], fields);
   const kept = leaves ? '' :
     '<input type="hidden" name="whereJson" value="' +
     esc(JSON.stringify(doc.where)) + '">' +
@@ -943,6 +970,11 @@ class ReportRuntime extends SpaClient {
    * @param last - whether the row carries the + that adds the next
    * @returns the row's HTML
    */
+  static filterValueHtml(n: number, fields: any[], fieldId: string,
+                         op: string, value: string): string {
+    return filterValueHtml(n, fields, fieldId, op, value);
+  }
+
   static filterRowHtml(t: any, n: number, fieldOptions: string,
                        last: boolean): string {
     return filterRowHtml(t, n, fieldOptions, last);
@@ -1759,11 +1791,54 @@ class ReportRuntime extends SpaClient {
         controls[i].selectedIndex = 0;
       }
     }
+    // The clone's value control is a text box again (#1007): its field is
+    // unchosen, so an enumerated field's dropdown would list the wrong
+    // values.
+    const valueEl = next.querySelector('[name="filterValue' + n + '"]');
+    if (valueEl && valueEl.tagName === 'SELECT') {
+      valueEl.outerHTML = filterValueHtml(n, [], '', '', '');
+    }
     const plus = row.querySelector('.addfilter');
     if (plus && plus.parentNode) {
       plus.parentNode.removeChild(plus);
     }
     row.parentNode.insertBefore(next, row.nextSibling);
+  }
+
+  /**
+   * Draws a filter row's value control again for its field and operator
+   * (#1007).
+   *
+   * @param row - the `.filterrow` element
+   * @param form - the form it is in
+   * @param n - the row's index
+   * @returns nothing
+   */
+  redrawFilterValue(row: any, form: any, n: number): void {
+    if (!row || !form || !row.querySelector) {
+      return;
+    }
+    const fieldEl = row.querySelector('[name="filterField' + n + '"]');
+    const opEl = row.querySelector('[name="filterOp' + n + '"]');
+    const valueEl = row.querySelector('[name="filterValue' + n + '"]');
+    if (!fieldEl || !opEl || !valueEl) {
+      return;
+    }
+    const sourceId = String((form.elements && form.elements.source &&
+      form.elements.source.value) || '');
+    let fields: any[] = [];
+    (this.catalogSources || []).forEach(function (src: any): void {
+      if (src && src.id === sourceId) {
+        fields = src.fields || [];
+      }
+    });
+    const html = filterValueHtml(n, fields, String(fieldEl.value || ''),
+      String(opEl.value || ''), String(valueEl.value || ''));
+    const wasBox = String(valueEl.tagName || '').toUpperCase() === 'INPUT';
+    if (wasBox && html.indexOf('<input') === 0) {
+      return;
+    }
+    valueEl.outerHTML = html;
   }
 
   /**
@@ -1811,6 +1886,16 @@ class ReportRuntime extends SpaClient {
       this.env.history.pushState(null, '', this.prefix + path +
         '?page=1&per=' + encodeURIComponent(String(el.value || '')));
       this.route();
+      return;
+    }
+    const filterControl = /^filter(Field|Op)(\d+)$/.exec(name);
+    if (filterControl && el.closest) {
+      // The row's field or operator changed (#1007): its value control is
+      // drawn again — a dropdown of the field's values under equals or not
+      // equals, a text box otherwise. A text box stays as it is when it
+      // would be a text box again, so what was typed is kept.
+      this.redrawFilterValue(el.closest('.filterrow'), el.closest('form'),
+        Number(filterControl[2]));
       return;
     }
     if (name === 'source' && el.closest && el.closest('form') &&

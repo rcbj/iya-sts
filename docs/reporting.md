@@ -167,7 +167,11 @@ holding the population. Each source says `paging: "limit"` and
 a `sources` key, or `source` sent as an array, is `invalid_query`.
 
 A field has an id, a type (`string`, `number`, `timestamp` or `boolean`),
-an English meaning, and whether it can be filtered, sorted or grouped.
+an English meaning, and whether it can be filtered, sorted or grouped. A
+field that can hold only certain values lists them as `values`, and the
+page draws a dropdown of them in a filter row under `equals` and `not
+equals` (a text box under the other operators). `credentialHolders`'
+`mechanism` and `role` are the first.
 Grouping is only with `aggregate: "count"`. The operators depend on the
 type, not on the source:
 
@@ -397,8 +401,8 @@ maintained per-realm passkey aggregate stays on Monitoring → Passkeys.
 |---|---|---|---|---|---|
 | `username` | string | The directory uid. | yes | yes | no |
 | `displayName` | string | `displayName`, or `cn`. | yes | yes | no |
-| `mechanism` | string | `passkey`, `totp`, `emailFactor`, `certificate` or `kerberos`. Indexed: `eq`, `in`. | yes | yes | yes |
-| `role` | string | `primary` or `mfa`. | yes | yes | yes |
+| `mechanism` | string | `passkey`, `totp`, `emailFactor`, `certificate` or `kerberos`; enumerated, a dropdown on the page. Indexed: `eq`, `in`. | yes | yes | yes |
+| `role` | string | `primary` or `mfa`; enumerated. | yes | yes | yes |
 | `credentials` | number | How many credentials of this mechanism and role the person holds. | yes | yes | no |
 | `algorithms` | string | The credentials' signature algorithms, distinct, joined (a passkey's JOSE name). | yes | yes | yes |
 | `lanes` | string | A passkey's lanes, distinct, joined. | yes | yes | yes |

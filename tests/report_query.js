@@ -1769,6 +1769,101 @@ function groups(t) {
   t.check(complex.indexOf('name="whereJson"') >= 0 &&
     complex.indexOf('name="filterValue0" value=') < 0,
     'a filter the rows cannot draw rides along as JSON, the rows empty');
+  // AN ENUMERATED FIELD'S VALUE IS A DROPDOWN (#1007): the catalog lists the
+  // values, the API publishes them, and the row draws them under equals or
+  // not equals, a text box otherwise; the runtime redraws the control when
+  // the row's field or operator changes.
+  const api = require('../report/report_api');
+  const holderSpec = catalog.field('credentialHolders', 'mechanism');
+  t.equal(JSON.stringify(holderSpec.values),
+    JSON.stringify(sources.mechanismIds()),
+    'the catalog enumerates the mechanisms as the table has them');
+  t.equal(JSON.stringify(catalog.field('credentialHolders', 'role').values),
+    JSON.stringify(['primary', 'mfa']), 'and the two roles');
+  t.equal(catalog.field('users', 'username').values, undefined,
+    'an open field has no values');
+  const published = api.publicSource(catalog.source('credentialHolders'));
+  t.equal(JSON.stringify(published.fields.filter(function (f) {
+    return f.id === 'mechanism';
+  })[0].values), JSON.stringify(sources.mechanismIds()),
+    'the API publishes the values');
+  t.check(JSON.stringify(published.fields.filter(function (f) {
+    return f.id === 'username';
+  })[0]).indexOf('values') < 0, 'and none for an open field');
+  t.check(!!spec.components.schemas.Field.properties.values,
+    'the OpenAPI field schema describes values');
+  const enumerated = ReportRuntime.queryFormHtml(tr, cat.sources, {
+    source: 'credentialHolders', select: ['username'],
+    where: { op: 'and', args: [
+      { op: 'eq', field: 'mechanism', value: 'passkey' },
+      { op: 'contains', field: 'memberOf', value: 'staff' }] } });
+  t.check(enumerated.indexOf('<select name="filterValue0"><option value="">' +
+    '</option><option value="passkey" selected>passkey</option>' +
+    '<option value="totp">totp</option>') >= 0,
+    'a saved mechanism equals passkey is a dropdown with passkey chosen',
+    enumerated);
+  t.check(enumerated.indexOf('<input name="filterValue1" value="staff">') >= 0,
+    'and the contains row keeps its text box');
+  t.check(ReportRuntime.filterValueHtml(0, cat.sources[0].fields, 'mechanism',
+    'startsWith', 'pa').indexOf('<input name="filterValue0" value="pa">') === 0,
+    'an enumerated field under startsWith is a text box');
+  t.check(ReportRuntime.filterValueHtml(2, [], '', '', '') ===
+    '<input name="filterValue2">', 'no field yet is an empty text box');
+  // The runtime redraws the control on a field change, from the form's
+  // source; a text box that stays a text box is left alone.
+  let swapped = '';
+  const holderFields = cat.sources.filter(function (src) {
+    return src.id === 'credentialHolders';
+  })[0].fields;
+  const controls = {
+    'filterField0': { value: 'mechanism' },
+    'filterOp0': { value: 'eq' },
+    'filterValue0': { tagName: 'INPUT', value: 'typed',
+      set outerHTML(html) {
+        swapped = html;
+      } }
+  };
+  const filterRow = {
+    querySelector: function (selector) {
+      const m = /\[name="([^"]+)"\]/.exec(selector);
+      return m ? controls[m[1]] || null : null;
+    }
+  };
+  const holderForm = { elements: { source: { value: 'credentialHolders' } } };
+  const fieldSelect = {
+    getAttribute: function (name) {
+      return name === 'name' ? 'filterField0' : null;
+    },
+    closest: function (selector) {
+      return selector === '.filterrow' ? filterRow
+        : (selector === 'form' ? holderForm : null);
+    }
+  };
+  const live = Object.create(ReportRuntime.prototype);
+  live.t = tr;
+  live.catalogSources = cat.sources;
+  live.onChange({ target: fieldSelect });
+  t.check(swapped.indexOf('<select name="filterValue0">') === 0 &&
+    swapped.indexOf('<option value="kerberos">') >= 0,
+    'choosing mechanism swaps the text box for the dropdown', swapped);
+  swapped = '';
+  controls.filterOp0.value = 'contains';
+  controls.filterValue0 = { tagName: 'SELECT', value: 'passkey',
+    set outerHTML(html) {
+      swapped = html;
+    } };
+  live.onChange({ target: fieldSelect });
+  t.equal(swapped, '<input name="filterValue0" value="passkey">',
+    'choosing contains swaps the dropdown back, keeping the value');
+  swapped = '';
+  controls.filterField0.value = 'username';
+  controls.filterValue0 = { tagName: 'INPUT', value: 'typed',
+    set outerHTML(html) {
+      swapped = html;
+    } };
+  live.onChange({ target: fieldSelect });
+  t.equal(swapped, '', 'a text box that stays one is not redrawn');
+  t.check(holderFields.length > 0, 'the holder fields were found');
   const fresh = ReportRuntime.queryFormHtml(tr, cat.sources, null);
   t.check(fresh.indexOf('name="filterField0"') >= 0 &&
     fresh.indexOf('name="limit" value="100"') >= 0,

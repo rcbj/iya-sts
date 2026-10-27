@@ -566,7 +566,11 @@ class OpenApi {
                   'rows it names. A users query whose filter uses none, ' +
                   'with an order or a count, or on a sealed field, reads ' +
                   'every person: refused in sync mode (result_too_large), ' +
-                  'a job in auto mode.' }
+                  'a job in auto mode.' },
+              values: { type: 'array', items: { type: 'string' },
+                description: 'Every value the field can hold, when it is ' +
+                  'an enumeration; the page draws a dropdown of them for ' +
+                  'equals and not equals. Absent for an open field.' }
             }
           },
           Source: {

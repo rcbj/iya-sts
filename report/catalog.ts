@@ -74,7 +74,18 @@ interface FieldSpec {
   sort: boolean;
   group: boolean;
   indexed: string[];
+  // Every value the field can hold, when it is an enumeration (#1007): the
+  // page draws a dropdown of them for equals and not-equals. Absent for a
+  // field whose values are open.
+  values?: string[];
 }
+
+// The mechanisms `credentialHolders` knows (#1002), in `sources.ts`'s
+// `MECHANISM_TABLE` order; `tests/report_query.js` holds the two lists equal,
+// because the catalog cannot require `sources.ts` (it requires the catalog).
+const HOLDER_MECHANISMS = ['passkey', 'totp', 'emailFactor', 'certificate',
+  'kerberos'];
+const HOLDER_ROLES = ['primary', 'mfa'];
 
 // The operators the store answers with an index, per field of `users`. No
 // other source reads the directory row by row, so no other source has a row.
@@ -103,9 +114,9 @@ interface SourceSpec {
 }
 
 function field(id: string, type: string, meaning: string,
-               indexed?: string[]): FieldSpec {
+               indexed?: string[], values?: string[]): FieldSpec {
   log.debug("Entering field().");
-  const spec = {
+  const spec: FieldSpec = {
     id: id,
     type: type,
     meaning: meaning,
@@ -114,6 +125,9 @@ function field(id: string, type: string, meaning: string,
     group: GROUPABLE.indexOf(id) >= 0,
     indexed: (indexed || []).slice()
   };
+  if (values && values.length) {
+    spec.values = values.slice();
+  }
   log.debug("Leaving field().");
   return spec;
 }
@@ -260,11 +274,11 @@ function standardSources(): SourceSpec[] {
          'displayName, or cn when displayName is empty.'),
        field('mechanism', 'string',
          'passkey, totp, emailFactor, certificate or kerberos.',
-         HOLDER_INDEXED.mechanism),
+         HOLDER_INDEXED.mechanism, HOLDER_MECHANISMS),
        field('role', 'string',
          'primary (signs the person in on its own) or mfa (a second ' +
          'factor after a password). A passkey\'s is the one chosen at ' +
-         'enrolment and enforced at sign-in.'),
+         'enrolment and enforced at sign-in.', undefined, HOLDER_ROLES),
        field('credentials', 'number',
          'How many credentials of this mechanism and role the person ' +
          'holds.'),

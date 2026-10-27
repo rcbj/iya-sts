@@ -385,7 +385,10 @@ function reportPublicSource(src: any): any {
       operators: Catalog.operatorsFor(field.type),
       // The operators the store answers with an index (#985); the page and
       // the OpenAPI document show them, and `sources.ts` decides on them.
-      indexed: Array.isArray(field.indexed) ? field.indexed.slice() : []
+      indexed: Array.isArray(field.indexed) ? field.indexed.slice() : [],
+      // Every value an enumerated field can hold (#1007), for the page's
+      // dropdown; absent (dropped by JSON) for an open field.
+      values: Array.isArray(field.values) ? field.values.slice() : undefined
     };
   });
   const out = {
@@ -1657,6 +1660,8 @@ export = {
     reportApi.registerRoutes(app);
   },
   realmsView: reportRealmsView,
+  // A source as the API publishes it, for the test of its `values` (#1007).
+  publicSource: reportPublicSource,
   ownerName: reportOwnerName,
   schedulesView: reportSchedulesView,
   definitionsView: reportDefinitionsView,

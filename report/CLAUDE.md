@@ -210,6 +210,26 @@ rows-per-page select — every page a link under the list's own path with
 moves to page one through the location (`onChange()`, `data-pager-path`).
 `tests/report_query.js` holds both views' paging and the pager's markup.
 
+## An enumerated field's filter value is a dropdown (#1007)
+
+rcbj, 2026-10-27: "mechanism equals" on credentialHolders should offer
+the possible values. **The enumeration is the catalog's**, not the
+page's: `FieldSpec.values` (set through `field()`'s fifth argument;
+`HOLDER_MECHANISMS`, held equal to `sources.ts`'s `MECHANISM_TABLE` by a
+test because the catalog cannot require sources, and `HOLDER_ROLES`),
+published by `reportPublicSource()` and described in the OpenAPI `Field`
+schema, so a client can draw the same choice. The page's
+`filterValueHtml(n, fields, field, op, value)` draws a `<select>` of the
+values with an empty first choice under `eq`, `ne` or no operator yet,
+and the text box otherwise; `filterRowsHtml()` draws a saved row the same
+way; `onChange()` on `filterFieldN`/`filterOpN` calls
+`redrawFilterValue()`, which replaces the control through `outerHTML`
+(a text box that would be a text box again is left alone, keeping what
+was typed); `addFilterRow()` gives the clone a text box, since its field
+is unchosen. `queryDocument()` reads `filterValueN` by name, so a select
+reads as the input did. The API still validates the value: the dropdown
+is a convenience, not the gate.
+
 ## The result of Run is paged in the browser (#1005)
 
 rcbj, 2026-10-27. `showRun()` drew the first fifty rows of a synchronous

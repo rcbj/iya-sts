@@ -2530,6 +2530,16 @@ export = {
   reportGateOne: reportGateOne,
   installReader: reportInstallReader,
   installDirectory: reportInstallDirectory,
+  // The mechanism ids, for the test that holds the catalog's enumeration
+  // (#1007) equal to the table (the catalog cannot require this module).
+  mechanismIds: function (): string[] {
+    log.debug("Entering mechanismIds().");
+    const ids = MECHANISM_TABLE.map(function (m: any): string {
+      return String(m.id);
+    });
+    log.debug("Leaving mechanismIds().");
+    return ids;
+  },
   indexedLookups: reportIndexedLookups,
   groupSearch: reportGroupSearch,
   groupRecipients: reportGroupRecipients,
