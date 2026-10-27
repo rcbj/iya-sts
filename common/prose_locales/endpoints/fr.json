@@ -403,6 +403,10 @@
     "en": "e146f5e15e76dfe5",
     "text": "Chaque page de la console"
   },
+  "endpoints.route./admin/signals/receive.name": {
+    "en": "d68ad816a1dfc9a9",
+    "text": "Le point de réception Shared Signals de la console"
+  },
   "endpoints.route./admin/console.js.name": {
     "en": "9932c00e39f5d470",
     "text": "Le script de la console"
@@ -426,6 +430,10 @@
   "endpoints.route./portal/portal.css.name": {
     "en": "3b05a0008cdc0eb1",
     "text": "La feuille de style du portail"
+  },
+  "endpoints.route./report/signals/receive.name": {
+    "en": "ab329d399f348d73",
+    "text": "Le point de réception Shared Signals de l’application de rapports"
   },
   "endpoints.route./report.name": {
     "en": "f8876dead2cd7bc2",
@@ -462,6 +470,10 @@
   "endpoints.route./report-api/realms.name": {
     "en": "c555ac10c13fd091",
     "text": "Les domaines de confiance, pour l’application de rapports"
+  },
+  "endpoints.route./report-api/signals.name": {
+    "en": "fa5ff98584c701fb",
+    "text": "La boîte de réception Shared Signals de l’application de rapports"
   },
   "endpoints.route./report-api/groups.name": {
     "en": "e30ed85f8fa2f141",

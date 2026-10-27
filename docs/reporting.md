@@ -218,6 +218,25 @@ line and a rows-per-page choice (25, 50, 100 or 200). Turning a page or
 changing the size redraws from what came back and asks the service
 nothing; the query's `limit` still decides how many rows that is.
 
+## Signals
+
+The reports application is a Shared Signals receiver, like the admin console
+and the user portal (see [Signals received](signals-received.md)). Its own
+stream receives every CAEP and RISC event in the realm, and **Signals** shows
+what arrived:
+
+- a report administrator sees every event delivered in the realm;
+- anybody else who may use reports sees only the events about themselves;
+- an application sees none.
+
+When the `signal-response` policy permits it, an event revokes the access
+tokens the reports application's client (`sts-report`) holds for the person
+it names. That person's next call to `/report-api` is refused, and the
+application signs them in again. Each row says what was done.
+
+`GET /report-api/signals` is the same list as JSON, paged with `page` and
+`per`.
+
 ## The catalog
 
 `GET /report-api/catalog` lists every source. `GET /report-api/catalog/{id}`
@@ -926,6 +945,10 @@ What to check when a schedule does nothing:
   "A saved parameter was not given" means the slot was kept. Save the
   value and the next pass can run.
 - "The owner can no longer run reports" means `report:use` was lost.
+  That occurrence was consumed.
+- "The owner's account is disabled." means the person who owns the
+  definition was disabled. Their schedules do not run until the account is
+  enabled again, and a job they had already queued fails as `forbidden`.
   That occurrence was consumed.
 - A queue that answered `too_many_jobs` did not consume the occurrence.
 - The cron expression is UTC. `* * * * *` is every minute.

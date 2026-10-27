@@ -601,6 +601,63 @@ own receivers hear this service's own events.
 
 ---
 
+## A STATIC SURFACE HOLDS A TOKEN, AND `/report` IS THE THIRD RECEIVER (#1042, 2026-10-27)
+
+rcbj: "I want /report to be a third receiver. Fix the admin console and user
+portal so that they correctly receive and process CAEP / RISC signals
+again."
+
+**What had stopped working.** `signal-end-sessions` ends the receiving
+surface's relying-party sessions (`authn.endRelyingPartySessions()`), and
+since #446 (the console) and #568 (the portal) neither surface makes one:
+each is a static application holding a DPoP-bound token its own client was
+issued. Only the embedded debugger still runs the server-side flow. So
+every verified signal recorded "ended 0" and changed nothing; what still
+held a person out was the token gates' own three checks (a revoked jti, a
+disabled account, an ended sign-on session).
+
+**What the reaction does now** (`SsfReceivers.revokeSurfaceTokens()`): it
+still ends any relying-party session the surface has, and it revokes the
+tokens the surface's OWN client holds for the person — `sts-admin-console`,
+`sts-user-portal`, `sts-report`, the `audience` on its SURFACES row — so
+the next call to `/admin-api`, `/account-api` or `/report-api` is refused
+and the surface signs in again. Four tests on each token, the session's
+rules read for a token:
+
+* issued to this surface's client, and no other;
+* `isAbout()` on the token's own username and subject (and the address the
+  directory's mail index gives a name), fail-closed as the portal's page is;
+* a `session-revoked` naming a session reaches only tokens issued on it
+  (`record.sessionId`);
+* a token issued after the event's second is left alone.
+
+**FOUND THROUGH THE INDEX, NEVER A WALK** (`tokenKeysNamed()`): the token
+register's `u:` and `s:` keys for every identifier the SET spells, and for
+an address the people the directory's mail index names (the directory found
+in the require cache, never required). Every password write sends a signal
+to every surface, and #767 measured what a walk per signal cost. Revoked
+through `admin_stats.revokeWhere()` with the initiating entity `policy`; the
+row's reaction carries `revoked` beside `ended`, and the `ssf.event.act`
+audit row says both.
+
+**`/report` IS THE THIRD SURFACE** (`id: 'report'`, audience `sts-report`,
+`sees: 'own'`): a stream per realm seeded with the others, polled by the
+same job, a receive endpoint at `/report/signals/receive` for a stream set
+back to push (`report/report_app.ts`), and `GET /report-api/signals` with
+the application's Signals page. The receiver row says `own` — the portal's
+fail-closed rule — and the report API widens it to the realm for a report
+ADMINISTRATOR (`rights.isAdmin()`), as the console sees everything for an
+administrator; an application caller sees nothing.
+
+**AND THE CONSOLE'S RECEIVE ENDPOINT IS BACK.** The #446 cutover deleted
+`POST /admin/signals/receive` with the server-rendered pages, so a console
+stream an operator set back to push was POSTed to a 404 (the static shell's
+STS-ADMIN-0843) while the portal's twin answered. It is registered above
+the shell again, STS-ADMIN-0019 un-retired for its refusals.
+
+`tests/signal_response.js` section G, `tests/ssf_receivers.js` section A and
+`tests/report_access_policy.js` C32-C34 hold it.
+
 ## THE OPT-OUT GATE, AND THE EXCEPTION WITHOUT WHICH IT IS A TRAP
 
 RISC section 2.8 gives an account three states — `opt-in`,

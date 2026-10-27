@@ -1151,6 +1151,18 @@
     "en": "fb526fdd286ba6e8",
     "text": "ICKE-SPEC. Samma dokument som /admin, för varje konsolsökväg (#446): sökvägen namnger sidan och webbläsaren läser den, så att en djuplänk och historiken fungerar. /admin/callback är dit en inloggning kommer tillbaka med en kod; att servera den registrerar återanropet på konsolens klientpost så som den förlitande parten gjorde (inlärt i utvecklingsläge, nekat i produktläge om det inte är registrerat)."
   },
+  "stsmetadata.endpoints./admin/signals/receive.what": {
+    "en": "cd68dd8169303f3e",
+    "text": "PUSH-LEVERANS ENLIGT RFC 8935 AVSNITT 2.1, för en konsolström som satts tillbaka till push (den skapade hämtas sedan #771). Övergången #446 tog bort den med de serverritade sidorna och #1042 återställde den: portalens tvilling, kontrollerad på samma sätt — bärartoken för konsolens egen ström i konstant tid, `aud` och sedan signaturen — och utan hastighetsbegränsning, av samma skäl."
+  },
+  "stsmetadata.endpoints./admin/signals/receive.effect": {
+    "en": "7414efe71859a097",
+    "text": "registrerar en Security Event Token som levererats till administratörskonsolen"
+  },
+  "stsmetadata.endpoints./admin/signals/receive.coverage": {
+    "en": "bbcf002898339fc9",
+    "text": "full för mottagning enligt RFC 8935 avsnitt 2.1, som /portal/signals/receive."
+  },
   "stsmetadata.endpoints./admin/console.js.what": {
     "en": "6f4d5410ba7dfbfb",
     "text": "ICKE-SPEC. Den statiska konsolen (#446): dess körtid och varje sidas renderare i en fil, byggd av build-typescript.sh. Publik, liksom dokumentet: ingenting i den är hemligt."
@@ -1174,6 +1186,18 @@
   "stsmetadata.endpoints./portal/portal.css.what": {
     "en": "69cf245f63b035d1",
     "text": "ICKE-SPEC. Portalens enda stilmall (#568)."
+  },
+  "stsmetadata.endpoints./report/signals/receive.what": {
+    "en": "02a6b59dd686363c",
+    "text": "PUSH-LEVERANS ENLIGT RFC 8935 AVSNITT 2.1, för en rapportström som satts tillbaka till push (#1042; den skapade hämtas, liksom konsolens och portalens). Kontrolleras som /portal/signals/receive."
+  },
+  "stsmetadata.endpoints./report/signals/receive.effect": {
+    "en": "6c9147c359daab5f",
+    "text": "registrerar en Security Event Token som levererats till rapportapplikationen"
+  },
+  "stsmetadata.endpoints./report/signals/receive.coverage": {
+    "en": "bbcf002898339fc9",
+    "text": "full för mottagning enligt RFC 8935 avsnitt 2.1, som /portal/signals/receive."
   },
   "stsmetadata.endpoints./report.what": {
     "en": "a9d6c3cc058a3617",
@@ -1210,6 +1234,10 @@
   "stsmetadata.endpoints./report-api/realms.what": {
     "en": "94cf90a7c7b10a68",
     "text": "NON-SPEC. Sfären som denna begäran befinner sig i och, där sfärer är aktiva, varje sfär med sitt id, namn och sökvägsprefix (#986): det som applikationens sfärfält och sfärväxling ritas från. Bakom samma token som resten av /report-api."
+  },
+  "stsmetadata.endpoints./report-api/signals.what": {
+    "en": "f00e66637d8d4146",
+    "text": "UTANFÖR SPECIFIKATION. Vad rapportapplikationen, en mottagare av tjänstens egen sändare (#1042), har tagit emot: varje signal i sfären för en rapportadministratör, och för alla andra bara signalerna om dem själva. Bakom samma token som resten av /report-api."
   },
   "stsmetadata.endpoints./report-api/groups.what": {
     "en": "339c957fd31d0c51",

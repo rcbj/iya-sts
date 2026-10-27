@@ -141,5 +141,21 @@
   "pager.where": "sida {page} av {pages} — rader {first}–{last} av {total}",
   "perPage.label": "Rader per sida",
   "perPage.rows": "{n} rader",
-  "tipPerPage": "Hur många rader en sida visar. Att ändra det börjar om från första sidan."
+  "tipPerPage": "Hur många rader en sida visar. Att ändra det börjar om från första sidan.",
+  "signals": "Signaler",
+  "signalsRealm": "Alla Shared Signals-händelser som levererats till rapportprogrammet i den här sfären, nyaste först.",
+  "signalsOwn": "Shared Signals-händelserna som gäller dig, nyaste först.",
+  "signalsOff": "Ingenting kan komma fram just nu:",
+  "signalsNone": "Inga signaler har kommit.",
+  "signalsAt": "Mottagen",
+  "signalsEvent": "Händelse",
+  "signalsVocabulary": "Vokabulär",
+  "signalsSubject": "Subjekt",
+  "signalsVerified": "Verifierad",
+  "signalsDone": "Vad som gjordes",
+  "signalsActed": "{sessions} session(er) avslutade, {tokens} token återkallade.",
+  "signalsSkipped": "Ingenting: {why}.",
+  "signalsObserved": "Ingenting: utvecklingsläget observerar bara.",
+  "signalsFailed": "Det gick inte att agera på den.",
+  "signalsNothing": "Ingenting: policyn begär ingen reaktion."
 }

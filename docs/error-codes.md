@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4688** of them, in **48** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4691** of them, in **48** subsystems.
 
 ## Where a code appears
 
@@ -96,7 +96,7 @@ is an ordinary outcome.
 * [Identity-provider-initiated sign-in (`STS-LAUNCH`)](#sts-launch) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 181
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
-* [Reporting (`STS-REPORT`)](#sts-report) — 45
+* [Reporting (`STS-REPORT`)](#sts-report) — 47
 
 ## STS-HTTP
 
@@ -4614,7 +4614,7 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0016` | The new-user form's Fill with example data was refused because the service is running in product mode. | HTTP 200 form page with a warning, or HTTP 400 JSON |
 | `STS-ADMIN-0017` | The new-user form's Fill with example data was pressed with no username to seed the example person from. | HTTP 200 form page with a warning |
 | `STS-ADMIN-0018` *(retired)* | The new-user form was posted with an action other than create or fill. | HTTP 200 form page with a warning, or HTTP 400 JSON |
-| `STS-ADMIN-0019` *(retired)* | The admin console's Shared Signals receive endpoint refused a pushed Security Event Token and the receiver named no more specific code. | HTTP 4xx/5xx per RFC 8935, as the receiver decided |
+| `STS-ADMIN-0019` | The admin console's Shared Signals receive endpoint refused a pushed Security Event Token and the receiver named no more specific code. Retired by the #446 cutover, which deleted the endpoint, and in use again since #1042 restored it. | HTTP 4xx/5xx per RFC 8935, as the receiver decided |
 | `STS-ADMIN-0020` *(retired)* | The realm switcher named a trust realm that is not defined; the browser was sent back to the current realm. | HTTP 303 to the current realm |
 | `STS-ADMIN-0021` | A console drill-down named a record that does not exist: an application, an authorization server profile, a trust realm, a federation relationship or a cache. | HTTP 200 page saying there is no such record |
 | `STS-ADMIN-0022` *(retired)* | The realm switcher was given a return path that is not a single-slash-rooted path (a possible open redirect); /admin was used instead. | HTTP 303 to /admin in the chosen realm |
@@ -5399,6 +5399,8 @@ Raised from: report/.
 | `STS-REPORT-0044` | The access-control policy refused a report API request (#1030): the subject holds no report role for the API, or the definition or job is not its own, not shared with a group it is in, and it is not a report administrator — an application reaches only what it defined. A hidden row is answered not_found. | forbidden (HTTP 403), or not_found (HTTP 404) for one row |
 | `STS-REPORT-0045` | A token the default realm issued was presented to another realm's report API and its subject is not a service administrator — a person holding Admin Read or Admin Write on the default realm's console roster now — so it was refused: only a service administrator reaches every realm's reports (#1038). | forbidden (HTTP 403) |
 | `STS-REPORT-0046` | A users report with an order or a count and no filter would read more people than a job may (report.asyncMaxRows), counted from the directory first, so it was refused at once rather than run as a job that reached report.asyncMaxMs (#1040). | result_too_large (HTTP 400) |
+| `STS-REPORT-0047` | The reports application's Shared Signals receive endpoint refused a pushed Security Event Token that carried no more specific code of its own (receivers off, no stream, wrong bearer token, empty or malformed token, wrong audience, or an unverified signature) (#1042). | HTTP 4xx/5xx per RFC 8935, as the receiver decided |
+| `STS-REPORT-0048` | A scheduled report, or a queued job, belongs to a person whose account is disabled, so it was not run (#1042): a disabled account stops its owner's schedules as it stops their sign-ins. | none (the occurrence is consumed; the job fails as forbidden) |
 
 ## Adding a code
 

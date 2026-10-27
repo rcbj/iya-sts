@@ -4645,6 +4645,18 @@ const ENDPOINTS: EndpointEntry[] = [
           'callback on the console\'s client entry as the relying party ' +
           'did (learnt in development, refused in product unless ' +
           'registered).' },
+  { path: '/admin/signals/receive', group: 'Admin',
+    name: 'The console\'s Shared Signals receive endpoint',
+    specs: ['ssf', 'rfc8935', 'rfc8417'],
+    effect: 'records a Security Event Token delivered to the admin console',
+    what: 'RFC 8935 SECTION 2.1 PUSH DELIVERY, for a console stream set back ' +
+          'to push (the seeded one is polled since #771). The #446 cutover ' +
+          'deleted it with the server-rendered pages and #1042 restored it: ' +
+          'the portal\'s twin, checked the same way — the bearer token on ' +
+          'the console\'s own stream in constant time, the `aud`, then the ' +
+          'signature — and not rate limited, for the same reason.',
+    coverage: 'full for RFC 8935 section 2.1 receipt, as ' +
+              '/portal/signals/receive.' },
   { path: '/admin/console.js', group: 'Admin', name: 'The console\'s script',
     specs: [],
     what: 'NON-SPEC. The static console (#446): its runtime and every ' +
@@ -4689,6 +4701,16 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/portal/portal.css', group: 'User portal',
     name: 'The portal\'s stylesheet', specs: [],
     what: 'NON-SPEC. The portal\'s one stylesheet (#568).' },
+  { path: '/report/signals/receive', group: 'Reporting',
+    name: 'The reports application\'s Shared Signals receive endpoint',
+    specs: ['ssf', 'rfc8935', 'rfc8417'],
+    effect: 'records a Security Event Token delivered to the reports ' +
+            'application',
+    what: 'RFC 8935 SECTION 2.1 PUSH DELIVERY, for a reports stream set ' +
+          'back to push (#1042; the seeded one is polled, as the console\'s ' +
+          'and the portal\'s are). Checked as /portal/signals/receive is.',
+    coverage: 'full for RFC 8935 section 2.1 receipt, as ' +
+              '/portal/signals/receive.' },
   { path: '/report', group: 'Reporting',
     name: 'The reports application', specs: [],
     what: 'NON-SPEC. The static reports application (#956). Every path ' +
@@ -4727,6 +4749,14 @@ const ENDPOINTS: EndpointEntry[] = [
           'active, every realm with its id, name and path prefix (#986): ' +
           'what the application\'s realm field and switch are drawn from. ' +
           'Behind the same token as the rest of /report-api.' },
+  { path: '/report-api/signals', group: 'Reporting',
+    name: 'The reports application\'s Shared Signals inbox',
+    specs: ['ssf', 'caep', 'risc'],
+    what: 'NON-SPEC. What the reports application, a receiver of this ' +
+          'service\'s own transmitter (#1042), has received: every signal ' +
+          'in the realm for a report administrator, only the signals about ' +
+          'themselves for anybody else. Behind the same token as the rest ' +
+          'of /report-api.' },
   { path: '/report-api/groups', group: 'Reporting',
     name: 'The group search, for the reports application', specs: [],
     what: 'NON-SPEC. The realm\'s groups whose name or DN contains q, five ' +

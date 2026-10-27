@@ -1178,6 +1178,75 @@ function reportTooManyPeople(catalog: any, everybody: number,
   };
 }
 
+// A person's first address, for the signals inbox's `own` match (#1042):
+// the directory's asynchronous door, one name. '' for nobody, a failure or
+// an entry with none — a signal about an address then matches nobody, which
+// is the receiver's fail-closed rule.
+// A PERSON OWNER WHOSE ACCOUNT IS DISABLED (#1042). A disable ends what the
+// person holds — sessions, tokens, connections — and refuses their next
+// sign-in, and a schedule they own is neither: it ran on under their name.
+// So the scheduler and the runner ask before a person's report runs, in
+// their own realm, through the directory's ASYNCHRONOUS door (one name, no
+// walk; `account_state.isDisabled()` reads the same attribute
+// synchronously, which a job body is not to do). An application is never
+// disabled here; the issuance policy refuses one. A directory that cannot
+// answer is not a disable: the role check beside this one already refuses
+// an owner it cannot read.
+async function reportOwnerDisabled(kind: string, ownerRealm: string,
+                                   name: string): Promise<boolean> {
+  log.debug("Entering reportOwnerDisabled().");
+  const who = String(name || '').trim();
+  if (kind === 'application' || !who || who === 'anonymous') {
+    log.debug("Leaving reportOwnerDisabled(). Not a person.");
+    return false;
+  }
+  // The directory a test installed, or the one this process has loaded —
+  // never a require here: the directory is a JavaScript route module, and
+  // a process that has not loaded it has nobody to be disabled.
+  let ldap: any = reportDirectory;
+  if (!ldap) {
+    const cached = require.cache[require.resolve('../ldap/ldap_server')];
+    ldap = cached ? cached.exports : null;
+  }
+  if (!ldap || typeof ldap.existingUserEntriesAsync !== 'function') {
+    log.debug("Leaving reportOwnerDisabled(). No directory loaded.");
+    return false;
+  }
+  const rights = require('./rights');
+  try {
+    const found = await rights.inOwnerRealm(String(ownerRealm || ''),
+      function (): Promise<any[]> {
+        return ldap.existingUserEntriesAsync([who]);
+      });
+    const entry = (found || [])[0];
+    const locked = !!(entry && reportAttr(entry, 'pwdAccountLockedTime'));
+    log.debug("Leaving reportOwnerDisabled(). " + locked);
+    return locked;
+  } catch (e) {
+    log.debug("Caught in reportOwnerDisabled(): " + ((e && e.message) || e));
+    return false;
+  }
+}
+
+async function reportPersonMail(username: string): Promise<string> {
+  log.debug("Entering reportPersonMail().");
+  const name = String(username || '').trim();
+  if (!name) {
+    log.debug("Leaving reportPersonMail(). Nobody.");
+    return '';
+  }
+  try {
+    const found = await reportLdap().existingUserEntriesAsync([name]);
+    const entry = (found || [])[0];
+    const mail = entry ? reportAttr(entry, 'mail') : '';
+    log.debug("Leaving reportPersonMail().");
+    return String(mail || '');
+  } catch (e) {
+    log.debug("Caught in reportPersonMail(): " + ((e && e.message) || e));
+    return '';
+  }
+}
+
 async function reportReadUsers(rows: any, control: any): Promise<void> {
   log.debug("Entering reportReadUsers().");
   const ldap = reportLdap();
@@ -3071,6 +3140,13 @@ async function reportRunOne(job: any, ctx: any): Promise<void> {
     summary: 'report job ' + job.id + ' started',
     detail: reportDetail(job)
   });
+  // A job queued before its owner was disabled does not run after (#1042).
+  if (await reportOwnerDisabled(String(job.ownerKind || 'user'),
+      String(job.ownerRealm || ''), reportActor(job))) {
+    reportFailJob(job, 'forbidden', 'STS-REPORT-0048');
+    log.debug("Leaving reportRunOne(). The owner is disabled.");
+    return;
+  }
   const validated = query.validate(job.document, job.parameters || null);
   if (!validated.ok) {
     reportFailJob(job, validated.error, validated.code);
@@ -3308,6 +3384,16 @@ async function reportScheduleWork(ctx: any): Promise<any> {
         'report: a schedule was skipped because its owner lost report:use.');
       continue;
     }
+    if (await reportOwnerDisabled(String(def.ownerKind || 'user'),
+        String(def.ownerRealm || ''), String(rightsOf.username || ''))) {
+      def.lastSlot = slot;
+      reportNoteFailure(def, 'The owner\'s account is disabled.');
+      stores.putDefinition(def);
+      log.warn(errorCodes.tag('STS-REPORT-0048') +
+        'report: a schedule was skipped because its owner\'s account is ' +
+        'disabled.');
+      continue;
+    }
     const names = jobsApi.parameterNames(def.document);
     const bag = def.parameters && typeof def.parameters === 'object' &&
       !Array.isArray(def.parameters) ? def.parameters : null;
@@ -3467,6 +3553,10 @@ export = {
   metricRows: reportMetricRows,
   mechanismRows: reportMechanismRows,
   activityRows: reportActivityRows,
+  personMail: reportPersonMail,
+  // One job run as the drain runs it, for the test that a disabled owner's
+  // queued job fails (#1042); the drain's own gate needs a scheduler.
+  runOne: reportRunOne,
   attributeSourceRows: reportAttributeSourceRows,
   notice: reportNotice,
   read: reportReadWork

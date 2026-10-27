@@ -7068,16 +7068,16 @@
     "text": "Om SSF-slutpunkterna accepterar HTTP Basic bredvid OAuth 2.0-åtkomsttokener, och publicerar det i authorization_schemes. I utvecklingsläge godtas vilket användarnamn som helst med vilket lösenord som helst utom \"invalid\"; i produktläge verifieras lösenordet mot personens hashade userPassword. I båda fallen har en Basic-principal båda omfången, eftersom Basic inte bär något — så en driftsättning som vill att ssf.read och ssf.manage upprätthålls för varje anropare stänger av detta."
   },
   "ssf.internalReceivers|label": {
-    "en": "8eca3281fa7a4ef7",
-    "text": "Registrera konsolen och portalen som mottagare"
+    "en": "7e760a8d68a5e030",
+    "text": "Registrera konsolen, portalen och rapporterna som mottagare"
   },
   "ssf.internalReceivers|description": {
-    "en": "1a148e2b3a63a17d",
-    "text": "Om den här tjänsten skapar en Shared Signals-ström för sin EGEN administratörskonsol och användarportal, så att var och en tar emot varje CAEP- och RISC-händelse — hämtade via RFC 8936-pollning från tjänstens egen /ssf/poll var ssf.internalPollMs (#771) — och visar det som kom fram på /admin/signals och /portal/signals. De är VANLIGA strömmar — pausa en, begränsa den eller ta bort den på /admin/ssf och den förblir så till en omstart."
+    "en": "0a23fbb0f030f814",
+    "text": "Om tjänsten skapar en Shared Signals-ström för sin EGEN administratörskonsol, användarportal och rapportapplikation (#1042), så att var och en tar emot varje CAEP- och RISC-händelse — genom RFC 8936-hämtning från tjänstens egen /ssf/poll var ssf.internalPollMs (#771) — och visar det som kommit på /admin/signals, /portal/signals och /report/signals. De är VANLIGA strömmar — pausa, begränsa eller ta bort en på /admin/ssf så förblir den så tills en omstart."
   },
   "ssf.internalReceivers|restartReason": {
-    "en": "75c18a7223a2e0a3",
-    "text": "de två strömmarna skapas när ssf/ssf.ts laddas och igen när varje sfär byggs, så att stänga av detta i drift skulle lämna kvar de strömmar som redan finns och att slå på det skulle inte skapa några"
+    "en": "eb2b8e34bd6ee85c",
+    "text": "de tre strömmarna skapas när ssf/ssf.ts läses in och igen när varje sfär byggs, så att stänga av detta under drift skulle lämna befintliga strömmar kvar och att slå på det skulle inte skapa några"
   },
   "ssf.internalPollMs|label": {
     "en": "245d4495769ca599",
@@ -7156,8 +7156,8 @@
     "text": "Behållna mottagna händelser"
   },
   "ssf.maxReceivedEvents|description": {
-    "en": "2c503bd8b26764ea",
-    "text": "Hur många levererade SET:er var och en av den här tjänstens egna mottagare (konsolens och portalens) behåller i sin inkorg, per sfär; de äldsta tas bort därutöver."
+    "en": "4c285fbb0b900559",
+    "text": "Hur många levererade SET varje av tjänstens egna mottagare (konsolens, portalens och rapportapplikationens) behåller i sin inkorg, per sfär; de äldsta tas bort därutöver."
   },
   "ssf.maxStreamLogEntries|label": {
     "en": "468201e24a40cdc6",
@@ -7232,12 +7232,12 @@
     "text": "Hur lång tid en begäran till en federationspartners Shared Signals — upptäckt, dess tokenslutpunkt, strömhantering, en avfrågning — får ta."
   },
   "ssf.actOnSignalsInDevelopment|label": {
-    "en": "563f14910995d99d",
-    "text": "Konsolen och portalen agerar på mottagna signaler i utvecklingsläge"
+    "en": "aa195c1cd8a0152a",
+    "text": "Tjänstens egna applikationer agerar på mottagna signaler under utveckling"
   },
   "ssf.actOnSignalsInDevelopment|description": {
-    "en": "551c98310bd92f77",
-    "text": "Produktläge gör alltid det som signalsvarspolicyn tillåter med en verifierad händelse som den här tjänstens egen konsol eller portal tar emot — avslutar den ytans egna sessioner för den person händelsen anger (#62) — eller som en federationspartner skickar (#373, #374). Utvecklingsläge registrerar vad det skulle ha gjort och gör ingenting, om inte detta är på. En overifierad händelse ageras aldrig på, oavsett vad detta säger."
+    "en": "2389ab3a9223bf66",
+    "text": "Produktionsläget gör alltid det som signal-response-policyn tillåter med en verifierad händelse som tjänstens konsol, portal eller rapportapplikation tar emot — återkallar de token som applikationens egen klient innehar för den namngivna personen (#1042; tills applikationerna slutade skapa sådana avslutade det förlitande parts sessioner, #62) — eller som en federationspartner skickar (#373, #374). Utvecklingsläget registrerar vad det skulle ha gjort och gör ingenting, om inte detta är på. En overifierad händelse hanteras aldrig, oavsett vad detta säger."
   },
   "ssf.signalsRevokeGrants|label": {
     "en": "a0ded7c93cee0e93",

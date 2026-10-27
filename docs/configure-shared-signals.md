@@ -631,13 +631,14 @@ api ssf/transmit '{"stream_id":"<id>",
 The type must be one the stream delivers. Unlike the CAEP and RISC emit
 forms, this sends on the one stream only.
 
-## The console's and portal's own receivers
+## The console's, portal's and reports application's own receivers
 
-Each realm seeds two receiver streams, for the console and the portal, while
-`ssf.internalReceivers` is on (the default; read at start). There is nothing
-to configure. **Monitoring → Shared Signals → Signals received** shows what
-the console's receiver was delivered, and `/portal/signals` shows a person
-theirs. An empty page has five causes; [Signals received](signals-received.md)
+Each realm seeds three receiver streams, for the console, the portal and the
+reports application, while `ssf.internalReceivers` is on (the default; read at
+start). There is nothing to configure. **Monitoring → Shared Signals → Signals
+received** shows what the console's receiver was delivered, `/portal/signals`
+shows a person theirs, and **Signals** in the reports application shows a
+report administrator the realm's and anybody else their own. An empty page has five causes; [Signals received](signals-received.md)
 lists them. A person can opt out of RISC sharing on `/portal/signals`; the
 opt-out takes effect after `risc.optOutDelayHours` (24).
 

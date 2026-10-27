@@ -261,6 +261,39 @@ rule, driven by the catalog:
 * **Run and Save are the definition page's buttons**: `.foot-actions`
   with `.button`s; Save stays first in the document for the Enter reason.
 
+## A Shared Signals receiver, and a disabled owner's schedules (#1042, 2026-10-27)
+
+**THE THIRD RECEIVER.** rcbj asked for `/report` to be a receiver beside the
+console and the portal; `ssf/CLAUDE.md` (*A STATIC SURFACE HOLDS A TOKEN*)
+has the design. This family's half:
+
+* `report_app.ts` registers `POST /report/signals/receive` above the shell
+  (which refuses every other POST, STS-REPORT-0033); a refusal there with no
+  code of the receiver's own is STS-REPORT-0047.
+* `GET /report-api/signals` (`reportServeSignals()`): every signal the
+  application's stream delivered in the realm for a report administrator
+  (`scope: 'realm'`), the caller's own for anybody else (`scope: 'own'`,
+  the person being their username, subject and the address
+  `sources.personMail()` asks the directory for), nothing for an
+  application. Paged with `page` and `per` (at most 100). Each row carries
+  what the application did: the sessions it ended and the tokens of
+  `sts-report` it revoked for the person.
+* The Signals page (`drawSignals()`) draws it, with sixteen `report.signals*`
+  words in every catalog.
+
+**A DISABLED OWNER'S SCHEDULES STOP.** A disable ends what the person holds
+and refuses their next sign-in, and a schedule they owned went on running
+under their name. `sources.ts`'s `reportOwnerDisabled()` asks the directory
+for the owner's entry through its ASYNCHRONOUS door, in the owner's realm,
+and reads `pwdAccountLockedTime`: the scheduler skips a due definition with
+the note "The owner's account is disabled." (the occurrence consumed), and
+the runner fails a job queued before the disable as `forbidden`. Both are
+STS-REPORT-0048. An application owner is never disabled here, and a process
+that has not loaded the directory has nobody to disable. `rights.ts`'s
+comment that the read "walks the directory" was wrong — it is one indexed
+lookup — and now says where the question is asked instead.
+`tests/report_query.js`'s `disabledOwner()` holds it.
+
 ## Every source run against 8081 (#1040, 2026-10-27)
 
 rcbj asked for every query the generator can make, run against 8081

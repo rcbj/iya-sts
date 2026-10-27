@@ -446,8 +446,8 @@ once per sweep as a summary, never once per SET.
 
 ### This service as a receiver
 
-This service's own receivers are the admin console's and the user portal's,
-which are seeded streams of its transmitter (see *Signals received*). They
+This service's own receivers are the admin console's, the user portal's and
+the reports application's, which are seeded streams of its transmitter (see *Signals received*). They
 verify each SET's signature, and refuse one that does not verify when
 `ssf.receiveRequireSignature` is on — **product mode always refuses one**
 (#117). They also refuse a SET whose header's `typ` is not `secevent+jwt`
@@ -532,17 +532,18 @@ arrived before it is paged.
 Development records what it would do and does nothing unless
 `ssf.actOnSignalsInDevelopment` is on.
 
-### The console and the portal are registered receivers
+### The console, the portal and the reports application are registered receivers
 
-Each trust realm has two streams seeded by the service itself, one for the
-admin console and one for the user portal. Both ask for every CAEP and RISC
-event type, and both take delivery over a real RFC 8935 push to an endpoint of
-their own. What arrives is shown at `/admin/signals` and `/portal/signals`.
+Each trust realm has three streams seeded by the service itself, one each for
+the admin console, the user portal and the reports application. Each asks for
+every CAEP and RISC event type and collects it over RFC 8936 poll from this
+service's own `/ssf/poll`. What arrives is shown at `/admin/signals`,
+`/portal/signals` and `/report/signals`.
 [Signals received](signals-received.md) explains how this works, and why an
-empty page has five possible causes. **Both act on what they receive**: a
-verified event the `signal-response` policy permits ends the receiving
-surface's own sessions for the person it names (product mode; development
-records it). An unverified event is never acted on.
+empty page has five possible causes. **All three act on what they receive**: a
+verified event the `signal-response` policy permits revokes the tokens the
+receiving application's own client holds for the person it names (product
+mode; development records it). An unverified event is never acted on.
 
 ### Deliberate defects
 
@@ -637,7 +638,7 @@ types from what a stream may ask for.
 | `ssf.deadLetterMaxPerStream` | `STS_SSF_DEAD_LETTER_MAX_PER_STREAM` | `1000` | yes | The most dead letters one stream keeps. The oldest is dropped first. |
 | `ssf.deadLetterSweepS` | `STS_SSF_DEAD_LETTER_SWEEP_S` | `60` | yes | How often expired dead letters are deleted, due probes are sent and the summary is logged. |
 | `ssf.authBasic` | `STS_SSF_AUTH_BASIC` | `true` | yes | Whether HTTP Basic is accepted and advertised. |
-| `ssf.internalReceivers` | `STS_SSF_INTERNAL_RECEIVERS` | `true` | **no** | Seeds the console's and the portal's own receiver streams. |
+| `ssf.internalReceivers` | `STS_SSF_INTERNAL_RECEIVERS` | `true` | **no** | Seeds the console's, the portal's and the reports application's own receiver streams. |
 | `ssf.maxStreams` | `STS_SSF_MAX_STREAMS` | `25` | yes | Streams per receiver in a realm. A create past the limit is refused with 403, and the refusal names this setting. The console's and portal's own streams do not count. |
 | `ssf.inactivityTimeoutS` | `STS_SSF_INACTIVITY_TIMEOUT_S` | `0` | yes | SSF 1.0 section 8.1.1's `inactivity_timeout`: a stream whose receiver has made no management call about it (and, for a poll stream, no poll) for this long is dealt with as `ssf.inactivityAction` says. `0`, the default, is no timeout. It is off by default because a push receiver never calls back. |
 | `ssf.inactivityAction` | `STS_SSF_INACTIVITY_ACTION` | `pause` | yes | `pause`, `disable` or `delete`. A pause or disable is announced with a stream-updated event before the stream stops. |
@@ -646,12 +647,12 @@ types from what a stream may ask for.
 | `ssf.maxSubjectsPerStream` | `STS_SSF_MAX_SUBJECTS_PER_STREAM` | `100` | yes | How many subjects one stream may name. |
 | `ssf.maxQueuedEvents` | `STS_SSF_MAX_QUEUED_EVENTS` | `200` | yes | How many undelivered SETs one stream holds. The oldest is dropped first. |
 | `ssf.pollMaxEvents` | `STS_SSF_POLL_MAX_EVENTS` | `20` | yes | The most SETs one poll returns, whatever the receiver asks for. |
-| `ssf.maxReceivedEvents` | `STS_SSF_MAX_RECEIVED_EVENTS` | `200` | yes | How many delivered SETs each of this service's own receivers (the console's and the portal's) keeps, per realm. |
+| `ssf.maxReceivedEvents` | `STS_SSF_MAX_RECEIVED_EVENTS` | `200` | yes | How many delivered SETs each of this service's own receivers (the console's, the portal's and the reports application's) keeps, per realm. |
 | `ssf.maxStreamLogEntries` | `STS_SSF_MAX_STREAM_LOG_ENTRIES` | `200` | yes | How many log lines each stream keeps. |
 | `ssf.authScopeRead` | `STS_SSF_AUTH_SCOPE_READ` | `ssf.read` | yes | The scope that reads a stream, its status or the poll queue. The CAEP profile name `ssf.read` is always accepted, even when this is renamed. Write includes read, so a write scope reads as well. |
 | `ssf.authScopeWrite` | `STS_SSF_AUTH_SCOPE_WRITE` | `ssf.manage` | yes | The scope that creates, updates or deletes a stream, changes subjects or status, or asks for verification. The CAEP profile name `ssf.manage` is always accepted, even when this is renamed. Write includes read, so a name set here reads as well. |
 | `ssf.receiveRequireSignature` | `STS_SSF_RECEIVE_REQUIRE_SIGNATURE` | `false` | yes | Refuses a received SET whose signature fails, with 400 `invalid_key`, in development mode. Product mode always refuses one (#117). |
-| `ssf.actOnSignalsInDevelopment` | `STS_SSF_ACT_ON_SIGNALS_IN_DEVELOPMENT` | `false` | yes | The console and portal end their own sessions on a received signal in development too; product always does. |
+| `ssf.actOnSignalsInDevelopment` | `STS_SSF_ACT_ON_SIGNALS_IN_DEVELOPMENT` | `false` | yes | The console, the portal and the reports application revoke their own client's tokens on a received signal in development too; product always does. |
 | `ssf.signalsRevokeGrants` | `STS_SSF_SIGNALS_REVOKE_GRANTS` | `true` | yes | A verified event from a federation partner that the `signal-response` policy answers with `signal-revoke-grants` revokes the person's GNAP grants, OAuth grants, tokens and authorization codes (#432). See *Receiving from a federation partner*. |
 | `ssf.foreignPollS` | `STS_SSF_FOREIGN_POLL_S` | `30` | yes | How often the `ssf.foreign-poll` scheduler job polls every federation partner whose stream is a poll stream. |
 | `ssf.foreignPollMaxEvents` | `STS_SSF_FOREIGN_POLL_MAX_EVENTS` | `50` | yes | The `maxEvents` asked of a partner in one poll. |

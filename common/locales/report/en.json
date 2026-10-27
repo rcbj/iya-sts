@@ -141,5 +141,21 @@
   "pager.where": "page {page} of {pages} — rows {first}–{last} of {total}",
   "perPage.label": "Rows per page",
   "perPage.rows": "{n} rows",
-  "tipPerPage": "How many rows a page shows. Changing it starts from the first page."
+  "tipPerPage": "How many rows a page shows. Changing it starts from the first page.",
+  "signals": "Signals",
+  "signalsRealm": "Every Shared Signals event delivered to the reports application in this realm, newest first.",
+  "signalsOwn": "The Shared Signals events about you, newest first.",
+  "signalsOff": "Nothing can arrive at the moment:",
+  "signalsNone": "No signals have arrived.",
+  "signalsAt": "Received",
+  "signalsEvent": "Event",
+  "signalsVocabulary": "Vocabulary",
+  "signalsSubject": "Subject",
+  "signalsVerified": "Verified",
+  "signalsDone": "What was done",
+  "signalsActed": "{sessions} session(s) ended, {tokens} token(s) revoked.",
+  "signalsSkipped": "Nothing: {why}.",
+  "signalsObserved": "Nothing: development mode only observes.",
+  "signalsFailed": "It could not be acted on.",
+  "signalsNothing": "Nothing: the policy asks for no reaction."
 }

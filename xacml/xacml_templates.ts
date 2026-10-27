@@ -921,8 +921,9 @@ const SIGNAL_ATTRIBUTE = {
   EVENT: 'urn:sts:xacml:signal-event',
   // `caep`, `risc` or `ssf`: the namespace the event's URI is in.
   FAMILY: 'urn:sts:xacml:signal-family',
-  // Which of this service's surfaces received it: `admin-console` or
-  // `user-portal` (`ssf/ssf_receivers.ts`'s SURFACES) — or, since #373,
+  // Which of this service's surfaces received it: `admin-console`,
+  // `user-portal` or `report` (`ssf/ssf_receivers.ts`'s SURFACES) — or,
+  // since #373,
   // `federation:<id>`, a federation relationship whose partner transmits
   // (`ssf/ssf_transmitters.ts`).
   SURFACE: 'urn:sts:xacml:signal-surface',
@@ -942,10 +943,12 @@ const SIGNAL_ATTRIBUTE = {
  * per reaction to a received signal.
  */
 const SIGNAL_RESPONSE = {
-  // End the receiving surface's OWN sessions for the person the event names:
-  // the console's or the portal's relying-party sessions. Never the
-  // provider's — a receiver acts on what it holds, and what the provider
-  // holds is the transmitter's to end.
+  // End what the receiving surface ITSELF holds for the person the event
+  // names: its relying-party sessions, and since #1042 the tokens its own
+  // client was issued — the console, the portal and the reports application
+  // are static applications holding tokens. Never the provider's — a
+  // receiver acts on what it holds, and what the provider holds is the
+  // transmitter's to end.
   END_SESSIONS: 'signal-end-sessions',
   // FROM A FEDERATION PARTNER (#373): end the sessions THIS RELATIONSHIP
   // started for the person — the one a `complex` subject's session names,

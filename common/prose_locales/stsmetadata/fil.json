@@ -1151,6 +1151,18 @@
     "en": "fb526fdd286ba6e8",
     "text": "NON-SPEC. Ang parehong dokumento ng /admin, para sa bawat console path (#446): pinangangalanan ng path ang page, at binabasa ito ng browser, kaya gumagana ang deep link at ang history. Ang /admin/callback ay kung saan bumabalik ang sign-in na may code; ang paghahain nito ay nagrerehistro ng callback sa client entry ng console gaya ng ginawa ng relying party (natutunan sa development, tinatanggihan sa product maliban kung nakarehistro)."
   },
+  "stsmetadata.endpoints./admin/signals/receive.what": {
+    "en": "cd68dd8169303f3e",
+    "text": "RFC 8935 SEKSYON 2.1 PUSH DELIVERY, para sa stream ng console na ibinalik sa push (pinupoll ang nilikha mula #771). Inalis ito ng cutover na #446 kasama ng mga pahinang iginuguhit ng server at ibinalik ng #1042: ang kakambal ng sa portal, sinusuri sa parehong paraan — ang bearer token ng sariling stream ng console sa constant time, ang `aud`, saka ang lagda — at walang rate limit, sa parehong dahilan."
+  },
+  "stsmetadata.endpoints./admin/signals/receive.effect": {
+    "en": "7414efe71859a097",
+    "text": "itinatala ang isang Security Event Token na naihatid sa admin console"
+  },
+  "stsmetadata.endpoints./admin/signals/receive.coverage": {
+    "en": "bbcf002898339fc9",
+    "text": "full para sa pagtanggap ng RFC 8935 seksyon 2.1, gaya ng /portal/signals/receive."
+  },
   "stsmetadata.endpoints./admin/console.js.what": {
     "en": "6f4d5410ba7dfbfb",
     "text": "NON-SPEC. Ang static console (#446): ang runtime nito at ang renderer ng bawat page sa iisang file, binuo ng build-typescript.sh. Public, gaya ng dokumento: walang secret sa loob nito."
@@ -1174,6 +1186,18 @@
   "stsmetadata.endpoints./portal/portal.css.what": {
     "en": "69cf245f63b035d1",
     "text": "NON-SPEC. Ang nag-iisang stylesheet ng portal (#568)."
+  },
+  "stsmetadata.endpoints./report/signals/receive.what": {
+    "en": "02a6b59dd686363c",
+    "text": "RFC 8935 SEKSYON 2.1 PUSH DELIVERY, para sa stream ng mga ulat na ibinalik sa push (#1042; pinupoll ang nilikha, gaya ng sa console at sa portal). Sinusuri gaya ng /portal/signals/receive."
+  },
+  "stsmetadata.endpoints./report/signals/receive.effect": {
+    "en": "6c9147c359daab5f",
+    "text": "itinatala ang isang Security Event Token na naihatid sa application ng mga ulat"
+  },
+  "stsmetadata.endpoints./report/signals/receive.coverage": {
+    "en": "bbcf002898339fc9",
+    "text": "full para sa pagtanggap ng RFC 8935 seksyon 2.1, gaya ng /portal/signals/receive."
   },
   "stsmetadata.endpoints./report.what": {
     "en": "a9d6c3cc058a3617",
@@ -1210,6 +1234,10 @@
   "stsmetadata.endpoints./report-api/realms.what": {
     "en": "94cf90a7c7b10a68",
     "text": "NON-SPEC. Ang realm kung nasaan ang request na ito at, kapag aktibo ang mga realm, bawat realm kasama ang id, pangalan at path prefix nito (#986): kung saan iginuguhit ang realm field at switch ng application. Nasa likod ng parehong token gaya ng iba pang bahagi ng /report-api."
+  },
+  "stsmetadata.endpoints./report-api/signals.what": {
+    "en": "f00e66637d8d4146",
+    "text": "HINDI MULA SA SPEC. Ang natanggap ng application ng mga ulat, isang receiver ng sariling transmitter ng serbisyong ito (#1042): bawat signal sa realm para sa isang report administrator, at para sa iba ang mga signal lamang tungkol sa kanila. Nasa likod ng parehong token gaya ng iba pang bahagi ng /report-api."
   },
   "stsmetadata.endpoints./report-api/groups.what": {
     "en": "339c957fd31d0c51",

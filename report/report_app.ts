@@ -29,6 +29,10 @@ import errorCodes = require('../common/error_codes');
 import listenerMap = require('../common/listener_map');
 import ShellDocument = require('../common/shell_document');
 import Html = require('../common/html');
+// This application as a Shared Signals receiver (#1042). A LIBRARY: it
+// registers no route and requires only libraries, so this require moves
+// nothing and closes no cycle — the console's and the portal's arrangement.
+import signals = require('../ssf/ssf_receivers');
 
 const log = bunyan.createLogger({ name: 'sts-report' });
 
@@ -330,7 +334,8 @@ class ReportApp {
   paths(): string[] {
     log.debug("Entering paths().");
     log.debug("Leaving paths().");
-    return [BASE, BASE + '/*', BASE + '/report.js', BASE + '/report.css'];
+    return [BASE, BASE + '/*', BASE + '/report.js', BASE + '/report.css',
+            BASE + '/signals/receive'];
   }
 
   /**
@@ -342,6 +347,32 @@ class ReportApp {
   registerRoutes(target: any): void {
     const self = this;
     log.debug("Entering registerRoutes().");
+    // THE SHARED SIGNALS RECEIVE ENDPOINT (#1042), the portal's twin and the
+    // one path under /report that is not the application's document. What
+    // arrives is a Security Event Token addressed to this application's own
+    // stream, authorised by that stream's bearer token; `accept()` checks it,
+    // the audience and the signature, and records what arrived either way.
+    // Registered above the shell, which answers a POST here 404. Not rate
+    // limited, for the portal's reason: a limiter would drop somebody's
+    // account-disabled notice under load.
+    target.post(BASE + '/signals/receive', function (req: any,
+                                                     res: any): void {
+      log.debug("Entering POST " + BASE + "/signals/receive.");
+      const taken = signals.accept(signals.REPORT, req);
+      if (taken.status >= 400) {
+        errorCodes.mark(res, errorCodes.codeOf(taken) ||
+                             String(taken.errorCode || '') ||
+                             'STS-REPORT-0047');
+      }
+      res.status(taken.status).set('Cache-Control', 'no-store');
+      if (taken.body) {
+        res.type('application/json').send(JSON.stringify(taken.body, null, 2));
+      } else {
+        // 202 with an EMPTY body, which is what RFC 8935 section 2.3 says.
+        res.end();
+      }
+      log.debug("Leaving POST " + BASE + "/signals/receive. " + taken.status);
+    });
     target.get(BASE + '/report.js', function (req: any, res: any): void {
       ShellDocument.sendFile(req, res, self.bundle(),
         'application/javascript');

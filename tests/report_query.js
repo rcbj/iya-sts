@@ -536,6 +536,7 @@ function projections(t) {
     '/report-api/catalog/{id}',
     '/report-api/realms',
     '/report-api/groups',
+    '/report-api/signals',
     '/report-api/schedules',
     '/report-api/queries',
     '/report-api/definitions',
@@ -3275,6 +3276,77 @@ async function auditFresh(t) {
   log.debug("Leaving auditFresh().");
 }
 
+// A DISABLED OWNER'S SCHEDULES STOP (#1042). A disable ends what the person
+// holds and refuses their next sign-in; a schedule they own ran on under
+// their name. The scheduler and the runner ask the directory (a double here,
+// the owner check injected as `schedules()` injects it): a locked owner's
+// due definition is skipped with a note and STS-REPORT-0048, the occurrence
+// consumed, and a job queued before the lock fails as forbidden when it
+// would run. Unlocked again, the schedule queues.
+async function disabledOwner(t) {
+  log.debug("Entering disabledOwner().");
+  const stores = require('../report/stores');
+  const rights = require('../report/rights');
+  const jobs = require('../report/jobs');
+  const sources = require('../report/sources');
+  stores.resetForTests();
+  rights.installOwnerCheck(function () {
+    return { ok: true, username: 'ada' };
+  });
+  let locked = true;
+  let asked = 0;
+  sources.installDirectory({
+    existingUserEntriesAsync: function (names) {
+      asked++;
+      return Promise.resolve(names.map(function (name) {
+        // The scheduler asks by the owner check's username and the runner
+        // by the job's owner, which names nobody else here.
+        return name === 'ada' || name === 'urn:uuid:test' ? {
+          dn: 'uid=ada,' + USERS_DN,
+          attributes: locked
+            ? { uid: ['ada'], pwdAccountLockedTime: ['20261027000000Z'] }
+            : { uid: ['ada'] } } : null;
+      }));
+    }
+  });
+  try {
+    const saved = jobs.save({ owner: 'urn:uuid:test', name: 'locked',
+      document: scheduledDocument(), schedule: '* * * * *',
+      scheduleEnabled: true, parameters: { who: 'ada' } });
+    t.equal(saved.ok, true, 'precondition: a scheduled definition is stored',
+      saved.description);
+    const at = Date.parse('2026-10-26T12:00:30Z');
+    const first = await jobs.scheduleNow(at);
+    const def = stores.getDefinition(saved.definition.id) || {};
+    const notes = (def.failures || []).map(function (f) {
+      return f.description;
+    });
+    t.equal(first.enqueued, 0, 'a disabled owner\'s due schedule is not ' +
+      'queued');
+    t.check(notes.indexOf('The owner\'s account is disabled.') >= 0,
+      'and it leaves a note saying why', JSON.stringify(notes));
+    t.check(def.lastSlot != null, 'the occurrence is consumed');
+    t.check(asked >= 1, 'the directory was asked, asynchronously');
+    locked = false;
+    const second = await jobs.scheduleNow(at + 60000);
+    t.equal(second.enqueued, 1, 'enabled again, the next occurrence queues');
+    locked = true;
+    const queuedJob = stores.listJobs()[0] || {};
+    await sources.runOne(queuedJob, { stillOwner: function () {
+      return true;
+    } });
+    const job = stores.getJob(queuedJob.id) || {};
+    t.equal(job.status + ' ' + job.error, 'failed forbidden',
+      'a job queued before the owner was disabled fails as forbidden ' +
+      'rather than run');
+  } finally {
+    sources.installDirectory(null);
+    rights.installOwnerCheck(null);
+    stores.resetForTests();
+  }
+  log.debug("Leaving disabledOwner().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   documents(t);
@@ -3289,6 +3361,7 @@ async function run(t) {
   groups(t);
   await holders(t);
   await auditFresh(t);
+  await disabledOwner(t);
   log.debug("Leaving run().");
 }
 

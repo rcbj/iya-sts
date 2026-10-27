@@ -7068,16 +7068,16 @@
     "text": "Si los endpoints de SSF aceptan HTTP Basic además de tokens de acceso de OAuth 2.0, y lo publican en authorization_schemes. En desarrollo pasa cualquier nombre de usuario con cualquier contraseña salvo «invalid»; en modo producto la contraseña se verifica contra el userPassword con hash de la persona. En cualquier caso un principal Basic tiene ambos ámbitos, porque Basic no lleva ninguno — así que un despliegue que quiera ssf.read y ssf.manage aplicados a todo llamante desactiva esto."
   },
   "ssf.internalReceivers|label": {
-    "en": "8eca3281fa7a4ef7",
-    "text": "Registrar la consola y el portal como receptores"
+    "en": "7e760a8d68a5e030",
+    "text": "Registrar la consola, el portal y los informes como receptores"
   },
   "ssf.internalReceivers|description": {
-    "en": "1a148e2b3a63a17d",
-    "text": "Si este servicio siembra un flujo de Shared Signals para su PROPIA consola de administración y su portal de usuario, de modo que cada uno reciba todos los eventos CAEP y RISC (recogiéndolos mediante sondeo de RFC 8936 del /ssf/poll de este servicio cada ssf.internalPollMs, #771) y dibuje lo que llegó en /admin/signals y /portal/signals. Son flujos NORMALES — pause uno, redúzcalo o elimínelo en /admin/ssf y quedará así hasta un reinicio."
+    "en": "0a23fbb0f030f814",
+    "text": "Indica si este servicio crea un flujo de Shared Signals para su PROPIA consola de administración, su portal de usuario y su aplicación de informes (#1042), de modo que cada uno reciba todos los eventos CAEP y RISC —recogiéndolos por sondeo RFC 8936 desde el /ssf/poll de este servicio cada ssf.internalPollMs (#771)— y muestre lo recibido en /admin/signals, /portal/signals y /report/signals. Son flujos ORDINARIOS: pause uno, restrínjalo o elimínelo en /admin/ssf y se mantendrá así hasta un reinicio."
   },
   "ssf.internalReceivers|restartReason": {
-    "en": "75c18a7223a2e0a3",
-    "text": "los dos flujos se siembran cuando se carga ssf/ssf.ts con require y de nuevo al construirse cada dominio, así que desactivar esto en caliente dejaría los flujos que ya existen y activarlo no crearía ninguno"
+    "en": "eb2b8e34bd6ee85c",
+    "text": "los tres flujos se crean al cargarse ssf/ssf.ts y de nuevo al construirse cada dominio, así que desactivarlo en caliente dejaría los flujos existentes y activarlo no crearía ninguno"
   },
   "ssf.internalPollMs|label": {
     "en": "245d4495769ca599",
@@ -7156,8 +7156,8 @@
     "text": "Eventos recibidos conservados"
   },
   "ssf.maxReceivedEvents|description": {
-    "en": "2c503bd8b26764ea",
-    "text": "Cuántos SET entregados conserva en su bandeja de entrada cada uno de los receptores propios de este servicio (el de la consola y el del portal), por dominio de confianza; superado este número se descartan los más antiguos."
+    "en": "4c285fbb0b900559",
+    "text": "Cuántos SET entregados conserva en su bandeja cada uno de los receptores propios de este servicio (el de la consola, el del portal y el de la aplicación de informes), por dominio; los más antiguos se descartan al superarlo."
   },
   "ssf.maxStreamLogEntries|label": {
     "en": "468201e24a40cdc6",
@@ -7232,12 +7232,12 @@
     "text": "Cuánto puede tardar una solicitud a los Shared Signals de un socio de federación — descubrimiento, su endpoint de token, gestión del flujo, un sondeo."
   },
   "ssf.actOnSignalsInDevelopment|label": {
-    "en": "563f14910995d99d",
-    "text": "La consola y el portal actúan sobre las señales recibidas en desarrollo"
+    "en": "aa195c1cd8a0152a",
+    "text": "Las aplicaciones propias de este servicio actúan sobre las señales recibidas en desarrollo"
   },
   "ssf.actOnSignalsInDevelopment|description": {
-    "en": "551c98310bd92f77",
-    "text": "El modo producto siempre hace lo que permite la política de respuesta a señales con un evento verificado que recibe la consola o el portal propios de este servicio — finaliza las sesiones propias de esa superficie para la persona que nombra (#62) — o que envía un socio de federación (#373, #374). El desarrollo registra lo que habría hecho y no hace nada, salvo que esto esté activado. Nunca se actúa sobre un evento no verificado, diga lo que diga esto."
+    "en": "2389ab3a9223bf66",
+    "text": "El modo de producción siempre hace lo que la política signal-response permite con un evento verificado que recibe la consola, el portal o la aplicación de informes de este servicio —revoca los tokens que el cliente de esa aplicación tiene para la persona nombrada (#1042; terminaba sesiones de parte confiante hasta que las aplicaciones dejaron de crearlas, #62)— o que envía un socio de federación (#373, #374). El desarrollo registra lo que habría hecho y no hace nada, salvo que esto esté activado. Un evento no verificado nunca se procesa, diga lo que diga esto."
   },
   "ssf.signalsRevokeGrants|label": {
     "en": "a0ded7c93cee0e93",

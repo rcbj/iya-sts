@@ -8571,6 +8571,33 @@ class AdminConsole {
     // their gate, the relying-party session, CSRF — are no longer reachable,
     // and they go in the commits that follow this one.
     // -------------------------------------------------------------------------
+    // THE SHARED SIGNALS RECEIVE ENDPOINT (#1042), the one path under
+    // /admin that is not the console's document. The cutover deleted it with
+    // the server-rendered pages, so a console stream an operator set back to
+    // RFC 8935 push (`ssf_receivers.ts` polls by default since #771) was
+    // POSTed to a 404 while the portal's twin answered. It is not a page:
+    // what arrives is a Security Event Token, and what authorises it is the
+    // bearer token on the console's own stream, which `accept()` checks in
+    // constant time with the audience and the signature. Registered above the
+    // shell, which would answer a POST here 404 (STS-ADMIN-0843).
+    app.post('/admin/signals/receive', function (req, res) {
+      log.debug("Entering the admin console's Shared Signals receive " +
+                "endpoint.");
+      const taken = signals.accept(signals.ADMIN, req);
+      if (taken.status >= 400) {
+        errorCodes.mark(res, taken.errorCode || errorCodes.codeOf(taken) ||
+                        'STS-ADMIN-0019');
+      }
+      res.status(taken.status).set('Cache-Control', 'no-store');
+      if (taken.body) {
+        res.type('application/json').send(JSON.stringify(taken.body, null, 2));
+      } else {
+        // 202 with an EMPTY body, which is what RFC 8935 section 2.3 says.
+        res.end();
+      }
+      log.debug("Leaving the admin console's Shared Signals receive " +
+                "endpoint. " + taken.status + ".");
+    });
     app.get('/admin/console.js', function (req, res) {
       log.debug("Entering the static console's script.");
       res.set('Cache-Control', 'no-cache').type('application/javascript');

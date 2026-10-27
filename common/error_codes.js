@@ -20483,8 +20483,9 @@ const CODES = [
   { code: 'STS-ADMIN-0019',
     summary: 'The admin console\'s Shared Signals receive endpoint refused a ' +
       'pushed Security Event Token and the receiver named no more ' +
-      'specific code.',
-    spec: 'HTTP 4xx/5xx per RFC 8935, as the receiver decided', retired: true },
+      'specific code. Retired by the #446 cutover, which deleted the ' +
+      'endpoint, and in use again since #1042 restored it.',
+    spec: 'HTTP 4xx/5xx per RFC 8935, as the receiver decided' },
   { code: 'STS-ADMIN-0020',
     summary: 'The realm switcher named a trust realm that is not defined; ' +
       'the browser was sent back to the current realm.',
@@ -23721,7 +23722,19 @@ const CODES = [
       'read more people than a job may (report.asyncMaxRows), counted ' +
       'from the directory first, so it was refused at once rather than ' +
       'run as a job that reached report.asyncMaxMs (#1040).',
-    spec: 'result_too_large (HTTP 400)' }
+    spec: 'result_too_large (HTTP 400)' },
+  { code: 'STS-REPORT-0047',
+    summary: 'The reports application\'s Shared Signals receive endpoint ' +
+      'refused a pushed Security Event Token that carried no more specific ' +
+      'code of its own (receivers off, no stream, wrong bearer token, empty ' +
+      'or malformed token, wrong audience, or an unverified signature) ' +
+      '(#1042).',
+    spec: 'HTTP 4xx/5xx per RFC 8935, as the receiver decided' },
+  { code: 'STS-REPORT-0048',
+    summary: 'A scheduled report, or a queued job, belongs to a person whose ' +
+      'account is disabled, so it was not run (#1042): a disabled account ' +
+      'stops its owner\'s schedules as it stops their sign-ins.',
+    spec: 'none (the occurrence is consumed; the job fails as forbidden)' }
   // ===== END ===============================================================
 ];
 

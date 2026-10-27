@@ -7068,16 +7068,16 @@
     "text": "Kung tumatanggap ang mga SSF endpoint ng HTTP Basic katabi ng mga OAuth 2.0 access token, at inilalathala ito sa authorization_schemes. Sa development, pumapasa ang anumang username na may anumang password maliban sa \"invalid\"; sa product mode, vine-verify ang password laban sa naka-hash na userPassword ng tao. Alinman dito, hawak ng Basic principal ang parehong scope, dahil walang dalang scope ang Basic — kaya ang deployment na gustong ipatupad ang ssf.read at ssf.manage para sa bawat caller ay ino-off ito."
   },
   "ssf.internalReceivers|label": {
-    "en": "8eca3281fa7a4ef7",
-    "text": "I-register ang console at ang portal bilang mga receiver"
+    "en": "7e760a8d68a5e030",
+    "text": "Irehistro ang console, ang portal at ang mga ulat bilang mga receiver"
   },
   "ssf.internalReceivers|description": {
-    "en": "1a148e2b3a63a17d",
-    "text": "Kung gumagawa ang serbisyong ito ng Shared Signals stream para sa SARILI nitong admin console at user portal, para tumanggap ang bawat isa ng bawat CAEP at RISC event — kinokolekta ang mga ito sa RFC 8936 poll mula sa sariling /ssf/poll ng serbisyong ito bawat ssf.internalPollMs (#771) — at ipakita ang dumating sa /admin/signals at /portal/signals. KARANIWANG stream ang mga ito — i-pause ang isa, limitahan o i-delete ito sa /admin/ssf at mananatili itong ganoon hanggang sa isang restart."
+    "en": "0a23fbb0f030f814",
+    "text": "Kung gumagawa ang serbisyong ito ng Shared Signals stream para sa SARILI nitong admin console, user portal at application ng mga ulat (#1042), upang matanggap ng bawat isa ang bawat CAEP at RISC na kaganapan — kinukuha sa pamamagitan ng RFC 8936 poll mula sa sariling /ssf/poll ng serbisyo tuwing ssf.internalPollMs (#771) — at ipinapakita ang dumating sa /admin/signals, /portal/signals at /report/signals. Mga KARANIWANG stream ang mga ito — i-pause, paliitin o burahin ang isa sa /admin/ssf at mananatili itong ganoon hanggang sa muling pag-start."
   },
   "ssf.internalReceivers|restartReason": {
-    "en": "75c18a7223a2e0a3",
-    "text": "ginagawa ang dalawang stream habang nire-require ang ssf/ssf.ts at muli habang binubuo ang bawat realm, kaya ang pag-off dito habang tumatakbo ay mag-iiwan sa mga stream na umiiral na at ang pag-on dito ay walang gagawin"
+    "en": "eb2b8e34bd6ee85c",
+    "text": "ginagawa ang tatlong stream kapag nilo-load ang ssf/ssf.ts at muli kapag binubuo ang bawat realm, kaya ang pag-off nito habang tumatakbo ay mag-iiwan ng mga dati nang stream at ang pag-on nito ay walang gagawin"
   },
   "ssf.internalPollMs|label": {
     "en": "245d4495769ca599",
@@ -7156,8 +7156,8 @@
     "text": "Mga natanggap na event na iniingatan"
   },
   "ssf.maxReceivedEvents|description": {
-    "en": "2c503bd8b26764ea",
-    "text": "Ilang naihatid na SET ang iniingatan sa inbox ng bawat sariling receiver ng serbisyong ito (ang sa console at ang sa portal), bawat realm; tinatanggal ang pinakaluma kapag lumampas dito."
+    "en": "4c285fbb0b900559",
+    "text": "Ilang naihatid na SET ang itinatago sa inbox ng bawat sariling receiver ng serbisyong ito (ng console, ng portal at ng application ng mga ulat), bawat realm; tinatanggal ang pinakaluma kapag lumampas."
   },
   "ssf.maxStreamLogEntries|label": {
     "en": "468201e24a40cdc6",
@@ -7232,12 +7232,12 @@
     "text": "Gaano katagal maaaring tumagal ang isang request sa Shared Signals ng federation partner — discovery, ang token endpoint nito, stream management, isang poll."
   },
   "ssf.actOnSignalsInDevelopment|label": {
-    "en": "563f14910995d99d",
-    "text": "Kumikilos ang console at portal sa mga natanggap na signal sa development"
+    "en": "aa195c1cd8a0152a",
+    "text": "Kumikilos ang sariling mga application ng serbisyong ito sa mga natanggap na signal sa development"
   },
   "ssf.actOnSignalsInDevelopment|description": {
-    "en": "551c98310bd92f77",
-    "text": "Laging ginagawa ng product mode ang pinapayagan ng signal-response policy sa isang na-verify na event na natatanggap ng sariling console o portal ng serbisyong ito — tinatapos ang sariling mga session ng surface na iyon para sa taong pinapangalanan nito (#62) — o ipinapadala ng isang federation partner (#373, #374). Nire-record ng development ang gagawin sana nito at walang ginagawa, maliban kung naka-on ito. Hindi kailanman kinikilusan ang hindi na-verify na event, anuman ang sinasabi nito."
+    "en": "2389ab3a9223bf66",
+    "text": "Palaging ginagawa ng product mode ang pinahihintulutan ng patakarang signal-response sa isang na-verify na kaganapang natanggap ng console, portal o application ng mga ulat ng serbisyong ito — binabawi ang mga token na hawak ng sariling client ng application na iyon para sa taong pinangalanan (#1042; tinatapos nito ang mga relying-party session hanggang tumigil ang mga application sa paggawa ng mga iyon, #62) — o ipinadala ng isang federation partner (#373, #374). Itinatala ng development ang gagawin sana nito at walang ginagawa, maliban kung naka-on ito. Hindi kailanman kinikilos ang isang hindi na-verify na kaganapan, anuman ang sabihin nito."
   },
   "ssf.signalsRevokeGrants|label": {
     "en": "a0ded7c93cee0e93",
