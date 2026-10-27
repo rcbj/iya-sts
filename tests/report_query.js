@@ -2525,6 +2525,23 @@ async function holders(t) {
       'generated when the set says');
     t.check(JSON.stringify(recovery.rows).indexOf('Y29kZ') < 0,
       'and no hash is in the row');
+    // A SEALED set (product mode, found on 8081): the codes are in `vault`,
+    // so the stored count stands and the scheme is this service's.
+    const adaEntry = built.people.filter(function (one) {
+      return one.attributes.uid[0] === 'ada';
+    })[0];
+    const openSet = adaEntry.attributes.stsBackupCodes;
+    adaEntry.attributes.stsBackupCodes = [JSON.stringify({ sealed: true,
+      vault: 'c2VhbGVk', total: 10, remaining: 10, generatedAt: 4500 })];
+    reset();
+    const sealed = await read({ source: 'credentialHolders',
+      select: fields, limit: 5,
+      where: { op: 'eq', field: 'mechanism', value: 'recoveryCodes' } });
+    t.check(sealed.rows[0].credentials === 10 &&
+      sealed.rows[0].algorithm === 'scrypt',
+      'a sealed set counts its stored remaining codes and names scrypt',
+      JSON.stringify(sealed.rows[0]));
+    adaEntry.attributes.stsBackupCodes = openSet;
 
     // THE PASSWORD MECHANISM (#1019): one row per password, the hash
     // scheme as its algorithm and never the hash, pwdChangedTime as its

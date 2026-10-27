@@ -1207,8 +1207,11 @@ function reportHolderRows(entry: any, mechanism: any, ldap: any): any[] {
         role: mechanism.role,
         credentials: codes.length ? unused : Number(set.remaining || 0),
         credentialId: String(set.generatedAt || (i + 1)),
+        // A set sealed under the key-encryption key (product mode) keeps
+        // its codes in `vault`, not `codes`; they are scrypt hashes since
+        // 2026-09-11, and the count is the stored `remaining`.
         algorithm: codes.length ? (hashed ? 'scrypt' : 'plain') :
-          (set.sealed ? 'scrypt' : ''),
+          (set.vault || set.sealed ? 'scrypt' : ''),
         lane: '',
         enrolledAt: reportMinIso([set.generatedAt]),
         lastUsedAt: reportMaxIso([set.lastUsedAt])
