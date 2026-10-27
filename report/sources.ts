@@ -1257,11 +1257,16 @@ function reportHolderCommon(entry: any, mechanism: any, ldap: any): any {
 }
 
 // THE VERIFIABLE CREDENTIALS A PERSON HOLDS (#1021): the register's rows
-// for their subject, one report row per issued copy — its format, the
-// holder key's algorithm and lane, the channel it was issued over, when it
-// was issued and when the wallet last reported on it. A copy the holder
-// removed on /portal/wallet is left out. `credentials` is the person's
-// copies, the same on each row.
+// for their subject, ONE REPORT ROW PER KIND OF COPY — the copies that
+// share a credential type, format, holder-key algorithm, lane and channel
+// are one row with `credentials` their number (rcbj, 2026-10-27: a batch
+// issuance bound four keys to four copies of one credential, and four rows
+// each saying "4" told nobody anything; one row saying 4 does). Copies that
+// differ in any of those are separate rows, so a count by algorithm or
+// channel still counts copies. The row's dates are the group's earliest
+// issuance and latest wallet report; `credentialId` names the credential
+// type (the configuration id). A copy the holder removed on /portal/wallet
+// is left out.
 function reportIssuedRowsFor(entry: any, mechanism: any, ldap: any,
                              context: any): any[] {
   log.debug("Entering reportIssuedRowsFor().");
@@ -1278,19 +1283,32 @@ function reportIssuedRowsFor(entry: any, mechanism: any, ldap: any,
     });
   });
   const common = reportHolderCommon(entry, mechanism, ldap);
-  const out = copies.map(function (copy: any): any {
+  const groups = new Map<string, any[]>();
+  copies.forEach(function (copy: any): void {
     const alg = String(copy.one.holderAlg || '');
-    return Object.assign({}, common, {
+    const kind = [String(copy.row.configId || ''),
+      String(copy.row.format || ''), alg, reportKeyLane(alg),
+      String(copy.one.channel || '')].join('\u0000');
+    groups.set(kind, (groups.get(kind) || []).concat([copy]));
+  });
+  const out: any[] = [];
+  groups.forEach(function (held: any[], kind: string): void {
+    const parts = kind.split('\u0000');
+    out.push(Object.assign({}, common, {
       role: mechanism.role,
-      credentials: copies.length,
-      credentialId: String(copy.one.artifactKey || copy.row.key || ''),
-      algorithm: alg,
-      lane: reportKeyLane(alg),
-      channel: String(copy.one.channel || ''),
-      format: String(copy.row.format || ''),
-      enrolledAt: reportMinIso([copy.one.issuedAt]),
-      lastUsedAt: reportMaxIso([copy.one.walletEventAt])
-    });
+      credentials: held.length,
+      credentialId: parts[0],
+      algorithm: parts[2],
+      lane: parts[3],
+      channel: parts[4],
+      format: parts[1],
+      enrolledAt: reportMinIso(held.map(function (copy: any): any {
+        return copy.one.issuedAt;
+      })),
+      lastUsedAt: reportMaxIso(held.map(function (copy: any): any {
+        return copy.one.walletEventAt;
+      }))
+    }));
   });
   log.debug("Leaving reportIssuedRowsFor(). " + out.length + '.');
   return out;

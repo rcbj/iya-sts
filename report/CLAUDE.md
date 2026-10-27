@@ -239,7 +239,14 @@ the algorithm of each. Two mechanisms, two different reads:
   subjects as the holders, names them (`helpers.nameForSubject`) and
   fetches the entries by name as a group's members are fetched. The
   mechanism carries `register: true`; the attribute-driven doors skip it.
-  One report row per live copy (`reportIssuedRowsFor()`): `format` from
+  One report row per KIND of live copy (`reportIssuedRowsFor()`): the
+  copies sharing a credential type, format, holder-key algorithm, lane
+  and channel are one row with `credentials` their number (rcbj, the
+  same day, on 8081: a batch issuance bound four keys to four copies and
+  four rows each saying 4 said nothing; one row saying 4 does; copies
+  that differ in any of those stay separate rows, so a count by algorithm
+  still counts copies), `credentialId` the configuration id, the dates
+  the group's earliest issuance and latest wallet report. `format` from
   the row, `algorithm` and `channel` from the copy — **two new fields the
   issuer records** (`Issued.holderAlg`, the holder JWK named as the
   passkey report names a key; `Issued.channel`, `VcIssuer.channelOf(req)`:

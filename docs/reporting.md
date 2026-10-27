@@ -407,10 +407,13 @@ attribute is not in that index.
 
 **Wallets.** `verifiableCredential` is every credential this realm
 issued and still remembers, read from the issuer's register rather than
-the directory: one row per issued copy, with its `format`, the holder
-key's `algorithm` and `lane`, and the `channel` it was issued over —
-`web` when the wallet's request carried a browser Origin, `app`
-otherwise. A copy the holder removed is left out. `selfIssued` is every
+the directory: one row per kind of copy a person holds — the copies that
+share a credential type (`credentialId`), `format`, holder-key
+`algorithm`, `lane` and `channel` are one row with `credentials` their
+number, so a batch that bound four keys to four copies of one credential
+is one row saying 4, while an ES256 copy and an ML-DSA copy are two. The
+`channel` is `web` when the wallet's request carried a browser Origin,
+`app` otherwise. A copy the holder removed is left out. `selfIssued` is every
 DID or key a person enrolled, one row each, with the channel the
 enrolment recorded (`web`, `app`, `dc_api`, or `admin` for one an
 administrator entered) and the key's algorithm, read off a `did:jwk` or

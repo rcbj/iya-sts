@@ -2402,7 +2402,12 @@ async function holders(t) {
           { artifactKey: 'a2', issuedAt: 1700001000000, expiresAt: 0,
             holderAlg: 'ML-DSA-65', channel: 'app', walletEventAt: 0 },
           { artifactKey: 'a3', issuedAt: 1700002000000, expiresAt: 0,
-            holderAlg: 'ES256', channel: 'web', removedAt: 1700003000000 }]
+            holderAlg: 'ES256', channel: 'web', removedAt: 1700003000000 },
+          // A second live ES256 copy from the web wallet (rcbj, 2026-10-27:
+          // a batch bound four keys to four copies): one row with the
+          // two, not two rows each saying two.
+          { artifactKey: 'a4', issuedAt: 1699999000000, expiresAt: 0,
+            holderAlg: 'ES256', channel: 'web', walletEventAt: 1700000900000 }]
       }];
     },
     nameForSubject: function (subject) {
@@ -2562,12 +2567,22 @@ async function holders(t) {
         row.lane + '/' + row.format;
     }).sort().join(','),
       'ada/app/ML-DSA-65/pqc/dc+sd-jwt,ada/web/ES256/classical/dc+sd-jwt',
-      'one row per live copy, with channel, algorithm, lane and format');
-    t.equal(issued.rows[0].credentials, 2, 'two live copies counted');
-    t.equal(issued.rows.filter(function (row) {
+      'one row per KIND of live copy, with channel, algorithm, lane and ' +
+      'format');
+    const webRow = issued.rows.filter(function (row) {
       return row.channel === 'web';
-    })[0].lastUsedAt, '2023-11-14T22:21:40.000Z',
-      'the wallet\'s last report is the last use');
+    })[0];
+    t.equal(webRow.credentials, 2,
+      'the two ES256 web copies are one row counting two');
+    t.equal(issued.rows.filter(function (row) {
+      return row.channel === 'app';
+    })[0].credentials, 1, 'and the ML-DSA-65 app copy is a row of one');
+    t.equal(webRow.credentialId, 'IdentityCredential',
+      'named by the credential type');
+    t.equal(webRow.enrolledAt, '2023-11-14T21:56:40.000Z',
+      'issued when the group\'s earliest copy was');
+    t.equal(webRow.lastUsedAt, '2023-11-14T22:28:20.000Z',
+      'the group\'s latest wallet report is the last use');
     reset();
     const selfIssued = await read({ source: 'credentialHolders',
       select: fields.concat(['channel']), limit: 5,
