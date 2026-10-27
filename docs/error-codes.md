@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4688** of them, in **48** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4693** of them, in **48** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 381
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 386
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 730
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 117
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 33
@@ -1572,6 +1572,11 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0460` | A Secure-Session-Skipped header was not an RFC 9651 list of sf-tokens, or a session_identifier in it was not an sf-string. Recorded on the log and the audit row. The request continues and the session is not marked skipped (#743). | log and audit; the request is not refused |
 | `STS-AUTHN-0461` | A passkey policy save was refused: it requires a device-bound session (deviceBoundRequired) while authn.deviceBoundSessions is off, so no browser would be offered the registration the requirement asks for (#740). | HTTP 400 (management API) |
 | `STS-AUTHN-0462` | An issuance was refused: the application's passkey profile requires a device-bound session and the session's fact is skipped or timedout. A fact that is still pending is a hold, not this refusal, and a session that was never offered registration is not this refusal (#740). | the issuance site's existing denial (the code is recorded, not sent) |
+| `STS-AUTHN-0463` | Continue with your certificate was refused at the sign-in screen: no verified client certificate arrived on the connection, the connection was a resumed TLS session that carries none, or the certificate names nobody (#1051). | the sign-in screen again (/authn-api answers next: refused) |
+| `STS-AUTHN-0464` | Continue with your certificate was refused at the sign-in screen: the certificate was refused on revocation (pki.revocationCheck), as GET /tls/sign-in refuses it (#1051). | the sign-in screen again (/authn-api answers next: refused) |
+| `STS-AUTHN-0465` | Continue with your certificate was refused at the sign-in screen: the identity gate does not accept the certificate as a person here — one of this service's that is not a TLS client identity, or one issued by another realm's authority (#1051). | the sign-in screen again (/authn-api answers next: refused) |
+| `STS-AUTHN-0466` | Continue with your certificate was refused at the sign-in screen: the certificate was issued to an application, which authenticates at the token endpoint (RFC 8705) and signs nobody in (#1051). | the sign-in screen again (/authn-api answers next: refused) |
+| `STS-AUTHN-0467` | Continue with your certificate was refused at the sign-in screen: it is not taken at this sign-in — the authentication policy does not accept a certificate as a first factor, the sign-in is a linking one, the application names the mechanisms it allows, or a security key or passkey is demanded (#1051). | the sign-in screen again (/authn-api answers next: refused) |
 
 ## STS-OAUTH
 

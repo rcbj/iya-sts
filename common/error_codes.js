@@ -6922,6 +6922,39 @@ const CODES = [
       'is not this refusal (#740).',
     spec: 'the issuance site\'s existing denial (the code is recorded, ' +
       'not sent)' },
+  // THE SIGN-IN SCREEN'S CERTIFICATE (#1051): "Continue as <name> with your
+  // certificate" refused at the act. The screen is drawn again with the
+  // sentence; the pending sign-in is kept.
+  { code: 'STS-AUTHN-0463',
+    summary: 'Continue with your certificate was refused at the sign-in ' +
+      'screen: no verified client certificate arrived on the connection, ' +
+      'the connection was a resumed TLS session that carries none, or the ' +
+      'certificate names nobody (#1051).',
+    spec: 'the sign-in screen again (/authn-api answers next: refused)' },
+  { code: 'STS-AUTHN-0464',
+    summary: 'Continue with your certificate was refused at the sign-in ' +
+      'screen: the certificate was refused on revocation ' +
+      '(pki.revocationCheck), as GET /tls/sign-in refuses it (#1051).',
+    spec: 'the sign-in screen again (/authn-api answers next: refused)' },
+  { code: 'STS-AUTHN-0465',
+    summary: 'Continue with your certificate was refused at the sign-in ' +
+      'screen: the identity gate does not accept the certificate as a ' +
+      'person here — one of this service\'s that is not a TLS client ' +
+      'identity, or one issued by another realm\'s authority (#1051).',
+    spec: 'the sign-in screen again (/authn-api answers next: refused)' },
+  { code: 'STS-AUTHN-0466',
+    summary: 'Continue with your certificate was refused at the sign-in ' +
+      'screen: the certificate was issued to an application, which ' +
+      'authenticates at the token endpoint (RFC 8705) and signs nobody in ' +
+      '(#1051).',
+    spec: 'the sign-in screen again (/authn-api answers next: refused)' },
+  { code: 'STS-AUTHN-0467',
+    summary: 'Continue with your certificate was refused at the sign-in ' +
+      'screen: it is not taken at this sign-in — the authentication ' +
+      'policy does not accept a certificate as a first factor, the ' +
+      'sign-in is a linking one, the application names the mechanisms it ' +
+      'allows, or a security key or passkey is demanded (#1051).',
+    spec: 'the sign-in screen again (/authn-api answers next: refused)' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',

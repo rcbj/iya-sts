@@ -368,8 +368,8 @@
     "text": "Certificat client TLS — comme premier facteur"
   },
   "authn.FIELDS.certificatePrimary.what": {
-    "en": "458b5463993c8ba4",
-    "text": "GET /tls/sign-in avec un certificat client vérifié."
+    "en": "bbf7d091b1854474",
+    "text": "Un certificat client TLS vérifié : GET /tls/sign-in, ou Continuer avec votre certificat sur l'écran de connexion."
   },
   "authn.FIELDS.kerberosPrimary.label": {
     "en": "f2f6ed9dd0454fdc",
@@ -524,8 +524,8 @@
     "text": "Un lien à usage unique envoyé à l’adresse VÉRIFIÉE de la personne, qui ne termine la connexion que dans le navigateur qui l’a commencée. NIST SP 800-63B-4 section 3.1.3.1 : « Email SHALL NOT be used for out-of-band authentication », car une boîte aux lettres peut être atteinte avec un simple mot de passe, et un courrier peut être lu en transit ou détourné. Désactivé par défaut pour cette raison ; ne l’activez que là où c’est un risque accepté."
   },
   "authn.SCHEMA.attributes.stsAuthnCertificatePrimary.what": {
-    "en": "458b5463993c8ba4",
-    "text": "GET /tls/sign-in avec un certificat client vérifié."
+    "en": "bbf7d091b1854474",
+    "text": "Un certificat client TLS vérifié : GET /tls/sign-in, ou Continuer avec votre certificat sur l'écran de connexion."
   },
   "authn.SCHEMA.attributes.stsAuthnKerberosPrimary.what": {
     "en": "da71a0338fe2a8df",
@@ -640,8 +640,8 @@
     "text": "Certificat client TLS"
   },
   "authn.MECHANISMS.certificate.what": {
-    "en": "458b5463993c8ba4",
-    "text": "GET /tls/sign-in avec un certificat client vérifié."
+    "en": "bbf7d091b1854474",
+    "text": "Un certificat client TLS vérifié : GET /tls/sign-in, ou Continuer avec votre certificat sur l'écran de connexion."
   },
   "authn.MECHANISMS.kerberos.label": {
     "en": "a8316dcb1a42420f",

@@ -5207,12 +5207,40 @@ function checkedSocket(socket) {
 // ---------------------------------------------------------------------------
 function startCertificateSession(req, res, mode, revocation, identity) {
   log.debug('Entering startCertificateSession(). mode=' + mode);
-  const socket = req.socket;
+  const checked = certificateRefusal(req.socket, mode, revocation, identity);
+  if (checked.refusal) {
+    log.debug('Leaving startCertificateSession(). Refused.');
+    return checked.refusal;
+  }
+  const gated = checked.gated;
+  // A TLS CLIENT OR ENROLLED CERTIFICATE SIGNS ITS HOLDER IN TO ITS OWN REALM,
+  // which is the realm of the authority that signed it; this socket has no
+  // path to carry one. Everything below — the existing-session read, the
+  // session store, the issuance policy — runs in that realm.
+  log.debug('Leaving startCertificateSession(). Continuing in the ' +
+            'certificate\'s realm.');
+  return inCertificateRealm(gated, function () {
+    return startCertificateSessionIn(req, res, mode, revocation, gated);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// THE FOUR REFUSALS EVERY CERTIFICATE SIGN-IN MAKES FIRST, IN THIS ORDER
+// (#1051, 2026-10-27: moved out of `startCertificateSession()` unchanged, so
+// that the sign-in screen's "Continue with your certificate" asks exactly
+// what `GET /tls/sign-in` asks rather than a copy of it): nothing verified,
+// refused on revocation, a certificate of this service's that is not an
+// identity, and an application's certificate. Answers `{ refusal }` — the
+// object `GET /tls/sign-in` reports as `session` — or `{ refusal: null,
+// gated }`, the identity gate's answer, for the caller to go on with.
+// ---------------------------------------------------------------------------
+function certificateRefusal(socket, mode, revocation, identity) {
+  log.debug('Entering certificateRefusal(). mode=' + mode);
   if (!socket || socket.authorized !== true) {
-    log.debug('Leaving startCertificateSession(). Nothing verified here.');
-    return { started: false,
+    log.debug('Leaving certificateRefusal(). Nothing verified here.');
+    return { gated: null, refusal: { started: false,
              why: 'no verified client certificate on this connection, so ' +
-                  'there is nobody to sign in' };
+                  'there is nobody to sign in' } };
   }
   // REFUSED ON REVOCATION (2026-09-12), before the existing-session read below:
   // a browser already holding a session is not handed a new one, and a revoked
@@ -5222,11 +5250,12 @@ function startCertificateSession(req, res, mode, revocation, identity) {
   if (revocation && revocation.refused) {
     log.info('tls: a verified client certificate on the ' + mode + ' ' +
              'listener was refused a session on revocation: ' + revocation.why);
-    log.debug('Leaving startCertificateSession(). Refused on revocation.');
-    return { started: false, refusedOnRevocation: true,
+    log.debug('Leaving certificateRefusal(). Refused on revocation.');
+    return { gated: null, refusal: { started: false,
+                                     refusedOnRevocation: true,
              why: 'the certificate verified and was REFUSED ON REVOCATION ' +
                   '(pki.revocationCheck is ' + revocation.policy + '): ' +
-                  revocation.why };
+                  revocation.why } };
   }
   // NOT AN IDENTITY (2026-09-13): a chain through this service's own Root from
   // an authority that does not issue TLS client identities. See
@@ -5237,10 +5266,11 @@ function startCertificateSession(req, res, mode, revocation, identity) {
     log.info('tls: a verified client certificate on the ' + mode + ' ' +
              'listener was issued by this service and is not a TLS client ' +
              'identity, so no session was started: ' + gated.why + '.');
-    log.debug('Leaving startCertificateSession(). Not an identity.');
-    return { started: false, refusedAsIdentity: true,
+    log.debug('Leaving certificateRefusal(). Not an identity.');
+    return { gated: gated, refusal: { started: false,
+                                      refusedAsIdentity: true,
              why: 'the certificate verified and is NOT AN IDENTITY here: ' +
-                  gated.why };
+                  gated.why } };
   }
   // AN APPLICATION'S CERTIFICATE IS A CLIENT CREDENTIAL AND NOT A SIGN-IN
   // (2026-09-13). The identity gate accepts a leaf naming a
@@ -5255,22 +5285,16 @@ function startCertificateSession(req, res, mode, revocation, identity) {
              'listener was issued to the application ' + gated.username +
              ', which authenticates at the token endpoint (RFC 8705) and ' +
              'signs nobody in, so no session was started.');
-    log.debug('Leaving startCertificateSession(). An application.');
-    return { started: false, application: gated.username,
+    log.debug('Leaving certificateRefusal(). An application.');
+    return { gated: gated, refusal: { started: false,
+                                      application: gated.username,
              why: 'the certificate verified and was issued to the ' +
                   'application "' + gated.username + '"; an application ' +
                   'presents it at the token endpoint under RFC 8705, and it ' +
-                  'is not a browser sign-in' };
+                  'is not a browser sign-in' } };
   }
-  // A TLS CLIENT OR ENROLLED CERTIFICATE SIGNS ITS HOLDER IN TO ITS OWN REALM,
-  // which is the realm of the authority that signed it; this socket has no
-  // path to carry one. Everything below — the existing-session read, the
-  // session store, the issuance policy — runs in that realm.
-  log.debug('Leaving startCertificateSession(). Continuing in the ' +
-            'certificate\'s realm.');
-  return inCertificateRealm(gated, function () {
-    return startCertificateSessionIn(req, res, mode, revocation, gated);
-  });
+  log.debug('Leaving certificateRefusal(). None.');
+  return { refusal: null, gated: gated };
 }
 
 // WHAT A CLIENT CERTIFICATE SAYS ABOUT ITS HOLDER, in claim names (#127):
@@ -5341,45 +5365,14 @@ function startCertificateSessionIn(req, res, mode, revocation, gated) {
                   'presenting a certificate to this listener does not start ' +
                   'a second one' };
   }
-  let cert = null;
-  try {
-    cert = socket.getPeerCertificate ? socket.getPeerCertificate() : null;
-  } catch (e) {
-    // A socket that went away between the handshake and this line. Swallowed
-    // for recordClientCertificate()'s reason: this runs inside the
-    // /tls/sign-in handler, and a throw here answers nothing.
-    log.debug('startCertificateSessionIn(): the peer certificate could not ' +
-              'be read: ' + e.message);
-    log.debug("Leaving startCertificateSessionIn().");
-    return { started: false, why: 'the peer certificate could not be read' };
+  const peer = certificatePeer(socket, gated);
+  if (!peer.ok) {
+    log.debug('Leaving startCertificateSessionIn(). ' + peer.why);
+    return { started: false, why: peer.why };
   }
-  if (!cert || !Object.keys(cert).length) {
-    // A RESUMED TLS SESSION carries no peer certificate — the client does not
-    // send it again. Nothing is started, rather than a session with no identity
-    // on it.
-    log.debug('Leaving startCertificateSessionIn(). No peer certificate; a ' +
-              'resumed session.');
-    return { started: false,
-             why: 'the connection verified but carries no peer certificate, ' +
-                  'which is what a resumed TLS session looks like' };
-  }
-  const subject = dnRfc4514(cert.subject);
-  const common = cert.subject && cert.subject.CN
-    ? String(Array.isArray(cert.subject.CN) ? cert.subject.CN[0] :
-             cert.subject.CN)
-    : '';
-  // THE IDENTITY THE ISSUING AUTHORITY WROTE, where this service issued it:
-  // the `urn:sts:person:` (or application) name, which is what an enrolled
-  // certificate is mapped to its entry by. Otherwise the common name, as it
-  // has been since 2026-09-05.
-  const username = (gated && gated.accepted && gated.username) ||
-                   common || subject;
-  if (!username) {
-    log.debug('Leaving startCertificateSessionIn(). The subject is empty.');
-    return { started: false,
-             why: 'the certificate names nobody: it has neither a common ' +
-                  'name nor a subject' };
-  }
+  const cert = peer.cert;
+  const subject = peer.subject;
+  const username = peer.username;
   // WHICH OF THE BROWSER'S ACCOUNTS THIS IS (#561), for the answer: the
   // certificate's account live in the set is re-authenticated, any other
   // added.
@@ -5460,6 +5453,56 @@ function startCertificateSessionIn(req, res, mode, revocation, gated) {
   return answer;
 }
 
+// THE CERTIFICATE ON THE CONNECTION AND WHOM IT NAMES (#1051: moved out of
+// `startCertificateSessionIn()` unchanged, for the sign-in screen's door):
+// `{ ok: true, cert, subject, username }`, or `{ ok: false, why }` for a
+// socket that went away, a resumed session that carries no certificate, or a
+// certificate that names nobody.
+function certificatePeer(socket, gated) {
+  log.debug('Entering certificatePeer().');
+  let cert = null;
+  try {
+    cert = socket.getPeerCertificate ? socket.getPeerCertificate() : null;
+  } catch (e) {
+    // A socket that went away between the handshake and this line. Swallowed
+    // for recordClientCertificate()'s reason: this runs inside the
+    // handler that asked, and a throw here answers nothing.
+    log.debug('Caught in certificatePeer(): the peer certificate could ' +
+              'not be read: ' + ((e && e.message) || e));
+    log.debug('Leaving certificatePeer(). Unreadable.');
+    return { ok: false, why: 'the peer certificate could not be read' };
+  }
+  if (!cert || !Object.keys(cert).length) {
+    // A RESUMED TLS SESSION carries no peer certificate — the client does not
+    // send it again. Nothing is started, rather than a session with no identity
+    // on it.
+    log.debug('Leaving certificatePeer(). No peer certificate; a resumed ' +
+              'session.');
+    return { ok: false,
+             why: 'the connection verified but carries no peer certificate, ' +
+                  'which is what a resumed TLS session looks like' };
+  }
+  const subject = dnRfc4514(cert.subject);
+  const common = cert.subject && cert.subject.CN
+    ? String(Array.isArray(cert.subject.CN) ? cert.subject.CN[0] :
+             cert.subject.CN)
+    : '';
+  // THE IDENTITY THE ISSUING AUTHORITY WROTE, where this service issued it:
+  // the `urn:sts:person:` (or application) name, which is what an enrolled
+  // certificate is mapped to its entry by. Otherwise the common name, as it
+  // has been since 2026-09-05.
+  const username = (gated && gated.accepted && gated.username) ||
+                   common || subject;
+  if (!username) {
+    log.debug('Leaving certificatePeer(). The subject is empty.');
+    return { ok: false,
+             why: 'the certificate names nobody: it has neither a common ' +
+                  'name nor a subject' };
+  }
+  log.debug('Leaving certificatePeer(). ' + username);
+  return { ok: true, cert: cert, subject: subject, username: username };
+}
+
 // THE CERTIFICATE'S ACCOUNT, LIVE IN THIS BROWSER'S SET (#561): the session
 // the set holds for that person, or null. By name, as `startSession()`
 // matches a re-authentication — the certificate names a login name, not a
@@ -5474,6 +5517,174 @@ function certificateAccountHeld(req, username) {
   log.debug('Leaving certificateAccountHeld(). ' +
             (found ? 'Held.' : 'Not held.'));
   return found;
+}
+
+// ---------------------------------------------------------------------------
+// THE SIGN-IN SCREEN CONTINUES WITH THE CERTIFICATE ON THE CONNECTION (#1051,
+// 2026-10-27).
+//
+// rcbj's decision on #520: every browser protocol — SAML 2.0 and 1.1 SSO,
+// WS-Federation, the OIDC authorization endpoint, GNAP's interaction — reaches
+// the one sign-in screen, so the certificate is offered THERE, once, as
+// "Continue as <name> with your certificate". These two functions are what
+// `authn/authn.ts` asks, and they are here rather than there because what
+// they ask is what `GET /tls/sign-in` asks, in the same functions:
+// `certificateRefusal()` (nothing verified, revocation, not an identity, an
+// application's certificate) and `certificatePeer()` (the certificate and the
+// name it signs in). The SESSION is the screen's: it is a first factor of a
+// pending sign-in, so `authn.ts` asks the authentication policy, the risk, a
+// second factor where one is needed, and returns to the protocol that sent
+// the person — none of which `GET /tls/sign-in`, which has no caller, does.
+//
+// TWO DIFFERENCES FROM `GET /tls/sign-in`, BOTH FORCED:
+//
+//   * THE REALM IS THE PENDING SIGN-IN'S, not the certificate's. The protocol
+//     that sent the person here decided the realm, so the certificate has to
+//     belong to it: `tls_client_certificates.checkSocket()` refuses one from
+//     another realm's authority, exactly as at the other doors of the main
+//     port that have an ambient realm. A certificate from an anchor somebody
+//     installed signs in by its common name, as at `GET /tls/sign-in`.
+//   * NO "ALREADY SIGNED IN" ANSWER. A person at the screen is not signed in
+//     for this request — that is why they are at it — and the screen's
+//     session replaces or re-authenticates as every first factor's does.
+//
+// `authn.ts` reaches this module LAZILY and only where it is loaded already
+// (`Authn.certificateDoor()`): this is a JavaScript route module, #20 in the
+// require order, and requiring it from #8 would drag its `/tls*` views to the
+// front of the router and close a cycle, since it requires `authn` itself.
+// ---------------------------------------------------------------------------
+/**
+ * Whom the connection's verified client certificate would sign in at the
+ * sign-in screen, in the request's realm, or null. The offer only: no
+ * revocation is asked here, and nothing is logged above debug.
+ *
+ * @param req - the request for the screen's view
+ * @returns `{ username }`, or null
+ */
+function screenCertificateOffer(req) {
+  log.debug('Entering screenCertificateOffer().');
+  const socket = req && req.socket;
+  if (!socket || socket.authorized !== true) {
+    log.debug('Leaving screenCertificateOffer(). Nothing verified.');
+    return null;
+  }
+  let checked = null;
+  try {
+    checked = require('../common/tls_client_certificates').checkSocket(socket);
+  } catch (e) {
+    log.debug('Caught in screenCertificateOffer(): ' +
+              ((e && e.message) || e));
+    checked = null;
+  }
+  const identity = checked ? checked.identity : null;
+  if (!checked || !checked.ok ||
+      (identity && identity.issuedHere &&
+       (!identity.accepted || identity.kind === 'application'))) {
+    log.debug('Leaving screenCertificateOffer(). Not a person here.');
+    return null;
+  }
+  const peer = certificatePeer(socket, identity);
+  log.debug('Leaving screenCertificateOffer(). ' +
+            (peer.ok ? 'Offered.' : 'Not offered.'));
+  return peer.ok ? { username: peer.username } : null;
+}
+
+/**
+ * The connection's verified client certificate as a first factor at the
+ * sign-in screen: revocation consulted, the identity gate and the ambient
+ * realm asked, an application's certificate refused — `GET /tls/sign-in`'s
+ * refusals, in its order, by its functions.
+ *
+ * @param req - the act's request
+ * @returns a promise of `{ ok: true, username, credentialId, revocationSaid,
+ *   recordVerification }`, or `{ ok: false, code, why }` with an English
+ *   sentence for the screen and the error code to record
+ */
+function screenCertificateHolder(req) {
+  log.debug('Entering screenCertificateHolder().');
+  const socket = req && req.socket;
+  const none = { ok: false, code: 'STS-AUTHN-0463',
+                 why: 'No verified client certificate arrived on this ' +
+                      'connection, so there is nobody to continue as. ' +
+                      'Choose the certificate when your browser asks, or ' +
+                      'sign in another way.' };
+  if (!socket || socket.authorized !== true) {
+    log.debug('Leaving screenCertificateHolder(). Nothing verified.');
+    return Promise.resolve(none);
+  }
+  log.debug('Leaving screenCertificateHolder(). The verdict follows.');
+  return checkedSocket(socket).then(function (revocation) {
+    let checked = null;
+    try {
+      checked = require('../common/tls_client_certificates')
+        .checkSocket(socket);
+    } catch (e) {
+      log.debug('Caught in screenCertificateHolder(): ' +
+                ((e && e.message) || e));
+      checked = null;
+    }
+    if (checked && !checked.ok && checked.error === 'OTHER_REALM') {
+      log.info('tls: the sign-in screen refused a client certificate from ' +
+               'another realm: ' + checked.why);
+      log.debug('Leaving screenCertificateHolder(). Another realm\'s.');
+      return { ok: false, code: 'STS-AUTHN-0465',
+               why: 'Your certificate was issued in another realm, so it ' +
+                    'cannot sign you in here.' };
+    }
+    const pre = certificateRefusal(socket, 'optional', revocation,
+                                   checked ? checked.identity : undefined);
+    if (pre.refusal) {
+      const r = pre.refusal;
+      log.info('tls: the sign-in screen did not continue with the client ' +
+               'certificate: ' + r.why);
+      log.debug('Leaving screenCertificateHolder(). Refused.');
+      if (r.refusedOnRevocation) {
+        return { ok: false, code: 'STS-AUTHN-0464',
+                 why: 'Your certificate has been revoked, or its revocation ' +
+                      'could not be confirmed, so it cannot sign you in.' };
+      }
+      if (r.refusedAsIdentity) {
+        return { ok: false, code: 'STS-AUTHN-0465',
+                 why: 'This certificate is not a TLS client certificate ' +
+                      'for a person here, so it cannot sign you in.' };
+      }
+      if (r.application) {
+        return { ok: false, code: 'STS-AUTHN-0466',
+                 why: 'This certificate was issued to an application, and ' +
+                      'an application\'s certificate signs nobody in.' };
+      }
+      return none;
+    }
+    const peer = certificatePeer(socket, pre.gated);
+    if (!peer.ok) {
+      log.info('tls: the sign-in screen did not continue with the client ' +
+               'certificate: ' + peer.why);
+      log.debug('Leaving screenCertificateHolder(). ' + peer.why);
+      return none;
+    }
+    const revocationSaid = revocation && revocation.checked
+      ? 'its revocation was consulted (' + revocation.policy + '): ' +
+        revocation.why
+      : 'NO REVOCATION WAS CHECKED (pki.revocationCheck is off)';
+    log.debug('Leaving screenCertificateHolder(). ' + peer.username);
+    return {
+      ok: true,
+      username: peer.username,
+      credentialId: String(peer.cert.fingerprint256 || ''),
+      revocationSaid: revocationSaid,
+      // THE IDENTITY VERIFICATION (#127) `GET /tls/sign-in` records once
+      // its session has started, recorded by the screen at the same point.
+      recordVerification: function recordVerification() {
+        log.debug('Entering recordVerification().');
+        identityAssurance.recordAutomatic(peer.username, 'certificate',
+                                          certificateFacts(peer.cert));
+        log.info('tls: ' + peer.username + ' continued at the sign-in ' +
+                 'screen with a verified client certificate. The chain ' +
+                 'verified and ' + revocationSaid);
+        log.debug('Leaving recordVerification().');
+      }
+    };
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -6689,6 +6900,10 @@ module.exports = {
     return ownValue(kind, null, name);
   },
   clientAuthOptions: clientAuthOptions,
+  // The sign-in screen's certificate (#1051), asked by `authn/authn.ts`
+  // lazily: the offer its view draws and the first factor its act takes.
+  screenCertificateOffer: screenCertificateOffer,
+  screenCertificateHolder: screenCertificateHolder,
   registerPolicyApplier: registerPolicyApplier,
   reapplyPolicy: reapplyPolicy,
   listenerPolicies: listenerPolicies,

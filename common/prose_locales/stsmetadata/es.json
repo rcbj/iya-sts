@@ -2707,6 +2707,10 @@
     "en": "092b3cc9235cb1b0",
     "text": "NON-SPEC (#571). Donde authn.unauthenticatedSessions está activado."
   },
+  "stsmetadata.endpoints./authn-api/pending/:id/certificate.what": {
+    "en": "e25acdfdf4c8d737",
+    "text": "NON-SPEC (#1051). El certificado de cliente TLS de la conexión como primer factor, amr [\"swk\"]: rechazado por revocación, por la puerta de identidad, por la autoridad de otro dominio o por el certificado de una aplicación, como lo rechaza GET /tls/sign-in; después, la política de autenticación, el riesgo y un segundo factor cuando se necesita uno."
+  },
   "stsmetadata.endpoints./authn-api/pending/:id/email.what": {
     "en": "f654c3c6f076950a",
     "text": "NON-SPEC (#571). Donde la política de autenticación acepta uno."

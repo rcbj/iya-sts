@@ -2707,6 +2707,10 @@
     "en": "092b3cc9235cb1b0",
     "text": "NON-SPEC (#571). Där authn.unauthenticatedSessions är på."
   },
+  "stsmetadata.endpoints./authn-api/pending/:id/certificate.what": {
+    "en": "e25acdfdf4c8d737",
+    "text": "NON-SPEC (#1051). Anslutningens TLS-klientcertifikat som första faktor, amr [\"swk\"]: nekas vid återkallelse, av identitetsgrinden, för en annan sfärs utfärdare eller ett programs certifikat, som GET /tls/sign-in nekar det; därefter autentiseringspolicyn, risken och en andra faktor där en behövs."
+  },
   "stsmetadata.endpoints./authn-api/pending/:id/email.what": {
     "en": "f654c3c6f076950a",
     "text": "NON-SPEC (#571). Där autentiseringspolicyn godtar en sådan."
