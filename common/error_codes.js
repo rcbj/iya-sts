@@ -11131,6 +11131,32 @@ const CODES = [
       'section 4.4) naming a party other than the requester. Held in every ' +
       'mode, as the token exchange holds it (STS-OAUTH-0620) (#747).',
     spec: 'SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11' },
+  { code: 'STS-WSTRUST-0034',
+    summary: 'The TLS client certificate on the connection, the requester\'s ' +
+      'only credential, verified and was refused on revocation ' +
+      '(pki.revocationCheck). Every mode (#1046).',
+    spec: 'SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 ' +
+      'section 11' },
+  { code: 'STS-WSTRUST-0035',
+    summary: 'The TLS client certificate on the connection, the requester\'s ' +
+      'only credential, was issued by this service and is not an identity ' +
+      'in this realm: another realm\'s authority, a key pair that is not a ' +
+      'TLS client certificate, or a holder whose entry is gone ' +
+      '(common/tls_client_certificates.js). Every mode (#1046).',
+    spec: 'SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 ' +
+      'section 11' },
+  { code: 'STS-WSTRUST-0036',
+    summary: 'The TLS client certificate on the connection, the requester\'s ' +
+      'only credential, is no longer listed on the record of the person or ' +
+      'application it was issued to. Every mode (#1046).',
+    spec: 'SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 ' +
+      'section 11' },
+  { code: 'STS-WSTRUST-0037',
+    summary: 'The TLS client certificate on the connection, the requester\'s ' +
+      'only credential, names a person whose account is disabled. Every ' +
+      'mode (#1046).',
+    spec: 'SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 ' +
+      'section 11' },
   { code: 'STS-WSFED-0001',
     summary: 'A wsignin1.0 request carried wreqptr, which this service ' +
       'refuses to dereference (fetching a URL from a query parameter ' +

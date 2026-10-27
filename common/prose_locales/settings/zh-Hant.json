@@ -4787,6 +4787,14 @@
     "en": "d75340dbe09a7542",
     "text": "此 STS 在 RequestSecurityTokenResponse 中傳回的 JWT 是否指出簽署它之金鑰的憑證鏈。SAML 斷言在其自己的 XML Signature 中攜帶憑證，不受影響。`x5u`——預設值——是此服務上該鏈的位址 `/pki/chain/{scope}/{sha256}.pem`，約一百位元組；`x5c` 是內嵌的鏈，葉憑證在前、服務根憑證在最後，base64 DER，數 KB；`both` 表示兩者皆有，`none` 表示兩者皆無。無論哪種，都是僅持有權杖的依賴方取得每張憑證的 CRL 發佈點、OCSP 回應程式與 caIssuers 位址所需的資訊。尚未在此領域的 JOSE Issuing CA 下取得憑證的金鑰，以及 HMAC 簽章，兩者皆不會加上。RFC 7515 section 4.1.5 要求 `x5u` 的擷取使用 TLS：global.https 關閉時位址為 `http://`，嚴格的驗證器會拒絕追蹤它。JWE 標頭永遠不會加上——此服務沒有任何經認證的金鑰會加密任何內容。可依領域設定。"
   },
+  "wstrust.acceptClientCertificate|label": {
+    "en": "04ac29464750e625",
+    "text": "接受 TLS 用戶端憑證作為請求方的認證資料"
+  },
+  "wstrust.acceptClientCertificate|description": {
+    "en": "23d9a8fba459f61c",
+    "text": "當送往 /sts 的請求之 wsse:Security 標頭未攜帶任何認證資料時，是否以連線上的 TLS 用戶端憑證來驗證請求方。只有在交握時驗證通過、且由本領域核發給某個人或某個應用程式的憑證（來自使用者入口網站或應用程式 Credentials 的 TLS 用戶端憑證，或透過 ACME、EST 或 SCEP 註冊的憑證）才是認證資料，兩種模式皆然；已撤銷的憑證、來自其他領域的憑證，以及持有者已不再持有的憑證，會以 wst:FailedAuthentication 拒絕。核發的權杖會表明使用了憑證：SAML 2.0 斷言中為 TLSClient，SAML 1.1 斷言中為 urn:ietf:rfc:2246，JWT 中為 amr swk。關閉時，此處忽略該憑證。"
+  },
   "wsfed.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
     "text": "由身分識別提供者發起的登入"

@@ -4787,6 +4787,14 @@
     "en": "d75340dbe09a7542",
     "text": "Om en JWT som den här STS:en returnerar i ett RequestSecurityTokenResponse anger certifikatkedjan för nyckeln som signerade den. Ett SAML-intyg bär sitt certifikat i sin egen XML-signatur och påverkas inte. `x5u` — standardvärdet — är kedjans adress på den här tjänsten, `/pki/chain/{scope}/{sha256}.pem`, ungefär hundra byte; `x5c` är kedjan inbäddad, lövet först och tjänstens rot sist, base64 DER, flera kilobyte; `both` är båda och `none` ingen av dem. I båda fallen är det vad en förlitande part som bara har token behöver för att nå varje certifikats CRL-distributionspunkter, OCSP-svarare och caIssuers-adress. En nyckel som ännu inte är certifierad under den här sfärens JOSE Issuing CA, och en HMAC-signatur, får ingen av dem. RFC 7515 avsnitt 4.1.5 kräver att hämtningen av `x5u` sker över TLS: med global.https avstängt är adressen `http://` och en strikt verifierare vägrar följa den. JWE-huvuden får aldrig något — ingen certifierad nyckel i den här tjänsten krypterar något. Kan anges per sfär."
   },
+  "wstrust.acceptClientCertificate|label": {
+    "en": "04ac29464750e625",
+    "text": "Godta TLS-klientcertifikatet som beställarens autentiseringsuppgift"
+  },
+  "wstrust.acceptClientCertificate|description": {
+    "en": "23d9a8fba459f61c",
+    "text": "Om en begäran till /sts vars wsse:Security-huvud inte bär någon autentiseringsuppgift autentiserar sin beställare med TLS-klientcertifikatet på anslutningen. Endast ett certifikat som verifierades i handskakningen och som denna sfär har utfärdat till en person eller ett program (ett TLS-klientcertifikat från användarportalen eller programmets Credentials, eller ett som registrerats via ACME, EST eller SCEP) är en autentiseringsuppgift, i båda lägena; ett återkallat, ett från en annan sfär och ett som innehavaren inte längre har avvisas med wst:FailedAuthentication. Den utfärdade token säger att ett certifikat användes: TLSClient i ett SAML 2.0-intyg, urn:ietf:rfc:2246 i ett SAML 1.1-intyg, amr swk i en JWT. Avstängt ignoreras certifikatet här."
+  },
   "wsfed.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
     "text": "Inloggning initierad av identitetsleverantören"

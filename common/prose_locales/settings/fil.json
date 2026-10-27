@@ -4787,6 +4787,14 @@
     "en": "d75340dbe09a7542",
     "text": "Kung pinapangalanan ng JWT na ibinabalik ng STS na ito sa isang RequestSecurityTokenResponse ang certificate chain ng key na pumirma rito. Dala ng SAML assertion ang certificate nito sa sarili nitong XML Signature at hindi ito apektado. Ang `x5u` — ang default — ay ang address ng chain sa serbisyong ito, `/pki/chain/{scope}/{sha256}.pem`, mga isandaang byte; ang `x5c` ay ang chain mismo na nakasama, leaf muna at huli ang service Root, base64 DER, ilang kilobyte; ang `both` ay pareho at ang `none` ay wala sa dalawa. Alinman dito, ito ang kailangan ng relying party na token lang ang hawak para maabot ang CRL distribution points, OCSP responder at caIssuers address ng bawat certificate. Walang natatanggap ang key na hindi pa naka-certify sa ilalim ng JOSE Issuing CA ng realm na ito, pati ang HMAC na pirma. Hinihingi ng RFC 7515 section 4.1.5 na gumamit ng TLS ang pag-fetch ng `x5u`: kapag naka-off ang global.https, `http://` ang address at tatanggi itong sundan ng isang mahigpit na verifier. Hindi kailanman binibigyan nito ang mga JWE header — walang ine-encrypt ang anumang certified key ng serbisyong ito. Puwedeng itakda bawat realm."
   },
+  "wstrust.acceptClientCertificate|label": {
+    "en": "04ac29464750e625",
+    "text": "Tanggapin ang TLS client certificate bilang kredensyal ng humihiling"
+  },
+  "wstrust.acceptClientCertificate|description": {
+    "en": "23d9a8fba459f61c",
+    "text": "Kung ang isang request sa /sts na walang dalang kredensyal ang wsse:Security header ay magpapatunay sa humihiling nito sa pamamagitan ng TLS client certificate sa koneksyon. Tanging ang certificate na na-verify sa handshake at inisyu ng realm na ito sa isang tao o isang application (isang TLS client certificate mula sa user portal o sa Credentials ng application, o isang na-enroll sa ACME, EST o SCEP) ang isang kredensyal, sa parehong mode; ang na-revoke, ang galing sa ibang realm, at ang hindi na hawak ng may-ari nito ay tinatanggihan ng wst:FailedAuthentication. Sinasabi ng inisyung token na may ginamit na certificate: TLSClient sa isang SAML 2.0 assertion, urn:ietf:rfc:2246 sa isang SAML 1.1, amr swk sa isang JWT. Kapag naka-off, binabalewala rito ang certificate."
+  },
   "wsfed.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
     "text": "Sign-in na sinimulan ng identity provider"

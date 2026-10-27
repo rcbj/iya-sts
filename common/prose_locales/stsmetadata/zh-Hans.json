@@ -232,8 +232,8 @@
     "text": "partial：响应程序应尽的部分。明文 HTTP（第 5 节）——响应程序在 `pki.httpPort` 以及 TLS 主端口上应答，证书指明明文端口；附加 base64 请求的 GET；任何 GeneralizedTime 中都没有小数秒（第 2.2.4 节）；响应程序 ID 按密钥哈希给出（第 2.2.2 节）；对其无权威的请求返回 `unauthorized`（第 2.2.3 节）；以及第 6.2 节的缓存标头——max-age 不晚于 nextUpdate、Last-Modified、Expires 和强 ETag，权威应答上从不使用 no-cache 或 no-store。未完成：响应按请求签名，而不是预先生成（第 2.2.1 节建议在高流量时预先生成），并且对携带 nonce 的请求的应答被标记为 private，而不是从缓存提供。"
   },
   "stsmetadata.specs.ws-trust.coverage": {
-    "en": "c1c6a4c05b39a697",
-    "text": "partial：基于 SOAP 1.1 和 1.2 的 Issue、Renew、Validate 和 Cancel。请求签名不会被验证。OnBehalfOf 和 ActAs 由签发策略决定（#186，令牌交换和 Kerberos S4U 共用的规则）——OnBehalfOf 请求的是模拟身份，ActAs 请求的是委托，条目的委托语义必须允许它，AppliesTo 必须是委托关系所允许的已注册应用，个人请求方需要 delegation.actorRole——在产品模式下以 wst:RequestFailed 故障（第 11 节）拒绝；同时出现两个元素则为 wst:InvalidRequest；开发模式记录本应被拒绝的内容。在产品模式下（2026-09-12），每个操作都需要凭据——针对目录验证的 UsernameToken，或由本 STS 签名且处于其 Conditions 之内的 SAML 断言——而 OnBehalfOf/ActAs 需要请求方自己的凭据，以及其中的此类断言；开发模式一概不要求，一如既往。在两种模式下，请求的 wst:Lifetime 都会被限制（wstrust.maxTokenLifetimeMin），所签发断言的 AuthnContext 指明的是所用凭据，而不是密码。"
+    "en": "c17ea82057db227d",
+    "text": "partial：基于 SOAP 1.1 和 1.2 的 Issue、Renew、Validate 和 Cancel。请求签名不会被验证。OnBehalfOf 和 ActAs 由签发策略决定（#186，令牌交换和 Kerberos S4U 共用的规则）——OnBehalfOf 请求的是模拟身份，ActAs 请求的是委托，条目的委托语义必须允许它，AppliesTo 必须是委托关系所允许的已注册应用，个人请求方需要 delegation.actorRole——在产品模式下以 wst:RequestFailed 故障（第 11 节）拒绝；同时出现两个元素则为 wst:InvalidRequest；开发模式记录本应被拒绝的内容。在产品模式下（2026-09-12），每个操作都需要凭据——针对目录验证的 UsernameToken，或由本 STS 签名且处于其 Conditions 之内的 SAML 断言——而 OnBehalfOf/ActAs 需要请求方自己的凭据，以及其中的此类断言；开发模式一概不要求，一如既往。在两种模式下，请求的 wst:Lifetime 都会被限制（wstrust.maxTokenLifetimeMin），所签发断言的 AuthnContext 指明的是所用凭据，而不是密码。若请求方的 wsse:Security 不携带任何凭据，则在两种模式下均以连接上的 TLS 客户端证书认证请求方，前提是该证书由本领域颁发给某个人或某个应用程序（#1046）。"
   },
   "stsmetadata.specs.wss-username.coverage": {
     "en": "397e6a07a7980365",

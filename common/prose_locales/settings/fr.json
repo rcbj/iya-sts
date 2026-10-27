@@ -4787,6 +4787,14 @@
     "en": "d75340dbe09a7542",
     "text": "Indique si un JWT que ce STS renvoie dans une RequestSecurityTokenResponse désigne la chaîne de certificats de la clé qui l’a signé. Une assertion SAML porte son certificat dans sa propre XML Signature et n’est pas concernée. `x5u` — la valeur par défaut — est l’adresse de la chaîne sur ce service, `/pki/chain/{scope}/{sha256}.pem`, environ cent octets ; `x5c` est la chaîne en ligne, la feuille en premier et la racine du service en dernier, en DER base64, plusieurs kilo-octets ; `both` donne les deux et `none` aucun. Dans les deux cas, c’est ce dont une partie de confiance qui ne détient que le jeton a besoin pour atteindre les points de distribution de CRL, le répondeur OCSP et l’adresse caIssuers de chaque certificat. Une clé pas encore certifiée par l’autorité de certification émettrice JOSE de ce domaine, ainsi qu’une signature HMAC, ne reçoivent ni l’un ni l’autre. La RFC 7515 section 4.1.5 exige que la récupération de `x5u` utilise TLS : avec global.https désactivé, l’adresse est en `http://` et un vérificateur strict refusera de la suivre. Les en-têtes JWE n’en reçoivent jamais — aucune clé certifiée de ce service ne chiffre quoi que ce soit. Réglable par domaine."
   },
+  "wstrust.acceptClientCertificate|label": {
+    "en": "04ac29464750e625",
+    "text": "Accepter le certificat client TLS comme justificatif du demandeur"
+  },
+  "wstrust.acceptClientCertificate|description": {
+    "en": "23d9a8fba459f61c",
+    "text": "Indique si une requête vers /sts dont l’en-tête wsse:Security ne porte aucun justificatif authentifie son demandeur par le certificat client TLS de la connexion. Seul un certificat vérifié lors de la négociation et que ce domaine a délivré à une personne ou à une application (un certificat client TLS du portail utilisateur ou des Credentials de l’application, ou un certificat inscrit par ACME, EST ou SCEP) est un justificatif, dans les deux modes ; un certificat révoqué, un certificat d’un autre domaine et un certificat que son titulaire ne détient plus sont refusés avec wst:FailedAuthentication. Le jeton délivré indique qu’un certificat a été utilisé : TLSClient dans une assertion SAML 2.0, urn:ietf:rfc:2246 dans une assertion SAML 1.1, amr swk dans un JWT. Désactivé, le certificat est ignoré ici."
+  },
   "wsfed.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
     "text": "Connexion initiée par le fournisseur d’identité"
