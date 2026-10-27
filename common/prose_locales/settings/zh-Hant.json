@@ -7324,8 +7324,8 @@
     "text": "資料集上傳目錄"
   },
   "risk.uploadDirectory|description": {
-    "en": "347858cd0224743e",
-    "text": "上傳的資料集檔案在匯入期間寫入的位置，並在匯入結束時（不論如何結束）從中刪除。相對路徑以此套件根目錄為基準解析，如同 persistence.dataDir。請為它提供專屬的磁碟區，空間足以容納您將上傳的最大檔案——壓縮後的大小；不會寫入任何展開後的內容——因為當目錄的可用空間不足以容納上傳時，上傳會被拒絕。此存放庫隨附的每個堆疊都會在此掛載一個磁碟區。"
+    "en": "ddab5a9b7f3d0a2a",
+    "text": "上傳的資料集檔案在匯入期間寫入的位置，也是報告作業在儲存之前建構的位置；每個檔案在其匯入或作業結束時（不論如何結束）都會被刪除。相對路徑以此套件根目錄為基準解析，與 persistence.dataDir 相同。請為它提供專屬的磁碟區，空間足以容納您將上傳的最大檔案——壓縮後的大小；不會寫入任何解壓內容——以及每個同時執行的報告作業所需的 report.asyncMaxBytes，因為當目錄的可用空間不足以容納時，上傳或作業會被拒絕。此存放庫隨附的每個堆疊都會在此掛載一個磁碟區。"
   },
   "risk.uploadMaxBytes|label": {
     "en": "959b6b79f9136a03",
@@ -7364,8 +7364,8 @@
     "text": "上傳清理間隔（秒）"
   },
   "risk.uploadSweepS|description": {
-    "en": "d2ecf2ff3686662e",
-    "text": "每個程序多久更新一次其正在匯入之上傳檔案的時間戳記並刪除已停止程序的殘留物（risk.upload-cleanup），以及 risk.stalled-imports 工作多久尋找一次被放棄的版本。請保持遠低於 risk.importStallMinutes。"
+    "en": "66b5d1a088266f41",
+    "text": "每個處理程序多久更新一次其正在匯入的上傳檔案和正在建構的報告，並刪除已停止處理程序留下的殘留檔案（risk.upload-cleanup、report.build-cleanup），以及 risk.stalled-imports 作業多久尋找一次被放棄的版本。請將其保持在遠低於 risk.importStallMinutes 的值。"
   },
   "risk.datasetShrinkLimitPercent|label": {
     "en": "46aea694920bebd6",

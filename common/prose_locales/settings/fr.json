@@ -7324,8 +7324,8 @@
     "text": "Répertoire de téléversement des jeux de données"
   },
   "risk.uploadDirectory|description": {
-    "en": "347858cd0224743e",
-    "text": "L’endroit où un fichier de jeu de données téléversé est écrit pendant son importation, et d’où il est supprimé à la fin de l’importation, quelle qu’en soit l’issue. Un chemin relatif est résolu par rapport à la racine de ce paquet, comme persistence.dataDir. Attribuez-lui un volume propre avec de la place pour le plus gros fichier que vous téléverserez — compressé ; rien de décompressé n’est écrit — car un téléversement est refusé lorsque l’espace libre du répertoire ne peut pas le contenir. Chaque pile fournie par ce dépôt monte un volume ici."
+    "en": "ddab5a9b7f3d0a2a",
+    "text": "L’endroit où un fichier de jeu de données téléversé est écrit pendant son importation, et où une tâche de rapport est construite avant d’être stockée ; chaque fichier est supprimé à la fin de son importation ou de sa tâche, quelle qu’en soit l’issue. Un chemin relatif est résolu par rapport à la racine de ce paquet, comme persistence.dataDir. Attribuez-lui un volume propre avec de la place pour le plus gros fichier que vous téléverserez — compressé ; rien de décompressé n’est écrit — et pour report.asyncMaxBytes par tâche de rapport exécutée simultanément, car un téléversement ou une tâche est refusé lorsque l’espace libre du répertoire ne peut pas le contenir. Chaque pile fournie par ce dépôt monte un volume ici."
   },
   "risk.uploadMaxBytes|label": {
     "en": "959b6b79f9136a03",
@@ -7364,8 +7364,8 @@
     "text": "Intervalle de nettoyage des téléversements (secondes)"
   },
   "risk.uploadSweepS|description": {
-    "en": "d2ecf2ff3686662e",
-    "text": "La fréquence à laquelle chaque processus maintient à jour les fichiers téléversés qu’il importe et supprime les reliquats d’un processus arrêté (risk.upload-cleanup), et la fréquence à laquelle la tâche risk.stalled-imports recherche une version abandonnée. Maintenez-la bien en dessous de risk.importStallMinutes."
+    "en": "66b5d1a088266f41",
+    "text": "La fréquence à laquelle chaque processus maintient à jour les fichiers téléversés qu’il importe et les rapports qu’il construit, et supprime les reliquats d’un processus arrêté (risk.upload-cleanup, report.build-cleanup), et la fréquence à laquelle la tâche risk.stalled-imports recherche une version abandonnée. Maintenez-la bien en dessous de risk.importStallMinutes."
   },
   "risk.datasetShrinkLimitPercent|label": {
     "en": "46aea694920bebd6",

@@ -10,7 +10,7 @@ shaped that way. [Persistence](persistence.md) covers turning the store on, the
 compose stack and what survives a restart. This page covers only what is in
 the database.
 
-**Schema version 28**: 39 tables and 44 secondary indexes in a schema of their
+**Schema version 29**: 40 tables and 44 secondary indexes in a schema of their
 own, `sts`.
 
 ## Where the schema is written down
@@ -69,6 +69,7 @@ does for you. The version row in `sts_schema` records which shape is on disk.
 | 26 | `sts_report_artifacts`: the bytes of a finished report (#956). Definitions and job rows stay in the realm maps |
 | 27 | `sts_ldap_entries_asked_names` rebuilt with `stsbackupcodes` among the asked names, so the reports application finds recovery-code holders through the index (#1024) |
 | 28 | two B-trees, `sts_ldap_entries_created` and `sts_ldap_entries_modified`, for a report's date range; `pwdaccountlockedtime` among the asked names, so "status is locked" is an index read; the asked-names index rebuilt again (#1028) |
+| 29 | `sts_report_artifact_pieces`: a finished report in sealed pieces of 1 MiB, so no process holds a report whole (#1045). A row of `sts_report_artifacts` written before it still holds the whole report and is still read |
 
 **Versions 27 and 28 rebuild an index on a large table.** The script drops
 `sts_ldap_entries_asked_names` and builds it again with the new list of
@@ -161,7 +162,8 @@ are a plain SHA-256, and the rows that exist only as keyed digests
 | `sts_risk_failures` | `address_sealed` | `name_hmac` (keyed) | everything else |
 | `sts_risk_session_context` | — | `ua_hash` (SHA-256) | everything else |
 | the other eleven `sts_risk_*` tables | — | — | every column (public datasets, counts and scores) |
-| `sts_report_artifacts` | `bytes` (since #1033) | `sha256` | `realm`, `job_id`, `media_type`, `created_at` |
+| `sts_report_artifacts` | `bytes` (since #1033; since #1045 a clear count of pieces and the size instead) | `sha256` | `realm`, `job_id`, `media_type`, `created_at` |
+| `sts_report_artifact_pieces` | `bytes` | — | `realm`, `job_id`, `seq` |
 | `sts_schema` | — | — | every column |
 
 Two things on that list deserve an operator's attention:
@@ -194,6 +196,7 @@ Two things on that list deserve an operator's attention:
  bookkeeping                         reports
  ───────────                         ───────
  sts_schema                          sts_report_artifacts (sealed)
+                                     sts_report_artifact_pieces (sealed)
 ```
 
 There are no foreign keys. Every table is keyed by what its readers look up,
@@ -744,12 +747,29 @@ rows stay in the realm maps (`sts_minted`, sealed), not in this table.
 |---|---|---|---|
 | `realm` | text | clear | the trust realm |
 | `job_id` | text | clear | the report job |
-| `bytes` | bytea | **sealed (AES-GCM)** | the finished document (CSV, PDF, …), sealed under the realm's `report-artifact` data key and stored as the envelope's bytes. Since #1033; a row from before stays in the clear until its retention ends. Without a key-encryption key no report is stored |
+| `bytes` | bytea | **sealed (AES-GCM)**, or a count | since #1045, `$pieces$1:<count>:<size>`: how many rows of `sts_report_artifact_pieces` hold the report and its size in bytes, in the clear. Before #1045, the finished document (CSV, PDF, …) sealed under the realm's `report-artifact` data key and stored as the envelope's bytes (since #1033; a row from before that stays in the clear until its retention ends). Such rows are still read. Without a key-encryption key no report is stored |
 | `sha256` | text | digest | the SHA-256 of the report as downloaded, for integrity; not reversible |
 | `media_type` | text | clear | the format's media type |
 | `created_at` | bigint | clear | milliseconds |
 
 Primary key `(realm, job_id)`; no other index.
+
+## `sts_report_artifact_pieces`
+
+A finished report in pieces (#1045, schema version 29). The reporting job
+builds the report in a file on local disk (`risk.uploadDirectory`), reads it
+back a piece at a time, and writes the pieces and the `sts_report_artifacts`
+row in one transaction. A download reads the pieces one at a time. A delete
+removes the pieces and the row in one statement.
+
+| Column | Type | Encrypted? | Meaning |
+|---|---|---|---|
+| `realm` | text | clear | the trust realm |
+| `job_id` | text | clear | the report job |
+| `seq` | int | clear | the piece's place, from 0 |
+| `bytes` | bytea | **sealed (AES-GCM)** | up to 1 MiB of the report, sealed on its own under the realm's `report-artifact` data key together with the job id and `seq`, so a piece moved to another job or another place does not open as part of a report |
+
+Primary key `(realm, job_id, seq)`; no other index.
 
 ## `sts_schema`
 
@@ -853,8 +873,8 @@ The tables not named in this section (`sts_realms`, `sts_appconfig`,
 `sts_keys`, `sts_cell_routing`, `sts_ldap_counts`, `sts_ldap_dek_counts`,
 `sts_change_readers`, `sts_cluster_leases`, `sts_cluster_secrets`,
 `sts_cluster_counters`, `sts_node_snapshots`, the remaining risk dataset
-tables, `sts_report_artifacts` and `sts_schema`) are read only by their
-primary key.
+tables, `sts_report_artifacts`, `sts_report_artifact_pieces` and
+`sts_schema`) are read only by their primary key.
 
 ## Related
 

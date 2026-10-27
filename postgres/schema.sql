@@ -1159,6 +1159,15 @@ CREATE TABLE IF NOT EXISTS sts_report_artifacts (
   created_at bigint NOT NULL,
   PRIMARY KEY (realm, job_id));
 
+-- A finished report's pieces (#1045, schema version 29), each sealed on its
+-- own and numbered from 0; the `sts_report_artifacts` row says how many.
+CREATE TABLE IF NOT EXISTS sts_report_artifact_pieces (
+  realm      text   NOT NULL,
+  job_id     text   NOT NULL,
+  seq        int    NOT NULL,
+  bytes      bytea  NOT NULL,
+  PRIMARY KEY (realm, job_id, seq));
+
 CREATE TABLE IF NOT EXISTS sts_schema (
   version int PRIMARY KEY,
   applied_at timestamptz NOT NULL DEFAULT now());
@@ -1166,7 +1175,7 @@ CREATE TABLE IF NOT EXISTS sts_schema (
 -- WHAT VERSION OF THE ABOVE THIS IS. The driver writes the same row on open()
 -- and `tests/postgres_schema.js` checks that this number is its SCHEMA_VERSION,
 -- so the two cannot disagree about which schema is on disk.
-INSERT INTO sts_schema (version) VALUES (28) ON CONFLICT (version) DO NOTHING;
+INSERT INTO sts_schema (version) VALUES (29) ON CONFLICT (version) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
 -- THE APPLICATION ROLE: READ AND WRITE THE ROWS, AND NOTHING ELSE.

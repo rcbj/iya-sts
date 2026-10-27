@@ -79,6 +79,8 @@
   "sched.jobs.persistence.tombstone-purge.describe": "Deletes the tombstones of ended minted rows older than persistence.mintedRetention from the shared store.",
   "sched.jobs.process.memory-report.title": "Memory report",
   "sched.jobs.process.memory-report.describe": "Logs, in this process, one line with its role and its memory: resident size, heap used and total, the heap limit, external memory and array buffers (#341).",
+  "sched.jobs.report.build-cleanup.title": "Report build clean-up",
+  "sched.jobs.report.build-cleanup.describe": "In every process: keeps the report files this process is building fresh, and deletes from risk.uploadDirectory a report build no live process has touched for report.asyncMaxMs and fifteen minutes — what a process that stopped mid-build left behind.",
   "sched.jobs.report.drain.title": "Report jobs",
   "sched.jobs.report.drain.describe": "Claims queued report jobs for this realm, up to the concurrency caps, and writes each artifact.",
   "sched.jobs.report.drain.here.title": "Report jobs on this node",

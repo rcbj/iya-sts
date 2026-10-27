@@ -802,6 +802,28 @@ After `report.artifactRetentionS` it is `result_expired` (HTTP 410). A
 job that ran longer than `report.asyncMaxMs` is `failed`, with
 `result_too_large`. Nothing was stored in part.
 
+### Where a job is built
+
+A job's report is never held whole in memory. It is written, as it is
+rendered, to a file in `risk.uploadDirectory`, the directory risk dataset
+uploads use. It is then stored in the database in sealed pieces of 1 MiB,
+and the file is deleted when the job ends, however it ends. A download
+reads the pieces back one at a time.
+
+Before it writes anything, a job checks that the directory has room for
+`report.asyncMaxBytes` plus 16 MiB. A directory without room fails the job
+with `STS-REPORT-0049`. A directory that cannot be written, or a disk that
+fills while the file is written, fails it with `STS-REPORT-0050`. Neither
+leaves a file behind. A process that stops while it is building a report
+leaves its file, and the `report.build-cleanup` job, which runs in every
+process on `risk.uploadSweepS`, deletes it once nobody has touched it for
+`report.asyncMaxMs` plus fifteen minutes. On AWS the directory is the
+node's encrypted EBS volume ([A cluster in
+AWS](aws-cluster.md#where-a-risk-dataset-upload-goes)).
+
+A synchronous answer is at most `report.syncMaxBytes` (1 MB). It is
+written straight to the response and never stored.
+
 `GET /report-api/jobs` is newest first. `after` is the previous page's
 `next` id. `limit` is how many to return (1 to 200; omitted, 50). `next`
 is null on the last page. Listing a job id does not authorize a job the
@@ -963,7 +985,13 @@ What to check when a schedule does nothing:
 database is sealed under the realm's data key for reports, which is itself
 wrapped by the service's key-encryption key; the database never holds a
 report in the clear. A service with no key-encryption key does not store
-reports in a database at all: the job fails and says why. See
+reports in a database at all: the job fails and says why. Each 1 MiB piece
+is sealed on its own and names its job and its place, so a piece moved to
+another job, or out of order, does not open as part of a report. A download
+whose piece fails, or whose digest does not match, is cut off rather than
+completed (`STS-REPORT-0051`). While a job runs, the file it is built in
+([Where a job is built](#where-a-job-is-built)) is on local disk in the
+clear, readable only by the service's own user. See
 [PostgreSQL schema](postgres-schema.md) for what else is sealed.
 
 Send `Authorization: DPoP` and the proof. The token is for `sts-report`,

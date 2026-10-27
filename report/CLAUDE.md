@@ -45,8 +45,9 @@ and `docs/configuration.md`.
 | `formats.ts` | JSON, RFC 4180 CSV, and a PDF 1.4 file in Helvetica WinAnsi. A PDF cell wraps within its column, up to 256 bytes, and a row is as tall as its tallest cell (#993); the file's header argues the pagination. |
 | `rows.ts`, `sources.ts`, `executor.ts` | Reading one source, bounded, and writing the artifact. |
 | `rights.ts` | The caller as held ∩ carried, and every question about the API, a definition or a job put to `common/access_gate.ts`. It decides nothing (#1030). |
-| `jobs.ts` | Definitions, the queue, and the six scheduler jobs. |
-| `stores.ts` | Realm maps for definitions, jobs and the reporter stamp. Artifact bytes go beside them. |
+| `jobs.ts` | Definitions, the queue, the six scheduler jobs, and the registration of `staging.ts`'s seventh. |
+| `staging.ts` | A job's report built as a file in `risk.uploadDirectory`, its room checked first, removed when the job ends; the per-process `report.build-cleanup` job (#1045). |
+| `stores.ts` | Realm maps for definitions, jobs and the reporter stamp. Artifact bytes go beside them, in sealed pieces since #1045. |
 
 ## The chrome (#986)
 
@@ -260,6 +261,89 @@ rule, driven by the catalog:
   own caps; filtering them reads nothing from the store.
 * **Run and Save are the definition page's buttons**: `.foot-actions`
   with `.button`s; Save stays first in the document for the Enter reason.
+
+## A job's report is built on disk and stored in pieces (#1045, 2026-10-27)
+
+rcbj, choosing between three answers to "use the risk uploads' temporary
+location": *"#2, this is because large data sets will eat up too much memory
+potentially."* Until then a job's report was one Buffer from
+`executor.finish()`. `putArtifact()` turned it into its base64, a sealed
+envelope and the envelope's bytes, all at once, and wrote them as one
+`bytea`, and a download read the row back and opened it whole. That is
+four copies of a 32 MB report in the heap of the process that runs
+`report.drain`, a front process by `ON_FRONT`. The cloud cluster gives a
+node a 10 GB volume for temporary files, and risk uploads already use it.
+
+* **ONE DIRECTORY, ONE DEFINITION.** `common/staging_directory.ts` resolves
+  `risk.uploadDirectory` and owns the 16 MiB reserve, the mkdir/`W_OK`
+  check and the statfs reading. `risk/risk_upload.ts` and `staging.ts`
+  both call it. It lives in `common/` because `report/` must not require a
+  risk library before the root builds it (`risk/CLAUDE.md`, *The require
+  order*). The setting kept its name, because deployments set it.
+* **ROOM FIRST.** `ReportStaging.open(asyncMaxBytes)` refuses before a byte
+  is written when the directory has less than the cap plus the reserve
+  (`STS-REPORT-0049`). It also refuses when the directory cannot be made
+  or written, or the file cannot be created (`STS-REPORT-0050`, which is
+  also a write that fails part-way, such as ENOSPC). A statfs that will not
+  answer is not a refusal, for the upload's reason.
+* **THE FORMATS ARE GENERATORS.** `jsonParts()`, `csvParts()` and
+  `pdfParts()` yield the document a row or an object at a time. The Buffer
+  methods are the parts joined, so every existing caller and test sees the
+  same bytes (`tests/report_staging.js` A holds JSON to `JSON.stringify` and
+  every PDF xref offset to its object). The PDF is laid out first, so a
+  page-cap refusal comes before a byte. Then each page stream is drawn
+  when asked for, and only the object offsets are kept.
+  `executor.finishToFile()` writes the parts through `StagedReport.write()`,
+  which buffers a piece, hashes as it goes and answers false once the cap is
+  passed. The synchronous path keeps `finish()`: at most `syncMaxBytes`,
+  answered and never stored.
+* **SEALED PIECES.** `stores.putArtifactFile()` reads the finished file back
+  in 1 MiB pieces and seals each as `{"j":job,"s":seq,"b":base64}`, so a
+  piece moved to another job or another place opens and is refused
+  (`STS-REPORT-0051`). The driver's `putReportArtifactPieces()` writes them
+  to `sts_report_artifact_pieces` (schema 29), and the
+  `sts_report_artifacts` row holds `$pieces$1:<count>:<size>`, all in ONE
+  `transactionOnce()`. It is never `withTransaction()`, whose conflict retry
+  would re-run the body over an iterable already read. A driver without
+  the two piece methods (a test double, or memory mode) gets the file read
+  whole: memory mode holds its reports in the process anyway.
+* **NO MIGRATION.** A row written before #1045 holds the whole report
+  (sealed, or in the clear before #1033). `openArtifact()` reads it as one
+  piece until its retention ends: 8081's data is kept and nothing is
+  rewritten.
+* **STREAMED OUT.** `reportServeResult()` opens the artifact and reads the
+  FIRST piece before a header leaves, so a missing artifact or an unopenable
+  first piece is still the 410 (`STS-REPORT-0029`). `reportStreamPieces()`
+  then writes piece after piece, waiting for `drain`, hashing as it goes,
+  with `Content-Length` from the marker. A later piece that fails, a byte
+  count that differs, or a digest that does not match DESTROYS the response
+  rather than ending it, so a client sees a broken transfer and never a
+  short file that looks whole.
+* **THE FILE IS REMOVED HOWEVER THE JOB ENDS**: `reportRunOne()` removes it
+  in a `finally` around the store, and `finishToFile()` removes it on each
+  of its own refusals. A process that dies mid-build leaves it, and
+  `report.build-cleanup` (per process, quiet, on `risk.uploadSweepS`) is the
+  `risk.upload-cleanup` sweep with its own file names
+  (`report-build-<pid>x<hex>-<uuid>.part`). It touches the files the
+  process holds, removes its own unheld files, and removes another
+  process's files untouched for `report.asyncMaxMs` plus fifteen minutes.
+  It never touches another name (`STS-REPORT-0052`).
+
+**What is still in memory**: the rows the reader returns before rendering,
+bounded by `report.asyncMaxRows`, and a PDF's layout (its wrapped lines).
+Neither is a copy of the bytes. A reader that streamed rows into the
+renderer would be the next step if the row cap were raised.
+
+**A gap found and not closed here**: the re-encryption job
+(`persistence_postgres.js`' `EXTRA_SEALED`, `countSealed()`) does not count
+or re-seal `sts_report_artifacts.bytes` or the pieces, so a `report-artifact`
+data key the job retires is not held alive by the reports sealed under it.
+Those reports then answer as gone (`STS-REPORT-0043`, `STS-REPORT-0051`).
+The rows are short-lived, by `report.artifactRetentionS`. Adding `bytea`
+columns to that machinery is its own change.
+
+`tests/report_staging.js` holds all of it in process. The postgres SQL of
+the two methods is not run against a database there.
 
 ## A Shared Signals receiver, and a disabled owner's schedules (#1042, 2026-10-27)
 
@@ -934,7 +1018,10 @@ Definitions and job rows are `realms.map` (`report.definitions`,
 `report.jobs`). The reporter heartbeat is `report.control` key `reporter`,
 written with `realms.run(null, …)` so every realm sees one stamp. Artifact
 bytes are `sts_report_artifacts` (schema version 26) when the driver has
-`putReportArtifact`, `getReportArtifact` and `deleteReportArtifact`.
+`putReportArtifact`, `getReportArtifact` and `deleteReportArtifact`, and
+since #1045 they are in sealed pieces in `sts_report_artifact_pieces`
+(schema version 29) when it also has `putReportArtifactPieces` and
+`getReportArtifactPiece` (above, *A job's report is built on disk*).
 Otherwise they stay in a map in this process, keyed by realm and job id.
 **The bytes are SEALED since #1033** (rcbj: "reports need to be stored
 encrypted"): `stores.ts`'s `reportSealBytes()` seals the base64 of the

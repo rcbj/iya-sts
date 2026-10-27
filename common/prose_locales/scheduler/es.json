@@ -319,6 +319,14 @@
     "en": "4f2c054a1405a843",
     "text": "Registra, en este proceso, una línea con su rol y su memoria: tamaño residente, heap usado y total, el límite del heap, la memoria externa y los array buffers (#341)."
   },
+  "sched.jobs.report.build-cleanup.title": {
+    "en": "e5bd8efc07f0b31b",
+    "text": "Limpieza de construcciones de informes"
+  },
+  "sched.jobs.report.build-cleanup.describe": {
+    "en": "203d8d2e97c041e2",
+    "text": "En cada proceso: mantiene al día los archivos de informe que este proceso está construyendo, y elimina de risk.uploadDirectory una construcción de informe que ningún proceso activo ha tocado durante report.asyncMaxMs y quince minutos: lo que dejó un proceso que se detuvo a mitad de la construcción."
+  },
   "sched.jobs.report.drain.title": {
     "en": "792c052635196abd",
     "text": "Trabajos de informe"

@@ -23734,7 +23734,39 @@ const CODES = [
     summary: 'A scheduled report, or a queued job, belongs to a person whose ' +
       'account is disabled, so it was not run (#1042): a disabled account ' +
       'stops its owner\'s schedules as it stops their sign-ins.',
-    spec: 'none (the occurrence is consumed; the job fails as forbidden)' }
+    spec: 'none (the occurrence is consumed; the job fails as forbidden)' },
+  { code: 'STS-REPORT-0049',
+    summary: 'A report job could not be built: the staging directory ' +
+      '(risk.uploadDirectory) has less free space than the job\'s byte cap ' +
+      '(report.asyncMaxBytes) and the reserve an upload keeps, so nothing ' +
+      'was written and the job failed (#1045).',
+    spec: 'none (the job fails as unavailable)' },
+  { code: 'STS-REPORT-0050',
+    summary: 'A report job could not be built: the staging directory ' +
+      '(risk.uploadDirectory) cannot be made or written, a build file ' +
+      'could not be created, written (a disk that filled) or read back, ' +
+      'so the job failed and its partial file was removed (#1045).',
+    spec: 'none (the job fails as unavailable)' },
+  { code: 'STS-REPORT-0051',
+    summary: 'A stored report has a piece that is missing or will not open ' +
+      'under the keys this process holds, its piece marker cannot be ' +
+      'read, or its download did not match its digest: refused as gone ' +
+      'before the answer began, or the response was cut part-way rather ' +
+      'than completed (#1045).',
+    spec: 'result_expired (HTTP 410) before the answer; otherwise none (the ' +
+      'connection is closed)' },
+  { code: 'STS-REPORT-0052',
+    summary: 'A report build file was left in the staging directory: one ' +
+      'that could not be removed when its job ended, or a leftover the ' +
+      'report.build-cleanup job removed (or could not) because no live ' +
+      'process held it (#1045).',
+    spec: 'none (a warning)' },
+  { code: 'STS-REPORT-0053',
+    summary: 'The store would not take a finished report (the database ' +
+      'refused or went away while its pieces were written), so the job ' +
+      'failed and nothing of it was kept (#1045). Until #1045 this read ' +
+      'as STS-REPORT-0042, could not be sealed.',
+    spec: 'none (the job fails as unavailable)' }
   // ===== END ===============================================================
 ];
 

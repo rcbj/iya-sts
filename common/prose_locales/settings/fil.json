@@ -7324,8 +7324,8 @@
     "text": "Upload directory ng dataset"
   },
   "risk.uploadDirectory|description": {
-    "en": "347858cd0224743e",
-    "text": "Kung saan isinusulat ang na-upload na dataset file habang ini-import ito, at kung saan ito dine-delete kapag natapos ang import paano man ito natapos. Nire-resolve ang relative path laban sa package root na ito, gaya ng persistence.dataDir. Bigyan ito ng sariling volume na may espasyo para sa pinakamalaking file na iyong ia-upload — naka-compress; walang naka-expand na isinusulat — dahil tinatanggihan ang upload kapag hindi ito kasya sa bakanteng espasyo ng directory. Nagma-mount ng isa rito ang bawat stack na kasama ng repository na ito."
+    "en": "ddab5a9b7f3d0a2a",
+    "text": "Kung saan isinusulat ang na-upload na file ng dataset habang ini-import ito, at kung saan binubuo ang isang report job bago ito iimbak; binubura ang bawat file kapag natapos ang import o job nito, paano man ito natapos. Ang relative path ay nire-resolve laban sa root ng package na ito, gaya ng persistence.dataDir. Bigyan ito ng sariling volume na may espasyo para sa pinakamalaking file na iyong ia-upload — naka-compress; walang naka-expand na isinusulat — at para sa report.asyncMaxBytes bawat report job na sabay-sabay na tumatakbo, dahil tinatanggihan ang isang upload o job kapag hindi ito kayang hawakan ng libreng espasyo ng directory. Bawat stack na kasama sa repository na ito ay nagmo-mount ng isa rito."
   },
   "risk.uploadMaxBytes|label": {
     "en": "959b6b79f9136a03",
@@ -7364,8 +7364,8 @@
     "text": "Interval ng upload clean-up (segundo)"
   },
   "risk.uploadSweepS|description": {
-    "en": "d2ecf2ff3686662e",
-    "text": "Gaano kadalas pinapanatiling sariwa ng bawat process ang mga upload file na ini-import nito at dine-delete ang mga tira ng process na tumigil (risk.upload-cleanup), at gaano kadalas naghahanap ang risk.stalled-imports job ng inabandonang version. Panatilihin itong mas mababa nang malaki sa risk.importStallMinutes."
+    "en": "66b5d1a088266f41",
+    "text": "Gaano kadalas pinapanatiling bago ng bawat proseso ang mga na-upload na file na ini-import nito at ang mga report na binubuo nito, at binubura ang mga naiwan ng prosesong huminto (risk.upload-cleanup, report.build-cleanup), at gaano kadalas naghahanap ang job na risk.stalled-imports ng inabandonang bersyon. Panatilihin itong mas mababa nang malaki sa risk.importStallMinutes."
   },
   "risk.datasetShrinkLimitPercent|label": {
     "en": "46aea694920bebd6",

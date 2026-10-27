@@ -1624,24 +1624,125 @@ async function reportServeResult(res: any, who: any, id: string):
     log.debug("Leaving reportServeResult(). Not ready.");
     return;
   }
-  const artifact = await stores.getArtifact(job.id);
-  const crypto = require('../common/crypto');
-  const digest = artifact && artifact.bytes ?
-    crypto.digest('sha256', artifact.bytes, 'hex') : '';
-  if (!artifact || !artifact.bytes || !job.sha256 ||
-      digest !== job.sha256) {
+  // STREAMED A PIECE AT A TIME (#1045): the stored pieces are opened and
+  // written one after another, never put together. The FIRST piece is
+  // read before a header goes out, so an artifact that is gone, or whose
+  // first piece will not open, is still refused (STS-REPORT-0029). Past
+  // that the answer is under way. A later piece that fails, or a digest
+  // that does not match at the end, DESTROYS the response rather than
+  // ending it (STS-REPORT-0051): the client sees a broken transfer, never
+  // a short file that looks complete.
+  const artifact = await stores.openArtifact(job.id);
+  const missing = function (): void {
     reportRetrieveRefused(who, job, 'STS-REPORT-0029');
     reportSend(res, reportHttpStatus('STS-REPORT-0029'),
       'STS-REPORT-0029', 'result_expired',
       'That result is no longer available.');
+  };
+  if (!artifact || !job.sha256 || artifact.sha256 !== job.sha256) {
+    missing();
     log.debug("Leaving reportServeResult(). Missing.");
+    return;
+  }
+  const pieces = artifact.pieces();
+  let first: IteratorResult<Buffer>;
+  try {
+    first = await pieces.next();
+  } catch (e: any) {
+    log.debug("Caught in reportServeResult(): " + ((e && e.message) || e));
+    log.error(errorCodes.tag('STS-REPORT-0051') + 'report: the first ' +
+      'stored piece of report ' + job.id + ' is missing or would not open.');
+    missing();
+    log.debug("Leaving reportServeResult(). First piece.");
     return;
   }
   reportRetrieveOk(who, job);
   const media = job.mediaType || executor.mediaOf(job.format);
-  reportBytes(res, media, artifact.bytes,
-    'attachment; filename="report.' + reportExtent(job.format) + '"');
+  const sent = await reportStreamPieces(res, media,
+    'attachment; filename="report.' + reportExtent(job.format) + '"',
+    artifact.size, first, pieces, job.sha256);
+  if (!sent) {
+    log.error(errorCodes.tag('STS-REPORT-0051') + 'report: report ' +
+      job.id + ' failed part-way through its download — a piece missing, ' +
+      'unopenable, or a digest that does not match — and the response ' +
+      'was cut rather than completed.');
+  }
   log.debug("Leaving reportServeResult().");
+}
+
+/**
+ * Writes an artifact's pieces as one 200 answer, waiting for the socket
+ * to drain between pieces, hashing as it goes (#1045).
+ *
+ * @param res - the response
+ * @param media - its media type
+ * @param attachment - its Content-Disposition
+ * @param size - the declared size, or NaN when unknown
+ * @param first - the first piece, already read
+ * @param rest - the remaining pieces
+ * @param sha256 - the digest the whole must have
+ * @returns true when it was sent whole; false when it was cut
+ */
+async function reportStreamPieces(res: any, media: string,
+    attachment: string, size: number, first: IteratorResult<Buffer>,
+    rest: AsyncIterator<Buffer>, sha256: string): Promise<boolean> {
+  log.debug("Entering reportStreamPieces().");
+  const crypto = require('../common/crypto');
+  const digest = crypto.sha256Digester();
+  res.set('Cache-Control', 'no-store');
+  res.set('Content-Disposition', attachment);
+  if (media.indexOf('charset') >= 0) {
+    res.set('Content-Type', media);
+  } else {
+    res.type(media);
+  }
+  if (Number.isFinite(size) && size >= 0) {
+    res.set('Content-Length', String(size));
+  }
+  res.status(200);
+  const drained = function (): Promise<void> {
+    return new Promise(function (resolve: () => void): void {
+      const done = function (): void {
+        res.removeListener('drain', done);
+        res.removeListener('close', done);
+        resolve();
+      };
+      res.once('drain', done);
+      res.once('close', done);
+    });
+  };
+  let piece = first;
+  let sent = 0;
+  try {
+    while (!piece.done) {
+      if (res.destroyed) {
+        log.debug("Leaving reportStreamPieces(). Client went away.");
+        return true;
+      }
+      digest.update(piece.value);
+      sent += piece.value.length;
+      if (!res.write(piece.value)) {
+        await drained();
+      }
+      piece = await rest.next();
+    }
+  } catch (e: any) {
+    log.debug("Caught in reportStreamPieces(): " + ((e && e.message) || e));
+    // A later piece missing or unopenable: the caller logs it, and the
+    // transfer is cut below.
+    res.destroy();
+    log.debug("Leaving reportStreamPieces(). A piece failed.");
+    return false;
+  }
+  if (digest.hex() !== sha256 ||
+      (Number.isFinite(size) && size >= 0 && sent !== size)) {
+    res.destroy();
+    log.debug("Leaving reportStreamPieces(). Digest.");
+    return false;
+  }
+  res.end();
+  log.debug("Leaving reportStreamPieces().");
+  return true;
 }
 
 async function reportRoute(req: any, res: any, who: any): Promise<void> {
@@ -1874,5 +1975,6 @@ export = {
   schedulesView: reportSchedulesView,
   definitionsView: reportDefinitionsView,
   jobsView: reportJobsView,
-  ReportApi: ReportApi
+  ReportApi: ReportApi,
+  streamPieces: reportStreamPieces
 };

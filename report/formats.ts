@@ -31,6 +31,12 @@
 // rather than losing its tail. The page cap is applied to the pages the
 // layout actually needs, so a wrapped report can be refused where a
 // clipped one was not — the alternative is a page count that lies.
+//
+// EACH FORMAT IS ALSO A STREAM OF PIECES (#1045): `jsonParts()`,
+// `csvParts()` and `pdfParts()` yield the document a row, a line or a PDF
+// object at a time, so a job's report is written into its staging file
+// without the whole body in memory (`executor.finishToFile()`). The Buffer
+// methods are those pieces joined, byte for byte.
 // ---------------------------------------------------------------------------
 
 import bunyan = require('bunyan');
@@ -311,14 +317,34 @@ class Formats {
    */
   static json(plan: PlanLike, rows: Row[]): Buffer {
     log.debug("Entering Formats.json().");
-    const body = JSON.stringify({
-      source: plan.source,
-      fields: plan.fields,
-      rows: rows,
-      truncated: false
-    });
+    const body = Formats.joined(Formats.jsonParts(plan, rows));
     log.debug("Leaving Formats.json().");
-    return Buffer.from(body, 'utf8');
+    return body;
+  }
+
+  /**
+   * The JSON document a piece at a time (#1045): the same bytes
+   * `JSON.stringify` makes of the whole, a row per piece, so a report is
+   * written to its staging file without the whole body in memory.
+   *
+   * @param plan - the plan
+   * @param rows - the output rows
+   * @returns the pieces, in order
+   */
+  static *jsonParts(plan: PlanLike, rows: Row[]): Generator<string> {
+    log.debug("Entering Formats.jsonParts().");
+    // The head as `JSON.stringify` writes it, less its closing brace, so a
+    // missing source is left out exactly as the whole document leaves it.
+    const head = JSON.stringify({ source: plan.source,
+      fields: plan.fields });
+    const open = head.length > 2 ? head.slice(0, -1) + ',' : '{';
+    yield open + '"rows":[';
+    for (let i = 0; i < rows.length; i++) {
+      const row = JSON.stringify(rows[i]);
+      yield (i ? ',' : '') + (row === undefined ? 'null' : row);
+    }
+    yield '],"truncated":false}';
+    log.debug("Leaving Formats.jsonParts().");
   }
 
   /**
@@ -328,17 +354,30 @@ class Formats {
    */
   static csv(plan: PlanLike, rows: Row[]): Buffer {
     log.debug("Entering Formats.csv().");
+    const body = Formats.joined(Formats.csvParts(plan, rows));
+    log.debug("Leaving Formats.csv().");
+    return body;
+  }
+
+  /**
+   * The CSV document a line at a time (#1045).
+   *
+   * @param plan - the plan
+   * @param rows - the output rows
+   * @returns the lines, each ending CRLF
+   */
+  static *csvParts(plan: PlanLike, rows: Row[]): Generator<string> {
+    log.debug("Entering Formats.csvParts().");
     const fields = plan.fields || [];
-    const lines = [fields.map(csvCell).join(',')];
+    yield fields.map(csvCell).join(',') + '\r\n';
     for (let i = 0; i < rows.length; i++) {
       const cells: string[] = [];
       for (let c = 0; c < fields.length; c++) {
         cells.push(csvCell(rows[i][fields[c]]));
       }
-      lines.push(cells.join(','));
+      yield cells.join(',') + '\r\n';
     }
-    log.debug("Leaving Formats.csv().");
-    return Buffer.from(lines.join('\r\n') + '\r\n', 'utf8');
+    log.debug("Leaving Formats.csvParts().");
   }
 
   /**
@@ -352,6 +391,32 @@ class Formats {
              maxPages: number):
       { ok: true; body: Buffer } | { ok: false; reason: string } {
     log.debug("Entering Formats.pdf().");
+    const laid = Formats.pdfParts(plan, rows, meta, maxPages);
+    if (!('parts' in laid)) {
+      log.debug("Leaving Formats.pdf(). Too many pages.");
+      return laid;
+    }
+    const body = Formats.joined(laid.parts);
+    log.debug("Leaving Formats.pdf().");
+    return { ok: true, body: body };
+  }
+
+  /**
+   * The PDF a piece at a time (#1045). The layout is decided first, so a
+   * report past the page cap is refused before a byte is produced; the
+   * pages are then drawn one at a time as the pieces are asked for.
+   *
+   * @param plan - the plan, including its locale
+   * @param rows - the output rows
+   * @param meta - the realm name and the generation time
+   * @param maxPages - report.pdfMaxPages
+   * @returns the pieces, or a refusal naming which cap broke
+   */
+  static pdfParts(plan: PlanLike, rows: Row[], meta: PdfMeta,
+                  maxPages: number):
+      { ok: true; parts: Iterable<string> } |
+      { ok: false; reason: string } {
+    log.debug("Entering Formats.pdfParts().");
     const cap = maxPages > 0 ? maxPages : 1;
     const fields = plan.fields.length ? plan.fields : ['count'];
     const width = (PAGE_W - MARGIN * 2) / fields.length;
@@ -364,13 +429,28 @@ class Formats {
     const budget = Math.max(1, LINES_PER_PAGE - (header.length - 1));
     const pages = paginate(rows, fields, width, budget);
     if (pages.length > cap) {
-      log.debug("Leaving Formats.pdf(). Too many pages.");
+      log.debug("Leaving Formats.pdfParts(). Too many pages.");
       return { ok: false, reason: 'pages' };
     }
-    const body = Formats.assemble(plan, meta || { realm: '', when: '' },
-      fields, width, header, pages);
-    log.debug("Leaving Formats.pdf().");
-    return { ok: true, body: body };
+    const chosen = chromeFor(plan.locale);
+    const given = meta || { realm: '', when: '' };
+    const streamOf = function (p: number): string {
+      return Formats.pageStream(plan, given, chosen, fields, width,
+        header, pages[p], p, pages.length);
+    };
+    log.debug("Leaving Formats.pdfParts().");
+    return { ok: true, parts: Formats.wrapParts(pages.length, streamOf) };
+  }
+
+  // The pieces of a document, as one UTF-8 buffer.
+  private static joined(parts: Iterable<string>): Buffer {
+    log.debug("Entering Formats.joined().");
+    const out: string[] = [];
+    for (const part of parts) {
+      out.push(part);
+    }
+    log.debug("Leaving Formats.joined().");
+    return Buffer.from(out.join(''), 'utf8');
   }
 
   /**
@@ -395,21 +475,6 @@ class Formats {
     log.debug("Entering Formats.cellBytes().");
     log.debug("Leaving Formats.cellBytes().");
     return CELL_BYTES;
-  }
-
-  private static assemble(plan: PlanLike, meta: PdfMeta, fields: string[],
-                          width: number, header: Line[],
-                          pages: Line[][]): Buffer {
-    log.debug("Entering Formats.assemble().");
-    const chosen = chromeFor(plan.locale);
-    const streams: string[] = [];
-    for (let p = 0; p < pages.length; p++) {
-      streams.push(Formats.pageStream(plan, meta, chosen, fields, width,
-        header, pages[p], p, pages.length));
-    }
-    const built = Formats.wrap(streams);
-    log.debug("Leaving Formats.assemble().");
-    return built;
   }
 
   // One line of the table at `y`: every column that has text on it.
@@ -465,39 +530,49 @@ class Formats {
     return parts.join('');
   }
 
-  private static wrap(streams: string[]): Buffer {
-    log.debug("Entering Formats.wrap().");
-    const n = streams.length;
-    const objects: string[] = [];
-    objects.push('<< /Type /Catalog /Pages 2 0 R >>');
+  // The file around the page streams, a piece at a time: each object as
+  // it is made, its offset counted from the bytes already produced, then
+  // the cross-reference table. Only the offsets are kept.
+  private static *wrapParts(n: number,
+      streamOf: (page: number) => string): Generator<string> {
+    log.debug("Entering Formats.wrapParts().");
     const kids: string[] = [];
     for (let i = 0; i < n; i++) {
       kids.push((4 + i * 2) + ' 0 R');
     }
-    objects.push('<< /Type /Pages /Kids [' + kids.join(' ') +
-      '] /Count ' + n + ' >>');
-    objects.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica ' +
-      '/Encoding /WinAnsiEncoding >>');
+    const fixed = [
+      '<< /Type /Catalog /Pages 2 0 R >>',
+      '<< /Type /Pages /Kids [' + kids.join(' ') + '] /Count ' + n + ' >>',
+      '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica ' +
+        '/Encoding /WinAnsiEncoding >>'
+    ];
+    const header = '%PDF-1.4\n%\u00e2\u00e3\u00cf\u00d3\n';
+    let at = Buffer.byteLength(header, 'utf8');
+    yield header;
+    const offsets: number[] = [0];
+    let number = 0;
+    const object = function (body: string): string {
+      number += 1;
+      offsets.push(at);
+      const text = number + ' 0 obj\n' + body + '\nendobj\n';
+      at += Buffer.byteLength(text, 'utf8');
+      return text;
+    };
+    for (let i = 0; i < fixed.length; i++) {
+      yield object(fixed[i]);
+    }
     for (let i = 0; i < n; i++) {
-      const pageNum = 4 + i * 2;
-      const contentNum = pageNum + 1;
-      objects.push('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' +
+      const contentNum = 4 + i * 2 + 1;
+      yield object('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' +
         PAGE_W + ' ' + PAGE_H + '] /Contents ' + contentNum +
         ' 0 R /Resources << /Font << /F1 3 0 R >> >> >>');
-      const stream = streams[i];
+      const stream = streamOf(i);
       const length = Buffer.byteLength(stream, 'utf8');
-      objects.push('<< /Length ' + length + ' >>\nstream\n' + stream +
+      yield object('<< /Length ' + length + ' >>\nstream\n' + stream +
         'endstream');
     }
-    const header = '%PDF-1.4\n%\u00e2\u00e3\u00cf\u00d3\n';
-    let body = header;
-    const offsets: number[] = [0];
-    for (let i = 0; i < objects.length; i++) {
-      offsets.push(Buffer.byteLength(body, 'utf8'));
-      body += (i + 1) + ' 0 obj\n' + objects[i] + '\nendobj\n';
-    }
-    const startxref = Buffer.byteLength(body, 'utf8');
-    let xref = 'xref\n0 ' + (objects.length + 1) + '\n';
+    const startxref = at;
+    let xref = 'xref\n0 ' + (number + 1) + '\n';
     xref += '0000000000 65535 f \n';
     for (let i = 1; i < offsets.length; i++) {
       let off = String(offsets[i]);
@@ -506,11 +581,9 @@ class Formats {
       }
       xref += off + ' 00000 n \n';
     }
-    body += xref;
-    body += 'trailer\n<< /Size ' + (objects.length + 1) +
+    yield xref + 'trailer\n<< /Size ' + (number + 1) +
       ' /Root 1 0 R >>\nstartxref\n' + startxref + '\n%%EOF\n';
-    log.debug("Leaving Formats.wrap().");
-    return Buffer.from(body, 'utf8');
+    log.debug("Leaving Formats.wrapParts().");
   }
 }
 

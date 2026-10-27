@@ -13931,14 +13931,16 @@ const SETTINGS = [
     label: 'Dataset upload directory', env: 'STS_RISK_UPLOAD_DIRECTORY',
     type: 'string', dflt: './data/risk-uploads', runtime: true,
     description: 'Where an uploaded dataset file is written while it is ' +
-                 'imported, and deleted from when the import ends however ' +
-                 'it ends. A relative path is resolved against this ' +
-                 'package root, as persistence.dataDir is. Give it a ' +
-                 'volume of its own with room for the largest file you ' +
-                 'will upload — compressed; nothing expanded is written — ' +
-                 'since an upload is refused when the directory\'s free ' +
-                 'space cannot hold it. Every stack this repository ships ' +
-                 'mounts one here.' },
+                 'imported, and where a report job is built before it is ' +
+                 'stored; each file is deleted when its import or job ' +
+                 'ends, however it ends. A relative path is resolved ' +
+                 'against this package root, as persistence.dataDir is. ' +
+                 'Give it a volume of its own with room for the largest ' +
+                 'file you will upload — compressed; nothing expanded is ' +
+                 'written — and for report.asyncMaxBytes per report job ' +
+                 'running at once, since an upload or a job is refused ' +
+                 'when the directory\'s free space cannot hold it. Every ' +
+                 'stack this repository ships mounts one here.' },
 
   { key: 'risk.uploadMaxBytes', group: 'Risk',
     label: 'Largest dataset upload (bytes)', env: 'STS_RISK_UPLOAD_MAX_BYTES',
@@ -13985,9 +13987,11 @@ const SETTINGS = [
     env: 'STS_RISK_UPLOAD_SWEEP_S', type: 'int', dflt: 60, min: 10,
     max: 3600, runtime: true,
     description: 'How often every process keeps the upload files it is ' +
-                 'importing fresh and deletes the leftovers of a process ' +
-                 'that stopped (risk.upload-cleanup), and how often the ' +
-                 'risk.stalled-imports job looks for an abandoned version. ' +
+                 'importing and the reports it is building fresh, and ' +
+                 'deletes the leftovers of a process that stopped ' +
+                 '(risk.upload-cleanup, report.build-cleanup), and how ' +
+                 'often the risk.stalled-imports job looks for an ' +
+                 'abandoned version. ' +
                  'Keep it well under risk.importStallMinutes.' },
 
   { key: 'risk.datasetShrinkLimitPercent', group: 'Risk',

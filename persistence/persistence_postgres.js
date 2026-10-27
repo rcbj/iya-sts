@@ -282,7 +282,11 @@ const CHANGE_ROWS_PER_STATEMENT = 5000;
 // and `pwdaccountlockedtime` among the asked names, so `status equals
 // locked` is a holders read. The asked index is rebuilt again (the same
 // advisory step, now looking for the newest name).
-const SCHEMA_VERSION = 28;
+// 29 SINCE 2026-10-27 (#1045): `sts_report_artifact_pieces`, a finished
+// report's sealed pieces, so a report is never one value in any process's
+// heap. A row of `sts_report_artifacts` written before it still holds its
+// whole body and is still read.
+const SCHEMA_VERSION = 29;
 
 // THE DATABASE'S CLOCK, in the milliseconds every cluster table stores. See the
 // cluster block in SCHEMA_OBJECTS for why no process's own clock is used.
@@ -1603,6 +1607,16 @@ const SCHEMA_OBJECTS = [
   '  media_type text   NOT NULL,' +
   '  created_at bigint NOT NULL,' +
   '  PRIMARY KEY (realm, job_id))' },
+  // A finished report's pieces (#1045, schema version 29), each sealed on
+  // its own and numbered from 0. The `sts_report_artifacts` row of the
+  // same job says how many there are.
+  { name: 'sts_report_artifact_pieces', statement:
+  'CREATE TABLE IF NOT EXISTS sts_report_artifact_pieces (' +
+  '  realm      text   NOT NULL,' +
+  '  job_id     text   NOT NULL,' +
+  '  seq        int    NOT NULL,' +
+  '  bytes      bytea  NOT NULL,' +
+  '  PRIMARY KEY (realm, job_id, seq))' },
   // What version of the above is on disk. One row, and nothing reads it yet —
   // it is here so that a future change has something to look at other than the
   // shape of the tables.
@@ -10209,6 +10223,55 @@ function create(options) {
       );
     },
 
+    // A finished report's pieces (#1045), with the row that says how many
+    // there are, in ONE transaction: a reader sees the old artifact or the
+    // whole new one. The pieces arrive as an async iterable — read from the
+    // build file and sealed one at a time — so the transaction is run once
+    // and never retried: the iterable cannot be read twice. A failure is
+    // the job's, which says so.
+    putReportArtifactPieces: function (row, pieces) {
+      log.debug("Entering putReportArtifactPieces().");
+      log.debug("Leaving putReportArtifactPieces().");
+      return transactionOnce(async function (client) {
+        await client.query(
+          'DELETE FROM sts_report_artifact_pieces WHERE realm = $1 AND ' +
+          'job_id = $2', [row.realm, row.jobId]);
+        let seq = 0;
+        for await (const piece of pieces) {
+          await client.query(
+            'INSERT INTO sts_report_artifact_pieces (realm, job_id, seq, ' +
+            'bytes) VALUES ($1, $2, $3, $4)',
+            [row.realm, row.jobId, seq, piece]);
+          seq += 1;
+        }
+        const marker = Buffer.from(String(row.prefix) + seq + ':' +
+          Number(row.size), 'utf8');
+        await client.query(
+          'INSERT INTO sts_report_artifacts (realm, job_id, bytes, sha256, ' +
+          'media_type, created_at) VALUES ($1, $2, $3, $4, $5, $6) ' +
+          'ON CONFLICT (realm, job_id) DO UPDATE SET ' +
+          'bytes = EXCLUDED.bytes, sha256 = EXCLUDED.sha256, ' +
+          'media_type = EXCLUDED.media_type, ' +
+          'created_at = EXCLUDED.created_at',
+          [row.realm, row.jobId, marker, row.sha256, row.mediaType,
+           Number(row.createdAt)]);
+        return seq;
+      });
+    },
+
+    getReportArtifactPiece: function (key) {
+      log.debug("Entering getReportArtifactPiece().");
+      log.debug("Leaving getReportArtifactPiece().");
+      return pool.query(
+        'SELECT bytes FROM sts_report_artifact_pieces WHERE realm = $1 ' +
+        'AND job_id = $2 AND seq = $3',
+        [key.realm, key.jobId, Number(key.seq)]
+      ).then(function (r) {
+        const found = r.rows[0];
+        return found ? found.bytes : null;
+      });
+    },
+
     getReportArtifact: function (key) {
       log.debug("Entering getReportArtifact().");
       log.debug("Leaving getReportArtifact().");
@@ -10233,7 +10296,11 @@ function create(options) {
     deleteReportArtifact: function (key) {
       log.debug("Entering deleteReportArtifact().");
       log.debug("Leaving deleteReportArtifact().");
+      // The pieces and the row in one statement (#1045), so neither is
+      // left without the other.
       return pool.query(
+        'WITH pieces AS (DELETE FROM sts_report_artifact_pieces ' +
+        'WHERE realm = $1 AND job_id = $2) ' +
         'DELETE FROM sts_report_artifacts WHERE realm = $1 AND job_id = $2',
         [key.realm, key.jobId]
       );
