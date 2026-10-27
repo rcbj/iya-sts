@@ -935,6 +935,12 @@ function directoryDouble(windowed) {
       enrolledAt: 1500, lastUsedAt: 7000 })],
     // A password too (#1019): its hash must never reach a row.
     userPassword: ['$scrypt$16384$8$1$c2FsdA==$c2VjcmV0aGFzaA=='],
+    // A recovery code set (#1024): two codes hashed, one spent; no hash
+    // may reach a row.
+    stsBackupCodes: [JSON.stringify({ codes: [
+      { hash: '$scrypt$16384$8$1$c2FsdA==$Y29kZW9uZQ==' },
+      { hash: '$scrypt$16384$8$1$c2FsdA==$Y29kZXR3bw==', usedAt: 8000 }],
+      total: 2, remaining: 1, generatedAt: 4000, lastUsedAt: 8000 })],
     pwdChangedTime: ['20261020100000Z'],
     authnMethod: ['pwd', 'hwk', 'otp'],
     mfaLastAuthTime: ['2026-10-20T10:00:00.000Z'] });
@@ -1789,7 +1795,7 @@ function groups(t) {
     JSON.stringify(sources.mechanismIds()),
     'the catalog enumerates the mechanisms as the table has them');
   t.equal(JSON.stringify(catalog.field('credentialHolders', 'role').values),
-    JSON.stringify(['primary', 'mfa']), 'and the two roles');
+    JSON.stringify(['primary', 'mfa', 'recovery']), 'and the three roles');
   t.equal(catalog.field('users', 'username').values, undefined,
     'an open field has no values');
   const published = api.publicSource(catalog.source('credentialHolders'));
@@ -2467,8 +2473,9 @@ async function holders(t) {
       return row.username + '/' + row.mechanism + '/' + row.role;
     }).sort().join(','),
       'ada/passkey/mfa,ada/passkey/primary,ada/passkey/primary,' +
-      'ada/password/primary,ada/totp/mfa',
-      'every credential of every member, the password among them');
+      'ada/password/primary,ada/recoveryCodes/recovery,ada/totp/mfa',
+      'every credential of every member, the password and the codes among ' +
+      'them');
 
     reset();
     const counted = await read({ source: 'credentialHolders',
@@ -2497,12 +2504,27 @@ async function holders(t) {
     const asJob = await read({ source: 'credentialHolders',
       select: fields, limit: 10 }, 'async');
     t.equal(asJob.ok, true, 'as a job it reads every mechanism\'s holders');
-    t.equal((asJob.rows || []).length, 6,
-      'ada three passkeys, an authenticator app and a password, bea one ' +
-      'passkey');
-    t.equal(calls.holders, 6, 'one holders lookup per mechanism');
-    t.equal(calls.holderCount, 6, 'after one count per mechanism');
-    t.equal(calls.holdersStop, 6, 'and each read carries a stop');
+    t.equal((asJob.rows || []).length, 7,
+      'ada three passkeys, an authenticator app, a password and a code ' +
+      'set, bea one passkey');
+    t.equal(calls.holders, 7, 'one holders lookup per mechanism');
+    t.equal(calls.holderCount, 7, 'after one count per mechanism');
+    t.equal(calls.holdersStop, 7, 'and each read carries a stop');
+
+    // THE RECOVERY CODE SET (#1024): one row, the unused codes counted, the
+    // hash scheme as its algorithm, never a hash or a code.
+    reset();
+    const recovery = await read({ source: 'credentialHolders',
+      select: fields, limit: 5,
+      where: { op: 'eq', field: 'mechanism', value: 'recoveryCodes' } });
+    t.equal((recovery.rows || []).map(label).join(','), 'ada/recovery',
+      'a recovery code set is one recovery row for its holder');
+    t.equal(recovery.rows[0].credentials, 1, 'with its unused codes counted');
+    t.equal(recovery.rows[0].algorithm, 'scrypt', 'and its hash scheme');
+    t.equal(recovery.rows[0].enrolledAt, '1970-01-01T00:00:04.000Z',
+      'generated when the set says');
+    t.check(JSON.stringify(recovery.rows).indexOf('Y29kZ') < 0,
+      'and no hash is in the row');
 
     // THE PASSWORD MECHANISM (#1019): one row per password, the hash
     // scheme as its algorithm and never the hash, pwdChangedTime as its

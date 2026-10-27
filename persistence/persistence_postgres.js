@@ -269,7 +269,13 @@ const CHANGE_ROWS_PER_STATEMENT = 5000;
 // store by `written_at` (only a BRIN, #630).
 // 26 SINCE 2026-10-25 (#956): `sts_report_artifacts`, the bytes of a
 // finished report. Definitions and job rows stay in the realm maps.
-const SCHEMA_VERSION = 26;
+// 27 SINCE 2026-10-27 (#1024): `sts_ldap_entries_asked_names` rebuilt with
+// `stsbackupcodes` among the asked names, so the reports application's
+// recovery-codes mechanism reads its holders through the index rather than
+// a scan. The index's expression changed, so an existing one is dropped
+// and built again (an advisory upgrade, the owner's to run on a large
+// store; `postgres/schema.sql` carries it).
+const SCHEMA_VERSION = 27;
 
 // THE DATABASE'S CLOCK, in the milliseconds every cluster table stores. See the
 // cluster block in SCHEMA_OBJECTS for why no process's own clock is used.
@@ -1860,7 +1866,23 @@ const SCHEMA_UPGRADES = [
       'n_distinct=100000']), statements: [
       'ALTER TABLE sts_ldap_entries ALTER COLUMN parent_key SET ' +
       '(n_distinct=100000)',
-      'ANALYZE sts_ldap_entries (parent_key)'] }
+      'ANALYZE sts_ldap_entries (parent_key)'] },
+  // THE ASKED-NAMES INDEX LEARNED A NAME (#1024, schema version 27): its
+  // expression and predicate spell every asked name, so an index built
+  // before `stsbackupcodes` joined them answers "nobody" for that name
+  // through the index. Where the definition lacks the name, the index is
+  // dropped and built again from SCHEMA_OBJECTS' statement. Advisory: on a
+  // large store the build takes minutes and locks writes, which is the
+  // owner's call (`postgres/schema.sql`), not a start-up's.
+  { name: 'sts_ldap_entries_asked_names_v27', table: 'sts_ldap_entries',
+    advisory: true, issue: '#1024',
+    when: 'EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = ' +
+          '\'sts_ldap_entries_asked_names\' AND position(\'stsbackupcodes\' ' +
+          'in indexdef) = 0)',
+    statements: ['DROP INDEX IF EXISTS sts_ldap_entries_asked_names',
+      SCHEMA_OBJECTS.filter(function (object) {
+        return object.name === 'sts_ldap_entries_asked_names';
+      })[0].statement] }
 ];
 
 // THE STATEMENTS ALONE, which is what this module exported before the pairing

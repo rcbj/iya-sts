@@ -84,8 +84,8 @@ interface FieldSpec {
 // `MECHANISM_TABLE` order; `tests/report_query.js` holds the two lists equal,
 // because the catalog cannot require `sources.ts` (it requires the catalog).
 const HOLDER_MECHANISMS = ['passkey', 'totp', 'emailFactor', 'certificate',
-  'kerberos', 'password'];
-const HOLDER_ROLES = ['primary', 'mfa'];
+  'kerberos', 'password', 'recoveryCodes'];
+const HOLDER_ROLES = ['primary', 'mfa', 'recovery'];
 
 // The operators the store answers with an index, per field of `users`. No
 // other source reads the directory row by row, so no other source has a row.
@@ -284,15 +284,17 @@ function standardSources(): SourceSpec[] {
        field('displayName', 'string',
          'displayName, or cn when displayName is empty.'),
        field('mechanism', 'string',
-         'passkey, totp, emailFactor, certificate, kerberos or password ' +
-         '(the password is counted from the realm\'s counter and listed ' +
-         'only narrowed by memberOf; its row carries the hash scheme, ' +
-         'never the hash).',
+         'passkey, totp, emailFactor, certificate, kerberos, password or ' +
+         'recoveryCodes (the password is counted from the realm\'s ' +
+         'counter and listed only narrowed by memberOf; its row carries ' +
+         'the hash scheme, never the hash; a recovery code set is one ' +
+         'row, its codes counted, never shown).',
          HOLDER_INDEXED.mechanism, HOLDER_MECHANISMS),
        field('role', 'string',
-         'primary (signs the person in on its own) or mfa (a second ' +
-         'factor after a password). A passkey\'s is the one chosen at ' +
-         'enrolment and enforced at sign-in.', undefined, HOLDER_ROLES),
+         'primary (signs the person in on its own), mfa (a second ' +
+         'factor after a password) or recovery (a recovery code set). A ' +
+         'passkey\'s is the one chosen at enrolment and enforced at ' +
+         'sign-in.', undefined, HOLDER_ROLES),
        field('credentials', 'number',
          'How many credentials of this mechanism and role the person ' +
          'holds; the same on each of their rows (#1011).'),

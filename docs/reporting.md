@@ -399,8 +399,11 @@ reads every mechanism's holders: on a directory held in a database that
 is refused synchronously (`result_too_large`) and becomes a job in
 `auto` mode. Nothing new is stored or indexed, and nothing changes what
 is sealed: the rows are read from the holders' own entries, as the users
-page's census reads them. Recovery codes and app passwords are not
-listed, because their attributes are not in that index.
+page's census reads them. A recovery code set is one row with its unused
+codes counted, the hash scheme as its algorithm and its generation as
+`enrolledAt`; no code reaches a row (since schema version 27, which put
+the attribute in the index). App passwords are not listed, because their
+attribute is not in that index.
 
 **The password is the one mechanism counted rather than indexed.**
 Nearly everyone holds one, so the directory keeps no index of its
@@ -438,8 +441,8 @@ Monitoring → Passkeys.
 |---|---|---|---|---|---|
 | `username` | string | The directory uid. | yes | yes | no |
 | `displayName` | string | `displayName`, or `cn`. | yes | yes | no |
-| `mechanism` | string | `passkey`, `totp`, `emailFactor`, `certificate`, `kerberos` or `password`; enumerated, a dropdown on the page. Indexed: `eq`, `in`. | yes | yes | yes |
-| `role` | string | `primary` or `mfa`; enumerated. | yes | yes | yes |
+| `mechanism` | string | `passkey`, `totp`, `emailFactor`, `certificate`, `kerberos`, `password` or `recoveryCodes`; enumerated, a dropdown on the page. Indexed: `eq`, `in`. | yes | yes | yes |
+| `role` | string | `primary`, `mfa` or `recovery`; enumerated. | yes | yes | yes |
 | `credentials` | number | How many credentials of this mechanism and role the person holds; the same on each of their rows. | yes | yes | no |
 | `credentialId` | string | This credential's own id (a passkey's credential id). | yes | yes | no |
 | `algorithm` | string | This credential's signature algorithm (a passkey's JOSE name, such as `ES256` or `ML-DSA-65`). | yes | yes | yes |

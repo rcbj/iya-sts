@@ -1077,7 +1077,12 @@ const MECHANISM_TABLE = [
   // comes from the realm's counter (`holderCountAsync`) and a list of its
   // holders is the population, refused unless narrowed by memberOf. Its
   // row never carries the hash: the scheme is the algorithm.
-  { id: 'password', attribute: 'userPassword', role: 'primary' }
+  { id: 'password', attribute: 'userPassword', role: 'primary' },
+  // Recovery codes (#1024): a set of single-use codes, stored as hashes,
+  // one attribute value per person. The asked-names index carries the name
+  // since schema version 27, so the holders are an indexed read like the
+  // others. A row is the set, its codes counted and never shown.
+  { id: 'recoveryCodes', attribute: 'stsBackupCodes', role: 'recovery' }
 ];
 const HOLDER_FIELDS = ['uid', 'displayname', 'cn', 'authnmethod',
   'mfalastauthtime', 'pwdchangedtime'];
@@ -1180,6 +1185,36 @@ function reportHolderRows(entry: any, mechanism: any, ldap: any): any[] {
     });
     log.debug("Leaving reportHolderRows(). Passkeys, " + out.length +
       ' role(s).');
+    return out;
+  }
+  if (mechanism.id === 'recoveryCodes') {
+    // THE RECOVERY CODE SET IS ONE ROW (#1024): how many codes remain
+    // (the stored count when the set is sealed under a key this process
+    // cannot open, the unused codes otherwise), the hash scheme as the
+    // algorithm (scrypt since 2026-09-11, plain before), the set's
+    // generation as its enrolment and its last use. No code or hash
+    // reaches the row.
+    reportParsedValues(values).forEach(function (set: any, i: number): void {
+      const codes: any[] = Array.isArray(set.codes) ? set.codes : [];
+      const unused = codes.filter(function (one: any): boolean {
+        return one && typeof one === 'object' && !one.usedAt;
+      }).length;
+      const hashed = codes.some(function (one: any): boolean {
+        return one && typeof one.hash === 'string' &&
+          one.hash.indexOf('$scrypt$') === 0;
+      });
+      out.push(Object.assign({}, common, {
+        role: mechanism.role,
+        credentials: codes.length ? unused : Number(set.remaining || 0),
+        credentialId: String(set.generatedAt || (i + 1)),
+        algorithm: codes.length ? (hashed ? 'scrypt' : 'plain') :
+          (set.sealed ? 'scrypt' : ''),
+        lane: '',
+        enrolledAt: reportMinIso([set.generatedAt]),
+        lastUsedAt: reportMaxIso([set.lastUsedAt])
+      }));
+    });
+    log.debug("Leaving reportHolderRows(). " + out.length + ' code set(s).');
     return out;
   }
   if (mechanism.id === 'password') {
