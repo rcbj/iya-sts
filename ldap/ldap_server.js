@@ -15667,9 +15667,9 @@ function rekeyLdaps(why) {
     const current = tlsServer.serverCertificate();
     Object.assign(serverCertificate, current);
     secureServer.server.setSecureContext(Object.assign({
-      cert: (current.chainPem && current.chainPem.length)
-        ? [current.certPem].concat(current.chainPem).join('')
-        : current.certPem,
+      // The leaf, its chain and the Root (#1064), as every listener presents
+      // them — tls_server.js's presentedBundlePem().
+      cert: tlsServer.presentedBundlePem(current),
       key: current.privateKeyPem,
       ca: tlsServer.clientTruststoreOptions(ldapsPolicy()).ca
     }, tlsProtocolOptions()));
@@ -15719,7 +15719,10 @@ if (serverCertificate && serverCertificate.certPem &&
     encodeErrorMessage: true,
     saslMechanisms: SASL_MECHANISMS,
     bindDnFromHandler: true,
-    certificate: serverCertificate.certPem,
+    // ldapjs passes this to `tls.createServer()` as `cert` unchanged, so the
+    // bundle is the whole of what LDAPS presents: the leaf, its chain and the
+    // Root (#1064), from the one function every listener takes it from.
+    certificate: tlsServer.presentedBundlePem(serverCertificate),
     key: serverCertificate.privateKeyPem,
     ca: tlsServer.clientTruststoreOptions(ldapsPolicy()).ca
   }, tlsProtocolOptions(),
@@ -15727,11 +15730,7 @@ if (serverCertificate && serverCertificate.certPem &&
   tlsServer.trustClientCertificatesOn(secureServer.server,
     'LDAPS (' + LDAPS_PORT + ')', function () {
       return { key: serverCertificate.privateKeyPem,
-               cert: (serverCertificate.chainPem &&
-                      serverCertificate.chainPem.length)
-                 ? [serverCertificate.certPem]
-                   .concat(serverCertificate.chainPem).join('')
-                 : serverCertificate.certPem };
+               cert: tlsServer.presentedBundlePem(serverCertificate) };
     }, { kind: 'ldaps' });
   // A ticket another node issued resumes here too, in an active-active
   // cluster (tls/session_tickets.ts); outside one this changes nothing.

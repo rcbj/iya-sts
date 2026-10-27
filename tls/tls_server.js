@@ -2455,12 +2455,9 @@ function secureContextOptions(policy) {
     // certificate is issued by this service's own TLS Issuing CA, so a client
     // holding only the Root needs the two certificates between them — without
     // that, "trust this one anchor" is true and unusable, and the failure is
-    // `unable to get local issuer certificate`, which names nothing.
-    cert: SERVER_CERTIFICATES.map(function (one) {
-      return (one.chainPem && one.chainPem.length)
-        ? [one.certPem].concat(one.chainPem).join('')
-        : one.certPem;
-    }),
+    // `unable to get local issuer certificate`, which names nothing. And the
+    // Root after them since #1064 — see presentedBundlePem().
+    cert: SERVER_CERTIFICATES.map(presentedBundlePem),
     // THE LISTENER'S OWN TRUSTSTORE (#429): the runtime anchors every
     // listener shares (/admin/tls/trust), the anchors of its OWN file where it
     // names one — replacing the service's file anchors for it — and the
@@ -2708,6 +2705,63 @@ function trustAnchorPems() {
   });
   log.debug('Leaving trustAnchorPems(). ' + out.length + ' anchor(s).');
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// WHAT A SOCKET PRESENTS: THE LEAF, ITS CHAIN, AND THE ROOT (#1064).
+//
+// **THE ONE PLACE A LISTENER'S `cert` BUNDLE IS BUILT**, and the chain in it
+// is `common/pki.js`'s `chainThroughRoot()`, the one place ANY reported chain
+// is completed — that function's header says why the Root goes with it and
+// why sending it trusts nothing. Every TLS listener this service owns presents
+// what this answers: the main port and the debugger's listener (both through
+// `secureContextOptions()`), the custom and realm listeners
+// (`tls/listeners.js`), LDAPS (`ldap/ldap_server.js`; ldapjs hands the bundle
+// to `tls.createServer()` unchanged), the channel between cells
+// (`common/cell_channel.ts`) and SPIFFE's gRPC listeners
+// (`spiffe/spiffe_grpc.ts`).
+//
+// RFC 8446 section 4.4.2 (RFC 5246 section 7.4.2 before it) lets a server
+// leave the trust anchor out, and until #1064 every listener here did; it lets
+// it be sent as well. `chainPem` keeps its meaning — what a certificate is
+// STORED with, without the Root — which the request workers' pin and every
+// "an empty chain means self-signed" reader in this file depend on.
+//
+// The candidate Roots are `trustAnchorPems()` as well as the service Root:
+// a supplied main certificate makes `trustAnchorPems()` answer the anchor that
+// came in its own file, which is the Root its chain ends under. A self-signed
+// leaf has no chain and is presented alone.
+// ---------------------------------------------------------------------------
+/**
+ * Builds the PEM bundle a TLS socket presents for one certificate: the leaf,
+ * the chain it is stored with, and the Root that signs that chain.
+ *
+ * @param record - `{ certPem, chainPem }`, `chainPem` leaf-first and without
+ *   the Root
+ * @returns the PEM bundle, leaf first
+ */
+function presentedBundlePem(record) {
+  log.debug("Entering presentedBundlePem().");
+  const certPem = String((record && record.certPem) || '');
+  const chain = ((record && record.chainPem) || []).filter(function (pem) {
+    return !!pem;
+  });
+  if (!chain.length) {
+    log.debug("Leaving presentedBundlePem(). No chain.");
+    return certPem;
+  }
+  // Lazily, as trustAnchorPems() reaches it: rule 3w, and a cache hit here.
+  const pems = require('../common/pki').chainThroughRoot(certPem, chain,
+    { anchors: trustAnchorPems() });
+  log.debug("Leaving presentedBundlePem(). " + pems.length +
+            " certificate(s).");
+  // Each block ends in a newline before the next begins: the inter-cell and
+  // SPIFFE callers joined theirs with '\n' and the others with '', so a PEM
+  // without a trailing newline would otherwise run into the next one's BEGIN
+  // line and OpenSSL would read one certificate fewer.
+  return pems.map(function (pem) {
+    return /\n$/.test(pem) ? pem : pem + '\n';
+  }).join('');
 }
 
 // ===========================================================================
@@ -6886,6 +6940,10 @@ module.exports = {
   // listeners from the same answer applyAnchors() re-applies to them, rather
   // than assembling a second one that can drift.
   clientTruststoreOptions: secureContextOptions,
+  // The `cert` bundle a socket presents for one `{ certPem, chainPem }`:
+  // leaf, chain and the Root that signs it (#1064). Every listener that
+  // builds its own context takes its bundle from here.
+  presentedBundlePem: presentedBundlePem,
   // `tls.minVersion` / `tls.ciphers` / `tls.groups` /
   // `tls.signatureAlgorithms` for a TLS listener this module does not
   // create — LDAPS, which ldapjs builds, and the main port at creation.

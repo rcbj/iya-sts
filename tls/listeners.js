@@ -180,10 +180,18 @@ async function certificateFor(desired) {
       (result && errorCodes.codeOf(result)) || 'STS-TLS-0040');
   }
   const issued = result.issued;
+  // THE BUNDLE EVERY LISTENER PRESENTS (#1064): the leaf, its chain and the
+  // Root that signs it, from the one function that builds it. Lazily, because
+  // `tls_server.js` is a JavaScript route module that registers its views
+  // where it is first required (root CLAUDE.md, rule 1), and this runs only
+  // once the stack is loaded. A certificate from the operator's own files,
+  // above, is presented as the file holds it.
+  const tlsServer = require('./tls_server');
   log.debug("Leaving certificateFor(). Issued.");
   return { ok: true, certificate: {
     key: issued.privateKeyPem,
-    cert: [issued.certificatePem].concat(issued.chainPem || []).join(''),
+    cert: tlsServer.presentedBundlePem({ certPem: issued.certificatePem,
+                                         chainPem: issued.chainPem || [] }),
     source: 'issued', notBefore: String(issued.notBefore || ''),
     notAfter: String(issued.notAfter || ''),
     serialHex: String(issued.serialHex || '') } };
