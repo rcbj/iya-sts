@@ -679,11 +679,14 @@ const SPECS: Spec[] = [
               'and the seven section 3.3 members plus additional ones, ' +
               'critical_subject_members, and section 3.5\'s jwt_id, ' +
               'saml_assertion_id and ip-addresses formats are implemented. ' +
-              'Section 8 authorization is three schemes — an OAuth 2.0 ' +
+              'Section 8 authorization is four schemes — an OAuth 2.0 ' +
               'access token with the read scope (ssf.read) or the write ' +
               'scope (ssf.manage), which includes read, issued to a ' +
               'client that declares that permission and ' +
-              'honoured only while it still does, HTTP Basic and GNAP — ' +
+              'honoured only while it still does, HTTP Basic, GNAP, and ' +
+              'the receiver\'s TLS client certificate (urn:ietf:rfc:8705), ' +
+              'issued by this realm to its application and holding what a ' +
+              'token for that application would be issued — ' +
               'published in authorization_schemes. Failed pushes are retried ' +
               'ssf.pushRetries times (0 by default, deliberately) and then ' +
               'dead-lettered, and streams are persisted in product mode. ' +
