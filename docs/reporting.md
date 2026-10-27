@@ -360,13 +360,15 @@ listed, because their attributes are not in that index.
 everyone holds is the population under another name: on a service where
 every person has a password, every person also holds Kerberos keys, so
 `mechanism` equals `kerberos` names a million people. The store counts
-the holders through the index that lists them, and a count over the
-execution's row cap (`report.syncMaxRows` synchronously,
-`report.asyncMaxRows` in a job) is refused as `result_too_large` before
-the first entry is opened; synchronously, when a job could still fit, it
-becomes a job in `auto` mode. A `memberOf` filter's members are counted
-the same way. The read that does start stops with the query's time cap
-or its cancellation, not with its last holder.
+the holders through the index that lists them, no further than one past
+the execution's row cap (`report.syncMaxRows` synchronously,
+`report.asyncMaxRows` in a job), so the question costs the cap and not
+the population; over the cap the query is refused as `result_too_large`
+before the first entry is opened. Synchronously the refusal says to run
+it as a job, which `auto` mode does, and the job counts again against
+its own cap. A `memberOf` filter's members are counted the same way. The
+read that does start stops with the query's time cap or its
+cancellation, not with its last holder.
 
 **The census is a count.** `aggregate: "count"` with `groupBy`
 `mechanism`, `role`, `algorithms` or `lanes` answers how many people hold
@@ -439,6 +441,12 @@ is `{ "op", "field", "value" }` or `{ "op", "field", "param" }`. A value
 and a parameter together are refused. A parameter name is a string. The
 bag is supplied beside a saved definition, not inside an ad hoc document
 that already has `source`.
+
+A field that is a list drawn as one string — `memberOf`, and the
+`credentialHolders` source's `algorithms`, `lanes` and `methodsUsed` —
+is compared value by value under `eq`, `ne` and `in`: a person in three
+groups matches `memberOf` equals any one of them. `contains` and
+`startsWith` look at the joined string.
 
 A string value is a string. A number is a finite JSON number. A boolean
 is `true` or `false`. A timestamp is a finite number of epoch

@@ -975,20 +975,24 @@ function directoryDouble(windowed) {
     // How many hold it (#1002): a test's own number when it set one on
     // `holderCounts`, else the people holding it; null when not windowed,
     // as the directory answers in memory.
-    holderCountAsync: function (kind, attribute) {
+    holderCountAsync: function (kind, attribute, upTo) {
       calls.holderCount = (calls.holderCount || 0) + 1;
+      calls.holderCountUpTo = upTo;
       const held = String(attribute).toLowerCase();
+      const bound = function (n) {
+        return upTo > 0 ? Math.min(n, upTo) : n;
+      };
       if (Object.prototype.hasOwnProperty.call(holderCounts, held)) {
-        return Promise.resolve(holderCounts[held]);
+        return Promise.resolve(bound(holderCounts[held]));
       }
       if (!windowed) {
         return Promise.resolve(null);
       }
-      return Promise.resolve(people.filter(function (one) {
+      return Promise.resolve(bound(people.filter(function (one) {
         return Object.keys(one.attributes).some(function (k) {
           return k.toLowerCase() === held && one.attributes[k].length;
         });
-      }).length);
+      }).length));
     },
     holdersAsync: function (kind, attribute, names, control) {
       calls.holders = (calls.holders || 0) + 1;
@@ -1037,8 +1041,12 @@ function directoryDouble(windowed) {
     },
     groupsOfUser: function (name) {
       calls.groups++;
+      // Ada is listed by two groups (#1002: a filter on one of them must
+      // still find her, as rcbj in group1 was not found on 8081) and claims
+      // a third through her own memberOf, which the row leaves out.
       return { groups: name === 'ada' ? [
         { cn: 'staff', via: ['member'], viaMemberOf: false },
+        { cn: 'ops', via: ['member'], viaMemberOf: false },
         { cn: 'claimed', via: [], viaMemberOf: true }
       ] : [] };
     },
@@ -1210,7 +1218,7 @@ async function narrowing(t) {
       where: { op: 'eq', field: 'username', value: 'ada' }, limit: 5 });
     t.equal(one.ok, true, 'username equals is answered');
     t.equal(names(one).join(','), 'ada', 'username equals names the person');
-    t.equal(one.rows[0].memberOf, 'staff',
+    t.equal(one.rows[0].memberOf, 'staff, ops',
       'the row carries the groups that list the person, from the index');
     t.equal(calls.byName, 1, 'one name lookup');
     t.equal(calls.walk, 0, 'the people were not paged');
@@ -1887,7 +1895,7 @@ async function holders(t) {
       '1970-01-01T00:00:09.000Z', 'the latest use');
     t.equal(adaPrimary && adaPrimary.methodsUsed, 'pwd, hwk, otp',
       'the methods the person has used');
-    t.equal(adaPrimary && adaPrimary.memberOf, 'staff',
+    t.equal(adaPrimary && adaPrimary.memberOf, 'staff, ops',
       'the groups that list the person');
     const adaMfa = rows.filter(function (row) {
       return row.username === 'ada' && row.role === 'mfa';
@@ -1947,10 +1955,10 @@ async function holders(t) {
     t.equal(calls.holderCount, 5, 'after one count per mechanism');
     t.equal(calls.holdersStop, 5, 'and each read carries a stop');
 
-    // THE COUNT COMES FIRST (#1002, 8081's million Kerberos keys): over the
-    // synchronous cap and under the job cap the refusal is unbounded, so
-    // auto mode queues a job; over the job cap it is flat; a job over its
-    // own cap is refused too. Nothing is read in any of the three.
+    // THE COUNT COMES FIRST, AND IS BOUNDED (#1002, 8081's million Kerberos
+    // keys): the store is asked for no more than the cap plus one, so the
+    // refusal says "more than the cap" and auto mode queues a job, which
+    // counts again against its own cap and is refused too. Nothing is read.
     built.holderCounts.stskrb5keys = 10000;
     reset();
     const manySync = await read({ source: 'credentialHolders',
@@ -1958,26 +1966,28 @@ async function holders(t) {
       where: { op: 'eq', field: 'mechanism', value: 'kerberos' } });
     t.equal(manySync.code, 'STS-REPORT-0039',
       'ten thousand holders are refused synchronously');
-    t.equal(manySync.unbounded, true, 'as an unbounded refusal (a job fits)');
+    t.equal(manySync.unbounded, true, 'as an unbounded refusal (try a job)');
     t.equal(manySync.error, 'result_too_large', 'and result_too_large');
     t.equal(calls.holders, 0, 'with no holder read');
-    t.check(manySync.description.indexOf('10000') >= 0,
-      'saying how many', manySync.description);
-    built.holderCounts.stskrb5keys = 200000;
+    t.equal(calls.holderCountUpTo, 501,
+      'the count asked for one more than the synchronous cap');
+    t.check(manySync.description.indexOf('more than 500') >= 0,
+      'saying more than the cap', manySync.description);
     reset();
-    const tooManyEven = await read({ source: 'credentialHolders',
+    const fewerJob = await read({ source: 'credentialHolders',
       select: fields, limit: 5,
-      where: { op: 'eq', field: 'mechanism', value: 'kerberos' } });
-    t.equal(tooManyEven.code, 'STS-REPORT-0039',
-      'two hundred thousand are refused synchronously');
-    t.equal(!!tooManyEven.unbounded, false,
-      'and not as unbounded: a job would not fit either');
+      where: { op: 'eq', field: 'mechanism', value: 'kerberos' } }, 'async');
+    t.equal(fewerJob.ok, true, 'a job reads ten thousand (under its cap)');
+    t.equal(calls.holderCountUpTo, 100001,
+      'having counted up to one more than the job cap');
+    built.holderCounts.stskrb5keys = 200000;
     reset();
     const tooManyJob = await read({ source: 'credentialHolders',
       select: fields, limit: 5,
       where: { op: 'eq', field: 'mechanism', value: 'kerberos' } }, 'async');
     t.equal(tooManyJob.code, 'STS-REPORT-0039',
       'and a job over its own cap is refused before it reads');
+    t.equal(!!tooManyJob.unbounded, false, 'flat: nothing larger to try');
     t.equal(calls.holders, 0, 'nothing read for it');
     delete built.holderCounts.stskrb5keys;
     reset();
