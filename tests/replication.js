@@ -357,6 +357,9 @@ async function run(t) {
   await replication.pull();
   t.equal(appliedEarly.length, 0, '5c1. a row of a realm this process does ' +
           'not define is held, not applied');
+  t.equal(replication.heldRealmIds().join(','), 'early-realm',
+          '5c1b. and heldRealmIds() names the realm it waits for, which ' +
+          'the realm load drops at once when the store does not list it');
   early.write('them', 'realms', '', 'early-realm');
   early.write('them', 'directory', 'early-realm', 'cn=second');
   await replication.pull();

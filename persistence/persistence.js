@@ -4178,6 +4178,24 @@ function applyRealmsChange() {
         // rows remembered and the realm absent.
         shadow.delete(id);
       });
+      // AND A HELD ROW OF A REALM THE STORE DOES NOT LIST IS DROPPED NOW
+      // (2026-10-27, run #4): the realm was created and removed before this
+      // process saw either row, so its directory rows — committed after the
+      // realm's row, in the flush order above — will never find their realm
+      // here. Waiting the ten minutes reported every one (STS-STORE-0088).
+      if (typeof replication.heldRealmIds === 'function') {
+        const listed = new Set(stored.map(function (row) {
+          return String(row.id);
+        }));
+        replication.heldRealmIds().forEach(function (id) {
+          if (!listed.has(id) && !realms.get(id)) {
+            const dropped = replication.forgetDeferred(id);
+            log.info('persistence: the "' + id + '" realm is not in the ' +
+                     'store; ' + dropped + ' held row(s) that arrived ' +
+                     'behind its removal are dropped.');
+          }
+        });
+      }
     } finally {
       restoring = was;
     }

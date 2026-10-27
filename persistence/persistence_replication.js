@@ -891,6 +891,21 @@ function createReplication(label) {
     return dropped;
   }
 
+  // The realms the held rows wait for, for `persistence.js`'s realm load:
+  // a realm the store no longer lists was removed before this process ever
+  // saw its row — the scheduler job's throwaway realm, created and removed
+  // between two pulls — and its held rows would otherwise wait the full ten
+  // minutes and report STS-STORE-0088 each (232 per cluster node, run #4).
+  function heldRealmIds() {
+    log.debug("Entering heldRealmIds().");
+    const ids = new Set();
+    deferredRows.forEach(function (held) {
+      ids.add(String(held.row.realm));
+    });
+    log.debug("Leaving heldRealmIds(). " + ids.size);
+    return Array.from(ids);
+  }
+
   // Applies every held row whose realm is defined here now, one after
   // another, and drops the ones that waited too long.
   function applyDeferredRows(applyOne) {
@@ -2177,6 +2192,7 @@ function createReplication(label) {
     stop: stop,
     syncNow: syncNow,
     forgetDeferred: forgetDeferred,
+    heldRealmIds: heldRealmIds,
     supports: supports,
     pull: pull,
     wake: wake,
