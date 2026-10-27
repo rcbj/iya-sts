@@ -513,7 +513,7 @@ async function anUnconfiguredRealmRefusesNobody() {
       "GET /admin-api/roles should answer 200; it answered " +
       register.status);
   });
-  check("a new realm holds exactly the six native roles", function () {
+  check("a new realm holds exactly the eight native roles", function () {
     // #303: ADMIN_READ and ADMIN_WRITE are CONFIGURED roles seeded into every
     // realm, each held by the realm's own management API client and
     // authorizing its admin scope. #309: DEVICE_COMPLIANCE beside them,
@@ -522,12 +522,15 @@ async function anUnconfiguredRealmRefusesNobody() {
     // is CONFERRED by the console's own client, sts-admin-console.
     // SSF_READ and SSF_MANAGE authorize ssf.read and ssf.manage, seeded
     // with the groups ssf-read and ssf-manage and with no application.
-    // Nothing else is seeded.
+    // #1030: REPORT_USE and REPORT_ADMIN authorize report:use and
+    // report:admin, seeded with the groups report-users and report-admins
+    // and with no application. Nothing else is seeded.
     const names = register.body.roles.map(function (r) { return r.name; });
     assert.strictEqual(JSON.stringify(names.slice().sort()),
       JSON.stringify(["ADMIN_CONSOLE", "ADMIN_READ", "ADMIN_WRITE",
-                      "DEVICE_COMPLIANCE", "SSF_MANAGE", "SSF_READ"]),
-      "a realm's ou=roles starts with the six native roles; this one " +
+                      "DEVICE_COMPLIANCE", "REPORT_ADMIN", "REPORT_USE",
+                      "SSF_MANAGE", "SSF_READ"]),
+      "a realm's ou=roles starts with the eight native roles; this one " +
       "holds " + JSON.stringify(names));
     const wanted = { ADMIN_READ: "admin:read", ADMIN_WRITE: "admin:write",
                      DEVICE_COMPLIANCE: "device:compliance",

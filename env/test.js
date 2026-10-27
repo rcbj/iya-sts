@@ -269,8 +269,14 @@ var config = {
     // 309th of 313 jobs in the memory mode and the next create anywhere was
     // refused (`sts_federation_realms`, `vc_did`: "This directory holds its
     // maximum of 2000 entries"). The bulk-load jobs raise it further for
-    // what they add, and leave it raised.
-    maxEntries: 10000,
+    // what they add, and leave it raised. **It reached 10000 on 2026-10-27**,
+    // two seconds before the bulk lane raised it, once #1030 seeded two more
+    // groups and two more roles into every realm: the realm `sts_tlsfuzzer`
+    // was creating lost its seeded groups (STS-LDAP-0007) and its first
+    // application, and `sts_vc_data_model_suite`'s client was refused the
+    // same way. The suite's own growth is about 60 entries a realm times
+    // 150 realms; 20000 leaves it room to double.
+    maxEntries: 20000,
     sizeLimit: 500
   },
 
