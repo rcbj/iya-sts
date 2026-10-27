@@ -3693,6 +3693,10 @@ const ticketNamesShared = realms.sharedMap({
   expiresAt: realms.expiryField('until', 1)
 });
 const TICKET_NAME_SHARED_ENTRIES = 4096;
+// How many read barriers a resumed session with no record here is given
+// before it is judged, and the pause between them (2026-10-27).
+const TICKET_NAME_BARRIERS = 4;
+const TICKET_NAME_BARRIER_PAUSE_MS = 250;
 // Rule 3ap: the replicated half describes itself to /admin/caches; each
 // listener's own record is reported beside its session cache.
 cacheRegistry.register({
@@ -4148,6 +4152,19 @@ function rememberTicketName(record, key, name, ttlMs) {
       }
     });
     ticketNamesShared.set(key, { servername: name, until: now + ttlMs });
+    // FLUSHED NOW, NOT AT THE NEXT UNRELATED WRITE (2026-10-27): a client
+    // resumes within milliseconds of its full handshake, on whichever node
+    // the balancer picks, and that node's read barrier can only see a row
+    // that has been COMMITTED. The minted flush coalesces concurrent
+    // callers into one write (persistence_minted.js), and nothing here
+    // waits for it.
+    const flushed = require('../persistence/persistence').flushMinted();
+    Promise.resolve(flushed).then(function () {
+      return null;
+    }, function (e) {
+      log.debug('Caught flushing a ticket name: ' + ((e && e.message) || e));
+      return null;
+    });
   } catch (e) {
     log.debug('Caught in rememberTicketName(): ' + ((e && e.message) || e));
   }
@@ -4279,6 +4296,7 @@ function attachSessionCache(server, kind, realmId) {
       return;
     }
     const judge = function (madeUnder) {
+      log.debug('Entering judge().');
       if (madeUnder === null || offered === null) {
         // Fails CLOSED, as the session-ID cache does: a session this
         // process cannot vouch for is not answered under a name nobody
@@ -4290,6 +4308,7 @@ function attachSessionCache(server, kind, realmId) {
                    : 'the hello\'s name was not read') + '); the ' +
                  'connection is closed (RFC 6066 section 3).');
         socket.destroy();
+        log.debug('Leaving judge(). No record.');
         return;
       }
       if (madeUnder !== offered) {
@@ -4299,6 +4318,7 @@ function attachSessionCache(server, kind, realmId) {
                  '; the connection is closed (RFC 6066 section 3).');
         socket.destroy();
       }
+      log.debug('Leaving judge().');
     };
     const madeUnder = key ? recordedTicketName(ticketNames, key, ttlMs)
                           : null;
@@ -4317,28 +4337,64 @@ function attachSessionCache(server, kind, realmId) {
     // (`persistence.syncNow()`, bounded by its own deadline; a memory
     // store answers at once with nothing to pull), and the record is read
     // again. A mismatch still closes without waiting, above.
+    // Asked up to TICKET_NAME_BARRIERS times, a short pause between: the
+    // making node flushes the row as it records it (rememberTicketName()),
+    // but that commit and this node's pull are two processes' timers, and
+    // one barrier can land between them.
     socket.pause();
-    let barrier = null;
-    try {
-      barrier = require('../persistence/persistence').syncNow();
-    } catch (e) {
-      log.debug('Caught in the ticket-name check: ' +
-                ((e && e.message) || e));
-      barrier = null;
-    }
-    Promise.resolve(barrier).then(function () {
-      return null;
-    }, function (e) {
-      log.debug('Caught in the ticket-name check\'s barrier: ' +
-                ((e && e.message) || e));
-      return null;
-    }).then(function () {
+    const barrierOnce = function () {
+      log.debug('Entering barrierOnce().');
+      let barrier = null;
+      try {
+        barrier = require('../persistence/persistence').syncNow();
+      } catch (e) {
+        log.debug('Caught in the ticket-name check: ' +
+                  ((e && e.message) || e));
+        barrier = null;
+      }
+      log.debug('Leaving barrierOnce().');
+      return Promise.resolve(barrier).then(function () {
+        return null;
+      }, function (e) {
+        log.debug('Caught in the ticket-name check\'s barrier: ' +
+                  ((e && e.message) || e));
+        return null;
+      });
+    };
+    // A loop, not a chain: the pause between two barriers is a one-shot
+    // delay inside one operation (tests/no_periodic_timers.js).
+    const lookAgain = async function () {
+      log.debug('Entering lookAgain().');
+      let found = null;
+      for (let left = TICKET_NAME_BARRIERS; left > 0; left--) {
+        await barrierOnce();
+        if (socket.destroyed) {
+          log.debug('Leaving lookAgain(). Gone.');
+          return null;
+        }
+        found = recordedTicketName(ticketNames, key, ttlMs);
+        if (found !== null || left === 1) {
+          break;
+        }
+        await new Promise(function (resolve) {
+          setTimeout(resolve, TICKET_NAME_BARRIER_PAUSE_MS);
+        });
+      }
+      log.debug('Leaving lookAgain().');
+      return found;
+    };
+    lookAgain().then(function (found) {
       if (socket.destroyed) {
         return;
       }
-      judge(recordedTicketName(ticketNames, key, ttlMs));
+      judge(found);
       if (!socket.destroyed) {
         socket.resume();
+      }
+    }, function (e) {
+      log.debug('Caught in lookAgain(): ' + ((e && e.message) || e));
+      if (!socket.destroyed) {
+        socket.destroy();
       }
     });
   });

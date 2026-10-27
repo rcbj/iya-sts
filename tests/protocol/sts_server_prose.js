@@ -33,6 +33,7 @@
 "use strict";
 
 const assert = require("assert");
+const https = require("https");
 const { Command, Option } = require("commander");
 
 var appconfig;
@@ -158,7 +159,12 @@ function shapeOf(value, path, out) {
 const DATA = { "/audit": ["events", "knownActors", "byAction"],
                "/node-health": ["nodes[].view.processes.unanswered"],
                "/ldap/service":
-                 ["persistence.replication.retention.lastTrim"] };
+                 ["persistence.replication.retention.lastTrim",
+                  // One counter per change KIND this process has applied
+                  // (cluster, 2026-10-27): two balanced reads land on two
+                  // nodes, and the node that applied no `appconfig` row yet
+                  // has no key for it.
+                  "persistence.replication.byKind"] };
 
 // Deletes `path` (dotted, `name[]` descending into every item) from `value`.
 function dropPath(value, path) {
@@ -305,6 +311,38 @@ async function test() {
   });
 
   log.info("=== g. the module prose is translated, the shape is not ===");
+  // BOTH LANGUAGES OVER ONE SOCKET (cluster, 2026-10-27). What is compared
+  // is ONE process's answer in two languages. Through the balancer (L4: a
+  // node per TCP connection) two fetches out of node's pool may land on two
+  // nodes, whose DATA members differ — an empty `unclassified` list on one
+  // and rows on the other, a replication counter one has not yet seen — and
+  // DATA above grew a path for every such run. One keep-alive agent holding
+  // one socket puts the second read on the node that answered the first.
+  // Each body is read before the next request, so the socket is free for
+  // it; and the agent is destroyed at the end, or its open socket keeps
+  // this process alive.
+  const oneSocket = new https.Agent({ keepAlive: true, maxSockets: 1 });
+  const readOnOneSocket = function (url, language) {
+    log.debug("Entering readOnOneSocket(). " + url + " " + language);
+    return new Promise(function (resolve, reject) {
+      const req = https.request(url, { agent: oneSocket, headers: {
+        Accept: "application/json", "Accept-Language": language } },
+        function (res) {
+          const chunks = [];
+          res.on("data", function (chunk) {
+            chunks.push(chunk);
+          });
+          res.on("end", function () {
+            log.debug("Leaving readOnOneSocket(). " + res.statusCode);
+            resolve({ status: res.statusCode,
+                      text: Buffer.concat(chunks).toString("utf8") });
+          });
+          res.on("error", reject);
+        });
+      req.on("error", reject);
+      req.end();
+    });
+  };
   const PAGES = ["/mode", "/realms", "/audit", "/listeners", "/ldap/service",
                  "/ldap/applications", "/federation", "/spiffe", "/scim",
                  "/pki", "/encryption", "/secrets", "/database", "/roles",
@@ -313,17 +351,14 @@ async function test() {
                  "/caches", "/node-health", "/worker-pools",
                  "/sts-metadata"];
   for (const page of PAGES) {
-    // EACH BODY IS READ BEFORE THE NEXT FETCH (2026-10-27): with two
-    // responses open at once the first sat unread while the second was
-    // fetched, and when its socket was closed under it (the cluster mode's
-    // balancer) node's own undici died on `assert(!this.paused)` and took
-    // the job with it — an internal assertion no catch reaches.
-    const en = await fetch(api + page, { headers: { Accept:
-      "application/json", "Accept-Language": "en" } });
-    const enBody = await en.text();
-    const fr = await fetch(api + page, { headers: { Accept:
-      "application/json", "Accept-Language": "fr" } });
-    const frBody = await fr.text();
+    // (Until 2026-10-27 these were two fetches with both responses open
+    // at once; the first sat unread while the second was fetched, and when
+    // the balancer closed its socket node's own undici died on
+    // `assert(!this.paused)` — an internal assertion no catch reaches.)
+    const en = await readOnOneSocket(api + page, "en");
+    const enBody = en.text;
+    const fr = await readOnOneSocket(api + page, "fr");
+    const frBody = fr.text;
     if (en.status !== 200 || fr.status !== 200) {
       // A page this stack does not draw (no database, no directory) is
       // not this job's to judge.
@@ -343,6 +378,8 @@ async function test() {
       assert.ok(changed > 0, page + ": no string changed");
     });
   }
+
+  oneSocket.destroy();
 
   assert.ok(checks >= 12, "only " + checks + " checks ran; a section has " +
                                            "stopped being called.");
