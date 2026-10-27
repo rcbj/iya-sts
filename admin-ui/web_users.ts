@@ -4308,8 +4308,8 @@ class UsersPage {
       if (!draft || (draft.at || 'owners') !== where) {
         return '';
       }
-      return (draft.error && draft.error.length
-        ? kit.warn(kit.esc(draft.error.join(' '))) : '') +
+      // A refusal floats, as on every Directory → Users tab (#1066).
+      return kit.refusalBanner(draft.error) +
         (draft.notice ? kit.note(kit.esc(draft.notice)) : '');
     };
     // A REMOVE: on a service account its own small form, written at once;

@@ -162,6 +162,22 @@ function checkRedraws(t) {
           /^<div class="flash"/.test(refused.banner),
           'D1. a refused create comes back with its reasons and its boxes, ' +
           'the reasons in the floating banner (#1066)');
+  // #1066: every refusal on Directory → Users floats in the banner the
+  // application pages use: a refused Fill, and the helper the Service
+  // account and owner-protection blocks draw their refusals with.
+  const unfilled = WebAnswers.filled({ username: 'ann' },
+    { inventRefused: 'Example data is development-mode only.' },
+    { fields: [] });
+  const kit = require('../admin-ui/web_kit');
+  const floated = kit.refusalBanner(['One.', 'Two <b>'], 'Not saved.');
+  t.check(/^<div class="flash"/.test(unfilled.banner) &&
+          /development-mode only/.test(unfilled.banner) &&
+          /^<div class="flash" role="status"><div class="warn"><strong>Not saved\.<\/strong><ul><li>One\.<\/li><li>Two &lt;b&gt;<\/li><\/ul>/
+            .test(floated) &&
+          kit.refusalBanner([]) === '' && kit.refusalBanner(null) === '',
+          'D1b. a refused Fill floats, and refusalBanner() draws the ' +
+          'application pages\' floating shape, escaped, or nothing',
+          unfilled.banner + ' | ' + floated);
   const pane = WebAnswers.redraw('/admin/pki/certificate', 'generate-keys',
     {}, { ok: true, why: 'Generated.', workbench: { draft: { a: 1 } } },
     { workbench: { draft: {} }, persons: [] });

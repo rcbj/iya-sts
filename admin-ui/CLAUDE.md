@@ -1049,8 +1049,14 @@ rule and an asterisk, drawn by the shared `fieldGridCell()`, so a person's
 Attributes tab outlines the same fields. The cell says *required* in words as
 well, so the colour is never the only sign. The tile counts
 `requiredAttributes` (`uid`, `cn` and `sn` always, then the realm's own); it was
-a constant 1. **A refused create floats** in `kit.flash()`, the application
-pages' banner (`WebAnswers.redraw()`).
+a constant 1. **Every refusal on a Directory → Users page or tab floats**
+(rcbj). It goes through `WebKit.refusalBanner()`: the application pages'
+`kit.flash()` warning, a heading and the reasons as a list. That covers a
+create, a Fill, the Service account tab's owners and destination, and the shared
+owner-protection block, so the Groups, Roles and Applications Owners tabs float
+too. A refusal that comes back as `?error=` already floated, through
+`ConsoleRuntime.draw()`. **A new in-place refusal on these pages uses the
+helper, not `kit.warn()`.**
 
 ### Two forms post `action=create` and only one carries it as a button
 

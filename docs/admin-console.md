@@ -479,9 +479,12 @@ and marked *required*:** `uid`, `cn` and `sn` always, and whatever the realm add
 Those fields are drawn in the simplified view as well. The *required* tile
 counts them. In product mode a create without one is refused; in development
 mode the policy is shown and not enforced. A `cn` left empty is made from the
-given name and surname. **A refused create keeps every box as you typed it**,
-and the reasons float in the banner at the top of the window, as on the
-application pages.
+given name and surname. **A refused create keeps every box as you typed it**.
+**On every Directory → Users page and tab, a refusal floats in the banner at
+the top of the window**, as on the application pages. That covers a create, a
+Fill, a person's attributes, the Service account owners and destination, and
+*Closed to its owners*. So the reason stays in view however far down the form
+you were.
 
 **Fill with example data** writes what this service would invent into the
 boxes you left empty, touching nothing you filled in and creating nobody. It is

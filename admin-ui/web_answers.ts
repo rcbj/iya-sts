@@ -700,11 +700,8 @@ class WebAnswers {
       // every refusal is (#539).
       return { json: WebAnswers.newUserAgain(json, fields,
                                              WebAnswers.one(fields, 'view')),
-               banner: kit.flash('<div class="warn"><strong>Nobody was ' +
-                 'created.</strong><ul>' + (errors.length ? errors
-                   : ['Refused.']).map(function (one) {
-                   return '<li>' + kit.esc(one) + '</li>';
-                 }).join('') + '</ul></div>') };
+               banner: kit.refusalBanner(errors.length ? errors
+                 : ['Refused.'], 'Nobody was created.') };
     }
     if (page === '/admin/users/edit' && !ok) {
       const out = WebAnswers.copy(json);
@@ -981,8 +978,9 @@ class WebAnswers {
     if (!answer || !answer.invented) {
       return { json: WebAnswers.newUserAgain(json, fields,
                                              WebAnswers.one(fields, 'view')),
-               banner: kit.warn(kit.esc((answer && answer.inventRefused) ||
-                 'Nothing was filled in.')) };
+               // A refused Fill floats like a refused create (#1066).
+               banner: kit.refusalBanner([(answer && answer.inventRefused) ||
+                 'Nothing was filled in.'], 'Nothing was filled in.') };
     }
     const posted = kit.gridValuesFromDraft(fields, json.longTextAttributes);
     const merged = {};
