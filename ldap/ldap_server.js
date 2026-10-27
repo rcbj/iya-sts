@@ -27490,6 +27490,10 @@ module.exports = {
   // tests/credential_census_async.js, which compares each with its
   // synchronous twin and counts what the store was asked.
   existingUserEntriesAsync: existingUserEntriesAsync,
+  // The holders of one attribute, asynchronously (#615), on the module too
+  // since #1002: the reports application's `credentialHolders` source
+  // reads a mechanism's holders through it, bounded by the holders.
+  holdersAsync: holdersAsync,
   locateStoredAsync: locateStoredAsync,
   credentialCensus: credentialCensus,
   credentialCensusAsync: credentialCensusAsync,

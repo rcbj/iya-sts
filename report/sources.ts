@@ -938,9 +938,9 @@ function reportMustVisitEverybody(plan: any): boolean {
   return must;
 }
 
-function reportUnboundedFilter(catalog: any): any {
+function reportUnboundedFilter(catalog: any, sourceId?: string): any {
   log.debug("Entering reportUnboundedFilter().");
-  const src = catalog.source('users') || { fields: [] };
+  const src = catalog.source(sourceId || 'users') || { fields: [] };
   const named = (src.fields || []).filter(function (field: any): boolean {
     return Array.isArray(field.indexed) && field.indexed.length > 0;
   }).map(function (field: any): string {
@@ -1000,6 +1000,307 @@ async function reportReadUsers(rows: any, control: any): Promise<void> {
     return reportOffer(reportUserRow(entry, names), rows, control);
   });
   log.debug("Leaving reportReadUsers().");
+}
+
+// ---------------------------------------------------------------------------
+// WHO HOLDS WHICH CREDENTIAL (#1002, rcbj: who has a passkey as a primary
+// mechanism, who as a second factor, with what algorithm, how many — and the
+// same question for other mechanisms and other communities, without a scan
+// and without changing what is sealed). One row per person, per mechanism,
+// per role. Everything read is what the directory already keeps:
+//
+//   * THE HOLDERS OF A MECHANISM are the holders of its attribute, through
+//     the store's asked-names index (`holdersAsync()`, bounded by the
+//     holders and never by the population); the entries opened are theirs.
+//   * THE MEMBERS OF A GROUP are read from the group entry and fetched by
+//     name (`existingUserEntriesAsync()`), bounded by the group.
+//   * A PASSKEY'S ROLE is the key's own `role`, `primary` or `mfa`, chosen
+//     at enrolment and enforced at sign-in (`common/credentials.ts`,
+//     `Credentials.ROLES`); its algorithm and lane are what every page
+//     shows (`keyAlgorithm()`, `keyLane()`). The other mechanisms have one
+//     role each, stated in `MECHANISM_TABLE`.
+//   * THE PERSON'S HISTORY is `authnMethod` (every RFC 8176 method used
+//     here) and `mfaLastAuthTime`, written at the authentication funnel.
+//
+// A filter on `mechanism` or `memberOf` is the indexed read; a query naming
+// neither reads every mechanism's holders, which is bounded by holders and
+// not people but still unbounded in the catalog's sense, so synchronously on
+// a windowed directory it is refused as the users source is, and as a job
+// it runs. Recovery codes and app passwords are not here: their attributes
+// are not in the asked-names index, so their holders would be a scan.
+// ---------------------------------------------------------------------------
+const MECHANISM_TABLE = [
+  { id: 'passkey', attribute: 'stsWebauthnCredential', role: '' },
+  { id: 'totp', attribute: 'stsTotpCredential', role: 'mfa' },
+  { id: 'emailFactor', attribute: 'stsMailFactor', role: 'mfa' },
+  { id: 'certificate', attribute: 'stsEnrolledCertificate', role: 'primary' },
+  { id: 'kerberos', attribute: 'stsKrb5Keys', role: 'primary' }
+];
+const HOLDER_FIELDS = ['uid', 'displayname', 'cn', 'authnmethod',
+  'mfalastauthtime'];
+const GROUP_MEMBERS_MAX = 50000;
+
+function reportParsedValues(values: string[]): any[] {
+  log.debug("Entering reportParsedValues().");
+  const out: any[] = [];
+  values.forEach(function (value: string): void {
+    try {
+      const parsed = JSON.parse(value);
+      out.push(parsed && typeof parsed === 'object' ? parsed : {});
+    } catch (e) {
+      // Not JSON this service wrote (a certificate's PEM, say): a
+      // credential with no dates and no algorithm to read.
+      log.debug("Caught in reportParsedValues(): " + ((e && e.message) || e));
+      out.push({});
+    }
+  });
+  log.debug("Leaving reportParsedValues().");
+  return out;
+}
+
+function reportMaxIso(stamps: any[]): string | null {
+  log.debug("Entering reportMaxIso().");
+  let best = 0;
+  stamps.forEach(function (one: any): void {
+    const n = Number(one) || 0;
+    if (n > best) {
+      best = n;
+    }
+  });
+  log.debug("Leaving reportMaxIso().");
+  return best ? reportIso(best) : null;
+}
+
+function reportMinIso(stamps: any[]): string | null {
+  log.debug("Entering reportMinIso().");
+  let best = 0;
+  stamps.forEach(function (one: any): void {
+    const n = Number(one) || 0;
+    if (n > 0 && (!best || n < best)) {
+      best = n;
+    }
+  });
+  log.debug("Leaving reportMinIso().");
+  return best ? reportIso(best) : null;
+}
+
+// The rows one person contributes for one mechanism: a passkey holder has
+// one per role held; every other mechanism one row.
+function reportHolderRows(entry: any, mechanism: any, ldap: any): any[] {
+  log.debug("Entering reportHolderRows(). " + mechanism.id);
+  const values = reportAttrList(entry, mechanism.attribute);
+  if (!values.length) {
+    log.debug("Leaving reportHolderRows(). None.");
+    return [];
+  }
+  const username = reportAttr(entry, 'uid');
+  const common = {
+    username: username,
+    displayName: reportAttr(entry, 'displayName') || reportAttr(entry, 'cn'),
+    mechanism: mechanism.id,
+    methodsUsed: reportAttrList(entry, 'authnMethod').join(', '),
+    mfaLastAuthTime: reportLdapTime(reportAttr(entry, 'mfaLastAuthTime')) ||
+      reportIso(Date.parse(reportAttr(entry, 'mfaLastAuthTime'))),
+    memberOf: reportGroupNamesOf(ldap, entry).join(', ')
+  };
+  const out: any[] = [];
+  if (mechanism.id === 'passkey') {
+    const credentials = require('../common/credentials');
+    const keys = credentials.keysOfValues(values, username);
+    const byRole: Record<string, any[]> = {};
+    keys.forEach(function (key: any): void {
+      const role = String(key.role || 'mfa');
+      byRole[role] = (byRole[role] || []).concat([key]);
+    });
+    Object.keys(byRole).sort().forEach(function (role: string): void {
+      const held = byRole[role];
+      const algorithms: string[] = [];
+      const lanes: string[] = [];
+      held.forEach(function (key: any): void {
+        const alg = credentials.Credentials.keyAlgorithm(key);
+        if (algorithms.indexOf(alg.name) < 0) {
+          algorithms.push(alg.name);
+        }
+        if (alg.lane && lanes.indexOf(alg.lane) < 0) {
+          lanes.push(alg.lane);
+        }
+      });
+      out.push(Object.assign({}, common, {
+        role: role,
+        credentials: held.length,
+        algorithms: algorithms.sort().join(', '),
+        lanes: lanes.sort().join(', '),
+        enrolledAt: reportMinIso(held.map(function (k: any): any {
+          return k.enrolledAt;
+        })),
+        lastUsedAt: reportMaxIso(held.map(function (k: any): any {
+          return k.lastUsedAt;
+        }))
+      }));
+    });
+    log.debug("Leaving reportHolderRows(). Passkeys, " + out.length +
+      ' role(s).');
+    return out;
+  }
+  const parsed = reportParsedValues(values);
+  const algorithms: string[] = [];
+  parsed.forEach(function (one: any): void {
+    const name = String(one.algorithm || one.enctype || '');
+    if (name && algorithms.indexOf(name) < 0) {
+      algorithms.push(name);
+    }
+  });
+  out.push(Object.assign({}, common, {
+    role: mechanism.role,
+    credentials: values.length,
+    algorithms: algorithms.sort().join(', '),
+    lanes: '',
+    enrolledAt: reportMinIso(parsed.map(function (one: any): any {
+      return one.enrolledAt;
+    })),
+    lastUsedAt: reportMaxIso(parsed.map(function (one: any): any {
+      return one.lastUsedAt;
+    }))
+  }));
+  log.debug("Leaving reportHolderRows().");
+  return out;
+}
+
+// A holder as `holdersAsync()` hands one back, as an entry the row builder
+// can read: its raw attributes are already keyed by the names asked for.
+function reportHolderEntry(holder: any): any {
+  log.debug("Entering reportHolderEntry().");
+  const entry = { dn: String((holder && holder.dn) || ''),
+                  attributes: (holder && holder.attributes) || {} };
+  log.debug("Leaving reportHolderEntry().");
+  return entry;
+}
+
+async function reportMechanismHolders(mechanism: any, ldap: any):
+    Promise<any[]> {
+  log.debug("Entering reportMechanismHolders(). " + mechanism.id);
+  // Unguarded, as the other doors above are: a directory without the door
+  // throws, and the run fails out loud rather than listing nobody. EVERY
+  // mechanism's attribute is asked for, not just this one's: a person
+  // holding two mechanisms is opened once (the reader keeps one entry per
+  // DN), and that entry has to carry both or the second mechanism's rows
+  // are lost.
+  const holders = await ldap.holdersAsync('person', mechanism.attribute,
+    MECHANISM_TABLE.map(function (m: any): string {
+      return String(m.attribute).toLowerCase();
+    }).concat(HOLDER_FIELDS));
+  const entries = (holders || []).map(reportHolderEntry);
+  log.debug("Leaving reportMechanismHolders(). " + entries.length + '.');
+  return entries;
+}
+
+// The members of a group, as entries: the group's member DNs, the person's
+// name read off each `uid=` RDN, fetched by name. A member named otherwise
+// (a group, a certificate's `cn=` entry) is left out: the row needs a person.
+// The group is named by its `cn`, as the row's `memberOf` names it — the
+// same spelling the filter is then checked against in `Rows.take()`; a DN
+// here would find the members and match no row.
+async function reportGroupMemberEntries(selector: string, ldap: any):
+    Promise<any[]> {
+  log.debug("Entering reportGroupMemberEntries(). " + selector);
+  const wanted = String(selector || '').trim();
+  const dn = wanted ? ldap.groupDnFor(wanted) : '';
+  const group = dn ? ldap.readGroupEntry(dn) : null;
+  if (!group) {
+    log.debug("Leaving reportGroupMemberEntries(). No such group.");
+    return [];
+  }
+  const names: string[] = [];
+  (group.members || []).slice(0, GROUP_MEMBERS_MAX).forEach(
+    function (member: any): void {
+      const value = String((member && (member.dn || member.value)) || '');
+      const matched = /^uid=([^,]+),/i.exec(value);
+      if (matched && names.indexOf(matched[1]) < 0) {
+        names.push(matched[1]);
+      }
+    });
+  const entries = names.length ?
+    await ldap.existingUserEntriesAsync(names) : [];
+  const found = (entries || []).filter(function (entry: any): boolean {
+    return !!entry;
+  });
+  log.debug("Leaving reportGroupMemberEntries(). " + found.length + ' of ' +
+    names.length + '.');
+  return found;
+}
+
+async function reportReadCredentialHolders(rows: any, control: any):
+    Promise<void> {
+  log.debug("Entering reportReadCredentialHolders().");
+  const ldap = reportLdap();
+  const plan = (rows && rows.plan) || {};
+  const catalog = new Catalog();
+  const lookups = reportIndexedLookups(plan.where, function (field: string):
+      string[] {
+    return catalog.indexedFor('credentialHolders', field);
+  }, 0) || [];
+  const groups = lookups.filter(function (one: Lookup): boolean {
+    return one.field === 'memberOf';
+  });
+  const mechanisms = lookups.filter(function (one: Lookup): boolean {
+    return one.field === 'mechanism';
+  });
+  const wantedIds: string[] = [];
+  mechanisms.forEach(function (one: Lookup): void {
+    one.values.forEach(function (id: string): void {
+      if (wantedIds.indexOf(id) < 0) {
+        wantedIds.push(id);
+      }
+    });
+  });
+  const table = wantedIds.length ? MECHANISM_TABLE.filter(function (m: any):
+      boolean {
+    return wantedIds.indexOf(m.id) >= 0;
+  }) : MECHANISM_TABLE;
+  if (!groups.length && !mechanisms.length && control &&
+      control.execution === 'sync' && ldap.directoryIsWindowed()) {
+    control.unbounded = reportUnboundedFilter(catalog, 'credentialHolders');
+    log.debug("Leaving reportReadCredentialHolders(). Unbounded.");
+    return;
+  }
+  let entries: any[] = [];
+  const seen = new Set<string>();
+  const take = function (entry: any): void {
+    const key = String((entry && entry.dn) || '').toLowerCase();
+    if (key && !seen.has(key)) {
+      seen.add(key);
+      entries.push(entry);
+    }
+  };
+  if (groups.length) {
+    // The community first: its members, then each one's mechanisms.
+    for (let g = 0; g < groups.length; g++) {
+      for (let v = 0; v < groups[g].values.length; v++) {
+        (await reportGroupMemberEntries(groups[g].values[v], ldap))
+          .forEach(take);
+      }
+    }
+  } else {
+    for (let m = 0; m < table.length; m++) {
+      (await reportMechanismHolders(table[m], ldap)).forEach(take);
+    }
+  }
+  for (let i = 0; i < entries.length; i++) {
+    for (let m = 0; m < table.length; m++) {
+      const made = reportHolderRows(entries[i], table[m], ldap);
+      for (let r = 0; r < made.length; r++) {
+        const keep = await reportOffer(made[r], rows, control);
+        if (keep === false) {
+          log.debug("Leaving reportReadCredentialHolders(). Stopped.");
+          return;
+        }
+      }
+    }
+    if (i % PAGE === PAGE - 1) {
+      await Promise.resolve();
+    }
+  }
+  log.debug("Leaving reportReadCredentialHolders().");
 }
 
 async function reportReadGroups(rows: any, control: any): Promise<void> {
@@ -1397,6 +1698,8 @@ async function reportReadSource(plan: any, rows: any, control: any):
     await reportReadJobRows(rows, control);
   } else if (source === 'attributeSources') {
     await reportReadAttributeSources(rows, control);
+  } else if (source === 'credentialHolders') {
+    await reportReadCredentialHolders(rows, control);
   }
   log.debug("Leaving reportReadSource().");
 }

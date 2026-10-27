@@ -336,6 +336,72 @@ entries, which is what `users` reads.
 | `onFailure` | string | `keep` or `refuse`, as the source is configured. | yes | yes | yes |
 | `enabled` | boolean | Whether the source is enabled. | yes | yes | yes |
 
+### `credentialHolders`
+
+Who holds which authentication credential, as the directory is now: one
+row per person, per mechanism, per role. A passkey's role is the one
+chosen at its enrolment, `primary` (it signs the person in on its own)
+or `mfa` (a second factor after a password), which the service enforces
+at sign-in; an authenticator app and an emailed code are `mfa`; a
+certificate and a Kerberos key are `primary`.
+
+**How it reads, and why it costs little.** A filter on `mechanism` reads
+the holders of that mechanism's attribute through the store's index of
+who holds what, so it costs the holders and never the population; a
+filter on `memberOf` reads that group's members. A query naming neither
+reads every mechanism's holders: on a directory held in a database that
+is refused synchronously (`result_too_large`) and becomes a job in
+`auto` mode. Nothing new is stored or indexed, and nothing changes what
+is sealed: the rows are read from the holders' own entries, as the users
+page's census reads them. Recovery codes and app passwords are not
+listed, because their attributes are not in that index.
+
+**The census is a count.** `aggregate: "count"` with `groupBy`
+`mechanism`, `role`, `algorithms` or `lanes` answers how many people hold
+a passkey as a primary mechanism, how many as a second factor, how many
+by algorithm, and so on; add a `memberOf` filter for one community. The
+maintained per-realm passkey aggregate stays on Monitoring → Passkeys.
+
+| Field | Type | Meaning | Filter | Sort | Group |
+|---|---|---|---|---|---|
+| `username` | string | The directory uid. | yes | yes | no |
+| `displayName` | string | `displayName`, or `cn`. | yes | yes | no |
+| `mechanism` | string | `passkey`, `totp`, `emailFactor`, `certificate` or `kerberos`. Indexed: `eq`, `in`. | yes | yes | yes |
+| `role` | string | `primary` or `mfa`. | yes | yes | yes |
+| `credentials` | number | How many credentials of this mechanism and role the person holds. | yes | yes | no |
+| `algorithms` | string | The credentials' signature algorithms, distinct, joined (a passkey's JOSE name). | yes | yes | yes |
+| `lanes` | string | A passkey's lanes, distinct, joined. | yes | yes | yes |
+| `enrolledAt` | timestamp | The earliest enrolment, where recorded. | yes | yes | no |
+| `lastUsedAt` | timestamp | The latest use, where recorded. | yes | yes | no |
+| `methodsUsed` | string | The RFC 8176 methods the person has ever signed in with here. | yes | yes | no |
+| `mfaLastAuthTime` | timestamp | When the person last completed a multi-factor sign-in. | yes | yes | no |
+| `memberOf` | string | The groups that list this person, by name (`cn`), joined. Indexed: `eq`, `in`, each value a group's name. | yes | no | no |
+
+Everyone with a passkey as a primary mechanism, with its algorithms and
+how many:
+
+```json
+{
+  "source": "credentialHolders",
+  "select": ["username", "displayName", "algorithms", "lanes", "credentials"],
+  "where": { "op": "and", "args": [
+    { "op": "eq", "field": "mechanism", "value": "passkey" },
+    { "op": "eq", "field": "role", "value": "primary" } ] },
+  "limit": 500
+}
+```
+
+How many hold a passkey, by role and algorithm:
+
+```json
+{
+  "source": "credentialHolders",
+  "where": { "op": "eq", "field": "mechanism", "value": "passkey" },
+  "aggregate": "count",
+  "groupBy": ["role", "algorithms"]
+}
+```
+
 ## The query document
 
 The keys are `source`, `select`, `where`, `orderBy`, `limit`, `format`,
