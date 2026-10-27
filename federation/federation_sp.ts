@@ -4349,6 +4349,8 @@ class FederationSp {
       privateKeyPem: STS.xmlSigner.privateKeyPem,
       privateKey: STS.xmlSigner.privateKey,
       certPem: STS.xmlSigner.certPem,
+      // The chain through the service Root in KeyInfo (#1064).
+      keyInfoXml: helpers.xmlSignerKeyInfo(STS.xmlSigner),
       sigAlg: how.sigAlg,
       c14nAlg: how.c14nAlg,
       placement: stsCrypto.PLACEMENT.AFTER_ISSUER,
@@ -6614,9 +6616,10 @@ class FederationSp {
     // AuthnRequests with — the PINNED xml key where the realm signs with one
     // (#263), since `STS.xmlSigner` is what signs them then.
     const signer = STS.xmlSigner;
-    const der = (signer && signer.pinned ? signer : STS.xml).certPem
-      .replace(/-----[^-]+-----/g, '')
-      .replace(/\s+/g, '');
+    // Its certificate, its chain and the service Root (#1064):
+    // helpers.xmlSignerKeyInfo(), the one writer of a signer's X509Data.
+    const signingKeyInfo = helpers.xmlSignerKeyInfo(
+      signer && signer.pinned ? signer : STS.xml);
     const xml = '<?xml version="1.0" encoding="UTF-8"?>\n' +
       '<md:EntityDescriptor xmlns:md="' + NS_MD + '" ' +
         'xmlns:ds="http://www.w3.org/2000/09/xmldsig#" ' +
@@ -6627,9 +6630,8 @@ class FederationSp {
         'WantAssertionsSigned="true" protocolSupportEnumeration="' +
         (record.fedProtocol === 'saml11' ? NS_SAMLP11 : NS_SAMLP) +
       '"><md:KeyDescriptor ' +
-      'use="signing"><ds:KeyInfo><ds:X509Data><ds:X509Certificate>' +
-        der +
-      '</ds:X509Certificate></ds:X509Data></ds:KeyInfo></md:KeyDescriptor>' +
+      'use="signing"><ds:KeyInfo>' + signingKeyInfo +
+      '</ds:KeyInfo></md:KeyDescriptor>' +
       encryption +
       // `federation.spNameIdFormat` since 2026-09-12; the literal before it is
       // the setting's default. THE SINGLE LOGOUT SERVICE (#167), on the

@@ -156,15 +156,6 @@ class CryptoMetadataDocument {
     };
   }
 
-  // A certificate PEM as the base64 of its DER, for `x5c`.
-  private der64(pem: string): string {
-    const { log } = this.deps;
-    log.debug("Entering CryptoMetadataDocument.der64().");
-    log.debug("Leaving CryptoMetadataDocument.der64().");
-    return String(pem || '').replace(/-----[^-]+-----/g, '')
-      .replace(/\s+/g, '');
-  }
-
   // One certificate's public facts: the chain leaf first, validity, the
   // SHA-256 fingerprint of the DER, the serial, and where its issuer's CRL,
   // OCSP responder and certificate are.
@@ -197,8 +188,9 @@ class CryptoMetadataDocument {
       }
     }
     const out: Json = {
-      x5c: [this.der64(pem)].concat(((record && record.chainPem) || [])
-        .map(this.der64.bind(this))),
+      // Through the service Root (#1064): helpers.x5cOf(), the one writer of
+      // a published `x5c`, says why.
+      x5c: helpers.x5cOf(pem, (record && record.chainPem) || []),
       subject: x509.subject.replace(/\n/g, ', '),
       issuer: x509.issuer.replace(/\n/g, ', '),
       serialNumber: x509.serialNumber,
@@ -657,6 +649,8 @@ class CryptoMetadataDocument {
       privateKeyPem: signer.privateKeyPem,
       privateKey: signer.privateKey,
       certPem: signer.certPem,
+      // The chain through the service Root in KeyInfo (#1064).
+      keyInfoXml: helpers.xmlSignerKeyInfo(signer),
       sigAlg: how.sigAlg, c14nAlg: how.c14nAlg,
       placement: stsCrypto.PLACEMENT.FIRST,
       id: id

@@ -105,6 +105,36 @@ truststore that holds only the leaf builds no path, and the client reports
 an authority; [TLS and mutual TLS → When a browser refuses the certificate](tls.md#when-a-browser-refuses-the-certificate)
 has the steps.
 
+### What the handshake sends
+
+Every listener sends four certificates: its own, the TLS Issuing CA, the
+Intermediate, and the service Root. RFC 8446 section 4.4.2 lets a server send
+the Root or leave it out; this service sends it. That covers the main port,
+LDAPS 636, the custom and realm listeners, the protocol debugger, the channel
+between cells and the SPIFFE gRPC listeners. A remote XACML PEP's
+`fullChainPem` has the Root last too.
+
+The Root arrives so that you can see which one it is. **Receiving it does not
+make your client trust it**: a client trusts only the Roots in its own store
+(RFC 5280 section 6.1). Every install builds its own Root, and every Root is
+named `CN=sts Root CA, O=sts`. A certificate viewer that shows only the name
+can make two installs look as if they share one Root. Compare thumbprints
+instead:
+
+```bash
+openssl s_client -connect "$HOST:8081" -showcerts </dev/null 2>/dev/null \
+  | awk '/BEGIN CERT/,/END CERT/' > presented.pem      # four certificates
+curl -sk "$BASE/pki/ca/%2Aservice/root" | openssl x509 -inform der \
+  -noout -fingerprint -sha256                          # this install's Root
+```
+
+If you trusted an earlier install's Root, remove it. It has the same name as
+the new one but a different key, and it anchors nothing this install issues.
+
+A certificate you supply from your own files (`tls.certificateFile`, or a
+custom listener's `certificateFile`) is sent as the file holds it, with a Root
+only if the file includes one.
+
 **Console:** **Protocols → TLS / mutual TLS** shows the certificate the main
 port presents. **Server configuration → Cryptography**
 (`/admin/crypto-metadata`) lists every certificate the service is configured

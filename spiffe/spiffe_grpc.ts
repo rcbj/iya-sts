@@ -2431,6 +2431,22 @@ class SpiffeGrpc {
     return options;
   }
 
+  /**
+   * The chain a SPIFFE gRPC listener presents for its server SVID: the SVID,
+   * the authorities above it, and the Root that signs them (#1064), from the
+   * one function every TLS listener here takes its bundle from.
+   *
+   * @param svid - a minted X509-SVID; its `chainPem` is leaf-first
+   * @returns the PEM bundle
+   */
+  static presentedChainPem(svid: any): string {
+    helpers.log.debug('Entering SpiffeGrpc.presentedChainPem().');
+    const chain = (svid && svid.chainPem) || [];
+    helpers.log.debug('Leaving SpiffeGrpc.presentedChainPem().');
+    return require('../tls/tls_server').presentedBundlePem({
+      certPem: chain[0] || '', chainPem: chain.slice(1) });
+  }
+
   async svidServerCredentials(surface: string) {
     const { log, ca, spiffeId, config, grpc, errorCodes } = this.deps;
     log.debug('Entering SpiffeGrpc.svidServerCredentials(). ' + surface);
@@ -2490,7 +2506,8 @@ class SpiffeGrpc {
       // `listenerTrustPem()` says why, and what it cannot do.
       this.listenerTrustPem().pem,
       [{ private_key: Buffer.from(svid.privateKeyPem, 'utf8'),
-         cert_chain: Buffer.from(svid.chainPem.join('\n'), 'utf8') }],
+         cert_chain: Buffer.from(SpiffeGrpc.presentedChainPem(svid),
+                                 'utf8') }],
       true);
     try {
       // See the header. This is a reach into grpc-js's own options object and
@@ -2589,7 +2606,7 @@ class SpiffeGrpc {
     credentials.stsTrustFingerprint = trust.fingerprint;
     credentials.updateSecureContextOptions(Object.assign({
       ca: trust.pem,
-      cert: [Buffer.from(svid.chainPem.join('\n'), 'utf8')],
+      cert: [Buffer.from(SpiffeGrpc.presentedChainPem(svid), 'utf8')],
       key: [Buffer.from(svid.privateKeyPem, 'utf8')]
     // The listeners' policy (#423) goes with every new context: a context
     // without it is node's defaults until the next setting change.

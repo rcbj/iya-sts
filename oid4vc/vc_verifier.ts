@@ -1408,7 +1408,13 @@ class VcVerifier {
       log.debug("Leaving VcVerifier.x509Material(). No certificate.");
       throw refused;
     }
-    const x5c = [certificate.certificatePem].concat(certificate.chainPem)
+    // WITHOUT THE ROOT, AND SAID HERE (#1064): HAIP 1.0 section 5 forbids
+    // the trust anchor in a signed OpenID4VP request's `x5c`. The chain still
+    // comes from pki.chainThroughRoot(), the one place a reported chain is
+    // completed, so the exception is visible where it is made.
+    const x5c = require('../common/pki').chainThroughRoot(
+      certificate.certificatePem, certificate.chainPem || [],
+      { withoutRoot: true })
       .map(function (pem: string): string {
         return String(pem).replace(/-----[^-]+-----/g, '')
           .replace(/\s+/g, '');

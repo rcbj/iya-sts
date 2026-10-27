@@ -1174,7 +1174,9 @@ if (useHttps) {
   // adapted for it (`common/http2_express.ts`, from `common/app.js`).
   const mainServer = http2.createSecureServer(Object.assign({
     allowHTTP1: true,
-    cert: serverCert.certPem,
+    // The leaf, its chain and the Root (#1064), as every listener presents
+    // them; the registration below re-applies the same bundle.
+    cert: tlsServer.presentedBundlePem(serverCert),
     key: serverCert.privateKeyPem,
     // THE CLIENT TRUSTSTORE, THE ONE /admin-api/tls/trust FILLS (2026-09-06; it
     // covered 8443 and 9443 too until they were deleted on 2026-09-16).

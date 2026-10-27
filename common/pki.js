@@ -2334,9 +2334,11 @@ function describeTree(realmIds) {
 }
 
 // The chain a leaf issued here travels with, leaf-first and WITHOUT the root —
-// which is what RFC 5246 section 7.4.2 asks of a TLS certificate_list and what
-// every JWS `x5c` header does. The root is a trust anchor: sending it is
-// harmless and relying on it having been sent is the mistake.
+// what is STORED with a certificate. RFC 8446 section 4.4.2 and RFC 5246
+// section 7.4.2 let the Root be left out of what is SENT, and until #1064 it
+// was, everywhere; what is reported now is `chainThroughRoot()` below, which
+// adds it. The Root is a trust anchor: sending it is harmless and relying on
+// it having been sent is the mistake.
 /**
  * Answers the chain a leaf issued in a realm travels with, leaf-first and
  * without the Root.
@@ -2355,6 +2357,110 @@ function chainPemFor(realmId) {
   return chain.tiers.slice().reverse()
     .filter(function (one) { return one.tier !== 'root'; })
     .map(function (one) { return one.certificatePem; });
+}
+
+// ---------------------------------------------------------------------------
+// THE CHAIN A CERTIFICATE IS REPORTED WITH: LEAF, ISSUERS, ROOT (#1064).
+//
+// **THE ONE PLACE A REPORTED CHAIN IS COMPLETED.** Every surface that hands a
+// certificate of this service to somebody else takes its chain from here: the
+// TLS listeners (`tls/tls_server.js` `presentedBundlePem()`), the JOSE `x5c`
+// headers (`common/jose_certificate_header.js`), every published JWK's `x5c`
+// (the realm JWKS, the pinned and grouped signers, the certified key pairs),
+// `/crypto/metadata`, and the XML signatures' and metadata's `X509Data`.
+//
+// **WHY THE ROOT GOES WITH IT.** Every Root this service builds is called
+// `CN=sts Root CA, O=sts`, and a fresh install builds a new one. A party never
+// handed the current Root sees only the top certificate's issuer NAME and can
+// match it to an older Root of that name it already holds — which a Windows
+// user reported as "the Root is the same on every install" when it never was.
+// Sent, the Root is a certificate with its own thumbprint.
+//
+// **SENDING IT TRUSTS NOTHING.** RFC 5280 section 6.1 takes the trust anchor
+// from the relying party; a Root that arrives beside a chain is a certificate
+// like any other until the reader already trusts it.
+//
+// **THE ROOT THAT SIGNS THE CHAIN, CHECKED BY SIGNATURE AND NOT BY NAME** —
+// the two Roots this has to tell apart have identical subjects, so a name
+// comparison passes on exactly the case that is wrong. The candidates are the
+// service Root and whatever `opts.anchors` adds (a TLS listener's supplied
+// anchor). Where none signs the top of the chain — a hierarchy that drifted,
+// an imported chain under a foreign Root — the chain is reported as stored,
+// without one, because a Root that terminates nothing is worse than none. A
+// certificate with no chain is answered alone: it is self-signed or nobody
+// here knows its issuer.
+//
+// **`opts.withoutRoot`** is the exception a SPECIFICATION makes, and the only
+// one: HAIP 1.0 sections 5, 6.1 and 6.1.1 forbid the trust anchor in the
+// `x5c` of a credential, a Status List Token and a signed OpenID4VP request.
+// Its callers say so where they call, so the exception is visible at the site
+// rather than a second function that drifts from this one.
+//
+// No memo here: the hot caller (a token's `x5c`) keeps its own, registered with
+// the cache register (`jose.x5c-chain-under-root`); the rest run per fetch.
+// ---------------------------------------------------------------------------
+/**
+ * Completes a certificate's chain for reporting: the leaf, the chain it is
+ * stored with, and the Root that signs that chain.
+ *
+ * @param certificatePem - the leaf
+ * @param chainPem - the chain stored with it, leaf-first, without the Root
+ * @param opts - `anchors`: further candidate Roots; `withoutRoot`: leave the
+ *   Root off (HAIP 1.0's rule, and nothing else's)
+ * @returns the PEMs, leaf first
+ */
+function chainThroughRoot(certificatePem, chainPem, opts) {
+  log.debug("Entering chainThroughRoot().");
+  const options = opts || {};
+  // A PEM or the bare base64 of a DER, which is how a federation
+  // relationship's encryption rows and a cluster's listener leaves hold them;
+  // answered as PEM either way.
+  const asPem = function (text) {
+    log.debug("Entering asPem().");
+    const value = String(text || '').trim();
+    if (!value || value.indexOf('-----BEGIN') >= 0) {
+      log.debug("Leaving asPem(). Already PEM, or nothing.");
+      return value ? String(text) : '';
+    }
+    log.debug("Leaving asPem(). Wrapped.");
+    return '-----BEGIN CERTIFICATE-----\n' +
+      (value.replace(/\s+/g, '').match(/.{1,64}/g) || []).join('\n') +
+      '\n-----END CERTIFICATE-----\n';
+  };
+  const leaf = asPem(certificatePem);
+  const chain = (chainPem || []).map(asPem).filter(function (pem) {
+    return !!pem && pem !== leaf;
+  });
+  const pems = leaf ? [leaf].concat(chain) : chain.slice();
+  if (!chain.length || options.withoutRoot) {
+    log.debug("Leaving chainThroughRoot(). " +
+              (chain.length ? 'Without the Root, as asked.' : 'No chain.'));
+    return pems;
+  }
+  const root = serviceRoot();
+  const candidates = (options.anchors || [])
+    .concat(root && root.certificatePem ? [root.certificatePem] : []);
+  let top = null;
+  try {
+    top = stsCrypto.parseCertificate(chain[chain.length - 1]);
+  } catch (e) {
+    log.debug("Caught in chainThroughRoot(): " + ((e && e.message) || e));
+    top = null;
+  }
+  const rootPem = top && candidates.filter(function (pem) {
+    if (!pem || pems.indexOf(pem) >= 0) {
+      return false;
+    }
+    try {
+      // `verify()` is the SIGNATURE — see the header.
+      return top.verify(stsCrypto.parseCertificate(pem).publicKey);
+    } catch (e) {
+      log.debug("Caught in chainThroughRoot(): " + ((e && e.message) || e));
+      return false;
+    }
+  })[0];
+  log.debug("Leaving chainThroughRoot(). root=" + !!rootPem);
+  return rootPem ? pems.concat([rootPem]) : pems;
 }
 
 // The trust anchors — the Root, and nothing else. What `verifyLeaf()` builds a
@@ -2796,8 +2902,10 @@ async function issueSigningKeyPair(realmId, opts) {
   // leaf, so dropping its first member drops the ISSUING CA — and an `x5c`
   // missing the certificate that signed the leaf is a chain nothing can build
   // a path from. `tests/pki.js` counts the members for exactly that reason.
-  publicJwk.x5c = [stsCrypto.stripPem(issued.pem)]
-    .concat(chainPemFor(id).map(stsCrypto.stripPem));
+  // And the Root after them since #1064 — chainThroughRoot(), the one place
+  // a reported chain is completed.
+  publicJwk.x5c = chainThroughRoot(issued.pem, chainPemFor(id))
+    .map(stsCrypto.stripPem);
   publicJwk['x5t#S256'] = stsCrypto.certificateThumbprint(issued.pem,
                                                           { format:
                                                               'base64url' });
@@ -5492,8 +5600,10 @@ async function registerCertificate(realmId, opts) {
   if (jwsAlg) {
     publicJwk.alg = jwsAlg;
   }
-  publicJwk.x5c = [stsCrypto.stripPem(leaf.pem)]
-    .concat(storedChain.map(stsCrypto.stripPem));
+  // Through the service Root where it signs the stored chain (#1064); an
+  // uploaded chain under a foreign Root is reported as it came.
+  publicJwk.x5c = chainThroughRoot(leaf.pem, storedChain)
+    .map(stsCrypto.stripPem);
   publicJwk['x5t#S256'] = stsCrypto.certificateThumbprint(leaf.pem,
                                                           { format:
                                                               'base64url' });
@@ -13714,6 +13824,7 @@ module.exports = {
   hasChain: hasChain,
   describe: describe,
   chainPemFor: chainPemFor,
+  chainThroughRoot: chainThroughRoot,
   trustAnchorsFor: trustAnchorsFor,
   issueSigningKeyPair: issueSigningKeyPair,
   issueEncryptionKeyPair: issueEncryptionKeyPair,

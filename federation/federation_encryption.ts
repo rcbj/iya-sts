@@ -739,11 +739,12 @@ class FederationEncryption {
         : '<md:EncryptionMethod Algorithm="' + XENC11_NS + 'ECDH-ES"/>' +
           '<md:EncryptionMethod Algorithm="' + XENC_NS + 'kw-aes256"/>');
     log.debug("Leaving FederationEncryption.keyDescriptorOf().");
+    // The certificate, its chain and the service Root (#1064):
+    // helpers.x509DataXml(), the one writer of an X509Data here.
     return '<md:KeyDescriptor use="encryption"><ds:KeyInfo xmlns:ds="' +
       DS_NS + '"><ds:KeyName>' + helpers.xmlEscape(row.kid) +
-      '</ds:KeyName><ds:X509Data><ds:X509Certificate>' + row.certificate +
-      '</ds:X509Certificate></ds:X509Data></ds:KeyInfo>' + methods +
-      '</md:KeyDescriptor>';
+      '</ds:KeyName>' + helpers.x509DataXml(row.certificate, row.chain || []) +
+      '</ds:KeyInfo>' + methods + '</md:KeyDescriptor>';
   }
 
   // What the relationship page and `GET /admin-api/federation` show: the

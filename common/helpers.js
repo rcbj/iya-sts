@@ -3972,12 +3972,15 @@ function ownRsaCertificates(useCaseId, keySet) {
       out.push(groupRow);
     }
     const xml = xmlKeyFor(keys);
-    out.push({ kid: xml.kid, certPem: xml.certPem, role: 'current' });
+    // Its stored chain beside it (#1064), for the metadata's X509Data.
+    out.push({ kid: xml.kid, certPem: xml.certPem, role: 'current',
+               chainPem: (xml.certChainPem || []).slice() });
     if (groupRow && !signerGroups.hybridGroupsOn()) {
       out.push(groupRow);
     }
   } else {
-    out.push({ kid: keys.kid, certPem: keys.certPem, role: 'current' });
+    out.push({ kid: keys.kid, certPem: keys.certPem, role: 'current',
+               chainPem: (keys.certChainPem || []).slice() });
   }
   const now = Date.now();
   let pki = null;
@@ -4456,6 +4459,94 @@ function pinnedXmlView(keys) {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// A PUBLISHED JWK'S `x5c`: THE CHAIN THROUGH THE ROOT, AS BASE64 DER (#1064).
+//
+// RFC 7517 section 4.7: the certificate holding the key first, each one after
+// it certifying the one before, base64 DER and NOT base64url. The chain is
+// `common/pki.js`'s `chainThroughRoot()` — the one place a reported chain is
+// completed, and the reason the service Root now ends it — and this is the
+// one place it is written as `x5c`, for every JWK this service publishes:
+// the realm JWKS (`oauth-oidc/oauth2.ts`), the pinned and grouped signers
+// below, and `/crypto/metadata`. A process with no PKI reports what it holds.
+// ---------------------------------------------------------------------------
+/**
+ * Writes a certificate and its stored chain as a JWK `x5c`, completed through
+ * the Root that signs it.
+ *
+ * @param certificatePem - the certificate holding the key
+ * @param chainPem - its stored chain, leaf-first, without the Root
+ * @returns the base64 DER certificates, leaf first
+ */
+function x5cOf(certificatePem, chainPem) {
+  log.debug("Entering x5cOf().");
+  let pems = [certificatePem].concat(chainPem || []);
+  try {
+    // Lazily, as every reach into it from this file is.
+    pems = require('./pki').chainThroughRoot(certificatePem, chainPem || []);
+  } catch (e) {
+    log.debug("Caught in x5cOf(): " + ((e && e.message) || e));
+  }
+  log.debug("Leaving x5cOf(). " + pems.length + ".");
+  return pems.map(function (pem) {
+    return stsCrypto.stripPem(pem);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// AN XML `ds:X509Data`: THE CHAIN THROUGH THE ROOT, ONE CERTIFICATE EACH
+// (#1064).
+//
+// The XML half of `x5cOf()` above, and the one writer of it: every XML
+// signature's KeyInfo (`common/crypto.js` `signXml()`, handed this as
+// `keyInfoXml` by each signer) and every metadata KeyDescriptor this service
+// publishes — SAML 2.0 and SAML 1.1, WS-Federation, a federation
+// relationship's own metadata, signing and encryption alike.
+//
+// **THE SIGNER'S OWN CERTIFICATE FIRST.** XML Signature 1.1 section 4.5.4
+// lets an X509Data carry several certificates that relate to the key by a
+// certification path, in no particular order; SAML 2.0 Core section 5.4.5
+// imposes nothing on KeyInfo. But this service's own verifier, and many a
+// relying party's, take the FIRST X509Certificate as the signer's, so the
+// leaf stays first and the Root comes last.
+// ---------------------------------------------------------------------------
+/**
+ * Writes a certificate and its stored chain as a `ds:X509Data`, completed
+ * through the Root that signs it.
+ *
+ * @param certificatePem - the signing or encryption certificate
+ * @param chainPem - its stored chain, leaf-first, without the Root
+ * @returns `<ds:X509Data>…</ds:X509Data>`, the `ds` prefix the caller's
+ */
+function x509DataXml(certificatePem, chainPem) {
+  log.debug("Entering x509DataXml().");
+  const out = '<ds:X509Data>' + x5cOf(certificatePem, chainPem)
+    .map(function (b64) {
+      return '<ds:X509Certificate>' + b64 + '</ds:X509Certificate>';
+    }).join('') + '</ds:X509Data>';
+  log.debug("Leaving x509DataXml().");
+  return out;
+}
+
+/**
+ * The KeyInfo content an XML signer's view signs with: its certificate and
+ * chain through the Root, as `x509DataXml()` writes them.
+ *
+ * @param view - an XML signer's view (`STS.xmlSigner`, `STS.xml`), with
+ *   `certPem` and `certChainPem`
+ * @returns the `ds:X509Data`, or an empty string for a view with no
+ *   certificate
+ */
+function xmlSignerKeyInfo(view) {
+  log.debug("Entering xmlSignerKeyInfo().");
+  if (!view || !view.certPem) {
+    log.debug("Leaving xmlSignerKeyInfo(). No certificate.");
+    return '';
+  }
+  log.debug("Leaving xmlSignerKeyInfo().");
+  return x509DataXml(view.certPem, view.certChainPem || []);
+}
+
 // The pinned `jose` keys as published JWKs, every one but the RSA key — which
 // the JWKS already takes from `ownRsaCertificates('jose')` — with its
 // certificate and chain in `x5c` (the operator's chain, where they supplied
@@ -4473,10 +4564,7 @@ function pinnedPublishedJwks(keys) {
     return one.kind !== 'rsa' && one.publicJwk;
   }).map(function (one) {
     return Object.assign({}, one.publicJwk, {
-      x5c: [stsCrypto.stripPem(one.certificatePem)].concat(
-        one.chainPem.map(function (pem) {
-          return stsCrypto.stripPem(pem);
-        }))
+      x5c: x5cOf(one.certificatePem, one.chainPem)
     });
   });
   log.debug("Leaving pinnedPublishedJwks(). " + out.length + ".");
@@ -4894,7 +4982,9 @@ function pinnedDecryptionRows(keys, now) {
 function ownXmlEncryptionCertificates(keySet) {
   log.debug("Entering ownXmlEncryptionCertificates().");
   const keys = keySet || stsKeysFor();
-  const generated = { kid: STS.xml.kid, certPem: STS.xml.certPem };
+  // Each with its stored chain (#1064), for the metadata's X509Data.
+  const generated = { kid: STS.xml.kid, certPem: STS.xml.certPem,
+                      chainPem: (STS.xml.certChainPem || []).slice() };
   const pki = pkiForPins();
   const pinned = pki && pki.pinnedSignersOn(keys.realm)
     ? pinnedSignersOf(keys, 'xml').filter(function (one) {
@@ -4903,9 +4993,11 @@ function ownXmlEncryptionCertificates(keySet) {
   const active = pinned.filter(function (one) {
     return one.role === 'active';
   })[0];
-  const out = active ? [{ kid: active.kid, certPem: active.certificatePem }]
+  const out = active ? [{ kid: active.kid, certPem: active.certificatePem,
+                          chainPem: (active.chainPem || []).slice() }]
     : [generated].concat(pinned.map(function (one) {
-      return { kid: one.kid, certPem: one.certificatePem };
+      return { kid: one.kid, certPem: one.certificatePem,
+               chainPem: (one.chainPem || []).slice() };
     }));
   log.debug("Leaving ownXmlEncryptionCertificates(). " + out.length + ".");
   return out;
@@ -5040,11 +5132,6 @@ function groupPublishedJwks(keys) {
     log.debug("Caught in groupPublishedJwks(): " + ((e && e.message) || e));
     pki = null;
   }
-  const b64 = function (pem) {
-    log.debug("Entering b64().");
-    log.debug("Leaving b64().");
-    return String(pem).replace(/-----[^-]+-----/g, '').replace(/\s+/g, '');
-  };
   const out = groupMembersOf(keys).filter(function (one) {
     return isGeneralJoseGroup(one.group);
   }).map(function (one) {
@@ -5056,8 +5143,7 @@ function groupPublishedJwks(keys) {
     const held = pki.publishedCertificateFor(keys.realm,
       grp ? grp.pkiUseCase : 'jose', one.slot, one.publicJwk.kid);
     if (held && held.certificatePem) {
-      jwk.x5c = [b64(held.certificatePem)].concat(
-        (held.chainPem || []).map(b64));
+      jwk.x5c = x5cOf(held.certificatePem, held.chainPem || []);
     }
     return jwk;
   });
@@ -8426,6 +8512,9 @@ module.exports = {
   // Pinned signers (#263).
   pinnedSignersOf: pinnedSignersOf,
   pinnedPublishedJwks: pinnedPublishedJwks,
+  x5cOf: x5cOf,
+  x509DataXml: x509DataXml,
+  xmlSignerKeyInfo: xmlSignerKeyInfo,
   pinnedJoseSigner: pinnedJoseSigner,
   joseSlotForAlg: joseSlotForAlg,
   standbyOf: standbyOf,
