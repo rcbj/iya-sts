@@ -1476,6 +1476,37 @@ function chrome(t) {
   t.equal(ReportRuntime.realmHtml(tr, null, '/report'), '',
     'no view yet draws nothing');
 
+  // CHANGING THE SOURCE REDRAWS THE QUERY BLOCK ON THE NEW QUERY PAGE TOO
+  // (rcbj, 2026-10-27: only the definition page redrew, so the filter
+  // dropdown kept the first source's fields and `mechanism` could not be
+  // picked for credentialHolders). The handler is driven with a stand-in
+  // element and form, as the browser would call it.
+  const redrawn = { innerHTML: '' };
+  const newQueryForm = {
+    querySelector: function (selector) {
+      return selector === '[data-query-block]' ? redrawn : null;
+    }
+  };
+  const sourceSelect = {
+    value: 'credentialHolders',
+    getAttribute: function (name) {
+      return name === 'name' ? 'source' : null;
+    },
+    closest: function (selector) {
+      // The New Query form is `data-form="query"`, not the definition's.
+      return selector === 'form' ? newQueryForm : null;
+    }
+  };
+  ReportRuntime.prototype.onChange.call(
+    { t: tr, catalogSources: new Catalog().list() },
+    { target: sourceSelect });
+  t.check(redrawn.innerHTML.indexOf('value="credentialHolders" selected') >= 0,
+    'the New Query block is redrawn for the chosen source', redrawn.innerHTML);
+  t.check(redrawn.innerHTML.indexOf('<option value="mechanism">') >= 0,
+    'and its filter dropdown offers mechanism');
+  t.check(redrawn.innerHTML.indexOf('name="field" value="role"') >= 0,
+    'and its field boxes are the new source\'s');
+
   // The two bars: the reader's controls above, right-justified; the pages
   // below.
   const bars = ReportRuntime.navHtml(tr, '<i>REALM</i>', '<i>MENU</i>',
