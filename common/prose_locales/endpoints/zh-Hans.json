@@ -1595,6 +1595,10 @@
     "en": "5468076a514d8abf",
     "text": "不登录继续"
   },
+  "endpoints.route./authn-api/pending/:id/certificate.name": {
+    "en": "92ce6eacdbb8d068",
+    "text": "使用您的证书继续"
+  },
   "endpoints.route./authn-api/pending/:id/email.name": {
     "en": "108905ece8873211",
     "text": "使用电子邮件发送的验证码或链接登录"

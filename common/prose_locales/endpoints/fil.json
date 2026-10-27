@@ -1595,6 +1595,10 @@
     "en": "5468076a514d8abf",
     "text": "Magpatuloy nang hindi nagsa-sign in"
   },
+  "endpoints.route./authn-api/pending/:id/certificate.name": {
+    "en": "92ce6eacdbb8d068",
+    "text": "Magpatuloy gamit ang iyong certificate"
+  },
   "endpoints.route./authn-api/pending/:id/email.name": {
     "en": "108905ece8873211",
     "text": "Mag-sign in gamit ang code o link na ipinadala sa email"

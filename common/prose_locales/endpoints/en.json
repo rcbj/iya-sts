@@ -398,6 +398,7 @@
   "endpoints.route./authn-api/pending/:id/password.name": "Sign in with a password",
   "endpoints.route./authn-api/pending/:id/cancel.name": "Decline the sign-in",
   "endpoints.route./authn-api/pending/:id/anonymous.name": "Continue without signing in",
+  "endpoints.route./authn-api/pending/:id/certificate.name": "Continue with your certificate",
   "endpoints.route./authn-api/pending/:id/email.name": "Sign in with an emailed code or link",
   "endpoints.route./authn-api/pending/:id/passkey/options.name": "Arm a passkey ceremony",
   "endpoints.route./authn-api/pending/:id/passkey.name": "Sign in with a passkey and no username",
