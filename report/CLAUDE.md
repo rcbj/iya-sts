@@ -226,6 +226,42 @@ GROUPABLE list and `rows.ts`'s `LIST_FIELDS` (a single value needs no
 splitting); `lane` is enumerated (#1007). Nothing changed in what is
 read: the same holders, the same entries, more rows out of each.
 
+## One rule for every filter row (#1028)
+
+rcbj, 2026-10-27: index the unencrypted filter fields; a field with no
+index is not a search parameter; a field with 20 or fewer values is a
+dropdown; a date is a date-time picker; "as cookie-cutter as possible";
+no query a user can build may scan. `web_report_pages.ts` now has ONE
+rule, driven by the catalog:
+
+* **A field's kind** (`kindOf()`): `choice` (catalog `values`, at most
+  `CHOICE_MAX` = 20, or a boolean as true/false), `time` (a timestamp),
+  `number`, `text`. **The kind decides the operators** (`OPS_OF`: choice
+  eq/ne/isNull; time ge/gt/le/lt/isNull; number the six comparisons and
+  isNull; text eq/ne/contains/startsWith/isNull) **and the control**
+  (`filterValueHtml()`: a dropdown, a `datetime-local` read as UTC, a
+  number box, a text box), and the control carries `data-type`, so
+  `queryDocument()` sends a number, a boolean, or ISO UTC text — the API
+  refused the strings it sent before.
+* **The anchoring first row** of a directory source (#1027) narrows the
+  kind's operators to the field's index (`opsFor(spec, true)`): the
+  username box offers eq/contains/startsWith, a date ge/gt/le/lt,
+  `mechanism` equals. `redrawFilterRow()` redraws the operator select
+  whenever the list differs (`data-ops` is the list itself).
+* **Finite fields** got `values`: applications.status, authMechanisms.type,
+  reportJobs.status and .format, credentialHolders.format,
+  attributeSources.dialect and .onFailure, and #1028's users.status.
+* **Unindexed fields stay as NARROWING rows**, not first filters — a
+  deliberate reading of "shouldn't be a searchable filter field": the
+  anchor rule already makes a query that would scan impossible, and
+  removing role, algorithm or channel as narrowing filters would undo
+  what rcbj asked for in #1002, #1021 and #1027 (`mechanism equals
+  passkey and role equals primary`). The non-directory sources (the audit
+  ring, the registers, the snapshot) are in-memory lists bounded by their
+  own caps; filtering them reads nothing from the store.
+* **Run and Save are the definition page's buttons**: `.foot-actions`
+  with `.button`s; Save stays first in the document for the Enter reason.
+
 ## Every index on every source, and the anchor rule (rcbj, 2026-10-27)
 
 Three sentences from rcbj the morning the credentialHolders source was
@@ -264,13 +300,22 @@ given the constraints we've defined." What that became:
   because they narrow the indexed read; a saved first row whose field is
   not indexed (saved before, or through the API) keeps its field by
   widening its own list.
-* **Not created**: an index for `status`, `displayName`, `createdAt` or a
-  credential's role, algorithm, lane or channel. `status` is an asked name
-  away (`pwdaccountlockedtime`, another schema version); `createdAt` and
-  `modifiedAt` are plain columns a btree would serve; `displayName` is
-  sealed and would need a keyed digest as `name_keys` has; a credential's
-  facts are inside the sealed value and cannot be indexed without changing
-  what is encrypted, which rcbj ruled out. Each is a ticket of its own.
+* **Created by #1028 (schema version 28)**: `status equals locked` is a
+  holders read (`pwdaccountlockedtime` joined the asked names;
+  `LOCK_ATTRIBUTE`, `USER_FIELDS` for what the row needs), and
+  `createdAt` / `modifiedAt` take the four range operators through two
+  B-trees over the directory's own generalized-time text columns, led by
+  realm and parent over each realm's `ou=users` (`sts_ldap_entries_created`,
+  `_modified`; `directory_queries.js`'s `createdBetween` / `modifiedBetween`,
+  `ldap_server.js`'s `entriesByTimeRangeAsync()`). The planner turns a
+  bound into a `range` lookup — `le` and `gt` moved a second to the
+  statement's inclusive-low, exclusive-high form — and two bounds on one
+  date in an `and` into ONE span, so "between" is one index read.
+  `active` anchors nothing: it is everybody else.
+* **Not created**: an index for `displayName` (sealed; it would need a
+  keyed digest as `name_keys` has) or a credential's role, algorithm, lane
+  or channel (inside the sealed value; indexing them would change what is
+  encrypted, which rcbj ruled out). Those stay narrowing fields.
 
 ## The wallet mechanisms (#1021)
 

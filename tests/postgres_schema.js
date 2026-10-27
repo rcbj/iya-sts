@@ -441,10 +441,10 @@ function checkTheVersionAgrees(t, sql) {
 // (#754) adds the seventh, `sts_sessions_surface`.
 function checkTheSessionIndex(t, sql) {
   log.debug("Entering checkTheSessionIndex().");
-  t.equal(driver.SCHEMA_VERSION, 27,
-          'the driver\'s schema version is 27 (#350, #754, the uid ' +
+  t.equal(driver.SCHEMA_VERSION, 28,
+          'the driver\'s schema version is 28 (#350, #754, the uid ' +
           'trigram index, #820\'s on-demand index and its sort_at, #956, ' +
-          '#1024\'s asked-names rebuild)');
+          '#1024\'s asked-names rebuild, #1028\'s date B-trees)');
   // #820: the on-demand stores' index, in the driver and in the script,
   // and (version 25) the partial index `minted.newest` walks.
   ['sts_minted_index', 'sts_minted_index_key',

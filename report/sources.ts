@@ -87,11 +87,23 @@ const CANDIDATE_CAP = 1000;
 const UNBOUNDED_FILTER = 'STS-REPORT-0036';
 const TOO_MANY_HOLDERS = 'STS-REPORT-0039';
 
+// `op` is `eq` (the values, exact), `contains` (one lower-cased substring),
+// or `range` (#1028: `values[0]` the first epoch millisecond taken, or '',
+// `values[1]` the first left out, or '').
 interface Lookup {
   field: string;
   op: string;
   values: string[];
 }
+
+// The lock attribute the users source's `status equals locked` reads the
+// holders of (#1028): an asked name since schema version 28.
+const LOCK_ATTRIBUTE = 'pwdAccountLockedTime';
+// What a users row reads off an entry, lower-cased as `holdersAsync()` picks.
+const USER_FIELDS = ['uid', 'cn', 'displayname', 'mail', 'entryuuid',
+  'createtimestamp', 'modifytimestamp', 'pwdaccountlockedtime', 'memberof',
+  'userpassword', 'stswebauthncredential', 'ststotpcredential',
+  'stsmailfactor', 'authnmethod', 'mfalastauthtime'];
 
 const MECHANISMS = [
   { id: 'password', kind: 'both', primary: 'passwordPrimary',
@@ -749,8 +761,33 @@ function reportLeafLookup(node: any, indexedOf: (field: string) => string[]):
       log.debug("Leaving reportLeafLookup(). Empty.");
       return null;
     }
+    // THE LOCK IS INDEXED, ITS ABSENCE IS NOT (#1028): `status equals
+    // locked` is the holders of pwdAccountLockedTime; `active` is everybody
+    // else and anchors nothing.
+    if (field === 'status' && values.some(function (v: string): boolean {
+      return v !== 'locked';
+    })) {
+      log.debug("Leaving reportLeafLookup(). Not the lock.");
+      return null;
+    }
     log.debug("Leaving reportLeafLookup(). Exact.");
     return { field: field, op: 'eq', values: values };
+  }
+  if (op === 'lt' || op === 'le' || op === 'gt' || op === 'ge') {
+    // A DATE BOUND (#1028): one side of a span, in epoch milliseconds; `le`
+    // and `gt` move by a second, the columns' resolution, to the exclusive
+    // and inclusive sides the statement takes.
+    const at = typeof node.value === 'number' ? node.value
+      : Date.parse(String(node.value || ''));
+    if (!Number.isFinite(at)) {
+      log.debug("Leaving reportLeafLookup(). Not a time.");
+      return null;
+    }
+    const lo = op === 'ge' ? at : (op === 'gt' ? at + 1000 : 0);
+    const hi = op === 'lt' ? at : (op === 'le' ? at + 1000 : 0);
+    log.debug("Leaving reportLeafLookup(). A bound.");
+    return { field: field, op: 'range',
+             values: [lo ? String(lo) : '', hi ? String(hi) : ''] };
   }
   if (op === 'contains' || op === 'startsWith') {
     const needle = typeof node.value === 'string' ?
@@ -786,12 +823,39 @@ function reportIndexedLookups(node: any,
   if (node.op === 'and') {
     const args = Array.isArray(node.args) ? node.args : [];
     let best: Lookup[] | null = null;
+    const ranges: Lookup[] = [];
     for (let i = 0; i < args.length; i++) {
       const arm = reportIndexedLookups(args[i], indexedOf, depth + 1);
+      if (arm && arm.length === 1 && arm[0].op === 'range') {
+        ranges.push(arm[0]);
+      }
       if (arm && (!best || (reportExactOnly(arm) &&
           !reportExactOnly(best)))) {
         best = arm;
       }
+    }
+    // TWO BOUNDS ON ONE DATE ARE ONE RANGE (#1028): `createdAt ge A and
+    // createdAt lt B` is read as the span [A, B), not as everything from A
+    // narrowed afterwards.
+    if (best && best.length === 1 && best[0].op === 'range' &&
+        ranges.length > 1) {
+      const merged: Lookup = { field: best[0].field, op: 'range',
+                               values: ['', ''] };
+      ranges.forEach(function (one: Lookup): void {
+        if (one.field !== merged.field) {
+          return;
+        }
+        if (one.values[0] && (!merged.values[0] ||
+            Number(one.values[0]) > Number(merged.values[0]))) {
+          merged.values[0] = one.values[0];
+        }
+        if (one.values[1] && (!merged.values[1] ||
+            Number(one.values[1]) < Number(merged.values[1]))) {
+          merged.values[1] = one.values[1];
+        }
+      });
+      log.debug("Leaving reportIndexedLookups(). A merged span.");
+      return [merged];
     }
     log.debug("Leaving reportIndexedLookups(). And.");
     return best;
@@ -844,6 +908,38 @@ async function reportLookupEntries(lookup: Lookup, ldap: any):
       }
     });
     log.debug("Leaving reportLookupEntries(). By name.");
+    return found;
+  }
+  if (lookup.op === 'range') {
+    // THE SPAN (#1028): the directory's B-tree over created_at or
+    // modified_at; null in memory or past the cap, and the caller walks.
+    const column = lookup.field === 'modifiedAt' ? 'modified' : 'created';
+    const inSpan = await ldap.entriesByTimeRangeAsync(column,
+      Number(lookup.values[0]) || 0, Number(lookup.values[1]) || 0,
+      CANDIDATE_CAP);
+    if (inSpan === null) {
+      log.debug("Leaving reportLookupEntries(). Span not whole.");
+      return null;
+    }
+    inSpan.forEach(function (entry: any): void {
+      if (entry) {
+        found.push(entry);
+      }
+    });
+    log.debug("Leaving reportLookupEntries(). " + found.length +
+      ' in the span.');
+    return found;
+  }
+  if (lookup.field === 'status' && lookup.op === 'eq') {
+    // THE LOCKED (#1028): the holders of the lock attribute through the
+    // asked-names index, every users field picked.
+    const locked = await ldap.holdersAsync('person', LOCK_ATTRIBUTE,
+      USER_FIELDS);
+    (locked || []).forEach(function (holder: any): void {
+      found.push(reportHolderEntry(holder));
+    });
+    log.debug("Leaving reportLookupEntries(). " + found.length +
+      ' locked.');
     return found;
   }
   if (lookup.field === 'memberOf' && lookup.op === 'eq') {
@@ -1021,6 +1117,22 @@ function reportUnboundedFilter(catalog: any, sourceId?: string): any {
   };
 }
 
+function reportTooManyCandidates(catalog: any): any {
+  log.debug("Entering reportTooManyCandidates().");
+  log.warn(errorCodes.tag('STS-REPORT-0041') +
+    'report: an indexed filter matched more people than one read may take ' +
+    '(' + CANDIDATE_CAP + '); refused rather than read person by person.');
+  log.debug("Leaving reportTooManyCandidates().");
+  return {
+    ok: false,
+    code: 'STS-REPORT-0041',
+    error: 'result_too_large',
+    description: 'The filter matches more than ' + CANDIDATE_CAP +
+      ' people. Narrow it: a shorter date span, a longer name, or add a ' +
+      'group (memberOf).'
+  };
+}
+
 async function reportReadUsers(rows: any, control: any): Promise<void> {
   log.debug("Entering reportReadUsers().");
   const ldap = reportLdap();
@@ -1031,6 +1143,17 @@ async function reportReadUsers(rows: any, control: any): Promise<void> {
     return catalog.indexedFor('users', field);
   }, 0);
   const candidates = lookups ? await reportCandidates(lookups, ldap) : null;
+  // A LOOKUP TOO LARGE TO ANSWER WHOLE NEVER BECOMES A WALK (#1028, rcbj:
+  // "users shouldn't run into queries that require full table scans"): on
+  // a windowed directory, an indexed filter whose answer filled the
+  // candidate cap (a date span of more than a thousand people, say) is
+  // refused as too large, asking for a narrower filter, rather than read
+  // by paging every person.
+  if (lookups && !candidates && ldap.directoryIsWindowed()) {
+    control.unbounded = reportTooManyCandidates(catalog);
+    log.debug("Leaving reportReadUsers(). Lookup not whole.");
+    return;
+  }
   if (candidates) {
     for (let i = 0; i < candidates.length; i++) {
       const entry = candidates[i];

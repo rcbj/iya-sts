@@ -154,6 +154,14 @@ the pane. The other recipients are still sent to.
 trash can beside a row removes it. The last row left is emptied rather
 than removed, so there is always one.
 
+**Each filter row fits its field.** A field with a short list of values
+(20 or fewer, true/false included) is a dropdown and offers equals, does
+not equal and is empty; a date is a date-time picker in UTC with before
+and after; a number offers the six comparisons; text offers equals, does
+not equal, contains and starts with. On `users` and `credentialHolders`
+the first row offers only the indexed fields and, for each, only the
+operators its index answers.
+
 **Sort and Group by are behind checkboxes.** Tick **Sort** to choose the
 field and the direction on the same row; unticked, the query carries no
 order. Tick **Group by**, on its own row under Count, to choose the group
@@ -214,7 +222,10 @@ directory. A person's attributes are stored as one sealed value, so the
 directory can filter on very few of them: `username` for `eq`, `in`,
 `contains` and `startsWith` (the substring needs three characters or
 more), `mail` and `entryUuid` for `eq` and `in`, and `memberOf` for `eq`
-and `in` through the group's own member list. Every other field of
+and `in` through the group's own member list, `status` for `eq` `locked`
+through the lock's holders, and `createdAt` and `modifiedAt` for the four
+range operators through a B-tree over each column (schema version 28; two
+bounds on one date are read as one span). Every other field of
 `users` is filtered after the rows are read. **Every source uses every
 index the store has for its fields**: `credentialHolders` the same four
 and its `mechanism`, `groups` its `name`; a field the directory indexes

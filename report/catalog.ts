@@ -100,7 +100,14 @@ const INDEXED: Record<string, string[]> = {
   // A group's member list is an index of who is in it (rcbj, 2026-10-27:
   // "use every index available on every source"): `memberOf` equals a
   // group name reads the group and fetches its members by name.
-  memberOf: ['eq', 'in']
+  memberOf: ['eq', 'in'],
+  // #1028: the lock is an asked name (`status equals locked` is a holders
+  // read; `active` is the complement and anchors nothing), and the two
+  // dates are B-trees over the directory's own columns, so a range on
+  // either reads the span.
+  status: ['eq'],
+  createdAt: ['lt', 'le', 'gt', 'ge'],
+  modifiedAt: ['lt', 'le', 'gt', 'ge']
 };
 
 // The groups source's own lookups: a group by its name is one read.
@@ -184,11 +191,13 @@ function standardSources(): SourceSpec[] {
       [field('username', 'string', 'The directory uid.', INDEXED.username),
        field('status', 'string',
          'locked when pwdAccountLockedTime is set, which is an ' +
-         'administrative disable or any other lock; active otherwise.'),
+         'administrative disable or any other lock; active otherwise. ' +
+         'Indexed for locked only: active is everybody else.',
+         INDEXED.status, ['active', 'locked']),
        field('createdAt', 'timestamp',
-         'When the directory created the entry.'),
+         'When the directory created the entry.', INDEXED.createdAt),
        field('modifiedAt', 'timestamp',
-         'When the directory last changed the entry.'),
+         'When the directory last changed the entry.', INDEXED.modifiedAt),
        field('entryUuid', 'string',
          'The entryUUID. It can be filtered and cannot be sorted.',
          INDEXED.entryUuid),
@@ -222,7 +231,7 @@ function standardSources(): SourceSpec[] {
        field('name', 'string', 'The application name.'),
        field('status', 'string',
          'active when the application is registered and enabled; ' +
-         'disabled otherwise.'),
+         'disabled otherwise.', undefined, ['active', 'disabled']),
        field('enabled', 'boolean',
          'Whether the application is registered and enabled.')]),
     source('federation',
@@ -242,7 +251,8 @@ function standardSources(): SourceSpec[] {
          'application row uses the value it lists.'),
        field('type', 'string',
          'both, primary, second or other for a realm row. primary for ' +
-         'appAuthnMechanism and second for appMfaMechanism.'),
+         'appAuthnMechanism and second for appMfaMechanism.', undefined,
+         ['both', 'primary', 'second', 'other']),
        field('enabled', 'boolean',
          'For a realm row, whether that policy flag is on. For an ' +
          'application row, true because the application lists it; a ' +
@@ -293,8 +303,11 @@ function standardSources(): SourceSpec[] {
       'retention; the job row ages out later.',
       [field('id', 'string', 'The job id. It is not an authorization.'),
        field('status', 'string',
-         'queued, running, completed, failed, cancelled or expired.'),
-       field('format', 'string', 'json, csv or pdf.'),
+         'queued, running, completed, failed, cancelled or expired.',
+         undefined, ['queued', 'running', 'completed', 'failed',
+           'cancelled', 'expired']),
+       field('format', 'string', 'json, csv or pdf.', undefined,
+         ['json', 'csv', 'pdf']),
        field('submittedAt', 'timestamp', 'When the job was queued.'),
        field('completedAt', 'timestamp',
          'When the job finished, or null while it has not.'),
@@ -352,7 +365,8 @@ function standardSources(): SourceSpec[] {
          'the channel was kept.', undefined, HOLDER_CHANNELS),
        field('format', 'string',
          'A verifiable credential\'s format: dc+sd-jwt, jwt_vc_json or ' +
-         'ldp_vc. Empty for the other mechanisms.'),
+         'ldp_vc. Empty for the other mechanisms.', undefined,
+         ['dc+sd-jwt', 'jwt_vc_json', 'ldp_vc']),
        field('enrolledAt', 'timestamp',
          'When this credential was enrolled, where it records it.'),
        field('lastUsedAt', 'timestamp',
@@ -371,7 +385,8 @@ function standardSources(): SourceSpec[] {
       'does not read the remote table. Values those sources write are ' +
       'already on directory entries.',
       [field('id', 'string', 'The source id.'),
-       field('dialect', 'string', 'postgres or mysql, as configured.'),
+       field('dialect', 'string', 'postgres or mysql, as configured.',
+         undefined, ['postgres', 'mysql']),
        field('database', 'string', 'The database name. Not the host.'),
        field('table', 'string', 'The table the lookup reads.'),
        field('keyAttribute', 'string',
@@ -379,7 +394,8 @@ function standardSources(): SourceSpec[] {
        field('mode', 'string',
          'The refresh modes, joined, such as sign-in or schedule.'),
        field('onFailure', 'string',
-         'keep or refuse, as the source is configured.'),
+         'keep or refuse, as the source is configured.', undefined,
+         ['keep', 'refuse']),
        field('enabled', 'boolean', 'Whether the source is enabled.')])
   ];
   log.debug("Leaving standardSources().");
