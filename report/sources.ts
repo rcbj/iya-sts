@@ -2842,7 +2842,17 @@ async function reportRunOne(job: any, ctx: any): Promise<void> {
   }
   const crypto = require('../common/crypto');
   const sha = crypto.digest('sha256', finished.body, 'hex');
-  await stores.putArtifact(stored.id, finished.body, sha, finished.media);
+  try {
+    await stores.putArtifact(stored.id, finished.body, sha, finished.media);
+  } catch (e: any) {
+    // NOT STORED UNSEALED (#1033): a report that could not be sealed is a
+    // failed job, said with the store's code, never a clear-text row.
+    log.debug("Caught in reportRunOne(): " + ((e && e.message) || e));
+    reportFailJob(stored, 'unavailable',
+      String((e && e.code) || 'STS-REPORT-0042'));
+    log.debug("Leaving reportRunOne(). Not stored.");
+    return;
+  }
   stored.status = 'completed';
   stored.error = null;
   stored.completedAt = Date.now();
