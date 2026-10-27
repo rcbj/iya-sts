@@ -4041,8 +4041,14 @@ and how a presented one finds it:
   and its digest recomputed), on its own clock `certificatesVersion`, moved by
   `noteCertificatesTouched()` from `touchDirectory()` only for a write naming
   no DN, one to an entry the index holds, or one to an entry now storing a
-  certificate — so a sign-in's own writes do not rebuild it.
-  `certificateIndexState()` exposes it for the tests.
+  certificate — so a sign-in's own writes do not rebuild it. **Unlike the
+  user-handle index it is rebuilt whenever that clock moved, not only on a
+  miss**: it answers HOW MANY entries store a certificate, and a second
+  holder leaves the first hit good and the count wrong (the first run of
+  `tests/stored_certificates.js` caught exactly that). A write that names no
+  DN — `writeStoredPassword()` is one — still moves it, so outside a window
+  the next lookup walks the realm once; the window's resident half is the
+  non-people only. `certificateIndexState()` exposes it for the tests.
 * **WHAT A HOLDER IS**: under `ou=users`, a person (by `uid`, else the RDN
   value); under `ou=applications` with an `appIdentifier`, that
   application; anything else, an entry that is no identity, which the gate
