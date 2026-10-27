@@ -311,7 +311,16 @@ row already in the map. Each has a `touch()` that re-sets the key after an edit;
 without it the flush would write every row as it was CREATED, and a restart
 would put back a session that was never revoked. A new store holding mutable
 rows owes the same, and `tests/realm_isolation.js` asserts the two that have it
-against a real observer. The same day added `vc_offers.deferredAccessTokens`
+against a real observer. **`admin_stats.users` was a third such store and
+had no touch until #999 (2026-10-27)**: every sign-in incremented the
+record in place after the one `set()` at creation, so the stored row was the
+record at its first flush — one authentication — for the life of the row.
+On 8081 an account with sixty-two accepted credentials read 1, every
+restart restored the frozen row, and the other worker read the same row
+through the fan-in; the portal's "Times you have signed in" and the
+console's user page both draw it. `touchUserRecord()` in `admin_stats.js`
+re-sets the key after the edits, at one `minted-own` change row per
+sign-in; `tests/user_register_journal.js` holds it against the journal. The same day added `vc_offers.deferredAccessTokens`
 (keyed by a digest of the token, never the token) and moved
 `spiffe.recordedConnections` from `scope: 'shared'` to a realm's partition — see
 `common/CLAUDE.md`'s table of the seven stores that sweep converted.
