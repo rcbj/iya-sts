@@ -230,6 +230,19 @@ read from what the directory keeps already:
   `Rows.take()`. A query naming neither is unbounded in the catalog's
   sense (every mechanism's holders): refused synchronously on a windowed
   directory (`STS-REPORT-0036`), a job otherwise.
+* **Counted before read, and stopped with the budget** (found on 8081 the
+  night it shipped): every person with a password holds `stsKrb5Keys`, so
+  the Kerberos mechanism's holders were a million people, and a query
+  naming it — or no mechanism, as a job — read them all, a page at a
+  time, for minutes after the client gave up. `ldap_server.js`'s
+  `holderCountAsync()` (the store's `countWithAttribute`, nothing opened)
+  is asked first; over `report.syncMaxRows` / `report.asyncMaxRows` the
+  read is refused, `STS-REPORT-0039`, as an unbounded refusal when a job
+  would still fit (so `auto` queues one) and flat otherwise. A group's
+  member names are counted against the same cap. The read that starts
+  passes `{ stop }` to `holdersAsync()`, which `DirectoryWindow` asks
+  between pages and the in-memory walk between slices, so the budget or a
+  cancellation ends the store's paging with a thrown `stopped` error.
 * **Not here**: recovery codes and app passwords, whose attributes are
   outside the asked-names index (a store index change, its own ticket);
   and a maintained per-role aggregate — `passkey_report.ts` keeps

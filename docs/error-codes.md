@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4680** of them, in **48** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4681** of them, in **48** subsystems.
 
 ## Where a code appears
 
@@ -96,7 +96,7 @@ is an ordinary outcome.
 * [Identity-provider-initiated sign-in (`STS-LAUNCH`)](#sts-launch) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 181
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
-* [Reporting (`STS-REPORT`)](#sts-report) — 37
+* [Reporting (`STS-REPORT`)](#sts-report) — 38
 
 ## STS-HTTP
 
@@ -5390,6 +5390,7 @@ Raised from: report/.
 | `STS-REPORT-0036` | A synchronous users report names no filter the directory can answer with an index, and the directory is windowed, so it was refused rather than read person by person; in auto mode it became a job. | result_too_large (HTTP 400) |
 | `STS-REPORT-0037` | A report job finished with Notify on, and a group the definition is shared with has no mail attribute, so that group was not sent the notice. The other recipients were. | recorded; the job still completed |
 | `STS-REPORT-0038` | GET /report-api/schedules asked for another account's schedules with a token that holds report:use and not report:admin. | forbidden (HTTP 403) |
+| `STS-REPORT-0039` | A credentialHolders query would read more holders (or group members) than its execution's row cap allows, so it was refused before the first page was read (#1002); synchronously, under the job cap, it becomes a job in auto mode. | result_too_large (HTTP 400) |
 
 ## Adding a code
 

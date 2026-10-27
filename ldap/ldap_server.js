@@ -1939,9 +1939,16 @@ const HOLDER_SCAN_SLICE = 2000;
  * @returns a promise of `[{ id, dn, attributes }]`, `attributes` keyed by
  *   the lower-cased names asked for
  */
-async function holdersAsync(kind, attribute, names) {
+async function holdersAsync(kind, attribute, names, control) {
   log.debug('Entering holdersAsync(). kind=' + kind + ' attribute=' +
             attribute);
+  // `control.stop()` (#1002), asked between pages of the store and between
+  // slices of the in-memory walk: a truthy answer is the reason, and the read
+  // ends with an error whose `stopped` is true. Without it a caller that
+  // gave up — a report past its budget, a request the client abandoned —
+  // left the store paging through a million holders for nobody.
+  const stop = control && typeof control.stop === 'function'
+    ? control.stop : null;
   const container = kind === 'person' ? usersDn()
     : (kind === 'device' ? devicesDn() : '');
   if (!container) {
@@ -1979,7 +1986,7 @@ async function holdersAsync(kind, attribute, names) {
     const hits = await directoryWindow.holdersAsync(realms.currentId(), base,
       held, function (entry) {
         return kind !== 'person' || isPersonEntry(entry);
-      });
+      }, stop ? { stop: stop } : undefined);
     hits.forEach(function (hit) {
       take(hit.entry);
     });
@@ -2001,11 +2008,49 @@ async function holdersAsync(kind, attribute, names) {
       await new Promise(function (resolve) {
         setImmediate(resolve);
       });
+      const why = stop ? stop() : '';
+      if (why) {
+        // Cast: the marker is read by the caller as `e.stopped`, and an
+        // Error has no such declared property.
+        const stopped = /** @type {any} */ (new Error(
+          'The holders walk was stopped after ' + seen + ' entries: ' +
+          String(why)));
+        stopped.stopped = true;
+        log.debug('Leaving holdersAsync(). Stopped.');
+        throw stopped;
+      }
     }
   }
   log.debug('Leaving holdersAsync(). ' + out.length + ' of ' + seen +
             ' entries walked in memory.');
   return out;
+}
+
+// HOW MANY HOLD AN ATTRIBUTE, BEFORE READING THEM (#1002). The store's count
+// over the asked-names index (`countWithAttribute`, linear in the holders,
+// nothing opened), so a caller can refuse a read it cannot afford before
+// the first page: on 8081 every person with a password holds `stsKrb5Keys`,
+// a million of them, and a report asking for the Kerberos mechanism's
+// holders read them all. In memory the answer is null — not counted — and
+// the caller reads, because a realm held in memory is small by design.
+async function holderCountAsync(kind, attribute) {
+  log.debug('Entering holderCountAsync(). kind=' + kind + ' attribute=' +
+            attribute);
+  const container = kind === 'person' ? usersDn()
+    : (kind === 'device' ? devicesDn() : '');
+  if (!container) {
+    log.debug('Leaving holderCountAsync(). No such kind.');
+    return 0;
+  }
+  if (!directoryWindow) {
+    log.debug('Leaving holderCountAsync(). Not counted: in memory.');
+    return null;
+  }
+  const n = await storeAsked(directoryWindow.countHoldersAsync(
+    realms.currentId(), normalizeDn(container),
+    String(attribute || '').toLowerCase()));
+  log.debug('Leaving holderCountAsync(). ' + n + '.');
+  return n;
 }
 
 // ---------------------------------------------------------------------------
@@ -27492,8 +27537,11 @@ module.exports = {
   existingUserEntriesAsync: existingUserEntriesAsync,
   // The holders of one attribute, asynchronously (#615), on the module too
   // since #1002: the reports application's `credentialHolders` source
-  // reads a mechanism's holders through it, bounded by the holders.
+  // reads a mechanism's holders through it, bounded by the holders — and
+  // counts them first, through `holderCountAsync`, so a mechanism nearly
+  // everyone holds is refused rather than read.
   holdersAsync: holdersAsync,
+  holderCountAsync: holderCountAsync,
   locateStoredAsync: locateStoredAsync,
   credentialCensus: credentialCensus,
   credentialCensusAsync: credentialCensusAsync,

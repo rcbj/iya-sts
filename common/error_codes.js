@@ -23663,7 +23663,13 @@ const CODES = [
   { code: 'STS-REPORT-0038',
     summary: 'GET /report-api/schedules asked for another account\'s ' +
       'schedules with a token that holds report:use and not report:admin.',
-    spec: 'forbidden (HTTP 403)' }
+    spec: 'forbidden (HTTP 403)' },
+  { code: 'STS-REPORT-0039',
+    summary: 'A credentialHolders query would read more holders (or group ' +
+      'members) than its execution\'s row cap allows, so it was refused ' +
+      'before the first page was read (#1002); synchronously, under the ' +
+      'job cap, it becomes a job in auto mode.',
+    spec: 'result_too_large (HTTP 400)' }
   // ===== END ===============================================================
 ];
 
