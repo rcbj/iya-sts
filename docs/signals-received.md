@@ -155,13 +155,16 @@ token:
 - the portal does the same with `sts-user-portal`'s;
 - the reports application does the same with `sts-report`'s.
 
-Three things narrow it. A CAEP `session-revoked` that names a sign-on session
+Four things narrow it. A CAEP `session-revoked` that names a sign-on session
 reaches only the tokens issued on that session. A token issued after the event
 happened is left alone, because it was issued to somebody who had already
 signed in again. And a CAEP `credential-change` whose `change_type` is
 `create` revokes nothing: a credential that was added took nothing away, so
 nobody's sign-in rests on a credential that stopped working. A credential
-updated, revoked or deleted still does.
+updated, revoked or deleted still does. And a RISC `account-disabled` about
+an account that is enabled again by the time the event is acted on revokes
+nothing: the disable ended the person's sessions when it happened, and the
+enable that followed let them back in.
 
 It never ends the identity provider's session. That session belongs to the
 transmitter, which has usually ended it already. And it never touches another

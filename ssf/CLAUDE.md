@@ -635,7 +635,13 @@ rules read for a token:
   ADDED takes nothing away, and the suite's own habit — create a person
   with a password, sign them in within the same second — met the delivery
   a moment later and "the same second is ended". `update`, `revoke` and
-  `delete` still end them. `tests/signal_response.js` E4b and G1b.
+  `delete` still end them. `tests/signal_response.js` E4b and G1b;
+* and a RISC `account-disabled` about a person who is ENABLED now reaches
+  nothing (the same day): the disable ended what it had to end when it
+  happened, and an enable superseded it before the event was acted on —
+  `sts_second_factor_doors` disables, enables and signs the person in to
+  the portal within one second. Asked of `account_state.isDisabled()` per
+  token; where nothing can be asked the event acts. G7 and G8.
 
 **FOUND THROUGH THE INDEX, NEVER A WALK** (`tokenKeysNamed()`): the token
 register's `u:` and `s:` keys for every identifier the SET spells, and for

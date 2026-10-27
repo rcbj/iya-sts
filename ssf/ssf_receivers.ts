@@ -1443,6 +1443,27 @@ class SsfReceivers {
         return eventAt > 0 && authenticatedAt > 0 &&
           Math.floor(authenticatedAt) > Math.floor(eventAt);
       };
+      // A RISC `account-disabled` ABOUT AN ACCOUNT THAT IS ENABLED NOW
+      // (2026-10-27): the disable ended what it had to end when it
+      // happened (`account_state.ts`), and an enable superseded it before
+      // this event was acted on. Acting on it then signs out a person who
+      // was let back in — `sts_second_factor_doors` disables, enables and
+      // signs the person in to the portal within the same second, which
+      // "the same second is ended" cannot tell from a sign-in made before
+      // the disable. Asked per token or session of this service's own
+      // account state; where nothing can be asked, the event acts.
+      const enabledAgain = function (username: string): boolean {
+        if (family !== 'risc' || short !== 'account-disabled' || !username) {
+          return false;
+        }
+        try {
+          return !require('../common/account_state').isDisabled(username);
+        } catch (e) {
+          log.debug("Caught in SsfReceivers.actOn(): " +
+                    ((e && e.message) || e));
+          return false;
+        }
+      };
       let skip = '';
       if (family === 'caep' && short === 'session-revoked' &&
           initiator === 'policy') {
@@ -1475,7 +1496,8 @@ class SsfReceivers {
                 return !!session &&
                   String(session.derivedFrom || '') === revokedSession;
               }
-              if (beganAfterEvent(session)) {
+              if (beganAfterEvent(session) ||
+                  enabledAgain(String(user.username || ''))) {
                 return false;
               }
               return self.isAbout(entry, { username: user.username,
@@ -1494,7 +1516,7 @@ class SsfReceivers {
           // narrowed the same two ways.
           const revoked = self.revokeSurfaceTokens(surface, entry,
             revokedSession, eventAt, 'the ' + surface.label +
-            ' receiving ' + short + ' (' + entry.jti + ')');
+            ' receiving ' + short + ' (' + entry.jti + ')', enabledAgain);
           out.push({ event: short, reaction: reaction, ended: ended,
                      revoked: revoked });
         } catch (e) {
@@ -1553,7 +1575,9 @@ class SsfReceivers {
   // ---------------------------------------------------------------------------
   private revokeSurfaceTokens(surface: Loose, entry: Loose,
                               revokedSession: string, eventAt: number,
-                              via: string): number {
+                              via: string,
+                              enabledAgain?: (username: string) => boolean
+                             ): number {
     const { log } = this.deps;
     log.debug("Entering SsfReceivers.revokeSurfaceTokens(). " + surface.id);
     const clientId = String((surface && surface.audience) || '');
@@ -1582,6 +1606,9 @@ class SsfReceivers {
         return false;
       }
       const username = String(record.username || '');
+      if (enabledAgain && enabledAgain(username)) {
+        return false;
+      }
       return self.isAbout(entry, { username: username,
         sub: String(record.sub || ''),
         mail: named.mailOf[username.toLowerCase()] || '' });

@@ -396,6 +396,47 @@ function childMain() {
            sub: erin, mail: '' } }).length >= 1,
          'G6. the reports inbox holds the signal; narrowed to a person it ' +
          'is shown to erin and not to frank');
+    // G7, G8 (2026-10-27): a RISC account-disabled about a person who is
+    // ENABLED now was superseded — the disable ended what it had to end
+    // when it happened — so it revokes nothing; about a person who is
+    // disabled it still does. `sts_second_factor_doors` disables, enables
+    // and signs the person in within one second.
+    const pushRisc = function (short, subject, payload) {
+      const claims = events.buildSet({ uri: events.RISC_PREFIX + short,
+        issuer: record.iss, audience: 'sts-admin-console',
+        subject: subject,
+        payload: Object.assign({ event_timestamp:
+          Math.floor(Date.now() / 1000) }, payload || {}) });
+      return receivers.acceptPolled('admin-console',
+                                    events.signSetSync(claims));
+    };
+    const g7Token = token('sr-erin', 'sts-admin-console');
+    const g7 = pushRisc('account-disabled',
+      { format: 'iss_sub', iss: record.iss, sub: erin }, {});
+    note(revokedOf(g7) === 0 && !stats.isRevoked(g7Token),
+         'G7. an account-disabled about a person who is ENABLED now ' +
+         'revokes nothing: a later enable superseded it',
+         JSON.stringify(g7.entry.reactions));
+    const accountState = require(ROOT + '/common/account_state');
+    let disabledOk = false;
+    try {
+      const act = accountState.setDisabled('sr-erin', true, { by: 'test' });
+      disabledOk = !!(act && act.ok !== false);
+    } catch (e) {
+      log.debug("Caught in run(): " + ((e && e.message) || e));
+      disabledOk = false;
+    }
+    const g8Token = token('sr-erin', 'sts-admin-console');
+    const g8 = pushRisc('account-disabled',
+      { format: 'iss_sub', iss: record.iss, sub: erin }, {});
+    note(disabledOk && revokedOf(g8) === 1 && stats.isRevoked(g8Token),
+         'G8. and about a person who IS disabled it revokes the console ' +
+         'token', JSON.stringify([disabledOk, g8.entry.reactions]));
+    try {
+      accountState.setDisabled('sr-erin', false, { by: 'test' });
+    } catch (e) {
+      log.debug("Caught in run(): " + ((e && e.message) || e));
+    }
 
     // --- D. a disabled policy ----------------------------------------------
     const written = xacmlStore.write('signal-response',
