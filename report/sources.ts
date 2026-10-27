@@ -96,6 +96,20 @@ interface Lookup {
   values: string[];
 }
 
+// A FIRST PAGE IS ENOUGH WHEN ANY ROWS WILL DO (#1040). A lookup whose
+// answer fills `CANDIDATE_CAP` is not whole, and an ordered or counted read
+// needs the whole answer. A read with neither needs only `limit` rows that
+// match, and any `limit` of them is a correct answer: on 8081
+// `createdAt after 2026-10-01`, limit 5, was refused as matching more than
+// 1000 people. `allowed` lets a lookup hand back the first page it was
+// given; `hit` says one did, and the read that offered all of them without
+// filling its limit is then refused as before, because the rows it did not
+// see may be the ones it lacks.
+interface PartialLookup {
+  allowed: boolean;
+  hit: boolean;
+}
+
 // The lock attribute the users source's `status equals locked` reads the
 // holders of (#1028): an asked name since schema version 28.
 const LOCK_ATTRIBUTE = 'pwdAccountLockedTime';
@@ -900,8 +914,8 @@ function reportIndexedLookups(node: any,
 // Null means the store could not answer it whole — a memory directory asked
 // a substring or an address (it has no index for either, and is small), or
 // an answer that filled the cap — and the caller walks instead.
-async function reportLookupEntries(lookup: Lookup, ldap: any):
-    Promise<any[] | null> {
+async function reportLookupEntries(lookup: Lookup, ldap: any,
+    partial?: PartialLookup): Promise<any[] | null> {
   log.debug("Entering reportLookupEntries(). " + lookup.field + ' ' +
     lookup.op);
   const found: any[] = [];
@@ -921,10 +935,13 @@ async function reportLookupEntries(lookup: Lookup, ldap: any):
     const column = lookup.field === 'modifiedAt' ? 'modified' : 'created';
     const inSpan = await ldap.entriesByTimeRangeAsync(column,
       Number(lookup.values[0]) || 0, Number(lookup.values[1]) || 0,
-      CANDIDATE_CAP);
+      CANDIDATE_CAP, !!(partial && partial.allowed));
     if (inSpan === null) {
       log.debug("Leaving reportLookupEntries(). Span not whole.");
       return null;
+    }
+    if (partial && inSpan.length >= CANDIDATE_CAP) {
+      partial.hit = true;
     }
     inSpan.forEach(function (entry: any): void {
       if (entry) {
@@ -1001,8 +1018,11 @@ async function reportLookupEntries(lookup: Lookup, ldap: any):
           });
         });
       if (hits.length >= CANDIDATE_CAP) {
-        log.debug("Leaving reportLookupEntries(). Mail at the cap.");
-        return null;
+        if (!partial || !partial.allowed) {
+          log.debug("Leaving reportLookupEntries(). Mail at the cap.");
+          return null;
+        }
+        partial.hit = true;
       }
       hits.forEach(function (hit: any): void {
         found.push(hit.entry);
@@ -1015,9 +1035,16 @@ async function reportLookupEntries(lookup: Lookup, ldap: any):
     const parent = String(ldap.usersDn() || '').toLowerCase();
     const page = await ldap.directoryWindow.uidContainsAsync(realmId,
       parent, lookup.values[0], CANDIDATE_CAP);
-    if (!page || page.asked >= CANDIDATE_CAP) {
-      log.debug("Leaving reportLookupEntries(). Substring at the cap.");
+    if (!page) {
+      log.debug("Leaving reportLookupEntries(). No substring answer.");
       return null;
+    }
+    if (page.asked >= CANDIDATE_CAP) {
+      if (!partial || !partial.allowed) {
+        log.debug("Leaving reportLookupEntries(). Substring at the cap.");
+        return null;
+      }
+      partial.hit = true;
     }
     page.rows.forEach(function (row: any): void {
       if (row && row.entry) {
@@ -1034,15 +1061,15 @@ async function reportLookupEntries(lookup: Lookup, ldap: any):
 // The candidates of a filter: every lookup's entries, each person once,
 // projections and entries with no `uid` left out as the walk leaves them.
 // Null when any lookup could not be answered whole.
-async function reportCandidates(lookups: Lookup[], ldap: any):
-    Promise<any[] | null> {
+async function reportCandidates(lookups: Lookup[], ldap: any,
+    partial?: PartialLookup): Promise<any[] | null> {
   log.debug("Entering reportCandidates(). " + lookups.length +
     ' lookup(s).');
   const parent = String(ldap.usersDn() || '').toLowerCase();
   const seen = new Set<string>();
   const out: any[] = [];
   for (let i = 0; i < lookups.length; i++) {
-    const entries = await reportLookupEntries(lookups[i], ldap);
+    const entries = await reportLookupEntries(lookups[i], ldap, partial);
     if (!entries) {
       log.debug("Leaving reportCandidates(). Not whole.");
       return null;
@@ -1101,12 +1128,7 @@ function reportMustVisitEverybody(plan: any): boolean {
 
 function reportUnboundedFilter(catalog: any, sourceId?: string): any {
   log.debug("Entering reportUnboundedFilter().");
-  const src = catalog.source(sourceId || 'users') || { fields: [] };
-  const named = (src.fields || []).filter(function (field: any): boolean {
-    return Array.isArray(field.indexed) && field.indexed.length > 0;
-  }).map(function (field: any): string {
-    return field.id + ' (' + field.indexed.join(', ') + ')';
-  });
+  const named = catalog.indexedPhrases(sourceId || 'users');
   log.warn(errorCodes.tag(UNBOUNDED_FILTER) +
     'report: a synchronous users query names no filter the directory ' +
     'can answer with an index, and the directory is windowed; refused ' +
@@ -1138,6 +1160,24 @@ function reportTooManyCandidates(catalog: any): any {
   };
 }
 
+function reportTooManyPeople(catalog: any, everybody: number,
+                             most: number): any {
+  log.debug("Entering reportTooManyPeople().");
+  log.warn(errorCodes.tag('STS-REPORT-0046') +
+    'report: a users read with an order or a count and no filter would ' +
+    'read ' + everybody + ' people, over report.asyncMaxRows (' + most +
+    '); refused before the first page.');
+  log.debug("Leaving reportTooManyPeople().");
+  return {
+    ok: false,
+    code: 'STS-REPORT-0046',
+    error: 'result_too_large',
+    description: 'This query would read all ' + everybody + ' people to ' +
+      'order or count them, more than a job may read (' + most + '). ' +
+      'Filter on ' + catalog.indexedPhrases('users').join(', ') + '.'
+  };
+}
+
 async function reportReadUsers(rows: any, control: any): Promise<void> {
   log.debug("Entering reportReadUsers().");
   const ldap = reportLdap();
@@ -1147,7 +1187,13 @@ async function reportReadUsers(rows: any, control: any): Promise<void> {
       string[] {
     return catalog.indexedFor('users', field);
   }, 0);
-  const candidates = lookups ? await reportCandidates(lookups, ldap) : null;
+  const partial: PartialLookup = {
+    allowed: !(Array.isArray(plan.orderBy) && plan.orderBy.length) &&
+      plan.aggregate !== 'count',
+    hit: false
+  };
+  const candidates = lookups ? await reportCandidates(lookups, ldap,
+    partial) : null;
   // A LOOKUP TOO LARGE TO ANSWER WHOLE NEVER BECOMES A WALK (#1028, rcbj:
   // "users shouldn't run into queries that require full table scans"): on
   // a windowed directory, an indexed filter whose answer filled the
@@ -1172,8 +1218,33 @@ async function reportReadUsers(rows: any, control: any): Promise<void> {
         await Promise.resolve();
       }
     }
+    if (partial.hit) {
+      // A first page offered whole without filling the limit: the rest of
+      // the lookup's answer may hold the rows still wanted.
+      control.unbounded = reportTooManyCandidates(catalog);
+      log.debug("Leaving reportReadUsers(). First page short.");
+      return;
+    }
     log.debug("Leaving reportReadUsers(). Indexed.");
     return;
+  }
+  // EVERYBODY IS COUNTED BEFORE THEY ARE READ (#1040). With no filter, an
+  // order or a count reads every person, and on 8081's million both
+  // `orderBy username` and `count by status` became jobs that ran into
+  // `report.asyncMaxMs` two minutes later. The store's count is a counter
+  // row (`personCount()`), so over `report.asyncMaxRows` — what a job may
+  // read, the cap `credentialHolders` counts its holders against — the
+  // read is refused now, in every mode, and not as `unbounded`, so `auto`
+  // does not turn it into a job that cannot finish.
+  if (ldap.directoryIsWindowed() && reportMustVisitEverybody(plan) &&
+      typeof ldap.personCount === 'function') {
+    const everybody = Number(ldap.personCount()) || 0;
+    const most = new Limits().asyncMaxRows();
+    if (everybody > most) {
+      control.unbounded = reportTooManyPeople(catalog, everybody, most);
+      log.debug("Leaving reportReadUsers(). Too many people.");
+      return;
+    }
   }
   if (control && control.execution === 'sync' &&
       ldap.directoryIsWindowed() && reportMustVisitEverybody(plan)) {
@@ -1852,6 +1923,30 @@ function reportTooManyHolders(n: number, cap: number, execution: string,
   };
 }
 
+// Whether a filter names nothing but `mechanism` (#1040), so a row that
+// carries only its mechanism is judged by it as the full row would be.
+function reportOnlyMechanisms(node: any): boolean {
+  log.debug("Entering reportOnlyMechanisms().");
+  if (node == null) {
+    log.debug("Leaving reportOnlyMechanisms(). No filter.");
+    return true;
+  }
+  if (node.op === 'and' || node.op === 'or') {
+    const args = Array.isArray(node.args) ? node.args : [];
+    const all = args.every(reportOnlyMechanisms);
+    log.debug("Leaving reportOnlyMechanisms(). " + node.op + '.');
+    return all;
+  }
+  if (node.op === 'not') {
+    const inner = reportOnlyMechanisms(node.arg);
+    log.debug("Leaving reportOnlyMechanisms(). Not.");
+    return inner;
+  }
+  const leaf = node.field === 'mechanism';
+  log.debug("Leaving reportOnlyMechanisms().");
+  return leaf;
+}
+
 function reportHoldersStop(control: any): () => string {
   log.debug("Entering reportHoldersStop().");
   const stop = function (): string {
@@ -1871,25 +1966,30 @@ async function reportReadCredentialHolders(rows: any, control: any):
   const ldap = reportLdap();
   const plan = (rows && rows.plan) || {};
   const catalog = new Catalog();
-  const lookups = reportIndexedLookups(plan.where, function (field: string):
-      string[] {
-    return catalog.indexedFor('credentialHolders', field);
-  }, 0) || [];
-  const groups = lookups.filter(function (one: Lookup): boolean {
-    return one.field === 'memberOf';
-  });
+  // EACH KIND OF LOOKUP IS ASKED OF THE FILTER ON ITS OWN (#1040). The
+  // filter's lookups were asked once, and an `and` gives ONE arm's — so
+  // `mechanism equals password` AND `memberOf equals ssf-read` kept the
+  // mechanism, never saw the group of one, and was refused on 8081 as more
+  // than 500 holders; and an `or` of a mechanism and a group read only the
+  // group's people. Asked per kind, an `and` gives every kind it names an
+  // arm of (each true of every row), and an `or` gives a kind only when
+  // every arm is of it — so the people, the group and the mechanisms each
+  // narrow the read only where the whole filter says they may.
+  const lookupsOf = function (fields: string[]): Lookup[] {
+    return reportIndexedLookups(plan.where, function (field: string):
+        string[] {
+      return fields.indexOf(field) >= 0 ?
+        catalog.indexedFor('credentialHolders', field) : [];
+    }, 0) || [];
+  };
+  const groups = lookupsOf(['memberOf']);
   // THE PERSON NAMED (rcbj, 2026-10-27: `username equals rcbj` was refused
   // as too large, because the reader knew only mechanism and memberOf and
   // read every mechanism's holders). A username, mail or entryUuid lookup
   // names the entries through the users source's doors
   // (`reportCandidates()`), and every mechanism of those people is read.
-  const people = lookups.filter(function (one: Lookup): boolean {
-    return one.field === 'username' || one.field === 'mail' ||
-      one.field === 'entryUuid';
-  });
-  const mechanisms = lookups.filter(function (one: Lookup): boolean {
-    return one.field === 'mechanism';
-  });
+  const people = lookupsOf(['username', 'mail', 'entryUuid']);
+  const mechanisms = lookupsOf(['mechanism']);
   const wantedIds: string[] = [];
   mechanisms.forEach(function (one: Lookup): void {
     one.values.forEach(function (id: string): void {
@@ -1898,10 +1998,37 @@ async function reportReadCredentialHolders(rows: any, control: any):
       }
     });
   });
-  const table = wantedIds.length ? MECHANISM_TABLE.filter(function (m: any):
+  let table = wantedIds.length ? MECHANISM_TABLE.filter(function (m: any):
       boolean {
     return wantedIds.indexOf(m.id) >= 0;
   }) : MECHANISM_TABLE;
+  // THE PASSWORD'S CENSUS IS ITS COUNTER (#1040). `docs/reporting.md` said
+  // since #1019 that a count by mechanism reads the password's count from
+  // the realm's counter, and nothing did: on 8081 `count` of `mechanism
+  // equals password` counted a million holders against the cap and was
+  // refused. A count grouped by mechanism alone, filtered on nothing but
+  // mechanisms and naming no person or group, takes the password's row
+  // from the counter (one row read, one row per holder) and reads the
+  // other mechanisms as before.
+  if (plan.aggregate === 'count' && Array.isArray(plan.groupBy) &&
+      plan.groupBy.length === 1 && plan.groupBy[0] === 'mechanism' &&
+      !people.length && !groups.length &&
+      reportOnlyMechanisms(plan.where) &&
+      table.some(function (m: any): boolean {
+        return m.id === 'password';
+      }) && typeof rows.takeCounted === 'function') {
+    const holding = await ldap.holderCountAsync('person', 'userPassword', 0);
+    if (typeof holding === 'number') {
+      rows.takeCounted({ mechanism: 'password' }, holding);
+      table = table.filter(function (m: any): boolean {
+        return m.id !== 'password';
+      });
+      if (!table.length) {
+        log.debug("Leaving reportReadCredentialHolders(). Counted.");
+        return;
+      }
+    }
+  }
   if (!groups.length && !mechanisms.length && !people.length && control &&
       control.execution === 'sync' && ldap.directoryIsWindowed()) {
     control.unbounded = reportUnboundedFilter(catalog, 'credentialHolders');
@@ -2312,11 +2439,7 @@ function reportActivityRows(events: any[]): any[] {
 
 async function reportReadActivity(rows: any, control: any): Promise<void> {
   log.debug("Entering reportReadActivity().");
-  const audit = require('../common/audit');
-  const config = require('../common/config');
-  const cap = Number(config.value('audit.maxEvents'));
-  const limit = Number.isFinite(cap) && cap > 0 ? cap : 5000;
-  const flat = reportActivityRows(audit.list().slice(0, limit));
+  const flat = reportActivityRows(await reportAuditEvents());
   for (let i = 0; i < flat.length; i++) {
     const keep = await reportOffer(flat[i], rows, control);
     if (keep === false) {
@@ -2380,13 +2503,28 @@ async function reportReadAttributeSources(rows: any, control: any):
   log.debug("Leaving reportReadAttributeSources().");
 }
 
-async function reportReadAudit(rows: any, control: any): Promise<void> {
-  log.debug("Entering reportReadAudit().");
+// THE WHOLE SERVICE'S AUDIT RING, NOT THIS PROCESS'S (#1040). Every
+// process keeps its own ring, and another process's rows are noted rather
+// than held until `audit.fresh()` reads them (#820) — the wait the console's
+// audit operations make. Without it a report on 8081's nine processes
+// answered from whichever one served the request: `authActivity` returned
+// nothing while the next request's `auditEvents` held six sign-ins. A fresh()
+// that fails fails the read, as it fails the console's.
+async function reportAuditEvents(): Promise<any[]> {
+  log.debug("Entering reportAuditEvents().");
   const audit = require('../common/audit');
   const config = require('../common/config');
+  await audit.fresh();
   const cap = Number(config.value('audit.maxEvents'));
   const limit = Number.isFinite(cap) && cap > 0 ? cap : 5000;
   const events = audit.list().slice(0, limit);
+  log.debug("Leaving reportAuditEvents(). " + events.length + '.');
+  return events;
+}
+
+async function reportReadAudit(rows: any, control: any): Promise<void> {
+  log.debug("Entering reportReadAudit().");
+  const events = await reportAuditEvents();
   for (let i = 0; i < events.length; i++) {
     const event = events[i] || {};
     const keep = await reportOffer({
@@ -2537,11 +2675,7 @@ function reportAnchorRefusal(plan: any): any {
     log.debug("Leaving reportAnchorRefusal(). Anchored.");
     return null;
   }
-  const named = (src.fields || []).filter(function (field: any): boolean {
-    return Array.isArray(field.indexed) && field.indexed.length > 0;
-  }).map(function (field: any): string {
-    return field.id + ' (' + field.indexed.join(', ') + ')';
-  });
+  const named = catalog.indexedPhrases(String(plan.source));
   log.warn(errorCodes.tag('STS-REPORT-0040') +
     'report: a ' + plan.source + ' filter names no indexed field; refused ' +
     'rather than read person by person.');

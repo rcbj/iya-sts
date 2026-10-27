@@ -189,7 +189,28 @@ class Rows {
     return rows;
   }
 
-  private count(row: Row): void {
+  /**
+   * Offers one source row standing for `n` alike (#1040): the password's
+   * census row, whose count the directory keeps as a counter rather than as
+   * rows. Only a count takes it; the filter is applied as to any row.
+   *
+   * @param row - the row, keyed by catalog field id
+   * @param n - how many rows it stands for
+   * @returns whether it was counted
+   */
+  takeCounted(row: Row, n: number): boolean {
+    log.debug("Entering Rows.takeCounted().");
+    if (this.plan.aggregate !== 'count' || !this.matches(this.plan.where,
+        row)) {
+      log.debug("Leaving Rows.takeCounted(). Not counted.");
+      return false;
+    }
+    this.count(row, n);
+    log.debug("Leaving Rows.takeCounted().");
+    return true;
+  }
+
+  private count(row: Row, n?: number): void {
     log.debug("Entering Rows.count().");
     const keyParts: unknown[] = [];
     const projected: Row = {};
@@ -200,10 +221,11 @@ class Rows {
     }
     const key = JSON.stringify(keyParts);
     const held = this.groups.get(key);
+    const by = n == null ? 1 : n;
     if (held) {
-      held.count += 1;
+      held.count += by;
     } else {
-      this.groups.set(key, { row: projected, count: 1 });
+      this.groups.set(key, { row: projected, count: by });
     }
     log.debug("Leaving Rows.count().");
   }

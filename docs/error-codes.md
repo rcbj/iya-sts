@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4687** of them, in **48** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4688** of them, in **48** subsystems.
 
 ## Where a code appears
 
@@ -96,7 +96,7 @@ is an ordinary outcome.
 * [Identity-provider-initiated sign-in (`STS-LAUNCH`)](#sts-launch) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 181
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
-* [Reporting (`STS-REPORT`)](#sts-report) — 44
+* [Reporting (`STS-REPORT`)](#sts-report) — 45
 
 ## STS-HTTP
 
@@ -5398,6 +5398,7 @@ Raised from: report/.
 | `STS-REPORT-0043` | A stored report would not open under the data keys this process holds (a destroyed or foreign key), so it was answered as gone (#1033). | none (the result is answered as not found) |
 | `STS-REPORT-0044` | The access-control policy refused a report API request (#1030): the subject holds no report role for the API, or the definition or job is not its own, not shared with a group it is in, and it is not a report administrator — an application reaches only what it defined. A hidden row is answered not_found. | forbidden (HTTP 403), or not_found (HTTP 404) for one row |
 | `STS-REPORT-0045` | A token the default realm issued was presented to another realm's report API and its subject is not a service administrator — a person holding Admin Read or Admin Write on the default realm's console roster now — so it was refused: only a service administrator reaches every realm's reports (#1038). | forbidden (HTTP 403) |
+| `STS-REPORT-0046` | A users report with an order or a count and no filter would read more people than a job may (report.asyncMaxRows), counted from the directory first, so it was refused at once rather than run as a job that reached report.asyncMaxMs (#1040). | result_too_large (HTTP 400) |
 
 ## Adding a code
 

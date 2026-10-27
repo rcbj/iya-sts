@@ -2032,8 +2032,11 @@ async function holdersAsync(kind, attribute, names, control) {
 // inclusive, `hi` exclusive, both epoch milliseconds, spelt into generalized
 // time as the columns hold it. Null in memory — the realm's map has no such
 // index and is small, so the caller walks — and null when the span holds
-// more than `cap` people, which the caller reads as "not whole".
-async function entriesByTimeRangeAsync(column, lo, hi, cap) {
+// more than `cap` people, which the caller reads as "not whole" — unless
+// `partial` asks for the first `cap` anyway (#1040: a report with a limit,
+// no order and no count may be answered from them), which the caller then
+// knows is not whole by its length.
+async function entriesByTimeRangeAsync(column, lo, hi, cap, partial) {
   log.debug('Entering entriesByTimeRangeAsync(). column=' + column);
   if (!directoryWindow) {
     log.debug('Leaving entriesByTimeRangeAsync(). In memory.');
@@ -2055,11 +2058,11 @@ async function entriesByTimeRangeAsync(column, lo, hi, cap) {
     function (entry) {
       return isPersonEntry(entry);
     }));
-  if (hits.length >= most) {
+  if (hits.length >= most && !partial) {
     log.debug('Leaving entriesByTimeRangeAsync(). Not whole.');
     return null;
   }
-  const out = hits.map(function (hit) {
+  const out = hits.slice(0, most).map(function (hit) {
     return hit.entry;
   });
   log.debug('Leaving entriesByTimeRangeAsync(). ' + out.length + '.');

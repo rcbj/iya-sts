@@ -78,6 +78,11 @@ interface FieldSpec {
   // page draws a dropdown of them for equals and not-equals. Absent for a
   // field whose values are open.
   values?: string[];
+  // The values whose equality the index answers, when it answers only some
+  // (#1040): `status equals locked` is the holders of the lock, and
+  // `active` is everybody else, which nothing indexes. Absent when every
+  // value of an indexed operator is answered.
+  indexedValues?: string[];
 }
 
 // The mechanisms `credentialHolders` knows (#1002), in `sources.ts`'s
@@ -149,7 +154,8 @@ interface SourceSpec {
 }
 
 function field(id: string, type: string, meaning: string,
-               indexed?: string[], values?: string[]): FieldSpec {
+               indexed?: string[], values?: string[],
+               indexedValues?: string[]): FieldSpec {
   log.debug("Entering field().");
   const spec: FieldSpec = {
     id: id,
@@ -162,6 +168,9 @@ function field(id: string, type: string, meaning: string,
   };
   if (values && values.length) {
     spec.values = values.slice();
+  }
+  if (indexedValues && indexedValues.length) {
+    spec.indexedValues = indexedValues.slice();
   }
   log.debug("Leaving field().");
   return spec;
@@ -196,7 +205,7 @@ function standardSources(): SourceSpec[] {
          'locked when pwdAccountLockedTime is set, which is an ' +
          'administrative disable or any other lock; active otherwise. ' +
          'Indexed for locked only: active is everybody else.',
-         INDEXED.status, ['active', 'locked']),
+         INDEXED.status, ['active', 'locked'], ['locked']),
        field('createdAt', 'timestamp',
          'When the directory created the entry.', INDEXED.createdAt),
        field('modifiedAt', 'timestamp',
@@ -265,9 +274,9 @@ function standardSources(): SourceSpec[] {
          'realm, or the application identifier when the row comes from ' +
          'that application\'s list.')]),
     source('auditEvents',
-      'The audit ring still held in this process, newest first, capped by ' +
-      'audit.maxEvents (5000 unless an operator set another cap). Not a ' +
-      'warehouse of sign-ins.',
+      'The audit rings still held by the service\'s processes, newest ' +
+      'first, each capped by audit.maxEvents (5000 unless an operator set ' +
+      'another cap). Not a warehouse of sign-ins.',
       [field('timestamp', 'timestamp', 'When the event was recorded.'),
        field('category', 'string', 'The audit category.'),
        field('action', 'string', 'The audit action.'),
@@ -440,6 +449,29 @@ class Catalog {
       (spec as any).indexed.slice() : [];
     log.debug("Leaving Catalog.indexedFor().");
     return list;
+  }
+
+  /**
+   * The indexed fields of a source as a refusal names them (#1040):
+   * `username (eq, in, contains, startsWith)`, and a field whose index
+   * answers only some values with them, `status (eq locked)`.
+   *
+   * @param sourceId - the source
+   * @returns one phrase per indexed field
+   */
+  indexedPhrases(sourceId: string): string[] {
+    log.debug("Entering Catalog.indexedPhrases().");
+    const src = this.source(sourceId) || { fields: [] };
+    const out = (src.fields || []).filter(function (spec: any): boolean {
+      return Array.isArray(spec.indexed) && spec.indexed.length > 0;
+    }).map(function (spec: any): string {
+      const only = Array.isArray(spec.indexedValues) &&
+        spec.indexedValues.length ? ' ' + spec.indexedValues.join(' or ') :
+        '';
+      return spec.id + ' (' + spec.indexed.join(', ') + only + ')';
+    });
+    log.debug("Leaving Catalog.indexedPhrases().");
+    return out;
   }
 
   /**

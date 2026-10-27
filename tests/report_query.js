@@ -965,7 +965,7 @@ function directoryDouble(windowed) {
     // The people created or changed in a span (#1028): the directory's
     // date B-trees, here the generalized-time attributes compared as
     // numbers; null when not windowed, as the directory answers in memory.
-    entriesByTimeRangeAsync: function (column, lo, hi, cap) {
+    entriesByTimeRangeAsync: function (column, lo, hi, cap, partial) {
       calls.range = (calls.range || 0) + 1;
       if (!windowed) {
         return Promise.resolve(null);
@@ -980,7 +980,8 @@ function directoryDouble(windowed) {
         const at = msOf(String((one.attributes[attr] || [''])[0]));
         return at && (!lo || at >= lo) && (!hi || at < hi);
       });
-      return Promise.resolve(hits.length >= cap ? null : hits);
+      return Promise.resolve(hits.length < cap ? hits :
+        (partial ? hits.slice(0, cap) : null));
     },
     entriesByUuidsAsync: function (uuids) {
       calls.byUuid++;
@@ -1148,6 +1149,10 @@ async function narrowing(t) {
     'a group is read by its name (rcbj, 2026-10-27)');
   t.equal(catalog.indexedFor('users', 'userPassword').length, 0,
     'a credential id is indexed for nothing');
+  t.equal((catalog.field('users', 'status').indexedValues || []).join(','),
+    'locked', 'status is indexed for locked only (#1040)');
+  t.equal(catalog.field('users', 'username').indexedValues, undefined,
+    'a field whose index answers every value carries no indexedValues');
   const spec = OpenApi.document(catalog);
   t.check(spec.components && spec.components.schemas &&
     spec.components.schemas.Field &&
@@ -1401,6 +1406,9 @@ async function narrowing(t) {
       where: { op: 'eq', field: 'status', value: 'active' }, limit: 10 });
     t.equal(activeOnly.code, 'STS-REPORT-0040',
       'active alone anchors nothing: it is everybody else');
+    t.check(activeOnly.description.indexOf('status (eq locked)') >= 0,
+      'and the refusal names the value that does (#1040)',
+      activeOnly.description);
     const sealedAnchored = await read({
       where: { op: 'and', args: [
         { op: 'contains', field: 'displayName', value: 'A' },
@@ -1432,6 +1440,93 @@ async function narrowing(t) {
       'a substring the store answers at its cap is not trusted whole, and ' +
       'is refused rather than walked (#1028)');
     t.equal(calls.contains, 1, 'the store was asked once');
+
+    // A FIRST PAGE IS ENOUGH WHEN ANY ROWS WILL DO (#1040): on 8081
+    // `createdAt after 2026-10-01`, limit 5, was refused as matching more
+    // than 1000 people. A span that fills the cap hands its first page to
+    // a read with no order and no count, which answers from it when its
+    // limit is met there; an ordered read, or one the page cannot fill, is
+    // refused as before.
+    const many = [];
+    for (let i = 0; i < 1000; i++) {
+      many.push(person('many' + i));
+    }
+    built.ldap.entriesByTimeRangeAsync = function (column, lo, hi, cap,
+                                                   partial) {
+      calls.range = (calls.range || 0) + 1;
+      return Promise.resolve(partial ? many.slice(0, cap) : null);
+    };
+    reset();
+    const firstPage = await read({
+      where: { op: 'gt', field: 'createdAt', value: '2026-10-01T00:00:00Z' },
+      limit: 5 });
+    t.equal(firstPage.ok, true, 'a span past the cap answers an unordered ' +
+      'read whose limit its first page meets', firstPage.description);
+    t.equal(names(firstPage).join(','), 'many0,many1,many2,many3,many4',
+      'with the first five of the page');
+    t.equal(calls.walk, 0, 'and nobody is walked');
+    reset();
+    const orderedSpan = await read({
+      where: { op: 'gt', field: 'createdAt', value: '2026-10-01T00:00:00Z' },
+      orderBy: [{ field: 'createdAt', dir: 'desc' }], limit: 5 });
+    t.equal(orderedSpan.code, 'STS-REPORT-0041',
+      'an ordered read needs the whole span, and is refused');
+    reset();
+    const countedSpan = await read({
+      where: { op: 'gt', field: 'createdAt', value: '2026-10-01T00:00:00Z' },
+      aggregate: 'count', groupBy: ['status'], select: ['status'], limit: 5 });
+    t.equal(countedSpan.code, 'STS-REPORT-0041',
+      'so does a counted one');
+    reset();
+    const shortPage = await read({
+      where: { op: 'and', args: [
+        { op: 'gt', field: 'createdAt', value: '2026-10-01T00:00:00Z' },
+        { op: 'eq', field: 'displayName', value: 'nobody' }] },
+      limit: 5 });
+    t.equal(shortPage.code, 'STS-REPORT-0041',
+      'a first page that does not fill the limit is refused: the rows it ' +
+      'lacks may be past it');
+    built.ldap.entriesByTimeRangeAsync = realRange;
+
+    // EVERYBODY IS COUNTED BEFORE THEY ARE READ (#1040): on 8081 a
+    // filterless `orderBy username` and `count by status` ran two minutes
+    // as jobs and failed at report.asyncMaxMs. Over report.asyncMaxRows
+    // the read is refused at once, in every mode, and not as unbounded.
+    built.ldap.personCount = function () {
+      calls.personCount = (calls.personCount || 0) + 1;
+      return 1000001;
+    };
+    reset();
+    const orderedJob = await read({ orderBy: [{ field: 'username',
+      dir: 'asc' }], limit: 2 }, 'async');
+    t.equal(orderedJob.code, 'STS-REPORT-0046',
+      'an ordered job over a million people is refused before it reads');
+    t.equal(orderedJob.error, 'result_too_large', 'as result_too_large');
+    t.equal(!!orderedJob.unbounded, false, 'flat: no job to turn it into');
+    t.check(String(orderedJob.description).indexOf('1000001') >= 0 &&
+      String(orderedJob.description).indexOf('100000') >= 0,
+      'naming the people and the cap', orderedJob.description);
+    t.equal(calls.walk, 0, 'nobody was paged');
+    reset();
+    const countedSync = await read({ aggregate: 'count',
+      groupBy: ['status'], select: ['status'], limit: 5 });
+    t.equal(countedSync.code, 'STS-REPORT-0046',
+      'a filterless count is refused the same way synchronously, so auto ' +
+      'mode queues no job that cannot finish');
+    reset();
+    const plainBig = await read({ limit: 2 });
+    t.equal(plainBig.ok, true,
+      'an unordered, uncounted read still stops at its limit');
+    t.equal(calls.personCount || 0, 0, 'and counts nobody');
+    built.ldap.personCount = function () {
+      return 50;
+    };
+    reset();
+    const orderedFew = await read({ orderBy: [{ field: 'username',
+      dir: 'asc' }], limit: 2 }, 'async');
+    t.equal(orderedFew.ok, true, 'a job over fifty people still runs',
+      orderedFew.description);
+    delete built.ldap.personCount;
   } finally {
     sources.installDirectory(null);
   }
@@ -3006,6 +3101,69 @@ async function holders(t) {
     t.equal(!!tooManyJob.unbounded, false, 'flat: nothing larger to try');
     t.equal(calls.holders, 0, 'nothing read for it');
     delete built.holderCounts.stskrb5keys;
+
+    // EACH KIND OF LOOKUP ON ITS OWN (#1040): on 8081 `mechanism equals
+    // password` AND `memberOf equals ssf-read` (one member) was refused as
+    // more than 500 holders, because an `and` gave the planner the
+    // mechanism's arm only. The group narrows the read and the mechanism
+    // picks the rows; the password's population is never counted.
+    built.holderCounts.userpassword = 200000;
+    reset();
+    const groupPasswords = await read({ source: 'credentialHolders',
+      select: fields, limit: 5,
+      where: { op: 'and', args: [
+        { op: 'eq', field: 'mechanism', value: 'password' },
+        { op: 'eq', field: 'memberOf', value: 'staff' }] } });
+    t.equal(groupPasswords.ok, true, 'a group of one narrows the password ' +
+      'holders', groupPasswords.description);
+    t.equal(groupPasswords.rows.map(function (row) {
+      return row.username + '/' + row.mechanism;
+    }).join(','), 'ada/password', 'to the member\'s password alone');
+    t.equal(calls.holderCount || 0, 0, 'with no holder counted');
+    reset();
+    const mixedOr = await read({ source: 'credentialHolders',
+      select: fields, limit: 5,
+      where: { op: 'or', args: [
+        { op: 'eq', field: 'mechanism', value: 'password' },
+        { op: 'eq', field: 'memberOf', value: 'staff' }] } });
+    t.equal(mixedOr.code, 'STS-REPORT-0036', 'an or of a mechanism and a ' +
+      'group is no longer read as the group alone, which dropped the ' +
+      'other members\' rows');
+    // THE PASSWORD'S CENSUS IS ITS COUNTER (#1040): the page said since
+    // #1019 that a count by mechanism reads it there, and on 8081 the count
+    // was refused as a million holders over the cap.
+    reset();
+    const census = await read({ source: 'credentialHolders',
+      select: ['mechanism'], aggregate: 'count', groupBy: ['mechanism'],
+      limit: 5, where: { op: 'eq', field: 'mechanism',
+        value: 'password' } }, 'async');
+    t.equal(census.ok, true, 'a count of the password holders is answered',
+      census.description);
+    t.equal(JSON.stringify(census.rows),
+      JSON.stringify([{ mechanism: 'password', count: 200000 }]),
+      'from the realm\'s counter');
+    t.equal(calls.holders || 0, 0, 'with no holder read');
+    reset();
+    const census2 = await read({ source: 'credentialHolders',
+      select: ['mechanism'], aggregate: 'count', groupBy: ['mechanism'],
+      limit: 5, where: { op: 'in', field: 'mechanism',
+        value: ['password', 'totp'] } }, 'async');
+    t.equal(census2.ok, true, 'beside another mechanism too',
+      census2.description);
+    t.check(census2.ok && census2.rows.some(function (row) {
+      return row.mechanism === 'password' && row.count === 200000;
+    }) && census2.rows.some(function (row) {
+      return row.mechanism === 'totp' && row.count >= 1;
+    }), 'the password counted and the other read',
+      JSON.stringify(census2.rows));
+    reset();
+    const notCensus = await read({ source: 'credentialHolders',
+      select: ['role'], aggregate: 'count', groupBy: ['role'],
+      limit: 5, where: { op: 'eq', field: 'mechanism',
+        value: 'password' } }, 'async');
+    t.equal(notCensus.code, 'STS-REPORT-0039', 'a count grouped by ' +
+      'anything else still reads the holders, and is refused over the cap');
+    delete built.holderCounts.userpassword;
     reset();
     const fewAgain = await read({ source: 'credentialHolders',
       select: fields, limit: 5,
@@ -3076,6 +3234,47 @@ async function sealedArtifacts(t) {
   log.debug("Leaving sealedArtifacts().");
 }
 
+// THE WHOLE SERVICE'S AUDIT RING (#1040): on 8081's nine processes
+// `authActivity` returned nothing while the next request's `auditEvents`
+// held six sign-ins, because the two read `audit.list()` without the wait
+// for the other processes' rows (`audit.fresh()`, #820) that the console's
+// audit operations make. Both sources now wait for it before they list.
+async function auditFresh(t) {
+  log.debug("Entering auditFresh().");
+  const sources = require('../report/sources');
+  const audit = require('../common/audit');
+  const realFresh = audit.fresh;
+  const realList = audit.list;
+  const order = [];
+  audit.fresh = function () {
+    order.push('fresh');
+    return Promise.resolve();
+  };
+  audit.list = function () {
+    order.push('list');
+    return [{ action: 'authentication', outcome: 'success', actor: 'ada',
+      category: 'authentication', at: Date.now(), detail: {} }];
+  };
+  try {
+    for (const id of ['auditEvents', 'authActivity']) {
+      order.length = 0;
+      const asked = ask({ source: id, select: ['actor', 'outcome'],
+        limit: 5 });
+      t.equal(asked.ok, true, id + ' is accepted', asked.description);
+      const answer = await sources.read(asked.plan, { startedMs: Date.now(),
+        budgetMs: 5000, execution: 'sync' });
+      t.equal(order.join(','), 'fresh,list',
+        id + ' waits for the other processes\' rows before it lists');
+      t.equal(answer.ok && answer.rows.length, 1,
+        id + ' answers the sign-in', answer.description);
+    }
+  } finally {
+    audit.fresh = realFresh;
+    audit.list = realList;
+  }
+  log.debug("Leaving auditFresh().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   documents(t);
@@ -3089,6 +3288,7 @@ async function run(t) {
   chrome(t);
   groups(t);
   await holders(t);
+  await auditFresh(t);
   log.debug("Leaving run().");
 }
 
