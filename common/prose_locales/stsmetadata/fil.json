@@ -2735,6 +2735,10 @@
     "en": "092b3cc9235cb1b0",
     "text": "NON-SPEC (#571). Kung saan naka-on ang authn.unauthenticatedSessions."
   },
+  "stsmetadata.endpoints./authn-api/pending/:id/certificate.what": {
+    "en": "e25acdfdf4c8d737",
+    "text": "NON-SPEC (#1051). Ang TLS client certificate ng koneksyon bilang unang factor, amr [\"swk\"]: tinatanggihan dahil sa pagbawi, ng identity gate, para sa awtoridad ng ibang realm o certificate ng isang application, gaya ng pagtanggi ng GET /tls/sign-in; pagkatapos ang authentication policy, ang panganib at isang pangalawang factor kung kailangan."
+  },
   "stsmetadata.endpoints./authn-api/pending/:id/email.what": {
     "en": "f654c3c6f076950a",
     "text": "NON-SPEC (#571). Kung saan tumatanggap nito ang authentication policy."

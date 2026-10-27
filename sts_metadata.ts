@@ -8325,6 +8325,14 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/authn-api/pending/:id/anonymous', group: 'Authentication',
     name: 'Continue without signing in', specs: [],
     what: 'NON-SPEC (#571). Where authn.unauthenticatedSessions is on.' },
+  { path: '/authn-api/pending/:id/certificate', group: 'Authentication',
+    name: 'Continue with your certificate', specs: [],
+    what: 'NON-SPEC (#1051). The TLS client certificate on the ' +
+          'connection as a first factor, amr ["swk"]: refused on ' +
+          'revocation, by the identity gate, for another realm\'s ' +
+          'authority or an application\'s certificate, as GET /tls/sign-in ' +
+          'refuses it; then the authentication policy, the risk and a ' +
+          'second factor where one is needed.' },
   { path: '/authn-api/pending/:id/email', group: 'Authentication',
     name: 'Sign in with an emailed code or link', specs: [],
     what: 'NON-SPEC (#571). Where the authentication policy accepts one.' },

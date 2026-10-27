@@ -1607,6 +1607,10 @@
     "en": "5468076a514d8abf",
     "text": "Fortsätt utan att logga in"
   },
+  "endpoints.route./authn-api/pending/:id/certificate.name": {
+    "en": "92ce6eacdbb8d068",
+    "text": "Fortsätt med ditt certifikat"
+  },
   "endpoints.route./authn-api/pending/:id/email.name": {
     "en": "108905ece8873211",
     "text": "Logga in med en kod eller länk via e-post"

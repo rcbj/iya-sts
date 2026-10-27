@@ -2735,6 +2735,10 @@
     "en": "092b3cc9235cb1b0",
     "text": "NON-SPEC（#571）。在 authn.unauthenticatedSessions 開啟時。"
   },
+  "stsmetadata.endpoints./authn-api/pending/:id/certificate.what": {
+    "en": "e25acdfdf4c8d737",
+    "text": "NON-SPEC (#1051)。連線上的 TLS 客戶端證書作為第一因素，amr [\"swk\"]：因撤銷、被身分關卡、因屬於另一領域的簽發機構或屬於某個應用的證書而被拒絕，與 GET /tls/sign-in 的拒絕方式相同；然後是驗證原則、風險，以及需要時的第二因素。"
+  },
   "stsmetadata.endpoints./authn-api/pending/:id/email.what": {
     "en": "f654c3c6f076950a",
     "text": "NON-SPEC（#571）。在驗證原則接受此方式時。"

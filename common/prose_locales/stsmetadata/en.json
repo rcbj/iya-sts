@@ -683,6 +683,7 @@
   "stsmetadata.endpoints./authn-api/pending/:id/password.what": "NON-SPEC (#571). The Sign In button: JSON, an Origin of this service and the X-CSRF-Token of the browser's session. Rate limited, risk-scored and decided by the issuance policy as the form was; the answer names the next step.",
   "stsmetadata.endpoints./authn-api/pending/:id/cancel.what": "NON-SPEC (#571). Cancel: the caller is told access_denied.",
   "stsmetadata.endpoints./authn-api/pending/:id/anonymous.what": "NON-SPEC (#571). Where authn.unauthenticatedSessions is on.",
+  "stsmetadata.endpoints./authn-api/pending/:id/certificate.what": "NON-SPEC (#1051). The TLS client certificate on the connection as a first factor, amr [\"swk\"]: refused on revocation, by the identity gate, for another realm's authority or an application's certificate, as GET /tls/sign-in refuses it; then the authentication policy, the risk and a second factor where one is needed.",
   "stsmetadata.endpoints./authn-api/pending/:id/email.what": "NON-SPEC (#571). Where the authentication policy accepts one.",
   "stsmetadata.endpoints./authn-api/pending/:id/passkey/options.what": "NON-SPEC (#571). A single-use challenge for a passkey with no username.",
   "stsmetadata.endpoints./authn-api/pending/:id/passkey.what": "NON-SPEC (#571). The ceremony's result, verified with user verification required.",

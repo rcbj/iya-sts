@@ -1607,6 +1607,10 @@
     "en": "5468076a514d8abf",
     "text": "Continuer sans se connecter"
   },
+  "endpoints.route./authn-api/pending/:id/certificate.name": {
+    "en": "92ce6eacdbb8d068",
+    "text": "Continuer avec votre certificat"
+  },
   "endpoints.route./authn-api/pending/:id/email.name": {
     "en": "108905ece8873211",
     "text": "Se connecter avec un code ou un lien envoyé par e-mail"

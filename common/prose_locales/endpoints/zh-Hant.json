@@ -1607,6 +1607,10 @@
     "en": "5468076a514d8abf",
     "text": "不登入繼續"
   },
+  "endpoints.route./authn-api/pending/:id/certificate.name": {
+    "en": "92ce6eacdbb8d068",
+    "text": "使用您的憑證繼續"
+  },
   "endpoints.route./authn-api/pending/:id/email.name": {
     "en": "108905ece8873211",
     "text": "使用電子郵件寄送的驗證碼或連結登入"

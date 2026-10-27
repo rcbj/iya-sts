@@ -56,7 +56,8 @@ any of them would be a broken implementation rather than a lenient one:
   algorithm against the offer, the credential id's length, signature and
   counter — and, where `webauthn.attestationPolicy` says (product by default),
   its **attestation statement**;
-* a **TLS client certificate** at `GET /tls/sign-in`, revocation included;
+* a **TLS client certificate** at `GET /tls/sign-in` and the sign-in
+  screen's **Continue with your certificate**, revocation included;
 * a **federation partner's** signature, issuer and audience;
 * an **RFC 7523 or RFC 7522 assertion's** signer, which must be declared;
 * a **wallet presentation** at `/authn/wallet`: the issuer's signature and the

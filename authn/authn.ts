@@ -1170,6 +1170,9 @@ interface AuthnDeps {
   // keystore and the device register, which a process loading this file for
   // one of its helpers has no need of.
   browserDevices: () => any;
+  // The sign-in screen's certificate door (#1051): `tls/tls_server.js`
+  // where it is loaded already, or null. See `certificateDoor()`.
+  certificateDoor: () => any;
   stsCrypto: typeof stsCrypto;
   realms: typeof realms;
   app: typeof app;
@@ -1248,6 +1251,28 @@ class Authn {
         helpers.log.debug("Entering browserDevices().");
         helpers.log.debug("Leaving browserDevices().");
         return require('../common/browser_devices');
+      },
+      // ONLY WHERE IT IS LOADED ALREADY: `tls/tls_server.js` is a JavaScript
+      // route module (#20), and requiring it from here would register its
+      // `/tls*` views wherever this ran first and close a cycle (it requires
+      // this module). In every process that serves the screen the
+      // composition root has loaded it long before a request arrives; one
+      // that has not offers no certificate.
+      certificateDoor: function certificateDoor() {
+        helpers.log.debug("Entering certificateDoor().");
+        let door: any = null;
+        try {
+          const file = require.resolve('../tls/tls_server');
+          door = require.cache[file] ? require.cache[file].exports : null;
+        } catch (e) {
+          helpers.log.debug("Caught in certificateDoor(): " +
+                            ((e && e.message) || e));
+          door = null;
+        }
+        helpers.log.debug("Leaving certificateDoor(). " +
+                          (door ? 'Loaded.' : 'Not loaded.'));
+        return door &&
+          typeof door.screenCertificateHolder === 'function' ? door : null;
       },
       stsCrypto: stsCrypto,
       realms: realms,
@@ -11931,7 +11956,8 @@ class Authn {
     void config;
     log.info('authn: "' + username + '" signed in with ' +
              (opts && opts.first === 'federation' ? 'a federation partner'
-                                                  : 'a wallet') +
+               : (opts && opts.first === 'certificate'
+                 ? 'a TLS client certificate' : 'a wallet')) +
              ' and a second ' +
              'factor is needed (' + (record.forceMfa ? 'the request demands ' +
              'two' : requirement.required ? 'required of them' :
@@ -12887,6 +12913,173 @@ class Authn {
                ? href + '&siop=1' : '' };
   }
 
+  // ---------------------------------------------------------------------------
+  // THE CERTIFICATE ON THE CONNECTION (#1051, 2026-10-27; rcbj's decision on
+  // #520): every browser protocol reaches this screen, so a TLS client
+  // certificate is offered HERE, once, rather than by each protocol. Where
+  // the connection presented one the identity gate accepts for this
+  // sign-in's realm, the screen offers "Continue as <name> with your
+  // certificate"; the act (`certificateSignIn()`) completes the pending
+  // sign-in on it as a first factor — the event `GET /tls/sign-in` records,
+  // `amr ["swk"]`, `acr "1"`, credential kind `certificate` — subject to the
+  // authentication policy like any other first factor.
+  //
+  // NOT OFFERED, and the act refuses it the same way (`certificateNotHere()`):
+  //
+  //   * where the authentication policy does not take a certificate as a
+  //     first factor (`certificatePrimary`);
+  //   * on a linking sign-in (#109), which rests on the password;
+  //   * where the application names the mechanisms it allows (#457): a TLS
+  //     client certificate is not one an application can name, so an
+  //     application naming any would re-prompt the session it made;
+  //   * where a security key or a passwordless passkey is demanded, or the
+  //     passkey policy requires a passkey with no username (#608): a
+  //     certificate is neither;
+  //   * where the connection carries no certificate that names a PERSON here
+  //     — none, one that did not verify, one of this service's that is not an
+  //     identity, an application's, or one from another realm's authority.
+  //
+  // UNDER A DEMAND FOR TWO FACTORS it is offered with a note: one factor,
+  // after which the second is asked for as after a wallet.
+  // ---------------------------------------------------------------------------
+  /**
+   * Why a certificate is not taken at this sign-in, or '' where it may be.
+   *
+   * @param record - the pending sign-in
+   * @returns the reason, for the log, or ''
+   */
+  private certificateNotHere(record): string {
+    const { log, authnPolicy } = this.deps;
+    log.debug("Entering Authn.certificateNotHere().");
+    const restricted: string[] = Array.isArray(record.allowedMechanisms)
+      ? record.allowedMechanisms : [];
+    const why = !authnPolicy.allows('certificate', 'primary')
+      ? 'the authentication policy does not take a certificate as a first ' +
+        'factor'
+      : (record.lockedUsername ? 'a linking sign-in rests on the password'
+      : (restricted.length ? 'the application names the mechanisms it ' +
+                             'allows'
+      : (record.forceKey || record.forcePasswordless
+        ? 'a security key or a passkey is demanded'
+      : (this.usernamelessRequired(record)
+        ? 'the passkey policy requires a passkey with no username' : ''))));
+    log.debug("Leaving Authn.certificateNotHere(). " + (why || 'Taken.'));
+    return why;
+  }
+
+  /**
+   * The screen's certificate offer: `{ name, mfaNote }`, or null.
+   *
+   * @param req - the request for the view, whose connection is read
+   * @param record - the pending sign-in
+   * @returns the offer, or null
+   */
+  private certificateOption(req, record): any {
+    const { log } = this.deps;
+    log.debug("Entering Authn.certificateOption().");
+    if (this.certificateNotHere(record)) {
+      log.debug("Leaving Authn.certificateOption(). Not taken here.");
+      return null;
+    }
+    const door = this.deps.certificateDoor();
+    const offer = door ? door.screenCertificateOffer(req) : null;
+    if (!offer || !offer.username) {
+      log.debug("Leaving Authn.certificateOption(). No certificate.");
+      return null;
+    }
+    log.debug("Leaving Authn.certificateOption(). Offered.");
+    return { name: String(offer.username), mfaNote: !!record.forceMfa };
+  }
+
+  // THE ACT (#1051): the first factor the screen offered, checked again in
+  // full — the view is not the enforcement. The certificate's own refusals
+  // are `tls_server.js`'s (`screenCertificateHolder()`), the rest is the
+  // emailed first factor's shape: a person homed in another cell restarted
+  // there, the risk assessed, a second factor asked for where one is needed
+  // (`beginSecondFactorAfterWallet()`), and otherwise a session of one
+  // factor and back to the protocol that sent the person here.
+  private async certificateSignIn(req, res, base, record): Promise<void> {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering Authn.certificateSignIn().");
+    const notHere = this.certificateNotHere(record);
+    if (notHere) {
+      log.info('authn: a certificate sign-in was refused at the screen: ' +
+               notHere + '.');
+      log.debug("Leaving Authn.certificateSignIn(). Not taken here.");
+      errorCodes.mark(res, 'STS-AUTHN-0467');
+      return this.screenRefused(res, record,
+        'Signing in with a certificate is not offered for this sign-in.');
+    }
+    const door = this.deps.certificateDoor();
+    const holder = door ? await door.screenCertificateHolder(req)
+      : { ok: false, code: 'STS-AUTHN-0463',
+          why: 'Signing in with a certificate is not available here.' };
+    if (!holder.ok) {
+      log.debug("Leaving Authn.certificateSignIn(). The certificate was " +
+                "refused.");
+      errorCodes.mark(res, holder.code || 'STS-AUTHN-0463');
+      return this.screenRefused(res, record, String(holder.why));
+    }
+    const username = String(holder.username);
+    // A PERSON HOMED IN ANOTHER CELL (#98 D9), as the password door does,
+    // before anything is counted here: the sign-in restarts at home, where
+    // the screen offers the certificate again.
+    if (cells.isMulti() && !req.stsCellRelay) {
+      const home = await cellRouting.homeOf(realms.currentId(), 'name',
+                                            username);
+      if (home && home !== cells.id() && cells.get(home)) {
+        if (!cellPlacement.CellPlacement.servePermitted(realms.currentId(),
+                                                        home, res)) {
+          pending.delete(record.id);
+          log.debug("Leaving Authn.certificateSignIn(). Geofenced.");
+          return undefined;
+        }
+        await this.restartAtHome(req, res, record, home);
+        log.debug("Leaving Authn.certificateSignIn(). Restarted at home.");
+        return undefined;
+      }
+    }
+    const application = String(record.application || '');
+    const credential = { kind: 'certificate',
+                         id: String(holder.credentialId || '') };
+    const assessed = await this.assessSignIn(req, username, record.protocol,
+      { application: application, credential: credential,
+        // A key may answer as the second factor (#259).
+        deviceAwaited: true });
+    const second = this.beginSecondFactorAfterWallet(req, res, record,
+      username, { amr: ['swk'], acr: '1' }, assessed,
+      { first: 'certificate' });
+    if (second.refused) {
+      log.debug("Leaving Authn.certificateSignIn(). Refused.");
+      errorCodes.mark(res, second.errorCode || 'STS-AUTHN-0009');
+      return this.screenRefused(res, record,
+        second.onRisk ? 'Authentication failed.' : String(second.refused));
+    }
+    if (second.handled) {
+      holder.recordVerification();
+      log.debug("Leaving Authn.certificateSignIn(). A second factor.");
+      return undefined;
+    }
+    // `amr ["swk"]` and `acr "1"`: `GET /tls/sign-in`'s event, and its
+    // reason — one factor, whose private key sits in a file.
+    const said = { request: req, application: application,
+                   risk: assessed || undefined, credential: credential,
+                   method: 'a TLS client certificate on the connection' };
+    pending.delete(record.id);
+    const started = this.startSession(res, username, ['swk'], '1',
+                                      record.protocol, said);
+    if (this.refusedSession(res, base, record, username, started, said)) {
+      log.debug("Leaving Authn.certificateSignIn(). The session was " +
+                "refused.");
+      return undefined;
+    }
+    holder.recordVerification();
+    this.returnToCaller(res, record, null, null);
+    log.debug("Leaving Authn.certificateSignIn(). " + username +
+              " continued with a certificate.");
+    return undefined;
+  }
+
   // Is a self-service password reset offered in this realm (#63)? Asked of
   // `common/mail_uses.ts` LAZILY — it reaches the credential store, which
   // this module must not load early — and "no" if it cannot be asked.
@@ -13012,6 +13205,7 @@ class Authn {
     // A PASSKEY AND NO USERNAME (#474), where `passkeyOffered()` says so and
     // the screen's form is drawn at all.
     const passkey = screenOffered && this.passkeyOffered(record).ok;
+    const usernameless = passkey && this.usernamelessRequired(record);
     const emailFirst = locked || record.forceKey || record.forcePasswordless ||
       restricted.length
       ? { code: false, link: false }
@@ -13054,8 +13248,12 @@ class Authn {
       passkey: passkey,
       // A PASSKEY WITH NO USERNAME, REQUIRED (#608): no username field and
       // no Sign In, the passkey button the way in.
-      usernameless: passkey && this.usernamelessRequired(record),
+      usernameless: usernameless,
       email: emailFirst,
+      // THE CERTIFICATE ON THIS CONNECTION (#1051): "Continue as <name>
+      // with your certificate", where `certificateOption()` says so.
+      certificate: screenOffered && !usernameless
+        ? this.certificateOption(req, record) : null,
       // A CLASSICAL PASSKEY REFUSED WHERE A POST-QUANTUM ONE IS REQUIRED
       // (#946): the panel's links, while the last refusal was that one.
       postQuantumRequired: record.postQuantumRequired
@@ -16427,7 +16625,8 @@ class Authn {
   // `authn/authn_api.ts` once it has checked the operation's body, its CSRF
   // binding and its pending id. `body` is the form's fields as they were —
   // `action` among `login`, `cancel`, `anonymous`, `email-code`,
-  // `email-link` and `passkey`, set by the operation — and every answer goes
+  // `email-link`, `passkey` and `certificate` (#1051), set by the
+  // operation — and every answer goes
   // through `screenRefused()`, `stepAnswer()`, `returnToCaller()` or
   // `sendHome()`, which answer JSON on the API's responses.
   // ===========================================================================
@@ -16557,6 +16756,12 @@ class Authn {
     // record so that whichever step finishes the sign-in — this one or a
     // second factor's — registers the browser (refusedSession()).
     record.rememberBrowser = String(body.remember_browser || '') === '1';
+    // THE CERTIFICATE ON THE CONNECTION (#1051): the certificate names the
+    // account, so no username is read. See certificateSignIn().
+    if (String(body.action || '') === 'certificate') {
+      log.debug("Leaving Authn.screenAct(). Continuing with a certificate.");
+      return this.certificateSignIn(req, res, base, record);
+    }
     // A PASSKEY AND NO USERNAME (#474), before a username is asked for:
     // the passkey names the account. See passkeySignIn().
     if (String(body.action || '') === 'passkey') {

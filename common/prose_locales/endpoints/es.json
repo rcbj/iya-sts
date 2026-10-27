@@ -1607,6 +1607,10 @@
     "en": "5468076a514d8abf",
     "text": "Continuar sin iniciar sesión"
   },
+  "endpoints.route./authn-api/pending/:id/certificate.name": {
+    "en": "92ce6eacdbb8d068",
+    "text": "Continuar con su certificado"
+  },
   "endpoints.route./authn-api/pending/:id/email.name": {
     "en": "108905ece8873211",
     "text": "Iniciar sesión con un código o enlace enviado por correo"
