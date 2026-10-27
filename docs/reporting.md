@@ -31,17 +31,27 @@ Directory → Roles (`/admin/roles`), the way `admin:read` and `admin:write`
 are decided by `ADMIN_READ` and `ADMIN_WRITE`:
 
 - **`REPORT_USE`** authorizes `report:use`. A person holds it by being in
-  the group `report-users`, or as a direct member of the role; an
-  application holds it by being a member of the role.
+  the group `report-users`, as a direct member of the role, or by holding
+  Admin Read or Admin Write on the realm's console roster; an application
+  holds it by being a member of the role.
 - **`REPORT_ADMIN`** authorizes `report:admin`. A person holds it through
-  `report-admins`, or as a direct member. It does not imply `report:use`:
-  the page asks for both and is issued what the person holds.
+  `report-admins`, as a direct member, or by holding Admin Write on the
+  realm's console roster. It does not imply `report:use`: the page asks
+  for both and is issued what the person holds.
 
-Both groups are created empty. A console administrator is not a report
-administrator by being one: add them to `report-admins`. A token is
-issued only the report scopes its subject's roles authorize, and every
-call to `/report-api` asks again, so a person taken out of the group is
-refused at once, before their token expires.
+Both groups are created empty. **A console administrator has reports
+without joining either group**: Admin Write is a report administrator in
+its realm, and Admin Read a report user. A realm's own administrators
+have this in their realm only. **The default realm's administrators are
+the service's**, and they reach every realm's reports: the realm field
+keeps their token when it moves to another realm, as the console's realm
+switcher does. Anybody else's default-realm token is refused under another
+realm's prefix, and they sign in to that realm instead.
+
+A token is issued only the report scopes its subject's roles authorize,
+and every call to `/report-api` asks again, so a person taken out of the
+group, or off the console roster, is refused at once, before their token
+expires.
 
 What a holder may reach is the access-control policy's decision
 ([XACML](xacml.md#the-embedded-peps-this-services-own-issuance-and-access)),
@@ -77,8 +87,10 @@ the top holds the controls about you: a field naming the **trust realm**
 the page is showing (when the service has several realms it is a
 drop-down, and choosing another realm opens that realm's reports
 application at the same page, where you sign in as you did here, because
-a token belongs to the realm that issued it; `GET /report-api/realms` is
-what it reads), the language chooser, and the user menu, which names the
+a token belongs to the realm that issued it — except for a service
+administrator signed in to the default realm, whose token the other realm
+accepts, so the page moves there without a sign-in; `GET
+/report-api/realms` is what it reads), the language chooser, and the user menu, which names the
 account this tab is signed in as and holds **Sign out** (with several
 accounts on it also switches between the browser's signed-in accounts).
 Under it the navigation bar holds the pages and Refresh, and under that

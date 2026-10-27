@@ -706,8 +706,8 @@ of 2026-09-05). All three are gone; this is what stands:
   direct member; an application as a member. Nothing asks whether the
   application a person signs in to is a member: `sts-report` declares the
   scopes (#110), as the console declares the admin ones. **A console
-  administrator is not a report administrator by holding the roster**
-  (rcbj: the report groups are the basis); add them to `report-admins`.
+  administrator IS one since #1038** (rcbj reversed #1030's "the report
+  groups are the basis" the same day): see *Console administrators* below.
   `report.usersGroup` is retired.
 * **Issuance** is `common/role_permissions.ts`'s with every other gated
   permission: narrowed at the authorization endpoint and in `tokenSet()`,
@@ -755,7 +755,53 @@ whole stack: the roles and groups, issuance to a member and not to an
 outsider, an application's `client_credentials` token, and the policy
 over HTTP for an owner, a report administrator, a shared group's member,
 an outsider, an application on its own rows and on a person's, a
-withdrawn role, and `permitReportSharing: no`.
+withdrawn role, and `permitReportSharing: no` — and its section F holds
+the console administrators below.
+
+### Console administrators (#1038, 2026-10-27)
+
+rcbj: "The admin user for the default domain should have /report access in
+all realms. The realm admins should have report access in their realms."
+After #1030 the default realm's `admin` was narrowed to no report scope
+and the page answered *That access token does not carry report:use or
+report:admin*. Three parts:
+
+* **The roles come with the roster.** `role_permissions.ts`'s
+  `heldRoles()` adds REPORT_ADMIN and REPORT_USE for Admin Write and
+  REPORT_USE for Admin Read, in the realm whose roster says so
+  (`REPORT_ROLES_OF_ROSTER`). So issuance, held ∩ carried, the PIP and the
+  schedule all see them, with no group membership written. In development
+  a console open to everybody (an empty roster, or an unclaimed bootstrap
+  window) therefore opens every report too.
+* **A service administrator crosses realms, as on `/admin-api`.** Under
+  `/realm/<id>/report-api`, a JWT that does not verify under the realm's
+  key and does under the default realm's is checked WHOLE in the default
+  realm (`reportAuthenticateToken()` inside `realms.run()`: issuer,
+  audience — the default realm's `/report-api` —, revocation, session,
+  sender constraint, declaration, held ∩ carried), and its subject must
+  then be a PERSON with Admin Read or Admin Write on the default roster
+  now (`rights.serviceAdministrator()`), or STS-REPORT-0045. The caller
+  carries `realm`; the row-level decisions run in the realm on screen with
+  the caller's default-realm roles, and `person` is left out of
+  `reportObject` so the PIP never reads a same-named local person's
+  groups. An opaque handle does not cross (it does not say its realm).
+* **Rows remember the owner's realm.** A definition or job such a caller
+  makes records `ownerRealm` (`jobs.ts`); `ownerMayRun()` asks the
+  default realm for the name and roles and refuses once the owner is off
+  the default roster; the owner's name (`reportOwnerName()`), the audit
+  actor and the notice (`reportNotify()`, mailed from the owner's realm
+  with a link carrying this realm's prefix) are resolved there too. A
+  row without `ownerRealm` is this realm's, which every row made before
+  #1038 is — no migration.
+
+**The page** (`web_report_pages.ts`) keeps `issuerPrefix`, the realm that
+issued its token: the token endpoint, discovery and `resource` name that
+realm, while pages and API calls name the realm on screen (`url()`,
+`urlAt()`; an `elsewhere` base has the load-time prefix swapped).
+`switchRealm()` asks the other realm's `/report-api` with the token first
+and, on a 200, moves in place with `pushState`; otherwise it navigates
+there and signs in as before. A sign-in always resets `issuerPrefix` to
+the realm on screen.
 
 The definition stores `parameters`, the values that schedule runs with.
 A save may still be type-checked with a dummy of a missing parameter.

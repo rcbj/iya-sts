@@ -144,6 +144,9 @@ function reportSubmit(spec: any): any {
     // `user` or `application` (#1030): which kind of subject owns it, so
     // the policy and the schedule can resolve the owner's roles.
     ownerKind: spec.ownerKind === 'application' ? 'application' : 'user',
+    // The realm the owner's identity is in when it is not this one: the
+    // default realm's for a service administrator (#1038), '' otherwise.
+    ownerRealm: String(spec.ownerRealm || ''),
     document: stores.copy(spec.document),
     parameters: spec.parameters ? stores.copy(spec.parameters) : null,
     definitionId: spec.definitionId || null,
@@ -442,6 +445,8 @@ function reportSave(spec: any): any {
     owner: previous ? previous.owner : spec.owner,
     ownerKind: previous ? (previous.ownerKind || 'user')
       : (spec.ownerKind === 'application' ? 'application' : 'user'),
+    ownerRealm: previous ? String(previous.ownerRealm || '')
+      : String(spec.ownerRealm || ''),
     document: stores.copy(spec.document),
     parameters: parameters,
     schedule: schedule,

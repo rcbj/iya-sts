@@ -38,6 +38,18 @@
 //   E. THE PARAMETER. An override built with `permitReportSharing: no`
 //      leaves every row to its owner: the shared member and the
 //      administrator are refused, the owner is not.
+//   F. CONSOLE ADMINISTRATORS (#1038). Admin Write on a realm's console
+//      roster holds REPORT_ADMIN and REPORT_USE there, Admin Read
+//      REPORT_USE, in no report group. A service administrator's
+//      default-realm token reaches another realm's report API, a default
+//      realm report user's is refused (STS-REPORT-0045), a definition made
+//      that way records its owner's realm and its schedule asks the
+//      default roster, and losing the roster ends both. A realm's own
+//      administrator is issued the report scopes in their realm, and their
+//      token is believed nowhere else.
+//
+// THE CONSOLE IS CLOSED FIRST: with nobody on the roster a development
+// console is open to everybody, and since #1038 so would every report be.
 //
 // In process rather than over the suite's stack because the memberships
 // are made and unmade here, and an override of `access-control` written
@@ -139,9 +151,19 @@ function childMain() {
     const GROUP = 'rap-share-' + stamp;
     const BASE = 'https://sts.report-access.test';
 
-    [OWNER, SHARED, OUT_PERSON, ADMIN, NOBODY, LATER].forEach(function (n) {
+    const rbac = require(ROOT_DIR + '/admin-ui/admin_rbac');
+    const CONSOLE_W = 'rap-cw-' + stamp;
+    const CONSOLE_R = 'rap-cr-' + stamp;
+    [OWNER, SHARED, OUT_PERSON, ADMIN, NOBODY, LATER, CONSOLE_W,
+     CONSOLE_R].forEach(function (n) {
       ldap.createUser(n, { invent: false });
     });
+    const granted = [rbac.grant(CONSOLE_W, 'write', { via: 'test' }),
+                     rbac.grant(CONSOLE_W, 'read', { via: 'test' }),
+                     rbac.grant(CONSOLE_R, 'read', { via: 'test' })];
+    note(granted.every(function (one) { return one && one.ok; }),
+         'precondition: the console roster names two administrators, so ' +
+         'the console is not open to everybody', JSON.stringify(granted));
     const group = ldap.createGroup(GROUP, { actor: 'test' });
     note(group && group.ok, 'precondition: a group to share with',
          JSON.stringify(group));
@@ -250,6 +272,12 @@ function childMain() {
     note((await machineToken(APP2, 'report:use report:admin')).scope ===
          'report:admin',
          'B7. an application in REPORT_ADMIN is issued report:admin');
+    note((await personToken(CONSOLE_W, asked)).scope ===
+         'openid report:use report:admin',
+         'B9. Admin Write on the console roster is issued report:use and ' +
+         'report:admin, in no report group (#1038)');
+    note((await personToken(CONSOLE_R, asked)).scope === 'openid report:use',
+         'B10. Admin Read is issued report:use and not report:admin');
     const bare = await refused(function () {
       return machineToken(CLIENT, 'report:use');
     });
@@ -481,6 +509,101 @@ function childMain() {
     }
     note(await get(tShared, D1) === 200 && await get(tAdmin, D1) === 200,
          'E5. with the override gone the built-in document decides again');
+
+    // --- F. console administrators (#1038) -----------------------------------
+    const R = 'rap' + stamp;
+    const madeRealm = realms.create({ id: R, name: 'Report access #1038' });
+    note(madeRealm && madeRealm.ok !== false && !!realms.get(R),
+         'precondition: a second realm', JSON.stringify(madeRealm));
+    const realmApi = '/realm/' + R + '/report-api';
+    const tServiceW = await mint({ client_id: CLIENT, username: CONSOLE_W,
+                                   sub: subjectOf(CONSOLE_W),
+                                   scope: 'report:use report:admin' });
+    const tServiceR = await mint({ client_id: CLIENT, username: CONSOLE_R,
+                                   sub: subjectOf(CONSOLE_R),
+                                   scope: 'report:use' });
+    r = await call(port, 'GET', '/report-api', tServiceW);
+    note(r.status === 200, 'F1. Admin Write reaches its own realm\'s ' +
+         'report API', brief(r));
+    r = await call(port, 'GET', realmApi, tServiceW);
+    note(r.status === 200,
+         'F2. a service administrator\'s default-realm token reaches ' +
+         'another realm\'s report API', brief(r));
+    r = await call(port, 'GET', realmApi, tServiceR);
+    note(r.status === 200, 'F3. so does Admin Read\'s', brief(r));
+    r = await call(port, 'GET', realmApi, tOwner);
+    note(r.status === 403 && /service administrator/.test(r.text),
+         'F4. a default-realm report user\'s token is refused there ' +
+         '(STS-REPORT-0045)', brief(r));
+    r = await call(port, 'GET', realmApi, tApp);
+    note(r.status === 403 && /service administrator/.test(r.text),
+         'F5. and so is a default-realm application\'s', brief(r));
+    const madeThere = await call(port, 'POST', realmApi + '/definitions',
+      tServiceW, { name: 'a service administrator\'s', document: document });
+    const DR = madeThere.json && madeThere.json.definition
+      ? madeThere.json.definition.id : null;
+    const drRow = DR ? realms.run(realms.get(R), function () {
+      return stores.getDefinition(DR);
+    }) : null;
+    note(!!drRow && drRow.owner === subjectOf(CONSOLE_W) &&
+         drRow.ownerRealm === realms.DEFAULT_ID,
+         'F6. a definition made there records its owner and the owner\'s ' +
+         'realm', brief(madeThere) + ' ' + JSON.stringify(drRow &&
+           { owner: drRow.owner, ownerRealm: drRow.ownerRealm }));
+    note(!!DR && (await call(port, 'GET', realmApi + '/definitions/' + DR,
+                             tServiceW)).status === 200,
+         'F7. and its owner reads it back there');
+    const mayCross = drRow ? realms.run(realms.get(R), function () {
+      return rights.ownerMayRun(drRow);
+    }) : null;
+    note(mayCross && mayCross.ok && mayCross.username === CONSOLE_W,
+         'F8. its schedule asks the default realm for the owner, who may ' +
+         'run it', JSON.stringify(mayCross));
+    note(rbac.revoke(CONSOLE_W, 'write', { via: 'test' }).ok &&
+         rbac.revoke(CONSOLE_W, 'read', { via: 'test' }).ok,
+         'precondition: the service administrator left the roster');
+    r = await call(port, 'GET', realmApi, tServiceW);
+    note(r.status === 403,
+         'F9. the same token is refused in the other realm at once', brief(r));
+    const mayAfter = drRow ? realms.run(realms.get(R), function () {
+      return rights.ownerMayRun(drRow);
+    }) : null;
+    note(mayAfter && mayAfter.ok === false &&
+         mayAfter.code === 'STS-REPORT-0028',
+         'F10. and the schedule refuses the owner (STS-REPORT-0028)',
+         JSON.stringify(mayAfter));
+    const RADMIN = 'rap-radmin-' + stamp;
+    const RCLIENT = 'rap-rclient-' + stamp;
+    const realmBase = base + '/realm/' + R;
+    const tRealm = await realms.run(realms.get(R), async function () {
+      ldap.createUser(RADMIN, { invent: false });
+      rbac.grant(RADMIN, 'write', { via: 'test', realm: R });
+      rbac.grant(RADMIN, 'read', { via: 'test', realm: R });
+      applications.createApplication({ identifier: RCLIENT,
+        protocols: ['oauth2'],
+        fields: { oauthClientId: RCLIENT,
+                  oauthTokenEndpointAuthMethod: ['client_secret_basic'],
+                  oauthAllowedScope: ['openid', 'report:use',
+                                      'report:admin'] } });
+      const issued = await oauth2.tokenSet(realmBase, {
+        client_id: RCLIENT, grant: 'refresh_token', withRefresh: false,
+        scope: asked, sub: RADMIN, username: RADMIN,
+        user: { username: RADMIN, sub: RADMIN } });
+      const token = await oauth2.accessTokenAsync(realmBase, {
+        audience: realmBase + '/report-api', client_id: RCLIENT,
+        username: RADMIN, sub: String(helpers.subjectForName(RADMIN) || ''),
+        scope: 'report:use report:admin' });
+      return { scope: issued.scope, token: token };
+    });
+    note(tRealm.scope === 'openid report:use report:admin',
+         'F11. a realm\'s own Admin Write is issued both report scopes in ' +
+         'that realm', tRealm.scope);
+    r = await call(port, 'GET', realmApi, tRealm.token);
+    note(r.status === 200, 'F12. and reaches that realm\'s report API',
+         brief(r));
+    r = await call(port, 'GET', '/report-api', tRealm.token);
+    note(r.status === 401,
+         'F13. and is believed in no other realm', brief(r));
 
     server.close();
     config.clearOverride('xacml.enforceAccess');

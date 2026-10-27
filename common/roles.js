@@ -684,17 +684,21 @@ const NATIVE_ROLES = CONSOLE_ROLES.concat([
   // nothing asks whether the application a person signs in to is a member
   // — the two scopes are declared on `sts-report` (#110), as the admin
   // scopes are on the console, and that declaration is the client's half.
-  // A console administrator is NOT a report administrator by holding the
-  // console roster (rcbj: the report groups are the basis); add them to
-  // `report-admins`. What a holder may reach is the access-control policy's
-  // report rules (`xacml/xacml_templates.ts`), never these rows.
+  // A console administrator IS one since #1038 (rcbj, 2026-10-27, reversing
+  // #1030's "the report groups are the basis"): `role_permissions.ts`'s
+  // `heldRoles()` gives Admin Write REPORT_ADMIN and REPORT_USE and Admin
+  // Read REPORT_USE, in the realm whose roster says so; the default realm's
+  // roster reaches every realm's reports through `report/report_api.ts`.
+  // What a holder may reach is the access-control policy's report rules
+  // (`xacml/xacml_templates.ts`), never these rows.
   { name: 'REPORT_USE', consoleRole: '', permission: 'report:use',
     groupSettings: [], seedApplications: [], seedGroups: ['report-users'],
     what: 'Reports, as a user. Authorizes the report:use permission: the ' +
           'reports application and /report-api for the definitions and ' +
           'jobs the holder owns or is shared, as the access-control ' +
           'policy decides. A person holds it through this role\'s group, ' +
-          'seeded as report-users, or as a direct member; an application ' +
+          'seeded as report-users, as a direct member, or on the console ' +
+          'roster (Admin Read or Admin Write); an application ' +
           'holds it as a member and is issued it on its own token, ' +
           'reaching only the definitions and jobs it defined.' },
   { name: 'REPORT_ADMIN', consoleRole: '', permission: 'report:admin',
@@ -702,7 +706,8 @@ const NATIVE_ROLES = CONSOLE_ROLES.concat([
     what: 'Reports, as an administrator. Authorizes the report:admin ' +
           'permission: every definition and every job in the realm, as the ' +
           'access-control policy decides. A person holds it through this ' +
-          'role\'s group, seeded as report-admins, or as a direct member; ' +
+          'role\'s group, seeded as report-admins, as a direct member, or ' +
+          'as Admin Write on the console roster; ' +
           'an application holding it still reaches only what it defined. ' +
           'It does not authorize report:use: a token asks for the scopes ' +
           'it needs.' }

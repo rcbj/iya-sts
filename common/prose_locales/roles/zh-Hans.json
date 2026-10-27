@@ -116,12 +116,12 @@
     "text": "Shared Signals 写入。授权 ssf.manage 权限。仅当某人属于此角色的组（种子组名为 ssf-manage），且其登录的应用程序是此角色的成员时，才会向其签发该权限。仅当应用程序本身是成员时，才会在其自身的令牌上签发该权限。该权限不授权 ssf.read。"
   },
   "roles.native.REPORT_USE.what": {
-    "en": "ff8791d63417ab91",
-    "text": "报表，作为用户。授权 report:use 权限：报表应用和 /report-api，范围是持有者拥有或被共享的定义和作业，由访问控制策略决定。个人通过此角色的组（初始化为 report-users）或作为直接成员持有；应用作为成员持有，并在其自身令牌上获得该权限，只能访问其自己定义的定义和作业。"
+    "en": "3dc6cff824e184e8",
+    "text": "报表，作为用户。授权 report:use 权限：报表应用和 /report-api，范围是持有者拥有或被共享的定义和作业，由访问控制策略决定。个人通过此角色的组（初始化为 report-users）、作为直接成员，或在控制台名册上（Admin Read 或 Admin Write）持有；应用作为成员持有，并在其自身令牌上获得该权限，只能访问其自己定义的定义和作业。"
   },
   "roles.native.REPORT_ADMIN.what": {
-    "en": "6a2dfae09f5ecba4",
-    "text": "报表，作为管理员。授权 report:admin 权限：领域内的每个定义和每个作业，由访问控制策略决定。个人通过此角色的组（初始化为 report-admins）或作为直接成员持有；持有它的应用仍然只能访问其自己定义的内容。它不授权 report:use：令牌需要请求它所需的作用域。"
+    "en": "d17c8f34f20ced92",
+    "text": "报表，作为管理员。授权 report:admin 权限：领域内的每个定义和每个作业，由访问控制策略决定。个人通过此角色的组（初始化为 report-admins）、作为直接成员，或作为控制台名册上的 Admin Write 持有；持有它的应用仍然只能访问其自己定义的内容。它不授权 report:use：令牌需要请求它所需的作用域。"
   },
   "roles.memberKinds.user.label": {
     "en": "df381eb4bb572daf",

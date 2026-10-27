@@ -1029,6 +1029,14 @@ class ReportRuntime extends SpaClient {
   // runs in this tab.
   private lastRun: any;
   private resultPer: number;
+  // THE REALM THE TOKEN WAS ISSUED IN (#1038): its prefix, null before a
+  // sign-in. A service administrator's default-realm token is kept when
+  // the realm field moves the page to another realm, so the token, refresh
+  // and resource requests go on naming the realm that issued it while the
+  // pages and the API calls name the realm on screen.
+  private issuerPrefix: string | null;
+  // The prefix the page was loaded at: the `elsewhere` bases carry it.
+  private loadedPrefix: string;
 
   /**
    * @param env - the browser's objects
@@ -1053,6 +1061,45 @@ class ReportRuntime extends SpaClient {
     this.groupQuery = '';
     this.lastRun = null;
     this.resultPer = 50;
+    this.issuerPrefix = null;
+    this.loadedPrefix = ReportRuntime.prefixOf(env.location.pathname);
+  }
+
+  /**
+   * One of a realm's addresses: on this origin, or on the listener the
+   * shell named for the path, with that realm's prefix.
+   *
+   * @param path - the path
+   * @param prefix - the realm's prefix, '' for the default realm
+   * @returns the absolute URL
+   */
+  urlAt(path: string, prefix: string): string {
+    const elsewhere = this.elsewhere || {};
+    const first = '/' + String(path || '').split(/[/?#]/)[1];
+    if (elsewhere[first]) {
+      const base = String(elsewhere[first]);
+      const loaded = this.loadedPrefix;
+      const root = loaded && base.slice(-loaded.length) === loaded
+        ? base.slice(0, base.length - loaded.length) : base;
+      return root + prefix + path;
+    }
+    return this.env.location.origin + prefix + path;
+  }
+
+  /**
+   * This page's address for a path: the authorization server's of the
+   * realm that issued the token (#1038), and the realm on screen's for
+   * everything else.
+   *
+   * @param path - the path
+   * @returns the absolute URL
+   */
+  url(path: string): string {
+    const first = '/' + String(path || '').split(/[/?#]/)[1];
+    const issuer = (first === '/oauth2' || first === '/.well-known') &&
+      this.issuerPrefix !== null;
+    return this.urlAt(path, issuer ? String(this.issuerPrefix)
+                                   : this.prefix);
   }
 
   /**
@@ -1300,7 +1347,8 @@ class ReportRuntime extends SpaClient {
    * @returns the resource
    */
   resource(): string {
-    return this.url(API);
+    return this.urlAt(API, this.issuerPrefix !== null
+      ? String(this.issuerPrefix) : this.prefix);
   }
 
   /**
@@ -1346,6 +1394,9 @@ class ReportRuntime extends SpaClient {
     const verifier = this.random(32);
     const state = this.random(16);
     const asked = extra || {};
+    // A sign-in is always in the realm on screen, whatever issued the token
+    // it replaces (#1038): this realm's client is registered here.
+    this.issuerPrefix = this.prefix;
     const record: any = {
       verifier: verifier,
       state: state,
@@ -1419,6 +1470,7 @@ class ReportRuntime extends SpaClient {
     }
     const before = this.storedAccount();
     this.keepTokens(answer.json);
+    this.issuerPrefix = this.prefix;
     this.username = SpaClient.claimOf(answer.json.id_token,
       'preferred_username');
     this.env.history.replaceState(null, '',
@@ -1621,15 +1673,19 @@ class ReportRuntime extends SpaClient {
   }
 
   /**
-   * Opens another realm's reports application at this page (#986). The
-   * token in hand belongs to this realm, so the other realm's page signs
-   * in as any first load does; the browser leaves this page for it.
+   * Opens another realm's reports application at this page (#986). A
+   * service administrator's default-realm token reaches every realm
+   * (#1038): the other realm's API is asked with it, and when it answers
+   * the page moves there in place, keeping the token, as the console's
+   * realm switcher does. Otherwise — a realm's own token, or a default
+   * one the other realm refuses — the other realm's page signs in as any
+   * first load does, and the browser leaves this page for it.
    *
    * @param realmId - the realm chosen
    * @param to - the report path and query to open there
    * @returns nothing
    */
-  switchRealm(realmId: string, to: string): void {
+  async switchRealm(realmId: string, to: string): Promise<void> {
     const list = (this.chrome && this.chrome.realms &&
       this.chrome.realms.realms) || [];
     const realm = list.filter(function (one: any): boolean {
@@ -1640,8 +1696,25 @@ class ReportRuntime extends SpaClient {
     }
     const path = String(to || BASE);
     const where = path.indexOf(BASE) === 0 ? path : BASE;
+    const target = String(realm.prefix || '');
+    if (this.accessToken && this.issuerPrefix !== null &&
+        (target === this.issuerPrefix || this.issuerPrefix === '')) {
+      let res: any = null;
+      try {
+        res = await this.sendOnce('GET', this.urlAt(API, target));
+      } catch (e) {
+        res = null;
+      }
+      if (res && res.status === 200) {
+        this.prefix = target;
+        this.chrome = null;
+        this.env.history.pushState(null, '', target + where);
+        await this.route();
+        return;
+      }
+    }
     this.env.location.assign(String(this.env.location.origin || '') +
-      String(realm.prefix || '') + where);
+      target + where);
   }
 
   /**
