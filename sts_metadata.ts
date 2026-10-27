@@ -1346,7 +1346,11 @@ const SPECS: Spec[] = [
               'development accepts none, as it always did. In both modes a ' +
               'requested wst:Lifetime is clamped ' +
               '(wstrust.maxTokenLifetimeMin) and the issued assertion\'s ' +
-              'AuthnContext names the credential rather than a password.' },
+              'AuthnContext names the credential rather than a password. A ' +
+              'requester whose wsse:Security carries no credential is ' +
+              'authenticated, in both modes, by the TLS client certificate ' +
+              'on the connection where this realm issued it to a person or ' +
+              'an application (#1046).' },
   { id: 'wss-username', name: 'WS-Security UsernameToken Profile 1.1',
     where: 'OASIS wss',
     url: 'https://docs.oasis-open.org/wss/v1.1/wss-v1.1-spec-os-UsernameTokenProfile.pdf',

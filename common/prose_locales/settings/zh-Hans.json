@@ -4787,6 +4787,14 @@
     "en": "d75340dbe09a7542",
     "text": "此 STS 在 RequestSecurityTokenResponse 中返回的 JWT 是否指明签署它的密钥的证书链。SAML 断言在其自身的 XML Signature 中携带证书，不受影响。`x5u`（默认值）是证书链在本服务上的地址 `/pki/chain/{scope}/{sha256}.pem`，约一百字节；`x5c` 是内联的证书链，叶证书在前、服务根证书在后，base64 DER 编码，有数千字节；`both` 表示两者都有，`none` 表示两者都没有。无论哪种，它都是仅持有令牌的依赖方访问每个证书的 CRL 分发点、OCSP 响应方和 caIssuers 地址所需的信息。尚未在此领域的 JOSE 签发 CA 下获得认证的密钥，以及 HMAC 签名，两者都不会得到。RFC 7515 第 4.1.5 节要求 `x5u` 的获取使用 TLS：global.https 关闭时，该地址为 `http://`，严格的验证方将拒绝跟随它。JWE 头部从不带有它——本服务没有任何经过认证的密钥用于加密任何内容。可按领域设置。"
   },
+  "wstrust.acceptClientCertificate|label": {
+    "en": "04ac29464750e625",
+    "text": "接受 TLS 客户端证书作为请求方的凭据"
+  },
+  "wstrust.acceptClientCertificate|description": {
+    "en": "23d9a8fba459f61c",
+    "text": "当发往 /sts 的请求的 wsse:Security 头不携带任何凭据时，是否通过连接上的 TLS 客户端证书来认证请求方。只有在握手时验证通过、且由本领域颁发给某个人或某个应用程序的证书（来自用户门户或应用程序 Credentials 的 TLS 客户端证书，或通过 ACME、EST 或 SCEP 注册的证书）才是凭据，两种模式皆然；已吊销的证书、来自其他领域的证书以及持有者已不再持有的证书会以 wst:FailedAuthentication 拒绝。颁发的令牌会表明使用了证书：SAML 2.0 断言中为 TLSClient，SAML 1.1 断言中为 urn:ietf:rfc:2246，JWT 中为 amr swk。关闭时，此处忽略该证书。"
+  },
   "wsfed.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
     "text": "身份提供方发起的登录"

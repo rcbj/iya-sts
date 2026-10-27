@@ -232,8 +232,8 @@
     "text": "partial：回應程式應盡的部分。純 HTTP（第 5 節）——回應程式除了 TLS 主連接埠外也在 `pki.httpPort` 上回應，且憑證指名的是純 HTTP 那一個；附加 base64 請求的 GET；任何 GeneralizedTime 中都沒有小數秒（第 2.2.4 節）；依金鑰雜湊的回應程式 ID（第 2.2.2 節）；對其無權威之請求回應 `unauthorized`（第 2.2.3 節）；以及第 6.2 節的快取標頭——max-age 不晚於 nextUpdate、Last-Modified、Expires 與強 ETag，權威回應絕不使用 no-cache 或 no-store。「未完成」：回應是依請求簽署，而不是「預先產生」（第 2.2.1 節建議在高流量時預先產生），且對攜帶 nonce 之請求的回應會被標記為 private，而不是從快取提供。"
   },
   "stsmetadata.specs.ws-trust.coverage": {
-    "en": "c1c6a4c05b39a697",
-    "text": "partial：透過 SOAP 1.1 與 1.2 的 Issue、Renew、Validate 與 Cancel。請求簽章不會被驗證。OnBehalfOf 與 ActAs 由簽發原則決定（#186，權杖交換與 Kerberos S4U 共用的規則）——OnBehalfOf 要求的是模擬身分，ActAs 要求的是委派，項目的委派語意必須允許，AppliesTo 必須是委派關係所允許的已註冊應用程式，而個人請求者需要 delegation.actorRole——在產品模式下以 wst:RequestFailed 錯誤（第 11 節）拒絕；兩個元素同時出現為 wst:InvalidRequest；開發模式則記錄原本會被拒絕的內容。在「產品」模式下（2026-09-12），每項操作都需要認證資料——依目錄驗證的 UsernameToken，或由此 STS 簽署且在其 Conditions 範圍內的 SAML 斷言——而 OnBehalfOf/ActAs 需要請求者自己的認證資料，且其中要有這樣的斷言；開發模式則一如以往什麼都不要求。在兩種模式下，所要求的 wst:Lifetime 都會被限制（wstrust.maxTokenLifetimeMin），且所簽發斷言的 AuthnContext 會指名實際的認證資料，而不是密碼。"
+    "en": "c17ea82057db227d",
+    "text": "partial：透過 SOAP 1.1 與 1.2 的 Issue、Renew、Validate 與 Cancel。請求簽章不會被驗證。OnBehalfOf 與 ActAs 由簽發原則決定（#186，權杖交換與 Kerberos S4U 共用的規則）——OnBehalfOf 要求的是模擬身分，ActAs 要求的是委派，項目的委派語意必須允許，AppliesTo 必須是委派關係所允許的已註冊應用程式，而個人請求者需要 delegation.actorRole——在產品模式下以 wst:RequestFailed 錯誤（第 11 節）拒絕；兩個元素同時出現為 wst:InvalidRequest；開發模式則記錄原本會被拒絕的內容。在「產品」模式下（2026-09-12），每項操作都需要認證資料——依目錄驗證的 UsernameToken，或由此 STS 簽署且在其 Conditions 範圍內的 SAML 斷言——而 OnBehalfOf/ActAs 需要請求者自己的認證資料，且其中要有這樣的斷言；開發模式則一如以往什麼都不要求。在兩種模式下，所要求的 wst:Lifetime 都會被限制（wstrust.maxTokenLifetimeMin），且所簽發斷言的 AuthnContext 會指名實際的認證資料，而不是密碼。若請求者的 wsse:Security 未攜帶任何認證資料，則在兩種模式下皆以連線上的 TLS 用戶端憑證驗證請求者，前提是該憑證由本領域核發給某個人或某個應用程式（#1046）。"
   },
   "stsmetadata.specs.wss-username.coverage": {
     "en": "397e6a07a7980365",
