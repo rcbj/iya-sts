@@ -308,6 +308,13 @@ async function run(t) {
           JSON.stringify(started));
   await sectionA(t);
   sectionB(t);
+  // The XML key is certified by a hook that runs a tick after the key is
+  // made (`helpers.js` `certifyLater()`), so it is asked for once here, as
+  // `tests/jose_certificate_header.js` does, rather than leaning on some
+  // earlier file in the run having made it already.
+  const xmlKey = helpers.STS.xmlSigner;
+  log.debug('XML signer before certification: ' + (xmlKey && xmlKey.kid));
+  await pki.certifyKeySet('default', helpers.stsKeysFor.of('default'));
   sectionC(t);
   sectionD(t);
   log.debug("Leaving run().");
