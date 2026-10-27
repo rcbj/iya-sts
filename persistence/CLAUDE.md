@@ -1372,6 +1372,25 @@ postgres driver writes and reads every entry through it.
   (`persistence_replication.js`) tries a sealed row up to five more times, a
   pause between, after re-reading the keys, before it reports the drop — the
   key's transaction may still be committing. `tests/replication.js` 5b.
+* **A REALM'S ROW COMMITS BEFORE ITS DIRECTORY, AND A READER HOLDS A ROW OF A
+  REALM IT DOES NOT DEFINE YET (2026-10-27).** `flush()` wrote the directory,
+  then the realms, then the settings, so a new realm's entries reached the
+  change log ahead of the realm's own row. Every other process applied them
+  in seq order before it knew the realm: a windowed process as RESIDENT
+  entries (its `isWindowed()` knew no containers for the realm), which it
+  forgot once the realm's row made its people windowed — and its next
+  flush's diff read "in the shadow, not in memory" as a deletion and
+  removed the person from the store. The console bootstrap job's
+  administrator disappeared that way after its first sign-in, in every
+  product mode (`sts_console_bootstrap_product`). Now `flush()` saves the
+  realms, then the settings, then the directory — the restore's order — and
+  `persistence_replication.js`'s `applyRows()` applies a page's realm and
+  settings rows first and HOLDS a directory row of a realm this process
+  does not define (`deferForRealm()`), applying it after the realm's row
+  has been (`applyDeferredRows()`), or dropping it after ten minutes
+  (STS-STORE-0088: a realm removed elsewhere before its rows arrived).
+  `tests/replication.js` 5c, `tests/cluster_lww_stores.js` (whose double's
+  registry read had silently stopped matching the driver's statement).
 * `cell_convert.js` opens the source entries to plan them (a group's members
   split between tiers) and seals what it writes for the tier it writes to.
 * A file (ldif) store is not sealed.

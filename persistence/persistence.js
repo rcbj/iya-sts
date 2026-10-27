@@ -1503,7 +1503,8 @@ function applyDirectoryOutcomes(changes, outcomes) {
 // the same shadow would each think they had to write everything.
 // ---------------------------------------------------------------------------
 /**
- * Writes the directory, realm and appconfig changes, then the minted rows.
+ * Writes the realm and appconfig changes, then the directory, then the
+ * minted rows.
  *
  * One flush at a time; a second caller shares the one queued behind the
  * running flush. A failure is logged and the changes stay dirty for the next
@@ -1677,8 +1678,35 @@ function flush() {
   // THE DATA-KEY ROWS LAND FIRST (#391): a directory entry carrying a value
   // sealed under a data encryption key made since the last flush must not
   // reach another process before the key does.
+  // THE REALM AND SETTINGS ROWS COMMIT BEFORE THE DIRECTORY (2026-10-27).
+  // They were written after it, so a new realm's entries reached the change
+  // log ahead of the realm's own row, and every other process applied them
+  // before it knew the realm — a windowed process as RESIDENT entries, which
+  // it forgot once the realm defined its windowed containers and then
+  // DELETED from the store at its next flush as rows its shadow held and its
+  // memory lacked (the console bootstrap job's administrator, in every
+  // product mode; persistence_replication.js holds a row of an unknown realm
+  // back as well). The restore's order, for the restore's reason: a realm
+  // has to exist before its directory can be loaded into it.
   flushing = Promise.resolve(typeof keystore.settleDeks === 'function'
     ? keystore.settleDeks() : null).then(function () {
+    if (!wantRealms) {
+      return null;
+    }
+    // The whole list AND the delta: a snapshot driver writes the first, a
+    // database the second. See `realmShadow` above.
+    return driver.saveRealms(realmRows(), realmChanges).then(function () {
+      advanceRealmShadow(realmChanges);
+    });
+  }).then(function () {
+    if (!wantConfig) {
+      return null;
+    }
+    return driver.saveOverrides(configChanges.live, configChanges)
+      .then(function () {
+        advanceAppconfigShadow(configChanges);
+      });
+  }).then(function () {
     if (!changes) {
       return null;
     }
@@ -1760,23 +1788,6 @@ function flush() {
     // failure to do so is not this flush's failure.
     const alone = takeClaimReleases(takenAt);
     return alone.length ? releaseClaimsAlone(alone) : null;
-  }).then(function () {
-    if (!wantRealms) {
-      return null;
-    }
-    // The whole list AND the delta: a snapshot driver writes the first, a
-    // database the second. See `realmShadow` above.
-    return driver.saveRealms(realmRows(), realmChanges).then(function () {
-      advanceRealmShadow(realmChanges);
-    });
-  }).then(function () {
-    if (!wantConfig) {
-      return null;
-    }
-    return driver.saveOverrides(configChanges.live, configChanges)
-      .then(function () {
-        advanceAppconfigShadow(configChanges);
-      });
   }).then(function () {
     // THE DIRECTORY, THE REALMS AND THE SETTINGS HAVE COMMITTED; the minted
     // write below is a separate transaction with generations of its own.

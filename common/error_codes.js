@@ -1805,6 +1805,10 @@ const CODES = [
       'they stay noted and are read at the next refresh, and the page draws ' +
       'what this process already holds.',
     spec: 'none' },
+  { code: 'STS-STORE-0088',
+    summary: 'A replicated directory change of a realm this process never ' +
+      'came to define waited ten minutes for the realm and was dropped.',
+    spec: '' },
   // ===== CLUSTER ===========================================================
   { code: 'STS-CLUSTER-0001',
     summary: 'A write transaction was refused by the fence: this node\'s ' +

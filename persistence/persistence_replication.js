@@ -205,6 +205,11 @@ function createReplication(label) {
   // pause between (2026-10-27; applyRows()).
   const SEALED_ROW_RETRIES = 5;
   const SEALED_ROW_RETRY_PAUSE_MS = 200;
+  // Directory changes of a realm this process does not define yet, kept by
+  // kind, realm and key until the realm's own row has been applied
+  // (2026-10-27; applyRows()), and the time after which one is given up.
+  const deferredRows = new Map();
+  const DEFERRED_ROW_EXPIRE_MS = 10 * 60 * 1000;
   // How many pulls have STARTED, and the start number of the newest one that
   // FINISHED. See syncNow(): a barrier waits for a pull that began after it
   // read
@@ -857,6 +862,47 @@ function createReplication(label) {
   // another realm's session in this one. That is the single most likely bug in
   // this file and it is why the wrapper is here rather than in each applier.
   // ---------------------------------------------------------------------------
+  // A directory change of a realm this process does not define yet, held
+  // until the realm's row is applied — the last occurrence of a key wins,
+  // as in a page — and given up after DEFERRED_ROW_EXPIRE_MS (a realm
+  // removed on another node before its rows reached here, for instance).
+  function deferForRealm(row) {
+    log.debug("Entering deferForRealm(). " + row.realm);
+    const id = row.kind + '\u0000' + row.realm + '\u0000' + row.key;
+    const held = deferredRows.get(id);
+    deferredRows.set(id, { row: row, since: held ? held.since : Date.now() });
+    log.debug("Leaving deferForRealm(). " + deferredRows.size + " held.");
+  }
+
+  // Applies every held row whose realm is defined here now, one after
+  // another, and drops the ones that waited too long.
+  function applyDeferredRows(applyOne) {
+    log.debug("Entering applyDeferredRows(). " + deferredRows.size);
+    let chain = Promise.resolve();
+    const now = Date.now();
+    deferredRows.forEach(function (held, id) {
+      const row = held.row;
+      if (realms.get(row.realm)) {
+        deferredRows.delete(id);
+        chain = chain.then(function () {
+          return applyOne(row);
+        });
+        return;
+      }
+      if (now - held.since > DEFERRED_ROW_EXPIRE_MS) {
+        deferredRows.delete(id);
+        log.warn(errorCodes.tag('STS-STORE-0088') + 'persistence: a "' +
+                 row.kind + '" change for "' + row.key + '" in realm "' +
+                 row.realm + '" waited ' +
+                 Math.round((now - held.since) / 1000) + ' s for that ' +
+                 'realm to be defined here, and it never was; the change ' +
+                 'is dropped.');
+      }
+    });
+    log.debug("Leaving applyDeferredRows().");
+    return chain;
+  }
+
   function applyRows(rows) {
     log.debug("Entering applyRows().");
     // COALESCED: a page can name one directory entry ten times, and re-reading
@@ -916,107 +962,141 @@ function createReplication(label) {
         });
       }
     });
-    seen.forEach(function (row) {
-      chain = chain.then(function () {
-        byKind[row.kind] = (byKind[row.kind] || 0) + 1;
-        const applier = appliers[row.kind];
-        if (typeof applier !== 'function') {
-          // A kind this build does not know. Ordinary during a rolling upgrade,
-          // and counted rather than thrown for that reason: an older process
-          // must not fall over because a newer one wrote a kind it has never
-          // heard of.
-          log.debug('persistence: change kind "' + row.kind + '" has no ' +
-                    'applier here; skipped.');
-          return null;
+    // THE REALM BEFORE ITS ROWS (2026-10-27). A realm is created in one
+    // flush whose directory rows commit before its registry row (they were
+    // written in that order until the same day), so a page could carry a
+    // realm's entries ahead of the realm. Applied in seq order, a person's
+    // row reached a windowed process before it knew the realm's windowed
+    // containers and was applied RESIDENT, into the shadow; when the
+    // realm's row then made its people windowed the resident copy was
+    // forgotten, and the next flush read shadow-has/memory-lacks as a
+    // deletion and removed the person from the store — the console
+    // bootstrap job's administrator, in every product mode. So a page's
+    // realm and settings rows go first, and a directory row of a realm
+    // still unknown here is held until its realm arrives.
+    const applyOne = function (row) {
+      log.debug("Entering applyOne(). " + row.kind);
+      byKind[row.kind] = (byKind[row.kind] || 0) + 1;
+      const applier = appliers[row.kind];
+      if (typeof applier !== 'function') {
+        // A kind this build does not know. Ordinary during a rolling upgrade,
+        // and counted rather than thrown for that reason: an older process
+        // must not fall over because a newer one wrote a kind it has never
+        // heard of.
+        log.debug('persistence: change kind "' + row.kind + '" has no ' +
+                  'applier here; skipped.');
+        log.debug("Leaving applyOne(). No applier.");
+        return null;
+      }
+      const realm = realms.get(row.realm) || null;
+      log.debug("Leaving applyOne().");
+      return realms.run(realm, function () {
+        // -----------------------------------------------------------------
+        // ONE ROW'S FAILURE IS NOT THE PAGE'S. A single entry that will not
+        // apply — a value this build cannot parse, a store that refused it —
+        // must not stop every other change in the page, because the
+        // alternative is one bad row wedging replication for ever at the same
+        // `seq` while this process goes on reporting that it is coordinating.
+        //
+        // **THE `try` IS AROUND THE CALL AND NOT ONLY AROUND THE PROMISE, and
+        // that is a defect `tests/replication.js` caught before this
+        // shipped.**
+        // It was `Promise.resolve(applier(row)).catch(…)`, which handles a
+        // REJECTED promise and does nothing at all for a SYNCHRONOUS throw:
+        // the throw happens while the argument to `Promise.resolve` is being
+        // evaluated, so it escapes the `.catch` that was written for it,
+        // propagates out of this function into the chain, and takes every
+        // later row in the page with it. Both applier shapes are real —
+        // `applyKeysChange()` is synchronous and the rest are not — so the
+        // wrong half was the one nothing in this repository would have
+        // exercised.
+        // -----------------------------------------------------------------
+        function failed(err) {
+          log.debug("Entering failed().");
+          log.error(errorCodes.tag('STS-STORE-0042') +
+                    'persistence: a "' + row.kind + '" change for "' +
+                    row.key + '" in realm "' + (row.realm || 'default') +
+                    '" could not be applied: ' + err.message +
+                    '. The rest of the page is unaffected.');
+          log.debug("Leaving failed().");
         }
-        const realm = realms.get(row.realm) || null;
-        return realms.run(realm, function () {
-          // -----------------------------------------------------------------
-          // ONE ROW'S FAILURE IS NOT THE PAGE'S. A single entry that will not
-          // apply — a value this build cannot parse, a store that refused it —
-          // must not stop every other change in the page, because the
-          // alternative is one bad row wedging replication for ever at the same
-          // `seq` while this process goes on reporting that it is coordinating.
-          //
-          // **THE `try` IS AROUND THE CALL AND NOT ONLY AROUND THE PROMISE, and
-          // that is a defect `tests/replication.js` caught before this
-          // shipped.**
-          // It was `Promise.resolve(applier(row)).catch(…)`, which handles a
-          // REJECTED promise and does nothing at all for a SYNCHRONOUS throw:
-          // the throw happens while the argument to `Promise.resolve` is being
-          // evaluated, so it escapes the `.catch` that was written for it,
-          // propagates out of this function into the chain, and takes every
-          // later row in the page with it. Both applier shapes are real —
-          // `applyKeysChange()` is synchronous and the rest are not — so the
-          // wrong half was the one nothing in this repository would have
-          // exercised.
-          // -----------------------------------------------------------------
-          function failed(err) {
-            log.debug("Entering failed().");
-            log.error(errorCodes.tag('STS-STORE-0042') +
-                      'persistence: a "' + row.kind + '" change for "' +
-                      row.key + '" in realm "' + (row.realm || 'default') +
-                      '" could not be applied: ' + err.message +
-                      '. The rest of the page is unaffected.');
-            log.debug("Leaving failed().");
+        // AN ENTRY UNDER A DATA KEY THIS THREAD HAS NOT READ YET is tried
+        // once more after the data-key rows are read again (2026-10-02):
+        // the ordinary cause is a realm another worker thread made a moment
+        // ago, and skipping the row left this thread's directory without
+        // it for good — 196 entries of two new realms in the single-node
+        // mode of the run on 91341350, its role groups among them.
+        function once() {
+          log.debug("Entering once().");
+          log.debug("Leaving once().");
+          try {
+            return Promise.resolve(applier(row));
+          } catch (err) {
+            return Promise.reject(err);
           }
-          // AN ENTRY UNDER A DATA KEY THIS THREAD HAS NOT READ YET is tried
-          // once more after the data-key rows are read again (2026-10-02):
-          // the ordinary cause is a realm another worker thread made a moment
-          // ago, and skipping the row left this thread's directory without
-          // it for good — 196 entries of two new realms in the single-node
-          // mode of the run on 91341350, its role groups among them.
-          function once() {
-            log.debug("Entering once().");
-            log.debug("Leaving once().");
+        }
+        // AND NOT ONCE BUT A FEW TIMES, A PAUSE BETWEEN (2026-10-27): the
+        // key's row may be a transaction still committing when the first
+        // re-read runs — the full run on 086c421b dropped a new realm's
+        // role groups that way in hundreds of realms (STS-STORE-0042) —
+        // and a dropped directory row is never applied again. Bounded: a
+        // row sealed under a key this process will never hold is still
+        // reported, after SEALED_ROW_RETRIES. A loop, not a chain
+        // (tests/no_periodic_timers.js).
+        const keyedRetries = async function () {
+          log.debug("Entering keyedRetries().");
+          let last = null;
+          for (let i = 0; i < SEALED_ROW_RETRIES; i++) {
+            await require('../common/keystore').refreshDekRows();
             try {
-              return Promise.resolve(applier(row));
+              const out = await once();
+              log.debug("Leaving keyedRetries(). Applied.");
+              return out;
             } catch (err) {
-              return Promise.reject(err);
+              if (errorCodes.codeOf(err) !== 'STS-STORE-0072') {
+                throw err;
+              }
+              last = err;
+            }
+            if (i + 1 < SEALED_ROW_RETRIES) {
+              await new Promise(function (resolve) {
+                setTimeout(resolve, SEALED_ROW_RETRY_PAUSE_MS);
+              });
             }
           }
-          // AND NOT ONCE BUT A FEW TIMES, A PAUSE BETWEEN (2026-10-27): the
-          // key's row may be a transaction still committing when the first
-          // re-read runs — the full run on 086c421b dropped a new realm's
-          // role groups that way in hundreds of realms (STS-STORE-0042) —
-          // and a dropped directory row is never applied again. Bounded: a
-          // row sealed under a key this process will never hold is still
-          // reported, after SEALED_ROW_RETRIES. A loop, not a chain
-          // (tests/no_periodic_timers.js).
-          const keyedRetries = async function () {
-            log.debug("Entering keyedRetries().");
-            let last = null;
-            for (let i = 0; i < SEALED_ROW_RETRIES; i++) {
-              await require('../common/keystore').refreshDekRows();
-              try {
-                const out = await once();
-                log.debug("Leaving keyedRetries(). Applied.");
-                return out;
-              } catch (err) {
-                if (errorCodes.codeOf(err) !== 'STS-STORE-0072') {
-                  throw err;
-                }
-                last = err;
-              }
-              if (i + 1 < SEALED_ROW_RETRIES) {
-                await new Promise(function (resolve) {
-                  setTimeout(resolve, SEALED_ROW_RETRY_PAUSE_MS);
-                });
-              }
-            }
-            log.debug("Leaving keyedRetries(). Still sealed.");
-            throw last;
-          };
-          return once().catch(function (err) {
-            if (errorCodes.codeOf(err) !== 'STS-STORE-0072') {
-              throw err;
-            }
-            log.debug("Caught in applyRows(): " + ((err && err.message) ||
-                                                    err));
+          log.debug("Leaving keyedRetries(). Still sealed.");
+          throw last;
+        };
+        return once().catch(function (err) {
+          if (errorCodes.codeOf(err) !== 'STS-STORE-0072') {
+            throw err;
+          }
+          log.debug("Caught in applyRows(): " + ((err && err.message) ||
+                                                  err));
             return keyedRetries();
           }).catch(failed);
         });
+    };
+    const first = [];
+    const rest = [];
+    seen.forEach(function (row) {
+      if (row.kind === 'realms' || row.kind === 'appconfig') {
+        first.push(row);
+      } else {
+        rest.push(row);
+      }
+    });
+    first.concat(rest).forEach(function (row) {
+      chain = chain.then(function () {
+        if (row.kind === 'directory' && row.realm && !realms.get(row.realm)) {
+          deferForRealm(row);
+          return null;
+        }
+        return applyOne(row);
       });
+    });
+    chain = chain.then(function () {
+      return applyDeferredRows(applyOne);
     });
     log.debug("Leaving applyRows().");
     // THE PAGE'S WORKING SET GOES WITH THE PAGE. A prefetch held past the page
@@ -2030,6 +2110,7 @@ function createReplication(label) {
    */
   function reset() {
     log.debug("Entering reset().");
+    deferredRows.clear();
     driver = null;
     appliers = null;
     origin = '';

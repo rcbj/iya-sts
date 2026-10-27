@@ -328,6 +328,44 @@ async function run(t) {
   t.equal(tries['cn=other'], 1, '5b3. any other failure is not retried');
 
   // -------------------------------------------------------------------------
+  // 5c. A DIRECTORY ROW OF A REALM NOT DEFINED HERE WAITS FOR THE REALM
+  // (2026-10-27): a realm's entries could reach the change log ahead of its
+  // own row, and applied before the realm they were applied resident, then
+  // forgotten, then DELETED from the store by the next flush's diff. A
+  // page's realm rows go first, and a row of a realm still unknown is held
+  // until the realm is defined here.
+  // -------------------------------------------------------------------------
+  t.log.info('=== a directory row of a realm not yet defined here waits ===');
+  replication.reset();
+  const early = fakeDriver('me');
+  const appliedEarly = [];
+  await replication.start(early, {
+    directory: function (change) {
+      log.debug("Entering directory().");
+      appliedEarly.push(change.realm + '/' + change.key);
+      log.debug("Leaving directory().");
+    },
+    realms: function (change) {
+      log.debug("Entering realms().");
+      if (!realms.get('early-realm')) {
+        realms.create({ id: 'early-realm', name: 'Early realm' });
+      }
+      log.debug("Leaving realms().");
+    }
+  });
+  early.write('them', 'directory', 'early-realm', 'cn=first');
+  await replication.pull();
+  t.equal(appliedEarly.length, 0, '5c1. a row of a realm this process does ' +
+          'not define is held, not applied');
+  early.write('them', 'realms', '', 'early-realm');
+  early.write('them', 'directory', 'early-realm', 'cn=second');
+  await replication.pull();
+  t.equal(appliedEarly.join(','), 'early-realm/cn=second,early-realm/cn=first',
+          '5c2. the realm row of a page is applied first, the page\'s own ' +
+          'row of that realm after it, and the held row last');
+  realms.remove('early-realm');
+
+  // -------------------------------------------------------------------------
   // 6. AN UNKNOWN KIND IS SKIPPED RATHER THAN FATAL.
   // -------------------------------------------------------------------------
   t.log.info('=== an unknown kind during a rolling upgrade ===');
