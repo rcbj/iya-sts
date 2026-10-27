@@ -889,6 +889,7 @@ function directoryDouble(windowed) {
         value: 'https://wallet.example/' }, keyAlg: 'ES256' })],
     mfaLastAuthTime: ['2026-10-20T10:00:00.000Z'] });
   const bea = person('bea', { pwdAccountLockedTime: ['20261001120000Z'],
+    createTimestamp: ['20260901120000Z'],
     stsWebauthnCredential: [key('mfa', 'ES256', -7, 'classical', 100, 200)],
     // A subject an administrator entered by value (#1021): channel admin,
     // no proof, no algorithm the record or the DID gives.
@@ -896,7 +897,7 @@ function directoryDouble(windowed) {
       label: 'a', enrolledAt: '2026-10-12T10:00:00.000Z', by: 'admin',
       proof: 'admin', location: { kind: 'admin', value: '' } })]
   });
-  const cy = person('cy');
+  const cy = person('cy', { createTimestamp: ['20261015120000Z'] });
   const xbea = person('xbea');
   const people = [ada, bea, cy, xbea];
   const staff = {
@@ -944,6 +945,26 @@ function directoryDouble(windowed) {
       return Promise.resolve(names.map(function (name) {
         return byName[String(name).toLowerCase()] || null;
       }));
+    },
+    // The people created or changed in a span (#1028): the directory's
+    // date B-trees, here the generalized-time attributes compared as
+    // numbers; null when not windowed, as the directory answers in memory.
+    entriesByTimeRangeAsync: function (column, lo, hi, cap) {
+      calls.range = (calls.range || 0) + 1;
+      if (!windowed) {
+        return Promise.resolve(null);
+      }
+      const attr = column === 'modified' ? 'modifyTimestamp'
+        : 'createTimestamp';
+      const msOf = function (gt) {
+        const m = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})Z$/.exec(gt);
+        return m ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]) : 0;
+      };
+      const hits = people.filter(function (one) {
+        const at = msOf(String((one.attributes[attr] || [''])[0]));
+        return at && (!lo || at >= lo) && (!hi || at < hi);
+      });
+      return Promise.resolve(hits.length >= cap ? null : hits);
     },
     entriesByUuidsAsync: function (uuids) {
       calls.byUuid++;
@@ -1151,7 +1172,7 @@ async function narrowing(t) {
   t.equal(plan({ op: 'not', arg: { op: 'eq', field: 'username',
     value: 'ada' } }), null, 'not is not a lookup');
   const andOne = plan({ op: 'and', args: [
-    { op: 'eq', field: 'status', value: 'locked' },
+    { op: 'eq', field: 'displayName', value: 'ADA' },
     { op: 'eq', field: 'username', value: 'ada' }] });
   t.equal(andOne && andOne.length === 1 && andOne[0].field, 'username',
     'an and is the lookups of its indexed arm');
@@ -1167,7 +1188,7 @@ async function narrowing(t) {
     'an or of indexed arms is the union of their lookups');
   t.equal(plan({ op: 'or', args: [
     { op: 'eq', field: 'username', value: 'ada' },
-    { op: 'eq', field: 'status', value: 'locked' }] }), null,
+    { op: 'eq', field: 'displayName', value: 'ADA' }] }), null,
     'an or with a sealed arm is not a lookup');
   const many = [];
   for (let i = 0; i < 17; i++) {
@@ -1311,6 +1332,59 @@ async function narrowing(t) {
     t.equal(sealedJob.code, 'STS-REPORT-0040',
       'and as a job too: it would have read everybody');
     t.equal(calls.walk, 0, 'nothing walked for either');
+    // A DATE RANGE IS AN INDEXED READ (#1028): one bound is a span open on
+    // the other side; two bounds on the same date are one span; the lock
+    // is a holders read; `active` anchors nothing.
+    reset();
+    const since = await read({
+      where: { op: 'ge', field: 'createdAt', value: '2026-10-01T00:00:00Z' },
+      limit: 10 });
+    t.equal(since.ok, true, 'a creation date bound is read', since.description);
+    t.equal(calls.range, 1, 'through the date index');
+    t.equal(calls.walk, 0, 'and no walk');
+    t.equal(names(since).join(','), 'ada,cy,xbea',
+      'the people created since the bound');
+    reset();
+    const between = await read({
+      where: { op: 'and', args: [
+        { op: 'ge', field: 'createdAt', value: '2026-10-01T00:00:00Z' },
+        { op: 'lt', field: 'createdAt', value: '2026-10-10T00:00:00Z' }] },
+      limit: 10 });
+    t.equal(calls.range, 1, 'two bounds on one date are one span');
+    // The statement repeats the partial index's condition (found on 8081:
+    // without it PostgreSQL scanned every row), and a span too large to
+    // answer whole is refused, never walked.
+    const dq = require('../persistence/directory_queries');
+    t.check(dq.createdBetween('default', 'ou=users,dc=x', '', '', 10).text
+      .indexOf(dq.USERS_PARENT) >= 0 &&
+      dq.modifiedBetween('default', 'ou=users,dc=x', '', '', 10).text
+        .indexOf(dq.USERS_PARENT) >= 0,
+      'the range statements repeat the partial index\'s condition');
+    const realRange = built.ldap.entriesByTimeRangeAsync;
+    built.ldap.entriesByTimeRangeAsync = function () {
+      return Promise.resolve(null);
+    };
+    reset();
+    const wide = await read({
+      where: { op: 'ge', field: 'createdAt', value: '2020-01-01T00:00:00Z' },
+      limit: 10 }, 'async');
+    built.ldap.entriesByTimeRangeAsync = realRange;
+    t.equal(wide.code, 'STS-REPORT-0041',
+      'a span past the cap is refused as too large, even as a job');
+    t.equal(calls.walk, 0, 'and nobody is walked');
+    t.equal(names(between).join(','), 'ada,xbea',
+      'the people created in the span');
+    reset();
+    const lockedOnly = await read({
+      where: { op: 'eq', field: 'status', value: 'locked' }, limit: 10 });
+    t.equal(lockedOnly.ok, true, 'the locked are read',
+      lockedOnly.description);
+    t.equal(calls.holders, 1, 'through the lock\'s holders index');
+    t.equal(names(lockedOnly).join(','), 'bea', 'bea is locked');
+    const activeOnly = await read({
+      where: { op: 'eq', field: 'status', value: 'active' }, limit: 10 });
+    t.equal(activeOnly.code, 'STS-REPORT-0040',
+      'active alone anchors nothing: it is everybody else');
     const sealedAnchored = await read({
       where: { op: 'and', args: [
         { op: 'contains', field: 'displayName', value: 'A' },
@@ -1338,8 +1412,9 @@ async function narrowing(t) {
     reset();
     const capped = await read({
       where: { op: 'contains', field: 'username', value: 'full' }, limit: 5 });
-    t.equal(capped.code, 'STS-REPORT-0036',
-      'a substring the store answers at its cap is not trusted whole');
+    t.equal(capped.code, 'STS-REPORT-0041',
+      'a substring the store answers at its cap is not trusted whole, and ' +
+      'is refused rather than walked (#1028)');
     t.equal(calls.contains, 1, 'the store was asked once');
   } finally {
     sources.installDirectory(null);
@@ -1506,6 +1581,9 @@ function chrome(t) {
   const runAt = actions.indexOf('value="run"');
   t.check(saveAt >= 0 && runAt > saveAt,
     'the Save button comes before Run in the document');
+  t.check(actions.indexOf('<div class="foot-actions">') === 0 &&
+    (actions.match(/class="button/g) || []).length === 2,
+    'Run and Save are the definition page\'s buttons (#1028)', actions);
   const saveTag = actions.slice(actions.lastIndexOf('<button', saveAt),
     saveAt);
   t.check(saveTag.indexOf(' disabled') >= 0 && saveTag.indexOf(' hidden') >= 0,
@@ -1763,11 +1841,14 @@ function groups(t) {
   // on whichever source carries it, so the reader asks the store and a
   // new source cannot forget one quietly.
   const INDEX_CAPABLE = { username: ['eq', 'in'], mail: ['eq', 'in'],
-    entryUuid: ['eq', 'in'], memberOf: ['eq', 'in'] };
+    entryUuid: ['eq', 'in'], memberOf: ['eq', 'in'], status: ['eq'],
+    createdAt: ['lt', 'le', 'gt', 'ge'], modifiedAt: ['lt', 'le', 'gt', 'ge'] };
   catalog.list().forEach(function (src) {
     (src.fields || []).forEach(function (f) {
+      // The directory's indexes bind the sources that read the directory;
+      // a register in memory is bounded and needs none.
       const wanted = f.id === 'name' && src.id === 'groups' ? ['eq', 'in']
-        : INDEX_CAPABLE[f.id];
+        : (src.anchored ? INDEX_CAPABLE[f.id] : null);
       if (!wanted) {
         return;
       }
@@ -1792,7 +1873,8 @@ function groups(t) {
     where: { op: 'and', args: [
       { op: 'eq', field: 'mechanism', value: 'passkey' },
       { op: 'contains', field: 'memberOf', value: 'staff' }] } });
-  t.check(enumerated.indexOf('<select name="filterValue0"><option value="">' +
+  t.check(enumerated.indexOf('<select name="filterValue0" ' +
+    'data-type="string"><option value="">' +
     '</option><option value="passkey" selected>passkey</option>' +
     '<option value="totp">totp</option>') >= 0,
     'a saved mechanism equals passkey is a dropdown with passkey chosen',
@@ -1838,7 +1920,8 @@ function groups(t) {
   live.t = tr;
   live.catalogSources = cat.sources;
   live.onChange({ target: fieldSelect });
-  t.check(swapped.indexOf('<select name="filterValue0">') === 0 &&
+  t.check(swapped.indexOf('<select name="filterValue0" ' +
+    'data-type="string">') === 0 &&
     swapped.indexOf('<option value="kerberos">') >= 0,
     'choosing mechanism swaps the text box for the dropdown', swapped);
   swapped = '';
@@ -1850,7 +1933,8 @@ function groups(t) {
   live.onChange({ target: fieldSelect });
   // #1022: contains is not offered over an enumerated field, so the
   // operator drops to the empty choice and the value stays a dropdown.
-  t.check(swapped.indexOf('<select name="filterValue0">') === 0 &&
+  t.check(swapped.indexOf('<select name="filterValue0" ' +
+    'data-type="string">') === 0 &&
     swapped.indexOf('<option value="passkey" selected>') >= 0,
     'an operator the field does not offer is dropped; the dropdown stays',
     swapped);
@@ -1886,9 +1970,11 @@ function groups(t) {
     'the source\'s sentence is under the select', anchoredForm.slice(0, 600));
   const usersFirst = /<select name="filterField0"[^>]*>([^]*?)<\/select>/
     .exec(ReportRuntime.queryFormHtml(tr, cat.sources, { source: 'users' }));
-  t.check(!!usersFirst && usersFirst[1].indexOf('value="status"') < 0 &&
-    usersFirst[1].indexOf('value="memberOf"') >= 0,
-    'users is anchored too: status is not a first filter, memberOf is');
+  t.check(!!usersFirst && usersFirst[1].indexOf('value="displayName"') < 0 &&
+    usersFirst[1].indexOf('value="memberOf"') >= 0 &&
+    usersFirst[1].indexOf('value="createdAt"') >= 0,
+    'users is anchored: displayName is not a first filter; memberOf and ' +
+    'createdAt are');
   const groupsFirst = /<select name="filterField0"[^>]*>([^]*?)<\/select>/
     .exec(ReportRuntime.queryFormHtml(tr, cat.sources, { source: 'groups' }));
   t.check(!!groupsFirst && groupsFirst[1].indexOf('value="description"') >= 0,
@@ -1904,14 +1990,15 @@ function groups(t) {
   // holds; a field change redraws it only when the list changes.
   const enumRow = ReportRuntime.filterRowHtml(tr, 0, '<option></option>',
     true);
-  t.check(enumRow.indexOf('<select name="filterOp0" data-ops="all">') >= 0 &&
-    enumRow.indexOf('<option value="contains">') >= 0,
-    'a fresh row offers every operator');
+  t.check(enumRow.indexOf('<select name="filterOp0" ' +
+    'data-ops="eq,ne,contains,startsWith,isNull">') >= 0,
+    'a fresh row offers the text operators');
   const enumSaved = ReportRuntime.queryFormHtml(tr, cat.sources, {
     source: 'credentialHolders', select: ['username'],
     where: { op: 'ne', field: 'mechanism', value: 'totp' } });
-  const enumOpSelect = /<select name="filterOp0" data-ops="enum">([^]*?)<\/select>/
-    .exec(enumSaved);
+  const enumOpSelect =
+    /<select name="filterOp0" data-ops="eq,ne,isNull">([^]*?)<\/select>/
+      .exec(enumSaved);
   t.check(!!enumOpSelect &&
     (enumOpSelect[1].match(/<option value="[a-zA-Z]+"/g) || []).length === 3 &&
     enumOpSelect[1].indexOf('<option value="ne" selected>') >= 0 &&
@@ -1950,15 +2037,20 @@ function groups(t) {
   };
   swapped = '';
   live.onChange({ target: opFieldSelect });
-  t.check(opSwapped.indexOf('<select name="filterOp0" data-ops="enum">') === 0 &&
-    opSwapped.indexOf('selected') < 0 && opSwapped.indexOf('startsWith') < 0,
-    'choosing mechanism redraws the operators, dropping startsWith', opSwapped);
-  t.check(swapped.indexOf('<select name="filterValue0">') === 0,
+  // #1028: on credentialHolders' first row mechanism's index answers
+  // equals only, so that is the list.
+  t.check(opSwapped.indexOf('<select name="filterOp0" data-ops="eq">') ===
+    0 && opSwapped.indexOf('selected') < 0 &&
+    opSwapped.indexOf('startsWith') < 0,
+    'choosing mechanism redraws the operators, dropping startsWith',
+    opSwapped);
+  t.check(swapped.indexOf('<select name="filterValue0" ' +
+    'data-type="string">') === 0,
     'and the value becomes the dropdown');
   opSwapped = '';
   opControls.filterOp0 = { value: 'eq',
     getAttribute: function (k) {
-      return k === 'data-ops' ? 'enum' : null;
+      return k === 'data-ops' ? 'eq' : null;
     },
     set outerHTML(html) {
       opSwapped = html;
@@ -1967,9 +2059,57 @@ function groups(t) {
   t.equal(opSwapped, '', 'an enumerated field again leaves the select alone');
   opControls.filterField0.value = 'username';
   live.onChange({ target: opFieldSelect });
-  t.check(opSwapped.indexOf('data-ops="all"') >= 0 &&
+  t.check(opSwapped.indexOf('data-ops="eq,contains,startsWith"') >= 0 &&
     opSwapped.indexOf('<option value="eq" selected>') >= 0,
-    'an open field brings the full list back, keeping equals', opSwapped);
+    'an open indexed field brings its indexed operators, keeping equals',
+    opSwapped);
+
+  // ONE RULE FOR EVERY FILTER ROW (#1028): the kind decides the operators
+  // and the control; the control carries the type; the form sends typed
+  // values; the buttons are the definition page's.
+  const jobFields = cat.sources.filter(function (src) {
+    return src.id === 'reportJobs';
+  })[0].fields;
+  t.check(ReportRuntime.filterValueHtml(0, jobFields, 'status', 'eq', '')
+    .indexOf('<option value="cancelled">') >= 0,
+    'a finite string field is a dropdown of its values');
+  const appFields = cat.sources.filter(function (src) {
+    return src.id === 'applications';
+  })[0].fields;
+  t.check(ReportRuntime.filterValueHtml(0, appFields, 'enabled', 'eq',
+    'true').indexOf('data-type="boolean"><option value=""></option>' +
+    '<option value="true" selected>') >= 0,
+    'a boolean is a true/false dropdown');
+  t.check(ReportRuntime.filterValueHtml(0, jobFields, 'submittedAt', 'ge',
+    '2026-10-27T09:30:00.000Z') === '<input type="datetime-local" ' +
+    'name="filterValue0" data-type="timestamp" title="UTC" ' +
+    'value="2026-10-27T09:30">', 'a timestamp is a date-time picker in UTC');
+  t.check(ReportRuntime.filterValueHtml(0, jobFields, 'byteSize', 'gt', '5')
+    .indexOf('<input type="number" name="filterValue0" data-type="number"') ===
+    0, 'a number is a number box');
+  const typedForm = formDouble({ source: 'reportJobs', format: 'json',
+    filterField0: 'submittedAt', filterOp0: 'ge',
+    filterValue0: '2026-10-27T09:30', filterField1: 'byteSize',
+    filterOp1: 'gt', filterValue1: '5', filterField2: 'status',
+    filterOp2: 'eq', filterValue2: 'failed' });
+  typedForm.elements.filterValue0.getAttribute = function () {
+    return 'timestamp';
+  };
+  typedForm.elements.filterValue1.getAttribute = function () {
+    return 'number';
+  };
+  const typedDoc = ReportRuntime.queryDocument(typedForm, 'en');
+  t.equal(JSON.stringify(typedDoc.where.args.map(function (leaf) {
+    return leaf.value;
+  })), JSON.stringify(['2026-10-27T09:30:00.000Z', 5, 'failed']),
+    'the form sends a UTC time, a number and a string');
+  const createdOps = /<select name="filterOp0" data-ops="([^"]*)"/.exec(
+    ReportRuntime.queryFormHtml(tr, cat.sources, { source: 'users',
+      select: ['username'],
+      where: { op: 'ge', field: 'createdAt',
+        value: '2026-10-01T00:00:00Z' } }));
+  t.equal(createdOps && createdOps[1], 'ge,gt,le,lt',
+    'a users first row on createdAt offers the indexed range operators');
   t.check(holderFields.length > 0, 'the holder fields were found');
 
   // THE SORT BOX, AND GROUP BY BEHIND COUNT (#1008): the selects are hidden
@@ -2626,13 +2766,13 @@ async function holders(t) {
     reset();
     const usersUnanchored = await read({ source: 'users',
       select: ['username', 'status'], limit: 5,
-      where: { op: 'eq', field: 'status', value: 'locked' } });
+      where: { op: 'eq', field: 'displayName', value: 'ADA' } });
     t.equal(usersUnanchored.code, 'STS-REPORT-0040',
       'the users source is held to the same rule');
     const usersByGroup = await read({ source: 'users',
       select: ['username', 'status'], limit: 5,
       where: { op: 'and', args: [
-        { op: 'eq', field: 'status', value: 'locked' },
+        { op: 'eq', field: 'displayName', value: 'ADA' },
         { op: 'eq', field: 'memberOf', value: 'staff' }] } });
     t.equal(usersByGroup.ok, true, 'a group anchors a users filter');
     t.equal(calls.groupRead, 1, 'through the group\'s member list');
@@ -2811,11 +2951,69 @@ async function holders(t) {
   log.debug("Leaving holders().");
 }
 
+// A FINISHED REPORT IS STORED SEALED (#1033, rcbj: "reports need to be
+// stored encrypted"): with a database attached, no key-encryption key means
+// the report is refused, not written in the clear; with one, the stored
+// row is the sealed envelope, holds none of the report's text, and reads
+// back as the report.
+async function sealedArtifacts(t) {
+  log.debug("Entering sealedArtifacts().");
+  const stores = require('../report/stores');
+  const keystore = require('../common/keystore');
+  const cryptoMod = require('crypto');
+  const rows = new Map();
+  const db = {
+    putReportArtifact: function (row) {
+      rows.set(row.realm + '|' + row.jobId, Object.assign({}, row));
+      return Promise.resolve();
+    },
+    getReportArtifact: function (key) {
+      return Promise.resolve(rows.get(key.realm + '|' + key.jobId) || null);
+    },
+    deleteReportArtifact: function (key) {
+      rows.delete(key.realm + '|' + key.jobId);
+      return Promise.resolve();
+    }
+  };
+  const report = Buffer.from('username,mail\nada,ada@example.com\n', 'utf8');
+  stores.setDriver(db, 'test');
+  try {
+    if (!keystore.sealed()) {
+      let refused = null;
+      try {
+        await stores.putArtifact('job-clear', report, 'x', 'text/csv');
+      } catch (e) {
+        refused = e;
+      }
+      t.check(!!refused && refused.code === 'STS-REPORT-0042' &&
+        rows.size === 0,
+        'without a key-encryption key a report is refused, not stored');
+    }
+    t.check(keystore.useEphemeralKek(cryptoMod.randomBytes(32)
+      .toString('hex')), 'a key-encryption key is installed');
+    await stores.putArtifact('job-sealed', report, 'x', 'text/csv');
+    const stored = Array.from(rows.values())[0];
+    const text = Buffer.from(stored.bytes).toString('utf8');
+    t.check(text.indexOf('$aesgcm$') === 0,
+      'the stored row is the sealed envelope', text.slice(0, 20));
+    t.check(text.indexOf('ada@example.com') < 0 &&
+      text.indexOf(report.toString('base64')) < 0,
+      'and holds none of the report');
+    const back = await stores.getArtifact('job-sealed');
+    t.equal(back && back.bytes.toString('utf8'), report.toString('utf8'),
+      'and reads back as the report');
+  } finally {
+    stores.clearDriver();
+  }
+  log.debug("Leaving sealedArtifacts().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   documents(t);
   formats(t);
   await artifacts(t);
+  await sealedArtifacts(t);
   projections(t);
   await budget(t);
   await schedules(t);

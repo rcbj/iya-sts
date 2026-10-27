@@ -29,7 +29,7 @@
 //      an outsider holding report:use sees nothing of it; an application
 //      sees, lists and deletes only what it defined, whichever role it
 //      holds, and a report administrator sees the application's. A person
-//      holding no report role is refused at the API (STS-REPORT-0041); a
+//      holding no report role is refused at the API (STS-REPORT-0044); a
 //      token whose role was taken away after it was minted is refused on
 //      the next call (STS-REPORT-0018); a token without a report scope is
 //      insufficient_scope.

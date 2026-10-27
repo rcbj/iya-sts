@@ -288,11 +288,13 @@ async function run(t) {
           'while it went on reporting that it was coordinating');
 
   // -------------------------------------------------------------------------
-  // 5b. A ROW UNDER A DATA KEY THIS THREAD HAS NOT READ YET IS TRIED ONCE
-  // MORE (2026-10-02), after the data-key rows are read again — the ordinary
-  // cause is a realm another worker thread made a moment ago. Only that code:
-  // any other failure is not retried, and a row that never opens is tried
-  // twice and then reported like any other bad row.
+  // 5b. A ROW UNDER A DATA KEY THIS THREAD HAS NOT READ YET IS TRIED AGAIN
+  // (2026-10-02; up to five more times, a pause between, since 2026-10-27),
+  // after the data-key rows are read again — the ordinary cause is a realm
+  // another process made a moment ago, whose key row may still be
+  // committing. Only that code: any other failure is not retried, and a row
+  // that never opens is tried six times and then reported like any other
+  // bad row.
   // -------------------------------------------------------------------------
   t.log.info('=== a row under a data key not read yet is tried once more ===');
   replication.reset();
@@ -320,8 +322,9 @@ async function run(t) {
   await replication.pull();
   t.equal(tries['cn=late'], 2, '5b1. a row that does not open the first ' +
           'time is applied on the second, after the data keys are read again');
-  t.equal(tries['cn=never'], 2, '5b2. a row that never opens is tried ' +
-          'twice and no more');
+  t.equal(tries['cn=never'], 6, '5b2. a row that never opens is tried ' +
+          'six times (the first, and five more after the keys are read ' +
+          'again) and no more');
   t.equal(tries['cn=other'], 1, '5b3. any other failure is not retried');
 
   // -------------------------------------------------------------------------

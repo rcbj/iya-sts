@@ -2026,6 +2026,46 @@ async function holdersAsync(kind, attribute, names, control) {
   return out;
 }
 
+// THE PEOPLE CREATED OR CHANGED IN A SPAN (#1028, the reports' date range):
+// the store's `createdBetween` / `modifiedBetween` over the two B-trees of
+// schema version 28, the children of this realm's `ou=users` only. `lo` is
+// inclusive, `hi` exclusive, both epoch milliseconds, spelt into generalized
+// time as the columns hold it. Null in memory — the realm's map has no such
+// index and is small, so the caller walks — and null when the span holds
+// more than `cap` people, which the caller reads as "not whole".
+async function entriesByTimeRangeAsync(column, lo, hi, cap) {
+  log.debug('Entering entriesByTimeRangeAsync(). column=' + column);
+  if (!directoryWindow) {
+    log.debug('Leaving entriesByTimeRangeAsync(). In memory.');
+    return null;
+  }
+  const name = column === 'modified' ? 'modifiedBetween' : 'createdBetween';
+  const most = Math.max(1, Math.floor(Number(cap) || 1000));
+  const spell = function (ms) {
+    const n = Number(ms);
+    if (!isFinite(n) || n <= 0) {
+      return '';
+    }
+    return new Date(n).toISOString().replace(/[-:T]/g, '').replace(
+      /\.\d{3}Z$/, 'Z');
+  };
+  const hits = await storeAsked(directoryWindow.findWindowedAsync(
+    realms.currentId(), name,
+    [realms.currentId(), normalizeDn(usersDn()), spell(lo), spell(hi), most],
+    function (entry) {
+      return isPersonEntry(entry);
+    }));
+  if (hits.length >= most) {
+    log.debug('Leaving entriesByTimeRangeAsync(). Not whole.');
+    return null;
+  }
+  const out = hits.map(function (hit) {
+    return hit.entry;
+  });
+  log.debug('Leaving entriesByTimeRangeAsync(). ' + out.length + '.');
+  return out;
+}
+
 // HOW MANY HOLD AN ATTRIBUTE, BEFORE READING THEM (#1002). The store's count
 // over the asked-names index (`countWithAttribute`, linear in the holders,
 // nothing opened), so a caller can refuse a read it cannot afford before
@@ -27559,6 +27599,8 @@ module.exports = {
   // everyone holds is refused rather than read.
   holdersAsync: holdersAsync,
   holderCountAsync: holderCountAsync,
+  // The people created or changed in a span (#1028), for the reports.
+  entriesByTimeRangeAsync: entriesByTimeRangeAsync,
   locateStoredAsync: locateStoredAsync,
   credentialCensus: credentialCensus,
   credentialCensusAsync: credentialCensusAsync,

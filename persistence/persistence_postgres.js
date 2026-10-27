@@ -275,7 +275,14 @@ const CHANGE_ROWS_PER_STATEMENT = 5000;
 // a scan. The index's expression changed, so an existing one is dropped
 // and built again (an advisory upgrade, the owner's to run on a large
 // store; `postgres/schema.sql` carries it).
-const SCHEMA_VERSION = 27;
+// 28 SINCE 2026-10-27 (#1028, rcbj: "index unencrypted fields that can be
+// used as filters"): two B-trees, `sts_ldap_entries_created` and
+// `sts_ldap_entries_modified`, on (realm, parent_key, created_at |
+// modified_at), so a report's date range reads the span and nothing else;
+// and `pwdaccountlockedtime` among the asked names, so `status equals
+// locked` is a holders read. The asked index is rebuilt again (the same
+// advisory step, now looking for the newest name).
+const SCHEMA_VERSION = 28;
 
 // THE DATABASE'S CLOCK, in the milliseconds every cluster table stores. See the
 // cluster block in SCHEMA_OBJECTS for why no process's own clock is used.
@@ -704,6 +711,18 @@ const SCHEMA_OBJECTS = [
     extension: 'pg_trgm', statement:
   'CREATE INDEX IF NOT EXISTS sts_ldap_entries_uid_trgm ON sts_ldap_entries ' +
   'USING gin (rdn_value gin_trgm_ops) ' + GIN_DIRECT + ' WHERE ' +
+  directoryQueries.USERS_PARENT },
+  // THE TWO DATES AS A RANGE (#1028, schema version 28): B-trees over the
+  // generalized-time text of `created_at` and `modified_at`, led by realm and
+  // parent, over the children of each realm's `ou=users` only — what a
+  // report's date range reads (`directory_queries.js`'s `createdBetween`,
+  // `modifiedBetween`). Fixed-width UTC text sorts as time does.
+  { name: 'sts_ldap_entries_created', afterColumns: true, statement:
+  'CREATE INDEX IF NOT EXISTS sts_ldap_entries_created ON sts_ldap_entries ' +
+  '(realm, parent_key, created_at) WHERE ' + directoryQueries.USERS_PARENT },
+  { name: 'sts_ldap_entries_modified', afterColumns: true, statement:
+  'CREATE INDEX IF NOT EXISTS sts_ldap_entries_modified ON ' +
+  'sts_ldap_entries (realm, parent_key, modified_at) WHERE ' +
   directoryQueries.USERS_PARENT },
   { name: 'sts_ldap_entries_names', afterColumns: true, statement:
   'CREATE INDEX IF NOT EXISTS sts_ldap_entries_names ON sts_ldap_entries ' +
@@ -1874,11 +1893,12 @@ const SCHEMA_UPGRADES = [
   // dropped and built again from SCHEMA_OBJECTS' statement. Advisory: on a
   // large store the build takes minutes and locks writes, which is the
   // owner's call (`postgres/schema.sql`), not a start-up's.
-  { name: 'sts_ldap_entries_asked_names_v27', table: 'sts_ldap_entries',
-    advisory: true, issue: '#1024',
+  { name: 'sts_ldap_entries_asked_names_v28', table: 'sts_ldap_entries',
+    advisory: true, issue: '#1028',
     when: 'EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = ' +
-          '\'sts_ldap_entries_asked_names\' AND position(\'stsbackupcodes\' ' +
-          'in indexdef) = 0)',
+          '\'sts_ldap_entries_asked_names\' AND (position(\'stsbackupcodes\' ' +
+          'in indexdef) = 0 OR position(\'pwdaccountlockedtime\' in ' +
+          'indexdef) = 0))',
     statements: ['DROP INDEX IF EXISTS sts_ldap_entries_asked_names',
       SCHEMA_OBJECTS.filter(function (object) {
         return object.name === 'sts_ldap_entries_asked_names';

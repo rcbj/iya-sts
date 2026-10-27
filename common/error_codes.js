@@ -23684,6 +23684,21 @@ const CODES = [
       'indexed fields, in every mode (rcbj, 2026-10-27).',
     spec: 'invalid_query (HTTP 400)' },
   { code: 'STS-REPORT-0041',
+    summary: 'An indexed report filter on users matched more people than ' +
+      'one read may take (the candidate cap), so it was refused rather ' +
+      'than read person by person (#1028).',
+    spec: 'result_too_large (HTTP 400)' },
+  { code: 'STS-REPORT-0042',
+    summary: 'A finished report could not be sealed under the key ' +
+      'hierarchy (no key-encryption key is held), so it was not stored; ' +
+      'the job failed rather than write the report in the clear (#1033).',
+    spec: 'none (the job fails with unavailable)' },
+  { code: 'STS-REPORT-0043',
+    summary: 'A stored report would not open under the data keys this ' +
+      'process holds (a destroyed or foreign key), so it was answered as ' +
+      'gone (#1033).',
+    spec: 'none (the result is answered as not found)' },
+  { code: 'STS-REPORT-0044',
     summary: 'The access-control policy refused a report API request ' +
       '(#1030): the subject holds no report role for the API, or the ' +
       'definition or job is not its own, not shared with a group it is ' +

@@ -1641,6 +1641,39 @@ function flush() {
   // When it began, for the `FLUSH directory` timer (#820).
   const flushStartedAt = Date.now();
 
+  // THE DATA KEYS EXIST FIRST, THEN THEIR ROWS LAND (2026-10-27). The settle
+  // below waits for the queued key rows so the change log carries a key
+  // ahead of what is sealed under it — but a realm's `directory` key was
+  // made lazily, by the first seal INSIDE `saveDirectory()`, after this
+  // wait: its row went out behind the entries, and every other process's
+  // reader met those entries sealed under a key it did not hold yet and
+  // dropped them for good (STS-STORE-0042/0072: a new realm's role groups,
+  // in hundreds of realms of the full run on 086c421b). So every realm about
+  // to be written has its key made now, and the wait below commits it first.
+  const sealedRealms = new Set();
+  if (changes) {
+    changes.upserts.forEach(function (row) {
+      sealedRealms.add(row.realm);
+    });
+  }
+  if (windowWrites) {
+    windowed.upserts.forEach(function (row) {
+      sealedRealms.add(row.realm);
+    });
+  }
+  if (sealedRealms.size && typeof driver.entryCodec === 'function') {
+    try {
+      const codec = driver.entryCodec();
+      if (codec && typeof codec.prepareKeys === 'function') {
+        codec.prepareKeys(Array.from(sealedRealms));
+      }
+    } catch (e) {
+      // The seal inside the write asks again and reports there.
+      log.debug('Caught preparing the directory keys: ' +
+                ((e && e.message) || e));
+    }
+  }
+
   // THE DATA-KEY ROWS LAND FIRST (#391): a directory entry carrying a value
   // sealed under a data encryption key made since the last flush must not
   // reach another process before the key does.

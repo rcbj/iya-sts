@@ -666,7 +666,7 @@ function reportAuthenticate(req: any, res: any): any {
     log.info('report-api: the access policy refused ' + req.method + ' ' +
              (req.originalUrl || req.url) + ' for ' + who.username + '. ' +
              policy.why);
-    reportForbidden(res, 'STS-REPORT-0041', 'forbidden',
+    reportForbidden(res, 'STS-REPORT-0044', 'forbidden',
       'The access policy refused this request. ' + policy.why +
       ' This token carries ' + (carried.join(', ') || '(none)') +
       ', which is the role(s) ' + (who.roles.length ? who.roles.join(', ')

@@ -24,6 +24,7 @@
 import bunyan = require('bunyan');
 import realms = require('../common/realms');
 import helpers = require('../common/helpers');
+import errorCodes = require('../common/error_codes');
 
 const log = bunyan.createLogger({ name: 'sts-report-stores' });
 
@@ -179,6 +180,57 @@ function reportControlDelete(key: string): void {
   log.debug("Leaving reportControlDelete().");
 }
 
+// A FINISHED REPORT IS STORED SEALED (#1033, rcbj: "reports need to be
+// stored encrypted"). A report can list people, their credentials and
+// their groups, so its bytes are sealed exactly as the minted stores' rows
+// are: `keystore.seal()` under the realm's data key of class
+// `report-artifact`, itself wrapped under the key-encryption key, which
+// never reaches the database. The column is `bytea`, so the sealed envelope
+// (`$aesgcm$2$…`, text) is stored as its UTF-8 bytes; the base64 of the
+// report is what is sealed. Without a key-encryption key nothing can be
+// sealed, and the report is REFUSED rather than written in the clear
+// (STS-REPORT-0042); the job fails and says so. The copy a process keeps
+// in memory when no database is attached is never written anywhere.
+const SEALED_LABEL = 'report-artifact';
+const SEALED_PREFIX = '$aesgcm$';
+
+function reportSealBytes(bytes: Buffer): Buffer | null {
+  log.debug("Entering reportSealBytes().");
+  const keystore = require('../common/keystore');
+  if (!keystore.sealed()) {
+    log.debug("Leaving reportSealBytes(). No key-encryption key.");
+    return null;
+  }
+  const sealed = keystore.seal(Buffer.from(bytes).toString('base64'),
+    SEALED_LABEL);
+  log.debug("Leaving reportSealBytes(). " + (sealed ? 'sealed' : 'refused'));
+  return sealed ? Buffer.from(String(sealed), 'utf8') : null;
+}
+
+// The report's bytes from a stored row: opened when sealed; null when the
+// envelope will not open under the keys this process holds.
+function reportOpenBytes(stored: any): Buffer | null {
+  log.debug("Entering reportOpenBytes().");
+  const raw = Buffer.from(stored);
+  const head = raw.subarray(0, SEALED_PREFIX.length).toString('utf8');
+  if (head !== SEALED_PREFIX) {
+    // A row written before #1033: in the clear until its retention ends.
+    log.debug("Leaving reportOpenBytes(). Not sealed.");
+    return raw;
+  }
+  const keystore = require('../common/keystore');
+  const opened = keystore.open(raw.toString('utf8'), SEALED_LABEL);
+  if (opened === null || opened === undefined) {
+    log.error(errorCodes.tag('STS-REPORT-0043') +
+      'report: a stored report would not open under the keys this ' +
+      'process holds; it is answered as gone.');
+    log.debug("Leaving reportOpenBytes(). Would not open.");
+    return null;
+  }
+  log.debug("Leaving reportOpenBytes(). Opened.");
+  return Buffer.from(String(opened), 'base64');
+}
+
 function reportPutArtifact(jobId: string, bytes: Buffer, sha256: string,
                            mediaType: string): Promise<void> {
   log.debug("Entering reportPutArtifact().");
@@ -194,6 +246,18 @@ function reportPutArtifact(jobId: string, bytes: Buffer, sha256: string,
   };
   let out: Promise<void>;
   if (driver) {
+    const sealed = reportSealBytes(bytes);
+    if (!sealed) {
+      log.error(errorCodes.tag('STS-REPORT-0042') +
+        'report: a finished report could not be sealed (no key-encryption ' +
+        'key); it is not written in the clear.');
+      const refused: any = new Error('The report could not be stored ' +
+        'encrypted, so it was not stored.');
+      refused.code = 'STS-REPORT-0042';
+      log.debug("Leaving reportPutArtifact(). Not sealed.");
+      return Promise.reject(refused);
+    }
+    row.bytes = sealed;
     out = Promise.resolve(driver.putReportArtifact(row)).then(function ():
         void {
       log.debug("Leaving reportPutArtifact(). Stored.");
@@ -232,8 +296,12 @@ function reportGetArtifact(jobId: string): Promise<any> {
     if (!found) {
       return null;
     }
+    const opened = reportOpenBytes(found.bytes);
+    if (!opened) {
+      return null;
+    }
     return {
-      bytes: Buffer.from(found.bytes),
+      bytes: opened,
       sha256: found.sha256,
       mediaType: found.mediaType,
       createdAt: Number(found.createdAt)
