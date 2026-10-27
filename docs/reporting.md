@@ -113,6 +113,15 @@ has no stored value, the query no longer validates, or the job could not
 be queued. A schedule that is saved with the Enabled box clear is kept
 and never runs.
 
+**The Definitions and Jobs lists are paged** as the console pages its
+tables: first, previous, a window of page numbers, next and last, a line
+saying page x of y and rows a–b of n, and a rows-per-page choice (25, 50,
+100 or 200), carried in the page's address as `?page=&per=` so a page can
+be linked to. `GET /report-api/definitions` and `GET /report-api/jobs`
+take `page` and `per` (50 unless given, at most 200) and answer `page`,
+`pages`, `per` and `total` beside the rows; the jobs list still answers a
+cursor walk with `after` and `limit`.
+
 **`GET /report-api/schedules`** lists every definition that carries a
 schedule, each with `nextRunAt`, `lastSlotAt`, its last three skip notes
 and its most recent scheduled jobs (at most five, with `jobCount` for the

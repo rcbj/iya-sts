@@ -1122,8 +1122,30 @@ async function reportAcceptQuery(req: any, res: any, who: any,
   log.debug("Leaving reportAcceptQuery(). Queued.");
 }
 
-function reportServeDefinitions(res: any, who: any): void {
-  log.debug("Entering reportServeDefinitions().");
+// NUMBERED PAGES ON THE TWO LISTS (#997), the console's pattern: `page` and
+// `per` (at most 200, 50 unless asked) in the query, and `page`, `pages`,
+// `per` and `total` beside the rows, so the application draws the pager
+// the console draws. The jobs list keeps its cursor (`after`, `limit`) for
+// a caller that pages that way.
+const LIST_PER = 50;
+const LIST_PER_MAX = 200;
+
+function reportPaging(query: any, rowCount: number): any {
+  log.debug("Entering reportPaging().");
+  const q = query || {};
+  const asked = Number(q.per !== undefined && q.per !== '' ? q.per :
+    q.limit);
+  const per = Math.min(LIST_PER_MAX, Math.max(1,
+    Math.floor(asked > 0 ? asked : LIST_PER)));
+  const pages = Math.max(1, Math.ceil(rowCount / per));
+  const page = Math.min(pages, Math.max(1, Math.floor(Number(q.page) || 1)));
+  log.debug("Leaving reportPaging().");
+  return { page: page, pages: pages, per: per, total: rowCount,
+           from: (page - 1) * per, to: page * per };
+}
+
+function reportDefinitionsView(who: any, query: any): any {
+  log.debug("Entering reportDefinitionsView().");
   const rows = stores.listDefinitions().filter(function (row: any):
       boolean {
     return rights.canSee(who.subject, who.scope, row);
@@ -1131,11 +1153,23 @@ function reportServeDefinitions(res: any, who: any): void {
   rows.sort(function (left: any, right: any): number {
     return String(left.name).localeCompare(String(right.name));
   });
-  reportJson(res, 200, {
-    definitions: rows.map(function (row: any): any {
+  const pg = reportPaging(query, rows.length);
+  const view = {
+    definitions: rows.slice(pg.from, pg.to).map(function (row: any): any {
       return reportDefinitionView(who, row);
-    })
-  });
+    }),
+    page: pg.page,
+    pages: pg.pages,
+    per: pg.per,
+    total: pg.total
+  };
+  log.debug("Leaving reportDefinitionsView().");
+  return view;
+}
+
+function reportServeDefinitions(req: any, res: any, who: any): void {
+  log.debug("Entering reportServeDefinitions().");
+  reportJson(res, 200, reportDefinitionsView(who, (req && req.query) || {}));
   log.debug("Leaving reportServeDefinitions().");
 }
 
@@ -1263,33 +1297,58 @@ async function reportRunSaved(req: any, res: any, who: any,
   log.debug("Leaving reportRunSaved().");
 }
 
-function reportServeJobs(req: any, res: any, who: any): void {
-  log.debug("Entering reportServeJobs().");
+function reportJobsView(who: any, query: any): any {
+  log.debug("Entering reportJobsView().");
+  const q = query || {};
   const rows = stores.listJobs().filter(function (job: any): boolean {
     return reportJobVisible(who, job);
   });
   rows.sort(function (left: any, right: any): number {
     return Number(right.submittedAt) - Number(left.submittedAt);
   });
-  const after = req.query && typeof req.query.after === 'string' ?
-    req.query.after : '';
-  let start = 0;
+  const after = typeof q.after === 'string' ? q.after : '';
   if (after) {
+    // THE CURSOR, kept for a caller that pages by id (#956's shape).
+    let start = 0;
     for (let i = 0; i < rows.length; i++) {
       if (rows[i].id === after) {
         start = i + 1;
       }
     }
+    const limit = reportPageLimit({ query: q });
+    const slice = rows.slice(start, start + limit);
+    const more = start + slice.length < rows.length;
+    log.debug("Leaving reportJobsView(). By cursor.");
+    return {
+      jobs: slice.map(function (job: any): any {
+        return jobs.jobView(job, false);
+      }),
+      next: more && slice.length ? slice[slice.length - 1].id : null,
+      total: rows.length
+    };
   }
-  const limit = reportPageLimit(req);
-  const page = rows.slice(start, start + limit);
-  const more = start + page.length < rows.length;
-  reportJson(res, 200, {
-    jobs: page.map(function (job: any): any {
+  const pg = reportPaging(q, rows.length);
+  const slice = rows.slice(pg.from, pg.to);
+  const view = {
+    jobs: slice.map(function (job: any): any {
       return jobs.jobView(job, false);
     }),
-    next: more && page.length ? page[page.length - 1].id : null
-  });
+    // `next` is kept for a caller that mixes the two: the last id of this
+    // page, or null on the last page.
+    next: pg.page < pg.pages && slice.length ? slice[slice.length - 1].id :
+      null,
+    page: pg.page,
+    pages: pg.pages,
+    per: pg.per,
+    total: pg.total
+  };
+  log.debug("Leaving reportJobsView().");
+  return view;
+}
+
+function reportServeJobs(req: any, res: any, who: any): void {
+  log.debug("Entering reportServeJobs().");
+  reportJson(res, 200, reportJobsView(who, (req && req.query) || {}));
   log.debug("Leaving reportServeJobs().");
 }
 
@@ -1403,7 +1462,7 @@ async function reportRoute(req: any, res: any, who: any): Promise<void> {
   } else if (a === 'queries' && !b && method === 'POST') {
     await reportAcceptQuery(req, res, who, false, null);
   } else if (a === 'definitions' && !b && method === 'GET') {
-    reportServeDefinitions(res, who);
+    reportServeDefinitions(req, res, who);
   } else if (a === 'definitions' && !b && method === 'POST') {
     reportCreateDefinition(req, res, who, '');
   } else if (a === 'definitions' && b && c === 'share' &&
@@ -1600,5 +1659,7 @@ export = {
   realmsView: reportRealmsView,
   ownerName: reportOwnerName,
   schedulesView: reportSchedulesView,
+  definitionsView: reportDefinitionsView,
+  jobsView: reportJobsView,
   ReportApi: ReportApi
 };

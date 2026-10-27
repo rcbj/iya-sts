@@ -196,6 +196,20 @@ rcbj, 2026-10-26, after seeing #986's page. Four things:
   Not held in process: the browser's Add/Remove and search, and a notice
   sent to a real transport.
 
+## The two lists are paged (#997)
+
+`reportPaging()` turns `page` and `per` (50 unless asked, at most 200)
+into a slice, and `reportDefinitionsView()` and `reportJobsView()` answer
+`page`, `pages`, `per` and `total` beside their rows; the jobs view keeps
+the cursor walk (`after`, `limit`) and answers it with no page number.
+The page draws `pagerHtml()` above and below each table — the console's
+`pageNavPair()` and `perPageForm()` as one line: first/previous, a window
+of seven numbers with the current marked, next/last, the where line, and a
+rows-per-page select — every page a link under the list's own path with
+`?page=&per=`, so the back button and a shared address work; the select
+moves to page one through the location (`onChange()`, `data-pager-path`).
+`tests/report_query.js` holds both views' paging and the pager's markup.
+
 ## The document
 
 A query is a JSON document: `source`, `select`, `where`, `orderBy`,

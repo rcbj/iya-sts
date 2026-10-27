@@ -786,6 +786,34 @@ async function schedules(t) {
       t.equal(api.schedulesView({ subject: 'urn:uuid:admin',
         scope: 'report:admin' }, { per: 1000 }).per, 100,
         'per is capped at a hundred');
+
+      // The two lists in numbered pages (#997): three definitions, one job.
+      const admin = { subject: 'urn:uuid:admin', scope: 'report:admin' };
+      const allDefs = api.definitionsView(admin, {});
+      t.equal(allDefs.total, 3, 'every definition is counted');
+      t.equal(allDefs.per === 50 && allDefs.page === 1 &&
+        allDefs.pages === 1, true, 'fifty a page unless asked');
+      const defPage = api.definitionsView(admin, { per: 1, page: 2 });
+      t.equal(defPage.pages === 3 && defPage.definitions.length === 1 &&
+        defPage.page === 2, true, 'a page of one, the second');
+      t.equal(defPage.definitions[0].name, 'theirs',
+        'in name order (no schedule, theirs, who)');
+      t.equal(api.definitionsView(admin, { per: 1, page: 9 }).page, 3,
+        'a page past the end is the last');
+      t.equal(api.definitionsView(admin, { per: 999 }).per, 200,
+        'per is capped at two hundred');
+      const own = api.definitionsView({ subject: 'urn:uuid:test',
+        scope: 'report:use' }, {});
+      t.equal(own.total, 2, 'report:use counts only what it may see');
+      const jobPage = api.jobsView(admin, { per: 1 });
+      t.equal(jobPage.total === 1 && jobPage.pages === 1 &&
+        jobPage.jobs.length === 1 && jobPage.next === null, true,
+        'the jobs list pages by number too');
+      const cursor = api.jobsView(admin, { after: jobPage.jobs[0].id,
+        limit: 5 });
+      t.equal(cursor.jobs.length === 0 && cursor.next === null &&
+        cursor.page === undefined, true,
+        'a cursor walk still works and carries no page number');
       t.equal(jobs.jobView(queued[0], false).queuedBecause, 'schedule',
         'and its view carries the reason');
       const held = stores.getDefinition(saved.definition.id);
@@ -1721,6 +1749,35 @@ function groups(t) {
   t.check(idle.indexOf('No run is due') >= 0 &&
     idle.indexOf('did not happen') < 0,
     'no schedule says so and lists nothing');
+
+  // The pager, the console's shape: links around a window of numbers,
+  // the ends greyed at the ends, the where line, the rows-per-page choice.
+  const middle = ReportRuntime.pagerHtml(tr, '/report/jobs',
+    { page: 5, pages: 12, per: 25, total: 290 });
+  t.check(middle.indexOf('href="/report/jobs?page=1&amp;per=25"') >= 0 &&
+    middle.indexOf('href="/report/jobs?page=4&amp;per=25"') >= 0 &&
+    middle.indexOf('href="/report/jobs?page=6&amp;per=25"') >= 0 &&
+    middle.indexOf('href="/report/jobs?page=12&amp;per=25"') >= 0,
+    'first, previous, next and last link to their pages', middle);
+  t.check(middle.indexOf('<span class="here">5</span>') >= 0 &&
+    middle.indexOf('>2</a>') >= 0 && middle.indexOf('>8</a>') >= 0 &&
+    middle.indexOf('>9</a>') < 0,
+    'a window of seven numbers around the current page');
+  t.check(middle.indexOf('page 5 of 12') >= 0 &&
+    middle.indexOf('rows 101–125 of 290') >= 0,
+    'the where line names the page and the rows', middle);
+  t.check(middle.indexOf('data-pager-path="/report/jobs"') >= 0 &&
+    middle.indexOf('<option value="25" selected>') >= 0,
+    'the rows-per-page select carries the path and the size');
+  const firstPage = ReportRuntime.pagerHtml(tr, '/report/definitions',
+    { page: 1, pages: 2, per: 50, total: 60 });
+  t.check(firstPage.indexOf('<span class="off">« first</span>') >= 0 &&
+    firstPage.indexOf('href="/report/definitions?page=2&amp;per=50"') >= 0,
+    'on the first page first and previous are greyed');
+  const only = ReportRuntime.pagerHtml(tr, '/report/jobs',
+    { page: 1, pages: 1, per: 50, total: 3 });
+  t.check(only.indexOf('<a ') < 0 && only.indexOf('rows 1–3 of 3') >= 0,
+    'one page draws no links, only the where line and the size');
 
   // The status bubble: the console's flash, ok or err, with a dismiss.
   const okBubble = ReportRuntime.flashHtml(tr, 'ok', 'Saved.');

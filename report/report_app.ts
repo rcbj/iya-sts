@@ -148,6 +148,20 @@ const REPORT_STYLE = [
   '.filterrow .addfilter { border: 1px solid #c9cad6; border-radius: 6px;',
   '  padding: .1rem .55rem; font-weight: 700; line-height: 1.4; }',
   '.filterrow .addfilter:hover { background: #e7e9f4; }',
+  // The pager (#997), the console's: links either side of a window of
+  // numbers, the current page marked, the ends greyed when there is no
+  // further page, and a rows-per-page choice on the same line.
+  '.pager { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center;',
+  '  margin: .5rem 0; font-size: .9em; color: #5b6070; }',
+  '.pager a { color: #3a2e96; text-decoration: none; padding: .1rem .35rem;',
+  '  border-radius: 4px; }',
+  '.pager a:hover { background: #e7e9f4; }',
+  '.pager .here { font-weight: 700; color: #12107c; padding: .1rem .35rem; }',
+  '.pager .off { color: #a0a3b1; padding: .1rem .35rem; }',
+  '.pager .where { margin-left: .5rem; }',
+  '.pager .perpage { margin-left: auto; display: flex; gap: .35rem;',
+  '  align-items: center; }',
+  '.pager .perpage select { font: inherit; }',
   '.table { width: 100%; border-collapse: collapse; }',
   '.table th, .table td { text-align: left; padding: .35rem .5rem;',
   '  border-bottom: 1px solid #d5d5dd; vertical-align: top; }',
