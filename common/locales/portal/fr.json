@@ -551,5 +551,6 @@
   "accounts.kept": "Le compte que cet onglet quitte reste connecté : vous pouvez y revenir d’ici.",
   "accounts.unsaved": "Cette page contient des modifications non enregistrées. Changer de compte quand même ? Elles seront perdues.",
   "announcement.heading": "Annonce",
-  "announcement.close": "Fermer"
+  "announcement.close": "Fermer",
+  "keys.possiblyReplaced": "Une autre clé d’accès enregistrée le {day} sous le même compte, sur le même modèle d’authentificateur, a peut-être remplacé celle-ci sur cet authentificateur. Si cette clé d’accès ne fonctionne plus, supprimez-la."
 }

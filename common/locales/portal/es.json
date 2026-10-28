@@ -551,5 +551,6 @@
   "accounts.kept": "La cuenta que deja esta pestaña conserva la sesión iniciada, así que puede volver a ella desde aquí.",
   "accounts.unsaved": "Esta página tiene cambios sin guardar. ¿Cambiar de cuenta de todos modos? Se perderán.",
   "announcement.heading": "Anuncio",
-  "announcement.close": "Cerrar"
+  "announcement.close": "Cerrar",
+  "keys.possiblyReplaced": "Otra llave de acceso registrada el {day} con la misma cuenta en el mismo modelo de autenticador puede haber reemplazado a esta en ese autenticador. Si esta llave de acceso ya no funciona, quítela."
 }

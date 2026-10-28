@@ -6,35 +6,43 @@
 // File: tests/post_login.js
 //
 // ===========================================================================
-// POST-LOGIN ACTIVITIES: THE POST-QUANTUM PASSKEY MIGRATION (#1096).
+// POST-LOGIN ACTIVITIES: THE POST-QUANTUM PASSKEY MIGRATION (#1096, #1100-
+// #1105).
 //
 // rcbj: a "post login activity", targeted at groups, configurable and
-// enabled per realm; the
-// first one asks a person holding a classical passkey to register a
-// post-quantum one, skippable for a number of days, with a grace period after
-// which the sign-in is held. In a CHILD PROCESS serving the stack on a
-// loopback port (`passkey_dual_lane.js`'s harness), with REAL ceremonies from
-// a software authenticator over `webauthn_attestation_kit.js`'s ML-DSA keys:
+// enabled per realm; the first one asks a person holding a classical
+// passkey to register a post-quantum one, skippable for a number of days,
+// with a grace period after which the sign-in is held. In a CHILD PROCESS
+// serving the stack on a loopback port (`passkey_dual_lane.js`'s harness),
+// with REAL ceremonies from a software authenticator over
+// `webauthn_attestation_kit.js`'s ES256 and ML-DSA keys:
 //
-//   A. The policy: off by default (nobody is due anything); a bad profile
-//      name, a missing field and a named profile with no group are refused
-//      under STS-AUTHN-0470 / 0471.
-//   B. On: a person holding a classical PRIMARY passkey is due one in
-//      `primary`, a person holding a classical second-factor passkey in
-//      `mfa`; a person with no passkey only as `noPasskey` says.
-//   C. Exclusion by group: a named profile with `enabled` off at a lower
-//      precedence reaches its members, who are due nothing.
-//   D. Over HTTP: a password sign-in by the classical-passkey holder starts
-//      NO session and lands on `/authn/post-login`; another step's act on
-//      the step's id is refused (the way round); Skip starts the held
-//      session and puts it off, so the next sign-in is not asked.
-//   E. Register: the passkey page's registration offers ML-DSA only and no
-//      classical retry; an ML-DSA credential registers in the activity's
-//      role, the held session starts, and nothing is due afterwards.
-//   F. Required: past the allotted time Skip is refused (STS-AUTHN-0474);
-//      a door that cannot draw the step is refused (STS-AUTHN-0473); a
-//      keyed caller is never asked.
-//   G. A realm that cannot make an ML-DSA passkey asks nobody.
+//   A. The policy: off by default; a bad profile name, a missing field and
+//      a named profile with no group are refused under their codes.
+//   B. On: a classical PRIMARY passkey is due in `primary`, a classical
+//      second-factor one in `mfa`; a person with no passkey only as
+//      `noPasskey` says; one lane makes `automatic` an UPGRADE (#1100).
+//   C. Exclusion by group.
+//   D. Over HTTP: a password sign-in starts NO session and lands on
+//      `/authn/post-login`; another step's act on its id is refused; Skip
+//      starts the held session and puts it off.
+//   E. The UPGRADE (#1100): Register proves the classical passkey (an
+//      assertion naming only it), then registers ML-DSA only with it left out
+//      of the exclude list; the ML-DSA passkey REPLACES it in place — one
+//      row — and the held session starts. A classical retry is refused.
+//   F. ALONGSIDE in one lane (#1100): a second passkey, made on another
+//      authenticator (the classical one is excluded), and the page says so.
+//   G. Required: Skip refused (0474); a door that cannot ask refused (0473);
+//      a keyed caller never asked.
+//   H. A device that cannot make it (#1105): the browser's error goes back
+//      to the step's page with guidance, and an audit row with the platform.
+//   I. A post-quantum attestation required (#1102): an ML-DSA passkey whose
+//      attestation is not recorded post-quantum does not count.
+//   J. The classical fallback for a person with no passkey (#1103).
+//   K. A row a later registration may have replaced (#1101): marked, shown,
+//      not counted by the removal guard, cleared by a use.
+//   L. Two lanes per population (#1104).
+//   M. The portal's Upgrade is gone (#1100), and so is webauthn.pqcUpgrade.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -98,33 +106,56 @@ function childMain() {
     return { go: go, jar: jar };
   }
 
-  // A SOFTWARE AUTHENTICATOR: registration only, `passkey_dual_lane.js`'s.
+  // A SOFTWARE AUTHENTICATOR, `passkey_dual_lane.js`'s, with an AAGUID of
+  // its own so #1101's comparison has something to compare.
   const sha256 = function (buf) {
     return nodeCrypto.createHash('sha256').update(buf).digest();
   };
-  const makeAuthenticator = async function (alg, rpId, origin) {
+  const makeAuthenticator = async function (alg, rpId, origin, aaguid) {
     const cred = await kit.credential(alg);
     const id = cred.id.toString('base64url');
+    let signCount = 0;
+    let userHandle = '';
+    const clientData = function (type, challenge) {
+      return Buffer.from(JSON.stringify({ type: type, challenge: challenge,
+                                          origin: origin,
+                                          crossOrigin: false }), 'utf8');
+    };
     return {
       credentialId: id,
-      register: function (challenge) {
+      register: function (challenge, handle) {
+        userHandle = handle || '';
         const count = Buffer.alloc(4);
         const idLen = Buffer.alloc(2);
         idLen.writeUInt16BE(cred.id.length, 0);
         const data = Buffer.concat([sha256(Buffer.from(rpId, 'utf8')),
-          Buffer.from([0x45]), count, Buffer.alloc(16), idLen, cred.id,
-          kit.cbor(cred.cose)]);
+          Buffer.from([0x45]), count,
+          aaguid ? Buffer.from(aaguid, 'hex') : Buffer.alloc(16), idLen,
+          cred.id, kit.cbor(cred.cose)]);
         const attestationObject = kit.cbor(new Map([['fmt', 'none'],
           ['attStmt', new Map()], ['authData', data]]));
         return { id: id, rawId: id, type: 'public-key',
-                 authenticatorAttachment: 'platform',
+                 authenticatorAttachment: 'cross-platform',
                  clientExtensionResults: { credProps: { rk: true } },
                  response: {
                    attestationObject: attestationObject.toString('base64url'),
-                   clientDataJSON: Buffer.from(JSON.stringify({
-                     type: 'webauthn.create', challenge: challenge,
-                     origin: origin, crossOrigin: false }), 'utf8')
+                   clientDataJSON: clientData('webauthn.create', challenge)
                      .toString('base64url') } };
+      },
+      assert: function (challenge) {
+        signCount += 1;
+        const count = Buffer.alloc(4);
+        count.writeUInt32BE(signCount, 0);
+        const data = Buffer.concat([sha256(Buffer.from(rpId, 'utf8')),
+                                    Buffer.from([0x05]), count]);
+        const cdj = clientData('webauthn.get', challenge);
+        const signature = cred.sign(Buffer.concat([data, sha256(cdj)]));
+        return { id: id, rawId: id, type: 'public-key',
+                 response: {
+                   authenticatorData: data.toString('base64url'),
+                   clientDataJSON: cdj.toString('base64url'),
+                   signature: Buffer.from(signature).toString('base64url'),
+                   userHandle: userHandle || null } };
       }
     };
   };
@@ -141,6 +172,9 @@ function childMain() {
     const authn = require(ROOT + '/authn/authn');
     const policy = require(ROOT + '/common/post_login_policy');
     const postLogin = require(ROOT + '/common/post_login');
+    const passkeyPolicy = require(ROOT + '/common/passkey_policy');
+    const webauthnPolicy = require(ROOT + '/authn/webauthn_policy');
+    const accountKeys = require(ROOT + '/portal/account_keys');
     const authnScreen = require(ROOT + '/tests/tools/authn_screen');
 
     const server = http.createServer(app);
@@ -151,6 +185,7 @@ function childMain() {
     const REDIRECT = 'https://rp.pla.example/cb';
     const PASSWORD = 'correct-horse-battery-staple-pla-7!';
     const EC = { kty: 'EC', crv: 'P-256', x: 'AA', y: 'AA' };
+    const MODEL = '0102030405060708090a0b0c0d0e0f10';
     config.setOverride('oauth2.consentRequired', false);
     applications.createApplication({ identifier: 'pla-public',
       protocols: ['oauth2'],
@@ -158,15 +193,31 @@ function childMain() {
                 oauthRedirectUri: [REDIRECT],
                 oauthTokenEndpointAuthMethod: 'none',
                 oauthGrantType: ['authorization_code'] } });
-    ['pla-ann', 'pla-bob', 'pla-cat', 'pla-dan', 'pla-eve']
-      .forEach(function (name) {
-        ldap.createUser(name, { invent: false });
+    // pla-gus has no password: the passkeys are the only way in (K).
+    ['pla-ann', 'pla-bob', 'pla-cat', 'pla-dan', 'pla-eve', 'pla-fay',
+     'pla-gus', 'pla-hal', 'pla-ivy'].forEach(function (name) {
+      ldap.createUser(name, { invent: false });
+      if (name !== 'pla-gus') {
         credentials.setPassword(name, PASSWORD);
-      });
-    // ann, dan and eve sign in with a classical passkey; cat's is a second
-    // factor; bob holds none.
-    credentials.addKey('pla-ann', { credentialId: 'pla-ann-ec',
-                                    publicKeyJwk: EC }, 'primary');
+      }
+    });
+    // REAL classical passkeys where a ceremony will prove them; dan's,
+    // eve's and cat's are rows only.
+    const enrol = async function (name, role, authenticator) {
+      const begun = credentials.beginKeyEnrolment(name,
+        { role: role, kind: 'passkey', lane: 'classical' });
+      const done = await credentials.confirmKeyEnrolment(name,
+        begun.enrolmentId,
+        authenticator.register(begun.challenge, begun.userHandle),
+        { origin: ORIGIN, rpId: RPID });
+      return done;
+    };
+    const annOld = await makeAuthenticator(-7, RPID, ORIGIN, MODEL);
+    const fayOld = await makeAuthenticator(-7, RPID, ORIGIN, MODEL);
+    const gusOld = await makeAuthenticator(-7, RPID, ORIGIN, MODEL);
+    const annSeed = await enrol('pla-ann', 'primary', annOld);
+    const faySeed = await enrol('pla-fay', 'primary', fayOld);
+    const gusSeed = await enrol('pla-gus', 'primary', gusOld);
     credentials.addKey('pla-dan', { credentialId: 'pla-dan-ec',
                                     publicKeyJwk: EC }, 'primary');
     credentials.addKey('pla-eve', { credentialId: 'pla-eve-ec',
@@ -187,7 +238,7 @@ function childMain() {
     const rows = function (action, actor) {
       return audit.list().filter(function (row) {
         return row.action === action && row.actor === actor;
-      }).length;
+      });
     };
     const screenFor = async function () {
       const b = browser(port);
@@ -252,15 +303,18 @@ function childMain() {
                                     noPasskey: 'invite',
                                     noPasskeyRole: 'mfa' }));
     const bobInvited = postLogin.dueFor('pla-bob');
-    note(on.ok && ann && ann.role === 'primary' &&
-         ann.reason === 'classical' && ann.required === false &&
+    note(annSeed.ok && faySeed.ok && gusSeed.ok && on.ok && ann &&
+         ann.role === 'primary' && ann.reason === 'classical' &&
+         ann.required === false && ann.method === 'upgrade' &&
          cat && cat.role === 'mfa' && bobLeft === null && bobInvited &&
          bobInvited.reason === 'none' && bobInvited.role === 'mfa' &&
+         bobInvited.method === 'register' &&
          bobInvited.enforceable === false,
          'B. on: classical primary and second-factor holders are due a ' +
-         'post-quantum passkey in that role; one with none only as ' +
-         'noPasskey says', JSON.stringify([on.errors, ann, cat, bobLeft,
-                                           bobInvited]));
+         'post-quantum passkey in that role, by an upgrade in one lane; one ' +
+         'with none only as noPasskey says',
+         JSON.stringify([annSeed.errors, on.errors, ann, cat, bobLeft,
+                         bobInvited]));
     policy.save('default', fields({ enabled: true, snoozeDays: 3 }));
 
     // C. Exclusion by group.
@@ -274,32 +328,32 @@ function childMain() {
 
     // D. Over HTTP: held, a way round refused, Skip.
     let s = await signIn('pla-ann');
-    const startsBefore = rows('session.start', 'pla-ann');
+    const startsBefore = rows('session.start', 'pla-ann').length;
     note(s.answer.next === 'mfa' && s.answer.step === 'post-login' &&
          /\/authn\/post-login\?mfa=/.test(s.answer.location) &&
-         rows('session.start', 'pla-ann') === startsBefore &&
-         rows('authn.post-login.asked', 'pla-ann') === 1,
+         rows('session.start', 'pla-ann').length === startsBefore &&
+         rows('authn.post-login.asked', 'pla-ann').length === 1,
          'D1. the password sign-in starts no session and lands on the ' +
          'post-login step', JSON.stringify(s.answer.json));
     let opened = await openStep(s.b, s.answer);
     const v = (opened.view || {}).postLogin || {};
     note(opened.status === 200 && v.role === 'primary' &&
          v.reason === 'classical' && v.canSkip === true &&
-         v.snoozeDays === 3,
-         'D2. its view names the role, the reason and Skip',
+         v.snoozeDays === 3 && v.method === 'upgrade',
+         'D2. its view names the role, the reason, the method and Skip',
          JSON.stringify(opened.view));
     const roundAbout = await stepAct(s.b, opened, 'totp',
                                      { code: '000000' });
     note(roundAbout.apiStatus === 400 &&
-         rows('session.start', 'pla-ann') === startsBefore,
+         rows('session.start', 'pla-ann').length === startsBefore,
          'D3. another step\'s act on the post-login step is refused and ' +
          'starts nothing', roundAbout.apiStatus + ' ' + roundAbout.next);
     const skipped = await stepAct(s.b, opened, 'post-login/skip');
     const snoozed = postLogin.stateOf('pla-ann');
     note(startsSession(skipped) &&
-         rows('session.start', 'pla-ann') === startsBefore + 1 &&
+         rows('session.start', 'pla-ann').length === startsBefore + 1 &&
          snoozed.snoozedUntil > Date.now() + 2 * DAY &&
-         rows('authn.post-login.skipped', 'pla-ann') === 1,
+         rows('authn.post-login.skipped', 'pla-ann').length === 1,
          'D4. Skip starts the held session and puts it off for snoozeDays',
          JSON.stringify([skipped.json, snoozed]));
     s = await signIn('pla-ann');
@@ -307,58 +361,97 @@ function childMain() {
          'D5. while it is put off, the next sign-in is not asked',
          JSON.stringify(s.answer.json));
 
-    // E. Register.
+    // E. The upgrade (#1100).
     postLogin.forget('pla-ann');
     s = await signIn('pla-ann');
     opened = await openStep(s.b, s.answer);
-    const toPasskey = await stepAct(s.b, opened, 'post-login/register');
-    const page = toPasskey.next === 'mfa'
-      ? await openStep(s.b, toPasskey) : {};
-    const w = (page.view || {}).webauthn || {};
-    note(toPasskey.step === 'webauthn' && w.mode === 'create' &&
-         (w.algorithms || []).length > 0 &&
-         w.algorithms.every(function (one) {
-           return /^ML-DSA-/.test(one);
-         }) && w.fallback && w.fallback.classical === false &&
-         w.postLogin && w.postLogin.role === 'primary',
-         'E1. Register draws a registration offering ML-DSA only, with no ' +
-         'classical retry', JSON.stringify(w).slice(0, 400));
-    const retry = await stepAct(s.b, page, 'webauthn/options',
+    const toProof = await stepAct(s.b, opened, 'post-login/register');
+    const proofPage = toProof.next === 'mfa'
+      ? await openStep(s.b, toProof) : {};
+    const pw = (proofPage.view || {}).webauthn || {};
+    const retry = await stepAct(s.b, proofPage, 'webauthn/options',
                                 { algorithms: 'classical' });
-    note(retry.apiStatus === 400,
-         'E2. a classical retry is refused on a post-login step',
-         retry.apiStatus + ' ' + JSON.stringify(retry.errors));
-    const pq = await makeAuthenticator(-49, RPID, ORIGIN);
-    const made = await authnScreen.passkeyStep({ port: port, jar: s.b.jar,
-      opened: page }, function (armed) {
-      return pq.register(armed.challenge);
+    const proved = await authnScreen.passkeyStep({ port: port, jar: s.b.jar,
+      opened: proofPage }, function (armed) {
+      return annOld.assert(armed.challenge);
     });
-    const keys = credentials.keysOf('pla-ann');
-    const pqKey = keys.filter(function (one) {
-      return credentials.keyAlgorithm(one).postQuantum;
-    })[0];
-    note(startsSession(made.answer) && pqKey && pqKey.role === 'primary' &&
-         keys.length === 2 && postLogin.dueFor('pla-ann') === null &&
-         rows('authn.post-login.done', 'pla-ann') === 1,
-         'E3. an ML-DSA passkey registers as primary beside the classical ' +
-         'one, the held session starts, and nothing is due afterwards',
-         JSON.stringify([made.armed.json && made.armed.json.options &&
-                         made.armed.json.options.algorithms,
-                         made.answer.json, keys.map(function (one) {
+    note(toProof.step === 'webauthn' && pw.mode === 'get' &&
+         pw.postLogin && pw.postLogin.upgrade &&
+         pw.postLogin.upgrade.phase === 'proof' &&
+         proved.armed.json && proved.armed.json.allow &&
+         proved.armed.json.allow.join(',') === annOld.credentialId &&
+         retry.apiStatus === 400 &&
+         proved.answer.next === 'mfa' && proved.answer.step === 'webauthn',
+         'E1. Register asks first for the classical passkey alone (the ' +
+         'proof), and a classical retry is refused',
+         JSON.stringify([toProof.json, pw.mode, proved.armed.json &&
+                         proved.armed.json.allow, retry.apiStatus,
+                         proved.answer.json]));
+    const createPage = await openStep(s.b, proved.answer);
+    const cw = (createPage.view || {}).webauthn || {};
+    const pq = await makeAuthenticator(-49, RPID, ORIGIN, MODEL);
+    const made = await authnScreen.passkeyStep({ port: port, jar: s.b.jar,
+      opened: createPage }, function (armed) {
+      return pq.register(armed.challenge, armed.user && armed.user.id);
+    });
+    const annKeys = credentials.keysOf('pla-ann');
+    note(cw.mode === 'create' && (cw.algorithms || []).length > 0 &&
+         cw.algorithms.every(function (one) {
+           return /^ML-DSA-/.test(one);
+         }) && made.armed.json &&
+         (made.armed.json.exclude || []).indexOf(annOld.credentialId) < 0 &&
+         startsSession(made.answer) && annKeys.length === 1 &&
+         credentials.keyAlgorithm(annKeys[0]).postQuantum &&
+         annKeys[0].role === 'primary' &&
+         annKeys[0].previousCredentialId === annOld.credentialId &&
+         postLogin.dueFor('pla-ann') === null &&
+         rows('authn.post-login.done', 'pla-ann').length === 1,
+         'E2. the registration is ML-DSA only with the classical passkey ' +
+         'left out of the exclude list; the ML-DSA passkey replaces it in ' +
+         'place (one row) and the held session starts',
+         JSON.stringify([cw.algorithms, made.armed.json &&
+                         made.armed.json.exclude, made.answer.json,
+                         annKeys.map(function (one) {
                            return [one.role,
-                                   credentials.keyAlgorithm(one).name];
+                                   credentials.keyAlgorithm(one).name,
+                                   one.previousCredentialId];
                          })]));
 
-    // F. Required.
+    // F. Alongside, in one lane: another authenticator.
     policy.save('default', fields({ enabled: true, snoozeDays: 3,
-                                    graceDays: 1 }));
+                                    method: 'alongside' }));
+    s = await signIn('pla-fay');
+    opened = await openStep(s.b, s.answer);
+    const fv = (opened.view || {}).postLogin || {};
+    const toCreate = await stepAct(s.b, opened, 'post-login/register');
+    const fayPage = toCreate.next === 'mfa'
+      ? await openStep(s.b, toCreate) : {};
+    const fayPq = await makeAuthenticator(-48, RPID, ORIGIN);
+    const fayMade = await authnScreen.passkeyStep({ port: port,
+      jar: s.b.jar, opened: fayPage }, function (armed) {
+      return fayPq.register(armed.challenge, armed.user && armed.user.id);
+    });
+    note(fv.method === 'alongside' && fv.separate === true &&
+         ((fayPage.view || {}).webauthn || {}).mode === 'create' &&
+         fayMade.armed.json &&
+         (fayMade.armed.json.exclude || []).indexOf(fayOld.credentialId) >=
+           0 && startsSession(fayMade.answer) &&
+         credentials.keysOf('pla-fay').length === 2,
+         'F. alongside in one lane: the page says another authenticator, ' +
+         'the classical passkey is excluded, and both passkeys are kept',
+         JSON.stringify([fv, fayMade.armed.json &&
+                         fayMade.armed.json.exclude, fayMade.answer.json]));
+
+    // G. Required.
+    policy.save('default', fields({ enabled: true, snoozeDays: 3,
+                                    graceDays: 1, method: 'alongside' }));
     const past = new postLogin.PostLogin(Object.assign(
       postLogin.PostLogin.defaultDeps(),
       { now: function () { return Date.now() - 2 * DAY; } }));
     past.noteSkipped('pla-dan', past.dueFor('pla-dan'));
     const dan = postLogin.dueFor('pla-dan');
     note(dan && dan.required === true,
-         'F1. past the allotted time the activity is required, whatever ' +
+         'G1. past the allotted time the activity is required, whatever ' +
          'was put off', JSON.stringify(dan));
     s = await signIn('pla-dan');
     opened = await openStep(s.b, s.answer);
@@ -366,25 +459,135 @@ function childMain() {
     note(opened.view && opened.view.postLogin &&
          opened.view.postLogin.canSkip === false &&
          noSkip.apiStatus === 400 && codeRecorded('STS-AUTHN-0474'),
-         'F2. Skip is not offered, and is refused (STS-AUTHN-0474)',
+         'G2. Skip is not offered, and is refused (STS-AUTHN-0474)',
          JSON.stringify([opened.view, noSkip.json]));
     const elsewhere = { request: { headers: {} },
                         credential: { kind: 'federation' } };
     const other = authn.startSession(fakeRes, 'pla-dan', ['fed'], '1',
                                      'a test', elsewhere);
     note(other === null && elsewhere.refusedWith === 'STS-AUTHN-0473',
-         'F3. a door that cannot draw the step is refused (STS-AUTHN-0473)',
+         'G3. a door that cannot draw the step is refused (STS-AUTHN-0473)',
          JSON.stringify(elsewhere.refusedWith || ''));
     const keyed = authn.startSession(fakeRes, 'pla-dan', ['pwd'], '1',
       'a test', { key: 'pla-key-' + Date.now(), credential: {} });
-    note(!!keyed, 'F4. a keyed caller is never asked');
+    note(!!keyed, 'G4. a keyed caller is never asked');
 
-    // G. No ML-DSA here.
-    config.setOverride('webauthn.enabled', false);
-    const off = postLogin.dueFor('pla-cat');
-    config.clearOverride('webauthn.enabled');
-    note(off === null,
-         'G. a realm that cannot make a passkey asks nobody for one');
+    // H. A device that cannot make it (#1105).
+    const toDanKey = await stepAct(s.b, opened, 'post-login/register');
+    const danPage = toDanKey.next === 'mfa'
+      ? await openStep(s.b, toDanKey) : {};
+    const failedAct = await stepAct(s.b, danPage, 'webauthn',
+      { credential: JSON.stringify({ error: 'NotSupportedError' }) });
+    const back = failedAct.next === 'mfa'
+      ? await openStep(s.b, failedAct) : {};
+    const unsupported = rows('authn.post-login.unsupported', 'pla-dan');
+    note(failedAct.step === 'post-login' && back.view &&
+         back.view.postLogin.failed === 'NotSupportedError' &&
+         unsupported.length === 1 &&
+         unsupported[0].detail.error === 'NotSupportedError',
+         'H. a ceremony the device did not complete goes back to the step ' +
+         'page, which names it and says what to do, and leaves an audit row',
+         JSON.stringify([failedAct.json, back.view && back.view.postLogin,
+                         unsupported.map(function (one) {
+                           return one.detail;
+                         })]));
+
+    // I. A post-quantum attestation required (#1102).
+    policy.save('default', fields({ enabled: true, snoozeDays: 3,
+                                    attestation: 'post-quantum' }));
+    postLogin.forget('pla-ann');
+    const annAgain = postLogin.dueFor('pla-ann');
+    note(annAgain && annAgain.reason === 'attestation' &&
+         annAgain.method === 'alongside',
+         'I. an ML-DSA passkey with no post-quantum attestation recorded ' +
+         'does not count where the profile asks for one; its holder is due ' +
+         'one beside it', JSON.stringify(annAgain));
+
+    // J. The classical fallback for a person with no passkey (#1103).
+    policy.save('default', fields({ enabled: true, snoozeDays: 3,
+                                    noPasskey: 'invite',
+                                    noPasskeyFallback: 'classical' }));
+    s = await signIn('pla-ivy');
+    opened = await openStep(s.b, s.answer);
+    const toIvy = await stepAct(s.b, opened, 'post-login/register');
+    const ivyPage = toIvy.next === 'mfa' ? await openStep(s.b, toIvy) : {};
+    const ivyFacts = (ivyPage.view || {}).webauthn || {};
+    const ivyRetry = await stepAct(s.b, ivyPage, 'webauthn/options',
+                                   { algorithms: 'classical' });
+    note(ivyFacts.fallback && ivyFacts.fallback.classical === true &&
+         ivyRetry.apiStatus === 200 && ivyRetry.json &&
+         ivyRetry.json.options &&
+         (ivyRetry.json.options.algorithms || []).every(function (one) {
+           return [-48, -49, -50].indexOf(Number(one)) < 0;
+         }),
+         'J. a person with no passkey is offered the classical retry where ' +
+         'the profile allows it, and the retry asks for no ML-DSA',
+         JSON.stringify([ivyFacts.fallback, ivyRetry.apiStatus,
+                         ivyRetry.json && ivyRetry.json.options &&
+                         ivyRetry.json.options.algorithms]));
+
+    // K. A row a later registration may have replaced (#1101).
+    const gusNew = await makeAuthenticator(-7, RPID, ORIGIN, MODEL);
+    const gusSecond = await enrol('pla-gus', 'primary', gusNew);
+    const marked = credentials.keysOf('pla-gus').filter(function (one) {
+      return one.credentialId === gusOld.credentialId;
+    })[0] || {};
+    const markRows = rows('webauthn.key.possibly-replaced', 'pla-gus');
+    const guarded = credentials.removeKey('pla-gus', gusNew.credentialId);
+    credentials.noteKeyUsed('pla-gus', gusOld.credentialId, 5);
+    const cleared = credentials.keysOf('pla-gus').filter(function (one) {
+      return one.credentialId === gusOld.credentialId;
+    })[0] || {};
+    const portalRow = new accountKeys.AccountKeys(
+      accountKeys.AccountKeys.defaultDeps()).keyRow(marked);
+    note(gusSecond.ok && marked.possiblyReplacedBy === gusNew.credentialId &&
+         markRows.length === 1 && portalRow.possiblyReplaced &&
+         !credentials.hasPassword('pla-gus') && !guarded.ok &&
+         errorCodes.codeOf(guarded) === 'STS-AUTHN-0070' &&
+         !cleared.possiblyReplacedBy,
+         'K. a key registered under the same handle and AAGUID marks the ' +
+         'older row, which the portal shows, the removal guard does not ' +
+         'count, and a use clears',
+         JSON.stringify([gusSecond.errors, marked.possiblyReplacedBy,
+                         markRows.length, guarded,
+                         cleared.possiblyReplacedBy]));
+
+    // L. Two lanes per population (#1104).
+    passkeyPolicy.select('pla-hal', '');
+    const laneOff = webauthnPolicy.alongsideClassical();
+    const both = passkeyPolicy.save('default', Object.assign({},
+      passkeyPolicy.DEFAULTS, { lanes: 'both' }));
+    passkeyPolicy.select('pla-hal', '');
+    const laneOn = webauthnPolicy.alongsideClassical();
+    const contradiction = passkeyPolicy.save('default', Object.assign({},
+      passkeyPolicy.DEFAULTS, { lanes: 'both',
+                                registrationMode: 'classical-only' }));
+    passkeyPolicy.reset('default');
+    note(laneOff === false && both.ok && laneOn === true &&
+         !contradiction.ok &&
+         errorCodes.codeOf(contradiction) === 'STS-AUTHN-0476',
+         'L. a profile\'s lanes: both turns two lanes on for its people ' +
+         'with the realm\'s setting off, and is refused beside ' +
+         'classical-only (STS-AUTHN-0476)',
+         JSON.stringify([laneOff, both.errors, laneOn,
+                         contradiction.errors]));
+
+    // M. The portal's Upgrade and its setting are gone.
+    const ops = new accountKeys.AccountKeys(
+      accountKeys.AccountKeys.defaultDeps()).accountOperations({
+        BASE: '/account-api', PORTAL: '/portal' });
+    let setting;
+    try {
+      setting = config.value('webauthn.pqcUpgrade');
+    } catch (e) {
+      // An unknown setting throws, which is what is being asserted.
+      setting = undefined;
+    }
+    note(!ops.some(function (op) {
+      return op.operationId === 'upgradeKey';
+    }) && setting === undefined,
+         'M. /account-api has no upgrade operation and webauthn.pqcUpgrade ' +
+         'is no setting', String(setting));
 
     policy.reset('pla-excluded');
     policy.reset('default');
@@ -406,7 +609,7 @@ function run(t) {
   delete env.CONFIG_FILE;
   const result = childProcess.spawnSync(process.execPath,
     ['-e', '(' + childMain.toString() + ')()'], {
-      cwd: ROOT, env: env, encoding: 'utf8', timeout: 180000,
+      cwd: ROOT, env: env, encoding: 'utf8', timeout: 240000,
       maxBuffer: 256 * 1024 * 1024 });
   let findings = null;
   try {
@@ -435,9 +638,10 @@ function run(t) {
 
 module.exports = {
   name: 'post_login',
-  describe: 'post-login activities (#1096): the post-quantum passkey ' +
-            'migration, targeted by group, skippable, then required — the ' +
-            'held session, Skip, an ML-DSA registration, and the doors that ' +
-            'cannot ask',
+  describe: 'post-login activities (#1096, #1100-#1105): the post-quantum ' +
+            'passkey migration — the held session, Skip, the upgrade in ' +
+            'place, alongside, required, a device that cannot, the ' +
+            'attestation rule, the classical fallback, a possibly replaced ' +
+            'row, two lanes per population, and the portal Upgrade gone',
   run: run
 };

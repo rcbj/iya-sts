@@ -582,9 +582,7 @@ function childMain() {
     const proveUpgrade = await credentials.proveKeyUpgrade('pkl-upgrade',
       beginUpgrade.upgradeId, upOld.assert(beginUpgrade.challenge),
       { origin: ORIGIN, rpId: RPID });
-    const proofView = view('pkl-upgrade').upgrade || {};
-    const proofHtml = keysPages.upgradeBlock(proofView,
-      { html: function (key) { return '[' + key + ']'; } });
+    const proofView = view('pkl-upgrade');
     const upNew = await makeAuthenticator(-49, RPID, ORIGIN);
     const sideDone = await credentials.confirmKeyUpgrade('pkl-upgrade',
       beginUpgrade.upgradeId,
@@ -601,20 +599,23 @@ function childMain() {
     const upgradeOps = new accountKeys.AccountKeys(
       accountKeys.AccountKeys.defaultDeps()).accountOperations({
         BASE: '/account-api', PORTAL: '/portal' });
+    // #1100: the portal has no upgrade any more — no operation, no block,
+    // and an upgrade in progress is not drawn as an enrolment either.
     note(upSeed.done.ok && beginUpgrade.ok && proveUpgrade.ok &&
-         proofView.pending && proofView.pending.phase === 'registration' &&
-         proofView.pending.options.algorithms.join(',') === '-50,-49,-48' &&
-         proofHtml.indexOf('data-mode="create"') >= 0 &&
-         upgradeOps.some(function (op) {
-           return op.operationId === 'upgradeKey' &&
+         proofView.upgrade === undefined && !proofView.enrol.pending &&
+         webauthnPolicy.upgradeCreationOptions(RPID, 'passkey').algorithms
+           .join(',') === '-50,-49,-48' &&
+         !upgradeOps.some(function (op) {
+           return op.operationId === 'upgradeKey' ||
                   op.path === '/account-api/keys/upgrade';
          }) &&
          sideDone.ok && sideDone.mode === 'alongside' &&
          sideRows.length === 2 && oldSide.upgradedTo === upNew.credentialId &&
          sideHistory.previousAlgorithm === 'ES256' &&
          sideHistory.mode === 'alongside',
-         '13a. the portal exposes an ML-DSA-only upgrade after proof, and ' +
-         'the alongside write records both keys and upgrade history',
+         '13a. the upgrade is ML-DSA only after proof, the portal exposes ' +
+         'none of it (#1100), and the alongside write records both keys and ' +
+         'upgrade history',
          JSON.stringify([beginUpgrade, proveUpgrade, sideDone, sideHistory]));
     const failOld = await makeAuthenticator(-7, RPID, ORIGIN);
     const failSeed = await enrol('pkl-failure',

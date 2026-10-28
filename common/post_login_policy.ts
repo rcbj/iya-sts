@@ -32,6 +32,20 @@
 //                  (skippable until the grace period ends).
 //   noPasskeyRole  The role such a person registers it in: `primary` (a
 //                  passwordless sign-in) or `mfa` (a second factor).
+//   method         HOW a classical passkey is migrated (#1100): `upgrade`
+//                  (prove the classical passkey, then an ML-DSA one
+//                  REPLACES it in place on the same authenticator — one
+//                  row, nothing left behind), `alongside` (an ML-DSA
+//                  passkey beside it: in the post-quantum lane where the
+//                  realm has two, on another authenticator where it has
+//                  one), or `automatic` (the realm's lanes decide: alongside
+//                  with two, upgrade with one).
+//   attestation    WHAT COUNTS AS MIGRATED (#1102): `any` (the passkey's
+//                  key algorithm is ML-DSA) or `post-quantum` (and its
+//                  recorded attestation is post-quantum too).
+//   noPasskeyFallback  For a person with no passkey (#1103): `none`
+//                  (ML-DSA only) or `classical` (#944's classical retry is
+//                  offered where the device cannot make ML-DSA).
 //
 // ---------------------------------------------------------------------------
 // TARGETING IS BY GROUP, AND EXCLUSION IS A PROFILE.
@@ -105,6 +119,9 @@ interface PostLoginProfile {
   graceDays: number;
   noPasskey: string;
   noPasskeyRole: string;
+  method: string;
+  attestation: string;
+  noPasskeyFallback: string;
   [field: string]: any;
 }
 
@@ -159,6 +176,17 @@ const SENTENCES: Readonly<Record<string, string>> = Object.freeze({
   pqcMigration: 'a person holding a classical passkey is asked, after ' +
     'signing in, to register a post-quantum (ML-DSA) passkey in the same ' +
     'role',
+  methodUpgrade: 'the ML-DSA passkey replaces the classical one in place, ' +
+    'after the person uses the classical one once',
+  methodAlongside: 'the ML-DSA passkey is added beside the classical one',
+  methodAutomatic: 'the ML-DSA passkey is added beside the classical one ' +
+    'where two lanes are offered, and replaces it in place where one is',
+  attestationAny: 'a passkey counts as post-quantum when its key ' +
+    'algorithm is ML-DSA',
+  attestationPq: 'a passkey counts as post-quantum only when its key ' +
+    'algorithm and its recorded attestation are post-quantum',
+  fallbackClassical: 'a person with no passkey whose device cannot make ' +
+    'ML-DSA is offered a classical passkey instead',
   snooze: 'Skip puts it off for {{days}} day(s)',
   grace: 'after {{days}} day(s) from the first invitation Skip is gone and ' +
     'the sign-in is held until it is done',
@@ -226,7 +254,33 @@ const FIELDS: PolicyField[] = [
   { key: 'noPasskeyRole', attribute: 'stsPostLoginNoPasskeyRole',
     type: 'enum', dflt: 'primary', values: ['primary', 'mfa'],
     label: 'Registered by a person with no passkey as',
-    what: 'primary: a passwordless sign-in. mfa: a second factor.' }
+    what: 'primary: a passwordless sign-in. mfa: a second factor.' },
+  { key: 'method', attribute: 'stsPostLoginMethod', type: 'enum',
+    dflt: 'automatic', values: ['automatic', 'upgrade', 'alongside'],
+    label: 'How a classical passkey is migrated',
+    what: 'upgrade: the person uses their classical passkey once, then an ' +
+          'ML-DSA passkey replaces it in place on the same authenticator — ' +
+          'one passkey, nothing left behind. alongside: an ML-DSA passkey ' +
+          'is added beside it, in the post-quantum lane where the realm ' +
+          'offers two lanes, or on another authenticator where it offers ' +
+          'one. automatic: alongside where the person\'s passkey policy ' +
+          'offers two lanes, upgrade where it offers one.' },
+  { key: 'attestation', attribute: 'stsPostLoginAttestation', type: 'enum',
+    dflt: 'any', values: ['any', 'post-quantum'],
+    label: 'A passkey counts as post-quantum when',
+    what: 'any: its key algorithm is ML-DSA. post-quantum: its key ' +
+          'algorithm is ML-DSA AND its recorded attestation was signed ' +
+          'with post-quantum algorithms throughout; a passkey with a ' +
+          'classical attestation, or none recorded, does not count, and ' +
+          'its holder is asked for one that does.' },
+  { key: 'noPasskeyFallback', attribute: 'stsPostLoginNoPasskeyFallback',
+    type: 'enum', dflt: 'none', values: ['none', 'classical'],
+    label: 'A person with no passkey whose device cannot make ML-DSA',
+    what: 'none: ML-DSA only. classical: after an ML-DSA registration ' +
+          'fails on the device, a retry with the classical algorithms is ' +
+          'offered (where the passkey policy allows one) — a classical ' +
+          'passkey is better than a password, and its holder is asked for ' +
+          'the migration later like anyone else\'s.' }
 ];
 
 /**
@@ -717,6 +771,11 @@ class PostLoginPolicy {
                                                : SENTENCES['param.primary'];
     const out = rules.enabled !== true ? [SENTENCES.off] : [
       SENTENCES.pqcMigration,
+      rules.method === 'upgrade' ? SENTENCES.methodUpgrade
+        : (rules.method === 'alongside' ? SENTENCES.methodAlongside
+                                        : SENTENCES.methodAutomatic),
+      rules.attestation === 'post-quantum' ? SENTENCES.attestationPq
+                                           : SENTENCES.attestationAny,
       fill(SENTENCES.snooze, { days: String(rules.snoozeDays) }),
       Number(rules.graceDays) > 0
         ? fill(SENTENCES.grace, { days: String(rules.graceDays) })
@@ -726,7 +785,9 @@ class PostLoginPolicy {
         : (rules.noPasskey === 'require'
           ? fill(SENTENCES.noPasskeyRequire, { role: role })
           : SENTENCES.noPasskeyLeave)
-    ];
+    ].concat(rules.noPasskey !== 'leave' &&
+             rules.noPasskeyFallback === 'classical'
+      ? [SENTENCES.fallbackClassical] : []);
     if (rules.name !== DEFAULT_PROFILE) {
       out.unshift(fill(SENTENCES.appliesTo, {
         list: rules.selectGroups.length ? rules.selectGroups.join(', ')

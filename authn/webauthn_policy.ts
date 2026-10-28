@@ -254,7 +254,8 @@ class WebauthnPolicy {
   // while `withRows()` runs.
   private rowsOverride: { registrationAlgorithms: string[];
                           registrationMode: string;
-                          postQuantumRequired: string } | null = null;
+                          postQuantumRequired: string;
+                          lanes: string } | null = null;
 
   /**
    * Builds the policy over the dependencies given.
@@ -768,8 +769,9 @@ class WebauthnPolicy {
   // (`credentials.confirmKeyUpgrade()`), so the classical key is touched
   // only once the new one has verified.
   //
-  // **WHAT THE WRITE DOES FOLLOWS `webauthn.pqcAlongsideClassical`** (rcbj's
-  // decision on #939): ON, the upgrade ADDS the ML-DSA key in the
+  // **WHAT THE WRITE DOES FOLLOWS THE LANES** (rcbj's decision on #939),
+  // unless the caller names it (#1100: the post-login activity's `method`):
+  // with both lanes on, the upgrade ADDS the ML-DSA key in the
   // post-quantum lane under that lane's user handle and keeps the classical
   // one (#643's two lanes, `alongside`); OFF, the ML-DSA key REPLACES the
   // classical one in place, under the classical lane's handle — on one
@@ -783,26 +785,26 @@ class WebauthnPolicy {
   // classical one is the thing the upgrade exists not to make. There is no
   // classical retry of an upgrade (#944's): its point is ML-DSA.
   //
-  // **OFFERED BY DEFAULT** (`webauthn.pqcUpgrade`, per realm, on): it is a
-  // person's change to their own credential, proved by that credential,
-  // that can only make it stronger and that leaves the classical key as it
-  // was if anything fails. A realm that wants no such change turns it off.
-  // Nothing about it differs between development and product mode: the
+  // **WHERE IT RUNS** (#1100, 2026-10-28): at a sign-in, as the post-login
+  // activity's PQC migration (`common/post_login.ts`), and from the
+  // console on a person's behalf. It was a button on `/portal/keys` behind
+  // `webauthn.pqcUpgrade` until then; rcbj had both removed, so whether a
+  // realm's people are asked is the post-login policy's to say. Nothing
+  // about it differs between development and product mode: the
   // proof is a signature this service verifies in both, as it verifies the
   // UV flag in both, and the attestation the new key brings is held to the
   // policy in force (`attestationSettings()`, which is the mode's).
   // ---------------------------------------------------------------------------
   /**
    * Decides whether this realm offers #939's upgrade of a classical passkey
-   * to an ML-DSA one at all: WebAuthn on, `webauthn.pqcUpgrade` on, an
-   * ML-DSA algorithm the verifier can check, and — with both lanes on —
+   * to an ML-DSA one at all: WebAuthn on, an ML-DSA algorithm the verifier can check, and — with both lanes on —
    * the post-quantum lane offered. The person's own keys, role and the
    * passkey policy are asked by `credentials.keyUpgradeRefusal()`.
    *
    * @returns `{ ok: true }`, or `{ ok: false, why }` carrying STS-AUTHN-0450
    */
   upgradeRefusal() {
-    const { config, log, errorCodes } = this.deps;
+    const { log, errorCodes } = this.deps;
     log.debug('Entering WebauthnPolicy.upgradeRefusal().');
     if (!this.settings().enabled) {
       log.debug('Leaving WebauthnPolicy.upgradeRefusal(). WebAuthn is off.');
@@ -810,15 +812,6 @@ class WebauthnPolicy {
                why: 'Passkeys are switched off in this realm ' +
                     '(webauthn.enabled), so none can be upgraded.' },
                'STS-AUTHN-0450');
-    }
-    if (config.value('webauthn.pqcUpgrade') === false) {
-      log.debug('Leaving WebauthnPolicy.upgradeRefusal(). Not offered.');
-      return errorCodes.mark({ ok: false,
-               why: 'Upgrading a classical passkey to a post-quantum ' +
-                    '(ML-DSA) one is not offered in this realm ' +
-                    '(webauthn.pqcUpgrade). You can register a ' +
-                    'post-quantum passkey beside it instead, where ' +
-                    'passkeys may be registered here.' }, 'STS-AUTHN-0450');
     }
     if (!this.upgradeAlgorithms().length) {
       log.debug('Leaving WebauthnPolicy.upgradeRefusal(). No ML-DSA.');
@@ -1201,7 +1194,8 @@ class WebauthnPolicy {
   // profile's.
   private registrationRows(): { registrationAlgorithms: string[];
                                 registrationMode: string;
-                                postQuantumRequired: string } {
+                                postQuantumRequired: string;
+                                lanes?: string } {
     const { log } = this.deps;
     log.debug('Entering WebauthnPolicy.registrationRows().');
     const out = this.rowsOverride || passkeyPolicy.registrationRows();
@@ -1244,7 +1238,8 @@ class WebauthnPolicy {
   // and puts back what was there, however `fn` ends.
   private withRows<T>(rows: { registrationAlgorithms?: unknown;
                               registrationMode?: unknown;
-                              postQuantumRequired?: unknown } | null
+                              postQuantumRequired?: unknown;
+                              lanes?: unknown } | null
                               | undefined,
                       fn: () => T): T {
     const { log } = this.deps;
@@ -1260,7 +1255,8 @@ class WebauthnPolicy {
       registrationMode: passkeyPolicy.REGISTRATION_MODES.indexOf(
         String(rows.registrationMode || '')) >= 0
         ? String(rows.registrationMode) : 'realm',
-      postQuantumRequired: String(rows.postQuantumRequired || 'off')
+      postQuantumRequired: String(rows.postQuantumRequired || 'off'),
+      lanes: String(rows.lanes || 'realm')
     };
     try {
       const out = fn();
@@ -1401,7 +1397,11 @@ class WebauthnPolicy {
   alongsideClassical(): boolean {
     const { config, log } = this.deps;
     log.debug('Entering WebauthnPolicy.alongsideClassical().');
-    const on = config.value('webauthn.pqcAlongsideClassical') === true &&
+    // THE POPULATION'S `lanes` ROW FIRST (#1104), then the realm's switch.
+    const lanes = String(this.registrationRows().lanes || 'realm');
+    const on = (lanes === 'both' ||
+                (lanes === 'realm' &&
+                 config.value('webauthn.pqcAlongsideClassical') === true)) &&
                !this.pqcOnly() &&
                this.registrationMode() !== 'classical-only';
     log.debug('Leaving WebauthnPolicy.alongsideClassical(). ' + on);
@@ -1953,9 +1953,9 @@ class WebauthnPolicy {
       lanes: this.lanes().map((lane) => {
         return { lane: lane, algorithms: this.algorithmsOffered(lane) };
       }),
-      // THE UPGRADE (#939): whether it is offered, what its write does and
-      // the ML-DSA it asks for.
-      pqcUpgrade: this.postQuantumUpgradeOffered(),
+      // THE UPGRADE (#939): what its write does by default and the ML-DSA
+      // it asks for; whether anybody is asked is the post-login policy's
+      // (#1100).
       upgradeMode: this.upgradeMode(),
       upgradeAlgorithms: this.upgradeAlgorithms(),
       curves: Object.keys(webauthn.COSE_CURVES).map(function (id) {

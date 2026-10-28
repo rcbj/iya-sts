@@ -181,6 +181,8 @@
   "audit.actions.authn.post-login.skipped.label": "A person skipped a post-login activity",
   "audit.actions.authn.post-login.done.label": "A person did a post-login activity",
   "audit.actions.authn.post-login.held.label": "A sign-in was held: a post-login activity is overdue",
+  "audit.actions.authn.post-login.unsupported.label": "A device could not make the passkey a post-login activity asked for",
+  "audit.actions.webauthn.key.possibly-replaced.label": "A passkey may have been replaced on its authenticator",
   "audit.actions.authn.mail-factor.change.label": "An emailed second factor was turned on or off",
   "audit.actions.authn.mail-factor.sent.label": "An emailed sign-in code or link was sent",
   "audit.actions.authn.mail-factor.accepted.label": "An emailed sign-in code or link was accepted",

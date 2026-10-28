@@ -1654,7 +1654,7 @@ class AdminApi {
                    attestationAlgorithms: 'none',
                    postQuantumAllowCredentials: 'realm',
                    registrationAlgorithms: 'realm',
-                   registrationMode: 'realm' }
+                   registrationMode: 'realm', lanes: 'realm' }
       },
       // #539: the fifth kind, with named profiles chosen by application.
       locale: {
@@ -1710,10 +1710,19 @@ class AdminApi {
               '(STS-AUTHN-0473). A named profile ' +
               'applies to the members of `selectGroups`; the lowest ' +
               '`precedence` wins, so a named profile with `enabled` off ' +
-              'excludes its groups.',
+              'excludes its groups. `method` (#1100) is how a classical ' +
+              'passkey is migrated: `upgrade` (proved once, then replaced ' +
+              'in place on its authenticator), `alongside` (an ML-DSA ' +
+              'passkey beside it) or `automatic` (the lanes decide). ' +
+              '`attestation` (#1102): `post-quantum` counts an ML-DSA ' +
+              'passkey as migrated only where its recorded attestation is ' +
+              'post-quantum too. `noPasskeyFallback` (#1103): `classical` ' +
+              'offers a person with no passkey a classical retry where ' +
+              'their device cannot make ML-DSA.',
         example: { enabled: true, activity: 'pqc-passkey-migration',
                    snoozeDays: 7, graceDays: 30, noPasskey: 'invite',
-                   noPasskeyRole: 'primary' }
+                   noPasskeyRole: 'primary', method: 'automatic',
+                   attestation: 'any', noPasskeyFallback: 'none' }
       }
     };
     const cap = function (text) {

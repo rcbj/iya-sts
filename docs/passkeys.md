@@ -50,7 +50,7 @@ rather than repeating them. Every setting in full is in
 | A new person with an activation link | **Directory → Users → New user** (`/admin/users/new`) | `POST /admin-api/users/create` |
 | Which methods one application accepts | **Directory → Applications**, the application's **Configuration** tab | `POST /admin-api/applications/add`, `/remove`, `/update-fields` |
 | Live sessions, and the record of what happened | **Monitoring → Sessions**, **Monitoring → Audit log** (`/admin/audit`) | `GET /admin-api/sessions`, `GET /admin-api/audit?code=<error code>` |
-| The person's own passkeys | the user portal's **Passkeys** page, `/portal/keys` | the [Account API](account-api.md): `GET` and `POST /account-api/keys`, and `POST /account-api/keys/upgrade` |
+| The person's own passkeys | the user portal's **Passkeys** page, `/portal/keys` | the [Account API](account-api.md): `GET` and `POST /account-api/keys` |
 | Signing in | `/authn/login`, then `/authn/webauthn` or `/authn/mfa-setup` | the [sign-in API](authn-api.md), `/authn-api` |
 
 **A token and the `api` helper.** The API examples below use the variables
@@ -617,7 +617,13 @@ console page (marked *post-quantum* or *insecure*), and on the audit log's
 ## A classical and a post-quantum passkey side by side
 
 This section describes the setting `webauthn.pqcAlongsideClassical`,
-added by [#643](https://github.com/rcbj/iya-sts/issues/643).
+added by [#643](https://github.com/rcbj/iya-sts/issues/643), and the
+passkey policy's **`lanes`** row, which sets it per population
+([#1104](https://github.com/rcbj/iya-sts/issues/1104)): `realm` (the default)
+follows the setting, `both` gives the profile's people two lanes even where
+the setting is off, and `one` gives them one lane even where it is on.
+`webauthn.pqcOnly` still means one lane, and `lanes: both` is refused beside
+`registrationMode: classical-only` (`STS-AUTHN-0476`).
 
 ### What it is, and why you would want it
 
@@ -996,29 +1002,34 @@ Rebuild the override from the current template. See [XACML](xacml.md) and
 
 ## Upgrading a classical passkey
 
-`webauthn.pqcUpgrade` (default on, per realm) lets a person who already holds
-a classical passkey move it to ML-DSA without deleting it first
-([#939](https://github.com/rcbj/iya-sts/issues/939)). Off, no passkey can be
-upgraded (`STS-AUTHN-0450`).
+A person who holds a classical passkey moves it to ML-DSA **at a sign-in**,
+through the realm's [post-login activity policy](post-login-activities.md)
+(Directory → Policies). The policy is off by default; you choose who is asked
+(by group), how long they may put it off, and **how** it is done. There is no
+upgrade button on `/portal/keys` and no setting to switch it on: the policy
+is the switch.
 
-**On the portal.** Sign in and open `/portal/keys`. Under **Upgrade a
-passkey**, each classical passkey that can be upgraded has **Upgrade to
-post-quantum**. The ceremony is two steps:
+**The upgrade ceremony** (`method: upgrade`, or `automatic` in a realm with
+one lane) is two steps after the person signs in:
 
-1. **Prove it.** The person asserts with that classical passkey. The
-   classical passkey is not changed.
-2. **Register ML-DSA.** The registration that follows offers ML-DSA only and
-   leaves that classical credential out of `excludeCredentials`, so the same
-   authenticator may answer. There is no classical retry: the point of the
-   upgrade is ML-DSA.
+1. **Prove it.** The person uses the classical passkey once. It is not
+   changed.
+2. **Register ML-DSA.** The registration offers ML-DSA only and leaves that
+   classical credential out of `excludeCredentials`, under its own user
+   handle, so the same authenticator answers and replaces it. There is no
+   classical retry: the point of the upgrade is ML-DSA.
 
-What the write does depends on
-[`webauthn.pqcAlongsideClassical`](#a-classical-and-a-post-quantum-passkey-side-by-side):
+The ML-DSA passkey then replaces the classical one **in place**: one row,
+keeping its name, recording when it was upgraded and from which algorithm.
+The person keeps one passkey, on the same authenticator, and nothing is left
+behind for them to clean up.
 
-| Setting | What is kept |
-|---|---|
-| on | the ML-DSA passkey is added in the post-quantum lane, and the classical passkey stays |
-| off | the ML-DSA passkey replaces the classical one, keeping its name, and the record says when it was upgraded and from which algorithm |
+**Alongside** (`method: alongside`, or `automatic` where the person's passkey
+policy offers [two lanes](#a-classical-and-a-post-quantum-passkey-side-by-side))
+adds an ML-DSA passkey beside the classical one: in the post-quantum lane
+where there are two lanes, or — with one lane — on a **different**
+authenticator, since the one holding the classical passkey is excluded. The
+page tells the person which.
 
 The classical passkey on this service is touched only once the new
 registration has been verified, so a failed upgrade leaves it as it was. The
@@ -1026,26 +1037,39 @@ authenticator itself may replace the credential it holds as soon as it
 creates the new one, which can be before this service has accepted the
 answer. A registration that fails after that leaves the classical passkey
 here and no classical credential on that device; the person signs in another
-way and can upgrade again.
-
-A sign-in that refuses a classical passkey because a post-quantum one is
-required links here as `/portal/keys?upgrade=post-quantum` when the realm
-offers the upgrade.
+way and is asked again.
 
 **On the console.** Directory → Users, on a classical passkey, **Upgrade to
-ML-DSA**. The same two steps run in the administrator's browser, against the
-person's authenticator. Over the API the actions are
-`begin-passkey-upgrade`, `prove-passkey-upgrade`, `finish-passkey-upgrade`
-and `cancel-passkey-upgrade` on `POST /admin-api/users`.
+ML-DSA**: an administrator runs the same two steps on a person's behalf, in
+the administrator's browser, against the person's authenticator. Over the API
+the actions are `begin-passkey-upgrade`, `prove-passkey-upgrade`,
+`finish-passkey-upgrade` and `cancel-passkey-upgrade` on
+`POST /admin-api/users`.
 
-**On the Account API.** The person calls `POST /account-api/keys/upgrade`
-with `action` `begin` (and `credentialId`), `prove`, `finish` or `cancel`.
-`prove` and `finish` send `upgrade_id` and `credential`. A refusal leaves
-the classical passkey as it was (`STS-AUTHN-0450` when the realm does not
-offer the upgrade, and `0451`–`0458` for a ceremony that does not complete).
+A ceremony that does not complete leaves the classical passkey as it was
+(`STS-AUTHN-0450` when the realm cannot make an ML-DSA passkey, `0451`–`0458`
+for the steps). The new passkey meets every rule a registration does,
+including `postQuantumRequired` and `attestationAlgorithms`.
 
-The new passkey meets every rule a registration does, including
-`postQuantumRequired` and `attestationAlgorithms`.
+### A passkey that may have been replaced on its authenticator
+
+An authenticator keeps one discoverable credential per relying party and user
+handle: a new one created under the same handle **replaces** the old one on
+the device, while iya-sts would keep both rows. So when a passkey is
+registered under a user handle another of the person's passkeys uses, **with
+the same AAGUID** (the same model of authenticator), the older row is marked
+*may have been replaced*. It is a marker, never a deletion — two keys of one
+model are two devices.
+
+- `/portal/keys` and the console's person page show the marker; **Remove**
+  (or **Clear key**) deletes the row.
+- The marker goes away when that passkey signs somebody in.
+- The "last way in" check on a removal does not count a marked passkey.
+- Each marking leaves an audit row, `webauthn.key.possibly-replaced`.
+
+A passkey with no user handle recorded (registered before handles were kept)
+or no AAGUID (attestation `none` on a platform that blanks it) is never
+marked: nothing says it was the same authenticator.
 
 ## Measuring the move to post-quantum passkeys
 
@@ -1319,7 +1343,6 @@ description of each is in [Configuration → WebAuthn](configuration.md#webauthn
 | `webauthn.pqcOnly` | `STS_WEBAUTHN_PQC_ONLY` | `false` |
 | `webauthn.pqcAlongsideClassical` | `STS_WEBAUTHN_PQC_ALONGSIDE_CLASSICAL` | `false` |
 | `webauthn.postQuantumAllowCredentials` | `STS_WEBAUTHN_POST_QUANTUM_ALLOW_CREDENTIALS` | `narrow` |
-| `webauthn.pqcUpgrade` | `STS_WEBAUTHN_PQC_UPGRADE` | `true` |
 | `webauthn.userVerification` | `STS_WEBAUTHN_USER_VERIFICATION` | `required` |
 | `webauthn.attestation` | `STS_WEBAUTHN_ATTESTATION` | `direct` |
 | `webauthn.attestationPolicy` | `STS_WEBAUTHN_ATTESTATION_POLICY` | `by-mode` |
@@ -1436,7 +1459,7 @@ browser or a client. Look a code up in the audit log with
 | `STS-AUTHN-0432` | a passkey's algorithm is not one the selected profile offers at registration |
 | `STS-AUTHN-0433` | the post-quantum lane was asked for where the profile's `registrationMode` is `classical-only` |
 | `STS-AUTHN-0440` | an administrator's passkey enrolment, where the person's profile has `adminEnrolment` off. `0441`–`0448` are the other refusals of that ceremony |
-| `STS-AUTHN-0450` | a passkey upgrade, where the realm does not offer it (`webauthn.pqcUpgrade` off, or no ML-DSA). `0451`–`0458` are the other refusals of that ceremony |
+| `STS-AUTHN-0450` | a passkey upgrade, where the realm cannot make an ML-DSA passkey. `0451`–`0458` are the other refusals of that ceremony |
 | `STS-AUTHN-0461` | a passkey policy requires a device-bound session while `authn.deviceBoundSessions` is off |
 | `STS-ADMIN-0522` | an administrator's removal of a passkey was refused |
 

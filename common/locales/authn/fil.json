@@ -116,7 +116,6 @@
   "pqRequired.text": "Ang passkey na ginamit mo ay pumipirma gamit ang classical na algorithm, at post-quantum (ML-DSA) na passkey lang ang tinatanggap ng application na ito. Hindi ka naka-sign in.",
   "pqRequired.how": "Gumamit ng post-quantum na passkey kung mayroon ka. Kung wala, magdagdag ng isa sa page ng iyong account, sa pag-sign in doon sa ibang paraan, at bumalik.",
   "pqRequired.register": "Magdagdag ng post-quantum na passkey",
-  "pqRequired.upgrade": "I-upgrade ang passkey na ito sa post-quantum",
   "webauthn.noPrompt": "Walang itinanong ang browser ko — sabihin mo kung bakit",
   "webauthn.details": "Mga teknikal na detalye",
   "webauthn.rpId": "RP ID: <code>{rpId}</code> — nakatali ang ceremony sa origin na ito.",
@@ -191,5 +190,16 @@
   "postLogin.until": "Puwede mo itong laktawan hanggang {date}; pagkatapos noon, kailangan na ito.",
   "postLogin.registerButton": "Magrehistro ng post-quantum na passkey",
   "postLogin.skipButton": "Laktawan nang {days} araw",
-  "postLogin.passkeyHeading": "Irehistro ang iyong post-quantum na passkey"
+  "postLogin.passkeyHeading": "Irehistro ang iyong post-quantum na passkey",
+  "postLogin.subUpgradePrimary": "{name}, nagsa-sign in ka gamit ang passkey na ginawa gamit ang klasikong algorithm. I-upgrade ito sa post-quantum (ML-DSA) na passkey.",
+  "postLogin.subUpgradeMfa": "{name}, ang iyong pangalawang factor ay passkey na ginawa gamit ang klasikong algorithm. I-upgrade ito sa post-quantum (ML-DSA) na passkey.",
+  "postLogin.methodUpgrade": "Gagamitin mo nang isang beses ang kasalukuyan mong passkey, para patunayang sa iyo ito, at saka gagawin ang post-quantum na passkey sa parehong authenticator. Papalitan nito roon ang luma, kaya iisang passkey lang ang hawak mo.",
+  "postLogin.methodSeparate": "Gawin ito sa ibang authenticator kaysa sa may hawak ng kasalukuyan mong passkey — halimbawa, isang security key na sumusuporta sa ML-DSA.",
+  "postLogin.proofHeading": "Una, gamitin ang kasalukuyan mong passkey",
+  "postLogin.proofSub": "Gamitin nang isang beses ang passkey na <strong>{name}</strong>, para patunayang sa iyo ito. Susunod na gagawin ang post-quantum na passkey, sa parehong authenticator.",
+  "postLogin.subAttestationPrimary": "{name}, hindi na-attest gamit ang mga post-quantum na algorithm ang post-quantum na passkey na ginagamit mo sa pag-sign in. Magrehistro ng isang na-attest nang ganoon.",
+  "postLogin.subAttestationMfa": "{name}, hindi na-attest gamit ang mga post-quantum na algorithm ang post-quantum na passkey na ginagamit mo bilang pangalawang factor. Magrehistro ng isang na-attest nang ganoon.",
+  "postLogin.failed": "Hindi nagawa ng iyong device ang passkey ({error}).",
+  "postLogin.failedHelp": "Kung hindi kayang gumawa ng iyong device o browser ng ML-DSA na passkey, irehistro ito sa hiwalay na security key na sumusuporta sa ML-DSA, o lumapit sa isang administrator, na puwedeng magrehistro ng isa para sa iyo.",
+  "postLogin.failedSkip": "Puwede mo rin itong laktawan muna sa ngayon."
 }

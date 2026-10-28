@@ -450,6 +450,48 @@ class WebauthnCeremonies {
       return null;
     }
   }
+
+  // -------------------------------------------------------------------------
+  // A ROW A LATER REGISTRATION MAY HAVE REPLACED ON ITS AUTHENTICATOR
+  // (#1101): `credentials.ts` marks it, and this is the audit row, since
+  // that module may not reach the audit log itself.
+  // -------------------------------------------------------------------------
+  /**
+   * Records that a passkey row may have been replaced on its authenticator
+   * by a later registration under the same user handle and AAGUID (#1101).
+   *
+   * @param input - `{ username, credentialId, by, aaguid }`
+   * @returns the row written, or null
+   */
+  possiblyReplaced(input: { username: string; credentialId: string;
+                            by: string; aaguid: string }): Json {
+    const { log, audit } = this.deps;
+    log.debug("Entering WebauthnCeremonies.possiblyReplaced().");
+    try {
+      const given = input || ({} as Json);
+      const row = audit.audit({
+        action: 'webauthn.key.possibly-replaced', category: 'authentication',
+        outcome: 'success', actor: String(given.username || ''),
+        target: String(given.username || ''),
+        channel: 'http', protocol: 'WebAuthn',
+        summary: 'a passkey of ' + String(given.username || '') + ' may ' +
+                 'have been replaced on its authenticator by one registered ' +
+                 'later under the same user handle',
+        detail: { credentialId: String(given.credentialId || ''),
+                  by: String(given.by || ''),
+                  aaguid: String(given.aaguid || '') }
+      });
+      log.debug("Leaving WebauthnCeremonies.possiblyReplaced(). Recorded.");
+      return row;
+    } catch (err) {
+      // As record(): evidence, never the registration.
+      log.debug("Caught in WebauthnCeremonies.possiblyReplaced(): " +
+                ((err && err.message) || err));
+      log.debug("Leaving WebauthnCeremonies.possiblyReplaced(). Not " +
+                "recorded.");
+      return null;
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -475,6 +517,7 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   record: slot.forward('record'),
   algorithmMismatch: slot.forward('algorithmMismatch'),
+  possiblyReplaced: slot.forward('possiblyReplaced'),
   clientOf: WebauthnCeremonies.clientOf,
   clientErrorName: WebauthnCeremonies.clientErrorName,
   CLIENT_ERRORS: CLIENT_ERRORS,

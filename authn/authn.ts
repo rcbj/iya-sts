@@ -11257,6 +11257,8 @@ class Authn {
       postLogin: {
         activity: String(due.activity), role: String(due.role),
         reason: String(due.reason), required: due.required === true,
+        method: String(due.method || ''),
+        fallback: String(due.fallback || 'none'),
         snoozeDays: Number(due.snoozeDays) || 1,
         graceDays: Number(due.graceDays) || 0,
         deadline: deadline,
@@ -11346,7 +11348,8 @@ class Authn {
    * @returns nothing; the answer is sent
    */
   postLoginAct(req: any, res: any, stepId: string, action: string): void {
-    const { log, baseUrlOf, audit, errorCodes, postLogin } = this.deps;
+    const { log, baseUrlOf, audit, errorCodes, postLogin,
+      credentials } = this.deps;
     log.debug("Entering Authn.postLoginAct(). " + action);
     const base = baseUrlOf(req);
     const found = this.stepProblem('post-login', stepId);
@@ -11387,7 +11390,7 @@ class Authn {
       log.debug("Leaving Authn.postLoginAct(). Skipped.");
       return;
     }
-    if (!postLogin.canRegister(String(due.role))) {
+    if (!postLogin.canRegister(String(due.role), String(due.method || ''))) {
       pendingMfa.delete(String(stepId));
       log.info(errorCodes.tag('STS-AUTHN-0475') + 'authn: the post-login ' +
                'passkey of "' + step.username + '" cannot be registered ' +
@@ -11398,13 +11401,40 @@ class Authn {
       log.debug("Leaving Authn.postLoginAct(). Cannot be done here.");
       return;
     }
-    // THE PASSKEY PAGE'S REGISTRATION FROM HERE, as the set-up step's
-    // `webauthn` does: the role off the activity, the lane the post-quantum
-    // passkey is made in, a handle minted for it when the ceremony is armed.
+    // AN UPGRADE (#1100, #939's ceremony): the classical passkey this
+    // sign-in used, where it is one of the role, else the one used last, is
+    // proved and then replaced in place — so the authenticator that holds it
+    // may answer the registration (it is left out of the exclude list), the
+    // new credential takes its handle, and one row is left, not two.
+    if (due.method === 'upgrade') {
+      const key = postLogin.keyToUpgrade(String(step.username),
+        String(due.role), String((step.held && step.held.credential &&
+                                  step.held.credential.id) || ''));
+      const begun = key
+        ? credentials.beginKeyUpgrade(String(step.username),
+                                      String(key.credentialId),
+                                      { mode: 'replace' })
+        : errorCodes.mark({ ok: false, errors: ['There is no classical ' +
+            'passkey to upgrade any more.'] }, 'STS-AUTHN-0451');
+      if (!begun.ok) {
+        errorCodes.mark(res, errorCodes.codeOf(begun) || 'STS-AUTHN-0450');
+        this.stepRefused(res, String((begun.errors || [])[0] ||
+                                     'The passkey could not be upgraded.'));
+        log.debug("Leaving Authn.postLoginAct(). The upgrade was refused.");
+        return;
+      }
+      step.upgradeId = String(begun.upgradeId);
+      step.upgradeKey = String(key.credentialId);
+    }
+    // THE PASSKEY PAGE FROM HERE, as the set-up step's `webauthn` does: the
+    // role off the activity, the lane the post-quantum passkey is made in,
+    // a handle minted for it when the ceremony is armed — or, for an
+    // upgrade, the proof and then the registration the pending upgrade
+    // arms (`upgradeStepFacts()`).
     step.factor = 'webauthn';
     step.atSignIn = true;
     step.passwordless = due.role === 'primary';
-    step.lane = postLogin.lane();
+    step.lane = postLogin.lane(String(due.method || ''));
     step.userHandle = '';
     step.classicalOnly = false;
     pendingMfa.set(String(stepId), step);
@@ -12438,6 +12468,16 @@ class Authn {
       const held = step.passwordless
         ? credentials.mechanismsFor(step.username).primaryKeys
         : credentials.mechanismsFor(step.username).mfaKeys;
+      // A POST-LOGIN UPGRADE (#1100) WHOSE PENDING UPGRADE IS GONE — it
+      // expired, or another tab began one — has no ceremony to draw.
+      const upgrade = step.upgradeId
+        ? credentials.pendingKeyUpgradeFor(step.username) : null;
+      if (step.upgradeId && !(upgrade && upgrade.id === step.upgradeId)) {
+        log.debug("Leaving Authn.stepProblem(). The upgrade is gone.");
+        return { problem: { code: 'STS-AUTHN-0454',
+          why: 'This passkey upgrade has expired. Start over to sign in ' +
+               'again; you will be asked again.' } };
+      }
       if (held < 1 && !(step.atSignIn && step.factor === 'webauthn')) {
         log.info('authn: a security-key screen was asked for "' +
                  step.username + '", who holds no key marked as a second ' +
@@ -12550,6 +12590,15 @@ class Authn {
         activity: String(due.activity || ''), role: String(due.role || ''),
         reason: String(due.reason || ''), required: due.required === true,
         canSkip: due.required !== true,
+        // HOW (#1100): `upgrade`, `alongside` or `register`; `separate`
+        // where an alongside passkey has to be made on another
+        // authenticator (one lane: the one holding the classical passkey is
+        // excluded, so it cannot make a second under the same handle).
+        method: String(due.method || ''),
+        // THE LAST CEREMONY THAT DID NOT COMPLETE (#1105): its error name.
+        failed: due.failed ? String(due.failed.error || 'Error') : '',
+        separate: due.method === 'alongside' &&
+                  this.deps.postLogin.lane('alongside') === 'classical',
         snoozeDays: Number(due.snoozeDays) || 0,
         deadline: Number(due.deadline) > 0
           ? new Date(Number(due.deadline)).toISOString() : '' };
@@ -15556,25 +15605,22 @@ class Authn {
   // refused: the account page's passkeys, root-relative so the browser
   // puts the realm's prefix on it, where passkeys may be registered here at
   // all — whether the person can reach it depends on the portal's own
-  // passkey profile, which the panel's words say — and #939's upgrade,
-  // which is '' until `postQuantumUpgradeOffered()` answers true.
+  // passkey profile, which the panel's words say. #939's upgrade link went
+  // with the portal's Upgrade button (#1100): a classical passkey is
+  // upgraded at a sign-in, by the post-login activity.
   /**
    * The links of the post-quantum panel (#946).
    *
-   * @returns `{ register, upgrade }`, each a path or ''
+   * @returns `{ register }`, a path or ''
    */
-  postQuantumHelp(): { register: string; upgrade: string } {
+  postQuantumHelp(): { register: string } {
     const { log, webauthnPolicy } = this.deps;
     log.debug("Entering Authn.postQuantumHelp().");
     const out = {
-      register: webauthnPolicy.offered() ? '/portal/keys' : '',
-      // #939: drawn when this realm offers the upgrade.
-      upgrade: webauthnPolicy.postQuantumUpgradeOffered()
-        ? '/portal/keys?upgrade=post-quantum' : ''
+      register: webauthnPolicy.offered() ? '/portal/keys' : ''
     };
     log.debug("Leaving Authn.postQuantumHelp(). " +
-              (out.register ? 'register' : 'none') +
-              (out.upgrade ? ', upgrade' : ''));
+              (out.register ? 'register' : 'none'));
     return out;
   }
 
@@ -15601,6 +15647,12 @@ class Authn {
     const { log, credentials, webauthnPolicy } = this.deps;
     const username = String(step.username);
     log.debug("Entering Authn.webauthnFacts(). username=" + username);
+    if (step.upgradeId) {
+      const upgrading = this.upgradeStepFacts(base, step);
+      log.debug("Leaving Authn.webauthnFacts(). An upgrade's " +
+                upgrading.mode + ".");
+      return upgrading;
+    }
     // -------------------------------------------------------------------
     // WHICH KEYS THIS PERSON HOLDS, FROM THE ONE STORE (2026-09-10), AND
     // ONLY THE KEYS THAT ANSWER THIS ROLE. A `primary` key signs somebody
@@ -15740,14 +15792,26 @@ class Authn {
     // retry with the classical algorithms only may be offered here
     // (`classical`), and whether this ceremony IS that retry. On the page's
     // facts and on the ceremony's, language-free.
-    // A POST-LOGIN STEP (#1096) ASKS FOR ML-DSA ONLY, and has no classical
-    // retry: a classical passkey is the thing it exists not to make. The
-    // algorithms are #939's upgrade's (`upgradeAlgorithms()`), in the lane
-    // the step was given.
+    // A POST-LOGIN STEP (#1096) ASKS FOR ML-DSA ONLY: a classical passkey is
+    // the thing it exists not to make. The algorithms are #939's upgrade's
+    // (`upgradeAlgorithms()`), in the lane the step was given. THE ONE
+    // EXCEPTION (#1103): a person with NO passkey, where the profile's
+    // `noPasskeyFallback` is `classical`, is offered #944's classical retry
+    // after the device fails ML-DSA — a classical passkey beats a password —
+    // and the retry is the realm's classical list.
+    const postLoginFallback = !!step.postLogin &&
+      step.postLogin.reason === 'none' &&
+      step.postLogin.fallback === 'classical';
+    const postLoginRetrying = postLoginFallback && !!step.classicalOnly;
     const postLoginAlgs = mode === 'create' && step.postLogin
-      ? webauthnPolicy.upgradeAlgorithms() : null;
+      ? (postLoginRetrying
+        ? webauthnPolicy.algorithmsOffered(stepLane, true)
+        : webauthnPolicy.upgradeAlgorithms()) : null;
     const fallback = postLoginAlgs
-      ? { asksPostQuantum: true, classical: false, retrying: false }
+      ? { asksPostQuantum: !postLoginRetrying,
+          classical: postLoginFallback && !postLoginRetrying &&
+            webauthnPolicy.classicalFallbackOffered(stepLane, 'sign-in'),
+          retrying: postLoginRetrying }
       : mode === 'create' ? {
       asksPostQuantum: webauthnPolicy.asksPostQuantum(stepLane,
                                                       !!step.classicalOnly),
@@ -15830,7 +15894,9 @@ class Authn {
         }).map(function (one) {
           return String(one.credentialId);
         }),
-        options: postLoginAlgs
+        options: postLoginAlgs && postLoginRetrying
+          ? webauthnPolicy.creationOptions(rpId, undefined, stepLane, true)
+          : postLoginAlgs
           ? Object.assign(webauthnPolicy.creationOptions(rpId, undefined,
                                                          stepLane, false),
                           { algorithms: webauthnPolicy.upgradeAlgorithmIds() })
@@ -15843,6 +15909,184 @@ class Authn {
         fallback: fallback } };
     log.debug("Leaving Authn.webauthnFacts(). mode=" + mode);
     return out;
+  }
+
+  // ---------------------------------------------------------------------------
+  // A POST-LOGIN UPGRADE'S CEREMONY (#1100): `webauthnFacts()`'s shape, from
+  // the pending upgrade `credentials.beginKeyUpgrade()` holds — the PROOF,
+  // an assertion naming the one classical credential over the upgrade's
+  // challenge, then the REGISTRATION it arms: ML-DSA only, under the
+  // classical credential's own handle, that credential left out of the
+  // exclude list so the authenticator holding it may answer and replace it.
+  // No classical retry: an upgrade's point is ML-DSA.
+  // ---------------------------------------------------------------------------
+  private upgradeStepFacts(base: string, step: any): any {
+    const { log, credentials, webauthnPolicy } = this.deps;
+    log.debug("Entering Authn.upgradeStepFacts().");
+    const username = String(step.username);
+    const held = credentials.pendingKeyUpgradeFor(username) || {};
+    const pending = held.upgrade || {};
+    const proof = pending.phase !== 'registration';
+    const mode = proof ? 'get' : 'create';
+    const rpId = this.rpIdOf(base);
+    const options = webauthnPolicy.settings();
+    const key = credentials.keysOf(username).filter(function (one) {
+      return String(one.credentialId) === String(step.upgradeKey || '');
+    })[0] || null;
+    const lane = String(held.lane || 'classical');
+    const fallback = proof ? null : { asksPostQuantum: true,
+                                      classical: false, retrying: false,
+                                      upgrade: true };
+    const user = Object.assign(credentials.laneUser(username,
+      String(this.deps.passkeyPolicy.displayNameFor(username, username)),
+      lane), { id: String(held.userHandle || '') });
+    const out = {
+      mode: mode, passwordless: !!step.passwordless, choices: [],
+      chosen: null, problem: String(this.rpIdProblem(base) || ''),
+      postQuantumRefused: null, hardwareRefused: null,
+      postQuantumHelp: null, postQuantumAllowCredentials: '',
+      fallback: fallback, rpId: rpId, widened: !!options.rpId,
+      challenge: String(held.challenge || ''),
+      attestation: String(options.attestation || ''),
+      algorithms: (proof ? (options.algorithms || [])
+                         : webauthnPolicy.upgradeAlgorithms()).map(String),
+      postLogin: { role: String((step.postLogin || {}).role || ''),
+                   required: !!(step.postLogin || {}).required,
+                   upgrade: { phase: proof ? 'proof' : 'registration',
+                              name: key ? String(credentials.keyName(key))
+                                        : String(held.label || ''),
+                              previousAlgorithm: String(
+                                pending.previousAlgorithm || '') } },
+      lanes: proof ? [] : [lane], lane: proof ? '' : lane,
+      userVerification: String(options.userVerification || ''),
+      residentKey: String(options.residentKey || ''),
+      attachment: String(options.authenticatorAttachment || ''),
+      ceremony: {
+        mode: mode, challenge: String(held.challenge || ''), rpId: rpId,
+        user: user,
+        allow: proof ? [String(pending.credentialId || '')] : [],
+        exclude: proof ? [] : (held.exclude || []).map(String),
+        options: proof ? webauthnPolicy.requestOptions(rpId)
+          : webauthnPolicy.upgradeCreationOptions(rpId, held.kind),
+        fallback: fallback } };
+    log.debug("Leaving Authn.upgradeStepFacts(). " + mode);
+    return out;
+  }
+
+  // A POST-LOGIN CEREMONY THE DEVICE DID NOT COMPLETE (#1105): the audit
+  // row an administrator finds the move's stalls by — the activity, the
+  // role, the browser's error NAME (never its message) and the platform.
+  private postLoginUnsupported(req: any, step: any, error: unknown): void {
+    const { log, audit, webauthnCeremonies } = this.deps;
+    log.debug("Entering Authn.postLoginUnsupported().");
+    const agent = String((req && req.headers &&
+                          req.headers['user-agent']) || '');
+    audit.audit({
+      action: 'authn.post-login.unsupported', outcome: 'failure',
+      errorCode: 'STS-AUTHN-0022', actor: String(step.username),
+      target: String(step.username), channel: 'http',
+      protocol: step.authn && step.authn.protocol,
+      summary: 'the device of ' + String(step.username) + ' did not ' +
+               'complete the passkey a post-login activity asked for',
+      detail: { activity: String(step.postLogin.activity || ''),
+                role: String(step.postLogin.role || ''),
+                method: String(step.postLogin.method || ''),
+                phase: step.upgradeId ? 'upgrade' : 'registration',
+                error: webauthnCeremonies.clientErrorName(error),
+                client: webauthnCeremonies.clientOf(agent),
+                userAgent: agent.slice(0, 256) }
+    });
+    log.debug("Leaving Authn.postLoginUnsupported().");
+  }
+
+  // ---------------------------------------------------------------------------
+  // A POST-LOGIN UPGRADE'S CEREMONY RESULT (#1100): the proof or the
+  // registration, handed to `credentials.ts`' upgrade, which verifies,
+  // spends and writes. A verified proof draws the registration; a verified
+  // registration is the activity done, and the held session starts. A
+  // refusal leaves the classical passkey as it was; where the library
+  // dropped the upgrade it is begun again, so the page may try again.
+  // ---------------------------------------------------------------------------
+  private async postLoginUpgradeAct(req: any, res: any, base: string,
+                                    mfaId: string, step: any,
+                                    credential: any,
+                                    opts: { origin: string; rpId: string }):
+      Promise<void> {
+    const { log, credentials, errorCodes, postLogin, audit } = this.deps;
+    log.debug("Entering Authn.postLoginUpgradeAct().");
+    const name = String(step.username);
+    const held = credentials.pendingKeyUpgradeFor(name);
+    const proof = !held || !held.upgrade ||
+                  held.upgrade.phase !== 'registration';
+    let answer: any;
+    try {
+      answer = proof
+        ? await credentials.proveKeyUpgrade(name, step.upgradeId,
+                                            credential, opts)
+        : await credentials.confirmKeyUpgrade(name, step.upgradeId,
+                                              credential, opts);
+    } catch (e) {
+      log.debug("Caught in Authn.postLoginUpgradeAct(): " +
+                ((e && e.message) || e));
+      answer = errorCodes.mark({ ok: false, errors: ['The passkey could ' +
+        'not be checked. Your passkey is unchanged; try again.'] },
+                               'STS-AUTHN-0027');
+    }
+    if (!answer.ok) {
+      if (!credentials.pendingKeyUpgradeFor(name)) {
+        const again = credentials.beginKeyUpgrade(name,
+          String(step.upgradeKey || ''), { mode: 'replace' });
+        if (again.ok) {
+          step.upgradeId = String(again.upgradeId);
+        } else {
+          step.factor = 'post-login';
+          delete step.upgradeId;
+        }
+        pendingMfa.set(String(mfaId), step);
+      }
+      errorCodes.mark(res, errorCodes.codeOf(answer) || 'STS-AUTHN-0458');
+      this.stepRefused(res, String((answer.errors || [])[0] ||
+                                   'The passkey was not upgraded.'));
+      log.debug("Leaving Authn.postLoginUpgradeAct(). Refused.");
+      return;
+    }
+    if (proof) {
+      this.stepAnswer(res, 'mfa', 'webauthn', String(mfaId), WEBAUTHN_PATH,
+                      'mfa');
+      log.debug("Leaving Authn.postLoginUpgradeAct(). Proved; the " +
+                "registration is armed.");
+      return;
+    }
+    pendingMfa.delete(String(mfaId));
+    postLogin.noteDone(name, step.postLogin);
+    const upgraded = credentials.keysOf(name).filter(function (one) {
+      return String(one.credentialId) === String(answer.credentialId || '');
+    })[0] || null;
+    const signals = this.deps.accountSignals;
+    signals.credentialChanged({ username: name,
+      credentialType: signals.keyCredentialType(upgraded),
+      fido2Aaguid: String((upgraded && upgraded.aaguid) || ''),
+      friendlyName: String((upgraded && upgraded.label) || ''),
+      changeType: answer.mode === 'replace' ? 'update' : 'create',
+      initiatingEntity: 'user', via: 'post-login passkey upgrade',
+      reasonAdmin: name + ' upgraded a classical passkey to ML-DSA after ' +
+                   'signing in.',
+      reasonUser: 'You upgraded a passkey to a post-quantum passkey.' });
+    audit.audit({
+      action: 'authn.post-login.done', outcome: 'success',
+      actor: name, target: name, channel: 'http',
+      protocol: step.authn && step.authn.protocol,
+      summary: name + ' upgraded a classical passkey to a post-quantum one ' +
+               'after signing in',
+      detail: { activity: String(step.postLogin.activity),
+                role: String(step.postLogin.role), method: 'upgrade',
+                algorithm: String(answer.algorithm || ''),
+                previousAlgorithm: String(answer.previousAlgorithm || ''),
+                mode: String(answer.mode || ''),
+                profile: String(step.postLogin.profile || '') }
+    });
+    this.finishPostLogin(req, res, base, step);
+    log.debug("Leaving Authn.postLoginUpgradeAct(). Upgraded.");
   }
 
   // ---------------------------------------------------------------------------
@@ -17920,9 +18164,14 @@ class Authn {
     // is armed, as `beginKeyEnrolment()` refuses it on the portal; the write
     // asks again (`credentials.addKey()`).
     // A POST-LOGIN STEP (#1096) is armed in the activity's lane, ML-DSA
-    // only: a lane or a classical retry asked for by the page is refused.
-    if (found.step.postLogin && (lane || String(algorithms || '') ===
-                                 'classical')) {
+    // only: a lane or a classical retry asked for by the page is refused —
+    // the retry except where #1103's fallback offers it.
+    const postLoginRetryAllowed = !!found.step.postLogin &&
+      found.step.postLogin.reason === 'none' &&
+      found.step.postLogin.fallback === 'classical' && !found.step.upgradeId;
+    if (found.step.postLogin && (lane || (String(algorithms || '') ===
+                                          'classical' &&
+                                          !postLoginRetryAllowed))) {
       errorCodes.mark(res, 'STS-AUTHN-0420');
       this.stepRefused(res, 'This step registers a post-quantum passkey ' +
                             'only; a classical one cannot be made here.');
@@ -18335,6 +18584,27 @@ class Authn {
       // THE BROWSER'S ERROR NAME ON THE CEREMONY'S ROW (#943), as the
       // page's script reported it; never its message.
       this.noteStepCeremony(req, body, step, 'STS-AUTHN-0022');
+      // A POST-LOGIN STEP'S CEREMONY THAT DID NOT COMPLETE (#1105): recorded
+      // with the platform, and — unless #1103's classical retry is the next
+      // thing the page offers — the person goes back to the step's own page,
+      // which says what to do: another authenticator, an administrator, or
+      // Skip where it is still allowed.
+      if (step.postLogin) {
+        this.postLoginUnsupported(req, step, credential.error);
+        if (!(facts.fallback && facts.fallback.classical)) {
+          if (step.upgradeId) {
+            credentials.abandonKeyEnrolment(step.username);
+            delete step.upgradeId;
+          }
+          step.factor = 'post-login';
+          step.postLogin.failed = { error: this.deps.webauthnCeremonies
+            .clientErrorName(credential.error), at: Date.now() };
+          pendingMfa.set(String(mfaId), step);
+          this.stepAnswer(res, 'mfa', 'post-login', String(mfaId),
+                          POST_LOGIN_PATH, 'mfa');
+          return undefined;
+        }
+      }
       return this.stepRefused(res, credential.error +
         ' (WebAuthn reports one error for ' +
         'several situations, so this does not say which.)');
@@ -18357,6 +18627,12 @@ class Authn {
     // `webauthn.allowedOrigins` where it is set — see expectedOriginFor().
     const expectedOrigin = this.expectedOriginFor(base, credential);
     const expectedRpId = this.rpIdOf(base);
+    // A POST-LOGIN UPGRADE (#1100): its two ceremonies are the upgrade's.
+    if (step.upgradeId) {
+      log.debug("Leaving Authn.mfaWebauthnAct(). To the upgrade.");
+      return this.postLoginUpgradeAct(req, res, base, mfaId, step,
+        credential, { origin: expectedOrigin, rpId: expectedRpId });
+    }
     let verdict;
     // An assertion that verified and still has to be SPENT. See below.
     let toSpend = null;

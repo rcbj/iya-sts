@@ -358,14 +358,13 @@ class WebAuthnLogin {
   // used is classical and the application requires a post-quantum one —
   // which a platform answering "no credential found" never said. In the
   // page's language; the refusal's own sentence, above it, stays English
-  // (#539). The links are the view's: registration on the account page
-  // where passkeys may be registered here, and #939's upgrade when
-  // `postQuantumUpgradeOffered()` is true. Shared by the screen and the
-  // passkey step's page.
+  // (#539). The link is the view's: registration on the account page where
+  // passkeys may be registered here. Shared by the screen and the passkey
+  // step's page.
   /**
    * The post-quantum panel, or ''.
    *
-   * @param help - the view's `{ register, upgrade }`, or null
+   * @param help - the view's `{ register }`, or null
    * @param t - the translator
    * @returns the markup
    */
@@ -378,10 +377,6 @@ class WebAuthnLogin {
       '<p><strong>' + t.html('authn.pqRequired.heading') + '</strong></p>' +
       '<p>' + t.html('authn.pqRequired.text') + '</p>' +
       '<p>' + t.html('authn.pqRequired.how') + '</p>' +
-      (help.upgrade
-        ? '<p><a id="authn-post-quantum-upgrade" href="' +
-          esc(help.upgrade) + '">' + t.html('authn.pqRequired.upgrade') +
-          '</a></p>' : '') +
       (help.register
         ? '<p><a id="authn-post-quantum-register" href="' +
           esc(help.register) + '">' + t.html('authn.pqRequired.register') +

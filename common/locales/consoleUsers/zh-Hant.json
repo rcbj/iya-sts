@@ -887,5 +887,6 @@
   "mfaSection.certAddTip": "一張葉憑證。簽發它的授權單位應放入用戶端信任存放區，而不是這裡。",
   "mfaSection.certAdd": "儲存",
   "mfaSection.certAddTitle": "將此憑證儲存到項目上",
-  "mfaSection.certNeedsWrite": "儲存或移除憑證需要 <strong>Admin Write</strong>。"
+  "mfaSection.certNeedsWrite": "儲存或移除憑證需要 <strong>Admin Write</strong>。",
+  "mfaSection.possiblyReplaced": "可能已在其驗證器上被於 {day} 以相同使用者控制代碼與 AAGUID 註冊的密碼金鑰取代。它不計為登入途徑；如果它已無法使用，請清除它。"
 }

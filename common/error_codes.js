@@ -6842,62 +6842,72 @@ const CODES = [
     spec: 'HTTP 400 from /admin-api/users/finish-passkey-enrolment' },
   // UPGRADING A CLASSICAL PASSKEY TO AN ML-DSA ONE (#939, rule 3ct):
   // `authn/webauthn_policy.ts`'s `upgradeRefusal()` and
-  // `common/credentials.ts`'s upgrade ceremony. A failed upgrade leaves the
+  // `common/credentials.ts`'s upgrade ceremony, run by the post-login
+  // activity's step (#1100, which replaced the portal's Upgrade button) and
+  // by an administrator on a person's behalf. A failed upgrade leaves the
   // classical passkey as it was, whichever of these refused it.
   { code: 'STS-AUTHN-0450',
     summary: 'A passkey upgrade to a post-quantum (ML-DSA) one was ' +
-      'refused before it began: the realm does not offer it ' +
-      '(webauthn.pqcUpgrade is off, or WebAuthn is), the verifier knows no ' +
+      'refused before it began: WebAuthn is off, the verifier knows no ' +
       'ML-DSA, or — with both lanes on — the post-quantum lane is not ' +
       'offered. Nothing was changed.',
-    spec: 'HTTP 400 from POST /account-api/keys/upgrade' },
+    spec: 'the post-login step\'s passkey page again (/authn-api answers ' +
+      'next: refused), or HTTP 400 from /admin-api/users/*-passkey-upgrade' },
   { code: 'STS-AUTHN-0451',
     summary: 'A passkey upgrade named a credential id that is not one of ' +
       'the caller\'s own passkeys. Nothing was changed.',
-    spec: 'HTTP 400 from POST /account-api/keys/upgrade' },
+    spec: 'the post-login step\'s passkey page again (/authn-api answers ' +
+      'next: refused), or HTTP 400 from /admin-api/users/*-passkey-upgrade' },
   { code: 'STS-AUTHN-0452',
     summary: 'A passkey upgrade named a passkey that is already ' +
       'post-quantum (ML-DSA): there is nothing to upgrade.',
-    spec: 'HTTP 400 from POST /account-api/keys/upgrade' },
+    spec: 'the post-login step\'s passkey page again (/authn-api answers ' +
+      'next: refused), or HTTP 400 from /admin-api/users/*-passkey-upgrade' },
   { code: 'STS-AUTHN-0453',
     summary: 'A passkey upgrade named a classical passkey that was already ' +
       'upgraded with a post-quantum passkey beside it, and that ' +
       'post-quantum passkey is still held. Remove it first to upgrade ' +
       'again.',
-    spec: 'HTTP 400 from POST /account-api/keys/upgrade' },
+    spec: 'the post-login step\'s passkey page again (/authn-api answers ' +
+      'next: refused), or HTTP 400 from /admin-api/users/*-passkey-upgrade' },
   { code: 'STS-AUTHN-0454',
     summary: 'A passkey upgrade\'s proof or registration arrived with no ' +
       'upgrade in progress: it expired, it was cancelled, another ' +
       'enrolment replaced it, or it names a different upgrade than the ' +
       'one in progress. Nothing was changed.',
-    spec: 'HTTP 400 from POST /account-api/keys/upgrade' },
+    spec: 'the post-login step\'s passkey page again (/authn-api answers ' +
+      'next: refused), or HTTP 400 from /admin-api/users/*-passkey-upgrade' },
   { code: 'STS-AUTHN-0455',
     summary: 'A passkey upgrade\'s proof of possession was refused before ' +
       'it was checked: the browser ran no assertion (it reported an error ' +
       'or posted nothing), or the assertion was made with a different ' +
       'credential than the passkey being upgraded. The upgrade is dropped; ' +
       'the classical passkey is unchanged.',
-    spec: 'HTTP 400 from POST /account-api/keys/upgrade' },
+    spec: 'the post-login step\'s passkey page again (/authn-api answers ' +
+      'next: refused), or HTTP 400 from /admin-api/users/*-passkey-upgrade' },
   { code: 'STS-AUTHN-0456',
     summary: 'A passkey upgrade\'s steps arrived out of order: a ' +
       'registration before the proof of possession, a second proof, or an ' +
       'upgrade in progress finished through the ordinary enrolment\'s ' +
       'finish (or an ordinary enrolment through the upgrade\'s). Nothing ' +
       'was changed.',
-    spec: 'HTTP 400 from POST /account-api/keys or ' +
-      '/account-api/keys/upgrade' },
+    spec: 'HTTP 400 from POST /account-api/keys, ' +
+      'the post-login step\'s passkey page again (/authn-api answers ' +
+      'next: refused), or HTTP 400 from /admin-api/users/*-passkey-upgrade' },
   { code: 'STS-AUTHN-0457',
     summary: 'A passkey upgrade\'s new post-quantum passkey verified, but ' +
       'the classical passkey it upgrades was removed or upgraded by ' +
       'another request since the proof of possession, so nothing was ' +
       'written.',
-    spec: 'HTTP 400 from POST /account-api/keys/upgrade' },
+    spec: 'the post-login step\'s passkey page again (/authn-api answers ' +
+      'next: refused), or HTTP 400 from /admin-api/users/*-passkey-upgrade' },
   { code: 'STS-AUTHN-0458',
     summary: 'A passkey upgrade\'s registration was not completed by the ' +
       'browser: it reported an error, or posted no credential. No ' +
       'classical retry is offered for an upgrade, whose point is ML-DSA; ' +
       'the upgrade is dropped and the classical passkey is unchanged.',
-    spec: 'HTTP 400 from POST /account-api/keys/upgrade' },
+    spec: 'the post-login step\'s passkey page again (/authn-api answers ' +
+      'next: refused), or HTTP 400 from /admin-api/users/*-passkey-upgrade' },
   { code: 'STS-AUTHN-0459',
     summary: 'A sign-in that must earn phrh (OpenID Connect EAP ACR Values ' +
       '1.0) reached the passkey step, and none of the keys held for that ' +
@@ -7006,6 +7016,12 @@ const CODES = [
       'and webauthn.pqcOnly are off), so the activity cannot be done here ' +
       'and the held sign-in is finished without it (#1096).',
     spec: 'none (the sign-in continues)' },
+  { code: 'STS-AUTHN-0476',
+    summary: 'A passkey policy profile was not saved: `lanes` is both ' +
+      '(a classical and a post-quantum passkey side by side) and ' +
+      '`registrationMode` is classical-only, which makes no post-quantum ' +
+      'passkey to hold in a second lane (#1104).',
+    spec: 'none (HTTP 400 from /admin-api/policies)' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',

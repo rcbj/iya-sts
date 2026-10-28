@@ -887,5 +887,6 @@
   "mfaSection.certAddTip": "Ett enda lövcertifikat. Utfärdaren som utfärdade det läggs i klientförtroendelagren, inte här.",
   "mfaSection.certAdd": "Lagra",
   "mfaSection.certAddTitle": "Lagra certifikatet på posten",
-  "mfaSection.certNeedsWrite": "Att lagra eller ta bort ett kräver <strong>Admin Write</strong>."
+  "mfaSection.certNeedsWrite": "Att lagra eller ta bort ett kräver <strong>Admin Write</strong>.",
+  "mfaSection.possiblyReplaced": "Kan ha ersatts på sin autentiserare av en nyckel som registrerades {day} under samma användarhandtag och AAGUID. Den räknas inte som en väg in; rensa den om den inte längre fungerar."
 }

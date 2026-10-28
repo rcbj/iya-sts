@@ -727,6 +727,14 @@
     "en": "9b31304e9f8a3131",
     "text": "一次登录被暂扣：一项登录后活动已逾期"
   },
+  "audit.actions.authn.post-login.unsupported.label": {
+    "en": "7d131d7e4638de23",
+    "text": "设备未能创建登录后活动所要求的通行密钥"
+  },
+  "audit.actions.webauthn.key.possibly-replaced.label": {
+    "en": "55f7e610db14e36d",
+    "text": "某个通行密钥可能已在其身份验证器上被替换"
+  },
   "audit.actions.authn.mail-factor.change.label": {
     "en": "4f4ca73f8a45e801",
     "text": "邮件第二因素被开启或关闭"

@@ -19,7 +19,7 @@ holds it may act on that sign-in, so it is a bearer value, like the
 
 | Operation | What it answers or does |
 |---|---|
-| `GET /authn-api/pending/{id}` | What the screen offers — the mechanisms the realm's authentication policy accepts, the passkey options, the demands of the request (two factors, a security key), the federation partners, the Kerberos and wallet doors — and `csrf`, the token every act on this sign-in carries. After a classical passkey was refused where a post-quantum one is required, `postQuantumRequired` carries the page's links (`register`, and `upgrade`, which is `/portal/keys?upgrade=post-quantum` when `webauthn.pqcUpgrade` offers the in-place upgrade and empty when it does not) |
+| `GET /authn-api/pending/{id}` | What the screen offers — the mechanisms the realm's authentication policy accepts, the passkey options, the demands of the request (two factors, a security key), the federation partners, the Kerberos and wallet doors — and `csrf`, the token every act on this sign-in carries. After a classical passkey was refused where a post-quantum one is required, `postQuantumRequired` carries the page's link (`register`) |
 | `POST /authn-api/pending/{id}/password` | Sign in with a username and password (or `webauthn_only` for a passkey instead) |
 | `POST /authn-api/pending/{id}/passkey/options`, `…/passkey` | A passkey with no username: the challenge, then the ceremony's result |
 | `POST /authn-api/pending/{id}/email` | An emailed code or link as the first factor, where the policy allows it |
@@ -47,6 +47,8 @@ bearer value like the pending sign-in's.
 | `POST /authn-api/mfa/{id}/webauthn/options`, `…/webauthn` | The passkey ceremony's options, then its result (`credential`). The options take `key` (a chosen passkey), `lane` (`classical` or `pqc`) and, for a registration that failed on the device, `algorithms: "classical"`: the retry with the classical algorithms only, refused (400, `STS-AUTHN-0420`) where a classical passkey is not allowed. A registration's options carry `fallback`: `asksPostQuantum`, `classical` (whether that retry may be offered) and `retrying` |
 | `POST /authn-api/mfa/{id}/setup/totp`, `…/setup/confirm`, `…/setup/webauthn` | Setting up a second factor: an authenticator app (its `otpauth:` URI is in the view; the first `code` confirms it) or a passkey |
 | `POST /authn-api/mfa/{id}/skip` | Ignore an offered second factor, where it was offered rather than required |
+| `POST /authn-api/mfa/{id}/post-login/register` | At a [post-login activity](post-login-activities.md): go to the passkey page — the upgrade's proof and then its ML-DSA registration, or a registration alone |
+| `POST /authn-api/mfa/{id}/post-login/skip` | Put a post-login activity off for the profile's `snoozeDays`; refused once the allotted time has passed (`STS-AUTHN-0474`) |
 | `POST /authn-api/mfa/{id}/email/send` | Mail a code or link (`kind`); answers `next: stay` |
 | `POST /authn-api/mfa/{id}/email/code` | An emailed code |
 | `POST /authn-api/mfa/{id}/email-link/open` | The mailed link's token (`t`), only in the browser that asked for it |

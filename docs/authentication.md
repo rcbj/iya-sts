@@ -280,13 +280,10 @@ Turned off, a post-quantum passkey already held goes on signing in and no
 new one can be created (`STS-AUTHN-0351`). Few authenticators make ML-DSA
 passkeys yet.
 
-**Upgrading a classical passkey** (`webauthn.pqcUpgrade`, on by default, per
-realm). A person who already holds a classical passkey can move it to ML-DSA
-on `/portal/keys`, and an administrator can run the same ceremony from the
-person's page. With `webauthn.pqcAlongsideClassical` on, the ML-DSA passkey
-is added beside the classical one; with it off, the ML-DSA passkey replaces
-the classical one once the new registration has been verified. Off, no
-passkey can be upgraded (`STS-AUTHN-0450`). See
+**Upgrading a classical passkey.** A person who already holds a classical
+passkey moves it to ML-DSA at a sign-in, when the realm's
+[post-login activity policy](post-login-activities.md) asks them to; an
+administrator can run the same ceremony from the person's page. See
 [Passkeys](passkeys.md#upgrading-a-classical-passkey).
 
 **`webauthn.userVerification` is the one ceremony option
@@ -1146,7 +1143,6 @@ See [What is not checked](what-is-not-checked.md).
 | `webauthn.pqcOnly` | `STS_WEBAUTHN_PQC_ONLY` | `false` | yes | Request only ML-DSA-44/65/87 (whichever `webauthn.algorithms` names, all three where it names none); a new passkey made with another algorithm is refused at registration. A classical key already enrolled goes on signing in. |
 | `webauthn.pqcAlongsideClassical` | `STS_WEBAUTHN_PQC_ALONGSIDE_CLASSICAL` | `false` | yes | Let a person hold a classical and a post-quantum (ML-DSA) passkey at once, choosing the kind when creating one (see above). Refused beside `webauthn.pqcOnly`. |
 | `webauthn.postQuantumAllowCredentials` | `STS_WEBAUTHN_POST_QUANTUM_ALLOW_CREDENTIALS` | `narrow` | yes | Read while a passkey policy requires a post-quantum passkey at sign-in and the profile's own row is `realm`. `narrow` names only the person's ML-DSA passkeys; `list-and-refuse` names every passkey and refuses a classical one after the ceremony (`STS-AUTHN-0356`). |
-| `webauthn.pqcUpgrade` | `STS_WEBAUTHN_PQC_UPGRADE` | `true` | yes | On, a person may upgrade a classical passkey to ML-DSA on `/portal/keys`, and an administrator from the person's page. Off, no passkey can be upgraded (`STS-AUTHN-0450`). See [Passkeys](passkeys.md#upgrading-a-classical-passkey). |
 | `webauthn.userVerification` | `STS_WEBAUTHN_USER_VERIFICATION` | `required` | yes | Whether the authenticator must verify the person; `required` is enforced. |
 | `webauthn.attestation` | `STS_WEBAUTHN_ATTESTATION` | `direct` | yes | The attestation conveyance asked for at registration. Whether a statement is verified is `webauthn.attestationPolicy`'s decision, not this setting's ([WebAuthn](#webauthn), above). |
 | `webauthn.attestationPolicy` | `STS_WEBAUTHN_ATTESTATION_POLICY` | `by-mode` | yes | What a registration's attestation statement must be: `verify-if-present` verifies every statement and refuses one that does not verify (`none`, self attestation and an unknown chain are accepted and recorded); `require-trusted` refuses anything that does not chain to an anchor, so no synced passkey; `off` verifies nothing (development only; product reads it as `by-mode`). `by-mode` is `verify-if-present` in product mode and `off` in development. |

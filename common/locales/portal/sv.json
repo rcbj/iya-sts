@@ -551,5 +551,6 @@
   "accounts.kept": "Kontot som den här fliken lämnar förblir inloggat, så du kan byta tillbaka till det här.",
   "accounts.unsaved": "Den här sidan har ändringar som inte har sparats. Byta konto ändå? De går förlorade.",
   "announcement.heading": "Meddelande",
-  "announcement.close": "Stäng"
+  "announcement.close": "Stäng",
+  "keys.possiblyReplaced": "En annan nyckel som registrerades {day} under samma konto på samma modell av autentiserare kan ha ersatt den här på den autentiseraren. Om den här nyckeln inte längre fungerar, ta bort den."
 }

@@ -584,8 +584,9 @@ What that changed, and why each piece is the way it is:
   `classical`) replaces the enrolment when it is pressed. `begin` asks
   `classicalRetryRefusal()` again (`STS-AUTHN-0420`, reason `algorithms`),
   and the pending record's `classicalOnly` holds the finish to the retry's
-  list. An upgrade's create phase draws the guidance with no classical
-  button and its finish still drops the upgrade. The activation's and the
+  list. (The portal's passkey Upgrade went with #1100: a classical passkey
+  is upgraded at a sign-in, by the post-login activity.) The activation's
+  and the
   device link's ceremonies draw no guidance, so a failure there is posted
   as before and abandoned. `authn/CLAUDE.md` (*The classical retry*) argues
   it.

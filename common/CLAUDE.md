@@ -13620,3 +13620,32 @@ default, and done inside the sign-in flow.
   sign-in is never held for something that cannot be done.
 * **The hold is in `authn.startSessionHere()`, last of the refusals** —
   `authn/CLAUDE.md` argues it.
+
+### 3ct, continued: the migration's method, and what replaced the portal's Upgrade button (#1100–#1105, 2026-10-28)
+
+**rcbj: the post-login activity's PQC migration REPLACES the "Upgrade to
+post-quantum" button on `/portal/keys` (#939), and the configuration that
+went with it is deleted.** So `POST /account-api/keys/upgrade`, its page
+block and `webauthn.pqcUpgrade` are gone; #939's ceremony
+(`credentials.beginKeyUpgrade()` / `proveKeyUpgrade()` /
+`confirmKeyUpgrade()`) stays, run by the sign-in step and by the console on a
+person's behalf. Whether a realm's people are asked is the post-login
+policy's to say; there is no second switch.
+
+* **`method`** (#1100): `upgrade` runs that ceremony with
+  `beginKeyUpgrade(..., { mode: 'replace' })` — proof by the classical
+  passkey, then an ML-DSA registration under ITS handle with it left out of
+  the exclude list, then one write in its place. A plain registration in a
+  one-lane realm was the lockout trap the method exists to avoid: the
+  authenticator holding the classical credential is excluded, so the person
+  is refused there, and if it were not excluded the new credential would
+  overwrite it on the device while both rows stayed here. `alongside` adds
+  an ML-DSA passkey beside it (the post-quantum lane; with one lane, another
+  authenticator, and the page says so). `automatic` asks the lanes.
+* **`attestation`** (#1102) and **`noPasskeyFallback`** (#1103) are read by
+  `post_login.ts`'s `roleFor()` and by `authn.ts`'s `webauthnFacts()`.
+* **The `possiblyReplacedBy` marker** (#1101) lives in `credentials.ts`
+  (`markPossiblyReplaced()`), its audit row in `webauthn_ceremonies.ts`
+  because `credentials.ts` may not reach the audit log.
+* **`lanes`** on the passkey policy (#1104) feeds
+  `webauthnPolicy.alongsideClassical()` through `registrationRows()`.

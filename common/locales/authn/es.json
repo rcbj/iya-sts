@@ -116,7 +116,6 @@
   "pqRequired.text": "La llave de acceso que usó firma con un algoritmo clásico, y esta aplicación solo acepta una llave de acceso poscuántica (ML-DSA). No se ha iniciado sesión.",
   "pqRequired.how": "Use una llave de acceso poscuántica si tiene una. Si no, añada una en la página de su cuenta, iniciando sesión allí de otra forma, y vuelva.",
   "pqRequired.register": "Añadir una llave de acceso poscuántica",
-  "pqRequired.upgrade": "Cambiar esta llave de acceso por una poscuántica",
   "webauthn.noPrompt": "Mi navegador no me preguntó nada: dígame por qué",
   "webauthn.details": "Detalles técnicos",
   "webauthn.rpId": "RP ID: <code>{rpId}</code> — la ceremonia está vinculada a este origen.",
@@ -191,5 +190,16 @@
   "postLogin.until": "Puedes omitir este paso hasta el {date}; después será obligatorio.",
   "postLogin.registerButton": "Registrar una clave de acceso poscuántica",
   "postLogin.skipButton": "Omitir durante {days} día(s)",
-  "postLogin.passkeyHeading": "Registra tu clave de acceso poscuántica"
+  "postLogin.passkeyHeading": "Registra tu clave de acceso poscuántica",
+  "postLogin.subUpgradePrimary": "{name}, inicias sesión con una clave de acceso creada con un algoritmo clásico. Actualízala a una clave de acceso poscuántica (ML-DSA).",
+  "postLogin.subUpgradeMfa": "{name}, tu segundo factor es una clave de acceso creada con un algoritmo clásico. Actualízala a una clave de acceso poscuántica (ML-DSA).",
+  "postLogin.methodUpgrade": "Usas tu clave de acceso actual una vez, para demostrar que es tuya, y después creas la clave de acceso poscuántica en el mismo autenticador. Allí reemplaza a la antigua, así que conservas una sola clave de acceso.",
+  "postLogin.methodSeparate": "Créala en un autenticador distinto del que guarda tu clave de acceso actual — por ejemplo, una llave de seguridad compatible con ML-DSA.",
+  "postLogin.proofHeading": "Primero, usa tu clave de acceso actual",
+  "postLogin.proofSub": "Usa la clave de acceso <strong>{name}</strong> una vez, para demostrar que es tuya. A continuación se crea la clave de acceso poscuántica, en el mismo autenticador.",
+  "postLogin.subAttestationPrimary": "{name}, la clave de acceso poscuántica con la que inicias sesión no se atestó con algoritmos poscuánticos. Registra una que sí lo esté.",
+  "postLogin.subAttestationMfa": "{name}, la clave de acceso poscuántica que usas como segundo factor no se atestó con algoritmos poscuánticos. Registra una que sí lo esté.",
+  "postLogin.failed": "Tu dispositivo no creó la clave de acceso ({error}).",
+  "postLogin.failedHelp": "Si tu dispositivo o navegador no puede crear una clave de acceso ML-DSA, regístrala en una llave de seguridad aparte compatible con ML-DSA, o pídeselo a un administrador, que puede registrar una por ti.",
+  "postLogin.failedSkip": "También puedes omitir este paso por ahora."
 }

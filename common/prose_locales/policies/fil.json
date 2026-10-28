@@ -1151,6 +1151,14 @@
     "en": "1466dbe275c566e7",
     "text": "Sinusunod ng `realm` (ang default) ang webauthn.pqcOnly at ang webauthn.pqcAlongsideClassical. ML-DSA lang ang inaalok ng `pq-only`, at tinatanggihan nito ang pag-ulit gamit ang mga classical na algorithm. Inaalok muna ng `pq-first` ang ML-DSA at pagkatapos ang mga classical na algorithm, kahit ML-DSA lang ang hinihingi ng realm. Walang inaalok na ML-DSA ang `classical-only` at walang post-quantum na passkey katabi ng classical, para sa mga taong pumapalya ang device sa pag-register ng ML-DSA. Tinatanggihan kapag ang postQuantumRequired ay hindi off o kapag may nakatakdang attestationAlgorithms (classical-only), at kapag walang ML-DSA sa mga inaalok na algorithm (pq-only, pq-first). Kapag hindi isinama sa pag-save, pinapanatili ang `realm`."
   },
+  "passkey.FIELDS.lanes.label": {
+    "en": "bfb331a11d2bc27a",
+    "text": "Classical at post-quantum na passkey nang magkatabi"
+  },
+  "passkey.FIELDS.lanes.what": {
+    "en": "8bc141c02b65ba53",
+    "text": "Sinusunod ng `realm` (ang default) ang webauthn.pqcAlongsideClassical. Binibigyan ng `both` ang mga tao ng profile na ito ng classical at post-quantum na passkey nang magkatabi, bawat isa sa sarili nitong user handle, saanman naka-off ang setting ng realm; binibigyan sila ng `one` ng iisang lane saanman ito naka-on. Iisang lane pa rin ang ibig sabihin ng webauthn.pqcOnly. Tinatanggihan bilang `both` kapag registrationMode classical-only. Kapag hindi isinama sa pag-save, pinapanatili ang `realm`."
+  },
   "passkey.FIELDS.passkeyHints.label": {
     "en": "7445bda72b06c415",
     "text": "Mga hint na ipinapadala ng \"Create a passkey\""
@@ -1298,6 +1306,10 @@
   "passkey.SCHEMA.attributes.stsPasskeyRegistrationMode.what": {
     "en": "1466dbe275c566e7",
     "text": "Sinusunod ng `realm` (ang default) ang webauthn.pqcOnly at ang webauthn.pqcAlongsideClassical. ML-DSA lang ang inaalok ng `pq-only`, at tinatanggihan nito ang pag-ulit gamit ang mga classical na algorithm. Inaalok muna ng `pq-first` ang ML-DSA at pagkatapos ang mga classical na algorithm, kahit ML-DSA lang ang hinihingi ng realm. Walang inaalok na ML-DSA ang `classical-only` at walang post-quantum na passkey katabi ng classical, para sa mga taong pumapalya ang device sa pag-register ng ML-DSA. Tinatanggihan kapag ang postQuantumRequired ay hindi off o kapag may nakatakdang attestationAlgorithms (classical-only), at kapag walang ML-DSA sa mga inaalok na algorithm (pq-only, pq-first). Kapag hindi isinama sa pag-save, pinapanatili ang `realm`."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyLanes.what": {
+    "en": "8bc141c02b65ba53",
+    "text": "Sinusunod ng `realm` (ang default) ang webauthn.pqcAlongsideClassical. Binibigyan ng `both` ang mga tao ng profile na ito ng classical at post-quantum na passkey nang magkatabi, bawat isa sa sarili nitong user handle, saanman naka-off ang setting ng realm; binibigyan sila ng `one` ng iisang lane saanman ito naka-on. Iisang lane pa rin ang ibig sabihin ng webauthn.pqcOnly. Tinatanggihan bilang `both` kapag registrationMode classical-only. Kapag hindi isinama sa pag-save, pinapanatili ang `realm`."
   },
   "passkey.SCHEMA.attributes.stsPasskeyHintsPasskey.what": {
     "en": "2ffa66aabab7a053",
@@ -1522,6 +1534,14 @@
   "passkey.sentences.param.realmAlgorithms": {
     "en": "62dd60f1d67057b4",
     "text": "ang webauthn.algorithms ng realm"
+  },
+  "passkey.sentences.lanesBoth": {
+    "en": "01a4a63a09108c26",
+    "text": "maaaring humawak ang isang tao ng classical at post-quantum na passkey nang magkatabi, bawat isa sa sarili nitong user handle"
+  },
+  "passkey.sentences.lanesOne": {
+    "en": "745ef3f6a44d81be",
+    "text": "hawak ng isang tao ang kanyang mga passkey sa iisang lane, anuman ang sabihin ng webauthn.pqcAlongsideClassical ng realm"
   },
   "passkey.sentences.adminEnrolment": {
     "en": "41023a55f549b1cd",
@@ -1807,6 +1827,30 @@
     "en": "b009a5eae7bbd7a7",
     "text": "primary: isang passwordless na sign-in. mfa: isang second factor."
   },
+  "postLogin.FIELDS.method.label": {
+    "en": "e5beebb729b34546",
+    "text": "Paano mina-migrate ang classical na passkey"
+  },
+  "postLogin.FIELDS.method.what": {
+    "en": "b028cf1ddda71c5d",
+    "text": "upgrade: ginagamit ng tao ang kanyang classical na passkey nang isang beses, pagkatapos ay papalitan ito ng ML-DSA na passkey sa mismong lugar sa parehong authenticator — iisang passkey, walang naiiwan. alongside: idinaragdag ang ML-DSA na passkey sa tabi nito, sa post-quantum na lane kung saan dalawang lane ang iniaalok ng realm, o sa ibang authenticator kung saan iisa ang iniaalok nito. automatic: alongside kung saan dalawang lane ang iniaalok ng passkey policy ng tao, upgrade kung saan iisa."
+  },
+  "postLogin.FIELDS.attestation.label": {
+    "en": "430490e68719e72e",
+    "text": "Itinuturing na post-quantum ang passkey kapag"
+  },
+  "postLogin.FIELDS.attestation.what": {
+    "en": "77645f746e1d52e2",
+    "text": "any: ML-DSA ang key algorithm nito. post-quantum: ML-DSA ang key algorithm nito AT nilagdaan ang naitalang attestation nito gamit ang mga post-quantum na algorithm sa kabuuan; hindi itinuturing ang passkey na may classical na attestation, o walang naitalang attestation, at hinihingan ang may hawak nito ng isang itinuturing."
+  },
+  "postLogin.FIELDS.noPasskeyFallback.label": {
+    "en": "8804bd18de56c2a8",
+    "text": "Taong walang passkey na hindi makagawa ng ML-DSA ang device"
+  },
+  "postLogin.FIELDS.noPasskeyFallback.what": {
+    "en": "4fa78beae92d0ce5",
+    "text": "none: ML-DSA lang. classical: kapag pumalya ang pag-register ng ML-DSA sa device, iniaalok ang pag-ulit gamit ang mga classical na algorithm (kung saan pinapayagan ito ng passkey policy) — mas mabuti ang classical na passkey kaysa password, at hihingan ang may hawak nito ng migration sa ibang pagkakataon gaya ng iba."
+  },
   "postLogin.SCHEMA.objectClasses.stsPostLoginPolicy.what": {
     "en": "7ac360a6d70b525c",
     "text": "Ang class ng serbisyong ito para sa post-login activity profile: kung ano ang hinihinging gawin ng tao pagkatapos mag-sign in. Pinangangalanan ayon sa PROFILE (`cn=default`, o isang named profile na pinipili ayon sa group)."
@@ -1835,6 +1879,18 @@
     "en": "b009a5eae7bbd7a7",
     "text": "primary: isang passwordless na sign-in. mfa: isang second factor."
   },
+  "postLogin.SCHEMA.attributes.stsPostLoginMethod.what": {
+    "en": "b028cf1ddda71c5d",
+    "text": "upgrade: ginagamit ng tao ang kanyang classical na passkey nang isang beses, pagkatapos ay papalitan ito ng ML-DSA na passkey sa mismong lugar sa parehong authenticator — iisang passkey, walang naiiwan. alongside: idinaragdag ang ML-DSA na passkey sa tabi nito, sa post-quantum na lane kung saan dalawang lane ang iniaalok ng realm, o sa ibang authenticator kung saan iisa ang iniaalok nito. automatic: alongside kung saan dalawang lane ang iniaalok ng passkey policy ng tao, upgrade kung saan iisa."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginAttestation.what": {
+    "en": "77645f746e1d52e2",
+    "text": "any: ML-DSA ang key algorithm nito. post-quantum: ML-DSA ang key algorithm nito AT nilagdaan ang naitalang attestation nito gamit ang mga post-quantum na algorithm sa kabuuan; hindi itinuturing ang passkey na may classical na attestation, o walang naitalang attestation, at hinihingan ang may hawak nito ng isang itinuturing."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginNoPasskeyFallback.what": {
+    "en": "4fa78beae92d0ce5",
+    "text": "none: ML-DSA lang. classical: kapag pumalya ang pag-register ng ML-DSA sa device, iniaalok ang pag-ulit gamit ang mga classical na algorithm (kung saan pinapayagan ito ng passkey policy) — mas mabuti ang classical na passkey kaysa password, at hihingan ang may hawak nito ng migration sa ibang pagkakataon gaya ng iba."
+  },
   "postLogin.SCHEMA.attributes.stsPostLoginSelectGroup.what": {
     "en": "5fdad032c7e1e1e7",
     "text": "Ang mga group (cn o DN) na ang mga miyembro ay sakop ng isang named post-login profile."
@@ -1862,6 +1918,30 @@
   "postLogin.sentences.pqcMigration": {
     "en": "b8a2588126ddb520",
     "text": "ang taong may hawak na classical na passkey ay hinihiling, pagkatapos mag-sign in, na mag-register ng post-quantum (ML-DSA) na passkey sa parehong role"
+  },
+  "postLogin.sentences.methodUpgrade": {
+    "en": "70079684df361766",
+    "text": "papalitan ng ML-DSA na passkey ang classical sa mismong lugar, pagkatapos gamitin ng tao ang classical nang isang beses"
+  },
+  "postLogin.sentences.methodAlongside": {
+    "en": "a8cb04020a43af35",
+    "text": "idinaragdag ang ML-DSA na passkey sa tabi ng classical"
+  },
+  "postLogin.sentences.methodAutomatic": {
+    "en": "ff31b304263925a9",
+    "text": "idinaragdag ang ML-DSA na passkey sa tabi ng classical kung saan dalawang lane ang iniaalok, at pinapalitan ito sa mismong lugar kung saan iisa"
+  },
+  "postLogin.sentences.attestationAny": {
+    "en": "a26a23bf63ae7e82",
+    "text": "itinuturing na post-quantum ang passkey kapag ML-DSA ang key algorithm nito"
+  },
+  "postLogin.sentences.attestationPq": {
+    "en": "f16fef2aa80b52a9",
+    "text": "itinuturing lang na post-quantum ang passkey kapag post-quantum ang key algorithm nito at ang naitalang attestation nito"
+  },
+  "postLogin.sentences.fallbackClassical": {
+    "en": "df5f433fb781483c",
+    "text": "inaalukan ng classical na passkey sa halip ang taong walang passkey na hindi makagawa ng ML-DSA ang device"
   },
   "postLogin.sentences.snooze": {
     "en": "f3c3ff82c8da1f59",

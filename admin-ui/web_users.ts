@@ -1871,6 +1871,13 @@ class UsersPage {
             t.html('consoleUsers.mfaSection.serial',
                    { serial: one.deviceSerial }) +
             '</div>' : '') +
+        // A LATER REGISTRATION MAY HAVE REPLACED IT ON ITS AUTHENTICATOR
+        // (#1101): Clear key, below, removes the row.
+        (one.possiblyReplaced
+          ? '<div class="note">' +
+            t.html('consoleUsers.mfaSection.possiblyReplaced', {
+              day: new Date(Number(one.possiblyReplaced.at) || 0)
+                .toISOString().slice(0, 10) }) + '</div>' : '') +
         (state.write
           ? '<details><summary>' + t.html('consoleUsers.mfaSection.rename') +
             '</summary>' +

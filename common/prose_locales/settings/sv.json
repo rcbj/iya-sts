@@ -1127,14 +1127,6 @@
     "en": "f34caf08dceeedd3",
     "text": "Läses bara medan nyckelpolicyn kräver en postkvantnyckel vid inloggning (`postQuantumRequired`), och bara där den valda profilens rad `postQuantumAllowCredentials` är `realm`. `narrow` (standard) anger bara personens postkvantnycklar (ML-DSA) i nyckelstegets `allowCredentials`, så en klassisk nyckel erbjuds aldrig — men en person vars enhet bara har deras klassiska nyckel ser plattformens eget meddelande ”ingen nyckel hittades”. `list-and-refuse` anger varje nyckel personen har och avvisar en klassisk efter ceremonin (STS-AUTHN-0356), med en sida som säger att programmet kräver en postkvantnyckel och var man lägger till en. Avvägningen: personen kan välja en nyckel som kommer att avvisas. I båda fallen får en person som inte har någon postkvantnyckel veta det före varje ceremoni."
   },
-  "webauthn.pqcUpgrade|label": {
-    "en": "1c2af00d33a75721",
-    "text": "Uppgradera en klassisk nyckel till en postkvantnyckel"
-  },
-  "webauthn.pqcUpgrade|description": {
-    "en": "a77cd9a980262260",
-    "text": "På (standardvärdet) kan en person uppgradera en av sina klassiska nycklar till en postkvantnyckel (ML-DSA) på /portal/keys: personen använder den klassiska nyckeln en gång, för att visa att den är hens, och skapar sedan den nya, som bara erbjuds ML-DSA. Med `webauthn.pqcAlongsideClassical` på LÄGGS postkvantnyckeln TILL i ett eget spår och den klassiska behålls; av ERSÄTTER postkvantnyckeln den klassiska på plats, behåller dess namn och antecknar när den uppgraderades och från vilken algoritm. Den klassiska nyckeln ändras först när den nya har verifierats, så en misslyckad uppgradering lämnar den som den var. Den nya nyckeln uppfyller varje regel som en registrering uppfyller. Av kan ingen nyckel uppgraderas; en postkvantnyckel kan fortfarande registreras bredvid en klassisk där nycklar får registreras."
-  },
   "webauthn.userVerification|label": {
     "en": "8b134177fe992d91",
     "text": "Användarverifiering"

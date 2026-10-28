@@ -887,5 +887,6 @@
   "mfaSection.certAddTip": "Un seul certificat feuille. L’autorité qui l’a délivré va dans les magasins de confiance clients, pas ici.",
   "mfaSection.certAdd": "Enregistrer",
   "mfaSection.certAddTitle": "Enregistrer ce certificat sur l’entrée",
-  "mfaSection.certNeedsWrite": "Enregistrer ou retirer un certificat nécessite <strong>Admin Write</strong>."
+  "mfaSection.certNeedsWrite": "Enregistrer ou retirer un certificat nécessite <strong>Admin Write</strong>.",
+  "mfaSection.possiblyReplaced": "A peut-être été remplacée sur son authentificateur par une clé d’accès enregistrée le {day} sous le même identifiant d’utilisateur et le même AAGUID. Elle n’est pas comptée comme moyen d’accès ; effacez-la si elle ne fonctionne plus."
 }
