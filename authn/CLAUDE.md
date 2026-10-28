@@ -3931,5 +3931,10 @@ one click from skipped.
   one lane otherwise; and it is exempt from product mode's "no primary key at
   the sign-in screen" (STS-AUTHN-0206), because the step exists only after a
   complete authentication.
+* **The pending step carries `askedBy`** (#1126: `policy`, or the started
+  activity that asked), so Skip and done stamp the progress row with the
+  source that asked, as the ask did; the asked, skipped and held audit rows
+  carry it too. Who may be due is `common/CLAUDE.md` 3ct's — a running
+  started activity asks its population even where the policy is off.
 * **No protocol test yet**: `tests/post_login.js` drives it over HTTP in
-  process.
+  process; `tests/post_login_started.js` holds #1126's selection.

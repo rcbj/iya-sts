@@ -376,6 +376,51 @@ class PostLoginActivities {
   }
 
   /**
+   * The RUNNING started activities of the ambient realm for one activity,
+   * oldest first (#1126): what `post_login.dueFor()` asks at every sign-in,
+   * since a running started activity turns the sign-in invitation on for
+   * its population. Each is `{ id, groups }`, its group DNs lower-cased for
+   * comparing with the person's.
+   *
+   * THE COST IS AN IN-MEMORY READ, AND NO CACHE IS KEPT. `started` is a
+   * persisted `realms.map()` that is NOT on demand: every process holds the
+   * realm's rows whole and the change log brings another process's writes
+   * (a Pause answered elsewhere) within its convergence, as the job's own
+   * `get()` before each person already relies on. A realm keeps at most
+   * `KEEP` (fifty) rows, ended ones included, so this is a walk of at most
+   * fifty objects already in this process — a cache over it would be a
+   * second copy to keep in step for nothing.
+   *
+   * @param activity - the activity, e.g. `pqc-passkey-migration`
+   * @returns the running ones, oldest first
+   */
+  runningOf(activity: string): { id: string; groups: string[];
+                                 startedAt: number }[] {
+    const { log, started } = this.deps;
+    log.debug("Entering PostLoginActivities.runningOf().");
+    const out: { id: string; groups: string[]; startedAt: number }[] = [];
+    started.forEach(function (value: any): void {
+      if (!value || value.state !== 'running' || !value.id ||
+          String(value.activity || '') !== String(activity || '')) {
+        return;
+      }
+      out.push({
+        id: String(value.id),
+        groups: (Array.isArray(value.groups) ? value.groups : [])
+          .map(function (one: any): string {
+            return String(one).toLowerCase();
+          }),
+        startedAt: Number(value.startedAt) || 0
+      });
+    });
+    out.sort(function (a, b) {
+      return a.startedAt - b.startedAt || (a.id < b.id ? -1 : 1);
+    });
+    log.debug("Leaving PostLoginActivities.runningOf(). " + out.length);
+    return out;
+  }
+
+  /**
    * One started activity of the ambient realm.
    *
    * @param id - its id
@@ -1096,6 +1141,7 @@ export = {
   groupNamesOf: PostLoginActivities.groupNamesOf,
   list: slot.forward('list'),
   get: slot.forward('get'),
+  runningOf: slot.forward('runningOf'),
   groupChooser: slot.forward('groupChooser'),
   view: slot.forward('view'),
   start: slot.forward('start'),

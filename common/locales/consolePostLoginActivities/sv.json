@@ -1,7 +1,7 @@
 {
-  "about": "En startad aktivitet efter inloggning skickar en påminnelse om att logga in till dem som har den att göra, och där ber aktiviteten dem att göra den. Ett schemalagt jobb läser varje pågående aktivitets personer en del i taget, ungefär var {minutes, plural, one {# minut} other {# minuter}}, och skriver bara till dem som har aktiviteten att göra — aldrig två gånger inom påminnelseintervallet och aldrig fler gånger än aktivitetens maximum. Mejlets enda länk öppnar inloggningssidan; den bär ingen inloggningsuppgift. Reglerna varje aktivitet följer är dess profil efter inloggning, under Katalog → Policyer.",
+  "about": "En startad aktivitet efter inloggning gör två saker. Vid inloggning ber den dem den når — medlemmarna i dess grupper, eller alla i realmen — att göra aktiviteten, enligt reglerna i den profil efter inloggning som når var och en under Katalog → Policyer, även om den profilen är avslagen. Per mejl läser ett schemalagt jobb varje pågående aktivitets personer en del i taget, ungefär var {minutes, plural, one {# minut} other {# minuter}}, och skickar en påminnelse om att logga in till dem som har aktiviteten att göra — aldrig två gånger inom påminnelseintervallet och aldrig fler gånger än aktivitetens maximum. Mejlets enda länk öppnar inloggningssidan; den bär ingen inloggningsuppgift.",
   "noMail": "Ingen e-posttransport är konfigurerad i den här realmen, så en pågående aktivitet efter inloggning skriver till ingen. Ställ in en under Serverkonfiguration → E-post.",
-  "noActivity": "Ingen profil efter inloggning i den här realmen har en aktivitet påslagen, så ingen har någon att göra och en startad aktivitet skulle inte skriva till någon. Slå på en under Katalog → Policyer.",
+  "signIn": "Medan en aktivitet pågår tillfrågas de den når vid sin nästa inloggning. En namngiven profil efter inloggning som når en person och är avslagen utesluter personen, precis som från policyn; att standardprofilen är avslagen utesluter ingen. Pausad eller avslutad frågar en aktivitet ingen vid inloggning och skriver till ingen; den som policyn själv slår på för tillfrågas ändå.",
   "reportLink": "Vem som fick mejl, och var varje person står: rapporten postLoginProgress",
   "activities": "Aktiviteter",
   "start": "Starta en aktivitet",
@@ -25,7 +25,7 @@
   "field.intervalDays": "Dagar mellan påminnelser",
   "field.maxMails": "Högst antal mejl per person",
   "field.perRun": "Personer lästa per körning",
-  "groupsHint": "Sök efter grupper och välj ett eller flera resultat för att bygga listan. Aktiviteten skriver till medlemmarna i varje grupp på listan, en gång per person; utan grupp till alla i realmen.",
+  "groupsHint": "Sök efter grupper och välj ett eller flera resultat för att bygga listan. Aktiviteten frågar medlemmarna i varje grupp på listan vid inloggning och skriver till dem, en gång per person; utan grupp alla i realmen.",
   "noGroups": "Ingen grupp vald: aktiviteten når alla i realmen.",
   "chosenGroups": "Valda grupper",
   "groupName": "Grupp",
@@ -37,7 +37,7 @@
   "noGroupMatches": "Ingen grupp matchar den sökningen.",
   "noGroupsAtAll": "Den här realmen har ingen grupp.",
   "groupsFull": "{max} grupper är valda, det flesta en aktivitet får ange.",
-  "startNote": "Utskicket börjar vid jobbets nästa körning. Den som redan har gjort aktiviteten, eller som realmen inte kan be om den, får inget mejl.",
+  "startNote": "När den startas tillfrågas de den når från sin nästa inloggning; utskicket börjar vid jobbets nästa körning. Den som redan har gjort aktiviteten, som realmen inte kan be om den, eller som en avslagen namngiven profil utesluter, varken tillfrågas eller får mejl.",
   "startButton": "Starta",
   "readOnly": "Att starta, pausa och avsluta en aktivitet efter inloggning kräver Admin Write."
 }

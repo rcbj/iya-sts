@@ -1,7 +1,7 @@
 {
-  "about": "Ang isang sinimulang aktibidad pagkatapos mag-sign in ay nagpapadala ng paalala na mag-sign in sa mga taong may nakabinbing aktibidad, kung saan hihilingin sa kanila ng aktibidad na gawin ito. Binabasa ng isang naka-iskedyul na job ang mga tao ng bawat tumatakbong aktibidad nang paisa-isang bahagi, humigit-kumulang bawat {minutes, plural, one {# minuto} other {# minuto}}, at sinusulatan lamang ang mga may nakabinbing aktibidad — hindi kailanman dalawang beses sa loob ng pagitan ng paalala, at hindi lalampas sa maximum ng aktibidad. Ang nag-iisang link ng mail ay nagbubukas ng pahina ng pag-sign in; wala itong dalang kredensyal. Ang mga patakarang sinusunod ng bawat aktibidad ay ang sa post-login profile nito, sa Directory → Mga policy.",
+  "about": "Dalawang bagay ang ginagawa ng isang sinimulang aktibidad pagkatapos mag-sign in. Sa pag-sign in, hinihiling nito sa mga taong naaabot nito — ang mga miyembro ng mga grupo nito, o lahat sa realm — na gawin ang aktibidad, ayon sa mga patakaran ng post-login profile na umaabot sa bawat tao sa Directory → Mga policy, kahit naka-off ang profile na iyon. Sa mail, binabasa ng isang naka-iskedyul na job ang mga tao ng bawat tumatakbong aktibidad nang paisa-isang bahagi, humigit-kumulang bawat {minutes, plural, one {# minuto} other {# minuto}}, at pinapadalhan ng paalalang mag-sign in ang mga may nakabinbing aktibidad — hindi kailanman dalawang beses sa loob ng pagitan ng paalala, at hindi lalampas sa maximum ng aktibidad. Ang nag-iisang link ng mail ay nagbubukas ng pahina ng pag-sign in; wala itong dalang kredensyal.",
   "noMail": "Walang naka-configure na mail transport sa realm na ito, kaya walang sinusulatan ang isang tumatakbong aktibidad pagkatapos mag-sign in. Mag-set up ng isa sa Server configuration → Mail.",
-  "noActivity": "Walang post-login profile sa realm na ito na may naka-on na aktibidad, kaya walang may nakabinbin at walang susulatan ang isang sinimulang aktibidad. Mag-on ng isa sa Directory → Mga policy.",
+  "signIn": "Habang tumatakbo ang isang aktibidad, tatanungin ang mga taong naaabot nito sa susunod nilang pag-sign in. Ang isang may-pangalang post-login profile na umaabot sa isang tao at naka-off ay hindi isinasama ang taong iyon, gaya ng sa policy; walang hindi isinasama dahil lamang naka-off ang default na profile. Kapag naka-pause o tapos na, wala nang tinatanong sa pag-sign in at walang sinusulatan ang aktibidad; tatanungin pa rin ang taong naka-on para sa kanya ang policy mismo.",
   "reportLink": "Sino ang nasulatan, at nasaan na ang bawat tao: ang ulat na postLoginProgress",
   "activities": "Mga aktibidad",
   "start": "Magsimula ng aktibidad",
@@ -25,7 +25,7 @@
   "field.intervalDays": "Mga araw sa pagitan ng mga paalala",
   "field.maxMails": "Pinakamaraming mail bawat tao",
   "field.perRun": "Mga taong binabasa bawat takbo",
-  "groupsHint": "Maghanap ng mga grupo at pumili ng isa o higit pang resulta para buuin ang listahan. Sinusulatan ng aktibidad ang mga miyembro ng bawat grupo sa listahan, isang beses bawat tao; kung walang grupo, lahat sa realm.",
+  "groupsHint": "Maghanap ng mga grupo at pumili ng isa o higit pang resulta para buuin ang listahan. Tinatanong ng aktibidad sa pag-sign in at sinusulatan ang mga miyembro ng bawat grupo sa listahan, isang beses bawat tao; kung walang grupo, lahat sa realm.",
   "noGroups": "Walang napiling grupo: naaabot ng aktibidad ang lahat sa realm.",
   "chosenGroups": "Mga napiling grupo",
   "groupName": "Grupo",
@@ -37,7 +37,7 @@
   "noGroupMatches": "Walang grupong tumutugma sa paghahanap na iyon.",
   "noGroupsAtAll": "Walang grupo ang realm na ito.",
   "groupsFull": "{max} grupo na ang napili, ang pinakamaraming maaaring pangalanan ng isang aktibidad.",
-  "startNote": "Magsisimula ang pagpapadala sa susunod na takbo ng job. Hindi sinusulatan ang taong nakagawa na ng aktibidad, o ang hindi maaaring hilingan ng realm.",
+  "startNote": "Kapag sinimulan, tatanungin ang mga taong naaabot nito mula sa susunod nilang pag-sign in; magsisimula ang pagpapadala sa susunod na takbo ng job. Hindi tinatanong at hindi sinusulatan ang taong nakagawa na ng aktibidad, ang hindi maaaring hilingan ng realm, o ang hindi isinasama ng isang may-pangalang profile na naka-off.",
   "startButton": "Simulan",
   "readOnly": "Kailangan ng Admin Write para magsimula, mag-pause at tapusin ang isang aktibidad pagkatapos mag-sign in."
 }

@@ -1345,7 +1345,13 @@ member, has every field's current value).
   application: the activity is about the person, not what they signed in
   to.
 * **To leave a group out**, give it a named profile with `enabled` off and a
-  lower precedence than the profile that would otherwise reach it.
+  lower precedence than the profile that would otherwise reach it. That
+  keeps them out of a started activity too (below).
+* **Or start the activity for some groups instead** of switching the policy
+  on: a started activity on **Directory → Post-login activities** asks the
+  members of its groups (or the whole realm) at sign-in, under the rules of
+  the profile the policy selects for each person, even where that profile
+  is off. See [Reminders by mail](#reminders-by-mail).
 
 A rollout usually goes like this:
 
@@ -1432,13 +1438,14 @@ activity does not interrupt them. A required one refuses them
 ### Reminders by mail
 
 The activity is asked only at a sign-in, so somebody who rarely signs in may
-reach a deadline without being asked. An administrator can start mail
-reminders by starting the activity on **Directory → Post-login activities**
+reach a deadline without being asked. An administrator can start the
+activity on **Directory → Post-login activities**
 (`/admin/post-login-activities`, or the `/admin-api` operations of the same
-name): the people it is due for, optionally only the members of groups
-chosen by search (each person once), are
-mailed every so many days, up to a maximum per person, until it is paused
-or ended.
+name), optionally only for the members of groups chosen by search. While it
+runs, those people are **asked at their next sign-in** whether or not the
+policy is on (a named profile switched off still leaves its group out), and
+the people it is due for are **mailed** every so many days, each person
+once a round, up to a maximum per person, until it is paused or ended.
 
 The mail only asks the person to sign in. Its one link carries no code and
 nothing about the person, it goes to the address on their entry, and a
@@ -1472,8 +1479,8 @@ authenticator. It runs in two places: at a sign-in, as the
 when its `method` is `upgrade` (or `automatic` for a person whose passkey
 profile has one lane), and from the console, run by an administrator on the
 person's behalf (below). There is no upgrade button on `/portal/keys` and no
-setting that switches it on: at a sign-in, the post-login activity policy
-is the switch.
+setting that switches it on: at a sign-in, the post-login activity policy,
+or a started post-login activity, is the switch.
 
 **The ceremony** is two steps:
 

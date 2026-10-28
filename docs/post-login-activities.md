@@ -5,8 +5,10 @@ title: "Post-login activities"
 # Post-login activities
 
 A **post-login activity** is something a realm asks a person to do after they
-sign in, before they are sent back to the application. In iya-sts it is a
-policy: you switch it on per realm, and you target it at people by group.
+sign in, before they are sent back to the application. There are two ways to
+switch it on: the **policy**, per realm and targeted by group, or **starting**
+an activity for some groups (or the whole realm), which asks them at sign-in
+and mails them reminders. Either way the rules come from the policy.
 [Passkeys → Post-login activities](passkeys.md#post-login-activities-moving-people-to-post-quantum-passkeys)
 walks through a rollout; this page is the reference.
 
@@ -20,7 +22,8 @@ More activities will use the same policy and the same step.
 
 ## Before you start
 
-- Post-login activities are **off by default** in every realm.
+- Post-login activities are **off by default** in every realm: the policy is
+  off, and no activity is started.
 - The realm has to be able to make an ML-DSA passkey. Passkeys must be on
   (`webauthn.enabled`), the role must be allowed (`webauthn.primaryAllowed` or
   `webauthn.mfaAllowed`), and an ML-DSA algorithm must be offered at
@@ -65,7 +68,8 @@ person, the one with the lowest `precedence` (1–1000) wins.
 
 **To exclude a group**, create a named profile for that group, switch `enabled`
 off, and give it a lower precedence than the profile that would otherwise reach
-its members.
+its members. That also keeps its members out of every
+[started activity](#starting-an-activity).
 
 **Example: a pilot group, required within 30 days**
 
@@ -140,20 +144,39 @@ fail and on which clients.
 
 ## Starting an activity
 
-The activity is asked only when a person signs in, so somebody who rarely
-signs in may not be asked before a deadline. **Starting** a post-login
-activity reminds them by mail. Open **Directory → Post-login activities**
-(`/admin/post-login-activities`), the **Start an activity** tab. The rules
-the activity follows — who it reaches, the allotted time, the role, the
-method — are its post-login profile's, set on **Directory → Policies** as
-above; starting it only adds the reminders.
+Open **Directory → Post-login activities** (`/admin/post-login-activities`),
+the **Start an activity** tab. A started activity does two things while it
+runs:
+
+- **At sign-in it asks its people.** Everybody it reaches — the members of
+  its groups, or everybody in the realm — is asked at their next sign-in,
+  **even where the post-login policy is off**. You do not have to switch the
+  policy on as well.
+- **By mail it reminds them.** The activity is otherwise asked only when a
+  person signs in, so somebody who rarely signs in may not be asked before a
+  deadline; the reminders bring them to the sign-in.
+
+**The rules come from the policy.** For each person, the profile the policy
+selects for them on **Directory → Policies** — a named profile that reaches
+one of their groups, else `default` — supplies the snooze, the allotted
+time, the role, the method, what a person with no passkey is asked, the
+attestation and the fallback. The started activity only switches it on.
+
+**Excluding still works.** A named profile with `enabled` off that reaches a
+person (at a lower precedence than any profile that would switch it on) keeps
+them out of every started activity, as it keeps them out of the policy. The
+`default` profile being off excludes nobody: that is how every realm starts.
+
+**Paused or ended, it asks nobody.** A person the policy itself switches on
+is still asked, as before.
 
 **Choose the groups first, or none.** Search for a group by part of its name
 or DN; the results come twenty at a time, with *next* and *previous* links.
 Pick a result to add it to the list of groups, pick more to add more, and
 **Remove** any you did not mean. The activity mails the members of every
 group on the list — their union, so somebody in two of the groups is mailed
-once. With no group chosen, it mails everybody in the realm.
+once. With no group chosen, it reaches everybody in the realm. Whether a
+person is in a group is read from their own memberships when they sign in.
 
 Then fill in the form and press **Start**:
 
@@ -167,8 +190,9 @@ Then fill in the form and press **Start**:
 A scheduler job, `post-login.activity-mail`, runs about every ten minutes in
 a realm with a started activity running (Run now on **Monitoring →
 Scheduler** starts it at once). Each run reads the next slice of the
-activity's people and mails those it is due for: the post-login policy
-reaches them, the realm can make the passkey, and they have not done it.
+activity's people and mails those it is due for: the activity reaches them
+and no named profile switched off excludes them, the realm can make the
+passkey, and they have not done it.
 When it reaches the end of the people it starts again from the beginning;
 that next pass sends the reminders.
 
@@ -181,8 +205,9 @@ that next pass sends the reminders.
   says so.
 - **A mail is not an invitation.** The allotted time still starts at the first
   time the person is asked at a sign-in.
-- **Pause** stops mailing and keeps the activity's place. **Resume** carries
-  on from there. **End** stops it for good. Only one may run at a time for
+- **Pause** stops the asking at sign-in and the mailing, and keeps the
+  activity's place. **Resume** carries on from there. **End** stops both for
+  good. Only one may run at a time for
   the same activity and the same groups (in any order), or for the same
   activity across the whole realm.
 
@@ -203,9 +228,10 @@ need Admin Write.
   "intervalDays": 7, "maxMails": 3 }
 ```
 
-**Who was mailed, and when, is a report.** Each mail is recorded on the
-person's progress row (`mailedBy`, the started activity that mailed them;
-how many mails it sent them; the first and the last), and the
+**Who was asked and mailed, and when, is a report.** The person's progress
+row records who asked them at a sign-in (`askedBy`: `policy`, or the started
+activity's id) and each mail (`mailedBy`, the started activity that mailed
+them; how many mails it sent them; the first and the last), and the
 `postLoginProgress` source in the
 [reports application](reporting.md#postloginprogress) reads it. The console
 page shows only each started activity's own counts.
@@ -226,7 +252,7 @@ Programs signing in with a key (SCIM, the SPIRE Server API) are never asked.
 
 | Action | When |
 |---|---|
-| `authn.post-login.asked` | A person was asked. |
+| `authn.post-login.asked` | A person was asked; `askedBy` says whether the policy or a started activity asked. |
 | `authn.post-login.skipped` | A person skipped; the row includes when the skip ends. |
 | `authn.post-login.done` | A person registered the passkey; the row includes its algorithm. |
 | `authn.post-login.held` | A required activity refused a sign-in at a door that can't ask for it. |

@@ -8164,7 +8164,8 @@ class Authn {
         detail: Object.assign(this.attemptFacts(extra.application,
           attemptMethod), { activity: postLoginDue.activity,
                             role: postLoginDue.role,
-                            profile: postLoginDue.profile })
+                            profile: postLoginDue.profile,
+                            askedBy: postLoginDue.askedBy })
       });
       extra.refusedWith = 'STS-AUTHN-0473';
       extra.refusedWhy = why;
@@ -11282,7 +11283,10 @@ class Authn {
         snoozeDays: Number(due.snoozeDays) || 1,
         graceDays: Number(due.graceDays) || 0,
         deadline: deadline,
-        profile: String(due.profile || '') },
+        profile: String(due.profile || ''),
+        // Who asked (#1126): the policy, or a started activity's id;
+        // written on the progress row at Skip and at done as at the ask.
+        askedBy: String(due.askedBy || '') },
       held: {
         amr: Array.isArray(hold.amr) ? hold.amr : [],
         acr: String(hold.acr || ''), via: String(hold.via || ''),
@@ -11303,11 +11307,13 @@ class Authn {
       detail: { activity: String(due.activity), role: String(due.role),
                 reason: String(due.reason), required: due.required === true,
                 profile: String(due.profile || ''),
+                askedBy: String(due.askedBy || ''),
                 application: String((record && record.application) || '') }
     });
     log.info('authn: "' + username + '" signed in and is asked for a ' +
              'post-login activity (' + due.activity + ', ' + due.role +
-             (due.required ? ', required' : '') + ') before the session ' +
+             (due.required ? ', required' : '') + ', asked by ' +
+             String(due.askedBy || 'policy') + ') before the session ' +
              'starts.');
     this.stepAnswer(res, 'mfa', 'post-login', stepId, POST_LOGIN_PATH, 'mfa');
     log.debug("Leaving Authn.postLoginStep().");
@@ -11404,7 +11410,8 @@ class Authn {
         detail: { activity: String(due.activity), role: String(due.role),
                   snoozedUntil: new Date(Number(skipped.snoozedUntil))
                     .toISOString(),
-                  profile: String(due.profile || '') }
+                  profile: String(due.profile || ''),
+                  askedBy: String(due.askedBy || '') }
       });
       this.finishPostLogin(req, res, base, step);
       log.debug("Leaving Authn.postLoginAct(). Skipped.");

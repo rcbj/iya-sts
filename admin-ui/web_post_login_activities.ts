@@ -8,6 +8,11 @@
 // DIRECTORY → POST-LOGIN ACTIVITIES (#1111, #1123), drawn from
 // `GET /admin-api/post-login-activities`.
 //
+// WHAT A STARTED ACTIVITY DOES IS SAID ON BOTH TABS (#1126): it asks its
+// people at sign-in (the `signIn` note above the list, `about`) and mails
+// them (`about`, `startNote`), and the policy being off no longer draws a
+// warning, because it no longer stops either.
+//
 // Two tabs. **Activities**: every post-login activity started in the realm
 // with its state, its groups, its numbers, what its runs have done so far,
 // and a Pause, Resume or End button where the state allows one. **Start an
@@ -68,16 +73,19 @@ class PostLoginActivitiesPage {
     const t = c.t;
     const v = view || {};
     const self = PostLoginActivitiesPage;
-    const warnings = (v.mailAvailable ? ''
-      : WebKit.warn(t.html('consolePostLoginActivities.noMail'))) +
-      (v.activityEnabled ? ''
-        : WebKit.warn(t.html('consolePostLoginActivities.noActivity')));
+    // No warning about the policy being off (#1126): a running started
+    // activity asks its own people at sign-in whatever the policy says, so
+    // `activityEnabled` no longer decides whether starting one does
+    // anything. Without a transport it still mails nobody.
+    const warnings = v.mailAvailable ? ''
+      : WebKit.warn(t.html('consolePostLoginActivities.noMail'));
     return WebKit.note(t.html('consolePostLoginActivities.about', {
       minutes: Number(v.everyMinutes) || 10 })) + warnings +
       '<p><a href="/report/sources/postLoginProgress">' +
       t.html('consolePostLoginActivities.reportLink') + '</a></p>' +
       '<h2 data-tab="activities">' +
       t.html('consolePostLoginActivities.activities') + '</h2>' +
+      WebKit.note(t.html('consolePostLoginActivities.signIn')) +
       self.list(v, c) +
       '<h2 data-tab="start">' + t.html('consolePostLoginActivities.start') +
       '</h2>' + self.startForm(v, c);

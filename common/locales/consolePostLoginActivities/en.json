@@ -1,7 +1,7 @@
 {
-  "about": "A started post-login activity mails the people it is due for a reminder to sign in, where the activity then asks them to do it. A scheduler job reads each running activity's people a slice at a time, about every {minutes, plural, one {# minute} other {# minutes}}, and mails only the people the activity is due for — never twice within the reminder interval, and never more than the activity's maximum. The mail's one link opens the sign-in page; it carries no credential. The rules each activity follows are its post-login profile's, on Directory → Policies.",
+  "about": "A started post-login activity does two things. At sign-in it asks the people it reaches — the members of its groups, or everybody in the realm — to do the activity, under the rules of the post-login profile that reaches each person on Directory → Policies, even where that profile is switched off. By mail, a scheduler job reads each running activity's people a slice at a time, about every {minutes, plural, one {# minute} other {# minutes}}, and mails the people the activity is due for a reminder to sign in — never twice within the reminder interval, and never more than the activity's maximum. The mail's one link opens the sign-in page; it carries no credential.",
   "noMail": "No mail transport is configured in this realm, so a running post-login activity mails nobody. Set one up on Server configuration → Mail.",
-  "noActivity": "No post-login profile in this realm has an activity switched on, so nobody is due one and a started activity would mail nobody. Turn one on in Directory → Policies.",
+  "signIn": "While an activity is running, the people it reaches are asked at their next sign-in. A named post-login profile that reaches a person and is switched off excludes them, as it does from the policy; the default profile being off excludes nobody. Paused or ended, an activity asks nobody at sign-in and mails nobody; a person the policy itself switches on is still asked.",
   "reportLink": "Who was mailed, and where each person stands: the postLoginProgress report",
   "activities": "Activities",
   "start": "Start an activity",
@@ -25,7 +25,7 @@
   "field.intervalDays": "Days between reminders",
   "field.maxMails": "Most mails per person",
   "field.perRun": "People read per run",
-  "groupsHint": "Search for groups and pick one or more results to build the list. The activity mails the members of every group on the list, each person once; with no group, everybody in the realm.",
+  "groupsHint": "Search for groups and pick one or more results to build the list. The activity asks the members of every group on the list at sign-in and mails them, each person once; with no group, everybody in the realm.",
   "noGroups": "No group chosen: the activity reaches everybody in the realm.",
   "chosenGroups": "Groups chosen",
   "groupName": "Group",
@@ -37,7 +37,7 @@
   "noGroupMatches": "No group matches that search.",
   "noGroupsAtAll": "This realm has no group.",
   "groupsFull": "{max} groups are chosen, the most one activity may name.",
-  "startNote": "Mailing starts at the job's next run. A person who has done the activity, or whom the realm cannot ask, is not mailed.",
+  "startNote": "Starting it asks the people it reaches from their next sign-in; mailing starts at the job's next run. A person who has done the activity, whom the realm cannot ask, or whom a named post-login profile switched off excludes, is neither asked nor mailed.",
   "startButton": "Start",
   "readOnly": "Starting, pausing and ending a post-login activity needs Admin Write."
 }

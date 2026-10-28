@@ -407,7 +407,10 @@ time budget and a cancellation stop the paging and not just the taking.
   stamps `profile`, `role` and `graceDays` on every write (`stamp()`), so
   a report does not ask the directory for each person's profile. A row
   written before #1110 has none; for it alone the reader asks
-  `post_login_policy.forPerson()`, once per person.
+  `post_login_policy.forPerson()`, once per person. **`askedBy` (#1126)**
+  is the row's own the same way — `policy`, or the started activity that
+  asked at a sign-in — and is never inferred for an older row: empty there
+  is the truth, nobody recorded who asked.
 * **`progress` is one word** (`done`, `past-grace`, `snoozed`, `asked`,
   `mailed`, the first that holds) because the New Query form groups by ONE
   field: "progress by activity" is that word counted, filtered to the
