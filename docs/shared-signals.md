@@ -557,8 +557,9 @@ Development records what it would do and does nothing unless
 Each trust realm has three streams seeded by the service itself, one each for
 the admin console, the user portal and the reports application. Each asks for
 every CAEP and RISC event type and collects it over RFC 8936 poll from this
-service's own `/ssf/poll`. What arrives is shown at `/admin/signals`,
-`/portal/signals` and `/report/signals`.
+service's own `/ssf/poll`. What arrives is shown at `/admin/signals` and
+`/portal/signals`; the reports application answers it at
+`GET /report-api/signals` and has no page for it.
 [Signals received](signals-received.md) explains how this works, and why an
 empty page has five possible causes. **All three act on what they receive**: a
 verified event the `signal-response` policy permits revokes the tokens the

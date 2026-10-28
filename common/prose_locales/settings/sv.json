@@ -7088,8 +7088,8 @@
     "text": "Registrera konsolen, portalen och rapporterna som mottagare"
   },
   "ssf.internalReceivers|description": {
-    "en": "0a23fbb0f030f814",
-    "text": "Om tjänsten skapar en Shared Signals-ström för sin EGEN administratörskonsol, användarportal och rapportapplikation (#1042), så att var och en tar emot varje CAEP- och RISC-händelse — genom RFC 8936-hämtning från tjänstens egen /ssf/poll var ssf.internalPollMs (#771) — och visar det som kommit på /admin/signals, /portal/signals och /report/signals. De är VANLIGA strömmar — pausa, begränsa eller ta bort en på /admin/ssf så förblir den så tills en omstart."
+    "en": "603011e249d33c00",
+    "text": "Om tjänsten skapar en Shared Signals-ström för sin EGEN administrationskonsol, användarportal och sitt rapportprogram (#1042), så att var och en tar emot varje CAEP- och RISC-händelse — hämtade genom RFC 8936-hämtning från tjänstens egen /ssf/poll var ssf.internalPollMs (#771) — och visar det som kommit på /admin/signals och /portal/signals; rapportprogrammet besvarar sitt eget på GET /report-api/signals och visar ingen sida för det (#1090). Det är VANLIGA strömmar — pausa en, begränsa den eller ta bort den på /admin/ssf så förblir den så till en omstart."
   },
   "ssf.internalReceivers|restartReason": {
     "en": "eb2b8e34bd6ee85c",

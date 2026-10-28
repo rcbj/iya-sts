@@ -7088,8 +7088,8 @@
     "text": "Enregistrer la console, le portail et les rapports comme récepteurs"
   },
   "ssf.internalReceivers|description": {
-    "en": "0a23fbb0f030f814",
-    "text": "Indique si ce service crée un flux Shared Signals pour sa PROPRE console d’administration, son portail utilisateur et son application de rapports (#1042), afin que chacun reçoive chaque événement CAEP et RISC — en les collectant par interrogation RFC 8936 depuis le /ssf/poll de ce service toutes les ssf.internalPollMs (#771) — et affiche ce qui est arrivé sur /admin/signals, /portal/signals et /report/signals. Ce sont des flux ORDINAIRES : mettez-en un en pause, restreignez-le ou supprimez-le sur /admin/ssf et il reste ainsi jusqu’à un redémarrage."
+    "en": "603011e249d33c00",
+    "text": "Indique si ce service crée un flux Shared Signals pour sa PROPRE console d'administration, son portail utilisateur et son application de rapports (#1042), afin que chacun reçoive chaque événement CAEP et RISC — en les récupérant par interrogation RFC 8936 depuis le /ssf/poll de ce service toutes les ssf.internalPollMs (#771) — et affiche ce qui est arrivé sur /admin/signals et /portal/signals ; l'application de rapports répond le sien à GET /report-api/signals et n'en affiche aucune page (#1090). Ce sont des flux ORDINAIRES : mettez-en un en pause, restreignez-le ou supprimez-le sur /admin/ssf et il le reste jusqu'au prochain redémarrage."
   },
   "ssf.internalReceivers|restartReason": {
     "en": "eb2b8e34bd6ee85c",
