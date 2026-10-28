@@ -1375,9 +1375,13 @@ rebuild it from the template.
 ## Watching the move to post-quantum passkeys: the ceremony audit rows
 
 Every passkey registration and sign-in at the sign-in screen, the
-usernameless sign-in, `/portal/keys` and an activation link writes one
+usernameless sign-in, `/portal/keys`, an activation link, an upgrade, an
+administrator's enrolment and a device link on `/portal/devices` writes one
 audit row, `webauthn.ceremony`, whether it completed or not
-([#943](https://github.com/rcbj/iya-sts/issues/943)). Find them on
+([#943](https://github.com/rcbj/iya-sts/issues/943),
+[#1108](https://github.com/rcbj/iya-sts/issues/1108)). The
+[passkey ceremonies source in `/report`](reporting.md#passkey-ceremonies)
+reads them back as a table you can filter and group. Find them on
 **Monitoring → Audit log** or with
 `GET /admin-api/audit?action=webauthn.ceremony` (add `actor=` for one
 person, `outcome=refused` for the ones that failed). The row's detail:
@@ -1385,14 +1389,21 @@ person, `outcome=refused` for the ones that failed). The row's detail:
 | Field | What it holds |
 |---|---|
 | `ceremony` | `registration` or `assertion` |
-| `door` | `sign-in-step`, `usernameless`, `portal` (including a device link on `/portal/devices`), `activation`, `upgrade` or `admin-enrolment` |
+| `door` | `sign-in-step`, `usernameless`, `portal`, `activation`, `upgrade`, `admin-enrolment` or `device-link` |
 | `role`, `lane` | `primary` or `mfa`; `classical` or `pqc` |
+| `application` | the application the sign-in was for (its client or relying-party id); absent at `/portal/keys`, an activation link, a device link and an administrator's enrolment |
+| `durationMs` | milliseconds from the ceremony's options being issued to its response arriving, measured by the service (never reported by the browser). It includes the time the person spent at the prompt, so compare many rows, not one |
 | `offered` | the algorithms offered, in order: for a registration, the list the browser was given (`pubKeyCredParams`); for a sign-in, the algorithms of the person's passkeys the ceremony could use |
-| `algorithm`, `postQuantum` | the algorithm that was used, and whether it is ML-DSA |
-| `client` | the browser and operating system, by name and major version only (`Chrome 141 on macOS 15`), from the User-Agent; then, where the browser reported its WebAuthn capabilities, `|` and those it has (`Chrome 141 on macOS 15|conditionalGet,hybridTransport`) |
-| `transports`, `attachment` | what the browser reported: `internal`, `hybrid`, `usb`...; `platform` or `cross-platform` |
+| `algorithm` | the algorithm that was used; it is post-quantum when it is one of the ML-DSA algorithms |
+| `client` | the browser and operating system, by name and major version only (`Chrome 141 on macOS 15`), from the User-Agent |
 | `clientError` | for a ceremony the browser did not complete, the error name its script reported: `NotAllowedError` (declined, timed out, or no passkey — the browser does not say which), `NotSupportedError`, `InvalidStateError`, `SecurityError`, `AbortError`, ...; `other` for anything else. The error's message is never recorded |
-| `attestation` | for a registration, what its attestation was signed with, leaf to anchor, and `(PQ)` where all of it is post-quantum; led by `enterprise not listed, asked direct` where `webauthn.attestation` is `enterprise` and the RP ID is not in `webauthn.attestationEnterpriseRpIds` (for a registration that recorded an attestation) |
+| `capabilities` | the client capabilities the browser reported as available, from a fixed list |
+| `authenticator` | three facts separated by `\|`: the attachment (`platform` or `cross-platform`), the transports the browser reported (`internal`, `hybrid`, `usb`...), and for a registration what its attestation was signed with, leaf to anchor, with `(PQ)` where all of it is post-quantum, led by `enterprise not listed, asked direct` where `webauthn.attestation` is `enterprise` and this RP ID is not on its list. For example `platform\|internal,hybrid\|ES256` |
+
+Rows written before #1108 carry `attachment`, `transports`, `attestation`
+and `postQuantum` as separate fields instead of `authenticator`, and a few
+written in between carry the capabilities on `client` after a `|`; the
+`/report` source reads all of them.
 
 A refused row carries the error code the refusal was recorded under (for a
 browser that gave up, `STS-AUTHN-0022`).
@@ -1698,8 +1709,8 @@ way, because the browser refuses the ceremony before the service sees it.
   tried; the attestation algorithms are recorded and enforced as WebAuthn
   and the ML-DSA certificate profile describe them.
 * **Device links on `/portal/devices` write `webauthn.ceremony` rows** with
-  door `portal`. The doors are `sign-in-step`, `usernameless`, `portal`,
-  `activation`, `upgrade` and `admin-enrolment`. When a browser declines a
+  door `device-link`. The doors are `sign-in-step`, `usernameless`, `portal`,
+  `activation`, `upgrade`, `admin-enrolment` and `device-link`. When a browser declines a
   registration, the existing authenticated ceremony operation records its
   allowlisted error name and the client capabilities it reported; no error
   message text is stored, and the pending ceremony remains available for its

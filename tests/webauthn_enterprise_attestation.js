@@ -27,9 +27,10 @@
 //      `conveyance: direct` and `enterpriseDowngraded: true`.
 //   D. The ceremony row's `attestation` detail leads with the downgrade,
 //      and says nothing of it for an enterprise request — and is stored at
-//      all: the client's capabilities ride on `client`, so the row is
-//      within `audit.js`'s twelve fields (it was thirteen, and the cap
-//      dropped `attestation`).
+//      all: since #1108 it is the third part of the folded `authenticator`
+//      (read back with `unfold()`), so the row is within `audit.js`'s
+//      twelve fields (it was thirteen, and the cap dropped `attestation`),
+//      with `client` the plain client and `capabilities` its own field.
 //
 // The certificates are made at run time by `webauthn_attestation_kit.js`;
 // no key material is in this repository.
@@ -236,7 +237,7 @@ function row(t, recorded) {
   const rows = audit.list().filter(function (one) {
     return one.action === 'webauthn.ceremony' && one.actor === who;
   }).map(function (one) {
-    return String((one.detail || {}).attestation || '');
+    return String(ceremonies.unfold(one.detail || {}).attestation || '');
   });
   const downgraded = rows.filter(function (text) {
     return /^enterprise not listed, asked direct; ES256/.test(text);
@@ -246,8 +247,10 @@ function row(t, recorded) {
   });
   t.check(rows.length === 2 && downgraded.length === 1 && plain.length === 1 &&
           Object.keys(first).length <= 12 && !first['(more)'] &&
-          first.client === 'Chrome 141 on macOS 10|conditionalGet,' +
-                           'hybridTransport',
+          first.client === 'Chrome 141 on macOS 10' &&
+          first.capabilities === 'conditionalGet,hybridTransport' &&
+          /^\|\|enterprise not listed, asked direct; ES256|^\|\|ES256/
+            .test(String(first.authenticator || '')),
           'D. the ceremony row\'s attestation detail leads with the ' +
           'downgrade, and an enterprise request\'s says nothing of it',
           JSON.stringify([rows, first]));
