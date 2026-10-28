@@ -568,6 +568,23 @@ What that changed, and why each piece is the way it is:
   `begin`'s `classical` default becomes the post-quantum lane
   (`webauthnPolicy.enrolmentLane()`). `authn/CLAUDE.md` (*A post-quantum
   passkey required*) argues the rest.
+* **The ceremony starts when the call to action is pressed (rcbj,
+  2026-10-28).** Pressing *Create a passkey* or *Use a security key* used
+  to draw a second form holding the same choice again — a *Create passkey*
+  / *Register security key* button that ran the ceremony, and *My browser
+  did not ask — tell me why* beside it. The press IS the request, so the
+  armed page now carries `data-autostart` on `#wa-data` and
+  `web_portal_webauthn.ts` runs `navigator.credentials.create()` as soon
+  as it is drawn; the second button and the "did not ask" button are gone
+  from this page, Cancel and the hidden ML-DSA guidance stay. A prompt the
+  browser refuses or the person dismisses is posted as the finish's error,
+  which abandons the enrolment and draws the two calls to action again
+  with the browser's own words, as a refused ceremony always did. The
+  activation's key step and the device link keep `#wa-go` and run on its
+  click: each is one step of a longer form, where the press that armed the
+  ceremony was not the person asking for the prompt. The device job
+  (`sts_portal_device_webauthn.js`) waits for the nickname form a finished
+  ceremony draws rather than clicking a button.
 * **The classical retry (#944)**: the armed ceremony carries `fallback`
   (`asksPostQuantum`, `classical`, `retrying`), `#wa-data` carries it as
   `data-fallback`, and `KeysPages.fallback()` draws the guidance HIDDEN

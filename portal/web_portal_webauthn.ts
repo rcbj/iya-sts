@@ -250,10 +250,16 @@ class PortalWebAuthn {
     PortalWebAuthn.signal(doc.getElementById('wa-signal-pqc'), window);
     const d = doc.getElementById('wa-data');
     const go = doc.getElementById('wa-go');
-    if (!d || !go) {
+    if (!d || (!go && d.getAttribute('data-autostart') !== '1')) {
       return;
     }
-    go.addEventListener('click', function (event: Json): void {
+    // STARTED ON DRAW OR ON THE BUTTON (rcbj, 2026-10-28): the Passkeys
+    // page marks its ceremony `data-autostart`, because the call to action
+    // a person pressed a moment ago is the request and a second button
+    // beside it asked the same question twice. The activation's key step
+    // and the device link still draw `#wa-go` and run on its click. One
+    // function either way, so the two cannot drift.
+    const run = function (event: Json): void {
       if (event && event.preventDefault) {
         event.preventDefault();
       }
@@ -292,7 +298,12 @@ class PortalWebAuthn {
           }
         });
       });
-    });
+    };
+    if (d.getAttribute('data-autostart') === '1') {
+      run(null);
+    } else {
+      go.addEventListener('click', run);
+    }
   }
 }
 

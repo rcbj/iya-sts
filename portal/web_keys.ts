@@ -13,9 +13,13 @@
 // fold with everything technical; two calls to action; and the ceremony
 // while a registration is waiting.
 //
-// THE CEREMONY IS THE SAME MARKUP THE SERVER DREW — `#wa-data`, `#wa-go`,
-// `#wa-form` with its hidden `#wa-credential` — and the runtime runs it
-// (`web_portal_webauthn.ts`) and sends `#wa-form` to `/account-api`. A
+// THE CEREMONY IS THE SAME MARKUP THE SERVER DREW — `#wa-data`, `#wa-form`
+// with its hidden `#wa-credential` — and the runtime runs it
+// (`web_portal_webauthn.ts`) AS SOON AS THE ARMED PAGE IS DRAWN (`#wa-data`
+// carries `data-autostart`; rcbj, 2026-10-28: the call to action pressed is
+// the request, and a second button asked it twice) and sends `#wa-form` to
+// `/account-api`. The activation's key step and the device link still draw
+// `#wa-go` and run on its click. A
 // registration the guidance shows is reported through that finish without
 // the form being submitted and without the answer being drawn (#961). The
 // Signal API's `#wa-signal` likewise. RENAME is a `<details>` with a form in
@@ -311,10 +315,13 @@ class KeysPages {
    *
    * @param pending - `{ challenge, rpId, user, userHandle, display, exclude,
    *   options }`
+   * @param autostart - true where the runtime is to run the ceremony as
+   *   soon as the page is drawn, with no button (the Passkeys page)
    * @returns the HTML
    */
-  static ceremonyData(pending: Json): string {
+  static ceremonyData(pending: Json, autostart?: boolean): string {
     return '<div id="wa-data"' +
+      (autostart ? ' data-autostart="1"' : '') +
       ' data-challenge="' + kit.esc(pending.challenge) + '"' +
       ' data-rpid="' + kit.esc(pending.rpId) + '"' +
       ' data-user="' + kit.esc(pending.user) + '"' +
@@ -409,19 +416,23 @@ class KeysPages {
           ? t.html('portal.key.promptSecurityKey')
           : t.html('portal.key.promptPasskey')) + ' ' +
         t.html('portal.enrol.different') + '</p>' +
-        KeysPages.ceremonyData(pending) +
-        '<button id="wa-go" type="button">' + (securityKey
-          ? t.html('portal.key.register') : t.html('portal.key.create')) +
-        '</button>' +
+        // THE CEREMONY STARTS ON ITS OWN (rcbj, 2026-10-28): the call to
+        // action a person pressed IS the request, so the armed page carries
+        // `data-autostart` and the runtime runs the browser's prompt as
+        // soon as it is drawn, with no second button to press and no "my
+        // browser did not ask" button beside it. A prompt the browser
+        // refuses or the person dismisses is posted as the finish's error,
+        // which abandons the enrolment and draws the two calls to action
+        // again with the browser's own words, as a refused ceremony always
+        // did. The activation's key step and the device link keep their
+        // button (`#wa-go`), because each is one step of a longer form.
+        KeysPages.ceremonyData(pending, true) +
         '<form method="post" action="' + PATH + '" id="wa-form">' +
         '<input type="hidden" name="action" value="finish">' +
         '<input type="hidden" name="enrolment_id" value="' +
         kit.esc(pending.id) + '">' +
         '<input type="hidden" name="credential" id="wa-credential">' +
-        // THE SECOND BUTTON: it sends a `finish` with no credential, which
-        // the operation answers by saying the browser ran no ceremony.
-        '<button class="secondary">' + t.html('portal.key.didNotAsk') +
-        '</button></form><form method="post" action="' + PATH + '">' +
+        '</form><form method="post" action="' + PATH + '">' +
         '<input type="hidden" name="action" value="cancel">' +
         '<button class="secondary">' + t.html('portal.enrol.cancel') +
         '</button></form>' + KeysPages.fallback(pending, t) +

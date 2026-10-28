@@ -450,9 +450,11 @@ async function signIn(driver, withKey) {
 
 // ENROLMENT ON /portal/keys (#470): press the call to action for the kind —
 // *Create a passkey* (`passkey`) or *Use a security key* (`security-key`),
-// keeping the default role (a second step after the password) — then the
-// page's own button, which runs `navigator.credentials.create()`; then give
-// it a nickname in the form the page opens once it is registered.
+// keeping the default role (a second step after the password). Since
+// 2026-10-28 (rcbj) that press is the whole request: the armed page runs
+// `navigator.credentials.create()` as soon as it is drawn, with no second
+// button, and the virtual authenticator answers it. Then give the key a
+// nickname in the form the page opens once it is registered.
 async function enrol(driver, kind, label) {
   log.debug("Entering enrol(). kind=" + kind);
   await openPage(driver, "/portal/keys");
@@ -462,14 +464,15 @@ async function enrol(driver, kind, label) {
     "/portal/keys offers no \"" + kind + "\" call to action, so a person " +
     "cannot ask for one");
   await buttons[0].click();
-  await waitFor(driver, function () {
-    return present(driver, "#wa-go");
-  }, "/portal/keys did not arm a ceremony for a " + kind);
-  await driver.findElement(By.id("wa-go")).click();
+  // THE NICKNAME FORM IS WHAT A FINISHED CEREMONY DRAWS (`named=`), so its
+  // arrival is the one condition that says the ceremony ran and the page
+  // came back; `#wa-data` alone could be read before the armed page is
+  // drawn at all.
   await waitFor(driver, async function () {
-    return !(await present(driver, "#wa-data"));
-  }, "the " + kind + " ceremony never finished: the page still holds the " +
-     "armed ceremony");
+    return !(await present(driver, "#wa-data")) &&
+      await present(driver, "form[action$='/rename-key'] input[name='label']");
+  }, "the " + kind + " ceremony never finished: the page never came back " +
+     "with the registered key's nickname form");
   // THE NICKNAME PROMPT, open at the top of the page with the default name.
   const nickname = await driver.findElements(
     By.css("form[action$='/rename-key'] input[name='label']"));
