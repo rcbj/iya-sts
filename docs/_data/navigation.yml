@@ -106,6 +106,10 @@
     - { title: Signals received, url: /signals-received.html }
     - { title: "Configuring Shared Signals", url: /configure-shared-signals.html }
 
+- section: Client libraries
+  items:
+    - { title: Authentication libraries, url: /client-libraries.html }
+
 - section: Certificates and workloads
   items:
     - { title: PKI, url: /pki.html }
