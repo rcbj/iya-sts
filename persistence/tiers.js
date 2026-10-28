@@ -406,10 +406,10 @@ const CELL_MINTED = [
   // this cell's people, as the passkey report's baseline is, so it stays
   // with them.
   'passkey_report.history',
-  // A post-login mail campaign (#1111) and what its runs did: the campaign
-  // names the administrator who started it, and its run row holds a key
-  // cursor that is a person's DN — and a campaign walks this cell's people.
-  'post_login.campaignRuns', 'post_login.campaigns',
+  // A started post-login activity (#1111, #1123) and what its runs did: the
+  // record names the administrator who started it, and its run row holds a
+  // key cursor that is a person's DN — and it walks this cell's people.
+  'post_login.activityRuns', 'post_login.activities',
   // The reports application's definitions, jobs and reporter stamp (#956).
   // A report reads this cell's people and its artifact holds them, so the
   // job and its definition are this cell's; the stamp names a node, and a

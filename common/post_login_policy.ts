@@ -231,9 +231,11 @@ const FIELDS: PolicyField[] = [
     what: 'What is asked. pqc-passkey-migration: a person holding a passkey ' +
           'made with a classical algorithm as their primary sign-in, or as ' +
           'a second factor, is asked to register a post-quantum (ML-DSA) ' +
-          'passkey in the same role. The classical passkey is kept. Nobody ' +
-          'is asked where the realm offers no ML-DSA algorithm at ' +
-          'registration (the default webauthn.algorithms does).' },
+          'passkey in the same role. Whether the classical passkey is ' +
+          'replaced in place or kept beside it is the method\'s to say ' +
+          '(below). Nobody is asked where the realm offers no ML-DSA ' +
+          'algorithm at registration (the default webauthn.algorithms ' +
+          'does).' },
   { key: 'snoozeDays', attribute: 'stsPostLoginSnoozeDays', type: 'int',
     dflt: 7, min: 1, max: 90, unit: 'days',
     label: 'Skip puts it off for',

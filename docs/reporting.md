@@ -626,7 +626,7 @@ How many passkeys there are, by role and algorithm:
 
 Where each person stands on a [post-login activity](post-login-activities.md):
 one row per person and activity that this realm has asked at a sign-in or
-mailed in a [campaign](post-login-activities.md#mail-campaigns). Somebody who
+mailed by a [started activity](post-login-activities.md#starting-an-activity). Somebody who
 was never asked and never mailed has no row. The rows come from the
 post-login progress store, not from the directory, so a filter on any field
 is allowed; an unordered query stops at its limit, and a sorted or counted
@@ -651,10 +651,10 @@ without the directory being asked again for every row.
 | `doneAt` | timestamp | When they did it. | yes | yes | no |
 | `deadline` | timestamp | When the allotted time ends, or null where there is none. | yes | yes | no |
 | `graceEnded` | boolean | The allotted time has ended and the activity is not done: Skip is gone and the next sign-in is held. | yes | yes | yes |
-| `campaign` | string | The mail campaign that last mailed the person. | yes | yes | yes |
-| `mails` | number | How many mails the campaign named in `campaign` sent the person. | yes | yes | no |
-| `firstMailedAt` | timestamp | When that campaign's first mail went. | yes | yes | no |
-| `lastMailedAt` | timestamp | When the last campaign mail went. | yes | yes | no |
+| `mailedBy` | string | The started post-login activity (its id, `pla-…`) that last mailed the person. | yes | yes | yes |
+| `mails` | number | How many mails the started activity named in `mailedBy` sent the person. | yes | yes | no |
+| `firstMailedAt` | timestamp | When that started activity's first mail went. | yes | yes | no |
+| `lastMailedAt` | timestamp | When the last reminder mail went. | yes | yes | no |
 
 Three **predefined queries** come with it. The source's page lists them; each
 opens New Query with its query filled in, and nothing runs until you press

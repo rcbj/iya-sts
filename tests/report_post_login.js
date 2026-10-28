@@ -17,9 +17,9 @@
 //      validator accepts and the New Query form can draw.
 //   B. The rows, read through a real `PostLogin` over a Map and a clock this
 //      file moves: a person asked, one who skipped twice, one past the
-//      allotted time, one done, one only mailed by a campaign (#1111's
-//      fields), and a row written before #1110 whose profile is asked of the
-//      policy.
+//      allotted time, one done, one only mailed by a started activity
+//      (#1111's fields), and a row written before #1110 whose profile is
+//      asked of the policy.
 //   C. The predefined queries run against those rows.
 //   D. The walk stops at the limit: `eachProgressAsync()` and
 //      `realms.map()`'s `scanAsync()` both end on a `false`.
@@ -62,7 +62,7 @@ function catalogChecks(t) {
   });
   ['username', 'activity', 'profile', 'role', 'progress', 'invitedAt',
    'snoozedUntil', 'asks', 'skips', 'done', 'doneAt', 'deadline',
-   'graceEnded', 'campaign', 'mails', 'firstMailedAt', 'lastMailedAt']
+   'graceEnded', 'mailedBy', 'mails', 'firstMailedAt', 'lastMailedAt']
     .forEach(function (id) {
       t.check(ids.indexOf(id) >= 0, 'postLoginProgress has ' + id);
     });
@@ -157,11 +157,11 @@ async function rowChecks(t) {
   pl.noteAsked('dee', due());
   built.clock.now = T0 - 10 * DAY;
   pl.noteDone('dee', due());
-  // eve: only mailed by a campaign (#1111), twice.
+  // eve: only mailed by a started activity (#1111), twice.
   built.clock.now = T0 - 3 * DAY;
-  pl.noteMailed('eve', due(), 'cmp-1');
+  pl.noteMailed('eve', due(), 'pla-1');
   built.clock.now = T0 - 1 * DAY;
-  pl.noteMailed('eve', due(), 'cmp-1');
+  pl.noteMailed('eve', due(), 'pla-1');
   // old: a row written before #1110 — no profile, no grace recorded.
   built.store.set('old|pqc-passkey-migration',
     { invitedAt: T0 - 2 * DAY, asks: 1, skips: 0, doneAt: 0,
@@ -172,7 +172,7 @@ async function rowChecks(t) {
     const all = await rowsOf(sources, { source: 'postLoginProgress',
       select: ['username', 'activity', 'profile', 'role', 'progress',
         'invitedAt', 'asks', 'skips', 'done', 'deadline', 'graceEnded',
-        'campaign', 'mails', 'firstMailedAt', 'lastMailedAt'],
+        'mailedBy', 'mails', 'firstMailedAt', 'lastMailedAt'],
       orderBy: [{ field: 'username', dir: 'asc' }], limit: 50 });
     t.equal(all.ok, true, 'the source answers', all.description);
     const by = {};
@@ -203,7 +203,8 @@ async function rowChecks(t) {
     t.equal(by.eve && by.eve.invitedAt, null,
       'a mail is not an invitation');
     t.equal(by.eve && by.eve.mails, 2, 'two mails went');
-    t.equal(by.eve && by.eve.campaign, 'cmp-1', 'from the campaign');
+    t.equal(by.eve && by.eve.mailedBy, 'pla-1',
+      'from the started activity');
     t.equal(by.eve && by.eve.firstMailedAt,
       new Date(T0 - 3 * DAY).toISOString(), 'the first mail');
     t.equal(by.eve && by.eve.lastMailedAt,

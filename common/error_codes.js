@@ -6225,7 +6225,8 @@ const CODES = [
       'a yes-or-no value, or not one of its values — discouraged, ' +
       'preferred, required; allow, disallow; or a minimum PIN length ' +
       'outside 4 to 63; or a hint list that is not one, or contradicts ' +
-      'the attachment its request sends (#527, #528, #529, #531).',
+      'the attachment its request sends; or a `clientRules` rule that ' +
+      'cannot be read (#527, #528, #529, #531, #1112).',
     spec: 'HTTP 400 (management API)' },
   { code: 'STS-AUTHN-0310',
     summary: 'There is no embedded directory in this process, so a passkey ' +
@@ -7011,10 +7012,13 @@ const CODES = [
       'required before the sign-in finishes (#1096).',
     spec: 'none (HTTP 400 from /authn-api)' },
   { code: 'STS-AUTHN-0475',
-    summary: 'A post-login passkey registration was refused: the realm no ' +
-      'longer offers post-quantum passkeys (webauthn.pqcAlongsideClassical ' +
-      'and webauthn.pqcOnly are off), so the activity cannot be done here ' +
-      'and the held sign-in is finished without it (#1096).',
+    summary: 'A post-login passkey registration was refused: the realm can ' +
+      'no longer make the ML-DSA passkey asked for (`canRegister()`: ' +
+      'passkeys off, the role not allowed, no ML-DSA algorithm offered at ' +
+      'registration — webauthn.algorithms, whose default list holds them ' +
+      '— the post-quantum lane refused where both lanes are on, or an ' +
+      'upgrade refused for the upgrade method), so the activity cannot be ' +
+      'done here and the held sign-in is finished without it (#1096).',
     spec: 'none (the sign-in continues)' },
   { code: 'STS-AUTHN-0476',
     summary: 'A passkey policy profile was not saved: `lanes` is both ' +
@@ -7038,34 +7042,37 @@ const CODES = [
       'registrations themselves are unchanged.',
     spec: 'none (service log)' },
   { code: 'STS-AUTHN-0490',
-    summary: 'A post-login mail campaign was not started: an unknown ' +
+    summary: 'A post-login activity was not started: an unknown ' +
       'activity, a number out of its bounds (intervalDays, maxMails, ' +
-      'perRun), or a group this realm does not have (#1111).',
-    spec: 'none (HTTP 400 from /admin-api/post-login-campaigns/start)' },
+      'perRun), or more groups than a started activity may name (#1111, ' +
+      '#1123).',
+    spec: 'none (HTTP 400 from /admin-api/post-login-activities/start)' },
   { code: 'STS-AUTHN-0491',
-    summary: 'A post-login mail campaign act was refused: an unknown ' +
-      'action, no such campaign in this realm, or a campaign whose state ' +
+    summary: 'A started post-login activity act was refused: an unknown ' +
+      'action, no such started activity in this realm, or one whose state ' +
       'the act does not move (pause needs running, resume paused, end ' +
       'either) (#1111).',
-    spec: 'none (HTTP 400 from /admin-api/post-login-campaigns/:action)' },
+    spec: 'none (HTTP 400 from /admin-api/post-login-activities/:action)' },
   { code: 'STS-AUTHN-0492',
-    summary: 'A post-login mail campaign was not started: one for the same ' +
-      'activity and the same people (the realm, or the same group) is ' +
+    summary: 'A post-login activity was not started: one for the same ' +
+      'activity and the same people (the realm, or the same groups) is ' +
       'already running or paused. End it first (#1111).',
-    spec: 'none (HTTP 400 from /admin-api/post-login-campaigns/start)' },
+    spec: 'none (HTTP 400 from /admin-api/post-login-activities/start)' },
   { code: 'STS-AUTHN-0493',
-    summary: 'A post-login mail campaign\'s run could not read its ' +
-      'population (the directory refused, or its group is gone); nobody ' +
-      'was mailed by it this run and its cursor did not move (#1111).',
+    summary: 'A started post-login activity\'s run could not read its ' +
+      'population (the directory refused, or one of its groups is gone); ' +
+      'nobody was mailed by it this run and its cursor did not move, or ' +
+      'the gone group\'s members were not read (#1111, #1123).',
     spec: 'none (logged; the scheduler run row)' },
   { code: 'STS-AUTHN-0494',
-    summary: 'The mail channel refused a post-login campaign\'s reminder ' +
-      'to some people this run: no address on the entry, the ' +
-      'notification declined, or a ceiling. Counted on the campaign and ' +
-      'the run\'s audit row; Monitoring → Mail names each (#1111).',
-    spec: 'none (audit row authn.post-login.campaign-run)' },
+    summary: 'The mail channel refused a started post-login activity\'s ' +
+      'reminder to some people this run: no address on the entry, the ' +
+      'notification declined, or a ceiling. Counted on the started ' +
+      'activity and the run\'s audit row; Monitoring → Mail names each ' +
+      '(#1111).',
+    spec: 'none (audit row authn.post-login.activity-run)' },
   { code: 'STS-AUTHN-0495',
-    summary: 'A post-login mail campaign is running in a realm with no ' +
+    summary: 'A post-login activity is running in a realm with no ' +
       'mail transport: its run mailed nobody and moved no cursor (#1111).',
     spec: 'none (logged; the scheduler run row)' },
   { code: 'STS-AUTHN-0500',
@@ -7093,6 +7100,11 @@ const CODES = [
       'the day\'s passkey history row (#1109). The row is written without ' +
       'that profile\'s counts and says so.',
     spec: 'none — logged; the history row records the profile as unread' },
+  { code: 'STS-AUTHN-0530',
+    summary: 'A post-login activity was not started: a group it names is ' +
+      'not one this realm has. Each missing name is listed; nothing was ' +
+      'started (#1123).',
+    spec: 'none (HTTP 400 from /admin-api/post-login-activities/start)' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',

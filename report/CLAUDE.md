@@ -386,8 +386,9 @@ lookup — and now says where the question is asked instead.
 
 ## Post-login progress, and predefined queries (#1110, 2026-10-28)
 
-rcbj: post-login progress (#1096) and a campaign's per-person mail
-progress (#1111) are reported HERE, as a source, and not on a console
+rcbj: post-login progress (#1096) and a started post-login activity's
+per-person mail progress (#1111; its column `mailedBy` since #1123) are
+reported HERE, as a source, and not on a console
 page. `postLoginProgress` reads `post_login.progress` through
 `common/post_login.ts`'s `eachProgressAsync()`, which is the store's
 `scanAsync()`: the rows this process holds, then the store a page at a

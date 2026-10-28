@@ -1800,8 +1800,8 @@
     "text": "Activity"
   },
   "postLogin.FIELDS.activity.what": {
-    "en": "1c027feada595f34",
-    "text": "Ang hinihingi. pqc-passkey-migration: ang taong may hawak na passkey na ginawa gamit ang classical na algorithm bilang kanyang pangunahing sign-in, o bilang second factor, ay hinihiling na mag-register ng post-quantum (ML-DSA) na passkey sa parehong role. Pinananatili ang classical na passkey. Walang hinihingi sa sinuman kung saan walang ML-DSA na algorithm na iniaalok ang realm sa registration (mayroon ang default na webauthn.algorithms)."
+    "en": "9514d5e70b9d4eaa",
+    "text": "Ang hinihingi. pqc-passkey-migration: ang taong may hawak na passkey na ginawa gamit ang classical na algorithm bilang kanyang pangunahing sign-in, o bilang second factor, ay hinihiling na mag-register ng post-quantum (ML-DSA) na passkey sa parehong role. Ang method (sa ibaba) ang nagsasabi kung papalitan sa lugar ang classical na passkey o pananatilihin sa tabi nito. Walang hinihingi sa sinuman kung saan walang ML-DSA na algorithm na iniaalok ang realm sa registration (mayroon ang default na webauthn.algorithms)."
   },
   "postLogin.FIELDS.snoozeDays.unit": {
     "en": "ab51004e9d71a485",
@@ -1876,8 +1876,8 @@
     "text": "NAKA-OFF BILANG DEFAULT. Kapag naka-on, ang bawat taong naaabot ng profile na ito na may nakatakdang activity sa ibaba ay hinihiling na gawin ito pagkatapos mag-sign in, bago siya ibalik sa application. Ang named profile na naka-off ito ay HINDI SINASAKLAW ang mga miyembro ng mga group nito."
   },
   "postLogin.SCHEMA.attributes.stsPostLoginActivity.what": {
-    "en": "1c027feada595f34",
-    "text": "Ang hinihingi. pqc-passkey-migration: ang taong may hawak na passkey na ginawa gamit ang classical na algorithm bilang kanyang pangunahing sign-in, o bilang second factor, ay hinihiling na mag-register ng post-quantum (ML-DSA) na passkey sa parehong role. Pinananatili ang classical na passkey. Walang hinihingi sa sinuman kung saan walang ML-DSA na algorithm na iniaalok ang realm sa registration (mayroon ang default na webauthn.algorithms)."
+    "en": "9514d5e70b9d4eaa",
+    "text": "Ang hinihingi. pqc-passkey-migration: ang taong may hawak na passkey na ginawa gamit ang classical na algorithm bilang kanyang pangunahing sign-in, o bilang second factor, ay hinihiling na mag-register ng post-quantum (ML-DSA) na passkey sa parehong role. Ang method (sa ibaba) ang nagsasabi kung papalitan sa lugar ang classical na passkey o pananatilihin sa tabi nito. Walang hinihingi sa sinuman kung saan walang ML-DSA na algorithm na iniaalok ang realm sa registration (mayroon ang default na webauthn.algorithms)."
   },
   "postLogin.SCHEMA.attributes.stsPostLoginSnoozeDays.what": {
     "en": "26d3b7bf4511a4e5",

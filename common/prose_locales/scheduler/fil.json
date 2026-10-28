@@ -319,13 +319,13 @@
     "en": "d5b8faad6c0c24c4",
     "text": "Binubura mula sa shared store ang mga tombstone ng mga natapos na minted row na mas matanda kaysa sa persistence.mintedRetention."
   },
-  "sched.jobs.post-login.campaign-mail.title": {
-    "en": "b434164532e5f5a1",
-    "text": "Mga mail campaign pagkatapos mag-sign in"
+  "sched.jobs.post-login.activity-mail.title": {
+    "en": "ae44cc986739ab6b",
+    "text": "Mail ng aktibidad pagkatapos mag-sign in"
   },
-  "sched.jobs.post-login.campaign-mail.describe": {
-    "en": "d95703ecc79a262f",
-    "text": "Pinapadalhan ang mga taong naaabot ng isang tumatakbong mail campaign pagkatapos mag-sign in (#1111) ng paalala na mag-sign in, kung saan hihilingin sa kanila ng aktibidad pagkatapos mag-sign in na magrehistro ng post-quantum na passkey. Binabasa sa bawat takbo ang isang bahagi ng mga tao ng bawat kampanya pagkatapos ng isang cursor, sinusulatan lamang ang mga may nakabinbing aktibidad, hindi kailanman sa loob ng pagitan ng paalala o lampas sa maximum ng kampanya, at nagsusulat ng isang audit row bawat kampanya bawat takbo."
+  "sched.jobs.post-login.activity-mail.describe": {
+    "en": "5081eadb5d5abbeb",
+    "text": "Pinapadalhan ng paalala na mag-sign in ang mga taong naaabot ng isang tumatakbong aktibidad pagkatapos mag-sign in (#1111), kung saan hihilingin sa kanila ng aktibidad na magrehistro ng post-quantum passkey. Bumabasa bawat takbo ng isang bahagi ng populasyon ng bawat sinimulang aktibidad (ang realm, o ang unyon ng mga grupo nito) pagkatapos ng cursor, sinusulatan lamang ang mga may nakabinbing aktibidad, hindi kailanman sa loob ng pagitan ng paalala o lampas sa maximum nito, at sumusulat ng isang audit row bawat sinimulang aktibidad bawat takbo."
   },
   "sched.jobs.process.memory-report.title": {
     "en": "b84bcf99d45e1ee1",

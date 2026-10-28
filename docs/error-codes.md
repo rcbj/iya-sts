@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4769** of them, in **48** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4770** of them, in **48** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 407
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 408
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 732
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 117
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 39
@@ -1460,7 +1460,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0306` | A second factor was needed of a person who holds none the application allows (appMfaMechanism, #475), and none of the allowed ones (a security key, an authenticator app) can be set up at sign-in in this realm; refused rather than signed in on one factor. | the sign-in screen, drawn again |
 | `STS-AUTHN-0307` | A second factor was DEMANDED — a security key by the relying party or on risk, or a second factor on risk — and the second factors the application allows (appMfaMechanism, #475) leave the person none that answers it. A step-up never enrols one. | the sign-in screen, drawn again |
 | `STS-AUTHN-0308` | A passkey policy profile name was refused: it is neither `default` nor a name of lower-case letters, digits and hyphens of at most 64 (#527, #535). | HTTP 400 (management API) |
-| `STS-AUTHN-0309` | A passkey policy save was refused: a field was missing, not a yes-or-no value, or not one of its values — discouraged, preferred, required; allow, disallow; or a minimum PIN length outside 4 to 63; or a hint list that is not one, or contradicts the attachment its request sends (#527, #528, #529, #531). | HTTP 400 (management API) |
+| `STS-AUTHN-0309` | A passkey policy save was refused: a field was missing, not a yes-or-no value, or not one of its values — discouraged, preferred, required; allow, disallow; or a minimum PIN length outside 4 to 63; or a hint list that is not one, or contradicts the attachment its request sends; or a `clientRules` rule that cannot be read (#527, #528, #529, #531, #1112). | HTTP 400 (management API) |
 | `STS-AUTHN-0310` | There is no embedded directory in this process, so a passkey policy could not be saved (#527). | HTTP 400 (management API) |
 | `STS-AUTHN-0311` | The directory would not store the passkey policy profile: it holds its maximum number of entries (#527). | HTTP 400 (management API) |
 | `STS-AUTHN-0312` | A synced passkey was not registered: its authenticator data set the backup-eligible flag (BE, WebAuthn Level 3 section 6.1) and the realm's passkey policy takes only device-bound passkeys (backupEligibility disallow, #528). Asked where every key is written, so the sign-in screen, /portal/keys and an activation link all refuse it. | the ceremony's page, drawn again with the reason |
@@ -1585,20 +1585,21 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0472` | A post-login activity profile was not saved: there is no embedded directory in this process, or it is at its maximum number of entries (#1096). | none (HTTP 400 from /admin-api/policies) |
 | `STS-AUTHN-0473` | A sign-in was held: the person's post-login activity is past its allotted time and cannot be done at this door (a federated, wallet, Kerberos or certificate sign-in, or a non-interactive one); they are told to sign in at the sign-in screen, where they will be asked to do it (#1096). | the door's own refusal; no session is started |
 | `STS-AUTHN-0474` | Skip was refused on a post-login activity: the allotted time since the person's first invitation has passed, so the activity is required before the sign-in finishes (#1096). | none (HTTP 400 from /authn-api) |
-| `STS-AUTHN-0475` | A post-login passkey registration was refused: the realm no longer offers post-quantum passkeys (webauthn.pqcAlongsideClassical and webauthn.pqcOnly are off), so the activity cannot be done here and the held sign-in is finished without it (#1096). | none (the sign-in continues) |
+| `STS-AUTHN-0475` | A post-login passkey registration was refused: the realm can no longer make the ML-DSA passkey asked for (`canRegister()`: passkeys off, the role not allowed, no ML-DSA algorithm offered at registration — webauthn.algorithms, whose default list holds them — the post-quantum lane refused where both lanes are on, or an upgrade refused for the upgrade method), so the activity cannot be done here and the held sign-in is finished without it (#1096). | none (the sign-in continues) |
 | `STS-AUTHN-0476` | A passkey policy profile was not saved: `lanes` is both (a classical and a post-quantum passkey side by side) and `registrationMode` is classical-only, which makes no post-quantum passkey to hold in a second lane (#1104). | none (HTTP 400 from /admin-api/policies) |
 | `STS-AUTHN-0477` | A learned passkey client was not cleared (#1112): the request named no client, or one this realm's learned clients do not list (`clear-passkey-client` takes the name exactly as the list shows it). Nothing is changed. | none (HTTP 400 from POST /admin-api/policies/clear-passkey-client) |
 | `STS-AUTHN-0478` | A realm's learned passkey clients (#1112) are at their bound, every entry already learned, so the failures of a client not yet counted were not counted: it cannot be learned until an entry is cleared on Directory → Policies → Passkey policy or through `clear-passkey-client`. Logged once per realm per process; the registrations themselves are unchanged. | none (service log) |
-| `STS-AUTHN-0490` | A post-login mail campaign was not started: an unknown activity, a number out of its bounds (intervalDays, maxMails, perRun), or a group this realm does not have (#1111). | none (HTTP 400 from /admin-api/post-login-campaigns/start) |
-| `STS-AUTHN-0491` | A post-login mail campaign act was refused: an unknown action, no such campaign in this realm, or a campaign whose state the act does not move (pause needs running, resume paused, end either) (#1111). | none (HTTP 400 from /admin-api/post-login-campaigns/:action) |
-| `STS-AUTHN-0492` | A post-login mail campaign was not started: one for the same activity and the same people (the realm, or the same group) is already running or paused. End it first (#1111). | none (HTTP 400 from /admin-api/post-login-campaigns/start) |
-| `STS-AUTHN-0493` | A post-login mail campaign's run could not read its population (the directory refused, or its group is gone); nobody was mailed by it this run and its cursor did not move (#1111). | none (logged; the scheduler run row) |
-| `STS-AUTHN-0494` | The mail channel refused a post-login campaign's reminder to some people this run: no address on the entry, the notification declined, or a ceiling. Counted on the campaign and the run's audit row; Monitoring → Mail names each (#1111). | none (audit row authn.post-login.campaign-run) |
-| `STS-AUTHN-0495` | A post-login mail campaign is running in a realm with no mail transport: its run mailed nobody and moved no cursor (#1111). | none (logged; the scheduler run row) |
+| `STS-AUTHN-0490` | A post-login activity was not started: an unknown activity, a number out of its bounds (intervalDays, maxMails, perRun), or more groups than a started activity may name (#1111, #1123). | none (HTTP 400 from /admin-api/post-login-activities/start) |
+| `STS-AUTHN-0491` | A started post-login activity act was refused: an unknown action, no such started activity in this realm, or one whose state the act does not move (pause needs running, resume paused, end either) (#1111). | none (HTTP 400 from /admin-api/post-login-activities/:action) |
+| `STS-AUTHN-0492` | A post-login activity was not started: one for the same activity and the same people (the realm, or the same groups) is already running or paused. End it first (#1111). | none (HTTP 400 from /admin-api/post-login-activities/start) |
+| `STS-AUTHN-0493` | A started post-login activity's run could not read its population (the directory refused, or one of its groups is gone); nobody was mailed by it this run and its cursor did not move, or the gone group's members were not read (#1111, #1123). | none (logged; the scheduler run row) |
+| `STS-AUTHN-0494` | The mail channel refused a started post-login activity's reminder to some people this run: no address on the entry, the notification declined, or a ceiling. Counted on the started activity and the run's audit row; Monitoring → Mail names each (#1111). | none (audit row authn.post-login.activity-run) |
+| `STS-AUTHN-0495` | A post-login activity is running in a realm with no mail transport: its run mailed nobody and moved no cursor (#1111). | none (logged; the scheduler run row) |
 | `STS-AUTHN-0500` | A settings write was refused (#1114): it would leave webauthn.attestation `enterprise` with webauthn.attestationEnterpriseRpIds empty — choosing enterprise with no RP ID listed, or emptying the list while it is chosen. Enterprise attestation is asked for only for a listed RP ID (WebAuthn Level 3 section 5.4.7). Nothing is changed. | none (HTTP 400 from the console's and /admin-api's settings writes) |
 | `STS-AUTHN-0520` | The passkey report's recount counted the realm and wrote its baseline, but the day's passkey history row (#1109) could not be written. The baseline stands; the day has no history row until the next recount writes one. | none — logged; the recount's run is not failed |
 | `STS-AUTHN-0521` | The passkey history rows older than webauthn.passkeyHistoryDays could not be pruned after a recount (#1109). They are kept, and the next recount tries again. | none — logged |
 | `STS-AUTHN-0522` | A named passkey profile's population could not be read for the day's passkey history row (#1109). The row is written without that profile's counts and says so. | none — logged; the history row records the profile as unread |
+| `STS-AUTHN-0530` | A post-login activity was not started: a group it names is not one this realm has. Each missing name is listed; nothing was started (#1123). | none (HTTP 400 from /admin-api/post-login-activities/start) |
 
 ## STS-OAUTH
 

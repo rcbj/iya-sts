@@ -1800,8 +1800,8 @@
     "text": "活动"
   },
   "postLogin.FIELDS.activity.what": {
-    "en": "1c027feada595f34",
-    "text": "所要求的内容。pqc-passkey-migration：持有以经典算法创建的通行密钥作为主要登录方式或第二因素的人，会被要求以相同角色注册一个后量子（ML-DSA）通行密钥。经典通行密钥会保留。在注册时不提供任何 ML-DSA 算法的领域中，不会要求任何人（默认的 webauthn.algorithms 提供了）。"
+    "en": "9514d5e70b9d4eaa",
+    "text": "所要求的内容。pqc-passkey-migration：持有以经典算法创建的通行密钥作为主要登录方式或第二因素的人，会被要求以相同角色注册一个后量子（ML-DSA）通行密钥。经典通行密钥是被原地替换还是保留在旁边，由方法决定（见下文）。在注册时不提供任何 ML-DSA 算法的领域中，不会要求任何人（默认的 webauthn.algorithms 提供了）。"
   },
   "postLogin.FIELDS.snoozeDays.unit": {
     "en": "ab51004e9d71a485",
@@ -1876,8 +1876,8 @@
     "text": "默认关闭。开启时，此配置文件所覆盖、且应完成下方活动的每个人，都会在登录后、被送回应用之前被要求完成该活动。关闭此项的命名配置文件会“排除”其群组的成员。"
   },
   "postLogin.SCHEMA.attributes.stsPostLoginActivity.what": {
-    "en": "1c027feada595f34",
-    "text": "所要求的内容。pqc-passkey-migration：持有以经典算法创建的通行密钥作为主要登录方式或第二因素的人，会被要求以相同角色注册一个后量子（ML-DSA）通行密钥。经典通行密钥会保留。在注册时不提供任何 ML-DSA 算法的领域中，不会要求任何人（默认的 webauthn.algorithms 提供了）。"
+    "en": "9514d5e70b9d4eaa",
+    "text": "所要求的内容。pqc-passkey-migration：持有以经典算法创建的通行密钥作为主要登录方式或第二因素的人，会被要求以相同角色注册一个后量子（ML-DSA）通行密钥。经典通行密钥是被原地替换还是保留在旁边，由方法决定（见下文）。在注册时不提供任何 ML-DSA 算法的领域中，不会要求任何人（默认的 webauthn.algorithms 提供了）。"
   },
   "postLogin.SCHEMA.attributes.stsPostLoginSnoozeDays.what": {
     "en": "26d3b7bf4511a4e5",

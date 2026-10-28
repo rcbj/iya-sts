@@ -319,13 +319,13 @@
     "en": "d5b8faad6c0c24c4",
     "text": "從共用儲存區刪除已結束之產生資料列中早於 persistence.mintedRetention 的墓碑。"
   },
-  "sched.jobs.post-login.campaign-mail.title": {
-    "en": "b434164532e5f5a1",
+  "sched.jobs.post-login.activity-mail.title": {
+    "en": "ae44cc986739ab6b",
     "text": "登入後活動郵件"
   },
-  "sched.jobs.post-login.campaign-mail.describe": {
-    "en": "d95703ecc79a262f",
-    "text": "向進行中的登入後活動郵件（#1111）所涵蓋的人寄送登入提醒，登入後，登入後活動會請他們註冊後量子通行金鑰。每次執行在游標之後讀取每個活動郵件的一批人員，只寄給有待完成該活動的人，絕不在提醒間隔內或超出該活動郵件的上限，並為每個活動郵件每次執行寫一列稽核記錄。"
+  "sched.jobs.post-login.activity-mail.describe": {
+    "en": "5081eadb5d5abbeb",
+    "text": "向進行中的登入後活動涵蓋的人員（#1111）寄送登入提醒，登入後該活動會請他們註冊後量子通行金鑰。每次執行在游標之後讀取每個已啟動活動人群（領域，或其各群組的聯集）的一批，只向有待完成該活動的人寄送，絕不在提醒間隔內或超過其上限寄送，並為每個已啟動活動的每次執行寫一筆稽核紀錄。"
   },
   "sched.jobs.process.memory-report.title": {
     "en": "b84bcf99d45e1ee1",

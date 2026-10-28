@@ -1895,17 +1895,17 @@
     "en": "cd923c72e2ca4fba",
     "text": "非規格端點（#942）。recount：在排程器的主節點上為此領域排入 passkeys.report-recount 工作，該工作把對持有者的一次全新計數作為新的基準。這是主控台在該頁面上的唯一操作；它在所有工作執行的地方執行，絕不在請求中執行。"
   },
-  "stsmetadata.endpoints./admin-api/post-login-campaigns.what": {
-    "en": "daba792318b37b53",
-    "text": "NON-SPEC (#1111)。目錄 → 登入後活動郵件 繪製的內容：領域的每個活動郵件及其活動、群組、提醒間隔、每人最多郵件數、每次執行人數、狀態及其排程器工作迄今所做的事，以及郵件傳輸和登入後活動是否開啟。寄給了誰是報告應用程式的 postLoginProgress 資料來源。對應 GET /admin/post-login-campaigns。"
+  "stsmetadata.endpoints./admin-api/post-login-activities.what": {
+    "en": "9ab3b2b86a19200c",
+    "text": "NON-SPEC (#1111, #1123)。目錄 → 登入後活動 繪製的內容：領域中已啟動的每個登入後活動及其活動、群組、提醒間隔、每人最多郵件數、每次執行人數、狀態以及其排程工作迄今所做的事；是否啟用了郵件傳輸和登入後活動原則；以及啟動表單的群組搜尋——來自目錄群組索引的一頁二十個群組（groupq、groupfrom），並解析迄今已選的群組（groups）。誰收到了郵件見報告應用的 postLoginProgress 資料來源。對應 GET /admin/post-login-activities。"
   },
-  "stsmetadata.endpoints./admin-api/post-login-campaigns/:action.what": {
-    "en": "d969b0654c3b6952",
-    "text": "NON-SPEC (#1111)。start，帶 { activity, group, intervalDays, maxMails, perRun }：工作 post-login.campaign-mail 向每個有待完成該活動的人寄送登入提醒，寄往其項目上的地址，附一個指向登入頁面的連結，其中不含任何憑證。pause、resume 和 end，帶 { id }。主控台在該頁面上的四個動作。"
+  "stsmetadata.endpoints./admin-api/post-login-activities/:action.what": {
+    "en": "b7cf32def03faa47",
+    "text": "NON-SPEC (#1111, #1123)。start，帶 { activity, groups, intervalDays, maxMails, perRun }：post-login.activity-mail 工作向每個有待完成該活動的人——領域中的所有人，或各群組成員的聯集，每人一次——寄送登入提醒，寄往其條目上的地址，帶一個指向登入頁面的連結，不含憑證。pause、resume 和 end，帶 { id }。主控台在該頁面上的四個操作。"
   },
-  "stsmetadata.endpoints./admin-api/post-login-campaigns/:action.effect": {
-    "en": "8498beda414a4cf5",
-    "text": "開始、暫停、繼續或結束活動郵件"
+  "stsmetadata.endpoints./admin-api/post-login-activities/:action.effect": {
+    "en": "0550e836ba364102",
+    "text": "啟動、暫停、繼續或結束登入後活動"
   },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",

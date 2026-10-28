@@ -340,7 +340,7 @@ const BUILT_IN: TemplateSpec[] = [
     html: '<p>The report <strong>{{definition}}</strong> for ' +
           '{{username}} is {{status}}.</p><p><a href="{{report}}">Open ' +
           'it</a>.</p>' },
-  // #1111: a post-login mail campaign's reminder. A NOTIFICATION, so a
+  // #1111: a started post-login activity's reminder. A NOTIFICATION, so a
   // person may decline it: it asks them to sign in, and the activity itself
   // is asked at the sign-in whatever they chose here. The one link is the
   // portal's path on this service's own origin; it signs nobody in and

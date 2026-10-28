@@ -219,7 +219,7 @@ looking. `ssf_cluster.ts` holds three of them; `ssf.ts` provides the capability.
   `ssf.deadStreamTimeoutS` — the same transition cannot recur inside one
   timeout); a store that cannot be asked reports anyway (`STS-SSF-0098`). **One
   process PROBES**: `leadsProbes()` is the front process of the node holding the
-  `ssf.dead-stream-probes` lease (`cluster.lead()` at require time, campaigned
+  `ssf.dead-stream-probes` lease (`cluster.lead()` at require time, contended
   on each heartbeat), never a request worker, and every process outside
   active-active as before; half-open goes with the probe. **The four dead-stream
   members stay on the record, which is last writer wins**: a node whose copy

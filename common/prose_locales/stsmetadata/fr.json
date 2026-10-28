@@ -1895,17 +1895,17 @@
     "en": "cd923c72e2ca4fba",
     "text": "NON-SPEC (#942). recount : met en file la tâche passkeys.report-recount pour ce domaine auprès du meneur du planificateur, qui fait d’un nouveau comptage des détenteurs la nouvelle base. La seule action de la console sur cette page ; elle s’exécute là où s’exécute toute tâche, jamais dans la requête."
   },
-  "stsmetadata.endpoints./admin-api/post-login-campaigns.what": {
-    "en": "daba792318b37b53",
-    "text": "NON-SPEC (#1111). Ce qu'affiche Annuaire → Campagnes après connexion : chaque campagne de courrier du domaine avec son activité, son groupe, son intervalle de rappel, le maximum de messages par personne, les personnes par exécution, son état et ce que sa tâche du planificateur a fait jusqu'ici, et si un transport de courrier et une activité après connexion sont actifs. À qui l'on a écrit est la source postLoginProgress de l'application de rapports. Reflète GET /admin/post-login-campaigns."
+  "stsmetadata.endpoints./admin-api/post-login-activities.what": {
+    "en": "9ab3b2b86a19200c",
+    "text": "NON-SPEC (#1111, #1123). Ce qu'affiche Annuaire → Activités après connexion : chaque activité après connexion lancée dans le domaine avec son activité, ses groupes, son intervalle de rappel, le maximum de courriers par personne, les personnes par exécution, son état et ce que sa tâche planifiée a fait jusqu'ici ; si un transport de courrier et une politique d'activité après connexion sont actifs ; et la recherche de groupes du formulaire de lancement, une page de vingt groupes tirée de l'index des groupes de l'annuaire (groupq, groupfrom), avec les groupes choisis jusqu'ici (groups) résolus. Qui a reçu un courrier relève de la source postLoginProgress de l'application de rapports. Reflète GET /admin/post-login-activities."
   },
-  "stsmetadata.endpoints./admin-api/post-login-campaigns/:action.what": {
-    "en": "d969b0654c3b6952",
-    "text": "NON-SPEC (#1111). start, avec { activity, group, intervalDays, maxMails, perRun } : la tâche post-login.campaign-mail envoie à chaque personne à qui l'activité est due un rappel de se connecter, à l'adresse de son entrée, avec un lien vers la page de connexion et aucun identifiant dedans. pause, resume et end, avec { id }. Les quatre actions de la console sur cette page."
+  "stsmetadata.endpoints./admin-api/post-login-activities/:action.what": {
+    "en": "b7cf32def03faa47",
+    "text": "NON-SPEC (#1111, #1123). start, avec { activity, groups, intervalDays, maxMails, perRun } : la tâche post-login.activity-mail envoie à chaque personne à qui l'activité est due — tout le domaine, ou l'union des membres des groupes, chaque personne une fois — un rappel de se connecter, à l'adresse de son entrée, avec un lien vers la page de connexion et aucun identifiant. pause, resume et end, avec { id }. Les quatre actions de la console sur cette page."
   },
-  "stsmetadata.endpoints./admin-api/post-login-campaigns/:action.effect": {
-    "en": "8498beda414a4cf5",
-    "text": "lance, met en pause, reprend ou termine une campagne de courrier"
+  "stsmetadata.endpoints./admin-api/post-login-activities/:action.effect": {
+    "en": "0550e836ba364102",
+    "text": "lance, met en pause, reprend ou termine une activité après connexion"
   },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",

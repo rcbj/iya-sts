@@ -2776,7 +2776,7 @@ function reportPostLoginRow(entry: any, postLogin: any,
     doneAt: reportIso(row.doneAt || null),
     deadline: reportIso(grace.deadline || null),
     graceEnded: grace.ended === true,
-    campaign: String(row.campaign || ''),
+    mailedBy: String(row.mailedBy || ''),
     mails: Number(row.mails) || 0,
     firstMailedAt: reportIso(row.firstMailedAt || null),
     lastMailedAt: reportIso(row.lastMailedAt || null)

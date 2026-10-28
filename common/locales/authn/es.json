@@ -200,6 +200,6 @@
   "postLogin.subAttestationPrimary": "{name}, la clave de acceso poscuántica con la que inicias sesión no se atestó con algoritmos poscuánticos. Registra una que sí lo esté.",
   "postLogin.subAttestationMfa": "{name}, la clave de acceso poscuántica que usas como segundo factor no se atestó con algoritmos poscuánticos. Registra una que sí lo esté.",
   "postLogin.failed": "Tu dispositivo no creó la clave de acceso ({error}).",
-  "postLogin.failedHelp": "Si tu dispositivo o navegador no puede crear una clave de acceso ML-DSA, regístrala en una llave de seguridad aparte compatible con ML-DSA, o pídeselo a un administrador, que puede registrar una por ti.",
+  "postLogin.failedHelp": "Si tu dispositivo o navegador no puede crear una clave de acceso ML-DSA, regístrala en una llave de seguridad aparte compatible con ML-DSA, o pídeselo a un administrador: donde tu política de claves de acceso permite que un administrador registre una por ti, puede hacerlo, y puede actualizar tu clave de acceso desde la consola.",
   "postLogin.failedSkip": "También puedes omitir este paso por ahora."
 }

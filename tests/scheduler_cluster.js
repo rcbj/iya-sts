@@ -13,7 +13,7 @@
 // claim table and ONE lease table — what several containers against one
 // postgres store share. Each claim below is one the plan makes (#49, Part 4a):
 //
-//   A. ONE LEADER: of three nodes campaigning, one holds ops.scheduler, and
+//   A. ONE LEADER: of three nodes contending, one holds ops.scheduler, and
 //      only it runs a cluster job;
 //   B. ONCE PER SLOT over a hundred slots, with the leadership forced to
 //      change hands every ten of them by the step-down command (D10) — every
@@ -100,7 +100,7 @@ async function run(t) {
       return n.scheduler.isLeading();
     });
     t.check(leading.length === 1 && w.leaderOf() === leading[0].name,
-            'of three nodes campaigning, exactly one leads the scheduler',
+            'of three nodes contending, exactly one leads the scheduler',
             JSON.stringify(nodes.map(function (n) {
               return [n.name, n.scheduler.isLeading()];
             })));
@@ -348,7 +348,7 @@ async function run(t) {
       n.scheduler.register(job({ run: function () { n.invoked.push(w.db); } }));
     });
     // The standby is an active-passive node without the service lease:
-    // server.js never reaches start(), so it never campaigns.
+    // server.js never reaches start(), so it never contends.
     active.scheduler.start('front');
     await w.advance(2 * MINUTE);
     active.kill();

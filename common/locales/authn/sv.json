@@ -200,6 +200,6 @@
   "postLogin.subAttestationPrimary": "{name}, postkvantnyckeln du loggar in med attesterades inte med postkvantalgoritmer. Registrera en som är det.",
   "postLogin.subAttestationMfa": "{name}, postkvantnyckeln du använder som andra faktor attesterades inte med postkvantalgoritmer. Registrera en som är det.",
   "postLogin.failed": "Din enhet skapade inte nyckeln ({error}).",
-  "postLogin.failedHelp": "Om din enhet eller webbläsare inte kan skapa en ML-DSA-nyckel kan du registrera den på en separat säkerhetsnyckel som stöder ML-DSA, eller be en administratör, som kan registrera en åt dig.",
+  "postLogin.failedHelp": "Om din enhet eller webbläsare inte kan skapa en ML-DSA-nyckel kan du registrera den på en separat säkerhetsnyckel som stöder ML-DSA, eller be en administratör: där din policy för nycklar låter en administratör registrera en nyckel åt dig kan hen göra det, och hen kan uppgradera din nyckel från konsolen.",
   "postLogin.failedSkip": "Du kan också hoppa över detta tills vidare."
 }

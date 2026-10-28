@@ -69,7 +69,7 @@ import ModePage = require('./web_mode');
 import BroadcastPage = require('./web_broadcast');
 import NodeHealthPage = require('./web_node_health');
 import PasskeyReportPage = require('./web_passkey_report');
-import PostLoginCampaignsPage = require('./web_post_login_campaigns');
+import PostLoginActivitiesPage = require('./web_post_login_activities');
 import PkiPage = require('./web_pki');
 import ProtocolSettingsPage = require('./web_protocol_settings');
 import PoliciesPage = require('./web_policies');
@@ -305,8 +305,9 @@ const PROTOCOL_TABS: Record<string, string[]> = {
   '/admin/devices': ['devices', 'register'],
   '/admin/attribute-sources': ['sources', 'add', 'person', 'settings'],
   '/admin/secret-destinations': ['destinations', 'add'],
-  // #1111: the campaigns and their controls; the report is /report's.
-  '/admin/post-login-campaigns': ['campaigns', 'start'],
+  // #1111, #1123: the started activities and their controls; the report
+  // is /report's.
+  '/admin/post-login-activities': ['activities', 'start'],
   '/admin/ldap/applications': ['entries'],
   '/admin/ldap/federations': ['entries'],
   '/admin/ldap/roles': ['entries'],
@@ -771,11 +772,12 @@ const PAGES: WebPage[] = [
     render: PasskeyReportPage.render },
   // `rows=shown`: the page's own call reads the certificates of the rows
   // it draws and no others (#352).
-  // DIRECTORY → POST-LOGIN CAMPAIGNS (#1111): born static; the controls of
-  // a mail campaign, whose per-person progress is a /report source.
-  { path: '/admin/post-login-campaigns', title: 'Post-login campaigns',
-    operation: '/admin-api/post-login-campaigns',
-    render: PostLoginCampaignsPage.render },
+  // DIRECTORY → POST-LOGIN ACTIVITIES (#1111, #1123): born static; the
+  // controls of a started post-login activity, whose per-person progress is
+  // a /report source.
+  { path: '/admin/post-login-activities', title: 'Post-login activities',
+    operation: '/admin-api/post-login-activities',
+    render: PostLoginActivitiesPage.render },
   { path: '/admin/pki', title: 'PKI', operation: '/admin-api/pki',
     fixed: { rows: 'shown' }, render: PkiPage.render },
   { path: '/admin/policies', title: 'Policies',

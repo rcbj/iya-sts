@@ -126,8 +126,8 @@ const CONSOLE: Record<string, string> = {
   '/admin/node-health': 'admin-console.html#node-health--adminnode-health',
   '/admin/oauth2': 'oauth-oidc.html',
   '/admin/oauth2/monitor': 'oauth-oidc.html',
-  '/admin/post-login-campaigns':
-    'post-login-activities.html#mail-campaigns',
+  '/admin/post-login-activities':
+    'post-login-activities.html#starting-an-activity',
   '/admin/passkey-report':
     'admin-console.html#passkeys--adminpasskey-report',
   '/admin/pki': 'pki.html',

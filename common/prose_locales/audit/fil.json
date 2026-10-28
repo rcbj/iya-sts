@@ -731,13 +731,13 @@
     "en": "9b31304e9f8a3131",
     "text": "May sign-in na pinigil: lampas na sa takdang panahon ang isang post-login activity"
   },
-  "audit.actions.admin.post-login-campaign.change.label": {
-    "en": "036bffa6d0958a81",
-    "text": "Sinimulan, na-pause, itinuloy o tinapos ang isang mail campaign pagkatapos mag-sign in"
+  "audit.actions.admin.post-login-activity.change.label": {
+    "en": "decd347b6d992cc1",
+    "text": "Isang aktibidad pagkatapos mag-sign in ang sinimulan, na-pause, itinuloy o tinapos"
   },
-  "audit.actions.authn.post-login.campaign-run.label": {
-    "en": "059642245f4ca8a9",
-    "text": "Ipinadala ng isang mail campaign pagkatapos mag-sign in ang mga paalala nito"
+  "audit.actions.authn.post-login.activity-run.label": {
+    "en": "0ce42a59606f1d17",
+    "text": "Nagpadala ng mga paalala nito ang isang sinimulang aktibidad pagkatapos mag-sign in"
   },
   "audit.actions.authn.post-login.unsupported.label": {
     "en": "7d131d7e4638de23",

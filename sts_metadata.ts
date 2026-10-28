@@ -6271,22 +6271,27 @@ const ENDPOINTS: EndpointEntry[] = [
           'count of the holders the new baseline. The console\'s one act ' +
           'on that page; it runs where every job runs, never on the ' +
           'request.' },
-  { path: '/admin-api/post-login-campaigns', group: 'Management API',
-    name: 'Post-login mail campaigns', specs: ['openapi'],
-    what: 'NON-SPEC (#1111). What Directory → Post-login campaigns draws: ' +
-          'every mail campaign of the realm with its activity, group, ' +
-          'reminder interval, most mails per person, people per run, state ' +
-          'and what its scheduler job has done so far, and whether a mail ' +
-          'transport and a post-login activity are on. Who was mailed is ' +
-          'the reports application\'s postLoginProgress source. Mirrors GET ' +
-          '/admin/post-login-campaigns.' },
-  { path: '/admin-api/post-login-campaigns/:action', group: 'Management API',
-    name: 'Start, pause, resume or end a post-login mail campaign',
+  { path: '/admin-api/post-login-activities', group: 'Management API',
+    name: 'Started post-login activities', specs: ['openapi'],
+    what: 'NON-SPEC (#1111, #1123). What Directory → Post-login activities ' +
+          'draws: every post-login activity started in the realm with its ' +
+          'activity, groups, reminder interval, most mails per person, ' +
+          'people per run, state and what its scheduler job has done so ' +
+          'far; whether a mail transport and a post-login activity policy ' +
+          'are on; and the start form\'s group search, a page of twenty ' +
+          'groups from the directory\'s group index (groupq, groupfrom), ' +
+          'with the groups chosen so far (groups) resolved. Who was mailed ' +
+          'is the reports application\'s postLoginProgress source. ' +
+          'Mirrors GET /admin/post-login-activities.' },
+  { path: '/admin-api/post-login-activities/:action', group: 'Management API',
+    name: 'Start, pause, resume or end a post-login activity',
     specs: ['openapi'],
-    effect: 'starts, pauses, resumes or ends a mail campaign',
-    what: 'NON-SPEC (#1111). start, with { activity, group, intervalDays, ' +
-          'maxMails, perRun }: the post-login.campaign-mail job mails each ' +
-          'person the activity is due for a reminder to sign in, at the ' +
+    effect: 'starts, pauses, resumes or ends a post-login activity',
+    what: 'NON-SPEC (#1111, #1123). start, with { activity, groups, ' +
+          'intervalDays, maxMails, perRun }: the post-login.activity-mail ' +
+          'job mails each person the activity is due for — everybody in ' +
+          'the realm, or the union of the groups\' members, each person ' +
+          'once — a reminder to sign in, at the ' +
           'address on their entry, with one link to the sign-in page and no ' +
           'credential in it. pause, resume and end, with { id }. The ' +
           'console\'s four acts on that page.' },

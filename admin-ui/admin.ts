@@ -1519,15 +1519,15 @@ const SECTIONS = [
       // profiles `credentials.setPassword()` checks. Different sections,
       // different containers; the label is the one rcbj asked for.
       // -------------------------------------------------------------------
-      // POST-LOGIN CAMPAIGNS (#1111), beside the policies whose post-login
-      // activity a campaign mails people about. Drawn by the static
-      // console (`admin-ui/web_post_login_campaigns.ts`) from `GET
-      // /admin-api/post-login-campaigns`. The CONTROLS only: where each
+      // POST-LOGIN ACTIVITIES (#1111, #1123), beside the policies whose
+      // rules a started post-login activity follows. Drawn by the static
+      // console (`admin-ui/web_post_login_activities.ts`) from `GET
+      // /admin-api/post-login-activities`. The CONTROLS only: where each
       // person stands is the reports application's postLoginProgress
       // source (#1110), rcbj's decision.
-      { path: '/admin/post-login-campaigns', label: 'Post-login campaigns',
-        blurb: 'Mail campaigns for a post-login activity: start one for ' +
-               'the realm or one group, and a scheduler job mails each ' +
+      { path: '/admin/post-login-activities', label: 'Post-login activities',
+        blurb: 'Start a post-login activity for the realm or for groups ' +
+               'chosen by search, and a scheduler job mails each ' +
                'person the activity is due for a reminder to sign in, ' +
                'every so many days up to a maximum per person. The mail ' +
                'only opens the sign-in page; the post-login activity does ' +

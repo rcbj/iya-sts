@@ -2633,16 +2633,23 @@ be asked (`STS-LDAP-0139` on the rejection) is 503, anything else 500, both
 `STS-AUTHN-0415`. `list` and `lane` are closed sets, held at the gate (#86).
 `tests/protocol/sts_passkey_report.js` drives it.
 
-## `/admin-api/post-login-campaigns` — DIRECTORY → POST-LOGIN CAMPAIGNS (#1111, 2026-10-28)
+## `/admin-api/post-login-activities` — DIRECTORY → POST-LOGIN ACTIVITIES (#1111, 2026-10-28; #1123)
 
-`mgmt-api/post_login_campaigns_api.ts`, spread into the table as the
-passkey report's: `GET /admin-api/post-login-campaigns` (the page's view)
-and `POST /admin-api/post-login-campaigns/{start,pause,resume,end}`
-(mirroring `POST /admin/post-login-campaigns`). **Both are
-`common/post_login_campaigns.ts`'s and nothing else.** Nothing here mails
+`mgmt-api/post_login_activities_api.ts`, spread into the table as the
+passkey report's: `GET /admin-api/post-login-activities` (the page's view)
+and `POST /admin-api/post-login-activities/{start,pause,resume,end}`
+(mirroring `POST /admin/post-login-activities`). **Both are
+`common/post_login_activities.ts`'s and nothing else.** Nothing here mails
 — a start writes a row and the scheduler job mails — and nothing here
 reports who was mailed: that is the `postLoginProgress` source in
 `/report` (rcbj on #1110). A refusal is 400 with the act's own code
-(`STS-AUTHN-0490`..`0492`); a failure to read or write the store is 500,
-`STS-AUTHN-0493`. `activity` is a closed set held at the gate.
-`tests/post_login_campaigns.js` B drives it.
+(`STS-AUTHN-0490`..`0492`, and `0530` for a group the realm does not have);
+a failure to read or write the store is 500, `STS-AUTHN-0493`. `activity` is
+a closed set held at the gate. **Since #1123 the start takes `groups`, a
+list** (the union of their members, each person once; none for the realm),
+and the GET takes the console's chooser parameters — `groupq`, `groupfrom`,
+and `groups` as ONE string, its names separated by `;` (a query value may
+hold no control character, so a line break is refused at the gate) — and answers `groupChooser`, so
+the page's search is this operation's and nothing console-only (rule 7).
+`tests/post_login_activities.js` B and
+`tests/protocol/sts_post_login_activities.js` drive it.

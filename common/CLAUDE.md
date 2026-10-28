@@ -13699,30 +13699,59 @@ default, and done inside the sign-in flow.
   sign-in is never held for something that cannot be done.
 * **The hold is in `authn.startSessionHere()`, last of the refusals** —
   `authn/CLAUDE.md` argues it.
-### 3ct, continued: mail campaigns (#1111, 2026-10-28)
+### 3ct, continued: started post-login activities (#1111, 2026-10-28; #1123)
 
-rcbj: an administrator STARTS a campaign for one post-login activity
-(optionally narrowed by group) from the console and `/admin-api`; a cluster
-scheduler job mails each person still due, reminders every N days up to a
-maximum per person; pause, resume, end; the mail sends the person to sign
-in and the post-login activity does the registration — no credential in any
-link. `post_login_campaigns.ts`'s header argues the rest; what reaches
-outside it:
+rcbj: an administrator STARTS a post-login activity (optionally narrowed to
+groups) from the console and `/admin-api`; a cluster scheduler job mails
+each person still due, reminders every N days up to a maximum per person;
+pause, resume, end; the mail sends the person to sign in and the post-login
+activity does the registration — no credential in any link.
+`post_login_activities.ts`'s header argues the rest; what reaches outside
+it:
 
-* **Two stores, one writer each.** `post_login.campaigns` (the decision:
-  activity, group, numbers, state) is written by the console and the API
-  only; `post_login.campaignRuns` (cursor, passes, counts) by the job only.
+* **ONE CONCEPT (#1123, rcbj).** #1111 gave what the page starts a name of
+  its own; rcbj's word is that it IS a post-login activity, and the old name
+  went from the page, the API paths, the identifiers, the file names, the
+  stores, the job, the audit actions, the error-code text, the report
+  column, the mail prose, every catalog and the docs. The post-login
+  activity POLICY KIND (Directory → Policies, `post_login_policy.ts`)
+  stays: it is the rules a started activity follows. In prose the record
+  is a *started* activity where the two must be told apart; in code it is
+  a `StartedActivity` (`id` `pla-…`), and on a person's progress row the
+  one that last mailed them is `mailedBy`. **No migration**: no released
+  data held a row; a row under the old store names on a development
+  instance is orphaned, not read.
+* **Two stores, one writer each.** `post_login.activities` (the decision:
+  activity, groups, numbers, state) is written by the console and the API
+  only; `post_login.activityRuns` (cursor, passes, counts) by the job only.
   The job runs on a request worker (#408) and a Pause is answered by any
   process, so one row would have each writing back the other's stale half.
   Both cell-tier: the cursor is a person's DN.
 * **The walk is the directory's key cursor**, never a scan per request:
-  `passkeyScanAsync({ attribute: '' })` for the realm and the new
-  `groupMembersAfterAsync()` for a group (`ldap/CLAUDE.md`), `perRun` at a
+  `passkeyScanAsync({ attribute: '' })` for the realm and
+  `groupMembersAfterAsync()` for groups (`ldap/CLAUDE.md`), `perRun` at a
   time. Whether a person is mailed is `dueFor()` — which already says
   nobody who has done it and nobody the realm cannot ask — then the
-  interval (the person's last mail from ANY campaign) and the maximum (THIS
-  campaign's count: `noteMailed()` resets `mails` when another campaign
-  writes the row).
+  interval (the person's last mail from ANY started activity) and the
+  maximum (THIS one's count: `noteMailed()` resets `mails` when another
+  started activity writes the row).
+* **SEVERAL GROUPS, THEIR UNION (#1123, rcbj).** `groups` is a list (at
+  most `MAX_GROUPS`, fifty); `groupMembersAfterAsync()` takes the list and
+  puts every group's member keys in ONE sorted set walked by ONE cursor, so
+  a person in two groups is read once and mailed once, and a pass is one
+  pass over the union. The alternative — a cursor per group, a person
+  de-duplicated by asking whether an earlier group held them — costs a
+  membership question per person and a cursor shape per started activity.
+  A start resolves each name through the group index (`groupsNamed()`) and
+  refuses one the realm does not have by name (STS-AUTHN-0530) rather than
+  dropping it; the duplicate check (0492) compares the SET of DNs. A group
+  deleted later is logged under 0493 and its members are simply not read.
+* **The console chooses the groups by search** (`chooserPane()`, a slice
+  of twenty cut by `view()` from the page's `groupq`/`groupfrom`/`groups`
+  — `admin-ui/CLAUDE.md` argues the list in the query). The search reads
+  `ldap_server.js`'s `groupChoices()`: the group INDEX, a row per group
+  rebuilt only when a group may have been written, never the directory's
+  entries or anybody's membership.
 * **A mail is not an invitation**: `invitedAt`, from which the allotted
   time counts, is still only written at a sign-in.
 * **The message is `post-login-reminder`, a NOTIFICATION** (a person may
@@ -13730,7 +13759,7 @@ outside it:
   sign-in whatever they chose), sent by `mail_uses.ts`'s
   `postLoginReminder()` to the address on the entry, its one link `/portal`
   on the pinned origin (3ba's rules unchanged).
-* **The console page is the CONTROLS** (`admin-ui/web_post_login_campaigns.ts`,
+* **The console page is the CONTROLS** (`admin-ui/web_post_login_activities.ts`,
   Directory, beside Policies); the per-person progress is the
   `postLoginProgress` report source (#1110).
 

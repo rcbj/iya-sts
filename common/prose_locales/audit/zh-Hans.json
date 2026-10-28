@@ -731,13 +731,13 @@
     "en": "9b31304e9f8a3131",
     "text": "一次登录被暂扣：一项登录后活动已逾期"
   },
-  "audit.actions.admin.post-login-campaign.change.label": {
-    "en": "036bffa6d0958a81",
-    "text": "登录后活动邮件已开始、暂停、继续或结束"
+  "audit.actions.admin.post-login-activity.change.label": {
+    "en": "decd347b6d992cc1",
+    "text": "登录后活动已启动、暂停、继续或结束"
   },
-  "audit.actions.authn.post-login.campaign-run.label": {
-    "en": "059642245f4ca8a9",
-    "text": "登录后活动邮件发送了提醒"
+  "audit.actions.authn.post-login.activity-run.label": {
+    "en": "0ce42a59606f1d17",
+    "text": "已启动的登录后活动发送了提醒"
   },
   "audit.actions.authn.post-login.unsupported.label": {
     "en": "7d131d7e4638de23",

@@ -3,37 +3,47 @@
 
 'use strict';
 //
-// File: post_login_campaigns.js
+// File: post_login_activities.js
 //
 // ===========================================================================
-// POST-LOGIN MAIL CAMPAIGNS (#1111), AND THE PROGRESS THEY LEAVE IN /report
-// (#1110).
+// STARTED POST-LOGIN ACTIVITIES (#1111, #1123), AND THE PROGRESS THEY LEAVE
+// IN /report (#1110).
 //
-// rcbj: an administrator starts a campaign for one post-login activity,
-// optionally narrowed by group, from the console and /admin-api; a cluster
+// rcbj: an administrator starts a post-login activity, optionally narrowed
+// to groups chosen by search (their union, #1123), from the console and
+// /admin-api; a cluster
 // scheduler job mails each person still due with reminders every N days up
 // to a maximum per person; pause, resume and end; the mail sends the person
 // to sign in and carries no credential; the per-person progress is a
 // /report source.
 //
 //   A. IN PROCESS, over doubles and a clock this file moves
-//      (`PostLoginCampaigns` built with its own dependencies): a start's
+//      (`PostLoginActivities` built with its own dependencies): a start's
 //      refusals (0490, 0492), the acts and their refusals (0491); a run
 //      reading a slice after a key cursor, mailing only the people due, the
 //      cursor moving and starting over at the end of the people; the
 //      interval and the maximum holding a person back; a refusal by the
 //      channel counted (0494); no transport mailing nobody and moving
-//      nothing (0495); a paused campaign mailing nobody; a group's walk; one
-//      audit row per campaign per run; `offIn()`.
+//      nothing (0495); a paused one mailing nobody; one audit row per
+//      started activity per run; `offIn()`; and #1123's groups — a list
+//      resolved to DNs, a missing group refused by name (0530), too many
+//      refused (0490), the same set in another order refused (0492), the
+//      union walked with one cursor and a member of two groups mailed once,
+//      and the chooser's slice (twenty, paged, the offset clamped, the
+//      chosen left out, the `groups` parameter `;`-separated).
 //   B. IN A CHILD PROCESS with the whole stack on an ephemeral port: the
 //      job registered with the scheduler; GET and POST
-//      /admin-api/post-login-campaigns (a start, a second refused, a bad
+//      /admin-api/post-login-activities (a start, a second refused, a bad
 //      value refused, pause, resume, end, an act on an ended one refused);
 //      a run of the job's body through the REAL mail channel (development's
 //      capture transport) and the real progress store, `dueFor()` replaced
 //      by a list of who is due — the captured message goes to the address on
 //      the entry, its one link is the portal's path with no query, and it
-//      carries no token; a group campaign mails only its member; and over
+//      carries no token; a started activity over two groups of the REAL
+//      directory mails each member once (one person in both); the API's
+//      group chooser over twenty-five real groups (a page of twenty, the
+//      next page, a stale offset clamped, the chosen left out) and its
+//      `groups` list refused for a missing group (0530); and over
 //      /report-api the `postLoginProgress` source and its presets, the
 //      mailed people with their mail counts.
 // ===========================================================================
@@ -45,7 +55,7 @@ const os = require('os');
 const fs = require('fs');
 const childProcess = require('child_process');
 
-const log = require('bunyan').createLogger({ name: 'post_login_campaigns',
+const log = require('bunyan').createLogger({ name: 'post_login_activities',
   level: process.env.LOG_LEVEL || 'info' });
 
 const ROOT = path.join(__dirname, '..');
@@ -54,7 +64,7 @@ const DAY = 24 * 60 * 60 * 1000;
 // ---------------------------------------------------------------------------
 // A. In process.
 // ---------------------------------------------------------------------------
-function doubles(people, groupMembers) {
+function doubles(people, groupMembers, otherMembers, groupNames) {
   log.debug("Entering doubles().");
   const PostLogin = require('../common/post_login').PostLogin;
   const helpers = require('../common/helpers');
@@ -84,23 +94,73 @@ function doubles(people, groupMembers) {
         next: slice.length ? 'uid=' + slice[slice.length - 1] : after,
         read: slice.length, done: rest.length <= ask.readLimit });
     },
-    groupMembersAfterAsync: function (group, after, limit) {
-      if (group !== 'cn=staff' && group !== 'staff') {
-        return Promise.resolve({ found: false, dn: group, rows: [],
-                                 next: after, done: true });
+    // The ldap_server.js shape over two groups, `staff` and `ops`: a list
+    // of names, the UNION of their members in key order after a cursor.
+    groupMembersAfterAsync: function (names, after, limit) {
+      directory.asked.push([].concat(names));
+      const union = new Set();
+      const groups = [].concat(names).map(function (g) {
+        const dn = /^cn=/.test(g) ? g : 'cn=' + g;
+        const held = groupsHeld[dn];
+        (held || []).forEach(function (n) {
+          union.add(n);
+        });
+        return { asked: g, dn: dn, found: !!held };
+      });
+      const any = groups.some(function (g) {
+        return g.found;
+      });
+      if (!any) {
+        return Promise.resolve({ found: false, dn: groups[0].dn,
+          groups: groups, rows: [], next: after, done: true });
       }
-      const rest = (groupMembers || []).slice().sort().filter(function (n) {
+      const rest = Array.from(union).sort().filter(function (n) {
         return 'uid=' + n > String(after || '');
       });
       const slice = rest.slice(0, limit);
-      return Promise.resolve({ found: true, dn: 'cn=staff',
+      return Promise.resolve({ found: true, dn: groups[0].dn,
+        groups: groups,
         rows: slice.map(function (n) {
           return { id: n, dn: 'uid=' + n };
         }),
         next: slice.length ? 'uid=' + slice[slice.length - 1] : after,
         done: rest.length <= limit });
-    }
+    },
+    groupsNamed: function (names) {
+      return [].concat(names).map(function (g) {
+        const dn = /^cn=/.test(g) ? g : 'cn=' + g;
+        return { asked: g, dn: dn, cn: dn.slice(3),
+                 found: !!groupsHeld[dn] };
+      });
+    },
+    // The chooser's page over `groupNames`, by ldap_server.js's rule.
+    groupChoices: function (wanted, from, limit, exclude) {
+      const left = (exclude || []).map(function (dn) {
+        return dn.toLowerCase();
+      });
+      const matched = groupNames.filter(function (cn) {
+        return left.indexOf('cn=' + cn) < 0 &&
+               cn.indexOf(String(wanted || '').toLowerCase()) >= 0;
+      }).sort();
+      let at = parseInt(String(from || ''), 10);
+      if (!isFinite(at) || at < 0 || at >= matched.length) {
+        at = 0;
+      }
+      return { total: groupNames.length, matched: matched.length, from: at,
+               rows: matched.slice(at, at + limit).map(function (cn) {
+                 return { dn: 'cn=' + cn, cn: cn };
+               }) };
+    },
+    asked: []
   };
+  const groupsHeld = { 'cn=staff': groupMembers || [],
+                       'cn=ops': otherMembers || [] };
+  (groupNames || []).forEach(function (cn) {
+    if (!groupsHeld['cn=' + cn]) {
+      groupsHeld['cn=' + cn] = [];
+    }
+  });
+  groupNames = groupNames || ['ops', 'staff'];
   const postLogin = {
     dueFor: function (u) {
       return due[u] ? Object.assign({ activity: 'pqc-passkey-migration',
@@ -116,10 +176,10 @@ function doubles(people, groupMembers) {
       return real.noteMailed(u, d, c);
     }
   };
-  const Campaigns = require('../common/post_login_campaigns')
-    .PostLoginCampaigns;
+  const Activities = require('../common/post_login_activities')
+    .PostLoginActivities;
   let ids = 0;
-  const campaigns = new Campaigns({
+  const activities = new Activities({
     log: helpers.log, errorCodes: require('../common/error_codes'),
     audit: { audit: function (row) {
       audits.push(row);
@@ -127,7 +187,7 @@ function doubles(people, groupMembers) {
     realms: { currentId: function () {
       return 'default';
     } },
-    campaigns: new Map(), runs: new Map(),
+    started: new Map(), runs: new Map(),
     directory: function () {
       return directory;
     },
@@ -166,14 +226,16 @@ function doubles(people, groupMembers) {
     }
   });
   log.debug("Leaving doubles().");
-  return { campaigns: campaigns, clock: clock, due: due, sent: sent,
-           audits: audits, mailState: mailState, real: real };
+  return { activities: activities, clock: clock, due: due, sent: sent,
+           audits: audits, mailState: mailState, real: real,
+           directory: directory };
 }
 
 async function inProcess(t) {
   log.debug("Entering inProcess().");
-  const d = doubles(['ann', 'ben', 'cat', 'dan', 'eli'], ['ben', 'dan']);
-  const c = d.campaigns;
+  const d = doubles(['ann', 'ben', 'cat', 'dan', 'eli'], ['ben', 'dan'],
+                    ['dan', 'eli']);
+  const c = d.activities;
   const ctx = { actor: 'admin', via: 'test' };
 
   // Refusals of a start.
@@ -186,22 +248,32 @@ async function inProcess(t) {
   t.equal(r.errorCode, 'STS-AUTHN-0490', 'a maximum past 20 is refused');
   r = await c.act({ action: 'start', perRun: 1.5 }, ctx);
   t.equal(r.errorCode, 'STS-AUTHN-0490', 'a fraction is refused');
-  r = await c.act({ action: 'start', group: 'nobody-here' }, ctx);
-  t.equal(r.errorCode, 'STS-AUTHN-0490', 'an unknown group is refused');
+  r = await c.act({ action: 'start', groups: ['staff', 'nobody-here'] },
+                  ctx);
+  t.equal(r.errorCode, 'STS-AUTHN-0530', 'an unknown group is refused');
+  t.check(r.errors && r.errors.length === 1 &&
+          /nobody-here/.test(r.errors[0]), 'by name, and only it',
+          JSON.stringify(r));
+  const many = [];
+  for (let i = 0; i <= 50; i++) {
+    many.push('g' + i);
+  }
+  r = await c.act({ action: 'start', groups: many }, ctx);
+  t.equal(r.errorCode, 'STS-AUTHN-0490', 'more than fifty groups refused');
   r = await c.act({ action: 'frobnicate', id: 'x' }, ctx);
   t.equal(r.errorCode, 'STS-AUTHN-0491', 'an unknown action is refused');
 
   // A start, and the second one refused.
   r = await c.act({ action: 'start', activity: 'pqc-passkey-migration',
                     intervalDays: 7, maxMails: 2, perRun: 2 }, ctx);
-  t.equal(r.ok, true, 'a campaign starts', JSON.stringify(r));
-  const id = r.campaign && r.campaign.id;
-  t.equal(r.campaign && r.campaign.state, 'running', 'running');
+  t.equal(r.ok, true, 'an activity starts', JSON.stringify(r));
+  const id = r.started && r.started.id;
+  t.equal(r.started && r.started.state, 'running', 'running');
   t.equal(d.audits.length && d.audits[d.audits.length - 1].action,
-    'admin.post-login-campaign.change', 'the start is audited');
+    'admin.post-login-activity.change', 'the start is audited');
   r = await c.act({ action: 'start' }, ctx);
   t.equal(r.errorCode, 'STS-AUTHN-0492',
-    'a second campaign for the same people is refused');
+    'a second for the same people is refused');
   t.equal(c.offIn('default'), '', 'the job is on with one running');
 
   // Run 1: two people read, of whom ben is due.
@@ -210,7 +282,7 @@ async function inProcess(t) {
   d.due.eli = {};
   const before = d.audits.length;
   let out = await c.runAsync({});
-  let one = (out.campaigns || [])[0] || {};
+  let one = (out.started || [])[0] || {};
   t.equal(one.read, 2, 'a run reads one slice (perRun)');
   t.equal(one.mailed, 1, 'and mails only the person due');
   t.equal(one.notDue, 1, 'the other is not due');
@@ -219,29 +291,29 @@ async function inProcess(t) {
   }).join(','), 'ben', 'ben was mailed');
   t.equal(d.audits.length - before, 1, 'one audit row for the run');
   t.equal(d.audits[d.audits.length - 1].action,
-    'authn.post-login.campaign-run', 'the run row');
+    'authn.post-login.activity-run', 'the run row');
   t.check(!JSON.stringify(d.sent[0].facts).match(/token|code|secret/i),
     'the reminder is asked with no credential', JSON.stringify(d.sent[0]));
   const benRow = d.real.stateOf('ben');
   t.equal(benRow.mails, 1, 'ben\'s progress row counts the mail');
-  t.equal(benRow.campaign, id, 'and names the campaign');
+  t.equal(benRow.mailedBy, id, 'and names the started activity');
   t.equal(benRow.invitedAt, 0, 'and a mail is not an invitation');
 
   // Run 2 and 3: the rest, then the pass ends.
   out = await c.runAsync({});
-  one = out.campaigns[0];
+  one = out.started[0];
   t.equal(one.mailed, 1, 'run two mails dan');
   out = await c.runAsync({});
-  one = out.campaigns[0];
+  one = out.started[0];
   t.equal(one.mailed, 1, 'run three mails eli');
   t.equal(one.passEnded, true, 'and the pass ends at the last person');
-  t.equal(c.view().campaigns[0].run.passes, 1, 'one pass is counted');
-  t.equal(c.view().campaigns[0].run.cursor, '',
+  t.equal(c.view().started[0].run.passes, 1, 'one pass is counted');
+  t.equal(c.view().started[0].run.cursor, '',
     'the cursor starts over');
 
   // The next pass, inside the interval: everybody held back.
   out = await c.runAsync({});
-  one = out.campaigns[0];
+  one = out.started[0];
   t.equal(one.mailed, 0, 'inside the interval nobody is mailed again');
   t.equal(one.heldBack, 1, 'ben is held back');
 
@@ -255,35 +327,35 @@ async function inProcess(t) {
   await c.runAsync({});
   out = await c.runAsync({});
   t.equal(d.real.stateOf('ben').mails, 2,
-    'never past the maximum (' + JSON.stringify(out.campaigns[0]) + ')');
+    'never past the maximum (' + JSON.stringify(out.started[0]) + ')');
 
   // A refusal by the channel is counted, and audited with 0494.
   d.clock.now += 30 * DAY;
   const r2 = await c.act({ action: 'end', id: id }, ctx);
-  t.equal(r2.ok && r2.campaign.state, 'ended', 'end ends it');
+  t.equal(r2.ok && r2.started.state, 'ended', 'end ends it');
   r = await c.act({ action: 'pause', id: id }, ctx);
-  t.equal(r.errorCode, 'STS-AUTHN-0491', 'an ended campaign cannot pause');
+  t.equal(r.errorCode, 'STS-AUTHN-0491', 'an ended one cannot pause');
   r = await c.act({ action: 'start', maxMails: 5, perRun: 10 }, ctx);
-  const id2 = r.campaign && r.campaign.id;
-  t.check(r.ok && id2 && id2 !== id, 'a new campaign once the first ended');
+  const id2 = r.started && r.started.id;
+  t.check(r.ok && id2 && id2 !== id, 'a new one once the first ended');
   d.mailState.refuse.dan = true;
   out = await c.runAsync({});
-  one = out.campaigns[0];
+  one = out.started[0];
   t.equal(one.refused, 1, 'a refusal by the channel is counted');
   t.equal(d.audits[d.audits.length - 1].errorCode, 'STS-AUTHN-0494',
     'and the run row carries 0494');
   t.equal(d.real.stateOf('ben').mails, 1,
-    'a new campaign counts its own mails');
+    'a new started activity counts its own mails');
 
   // Pause: nobody mailed; no transport: nobody mailed and nothing moved.
   r = c.move('pause', id2, ctx);
-  t.equal(r.ok && r.campaign.state, 'paused', 'pause pauses');
+  t.equal(r.ok && r.started.state, 'paused', 'pause pauses');
   t.check(c.offIn('default') !== '', 'the job is off with none running');
   out = await c.runAsync({});
-  t.equal(out.summary, 'No campaign is running in this realm.',
-    'a paused campaign mails nobody');
+  t.equal(out.summary, 'No post-login activity is running in this realm.',
+    'a paused one mails nobody');
   r = c.move('resume', id2, ctx);
-  t.equal(r.ok && r.campaign.state, 'running', 'resume resumes');
+  t.equal(r.ok && r.started.state, 'running', 'resume resumes');
   r = c.move('resume', id2, ctx);
   t.equal(r.errorCode, 'STS-AUTHN-0491', 'a running one cannot resume');
   d.mailState.available = false;
@@ -294,10 +366,11 @@ async function inProcess(t) {
   d.mailState.available = true;
   c.move('end', id2, ctx);
 
-  // A group's campaign walks its members only.
-  r = await c.act({ action: 'start', group: 'staff', perRun: 10 }, ctx);
-  t.equal(r.ok && r.campaign.group, 'cn=staff',
-    'a group campaign keeps the group\'s DN');
+  // Groups (#1123): one group walks its members only.
+  r = await c.act({ action: 'start', groups: ['staff'], perRun: 10 }, ctx);
+  t.equal(r.ok && r.started.groups.join(';'), 'cn=staff',
+    'a started activity keeps its group\'s DN');
+  const gid = r.started && r.started.id;
   d.clock.now += 30 * DAY;
   d.sent.length = 0;
   d.mailState.refuse = {};
@@ -306,7 +379,74 @@ async function inProcess(t) {
     return s.to;
   }).sort().join(','), 'ben,dan',
     'only the group\'s due members are mailed (eli is not one)');
+  c.move('end', gid, ctx);
+
+  // Two groups: their UNION, dan (in both) read and mailed once.
+  r = await c.act({ action: 'start', groups: 'staff;cn=ops', perRun: 2 },
+                  ctx);
+  t.equal(r.ok && r.started.groups.join(';'), 'cn=staff;cn=ops',
+    'a `;`-separated list is resolved to DNs, in order');
+  const uid = r.started && r.started.id;
+  r = await c.act({ action: 'start', groups: ['ops', 'staff'] }, ctx);
+  t.equal(r.errorCode, 'STS-AUTHN-0492',
+    'the same groups in another order are the same people');
+  r = await c.act({ action: 'start', groups: ['ops'] }, ctx);
+  t.check(r.ok, 'another set of groups is other people', JSON.stringify(r));
+  c.move('end', r.started.id, ctx);
+  d.clock.now += 30 * DAY;
+  d.sent.length = 0;
+  d.directory.asked.length = 0;
+  out = await c.runAsync({});
+  t.equal(out.started[0].read, 2, 'a slice of the union (perRun 2)');
+  out = await c.runAsync({});
+  t.equal(out.started[0].passEnded, true, 'the union ends a pass');
+  t.equal(d.sent.map(function (s) {
+    return s.to;
+  }).sort().join(','), 'ben,dan,eli',
+    'each member of either group mailed once; dan, in both, once');
+  t.equal(JSON.stringify(d.directory.asked[0]), '["cn=staff","cn=ops"]',
+    'one walk asks both groups together');
+  t.equal(c.view().started.filter(function (one) {
+    return one.id === uid;
+  })[0].run.read, 3, 'three people read in the pass, not four');
+  c.move('end', uid, ctx);
   log.debug("Leaving inProcess().");
+}
+
+// The chooser's slice, from the page's query (#1123), over twenty-five
+// groups: `chooserPane()`'s twenty, the next page, a stale offset clamped,
+// the chosen left out and resolved.
+async function chooser(t) {
+  log.debug("Entering chooser().");
+  const names = [];
+  for (let i = 0; i < 25; i++) {
+    names.push('team-' + (i < 10 ? '0' : '') + i);
+  }
+  const d = doubles(['ann'], [], [], names.concat(['ops', 'staff']));
+  const c = d.activities;
+  let g = c.view({}).groupChooser;
+  t.equal(g.pane.matched, 27, 'every group matches no search');
+  t.equal(g.pane.shown.length, 20, 'twenty to a page');
+  g = c.view({ groupq: 'team' }).groupChooser;
+  t.equal(g.pane.matched, 25, 'the search narrows');
+  t.equal(g.search, 'team', 'and is echoed');
+  g = c.view({ groupq: 'team', groupfrom: '20' }).groupChooser;
+  t.equal(g.pane.from === 20 && g.pane.shown.length, 5,
+    'the next page holds the last five');
+  g = c.view({ groupq: 'team', groupfrom: '400' }).groupChooser;
+  t.equal(g.pane.from, 0, 'a stale offset is clamped to the first page');
+  g = c.view({ groupq: 'team', groups: 'team-03;cn=team-07;nope' })
+    .groupChooser;
+  t.equal(g.pane.matched, 23, 'the chosen are left out of the results');
+  t.equal(g.chosen.map(function (one) {
+    return one.dn + ':' + one.found;
+  }).join(','), 'cn=team-03:true,cn=team-07:true,cn=nope:false',
+    'the list is resolved, a missing group marked');
+  t.equal(require('../common/post_login_activities')
+    .groupNamesOf(['a; b', '', 'cn=c\\;d,ou=x;']).join('|'),
+    'a|b|cn=c\\;d,ou=x',
+    'groupNamesOf splits on `;`, keeps an escaped one, drops empties');
+  log.debug("Leaving chooser().");
 }
 
 // ---------------------------------------------------------------------------
@@ -315,8 +455,8 @@ async function inProcess(t) {
 // Entering/Leaving rule (root CLAUDE.md, *Code style*).
 // ---------------------------------------------------------------------------
 function childMain() {
-  const ROOT_DIR = process.env.PLC_ROOT;
-  const OUT = process.env.PLC_OUT;
+  const ROOT_DIR = process.env.PLA_ROOT;
+  const OUT = process.env.PLA_OUT;
   const http = require('http');
   const findings = [];
   function note(ok, what, detail) {
@@ -372,21 +512,23 @@ function childMain() {
     const scheduler = require(ROOT_DIR + '/cluster/scheduler');
     const mail = require(ROOT_DIR + '/common/mail');
     const postLogin = require(ROOT_DIR + '/common/post_login');
-    const campaigns = require(ROOT_DIR + '/common/post_login_campaigns');
+    const activities = require(ROOT_DIR + '/common/post_login_activities');
     const stamp = String(process.pid);
-    const A = 'plc-a-' + stamp;
-    const B = 'plc-b-' + stamp;
-    const C = 'plc-c-' + stamp;
-    const ADMIN = 'plc-admin-' + stamp;
-    const GROUP = 'plc-group-' + stamp;
-    const CLIENT = 'plc-client-' + stamp;
+    const A = 'pla-a-' + stamp;
+    const B = 'pla-b-' + stamp;
+    const C = 'pla-c-' + stamp;
+    const ADMIN = 'pla-admin-' + stamp;
+    const GROUP = 'pla-group-' + stamp;
+    const OTHER = 'pla-other-' + stamp;
+    const TEAM = 'pla-team-' + stamp + '-';
+    const CLIENT = 'pla-client-' + stamp;
     const BASE_REALM = realms.DEFAULT_REALM;
     const inDefault = function (fn) {
       return realms.run(BASE_REALM, fn);
     };
 
-    note(!!scheduler.job('post-login.campaign-mail'),
-         'B1. the job post-login.campaign-mail is registered');
+    note(!!scheduler.job('post-login.activity-mail'),
+         'B1. the job post-login.activity-mail is registered');
     [A, B, C].forEach(function (n) {
       ldap.createUser(n, { invent: false,
         attributes: { mail: n + '@example.test' } });
@@ -394,6 +536,14 @@ function childMain() {
     ldap.createUser(ADMIN, { invent: false });
     ldap.createGroup(GROUP, { actor: 'test' });
     ldap.addGroupMember(GROUP, B, { actor: 'test' });
+    // #1123: a second group sharing B with GROUP, and C of its own.
+    ldap.createGroup(OTHER, { actor: 'test' });
+    ldap.addGroupMember(OTHER, B, { actor: 'test' });
+    ldap.addGroupMember(OTHER, C, { actor: 'test' });
+    // Twenty-five groups for the chooser's pages.
+    for (let i = 0; i < 25; i++) {
+      ldap.createGroup(TEAM + (i < 10 ? '0' : '') + i, { actor: 'test' });
+    }
     ldap.addGroupMember('report-admins', ADMIN, { actor: 'test' });
     applications.createApplication({ identifier: CLIENT,
       protocols: ['oauth2'],
@@ -417,34 +567,58 @@ function childMain() {
       scope: 'report:admin' });
 
     // --- the API -----------------------------------------------------------
-    let r = await call(port, 'GET', '/admin-api/post-login-campaigns', admin);
-    note(r.status === 200 && r.json && Array.isArray(r.json.campaigns) &&
-         r.json.job === 'post-login.campaign-mail' &&
+    let r = await call(port, 'GET', '/admin-api/post-login-activities', admin);
+    note(r.status === 200 && r.json && Array.isArray(r.json.started) &&
+         r.json.job === 'post-login.activity-mail' &&
          r.json.activities.indexOf('pqc-passkey-migration') >= 0,
-         'B2. GET /admin-api/post-login-campaigns answers the view',
+         'B2. GET /admin-api/post-login-activities answers the view',
          brief(r));
-    r = await call(port, 'POST', '/admin-api/post-login-campaigns/start',
+    r = await call(port, 'POST', '/admin-api/post-login-activities/start',
                    admin, { activity: 'pqc-passkey-migration',
                             intervalDays: 0 });
     note(r.status === 400, 'B3. an interval of 0 is refused 400', brief(r));
-    r = await call(port, 'POST', '/admin-api/post-login-campaigns/start',
+    r = await call(port, 'POST', '/admin-api/post-login-activities/start',
                    admin, { activity: 'pqc-passkey-migration',
                             intervalDays: 3, maxMails: 2, perRun: 500 });
-    const id = r.json && r.json.campaign && r.json.campaign.id;
-    note(r.status === 200 && !!id && r.json.campaign.state === 'running',
-         'B4. a campaign starts over the API', brief(r));
-    r = await call(port, 'POST', '/admin-api/post-login-campaigns/start',
+    const id = r.json && r.json.started && r.json.started.id;
+    note(r.status === 200 && !!id && r.json.started.state === 'running',
+         'B4. a post-login activity starts over the API', brief(r));
+    r = await call(port, 'POST', '/admin-api/post-login-activities/start',
                    admin, { activity: 'pqc-passkey-migration' });
     note(r.status === 400, 'B5. a second for the same people is refused',
          brief(r));
-    r = await call(port, 'POST', '/admin-api/post-login-campaigns/pause',
+    r = await call(port, 'POST', '/admin-api/post-login-activities/pause',
                    admin, { id: id });
-    note(r.status === 200 && r.json.campaign.state === 'paused',
+    note(r.status === 200 && r.json.started.state === 'paused',
          'B6. pause', brief(r));
-    r = await call(port, 'POST', '/admin-api/post-login-campaigns/resume',
+    r = await call(port, 'POST', '/admin-api/post-login-activities/resume',
                    admin, { id: id });
-    note(r.status === 200 && r.json.campaign.state === 'running',
+    note(r.status === 200 && r.json.started.state === 'running',
          'B7. resume', brief(r));
+
+    // --- the group chooser over the API (#1123) ---------------------------
+    const pane = async function (query) {
+      const got = await call(port, 'GET', '/admin-api/post-login-activities' +
+                             query, admin);
+      return got.json && got.json.groupChooser;
+    };
+    let g = await pane('?groupq=' + encodeURIComponent(TEAM));
+    note(g && g.pane.matched === 25 && g.pane.shown.length === 20 &&
+         g.pane.from === 0, 'B7a. the search matches 25, twenty shown',
+         JSON.stringify(g && g.pane && { m: g.pane.matched,
+                                         n: g.pane.shown.length }));
+    g = await pane('?groupq=' + encodeURIComponent(TEAM) + '&groupfrom=20');
+    note(g && g.pane.from === 20 && g.pane.shown.length === 5,
+         'B7b. the next page holds the last five');
+    g = await pane('?groupq=' + encodeURIComponent(TEAM) + '&groupfrom=900');
+    note(g && g.pane.from === 0, 'B7c. a stale offset is clamped');
+    g = await pane('?groupq=' + encodeURIComponent(TEAM) + '&groups=' +
+                   encodeURIComponent(TEAM + '00;' + TEAM + '01'));
+    note(g && g.pane.matched === 23 && g.chosen.length === 2 &&
+         g.chosen.every(function (one) {
+           return one.found && /^cn=/i.test(one.dn);
+         }), 'B7d. the chosen are resolved and left out of the results',
+         JSON.stringify(g && g.chosen));
 
     // --- the job's body, through the real channel and store --------------
     const dueNow = {};
@@ -459,10 +633,10 @@ function childMain() {
     };
     try {
       const ran = await inDefault(function () {
-        return campaigns.runAsync({ runId: 'test' });
+        return activities.runAsync({ runId: 'test' });
       });
-      note(ran && Array.isArray(ran.campaigns) &&
-           ran.campaigns[0].mailed === 2,
+      note(ran && Array.isArray(ran.started) &&
+           ran.started[0].mailed === 2,
            'B8. a run mails the two people due', JSON.stringify(ran));
       const rows = inDefault(function () {
         return mail.list({ q: 'post-login-reminder' });
@@ -501,42 +675,57 @@ function childMain() {
       const row = inDefault(function () {
         return postLogin.stateOf(A);
       });
-      note(row.mails === 1 && row.campaign === id && !row.invitedAt,
+      note(row.mails === 1 && row.mailedBy === id && !row.invitedAt,
            'B12. the progress row records the mail, not an invitation',
            JSON.stringify(row));
-      // A group campaign: end the realm's, start the group's.
-      await call(port, 'POST', '/admin-api/post-login-campaigns/end', admin,
+      // Two groups (#1123): end the realm's, start one over both.
+      await call(port, 'POST', '/admin-api/post-login-activities/end', admin,
                  { id: id });
-      r = await call(port, 'POST', '/admin-api/post-login-campaigns/end',
+      r = await call(port, 'POST', '/admin-api/post-login-activities/end',
                      admin, { id: id });
-      note(r.status === 400, 'B13. an ended campaign cannot end again',
+      note(r.status === 400, 'B13. an ended one cannot end again',
            brief(r));
-      r = await call(port, 'POST', '/admin-api/post-login-campaigns/start',
-                     admin, { group: GROUP, intervalDays: 1 });
-      const gid = r.json && r.json.campaign && r.json.campaign.id;
-      note(r.status === 200 && !!gid, 'B14. a group campaign starts',
+      r = await call(port, 'POST', '/admin-api/post-login-activities/start',
+                     admin, { groups: [GROUP, 'pla-none-' + stamp],
+                              intervalDays: 1 });
+      note(r.status === 400 && r.json &&
+           r.json.errorCode === 'STS-AUTHN-0530' &&
+           /pla-none-/.test(JSON.stringify(r.json.errors)),
+           'B14a. a group this realm does not have is refused (0530)',
            brief(r));
+      r = await call(port, 'POST', '/admin-api/post-login-activities/start',
+                     admin, { groups: [GROUP, OTHER], intervalDays: 1 });
+      const gid = r.json && r.json.started && r.json.started.id;
+      note(r.status === 200 && !!gid &&
+           r.json.started.groups.length === 2,
+           'B14. a post-login activity over two groups starts', brief(r));
       const before = inDefault(function () {
         return mail.list({ q: 'post-login-reminder' }).length;
       });
-      // Both A and B are inside the interval of the first campaign; make
-      // A's last mail old so only the group's walk decides.
+      // A and B are inside the interval of the first one; forget their
+      // rows so only the groups' walk decides. C is due now too: B is in
+      // both groups, C in one, A in neither.
       inDefault(function () {
         [A, B].forEach(function (n) {
           postLogin.forget(n);
         });
       });
+      dueNow[C] = true;
       const ranG = await inDefault(function () {
-        return campaigns.runAsync({ runId: 'test-group' });
+        return activities.runAsync({ runId: 'test-group' });
       });
       const after = inDefault(function () {
         return mail.list({ q: 'post-login-reminder' });
       });
-      note(ranG.campaigns[0].mailed === 1 &&
-           after.length === before + 1 && after.filter(function (m) {
+      note(ranG.started[0].mailed === 2 && ranG.started[0].read === 2 &&
+           after.length === before + 2 && after.filter(function (m) {
              return m.username === B;
-           }).length === 2,
-           'B15. a group campaign mails only its member',
+           }).length === 2 && after.filter(function (m) {
+             return m.username === C;
+           }).length === 1 && after.filter(function (m) {
+             return m.username === A;
+           }).length === 1,
+           'B15. the union of two groups, B (in both) mailed once, A not',
            JSON.stringify(ranG));
     } finally {
       postLogin.dueFor = realDue;
@@ -551,13 +740,14 @@ function childMain() {
          brief(r));
     r = await call(port, 'POST', '/report-api/queries', reporter, {
       source: 'postLoginProgress',
-      select: ['username', 'campaign', 'mails', 'progress'],
+      select: ['username', 'mailedBy', 'mails', 'progress'],
       where: { op: 'eq', field: 'username', value: B },
       limit: 10, format: 'json', mode: 'sync' });
     const got = r.json && Array.isArray(r.json.rows) ? r.json.rows : [];
     note(r.status === 200 && got.length === 1 && got[0].mails === 1 &&
          got[0].progress === 'mailed',
-         'B17. the report reads the campaign\'s mail on the person\'s row',
+         'B17. the report reads the started activity\'s mail on the ' +
+         'person\'s row',
          brief(r));
     const preset = r.status === 200 ? await call(port, 'POST',
       '/report-api/queries', reporter,
@@ -581,7 +771,7 @@ function childMain() {
 
 async function overHttp(t) {
   log.debug("Entering overHttp().");
-  const out = path.join(os.tmpdir(), 'plc-' + process.pid + '-' +
+  const out = path.join(os.tmpdir(), 'pla-' + process.pid + '-' +
                         Date.now() + '.json');
   const clean = {};
   Object.keys(process.env).forEach(function (key) {
@@ -593,7 +783,7 @@ async function overHttp(t) {
   const result = childProcess.spawnSync(process.execPath,
     ['-e', '(' + childMain.toString() + ')()'], {
       env: Object.assign(clean, { LOG_LEVEL: 'fatal', STS_LOG_LEVEL: 'fatal',
-                                  PLC_ROOT: ROOT, PLC_OUT: out }),
+                                  PLA_ROOT: ROOT, PLA_OUT: out }),
       encoding: 'utf8', timeout: 240000, cwd: ROOT
     });
   let findings = null;
@@ -624,13 +814,15 @@ async function overHttp(t) {
 async function run(t) {
   log.debug("Entering run().");
   await inProcess(t);
+  await chooser(t);
   await overHttp(t);
   log.debug("Leaving run().");
 }
 
 module.exports = {
-  name: 'post_login_campaigns',
-  describe: 'post-login mail campaigns (#1111): the start, the acts, the ' +
+  name: 'post_login_activities',
+  describe: 'started post-login activities (#1111, #1123): the start, the ' +
+            'groups, their union and the chooser, the acts, the ' +
             'job\'s slices, interval and maximum, the real channel\'s ' +
             'message with one sign-in link and no credential, the API, and ' +
             'the progress it leaves in /report (#1110)',
