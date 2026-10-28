@@ -382,11 +382,12 @@ async function test() {
           });
         });
   check("the JWKS carries the whole path in `x5c` — leaf, Issuing, " +
-        "Intermediate — so registering it registers the chain with it",
+        "Intermediate and, since #1064, the service Root — so registering " +
+        "it registers the chain with it",
         function () {
           const jwks = JSON.parse(fields.oauthAssertionJwks);
           assert.strictEqual(jwks.keys.length, 1);
-          assert.strictEqual(jwks.keys[0].x5c.length, 3,
+          assert.strictEqual(jwks.keys[0].x5c.length, 4,
             "x5c has " + jwks.keys[0].x5c.length + " member(s)");
           assert.strictEqual(jwks.keys[0].kid, kid);
         });

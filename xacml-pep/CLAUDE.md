@@ -417,10 +417,18 @@ product, #171), so the demonstration converges on its poll.
 registers unauthenticated and the mock refuses it — which is the honest default
 rather than a broken one. **SINCE 2026-09-06 THAT REFUSAL IS THE ACCESS POLICY'S
 RATHER THAN `xacml.pepRequireCertificate`'S**, and it is no longer optional: the
-three endpoints require a client certificate this service VERIFIED whose subject
-DN resolves to a directory entry holding the built-in `REMOTE_PEPS` role. Both
-launchers mint one with `tests/tools/pep-credential.js` and mount it at
-`/certs`; a container without one starts, enforces what it can pull (nothing),
+three endpoints require a client certificate this service VERIFIED that
+resolves to a directory entry holding the built-in `REMOTE_PEPS` role. **Since
+#1061 that entry is the one STORING the certificate** in `userCertificate`
+(`common/CLAUDE.md` 3ag): the PEP's certificate comes from an outside
+authority, and its subject DN is no longer read, so the certificate has to be
+stored on the PEP's entry in the realm it pulls from or every call is refused
+(`STS-XACML-0179`, `0180` when stored on two entries). Nothing in either image
+can do that — the certificate is minted after the stack is up — so whoever
+mints it stores it too: the launchers after `tests/tools/pep-credential.js`,
+the job for a container it starts itself, and an operator upgrading an
+existing deployment BEFORE the upgrade. Both launchers mint one and mount it
+at `/certs`; a container without one starts, enforces what it can pull (nothing),
 and says why. Generating one here would mean either committing a
 private key to this repository (which `postgres/generate-tls.sh` exists
 specifically to avoid) or a first-start script for a demonstration container.

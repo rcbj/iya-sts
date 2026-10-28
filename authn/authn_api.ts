@@ -403,6 +403,20 @@ const OPERATIONS: Operation[] = [
     summary: 'Continues without signing in',
     description: 'Where `authn.unauthenticatedSessions` is on: a session ' +
       'that records that nobody authenticated.' },
+  { method: 'POST', path: API + '/pending/:id/certificate',
+    operationId: 'continueWithCertificate', access: 'pending',
+    mirrors: 'POST /authn/login', action: 'certificate', handler: 'act',
+    body: ANONYMOUS_BODY, answer: NEXT_ANSWER,
+    summary: 'Continues as the holder of the connection\'s TLS client ' +
+             'certificate',
+    description: 'Where the view offers `certificate` (#1051): the TLS ' +
+      'client certificate this connection presented, its revocation ' +
+      'consulted, the identity gate asked for this sign-in\'s realm, and ' +
+      'an application\'s certificate refused — the checks `GET ' +
+      '/tls/sign-in` makes — as a first factor, `amr ["swk"]`. The ' +
+      'authentication policy, the risk and the issuance policy decide as ' +
+      'for any first factor, and a second factor is the next step where ' +
+      'one is needed.' },
   { method: 'POST', path: API + '/pending/:id/email',
     operationId: 'signInByEmail', access: 'pending',
     mirrors: 'POST /authn/login', action: 'email', handler: 'act',

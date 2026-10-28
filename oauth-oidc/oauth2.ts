@@ -3420,14 +3420,6 @@ class OAuth2Server {
     log.debug("Entering OAuth2Server.sendJwks().");
     try {
       const pub = forge.pki.certificateFromPem(STS.certPem).publicKey;
-      // The base64 of a PEM's DER, for `x5c` — which is base64 and NOT
-      // base64url (RFC 7517 section 4.7 is explicit, and a base64url `x5c`
-      // parses as garbage in every library that reads it).
-      const forX5c = function (pem) {
-        log.debug("Entering forX5c().");
-        log.debug("Leaving forX5c().");
-        return String(pem).replace(/-----[^-]+-----/g, '').replace(/\s+/g, '');
-      };
 
       const b64u = function (hex) {
         log.debug("Entering b64u().");
@@ -3498,7 +3490,9 @@ class OAuth2Server {
           // local issuer certificate`, which names nothing. `certChainPem` is
           // empty while a key is still self-signed, so this is byte for byte
           // what it always was on a service whose hierarchy has not been built.
-          x5c: [STS.certB64].concat((STS.certChainPem || []).map(forX5c))
+          // And through the service Root since #1064: helpers.x5cOf(), the
+          // one writer of a published JWK's `x5c`, says why.
+          x5c: helpers.x5cOf(STS.certPem, STS.certChainPem || [])
         // The whole key list and not STS.extraKeys: the post-quantum keys are
         // made on FIRST USE (see helpers.js), and the call above is what brings
         // them into being. That makes the first JWKS fetch on a realm slow —
@@ -3520,8 +3514,8 @@ class OAuth2Server {
                 .export({ format: 'jwk' });
               return { kty: 'RSA', use: 'sig', kid: one.kid, n: jwk.n,
                        e: jwk.e,
-                       x5c: [forX5c(one.certPem)].concat(
-                         (one.chainPem || []).map(forX5c)) };
+                       x5c: helpers.x5cOf(one.certPem,
+                                          one.chainPem || []) };
             }))
           .concat(helpers.standbyOf(STS).filter(function (one: any): boolean {
             return one.kind !== 'rsa' && one.useCase === 'jose' &&
@@ -5571,13 +5565,10 @@ class OAuth2Server {
         self.issuanceSubjectOf(opts),
         { clientId: opts.client_id, grant: opts.grant });
     }
-    // REPORT SCOPES ARE A GROUP'S, AND AN ADMINISTRATOR'S (#956). Every
-    // grant mints through here, so a refresh, an exchange and
-    // client_credentials all lose `report:use` and `report:admin` when the
-    // subject may not hold them. Asked lazily: this module is loaded long
-    // before the report library.
-    opts.scope = require('../report/rights').reportNarrowScope(opts.scope,
-      self.issuanceSubjectOf(opts));
+    // (The report scopes were narrowed here by `report/rights.ts`'s own
+    // group check until #1030; `report:use` and `report:admin` are the
+    // native roles REPORT_USE and REPORT_ADMIN's permissions now, and the
+    // role narrowing below decides them with every other gated one.)
     // A GATED PERMISSION GOES WITH THE SUBJECT'S ROLES (#302, #303), here for
     // the debugger permission's reason: every grant mints through this
     // function, so a refresh after a role was revoked, a token exchange, a
@@ -5656,6 +5647,17 @@ class OAuth2Server {
           'client certificate (RFC 8705): the resource server that declares ' +
           'the type does not accept a bearer token for it.' },
         'STS-OAUTH-0878'));
+    }
+    // A CLIENT THAT DECLARED A CERTIFICATE GETS AN `/admin-api` TOKEN ONLY
+    // BOUND TO ONE (#1050). Here, for the reason the block above is here:
+    // every grant mints through this function, and the certificate on this
+    // connection is known only now — `adminApiBindingRefusal()` argues it.
+    const adminUnbound = self.adminApiBindingRefusal(opts.client_id,
+      plan.audiences, opts.request || null, base, !!opts.request);
+    if (adminUnbound) {
+      log.debug("Leaving OAuth2Server.tokenSet(). An /admin-api token for a " +
+                "certificate client, and no certificate to bind it to.");
+      throw new AccessTokenRefused(log, adminUnbound);
     }
     // A TYPE THAT NEEDS AN AUTHENTICATION LEVEL (#432 phase 6): every acr
     // the catalogue declares for a detail type the token carries, met by the
@@ -8444,6 +8446,86 @@ class OAuth2Server {
     return (Array.isArray(value) ? value : [value]).map(String);
   }
 
+  // ---------------------------------------------------------------------------
+  // AN `/admin-api` TOKEN FOR A CLIENT THAT DECLARED A CERTIFICATE IS BOUND TO
+  // ONE, OR IS NOT ISSUED (#1050, rcbj's decision on #520: "bound tokens
+  // only, no bare certificate as a credential").
+  //
+  // RFC 8705 section 3.4 leaves binding to the authorization server's
+  // discretion, and `mtls.declaredRefusal()` already holds the token endpoint
+  // to two declarations. What was left open, found on #1050: an entry that
+  // declares a certificate method BESIDE a secret (2026-10-01) and sent the
+  // secret on a connection with no certificate, which `declaredRefusal()`
+  // rightly holds to the secret — and then minted an unbound administrative
+  // token; a CIBA push, minted when the person approves and on no
+  // connection at all; and the implicit and hybrid responses, minted at the
+  // authorization endpoint, where the connection is the browser's and never
+  // the client's. For the management API — the one resource server here where
+  // a stolen token administers the service — such a client's token is bound
+  // to a certificate or refused, in every mode, for `declaredRefusal()`'s
+  // reason: the CLIENT asked for it.
+  //
+  // `invalid_request` (STS-OAUTH-0489), for STS-OAUTH-0487's reason: nothing
+  // failed to authenticate; the request cannot produce what the client is
+  // registered for. The token's other audiences do not save it — an access
+  // token naming `/admin-api` is an administrative credential whatever else it
+  // names. `/admin-api` holds the same rule at the other end
+  // (STS-API-0137), for a token issued unbound some other way.
+  // ---------------------------------------------------------------------------
+  /**
+   * Refuses an `/admin-api` access token for a client that declared a
+   * certificate when there is no certificate to bind it to (#1050).
+   *
+   * @param clientId - the client the token is for
+   * @param audiences - the audiences it would carry
+   * @param req - the request, or null where the token is minted on none
+   * @param base - the base it is minted at
+   * @param fromClient - whether `req` is the CLIENT's connection (the token
+   *   endpoint's), whose certificate a token can be bound to; the
+   *   authorization endpoint's is the browser's
+   * @returns null, or `{ error, description }` marked STS-OAUTH-0489 (the
+   *   token endpoint) or STS-OAUTH-0490 (the authorization endpoint)
+   */
+  private adminApiBindingRefusal(clientId: Json, audiences: Json, req: Json,
+                                 base: Json, fromClient: boolean): Json {
+    const { log, mtls, errorCodes, applications } = this.deps;
+    log.debug("Entering OAuth2Server.adminApiBindingRefusal().");
+    if (fromClient && req && mtls.presentedThumbprint(req)) {
+      log.debug("Leaving OAuth2Server.adminApiBindingRefusal(). A " +
+                "certificate to bind to.");
+      return null;
+    }
+    const forApi = this.audienceList(audiences)
+      .filter(function (one: string): boolean {
+        return RegisteredTargets.namesManagementApi(one, req, base);
+      })[0];
+    if (!forApi) {
+      log.debug("Leaving OAuth2Server.adminApiBindingRefusal(). Not for " +
+                "/admin-api.");
+      return null;
+    }
+    const declared = mtls.certificateDeclaration(
+      applications.clientConfigOf(String(clientId || '')));
+    if (!declared) {
+      log.debug("Leaving OAuth2Server.adminApiBindingRefusal(). The client " +
+                "declared no certificate.");
+      return null;
+    }
+    log.debug("Leaving OAuth2Server.adminApiBindingRefusal(). Refused.");
+    return errorCodes.mark({
+      error: 'invalid_request',
+      description: 'RFC 8705: client "' + String(clientId) + '" declares ' +
+        declared + ', so an access token for the management API (' + forApi +
+        ') is issued to it only bound to its TLS client certificate ' +
+        '(cnf["x5t#S256"]), and ' + (fromClient && req
+          ? 'this request arrived on a connection with no client ' +
+            'certificate. Make the request over mutual TLS.'
+          : 'this token would be minted where there is no connection of ' +
+            'the client\'s to bind it to. Ask the token endpoint for it ' +
+            'over mutual TLS instead.') },
+      fromClient ? 'STS-OAUTH-0489' : 'STS-OAUTH-0490');
+  }
+
   /**
    * Plans an access token's audiences and scope from the request, through
    * `jwt_access_token.audiencePlan()`.
@@ -8605,7 +8687,6 @@ class OAuth2Server {
     let scope = debuggerAccess.narrowScope(
       self.offlineAccessScope(String(query.scope || ''), query, types, user),
       person, { clientId: query.client_id, grant: 'authorization_code' });
-    scope = require('../report/rights').reportNarrowScope(scope, person);
     const out: Json = {};
     const parsedDetails = self.parseAuthorizationDetails(
       query.authorization_details, { clientId: query.client_id, req: req });
@@ -8755,6 +8836,25 @@ class OAuth2Server {
                   "resources, each issuable alone; the token request picks.");
         audiencePlan = one;
       }
+    }
+    // AN `/admin-api` TOKEN IN THE BROWSER, for a client that declared a
+    // certificate (#1050): the implicit and hybrid token is minted here, on
+    // the browser's connection, so it could never be bound to the client's
+    // certificate — `adminApiBindingRefusal()`. Before the code is minted,
+    // for the reason the audience refusal below is.
+    const browserToken = types.indexOf('token') >= 0 && !audiencePlan.refusal
+      ? self.adminApiBindingRefusal(query.client_id, audiencePlan.audiences,
+                                    req, base, false)
+      : null;
+    if (browserToken) {
+      log.debug("Leaving OAuth2Server.issueAuthorizationResponse(). An " +
+                "/admin-api token for a certificate client, in the browser.");
+      errorCodes.mark(res, 'STS-OAUTH-0490');
+      return self.redirectBack(res, base, redirectUri, query.state,
+        { error: browserToken.error,
+          error_description: browserToken.description },
+        self.usesFragment(types, query.response_mode),
+        query.response_mode);
     }
     if (audiencePlan.refusal) {
       log.debug("Leaving OAuth2Server.issueAuthorizationResponse(). RFC 9068 " +

@@ -319,6 +319,14 @@
     "en": "4f2c054a1405a843",
     "text": "Journalise, dans ce processus, une ligne avec son rôle et sa mémoire : taille résidente, tas utilisé et total, limite du tas, mémoire externe et tampons de tableaux (#341)."
   },
+  "sched.jobs.report.build-cleanup.title": {
+    "en": "e5bd8efc07f0b31b",
+    "text": "Nettoyage des constructions de rapports"
+  },
+  "sched.jobs.report.build-cleanup.describe": {
+    "en": "203d8d2e97c041e2",
+    "text": "Dans chaque processus : maintient à jour les fichiers de rapport que ce processus construit, et supprime de risk.uploadDirectory une construction de rapport qu’aucun processus actif n’a touchée depuis report.asyncMaxMs et quinze minutes — ce qu’un processus arrêté en cours de construction a laissé."
+  },
   "sched.jobs.report.drain.title": {
     "en": "792c052635196abd",
     "text": "Tâches de rapport"

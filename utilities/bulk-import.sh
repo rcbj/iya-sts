@@ -22,6 +22,8 @@ LU=$(cd "$(dirname "$0")" && pwd)
 IY=$(cd "$LU/.." && pwd)
 D=${LDIF_DIR:-$LU/ldif}
 LOG=$LU/bulk-import.log
+# hostPath() and the docker shim under Cygwin, nothing on Linux (#512).
+. "$IY/tests/tools/host-platform.sh"
 FROM=${1:?FROM}
 TO=${2:?TO}
 PER=${3:-1000000}
@@ -45,8 +47,9 @@ docker exec sts-postgres psql -U sts -d sts -v ON_ERROR_STOP=1 -qc \
    WHERE key='ldap.maxEntries'" || { say "could not raise ldap.maxEntries"; exit 1; }
 
 gen() { # gen START COUNT
-  node "$IY/tests/tools/generate-people-ldif.js" --count="$2" --start="$1" \
-    --stamp=$STAMP --out="$D/people-$1.ldif.part" >/dev/null &&
+  node "$(hostPath "$IY/tests/tools/generate-people-ldif.js")" --count="$2" \
+    --start="$1" --stamp=$STAMP --out="$(hostPath "$D/people-$1.ldif.part")" \
+    >/dev/null &&
   mv "$D/people-$1.ldif.part" "$D/people-$1.ldif"
 }
 
@@ -67,7 +70,7 @@ while [ "$n" -le "$TO" ]; do
   docker compose up --no-deps openbao-seed >/dev/null 2>&1 ||
     { say "openbao-seed failed before $n"; exit 1; }
   t0=$(date +%s)
-  docker compose run --rm --no-deps -T -v "$D:/import" sts sh -c \
+  docker compose run --rm --no-deps -T -v "$(hostPath "$D"):/import" sts sh -c \
     'STARTUP="$(node openbao/startup-secrets.js)" || exit 1; eval "$STARTUP";
      exec setpriv --reuid=10001 --regid=10001 --clear-groups --inh-caps=-all \
        --bounding-set=-all --no-new-privs node persistence/bulk_import.js \
@@ -77,7 +80,7 @@ while [ "$n" -le "$TO" ]; do
   rc=$?
   t1=$(date +%s)
   secs=$(( t1 - t0 )); [ "$secs" -lt 1 ] && secs=1
-  summary=$(node -e 'try{const r=require(process.argv[1]);console.log(JSON.stringify({imported:r.imported,present:r.present,taken:r.taken,refusals:r.refusals,stopped:r.stopped}))}catch(e){console.log("no report")}' "$D/people-$n.report.json")
+  summary=$(node -e 'try{const r=require(process.argv[1]);console.log(JSON.stringify({imported:r.imported,present:r.present,taken:r.taken,refusals:r.refusals,stopped:r.stopped}))}catch(e){console.log("no report")}' "$(hostPath "$D/people-$n.report.json")")
   say "file $n (+$cnt): exit $rc in ${secs}s = $(( cnt / secs ))/s $summary"
   if [ "$rc" -ne 0 ] && [ "$rc" -ne 3 ]; then
     say "STOPPED: import of $n exited $rc; see bulk-import.out (resume with FROM=$n, or --skip)"

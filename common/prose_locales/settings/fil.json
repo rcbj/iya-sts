@@ -4787,6 +4787,14 @@
     "en": "d75340dbe09a7542",
     "text": "Kung pinapangalanan ng JWT na ibinabalik ng STS na ito sa isang RequestSecurityTokenResponse ang certificate chain ng key na pumirma rito. Dala ng SAML assertion ang certificate nito sa sarili nitong XML Signature at hindi ito apektado. Ang `x5u` — ang default — ay ang address ng chain sa serbisyong ito, `/pki/chain/{scope}/{sha256}.pem`, mga isandaang byte; ang `x5c` ay ang chain mismo na nakasama, leaf muna at huli ang service Root, base64 DER, ilang kilobyte; ang `both` ay pareho at ang `none` ay wala sa dalawa. Alinman dito, ito ang kailangan ng relying party na token lang ang hawak para maabot ang CRL distribution points, OCSP responder at caIssuers address ng bawat certificate. Walang natatanggap ang key na hindi pa naka-certify sa ilalim ng JOSE Issuing CA ng realm na ito, pati ang HMAC na pirma. Hinihingi ng RFC 7515 section 4.1.5 na gumamit ng TLS ang pag-fetch ng `x5u`: kapag naka-off ang global.https, `http://` ang address at tatanggi itong sundan ng isang mahigpit na verifier. Hindi kailanman binibigyan nito ang mga JWE header — walang ine-encrypt ang anumang certified key ng serbisyong ito. Puwedeng itakda bawat realm."
   },
+  "wstrust.acceptClientCertificate|label": {
+    "en": "04ac29464750e625",
+    "text": "Tanggapin ang TLS client certificate bilang kredensyal ng humihiling"
+  },
+  "wstrust.acceptClientCertificate|description": {
+    "en": "23d9a8fba459f61c",
+    "text": "Kung ang isang request sa /sts na walang dalang kredensyal ang wsse:Security header ay magpapatunay sa humihiling nito sa pamamagitan ng TLS client certificate sa koneksyon. Tanging ang certificate na na-verify sa handshake at inisyu ng realm na ito sa isang tao o isang application (isang TLS client certificate mula sa user portal o sa Credentials ng application, o isang na-enroll sa ACME, EST o SCEP) ang isang kredensyal, sa parehong mode; ang na-revoke, ang galing sa ibang realm, at ang hindi na hawak ng may-ari nito ay tinatanggihan ng wst:FailedAuthentication. Sinasabi ng inisyung token na may ginamit na certificate: TLSClient sa isang SAML 2.0 assertion, urn:ietf:rfc:2246 sa isang SAML 1.1, amr swk sa isang JWT. Kapag naka-off, binabalewala rito ang certificate."
+  },
   "wsfed.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
     "text": "Sign-in na sinimulan ng identity provider"
@@ -4996,16 +5004,16 @@
     "text": "LDAPS: huwag humingi ng client certificate"
   },
   "ldap.ldapsDisableOptionalClientCertificate|description": {
-    "en": "7e1993d7f889bc3c",
-    "text": "Walang ipinapadalang CertificateRequest ang LDAPS. NAKA-ON bilang default, na siyang palaging ginagawa ng LDAPS: ang bind ang paraan ng directory client para sabihin kung sino ito, at ang certificate prompt sa harap ng bawat client na may hawak nito ay sorpresa. Kapag naka-off, humihingi ng certificate sa bawat connection at walang hinihinging sapilitan; vine-verify ang ipinakitang certificate laban sa client truststore pero walang bina-bind na sinuman (walang SASL EXTERNAL dito)."
+    "en": "7c1815ed4a7499c4",
+    "text": "Walang ipinapadalang CertificateRequest ang LDAPS. NAKA-ON bilang default, na siyang laging ginagawa ng LDAPS: ang bind ang paraan ng directory client para sabihin kung sino ito, at nakagugulat ang paghingi ng certificate sa bawat client na mayroon nito. Kapag naka-off, humihingi ito ng certificate sa bawat koneksyon at walang kinakailangan; ang ipinakitang certificate ay pinapatunayan laban sa client truststore, at ang koneksyong may dalang certificate na ibinigay ng serbisyong ito sa isang tao ay maaaring mag-bind bilang taong iyon gamit ang SASL EXTERNAL."
   },
   "ldap.ldapsRequireClientCertificate|label": {
     "en": "eff4646ac01e4612",
     "text": "LDAPS: kailanganin ang client certificate"
   },
   "ldap.ldapsRequireClientCertificate|description": {
-    "en": "2c73995bcc16b3fa",
-    "text": "Tinatanggihan ng LDAPS, sa handshake, ang bawat connection na hindi nagpapakita ng client certificate na kumakadena sa client truststore — pangalawang gate sa harap ng bind, na siya pa ring nagpapasya kung sino ang connection. Nananaig sa toggle sa itaas. Naka-off bilang default."
+    "en": "cfadc0b97c1bfaa8",
+    "text": "Tinatanggihan ng LDAPS, sa handshake, ang bawat koneksyong hindi nagpapakita ng client certificate na umaabot sa client truststore — pangalawang harang bago ang bind, na siya pa ring nagpapasya kung sino ang koneksyon: password, o SASL EXTERNAL na may certificate na ibinigay ng serbisyong ito sa isang tao. Nangingibabaw sa toggle sa itaas. Naka-off bilang default."
   },
   "debugger.disableOptionalClientCertificate|label": {
     "en": "df19c772421bba66",
@@ -6592,8 +6600,8 @@
     "text": "Mag-alok ng TLS client certificate"
   },
   "scim.authClientCert|description": {
-    "en": "be5e7d5ccffce8c1",
-    "text": "Mutual TLS, ang unang scheme na pinapangalanan ng RFC 7644 section 2. Nalalapat lang ito kung saan dumating ang request sa TLS na may certificate na NA-VERIFY laban sa client truststore (/admin/tls/trust), kaya kapag naka-on lang ang global.https. Ito ang unang lugar sa serbisyong ito kung saan naging CREDENTIAL ang client certificate sa halip na obserbasyon; dito, nag-a-authenticate ito ng isang tao na pagkatapos ay maaaring sumulat sa directory."
+    "en": "0a6d722dc96ad17f",
+    "text": "Mutual TLS, ang unang scheme na pinapangalanan ng RFC 7644 section 2. Nalalapat lang ito kung saan dumating ang request sa TLS na may certificate na NA-VERIFY laban sa client truststore (/admin/tls/trust), kaya kapag naka-on lang ang global.https. Ito ang unang lugar sa serbisyong ito kung saan naging CREDENTIAL ang client certificate sa halip na obserbasyon. Ang certificate na inisyu ng realm na ito sa isang APPLICATION ay magagawa lang ang idinedeklara ng oauthAllowedScope ng application na iyon: ang read scope para magbasa at ang write scope para magsulat, tinatanong sa bawat request (STS-SCIM-0083). Ang certificate ng isang tao — inisyu ng realm na ito, o mula sa isang panlabas na certificate authority at nakaimbak sa userCertificate sa entry ng taong iyon (#1061) — ay puwedeng magbasa at sumulat sa directory."
   },
   "scimClient.attempts|label": {
     "en": "babe2e714439f7c0",
@@ -7067,17 +7075,25 @@
     "en": "34a196af42de2673",
     "text": "Kung tumatanggap ang mga SSF endpoint ng HTTP Basic katabi ng mga OAuth 2.0 access token, at inilalathala ito sa authorization_schemes. Sa development, pumapasa ang anumang username na may anumang password maliban sa \"invalid\"; sa product mode, vine-verify ang password laban sa naka-hash na userPassword ng tao. Alinman dito, hawak ng Basic principal ang parehong scope, dahil walang dalang scope ang Basic — kaya ang deployment na gustong ipatupad ang ssf.read at ssf.manage para sa bawat caller ay ino-off ito."
   },
+  "ssf.authClientCert|label": {
+    "en": "ad5fbafbb2ac1812",
+    "text": "Mag-alok ng mga TLS client certificate"
+  },
+  "ssf.authClientCert|description": {
+    "en": "73d4ba2aa33adad2",
+    "text": "Kung tumatanggap ang mga SSF endpoint ng receiver na na-authenticate sa pamamagitan ng TLS client certificate sa koneksyon nito, nang walang Authorization header, at kung inilalathala ang urn:ietf:rfc:8705 sa authorization_schemes. Tanging certificate na inisyu ng realm na ito sa isang application, at hawak pa ng application, ang tinatanggap; ang receiver ay ang application na iyon at may-ari ng mga stream na nililikha nito, at hawak nito ang mga Shared Signals scope na idinedeklara ng oauthAllowedScope nito at pinahihintulutan ng mga role nitong SSF_READ at SSF_MANAGE."
+  },
   "ssf.internalReceivers|label": {
-    "en": "8eca3281fa7a4ef7",
-    "text": "I-register ang console at ang portal bilang mga receiver"
+    "en": "7e760a8d68a5e030",
+    "text": "Irehistro ang console, ang portal at ang mga ulat bilang mga receiver"
   },
   "ssf.internalReceivers|description": {
-    "en": "1a148e2b3a63a17d",
-    "text": "Kung gumagawa ang serbisyong ito ng Shared Signals stream para sa SARILI nitong admin console at user portal, para tumanggap ang bawat isa ng bawat CAEP at RISC event — kinokolekta ang mga ito sa RFC 8936 poll mula sa sariling /ssf/poll ng serbisyong ito bawat ssf.internalPollMs (#771) — at ipakita ang dumating sa /admin/signals at /portal/signals. KARANIWANG stream ang mga ito — i-pause ang isa, limitahan o i-delete ito sa /admin/ssf at mananatili itong ganoon hanggang sa isang restart."
+    "en": "0a23fbb0f030f814",
+    "text": "Kung gumagawa ang serbisyong ito ng Shared Signals stream para sa SARILI nitong admin console, user portal at application ng mga ulat (#1042), upang matanggap ng bawat isa ang bawat CAEP at RISC na kaganapan — kinukuha sa pamamagitan ng RFC 8936 poll mula sa sariling /ssf/poll ng serbisyo tuwing ssf.internalPollMs (#771) — at ipinapakita ang dumating sa /admin/signals, /portal/signals at /report/signals. Mga KARANIWANG stream ang mga ito — i-pause, paliitin o burahin ang isa sa /admin/ssf at mananatili itong ganoon hanggang sa muling pag-start."
   },
   "ssf.internalReceivers|restartReason": {
-    "en": "75c18a7223a2e0a3",
-    "text": "ginagawa ang dalawang stream habang nire-require ang ssf/ssf.ts at muli habang binubuo ang bawat realm, kaya ang pag-off dito habang tumatakbo ay mag-iiwan sa mga stream na umiiral na at ang pag-on dito ay walang gagawin"
+    "en": "eb2b8e34bd6ee85c",
+    "text": "ginagawa ang tatlong stream kapag nilo-load ang ssf/ssf.ts at muli kapag binubuo ang bawat realm, kaya ang pag-off nito habang tumatakbo ay mag-iiwan ng mga dati nang stream at ang pag-on nito ay walang gagawin"
   },
   "ssf.internalPollMs|label": {
     "en": "245d4495769ca599",
@@ -7156,8 +7172,8 @@
     "text": "Mga natanggap na event na iniingatan"
   },
   "ssf.maxReceivedEvents|description": {
-    "en": "2c503bd8b26764ea",
-    "text": "Ilang naihatid na SET ang iniingatan sa inbox ng bawat sariling receiver ng serbisyong ito (ang sa console at ang sa portal), bawat realm; tinatanggal ang pinakaluma kapag lumampas dito."
+    "en": "4c285fbb0b900559",
+    "text": "Ilang naihatid na SET ang itinatago sa inbox ng bawat sariling receiver ng serbisyong ito (ng console, ng portal at ng application ng mga ulat), bawat realm; tinatanggal ang pinakaluma kapag lumampas."
   },
   "ssf.maxStreamLogEntries|label": {
     "en": "468201e24a40cdc6",
@@ -7232,12 +7248,12 @@
     "text": "Gaano katagal maaaring tumagal ang isang request sa Shared Signals ng federation partner — discovery, ang token endpoint nito, stream management, isang poll."
   },
   "ssf.actOnSignalsInDevelopment|label": {
-    "en": "563f14910995d99d",
-    "text": "Kumikilos ang console at portal sa mga natanggap na signal sa development"
+    "en": "aa195c1cd8a0152a",
+    "text": "Kumikilos ang sariling mga application ng serbisyong ito sa mga natanggap na signal sa development"
   },
   "ssf.actOnSignalsInDevelopment|description": {
-    "en": "551c98310bd92f77",
-    "text": "Laging ginagawa ng product mode ang pinapayagan ng signal-response policy sa isang na-verify na event na natatanggap ng sariling console o portal ng serbisyong ito — tinatapos ang sariling mga session ng surface na iyon para sa taong pinapangalanan nito (#62) — o ipinapadala ng isang federation partner (#373, #374). Nire-record ng development ang gagawin sana nito at walang ginagawa, maliban kung naka-on ito. Hindi kailanman kinikilusan ang hindi na-verify na event, anuman ang sinasabi nito."
+    "en": "2389ab3a9223bf66",
+    "text": "Palaging ginagawa ng product mode ang pinahihintulutan ng patakarang signal-response sa isang na-verify na kaganapang natanggap ng console, portal o application ng mga ulat ng serbisyong ito — binabawi ang mga token na hawak ng sariling client ng application na iyon para sa taong pinangalanan (#1042; tinatapos nito ang mga relying-party session hanggang tumigil ang mga application sa paggawa ng mga iyon, #62) — o ipinadala ng isang federation partner (#373, #374). Itinatala ng development ang gagawin sana nito at walang ginagawa, maliban kung naka-on ito. Hindi kailanman kinikilos ang isang hindi na-verify na kaganapan, anuman ang sabihin nito."
   },
   "ssf.signalsRevokeGrants|label": {
     "en": "a0ded7c93cee0e93",
@@ -7324,8 +7340,8 @@
     "text": "Upload directory ng dataset"
   },
   "risk.uploadDirectory|description": {
-    "en": "347858cd0224743e",
-    "text": "Kung saan isinusulat ang na-upload na dataset file habang ini-import ito, at kung saan ito dine-delete kapag natapos ang import paano man ito natapos. Nire-resolve ang relative path laban sa package root na ito, gaya ng persistence.dataDir. Bigyan ito ng sariling volume na may espasyo para sa pinakamalaking file na iyong ia-upload — naka-compress; walang naka-expand na isinusulat — dahil tinatanggihan ang upload kapag hindi ito kasya sa bakanteng espasyo ng directory. Nagma-mount ng isa rito ang bawat stack na kasama ng repository na ito."
+    "en": "ddab5a9b7f3d0a2a",
+    "text": "Kung saan isinusulat ang na-upload na file ng dataset habang ini-import ito, at kung saan binubuo ang isang report job bago ito iimbak; binubura ang bawat file kapag natapos ang import o job nito, paano man ito natapos. Ang relative path ay nire-resolve laban sa root ng package na ito, gaya ng persistence.dataDir. Bigyan ito ng sariling volume na may espasyo para sa pinakamalaking file na iyong ia-upload — naka-compress; walang naka-expand na isinusulat — at para sa report.asyncMaxBytes bawat report job na sabay-sabay na tumatakbo, dahil tinatanggihan ang isang upload o job kapag hindi ito kayang hawakan ng libreng espasyo ng directory. Bawat stack na kasama sa repository na ito ay nagmo-mount ng isa rito."
   },
   "risk.uploadMaxBytes|label": {
     "en": "959b6b79f9136a03",
@@ -7364,8 +7380,8 @@
     "text": "Interval ng upload clean-up (segundo)"
   },
   "risk.uploadSweepS|description": {
-    "en": "d2ecf2ff3686662e",
-    "text": "Gaano kadalas pinapanatiling sariwa ng bawat process ang mga upload file na ini-import nito at dine-delete ang mga tira ng process na tumigil (risk.upload-cleanup), at gaano kadalas naghahanap ang risk.stalled-imports job ng inabandonang version. Panatilihin itong mas mababa nang malaki sa risk.importStallMinutes."
+    "en": "66b5d1a088266f41",
+    "text": "Gaano kadalas pinapanatiling bago ng bawat proseso ang mga na-upload na file na ini-import nito at ang mga report na binubuo nito, at binubura ang mga naiwan ng prosesong huminto (risk.upload-cleanup, report.build-cleanup), at gaano kadalas naghahanap ang job na risk.stalled-imports ng inabandonang bersyon. Panatilihin itong mas mababa nang malaki sa risk.importStallMinutes."
   },
   "risk.datasetShrinkLimitPercent|label": {
     "en": "46aea694920bebd6",
@@ -10222,14 +10238,6 @@
   "report.jobRetentionS|description": {
     "en": "dfada581a8c28ca3",
     "text": "Gaano katagal nananatili sa listahan ang row ng natapos na report job. Ang job na tumatakbo pa ay hindi inaalis."
-  },
-  "report.usersGroup|label": {
-    "en": "21554dfaa265b36f",
-    "text": "Sino ang maaaring ma-issue-han ng report:use"
-  },
-  "report.usersGroup|description": {
-    "en": "28068508e0655509",
-    "text": "Ang directory group na ang mga miyembro ay maaaring ma-issue-han ng report:use. Ang walang laman ay nangangahulugang mga administrator lang ng realm na ito ang maaari. Ang report:admin ay ini-issue lamang sa mga administrator na iyon."
   },
   "listenerMain.minVersion|label": {
     "en": "6470c151e28a9ab3",

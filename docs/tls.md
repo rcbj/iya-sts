@@ -292,10 +292,20 @@ arrives. What a certificate is worth is decided where it is used:
 
 | Where | What it takes |
 |---|---|
-| `GET /tls/sign-in` | a certificate that verified starts a sign-on session (below) |
+| `GET /tls/sign-in` and the sign-in screen | a certificate that verified starts a sign-on session (below) |
 | the token endpoint | RFC 8705: `tls_client_auth` and `self_signed_tls_client_auth` authenticate a client, and a token is bound to whatever certificate the connection carried |
-| `/xacml/*` and `POST /xacml/pip` | a verified chain whose subject DN resolves to an entry holding `REMOTE_PEPS` or `XACML_USER` |
+| `/xacml/*` and `POST /xacml/pip` | a verified certificate whose entry holds `REMOTE_PEPS` or `XACML_USER` |
 | `/scim/v2` | RFC 7644 section 2's client-certificate scheme |
+| Shared Signals, WS-Trust, LDAPS (SASL EXTERNAL) | a verified certificate as the receiver's application, the requester, or the bound person |
+
+Every door except the token endpoint (and GNAP's key proof, which reads a
+certificate as a key) maps a certificate to **one directory entry** the same
+way: a certificate this service issued names its person or application in a
+`urn:sts:person:` / `urn:sts:application:` subjectAltName, and a certificate
+from an outside certificate authority is the entry it is **stored on** — see
+[A certificate from an outside certificate authority](#a-certificate-from-an-outside-certificate-authority).
+The token endpoint keeps the client's registered RFC 8705 metadata
+(`tls_client_auth_subject_dn` and the SAN members).
 
 Presenting a certificate anywhere else signs nobody in, and does nothing at all
 at a route that reads no certificate.
@@ -325,10 +335,12 @@ What happens to a certificate that is presented:
   mutual TLS under `gnap.mtlsTrust=pki` ([GNAP](gnap.md#mutual-tls-trust)) each
   decide for themselves, carrying OpenSSL's own reason (`authorizationError`)
   out whole.
-* **A verified certificate is recorded as an authentication** when the
-  connection is established — once per connection, not per request — under
-  protocol `TLS` on `/admin/users` (see *Recording a verified certificate*
-  below).
+* **A verified certificate this service issued is recorded as an
+  authentication** when the connection is established — once per connection,
+  not per request — under protocol `TLS` on `/admin/users` (see *Recording a
+  verified certificate* below). One from an outside authority is not: a
+  handshake has no realm to look its entry up in, so it is recorded by the
+  door that signs its holder in.
 * A certificate is **never** read from a forwarded header (`X-Client-Cert` and
   its relatives) in any mode. Behind a balancer, TLS has to be passed through.
 * **A handshake that fails is logged**, with OpenSSL's own reason
@@ -342,11 +354,13 @@ What happens to a certificate that is presented:
 
 `/admin/users` answers "who has this service seen, in an interaction that
 succeeded", and a mutual-TLS client whose certificate verified is exactly that.
-So when a handshake completes with a certificate that verified, its subject is
-filed through the same authentication record every other family uses, under
-protocol `TLS`, and the embedded directory seeds an entry for it. It is a
-**record** of what happened, not a credential: nothing consults the record or
-the entry to decide anything (`/tls/sign-in` is what signs somebody in).
+So when a handshake completes with a certificate this service issued that
+verified, its subject is filed through the same authentication record every
+other family uses, under protocol `TLS`, on the entry of the person it names.
+It is a **record** of what happened, not a credential: nothing consults the
+record to decide anything (`/tls/sign-in` is what signs somebody in). **No
+entry is created from a certificate** — not for one this service issued,
+whose person already has one, and never for one from an outside authority.
 
 * It is recorded **at the handshake**, not per request. The handshake is where
   the credential was accepted, so a connection carrying six requests is one
@@ -358,25 +372,64 @@ the entry to decide anything (`/tls/sign-in` is what signs somebody in).
   the commas, values escaped. That is a *different string* from the display DN
   shown beside it and from the one `openssl x509 -subject` prints.
 
-**Where the directory entry goes.** A certificate subject is already a DN, but
-it usually names an object in somebody *else's* directory:
-`CN=alice,O=Example Corp,C=US` is not under `dc=example,dc=com`. So a subject
-that already lies under this directory's base DN (with its parent present) is
-created **at it, unchanged**; anything else is named by the subject's `CN` — or
-its leaf RDN where there is none — under `ou=users`, with every other RDN kept
-as an attribute and the full subject, issuer, serial, validity and fingerprint
-written on as `x509*` attributes. Those names are this service's own: there is
-no standard attribute for "the DN inside the certificate", and the standard one
-for the certificate itself, `userCertificate`, is binary and transferred as
-`userCertificate;binary`, so base64 under that name would be a value no client
-could parse. The CN is preferred over the leaf RDN because openssl puts
-`emailAddress` **last** in a subject, so the leaf RDN of a typical client
-certificate is the address. What that costs is a collapse — two certificates
-whose CNs match, from two different CAs, land on one entry — and it is made
-visible: both subjects are listed under `x509subject`, and the console still
-files them as two identities because it keys on the whole DN. A renewed
-certificate for the same subject makes no second entry; its serial, validity
-and fingerprint are **appended**, so the entry shows the history.
+**No entry is seeded from a certificate any more** (#1061). Until then a
+certificate from an outside authority made an entry named by its `CN`
+(`cn=alice,ou=users,…`) and was filed under it; that name was chosen by
+whoever ran the authority, so it is no longer read at all. Entries made that
+way are left as they are, and sign nobody in unless the certificate is stored
+on them.
+
+### A certificate from an outside certificate authority
+
+A certificate that chains to an anchor in the truststore below — not to this
+service's own Root — is an identity **only while it is stored, byte for byte,
+in `userCertificate` (RFC 4523) on exactly one entry of the realm** the request
+is in. Every door that reads a certificate as a person or an application asks
+the same question: `GET /tls/sign-in`, the sign-in screen's **Continue with
+your certificate**, SCIM's client-certificate scheme, the XACML gates and the
+remote PEP endpoints, Shared Signals, WS-Trust and LDAP SASL EXTERNAL.
+
+* It is **never** matched by its common name or subject, and **no entry is
+  created** for it.
+* Stored on **no** entry, or on **more than one**, it signs nobody in. Each
+  door refuses it with a code of its own: `STS-TLS-0054`/`0055` at
+  `/tls/sign-in`, `STS-AUTHN-0468`/`0469` on the sign-in screen,
+  `STS-SCIM-0084`/`0085`, `STS-XACML-0177`–`0180`, `STS-SSF-0151`/`0152`,
+  `STS-WSTRUST-0038`/`0039` and `STS-LDAP-0192`/`0193`
+  ([Error codes](error-codes.md)).
+* It must still **verify** against the truststore and pass the **revocation**
+  check below; storing it does not replace either.
+* A **renewed** certificate is a different certificate: store the new one (the
+  old one can stay on the entry until it expires, then be removed).
+* The match is by the SHA-256 of the certificate's DER, looked up in an index,
+  so it costs the same with a million people as with ten.
+
+**Storing one.** Store the leaf (only the leaf — its issuing authority goes in
+the truststore) on the person's entry:
+
+* the console: **Users →** the person **→ Stored certificates**, paste the
+  PEM, **Store**; **Remove** beside a stored one takes it off;
+* the management API: `POST /admin-api/users/add-certificate`
+  `{"user":"alice","certificate":"-----BEGIN CERTIFICATE-----…"}`,
+  `POST /admin-api/users/remove-certificate` `{"user":"alice","sha256":"…"}`,
+  and `GET /admin-api/users/certificates?user=alice` to list them;
+* LDAP: a modify adding `userCertificate;binary` to the entry, under product
+  mode's write authorization ([LDAP](ldap.md)).
+
+The console and the API refuse a certificate that is not one X.509 certificate
+(`STS-ADMIN-0897`), a person with no entry (`STS-ADMIN-0898`), a certificate
+already stored on another entry (`STS-ADMIN-0899`), and removing one the entry
+does not store (`STS-ADMIN-0900`). An application's entry may store one too
+(over LDAP), which is how a Shared Signals receiver or a SCIM client is
+authenticated by an outside certificate. SCIM does not write it: its
+`x509Certificates` member is not published ([SCIM](scim.md)).
+
+**Upgrading a deployment.** Before upgrading a deployment that signs people
+in with certificates from an outside authority — the remote XACML PEP is one —
+store each of those certificates on its entry. Until it is stored, the
+certificate is refused at every door; nothing migrates them, because which
+entry a certificate belongs to is the decision the old common-name match made
+on the operator's behalf.
 
 ### The client truststore
 
@@ -431,8 +484,10 @@ is signed in to every surface on the port. In order:
    credential, reported as `session.application`;
 4. **the session starts in the certificate's realm**: for a certificate this
    service issued, the realm whose Issuing CA signed it and the person it names;
-   for one from an anchor somebody installed, the default realm and the
-   certificate's common name (the record keeps the full RFC 4514 subject).
+   for one from an anchor somebody installed, the realm of the request
+   (`/realm/<id>/tls/sign-in`, else the default realm) and the person whose
+   entry stores it — refused, with `session.refusedAsStored`, when no entry or
+   several do (above).
 
 The answer is **JSON**: `signedIn`, the session, whether a certificate was
 presented and verified, the `x5t#S256` thumbprint the token endpoint would bind
@@ -500,7 +555,10 @@ the recorded identity and the request are what get refused. See [PKI](pki.md).
   setting" warning at startup rather than a silent no-op.
 * **Client certificates on LDAPS by default.** Port 636 asks for none until
   `ldap.ldapsDisableOptionalClientCertificate` is turned off (see *The
-  listeners* above).
+  listeners* above). Once it asks, a person's certificate binds an LDAP
+  connection with SASL EXTERNAL — one this service issued, or one from an
+  outside certificate authority stored on that person's entry ([LDAP](ldap.md),
+  *Binding with a client certificate*).
 
 ## Development and product mode
 
@@ -536,7 +594,7 @@ refusal of an application's certificate — is the same in both modes. See
 | `tls.sessionTicketRotationS` | `STS_TLS_SESSION_TICKET_ROTATION_S` | `3600` | yes | In an active-active cluster, how often the session-ticket key every node's LDAPS listener and main port share is replaced (the old key is deleted); `0` shares nothing. Outside active-active nothing is shared. |
 | `tls.mainPortSharedTickets` | `STS_TLS_MAIN_PORT_SHARED_TICKETS` | `true` | no | The main port seals its session tickets under the cluster's shared key, so a session resumes on any node. `false` keeps a key per node. |
 | `tls.sessionTimeoutS` | `STS_TLS_SESSION_TIMEOUT_S` | `300` | yes | How long a TLS session may be resumed, on every TLS listener that does not set its own (`listener<Id>.sessionTimeoutS`; `-1` inherits). It was `tls.mainSessionTimeoutS`, the main port's alone, until #429. |
-| `tls.sessionCacheSize` | `STS_TLS_SESSION_CACHE_SIZE` | `2048` | yes | How many TLS 1.2 session IDs a listener keeps for resumption; `0` keeps none and resumes by ticket only. Per listener as `listener<Id>.sessionCacheSize`. Not on the SPIFFE listeners: grpc-js offers no session-ID cache. |
+| `tls.sessionCacheSize` | `STS_TLS_SESSION_CACHE_SIZE` | `2048` | yes | How many TLS 1.2 session IDs a listener keeps for resumption; `0` keeps none and resumes by ticket only. Per listener as `listener<Id>.sessionCacheSize`. Not on the SPIFFE listeners: grpc-js offers no session-ID cache. A TLS 1.2 session, by ID or by ticket, is resumed only under the server name it was made under (RFC 6066 section 3): a session ID offered under another name gets a full handshake, and a ticket offered under another name is accepted by OpenSSL and the connection then closed, so the client's next connection is a full handshake. A TLS 1.3 ticket is the client's to use under one name (RFC 8446 section 4.6.1). |
 | `tls.resumedChainWaitMs` | `STS_TLS_RESUMED_CHAIN_WAIT_MS` | `2000` | yes | How long a request on a session resumed from another node waits for that session's client-certificate chain to replicate; `0` never waits. |
 | `http.keepAliveTimeoutS` | `STS_HTTP_KEEP_ALIVE_TIMEOUT_S` | `60` | yes | How long an HTTP listener keeps an idle connection for the next request — an HTTP/1.1 one between requests, an HTTP/2 one with no frame passing, which is closed with a GOAWAY; pipelined requests are answered in order. It was `global.httpKeepAliveTimeoutS`, the main port's alone, until #429. |
 | `http.headersTimeoutS` | `STS_HTTP_HEADERS_TIMEOUT_S` | `0` | yes | How long a request's headers may take to arrive; `0` is the keep-alive timeout plus one second, and a value at or below the keep-alive is raised to that. |

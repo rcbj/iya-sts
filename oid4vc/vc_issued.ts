@@ -175,6 +175,14 @@ interface Issued {
   // person's proven DID a configuration bound to it carries. The key itself
   // is the row's `jkt`.
   holderDid?: string;
+  // WHAT THE REPORTS ASK (#1021, rcbj: credentials by wallet kind and
+  // algorithm): the holder key's algorithm as `Credentials.keyAlgorithm()`
+  // names it (ES256, EdDSA, ML-DSA-65, …), and the channel the credential
+  // request came by — `web` when it carried a browser Origin (a web
+  // wallet), `app` otherwise (a native wallet). Empty on a row written
+  // before.
+  holderAlg?: string;
+  channel?: string;
 }
 
 // One credential of a person's history, for `/portal/wallet`.
@@ -523,6 +531,7 @@ class VcIssued {
                   keyStorage?: string[];
                   userAuthentication?: string[];
                   notificationId?: string; holderDid?: string;
+                  holderAlg?: string; channel?: string;
                   announce?: boolean }): string {
     const { log, store, jwkThumbprint } = this.deps;
     log.debug("Entering VcIssued.record(). format=" + entry.format);
@@ -559,7 +568,9 @@ class VcIssued {
       walletEventAt: 0,
       removedAt: 0,
       removedVia: '',
-      holderDid: String(entry.holderDid || '')
+      holderDid: String(entry.holderDid || ''),
+      holderAlg: String(entry.holderAlg || ''),
+      channel: String(entry.channel || '')
     };
     const ldp = format === 'ldp_vc';
     const key = ldp ? this.keyForHolder(jkt, entry.subject)

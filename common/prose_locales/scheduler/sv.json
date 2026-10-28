@@ -319,6 +319,14 @@
     "en": "4f2c054a1405a843",
     "text": "Loggar, i den här processen, en rad med dess roll och dess minne: residenta storlek, använd och total heap, heapgränsen, externt minne och array buffers (#341)."
   },
+  "sched.jobs.report.build-cleanup.title": {
+    "en": "e5bd8efc07f0b31b",
+    "text": "Rensning av rapportbyggen"
+  },
+  "sched.jobs.report.build-cleanup.describe": {
+    "en": "203d8d2e97c041e2",
+    "text": "I varje process: håller rapportfilerna som denna process bygger färska, och tar bort från risk.uploadDirectory ett rapportbygge som ingen levande process har rört på report.asyncMaxMs och femton minuter — det en process som stoppade mitt i ett bygge lämnade kvar."
+  },
   "sched.jobs.report.drain.title": {
     "en": "792c052635196abd",
     "text": "Rapportjobb"

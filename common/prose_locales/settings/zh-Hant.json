@@ -4787,6 +4787,14 @@
     "en": "d75340dbe09a7542",
     "text": "此 STS 在 RequestSecurityTokenResponse 中傳回的 JWT 是否指出簽署它之金鑰的憑證鏈。SAML 斷言在其自己的 XML Signature 中攜帶憑證，不受影響。`x5u`——預設值——是此服務上該鏈的位址 `/pki/chain/{scope}/{sha256}.pem`，約一百位元組；`x5c` 是內嵌的鏈，葉憑證在前、服務根憑證在最後，base64 DER，數 KB；`both` 表示兩者皆有，`none` 表示兩者皆無。無論哪種，都是僅持有權杖的依賴方取得每張憑證的 CRL 發佈點、OCSP 回應程式與 caIssuers 位址所需的資訊。尚未在此領域的 JOSE Issuing CA 下取得憑證的金鑰，以及 HMAC 簽章，兩者皆不會加上。RFC 7515 section 4.1.5 要求 `x5u` 的擷取使用 TLS：global.https 關閉時位址為 `http://`，嚴格的驗證器會拒絕追蹤它。JWE 標頭永遠不會加上——此服務沒有任何經認證的金鑰會加密任何內容。可依領域設定。"
   },
+  "wstrust.acceptClientCertificate|label": {
+    "en": "04ac29464750e625",
+    "text": "接受 TLS 用戶端憑證作為請求方的認證資料"
+  },
+  "wstrust.acceptClientCertificate|description": {
+    "en": "23d9a8fba459f61c",
+    "text": "當送往 /sts 的請求之 wsse:Security 標頭未攜帶任何認證資料時，是否以連線上的 TLS 用戶端憑證來驗證請求方。只有在交握時驗證通過、且由本領域核發給某個人或某個應用程式的憑證（來自使用者入口網站或應用程式 Credentials 的 TLS 用戶端憑證，或透過 ACME、EST 或 SCEP 註冊的憑證）才是認證資料，兩種模式皆然；已撤銷的憑證、來自其他領域的憑證，以及持有者已不再持有的憑證，會以 wst:FailedAuthentication 拒絕。核發的權杖會表明使用了憑證：SAML 2.0 斷言中為 TLSClient，SAML 1.1 斷言中為 urn:ietf:rfc:2246，JWT 中為 amr swk。關閉時，此處忽略該憑證。"
+  },
   "wsfed.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
     "text": "由身分識別提供者發起的登入"
@@ -4996,16 +5004,16 @@
     "text": "LDAPS：不要求用戶端憑證"
   },
   "ldap.ldapsDisableOptionalClientCertificate|description": {
-    "en": "7e1993d7f889bc3c",
-    "text": "LDAPS 不傳送 CertificateRequest。預設為開啟，這是 LDAPS 一直以來的做法：繫結是目錄用戶端表明自己身分的方式，而在每個持有憑證的用戶端面前跳出憑證提示會令人意外。關閉時會向每個連線要求憑證但不強制；出示的憑證會對照用戶端信任儲存區驗證，但不會繫結任何人（此處沒有 SASL EXTERNAL）。"
+    "en": "7c1815ed4a7499c4",
+    "text": "LDAPS 不傳送 CertificateRequest。預設開啟，這正是 LDAPS 一貫的做法：繫結是目錄用戶端表明身分的方式，在每個持有憑證的用戶端前跳出憑證提示會令人意外。關閉後會向每個連線要求憑證但不強制；出示的憑證會針對用戶端信任庫進行驗證，攜帶本服務核發給某人之憑證的連線可以使用 SASL EXTERNAL 以該人員身分繫結。"
   },
   "ldap.ldapsRequireClientCertificate|label": {
     "en": "eff4646ac01e4612",
     "text": "LDAPS：要求用戶端憑證"
   },
   "ldap.ldapsRequireClientCertificate|description": {
-    "en": "2c73995bcc16b3fa",
-    "text": "LDAPS 在交握時拒絕每個未出示鏈結到用戶端信任儲存區之用戶端憑證的連線——這是繫結前方的第二道關卡，而繫結仍決定連線的身分。優先於上方的切換。預設為關閉。"
+    "en": "cfadc0b97c1bfaa8",
+    "text": "LDAPS 在交握時拒絕每個未出示鏈結至用戶端信任庫之用戶端憑證的連線——這是繫結之前的第二道關卡，繫結仍決定連線是誰：密碼，或使用本服務核發給某人的憑證進行 SASL EXTERNAL。優先於上面的切換開關。預設關閉。"
   },
   "debugger.disableOptionalClientCertificate|label": {
     "en": "df19c772421bba66",
@@ -6592,8 +6600,8 @@
     "text": "提供 TLS 用戶端憑證"
   },
   "scim.authClientCert|description": {
-    "en": "be5e7d5ccffce8c1",
-    "text": "相互 TLS，RFC 7644 第 2 節指名的第一種機制。它只適用於透過 TLS 抵達、且憑證已依用戶端信任存放區（/admin/tls/trust）「驗證」的要求，因此只在 global.https 開啟時適用。這是此服務中用戶端憑證第一次成為「認證」而非觀察結果的地方；在這裡，它驗證的人隨後便可寫入目錄。"
+    "en": "0a6d722dc96ad17f",
+    "text": "相互 TLS，RFC 7644 第 2 節指名的第一種機制。它只適用於透過 TLS 抵達、且憑證已依用戶端信任存放區（/admin/tls/trust）「驗證」的要求，因此只在 global.https 開啟時適用。這是此服務中用戶端憑證第一次成為「認證」而非觀察結果的地方。本領域簽發給某個應用程式的憑證只能做該應用程式的 oauthAllowedScope 所宣告的事：讀取需要讀取範圍，寫入需要寫入範圍，每次請求都會檢查（STS-SCIM-0083）。個人的憑證——本領域簽發的，或來自外部憑證授權單位並儲存在該人項目之 userCertificate 中的（#1061）——可以讀寫目錄。"
   },
   "scimClient.attempts|label": {
     "en": "babe2e714439f7c0",
@@ -7067,17 +7075,25 @@
     "en": "34a196af42de2673",
     "text": "SSF 端點是否在 OAuth 2.0 存取權杖之外也接受 HTTP Basic，並在 authorization_schemes 中發布。在開發模式下，任何使用者名稱搭配 \"invalid\" 以外的任何密碼都能通過；在產品模式下，密碼會依該人員雜湊後的 userPassword 驗證。無論哪種情況，Basic 主體都擁有兩個範圍，因為 Basic 不攜帶任何範圍——因此要對每個呼叫者強制執行 ssf.read 與 ssf.manage 的部署應關閉此項。"
   },
+  "ssf.authClientCert|label": {
+    "en": "ad5fbafbb2ac1812",
+    "text": "提供 TLS 用戶端憑證"
+  },
+  "ssf.authClientCert|description": {
+    "en": "73d4ba2aa33adad2",
+    "text": "SSF 端點是否接受透過其連線上的 TLS 用戶端憑證進行驗證、且不帶 Authorization 標頭的接收方，並在 authorization_schemes 中發布 urn:ietf:rfc:8705。只接受此領域核發給某個應用程式且該應用程式仍持有的憑證；接收方即該應用程式，擁有其建立的串流，並持有其 oauthAllowedScope 所宣告、且其 SSF_READ 與 SSF_MANAGE 角色所授權的 Shared Signals 範圍。"
+  },
   "ssf.internalReceivers|label": {
-    "en": "8eca3281fa7a4ef7",
-    "text": "將主控台與入口網站註冊為接收端"
+    "en": "7e760a8d68a5e030",
+    "text": "將控制台、入口網站和報表註冊為接收方"
   },
   "ssf.internalReceivers|description": {
-    "en": "1a148e2b3a63a17d",
-    "text": "此服務是否為其「自己的」管理主控台與使用者入口網站植入 Shared Signals 串流，使兩者各自接收每個 CAEP 與 RISC 事件——每隔 ssf.internalPollMs 透過 RFC 8936 輪詢從本服務自己的 /ssf/poll 收取（#771）——並在 /admin/signals 與 /portal/signals 上繪製所收到的內容。它們是「一般」串流——在 /admin/ssf 暫停、縮減或刪除其中一個，它會保持該狀態直到重新啟動。"
+    "en": "0a23fbb0f030f814",
+    "text": "此服務是否為其自身的管理控制台、使用者入口網站和報表應用程式 (#1042) 建立 Shared Signals 串流，使每個都能接收每個 CAEP 和 RISC 事件——每隔 ssf.internalPollMs 透過 RFC 8936 輪詢從此服務自己的 /ssf/poll 收取 (#771)——並在 /admin/signals、/portal/signals 和 /report/signals 顯示收到的內容。它們是一般的串流——在 /admin/ssf 暫停、縮小範圍或刪除其中一個，它會維持該狀態直到重新啟動。"
   },
   "ssf.internalReceivers|restartReason": {
-    "en": "75c18a7223a2e0a3",
-    "text": "兩個串流在 require ssf/ssf.ts 時植入，並在建構每個領域時再次植入，因此就地關閉此項會留下已存在的串流，而開啟它也不會建立任何串流"
+    "en": "eb2b8e34bd6ee85c",
+    "text": "這三個串流在載入 ssf/ssf.ts 時以及建立每個領域時建立，因此在執行中關閉此項會保留既有的串流，而開啟此項不會建立任何串流"
   },
   "ssf.internalPollMs|label": {
     "en": "245d4495769ca599",
@@ -7156,8 +7172,8 @@
     "text": "保留的已接收事件數"
   },
   "ssf.maxReceivedEvents|description": {
-    "en": "2c503bd8b26764ea",
-    "text": "本服務自己的每個接收者（主控台的與入口網站的）在其收件匣中保留多少個已傳遞的 SET，依領域計；超過此數時會捨棄最舊的。"
+    "en": "4c285fbb0b900559",
+    "text": "此服務自己的每個接收方（控制台、入口網站和報表應用程式）在其收件匣中依領域保留的已送達 SET 數量；超過後捨棄最舊的。"
   },
   "ssf.maxStreamLogEntries|label": {
     "en": "468201e24a40cdc6",
@@ -7232,12 +7248,12 @@
     "text": "對聯盟合作夥伴之 Shared Signals 的單一要求——探索、其權杖端點、串流管理、輪詢——可花費多久。"
   },
   "ssf.actOnSignalsInDevelopment|label": {
-    "en": "563f14910995d99d",
-    "text": "主控台與入口網站在開發模式下依收到的訊號採取行動"
+    "en": "aa195c1cd8a0152a",
+    "text": "此服務自己的應用程式在開發模式下對收到的訊號採取動作"
   },
   "ssf.actOnSignalsInDevelopment|description": {
-    "en": "551c98310bd92f77",
-    "text": "對於此服務自己的主控台或入口網站收到的已驗證事件，產品模式一律執行訊號回應原則所允許的動作——結束該介面上其所指名之人員的工作階段（#62）——對聯盟合作夥伴送來的事件亦然（#373、#374）。開發模式只記錄它原本會做的事而不採取任何行動，除非開啟此項。不論此處為何，未經驗證的事件絕不會被據以行動。"
+    "en": "2389ab3a9223bf66",
+    "text": "生產模式一律對此服務的控制台、入口網站或報表應用程式收到的已驗證事件執行 signal-response 原則所允許的動作——撤銷該應用程式自己的用戶端為所指人員持有的權杖（#1042；在應用程式不再建立信賴方工作階段之前，它結束的是這些工作階段，#62）——或對聯合夥伴傳送的事件執行相應動作 (#373, #374)。開發模式記錄它本會執行的動作而不執行，除非開啟此項。無論此項如何設定，未驗證的事件都不會被處理。"
   },
   "ssf.signalsRevokeGrants|label": {
     "en": "a0ded7c93cee0e93",
@@ -7324,8 +7340,8 @@
     "text": "資料集上傳目錄"
   },
   "risk.uploadDirectory|description": {
-    "en": "347858cd0224743e",
-    "text": "上傳的資料集檔案在匯入期間寫入的位置，並在匯入結束時（不論如何結束）從中刪除。相對路徑以此套件根目錄為基準解析，如同 persistence.dataDir。請為它提供專屬的磁碟區，空間足以容納您將上傳的最大檔案——壓縮後的大小；不會寫入任何展開後的內容——因為當目錄的可用空間不足以容納上傳時，上傳會被拒絕。此存放庫隨附的每個堆疊都會在此掛載一個磁碟區。"
+    "en": "ddab5a9b7f3d0a2a",
+    "text": "上傳的資料集檔案在匯入期間寫入的位置，也是報告作業在儲存之前建構的位置；每個檔案在其匯入或作業結束時（不論如何結束）都會被刪除。相對路徑以此套件根目錄為基準解析，與 persistence.dataDir 相同。請為它提供專屬的磁碟區，空間足以容納您將上傳的最大檔案——壓縮後的大小；不會寫入任何解壓內容——以及每個同時執行的報告作業所需的 report.asyncMaxBytes，因為當目錄的可用空間不足以容納時，上傳或作業會被拒絕。此存放庫隨附的每個堆疊都會在此掛載一個磁碟區。"
   },
   "risk.uploadMaxBytes|label": {
     "en": "959b6b79f9136a03",
@@ -7364,8 +7380,8 @@
     "text": "上傳清理間隔（秒）"
   },
   "risk.uploadSweepS|description": {
-    "en": "d2ecf2ff3686662e",
-    "text": "每個程序多久更新一次其正在匯入之上傳檔案的時間戳記並刪除已停止程序的殘留物（risk.upload-cleanup），以及 risk.stalled-imports 工作多久尋找一次被放棄的版本。請保持遠低於 risk.importStallMinutes。"
+    "en": "66b5d1a088266f41",
+    "text": "每個處理程序多久更新一次其正在匯入的上傳檔案和正在建構的報告，並刪除已停止處理程序留下的殘留檔案（risk.upload-cleanup、report.build-cleanup），以及 risk.stalled-imports 作業多久尋找一次被放棄的版本。請將其保持在遠低於 risk.importStallMinutes 的值。"
   },
   "risk.datasetShrinkLimitPercent|label": {
     "en": "46aea694920bebd6",
@@ -10222,14 +10238,6 @@
   "report.jobRetentionS|description": {
     "en": "dfada581a8c28ca3",
     "text": "已完成報表工作的列留在清單中的時間長度。仍在執行的工作不會被移除。"
-  },
-  "report.usersGroup|label": {
-    "en": "21554dfaa265b36f",
-    "text": "誰可以獲簽發 report:use"
-  },
-  "report.usersGroup|description": {
-    "en": "28068508e0655509",
-    "text": "其成員可獲簽發 report:use 的目錄群組。留空表示只有此領域的管理員可以。report:admin 只簽發給這些管理員。"
   },
   "listenerMain.minVersion|label": {
     "en": "6470c151e28a9ab3",

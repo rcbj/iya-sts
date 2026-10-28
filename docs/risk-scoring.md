@@ -218,6 +218,16 @@ Tor signal alone leaves it LOW. HIGH is unchanged at 10, so `operator-deny`
 (×20) still makes HIGH any sign-in that scored 0.5 or more, unless it comes
 from a known context, which caps address evidence at MEDIUM.
 
+**That is why the three list signals decide on their own (#503).** The
+factors were not raised to match the line: a factor is evidence about the
+sign-in and the line is the odds for the whole population, so scaling one by
+the other would count the odds twice. Instead the issuance policy asks for a
+second factor at LOW whenever `tor-exit`, `reputation` or `operator-deny`
+fired — the `role-issuance` template's `stepUpSignals` parameter, described
+under *How a score decides*. A list the operator loaded says something about
+the address whatever the model thinks of the person's habits, and what to do
+about it is a decision, so it is made in the policy.
+
 ## How a score decides
 
 A score decides nothing by itself. The service's **issuance policy** — the
@@ -235,16 +245,24 @@ person's roles:
 | `urn:sts:xacml:risk-satisfied` | the step-ups the authentication already meets: `second-factor`, and `security-key` when a WebAuthn key was used |
 | `urn:sts:xacml:risk-held` | the step-ups the person could answer: `second-factor` if they hold an authenticator app or a security key, and `security-key` if they hold a key |
 
-The built-in policy has three risk rules, ahead of the role rule, and a risk
+The built-in policy has four risk rules, ahead of the role rule, and a risk
 Deny overrides a role Permit. The console (`sts-admin-console`) is the
 exception, described below.
 
 | Risk | Decision |
 |---|---|
-| LOW or UNSCORED | decided on roles alone |
+| UNSCORED | decided on roles alone |
+| LOW, with a signal on the `stepUpSignals` list (`tor-exit`, `reputation`, `operator-deny` by default; #503) | refused until the authentication carried a **second factor** |
+| any other LOW | decided on roles alone |
 | MEDIUM, with a signal about the device or TLS client (`automated-client`, `new-tls-stack`) | refused until the authentication used a **security key** |
 | any other MEDIUM | refused until the authentication carried a **second factor** |
 | HIGH | refused |
+
+A fifth rule exists only when the template's `refuseSignals` parameter names
+a signal: an authentication carrying one is then **refused at any level**,
+however many factors it presented, as HIGH is. The list is empty by default,
+because a refusal on an address signal is what locked every administrator
+out on #226.
 
 **An authentication with no assessment is decided on roles alone.** Nothing
 unknown is ever a reason to refuse.
@@ -252,9 +270,10 @@ unknown is ever a reason to refuse.
 **The admin console is never refused on risk.** A console that nobody can sign
 in to leaves a cluster that nobody can repair (#226). For the applications
 named by the `role-issuance` template's `neverLockOut` parameter
-(`sts-admin-console` by default), HIGH and MEDIUM ask for a step-up instead:
+(`sts-admin-console` by default), HIGH and MEDIUM — and a signal on either
+list above — ask for a step-up instead:
 
-| The person holds | Decision at HIGH or MEDIUM |
+| The person holds | Decision at HIGH or MEDIUM, or on a listed signal |
 |---|---|
 | a security key | refused until the authentication used the key |
 | a second factor but no key | refused until the authentication carried a second factor |
@@ -313,8 +332,12 @@ The rules are an ordinary policy on **XACML → Policies**: a realm's own
 override of `role-issuance` replaces the built-in document in that realm. You
 can permit MEDIUM, refuse it outright for administrators, add a rule on any
 attribute of the person's directory entry, or change which signals demand a
-key — the `role-issuance` template's `keySignals` parameter. Building the
-template with `decideRisk` set to `no` gives the roles-only policy.
+key — the `role-issuance` template's `keySignals` parameter. Two more
+parameters key a decision on the signal rather than the level (#503):
+`stepUpSignals` names the signals that ask for a second factor at LOW
+(`none` builds no such rule), and `refuseSignals` the signals that refuse
+at any level. Building the template with `decideRisk` set to `no` gives
+the roles-only policy.
 
 **An override written before these rules existed reads no risk attribute**,
 and that realm then refuses nothing on risk. The console says so on the
@@ -539,7 +562,8 @@ million rows takes minutes to load into the database. A refusal found before
 the file is stored, such as terms nobody has accepted, is the answer itself.
 
 The upload is written to `risk.uploadDirectory` while it is imported, and
-deleted when the import ends. Every stack this repository ships mounts a
+deleted when the import ends. Report jobs are built in the same directory
+([Reports](reporting.md#where-a-job-is-built)), so size it for both. Every stack this repository ships mounts a
 volume there; on AWS it is an encrypted EBS volume per node, created and
 deleted with the node's task ([A cluster in AWS](aws-cluster.md#where-a-risk-dataset-upload-goes)). Give it room for the largest file you will upload, as
 compressed. Several limits apply:

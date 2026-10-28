@@ -100,8 +100,8 @@
     "text": "full för förfrågan och svaret: förkortade kategorinamn, korta datatypnamn, härledning av datatyp från JSON-typen (inklusive skillnaden mellan heltal och flyttal, som läses från källtexten eftersom JSON.parse redan har kastat bort den), arrayer som bags, obligations, advice och PolicyIdentifierList. Profilen definierar ingen policysyntax, så policyer förblir XML."
   },
   "stsmetadata.specs.ssf.coverage": {
-    "en": "43e50e62e3dae13e",
-    "text": "partial: sändarhalvan i sin helhet — konfigurationsmetadata på /.well-known/ssf-configuration och i formen med infogad sökväg enligt avsnitt 7.2 för en sfärutfärdare, API:t för strömhantering (skapa, läsa, ersätta, slå samman, ta bort), statusslutpunkten med alla tre statusar, lägga till och ta bort subjekt, verifieringsslutpunkten (svarar 204 och levererar asynkront, avsnitt 8.1.4.2), båda leveransmetoderna, och båda SSF:s egna händelsetyper — verification, som också skickas på sändarens eget initiativ (ssf.verificationEveryS, eller Verify på /admin/ssf), och stream updated, som skickas innan en ström stoppas och efter att den startar igen vid varje statusändring. Varje ström tillhör mottagaren som skapade den (avsnitt 8): en annan mottagares ström svarar 404, en lista är anroparens egna strömmar, aud är Transmitter-Supplied utifrån mottagarens identitet, och ssf.maxStreams gäller per mottagare. En pausad push-ström håller sina SET och pushar dem i ordning när den aktiveras; en död pausas och meddelas. inactivity_timeout (av som standard), txn på varje SET, komplexa subjekt med \"format\": \"complex\" och de sju medlemmarna i avsnitt 3.3 plus ytterligare, critical_subject_members, och avsnitt 3.5:s format jwt_id, saml_assertion_id och ip-addresses är implementerade. Auktorisering enligt avsnitt 8 är tre scheman — en OAuth 2.0-åtkomsttoken med läsomfånget (ssf.read) eller skrivomfånget (ssf.manage), som inkluderar läsning, utfärdad till en klient som deklarerar den behörigheten och respekterad endast så länge den fortfarande gör det, HTTP Basic och GNAP — publicerade i authorization_schemes. Misslyckade push försöks igen ssf.pushRetries gånger (0 som standard, medvetet) och hamnar sedan bland döda brev, och strömmar sparas i produktläge. OCH MOTTAGARHALVAN (#153): en sfär registrerar en främmande sändare via dess utfärdare (avsnitt 7:s dokument, som måste namnge den, och dess jwks_uri), skapar, läser, uppdaterar och tar bort sin ström där, sätter dess status, lägger till och tar bort subjekt och begär verifiering, tar emot via pollning (RFC 8936, ett schemaläggarjobb som kvitterar det som tagits emot) eller push (RFC 8935, auktoriseringshuvudet den angav), verifierar varje SET (signatur mot sändarens nycklar, typ, iss, aud, en jti en gång) och agerar på den via policyn för signalsvar för en person som en federationsrelation kopplar. INTE täckt: ingenting verifieras om ett subjekt som den här sändarens egna strömmar namnger, så en ström kan namnge någon som aldrig har varit här."
+    "en": "f6086ea1ba40a4c3",
+    "text": "partial: sändarhalvan i sin helhet — konfigurationsmetadata på /.well-known/ssf-configuration och i formen med infogad sökväg enligt avsnitt 7.2 för en sfärutfärdare, API:t för strömhantering (skapa, läsa, ersätta, slå samman, ta bort), statusslutpunkten med alla tre statusar, lägga till och ta bort subjekt, verifieringsslutpunkten (svarar 204 och levererar asynkront, avsnitt 8.1.4.2), båda leveransmetoderna, och båda SSF:s egna händelsetyper — verification, som också skickas på sändarens eget initiativ (ssf.verificationEveryS, eller Verify på /admin/ssf), och stream updated, som skickas innan en ström stoppas och efter att den startar igen vid varje statusändring. Varje ström tillhör mottagaren som skapade den (avsnitt 8): en annan mottagares ström svarar 404, en lista är anroparens egna strömmar, aud är Transmitter-Supplied utifrån mottagarens identitet, och ssf.maxStreams gäller per mottagare. En pausad push-ström håller sina SET och pushar dem i ordning när den aktiveras; en död pausas och meddelas. inactivity_timeout (av som standard), txn på varje SET, komplexa subjekt med \"format\": \"complex\" och de sju medlemmarna i avsnitt 3.3 plus ytterligare, critical_subject_members, och avsnitt 3.5:s format jwt_id, saml_assertion_id och ip-addresses är implementerade. Auktorisering enligt avsnitt 8 är fyra scheman — en OAuth 2.0-åtkomsttoken med läsomfånget (ssf.read) eller skrivomfånget (ssf.manage), som inkluderar läsning, utfärdad till en klient som deklarerar den behörigheten och respekterad endast så länge den fortfarande gör det, HTTP Basic, GNAP, och mottagarens TLS-klientcertifikat (urn:ietf:rfc:8705), utfärdat av denna sfär till dess applikation och med det som en token för den applikationen skulle utfärdas — publicerade i authorization_schemes. Misslyckade push försöks igen ssf.pushRetries gånger (0 som standard, medvetet) och hamnar sedan bland döda brev, och strömmar sparas i produktläge. OCH MOTTAGARHALVAN (#153): en sfär registrerar en främmande sändare via dess utfärdare (avsnitt 7:s dokument, som måste namnge den, och dess jwks_uri), skapar, läser, uppdaterar och tar bort sin ström där, sätter dess status, lägger till och tar bort subjekt och begär verifiering, tar emot via pollning (RFC 8936, ett schemaläggarjobb som kvitterar det som tagits emot) eller push (RFC 8935, auktoriseringshuvudet den angav), verifierar varje SET (signatur mot sändarens nycklar, typ, iss, aud, en jti en gång) och agerar på den via policyn för signalsvar för en person som en federationsrelation kopplar. INTE täckt: ingenting verifieras om ett subjekt som den här sändarens egna strömmar namnger, så en ström kan namnge någon som aldrig har varit här."
   },
   "stsmetadata.specs.rfc8417.coverage": {
     "en": "8641e83cb922bdcc",
@@ -192,16 +192,16 @@
     "text": "Filformatet som persistensläget ldif skriver och läser."
   },
   "stsmetadata.specs.rfc4511.coverage": {
-    "en": "67293c1dfe556980",
-    "text": "partial: bind (simple), unbind, add, delete, modify, modifyDN, compare och search, på TVÅ lyssnare med samma hanterare och samma lager — okrypterad TCP 389 och LDAPS (TLS från första byten) på 636 — med rot-DSE och resultatkoderna 0 (success), 2 (protocolError), 4 (sizeLimitExceeded), 11 (adminLimitExceeded), 16 (noSuchAttribute), 32 (noSuchObject), 49 (invalidCredentials), 66 (notAllowedOnNonLeaf) och 68 (entryAlreadyExists) alla nåbara på båda. Ingen SASL, ingen StartTLS, inga kontroller (alltså inga sidindelade resultat och ingen sortering), inga utökade operationer och inga hänvisningar. StartTLS nämns två gånger där med avsikt: det ÄR en utökad operation (avsnitt 4.14), så \"inga utökade operationer\" och \"ingen StartTLS\" är ett faktum snarare än två, och vägen till TLS här är den andra porten. VARJE BIND LYCKAS — vilket DN som helst, vilket lösenord som helst, anonym inräknad — med det enda undantaget för det bokstavliga lösenordet \"invalid\", som nekas med LDAP_INVALID_CREDENTIALS så att ett negativt test har något att misslyckas på. Det är utvecklingsläge: i produktläge verifieras en namngiven simple bind mot postens userPassword, katalogen innehåller inga förifyllda personer, och ldap.plainListener kan lämna 389 obunden. Avsnitt 4.5.1 och 4.10 överlåter åtkomstkontroll till servern, och i produktläge ÄR en läsning auktoriserad per identitet (#106): en administratör läser sitt omfång, en person sin egen post, andra personers ldap.directoryReadableAttributes (inga som standard), grupperna hen är med i och behållarna; en post hen inte får se svarar noSuchObject som en saknad post gör, ett filter kan inte matcha det hen inte får läsa, en compare av den ger insufficientAccessRights (50), och endast en person kan binda. Det är biblioteket ldapjs 3.0.7, fäst som en submodul och använt oförändrat; det som är skrivet här är hanterarna."
+    "en": "2cac07857b3eeaf5",
+    "text": "partial: bind (simple), unbind, add, delete, modify, modifyDN, compare och search, på TVÅ lyssnare med samma hanterare och samma lager — okrypterad TCP 389 och LDAPS (TLS från första byten) på 636 — med rot-DSE och resultatkoderna 0 (success), 2 (protocolError), 4 (sizeLimitExceeded), 11 (adminLimitExceeded), 16 (noSuchAttribute), 32 (noSuchObject), 49 (invalidCredentials), 66 (notAllowedOnNonLeaf) och 68 (entryAlreadyExists) alla nåbara på båda. Ingen SASL-mekanism utom EXTERNAL (RFC 4513, nedan), ingen StartTLS, inga kontroller (alltså inga sidindelade resultat och ingen sortering), inga utökade operationer och inga hänvisningar. StartTLS nämns två gånger där med avsikt: det ÄR en utökad operation (avsnitt 4.14), så \"inga utökade operationer\" och \"ingen StartTLS\" är ett faktum snarare än två, och vägen till TLS här är den andra porten. VARJE BIND LYCKAS — vilket DN som helst, vilket lösenord som helst, anonym inräknad — med det enda undantaget för det bokstavliga lösenordet \"invalid\", som nekas med LDAP_INVALID_CREDENTIALS så att ett negativt test har något att misslyckas på. Det är utvecklingsläge: i produktläge verifieras en namngiven simple bind mot postens userPassword, katalogen innehåller inga förifyllda personer, och ldap.plainListener kan lämna 389 obunden. Avsnitt 4.5.1 och 4.10 överlåter åtkomstkontroll till servern, och i produktläge ÄR en läsning auktoriserad per identitet (#106): en administratör läser sitt omfång, en person sin egen post, andra personers ldap.directoryReadableAttributes (inga som standard), grupperna hen är med i och behållarna; en post hen inte får se svarar noSuchObject som en saknad post gör, ett filter kan inte matcha det hen inte får läsa, en compare av den ger insufficientAccessRights (50), och endast en person kan binda. Det är biblioteket ldapjs 3.0.7, fäst som en submodul och använt oförändrat; det som är skrivet här är hanterarna."
   },
   "stsmetadata.specs.rfc4512.coverage": {
     "en": "f856c6b18542f41b",
     "text": "minimal: trädet, rot-DSE och namingContexts är verkliga; SCHEMAT FINNS INTE ALLS. Ingen objectClass tillämpas, inget attribut kontrolleras mot en syntax eller en matchningsregel, och det finns ingen subschema-subentry — så en post kan bära vilket attribut som helst som en klient vill skicka, vilket en riktig katalog skulle neka. Tre strukturella regler tillämpas ändå, eftersom deras frånvaro skulle lära en klient något falskt: en add kräver sin förälder, en delete kräver ett löv, och ett attribut utan värden finns inte."
   },
   "stsmetadata.specs.rfc4513.coverage": {
-    "en": "e45e6b179ab6ffec",
-    "text": "partial, och den del som finns här är TRANSPORTEN snarare än autentiseringen: simple bind (avsnitt 5.1) är den enda metod som erbjuds — ingen SASL, alltså ingen EXTERNAL och ingen DIGEST-MD5. I utvecklingsläge autentiserar den ingen, eftersom varje bind lyckas utom med det bokstavliga lösenordet \"invalid\", och det som TLS på 636 tillför är konfidentialitet för ett lösenord som aldrig skulle kontrolleras, vilket är värt att ha för en klient som måste bevisa att den kan LDAPS och värt att säga högt så att ingen läser TLS som autentisering; i produktläge verifieras en persons lösenord, och bara över 636. StartTLS (avsnitt 3) är INTE implementerat: det är en utökad operation och ldapjs-submodulen som den här tjänsten bygger på implementerar inga, och det här arkivet patchar inte den submodulen. Värt att veta vilken av de två som det här dokumentet faktiskt standardiserade — StartTLS finns här; ldaps:// är de facto-schemat som det lämnade i fred, vilket är varför ingen RFC definierar det som varje klient talar. Certifikatet utfärdas under den här tjänstens egen Root, genereras om vid varje start (om inte tls.certificateFile tillhandahåller ett) och delas med huvudporten, så en klient verifierar det per körning: hämta kedjan från GET /tls/server-certificate i stället för att ta till LDAPTLS_REQCERT=never, vilket också skulle dölja det enda som är värt att kontrollera här. I PRODUKTläge VERIFIERAS en simple bind, vilket gör 389 till ett lösenord i klartext: ldap.plainListener stänger av den lyssnaren och tjänsten varnar vid start medan den är på. Avsnitt 6.1: \"Access control should always be applied when reading sensitive information\" — produktläge gör det, per bunden identitet (ldap/directory_read_policy.ts)."
+    "en": "ffd676cfc6a6acde",
+    "text": "partial, och den del som finns här är TRANSPORTEN snarare än autentiseringen: simple bind (avsnitt 5.1) och, så länge 636 begär ett klientcertifikat, SASL EXTERNAL (avsnitt 5.2.1.2) med ett certifikat som denna tjänst utfärdat till en person, eller ett externt som lagrats i userCertificate på exakt en personpost; ingen annan SASL-mekanism, alltså ingen DIGEST-MD5. I utvecklingsläge autentiserar den ingen, eftersom varje bind lyckas utom med det bokstavliga lösenordet \"invalid\", och det som TLS på 636 tillför är konfidentialitet för ett lösenord som aldrig skulle kontrolleras, vilket är värt att ha för en klient som måste bevisa att den kan LDAPS och värt att säga högt så att ingen läser TLS som autentisering; i produktläge verifieras en persons lösenord, och bara över 636. StartTLS (avsnitt 3) är INTE implementerat: det är en utökad operation och ldapjs-submodulen som den här tjänsten bygger på implementerar inga, och det här arkivet patchar inte den submodulen. Värt att veta vilken av de två som det här dokumentet faktiskt standardiserade — StartTLS finns här; ldaps:// är de facto-schemat som det lämnade i fred, vilket är varför ingen RFC definierar det som varje klient talar. Certifikatet utfärdas under den här tjänstens egen Root, genereras om vid varje start (om inte tls.certificateFile tillhandahåller ett) och delas med huvudporten, så en klient verifierar det per körning: hämta kedjan från GET /tls/server-certificate i stället för att ta till LDAPTLS_REQCERT=never, vilket också skulle dölja det enda som är värt att kontrollera här. I PRODUKTläge VERIFIERAS en simple bind, vilket gör 389 till ett lösenord i klartext: ldap.plainListener stänger av den lyssnaren och tjänsten varnar vid start medan den är på. Avsnitt 6.1: \"Access control should always be applied when reading sensitive information\" — produktläge gör det, per bunden identitet (ldap/directory_read_policy.ts)."
   },
   "stsmetadata.specs.rfc4514.coverage": {
     "en": "d74d5f5a23a41bdb",
@@ -232,8 +232,8 @@
     "text": "partial: de delar som en responder är skyldig. Okrypterad HTTP (avsnitt 5) — respondern svarar på `pki.httpPort` såväl som på TLS-huvudporten, och certifikat namnger den okrypterade; GET med den base64-kodade förfrågan tillagd; inga bråkdelssekunder i någon GeneralizedTime (avsnitt 2.2.4); responder-ID:t efter nyckelhash (avsnitt 2.2.2); `unauthorized` för en förfrågan den inte är auktoritativ för (avsnitt 2.2.3); och cachehuvudena i avsnitt 6.2 — max-age inte senare än nextUpdate, Last-Modified, Expires och en stark ETag, aldrig no-cache eller no-store på ett auktoritativt svar. INTE GJORT: svar signeras på begäran snarare än att FÖRPRODUCERAS (avsnitt 2.2.1 rekommenderar förproduktion för stora volymer), och ett svar på en förfrågan som bär en nonce markeras som privat i stället för att betjänas från en cache."
   },
   "stsmetadata.specs.ws-trust.coverage": {
-    "en": "c1c6a4c05b39a697",
-    "text": "partial: Issue, Renew, Validate och Cancel över SOAP 1.1 och 1.2. Förfrågningssignaturer verifieras inte. OnBehalfOf och ActAs avgörs av utfärdandepolicyn (#186, reglerna som tokenutbytet och Kerberos S4U delar) — OnBehalfOf begär personifiering och ActAs delegering, posternas delegeringssemantik måste tillåta det, AppliesTo måste vara en registrerad applikation som delegeringsrelationerna tillåter, och en person som begärande kräver delegation.actorRole — och nekas med ett wst:RequestFailed-fel (avsnitt 11) i produktläge; båda elementen samtidigt ger wst:InvalidRequest; utvecklingsläge registrerar vad som skulle ha nekats. I PRODUKTläge (2026-09-12) kräver varje operation en autentiseringsuppgift — en UsernameToken verifierad mot katalogen, eller ett SAML-intyg som den här STS:en signerat och som är inom sina Conditions — och en OnBehalfOf/ActAs kräver den begärandes egen autentiseringsuppgift och ett sådant intyg inuti den; utvecklingsläge accepterar ingen, som det alltid har gjort. I båda lägena begränsas en begärd wst:Lifetime (wstrust.maxTokenLifetimeMin) och det utfärdade intygets AuthnContext namnger autentiseringsuppgiften snarare än ett lösenord."
+    "en": "cafeffef561dcd9a",
+    "text": "partial: Issue, Renew, Validate och Cancel över SOAP 1.1 och 1.2. Förfrågningssignaturer verifieras inte. OnBehalfOf och ActAs avgörs av utfärdandepolicyn (#186, reglerna som tokenutbytet och Kerberos S4U delar) — OnBehalfOf begär personifiering och ActAs delegering, posternas delegeringssemantik måste tillåta det, AppliesTo måste vara en registrerad applikation som delegeringsrelationerna tillåter, och en person som begärande kräver delegation.actorRole — och nekas med ett wst:RequestFailed-fel (avsnitt 11) i produktläge; båda elementen samtidigt ger wst:InvalidRequest; utvecklingsläge registrerar vad som skulle ha nekats. I PRODUKTläge (2026-09-12) kräver varje operation en autentiseringsuppgift — en UsernameToken verifierad mot katalogen, eller ett SAML-intyg som den här STS:en signerat och som är inom sina Conditions — och en OnBehalfOf/ActAs kräver den begärandes egen autentiseringsuppgift och ett sådant intyg inuti den; utvecklingsläge accepterar ingen, som det alltid har gjort. I båda lägena begränsas en begärd wst:Lifetime (wstrust.maxTokenLifetimeMin) och det utfärdade intygets AuthnContext namnger autentiseringsuppgiften snarare än ett lösenord. En beställare vars wsse:Security inte bär någon autentiseringsuppgift autentiseras, i båda lägena, med TLS-klientcertifikatet på anslutningen när denna sfär har utfärdat det till en person eller ett program (#1046), eller när det kommer från en extern certifikatutfärdare och är lagrat i userCertificate på exakt en av deras poster (#1061)."
   },
   "stsmetadata.specs.wss-username.coverage": {
     "en": "397e6a07a7980365",
@@ -1056,8 +1056,8 @@
     "text": "RFC 7486 avsnitt 7. En formulärkodad POST som bär pub=<PEM-publik nyckel> och (den här tjänstens egen parameter) username=<vem den är till för>, besvarad med 201 och huvudet Hobareg: regok. OAUTENTISERAD med avsikt: det är så en anropare FÅR en inloggningsuppgift, så att kräva en för att nå den skulle göra schemat oanvändbart för alla som inte redan hade en annan. Vem som helst får registrera vilken nyckel som helst för vilket namn som helst — SIGNATUREN verifieras sedan på riktigt, vilket är den halva som gör schemat värt att implementera. Nyckeln hamnar på personens egen post under ou=users som hobaPublicKey, så att en ldapsearch och /admin/users visar den. GET beskriver slutpunkten, eftersom en well-known-sökväg som ger 404 i en webbläsare inte går att skilja från en som ingen implementerat."
   },
   "stsmetadata.endpoints./tls/sign-in.what": {
-    "en": "7335cf97f459114d",
-    "text": "ETT VERIFIERAT KLIENTCERTIFIKAT BLIR EN SESSION (2026-09-05), på den här porten sedan 2026-09-16 — det var en bieffekt av att nå någon av de borttagna TLS-lyssnarna, vilket innebar att du loggades in av att ladda en diagnostiksida. Den svarar vad som kom fram, om det verifierades, det tumavtryck som tokenslutpunkten skulle binda en token till, vad återkallelsekontrollen fann och om en session startades. Den nekar ingen vid handskakningen och kan inte: ett certifikat som inte verifieras, ett som den här tjänsten utfärdat men som inte är en TLS-klientidentitet, och en applikations certifikat (en RFC 8705-inloggningsuppgift, inte en person) besvaras vart och ett med 200 utan session och med skälet."
+    "en": "b9f18166e17e9c9d",
+    "text": "ETT VERIFIERAT KLIENTCERTIFIKAT BLIR EN SESSION (2026-09-05), på den här porten sedan 2026-09-16 — det var en bieffekt av att nå någon av de borttagna TLS-lyssnarna, vilket innebar att du loggades in av att ladda en diagnostiksida. Den svarar vad som kom fram, om det verifierades, det tumavtryck som tokenslutpunkten skulle binda en token till, vad återkallelsekontrollen fann och om en session startades. Den nekar ingen vid handskakningen och kan inte: ett certifikat som inte verifieras, ett som den här tjänsten utfärdat men som inte är en TLS-klientidentitet, ett från en extern certifikatutfärdare som inte är lagrat i userCertificate på exakt en post i sfären (matchas aldrig på sitt vanliga namn), och en applikations certifikat (en RFC 8705-inloggningsuppgift, inte en person) besvaras vart och ett med 200 utan session och med skälet."
   },
   "stsmetadata.endpoints./tls/server-certificate.what": {
     "en": "54631edee4eb2352",
@@ -1151,6 +1151,18 @@
     "en": "fb526fdd286ba6e8",
     "text": "ICKE-SPEC. Samma dokument som /admin, för varje konsolsökväg (#446): sökvägen namnger sidan och webbläsaren läser den, så att en djuplänk och historiken fungerar. /admin/callback är dit en inloggning kommer tillbaka med en kod; att servera den registrerar återanropet på konsolens klientpost så som den förlitande parten gjorde (inlärt i utvecklingsläge, nekat i produktläge om det inte är registrerat)."
   },
+  "stsmetadata.endpoints./admin/signals/receive.what": {
+    "en": "cd68dd8169303f3e",
+    "text": "PUSH-LEVERANS ENLIGT RFC 8935 AVSNITT 2.1, för en konsolström som satts tillbaka till push (den skapade hämtas sedan #771). Övergången #446 tog bort den med de serverritade sidorna och #1042 återställde den: portalens tvilling, kontrollerad på samma sätt — bärartoken för konsolens egen ström i konstant tid, `aud` och sedan signaturen — och utan hastighetsbegränsning, av samma skäl."
+  },
+  "stsmetadata.endpoints./admin/signals/receive.effect": {
+    "en": "7414efe71859a097",
+    "text": "registrerar en Security Event Token som levererats till administratörskonsolen"
+  },
+  "stsmetadata.endpoints./admin/signals/receive.coverage": {
+    "en": "bbcf002898339fc9",
+    "text": "full för mottagning enligt RFC 8935 avsnitt 2.1, som /portal/signals/receive."
+  },
   "stsmetadata.endpoints./admin/console.js.what": {
     "en": "6f4d5410ba7dfbfb",
     "text": "ICKE-SPEC. Den statiska konsolen (#446): dess körtid och varje sidas renderare i en fil, byggd av build-typescript.sh. Publik, liksom dokumentet: ingenting i den är hemligt."
@@ -1174,6 +1186,18 @@
   "stsmetadata.endpoints./portal/portal.css.what": {
     "en": "69cf245f63b035d1",
     "text": "ICKE-SPEC. Portalens enda stilmall (#568)."
+  },
+  "stsmetadata.endpoints./report/signals/receive.what": {
+    "en": "02a6b59dd686363c",
+    "text": "PUSH-LEVERANS ENLIGT RFC 8935 AVSNITT 2.1, för en rapportström som satts tillbaka till push (#1042; den skapade hämtas, liksom konsolens och portalens). Kontrolleras som /portal/signals/receive."
+  },
+  "stsmetadata.endpoints./report/signals/receive.effect": {
+    "en": "6c9147c359daab5f",
+    "text": "registrerar en Security Event Token som levererats till rapportapplikationen"
+  },
+  "stsmetadata.endpoints./report/signals/receive.coverage": {
+    "en": "bbcf002898339fc9",
+    "text": "full för mottagning enligt RFC 8935 avsnitt 2.1, som /portal/signals/receive."
   },
   "stsmetadata.endpoints./report.what": {
     "en": "a9d6c3cc058a3617",
@@ -1206,6 +1230,22 @@
   "stsmetadata.endpoints./report-api/catalog/:id.what": {
     "en": "4d6e53c9ce4823ca",
     "text": "NON-SPEC. En källa ur katalogen, via sitt id."
+  },
+  "stsmetadata.endpoints./report-api/realms.what": {
+    "en": "94cf90a7c7b10a68",
+    "text": "NON-SPEC. Sfären som denna begäran befinner sig i och, där sfärer är aktiva, varje sfär med sitt id, namn och sökvägsprefix (#986): det som applikationens sfärfält och sfärväxling ritas från. Bakom samma token som resten av /report-api."
+  },
+  "stsmetadata.endpoints./report-api/signals.what": {
+    "en": "f00e66637d8d4146",
+    "text": "UTANFÖR SPECIFIKATION. Vad rapportapplikationen, en mottagare av tjänstens egen sändare (#1042), har tagit emot: varje signal i sfären för en rapportadministratör, och för alla andra bara signalerna om dem själva. Bakom samma token som resten av /report-api."
+  },
+  "stsmetadata.endpoints./report-api/groups.what": {
+    "en": "339c957fd31d0c51",
+    "text": "NON-SPEC. Sfärens grupper vars namn eller DN innehåller q, fem per sida, var och en med sitt eget mail-attribut (#989): definitionssidans panel. En definitions grupper är de som får dess resultat med e-post. Bakom samma token som resten av /report-api."
+  },
+  "stsmetadata.endpoints./report-api/schedules.what": {
+    "en": "6db4cff36d4beb56",
+    "text": "NON-SPEC. Varje definition som bär ett schema, med sin nästa körning, den förekomst den senast tog, sina överhoppningsanteckningar och sina senaste schemalagda jobb (#992). report:use ser sina egna och delade; report:admin hela sfären, och en ägare vid namn. Bakom samma token som resten av /report-api."
   },
   "stsmetadata.endpoints./report-api/queries.what": {
     "en": "0d15a58a10e2b1ba",
@@ -1614,6 +1654,10 @@
   "stsmetadata.endpoints./admin-api/users/devices.what": {
     "en": "f3efcad394d83c8d",
     "text": "ICKE-SPEC (#130). Personens poster i ou=devices: id, DN, etikett, de applikationer som använt var och en, om den har en Native SSO-hemlighet och om den hemlighetens session är levande. POST /admin-api/users/remove-device tar bort en. Speglar blocket Enheter på personens /admin/users-sida."
+  },
+  "stsmetadata.endpoints./admin-api/users/certificates.what": {
+    "en": "e6213352c307d2b7",
+    "text": "UTANFÖR SPECIFIKATION (#1061). Varje certifikat som lagras i personens userCertificate: SHA-256 av dess DER, dess subjekt, utfärdare, serienummer och giltighet. Ett certifikat från en extern utfärdare loggar in sin innehavare endast som den enda post som lagrar det; POST /admin-api/users/add-certificate lagrar ett och /remove-certificate tar bort det. Speglar blocket Lagrade certifikat på personens /admin/users-sida."
   },
   "stsmetadata.endpoints./admin-api/devices.what": {
     "en": "44c53b68d1ed9a1d",
@@ -2694,6 +2738,10 @@
   "stsmetadata.endpoints./authn-api/pending/:id/anonymous.what": {
     "en": "092b3cc9235cb1b0",
     "text": "NON-SPEC (#571). Där authn.unauthenticatedSessions är på."
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id/certificate.what": {
+    "en": "ff1fb299d130d818",
+    "text": "NON-SPEC (#1051). Anslutningens TLS-klientcertifikat som första faktor, amr [\"swk\"]: nekas vid återkallelse, av identitetsgrinden, för en annan sfärs utfärdare, ett externt certifikat som inte är lagrat på exakt en post, eller ett programs certifikat, som GET /tls/sign-in nekar det; därefter autentiseringspolicyn, risken och en andra faktor där en behövs."
   },
   "stsmetadata.endpoints./authn-api/pending/:id/email.what": {
     "en": "f654c3c6f076950a",

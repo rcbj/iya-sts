@@ -4787,6 +4787,14 @@
     "en": "d75340dbe09a7542",
     "text": "Om en JWT som den här STS:en returnerar i ett RequestSecurityTokenResponse anger certifikatkedjan för nyckeln som signerade den. Ett SAML-intyg bär sitt certifikat i sin egen XML-signatur och påverkas inte. `x5u` — standardvärdet — är kedjans adress på den här tjänsten, `/pki/chain/{scope}/{sha256}.pem`, ungefär hundra byte; `x5c` är kedjan inbäddad, lövet först och tjänstens rot sist, base64 DER, flera kilobyte; `both` är båda och `none` ingen av dem. I båda fallen är det vad en förlitande part som bara har token behöver för att nå varje certifikats CRL-distributionspunkter, OCSP-svarare och caIssuers-adress. En nyckel som ännu inte är certifierad under den här sfärens JOSE Issuing CA, och en HMAC-signatur, får ingen av dem. RFC 7515 avsnitt 4.1.5 kräver att hämtningen av `x5u` sker över TLS: med global.https avstängt är adressen `http://` och en strikt verifierare vägrar följa den. JWE-huvuden får aldrig något — ingen certifierad nyckel i den här tjänsten krypterar något. Kan anges per sfär."
   },
+  "wstrust.acceptClientCertificate|label": {
+    "en": "04ac29464750e625",
+    "text": "Godta TLS-klientcertifikatet som beställarens autentiseringsuppgift"
+  },
+  "wstrust.acceptClientCertificate|description": {
+    "en": "23d9a8fba459f61c",
+    "text": "Om en begäran till /sts vars wsse:Security-huvud inte bär någon autentiseringsuppgift autentiserar sin beställare med TLS-klientcertifikatet på anslutningen. Endast ett certifikat som verifierades i handskakningen och som denna sfär har utfärdat till en person eller ett program (ett TLS-klientcertifikat från användarportalen eller programmets Credentials, eller ett som registrerats via ACME, EST eller SCEP) är en autentiseringsuppgift, i båda lägena; ett återkallat, ett från en annan sfär och ett som innehavaren inte längre har avvisas med wst:FailedAuthentication. Den utfärdade token säger att ett certifikat användes: TLSClient i ett SAML 2.0-intyg, urn:ietf:rfc:2246 i ett SAML 1.1-intyg, amr swk i en JWT. Avstängt ignoreras certifikatet här."
+  },
   "wsfed.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
     "text": "Inloggning initierad av identitetsleverantören"
@@ -4996,16 +5004,16 @@
     "text": "LDAPS: fråga inte efter ett klientcertifikat"
   },
   "ldap.ldapsDisableOptionalClientCertificate|description": {
-    "en": "7e1993d7f889bc3c",
-    "text": "LDAPS skickar ingen CertificateRequest. PÅSLAGET som standard, vilket är vad LDAPS alltid har gjort: en bind är hur en katalogklient säger vem den är, och en certifikatfråga framför varje klient som har ett är en överraskning. Avstängt ber varje anslutning om ett certifikat och kräver inget; ett presenterat certifikat verifieras mot förtroendelagret för klienter men binder ingen (det finns ingen SASL EXTERNAL här)."
+    "en": "7c1815ed4a7499c4",
+    "text": "LDAPS skickar ingen CertificateRequest. PÅ som standard, vilket är vad LDAPS alltid gjort: en bindning är hur en katalogklient säger vem den är, och en certifikatfråga framför varje klient som har ett är en överraskning. Av ber varje anslutning om ett certifikat och kräver inget; ett uppvisat certifikat verifieras mot klientens förtroendelager, och en anslutning med ett som denna tjänst utfärdat till en person kan binda som den personen med SASL EXTERNAL."
   },
   "ldap.ldapsRequireClientCertificate|label": {
     "en": "eff4646ac01e4612",
     "text": "LDAPS: kräv ett klientcertifikat"
   },
   "ldap.ldapsRequireClientCertificate|description": {
-    "en": "2c73995bcc16b3fa",
-    "text": "LDAPS avvisar, vid handskakningen, varje anslutning som inte presenterar ett klientcertifikat som kedjar till förtroendelagret för klienter — en andra spärr framför bind, som fortfarande avgör vem anslutningen är. Har företräde framför växeln ovan. Avstängt som standard."
+    "en": "cfadc0b97c1bfaa8",
+    "text": "LDAPS avvisar vid handskakningen varje anslutning som inte visar upp ett klientcertifikat som kedjar till klientens förtroendelager — en andra spärr framför bindningen, som fortfarande avgör vem anslutningen är: ett lösenord, eller SASL EXTERNAL med ett certifikat som denna tjänst utfärdat till en person. Går före växeln ovan. Av som standard."
   },
   "debugger.disableOptionalClientCertificate|label": {
     "en": "df19c772421bba66",
@@ -6592,8 +6600,8 @@
     "text": "Erbjud TLS-klientcertifikat"
   },
   "scim.authClientCert|description": {
-    "en": "be5e7d5ccffce8c1",
-    "text": "Ömsesidig TLS, det första schema som RFC 7644 avsnitt 2 nämner. Det gäller bara där begäran kom över TLS med ett certifikat som VERIFIERADES mot klientens förtroendelager (/admin/tls/trust), alltså bara när global.https är på. Det var den första platsen i den här tjänsten där ett klientcertifikat var en INLOGGNINGSUPPGIFT snarare än en observation; här autentiserar det någon som sedan får skriva till katalogen."
+    "en": "0a6d722dc96ad17f",
+    "text": "Ömsesidig TLS, det första schema som RFC 7644 avsnitt 2 nämner. Det gäller bara där begäran kom över TLS med ett certifikat som VERIFIERADES mot klientens förtroendelager (/admin/tls/trust), alltså bara när global.https är på. Det var den första platsen i den här tjänsten där ett klientcertifikat var en INLOGGNINGSUPPGIFT snarare än en observation. Ett certifikat som den här sfären utfärdat till en APPLIKATION får bara göra det som applikationens oauthAllowedScope deklarerar: läsomfånget för att läsa och skrivomfånget för att skriva, kontrollerat vid varje begäran (STS-SCIM-0083). En persons certifikat — utfärdat av denna sfär, eller från en extern certifikatutfärdare och lagrat i userCertificate på den personens post (#1061) — får läsa och skriva i katalogen."
   },
   "scimClient.attempts|label": {
     "en": "babe2e714439f7c0",
@@ -7067,17 +7075,25 @@
     "en": "34a196af42de2673",
     "text": "Om SSF-slutpunkterna accepterar HTTP Basic bredvid OAuth 2.0-åtkomsttokener, och publicerar det i authorization_schemes. I utvecklingsläge godtas vilket användarnamn som helst med vilket lösenord som helst utom \"invalid\"; i produktläge verifieras lösenordet mot personens hashade userPassword. I båda fallen har en Basic-principal båda omfången, eftersom Basic inte bär något — så en driftsättning som vill att ssf.read och ssf.manage upprätthålls för varje anropare stänger av detta."
   },
+  "ssf.authClientCert|label": {
+    "en": "ad5fbafbb2ac1812",
+    "text": "Erbjud TLS-klientcertifikat"
+  },
+  "ssf.authClientCert|description": {
+    "en": "73d4ba2aa33adad2",
+    "text": "Om SSF-slutpunkterna accepterar en mottagare som autentiseras med TLS-klientcertifikatet på sin anslutning, utan Authorization-huvud, och publicerar urn:ietf:rfc:8705 i authorization_schemes. Endast ett certifikat som denna sfär har utfärdat till en applikation, och som applikationen fortfarande innehar, godtas; mottagaren är den applikationen och äger de strömmar den skapar, och den innehar de Shared Signals-omfång som dess oauthAllowedScope deklarerar och som dess roller SSF_READ och SSF_MANAGE auktoriserar."
+  },
   "ssf.internalReceivers|label": {
-    "en": "8eca3281fa7a4ef7",
-    "text": "Registrera konsolen och portalen som mottagare"
+    "en": "7e760a8d68a5e030",
+    "text": "Registrera konsolen, portalen och rapporterna som mottagare"
   },
   "ssf.internalReceivers|description": {
-    "en": "1a148e2b3a63a17d",
-    "text": "Om den här tjänsten skapar en Shared Signals-ström för sin EGEN administratörskonsol och användarportal, så att var och en tar emot varje CAEP- och RISC-händelse — hämtade via RFC 8936-pollning från tjänstens egen /ssf/poll var ssf.internalPollMs (#771) — och visar det som kom fram på /admin/signals och /portal/signals. De är VANLIGA strömmar — pausa en, begränsa den eller ta bort den på /admin/ssf och den förblir så till en omstart."
+    "en": "0a23fbb0f030f814",
+    "text": "Om tjänsten skapar en Shared Signals-ström för sin EGEN administratörskonsol, användarportal och rapportapplikation (#1042), så att var och en tar emot varje CAEP- och RISC-händelse — genom RFC 8936-hämtning från tjänstens egen /ssf/poll var ssf.internalPollMs (#771) — och visar det som kommit på /admin/signals, /portal/signals och /report/signals. De är VANLIGA strömmar — pausa, begränsa eller ta bort en på /admin/ssf så förblir den så tills en omstart."
   },
   "ssf.internalReceivers|restartReason": {
-    "en": "75c18a7223a2e0a3",
-    "text": "de två strömmarna skapas när ssf/ssf.ts laddas och igen när varje sfär byggs, så att stänga av detta i drift skulle lämna kvar de strömmar som redan finns och att slå på det skulle inte skapa några"
+    "en": "eb2b8e34bd6ee85c",
+    "text": "de tre strömmarna skapas när ssf/ssf.ts läses in och igen när varje sfär byggs, så att stänga av detta under drift skulle lämna befintliga strömmar kvar och att slå på det skulle inte skapa några"
   },
   "ssf.internalPollMs|label": {
     "en": "245d4495769ca599",
@@ -7156,8 +7172,8 @@
     "text": "Behållna mottagna händelser"
   },
   "ssf.maxReceivedEvents|description": {
-    "en": "2c503bd8b26764ea",
-    "text": "Hur många levererade SET:er var och en av den här tjänstens egna mottagare (konsolens och portalens) behåller i sin inkorg, per sfär; de äldsta tas bort därutöver."
+    "en": "4c285fbb0b900559",
+    "text": "Hur många levererade SET varje av tjänstens egna mottagare (konsolens, portalens och rapportapplikationens) behåller i sin inkorg, per sfär; de äldsta tas bort därutöver."
   },
   "ssf.maxStreamLogEntries|label": {
     "en": "468201e24a40cdc6",
@@ -7232,12 +7248,12 @@
     "text": "Hur lång tid en begäran till en federationspartners Shared Signals — upptäckt, dess tokenslutpunkt, strömhantering, en avfrågning — får ta."
   },
   "ssf.actOnSignalsInDevelopment|label": {
-    "en": "563f14910995d99d",
-    "text": "Konsolen och portalen agerar på mottagna signaler i utvecklingsläge"
+    "en": "aa195c1cd8a0152a",
+    "text": "Tjänstens egna applikationer agerar på mottagna signaler under utveckling"
   },
   "ssf.actOnSignalsInDevelopment|description": {
-    "en": "551c98310bd92f77",
-    "text": "Produktläge gör alltid det som signalsvarspolicyn tillåter med en verifierad händelse som den här tjänstens egen konsol eller portal tar emot — avslutar den ytans egna sessioner för den person händelsen anger (#62) — eller som en federationspartner skickar (#373, #374). Utvecklingsläge registrerar vad det skulle ha gjort och gör ingenting, om inte detta är på. En overifierad händelse ageras aldrig på, oavsett vad detta säger."
+    "en": "2389ab3a9223bf66",
+    "text": "Produktionsläget gör alltid det som signal-response-policyn tillåter med en verifierad händelse som tjänstens konsol, portal eller rapportapplikation tar emot — återkallar de token som applikationens egen klient innehar för den namngivna personen (#1042; tills applikationerna slutade skapa sådana avslutade det förlitande parts sessioner, #62) — eller som en federationspartner skickar (#373, #374). Utvecklingsläget registrerar vad det skulle ha gjort och gör ingenting, om inte detta är på. En overifierad händelse hanteras aldrig, oavsett vad detta säger."
   },
   "ssf.signalsRevokeGrants|label": {
     "en": "a0ded7c93cee0e93",
@@ -7324,8 +7340,8 @@
     "text": "Uppladdningskatalog för datamängder"
   },
   "risk.uploadDirectory|description": {
-    "en": "347858cd0224743e",
-    "text": "Där en uppladdad datamängdsfil skrivs medan den importeras, och tas bort ifrån när importen avslutas hur den än avslutas. En relativ sökväg löses mot den här paketroten, som persistence.dataDir. Ge den en egen volym med plats för den största fil du kommer att ladda upp — komprimerad; inget uppackat skrivs — eftersom en uppladdning avvisas när katalogens lediga utrymme inte räcker. Varje stack som det här repositoryt levererar monterar en här."
+    "en": "ddab5a9b7f3d0a2a",
+    "text": "Var en uppladdad datamängdsfil skrivs medan den importeras, och var ett rapportjobb byggs innan det lagras; varje fil tas bort när dess import eller jobb avslutas, hur det än avslutas. En relativ sökväg tolkas mot detta pakets rot, som persistence.dataDir. Ge den en egen volym med plats för den största fil du kommer att ladda upp — komprimerad; inget uppackat skrivs — och för report.asyncMaxBytes per rapportjobb som körs samtidigt, eftersom en uppladdning eller ett jobb avvisas när katalogens lediga utrymme inte räcker. Varje stack som detta arkiv levererar monterar en här."
   },
   "risk.uploadMaxBytes|label": {
     "en": "959b6b79f9136a03",
@@ -7364,8 +7380,8 @@
     "text": "Intervall för uppstädning av uppladdningar (sekunder)"
   },
   "risk.uploadSweepS|description": {
-    "en": "d2ecf2ff3686662e",
-    "text": "Hur ofta varje process håller de uppladdningsfiler den importerar färska och tar bort kvarlevorna efter en process som har stannat (risk.upload-cleanup), och hur ofta jobbet risk.stalled-imports letar efter en övergiven version. Håll det väl under risk.importStallMinutes."
+    "en": "66b5d1a088266f41",
+    "text": "Hur ofta varje process håller de uppladdade filer den importerar och de rapporter den bygger färska och tar bort det som en stoppad process lämnat kvar (risk.upload-cleanup, report.build-cleanup), och hur ofta jobbet risk.stalled-imports letar efter en övergiven version. Håll den långt under risk.importStallMinutes."
   },
   "risk.datasetShrinkLimitPercent|label": {
     "en": "46aea694920bebd6",
@@ -10222,14 +10238,6 @@
   "report.jobRetentionS|description": {
     "en": "dfada581a8c28ca3",
     "text": "Hur länge ett färdigt rapportjobbs rad stannar i listan. Ett jobb som fortfarande körs tas inte bort."
-  },
-  "report.usersGroup|label": {
-    "en": "21554dfaa265b36f",
-    "text": "Vem som kan få report:use utfärdad"
-  },
-  "report.usersGroup|description": {
-    "en": "28068508e0655509",
-    "text": "Kataloggruppen vars medlemmar kan få report:use utfärdad. Tom betyder att bara den här sfärens administratörer kan det. report:admin utfärdas bara till dessa administratörer."
   },
   "listenerMain.minVersion|label": {
     "en": "6470c151e28a9ab3",

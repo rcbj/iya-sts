@@ -71,7 +71,8 @@ its audience is the `AppliesTo`, its validity window is widened by
 [custom SAML attributes](saml2-sso.md#custom-saml-attributes). Its
 `AuthnContextClassRef` names the credential that was presented:
 `PasswordProtectedTransport` for a UsernameToken, `PreviousSession` for an
-assertion, `unspecified` for a delegation or nothing. The `wsu:Lifetime` around
+assertion, `TLSClient` for a TLS client certificate, `unspecified` for a
+delegation or nothing. The `wsu:Lifetime` around
 it states the lifetime without the skew.
 
 **The JWT** has `iss` the realm's OAuth 2.0 issuer, the one
@@ -107,7 +108,10 @@ Some claims are left out on purpose:
   access token's are, with the application as the client: its
   `oauthAllowedScope` in product, and the issuance policy. What is left off
   is audited.
-* **No `auth_time`, `acr` or `amr`.** RFC 9068 makes them optional.
+* **No `auth_time` or `acr`.** RFC 9068 makes them optional. **`amr`** is
+  carried on a token about the requester itself (#1046): `["pwd"]` for a
+  UsernameToken, `["swk"]` for a TLS client certificate. A delegated token,
+  and one issued on an assertion or a JWT, carries none.
 
 `iss` is the realm's OAuth issuer, so RFC 9068 section 4's check against the
 authorization server's metadata holds (#480). The RST and RSTR are unchanged: the `wst:TokenType` answered is still
@@ -132,7 +136,53 @@ element that holds somebody else's token:
 * a **SAML assertion** (SAML 2.0 or SAML 1.1) in the security header;
 * a **JWT** this service issued, in the `wsse:BinarySecurityToken` an RSTR
   hands one back in (ValueType `urn:ietf:params:oauth:token-type:jwt`);
+* the **TLS client certificate** on the connection, when `wsse:Security`
+  carries none of the three above (#1046) — see below;
 * a request with **no credential** (development only — see below).
+
+#### The TLS client certificate
+
+On the main port with `global.https` on, a client may present a TLS client
+certificate at the handshake. It is the requester's credential, in both
+modes, when all of these hold:
+
+* it verified against the client truststore;
+* this realm issued it to a person or an application — a TLS client
+  certificate from the user portal (*Signing key*) or an application's
+  *Credentials* section, or one enrolled over [ACME, EST or SCEP](pki.md);
+  the person or application it names is the requester — **or** it is from an
+  outside certificate authority in the truststore and is stored byte for
+  byte in `userCertificate` on exactly one person's or application's entry,
+  which is the requester ([TLS](tls.md#a-certificate-from-an-outside-certificate-authority));
+* it is not revoked, and its holder's record still lists it;
+* for a person, the account is not disabled.
+
+A certificate that verified and fails one of these is refused with
+`wst:FailedAuthentication` (`STS-WSTRUST-0034` to `0037`) rather than
+treated as no credential, and so is one from an anchor somebody added at
+`/admin/tls/trust` that is stored on no entry (`STS-WSTRUST-0038`) or on
+more than one (`STS-WSTRUST-0039`); its common name and subject are never
+read. One that did not verify is ignored. A UsernameToken, an assertion or a JWT in the message
+always wins: the certificate is asked only when the message carries none.
+
+The token issued says a certificate was used: `TLSClient` as a SAML 2.0
+assertion's `AuthnContextClassRef`, `urn:ietf:rfc:2246` as a SAML 1.1
+`AuthenticationMethod`, and `amr` `["swk"]` in a JWT. A person's certificate
+starts a session with method `swk`, as `GET /tls/sign-in` does; an
+application's starts none. `wstrust.acceptClientCertificate` turns the
+credential off.
+
+```bash
+curl --cert alice.pem --key alice-key.pem --cacert root.pem \
+  -H 'Content-Type: application/soap+xml' --data @rst.xml \
+  https://sts.example.com:8081/sts
+```
+
+where `rst.xml` is an `Issue` with an empty `wsse:Security` header (or none).
+
+A WS-Security **X.509 `BinarySecurityToken` with a signature over the
+request** is not a credential here: request signatures are not verified (see
+*Not implemented*).
 
 Any of the three token types can be the credential, the token inside
 `OnBehalfOf` / `ActAs`, and the token issued, in any combination. So a
@@ -221,7 +271,9 @@ development and refused in product.
 
 ### Not implemented
 
-Request signatures are not verified; `Validate` reports whether a token is
+Request signatures are not verified, so a WS-Security X.509
+`BinarySecurityToken` signed over the request authenticates nobody (the TLS
+client certificate on the connection does, above); `Validate` reports whether a token is
 **present**, not whether it verifies; `Cancel` recalls nothing already issued;
 and a SAML assertion presented as a credential is trusted only when **this**
 STS signed it — there is no register of foreign issuers.
@@ -258,6 +310,7 @@ in [Error codes](error-codes.md).
 | A UsernameToken password | any password but `invalid` | verified against the person's stored `userPassword`; a person who holds or must hold a second factor is refused their own password with the same fault a wrong one gets, and presents an [app password](authentication.md#the-password-only-doors-and-app-passwords) scoped to `wstrust` |
 | A UsernameToken naming an application | any password but `invalid` | one of the application's unexpired client secrets |
 | A SAML assertion as the credential | believed | must verify against this realm's own signing certificate (`/sts/cert`) and be inside its `Conditions` |
+| A TLS client certificate as the credential | the same as product: it must verify and be this realm's, for a person or an application; a refused one is a fault | as development |
 | A JWT as the credential | believed | must verify with this realm's own key (`/oauth2/jwks`), be within its `exp`, carry the realm's OAuth issuer, and name a person or an application this realm holds |
 | `OnBehalfOf` / `ActAs` | needs no requester credential | needs the requester's own credential, and the inner token must be an assertion or a JWT this STS signed |
 | Who may act for whom | the issuance policy is asked and the act says what would have been refused; the token is issued | the policy must allow the act ([Delegation and impersonation](delegation.md)), or a `wst:RequestFailed` fault |
@@ -276,6 +329,7 @@ The lifetime clamp, the authentication context, the JWT's `jti` and `kid`, and
 | `wstrust.maxTokenLifetimeMin` | `STS_WSTRUST_MAX_TOKEN_LIFETIME_MIN` | `1440` | yes | The ceiling a requested `wst:Lifetime` is clamped to, in both modes. |
 | `wstrust.jwtAlgorithm` | `STS_WSTRUST_JWT_ALGORITHM` | `RS256` | yes | The JWT's `alg`: `RS256`–`RS512`, `PS256`–`PS512`, `ES256`–`ES512` or `EdDSA`. |
 | `wstrust.jwtCertificateHeader` | `STS_WSTRUST_JWT_CERTIFICATE_HEADER` | `x5u` | yes | Whether a JWT names its signing chain: `x5u` (an address), `x5c` (inline), `both` or `none`. |
+| `wstrust.acceptClientCertificate` | `STS_WSTRUST_ACCEPT_CLIENT_CERTIFICATE` | `true` | yes | Whether the verified TLS client certificate on the connection authenticates a requester whose `wsse:Security` carries no credential (see [Credentials](#credentials)). |
 
 A SAML token is shaped by the shared `saml.*` settings and the SAML 2.0
 assertion settings — see the

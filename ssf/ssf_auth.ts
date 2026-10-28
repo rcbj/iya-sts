@@ -15,7 +15,7 @@
 // receiver discovers how to authenticate rather than guessing, and this
 // module's list and that member are one table.
 //
-// **THREE SCHEMES, NOT SIX, AND THAT IS A DECISION.** SCIM offers all six of
+// **FOUR SCHEMES, NOT SIX, AND THAT IS A DECISION.** SCIM offers all six of
 // RFC 7644's because RFC 7644 names all six and a provisioning client meets
 // them in the wild. SSF names none: `authorization_schemes` is an open list of
 // `spec_urn` values and the only one the specification's own examples use is
@@ -24,7 +24,9 @@
 // test that has not implemented a token flow yet can still reach every
 // endpoint, and its 401 path stays reachable when the credential is wrong. The
 // third, GNAP (2026-09-12), is here for a different reason and attemptGnap()
-// argues it: a GNAP client application owns a stream as ITSELF.
+// argues it: a GNAP client application owns a stream as ITSELF. The fourth,
+// the receiver's TLS client certificate (#1049, part of #520), arrives at the
+// same owner by another road, and attemptClientCertificate() argues it.
 //
 // **IN DEVELOPMENT BASIC IS A TURNSTILE AND NOT A LOCK**, exactly as
 // `scim/CLAUDE.md` says of its own: any username with any password but
@@ -199,6 +201,19 @@ interface SsfAuthDeps {
   };
   loadGnapAccess(): { accessCovers(access: any, wanted: any[]): boolean };
   loadGnapRs(): { presentation(req: any): any };
+  // `common/tls_client_certificates.js` (the one mapping from a verified
+  // certificate to a directory entry), `common/role_permissions.ts` (the
+  // roles that authorize a Shared Signals scope) and `common/audit.js`,
+  // required when first asked for. See attemptClientCertificate().
+  loadTlsClientCertificates(): {
+    checkSocket(socket: any, options?: any): any;
+    stillHeld(identity: any): boolean;
+  };
+  loadRolePermissions(): {
+    narrowScope(scope: unknown, subject: object, context?: object): {
+      scope: string; removed: string[]; emptied: boolean; why: string };
+  };
+  loadAudit(): { failure(code: string, row: object): unknown };
 }
 
 // The `authorization_schemes` this transmitter publishes. `spec_urn` is the
@@ -236,7 +251,22 @@ const SCHEMES: Scheme[] = [
           'as a reference string or as an object of type "ssf" with those ' +
           'actions. The principal is the GNAP client application, which is ' +
           'what scopes a stream it owns to the people who approved a grant ' +
-          'to it. Offered while gnap.enabled is on.' }
+          'to it. Offered while gnap.enabled is on.' },
+  // THE RECEIVER'S TLS CLIENT CERTIFICATE (#1049). SSF 1.0's own transmitter
+  // configuration example lists `urn:ietf:rfc:8705` beside RFC 6749, which
+  // is the URN a receiver looks for to learn that mutual TLS authenticates
+  // it here. See attemptClientCertificate().
+  { id: 'clientcert', spec_urn: 'urn:ietf:rfc:8705',
+    name: 'TLS client certificate',
+    what: 'The TLS client certificate on the connection, presented with no ' +
+          'Authorization header. Only a certificate this realm issued to an ' +
+          'application (its TLS client or enrollment Issuing CA, ' +
+          'clientAuth, a urn:sts:application: subjectAltName), not revoked ' +
+          'and still held by the application, is taken. The principal is ' +
+          'the application\'s identifier, the owner a GNAP token for it ' +
+          'would be, and it holds the Shared Signals scopes its ' +
+          'oauthAllowedScope declares and its SSF_READ and SSF_MANAGE ' +
+          'roles authorize; write includes read. Off with ssf.authClientCert.' }
 ];
 
 // The one password Basic refuses, so that a wrong-credential path exists at
@@ -245,14 +275,15 @@ const REFUSED_PASSWORD = 'invalid';
 
 /**
  * The gate in front of the Shared Signals stream endpoints: OAuth 2.0 bearer
- * tokens, GNAP and HTTP Basic, with a read and a write scope.
+ * tokens, GNAP, HTTP Basic and the receiver's TLS client certificate, with a
+ * read and a write scope.
  *
  * In development mode Basic accepts any password but `invalid`; in product mode
  * it verifies the password through `common/credentials.ts`.
  */
 class SsfAuth {
   /**
-   * The three schemes this gate knows, each with its id, name, `spec_urn` and a
+   * The four schemes this gate knows, each with its id, name, `spec_urn` and a
    * description, in the order a 401 offers them.
    */
   static readonly SCHEMES = SCHEMES;
@@ -328,9 +359,22 @@ class SsfAuth {
     return config.value('gnap.enabled') !== false;
   }
 
+  // Whether a TLS client certificate is taken (#1049). A setting, mirroring
+  // `ssf.authBasic`; on by default. Read at call time.
+  private clientCertOffered(): boolean {
+    const { helpers: { log }, config } = this.deps;
+    log.debug("Entering SsfAuth.clientCertOffered().");
+    log.debug("Leaving SsfAuth.clientCertOffered().");
+    return config.value('ssf.authClientCert') !== false;
+  }
+
   private offered(row: Scheme): boolean {
     const { helpers: { log } } = this.deps;
     log.debug("Entering SsfAuth.offered().");
+    if (row.id === 'clientcert') {
+      log.debug("Leaving SsfAuth.offered().");
+      return this.clientCertOffered();
+    }
     if (row.id === 'basic') {
       log.debug("Leaving SsfAuth.offered().");
       return this.basicOffered();
@@ -930,6 +974,232 @@ class SsfAuth {
   }
 
   // -------------------------------------------------------------------------
+  // THE TLS CLIENT CERTIFICATE (#1049, part of #520, 2026-10-27).
+  //
+  // rcbj's decision on #520: stream management and the poll endpoint accept
+  // a receiver authenticated by the TLS client certificate on its
+  // connection, beside its bearer token, resolved to the receiver's
+  // APPLICATION by the identity gate. A stream is its owner's either way, so
+  // a certificate reaches only that application's streams.
+  //
+  // **THE ONE MAPPING.** `common/tls_client_certificates.js`'s
+  // `checkSocket()` — `identityOf()` under this request's ambient realm — is
+  // what says a verified certificate is somebody, and `stillHeld()` whether
+  // the entry it names still lists it; RFC 8705's implicit mapping
+  // (`oauth-oidc/client_auth.js`) and GNAP's PKI trust model ask the same
+  // two. Nothing here reads a subject DN or a CN. So, from that gate:
+  //
+  //   * a chain through no authority this process holds (an anchor somebody
+  //     installed at /admin-api/tls/trust) is, since #1061 (rcbj
+  //     2026-10-27), the ONE entry of this realm storing it, byte for byte,
+  //     in `userCertificate` — an application's entry is that application,
+  //     held to everything below like one this realm issued; stored on no
+  //     entry it is refused STS-SSF-0151, and on more than one STS-SSF-0152.
+  //     (Until then it named nobody here and was not this credential.)
+  //   * a certificate this service issued that the gate refuses (not from a
+  //     realm's TLS client or enrollment Issuing CA, no clientAuth, not
+  //     exactly one urn:sts: name, ANOTHER REALM'S authority — the realm
+  //     boundary), or one issued to a PERSON, is refused STS-SSF-0147: a
+  //     receiver is an application, and a person's own streams are reached
+  //     with a token issued for them;
+  //   * one the application's record no longer lists is STS-SSF-0148;
+  //   * one refused on revocation (`req.certificateRevocation`, which
+  //     `common/app.js` computed under `pki.revocationCheck` before any
+  //     route) is STS-SSF-0150, with the certificate's own code audited.
+  //
+  // A refusal is answered only on an endpoint that needs a permission: the
+  // open description (`need` none) never refuses anybody for what their
+  // browser presented. It is answered in BOTH modes, because what was
+  // presented is a wrong credential, as Basic's reserved password is, and a
+  // receiver under test needs that path; development's turnstile is for a
+  // request that presents nothing.
+  //
+  // **ONLY WITH NO AUTHORIZATION HEADER**, SCIM's rule: a header is the
+  // caller choosing its credential, and a certificate-bound OAuth token
+  // already reaches its binding through `attemptOAuth()`.
+  //
+  // **THE PRINCIPAL IS THE APPLICATION'S IDENTIFIER**, which is what a GNAP
+  // token for it owns a stream as, what `ssfAllowedEvents`, `ssfReceiverId`
+  // and the per-receiver settings are found by (`applications.js`'s
+  // `findSsfOwner()`), and what a client_credentials token owns as wherever
+  // the application's client_id is its identifier — the usual registration.
+  //
+  // **ITS SCOPES ARE WHAT A TOKEN WOULD BE ISSUED, ASKED ON EVERY CALL.**
+  // There is no issuance step to ask #110's and #303's questions at, so they
+  // are asked here: the Shared Signals names the application's
+  // `oauthAllowedScope` declares, LITERALLY (a write declaration's implied
+  // read is not asked for, so that an application holding only SSF_MANAGE
+  // is not audited STS-ADMIN-0821 on every poll), narrowed by
+  // `role_permissions.ts`'s `narrowScope()` — the issuance policy, with its
+  // SSF_READ and SSF_MANAGE membership — exactly as a client_credentials
+  // token request. Then `ssf_scopes.ts`'s one rule: write includes read. A
+  // permission nothing authorizes is STS-SSF-0149, a 403 naming the two
+  // halves. A role or a declaration taken away stops the certificate at its
+  // next call, which is what #110 asks of a token.
+  // -------------------------------------------------------------------------
+  private attemptClientCertificate(req: AuthRequest,
+                                   need: string): Decision | null {
+    const { helpers: { log }, errorCodes, scopePolicy, ssfScopes,
+            loadTlsClientCertificates, loadRolePermissions,
+            loadAudit } = this.deps;
+    log.debug("Entering SsfAuth.attemptClientCertificate().");
+    if (this.authorizationScheme(req)) {
+      log.debug("Leaving SsfAuth.attemptClientCertificate(). An " +
+                "Authorization header was sent.");
+      return null;
+    }
+    if (!this.clientCertOffered()) {
+      log.debug("Leaving SsfAuth.attemptClientCertificate(). Not offered.");
+      return null;
+    }
+    const socket = req.socket || req.connection;
+    if (!socket || typeof socket.getPeerCertificate !== 'function' ||
+        socket.authorized !== true) {
+      log.debug("Leaving SsfAuth.attemptClientCertificate(). No verified " +
+                "certificate on this connection.");
+      return null;
+    }
+    const decides = need !== 'none';
+    const revocation = req.certificateRevocation || null;
+    if (revocation && revocation.refused) {
+      const code = errorCodes.codeOf(revocation) || 'STS-PKI-0118';
+      try {
+        loadAudit().failure(code, {
+          protocol: 'SSF', channel: 'http',
+          target: req.originalUrl || req.url,
+          summary: 'a verified client certificate was not accepted as a ' +
+                   'Shared Signals receiver credential: ' + revocation.why,
+          outcome: 'refused'
+        });
+      } catch (e) {
+        // No audit log in this process (a test driving the gate alone). The
+        // refusal below still carries its code.
+        log.debug("Caught in SsfAuth.attemptClientCertificate(): " +
+                  ((e && e.message) || e));
+      }
+      log.debug("Leaving SsfAuth.attemptClientCertificate(). Refused on " +
+                "revocation.");
+      return decides ? this.refusal('STS-SSF-0150', 401,
+        'The TLS client certificate on this connection was refused on ' +
+        'revocation (' + String(revocation.why || 'revoked') + '), so it ' +
+        'authenticates no receiver. Present a certificate this realm ' +
+        'issued to your application and has not revoked, or an access ' +
+        'token.',
+        { 'WWW-Authenticate': this.challenges(req) }) : null;
+    }
+    let gate: any = null;
+    try {
+      gate = loadTlsClientCertificates().checkSocket(socket,
+                                                     { stored: true });
+    } catch (e) {
+      // No certificate authority in this process, so nothing here was
+      // issued by one and nothing names an application.
+      log.debug("Caught in SsfAuth.attemptClientCertificate(): " +
+                ((e && e.message) || e));
+      gate = null;
+    }
+    const identity = (gate && gate.identity) || {};
+    if (gate && !gate.ok && (gate.error === 'NOT_STORED' ||
+                             gate.error === 'STORED_TWICE')) {
+      const twice = gate.error === 'STORED_TWICE';
+      log.debug("Leaving SsfAuth.attemptClientCertificate(). An outside " +
+                "certificate, not stored on one entry.");
+      return decides ? this.refusal(twice ? 'STS-SSF-0152' : 'STS-SSF-0151',
+        401, 'The TLS client certificate on this connection is from an ' +
+        'outside certificate authority and ' + (twice
+          ? 'is stored on more than one entry here, so it names no ' +
+            'receiver. Store it on the application\'s entry alone.'
+          : 'is not stored on any entry here. An outside certificate ' +
+            'authenticates a receiver only when it is stored, byte for ' +
+            'byte, in userCertificate on that application\'s entry; a ' +
+            'renewed certificate is stored again.') +
+        ' Or present an access token.',
+        { 'WWW-Authenticate': this.challenges(req) }) : null;
+    }
+    if (!gate || (gate.ok && !identity.issuedHere && !identity.accepted)) {
+      log.debug("Leaving SsfAuth.attemptClientCertificate(). Not a " +
+                "certificate this service issued.");
+      return null;
+    }
+    if (!gate.ok || !identity.accepted || identity.kind !== 'application') {
+      const why = !gate.ok
+        ? String(gate.why || identity.why || 'it is not an identity here')
+        : 'it was issued to the ' + String(identity.kind || 'holder') +
+          ' "' + String(identity.username || '') + '", and a receiver ' +
+          'authenticated by its certificate is an application';
+      log.debug("Leaving SsfAuth.attemptClientCertificate(). Not an " +
+                "application of this realm: " + why);
+      return decides ? this.refusal('STS-SSF-0147', 401,
+        'The TLS client certificate on this connection does not authenticate ' +
+        'a Shared Signals receiver here: ' + why + '. A receiver presents a ' +
+        'TLS client certificate this realm issued to its application, or an ' +
+        'access token.',
+        { 'WWW-Authenticate': this.challenges(req) }) : null;
+    }
+    const identifier = String(identity.username || '');
+    let held = false;
+    try {
+      held = loadTlsClientCertificates().stillHeld(identity);
+    } catch (e) {
+      log.debug("Caught in SsfAuth.attemptClientCertificate(): " +
+                ((e && e.message) || e));
+      held = false;
+    }
+    if (!held) {
+      log.debug("Leaving SsfAuth.attemptClientCertificate(). No longer " +
+                "held.");
+      return decides ? this.refusal('STS-SSF-0148', 401,
+        'The TLS client certificate on this connection was issued to the ' +
+        'application "' + identifier + '" (serial ' +
+        String(identity.serialHex || '') + '), and its record no longer ' +
+        'lists it — it was taken off or replaced. A certificate the ' +
+        'application does not hold is not its credential.',
+        { 'WWW-Authenticate': this.challenges(req) }) : null;
+    }
+    let scopes = '';
+    if (decides) {
+      const published = ssfScopes.published();
+      const declared = (scopePolicy.declaredScopes(identifier) || [])
+        .filter(function (one) {
+          return published.indexOf(one) >= 0;
+        });
+      if (declared.length) {
+        scopes = loadRolePermissions().narrowScope(declared.join(' '),
+          { kind: 'application', name: identifier, authenticated: true },
+          { clientId: identifier, grant: 'tls_client_certificate',
+            stage: 'ssf' }).scope;
+      }
+      if (!ssfScopes.covers(scopes, need)) {
+        const accepted = this.acceptedFor(need);
+        log.debug("Leaving SsfAuth.attemptClientCertificate(). The " +
+                  "application holds no \"" + need + "\" permission.");
+        return this.refusal('STS-SSF-0149', 403,
+          'The TLS client certificate authenticates the application "' +
+          identifier + '", which ' + (declared.length
+            ? 'declares ' + declared.join(', ') + ' and is authorized ' +
+              (scopes ? 'only ' + scopes : 'none of them') + ' by its roles'
+            : 'declares no Shared Signals scope in its oauthAllowedScope') +
+          ', and this operation needs one of "' + accepted.join('", "') +
+          '". Write includes read. A certificate holds what a token for ' +
+          'the application would be issued: the scope declared on the ' +
+          'application, and the application a member of SSF_READ or ' +
+          'SSF_MANAGE.',
+          { 'WWW-Authenticate': this.challenges(req) }, 'access_denied');
+      }
+    }
+    log.debug("Leaving SsfAuth.attemptClientCertificate(). Accepted " +
+              identifier + '.');
+    return { ok: true, status: 200, scheme: 'clientcert',
+      principal: identifier, scopes: scopes, err: '', description: '',
+      headers: {},
+      owner: { kind: 'application', name: identifier },
+      note: 'TLS client certificate (' + (identity.stored === true
+        ? 'SHA-256 ' + String(identity.fingerprint || '')
+        : 'serial ' + String(identity.serialHex || '')) + ', ' +
+            String(identity.why || 'issued by this realm') + ')' };
+  }
+
+  // -------------------------------------------------------------------------
   // THE ONE CALL EVERY PROTECTED ENDPOINT MAKES.
   //
   //   need   'read', 'write' or 'none'
@@ -943,7 +1213,8 @@ class SsfAuth {
    * Authenticates a request to a protected endpoint and decides whether it
    * holds the scope the operation needs.
    *
-   * It tries OAuth, then GNAP, then Basic. It sends nothing itself: the
+   * It tries OAuth, then GNAP, then Basic, then — with no Authorization
+   * header — the TLS client certificate. It sends nothing itself: the
    * decision carries `ok`, `status`, `err`, `description`, `headers` (the
    * challenges on a 401), `principal`, `scheme`, `scopes` and, on a refusal,
    * the error code, and the route writes the body.
@@ -962,6 +1233,9 @@ class SsfAuth {
     }
     if (!decision) {
       decision = this.attemptBasic(req);
+    }
+    if (!decision) {
+      decision = this.attemptClientCertificate(req, wanted);
     }
     if (decision) {
       log.debug("Leaving SsfAuth.authenticate(). A credential was " +
@@ -991,13 +1265,17 @@ class SsfAuth {
           'with the read scope (ssf.read) or the write scope ' +
           '(ssf.manage), which includes read' +
           (this.basicOffered() ? ', or a directory person\'s username and ' +
-           'password over Basic' : '') + '.'
+           'password over Basic' : '') +
+          (this.clientCertOffered() ? ', or a TLS client certificate this ' +
+           'realm issued to your application' : '') + '.'
         : 'Any scheme in the WWW-Authenticate headers will do and each is ' +
           'permissive: an access token from this service\'s own token ' +
           'endpoint with the read scope (ssf.read) or the write scope ' +
           '(ssf.manage), which includes read' +
           (this.basicOffered() ? ', or any username with any password but ' +
-          '"' + REFUSED_PASSWORD + '" over Basic' : '') + '.') +
+          '"' + REFUSED_PASSWORD + '" over Basic' : '') +
+          (this.clientCertOffered() ? ', or a TLS client certificate this ' +
+           'realm issued to your application' : '') + '.') +
       ' The transmitter configuration at /.well-known/ssf-configuration ' +
       'lists the schemes and is readable without a credential for exactly ' +
       'that reason.',
@@ -1095,6 +1373,15 @@ class SsfAuth {
       },
       loadGnapRs: function () {
         return require('../gnap/gnap_rs');
+      },
+      loadTlsClientCertificates: function () {
+        return require('../common/tls_client_certificates');
+      },
+      loadRolePermissions: function () {
+        return require('../common/role_permissions');
+      },
+      loadAudit: function () {
+        return require('../common/audit');
       }
     };
   }

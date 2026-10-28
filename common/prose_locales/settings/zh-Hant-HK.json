@@ -1639,17 +1639,9 @@
     "en": "66b6d169a977d0ba",
     "text": "LDAPS：不要求客戶端證書"
   },
-  "ldap.ldapsDisableOptionalClientCertificate|description": {
-    "en": "7e1993d7f889bc3c",
-    "text": "LDAPS 不傳送 CertificateRequest。預設為開啟，這是 LDAPS 一直以來的做法：繫結是目錄客戶端表明自己身分的方式，而在每個持有證書的客戶端面前跳出證書提示會令人意外。關閉時會向每個連線要求證書但不強制；出示的證書會對照客戶端信任儲存區驗證，但不會繫結任何人（此處沒有 SASL EXTERNAL）。"
-  },
   "ldap.ldapsRequireClientCertificate|label": {
     "en": "eff4646ac01e4612",
     "text": "LDAPS：要求客戶端證書"
-  },
-  "ldap.ldapsRequireClientCertificate|description": {
-    "en": "2c73995bcc16b3fa",
-    "text": "LDAPS 在交握時拒絕每個未出示鏈結到客戶端信任儲存區之客戶端證書的連線——這是繫結前方的第二道關卡，而繫結仍決定連線的身分。優先於上方的切換。預設為關閉。"
   },
   "debugger.disableOptionalClientCertificate|label": {
     "en": "df19c772421bba66",
@@ -2240,8 +2232,8 @@
     "text": "SSF 端點是否在 OAuth 2.0 存取權杖之外也接受 HTTP Basic，並在 authorization_schemes 中發布。在開發模式下，任何用戶名稱搭配 \"invalid\" 以外的任何密碼都能通過；在產品模式下，密碼會依該人員雜湊後的 userPassword 驗證。無論哪種情況，Basic 主體都擁有兩個範圍，因為 Basic 不攜帶任何範圍——因此要對每個呼叫者強制執行 ssf.read 與 ssf.manage 的部署應關閉此項。"
   },
   "ssf.internalReceivers|description": {
-    "en": "1a148e2b3a63a17d",
-    "text": "此服務是否為其「自己的」管理主控台與用戶入口網站植入 Shared Signals 串流，使兩者各自接收每個 CAEP 與 RISC 事件——每隔 ssf.internalPollMs 透過 RFC 8936 輪詢從本服務自己的 /ssf/poll 收取（#771）——並在 /admin/signals 與 /portal/signals 上繪製所收到的內容。它們是「一般」串流——在 /admin/ssf 暫停、縮減或刪除其中一個，它會保持該狀態直到重新啟動。"
+    "en": "0a23fbb0f030f814",
+    "text": "此服務是否為其「自己的」管理主控台、用戶入口網站與報表應用程式（#1042）植入 Shared Signals 串流，使三者各自接收每個 CAEP 與 RISC 事件——每隔 ssf.internalPollMs 透過 RFC 8936 輪詢從本服務自己的 /ssf/poll 收取（#771）——並在 /admin/signals、/portal/signals 與 /report/signals 上繪製所收到的內容。它們是「一般」串流——在 /admin/ssf 暫停、縮減或刪除其中一個，它會保持該狀態直到重新啟動。"
   },
   "ssf.internalPollMs|description": {
     "en": "b80cedcb611f2fd3",
@@ -2284,8 +2276,8 @@
     "text": "數據集上傳目錄"
   },
   "risk.uploadDirectory|description": {
-    "en": "347858cd0224743e",
-    "text": "上傳的數據集檔案在匯入期間寫入的位置，並在匯入結束時（不論如何結束）從中刪除。相對路徑以此套件根目錄為基準解析，如同 persistence.dataDir。請為它提供專屬的磁碟區，空間足以容納您將上傳的最大檔案——壓縮後的大小；不會寫入任何展開後的內容——因為當目錄的可用空間不足以容納上傳時，上傳會被拒絕。此存放庫隨附的每個堆疊都會在此掛載一個磁碟區。"
+    "en": "ddab5a9b7f3d0a2a",
+    "text": "上傳的數據集檔案在匯入期間寫入的位置，亦是報告作業在儲存之前建構的位置；每個檔案在其匯入或作業結束時（不論如何結束）都會被刪除。相對路徑以此套件根目錄為基準解析，如同 persistence.dataDir。請為它提供專屬的磁碟區，空間足以容納您將上傳的最大檔案——壓縮後的大小；不會寫入任何展開後的內容——以及每個同時執行的報告作業所需的 report.asyncMaxBytes，因為當目錄的可用空間不足以容納時，上傳或作業會被拒絕。此存放庫隨附的每個堆疊都會在此掛載一個磁碟區。"
   },
   "risk.uploadMaxBytes|label": {
     "en": "959b6b79f9136a03",

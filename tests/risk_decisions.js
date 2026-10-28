@@ -21,6 +21,11 @@
 //      factor, or a security key where a signal is about the device, and
 //      permits once the authentication carries it. A refusal tells a client
 //      nothing about the level or the signals. No facts decides on roles.
+//      AND (#503) A SIGNAL BELOW MEDIUM: at LOW a Tor exit, a reputation
+//      list or the operator's deny list asks for a second factor, which
+//      the level alone would not — the `stepUpSignals` parameter; a signal
+//      on `refuseSignals` refuses at any level; `none` leaves LOW to the
+//      roles; the console is stepped up or alarmed on them, never refused.
 //   C. NO WAY ROUND. The gate's two shortcuts — no application named,
 //      `roles.enforceIssuance` off — waive the role question only.
 //   D. WHERE THE FACTS COME FROM when a caller names none: the session it
@@ -175,7 +180,8 @@ function childMain() {
     note(built.ok && ruleIds.join(',') === 'device-compromised,' +
          'device-required,protocol-not-declared,authn-mechanism,' +
          'mfa-mechanism,risk-high,risk-medium-key,' +
-         'risk-medium-second-factor,risk-protected-key,' +
+         'risk-medium-second-factor,risk-signal-step-up,' +
+         'risk-protected-key,' +
          'risk-protected-second-factor,' +
          // #740: a device-bound session the application requires. Always
          // in the document; a missing attribute makes it inapplicable.
@@ -243,7 +249,7 @@ function childMain() {
          'A1. the built-in issuance policy carries the two device rules ' +
          '(#164), the protocol-declaration rule, the sign-in mechanism ' +
          'rule (#457), the second-factor rule (#475), the three risk ' +
-         'rules, the console\'s two step-ups and ' +
+         'rules and #503\'s signal step-up, the console\'s two step-ups and ' +
          'its alarm ahead of the role rule, under ordered-deny-overrides',
          ruleIds.join(',') + ' ' + (built.policy || {}).combiningAlgId);
     const rolesOnly = templates.build('role-issuance',
@@ -333,6 +339,116 @@ function childMain() {
          riskEngine.satisfiedBy(['pwd'], '1').length === 0,
          'B7. a code after a password meets a second factor; a key meets ' +
          'both; a password alone meets neither');
+    // #503: a signal on the step-up list decides at LOW, where the level
+    // alone asks for nothing.
+    const lowTor = ask(facts('LOW', ['tor-exit']));
+    note(!lowTor.allowed && lowTor.risk && lowTor.risk.action === 'step-up' &&
+         lowTor.risk.factor === 'second-factor',
+         'B8. LOW from a Tor exit asks for a second factor (#503): the ' +
+         'signal decides where the level would not',
+         JSON.stringify(lowTor.risk));
+    const lowDeny = ask(facts('LOW', ['operator-deny']));
+    const lowList = ask(facts('LOW', ['reputation']));
+    note(!lowDeny.allowed && lowDeny.risk &&
+         lowDeny.risk.action === 'step-up' &&
+         lowDeny.risk.factor === 'second-factor' && !lowList.allowed &&
+         lowList.risk && lowList.risk.factor === 'second-factor',
+         'B9. so do the operator\'s deny list and the reputation list',
+         JSON.stringify([lowDeny.risk, lowList.risk]));
+    note(ask(facts('LOW', ['tor-exit'], ['second-factor'])).allowed &&
+         ask(facts('LOW', ['operator-deny'],
+                   ['security-key', 'second-factor'])).allowed,
+         'B10. and permits once the authentication carries one');
+    note(ask(facts('LOW', ['new-device'])).allowed &&
+         ask(facts('LOW', ['network-failures', 'operator-allow'])).allowed &&
+         ask(facts('LOW', ['automated-client'])).allowed,
+         'B11. a signal not on the list leaves LOW decided on roles — ' +
+         'MEDIUM is still where new-device and a key signal ask');
+    // The parameters, through the PDP directly: `none` builds no rule, a
+    // refuse list refuses at LOW and at MEDIUM, and the console is stepped
+    // up or alarmed rather than refused on either list.
+    const riskActionOf = function (answer) {
+      let action = null;
+      let factor = null;
+      (answer.obligations || []).forEach(function (o) {
+        if (o.id !== RISK.OBLIGATION) {
+          return;
+        }
+        (o.assignments || []).forEach(function (a) {
+          const value = String(a.lexical !== undefined ? a.lexical
+                                                       : a.value);
+          if (a.attributeId === RISK.ACTION) {
+            action = value;
+          }
+          if (a.attributeId === RISK.FACTOR) {
+            factor = value;
+          }
+        });
+      });
+      return answer.decision + (action ? ':' + action : '') +
+             (factor ? ':' + factor : '');
+    };
+    const CONSOLE_APP = 'sts-admin-console';
+    const decideWith = function (answers, application, risk) {
+      const doc = templates.build('role-issuance', answers,
+                                  { name: 'role-issuance' });
+      const req = rolePep.buildRequest({
+        application: application, kind: 'start-session',
+        subject: { kind: 'user', name: 'rd-unit', authenticated: true },
+        risk: Object.assign({ score: 2, satisfied: [], enforced: true },
+                            risk) }, ['EVERYBODY'], [], ['EVERYBODY']);
+      return doc.ok ? riskActionOf(pdp.evaluate(doc.policy, req, {}))
+                    : 'not built: ' + doc.why;
+    };
+    const lowSignal = { level: 'LOW', signals: ['tor-exit'] };
+    note(decideWith({ stepUpSignals: 'none' }, CLIENT, lowSignal) ===
+           'Permit' &&
+         !templates.build('role-issuance', { stepUpSignals: 'none' },
+                          { name: 'role-issuance' }).policy.rules
+           .some(function (r) { return /risk-signal-step-up$/.test(r.id); }),
+         'B12. stepUpSignals: none builds no such rule, and LOW from a Tor ' +
+         'exit is permitted on roles alone');
+    note(decideWith({ stepUpSignals: 'new-device' }, CLIENT, lowSignal) ===
+           'Permit' &&
+         decideWith({ stepUpSignals: 'new-device' }, CLIENT,
+                    { level: 'LOW', signals: ['new-device'] }) ===
+           'Deny:step-up:second-factor',
+         'B13. the list is the realm\'s: another signal on it asks, and ' +
+         'the Tor exit off it does not');
+    const refusing = { refuseSignals: 'operator-deny' };
+    note(decideWith(refusing, CLIENT,
+                    { level: 'LOW', signals: ['operator-deny'] }) ===
+           'Deny:refuse' &&
+         decideWith(refusing, CLIENT,
+                    { level: 'MEDIUM', signals: ['operator-deny'],
+                      satisfied: ['security-key', 'second-factor'] }) ===
+           'Deny:refuse' &&
+         decideWith(refusing, CLIENT,
+                    { level: 'MEDIUM', signals: ['automated-client'] }) ===
+           'Deny:step-up:security-key' &&
+         decideWith(refusing, CLIENT, lowSignal) ===
+           'Deny:step-up:second-factor',
+         'B14. refuseSignals refuses at LOW and at MEDIUM however many ' +
+         'factors were carried, and the other rules still decide the rest');
+    note(decideWith(refusing, CONSOLE_APP,
+                    { level: 'LOW', signals: ['operator-deny'] }) ===
+           'Permit' &&
+         decideWith({}, CONSOLE_APP, lowSignal) === 'Permit',
+         'B15. the console is never refused on either list: with nothing ' +
+         'held it is permitted (the alarm, I1, is on the audit log)');
+    const ids = function (answers) {
+      return templates.build('role-issuance', answers,
+                             { name: 'role-issuance' }).policy.rules
+        .map(function (r) { return r.id.split(':rule:')[1]; })
+        .filter(function (id) { return /^risk-/.test(id); }).join(',');
+    };
+    note(ids(refusing) === 'risk-high,risk-signal-refuse,risk-medium-key,' +
+           'risk-medium-second-factor,risk-signal-step-up,' +
+           'risk-protected-key,risk-protected-second-factor,' +
+           'risk-protected-alarm',
+         'B16. the refuse rule sits after HIGH and the step-up rule after ' +
+         'the MEDIUM ones, so under ordered-deny-overrides the level\'s ' +
+         'rule speaks first', ids(refusing));
 
     // --- C. no way round ----------------------------------------------------
     note(!ask(facts('HIGH'), { application: '' }).allowed &&
@@ -723,8 +839,9 @@ function childMain() {
          // #536, #718's two post-quantum passkey rules, the five
          // Kerberos-trust exchange rules of #430 Phase 3, #724's three
          // recovery rules, #941's two attestation-algorithm rules,
-         // #940's profile-algorithm rule and #740's device-bound rule.
-         unprotectedPolicy.policy.rules.length === 94,
+         // #940's profile-algorithm rule, #740's device-bound rule and
+         // #503's signal step-up rule.
+         unprotectedPolicy.policy.rules.length === 95,
          'I5. neverLockOut none puts the console under the three rules, ' +
          'and HIGH refuses it', plain.decision);
 

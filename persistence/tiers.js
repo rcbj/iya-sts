@@ -416,6 +416,10 @@ const CELL_MINTED = [
   // Each node's own listener key (2026-10-08), sealed: a node is a member of
   // one cell, and its key never leaves that cell's store.
   'tls.listenerKeys', 'tls.presentedChains',
+  // The server name a TLS 1.2 ticket was made under (#507), beside the
+  // chain it presented: both are what a node that did not make the ticket
+  // needs when the shared ticket key brings the session to it.
+  'tls.ticketNames',
   'tls.sessionTicketKey', 'vc_issued.byNotification', 'vc_issued.bySubject',
   'vc_issued.credentials',
   'vc_issuer.lastCredentialRequest', 'vc_issuer.notificationIds',

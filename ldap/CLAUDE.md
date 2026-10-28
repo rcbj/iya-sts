@@ -525,6 +525,12 @@ seeds no demonstration data — the bind account, alice, bob, carol and the two
 groups, under the realm's own base. A realm is a whole logical copy of this
 service, and one whose `ldapsearch` taught less than the default's would not be.
 `realms.onRemove()` purges the subtree, for the reason every other store purges.
+**Not for a realm that REPLICATED** (2026-10-27): the builder's third
+argument says where the realm came from, and one another process made has
+its subtree on the way in the same change log, so seeding it here raced
+those rows (STS-STORE-0052 per entry on every replica, and a write on the
+losing copy lost). The builder's own comment and `persistence/CLAUDE.md`
+carry it; `tests/realm_replicated_seed.js` holds it.
 
 ### `const entries = realms.map()`, and why it is not a subtree of one Map
 
@@ -1037,6 +1043,24 @@ again, and this one is this service's own credential at a REAL foreign
 service. Both are SEALED on the entry since 2026-10-01 wherever the process
 holds a durable key-encryption key (`federation.js`'s `sealClientSecret()`),
 and in the clear without one.
+
+## A GROUP'S OWN EMAIL ADDRESS (#989, 2026-10-26)
+
+A group entry may carry one `mail` value: the address a report definition
+shared with the group sends its result notices to (`report/CLAUDE.md`).
+`createGroup()` takes it as `opts.mail`, and `setGroupMail(group, mail,
+options)` sets or clears it afterwards — the group page's *Email address*
+form and `POST /admin-api/groups/set-mail` both reach it through the
+`setGroupWriter()` slot, whose member list grew by one. The shape rule
+(`GROUP_MAIL_SHAPE`: one local part, one `@`, a domain with a dot, no
+whitespace) is this file's and refuses with `STS-LDAP-0177`; it is
+deliberately not the mail channel's `addressProblem()`, which this file
+would otherwise require for one regular expression. The write leaves the
+operational three out for `addGroupMember()`'s reason, touches nothing
+else on the entry, and is idempotent. The mail channel reads the address
+back through the `groupEntry(dn)` hook beside `personEntry` in the
+`mailChannel.setDirectory()` filler. `tests/directory_group_writes.js`
+section 6.
 
 ## `ou=devices`: A DEVICE IS AN ENTRY (2026-09-23, #130)
 
@@ -2150,7 +2174,9 @@ red.
 **The fork is `rcbj/node-ldapjs` and it is ours to change (2026-09-18)** —
 the first change is the `routeAnonymousBinds` server option
 (the bind refusals, below), the second `encodeErrorMessage`, which
-sends a refusal's text as its diagnosticMessage (#261). A change goes in THE FORK, never as a
+sends a refusal's text as its diagnosticMessage (#261), and the third and
+fourth `saslMechanisms` and `bindDnFromHandler` (#1047, *SASL EXTERNAL*,
+below). A change goes in THE FORK, never as a
 patch from this repository into the library: an option whose default is
 upstream's behaviour, a test in the fork's own `test/` (tap), a line in its
 `docs/`, a commit pushed to `rcbj/node-ldapjs`, and the submodule pin bumped
@@ -2195,8 +2221,9 @@ mode.
 * **The LDAP directory takes that further: EVERY BIND SUCCEEDS**, any DN and any
   password, anonymous included — **on LDAPS (636) exactly as on the plain port**,
   since the two listeners share one set of handlers. TLS there keeps the password off
-  the wire and does not make it checked, and a client certificate is never even asked
-  for on that socket. The single exception is the literal password
+  the wire and does not make it checked, and a client certificate is not asked
+  for on that socket by default (a SASL EXTERNAL bind, which IS checked in
+  both modes, is below). The single exception is the literal password
   `invalid`, which is refused with `LDAP_INVALID_CREDENTIALS` (49). That exception
   is not a softening; it is what keeps result code 49 reachable, and 49 is the code
   an LDAP client's error handling is built around. The directory is also
@@ -3355,7 +3382,7 @@ where a seen-only one is refused.
 from: it records the DN a successful bind handler named on the connection
 (`conn.ldap.bindDN`, `cn=anonymous` until then) and leaves every rule after that
 to these handlers. It has no access control, no attribute visibility, no StartTLS
-on the server side, no SASL and no limit on guesses. The section above is the
+on the server side, no SASL beyond decoding it (#1047) and no limit on guesses. The section above is the
 write half; this is the rest, and the block headed *THE DIRECTORY'S READ AND BIND
 SECURITY* in `ldap_server.js` argues each rule where it is enforced. Five
 `common/mode.js` predicates decide whether each asks at all, and all five are
@@ -3747,6 +3774,76 @@ the handler), a SCIM create of a User or a Group, and `POST
   `directory_create_claims.ts`'s header has it, and
   `tests/cluster_autocreate_subject.js` holds both halves.
 
+## SASL EXTERNAL: A PERSON BOUND BY THE CERTIFICATE THIS SERVICE ISSUED (#1047, 2026-10-27)
+
+**RFC 4513 section 5.2.1.2 over LDAPS, and the decisions are rcbj's on #1047
+and #520.** A SASL EXTERNAL bind binds the connection as the person entry a
+verified TLS client certificate names. Four things are worth knowing before
+changing it; the block headed *THE CERTIFICATE BIND* above `server.bind` in
+`ldap_server.js` argues each where it is enforced.
+
+* **There is no setting of its own.** A connection carries a verified
+  certificate only when 636 asks for one — #423's pair, optional
+  (`ldap.ldapsDisableOptionalClientCertificate` off) or required
+  (`ldap.ldapsRequireClientCertificate` on) — and the bind is available
+  exactly then. A switch `ldap.clientCertificates` was proposed and dropped:
+  it could only ever have refused something the pair had already made
+  possible. At the defaults nothing asks, every EXTERNAL bind is refused as
+  having no certificate (`STS-LDAP-0179`), and #418's posture
+  (`tests/ldaps_no_certificate_request.js`) is untouched.
+  `/admin/ldap/service` and `/admin-api/ldap/service` publish the mode
+  (`tls.clientCertificateMode`), whether the bind is available
+  (`tls.saslExternal`) and a sentence per mode — rule 7.
+* **ONLY A CERTIFICATE THIS SERVICE ISSUED, TO A PERSON WHO HAS AN ENTRY.**
+  `common/tls_client_certificates.js`'s `checkSocket()` (its `identityOf()`
+  under the bind's realm) decides; the name is the `urn:sts:person:`
+  subjectAltName; `stillHeld()` and revocation are asked; a disabled account
+  is refused; nothing is read off a CN or subject and no entry is created.
+  An APPLICATION's certificate is refused (`0185`) by #106's rule that only a
+  person binds. **A certificate from an outside authority trusted through
+  `/admin/tls/trust` (`issuedHere: false`) was refused (`0182`, retired)
+  until #1061**, which is how such an entry is now "configured ahead of
+  time": the gate is asked `{ stored: true }`, and the certificate binds as
+  the one PERSON entry of the bind's realm storing it in `userCertificate`
+  (`common/CLAUDE.md` 3ag) — `getEntry(identity.dn)`, not a name lookup.
+  Stored on no entry it is `0192`, on more than one `0193`; stored on an
+  application it is `0185` like an application's issued certificate. The
+  root DSE's `tls.saslExternal.outsideCertificateAuthorities` is `true`
+  since. The authzId (section
+  5.2.1.8) is honoured only as `dn:` or `u:` naming the same entry (`0189`,
+  50); a non-empty bind name is held to the same (`0190`). Each other refusal
+  has its own code, `0178`–`0188`. It is the same in both modes and has no
+  rate limit: the handshake verified the chain, and nothing is guessed.
+* **THE REALM** of an EXTERNAL bind with no name is the authzId's `dn:`
+  where one is sent, else the realm whose Issuing CA signed the certificate
+  — `externalBindRealmDn()`, which the realm wrapper asks when the DN is
+  empty. A certificate held against another realm's DN is `0184`. **An
+  outside certificate names no realm**, so its empty bind is in the DEFAULT
+  realm; a person of another realm sends `dn:<their DN>`, and the store is
+  looked up in that realm.
+* **THE SOCKET IS THE FRONT PROCESS'S, THE DECISION IS WHEREVER THE BIND
+  RUNS.** `withConnectionCertificate()`, the bind's outermost wrapper, reads
+  the certificate (`revocation_status.fromSocket()`) and awaits its
+  revocation verdict in the process holding the socket; both travel in the
+  dispatched bind's shape (`sasl.external`, base64), and `externalBind()`
+  decides from them in a worker exactly as in process. The bound DN comes
+  back as the outcome's `bindDN`, which `applyOperationResult()` sets on the
+  real response as `res.bindDN` for node-ldapjs to bind
+  (`bindDnFromHandler`) — without that option the connection would be bound
+  as the request's empty name, i.e. anonymous.
+
+**The fork's half**: node-ldapjs could not decode a SASL bind at all —
+`@ldapjs/messages`' BindRequest throws on the sasl choice and the connection
+was destroyed. `saslMechanisms` makes the fork's parser decode it
+(`lib/messages/sasl_bind.js`, without touching `@ldapjs/messages`), routes a
+listed mechanism to the bind handlers with `req.authentication`,
+`req.mechanism` and `req.saslCredentials`, never lets it match the
+anonymous-bind shortcut, and answers any other mechanism 7 itself, emitting
+`saslMechanismNotSupported` (recorded here as `0178`). Both servers are asked
+whether the options took (`STS-LDAP-0191`). `tests/ldap_sasl_external.js`
+holds the service over real handshakes in the three modes; the fork's
+`test/sasl_bind.test.js` holds the options.
+
 ## A SECOND-FACTOR PERSON'S BIND, AND `stsAppPassword` (2026-09-22, #101)
 
 The simple bind passes `door: 'ldap'` to `credentials.verify()`, so in product
@@ -3921,3 +4018,53 @@ this directory's:
 * **`peopleMissing()` IS A WALK**, said at the function: no index records
   what an entry LACKS. It answers null in a windowed process, where the
   directory is in the store, and the page gives the RFC 4515 filter instead.
+
+## `userCertificate`: WHAT AN OUTSIDE CERTIFICATE IS STORED IN, AND HOW IT IS FOUND (#1061, 2026-10-27)
+
+The rule is `common/CLAUDE.md` 3ag. This file owns where the certificate is
+and how a presented one finds it:
+
+* **STORED AS RFC 4522 SAYS**, `userCertificate;binary`, base64 DER — what
+  `@ldapjs/attribute` hands a handler for a `;binary` type and what an
+  `ldapsearch` reads back as a certificate. The bare type is read too (base64
+  or PEM), so a hand-written entry is not silently unlike one written here.
+  `changeStoredCertificate()` is the one writer the console and `/admin-api`
+  use (never creates an entry, touches the DN it wrote);
+  `storedCertificatesOf()` reads; an LDAP modify writes the same attribute
+  under product mode's write authorization. **It is deliberately NOT in
+  `CREDENTIAL_ATTRIBUTE_DOORS`** — rcbj named LDAP as a door for it, and
+  #237's reason for refusing a credential over the socket (its door signals
+  and checks what LDAP cannot) does not apply to a public certificate.
+* **FOUND BY AN INDEX, NEVER A WALK OF THE PEOPLE** (`certificateHolders()`,
+  offered on certificate enrollment's slot). In a windowed process the store
+  answers: `persistence/directory_codec.js` writes a DERIVED value key,
+  `usercertificatesha256` = the SHA-256 of each stored DER, into
+  `value_keys`, and `byAttribute` asks it — one GIN probe, no schema version
+  (the column is the service's), and an entry written before #1061 has no key
+  until it is next written, which storing the certificate is. The resident
+  half (applications; everything, outside a window) is the user-handle
+  index's arrangement: built from the holders, CHECKED (a hit is read back
+  and its digest recomputed), on its own clock `certificatesVersion`, moved by
+  `noteCertificatesTouched()` from `touchDirectory()` only for a write naming
+  no DN, one to an entry the index holds, or one to an entry now storing a
+  certificate — so a sign-in's own writes do not rebuild it. **Unlike the
+  user-handle index it is rebuilt whenever that clock moved, not only on a
+  miss**: it answers HOW MANY entries store a certificate, and a second
+  holder leaves the first hit good and the count wrong (the first run of
+  `tests/stored_certificates.js` caught exactly that). A write that names no
+  DN — `writeStoredPassword()` is one — still moves it, so outside a window
+  the next lookup walks the realm once; the window's resident half is the
+  non-people only. `certificateIndexState()` exposes it for the tests.
+* **WHAT A HOLDER IS**: under `ou=users`, a person (by `uid`, else the RDN
+  value); under `ou=applications` with an `appIdentifier`, that
+  application; anything else, an entry that is no identity, which the gate
+  refuses as `NOT_STORED` (but counts towards "stored twice"). At most three
+  are answered: the caller asks only whether there is exactly one.
+* **NO ENTRY IS SEEDED FROM AN OUTSIDE CERTIFICATE ANY MORE**:
+  `tls_server.js` no longer records one at the handshake, so
+  `certificatePlan()`'s `cn=<CN>,ou=users` placement is reached only by a
+  certificate this service issued (whose person exists) and by the XACML
+  registry's naming of one (`certificateIdentity()`, which writes nothing).
+  Entries it seeded before stay, and sign nobody in unless the certificate is
+  stored on them.
+

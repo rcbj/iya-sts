@@ -96,6 +96,26 @@ Other doors end in the same session:
 | `/authn/wallet`, a verifiable credential | [OpenID4VP](oid4vp.md#signing-in-with-a-wallet) |
 | `GET /tls/sign-in`, a verified client certificate | [TLS](tls.md) |
 
+**Continue with your certificate.** When the browser presented a TLS client
+certificate on the connection, and that certificate names a person in the
+realm the sign-in is for, the sign-in screen offers **Continue as *name* with
+your certificate**. It completes the sign-in on the certificate, so every
+protocol that sends people to this screen — SAML, WS-Federation, OpenID
+Connect, GNAP — can be answered with it. The session records the same event
+as `GET /tls/sign-in` (`amr ["swk"]`, `acr "1"`): one factor, so a request
+or a requirement for two asks for a second one afterwards. It is offered only
+where the authentication policy accepts a TLS client certificate as a first
+factor, and not on a linking sign-in, for an application that names the
+sign-in mechanisms it allows, or where a security key or passkey is demanded.
+A certificate from an outside certificate authority names the person only
+when it is stored, byte for byte, in `userCertificate` on their entry and no
+other ([TLS](tls.md#a-certificate-from-an-outside-certificate-authority));
+its common name is never read. A revoked certificate, an application's
+certificate, a certificate from another realm's authority and an outside one
+stored on no entry (`STS-AUTHN-0468`) or on several (`STS-AUTHN-0469`) are
+refused, and the screen says why. See
+[Sign in with a client certificate](configure-tls.md#sign-in-with-a-client-certificate).
+
 With `authn.unauthenticatedSessions` on, a third button, **Continue without
 signing in**, starts a real session for the stable `anonymous` principal. The
 session is marked `authenticated: false`, with empty `amr` and `acr "0"`. It

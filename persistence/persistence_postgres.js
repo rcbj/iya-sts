@@ -269,7 +269,29 @@ const CHANGE_ROWS_PER_STATEMENT = 5000;
 // store by `written_at` (only a BRIN, #630).
 // 26 SINCE 2026-10-25 (#956): `sts_report_artifacts`, the bytes of a
 // finished report. Definitions and job rows stay in the realm maps.
-const SCHEMA_VERSION = 26;
+// 27 SINCE 2026-10-27 (#1024): `sts_ldap_entries_asked_names` rebuilt with
+// `stsbackupcodes` among the asked names, so the reports application's
+// recovery-codes mechanism reads its holders through the index rather than
+// a scan. The index's expression changed, so an existing one is dropped
+// and built again (an advisory upgrade, the owner's to run on a large
+// store; `postgres/schema.sql` carries it).
+// 28 SINCE 2026-10-27 (#1028, rcbj: "index unencrypted fields that can be
+// used as filters"): two B-trees, `sts_ldap_entries_created` and
+// `sts_ldap_entries_modified`, on (realm, parent_key, created_at |
+// modified_at), so a report's date range reads the span and nothing else;
+// and `pwdaccountlockedtime` among the asked names, so `status equals
+// locked` is a holders read. The asked index is rebuilt again (the same
+// advisory step, now looking for the newest name).
+// 29 SINCE 2026-10-27 (#1045): `sts_report_artifact_pieces`, a finished
+// report's sealed pieces, so a report is never one value in any process's
+// heap. A row of `sts_report_artifacts` written before it still holds its
+// whole body and is still read.
+const SCHEMA_VERSION = 29;
+// How many times a directory flush re-reads the data-key rows and tries
+// again when a locked row is sealed under a key this process does not hold
+// yet, and the pause between tries (2026-10-27; saveDirectory()).
+const SEALED_FLUSH_RETRIES = 5;
+const SEALED_FLUSH_RETRY_PAUSE_MS = 200;
 
 // THE DATABASE'S CLOCK, in the milliseconds every cluster table stores. See the
 // cluster block in SCHEMA_OBJECTS for why no process's own clock is used.
@@ -698,6 +720,18 @@ const SCHEMA_OBJECTS = [
     extension: 'pg_trgm', statement:
   'CREATE INDEX IF NOT EXISTS sts_ldap_entries_uid_trgm ON sts_ldap_entries ' +
   'USING gin (rdn_value gin_trgm_ops) ' + GIN_DIRECT + ' WHERE ' +
+  directoryQueries.USERS_PARENT },
+  // THE TWO DATES AS A RANGE (#1028, schema version 28): B-trees over the
+  // generalized-time text of `created_at` and `modified_at`, led by realm and
+  // parent, over the children of each realm's `ou=users` only — what a
+  // report's date range reads (`directory_queries.js`'s `createdBetween`,
+  // `modifiedBetween`). Fixed-width UTC text sorts as time does.
+  { name: 'sts_ldap_entries_created', afterColumns: true, statement:
+  'CREATE INDEX IF NOT EXISTS sts_ldap_entries_created ON sts_ldap_entries ' +
+  '(realm, parent_key, created_at) WHERE ' + directoryQueries.USERS_PARENT },
+  { name: 'sts_ldap_entries_modified', afterColumns: true, statement:
+  'CREATE INDEX IF NOT EXISTS sts_ldap_entries_modified ON ' +
+  'sts_ldap_entries (realm, parent_key, modified_at) WHERE ' +
   directoryQueries.USERS_PARENT },
   { name: 'sts_ldap_entries_names', afterColumns: true, statement:
   'CREATE INDEX IF NOT EXISTS sts_ldap_entries_names ON sts_ldap_entries ' +
@@ -1578,6 +1612,16 @@ const SCHEMA_OBJECTS = [
   '  media_type text   NOT NULL,' +
   '  created_at bigint NOT NULL,' +
   '  PRIMARY KEY (realm, job_id))' },
+  // A finished report's pieces (#1045, schema version 29), each sealed on
+  // its own and numbered from 0. The `sts_report_artifacts` row of the
+  // same job says how many there are.
+  { name: 'sts_report_artifact_pieces', statement:
+  'CREATE TABLE IF NOT EXISTS sts_report_artifact_pieces (' +
+  '  realm      text   NOT NULL,' +
+  '  job_id     text   NOT NULL,' +
+  '  seq        int    NOT NULL,' +
+  '  bytes      bytea  NOT NULL,' +
+  '  PRIMARY KEY (realm, job_id, seq))' },
   // What version of the above is on disk. One row, and nothing reads it yet —
   // it is here so that a future change has something to look at other than the
   // shape of the tables.
@@ -1860,7 +1904,24 @@ const SCHEMA_UPGRADES = [
       'n_distinct=100000']), statements: [
       'ALTER TABLE sts_ldap_entries ALTER COLUMN parent_key SET ' +
       '(n_distinct=100000)',
-      'ANALYZE sts_ldap_entries (parent_key)'] }
+      'ANALYZE sts_ldap_entries (parent_key)'] },
+  // THE ASKED-NAMES INDEX LEARNED A NAME (#1024, schema version 27): its
+  // expression and predicate spell every asked name, so an index built
+  // before `stsbackupcodes` joined them answers "nobody" for that name
+  // through the index. Where the definition lacks the name, the index is
+  // dropped and built again from SCHEMA_OBJECTS' statement. Advisory: on a
+  // large store the build takes minutes and locks writes, which is the
+  // owner's call (`postgres/schema.sql`), not a start-up's.
+  { name: 'sts_ldap_entries_asked_names_v28', table: 'sts_ldap_entries',
+    advisory: true, issue: '#1028',
+    when: 'EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = ' +
+          '\'sts_ldap_entries_asked_names\' AND (position(\'stsbackupcodes\' ' +
+          'in indexdef) = 0 OR position(\'pwdaccountlockedtime\' in ' +
+          'indexdef) = 0))',
+    statements: ['DROP INDEX IF EXISTS sts_ldap_entries_asked_names',
+      SCHEMA_OBJECTS.filter(function (object) {
+        return object.name === 'sts_ldap_entries_asked_names';
+      })[0].statement] }
 ];
 
 // THE STATEMENTS ALONE, which is what this module exported before the pairing
@@ -6117,21 +6178,44 @@ function create(options) {
       // (2026-10-02)** — the ordinary cause is a realm another worker thread
       // created a moment ago, whose `directory` key this thread has not read.
       // `keystore.writeAfterDeks()` does the same for its own rows.
-      const attempt = function (again) {
-        outcomes.length = 0;
-        pendingLost.length = 0;
-        return withTransaction(transactionBody).then(function () {
-          return mergeLostRows(pendingLost);
-        }).catch(function (e) {
-          if (!again || errorCodes.codeOf(e) !== 'STS-STORE-0072') {
-            throw e;
+      // A ROW SEALED UNDER A DATA KEY THIS PROCESS DOES NOT HOLD YET is read
+      // again after the key rows are re-read — up to SEALED_FLUSH_RETRIES
+      // times, a pause between (2026-10-27; it was once): two processes
+      // seeding one new realm each make a key for it, and the other's key
+      // row may be a transaction still committing when the first re-read
+      // runs. A flush that gave up answered the request that caused it 503
+      // (STS-STORE-0066, sts_kerberos_rc4's realm create in the single-node
+      // mode). A loop, not a chain (tests/no_periodic_timers.js).
+      const attempt = async function () {
+        log.debug("Entering attempt().");
+        let last = null;
+        for (let i = 0; i <= SEALED_FLUSH_RETRIES; i++) {
+          outcomes.length = 0;
+          pendingLost.length = 0;
+          try {
+            await withTransaction(transactionBody);
+            const merged = await mergeLostRows(pendingLost);
+            log.debug("Leaving attempt().");
+            return merged;
+          } catch (e) {
+            if (i === SEALED_FLUSH_RETRIES ||
+                errorCodes.codeOf(e) !== 'STS-STORE-0072') {
+              log.debug("Leaving attempt(). Failed.");
+              throw e;
+            }
+            log.debug("Caught in saveDirectory(): " +
+                      ((e && e.message) || e));
+            last = e;
+            await require('../common/keystore').refreshDekRows();
+            if (i > 0) {
+              await new Promise(function (resolve) {
+                setTimeout(resolve, SEALED_FLUSH_RETRY_PAUSE_MS);
+              });
+            }
           }
-          log.debug("Caught in saveDirectory(): " + ((e && e.message) || e));
-          return require('../common/keystore').refreshDekRows()
-            .then(function () {
-              return attempt(false);
-            });
-        });
+        }
+        log.debug("Leaving attempt(). Exhausted.");
+        throw last;
       };
       const transactionBody = function (client) {
         let chain = Promise.resolve();
@@ -6347,7 +6431,7 @@ function create(options) {
           }));
         });
       };
-      return attempt(true).then(function () {
+      return attempt().then(function () {
         log.debug('Leaving the postgres driver saveDirectory(). ' +
                   change.upserts.length + ' upsert(s), ' +
                   change.deletes.length + ' delete(s), ' + outcomes.length +
@@ -10167,6 +10251,55 @@ function create(options) {
       );
     },
 
+    // A finished report's pieces (#1045), with the row that says how many
+    // there are, in ONE transaction: a reader sees the old artifact or the
+    // whole new one. The pieces arrive as an async iterable — read from the
+    // build file and sealed one at a time — so the transaction is run once
+    // and never retried: the iterable cannot be read twice. A failure is
+    // the job's, which says so.
+    putReportArtifactPieces: function (row, pieces) {
+      log.debug("Entering putReportArtifactPieces().");
+      log.debug("Leaving putReportArtifactPieces().");
+      return transactionOnce(async function (client) {
+        await client.query(
+          'DELETE FROM sts_report_artifact_pieces WHERE realm = $1 AND ' +
+          'job_id = $2', [row.realm, row.jobId]);
+        let seq = 0;
+        for await (const piece of pieces) {
+          await client.query(
+            'INSERT INTO sts_report_artifact_pieces (realm, job_id, seq, ' +
+            'bytes) VALUES ($1, $2, $3, $4)',
+            [row.realm, row.jobId, seq, piece]);
+          seq += 1;
+        }
+        const marker = Buffer.from(String(row.prefix) + seq + ':' +
+          Number(row.size), 'utf8');
+        await client.query(
+          'INSERT INTO sts_report_artifacts (realm, job_id, bytes, sha256, ' +
+          'media_type, created_at) VALUES ($1, $2, $3, $4, $5, $6) ' +
+          'ON CONFLICT (realm, job_id) DO UPDATE SET ' +
+          'bytes = EXCLUDED.bytes, sha256 = EXCLUDED.sha256, ' +
+          'media_type = EXCLUDED.media_type, ' +
+          'created_at = EXCLUDED.created_at',
+          [row.realm, row.jobId, marker, row.sha256, row.mediaType,
+           Number(row.createdAt)]);
+        return seq;
+      });
+    },
+
+    getReportArtifactPiece: function (key) {
+      log.debug("Entering getReportArtifactPiece().");
+      log.debug("Leaving getReportArtifactPiece().");
+      return pool.query(
+        'SELECT bytes FROM sts_report_artifact_pieces WHERE realm = $1 ' +
+        'AND job_id = $2 AND seq = $3',
+        [key.realm, key.jobId, Number(key.seq)]
+      ).then(function (r) {
+        const found = r.rows[0];
+        return found ? found.bytes : null;
+      });
+    },
+
     getReportArtifact: function (key) {
       log.debug("Entering getReportArtifact().");
       log.debug("Leaving getReportArtifact().");
@@ -10191,7 +10324,11 @@ function create(options) {
     deleteReportArtifact: function (key) {
       log.debug("Entering deleteReportArtifact().");
       log.debug("Leaving deleteReportArtifact().");
+      // The pieces and the row in one statement (#1045), so neither is
+      // left without the other.
       return pool.query(
+        'WITH pieces AS (DELETE FROM sts_report_artifact_pieces ' +
+        'WHERE realm = $1 AND job_id = $2) ' +
         'DELETE FROM sts_report_artifacts WHERE realm = $1 AND job_id = $2',
         [key.realm, key.jobId]
       );

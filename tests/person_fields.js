@@ -420,6 +420,43 @@ function childMain() {
              /name="field\.carLicense\.0" value=""/.test(switched),
            'G. switching view keeps what was typed and gives a new list ' +
            'field a box');
+      // #1066: the username stays the one box at the top of the form, ahead
+      // of the grid; `uid` gets no cell of its own; every field the
+      // attribute policy requires is outlined; the tile counts them.
+      const usernameOnTop = function (html) {
+        return (html.match(/name="username"/g) || []).length === 1 &&
+          html.indexOf('id="new-username"') < html.indexOf('id="fgc-cn"') &&
+          !/id="fgc-uid"/.test(html) && !/name="field\.uid/.test(html);
+      };
+      note(usernameOnTop(simple) && usernameOnTop(advanced),
+           'G. the username is the one box at the top, and uid has no cell');
+      const outlined = function (attribute) {
+        return new RegExp('id="fgc-' + attribute +
+                          '" class="fg-cell[^"]*fg-required').test(simple);
+      };
+      // Against the policy in force: the sections above add to it.
+      const policy = (newUserForm.requiredAttributes || [])
+        .map(function (one) {
+          return one.toLowerCase();
+        });
+      const wrong = (newUserForm.fieldRows || []).filter(function (row) {
+        return row.simple && outlined(row.attribute) !==
+          (policy.indexOf(row.attribute.toLowerCase()) >= 0);
+      }).map(function (row) {
+        return row.attribute;
+      });
+      note(outlined('cn') && outlined('sn') && wrong.length === 0 &&
+             (newUserForm.fieldRows || []).some(function (row) {
+               return row.simple && !outlined(row.attribute);
+             }),
+           'G. the fields the attribute policy requires are outlined, and ' +
+           'no other', policy.join(',') + ' | wrong: ' + wrong.join(','));
+      note((newUserForm.requiredAttributes || []).length >= 3 &&
+             simple.indexOf('<div class="n">' +
+               newUserForm.requiredAttributes.length +
+               '</div><div class="l">required by the attribute policy') >= 0,
+           'G. the tile counts what the attribute policy requires',
+           (newUserForm.requiredAttributes || []).join(','));
       const json = adminViews.newUserJson(fresh);
       note(json.gridFields && json.gridFields.length === rows.length &&
              json.fieldGroups.length === editor.FIELD_GROUPS.length,

@@ -29,6 +29,10 @@ import errorCodes = require('../common/error_codes');
 import listenerMap = require('../common/listener_map');
 import ShellDocument = require('../common/shell_document');
 import Html = require('../common/html');
+// This application as a Shared Signals receiver (#1042). A LIBRARY: it
+// registers no route and requires only libraries, so this require moves
+// nothing and closes no cycle — the console's and the portal's arrangement.
+import signals = require('../ssf/ssf_receivers');
 
 const log = bunyan.createLogger({ name: 'sts-report' });
 
@@ -58,28 +62,156 @@ const REPORT_STYLE = [
   '.nav a:hover, .nav .btn:hover { background: #e7e9f4; }',
   '.nav a[aria-current="page"] { background: #fff; color: #12107c;',
   '  box-shadow: inset 0 0 0 1px #c9cad6; font-weight: 600; }',
-  '.bar .language-chooser { display: flex; align-items: center;',
-  '  gap: .35rem; margin: 0; font-size: .85em; }',
-  '.bar .language-chooser button, .bar .language-chooser select {',
-  '  font: inherit; }',
+  // The top bar (#986): a bar like the navigation bar below it, smaller
+  // and right-justified, holding the controls about the reader — the
+  // realm field, the language chooser, the user menu. EVERY CONTROL IN IT
+  // IS DRAWN ALIKE (rcbj, 2026-10-26: the language chooser had the
+  // browser's own background and the user menu its own shape): one rule
+  // gives the selects, the buttons and the menu's summary the same box.
+  '.topbar { display: flex; justify-content: flex-end; flex-wrap: wrap;',
+  '  gap: 1rem; align-items: center; margin: 0 0 .45rem;',
+  '  padding: .3rem .45rem; font-size: .85em;',
+  '  background: #f7f8fc; border: 1px solid #c9cad6;',
+  '  border-radius: 8px; }',
+  '.topbar select, .topbar button, .topbar .usermenu > summary {',
+  '  font: inherit; padding: 2px 8px; border: 1px solid #c9c9d4;',
+  '  border-radius: 5px; background: #fff; color: #222;',
+  '  line-height: 1.4; }',
+  '.topbar button { cursor: pointer; }',
+  '.topbar button:hover, .topbar .usermenu > summary:hover {',
+  '  background: #eef2fb; }',
+  '.topbar label { color: #8a8a99; font-weight: 700; font-size: .85em;',
+  '  text-transform: uppercase; letter-spacing: .06em; }',
+  '.topbar .language-chooser { display: flex; align-items: center;',
+  '  gap: .35rem; margin: 0; }',
+  '.topbar .usermenu { margin-left: 0; }',
+  // The realm field and switch (#986), on the console's `.realmpick`
+  // shape made inline: the label before the control, the select taking
+  // what a realm name needs, the Go button beside it. With one realm the
+  // name is text and there is no select.
+  '.realmpick { margin: 0; display: flex; align-items: center;',
+  '  gap: .35rem; }',
+  '.realmpickrow { display: flex; gap: 6px; align-items: center; }',
+  '.realmpick .realmname { font-weight: 600; }',
+  // The documentation link under the bar, and the version under the card.
+  '.doclink { margin: -.5rem 0 1rem; font-size: .9em; }',
+  '.foot { margin: .75rem 0 0; color: #6b6f80; font-size: .85em;',
+  '  text-align: right; }',
+  // Save is first in the document so that Enter saves when the Save query
+  // box is ticked, and drawn after Run (`web_report_pages.ts`,
+  // `actionsHtml()`).
+  '.actions .save-only, .foot-actions .save-only { order: 2; }',
+  // THE DEFINITION EDITOR (#989): two columns — the query on the left, the
+  // schedule, the notice and the groups on the right — and real buttons at
+  // the foot. One column under 48rem.
+  // The two columns are the same height (rcbj, 2026-10-26: "even"): the
+  // grid stretches both sections, and each is a bordered panel so the
+  // shared height is seen rather than inferred from the taller one.
+  '.editor { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem;',
+  '  align-items: stretch; }',
+  '.editor > section { border: 1px solid #d5d5dd; border-radius: 8px;',
+  '  padding: .75rem 1rem; background: #fafafc; min-width: 0; }',
+  '@media (max-width: 48rem) { .editor { grid-template-columns: 1fr; } }',
+  '.editor h3 { margin: .25rem 0 .5rem; font-size: 1.05rem; }',
+  '.editor .field { margin: .4rem 0; }',
+  '.foot-actions { display: flex; gap: .75rem; justify-content: flex-end;',
+  '  margin: 1rem 0 0; padding-top: .75rem; border-top: 1px solid #d5d5dd; }',
+  '.button { font: inherit; padding: .4rem .9rem; border-radius: 6px;',
+  '  border: 1px solid #3a2e96; background: #3a2e96; color: #fff;',
+  '  cursor: pointer; }',
+  '.button:hover { background: #2d2378; }',
+  '.button.secondary { background: #fff; color: #3a2e96; }',
+  '.button.secondary:hover { background: #e7e9f4; }',
+  '.button.danger { background: #fff; color: #a3242c; border-color: #a3242c; }',
+  '.button.danger:hover { background: #fbeaec; }',
+  // The group search and its results (#989): a box, a result row with an
+  // Add, a pager under five rows, and the chosen groups as a list with a
+  // Remove beside each.
+  '.groups-pane .results { margin: .35rem 0; border: 1px solid #d5d5dd;',
+  '  border-radius: 6px; }',
+  '.groups-pane .results .hit { display: flex; gap: .5rem;',
+  '  align-items: center; padding: .3rem .5rem;',
+  '  border-bottom: 1px solid #eee; }',
+  '.groups-pane .results .hit:last-child { border-bottom: 0; }',
+  '.groups-pane .hit .who { flex: 1 1 auto; min-width: 0; }',
+  '.groups-pane .hit .mail { color: #5b6070; font-size: .85em; }',
+  '.groups-pane .pager { display: flex; gap: .5rem; align-items: center;',
+  '  font-size: .85em; color: #5b6070; }',
+  '.groups-pane .chosen { list-style: none; margin: .35rem 0 0; padding: 0; }',
+  '.groups-pane .chosen li { display: flex; gap: .5rem; align-items: center;',
+  '  padding: .25rem 0; }',
+  '.groups-pane .chosen .who { flex: 1 1 auto; min-width: 0; }',
+  '.btn.small { border: 1px solid #c9cad6; border-radius: 6px;',
+  '  padding: .1rem .55rem; font-size: .9em; }',
+  '.btn.small:hover { background: #e7e9f4; }',
+  // The schedule editor's weekday boxes (#986), one row.
+  '.days label.day { display: inline-flex; gap: .25rem;',
+  '  align-items: center; }',
+  // A filter row and the + that adds the next one (#986).
+  '.filterrow { margin: 0 0 .35rem; }',
+  '.filterrow .addfilter { border: 1px solid #c9cad6; border-radius: 6px;',
+  '  padding: .1rem .55rem; font-weight: 700; line-height: 1.4; }',
+  '.filterrow .addfilter:hover { background: #e7e9f4; }',
+  // The trash can beside every filter row (#1017), the + button's shape.
+  '.filterrow .removefilter { border: 1px solid #c9cad6; border-radius: 6px;',
+  '  padding: .1rem .45rem; line-height: 1.4; }',
+  '.filterrow .removefilter:hover { background: #f7e4e6; }',
+  // The pager (#997), the console's: links either side of a window of
+  // numbers, the current page marked, the ends greyed when there is no
+  // further page, and a rows-per-page choice on the same line.
+  '.pager { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center;',
+  '  margin: .5rem 0; font-size: .9em; color: #5b6070; }',
+  '.pager a { color: #3a2e96; text-decoration: none; padding: .1rem .35rem;',
+  '  border-radius: 4px; }',
+  '.pager a:hover { background: #e7e9f4; }',
+  '.pager .here { font-weight: 700; color: #12107c; padding: .1rem .35rem; }',
+  '.pager .off { color: #a0a3b1; padding: .1rem .35rem; }',
+  '.pager .where { margin-left: .5rem; }',
+  '.pager .perpage { margin-left: auto; display: flex; gap: .35rem;',
+  '  align-items: center; }',
+  '.pager .perpage select { font: inherit; }',
+  // A wide result scrolls inside its card rather than off the page (rcbj,
+  // 2026-10-27): the wrapper scrolls sideways, a cell may break a long
+  // value, and a heading stays on one line so the columns keep their names.
+  '.tablewrap { overflow-x: auto; max-width: 100%; }',
   '.table { width: 100%; border-collapse: collapse; }',
   '.table th, .table td { text-align: left; padding: .35rem .5rem;',
   '  border-bottom: 1px solid #d5d5dd; vertical-align: top; }',
+  '.table th { white-space: nowrap; }',
+  '.table td { overflow-wrap: anywhere; }',
   '.field { margin: .5rem 0; }',
   '.field label { display: block; }',
+  // THE `hidden` ATTRIBUTE WINS (#1013): the rules above and `.row`'s flex
+  // set `display`, which outranks the browser's own `[hidden] { display:
+  // none }`, so the Sort selects stayed in view with the box unticked
+  // (rcbj, 2026-10-27). One rule, so every gated control hides.
+  '[hidden] { display: none !important; }',
+  '.row label { display: inline-flex; align-items: center; gap: .3rem; }',
   '.err { color: #a3242c; }',
+  // The status bubble (rcbj, 2026-10-26), the console's `.flash`: sticky at
+  // the top of the card, one message, ok or err, with a dismiss.
+  '.flash { position: sticky; top: 0; z-index: 30; padding-top: 6px;',
+  '  background: #fff; margin: 0 0 .75rem; }',
+  '.flash .ok, .flash .err { display: flex; align-items: center;',
+  '  gap: .75rem; padding: 8px 11px; border-radius: 6px; font-size: .9em;',
+  '  box-shadow: 0 2px 8px rgba(0,0,0,.12); }',
+  '.flash .ok { background: #e8f5e9; border: 1px solid #a5d6a7;',
+  '  color: #1b5e20; }',
+  '.flash .err { background: #fdecea; border: 1px solid #f5c6c2;',
+  '  color: #b00020; }',
+  '.flash .dismiss { margin-left: auto; font-size: 1.2em; line-height: 1;',
+  '  padding: 0 .3rem; color: inherit; }',
   '.sub { color: #5b6070; }',
   // The account menu overlays the page. The panel is out of flow, so
   // opening the <details> does not grow the flex bar.
   '.usermenu{position:relative;margin-left:auto}',
+  // Its box — border, padding, background — is the top bar's rule above,
+  // so it matches the selects beside it.
   '.usermenu>summary{cursor:pointer;list-style:none;',
-  '  display:inline-flex;gap:.4em;align-items:center;',
-  '  border:1px solid #d5d5dd;border-radius:6px;',
-  '  padding:4px 10px;background:#fff;color:#333;font-size:.85em}',
+  '  display:inline-flex;gap:.4em;align-items:center}',
   '.usermenu>summary::-webkit-details-marker{display:none}',
   '.usermenu>summary::after{content:"\\25be";color:#888;',
   '  font-size:.9em}',
-  '.usermenu>summary:hover{background:#f4f6fb}',
   '.usermenu[open]>summary{background:#eef2fb;',
   '  border-color:#c3d0ea;color:#12107c}',
   '.usermenupanel{position:absolute;right:0;top:calc(100% + 6px);',
@@ -96,7 +228,12 @@ const REPORT_STYLE = [
   '  border-radius:5px;color:#12107c;font:inherit;font-size:.85em;',
   '  cursor:pointer}',
   '.usermenuaccounts button.linklike:hover{background:#eef2fb}',
-  '.usermenuaccounts button span{color:#777;font-size:.9em}'
+  '.usermenuaccounts button span{color:#777;font-size:.9em}',
+  // Sign out, the menu's last item since #986, drawn as the switch
+  // buttons are so the menu reads as one list.
+  '.usermenusignout a.linklike{display:block;padding:6px 8px;',
+  '  color:#3a2e96;text-decoration:none;border-radius:4px}',
+  '.usermenusignout a.linklike:hover{background:#eef2fb}'
 ].join('\n');
 
 /**
@@ -197,7 +334,8 @@ class ReportApp {
   paths(): string[] {
     log.debug("Entering paths().");
     log.debug("Leaving paths().");
-    return [BASE, BASE + '/*', BASE + '/report.js', BASE + '/report.css'];
+    return [BASE, BASE + '/*', BASE + '/report.js', BASE + '/report.css',
+            BASE + '/signals/receive'];
   }
 
   /**
@@ -209,6 +347,32 @@ class ReportApp {
   registerRoutes(target: any): void {
     const self = this;
     log.debug("Entering registerRoutes().");
+    // THE SHARED SIGNALS RECEIVE ENDPOINT (#1042), the portal's twin and the
+    // one path under /report that is not the application's document. What
+    // arrives is a Security Event Token addressed to this application's own
+    // stream, authorised by that stream's bearer token; `accept()` checks it,
+    // the audience and the signature, and records what arrived either way.
+    // Registered above the shell, which answers a POST here 404. Not rate
+    // limited, for the portal's reason: a limiter would drop somebody's
+    // account-disabled notice under load.
+    target.post(BASE + '/signals/receive', function (req: any,
+                                                     res: any): void {
+      log.debug("Entering POST " + BASE + "/signals/receive.");
+      const taken = signals.accept(signals.REPORT, req);
+      if (taken.status >= 400) {
+        errorCodes.mark(res, errorCodes.codeOf(taken) ||
+                             String(taken.errorCode || '') ||
+                             'STS-REPORT-0047');
+      }
+      res.status(taken.status).set('Cache-Control', 'no-store');
+      if (taken.body) {
+        res.type('application/json').send(JSON.stringify(taken.body, null, 2));
+      } else {
+        // 202 with an EMPTY body, which is what RFC 8935 section 2.3 says.
+        res.end();
+      }
+      log.debug("Leaving POST " + BASE + "/signals/receive. " + taken.status);
+    });
     target.get(BASE + '/report.js', function (req: any, res: any): void {
       ShellDocument.sendFile(req, res, self.bundle(),
         'application/javascript');

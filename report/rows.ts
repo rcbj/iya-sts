@@ -47,6 +47,40 @@ function stamp(value: unknown): number | null {
   return null;
 }
 
+// THE FIELDS THAT ARE A LIST DRAWN AS ONE STRING (#1002, found on 8081): a
+// person's groups and the methods a person has used are joined with ', '
+// into the row (a credential's algorithm and lane were, until #1011 made a
+// credential a row of its own). `eq`, `ne` and `in` on
+// one of them are asked of EACH value, not of the joined string — a person
+// in three groups is in each of them, and the indexed read of a group's
+// members found rcbj in group1 only for the row filter to drop the row
+// because "group1, ssf-manage, ssf-read" is not "group1". `contains` and
+// `startsWith` keep working on the joined string.
+const LIST_FIELDS = ['memberOf', 'methodsUsed'];
+
+function partsOf(field: string, value: unknown): unknown[] {
+  log.debug("Entering partsOf().");
+  if (LIST_FIELDS.indexOf(field) < 0 || typeof value !== 'string') {
+    log.debug("Leaving partsOf(). The value itself.");
+    return [value];
+  }
+  const parts = value.split(', ').filter(function (one: string): boolean {
+    return one !== '';
+  });
+  log.debug("Leaving partsOf(). " + parts.length + '.');
+  return parts.length ? parts : [value];
+}
+
+function anyPartSame(type: string, field: string, value: unknown,
+                     wanted: unknown): boolean {
+  log.debug("Entering anyPartSame().");
+  const held = partsOf(field, value).some(function (part: unknown): boolean {
+    return same(type, part, wanted);
+  });
+  log.debug("Leaving anyPartSame().");
+  return held;
+}
+
 function same(type: string, left: unknown, right: unknown): boolean {
   log.debug("Entering same().");
   if (type === 'timestamp') {
@@ -155,7 +189,28 @@ class Rows {
     return rows;
   }
 
-  private count(row: Row): void {
+  /**
+   * Offers one source row standing for `n` alike (#1040): the password's
+   * census row, whose count the directory keeps as a counter rather than as
+   * rows. Only a count takes it; the filter is applied as to any row.
+   *
+   * @param row - the row, keyed by catalog field id
+   * @param n - how many rows it stands for
+   * @returns whether it was counted
+   */
+  takeCounted(row: Row, n: number): boolean {
+    log.debug("Entering Rows.takeCounted().");
+    if (this.plan.aggregate !== 'count' || !this.matches(this.plan.where,
+        row)) {
+      log.debug("Leaving Rows.takeCounted(). Not counted.");
+      return false;
+    }
+    this.count(row, n);
+    log.debug("Leaving Rows.takeCounted().");
+    return true;
+  }
+
+  private count(row: Row, n?: number): void {
     log.debug("Entering Rows.count().");
     const keyParts: unknown[] = [];
     const projected: Row = {};
@@ -166,10 +221,11 @@ class Rows {
     }
     const key = JSON.stringify(keyParts);
     const held = this.groups.get(key);
+    const by = n == null ? 1 : n;
     if (held) {
-      held.count += 1;
+      held.count += by;
     } else {
-      this.groups.set(key, { row: projected, count: 1 });
+      this.groups.set(key, { row: projected, count: by });
     }
     log.debug("Leaving Rows.count().");
   }
@@ -382,7 +438,7 @@ class Rows {
     if (node.op === 'in') {
       const list = Array.isArray(node.value) ? node.value : [];
       for (let i = 0; i < list.length; i++) {
-        if (same(type, value, list[i])) {
+        if (anyPartSame(type, node.field, value, list[i])) {
           log.debug("Leaving Rows.leaf(). In.");
           return true;
         }
@@ -392,11 +448,11 @@ class Rows {
     }
     if (node.op === 'eq') {
       log.debug("Leaving Rows.leaf(). eq.");
-      return same(type, value, node.value);
+      return anyPartSame(type, node.field, value, node.value);
     }
     if (node.op === 'ne') {
       log.debug("Leaving Rows.leaf(). ne.");
-      return !same(type, value, node.value);
+      return !anyPartSame(type, node.field, value, node.value);
     }
     if (node.op === 'contains') {
       const held = typeof value === 'string' &&

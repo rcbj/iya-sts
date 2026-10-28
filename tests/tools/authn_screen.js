@@ -62,9 +62,15 @@ function call(o) {
     }
     // A service on TLS (`ca`, the PEM its certificate chains to) is asked
     // over https, verified against that anchor.
-    const transport = o.ca ? require('https') : http;
+    const transport = o.ca || o.cert ? require('https') : http;
+    // A TLS CLIENT CERTIFICATE (#1051): `cert` and `key`, presented on a
+    // connection of its own (`agent: false`), since a pooled one may have
+    // been opened by a request that presented none.
     const req = transport.request({ host: '127.0.0.1', port: o.port,
       ca: o.ca || undefined,
+      cert: o.cert || undefined, key: o.key || undefined,
+      rejectUnauthorized: o.cert && !o.ca ? false : undefined,
+      agent: o.cert ? false : undefined,
       path: String(o.path).replace(/^https?:\/\/[^/]+/, ''),
       method: o.method, headers: headers }, function (res) {
       let text = '';
@@ -130,14 +136,16 @@ async function open(o) {
   log.debug("Entering open().");
   const where = parse(o.at);
   const shellPath = o.at.replace(/^https?:\/\/[^/]+/, '');
-  const shell = await call({ port: o.port, ca: o.ca, jar: o.jar,
+  const shell = await call({ port: o.port, ca: o.ca, cert: o.cert,
+                             key: o.key, jar: o.jar,
                              userAgent: o.userAgent, method: 'GET',
                              path: shellPath });
   const viewPath = where.prefix + (where.page === 'password-change'
     ? '/authn-api/password-change/' + encodeURIComponent(where.id)
     : '/authn-api/pending/' + encodeURIComponent(where.id) +
       (where.page === 'select-idp' ? '/partners' : ''));
-  const view = await call({ port: o.port, ca: o.ca, jar: o.jar,
+  const view = await call({ port: o.port, ca: o.ca, cert: o.cert,
+                            key: o.key, jar: o.jar,
                             userAgent: o.userAgent, method: 'GET',
                             path: viewPath,
                             headers: { accept: 'application/json' } });
@@ -151,7 +159,8 @@ async function open(o) {
 // The operation each of the screen's buttons is.
 const OPERATIONS = {
   login: 'password', cancel: 'cancel', anonymous: 'anonymous',
-  'email-code': 'email', 'email-link': 'email', passkey: 'passkey'
+  'email-code': 'email', 'email-link': 'email', passkey: 'passkey',
+  certificate: 'certificate'
 };
 
 /**
@@ -168,13 +177,14 @@ async function act(o) {
     'content-type': o.contentType || 'application/json' };
   if (o.origin !== null) {
     headers.origin = o.origin ||
-      (o.ca ? 'https' : 'http') + '://127.0.0.1:' + o.port;
+      (o.ca || o.cert ? 'https' : 'http') + '://127.0.0.1:' + o.port;
   }
   const csrf = o.csrf === undefined ? o.opened.csrf : o.csrf;
   if (csrf) {
     headers['x-csrf-token'] = csrf;
   }
-  const r = await call({ port: o.port, ca: o.ca, jar: o.jar,
+  const r = await call({ port: o.port, ca: o.ca, cert: o.cert,
+                         key: o.key, jar: o.jar,
     userAgent: o.userAgent,
     method: 'POST', path: o.opened.prefix + o.path, headers: headers,
     body: typeof o.body === 'string' ? o.body : JSON.stringify(o.body || {})
@@ -212,7 +222,7 @@ function bodyFor(action, f) {
             webauthn_only: flag(fields.webauthn_only),
             remember_browser: flag(fields.remember_browser),
             device_fp: fields.device_fp || undefined };
-  } else if (action === 'anonymous') {
+  } else if (action === 'anonymous' || action === 'certificate') {
     out = { remember_browser: flag(fields.remember_browser),
             device_fp: fields.device_fp || undefined };
   } else if (action === 'email-code' || action === 'email-link') {
@@ -254,7 +264,8 @@ async function submit(o) {
              text: JSON.stringify(opened.json), headers: {}, view: null,
              opened: opened };
   }
-  const answer = await act({ port: o.port, ca: o.ca, jar: o.jar,
+  const answer = await act({ port: o.port, ca: o.ca, cert: o.cert,
+                             key: o.key, jar: o.jar,
     userAgent: o.userAgent, opened: opened,
     path: '/authn-api/pending/' + encodeURIComponent(opened.id) + '/' +
           OPERATIONS[action],
@@ -275,7 +286,8 @@ async function submit(o) {
 async function changePassword(o) {
   log.debug("Entering changePassword().");
   const opened = await open(o);
-  const answer = await act({ port: o.port, ca: o.ca, jar: o.jar,
+  const answer = await act({ port: o.port, ca: o.ca, cert: o.cert,
+                             key: o.key, jar: o.jar,
     userAgent: o.userAgent, opened: opened,
     path: '/authn-api/password-change/' + encodeURIComponent(opened.id),
     body: { new_password: o.fields.new_password,
@@ -295,7 +307,8 @@ async function changePassword(o) {
  */
 async function passkeyOptions(o) {
   log.debug("Entering passkeyOptions().");
-  const answer = await act({ port: o.port, ca: o.ca, jar: o.jar,
+  const answer = await act({ port: o.port, ca: o.ca, cert: o.cert,
+                             key: o.key, jar: o.jar,
     userAgent: o.userAgent, opened: o.opened,
     path: '/authn-api/pending/' + encodeURIComponent(o.opened.id) +
           '/passkey/options', body: {} });
@@ -354,11 +367,13 @@ async function openStep(o) {
   log.debug("Entering openStep().");
   const where = stepOf(o.at);
   const page = o.page || where.page;
-  const shell = await call({ port: o.port, ca: o.ca, jar: o.jar,
+  const shell = await call({ port: o.port, ca: o.ca, cert: o.cert,
+                             key: o.key, jar: o.jar,
                              userAgent: o.userAgent, method: 'GET',
                              path: String(o.at).replace(/^https?:\/\/[^/]+/,
                                                          '') });
-  const view = await call({ port: o.port, ca: o.ca, jar: o.jar,
+  const view = await call({ port: o.port, ca: o.ca, cert: o.cert,
+                            key: o.key, jar: o.jar,
     userAgent: o.userAgent, method: 'GET',
     path: where.prefix + '/authn-api/mfa/' + encodeURIComponent(where.id) +
           '?page=' + page + (where.key ? '&key=' +
@@ -410,9 +425,11 @@ async function follow(o) {
     return answer;
   }
   const page = answer.next === 'mfa'
-    ? await openStep({ port: o.port, ca: o.ca, jar: o.jar,
+    ? await openStep({ port: o.port, ca: o.ca, cert: o.cert,
+                       key: o.key, jar: o.jar,
                        userAgent: o.userAgent, at: answer.location })
-    : await open({ port: o.port, ca: o.ca, jar: o.jar,
+    : await open({ port: o.port, ca: o.ca, cert: o.cert,
+                   key: o.key, jar: o.jar,
                    userAgent: o.userAgent, at: answer.location });
   page.answer = answer;
   log.debug("Leaving follow(). The step's page.");
@@ -505,7 +522,8 @@ async function signOut(o) {
   const prefix = o.prefix || '';
   const f = o.fields || {};
   const q = f.username ? '?username=' + encodeURIComponent(f.username) : '';
-  const common = { port: o.port, ca: o.ca, jar: o.jar,
+  const common = { port: o.port, ca: o.ca, cert: o.cert,
+                   key: o.key, jar: o.jar,
                    userAgent: o.userAgent };
   await call(Object.assign({ method: 'GET', path: prefix + '/logout' + q },
                            common));
@@ -586,11 +604,13 @@ function consentOf(at) {
 async function openConsent(o) {
   log.debug("Entering openConsent().");
   const where = consentOf(o.at);
-  const shell = await call({ port: o.port, ca: o.ca, jar: o.jar,
+  const shell = await call({ port: o.port, ca: o.ca, cert: o.cert,
+                             key: o.key, jar: o.jar,
                              userAgent: o.userAgent, method: 'GET',
                              path: String(o.at).replace(/^https?:\/\/[^/]+/,
                                                          '') });
-  const view = await call({ port: o.port, ca: o.ca, jar: o.jar,
+  const view = await call({ port: o.port, ca: o.ca, cert: o.cert,
+                            key: o.key, jar: o.jar,
     userAgent: o.userAgent, method: 'GET',
     path: where.prefix + '/authn-api/consent/' +
           encodeURIComponent(where.id),

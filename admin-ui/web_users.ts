@@ -638,7 +638,10 @@ class UsersPage {
       inner = '<div class="tiles">' +
           kit.tile(UsersPage.newUserFieldRows(json, 'advanced').length,
                     t.text('consoleUsers.newUserBody.tileFields')) +
-          kit.tile(1, t.text('consoleUsers.newUserBody.tileRequired')) +
+          // WHAT THE ATTRIBUTE POLICY REQUIRES (#1066): uid (the username),
+          // cn and sn always, and the realm's own; it was a constant 1.
+          kit.tile((json.requiredAttributes || []).length || 1,
+                   t.text('consoleUsers.newUserBody.tileRequiredPolicy')) +
           kit.tile(json.credentials.length,
                    t.text('consoleUsers.newUserBody.tileWaysIn')) +
           kit.tile(development ? t.text('consoleUsers.newUserBody.yes')
@@ -670,7 +673,10 @@ class UsersPage {
         'value="' + kit.esc(username) + '" placeholder="' +
         kit.esc(t.text('consoleUsers.newUserBody.usernameHint')) +
         '"></div>' +
-        kit.note(t.html('consoleUsers.newUserBody.onlyRequired')) +
+        // NOT THE ONLY REQUIRED FIELD (#1066): the attribute policy requires
+        // cn and sn as well, and the realm may add more, each outlined in
+        // the grid below.
+        kit.note(t.html('consoleUsers.newUserBody.usernameRequired')) +
 
         '<h2>' + t.html('consoleUsers.newUserBody.howHeading') + '</h2>' +
         '<table><tr><th>' + t.html('consoleUsers.newUserBody.thChoose') +
@@ -2380,6 +2386,64 @@ class UsersPage {
       (state.write ? ''
         : kit.note(t.html('consoleUsers.mfaSection.removeNeedsWrite')));
 
+    // --- stored certificates (#1061, 2026-10-27) ----------------------------
+    // THE CERTIFICATES STORED IN THE PERSON'S `userCertificate`: a
+    // certificate from an outside certificate authority signs them in only
+    // while it is stored here, byte for byte, and on no other entry. The
+    // list with a Remove each, and a form that stores one. `GET
+    // /admin-api/users/certificates`, `POST /admin-api/users/add-certificate`
+    // and `remove-certificate` are the same three (rule 7).
+    const certView = data.certificates && data.certificates.ok
+      ? data.certificates : { certificates: [] };
+    const certRow = function (one) {
+      return '<tr><td><code>' + kit.esc(one.subject || '—') + '</code></td>' +
+        '<td><code>' + kit.esc(one.issuer || '—') + '</code></td><td>' +
+        kit.esc(one.notBefore || '—') + ' – ' + kit.esc(one.notAfter || '—') +
+        (one.expired
+          ? ' <strong>' + t.html('consoleUsers.mfaSection.certExpired') +
+            '</strong>' : '') +
+        '</td><td><code>' + kit.esc(one.sha256) + '</code></td><td>' +
+        (state.write
+          ? '<form method="post" action="/admin/users">' +
+            '<input type="hidden" name="action" value="remove-certificate">' +
+            '<input type="hidden" name="user" value="' + kit.esc(key) +
+            '"><input type="hidden" name="sha256" value="' +
+            kit.esc(one.sha256) + '">' +
+            '<input type="hidden" name="from" value="user">' +
+            '<input type="hidden" name="back" value="' + kit.esc(back) +
+            '"><button class="danger" type="submit"' +
+            kit.tip(t.text('consoleUsers.mfaSection.certRemoveTip')) +
+            '>' + t.html('consoleUsers.mfaSection.remove') + '</button></form>'
+          : '') + '</td></tr>';
+    };
+    const certificatesBlock = '<h3>' +
+      t.html('consoleUsers.mfaSection.certificatesHeading') + '</h3>' +
+      kit.note(t.html('consoleUsers.mfaSection.certificatesLead')) +
+      (certView.certificates.length
+        ? '<table><tr><th>' +
+          t.html('consoleUsers.mfaSection.certThSubject') + '</th><th>' +
+          t.html('consoleUsers.mfaSection.certThIssuer') + '</th><th>' +
+          t.html('consoleUsers.mfaSection.certThValidity') + '</th><th>' +
+          'SHA-256</th><th></th></tr>' +
+          certView.certificates.map(certRow).join('') + '</table>'
+        : kit.note('<strong>' + t.html('consoleUsers.mfaSection.none') +
+                   '</strong>')) +
+      (state.write
+        ? '<form method="post" action="/admin/users">' +
+          '<input type="hidden" name="action" value="add-certificate">' +
+          '<input type="hidden" name="user" value="' + kit.esc(key) + '">' +
+          '<input type="hidden" name="from" value="user">' +
+          '<input type="hidden" name="back" value="' + kit.esc(back) + '">' +
+          '<div class="formrow"><label' +
+          kit.tip(t.text('consoleUsers.mfaSection.certAddTip')) + '>' +
+          t.html('consoleUsers.mfaSection.certAddLabel') + '<br>' +
+          '<textarea name="certificate" rows="6" cols="66" ' +
+          'spellcheck="false"></textarea></label></div>' +
+          '<div class="formrow"><button type="submit" title="' +
+          kit.esc(t.text('consoleUsers.mfaSection.certAddTitle')) + '">' +
+          t.html('consoleUsers.mfaSection.certAdd') + '</button></div></form>'
+        : kit.note(t.html('consoleUsers.mfaSection.certNeedsWrite')));
+
     // --- self-issued IDs (#129, 2026-09-23) --------------------------------
     // THE WALLET KEYS WHOSE SIOPv2 ID TOKEN SIGNS THIS PERSON IN. The list
     // with a Remove each, and a form that enrols one BY VALUE — the
@@ -2486,7 +2550,8 @@ class UsersPage {
       wayIn + totpBlock + UsersPage.emailFactorBlock(t, key, mech, state,
                                                 carryBack, data.mail) +
       keysBlock + recoveryBlock + appPasswordsBlock +
-      devicesBlock + selfIssuedBlock + verificationsBlock;
+      devicesBlock + certificatesBlock + selfIssuedBlock +
+      verificationsBlock;
 
     // ONE SOURCE for what this panel says (2026-09-12): the layer builds it,
     // this draws it — and since #446 draws it from the answer's `page.mfa`.
@@ -4226,8 +4291,8 @@ class UsersPage {
       if (!draft || (draft.at || 'owners') !== where) {
         return '';
       }
-      return (draft.error && draft.error.length
-        ? kit.warn(kit.esc(draft.error.join(' '))) : '') +
+      // A refusal floats, as on every Directory → Users tab (#1066).
+      return kit.refusalBanner(draft.error) +
         (draft.notice ? kit.note(kit.esc(draft.notice)) : '');
     };
     // A REMOVE: on a service account its own small form, written at once;

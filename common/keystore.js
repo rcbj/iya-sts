@@ -2858,9 +2858,16 @@ function ephemeralKek() {
 // DEK row is queued the moment the DEK is made, and every writer of sealed
 // rows — this file's own, `persistence.js`'s and `persistence_minted.js`'s
 // flushes — waits for `settleDeks()` first, so the change log carries the DEK
-// row ahead of anything sealed under it. A value naming a DEK this process
-// does not hold yet is refused (`open()` answers null, STS-KEYS-0092) and the
-// rows are read again in the background.
+// row ahead of anything sealed under it. **And the DEK has to EXIST before
+// that wait** (`writeAfterDeks()`'s `sealedAs`, and `ensureDek()` for the
+// directory flush, 2026-10-27): a DEK made lazily by the first seal INSIDE
+// the write it waited for is queued after the wait, and its row commits
+// after the rows sealed under it — on the full run of 2026-10-27 every new
+// realm's role groups reached the other processes' change-log readers that
+// way (STS-STORE-0042/0072, hundreds of realms) and were dropped for good.
+// A value naming a DEK this process does not hold yet is refused (`open()`
+// answers null, STS-KEYS-0092) and the rows are read again in the
+// background.
 //
 // **WHERE NOTHING IS STORED A DEK IS DERIVED** (`crypto.deriveDek()`), and
 // its id carries what it was derived for, so a sibling thread holding the
@@ -3680,6 +3687,34 @@ function writeDekRow(rowKey, payload) {
               'restart until it is.');
     return { ok: false, error: e.message };
   });
+}
+
+/**
+ * Makes the data encryption key a seal under `label` for `tier` and the
+ * realm would make, now, so its row is queued BEFORE `settleDeks()` is
+ * waited for (2026-10-27; the order rule above). A no-op where keys are
+ * derived, or where the scope has no wrapping key yet.
+ *
+ * @param label - the data class a seal would name
+ * @param tier - the tier a seal would name (`'service'` or a cell's)
+ * @param options - `{ realm }`, else the ambient realm
+ * @returns true when a DEK is held for it
+ */
+function ensureDek(label, tier, options) {
+  log.debug("Entering ensureDek(). " + label);
+  const realm = options && options.realm !== undefined
+    ? options.realm : realms.currentId();
+  let rec = null;
+  try {
+    rec = activeDek(dekScopeFor(tier), dekRealm(realm), dekClass(label));
+  } catch (e) {
+    // The seal asks the same question and reports its failure where the
+    // write is refused; nothing is lost by answering false here.
+    log.debug("Caught in ensureDek(): " + ((e && e.message) || e));
+    rec = null;
+  }
+  log.debug("Leaving ensureDek(). " + !!rec);
+  return !!rec;
 }
 
 /**
@@ -5957,8 +5992,12 @@ module.exports = {
   // ENVELOPE ENCRYPTION (#391): every writer of sealed rows waits for the
   // data-key rows first; the console reads what is held.
   settleDeks: settleDeks,
+  ensureDek: ensureDek,
   reloadDekRows: reloadDekRows,
   refreshDekRows: refreshDekRows,
+  // For a reader that has to tell "not held YET" from "malformed" before it
+  // gives a sealed value up (#1070, `persistence_minted.js`'s change names).
+  namesUnheldDek: namesUnheldDek,
   dataKeys: dataKeys,
   // THE DEK LIFECYCLE (#391 P2), for `common/data_key_rotation.ts`.
   rotateDeks: rotateDeks,

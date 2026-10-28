@@ -12347,6 +12347,8 @@ class AdminViews {
     const certificate = methods.filter(function (m) {
       return mtls.CERTIFICATE_METHODS.indexOf(m) >= 0;
     })[0] || '';
+    const boundTokens = one(applications.TLS_BOUND_TOKENS_ATTRIBUTE)
+      .toUpperCase() === 'TRUE';
     log.debug("Leaving AdminViews.applicationMtlsState(). " + held.length +
               " held.");
     return {
@@ -12365,9 +12367,13 @@ class AdminViews {
         return s.member;
       }),
       boundTokensAttribute: applications.TLS_BOUND_TOKENS_ATTRIBUTE,
-      boundTokens: one(applications.TLS_BOUND_TOKENS_ATTRIBUTE)
-        .toUpperCase() ===
-                   'TRUE',
+      boundTokens: boundTokens,
+      // #1050 (rule 7, the console's half of what `/admin-api`'s gate and
+      // `mtls.certificateDeclaration()` decide): whether this application's
+      // access tokens for the management API are issued and accepted only
+      // bound to its certificate — a certificate method among its methods,
+      // or the section 3.4 flag.
+      adminApiBound: !!certificate || boundTokens,
       selfSignedThumbprint: one('oauthTlsClientCertificateThumbprint'),
       bindingAvailable: mtls.available(),
       caAvailable: !!caAvailable,
@@ -13429,8 +13435,21 @@ class AdminViews {
         withDn.push(at);
       }
     });
-    const onDemand = typeof stats.tokensOnDemand === 'function' &&
-      stats.tokensOnDemand() && typeof stats.userRowsOfAsync === 'function';
+    // THE REGISTER'S OWN FACTS FOR THE SHOWN ROWS, FROM THE INDEX (#1001;
+    // 2026-10-27). On demand, `userRows()` — what `peopleRows()` folds the
+    // directory's people into — is what THIS process holds, so a person
+    // created or signed in on another node (or another worker) is a
+    // `directory` row here: `knownBy: 'directory'`, no sign-ins, nothing.
+    // The cluster mode's sts_admin_api_operations read a person it had just
+    // created as never seen. `userRowsOfAsync()` asks the index, which holds
+    // every origin's row for a person, so the shown rows are upgraded from
+    // it below — the population is not: a page of rows is a few index reads,
+    // the whole population would be thousands.
+    const usersOnDemand = typeof stats.usersOnDemand === 'function' &&
+      stats.usersOnDemand();
+    const onDemand = ((typeof stats.tokensOnDemand === 'function' &&
+      stats.tokensOnDemand()) || usersOnDemand) &&
+      typeof stats.userRowsOfAsync === 'function';
     const answers = await Promise.all([
       typeof credentials.factorHolderRowsAsync === 'function'
         ? credentials.factorHolderRowsAsync(holders)
@@ -13462,8 +13481,27 @@ class AdminViews {
     });
     const own = answers[2];
     if (own) {
+      // What the register says about a person, carried over whole when the
+      // index knows one this process's own walk did not (above); `factors`,
+      // `inDirectory`, `key` and `name` are the directory's and stay.
+      const REGISTER_FACTS = ['authenticated', 'authentications', 'events',
+                              'eventsForgotten', 'firstAt', 'forms',
+                              'isClient', 'knownBy', 'lastActivityAt',
+                              'lastAt', 'protocols', 'realms',
+                              'artifactKinds', 'artifacts'];
       shown.forEach(function (row, at) {
-        if (own[at] && own[at].tokens) {
+        if (!own[at]) {
+          return;
+        }
+        if (usersOnDemand && row && row.knownBy === 'directory' &&
+            own[at].knownBy && own[at].knownBy !== 'directory') {
+          REGISTER_FACTS.forEach(function (name) {
+            if (own[at][name] !== undefined) {
+              row[name] = own[at][name];
+            }
+          });
+        }
+        if (own[at].tokens) {
           row.tokens = own[at].tokens;
         }
       });
@@ -14665,6 +14703,11 @@ class AdminViews {
         inventsClaimValues: mode.inventsClaimValues(),
         devices: this.devicesJson({ user: key }),
         selfIssued: this.selfIssuedSubjectsJson({ user: key }),
+        // The certificates stored on the entry (#1061), as
+        // `GET /admin-api/users/certificates` answers them. Required when
+        // drawn: `admin_actions.ts` is this module's other half and requires
+        // what this one does, so the require moves nothing.
+        certificates: require('./admin_actions').storedCertificatesOf(key),
         // The address and the emailed second factor (#64), and the account
         // ids clients know them by (#148).
         mail: {

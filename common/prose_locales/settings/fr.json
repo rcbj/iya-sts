@@ -4787,6 +4787,14 @@
     "en": "d75340dbe09a7542",
     "text": "Indique si un JWT que ce STS renvoie dans une RequestSecurityTokenResponse désigne la chaîne de certificats de la clé qui l’a signé. Une assertion SAML porte son certificat dans sa propre XML Signature et n’est pas concernée. `x5u` — la valeur par défaut — est l’adresse de la chaîne sur ce service, `/pki/chain/{scope}/{sha256}.pem`, environ cent octets ; `x5c` est la chaîne en ligne, la feuille en premier et la racine du service en dernier, en DER base64, plusieurs kilo-octets ; `both` donne les deux et `none` aucun. Dans les deux cas, c’est ce dont une partie de confiance qui ne détient que le jeton a besoin pour atteindre les points de distribution de CRL, le répondeur OCSP et l’adresse caIssuers de chaque certificat. Une clé pas encore certifiée par l’autorité de certification émettrice JOSE de ce domaine, ainsi qu’une signature HMAC, ne reçoivent ni l’un ni l’autre. La RFC 7515 section 4.1.5 exige que la récupération de `x5u` utilise TLS : avec global.https désactivé, l’adresse est en `http://` et un vérificateur strict refusera de la suivre. Les en-têtes JWE n’en reçoivent jamais — aucune clé certifiée de ce service ne chiffre quoi que ce soit. Réglable par domaine."
   },
+  "wstrust.acceptClientCertificate|label": {
+    "en": "04ac29464750e625",
+    "text": "Accepter le certificat client TLS comme justificatif du demandeur"
+  },
+  "wstrust.acceptClientCertificate|description": {
+    "en": "23d9a8fba459f61c",
+    "text": "Indique si une requête vers /sts dont l’en-tête wsse:Security ne porte aucun justificatif authentifie son demandeur par le certificat client TLS de la connexion. Seul un certificat vérifié lors de la négociation et que ce domaine a délivré à une personne ou à une application (un certificat client TLS du portail utilisateur ou des Credentials de l’application, ou un certificat inscrit par ACME, EST ou SCEP) est un justificatif, dans les deux modes ; un certificat révoqué, un certificat d’un autre domaine et un certificat que son titulaire ne détient plus sont refusés avec wst:FailedAuthentication. Le jeton délivré indique qu’un certificat a été utilisé : TLSClient dans une assertion SAML 2.0, urn:ietf:rfc:2246 dans une assertion SAML 1.1, amr swk dans un JWT. Désactivé, le certificat est ignoré ici."
+  },
   "wsfed.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
     "text": "Connexion initiée par le fournisseur d’identité"
@@ -4996,16 +5004,16 @@
     "text": "LDAPS : ne pas demander de certificat client"
   },
   "ldap.ldapsDisableOptionalClientCertificate|description": {
-    "en": "7e1993d7f889bc3c",
-    "text": "LDAPS n’envoie pas de CertificateRequest. ACTIVÉ par défaut, ce qu’a toujours fait LDAPS : un bind est la manière dont un client d’annuaire dit qui il est, et une demande de certificat devant chaque client qui en détient un est une surprise. Désactivé, un certificat est demandé à chaque connexion sans qu’aucun ne soit exigé ; un certificat présenté est vérifié par rapport au magasin de confiance client mais n’effectue le bind de personne (il n’y a pas de SASL EXTERNAL ici)."
+    "en": "7c1815ed4a7499c4",
+    "text": "LDAPS n’envoie aucun CertificateRequest. ACTIVÉ par défaut, ce que LDAPS a toujours fait : un bind est la façon dont un client d’annuaire dit qui il est, et une demande de certificat devant chaque client qui en détient un est une surprise. Désactivé, chaque connexion est invitée à présenter un certificat et aucune n’y est tenue ; un certificat présenté est vérifié par rapport au magasin de confiance client, et une connexion portant un certificat que ce service a délivré à une personne peut se lier en tant que cette personne avec SASL EXTERNAL."
   },
   "ldap.ldapsRequireClientCertificate|label": {
     "en": "eff4646ac01e4612",
     "text": "LDAPS : exiger un certificat client"
   },
   "ldap.ldapsRequireClientCertificate|description": {
-    "en": "2c73995bcc16b3fa",
-    "text": "LDAPS refuse, lors de la poignée de main, toute connexion qui ne présente pas de certificat client se rattachant au magasin de confiance client — une seconde barrière devant le bind, qui continue de décider de l’identité de la connexion. L’emporte sur l’interrupteur ci-dessus. Désactivé par défaut."
+    "en": "cfadc0b97c1bfaa8",
+    "text": "LDAPS refuse, lors de la négociation, toute connexion qui ne présente pas de certificat client remontant au magasin de confiance client — une seconde barrière devant le bind, qui décide toujours qui est la connexion : un mot de passe, ou SASL EXTERNAL avec un certificat que ce service a délivré à une personne. Prévaut sur l’option ci-dessus. Désactivé par défaut."
   },
   "debugger.disableOptionalClientCertificate|label": {
     "en": "df19c772421bba66",
@@ -6592,8 +6600,8 @@
     "text": "Proposer les certificats client TLS"
   },
   "scim.authClientCert|description": {
-    "en": "be5e7d5ccffce8c1",
-    "text": "TLS mutuel, le premier schéma que nomme RFC 7644 section 2. Il ne s’applique que lorsque la requête est arrivée par TLS avec un certificat VÉRIFIÉ par rapport au magasin de confiance client (/admin/tls/trust), donc uniquement lorsque global.https est activé. C’était le premier endroit de ce service où un certificat client était un IDENTIFIANT plutôt qu’une observation ; ici, il authentifie quelqu’un qui peut ensuite écrire dans l’annuaire."
+    "en": "0a6d722dc96ad17f",
+    "text": "TLS mutuel, le premier schéma que nomme RFC 7644 section 2. Il ne s’applique que lorsque la requête est arrivée par TLS avec un certificat VÉRIFIÉ par rapport au magasin de confiance client (/admin/tls/trust), donc uniquement lorsque global.https est activé. C’était le premier endroit de ce service où un certificat client était un IDENTIFIANT plutôt qu’une observation . Un certificat que ce domaine a émis pour une APPLICATION ne peut faire que ce que déclare l’oauthAllowedScope de cette application : le scope de lecture pour lire et le scope d’écriture pour écrire, vérifié à chaque requête (STS-SCIM-0083). Le certificat d’une personne — délivré par ce domaine, ou issu d’une autorité de certification externe et enregistré dans userCertificate sur l’entrée de cette personne (#1061) — peut lire et écrire dans l’annuaire."
   },
   "scimClient.attempts|label": {
     "en": "babe2e714439f7c0",
@@ -7067,17 +7075,25 @@
     "en": "34a196af42de2673",
     "text": "Indique si les endpoints SSF acceptent HTTP Basic à côté des jetons d’accès OAuth 2.0, et le publient dans authorization_schemes. En développement, n’importe quel nom d’utilisateur avec n’importe quel mot de passe sauf « invalid » passe ; en mode produit, le mot de passe est vérifié par rapport au userPassword haché de la personne. Dans les deux cas, un principal Basic détient les deux portées, car Basic n’en porte aucune — un déploiement qui veut que ssf.read et ssf.manage soient appliqués à chaque appelant désactive donc ce paramètre."
   },
+  "ssf.authClientCert|label": {
+    "en": "ad5fbafbb2ac1812",
+    "text": "Proposer les certificats client TLS"
+  },
+  "ssf.authClientCert|description": {
+    "en": "73d4ba2aa33adad2",
+    "text": "Indique si les endpoints SSF acceptent un récepteur authentifié par le certificat client TLS de sa connexion, sans en-tête Authorization, et publient urn:ietf:rfc:8705 dans authorization_schemes. Seul un certificat que ce royaume a délivré à une application, et que l’application détient toujours, est accepté ; le récepteur est cette application et possède les flux qu’il crée, et il détient les portées Shared Signals que son oauthAllowedScope déclare et que ses rôles SSF_READ et SSF_MANAGE autorisent."
+  },
   "ssf.internalReceivers|label": {
-    "en": "8eca3281fa7a4ef7",
-    "text": "Enregistrer la console et le portail comme récepteurs"
+    "en": "7e760a8d68a5e030",
+    "text": "Enregistrer la console, le portail et les rapports comme récepteurs"
   },
   "ssf.internalReceivers|description": {
-    "en": "1a148e2b3a63a17d",
-    "text": "Indique si ce service crée un flux Shared Signals pour sa PROPRE console d’administration et son portail utilisateur, afin que chacun reçoive chaque événement CAEP et RISC — en les collectant par interrogation RFC 8936 sur le /ssf/poll de ce service toutes les ssf.internalPollMs (#771) — et affiche ce qui est arrivé sur /admin/signals et /portal/signals. Ce sont des flux ORDINAIRES — mettez-en un en pause, restreignez-le ou supprimez-le sur /admin/ssf et il le reste jusqu’à un redémarrage."
+    "en": "0a23fbb0f030f814",
+    "text": "Indique si ce service crée un flux Shared Signals pour sa PROPRE console d’administration, son portail utilisateur et son application de rapports (#1042), afin que chacun reçoive chaque événement CAEP et RISC — en les collectant par interrogation RFC 8936 depuis le /ssf/poll de ce service toutes les ssf.internalPollMs (#771) — et affiche ce qui est arrivé sur /admin/signals, /portal/signals et /report/signals. Ce sont des flux ORDINAIRES : mettez-en un en pause, restreignez-le ou supprimez-le sur /admin/ssf et il reste ainsi jusqu’à un redémarrage."
   },
   "ssf.internalReceivers|restartReason": {
-    "en": "75c18a7223a2e0a3",
-    "text": "les deux flux sont créés au chargement de ssf/ssf.ts, puis de nouveau à la construction de chaque domaine ; le désactiver à chaud laisserait donc les flux déjà existants, et l’activer n’en créerait aucun"
+    "en": "eb2b8e34bd6ee85c",
+    "text": "les trois flux sont créés au chargement de ssf/ssf.ts et de nouveau à la construction de chaque domaine ; désactiver ce réglage à chaud laisserait les flux existants, et l’activer n’en créerait aucun"
   },
   "ssf.internalPollMs|label": {
     "en": "245d4495769ca599",
@@ -7156,8 +7172,8 @@
     "text": "Événements reçus conservés"
   },
   "ssf.maxReceivedEvents|description": {
-    "en": "2c503bd8b26764ea",
-    "text": "Le nombre de SET remis que chacun des récepteurs propres à ce service (celui de la console et celui du portail) conserve dans sa boîte de réception, par domaine de confiance ; au-delà, les plus anciens sont abandonnés."
+    "en": "4c285fbb0b900559",
+    "text": "Nombre de SET reçus que chacun des récepteurs propres à ce service (celui de la console, celui du portail et celui de l’application de rapports) conserve dans sa boîte de réception, par domaine ; les plus anciens sont supprimés au-delà."
   },
   "ssf.maxStreamLogEntries|label": {
     "en": "468201e24a40cdc6",
@@ -7232,12 +7248,12 @@
     "text": "La durée maximale d’une requête vers les Shared Signals d’un partenaire de fédération — découverte, son endpoint de jeton, gestion de flux, interrogation."
   },
   "ssf.actOnSignalsInDevelopment|label": {
-    "en": "563f14910995d99d",
-    "text": "La console et le portail agissent sur les signaux reçus en développement"
+    "en": "aa195c1cd8a0152a",
+    "text": "Les applications propres à ce service agissent sur les signaux reçus en développement"
   },
   "ssf.actOnSignalsInDevelopment|description": {
-    "en": "551c98310bd92f77",
-    "text": "Le mode produit fait toujours ce que permet la politique de réponse aux signaux pour un événement vérifié que reçoit la console ou le portail propre à ce service — mettre fin aux sessions de cette interface pour la personne qu’il nomme (#62) — ou qu’envoie un partenaire de fédération (#373, #374). Le développement enregistre ce qu’il aurait fait et ne fait rien, sauf si ce paramètre est activé. Un événement non vérifié n’entraîne jamais d’action, quelle que soit cette valeur."
+    "en": "2389ab3a9223bf66",
+    "text": "Le mode production fait toujours ce que la politique signal-response autorise avec un événement vérifié reçu par la console, le portail ou l’application de rapports de ce service — il révoque les jetons que le client de cette application détient pour la personne nommée (#1042 ; il mettait fin aux sessions de partie de confiance jusqu’à ce que les applications cessent d’en créer, #62) — ou envoyé par un partenaire de fédération (#373, #374). Le développement enregistre ce qu’il aurait fait et ne fait rien, sauf si ce réglage est activé. Un événement non vérifié n’est jamais traité, quoi qu’indique ce réglage."
   },
   "ssf.signalsRevokeGrants|label": {
     "en": "a0ded7c93cee0e93",
@@ -7324,8 +7340,8 @@
     "text": "Répertoire de téléversement des jeux de données"
   },
   "risk.uploadDirectory|description": {
-    "en": "347858cd0224743e",
-    "text": "L’endroit où un fichier de jeu de données téléversé est écrit pendant son importation, et d’où il est supprimé à la fin de l’importation, quelle qu’en soit l’issue. Un chemin relatif est résolu par rapport à la racine de ce paquet, comme persistence.dataDir. Attribuez-lui un volume propre avec de la place pour le plus gros fichier que vous téléverserez — compressé ; rien de décompressé n’est écrit — car un téléversement est refusé lorsque l’espace libre du répertoire ne peut pas le contenir. Chaque pile fournie par ce dépôt monte un volume ici."
+    "en": "ddab5a9b7f3d0a2a",
+    "text": "L’endroit où un fichier de jeu de données téléversé est écrit pendant son importation, et où une tâche de rapport est construite avant d’être stockée ; chaque fichier est supprimé à la fin de son importation ou de sa tâche, quelle qu’en soit l’issue. Un chemin relatif est résolu par rapport à la racine de ce paquet, comme persistence.dataDir. Attribuez-lui un volume propre avec de la place pour le plus gros fichier que vous téléverserez — compressé ; rien de décompressé n’est écrit — et pour report.asyncMaxBytes par tâche de rapport exécutée simultanément, car un téléversement ou une tâche est refusé lorsque l’espace libre du répertoire ne peut pas le contenir. Chaque pile fournie par ce dépôt monte un volume ici."
   },
   "risk.uploadMaxBytes|label": {
     "en": "959b6b79f9136a03",
@@ -7364,8 +7380,8 @@
     "text": "Intervalle de nettoyage des téléversements (secondes)"
   },
   "risk.uploadSweepS|description": {
-    "en": "d2ecf2ff3686662e",
-    "text": "La fréquence à laquelle chaque processus maintient à jour les fichiers téléversés qu’il importe et supprime les reliquats d’un processus arrêté (risk.upload-cleanup), et la fréquence à laquelle la tâche risk.stalled-imports recherche une version abandonnée. Maintenez-la bien en dessous de risk.importStallMinutes."
+    "en": "66b5d1a088266f41",
+    "text": "La fréquence à laquelle chaque processus maintient à jour les fichiers téléversés qu’il importe et les rapports qu’il construit, et supprime les reliquats d’un processus arrêté (risk.upload-cleanup, report.build-cleanup), et la fréquence à laquelle la tâche risk.stalled-imports recherche une version abandonnée. Maintenez-la bien en dessous de risk.importStallMinutes."
   },
   "risk.datasetShrinkLimitPercent|label": {
     "en": "46aea694920bebd6",
@@ -10222,14 +10238,6 @@
   "report.jobRetentionS|description": {
     "en": "dfada581a8c28ca3",
     "text": "Durée pendant laquelle la ligne d’une tâche de rapport terminée reste dans la liste. Une tâche encore en cours n’est pas supprimée."
-  },
-  "report.usersGroup|label": {
-    "en": "21554dfaa265b36f",
-    "text": "Qui peut se voir délivrer report:use"
-  },
-  "report.usersGroup|description": {
-    "en": "28068508e0655509",
-    "text": "Le groupe d’annuaire dont les membres peuvent se voir délivrer report:use. Vide : seuls les administrateurs de ce domaine le peuvent. report:admin n’est délivré qu’à ces administrateurs."
   },
   "listenerMain.minVersion|label": {
     "en": "6470c151e28a9ab3",

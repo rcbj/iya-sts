@@ -61,9 +61,14 @@ function minimal(b) {
 }
 
 // Signs until `want(r, s)` holds, so each case is the case it names.
+// 4000 tries, not 400 (2026-10-27): case 3 wants a leading ZERO byte in r
+// or s, which one signature in about 128 has, so 400 tries missed it about
+// one run in 23 (e^(-400/128)) and the job failed on develop 882641ac with
+// nothing wrong. At 4000 the miss is e^(-31), and the expected cost is
+// still ~128 signatures.
 function signatureWhere(pair, size, data, want) {
   log.debug("Entering signatureWhere().");
-  for (let i = 0; i < 400; i++) {
+  for (let i = 0; i < 4000; i++) {
     const raw = nodeCrypto.sign('sha256', data, { key: pair.privateKey,
       dsaEncoding: 'ieee-p1363' });
     const r = raw.subarray(0, size);

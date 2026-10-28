@@ -107,8 +107,31 @@
 //               a list, and a product-mode service refuses the chain
 //               (STS-PKI-0190) — which is what the launchers pass it for.
 //
+//   --store-on  a username (#1061): after the anchor, the leaf is STORED on
+//               that person's entry (created first if absent), through
+//               POST /admin-api/users/add-certificate. Needs --realm when
+//               the entry is not in the default realm, and the realm must
+//               already exist.
+//   --realm     the realm --store-on writes in. Default: the default realm.
+//
 // It prints the leaf's DN as its LAST line, so `$(... --quiet)` is the DN and a
 // launcher needs no parsing.
+//
+// ---------------------------------------------------------------------------
+// **TRUSTING THE ROOT NO LONGER MAKES THE LEAF ANYBODY (#1061, rcbj
+// 2026-10-27).** A certificate from an outside authority — which is every
+// certificate this file makes — is an identity at a door that reads a client
+// certificate as a person or application (the XACML gates, /tls/sign-in, the
+// sign-in screen, SCIM, Shared Signals, WS-Trust, LDAP SASL EXTERNAL) only
+// while it is STORED, byte for byte, in `userCertificate` on exactly one
+// entry of the realm the request is in. Its CN is never read as a name. So
+// whoever presents one of these leaves stores it first: `--store-on` here,
+// or `storeOnEntry()` (exported below) from a job, which makes the entry
+// where it is missing. The launchers mint the PEP's leaf before the job that
+// creates the PEP's realm has run, so `sts_xacml_remote_pep.js` stores the
+// launcher's `pep.crt` itself; the AWS runner's `pep-credential.sh` is in the
+// same position. RFC 8705 client authentication and GNAP's key proof read
+// the certificate as a KEY and are unchanged.
 //
 // **`MOCK_STS_DIR` RELOCATES THE ENGINE**, defaulting to two directories up.
 // The containerized launcher runs this file with the repository mounted into an
@@ -167,6 +190,8 @@ function parseArgs(argv) {
     else if (name === '--subject') { opts.subject = value; }
     else if (name === '--years') { opts.years = parseInt(value, 10) || 1; }
     else if (name === '--quiet') { opts.quiet = true; }
+    else if (name === '--store-on') { opts.storeOn = value; }
+    else if (name === '--realm') { opts.realm = value; }
     else if (name === '--crl-base') {
       opts.crlBase = value.replace(/\/+$/, '');
     }
@@ -592,6 +617,20 @@ async function main() {
   // THE DN, LAST AND ON STDOUT, so that `$(pep-credential.js --quiet ...)` is
   // the DN and a launcher needs no parsing. Everything else this file says
   // goes to stderr for that reason.
+  if (opts.storeOn) {
+    const stored = await storeFromCli(opts, leaf.pem);
+    if (!stored.ok) {
+      process.stderr.write('Could not store the leaf on ' + opts.storeOn +
+        ': POST /admin-api/users/add-certificate answered ' +
+        (stored.status || stored.why) + ' ' +
+        String(stored.body || '').slice(0, 300) + '\nThe anchor is trusted, ' +
+        'but the certificate names nobody until it is stored (#1061).\n');
+      process.exit(1);
+    }
+    say(opts, 'The leaf is stored on ' + opts.storeOn + '\'s entry' +
+              (opts.realm ? ' in the "' + opts.realm + '" realm' : '') +
+              ', which is what makes it that entry\'s identity (#1061).');
+  }
   process.stdout.write(leaf.subject + '\n');
   log.debug("Leaving main().");
 }
@@ -600,6 +639,114 @@ async function main() {
 // `removeAnchor()`, `forgetAnchors()` and `settleAnchors()` without it parsing
 // arguments and writing files — the same guard `xacml-pep/pep.js` and
 // `common/request_worker.ts` carry, for the same reason.
+// ---------------------------------------------------------------------------
+// STORE A LEAF ON ITS ENTRY (#1061), from a job.
+//
+// `api` is the job's own verbs — `{ get(url), post(url, payload) }`, each a
+// promise of `{ status, body, text }` — because every job already
+// authenticates to /admin-api its own way and this file must not grow a
+// second one. `prefix` is '' for the default realm or `/realm/<id>`. The
+// entry is created first where `GET /admin-api/users/certificates` says there
+// is none (a 400 is that refusal, STS-ADMIN-0898; codes are never sent), with
+// the attributes a product-mode realm's attribute policy requires.
+// Answers `{ prefix, user, sha256 }` for `forgetStored()`.
+// ---------------------------------------------------------------------------
+async function storeOnEntry(api, base, prefix, username, leafPem, attributes) {
+  log.debug("Entering storeOnEntry(). " + prefix + " " + username);
+  const root = String(base || '').replace(/\/+$/, '') + String(prefix || '') +
+               '/admin-api/users';
+  const listed = await api.get(root + '/certificates?user=' +
+                               encodeURIComponent(username));
+  if (listed.status !== 200) {
+    const made = await api.post(root + '/create', {
+      username: username, invent: false,
+      attributes: Object.assign({ cn: username, givenName: 'Certificate',
+                                  sn: username,
+                                  mail: username + '@certificate-holder.test',
+                                  displayName: username }, attributes || {})
+    });
+    if (made.status !== 200) {
+      log.debug("Leaving storeOnEntry(). The create was refused.");
+      throw new Error('POST ' + prefix + '/admin-api/users/create for ' +
+        username + ' answered ' + made.status + ' ' +
+        String(made.text || JSON.stringify(made.body)).slice(0, 300) +
+        '. An outside certificate is an identity only on an entry that ' +
+        'stores it, so there has to be one.');
+    }
+  }
+  const leaf = String(leafPem || '').match(
+    /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/);
+  const stored = await api.post(root + '/add-certificate', {
+    user: username, certificate: leaf ? leaf[0] : String(leafPem || '') });
+  if (stored.status !== 200 || !stored.body || !stored.body.ok) {
+    log.debug("Leaving storeOnEntry(). The store was refused.");
+    throw new Error('POST ' + prefix + '/admin-api/users/add-certificate ' +
+      'for ' + username + ' answered ' + stored.status + ' ' +
+      String(stored.text || JSON.stringify(stored.body)).slice(0, 300) +
+      '. Without it the certificate verifies and names nobody (#1061).');
+  }
+  log.debug("Leaving storeOnEntry(). " + stored.body.sha256);
+  return { prefix: String(prefix || ''), user: username,
+           sha256: String(stored.body.sha256 || '') };
+}
+
+// Takes off what `storeOnEntry()` stored, for a job's cleanup: an entry in a
+// realm the run keeps (the default one) must not keep a certificate whose key
+// was a temporary file. Failures are logged and answered, never thrown — a
+// cleanup that throws would replace the job's own verdict.
+async function forgetStored(api, base, list) {
+  log.debug("Entering forgetStored(). " + (list || []).length);
+  const problems = [];
+  for (const one of (list || [])) {
+    try {
+      const r = await api.post(String(base || '').replace(/\/+$/, '') +
+        one.prefix + '/admin-api/users/remove-certificate',
+        { user: one.user, sha256: one.sha256 });
+      if (r.status !== 200) {
+        problems.push(one.user + ': ' + r.status);
+      }
+    } catch (e) {
+      log.debug("Caught in forgetStored(): " + ((e && e.message) || e));
+      problems.push(one.user + ': ' + ((e && e.message) || e));
+    }
+  }
+  if (problems.length) {
+    log.warn('pep-credential: some stored certificates were not taken off: ' +
+             problems.join('; '));
+  }
+  log.debug("Leaving forgetStored().");
+  return problems;
+}
+
+// The CLI's `--store-on`, over `send()`: create (a refusal because the entry
+// exists is expected and passed over), then store.
+async function storeFromCli(opts, leafPem) {
+  log.debug("Entering storeFromCli().");
+  const prefix = opts.realm ? '/realm/' + opts.realm : '';
+  const root = String(opts.url).replace(/\/+$/, '') + prefix +
+               '/admin-api/users';
+  const token = process.env.STS_ADMIN_API_TOKEN || '';
+  const headers = token ? { Authorization: 'Bearer ' + token } : {};
+  const user = String(opts.storeOn);
+  const made = await send(root + '/create', 'application/json',
+    JSON.stringify({ username: user, invent: false,
+      attributes: { cn: user, givenName: 'Remote', sn: user,
+                    mail: user + '@xacml-remote-pep.test',
+                    displayName: user } }), headers, true);
+  if (!made.ok) {
+    log.info('pep-credential: the create of ' + user + ' answered ' +
+             (made.status || made.why) + '; an entry that is already there ' +
+             'is the usual reason, and the store below says if not.');
+  }
+  const leaf = String(leafPem).match(
+    /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/);
+  const stored = await send(root + '/add-certificate', 'application/json',
+    JSON.stringify({ user: user, certificate: leaf ? leaf[0] : leafPem }),
+    headers, true);
+  log.debug("Leaving storeFromCli().");
+  return stored;
+}
+
 if (require.main === module) {
   main().catch(function (error) {
     process.stderr.write((error && error.stack ? error.stack : String(error)) +
@@ -611,4 +758,5 @@ if (require.main === module) {
 module.exports = { mint: mint, trustAnchor: postAnchor,
                    removeAnchor: removeAnchor, forgetAnchors: forgetAnchors,
                    settleAnchors: settleAnchors,
+                   storeOnEntry: storeOnEntry, forgetStored: forgetStored,
                    DEFAULT_SUBJECT: DEFAULT_SUBJECT };

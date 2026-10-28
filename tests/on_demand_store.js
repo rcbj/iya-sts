@@ -33,7 +33,11 @@
 //   D11. `warm()` reads the keys it does not hold in ONE batch, holds what
 //        is there, remembers what is not, and skips a key already held;
 //   D12. a key another process changed while the batch was reading is not
-//        held from it (its answer may be the older one).
+//        held from it (its answer may be the older one);
+//   D13. a `merge: 'own'` store's `lookup()` never answers, or holds,
+//        another process's row (#1001);
+//   D14. its `lookupEntries()` answers every origin's row with whose it is,
+//        and caches only this process's.
 //
 // In a child process: it installs a stand-in reader in `common/realms.js`.
 // ===========================================================================
@@ -260,6 +264,60 @@ function child() {
          'D12. a key changed by another process while the batch read is not ' +
          'held from it, and is read again', JSON.stringify({ got3: got3,
            asked: asked }));
+
+    // A PER-ORIGIN STORE ON DEMAND (#1001): the reader marks another
+    // process's row `own: false`.
+    const ownStored = new Map([['p-1', { who: 'p', n: 1 }]]);
+    const ownAsked = [];
+    realms.setOnDemandReader({
+      active: function () {
+        return true;
+      },
+      read: function (handle, realmId, key) {
+        ownAsked.push('read:' + key);
+        return ownStored.has(key)
+          ? { present: true, value: ownStored.get(key) } : { present: false };
+      },
+      byIndex: function (handle, realmId, indexKey) {
+        ownAsked.push('index:' + indexKey);
+        const out = [];
+        if (indexKey === 'p') {
+          out.push({ key: 'p-1', origin: '', own: true,
+                     value: { who: 'p', n: 1 } });
+          out.push({ key: 'p-1', origin: 'n:other', own: false,
+                     value: { who: 'p', n: 7 } });
+        }
+        return out;
+      },
+      journalled: function () {
+        return false;
+      }
+    });
+    const perOrigin = realms.map({ persist: 'test.ods.own', merge: 'own',
+      onDemand: { maxEntries: 3 },
+      indexBy: function (value) {
+        return value && value.who ? [value.who] : [];
+      } });
+    const keys = perOrigin.lookup('p');
+    const heldOwn = perOrigin.realmMap().get('p-1');
+    note(keys.length === 1 && keys[0] === 'p-1' && heldOwn && heldOwn.n === 1,
+         'D13. lookup() answers this process\'s key once and never another ' +
+         'origin\'s row, which it holds under nothing',
+         JSON.stringify({ keys: keys, held: heldOwn }));
+    const entries = perOrigin.lookupEntries('p');
+    const mine = entries.filter(function (e) {
+      return e.own;
+    });
+    const theirs = entries.filter(function (e) {
+      return !e.own;
+    });
+    note(entries.length === 2 && mine.length === 1 &&
+         mine[0].value.n === 1 && theirs.length === 1 &&
+         theirs[0].origin === 'n:other' && theirs[0].value.n === 7 &&
+         perOrigin.realmMap().size === 1,
+         'D14. lookupEntries() answers both rows with whose each is, and ' +
+         'caches only this process\'s',
+         JSON.stringify(entries));
   })().catch(function (e) {
     note(false, 'the child threw', (e && e.stack) || e);
   }).then(function () {

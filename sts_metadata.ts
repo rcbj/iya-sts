@@ -679,11 +679,14 @@ const SPECS: Spec[] = [
               'and the seven section 3.3 members plus additional ones, ' +
               'critical_subject_members, and section 3.5\'s jwt_id, ' +
               'saml_assertion_id and ip-addresses formats are implemented. ' +
-              'Section 8 authorization is three schemes — an OAuth 2.0 ' +
+              'Section 8 authorization is four schemes — an OAuth 2.0 ' +
               'access token with the read scope (ssf.read) or the write ' +
               'scope (ssf.manage), which includes read, issued to a ' +
               'client that declares that permission and ' +
-              'honoured only while it still does, HTTP Basic and GNAP — ' +
+              'honoured only while it still does, HTTP Basic, GNAP, and ' +
+              'the receiver\'s TLS client certificate (urn:ietf:rfc:8705), ' +
+              'issued by this realm to its application and holding what a ' +
+              'token for that application would be issued — ' +
               'published in authorization_schemes. Failed pushes are retried ' +
               'ssf.pushRetries times (0 by default, deliberately) and then ' +
               'dead-lettered, and streams are persisted in product mode. ' +
@@ -1106,7 +1109,8 @@ const SPECS: Spec[] = [
               '(sizeLimitExceeded), 11 (adminLimitExceeded), 16 ' +
               '(noSuchAttribute), 32 (noSuchObject), 49 ' +
               '(invalidCredentials), 66 (notAllowedOnNonLeaf) and 68 ' +
-              '(entryAlreadyExists) all reachable on both. No SASL, no ' +
+              '(entryAlreadyExists) all reachable on both. No SASL ' +
+              'mechanism but EXTERNAL (RFC 4513, below), no ' +
               'StartTLS, no controls (so no paged results and no sorting), ' +
               'no extended operations and no referrals. StartTLS is named ' +
               'twice there on purpose: it IS an extended operation (section ' +
@@ -1152,9 +1156,13 @@ const SPECS: Spec[] = [
     where: 'IETF',
     url: 'https://www.rfc-editor.org/rfc/rfc4513',
     coverage: 'partial, and the part that is here is the TRANSPORT rather ' +
-              'than the authentication: simple bind (section 5.1) is the ' +
-              'only method offered — no SASL, so no EXTERNAL and no ' +
-              'DIGEST-MD5. In development mode it authenticates nobody, ' +
+              'than the authentication: simple bind (section 5.1) and, ' +
+              'while 636 asks for a client certificate, SASL EXTERNAL ' +
+              '(section 5.2.1.2) with a certificate this service issued ' +
+              'to a person, or an outside one stored in userCertificate ' +
+              'on exactly one person entry; no other SASL mechanism, so ' +
+              'no DIGEST-MD5. ' +
+              'In development mode it authenticates nobody, ' +
               'since every bind succeeds except the literal password ' +
               '"invalid", and what TLS on 636 adds is confidentiality for a ' +
               'password that was never going to be checked, which is worth ' +
@@ -1346,7 +1354,13 @@ const SPECS: Spec[] = [
               'development accepts none, as it always did. In both modes a ' +
               'requested wst:Lifetime is clamped ' +
               '(wstrust.maxTokenLifetimeMin) and the issued assertion\'s ' +
-              'AuthnContext names the credential rather than a password.' },
+              'AuthnContext names the credential rather than a password. A ' +
+              'requester whose wsse:Security carries no credential is ' +
+              'authenticated, in both modes, by the TLS client certificate ' +
+              'on the connection where this realm issued it to a person or ' +
+              'an application (#1046), or where it is from an outside ' +
+              'certificate authority and stored in userCertificate on ' +
+              'exactly one of their entries (#1061).' },
   { id: 'wss-username', name: 'WS-Security UsernameToken Profile 1.1',
     where: 'OASIS wss',
     url: 'https://docs.oasis-open.org/wss/v1.1/wss-v1.1-spec-os-UsernameTokenProfile.pdf',
@@ -4380,9 +4394,11 @@ const ENDPOINTS: EndpointEntry[] = [
           'revocation found, and whether a session was started. It refuses ' +
           'nobody at the handshake and cannot: a certificate that does not ' +
           'verify, one this service issued that is not a TLS client ' +
-          'identity, and an application\'s certificate (an RFC 8705 ' +
-          'credential, not a person) are each answered 200 with no session ' +
-          'and the reason.' },
+          'identity, one from an outside certificate authority that is not ' +
+          'stored in userCertificate on exactly one entry of the realm ' +
+          '(never matched by its common name), and an application\'s ' +
+          'certificate (an RFC 8705 credential, not a person) are each ' +
+          'answered 200 with no session and the reason.' },
   { path: '/tls/server-certificate', group: 'TLS', name: 'The server ' +
       'certificate (PEM)',
     specs: ['rfc5280'],
@@ -4645,6 +4661,18 @@ const ENDPOINTS: EndpointEntry[] = [
           'callback on the console\'s client entry as the relying party ' +
           'did (learnt in development, refused in product unless ' +
           'registered).' },
+  { path: '/admin/signals/receive', group: 'Admin',
+    name: 'The console\'s Shared Signals receive endpoint',
+    specs: ['ssf', 'rfc8935', 'rfc8417'],
+    effect: 'records a Security Event Token delivered to the admin console',
+    what: 'RFC 8935 SECTION 2.1 PUSH DELIVERY, for a console stream set back ' +
+          'to push (the seeded one is polled since #771). The #446 cutover ' +
+          'deleted it with the server-rendered pages and #1042 restored it: ' +
+          'the portal\'s twin, checked the same way — the bearer token on ' +
+          'the console\'s own stream in constant time, the `aud`, then the ' +
+          'signature — and not rate limited, for the same reason.',
+    coverage: 'full for RFC 8935 section 2.1 receipt, as ' +
+              '/portal/signals/receive.' },
   { path: '/admin/console.js', group: 'Admin', name: 'The console\'s script',
     specs: [],
     what: 'NON-SPEC. The static console (#446): its runtime and every ' +
@@ -4689,6 +4717,16 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/portal/portal.css', group: 'User portal',
     name: 'The portal\'s stylesheet', specs: [],
     what: 'NON-SPEC. The portal\'s one stylesheet (#568).' },
+  { path: '/report/signals/receive', group: 'Reporting',
+    name: 'The reports application\'s Shared Signals receive endpoint',
+    specs: ['ssf', 'rfc8935', 'rfc8417'],
+    effect: 'records a Security Event Token delivered to the reports ' +
+            'application',
+    what: 'RFC 8935 SECTION 2.1 PUSH DELIVERY, for a reports stream set ' +
+          'back to push (#1042; the seeded one is polled, as the console\'s ' +
+          'and the portal\'s are). Checked as /portal/signals/receive is.',
+    coverage: 'full for RFC 8935 section 2.1 receipt, as ' +
+              '/portal/signals/receive.' },
   { path: '/report', group: 'Reporting',
     name: 'The reports application', specs: [],
     what: 'NON-SPEC. The static reports application (#956). Every path ' +
@@ -4721,6 +4759,33 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/report-api/catalog/:id', group: 'Reporting',
     name: 'One report source', specs: [],
     what: 'NON-SPEC. One source from the catalog, by its id.' },
+  { path: '/report-api/realms', group: 'Reporting',
+    name: 'The trust realms, for the reports application', specs: [],
+    what: 'NON-SPEC. The realm this request is in and, where realms are ' +
+          'active, every realm with its id, name and path prefix (#986): ' +
+          'what the application\'s realm field and switch are drawn from. ' +
+          'Behind the same token as the rest of /report-api.' },
+  { path: '/report-api/signals', group: 'Reporting',
+    name: 'The reports application\'s Shared Signals inbox',
+    specs: ['ssf', 'caep', 'risc'],
+    what: 'NON-SPEC. What the reports application, a receiver of this ' +
+          'service\'s own transmitter (#1042), has received: every signal ' +
+          'in the realm for a report administrator, only the signals about ' +
+          'themselves for anybody else. Behind the same token as the rest ' +
+          'of /report-api.' },
+  { path: '/report-api/groups', group: 'Reporting',
+    name: 'The group search, for the reports application', specs: [],
+    what: 'NON-SPEC. The realm\'s groups whose name or DN contains q, five ' +
+          'a page, each with its own mail attribute (#989): the definition ' +
+          'page\'s pane. A definition\'s groups are who is emailed its ' +
+          'result. Behind the same token as the rest of /report-api.' },
+  { path: '/report-api/schedules', group: 'Reporting',
+    name: 'The scheduled report definitions', specs: [],
+    what: 'NON-SPEC. Every definition that carries a schedule, with its ' +
+          'next run, the occurrence it last took, its skip notes and its ' +
+          'recent scheduled jobs (#992). report:use sees its own and ' +
+          'shared ones; report:admin the whole realm, and one owner by ' +
+          'name. Behind the same token as the rest of /report-api.' },
   { path: '/report-api/queries', group: 'Reporting',
     name: 'Run a report query', specs: [],
     what: 'NON-SPEC. A catalog query. A small bounded one answers in the ' +
@@ -5638,6 +5703,15 @@ const ENDPOINTS: EndpointEntry[] = [
           'Native SSO secret and whether that secret\'s session is live. ' +
           'POST /admin-api/users/remove-device removes one. Mirrors the ' +
           'Devices block on the person\'s /admin/users page.' },
+  { path: '/admin-api/users/certificates', group: 'Management API',
+    name: 'One person\'s stored certificates', specs: ['rfc5280'],
+    what: 'NON-SPEC (#1061). Each certificate stored in the person\'s ' +
+          'userCertificate: the SHA-256 of its DER, its subject, issuer, ' +
+          'serial and validity. A certificate from an outside authority ' +
+          'signs its holder in only as the one entry storing it; POST ' +
+          '/admin-api/users/add-certificate stores one and ' +
+          '/remove-certificate takes it away. Mirrors the Stored ' +
+          'certificates block on the person\'s /admin/users page.' },
   { path: '/admin-api/devices', group: 'Management API',
     name: 'The device register', specs: ['oidc-native-sso', 'openapi'],
     what: 'NON-SPEC (#164, #218). GET /admin/devices over JSON: every ' +
@@ -8269,6 +8343,15 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/authn-api/pending/:id/anonymous', group: 'Authentication',
     name: 'Continue without signing in', specs: [],
     what: 'NON-SPEC (#571). Where authn.unauthenticatedSessions is on.' },
+  { path: '/authn-api/pending/:id/certificate', group: 'Authentication',
+    name: 'Continue with your certificate', specs: [],
+    what: 'NON-SPEC (#1051). The TLS client certificate on the ' +
+          'connection as a first factor, amr ["swk"]: refused on ' +
+          'revocation, by the identity gate, for another realm\'s ' +
+          'authority, an outside certificate not stored on exactly one ' +
+          'entry, or an application\'s certificate, as GET /tls/sign-in ' +
+          'refuses it; then the authentication policy, the risk and a ' +
+          'second factor where one is needed.' },
   { path: '/authn-api/pending/:id/email', group: 'Authentication',
     name: 'Sign in with an emailed code or link', specs: [],
     what: 'NON-SPEC (#571). Where the authentication policy accepts one.' },

@@ -30,6 +30,7 @@
   "off": "關閉",
   "scopes": "範圍",
   "everything": "全部",
+  "applicationDeclares": "應用程式的：其宣告的；個人的：全部",
   "scopesText": "兩個 OAuth 範圍為 <code>{read}</code> 與 <code>{write}</code>，發布於兩份探索文件的 <code>scopes_supported</code> 中。Digest 提供 {algorithms}。HOBA 金鑰在 <code>{hoba}</code> 註冊。",
   "policy": "存取控制原則",
   "endpoints": "端點",

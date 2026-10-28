@@ -114,10 +114,17 @@ class OpenApi {
       info: {
         title: 'IYA STS reports',
         version: '1',
-        description: 'The reports API. Every operation takes a DPoP-bound ' +
-          'access token for the public client sts-report, resource this ' +
-          'realm\'s /report-api, scope report:use or report:admin, sent ' +
-          'as Authorization: DPoP. A job id is not an authorization: ' +
+        description: 'The reports API. Every operation takes an access ' +
+          'token for this realm\'s /report-api carrying report:use or ' +
+          'report:admin — the public client sts-report\'s, DPoP-bound and ' +
+          'sent as Authorization: DPoP, or an application\'s own ' +
+          '(client_credentials) where the application is a member of ' +
+          'REPORT_USE or REPORT_ADMIN and declares the scope. The scopes ' +
+          'are the permissions of those two roles; the access-control ' +
+          'policy decides every definition and job: an owner their own, a ' +
+          'report administrator every one, a shared group\'s member reading ' +
+          'and running one shared with them, an application only what it ' +
+          'defined. A job id is not an authorization: ' +
           'retrieving a result takes the same token. Paths are after the ' +
           'realm prefix; the default realm has none. The catalog is the ' +
           'field reference. A query names one source. An offset, a second ' +
@@ -127,7 +134,8 @@ class OpenApi {
       paths: {
         '/report-api': {
           get: operation('The report API index',
-            'Names the catalog address.', {
+            'Names the catalog and realms addresses, and carries the ' +
+            'service version the application draws in its footer.', {
               responses: {
                 '200': answered('The index.',
                   { $ref: '#/components/schemas/Index' })
@@ -140,6 +148,87 @@ class OpenApi {
               responses: {
                 '200': answered('This OpenAPI document.',
                   { type: 'object' })
+              }
+            })
+        },
+        '/report-api/realms': {
+          get: operation('The trust realms',
+            'The realm this request is in, and every realm with its id, ' +
+            'name and path prefix where realms are active (null where ' +
+            'they are not). The application draws its realm field and ' +
+            'switch from it.', {
+              responses: {
+                '200': answered('The realms.',
+                  { $ref: '#/components/schemas/Realms' })
+              }
+            })
+        },
+        '/report-api/groups': {
+          get: operation('Search the realm\'s groups',
+            'The groups of this realm whose name or DN contains `q` ' +
+            '(case-insensitive; empty matches every group), five a page ' +
+            'in name order, each with its own `mail` attribute or an ' +
+            'empty string. The definition page builds its share list from ' +
+            'it; a definition\'s groups are who is emailed its result, at ' +
+            'that address (#989).', {
+              parameters: [
+                { name: 'q', in: 'query', required: false,
+                  schema: { type: 'string' } },
+                { name: 'page', in: 'query', required: false,
+                  schema: { type: 'integer', minimum: 1 } }
+              ],
+              responses: {
+                '200': answered('One page of groups.',
+                  { $ref: '#/components/schemas/GroupPage' })
+              }
+            })
+        },
+        '/report-api/signals': {
+          get: operation('This application\'s Shared Signals inbox',
+            'The CAEP and RISC events this application\'s own stream ' +
+            'delivered in this realm, newest first, twenty a page by default (#1042). ' +
+            'report:admin sees every one (`scope` realm); anybody else ' +
+            'sees only the events about themselves (`scope` own), and an ' +
+            'application sees none. Each row says what this application ' +
+            'did with it: the sessions it ended and the tokens of its own ' +
+            'client it revoked for the person named, or why it did ' +
+            'nothing. `receiving` is false, with `why`, when nothing can ' +
+            'arrive. `per` is at most 100.', {
+              parameters: [
+                { name: 'page', in: 'query', required: false,
+                  schema: { type: 'integer', minimum: 1 } },
+                { name: 'per', in: 'query', required: false,
+                  schema: { type: 'integer', minimum: 1, maximum: 100 } }
+              ],
+              responses: {
+                '200': answered('One page of the inbox.',
+                  { type: 'object' })
+              }
+            })
+        },
+        '/report-api/schedules': {
+          get: operation('The scheduled definitions and their runs',
+            'Every definition that carries a schedule, with when it next ' +
+            'runs, the occurrence it last took, the notes a skipped run ' +
+            'left, and its most recent scheduled jobs. A report:use token ' +
+            'sees the definitions it owns or is shared; report:admin sees ' +
+            'every one in the realm and may name one owner with `owner` ' +
+            '(a urn:uuid subject or a username). A report:use token that ' +
+            'names another owner is refused with forbidden (403). Paged; ' +
+            '`per` is at most 100.', {
+              parameters: [
+                { name: 'owner', in: 'query', required: false,
+                  schema: { type: 'string' } },
+                { name: 'page', in: 'query', required: false,
+                  schema: { type: 'integer', minimum: 1 } },
+                { name: 'per', in: 'query', required: false,
+                  schema: { type: 'integer', minimum: 1, maximum: 100 } }
+              ],
+              responses: {
+                '200': answered('The schedules.',
+                  { $ref: '#/components/schemas/SchedulePage' }),
+                '403': answered('Another owner was named without ' +
+                  'report:admin.', { $ref: '#/components/schemas/Error' })
               }
             })
         },
@@ -192,7 +281,15 @@ class OpenApi {
           get: operation('List definitions',
             'The caller\'s own definitions, those shared with a group ' +
             'the caller belongs to, and every definition when the token ' +
-            'has report:admin.', {
+            'has report:admin. In name order, numbered pages: `page` and ' +
+            '`per` (50 unless given, at most 200); the answer carries ' +
+            'page, pages, per and total beside the rows.', {
+              parameters: [
+                { name: 'page', in: 'query', required: false,
+                  schema: { type: 'integer', minimum: 1 } },
+                { name: 'per', in: 'query', required: false,
+                  schema: { type: 'integer', minimum: 1, maximum: 200 } }
+              ],
               responses: {
                 '200': answered('The definitions.',
                   { $ref: '#/components/schemas/DefinitionList' })
@@ -282,20 +379,30 @@ class OpenApi {
         },
         '/report-api/jobs': {
           get: operation('List jobs',
-            'Newest first. after is the previous page\'s next id. A job ' +
-            'id in the list is not permission to read a job the token ' +
-            'cannot see.', {
+            'Newest first, in numbered pages: `page` and `per` (50 unless ' +
+            'given, at most 200), with page, pages, per and total beside ' +
+            'the rows. A caller may page by cursor instead: `after` is the ' +
+            'previous page\'s next id and `limit` its size. A job id in ' +
+            'the list is not permission to read a job the token cannot ' +
+            'see.', {
               parameters: [{
+                name: 'page', in: 'query', required: false,
+                schema: { type: 'integer', minimum: 1 }
+              }, {
+                name: 'per', in: 'query', required: false,
+                schema: { type: 'integer', minimum: 1, maximum: 200 }
+              }, {
                 name: 'after',
                 in: 'query',
                 required: false,
-                description: 'The last id of the previous page.',
+                description: 'The last id of the previous page, for a ' +
+                  'cursor walk; page and per are then ignored.',
                 schema: { type: 'string' }
               }, {
                 name: 'limit',
                 in: 'query',
                 required: false,
-                description: 'How many jobs to return.',
+                description: 'How many jobs a cursor page returns.',
                 schema: { type: 'integer' }
               }],
               responses: {
@@ -379,7 +486,97 @@ class OpenApi {
             type: 'object',
             properties: {
               service: { type: 'string', example: 'report' },
-              catalog: { type: 'string' }
+              catalog: { type: 'string' },
+              realms: { type: 'string' },
+              version: {
+                type: 'object',
+                properties: {
+                  version: { type: 'string' },
+                  stamped: { type: 'boolean' },
+                  buildInfo: { type: 'string' }
+                }
+              }
+            }
+          },
+          Realm: {
+            type: 'object',
+            properties: {
+              id: { type: 'string' },
+              name: { type: 'string' },
+              prefix: { type: 'string',
+                description: 'The realm\'s path prefix; empty for the ' +
+                  'default realm.' }
+            }
+          },
+          Realms: {
+            type: 'object',
+            properties: {
+              current: { $ref: '#/components/schemas/Realm' },
+              realms: { type: 'array', nullable: true,
+                items: { $ref: '#/components/schemas/Realm' } }
+            }
+          },
+          Schedule: {
+            type: 'object',
+            properties: {
+              definition: {
+                type: 'object',
+                properties: {
+                  id: { type: 'string' },
+                  name: { type: 'string' },
+                  owner: { type: 'string' },
+                  ownerName: { type: 'string' },
+                  schedule: { type: 'string' },
+                  scheduleEnabled: { type: 'boolean' },
+                  notify: { type: 'boolean' },
+                  nextRunAt: { type: 'string', nullable: true },
+                  lastSlotAt: { type: 'string', nullable: true },
+                  failures: { type: 'array', items: { type: 'object',
+                    properties: { at: { type: 'string', nullable: true },
+                      description: { type: 'string' } } } }
+                }
+              },
+              jobs: { type: 'array',
+                description: 'The most recent scheduled jobs, newest first, ' +
+                  'at most five.',
+                items: { $ref: '#/components/schemas/Job' } },
+              jobCount: { type: 'integer',
+                description: 'How many scheduled jobs the definition has ' +
+                  'in all.' }
+            }
+          },
+          SchedulePage: {
+            type: 'object',
+            properties: {
+              scope: { type: 'string', enum: ['mine', 'realm'] },
+              owner: { type: 'string', nullable: true },
+              page: { type: 'integer' },
+              pages: { type: 'integer' },
+              per: { type: 'integer' },
+              total: { type: 'integer' },
+              schedules: { type: 'array',
+                items: { $ref: '#/components/schemas/Schedule' } }
+            }
+          },
+          Group: {
+            type: 'object',
+            properties: {
+              dn: { type: 'string' },
+              name: { type: 'string', description: 'The cn.' },
+              mail: { type: 'string',
+                description: 'The group\'s own address, or empty.' }
+            }
+          },
+          GroupPage: {
+            type: 'object',
+            properties: {
+              q: { type: 'string' },
+              page: { type: 'integer' },
+              pages: { type: 'integer' },
+              per: { type: 'integer', example: 5 },
+              total: { type: 'integer' },
+              groups: { type: 'array',
+                items: { $ref: '#/components/schemas/Group' } }
             }
           },
           Field: {
@@ -392,13 +589,36 @@ class OpenApi {
               filter: { type: 'boolean' },
               sort: { type: 'boolean' },
               group: { type: 'boolean' },
-              operators: { type: 'array', items: { type: 'string' } }
+              operators: { type: 'array', items: { type: 'string' } },
+              indexed: { type: 'array', items: { type: 'string' },
+                description: 'The operators the directory answers with ' +
+                  'an index, so a filter using one of them reads only the ' +
+                  'rows it names. A users query whose filter uses none, ' +
+                  'with an order or a count, or on a sealed field, reads ' +
+                  'every person: refused in sync mode (result_too_large), ' +
+                  'a job in auto mode.' },
+              indexedValues: { type: 'array', items: { type: 'string' },
+                description: 'The values whose equality the index ' +
+                  'answers, when it answers only some: users status is ' +
+                  'indexed for locked, and active is everybody else. ' +
+                  'Absent when every value is answered.' },
+              values: { type: 'array', items: { type: 'string' },
+                description: 'Every value the field can hold, when it is ' +
+                  'an enumeration; the page draws a dropdown of them for ' +
+                  'equals and not equals. Absent for an open field.' }
             }
           },
           Source: {
             type: 'object',
             properties: {
               id: { type: 'string', enum: names },
+              anchored: { type: 'boolean',
+                description: 'True for a source read from the directory ' +
+                  '(users, credentialHolders): a filter on it has to name ' +
+                  'a field whose `indexed` list holds the operator — a ' +
+                  'leaf of an and, or every arm of an or — or it is ' +
+                  'refused as invalid_query; the other fields narrow an ' +
+                  'indexed read.' },
               bounded: { type: 'boolean' },
               retention: { type: 'string' },
               paging: { type: 'string', enum: ['limit'] },
@@ -489,9 +709,22 @@ class OpenApi {
             properties: {
               id: { type: 'string' },
               name: { type: 'string' },
-              owner: { type: 'string' },
-              schedule: { type: 'string' },
+              owner: { type: 'string',
+                description: 'The owner\'s subject (urn:uuid:…).' },
+              ownerName: { type: 'string',
+                description: 'The owner\'s display name, or username; ' +
+                  'empty for a subject this realm cannot name.' },
+              schedule: { type: 'string',
+                description: 'A five-field cron expression in UTC, or ' +
+                  'empty. The application composes it from a date-time ' +
+                  'and weekday boxes.' },
               scheduleEnabled: { type: 'boolean' },
+              nextRunAt: { type: 'string', nullable: true,
+                description: 'When the enabled schedule next occurs, ' +
+                  'ISO-8601 UTC; null when it is off or has no occurrence.' },
+              lastSlotAt: { type: 'string', nullable: true,
+                description: 'The most recent occurrence the schedule has ' +
+                  'taken (queued, or skipped with a note), or null.' },
               notify: { type: 'boolean' },
               editable: { type: 'boolean' },
               createdAt: { type: 'string', format: 'date-time' },
@@ -512,7 +745,11 @@ class OpenApi {
             type: 'object',
             properties: {
               definitions: { type: 'array',
-                items: { $ref: '#/components/schemas/Definition' } }
+                items: { $ref: '#/components/schemas/Definition' } },
+              page: { type: 'integer' },
+              pages: { type: 'integer' },
+              per: { type: 'integer' },
+              total: { type: 'integer' }
             }
           },
           ShareWrite: {
@@ -540,6 +777,16 @@ class OpenApi {
               definitionName: { type: 'string', nullable: true },
               source: { type: 'string' },
               fields: { type: 'array', items: { type: 'string' } },
+              queuedBecause: { type: 'string', nullable: true,
+                enum: ['every-person', 'asked', 'limit', 'source', 'run',
+                  'schedule'],
+                description: 'Why this query is a job: every-person (an ' +
+                  'auto-mode query whose filter the directory cannot ' +
+                  'answer from an index, so it has to read every person), ' +
+                  'asked (mode async, or POST /jobs), limit (auto over ' +
+                  'report.syncMaxRows), source (a source that cannot be ' +
+                  'read synchronously), run (a saved definition run by ' +
+                  'hand) or schedule.' },
               query: { $ref: '#/components/schemas/QueryDocument' }
             }
           },
@@ -554,7 +801,12 @@ class OpenApi {
             properties: {
               jobs: { type: 'array',
                 items: { $ref: '#/components/schemas/Job' } },
-              next: { type: 'string', nullable: true }
+              next: { type: 'string', nullable: true },
+              page: { type: 'integer',
+                description: 'Absent on a cursor page.' },
+              pages: { type: 'integer' },
+              per: { type: 'integer' },
+              total: { type: 'integer' }
             }
           }
         }

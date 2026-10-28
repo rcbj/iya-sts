@@ -1451,6 +1451,22 @@
     "en": "7e34d7e487ace8d1",
     "text": "Ingen utgång: en ersatt Issuing CA ändrar nyckeln. När det är fullt töms hela minnet på en gång."
   },
+  "caches.store.tls.ticket-names.title": {
+    "en": "45b312c79e1fc669",
+    "text": "TLS 1.2-biljettnamn, för återupptagna sessioner"
+  },
+  "caches.store.tls.ticket-names.description": {
+    "en": "57d1e55a310de728",
+    "text": "Servernamnet som en fullständig TLS 1.2-handskakning gjordes under, nycklat på en kontrollsumma av sessionens huvudhemlighet och jämfört när den sessionen ÅTERUPPTAS med biljett (#507, RFC 6066 avsnitt 3): node återupptar en biljett inne i OpenSSL utan någon händelse, och OpenSSL jämför inte namnet. Ett återupptagande under ett annat namn, eller ett som ingen post går i god för, stängs efter handskakningen. Varje lyssnare håller också sin egen kopia, begränsad på samma sätt."
+  },
+  "caches.store.tls.ticket-names.bound": {
+    "en": "fbeee6f2caab2df9",
+    "text": "Upprätthållen: 4096 sessioner; utgångna rader går först, sedan de äldsta."
+  },
+  "caches.store.tls.ticket-names.lifetime": {
+    "en": "f016ce1d11af0c30",
+    "text": "Delad av varje nod och replikerad: lyssnarens sessionslivstid (tls.sessionTimeoutS), vilket är så länge en biljett lever."
+  },
   "caches.store.vc-api.issued.title": {
     "en": "146ad69e9e6c821f",
     "text": "VC-API-intyg med en status"

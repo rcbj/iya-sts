@@ -583,6 +583,62 @@ function declaredRefusal(opts) {
 }
 
 // ---------------------------------------------------------------------------
+// WHAT A CLIENT DECLARED THAT MAKES ITS `/admin-api` TOKENS CERTIFICATE-BOUND
+// (#1050, rcbj's decision on #520, 2026-10-27).
+//
+// "Bound tokens only, no bare certificate as a credential": a client whose
+// entry declares `tls_client_auth` or `self_signed_tls_client_auth` AMONG its
+// methods, or `tls_client_certificate_bound_access_tokens: true`, is issued an
+// access token for the management API only bound to a certificate, and that
+// API refuses such a client's token that carries no `x5t#S256`. Among its
+// methods, not as its first one: since 2026-10-01 an entry may declare a
+// secret beside a certificate method, and `declaredRefusal()` above then
+// holds the request to the secret it sent — which is exactly the door an
+// unbound administrative token would have come through.
+//
+// Read off `clientConfigOf()`'s shape (`token_endpoint_auth_methods`, or the
+// one `token_endpoint_auth_method` an older shape names) rather than through
+// `client_auth.declaredMethodsOf()`, because `client_auth.js` requires this
+// file and a require back would close the cycle this library is kept out of.
+// ---------------------------------------------------------------------------
+/**
+ * Names the declaration that makes a client's `/admin-api` access tokens
+ * certificate-bound (#1050), or '' when it declares none.
+ *
+ * @param registered - the client's configuration (`clientConfigOf()`)
+ * @returns `token_endpoint_auth_method=<method>`,
+ *   `tls_client_certificate_bound_access_tokens=true`, or ''
+ */
+function certificateDeclaration(registered) {
+  log.debug("Entering certificateDeclaration().");
+  const r = registered || {};
+  if (!r.known) {
+    log.debug("Leaving certificateDeclaration(). No entry.");
+    return '';
+  }
+  const methods = [].concat(Array.isArray(r.token_endpoint_auth_methods) &&
+                            r.token_endpoint_auth_methods.length
+    ? r.token_endpoint_auth_methods
+    : [r.token_endpoint_auth_method || ''])
+    .map(function (one) {
+      return String(one || '').trim();
+    });
+  const method = methods.filter(function (one) {
+    return CERTIFICATE_METHODS.indexOf(one) >= 0;
+  })[0];
+  if (method) {
+    log.debug("Leaving certificateDeclaration(). " + method);
+    return 'token_endpoint_auth_method=' + method;
+  }
+  if (r.tls_client_certificate_bound_access_tokens === true) {
+    log.debug("Leaving certificateDeclaration(). Bound tokens.");
+    return 'tls_client_certificate_bound_access_tokens=true';
+  }
+  log.debug("Leaving certificateDeclaration(). None.");
+  return '';
+}
+
+// ---------------------------------------------------------------------------
 // RFC 8705 SECTION 7.1: IS A REFRESH TOKEN'S CERTIFICATE BINDING CHECKED FOR
 // THIS REQUEST (2026-09-13).
 //
@@ -662,6 +718,7 @@ module.exports = {
   checkBinding: checkBinding,
   CERTIFICATE_METHODS: CERTIFICATE_METHODS,
   declaredRefusal: declaredRefusal,
+  certificateDeclaration: certificateDeclaration,
   refreshBindingApplies: refreshBindingApplies,
   available: available
 };

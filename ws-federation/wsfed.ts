@@ -2438,10 +2438,12 @@ class WsFederation {
       // One per live generation of the XML key (#42): the token-signing
       // certificate a relying party trusts is published ahead of its use.
       return helpers.ownXmlSigningCertificates().map(function (one: any) {
+        // The certificate, its chain and the service Root (#1064):
+        // helpers.x509DataXml(), the one writer of an X509Data here.
         return '<md:KeyDescriptor use="' + use + '"><ds:KeyInfo ' +
-          'xmlns:ds="http://www.w3.org/2000/09/xmldsig#"><ds:X509Data>' +
-          '<ds:X509Certificate>' + stsCrypto.stripPem(one.certPem) +
-          '</ds:X509Certificate></ds:X509Data></ds:KeyInfo></md:KeyDescriptor>';
+          'xmlns:ds="http://www.w3.org/2000/09/xmldsig#">' +
+          helpers.x509DataXml(one.certPem, one.chainPem) +
+          '</ds:KeyInfo></md:KeyDescriptor>';
       }).join('');
     };
 

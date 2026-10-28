@@ -676,6 +676,53 @@ async function thePortalSignInCreatesASession() {
     assert.ok(page.text.indexOf(OWNER) >= 0,
       "the portal page does not name " + OWNER);
   });
+
+  // "TIMES YOU HAVE SIGNED IN" IS AT LEAST ONE, BECAUSE THEY JUST DID (#672).
+  // The figure is `admin_stats`' register — the row the console's user page
+  // draws — and from the portal's first day until #672 the Overview read it
+  // off the wrong member of `userDetail()`'s answer and said 0 for
+  // everybody. The sign-in above was recorded through the funnel every
+  // protocol goes through, so the figure is at least one; EXACTLY one is
+  // not asserted, because `ensurePerson()` may have signed them in before
+  // and the register counts a process's whole life. The view is read off
+  // the operation's JSON and the drawn page both: the JSON is what the
+  // runtime draws from, the page is what the person sees.
+  //
+  // READ AGAIN FOR A MOMENT if the figure is not there yet: the register
+  // is per process and folded across workers and nodes through the
+  // change log, so an operation answered by a worker other than the one
+  // that signed them in may be a pull behind (`common/admin_stats.js`,
+  // `everyUserRecord()`). A bounded wait, never an unbounded one.
+  let signedIn = null;
+  let drawn = page;
+  for (let attempt = 0; attempt < 12; attempt++) {
+    const view = drawn.json && drawn.json.view ? drawn.json.view : drawn.json;
+    signedIn = view && typeof view.timesSignedIn === "number"
+      ? view.timesSignedIn : null;
+    if (signedIn !== null && signedIn >= 1) {
+      break;
+    }
+    await new Promise(function (resolve) {
+      setTimeout(resolve, 500);
+    });
+    drawn = await b.draw("/portal");
+  }
+  check("THE OVERVIEW COUNTS THE SIGN-IN THAT JUST HAPPENED: " +
+        "\"Times you have signed in\" is a number of at least one (#672: " +
+        "it was 0 for everybody)", function () {
+      assert.strictEqual(typeof signedIn, "number",
+        "timesSignedIn is not on the overview: " +
+        JSON.stringify(drawn.json).slice(0, 300));
+      assert.ok(signedIn >= 1, "timesSignedIn is " + signedIn);
+    });
+  check("and the drawn page carries that figure under its label", function () {
+    const pattern = new RegExp("Times you have signed in</th><td>" +
+                               signedIn + "</td>");
+    assert.ok(pattern.test(drawn.text),
+      "the Overview does not draw the count " + signedIn + ": " +
+      (drawn.text.match(/Times you have signed in[^<]*<\/th><td>[^<]*/) ||
+       ["no such row"])[0]);
+  });
   log.debug("Leaving thePortalSignInCreatesASession().");
   return b;
 }

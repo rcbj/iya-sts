@@ -108,14 +108,19 @@
 // translated. See `attemptBearer()`, where that shim is written out; it is a
 // workaround and is commented as one rather than left to look like a design.
 //
-// **ONLY THE OAUTH SCHEMES CARRY SCOPES.** A Basic credential has none, a
-// client certificate has none, a HOBA signature has none. The access control
-// policy therefore reads: an OAuth credential may do what `scim:read` and
-// `scim:write` say it may, and every other accepted credential may do both.
-// That is a real policy rather than an absence of one, and it has a consequence
-// worth stating where somebody will read it: a caller who cannot get the scope
-// can simply use Basic instead. Which is why every scheme has its own switch —
-// a deployment exercising a client's scope handling turns the other five off,
+// **ONLY THE OAUTH SCHEMES CARRY SCOPES — AND AN APPLICATION'S CERTIFICATE IS
+// HELD TO THE SCOPES ITS APPLICATION DECLARES (#1048).** A Basic credential
+// has none, a client certificate has none, a HOBA signature has none. The
+// access control policy therefore reads: an OAuth credential may do what
+// `scim:read` and `scim:write` say it may; a TLS client certificate this realm
+// issued to an APPLICATION may do what that application's `oauthAllowedScope`
+// declares of the same two (#110's declaration, asked on every request, so
+// withdrawing it cuts the certificate off at once); and every other accepted
+// credential — a person's certificate among them — may do both. That is a
+// real policy rather than an absence of one, and it has a consequence worth
+// stating where somebody will read it: a caller who cannot get the scope can
+// simply use Basic instead. Which is why every scheme has its own switch — a
+// deployment exercising a client's scope handling turns the other five off,
 // and then the only way in is the one being tested.
 //
 // **WHICH SCHEMES COUNT AS AN AUTHENTICATION, AND WHICH DO NOT.** `recorded` on
@@ -589,6 +594,9 @@ interface SchemeRow {
   setting: string;
   primary?: boolean;
   scoped: boolean;
+  // A certificate scheme whose credential, when it names an APPLICATION,
+  // is held to that application's declared SCIM scopes (#1048).
+  applicationScoped?: boolean;
   recorded: boolean;
   spec: string;
   specUri: string;
@@ -637,7 +645,8 @@ interface ScimAuthDeps {
   scopePolicy: typeof scopePolicy;
   // `common/tls_client_certificates.js`, required when first asked for — see
   // attemptClientCertificate().
-  loadTlsClientCertificates(): { checkSocket(socket: any): any };
+  loadTlsClientCertificates(): { checkSocket(socket: any,
+                                             options?: any): any };
   digestNonces: ChallengeStore;
   digestCounts: ChallengeStore;
   hobaChallenges: ChallengeStore;
@@ -729,12 +738,21 @@ const SCHEME_DESCRIPTIONS = Object.freeze({
     'that VERIFIED against an anchor in the client truststore ' +
     '(/admin/tls/trust) — so on ' +
     'the main port only when it is bound as HTTPS (global.https, which ' +
-    'oauth2.rfc9700 turns on). The identity is the subject in RFC 4514 ' +
-    'form, which is the same string /admin/users and the directory ' +
-    'already file a certificate under. It is not recorded again here: ' +
+    'oauth2.rfc9700 turns on). A certificate from an outside ' +
+    'certificate authority (an anchor somebody added) is the person or ' +
+    'application whose entry stores it, byte for byte, in ' +
+    'userCertificate, and nothing else: stored on no entry or on several, ' +
+    'it is not this credential (STS-SCIM-0084, STS-SCIM-0085). A ' +
+    'person\'s certificate this realm issued is filed under its subject ' +
+    'in RFC 4514 form. It is not recorded again here: ' +
     'tls_server.js records a certificate once per CONNECTION on ' +
     'purpose, and counting it per request would undo that from the ' +
-    'other end.'
+    'other end. A certificate this realm issued to an APPLICATION is ' +
+    'that application, and may do only what its oauthAllowedScope ' +
+    'declares: the read scope to read and the write scope to write, ' +
+    'asked on every request, so one that declares neither is refused ' +
+    '(STS-SCIM-0083). A person\'s certificate, issued here or stored ' +
+    'on their entry, may do both.'
 });
 
 // Why an ON `scim.authDigest` is not an offered scheme in product mode.
@@ -750,11 +768,18 @@ const POLICY = Object.freeze({
     'implies the other, so that a client\'s handling of a read-only ' +
     'credential is something this service can actually produce.',
   others: 'EVERY OTHER SCHEME MAY DO BOTH. Basic, Digest, HOBA, a session ' +
-    'cookie and a client certificate carry no scopes, so the policy for ' +
-    'them is the whole surface. That is worth reading twice: a caller who ' +
-    'cannot get a scope can use Basic instead, which is why each scheme has ' +
-    'a switch of its own — a deployment exercising scope handling turns the ' +
-    'other five off.',
+    'cookie and a person\'s client certificate carry no scopes, so the ' +
+    'policy for them is the whole surface. That is worth reading twice: a ' +
+    'caller who cannot get a scope can use Basic instead, which is why each ' +
+    'scheme has a switch of its own — a deployment exercising scope ' +
+    'handling turns the other five off.',
+  certificate: 'AN APPLICATION\'S CERTIFICATE IS HELD TO ITS DECLARED ' +
+    'SCOPES (#1048). A TLS client certificate this realm issued to an ' +
+    'application carries no scopes, so it may do what that application\'s ' +
+    'oauthAllowedScope declares of the two above, asked on every request: ' +
+    'one that declares neither is refused, one that declares only the read ' +
+    'scope may only read, and removing a declaration cuts the certificate ' +
+    'off at once (STS-SCIM-0083).',
   rfc: 'RFC 7644 section 2 requires a provider to be ABLE to map an ' +
     'authenticated client to an access control policy. This is that ' +
     'policy. It is two lines because in development mode this service ' +
@@ -1186,6 +1211,7 @@ class ScimAuth {
         name: 'TLS client certificate',
         setting: 'scim.authClientCert',
         scoped: false,
+        applicationScoped: true,
         recorded: false,
         spec: 'RFC 8446 / RFC 5280',
         specUri: 'https://www.rfc-editor.org/rfc/rfc8446',
@@ -2592,13 +2618,36 @@ class ScimAuth {
     // `mtls.peerVerified()` does.
     let gate = null;
     try {
-      gate = loadTlsClientCertificates().checkSocket(socket);
+      // `stored` (#1061): an outside authority's certificate is the one entry
+      // storing it in `userCertificate`, or nobody.
+      gate = loadTlsClientCertificates().checkSocket(socket,
+                                                     { stored: true });
     } catch (e) {
       // No certificate authority in this process, so nothing here was issued by
       // one and there is nothing to refuse.
       log.debug("Caught in ScimAuth.attemptClientCertificate(): " +
                 ((e && e.message) || e));
       gate = null;
+    }
+    // AN OUTSIDE AUTHORITY'S CERTIFICATE NOT STORED ON EXACTLY ONE ENTRY
+    // (#1061, rcbj 2026-10-27). It was filed under its subject DN, and any
+    // certificate an anchor somebody added would chain to could name any
+    // subject. Now it is NOT THIS CREDENTIAL, for the reason an unverified
+    // one above is not, and the refusal of the CERTIFICATE is recorded under
+    // its own code so an operator finds it rather than inferring it from a
+    // 401.
+    if (gate && !gate.ok && (gate.error === 'NOT_STORED' ||
+                             gate.error === 'STORED_TWICE')) {
+      audit.failure(gate.error === 'STORED_TWICE' ? 'STS-SCIM-0085'
+                                                  : 'STS-SCIM-0084', {
+        protocol: 'SCIM', channel: 'http', target: req.originalUrl || req.url,
+        summary: 'a verified client certificate was not accepted as a SCIM ' +
+                 'credential: ' + gate.why,
+        outcome: 'refused'
+      });
+      log.debug("Leaving ScimAuth.attemptClientCertificate(). An outside " +
+                "certificate, not stored on one entry.");
+      return null;
     }
     if (gate && !gate.ok) {
       log.info('scim: a verified client certificate was not taken as a SCIM ' +
@@ -2619,6 +2668,47 @@ class ScimAuth {
       log.debug("Leaving ScimAuth.attemptClientCertificate(). The subject is " +
                 "empty.");
       return null;
+    }
+    // AN APPLICATION'S CERTIFICATE IS THAT APPLICATION (#1048). Where
+    // `identityOf()` — through `checkSocket()` above, which has already held
+    // the realm boundary — says this realm issued the leaf to an APPLICATION,
+    // the caller is that application, named by its registry identifier as a
+    // client_credentials token's caller is named by its client_id, and
+    // `settleDecision()` holds it to the SCIM scopes the application
+    // declares. A person's certificate, and one from an anchor somebody
+    // added (which names no entry), keep the rule they always had.
+    const identity = gate && gate.identity;
+    if (identity && identity.accepted && identity.kind === 'application' &&
+        identity.username) {
+      const application = String(identity.username);
+      log.debug("Leaving ScimAuth.attemptClientCertificate(). The " +
+                "application " + application + " is accepted.");
+      return {
+        ok: true, scheme: 'clientcert', principal: application,
+        isClient: true, scopes: '', clientId: application,
+        application: application,
+        note: 'a TLS client certificate this realm issued to the ' +
+              'application ' + application +
+              (certificate.fingerprint256 ?
+               ' (' + certificate.fingerprint256 + ')' : '')
+      };
+    }
+    // AN OUTSIDE AUTHORITY'S CERTIFICATE IS THE PERSON IT IS STORED ON
+    // (#1061): named as Basic names them, by their username, since the entry
+    // and not the certificate's subject is who it is.
+    if (identity && identity.accepted && identity.stored === true &&
+        identity.username) {
+      const person = String(identity.username);
+      log.debug("Leaving ScimAuth.attemptClientCertificate(). The person " +
+                person + ", whose entry stores the certificate.");
+      return {
+        ok: true, scheme: 'clientcert', principal: person, isClient: false,
+        scopes: '',
+        note: 'a client certificate from an outside certificate authority, ' +
+              'stored on ' + String(identity.dn || person) +
+              (certificate.fingerprint256 ?
+               ' (' + certificate.fingerprint256 + ')' : '')
+      };
     }
     log.debug("Leaving ScimAuth.attemptClientCertificate(). " + subject +
               " is accepted.");
@@ -3300,6 +3390,39 @@ class ScimAuth {
       }
     }
 
+    // AN APPLICATION'S CERTIFICATE, HELD TO ITS DECLARED SCOPES (#1048,
+    // rcbj's decision on #520). A certificate carries no scopes, so where it
+    // names an application the application's `oauthAllowedScope` stands in
+    // for them, through the same `scopePolicy.declares()` the token check
+    // above asks — in the ambient realm, which `checkSocket()` has held to
+    // the certificate's. Asked on every request, so removing a declaration
+    // cuts the certificate off at once. The read and write scopes do not
+    // imply one another here either. Not a challenge: a certificate is asked
+    // for by the handshake, and the credential was accepted.
+    if (row && row.applicationScoped && decision.application &&
+        wanted !== 'none') {
+      const needed = wanted === 'write' ? this.scopeWrite() :
+        this.scopeRead();
+      if (!scopePolicy.declares(decision.application, needed)) {
+        log.info('scim: the application ' + decision.application + ' ' +
+                 'presented its TLS client certificate and does not ' +
+                 'declare ' + needed + '.');
+        log.debug("Leaving ScimAuth.settleDecision(). The application " +
+                  "does not declare " + needed + ".");
+        return this.coded('STS-SCIM-0083', {
+          ok: false, status: 403, scimType: null,
+          detail: 'This operation needs the "' + needed + '" scope, and the ' +
+                  'TLS client certificate presented was issued to the ' +
+                  'application "' + decision.application + '", which does ' +
+                  'not declare it in its oauthAllowedScope. A certificate ' +
+                  'carries no scopes, so an application\'s certificate may ' +
+                  'do only what the application declares: "' +
+                  this.scopeRead() + '" to read and "' + this.scopeWrite() +
+                  '" to write. Neither implies the other.'
+        });
+      }
+    }
+
     // The authentication funnel, for the schemes that present a credential per
     // request. See the header for why a bearer token, a session cookie and a
     // client certificate are NOT recorded here — each was already recorded
@@ -3623,6 +3746,7 @@ class ScimAuth {
           setting: row.setting,
           primary: !!row.primary,
           scoped: !!row.scoped,
+          applicationScoped: !!row.applicationScoped,
           recorded: !!row.recorded,
           challenged: !!row.challenge,
           spec: row.spec,
@@ -3634,6 +3758,7 @@ class ScimAuth {
         serverProse.fill(POLICY.oauth, { read: this.scopeRead(),
                                          write: this.scopeWrite() }),
         POLICY.others,
+        POLICY.certificate,
         POLICY.rfc,
         POLICY.tied
       ]

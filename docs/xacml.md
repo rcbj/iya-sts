@@ -172,7 +172,7 @@ Four PEPs are built into the process:
 | PEP | Decides | Policy |
 |---|---|---|
 | **issuance** | every one of the nine kinds of issuance: session, access token, ID token, refresh token, authorization code, SAML assertion, WS-Federation token, WS-Trust token and Kerberos ticket | `xacml.issuancePolicy` (`role-issuance`) |
-| **access** | who may reach the admin console, the management API, the User Portal, SCIM, the SPIRE Server API, the embedded debugger and the `/xacml` surface | `xacml.accessPolicy` (`access-control`) |
+| **access** | who may reach the admin console, the management API, the User Portal, SCIM, the SPIRE Server API, the embedded debugger, the `/xacml` surface, and — one definition or job at a time — the report API | `xacml.accessPolicy` (`access-control`) |
 | **risk response** | what happens when a person's risk level changes: a CAEP announcement, ending everything they hold, a RISC credential-compromise, disabling the account — one question per reaction, a Permit meaning do it ([Risk scoring](risk-scoring.md#when-a-persons-risk-changes)) | `xacml.riskResponsePolicy` (`risk-response`) |
 | **signal response** | what this service's own console and portal do with a verified CAEP or RISC event they receive: whether it ends their own sessions for the person it names ([Signals received](signals-received.md#what-the-console-and-the-portal-do-with-a-signal)) | `xacml.signalResponsePolicy` (`signal-response`) |
 
@@ -318,7 +318,11 @@ Every `/xacml` endpoint requires a client certificate on the main port. A
 caller is admitted through a chain of four checks:
 
 1. the certificate is **verified** against this service's truststore;
-2. its subject DN resolves to a **directory entry**;
+2. it resolves to a **directory entry**: one this service issued names its
+   person; one from your own CA is the entry that stores it, byte for byte, in
+   `userCertificate`, and nobody when no entry or several do
+   (`STS-XACML-0177` to `0180`) — its common name and subject are never read
+   ([TLS](tls.md#a-certificate-from-an-outside-certificate-authority));
 3. that entry holds the **role** the endpoint requires;
 4. the **access policy** permits it.
 
@@ -336,6 +340,24 @@ to the XACML endpoints proper must not admit it to those. `POST /xacml/pip`
 is outside `/xacml/pep/`, but it takes the narrower role because what it
 returns is personal data. A person is given a role by being added to the
 group, and that takes effect on their next request.
+
+### The report API's rows
+
+`/report-api` asks the access policy on the resource `report-api`: once per
+call, for the API (a report role, `REPORT_USE` or `REPORT_ADMIN`, held
+now by the token's subject and carried by the token), and once for every
+definition or job the call reaches, with the row's owner as the question's
+owner and the row's shared groups beside it. The built-in `access-control`
+document then decides with its first rule — the owner, the same comparison
+that reaches a person their own portal account — and a third rule,
+`report-administrators-and-shares`: a person holding `REPORT_ADMIN`
+reaches any row, and a person holding a report role reaches a row shared
+with a group they are in (the PIP answers their groups) for the actions
+the parameter `reportSharedActions` lists, `read` and `run` by default.
+An application holding a report role is a subject of kind `application`,
+which the rule excludes, so it reaches only what it defined.
+`permitReportSharing: no` builds the document without the rule. A realm
+writes its own reading into an override ([Reports](reporting.md#who-can-open-it)).
 
 ### The remote PEPs' PDP side
 

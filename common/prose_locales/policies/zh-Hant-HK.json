@@ -44,8 +44,8 @@
     "text": "TLS 客戶端證書——作為第一因素"
   },
   "authn.FIELDS.certificatePrimary.what": {
-    "en": "458b5463993c8ba4",
-    "text": "以已驗證的客戶端證書存取 GET /tls/sign-in。"
+    "en": "bbf7d091b1854474",
+    "text": "已驗證的 TLS 客戶端證書：GET /tls/sign-in，或在登入頁面上使用「使用您的憑證繼續」。"
   },
   "authn.FIELDS.emailCodeTtlS.label": {
     "en": "a0d3df11fd93619b",
@@ -80,8 +80,8 @@
     "text": "寄到該人「已驗證」地址的單次使用連結，只在開始登入的那個瀏覽器中才能完成登入。NIST SP 800-63B-4 第 3.1.3.1 節：「Email SHALL NOT be used for out-of-band authentication」，因為郵箱可能只憑密碼就能進入，郵件也可能在傳輸中被讀取或被轉送。因此預設關閉；只有在這是可接受的風險時才開啟。"
   },
   "authn.SCHEMA.attributes.stsAuthnCertificatePrimary.what": {
-    "en": "458b5463993c8ba4",
-    "text": "以已驗證的客戶端證書存取 GET /tls/sign-in。"
+    "en": "bbf7d091b1854474",
+    "text": "已驗證的 TLS 客戶端證書：GET /tls/sign-in，或在登入頁面上使用「使用您的憑證繼續」。"
   },
   "authn.SCHEMA.attributes.stsAuthnEmailCodeAttempts.what": {
     "en": "f01dd1453c1c4690",
@@ -120,8 +120,8 @@
     "text": "TLS 客戶端證書"
   },
   "authn.MECHANISMS.certificate.what": {
-    "en": "458b5463993c8ba4",
-    "text": "以已驗證的客戶端證書存取 GET /tls/sign-in。"
+    "en": "bbf7d091b1854474",
+    "text": "已驗證的 TLS 客戶端證書：GET /tls/sign-in，或在登入頁面上使用「使用您的憑證繼續」。"
   },
   "authn.nistWarning": {
     "en": "a84b99742bf880e2",

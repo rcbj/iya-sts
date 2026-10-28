@@ -20,7 +20,8 @@
 //
 //   A. `GET /tls/sign-in`, over a real handshake, with a client certificate
 //      from a CA in the client truststore that this service did not build —
-//      its common name is the identity;
+//      since #1061 it is an identity only as the one entry storing it, so in
+//      BOTH modes it signs nobody in and seeds nothing;
 //   B. an OpenID4VP presentation at `/authn/wallet` of an SD-JWT VC from a
 //      trusted foreign issuer (`oid4vp.trustedIssuerCertificates`) whose `sub`
 //      names somebody — it verifies and signs nobody in (STS-VC-0058) in both
@@ -225,26 +226,27 @@ function childMain() {
         note(cert.presented === true && cert.verified === true,
              'A0. ' + label + ': the foreign certificate naming ' + certName +
              ' is presented and verifies', JSON.stringify(cert));
-        if (!PRODUCT) {
-          note(signed.body.signedIn === true && session.started === true &&
-               holds(certName) && entryCount() > before,
-               'A1. ' + label + ': GET /tls/sign-in signs its holder in, and ' +
-               'an entry for ' + certName + ' is made (the control)',
-               JSON.stringify({ status: signed.status, session: session }));
-        } else {
-          note(signed.status === 200 && signed.body.signedIn === false &&
-               session.started !== true,
-               'A1. ' + label + ': GET /tls/sign-in signs nobody in',
-               JSON.stringify({ status: signed.status, session: session }));
-          note(refusedForNoEntry(certName),
-               'A2. ' + label + ': the session was refused because the ' +
-               'directory holds no entry for ' + certName +
-               ' (STS-AUTHN-0180)');
-          note(!holds(certName) && entryCount() === before,
-               'A3. ' + label + ': and no entry was made — the directory ' +
-               'holds as many entries as before', entryCount() + ' / ' +
-               before);
-        }
+        // IN BOTH MODES SINCE #1061 (rcbj, 2026-10-27): a certificate from
+        // an outside authority is the one entry storing it in
+        // userCertificate, and its common name is never read as a name. It
+        // was the development control here — it signed its CN in and made
+        // an entry — until then; now it signs nobody in, refused for being
+        // stored on no entry before a session is asked for, and no entry
+        // appears in either mode.
+        note(signed.status === 200 && signed.body.signedIn === false &&
+             session.started !== true &&
+             session.refusedAsStored === 'NOT_STORED',
+             'A1. ' + label + ': GET /tls/sign-in signs nobody in — the ' +
+             'certificate is stored on no entry, and its CN ' + certName +
+             ' is not a name (#1061)',
+             JSON.stringify({ status: signed.status, session: session }));
+        note(!refusedForNoEntry(certName),
+             'A2. ' + label + ': no session was even asked for ' + certName +
+             ' (no STS-AUTHN-0180): the certificate names nobody');
+        note(!holds(certName) && entryCount() === before,
+             'A3. ' + label + ': and no entry was made — the directory ' +
+             'holds as many entries as before', entryCount() + ' / ' +
+             before);
 
         // --- B. the wallet presentation ----------------------------------
         const walletName = 'cs-wallet-' + mode.slice(0, 4) + '-' + M.stamp;

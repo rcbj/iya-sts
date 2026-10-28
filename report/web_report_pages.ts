@@ -23,6 +23,7 @@ import SpaClient = require('../common/web_spa_client');
 import WebI18n = require('../common/web_i18n');
 import WebAccounts = require('../common/web_accounts');
 import WebMessages = require('../common/web_messages');
+import DocLinks = require('../common/web_doc_links');
 
 const CLIENT_ID = 'sts-report';
 const SCOPE = 'openid profile email offline_access report:use report:admin';
@@ -31,6 +32,11 @@ const API = '/report-api';
 const SIGNIN_KEY = 'sts-report-pkce';
 const ACCOUNTS_ID = 'sts-report-accounts';
 const REFRESH_EARLY = 30;
+// The most filter rows the form reads: what an `and` may carry (#986).
+const FILTER_ROWS_MAX = 16;
+// The documentation page for this application (#986), on the site every
+// surface links to (`common/web_doc_links.ts`).
+const DOCS_PAGE = 'reporting.html';
 const NEEDS_SIGN_IN = { needsSignIn: true };
 const ABORTED = { aborted: true };
 
@@ -83,15 +89,64 @@ function navCurrent(path: string, suffix: string): boolean {
   return here === href || here.indexOf(href + '/') === 0;
 }
 
+// A TOOLTIP ON EVERY FIELD (rcbj, 2026-10-26), the console's shape: a
+// `title` on the field's label (`admin-ui/web_kit.ts`, `tip()`), from the
+// `report.tip*` sentences, so the browser shows it on hover and a reader
+// of the markup finds it on the control it explains.
+function tip(t: any, key: string): string {
+  const text = t.text(key);
+  return text && text !== key ? ' title="' + esc(text) + '"' : '';
+}
+
+// The parameters a saved filter names (`param` leaves), for the sentence
+// under the Run box (#989's follow-up): a run fills them from the JSON
+// object typed there; a definition naming none ignores the box.
+function paramNames(node: any, into?: string[]): string[] {
+  const out = into || [];
+  if (!node || typeof node !== 'object') {
+    return out;
+  }
+  if (node.op === 'and' || node.op === 'or') {
+    (node.args || []).forEach(function (arg: any): void {
+      paramNames(arg, out);
+    });
+  } else if (node.op === 'not') {
+    paramNames(node.arg, out);
+  } else if (typeof node.param === 'string' && node.param &&
+             out.indexOf(node.param) < 0) {
+    out.push(node.param);
+  }
+  return out;
+}
+
+function parametersHelpHtml(t: any, document: any): string {
+  const names = paramNames(document && document.where);
+  const named = names.length
+    ? t.text('report.parametersNamed', { names: names.join(', ') })
+    : t.text('report.parametersNone');
+  // The two JSON examples ride in as values: a brace in a catalog message
+  // is a parameter to the message format, so they cannot be written there.
+  return '<p class="sub params-help">' + esc(named) + ' ' +
+    esc(t.text('report.parametersHelp', {
+      leaf: '{"op": "eq", "field": "username", "param": "who"}',
+      example: '{"who": "rcbj"}'
+    })) + '</p>';
+}
+
 function navLink(href: string, label: string, current: boolean): string {
   return '<a href="' + esc(href) + '"' +
     (current ? ' aria-current="page"' : '') + '>' + esc(label) +
     '</a>';
 }
 
-function navHtml(t: any, accounts: string, chooser: string,
+// Two bars (#986). The top one is smaller and right-justified and holds
+// the controls about the reader rather than the pages: the realm field,
+// the language chooser and the user menu, which holds Sign out. The bar
+// under it is the pages and Refresh.
+function navHtml(t: any, realm: string, accounts: string, chooser: string,
                  path: string): string {
-  return '<div class="bar"><nav class="nav">' +
+  return '<div class="topbar">' + realm + chooser + accounts + '</div>' +
+    '<div class="bar"><nav class="nav">' +
     navLink(BASE, t.text('report.catalog'), navCurrent(path, '')) +
     navLink(BASE + '/query', t.text('report.newQuery'),
       navCurrent(path, '/query')) +
@@ -99,18 +154,753 @@ function navHtml(t: any, accounts: string, chooser: string,
       navCurrent(path, '/definitions')) +
     navLink(BASE + '/jobs', t.text('report.jobs'),
       navCurrent(path, '/jobs')) +
-    '<a href="/logout">' + esc(t.text('report.signOut')) + '</a>' +
+    navLink(BASE + '/signals', t.text('report.signals'),
+      navCurrent(path, '/signals')) +
     '<button type="button" class="btn" data-act="refresh">' +
     esc(t.text('report.refresh')) + '</button>' +
-    '</nav>' + accounts + chooser + '</div>';
+    '</nav></div>';
+}
+
+// One filter row (#986): a field, an operator, a value, and — on the last
+// row only — the + that adds the next. The runtime clones the last row for
+// the next one, so the options are not kept anywhere else.
+// ONE RULE FOR EVERY FILTER ROW (#1007, #1022, #1028; rcbj: "as
+// cookie-cutter as possible"). A field's KIND decides its operators and
+// its value control, and the catalog decides the kind:
+//
+//   * `choice` — the catalog lists its values (`values`, 20 or fewer) or
+//     it is a boolean: equals, does not equal, is empty; a dropdown.
+//   * `time`   — a timestamp: after, on or after, before, on or before, is
+//     empty; a date-time picker read as UTC, as the schedule editor's.
+//   * `number` — the six comparisons and is empty; a number box.
+//   * `text`   — equals, does not equal, contains, starts with, is empty;
+//     a text box.
+//
+// On a directory-backed source (`anchored`) the FIRST row offers only the
+// indexed fields (#1027) and, of a field's operators, only those its index
+// answers, so the row a user starts from can never ask for a scan. The
+// value control carries `data-type`, and `queryDocument()` sends a number
+// as a number, a boolean as a boolean and a picked time as UTC ISO text.
+const CHOICE_MAX = 20;
+const ENUM_OPS = ['eq', 'ne', 'isNull'];
+const OPS_OF: Record<string, string[]> = {
+  choice: ENUM_OPS,
+  time: ['ge', 'gt', 'le', 'lt', 'isNull'],
+  number: ['eq', 'ne', 'lt', 'le', 'gt', 'ge', 'isNull'],
+  text: ['eq', 'ne', 'contains', 'startsWith', 'isNull']
+};
+const OP_LABEL: Record<string, string> = {
+  eq: 'opEq', ne: 'opNe', contains: 'opContains', startsWith: 'opStartsWith',
+  lt: 'opLt', le: 'opLe', gt: 'opGt', ge: 'opGe', isNull: 'opIsNull'
+};
+
+function fieldSpecOf(fields: any[], fieldId: string): any {
+  return (fields || []).filter(function (field: any): boolean {
+    return field && field.id === fieldId;
+  })[0] || null;
+}
+
+function choicesOf(spec: any): string[] | null {
+  if (!spec) {
+    return null;
+  }
+  if (spec.type === 'boolean') {
+    return ['true', 'false'];
+  }
+  return Array.isArray(spec.values) && spec.values.length &&
+    spec.values.length <= CHOICE_MAX ? spec.values : null;
+}
+
+function kindOf(spec: any): string {
+  if (choicesOf(spec)) {
+    return 'choice';
+  }
+  if (spec && spec.type === 'timestamp') {
+    return 'time';
+  }
+  return spec && spec.type === 'number' ? 'number' : 'text';
+}
+
+function isEnumerated(fields: any[], fieldId: string): boolean {
+  return kindOf(fieldSpecOf(fields, fieldId)) === 'choice';
+}
+
+// The operators a row offers: the kind's, and on an anchoring first row
+// only those the field's index answers.
+function opsFor(spec: any, anchorRow: boolean): string[] {
+  const ops = OPS_OF[kindOf(spec)];
+  if (!anchorRow || !spec) {
+    return ops;
+  }
+  const indexed: string[] = Array.isArray(spec.indexed) ? spec.indexed : [];
+  return ops.filter(function (op: string): boolean {
+    return indexed.indexOf(op) >= 0;
+  });
+}
+
+// A UTC ISO time as a `datetime-local` value (minutes), or ''.
+function pickerValueOf(value: string): string {
+  const at = Date.parse(String(value || ''));
+  return Number.isFinite(at) ? new Date(at).toISOString().slice(0, 16) : '';
+}
+
+// On an anchoring first row a field whose index answers only some values
+// (#1040: `status`, indexed for `locked`) offers only those for equals, so
+// the row a user starts from cannot pick `active` and be refused.
+function filterValueHtml(n: number, fields: any[], fieldId: string,
+                         op: string, value: string,
+                         anchorRow?: boolean): string {
+  const spec = fieldSpecOf(fields, fieldId);
+  const kind = kindOf(spec);
+  const type = spec ? String(spec.type || 'string') : 'string';
+  const chosen = String(op || '');
+  const only = anchorRow && spec && chosen === 'eq' &&
+    Array.isArray(spec.indexedValues) && spec.indexedValues.length ?
+    spec.indexedValues : null;
+  const choices = only || choicesOf(spec);
+  if (choices && (chosen === '' || chosen === 'eq' || chosen === 'ne')) {
+    return '<select name="filterValue' + n + '" data-type="' + esc(type) +
+      '"><option value=""></option>' +
+      choices.map(function (one: string): string {
+        return '<option value="' + esc(one) + '"' +
+          (one === value ? ' selected' : '') + '>' + esc(one) + '</option>';
+      }).join('') + '</select>';
+  }
+  if (kind === 'time') {
+    const picked = pickerValueOf(value);
+    return '<input type="datetime-local" name="filterValue' + n +
+      '" data-type="timestamp" title="UTC"' +
+      (picked ? ' value="' + esc(picked) + '"' : '') + '>';
+  }
+  if (kind === 'number') {
+    return '<input type="number" name="filterValue' + n +
+      '" data-type="number"' + (value ? ' value="' + esc(value) + '"' : '') +
+      '>';
+  }
+  return '<input name="filterValue' + n + '"' +
+    (value ? ' value="' + esc(value) + '"' : '') + '>';
+}
+
+function opSelectHtml(t: any, n: number, ops: string[],
+                      chosen: string): string {
+  return '<select name="filterOp' + n + '" data-ops="' + ops.join(',') +
+    '">' + '<option value=""></option>' +
+    ops.map(function (op: string): string {
+      return '<option value="' + op + '"' + (op === chosen ? ' selected' :
+        '') + '>' + esc(t.text('report.' + OP_LABEL[op])) + '</option>';
+    }).join('') + '</select>';
+}
+
+function filterRowHtml(t: any, n: number, fieldOptions: string,
+                       last: boolean, valueControl?: string,
+                       opSelect?: string, fieldTip?: string): string {
+  return '<div class="row filterrow" data-filter-row="' + n + '">' +
+    '<select name="filterField' + n + '"' + (fieldTip || '') + '>' +
+    fieldOptions + '</select>' +
+    (opSelect || opSelectHtml(t, n, OPS_OF.text, '')) +
+    (valueControl || '<input name="filterValue' + n + '">') +
+    // A trash can on every row (#1017): removes the row, or empties the
+    // last one left, so the form always has a row (`removeFilterRow()`).
+    '<button type="button" class="btn removefilter" ' +
+    'data-act="remove-filter" title="' + esc(t.text('report.removeFilter')) +
+    '" aria-label="' + esc(t.text('report.removeFilter')) +
+    '">\u{1F5D1}</button>' +
+    (last ? addFilterButtonHtml(t) : '') +
+    '</div>';
+}
+
+function addFilterButtonHtml(t: any): string {
+  return '<button type="button" class="btn addfilter" ' +
+    'data-act="add-filter" title="' + esc(t.text('report.addFilter')) +
+    '" aria-label="' + esc(t.text('report.addFilter')) + '">+</button>';
+}
+
+// THE QUERY FORM, SHARED (#989). The New Query page and the definition
+// page draw the same controls from the same function, the second filled
+// from the saved document, so a definition is edited with the controls it
+// was made with. `whereLeaves()` says whether the filter can be drawn as
+// rows — a leaf, or an `and` of leaves, each with an operator the row's
+// select offers — and when it cannot, the rows stay empty and the filter
+// rides along as JSON (`whereJson`), which `queryDocument()` carries back.
+const ROW_OPS = ['eq', 'ne', 'contains', 'startsWith', 'lt', 'le', 'gt',
+  'ge', 'isNull'];
+
+function whereLeaves(where: any): any[] | null {
+  if (where == null) {
+    return [];
+  }
+  const leafOk = function (node: any): boolean {
+    return !!node && typeof node === 'object' && ROW_OPS.indexOf(
+      String(node.op)) >= 0 && typeof node.field === 'string' &&
+      (node.op === 'isNull' || typeof node.value === 'string' ||
+       typeof node.value === 'number');
+  };
+  if (leafOk(where)) {
+    return [where];
+  }
+  if (where.op === 'and' && Array.isArray(where.args) &&
+      where.args.length && where.args.every(leafOk)) {
+    return where.args.slice();
+  }
+  return null;
+}
+
+function filterRowsHtml(t: any, fieldOptions: string, leaves: any[],
+                        fields: any[], firstOptions?: string,
+                        firstTip?: string): string {
+  const first = firstOptions || fieldOptions;
+  if (!leaves.length) {
+    return filterRowHtml(t, 0, first, true, undefined, undefined, firstTip);
+  }
+  return leaves.map(function (leaf: any, n: number): string {
+    const value = leaf.op === 'isNull' ? '' : String(leaf.value);
+    const field = String(leaf.field);
+    // A saved first row whose field the indexed list lacks (saved before
+    // the rule, or through the API) still shows its field: the list is
+    // widened to the full one for that row rather than losing the choice.
+    const options = n === 0 && first.indexOf('value="' + esc(field) + '"') < 0
+      ? fieldOptions : (n === 0 ? first : fieldOptions);
+    // The operators the kind takes, narrowed to the indexed ones on an
+    // anchoring first row (`firstTip` is drawn only there); a saved
+    // operator the list lacks widens it to the kind's, so it is not lost.
+    const spec = fieldSpecOf(fields, field);
+    let ops = opsFor(spec, n === 0 && !!firstTip);
+    if (ops.indexOf(String(leaf.op)) < 0) {
+      ops = OPS_OF[kindOf(spec)].indexOf(String(leaf.op)) >= 0
+        ? OPS_OF[kindOf(spec)] : ops.concat([String(leaf.op)]);
+    }
+    const row = filterRowHtml(t, n, options, n === leaves.length - 1,
+      filterValueHtml(n, fields, field, String(leaf.op), value,
+        n === 0 && !!firstTip),
+      opSelectHtml(t, n, ops, String(leaf.op)),
+      n === 0 ? firstTip : '');
+    return row
+      .replace('<option value="' + esc(leaf.field) + '">',
+        '<option value="' + esc(leaf.field) + '" selected>');
+  }).join('');
+}
+
+function queryFormHtml(t: any, sources: any[], document: any): string {
+  const doc = document || {};
+  const current = String(doc.source || (sources[0] && sources[0].id) || '');
+  let fields: any[] = [];
+  sources.forEach(function (src: any): void {
+    if (src.id === current) {
+      fields = src.fields || [];
+    }
+  });
+  const counted = doc.aggregate === 'count';
+  const group = counted && Array.isArray(doc.groupBy) ? String(doc.groupBy[0] ||
+    '') : '';
+  const selected = Array.isArray(doc.select) && doc.select.length && !counted ?
+    doc.select : null;
+  const options = sources.map(function (src: any): string {
+    return '<option value="' + esc(src.id) + '"' +
+      (src.id === current ? ' selected' : '') + '>' + esc(src.id) +
+      '</option>';
+  }).join('');
+  const checks = fields.map(function (field: any): string {
+    const on = selected ? selected.indexOf(field.id) >= 0 : true;
+    return '<label><input type="checkbox" name="field" value="' +
+      esc(field.id) + '"' + (on ? ' checked' : '') + '> ' + esc(field.id) +
+      '</label>';
+  }).join(' ');
+  const optionsOf = function (list: any[]): string {
+    return '<option value=""></option>' +
+      list.map(function (field: any): string {
+        return '<option value="' + esc(field.id) + '">' + esc(field.id) +
+          '</option>';
+      }).join('');
+  };
+  const fieldOptions = optionsOf(fields);
+  // AN ANCHORED SOURCE (rcbj, 2026-10-27: a field the store cannot answer
+  // "shouldn't be exposed as a valid search parameter"): the FIRST filter
+  // row offers only the indexed fields, with a tooltip saying why; the rows
+  // after it offer every field, since they narrow the indexed read. The
+  // full list rides in a template for the + to clone from.
+  const anchored = !!(current && sources.some(function (src: any): boolean {
+    return src.id === current && src.anchored === true;
+  }));
+  const firstOptions = anchored ? optionsOf(fields.filter(
+    function (field: any): boolean {
+      return Array.isArray(field.indexed) && field.indexed.length > 0;
+    })) : fieldOptions;
+  const leaves = whereLeaves(doc.where);
+  const filters = filterRowsHtml(t, fieldOptions, leaves || [], fields,
+    firstOptions, anchored ? tip(t, 'report.tipAnchor') : '') +
+    '<template data-field-options>' + fieldOptions + '</template>';
+  const kept = leaves ? '' :
+    '<input type="hidden" name="whereJson" value="' +
+    esc(JSON.stringify(doc.where)) + '">' +
+    '<pre class="sub">' + esc(JSON.stringify(doc.where, null, 1)) + '</pre>';
+  const order = Array.isArray(doc.orderBy) && doc.orderBy[0] ?
+    doc.orderBy[0] : null;
+  const sortOptions = order ? fieldOptions.replace(
+    '<option value="' + esc(String(order.field)) + '">',
+    '<option value="' + esc(String(order.field)) + '" selected>') :
+    fieldOptions;
+  const groupOptions = group ? fieldOptions.replace(
+    '<option value="' + esc(group) + '">',
+    '<option value="' + esc(group) + '" selected>') : fieldOptions;
+  const format = String(doc.format || 'json');
+  const formatOption = function (value: string, key: string): string {
+    return '<option value="' + value + '"' +
+      (format === value ? ' selected' : '') + '>' + esc(t.text(key)) +
+      '</option>';
+  };
+  return '<div class="field"><label' + tip(t, 'report.tipSource') + '>' +
+    esc(t.text('report.source')) +
+    '</label><select name="source">' + options + '</select>' +
+    // WHAT THE SOURCE IS (rcbj, 2026-10-27: "clarify what each data source
+    // on the new query screen represents"): the catalog's own sentence for
+    // the chosen source, under the select, redrawn with the block.
+    '<p class="sub" data-source-help>' + esc(String((sources.filter(
+      function (src: any): boolean {
+        return src.id === current;
+      })[0] || {}).retention || '')) + '</p></div>' +
+    '<div class="field"><label' + tip(t, 'report.tipFields') + '>' +
+    esc(t.text('report.fields')) +
+    '</label><div class="row">' + checks + '</div></div>' +
+    '<div class="field"><label' + tip(t, 'report.tipFilter') + '>' +
+    esc(t.text('report.filter')) +
+    '</label>' + filters + kept + '</div>' +
+    // THE SORT ROW (#1008, #1013, rcbj): the Sort checkbox, the field select
+    // and the direction select on ONE row, the two selects carrying `hidden`
+    // until the box is ticked (`onChange()`), the Save query box's shape. A
+    // saved document with an order draws it ticked; unticked, the document
+    // carries no orderBy.
+    '<div class="field"><div class="row"><label' +
+    tip(t, 'report.tipSort') + '>' +
+    '<input type="checkbox" name="sortQuery"' + (order ? ' checked' : '') +
+    '> ' + esc(t.text('report.sort')) + '</label>' +
+    '<select name="sortField" class="sort-only"' + (order ? '' : ' hidden') +
+    '>' + sortOptions + '</select>' +
+    '<select name="sortDir" class="sort-only"' + (order ? '' : ' hidden') +
+    '><option value="asc"' +
+    (order && order.dir !== 'desc' ? ' selected' : '') + '>' +
+    esc(t.text('report.ascending')) + '</option><option value="desc"' +
+    (order && order.dir === 'desc' ? ' selected' : '') + '>' +
+    esc(t.text('report.descending')) + '</option></select></div></div>' +
+    '<div class="field"><label' + tip(t, 'report.tipLimit') + '>' +
+    esc(t.text('report.limit')) +
+    '</label><input name="limit" value="' +
+    esc(String(doc.limit || 100)) + '"></div>' +
+    '<div class="field"><label' + tip(t, 'report.tipFormat') + '>' +
+    esc(t.text('report.format')) +
+    '</label><select name="format">' + formatOption('json', 'report.json') +
+    formatOption('csv', 'report.csv') + formatOption('pdf', 'report.pdf') +
+    '</select></div>' +
+    // THE COUNT ROW, THEN THE GROUP BY ROW (#1008, #1013, #1015, "the same
+    // for group by"; then rcbj: Group by on a row of its own, below Count
+    // and above Save query): the Count box alone; under it the Group by box,
+    // its label and the group field select, hidden until the box is ticked.
+    // A group-by is a count, so a ticked Group by with a field counts
+    // whether or not Count is ticked (`queryDocument()`); a saved count
+    // with a group draws both ticked. The Save query box follows this block
+    // on the page, so this row sits above it.
+    '<div class="field"><div class="row"><label' +
+    tip(t, 'report.tipCount') + '>' +
+    '<input type="checkbox" name="counted"' +
+    (counted ? ' checked' : '') + '> ' + esc(t.text('report.count')) +
+    '</label></div></div>' +
+    '<div class="field"><div class="row"><label' +
+    tip(t, 'report.tipGroupBy') + '>' +
+    '<input type="checkbox" name="groupByQuery"' + (group ? ' checked' : '') +
+    '> ' + esc(t.text('report.groupBy')) + '</label>' +
+    '<select name="groupBy" class="group-only"' + (group ? '' : ' hidden') +
+    '>' + groupOptions + '</select></div></div>';
+}
+
+// THE GROUP PANE (#989): one page of the search's hits, five at most, each
+// with an Add; a pager under them; and the chosen groups as a list whose
+// hidden inputs are what Save posts to the share endpoint.
+function groupHitHtml(t: any, group: any, chosen: string[]): string {
+  const has = chosen.indexOf(String(group.dn).toLowerCase()) >= 0;
+  return '<div class="hit"><span class="who">' + esc(group.name) +
+    ' <span class="mail">' + esc(group.mail || t.text('report.noMail')) +
+    '</span></span>' +
+    '<button type="button" class="btn small" data-act="group-add" ' +
+    'data-dn="' + esc(group.dn) + '" data-name="' + esc(group.name) +
+    '" data-mail="' + esc(group.mail || '') + '"' +
+    (has ? ' disabled' : '') + '>' + esc(t.text('report.add')) +
+    '</button></div>';
+}
+
+function groupResultsHtml(t: any, page: any, chosen: string[]): string {
+  const hits = (page && page.groups) || [];
+  if (!hits.length) {
+    return '<p class="sub">' + esc(t.text('report.noGroups')) + '</p>';
+  }
+  const pager = page.pages > 1 ? '<div class="pager">' +
+    '<button type="button" class="btn small" data-act="group-page" ' +
+    'data-page="' + (page.page - 1) + '"' +
+    (page.page <= 1 ? ' disabled' : '') + '>' +
+    esc(t.text('report.previous')) + '</button><span>' +
+    esc(t.text('report.pageOf', { page: String(page.page),
+      pages: String(page.pages) })) + '</span>' +
+    '<button type="button" class="btn small" data-act="group-page" ' +
+    'data-page="' + (page.page + 1) + '"' +
+    (page.page >= page.pages ? ' disabled' : '') + '>' +
+    esc(t.text('report.next')) + '</button></div>' : '';
+  return '<div class="results">' + hits.map(function (group: any): string {
+    return groupHitHtml(t, group, chosen);
+  }).join('') + '</div>' + pager;
+}
+
+function chosenGroupHtml(t: any, group: any): string {
+  return '<li data-dn="' + esc(String(group.dn).toLowerCase()) + '">' +
+    '<input type="hidden" name="group" value="' + esc(group.dn) + '">' +
+    '<span class="who">' + esc(group.name) + ' <span class="mail">' +
+    esc(group.mail || t.text('report.noMail')) + '</span></span>' +
+    '<button type="button" class="btn small" data-act="group-remove">' +
+    esc(t.text('report.remove')) + '</button></li>';
+}
+
+// The realm field (#986), on the console's switcher shape
+// (`admin-ui/web_shell.ts`, `realmChooser()`): the label, then a select of
+// the realms and a Go button where the service has several, or the one
+// realm's name where it has not. `view` is `GET /report-api/realms`'s
+// answer; nothing is drawn until it has arrived.
+function realmHtml(t: any, view: any, path: string): string {
+  if (!view || !view.current) {
+    return '';
+  }
+  const current = view.current;
+  const list = Array.isArray(view.realms) ? view.realms : [];
+  const label = '<label for="realmpick"' + tip(t, 'report.tipTrustRealm') +
+    '>' + esc(t.text('report.trustRealm')) + '</label>';
+  if (list.length < 2) {
+    return '<div class="realmpick">' + label +
+      '<span class="realmname" id="realmpick">' +
+      esc(current.name || current.id || '') + '</span></div>';
+  }
+  const options = list.map(function (realm: any): string {
+    return '<option value="' + esc(realm.id) + '"' +
+      (realm.id === current.id ? ' selected' : '') + '>' +
+      esc(realm.name || realm.id) + '</option>';
+  }).join('');
+  return '<form class="realmpick" data-form="realm">' + label +
+    '<input type="hidden" name="to" value="' + esc(path) + '">' +
+    '<div class="realmpickrow">' +
+    '<select id="realmpick" name="realm">' + options + '</select>' +
+    '<button type="submit" class="btn">' + esc(t.text('report.go')) +
+    '</button></div></form>';
+}
+
+// The query form's buttons (#986). SAVE IS FIRST IN THE DOCUMENT and drawn
+// second: a form submitted with Enter — in the Name box, say — activates
+// its DEFAULT button, the first submit button in tree order that is not
+// disabled, and until this was so, Enter in the Name box RAN the query
+// instead of saving it (rcbj, 2026-10-26: a saved query came back as a
+// job's row count). So Save is first, `disabled` as well as `hidden` while
+// the Save query box is clear — a hidden button is still a default button;
+// a disabled one is not — and `.actions .save-only { order: 2 }` puts it
+// after Run for the eye. With the box ticked, Enter saves; Run still runs.
+// THE NEW QUERY PAGE'S BUTTONS (rcbj, 2026-10-27: "replace the Run and Save
+// links with buttons matching the Definitions → Definition tab"): the
+// definition page's `.foot-actions` with `.button`s, Save first in the
+// document and drawn after Run (`order`), for the Enter reason above.
+function actionsHtml(t: any): string {
+  return '<div class="foot-actions">' +
+    '<button type="submit" class="button save-only" hidden disabled ' +
+    'name="intent" value="save">' + esc(t.text('report.save')) +
+    '</button>' +
+    '<button type="submit" class="button" name="intent" value="run">' +
+    esc(t.text('report.run')) + '</button></div>';
+}
+
+// THE SCHEDULE EDITOR (#986). A definition's schedule is a five-field cron
+// expression in UTC, and the API keeps it that way; what rcbj refused was
+// a free box with no hint of what goes in it. The editor is a date-time
+// (`datetime-local`, read as UTC, which the label says) and seven weekday
+// boxes, and `scheduleCronOf()` composes the expression: the minute and
+// hour from the time; with weekdays ticked, `m h * * d,d` (those days,
+// every week); with none, `m h D M *` (that date, every year, which the
+// preview says). An empty date is no schedule. `scheduleFieldsOf()` reads
+// an expression back into the controls where it can — numeric minute and
+// hour, a weekday list, or a numeric day and month — and the expression
+// itself is always shown under the controls, so one the editor cannot
+// draw (a step, a range, `*` for the minute) is still seen and kept until
+// the controls are touched. Weekday names come from Intl in the page's
+// language, so they cost no catalog.
+const WEEKDAYS = [1, 2, 3, 4, 5, 6, 0];
+
+function pad2(n: number): string {
+  return (n < 10 ? '0' : '') + n;
+}
+
+function weekdayName(locale: string, dow: number): string {
+  // 2026-02-01 is a Sunday; dow 0 is Sunday.
+  const date = new Date(Date.UTC(2026, 1, 1 + dow));
+  try {
+    return new Intl.DateTimeFormat(locale || 'en',
+      { weekday: 'short', timeZone: 'UTC' }).format(date);
+  } catch (e) {
+    return ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][dow];
+  }
+}
+
+function scheduleFieldsOf(cron: string): any {
+  const parts = String(cron || '').trim().split(/\s+/);
+  const out: any = { at: '', days: [] as number[] };
+  if (parts.length !== 5) {
+    return out;
+  }
+  const minute = /^\d{1,2}$/.test(parts[0]) ? Number(parts[0]) : -1;
+  const hour = /^\d{1,2}$/.test(parts[1]) ? Number(parts[1]) : -1;
+  if (minute < 0 || hour < 0) {
+    return out;
+  }
+  const now = new Date();
+  let day = now.getUTCDate();
+  let month = now.getUTCMonth() + 1;
+  if (/^\d{1,2}$/.test(parts[2]) && /^\d{1,2}$/.test(parts[3])) {
+    day = Number(parts[2]);
+    month = Number(parts[3]);
+  }
+  if (parts[4] !== '*') {
+    parts[4].split(',').forEach(function (one: string): void {
+      if (/^\d$/.test(one) && Number(one) <= 7) {
+        out.days.push(Number(one) === 7 ? 0 : Number(one));
+      }
+    });
+  }
+  out.at = now.getUTCFullYear() + '-' + pad2(month) + '-' + pad2(day) +
+    'T' + pad2(hour) + ':' + pad2(minute);
+  return out;
+}
+
+function scheduleCronOf(form: any): string {
+  const at = String((form.elements.scheduleAt &&
+    form.elements.scheduleAt.value) || '');
+  const matched = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(at);
+  if (!matched) {
+    return '';
+  }
+  const days: string[] = [];
+  const boxes = form.querySelectorAll ?
+    form.querySelectorAll('input[name="repeatDay"]:checked') : [];
+  for (let i = 0; i < boxes.length; i++) {
+    days.push(String(boxes[i].value));
+  }
+  const minute = String(Number(matched[5]));
+  const hour = String(Number(matched[4]));
+  if (days.length) {
+    return minute + ' ' + hour + ' * * ' + days.join(',');
+  }
+  return minute + ' ' + hour + ' ' + String(Number(matched[3])) + ' ' +
+    String(Number(matched[2])) + ' *';
+}
+
+function schedulePreview(t: any, cron: string): string {
+  if (!cron) {
+    return t.text('report.scheduleNone');
+  }
+  const fields = scheduleFieldsOf(cron);
+  const parts = cron.split(/\s+/);
+  if (!fields.at) {
+    return t.text('report.scheduleExpression', { cron: cron });
+  }
+  const time = fields.at.slice(11);
+  if (parts[4] !== '*') {
+    const names = fields.days.map(function (dow: number): string {
+      return weekdayName(t.locale, dow);
+    }).join(', ');
+    return t.text('report.scheduleWeekly', { time: time, days: names });
+  }
+  return t.text('report.scheduleYearly', { date: fields.at.slice(0, 10),
+    time: time });
+}
+
+function scheduleEditorHtml(t: any, cron: string): string {
+  const fields = scheduleFieldsOf(cron);
+  const boxes = WEEKDAYS.map(function (dow: number): string {
+    return '<label class="day"><input type="checkbox" name="repeatDay" ' +
+      'value="' + dow + '"' +
+      (fields.days.indexOf(dow) >= 0 ? ' checked' : '') + '> ' +
+      esc(weekdayName(t.locale, dow)) + '</label>';
+  }).join(' ');
+  return '<div class="field"><label' + tip(t, 'report.tipRunAt') + '>' +
+    esc(t.text('report.runAt')) +
+    '</label><input type="datetime-local" name="scheduleAt" step="60" ' +
+    'value="' + esc(fields.at) + '"></div>' +
+    '<div class="field"><label' + tip(t, 'report.tipRepeatOn') + '>' +
+    esc(t.text('report.repeatOn')) +
+    '</label><div class="row days">' + boxes + '</div></div>' +
+    '<p class="sub" data-schedule-preview>' +
+    esc(schedulePreview(t, cron)) + '</p>';
+}
+
+// THE SCHEDULE'S STATUS (#989's follow-up): when it runs next, which
+// occurrence it last took, how it works in one sentence, and the notes the
+// schedule job left when a run did not happen. Drawn under the editor so
+// "no job yet" has an answer on the page.
+function scheduleStatusHtml(t: any, row: any): string {
+  const when = function (iso: any): string {
+    return String(iso || '').replace('T', ' ').replace(/:\d\d(\.\d+)?Z$/, '');
+  };
+  const next = row && row.nextRunAt
+    ? t.text('report.nextRun', { when: when(row.nextRunAt) })
+    : t.text('report.nextRunNone');
+  const last = row && row.lastSlotAt
+    ? ' ' + t.text('report.lastSlot', { when: when(row.lastSlotAt) }) : '';
+  const notes = (row && Array.isArray(row.failures) ? row.failures : [])
+    .slice().reverse();
+  const list = notes.length
+    ? '<p class="sub"><strong>' + esc(t.text('report.scheduleNotes')) +
+      '</strong></p><ul class="sub notes">' +
+      notes.map(function (note: any): string {
+        return '<li>' + esc(when(note && note.at ? new Date(note.at)
+          .toISOString() : '')) + ' ' + esc(String((note &&
+          note.description) || '')) + '</li>';
+      }).join('') + '</ul>'
+    : '';
+  return '<p class="sub schedule-status">' + esc(next) + esc(last) + ' ' +
+    esc(t.text('report.scheduleHow')) + '</p>' + list;
+}
+
+// Why a query is a job (#986), from the job's `queuedBecause`: one
+// sentence per reason the API records, nothing for a job that records
+// none (one queued before the field existed).
+const BECAUSE: Record<string, string> = {
+  'every-person': 'report.because.everyPerson',
+  asked: 'report.because.asked',
+  limit: 'report.because.limit',
+  source: 'report.because.source',
+  run: 'report.because.run',
+  schedule: 'report.because.schedule'
+};
+
+function becauseHtml(t: any, why: any): string {
+  const key = BECAUSE[String(why || '')];
+  if (!key) {
+    return '';
+  }
+  return '<p class="sub because">' + esc(t.text(key)) + '</p>';
+}
+
+// The service version under the card (#986), from the index's `version`.
+function footerHtml(t: any, version: any): string {
+  if (!version || !version.version) {
+    return '';
+  }
+  return '<p class="foot" title="' + esc(version.buildInfo || '') + '">' +
+    esc(t.text('report.version', { version: String(version.version) })) +
+    '</p>';
+}
+
+// THE PAGER (#997), the console's `pageNavPair()` and `perPageForm()` in
+// one line: first and previous, a window of up to seven page numbers with
+// the current one marked, next and last, then "page x of y — rows a–b of
+// n", and a rows-per-page select that moves to page one. Every page is a
+// link under the list's own path with `?page=&per=`, so a page can be
+// linked to and the back button works; the select navigates on change.
+const PER_CHOICES = [25, 50, 100, 200];
+
+// The page and size a route's query asks for, as the API's query string.
+function pageQuery(query: any): string {
+  const q = query || {};
+  const parts: string[] = [];
+  if (q.page) {
+    parts.push('page=' + encodeURIComponent(String(q.page)));
+  }
+  if (q.per) {
+    parts.push('per=' + encodeURIComponent(String(q.per)));
+  }
+  return parts.length ? '?' + parts.join('&') : '';
+}
+
+// A pager over rows the browser already HOLDS (#1005: the result of Run) is
+// the same markup with links that go nowhere: `data-act="result-page"` and
+// the page number, handled in `onClick()`, and a rows-per-page select marked
+// `data-result-pager`, handled in `onChange()`. The location does not
+// change, because the rows are in memory and a route would draw the form
+// again and lose them.
+function pagerLink(path: string, page: number, per: number,
+                   label: string, title?: string, held?: boolean): string {
+  if (held) {
+    return '<a href="#" data-act="result-page" data-page="' + page + '"' +
+      (title ? ' title="' + esc(title) + '"' : '') + '>' + label + '</a>';
+  }
+  return '<a href="' + esc(path + '?page=' + page + '&per=' + per) + '"' +
+    (title ? ' title="' + esc(title) + '"' : '') + '>' + label + '</a>';
+}
+
+function pagerHtml(t: any, path: string, pg: any, held?: boolean): string {
+  const page = Number(pg.page) || 1;
+  const pages = Math.max(1, Number(pg.pages) || 1);
+  const per = Number(pg.per) || 50;
+  const total = Number(pg.total) || 0;
+  const first = esc(t.text('report.pager.first'));
+  const prev = esc(t.text('report.pager.prev'));
+  const next = esc(t.text('report.pager.next'));
+  const last = esc(t.text('report.pager.last'));
+  const out: string[] = [];
+  if (pages > 1) {
+    if (page > 1) {
+      out.push(pagerLink(path, 1, per, first, undefined, held));
+      out.push(pagerLink(path, page - 1, per, prev, undefined, held));
+    } else {
+      out.push('<span class="off">' + first + '</span>');
+      out.push('<span class="off">' + prev + '</span>');
+    }
+    const from = Math.max(1, Math.min(page - 3, pages - 6));
+    const to = Math.min(pages, Math.max(page + 3, 7));
+    for (let n = from; n <= to; n++) {
+      out.push(n === page ? '<span class="here">' + n + '</span>'
+        : pagerLink(path, n, per, String(n), undefined, held));
+    }
+    if (page < pages) {
+      out.push(pagerLink(path, page + 1, per, next, undefined, held));
+      out.push(pagerLink(path, pages, per, last, undefined, held));
+    } else {
+      out.push('<span class="off">' + next + '</span>');
+      out.push('<span class="off">' + last + '</span>');
+    }
+  }
+  const firstRow = total ? (page - 1) * per + 1 : 0;
+  const lastRow = Math.min(total, page * per);
+  out.push('<span class="where">' + esc(t.text('report.pager.where', {
+    page: String(page), pages: String(pages), first: String(firstRow),
+    last: String(lastRow), total: String(total) })) + '</span>');
+  const choices = PER_CHOICES.indexOf(per) >= 0 ? PER_CHOICES.slice()
+    : PER_CHOICES.concat([per]).sort(function (a, b) {
+      return a - b;
+    });
+  out.push('<label class="perpage"' + tip(t, 'report.tipPerPage') + '>' +
+    esc(t.text('report.perPage.label')) +
+    ' <select name="per" ' + (held ? 'data-result-pager=""'
+      : 'data-pager-path="' + esc(path) + '"') + '>' +
+    choices.map(function (n: number): string {
+      return '<option value="' + n + '"' + (n === per ? ' selected' : '') +
+        '>' + esc(t.text('report.perPage.rows', { n: String(n) })) +
+        '</option>';
+    }).join('') + '</select></label>');
+  return '<div class="pager">' + out.join('') + '</div>';
 }
 
 function problemHtml(t: any, text: string): string {
   return '<p class="err">' + esc(text || t.text('report.error')) + '</p>';
 }
 
+// A STATUS MESSAGE IN A BUBBLE AT THE TOP OF THE PAGE (rcbj, 2026-10-26),
+// the console's `.flash`: sticky at the top of the card, `ok` or `err`,
+// with a dismiss. It replaces the note at the foot of a form and the page
+// repaint a refusal used to cause, so a refused save or run leaves the
+// form as it was and says why above it.
+function flashHtml(t: any, kind: string, text: string): string {
+  return '<div class="flash" role="status"><div class="' +
+    (kind === 'ok' ? 'ok' : 'err') + '">' + esc(text) +
+    '<button type="button" class="btn dismiss" data-act="dismiss" ' +
+    'aria-label="' + esc(t.text('report.dismiss')) + '" title="' +
+    esc(t.text('report.dismiss')) + '">&times;</button></div></div>';
+}
+
+// Every table sits in `.tablewrap`, which scrolls sideways when the table is
+// wider than the card (rcbj, 2026-10-27: a credentialHolders result with
+// twelve columns ran off the page), and a cell may break a long value.
 function tableHtml(headers: string[], rows: string[][]): string {
-  return '<table class="table"><thead><tr>' +
+  return '<div class="tablewrap"><table class="table"><thead><tr>' +
     headers.map(function (header: string): string {
       return '<th>' + header + '</th>';
     }).join('') + '</tr></thead><tbody>' +
@@ -118,7 +908,7 @@ function tableHtml(headers: string[], rows: string[][]): string {
       return '<tr>' + row.map(function (cell: string): string {
         return '<td>' + cell + '</td>';
       }).join('') + '</tr>';
-    }).join('') + '</tbody></table>';
+    }).join('') + '</tbody></table></div>';
 }
 
 // The chosen language is part of the document. A saved definition keeps
@@ -133,32 +923,60 @@ function queryDocument(form: any, locale: any): any {
     selected.push(String(boxes[i].value || ''));
   }
   const filters: any[] = [];
-  for (let n = 0; n < 3; n++) {
+  // As many rows as the form holds (#986): the form starts with one and
+  // the + beside the last adds the next, so the reader stops at the first
+  // index with no field control rather than at a fixed count.
+  for (let n = 0; n < FILTER_ROWS_MAX && form.elements['filterField' + n];
+       n++) {
     const field = String((form.elements['filterField' + n] &&
       form.elements['filterField' + n].value) || '');
     const op = String((form.elements['filterOp' + n] &&
       form.elements['filterOp' + n].value) || '');
-    const value = String((form.elements['filterValue' + n] &&
-      form.elements['filterValue' + n].value) || '');
+    const valueEl = form.elements['filterValue' + n];
+    const value = String((valueEl && valueEl.value) || '');
     if (!field || !op) {
       continue;
     }
     if (op === 'isNull') {
       filters.push({ op: 'isNull', field: field });
     } else if (value) {
-      filters.push({ op: op, field: field, value: value });
+      // THE VALUE IN ITS FIELD'S TYPE (#1028): the control says the type
+      // (`data-type`), so a number is sent as a number, a boolean as a
+      // boolean, and a picked date-time — read as UTC, as the schedule
+      // editor's — as ISO text; the API refused the strings before.
+      const type = valueEl && valueEl.getAttribute ?
+        String(valueEl.getAttribute('data-type') || '') : '';
+      let typed: any = value;
+      if (type === 'number' && Number.isFinite(Number(value))) {
+        typed = Number(value);
+      } else if (type === 'boolean') {
+        typed = value === 'true';
+      } else if (type === 'timestamp' &&
+          /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value)) {
+        typed = value + ':00.000Z';
+      }
+      filters.push({ op: op, field: field, value: typed });
     }
   }
-  const sort = String((form.elements.sortField &&
-    form.elements.sortField.value) || '');
+  // The Sort box (#1008): unticked, no order, whatever the hidden selects
+  // hold. A form without the box (an older test double) sorts as before.
+  const sorting = !form.elements.sortQuery || !!form.elements.sortQuery.checked;
+  const sort = sorting ? String((form.elements.sortField &&
+    form.elements.sortField.value) || '') : '';
   const dir = String((form.elements.sortDir &&
     form.elements.sortDir.value) || 'asc');
   const limit = Number(form.elements.limit && form.elements.limit.value);
   const format = String((form.elements.format &&
     form.elements.format.value) || 'json');
-  const counted = !!(form.elements.counted && form.elements.counted.checked);
-  const group = String((form.elements.groupBy &&
-    form.elements.groupBy.value) || '');
+  // The Group by box (#1013): unticked, no group, whatever the hidden select
+  // holds; ticked with a field, a count, because a group-by is one. A form
+  // without the box (an older test double) groups as before.
+  const grouping = !form.elements.groupByQuery ||
+    !!form.elements.groupByQuery.checked;
+  const group = grouping ? String((form.elements.groupBy &&
+    form.elements.groupBy.value) || '') : '';
+  const counted = !!(form.elements.counted && form.elements.counted.checked) ||
+    (!!form.elements.groupByQuery && grouping && !!group);
   const document: any = {
     source: source,
     select: counted ? (group ? [group] : []) : selected,
@@ -172,6 +990,19 @@ function queryDocument(form: any, locale: any): any {
     document.where = filters[0];
   } else if (filters.length > 1) {
     document.where = { op: 'and', args: filters };
+  } else if (form.elements.whereJson && form.elements.whereJson.value) {
+    // A FILTER THE ROWS CANNOT DRAW (#989): a saved definition whose
+    // `where` holds an `or`, a `not` or an `in` is shown as its JSON and
+    // carried back unchanged while no row is filled in.
+    try {
+      document.where = JSON.parse(String(form.elements.whereJson.value));
+    } catch (e) {
+      // Not JSON: the filter is dropped, as an empty form drops it.
+      document.where = undefined;
+    }
+    if (document.where === undefined) {
+      delete document.where;
+    }
   }
   if (sort) {
     document.orderBy = [{ field: sort, dir: dir === 'desc' ? 'desc' : 'asc' }];
@@ -196,6 +1027,26 @@ class ReportRuntime extends SpaClient {
   private i18n: any;
   private t: any;
   private accountsListening: boolean;
+  // The index's version and the realms view, read once per load (#986).
+  private chrome: any;
+  // The catalog's sources, kept from the last read for a source change on
+  // the definition page (#989).
+  private catalogSources: any[];
+  // The group search's last query, for the pager (#989).
+  private groupQuery: string;
+  // The last Run's answer, paged in the browser (#1005): its fields and
+  // every row that came back, and the rows-per-page choice, kept across
+  // runs in this tab.
+  private lastRun: any;
+  private resultPer: number;
+  // THE REALM THE TOKEN WAS ISSUED IN (#1038): its prefix, null before a
+  // sign-in. A service administrator's default-realm token is kept when
+  // the realm field moves the page to another realm, so the token, refresh
+  // and resource requests go on naming the realm that issued it while the
+  // pages and the API calls name the realm on screen.
+  private issuerPrefix: string | null;
+  // The prefix the page was loaded at: the `elsewhere` bases carry it.
+  private loadedPrefix: string;
 
   /**
    * @param env - the browser's objects
@@ -215,6 +1066,259 @@ class ReportRuntime extends SpaClient {
     this.t = WebMessages.WebTranslator.fromData(null);
     this.i18n = new WebI18n(env, this, ['report']);
     this.accountsListening = false;
+    this.chrome = null;
+    this.catalogSources = [];
+    this.groupQuery = '';
+    this.lastRun = null;
+    this.resultPer = 50;
+    this.issuerPrefix = null;
+    this.loadedPrefix = ReportRuntime.prefixOf(env.location.pathname);
+  }
+
+  /**
+   * One of a realm's addresses: on this origin, or on the listener the
+   * shell named for the path, with that realm's prefix.
+   *
+   * @param path - the path
+   * @param prefix - the realm's prefix, '' for the default realm
+   * @returns the absolute URL
+   */
+  urlAt(path: string, prefix: string): string {
+    const elsewhere = this.elsewhere || {};
+    const first = '/' + String(path || '').split(/[/?#]/)[1];
+    if (elsewhere[first]) {
+      const base = String(elsewhere[first]);
+      const loaded = this.loadedPrefix;
+      const root = loaded && base.slice(-loaded.length) === loaded
+        ? base.slice(0, base.length - loaded.length) : base;
+      return root + prefix + path;
+    }
+    return this.env.location.origin + prefix + path;
+  }
+
+  /**
+   * This page's address for a path: the authorization server's of the
+   * realm that issued the token (#1038), and the realm on screen's for
+   * everything else.
+   *
+   * @param path - the path
+   * @returns the absolute URL
+   */
+  url(path: string): string {
+    const first = '/' + String(path || '').split(/[/?#]/)[1];
+    const issuer = (first === '/oauth2' || first === '/.well-known') &&
+      this.issuerPrefix !== null;
+    return this.urlAt(path, issuer ? String(this.issuerPrefix)
+                                   : this.prefix);
+  }
+
+  /**
+   * The shared query form, for a test (#989).
+   *
+   * @param t - the translator
+   * @param sources - the catalog's sources
+   * @param document - a saved document, or null for the New Query page
+   * @returns the controls' HTML
+   */
+  static queryFormHtml(t: any, sources: any[], document: any): string {
+    return queryFormHtml(t, sources, document);
+  }
+
+  /**
+   * The schedule's status lines and notes, for a test.
+   *
+   * @param t - the translator
+   * @param row - the definition view
+   * @returns the HTML
+   */
+  static scheduleStatusHtml(t: any, row: any): string {
+    return scheduleStatusHtml(t, row);
+  }
+
+  /**
+   * The parameters a filter names, for a test.
+   *
+   * @param where - the filter
+   * @returns the parameter names, each once
+   */
+  static paramNames(where: any): string[] {
+    return paramNames(where);
+  }
+
+  /**
+   * The sentence under the Run box, for a test.
+   *
+   * @param t - the translator
+   * @param document - the saved document
+   * @returns the sentence's HTML
+   */
+  static parametersHelpHtml(t: any, document: any): string {
+    return parametersHelpHtml(t, document);
+  }
+
+  /**
+   * The leaves a filter can be drawn as rows, for a test (#989).
+   *
+   * @param where - the filter
+   * @returns the leaves, or null when rows cannot draw it
+   */
+  static whereLeaves(where: any): any[] | null {
+    return whereLeaves(where);
+  }
+
+  /**
+   * One page of group hits, for a test (#989).
+   *
+   * @param t - the translator
+   * @param page - `GET /report-api/groups`'s answer
+   * @param chosen - the DNs already chosen, lower-cased
+   * @returns the pane's HTML
+   */
+  static groupResultsHtml(t: any, page: any, chosen: string[]): string {
+    return groupResultsHtml(t, page, chosen);
+  }
+
+  /**
+   * A chosen group's row, for a test (#989).
+   *
+   * @param t - the translator
+   * @param group - `{ dn, name, mail }`
+   * @returns the row's HTML
+   */
+  static chosenGroupHtml(t: any, group: any): string {
+    return chosenGroupHtml(t, group);
+  }
+
+  /**
+   * The query document a form holds, for a test (#986).
+   *
+   * @param form - the form
+   * @param locale - the language tag, or null
+   * @returns the document
+   */
+  static queryDocument(form: any, locale: any): any {
+    return queryDocument(form, locale);
+  }
+
+  /**
+   * One filter row, for a test (#986).
+   *
+   * @param t - the translator
+   * @param n - the row's index
+   * @param fieldOptions - the field options' HTML
+   * @param last - whether the row carries the + that adds the next
+   * @returns the row's HTML
+   */
+  static filterValueHtml(n: number, fields: any[], fieldId: string,
+                         op: string, value: string,
+                         anchorRow?: boolean): string {
+    return filterValueHtml(n, fields, fieldId, op, value, anchorRow);
+  }
+
+  static filterRowHtml(t: any, n: number, fieldOptions: string,
+                       last: boolean): string {
+    return filterRowHtml(t, n, fieldOptions, last);
+  }
+
+  /**
+   * The realm field, for a test (#986).
+   *
+   * @param t - the translator
+   * @param view - `GET /report-api/realms`'s answer
+   * @param path - the page path the switch returns to
+   * @returns the field's HTML
+   */
+  static realmHtml(t: any, view: any, path: string): string {
+    return realmHtml(t, view, path);
+  }
+
+  /**
+   * The two bars, for a test (#986).
+   *
+   * @param t - the translator
+   * @param realm - the realm field's HTML
+   * @param accounts - the user menu's HTML
+   * @param chooser - the language chooser's HTML
+   * @param path - the page path
+   * @returns the bars' HTML
+   */
+  static navHtml(t: any, realm: string, accounts: string, chooser: string,
+                 path: string): string {
+    return navHtml(t, realm, accounts, chooser, path);
+  }
+
+  /**
+   * The query form's buttons, for a test (#986).
+   *
+   * @param t - the translator
+   * @returns the buttons' HTML
+   */
+  static actionsHtml(t: any): string {
+    return actionsHtml(t);
+  }
+
+  /**
+   * The schedule editor, for a test (#986).
+   *
+   * @param t - the translator
+   * @param cron - the definition's cron expression, or ''
+   * @returns the editor's HTML
+   */
+  static scheduleEditorHtml(t: any, cron: string): string {
+    return scheduleEditorHtml(t, cron);
+  }
+
+  /**
+   * The cron expression a definition form holds, for a test (#986).
+   *
+   * @param form - the form
+   * @returns the expression, or '' for no schedule
+   */
+  static scheduleCronOf(form: any): string {
+    return scheduleCronOf(form);
+  }
+
+  /**
+   * The controls' values for an expression, for a test (#986).
+   *
+   * @param cron - the expression
+   * @returns `{ at, days }`
+   */
+  static scheduleFieldsOf(cron: string): any {
+    return scheduleFieldsOf(cron);
+  }
+
+  /**
+   * The sentence under the editor, for a test (#986).
+   *
+   * @param t - the translator
+   * @param cron - the expression
+   * @returns the sentence
+   */
+  static schedulePreview(t: any, cron: string): string {
+    return schedulePreview(t, cron);
+  }
+
+  /**
+   * Why a job is a job, for a test (#986).
+   *
+   * @param t - the translator
+   * @param why - the job's `queuedBecause`
+   * @returns the sentence's HTML, or ''
+   */
+  static becauseHtml(t: any, why: any): string {
+    return becauseHtml(t, why);
+  }
+
+  /**
+   * The footer, for a test (#986).
+   *
+   * @param t - the translator
+   * @param version - the index's `version`
+   * @returns the footer's HTML
+   */
+  static footerHtml(t: any, version: any): string {
+    return footerHtml(t, version);
   }
 
   /**
@@ -254,7 +1358,8 @@ class ReportRuntime extends SpaClient {
    * @returns the resource
    */
   resource(): string {
-    return this.url(API);
+    return this.urlAt(API, this.issuerPrefix !== null
+      ? String(this.issuerPrefix) : this.prefix);
   }
 
   /**
@@ -300,6 +1405,9 @@ class ReportRuntime extends SpaClient {
     const verifier = this.random(32);
     const state = this.random(16);
     const asked = extra || {};
+    // A sign-in is always in the realm on screen, whatever issued the token
+    // it replaces (#1038): this realm's client is registered here.
+    this.issuerPrefix = this.prefix;
     const record: any = {
       verifier: verifier,
       state: state,
@@ -373,6 +1481,7 @@ class ReportRuntime extends SpaClient {
     }
     const before = this.storedAccount();
     this.keepTokens(answer.json);
+    this.issuerPrefix = this.prefix;
     this.username = SpaClient.claimOf(answer.json.id_token,
       'preferred_username');
     this.env.history.replaceState(null, '',
@@ -483,7 +1592,8 @@ class ReportRuntime extends SpaClient {
    * @param body - a JSON body, or nothing
    * @returns the answer, or null when a sign-in began
    */
-  async call(method: string, path: string, body?: any): Promise<any> {
+  async call(method: string, path: string, body?: any,
+             options?: any): Promise<any> {
     const res = await this.sendOnce(method, this.url(path), body);
     if (res === ABORTED) {
       return null;
@@ -494,6 +1604,14 @@ class ReportRuntime extends SpaClient {
     }
     const type = String((res.headers && res.headers.get &&
       res.headers.get('Content-Type')) || '');
+    // A RESULT IS BYTES WHATEVER ITS TYPE (`raw`): a JSON-format report
+    // is served as application/json, and reading it as the API's JSON
+    // left `bytes` empty, so Download said only that something went
+    // wrong. A refusal is still read as JSON, for its description.
+    if (options && options.raw && res.status === 200) {
+      const bytes = await res.arrayBuffer();
+      return { status: res.status, bytes: bytes, media: type, res: res };
+    }
     if (type.indexOf('json') >= 0 || type === '') {
       let json: any = null;
       try {
@@ -529,12 +1647,85 @@ class ReportRuntime extends SpaClient {
   paint(body: string): void {
     const accounts = ReportRuntime.accountMenu(this);
     const chooser = this.i18n.chooser(this.t, this.here());
+    const chrome = this.chrome || {};
+    const realm = realmHtml(this.t, chrome.realms, this.here());
+    const docs = DocLinks.markup(DocLinks.abs(DOCS_PAGE),
+      this.t.text('report.docsLink'));
     const html = '<h1>' + esc(this.t.text('report.title')) + '</h1>' +
-      navHtml(this.t, accounts, chooser, this.reportPath()) + body;
+      navHtml(this.t, realm, accounts, chooser, this.reportPath()) + docs +
+      body + footerHtml(this.t, chrome.version);
     const main = this.env.document.getElementById('report');
     if (main) {
       main.innerHTML = html;
     }
+  }
+
+  /**
+   * Reads the index (the version) and the realms once per load, after the
+   * token is in hand (#986). A failure leaves the chrome without them;
+   * nothing else is held up.
+   *
+   * @returns nothing
+   */
+  async ensureChrome(): Promise<void> {
+    if (this.chrome) {
+      return;
+    }
+    const chrome: any = { version: null, realms: null };
+    const index = await this.call('GET', API);
+    if (index && index.json) {
+      chrome.version = index.json.version || null;
+    }
+    const realms = await this.call('GET', API + '/realms');
+    if (realms && realms.json && realms.json.current) {
+      chrome.realms = realms.json;
+    }
+    this.chrome = chrome;
+  }
+
+  /**
+   * Opens another realm's reports application at this page (#986). A
+   * service administrator's default-realm token reaches every realm
+   * (#1038): the other realm's API is asked with it, and when it answers
+   * the page moves there in place, keeping the token, as the console's
+   * realm switcher does. Otherwise — a realm's own token, or a default
+   * one the other realm refuses — the other realm's page signs in as any
+   * first load does, and the browser leaves this page for it.
+   *
+   * @param realmId - the realm chosen
+   * @param to - the report path and query to open there
+   * @returns nothing
+   */
+  async switchRealm(realmId: string, to: string): Promise<void> {
+    const list = (this.chrome && this.chrome.realms &&
+      this.chrome.realms.realms) || [];
+    const realm = list.filter(function (one: any): boolean {
+      return one.id === realmId;
+    })[0];
+    if (!realm) {
+      return;
+    }
+    const path = String(to || BASE);
+    const where = path.indexOf(BASE) === 0 ? path : BASE;
+    const target = String(realm.prefix || '');
+    if (this.accessToken && this.issuerPrefix !== null &&
+        (target === this.issuerPrefix || this.issuerPrefix === '')) {
+      let res: any = null;
+      try {
+        res = await this.sendOnce('GET', this.urlAt(API, target));
+      } catch (e) {
+        res = null;
+      }
+      if (res && res.status === 200) {
+        this.prefix = target;
+        this.chrome = null;
+        this.env.history.pushState(null, '', target + where);
+        await this.route();
+        return;
+      }
+    }
+    this.env.location.assign(String(this.env.location.origin || '') +
+      target + where);
   }
 
   /**
@@ -585,18 +1776,24 @@ class ReportRuntime extends SpaClient {
    */
   static accountMenu(page: ReportRuntime): string {
     const list = page.accounts;
-    if (!list || !list.enabled) {
-      return '';
-    }
+    const several = !!(list && list.enabled);
     const name = ReportRuntime.accountLabel(page);
     const t = page.t;
+    // Drawn for everybody since #986, because Sign out lives here; the
+    // switch group still appears only with several accounts on.
     return '<details class="usermenu"><summary title="' +
-      esc(t.text('report.accounts.summaryTitle', { user: name })) + '">' +
+      esc(several ? t.text('report.accounts.summaryTitle', { user: name })
+        : name) + '">' +
       esc(name) + '</summary><div class="usermenupanel">' +
       '<p class="usermenuwho">' +
       t.html('report.accounts.who', { user: name }) + '</p>' +
-      '<div id="' + ACCOUNTS_ID + '" class="usermenuaccounts">' +
-      ReportRuntime.accountItems(page) + '</div></div></details>';
+      (several
+        ? '<div id="' + ACCOUNTS_ID + '" class="usermenuaccounts">' +
+          ReportRuntime.accountItems(page) + '</div>'
+        : '') +
+      '<div class="usermenuaccounts usermenusignout">' +
+      '<a class="linklike" href="' + esc(page.prefix + '/logout') + '">' +
+      esc(t.text('report.signOut')) + '</a></div></div></details>';
   }
 
   /**
@@ -751,25 +1948,47 @@ class ReportRuntime extends SpaClient {
     const src = answer.json.source;
     const yes = esc(this.t.text('report.yes'));
     const no = esc(this.t.text('report.no'));
+    const t = this.t;
+    // The Indexed column (#985) names the operators the directory answers
+    // without reading every row, in the words the filter form uses; a
+    // field with none shows a dash. The page explains the column once,
+    // and only where a field carries one.
+    const opWords: Record<string, string> = {
+      eq: 'report.opEq', ne: 'report.opNe', contains: 'report.opContains',
+      startsWith: 'report.opStartsWith', in: 'report.opIn',
+      lt: 'report.opLt', le: 'report.opLe', gt: 'report.opGt',
+      ge: 'report.opGe', isNull: 'report.opIsNull'
+    };
+    let anyIndexed = false;
     const rows = (src.fields || []).map(function (field: any): string[] {
+      const indexed = Array.isArray(field.indexed) ? field.indexed : [];
+      if (indexed.length) {
+        anyIndexed = true;
+      }
       return [esc(field.id), esc(field.type),
         esc(field.meaning || ''),
         field.filter ? yes : no,
         field.sort ? yes : no,
-        field.group ? yes : no];
+        field.group ? yes : no,
+        indexed.length ? esc(indexed.map(function (op: string): string {
+          return opWords[op] ? t.text(opWords[op]) : op;
+        }).join(', ')) : '&mdash;'];
     });
     const kept = src.retention ? '<p class="sub">' +
       esc(src.retention) + '</p>' : '';
+    const indexedNote = anyIndexed ? '<p class="sub">' +
+      esc(t.text('report.indexedNote')) + '</p>' : '';
     this.paint('<p><a href="' + esc(BASE + '/query?source=' + src.id) +
       '">' + esc(this.t.text('report.newQuery')) + '</a></p>' +
-      '<h2>' + esc(src.id) + '</h2>' + kept +
+      '<h2>' + esc(src.id) + '</h2>' + kept + indexedNote +
       tableHtml([
         esc(this.t.text('report.fields')),
         esc(this.t.text('report.type')),
         esc(this.t.text('report.meaning')),
         esc(this.t.text('report.filter')),
         esc(this.t.text('report.sort')),
-        esc(this.t.text('report.groupBy'))
+        esc(this.t.text('report.groupBy')),
+        esc(this.t.text('report.indexed'))
       ], rows));
   }
 
@@ -787,83 +2006,291 @@ class ReportRuntime extends SpaClient {
       return;
     }
     const sources = answer.json.sources;
-    const current = sourceId || (sources[0] && sources[0].id) || '';
+    this.catalogSources = sources;
+    const self = this;
+    this.paint('<form class="query-form" data-form="query">' +
+      '<div data-query-block>' +
+      queryFormHtml(self.t, sources, { source: sourceId || '' }) +
+      '</div>' +
+      // Save query (#986): the Name field and the Save button appear only
+      // once the box is ticked; unticked, the form runs and saves nothing.
+      '<div class="field"><label' + tip(self.t, 'report.tipSaveQuery') +
+      '><input type="checkbox" name="saveQuery"> ' +
+      esc(self.t.text('report.saveQuery')) + '</label></div>' +
+      '<div class="field save-only" hidden><label' +
+      tip(self.t, 'report.tipName') + '>' +
+      esc(self.t.text('report.name')) +
+      '</label><input name="definitionName"></div>' +
+      actionsHtml(self.t) + '</form>');
+  }
+
+  /**
+   * Adds a filter row after the last one (#986): the last row is cloned,
+   * its controls renamed to the next index and emptied, and the + moves
+   * to the new row.
+   *
+   * @param button - the + pressed
+   * @returns nothing
+   */
+  addFilterRow(button: any): void {
+    const row = button && button.closest ? button.closest('.filterrow') :
+      null;
+    const form = row && row.closest ? row.closest('form') : null;
+    if (!row || !form) {
+      return;
+    }
+    const rows = form.querySelectorAll('.filterrow');
+    const n = rows.length;
+    if (n >= FILTER_ROWS_MAX) {
+      return;
+    }
+    const next = row.cloneNode(true);
+    next.setAttribute('data-filter-row', String(n));
+    // The clone offers every field (rcbj, 2026-10-27): the first row of an
+    // anchored source lists only the indexed ones, and the rows after it
+    // narrow that read, so they take the full list from the template.
+    const template = form.querySelector('template[data-field-options]');
+    const fieldSel = next.querySelector('select[name^="filterField"]');
+    if (template && fieldSel) {
+      fieldSel.innerHTML = template.innerHTML;
+      fieldSel.removeAttribute('title');
+    }
+    const controls = next.querySelectorAll('select, input');
+    for (let i = 0; i < controls.length; i++) {
+      const name = String(controls[i].getAttribute('name') || '')
+        .replace(/\d+$/, '');
+      controls[i].setAttribute('name', name + n);
+      if (controls[i].tagName === 'INPUT') {
+        controls[i].value = '';
+      } else {
+        controls[i].selectedIndex = 0;
+      }
+    }
+    // The clone's value control is a text box again (#1007): its field is
+    // unchosen, so an enumerated field's dropdown would list the wrong
+    // values.
+    const valueEl = next.querySelector('[name="filterValue' + n + '"]');
+    if (valueEl && valueEl.tagName === 'SELECT') {
+      valueEl.outerHTML = filterValueHtml(n, [], '', '', '');
+    }
+    const plus = row.querySelector('.addfilter');
+    if (plus && plus.parentNode) {
+      plus.parentNode.removeChild(plus);
+    }
+    row.parentNode.insertBefore(next, row.nextSibling);
+  }
+
+  /**
+   * Removes a filter row (#1017, rcbj: a trash can beside each row). The
+   * last row left is emptied rather than removed, so the form always has
+   * one; the rows that remain are renumbered in order, and the + moves to
+   * the new last row when the removed one carried it.
+   *
+   * @param button - the trash can pressed
+   * @returns nothing
+   */
+  removeFilterRow(button: any): void {
+    const row = button && button.closest ? button.closest('.filterrow') :
+      null;
+    const form = row && row.closest ? row.closest('form') : null;
+    if (!row || !form) {
+      return;
+    }
+    const before = form.querySelectorAll('.filterrow');
+    if (before.length <= 1) {
+      // The only row: emptied, its value control a text box again.
+      const controls = row.querySelectorAll('select, input');
+      for (let i = 0; i < controls.length; i++) {
+        if (controls[i].tagName === 'INPUT') {
+          controls[i].value = '';
+        } else {
+          controls[i].selectedIndex = 0;
+        }
+      }
+      const valueEl = row.querySelector('[name="filterValue0"]');
+      if (valueEl && valueEl.tagName === 'SELECT') {
+        valueEl.outerHTML = filterValueHtml(0, [], '', '', '');
+      }
+      return;
+    }
+    const hadPlus = !!row.querySelector('.addfilter');
+    row.parentNode.removeChild(row);
+    const rows = form.querySelectorAll('.filterrow');
+    for (let n = 0; n < rows.length; n++) {
+      rows[n].setAttribute('data-filter-row', String(n));
+      const controls = rows[n].querySelectorAll('select, input');
+      for (let i = 0; i < controls.length; i++) {
+        const name = String(controls[i].getAttribute('name') || '')
+          .replace(/\d+$/, '');
+        controls[i].setAttribute('name', name + n);
+      }
+    }
+    if (hadPlus && rows.length) {
+      const last = rows[rows.length - 1];
+      if (!last.querySelector('.addfilter')) {
+        last.insertAdjacentHTML('beforeend', addFilterButtonHtml(this.t));
+      }
+    }
+  }
+
+  /**
+   * Draws a filter row's operator select and value control again for its
+   * field and operator (#1007, #1022).
+   *
+   * @param row - the `.filterrow` element
+   * @param form - the form it is in
+   * @param n - the row's index
+   * @returns nothing
+   */
+  redrawFilterRow(row: any, form: any, n: number): void {
+    if (!row || !form || !row.querySelector) {
+      return;
+    }
+    const fieldEl = row.querySelector('[name="filterField' + n + '"]');
+    const opEl = row.querySelector('[name="filterOp' + n + '"]');
+    const valueEl = row.querySelector('[name="filterValue' + n + '"]');
+    if (!fieldEl || !opEl || !valueEl) {
+      return;
+    }
+    const sourceId = String((form.elements && form.elements.source &&
+      form.elements.source.value) || '');
     let fields: any[] = [];
-    sources.forEach(function (src: any): void {
-      if (src.id === current) {
+    let anchored = false;
+    (this.catalogSources || []).forEach(function (src: any): void {
+      if (src && src.id === sourceId) {
         fields = src.fields || [];
+        anchored = src.anchored === true;
       }
     });
-    const self = this;
-    const options = sources.map(function (src: any): string {
-      return '<option value="' + esc(src.id) + '"' +
-        (src.id === current ? ' selected' : '') + '>' + esc(src.id) +
-        '</option>';
-    }).join('');
-    const checks = fields.map(function (field: any): string {
-      return '<label><input type="checkbox" name="field" value="' +
-        esc(field.id) + '" checked> ' + esc(field.id) + '</label>';
-    }).join(' ');
-    const fieldOptions = '<option value=""></option>' +
-      fields.map(function (field: any): string {
-        return '<option value="' + esc(field.id) + '">' + esc(field.id) +
-          '</option>';
-      }).join('');
-    let filters = '';
-    for (let n = 0; n < 3; n++) {
-      filters = filters + '<div class="row"><select name="filterField' + n +
-        '">' + fieldOptions + '</select><select name="filterOp' + n + '">' +
-        '<option value=""></option>' +
-        '<option value="eq">' + esc(self.t.text('report.opEq')) +
-        '</option>' +
-        '<option value="ne">' + esc(self.t.text('report.opNe')) +
-        '</option>' +
-        '<option value="contains">' +
-        esc(self.t.text('report.opContains')) + '</option>' +
-        '<option value="startsWith">' +
-        esc(self.t.text('report.opStartsWith')) + '</option>' +
-        '<option value="lt">' + esc(self.t.text('report.opLt')) +
-        '</option>' +
-        '<option value="le">' + esc(self.t.text('report.opLe')) +
-        '</option>' +
-        '<option value="gt">' + esc(self.t.text('report.opGt')) +
-        '</option>' +
-        '<option value="ge">' + esc(self.t.text('report.opGe')) +
-        '</option>' +
-        '<option value="isNull">' +
-        esc(self.t.text('report.opIsNull')) + '</option></select>' +
-        '<input name="filterValue' + n + '"></div>';
+    const fieldId = String(fieldEl.value || '');
+    const ops = opsFor(fieldSpecOf(fields, fieldId), anchored && n === 0);
+    let op = String(opEl.value || '');
+    const holds = String((opEl.getAttribute && opEl.getAttribute('data-ops'))
+      || '');
+    if (holds !== ops.join(',')) {
+      // The field's operator list changed (#1022, #1028): the select is
+      // drawn again with the list the field takes, keeping the operator
+      // when the new list still offers it.
+      if (ops.indexOf(op) < 0) {
+        op = '';
+      }
+      opEl.outerHTML = opSelectHtml(this.t, n, ops, op);
     }
-    this.paint('<form class="query-form" data-form="query">' +
-      '<div class="field"><label>' + esc(self.t.text('report.source')) +
-      '</label><select name="source">' + options + '</select></div>' +
-      '<div class="field"><label>' + esc(self.t.text('report.fields')) +
-      '</label><div class="row">' + checks + '</div></div>' +
-      '<div class="field"><label>' + esc(self.t.text('report.filter')) +
-      '</label>' + filters + '</div>' +
-      '<div class="field"><label>' + esc(self.t.text('report.sort')) +
-      '</label><div class="row"><select name="sortField">' + fieldOptions +
-      '</select><select name="sortDir"><option value="asc">' +
-      esc(self.t.text('report.ascending')) + '</option><option value="desc">' +
-      esc(self.t.text('report.descending')) + '</option></select></div></div>' +
-      '<div class="field"><label>' + esc(self.t.text('report.limit')) +
-      '</label><input name="limit" value="100"></div>' +
-      '<div class="field"><label>' + esc(self.t.text('report.format')) +
-      '</label><select name="format"><option value="json">' +
-      esc(self.t.text('report.json')) + '</option><option value="csv">' +
-      esc(self.t.text('report.csv')) + '</option><option value="pdf">' +
-      esc(self.t.text('report.pdf')) + '</option></select></div>' +
-      '<div class="field"><label><input type="checkbox" name="counted"> ' +
-      esc(self.t.text('report.count')) + '</label>' +
-      '<select name="groupBy">' + fieldOptions + '</select> ' +
-      esc(self.t.text('report.groupBy')) + '</div>' +
-      '<div class="field"><label>' + esc(self.t.text('report.name')) +
-      '</label><input name="definitionName"></div>' +
-      '<div class="actions"><button type="submit" class="btn" ' +
-      'name="intent" value="run">' + esc(self.t.text('report.run')) +
-      '</button><button type="submit" class="btn" name="intent" ' +
-      'value="save">' + esc(self.t.text('report.save')) + '</button></div>' +
-      '<p class="sub" id="report-note"></p></form>');
+    const html = filterValueHtml(n, fields, fieldId, op,
+      String(valueEl.value || ''), anchored && n === 0);
+    // A plain text box that would be a plain text box again is left alone,
+    // so what was typed is kept; any other change of kind redraws.
+    const wasPlain = String(valueEl.tagName || '').toUpperCase() ===
+      'INPUT' && !(valueEl.getAttribute && valueEl.getAttribute('type'));
+    if (wasPlain && html.indexOf('<input name=') === 0) {
+      return;
+    }
+    valueEl.outerHTML = html;
+  }
+
+  /**
+   * A control changed (#986): the Save query box shows or hides the Name
+   * field and the Save button; the realm select switches realm.
+   *
+   * @param event - the change
+   * @returns nothing
+   */
+  onChange(event: any): void {
+    const el = event.target;
+    if (!el || !el.getAttribute) {
+      return;
+    }
+    const name = String(el.getAttribute('name') || '');
+    if (name === 'sortQuery' || name === 'groupByQuery') {
+      // The Sort box shows the sort selects, the Group by box the group
+      // select (#1008, #1013): the Save query box's mechanism, below.
+      const form = el.closest ? el.closest('form') : null;
+      const gated = form ? form.querySelectorAll(
+        name === 'sortQuery' ? '.sort-only' : '.group-only') : [];
+      for (let i = 0; i < gated.length; i++) {
+        if (el.checked) {
+          gated[i].removeAttribute('hidden');
+        } else {
+          gated[i].setAttribute('hidden', '');
+        }
+      }
+      return;
+    }
+    if (name === 'saveQuery') {
+      const form = el.closest ? el.closest('form') : null;
+      const only = form ? form.querySelectorAll('.save-only') : [];
+      for (let i = 0; i < only.length; i++) {
+        if (el.checked) {
+          only[i].removeAttribute('hidden');
+          only[i].removeAttribute('disabled');
+        } else {
+          only[i].setAttribute('hidden', '');
+          // A hidden submit button is still the form's default button;
+          // a disabled one is not (see actionsHtml()).
+          if (only[i].tagName === 'BUTTON') {
+            only[i].setAttribute('disabled', '');
+          }
+        }
+      }
+      return;
+    }
+    if (name === 'per' && el.getAttribute('data-result-pager') != null) {
+      // Rows per page of the held result (#1005): page one at the new
+      // size, from memory; the choice is kept for the next Run in this tab.
+      this.resultPer = Number(el.value) || 50;
+      this.drawRunResult(1);
+      return;
+    }
+    if (name === 'per' && el.getAttribute('data-pager-path')) {
+      // The rows-per-page choice (#997) moves to page one at the new size,
+      // through the location, as a pager link does.
+      const path = String(el.getAttribute('data-pager-path') || BASE);
+      this.env.history.pushState(null, '', this.prefix + path +
+        '?page=1&per=' + encodeURIComponent(String(el.value || '')));
+      this.route();
+      return;
+    }
+    const filterControl = /^filter(Field|Op)(\d+)$/.exec(name);
+    if (filterControl && el.closest) {
+      // The row's field or operator changed (#1007, #1022): its operator
+      // select is drawn again when the field's list of operators changed,
+      // and its value control — a dropdown of the field's values under
+      // equals or not equals, a text box otherwise. A text box stays as it
+      // is when it would be a text box again, so what was typed is kept.
+      this.redrawFilterRow(el.closest('.filterrow'), el.closest('form'),
+        Number(filterControl[2]));
+      return;
+    }
+    if (name === 'source' && el.closest && el.closest('form') &&
+        el.closest('form').querySelector('[data-query-block]')) {
+      // Another source, on the definition page (#989) AND on the New Query
+      // page (rcbj, 2026-10-27: it redrew only the definition page, so the
+      // field boxes and the filter dropdown kept the first source's fields
+      // and `mechanism` was nowhere to be picked for credentialHolders):
+      // the query block is drawn again for the chosen source's fields,
+      // empty, as the New Query page starts.
+      const block = el.closest('form').querySelector('[data-query-block]');
+      if (block) {
+        block.innerHTML = queryFormHtml(this.t, this.catalogSources,
+          { source: String(el.value || '') });
+      }
+      return;
+    }
+    if ((name === 'scheduleAt' || name === 'repeatDay') && el.closest) {
+      const form = el.closest('form[data-form="definition"]');
+      const preview = form ? form.querySelector('[data-schedule-preview]') :
+        null;
+      if (preview) {
+        preview.textContent = schedulePreview(this.t, scheduleCronOf(form));
+      }
+      return;
+    }
+    if (name === 'realm' && el.closest &&
+        el.closest('form[data-form="realm"]')) {
+      const form = el.closest('form');
+      const to = form.elements.to ? String(form.elements.to.value) : '';
+      this.switchRealm(String(el.value || ''), to);
+    }
   }
 
   /**
@@ -871,8 +2298,9 @@ class ReportRuntime extends SpaClient {
    *
    * @returns nothing
    */
-  async drawDefinitions(): Promise<void> {
-    const answer = await this.call('GET', API + '/definitions');
+  async drawDefinitions(query: any): Promise<void> {
+    const answer = await this.call('GET', API + '/definitions' +
+      pageQuery(query));
     if (!answer) {
       return;
     }
@@ -889,13 +2317,15 @@ class ReportRuntime extends SpaClient {
     }
     const rows = list.map(function (row: any): string[] {
       return ['<a href="' + esc(BASE + '/definitions/' + row.id) + '">' +
-        esc(row.name) + '</a>', esc(row.owner), esc(row.schedule || '')];
+        esc(row.name) + '</a>', esc(row.ownerName || row.owner),
+        esc(row.schedule || '')];
     });
-    this.paint(tableHtml([
+    const pager = pagerHtml(this.t, BASE + '/definitions', answer.json);
+    this.paint(pager + tableHtml([
       esc(this.t.text('report.name')),
       esc(this.t.text('report.owner')),
       esc(this.t.text('report.schedule'))
-    ], rows));
+    ], rows) + pager);
   }
 
   /**
@@ -916,41 +2346,163 @@ class ReportRuntime extends SpaClient {
         answer.json.error_description));
       return;
     }
-    const groups = (row.groups || []).join('\n');
     let editor = '';
     if (row.editable) {
+      // THE EDITOR (#989): the query with the New Query form's own
+      // controls, filled from the saved document; the schedule, the
+      // notice and the groups beside it; Save and Delete as buttons at
+      // the foot. The groups are what the share endpoint takes, and who
+      // is emailed the result.
+      const catalog = await this.call('GET', API + '/catalog');
+      const sources = (catalog && catalog.json && catalog.json.sources) ||
+        this.catalogSources || [];
+      this.catalogSources = sources;
+      const t = this.t;
+      const chosen = (row.groups || []).map(function (dn: string): string {
+        return chosenGroupHtml(t, { dn: dn, name: dn, mail: '' });
+      }).join('');
       editor = '<form data-form="definition" data-id="' + esc(row.id) + '">' +
-        '<div class="field"><label>' + esc(this.t.text('report.name')) +
+        '<div class="editor"><section>' +
+        '<h3>' + esc(t.text('report.queryHeading')) + '</h3>' +
+        '<div class="field"><label' + tip(t, 'report.tipName') + '>' +
+        esc(t.text('report.name')) +
         '</label><input name="name" value="' + esc(row.name) + '"></div>' +
-        '<div class="field"><label>' + esc(this.t.text('report.schedule')) +
-        '</label><input name="schedule" value="' + esc(row.schedule || '') +
-        '"></div>' +
-        '<div class="field"><label><input type="checkbox" name="enabled"' +
+        '<div data-query-block>' +
+        queryFormHtml(t, sources, row.document || {}) + '</div>' +
+        '</section><section>' +
+        '<h3>' + esc(t.text('report.settingsHeading')) + '</h3>' +
+        scheduleEditorHtml(t, String(row.schedule || '')) +
+        scheduleStatusHtml(t, row) +
+        '<div class="field"><label' + tip(t, 'report.tipEnabled') + '>' +
+        '<input type="checkbox" name="enabled"' +
         (row.scheduleEnabled ? ' checked' : '') + '> ' +
-        esc(this.t.text('report.enabled')) + '</label></div>' +
-        '<div class="field"><label><input type="checkbox" name="notify"' +
+        esc(t.text('report.enabled')) + '</label></div>' +
+        '<div class="field"><label' + tip(t, 'report.tipNotify') + '>' +
+        '<input type="checkbox" name="notify"' +
         (row.notify ? ' checked' : '') + '> ' +
-        esc(this.t.text('report.notify')) + '</label></div>' +
-        '<div class="actions"><button class="btn" type="submit">' +
-        esc(this.t.text('report.save')) + '</button>' +
-        '<button class="btn" type="button" data-act="delete" data-id="' +
-        esc(row.id) + '">' + esc(this.t.text('report.cancel')) +
-        '</button></div></form>' +
-        '<form data-form="share" data-id="' + esc(row.id) + '">' +
-        '<div class="field"><label>' + esc(this.t.text('report.groups')) +
-        '</label><textarea name="groups">' + esc(groups) +
-        '</textarea></div>' +
-        '<button class="btn" type="submit">' +
-        esc(this.t.text('report.share')) + '</button></form>';
+        esc(t.text('report.notify')) + '</label></div>' +
+        '<h3>' + esc(t.text('report.groupsHeading')) + '</h3>' +
+        '<div class="groups-pane">' +
+        '<div class="field"><label' + tip(t, 'report.tipGroupSearch') + '>' +
+        esc(t.text('report.groupSearch')) +
+        '</label><div class="row"><input type="search" name="groupQuery">' +
+        '<button type="button" class="btn small" data-act="group-search">' +
+        esc(t.text('report.search')) + '</button></div></div>' +
+        '<div data-group-results></div>' +
+        '<ul class="chosen" data-chosen-groups>' + chosen + '</ul>' +
+        '<p class="sub" data-chosen-none' + (chosen ? ' hidden' : '') + '>' +
+        esc(t.text('report.chosenNone')) + '</p>' +
+        '<p class="sub">' + esc(t.text('report.groupsNote')) + '</p>' +
+        '</div></section></div>' +
+        '<div class="foot-actions">' +
+        '<button class="button danger" type="button" data-act="delete" ' +
+        'data-id="' + esc(row.id) + '">' + esc(t.text('report.delete')) +
+        '</button>' +
+        '<button class="button" type="submit">' +
+        esc(t.text('report.save')) + '</button></div></form>';
     }
-    this.paint('<h2>' + esc(row.name) + '</h2><p>' +
-      esc(this.t.text('report.owner')) + ' ' + esc(row.owner) + '</p>' +
+    this.paint('<h2>' + esc(row.name) + '</h2><p class="sub">' +
+      esc(this.t.text('report.owner')) + ' ' +
+      esc(row.ownerName || row.owner) + '</p>' +
       '<form data-form="run" data-id="' + esc(row.id) + '">' +
-      '<div class="field"><label>' +
+      '<div class="row"><label' + tip(this.t, 'report.tipParameters') + '>' +
       esc(this.t.text('report.parameters')) +
-      '</label><textarea name="parameters"></textarea></div>' +
-      '<button class="btn" type="submit">' +
-      esc(this.t.text('report.run')) + '</button></form>' + editor);
+      '</label><textarea name="parameters" rows="1" placeholder="' +
+      esc('{"who": "rcbj"}') + '"></textarea>' +
+      '<button class="button secondary" type="submit">' +
+      esc(this.t.text('report.run')) + '</button></div>' +
+      parametersHelpHtml(this.t, row.document) + '</form>' + editor);
+    if (row.editable) {
+      await this.searchGroups('', 1);
+    }
+  }
+
+  /**
+   * Runs the group search and draws its page into the pane (#989).
+   *
+   * @param q - the text typed
+   * @param page - the page asked for
+   * @returns nothing
+   */
+  async searchGroups(q: string, page: number): Promise<void> {
+    this.groupQuery = String(q || '');
+    const answer = await this.call('GET', API + '/groups?q=' +
+      encodeURIComponent(this.groupQuery) + '&page=' +
+      encodeURIComponent(String(page || 1)));
+    const doc = this.env.document;
+    const pane = doc.querySelector ? doc.querySelector('[data-group-results]')
+      : null;
+    if (!pane) {
+      return;
+    }
+    const chosen: string[] = [];
+    const held = doc.querySelectorAll('[data-chosen-groups] li');
+    for (let i = 0; i < held.length; i++) {
+      chosen.push(String(held[i].getAttribute('data-dn') || ''));
+    }
+    pane.innerHTML = groupResultsHtml(this.t, answer && answer.json, chosen);
+  }
+
+  /**
+   * Adds a group to the chosen list, once (#989).
+   *
+   * @param button - the Add pressed
+   * @returns nothing
+   */
+  addGroup(button: any): void {
+    const doc = this.env.document;
+    const list = doc.querySelector('[data-chosen-groups]');
+    if (!list) {
+      return;
+    }
+    const dn = String(button.getAttribute('data-dn') || '');
+    const key = dn.toLowerCase();
+    const items = list.querySelectorAll('li');
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].getAttribute('data-dn') === key) {
+        return;
+      }
+    }
+    list.insertAdjacentHTML('beforeend', chosenGroupHtml(this.t, {
+      dn: dn,
+      name: String(button.getAttribute('data-name') || dn),
+      mail: String(button.getAttribute('data-mail') || '')
+    }));
+    button.setAttribute('disabled', '');
+    const none = doc.querySelector('[data-chosen-none]');
+    if (none) {
+      none.setAttribute('hidden', '');
+    }
+  }
+
+  /**
+   * Takes a group off the chosen list (#989).
+   *
+   * @param button - the Remove pressed
+   * @returns nothing
+   */
+  removeGroup(button: any): void {
+    const item = button.closest ? button.closest('li') : null;
+    if (!item || !item.parentNode) {
+      return;
+    }
+    const key = String(item.getAttribute('data-dn') || '');
+    const list = item.parentNode;
+    list.removeChild(item);
+    const doc = this.env.document;
+    const adds = doc.querySelectorAll('[data-act="group-add"]');
+    for (let i = 0; i < adds.length; i++) {
+      if (String(adds[i].getAttribute('data-dn') || '').toLowerCase() ===
+          key) {
+        adds[i].removeAttribute('disabled');
+      }
+    }
+    if (!list.querySelectorAll('li').length) {
+      const none = doc.querySelector('[data-chosen-none]');
+      if (none) {
+        none.removeAttribute('hidden');
+      }
+    }
   }
 
   /**
@@ -958,8 +2510,8 @@ class ReportRuntime extends SpaClient {
    *
    * @returns nothing
    */
-  async drawJobs(): Promise<void> {
-    const answer = await this.call('GET', API + '/jobs');
+  async drawJobs(query: any): Promise<void> {
+    const answer = await this.call('GET', API + '/jobs' + pageQuery(query));
     if (!answer) {
       return;
     }
@@ -980,12 +2532,78 @@ class ReportRuntime extends SpaClient {
         esc(job.id) + '</a>', statusWord(self.t, job.status),
         formatWord(self.t, job.format), esc(job.submittedAt || '')];
     });
-    this.paint(tableHtml([
+    const pager = pagerHtml(this.t, BASE + '/jobs', answer.json);
+    this.paint(pager + tableHtml([
       esc(this.t.text('report.jobs')),
       esc(this.t.text('report.status')),
       esc(this.t.text('report.format')),
       esc(this.t.text('report.result'))
-    ], rows));
+    ], rows) + pager);
+  }
+
+  /**
+   * Draws this application's Shared Signals inbox (#1042): what its own
+   * stream delivered, and what it did with each signal.
+   *
+   * @param query - the page's query
+   * @returns nothing
+   */
+  async drawSignals(query: any): Promise<void> {
+    const answer = await this.call('GET', API + '/signals' +
+      pageQuery(query));
+    if (!answer) {
+      return;
+    }
+    const json = answer.json || {};
+    const list = json.rows;
+    if (!Array.isArray(list)) {
+      this.paint(problemHtml(this.t, json.error_description));
+      return;
+    }
+    const t = this.t;
+    let head = '<p class="sub">' + esc(t.text(json.scope === 'realm'
+      ? 'report.signalsRealm' : 'report.signalsOwn')) + '</p>';
+    if (!json.receiving) {
+      head += '<p class="err">' + esc(t.text('report.signalsOff')) +
+        '</p>' + (Array.isArray(json.why) && json.why.length
+        ? '<ul>' + json.why.map(function (one: any): string {
+          return '<li>' + esc(String(one)) + '</li>';
+        }).join('') + '</ul>' : '');
+    }
+    if (!list.length) {
+      this.paint(head + '<p class="sub">' +
+        esc(t.text('report.signalsNone')) + '</p>');
+      return;
+    }
+    const rows = list.map(function (row: any): string[] {
+      const done = (row.reactions || []).map(function (r: any): string {
+        if (r.failed) {
+          return t.text('report.signalsFailed');
+        }
+        if (r.skipped) {
+          return t.text('report.signalsSkipped', { why: r.skipped });
+        }
+        if (r.observed) {
+          return t.text('report.signalsObserved');
+        }
+        return t.text('report.signalsActed', {
+          sessions: String(Number(r.ended) || 0),
+          tokens: String(Number(r.revoked) || 0) });
+      }).join(' ');
+      return [esc(String(row.at || '')), esc(String(row.name || '')),
+        esc(String(row.vocabulary || '')), esc(String(row.subject || '')),
+        esc(t.text(row.verified ? 'report.yes' : 'report.no')),
+        esc(done || t.text('report.signalsNothing'))];
+    });
+    const pager = pagerHtml(t, BASE + '/signals', json);
+    this.paint(head + pager + tableHtml([
+      esc(t.text('report.signalsAt')),
+      esc(t.text('report.signalsEvent')),
+      esc(t.text('report.signalsVocabulary')),
+      esc(t.text('report.signalsSubject')),
+      esc(t.text('report.signalsVerified')),
+      esc(t.text('report.signalsDone'))
+    ], rows) + pager);
   }
 
   /**
@@ -1012,13 +2630,14 @@ class ReportRuntime extends SpaClient {
         'data-id="' + esc(job.id) + '" data-format="' + esc(job.format) +
         '">' + esc(this.t.text('report.download')) + '</button>';
     }
-    this.paint('<h2>' + esc(job.id) + '</h2><p>' +
+    this.paint('<h2>' + esc(job.id) + '</h2>' +
+      becauseHtml(this.t, job.queuedBecause) + '<p>' +
       esc(this.t.text('report.status')) + ' ' +
       statusWord(this.t, job.status) + '</p><p>' +
       esc(this.t.text('report.format')) + ' ' +
       formatWord(this.t, job.format) + '</p>' +
       (job.error ? problemHtml(this.t, job.error) : '') +
-      '<p>' + download + '</p><p id="report-note"></p>');
+      '<p>' + download + '</p>');
   }
 
   /**
@@ -1031,16 +2650,15 @@ class ReportRuntime extends SpaClient {
    */
   async download(id: string, format: string): Promise<void> {
     const answer = await this.call('GET', API + '/jobs/' +
-      encodeURIComponent(id) + '/result');
+      encodeURIComponent(id) + '/result', undefined, { raw: true });
     if (!answer) {
       return;
     }
     if (answer.status !== 200 || !answer.bytes) {
-      const note = this.env.document.getElementById('report-note');
-      if (note) {
-        note.textContent = (answer.json && answer.json.error_description) ||
-          this.t.text('report.error');
-      }
+      this.flash('err', (answer.json && (answer.json.error_description ||
+        answer.json.error)) ||
+        this.t.text('report.downloadFailed',
+          { status: String(answer.status || '') }));
       return;
     }
     const blob = new Blob([answer.bytes], {
@@ -1066,21 +2684,23 @@ class ReportRuntime extends SpaClient {
       return;
     }
     if (answer.status === 202 && answer.json && answer.json.job) {
+      const self = this;
+      const jobId = String(answer.json.job.id);
       this.env.history.pushState(null, '', this.prefix + BASE + '/jobs/' +
-        answer.json.job.id);
-      this.route();
+        jobId);
+      this.route().then(function (): void {
+        self.flash('ok', self.t.text('report.queuedAs', { id: jobId }));
+      }, function (): void {
+        return undefined;
+      });
       return;
     }
     if (answer.json && answer.json.rows) {
-      const fields = answer.json.fields || [];
-      const rows = (answer.json.rows || []).slice(0, 50).map(
-        function (row: any): string[] {
-          return fields.map(function (field: string): string {
-            const value = row[field];
-            return esc(value == null ? '' : String(value));
-          });
-        });
-      this.paint(tableHtml(fields.map(esc), rows));
+      // Every row that came back is kept and paged here (#1005); until
+      // then the first fifty were drawn and the rest silently dropped.
+      this.lastRun = { fields: answer.json.fields || [],
+                       rows: answer.json.rows || [] };
+      this.drawRunResult(1);
       return;
     }
     if (answer.bytes) {
@@ -1090,8 +2710,82 @@ class ReportRuntime extends SpaClient {
         esc(this.t.text('report.download')) + '</a></p>');
       return;
     }
-    this.paint(problemHtml(this.t, answer.json &&
-      answer.json.error_description));
+    // A refusal keeps the form on the page and says why above it.
+    this.flash('err', (answer.json && (answer.json.error_description ||
+      answer.json.error)) || this.t.text('report.error'));
+  }
+
+  /**
+   * Draws one page of the last Run's rows, with the pager above and below
+   * (#1005, rcbj: page the result of Run as the lists are paged). The rows
+   * are in hand, so a page is a slice and no request is made.
+   *
+   * @param page - the page to draw, clamped to what there is
+   * @returns nothing
+   */
+  drawRunResult(page: number): void {
+    const held = this.lastRun || { fields: [], rows: [] };
+    const per = PER_CHOICES.indexOf(this.resultPer) >= 0 ? this.resultPer
+      : 50;
+    const total = held.rows.length;
+    const pages = Math.max(1, Math.ceil(total / per));
+    const at = Math.min(pages, Math.max(1, Math.floor(Number(page) || 1)));
+    const fields: string[] = held.fields;
+    const rows = held.rows.slice((at - 1) * per, at * per).map(
+      function (row: any): string[] {
+        return fields.map(function (field: string): string {
+          const value = row[field];
+          return esc(value == null ? '' : String(value));
+        });
+      });
+    const pager = pagerHtml(this.t, BASE + '/query',
+      { page: at, pages: pages, per: per, total: total }, true);
+    this.paint(pager + tableHtml(fields.map(esc), rows) + pager);
+  }
+
+  /**
+   * Shows a status message in the bubble at the top of the page, one at a
+   * time; the next replaces it, and a repaint clears it.
+   *
+   * @param kind - 'ok' or 'err'
+   * @param text - the message
+   * @returns nothing
+   */
+  flash(kind: string, text: string): void {
+    const doc = this.env.document;
+    const main = doc.getElementById('report');
+    if (!main) {
+      return;
+    }
+    const old = main.querySelector('.flash');
+    if (old && old.parentNode) {
+      old.parentNode.removeChild(old);
+    }
+    main.insertAdjacentHTML('afterbegin', flashHtml(this.t, kind, text));
+  }
+
+  /**
+   * The pager, for a test (#997).
+   *
+   * @param t - the translator
+   * @param path - the list's path
+   * @param pg - `{ page, pages, per, total }` from the API
+   * @returns the pager's HTML
+   */
+  static pagerHtml(t: any, path: string, pg: any, held?: boolean): string {
+    return pagerHtml(t, path, pg, held);
+  }
+
+  /**
+   * The status bubble, for a test.
+   *
+   * @param t - the translator
+   * @param kind - 'ok' or 'err'
+   * @param text - the message
+   * @returns the bubble's HTML
+   */
+  static flashHtml(t: any, kind: string, text: string): string {
+    return flashHtml(t, kind, text);
   }
 
   /**
@@ -1117,6 +2811,7 @@ class ReportRuntime extends SpaClient {
       return;
     }
     await this.hearAccounts();
+    await this.ensureChrome();
     const query = SpaClient.queryOf(this.env.location.search);
     if (path === BASE) {
       await this.drawCatalog();
@@ -1132,7 +2827,7 @@ class ReportRuntime extends SpaClient {
       return;
     }
     if (path === BASE + '/definitions') {
-      await this.drawDefinitions();
+      await this.drawDefinitions(query);
       return;
     }
     if (path.indexOf(BASE + '/definitions/') === 0) {
@@ -1141,7 +2836,11 @@ class ReportRuntime extends SpaClient {
       return;
     }
     if (path === BASE + '/jobs') {
-      await this.drawJobs();
+      await this.drawJobs(query);
+      return;
+    }
+    if (path === BASE + '/signals') {
+      await this.drawSignals(query);
       return;
     }
     if (path.indexOf(BASE + '/jobs/') === 0) {
@@ -1181,6 +2880,51 @@ class ReportRuntime extends SpaClient {
         this.route();
         return;
       }
+      if (act === 'result-page') {
+        // A page of the held result (#1005): drawn from memory, no route.
+        event.preventDefault();
+        this.drawRunResult(Number(el.getAttribute('data-page') || 1));
+        return;
+      }
+      if (act === 'dismiss') {
+        event.preventDefault();
+        const bubble = el.closest ? el.closest('.flash') : null;
+        if (bubble && bubble.parentNode) {
+          bubble.parentNode.removeChild(bubble);
+        }
+        return;
+      }
+      if (act === 'add-filter') {
+        event.preventDefault();
+        this.addFilterRow(el);
+        return;
+      }
+      if (act === 'remove-filter') {
+        event.preventDefault();
+        this.removeFilterRow(el);
+        return;
+      }
+      if (act === 'group-search' || act === 'group-page') {
+        event.preventDefault();
+        const form = el.closest ? el.closest('form') : null;
+        const box = form && form.elements.groupQuery;
+        const q = act === 'group-search' ? String((box && box.value) || '')
+          : this.groupQuery;
+        const page = act === 'group-page' ?
+          Number(el.getAttribute('data-page') || 1) : 1;
+        this.searchGroups(q, page);
+        return;
+      }
+      if (act === 'group-add') {
+        event.preventDefault();
+        this.addGroup(el);
+        return;
+      }
+      if (act === 'group-remove') {
+        event.preventDefault();
+        this.removeGroup(el);
+        return;
+      }
       if (act === 'signin') {
         event.preventDefault();
         this.beginSignIn(this.here());
@@ -1196,12 +2940,19 @@ class ReportRuntime extends SpaClient {
         event.preventDefault();
         const id = String(el.getAttribute('data-id') || '');
         this.call('DELETE', API + '/definitions/' + encodeURIComponent(id))
-          .then(function (answer: any): void {
+          .then(function (answer: any): any {
             if (answer && answer.status === 200) {
               self.env.history.pushState(null, '', self.prefix + BASE +
                 '/definitions');
-              self.route();
+              return self.route().then(function (): void {
+                self.flash('ok', self.t.text('report.deleted'));
+              });
             }
+            if (answer) {
+              self.flash('err', (answer.json &&
+                answer.json.error_description) || self.t.text('report.error'));
+            }
+            return null;
           }, function (): void {
             return undefined;
           });
@@ -1243,6 +2994,12 @@ class ReportRuntime extends SpaClient {
       return;
     }
     event.preventDefault();
+    if (kind === 'realm') {
+      this.switchRealm(String((form.elements.realm &&
+        form.elements.realm.value) || ''),
+        String((form.elements.to && form.elements.to.value) || ''));
+      return;
+    }
     if (kind === 'query') {
       const intent = event.submitter && event.submitter.value;
       const document = queryDocument(form, this.t && this.t.locale);
@@ -1255,15 +3012,19 @@ class ReportRuntime extends SpaClient {
           schedule: '',
           scheduleEnabled: false,
           notify: false
-        }).then(function (answer: any): void {
+        }).then(function (answer: any): any {
           if (answer && answer.json && answer.json.definition) {
             self.env.history.pushState(null, '', self.prefix + BASE +
               '/definitions/' + answer.json.definition.id);
-            self.route();
-            return;
+            return self.route().then(function (): void {
+              self.flash('ok', self.t.text('report.saved'));
+            });
           }
-          self.paint(problemHtml(self.t, answer && answer.json &&
-            answer.json.error_description));
+          if (answer) {
+            self.flash('err', (answer.json && answer.json.error_description) ||
+              self.t.text('report.error'));
+          }
+          return null;
         }, function (): void {
           return undefined;
         });
@@ -1298,42 +3059,43 @@ class ReportRuntime extends SpaClient {
       });
       return;
     }
-    if (kind === 'share') {
-      const groups = String((form.elements.groups &&
-        form.elements.groups.value) || '').split(/\n/).map(
-        function (line: string): string {
-          return line.trim();
-        }).filter(function (line: string): boolean {
-          return line.length > 0;
-        });
-      this.call('POST', API + '/definitions/' + encodeURIComponent(id) +
-        '/share', { groups: groups }).then(function (): void {
-        self.route();
-      }, function (): void {
-        return undefined;
-      });
-      return;
-    }
     if (kind === 'definition') {
-      this.call('GET', API + '/definitions/' + encodeURIComponent(id)).then(
-        function (current: any): any {
-          const row = current && current.json && current.json.definition;
-          if (!row || !row.document) {
-            self.paint(problemHtml(self.t, self.t.text('report.error')));
-            return null;
+      // THE DOCUMENT IS READ OFF THE FORM (#989), as the New Query page
+      // reads it; then the groups go to the share endpoint. A refused save
+      // is drawn and the groups are not sent.
+      const groups: string[] = [];
+      const held = form.querySelectorAll('input[name="group"]');
+      for (let i = 0; i < held.length; i++) {
+        groups.push(String(held[i].value || ''));
+      }
+      this.call('POST', API + '/definitions/' + encodeURIComponent(id), {
+        name: String(form.elements.name.value || ''),
+        document: queryDocument(form, this.t && this.t.locale),
+        schedule: scheduleCronOf(form),
+        scheduleEnabled: !!form.elements.enabled.checked,
+        notify: !!form.elements.notify.checked
+      }).then(function (answer: any): any {
+        if (!answer || !answer.json || !answer.json.definition) {
+          if (answer) {
+            self.flash('err', (answer.json && answer.json.error_description) ||
+              self.t.text('report.error'));
           }
-          return self.call('POST', API + '/definitions/' +
-            encodeURIComponent(id), {
-            name: String(form.elements.name.value || ''),
-            document: row.document,
-            schedule: String(form.elements.schedule.value || ''),
-            scheduleEnabled: !!form.elements.enabled.checked,
-            notify: !!form.elements.notify.checked
-          });
-        }).then(function (answer: any): void {
-        if (answer) {
-          self.route();
+          return null;
         }
+        return self.call('POST', API + '/definitions/' +
+          encodeURIComponent(id) + '/share', { groups: groups });
+      }).then(function (answer: any): any {
+        if (!answer) {
+          return null;
+        }
+        if (answer.status !== 200) {
+          self.flash('err', (answer.json && answer.json.error_description) ||
+            self.t.text('report.error'));
+          return null;
+        }
+        return self.route().then(function (): void {
+          self.flash('ok', self.t.text('report.saved'));
+        });
       }, function (): void {
         return undefined;
       });
@@ -1353,6 +3115,21 @@ class ReportRuntime extends SpaClient {
     this.env.document.addEventListener('submit', function (event: any):
         void {
       self.onSubmit(event);
+    });
+    this.env.document.addEventListener('change', function (event: any):
+        void {
+      self.onChange(event);
+    });
+    // Enter in the group search box searches rather than submitting the
+    // definition form it sits in (#989).
+    this.env.document.addEventListener('keydown', function (event: any):
+        void {
+      const el = event.target;
+      if (event.key === 'Enter' && el && el.getAttribute &&
+          el.getAttribute('name') === 'groupQuery') {
+        event.preventDefault();
+        self.searchGroups(String(el.value || ''), 1);
+      }
     });
     if (this.env.window) {
       this.env.window.addEventListener('popstate', function (): void {

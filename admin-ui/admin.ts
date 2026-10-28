@@ -4378,6 +4378,13 @@ class AdminConsole {
       'background:#fbfbfd;min-width:0}' +
       '.fg-name{display:block;font-weight:600;overflow-wrap:anywhere}' +
       '.fg-for{display:block;color:#666;font-size:.78em;margin:.1em 0 .4em}' +
+      // A FIELD THE REALM'S ATTRIBUTE POLICY REQUIRES (#1066): a red rule
+      // down its left and a red asterisk after its name. The words
+      // "required" are in the cell as well, so the colour is never the
+      // only sign.
+      '.fg-cell.fg-required{border-color:#e8b4b0;border-left:4px solid ' +
+      '#b00020;background:#fffafa}' +
+      '.fg-required .fg-name::after{content:" *";color:#b00020}' +
       '.fg-cell input[type=text],.fg-cell input[type=number],' +
       '.fg-cell select,.fg-cell textarea{width:100%;box-sizing:border-box;' +
       'min-height:0}' +
@@ -8571,6 +8578,33 @@ class AdminConsole {
     // their gate, the relying-party session, CSRF — are no longer reachable,
     // and they go in the commits that follow this one.
     // -------------------------------------------------------------------------
+    // THE SHARED SIGNALS RECEIVE ENDPOINT (#1042), the one path under
+    // /admin that is not the console's document. The cutover deleted it with
+    // the server-rendered pages, so a console stream an operator set back to
+    // RFC 8935 push (`ssf_receivers.ts` polls by default since #771) was
+    // POSTed to a 404 while the portal's twin answered. It is not a page:
+    // what arrives is a Security Event Token, and what authorises it is the
+    // bearer token on the console's own stream, which `accept()` checks in
+    // constant time with the audience and the signature. Registered above the
+    // shell, which would answer a POST here 404 (STS-ADMIN-0843).
+    app.post('/admin/signals/receive', function (req, res) {
+      log.debug("Entering the admin console's Shared Signals receive " +
+                "endpoint.");
+      const taken = signals.accept(signals.ADMIN, req);
+      if (taken.status >= 400) {
+        errorCodes.mark(res, taken.errorCode || errorCodes.codeOf(taken) ||
+                        'STS-ADMIN-0019');
+      }
+      res.status(taken.status).set('Cache-Control', 'no-store');
+      if (taken.body) {
+        res.type('application/json').send(JSON.stringify(taken.body, null, 2));
+      } else {
+        // 202 with an EMPTY body, which is what RFC 8935 section 2.3 says.
+        res.end();
+      }
+      log.debug("Leaving the admin console's Shared Signals receive " +
+                "endpoint. " + taken.status + ".");
+    });
     app.get('/admin/console.js', function (req, res) {
       log.debug("Entering the static console's script.");
       res.set('Cache-Control', 'no-cache').type('application/javascript');
@@ -9518,7 +9552,8 @@ let directoryWriter = null;
 // AND SINCE #603 A GROUP'S OWNERS, added and taken off one at a time — the
 // group page's Owners tab writes each at once.
 const GROUP_WRITER_MEMBERS = ['createGroup', 'addGroupMember',
-                              'addGroupOwner', 'removeGroupOwner'];
+                              'addGroupOwner', 'removeGroupOwner',
+                              'setGroupMail'];
 let groupWriter = null;
 
 // The rule cell, the caveat and the links both groups pages carry are

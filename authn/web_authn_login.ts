@@ -16,7 +16,8 @@
 // person's muscle memory knows (`username`, `password`, `kc-login`,
 // `kc-cancel`, `kc-anonymous`, `use_webauthn`, `webauthn_only`,
 // `remember_browser`, `wa-passkey-go`, `kc-email-code`, `kc-email-link`,
-// `wallet-signin`, `siop-signin`, `wallet-mfa-note`, `wallet-withheld`).
+// `wallet-signin`, `siop-signin`, `wallet-mfa-note`, `wallet-withheld`,
+// and since #1051 `kc-certificate` and `certificate-mfa-note`).
 //
 // THE VIEW IS LANGUAGE-FREE AND THE DECISIONS ARE THE SERVER'S: which doors,
 // which boxes checked and disabled, which partner buttons — each is a fact
@@ -210,6 +211,7 @@ class WebAuthnLogin {
           'name="action" value="passkey" class="secondary">' +
           t.html('authn.login.passkey') + '</button></div>'
         : '') +
+      WebAuthnLogin.certificateRow(v, t) +
       (email.code || email.link
         ? '<div class="row">' +
           (email.code
@@ -223,6 +225,32 @@ class WebAuthnLogin {
           '</div>'
         : '') +
       '</form>';
+  }
+
+  /**
+   * "Continue as <name> with your certificate" (#1051), where the view
+   * offers the TLS client certificate on the connection: a button of the
+   * form, so it carries "Remember this browser", and the runtime sends it
+   * to `…/certificate`. The name is the view's, escaped by the translator.
+   *
+   * @param v - the view
+   * @param t - the translator
+   * @returns the markup, or ''
+   */
+  static certificateRow(v: Json, t: Json): string {
+    const c = v.certificate;
+    if (!c || !c.name) {
+      return '';
+    }
+    return '<div class="row cert">' +
+      kit.note(t.html('authn.options.certificate') +
+        (c.mfaNote ? ' <span id="certificate-mfa-note">' +
+                     t.html('authn.options.certificateMfaNote') + '</span>'
+                   : '')) +
+      '<button type="submit" id="kc-certificate" name="action" ' +
+      'value="certificate" class="secondary">' +
+      t.html('authn.options.certificateButton', { name: String(c.name) }) +
+      '</button></div>';
   }
 
   /**

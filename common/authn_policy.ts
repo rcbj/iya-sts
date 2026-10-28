@@ -249,7 +249,8 @@ const MECHANISMS: Mechanism[] = [
           NIST_EMAIL_WARNING },
   { id: 'certificate', label: 'TLS client certificate', primary: true,
     secondFactor: null,
-    what: 'GET /tls/sign-in with a verified client certificate.' },
+    what: 'A verified TLS client certificate: GET /tls/sign-in, or ' +
+          'Continue with your certificate on the sign-in screen.' },
   { id: 'kerberos', label: 'Kerberos (SPNEGO)', primary: true,
     secondFactor: null,
     what: 'GET /authn/spnego with a Kerberos ticket.' },

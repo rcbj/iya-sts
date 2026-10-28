@@ -2538,7 +2538,11 @@ class AdminApi {
         operationId: 'getWsTrustSettings',
         summary: 'The security token service\'s own settings',
         description: 'The `wstrust.*` settings: the token lifetime and its ' +
-                     'ceiling, and the JWT signing algorithm. Who a token ' +
+                     'ceiling, the JWT signing algorithm, and whether the ' +
+                     'TLS client certificate on the connection is accepted ' +
+                     'as the requester\'s credential ' +
+                     '(`wstrust.acceptClientCertificate`, #1046). ' +
+                     'Who a token ' +
                      'says issued it is not a setting (#523): it is the ' +
                      'realm\'s OAuth issuer, a JWT\'s `iss` and an ' +
                      'assertion\'s Issuer alike.\n\n' +
@@ -6663,6 +6667,36 @@ class AdminApi {
           log.debug("Leaving the management API app-passwords endpoint.");
         } },
 
+      // STORED CERTIFICATES, ONE PERSON'S (#1061). The list the Stored
+      // certificates block on /admin/users draws.
+      { method: 'GET', path: BASE + '/users/certificates', tag: 'Users',
+        operationId: 'getUserCertificates',
+        summary: 'The certificates stored on one person\'s entry ' +
+                 '(userCertificate)',
+        description: 'Each certificate stored in the person\'s ' +
+                     '`userCertificate`: the SHA-256 of its DER, its ' +
+                     'subject, issuer, serial and validity. A certificate ' +
+                     'from an outside certificate authority signs its ' +
+                     'holder in only as the one entry storing it (#1061).',
+        mirrors: 'GET /admin/users',
+        parameters: [
+          { name: 'user', in: 'query', required: true,
+            schema: { type: 'string' },
+            description: 'The person, as /admin-api/users names them.' }
+        ],
+        responseDescription: 'The stored certificates.',
+        handler: function (req, res) {
+          log.debug("Entering the management API certificates endpoint.");
+          const answer = adminActions.storedCertificatesOf(
+            String((req.query || {}).user || ''));
+          if (!answer.ok) {
+            errorCodes.mark(res, errorCodes.codeOf(answer) ||
+                                 'STS-API-0030');
+          }
+          self.sendJson(res, answer.ok ? 200 : 400, answer);
+          log.debug("Leaving the management API certificates endpoint.");
+        } },
+
       // DEVICES, ONE PERSON'S (#130). The list the Devices block on
       // /admin/users draws.
       { method: 'GET', path: BASE + '/users/devices', tag: 'Users',
@@ -8260,6 +8294,72 @@ class AdminApi {
             },
             responseDescription: 'What was removed.' },
 
+          { action: 'add-certificate', operationId: 'addUserCertificate',
+            summary: 'Store a certificate on somebody\'s entry, so an ' +
+                     'outside certificate authority\'s certificate signs ' +
+                     'them in',
+            description: 'Stores one X.509 certificate in the person\'s ' +
+                         '`userCertificate` (RFC 4523; written as ' +
+                         '`userCertificate;binary`). A certificate from an ' +
+                         'outside certificate authority — one trusted ' +
+                         'through the Client Truststores — is an identity ' +
+                         'at a door that reads a client certificate as a ' +
+                         'person (/tls/sign-in, the sign-in screen, SCIM, ' +
+                         'the XACML gates, Shared Signals, WS-Trust, LDAP ' +
+                         'SASL EXTERNAL) only while it is stored, byte for ' +
+                         'byte, on exactly one entry of the realm: never ' +
+                         'by its common name or subject (#1061). Refused ' +
+                         'when it is already stored on another entry ' +
+                         '(STS-ADMIN-0899) or the person has no entry ' +
+                         '(STS-ADMIN-0898). A renewed certificate is ' +
+                         'stored again.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                certificate: { type: 'string',
+                               description: 'The leaf, as one PEM block ' +
+                                            'or base64 DER.' }
+              },
+              required: ['user', 'certificate'],
+              examples: [{ user: 'alice',
+                           certificate: '-----BEGIN CERTIFICATE-----\n' +
+                                        'MIIC...\n-----END CERTIFICATE-----' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The certificates the entry stores now.' },
+
+          { action: 'remove-certificate',
+            operationId: 'removeUserCertificate',
+            summary: 'Take a stored certificate off somebody\'s entry',
+            description: 'Removes one certificate from the person\'s ' +
+                         '`userCertificate`, named by the SHA-256 of its ' +
+                         'DER (as GET /admin-api/users/certificates lists ' +
+                         'it). From then on it signs nobody in (#1061).',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                sha256: { type: 'string',
+                          description: 'The SHA-256 of the certificate\'s ' +
+                                       'DER, hex.' }
+              },
+              required: ['user', 'sha256'],
+              examples: [{ user: 'alice', sha256: '0'.repeat(64) }],
+              additionalProperties: false
+            },
+            responseDescription: 'The certificates the entry stores now.' },
+
           { action: 'enrol-self-issued-subject',
             operationId: 'enrolUserSelfIssuedSubject',
             summary: 'Enrol a self-issued (SIOPv2) subject for somebody',
@@ -9524,7 +9624,13 @@ class AdminApi {
                                'entry it meant to name.',
                   oneOf: [{ type: 'array', items: { type: 'string' } },
                           { type: 'string' }]
-                }
+                },
+                mail: { type: 'string',
+                        description: 'The group\'s own email address, its ' +
+                                     '`mail` attribute (#989): where a ' +
+                                     'report definition shared with the ' +
+                                     'group sends its result notices. One ' +
+                                     'address, or omitted.' }
               },
               required: ['group'],
               examples: [{ group: 'developers', note: 'the people who write it',
@@ -9584,6 +9690,39 @@ class AdminApi {
             responseDescription: 'Whether anything changed, the value ' +
                                  'written, and whether it resolves to an ' +
                                  'entry this directory holds.' },
+
+          // A GROUP'S EMAIL ADDRESS (#989): the group page's Email address
+          // form. The directory owns the shape rule and the refusals.
+          { action: 'set-mail', operationId: 'setGroupMail',
+            summary: 'Set or clear a group\'s email address',
+            description: 'Writes one `mail` value onto the group\'s own ' +
+                         'entry, or removes it when `mail` is empty. It is ' +
+                         'where a report definition shared with the group ' +
+                         'sends its result notices (the reports ' +
+                         'application, #989); a shared group with no ' +
+                         'address is written up as STS-REPORT-0037 when a ' +
+                         'notice is due. `group` is its `cn` or its whole ' +
+                         'DN. **Idempotent**: the same address again, or ' +
+                         'clearing one that is already absent, answers ' +
+                         '`ok: true` with `changed: false`. A value that is ' +
+                         'not an address (one local part, one `@`, a domain ' +
+                         'with a dot, no whitespace) is refused.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                group: { type: 'string',
+                         description: 'The group\'s `cn` or its whole DN.' },
+                mail: { type: 'string',
+                        description: 'The address, or empty to remove it.' }
+              },
+              required: ['group'],
+              examples: [{ group: 'developers',
+                           mail: 'developers@example.com' }],
+              additionalProperties: false
+            },
+            responseDescription: 'Whether anything changed, and the ' +
+                                 'address now on the entry.' },
 
           // A GROUP'S OWNERS (#603): what the group page's Owners tab saves
           // the moment Add or Remove is pressed.
@@ -26247,6 +26386,43 @@ class AdminApi {
           return self.sendJson(res, 401, {
             error: 'invalid_token',
             errors: [certificateProblem.description] });
+        }
+        // ---------------------------------------------------------------------
+        // AND A CLIENT THAT DECLARED A CERTIFICATE IS HELD TO ONE HERE (#1050,
+        // rcbj's decision on #520: "bound tokens only, no bare certificate as
+        // a credential"). The check above holds a token that IS bound; this
+        // one refuses a token that is NOT, when the client it was issued to
+        // declares `tls_client_auth`, `self_signed_tls_client_auth` (among
+        // its methods) or `tls_client_certificate_bound_access_tokens` —
+        // read NOW, in the realm that issued it, so a declaration added after
+        // the token was minted takes it away. The token endpoint no longer
+        // issues one (`oauth2.adminApiBindingRefusal()`, STS-OAUTH-0489/0490);
+        // this is the other end, for a token issued before that rule, or
+        // under a declaration since made, or by a door nobody has found. Its
+        // scopes still decide what a bound token may do — this decides only
+        // whether it is a credential here at all. In every mode: the client
+        // asked for it.
+        // ---------------------------------------------------------------------
+        if (!mtls.boundThumbprintOf(claims)) {
+          const holder = String(claims.client_id || '');
+          const declaration = holder
+            ? realms.run(realms.get(tokenRealm), function () {
+                return mtls.certificateDeclaration(
+                  applications.clientConfigOf(holder));
+              })
+            : '';
+          if (declaration) {
+            errorCodes.mark(res, 'STS-API-0137');
+            res.set('WWW-Authenticate', 'Bearer error="invalid_token", ' +
+                    'scope="' + scopesWanted + '"');
+            return self.sendJson(res, 401, { error: 'invalid_token', errors: [
+              'RFC 8705: client "' + holder + '" declares ' + declaration +
+              ', so this API accepts its access tokens only bound to its ' +
+              'TLS client certificate (cnf["x5t#S256"]), and this one is ' +
+              'not bound. Ask /oauth2/token for a new one over mutual TLS ' +
+              'and present it on a connection made with the same ' +
+              'certificate.'] });
+          }
         }
         // ---------------------------------------------------------------------
         // RFC 9449 SECTION 7, AND THE SAME HOLE ONE CONSTRAINT ALONG (#34,

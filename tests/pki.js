@@ -194,10 +194,10 @@ async function run(t) {
           'the kid is derived from the KEY MATERIAL (RFC 7638), which is the ' +
           'rule every kid in this service follows: two instances must not ' +
           'publish one name over two keys', leaf.kid);
-  t.equal(leaf.publicJwk.x5c.length, 3,
+  t.equal(leaf.publicJwk.x5c.length, 4,
           'the JWK carries the whole path in `x5c` — leaf, Issuing, ' +
-          'Intermediate — so a client that registers this JWKS registers the ' +
-          'chain with it');
+          'Intermediate and, since #1064, the service Root — so a client ' +
+          'that registers this JWKS registers the chain with it');
   t.check(leaf.publicJwk['x5t#S256'] ===
             stsCrypto.certificateThumbprint(leaf.certificatePem,
                                             { format: 'base64url' }),

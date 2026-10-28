@@ -644,7 +644,8 @@ class AuthnSurface extends WebSurface {
                use_webauthn: fields.use_webauthn ? '1' : undefined,
                webauthn_only: fields.webauthn_only ? '1' : undefined,
                remember_browser: remember, device_fp: fp || undefined };
-    } else if (action === 'anonymous') {
+    } else if (action === 'anonymous' || action === 'certificate') {
+      // The certificate (#1051) is the connection's: nothing is typed.
       body = { remember_browser: remember, device_fp: fp || undefined };
     } else if (action === 'email') {
       body = { username: fields.username,

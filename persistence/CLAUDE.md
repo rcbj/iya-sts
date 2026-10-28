@@ -311,8 +311,20 @@ row already in the map. Each has a `touch()` that re-sets the key after an edit;
 without it the flush would write every row as it was CREATED, and a restart
 would put back a session that was never revoked. A new store holding mutable
 rows owes the same, and `tests/realm_isolation.js` asserts the two that have it
-against a real observer. The same day added `vc_offers.deferredAccessTokens`
-(keyed by a digest of the token, never the token) and moved
+against a real observer. **`admin_stats.users` was a third such store and
+had no touch until #999 (2026-10-27)**: every sign-in incremented the
+record in place after the one `set()` at creation, so the stored row was the
+record at its first flush — one authentication — for the life of the row.
+On 8081 an account with sixty-two accepted credentials read 1, every
+restart restored the frozen row, and the other worker read the same row
+through the fan-in; the portal's "Times you have signed in" and the
+console's user page both draw it. `touchUserRecord()` in `admin_stats.js`
+re-sets the key after the edits, at one `minted-own` change row per
+sign-in; `tests/user_register_journal.js` holds it against the journal.
+#1001 then put the store on demand, so the rewritten row is what a reader
+gets back (below, *A PER-ORIGIN STORE ON DEMAND*). The same day added
+`vc_offers.deferredAccessTokens` (keyed by a digest of the token, never the
+token) and moved
 `spiffe.recordedConnections` from `scope: 'shared'` to a realm's partition — see
 `common/CLAUDE.md`'s table of the seven stores that sweep converted.
 **A JOURNAL AND NOT THE DIFF NEXT DOOR**, and the two arguments are opposite and
@@ -1329,6 +1341,12 @@ postgres driver writes and reads every entry through it.
   column and its index are unchanged, only what the service writes into
   them, and a row written before is not rewritten (it is found again once
   next written).
+* **AND ONE DERIVED KEY SINCE #1061 (2026-10-27): `usercertificatesha256`**,
+  the SHA-256 of each certificate stored in `userCertificate` (either
+  spelling; `certificateDigestsOf()`), not the base64 value itself, which is
+  a kilobyte. No attribute of that name exists on any entry; it is an index
+  key only, and the same no-schema-version reasoning holds. Why a presented
+  certificate is looked up by it is `ldap/CLAUDE.md`, *`userCertificate`*.
 * **A QUERY IS KEYED AND OPENED ON THE THREAD THAT HOLDS THE KEYS.** The
   windowed directory's bridge thread builds a statement and shapes its rows
   with no keystore, so `persistence.js` wraps the bridge: `keyArgs()` before
@@ -1346,6 +1364,49 @@ postgres driver writes and reads every entry through it.
 * **The keystore starts before the directory is restored** (see
   `persistence.js`): a blob cannot be opened before the key-encryption key is
   read.
+* **A REALM'S `directory` KEY IS MADE BEFORE THE FLUSH WAITS FOR THE KEY ROWS
+  (2026-10-27).** `flush()` waited for `keystore.settleDeks()` and then
+  sealed inside `saveDirectory()` — where a NEW realm's key was first made,
+  so its row was queued after the wait and committed after the entries
+  sealed under it. Every other process's change-log reader met the entries
+  first, re-read the key rows once, still lacked the key and dropped them for
+  good (STS-STORE-0042 over STS-STORE-0072): a new realm's role groups, in
+  hundreds of realms of the full run on 086c421b, which is how the console
+  roster and the scheduler's job lists read differently per process.
+  `flush()` now asks the driver's codec to `prepareKeys()` for every realm
+  with an upsert (`keystore.ensureDek()`) before the settle. And the reader
+  (`persistence_replication.js`) tries a sealed row up to five more times, a
+  pause between, after re-reading the keys, before it reports the drop — the
+  key's transaction may still be committing. `tests/replication.js` 5b.
+* **A REALM'S ROW COMMITS BEFORE ITS DIRECTORY, AND A READER HOLDS A ROW OF A
+  REALM IT DOES NOT DEFINE YET (2026-10-27).** `flush()` wrote the directory,
+  then the realms, then the settings, so a new realm's entries reached the
+  change log ahead of the realm's own row. Every other process applied them
+  in seq order before it knew the realm: a windowed process as RESIDENT
+  entries (its `isWindowed()` knew no containers for the realm), which it
+  forgot once the realm's row made its people windowed — and its next
+  flush's diff read "in the shadow, not in memory" as a deletion and
+  removed the person from the store. The console bootstrap job's
+  administrator disappeared that way after its first sign-in, in every
+  product mode (`sts_console_bootstrap_product`). Now `flush()` saves the
+  realms, then the settings, then the directory — the restore's order — and
+  `persistence_replication.js`'s `applyRows()` applies a page's realm and
+  settings rows first and HOLDS a directory row of a realm this process
+  does not define (`deferForRealm()`), applying it after the realm's row
+  has been (`applyDeferredRows()`), or dropping it after ten minutes
+  (STS-STORE-0088: a realm removed elsewhere before its rows arrived).
+  `tests/replication.js` 5c, `tests/cluster_lww_stores.js` (whose double's
+  registry read had silently stopped matching the driver's statement).
+  **And a replica no longer SEEDS the realm it just learnt of** (the same
+  day, run #4): with the realm row applied ahead of its directory rows,
+  `ldap_server.js`'s builder seeded an empty tree milliseconds before the
+  creator's rows arrived — STS-STORE-0052 for every seeded entry on every
+  replica, and a write made on the replica's losing copy was lost
+  (`sts_worker_pools` regenerated sts-management-api's secret there). So
+  `restoreRealms(rows, true)` creates the realm `replicated: true`,
+  `realms.create()` hands its builders `{ restored, replicated }`, and the
+  directory's builder stands aside for a replicated realm.
+  `tests/realm_replicated_seed.js`.
 * `cell_convert.js` opens the source entries to plan them (a group's members
   split between tiers) and seals what it writes for the tier it writes to.
 * A file (ldif) store is not sealed.
@@ -1370,6 +1431,26 @@ A row with an empty `key_sealed` (written with no key held, or by a test) is
 read with its `key` as its name. Both new places are on `EXTRA_SEALED`, so the
 re-encryption job re-seals them. `cell_convert.js` carries `key_sealed` with
 the row.
+
+**A CHANGE'S SEALED NAME UNDER A DATA KEY NOT HELD YET IS WAITED FOR, NOT
+DROPPED (#1070, 2026-10-28).** A worker that defines a realm makes its data
+keys and seeds its stores in one second, every seed name sealed under the new
+key; the data-key rows land first (`flush()` waits on `settleDeks()`), but the
+pulling process has not read them, and `keystore.open()` answers null for
+"not held" and for "malformed" alike. So `applyChange()` reported every such
+change as STS-STORE-0014 at error (~1,400 lines a full run, half of them
+`ssf_streams.streams`) and dropped it: the new realm's seed rows never
+arrived by the log. Now `keystore.namesUnheldDek()` tells the two apart: a
+name under a key not held reads the data-key rows again
+(`keystore.refreshDekRows()`, `keystore.writeAfterDeks()`'s remedy) and is
+applied once more; `prefetch()` does that read ONCE for the page before it
+splits the keys, so the page's rows stay in its one batched read. A key still
+not held after a read is another build's or a removed realm's: the change is
+skipped under STS-STORE-0089, said once per key, and changes under it for the
+next two seconds are skipped without another read. `nameOfChangeHalf()` does
+not remember such a name as unopenable, or the second asking would hit the
+remembered null. STS-STORE-0014 keeps its meaning — a key not of the shape
+`recordChanges()` writes. `tests/minted_unheld_dek.js`.
 
 ## SECRET SETTINGS ARE SEALED AT THE DRIVER'S DOOR (#222, 2026-10-01)
 
@@ -2133,7 +2214,27 @@ memory mode, development, and every in-process test.
   revoke-all, by kind and by user (`revokeWhereAsync()`, which also yields
   every 500 revocations), so the process answers others meanwhile.
 
-The stores on demand: `oauth2_bcp.refreshTokens` and `oauth2_bcp.grantTokens`
+**A PER-ORIGIN STORE ON DEMAND (#1001, 2026-10-27).** `admin_stats.users`
+is the first store that is both `merge: 'own'` and `onDemand`, and the reader
+had three things to learn (`persistence_minted.js`, *A PER-ORIGIN ROW ON
+DEMAND*): a read of a bare key asks for `<key>.<origin>`, this process's own
+row (`onDemandRead()` applies `storedKey()`, as `onDemandReadMany()` did);
+an index answers every origin's row for the person, each split into key,
+origin and `own`, and the facade's new `lookupEntries()` /
+`lookupEntriesAsync()` hand another origin's rows over WITHOUT caching them
+(a foreign row cached under the bare key would be written back under this
+origin at the next flush; `lookup()` skips them); and another process's
+change to such a row is neither fanned in nor held (`applyChange()`,
+`prefetch()`) — the index is where a reader finds it, and the fan-in would
+have grown with every sign-in anywhere once #999 rewrote the row per
+sign-in. The index backfill files the held-whole start's fanned-in foreign
+rows too (`replication.remoteContributions()`), under their own stored
+names, or a lookup would answer only this process's share. The cap bounds
+the cache and deletes nothing. `tests/user_register_on_demand.js` and
+`tests/on_demand_store.js` D13–D14.
+
+The stores on demand: `admin_stats.users` (#1001, per origin, filed by the
+person, sorted by `lastAt`), `oauth2_bcp.refreshTokens` and `oauth2_bcp.grantTokens`
 (filed by family), `oauth2_bcp.refreshFamilies`, key-resident
 `admin_stats.revokedJtis`, `authn.accountSets` (after its legacy
 expiries; `authn/account_sets.ts` argues the expiry), and

@@ -8,7 +8,7 @@
     "text": "La session d’authentification unique du navigateur dont ce service dispose déjà — celle qu’établit /authn/login et que partage WS-Federation —, proposée ici parce que la section 2 la nomme : « clients may assert HTTP cookies over TLS that contain an authentication state understood by the SCIM service provider ». C’est ce qui permet à un appel SCIM depuis une page de ce service de fonctionner sans second identifiant. Il n’y a pas de défi pour elle : un serveur ne peut pas demander un témoin dans WWW-Authenticate ; elle est donc utilisée lorsqu’elle est présente et jamais exigée."
   },
   "auth.policy.others": {
-    "en": "e23c0683e2f710ad",
-    "text": "TOUS LES AUTRES SCHÉMAS PEUVENT FAIRE LES DEUX. Basic, Digest, HOBA, un témoin de session et un certificat client ne portent aucun scope ; la politique qui les concerne est donc toute la surface. Cela vaut la peine d’être relu : un appelant qui ne peut pas obtenir de scope peut utiliser Basic à la place, c’est pourquoi chaque schéma a son propre interrupteur — un déploiement qui éprouve la gestion des scopes désactive les cinq autres."
+    "en": "d754835a0e2987d3",
+    "text": "TOUS LES AUTRES SCHÉMAS PEUVENT FAIRE LES DEUX. Basic, Digest, HOBA, un témoin de session et le certificat client d’une personne ne portent aucun scope ; la politique qui les concerne est donc toute la surface. Cela vaut la peine d’être relu : un appelant qui ne peut pas obtenir de scope peut utiliser Basic à la place, c’est pourquoi chaque schéma a son propre interrupteur — un déploiement qui éprouve la gestion des scopes désactive les cinq autres."
   }
 }

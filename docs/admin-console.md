@@ -431,8 +431,8 @@ an attribute that holds several, and **Remove from** takes one value off.
 
 **Creating a person** (`/admin/users/new`) draws the same fields under the
 same group headings, in a simplified view (names and contact details) and an
-advanced view (every field). A value a create writes is held to the same
-rules as an edit.
+advanced view (every field). A value a create writes is held
+to the same rules as an edit.
 
 **What may be changed** is the person schema — `person`,
 `organizationalPerson`, `inetOrgPerson` and the Identity Assurance claims —
@@ -443,7 +443,8 @@ and the credential catalogue, less what has a door of its own or is not text:
 | `userPassword` | the password controls on the same page, or `POST /admin-api/users/set-password`, which hashes it |
 | `mail` | **Set the address**, in the same section (`POST /admin-api/users/set-mail`), which marks the address verified and tells the former one |
 | `uid`, and the attribute the entry's DN is named by | nothing: a rename is not an attribute edit |
-| the certificates, photographs, `audio`, `userPKCS12` | an LDAP client: their values are binary |
+| `userCertificate` | **Stored certificates** on the Credentials tab (Factors) |
+| the other certificates, photographs, `audio`, `userPKCS12` | an LDAP client: their values are binary |
 | group memberships, credentials, what sign-ins record | Groups, the credential controls |
 
 **What a value must look like.** `cn` and `sn` can never be emptied (RFC 4519
@@ -467,8 +468,23 @@ verification lapse for it.
 The list page has one control: a name, and a button to **`/admin/users/new`**,
 where the person is described. It is a box for every attribute a person here
 can carry — the same catalogue *Credential claims* chooses from, so a value typed
-here is the value an issued credential asserts. **Only the username is
-required, and an empty box records no value.**
+here is the value an issued credential asserts. **An empty box records no
+value.**
+
+**The username, at the top of the form, is the entry's `uid`** and is always
+required; it is the only place a `uid` is typed. **Every field in the grid
+that the realm's attribute policy (*Directory → Policies → Attribute policy*,
+below) requires is outlined in red and marked *required*:** `cn` and `sn`
+always, and whatever the realm adds. Those fields are drawn in the simplified
+view as well. The *required* tile counts them, with the username. In product
+mode a create without one is refused; in development mode the policy is shown
+and not enforced. A `cn` left empty is made from the
+given name and surname. **A refused create keeps every box as you typed it**.
+**On every Directory → Users page and tab, a refusal floats in the banner at
+the top of the window**, as on the application pages. That covers a create, a
+Fill, a person's attributes, the Service account owners and destination, and
+*Closed to its owners*. So the reason stays in view however far down the form
+you were.
 
 **Fill with example data** writes what this service would invent into the
 boxes you left empty, touching nothing you filled in and creating nobody. It is
@@ -491,7 +507,9 @@ missing selected attribute on every person.
 
 A generated password or link is shown in the body of the page that comes back,
 never in a redirect, because a secret in a URL is a secret in the browser's
-history and every proxy log. Issuing another activation link invalidates the
+history and every proxy log. It has a **Copy** button under it. That page's
+breadcrumb trail reads *Admin console › Users › (the new username) › User
+created*, so the users list and the new person's page are each one click away. Issuing another activation link invalidates the
 first, which is also how a lost one is replaced.
 
 **The catalogue is not the whole schema.** It is the twenty-seven claim-bearing
@@ -557,6 +575,17 @@ of Admin Write. Each control is an action on `POST /admin/users` and on
   ticked and shows it once. `POST /admin-api/users/create-app-password` and
   `revoke-app-password`, and `GET /admin-api/users/app-passwords` (paged), are
   the same acts. See [Authentication](authentication.md#the-password-only-doors-and-app-passwords).
+* **Stored certificates** lists the certificates stored in the person's
+  `userCertificate` — subject, issuer, validity and SHA-256 — with
+  **Remove** per row, and a box to paste one more (PEM) and **Store** it. A
+  certificate from an outside certificate authority in the client
+  truststore signs its holder in only while it is stored on their entry and
+  no other ([TLS](tls.md#a-certificate-from-an-outside-certificate-authority)).
+  A certificate already stored on another entry is refused
+  (`STS-ADMIN-0899`), as is anything that is not one X.509 certificate
+  (`STS-ADMIN-0897`). `POST /admin-api/users/add-certificate` and
+  `remove-certificate`, and `GET /admin-api/users/certificates`, are the same
+  acts; each sends a CAEP `credential-change` of type `x509`.
 
 Every one of them sends Shared Signals to the streams that asked: a CAEP
 `credential-change` for each credential created, updated or removed, a RISC
@@ -654,7 +683,8 @@ required. They belong to the realm (`ou=attributeDefinitions`) and are not
 inherited. `POST /admin-api/policies/define-person-attribute` and
 `remove-person-attribute` do the same over the API; a custom attribute cannot be
 removed while anybody holds a value of it or the policy requires it.
-`/admin/users/new` and a person's Attributes tab mark every required field.
+`/admin/users/new` and a person's Attributes tab outline every required field
+in red and mark it *required*.
 
 **The passkey policy** is described row by row under
 [the passkey policy](authentication.md#the-passkey-policy) and, with recipes, in
@@ -672,12 +702,22 @@ issued. It lists every group with what it is made of, and `?group=<dn>` drills
 into one: every attribute the entry holds, operational ones included, and every
 member resolved to the entry it names.
 
-**Two controls.** **Create a group** is below the list's table: it puts a
+**Three controls.** **Create a group** is below the list's table: it puts a
 `groupOfNames` at `cn=<name>,ou=groups` and takes members one per line or
 comma-separated, each a user name or any DN (a group can hold another group,
-and no user name names one). **Add a member** is on the drill-down; a create
-lands you on the group it just made. `POST /admin-api/groups/create` and
-`POST /admin-api/groups/add-member` are the same acts.
+and no user name names one), and an optional **email address**, the group's
+own `mail` attribute. **Add a member** and **Email address** are on the
+drill-down; a create lands you on the group it just made.
+`POST /admin-api/groups/create`, `POST /admin-api/groups/add-member` and
+`POST /admin-api/groups/set-mail` are the same acts.
+
+**The email address is where a report shared with the group is sent.** A
+report definition shared with the group (the reports application,
+[Reports](reporting.md)) emails its result notices to this address when a
+job of it finishes with Notify on; a shared group with no address is
+written up as `STS-REPORT-0037` when a notice is due. The box takes one
+address, `local-part@domain`; an emptied box removes the attribute. Nothing
+else reads it.
 
 Three behaviours are the directory being consistent with itself:
 
@@ -1781,12 +1821,20 @@ mode does not check. A realm in product mode does not show it.
 
 ## What the console keeps
 
-The registries behind these pages are **bounded**: the most recent 5,000
-tokens and 5,000 other artifacts, 500 call paths, and 2,000 identities keeping
-their 50 most recent authentications each (capped per person, because a test
-loop signing one name in a thousand times is normal). What was dropped is
-counted and shown. The revoked-jti set is **not** capped and is kept apart from
-the token records, so a token whose record has aged out stays revoked. The
+The registries behind these pages are **bounded in memory**: the most recent
+5,000 tokens and 5,000 other artifacts, 500 call paths, and 2,000 identities
+keeping their 50 most recent authentications each (capped per person,
+because a test loop signing one name in a thousand times is normal). What was
+dropped is counted and shown. **In product mode on a postgres store the
+identity register is read from the store**: each process writes its share of
+a person's record after every sign-in, and a person's page, their count on
+the user portal and whether they are known are read back from the store —
+every process's share and every restart's, summed — so the 2,000 bounds only
+what a process keeps in memory, and nothing is lost when a record leaves it.
+The whole-register figures on this page (how many identities, how many
+sign-ins in all) are then what the process holds, and the page says so. The
+revoked-jti set is **not** capped and is kept apart from the token records,
+so a token whose record has aged out stays revoked. The
 audit log is capped by `audit.maxEvents` and the delegation acts by
 `delegation.maxRecords`.
 

@@ -16,7 +16,7 @@
     "text": "Una credencial OAuth — un token de acceso Bearer o DPoP — puede hacer lo que dicen sus ámbitos: \"{{read}}\" para leer y \"{{write}}\" para escribir. Ninguno implica el otro, para que la gestión por parte de un cliente de una credencial de solo lectura sea algo que este servicio pueda producir realmente."
   },
   "auth.policy.others": {
-    "en": "e23c0683e2f710ad",
-    "text": "TODOS LOS DEMÁS ESQUEMAS PUEDEN HACER AMBAS COSAS. Basic, Digest, HOBA, una cookie de sesión y un certificado de cliente no llevan ámbitos, así que la política para ellos es toda la superficie. Vale la pena leerlo dos veces: un llamante que no puede obtener un ámbito puede usar Basic en su lugar, por eso cada esquema tiene su propio interruptor — un despliegue que prueba la gestión de ámbitos desactiva los otros cinco."
+    "en": "d754835a0e2987d3",
+    "text": "TODOS LOS DEMÁS ESQUEMAS PUEDEN HACER AMBAS COSAS. Basic, Digest, HOBA, una cookie de sesión y el certificado de cliente de una persona no llevan ámbitos, así que la política para ellos es toda la superficie. Vale la pena leerlo dos veces: un llamante que no puede obtener un ámbito puede usar Basic en su lugar, por eso cada esquema tiene su propio interruptor — un despliegue que prueba la gestión de ámbitos desactiva los otros cinco."
   }
 }

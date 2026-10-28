@@ -197,7 +197,7 @@ let origin = '';
 // The stores already told that a NUL key is kept in memory only.
 const nulKeyWarned = new Set();
 
-function storedKey(row, key) {
+function storedKey(row, key, whose) {
   log.debug("Entering storedKey().");
   if (row.merge !== 'own') {
     log.debug("Leaving storedKey().");
@@ -205,7 +205,41 @@ function storedKey(row, key) {
   }
   log.debug("Leaving storedKey().");
   return Buffer.from(String(key), 'utf8').toString('base64url') + '.' +
-         Buffer.from(String(origin), 'utf8').toString('base64url');
+         Buffer.from(String(whose === undefined ? origin : whose), 'utf8')
+           .toString('base64url');
+}
+
+// ---------------------------------------------------------------------------
+// A PER-ORIGIN ROW ON DEMAND (#1001, 2026-10-27).
+//
+// `admin_stats.users` is the first store that is both `merge: 'own'` and
+// `onDemand`. Its rows are filed under `<key>.<origin>` (`storedKey()`), so
+// three things the on-demand reader did for a one-row-per-key store are
+// wrong for it: a read of a bare key misses this process's own row (the
+// stored name carries the origin — `onDemandRead()` applies `storedKey()`,
+// as `onDemandReadMany()` always did); an index answers EVERY origin's row
+// for the person, and the facade must know which is this process's (its
+// cache) and which is another's (read, folded, never cached — a foreign
+// row cached under the bare key would be written back under THIS origin at
+// the next flush); and another process's change to such a row is not held
+// here at all (`applyChange()`, `prefetch()`), because the fan-in grew with
+// every sign-in anywhere once #999 rewrote the row per sign-in, and the
+// index is where a reader finds it.
+// ---------------------------------------------------------------------------
+/**
+ * Whether a stored name of a `merge: 'own'` store names another process's
+ * row.
+ *
+ * @param declared - the store
+ * @param split - `splitKey()`'s answer for the stored name
+ * @returns true for another origin's row
+ */
+function foreignRow(declared, split) {
+  log.debug("Entering foreignRow().");
+  const foreign = !!declared && declared.merge === 'own' &&
+    !!split.origin && split.origin !== origin;
+  log.debug("Leaving foreignRow().");
+  return foreign;
 }
 
 // ---------------------------------------------------------------------------
@@ -885,6 +919,36 @@ let prefetched = null;
  */
 function prefetch(changes) {
   log.debug("Entering prefetch().");
+  // A PAGE NAMING A DATA ENCRYPTION KEY NOT HELD YET READS THE DATA-KEY ROWS
+  // ONCE FIRST (#1070), so its names open and its rows are in the one query.
+  // One change key per missing key id, to ask again after the read.
+  const unheld = new Map();
+  (changes || []).forEach(function (change) {
+    const id = unheldDekOfChange(change.key);
+    if (id && !unheld.has(id) && worthRefreshFor(id)) {
+      unheld.set(id, change.key);
+    }
+  });
+  if (unheld.size) {
+    log.debug("Leaving prefetch(). The data-key rows first.");
+    return refreshForUnheld(null).then(function () {
+      // What the read did not bring is noted, so `applyChange()` skips it
+      // rather than reading the data-key rows again for each change.
+      unheld.forEach(function (key, id) {
+        if (unheldDekOfChange(key)) {
+          noteUnheldAfterRefresh(id);
+        }
+      });
+      return prefetchPage(changes);
+    });
+  }
+  log.debug("Leaving prefetch().");
+  return prefetchPage(changes);
+}
+
+// prefetch()'s read, once every name the page can open opens.
+function prefetchPage(changes) {
+  log.debug("Entering prefetchPage().");
   // **THE PAGE'S ROWS ACCUMULATE (2026-10-21).** `minted` and `minted-own`
   // are two kinds, each with its own `prepare`, and replication prepares
   // every kind of a page before it applies any — so this began by dropping
@@ -893,7 +957,7 @@ function prefetch(changes) {
   // reads a second. Each prepare adds its rows to the page's map now;
   // `endPrefetch()`, once the page is applied, still drops it.
   if (!driver || typeof driver.readMintedMany !== 'function') {
-    log.debug("Leaving prefetch().");
+    log.debug("Leaving prefetchPage().");
     return Promise.resolve(0);
   }
   const refs = [];
@@ -917,6 +981,11 @@ function prefetch(changes) {
                                       splitKey(declared, parsed.storedName))) {
       return;
     }
+    if (declared && declared.onDemand && demandLiveFor(parsed.handle) &&
+        foreignRow(declared, splitKey(declared, parsed.storedName))) {
+      // #1001: see applyChange().
+      return;
+    }
     if (declared && declared.onDemand && !declared.keysResident &&
         demandLiveFor(parsed.handle)) {
       const name = splitKey(declared, parsed.storedName).key;
@@ -935,10 +1004,10 @@ function prefetch(changes) {
                 name: parsed.storedName });
   });
   if (!refs.length) {
-    log.debug("Leaving prefetch().");
+    log.debug("Leaving prefetchPage().");
     return Promise.resolve(0);
   }
-  log.debug("Leaving prefetch().");
+  log.debug("Leaving prefetchPage().");
   return driver.readMintedMany(refs.map(function (ref) {
     return { handle: ref.handle, realm: ref.realm, key: ref.key };
   })).then(function (rows) {
@@ -1012,6 +1081,121 @@ function endPrefetch() {
   log.debug("Leaving endPrefetch().");
 }
 
+// ---------------------------------------------------------------------------
+// A CHANGE WHOSE NAME IS SEALED UNDER A DATA ENCRYPTION KEY NOT HELD YET
+// (#1070, 2026-10-28).
+//
+// A request worker that defines a realm makes the realm's data encryption
+// keys and seeds its stores in the same second, and every seed row's NAME is
+// sealed under the new key (`columnsFor()`, `minted-key`). The data-key rows
+// land before the minted rows do (`flush()` waits on `settleDeks()`), but the
+// process that PULLS the change log has not read them: it meets a name it
+// cannot open. `keystore.open()` answers null for that and for a malformed
+// envelope alike, so every such change was reported as "not the shape
+// recordChanges() writes" (STS-STORE-0014, at error, ~1,400 lines a full run,
+// a third of them `ssf_streams.streams`) and DROPPED — the pulling process
+// never applied the new realm's seed rows from the log.
+//
+// The case `keystore.writeAfterDeks()` closed for key and authority rows on
+// 2026-10-05, closed here the same way: a name under a key not held is told
+// apart from a malformed one, the data-key rows are read again
+// (`keystore.refreshDekRows()`), and the change is applied once more. Only a
+// name whose key is STILL not held after that is skipped — another build's,
+// or a realm's that was removed — under STS-STORE-0089, said once per key, so
+// STS-STORE-0014 keeps its meaning. `prefetch()` does the read once for the
+// page before splitting, so a page of a new realm's seed rows costs one read
+// of the data-key rows and its rows are still read in one query.
+// ---------------------------------------------------------------------------
+// When a key was last found missing AFTER a read of the data-key rows, by key
+// id: a change under it within the interval is skipped without another read,
+// so a page of another build's rows is not a read of the data-key rows each.
+const unheldAfterRefresh = new Map();
+const UNHELD_RECHECK_MS = 2000;
+// The keys STS-STORE-0089 has been said for.
+const unheldWarned = new Set();
+const UNHELD_TRACKED_MAX = 1000;
+
+// The id of the data encryption key a sealed name half names, when this
+// process does not hold it; null otherwise (held, or not sealed at all).
+function unheldDekOfHalf(half) {
+  log.debug("Entering unheldDekOfHalf().");
+  const text = String(half || '');
+  if (text.indexOf('$') < 0 || typeof keystore.namesUnheldDek !== 'function' ||
+      !keystore.namesUnheldDek(text)) {
+    log.debug("Leaving unheldDekOfHalf(). Not a key missing here.");
+    return null;
+  }
+  // Lazily, as `persistence.js` does: a leaf this file needs only here.
+  const id = require('../common/crypto').dekIdOf(text);
+  log.debug("Leaving unheldDekOfHalf().");
+  return id || null;
+}
+
+// The same question of a whole change key.
+function unheldDekOfChange(key) {
+  log.debug("Entering unheldDekOfChange().");
+  const text = String(key == null ? '' : key);
+  const at = text.indexOf('.');
+  log.debug("Leaving unheldDekOfChange().");
+  return at < 0 ? null : unheldDekOfHalf(text.slice(at + 1));
+}
+
+// Whether a change under key `id` is worth a read of the data-key rows: not
+// when one, made a moment ago, already found the key missing.
+function worthRefreshFor(id) {
+  log.debug("Entering worthRefreshFor().");
+  const at = unheldAfterRefresh.get(id);
+  log.debug("Leaving worthRefreshFor().");
+  return at === undefined || Date.now() - at >= UNHELD_RECHECK_MS;
+}
+
+// Reads the data-key rows again for a change under key `id`, and notes the
+// key as still missing when the read did not bring it.
+function refreshForUnheld(id) {
+  log.debug("Entering refreshForUnheld(). dek=" + (id || 'the page'));
+  const refreshing = typeof keystore.refreshDekRows === 'function'
+    ? keystore.refreshDekRows() : Promise.resolve(0);
+  log.debug("Leaving refreshForUnheld().");
+  return Promise.resolve(refreshing).then(function () {
+    return null;
+  }, function (e) {
+    // The refresh resolves on a failed read already; this is belt and
+    // braces, and the change is then judged on what is held.
+    log.debug("Caught in refreshForUnheld(): " + ((e && e.message) || e));
+    return null;
+  });
+}
+
+// Records that key `id` was still missing after a read of the data-key rows.
+function noteUnheldAfterRefresh(id) {
+  log.debug("Entering noteUnheldAfterRefresh().");
+  if (unheldAfterRefresh.size >= UNHELD_TRACKED_MAX) {
+    unheldAfterRefresh.clear();
+  }
+  unheldAfterRefresh.set(id, Date.now());
+  log.debug("Leaving noteUnheldAfterRefresh().");
+}
+
+// A change skipped because its name's key is not held: said once per key.
+function skipUnheld(change, handle, id) {
+  log.debug("Entering skipUnheld(). dek=" + id);
+  if (!unheldWarned.has(id)) {
+    if (unheldWarned.size < UNHELD_TRACKED_MAX) {
+      unheldWarned.add(id);
+    }
+    log.warn(errorCodes.tag('STS-STORE-0089') +
+             'persistence: a minted change to "' + handle + '" names its ' +
+             'row under the data encryption key "' + id + '", which this ' +
+             'process does not hold after reading the data-key rows again. ' +
+             'Skipped; said once per key.');
+  } else {
+    log.debug('skipUnheld(): ' + change.key + ' skipped, its key "' + id +
+              '" not held.');
+  }
+  log.debug("Leaving skipUnheld().");
+  return Promise.resolve(false);
+}
+
 // The change key's two halves, or null. Shared by prefetch() and applyChange()
 // so the encoding is read in one place.
 function splitChangeKey(key) {
@@ -1046,7 +1230,7 @@ function splitChangeKey(key) {
  * @param change - the change-log row, `{ key, realm, ... }`
  * @returns a promise of true when the change was applied
  */
-function applyChange(change) {
+function applyChange(change, refreshed) {
   log.debug('Entering applyChange(). key=' + change.key);
   if (!driver || typeof driver.readMinted !== 'function') {
     log.debug("Leaving applyChange().");
@@ -1078,11 +1262,27 @@ function applyChange(change) {
     handle = Buffer.from(text.slice(0, at), 'base64url').toString('utf8');
     // Sealed since #222, or base64url of the name.
     storedName = nameOfChangeHalf(text.slice(at + 1));
-    if (storedName === null) {
-      throw new Error('the sealed name did not open');
-    }
   } catch (e) {
     log.debug("Caught in applyChange(): " + ((e && e.message) || e));
+    storedName = null;
+  }
+  if (storedName === null) {
+    // NOT HELD YET, OR NOT OURS — told apart from malformed (#1070): see
+    // unheldDekOfHalf() above.
+    const dekId = unheldDekOfHalf(text.slice(at + 1));
+    if (dekId && !refreshed && worthRefreshFor(dekId)) {
+      log.debug("Leaving applyChange(). Reading the data-key rows again.");
+      return refreshForUnheld(dekId).then(function () {
+        return applyChange(change, true);
+      });
+    }
+    if (dekId) {
+      if (refreshed) {
+        noteUnheldAfterRefresh(dekId);
+      }
+      log.debug("Leaving applyChange(). Its key is not held.");
+      return skipUnheld(change, handle || '?', dekId);
+    }
     log.error(errorCodes.tag('STS-STORE-0014') +
               'persistence: a minted change names "' + change.key + '", ' +
               'which is not the shape recordChanges() writes. Skipped.');
@@ -1115,6 +1315,12 @@ function applyChange(change) {
   // A KEY-RESIDENT store's row IS read, held or not (#820 part 2): its
   // digests are kept exact, and only the row says whether this was a write
   // or a delete. `applyLocally()` files the digest and holds nothing new.
+  if (store.onDemand && demandLiveFor(handle) && foreignRow(store, split)) {
+    // Another process's row of a per-origin store on demand (#1001): read
+    // from the index when a reader asks, never held here.
+    log.debug("Leaving applyChange(). On demand, another origin's row.");
+    return Promise.resolve(true);
+  }
   if (store.onDemand && !store.keysResident && demandLiveFor(handle)) {
     const local = store.read(change.realm, split.key);
     if (!local || !local.present) {
@@ -2305,25 +2511,36 @@ async function backfillMintedIndexes() {
       if (!partition) {
         continue;
       }
-      for (const entry of partition.entries()) {
-        const lookups = lookupsFor(declared, declared.handle, realmId,
-                                   entry[0], entry[1]) || [];
-        if (lookups.length) {
-          const key = keyColumnOf(declared.handle, realmId,
-                                  storedKey(declared, entry[0]));
-          lookups.forEach(function (indexKey) {
-            batch.push({ handle: declared.handle, realm: realmId,
-                         indexKey: indexKey, key: key });
-          });
+      // And, for a `merge: 'own'` store, every other origin's rows the
+      // held-whole start fanned in (#1001): each is a row of its own in
+      // the store, filed under its own stored name, or a lookup would
+      // answer only this process's share of a person.
+      const foreign = declared.merge === 'own'
+        ? replication.remoteContributions(declared.handle, realmId) : [];
+      const walk = function* () {
+        for (const e of partition.entries()) {
+          yield { key: e[0], value: e[1], origin: undefined };
         }
+        for (const c of foreign) {
+          yield { key: c.key, value: c.value, origin: c.origin };
+        }
+      };
+      for (const entry of walk()) {
+        const column = keyColumnOf(declared.handle, realmId,
+                                   storedKey(declared, entry.key,
+                                             entry.origin));
+        const lookups = lookupsFor(declared, declared.handle, realmId,
+                                   entry.key, entry.value) || [];
+        lookups.forEach(function (indexKey) {
+          batch.push({ handle: declared.handle, realm: realmId,
+                       indexKey: indexKey, key: column });
+        });
         // The row's sort value, filed the same way (2026-10-22, #820).
-        const sortAt = sortAtFor(declared, entry[1], entry[0]);
+        const sortAt = sortAtFor(declared, entry.value, entry.key);
         if (sortAt !== null) {
           batch.push({ handle: declared.handle, realm: realmId,
                        indexKey: require('./minted_queries').SORT_INDEX_KEY,
-                       key: keyColumnOf(declared.handle, realmId,
-                                        storedKey(declared, entry[0])),
-                       sortAt: sortAt });
+                       key: column, sortAt: sortAt });
         }
         if (++inBatch >= BACKFILL_BATCH) {
           await flushBatch();
@@ -2504,10 +2721,14 @@ function onDemandRead(handle, realmId, name) {
     log.debug("Leaving onDemandRead(). No bridge.");
     return { present: false };
   }
+  // The row's stored name: for a `merge: 'own'` store THIS process's row,
+  // `<name>.<origin>` (#1001).
+  const declared = realms.handleFor(handle);
+  const stored = declared ? storedKey(declared, name) : name;
   let answer = null;
   try {
     answer = bridge.query('minted.read',
-      [handle, realmId, keyColumnOf(handle, realmId, name)]);
+      [handle, realmId, keyColumnOf(handle, realmId, stored)]);
   } catch (e) {
     log.error(errorCodes.tag('STS-STORE-0084') + 'persistence: an on-demand "' +
               handle + '" row could not be read: ' + ((e && e.message) || e));
@@ -2565,14 +2786,7 @@ function onDemandByIndex(handle, realmId, value) {
     log.debug("Leaving onDemandByIndex(). Failed.");
     return [];
   }
-  const out = [];
-  rows.forEach(function (row) {
-    const name = nameOfRow({ key: row.key, keySealed: row.keySealed });
-    const opened = name === null ? undefined : openedBody(handle, row.body);
-    if (opened !== undefined) {
-      out.push({ key: name, value: opened });
-    }
-  });
+  const out = openedRows(handle, rows, false);
   log.debug("Leaving onDemandByIndex(). " + out.length + " row(s).");
   return out;
 }
@@ -2689,14 +2903,25 @@ function mintedQueryAsync(name, args) {
 // body will not open is left out, as a read leaves it.
 function openedRows(handle, rows, split) {
   log.debug("Entering openedRows(). " + handle);
-  const declared = split ? realms.handleFor(handle) : null;
+  const store = realms.handleFor(handle);
+  // A `merge: 'own'` store's names are split whatever the caller asked
+  // (#1001): the bare name is `<key>.<origin>`, which no caller files
+  // anything under, and the origin says whose row it is.
+  const own = !!store && store.merge === 'own';
+  const declared = split || own ? store : null;
   const out = [];
   (rows || []).forEach(function (row) {
     const name = nameOfRow({ key: row.key, keySealed: row.keySealed });
     const opened = name === null ? undefined : openedBody(handle, row.body);
     if (opened !== undefined) {
-      out.push({ key: declared ? splitKey(declared, name).key : name,
-                 value: opened });
+      const parts = declared ? splitKey(declared, name)
+        : { key: name, origin: '' };
+      const entry = { key: parts.key, value: opened };
+      if (own) {
+        entry.origin = parts.origin;
+        entry.own = !foreignRow(store, parts);
+      }
+      out.push(entry);
     }
   });
   log.debug("Leaving openedRows(). " + out.length + " row(s).");
@@ -2920,6 +3145,13 @@ function nameOfChangeHalf(text) {
     }
     const opened = keystore.open(half, NAME_LABEL);
     const name = opened === undefined ? null : opened;
+    // A NAME UNDER A DATA ENCRYPTION KEY NOT HELD YET IS NOT REMEMBERED AS
+    // UNOPENABLE (#1070): `applyChange()` reads the data-key rows again and
+    // asks once more, and a remembered null would answer that second asking.
+    if (name === null && unheldDekOfHalf(half)) {
+      log.debug("Leaving nameOfChangeHalf(). Its key is not held yet.");
+      return null;
+    }
     if (openedNames.size >= OPENED_NAMES_MAX) {
       openedNames.clear();
     }
@@ -3649,7 +3881,13 @@ function restore() {
 
       // The index of every indexed on-demand store still read back whole is
       // filed by a scheduler job, after the start (see the backfill above).
-      if (!process.env.STS_REQUEST_WORKER && backfillOwed().length) {
+      // REGISTERED ON EVERY FRONT PROCESS WITH AN ON-DEMAND STORE, not only
+      // where a backfill is owed (2026-10-27): a cluster job runs on the
+      // LEADER, so a job one node alone registered never ran unless that
+      // node led, and the nodes' job lists disagreed (sts_scheduler's page
+      // and API read through the balancer). The run itself asks
+      // `backfillOwed()` and does nothing when nothing is.
+      if (!process.env.STS_REQUEST_WORKER && onDemandActive()) {
         ensureIndexBackfillJob();
       }
       log.debug('Leaving restore(). ' + restored + ' row(s).');
@@ -3754,6 +3992,8 @@ function reset() {
   flushInFlight = null;
   indexComplete.clear();
   indexBackfilled.clear();
+  unheldAfterRefresh.clear();
+  unheldWarned.clear();
   generation = 0;
   observedGeneration = 0;
   observational.clear();
@@ -3914,6 +4154,16 @@ module.exports = {
   // The key column a name is filed under, and a stored row's name (#222):
   // for the tests, which look rows up by the name they wrote.
   keyColumnOf: keyColumnOf,
+  // The on-demand reader's two synchronous doors and the bridge they ask,
+  // for the tests (#1001): a per-origin store's rows are named with their
+  // origin, and that is asserted against a stand-in bridge.
+  onDemandRead: onDemandRead,
+  onDemandByIndex: onDemandByIndex,
+  setDemandBridge: function (bridge) {
+    log.debug("Entering setDemandBridge().");
+    demandBridge = bridge || null;
+    log.debug("Leaving setDemandBridge().");
+  },
   journalled: journalled,
   nameOfRow: nameOfRow,
   backfillSessionIndex: backfillSessionIndex,

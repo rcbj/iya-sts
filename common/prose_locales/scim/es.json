@@ -284,16 +284,20 @@
     "text": "La sesión de inicio de sesión del navegador que este servicio ya tiene — la que establece /authn/login y comparte WS-Federation — ofrecida aquí porque la sección 2 la nombra: \"clients may assert HTTP cookies over TLS that contain an authentication state understood by the SCIM service provider\". Es lo que hace que una llamada SCIM desde una página de este servicio funcione sin una segunda credencial. No hay desafío para ella: un servidor no puede pedir una cookie en WWW-Authenticate, así que se usa cuando está y nunca se exige."
   },
   "auth.schemes.clientcert": {
-    "en": "2d55447d0d4792ee",
-    "text": "TLS mutuo, el primer esquema que nombra la sección 2 de RFC 7644. Disponible solo cuando esta solicitud llegó por TLS con un certificado que se VERIFICÓ contra un ancla del almacén de confianza de clientes (/admin/tls/trust) — así que en el puerto principal solo cuando está enlazado como HTTPS (global.https, que oauth2.rfc9700 activa). La identidad es el sujeto en forma RFC 4514, que es la misma cadena bajo la que /admin/users y el directorio ya archivan un certificado. Aquí no se vuelve a registrar: tls_server.js registra un certificado una vez por CONEXIÓN a propósito, y contarlo por solicitud desharía eso desde el otro extremo."
+    "en": "440fefb9a488412f",
+    "text": "TLS mutuo, el primer esquema que nombra la sección 2 de RFC 7644. Disponible solo cuando esta solicitud llegó por TLS con un certificado que se VERIFICÓ contra un ancla del almacén de confianza de clientes (/admin/tls/trust) — así que en el puerto principal solo cuando está enlazado como HTTPS (global.https, que oauth2.rfc9700 activa). Un certificado de una autoridad de certificación externa (un ancla que alguien añadió) es la persona o la aplicación cuya entrada lo almacena, byte a byte, en userCertificate, y nada más: almacenado en ninguna entrada o en varias, no es esta credencial (STS-SCIM-0084, STS-SCIM-0085). El certificado de una persona que este dominio emitió se archiva bajo su sujeto en forma RFC 4514. Aquí no se vuelve a registrar: tls_server.js registra un certificado una vez por CONEXIÓN a propósito, y contarlo por solicitud desharía eso desde el otro extremo. Un certificado que este dominio emitió a una APLICACIÓN es esa aplicación, y solo puede hacer lo que declara su oauthAllowedScope: el ámbito de lectura para leer y el de escritura para escribir, consultado en cada solicitud, de modo que una que no declara ninguno se rechaza (STS-SCIM-0083). El certificado de una persona, emitido aquí o almacenado en su entrada, puede hacer ambas cosas."
   },
   "auth.policy.oauth": {
     "en": "25657a7b65df5ecd",
     "text": "Una credencial OAuth — un token de acceso Bearer o DPoP — puede hacer lo que dicen sus ámbitos: \"{{read}}\" para leer y \"{{write}}\" para escribir. Ninguno implica el otro, para que el manejo por parte de un cliente de una credencial de solo lectura sea algo que este servicio pueda producir realmente."
   },
   "auth.policy.others": {
-    "en": "e23c0683e2f710ad",
-    "text": "TODOS LOS DEMÁS ESQUEMAS PUEDEN HACER AMBAS COSAS. Basic, Digest, HOBA, una cookie de sesión y un certificado de cliente no llevan ámbitos, así que la política para ellos es toda la superficie. Vale la pena leerlo dos veces: un llamante que no puede obtener un ámbito puede usar Basic en su lugar, por eso cada esquema tiene su propio interruptor — un despliegue que prueba el manejo de ámbitos desactiva los otros cinco."
+    "en": "d754835a0e2987d3",
+    "text": "TODOS LOS DEMÁS ESQUEMAS PUEDEN HACER AMBAS COSAS. Basic, Digest, HOBA, una cookie de sesión y el certificado de cliente de una persona no llevan ámbitos, así que la política para ellos es toda la superficie. Vale la pena leerlo dos veces: un llamante que no puede obtener un ámbito puede usar Basic en su lugar, por eso cada esquema tiene su propio interruptor — un despliegue que prueba el manejo de ámbitos desactiva los otros cinco."
+  },
+  "auth.policy.certificate": {
+    "en": "113cbb3081d556a7",
+    "text": "EL CERTIFICADO DE UNA APLICACIÓN SE ATIENE A SUS ÁMBITOS DECLARADOS (#1048). Un certificado de cliente TLS que este dominio emitió a una aplicación no lleva ámbitos, así que puede hacer lo que el oauthAllowedScope de esa aplicación declare de los dos anteriores, consultado en cada solicitud: una que no declara ninguno se rechaza, una que declara solo el ámbito de lectura solo puede leer, y retirar una declaración corta el certificado de inmediato (STS-SCIM-0083)."
   },
   "auth.policy.rfc": {
     "en": "01badc7fa9089572",

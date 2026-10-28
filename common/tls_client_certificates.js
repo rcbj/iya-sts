@@ -66,10 +66,12 @@
 //     disagree is somebody else's construction and is refused rather than
 //     believed on its CN.
 //
-// A chain through NO authority this process holds is not this module's
-// business and is answered `issuedHere: false`: that is an anchor somebody
-// installed through /admin-api/tls/trust, and every door treats it exactly
-// as before.
+// A chain through NO authority this process holds is an anchor somebody
+// installed through /admin-api/tls/trust — an OUTSIDE authority. It is
+// answered `issuedHere: false`, and since #1061 (rcbj, 2026-10-27) it is an
+// identity ONLY when the caller asks (`{ stored: true }`) and it is, byte for
+// byte, a leaf stored in `userCertificate` on EXACTLY ONE entry of the realm —
+// see STORED, below. It is never read by its common name or subject.
 //
 // ---------------------------------------------------------------------------
 // THE REALM IS THE ISSUING CA'S.
@@ -909,6 +911,93 @@ function currentHolderOf(answer) {
                                   certifiedName: answer.username });
 }
 
+// ---------------------------------------------------------------------------
+// STORED: A CERTIFICATE FROM AN OUTSIDE AUTHORITY IS THE ENTRY IT IS STORED ON
+// (#1061, rcbj 2026-10-27).
+//
+// rcbj's rule, whole: an outside certificate authenticates only if it
+// verifies against the Client Truststores, passes the revocation check, and is
+// byte for byte (the SHA-256 of its DER) a leaf stored in `userCertificate`
+// (RFC 4523) on EXACTLY ONE existing entry in the request's realm. Never by
+// its common name or subject; never by creating or seeding an entry; a
+// certificate stored on two entries is refused; a renewed certificate is a
+// different DER and has to be stored again.
+//
+// The first two are the door's (the handshake and `req.certificateRevocation`
+// — every door already asks both before it reaches this module). The third is
+// this function, the ONE mapping every door asks, through certificate
+// enrollment's directory slot (`certificateHolders()`, filled by
+// `ldap/ldap_server.js`), which looks the digest up in an index and never walks
+// the people.
+//
+// ASKED PER CALL AND NEVER MEMOISED, for `currentHolderOf()`'s reason: the
+// answer is the directory's, and an entry the certificate was taken off a
+// second ago is not its holder now. And ONLY WHEN A DOOR ASKS
+// (`{ stored: true }`): RFC 8705's token endpoint, GNAP's key proof and the
+// other doors that read a certificate as a KEY rather than as a person keep
+// their own registered metadata (rcbj on #1061), so they neither pay for the
+// lookup nor see its answer.
+//
+// The answer, `issuedHere: false` and `outside: true` throughout:
+//   * accepted — `kind` ('person' or 'application'), `username` (the
+//     person's name or the application's identifier), `dn`, `realm`,
+//     `stored: true`, `fingerprint` (the SHA-256, hex);
+//   * refused  — `error` 'NOT_STORED' (on no entry, or only on an entry that
+//     is neither a person nor an application) or 'STORED_TWICE' (on more than
+//     one), with `why`.
+// ---------------------------------------------------------------------------
+function storedIdentityOf(leafBytes, realmId) {
+  log.debug("Entering storedIdentityOf().");
+  const fingerprint = crypto.digest('sha256', leafBytes, 'hex');
+  const realmIdNow = realmId ? String(realmId) : realms.currentId();
+  const realm = realms.get(realmIdNow);
+  let holders = null;
+  try {
+    const ask = function () {
+      return require('./cert_enrollment').certificateHolders(fingerprint);
+    };
+    holders = realm ? realms.run(realm, ask) : ask();
+  } catch (e) {
+    log.debug("Caught in storedIdentityOf(): " + ((e && e.message) || e));
+    holders = null;
+  }
+  const base = { issuedHere: false, outside: true, accepted: false,
+                 realm: realmIdNow, fingerprint: fingerprint };
+  const list = Array.isArray(holders) ? holders : [];
+  if (list.length > 1) {
+    log.debug("Leaving storedIdentityOf(). Stored on " + list.length + ".");
+    return Object.assign(base, { error: 'STORED_TWICE',
+      holders: list.map(function (one) { return String(one.dn); }),
+      why: 'the certificate is from an outside certificate authority and ' +
+           'is stored in userCertificate on more than one entry of the "' +
+           realmIdNow + '" realm (' + list.map(function (one) {
+             return String(one.dn);
+           }).join(', ') + '), so it names nobody; store it on exactly one' });
+  }
+  const one = list[0];
+  if (!one || (one.kind !== 'person' && one.kind !== 'application')) {
+    log.debug("Leaving storedIdentityOf(). Not stored on an identity.");
+    return Object.assign(base, { error: 'NOT_STORED',
+      why: one
+        ? 'the certificate is from an outside certificate authority and is ' +
+          'stored on ' + String(one.dn) + ', which is neither a person nor ' +
+          'an application'
+        : 'the certificate is from an outside certificate authority and is ' +
+          'not stored in userCertificate on any entry of the "' +
+          realmIdNow + '" realm (SHA-256 ' + fingerprint + '); an outside ' +
+          'certificate names the one entry it is stored on, and nothing ' +
+          'else — store it on the person\'s or the application\'s entry ' +
+          'first (a renewed certificate is stored again)' });
+  }
+  log.debug("Leaving storedIdentityOf(). The " + one.kind + " " + one.id +
+            ".");
+  return Object.assign(base, { accepted: true, stored: true,
+    kind: one.kind, username: String(one.id), dn: String(one.dn),
+    why: 'an outside certificate authority\'s certificate, stored in ' +
+         'userCertificate on ' + String(one.dn) + ' in the "' + realmIdNow +
+         '" realm' });
+}
+
 /**
  * Recognises a verified client certificate as an identity, or refuses it.
  *
@@ -917,12 +1006,18 @@ function currentHolderOf(answer) {
  * `IDENTITY_USE_CASES`, with clientAuth, naming exactly one person or
  * application; a person is then resolved to whoever holds their subject
  * now. Memoised by leaf digest and held authorities.
+ * A chain through no held authority is an outside authority's: with
+ * `options.stored` it is resolved to the one entry storing it in
+ * `userCertificate` (#1061, `storedIdentityOf()`), in `options.realm` or the
+ * ambient realm; without, it is answered `issuedHere: false` and nothing
+ * else, as it always was.
  * @param input - `{ leaf, chain, verified }`, from
  *   `revocation_status.fromSocket()`
+ * @param options - `{ stored, realm }`, both optional
  * @returns `{ issuedHere, accepted }`, with `realm`, `kind`, `username`,
  *   `serialHex` and `authority` when accepted, or `error` and `why` when not
  */
-function identityOf(input) {
+function identityOf(input, options) {
   log.debug("Entering identityOf().");
   if (!input || !input.leaf || input.verified !== true) {
     log.debug("Leaving identityOf(). Nothing verified.");
@@ -941,10 +1036,19 @@ function identityOf(input) {
   const heldKey = (typeof status.heldAuthorityKey === 'function')
     ? status.heldAuthorityKey() : '';
   const key = crypto.digest('sha256', leafBytes, 'hex') + '|' + heldKey;
+  const opts = options || {};
+  // The outside half is the directory's answer, asked each time and never
+  // memoised (STORED, above); the memo still says whether it IS outside.
+  const settle = function (answer) {
+    if (!answer.issuedHere && opts.stored === true) {
+      return storedIdentityOf(leafBytes, opts.realm);
+    }
+    return currentHolderOf(answer);
+  };
   if (memo.has(key)) {
     memoCount.hit();
     log.debug("Leaving identityOf(). Memoised.");
-    return currentHolderOf(memo.get(key));
+    return settle(memo.get(key));
   }
   memoCount.miss();
   const walked = status.walk(input);
@@ -1035,7 +1139,7 @@ function identityOf(input) {
   memo.set(key, answer);
   log.debug("Leaving identityOf(). issuedHere=" + answer.issuedHere +
             " accepted=" + answer.accepted);
-  return currentHolderOf(answer);
+  return settle(answer);
 }
 
 // ---------------------------------------------------------------------------
@@ -1066,6 +1170,12 @@ function identityOf(input) {
  */
 function stillHeld(identity) {
   log.debug("Entering stillHeld().");
+  // A STORED certificate (#1061) was found ON its entry a moment ago, by the
+  // lookup that made it an identity: that lookup is this question.
+  if (identity && identity.accepted && identity.stored === true) {
+    log.debug("Leaving stillHeld(). Stored on its entry.");
+    return true;
+  }
   if (!identity || !identity.accepted || !identity.authority) {
     log.debug("Leaving stillHeld(). Not an accepted identity.");
     return false;
@@ -1121,15 +1231,26 @@ function stillHeld(identity) {
 // certificate this service issued for something else, or one from another
 // realm's authority.
 // ---------------------------------------------------------------------------
+//
+// WITH `{ stored: true }` (#1061) A CERTIFICATE FROM AN OUTSIDE AUTHORITY IS
+// NO LONGER "NO OPINION": it is `{ ok: true }` with the entry it is stored on
+// as its identity, or `{ ok: false }` with 'NOT_STORED' or 'STORED_TWICE'.
+// Every door that turns a certificate into a person or an application asks
+// that way; the doors that read one as a key (RFC 8705, GNAP) do not.
 /**
  * Checks a main-port socket's client certificate against the ambient realm.
  *
  * @param socket - the TLS socket
+ * @param options - `{ stored: true }` to resolve an outside authority's
+ *   certificate to the entry storing it (#1061); `realm` to ask in a realm
+ *   other than the ambient one
  * @returns `{ ok: true, identity }` for no opinion or a certificate from
- *   this realm's authority, or `{ ok: false, identity, error, why }` for a
- *   certificate issued here for something else or by another realm
+ *   this realm's authority (or, with `stored`, an outside certificate stored
+ *   on one entry), or `{ ok: false, identity, error, why }` for a
+ *   certificate issued here for something else or by another realm, or an
+ *   outside one not stored on exactly one entry
  */
-function checkSocket(socket) {
+function checkSocket(socket, options) {
   log.debug("Entering checkSocket().");
   let input = null;
   try {
@@ -1138,7 +1259,16 @@ function checkSocket(socket) {
     log.debug("Caught in checkSocket(): " + ((e && e.message) || e));
     input = null;
   }
-  const identity = identityOf(input);
+  const opts = options || {};
+  const identity = identityOf(input, opts);
+  if (!identity.issuedHere && identity.outside === true) {
+    log.debug("Leaving checkSocket(). An outside certificate, " +
+              (identity.accepted ? 'stored on one entry.' : 'refused.'));
+    return identity.accepted
+      ? { ok: true, identity: identity }
+      : { ok: false, identity: identity, error: identity.error,
+          why: identity.why };
+  }
   if (!identity.issuedHere) {
     log.debug("Leaving checkSocket(). Not ours.");
     return { ok: true, identity: identity };
@@ -1148,7 +1278,7 @@ function checkSocket(socket) {
     return { ok: false, identity: identity, error: identity.error,
              why: identity.why };
   }
-  const ambient = realms.currentId();
+  const ambient = opts.realm ? String(opts.realm) : realms.currentId();
   if (identity.realm !== ambient) {
     log.debug("Leaving checkSocket(). Another realm's.");
     return { ok: false, identity: identity, error: 'OTHER_REALM',
@@ -1222,6 +1352,7 @@ module.exports = {
   slotHolder: slotHolder,
   maxPerHolder: maxPerHolder,
   stillHeld: stillHeld,
+  storedIdentityOf: storedIdentityOf,
   listFor: listFor,
   activeFor: activeFor,
   labelProblem: labelProblem,

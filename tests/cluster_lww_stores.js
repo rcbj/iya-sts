@@ -214,9 +214,15 @@ function fakeDatabase() {
       return rows([]);
     }
     // ---- the realm registry -----------------------------------------------
-    if (/^SELECT id, name, description, created_at, overrides FROM sts_realms/
+    // The driver's read names `domain` and `retiring_at` too (the realm's
+    // DNS domain, #33; a retiring realm), so the pattern allows them: a
+    // double answering NO rows to the registry read makes the applier
+    // remove every realm this process defined (2026-10-27, found by 5c).
+    if (/^SELECT id, name, description, created_at, overrides(, domain, retiring_at)? FROM sts_realms/
           .test(text)) {
-      return rows(Array.from(db.realms.values()));
+      return rows(Array.from(db.realms.values()).map(function (row) {
+        return Object.assign({ domain: null, retiring_at: null }, row);
+      }));
     }
     if (/^DELETE FROM sts_realms WHERE NOT/.test(text)) {
       const keep = new Set(p[0]);
@@ -633,8 +639,13 @@ async function sectionD(t, db) {
   db.log.push({ seq: db.log.length + 1, origin: 'node-b', kind: 'directory',
                 realm: 'ghost', key: ghostDn });
   await persistence.syncNow();
-  t.check(!!(dirs.get('ghost') || new Map()).get(ghostDn),
-          'node B\'s entry for its new realm was applied here');
+  // HELD, NOT APPLIED, UNTIL THE REALM'S OWN ROW IS (2026-10-27): applied
+  // resident before the realm was defined here, the entry was forgotten
+  // once the realm made its people windowed, and the next flush deleted it
+  // from the store as a row the shadow held and memory lacked.
+  t.check(!(dirs.get('ghost') || new Map()).get(ghostDn),
+          'node B\'s entry for a realm this process does not define yet is ' +
+          'held, not applied');
 
   // NODE B, writing straight into the table: a realm of its own and a
   // setting, neither of which this process has applied.
@@ -654,6 +665,15 @@ async function sectionD(t, db) {
           'is not a realm this process removed');
   t.equal(String((db.realms.get('lwwa').overrides || {})[runtimeKey]),
           'false', 'and the change itself was written');
+  db.realms.set('ghost', { id: 'ghost', name: 'Ghost', description: '',
+                           created_at: Date.now(), overrides: {} });
+  db.log.push({ seq: db.log.length + 1, origin: 'node-b', kind: 'realms',
+                realm: '', key: 'ghost' });
+  await persistence.syncNow();
+  t.check(!!realms.get('ghost') &&
+          !!(dirs.get('ghost') || new Map()).get(ghostDn),
+          'and once the realm\'s own row has been applied here, the held ' +
+          'entry follows it');
 
   config.setOverride('oid4vci.batchSize', '7');
   await persistence.flush();

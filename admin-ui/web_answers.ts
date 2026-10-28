@@ -693,10 +693,15 @@ class WebAnswers {
     const errors = (answer && answer.errors) ||
       (answer && answer.why ? [String(answer.why)] : []);
     if (page === '/admin/users/new' && !ok) {
+      // THE REFUSAL FLOATS (#1066), in the sticky banner the application
+      // screens use (`kit.flash()`), so it stays in view over a form a
+      // reader has scrolled down; a `warn()` at the top of the body was
+      // off-screen from the Create button that caused it. In English, as
+      // every refusal is (#539).
       return { json: WebAnswers.newUserAgain(json, fields,
                                              WebAnswers.one(fields, 'view')),
-               banner: kit.warn('<strong>Nobody was created.</strong> ' +
-                                kit.esc(errors.join(' ') || 'Refused.')) };
+               banner: kit.refusalBanner(errors.length ? errors
+                 : ['Refused.'], 'Nobody was created.') };
     }
     if (page === '/admin/users/edit' && !ok) {
       const out = WebAnswers.copy(json);
@@ -973,8 +978,9 @@ class WebAnswers {
     if (!answer || !answer.invented) {
       return { json: WebAnswers.newUserAgain(json, fields,
                                              WebAnswers.one(fields, 'view')),
-               banner: kit.warn(kit.esc((answer && answer.inventRefused) ||
-                 'Nothing was filled in.')) };
+               // A refused Fill floats like a refused create (#1066).
+               banner: kit.refusalBanner([(answer && answer.inventRefused) ||
+                 'Nothing was filled in.'], 'Nothing was filled in.') };
     }
     const posted = kit.gridValuesFromDraft(fields, json.longTextAttributes);
     const merged = {};
@@ -1042,6 +1048,26 @@ class WebAnswers {
   // ---------------------------------------------------------------------------
   // 1. THE SECRETS SHOWN ONCE
   // ---------------------------------------------------------------------------
+  // THE TRAIL OF A PAGE SHOWN ONCE ABOUT A PERSON (#1068): Admin console ›
+  // Users › <the person> › <what happened>. Users and the person are links,
+  // so the list and the person's own page are one click away; the leaf is
+  // never a link (rule 7a). With no username, Users alone.
+  /**
+   * The `up` of a page shown once about a person.
+   *
+   * @param username - the person's username, or nothing
+   * @param leaf - the page's title
+   * @returns the `up` the shell's trail reads
+   */
+  static personTrail(username: Json, leaf: string): Json {
+    const name = String(username == null ? '' : username);
+    return { href: '/admin/users', leaf: leaf,
+             via: name
+               ? [{ label: name,
+                    href: '/admin/users' + kit.queryWith({ user: name }, {}) }]
+               : [] };
+  }
+
   /**
    * The page an answer carrying a secret is drawn as, or null.
    *
@@ -1052,7 +1078,7 @@ class WebAnswers {
    * @param env - `base` (this realm's absolute root, for a link somebody
    *   will paste) and `back` (the page the form was on)
    * @param t - optional; the translator (#539), the default when left out
-   * @returns `{ title, active, html }`, or null
+   * @returns `{ title, active, up?, html }`, or null
    */
   static once(page: string, action: string, fields: Json, answer: Json,
               env: Json, t?: Json): Json {
@@ -1062,8 +1088,10 @@ class WebAnswers {
     t = t || kit.context().t;
     const back = String((env && env.back) || '/admin');
     if (page === '/admin/users/new' && action === 'create') {
-      return { title: t.text('consoleAnswers.once.userCreated'),
+      const title = t.text('consoleAnswers.once.userCreated');
+      return { title: title,
                active: '/admin/users',
+               up: WebAnswers.personTrail(answer.username, title),
                html: WebAnswers.createdUser(answer, env, t) };
     }
     if (answer.keytab) {
@@ -1076,6 +1104,8 @@ class WebAnswers {
         (answer.password || answer.resetUrl || answer.appPassword)) {
       return { title: t.text('consoleAnswers.once.credentialReset'),
                active: '/admin/users',
+               up: WebAnswers.personTrail(answer.username,
+                 t.text('consoleAnswers.once.credentialReset')),
                html: WebAnswers.credentialReset(answer, back, t) };
     }
     if (page === '/admin/realms' && answer.password) {
@@ -1175,7 +1205,7 @@ class WebAnswers {
       // sign-out and no RISC event, so this is the whole answer.
       return '<h2>' + t.html('consoleAnswers.appPassword.heading',
                              { name: result.name, who: who }) + '</h2>' +
-        '<div class="secret">' + kit.esc(result.appPassword) + '</div>' +
+        WebAnswers.secretBlock(result.appPassword, t) +
         kit.warn(t.html('consoleAnswers.appPassword.warn', {
           who: who,
           doors: (result.doorLabels || result.doors || []).join(', ') })) +
@@ -1186,7 +1216,7 @@ class WebAnswers {
     if (result.password) {
       out.push('<h2>' + t.html('consoleAnswers.reset.passwordHeading',
                                { who: who }) + '</h2>' +
-        '<div class="secret">' + kit.esc(result.password) + '</div>' +
+        WebAnswers.secretBlock(result.password, t) +
         kit.warn(t.html('consoleAnswers.reset.passwordWarn') + (
           result.forcedChange
             ? t.html('consoleAnswers.reset.forced', { who: who })
@@ -1200,7 +1230,7 @@ class WebAnswers {
     if (result.resetUrl) {
       out.push('<h2>' + t.html('consoleAnswers.reset.linkHeading',
                                { who: who }) +
-        '</h2><div class="secret">' + kit.esc(result.resetUrl) + '</div>' +
+        '</h2>' + WebAnswers.secretBlock(result.resetUrl, t) +
         kit.warn(t.html('consoleAnswers.reset.linkWarn', {
           who: who,
           until: result.expiresAt || t.text('consoleAnswers.itExpires') }) +
@@ -1220,6 +1250,24 @@ class WebAnswers {
     return out.join('');
   }
 
+  // A VALUE SHOWN ONCE, WITH A COPY BUTTON (#1068): a generated password,
+  // an activation or reset link, an app password. It is drawn big and
+  // monospaced as before, and `WebKit.copyButton()` sits under it, which
+  // `ConsoleRuntime.draw()` reveals and wires on every page, these
+  // included. Selecting the value by hand still works.
+  /**
+   * Draws a value shown once, with a Copy button under it.
+   *
+   * @param value - the secret
+   * @param t - the translator
+   * @returns the markup
+   */
+  static secretBlock(value: Json, t: Json): string {
+    return '<div class="secret">' + kit.esc(value) + '</div>' +
+      '<div class="formrow secret-copy">' + kit.copyButton(value, t) +
+      '</div>';
+  }
+
   /**
    * A person just created: the generated password or activation link
    * shown once, and the entry as it was written.
@@ -1236,7 +1284,7 @@ class WebAnswers {
     if (result.password) {
       secret.push('<h2>' + t.html('consoleAnswers.created.passwordHeading') +
         '</h2>' +
-        '<div class="secret">' + kit.esc(result.password) + '</div>' +
+        WebAnswers.secretBlock(result.password, t) +
         kit.warn(t.html('consoleAnswers.created.passwordWarn',
                         { username: result.username })));
     }
@@ -1262,9 +1310,8 @@ class WebAnswers {
       // would use; this console's own is the fallback.
       secret.push('<h2>' + t.html('consoleAnswers.created.linkHeading') +
         '</h2>' +
-        '<div class="secret">' + kit.esc(result.activationLink ||
-                                         base + result.activationUrl) +
-        '</div>' +
+        WebAnswers.secretBlock(result.activationLink ||
+                               base + result.activationUrl, t) +
         kit.warn(t.html('consoleAnswers.created.linkWarn', {
           until: result.expiresAt || t.text('consoleAnswers.itExpires') })));
     }
@@ -1331,7 +1378,7 @@ class WebAnswers {
       '</h2><table class="key"><tr>' +
       '<th>' + t.html('consoleAnswers.username') + '</th><td><code>' +
       kit.esc(result.username) + '</code></td></tr></table>' +
-      '<div class="secret">' + kit.esc(result.password) + '</div>' +
+      WebAnswers.secretBlock(result.password, t) +
       kit.warn(t.html('consoleAnswers.realm.warn', { realm: result.realm })) +
       kit.note('<a class="btn" href="' + kit.esc(back) + '">' +
                t.html('consoleAnswers.realm.back') + '</a> &middot; <a ' +

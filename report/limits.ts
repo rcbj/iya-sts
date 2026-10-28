@@ -37,8 +37,7 @@ const DEFAULTS: Record<string, number | string> = {
   maxConcurrentPerRealm: 2,
   maxConcurrentPerSubject: 1,
   artifactRetentionS: 86400,
-  jobRetentionS: 604800,
-  usersGroup: ''
+  jobRetentionS: 604800
 };
 
 function configured(key: string): number | string {
@@ -92,7 +91,7 @@ class Limits {
    * One cap: the override when this instance has one, otherwise the setting.
    *
    * @param key - the name without the `report.` prefix
-   * @returns the number, or the string for usersGroup
+   * @returns the number
    */
   private pick(key: string): number | string {
     log.debug("Entering Limits.pick().");
@@ -188,14 +187,6 @@ class Limits {
     log.debug("Entering Limits.jobRetentionS().");
     log.debug("Leaving Limits.jobRetentionS().");
     return Number(this.pick('jobRetentionS'));
-  }
-
-  /** @returns report.usersGroup, which may be empty */
-  usersGroup(): string {
-    log.debug("Entering Limits.usersGroup().");
-    const value = this.pick('usersGroup');
-    log.debug("Leaving Limits.usersGroup().");
-    return value == null ? '' : String(value);
   }
 }
 

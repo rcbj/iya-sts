@@ -389,7 +389,8 @@ restart-only, on by default. Four things are this directory's:
   wraps `startCertificateSessionIn()` and the authentication recording in
   `realms.run()` of the realm whose Issuing CA signed the leaf, and the session's
   username is the leaf's `urn:sts:person:` name. A certificate from an anchor
-  somebody installed is unchanged: default realm, common name.
+  somebody installed signs in, since #1061, in the REQUEST's realm as the
+  entry storing it (below); it was default realm and common name until then.
 * **THE CONTEXT IS RE-APPLIED WHEN THE CERTIFICATE IS CERTIFIED.** A listener
   is created before the certificate authority starts, so the Root was not there
   to add; `onCertified` calls `applyAnchors()`, which re-applies it to every
@@ -622,9 +623,10 @@ it **refuses every connection**, which is worse than no pin because it reads as
 a broken server.
 
 **`serverCertificate()` ANSWERS BOTH QUESTIONS NOW.** `chainPem` is what the
-certificate TRAVELS WITH (the Issuing CA and the Intermediate, leaf-first and
-without the Root, as RFC 5246 section 7.4.2 asks); `trustAnchorPem` is what a
-caller VERIFIES it against. `trustAnchorPems()` answers the Root when this
+certificate is STORED with (the Issuing CA and the Intermediate, leaf-first and
+without the Root); `trustAnchorPem` is what a caller VERIFIES it against. What
+a socket SENDS is neither of them since #1064 — see *Every listener presents
+the Root*, below. `trustAnchorPems()` answers the Root when this
 service has one and the self-signed certificate when it does not — which is
 what `tls.certificateFile` and any process that never runs `pki.start()`
 (`npm test`, every in-process job) leave behind. **The invariant is that the
@@ -652,6 +654,50 @@ about. It re-reads the record and calls `setSecureContext()` on the way into
 `tests/tls_trust_anchor.js` pins all of it, and pins it as a HANDSHAKE: every
 version of that test which compared subjects and issuers passed on a truststore
 OpenSSL would refuse, which is precisely the state this service was in.
+
+## Every listener presents the Root (#1064, 2026-10-27)
+
+**Every TLS listener this service owns sends four certificates: leaf, Issuing
+CA, Intermediate, Root.** Until #1064 it sent three. RFC 8446 section 4.4.2
+(RFC 5246 section 7.4.2 before it) allows either, and leaving the Root out was
+the old reading of "it is the anchor; relying on it having been sent is the
+mistake". What that reading missed is what a client SHOWS. Every Root this
+service builds is `CN=sts Root CA, O=sts`, and a fresh install builds a new
+one. So a client never handed the current Root completed the path from the
+Intermediate's issuer NAME against whatever same-named Root it already held.
+A Windows user reported it as "the Issuing CA and the Intermediate differ
+between installs but the Root is the same". Six fresh installs on two machines
+each had a Root of their own; the name was the only thing shared.
+
+**Sending the Root trusts nothing** (RFC 5280 section 6.1: the anchor is the
+relying party's input), so this changes what a client can display and nothing
+it accepts.
+
+* **One function builds every socket's bundle: `presentedBundlePem()`**
+  (`tls_server.js`). It is used by `secureContextOptions()` (the main port and
+  the debugger), `server.js` at the main port's creation, `tls/listeners.js`
+  (custom and realm listeners), `ldap/ldap_server.js` (LDAPS: ldapjs passes
+  `certificate` to `tls.createServer()` as `cert` unchanged, so the fork needs
+  nothing), `common/cell_channel.ts` (the channel between cells, server side)
+  and `spiffe/spiffe_grpc.ts` (`presentedChainPem()`, both of its contexts).
+  A new listener takes its bundle from there, never from
+  `[cert].concat(chainPem)`.
+* **The chain in it comes from `common/pki.js` `chainThroughRoot()`**, the one
+  place any reported chain is completed (`common/CLAUDE.md`). Its candidates
+  are the service Root and `trustAnchorPems()`, so a supplied
+  `tls.certificateFile` whose file carried its Root now SENDS that Root
+  (`splitSuppliedBundle()` used to keep it out of `chainPem`, and still does).
+  A file with no Root in it is sent as it is.
+* **`chainPem` is unchanged.** It is what a certificate is stored with, and the
+  workers' pin, `anchorSigns()` and every "an empty chain means self-signed"
+  check here read it.
+* **Not changed:** a CLIENT certificate this service presents when it dials
+  out (the inter-cell client side, the SCIM client's mutual TLS). Those are
+  not listeners.
+
+`tests/tls_presented_root.js` holds it as a handshake: four certificates
+arrive, the last one this process's Root by fingerprint, and a client trusting
+that Root alone verifies.
 
 ## THE PUBLISHED ANCHOR MUST SIGN THE PUBLISHED CHAIN (2026-09-11)
 
@@ -1431,11 +1477,47 @@ Pooling settings on each HTTP/HTTPS listener tab."
     with the session and compares it byte for byte. It FAILS CLOSED: a
     name it cannot see refuses the resumption, and a node with no
     `_init` is logged as STS-TLS-0046 and resumes nothing by ID.
-    `tests/listener_tls_policy.js` L5c holds it. **TLS 1.2 TICKETS are not
-    covered**: node resumes a ticket inside OpenSSL with no event, and
-    OpenSSL resumes a ticket offered under another name (shown by hand
-    against a bare node server, 2026-10-07); that is unchanged by this and
-    open.
+    `tests/listener_tls_policy.js` L5c holds it.
+  - **A TLS 1.2 TICKET is held to the same rule after the handshake
+    (#507, 2026-10-26).** Node resumes a ticket inside OpenSSL with no
+    event, OpenSSL resumes one offered under another name, and nothing
+    node exposes carries the name a ticket was made under: `servername`
+    is false after a TLS 1.2 hit and the session's DER holds no name,
+    with or without an SNI callback answering a context (shown by hand
+    against a bare node server, 2026-10-26). What a resumed TLS 1.2
+    session keeps is the MASTER SECRET of the session it resumes, so
+    `attachSessionCache()` records, at the end of every full TLS 1.2
+    handshake, the hello's name under a SHA-256 of that secret (read
+    from `getSession()`'s SSL_SESSION), and on every resumed TLS 1.2
+    connection looks it up and CLOSES the connection when the name
+    differs (`STS-TLS-0052`) or this node has no record
+    (`STS-TLS-0053`). Closed rather than resumed afresh: by
+    `secureConnection` the handshake is over, and the connection is
+    closed before node's HTTP server or anything else reads it
+    (`prependListener`, `refuseNonNistCurveCertificatesOn()`'s
+    arrangement). The record is per listener and per process, bounded by
+    4096 entries and the listener's `sessionTimeoutS` (a ticket lives no
+    longer), and a replicated shared store `tls.ticketNames`
+    (`tls.presentedChains`'s shape, a CELL-tier store) carries it to the
+    other nodes for a ticket sealed under the cluster's shared key.
+    A mismatch closes at once; a resumed session this node has NO record
+    of is held through one read barrier (`persistence.syncNow()`) and
+    judged again (2026-10-27): behind a balancer the row is still
+    replicating, and the cluster mode's tlsfuzzer showed that closing at
+    once closed every quick reconnect through `sts-lb`. The four options the
+    ticket listed, and why this one: turning TLS 1.2 tickets off
+    (`SSL_OP_NO_TICKET`) also makes TLS 1.3 tickets STATEFUL, so every
+    TLS 1.3 resumption would go through the per-process cache and die
+    with it across nodes; node exposes no ticket callback to carry the
+    name in; and no hook permits a full-handshake fallback after OpenSSL
+    has accepted the ticket. **TLS 1.3 is left alone on purpose**: RFC
+    8446 section 4.2.11 removes the server's check ("the server does not
+    need to" compare) and section 4.6.1 binds the CLIENT to the same SNI,
+    and OpenSSL resumes a TLS 1.3 PSK under another name (same probe).
+    **Not on the SPIFFE listeners**, for the session cache's reason: grpc-js
+    owns those servers and `attachSessionCache()` never sees them; they
+    are TLS 1.3 only in practice. `tests/listener_tls_policy.js` L5d and
+    L5e hold both.
 * **Connection pooling is four settings, all runtime, on the HTTP
   listeners only** (main, the debugger, the plain-HTTP revocation listener,
   and a realm's own): `http.keepAliveTimeoutS` (60; it replaced
@@ -1958,3 +2040,76 @@ session per person per browser, however many fetches; the answer says which
 cell placement's `held` (`placeCertificateSignIn()`) asks the same question.
 Off, the function is what it was. The design is `authn/CLAUDE.md`, *Several
 signed-in accounts in one browser*.
+
+## THE SIGN-IN SCREEN ASKS THE SAME QUESTIONS (#1051, 2026-10-27)
+
+rcbj's decision on #520: every browser protocol reaches `authn/`'s sign-in
+screen, so the certificate on the connection is offered THERE, once —
+"Continue as <name> with your certificate" — rather than by each protocol.
+The screen is `authn/`'s (`authn/CLAUDE.md`, *The certificate on the
+connection*); what it asks of the certificate is this module's, in the same
+functions `GET /tls/sign-in` runs:
+
+* **`certificateRefusal()`** — nothing verified, refused on revocation, a
+  certificate of this service's that is not an identity, an application's
+  certificate, in that order — and **`certificatePeer()`** — the certificate
+  read off the socket (none on a resumed session) and the name it signs in:
+  the gate's name and nothing else since #1061 (it fell back to the common
+  name, then the subject, until then). Both
+  were moved out of `startCertificateSession()` and
+  `startCertificateSessionIn()` unchanged; `GET /tls/sign-in` answers exactly
+  what it did.
+* **`screenCertificateOffer(req)`** is the view's: synchronous, no revocation
+  asked, nothing logged above debug — a person's name or null.
+  **`screenCertificateHolder(req)`** is the act's: `checkedSocket()`'s
+  verdict, then those two functions, answering the holder (with
+  `recordVerification()`, the #127 identity verification `GET /tls/sign-in`
+  records once its session starts) or a refusal with its STS-AUTHN-0463..0466
+  code and an English sentence for the screen.
+* **TWO DIFFERENCES, BOTH FORCED.** The realm is the PENDING SIGN-IN'S, not
+  the certificate's — the protocol that sent the person decided it — so
+  `tls_client_certificates.checkSocket()` refuses a certificate from another
+  realm's authority (STS-AUTHN-0465), as every main-port door with an ambient
+  realm does; and there is no "already signed in on this browser" answer,
+  since a person at the screen is not signed in for this request.
+* **`authn.ts` reaches this module only where it is already loaded**
+  (`certificateDoor()` reads `require.cache`): this is a JavaScript route
+  module, #20, and a require from #8 would drag its `/tls*` views forward and
+  close a cycle, since it requires `authn`. No slot was added: nothing here
+  needs filling at load, and every process that serves the screen has the
+  composition root's copy long before a request arrives.
+
+## A CERTIFICATE FROM AN OUTSIDE AUTHORITY IS THE ENTRY STORING IT (#1061, 2026-10-27)
+
+The rule and its one mapping are `common/CLAUDE.md` 3ag. What is this
+module's:
+
+* **EVERY SIGN-IN ASKS WITH `{ stored: true }`.** `issuedIdentityOf(socket,
+  options)` passes it through; `GET /tls/sign-in` (`answerCertificateSignIn()`
+  and the cell placement `placeCertificateSignIn()`), `certificateRefusal()`'s
+  default, `screenCertificateOffer()` and `screenCertificateHolder()` all ask
+  it. `certificateRefusal()` gained a fifth refusal, FIRST after revocation:
+  an outside certificate stored on no entry or several, reported as
+  `session.refusedAsStored` (`NOT_STORED` / `STORED_TWICE`) and marked
+  `STS-TLS-0054` / `0055` on the 200; the screen's are `STS-AUTHN-0468` /
+  `0469`, and it reports revocation first when both apply. An application's
+  refusal now holds for a STORED application's certificate too
+  (`gated.accepted && kind === 'application'`, no `issuedHere`).
+* **`certificatePeer()` READS NO NAME OFF THE CERTIFICATE.** It answers only
+  the gate's `username`; with no accepted identity it refuses, naming the CN in
+  the sentence and nothing else. An outside issuer could write anybody's CN.
+* **THE HANDSHAKE NO LONGER RECORDS AN OUTSIDE CERTIFICATE.**
+  `recordClientCertificate()` returns before recording when `!issuedHere`: it
+  used to file the subject and the observer SEEDED `cn=<CN>,ou=users` through
+  `certificatePlan()` — an entry made out of a name somebody else's authority
+  chose. A handshake has no realm to look the stored entry up in, so the door
+  that signs the holder in records the authentication instead. The connection
+  page (`/admin/tls-connection`) still calls `issuedIdentityOf()` WITHOUT
+  `stored`: it describes what arrived, and reports an outside certificate as
+  `issuedHere: false` as before.
+* **WHAT HAS NO IN-PROCESS TEST**: a stored outside certificate over a real
+  HTTP request to `/tls/sign-in` is held only by the protocol jobs that
+  present one (`sts_tls_connection`, `sts_main_port_pooling`,
+  `sts_global_logout`), which need a stack; they were not run in #1061's
+  session.
+

@@ -109,13 +109,17 @@ const WHY = {
     "refused on every listener (SSL_OP_NO_RENEGOTIATION, #212): OpenSSL " +
     "answers a renegotiating ClientHello with a no_renegotiation warning; " +
     "test-renegotiation-disabled holds the refusal" },
-  sessionCache: { why: "openssl", reason: "node keeps no server-side TLS " +
-    "session cache of its own; this service's session-ID cache (#429) is " +
-    "per listener and per PROCESS, sized by sessionCacheSize, so a " +
-    "session ID offered to another node, or to a listener whose cache is " +
-    "0, is not resumed and the server answers with a full handshake; " +
-    "resumption works everywhere through session tickets " +
-    "(test-session-ticket-resumption, and TLS 1.3 PSK)" },
+  // #507: since tls.sessionCacheSize went to 2048 (2026-10-07) a session
+  // ID IS resumed on the listener that made it, so these exceptions are
+  // the cluster mode's only: the balancer may put the resumption on the
+  // other node, whose cache never saw the session.
+  sessionCache: { why: "design", reason: "the cluster mode only: this " +
+    "service's session-ID cache (#429) is per listener and per PROCESS, " +
+    "sized by sessionCacheSize (2048), so a session ID offered to the " +
+    "other node is not resumed and that node answers with a full " +
+    "handshake; on one node the session is resumed, and resumption works " +
+    "everywhere through session tickets (test-session-ticket-resumption, " +
+    "and TLS 1.3 PSK)" },
   // #703 (#407). Seen when the cache resumes the session and the HTTP/2
   // preface reaches the script before its close_notify is answered, which
   // is a race: the script sends that alert straight after its Finished. A
@@ -429,9 +433,17 @@ const PLAN = [
     "in-renegotiation.py", skip: "every probe renegotiates; refused (#212)" },
   { script: "test-interleaved-application-data-in-renegotiation.py", skip:
     "every probe renegotiates; refused (#212)" },
-  { script: "test-resumption-with-wrong-ciphers.py", skip: "every probe " +
-    "resumes a TLS 1.2 session by session ID, which node does not cache " +
-    "(tickets are how this service resumes)" },
+  // #507: the session-ID cache resumes a session now (2026-10-07), so the
+  // old reason ("node does not cache session IDs") is gone; what keeps the
+  // script out is its cipher list.
+  { script: "test-resumption-with-wrong-ciphers.py", skip: "every probe, " +
+    "the sanity ones included, offers only CBC suites " +
+    "(TLS_*_WITH_AES_*_CBC_SHA, or NULL_SHA), and the TLS 1.2 list is BCP " +
+    "195's four GCM suites, so every hello is refused with " +
+    "handshake_failure before a session exists to resume; the cipher " +
+    "check on a session-ID resumption is OpenSSL's (an offered list " +
+    "without the session's suite is illegal_parameter), and " +
+    "test-sessionID-resumption holds the resumption itself" },
   { script: "test-SSLv3-padding.py", skip: "SSL 3.0 is refused " +
     "(tls.minVersion); test-version-numbers and the SSLv2 scripts hold " +
     "the refusals" },
@@ -580,7 +592,7 @@ const PLAN = [
     exceptions: [
       ex(/renegotiat/, "no_renegotiation", "renegotiation"),
       ex(/^EMS with session resume/, ["session_id == srv_hello.session_id",
-         "server_hello"], "sessionCache"),
+         "server_hello"], "sessionCache", { clustered: true }),
       ex(/TLSv1\.1/, REFUSED_OLD, "oldVersion"),
       // A full handshake by design (RFC 7627 refuses to resume a non-EMS
       // session with EMS), which the balancer may put on the other node:
@@ -681,7 +693,7 @@ const PLAN = [
                     "sslv2Hello")] },
   { script: "test-sessionID-resumption.py",
     exceptions: [ex("session ID resume", "session_id == srv_hello",
-                    "sessionCache")] },
+                    "sessionCache", { clustered: true })] },
   { script: "test-session-ticket-resumption.py",
     args: ["--no-new-ticket-on-resumption"],
     exceptions: [ex(/renegotiation/, "no_renegotiation",

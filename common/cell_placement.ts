@@ -213,6 +213,12 @@ const ROWS: Row[] = [
   { prefix: '/portal/signals/receive', strategy: 'local',
     why: 'the portal\'s Shared Signals stream is received where it is ' +
          'delivered' },
+  { prefix: '/admin/signals/receive', strategy: 'local',
+    why: 'the console\'s Shared Signals stream is received where it is ' +
+         'delivered (#1042)' },
+  { prefix: '/report/signals/receive', strategy: 'local',
+    why: 'the reports application\'s Shared Signals stream is received ' +
+         'where it is delivered (#1042)' },
   { prefix: '/portal/claim-sources/callback', strategy: 'affinity',
     browser: true,
     why: 'a Claims Provider sends the browser back where the link began' },

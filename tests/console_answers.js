@@ -114,6 +114,39 @@ function checkOnce(t) {
           created.html.indexOf('$scrypt$x') < 0,
           'C2. a created person\'s activation link is the absolute one the ' +
           'operation built, and the verifier is named, not printed');
+  // #1068: the page after a create leads back. Its trail is Admin console
+  // › Users › bo › User created, Users and bo links and the leaf not one;
+  // the activation link and a generated password each carry a Copy button.
+  const crumbs = WebShell.trailBar(created.active, created.up,
+                                   created.title, { '/admin/users': 'Users' });
+  const madePassword = WebAnswers.once('/admin/users/new', 'create', {},
+    { ok: true, username: 'cy', dn: 'uid=cy,ou=users', message: 'Made.',
+      password: 'Gen-2!pass', entry: { attributes: {} } }, env);
+  t.check(created.up && created.up.href === '/admin/users' &&
+          /<a href="\/admin\/users"[^>]*>Users<\/a>/.test(crumbs) &&
+          /<a href="\/admin\/users\?user=bo"[^>]*>bo<\/a>/.test(crumbs) &&
+          /<span class="leaf"[^>]*>[^<]+<\/span><\/p>$/.test(crumbs) &&
+          /class="copybtn" hidden data-copy="https:\/\/public\.test\/portal\/activate\?t=1"/
+            .test(created.html) &&
+          /class="copybtn" hidden data-copy="Gen-2!pass"/
+            .test(madePassword.html) &&
+          /class="copybtn" hidden data-copy="Generated-1!"/.test(reset.html) &&
+          reset.up && reset.up.via.length === 1 &&
+          reset.up.via[0].href === '/admin/users?user=ann',
+          'C2b. the page after a create leads back to Users and to the ' +
+          'person, and each value shown once has a Copy button', crumbs);
+  // Every other page shown once links back to its section (#1068): the
+  // runtime hands the shell an `up` whatever `once()` answered.
+  const runtimeSource = require('fs').readFileSync(
+    require('path').join(__dirname, '..', 'admin-ui', 'web_runtime.ts'),
+    'utf8');
+  t.check(/once\.up \|\| \{ href: once\.active, leaf: once\.title \}/
+            .test(runtimeSource) &&
+          /<a href="\/admin\/kerberos\/principals"/.test(
+            WebShell.trailBar('/admin/kerberos/principals',
+              { href: '/admin/kerberos/principals', leaf: 'Keytab' },
+              'Keytab', { '/admin/kerberos/principals': 'Principals' })),
+          'C2c. every page shown once links back to its section');
   const keytab = WebAnswers.once('/admin/kerberos/principals', 'create',
     {}, { ok: true, principal: 'HTTP/x@R', kvno: 2, etypes: [18],
           keytab: 'BQIAAA', keytabFilename: 'x.keytab', message: 'Made.' },
@@ -158,8 +191,26 @@ function checkRedraws(t) {
     { ok: false, errors: ['The name is taken.'] }, { fields: [] });
   t.check(refused && /Nobody was created/.test(refused.banner) &&
           /The name is taken/.test(refused.banner) &&
-          refused.json.prefill.draft['field.cn.0'] === 'Ann',
-          'D1. a refused create comes back with its reasons and its boxes');
+          refused.json.prefill.draft['field.cn.0'] === 'Ann' &&
+          /^<div class="flash"/.test(refused.banner),
+          'D1. a refused create comes back with its reasons and its boxes, ' +
+          'the reasons in the floating banner (#1066)');
+  // #1066: every refusal on Directory → Users floats in the banner the
+  // application pages use: a refused Fill, and the helper the Service
+  // account and owner-protection blocks draw their refusals with.
+  const unfilled = WebAnswers.filled({ username: 'ann' },
+    { inventRefused: 'Example data is development-mode only.' },
+    { fields: [] });
+  const kit = require('../admin-ui/web_kit');
+  const floated = kit.refusalBanner(['One.', 'Two <b>'], 'Not saved.');
+  t.check(/^<div class="flash"/.test(unfilled.banner) &&
+          /development-mode only/.test(unfilled.banner) &&
+          /^<div class="flash" role="status"><div class="warn"><strong>Not saved\.<\/strong><ul><li>One\.<\/li><li>Two &lt;b&gt;<\/li><\/ul>/
+            .test(floated) &&
+          kit.refusalBanner([]) === '' && kit.refusalBanner(null) === '',
+          'D1b. a refused Fill floats, and refusalBanner() draws the ' +
+          'application pages\' floating shape, escaped, or nothing',
+          unfilled.banner + ' | ' + floated);
   const pane = WebAnswers.redraw('/admin/pki/certificate', 'generate-keys',
     {}, { ok: true, why: 'Generated.', workbench: { draft: { a: 1 } } },
     { workbench: { draft: {} }, persons: [] });

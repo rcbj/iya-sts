@@ -75,6 +75,7 @@
 // root's own install would then refuse (`issuer_names.ts` tells that story).
 // ---------------------------------------------------------------------------
 
+import config = require('./config');
 import helpers = require('./helpers');
 import mode = require('./mode');
 
@@ -205,6 +206,52 @@ export = class RegisteredTargets {
     }
     log.debug("Leaving RegisteredTargets.ownResourceServer(). None.");
     return '';
+  }
+
+  // WHETHER A TOKEN ADDRESSED TO `target` WOULD BE ONE FOR THE MANAGEMENT API
+  // (#1050), for the token funnel's certificate-binding rule. With a request
+  // it is `admin_api.ts`'s own `namesThisApi()`, the check a token meets
+  // there. WITHOUT ONE — a CIBA push, minted when the person approves and on
+  // no connection — the request-relative audience cannot be computed, so the
+  // two that can stand in: `<base>/admin-api` under the base the token is
+  // minted at (a realm's own audience, and the default realm's under that
+  // name), and `adminApi.audience` as configured. A token minted there is
+  // unbound whatever it is for, so reading a little wide refuses nothing a
+  // certificate could have saved.
+  /**
+   * Says whether a target names the management API (#1050).
+   *
+   * @param target - an audience the token will carry
+   * @param req - the token request, or nothing where there was none
+   * @param base - the base URL the token is minted at
+   * @returns true when it does
+   */
+  static namesManagementApi(target: string, req: Json, base: string): boolean {
+    log.debug("Entering RegisteredTargets.namesManagementApi().");
+    const wanted = String(target == null ? '' : target).trim();
+    if (!wanted) {
+      log.debug("Leaving RegisteredTargets.namesManagementApi(). Nothing.");
+      return false;
+    }
+    if (req) {
+      const adminApi = RegisteredTargets.installed('admin_api',
+        function loadAdminApi(): Json {
+          log.debug("Entering loadAdminApi().");
+          log.debug("Leaving loadAdminApi().");
+          return require('../mgmt-api/admin_api');
+        });
+      if (adminApi && typeof adminApi.namesThisApi === 'function') {
+        const named = !!adminApi.namesThisApi(wanted, req);
+        log.debug("Leaving RegisteredTargets.namesManagementApi(). " + named);
+        return named;
+      }
+    }
+    const configured = String(config.value('adminApi.audience') || '').trim();
+    const named = wanted === String(base || '') + '/admin-api' ||
+      (!!configured && wanted === configured);
+    log.debug("Leaving RegisteredTargets.namesManagementApi(). " + named +
+              " (no request).");
+    return named;
   }
 
   /**

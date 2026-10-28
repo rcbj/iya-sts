@@ -8165,6 +8165,55 @@ verification path in the same act. `tests/pki.js` asserts that, the ciphertext
 at rest, the PEM at the surface, that an unrelated edit to the same entry does
 not rewrite the key in the clear, and the double-seal refusal.
 
+### 3w, CONTINUED: EVERY REPORTED CHAIN ENDS WITH THE ROOT, AND ONE FUNCTION SAYS SO (#1064, 2026-10-27)
+
+**`chainThroughRoot(certificatePem, chainPem, opts)` is the one place a chain
+this service reports about its OWN certificates is completed.** It returns
+the leaf, the stored chain, and the Root that signs the chain's top, checked
+by SIGNATURE (the two Roots it has to tell apart have the same subject). It
+takes PEM or bare base64. Where no candidate signs the top (a drifted
+hierarchy, an uploaded chain under a foreign Root), the chain comes back as
+stored, without a Root. A certificate with no chain comes back alone.
+`opts.anchors` adds candidates (a TLS listener's supplied anchor), and
+`opts.withoutRoot` leaves the Root off. **`withoutRoot` is for HAIP 1.0 and
+nothing else**: sections 5, 6.1 and 6.1.1 forbid the trust anchor in the
+`x5c` of a credential, a Status List Token and a signed OpenID4VP request.
+Its callers state that at the call site.
+
+**WHY.** Every Root is `CN=sts Root CA, O=sts` and a fresh install builds a new
+one, so a reader never handed the current Root matched the top certificate's
+issuer NAME to an older Root it already held: "the Root is the same on every
+install", reported from Windows, when it never was. Sending the Root trusts
+nothing (RFC 5280 section 6.1); it lets a reader show the thumbprint.
+
+**`chainPem` keeps its meaning everywhere: what a certificate is STORED with,
+no Root.** Only the REPORTING sites go through this function. Each has one
+writer for its format:
+
+| Format | Writer | Readers it serves |
+|---|---|---|
+| a TLS socket's `cert` bundle | `tls/tls_server.js` `presentedBundlePem()` | every listener (`tls/CLAUDE.md`, *Every listener presents the Root*) |
+| a JOSE header `x5c` | `common/jose_certificate_header.js` `chainPemsOf()`, its memo kept | every token's `x5c`; `withoutAnchor` rows unchanged |
+| a published JWK `x5c` | `helpers.x5cOf()` | the realm JWKS and its standby keys, pinned and grouped signers, `pki.js`'s certified key pairs, `/crypto/metadata` |
+| an XML `ds:X509Data` | `helpers.x509DataXml()`, `helpers.xmlSignerKeyInfo(view)` | every XML signature's KeyInfo (handed to `crypto.js` `signXml()` as `keyInfoXml` by the seven signers), every metadata KeyDescriptor, signing and encryption |
+| PEM text | `chainThroughRoot()` itself | the remote PEP's `fullChainPem`, the console's `-chain.pem` download |
+
+**`crypto.js` does not complete chains, because it is a leaf (3r)**: a signer
+passes the finished `ds:X509Data` as `keyInfoXml`. The vendored `xmldsig.js`
+is unchanged (rcbj's D8): `signEnveloped()` wraps a caller's `keyInfoXml`, and
+the general engine's `buildKeyInfo()` takes it as is and AHEAD of its `none`
+check, so `signXml()` wraps it on that path and passes nothing when
+`includeKeyInfo` is false. **The signer's own certificate stays FIRST** in
+every X509Data: XML Signature 1.1 section 4.5.4 sets no order, but this
+service's verifier and xml-crypto's `getCertFromKeyInfo` take the first.
+
+**Outside it, on purpose**: the SPIFFE trust bundle (its `x5c` IS the
+anchors), the SAML EncryptedKey's KeyInfo (the RECIPIENT's certificate, whose
+chain this service does not hold), a client certificate this service presents
+when dialling out, and the enrollment protocols' issued chains (ACME, EST,
+SCEP), which answer what each protocol asks. `tests/tls_presented_root.js`
+holds the function and every format.
+
 ## 3ab. `person_assertions.js`: a PERSON as an RFC 7523 issuer, and the one refusal it exists for
 
 Added 2026-09-11. `oauth-oidc/assertion_grant.js` accepted an assertion grant
@@ -10344,9 +10393,54 @@ because a leaf failing two at once hid two deleted checks in the first round:
 * for `tls-client`, that name is also the CN, which `issue()` writes from one
   username.
 
-A chain through NO held authority answers `issuedHere: false` and every door
-treats it exactly as before — that is an anchor somebody installed through
-`/admin-api/tls/trust`.
+A chain through NO held authority answers `issuedHere: false` — an anchor
+somebody installed through `/admin-api/tls/trust`, an OUTSIDE authority — and
+since #1061 it is an identity only as the entry STORING it (below).
+
+**AN OUTSIDE CERTIFICATE IS THE ONE ENTRY STORING IT (#1061, rcbj
+2026-10-27).** Until then every door that met one read a name off it — the CN
+at `/tls/sign-in` (and the handshake SEEDED `cn=<CN>,ou=users` through
+`certificatePlan()`), the RFC 4514 subject at SCIM, `certificatePlan()`'s CN at
+the XACML gates — and any authority an operator trusted could therefore name
+anybody. rcbj's rule, whole: it verifies against the truststore, passes
+revocation, and is byte for byte (the SHA-256 of its DER) a leaf stored in
+`userCertificate` (RFC 4523) on EXACTLY ONE entry of the request's realm. Never
+by CN or subject; no entry created or seeded; stored on two, refused; renewed,
+stored again. What carries it:
+
+* **ONE MAPPING, OPTED INTO.** `identityOf(input, { stored: true, realm })`
+  and `checkSocket(socket, { stored: true })` answer an outside leaf with
+  `storedIdentityOf()`: `outside: true`, and either `accepted`, `stored`,
+  `kind` (`person` or `application`), `username`, `dn`, `fingerprint`, or
+  `error` `NOT_STORED` / `STORED_TWICE`. `checkSocket()` turns the refusal into
+  `{ ok: false, error }`, so a door that checks `gate.ok` refuses it, and each
+  door marks its own two codes. Asked per call and never memoised (the memo
+  still says WHETHER a leaf is outside) — `currentHolderOf()`'s reason.
+  `stillHeld()` answers true for a stored identity: the lookup that made it one
+  is that question.
+* **WHO DOES NOT ASK.** RFC 8705 client authentication at the token endpoint
+  keeps the client's registered `tls_client_auth` metadata (rcbj on #1061), and
+  GNAP's key proof and the certificate-bound token read a certificate as a KEY,
+  not a person. Neither passes `stored`, so neither pays for the lookup nor sees
+  its answer; `mtls.js`, `client_auth.js` and `gnap/` are unchanged. PKINIT
+  (`kerberos/krb5_pkinit.ts`) is not a TLS door and binds by RFC 4556's
+  `id-pkinit-san`, which is not a CN match; it was left as it is.
+* **THE DIRECTORY THROUGH AN EXISTING SLOT.** `cert_enrollment.ts`'s
+  `certificateHolders(sha256)` forwards to `certificateHolders` on the
+  directory slot `ldap/ldap_server.js` already fills for this module's
+  `findEnrolled()` — the slot that answers "which entry is this certificate
+  on". A slot of its own would have passed rule 3e's test the same way (a
+  require of the JavaScript `ldap_server.js` drags its routes forward) and
+  added only an indirection, so none was added. The member is OPTIONAL in
+  `setDirectory()`: a test's stub without it maps no outside certificate to
+  anybody.
+* **THE ADMIN DOORS** (`admin-core/admin_actions.ts`): `add-certificate` and
+  `remove-certificate` on the Users resource and `storedCertificatesOf()` for
+  `GET /admin-api/users/certificates`. Storing refuses a certificate already on
+  ANOTHER entry (`STS-ADMIN-0899`) rather than creating the two-holder state
+  every door would then refuse with nothing on either page saying why; LDAP can
+  still create it, and the doors refuse it then. Each change says CAEP
+  credential-change `x509`.
 
 **THE REALM IS THE ISSUING CA'S.** A socket has no path to carry a realm, so
 `identityOf()` answers the realm of the authority that signed the leaf, and
@@ -11603,6 +11697,18 @@ stated in its header. `tests/sync_query.js`.
 
 
 ## 3ba. The mail channel: `mail.ts`, `mail_transports.ts`, `mail_templates.ts`, `mail_uses.ts` (#63, 2026-09-22)
+
+**A GROUP AS A RECIPIENT (#989, 2026-10-26).** `SendRequest.groupDn` names a
+group of this realm, and the address is the group's own `mail` attribute,
+read through the directory slot's `groupEntry(dn)` (filled by
+`ldap/ldap_server.js` beside `personEntry`). It is queued under the DN as
+the recipient key, so the dedup window, the ceilings and the outbox rows
+name the group; a group with no entry or no address is refused with the
+codes a person's would be (`STS-MAIL-0012`, `0011`). The rule the channel
+was built on holds: the address comes from the directory and never from
+the request. The one caller is the reports application's result notice
+(`report/CLAUDE.md`), which checks the address first and records its own
+code for a group without one.
 
 Until #63 this service had no way to tell a person anything. A reset link and
 an activation link were shown to an administrator to pass on by hand, and a

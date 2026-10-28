@@ -335,7 +335,10 @@ class CellChannel {
     log.debug("Leaving CellChannel.serverContextOptions().");
     return Object.assign(policy, {
       key: leaf.keyPem,
-      cert: [leaf.certPem].concat(leaf.chainPem).join('\n'),
+      // The leaf, its chain and the Root (#1064), as every listener here
+      // presents them — tls_server.js's presentedBundlePem().
+      cert: tlsServer.presentedBundlePem({ certPem: leaf.certPem,
+                                           chainPem: leaf.chainPem }),
       ca: [this.rootPem()]
     });
   }

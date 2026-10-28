@@ -24,6 +24,11 @@
 //      way (#117's rule), even while it is accepted; an event the policy does
 //      not permit ends nothing.
 //   D. A DISABLED POLICY decides nothing, and nothing is ended.
+//   G. WHAT A STATIC SURFACE HOLDS (#1042): a signal revokes the tokens the
+//      receiving surface's own client holds for the person — the console's,
+//      the portal's, the reports application's — narrowed to a named
+//      session and never a token issued after the event; and the reports
+//      application is a receiver of its own, its inbox narrowed per person.
 //   F. PRODUCT MODE REFUSES AN UNVERIFIED SET (#117) at the console's
 //      receiver, whatever ssf.receiveRequireSignature says; and there is no
 //      /ssf/receive in either mode (#593 deleted it; Express's own 404).
@@ -258,6 +263,26 @@ function childMain() {
     note(endedOf(byAdmin) === 1,
          'E4. an administrator\'s credential-change still ends the ' +
          'person\'s console session', JSON.stringify(byAdmin.entry.reactions));
+    // E4b (2026-10-27): a credential ADDED takes nothing away. A person
+    // created with a password and signed in within the same second lost
+    // that sign-in to the signal's delivery a moment later (run #4).
+    derived('sr-erin', 'sso-parent-2b');
+    const added = pushAbout('credential-change',
+      { format: 'iss_sub', iss: record.iss, sub: erin },
+      { initiating_entity: 'admin', credential_type: 'password',
+        change_type: 'create' });
+    note(endedOf(added) === 0 && !!(added.entry.reactions[0] || {}).skipped,
+         'E4b. a credential an administrator ADDED (change_type create) ' +
+         'ends nothing: nothing was taken away',
+         JSON.stringify(added.entry.reactions));
+    const swept = pushAbout('credential-change',
+      { format: 'iss_sub', iss: record.iss, sub: erin },
+      { initiating_entity: 'admin', credential_type: 'password',
+        change_type: 'update' });
+    note(endedOf(swept) === 1,
+         'E4c. and the session E4b left standing was there to end: an ' +
+         'update by an administrator ends it',
+         JSON.stringify(swept.entry.reactions));
     // E5 (2026-09-24): a session begun AFTER the event's second is not
     // about it — delivery is asynchronous, and the person may already have
     // signed in again with the new password. One begun within it is still
@@ -277,6 +302,141 @@ function childMain() {
          'E5. an administrator\'s credential-change from BEFORE a session ' +
          'began leaves it, and one from the second it began ends it',
          JSON.stringify([late.entry.reactions, current.entry.reactions]));
+
+    // --- G. what a static surface holds: its client's tokens (#1042) ------
+    // Since #446 and #568 the console and the portal are static
+    // applications holding tokens, and no relying-party session: C and E
+    // above drive the debugger-shaped sessions the call still ends. Here a
+    // signal revokes the tokens the receiving surface's OWN client holds for
+    // the person, and nothing else.
+    const stats = require(ROOT + '/common/admin_stats');
+    const cryptoNode = require('crypto');
+    const token = function (username, clientId, sessionId) {
+      const jti = 'sr-' + cryptoNode.randomBytes(8).toString('hex');
+      const now = Math.floor(Date.now() / 1000);
+      stats.recordJwt({ jti: jti, sub: String(helpers.subjectForName(username)),
+        username: username, client_id: clientId, iat: now, exp: now + 3600 },
+        '', { kind: 'access_token', sessionId: sessionId || '' });
+      return jti;
+    };
+    const revokedOf = function (answer) {
+      return ((answer.entry && answer.entry.reactions) || [])
+        .reduce(function (n, r) {
+          return n + (Number(r.revoked) || 0);
+        }, 0);
+    };
+    const erinConsole = token('sr-erin', 'sts-admin-console');
+    const erinPortal = token('sr-erin', 'sts-user-portal');
+    const erinReport = token('sr-erin', 'sts-report');
+    const frankConsole = token('sr-frank', 'sts-admin-console');
+    const g1 = pushAbout('credential-change',
+      { format: 'iss_sub', iss: record.iss, sub: erin },
+      { initiating_entity: 'admin', credential_type: 'password',
+        change_type: 'update' });
+    note(revokedOf(g1) === 1 && stats.isRevoked(erinConsole) &&
+         !stats.isRevoked(erinPortal) && !stats.isRevoked(erinReport) &&
+         !stats.isRevoked(frankConsole),
+         'G1. an administrator\'s credential-change about erin revokes the ' +
+         'token the CONSOLE\'s client holds for her, and not her portal or ' +
+         'reports token, nor anybody else\'s console token',
+         JSON.stringify([g1.entry.reactions, stats.isRevoked(erinConsole),
+                         stats.isRevoked(erinPortal),
+                         stats.isRevoked(frankConsole)]));
+    const g1bToken = token('sr-erin', 'sts-admin-console');
+    const g1b = pushAbout('credential-change',
+      { format: 'iss_sub', iss: record.iss, sub: erin },
+      { initiating_entity: 'admin', credential_type: 'password',
+        change_type: 'create' });
+    note(revokedOf(g1b) === 0 && !stats.isRevoked(g1bToken),
+         'G1b. a credential ADDED (change_type create) revokes no token',
+         JSON.stringify(g1b.entry.reactions));
+    const g2Token = token('sr-erin', 'sts-admin-console');
+    const g2 = pushAbout('credential-change',
+      { format: 'iss_sub', iss: record.iss, sub: erin },
+      { initiating_entity: 'admin', credential_type: 'password',
+        change_type: 'update',
+        event_timestamp: Math.floor(Date.now() / 1000) - 10 });
+    note(revokedOf(g2) === 0 && !stats.isRevoked(g2Token),
+         'G2. a token issued AFTER the event is left alone, as a session ' +
+         'begun after it is', JSON.stringify(g2.entry.reactions));
+    const inX = token('sr-erin', 'sts-admin-console', 'sso-x');
+    const inY = token('sr-erin', 'sts-admin-console', 'sso-y');
+    const g3 = pushAbout('session-revoked', bySession('sso-x'),
+                         { initiating_entity: 'user' });
+    note(stats.isRevoked(inX) && !stats.isRevoked(inY) &&
+         !stats.isRevoked(g2Token),
+         'G3. a session-revoked naming a sign-on session revokes only the ' +
+         'console tokens issued on it',
+         JSON.stringify([g3.entry.reactions, stats.isRevoked(inX),
+                         stats.isRevoked(inY)]));
+    // The reports application, the third receiver (#1042).
+    const reportRecord = receivers.streamFor('report');
+    note(!!reportRecord &&
+         receivers.surfaceOf(receivers.REPORT).audience === 'sts-report',
+         'G4. the reports application has a stream of its own, audienced ' +
+         'to sts-report', JSON.stringify(reportRecord &&
+                                         reportRecord.stream_id));
+    const toReport = receivers.acceptPolled('report', events.signSetSync(
+      events.buildSet({ uri: events.CAEP_PREFIX + 'credential-change',
+        issuer: record.iss, audience: 'sts-report',
+        subject: { format: 'iss_sub', iss: record.iss, sub: erin },
+        payload: { event_timestamp: Math.floor(Date.now() / 1000),
+                   initiating_entity: 'admin', credential_type: 'password',
+                   change_type: 'update' } })));
+    note(toReport.status === 202 && toReport.entry.verified &&
+         revokedOf(toReport) === 1 && stats.isRevoked(erinReport) &&
+         !stats.isRevoked(erinPortal),
+         'G5. delivered to the reports application, it revokes the token ' +
+         'sts-report holds for erin, and not her portal token',
+         JSON.stringify([toReport.status, toReport.entry.reactions]));
+    note(receivers.listFor('report', {}).length >= 1 &&
+         receivers.listFor('report', { person: { username: 'sr-frank',
+           sub: frank, mail: '' } }).length === 0 &&
+         receivers.listFor('report', { person: { username: 'sr-erin',
+           sub: erin, mail: '' } }).length >= 1,
+         'G6. the reports inbox holds the signal; narrowed to a person it ' +
+         'is shown to erin and not to frank');
+    // G7, G8 (2026-10-27): a RISC account-disabled about a person who is
+    // ENABLED now was superseded — the disable ended what it had to end
+    // when it happened — so it revokes nothing; about a person who is
+    // disabled it still does. `sts_second_factor_doors` disables, enables
+    // and signs the person in within one second.
+    const pushRisc = function (short, subject, payload) {
+      const claims = events.buildSet({ uri: events.RISC_PREFIX + short,
+        issuer: record.iss, audience: 'sts-admin-console',
+        subject: subject,
+        payload: Object.assign({ event_timestamp:
+          Math.floor(Date.now() / 1000) }, payload || {}) });
+      return receivers.acceptPolled('admin-console',
+                                    events.signSetSync(claims));
+    };
+    const g7Token = token('sr-erin', 'sts-admin-console');
+    const g7 = pushRisc('account-disabled',
+      { format: 'iss_sub', iss: record.iss, sub: erin }, {});
+    note(revokedOf(g7) === 0 && !stats.isRevoked(g7Token),
+         'G7. an account-disabled about a person who is ENABLED now ' +
+         'revokes nothing: a later enable superseded it',
+         JSON.stringify(g7.entry.reactions));
+    const accountState = require(ROOT + '/common/account_state');
+    let disabledOk = false;
+    try {
+      const act = accountState.setDisabled('sr-erin', true, { by: 'test' });
+      disabledOk = !!(act && act.ok !== false);
+    } catch (e) {
+      log.debug("Caught in run(): " + ((e && e.message) || e));
+      disabledOk = false;
+    }
+    const g8Token = token('sr-erin', 'sts-admin-console');
+    const g8 = pushRisc('account-disabled',
+      { format: 'iss_sub', iss: record.iss, sub: erin }, {});
+    note(disabledOk && revokedOf(g8) === 1 && stats.isRevoked(g8Token),
+         'G8. and about a person who IS disabled it revokes the console ' +
+         'token', JSON.stringify([disabledOk, g8.entry.reactions]));
+    try {
+      accountState.setDisabled('sr-erin', false, { by: 'test' });
+    } catch (e) {
+      log.debug("Caught in run(): " + ((e && e.message) || e));
+    }
 
     // --- D. a disabled policy ----------------------------------------------
     const written = xacmlStore.write('signal-response',

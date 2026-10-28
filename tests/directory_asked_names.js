@@ -119,7 +119,13 @@ function namesAsked(t) {
      /const SAML_ISSUER_ATTRIBUTE = '([^']+)'/],
     ['common/person_assertions.js', /present: '(stsAssertion[^']+)'/],
     ['common/person_assertions.js', /present: '(stsSaml[^']+)'/],
-    ['scim/scim_auth.ts', /HOBA_ATTRIBUTE = '([^']+)'/]
+    ['scim/scim_auth.ts', /HOBA_ATTRIBUTE = '([^']+)'/],
+    // The reports application's recovery-codes mechanism (#1024) asks the
+    // holders of the recovery code set through this constant's name.
+    ['common/credentials.ts', /BACKUP_CODES_ATTRIBUTE = '([^']+)'/],
+    // The reports' `status equals locked` (#1028) asks the holders of the
+    // lock through this constant's name.
+    ['report/sources.ts', /LOCK_ATTRIBUTE = '([^']+)'/]
   ];
   constants.forEach(function (one) {
     const name = captured(one[0], one[1]);

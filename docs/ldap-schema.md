@@ -90,7 +90,7 @@ All the inetOrgPerson attributes (RFC 2798, RFC 4519) can be stored, and
 |---|---|
 | `uid`, `cn`, `sn`, `givenName`, `displayName`, `mail` | the person. In development mode an auto-created entry gets invented values; product mode invents none |
 | `userPassword` | **scrypt hash** (`$scrypt$N$r$p$salt$hash`), hashed on every write including an LDAP modify. Withheld from reads in product mode |
-| `userCertificate` | standard, but not what this service writes for a presented certificate (see `x509*`) |
+| `userCertificate` | RFC 4523, stored as `userCertificate;binary` (base64 DER). A certificate from an outside certificate authority is an identity only as the one entry storing it here, byte for byte ([TLS](tls.md#a-certificate-from-an-outside-certificate-authority)). Written by **Stored certificates** on a person's console page, `POST /admin-api/users/add-certificate` and `remove-certificate`, or an LDAP modify. Looked up by the SHA-256 of the DER, which the store indexes |
 | `title`, `employeeType`, `telephoneNumber`, `mobile`, `street`, `l`, `st`, `postalCode`, `c`, `postalAddress`, `o`, `ou`, `departmentNumber`, `employeeNumber`, `preferredLanguage`, `labeledURI`, `manager` | released as claims (`oid4vc/vc_claims.ts`) and mapped by SCIM (`scim/scim_map.ts`) |
 | `schacDateOfBirth`, `schacCountryOfCitizenship`, `schacPersonalTitle` | SCHAC names, released as `birthdate`, `nationalities`, `title` |
 | `salutation`, `birthFamilyName`, `birthGivenName`, `birthMiddleName`, `alsoKnownAs`, `placeOfBirthCountry`, `placeOfBirthRegion`, `placeOfBirthLocality` | this service's own, for Identity Assurance claims |
@@ -150,7 +150,7 @@ uploaded instead.
 | Attribute | Meaning |
 |---|---|
 | `authnMethod`, `mfaAuthenticated`, `mfaLastAuthTime` | how they last authenticated, where the protocol said. `mfaLastAuthTime` is never cleared |
-| `x509subject`, `x509issuer`, `x509serialNumber`, `x509notBefore`, `x509notAfter`, `x509fingerprint256` | a verified client certificate, or an issued X509-SVID |
+| `x509subject`, `x509issuer`, `x509serialNumber`, `x509notBefore`, `x509notAfter`, `x509fingerprint256` | a verified client certificate this service issued, or an issued X509-SVID. Entries made from an outside certificate's subject before #1061 keep theirs; none is made now |
 | `x509svidsIssued`, `x509firstIssued`, `x509lastIssued` | X509-SVIDs only: how many have been issued, and since when |
 | `didSubject`, `didMethod` | the DID this entry is. The entry is found by `didSubject` |
 | `spiffeSubject`, `spiffePath`, `spiffeTrustDomain` | the SPIFFE ID that authenticated. **These are not the same as `spiffeId`** on a registration entry |
@@ -284,7 +284,10 @@ console's client, `sts-admin-console`, on everybody who signs in to the console 
 groups `ssf-read` and `ssf-manage` are stored on `roleMemberGroup`, created empty when missing and never
 overwritten. A person is issued the scope only while they belong to the role's group and the application is a
 member; an application's own token needs the application to be a member. `SSF_MANAGE` does not authorize
-`ssf.read`. None of the six can be
+`ssf.read`. Two more, `REPORT_USE` and `REPORT_ADMIN` (#1030), authorize `report:use` and `report:admin`
+through the groups `report-users` and `report-admins`, stored and seeded the same way; a person is issued the
+scope while they are in the group or a direct member, and an application while it is a member, with no
+condition on the application the person signs in to. None of the eight can be
 deleted, and their permissions are fixed. A role only applications may hold, and the two console roles, cannot be
 conferred. The service also computes eight
 built-in roles that are not stored: EVERYBODY, ALL_AUTHENTICATED_USERS, ALL_UNAUTHENTICATED_USERS,

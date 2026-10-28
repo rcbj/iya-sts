@@ -280,7 +280,20 @@ async function runModule(planId, module, onWaiting) {
             encodeURIComponent(planId) +
             (module.variant ? "&variant=" +
              encodeURIComponent(JSON.stringify(module.variant)) : "");
-  const created = await suite("POST", "api/runner?" + q);
+  let created = await suite("POST", "api/runner?" + q);
+  // THE SUITE'S OWN RACE (2026-10-26): a module stopped for its deadline
+  // below is still being stopped when the next one is created, and the
+  // runner can answer that creation with "setStatus() called but status is
+  // the same: INTERRUPTED -> INTERRUPTED". t-jwt-cl lost every module after
+  // one timed out that way. The stop is waited on below, and a creation that
+  // still meets it is made again once.
+  if (created.status !== 201 && created.status !== 200 &&
+      /setStatus\(\) called/.test(created.raw)) {
+    log.info("The suite was still stopping a module; creating " +
+             module.testModule + " again.");
+    await waitMs(5000);
+    created = await suite("POST", "api/runner?" + q);
+  }
   assert.ok(created.status === 201 || created.status === 200,
             "creating " + module.testModule + ": " + created.raw.slice(0, 300));
   const id = created.body.id;
@@ -310,7 +323,26 @@ async function runModule(planId, module, onWaiting) {
       }
     }
     if (Date.now() > deadline) {
+      // WHAT IT WAS WAITING ON, before it is stopped: a hang is otherwise
+      // a bare TIMED OUT. oidcc-claims-essential timed out once in
+      // t-jwt-cl on 2026-10-26 with nothing in either log to say why.
+      const runner = (await suite("GET", "api/runner/" + id)).body || {};
+      const held = runner.browser || {};
+      log.info("  " + module.testModule + " timed out " + info.status +
+               (info.status === "WAITING" ? "" : " (not waiting)") +
+               "; the browser was asked for " +
+               JSON.stringify(held.urls || []) + " and visited " +
+               JSON.stringify(held.visited || []));
       await suite("DELETE", "api/runner/" + id);
+      // Until the suite has finished stopping it, so the next creation does
+      // not meet the stop (see the creation above). Thirty seconds at most.
+      for (let i = 0; i < 15; i++) {
+        const now = (await suite("GET", "api/info/" + id)).body || {};
+        if (now.status === "INTERRUPTED" || now.status === "FINISHED") {
+          break;
+        }
+        await waitMs(2000);
+      }
       info = Object.assign({}, info, { status: "TIMED OUT" });
       break;
     }
@@ -352,7 +384,17 @@ async function runPlan(planName, variant, configuration, label, onWaiting) {
   const results = [];
   const modules = created.body.modules || [];
   for (let i = 0; i < modules.length; i++) {
-    const got = await runModule(created.body.id, modules[i], onWaiting);
+    let got = await runModule(created.body.id, modules[i], onWaiting);
+    // ONE MORE RUN FOR A MODULE THAT TIMED OUT (2026-10-26). The one hang
+    // seen, in one plan of twenty-four, left nothing on the service and no
+    // error from the browser, so it is taken to be the suite's or the
+    // browser's; a module that hangs again is reported as it was. A FAILED
+    // or a WARNING is never run again: those are verdicts.
+    if (got.status === "TIMED OUT") {
+      log.info("  " + label + " " + got.module + ": TIMED OUT; running " +
+               "it once more.");
+      got = await runModule(created.body.id, modules[i], onWaiting);
+    }
     log.info("  " + label + " " + got.module + ": " +
              (got.result || got.status) +
              (got.failures.length ? " — " + got.failures[0].src + ": " +

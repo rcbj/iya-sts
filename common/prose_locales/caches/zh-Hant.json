@@ -1451,6 +1451,22 @@
     "en": "7e34d7e487ace8d1",
     "text": "不會過期：被取代的 Issuing CA 會改變鍵。滿時一次清空整個備忘錄。"
   },
+  "caches.store.tls.ticket-names.title": {
+    "en": "45b312c79e1fc669",
+    "text": "TLS 1.2 票證名稱，用於恢復的工作階段"
+  },
+  "caches.store.tls.ticket-names.description": {
+    "en": "57d1e55a310de728",
+    "text": "完整 TLS 1.2 交握所使用的伺服器名稱，以該工作階段主密鑰的摘要為鍵，在該工作階段透過票證恢復時進行比較（#507，RFC 6066 第 3 節）：node 在 OpenSSL 內部恢復票證而不觸發任何事件，OpenSSL 也不比較名稱。在另一名稱下的恢復，或沒有任何記錄為其擔保的恢復，會在交握後被關閉。每個接聽器也保留自己的副本，並以同樣方式設限。"
+  },
+  "caches.store.tls.ticket-names.bound": {
+    "en": "fbeee6f2caab2df9",
+    "text": "強制：4096 個工作階段；先清除已過期的列，然後是最舊的列。"
+  },
+  "caches.store.tls.ticket-names.lifetime": {
+    "en": "f016ce1d11af0c30",
+    "text": "由每個節點共用並複寫：接聽器的工作階段存續期（tls.sessionTimeoutS），即票證的存續期。"
+  },
   "caches.store.vc-api.issued.title": {
     "en": "146ad69e9e6c821f",
     "text": "具有狀態的 VC-API 憑證"

@@ -806,8 +806,10 @@ function page(realm, baseKey, afterKey, limit, options) {
 // ---------------------------------------------------------------------------
 const ASKED_ATTRIBUTES = Object.freeze([
   'federationlink', 'hobapublickey', 'memberof', 'oauthconsent',
+  'pwdaccountlockedtime',
   'stsacmeeabkey', 'stsandroidattestedcredential', 'stsassertionissuer',
-  'stsassertionjwks', 'stscertificatehostname', 'stsclaimsourcetokens',
+  'stsassertionjwks', 'stsbackupcodes', 'stscertificatehostname',
+  'stsclaimsourcetokens',
   'stsdefaultdelegationsemantics', 'stsdelegationsemantics',
   'stsdeviceandroidkey', 'stsdevicekey', 'stsenrolledcertificate',
   'stsenrolledprivatekey', 'stskrb5keyinfo', 'stskrb5keys', 'stsmailfactor',
@@ -961,6 +963,61 @@ function countHolding(realm, baseKey, attribute) {
  * @param names - the names; each `{ key, rdn }` once keyed
  * @returns the statement
  */
+// THE DIRECTORY'S TWO DATES AS A RANGE (#1028, rcbj: "index unencrypted
+// fields that can be used as filters"): `created_at` and `modified_at` are
+// text in RFC 4517 generalized time (`20260827192200Z`, fixed width, UTC),
+// so a B-tree over them sorts chronologically and a range is two
+// comparisons. The index is (realm, parent_key, column), so the children of
+// one realm's `ou=users` in one span are read in order and nothing else is
+// touched. `lo` is inclusive and `hi` exclusive, both in that format; the
+// caller spells a `<=` as the next second's `<`.
+// THE STATEMENT REPEATS THE INDEX'S CONDITION (`USERS_PARENT`), found on
+// 8081: PostgreSQL uses a partial index only when it can prove the query
+// implies the index's WHERE, and it cannot prove `parent_key = $2` implies
+// `parent_key LIKE 'ou=users,%'`, so without it the plan was a sequential
+// scan of fifty million rows (cost 11.3M; with it, 8.6).
+function timeBetween(column, realm, parentKey, lo, hi, limit) {
+  return { text: 'SELECT ' + COLUMNS + ' FROM sts_ldap_entries WHERE ' +
+                 'realm = $1 AND parent_key = $2 AND ' + USERS_PARENT +
+                 ' AND ' + column +
+                 ' >= $3 AND ' + column + ' < $4 ORDER BY ' + column +
+                 ', dn_key LIMIT $5',
+           values: [String(realm), String(parentKey), String(lo || ''),
+                    String(hi || '99999999999999Z'), pageSize(limit)] };
+}
+
+/**
+ * The entries under a parent created in a span of generalized time.
+ *
+ * @param realm - the realm id
+ * @param parentKey - the parent's normalised DN
+ * @param lo - the first creation time taken, inclusive, or ''
+ * @param hi - the first creation time left out, or '' for no bound
+ * @param limit - at most this many (at most 1,000)
+ * @returns the statement
+ */
+function createdBetween(realm, parentKey, lo, hi, limit) {
+  log.debug("Entering createdBetween().");
+  log.debug("Leaving createdBetween().");
+  return timeBetween('created_at', realm, parentKey, lo, hi, limit);
+}
+
+/**
+ * The entries under a parent last changed in a span of generalized time.
+ *
+ * @param realm - the realm id
+ * @param parentKey - the parent's normalised DN
+ * @param lo - the first change time taken, inclusive, or ''
+ * @param hi - the first change time left out, or '' for no bound
+ * @param limit - at most this many (at most 1,000)
+ * @returns the statement
+ */
+function modifiedBetween(realm, parentKey, lo, hi, limit) {
+  log.debug("Entering modifiedBetween().");
+  log.debug("Leaving modifiedBetween().");
+  return timeBetween('modified_at', realm, parentKey, lo, hi, limit);
+}
+
 function withNames(realm, parentKey, names) {
   log.debug("Entering withNames().");
   const list = Array.isArray(names) ? names : [];
@@ -1065,6 +1122,33 @@ function countWithAttribute(realm, baseKey, attribute) {
                  'realm = $1 AND ' + underClause(2, 4, false) + ' AND ' +
                  holdsClause(name, 3),
            values: [String(realm), String(baseKey), name,
+                    suffixLength(baseKey)] };
+}
+
+/**
+ * How many entries under a base hold an attribute, counted no further than
+ * `limit` (#1002): the count of the first `limit` holders, so the answer is
+ * `limit` when at least that many hold it. A caller asking "more than my
+ * cap?" pays for the cap and not for the holders — on 8081 the whole count
+ * of a million Kerberos key holders took a minute, and the question was
+ * whether there were more than five hundred.
+ *
+ * @param realm - the realm id
+ * @param baseKey - the base's normalised DN
+ * @param attribute - the attribute name, lower-cased as stored
+ * @param limit - count no further than this many (at least 1)
+ * @returns the statement; its one row's `n` is the bounded count
+ */
+function countWithAttributeUpTo(realm, baseKey, attribute, limit) {
+  log.debug("Entering countWithAttributeUpTo().");
+  const name = String(attribute).toLowerCase();
+  const most = Math.max(1, Math.floor(Number(limit) || 0));
+  log.debug("Leaving countWithAttributeUpTo().");
+  return { text: 'SELECT count(*)::bigint AS n FROM (SELECT 1 AS one FROM ' +
+                 'sts_ldap_entries WHERE realm = $1 AND ' +
+                 underClause(2, 5, false) + ' AND ' + holdsClause(name, 3) +
+                 ' LIMIT $4) AS held',
+           values: [String(realm), String(baseKey), name, most,
                     suffixLength(baseKey)] };
 }
 
@@ -1378,7 +1462,7 @@ function answerOf(name, rows) {
   log.debug("Entering answerOf().");
   const list = Array.isArray(rows) ? rows : [];
   if (name === 'count' || name === 'realmCount' || name === 'rdnCount' ||
-      name === 'countWithAttribute') {
+      name === 'countWithAttribute' || name === 'countWithAttributeUpTo') {
     log.debug("Leaving answerOf(). A count.");
     return Number((list[0] || {}).n || 0);
   }
@@ -1450,8 +1534,11 @@ const QUERIES = {
   hasChild: hasChild,
   withAttribute: withAttribute,
   countWithAttribute: countWithAttribute,
+  countWithAttributeUpTo: countWithAttributeUpTo,
   withAttributeAt: withAttributeAt,
   withNames: withNames,
+  createdBetween: createdBetween,
+  modifiedBetween: modifiedBetween,
   anyWithAttribute: anyWithAttribute,
   classesUnder: classesUnder,
   namesUnder: namesUnder,
@@ -1512,8 +1599,11 @@ module.exports = {
   hasChild: hasChild,
   withAttribute: withAttribute,
   countWithAttribute: countWithAttribute,
+  countWithAttributeUpTo: countWithAttributeUpTo,
   withAttributeAt: withAttributeAt,
   withNames: withNames,
+  createdBetween: createdBetween,
+  modifiedBetween: modifiedBetween,
   anyWithAttribute: anyWithAttribute,
   classesUnder: classesUnder,
   namesUnder: namesUnder,

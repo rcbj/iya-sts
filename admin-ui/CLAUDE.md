@@ -258,6 +258,18 @@ It also reads the SESSION store, which `../authn/authn.ts` owns.
    form on either of those pages needs `carryBack` in it**, or an edit made
    through it silently costs the reader their place in the list.
 
+   **A PAGE SHOWN ONCE GETS AN `up` TOO (#1068).** A generated password, a
+   keytab, a new realm's credentials: `WebAnswers.once()` draws them in place,
+   and with no `up` the section was the last crumb, which is never a link. So
+   the page after Create user had no way back to Users. `ConsoleRuntime` now
+   hands the shell `once.up || { href: active, leaf: title }`. A page about a
+   person (a create, a credential reset) answers
+   `WebAnswers.personTrail()`, whose `via` puts the person between the section
+   and the leaf. `via` is a list of `{ label, href }` crumbs that
+   `trailBar()` draws as links; the leaf after them still is not a link. Every
+   value such a page shows once goes through `WebAnswers.secretBlock()`, which
+   puts `WebKit.copyButton()` under it.
+
    **A NEW DRILL-DOWN NEEDS `up` AND NOTHING CAN CHECK THAT IT HAS ONE**, the same
    gap rule 7 describes: no code here can see a page appear. The four are
    `?user=`, `?group=`, `?application=` and `?profile=`, and every branch of those
@@ -1033,6 +1045,28 @@ than a value, so printing them leaks nothing — but on a page whose subject is
 what somebody just typed, beside the one-time value itself, a second opaque
 string is noise a reader has to work out. `/admin/ldap/directory` still shows
 both in full, because what THAT page is for is exactly what the store holds.
+
+### Required fields are outlined, and every refusal floats (#1066)
+
+**The username box stays at the top of the form, and `uid` gets no cell in the
+grid.** rcbj first asked for a `uid` cell in the simplified view, then
+withdrew it: the username at the top IS the `uid`, and the note under it says
+so. That note also stopped calling the username *the only required field*,
+because the attribute policy always requires `cn` and `sn` as well.
+
+**A field the attribute policy requires carries `fg-required`.** That is a red
+rule and an asterisk, drawn by the shared `fieldGridCell()`, so a person's
+Attributes tab outlines the same fields. The cell says *required* in words as
+well, so the colour is never the only sign. The tile counts
+`requiredAttributes` (`uid`, `cn` and `sn` always, then the realm's own); it was
+a constant 1. **Every refusal on a Directory → Users page or tab floats**
+(rcbj). It goes through `WebKit.refusalBanner()`: the application pages'
+`kit.flash()` warning, a heading and the reasons as a list. That covers a
+create, a Fill, the Service account tab's owners and destination, and the shared
+owner-protection block, so the Groups, Roles and Applications Owners tabs float
+too. A refusal that comes back as `?error=` already floated, through
+`ConsoleRuntime.draw()`. **A new in-place refusal on these pages uses the
+helper, not `kit.warn()`.**
 
 ### Two forms post `action=create` and only one carries it as a button
 
@@ -7099,6 +7133,20 @@ copied, since an app password is the third secret that exists once and must
 never ride a redirect's query string. The three settings are in the existing
 *Second-factor requirement* group, so `SETTING_HOMES` gained no row.
 `authn/CLAUDE.md` owns the rule; `mgmt-api/CLAUDE.md` has the API twin.
+
+## A PERSON'S STORED CERTIFICATES ON `/admin/users` (#1061, 2026-10-27)
+
+A **Stored certificates** block on the person's Credentials tab lists what
+their entry stores in `userCertificate` (`GET /admin-api/users/certificates`:
+SHA-256, subject, issuer, serial, validity, expired), with **Remove** per row
+(`remove-certificate`, by SHA-256) and a PEM box with **Store**
+(`add-certificate`) — the same `usersAction()` acts the API reaches, so rule 7
+holds by construction; Admin Write for either. It exists because a
+certificate from an outside authority signs its holder in only while it is
+stored on their entry and no other (`common/CLAUDE.md` 3ag), so this is where
+an operator says ahead of time which certificate is whose. The Attributes
+tab's editor still does not offer `userCertificate`: its value is binary, and
+this block is its door. `mgmt-api/CLAUDE.md` has the API twin.
 
 ## `/admin/mail` AND `/admin/mail/outbox`: THE MAIL CHANNEL'S TWO PAGES (2026-09-22, #63)
 

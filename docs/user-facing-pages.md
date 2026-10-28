@@ -105,7 +105,11 @@ portal needs JavaScript; with scripts blocked it says so and shows nothing.
 Refresh and Sign out, and on the pages drawn for nobody (activation, a
 password reset, address verification). The Overview has a **Language and
 region** card: it sets the person's own `preferredLanguage`, or removes it
-to follow the browser. Error text stays English.
+to follow the browser. Error text stays English. Its **Times you have signed
+in** is the service's own count of this person's accepted sign-ins, the same
+figure the admin console's user page shows; in product mode it is read from
+the store, so it survives a restart of the service and is not bounded by what
+one process keeps in memory.
 
 **Sign out** in the header ends the sign-on session, and with it the
 portal's tokens. A person signed in to the admin console is signed in to the

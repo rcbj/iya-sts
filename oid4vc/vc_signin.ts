@@ -1273,7 +1273,8 @@ class VcSignin {
                                   'enrolled with a wallet', 'self (SIOPv2)',
                                   { proof: siop.PROOF_WALLET,
                                     pinnedKeys: outcome.pinnedKeys || [],
-                                    location: VcSignin.locationOf(tx) });
+                                    location: VcSignin.locationOf(tx),
+                                    keyAlg: String(outcome.alg || '') });
       this.auditEnrolment(username, String(outcome.subject), tx,
                           enrolled.ok ? '' : 'STS-VC-0094',
                           enrolled.ok ? '' : String(enrolled.error),

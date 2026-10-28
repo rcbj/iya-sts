@@ -4787,6 +4787,14 @@
     "en": "d75340dbe09a7542",
     "text": "Indica si un JWT que devuelve este STS en un RequestSecurityTokenResponse nombra la cadena de certificados de la clave que lo firmó. Una aserción SAML lleva su certificado en su propia XML Signature y no se ve afectada. `x5u` — el predeterminado — es la dirección de la cadena en este servicio, `/pki/chain/{scope}/{sha256}.pem`, de unos cien bytes; `x5c` es la cadena en línea, primero la hoja y al final la raíz del servicio, en DER base64, de varios kilobytes; `both` es ambos y `none` ninguno. En cualquier caso, es lo que necesita una parte que confía que solo tiene el token para llegar a los puntos de distribución de CRL, al respondedor OCSP y a la dirección caIssuers de cada certificado. Una clave aún no certificada bajo la CA emisora JOSE de este dominio, y una firma HMAC, no reciben ninguno. RFC 7515 sección 4.1.5 exige que la obtención de `x5u` use TLS: con global.https desactivado la dirección es `http://` y un verificador estricto se negará a seguirla. Los encabezados JWE nunca reciben uno — ninguna clave certificada de este servicio cifra nada. Configurable por dominio."
   },
+  "wstrust.acceptClientCertificate|label": {
+    "en": "04ac29464750e625",
+    "text": "Aceptar el certificado de cliente TLS como credencial del solicitante"
+  },
+  "wstrust.acceptClientCertificate|description": {
+    "en": "23d9a8fba459f61c",
+    "text": "Indica si una solicitud a /sts cuya cabecera wsse:Security no lleva ninguna credencial autentica a su solicitante mediante el certificado de cliente TLS de la conexión. Solo es una credencial un certificado que se verificó en el protocolo de enlace y que este dominio emitió a una persona o a una aplicación (un certificado de cliente TLS del portal de usuario o de las Credentials de la aplicación, o uno inscrito por ACME, EST o SCEP), en ambos modos; uno revocado, uno de otro dominio y uno que su titular ya no tiene se rechazan con wst:FailedAuthentication. El token emitido indica que se usó un certificado: TLSClient en una aserción SAML 2.0, urn:ietf:rfc:2246 en una SAML 1.1, amr swk en un JWT. Desactivado, el certificado se ignora aquí."
+  },
   "wsfed.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
     "text": "Inicio de sesión iniciado por el proveedor de identidad"
@@ -4996,16 +5004,16 @@
     "text": "LDAPS: no pedir certificado de cliente"
   },
   "ldap.ldapsDisableOptionalClientCertificate|description": {
-    "en": "7e1993d7f889bc3c",
-    "text": "LDAPS no envía CertificateRequest. ACTIVADO de forma predeterminada, que es lo que LDAPS siempre hizo: un bind es la forma en que un cliente de directorio dice quién es, y una solicitud de certificado delante de todo cliente que tenga uno es una sorpresa. Desactivado pide un certificado a cada conexión y no exige ninguno; un certificado presentado se verifica contra el almacén de confianza de clientes pero no hace bind de nadie (aquí no hay SASL EXTERNAL)."
+    "en": "7c1815ed4a7499c4",
+    "text": "LDAPS no envía ningún CertificateRequest. ACTIVADO por defecto, que es lo que LDAPS siempre hizo: un bind es la forma en que un cliente de directorio dice quién es, y pedir un certificado a todo cliente que tenga uno es una sorpresa. Desactivado, pide un certificado a cada conexión y no exige ninguno; un certificado presentado se verifica contra el almacén de confianza de clientes, y una conexión que lleve uno que este servicio emitió a una persona puede hacer bind como esa persona con SASL EXTERNAL."
   },
   "ldap.ldapsRequireClientCertificate|label": {
     "en": "eff4646ac01e4612",
     "text": "LDAPS: exigir un certificado de cliente"
   },
   "ldap.ldapsRequireClientCertificate|description": {
-    "en": "2c73995bcc16b3fa",
-    "text": "LDAPS rechaza, en el handshake, toda conexión que no presente un certificado de cliente que encadene con el almacén de confianza de clientes — una segunda barrera delante del bind, que sigue decidiendo quién es la conexión. Prevalece sobre el interruptor de arriba. Desactivado de forma predeterminada."
+    "en": "cfadc0b97c1bfaa8",
+    "text": "LDAPS rechaza, en el protocolo de enlace, toda conexión que no presente un certificado de cliente que encadene al almacén de confianza de clientes: una segunda barrera delante del bind, que sigue decidiendo quién es la conexión: una contraseña, o SASL EXTERNAL con un certificado que este servicio emitió a una persona. Prevalece sobre la opción anterior. Desactivado por defecto."
   },
   "debugger.disableOptionalClientCertificate|label": {
     "en": "df19c772421bba66",
@@ -6592,8 +6600,8 @@
     "text": "Ofrecer certificados de cliente TLS"
   },
   "scim.authClientCert|description": {
-    "en": "be5e7d5ccffce8c1",
-    "text": "TLS mutuo, el primer esquema que nombra RFC 7644 sección 2. Se aplica solo cuando la solicitud llegó por TLS con un certificado que se VERIFICÓ contra el almacén de confianza de clientes (/admin/tls/trust), así que solo cuando global.https está activado. Fue el primer lugar de este servicio en que un certificado de cliente era una CREDENCIAL y no una observación; aquí autentica a alguien que luego puede escribir en el directorio."
+    "en": "0a6d722dc96ad17f",
+    "text": "TLS mutuo, el primer esquema que nombra RFC 7644 sección 2. Se aplica solo cuando la solicitud llegó por TLS con un certificado que se VERIFICÓ contra el almacén de confianza de clientes (/admin/tls/trust), así que solo cuando global.https está activado. Fue el primer lugar de este servicio en que un certificado de cliente era una CREDENCIAL y no una observación. Un certificado que este dominio emitió a una APLICACIÓN solo puede hacer lo que declara el oauthAllowedScope de esa aplicación: el ámbito de lectura para leer y el de escritura para escribir, consultado en cada solicitud (STS-SCIM-0083). El certificado de una persona —emitido por este dominio, o de una autoridad de certificación externa y almacenado en userCertificate en la entrada de esa persona (#1061)— puede leer y escribir en el directorio."
   },
   "scimClient.attempts|label": {
     "en": "babe2e714439f7c0",
@@ -7067,17 +7075,25 @@
     "en": "34a196af42de2673",
     "text": "Si los endpoints de SSF aceptan HTTP Basic además de tokens de acceso de OAuth 2.0, y lo publican en authorization_schemes. En desarrollo pasa cualquier nombre de usuario con cualquier contraseña salvo «invalid»; en modo producto la contraseña se verifica contra el userPassword con hash de la persona. En cualquier caso un principal Basic tiene ambos ámbitos, porque Basic no lleva ninguno — así que un despliegue que quiera ssf.read y ssf.manage aplicados a todo llamante desactiva esto."
   },
+  "ssf.authClientCert|label": {
+    "en": "ad5fbafbb2ac1812",
+    "text": "Ofrecer certificados de cliente TLS"
+  },
+  "ssf.authClientCert|description": {
+    "en": "73d4ba2aa33adad2",
+    "text": "Indica si los endpoints SSF aceptan un receptor autenticado por el certificado de cliente TLS de su conexión, sin encabezado Authorization, y publican urn:ietf:rfc:8705 en authorization_schemes. Solo se acepta un certificado que este dominio emitió a una aplicación y que la aplicación aún conserva; el receptor es esa aplicación y es dueño de los flujos que crea, y tiene los ámbitos de Shared Signals que declara su oauthAllowedScope y que autorizan sus roles SSF_READ y SSF_MANAGE."
+  },
   "ssf.internalReceivers|label": {
-    "en": "8eca3281fa7a4ef7",
-    "text": "Registrar la consola y el portal como receptores"
+    "en": "7e760a8d68a5e030",
+    "text": "Registrar la consola, el portal y los informes como receptores"
   },
   "ssf.internalReceivers|description": {
-    "en": "1a148e2b3a63a17d",
-    "text": "Si este servicio siembra un flujo de Shared Signals para su PROPIA consola de administración y su portal de usuario, de modo que cada uno reciba todos los eventos CAEP y RISC (recogiéndolos mediante sondeo de RFC 8936 del /ssf/poll de este servicio cada ssf.internalPollMs, #771) y dibuje lo que llegó en /admin/signals y /portal/signals. Son flujos NORMALES — pause uno, redúzcalo o elimínelo en /admin/ssf y quedará así hasta un reinicio."
+    "en": "0a23fbb0f030f814",
+    "text": "Indica si este servicio crea un flujo de Shared Signals para su PROPIA consola de administración, su portal de usuario y su aplicación de informes (#1042), de modo que cada uno reciba todos los eventos CAEP y RISC —recogiéndolos por sondeo RFC 8936 desde el /ssf/poll de este servicio cada ssf.internalPollMs (#771)— y muestre lo recibido en /admin/signals, /portal/signals y /report/signals. Son flujos ORDINARIOS: pause uno, restrínjalo o elimínelo en /admin/ssf y se mantendrá así hasta un reinicio."
   },
   "ssf.internalReceivers|restartReason": {
-    "en": "75c18a7223a2e0a3",
-    "text": "los dos flujos se siembran cuando se carga ssf/ssf.ts con require y de nuevo al construirse cada dominio, así que desactivar esto en caliente dejaría los flujos que ya existen y activarlo no crearía ninguno"
+    "en": "eb2b8e34bd6ee85c",
+    "text": "los tres flujos se crean al cargarse ssf/ssf.ts y de nuevo al construirse cada dominio, así que desactivarlo en caliente dejaría los flujos existentes y activarlo no crearía ninguno"
   },
   "ssf.internalPollMs|label": {
     "en": "245d4495769ca599",
@@ -7156,8 +7172,8 @@
     "text": "Eventos recibidos conservados"
   },
   "ssf.maxReceivedEvents|description": {
-    "en": "2c503bd8b26764ea",
-    "text": "Cuántos SET entregados conserva en su bandeja de entrada cada uno de los receptores propios de este servicio (el de la consola y el del portal), por dominio de confianza; superado este número se descartan los más antiguos."
+    "en": "4c285fbb0b900559",
+    "text": "Cuántos SET entregados conserva en su bandeja cada uno de los receptores propios de este servicio (el de la consola, el del portal y el de la aplicación de informes), por dominio; los más antiguos se descartan al superarlo."
   },
   "ssf.maxStreamLogEntries|label": {
     "en": "468201e24a40cdc6",
@@ -7232,12 +7248,12 @@
     "text": "Cuánto puede tardar una solicitud a los Shared Signals de un socio de federación — descubrimiento, su endpoint de token, gestión del flujo, un sondeo."
   },
   "ssf.actOnSignalsInDevelopment|label": {
-    "en": "563f14910995d99d",
-    "text": "La consola y el portal actúan sobre las señales recibidas en desarrollo"
+    "en": "aa195c1cd8a0152a",
+    "text": "Las aplicaciones propias de este servicio actúan sobre las señales recibidas en desarrollo"
   },
   "ssf.actOnSignalsInDevelopment|description": {
-    "en": "551c98310bd92f77",
-    "text": "El modo producto siempre hace lo que permite la política de respuesta a señales con un evento verificado que recibe la consola o el portal propios de este servicio — finaliza las sesiones propias de esa superficie para la persona que nombra (#62) — o que envía un socio de federación (#373, #374). El desarrollo registra lo que habría hecho y no hace nada, salvo que esto esté activado. Nunca se actúa sobre un evento no verificado, diga lo que diga esto."
+    "en": "2389ab3a9223bf66",
+    "text": "El modo de producción siempre hace lo que la política signal-response permite con un evento verificado que recibe la consola, el portal o la aplicación de informes de este servicio —revoca los tokens que el cliente de esa aplicación tiene para la persona nombrada (#1042; terminaba sesiones de parte confiante hasta que las aplicaciones dejaron de crearlas, #62)— o que envía un socio de federación (#373, #374). El desarrollo registra lo que habría hecho y no hace nada, salvo que esto esté activado. Un evento no verificado nunca se procesa, diga lo que diga esto."
   },
   "ssf.signalsRevokeGrants|label": {
     "en": "a0ded7c93cee0e93",
@@ -7324,8 +7340,8 @@
     "text": "Directorio de subida de conjuntos de datos"
   },
   "risk.uploadDirectory|description": {
-    "en": "347858cd0224743e",
-    "text": "Dónde se escribe un archivo de conjunto de datos subido mientras se importa, y de dónde se elimina cuando termina la importación, termine como termine. Una ruta relativa se resuelve respecto a la raíz de este paquete, como persistence.dataDir. Asígnele un volumen propio con espacio para el archivo más grande que vaya a subir — comprimido; no se escribe nada descomprimido —, ya que se rechaza una subida cuando el espacio libre del directorio no puede contenerla. Toda pila que distribuye este repositorio monta uno aquí."
+    "en": "ddab5a9b7f3d0a2a",
+    "text": "Dónde se escribe un archivo de conjunto de datos subido mientras se importa, y dónde se construye un trabajo de informe antes de almacenarse; cada archivo se elimina cuando termina su importación o su trabajo, termine como termine. Una ruta relativa se resuelve respecto a la raíz de este paquete, como persistence.dataDir. Dele un volumen propio con espacio para el archivo más grande que vaya a subir —comprimido; no se escribe nada descomprimido— y para report.asyncMaxBytes por cada trabajo de informe que se ejecute a la vez, ya que una subida o un trabajo se rechaza cuando el espacio libre del directorio no puede contenerlo. Cada pila que distribuye este repositorio monta uno aquí."
   },
   "risk.uploadMaxBytes|label": {
     "en": "959b6b79f9136a03",
@@ -7364,8 +7380,8 @@
     "text": "Intervalo de limpieza de subidas (segundos)"
   },
   "risk.uploadSweepS|description": {
-    "en": "d2ecf2ff3686662e",
-    "text": "Con qué frecuencia cada proceso mantiene actualizados los archivos subidos que está importando y elimina los restos de un proceso que se detuvo (risk.upload-cleanup), y con qué frecuencia el trabajo risk.stalled-imports busca una versión abandonada. Manténgalo bastante por debajo de risk.importStallMinutes."
+    "en": "66b5d1a088266f41",
+    "text": "Con qué frecuencia cada proceso mantiene al día los archivos subidos que está importando y los informes que está construyendo, y elimina los restos de un proceso que se detuvo (risk.upload-cleanup, report.build-cleanup), y con qué frecuencia el trabajo risk.stalled-imports busca una versión abandonada. Manténgala muy por debajo de risk.importStallMinutes."
   },
   "risk.datasetShrinkLimitPercent|label": {
     "en": "46aea694920bebd6",
@@ -10222,14 +10238,6 @@
   "report.jobRetentionS|description": {
     "en": "dfada581a8c28ca3",
     "text": "Cuánto tiempo permanece en la lista la fila de un trabajo de informe terminado. Un trabajo que sigue en ejecución no se elimina."
-  },
-  "report.usersGroup|label": {
-    "en": "21554dfaa265b36f",
-    "text": "A quién se le puede emitir report:use"
-  },
-  "report.usersGroup|description": {
-    "en": "28068508e0655509",
-    "text": "El grupo del directorio cuyos miembros pueden recibir report:use. Vacío significa que solo pueden los administradores de este dominio. report:admin se emite únicamente a esos administradores."
   },
   "listenerMain.minVersion|label": {
     "en": "6470c151e28a9ab3",

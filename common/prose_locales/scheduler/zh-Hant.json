@@ -319,6 +319,14 @@
     "en": "4f2c054a1405a843",
     "text": "在此程序中記錄一行，包含其角色與記憶體：常駐大小、已使用與總計的堆積、堆積上限、外部記憶體與陣列緩衝區（#341）。"
   },
+  "sched.jobs.report.build-cleanup.title": {
+    "en": "e5bd8efc07f0b31b",
+    "text": "報告建構清理"
+  },
+  "sched.jobs.report.build-cleanup.describe": {
+    "en": "203d8d2e97c041e2",
+    "text": "在每個處理程序中：更新此處理程序正在建構的報告檔案，並從 risk.uploadDirectory 中刪除在 report.asyncMaxMs 加十五分鐘內沒有任何存活處理程序觸及的報告建構檔案——即在建構中途停止的處理程序留下的檔案。"
+  },
   "sched.jobs.report.drain.title": {
     "en": "792c052635196abd",
     "text": "報表工作"

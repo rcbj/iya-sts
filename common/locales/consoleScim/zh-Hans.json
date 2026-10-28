@@ -53,6 +53,7 @@
   "on": "开启",
   "whatItsScopesSay": "其作用域所允许的",
   "everything": "全部",
+  "applicationDeclares": "应用的：其声明的；个人的：全部",
   "rowAnonymous": "无（开放的发现调用，或身份验证已关闭）",
   "rowRefused": "在任何处理程序运行前被拒绝",
   "authentication": "身份验证",

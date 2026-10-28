@@ -1236,8 +1236,8 @@
     "text": "`userPassword` se almacena como hash scrypt en AMBOS modos, mediante crypto.hashSecret(), sea cual sea la puerta que lo escribió — incluidos un add o un modify de LDAP. El modo producto rechaza un valor enviado ya con hash, que no puede someterse a la política de contraseñas; desarrollo lo conserva tal como se dio, que es como un directorio se traslada entre dos instancias."
   },
   "crypto.families.ldap.whatItDoesNot": {
-    "en": "b5fd76f7abc4adab",
-    "text": "NO RESPONDE NINGÚN MECANISMO SASL — el root DSE omite `supportedSASLMechanisms` en lugar de publicarlo vacío, porque un atributo LDAP siempre tiene al menos un valor y uno vacío no es una afirmación más débil, es una mal formada. Así que no hay bind GSSAPI, ni bind EXTERNAL, ni StartTLS: 636 es TLS desde el primer byte."
+    "en": "4b8955de2d74cab1",
+    "text": "RESPONDE UN SOLO MECANISMO SASL, EXTERNAL, y solo mientras 636 pida un certificado de cliente — el root DSE publica entonces `supportedSASLMechanisms` y lo omite en otro caso en lugar de publicarlo vacío, porque un atributo LDAP siempre tiene al menos un valor y uno vacío no es una afirmación más débil, es una mal formada. Así que no hay bind GSSAPI, ni StartTLS: 636 es TLS desde el primer byte."
   },
   "crypto.families.ldap.algorithms.0.what": {
     "en": "896a443631bae685",

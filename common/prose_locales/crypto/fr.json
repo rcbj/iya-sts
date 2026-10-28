@@ -1236,8 +1236,8 @@
     "text": "`userPassword` est stocké sous forme de hachage scrypt dans LES DEUX modes, via crypto.hashSecret(), quelle que soit la porte qui l’a écrit — un add ou un modify LDAP compris. Le mode produit refuse une valeur envoyée déjà hachée, qui ne peut pas être soumise à la politique de mots de passe ; le développement la conserve telle quelle, ce qui permet de déplacer un annuaire entre deux instances."
   },
   "crypto.families.ldap.whatItDoesNot": {
-    "en": "b5fd76f7abc4adab",
-    "text": "Il ne répond à AUCUN MÉCANISME SASL — le root DSE omet `supportedSASLMechanisms` plutôt que de le publier vide, car un attribut LDAP a toujours au moins une valeur et un attribut vide n’est pas une affirmation plus faible, c’est une affirmation mal formée. Donc pas de bind GSSAPI, pas de bind EXTERNAL, et pas de StartTLS : 636 est en TLS dès le premier octet."
+    "en": "4b8955de2d74cab1",
+    "text": "Il répond à UN SEUL MÉCANISME SASL, EXTERNAL, et seulement tant que 636 demande un certificat client — le root DSE publie alors `supportedSASLMechanisms` et l’omet sinon plutôt que de le publier vide, car un attribut LDAP a toujours au moins une valeur et un attribut vide n’est pas une affirmation plus faible, c’est une affirmation mal formée. Donc pas de bind GSSAPI, et pas de StartTLS : 636 est en TLS dès le premier octet."
   },
   "crypto.families.ldap.algorithms.0.what": {
     "en": "896a443631bae685",

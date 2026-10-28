@@ -1805,6 +1805,16 @@ const CODES = [
       'they stay noted and are read at the next refresh, and the page draws ' +
       'what this process already holds.',
     spec: 'none' },
+  { code: 'STS-STORE-0088',
+    summary: 'A replicated directory change of a realm this process never ' +
+      'came to define waited ten minutes for the realm and was dropped.',
+    spec: '' },
+  { code: 'STS-STORE-0089',
+    summary: 'A replicated minted-row change names its row under a data ' +
+      'encryption key this process does not hold, even after reading the ' +
+      'data-key rows again, and was skipped (another build\'s or a removed ' +
+      'realm\'s); said once per key.',
+    spec: '' },
   // ===== CLUSTER ===========================================================
   { code: 'STS-CLUSTER-0001',
     summary: 'A write transaction was refused by the fence: this node\'s ' +
@@ -6918,6 +6928,51 @@ const CODES = [
       'is not this refusal (#740).',
     spec: 'the issuance site\'s existing denial (the code is recorded, ' +
       'not sent)' },
+  // THE SIGN-IN SCREEN'S CERTIFICATE (#1051): "Continue as <name> with your
+  // certificate" refused at the act. The screen is drawn again with the
+  // sentence; the pending sign-in is kept.
+  { code: 'STS-AUTHN-0463',
+    summary: 'Continue with your certificate was refused at the sign-in ' +
+      'screen: no verified client certificate arrived on the connection, ' +
+      'the connection was a resumed TLS session that carries none, or the ' +
+      'certificate names nobody (#1051).',
+    spec: 'the sign-in screen again (/authn-api answers next: refused)' },
+  { code: 'STS-AUTHN-0464',
+    summary: 'Continue with your certificate was refused at the sign-in ' +
+      'screen: the certificate was refused on revocation ' +
+      '(pki.revocationCheck), as GET /tls/sign-in refuses it (#1051).',
+    spec: 'the sign-in screen again (/authn-api answers next: refused)' },
+  { code: 'STS-AUTHN-0465',
+    summary: 'Continue with your certificate was refused at the sign-in ' +
+      'screen: the identity gate does not accept the certificate as a ' +
+      'person here — one of this service\'s that is not a TLS client ' +
+      'identity, or one issued by another realm\'s authority (#1051).',
+    spec: 'the sign-in screen again (/authn-api answers next: refused)' },
+  { code: 'STS-AUTHN-0466',
+    summary: 'Continue with your certificate was refused at the sign-in ' +
+      'screen: the certificate was issued to an application, which ' +
+      'authenticates at the token endpoint (RFC 8705) and signs nobody in ' +
+      '(#1051).',
+    spec: 'the sign-in screen again (/authn-api answers next: refused)' },
+  { code: 'STS-AUTHN-0467',
+    summary: 'Continue with your certificate was refused at the sign-in ' +
+      'screen: it is not taken at this sign-in — the authentication ' +
+      'policy does not accept a certificate as a first factor, the ' +
+      'sign-in is a linking one, the application names the mechanisms it ' +
+      'allows, or a security key or passkey is demanded (#1051).',
+    spec: 'the sign-in screen again (/authn-api answers next: refused)' },
+  { code: 'STS-AUTHN-0468',
+    summary: 'Continue with your certificate was refused at the sign-in ' +
+      'screen: the certificate is from an outside certificate authority ' +
+      'and is not stored in userCertificate on any account of the realm ' +
+      '(#1061).',
+    spec: 'the sign-in screen again (/authn-api answers next: refused)' },
+  { code: 'STS-AUTHN-0469',
+    summary: 'Continue with your certificate was refused at the sign-in ' +
+      'screen: the certificate is from an outside certificate authority ' +
+      'and is stored in userCertificate on more than one account of the ' +
+      'realm (#1061).',
+    spec: 'the sign-in screen again (/authn-api answers next: refused)' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
@@ -8561,6 +8616,21 @@ const CODES = [
       'method did not authenticate by certificate and no more specific ' +
       'reason was recorded; refused in every mode.',
     spec: 'invalid_client (HTTP 401)' },
+  // #1050 (2026-10-27): an /admin-api access token for a client that
+  // declared a certificate is bound to one or not issued.
+  { code: 'STS-OAUTH-0489',
+    summary: 'An access token for /admin-api was asked of the token ' +
+      'endpoint by a client declaring tls_client_auth, ' +
+      'self_signed_tls_client_auth or tls_client_certificate_bound_access_' +
+      'tokens, with no client certificate to bind it to (or minted on no ' +
+      'connection, a CIBA push); refused in every mode.',
+    spec: 'invalid_request (HTTP 400)' },
+  { code: 'STS-OAUTH-0490',
+    summary: 'An implicit or hybrid authorization response would have ' +
+      'carried an /admin-api access token for a client declaring a ' +
+      'certificate, which the browser\'s connection can never bind; ' +
+      'refused in every mode.',
+    spec: 'invalid_request (redirected error)' },
   // RFC 9470 (2026-09-13): step-up authentication. `oauth-oidc/step_up.ts`
   // decides; the authorization endpoint and `dpop.presentedAccessToken()`
   // answer. Block reserved at 0500..0529.
@@ -11127,6 +11197,46 @@ const CODES = [
       'section 4.4) naming a party other than the requester. Held in every ' +
       'mode, as the token exchange holds it (STS-OAUTH-0620) (#747).',
     spec: 'SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11' },
+  { code: 'STS-WSTRUST-0034',
+    summary: 'The TLS client certificate on the connection, the requester\'s ' +
+      'only credential, verified and was refused on revocation ' +
+      '(pki.revocationCheck). Every mode (#1046).',
+    spec: 'SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 ' +
+      'section 11' },
+  { code: 'STS-WSTRUST-0035',
+    summary: 'The TLS client certificate on the connection, the requester\'s ' +
+      'only credential, was issued by this service and is not an identity ' +
+      'in this realm: another realm\'s authority, a key pair that is not a ' +
+      'TLS client certificate, or a holder whose entry is gone ' +
+      '(common/tls_client_certificates.js). Every mode (#1046).',
+    spec: 'SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 ' +
+      'section 11' },
+  { code: 'STS-WSTRUST-0036',
+    summary: 'The TLS client certificate on the connection, the requester\'s ' +
+      'only credential, is no longer listed on the record of the person or ' +
+      'application it was issued to. Every mode (#1046).',
+    spec: 'SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 ' +
+      'section 11' },
+  { code: 'STS-WSTRUST-0037',
+    summary: 'The TLS client certificate on the connection, the requester\'s ' +
+      'only credential, names a person whose account is disabled. Every ' +
+      'mode (#1046).',
+    spec: 'SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 ' +
+      'section 11' },
+  { code: 'STS-WSTRUST-0038',
+    summary: 'The TLS client certificate on the connection, the requester\'s ' +
+      'only credential, is from an outside certificate authority and is ' +
+      'not stored in userCertificate on any entry of the realm. Every ' +
+      'mode (#1061).',
+    spec: 'SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 ' +
+      'section 11' },
+  { code: 'STS-WSTRUST-0039',
+    summary: 'The TLS client certificate on the connection, the requester\'s ' +
+      'only credential, is from an outside certificate authority and is ' +
+      'stored in userCertificate on more than one entry of the realm. ' +
+      'Every mode (#1061).',
+    spec: 'SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 ' +
+      'section 11' },
   { code: 'STS-WSFED-0001',
     summary: 'A wsignin1.0 request carried wreqptr, which this service ' +
       'refuses to dereference (fetching a URL from a query parameter ' +
@@ -14188,6 +14298,101 @@ const CODES = [
       'code of its own: a fault in this service, answered as one and ' +
       'logged with the stack, never a "try again shortly".',
     spec: 'HTTP 500 (server_error)' },
+  { code: 'STS-LDAP-0177',
+    summary: 'A group\'s mail address was refused: the value given to ' +
+      'the console or the management API is not an email address.',
+    spec: 'a console/API refusal' },
+  { code: 'STS-LDAP-0178',
+    summary: 'A SASL bind named a mechanism other than EXTERNAL; this ' +
+      'directory accepts SASL EXTERNAL only (#1047).',
+    spec: 'LDAP result code 7, authMethodNotSupported (RFC 4511 ' +
+      'section 4.2.2)' },
+  { code: 'STS-LDAP-0179',
+    summary: 'A SASL EXTERNAL bind arrived on an LDAPS connection that ' +
+      'carries no client certificate that verified against the ' +
+      'client truststore — at the defaults LDAPS asks for none ' +
+      '(ldap.ldapsDisableOptionalClientCertificate) (#1047).',
+    spec: 'LDAP result code 48, inappropriateAuthentication (RFC 4513 ' +
+      'section 5.2.1.2)' },
+  { code: 'STS-LDAP-0180',
+    summary: 'A SASL EXTERNAL bind arrived on the plain LDAP listener, ' +
+      'which has no TLS and so no client certificate (#1047).',
+    spec: 'LDAP result code 48, inappropriateAuthentication' },
+  { code: 'STS-LDAP-0181',
+    summary: 'A SASL EXTERNAL bind was refused because the connection\'s ' +
+      'client certificate was refused on revocation, or its ' +
+      'revocation status could not be established (#1047).',
+    spec: 'LDAP result code 49, invalidCredentials' },
+  { code: 'STS-LDAP-0182',
+    summary: 'A SASL EXTERNAL bind was refused because the connection\'s ' +
+      'client certificate verified against an anchor in the client ' +
+      'truststore but was not issued by this service; a certificate ' +
+      'from an outside certificate authority binds nobody to the ' +
+      'directory (#1047). Retired by #1061: such a certificate binds as ' +
+      'the one entry storing it, else STS-LDAP-0192 or STS-LDAP-0193.',
+    spec: 'LDAP result code 49, invalidCredentials', retired: true },
+  { code: 'STS-LDAP-0183',
+    summary: 'A SASL EXTERNAL bind was refused because the connection\'s ' +
+      'client certificate was issued by this service but is not a ' +
+      'TLS client identity (no clientAuth, no single ' +
+      'urn:sts:person: name, a realm that is gone) ' +
+      '(#1047).',
+    spec: 'LDAP result code 49, invalidCredentials' },
+  { code: 'STS-LDAP-0184',
+    summary: 'A SASL EXTERNAL bind was refused because the connection\'s ' +
+      'client certificate was issued by another trust realm\'s ' +
+      'authority than the realm the bind is in (#1047).',
+    spec: 'LDAP result code 49, invalidCredentials' },
+  { code: 'STS-LDAP-0185',
+    summary: 'A SASL EXTERNAL bind was refused because the connection\'s ' +
+      'client certificate was issued to an application; only a ' +
+      'person binds to this directory (#1047).',
+    spec: 'LDAP result code 49, invalidCredentials' },
+  { code: 'STS-LDAP-0186',
+    summary: 'A SASL EXTERNAL bind was refused because the connection\'s ' +
+      'client certificate is no longer on its holder\'s record ' +
+      '(#1047).',
+    spec: 'LDAP result code 49, invalidCredentials' },
+  { code: 'STS-LDAP-0187',
+    summary: 'A SASL EXTERNAL bind was refused because the person the ' +
+      'connection\'s client certificate was issued to has no entry ' +
+      'in the realm\'s directory; none is created (#1047).',
+    spec: 'LDAP result code 49, invalidCredentials' },
+  { code: 'STS-LDAP-0188',
+    summary: 'A SASL EXTERNAL bind was refused because the person the ' +
+      'connection\'s client certificate names has a disabled ' +
+      'account (#1047).',
+    spec: 'LDAP result code 49, invalidCredentials' },
+  { code: 'STS-LDAP-0189',
+    summary: 'A SASL EXTERNAL bind was refused because its authorization ' +
+      'identity (dn: or u:) did not name the entry the certificate ' +
+      'was issued to, or was in neither form (#1047).',
+    spec: 'LDAP result code 50, insufficientAccessRights (RFC 4513 ' +
+      'section 5.2.1.8)' },
+  { code: 'STS-LDAP-0190',
+    summary: 'A SASL EXTERNAL bind was refused because its bind name was ' +
+      'not empty and did not name the entry the certificate was ' +
+      'issued to (#1047).',
+    spec: 'LDAP result code 49, invalidCredentials' },
+  { code: 'STS-LDAP-0191',
+    summary: 'The node-ldapjs in use does not support the saslMechanisms ' +
+      'and bindDnFromHandler server options, so a SASL EXTERNAL ' +
+      'bind cannot be decoded and its connection is closed (#1047).',
+    spec: 'none — logged at startup' },
+  { code: 'STS-LDAP-0192',
+    summary: 'A SASL EXTERNAL bind was refused because the connection\'s ' +
+      'client ' +
+      'certificate is from an outside certificate authority and is not ' +
+      'stored in userCertificate on any person entry of the bind\'s ' +
+      'realm (#1061).',
+    spec: 'LDAP result code 49, invalidCredentials' },
+  { code: 'STS-LDAP-0193',
+    summary: 'A SASL EXTERNAL bind was refused because the connection\'s ' +
+      'client ' +
+      'certificate is from an outside certificate authority and is ' +
+      'stored in userCertificate on more than one entry of the bind\'s ' +
+      'realm (#1061).',
+    spec: 'LDAP result code 49, invalidCredentials' },
   // ===== ATTR ==============================================================
   { code: 'STS-ATTR-0001',
     summary: 'An attribute source\'s driver (or Knex) is not installed: the ' +
@@ -14745,6 +14950,22 @@ const CODES = [
     summary: 'A filter ordered (gt, ge, lt, le) a boolean or binary ' +
       'attribute, which RFC 7644 section 3.4.2.2 refuses (#206).',
     spec: 'HTTP 400 invalidFilter (SCIM Error)' },
+  { code: 'STS-SCIM-0083',
+    summary: 'A TLS client certificate this realm issued to an application ' +
+      'was presented at /scim/v2, and the application does not declare the ' +
+      'SCIM scope the operation needs in its oauthAllowedScope (#1048).',
+    spec: 'HTTP 403 (SCIM Error)' },
+  { code: 'STS-SCIM-0084',
+    summary: 'A verified TLS client certificate from an outside certificate ' +
+      'authority was not taken as a SCIM credential: it is not stored ' +
+      'in userCertificate on any entry of the realm (#1061). The ' +
+      'request is decided as if no certificate had been presented.',
+    spec: 'audit row; HTTP 401 when no other scheme authenticates' },
+  { code: 'STS-SCIM-0085',
+    summary: 'A verified TLS client certificate from an outside certificate ' +
+      'authority was not taken as a SCIM credential: it is stored in ' +
+      'userCertificate on more than one entry of the realm (#1061).',
+    spec: 'audit row; HTTP 401 when no other scheme authenticates' },
   // ===== SPIFFE ============================================================
   { code: 'STS-SPIFFE-0001',
     summary: 'A SPIFFE gRPC handler failed with something that was not a ' +
@@ -15717,6 +15938,39 @@ const CODES = [
       '(sts_tls_page), which the page\'s shell carries (#583). Retired by ' +
       '#597, with both routes.',
     spec: '', retired: true },
+  { code: 'STS-TLS-0052',
+    summary: 'A TLS 1.2 session resumed by session ticket was offered ' +
+      'under a server name other than the one it was made under (#507). ' +
+      'RFC 6066 section 3 forbids accepting the resumption; node resumes a ' +
+      'ticket inside OpenSSL with no event to refuse it in, so the listener ' +
+      'compares the name after the handshake, against the name it recorded ' +
+      'under a digest of the session\'s master secret, and closes the ' +
+      'connection.',
+    spec: 'logged; the connection is closed; the client\'s next connection ' +
+      'is a full handshake' },
+  { code: 'STS-TLS-0053',
+    summary: 'A TLS 1.2 session was resumed by session ticket and this node ' +
+      'has no record of the server name it was made under (#507): the ' +
+      'record aged out or was evicted, the ticket was sealed under the ' +
+      'cluster\'s shared key by a node whose row has not replicated here ' +
+      'yet, or the hello\'s name could not be read. The connection is ' +
+      'closed, because a name nobody compared is not vouched for (RFC 6066 ' +
+      'section 3).',
+    spec: 'logged; the connection is closed; the client\'s next connection ' +
+      'is a full handshake' },
+  { code: 'STS-TLS-0054',
+    summary: 'GET /tls/sign-in started no session for a verified client ' +
+      'certificate from an outside certificate authority that is not ' +
+      'stored in userCertificate on any entry of the realm; an outside ' +
+      'certificate names only the entry it is stored on, never its ' +
+      'common name or subject (#1061).',
+    spec: 'HTTP 200, session.started false' },
+  { code: 'STS-TLS-0055',
+    summary: 'GET /tls/sign-in started no session for a verified client ' +
+      'certificate from an outside certificate authority that is stored ' +
+      'in userCertificate on more than one entry of the realm, so it ' +
+      'names nobody (#1061).',
+    spec: 'HTTP 200, session.started false' },
   // ===== VC ================================================================
   { code: 'STS-VC-0001',
     summary: 'An oid4vci encryption setting names no content encryption ' +
@@ -17028,6 +17282,38 @@ const CODES = [
       'own receive endpoints while its stream is delivered by poll (#771). ' +
       'Nothing is agreed to be pushed there.',
     spec: 'RFC 8935 section 2.4 shape, err invalid_request (HTTP 400)' },
+  { code: 'STS-SSF-0147',
+    summary: 'A TLS client certificate presented alone to a Shared Signals ' +
+      'endpoint was not taken as a receiver (#1049): this service issued ' +
+      'it, and it is not an identity here, is another realm\'s, or names a ' +
+      'person rather than an application.',
+    spec: 'HTTP 401 {err: authentication_failed} with WWW-Authenticate' },
+  { code: 'STS-SSF-0148',
+    summary: 'A TLS client certificate this realm issued to an application ' +
+      'was presented to a Shared Signals endpoint after the application\'s ' +
+      'record stopped listing it (#1049).',
+    spec: 'HTTP 401 {err: authentication_failed} with WWW-Authenticate' },
+  { code: 'STS-SSF-0149',
+    summary: 'An application authenticated to a Shared Signals endpoint by ' +
+      'its TLS client certificate holds no permission the operation needs ' +
+      '(#1049): its oauthAllowedScope declares none, or its SSF_READ and ' +
+      'SSF_MANAGE roles authorize none of what it declares.',
+    spec: 'HTTP 403 {err: access_denied} with WWW-Authenticate' },
+  { code: 'STS-SSF-0150',
+    summary: 'A TLS client certificate presented alone to a Shared Signals ' +
+      'endpoint was refused on revocation (#1049); the certificate\'s own ' +
+      'code is on the audit row beside it.',
+    spec: 'HTTP 401 {err: authentication_failed} with WWW-Authenticate' },
+  { code: 'STS-SSF-0151',
+    summary: 'A TLS client certificate presented alone to a Shared Signals ' +
+      'endpoint is from an outside certificate authority and is not ' +
+      'stored in userCertificate on any entry of the realm (#1061).',
+    spec: 'HTTP 401 {err: authentication_failed} with WWW-Authenticate' },
+  { code: 'STS-SSF-0152',
+    summary: 'A TLS client certificate presented alone to a Shared Signals ' +
+      'endpoint is from an outside certificate authority and is stored ' +
+      'in userCertificate on more than one entry of the realm (#1061).',
+    spec: 'HTTP 401 {err: authentication_failed} with WWW-Authenticate' },
   // ===== RISK ==============================================================
   { code: 'STS-RISK-0001',
     summary: 'A dataset import was refused before anything was loaded: the ' +
@@ -17218,10 +17504,12 @@ const CODES = [
       'not be checked, or its import threw rather than answering. The ' +
       'upload\'s file is deleted.' },
   { code: 'STS-RISK-0038',
-    summary: 'An authentication at HIGH or MEDIUM risk was PERMITTED for an ' +
-      'application the issuance policy says risk may never lock out (the ' +
-      'role-issuance template\'s neverLockOut, the console by default), ' +
-      'because the person holds no second factor to step up with (#226). ' +
+    summary: 'An authentication at HIGH or MEDIUM risk, or carrying a ' +
+      'signal the policy steps up or refuses on whatever the level (#503), ' +
+      'was PERMITTED for an application the issuance policy says risk may ' +
+      'never lock out (the role-issuance template\'s neverLockOut, the ' +
+      'console by default), because the person holds no second factor to ' +
+      'step up with (#226). ' +
       'The alarm: enrol a second factor for this person, and look at the ' +
       'assessment\'s signals.',
     spec: 'permitted; recorded on the audit row and logged as a warning' },
@@ -20082,14 +20370,15 @@ const CODES = [
     spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-XACML-0076',
     summary: 'A delete named a native role — ADMIN_READ, ADMIN_WRITE, ' +
-      'DEVICE_COMPLIANCE, SSF_READ or SSF_MANAGE — which every realm keeps ' +
-      '(#303, #309).',
+      'ADMIN_CONSOLE, DEVICE_COMPLIANCE, SSF_READ, SSF_MANAGE, REPORT_USE ' +
+      'or REPORT_ADMIN — which every realm keeps (#303, #309, #1030).',
     spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-XACML-0077',
-    summary: 'A native role (ADMIN_READ, ADMIN_WRITE, DEVICE_COMPLIANCE, ' +
-      'SSF_READ or SSF_MANAGE) could not be seeded in a realm; no machine ' +
-      'client can be issued its permission there until it exists (#303, ' +
-      '#309).',
+    summary: 'A native role (ADMIN_READ, ADMIN_WRITE, ADMIN_CONSOLE, ' +
+      'DEVICE_COMPLIANCE, SSF_READ, SSF_MANAGE, REPORT_USE or REPORT_ADMIN) ' +
+      'or one of its seeded groups could not be seeded in a realm; no ' +
+      'machine client can be issued its permission there until it exists ' +
+      '(#303, #309, #1030).',
     spec: 'none — a warning in the log' },
   { code: 'STS-XACML-0078',
     summary: 'Neither the issuance policy nor the built-in one it falls back ' +
@@ -20193,6 +20482,33 @@ const CODES = [
     summary: 'Taking an owner off a role was refused: the value is not one ' +
       'of the role\'s owners (#604).',
     spec: 'HTTP 400 (API) or a refusal on the role page' },
+  { code: 'STS-XACML-0177',
+    summary: 'The access policy refused a request to GET /xacml, POST ' +
+      '/xacml/pdp or GET /xacml/policies: the client certificate ' +
+      'verified and is from an outside certificate authority that is ' +
+      'not stored in userCertificate on any entry of the realm, so it ' +
+      'resolved to nobody (#1061).',
+    spec: 'HTTP 403 access_denied' },
+  { code: 'STS-XACML-0178',
+    summary: 'The access policy refused a request to GET /xacml, POST ' +
+      '/xacml/pdp or GET /xacml/policies: the client certificate ' +
+      'verified and is from an outside certificate authority that is ' +
+      'stored in userCertificate on more than one entry of the realm ' +
+      '(#1061).',
+    spec: 'HTTP 403 access_denied' },
+  { code: 'STS-XACML-0179',
+    summary: 'The access policy refused a remote PEP request (/xacml/pep/*, ' +
+      'POST /xacml/pip): the client certificate verified and is from an ' +
+      'outside certificate authority that is not stored in ' +
+      'userCertificate on any entry of the realm, so it resolved to ' +
+      'nobody (#1061).',
+    spec: 'HTTP 403 access_denied' },
+  { code: 'STS-XACML-0180',
+    summary: 'The access policy refused a remote PEP request (/xacml/pep/*, ' +
+      'POST /xacml/pip): the client certificate verified and is from an ' +
+      'outside certificate authority that is stored in userCertificate ' +
+      'on more than one entry of the realm (#1061).',
+    spec: 'HTTP 403 access_denied' },
   // ===== XPEP ==============================================================
   { code: 'STS-XPEP-0001',
     summary: 'The error-code registry could not be loaded from ./error_codes ' +
@@ -20452,8 +20768,9 @@ const CODES = [
   { code: 'STS-ADMIN-0019',
     summary: 'The admin console\'s Shared Signals receive endpoint refused a ' +
       'pushed Security Event Token and the receiver named no more ' +
-      'specific code.',
-    spec: 'HTTP 4xx/5xx per RFC 8935, as the receiver decided', retired: true },
+      'specific code. Retired by the #446 cutover, which deleted the ' +
+      'endpoint, and in use again since #1042 restored it.',
+    spec: 'HTTP 4xx/5xx per RFC 8935, as the receiver decided' },
   { code: 'STS-ADMIN-0020',
     summary: 'The realm switcher named a trust realm that is not defined; ' +
       'the browser was sent back to the current realm.',
@@ -21213,8 +21530,9 @@ const CODES = [
     spec: 'invalid_scope (RFC 6749 sections 4.1.2.1 and 5.2)' },
   { code: 'STS-ADMIN-0823',
     summary: 'add-permission or remove-permission named a native role — ' +
-      'ADMIN_READ, ADMIN_WRITE, DEVICE_COMPLIANCE, SSF_READ or ' +
-      'SSF_MANAGE — whose permission is fixed (#303, #309).',
+      'ADMIN_READ, ADMIN_WRITE, ADMIN_CONSOLE, DEVICE_COMPLIANCE, SSF_READ, ' +
+      'SSF_MANAGE, REPORT_USE or REPORT_ADMIN — whose permission is fixed ' +
+      '(#303, #309, #1030).',
     spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-ADMIN-0824',
     summary: 'add-permission or remove-permission named no permission ' +
@@ -21428,6 +21746,30 @@ const CODES = [
       'the dashboard); the clients counted are the holders this process ' +
       'holds (#820).',
     spec: 'logged; the page answers' },
+  { code: 'STS-ADMIN-0896',
+    summary: 'Setting or clearing a group\'s mail address was refused by ' +
+      'the directory; the refusal carries the directory\'s own code.',
+    spec: 'HTTP 400' },
+  { code: 'STS-ADMIN-0897',
+    summary: 'Storing a certificate on a person\'s entry was refused: ' +
+      'what was ' +
+      'given is not one PEM or base64 DER X.509 certificate (#1061).',
+    spec: 'HTTP 400 (API) or a refusal on the person\'s page' },
+  { code: 'STS-ADMIN-0898',
+    summary: 'Storing or removing a certificate was refused: the person ' +
+      'named ' +
+      'has no entry in this realm, and none is created (#1061).',
+    spec: 'HTTP 400 (API) or a refusal on the person\'s page' },
+  { code: 'STS-ADMIN-0899',
+    summary: 'Storing a certificate on a person\'s entry was refused: ' +
+      'the same ' +
+      'certificate is already stored on another entry of the realm, and ' +
+      'a certificate stored on two entries names nobody (#1061).',
+    spec: 'HTTP 400 (API) or a refusal on the person\'s page' },
+  { code: 'STS-ADMIN-0900',
+    summary: 'Removing a stored certificate was refused: the person\'s entry ' +
+      'stores no certificate with that SHA-256 (#1061).',
+    spec: 'HTTP 400 (API) or a refusal on the person\'s page' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',
@@ -21842,6 +22184,13 @@ const CODES = [
       'did:web enrolment, which fetches the DID document) failed inside ' +
       'this service; the log says why (#693).',
     spec: 'HTTP 500' },
+  // #1050 (2026-10-27): the other end of STS-OAUTH-0489.
+  { code: 'STS-API-0137',
+    summary: 'An /admin-api access token issued to a client that declares ' +
+      'tls_client_auth, self_signed_tls_client_auth or tls_client_' +
+      'certificate_bound_access_tokens carries no cnf x5t#S256 (RFC 8705): ' +
+      'such a client\'s tokens are accepted only certificate-bound.',
+    spec: 'invalid_token (HTTP 401)' },
   { code: 'STS-PORTAL-0001',
     summary: 'A user portal request\'s query string or form body did not ' +
       'match the shape its route accepts, and was refused before ' +
@@ -23553,14 +23902,19 @@ const CODES = [
       'the proof was refused and named no code of its own.',
     spec: 'invalid_token or invalid_dpop_proof (HTTP 401)' },
   { code: 'STS-REPORT-0016',
-    summary: 'The access token presented to the reports API names no person.',
-    spec: 'forbidden (HTTP 403)' },
+    summary: 'The access token presented to the reports API names no ' +
+      'person. Retired by #1030 (2026-10-27): an application holding ' +
+      'REPORT_USE or REPORT_ADMIN is a caller, confined to what it defined.',
+    spec: 'forbidden (HTTP 403)', retired: true },
   { code: 'STS-REPORT-0017',
     summary: 'The token lacks report:use or report:admin, or the client no ' +
       'longer declares the scope.',
     spec: 'insufficient_scope or forbidden (HTTP 403)' },
   { code: 'STS-REPORT-0018',
-    summary: 'This account may not use reports in this realm.',
+    summary: 'The token carries report:use or report:admin and no role its ' +
+      'subject holds NOW authorizes it (held ∩ carried, #1030): REPORT_USE ' +
+      'or REPORT_ADMIN was taken from the person or the application after ' +
+      'the token was minted.',
     spec: 'forbidden (HTTP 403)' },
   { code: 'STS-REPORT-0019',
     summary: 'No such report definition, including one the caller may not see.',
@@ -23618,7 +23972,113 @@ const CODES = [
   { code: 'STS-REPORT-0035',
     summary: 'A scheduled report names a parameter and stores no value ' +
       'for it, so this occurrence did not run and the slot was kept.',
-    spec: 'recorded' }
+    spec: 'recorded' },
+  { code: 'STS-REPORT-0036',
+    summary: 'A synchronous users report names no filter the directory ' +
+      'can answer with an index, and the directory is windowed, so it ' +
+      'was refused rather than read person by person; in auto mode it ' +
+      'became a job.',
+    spec: 'result_too_large (HTTP 400)' },
+  { code: 'STS-REPORT-0037',
+    summary: 'A report job finished with Notify on, and a group the ' +
+      'definition is shared with has no mail attribute, so that group ' +
+      'was not sent the notice. The other recipients were.',
+    spec: 'recorded; the job still completed' },
+  { code: 'STS-REPORT-0038',
+    summary: 'GET /report-api/schedules asked for another account\'s ' +
+      'schedules with a token that holds report:use and not report:admin.',
+    spec: 'forbidden (HTTP 403)' },
+  { code: 'STS-REPORT-0039',
+    summary: 'A credentialHolders query would read more holders (or group ' +
+      'members) than its execution\'s row cap allows, so it was refused ' +
+      'before the first page was read (#1002); synchronously, under the ' +
+      'job cap, it becomes a job in auto mode.',
+    spec: 'result_too_large (HTTP 400)' },
+  { code: 'STS-REPORT-0040',
+    summary: 'A filter on a directory-backed report source (users, ' +
+      'credentialHolders) named no field the directory indexes, so it ' +
+      'would have read every person; refused at acceptance, naming the ' +
+      'indexed fields, in every mode (rcbj, 2026-10-27).',
+    spec: 'invalid_query (HTTP 400)' },
+  { code: 'STS-REPORT-0041',
+    summary: 'An indexed report filter on users matched more people than ' +
+      'one read may take (the candidate cap), so it was refused rather ' +
+      'than read person by person (#1028).',
+    spec: 'result_too_large (HTTP 400)' },
+  { code: 'STS-REPORT-0042',
+    summary: 'A finished report could not be sealed under the key ' +
+      'hierarchy (no key-encryption key is held), so it was not stored; ' +
+      'the job failed rather than write the report in the clear (#1033).',
+    spec: 'none (the job fails with unavailable)' },
+  { code: 'STS-REPORT-0043',
+    summary: 'A stored report would not open under the data keys this ' +
+      'process holds (a destroyed or foreign key), so it was answered as ' +
+      'gone (#1033).',
+    spec: 'none (the result is answered as not found)' },
+  { code: 'STS-REPORT-0044',
+    summary: 'The access-control policy refused a report API request ' +
+      '(#1030): the subject holds no report role for the API, or the ' +
+      'definition or job is not its own, not shared with a group it is ' +
+      'in, and it is not a report administrator — an application reaches ' +
+      'only what it defined. A hidden row is answered not_found.',
+    spec: 'forbidden (HTTP 403), or not_found (HTTP 404) for one row' },
+  { code: 'STS-REPORT-0045',
+    summary: 'A token the default realm issued was presented to another ' +
+      'realm\'s report API and its subject is not a service ' +
+      'administrator — a person holding Admin Read or Admin Write on the ' +
+      'default realm\'s console roster now — so it was refused: only a ' +
+      'service administrator reaches every realm\'s reports (#1038).',
+    spec: 'forbidden (HTTP 403)' },
+  { code: 'STS-REPORT-0046',
+    summary: 'A users report with an order or a count and no filter would ' +
+      'read more people than a job may (report.asyncMaxRows), counted ' +
+      'from the directory first, so it was refused at once rather than ' +
+      'run as a job that reached report.asyncMaxMs (#1040).',
+    spec: 'result_too_large (HTTP 400)' },
+  { code: 'STS-REPORT-0047',
+    summary: 'The reports application\'s Shared Signals receive endpoint ' +
+      'refused a pushed Security Event Token that carried no more specific ' +
+      'code of its own (receivers off, no stream, wrong bearer token, empty ' +
+      'or malformed token, wrong audience, or an unverified signature) ' +
+      '(#1042).',
+    spec: 'HTTP 4xx/5xx per RFC 8935, as the receiver decided' },
+  { code: 'STS-REPORT-0048',
+    summary: 'A scheduled report, or a queued job, belongs to a person whose ' +
+      'account is disabled, so it was not run (#1042): a disabled account ' +
+      'stops its owner\'s schedules as it stops their sign-ins.',
+    spec: 'none (the occurrence is consumed; the job fails as forbidden)' },
+  { code: 'STS-REPORT-0049',
+    summary: 'A report job could not be built: the staging directory ' +
+      '(risk.uploadDirectory) has less free space than the job\'s byte cap ' +
+      '(report.asyncMaxBytes) and the reserve an upload keeps, so nothing ' +
+      'was written and the job failed (#1045).',
+    spec: 'none (the job fails as unavailable)' },
+  { code: 'STS-REPORT-0050',
+    summary: 'A report job could not be built: the staging directory ' +
+      '(risk.uploadDirectory) cannot be made or written, a build file ' +
+      'could not be created, written (a disk that filled) or read back, ' +
+      'so the job failed and its partial file was removed (#1045).',
+    spec: 'none (the job fails as unavailable)' },
+  { code: 'STS-REPORT-0051',
+    summary: 'A stored report has a piece that is missing or will not open ' +
+      'under the keys this process holds, its piece marker cannot be ' +
+      'read, or its download did not match its digest: refused as gone ' +
+      'before the answer began, or the response was cut part-way rather ' +
+      'than completed (#1045).',
+    spec: 'result_expired (HTTP 410) before the answer; otherwise none (the ' +
+      'connection is closed)' },
+  { code: 'STS-REPORT-0052',
+    summary: 'A report build file was left in the staging directory: one ' +
+      'that could not be removed when its job ended, or a leftover the ' +
+      'report.build-cleanup job removed (or could not) because no live ' +
+      'process held it (#1045).',
+    spec: 'none (a warning)' },
+  { code: 'STS-REPORT-0053',
+    summary: 'The store would not take a finished report (the database ' +
+      'refused or went away while its pieces were written), so the job ' +
+      'failed and nothing of it was kept (#1045). Until #1045 this read ' +
+      'as STS-REPORT-0042, could not be sealed.',
+    spec: 'none (the job fails as unavailable)' }
   // ===== END ===============================================================
 ];
 

@@ -4787,6 +4787,14 @@
     "en": "d75340dbe09a7542",
     "text": "此 STS 在 RequestSecurityTokenResponse 中返回的 JWT 是否指明签署它的密钥的证书链。SAML 断言在其自身的 XML Signature 中携带证书，不受影响。`x5u`（默认值）是证书链在本服务上的地址 `/pki/chain/{scope}/{sha256}.pem`，约一百字节；`x5c` 是内联的证书链，叶证书在前、服务根证书在后，base64 DER 编码，有数千字节；`both` 表示两者都有，`none` 表示两者都没有。无论哪种，它都是仅持有令牌的依赖方访问每个证书的 CRL 分发点、OCSP 响应方和 caIssuers 地址所需的信息。尚未在此领域的 JOSE 签发 CA 下获得认证的密钥，以及 HMAC 签名，两者都不会得到。RFC 7515 第 4.1.5 节要求 `x5u` 的获取使用 TLS：global.https 关闭时，该地址为 `http://`，严格的验证方将拒绝跟随它。JWE 头部从不带有它——本服务没有任何经过认证的密钥用于加密任何内容。可按领域设置。"
   },
+  "wstrust.acceptClientCertificate|label": {
+    "en": "04ac29464750e625",
+    "text": "接受 TLS 客户端证书作为请求方的凭据"
+  },
+  "wstrust.acceptClientCertificate|description": {
+    "en": "23d9a8fba459f61c",
+    "text": "当发往 /sts 的请求的 wsse:Security 头不携带任何凭据时，是否通过连接上的 TLS 客户端证书来认证请求方。只有在握手时验证通过、且由本领域颁发给某个人或某个应用程序的证书（来自用户门户或应用程序 Credentials 的 TLS 客户端证书，或通过 ACME、EST 或 SCEP 注册的证书）才是凭据，两种模式皆然；已吊销的证书、来自其他领域的证书以及持有者已不再持有的证书会以 wst:FailedAuthentication 拒绝。颁发的令牌会表明使用了证书：SAML 2.0 断言中为 TLSClient，SAML 1.1 断言中为 urn:ietf:rfc:2246，JWT 中为 amr swk。关闭时，此处忽略该证书。"
+  },
   "wsfed.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
     "text": "身份提供方发起的登录"
@@ -4996,16 +5004,16 @@
     "text": "LDAPS：不请求客户端证书"
   },
   "ldap.ldapsDisableOptionalClientCertificate|description": {
-    "en": "7e1993d7f889bc3c",
-    "text": "LDAPS 不发送 CertificateRequest。默认打开，这也是 LDAPS 一贯的做法：绑定是目录客户端表明身份的方式，而在每个持有证书的客户端面前弹出证书提示会令人意外。关闭时会向每个连接请求证书但不强制要求；出示的证书会对照客户端信任库进行验证，但不会绑定任何人（此处没有 SASL EXTERNAL）。"
+    "en": "7c1815ed4a7499c4",
+    "text": "LDAPS 不发送 CertificateRequest。默认开启，这正是 LDAPS 一贯的做法：绑定是目录客户端表明身份的方式，在每个持有证书的客户端前弹出证书提示会令人意外。关闭后会向每个连接请求证书但不强制；出示的证书会针对客户端信任库进行验证，携带本服务颁发给某人的证书的连接可以使用 SASL EXTERNAL 以该人员身份绑定。"
   },
   "ldap.ldapsRequireClientCertificate|label": {
     "en": "eff4646ac01e4612",
     "text": "LDAPS：要求客户端证书"
   },
   "ldap.ldapsRequireClientCertificate|description": {
-    "en": "2c73995bcc16b3fa",
-    "text": "LDAPS 在握手时拒绝每一个未出示链接到客户端信任库的客户端证书的连接——这是绑定之前的第二道关卡，连接的身份仍由绑定决定。优先于上面的开关。默认关闭。"
+    "en": "cfadc0b97c1bfaa8",
+    "text": "LDAPS 在握手时拒绝每个未出示链接到客户端信任库的客户端证书的连接——这是绑定之前的第二道关卡，绑定仍决定连接是谁：密码，或使用本服务颁发给某人的证书进行 SASL EXTERNAL。优先于上面的开关。默认关闭。"
   },
   "debugger.disableOptionalClientCertificate|label": {
     "en": "df19c772421bba66",
@@ -6592,8 +6600,8 @@
     "text": "提供 TLS 客户端证书方式"
   },
   "scim.authClientCert|description": {
-    "en": "be5e7d5ccffce8c1",
-    "text": "双向 TLS，RFC 7644 第 2 节指明的第一个方案。仅当请求通过 TLS 到达，且其证书能依据客户端信任库验证时才适用（/admin/tls/trust），因此仅在 global.https 开启时适用。这是本服务中客户端证书第一次成为凭据而不仅是观察结果的地方；在这里，它认证的人随后可以写入目录。"
+    "en": "0a6d722dc96ad17f",
+    "text": "双向 TLS，RFC 7644 第 2 节指明的第一个方案。仅当请求通过 TLS 到达，且其证书能依据客户端信任库验证时才适用（/admin/tls/trust），因此仅在 global.https 开启时适用。这是本服务中客户端证书第一次成为凭据而不仅是观察结果的地方。本领域签发给某个应用的证书只能做该应用的 oauthAllowedScope 所声明的事：读取需要读取范围，写入需要写入范围，每次请求都会检查（STS-SCIM-0083）。个人的证书——本领域颁发的，或来自外部证书颁发机构并存储在该人条目的 userCertificate 中的（#1061）——可以读写目录。"
   },
   "scimClient.attempts|label": {
     "en": "babe2e714439f7c0",
@@ -7067,17 +7075,25 @@
     "en": "34a196af42de2673",
     "text": "SSF 端点是否在 OAuth 2.0 访问令牌之外还接受 HTTP Basic，并在 authorization_schemes 中发布它。在开发模式下，任何用户名配合除 \"invalid\" 以外的任何密码均可通过；在产品模式下，密码会依据该人员经过哈希的 userPassword 进行验证。无论哪种情况，Basic 主体都同时拥有两个范围，因为 Basic 不携带范围——因此希望对每个调用方都强制执行 ssf.read 和 ssf.manage 的部署应关闭此项。"
   },
+  "ssf.authClientCert|label": {
+    "en": "ad5fbafbb2ac1812",
+    "text": "提供 TLS 客户端证书"
+  },
+  "ssf.authClientCert|description": {
+    "en": "73d4ba2aa33adad2",
+    "text": "SSF 端点是否接受通过其连接上的 TLS 客户端证书进行身份验证、且不带 Authorization 标头的接收方，并在 authorization_schemes 中发布 urn:ietf:rfc:8705。只接受此领域颁发给某个应用程序且该应用程序仍持有的证书；接收方即该应用程序，拥有其创建的流，并持有其 oauthAllowedScope 所声明、且其 SSF_READ 和 SSF_MANAGE 角色所授权的 Shared Signals 范围。"
+  },
   "ssf.internalReceivers|label": {
-    "en": "8eca3281fa7a4ef7",
-    "text": "将控制台和门户注册为接收方"
+    "en": "7e760a8d68a5e030",
+    "text": "将控制台、门户和报表注册为接收方"
   },
   "ssf.internalReceivers|description": {
-    "en": "1a148e2b3a63a17d",
-    "text": "本服务是否为其自身的管理控制台和用户门户预置 Shared Signals 流，使两者各自接收每个 CAEP 和 RISC 事件——每隔 ssf.internalPollMs 通过 RFC 8936 轮询从本服务自己的 /ssf/poll 收取（#771）——并在 /admin/signals 和 /portal/signals 上显示收到的内容。它们是普通的流——在 /admin/ssf 上暂停、缩小或删除其中一个，它会保持该状态直到重启。"
+    "en": "0a23fbb0f030f814",
+    "text": "此服务是否为其自身的管理控制台、用户门户和报表应用程序 (#1042) 创建 Shared Signals 流，使每个都能接收每个 CAEP 和 RISC 事件——每隔 ssf.internalPollMs 通过 RFC 8936 轮询从此服务自己的 /ssf/poll 收取 (#771)——并在 /admin/signals、/portal/signals 和 /report/signals 显示收到的内容。它们是普通的流——在 /admin/ssf 暂停、收窄或删除其中一个，它会保持该状态直到重启。"
   },
   "ssf.internalReceivers|restartReason": {
-    "en": "75c18a7223a2e0a3",
-    "text": "这两个流在 require ssf/ssf.ts 时以及构建每个领域时预置，因此原地关闭此项会留下已存在的流，而开启也不会创建任何流"
+    "en": "eb2b8e34bd6ee85c",
+    "text": "这三个流在加载 ssf/ssf.ts 时以及构建每个领域时创建，因此在运行中关闭此项会保留已有的流，而开启此项不会创建任何流"
   },
   "ssf.internalPollMs|label": {
     "en": "245d4495769ca599",
@@ -7156,8 +7172,8 @@
     "text": "保留的已接收事件数"
   },
   "ssf.maxReceivedEvents|description": {
-    "en": "2c503bd8b26764ea",
-    "text": "本服务自己的每个接收方（控制台的和门户的）在其收件箱中保留多少个已投递的 SET，按领域计；超过此数量时丢弃最旧的。"
+    "en": "4c285fbb0b900559",
+    "text": "此服务自己的每个接收方（控制台、门户和报表应用程序）在其收件箱中按领域保留的已送达 SET 数量；超过后丢弃最旧的。"
   },
   "ssf.maxStreamLogEntries|label": {
     "en": "468201e24a40cdc6",
@@ -7232,12 +7248,12 @@
     "text": "对联合合作方 Shared Signals 的一次请求——发现、其令牌端点、流管理、一次轮询——允许花费的时长。"
   },
   "ssf.actOnSignalsInDevelopment|label": {
-    "en": "563f14910995d99d",
-    "text": "开发模式下控制台和门户对收到的信号采取行动"
+    "en": "aa195c1cd8a0152a",
+    "text": "此服务自己的应用程序在开发模式下对收到的信号采取行动"
   },
   "ssf.actOnSignalsInDevelopment|description": {
-    "en": "551c98310bd92f77",
-    "text": "对于本服务自身的控制台或门户收到的、或联合合作方发送的（#373、#374）经验证的事件，产品模式始终执行信号响应策略所允许的操作——结束该界面上其所指明人员的会话（#62）。开发模式只记录它本会执行的操作而不实际执行，除非开启此项。无论此项如何，都绝不会对未经验证的事件采取行动。"
+    "en": "2389ab3a9223bf66",
+    "text": "生产模式始终对此服务的控制台、门户或报表应用程序收到的已验证事件执行 signal-response 策略所允许的操作——撤销该应用程序自己的客户端为所指人员持有的令牌（#1042；在应用程序不再创建依赖方会话之前，它结束的是这些会话，#62）——或对联合伙伴发送的事件执行相应操作 (#373, #374)。开发模式记录它本会执行的操作而不执行，除非开启此项。无论此项如何设置，未验证的事件都不会被处理。"
   },
   "ssf.signalsRevokeGrants|label": {
     "en": "a0ded7c93cee0e93",
@@ -7324,8 +7340,8 @@
     "text": "数据集上传目录"
   },
   "risk.uploadDirectory|description": {
-    "en": "347858cd0224743e",
-    "text": "上传的数据集文件在导入期间写入的位置，无论导入以何种方式结束，结束时都会从中删除。相对路径依据此软件包根目录解析，与 persistence.dataDir 相同。请为其提供单独的卷，空间足以容纳您要上传的最大文件——压缩后的大小；不会写入任何解压后的内容——因为当目录的可用空间无法容纳上传时，上传会被拒绝。本代码库随附的每个栈都在此处挂载了一个卷。"
+    "en": "ddab5a9b7f3d0a2a",
+    "text": "上传的数据集文件在导入期间写入的位置，也是报告作业在存储之前构建的位置；每个文件在其导入或作业结束时（无论以何种方式结束）都会被删除。相对路径以此软件包根目录为基准解析，与 persistence.dataDir 相同。请为它提供专用卷，空间足以容纳您将上传的最大文件——压缩后的大小；不会写入任何解压内容——以及每个同时运行的报告作业所需的 report.asyncMaxBytes，因为当目录的可用空间不足以容纳时，上传或作业会被拒绝。此存储库附带的每个堆栈都会在此挂载一个卷。"
   },
   "risk.uploadMaxBytes|label": {
     "en": "959b6b79f9136a03",
@@ -7364,8 +7380,8 @@
     "text": "上传清理间隔（秒）"
   },
   "risk.uploadSweepS|description": {
-    "en": "d2ecf2ff3686662e",
-    "text": "每个进程刷新其正在导入的上传文件并删除已停止进程的残留文件（risk.upload-cleanup）的频率，以及 risk.stalled-imports 作业查找被放弃版本的频率。请使其远小于 risk.importStallMinutes。"
+    "en": "66b5d1a088266f41",
+    "text": "每个进程多久刷新一次其正在导入的上传文件和正在构建的报告，并删除已停止进程留下的残留文件（risk.upload-cleanup、report.build-cleanup），以及 risk.stalled-imports 作业多久查找一次被放弃的版本。请将其保持在远低于 risk.importStallMinutes 的值。"
   },
   "risk.datasetShrinkLimitPercent|label": {
     "en": "46aea694920bebd6",
@@ -10222,14 +10238,6 @@
   "report.jobRetentionS|description": {
     "en": "dfada581a8c28ca3",
     "text": "已完成报表作业的行在列表中保留多久。仍在运行的作业不会被移除。"
-  },
-  "report.usersGroup|label": {
-    "en": "21554dfaa265b36f",
-    "text": "谁可以被签发 report:use"
-  },
-  "report.usersGroup|description": {
-    "en": "28068508e0655509",
-    "text": "其成员可以被签发 report:use 的目录组。为空表示只有本领域的管理员可以。report:admin 只签发给这些管理员。"
   },
   "listenerMain.minVersion|label": {
     "en": "6470c151e28a9ab3",

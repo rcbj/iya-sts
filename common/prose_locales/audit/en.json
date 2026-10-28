@@ -309,6 +309,7 @@
   "audit.actions.group.add-owner.label": "An owner was added to a group",
   "audit.actions.group.remove-owner.label": "An owner was taken off a group",
   "audit.actions.group.owner-protected.label": "A group was closed to its owners, or opened to them again",
+  "audit.actions.group.set-mail.label": "A group was given an address, or its address was taken away",
   "audit.actions.krb5.keytab.person.label": "A person's keytab was made from a password in hand",
   "audit.actions.logout.backchannel.retry.label": "A dead back-channel Logout Token delivery was retried",
   "audit.actions.oauth.device-secret.revoke.label": "A Native SSO device secret was revoked",

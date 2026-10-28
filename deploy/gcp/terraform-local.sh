@@ -44,6 +44,12 @@ set -euo pipefail
 IMAGE_NAME="${IMAGE_NAME:-iya-sts-terraform-gcp}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
+# Linux, or Windows under Cygwin (#512): hostPath() for each path docker.exe
+# is handed, and the shims that take the CR off what docker and the cloud
+# CLIs print. See its header.
+# shellcheck source=../../tests/tools/host-platform.sh
+. "${REPO_ROOT}/tests/tools/host-platform.sh"
+
 TF_ENV="${TF_ENV:-${1:-dev}}"
 TF_ACTION="${TF_ACTION:-${2:-plan}}"
 TF_STACK="${TF_STACK:-environment}"
@@ -52,7 +58,9 @@ if [ -n "${DOCKER:-}" ]; then
   read -r -a DOCKER_CMD <<< "${DOCKER}"
 elif docker info > /dev/null 2>&1; then
   DOCKER_CMD=(docker)
-elif command -v sudo > /dev/null 2>&1; then
+elif [ "${HOST_WINDOWS}" != "1" ] && command -v sudo > /dev/null 2>&1; then
+  # Not on Windows, which has no sudo: a daemon that does not answer there
+  # is Docker Desktop not running.
   DOCKER_CMD=(sudo docker)
 else
   echo "ERROR: docker is required and not reachable." >&2
@@ -68,6 +76,18 @@ PROJECT="${GOOGLE_CLOUD_PROJECT:-$(gcloud config get-value project 2> /dev/null 
 }
 
 GCLOUD_DIR="${CLOUDSDK_CONFIG:-${HOME}/.config/gcloud}"
+# gcloud on Windows keeps its configuration under %APPDATA%, not under the
+# Cygwin home, and a CLOUDSDK_CONFIG set for it is a Windows path (#512).
+if [ "${HOST_WINDOWS}" = "1" ];
+then
+  if [ -n "${CLOUDSDK_CONFIG:-}" ];
+  then
+    GCLOUD_DIR="$(cygpath -u "${CLOUDSDK_CONFIG}")"
+  elif [ -n "${APPDATA:-}" ];
+  then
+    GCLOUD_DIR="$(cygpath -u "${APPDATA}")/gcloud"
+  fi
+fi
 [ -f "${GCLOUD_DIR}/application_default_credentials.json" ] || {
   echo "ERROR: no application-default credentials in ${GCLOUD_DIR}." >&2
   echo "       Run: gcloud auth application-default login" >&2
@@ -100,7 +120,9 @@ for v in TF_CLI_ARGS TF_CLI_ARGS_plan TF_CLI_ARGS_apply TF_CLI_ARGS_destroy TF_I
 done
 
 echo "==> Building ${IMAGE_NAME}" >&2
-"${DOCKER_CMD[@]}" build -q -t "${IMAGE_NAME}" -f "${REPO_ROOT}/deploy/gcp/Dockerfile" "${REPO_ROOT}" > /dev/null
+"${DOCKER_CMD[@]}" build -q -t "${IMAGE_NAME}" \
+  -f "$(hostPath "${REPO_ROOT}/deploy/gcp/Dockerfile")" \
+  "$(hostPath "${REPO_ROOT}")" > /dev/null
 
 CONTAINER_NAME="iya-sts-terraform-gcp-${TF_ENV}-$$"
 relay() {
@@ -109,7 +131,7 @@ relay() {
 }
 trap relay INT TERM
 "${DOCKER_CMD[@]}" run --rm --name "${CONTAINER_NAME}" \
-  --env-file "${CREDS_ENV_FILE}" \
+  --env-file "$(hostPath "${CREDS_ENV_FILE}")" \
   -e GOOGLE_CLOUD_PROJECT="${PROJECT}" \
   -e TF_STACK="${TF_STACK}" \
   -e TF_ENV="${TF_ENV}" \

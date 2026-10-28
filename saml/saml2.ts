@@ -186,6 +186,8 @@ class Saml2Assertions {
       privateKeyPem: STS.xmlSigner.privateKeyPem,
       privateKey: STS.xmlSigner.privateKey,
       certPem: STS.xmlSigner.certPem,
+      // The chain through the service Root in KeyInfo (#1064).
+      keyInfoXml: helpers.xmlSignerKeyInfo(STS.xmlSigner),
       placement: stsCrypto.PLACEMENT.AFTER_ISSUER,
       sigAlg: how.sigAlg,
       c14nAlg: how.c14nAlg,

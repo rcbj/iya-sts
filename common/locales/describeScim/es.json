@@ -30,6 +30,7 @@
   "off": "desactivado",
   "scopes": "scopes",
   "everything": "todo",
+  "applicationDeclares": "el de una aplicación: lo que declare; el de una persona: todo",
   "scopesText": "Los dos scopes de OAuth son <code>{read}</code> y <code>{write}</code>, publicados en <code>scopes_supported</code> en ambos documentos de descubrimiento. Digest ofrece {algorithms}. Las claves HOBA se registran en <code>{hoba}</code>.",
   "policy": "La política de control de acceso",
   "endpoints": "Endpoints",

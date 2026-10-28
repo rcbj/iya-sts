@@ -356,13 +356,27 @@ operator also needs to know:
   asking for `tls_client_certificate_bound_access_tokens` while the main port
   is not TLS is refused. A **public** client's refresh token is bound to its
   certificate (section 4).
+* **`/admin-api` tokens for a client that declares a certificate are always
+  bound** (#1050). A client whose entry declares `tls_client_auth` or
+  `self_signed_tls_client_auth` — alone or beside another method — or
+  `tls_client_certificate_bound_access_tokens` is issued an access token for
+  the management API only bound to the certificate on its connection. Without
+  one, `/oauth2/token` answers `invalid_request` (`STS-OAUTH-0489`), even when
+  the client authenticated with a secret it also declares; an implicit or
+  hybrid response that would carry such a token is refused with
+  `invalid_request` (`STS-OAUTH-0490`); and `/admin-api` refuses an unbound
+  token of such a client, whenever it was issued (`STS-API-0137`). A token for
+  any other resource is unaffected, and the token's scopes still decide what
+  it may do. The application's Credentials section says whether this applies
+  (`credentials.mtls.adminApiBound` in
+  `GET /admin-api/applications?application=`).
 * **Not done**: binding at the authorization endpoint's implicit flow, which
   the RFC puts out of scope (section 6.4). A setting that requires a
   certificate binding while the main port is not HTTPS refuses every affected
   request (`STS-OAUTH-0527`) rather than letting it through.
-* The error codes are `STS-OAUTH-0480..0488`, `STS-REG-0130..0136`,
-  `STS-PKI-0180..0181`, `STS-ADMIN-0720..0724`, `STS-API-0110` and
-  `STS-DBG-0030`; the settings that require a sender constraint add
+* The error codes are `STS-OAUTH-0480..0490`, `STS-REG-0130..0136`,
+  `STS-PKI-0180..0181`, `STS-ADMIN-0720..0724`, `STS-API-0110`,
+  `STS-API-0137` and `STS-DBG-0030`; the settings that require a sender constraint add
   `STS-OAUTH-0521..0531`, `STS-API-0120..0121` and `STS-DBG-0031..0032`. See
   [Error codes](error-codes.md).
 
@@ -619,6 +633,10 @@ it is the client itself. Two kinds of scope are gated:
   `ADMIN_READ` and `ADMIN_WRITE` roles. A person holds those through the
   console's Admin Read and Admin Write groups, and an application by being a
   member of the role ([Management API](management-api.md)).
+* **`report:use` and `report:admin`**, always. They are authorized by the
+  native roles `REPORT_USE` and `REPORT_ADMIN`: a person through the groups
+  `report-users` and `report-admins` or as a direct member, an application
+  (`client_credentials`) as a member ([Reports](reporting.md#who-can-open-it)).
 * **`ssf.read` and `ssf.manage`**, always. They are authorized by the ordinary
   native roles `SSF_READ` and `SSF_MANAGE`. A person is issued one only while
   they belong to that role's group (`ssf-read` or `ssf-manage`, unless an

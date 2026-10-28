@@ -53,6 +53,7 @@
   "on": "naka-on",
   "whatItsScopesSay": "ang sinasabi ng mga scope nito",
   "everything": "lahat",
+  "applicationDeclares": "sa isang application: ang idinedeklara nito; sa isang tao: lahat",
   "rowAnonymous": "Wala (isang bukas na discovery call, o naka-off ang authentication)",
   "rowRefused": "Tinanggihan bago tumakbo ang anumang handler",
   "authentication": "Authentication",

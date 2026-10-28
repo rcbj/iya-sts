@@ -2499,13 +2499,14 @@ class CryptoMetadata {
                 'sent already hashed, which cannot be held to the password ' +
                 'policy; development keeps one as given, which is how a ' +
                 'directory moves between two instances.',
-        whatItDoesNot: 'It answers NO SASL MECHANISM — the root DSE omits ' +
-                       '`supportedSASLMechanisms` rather than publishing it ' +
+        whatItDoesNot: 'It answers ONE SASL MECHANISM, EXTERNAL, and only ' +
+                       'while 636 asks for a client certificate — the root ' +
+                       'DSE publishes `supportedSASLMechanisms` then and ' +
+                       'omits it otherwise rather than publishing it ' +
                        'empty, because an LDAP attribute always has at least ' +
                        'one value and an empty one is not a weaker claim, it ' +
-                       'is a malformed one. So no GSSAPI bind, no EXTERNAL ' +
-                       'bind, and no StartTLS: 636 is TLS from the first ' +
-                       'byte.',
+                       'is a malformed one. So no GSSAPI bind, and no ' +
+                       'StartTLS: 636 is TLS from the first byte.',
         envelopes: ['tls'],
         algorithms: function () {
           log.debug("Entering algorithms().");
@@ -4497,9 +4498,10 @@ class CryptoMetadata {
       const files = [{ name: row.alg.toLowerCase() + '-public.jwk.json',
                        data: text, mime: 'application/jwk+json' }];
       // AND THE CERTIFICATE THIS REALM'S JOSE ISSUING CA ISSUED OVER IT
-      // (2026-09-13), leaf first with the chain under it and without the Root —
-      // public, and the one thing about this key a relying party could not get
-      // from the JWKS.
+      // (2026-09-13), leaf first with the chain under it and — since #1064 —
+      // the service Root last, from pki.chainThroughRoot(), the one place a
+      // reported chain is completed. Public, and the one thing about this
+      // key a relying party could not get from the JWKS.
       let held = null;
       try {
         held = stsPki.publishedCertificateFor(
@@ -4512,7 +4514,8 @@ class CryptoMetadata {
       }
       if (held) {
         files.push({ name: row.alg.toLowerCase() + '-chain.pem',
-                     data: [held.certificatePem].concat(held.chainPem).join(''),
+                     data: stsPki.chainThroughRoot(held.certificatePem,
+                       held.chainPem || []).join(''),
                      mime: 'application/x-pem-file' });
       }
       log.debug("Leaving CryptoMetadata.exportKey(). An AKP public JWK.");

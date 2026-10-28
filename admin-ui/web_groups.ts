@@ -214,6 +214,13 @@ class GroupsPage {
           'placeholder="' + kit.esc(t.text('consoleGroups.body.noteHint')) +
           '">' +
           '</div><div class="formrow">' +
+          // The group's own email address (#989), optional.
+          '<label for="newmail">' + t.html('consoleGroups.body.mail') +
+          '</label>' +
+          '<input type="email" id="newmail" name="mail" size="40" ' +
+          'placeholder="' + kit.esc(t.text('consoleGroups.body.mailHint')) +
+          '">' +
+          '</div><div class="formrow">' +
           '<label for="newmembers">' + t.html('consoleGroups.body.thMembers') +
           '</label>' +
           '<textarea id="newmembers" name="members" rows="3" cols="60" ' +
@@ -228,6 +235,24 @@ class GroupsPage {
       SettingsForms.forms(json.settings, '/admin/groups', undefined, t) +
       GroupsPage.groupsCaveat(t, json.adminGroups) +
       GroupsPage.groupsLinks(t);
+  }
+
+  /**
+   * A group's own email address (#989): its first `mail` value, or ''.
+   *
+   * @param group - the group as the directory reader returns it
+   * @returns the address
+   */
+  static groupMail(group) {
+    const attrs = (group && group.attributes) || {};
+    const keys = Object.keys(attrs);
+    for (let i = 0; i < keys.length; i++) {
+      if (keys[i].toLowerCase() === 'mail') {
+        const values = attrs[keys[i]];
+        return String((Array.isArray(values) ? values[0] : values) || '');
+      }
+    }
+    return '';
   }
 
   /**
@@ -526,7 +551,25 @@ class GroupsPage {
                             { usersDn: info.usersDn }) +
             '<a href="/admin/rbac">' +
             t.html('consoleGroups.groupsCaveat.adminRoles') + '</a>' +
-            t.html('consoleGroups.detail.addAfter'))
+            t.html('consoleGroups.detail.addAfter')) +
+            // THE GROUP'S EMAIL ADDRESS (#989): its own `mail`, where a
+            // report shared with it is sent. One box, prefilled; Save
+            // writes it, and an emptied box removes it.
+            '<h2>' + t.html('consoleGroups.detail.mailHeading') + '</h2>' +
+            '<form method="post" action="/admin/groups">' +
+            '<input type="hidden" name="action" value="set-mail">' +
+            '<input type="hidden" name="group" value="' + kit.esc(group.dn) +
+            '"><input type="hidden" name="back" value="' +
+            kit.esc(kit.queryWith(kit.listViewOf('/admin/groups', ctx.query),
+              {})) +
+            '"><div class="formrow"><label for="groupmail">' +
+            t.html('consoleGroups.detail.mail') + '</label><input ' +
+            'type="email" id="groupmail" name="mail" size="44" value="' +
+            kit.esc(GroupsPage.groupMail(group)) + '">' +
+            '<button type="submit">' +
+            t.html('consoleGroups.detail.setMail') + '</button>' +
+            '</div></form>' +
+            kit.note(t.html('consoleGroups.detail.mailNote'))
           : '') +
 
         '<h2>' + t.html('consoleGroups.detail.attributesHeading') + '</h2>' +
@@ -616,8 +659,9 @@ class GroupsPage {
         '" formnovalidate' + kit.tip(tipText) +
         (off ? ' disabled' : '') + '>' + kit.esc(label) + '</button>';
     };
-    const said = (drawn.error && drawn.error.length
-      ? kit.warn(kit.esc(drawn.error.join(' '))) : '') +
+    // A refusal floats (#1066): this block is on a person's Service
+    // account tab as well as the Groups, Roles and Applications Owners tabs.
+    const said = kit.refusalBanner(drawn.error) +
       (drawn.notice ? kit.note(kit.esc(drawn.notice)) : '');
     const removeOf = function (one) {
       if (!write) {
@@ -787,8 +831,9 @@ class GroupsPage {
     const o = opts || {};
     const anchor = '#' + (o.id || 'owners') + '-protection';
     const drawn = (o.state && o.state.ownerProtection) || {};
-    const said = (drawn.error && drawn.error.length
-      ? kit.warn(kit.esc(drawn.error.join(' '))) : '') +
+    // A refusal floats (#1066): this block is on a person's Service
+    // account tab as well as the Groups, Roles and Applications Owners tabs.
+    const said = kit.refusalBanner(drawn.error) +
       (drawn.notice ? kit.note(kit.esc(drawn.notice)) : '');
     const mark = 'an administrator closed it to its owners';
     const others = (ownership.reasons || []).filter(function (one) {

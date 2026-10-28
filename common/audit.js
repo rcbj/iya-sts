@@ -1292,6 +1292,8 @@ const ACTIONS = [
     label: 'An owner was taken off a group' },
   { action: 'group.owner-protected', category: 'directory',
     label: 'A group was closed to its owners, or opened to them again' },
+  { action: 'group.set-mail', category: 'directory',
+    label: 'A group was given an address, or its address was taken away' },
   { action: 'krb5.keytab.person', category: 'authentication',
     label: 'A person\'s keytab was made from a password in hand' },
   { action: 'logout.backchannel.retry', category: 'session',

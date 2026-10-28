@@ -414,7 +414,11 @@ const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
                        'finish-passkey-upgrade', 'cancel-passkey-upgrade',
                        // An administrator enrols a passkey (#945).
                        'begin-passkey-enrolment',
-                       'finish-passkey-enrolment'];
+                       'finish-passkey-enrolment',
+                       // A certificate from an outside authority, stored
+                       // on the entry it is to sign in as, and taken off
+                       // (#1061).
+                       'add-certificate', 'remove-certificate'];
 
 // ---------------------------------------------------------------------------
 // WHAT AN ADMINISTRATOR DOES TO SOMEBODY'S CREDENTIALS FROM THEIR PAGE
@@ -2482,6 +2486,228 @@ class AdminActions {
     return { sessionsEnded: sessionsEnded, failed: failed };
   }
 
+  // ---------------------------------------------------------------------------
+  // A CERTIFICATE STORED ON A PERSON'S ENTRY (#1061, rcbj 2026-10-27).
+  //
+  // A certificate from an outside certificate authority — one trusted through
+  // the Client Truststores — signs its holder in only as the one entry that
+  // stores it, byte for byte, in `userCertificate` (RFC 4523), at every door
+  // that reads a client certificate as a person
+  // (`common/tls_client_certificates.js`, STORED). This is how an operator
+  // says ahead of time which certificate is whose: the person's page on the
+  // console and `POST /admin-api/users/add-certificate` (rule 7), with
+  // `remove-certificate` beside it and `GET /admin-api/users/certificates`
+  // listing them. An LDAP client writing `userCertificate;binary` reaches the
+  // same attribute, under product mode's write authorization.
+  //
+  // REFUSED HERE, AND NOT ONLY WHEN PRESENTED: a certificate already stored on
+  // ANOTHER entry of the realm (STS-ADMIN-0899). Stored on two it names
+  // nobody, and every door refuses it; storing it on the second through this
+  // door would cut the first holder off with nothing on either page saying
+  // why. The entry is never created (STS-ADMIN-0898). A renewed certificate
+  // is a new DER and is stored again; the old one can stay until it expires.
+  //
+  // Each says so over Shared Signals, as an issued certificate does: a CAEP
+  // credential-change of type x509.
+  // ---------------------------------------------------------------------------
+  /**
+   * The certificates stored on a person's entry in `userCertificate`, each
+   * with its SHA-256, subject, issuer, serial and validity.
+   *
+   * @param who - the person
+   * @returns `{ ok: true, user, dn, certificates }`, or a refusal
+   */
+  storedCertificatesOf(who) {
+    const { log } = this.deps;
+    log.debug("Entering AdminActions.storedCertificatesOf().");
+    const name = String(who || '').trim();
+    if (!name) {
+      log.debug("Leaving AdminActions.storedCertificatesOf(). Nobody.");
+      return this.refused('STS-ADMIN-0518', { ok: false,
+        errors: ['Name the person in `user`.'] });
+    }
+    const held = require('../ldap/ldap_server')
+      .storedCertificatesOf('person', name);
+    if (!held) {
+      log.debug("Leaving AdminActions.storedCertificatesOf(). No entry.");
+      return this.refused('STS-ADMIN-0898', { ok: false,
+        errors: ['There is no person called "' + name + '" here.'] });
+    }
+    const self = this;
+    const rows = held.certificates.map(function (one) {
+      return self.describeStoredCertificate(one.der, one.sha256);
+    });
+    log.debug("Leaving AdminActions.storedCertificatesOf(). " + rows.length +
+              ".");
+    return { ok: true, user: name, dn: held.dn, certificates: rows,
+             rule: 'A certificate from an outside certificate authority ' +
+                   'signs this person in only while it is stored here, ' +
+                   'byte for byte, and on no other entry of the realm. A ' +
+                   'renewed certificate is stored again.' };
+  }
+
+  // One stored certificate, described from its DER.
+  private describeStoredCertificate(der, sha256) {
+    const { log } = this.deps;
+    log.debug("Entering AdminActions.describeStoredCertificate().");
+    let parsed: any = null;
+    try {
+      parsed = stsCrypto.parseCertificate(der);
+    } catch (e) {
+      log.debug("Caught in AdminActions.describeStoredCertificate(): " +
+                ((e && e.message) || e));
+      parsed = null;
+    }
+    log.debug("Leaving AdminActions.describeStoredCertificate().");
+    return {
+      sha256: String(sha256),
+      subject: parsed ? String(parsed.subject || '').split('\n').join(', ')
+                      : '',
+      issuer: parsed ? String(parsed.issuer || '').split('\n').join(', ')
+                     : '',
+      serialNumber: parsed ? String(parsed.serialNumber || '') : '',
+      notBefore: parsed ? String(parsed.validFrom || '') : '',
+      notAfter: parsed ? String(parsed.validTo || '') : '',
+      expired: parsed ? Date.parse(String(parsed.validTo || '')) < Date.now()
+                      : false,
+      readable: !!parsed
+    };
+  }
+
+  // The DER of one certificate given as PEM or as base64 DER, or null.
+  private certificateDerFrom(value) {
+    const { log } = this.deps;
+    log.debug("Entering AdminActions.certificateDerFrom().");
+    const text = String(value || '').trim();
+    const blocks = text.match(/-----BEGIN CERTIFICATE-----/g) || [];
+    if (blocks.length > 1) {
+      log.debug("Leaving AdminActions.certificateDerFrom(). Several.");
+      return null;
+    }
+    const der = require('../persistence/directory_codec')
+      .certificateDerOf(text);
+    if (!der) {
+      log.debug("Leaving AdminActions.certificateDerFrom(). Not base64.");
+      return null;
+    }
+    try {
+      stsCrypto.parseCertificate(der);
+    } catch (e) {
+      log.debug("Caught in AdminActions.certificateDerFrom(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving AdminActions.certificateDerFrom(). Not X.509.");
+      return null;
+    }
+    log.debug("Leaving AdminActions.certificateDerFrom().");
+    return der;
+  }
+
+  private storedCertificateAction(action, body, ctx) {
+    const { log, auditLog, accountSignals } = this.deps;
+    log.debug("Entering AdminActions.storedCertificateAction(). " + action);
+    const who = String(body.user || body.username || '').trim();
+    if (!who) {
+      log.debug("Leaving AdminActions.storedCertificateAction(). Nobody.");
+      return this.refused('STS-ADMIN-0518', { ok: false,
+        errors: ['Name the person in `user`.'] });
+    }
+    const ldap = require('../ldap/ldap_server');
+    const before = ldap.storedCertificatesOf('person', who);
+    if (!before) {
+      log.debug("Leaving AdminActions.storedCertificateAction(). No entry.");
+      return this.refused('STS-ADMIN-0898', { ok: false,
+        errors: ['There is no person called "' + who + '" here, and ' +
+                 'storing a certificate creates nobody.'] });
+    }
+    let der: any = null;
+    let sha256 = '';
+    if (action === 'add-certificate') {
+      der = this.certificateDerFrom(body.certificate);
+      if (!der) {
+        log.debug("Leaving AdminActions.storedCertificateAction(). Not a " +
+                  "certificate.");
+        return this.refused('STS-ADMIN-0897', { ok: false,
+          errors: ['`certificate` is one X.509 certificate, as a PEM block ' +
+                   '(-----BEGIN CERTIFICATE-----) or base64 DER. Only the ' +
+                   'leaf: the authority that issued it goes in the Client ' +
+                   'Truststores.'] });
+      }
+      sha256 = stsCrypto.digest('sha256', der, 'hex');
+      const elsewhere = (ldap.certificateHolders(sha256) || [])
+        .filter(function (one) {
+          return String(one.dn).toLowerCase() !==
+                 String(before.dn).toLowerCase();
+        });
+      if (elsewhere.length) {
+        log.debug("Leaving AdminActions.storedCertificateAction(). Stored " +
+                  "elsewhere.");
+        return this.refused('STS-ADMIN-0899', { ok: false,
+          errors: ['That certificate is already stored on ' +
+                   elsewhere.map(function (one) {
+                     return String(one.dn);
+                   }).join(', ') + '. Stored on two entries it signs ' +
+                   'nobody in; take it off there first.'] });
+      }
+    } else {
+      sha256 = String(body.sha256 || body.fingerprint || '')
+        .replace(/:/g, '').trim().toLowerCase();
+      const held = before.certificates.filter(function (one) {
+        return one.sha256 === sha256;
+      })[0];
+      der = held ? held.der : null;
+      if (!held) {
+        log.debug("Leaving AdminActions.storedCertificateAction(). Not " +
+                  "held.");
+        return this.refused('STS-ADMIN-0900', { ok: false,
+          errors: ['The entry of "' + who + '" stores no certificate with ' +
+                   'the SHA-256 "' + sha256 + '". GET ' +
+                   '/admin-api/users/certificates lists what it stores.'] });
+      }
+    }
+    const done = ldap.changeStoredCertificate('person', who,
+      action === 'add-certificate' ? { add: der } : { remove: sha256 });
+    if (!done || !done.ok) {
+      log.debug("Leaving AdminActions.storedCertificateAction(). No entry.");
+      return this.refused('STS-ADMIN-0898', { ok: false,
+        errors: ['There is no person called "' + who + '" here.'] });
+    }
+    const verb = action === 'add-certificate' ? 'stored' : 'removed';
+    auditLog.record({
+      category: 'authentication',
+      action: action === 'add-certificate' ? 'certificate.stored'
+                                           : 'certificate.unstored',
+      actor: ctx.actor, target: who, outcome: 'success',
+      summary: 'a certificate (SHA-256 ' + sha256 + ') was ' + verb +
+               (action === 'add-certificate' ? ' on ' : ' from ') +
+               'the entry of ' + who,
+      detail: { username: who, dn: done.dn, sha256: sha256, via: ctx.via,
+                changed: done.changed }
+    });
+    if (done.changed) {
+      accountSignals.certificateChanged({
+        username: who, initiatingEntity: 'admin', via: ctx.via,
+        pem: '-----BEGIN CERTIFICATE-----\n' +
+          Buffer.from(der).toString('base64').replace(/(.{64})/g, '$1\n')
+            .replace(/\n$/, '') + '\n-----END CERTIFICATE-----\n',
+        changeType: action === 'add-certificate' ? 'create' : 'delete',
+        friendlyName: 'stored certificate',
+        reasonAdmin: 'A certificate was ' + verb + ' for ' + who + '.',
+        reasonUser: action === 'add-certificate'
+          ? 'A certificate was stored on your account; it signs you in.'
+          : 'A certificate stored on your account was removed.' });
+    }
+    const after = this.storedCertificatesOf(who);
+    log.debug("Leaving AdminActions.storedCertificateAction(). " + verb +
+              ".");
+    return Object.assign({}, after, {
+      ok: true, changed: done.changed, sha256: sha256,
+      message: done.changed
+        ? 'The certificate (SHA-256 ' + sha256 + ') was ' + verb + '.'
+        : (action === 'add-certificate'
+          ? 'That certificate was already stored on this entry.'
+          : 'That certificate was not stored on this entry.') });
+  }
+
   private credentialAdminAction(action, body, ctx) {
     const { log, credentials, auditLog, accountSignals, errorCodes } =
       this.deps;
@@ -3717,6 +3943,12 @@ class AdminActions {
         .trim(), body, ctx);
     }
 
+    // A STORED CERTIFICATE (#1061), put on a person's entry or taken off.
+    if (action === 'add-certificate' || action === 'remove-certificate') {
+      log.debug("Leaving AdminActions.usersAction(). A stored certificate.");
+      return this.storedCertificateAction(action, body, ctx);
+    }
+
     // A FEDERATION LINK, MADE OR REMOVED BY AN ADMINISTRATOR (#109).
     if (action === 'federation-link' || action === 'federation-unlink') {
       log.debug("Leaving AdminActions.usersAction(). A federation link.");
@@ -4766,7 +4998,10 @@ class AdminActions {
               'directory client',
         channel: 'console',
         actor: String(body.actor || ''),
-        members: members
+        members: members,
+        // The group's own email address (#989), where a report shared
+        // with it is sent; optional, checked by the directory.
+        mail: String(body.mail || '').trim()
       });
       if (!result.ok) {
         log.debug("Leaving AdminActions.groupsAction(). create refused.");
@@ -4815,6 +5050,26 @@ class AdminActions {
       return result;
     }
 
+    // A GROUP'S EMAIL ADDRESS (#989): set or cleared from the group page's
+    // form and `POST /admin-api/groups/set-mail`, both reaching the
+    // directory's one setter, which owns the shape rule and the refusals.
+    if (action === 'set-mail') {
+      const group = String(body.group || '').trim();
+      const address = String(body.mail || '').trim();
+      const result = groupWriter.setGroupMail(group, address, {
+        origin: 'console',
+        channel: 'console',
+        actor: String(body.actor || '')
+      });
+      if (!result.ok) {
+        log.debug("Leaving AdminActions.groupsAction(). set-mail refused.");
+        return this.refusedBy('STS-ADMIN-0896', result);
+      }
+      log.debug("Leaving AdminActions.groupsAction(). set-mail " +
+                (result.changed ? "changed." : "already so."));
+      return result;
+    }
+
     // A GROUP'S OWNERS (#603): one added or taken off at a time, written at
     // once — the group page's Owners tab, and its two operations. Who may
     // be an owner and every refusal are ldap_server.js's.
@@ -4841,8 +5096,9 @@ class AdminActions {
     log.debug("Leaving AdminActions.groupsAction(). Unknown action.");
     return this.refused('STS-ADMIN-0500',
                    { ok: false, errors: ['Unknown action "' + action + '". ' +
-                                 'The four are: create, add-member, ' +
-                                 'add-owner, remove-owner. Removing ' +
+                                 'The five are: create, add-member, ' +
+                                 'set-mail, add-owner, remove-owner. ' +
+                                 'Removing ' +
                                  'a member is /admin/rbac for the two ' +
                                  'console roles, and an ldapmodify or a SCIM ' +
                                  'PATCH ' +
@@ -10699,6 +10955,7 @@ export = {
   truthy: slot.forward('truthy'),
   USERS_ACTIONS: USERS_ACTIONS,
   usersAction: slot.forward('usersAction'),
+  storedCertificatesOf: slot.forward('storedCertificatesOf'),
   groupsAction: slot.forward('groupsAction'),
   FIELD_PREFIX: FIELD_PREFIX,
   applicationFieldsFrom: slot.forward('applicationFieldsFrom'),

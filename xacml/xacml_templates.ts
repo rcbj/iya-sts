@@ -285,7 +285,23 @@ const ISSUANCE_ATTRIBUTE = {
   OWNER_SUBJECT: 'urn:sts:xacml:owner-subject',
   // On the SUBJECT, FROM THE PIP: the person's own DN and every group they
   // are in, compared as OBJECT_OWNER is.
-  OWNER_IDENTITY: 'urn:sts:xacml:owner-identity'
+  OWNER_IDENTITY: 'urn:sts:xacml:owner-identity',
+  // -------------------------------------------------------------------------
+  // THE REPORT RULE'S VOCABULARY (#1030, 2026-10-27): a definition or a job
+  // of `/report-api`, decided one row at a time. The row's OWNER travels as
+  // `resource-owner` (OWNER above) and is compared with `subject-id`, which
+  // `report/rights.ts` sets to the token's `sub` — a `urn:uuid:` person or
+  // a client — so the first rule permits the owner exactly as it permits a
+  // person their own portal account. These two are what the third rule
+  // reads beside it; the subject's groups come from the PIP as
+  // OWNER_IDENTITY, looked up by OWNER_SUBJECT (the person by username).
+  // -------------------------------------------------------------------------
+  // On the RESOURCE: `definition` or `job`.
+  REPORT_OBJECT_KIND: 'urn:sts:xacml:report-object-kind',
+  // On the RESOURCE: the group DNs the definition is shared with (a job's,
+  // its definition's), compared as OBJECT_OWNER is. Empty for a row shared
+  // with nobody, and for a question about the API rather than a row.
+  REPORT_SHARED_GROUP: 'urn:sts:xacml:report-shared-group'
 };
 
 // ---------------------------------------------------------------------------
@@ -905,8 +921,9 @@ const SIGNAL_ATTRIBUTE = {
   EVENT: 'urn:sts:xacml:signal-event',
   // `caep`, `risc` or `ssf`: the namespace the event's URI is in.
   FAMILY: 'urn:sts:xacml:signal-family',
-  // Which of this service's surfaces received it: `admin-console` or
-  // `user-portal` (`ssf/ssf_receivers.ts`'s SURFACES) — or, since #373,
+  // Which of this service's surfaces received it: `admin-console`,
+  // `user-portal` or `report` (`ssf/ssf_receivers.ts`'s SURFACES) — or,
+  // since #373,
   // `federation:<id>`, a federation relationship whose partner transmits
   // (`ssf/ssf_transmitters.ts`).
   SURFACE: 'urn:sts:xacml:signal-surface',
@@ -926,10 +943,12 @@ const SIGNAL_ATTRIBUTE = {
  * per reaction to a received signal.
  */
 const SIGNAL_RESPONSE = {
-  // End the receiving surface's OWN sessions for the person the event names:
-  // the console's or the portal's relying-party sessions. Never the
-  // provider's — a receiver acts on what it holds, and what the provider
-  // holds is the transmitter's to end.
+  // End what the receiving surface ITSELF holds for the person the event
+  // names: its relying-party sessions, and since #1042 the tokens its own
+  // client was issued — the console, the portal and the reports application
+  // are static applications holding tokens. Never the provider's — a
+  // receiver acts on what it holds, and what the provider holds is the
+  // transmitter's to end.
   END_SESSIONS: 'signal-end-sessions',
   // FROM A FEDERATION PARTNER (#373): end the sessions THIS RELATIONSHIP
   // started for the person — the one a `complex` subject's session names,
@@ -1402,7 +1421,32 @@ const TEMPLATES: TemplateRow[] = [
               'one of them, a second factor is not enough: an attacker ' +
               'relaying a person\'s one-time code from another machine ' +
               'passes a code, and cannot pass a WebAuthn ceremony bound to ' +
-              'this origin. Empty makes every MEDIUM a second-factor step-up.' }
+              'this origin. Empty makes every MEDIUM a second-factor ' +
+              'step-up.' },
+      { name: 'stepUpSignals',
+        label: 'Signals that demand a SECOND FACTOR below MEDIUM',
+        dflt: 'tor-exit, reputation, operator-deny', type: 'string',
+        help: 'The risk signals, comma separated, that ask for a second ' +
+              'factor at LOW, where the level alone asks for nothing ' +
+              '(#503). The score is a likelihood ratio and the MEDIUM line ' +
+              'is set for the whole population (risk.mediumScorePercent, ' +
+              '300 by default), so one signal lifts a familiar sign-in ' +
+              'over it less often than it did when the line was 1: a Tor ' +
+              'exit (×5) needs a model score of 0.6. A list the operator ' +
+              'loaded is a statement about the ADDRESS, not about this ' +
+              'person\'s habits, so what to do about it is decided here, ' +
+              'as policy, rather than by rescaling the factors. At MEDIUM ' +
+              'and HIGH the level\'s own rules decide. `none` builds no ' +
+              'such rule.' },
+      { name: 'refuseSignals',
+        label: 'Signals that REFUSE whatever the level',
+        dflt: '', type: 'string',
+        help: 'The risk signals, comma separated, that refuse the issuance ' +
+              'outright at any level, as HIGH does (#503). Empty by ' +
+              'default: a refusal on an address signal is what locked ' +
+              'every administrator out on #226, which is why a known ' +
+              'context caps such evidence at MEDIUM. The applications ' +
+              'neverLockOut names are stepped up instead, as at HIGH.' }
     ],
     build: function (answers, options) {
       log.debug('Entering buildRoleIssuance().');
@@ -1428,6 +1472,14 @@ const TEMPLATES: TemplateRow[] = [
           return one.toLowerCase() !== 'none';
         });
       const keySignals = B.listOf(given.keySignals);
+      // #503: the two signal-keyed lists. The step-up list has a default
+      // and `none` empties it; the refuse list is empty unless given.
+      const stepUpSignals = B.listOf(given.stepUpSignals === undefined
+        ? 'tor-exit, reputation, operator-deny' : given.stepUpSignals)
+        .filter(function (one: string): boolean {
+          return one.toLowerCase() !== 'none';
+        });
+      const refuseSignals = B.listOf(given.refuseSignals);
       const neverLockOut = B.listOf(given.neverLockOut === undefined
         ? 'sts-admin-console' : given.neverLockOut)
         .filter(function (one: string): boolean {
@@ -1510,14 +1562,24 @@ const TEMPLATES: TemplateRow[] = [
         return [{ id: RISK_ATTRIBUTE.OBLIGATION, on: model.EFFECT.DENY,
                   assignments: assignments }];
       };
-      const keySignal = keySignals.length
-        ? B.apply(F3 + 'any-of-any', [
-          { kind: 'function', functionId: F1 + 'string-equal' },
-          B.designator(env, RISK_ATTRIBUTE.SIGNAL, TYPE.STRING),
-          B.apply(F1 + 'string-bag', keySignals.map(function (one) {
-            return B.value(TYPE.STRING, one);
-          }))])
-        : null;
+      // "ONE OF THESE SIGNALS FIRED": the intersection of the SIGNAL bag
+      // and a list, for the key signals and (#503) the two lists below.
+      // `null` for an empty list, so a rule built on it is left out.
+      const signalIn = function (names: string[]): any {
+        log.debug("Entering signalIn().");
+        log.debug("Leaving signalIn().");
+        return names.length
+          ? B.apply(F3 + 'any-of-any', [
+            { kind: 'function', functionId: F1 + 'string-equal' },
+            B.designator(env, RISK_ATTRIBUTE.SIGNAL, TYPE.STRING),
+            B.apply(F1 + 'string-bag', names.map(function (one) {
+              return B.value(TYPE.STRING, one);
+            }))])
+          : null;
+      };
+      const keySignal = signalIn(keySignals);
+      const stepUpSignal = signalIn(stepUpSignals);
+      const refuseSignal = signalIn(refuseSignals);
       const held = function (factor: string): any {
         log.debug("Entering held().");
         log.debug("Leaving held().");
@@ -1549,8 +1611,18 @@ const TEMPLATES: TemplateRow[] = [
         return protectedApp
           ? B.apply(F1 + 'and', [condition, not(protectedApp)]) : condition;
       };
+      // "THE RISK ASKS FOR SOMETHING": HIGH, MEDIUM, and (#503) a signal
+      // on either list — what the protected applications are stepped up on
+      // instead of refused, and what their alarm is raised on.
       const elevated = B.apply(F1 + 'or', [levelIs('HIGH'),
-                                           levelIs('MEDIUM')]);
+                                           levelIs('MEDIUM')]
+        .concat(refuseSignal ? [refuseSignal] : [])
+        .concat(stepUpSignal ? [stepUpSignal] : []));
+      const elevatedWords = 'at HIGH or MEDIUM' +
+        (refuseSignal || stepUpSignal
+           ? ' (or with a signal of ' +
+             refuseSignals.concat(stepUpSignals).join(', ') + ')'
+           : '');
       const riskRules: any[] = [];
       if (decideRisk) {
         riskRules.push({
@@ -1565,7 +1637,28 @@ const TEMPLATES: TemplateRow[] = [
           target: null, condition: unprotected(levelIs('HIGH')),
           obligations: obligation('refuse', ''), advice: []
         });
+        // A SIGNAL THAT REFUSES WHATEVER THE LEVEL (#503). Empty by
+        // default. HIGH is the rule above, so this one takes the rest and
+        // the two stay exclusive; the MEDIUM rules below leave it out.
+        if (refuseSignal) {
+          riskRules.push({
+            id: options.idBase + ':rule:risk-signal-refuse',
+            effect: model.EFFECT.DENY,
+            description: 'Refuse an authentication carrying one of these ' +
+                         'signals, whatever its level: ' +
+                         refuseSignals.join(', ') + '.',
+            target: null,
+            condition: unprotected(B.apply(F1 + 'and', [refuseSignal,
+              not(levelIs('HIGH'))])),
+            obligations: obligation('refuse', ''), advice: []
+          });
+        }
         if (keySignal) {
+          const mediumKey = [levelIs('MEDIUM'), keySignal,
+            not(satisfied('security-key'))];
+          if (refuseSignal) {
+            mediumKey.push(not(refuseSignal));
+          }
           riskRules.push({
             id: options.idBase + ':rule:risk-medium-key',
             effect: model.EFFECT.DENY,
@@ -1573,8 +1666,7 @@ const TEMPLATES: TemplateRow[] = [
                          'TLS client, refuse until the authentication used ' +
                          'a SECURITY KEY — the obligation asks for one.',
             target: null,
-            condition: unprotected(B.apply(F1 + 'and', [levelIs('MEDIUM'),
-              keySignal, not(satisfied('security-key'))])),
+            condition: unprotected(B.apply(F1 + 'and', mediumKey)),
             obligations: obligation('step-up', 'security-key'), advice: []
           });
         }
@@ -1582,6 +1674,9 @@ const TEMPLATES: TemplateRow[] = [
           not(satisfied('second-factor'))];
         if (keySignal) {
           secondFactor.push(not(keySignal));
+        }
+        if (refuseSignal) {
+          secondFactor.push(not(refuseSignal));
         }
         riskRules.push({
           id: options.idBase + ':rule:risk-medium-second-factor',
@@ -1592,6 +1687,33 @@ const TEMPLATES: TemplateRow[] = [
           condition: unprotected(B.apply(F1 + 'and', secondFactor)),
           obligations: obligation('step-up', 'second-factor'), advice: []
         });
+        // A SIGNAL THAT DEMANDS A SECOND FACTOR BELOW MEDIUM (#503): at
+        // LOW, where the level alone asks for nothing (UNSCORED never
+        // carries a signal). MEDIUM and HIGH are the rules above, so the
+        // risk rules stay exclusive and a Deny still carries exactly one
+        // instruction. The ticket's arithmetic: with the MEDIUM line at 3
+        // (#499) a Tor exit (×5) lifts the model's score over it only from
+        // 0.6, where a line at 1 needed 0.2; the factors are evidence and
+        // the line is the population's prior, so rescaling one by the
+        // other would count the prior twice — the decision is policy.
+        if (stepUpSignal) {
+          const lowStepUp = [stepUpSignal, not(levelIs('HIGH')),
+            not(levelIs('MEDIUM')), not(satisfied('second-factor'))];
+          if (refuseSignal) {
+            lowStepUp.push(not(refuseSignal));
+          }
+          riskRules.push({
+            id: options.idBase + ':rule:risk-signal-step-up',
+            effect: model.EFFECT.DENY,
+            description: 'Below MEDIUM, with one of these signals (' +
+                         stepUpSignals.join(', ') + '), refuse until the ' +
+                         'authentication carried a SECOND FACTOR — the ' +
+                         'obligation asks for one.',
+            target: null,
+            condition: unprotected(B.apply(F1 + 'and', lowStepUp)),
+            obligations: obligation('step-up', 'second-factor'), advice: []
+          });
+        }
         // THE APPLICATIONS RISK MAY NEVER LOCK OUT (#226): a step-up to the
         // strongest factor the person HOLDS, at HIGH as at MEDIUM, and never
         // a refusal. Two rules, exclusive by what is held.
@@ -1599,9 +1721,9 @@ const TEMPLATES: TemplateRow[] = [
           riskRules.push({
             id: options.idBase + ':rule:risk-protected-key',
             effect: model.EFFECT.DENY,
-            description: 'For ' + neverLockOut.join(', ') + ', at HIGH or ' +
-                         'MEDIUM, ask a person who holds a security key ' +
-                         'for it — never a refusal.',
+            description: 'For ' + neverLockOut.join(', ') + ', ' +
+                         elevatedWords + ', ask a person who holds a ' +
+                         'security key for it — never a refusal.',
             target: null,
             condition: B.apply(F1 + 'and', [protectedApp, elevated,
               held('security-key'), not(satisfied('security-key'))]),
@@ -1610,9 +1732,10 @@ const TEMPLATES: TemplateRow[] = [
           riskRules.push({
             id: options.idBase + ':rule:risk-protected-second-factor',
             effect: model.EFFECT.DENY,
-            description: 'For ' + neverLockOut.join(', ') + ', at HIGH or ' +
-                         'MEDIUM, ask a person who holds a second factor ' +
-                         'and no security key for it — never a refusal.',
+            description: 'For ' + neverLockOut.join(', ') + ', ' +
+                         elevatedWords + ', ask a person who holds a ' +
+                         'second factor and no security key for it — ' +
+                         'never a refusal.',
             target: null,
             condition: B.apply(F1 + 'and', [protectedApp, elevated,
               not(held('security-key')), held('second-factor'),
@@ -3314,7 +3437,16 @@ const TEMPLATES: TemplateRow[] = [
                             ? ' — a security key where a signal is about the ' +
                               'device or TLS client (' + keySignals.join(', ') +
                               '), a second factor otherwise'
-                            : ' — a second factor') + '. The risk rules deny ' +
+                            : ' — a second factor') +
+                          (stepUpSignals.length
+                            ? '; below MEDIUM, one carrying ' +
+                              stepUpSignals.join(', ') + ' is refused until ' +
+                              'it carries a second factor (#503)'
+                            : '') +
+                          (refuseSignals.length
+                            ? '; one carrying ' + refuseSignals.join(', ') +
+                              ' is refused at any level (#503)'
+                            : '') + '. The risk rules deny ' +
                           'and override the role rule; an authentication ' +
                           'with no assessment is decided on roles alone.' +
                           (protectedApp
@@ -3430,9 +3562,9 @@ const TEMPLATES: TemplateRow[] = [
           // makes the PEP say so loudly.
           id: options.idBase + ':rule:risk-protected-alarm',
           effect: model.EFFECT.PERMIT,
-          description: 'For ' + neverLockOut.join(', ') + ', at HIGH or ' +
-                       'MEDIUM, with no second factor to ask for: permit ' +
-                       'on the roles, and raise the alarm.',
+          description: 'For ' + neverLockOut.join(', ') + ', ' +
+                       elevatedWords + ', with no second factor to ask ' +
+                       'for: permit on the roles, and raise the alarm.',
           target: null,
           condition: B.apply(F1 + 'and', [protectedApp, elevated,
             not(held('second-factor')), condition]),
@@ -3953,7 +4085,11 @@ const TEMPLATES: TemplateRow[] = [
           'OWNER_WRITE may administer, through the management API, a role, ' +
           'group, service account or application they own, within the ' +
           'actions listed for its kind, never one closed to its owners and ' +
-          'never removing its last owner.',
+          'never removing its last owner. Since #1030 a third rule decides ' +
+          'the report API\'s rows: a report administrator reaches any ' +
+          'definition or job, a report user one shared with a group they ' +
+          'are in, for the listed actions; an owner reaches their own ' +
+          'through the first rule, and an application only those.',
     parameters: [
       { name: 'permitOwner',
         label: 'Permit a subject to act on a resource they own',
@@ -4039,7 +4175,30 @@ const TEMPLATES: TemplateRow[] = [
               'and update-fields are permitted only when EVERY attribute ' +
               'they write is listed. Leave out what turns an application ' +
               'into a bigger credential: its scopes, roles, grant types, ' +
-              'keys and delegation.' }
+              'keys and delegation.' },
+      // THE REPORT RULE (#1030): a report administrator on any row, and a
+      // shared group's member on the listed actions. An owner needs none of
+      // it — the first rule permits them — and an application is never a
+      // report administrator nor a group's member here, so it reaches only
+      // what it owns whatever role it holds (rcbj's decision 4 on #1030).
+      { name: 'permitReportSharing',
+        label: 'Permit report administrators and shared groups on the ' +
+               'report API',
+        dflt: 'yes', type: 'string',
+        help: 'yes or no. The THIRD rule (#1030): a PERSON holding ' +
+              'REPORT_ADMIN reaches every report definition and job in the ' +
+              'realm, and a person holding REPORT_USE reaches one shared ' +
+              'with a group they are in, for the actions listed below. An ' +
+              'owner reaches their own rows through the first rule whatever ' +
+              'this says, and an application holding either role reaches ' +
+              'only what it defined. No leaves every row to its owner.' },
+      { name: 'reportSharedActions',
+        label: 'What a shared group\'s member may do with a definition',
+        dflt: 'read, run', type: 'list',
+        help: 'Comma- or newline-separated: `read` (see the definition and ' +
+              'its jobs, download a result), `run` (run it), `write` ' +
+              '(change, share or delete it, which the default leaves to ' +
+              'the owner and a report administrator).' }
     ],
     build: function (answers, options) {
       log.debug('Entering buildAccessControl().');
@@ -4303,6 +4462,82 @@ const TEMPLATES: TemplateRow[] = [
                            TYPE.STRING)]),
             B.value(TYPE.INTEGER, '1')])])
       ];
+      // ---------------------------------------------------------------------
+      // THE THIRD RULE: REPORT ADMINISTRATORS AND SHARED GROUPS (#1030).
+      //
+      // Until #1030 `report/rights.ts` decided this with an `if`: an
+      // administrator sees everything, an owner their own, a shared group's
+      // member what was shared. The owner is the first rule's business — the
+      // report gate puts the row's owner in `resource-owner` and the token's
+      // subject in `subject-id` — and this rule is the other two sentences,
+      // TARGETED at the report API so that no other surface's question can
+      // trip it, and conjoined so that each narrows:
+      //   * the subject authenticated, and holding a role the resource
+      //     requires (REPORT_USE or REPORT_ADMIN, the gate's any-one);
+      //   * the subject a PERSON (`subject-kind` is `user`) — an application
+      //     holding a report role is an owner and nothing else, which is
+      //     rcbj's decision 4: it reaches, runs, edits and deletes only what
+      //     it defined;
+      //   * and then EITHER REPORT_ADMIN among its roles, OR the action one
+      //     of `reportSharedActions` AND a group among the row's shared
+      //     groups that the PIP says the person is in (`owner-identity`
+      //     against `report-shared-group`, the owner rule's comparison).
+      // A question about the API rather than a row carries no shared group,
+      // so the second arm is false for it, and the first rule decides it.
+      // ---------------------------------------------------------------------
+      const permitReportSharing = B.yes(given.permitReportSharing, true);
+      const sharedActions = listedOr('reportSharedActions', 'read, run');
+      const isAPerson = B.apply(F1 + 'string-is-in', [
+        B.value(TYPE.STRING, 'user'),
+        B.designator(model.CATEGORY.ACCESS_SUBJECT,
+                     ISSUANCE_ATTRIBUTE.SUBJECT_KIND, TYPE.STRING)]);
+      const isReportAdmin = B.apply(F1 + 'string-is-in', [
+        B.value(TYPE.STRING, 'REPORT_ADMIN'),
+        B.designator(model.CATEGORY.ACCESS_SUBJECT, ISSUANCE_ATTRIBUTE.ROLE,
+                     TYPE.STRING)]);
+      const sharedWithTheirGroup = B.apply(F1 + 'and', [
+        sharedActions.length
+          ? B.apply(F3 + 'any-of-any', [
+            { kind: 'function', functionId: F1 + 'string-equal' },
+            B.designator(model.CATEGORY.ACTION, model.ATTRIBUTE.ACTION_ID,
+                         TYPE.STRING),
+            stringBag(sharedActions)])
+          : B.value(TYPE.BOOLEAN, 'false'),
+        B.apply(F3 + 'any-of-any', [
+          { kind: 'function', functionId: F1 + 'string-equal' },
+          B.designator(model.CATEGORY.ACCESS_SUBJECT,
+                       ISSUANCE_ATTRIBUTE.OWNER_IDENTITY, TYPE.STRING),
+          B.designator(R, ISSUANCE_ATTRIBUTE.REPORT_SHARED_GROUP,
+                       TYPE.STRING)])]);
+      const reportRule = {
+        id: options.idBase + ':rule:report-administrators-and-shares',
+        effect: model.EFFECT.PERMIT,
+        description: 'Permit a PERSON holding REPORT_ADMIN any report ' +
+                     'definition or job of the realm, and a person holding ' +
+                     'a report role the actions ' +
+                     (sharedActions.join(', ') || '(none)') + ' on one ' +
+                     'shared with a group they are in (#1030). An owner ' +
+                     'reaches their own through the first rule; an ' +
+                     'application reaches only what it defined.',
+        // `report-api` is `common/access_gate.ts`'s RESOURCE.REPORT_API,
+        // which the report gate sends as the resource-id; written out
+        // because this file may not require that module's dependents.
+        target: B.targetOf([[
+          B.match(F1 + 'string-equal', B.value(TYPE.STRING, 'report-api'),
+                  B.designator(R, model.ATTRIBUTE.RESOURCE_ID,
+                               TYPE.STRING))]]),
+        condition: B.apply(F1 + 'and', [
+          B.apply(F3 + 'any-of', [
+            { kind: 'function', functionId: F1 + 'boolean-equal' },
+            B.value(TYPE.BOOLEAN, 'true'),
+            B.designator(model.CATEGORY.ACCESS_SUBJECT,
+                         ISSUANCE_ATTRIBUTE.AUTHENTICATED, TYPE.BOOLEAN)]),
+          holdsRequiredRole,
+          isAPerson,
+          B.apply(F1 + 'or', [isReportAdmin, sharedWithTheirGroup])]),
+        obligations: [], advice: []
+      };
+
       const ownerRule = {
         id: options.idBase + ':rule:owner-administers-what-they-own',
         effect: model.EFFECT.PERMIT,
@@ -4347,6 +4582,12 @@ const TEMPLATES: TemplateRow[] = [
                          'administer what they own through the management ' +
                          'API, within the actions its kind allows'
                        : '') +
+                     (permitReportSharing
+                       ? '. A third rule (#1030) permits a report ' +
+                         'administrator any report definition or job, and ' +
+                         'a shared group\'s member the listed actions on ' +
+                         'one shared with them'
+                       : '') +
                      '. Everything else is denied: the combining algorithm ' +
                      'is deny-unless-permit, so an access decision does not ' +
                      'depend on a PEP\'s bias.',
@@ -4369,7 +4610,8 @@ const TEMPLATES: TemplateRow[] = [
           target: null,
           condition: condition,
           obligations: [], advice: []
-        }].concat(permitOwnerAdministration ? [ownerRule] : []),
+        }].concat(permitOwnerAdministration ? [ownerRule] : [])
+          .concat(permitReportSharing ? [reportRule] : []),
         obligations: [], advice: []
       };
     }

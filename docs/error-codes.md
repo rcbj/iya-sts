@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4673** of them, in **48** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4747** of them, in **48** subsystems.
 
 ## Where a code appears
 
@@ -53,7 +53,7 @@ is an ordinary outcome.
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
 * [Service core (`STS-CORE`)](#sts-core) — 95
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 51
-* [Persistence and coordination (`STS-STORE`)](#sts-store) — 87
+* [Persistence and coordination (`STS-STORE`)](#sts-store) — 89
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 32
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 20
@@ -63,40 +63,40 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 381
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 730
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 388
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 732
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 117
-* [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 33
+* [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 39
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 30
 * [Federation (`STS-FED`)](#sts-fed) — 171
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 242
-* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 130
+* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 147
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
 * [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 34
-* [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 77
+* [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 80
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 151
-* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 51
+* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 55
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 138
-* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 125
+* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 131
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 48
 * [Mail (`STS-MAIL`)](#sts-mail) — 40
 * [Languages and locales (`STS-I18N`)](#sts-i18n) — 12
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 356
 * [Device register (`STS-DEVICE`)](#sts-device) — 52
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 29
-* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 98
+* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 102
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 244
-* [Management API (`STS-API`)](#sts-api) — 86
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 249
+* [Management API (`STS-API`)](#sts-api) — 87
 * [User portal (`STS-PORTAL`)](#sts-portal) — 107
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 19
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 13
 * [Identity-provider-initiated sign-in (`STS-LAUNCH`)](#sts-launch) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 181
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
-* [Reporting (`STS-REPORT`)](#sts-report) — 34
+* [Reporting (`STS-REPORT`)](#sts-report) — 52
 
 ## STS-HTTP
 
@@ -403,6 +403,8 @@ Raised from: persistence/.
 | `STS-STORE-0085` | An on-demand minted store (#820) read a row whose sealed body will not open under this process's keys. It is answered as absent. | none |
 | `STS-STORE-0086` | The front process could not complete the index of an indexed on-demand minted store (#820): a write of its index rows or of the completion mark failed. Nothing is lost — the store stays read back whole at the next start, which tries again. | none |
 | `STS-STORE-0087` | Another process's rows of a store read when its page is drawn (`contributionsOnRead`, #820) could not be read. Nothing is lost: they stay noted and are read at the next refresh, and the page draws what this process already holds. | none |
+| `STS-STORE-0088` | A replicated directory change of a realm this process never came to define waited ten minutes for the realm and was dropped. | — |
+| `STS-STORE-0089` | A replicated minted-row change names its row under a data encryption key this process does not hold, even after reading the data-key rows again, and was skipped (another build's or a removed realm's); said once per key. | — |
 
 ## STS-CLUSTER
 
@@ -1571,6 +1573,13 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0460` | A Secure-Session-Skipped header was not an RFC 9651 list of sf-tokens, or a session_identifier in it was not an sf-string. Recorded on the log and the audit row. The request continues and the session is not marked skipped (#743). | log and audit; the request is not refused |
 | `STS-AUTHN-0461` | A passkey policy save was refused: it requires a device-bound session (deviceBoundRequired) while authn.deviceBoundSessions is off, so no browser would be offered the registration the requirement asks for (#740). | HTTP 400 (management API) |
 | `STS-AUTHN-0462` | An issuance was refused: the application's passkey profile requires a device-bound session and the session's fact is skipped or timedout. A fact that is still pending is a hold, not this refusal, and a session that was never offered registration is not this refusal (#740). | the issuance site's existing denial (the code is recorded, not sent) |
+| `STS-AUTHN-0463` | Continue with your certificate was refused at the sign-in screen: no verified client certificate arrived on the connection, the connection was a resumed TLS session that carries none, or the certificate names nobody (#1051). | the sign-in screen again (/authn-api answers next: refused) |
+| `STS-AUTHN-0464` | Continue with your certificate was refused at the sign-in screen: the certificate was refused on revocation (pki.revocationCheck), as GET /tls/sign-in refuses it (#1051). | the sign-in screen again (/authn-api answers next: refused) |
+| `STS-AUTHN-0465` | Continue with your certificate was refused at the sign-in screen: the identity gate does not accept the certificate as a person here — one of this service's that is not a TLS client identity, or one issued by another realm's authority (#1051). | the sign-in screen again (/authn-api answers next: refused) |
+| `STS-AUTHN-0466` | Continue with your certificate was refused at the sign-in screen: the certificate was issued to an application, which authenticates at the token endpoint (RFC 8705) and signs nobody in (#1051). | the sign-in screen again (/authn-api answers next: refused) |
+| `STS-AUTHN-0467` | Continue with your certificate was refused at the sign-in screen: it is not taken at this sign-in — the authentication policy does not accept a certificate as a first factor, the sign-in is a linking one, the application names the mechanisms it allows, or a security key or passkey is demanded (#1051). | the sign-in screen again (/authn-api answers next: refused) |
+| `STS-AUTHN-0468` | Continue with your certificate was refused at the sign-in screen: the certificate is from an outside certificate authority and is not stored in userCertificate on any account of the realm (#1061). | the sign-in screen again (/authn-api answers next: refused) |
+| `STS-AUTHN-0469` | Continue with your certificate was refused at the sign-in screen: the certificate is from an outside certificate authority and is stored in userCertificate on more than one account of the realm (#1061). | the sign-in screen again (/authn-api answers next: refused) |
 
 ## STS-OAUTH
 
@@ -1959,6 +1968,8 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0486` | A tls_client_auth client presented a verified certificate this realm did not issue to it, and registers no certificate subject to match it against. | invalid_client (HTTP 401) |
 | `STS-OAUTH-0487` | A client that registered tls_client_certificate_bound_access_tokens made a token request on a connection with no client certificate (RFC 8705 section 3.4), refused in every mode. | invalid_request (HTTP 400) |
 | `STS-OAUTH-0488` | A client declaring an RFC 8705 certificate authentication method did not authenticate by certificate and no more specific reason was recorded; refused in every mode. | invalid_client (HTTP 401) |
+| `STS-OAUTH-0489` | An access token for /admin-api was asked of the token endpoint by a client declaring tls_client_auth, self_signed_tls_client_auth or tls_client_certificate_bound_access_tokens, with no client certificate to bind it to (or minted on no connection, a CIBA push); refused in every mode. | invalid_request (HTTP 400) |
+| `STS-OAUTH-0490` | An implicit or hybrid authorization response would have carried an /admin-api access token for a client declaring a certificate, which the browser's connection can never bind; refused in every mode. | invalid_request (redirected error) |
 | `STS-OAUTH-0500` | An authorization request's acr_values were not met by the authentication performed after the person was sent to sign in again (RFC 9470 section 5); refused in every mode. | unmet_authentication_requirements (redirected error) |
 | `STS-OAUTH-0501` | An authorization request's max_age was still not met on the return from the sign-in it was sent to — the sign-in did not start a new authentication. | unmet_authentication_requirements (redirected error) |
 | `STS-OAUTH-0502` | The session did not meet an authorization request's acr_values or max_age, and prompt=none forbids sending the person to sign in again. | login_required (redirected error) |
@@ -2478,6 +2489,12 @@ Raised from: ws-trust/.
 | `STS-WSTRUST-0031` | Product mode: an RST asked for a token and carried no AppliesTo, so it names no application a token could be for; refused before anything was issued or recorded (#496). | SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 section 11 |
 | `STS-WSTRUST-0032` | Product mode: a SAML assertion or JWT presented as the requester's credential is addressed neither to its holder (an audience the holder's application registers) nor to this IdP (its WS-Trust issuer name, SAML entityID, OAuth issuer or /sts address) (#519). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
 | `STS-WSTRUST-0033` | An OnBehalfOf or ActAs request was refused because the verified JWT inside the element carries a may_act claim (RFC 8693 section 4.4) naming a party other than the requester. Held in every mode, as the token exchange holds it (STS-OAUTH-0620) (#747). | SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0034` | The TLS client certificate on the connection, the requester's only credential, verified and was refused on revocation (pki.revocationCheck). Every mode (#1046). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0035` | The TLS client certificate on the connection, the requester's only credential, was issued by this service and is not an identity in this realm: another realm's authority, a key pair that is not a TLS client certificate, or a holder whose entry is gone (common/tls_client_certificates.js). Every mode (#1046). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0036` | The TLS client certificate on the connection, the requester's only credential, is no longer listed on the record of the person or application it was issued to. Every mode (#1046). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0037` | The TLS client certificate on the connection, the requester's only credential, names a person whose account is disabled. Every mode (#1046). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0038` | The TLS client certificate on the connection, the requester's only credential, is from an outside certificate authority and is not stored in userCertificate on any entry of the realm. Every mode (#1061). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0039` | The TLS client certificate on the connection, the requester's only credential, is from an outside certificate authority and is stored in userCertificate on more than one entry of the realm. Every mode (#1061). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
 
 ## STS-WSFED
 
@@ -3163,6 +3180,23 @@ Raised from: ldap/, persistence/bulk_import.js (STS-LDAP-0150 to 0161).
 | `STS-LDAP-0174` | A custom attribute was not removed: the realm defines none by that name (#396). | HTTP 400 (console and API) |
 | `STS-LDAP-0175` | A console or management-API request (#359) had already spent ldap.workerDirectoryBudgetMs waiting on synchronous directory reads, so the next question was refused and not asked. One slow question still fails as STS-LDAP-0130 when it exceeds its own timeout first. A request outside /admin and /admin-api has no such budget. | HTTP 503 with Retry-After; an LDAP operation answers unavailable (52) |
 | `STS-LDAP-0176` | GET /admin-api/ldap/devices or /admin-api/rbac failed to draw its page with something other than a store it could not read (#359: STS-LDAP-0130, 0131, 0139 and 0175 are the 503s) and with no code of its own: a fault in this service, answered as one and logged with the stack, never a "try again shortly". | HTTP 500 (server_error) |
+| `STS-LDAP-0177` | A group's mail address was refused: the value given to the console or the management API is not an email address. | a console/API refusal |
+| `STS-LDAP-0178` | A SASL bind named a mechanism other than EXTERNAL; this directory accepts SASL EXTERNAL only (#1047). | LDAP result code 7, authMethodNotSupported (RFC 4511 section 4.2.2) |
+| `STS-LDAP-0179` | A SASL EXTERNAL bind arrived on an LDAPS connection that carries no client certificate that verified against the client truststore — at the defaults LDAPS asks for none (ldap.ldapsDisableOptionalClientCertificate) (#1047). | LDAP result code 48, inappropriateAuthentication (RFC 4513 section 5.2.1.2) |
+| `STS-LDAP-0180` | A SASL EXTERNAL bind arrived on the plain LDAP listener, which has no TLS and so no client certificate (#1047). | LDAP result code 48, inappropriateAuthentication |
+| `STS-LDAP-0181` | A SASL EXTERNAL bind was refused because the connection's client certificate was refused on revocation, or its revocation status could not be established (#1047). | LDAP result code 49, invalidCredentials |
+| `STS-LDAP-0182` *(retired)* | A SASL EXTERNAL bind was refused because the connection's client certificate verified against an anchor in the client truststore but was not issued by this service; a certificate from an outside certificate authority binds nobody to the directory (#1047). Retired by #1061: such a certificate binds as the one entry storing it, else STS-LDAP-0192 or STS-LDAP-0193. | LDAP result code 49, invalidCredentials |
+| `STS-LDAP-0183` | A SASL EXTERNAL bind was refused because the connection's client certificate was issued by this service but is not a TLS client identity (no clientAuth, no single urn:sts:person: name, a realm that is gone) (#1047). | LDAP result code 49, invalidCredentials |
+| `STS-LDAP-0184` | A SASL EXTERNAL bind was refused because the connection's client certificate was issued by another trust realm's authority than the realm the bind is in (#1047). | LDAP result code 49, invalidCredentials |
+| `STS-LDAP-0185` | A SASL EXTERNAL bind was refused because the connection's client certificate was issued to an application; only a person binds to this directory (#1047). | LDAP result code 49, invalidCredentials |
+| `STS-LDAP-0186` | A SASL EXTERNAL bind was refused because the connection's client certificate is no longer on its holder's record (#1047). | LDAP result code 49, invalidCredentials |
+| `STS-LDAP-0187` | A SASL EXTERNAL bind was refused because the person the connection's client certificate was issued to has no entry in the realm's directory; none is created (#1047). | LDAP result code 49, invalidCredentials |
+| `STS-LDAP-0188` | A SASL EXTERNAL bind was refused because the person the connection's client certificate names has a disabled account (#1047). | LDAP result code 49, invalidCredentials |
+| `STS-LDAP-0189` | A SASL EXTERNAL bind was refused because its authorization identity (dn: or u:) did not name the entry the certificate was issued to, or was in neither form (#1047). | LDAP result code 50, insufficientAccessRights (RFC 4513 section 5.2.1.8) |
+| `STS-LDAP-0190` | A SASL EXTERNAL bind was refused because its bind name was not empty and did not name the entry the certificate was issued to (#1047). | LDAP result code 49, invalidCredentials |
+| `STS-LDAP-0191` | The node-ldapjs in use does not support the saslMechanisms and bindDnFromHandler server options, so a SASL EXTERNAL bind cannot be decoded and its connection is closed (#1047). | none — logged at startup |
+| `STS-LDAP-0192` | A SASL EXTERNAL bind was refused because the connection's client certificate is from an outside certificate authority and is not stored in userCertificate on any person entry of the bind's realm (#1061). | LDAP result code 49, invalidCredentials |
+| `STS-LDAP-0193` | A SASL EXTERNAL bind was refused because the connection's client certificate is from an outside certificate authority and is stored in userCertificate on more than one entry of the bind's realm (#1061). | LDAP result code 49, invalidCredentials |
 
 ## STS-ATTR
 
@@ -3341,6 +3375,9 @@ Raised from: scim/.
 | `STS-SCIM-0080` | A request named a path under /scim/v2 that is no SCIM endpoint; it is answered in the SCIM Error schema rather than by express as an HTML page (#206). | HTTP 404 (SCIM Error, RFC 7644 section 3.12) |
 | `STS-SCIM-0081` | A PUT, PATCH or DELETE carried an If-Match other than *, and this service keeps no entity-tags, so no version can match it (RFC 9110 section 13.1.1); nothing was changed (#206). | HTTP 412 (SCIM Error, RFC 7644 sections 3.12 and 3.14) |
 | `STS-SCIM-0082` | A filter ordered (gt, ge, lt, le) a boolean or binary attribute, which RFC 7644 section 3.4.2.2 refuses (#206). | HTTP 400 invalidFilter (SCIM Error) |
+| `STS-SCIM-0083` | A TLS client certificate this realm issued to an application was presented at /scim/v2, and the application does not declare the SCIM scope the operation needs in its oauthAllowedScope (#1048). | HTTP 403 (SCIM Error) |
+| `STS-SCIM-0084` | A verified TLS client certificate from an outside certificate authority was not taken as a SCIM credential: it is not stored in userCertificate on any entry of the realm (#1061). The request is decided as if no certificate had been presented. | audit row; HTTP 401 when no other scheme authenticates |
+| `STS-SCIM-0085` | A verified TLS client certificate from an outside certificate authority was not taken as a SCIM credential: it is stored in userCertificate on more than one entry of the realm (#1061). | audit row; HTTP 401 when no other scheme authenticates |
 
 ## STS-SPIFFE
 
@@ -3561,6 +3598,10 @@ Raised from: tls/.
 | `STS-TLS-0049` *(retired)* | A browser's POST /tls/trust or /tls/trust/clear (one carrying an Origin) was not JSON: the /tls page sends its two acts as JSON (#583). A request with no Origin is a script's and is not asked. Retired by #597, with both routes. | — |
 | `STS-TLS-0050` *(retired)* | A browser's POST /tls/trust or /tls/trust/clear carried an Origin this service does not answer on: it was not sent by the /tls page (#583). Retired by #597, with both routes. | — |
 | `STS-TLS-0051` *(retired)* | A browser's POST /tls/trust or /tls/trust/clear carried no X-CSRF-Token, or not the token of the /tls page's own cookie (sts_tls_page), which the page's shell carries (#583). Retired by #597, with both routes. | — |
+| `STS-TLS-0052` | A TLS 1.2 session resumed by session ticket was offered under a server name other than the one it was made under (#507). RFC 6066 section 3 forbids accepting the resumption; node resumes a ticket inside OpenSSL with no event to refuse it in, so the listener compares the name after the handshake, against the name it recorded under a digest of the session's master secret, and closes the connection. | logged; the connection is closed; the client's next connection is a full handshake |
+| `STS-TLS-0053` | A TLS 1.2 session was resumed by session ticket and this node has no record of the server name it was made under (#507): the record aged out or was evicted, the ticket was sealed under the cluster's shared key by a node whose row has not replicated here yet, or the hello's name could not be read. The connection is closed, because a name nobody compared is not vouched for (RFC 6066 section 3). | logged; the connection is closed; the client's next connection is a full handshake |
+| `STS-TLS-0054` | GET /tls/sign-in started no session for a verified client certificate from an outside certificate authority that is not stored in userCertificate on any entry of the realm; an outside certificate names only the entry it is stored on, never its common name or subject (#1061). | HTTP 200, session.started false |
+| `STS-TLS-0055` | GET /tls/sign-in started no session for a verified client certificate from an outside certificate authority that is stored in userCertificate on more than one entry of the realm, so it names nobody (#1061). | HTTP 200, session.started false |
 
 ## STS-VC
 
@@ -3842,6 +3883,12 @@ Raised from: ssf/.
 | `STS-SSF-0144` | The internal poll (#771) could not collect a surface's Security Event Tokens in a realm: the request failed or was refused. They stay queued on the stream and the next run tries again. | none — logged once per change of outcome |
 | `STS-SSF-0145` | A poll for one of this service's own receiver streams presented the wrong authorization header, or none (#771). Only this service's own receivers hold the credential. | RFC 8935 section 2.4 shape, err access_denied (HTTP 401) |
 | `STS-SSF-0146` | A Security Event Token was pushed to one of this service's own receive endpoints while its stream is delivered by poll (#771). Nothing is agreed to be pushed there. | RFC 8935 section 2.4 shape, err invalid_request (HTTP 400) |
+| `STS-SSF-0147` | A TLS client certificate presented alone to a Shared Signals endpoint was not taken as a receiver (#1049): this service issued it, and it is not an identity here, is another realm's, or names a person rather than an application. | HTTP 401 {err: authentication_failed} with WWW-Authenticate |
+| `STS-SSF-0148` | A TLS client certificate this realm issued to an application was presented to a Shared Signals endpoint after the application's record stopped listing it (#1049). | HTTP 401 {err: authentication_failed} with WWW-Authenticate |
+| `STS-SSF-0149` | An application authenticated to a Shared Signals endpoint by its TLS client certificate holds no permission the operation needs (#1049): its oauthAllowedScope declares none, or its SSF_READ and SSF_MANAGE roles authorize none of what it declares. | HTTP 403 {err: access_denied} with WWW-Authenticate |
+| `STS-SSF-0150` | A TLS client certificate presented alone to a Shared Signals endpoint was refused on revocation (#1049); the certificate's own code is on the audit row beside it. | HTTP 401 {err: authentication_failed} with WWW-Authenticate |
+| `STS-SSF-0151` | A TLS client certificate presented alone to a Shared Signals endpoint is from an outside certificate authority and is not stored in userCertificate on any entry of the realm (#1061). | HTTP 401 {err: authentication_failed} with WWW-Authenticate |
+| `STS-SSF-0152` | A TLS client certificate presented alone to a Shared Signals endpoint is from an outside certificate authority and is stored in userCertificate on more than one entry of the realm (#1061). | HTTP 401 {err: authentication_failed} with WWW-Authenticate |
 
 ## STS-RISK
 
@@ -3888,7 +3935,7 @@ Raised from: risk/, admin-ui/risk_admin.ts.
 | `STS-RISK-0035` | A risk dataset version was left loading with no progress for risk.importStallMinutes — the process importing it stopped — and the risk.stalled-imports job refused it; or an import found its version already refused that way and stopped. | — |
 | `STS-RISK-0036` | The risk.upload-cleanup job removed a leftover upload file that no live process had touched for risk.importStallMinutes, or an upload file could not be deleted after its import. | — |
 | `STS-RISK-0037` | A risk dataset upload failed unexpectedly: its fields could not be checked, or its import threw rather than answering. The upload's file is deleted. | — |
-| `STS-RISK-0038` | An authentication at HIGH or MEDIUM risk was PERMITTED for an application the issuance policy says risk may never lock out (the role-issuance template's neverLockOut, the console by default), because the person holds no second factor to step up with (#226). The alarm: enrol a second factor for this person, and look at the assessment's signals. | permitted; recorded on the audit row and logged as a warning |
+| `STS-RISK-0038` | An authentication at HIGH or MEDIUM risk, or carrying a signal the policy steps up or refuses on whatever the level (#503), was PERMITTED for an application the issuance policy says risk may never lock out (the role-issuance template's neverLockOut, the console by default), because the person holds no second factor to step up with (#226). The alarm: enrol a second factor for this person, and look at the assessment's signals. | permitted; recorded on the audit row and logged as a warning |
 | `STS-RISK-0039` | An administrator with no second factor was sent to set one up (offered or required, #246) at a sign-in whose risk is HIGH or MEDIUM. The enrolment goes ahead so the console is never locked out (#226); whoever holds the password could be the one enrolling, so confirm it with the person. | the set-up step; recorded on the audit row and logged as a warning |
 | `STS-RISK-0040` | The install-time dataset loader (risk/risk_install.ts) could not make the database connection the way the service makes it (#213): persistence.databasePasswordProvider names a secret store whose password could not be read, or persistence.databaseUrl is not a URL it can be put into. The provider's own reason follows. Nothing is imported and the loader exits non-zero. | — |
 | `STS-RISK-0041` | Monitoring → Geolocation (/admin/geolocation or GET /admin-api/geolocation, #255) could not be drawn or answered: the store's count of the realm's assessments by place failed, or the country outlines (admin-ui/natural_earth/countries.json) could not be read. The reason follows on the log line. | HTTP 500 |
@@ -4517,8 +4564,8 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0073` | A change nudge was not sent because the PEP's notify URL is plain http and the realm is in product mode, whatever xacml.pepNotifyAllowHttp says (#171). | — |
 | `STS-XACML-0074` | Product mode ignored xacml.pepNotifySkipTlsVerification: a nudge verifies the PEP's certificate whatever it says. Logged once per process (#171). | none — a warning in the log |
 | `STS-XACML-0075` | A write put a person or a group on ADMIN_READ or ADMIN_WRITE; their people are the console roster's, granted on /admin/rbac, and only an application is added on the role (#303). | none (a console or management API refusal, HTTP 400) |
-| `STS-XACML-0076` | A delete named a native role — ADMIN_READ, ADMIN_WRITE, DEVICE_COMPLIANCE, SSF_READ or SSF_MANAGE — which every realm keeps (#303, #309). | none (a console or management API refusal, HTTP 400) |
-| `STS-XACML-0077` | A native role (ADMIN_READ, ADMIN_WRITE, DEVICE_COMPLIANCE, SSF_READ or SSF_MANAGE) could not be seeded in a realm; no machine client can be issued its permission there until it exists (#303, #309). | none — a warning in the log |
+| `STS-XACML-0076` | A delete named a native role — ADMIN_READ, ADMIN_WRITE, ADMIN_CONSOLE, DEVICE_COMPLIANCE, SSF_READ, SSF_MANAGE, REPORT_USE or REPORT_ADMIN — which every realm keeps (#303, #309, #1030). | none (a console or management API refusal, HTTP 400) |
+| `STS-XACML-0077` | A native role (ADMIN_READ, ADMIN_WRITE, ADMIN_CONSOLE, DEVICE_COMPLIANCE, SSF_READ, SSF_MANAGE, REPORT_USE or REPORT_ADMIN) or one of its seeded groups could not be seeded in a realm; no machine client can be issued its permission there until it exists (#303, #309, #1030). | none — a warning in the log |
 | `STS-XACML-0078` | Neither the issuance policy nor the built-in one it falls back to gave a verdict on a requested scope — a defect; a scope gated by role was dropped and an ungated one kept (#304). | none — a warning in the log |
 | `STS-XACML-0079` | The built-in issuance policy could not be evaluated for the per-scope question in a process with no issuance PEP — a defect; scopes gated by role were dropped and the rest kept (#304, #305). | none — an error in the log |
 | `STS-XACML-0080` | A write named an application's role that is not <role>@<application>, or used a native or built-in role's name for one (#310). | none (a console or management API refusal, HTTP 400) |
@@ -4540,6 +4587,10 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0174` | Adding an owner to a role was refused: the value names no person and no group in this realm (#604). | HTTP 400 (API) or a refusal on the role page |
 | `STS-XACML-0175` | Adding an owner to a role was refused: the role already names the most owners a role may (#604). | HTTP 400 (API) or a refusal on the role page |
 | `STS-XACML-0176` | Taking an owner off a role was refused: the value is not one of the role's owners (#604). | HTTP 400 (API) or a refusal on the role page |
+| `STS-XACML-0177` | The access policy refused a request to GET /xacml, POST /xacml/pdp or GET /xacml/policies: the client certificate verified and is from an outside certificate authority that is not stored in userCertificate on any entry of the realm, so it resolved to nobody (#1061). | HTTP 403 access_denied |
+| `STS-XACML-0178` | The access policy refused a request to GET /xacml, POST /xacml/pdp or GET /xacml/policies: the client certificate verified and is from an outside certificate authority that is stored in userCertificate on more than one entry of the realm (#1061). | HTTP 403 access_denied |
+| `STS-XACML-0179` | The access policy refused a remote PEP request (/xacml/pep/*, POST /xacml/pip): the client certificate verified and is from an outside certificate authority that is not stored in userCertificate on any entry of the realm, so it resolved to nobody (#1061). | HTTP 403 access_denied |
+| `STS-XACML-0180` | The access policy refused a remote PEP request (/xacml/pep/*, POST /xacml/pip): the client certificate verified and is from an outside certificate authority that is stored in userCertificate on more than one entry of the realm (#1061). | HTTP 403 access_denied |
 
 ## STS-XPEP
 
@@ -4610,7 +4661,7 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0016` | The new-user form's Fill with example data was refused because the service is running in product mode. | HTTP 200 form page with a warning, or HTTP 400 JSON |
 | `STS-ADMIN-0017` | The new-user form's Fill with example data was pressed with no username to seed the example person from. | HTTP 200 form page with a warning |
 | `STS-ADMIN-0018` *(retired)* | The new-user form was posted with an action other than create or fill. | HTTP 200 form page with a warning, or HTTP 400 JSON |
-| `STS-ADMIN-0019` *(retired)* | The admin console's Shared Signals receive endpoint refused a pushed Security Event Token and the receiver named no more specific code. | HTTP 4xx/5xx per RFC 8935, as the receiver decided |
+| `STS-ADMIN-0019` | The admin console's Shared Signals receive endpoint refused a pushed Security Event Token and the receiver named no more specific code. Retired by the #446 cutover, which deleted the endpoint, and in use again since #1042 restored it. | HTTP 4xx/5xx per RFC 8935, as the receiver decided |
 | `STS-ADMIN-0020` *(retired)* | The realm switcher named a trust realm that is not defined; the browser was sent back to the current realm. | HTTP 303 to the current realm |
 | `STS-ADMIN-0021` | A console drill-down named a record that does not exist: an application, an authorization server profile, a trust realm, a federation relationship or a cache. | HTTP 200 page saying there is no such record |
 | `STS-ADMIN-0022` *(retired)* | The realm switcher was given a return path that is not a single-slash-rooted path (a possible open redirect); /admin was used instead. | HTTP 303 to /admin in the chosen realm |
@@ -4793,7 +4844,7 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0820` *(retired)* | A console form POST held a value outside the closed set the mirroring /admin-api operation's enum declares (#86). | HTTP 400 page |
 | `STS-ADMIN-0821` | A permission gated by role — admin:read, admin:write, ssf.read, ssf.manage, or an application permission its resource lists in oauthRoleGatedPermission — was asked for on behalf of a person or an application no held role authorizes it for (for a person's console roles: no Admin Read or Admin Write, not signed in, or the bootstrap administrator before its claim), and was left off the tokens (#302, #303). | none — the token is issued without that scope (RFC 6749 section 3.3) |
 | `STS-ADMIN-0822` | Every scope a request asked for was a permission gated by role that the subject's roles do not authorize, so nothing was left to issue (#302, #303). | invalid_scope (RFC 6749 sections 4.1.2.1 and 5.2) |
-| `STS-ADMIN-0823` | add-permission or remove-permission named a native role — ADMIN_READ, ADMIN_WRITE, DEVICE_COMPLIANCE, SSF_READ or SSF_MANAGE — whose permission is fixed (#303, #309). | none (a console or management API refusal, HTTP 400) |
+| `STS-ADMIN-0823` | add-permission or remove-permission named a native role — ADMIN_READ, ADMIN_WRITE, ADMIN_CONSOLE, DEVICE_COMPLIANCE, SSF_READ, SSF_MANAGE, REPORT_USE or REPORT_ADMIN — whose permission is fixed (#303, #309, #1030). | none (a console or management API refusal, HTTP 400) |
 | `STS-ADMIN-0824` | add-permission or remove-permission named no permission (#303). | none (a console or management API refusal, HTTP 400) |
 | `STS-ADMIN-0825` | add-permission named a native permission (admin:read, admin:write, device:compliance, ssf.read, ssf.manage), which only its native role authorizes (#303, #309). | none (a console or management API refusal, HTTP 400) |
 | `STS-ADMIN-0826` | add-permission named a permission no application in the realm defines; a permission must be defined before a role can authorize it (#303). | none (a console or management API refusal, HTTP 400) |
@@ -4836,6 +4887,11 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0872` | set-preferred-self-issued-subject was refused: the subject is not enrolled for the person, was enrolled by value (unproven), is a JWK thumbprint rather than a DID, or the directory did not store the change (#693). | HTTP 400 (API) |
 | `STS-ADMIN-0890` | The token register could not be read from the store for Monitoring → Tokens; the list drawn is what the answering process holds, and the answer says so (`coverage.unread`) (#820). | logged; the page answers |
 | `STS-ADMIN-0895` | The token holders that are clients could not be read from the store's `client` index for the user counts (Monitoring → Metrics, the dashboard); the clients counted are the holders this process holds (#820). | logged; the page answers |
+| `STS-ADMIN-0896` | Setting or clearing a group's mail address was refused by the directory; the refusal carries the directory's own code. | HTTP 400 |
+| `STS-ADMIN-0897` | Storing a certificate on a person's entry was refused: what was given is not one PEM or base64 DER X.509 certificate (#1061). | HTTP 400 (API) or a refusal on the person's page |
+| `STS-ADMIN-0898` | Storing or removing a certificate was refused: the person named has no entry in this realm, and none is created (#1061). | HTTP 400 (API) or a refusal on the person's page |
+| `STS-ADMIN-0899` | Storing a certificate on a person's entry was refused: the same certificate is already stored on another entry of the realm, and a certificate stored on two entries names nobody (#1061). | HTTP 400 (API) or a refusal on the person's page |
+| `STS-ADMIN-0900` | Removing a stored certificate was refused: the person's entry stores no certificate with that SHA-256 (#1061). | HTTP 400 (API) or a refusal on the person's page |
 
 ## STS-API
 
@@ -4931,6 +4987,7 @@ Raised from: mgmt-api/.
 | `STS-API-0134` | A request to close an object to its owners, or open it again, named no kind of the four or no object (#607). | HTTP 400 |
 | `STS-API-0135` | A Kerberos trusts action through POST /admin-api/kerberos/trusts/{action} threw inside this service; the log says why (#430). | HTTP 500 |
 | `STS-API-0136` | A management API users action that answers later (a by-value did:web enrolment, which fetches the DID document) failed inside this service; the log says why (#693). | HTTP 500 |
+| `STS-API-0137` | An /admin-api access token issued to a client that declares tls_client_auth, self_signed_tls_client_auth or tls_client_certificate_bound_access_tokens carries no cnf x5t#S256 (RFC 8705): such a client's tokens are accepted only certificate-bound. | invalid_token (HTTP 401) |
 
 ## STS-PORTAL
 
@@ -5364,9 +5421,9 @@ Raised from: report/.
 | `STS-REPORT-0013` | The sign-on session the access token came from has ended. | invalid_token (HTTP 401) |
 | `STS-REPORT-0014` | A certificate-bound access token was presented to the reports API without that certificate. | invalid_token (HTTP 401) |
 | `STS-REPORT-0015` | A DPoP-bound token was sent to the reports API as Bearer, or the proof was refused and named no code of its own. | invalid_token or invalid_dpop_proof (HTTP 401) |
-| `STS-REPORT-0016` | The access token presented to the reports API names no person. | forbidden (HTTP 403) |
+| `STS-REPORT-0016` *(retired)* | The access token presented to the reports API names no person. Retired by #1030 (2026-10-27): an application holding REPORT_USE or REPORT_ADMIN is a caller, confined to what it defined. | forbidden (HTTP 403) |
 | `STS-REPORT-0017` | The token lacks report:use or report:admin, or the client no longer declares the scope. | insufficient_scope or forbidden (HTTP 403) |
-| `STS-REPORT-0018` | This account may not use reports in this realm. | forbidden (HTTP 403) |
+| `STS-REPORT-0018` | The token carries report:use or report:admin and no role its subject holds NOW authorizes it (held ∩ carried, #1030): REPORT_USE or REPORT_ADMIN was taken from the person or the application after the token was minted. | forbidden (HTTP 403) |
 | `STS-REPORT-0019` | No such report definition, including one the caller may not see. | not_found (HTTP 404) |
 | `STS-REPORT-0020` | No such report job, including one the caller may not see. | job_not_found (HTTP 404) |
 | `STS-REPORT-0021` | The report job has not finished, so its result is not ready. | job_not_ready (HTTP 409) |
@@ -5383,6 +5440,24 @@ Raised from: report/.
 | `STS-REPORT-0033` | A method other than GET or HEAD was sent to the reports document. | HTTP 404 |
 | `STS-REPORT-0034` | A report job exceeded its time and was failed rather than returned in part. | result_too_large on the job; the submission already answered |
 | `STS-REPORT-0035` | A scheduled report names a parameter and stores no value for it, so this occurrence did not run and the slot was kept. | recorded |
+| `STS-REPORT-0036` | A synchronous users report names no filter the directory can answer with an index, and the directory is windowed, so it was refused rather than read person by person; in auto mode it became a job. | result_too_large (HTTP 400) |
+| `STS-REPORT-0037` | A report job finished with Notify on, and a group the definition is shared with has no mail attribute, so that group was not sent the notice. The other recipients were. | recorded; the job still completed |
+| `STS-REPORT-0038` | GET /report-api/schedules asked for another account's schedules with a token that holds report:use and not report:admin. | forbidden (HTTP 403) |
+| `STS-REPORT-0039` | A credentialHolders query would read more holders (or group members) than its execution's row cap allows, so it was refused before the first page was read (#1002); synchronously, under the job cap, it becomes a job in auto mode. | result_too_large (HTTP 400) |
+| `STS-REPORT-0040` | A filter on a directory-backed report source (users, credentialHolders) named no field the directory indexes, so it would have read every person; refused at acceptance, naming the indexed fields, in every mode (rcbj, 2026-10-27). | invalid_query (HTTP 400) |
+| `STS-REPORT-0041` | An indexed report filter on users matched more people than one read may take (the candidate cap), so it was refused rather than read person by person (#1028). | result_too_large (HTTP 400) |
+| `STS-REPORT-0042` | A finished report could not be sealed under the key hierarchy (no key-encryption key is held), so it was not stored; the job failed rather than write the report in the clear (#1033). | none (the job fails with unavailable) |
+| `STS-REPORT-0043` | A stored report would not open under the data keys this process holds (a destroyed or foreign key), so it was answered as gone (#1033). | none (the result is answered as not found) |
+| `STS-REPORT-0044` | The access-control policy refused a report API request (#1030): the subject holds no report role for the API, or the definition or job is not its own, not shared with a group it is in, and it is not a report administrator — an application reaches only what it defined. A hidden row is answered not_found. | forbidden (HTTP 403), or not_found (HTTP 404) for one row |
+| `STS-REPORT-0045` | A token the default realm issued was presented to another realm's report API and its subject is not a service administrator — a person holding Admin Read or Admin Write on the default realm's console roster now — so it was refused: only a service administrator reaches every realm's reports (#1038). | forbidden (HTTP 403) |
+| `STS-REPORT-0046` | A users report with an order or a count and no filter would read more people than a job may (report.asyncMaxRows), counted from the directory first, so it was refused at once rather than run as a job that reached report.asyncMaxMs (#1040). | result_too_large (HTTP 400) |
+| `STS-REPORT-0047` | The reports application's Shared Signals receive endpoint refused a pushed Security Event Token that carried no more specific code of its own (receivers off, no stream, wrong bearer token, empty or malformed token, wrong audience, or an unverified signature) (#1042). | HTTP 4xx/5xx per RFC 8935, as the receiver decided |
+| `STS-REPORT-0048` | A scheduled report, or a queued job, belongs to a person whose account is disabled, so it was not run (#1042): a disabled account stops its owner's schedules as it stops their sign-ins. | none (the occurrence is consumed; the job fails as forbidden) |
+| `STS-REPORT-0049` | A report job could not be built: the staging directory (risk.uploadDirectory) has less free space than the job's byte cap (report.asyncMaxBytes) and the reserve an upload keeps, so nothing was written and the job failed (#1045). | none (the job fails as unavailable) |
+| `STS-REPORT-0050` | A report job could not be built: the staging directory (risk.uploadDirectory) cannot be made or written, a build file could not be created, written (a disk that filled) or read back, so the job failed and its partial file was removed (#1045). | none (the job fails as unavailable) |
+| `STS-REPORT-0051` | A stored report has a piece that is missing or will not open under the keys this process holds, its piece marker cannot be read, or its download did not match its digest: refused as gone before the answer began, or the response was cut part-way rather than completed (#1045). | result_expired (HTTP 410) before the answer; otherwise none (the connection is closed) |
+| `STS-REPORT-0052` | A report build file was left in the staging directory: one that could not be removed when its job ended, or a leftover the report.build-cleanup job removed (or could not) because no live process held it (#1045). | none (a warning) |
+| `STS-REPORT-0053` | The store would not take a finished report (the database refused or went away while its pieces were written), so the job failed and nothing of it was kept (#1045). Until #1045 this read as STS-REPORT-0042, could not be sealed. | none (the job fails as unavailable) |
 
 ## Adding a code
 

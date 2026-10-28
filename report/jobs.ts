@@ -39,6 +39,7 @@ import sources = require('./sources');
 import Catalog = require('./catalog');
 import Limits = require('./limits');
 import Query = require('./query');
+import Staging = require('./staging');
 
 const log = bunyan.createLogger({ name: 'sts-report-jobs' });
 
@@ -141,6 +142,12 @@ function reportSubmit(spec: any): any {
   const job = {
     id: stores.newId(),
     owner: spec.owner,
+    // `user` or `application` (#1030): which kind of subject owns it, so
+    // the policy and the schedule can resolve the owner's roles.
+    ownerKind: spec.ownerKind === 'application' ? 'application' : 'user',
+    // The realm the owner's identity is in when it is not this one: the
+    // default realm's for a service administrator (#1038), '' otherwise.
+    ownerRealm: String(spec.ownerRealm || ''),
     document: stores.copy(spec.document),
     parameters: spec.parameters ? stores.copy(spec.parameters) : null,
     definitionId: spec.definitionId || null,
@@ -149,6 +156,12 @@ function reportSubmit(spec: any): any {
     source: plan.source,
     fields: (plan.fields || []).slice(),
     format: plan.format,
+    // WHY THIS IS A JOB (#986): `every-person` (an auto-mode query the
+    // reader refused to run synchronously, #985), `asked` (mode async,
+    // or POST /jobs), `limit` (auto over report.syncMaxRows), `source` (a
+    // source that cannot be read synchronously), `run` (a saved
+    // definition run by hand) or `schedule`. The job page says it.
+    queuedBecause: String(spec.because || 'asked'),
     status: 'queued',
     submittedAt: now,
     startedAt: null,
@@ -321,6 +334,37 @@ function reportBag(document: any, parameters: any): any {
   return bag;
 }
 
+// WHEN A SCHEDULE RUNS NEXT, AND WHICH OCCURRENCE IT LAST TOOK (#989's
+// follow-up, rcbj: a schedule set and no job seen). The page draws both,
+// so a reader can tell "not due yet" from "skipped", and the failure notes
+// say why a skip happened. Null where the schedule is off or has no
+// occurrence; `cronNext` is croner's, in UTC, as the job's `cronPrev` is.
+function reportScheduleTimes(def: any, nowMs?: number): any {
+  log.debug("Entering reportScheduleTimes().");
+  const out = { nextRunAt: null as string | null,
+                lastSlotAt: null as string | null };
+  if (def && typeof def.lastSlot === 'number') {
+    out.lastSlotAt = reportIso(def.lastSlot);
+  }
+  if (!def || !def.scheduleEnabled || !def.schedule) {
+    log.debug("Leaving reportScheduleTimes(). Off.");
+    return out;
+  }
+  try {
+    const scheduler = require('../cluster/scheduler');
+    const next = scheduler.Scheduler.cronNext(String(def.schedule),
+      typeof nowMs === 'number' ? nowMs : Date.now());
+    out.nextRunAt = next == null ? null : reportIso(next);
+  } catch (e) {
+    // An expression croner cannot read has no next run; the save refused
+    // it already, so this is a row written by hand.
+    log.debug("Caught in reportScheduleTimes(): " + ((e && e.message) || e));
+    out.nextRunAt = null;
+  }
+  log.debug("Leaving reportScheduleTimes().");
+  return out;
+}
+
 function reportCronOk(expr: string): boolean {
   log.debug("Entering reportCronOk().");
   if (!expr) {
@@ -400,6 +444,10 @@ function reportSave(spec: any): any {
     id: previous ? previous.id : stores.newId(),
     name: name,
     owner: previous ? previous.owner : spec.owner,
+    ownerKind: previous ? (previous.ownerKind || 'user')
+      : (spec.ownerKind === 'application' ? 'application' : 'user'),
+    ownerRealm: previous ? String(previous.ownerRealm || '')
+      : String(spec.ownerRealm || ''),
     document: stores.copy(spec.document),
     parameters: parameters,
     schedule: schedule,
@@ -513,7 +561,8 @@ function reportJobView(job: any, full: boolean): any {
     definitionId: job.definitionId || null,
     definitionName: job.definitionName || null,
     source: job.source,
-    fields: (job.fields || []).slice()
+    fields: (job.fields || []).slice(),
+    queuedBecause: job.queuedBecause || null
   };
   if (full) {
     view.query = stores.copy(job.document);
@@ -746,6 +795,9 @@ function reportRegister(): void {
       return Promise.resolve(out);
     }
   });
+  // The staged build files' clean-up (#1045), in every process: any of
+  // them may be the one `report.drain` runs a job in.
+  Staging.ReportStaging.registerJobs(schedulerMod);
   log.debug("Leaving reportRegister().");
 }
 
@@ -772,6 +824,7 @@ reportOfferLease();
 
 export = {
   submit: reportSubmit,
+  scheduleTimes: reportScheduleTimes,
   save: reportSave,
   share: reportShare,
   remove: reportRemove,

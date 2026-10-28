@@ -417,6 +417,11 @@ const JOBS = [
   // in a throwaway realm. A client is issued one only while it holds the
   // matching native role. `local: true`.
   { file: 'sts_ssf_caep_scopes.js',      browser: false },
+  // A SHARED SIGNALS RECEIVER AUTHENTICATED BY ITS TLS CLIENT CERTIFICATE
+  // (#1049): the application's certificate alone drives its own stream,
+  // reaches nobody else's, is held to its declared scopes and SSF roles, and
+  // is refused from another realm and once revoked. `local: true`.
+  { file: 'sts_ssf_client_certificate.js', browser: false },
   // OPENID CONNECT CORE OVER THE WIRE (#118, 2026-09-22): the ID Token's
   // hashes by its alg, errors in the fragment, POST at the authorization
   // endpoint, openid/prompt/nonce rules, id_token_hint, section 5.4's claims,

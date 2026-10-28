@@ -601,6 +601,75 @@ own receivers hear this service's own events.
 
 ---
 
+## A STATIC SURFACE HOLDS A TOKEN, AND `/report` IS THE THIRD RECEIVER (#1042, 2026-10-27)
+
+rcbj: "I want /report to be a third receiver. Fix the admin console and user
+portal so that they correctly receive and process CAEP / RISC signals
+again."
+
+**What had stopped working.** `signal-end-sessions` ends the receiving
+surface's relying-party sessions (`authn.endRelyingPartySessions()`), and
+since #446 (the console) and #568 (the portal) neither surface makes one:
+each is a static application holding a DPoP-bound token its own client was
+issued. Only the embedded debugger still runs the server-side flow. So
+every verified signal recorded "ended 0" and changed nothing; what still
+held a person out was the token gates' own three checks (a revoked jti, a
+disabled account, an ended sign-on session).
+
+**What the reaction does now** (`SsfReceivers.revokeSurfaceTokens()`): it
+still ends any relying-party session the surface has, and it revokes the
+tokens the surface's OWN client holds for the person — `sts-admin-console`,
+`sts-user-portal`, `sts-report`, the `audience` on its SURFACES row — so
+the next call to `/admin-api`, `/account-api` or `/report-api` is refused
+and the surface signs in again. Four tests on each token, the session's
+rules read for a token:
+
+* issued to this surface's client, and no other;
+* `isAbout()` on the token's own username and subject (and the address the
+  directory's mail index gives a name), fail-closed as the portal's page is;
+* a `session-revoked` naming a session reaches only tokens issued on it
+  (`record.sessionId`);
+* a token issued after the event's second is left alone;
+* and a `credential-change` whose `change_type` is `create` reaches no
+  token and no session (2026-10-27, run #4 of the suite): a credential
+  ADDED takes nothing away, and the suite's own habit — create a person
+  with a password, sign them in within the same second — met the delivery
+  a moment later and "the same second is ended". `update`, `revoke` and
+  `delete` still end them. `tests/signal_response.js` E4b and G1b;
+* and a RISC `account-disabled` about a person who is ENABLED now reaches
+  nothing (the same day): the disable ended what it had to end when it
+  happened, and an enable superseded it before the event was acted on —
+  `sts_second_factor_doors` disables, enables and signs the person in to
+  the portal within one second. Asked of `account_state.isDisabled()` per
+  token; where nothing can be asked the event acts. G7 and G8.
+
+**FOUND THROUGH THE INDEX, NEVER A WALK** (`tokenKeysNamed()`): the token
+register's `u:` and `s:` keys for every identifier the SET spells, and for
+an address the people the directory's mail index names (the directory found
+in the require cache, never required). Every password write sends a signal
+to every surface, and #767 measured what a walk per signal cost. Revoked
+through `admin_stats.revokeWhere()` with the initiating entity `policy`; the
+row's reaction carries `revoked` beside `ended`, and the `ssf.event.act`
+audit row says both.
+
+**`/report` IS THE THIRD SURFACE** (`id: 'report'`, audience `sts-report`,
+`sees: 'own'`): a stream per realm seeded with the others, polled by the
+same job, a receive endpoint at `/report/signals/receive` for a stream set
+back to push (`report/report_app.ts`), and `GET /report-api/signals` with
+the application's Signals page. The receiver row says `own` — the portal's
+fail-closed rule — and the report API widens it to the realm for a report
+ADMINISTRATOR (`rights.isAdmin()`), as the console sees everything for an
+administrator; an application caller sees nothing.
+
+**AND THE CONSOLE'S RECEIVE ENDPOINT IS BACK.** The #446 cutover deleted
+`POST /admin/signals/receive` with the server-rendered pages, so a console
+stream an operator set back to push was POSTed to a 404 (the static shell's
+STS-ADMIN-0843) while the portal's twin answered. It is registered above
+the shell again, STS-ADMIN-0019 un-retired for its refusals.
+
+`tests/signal_response.js` section G, `tests/ssf_receivers.js` section A and
+`tests/report_access_policy.js` C32-C34 hold it.
+
 ## THE OPT-OUT GATE, AND THE EXCEPTION WITHOUT WHICH IT IS A TRAP
 
 RISC section 2.8 gives an account three states — `opt-in`,
@@ -1353,7 +1422,7 @@ SSF" from "the path is wrong".
 
 ---
 
-## THREE SCHEMES AND TWO SCOPES
+## FOUR SCHEMES AND TWO SCOPES
 
 SSF 1.0 section 8 requires these endpoints to be protected and — unlike RFC
 7644, which names six schemes and leaves it there — has the transmitter
@@ -1444,6 +1513,58 @@ registered subject scope that only takes events away. GNAP now also emits a
 `ownerPersonCovers()` already refuses such a subject on a person's stream, and
 the internal receivers match a GNAP session id against no session of theirs.
 `gnap/CLAUDE.md` argues it.
+
+**A FOURTH SCHEME SINCE 2026-10-27: THE RECEIVER'S TLS CLIENT CERTIFICATE
+(#1049, part of #520).** rcbj's decision on #520: stream management and poll
+accept a receiver authenticated by its certificate, resolved to the
+receiver's APPLICATION by the identity gate, beside its bearer token.
+`ssf_auth.ts`'s `attemptClientCertificate()` carries the argument; what a
+reader of this file needs:
+
+* **One mapping, not a new one.** `common/tls_client_certificates.js`'s
+  `checkSocket()` (the realm boundary included) and `stillHeld()`, the two
+  questions RFC 8705's implicit mapping and GNAP's PKI trust model ask.
+  Nothing here reads a DN or a CN. A certificate from an anchor somebody
+  installed at `/admin-api/tls/trust` named nobody here and was ignored until
+  #1061; since then it is asked `{ stored: true }` and is the application
+  whose entry stores it in `userCertificate` (`common/CLAUDE.md` 3ag), held
+  to everything below like one this realm issued, and refused STS-SSF-0151
+  (stored on no entry) or 0152 (on more than one). Stored on a PERSON it is
+  0147, as a person's issued certificate is. The positive outside case over
+  the wire (`sts_ssf_client_certificate`) needs a stack and was not run in
+  #1061's session.
+* **Only with no Authorization header**, SCIM's rule; a header is the
+  caller choosing its credential, and a certificate-bound token already
+  reaches its binding through the OAuth attempt.
+* **The principal is the application's identifier** — what a GNAP token for
+  it owns as and what `findSsfOwner()` finds an entry by. A stream made with
+  a client_credentials token is owned by the client_id, so the two reach the
+  same streams where the client_id is the identifier, the usual
+  registration, and not otherwise. That was chosen over "the client_id when
+  there is exactly one", which would have made `ssfAllowedEvents` and
+  `ssfReceiverId` stop finding the entry for an application whose client_id
+  differs.
+* **Its scopes are what a token would be issued, asked on every call**:
+  the SSF names its `oauthAllowedScope` declares LITERALLY, through
+  `role_permissions.ts`'s `narrowScope()` (SSF_READ, SSF_MANAGE, the
+  issuance policy), then write includes read. Literally, because the implied
+  `ssf.read` of a manage-only declaration is a name SSF_MANAGE does not
+  authorize, and asking for it would audit STS-ADMIN-0821 on every poll.
+* **Refused in both modes**, only where the endpoint needs a permission:
+  STS-SSF-0147 (issued here and not an application of this realm, a
+  person's included), 0148 (no longer held), 0149 (403, nothing authorized),
+  0150 (revoked; the certificate's own code audited beside it). A wrong
+  credential is a refusal like Basic's reserved password; development's
+  turnstile is for a request that presents nothing.
+* **`authorization_schemes` publishes `urn:ietf:rfc:8705`**, the URN SSF
+  1.0's own transmitter configuration example lists beside RFC 6749.
+  `ssf.authClientCert` (on, as `ssf.authBasic` is) removes both.
+
+`tests/ssf_client_certificate.js` holds every branch;
+`tests/protocol/sts_ssf_client_certificate.js` the wire. No console page or
+`/admin-api` operation was added: `/admin/ssf` draws the setting and
+`GET /admin-api/ssf`'s `authentication.schemes` says whether the scheme is
+offered (rule 7).
 
 ## `ssfAllowedEvents`: THE ONE PLACE AN APPLICATION ENTRY LIMITS A STREAM (2026-09-12)
 

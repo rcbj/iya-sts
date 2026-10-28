@@ -284,16 +284,20 @@
     "text": "Den webbläsarsession för inloggning som den här tjänsten redan har — den som /authn/login upprättar och WS-Federation delar — erbjuden här eftersom avsnitt 2 namnger den: \"clients may assert HTTP cookies over TLS that contain an authentication state understood by the SCIM service provider\". Det är vad som gör att ett SCIM-anrop från en sida på den här tjänsten fungerar utan en andra autentiseringsuppgift. Det finns ingen utmaning för den: en server kan inte be om en cookie i WWW-Authenticate, så den används när den finns där och krävs aldrig."
   },
   "auth.schemes.clientcert": {
-    "en": "2d55447d0d4792ee",
-    "text": "Ömsesidig TLS, det första schema som RFC 7644 avsnitt 2 namnger. Tillgängligt endast där den här begäran kom över TLS med ett certifikat som VERIFIERADES mot ett ankare i klientens förtroendelager (/admin/tls/trust) — så på huvudporten endast när den är bunden som HTTPS (global.https, som oauth2.rfc9700 slår på). Identiteten är subjektet i RFC 4514-form, vilket är samma sträng som /admin/users och katalogen redan arkiverar ett certifikat under. Det registreras inte igen här: tls_server.js registrerar avsiktligt ett certifikat en gång per ANSLUTNING, och att räkna det per begäran skulle göra det ogjort från andra hållet."
+    "en": "440fefb9a488412f",
+    "text": "Ömsesidig TLS, det första schema som RFC 7644 avsnitt 2 namnger. Tillgängligt endast där den här begäran kom över TLS med ett certifikat som VERIFIERADES mot ett ankare i klientens förtroendelager (/admin/tls/trust) — så på huvudporten endast när den är bunden som HTTPS (global.https, som oauth2.rfc9700 slår på). Ett certifikat från en extern certifikatutfärdare (ett ankare någon har lagt till) är den person eller det program vars post lagrar det, byte för byte, i userCertificate, och inget annat: lagrat på ingen post eller på flera är det inte denna autentiseringsuppgift (STS-SCIM-0084, STS-SCIM-0085). En persons certifikat som den här sfären utfärdat arkiveras under sitt subjekt i RFC 4514-form. Det registreras inte igen här: tls_server.js registrerar avsiktligt ett certifikat en gång per ANSLUTNING, och att räkna det per begäran skulle göra det ogjort från andra hållet. Ett certifikat som den här sfären utfärdat till en APPLIKATION är den applikationen, och får bara göra det dess oauthAllowedScope deklarerar: läsomfånget för att läsa och skrivomfånget för att skriva, kontrollerat vid varje begäran, så en som inte deklarerar något av dem avvisas (STS-SCIM-0083). En persons certifikat, utfärdat här eller lagrat på dess post, får göra båda."
   },
   "auth.policy.oauth": {
     "en": "25657a7b65df5ecd",
     "text": "En OAuth-autentiseringsuppgift — en Bearer- eller DPoP-åtkomsttoken — får göra det som dess omfång säger: \"{{read}}\" för att läsa och \"{{write}}\" för att skriva. Ingetdera innebär det andra, så att en klients hantering av en skrivskyddad autentiseringsuppgift är något som den här tjänsten faktiskt kan producera."
   },
   "auth.policy.others": {
-    "en": "e23c0683e2f710ad",
-    "text": "VARJE ANNAT SCHEMA FÅR GÖRA BÅDA. Basic, Digest, HOBA, en sessionscookie och ett klientcertifikat bär inga omfång, så policyn för dem är hela ytan. Det är värt att läsa två gånger: en anropare som inte kan få ett omfång kan använda Basic i stället, vilket är skälet till att varje schema har en egen brytare — en driftsättning som prövar omfångshantering stänger av de andra fem."
+    "en": "d754835a0e2987d3",
+    "text": "VARJE ANNAT SCHEMA FÅR GÖRA BÅDA. Basic, Digest, HOBA, en sessionscookie och en persons klientcertifikat bär inga omfång, så policyn för dem är hela ytan. Det är värt att läsa två gånger: en anropare som inte kan få ett omfång kan använda Basic i stället, vilket är skälet till att varje schema har en egen brytare — en driftsättning som prövar omfångshantering stänger av de andra fem."
+  },
+  "auth.policy.certificate": {
+    "en": "113cbb3081d556a7",
+    "text": "EN APPLIKATIONS CERTIFIKAT HÅLLS TILL DESS DEKLARERADE OMFÅNG (#1048). Ett TLS-klientcertifikat som den här sfären utfärdat till en applikation bär inga omfång, så det får göra det som applikationens oauthAllowedScope deklarerar av de två ovan, kontrollerat vid varje begäran: en som inte deklarerar något av dem avvisas, en som bara deklarerar läsomfånget får bara läsa, och att ta bort en deklaration stänger genast ute certifikatet (STS-SCIM-0083)."
   },
   "auth.policy.rfc": {
     "en": "01badc7fa9089572",

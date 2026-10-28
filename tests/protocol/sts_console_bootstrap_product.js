@@ -58,6 +58,9 @@ const credentials = require("../tools/pep-credential.js");
 // CAs this job posts. Removed when it finishes, pass or fail (#335). The
 // truststore is service-wide and holds 32. tests/CLAUDE.md.
 const addedAnchors = [];
+// Certificates this job stored on default-realm entries (#1061), taken off
+// when it finishes: the default realm outlives the job.
+const storedHere = [];
 
 var appconfig;
 let appconfigProblem = null;
@@ -436,6 +439,20 @@ async function signInWithCertificate(commonName) {
     "adding this job's CA through POST /admin-api/tls/trust/add answered " +
     added.status + " " + added.text.slice(0, 200));
   addedAnchors.push(pki.caPem);
+  // STORED ON THE ENTRY IT SIGNS IN AS (#1061, rcbj 2026-10-27). The leaf is
+  // an outside authority's, and such a certificate names nobody by its CN any
+  // more: it is the one entry of the realm storing it in `userCertificate`.
+  // Stored on `commonName`'s default-realm entry, which is the person this
+  // section means; an unstored one starts no session (STS-TLS-0054).
+  storedHere.push(await credentials.storeOnEntry({
+    get: function (url) {
+      return call("GET", url);
+    },
+    post: function (url, payload) {
+      return call("POST", url, {
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload) });
+    } }, base, "", commonName, pki.certPem));
   // THE ANCHOR IS APPLIED WITH `setSecureContext()` AND THE NEXT HANDSHAKE IS
   // JUDGED AGAINST IT, so a sign-in in the same tick can meet the old
   // context — retried, as `sts_global_logout.js` retries it, on a sign-in that
@@ -653,7 +670,19 @@ async function thePasswordClaimsIt(created, visitorClient) {
         }).sort(), ["read", "write"]);
       assert.strictEqual(reply.body.you.viaEmptyRoster, false);
     });
-  const roster = await api("GET", R + "/admin-api/rbac");
+  // READ AGAIN FOR A MOMENT (cluster, 2026-10-27): the claim is written on
+  // the node the sign-in landed on and reaches the others through the
+  // change log, so a roster read through the balancer may be a pull
+  // behind. A bounded wait, never an unbounded one.
+  let roster = await api("GET", R + "/admin-api/rbac");
+  for (let attempt = 0; attempt < 40; attempt++) {
+    if (roster.body && roster.body.bootstrap &&
+        roster.body.bootstrap.claimedAt) {
+      break;
+    }
+    await new Promise(function (r) { setTimeout(r, 500); });
+    roster = await api("GET", R + "/admin-api/rbac");
+  }
   check("and its arrival claimed the realm's console", function () {
     assert.ok(roster.body.bootstrap.claimedAt,
               JSON.stringify(roster.body.bootstrap));
@@ -711,13 +740,33 @@ program
   .parse(process.argv);
 base = String(program.opts().url || base).replace(/\/+$/, "");
 
+// The stored certificates come off first (#1061); `forgetStored()` never
+// throws, so the verdict below is the test's.
+function forgetTheStored() {
+  log.debug("Entering forgetTheStored().");
+  log.debug("Leaving forgetTheStored().");
+  return credentials.forgetStored({
+    get: function (url) {
+      return call("GET", url);
+    },
+    post: function (url, payload) {
+      return call("POST", url, {
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload) });
+    } }, base, storedHere);
+}
+
 test().then(function () {
-  return credentials.settleAnchors(base, addedAnchors, null);
+  return forgetTheStored().then(function () {
+    return credentials.settleAnchors(base, addedAnchors, null);
+  });
 }, function (e) {
   // Cleanup still runs, and the original failure is passed through
   // settleAnchors(), which rethrows it.
   log.debug("Caught in test(): " + ((e && e.message) || e));
-  return credentials.settleAnchors(base, addedAnchors, e);
+  return forgetTheStored().then(function () {
+    return credentials.settleAnchors(base, addedAnchors, e);
+  });
 }).catch(function (e) {
   log.error(e.stack || e.message);
   process.exit(1);

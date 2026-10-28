@@ -1503,7 +1503,8 @@ function applyDirectoryOutcomes(changes, outcomes) {
 // the same shadow would each think they had to write everything.
 // ---------------------------------------------------------------------------
 /**
- * Writes the directory, realm and appconfig changes, then the minted rows.
+ * Writes the realm and appconfig changes, then the directory, then the
+ * minted rows.
  *
  * One flush at a time; a second caller shares the one queued behind the
  * running flush. A failure is logged and the changes stay dirty for the next
@@ -1641,11 +1642,71 @@ function flush() {
   // When it began, for the `FLUSH directory` timer (#820).
   const flushStartedAt = Date.now();
 
+  // THE DATA KEYS EXIST FIRST, THEN THEIR ROWS LAND (2026-10-27). The settle
+  // below waits for the queued key rows so the change log carries a key
+  // ahead of what is sealed under it — but a realm's `directory` key was
+  // made lazily, by the first seal INSIDE `saveDirectory()`, after this
+  // wait: its row went out behind the entries, and every other process's
+  // reader met those entries sealed under a key it did not hold yet and
+  // dropped them for good (STS-STORE-0042/0072: a new realm's role groups,
+  // in hundreds of realms of the full run on 086c421b). So every realm about
+  // to be written has its key made now, and the wait below commits it first.
+  const sealedRealms = new Set();
+  if (changes) {
+    changes.upserts.forEach(function (row) {
+      sealedRealms.add(row.realm);
+    });
+  }
+  if (windowWrites) {
+    windowed.upserts.forEach(function (row) {
+      sealedRealms.add(row.realm);
+    });
+  }
+  if (sealedRealms.size && typeof driver.entryCodec === 'function') {
+    try {
+      const codec = driver.entryCodec();
+      if (codec && typeof codec.prepareKeys === 'function') {
+        codec.prepareKeys(Array.from(sealedRealms));
+      }
+    } catch (e) {
+      // The seal inside the write asks again and reports there.
+      log.debug('Caught preparing the directory keys: ' +
+                ((e && e.message) || e));
+    }
+  }
+
   // THE DATA-KEY ROWS LAND FIRST (#391): a directory entry carrying a value
   // sealed under a data encryption key made since the last flush must not
   // reach another process before the key does.
+  // THE REALM AND SETTINGS ROWS COMMIT BEFORE THE DIRECTORY (2026-10-27).
+  // They were written after it, so a new realm's entries reached the change
+  // log ahead of the realm's own row, and every other process applied them
+  // before it knew the realm — a windowed process as RESIDENT entries, which
+  // it forgot once the realm defined its windowed containers and then
+  // DELETED from the store at its next flush as rows its shadow held and its
+  // memory lacked (the console bootstrap job's administrator, in every
+  // product mode; persistence_replication.js holds a row of an unknown realm
+  // back as well). The restore's order, for the restore's reason: a realm
+  // has to exist before its directory can be loaded into it.
   flushing = Promise.resolve(typeof keystore.settleDeks === 'function'
     ? keystore.settleDeks() : null).then(function () {
+    if (!wantRealms) {
+      return null;
+    }
+    // The whole list AND the delta: a snapshot driver writes the first, a
+    // database the second. See `realmShadow` above.
+    return driver.saveRealms(realmRows(), realmChanges).then(function () {
+      advanceRealmShadow(realmChanges);
+    });
+  }).then(function () {
+    if (!wantConfig) {
+      return null;
+    }
+    return driver.saveOverrides(configChanges.live, configChanges)
+      .then(function () {
+        advanceAppconfigShadow(configChanges);
+      });
+  }).then(function () {
     if (!changes) {
       return null;
     }
@@ -1727,23 +1788,6 @@ function flush() {
     // failure to do so is not this flush's failure.
     const alone = takeClaimReleases(takenAt);
     return alone.length ? releaseClaimsAlone(alone) : null;
-  }).then(function () {
-    if (!wantRealms) {
-      return null;
-    }
-    // The whole list AND the delta: a snapshot driver writes the first, a
-    // database the second. See `realmShadow` above.
-    return driver.saveRealms(realmRows(), realmChanges).then(function () {
-      advanceRealmShadow(realmChanges);
-    });
-  }).then(function () {
-    if (!wantConfig) {
-      return null;
-    }
-    return driver.saveOverrides(configChanges.live, configChanges)
-      .then(function () {
-        advanceAppconfigShadow(configChanges);
-      });
   }).then(function () {
     // THE DIRECTORY, THE REALMS AND THE SETTINGS HAVE COMMITTED; the minted
     // write below is a separate transaction with generations of its own.
@@ -3373,7 +3417,11 @@ function restoreRealms(rows, replicated) {
       overrides: row.overrides || {},
       // Told so, for the watchers that must not treat a realm another process
       // made — or the last run made — as one made here. `pki.js` is why.
-      restored: true
+      restored: true,
+      // And told it REPLICATED, for the directory's builder: a realm another
+      // process made has its subtree on the way in the same change log, and
+      // seeding it here raced those rows (2026-10-27).
+      replicated: !!replicated
     });
     if (!result.ok) {
       // Reported and skipped rather than fatal: one unrestorable realm must
@@ -4122,11 +4170,32 @@ function applyRealmsChange() {
         log.info('persistence: the "' + id + '" realm was removed by another ' +
                  'node; removing it here.');
         realms.remove(id);
+        if (typeof replication.forgetDeferred === 'function') {
+          replication.forgetDeferred(id);
+        }
         // Its directory is gone from the store with it, so its shadow goes
         // too — and without this the next full walk would find the realm's
         // rows remembered and the realm absent.
         shadow.delete(id);
       });
+      // AND A HELD ROW OF A REALM THE STORE DOES NOT LIST IS DROPPED NOW
+      // (2026-10-27, run #4): the realm was created and removed before this
+      // process saw either row, so its directory rows — committed after the
+      // realm's row, in the flush order above — will never find their realm
+      // here. Waiting the ten minutes reported every one (STS-STORE-0088).
+      if (typeof replication.heldRealmIds === 'function') {
+        const listed = new Set(stored.map(function (row) {
+          return String(row.id);
+        }));
+        replication.heldRealmIds().forEach(function (id) {
+          if (!listed.has(id) && !realms.get(id)) {
+            const dropped = replication.forgetDeferred(id);
+            log.info('persistence: the "' + id + '" realm is not in the ' +
+                     'store; ' + dropped + ' held row(s) that arrived ' +
+                     'behind its removal are dropped.');
+          }
+        });
+      }
     } finally {
       restoring = was;
     }

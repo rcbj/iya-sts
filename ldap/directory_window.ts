@@ -1086,10 +1086,16 @@ class DirectoryWindow {
    * @param base - the base's normalised DN (a windowed container, usually)
    * @param attribute - the attribute name, lower-cased as stored
    * @param predicate - the service's own rule, asked of each candidate
+   * @param control - optionally `{ stop }`, asked before each page; a truthy
+   *   answer (the reason) ends the read with a thrown error whose `stopped`
+   *   is true, so a caller whose budget ran out stops the store too
+   *   (#1002: a report's holders read on 8081 outlived its request by
+   *   minutes, a page at a time, with nobody waiting for the answer)
    * @returns a promise of `[{ key, entry }]`
    */
   async holdersAsync(realmId: string, base: string, attribute: string,
-                     predicate: (entry: Entry, key: string) => boolean):
+                     predicate: (entry: Entry, key: string) => boolean,
+                     control?: { stop?: () => any }):
       Promise<Array<{ key: string; entry: Entry }>> {
     log.debug("Entering DirectoryWindow.holdersAsync(). " + attribute);
     const out: Array<{ key: string; entry: Entry }> = [];
@@ -1097,6 +1103,15 @@ class DirectoryWindow {
     let after = '';
     let pages = 0;
     while (this.bridge) {
+      const why = control && typeof control.stop === 'function'
+        ? control.stop() : '';
+      if (why) {
+        const stopped: any = new Error('The holders read was stopped ' +
+          'before its ' + (pages + 1) + 'th page: ' + String(why));
+        stopped.stopped = true;
+        log.debug("Leaving DirectoryWindow.holdersAsync(). Stopped.");
+        throw stopped;
+      }
       const bridge = this.bridge;
       const args = [realmId, base, attribute, after, PAGE];
       const rows = (typeof bridge.queryAsync === 'function'
@@ -1165,10 +1180,16 @@ class DirectoryWindow {
    * @returns a promise of the count (0 before `attach()`)
    */
   async countHoldersAsync(realmId: string, base: string,
-                          attribute: string): Promise<number> {
+                          attribute: string, upTo?: number): Promise<number> {
     log.debug("Entering DirectoryWindow.countHoldersAsync(). " + attribute);
-    const n = Number(await this.askAsync('countWithAttribute',
-      [realmId, base, attribute])) || 0;
+    // `upTo` (#1002) bounds the count: the store counts no further than
+    // that many, so "more than my cap?" costs the cap and not the holders.
+    const most = Math.floor(Number(upTo) || 0);
+    const n = most > 0
+      ? Number(await this.askAsync('countWithAttributeUpTo',
+          [realmId, base, attribute, most])) || 0
+      : Number(await this.askAsync('countWithAttribute',
+          [realmId, base, attribute])) || 0;
     log.debug("Leaving DirectoryWindow.countHoldersAsync(). " + n + '.');
     return n;
   }

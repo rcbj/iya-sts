@@ -1482,6 +1482,9 @@ let groupsVersion = 0;
 let serviceAccountsVersion = 0;
 // The user-handle index's own clock (#909); see noteUserHandlesTouched().
 let userHandlesVersion = 0;
+// The stored-certificate index's own clock (#1061), the same arrangement; see
+// noteCertificatesTouched().
+let certificatesVersion = 0;
 
 // ---------------------------------------------------------------------------
 // WHAT HAS BEEN WRITTEN SINCE AN LDAP ADD ASKED ITS NAMES (#625).
@@ -1570,6 +1573,7 @@ function touchDirectory(dn, after) {
   noteGroupsTouched(dn, after);
   noteServiceAccountsTouched(dn, after);
   noteUserHandlesTouched(dn, after);
+  noteCertificatesTouched(dn, after);
   // And any add holding names it asked first is told what this write
   // touched (#625).
   noteHeldNamesTouched(dn, after);
@@ -1939,9 +1943,16 @@ const HOLDER_SCAN_SLICE = 2000;
  * @returns a promise of `[{ id, dn, attributes }]`, `attributes` keyed by
  *   the lower-cased names asked for
  */
-async function holdersAsync(kind, attribute, names) {
+async function holdersAsync(kind, attribute, names, control) {
   log.debug('Entering holdersAsync(). kind=' + kind + ' attribute=' +
             attribute);
+  // `control.stop()` (#1002), asked between pages of the store and between
+  // slices of the in-memory walk: a truthy answer is the reason, and the read
+  // ends with an error whose `stopped` is true. Without it a caller that
+  // gave up — a report past its budget, a request the client abandoned —
+  // left the store paging through a million holders for nobody.
+  const stop = control && typeof control.stop === 'function'
+    ? control.stop : null;
   const container = kind === 'person' ? usersDn()
     : (kind === 'device' ? devicesDn() : '');
   if (!container) {
@@ -1979,7 +1990,7 @@ async function holdersAsync(kind, attribute, names) {
     const hits = await directoryWindow.holdersAsync(realms.currentId(), base,
       held, function (entry) {
         return kind !== 'person' || isPersonEntry(entry);
-      });
+      }, stop ? { stop: stop } : undefined);
     hits.forEach(function (hit) {
       take(hit.entry);
     });
@@ -2001,11 +2012,108 @@ async function holdersAsync(kind, attribute, names) {
       await new Promise(function (resolve) {
         setImmediate(resolve);
       });
+      const why = stop ? stop() : '';
+      if (why) {
+        // Cast: the marker is read by the caller as `e.stopped`, and an
+        // Error has no such declared property.
+        const stopped = /** @type {any} */ (new Error(
+          'The holders walk was stopped after ' + seen + ' entries: ' +
+          String(why)));
+        stopped.stopped = true;
+        log.debug('Leaving holdersAsync(). Stopped.');
+        throw stopped;
+      }
     }
   }
   log.debug('Leaving holdersAsync(). ' + out.length + ' of ' + seen +
             ' entries walked in memory.');
   return out;
+}
+
+// THE PEOPLE CREATED OR CHANGED IN A SPAN (#1028, the reports' date range):
+// the store's `createdBetween` / `modifiedBetween` over the two B-trees of
+// schema version 28, the children of this realm's `ou=users` only. `lo` is
+// inclusive, `hi` exclusive, both epoch milliseconds, spelt into generalized
+// time as the columns hold it. Null in memory — the realm's map has no such
+// index and is small, so the caller walks — and null when the span holds
+// more than `cap` people, which the caller reads as "not whole" — unless
+// `partial` asks for the first `cap` anyway (#1040: a report with a limit,
+// no order and no count may be answered from them), which the caller then
+// knows is not whole by its length.
+async function entriesByTimeRangeAsync(column, lo, hi, cap, partial) {
+  log.debug('Entering entriesByTimeRangeAsync(). column=' + column);
+  if (!directoryWindow) {
+    log.debug('Leaving entriesByTimeRangeAsync(). In memory.');
+    return null;
+  }
+  const name = column === 'modified' ? 'modifiedBetween' : 'createdBetween';
+  const most = Math.max(1, Math.floor(Number(cap) || 1000));
+  const spell = function (ms) {
+    const n = Number(ms);
+    if (!isFinite(n) || n <= 0) {
+      return '';
+    }
+    return new Date(n).toISOString().replace(/[-:T]/g, '').replace(
+      /\.\d{3}Z$/, 'Z');
+  };
+  const hits = await storeAsked(directoryWindow.findWindowedAsync(
+    realms.currentId(), name,
+    [realms.currentId(), normalizeDn(usersDn()), spell(lo), spell(hi), most],
+    function (entry) {
+      return isPersonEntry(entry);
+    }));
+  if (hits.length >= most && !partial) {
+    log.debug('Leaving entriesByTimeRangeAsync(). Not whole.');
+    return null;
+  }
+  const out = hits.slice(0, most).map(function (hit) {
+    return hit.entry;
+  });
+  log.debug('Leaving entriesByTimeRangeAsync(). ' + out.length + '.');
+  return out;
+}
+
+// HOW MANY HOLD AN ATTRIBUTE, BEFORE READING THEM (#1002). The store's count
+// over the asked-names index (`countWithAttribute`, linear in the holders,
+// nothing opened), so a caller can refuse a read it cannot afford before
+// the first page: on 8081 every person with a password holds `stsKrb5Keys`,
+// a million of them, and a report asking for the Kerberos mechanism's
+// holders read them all. In memory the answer is null — not counted — and
+// the caller reads, because a realm held in memory is small by design.
+// `upTo` bounds the count (the store counts no further than that many), so
+// "more than my cap?" costs the cap and not the population.
+async function holderCountAsync(kind, attribute, upTo) {
+  log.debug('Entering holderCountAsync(). kind=' + kind + ' attribute=' +
+            attribute + ' upTo=' + upTo);
+  const container = kind === 'person' ? usersDn()
+    : (kind === 'device' ? devicesDn() : '');
+  if (!container) {
+    log.debug('Leaving holderCountAsync(). No such kind.');
+    return 0;
+  }
+  if (!directoryWindow) {
+    log.debug('Leaving holderCountAsync(). Not counted: in memory.');
+    return null;
+  }
+  const held = String(attribute || '').toLowerCase();
+  if (held === 'userpassword') {
+    // THE PASSWORD IS COUNTED, NOT INDEXED (#1019): nearly everyone holds
+    // one, so the store keeps no index of its holders and the asked-names
+    // walk would scan the realm; it keeps a COUNTER instead
+    // (`directory_queries.js`'s COUNTED_ATTRIBUTES, `countHolding`), one
+    // row read. `upTo` bounds the answer as it bounds the indexed count.
+    const counted = await storeAsked(directoryWindow.countHoldingAsync(
+      realms.currentId(), normalizeDn(container), held));
+    const holding = Number((counted && counted.holding) || 0);
+    const most = Math.floor(Number(upTo) || 0);
+    const bounded = most > 0 ? Math.min(holding, most) : holding;
+    log.debug('Leaving holderCountAsync(). ' + bounded + ' (counter).');
+    return bounded;
+  }
+  const n = await storeAsked(directoryWindow.countHoldersAsync(
+    realms.currentId(), normalizeDn(container), held, upTo));
+  log.debug('Leaving holderCountAsync(). ' + n + '.');
+  return n;
 }
 
 // ---------------------------------------------------------------------------
@@ -5365,8 +5473,28 @@ seed();
 // outside acme — see the note above the admin_rbac setDirectory() install
 // further down.
 // ---------------------------------------------------------------------------
-realms.onCreate(function (id) {
+// **NOT FOR A REALM THAT REPLICATED (2026-10-27).** A realm another process
+// made arrives through the change log as its row AND its subtree — the
+// containers, the seeded people, the internal applications, the native
+// roles — written by the process that built it. Since d49cd337 a replica
+// applies the realm row BEFORE that page's directory rows (a row of an
+// undefined realm was dropped, then held), so a seed here ran against an
+// empty tree a few milliseconds ahead of the creator's rows: STS-STORE-0052
+// for every seeded entry on every replica (3,026 in a single-node run, 6,700
+// per cluster node), and — the one that cost a job — a write made on the
+// replica's LOSING copy before the merge threw it away: `sts_worker_pools`
+// regenerated sts-management-api's secret on such a copy and the token
+// endpoint, reading the kept copy, refused the new secret. A replica
+// therefore builds nothing and waits for the rows; the process that made
+// the realm, and a process restoring the store at startup, seed as before.
+realms.onCreate(function (id, realm, origin) {
   log.debug('Entering the realm directory builder. id=' + id);
+  if (origin && origin.replicated) {
+    log.info('ldap: the "' + id + '" realm replicated from another ' +
+             'process; its subtree arrives with it and is not seeded here.');
+    log.debug('Leaving the realm directory builder. Replicated.');
+    return;
+  }
   realms.run(realms.get(id), function () {
     seed();
     // The vc-attribute sweep, for the reason it is run once after the default
@@ -5384,10 +5512,11 @@ realms.onCreate(function (id) {
     // directory slot, which resolves the container from the ambient realm —
     // the same reason `seed()` is in here.
     applications.seedInternalApplications({ scope: 'every' });
-    // THE NATIVE ROLES (#303, #309) — the console roles, DEVICE_COMPLIANCE,
-    // and SSF_READ and SSF_MANAGE. After the applications, whose client the
-    // console roles name. The SSF groups are created here when missing and
-    // an existing group's members are left as they are.
+    // THE NATIVE ROLES (#303, #309, #1030) — the console roles,
+    // DEVICE_COMPLIANCE, SSF_READ and SSF_MANAGE, REPORT_USE and
+    // REPORT_ADMIN. After the applications, whose client the console roles
+    // name. The SSF and report groups are created here when missing and an
+    // existing group's members are left as they are.
     roles.seedNativeRoles();
   });
   log.info('ldap: built the "' + id + '" realm\'s subtree at ' +
@@ -9833,7 +9962,8 @@ if (typeof admin.setGroupWriter === 'function') {
   admin.setGroupWriter({ createGroup: createGroup,
                          addGroupMember: addGroupMember,
                          addGroupOwner: addGroupOwner,
-                         removeGroupOwner: removeGroupOwner });
+                         removeGroupOwner: removeGroupOwner,
+                         setGroupMail: setGroupMail });
 } else {
   log.warn('ldap: the admin console offers no setGroupWriter(), so ' +
            '/admin/groups cannot create a group or add a member to one. The ' +
@@ -11977,6 +12107,305 @@ function webauthnUserHandleOwner(handle) {
 }
 
 // ---------------------------------------------------------------------------
+// A CERTIFICATE STORED ON AN ENTRY, AND THE ENTRY A PRESENTED ONE IS (#1061,
+// rcbj 2026-10-27).
+//
+// A certificate from an OUTSIDE authority — one somebody trusted through the
+// Client Truststores — is an identity only when it is, byte for byte, a leaf
+// stored in `userCertificate` (RFC 4523 section 2.1) on EXACTLY ONE entry of
+// the realm. It is never matched by its common name or subject, and no entry
+// is created or seeded from it. `common/tls_client_certificates.js`'s
+// `identityOf()` asks; this answers who holds it, through certificate
+// enrollment's slot (`certificateHolders`, below), because that is already the
+// slot that hands the certificate code the entry a certificate is on.
+//
+// **STORED AS RFC 4522 SAYS**: `userCertificate;binary`, base64 of the DER,
+// which is what an LDAP client writing the attribute sends and what an
+// `ldapsearch` hands back as a certificate. A value under the bare type is
+// read too (base64 or PEM), so an entry written by hand is not silently
+// unlike one written here.
+//
+// **FOUND THROUGH AN INDEX, NEVER A WALK OF THE PEOPLE.** In a windowed
+// process (#349 — 8081's millions) the store answers: `value_keys` holds the
+// SHA-256 of every stored certificate's DER under `usercertificatesha256`
+// (`persistence/directory_codec.js`), one GIN probe. The resident half (the
+// applications, and every entry of a whole directory) is the user-handle
+// index's arrangement: built from the holders of the attribute, checked rather
+// than kept (a hit is read back from its entry), on its own clock, which moves
+// only for a write naming no DN, a write to an entry the index holds, or one
+// to an entry holding a certificate. So a sign-in's own writes do not rebuild
+// it, and an unknown certificate presented twice costs one walk of the
+// holders at most.
+// ---------------------------------------------------------------------------
+const CERTIFICATE_ATTRIBUTES = ['usercertificate;binary', 'usercertificate'];
+
+const certificateIndexes = realms.keyed(function () {
+  return { index: null, dns: null, version: -1, builds: 0 };
+});
+
+// Whether an entry stores a certificate under either spelling.
+function storesCertificate(stored) {
+  log.debug("Entering storesCertificate().");
+  const attrs = (stored && stored.attributes) || {};
+  log.debug("Leaving storesCertificate().");
+  return CERTIFICATE_ATTRIBUTES.some(function (name) {
+    return (attrs[name] || []).length > 0;
+  });
+}
+
+// Whether a write may have changed who stores a certificate. Hot path (every
+// write): no Entering/Leaving pair, the exception the code style allows,
+// stated as it requires — `noteUserHandlesTouched()`'s shape.
+function noteCertificatesTouched(dn, after) {
+  if (!moduleLoaded || dn === undefined || dn === null || dn === '') {
+    certificatesVersion++;
+    return;
+  }
+  const key = normalizeDn(dn);
+  const cache = certificateIndexes();
+  if (cache.dns && cache.dns.has(key)) {
+    certificatesVersion++;
+    return;
+  }
+  let now = after;
+  if (now === undefined) {
+    if (directoryWindow) {
+      const held = directoryWindow.heldIn(realms.currentId(), key);
+      if (!held.known) {
+        certificatesVersion++;
+        return;
+      }
+      now = held.entry;
+    } else {
+      now = entries.get(key) || null;
+    }
+  }
+  const attrs = (now && now.attributes) || {};
+  if ((attrs['usercertificate;binary'] || []).length ||
+      (attrs.usercertificate || []).length) {
+    certificatesVersion++;
+  }
+}
+
+// The SHA-256 digests of the certificates an entry stores — the codec's own
+// reading, so the index the store keeps and the one kept here cannot differ.
+function certificateDigestsOfEntry(stored) {
+  log.debug("Entering certificateDigestsOfEntry().");
+  const out = stored && stored.attributes
+    ? require('../persistence/directory_codec')
+      .certificateDigestsOf(stored.attributes) : [];
+  log.debug("Leaving certificateDigestsOfEntry(). " + out.length + ".");
+  return out;
+}
+
+// What an entry holding a certificate IS, for the identity it answers: a
+// person (named as a simple bind names them), an application (by its
+// identifier), or another entry, which is no identity.
+function certificateHolderOf(stored) {
+  log.debug("Entering certificateHolderOf().");
+  const dn = String(stored.dn);
+  if (isPersonEntry(stored)) {
+    log.debug("Leaving certificateHolderOf(). A person.");
+    return { kind: 'person', dn: dn,
+             id: String((stored.attributes.uid || [])[0] ||
+                        usernameOfEntry(stored)) };
+  }
+  const identifier = (stored.attributes.appidentifier || [])[0];
+  if (identifier && isUnder(dn, applicationsDn())) {
+    log.debug("Leaving certificateHolderOf(). An application.");
+    return { kind: 'application', dn: dn, id: String(identifier) };
+  }
+  log.debug("Leaving certificateHolderOf(). Another entry.");
+  return { kind: 'entry', dn: dn, id: dn };
+}
+
+/**
+ * The entries of the ambient realm that store a certificate whose DER has
+ * this SHA-256, each `{ kind, id, dn }` — person, application, or another
+ * entry. At most three are answered: the caller asks whether there is exactly
+ * one.
+ *
+ * @param sha256 - the digest of the certificate's DER, hex
+ * @returns the holders, each once
+ */
+function certificateHolders(sha256) {
+  log.debug('Entering certificateHolders().');
+  const wanted = String(sha256 || '').toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(wanted)) {
+    log.debug('Leaving certificateHolders(). Not a digest.');
+    return [];
+  }
+  const holds = function (stored) {
+    return !!stored && certificateDigestsOfEntry(stored).indexOf(wanted) >= 0;
+  };
+  const found = new Map();
+  const add = function (stored) {
+    const key = normalizeDn(stored.dn);
+    if (!found.has(key)) {
+      found.set(key, certificateHolderOf(stored));
+    }
+  };
+  // THE WINDOWED HALF: the people and devices, asked of the store's index.
+  (windowedFind('byAttribute', ['usercertificatesha256', wanted, 3],
+                holds) || []).forEach(add);
+  // THE RESIDENT HALF (everything, outside a window): the checked index.
+  const cache = certificateIndexes();
+  const resident = function () {
+    return ((cache.index && cache.index.get(wanted)) || [])
+      .map(function (dn) {
+        return getEntry(dn);
+      }).filter(holds);
+  };
+  // REBUILT WHENEVER ITS CLOCK MOVED, and not only on a miss as the
+  // user-handle index is: that one asks for THE holder, this one for HOW MANY
+  // — a second entry gaining the certificate leaves the first hit good and
+  // the answer wrong. The clock moves only for a write to a holder or an
+  // unnamed write, so a sign-in's own writes still do not rebuild it.
+  let hits = [];
+  if (!cache.index || cache.version !== certificatesVersion) {
+    const index = new Map();
+    const dns = new Set();
+    const visit = function (stored) {
+      if (!storesCertificate(stored)) {
+        return;
+      }
+      certificateDigestsOfEntry(stored).forEach(function (one) {
+        const list = index.get(one) || [];
+        list.push(stored.dn);
+        index.set(one, list);
+      });
+      dns.add(normalizeDn(stored.dn));
+    };
+    if (directoryWindow) {
+      directoryWindow.eachResident(realms.currentId(), visit);
+    } else {
+      eachEntryInRealm(visit);
+    }
+    cache.index = index;
+    cache.dns = dns;
+    cache.version = certificatesVersion;
+    cache.builds++;
+  }
+  hits = resident();
+  hits.forEach(add);
+  const out = Array.from(found.values()).slice(0, 3);
+  log.debug('Leaving certificateHolders(). ' + out.length + '.');
+  return out;
+}
+
+// What the stored-certificate index has done in the ambient realm, for the
+// tests: `userHandleIndexState()`'s shape.
+function certificateIndexState() {
+  log.debug("Entering certificateIndexState().");
+  const cache = certificateIndexes();
+  log.debug("Leaving certificateIndexState().");
+  return { builds: cache.builds, version: cache.version,
+           certificatesVersion: certificatesVersion };
+}
+
+// The entry a person's or an application's stored certificates are on.
+function certificateEntryFor(kind, id) {
+  log.debug("Entering certificateEntryFor(). " + kind + " " + id);
+  const stored = kind === 'application'
+    ? applicationEntry(String(id || ''))
+    : (locateEntry(String(id || '')).stored || null);
+  log.debug("Leaving certificateEntryFor(). " + (stored ? 'Found.' : 'None.'));
+  return stored && (kind === 'application' || isPersonEntry(stored))
+    ? stored : null;
+}
+
+/**
+ * The certificates stored on a person's (or an application's) entry, each
+ * `{ sha256, der }`, in the order stored.
+ *
+ * @param kind - 'person' or 'application'
+ * @param id - the username or the application's identifier
+ * @returns the certificates, or null when there is no such entry
+ */
+function storedCertificatesOf(kind, id) {
+  log.debug("Entering storedCertificatesOf().");
+  const stored = certificateEntryFor(kind, id);
+  if (!stored) {
+    log.debug("Leaving storedCertificatesOf(). No entry.");
+    return null;
+  }
+  const codec = require('../persistence/directory_codec');
+  const out = [];
+  CERTIFICATE_ATTRIBUTES.forEach(function (name) {
+    (stored.attributes[name] || []).forEach(function (value) {
+      const der = codec.certificateDerOf(value);
+      if (der) {
+        out.push({ der: der,
+                   sha256: require('../common/crypto')
+                     .digest('sha256', der, 'hex') });
+      }
+    });
+  });
+  log.debug("Leaving storedCertificatesOf(). " + out.length + ".");
+  return { dn: String(stored.dn), certificates: out };
+}
+
+/**
+ * Stores one certificate on a person's (or an application's) entry, under
+ * `userCertificate;binary`, or takes one off by the SHA-256 of its DER. The
+ * entry is never created here.
+ *
+ * @param kind - 'person' or 'application'
+ * @param id - the username or the application's identifier
+ * @param change - `{ add: <DER Buffer> }` or `{ remove: <sha256 hex> }`
+ * @returns `{ ok, dn, changed }`, or `{ ok: false }` for no such entry
+ */
+function changeStoredCertificate(kind, id, change) {
+  log.debug("Entering changeStoredCertificate(). " + kind + " " + id);
+  const stored = certificateEntryFor(kind, id);
+  if (!stored) {
+    log.debug("Leaving changeStoredCertificate(). No entry.");
+    return { ok: false };
+  }
+  const codec = require('../persistence/directory_codec');
+  const digestOf = function (value) {
+    const der = codec.certificateDerOf(value);
+    return der ? require('../common/crypto').digest('sha256', der, 'hex') : '';
+  };
+  let changed = false;
+  if (change && change.add) {
+    const base64 = Buffer.from(change.add).toString('base64');
+    const wanted = digestOf(base64);
+    const have = stored.attributes['usercertificate;binary'] || [];
+    const already = CERTIFICATE_ATTRIBUTES.some(function (name) {
+      return (stored.attributes[name] || []).some(function (value) {
+        return digestOf(value) === wanted;
+      });
+    });
+    if (!already) {
+      stored.attributes['usercertificate;binary'] = have.concat([base64]);
+      changed = true;
+    }
+  } else if (change && change.remove) {
+    const gone = String(change.remove).toLowerCase();
+    CERTIFICATE_ATTRIBUTES.forEach(function (name) {
+      const have = stored.attributes[name] || [];
+      const kept = have.filter(function (value) {
+        return digestOf(value) !== gone;
+      });
+      if (kept.length !== have.length) {
+        changed = true;
+        if (kept.length) {
+          stored.attributes[name] = kept;
+        } else {
+          delete stored.attributes[name];
+        }
+      }
+    });
+  }
+  if (changed) {
+    touchDirectory(stored.dn);
+  }
+  log.debug("Leaving changeStoredCertificate(). changed=" + changed);
+  return { ok: true, dn: String(stored.dn), changed: changed };
+}
+
+// ---------------------------------------------------------------------------
 // THE AUTHENTICATOR APP'S SHARED SECRET (2026-09-10).
 //
 // **SINGLE-VALUED, WHERE THE SECURITY KEY BESIDE IT IS MULTI-VALUED.** A
@@ -13671,6 +14100,21 @@ if (typeof mailChannel.setDirectory === 'function') {
       return { dn: located.stored.dn,
                attributes: Object.assign({}, located.stored.attributes) };
     },
+    // A GROUP BY DN, FOR A NOTICE ADDRESSED TO ITS OWN `mail` (#989): the
+    // stored entry's attributes as they are, so the channel reads `mail`
+    // and `cn` as it reads a person's. Null for anything that is not a
+    // group of this realm.
+    groupEntry: function (dn) {
+      log.debug('Entering groupEntry().');
+      const stored = getEntry(String(dn || ''));
+      if (!stored || !groupRuleFor(stored)) {
+        log.debug('Leaving groupEntry(). Not a group here.');
+        return null;
+      }
+      log.debug('Leaving groupEntry().');
+      return { dn: stored.dn,
+               attributes: Object.assign({}, stored.attributes) };
+    },
     personByMail: function (address) {
       log.debug('Entering personByMail().');
       const wanted = String(address || '').trim().toLowerCase();
@@ -14678,6 +15122,17 @@ if (typeof certEnrollment.setDirectory === 'function') {
       log.debug('Leaving holders(). ' + out.length + '.');
       return out;
     },
+    // THE ENTRIES A PRESENTED CERTIFICATE IS STORED ON (#1061), for
+    // `tls_client_certificates.js`'s `identityOf()`: `[{ kind, id, dn }]`
+    // in the ambient realm, by the SHA-256 of the DER — see
+    // `certificateHolders()`. On this slot rather than one of its own,
+    // because this is the slot that already answers "which entry is this
+    // certificate on" for the enrollment authorities (`findEnrolled()`), and
+    // a second slot from this file to the certificate code would be a second
+    // answer to that question; a new one would pass rule 3e's test for the
+    // same reason this one did (a require from there to here drags every
+    // `/admin/ldap/*` route forward) and add nothing but an indirection.
+    certificateHolders: certificateHolders,
     // `holders()` WITH THE VALUES, in the same walk and the same order
     // (#352, 2026-09-29): `[{ id, values }]`. The enrollment listings asked
     // `holders()` for the ids and then `read()` for each — a second lookup
@@ -15429,6 +15884,11 @@ populateVcAttributes();
 // handlers reach it because they were never scoped to a base in the first
 // place.
 // ---------------------------------------------------------------------------
+// The one SASL mechanism this directory accepts (#1047): EXTERNAL, RFC 4513
+// section 5.2.1.2, the identity the TLS layer established. Any other is
+// answered authMethodNotSupported (7) by node-ldapjs itself.
+const SASL_MECHANISMS = ['EXTERNAL'];
+
 // ---------------------------------------------------------------------------
 // TWO SERVERS, ONE SET OF HANDLERS.
 //
@@ -15455,9 +15915,14 @@ populateVcAttributes();
 // worth more than a TypeError out of a constructor, which is the same trade
 // every listen path here makes.
 // ---------------------------------------------------------------------------
+// `saslMechanisms` and `bindDnFromHandler` (#1047): SASL EXTERNAL reaches
+// the bind handler, which names the entry the connection is bound as. See
+// THE CERTIFICATE BIND, above the bind handler. On 389 it is refused there.
 const plainServer = ldap.createServer({ log: log,
                                        routeAnonymousBinds: true,
-                                       encodeErrorMessage: true });
+                                       encodeErrorMessage: true,
+                                       saslMechanisms: SASL_MECHANISMS,
+                                       bindDnFromHandler: true });
 
 // The TLS protocol policy, asked of the module that states it. An older copy of
 // `tls_server.js` without the function gets node's defaults, which is what
@@ -15516,9 +15981,9 @@ function rekeyLdaps(why) {
     const current = tlsServer.serverCertificate();
     Object.assign(serverCertificate, current);
     secureServer.server.setSecureContext(Object.assign({
-      cert: (current.chainPem && current.chainPem.length)
-        ? [current.certPem].concat(current.chainPem).join('')
-        : current.certPem,
+      // The leaf, its chain and the Root (#1064), as every listener presents
+      // them — tls_server.js's presentedBundlePem().
+      cert: tlsServer.presentedBundlePem(current),
       key: current.privateKeyPem,
       ca: tlsServer.clientTruststoreOptions(ldapsPolicy()).ca
     }, tlsProtocolOptions()));
@@ -15566,7 +16031,12 @@ if (serverCertificate && serverCertificate.certPem &&
     log: log,
     routeAnonymousBinds: true,
     encodeErrorMessage: true,
-    certificate: serverCertificate.certPem,
+    saslMechanisms: SASL_MECHANISMS,
+    bindDnFromHandler: true,
+    // ldapjs passes this to `tls.createServer()` as `cert` unchanged, so the
+    // bundle is the whole of what LDAPS presents: the leaf, its chain and the
+    // Root (#1064), from the one function every listener takes it from.
+    certificate: tlsServer.presentedBundlePem(serverCertificate),
     key: serverCertificate.privateKeyPem,
     ca: tlsServer.clientTruststoreOptions(ldapsPolicy()).ca
   }, tlsProtocolOptions(),
@@ -15574,11 +16044,7 @@ if (serverCertificate && serverCertificate.certPem &&
   tlsServer.trustClientCertificatesOn(secureServer.server,
     'LDAPS (' + LDAPS_PORT + ')', function () {
       return { key: serverCertificate.privateKeyPem,
-               cert: (serverCertificate.chainPem &&
-                      serverCertificate.chainPem.length)
-                 ? [serverCertificate.certPem]
-                   .concat(serverCertificate.chainPem).join('')
-                 : serverCertificate.certPem };
+               cert: tlsServer.presentedBundlePem(serverCertificate) };
     }, { kind: 'ldaps' });
   // A ticket another node issued resumes here too, in an active-active
   // cluster (tls/session_tickets.ts); outside one this changes nothing.
@@ -15659,6 +16125,82 @@ function diagnosticMessagesEncoded(ldapServer) {
 
 servers.forEach(diagnosticMessagesEncoded);
 
+// ---------------------------------------------------------------------------
+// A SASL BIND REACHES THE BIND HANDLER, AND THE HANDLER NAMES WHO IS BOUND
+// (#1047, 2026-10-27).
+//
+// node-ldapjs could not decode a SASL bind at all — `@ldapjs/messages`
+// threw on the sasl choice and the connection was destroyed — and it bound
+// a connection as the request's NAME, which for SASL EXTERNAL is empty. The
+// fork's third and fourth changes: `saslMechanisms` decodes the bind, keeps
+// it out of the anonymous-bind shortcut and answers any mechanism not listed
+// with authMethodNotSupported (7); `bindDnFromHandler` lets the handler set
+// `res.bindDN`. Both are ASKED of each server, as the two options above
+// are, because an older submodule ignores them: it would close every
+// connection that tried a certificate bind (STS-LDAP-0191).
+// ---------------------------------------------------------------------------
+function saslExternalSupported(ldapServer) {
+  log.debug("Entering saslExternalSupported().");
+  const supported = !!(ldapServer &&
+                       Array.isArray(ldapServer._saslMechanisms) &&
+                       ldapServer._saslMechanisms.indexOf('EXTERNAL') >= 0 &&
+                       ldapServer._bindDnFromHandler === true);
+  if (!supported) {
+    log.warn(errorCodes.tag('STS-LDAP-0191') + 'ldap: this node-ldapjs does ' +
+             'not support saslMechanisms and bindDnFromHandler, so a SASL ' +
+             'EXTERNAL bind cannot be decoded and its connection is closed. ' +
+             'Update the node-ldapjs submodule.');
+  }
+  log.debug("Leaving saslExternalSupported(). " + supported);
+  return supported;
+}
+
+servers.forEach(saslExternalSupported);
+
+// An attribute map without the attributes whose value is undefined: the
+// root DSE publishes an attribute it has no value for by leaving it out.
+function withoutAbsent(attributes) {
+  log.debug("Entering withoutAbsent().");
+  const out = {};
+  Object.keys(attributes).forEach(function (name) {
+    if (attributes[name] !== undefined) {
+      out[name] = attributes[name];
+    }
+  });
+  log.debug("Leaving withoutAbsent().");
+  return out;
+}
+
+// Whether a SASL EXTERNAL bind can succeed at all now: 636 asks for a client
+// certificate (#423's pair, optional or required), which is the only way a
+// connection comes to carry one.
+function saslExternalOffered() {
+  log.debug("Entering saslExternalOffered().");
+  const policy = secureServer ? ldapsPolicy() : null;
+  const offered = !!policy && !!policy.clientAuth &&
+                  policy.clientAuth !== 'none';
+  log.debug("Leaving saslExternalOffered(). " + offered);
+  return offered;
+}
+
+// THE MECHANISM node-ldapjs REFUSED ITSELF (7), recorded here: the library
+// answers before any handler runs, so this is the one refusal of a bind the
+// handler never sees.
+servers.forEach(function (one) {
+  one.on('saslMechanismNotSupported', function (req) {
+    log.debug("Entering the saslMechanismNotSupported listener.");
+    const mechanism = String((req && req.mechanism) || '');
+    log.info('ldap: a SASL bind naming the mechanism "' + mechanism +
+             '" was answered authMethodNotSupported (7); only EXTERNAL is ' +
+             'accepted.');
+    ldapRefusal(req, 'STS-LDAP-0178', 'a SASL bind naming the mechanism "' +
+      mechanism + '" was refused with authMethodNotSupported (7); this ' +
+      'directory accepts SASL EXTERNAL only',
+      new ldap.AuthMethodNotSupportedError(), mechanism);
+    log.debug("Leaving the saslMechanismNotSupported listener.");
+  });
+});
+
 // The eight operations and unbind. Written out rather than read off ldapjs's
 // prototype, because that would fan out `listen`, `close` and `address` too —
 // and those three must stay per-server: each listener has its own port, its own
@@ -15700,10 +16242,50 @@ function inRealmOfRequest(handler) {
   log.debug("Leaving inRealmOfRequest().");
   return function (req, res, next) {
     const dn = req && req.dn ? req.dn.toString() : '';
-    return inRealmOf(dn, function () {
+    return inRealmOf(dn || externalBindRealmDn(req), function () {
       return handler(req, res, next);
     });
   };
+}
+
+// ---------------------------------------------------------------------------
+// WHICH REALM A SASL EXTERNAL BIND WITH NO NAME IS IN (#1047). RFC 4513
+// section 5.2.1.2 has the name empty, so the DN cannot pick the realm. An
+// authzId `dn:` names one, as a DN does; otherwise it is the realm whose
+// Issuing CA signed the certificate — the answer `GET /tls/sign-in` gives
+// for the same reason (a socket has no path). '' for anything else, which
+// is the default realm, where the handler refuses what it finds.
+// ---------------------------------------------------------------------------
+function externalBindRealmDn(req) {
+  log.debug("Entering externalBindRealmDn().");
+  if (!req || req.authentication !== 'sasl') {
+    log.debug("Leaving externalBindRealmDn(). Not a SASL bind.");
+    return '';
+  }
+  const authz = authzIdOf(req);
+  if (authz.kind === 'dn' && authz.value) {
+    log.debug("Leaving externalBindRealmDn(). The authzId's DN.");
+    return authz.value;
+  }
+  const external = req.stsExternal || {};
+  if (!external.certificate || external.certificate.verified !== true) {
+    log.debug("Leaving externalBindRealmDn(). No verified certificate.");
+    return '';
+  }
+  let identity = null;
+  try {
+    identity = require('../common/tls_client_certificates')
+      .identityOf(external.certificate);
+  } catch (e) {
+    log.debug("Caught in externalBindRealmDn(): " + ((e && e.message) || e));
+    identity = null;
+  }
+  if (!identity || !identity.accepted || !realms.get(identity.realm)) {
+    log.debug("Leaving externalBindRealmDn(). Not an identity here.");
+    return '';
+  }
+  log.debug("Leaving externalBindRealmDn(). The issuing realm's.");
+  return realmBaseDn(identity.realm);
 }
 
 // ---------------------------------------------------------------------------
@@ -15840,6 +16422,13 @@ OPERATIONS.forEach(function (operation) {
     // cannot both succeed. See `claimingTheAdd()`.
     if (operation === 'add') {
       args[args.length - 1] = claimingTheAdd(args[args.length - 1]);
+    }
+    // AND FOR A BIND, THE CONNECTION'S CERTIFICATE (#1047): read off the
+    // socket, and its revocation asked, in the process that holds it,
+    // before the bind runs here or in a worker. See
+    // `withConnectionCertificate()`.
+    if (operation === 'bind') {
+      args[args.length - 1] = withConnectionCertificate(args[args.length - 1]);
     }
     servers.forEach(function (one) {
       one[operation].apply(one, args);
@@ -16717,6 +17306,18 @@ function operationRequest(operation, req) {
   if (operation === 'bind') {
     shape.credentials = req.credentials === undefined ? '' :
                         String(req.credentials);
+    // A SASL BIND'S MECHANISM, ITS CREDENTIALS AND THE CONNECTION'S
+    // CERTIFICATE (#1047): the certificate is a fact about a socket only
+    // this process holds, read by `withConnectionCertificate()`, so it
+    // travels as the bound DN does.
+    if (req.authentication === 'sasl') {
+      shape.sasl = {
+        mechanism: String(req.mechanism || ''),
+        credentials: Buffer.isBuffer(req.saslCredentials)
+          ? req.saslCredentials.toString('base64') : null,
+        external: externalShape(req.stsExternal)
+      };
+    }
   } else if (operation === 'add') {
     shape.attributes = plainAttributes(req.attributes);
   } else if (operation === 'modify') {
@@ -16778,6 +17379,13 @@ function operationContext(operation, shape) {
   };
   if (operation === 'bind') {
     req.credentials = shape.credentials || '';
+    if (shape.sasl) {
+      req.authentication = 'sasl';
+      req.mechanism = String(shape.sasl.mechanism || '');
+      req.saslCredentials = typeof shape.sasl.credentials === 'string'
+        ? Buffer.from(shape.sasl.credentials, 'base64') : null;
+      req.stsExternal = externalFromShape(shape.sasl.external);
+    }
   } else if (operation === 'add') {
     req.attributes = shape.attributes || [];
   } else if (operation === 'modify') {
@@ -17057,7 +17665,11 @@ function operationOutcome(operation, req, res, failure) {
   log.debug('Leaving operationOutcome(). ' + rest.length +
             ' entry/entries' + (res.collected.emitted
     ? ', ' + res.collected.emitted + ' sent ahead.' : '.'));
-  return { ok: true, entries: rest, endArg: res.collected.endArg };
+  // THE DN A CERTIFICATE BIND NAMED (#1047): set by the handler on the
+  // response, and set by `applyOperationResult()` on the real one, where
+  // node-ldapjs reads it.
+  return { ok: true, entries: rest, endArg: res.collected.endArg,
+           bindDN: typeof res.bindDN === 'string' ? res.bindDN : undefined };
 }
 
 // SEARCH ENTRIES A WORKER COLLECTED, WRITTEN TO THE REAL RESPONSE: at the end
@@ -17120,6 +17732,9 @@ function applyOperationResult(operation, req, res, next, result) {
     // bound DN only once the handler chain has returned.
     if (req.connection) {
       req.connection.stsBoundAt = Date.now();
+    }
+    if (typeof result.bindDN === 'string') {
+      res.bindDN = result.bindDN;
     }
     publishConnectionsSoon();
   }
@@ -17396,9 +18011,420 @@ function answerCellBind(body, ctx) {
 
 require('../common/cell_channel').registerOp('ldap-bind', answerCellBind);
 
+// ---------------------------------------------------------------------------
+// THE CERTIFICATE BIND: SASL EXTERNAL OVER LDAPS (#1047, from #520; rcbj
+// 2026-10-27).
+//
+// RFC 4513 section 5.2.1.2: a client that presented a certificate in the
+// TLS handshake binds with the SASL mechanism EXTERNAL, and the server binds
+// the connection as the identity that certificate establishes. There is NO
+// SETTING of its own, which was rcbj's decision: a connection carries a
+// verified certificate only when 636 asks for one — #423's pair,
+// `ldap.ldapsDisableOptionalClientCertificate` off (optional) or
+// `ldap.ldapsRequireClientCertificate` on (required) — and the bind is
+// available exactly then. At the defaults 636 asks for nothing, every
+// EXTERNAL bind is refused as "no certificate on the connection", and
+// nothing that was true before is different.
+//
+// ONE MAPPING, NOT A SECOND (#520's rule): the certificate is an entry only
+// where `common/tls_client_certificates.js` says it is an identity in THIS
+// realm (`checkSocket()`, which is `identityOf()` under the ambient realm),
+// issued to a PERSON — `urn:sts:person:<name>` in its subjectAltName, which
+// is the same name a simple bind's entry has — whose record still lists it
+// (`stillHeld()`) and whose entry EXISTS. Nothing is read off a CN or a
+// subject, and no entry is ever created from a certificate. Three things a
+// verified certificate can be that are NOT that, each refused with its own
+// code:
+//
+//   * a certificate from an anchor somebody added (`/admin/tls/trust`), an
+//     OUTSIDE authority's: since #1061 (rcbj 2026-10-27) it binds as the
+//     ONE person entry of the bind's realm storing it, byte for byte, in
+//     `userCertificate` — that is how an entry says ahead of time which
+//     certificate is its own. Stored on no entry it is refused
+//     STS-LDAP-0192, on more than one STS-LDAP-0193. (Until #1061 every
+//     such certificate was refused, STS-LDAP-0182, now retired.) An empty
+//     bind with no authzId is in the default realm, since an outside
+//     certificate names no realm; another realm's person sends
+//     `dn:<their DN>`;
+//   * an APPLICATION's certificate: only a person binds to this directory
+//     (#106's rule for a simple bind, `nonPersonBindRefusal()`), and an
+//     application's entry is not one (STS-LDAP-0185);
+//   * another realm's (STS-LDAP-0184), or one issued here for something
+//     other than a TLS client identity (STS-LDAP-0183).
+//
+// THE AUTHZID (section 5.2.1.8) is honoured only when it names the SAME
+// entry — `dn:<that entry's DN>` or `u:<that person's name>` — so it can
+// restate who is binding and never change it; anything else is 50
+// (STS-LDAP-0189). A non-empty bind NAME is held to the same rule
+// (STS-LDAP-0190).
+//
+// IT IS THE SAME IN BOTH MODES. Development mode's "every bind succeeds" is
+// about a PASSWORD nobody checks; here the handshake has verified the chain
+// and every other door that reads this gate (SCIM, WS-Trust, `/tls/sign-in`,
+// RFC 8705) holds the same answers in both modes. No failed-bind rate limit
+// either: there is nothing to guess.
+//
+// WHERE EACH HALF RUNS. The socket is the front process's, so
+// `withConnectionCertificate()` — the outermost wrapper of the bind, in the
+// process that holds it — reads the certificate off it and asks for its
+// revocation verdict, and the two travel to a request worker in the
+// operation's shape (`operationRequest()`), as the bound DN does. The
+// decision is `externalBind()`, wherever the bind runs; the DN it binds is
+// `res.bindDN`, which node-ldapjs reads (`bindDnFromHandler`) and
+// `applyOperationResult()` carries back from a worker.
+// ---------------------------------------------------------------------------
+/**
+ * Wraps the bind handler so that a SASL bind carries the connection's
+ * certificate and its revocation verdict, read in the process holding the
+ * socket.
+ *
+ * @param handler - the bind handler as the fan-out has it so far
+ * @returns the wrapped handler
+ */
+function withConnectionCertificate(handler) {
+  log.debug("Entering withConnectionCertificate().");
+  log.debug("Leaving withConnectionCertificate().");
+  return function (req, res, next) {
+    if (!req || req.authentication !== 'sasl') {
+      return handler(req, res, next);
+    }
+    let input = null;
+    let status = null;
+    try {
+      status = require('../common/revocation_status');
+      input = status.fromSocket(req.connection);
+    } catch (e) {
+      log.debug("Caught in withConnectionCertificate(): " +
+                ((e && e.message) || e));
+      input = null;
+    }
+    if (!input || input.verified !== true || !status) {
+      req.stsExternal = { certificate: input, revocation: null };
+      return handler(req, res, next);
+    }
+    return Promise.resolve(status.verdictFor(input)).then(function (verdict) {
+      req.stsExternal = {
+        certificate: input,
+        revocation: verdict ? { refused: !!verdict.refused,
+                                why: String(verdict.why || ''),
+                                code: verdict.refused
+                                  ? status.codeOf(verdict) : '' } : null
+      };
+      return handler(req, res, next);
+    }, function (e) {
+      // A verdict that could not be reached is not "not revoked": the bind
+      // is refused as revoked would be, naming why.
+      log.warn(errorCodes.tag('STS-LDAP-0181') + 'ldap: the revocation ' +
+               'status of the certificate on a SASL EXTERNAL bind could not ' +
+               'be established: ' + ((e && e.message) || e));
+      req.stsExternal = {
+        certificate: input,
+        revocation: { refused: true, code: '',
+                      why: 'its revocation status could not be established' }
+      };
+      return handler(req, res, next);
+    });
+  };
+}
+
+// The certificate and verdict as a request worker receives them: the
+// certificates as base64, everything else as it is.
+function externalShape(external) {
+  log.debug("Entering externalShape().");
+  if (!external) {
+    log.debug("Leaving externalShape(). Nothing.");
+    return null;
+  }
+  const cert = external.certificate;
+  log.debug("Leaving externalShape().");
+  return {
+    certificate: cert && cert.leaf ? {
+      leaf: Buffer.from(cert.leaf).toString('base64'),
+      chain: (cert.chain || []).map(function (one) {
+        return Buffer.from(one).toString('base64');
+      }),
+      verified: cert.verified === true
+    } : null,
+    revocation: external.revocation || null
+  };
+}
+
+function externalFromShape(shape) {
+  log.debug("Entering externalFromShape().");
+  if (!shape) {
+    log.debug("Leaving externalFromShape(). Nothing.");
+    return null;
+  }
+  const cert = shape.certificate;
+  log.debug("Leaving externalFromShape().");
+  return {
+    certificate: cert && cert.leaf ? {
+      leaf: Buffer.from(String(cert.leaf), 'base64'),
+      chain: (cert.chain || []).map(function (one) {
+        return Buffer.from(String(one), 'base64');
+      }),
+      verified: cert.verified === true
+    } : null,
+    revocation: shape.revocation || null
+  };
+}
+
+// THE AUTHZID A SASL EXTERNAL BIND CARRIES (RFC 4513 section 5.2.1.8):
+// `{ kind: 'none' }` for no credentials or empty ones, `dn` or `u` with the
+// value, and `invalid` for anything else.
+function authzIdOf(req) {
+  log.debug("Entering authzIdOf().");
+  const raw = req && Buffer.isBuffer(req.saslCredentials)
+    ? req.saslCredentials.toString('utf8') : '';
+  if (!raw) {
+    log.debug("Leaving authzIdOf(). None.");
+    return { kind: 'none', value: '', raw: '' };
+  }
+  if (raw.indexOf('dn:') === 0) {
+    log.debug("Leaving authzIdOf(). A DN.");
+    return { kind: 'dn', value: raw.slice(3), raw: raw };
+  }
+  if (raw.indexOf('u:') === 0) {
+    log.debug("Leaving authzIdOf(). A user name.");
+    return { kind: 'u', value: raw.slice(2), raw: raw };
+  }
+  log.debug("Leaving authzIdOf(). Neither form.");
+  return { kind: 'invalid', value: '', raw: raw };
+}
+
+// A socket `revocation_status.fromSocket()` reads as it reads a request
+// worker's shim: the leaf, the chain as base64, and whether it verified.
+function certificateShim(certificate) {
+  log.debug("Entering certificateShim().");
+  log.debug("Leaving certificateShim().");
+  return {
+    authorized: certificate.verified === true,
+    getPeerCertificate: function () {
+      return { raw: certificate.leaf,
+               issuerChain: (certificate.chain || []).map(function (one) {
+                 return one.toString('base64');
+               }) };
+    }
+  };
+}
+
+/**
+ * Answers a SASL bind: EXTERNAL binds the connection as the person entry
+ * the connection's verified certificate was issued to, or is refused with
+ * the code for why.
+ *
+ * @param req - the ldapjs request (or a worker's rebuilt one)
+ * @param res - the response
+ * @param next - the handler chain's next
+ * @returns what `next()` returns
+ */
+function externalBind(req, res, next) {
+  log.debug("Entering externalBind().");
+  const name = req.dn ? req.dn.toString() : '';
+  const mechanism = String(req.mechanism || '');
+  const refuse = function (code, summary, err, target) {
+    log.debug("Entering refuse(). " + code);
+    log.info('ldap: a SASL EXTERNAL bind was refused (' + code + '): ' +
+             summary);
+    log.debug("Leaving refuse().");
+    return next(ldapRefusal(req, code, 'a SASL EXTERNAL bind was refused: ' +
+                            summary, coded(code, err), target || name));
+  };
+  if (mechanism !== 'EXTERNAL') {
+    // node-ldapjs answers every other mechanism itself (`saslMechanisms`);
+    // this is the same answer for a submodule that did not.
+    log.debug("Leaving externalBind(). Not EXTERNAL.");
+    return refuse('STS-LDAP-0178', 'the mechanism "' + mechanism + '" is ' +
+      'not supported', new ldap.AuthMethodNotSupportedError(
+        'SASL mechanism "' + mechanism + '" is not supported; use EXTERNAL'),
+      mechanism);
+  }
+  if (ldapChannelOf(req) !== 'ldaps') {
+    log.debug("Leaving externalBind(). The plain listener.");
+    return refuse('STS-LDAP-0180', 'it arrived on the plain listener, ' +
+      'where there is no TLS and so no client certificate',
+      new ldap.InappropriateAuthenticationError('SASL EXTERNAL needs a ' +
+        'client certificate, and this listener has no TLS; use LDAPS'));
+  }
+  const external = req.stsExternal || {};
+  const certificate = external.certificate;
+  if (!certificate || !certificate.leaf || certificate.verified !== true) {
+    log.debug("Leaving externalBind(). No verified certificate.");
+    return refuse('STS-LDAP-0179', certificate && certificate.leaf
+      ? 'the client certificate on the connection did not verify against ' +
+        'the client truststore'
+      : 'the connection carries no client certificate (LDAPS asks for one ' +
+        'only when ldap.ldapsDisableOptionalClientCertificate is off or ' +
+        'ldap.ldapsRequireClientCertificate is on)',
+      new ldap.InappropriateAuthenticationError('SASL EXTERNAL needs a ' +
+        'client certificate that verifies, and this connection has none'));
+  }
+  const revocation = external.revocation;
+  if (revocation && revocation.refused) {
+    log.debug("Leaving externalBind(). Revoked.");
+    return refuse('STS-LDAP-0181', 'the certificate was refused on ' +
+      'revocation (' + String(revocation.why || 'revoked') + ')',
+      new ldap.InvalidCredentialsError('the client certificate was ' +
+        'refused on revocation'));
+  }
+  let gates = null;
+  let gate = null;
+  try {
+    gates = require('../common/tls_client_certificates');
+    gate = gates.checkSocket(certificateShim(certificate), { stored: true });
+  } catch (e) {
+    log.debug("Caught in externalBind(): " + ((e && e.message) || e));
+    gate = null;
+  }
+  const identity = (gate && gate.identity) || {};
+  if (gate && !gate.ok && gate.error === 'STORED_TWICE') {
+    log.debug("Leaving externalBind(). Stored on more than one entry.");
+    return refuse('STS-LDAP-0193', String(gate.why || gate.error),
+      new ldap.InvalidCredentialsError('this client certificate is stored ' +
+        'on more than one entry, so it names nobody'));
+  }
+  if (!gate || (gate.ok && !identity.issuedHere && !identity.accepted) ||
+      (!gate.ok && gate.error === 'NOT_STORED')) {
+    log.debug("Leaving externalBind(). An outside certificate stored on " +
+              "no entry.");
+    return refuse('STS-LDAP-0192', String((gate && gate.why) ||
+      'the certificate was not issued by this service and is not stored ' +
+      'in userCertificate on any entry of this realm'),
+      new ldap.InvalidCredentialsError('this client certificate is not ' +
+        'stored on any entry here; an outside certificate binds only as ' +
+        'the entry it is stored on'));
+  }
+  if (!gate.ok) {
+    if (gate.error === 'OTHER_REALM') {
+      log.debug("Leaving externalBind(). Another realm's.");
+      return refuse('STS-LDAP-0184', String(gate.why || gate.error),
+        new ldap.InvalidCredentialsError('the client certificate was issued ' +
+          'in another trust realm'));
+    }
+    if (gate.error === 'HOLDER_GONE') {
+      // The person it was issued to has no entry any more: the register
+      // records their subject, and the directory no longer answers it.
+      log.debug("Leaving externalBind(). The holder's entry is gone.");
+      return refuse('STS-LDAP-0187', String(gate.why || gate.error),
+        new ldap.InvalidCredentialsError('the person this client ' +
+          'certificate was issued to has no entry in this directory'));
+    }
+    log.debug("Leaving externalBind(). Not an identity.");
+    return refuse('STS-LDAP-0183', String(gate.why || gate.error),
+      new ldap.InvalidCredentialsError('the client certificate is not an ' +
+        'identity this directory can bind'));
+  }
+  if (identity.kind !== 'person') {
+    log.debug("Leaving externalBind(). An application's.");
+    return refuse('STS-LDAP-0185', 'the certificate was issued to the ' +
+      'application "' + identity.username + '", and only a person binds ' +
+      'to this directory',
+      new ldap.InvalidCredentialsError('the client certificate names an ' +
+        'application; only a person binds to this directory'));
+  }
+  if (!gates.stillHeld(identity)) {
+    log.debug("Leaving externalBind(). No longer held.");
+    return refuse('STS-LDAP-0186', 'it was issued to "' + identity.username +
+      '", whose record no longer lists it',
+      new ldap.InvalidCredentialsError('the client certificate is no longer ' +
+        'on its holder\'s record'));
+  }
+  // A STORED certificate's entry is the one it was found on (#1061); a
+  // certificate issued here names its person by name.
+  const entry = identity.stored === true ? getEntry(String(identity.dn))
+                                         : existingUserEntry(identity.username);
+  if (!entry) {
+    log.debug("Leaving externalBind(). No entry.");
+    return refuse('STS-LDAP-0187', 'it names "' + identity.username +
+      '", who has no entry in this realm\'s directory; none is created',
+      new ldap.InvalidCredentialsError('the person this client certificate ' +
+        'was issued to has no entry in this directory'));
+  }
+  const entryDn = String(entry.dn);
+  if (credentials.accountDisabled(identity.username)) {
+    log.debug("Leaving externalBind(). Disabled.");
+    return refuse('STS-LDAP-0188', 'it names "' + identity.username +
+      '", whose account is disabled',
+      new ldap.InvalidCredentialsError('this account is disabled'), entryDn);
+  }
+  if (name && normalizeDn(name) !== normalizeDn(entryDn)) {
+    log.debug("Leaving externalBind(). The name is somebody else.");
+    return refuse('STS-LDAP-0190', 'the bind name "' + name + '" is not ' +
+      'the entry the certificate names (' + entryDn + ')',
+      new ldap.InvalidCredentialsError('the bind name is not the entry this ' +
+        'client certificate was issued to; send an empty name'));
+  }
+  const authz = authzIdOf(req);
+  if (authz.kind !== 'none') {
+    const sameEntry = authz.kind === 'dn'
+      ? !!authz.value && normalizeDn(authz.value) === normalizeDn(entryDn)
+      : authz.kind === 'u'
+        ? (function () {
+          const named = existingUserEntry(authz.value);
+          return !!named && normalizeDn(named.dn) === normalizeDn(entryDn);
+        }())
+        : false;
+    if (!sameEntry) {
+      log.debug("Leaving externalBind(). The authzId is somebody else.");
+      return refuse('STS-LDAP-0189', 'the authorization identity "' +
+        authz.raw + '" is not ' + entryDn + ', which the certificate names',
+        new ldap.InsufficientAccessRightsError('the authorization identity ' +
+          'may only name the entry this client certificate was issued to'),
+        entryDn);
+    }
+  }
+  auditLdap(req, {
+    action: 'directory.bind',
+    actor: consoleKeyFor(entryDn, entry), actorForm: entryDn,
+    target: entryDn,
+    summary: 'a SASL EXTERNAL bind as ' + entryDn + ' succeeded',
+    detail: { mechanism: 'EXTERNAL',
+              certificateSerial: String(identity.serialHex || ''),
+              certificateSha256: identity.stored === true
+                ? String(identity.fingerprint || '') : undefined,
+              authority: identity.stored === true ? 'outside'
+                : String((identity.authority && identity.authority.ca) ||
+                         ''),
+              authzId: authz.raw || undefined,
+              note: identity.stored === true
+                ? 'the TLS client certificate on the connection verified, ' +
+                  'was not refused on revocation, and is from an outside ' +
+                  'certificate authority, stored in userCertificate on ' +
+                  entryDn
+                : 'the TLS client certificate on the connection verified, ' +
+                  'was not refused on revocation, and was issued to "' +
+                  identity.username + '" by this realm\'s Issuing CA' }
+  });
+  stats.recordAuthentication({
+    presented: entryDn,
+    protocol: 'ldap',
+    method: 'SASL EXTERNAL (TLS client certificate)',
+    application: '',
+    note: identity.stored === true
+      ? 'an outside certificate authority\'s certificate stored on ' +
+        identity.username
+      : 'a TLS client certificate issued to ' + identity.username
+  });
+  if (req.connection) {
+    req.connection.stsBoundAt = Date.now();
+  }
+  publishConnectionsSoon();
+  res.bindDN = entryDn;
+  res.end();
+  log.debug("Leaving externalBind(). Bound as " + entryDn + ".");
+  return next();
+}
+
 // --- bind ------------------------------------------------------------------
 server.bind('', function (req, res, next) {
   log.debug('Entering the LDAP bind handler.');
+  // A SASL BIND IS A CERTIFICATE BIND (#1047), and none of what follows —
+  // a password, its rate limit, the refusals that come before one is read —
+  // applies to it.
+  if (req.authentication === 'sasl') {
+    log.debug('Leaving the LDAP bind handler. A SASL bind.');
+    return externalBind(req, res, next);
+  }
   const dn = req.dn ? req.dn.toString() : '';
   // NAMED `credentials_value` AND NOT `credentials` since 2026-09-06: the
   // module now requires `common/credentials.ts` under that name, and a local
@@ -19203,7 +20229,7 @@ server.search('', function (req, res, next) {
     if (scope === 'base') {
       res.send(toSearchEntry({
         dn: '',
-        attributes: {
+        attributes: withoutAbsent({
           objectclass: ['top', 'LDAProotDSE'],
           // EVERY REALM'S BASE, not just ROOT_DN, and this changed on
           // 2026-08-25 with the search scoping below. A search from ROOT_DN
@@ -19216,19 +20242,28 @@ server.search('', function (req, res, next) {
           namingcontexts: namingContexts(),
           supportedldapversion: ['3'],
           vendorname: ['IYA STS (ldapjs, unmodified, pinned as a submodule)'],
-          // supportedControl, supportedExtension and supportedSASLMechanisms
-          // are absent rather than empty, and the difference is the point: an
-          // LDAP attribute always has at least one value (RFC 4511 section
-          // 4.1.7), so "this server supports no controls" is said by not
-          // publishing the attribute. Sending it empty is not a weaker claim,
-          // it is a malformed one.
+          // supportedControl and supportedExtension are absent rather than
+          // empty, and the difference is the point: an LDAP attribute always
+          // has at least one value (RFC 4511 section 4.1.7), so "this server
+          // supports no controls" is said by not publishing the attribute.
+          // Sending it empty is not a weaker claim, it is a malformed one.
+          // supportedSASLMechanisms is EXTERNAL exactly while 636 asks for a
+          // client certificate (#1047), and absent otherwise, for the same
+          // reason: at the defaults no connection can use it.
+          supportedsaslmechanisms: saslExternalOffered()
+            ? SASL_MECHANISMS.slice(0) : undefined,
           description: [(mode.verifiesCredentials()
                           ? 'Binds are verified, and a read requires one. '
                           : 'Every bind succeeds except the password ' +
                             '"invalid". ') +
                         'This directory has no schema and answers no ' +
-                        'controls, extended operations or SASL mechanisms.']
-        }
+                        'controls or extended operations' +
+                        (saslExternalOffered()
+                          ? '; SASL EXTERNAL binds over LDAPS with a ' +
+                            'client certificate this service issued.'
+                          : ', and no SASL mechanism while LDAPS asks for ' +
+                            'no client certificate.')]
+        })
       }, req.attributes, res.messageId));
       // Recorded like any other search, and it earns its row: a client that
       // does not yet know the base DN asks for the root DSE FIRST, so this is
@@ -19855,23 +20890,48 @@ const SERVICE_SENTENCES = Object.freeze({
     'the DN out names the realm',
   searchScopeOne: 'no trust realms are defined, so there is one context ' +
     '({{root}}) and a subtree search from it answers about the whole store',
-  clientCertificates: 'never requested. This listener proves the SERVER ' +
-    'to the client and nothing more; a client certificate offered to it ' +
-    'is not asked for and would not be a login if it were. The main ' +
-    'port ({{port}}) is where client certificates are asked for and read.',
+  // WHETHER 636 ASKS FOR A CLIENT CERTIFICATE, AND SO WHETHER A CERTIFICATE
+  // BIND IS AVAILABLE (#1047): one sentence per mode of #423's pair. Each
+  // says the same rule — SASL EXTERNAL is available exactly when 636 asks —
+  // and which certificates bind.
+  clientCertificatesNone: 'not asked for: ' +
+    '`ldap.ldapsDisableOptionalClientCertificate` is on, so LDAPS sends no ' +
+    'CertificateRequest and a certificate bind (SASL EXTERNAL) is refused ' +
+    'for want of a certificate. Turn that setting off to ask every ' +
+    'connection for one (optional), or turn ' +
+    '`ldap.ldapsRequireClientCertificate` on to require one; either makes ' +
+    'SASL EXTERNAL available. The main port ({{port}}) asks for client ' +
+    'certificates on its own settings.',
+  clientCertificatesOptional: 'asked for and not required (optional: ' +
+    '`ldap.ldapsDisableOptionalClientCertificate` is off). A connection ' +
+    'that presents one which verifies against the client truststore may ' +
+    'bind with SASL EXTERNAL; one without binds with a password as before.',
+  clientCertificatesRequired: 'required ' +
+    '(`ldap.ldapsRequireClientCertificate` is on): a connection without a ' +
+    'certificate that verifies against the client truststore is refused at ' +
+    'the handshake. A connection may then bind with SASL EXTERNAL, or with ' +
+    'a password as before.',
+  certificateBindRule: 'SASL EXTERNAL binds the connection as the person ' +
+    'entry the certificate belongs to: one this service issued to a person ' +
+    'who has an entry in that realm, or one from an outside certificate ' +
+    'authority trusted through /admin/tls/trust that is stored, byte for ' +
+    'byte, in userCertificate on exactly one person entry of that realm. ' +
+    'Revoked, another realm\'s, an application\'s, an outside certificate ' +
+    'stored on no entry or on more than one is refused, and nothing is ' +
+    'read off a common name or subject. An authorization identity is ' +
+    'honoured only when it names that same entry.',
   certificateSource: 'the same certificate and key the main port ' +
     '({{port}}) serves. It is {{provenance}}: GET /tls/server-certificate ' +
     'hands it out in PEM. One anchor for both sockets is why they share it.',
   autoCreateRule: 'an entry uid=<name>,{{usersDn}} appears the first ' +
     'time <name> authenticates to this service through ANY protocol. An ' +
     'LDAP bind does not seed one (it presents a DN, not a user name) and ' +
-    'neither does an OAuth client. A verified TLS CLIENT CERTIFICATE is ' +
-    'the one identity that is already a DN: its entry keeps the subject\'s ' +
-    'own leaf RDN — cn=alice,{{usersDn}} for CN=alice,O=Example — or the ' +
-    'whole subject where that already lies under {{baseDn}}, and the ' +
-    'full subject, issuer, serial and validity are on the entry as x509* ' +
-    'attributes, which are this service\'s own names and not schema. A ' +
-    'DECENTRALIZED IDENTIFIER is the third shape and is neither a name nor ' +
+    'neither does an OAuth client. A verified TLS CLIENT CERTIFICATE ' +
+    'seeds nothing: one this service issued names a person who already ' +
+    'has an entry, and one from an outside certificate authority is the ' +
+    'entry it is stored on in userCertificate, or nobody — its common ' +
+    'name and subject are never read as a name. A ' +
+    'DECENTRALIZED IDENTIFIER is another shape and is neither a name nor ' +
     'a DN: an issued credential\'s did:jwk subject, whatever DID presents ' +
     'to the OID4VP Verifier. Its entry goes ' +
     'at uid=did-<12 hex of the SHA-256 of the DID>,{{usersDn}} — a ' +
@@ -19944,6 +21004,10 @@ function description(req) {
   // presented to is that module's to decide, and a second copy here would be
   // a second thing to keep right.
   const tlsPorts = tlsServer.ports();
+  // 'none', 'optional' or 'required': #423's pair, read as 636 reads it.
+  const ldapsPolicyNow = ldapsPolicy();
+  const ldapsClientAuth = String((ldapsPolicyNow &&
+                                  ldapsPolicyNow.clientAuth) || 'none');
   const out = {
     url: 'ldap://' + host + ':' + boundPort,
     port: boundPort,
@@ -19998,8 +21062,8 @@ function description(req) {
     persistence: persistence.status(),
     // This was `false` and it is now the whole answer, because one boolean had
     // to stand for three different facts and got at least one of them wrong for
-    // any reader: LDAPS is here, StartTLS is not, and no CLIENT certificate is
-    // ever asked for on either transport.
+    // any reader: LDAPS is here, StartTLS is not, and whether a CLIENT
+    // certificate is asked for on 636 is #423's pair (never on 389).
     tls: {
       ldaps: !!secureServer,
       port: secureServer ? boundTlsPort : null,
@@ -20015,8 +21079,24 @@ function description(req) {
       // submodule. LDAPS is also the one of the pair no RFC defines — RFC 4513
       // standardised StartTLS and left ldaps:// as the de-facto scheme.
       startTls: false,
+      // WHETHER 636 ASKS, AND SO WHETHER A CERTIFICATE BIND IS AVAILABLE
+      // (#1047, rule 7): the mode of #423's pair, and the sentence for it.
+      clientCertificateMode: ldapsClientAuth,
+      saslExternal: {
+        available: ldapsClientAuth !== 'none',
+        mechanisms: SASL_MECHANISMS.slice(0),
+        // Since #1061: an outside authority's certificate binds as the
+        // one person entry storing it in userCertificate.
+        outsideCertificateAuthorities: true,
+        rule: SERVICE_SENTENCES.certificateBindRule
+      },
       clientCertificates: serverProse.fill(
-        SERVICE_SENTENCES.clientCertificates, { port: tlsPorts.main }),
+        ldapsClientAuth === 'required'
+          ? SERVICE_SENTENCES.clientCertificatesRequired
+          : ldapsClientAuth === 'optional'
+            ? SERVICE_SENTENCES.clientCertificatesOptional
+            : SERVICE_SENTENCES.clientCertificatesNone,
+        { port: tlsPorts.main }),
       certificate: {
         subject: serverCertificate ? serverCertificate.subject : '',
         names: serverCertificate ? serverCertificate.names : [],
@@ -25258,6 +26338,16 @@ function createGroup(displayName, options) {
   });
   const note = String(opts.note || '').trim() ||
     'created by hand rather than by a directory client';
+  // THE GROUP'S OWN ADDRESS (#989): `mail` on the group entry, where a
+  // report definition shared with the group sends its result notices.
+  // Checked here, at the one door, with the rule `setGroupMail()` applies.
+  const mailAsked = String(opts.mail == null ? '' : opts.mail).trim();
+  if (mailAsked && !GROUP_MAIL_SHAPE.test(mailAsked)) {
+    log.debug('Leaving createGroup(). Not an address.');
+    return coded('STS-LDAP-0177', { ok: false, errors: ['"' + mailAsked +
+      '" is not an email address, so it cannot be the group\'s mail ' +
+      'attribute. Give one address, local-part@domain, or none.'] });
+  }
   const attributes = {
     objectClass: ['top', 'groupOfNames'],
     cn: [wanted],
@@ -25265,6 +26355,9 @@ function createGroup(displayName, options) {
   };
   if (members.length) {
     attributes.member = members;
+  }
+  if (mailAsked) {
+    attributes.mail = [mailAsked];
   }
   const written = writeGroupEntry(dn, attributes, opts.origin || 'console');
   if (!written.ok) {
@@ -25539,6 +26632,104 @@ function addGroupMember(group, member, options) {
                                       'because this directory does no ' +
                                       'referential integrity in either ' +
                                       'direction.') };
+}
+
+// ---------------------------------------------------------------------------
+// A GROUP'S EMAIL ADDRESS (#989). One `mail` value on the group's own entry,
+// where a report definition shared with the group sends its result notices
+// (`report/sources.ts`, `reportNotify()`). Set or cleared through the group
+// page's form and `POST /admin-api/groups/set-mail`, which both reach this
+// one function; a create takes it as `opts.mail`. The shape rule is the
+// plainest one that refuses what cannot be delivered to — one local part,
+// one `@`, a domain with a dot, no whitespace — and is deliberately not the
+// mail channel's `addressProblem()`, which this file would otherwise have
+// to require for one regular expression. An empty value removes the
+// attribute. Nothing else about the entry is touched, and the operational
+// three are left out of the write for `addGroupMember()`'s reason.
+// ---------------------------------------------------------------------------
+const GROUP_MAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/**
+ * Sets or clears a group's `mail` attribute (#989).
+ *
+ * @param group - the group's `cn` or its whole DN
+ * @param mail - the address, or '' to remove it
+ * @param options - `origin`, `channel`, `protocol`, `actor`
+ * @returns `{ ok, changed, dn, mail }`, or a coded refusal
+ */
+function setGroupMail(group, mail, options) {
+  log.debug('Entering setGroupMail().');
+  const opts = options || {};
+  const wantedGroup = String(group == null ? '' : group).trim();
+  const wantedMail = String(mail == null ? '' : mail).trim();
+  if (!wantedGroup) {
+    log.debug('Leaving setGroupMail(). No group.');
+    return coded('STS-LDAP-0042', { ok: false, errors: [
+      'Which group? Send `group` with its `cn` or its whole DN.'] });
+  }
+  if (wantedMail && !GROUP_MAIL_SHAPE.test(wantedMail)) {
+    log.debug('Leaving setGroupMail(). Not an address.');
+    return coded('STS-LDAP-0177', { ok: false, errors: ['"' + wantedMail +
+      '" is not an email address, so it cannot be the group\'s mail ' +
+      'attribute. Give one address, local-part@domain, or none.'] });
+  }
+  const dn = DN_SHAPED.test(wantedGroup) ? wantedGroup :
+             groupDnFor(wantedGroup);
+  const existing = readGroupEntry(dn);
+  if (!existing) {
+    log.debug('Leaving setGroupMail(). No group there.');
+    return coded('STS-LDAP-0050', { ok: false, errors: [
+      'There is no group at ' + dn + '.'] });
+  }
+  const attributes = {};
+  let mailKey = 'mail';
+  Object.keys(existing.attributes).forEach(function (name) {
+    if (OPERATIONAL.indexOf(name.toLowerCase()) >= 0) {
+      return;
+    }
+    if (name.toLowerCase() === 'mail') {
+      mailKey = name;
+      return;
+    }
+    attributes[name] = existing.attributes[name].slice(0);
+  });
+  const before = String(((existing.attributes[mailKey] || [])[0]) || '');
+  if (before === wantedMail) {
+    log.debug('Leaving setGroupMail(). Unchanged.');
+    return { ok: true, changed: false, dn: existing.dn, mail: wantedMail,
+             message: wantedMail
+               ? existing.dn + ' already has the address ' + wantedMail + '.'
+               : existing.dn + ' has no address, as asked.' };
+  }
+  if (wantedMail) {
+    attributes[mailKey] = [wantedMail];
+  }
+  const written = writeGroupEntry(existing.dn, attributes,
+                                  opts.origin || 'console');
+  if (!written.ok) {
+    log.debug('Leaving setGroupMail(). Not written: ' + written.reason);
+    return coded(errorCodes.codeOf(written),
+                 { ok: false, reason: written.reason,
+             errors: ['The address could not be written onto ' +
+                      existing.dn + ' (' + written.reason + ').'] });
+  }
+  audit.recordDirectory({
+    action: 'group.set-mail',
+    actor: String(opts.actor || ''),
+    target: existing.dn,
+    protocol: String(opts.protocol || ''),
+    channel: opts.channel || 'internal',
+    summary: wantedMail
+      ? existing.dn + ' now has the address ' + wantedMail
+      : existing.dn + ' no longer has an address',
+    detail: { mail: wantedMail, before: before }
+  });
+  log.debug('Leaving setGroupMail().');
+  return { ok: true, changed: true, dn: existing.dn, mail: wantedMail,
+           entry: written.entry,
+           message: wantedMail
+             ? existing.dn + ' now has the address ' + wantedMail + '.'
+             : 'The address was removed from ' + existing.dn + '.' };
 }
 
 // ---------------------------------------------------------------------------
@@ -27363,6 +28554,15 @@ module.exports = {
   // tests/credential_census_async.js, which compares each with its
   // synchronous twin and counts what the store was asked.
   existingUserEntriesAsync: existingUserEntriesAsync,
+  // The holders of one attribute, asynchronously (#615), on the module too
+  // since #1002: the reports application's `credentialHolders` source
+  // reads a mechanism's holders through it, bounded by the holders — and
+  // counts them first, through `holderCountAsync`, so a mechanism nearly
+  // everyone holds is refused rather than read.
+  holdersAsync: holdersAsync,
+  holderCountAsync: holderCountAsync,
+  // The people created or changed in a span (#1028), for the reports.
+  entriesByTimeRangeAsync: entriesByTimeRangeAsync,
   locateStoredAsync: locateStoredAsync,
   credentialCensus: credentialCensus,
   credentialCensusAsync: credentialCensusAsync,
@@ -27373,6 +28573,13 @@ module.exports = {
   // The group index's builds and clock, for tests/group_index_clock.js (#618).
   groupIndexState: groupIndexState,
   userHandleIndexState: userHandleIndexState,
+  // A CERTIFICATE STORED ON AN ENTRY (#1061): who stores one, what an entry
+  // stores, the one writer the console and /admin-api go through, and the
+  // index's state for the tests.
+  certificateHolders: certificateHolders,
+  storedCertificatesOf: storedCertificatesOf,
+  changeStoredCertificate: changeStoredCertificate,
+  certificateIndexState: certificateIndexState,
   applicationsDn: applicationsDn,
   spiffeDn: spiffeDn,
   spiffeEntriesDn: spiffeEntriesDn,
@@ -27416,6 +28623,7 @@ module.exports = {
   inPersonBatch: inPersonBatch,
   personBatchStep: personBatchStep,
   groupDnFor: groupDnFor,
+  setGroupMail: setGroupMail,
   // ---------------------------------------------------------------------
   // THE OPERATION CODEC, EXPORTED FOR `tests/ldap_operations.js` AND FOR
   // NOTHING ELSE IN THE SERVICE.
@@ -27461,6 +28669,9 @@ module.exports = {
   operationContext: operationContext,
   performOperation: performOperation,
   applyOperationResult: applyOperationResult,
+  // `/admin/ldap/service`'s answer, for tests/ldap_sasl_external.js (#1047),
+  // which reads what it says about 636's client certificates in each mode.
+  ldapServiceView: ldapServiceView,
   ldapErrorNamed: ldapErrorNamed,
   // The live connections, and the only sign-out LDAP has. Read by
   // ../logout/logout.ts, which requires this module in the ordinary direction:

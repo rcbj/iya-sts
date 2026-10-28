@@ -115,6 +115,14 @@
     "en": "599cadcd7892cdd2",
     "text": "Écriture Shared Signals. Autorise la permission ssf.manage. Une personne ne la reçoit que tant qu'elle appartient au groupe de ce rôle, amorcé sous le nom ssf-manage, et que l'application à laquelle elle se connecte est membre de ce rôle. Une application ne la reçoit sur son propre jeton que tant qu'elle en est membre. Elle n'autorise pas ssf.read."
   },
+  "roles.native.REPORT_USE.what": {
+    "en": "3dc6cff824e184e8",
+    "text": "Rapports, en tant qu'utilisateur. Autorise la permission report:use : l'application de rapports et /report-api pour les définitions et les travaux que le détenteur possède ou qui lui sont partagés, selon ce que décide la politique de contrôle d'accès. Une personne la détient par le groupe de ce rôle, amorcé sous le nom report-users, en tant que membre direct, ou sur la liste de la console (Admin Read ou Admin Write) ; une application la détient en tant que membre et la reçoit sur son propre jeton, n'atteignant que les définitions et les travaux qu'elle a définis."
+  },
+  "roles.native.REPORT_ADMIN.what": {
+    "en": "d17c8f34f20ced92",
+    "text": "Rapports, en tant qu'administrateur. Autorise la permission report:admin : chaque définition et chaque travail du domaine, selon ce que décide la politique de contrôle d'accès. Une personne la détient par le groupe de ce rôle, amorcé sous le nom report-admins, en tant que membre direct, ou en tant qu'Admin Write sur la liste de la console ; une application qui la détient n'atteint toujours que ce qu'elle a défini. Elle n'autorise pas report:use : un jeton demande les portées dont il a besoin."
+  },
   "roles.memberKinds.user.label": {
     "en": "df381eb4bb572daf",
     "text": "une personne"

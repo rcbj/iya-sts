@@ -250,6 +250,14 @@ CREATE INDEX IF NOT EXISTS sts_ldap_entries_rdn ON sts_ldap_entries (realm, pare
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
 CREATE INDEX IF NOT EXISTS sts_ldap_entries_uid_trgm ON sts_ldap_entries USING gin (rdn_value gin_trgm_ops) WITH (fastupdate = off) WHERE parent_key LIKE 'ou=users,%';
 
+-- THE TWO DATES AS A RANGE (#1028, schema version 28): B-trees over the
+-- generalized-time text of created_at and modified_at, led by realm and
+-- parent, over the children of each realm's ou=users only, so a report's
+-- date range reads the span and nothing else. Fixed-width UTC text sorts as
+-- time does.
+CREATE INDEX IF NOT EXISTS sts_ldap_entries_created ON sts_ldap_entries (realm, parent_key, created_at) WHERE parent_key LIKE 'ou=users,%';
+CREATE INDEX IF NOT EXISTS sts_ldap_entries_modified ON sts_ldap_entries (realm, parent_key, modified_at) WHERE parent_key LIKE 'ou=users,%';
+
 -- HOW MANY PARENTS THE DIRECTORY HAS, SAID RATHER THAN SAMPLED (#639, schema
 -- version 20). ANALYZE reads about 30,000 rows, and with 50M of 50.2M entries
 -- under one `ou=users` its sample held one `parent_key`: `n_distinct` was 1,
@@ -279,7 +287,16 @@ CREATE INDEX IF NOT EXISTS sts_ldap_entries_values ON sts_ldap_entries USING gin
 -- still holds all its classes, which answers the same question). They
 -- replace the two below, which indexed every name and every class of every
 -- entry — about nineteen GIN entries a person insert that narrowed nothing.
-CREATE INDEX IF NOT EXISTS sts_ldap_entries_asked_names ON sts_ldap_entries USING gin ((jsonb_path_query_array(attr_names, '$[*] ? (@ == "federationlink" || @ == "hobapublickey" || @ == "memberof" || @ == "oauthconsent" || @ == "stsacmeeabkey" || @ == "stsandroidattestedcredential" || @ == "stsassertionissuer" || @ == "stsassertionjwks" || @ == "stscertificatehostname" || @ == "stsclaimsourcetokens" || @ == "stsdefaultdelegationsemantics" || @ == "stsdelegationsemantics" || @ == "stsdeviceandroidkey" || @ == "stsdevicekey" || @ == "stsenrolledcertificate" || @ == "stsenrolledprivatekey" || @ == "stskrb5keyinfo" || @ == "stskrb5keys" || @ == "stsmailfactor" || @ == "stsmayact" || @ == "stsnotdelegated" || @ == "stssamlassertioncertificate" || @ == "stssamlassertionissuer" || @ == "stsscepchallenge" || @ == "stsselfissuedsubject" || @ == "stsserviceaccount" || @ == "ststotpcredential" || @ == "stswebauthncredential" || @ == "stswebauthnuserhandle")'))) WITH (fastupdate = off) WHERE attr_names ?| ARRAY['federationlink', 'hobapublickey', 'memberof', 'oauthconsent', 'stsacmeeabkey', 'stsandroidattestedcredential', 'stsassertionissuer', 'stsassertionjwks', 'stscertificatehostname', 'stsclaimsourcetokens', 'stsdefaultdelegationsemantics', 'stsdelegationsemantics', 'stsdeviceandroidkey', 'stsdevicekey', 'stsenrolledcertificate', 'stsenrolledprivatekey', 'stskrb5keyinfo', 'stskrb5keys', 'stsmailfactor', 'stsmayact', 'stsnotdelegated', 'stssamlassertioncertificate', 'stssamlassertionissuer', 'stsscepchallenge', 'stsselfissuedsubject', 'stsserviceaccount', 'ststotpcredential', 'stswebauthncredential', 'stswebauthnuserhandle'];
+-- THE ASKED NAMES GREW (#1024 then #1028, schema versions 27 and 28):
+-- `stsbackupcodes` and `pwdaccountlockedtime` joined them, so an index
+-- built before answers "nobody" for those names through
+-- the index. It is dropped here and built again by the CREATE below, which
+-- is the driver's advisory upgrade step `sts_ldap_entries_asked_names_v27`
+-- for a role that owns the table. On a large store the build takes minutes
+-- and locks writes; `CREATE INDEX CONCURRENTLY` under another name, a
+-- DROP and a RENAME do the same without the lock, outside a transaction.
+DROP INDEX IF EXISTS sts_ldap_entries_asked_names;
+CREATE INDEX IF NOT EXISTS sts_ldap_entries_asked_names ON sts_ldap_entries USING gin ((jsonb_path_query_array(attr_names, '$[*] ? (@ == "federationlink" || @ == "hobapublickey" || @ == "memberof" || @ == "oauthconsent" || @ == "pwdaccountlockedtime" || @ == "stsacmeeabkey" || @ == "stsandroidattestedcredential" || @ == "stsassertionissuer" || @ == "stsassertionjwks" || @ == "stsbackupcodes" || @ == "stscertificatehostname" || @ == "stsclaimsourcetokens" || @ == "stsdefaultdelegationsemantics" || @ == "stsdelegationsemantics" || @ == "stsdeviceandroidkey" || @ == "stsdevicekey" || @ == "stsenrolledcertificate" || @ == "stsenrolledprivatekey" || @ == "stskrb5keyinfo" || @ == "stskrb5keys" || @ == "stsmailfactor" || @ == "stsmayact" || @ == "stsnotdelegated" || @ == "stssamlassertioncertificate" || @ == "stssamlassertionissuer" || @ == "stsscepchallenge" || @ == "stsselfissuedsubject" || @ == "stsserviceaccount" || @ == "ststotpcredential" || @ == "stswebauthncredential" || @ == "stswebauthnuserhandle")'))) WITH (fastupdate = off) WHERE attr_names ?| ARRAY['federationlink', 'hobapublickey', 'memberof', 'oauthconsent', 'pwdaccountlockedtime', 'stsacmeeabkey', 'stsandroidattestedcredential', 'stsassertionissuer', 'stsassertionjwks', 'stsbackupcodes', 'stscertificatehostname', 'stsclaimsourcetokens', 'stsdefaultdelegationsemantics', 'stsdelegationsemantics', 'stsdeviceandroidkey', 'stsdevicekey', 'stsenrolledcertificate', 'stsenrolledprivatekey', 'stskrb5keyinfo', 'stskrb5keys', 'stsmailfactor', 'stsmayact', 'stsnotdelegated', 'stssamlassertioncertificate', 'stssamlassertionissuer', 'stsscepchallenge', 'stsselfissuedsubject', 'stsserviceaccount', 'ststotpcredential', 'stswebauthncredential', 'stswebauthnuserhandle'];
 CREATE INDEX IF NOT EXISTS sts_ldap_entries_group_classes ON sts_ldap_entries USING gin (class_keys) WITH (fastupdate = off) WHERE class_keys <> '[]'::jsonb;
 DROP INDEX IF EXISTS sts_ldap_entries_attr_names;
 DROP INDEX IF EXISTS sts_ldap_entries_classes;
@@ -1142,6 +1159,15 @@ CREATE TABLE IF NOT EXISTS sts_report_artifacts (
   created_at bigint NOT NULL,
   PRIMARY KEY (realm, job_id));
 
+-- A finished report's pieces (#1045, schema version 29), each sealed on its
+-- own and numbered from 0; the `sts_report_artifacts` row says how many.
+CREATE TABLE IF NOT EXISTS sts_report_artifact_pieces (
+  realm      text   NOT NULL,
+  job_id     text   NOT NULL,
+  seq        int    NOT NULL,
+  bytes      bytea  NOT NULL,
+  PRIMARY KEY (realm, job_id, seq));
+
 CREATE TABLE IF NOT EXISTS sts_schema (
   version int PRIMARY KEY,
   applied_at timestamptz NOT NULL DEFAULT now());
@@ -1149,7 +1175,7 @@ CREATE TABLE IF NOT EXISTS sts_schema (
 -- WHAT VERSION OF THE ABOVE THIS IS. The driver writes the same row on open()
 -- and `tests/postgres_schema.js` checks that this number is its SCHEMA_VERSION,
 -- so the two cannot disagree about which schema is on disk.
-INSERT INTO sts_schema (version) VALUES (26) ON CONFLICT (version) DO NOTHING;
+INSERT INTO sts_schema (version) VALUES (29) ON CONFLICT (version) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
 -- THE APPLICATION ROLE: READ AND WRITE THE ROWS, AND NOTHING ELSE.

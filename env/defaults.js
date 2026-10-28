@@ -323,7 +323,7 @@ var config = {
     fanout: "/scim,/xacml,/admin-api,/account-api",                // Dispatched paths with no session affinity; restart to apply
     surfaceCount: 0,                                               // Hosted-surface worker processes; restart to apply
     surfaces: "/admin,/portal",                                    // Paths handled by the hosted-surface workers; restart to apply
-    batch: "/scim,/admin/signals/receive,/portal/signals/receive", // Batch traffic paths
+    batch: "/scim,/admin/signals/receive,/portal/signals/receive,/report/signals/receive", // Batch traffic paths
     batchWorkerShare: 50,                                          // Share of workers batch traffic may use (%)
     batchConcurrency: 8,                                           // Batch requests in flight per lane worker
     batchQueueLimit: 5000,                                         // Batch requests waiting
@@ -749,10 +749,11 @@ var config = {
 
   // --- WS-Trust --------------------------------------------------------
   wstrust: {
-    tokenLifetimeMin: 60,        // Token lifetime (minutes)
-    maxTokenLifetimeMin: 1440,   // Longest lifetime a request may ask for (minutes)
-    jwtAlgorithm: "RS256",       // JWT signature algorithm
-    jwtCertificateHeader: "x5u"  // JWT certificate header
+    tokenLifetimeMin: 60,          // Token lifetime (minutes)
+    maxTokenLifetimeMin: 1440,     // Longest lifetime a request may ask for (minutes)
+    jwtAlgorithm: "RS256",         // JWT signature algorithm
+    jwtCertificateHeader: "x5u",   // JWT certificate header
+    acceptClientCertificate: true  // Accept the TLS client certificate as the requester's credential
   },
 
   // --- WS-Federation ---------------------------------------------------
@@ -1044,6 +1045,7 @@ var config = {
     deadLetterMaxPerStream: 1000,                                                                                                                         // Dead letters per stream
     deadLetterSweepS: 60,                                                                                                                                 // Dead-letter sweep interval (seconds)
     authBasic: true,                                                                                                                                      // Offer HTTP Basic
+    authClientCert: true,                                                                                                                                 // Offer TLS client certificates
     internalReceivers: true,                                                                                                                              // Register the console and the portal as receivers; restart to apply
     internalPollMs: 1000,                                                                                                                                 // Console and portal poll interval (milliseconds)
     maxStreams: 25,                                                                                                                                       // Streams per receiver
@@ -1478,8 +1480,7 @@ var config = {
     maxConcurrentPerRealm: 2,   // Report jobs running per realm
     maxConcurrentPerSubject: 1, // Report jobs running per person
     artifactRetentionS: 86400,  // How long a report result is kept (seconds)
-    jobRetentionS: 604800,      // How long a report job row is kept (seconds)
-    usersGroup: ""              // Who may be issued report:use
+    jobRetentionS: 604800       // How long a report job row is kept (seconds)
   },
 
   // --- Listener: Main port ---------------------------------------------

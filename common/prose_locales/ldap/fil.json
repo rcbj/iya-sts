@@ -67,17 +67,29 @@
     "en": "55b2bbab540dbbb4",
     "text": "walang trust realm na naka-define, kaya iisa ang context ({{root}}) at ang subtree search mula rito ay sumasagot tungkol sa buong store"
   },
-  "ldap.service.sentences.clientCertificates": {
-    "en": "18c68f9d37420f1c",
-    "text": "hindi kailanman hinihingi. Pinatutunayan lang ng listener na ito ang SERVER sa client at wala nang iba; ang client certificate na iniaalok dito ay hindi hinihingi at hindi magiging login kahit hingin. Ang main port ({{port}}) ang lugar kung saan hinihingi at binabasa ang mga client certificate."
+  "ldap.service.sentences.clientCertificatesNone": {
+    "en": "e871e2b9901509f2",
+    "text": "hindi hinihingi: naka-on ang `ldap.ldapsDisableOptionalClientCertificate`, kaya walang ipinapadalang CertificateRequest ang LDAPS at tinatanggihan ang certificate bind (SASL EXTERNAL) dahil walang certificate. I-off ang setting na iyon para humingi ng isa sa bawat koneksyon (opsyonal), o i-on ang `ldap.ldapsRequireClientCertificate` para hingin ito; alinman ay nagpapagana sa SASL EXTERNAL. Humihingi ang pangunahing port ({{port}}) ng client certificate ayon sa sarili nitong mga setting."
+  },
+  "ldap.service.sentences.clientCertificatesOptional": {
+    "en": "872d11f2c2ff8a31",
+    "text": "hinihingi at hindi kinakailangan (opsyonal: naka-off ang `ldap.ldapsDisableOptionalClientCertificate`). Ang koneksyong nagpapakita ng isa na napatunayan laban sa client truststore ay maaaring mag-bind gamit ang SASL EXTERNAL; ang walang certificate ay nagba-bind gamit ang password gaya ng dati."
+  },
+  "ldap.service.sentences.clientCertificatesRequired": {
+    "en": "d4476c20b14dd318",
+    "text": "kinakailangan (naka-on ang `ldap.ldapsRequireClientCertificate`): tinatanggihan sa handshake ang koneksyong walang certificate na napatunayan laban sa client truststore. Maaari nang mag-bind ang koneksyon gamit ang SASL EXTERNAL, o gamit ang password gaya ng dati."
+  },
+  "ldap.service.sentences.certificateBindRule": {
+    "en": "c26bf08affa27730",
+    "text": "Ibina-bind ng SASL EXTERNAL ang koneksyon bilang entry ng tao na may-ari ng certificate: isang inisyu ng serbisyong ito sa isang taong may entry sa realm na iyon, o isa mula sa isang panlabas na certificate authority na pinagkakatiwalaan sa pamamagitan ng /admin/tls/trust na nakaimbak, byte por byte, sa userCertificate sa eksaktong isang entry ng tao sa realm na iyon. Tinatanggihan ang binawi, ang sa ibang realm, ang sa isang application, at ang panlabas na nakaimbak sa walang entry o sa higit sa isa, at walang binabasa mula sa common name o subject. Ang authorization identity ay tinatanggap lamang kapag pinangangalanan nito ang parehong entry."
   },
   "ldap.service.sentences.certificateSource": {
     "en": "a969a038097605ed",
     "text": "ang parehong certificate at key na inihahain ng main port ({{port}}). Ito ay {{provenance}}: iniaabot ito ng GET /tls/server-certificate sa PEM. Iisang anchor para sa dalawang socket ang dahilan kung bakit nila ito pinaghahatian."
   },
   "ldap.service.sentences.autoCreateRule": {
-    "en": "7e10a7e3ec45179d",
-    "text": "lumalabas ang entry na uid=<name>,{{usersDn}} sa unang beses na mag-authenticate si <name> sa serbisyong ito sa pamamagitan ng ANUMANG protocol. Hindi nagse-seed ng isa ang LDAP bind (DN ang ipinapakita nito, hindi user name) at hindi rin ang OAuth client. Ang na-verify na TLS CLIENT CERTIFICATE ang nag-iisang identity na DN na: pinananatili ng entry nito ang sariling leaf RDN ng subject — cn=alice,{{usersDn}} para sa CN=alice,O=Example — o ang buong subject kung nasa ilalim na iyon ng {{baseDn}}, at nasa entry ang buong subject, issuer, serial at validity bilang mga x509* attribute, na sariling mga pangalan ng serbisyong ito at hindi schema. Ang DECENTRALIZED IDENTIFIER ang ikatlong hugis at hindi ito pangalan o DN: ang did:jwk subject ng isang na-issue na credential, anumang DID na ipinapakita sa OID4VP Verifier. Napupunta ang entry nito sa uid=did-<12 hex ng SHA-256 ng DID>,{{usersDn}} — ang did:jwk na isinulat nang buo ay DN na may ilang daang character, karamihan ay key material — na ang identifier mismo ay buong itinatago sa entry bilang didSubject, at ang method nito bilang didMethod. Hanapin ang tao ayon sa didSubject, hindi ayon sa uid: sa mga entry na iyon, digest ang uid at ang didSubject ang identity."
+    "en": "6ddfd5c3a5e8025c",
+    "text": "lumalabas ang entry na uid=<name>,{{usersDn}} sa unang beses na mag-authenticate si <name> sa serbisyong ito sa pamamagitan ng ANUMANG protocol. Hindi nagse-seed ng isa ang LDAP bind (DN ang ipinapakita nito, hindi user name) at hindi rin ang OAuth client. Walang nililikha ang na-verify na TLS CLIENT CERTIFICATE: ang inisyu ng serbisyong ito ay tumutukoy sa isang taong may entry na, at ang mula sa isang panlabas na certificate authority ay ang entry kung saan ito nakaimbak sa userCertificate, o wala — hindi kailanman binabasa bilang pangalan ang common name at subject nito. Ang DECENTRALIZED IDENTIFIER ay isa pang hugis at hindi ito pangalan o DN: ang did:jwk subject ng isang na-issue na credential, anumang DID na ipinapakita sa OID4VP Verifier. Napupunta ang entry nito sa uid=did-<12 hex ng SHA-256 ng DID>,{{usersDn}} — ang did:jwk na isinulat nang buo ay DN na may ilang daang character, karamihan ay key material — na ang identifier mismo ay buong itinatago sa entry bilang didSubject, at ang method nito bilang didMethod. Hanapin ang tao ayon sa didSubject, hindi ayon sa uid: sa mga entry na iyon, digest ang uid at ang didSubject ang identity."
   },
   "ldap.spiffe.sourceOfTruth": {
     "en": "b1ca8ee3d774cf2d",

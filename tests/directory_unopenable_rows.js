@@ -18,9 +18,10 @@
 //
 //   A. a flush that DELETES a row that does not open commits, and the
 //      DELETE is issued;
-//   B. a flush that MERGES into a row that does not open is tried twice —
-//      once more after the data-key rows are read again — and then refused
-//      with STS-STORE-0072, never written over.
+//   B. a flush that MERGES into a row that does not open is tried six times
+//      (since 2026-10-27; it was twice) — five more after the data-key rows
+//      are read again, a pause between — and then refused with
+//      STS-STORE-0072, never written over.
 //
 // Against a `pg` that records statements (`directory_queries.js`'s), so the
 // order of statements is what is asserted. Nothing here is sealed: a value
@@ -132,9 +133,9 @@ async function run(t) {
   }
   t.equal(failure && errorCodes.codeOf(failure), 'STS-STORE-0072',
           'B1. it is refused with STS-STORE-0072');
-  t.equal(count(merging, /FOR UPDATE/), 2,
-          'B2. it was tried twice: once more after the data-key rows were ' +
-          'read again');
+  t.equal(count(merging, /FOR UPDATE/), 6,
+          'B2. it was tried six times: once, and five more after the ' +
+          'data-key rows were read again, 200 ms apart (2026-10-27)');
   t.equal(count(merging, /INSERT INTO sts_ldap_entries|UPDATE sts_ldap_entries/), 0,
           'B3. nothing was written over the row it could not read');
   log.debug("Leaving run().");

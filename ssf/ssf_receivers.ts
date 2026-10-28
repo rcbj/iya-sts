@@ -21,9 +21,11 @@
 // File: ssf_receivers.ts
 //
 // ===========================================================================
-// THIS SERVICE'S OWN TWO SURFACES, AS SHARED SIGNALS RECEIVERS (2026-09-10).
+// THIS SERVICE'S OWN SURFACES, AS SHARED SIGNALS RECEIVERS (2026-09-10; the
+// reports application the third since #1042).
 //
-// The admin console and the user portal are **registered receivers** of this
+// The admin console, the user portal and the reports application are
+// **registered receivers** of this
 // service's own transmitter: each has a stream of its own, seeded per trust
 // realm, asking for every CAEP and every RISC event type; each hosts a receive
 // endpoint that a Security Event Token is POSTed to; and each draws what has
@@ -154,7 +156,7 @@ import transport = require('./ssf_http');
 import errorCodes = require('../common/error_codes');
 
 // ---------------------------------------------------------------------------
-// THE TWO SURFACES. This table is the whole register — there is no second list
+// THE SURFACES. This table is the whole register — there is no second list
 // of them anywhere — and each row says what the surface IS rather than what it
 // draws, because the drawing belongs to the surface.
 //
@@ -198,7 +200,24 @@ const SURFACES = [
     sees: 'own',
     what: 'This service\'s own user portal, at /portal. It takes every CAEP ' +
           'and RISC event in the realm, and each person is shown only the ' +
-          'ones whose subject is them.' }
+          'ones whose subject is them.' },
+  // THE REPORTS APPLICATION (#1042, rcbj: "I want /report to be a third
+  // receiver"). A static application like the other two since #956, signing
+  // in as `sts-report`, so its stream's audience is that client. It `sees`
+  // `own`, the portal's fail-closed rule: a report USER is shown only the
+  // signals about themselves, and the report API widens it to the whole
+  // realm for a report ADMINISTRATOR (`report/report_api.ts`), as the
+  // console sees every signal for an administrator.
+  { id: 'report',
+    label: 'Reports',
+    audience: 'sts-report',
+    rpSurface: 'report',
+    receivePath: '/report/signals/receive',
+    inboxPath: '/report/signals',
+    sees: 'own',
+    what: 'This service\'s own reports application, at /report. It takes ' +
+          'every CAEP and RISC event in the realm; a report administrator ' +
+          'is shown all of them and anybody else only the ones about them.' }
 ];
 
 const SURFACE_BY_ID = {};
@@ -624,8 +643,9 @@ class SsfReceivers {
     log.debug("Entering SsfReceivers.seedStreams(). realm=" +
               realms.currentId());
     if (!this.enabled()) {
-      log.info('ssf: the admin console and the user portal were NOT ' +
-               'registered as receivers in the "' + realms.currentId() +
+      log.info('ssf: the admin console, the user portal and the reports ' +
+               'application were NOT registered as receivers in the "' +
+               realms.currentId() +
                    '" realm; ' +
                (config.value('ssf.enabled') ? 'ssf.internalReceivers'
                                             : 'ssf.enabled') + ' is off.');
@@ -1389,7 +1409,19 @@ class SsfReceivers {
       //   and signing them out of the page they did it on is the opposite of
       //   what OWASP ASVS 3.3 asks (keep the session that made the change).
       //   An administrator's or a policy's change still ends them.
+      // * a `credential-change` whose `change_type` is `create` ADDED a
+      //   credential — a person created with a password, a passkey enrolled,
+      //   an app password or a client secret made — and took nothing away,
+      //   so no session rests on a credential that stopped being one. Ending
+      //   on it was what run #4 of 2026-10-27 measured once #1042 gave the
+      //   reaction teeth: a suite job creates a person with a password and
+      //   signs them in within the same second, the signal is delivered a
+      //   moment later, and "the same second is ended" (below) ended the
+      //   sign-in the credential was made FOR. An `update`, a `revoke` and a
+      //   `delete` still end them — those are a credential replaced or
+      //   taken away.
       const initiator = String(body.initiating_entity || '');
+      const changeType = String(body.change_type || '');
       const subjectSession = ((entry.claims && entry.claims.sub_id) || {})
         .session;
       const revokedSession = family === 'caep' &&
@@ -1411,6 +1443,27 @@ class SsfReceivers {
         return eventAt > 0 && authenticatedAt > 0 &&
           Math.floor(authenticatedAt) > Math.floor(eventAt);
       };
+      // A RISC `account-disabled` ABOUT AN ACCOUNT THAT IS ENABLED NOW
+      // (2026-10-27): the disable ended what it had to end when it
+      // happened (`account_state.ts`), and an enable superseded it before
+      // this event was acted on. Acting on it then signs out a person who
+      // was let back in — `sts_second_factor_doors` disables, enables and
+      // signs the person in to the portal within the same second, which
+      // "the same second is ended" cannot tell from a sign-in made before
+      // the disable. Asked per token or session of this service's own
+      // account state; where nothing can be asked, the event acts.
+      const enabledAgain = function (username: string): boolean {
+        if (family !== 'risc' || short !== 'account-disabled' || !username) {
+          return false;
+        }
+        try {
+          return !require('../common/account_state').isDisabled(username);
+        } catch (e) {
+          log.debug("Caught in SsfReceivers.actOn(): " +
+                    ((e && e.message) || e));
+          return false;
+        }
+      };
       let skip = '';
       if (family === 'caep' && short === 'session-revoked' &&
           initiator === 'policy') {
@@ -1418,6 +1471,9 @@ class SsfReceivers {
       } else if (family === 'caep' && short === 'credential-change' &&
                  initiator === 'user') {
         skip = 'the person\'s own change';
+      } else if (family === 'caep' && short === 'credential-change' &&
+                 changeType === 'create') {
+        skip = 'a credential added, which takes nothing away';
       }
       (decided.reactions || []).forEach(function (reaction: string): void {
         if (skip) {
@@ -1440,7 +1496,8 @@ class SsfReceivers {
                 return !!session &&
                   String(session.derivedFrom || '') === revokedSession;
               }
-              if (beganAfterEvent(session)) {
+              if (beganAfterEvent(session) ||
+                  enabledAgain(String(user.username || ''))) {
                 return false;
               }
               return self.isAbout(entry, { username: user.username,
@@ -1449,7 +1506,19 @@ class SsfReceivers {
             },
             'the ' + surface.label + ' receiving ' + short + ' (' +
             entry.jti + ')', 'policy');
-          out.push({ event: short, reaction: reaction, ended: ended });
+          // WHAT A STATIC SURFACE HOLDS (#1042). The console (#446), the
+          // portal (#568) and the reports application (#956) make no
+          // relying-party session: each holds a DPoP-bound token its own
+          // client was issued, so the call above ends nothing for them and
+          // every reaction recorded "ended 0". Revoking those tokens is the
+          // same act — the next call to /admin-api, /account-api or
+          // /report-api is refused, and the surface signs in again —
+          // narrowed the same two ways.
+          const revoked = self.revokeSurfaceTokens(surface, entry,
+            revokedSession, eventAt, 'the ' + surface.label +
+            ' receiving ' + short + ' (' + entry.jti + ')', enabledAgain);
+          out.push({ event: short, reaction: reaction, ended: ended,
+                     revoked: revoked });
         } catch (e) {
           log.warn(errorCodes.tag('STS-SSF-0111') + 'ssf: the ' +
                    surface.label + ' could not act on ' + short + ' (' +
@@ -1461,6 +1530,9 @@ class SsfReceivers {
     const ended = out.reduce(function (n: number, r: Loose): number {
       return n + (Number(r.ended) || 0);
     }, 0);
+    const revokedTokens = out.reduce(function (n: number, r: Loose): number {
+      return n + (Number(r.revoked) || 0);
+    }, 0);
     if (out.length) {
       audit.audit({ action: 'ssf.event.act', category: 'signals',
         protocol: 'SSF', channel: 'internal', target: entry.jti,
@@ -1468,15 +1540,195 @@ class SsfReceivers {
           return !!r.failed;
         }) ? 'STS-SSF-0111' : undefined,
         summary: 'The ' + surface.label + ' ' + (observe
-          ? 'would have ended its own sessions for the person named ' +
-            '(development observes)'
-          : 'ended ' + ended + ' of its own session(s) for the person ' +
-            'named'),
+          ? 'would have ended its own sessions and revoked its own ' +
+            'tokens for the person named (development observes)'
+          : 'ended ' + ended + ' of its own session(s) and revoked ' +
+            revokedTokens + ' of its own token(s) for the person named'),
         detail: { surface: surface.id, reactions: out } });
     }
     log.debug("Leaving SsfReceivers.actOn(). " + out.length +
-              " reaction(s), " + ended + " ended.");
+              " reaction(s), " + ended + " ended, " + revokedTokens +
+              " token(s) revoked.");
     return out;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE SURFACE'S OWN TOKENS FOR THE PERSON A SET NAMES (#1042).
+  //
+  // Found through the token register's index and never by a walk — the
+  // username (`u:`) and the subject (`s:`) the SET's identifiers spell, and
+  // for an address the people the directory's mail index names — because
+  // every password write sends a signal to every surface (#767 measured what
+  // a walk per signal cost). Every candidate is then held to four tests:
+  //
+  //   * issued to THIS surface's client (`audience`), and no other;
+  //   * about the person: `isAbout()` on the token's own username and
+  //     subject, so a token is revoked only where the SET would have been
+  //     shown to its holder — the fail-closed rule, for a write this time;
+  //   * a `session-revoked` naming a session reaches only the tokens issued
+  //     on that session, as it reached only the sessions derived from it;
+  //   * a token issued AFTER the event is left alone, as a session begun
+  //     after it was: it was issued on a sign-in that already knew.
+  //
+  // Revoked through `admin_stats.revoke()`, the one revocation set, with the
+  // initiating entity `policy` — the signal-response policy decided it.
+  // ---------------------------------------------------------------------------
+  private revokeSurfaceTokens(surface: Loose, entry: Loose,
+                              revokedSession: string, eventAt: number,
+                              via: string,
+                              enabledAgain?: (username: string) => boolean
+                             ): number {
+    const { log } = this.deps;
+    log.debug("Entering SsfReceivers.revokeSurfaceTokens(). " + surface.id);
+    const clientId = String((surface && surface.audience) || '');
+    if (!clientId) {
+      log.debug("Leaving SsfReceivers.revokeSurfaceTokens(). No client.");
+      return 0;
+    }
+    const named = this.tokenKeysNamed(entry);
+    if (!named.keys.length) {
+      log.debug("Leaving SsfReceivers.revokeSurfaceTokens(). Nobody named.");
+      return 0;
+    }
+    const stats = require('../common/admin_stats');
+    const self = this;
+    const revoked = stats.revokeWhere(function (record: Loose): boolean {
+      if (String(record.client_id || '') !== clientId) {
+        return false;
+      }
+      if (revokedSession &&
+          String(record.sessionId || '') !== revokedSession) {
+        return false;
+      }
+      const issuedMs = Number(record.issuedAt) || 0;
+      if (eventAt > 0 && issuedMs > 0 &&
+          Math.floor(issuedMs / 1000) > Math.floor(eventAt)) {
+        return false;
+      }
+      const username = String(record.username || '');
+      if (enabledAgain && enabledAgain(username)) {
+        return false;
+      }
+      return self.isAbout(entry, { username: username,
+        sub: String(record.sub || ''),
+        mail: named.mailOf[username.toLowerCase()] || '' });
+    }, via, { initiatingEntity: 'policy' }, named.keys);
+    log.debug("Leaving SsfReceivers.revokeSurfaceTokens(). " + revoked +
+              " revoked.");
+    return revoked;
+  }
+
+  // The token register's index keys for the identifiers a SET carries — its
+  // subject in every shape `matchesSubject()` reads, and an identifier
+  // change's new value — and, for an address, the address of each person
+  // the directory's mail index names, so `isAbout()` can match it. Nothing
+  // here decides who the SET is about; `isAbout()` does, per token.
+  private tokenKeysNamed(entry: Loose): Loose {
+    const { log, mode, subjects } = this.deps;
+    log.debug("Entering SsfReceivers.tokenKeysNamed().");
+    const claims = (entry && entry.claims) || {};
+    const values: string[] = [];
+    const collect = (subject: Loose, depth: number): void => {
+      if (!subject || typeof subject !== 'object' || Array.isArray(subject) ||
+          depth > 2) {
+        return;
+      }
+      if (subjects.isComplex(subject)) {
+        subjects.complexMembers(subject).forEach((name: string) => {
+          collect(subject[name], depth + 1);
+        });
+        return;
+      }
+      const format = String(subject.format || subject.subject_type || '');
+      if (format === 'aliases') {
+        (Array.isArray(subject.identifiers) ? subject.identifiers : [])
+          .forEach((one: Loose) => {
+            collect(one, depth + 1);
+          });
+      } else if (format === 'iss_sub') {
+        values.push(String(subject.sub || ''));
+      } else if (format === 'opaque') {
+        values.push(String(subject.id || ''));
+      } else if (format === 'email') {
+        values.push(String(subject.email || ''));
+      } else if (format === 'account') {
+        values.push(String(subject.uri || '').replace(/^acct:/i, ''));
+      } else if (format === 'uri') {
+        values.push(String(subject.uri || '').split('/users/')[1] || '');
+      } else if (format === 'did') {
+        values.push(String(subject.url || '').split(':').pop() || '');
+      }
+    };
+    collect(claims.sub_id, 0);
+    const payloads = claims.events || {};
+    Object.keys(payloads).forEach((uri: string) => {
+      const moved = (payloads[uri] || {})['new-value'];
+      if (typeof moved === 'string') {
+        values.push(moved);
+      }
+    });
+    const keys: string[] = [];
+    const mailOf: Record<string, string> = {};
+    const add = (key: string): void => {
+      if (key && keys.indexOf(key) < 0) {
+        keys.push(key);
+      }
+    };
+    values.map((one) => {
+      return one.trim();
+    }).filter(Boolean).forEach((value: string) => {
+      add('s:' + value);
+      add('u:' + value);
+      add('u:' + value.toLowerCase());
+      if (value.indexOf('@') < 0) {
+        return;
+      }
+      // AN ADDRESS NAMES A PERSON ONLY THROUGH THE DIRECTORY: its mail index
+      // (one indexed question), found in the require cache because the
+      // directory is a JavaScript route module this library may not
+      // require (rule 1). The address this service INVENTS for somebody
+      // with none (`realms.inventedMailOf()`) is its local part, where
+      // addresses are invented — `namesPerson()`'s rule.
+      const ldap = this.loadedDirectory();
+      if (ldap && typeof ldap.peopleByMail === 'function') {
+        try {
+          (ldap.peopleByMail(value) || []).forEach((hit: Loose) => {
+            const name = String((hit && hit.username) || '');
+            if (name) {
+              add('u:' + name);
+              mailOf[name.toLowerCase()] = value;
+            }
+          });
+        } catch (e) {
+          log.debug("Caught in SsfReceivers.tokenKeysNamed(): " +
+                    ((e && e.message) || e));
+        }
+      }
+      if (mode.inventsClaimValues()) {
+        add('u:' + value.split('@')[0]);
+      }
+    });
+    log.debug("Leaving SsfReceivers.tokenKeysNamed(). " + keys.length +
+              " key(s).");
+    return { keys: keys, mailOf: mailOf };
+  }
+
+  // The directory module where this process has loaded it, or null; never a
+  // require (the account_signals.ts arrangement).
+  private loadedDirectory(): Loose {
+    const { log } = this.deps;
+    log.debug("Entering SsfReceivers.loadedDirectory().");
+    let found: Loose = null;
+    try {
+      const cached = require.cache[require.resolve('../ldap/ldap_server')];
+      found = cached ? cached.exports : null;
+    } catch (e) {
+      log.debug("Caught in SsfReceivers.loadedDirectory(): " +
+                ((e && e.message) || e));
+      found = null;
+    }
+    log.debug("Leaving SsfReceivers.loadedDirectory(). " + !!found);
+    return found;
   }
 
   // Whether a JOSE header carries SSF's explicit type (section 4.1.1), with
@@ -1895,7 +2147,7 @@ class SsfReceivers {
         'Signals transmitter at all and nothing is built, queued or sent.');
     } else if (!out.internalReceivers) {
       out.why.push('ssf.internalReceivers is off, so this service does not ' +
-        'register its own two surfaces as receivers. Everything else about ' +
+        'register its own surfaces as receivers. Everything else about ' +
         'Shared Signals is unaffected.');
     } else if (!record) {
       out.why.push('There is no stream for the ' + surface.label + ' in the "' +
@@ -2130,6 +2382,10 @@ export = {
    * The user portal's surface id.
    */
   PORTAL: 'user-portal',
+  /**
+   * The reports application's surface id (#1042).
+   */
+  REPORT: 'report',
   surfaceOf: slot.forward('surfaceOf'),
   enabled: slot.forward('enabled'),
   seedStreams: slot.forward('seedStreams'),

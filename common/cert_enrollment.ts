@@ -494,6 +494,12 @@ class CertEnrollment {
   //   write(kind, id, name, values)  -> true | false. `values` replaces the
   //                                     attribute; an empty array removes it.
   //   holders(kind, name)            -> [id] of entries carrying `name`.
+  //   certificateHolders(sha256)     -> [{ kind, id, dn }] of the entries
+  //                                     storing a certificate whose DER has
+  //                                     that SHA-256 in `userCertificate`
+  //                                     (#1061). OPTIONAL: a test's stub may
+  //                                     leave it out, and then no outside
+  //                                     certificate maps to anybody.
   //
   // Validated whole, for `setLogoutReader()`'s reason: half a store is a
   // register that can issue a credential it cannot find again.
@@ -3205,6 +3211,28 @@ class CertEnrollment {
     return null;
   }
 
+  /**
+   * The entries of the ambient realm that store a certificate whose DER has
+   * this SHA-256 in `userCertificate` (#1061), through the directory slot.
+   *
+   * @param sha256 - the digest, hex
+   * @returns `[{ kind, id, dn }]`, or null when the directory offers no such
+   *   question
+   */
+  certificateHolders(sha256) {
+    const { log } = this.deps;
+    log.debug("Entering CertEnrollment.certificateHolders().");
+    const directory = this.directory;
+    if (!directory || typeof directory.certificateHolders !== 'function') {
+      log.debug("Leaving CertEnrollment.certificateHolders(). No directory.");
+      return null;
+    }
+    const out = directory.certificateHolders(String(sha256 || '')) || [];
+    log.debug("Leaving CertEnrollment.certificateHolders(). " + out.length +
+              ".");
+    return out;
+  }
+
   // -------------------------------------------------------------------------
   // A DEVICE'S CERTIFICATES, REVOKED (#164 phase 4): every x509 key on the
   // device whose certificate THIS service's EST or SCEP Issuing CA issued —
@@ -4983,6 +5011,7 @@ export = {
   issueWithServerKey: slot.forward('issueWithServerKey'),
   enrolledOf: slot.forward('enrolledOf'),
   findEnrolled: slot.forward('findEnrolled'),
+  certificateHolders: slot.forward('certificateHolders'),
   revokeEnrolled: slot.forward('revokeEnrolled'),
   revokeDeviceCertificates: slot.forward('revokeDeviceCertificates'),
   serverKeyOf: slot.forward('serverKeyOf'),

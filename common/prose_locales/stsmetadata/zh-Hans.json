@@ -100,8 +100,8 @@
     "text": "full：覆盖请求和响应：简写类别名称、短数据类型名称、根据 JSON 类型推断数据类型（包括整数/双精度的区分，这是从源文本读取的，因为 JSON.parse 已经丢弃了它）、数组作为包、义务、建议以及 PolicyIdentifierList。该配置文件不定义策略语法，因此策略仍为 XML。"
   },
   "stsmetadata.specs.ssf.coverage": {
-    "en": "43e50e62e3dae13e",
-    "text": "partial：传输方一半完整实现——位于 /.well-known/ssf-configuration 以及（针对领域颁发者）第 7.2 节插入路径形式的配置元数据，流管理 API（创建、读取、替换、合并、删除），带全部三种状态的状态端点，添加和移除主体，验证端点（应答 204 并异步传递，第 8.1.4.2 节），两种传递方式，以及 SSF 自己的两种事件类型——验证（也由传输方主动发送，ssf.verificationEveryS，或 /admin/ssf 上的 Verify），以及流已更新（在每次状态变化时，流停止前和重新开始后发送）。每个流属于创建它的接收方（第 8 节）：另一接收方的流应答 404，列表只包含调用方自己的流，aud 根据接收方的身份由传输方提供，ssf.maxStreams 按接收方计算。暂停的推送流会保留其 SET，并在启用时按顺序推送；失效的流会被暂停并通告。已实现 inactivity_timeout（默认关闭）、每个 SET 上的 txn、带 \"format\": \"complex\" 及第 3.3 节七个成员和其他成员的复合主体、critical_subject_members，以及第 3.5 节的 jwt_id、saml_assertion_id 和 ip-addresses 格式。第 8 节授权有三种方案——带有读取范围（ssf.read）或写入范围（ssf.manage，包含读取）的 OAuth 2.0 访问令牌（只签发给声明了该权限的客户端，并且只在其仍声明时才被认可）、HTTP Basic 和 GNAP——在 authorization_schemes 中公布。推送失败会重试 ssf.pushRetries 次（默认为 0，这是刻意的），然后进入死信，流在产品模式下会被持久化。以及接收方一半（#153）：领域按颁发者注册外部传输方（第 7 节的文档必须指明它，以及它的 jwks_uri），在那里创建、读取、更新和删除自己的流，设置其状态，添加和移除主体并请求验证，通过轮询（RFC 8936，由一个调度器作业确认收到的内容）或推送（RFC 8935，使用它提供的 authorization 标头）接收，验证每个 SET（针对传输方密钥的签名、typ、iss、aud、jti 仅一次），并通过信号响应策略针对联合关系所关联的人采取行动。未覆盖：对本传输方自己的流所指明的主体不做任何验证，因此流可能指明一个从未来过这里的人。"
+    "en": "f6086ea1ba40a4c3",
+    "text": "partial：传输方一半完整实现——位于 /.well-known/ssf-configuration 以及（针对领域颁发者）第 7.2 节插入路径形式的配置元数据，流管理 API（创建、读取、替换、合并、删除），带全部三种状态的状态端点，添加和移除主体，验证端点（应答 204 并异步传递，第 8.1.4.2 节），两种传递方式，以及 SSF 自己的两种事件类型——验证（也由传输方主动发送，ssf.verificationEveryS，或 /admin/ssf 上的 Verify），以及流已更新（在每次状态变化时，流停止前和重新开始后发送）。每个流属于创建它的接收方（第 8 节）：另一接收方的流应答 404，列表只包含调用方自己的流，aud 根据接收方的身份由传输方提供，ssf.maxStreams 按接收方计算。暂停的推送流会保留其 SET，并在启用时按顺序推送；失效的流会被暂停并通告。已实现 inactivity_timeout（默认关闭）、每个 SET 上的 txn、带 \"format\": \"complex\" 及第 3.3 节七个成员和其他成员的复合主体、critical_subject_members，以及第 3.5 节的 jwt_id、saml_assertion_id 和 ip-addresses 格式。第 8 节授权有四种方案——带有读取范围（ssf.read）或写入范围（ssf.manage，包含读取）的 OAuth 2.0 访问令牌（只签发给声明了该权限的客户端，并且只在其仍声明时才被认可）、HTTP Basic、GNAP，以及接收方的 TLS 客户端证书（urn:ietf:rfc:8705，由此领域颁发给其应用程序，持有为该应用程序签发的令牌所会拥有的内容）——在 authorization_schemes 中公布。推送失败会重试 ssf.pushRetries 次（默认为 0，这是刻意的），然后进入死信，流在产品模式下会被持久化。以及接收方一半（#153）：领域按颁发者注册外部传输方（第 7 节的文档必须指明它，以及它的 jwks_uri），在那里创建、读取、更新和删除自己的流，设置其状态，添加和移除主体并请求验证，通过轮询（RFC 8936，由一个调度器作业确认收到的内容）或推送（RFC 8935，使用它提供的 authorization 标头）接收，验证每个 SET（针对传输方密钥的签名、typ、iss、aud、jti 仅一次），并通过信号响应策略针对联合关系所关联的人采取行动。未覆盖：对本传输方自己的流所指明的主体不做任何验证，因此流可能指明一个从未来过这里的人。"
   },
   "stsmetadata.specs.rfc8417.coverage": {
     "en": "8641e83cb922bdcc",
@@ -192,16 +192,16 @@
     "text": "ldif 持久化模式写入和读取的文件格式。"
   },
   "stsmetadata.specs.rfc4511.coverage": {
-    "en": "67293c1dfe556980",
-    "text": "partial：bind（简单）、unbind、add、delete、modify、modifyDN、compare 和 search，在两个监听器上提供，使用相同的处理程序和相同的存储——明文 TCP 389 和 636 上的 LDAPS（从第一个字节起即为 TLS）——根 DSE 以及结果代码 0（success）、2（protocolError）、4（sizeLimitExceeded）、11（adminLimitExceeded）、16（noSuchAttribute）、32（noSuchObject）、49（invalidCredentials）、66（notAllowedOnNonLeaf）和 68（entryAlreadyExists）在两者上都可以触发。没有 SASL，没有 StartTLS，没有控制项（因此没有分页结果和排序），没有扩展操作，也没有引荐。StartTLS 在那里被刻意提了两次：它本身就是一个扩展操作（第 4.14 节），因此“没有扩展操作”和“没有 StartTLS”是同一个事实而不是两个，而这里通往 TLS 的途径是另一个端口。每次 bind 都会成功——任何 DN、任何密码，包括匿名——唯一的例外是字面密码“invalid”，它以 LDAP_INVALID_CREDENTIALS 被拒绝，以便负面测试有可以失败的东西。这就是开发模式：在产品模式下，具名的简单 bind 会针对条目的 userPassword 进行验证，目录中没有预置人员，ldap.plainListener 可以让 389 不绑定。第 4.5.1 节和第 4.10 节将访问控制留给服务器，而在产品模式下读取确实会按身份授权（#106）：管理员读取其管辖范围，个人读取自己的条目、他人的 ldap.directoryReadableAttributes（默认无）、自己所属的组以及容器；不允许其查看的条目会像不存在的条目一样应答 noSuchObject，过滤器无法匹配其不能读取的内容，对其进行 compare 会得到 insufficientAccessRights（50），并且只有个人可以 bind。它使用 ldapjs 3.0.7 库，作为子模块固定版本且未加修改；此处编写的是处理程序。"
+    "en": "2cac07857b3eeaf5",
+    "text": "partial：bind（简单）、unbind、add、delete、modify、modifyDN、compare 和 search，在两个监听器上提供，使用相同的处理程序和相同的存储——明文 TCP 389 和 636 上的 LDAPS（从第一个字节起即为 TLS）——根 DSE 以及结果代码 0（success）、2（protocolError）、4（sizeLimitExceeded）、11（adminLimitExceeded）、16（noSuchAttribute）、32（noSuchObject）、49（invalidCredentials）、66（notAllowedOnNonLeaf）和 68（entryAlreadyExists）在两者上都可以触发。除 EXTERNAL（RFC 4513，见下文）外没有 SASL 机制，没有 StartTLS，没有控制项（因此没有分页结果和排序），没有扩展操作，也没有引荐。StartTLS 在那里被刻意提了两次：它本身就是一个扩展操作（第 4.14 节），因此“没有扩展操作”和“没有 StartTLS”是同一个事实而不是两个，而这里通往 TLS 的途径是另一个端口。每次 bind 都会成功——任何 DN、任何密码，包括匿名——唯一的例外是字面密码“invalid”，它以 LDAP_INVALID_CREDENTIALS 被拒绝，以便负面测试有可以失败的东西。这就是开发模式：在产品模式下，具名的简单 bind 会针对条目的 userPassword 进行验证，目录中没有预置人员，ldap.plainListener 可以让 389 不绑定。第 4.5.1 节和第 4.10 节将访问控制留给服务器，而在产品模式下读取确实会按身份授权（#106）：管理员读取其管辖范围，个人读取自己的条目、他人的 ldap.directoryReadableAttributes（默认无）、自己所属的组以及容器；不允许其查看的条目会像不存在的条目一样应答 noSuchObject，过滤器无法匹配其不能读取的内容，对其进行 compare 会得到 insufficientAccessRights（50），并且只有个人可以 bind。它使用 ldapjs 3.0.7 库，作为子模块固定版本且未加修改；此处编写的是处理程序。"
   },
   "stsmetadata.specs.rfc4512.coverage": {
     "en": "f856c6b18542f41b",
     "text": "minimal：树、根 DSE 和 namingContexts 是真实的；架构则完全不存在。不强制任何 objectClass，不按语法或匹配规则检查任何属性，也没有子架构子条目——因此条目可以携带客户端愿意发送的任何属性，而真实的目录会拒绝。仍有三条结构规则得到执行，因为缺少它们会让客户端学到错误的东西：add 需要其父条目存在，delete 需要叶条目，没有值的属性不存在。"
   },
   "stsmetadata.specs.rfc4513.coverage": {
-    "en": "e45e6b179ab6ffec",
-    "text": "partial：此处具备的部分是“传输”而不是身份验证：简单 bind（第 5.1 节）是唯一提供的方法——没有 SASL，因此没有 EXTERNAL，也没有 DIGEST-MD5。在开发模式下它不对任何人进行身份验证，因为除字面密码“invalid”外每次 bind 都会成功，636 上的 TLS 带来的，是为一个本来就不会被检查的密码提供机密性；对必须证明自己能使用 LDAPS 的客户端来说这值得拥有，也值得明说，以免有人把 TLS 当作身份验证；在产品模式下，人员的密码会被验证，并且只能通过 636。“未”实现 StartTLS（第 3 节）：它是一个扩展操作，而本服务所基于的 ldapjs 子模块一个扩展操作都没有实现，本存储库也不修补该子模块。值得了解本文档实际标准化的是两者中的哪一个——StartTLS 在本文档中；ldaps:// 是它未予处理的事实标准方案，这就是为什么没有任何 RFC 定义每个客户端都在使用的东西。证书由本服务自己的根证书签发，每次启动时重新生成（除非 tls.certificateFile 提供了证书），并与主端口共享，因此客户端每次运行都要验证它：请从 GET /tls/server-certificate 获取证书链，而不要动用 LDAPTLS_REQCERT=never，后者还会掩盖此处唯一值得检查的东西。在“产品”模式下，简单 bind “确实”会被验证，这使得 389 成为明文传输的密码：ldap.plainListener 可关闭该监听器，并且在它开启期间服务会在启动时发出警告。第 6.1 节：“读取敏感信息时应始终应用访问控制”——产品模式会这样做，按绑定的身份进行（ldap/directory_read_policy.ts）。"
+    "en": "ffd676cfc6a6acde",
+    "text": "partial：此处具备的部分是“传输”而不是身份验证：简单 bind（第 5.1 节），以及在 636 请求客户端证书期间，使用本服务颁发给某人的证书、或逐字节存储在恰好一个人员条目的 userCertificate 中的外部证书进行的 SASL EXTERNAL（第 5.2.1.2 节）；没有其他 SASL 机制，因此没有 DIGEST-MD5。在开发模式下它不对任何人进行身份验证，因为除字面密码“invalid”外每次 bind 都会成功，636 上的 TLS 带来的，是为一个本来就不会被检查的密码提供机密性；对必须证明自己能使用 LDAPS 的客户端来说这值得拥有，也值得明说，以免有人把 TLS 当作身份验证；在产品模式下，人员的密码会被验证，并且只能通过 636。“未”实现 StartTLS（第 3 节）：它是一个扩展操作，而本服务所基于的 ldapjs 子模块一个扩展操作都没有实现，本存储库也不修补该子模块。值得了解本文档实际标准化的是两者中的哪一个——StartTLS 在本文档中；ldaps:// 是它未予处理的事实标准方案，这就是为什么没有任何 RFC 定义每个客户端都在使用的东西。证书由本服务自己的根证书签发，每次启动时重新生成（除非 tls.certificateFile 提供了证书），并与主端口共享，因此客户端每次运行都要验证它：请从 GET /tls/server-certificate 获取证书链，而不要动用 LDAPTLS_REQCERT=never，后者还会掩盖此处唯一值得检查的东西。在“产品”模式下，简单 bind “确实”会被验证，这使得 389 成为明文传输的密码：ldap.plainListener 可关闭该监听器，并且在它开启期间服务会在启动时发出警告。第 6.1 节：“读取敏感信息时应始终应用访问控制”——产品模式会这样做，按绑定的身份进行（ldap/directory_read_policy.ts）。"
   },
   "stsmetadata.specs.rfc4514.coverage": {
     "en": "d74d5f5a23a41bdb",
@@ -232,8 +232,8 @@
     "text": "partial：响应程序应尽的部分。明文 HTTP（第 5 节）——响应程序在 `pki.httpPort` 以及 TLS 主端口上应答，证书指明明文端口；附加 base64 请求的 GET；任何 GeneralizedTime 中都没有小数秒（第 2.2.4 节）；响应程序 ID 按密钥哈希给出（第 2.2.2 节）；对其无权威的请求返回 `unauthorized`（第 2.2.3 节）；以及第 6.2 节的缓存标头——max-age 不晚于 nextUpdate、Last-Modified、Expires 和强 ETag，权威应答上从不使用 no-cache 或 no-store。未完成：响应按请求签名，而不是预先生成（第 2.2.1 节建议在高流量时预先生成），并且对携带 nonce 的请求的应答被标记为 private，而不是从缓存提供。"
   },
   "stsmetadata.specs.ws-trust.coverage": {
-    "en": "c1c6a4c05b39a697",
-    "text": "partial：基于 SOAP 1.1 和 1.2 的 Issue、Renew、Validate 和 Cancel。请求签名不会被验证。OnBehalfOf 和 ActAs 由签发策略决定（#186，令牌交换和 Kerberos S4U 共用的规则）——OnBehalfOf 请求的是模拟身份，ActAs 请求的是委托，条目的委托语义必须允许它，AppliesTo 必须是委托关系所允许的已注册应用，个人请求方需要 delegation.actorRole——在产品模式下以 wst:RequestFailed 故障（第 11 节）拒绝；同时出现两个元素则为 wst:InvalidRequest；开发模式记录本应被拒绝的内容。在产品模式下（2026-09-12），每个操作都需要凭据——针对目录验证的 UsernameToken，或由本 STS 签名且处于其 Conditions 之内的 SAML 断言——而 OnBehalfOf/ActAs 需要请求方自己的凭据，以及其中的此类断言；开发模式一概不要求，一如既往。在两种模式下，请求的 wst:Lifetime 都会被限制（wstrust.maxTokenLifetimeMin），所签发断言的 AuthnContext 指明的是所用凭据，而不是密码。"
+    "en": "cafeffef561dcd9a",
+    "text": "partial：基于 SOAP 1.1 和 1.2 的 Issue、Renew、Validate 和 Cancel。请求签名不会被验证。OnBehalfOf 和 ActAs 由签发策略决定（#186，令牌交换和 Kerberos S4U 共用的规则）——OnBehalfOf 请求的是模拟身份，ActAs 请求的是委托，条目的委托语义必须允许它，AppliesTo 必须是委托关系所允许的已注册应用，个人请求方需要 delegation.actorRole——在产品模式下以 wst:RequestFailed 故障（第 11 节）拒绝；同时出现两个元素则为 wst:InvalidRequest；开发模式记录本应被拒绝的内容。在产品模式下（2026-09-12），每个操作都需要凭据——针对目录验证的 UsernameToken，或由本 STS 签名且处于其 Conditions 之内的 SAML 断言——而 OnBehalfOf/ActAs 需要请求方自己的凭据，以及其中的此类断言；开发模式一概不要求，一如既往。在两种模式下，请求的 wst:Lifetime 都会被限制（wstrust.maxTokenLifetimeMin），所签发断言的 AuthnContext 指明的是所用凭据，而不是密码。若请求方的 wsse:Security 不携带任何凭据，则在两种模式下均以连接上的 TLS 客户端证书认证请求方，前提是该证书由本领域颁发给某个人或某个应用程序（#1046），或者来自外部证书颁发机构并存储在其恰好一个条目的 userCertificate 中（#1061）。"
   },
   "stsmetadata.specs.wss-username.coverage": {
     "en": "397e6a07a7980365",
@@ -1056,8 +1056,8 @@
     "text": "RFC 7486 第 7 节。表单编码的 POST，携带 pub=<PEM public key> 和（本服务自己的参数）username=<who it is for>，以 201 和 Hobareg: regok 头部应答。刻意不经身份验证：这是调用方获得凭据的方式，因此要求凭据才能访问它，将使任何尚未拥有其他凭据的人都无法使用该方案。任何人都可以为任何名称注册任何密钥——随后签名会被真正验证，这才是使该方案值得实现的那一半。该密钥以 hobaPublicKey 的形式落在此人自己位于 ou=users 下的条目上，因此 ldapsearch 和 /admin/users 都会显示它。GET 描述该端点，因为对浏览器返回 404 的 well-known 路径与无人实现的路径无法区分。"
   },
   "stsmetadata.endpoints./tls/sign-in.what": {
-    "en": "7335cf97f459114d",
-    "text": "经过验证的客户端证书成为会话（2026-09-05），自 2026-09-16 起位于此端口——它曾是访问任一已删除 TLS 监听器的副作用，这意味着加载一个诊断页面就会让你登录。它应答收到了什么、是否通过验证、令牌端点会将令牌绑定到的指纹、吊销检查发现了什么，以及是否启动了会话。它在握手时不拒绝任何人，也无法拒绝：无法验证的证书、本服务签发但不是 TLS 客户端身份的证书，以及应用的证书（RFC 8705 凭据，而不是人）都会以 200 应答，不建立会话，并说明原因。"
+    "en": "b9f18166e17e9c9d",
+    "text": "经过验证的客户端证书成为会话（2026-09-05），自 2026-09-16 起位于此端口——它曾是访问任一已删除 TLS 监听器的副作用，这意味着加载一个诊断页面就会让你登录。它应答收到了什么、是否通过验证、令牌端点会将令牌绑定到的指纹、吊销检查发现了什么，以及是否启动了会话。它在握手时不拒绝任何人，也无法拒绝：无法验证的证书、本服务签发但不是 TLS 客户端身份的证书、未逐字节存储在本领域恰好一个条目的 userCertificate 中的外部证书颁发机构证书（从不按通用名称匹配），以及应用的证书（RFC 8705 凭据，而不是人）都会以 200 应答，不建立会话，并说明原因。"
   },
   "stsmetadata.endpoints./tls/server-certificate.what": {
     "en": "54631edee4eb2352",
@@ -1151,6 +1151,18 @@
     "en": "fb526fdd286ba6e8",
     "text": "非规范。对每个控制台路径返回与 /admin 相同的文档（#446）：路径指明页面，由浏览器读取，因此深层链接和历史记录都能正常工作。/admin/callback 是登录带着代码返回的地方；提供它时会像依赖方那样在控制台的客户端条目上注册该回调（在开发模式下自动学习，在产品模式下除非已注册否则拒绝）。"
   },
+  "stsmetadata.endpoints./admin/signals/receive.what": {
+    "en": "cd68dd8169303f3e",
+    "text": "RFC 8935 第 2.1 节推送交付，用于被改回推送的控制台流（种子流自 #771 起采用轮询）。#446 切换随服务器渲染页面一起删除了它，#1042 将其恢复：它是门户端点的孪生端点，检查方式相同——以恒定时间比对控制台自身流的持有者令牌，然后是 `aud`，再是签名——并且出于同样的原因不做速率限制。"
+  },
+  "stsmetadata.endpoints./admin/signals/receive.effect": {
+    "en": "7414efe71859a097",
+    "text": "记录交付给管理控制台的 Security Event Token"
+  },
+  "stsmetadata.endpoints./admin/signals/receive.coverage": {
+    "en": "bbcf002898339fc9",
+    "text": "full：对 RFC 8935 第 2.1 节的接收，与 /portal/signals/receive 相同。"
+  },
   "stsmetadata.endpoints./admin/console.js.what": {
     "en": "6f4d5410ba7dfbfb",
     "text": "非规范。静态控制台（#446）：其运行时和每个页面的渲染器都在一个文件中，由 build-typescript.sh 构建。与文档一样公开：其中没有任何秘密。"
@@ -1174,6 +1186,18 @@
   "stsmetadata.endpoints./portal/portal.css.what": {
     "en": "69cf245f63b035d1",
     "text": "非规范。门户唯一的样式表（#568）。"
+  },
+  "stsmetadata.endpoints./report/signals/receive.what": {
+    "en": "02a6b59dd686363c",
+    "text": "RFC 8935 第 2.1 节推送交付，用于被改回推送的报表流（#1042；种子流采用轮询，与控制台和门户的相同）。检查方式与 /portal/signals/receive 相同。"
+  },
+  "stsmetadata.endpoints./report/signals/receive.effect": {
+    "en": "6c9147c359daab5f",
+    "text": "记录交付给报表应用程序的 Security Event Token"
+  },
+  "stsmetadata.endpoints./report/signals/receive.coverage": {
+    "en": "bbcf002898339fc9",
+    "text": "full：对 RFC 8935 第 2.1 节的接收，与 /portal/signals/receive 相同。"
   },
   "stsmetadata.endpoints./report.what": {
     "en": "a9d6c3cc058a3617",
@@ -1206,6 +1230,22 @@
   "stsmetadata.endpoints./report-api/catalog/:id.what": {
     "en": "4d6e53c9ce4823ca",
     "text": "NON-SPEC。目录中的单个数据源，按其 id 指定。"
+  },
+  "stsmetadata.endpoints./report-api/realms.what": {
+    "en": "94cf90a7c7b10a68",
+    "text": "NON-SPEC。此请求所在的领域，以及在启用领域时，每个领域及其 id、名称和路径前缀（#986）：应用的领域字段和切换器即由此绘制。与 /report-api 的其余部分使用同一令牌。"
+  },
+  "stsmetadata.endpoints./report-api/signals.what": {
+    "en": "f00e66637d8d4146",
+    "text": "非规范。报表应用程序作为此服务自身发送方的接收方 (#1042) 所收到的内容：报表管理员可看到领域中的每个信号，其他人只能看到与自己有关的信号。与 /report-api 其余部分使用同一令牌。"
+  },
+  "stsmetadata.endpoints./report-api/groups.what": {
+    "en": "339c957fd31d0c51",
+    "text": "NON-SPEC。领域中名称或 DN 包含 q 的组，每页五个，各自带有自己的 mail 属性（#989）：定义页面的面板。定义的组即其结果的电子邮件收件人。与 /report-api 的其余部分使用同一令牌。"
+  },
+  "stsmetadata.endpoints./report-api/schedules.what": {
+    "en": "6db4cff36d4beb56",
+    "text": "NON-SPEC。每个带有计划的定义，及其下一次运行、上一次执行的时点、跳过说明和最近的计划作业（#992）。report:use 看到自己的和共享的；report:admin 看到整个领域，并可按名称查看某一位所有者的。与 /report-api 的其余部分使用同一令牌。"
   },
   "stsmetadata.endpoints./report-api/queries.what": {
     "en": "0d15a58a10e2b1ba",
@@ -1614,6 +1654,10 @@
   "stsmetadata.endpoints./admin-api/users/devices.what": {
     "en": "f3efcad394d83c8d",
     "text": "非规范（#130）。此人在 ou=devices 中的条目：id、DN、标签、使用过每个设备的应用、它是否持有 Native SSO 密钥，以及该密钥的会话是否活动。POST /admin-api/users/remove-device 删除一个。对应此人 /admin/users 页面上的“设备”块。"
+  },
+  "stsmetadata.endpoints./admin-api/users/certificates.what": {
+    "en": "e6213352c307d2b7",
+    "text": "非规范（#1061）。存储在此人 userCertificate 中的每个证书：其 DER 的 SHA-256、主体、颁发者、序列号和有效期。来自外部机构的证书只能以存储它的唯一条目的身份让其持有者登录；POST /admin-api/users/add-certificate 存储一个证书，/remove-certificate 将其移除。与此人 /admin/users 页面上的“已存储证书”区块一致。"
   },
   "stsmetadata.endpoints./admin-api/devices.what": {
     "en": "44c53b68d1ed9a1d",
@@ -2694,6 +2738,10 @@
   "stsmetadata.endpoints./authn-api/pending/:id/anonymous.what": {
     "en": "092b3cc9235cb1b0",
     "text": "NON-SPEC（#571）。在 authn.unauthenticatedSessions 开启时。"
+  },
+  "stsmetadata.endpoints./authn-api/pending/:id/certificate.what": {
+    "en": "ff1fb299d130d818",
+    "text": "NON-SPEC (#1051)。连接上的 TLS 客户端证书作为第一因素，amr [\"swk\"]：因吊销、被身份关卡、因属于另一领域的颁发机构、因外部证书未存储在恰好一个条目上、或因属于某个应用的证书而被拒绝，与 GET /tls/sign-in 的拒绝方式相同；然后是认证策略、风险，以及需要时的第二因素。"
   },
   "stsmetadata.endpoints./authn-api/pending/:id/email.what": {
     "en": "f654c3c6f076950a",

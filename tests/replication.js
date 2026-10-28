@@ -288,11 +288,13 @@ async function run(t) {
           'while it went on reporting that it was coordinating');
 
   // -------------------------------------------------------------------------
-  // 5b. A ROW UNDER A DATA KEY THIS THREAD HAS NOT READ YET IS TRIED ONCE
-  // MORE (2026-10-02), after the data-key rows are read again — the ordinary
-  // cause is a realm another worker thread made a moment ago. Only that code:
-  // any other failure is not retried, and a row that never opens is tried
-  // twice and then reported like any other bad row.
+  // 5b. A ROW UNDER A DATA KEY THIS THREAD HAS NOT READ YET IS TRIED AGAIN
+  // (2026-10-02; up to five more times, a pause between, since 2026-10-27),
+  // after the data-key rows are read again — the ordinary cause is a realm
+  // another process made a moment ago, whose key row may still be
+  // committing. Only that code: any other failure is not retried, and a row
+  // that never opens is tried six times and then reported like any other
+  // bad row.
   // -------------------------------------------------------------------------
   t.log.info('=== a row under a data key not read yet is tried once more ===');
   replication.reset();
@@ -320,9 +322,61 @@ async function run(t) {
   await replication.pull();
   t.equal(tries['cn=late'], 2, '5b1. a row that does not open the first ' +
           'time is applied on the second, after the data keys are read again');
-  t.equal(tries['cn=never'], 2, '5b2. a row that never opens is tried ' +
-          'twice and no more');
+  t.equal(tries['cn=never'], 6, '5b2. a row that never opens is tried ' +
+          'six times (the first, and five more after the keys are read ' +
+          'again) and no more');
   t.equal(tries['cn=other'], 1, '5b3. any other failure is not retried');
+
+  // -------------------------------------------------------------------------
+  // 5c. A DIRECTORY ROW OF A REALM NOT DEFINED HERE WAITS FOR THE REALM
+  // (2026-10-27): a realm's entries could reach the change log ahead of its
+  // own row, and applied before the realm they were applied resident, then
+  // forgotten, then DELETED from the store by the next flush's diff. A
+  // page's realm rows go first, and a row of a realm still unknown is held
+  // until the realm is defined here.
+  // -------------------------------------------------------------------------
+  t.log.info('=== a directory row of a realm not yet defined here waits ===');
+  replication.reset();
+  const early = fakeDriver('me');
+  const appliedEarly = [];
+  await replication.start(early, {
+    directory: function (change) {
+      log.debug("Entering directory().");
+      appliedEarly.push(change.realm + '/' + change.key);
+      log.debug("Leaving directory().");
+    },
+    realms: function (change) {
+      log.debug("Entering realms().");
+      if (!realms.get('early-realm')) {
+        realms.create({ id: 'early-realm', name: 'Early realm' });
+      }
+      log.debug("Leaving realms().");
+    }
+  });
+  early.write('them', 'directory', 'early-realm', 'cn=first');
+  await replication.pull();
+  t.equal(appliedEarly.length, 0, '5c1. a row of a realm this process does ' +
+          'not define is held, not applied');
+  t.equal(replication.heldRealmIds().join(','), 'early-realm',
+          '5c1b. and heldRealmIds() names the realm it waits for, which ' +
+          'the realm load drops at once when the store does not list it');
+  early.write('them', 'realms', '', 'early-realm');
+  early.write('them', 'directory', 'early-realm', 'cn=second');
+  await replication.pull();
+  t.equal(appliedEarly.join(','), 'early-realm/cn=second,early-realm/cn=first',
+          '5c2. the realm row of a page is applied first, the page\'s own ' +
+          'row of that realm after it, and the held row last');
+  realms.remove('early-realm');
+  early.write('them', 'directory', 'early-realm', 'cn=third');
+  await replication.pull();
+  t.equal(replication.forgetDeferred('early-realm'), 1,
+          '5c3. a realm removed here on another node\'s word drops its ' +
+          'held rows, which arrived behind the removal');
+  early.write('them', 'realms', '', 'early-realm');
+  await replication.pull();
+  t.equal(appliedEarly.length, 2, '5c4. and a dropped row is not applied ' +
+          'when the realm is defined again');
+  realms.remove('early-realm');
 
   // -------------------------------------------------------------------------
   // 6. AN UNKNOWN KIND IS SKIPPED RATHER THAN FATAL.

@@ -67,17 +67,29 @@
     "en": "55b2bbab540dbbb4",
     "text": "未定义任何信任领域，因此只有一个上下文（{{root}}），从它开始的子树搜索回答的是整个存储"
   },
-  "ldap.service.sentences.clientCertificates": {
-    "en": "18c68f9d37420f1c",
-    "text": "从不请求。此监听器只向客户端证明服务器，仅此而已；向它出示的客户端证书不会被请求，即使被请求也不会成为登录。主端口（{{port}}）才是请求和读取客户端证书的地方。"
+  "ldap.service.sentences.clientCertificatesNone": {
+    "en": "e871e2b9901509f2",
+    "text": "不请求：`ldap.ldapsDisableOptionalClientCertificate` 已开启，因此 LDAPS 不发送 CertificateRequest，证书绑定（SASL EXTERNAL）因没有证书而被拒绝。关闭该设置即可向每个连接请求证书（可选），或开启 `ldap.ldapsRequireClientCertificate` 以要求证书；两者都会使 SASL EXTERNAL 可用。主端口（{{port}}）按其自身设置请求客户端证书。"
+  },
+  "ldap.service.sentences.clientCertificatesOptional": {
+    "en": "872d11f2c2ff8a31",
+    "text": "请求但不要求（可选：`ldap.ldapsDisableOptionalClientCertificate` 已关闭）。出示经客户端信任库验证的证书的连接可以使用 SASL EXTERNAL 绑定；没有证书的连接仍像以前一样使用密码绑定。"
+  },
+  "ldap.service.sentences.clientCertificatesRequired": {
+    "en": "d4476c20b14dd318",
+    "text": "要求（`ldap.ldapsRequireClientCertificate` 已开启）：没有经客户端信任库验证的证书的连接在握手时被拒绝。连接随后可以使用 SASL EXTERNAL 绑定，或像以前一样使用密码绑定。"
+  },
+  "ldap.service.sentences.certificateBindRule": {
+    "en": "c26bf08affa27730",
+    "text": "SASL EXTERNAL 将连接绑定为证书所属的人员条目：本服务颁发给在该领域有条目的人员的证书，或通过 /admin/tls/trust 受信任的外部证书颁发机构的证书，且该证书逐字节存储在该领域恰好一个人员条目的 userCertificate 中。已吊销的、其他领域的、应用程序的证书，以及未存储在任何条目上或存储在多个条目上的外部证书都会被拒绝，并且不会读取通用名称或主题。授权身份只有在指向同一条目时才会被接受。"
   },
   "ldap.service.sentences.certificateSource": {
     "en": "a969a038097605ed",
     "text": "与主端口（{{port}}）提供的证书和密钥相同。它是{{provenance}}：GET /tls/server-certificate 以 PEM 形式提供它。两个套接字共用一个信任锚，这就是它们共享证书的原因。"
   },
   "ldap.service.sentences.autoCreateRule": {
-    "en": "7e10a7e3ec45179d",
-    "text": "当 <name> 首次通过任何协议向本服务进行身份验证时，会出现条目 uid=<name>,{{usersDn}}。LDAP 绑定不会创建条目（它出示的是 DN，不是用户名），OAuth 客户端也不会。经验证的 TLS 客户端证书是唯一本身已是 DN 的身份：其条目保留主体自身的叶 RDN——CN=alice,O=Example 对应 cn=alice,{{usersDn}}——或者在整个主体已位于 {{baseDn}} 之下时保留整个主体，完整的主体、颁发者、序列号和有效期作为 x509* 属性保存在条目上，这些是本服务自己的名称，而不是模式的一部分。去中心化标识符是第三种形式，既不是名称也不是 DN：已签发凭据的 did:jwk 主体、任何向 OID4VP 验证方出示的 DID。其条目位于 uid=did-<该 DID 的 SHA-256 的 12 位十六进制>,{{usersDn}}——完整写出的 did:jwk 是一个数百字符的 DN，其中大部分是密钥材料——标识符本身作为 didSubject 完整保存在条目上，其方法保存为 didMethod。请按 didSubject 而不是 uid 搜索此人：在这些条目上，uid 是摘要，didSubject 才是身份。"
+    "en": "6ddfd5c3a5e8025c",
+    "text": "当 <name> 首次通过任何协议向本服务进行身份验证时，会出现条目 uid=<name>,{{usersDn}}。LDAP 绑定不会创建条目（它出示的是 DN，不是用户名），OAuth 客户端也不会。经验证的 TLS 客户端证书不会创建任何条目：本服务颁发的证书指向一个已有条目的人员，而外部证书颁发机构的证书就是在 userCertificate 中存储它的那个条目，否则不指向任何人——其通用名称和主题从不被当作名称读取。去中心化标识符是另一种形式，既不是名称也不是 DN：已签发凭据的 did:jwk 主体、任何向 OID4VP 验证方出示的 DID。其条目位于 uid=did-<该 DID 的 SHA-256 的 12 位十六进制>,{{usersDn}}——完整写出的 did:jwk 是一个数百字符的 DN，其中大部分是密钥材料——标识符本身作为 didSubject 完整保存在条目上，其方法保存为 didMethod。请按 didSubject 而不是 uid 搜索此人：在这些条目上，uid 是摘要，didSubject 才是身份。"
   },
   "ldap.spiffe.sourceOfTruth": {
     "en": "b1ca8ee3d774cf2d",

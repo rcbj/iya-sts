@@ -36,8 +36,15 @@ import Query = require('./query');
 import Catalog = require('./catalog');
 import Limits = require('./limits');
 import OpenApi = require('./openapi');
+import version = require('../common/version');
 
 const log = bunyan.createLogger({ name: 'sts-report-api' });
+
+// The one version source (`common/version.js`, as every surface that draws
+// a version reads it; `tests/version.js` holds the source). The index
+// carries it for the application's footer (#986).
+const APP_VERSION = version.load();
+const APP_BUILD_INFO = version.buildInfo(APP_VERSION);
 
 const BASE = '/report-api';
 
@@ -69,6 +76,9 @@ function reportDepsOf(): any {
 function reportHttpStatus(code: string): number {
   log.debug("Entering reportHttpStatus().");
   let status = 400;
+  if (code === 'STS-REPORT-0038') {
+    status = 403;
+  }
   if (code === 'STS-REPORT-0001' || code === 'STS-REPORT-0019' ||
       code === 'STS-REPORT-0020') {
     status = 404;
@@ -79,7 +89,8 @@ function reportHttpStatus(code: string): number {
   } else if (code === 'STS-REPORT-0023') {
     status = 429;
   } else if (code === 'STS-REPORT-0011' || code === 'STS-REPORT-0016' ||
-      code === 'STS-REPORT-0017' || code === 'STS-REPORT-0018') {
+      code === 'STS-REPORT-0017' || code === 'STS-REPORT-0018' ||
+      code === 'STS-REPORT-0044' || code === 'STS-REPORT-0045') {
     status = 403;
   } else if (code === 'STS-REPORT-0006' || code === 'STS-REPORT-0007' ||
       code === 'STS-REPORT-0008' || code === 'STS-REPORT-0009' ||
@@ -372,7 +383,19 @@ function reportPublicSource(src: any): any {
       filter: field.filter,
       sort: field.sort,
       group: field.group,
-      operators: Catalog.operatorsFor(field.type)
+      // None for a field that cannot be filtered (#1040: `groups.members`
+      // listed six, and a filter on it is refused).
+      operators: field.filter ? Catalog.operatorsFor(field.type) : [],
+      // The operators the store answers with an index (#985); the page and
+      // the OpenAPI document show them, and `sources.ts` decides on them.
+      indexed: Array.isArray(field.indexed) ? field.indexed.slice() : [],
+      // Every value an enumerated field can hold (#1007), for the page's
+      // dropdown; absent (dropped by JSON) for an open field.
+      values: Array.isArray(field.values) ? field.values.slice() : undefined,
+      // The values whose equality the index answers, when only some are
+      // (#1040); absent otherwise.
+      indexedValues: Array.isArray(field.indexedValues) ?
+        field.indexedValues.slice() : undefined
     };
   });
   const out = {
@@ -382,6 +405,9 @@ function reportPublicSource(src: any): any {
     paging: src.paging || 'limit',
     relationships: Array.isArray(src.relationships) ?
       src.relationships.slice() : [],
+    // A directory-backed source (rcbj, 2026-10-27): a filter has to name
+    // an indexed field, and the page offers only those in a first row.
+    anchored: src.anchored === true,
     fields: fields
   };
   log.debug("Leaving reportPublicSource().");
@@ -420,9 +446,68 @@ function reportAudienceOk(audiences: any, base: string): boolean {
   return ok;
 }
 
+// ---------------------------------------------------------------------------
+// A SERVICE ADMINISTRATOR'S TOKEN IN ANOTHER REALM (#1038, 2026-10-27).
+//
+// rcbj: "The admin user for the default domain should have /report access
+// in all realms." The default realm's console roster is the service roster
+// (`admin-ui/CLAUDE.md` 8d), and `/admin-api` already believes a token the
+// default realm issued under every realm's prefix. This is the same
+// arrangement for the report API, narrowed to the one caller it is for:
+//
+//   * A JWT that does NOT verify under the ambient realm's key and DOES
+//     under the default realm's, presented under another realm's prefix,
+//     is checked WHOLE in the default realm — issuer, audience (the
+//     default realm's `/report-api`, which is what the reports app's
+//     realm switcher keeps), revocation, the sign-on session, the sender
+//     constraint, the client's declaration and the roles, held ∩ carried,
+//     all the default realm's — by the same code that checks any token.
+//   * Then its subject must be a PERSON on the default realm's console
+//     roster now (`rights.serviceAdministrator()`), or it is refused
+//     (STS-REPORT-0045): a member of the default realm's `report-users`
+//     reaches the default realm's reports and nobody else's.
+//   * The caller carries `realm` = the default realm's id, so every row it
+//     makes records `ownerRealm` and its groups are not read here
+//     (`rights.ts`).
+//
+// An opaque handle is not tried across realms: it is looked up in the
+// realm it was issued in, which the handle does not say.
+// ---------------------------------------------------------------------------
+function reportServiceToken(token: string): boolean {
+  log.debug("Entering reportServiceToken().");
+  const realms = require('../common/realms');
+  const helpers = require('../common/helpers');
+  if (realms.currentId() === realms.DEFAULT_ID ||
+      String(token || '').indexOf('.') < 0) {
+    log.debug("Leaving reportServiceToken(). Not a crossing.");
+    return false;
+  }
+  try {
+    helpers.verifyOwnJws(token);
+    log.debug("Leaving reportServiceToken(). This realm's own.");
+    return false;
+  } catch (err) {
+    // Not this realm's key: asked of the default realm's below.
+    log.debug("Caught in reportServiceToken(): " +
+      ((err && err.message) || err));
+  }
+  let ours = false;
+  try {
+    realms.run(realms.get(realms.DEFAULT_ID), function (): void {
+      helpers.verifyOwnJws(token);
+    });
+    ours = true;
+  } catch (err) {
+    log.debug("Caught in reportServiceToken(): " +
+      ((err && err.message) || err));
+    ours = false;
+  }
+  log.debug("Leaving reportServiceToken(). " + ours);
+  return ours;
+}
+
 function reportAuthenticate(req: any, res: any): any {
   log.debug("Entering reportAuthenticate().");
-  const deps = reportDepsOf();
   const presentation = reportPresented(req);
   if (!presentation.token) {
     reportUnauthenticated(res, 'STS-REPORT-0006', 'invalid_token',
@@ -431,12 +516,72 @@ function reportAuthenticate(req: any, res: any): any {
     log.debug("Leaving reportAuthenticate(). No token.");
     return null;
   }
+  const realms = require('../common/realms');
+  let who: any = null;
+  if (reportServiceToken(presentation.token)) {
+    who = realms.run(realms.get(realms.DEFAULT_ID), function (): any {
+      return reportAuthenticateToken(req, res, presentation);
+    });
+    if (!who) {
+      log.debug("Leaving reportAuthenticate(). The default realm refused.");
+      return null;
+    }
+    if (who.kind !== 'user' || !rights.serviceAdministrator(who.username)) {
+      reportForbidden(res, 'STS-REPORT-0045', 'forbidden',
+        'That access token was issued by the default realm. It reaches ' +
+        'another realm\'s reports only for a service administrator: a ' +
+        'person holding Admin Read or Admin Write on the default realm\'s ' +
+        'console roster. Sign in to this realm\'s reports instead.');
+      log.debug("Leaving reportAuthenticate(). Not a service " +
+                "administrator.");
+      return null;
+    }
+    who.realm = realms.DEFAULT_ID;
+  } else {
+    who = reportAuthenticateToken(req, res, presentation);
+    if (!who) {
+      log.debug("Leaving reportAuthenticate(). Refused.");
+      return null;
+    }
+  }
+  const carried = String(who.scope || '').split(/\s+/).filter(
+    function (part: string): boolean {
+      return part.length > 0;
+    });
+  // AND THE POLICY, FOR THE API ITSELF: holding a report role, as the
+  // access-control document's first rule reads it. Every definition and
+  // job is asked about again, one row at a time, where it is reached.
+  const policy = rights.mayReach(who, req.method);
+  if (!policy.allowed) {
+    log.info('report-api: the access policy refused ' + req.method + ' ' +
+             (req.originalUrl || req.url) + ' for ' + who.username + '. ' +
+             policy.why);
+    reportForbidden(res, 'STS-REPORT-0044', 'forbidden',
+      'The access policy refused this request. ' + policy.why +
+      ' This token carries ' + (carried.join(', ') || '(none)') +
+      ', which is the role(s) ' + (who.roles.length ? who.roles.join(', ')
+                                                     : '(none)') +
+      '. The report API needs REPORT_USE or REPORT_ADMIN; the document is ' +
+      'on /admin/xacml and xacml.enforceAccess turns the layer off.');
+    log.debug("Leaving reportAuthenticate(). The policy refused.");
+    return null;
+  }
+  log.debug("Leaving reportAuthenticate().");
+  return who;
+}
+
+// The token's own checks, in the realm they are asked in: the ambient one,
+// or the default realm's for a service administrator's token (above).
+function reportAuthenticateToken(req: any, res: any, presentation: any):
+    any {
+  log.debug("Entering reportAuthenticateToken().");
+  const deps = reportDepsOf();
   let claims: any = null;
   let opaqueAccess = false;
   try {
     claims = deps.helpers.verifyOwnJws(presentation.token);
   } catch (err) {
-    log.debug("Caught in reportAuthenticate(): " +
+    log.debug("Caught in reportAuthenticateToken(): " +
       ((err && err.message) || err));
     claims = null;
   }
@@ -450,7 +595,7 @@ function reportAuthenticate(req: any, res: any): any {
       reportUnauthenticated(res, 'STS-REPORT-0012', 'invalid_token',
         'That access token has been revoked, or the account it was ' +
         'issued to is disabled.');
-      log.debug("Leaving reportAuthenticate(). Revoked handle.");
+      log.debug("Leaving reportAuthenticateToken(). Revoked handle.");
       return null;
     } else if (found.kind === 'unknown' && deps.opaque.issuesOpaque()) {
       const limited = deps.opaque.noteMiss(req);
@@ -459,12 +604,12 @@ function reportAuthenticate(req: any, res: any): any {
         reportSend(res, 429, 'STS-OAUTH-0983', 'invalid_token',
           'Too many attempts. Wait ' + limited.retryAfterS +
           ' seconds and try again.');
-        log.debug("Leaving reportAuthenticate(). Too many handles.");
+        log.debug("Leaving reportAuthenticateToken(). Too many handles.");
         return null;
       }
       reportUnauthenticated(res, 'STS-OAUTH-0980', 'invalid_token',
         'That access token is not valid.');
-      log.debug("Leaving reportAuthenticate(). Unknown handle.");
+      log.debug("Leaving reportAuthenticateToken(). Unknown handle.");
       return null;
     }
   }
@@ -472,14 +617,14 @@ function reportAuthenticate(req: any, res: any): any {
     reportUnauthenticated(res, 'STS-REPORT-0007', 'invalid_token',
       'That access token was not issued by this realm, or its ' +
       'signature does not verify.');
-    log.debug("Leaving reportAuthenticate(). Does not verify.");
+    log.debug("Leaving reportAuthenticateToken(). Does not verify.");
     return null;
   }
   const now = Math.floor(Date.now() / 1000);
   if (claims.exp && Number(claims.exp) <= now) {
     reportUnauthenticated(res, 'STS-REPORT-0008', 'invalid_token',
       'That access token has expired.');
-    log.debug("Leaving reportAuthenticate(). Expired.");
+    log.debug("Leaving reportAuthenticateToken(). Expired.");
     return null;
   }
   if (!opaqueAccess) {
@@ -487,7 +632,7 @@ function reportAuthenticate(req: any, res: any): any {
     if (!deps.jwt.isAccessTokenType(typ)) {
       reportUnauthenticated(res, 'STS-REPORT-0009', 'invalid_token',
         'That token is not an access token.');
-      log.debug("Leaving reportAuthenticate(). Not an access token.");
+      log.debug("Leaving reportAuthenticateToken(). Not an access token.");
       return null;
     }
   }
@@ -495,7 +640,7 @@ function reportAuthenticate(req: any, res: any): any {
   if (!deps.jwt.isHostedIssuer(claims.iss, base)) {
     reportUnauthenticated(res, 'STS-REPORT-0010', 'invalid_token',
       'That access token was issued by another authorization server.');
-    log.debug("Leaving reportAuthenticate(). Another issuer.");
+    log.debug("Leaving reportAuthenticateToken(). Another issuer.");
     return null;
   }
   const audiences = Array.isArray(claims.aud) ? claims.aud :
@@ -503,7 +648,7 @@ function reportAuthenticate(req: any, res: any): any {
   if (!reportAudienceOk(audiences, base)) {
     reportForbidden(res, 'STS-REPORT-0011', 'invalid_token',
       'That access token is not for this API.');
-    log.debug("Leaving reportAuthenticate(). Another audience.");
+    log.debug("Leaving reportAuthenticateToken(). Another audience.");
     return null;
   }
   const person = String(claims.username ||
@@ -513,7 +658,7 @@ function reportAuthenticate(req: any, res: any): any {
     reportUnauthenticated(res, 'STS-REPORT-0012', 'invalid_token',
       'That access token has been revoked, or the account it was ' +
       'issued to is disabled.');
-    log.debug("Leaving reportAuthenticate(). Revoked or disabled.");
+    log.debug("Leaving reportAuthenticateToken(). Revoked or disabled.");
     return null;
   }
   const sid = claims.jti ? String(deps.stats.sessionIdOfJti(
@@ -522,14 +667,14 @@ function reportAuthenticate(req: any, res: any): any {
     reportUnauthenticated(res, 'STS-REPORT-0013', 'invalid_token',
       'That access token was issued on a sign-on session that has ' +
       'ended.');
-    log.debug("Leaving reportAuthenticate(). Session ended.");
+    log.debug("Leaving reportAuthenticateToken(). Session ended.");
     return null;
   }
   const certificateProblem = deps.mtls.checkBinding(claims, req, true);
   if (certificateProblem) {
     reportUnauthenticated(res, 'STS-REPORT-0014', 'invalid_token',
       certificateProblem.description);
-    log.debug("Leaving reportAuthenticate(). Certificate binding.");
+    log.debug("Leaving reportAuthenticateToken(). Certificate binding.");
     return null;
   }
   const boundJkt = deps.dpop.jktOf(claims);
@@ -538,7 +683,7 @@ function reportAuthenticate(req: any, res: any): any {
     if (presentation.scheme !== 'dpop') {
       reportUnauthenticated(res, 'STS-REPORT-0015', 'invalid_token',
         'That access token is DPoP-bound, so it must be sent as DPoP.');
-      log.debug("Leaving reportAuthenticate(). Sent as Bearer.");
+      log.debug("Leaving reportAuthenticateToken(). Sent as Bearer.");
       return null;
     }
     const checked = deps.dpop.verifyProof(req.headers.dpop, {
@@ -555,13 +700,13 @@ function reportAuthenticate(req: any, res: any): any {
         reportSend(res, reportHttpStatus('STS-REPORT-0015'),
           checked.errorCode || 'STS-REPORT-0015', 'use_dpop_nonce',
           checked.description);
-        log.debug("Leaving reportAuthenticate(). Nonce wanted.");
+        log.debug("Leaving reportAuthenticateToken(). Nonce wanted.");
         return null;
       }
       reportUnauthenticated(res,
         checked.errorCode || 'STS-REPORT-0015', 'invalid_dpop_proof',
         checked.description);
-      log.debug("Leaving reportAuthenticate(). Proof refused.");
+      log.debug("Leaving reportAuthenticateToken(). Proof refused.");
       return null;
     }
     proofOk = true;
@@ -571,7 +716,7 @@ function reportAuthenticate(req: any, res: any): any {
   try {
     entry = deps.applications.clientConfigOf(issuedTo) || {};
   } catch (err) {
-    log.debug("Caught in reportAuthenticate(): " +
+    log.debug("Caught in reportAuthenticateToken(): " +
       ((err && err.message) || err));
     entry = {};
   }
@@ -592,13 +737,17 @@ function reportAuthenticate(req: any, res: any): any {
   if (required) {
     reportUnauthenticated(res, required.errorCode, required.error,
       required.description);
-    log.debug("Leaving reportAuthenticate(). Sender constraint.");
+    log.debug("Leaving reportAuthenticateToken(). Sender constraint.");
     return null;
   }
-  if (!person || !claims.sub || String(claims.sub) === issuedTo) {
-    reportForbidden(res, 'STS-REPORT-0016', 'forbidden',
-      'That access token names no person.');
-    log.debug("Leaving reportAuthenticate(). No person.");
+  // A CLIENT'S OWN TOKEN IS A CALLER SINCE #1030: an application holding
+  // REPORT_USE or REPORT_ADMIN as a member is issued the scope on
+  // client_credentials and reaches only what it defined, as the policy
+  // decides. (STS-REPORT-0016 refused it until then.)
+  if (!claims.sub) {
+    reportForbidden(res, 'STS-REPORT-0017', 'forbidden',
+      'That access token names no subject.');
+    log.debug("Leaving reportAuthenticateToken(). No subject.");
     return null;
   }
   const carried = String(claims.scope || '').split(/\s+/).filter(
@@ -612,7 +761,7 @@ function reportAuthenticate(req: any, res: any): any {
       'DPoP error="insufficient_scope", scope="' + SCOPE_CHALLENGE + '"');
     reportForbidden(res, 'STS-REPORT-0017', 'insufficient_scope',
       'That access token does not carry report:use or report:admin.');
-    log.debug("Leaving reportAuthenticate(). No report scope.");
+    log.debug("Leaving reportAuthenticateToken(). No report scope.");
     return null;
   }
   if ((wantsUse && !deps.scopes.declares(issuedTo, 'report:use')) ||
@@ -620,25 +769,22 @@ function reportAuthenticate(req: any, res: any): any {
     reportForbidden(res, 'STS-REPORT-0017', 'forbidden',
       'The client this token was issued to no longer declares that ' +
       'report scope.');
-    log.debug("Leaving reportAuthenticate(). Undeclared.");
+    log.debug("Leaving reportAuthenticateToken(). Undeclared.");
     return null;
   }
-  const allowed = rights.mayUse(String(claims.sub),
-    String(claims.scope || ''));
-  if (!allowed.ok) {
-    reportForbidden(res, 'STS-REPORT-0018',
-      allowed.error || 'forbidden', allowed.description);
-    log.debug("Leaving reportAuthenticate(). Not a report user.");
+  // HELD ∩ CARRIED (#1030), the management API's reading: the roles the
+  // subject holds NOW in this realm, less any whose permission the token
+  // does not carry. A role taken away after the token was minted refuses
+  // the call at once.
+  const caller = rights.callerOf(claims, carried);
+  if (!caller.ok) {
+    reportForbidden(res, caller.code, caller.error || 'forbidden',
+      caller.description);
+    log.debug("Leaving reportAuthenticateToken(). A role was withdrawn.");
     return null;
   }
-  const who = {
-    subject: String(claims.sub),
-    username: allowed.username || person || String(claims.sub),
-    scope: String(claims.scope || ''),
-    clientId: issuedTo
-  };
-  log.debug("Leaving reportAuthenticate().");
-  return who;
+  log.debug("Leaving reportAuthenticateToken().");
+  return caller.who;
 }
 
 function reportParts(req: any): string[] {
@@ -697,27 +843,76 @@ function reportJobVisible(who: any, job: any): boolean {
     log.debug("Leaving reportJobVisible(). None.");
     return false;
   }
-  if (rights.isAdmin(who.scope) || job.owner === who.subject) {
-    log.debug("Leaving reportJobVisible(). Owner.");
-    return true;
-  }
+  // THE POLICY DECIDES (#1030): the job's owner through the first rule, a
+  // report administrator or a shared group's member — through the
+  // definition the job ran — through the third.
   const definition = job.definitionId ?
     stores.getDefinition(job.definitionId) : null;
-  const shared = !!definition && rights.canSee(who.subject, who.scope,
-    definition);
+  const visible = rights.canSeeJob(who, job, definition);
   log.debug("Leaving reportJobVisible().");
-  return shared;
+  return visible;
+}
+
+// THE OWNER'S NAME (#986): a definition's `owner` is a subject
+// (`urn:uuid:<entryUUID>`), which no reader can place. The page shows the
+// person's display name, or their username, and keeps the subject beside
+// it. The subject resolver (`helpers.nameForSubject()`, filled by the
+// directory) gives the username; the entry gives `displayName` or `cn`.
+// A subject that names nobody here — a deleted person, another realm's —
+// is shown as it is. The directory is reached lazily: by request time it
+// is loaded, and a load-time require of a JavaScript route module would
+// move its routes (root CLAUDE.md, rule 1).
+function reportOwnerName(owner: string, ownerRealm?: string): string {
+  log.debug("Entering reportOwnerName().");
+  // An owner from another realm (#1038) is named in THEIR realm.
+  if (ownerRealm) {
+    const named = rights.inOwnerRealm(ownerRealm, function (): string {
+      return reportOwnerName(owner);
+    });
+    log.debug("Leaving reportOwnerName(). In " + ownerRealm + '.');
+    return named;
+  }
+  const helpers = require('../common/helpers');
+  const username = String(helpers.nameForSubject(owner) || '');
+  if (!username) {
+    log.debug("Leaving reportOwnerName(). Nobody.");
+    return '';
+  }
+  let shown = username;
+  const ldap = require('../ldap/ldap_server');
+  const entry = typeof ldap.existingUserEntry === 'function' ?
+    ldap.existingUserEntry(username) : null;
+  const attrs = (entry && entry.attributes) || {};
+  const first = function (name: string): string {
+    const keys = Object.keys(attrs);
+    for (let i = 0; i < keys.length; i++) {
+      if (keys[i].toLowerCase() === name) {
+        const value = attrs[keys[i]];
+        return String((Array.isArray(value) ? value[0] : value) || '');
+      }
+    }
+    return '';
+  };
+  shown = first('displayname') || first('cn') || username;
+  log.debug("Leaving reportOwnerName().");
+  return shown;
 }
 
 function reportDefinitionView(who: any, row: any): any {
   log.debug("Entering reportDefinitionView().");
-  const editable = !!row && rights.canEdit(who.subject, who.scope, row);
+  const editable = !!row && rights.canEdit(who, row);
   const view: any = {
     id: row.id,
     name: row.name,
     owner: row.owner,
+    ownerName: reportOwnerName(String(row.owner || ''),
+      String(row.ownerRealm || '')),
     schedule: row.schedule || '',
     scheduleEnabled: !!row.scheduleEnabled,
+    // When the schedule next runs and which occurrence it last took, so
+    // the page can tell "not due yet" from "skipped" (#989's follow-up).
+    nextRunAt: jobs.scheduleTimes(row).nextRunAt,
+    lastSlotAt: jobs.scheduleTimes(row).lastSlotAt,
     notify: !!row.notify,
     editable: editable,
     createdAt: jobs.iso(row.createdAt),
@@ -737,9 +932,236 @@ function reportServeIndex(res: any): void {
   log.debug("Entering reportServeIndex().");
   reportJson(res, 200, {
     service: 'report',
-    catalog: BASE + '/catalog'
+    catalog: BASE + '/catalog',
+    realms: BASE + '/realms',
+    version: {
+      version: APP_VERSION.version,
+      stamped: APP_VERSION.stamped === true,
+      buildInfo: APP_BUILD_INFO
+    }
   });
   log.debug("Leaving reportServeIndex().");
+}
+
+// THE REALMS, FOR THE APPLICATION'S SWITCH (#986): the realm this token's
+// request is in, and — where realms are active — every realm with its id,
+// name and prefix, the rows the console's shell view carries for its own
+// switcher (`admin-ui/admin.ts`, `shellJson()`). The names are what the
+// realm chooser already shows an anonymous visitor, so a report token is
+// not told anything the sign-in page does not say. With realms off the
+// list is null and the application names the realm it is in.
+function reportRealmsView(): any {
+  log.debug("Entering reportRealmsView().");
+  const realms = require('../common/realms');
+  const current = realms.current() || {};
+  const view = {
+    current: {
+      id: String(realms.currentId() || ''),
+      name: String(current.name || ''),
+      prefix: String(realms.currentPrefix() || '')
+    },
+    realms: realms.active()
+      ? realms.list().map(function (one: any): any {
+        return { id: one.id, name: one.name, prefix: realms.prefixOf(one) };
+      })
+      : null
+  };
+  log.debug("Leaving reportRealmsView().");
+  return view;
+}
+
+// THE SCHEDULES (#992): every definition that carries a schedule, with what
+// the definition page shows of it and its recent scheduled jobs. A
+// report:use token sees the definitions it owns or is shared, as
+// /definitions does; report:admin sees every one in the realm and may name
+// one owner (`?owner=`, a subject or a username). A non-administrator who
+// names an owner is refused rather than narrowed to their own, so the
+// answer never quietly means something other than what was asked.
+const SCHEDULES_PER = 20;
+const SCHEDULES_PER_MAX = 100;
+const SCHEDULE_JOBS_SHOWN = 5;
+
+function reportOwnerAsked(asked: string): string {
+  log.debug("Entering reportOwnerAsked().");
+  const text = String(asked || '').trim();
+  if (!text) {
+    log.debug("Leaving reportOwnerAsked(). None.");
+    return '';
+  }
+  if (/^urn:uuid:/i.test(text)) {
+    log.debug("Leaving reportOwnerAsked(). A subject.");
+    return text;
+  }
+  const helpers = require('../common/helpers');
+  const subject = String(helpers.subjectForName(text) || '');
+  log.debug("Leaving reportOwnerAsked(). " + (subject ? 'Resolved.' :
+    'Unknown name.'));
+  return subject || text;
+}
+
+function reportSchedulesView(who: any, query: any): any {
+  log.debug("Entering reportSchedulesView().");
+  const q = query || {};
+  const admin = rights.isAdmin(who);
+  const ownerAsked = reportOwnerAsked(q.owner);
+  if (ownerAsked && !admin && ownerAsked !== who.subject) {
+    log.debug("Leaving reportSchedulesView(). Another owner, refused.");
+    return { ok: false, code: 'STS-REPORT-0038', error: 'forbidden',
+      description: 'Only a realm administrator may list another ' +
+        'account\'s schedules.' };
+  }
+  const rows = stores.listDefinitions().filter(function (row: any): boolean {
+    if (!row.schedule) {
+      return false;
+    }
+    if (ownerAsked && row.owner !== ownerAsked) {
+      return false;
+    }
+    return rights.canSee(who, row);
+  });
+  rows.sort(function (left: any, right: any): number {
+    return String(left.name).localeCompare(String(right.name));
+  });
+  const per = Math.min(SCHEDULES_PER_MAX, Math.max(1,
+    Math.floor(Number(q.per) || SCHEDULES_PER)));
+  const pages = Math.max(1, Math.ceil(rows.length / per));
+  const page = Math.min(pages, Math.max(1, Math.floor(Number(q.page) || 1)));
+  const allJobs = stores.listJobs();
+  const schedules = rows.slice((page - 1) * per, page * per).map(
+    function (row: any): any {
+      const times = jobs.scheduleTimes(row);
+      const own = allJobs.filter(function (job: any): boolean {
+        return job.definitionId === row.id &&
+          job.queuedBecause === 'schedule';
+      });
+      own.sort(function (a: any, b: any): number {
+        return Number(b.submittedAt || 0) - Number(a.submittedAt || 0);
+      });
+      const notes = (Array.isArray(row.failures) ? row.failures : [])
+        .slice(-3).reverse().map(function (note: any): any {
+          return { at: jobs.iso(note && note.at),
+                   description: String((note && note.description) || '') };
+        });
+      return {
+        definition: {
+          id: row.id,
+          name: row.name,
+          owner: row.owner,
+          ownerName: reportOwnerName(String(row.owner || ''),
+      String(row.ownerRealm || '')),
+          schedule: row.schedule,
+          scheduleEnabled: !!row.scheduleEnabled,
+          notify: !!row.notify,
+          nextRunAt: times.nextRunAt,
+          lastSlotAt: times.lastSlotAt,
+          failures: notes
+        },
+        jobs: own.slice(0, SCHEDULE_JOBS_SHOWN).map(function (job: any): any {
+          return jobs.jobView(job, false);
+        }),
+        jobCount: own.length
+      };
+    });
+  log.debug("Leaving reportSchedulesView(). " + rows.length + '.');
+  return {
+    ok: true,
+    scope: admin ? 'realm' : 'mine',
+    owner: ownerAsked || null,
+    page: page,
+    pages: pages,
+    per: per,
+    total: rows.length,
+    schedules: schedules
+  };
+}
+
+function reportServeSchedules(req: any, res: any, who: any): void {
+  log.debug("Entering reportServeSchedules().");
+  const view = reportSchedulesView(who, (req && req.query) || {});
+  if (!view.ok) {
+    reportSend(res, reportHttpStatus(view.code), view.code, view.error,
+      view.description);
+    log.debug("Leaving reportServeSchedules(). Refused.");
+    return;
+  }
+  delete view.ok;
+  reportJson(res, 200, view);
+  log.debug("Leaving reportServeSchedules().");
+}
+
+// THE GROUP SEARCH (#989): the definition page's pane, five a page, over
+// the realm's resident groups, each with its own address so the page can
+// say which groups a notice could reach.
+function reportServeGroups(req: any, res: any): void {
+  log.debug("Entering reportServeGroups().");
+  const query = (req && req.query) || {};
+  reportJson(res, 200, sources.groupSearch(String(query.q || ''),
+    Number(query.page || 1)));
+  log.debug("Leaving reportServeGroups().");
+}
+
+// THIS APPLICATION'S SHARED SIGNALS INBOX (#1042): what its own stream
+// delivered in the realm, as `ssf/ssf_receivers.ts` recorded it. A report
+// ADMINISTRATOR sees every signal, as an administrator does on the console;
+// anybody else sees the signals about themselves (the receiver's `own`, the
+// portal's fail-closed rule), and an application, which is nobody, sees none.
+// The person is their username, their subject and their address, which the
+// directory is asked for — what the portal reads off its session.
+const SIGNALS_PER_PAGE = 20;
+
+async function reportServeSignals(req: any, res: any, who: any):
+    Promise<void> {
+  log.debug("Entering reportServeSignals().");
+  const signals = require('../ssf/ssf_receivers');
+  const everyone = rights.isAdmin(who);
+  let person: any = null;
+  if (!everyone) {
+    person = who && who.kind === 'user'
+      ? { username: String(who.username || ''),
+          sub: String(who.subject || ''),
+          mail: await sources.personMail(String(who.username || '')) }
+      : { username: '', sub: '', mail: '' };
+  }
+  const view = signals.view(signals.REPORT, { person: person });
+  const rows: any[] = view.received || [];
+  const query = (req && req.query) || {};
+  const wantedPer = Math.floor(Number(query.per || SIGNALS_PER_PAGE));
+  const per = Number.isFinite(wantedPer) && wantedPer >= 1
+    ? Math.min(wantedPer, 100) : SIGNALS_PER_PAGE;
+  const pages = Math.max(1, Math.ceil(rows.length / per));
+  const asked = Math.floor(Number(query.page || 1));
+  const page = Math.min(Math.max(1, Number.isFinite(asked) ? asked : 1),
+    pages);
+  const status: any = view.status || {};
+  reportJson(res, 200, {
+    scope: everyone ? 'realm' : 'own',
+    receiving: !(status.why && status.why.length),
+    why: Array.isArray(status.why) ? status.why : [],
+    total: rows.length,
+    page: page,
+    pages: pages,
+    per: per,
+    rows: rows.slice((page - 1) * per, page * per)
+      .map(function (row: any): any {
+        return { at: row.at, name: row.name, vocabulary: row.vocabulary,
+                 type: (row.types || [])[0] || '', subject: row.subject,
+                 verified: !!row.verified,
+                 reactions: (row.reactions || []).map(function (r: any):
+                     any {
+                   return { failed: !!r.failed, skipped: r.skipped || '',
+                            observed: !!r.observed,
+                            ended: Number(r.ended || 0),
+                            revoked: Number(r.revoked || 0) };
+                 }) };
+      })
+  });
+  log.debug("Leaving reportServeSignals(). " + rows.length + " held.");
+}
+
+function reportServeRealms(res: any): void {
+  log.debug("Entering reportServeRealms().");
+  reportJson(res, 200, reportRealmsView());
+  log.debug("Leaving reportServeRealms().");
 }
 
 function reportServeOpenApi(res: any): void {
@@ -774,7 +1196,7 @@ function reportServeSource(res: any, id: string): void {
 }
 
 async function reportAcceptQuery(req: any, res: any, who: any,
-    forceAsync: boolean, definition: any): Promise<void> {
+    forceAsync: boolean, definition: any, because?: string): Promise<void> {
   log.debug("Entering reportAcceptQuery().");
   const posted = reportPosted(req);
   if (posted === false) {
@@ -823,6 +1245,20 @@ async function reportAcceptQuery(req: any, res: any, who: any,
       }
     };
     const read = await sources.reportGateOne('read', plan, control);
+    if (read && !read.ok && read.unbounded && plan.mode === 'auto' &&
+        !forceAsync) {
+      // THE READER REFUSED TO SCAN A WINDOWED DIRECTORY SYNCHRONOUSLY
+      // (#985), and `auto` means "a job when it cannot be answered now":
+      // the same document is accepted again as a job, under the job's
+      // caps. Nothing is recorded as refused. `mode: sync` keeps the
+      // refusal, which names the fields the store can filter on.
+      log.info(errorCodes.tag(read.code) + 'report: an auto-mode query ' +
+        'would read every person synchronously; queued as a job instead.');
+      await reportAcceptQuery(req, res, who, true, definition,
+        'every-person');
+      log.debug("Leaving reportAcceptQuery(). Auto became a job.");
+      return;
+    }
     if (!read || !read.ok) {
       if (read && read.code) {
         reportApplyRefusal(res, who, read, plan, 'query');
@@ -850,13 +1286,30 @@ async function reportAcceptQuery(req: any, res: any, who: any,
     log.debug("Leaving reportAcceptQuery(). Sync.");
     return;
   }
+  // Why this is a job, for the job page (#986): what the caller said, or
+  // read off the plan — the mode asked for a job, the source cannot be
+  // read now, or the limit is above the synchronous cap.
+  let why = because || '';
+  if (!why) {
+    const src = reportValidator().catalog.source(plan.source);
+    if (plan.mode === 'async') {
+      why = 'asked';
+    } else if (src && src.bounded === false) {
+      why = 'source';
+    } else {
+      why = 'limit';
+    }
+  }
   const submitted = jobs.submit({
     owner: who.subject,
+    ownerKind: who.kind,
+    ownerRealm: who.realm || '',
     document: document,
     parameters: wrapped.parameters,
     definitionId: definition ? definition.id : null,
     definitionName: definition ? definition.name : null,
     notify: false,
+    because: why,
     plan: plan
   });
   if (!submitted.ok) {
@@ -870,20 +1323,54 @@ async function reportAcceptQuery(req: any, res: any, who: any,
   log.debug("Leaving reportAcceptQuery(). Queued.");
 }
 
-function reportServeDefinitions(res: any, who: any): void {
-  log.debug("Entering reportServeDefinitions().");
+// NUMBERED PAGES ON THE TWO LISTS (#997), the console's pattern: `page` and
+// `per` (at most 200, 50 unless asked) in the query, and `page`, `pages`,
+// `per` and `total` beside the rows, so the application draws the pager
+// the console draws. The jobs list keeps its cursor (`after`, `limit`) for
+// a caller that pages that way.
+const LIST_PER = 50;
+const LIST_PER_MAX = 200;
+
+function reportPaging(query: any, rowCount: number): any {
+  log.debug("Entering reportPaging().");
+  const q = query || {};
+  const asked = Number(q.per !== undefined && q.per !== '' ? q.per :
+    q.limit);
+  const per = Math.min(LIST_PER_MAX, Math.max(1,
+    Math.floor(asked > 0 ? asked : LIST_PER)));
+  const pages = Math.max(1, Math.ceil(rowCount / per));
+  const page = Math.min(pages, Math.max(1, Math.floor(Number(q.page) || 1)));
+  log.debug("Leaving reportPaging().");
+  return { page: page, pages: pages, per: per, total: rowCount,
+           from: (page - 1) * per, to: page * per };
+}
+
+function reportDefinitionsView(who: any, query: any): any {
+  log.debug("Entering reportDefinitionsView().");
   const rows = stores.listDefinitions().filter(function (row: any):
       boolean {
-    return rights.canSee(who.subject, who.scope, row);
+    return rights.canSee(who, row);
   });
   rows.sort(function (left: any, right: any): number {
     return String(left.name).localeCompare(String(right.name));
   });
-  reportJson(res, 200, {
-    definitions: rows.map(function (row: any): any {
+  const pg = reportPaging(query, rows.length);
+  const view = {
+    definitions: rows.slice(pg.from, pg.to).map(function (row: any): any {
       return reportDefinitionView(who, row);
-    })
-  });
+    }),
+    page: pg.page,
+    pages: pg.pages,
+    per: pg.per,
+    total: pg.total
+  };
+  log.debug("Leaving reportDefinitionsView().");
+  return view;
+}
+
+function reportServeDefinitions(req: any, res: any, who: any): void {
+  log.debug("Entering reportServeDefinitions().");
+  reportJson(res, 200, reportDefinitionsView(who, (req && req.query) || {}));
   log.debug("Leaving reportServeDefinitions().");
 }
 
@@ -900,7 +1387,7 @@ function reportCreateDefinition(req: any, res: any, who: any,
   }
   if (id) {
     const existing = stores.getDefinition(id);
-    if (!existing || !rights.canEdit(who.subject, who.scope, existing)) {
+    if (!existing || !rights.canEdit(who, existing)) {
       reportMissingDefinition(res);
       log.debug("Leaving reportCreateDefinition(). Not editable.");
       return;
@@ -910,6 +1397,8 @@ function reportCreateDefinition(req: any, res: any, who: any,
     id: id || null,
     name: posted.name,
     owner: who.subject,
+    ownerKind: who.kind,
+    ownerRealm: who.realm || '',
     document: posted.document,
     schedule: posted.schedule,
     scheduleEnabled: posted.scheduleEnabled,
@@ -930,7 +1419,7 @@ function reportCreateDefinition(req: any, res: any, who: any,
 function reportServeDefinition(res: any, who: any, id: string): void {
   log.debug("Entering reportServeDefinition().");
   const row = reportIdOk(id) ? stores.getDefinition(id) : null;
-  if (!row || !rights.canSee(who.subject, who.scope, row)) {
+  if (!row || !rights.canSee(who, row)) {
     reportMissingDefinition(res);
     log.debug("Leaving reportServeDefinition(). Hidden.");
     return;
@@ -942,7 +1431,7 @@ function reportServeDefinition(res: any, who: any, id: string): void {
 function reportDeleteDefinition(res: any, who: any, id: string): void {
   log.debug("Entering reportDeleteDefinition().");
   const row = reportIdOk(id) ? stores.getDefinition(id) : null;
-  if (!row || !rights.canEdit(who.subject, who.scope, row)) {
+  if (!row || !rights.canEdit(who, row)) {
     reportMissingDefinition(res);
     log.debug("Leaving reportDeleteDefinition(). Hidden.");
     return;
@@ -961,7 +1450,7 @@ function reportSharePosted(req: any, res: any, who: any, id: string):
     void {
   log.debug("Entering reportSharePosted().");
   const row = reportIdOk(id) ? stores.getDefinition(id) : null;
-  if (!row || !rights.canEdit(who.subject, who.scope, row)) {
+  if (!row || !rights.canEdit(who, row)) {
     reportMissingDefinition(res);
     log.debug("Leaving reportSharePosted(). Hidden.");
     return;
@@ -994,7 +1483,8 @@ async function reportRunSaved(req: any, res: any, who: any,
     id: string): Promise<void> {
   log.debug("Entering reportRunSaved().");
   const row = reportIdOk(id) ? stores.getDefinition(id) : null;
-  if (!row || !rights.canSee(who.subject, who.scope, row)) {
+  // `run`, the act a share grants beside reading (#1030).
+  if (!row || !rights.canRun(who, row)) {
     reportMissingDefinition(res);
     log.debug("Leaving reportRunSaved(). Hidden.");
     return;
@@ -1007,37 +1497,62 @@ async function reportRunSaved(req: any, res: any, who: any,
     log.debug("Leaving reportRunSaved(). Bad JSON.");
     return;
   }
-  await reportAcceptQuery(req, res, who, true, row);
+  await reportAcceptQuery(req, res, who, true, row, 'run');
   log.debug("Leaving reportRunSaved().");
 }
 
-function reportServeJobs(req: any, res: any, who: any): void {
-  log.debug("Entering reportServeJobs().");
+function reportJobsView(who: any, query: any): any {
+  log.debug("Entering reportJobsView().");
+  const q = query || {};
   const rows = stores.listJobs().filter(function (job: any): boolean {
     return reportJobVisible(who, job);
   });
   rows.sort(function (left: any, right: any): number {
     return Number(right.submittedAt) - Number(left.submittedAt);
   });
-  const after = req.query && typeof req.query.after === 'string' ?
-    req.query.after : '';
-  let start = 0;
+  const after = typeof q.after === 'string' ? q.after : '';
   if (after) {
+    // THE CURSOR, kept for a caller that pages by id (#956's shape).
+    let start = 0;
     for (let i = 0; i < rows.length; i++) {
       if (rows[i].id === after) {
         start = i + 1;
       }
     }
+    const limit = reportPageLimit({ query: q });
+    const slice = rows.slice(start, start + limit);
+    const more = start + slice.length < rows.length;
+    log.debug("Leaving reportJobsView(). By cursor.");
+    return {
+      jobs: slice.map(function (job: any): any {
+        return jobs.jobView(job, false);
+      }),
+      next: more && slice.length ? slice[slice.length - 1].id : null,
+      total: rows.length
+    };
   }
-  const limit = reportPageLimit(req);
-  const page = rows.slice(start, start + limit);
-  const more = start + page.length < rows.length;
-  reportJson(res, 200, {
-    jobs: page.map(function (job: any): any {
+  const pg = reportPaging(q, rows.length);
+  const slice = rows.slice(pg.from, pg.to);
+  const view = {
+    jobs: slice.map(function (job: any): any {
       return jobs.jobView(job, false);
     }),
-    next: more && page.length ? page[page.length - 1].id : null
-  });
+    // `next` is kept for a caller that mixes the two: the last id of this
+    // page, or null on the last page.
+    next: pg.page < pg.pages && slice.length ? slice[slice.length - 1].id :
+      null,
+    page: pg.page,
+    pages: pg.pages,
+    per: pg.per,
+    total: pg.total
+  };
+  log.debug("Leaving reportJobsView().");
+  return view;
+}
+
+function reportServeJobs(req: any, res: any, who: any): void {
+  log.debug("Entering reportServeJobs().");
+  reportJson(res, 200, reportJobsView(who, (req && req.query) || {}));
   log.debug("Leaving reportServeJobs().");
 }
 
@@ -1049,7 +1564,9 @@ function reportServeJob(res: any, who: any, id: string): void {
     log.debug("Leaving reportServeJob(). Hidden.");
     return;
   }
-  const full = rights.isAdmin(who.scope) || job.owner === who.subject;
+  // Everything about the job for whoever may stop it — its owner or a
+  // report administrator — as the policy decides (#1030).
+  const full = rights.canEdit(who, { kind: 'job', owner: job.owner });
   reportJson(res, 200, { job: jobs.jobView(job, full) });
   log.debug("Leaving reportServeJob().");
 }
@@ -1107,24 +1624,125 @@ async function reportServeResult(res: any, who: any, id: string):
     log.debug("Leaving reportServeResult(). Not ready.");
     return;
   }
-  const artifact = await stores.getArtifact(job.id);
-  const crypto = require('../common/crypto');
-  const digest = artifact && artifact.bytes ?
-    crypto.digest('sha256', artifact.bytes, 'hex') : '';
-  if (!artifact || !artifact.bytes || !job.sha256 ||
-      digest !== job.sha256) {
+  // STREAMED A PIECE AT A TIME (#1045): the stored pieces are opened and
+  // written one after another, never put together. The FIRST piece is
+  // read before a header goes out, so an artifact that is gone, or whose
+  // first piece will not open, is still refused (STS-REPORT-0029). Past
+  // that the answer is under way. A later piece that fails, or a digest
+  // that does not match at the end, DESTROYS the response rather than
+  // ending it (STS-REPORT-0051): the client sees a broken transfer, never
+  // a short file that looks complete.
+  const artifact = await stores.openArtifact(job.id);
+  const missing = function (): void {
     reportRetrieveRefused(who, job, 'STS-REPORT-0029');
     reportSend(res, reportHttpStatus('STS-REPORT-0029'),
       'STS-REPORT-0029', 'result_expired',
       'That result is no longer available.');
+  };
+  if (!artifact || !job.sha256 || artifact.sha256 !== job.sha256) {
+    missing();
     log.debug("Leaving reportServeResult(). Missing.");
+    return;
+  }
+  const pieces = artifact.pieces();
+  let first: IteratorResult<Buffer>;
+  try {
+    first = await pieces.next();
+  } catch (e: any) {
+    log.debug("Caught in reportServeResult(): " + ((e && e.message) || e));
+    log.error(errorCodes.tag('STS-REPORT-0051') + 'report: the first ' +
+      'stored piece of report ' + job.id + ' is missing or would not open.');
+    missing();
+    log.debug("Leaving reportServeResult(). First piece.");
     return;
   }
   reportRetrieveOk(who, job);
   const media = job.mediaType || executor.mediaOf(job.format);
-  reportBytes(res, media, artifact.bytes,
-    'attachment; filename="report.' + reportExtent(job.format) + '"');
+  const sent = await reportStreamPieces(res, media,
+    'attachment; filename="report.' + reportExtent(job.format) + '"',
+    artifact.size, first, pieces, job.sha256);
+  if (!sent) {
+    log.error(errorCodes.tag('STS-REPORT-0051') + 'report: report ' +
+      job.id + ' failed part-way through its download — a piece missing, ' +
+      'unopenable, or a digest that does not match — and the response ' +
+      'was cut rather than completed.');
+  }
   log.debug("Leaving reportServeResult().");
+}
+
+/**
+ * Writes an artifact's pieces as one 200 answer, waiting for the socket
+ * to drain between pieces, hashing as it goes (#1045).
+ *
+ * @param res - the response
+ * @param media - its media type
+ * @param attachment - its Content-Disposition
+ * @param size - the declared size, or NaN when unknown
+ * @param first - the first piece, already read
+ * @param rest - the remaining pieces
+ * @param sha256 - the digest the whole must have
+ * @returns true when it was sent whole; false when it was cut
+ */
+async function reportStreamPieces(res: any, media: string,
+    attachment: string, size: number, first: IteratorResult<Buffer>,
+    rest: AsyncIterator<Buffer>, sha256: string): Promise<boolean> {
+  log.debug("Entering reportStreamPieces().");
+  const crypto = require('../common/crypto');
+  const digest = crypto.sha256Digester();
+  res.set('Cache-Control', 'no-store');
+  res.set('Content-Disposition', attachment);
+  if (media.indexOf('charset') >= 0) {
+    res.set('Content-Type', media);
+  } else {
+    res.type(media);
+  }
+  if (Number.isFinite(size) && size >= 0) {
+    res.set('Content-Length', String(size));
+  }
+  res.status(200);
+  const drained = function (): Promise<void> {
+    return new Promise(function (resolve: () => void): void {
+      const done = function (): void {
+        res.removeListener('drain', done);
+        res.removeListener('close', done);
+        resolve();
+      };
+      res.once('drain', done);
+      res.once('close', done);
+    });
+  };
+  let piece = first;
+  let sent = 0;
+  try {
+    while (!piece.done) {
+      if (res.destroyed) {
+        log.debug("Leaving reportStreamPieces(). Client went away.");
+        return true;
+      }
+      digest.update(piece.value);
+      sent += piece.value.length;
+      if (!res.write(piece.value)) {
+        await drained();
+      }
+      piece = await rest.next();
+    }
+  } catch (e: any) {
+    log.debug("Caught in reportStreamPieces(): " + ((e && e.message) || e));
+    // A later piece missing or unopenable: the caller logs it, and the
+    // transfer is cut below.
+    res.destroy();
+    log.debug("Leaving reportStreamPieces(). A piece failed.");
+    return false;
+  }
+  if (digest.hex() !== sha256 ||
+      (Number.isFinite(size) && size >= 0 && sent !== size)) {
+    res.destroy();
+    log.debug("Leaving reportStreamPieces(). Digest.");
+    return false;
+  }
+  res.end();
+  log.debug("Leaving reportStreamPieces().");
+  return true;
 }
 
 async function reportRoute(req: any, res: any, who: any): Promise<void> {
@@ -1142,10 +1760,18 @@ async function reportRoute(req: any, res: any, who: any): Promise<void> {
     reportServeCatalog(res);
   } else if (a === 'catalog' && b && !c && method === 'GET') {
     reportServeSource(res, b);
+  } else if (a === 'realms' && !b && method === 'GET') {
+    reportServeRealms(res);
+  } else if (a === 'groups' && !b && method === 'GET') {
+    reportServeGroups(req, res);
+  } else if (a === 'signals' && !b && method === 'GET') {
+    await reportServeSignals(req, res, who);
+  } else if (a === 'schedules' && !b && method === 'GET') {
+    reportServeSchedules(req, res, who);
   } else if (a === 'queries' && !b && method === 'POST') {
     await reportAcceptQuery(req, res, who, false, null);
   } else if (a === 'definitions' && !b && method === 'GET') {
-    reportServeDefinitions(res, who);
+    reportServeDefinitions(req, res, who);
   } else if (a === 'definitions' && !b && method === 'POST') {
     reportCreateDefinition(req, res, who, '');
   } else if (a === 'definitions' && b && c === 'share' &&
@@ -1274,6 +1900,18 @@ class ReportApi {
     app.get(BASE + '/catalog/:id', function (req: any, res: any): void {
       reportAnswer(req, res);
     });
+    app.get(BASE + '/realms', function (req: any, res: any): void {
+      reportAnswer(req, res);
+    });
+    app.get(BASE + '/groups', function (req: any, res: any): void {
+      reportAnswer(req, res);
+    });
+    app.get(BASE + '/signals', function (req: any, res: any): void {
+      reportAnswer(req, res);
+    });
+    app.get(BASE + '/schedules', function (req: any, res: any): void {
+      reportAnswer(req, res);
+    });
     app.post(BASE + '/queries', function (req: any, res: any): void {
       reportAnswer(req, res);
     });
@@ -1330,5 +1968,13 @@ export = {
   registerRoutes: function (app: any): void {
     reportApi.registerRoutes(app);
   },
-  ReportApi: ReportApi
+  realmsView: reportRealmsView,
+  // A source as the API publishes it, for the test of its `values` (#1007).
+  publicSource: reportPublicSource,
+  ownerName: reportOwnerName,
+  schedulesView: reportSchedulesView,
+  definitionsView: reportDefinitionsView,
+  jobsView: reportJobsView,
+  ReportApi: ReportApi,
+  streamPieces: reportStreamPieces
 };

@@ -67,17 +67,29 @@
     "en": "55b2bbab540dbbb4",
     "text": "aucun domaine de confiance n’est défini ; il y a donc un seul contexte ({{root}}) et une recherche subtree depuis celui-ci répond au sujet de tout le magasin"
   },
-  "ldap.service.sentences.clientCertificates": {
-    "en": "18c68f9d37420f1c",
-    "text": "jamais demandés. Cet écouteur prouve le SERVEUR au client et rien de plus ; un certificat client qui lui est proposé n’est pas demandé et ne constituerait pas une connexion s’il l’était. C’est sur le port principal ({{port}}) que les certificats client sont demandés et lus."
+  "ldap.service.sentences.clientCertificatesNone": {
+    "en": "e871e2b9901509f2",
+    "text": "non demandés : `ldap.ldapsDisableOptionalClientCertificate` est activé, si bien que LDAPS n’envoie aucun CertificateRequest et qu’un bind par certificat (SASL EXTERNAL) est refusé faute de certificat. Désactivez ce paramètre pour en demander un à chaque connexion (facultatif), ou activez `ldap.ldapsRequireClientCertificate` pour en exiger un ; l’un ou l’autre rend SASL EXTERNAL disponible. Le port principal ({{port}}) demande les certificats client selon ses propres paramètres."
+  },
+  "ldap.service.sentences.clientCertificatesOptional": {
+    "en": "872d11f2c2ff8a31",
+    "text": "demandés et non exigés (facultatif : `ldap.ldapsDisableOptionalClientCertificate` est désactivé). Une connexion qui en présente un vérifié par rapport au magasin de confiance client peut se lier avec SASL EXTERNAL ; une connexion sans certificat se lie avec un mot de passe comme avant."
+  },
+  "ldap.service.sentences.clientCertificatesRequired": {
+    "en": "d4476c20b14dd318",
+    "text": "exigés (`ldap.ldapsRequireClientCertificate` est activé) : une connexion sans certificat vérifié par rapport au magasin de confiance client est refusée lors de la négociation. Une connexion peut alors se lier avec SASL EXTERNAL, ou avec un mot de passe comme avant."
+  },
+  "ldap.service.sentences.certificateBindRule": {
+    "en": "c26bf08affa27730",
+    "text": "SASL EXTERNAL lie la connexion à l’entrée de la personne à laquelle appartient le certificat : un certificat que ce service a délivré à une personne ayant une entrée dans ce domaine, ou un certificat d’une autorité de certification externe approuvée via /admin/tls/trust qui est enregistré, octet pour octet, dans userCertificate sur exactement une entrée de personne de ce domaine. Un certificat révoqué, d’un autre domaine, d’une application, ou un certificat externe enregistré sur aucune entrée ou sur plusieurs est refusé, et rien n’est lu dans un nom commun ou un sujet. Une identité d’autorisation n’est acceptée que si elle désigne cette même entrée."
   },
   "ldap.service.sentences.certificateSource": {
     "en": "a969a038097605ed",
     "text": "le même certificat et la même clé que sert le port principal ({{port}}). Il est {{provenance}} : GET /tls/server-certificate le distribue au format PEM. Une seule ancre pour les deux sockets explique qu’ils le partagent."
   },
   "ldap.service.sentences.autoCreateRule": {
-    "en": "7e10a7e3ec45179d",
-    "text": "une entrée uid=<name>,{{usersDn}} apparaît la première fois que <name> s’authentifie auprès de ce service par N’IMPORTE QUEL protocole. Un bind LDAP n’en crée pas (il présente un DN, pas un nom d’utilisateur), pas plus qu’un client OAuth. Un CERTIFICAT CLIENT TLS vérifié est la seule identité qui soit déjà un DN : son entrée conserve le RDN feuille propre au sujet — cn=alice,{{usersDn}} pour CN=alice,O=Example — ou le sujet entier lorsqu’il se trouve déjà sous {{baseDn}}, et le sujet complet, l’émetteur, le numéro de série et la validité figurent sur l’entrée sous forme d’attributs x509*, qui sont des noms propres à ce service et non un schéma. Un IDENTIFIANT DÉCENTRALISÉ est la troisième forme et n’est ni un nom ni un DN : le sujet did:jwk d’une attestation émise, tout DID qui se présente au Verifier OID4VP. Son entrée est placée à uid=did-<12 hex du SHA-256 du DID>,{{usersDn}} — un did:jwk écrit en entier donne un DN de plusieurs centaines de caractères, composé en majeure partie d’éléments de clé — l’identifiant lui-même étant conservé en entier sur l’entrée sous didSubject, et sa méthode sous didMethod. Recherchez la personne par didSubject, et non par uid : sur ces entrées, l’uid est un condensat et le didSubject est l’identité."
+    "en": "6ddfd5c3a5e8025c",
+    "text": "une entrée uid=<name>,{{usersDn}} apparaît la première fois que <name> s’authentifie auprès de ce service par N’IMPORTE QUEL protocole. Un bind LDAP n’en crée pas (il présente un DN, pas un nom d’utilisateur), pas plus qu’un client OAuth. Un CERTIFICAT CLIENT TLS vérifié ne crée rien : celui que ce service a délivré désigne une personne qui a déjà une entrée, et celui d’une autorité de certification externe est l’entrée sur laquelle il est enregistré dans userCertificate, ou personne — son nom commun et son sujet ne sont jamais lus comme un nom. Un IDENTIFIANT DÉCENTRALISÉ est une autre forme et n’est ni un nom ni un DN : le sujet did:jwk d’une attestation émise, tout DID qui se présente au Verifier OID4VP. Son entrée est placée à uid=did-<12 hex du SHA-256 du DID>,{{usersDn}} — un did:jwk écrit en entier donne un DN de plusieurs centaines de caractères, composé en majeure partie d’éléments de clé — l’identifiant lui-même étant conservé en entier sur l’entrée sous didSubject, et sa méthode sous didMethod. Recherchez la personne par didSubject, et non par uid : sur ces entrées, l’uid est un condensat et le didSubject est l’identité."
   },
   "ldap.spiffe.sourceOfTruth": {
     "en": "b1ca8ee3d774cf2d",

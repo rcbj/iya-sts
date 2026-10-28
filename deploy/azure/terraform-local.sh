@@ -46,6 +46,12 @@ set -euo pipefail
 IMAGE_NAME="${IMAGE_NAME:-iya-sts-terraform-azure}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
+# Linux, or Windows under Cygwin (#512): hostPath() for each path docker.exe
+# is handed, and the shims that take the CR off what docker and the cloud
+# CLIs print. See its header.
+# shellcheck source=../../tests/tools/host-platform.sh
+. "${REPO_ROOT}/tests/tools/host-platform.sh"
+
 TF_ENV="${TF_ENV:-${1:-dev}}"
 TF_ACTION="${TF_ACTION:-${2:-plan}}"
 TF_STACK="${TF_STACK:-environment}"
@@ -54,7 +60,9 @@ if [ -n "${DOCKER:-}" ]; then
   read -r -a DOCKER_CMD <<< "${DOCKER}"
 elif docker info > /dev/null 2>&1; then
   DOCKER_CMD=(docker)
-elif command -v sudo > /dev/null 2>&1; then
+elif [ "${HOST_WINDOWS}" != "1" ] && command -v sudo > /dev/null 2>&1; then
+  # Not on Windows, which has no sudo: a daemon that does not answer there
+  # is Docker Desktop not running.
   DOCKER_CMD=(sudo docker)
 else
   echo "ERROR: docker is required and not reachable." >&2
@@ -70,11 +78,35 @@ SUBSCRIPTION="${AZURE_SUBSCRIPTION_ID:-$(az account show --query id -o tsv 2> /d
 }
 
 AZ_DIR="${AZURE_CONFIG_DIR:-${HOME}/.azure}"
+# The Azure CLI on Windows keeps its login under %USERPROFILE%, not under the
+# Cygwin home, and an AZURE_CONFIG_DIR set for it is a Windows path (#512).
+if [ "${HOST_WINDOWS}" = "1" ];
+then
+  if [ -n "${AZURE_CONFIG_DIR:-}" ];
+  then
+    AZ_DIR="$(cygpath -u "${AZURE_CONFIG_DIR}")"
+  elif [ -n "${USERPROFILE:-}" ];
+  then
+    AZ_DIR="$(cygpath -u "${USERPROFILE}")/.azure"
+  fi
+fi
 [ -f "${AZ_DIR}/azureProfile.json" ] || {
   echo "ERROR: no Azure CLI login in ${AZ_DIR}." >&2
   echo "       Run: az login" >&2
   exit 1
 }
+
+# THE AZURE CLI ON WINDOWS ENCRYPTS ITS TOKEN CACHE WITH DPAPI
+# (msal_token_cache.bin), a key only this Windows account holds, so the copy
+# below would reach the Linux container as bytes nothing there can read and
+# terraform would fail naming a login. Said here instead (#512).
+if [ "${HOST_WINDOWS}" = "1" ] && [ ! -f "${AZ_DIR}/msal_token_cache.json" ];
+then
+  echo "ERROR: the Azure CLI's token cache in ${AZ_DIR} is encrypted for this" >&2
+  echo "       Windows account only. Keep it in plain JSON, then sign in again:" >&2
+  echo "       az config set core.encrypt_token_cache=false && az login" >&2
+  exit 1
+fi
 
 CREDS_ENV_FILE="$(mktemp)"
 chmod 600 "${CREDS_ENV_FILE}"
@@ -111,7 +143,9 @@ for v in TF_CLI_ARGS TF_CLI_ARGS_plan TF_CLI_ARGS_apply TF_CLI_ARGS_destroy TF_I
 done
 
 echo "==> Building ${IMAGE_NAME}" >&2
-"${DOCKER_CMD[@]}" build -q -t "${IMAGE_NAME}" -f "${REPO_ROOT}/deploy/azure/Dockerfile" "${REPO_ROOT}" > /dev/null
+"${DOCKER_CMD[@]}" build -q -t "${IMAGE_NAME}" \
+  -f "$(hostPath "${REPO_ROOT}/deploy/azure/Dockerfile")" \
+  "$(hostPath "${REPO_ROOT}")" > /dev/null
 
 CONTAINER_NAME="iya-sts-terraform-azure-${TF_ENV}-$$"
 relay() {
@@ -120,7 +154,7 @@ relay() {
 }
 trap relay INT TERM
 "${DOCKER_CMD[@]}" run --rm --name "${CONTAINER_NAME}" \
-  --env-file "${CREDS_ENV_FILE}" \
+  --env-file "$(hostPath "${CREDS_ENV_FILE}")" \
   -e AZURE_SUBSCRIPTION_ID="${SUBSCRIPTION}" \
   -e TF_STACK="${TF_STACK}" \
   -e TF_ENV="${TF_ENV}" \

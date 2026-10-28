@@ -716,6 +716,35 @@ console is reached in. Making the explorer mint and prove a DPoP key in the
 browser would be a second implementation of RFC 9449 in a page that exists to
 show what an operation returns.
 
+## A CLIENT THAT DECLARES A CERTIFICATE IS ANSWERED ONLY ON A BOUND TOKEN (#1050, 2026-10-27)
+
+rcbj's decision on #520 for this door: **certificate-bound tokens only, no
+bare certificate as a credential.** A certificate presented with no token
+still authenticates nothing here, and that is deliberate: the gate's
+questions — which realm, which scopes, which roles held now, which session —
+are all answered off a token, and a second credential beside it would be a
+second gate that drifted from the first.
+
+What was added is one refusal, after the `x5t#S256` check (`STS-API-0110`),
+which holds a token that IS bound: a token that is NOT bound, issued to a
+client whose entry declares `tls_client_auth` or `self_signed_tls_client_auth`
+among its methods, or `tls_client_certificate_bound_access_tokens`, is 401
+`invalid_token`, `STS-API-0137`, in every mode. The declaration is
+`mtls.certificateDeclaration()`, read NOW in the realm that issued the token
+(as `clientBound` is below it), so a token minted before the rule — or before
+the client declared — stops working at once. Its scopes, roles and owner
+rules still decide what a bound token may do; this decides only whether the
+token is a credential here at all.
+
+The issuing half is `oauth-oidc/CLAUDE.md` 3an (`STS-OAUTH-0489`, `0490`),
+which also lists which paths were already closed and which were open — the
+only real one being a client declaring a certificate method beside a secret,
+since 2026-10-01. Rule 7: the application's Credentials section says it
+(`credentials.mtls.adminApiBound` on `GET /admin-api/applications?application=`,
+a sentence under *Certificate-bound access tokens* on the console page).
+`/admin/api-explorer` is unaffected: it mints for `sts-admin-console`, which
+declares no certificate.
+
 ## `/admin-api/logout` — four operations, and one that differs from its console form
 
 The sign-out resource mirrors `/admin/logout` and calls the same two functions
@@ -2003,6 +2032,22 @@ person's own password. `GET /admin-api/users?user=` carries the same list
 unpaged in `factors.appPasswords` (bounded by `appPasswords.maxPerPerson`,
 at most fifty), the precedent `admin_views.ts` sets for a list that cannot
 grow past fifty.
+
+## STORED CERTIFICATES (#1061, 2026-10-27)
+
+Two more users actions — `add-certificate` (`user`, `certificate`: one PEM
+block or base64 DER, the leaf only) and `remove-certificate` (`user`,
+`sha256`) — through `admin-core/admin_actions.ts`'s
+`storedCertificateAction()`, each audited (`certificate.stored`,
+`certificate.unstored`) and a CAEP `credential-change` of type `x509`; and
+`GET /admin-api/users/certificates?user=` (`storedCertificatesOf()`),
+mirroring the Stored certificates block on the person's `/admin/users` page.
+Refusals: not one certificate `STS-ADMIN-0897`, no such person `0898` (no
+entry is created), already stored on another entry `0899`, not stored here
+`0900`. Why the doors need it is `common/CLAUDE.md` 3ag. The OpenAPI rows are
+in the `POST /users/:action` table; the rule-7 parity job
+(`sts_admin_api_operations`) needs a stack and was not run in #1061's
+session.
 
 ## A REALM'S OWN TOKEN (2026-09-14, #32)
 

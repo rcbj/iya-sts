@@ -222,9 +222,11 @@ disable/enable pair is what `sts_xacml_editor.js` drives.
 ## Admit a caller to `/xacml`
 
 Every `/xacml` endpoint requires a client certificate, checked four ways:
-the certificate verifies against the truststore, its subject resolves to a
-directory entry, the entry holds the role the endpoint needs, and the access
-policy permits it. There are two roles, each granted by a group:
+the certificate verifies against the truststore, it resolves to a directory
+entry — a certificate from your own CA is **stored byte for byte in that
+entry's `userCertificate`** and on no other entry ([TLS](tls.md#a-certificate-from-an-outside-certificate-authority)); its common name
+and subject are never read — the entry holds the role the endpoint needs, and
+the access policy permits it. There are two roles, each granted by a group:
 
 | Endpoints | Role | Group (setting) |
 |---|---|---|
@@ -238,10 +240,14 @@ common name `xacml-user-1` in the realm's `xacml-users` group.
 1. **Protocols → Client-certificate truststore**: under
    **Add anchors**, paste the PEM of the CA that issued the caller's
    certificate and click **Trust these**. The truststore is service-wide.
-2. **Directory → Users**: make sure there is an entry for the certificate's
-   common name. In development mode `xacml-user-1` is seeded; in product mode
-   create it.
-3. **Directory → Groups → xacml-users**: under **Add a member**, enter the
+2. **Directory → Users**: make sure there is an entry for the caller. In
+   development mode `xacml-user-1` is seeded; in product mode create it. Its
+   name need not match anything in the certificate.
+3. On that person's page, under **Stored certificates**, paste the caller's
+   leaf certificate (PEM) and click **Store**. A certificate stored on no
+   entry is refused (`STS-XACML-0177`), and one stored on two entries too
+   (`STS-XACML-0178`). A renewed certificate is stored again.
+4. **Directory → Groups → xacml-users**: under **Add a member**, enter the
    entry and click **Add**.
 
 **API:**
@@ -255,8 +261,11 @@ api users/create '{"username":"xacml-user-1","invent":false,
   "attributes":{"cn":"xacml-user-1","givenName":"XACML","sn":"User",
                 "mail":"xacml-user-1@example.test"}}'
 
-USERS_DN=$(curl -sk "$BASE/admin-api/groups" -H "Authorization: Bearer $TOKEN" | jq -r .usersDn)
-api groups/add-member '{"group":"xacml-users","member":"cn=xacml-user-1,'"$USERS_DN"'"}'
+# both modes: the leaf, stored on the entry it is to resolve to
+api users/add-certificate "$(jq -n --rawfile pem user.crt \
+  '{user:"xacml-user-1", certificate:$pem}')"
+
+api groups/add-member '{"group":"xacml-users","member":"xacml-user-1"}'
 ```
 
 A runtime anchor is written to `ou=trustAnchors` in the default realm, so it
@@ -266,7 +275,8 @@ post its anchor in one step, use `tests/tools/pep-credential.js` as
 [Remote PEP → Minting the certificate](remote-pep.md#minting-the-certificate)
 shows, with `--subject="CN=xacml-user-1,OU=xacml-users,O=…"`; it posts the
 anchor through `/admin-api/tls/trust/add`, so it needs `STS_ADMIN_API_TOKEN`
-set to a token.
+set to a token. It does not store the leaf: store it as above. `user.crt`
+must hold the leaf alone (the first block of what the tool writes).
 
 A certificate that verifies, for an entry outside the group, is refused, and
 the refusal says the certificate itself was fine. Membership takes effect on
@@ -384,8 +394,10 @@ values are `sts_xacml_remote_pep.js`'s.
 **Console:**
 1. Trust the PEP certificate's CA on the **Client-certificate truststore**
    page, as above.
-2. **Directory → Users**: create an entry whose username is the
-   certificate's common name. (`remote-pep-1` is seeded in development mode.)
+2. **Directory → Users**: create an entry for the PEP (`remote-pep-1` is
+   seeded in development mode), and under **Stored certificates** on its page
+   store the PEP's leaf certificate. Until it is stored the PEP is refused
+   (`STS-XACML-0179`; `0180` when it is stored on two entries).
 3. **Directory → Groups → remote-peps**: **Add a member** with that entry.
 4. Create the policy the PEP will enforce and make it root, as in
    [Create a policy from a template](#create-a-policy-from-a-template).
@@ -395,8 +407,13 @@ values are `sts_xacml_remote_pep.js`'s.
 api users/create '{"username":"my-pep","invent":false,
   "attributes":{"cn":"my-pep","givenName":"Remote","sn":"Remote PEP",
                 "mail":"my-pep@xacml-remote-pep.test","displayName":"my-pep"}}'
+api users/add-certificate "$(jq -n --rawfile pem pep-leaf.crt \
+  '{user:"my-pep", certificate:$pem}')"
 api groups/add-member '{"group":"remote-peps","member":"my-pep"}'
 ```
+
+`pep-leaf.crt` is the leaf alone: `pep.crt` from `pep-credential.js` is the
+leaf followed by its Issuing CA, and only the leaf is stored.
 
 `my-pep` stands for the job's per-run name. Then start the container with
 the certificate mounted:
@@ -411,8 +428,8 @@ PEP_NOTIFY_URL=https://my-pep.example.test:9443/notify   # optional: where the n
 
 The PEP registers itself (`POST /xacml/pep/register`), and its row appears on
 the **Remote PEPs** tab with whether it holds the current policy. **The row
-is named from the certificate's common name**, not from `PEP_NAME`, when a
-certificate is presented. A PEP enforces whether or not it is registered;
+is named from the entry the certificate is stored on**, not from
+`PEP_NAME`, when a certificate is presented. A PEP enforces whether or not it is registered;
 the registration buys the row and the nudge.
 
 ## Issue the PEP an HTTPS listener certificate

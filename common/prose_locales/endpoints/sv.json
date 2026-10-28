@@ -403,6 +403,10 @@
     "en": "e146f5e15e76dfe5",
     "text": "Varje konsolsida"
   },
+  "endpoints.route./admin/signals/receive.name": {
+    "en": "d68ad816a1dfc9a9",
+    "text": "Konsolens mottagningsslutpunkt för Shared Signals"
+  },
   "endpoints.route./admin/console.js.name": {
     "en": "9932c00e39f5d470",
     "text": "Konsolens skript"
@@ -426,6 +430,10 @@
   "endpoints.route./portal/portal.css.name": {
     "en": "3b05a0008cdc0eb1",
     "text": "Portalens formatmall"
+  },
+  "endpoints.route./report/signals/receive.name": {
+    "en": "ab329d399f348d73",
+    "text": "Rapportapplikationens mottagningsslutpunkt för Shared Signals"
   },
   "endpoints.route./report.name": {
     "en": "f8876dead2cd7bc2",
@@ -458,6 +466,22 @@
   "endpoints.route./report-api/catalog/:id.name": {
     "en": "f4a97ac800f661e8",
     "text": "En rapportkälla"
+  },
+  "endpoints.route./report-api/realms.name": {
+    "en": "c555ac10c13fd091",
+    "text": "Förtroendesfärerna, för rapportapplikationen"
+  },
+  "endpoints.route./report-api/signals.name": {
+    "en": "fa5ff98584c701fb",
+    "text": "Rapportapplikationens inkorg för Shared Signals"
+  },
+  "endpoints.route./report-api/groups.name": {
+    "en": "e30ed85f8fa2f141",
+    "text": "Gruppsökningen, för rapportapplikationen"
+  },
+  "endpoints.route./report-api/schedules.name": {
+    "en": "25a6618403794275",
+    "text": "De schemalagda rapportdefinitionerna"
   },
   "endpoints.route./report-api/queries.name": {
     "en": "ba718855c8f4548d",
@@ -782,6 +806,10 @@
   "endpoints.route./admin-api/users/devices.name": {
     "en": "cbd7e46575f64db6",
     "text": "En persons enheter"
+  },
+  "endpoints.route./admin-api/users/certificates.name": {
+    "en": "12293a2c63e7d8fb",
+    "text": "En persons lagrade certifikat"
   },
   "endpoints.route./admin-api/devices.name": {
     "en": "2785787c7598b5f2",
@@ -1582,6 +1610,10 @@
   "endpoints.route./authn-api/pending/:id/anonymous.name": {
     "en": "5468076a514d8abf",
     "text": "Fortsätt utan att logga in"
+  },
+  "endpoints.route./authn-api/pending/:id/certificate.name": {
+    "en": "92ce6eacdbb8d068",
+    "text": "Fortsätt med ditt certifikat"
   },
   "endpoints.route./authn-api/pending/:id/email.name": {
     "en": "108905ece8873211",

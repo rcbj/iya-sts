@@ -28,6 +28,31 @@
 //
 // Credential attributes are not read. They are not fields, and this file
 // does not name them.
+//
+// A FILTER THE STORE CAN ANSWER IS ASKED OF THE STORE (#985). On the 8081
+// installation, fifty million people, `username equals rcbj` walked every
+// one of them — the group index first, then every page of `ou=users`, one
+// `existingUserEntry()` per person, the filter applied only in
+// `Rows.take()`, which keeps paging past a row that does not match — and
+// met the ten-second cap every time; a job would have met the two-minute
+// one. The directory already answers the question the walk was asking: the
+// keyed digests `name_keys`, `mail_keys` and `uuid_keys` and the trigram
+// index over the RDN value (`persistence/directory_queries.js`), which
+// sign-in and `/portal/delegate` use. So `reportReadUsers()` reads the
+// plan's `where` first (`reportIndexedLookups()`): a leaf on an indexed
+// field and operator (the catalog's `indexed` list), one arm of an `and`,
+// or every arm of an `or` names the CANDIDATES, resolved through the
+// directory's own lookups (`reportCandidates()`), and only those rows are
+// offered — every other term still applies in `Rows.take()`, so the answer
+// is the walk's. `contains` and `startsWith` on `username` are the trigram
+// index's superset (lower-cased, three characters or more), narrowed in
+// process; a needle the store answers at its cap is not trusted to be
+// whole and falls back. A filter the store cannot answer, with the
+// directory windowed and the read synchronous, is REFUSED before the walk
+// starts (`STS-REPORT-0036`, `reportUnboundedFilter()`), and `mode: auto`
+// turns that refusal into a job (`report_api.ts`); a walk that the limit
+// bounds — no filter, no order, no count — still runs. The memory directory
+// is in process and small by construction, so it walks as it always did.
 // ---------------------------------------------------------------------------
 
 import bunyan = require('bunyan');
@@ -47,6 +72,52 @@ const FENCE_GONE = 'STS-REPORT-0025';
 let reportReader: ((plan: any, take: (row: any) => boolean,
   control: any) => Promise<void> | void) | null = null;
 const reportFences = new Set<string>();
+
+// The directory this file reads: `ldap/ldap_server.js`, required when first
+// asked, or the double a test installs (#985). Nothing else installs one.
+let reportDirectory: any = null;
+
+// How many store questions one filter may become (an `or` of lookups), the
+// shortest substring the trigram index is asked, how many rows a substring
+// or a mail lookup is asked for — an answer that fills it is not whole, and
+// the read falls back — and the one refusal this file adds.
+const INDEX_LOOKUP_CAP = 16;
+const NEEDLE_MIN = 3;
+const CANDIDATE_CAP = 1000;
+const UNBOUNDED_FILTER = 'STS-REPORT-0036';
+const TOO_MANY_HOLDERS = 'STS-REPORT-0039';
+
+// `op` is `eq` (the values, exact), `contains` (one lower-cased substring),
+// or `range` (#1028: `values[0]` the first epoch millisecond taken, or '',
+// `values[1]` the first left out, or '').
+interface Lookup {
+  field: string;
+  op: string;
+  values: string[];
+}
+
+// A FIRST PAGE IS ENOUGH WHEN ANY ROWS WILL DO (#1040). A lookup whose
+// answer fills `CANDIDATE_CAP` is not whole, and an ordered or counted read
+// needs the whole answer. A read with neither needs only `limit` rows that
+// match, and any `limit` of them is a correct answer: on 8081
+// `createdAt after 2026-10-01`, limit 5, was refused as matching more than
+// 1000 people. `allowed` lets a lookup hand back the first page it was
+// given; `hit` says one did, and the read that offered all of them without
+// filling its limit is then refused as before, because the rows it did not
+// see may be the ones it lacks.
+interface PartialLookup {
+  allowed: boolean;
+  hit: boolean;
+}
+
+// The lock attribute the users source's `status equals locked` reads the
+// holders of (#1028): an asked name since schema version 28.
+const LOCK_ATTRIBUTE = 'pwdAccountLockedTime';
+// What a users row reads off an entry, lower-cased as `holdersAsync()` picks.
+const USER_FIELDS = ['uid', 'cn', 'displayname', 'mail', 'entryuuid',
+  'createtimestamp', 'modifytimestamp', 'pwdaccountlockedtime', 'memberof',
+  'userpassword', 'stswebauthncredential', 'ststotpcredential',
+  'stsmailfactor', 'authnmethod', 'mfalastauthtime'];
 
 const MECHANISMS = [
   { id: 'password', kind: 'both', primary: 'passwordPrimary',
@@ -77,6 +148,19 @@ function reportInstallReader(fn: typeof reportReader): void {
   log.debug("Entering reportInstallReader().");
   reportReader = fn;
   log.debug("Leaving reportInstallReader().");
+}
+
+function reportInstallDirectory(directory: any): void {
+  log.debug("Entering reportInstallDirectory().");
+  reportDirectory = directory || null;
+  log.debug("Leaving reportInstallDirectory().");
+}
+
+function reportLdap(): any {
+  log.debug("Entering reportLdap().");
+  const ldap = reportDirectory || require('../ldap/ldap_server');
+  log.debug("Leaving reportLdap().");
+  return ldap;
 }
 
 function reportProcessToken(): string {
@@ -290,7 +374,12 @@ function reportAudit(info: any): void {
 function reportActor(job: any): string {
   log.debug("Entering reportActor().");
   const helpers = require('../common/helpers');
-  const name = String(helpers.nameForSubject(job && job.owner) || '');
+  const rights = require('./rights');
+  // An owner from another realm (#1038) is named in THEIR realm.
+  const name = String(rights.inOwnerRealm(
+    String((job && job.ownerRealm) || ''), function (): string {
+      return helpers.nameForSubject(job && job.owner) || '';
+    }) || '');
   log.debug("Leaving reportActor().");
   return name || String((job && job.owner) || '');
 }
@@ -449,7 +538,7 @@ async function reportOffer(row: any, rows: any, control: any):
 async function reportEachEntry(parent: string, onEntry: (entry: any,
     dn: string) => Promise<boolean> | boolean): Promise<void> {
   log.debug("Entering reportEachEntry().");
-  const ldap = require('../ldap/ldap_server');
+  const ldap = reportLdap();
   const held: Array<{ entry: any; dn: string }> = [];
   ldap.entries.forEach(function (entry: any, dn: string): void {
     if (reportUnder(String(dn), parent)) {
@@ -476,7 +565,7 @@ async function reportEachEntry(parent: string, onEntry: (entry: any,
 async function reportRdnPages(parent: string, onRow: (row: any) =>
     Promise<boolean> | boolean): Promise<void> {
   log.debug("Entering reportRdnPages().");
-  const ldap = require('../ldap/ldap_server');
+  const ldap = reportLdap();
   const realms = require('../common/realms');
   const window = ldap.directoryWindow;
   let cursor = '';
@@ -508,7 +597,7 @@ async function reportRdnPages(parent: string, onRow: (row: any) =>
 
 async function reportGroupIndex(): Promise<any> {
   log.debug("Entering reportGroupIndex().");
-  const ldap = require('../ldap/ldap_server');
+  const ldap = reportLdap();
   const parent = ldap.groupsDn();
   const byUser: Record<string, string[]> = {};
   const groups: any[] = [];
@@ -554,7 +643,7 @@ async function reportGroupIndex(): Promise<any> {
 async function reportEachUser(onUser: (entry: any, dn: string) =>
     Promise<boolean> | boolean): Promise<void> {
   log.debug("Entering reportEachUser().");
-  const ldap = require('../ldap/ldap_server');
+  const ldap = reportLdap();
   if (!ldap.directoryIsWindowed()) {
     await reportEachEntry(ldap.usersDn(), async function (entry: any,
         dn: string): Promise<boolean> {
@@ -596,33 +685,1622 @@ async function reportEachUser(onUser: (entry: any, dn: string) =>
   log.debug("Leaving reportEachUser(). Guard.");
 }
 
+// How many second-factor credentials an entry holds (#1019): passkeys
+// enrolled in the mfa role, authenticator apps and mail factors, each
+// credential counted once. Recovery codes and app passwords are not
+// factors; a primary passkey is not a second one.
+function reportSecondFactors(entry: any): number {
+  log.debug("Entering reportSecondFactors().");
+  const keys = reportAttrList(entry, 'stsWebauthnCredential');
+  let n = 0;
+  if (keys.length) {
+    const credentials = require('../common/credentials');
+    credentials.keysOfValues(keys, reportAttr(entry, 'uid')).forEach(
+      function (key: any): void {
+        if (String(key.role || 'mfa') === 'mfa') {
+          n += 1;
+        }
+      });
+  }
+  n += reportAttrList(entry, 'stsTotpCredential').length;
+  n += reportAttrList(entry, 'stsMailFactor').length;
+  log.debug("Leaving reportSecondFactors(). " + n + '.');
+  return n;
+}
+
+function reportUserRow(entry: any, names: string[]): any {
+  log.debug("Entering reportUserRow().");
+  // pwdAccountLockedTime is the administrative disable and any other
+  // lock. The catalog calls both locked. This read does not ask
+  // account_state, which would walk the directory a second time.
+  const locked = reportAttr(entry, 'pwdAccountLockedTime');
+  const row = {
+    username: reportAttr(entry, 'uid'),
+    status: locked ? 'locked' : 'active',
+    createdAt: reportLdapTime(reportAttr(entry, 'createTimestamp')),
+    modifiedAt: reportLdapTime(reportAttr(entry, 'modifyTimestamp')),
+    entryUuid: reportAttr(entry, 'entryUUID'),
+    mail: reportAttr(entry, 'mail'),
+    displayName: reportAttr(entry, 'displayName') ||
+      reportAttr(entry, 'cn'),
+    memberOf: names.join(', '),
+    // WHAT THE PERSON CAN SIGN IN WITH, AND HAS (#1019, rcbj: account for
+    // username/password): whether a password is set, how many second
+    // factors the entry holds (`reportSecondFactors()`), the RFC 8176
+    // methods they have used and their last multi-factor sign-in — the
+    // credentialHolders source's common columns, on the person's own row,
+    // so `hasPassword equals true` and `factors equals 0` is "password
+    // only". None is indexed: a job on a large directory.
+    hasPassword: reportAttrList(entry, 'userPassword').length > 0,
+    factors: reportSecondFactors(entry),
+    methodsUsed: reportAttrList(entry, 'authnMethod').join(', '),
+    mfaLastAuthTime: reportLdapTime(reportAttr(entry, 'mfaLastAuthTime')) ||
+      reportIso(Date.parse(reportAttr(entry, 'mfaLastAuthTime')))
+  };
+  log.debug("Leaving reportUserRow().");
+  return row;
+}
+
+// ---------------------------------------------------------------------------
+// THE INDEXED LOOKUPS OF A FILTER (#985): the store questions whose union
+// holds every row the filter can match, or null when none can be named. A
+// leaf on an indexed field and operator is one lookup (`eq` and `in` are an
+// exact lookup over the values; `contains` and `startsWith` on `username`
+// are the trigram index's substring, lower-cased, which is a SUPERSET of
+// either — `Rows.take()` still applies the leaf). An `and` is the lookups
+// of any ONE of its arms, since every match satisfies every arm, and an
+// exact arm is preferred to a substring one. An `or` is the lookups of
+// EVERY arm, or null if one arm has none. A `not`, an `isNull`, a `ne`, a
+// filter on a sealed field, a needle under three characters: null. Bounded
+// in lookups, so no filter becomes an unbounded number of questions. The
+// same shape `ldap_server.js`'s `indexedLookupsOf()` gives an LDAP search.
+// ---------------------------------------------------------------------------
+function reportLeafLookup(node: any, indexedOf: (field: string) => string[]):
+    Lookup | null {
+  log.debug("Entering reportLeafLookup().");
+  const field = String(node.field || '');
+  const op = String(node.op || '');
+  const allowed = indexedOf(field);
+  if (allowed.indexOf(op) < 0) {
+    log.debug("Leaving reportLeafLookup(). Not indexed.");
+    return null;
+  }
+  if (op === 'eq' || op === 'in') {
+    const list = op === 'in' ? (Array.isArray(node.value) ? node.value :
+      []) : [node.value];
+    const values: string[] = [];
+    for (let i = 0; i < list.length; i++) {
+      if (typeof list[i] !== 'string' || !list[i].trim()) {
+        log.debug("Leaving reportLeafLookup(). Not a name.");
+        return null;
+      }
+      values.push(list[i]);
+    }
+    if (!values.length) {
+      log.debug("Leaving reportLeafLookup(). Empty.");
+      return null;
+    }
+    // THE LOCK IS INDEXED, ITS ABSENCE IS NOT (#1028): `status equals
+    // locked` is the holders of pwdAccountLockedTime; `active` is everybody
+    // else and anchors nothing.
+    if (field === 'status' && values.some(function (v: string): boolean {
+      return v !== 'locked';
+    })) {
+      log.debug("Leaving reportLeafLookup(). Not the lock.");
+      return null;
+    }
+    log.debug("Leaving reportLeafLookup(). Exact.");
+    return { field: field, op: 'eq', values: values };
+  }
+  if (op === 'lt' || op === 'le' || op === 'gt' || op === 'ge') {
+    // A DATE BOUND (#1028): one side of a span, in epoch milliseconds; `le`
+    // and `gt` move by a second, the columns' resolution, to the exclusive
+    // and inclusive sides the statement takes.
+    const at = typeof node.value === 'number' ? node.value
+      : Date.parse(String(node.value || ''));
+    if (!Number.isFinite(at)) {
+      log.debug("Leaving reportLeafLookup(). Not a time.");
+      return null;
+    }
+    const lo = op === 'ge' ? at : (op === 'gt' ? at + 1000 : 0);
+    const hi = op === 'lt' ? at : (op === 'le' ? at + 1000 : 0);
+    log.debug("Leaving reportLeafLookup(). A bound.");
+    return { field: field, op: 'range',
+             values: [lo ? String(lo) : '', hi ? String(hi) : ''] };
+  }
+  if (op === 'contains' || op === 'startsWith') {
+    const needle = typeof node.value === 'string' ?
+      node.value.trim().toLowerCase() : '';
+    if (needle.length < NEEDLE_MIN) {
+      log.debug("Leaving reportLeafLookup(). Short.");
+      return null;
+    }
+    log.debug("Leaving reportLeafLookup(). Substring.");
+    return { field: field, op: 'contains', values: [needle] };
+  }
+  log.debug("Leaving reportLeafLookup(). Operator.");
+  return null;
+}
+
+function reportExactOnly(lookups: Lookup[]): boolean {
+  log.debug("Entering reportExactOnly().");
+  const exact = lookups.every(function (one: Lookup): boolean {
+    return one.op === 'eq';
+  });
+  log.debug("Leaving reportExactOnly().");
+  return exact;
+}
+
+function reportIndexedLookups(node: any,
+    indexedOf: (field: string) => string[], depth: number):
+    Lookup[] | null {
+  log.debug("Entering reportIndexedLookups().");
+  if (!node || typeof node !== 'object' || depth > 4) {
+    log.debug("Leaving reportIndexedLookups(). None.");
+    return null;
+  }
+  if (node.op === 'and') {
+    const args = Array.isArray(node.args) ? node.args : [];
+    let best: Lookup[] | null = null;
+    const ranges: Lookup[] = [];
+    for (let i = 0; i < args.length; i++) {
+      const arm = reportIndexedLookups(args[i], indexedOf, depth + 1);
+      if (arm && arm.length === 1 && arm[0].op === 'range') {
+        ranges.push(arm[0]);
+      }
+      if (arm && (!best || (reportExactOnly(arm) &&
+          !reportExactOnly(best)))) {
+        best = arm;
+      }
+    }
+    // TWO BOUNDS ON ONE DATE ARE ONE RANGE (#1028): `createdAt ge A and
+    // createdAt lt B` is read as the span [A, B), not as everything from A
+    // narrowed afterwards.
+    if (best && best.length === 1 && best[0].op === 'range' &&
+        ranges.length > 1) {
+      const merged: Lookup = { field: best[0].field, op: 'range',
+                               values: ['', ''] };
+      ranges.forEach(function (one: Lookup): void {
+        if (one.field !== merged.field) {
+          return;
+        }
+        if (one.values[0] && (!merged.values[0] ||
+            Number(one.values[0]) > Number(merged.values[0]))) {
+          merged.values[0] = one.values[0];
+        }
+        if (one.values[1] && (!merged.values[1] ||
+            Number(one.values[1]) < Number(merged.values[1]))) {
+          merged.values[1] = one.values[1];
+        }
+      });
+      log.debug("Leaving reportIndexedLookups(). A merged span.");
+      return [merged];
+    }
+    log.debug("Leaving reportIndexedLookups(). And.");
+    return best;
+  }
+  if (node.op === 'or') {
+    const args = Array.isArray(node.args) ? node.args : [];
+    let all: Lookup[] = [];
+    for (let i = 0; i < args.length; i++) {
+      const arm = reportIndexedLookups(args[i], indexedOf, depth + 1);
+      if (!arm) {
+        log.debug("Leaving reportIndexedLookups(). Or, an arm walks.");
+        return null;
+      }
+      all = all.concat(arm);
+    }
+    if (!all.length || all.length > INDEX_LOOKUP_CAP) {
+      log.debug("Leaving reportIndexedLookups(). Or, too many.");
+      return null;
+    }
+    log.debug("Leaving reportIndexedLookups(). Or.");
+    return all;
+  }
+  if (node.op === 'not') {
+    log.debug("Leaving reportIndexedLookups(). Not.");
+    return null;
+  }
+  const leaf = reportLeafLookup(node, indexedOf);
+  log.debug("Leaving reportIndexedLookups().");
+  return leaf ? [leaf] : null;
+}
+
+// The entries one lookup names, through the directory's own doors — the
+// same ones a sign-in and a SCIM read use, so the answer is theirs: a name
+// through `existingUserEntriesAsync()` (`byName`, or the in-memory
+// username index), a UUID through `entriesByUuidsAsync()`, an address
+// through the window's `byMail`, a substring through the trigram index.
+// Null means the store could not answer it whole — a memory directory asked
+// a substring or an address (it has no index for either, and is small), or
+// an answer that filled the cap — and the caller walks instead.
+async function reportLookupEntries(lookup: Lookup, ldap: any,
+    partial?: PartialLookup): Promise<any[] | null> {
+  log.debug("Entering reportLookupEntries(). " + lookup.field + ' ' +
+    lookup.op);
+  const found: any[] = [];
+  if (lookup.field === 'username' && lookup.op === 'eq') {
+    const entries = await ldap.existingUserEntriesAsync(lookup.values);
+    (entries || []).forEach(function (entry: any): void {
+      if (entry) {
+        found.push(entry);
+      }
+    });
+    log.debug("Leaving reportLookupEntries(). By name.");
+    return found;
+  }
+  if (lookup.op === 'range') {
+    // THE SPAN (#1028): the directory's B-tree over created_at or
+    // modified_at; null in memory or past the cap, and the caller walks.
+    const column = lookup.field === 'modifiedAt' ? 'modified' : 'created';
+    const inSpan = await ldap.entriesByTimeRangeAsync(column,
+      Number(lookup.values[0]) || 0, Number(lookup.values[1]) || 0,
+      CANDIDATE_CAP, !!(partial && partial.allowed));
+    if (inSpan === null) {
+      log.debug("Leaving reportLookupEntries(). Span not whole.");
+      return null;
+    }
+    if (partial && inSpan.length >= CANDIDATE_CAP) {
+      partial.hit = true;
+    }
+    inSpan.forEach(function (entry: any): void {
+      if (entry) {
+        found.push(entry);
+      }
+    });
+    log.debug("Leaving reportLookupEntries(). " + found.length +
+      ' in the span.');
+    return found;
+  }
+  if (lookup.field === 'status' && lookup.op === 'eq') {
+    // THE LOCKED (#1028): the holders of the lock attribute through the
+    // asked-names index, every users field picked.
+    const locked = await ldap.holdersAsync('person', LOCK_ATTRIBUTE,
+      USER_FIELDS);
+    (locked || []).forEach(function (holder: any): void {
+      found.push(reportHolderEntry(holder));
+    });
+    log.debug("Leaving reportLookupEntries(). " + found.length +
+      ' locked.');
+    return found;
+  }
+  if (lookup.field === 'memberOf' && lookup.op === 'eq') {
+    // A GROUP'S MEMBER LIST IS AN INDEX (rcbj, 2026-10-27): the group is
+    // read by its name and its members fetched by theirs, so a filter on
+    // memberOf costs the group's size and never the population.
+    const names: string[] = [];
+    lookup.values.forEach(function (selector: string): void {
+      reportGroupMemberNames(selector, ldap).forEach(
+        function (name: string): void {
+          if (names.indexOf(name) < 0) {
+            names.push(name);
+          }
+        });
+    });
+    const members = names.length
+      ? await ldap.existingUserEntriesAsync(names) : [];
+    (members || []).forEach(function (entry: any): void {
+      if (entry) {
+        found.push(entry);
+      }
+    });
+    log.debug("Leaving reportLookupEntries(). " + found.length +
+      ' member(s).');
+    return found;
+  }
+  if (lookup.field === 'entryUuid' && lookup.op === 'eq') {
+    const map = await ldap.entriesByUuidsAsync(lookup.values);
+    if (map && typeof map.forEach === 'function') {
+      map.forEach(function (entry: any): void {
+        if (entry) {
+          found.push(entry);
+        }
+      });
+    }
+    log.debug("Leaving reportLookupEntries(). By UUID.");
+    return found;
+  }
+  if (!ldap.directoryIsWindowed() || !ldap.directoryWindow) {
+    log.debug("Leaving reportLookupEntries(). No index in memory.");
+    return null;
+  }
+  const realms = require('../common/realms');
+  const realmId = realms.currentId();
+  if (lookup.field === 'mail' && lookup.op === 'eq') {
+    for (let i = 0; i < lookup.values.length; i++) {
+      const wanted = lookup.values[i].trim().toLowerCase();
+      const hits = await ldap.directoryWindow.findWindowedAsync(realmId,
+        'byMail', [realmId, wanted, CANDIDATE_CAP],
+        function (entry: any): boolean {
+          return reportAttrList(entry, 'mail').some(function (one: string):
+              boolean {
+            return one.toLowerCase() === wanted;
+          });
+        });
+      if (hits.length >= CANDIDATE_CAP) {
+        if (!partial || !partial.allowed) {
+          log.debug("Leaving reportLookupEntries(). Mail at the cap.");
+          return null;
+        }
+        partial.hit = true;
+      }
+      hits.forEach(function (hit: any): void {
+        found.push(hit.entry);
+      });
+    }
+    log.debug("Leaving reportLookupEntries(). By mail.");
+    return found;
+  }
+  if (lookup.field === 'username' && lookup.op === 'contains') {
+    const parent = String(ldap.usersDn() || '').toLowerCase();
+    const page = await ldap.directoryWindow.uidContainsAsync(realmId,
+      parent, lookup.values[0], CANDIDATE_CAP);
+    if (!page) {
+      log.debug("Leaving reportLookupEntries(). No substring answer.");
+      return null;
+    }
+    if (page.asked >= CANDIDATE_CAP) {
+      if (!partial || !partial.allowed) {
+        log.debug("Leaving reportLookupEntries(). Substring at the cap.");
+        return null;
+      }
+      partial.hit = true;
+    }
+    page.rows.forEach(function (row: any): void {
+      if (row && row.entry) {
+        found.push(row.entry);
+      }
+    });
+    log.debug("Leaving reportLookupEntries(). By substring.");
+    return found;
+  }
+  log.debug("Leaving reportLookupEntries(). Unknown.");
+  return null;
+}
+
+// The candidates of a filter: every lookup's entries, each person once,
+// projections and entries with no `uid` left out as the walk leaves them.
+// Null when any lookup could not be answered whole.
+async function reportCandidates(lookups: Lookup[], ldap: any,
+    partial?: PartialLookup): Promise<any[] | null> {
+  log.debug("Entering reportCandidates(). " + lookups.length +
+    ' lookup(s).');
+  const parent = String(ldap.usersDn() || '').toLowerCase();
+  const seen = new Set<string>();
+  const out: any[] = [];
+  for (let i = 0; i < lookups.length; i++) {
+    const entries = await reportLookupEntries(lookups[i], ldap, partial);
+    if (!entries) {
+      log.debug("Leaving reportCandidates(). Not whole.");
+      return null;
+    }
+    for (let k = 0; k < entries.length; k++) {
+      const entry = entries[k];
+      const dn = String((entry && entry.dn) || '').toLowerCase();
+      const origin = String((entry && entry.origin) || '');
+      if (!dn || seen.has(dn) || origin.indexOf('projection') === 0 ||
+          !reportAttr(entry, 'uid') || !reportUnder(dn, parent)) {
+        continue;
+      }
+      seen.add(dn);
+      out.push(entry);
+    }
+  }
+  log.debug("Leaving reportCandidates(). " + out.length + '.');
+  return out;
+}
+
+// The names of the groups that LIST this person, from the directory's own
+// group index (`groupsOfUser()`, what every token's groups claim reads)
+// rather than from a pass over every group: a candidate's row needs its
+// groups, not the realm's. A group the person only claims through their
+// own `memberOf` is left out, as the walk's index leaves it out.
+function reportGroupNamesOf(ldap: any, entry: any): string[] {
+  log.debug("Entering reportGroupNamesOf().");
+  const names: string[] = [];
+  const username = reportAttr(entry, 'uid');
+  if (username && typeof ldap.groupsOfUser === 'function') {
+    const answer = ldap.groupsOfUser(username) || {};
+    (answer.groups || []).forEach(function (group: any): void {
+      const listed = Array.isArray(group.via) ? group.via.length > 0 :
+        !group.viaMemberOf;
+      if (listed && group.cn && names.indexOf(group.cn) < 0) {
+        names.push(group.cn);
+      }
+    });
+  }
+  log.debug("Leaving reportGroupNamesOf().");
+  return names;
+}
+
+// Whether the plan has to see every person to answer: a filter the store
+// did not narrow (the limit cannot stop a walk that finds nothing), an
+// order (the heap needs the last row), or a count. A plain unordered read
+// with no filter stops at its limit, and may walk.
+function reportMustVisitEverybody(plan: any): boolean {
+  log.debug("Entering reportMustVisitEverybody().");
+  const must = !!(plan && (plan.where != null ||
+    (Array.isArray(plan.orderBy) && plan.orderBy.length) ||
+    plan.aggregate === 'count'));
+  log.debug("Leaving reportMustVisitEverybody().");
+  return must;
+}
+
+function reportUnboundedFilter(catalog: any, sourceId?: string): any {
+  log.debug("Entering reportUnboundedFilter().");
+  const named = catalog.indexedPhrases(sourceId || 'users');
+  log.warn(errorCodes.tag(UNBOUNDED_FILTER) +
+    'report: a synchronous users query names no filter the directory ' +
+    'can answer with an index, and the directory is windowed; refused ' +
+    'rather than read row by row.');
+  log.debug("Leaving reportUnboundedFilter().");
+  return {
+    ok: false,
+    code: UNBOUNDED_FILTER,
+    error: 'result_too_large',
+    unbounded: true,
+    description: 'This query would read every person. Filter on ' +
+      named.join(', ') + ', or run it as a job.'
+  };
+}
+
+function reportTooManyCandidates(catalog: any): any {
+  log.debug("Entering reportTooManyCandidates().");
+  log.warn(errorCodes.tag('STS-REPORT-0041') +
+    'report: an indexed filter matched more people than one read may take ' +
+    '(' + CANDIDATE_CAP + '); refused rather than read person by person.');
+  log.debug("Leaving reportTooManyCandidates().");
+  return {
+    ok: false,
+    code: 'STS-REPORT-0041',
+    error: 'result_too_large',
+    description: 'The filter matches more than ' + CANDIDATE_CAP +
+      ' people. Narrow it: a shorter date span, a longer name, or add a ' +
+      'group (memberOf).'
+  };
+}
+
+function reportTooManyPeople(catalog: any, everybody: number,
+                             most: number): any {
+  log.debug("Entering reportTooManyPeople().");
+  log.warn(errorCodes.tag('STS-REPORT-0046') +
+    'report: a users read with an order or a count and no filter would ' +
+    'read ' + everybody + ' people, over report.asyncMaxRows (' + most +
+    '); refused before the first page.');
+  log.debug("Leaving reportTooManyPeople().");
+  return {
+    ok: false,
+    code: 'STS-REPORT-0046',
+    error: 'result_too_large',
+    description: 'This query would read all ' + everybody + ' people to ' +
+      'order or count them, more than a job may read (' + most + '). ' +
+      'Filter on ' + catalog.indexedPhrases('users').join(', ') + '.'
+  };
+}
+
+// A person's first address, for the signals inbox's `own` match (#1042):
+// the directory's asynchronous door, one name. '' for nobody, a failure or
+// an entry with none — a signal about an address then matches nobody, which
+// is the receiver's fail-closed rule.
+// A PERSON OWNER WHOSE ACCOUNT IS DISABLED (#1042). A disable ends what the
+// person holds — sessions, tokens, connections — and refuses their next
+// sign-in, and a schedule they own is neither: it ran on under their name.
+// So the scheduler and the runner ask before a person's report runs, in
+// their own realm, through the directory's ASYNCHRONOUS door (one name, no
+// walk; `account_state.isDisabled()` reads the same attribute
+// synchronously, which a job body is not to do). An application is never
+// disabled here; the issuance policy refuses one. A directory that cannot
+// answer is not a disable: the role check beside this one already refuses
+// an owner it cannot read.
+async function reportOwnerDisabled(kind: string, ownerRealm: string,
+                                   name: string): Promise<boolean> {
+  log.debug("Entering reportOwnerDisabled().");
+  const who = String(name || '').trim();
+  if (kind === 'application' || !who || who === 'anonymous') {
+    log.debug("Leaving reportOwnerDisabled(). Not a person.");
+    return false;
+  }
+  // The directory a test installed, or the one this process has loaded —
+  // never a require here: the directory is a JavaScript route module, and
+  // a process that has not loaded it has nobody to be disabled.
+  let ldap: any = reportDirectory;
+  if (!ldap) {
+    const cached = require.cache[require.resolve('../ldap/ldap_server')];
+    ldap = cached ? cached.exports : null;
+  }
+  if (!ldap || typeof ldap.existingUserEntriesAsync !== 'function') {
+    log.debug("Leaving reportOwnerDisabled(). No directory loaded.");
+    return false;
+  }
+  const rights = require('./rights');
+  try {
+    const found = await rights.inOwnerRealm(String(ownerRealm || ''),
+      function (): Promise<any[]> {
+        return ldap.existingUserEntriesAsync([who]);
+      });
+    const entry = (found || [])[0];
+    const locked = !!(entry && reportAttr(entry, 'pwdAccountLockedTime'));
+    log.debug("Leaving reportOwnerDisabled(). " + locked);
+    return locked;
+  } catch (e) {
+    log.debug("Caught in reportOwnerDisabled(): " + ((e && e.message) || e));
+    return false;
+  }
+}
+
+async function reportPersonMail(username: string): Promise<string> {
+  log.debug("Entering reportPersonMail().");
+  const name = String(username || '').trim();
+  if (!name) {
+    log.debug("Leaving reportPersonMail(). Nobody.");
+    return '';
+  }
+  try {
+    const found = await reportLdap().existingUserEntriesAsync([name]);
+    const entry = (found || [])[0];
+    const mail = entry ? reportAttr(entry, 'mail') : '';
+    log.debug("Leaving reportPersonMail().");
+    return String(mail || '');
+  } catch (e) {
+    log.debug("Caught in reportPersonMail(): " + ((e && e.message) || e));
+    return '';
+  }
+}
+
 async function reportReadUsers(rows: any, control: any): Promise<void> {
   log.debug("Entering reportReadUsers().");
+  const ldap = reportLdap();
+  const plan = (rows && rows.plan) || {};
+  const catalog = new Catalog();
+  const lookups = reportIndexedLookups(plan.where, function (field: string):
+      string[] {
+    return catalog.indexedFor('users', field);
+  }, 0);
+  const partial: PartialLookup = {
+    allowed: !(Array.isArray(plan.orderBy) && plan.orderBy.length) &&
+      plan.aggregate !== 'count',
+    hit: false
+  };
+  const candidates = lookups ? await reportCandidates(lookups, ldap,
+    partial) : null;
+  // A LOOKUP TOO LARGE TO ANSWER WHOLE NEVER BECOMES A WALK (#1028, rcbj:
+  // "users shouldn't run into queries that require full table scans"): on
+  // a windowed directory, an indexed filter whose answer filled the
+  // candidate cap (a date span of more than a thousand people, say) is
+  // refused as too large, asking for a narrower filter, rather than read
+  // by paging every person.
+  if (lookups && !candidates && ldap.directoryIsWindowed()) {
+    control.unbounded = reportTooManyCandidates(catalog);
+    log.debug("Leaving reportReadUsers(). Lookup not whole.");
+    return;
+  }
+  if (candidates) {
+    for (let i = 0; i < candidates.length; i++) {
+      const entry = candidates[i];
+      const keep = await reportOffer(reportUserRow(entry,
+        reportGroupNamesOf(ldap, entry)), rows, control);
+      if (keep === false) {
+        log.debug("Leaving reportReadUsers(). Stopped.");
+        return;
+      }
+      if (i % PAGE === PAGE - 1) {
+        await Promise.resolve();
+      }
+    }
+    if (partial.hit) {
+      // A first page offered whole without filling the limit: the rest of
+      // the lookup's answer may hold the rows still wanted.
+      control.unbounded = reportTooManyCandidates(catalog);
+      log.debug("Leaving reportReadUsers(). First page short.");
+      return;
+    }
+    log.debug("Leaving reportReadUsers(). Indexed.");
+    return;
+  }
+  // EVERYBODY IS COUNTED BEFORE THEY ARE READ (#1040). With no filter, an
+  // order or a count reads every person, and on 8081's million both
+  // `orderBy username` and `count by status` became jobs that ran into
+  // `report.asyncMaxMs` two minutes later. The store's count is a counter
+  // row (`personCount()`), so over `report.asyncMaxRows` — what a job may
+  // read, the cap `credentialHolders` counts its holders against — the
+  // read is refused now, in every mode, and not as `unbounded`, so `auto`
+  // does not turn it into a job that cannot finish.
+  if (ldap.directoryIsWindowed() && reportMustVisitEverybody(plan) &&
+      typeof ldap.personCount === 'function') {
+    const everybody = Number(ldap.personCount()) || 0;
+    const most = new Limits().asyncMaxRows();
+    if (everybody > most) {
+      control.unbounded = reportTooManyPeople(catalog, everybody, most);
+      log.debug("Leaving reportReadUsers(). Too many people.");
+      return;
+    }
+  }
+  if (control && control.execution === 'sync' &&
+      ldap.directoryIsWindowed() && reportMustVisitEverybody(plan)) {
+    control.unbounded = reportUnboundedFilter(catalog);
+    log.debug("Leaving reportReadUsers(). Unbounded.");
+    return;
+  }
   const index = await reportGroupIndex();
   await reportEachUser(async function (entry: any, dn: string):
       Promise<boolean> {
     const names = index.byUser[String(dn).toLowerCase()] || [];
-    // pwdAccountLockedTime is the administrative disable and any other
-    // lock. The catalog calls both locked. This read does not ask
-    // account_state, which would walk the directory a second time.
-    const locked = reportAttr(entry, 'pwdAccountLockedTime');
-    return reportOffer({
-      username: reportAttr(entry, 'uid'),
-      status: locked ? 'locked' : 'active',
-      createdAt: reportLdapTime(reportAttr(entry, 'createTimestamp')),
-      modifiedAt: reportLdapTime(reportAttr(entry, 'modifyTimestamp')),
-      entryUuid: reportAttr(entry, 'entryUUID'),
-      mail: reportAttr(entry, 'mail'),
-      displayName: reportAttr(entry, 'displayName') ||
-        reportAttr(entry, 'cn'),
-      memberOf: names.join(', ')
-    }, rows, control);
+    return reportOffer(reportUserRow(entry, names), rows, control);
   });
   log.debug("Leaving reportReadUsers().");
 }
 
+// ---------------------------------------------------------------------------
+// WHO HOLDS WHICH CREDENTIAL (#1002, rcbj: who has a passkey as a primary
+// mechanism, who as a second factor, with what algorithm, how many — and the
+// same question for other mechanisms and other communities, without a scan
+// and without changing what is sealed). One row per person, per mechanism,
+// per role. Everything read is what the directory already keeps:
+//
+//   * THE HOLDERS OF A MECHANISM are the holders of its attribute, through
+//     the store's asked-names index (`holdersAsync()`, bounded by the
+//     holders and never by the population); the entries opened are theirs.
+//   * THE MEMBERS OF A GROUP are read from the group entry and fetched by
+//     name (`existingUserEntriesAsync()`), bounded by the group.
+//   * A PASSKEY'S ROLE is the key's own `role`, `primary` or `mfa`, chosen
+//     at enrolment and enforced at sign-in (`common/credentials.ts`,
+//     `Credentials.ROLES`); its algorithm and lane are what every page
+//     shows (`keyAlgorithm()`, `keyLane()`). The other mechanisms have one
+//     role each, stated in `MECHANISM_TABLE`.
+//   * THE PERSON'S HISTORY is `authnMethod` (every RFC 8176 method used
+//     here) and `mfaLastAuthTime`, written at the authentication funnel.
+//
+// A filter on `mechanism` or `memberOf` is the indexed read; a query naming
+// neither reads every mechanism's holders, which is bounded by holders and
+// not people but still unbounded in the catalog's sense, so synchronously on
+// a windowed directory it is refused as the users source is, and as a job
+// it runs. Recovery codes and app passwords are not here: their attributes
+// are not in the asked-names index, so their holders would be a scan.
+// ---------------------------------------------------------------------------
+const MECHANISM_TABLE = [
+  { id: 'passkey', attribute: 'stsWebauthnCredential', role: '' },
+  { id: 'totp', attribute: 'stsTotpCredential', role: 'mfa' },
+  { id: 'emailFactor', attribute: 'stsMailFactor', role: 'mfa' },
+  { id: 'certificate', attribute: 'stsEnrolledCertificate', role: 'primary' },
+  { id: 'kerberos', attribute: 'stsKrb5Keys', role: 'primary' },
+  // The password (#1019, rcbj: "what about username password
+  // authentication"): a primary mechanism like the others, but the one the
+  // store does not index by holder — nearly everyone has one — so its count
+  // comes from the realm's counter (`holderCountAsync`) and a list of its
+  // holders is the population, refused unless narrowed by memberOf. Its
+  // row never carries the hash: the scheme is the algorithm.
+  { id: 'password', attribute: 'userPassword', role: 'primary' },
+  // Recovery codes (#1024): a set of single-use codes, stored as hashes,
+  // one attribute value per person. The asked-names index carries the name
+  // since schema version 27, so the holders are an indexed read like the
+  // others. A row is the set, its codes counted and never shown.
+  { id: 'recoveryCodes', attribute: 'stsBackupCodes', role: 'recovery' },
+  // THE KEYS A PERSON SIGNS WITH AND ENROLLS WITH (#1036, rcbj: "signer
+  // certificates, ACME, EST and SCEP credentials"). A person's RFC 7523
+  // JWT key pair and RFC 7522 SAML key pair (`common/person_assertions.js`),
+  // role `signer`; an ACME External Account Binding key and a SCEP challenge
+  // (`common/cert_enrollment.ts`), role `enrollment` — the credentials those
+  // protocols authenticate a request with. EST has none of its own: it takes
+  // the person's password or a client certificate. Each is an asked name,
+  // so an indexed read; no secret half reaches a row.
+  { id: 'jwtSigningKey', attribute: 'stsAssertionJwks', role: 'signer' },
+  { id: 'samlSigningKey', attribute: 'stsSamlAssertionCertificate',
+    role: 'signer' },
+  { id: 'acmeAccountKey', attribute: 'stsAcmeEabKey', role: 'enrollment' },
+  { id: 'scepChallenge', attribute: 'stsScepChallenge', role: 'enrollment' },
+  // THE WALLET MECHANISMS (#1021, rcbj: credentials from a web wallet, from
+  // a native wallet, and self-issued subjects, by algorithm). A self-issued
+  // subject is a DID or key the person proved with a wallet (SIOPv2), on
+  // the entry as `stsSelfIssuedSubject` — an asked name, so an indexed read
+  // like the others. A verifiable credential this realm issued is NOT on
+  // the entry: it is a row of `oid4vc/vc_issued.ts`'s register, so the
+  // holders come from the register (`register: true`, `reportIssuedRows()`),
+  // bounded by the credentials issued and never by the population.
+  { id: 'selfIssued', attribute: 'stsSelfIssuedSubject', role: 'primary' },
+  { id: 'verifiableCredential', attribute: '', role: 'primary',
+    register: true }
+];
+
+// The issued-credential register, for a test to replace (#1021): what the
+// report reads is `rowsForSubject(null)` — every live row of the realm —
+// and `nameForSubject(subject)`, the directory's name for a `urn:uuid:`.
+let reportIssuedRegister: any = null;
+
+function reportInstallIssuedRegister(register: any): void {
+  log.debug("Entering reportInstallIssuedRegister().");
+  reportIssuedRegister = register || null;
+  log.debug("Leaving reportInstallIssuedRegister().");
+}
+
+function reportRegister(): any {
+  log.debug("Entering reportRegister().");
+  const register = reportIssuedRegister || require('../oid4vc/vc_issued');
+  log.debug("Leaving reportRegister().");
+  return register;
+}
+
+// Every live row of the register, filed by subject (#1021): one read per
+// report, bounded by the credentials this realm has issued and still
+// remembers, which is what a wallet-credential census is about.
+function reportIssuedRows(): { bySubject: Map<string, any[]> } {
+  log.debug("Entering reportIssuedRows().");
+  const register = reportRegister();
+  const bySubject = new Map<string, any[]>();
+  const rows = typeof register.rowsForSubject === 'function'
+    ? register.rowsForSubject(null) || [] : [];
+  rows.forEach(function (row: any): void {
+    const subject = String((row && row.subject) || '');
+    if (!subject) {
+      return;
+    }
+    bySubject.set(subject, (bySubject.get(subject) || []).concat([row]));
+  });
+  log.debug("Leaving reportIssuedRows(). " + bySubject.size +
+    ' subject(s).');
+  return { bySubject: bySubject };
+}
+
+// The directory's name for a register subject (`urn:uuid:<entryUUID>`), or
+// '' — the test's register may answer it itself.
+function reportNameForSubject(subject: string): string {
+  log.debug("Entering reportNameForSubject().");
+  const register = reportRegister();
+  let name = '';
+  if (register && typeof register.nameForSubject === 'function') {
+    name = String(register.nameForSubject(subject) || '');
+  } else {
+    const helpers = require('../common/helpers');
+    name = String(helpers.nameForSubject(subject) || '');
+  }
+  log.debug("Leaving reportNameForSubject(). " + (name ? 'named' : 'none'));
+  return name;
+}
+
+// A wallet key's algorithm and lane (#1021): from the name the passkey
+// report gives a key, or from a DID that spells its key (did:jwk, did:key).
+function reportKeyLane(algorithm: string): string {
+  log.debug("Entering reportKeyLane().");
+  const lane = !algorithm ? '' :
+    (/ML-DSA|SLH-DSA|ML-KEM/i.test(algorithm) ? 'pqc' : 'classical');
+  log.debug("Leaving reportKeyLane(). " + lane);
+  return lane;
+}
+
+function reportDidAlgorithm(subject: string): string {
+  log.debug("Entering reportDidAlgorithm().");
+  let name = '';
+  try {
+    const di = require('../oid4vc/vc_data_integrity');
+    const credentials = require('../common/credentials');
+    let jwk: any = null;
+    if (/^did:jwk:/.test(subject)) {
+      jwk = di.jwkOfDidJwk(subject);
+    } else if (/^did:key:/.test(subject)) {
+      jwk = di.jwkOfMultikey(subject.slice('did:key:'.length));
+    }
+    name = jwk ? String(credentials.Credentials.keyAlgorithm(
+      { publicKeyJwk: jwk }).name || '') : '';
+  } catch (e) {
+    // A DID that does not decode, or a key the namer does not know: the
+    // row says nothing rather than something wrong.
+    log.debug("Caught in reportDidAlgorithm(): " + ((e && e.message) || e));
+    name = '';
+  }
+  log.debug("Leaving reportDidAlgorithm(). " + name);
+  return name;
+}
+// `entryuuid` is here for the register read (#1021): a credential's subject
+// is `urn:uuid:<entryUUID>`, and an entry the asked-names read handed back
+// without it would show none of the person's wallet credentials when
+// another mechanism's read found the entry first.
+const HOLDER_FIELDS = ['uid', 'displayname', 'cn', 'authnmethod',
+  'mfalastauthtime', 'pwdchangedtime', 'entryuuid',
+  // The signing keys' public facts (#1036), read beside their asked name.
+  'stsassertioncertificate', 'stsassertionkid', 'stsassertionkeysource',
+  'stssamlassertionthumbprint', 'stssamlassertionkeysource'];
+
+// A certificate's key algorithm, named as a report would (#1036): RSA with
+// its size, an EC curve by its JOSE name, EdDSA and the post-quantum keys by
+// their own; '' when the PEM will not parse.
+function reportCertKeyAlg(pem: string): string {
+  log.debug("Entering reportCertKeyAlg().");
+  let name = '';
+  try {
+    const crypto = require('../common/crypto');
+    const key = crypto.parseCertificate(String(pem)).publicKey;
+    const type = String(key.asymmetricKeyType || '');
+    const details: any = key.asymmetricKeyDetails || {};
+    const curves: Record<string, string> = { prime256v1: 'P-256',
+      secp384r1: 'P-384', secp521r1: 'P-521', secp256k1: 'secp256k1' };
+    if (type === 'rsa' || type === 'rsa-pss') {
+      name = 'RSA-' + String(details.modulusLength || '');
+    } else if (type === 'ec') {
+      name = curves[String(details.namedCurve)] ||
+        String(details.namedCurve || 'EC');
+    } else if (type === 'ed25519' || type === 'ed448') {
+      name = type === 'ed25519' ? 'Ed25519' : 'Ed448';
+    } else {
+      name = type.toUpperCase();
+    }
+  } catch (e) {
+    // Not a certificate this runtime can read (a composite key, say): the
+    // row says nothing rather than something wrong.
+    log.debug("Caught in reportCertKeyAlg(): " + ((e && e.message) || e));
+    name = '';
+  }
+  log.debug("Leaving reportCertKeyAlg(). " + name);
+  return name;
+}
+
+// A certificate's notBefore, as ISO, or null.
+function reportCertIssuedAt(pem: string): string | null {
+  log.debug("Entering reportCertIssuedAt().");
+  let out: string | null = null;
+  try {
+    const crypto = require('../common/crypto');
+    out = reportIso(Date.parse(crypto.parseCertificate(String(pem))
+      .validFrom));
+  } catch (e) {
+    log.debug("Caught in reportCertIssuedAt(): " + ((e && e.message) || e));
+    out = null;
+  }
+  log.debug("Leaving reportCertIssuedAt().");
+  return out;
+}
+const GROUP_MEMBERS_MAX = 50000;
+
+function reportParsedValues(values: string[]): any[] {
+  log.debug("Entering reportParsedValues().");
+  const out: any[] = [];
+  values.forEach(function (value: string): void {
+    try {
+      const parsed = JSON.parse(value);
+      out.push(parsed && typeof parsed === 'object' ? parsed : {});
+    } catch (e) {
+      // Not JSON this service wrote (a certificate's PEM, say): a
+      // credential with no dates and no algorithm to read.
+      log.debug("Caught in reportParsedValues(): " + ((e && e.message) || e));
+      out.push({});
+    }
+  });
+  log.debug("Leaving reportParsedValues().");
+  return out;
+}
+
+function reportMaxIso(stamps: any[]): string | null {
+  log.debug("Entering reportMaxIso().");
+  let best = 0;
+  stamps.forEach(function (one: any): void {
+    const n = Number(one) || 0;
+    if (n > best) {
+      best = n;
+    }
+  });
+  log.debug("Leaving reportMaxIso().");
+  return best ? reportIso(best) : null;
+}
+
+function reportMinIso(stamps: any[]): string | null {
+  log.debug("Entering reportMinIso().");
+  let best = 0;
+  stamps.forEach(function (one: any): void {
+    const n = Number(one) || 0;
+    if (n > 0 && (!best || n < best)) {
+      best = n;
+    }
+  });
+  log.debug("Leaving reportMinIso().");
+  return best ? reportIso(best) : null;
+}
+
+// The rows one person contributes for one mechanism: a passkey holder has
+// one per role held; every other mechanism one row.
+// What every row of a person says, whatever the mechanism (#1002, #1021).
+function reportHolderCommon(entry: any, mechanism: any, ldap: any): any {
+  log.debug("Entering reportHolderCommon().");
+  const common = {
+    username: reportAttr(entry, 'uid'),
+    displayName: reportAttr(entry, 'displayName') || reportAttr(entry, 'cn'),
+    mechanism: mechanism.id,
+    methodsUsed: reportAttrList(entry, 'authnMethod').join(', '),
+    mfaLastAuthTime: reportLdapTime(reportAttr(entry, 'mfaLastAuthTime')) ||
+      reportIso(Date.parse(reportAttr(entry, 'mfaLastAuthTime'))),
+    memberOf: reportGroupNamesOf(ldap, entry).join(', '),
+    mail: reportAttr(entry, 'mail'),
+    entryUuid: reportAttr(entry, 'entryUUID'),
+    channel: '',
+    format: ''
+  };
+  log.debug("Leaving reportHolderCommon().");
+  return common;
+}
+
+// THE VERIFIABLE CREDENTIALS A PERSON HOLDS (#1021): the register's rows
+// for their subject, ONE REPORT ROW PER KIND OF COPY — the copies that
+// share a credential type, format, holder-key algorithm, lane and channel
+// are one row with `credentials` their number (rcbj, 2026-10-27: a batch
+// issuance bound four keys to four copies of one credential, and four rows
+// each saying "4" told nobody anything; one row saying 4 does). Copies that
+// differ in any of those are separate rows, so a count by algorithm or
+// channel still counts copies. The row's dates are the group's earliest
+// issuance and latest wallet report; `credentialId` names the credential
+// type (the configuration id). A copy the holder removed on /portal/wallet
+// is left out.
+function reportIssuedRowsFor(entry: any, mechanism: any, ldap: any,
+                             context: any): any[] {
+  log.debug("Entering reportIssuedRowsFor().");
+  const subject = 'urn:uuid:' + reportAttr(entry, 'entryUUID');
+  const bySubject: Map<string, any[]> = (context &&
+    context.issuedBySubject) || new Map();
+  const rows = bySubject.get(subject) || [];
+  const copies: any[] = [];
+  rows.forEach(function (row: any): void {
+    [].concat(row.credentials || []).forEach(function (one: any): void {
+      if (one && !one.removedAt) {
+        copies.push({ row: row, one: one });
+      }
+    });
+  });
+  const common = reportHolderCommon(entry, mechanism, ldap);
+  const groups = new Map<string, any[]>();
+  copies.forEach(function (copy: any): void {
+    const alg = String(copy.one.holderAlg || '');
+    const kind = [String(copy.row.configId || ''),
+      String(copy.row.format || ''), alg, reportKeyLane(alg),
+      String(copy.one.channel || '')].join('\u0000');
+    groups.set(kind, (groups.get(kind) || []).concat([copy]));
+  });
+  const out: any[] = [];
+  groups.forEach(function (held: any[], kind: string): void {
+    const parts = kind.split('\u0000');
+    out.push(Object.assign({}, common, {
+      role: mechanism.role,
+      credentials: held.length,
+      credentialId: parts[0],
+      algorithm: parts[2],
+      lane: parts[3],
+      channel: parts[4],
+      format: parts[1],
+      enrolledAt: reportMinIso(held.map(function (copy: any): any {
+        return copy.one.issuedAt;
+      })),
+      lastUsedAt: reportMaxIso(held.map(function (copy: any): any {
+        return copy.one.walletEventAt;
+      }))
+    }));
+  });
+  log.debug("Leaving reportIssuedRowsFor(). " + out.length + '.');
+  return out;
+}
+
+function reportHolderRows(entry: any, mechanism: any, ldap: any,
+                          context?: any): any[] {
+  log.debug("Entering reportHolderRows(). " + mechanism.id);
+  if (mechanism.register) {
+    const issued = reportIssuedRowsFor(entry, mechanism, ldap, context);
+    log.debug("Leaving reportHolderRows(). Register.");
+    return issued;
+  }
+  const values = reportAttrList(entry, mechanism.attribute);
+  if (!values.length) {
+    log.debug("Leaving reportHolderRows(). None.");
+    return [];
+  }
+  const username = reportAttr(entry, 'uid');
+  const common = reportHolderCommon(entry, mechanism, ldap);
+  const out: any[] = [];
+  if (mechanism.id === 'selfIssued') {
+    // A SELF-ISSUED SUBJECT (#1021): one row per enrolled DID or key, the
+    // channel the enrolment recorded (`location.kind`, #693; `admin` for
+    // one an administrator entered), the key's algorithm — what the DID
+    // spells, else what the proof was signed with — and when it was proved
+    // or entered.
+    reportParsedValues(values).forEach(function (one: any): void {
+      const subject = String(one.subject || '');
+      const location = one.location && typeof one.location === 'object'
+        ? one.location : null;
+      const channel = location && location.kind ? String(location.kind)
+        : (one.proof === 'admin' ? 'admin' : '');
+      const alg = reportDidAlgorithm(subject) || String(one.keyAlg || '');
+      out.push(Object.assign({}, common, {
+        role: mechanism.role,
+        credentials: values.length,
+        credentialId: subject,
+        algorithm: alg,
+        lane: reportKeyLane(alg),
+        channel: channel,
+        enrolledAt: reportMinIso([Date.parse(String(one.provedAt ||
+          one.enrolledAt || ''))]),
+        lastUsedAt: null
+      }));
+    });
+    log.debug("Leaving reportHolderRows(). " + out.length + ' subject(s).');
+    return out;
+  }
+  // ONE ROW PER CREDENTIAL (#1011, rcbj: "a separate row for each passkey
+  // + algorithm; the reports we need require this granular data"). Until
+  // then a row was a person's credentials of one mechanism and role, with
+  // the algorithms joined into one string, so a count by algorithm counted
+  // people and a mixed holder was one row. Now each credential is a row
+  // with its own algorithm, lane, id and dates; `credentials` is still the
+  // person's count of that mechanism and role, the same on each of their
+  // rows, so a count grouped by username is still how many each holds.
+  if (mechanism.id === 'passkey') {
+    const credentials = require('../common/credentials');
+    const keys = credentials.keysOfValues(values, username);
+    const byRole: Record<string, any[]> = {};
+    keys.forEach(function (key: any): void {
+      const role = String(key.role || 'mfa');
+      byRole[role] = (byRole[role] || []).concat([key]);
+    });
+    Object.keys(byRole).sort().forEach(function (role: string): void {
+      const held = byRole[role];
+      held.forEach(function (key: any): void {
+        const alg = credentials.Credentials.keyAlgorithm(key);
+        out.push(Object.assign({}, common, {
+          role: role,
+          credentials: held.length,
+          credentialId: String(key.credentialId || ''),
+          algorithm: String(alg.name || ''),
+          lane: String(alg.lane || ''),
+          enrolledAt: reportMinIso([key.enrolledAt]),
+          lastUsedAt: reportMaxIso([key.lastUsedAt])
+        }));
+      });
+    });
+    log.debug("Leaving reportHolderRows(). Passkeys, " + out.length +
+      ' role(s).');
+    return out;
+  }
+  if (mechanism.id === 'jwtSigningKey' || mechanism.id === 'samlSigningKey') {
+    // A SIGNING KEY PAIR (#1036): one row, its certificate's key algorithm,
+    // its kid or thumbprint, where the pair came from as the channel
+    // (`issued` here or `uploaded`), and the certificate's notBefore. The
+    // private half is sealed on the entry and never read here.
+    const jwt = mechanism.id === 'jwtSigningKey';
+    const pem = jwt ? reportAttr(entry, 'stsAssertionCertificate')
+      : values[0];
+    out.push(Object.assign({}, common, {
+      role: mechanism.role,
+      credentials: 1,
+      credentialId: jwt ? reportAttr(entry, 'stsAssertionKid')
+        : reportAttr(entry, 'stsSamlAssertionThumbprint'),
+      algorithm: reportCertKeyAlg(pem),
+      lane: reportKeyLane(reportCertKeyAlg(pem)),
+      channel: reportAttr(entry, jwt ? 'stsAssertionKeySource'
+        : 'stsSamlAssertionKeySource'),
+      format: jwt ? 'RFC 7523' : 'RFC 7522',
+      enrolledAt: reportCertIssuedAt(pem),
+      lastUsedAt: null
+    }));
+    log.debug("Leaving reportHolderRows(). Signing key.");
+    return out;
+  }
+  if (mechanism.id === 'acmeAccountKey' || mechanism.id === 'scepChallenge') {
+    // AN ENROLLMENT CREDENTIAL (#1036): one row per ACME EAB key or SCEP
+    // challenge, its id, its creation, and whether it was spent; the HMAC
+    // key is sealed and the challenge is only a digest, and neither is read.
+    const acme = mechanism.id === 'acmeAccountKey';
+    reportParsedValues(values).forEach(function (one: any): void {
+      out.push(Object.assign({}, common, {
+        role: mechanism.role,
+        credentials: values.length,
+        credentialId: String((acme ? one.kid : one.id) || ''),
+        algorithm: acme ? 'HS256' : '',
+        lane: '',
+        channel: acme ? 'acme' : 'scep',
+        format: String(one.profile || ''),
+        enrolledAt: reportMinIso([Date.parse(String(one.createdAt || ''))]),
+        lastUsedAt: reportMaxIso([Date.parse(String(one.usedAt || ''))])
+      }));
+    });
+    log.debug("Leaving reportHolderRows(). Enrollment credentials.");
+    return out;
+  }
+  if (mechanism.id === 'certificate') {
+    // AN ENROLLED CERTIFICATE (#1036): one row per certificate, its serial,
+    // the protocol that issued it (acme, est, scep) as the channel, its
+    // profile (tls-client, server, device, …) as the format, its key
+    // algorithm and its issuance. A TLS client certificate is one of these.
+    reportParsedValues(values).forEach(function (one: any): void {
+      const alg = String(one.keyAlg || '');
+      out.push(Object.assign({}, common, {
+        role: mechanism.role,
+        credentials: values.length,
+        credentialId: String(one.serialHex || ''),
+        algorithm: alg,
+        lane: reportKeyLane(alg),
+        channel: String(one.family || ''),
+        format: String(one.profile || ''),
+        enrolledAt: reportMinIso([Date.parse(String(one.issuedAt || ''))]),
+        lastUsedAt: null
+      }));
+    });
+    log.debug("Leaving reportHolderRows(). Certificates.");
+    return out;
+  }
+  if (mechanism.id === 'recoveryCodes') {
+    // THE RECOVERY CODE SET IS ONE ROW (#1024): how many codes remain
+    // (the stored count when the set is sealed under a key this process
+    // cannot open, the unused codes otherwise), the hash scheme as the
+    // algorithm (scrypt since 2026-09-11, plain before), the set's
+    // generation as its enrolment and its last use. No code or hash
+    // reaches the row.
+    reportParsedValues(values).forEach(function (set: any, i: number): void {
+      const codes: any[] = Array.isArray(set.codes) ? set.codes : [];
+      const unused = codes.filter(function (one: any): boolean {
+        return one && typeof one === 'object' && !one.usedAt;
+      }).length;
+      const hashed = codes.some(function (one: any): boolean {
+        return one && typeof one.hash === 'string' &&
+          one.hash.indexOf('$scrypt$') === 0;
+      });
+      out.push(Object.assign({}, common, {
+        role: mechanism.role,
+        credentials: codes.length ? unused : Number(set.remaining || 0),
+        credentialId: String(set.generatedAt || (i + 1)),
+        // A set sealed under the key-encryption key (product mode) keeps
+        // its codes in `vault`, not `codes`; they are scrypt hashes since
+        // 2026-09-11, and the count is the stored `remaining`.
+        algorithm: codes.length ? (hashed ? 'scrypt' : 'plain') :
+          (set.vault || set.sealed ? 'scrypt' : ''),
+        lane: '',
+        enrolledAt: reportMinIso([set.generatedAt]),
+        lastUsedAt: reportMaxIso([set.lastUsedAt])
+      }));
+    });
+    log.debug("Leaving reportHolderRows(). " + out.length + ' code set(s).');
+    return out;
+  }
+  if (mechanism.id === 'password') {
+    // THE PASSWORD ROW CARRIES NO HASH (#1019): the stored value is the
+    // hash and only its scheme is read, as the algorithm — this service's
+    // own `$scrypt$…` and `$argon2id$…` (`common/crypto.js`'s
+    // `encodeStoredSecret`, `encodeArgon2Secret`), or an imported
+    // `{SCHEME}…`; the enrolment is the directory's pwdChangedTime.
+    values.forEach(function (value: string, i: number): void {
+      const text = String(value || '');
+      const dollar = /^\$([a-z0-9-]+)\$/i.exec(text);
+      const braced = /^\{([^}]+)\}/.exec(text);
+      out.push(Object.assign({}, common, {
+        role: mechanism.role,
+        credentials: values.length,
+        credentialId: String(i + 1),
+        algorithm: dollar ? dollar[1] : (braced ? braced[1] : ''),
+        lane: '',
+        enrolledAt: reportLdapTime(reportAttr(entry, 'pwdChangedTime')) ||
+          null,
+        lastUsedAt: null
+      }));
+    });
+    log.debug("Leaving reportHolderRows(). " + out.length + ' password.');
+    return out;
+  }
+  // Every other mechanism: one row per attribute value, which is one
+  // credential (an authenticator app, an enrolled certificate, a mail
+  // factor, a Kerberos key set), with what the value records.
+  const parsed = reportParsedValues(values);
+  parsed.forEach(function (one: any, i: number): void {
+    out.push(Object.assign({}, common, {
+      role: mechanism.role,
+      credentials: values.length,
+      credentialId: String(one.id || one.credentialId || one.serial ||
+        one.kvno || (i + 1)),
+      algorithm: String(one.algorithm || one.enctype || ''),
+      lane: '',
+      enrolledAt: reportMinIso([one.enrolledAt]),
+      lastUsedAt: reportMaxIso([one.lastUsedAt])
+    }));
+  });
+  log.debug("Leaving reportHolderRows(). " + out.length + ' row(s).');
+  return out;
+}
+
+// A holder as `holdersAsync()` hands one back, as an entry the row builder
+// can read: its raw attributes are already keyed by the names asked for.
+function reportHolderEntry(holder: any): any {
+  log.debug("Entering reportHolderEntry().");
+  const entry = { dn: String((holder && holder.dn) || ''),
+                  attributes: (holder && holder.attributes) || {} };
+  log.debug("Leaving reportHolderEntry().");
+  return entry;
+}
+
+async function reportMechanismHolders(mechanism: any, ldap: any,
+                                      stop?: () => string): Promise<any[]> {
+  log.debug("Entering reportMechanismHolders(). " + mechanism.id);
+  // Unguarded, as the other doors above are: a directory without the door
+  // throws, and the run fails out loud rather than listing nobody. EVERY
+  // mechanism's attribute is asked for, not just this one's: a person
+  // holding two mechanisms is opened once (the reader keeps one entry per
+  // DN), and that entry has to carry both or the second mechanism's rows
+  // are lost.
+  const holders = await ldap.holdersAsync('person', mechanism.attribute,
+    MECHANISM_TABLE.map(function (m: any): string {
+      return String(m.attribute).toLowerCase();
+    }).filter(function (name: string): boolean {
+      return name !== '';
+    }).concat(HOLDER_FIELDS), stop ? { stop: stop } : undefined);
+  const entries = (holders || []).map(reportHolderEntry);
+  log.debug("Leaving reportMechanismHolders(). " + entries.length + '.');
+  return entries;
+}
+
+// The members of a group, by name: the group's member DNs, the person's name
+// read off each `uid=` RDN. A member named otherwise (a group, a
+// certificate's `cn=` entry) is left out: the row needs a person. The group
+// is named by its `cn`, as the row's `memberOf` names it — the same spelling
+// the filter is then checked against in `Rows.take()`; a DN here would find
+// the members and match no row.
+function reportGroupMemberNames(selector: string, ldap: any): string[] {
+  log.debug("Entering reportGroupMemberNames(). " + selector);
+  const wanted = String(selector || '').trim();
+  const dn = wanted ? ldap.groupDnFor(wanted) : '';
+  const group = dn ? ldap.readGroupEntry(dn) : null;
+  if (!group) {
+    log.debug("Leaving reportGroupMemberNames(). No such group.");
+    return [];
+  }
+  const names: string[] = [];
+  (group.members || []).slice(0, GROUP_MEMBERS_MAX).forEach(
+    function (member: any): void {
+      const value = String((member && (member.dn || member.value)) || '');
+      const matched = /^uid=([^,]+),/i.exec(value);
+      if (matched && names.indexOf(matched[1]) < 0) {
+        names.push(matched[1]);
+      }
+    });
+  log.debug("Leaving reportGroupMemberNames(). " + names.length + '.');
+  return names;
+}
+
+// THE READ IS REFUSED BEFORE ITS FIRST PAGE WHEN IT CANNOT FIT (#1002, found
+// on 8081): every person with a password there holds `stsKrb5Keys`, so the
+// Kerberos mechanism's holders ARE the population — a million entries — and
+// a query naming it, or naming no mechanism, read them all, and went on
+// reading them a page at a time for minutes after the client gave up. The
+// store counts the holders of an attribute through the same index that
+// lists them (`holderCountAsync`, nothing opened), so the count comes first,
+// AND IT IS BOUNDED: the store counts no further than the cap plus one (a
+// whole count of 8081's million took a minute, and the question is only
+// "more than the cap?"). Over the execution's row cap (`report.syncMaxRows`,
+// `report.asyncMaxRows`) the read is refused as `result_too_large` —
+// synchronously as an UNBOUNDED refusal, which `auto` mode turns into a job,
+// and the job counts again against its own, larger cap. The same cap bounds
+// a group's members. And the read that does start carries `stop`, so the
+// store's paging ends with the budget or a cancellation rather than with
+// the last holder.
+function reportTooManyHolders(n: number, cap: number, execution: string,
+                              what: string): any {
+  log.debug("Entering reportTooManyHolders().");
+  const said = n > cap ? 'more than ' + cap : String(n);
+  log.warn(errorCodes.tag(TOO_MANY_HOLDERS) +
+    'report: a credentialHolders query would read ' + said + ' ' + what +
+    ', over the ' + execution + ' cap of ' + cap + '; refused before the ' +
+    'first page was read.');
+  const sync = execution === 'sync';
+  log.debug("Leaving reportTooManyHolders().");
+  return {
+    ok: false,
+    code: TOO_MANY_HOLDERS,
+    error: 'result_too_large',
+    unbounded: sync,
+    description: 'This query would read ' + said + ' ' + what + ', more ' +
+      'than ' + (sync ? 'a synchronous query' : 'a job') + ' may read (' +
+      cap + '). ' + (sync ? 'Run it as a job, or n' : 'N') +
+      'arrow it: filter on a mechanism fewer people hold, or on memberOf.'
+  };
+}
+
+// Whether a filter names nothing but `mechanism` (#1040), so a row that
+// carries only its mechanism is judged by it as the full row would be.
+function reportOnlyMechanisms(node: any): boolean {
+  log.debug("Entering reportOnlyMechanisms().");
+  if (node == null) {
+    log.debug("Leaving reportOnlyMechanisms(). No filter.");
+    return true;
+  }
+  if (node.op === 'and' || node.op === 'or') {
+    const args = Array.isArray(node.args) ? node.args : [];
+    const all = args.every(reportOnlyMechanisms);
+    log.debug("Leaving reportOnlyMechanisms(). " + node.op + '.');
+    return all;
+  }
+  if (node.op === 'not') {
+    const inner = reportOnlyMechanisms(node.arg);
+    log.debug("Leaving reportOnlyMechanisms(). Not.");
+    return inner;
+  }
+  const leaf = node.field === 'mechanism';
+  log.debug("Leaving reportOnlyMechanisms().");
+  return leaf;
+}
+
+function reportHoldersStop(control: any): () => string {
+  log.debug("Entering reportHoldersStop().");
+  const stop = function (): string {
+    if (control && typeof control.cancelled === 'function' &&
+        control.cancelled()) {
+      return 'cancelled';
+    }
+    return reportOverBudget(control) ? 'budget' : '';
+  };
+  log.debug("Leaving reportHoldersStop().");
+  return stop;
+}
+
+async function reportReadCredentialHolders(rows: any, control: any):
+    Promise<void> {
+  log.debug("Entering reportReadCredentialHolders().");
+  const ldap = reportLdap();
+  const plan = (rows && rows.plan) || {};
+  const catalog = new Catalog();
+  // EACH KIND OF LOOKUP IS ASKED OF THE FILTER ON ITS OWN (#1040). The
+  // filter's lookups were asked once, and an `and` gives ONE arm's — so
+  // `mechanism equals password` AND `memberOf equals ssf-read` kept the
+  // mechanism, never saw the group of one, and was refused on 8081 as more
+  // than 500 holders; and an `or` of a mechanism and a group read only the
+  // group's people. Asked per kind, an `and` gives every kind it names an
+  // arm of (each true of every row), and an `or` gives a kind only when
+  // every arm is of it — so the people, the group and the mechanisms each
+  // narrow the read only where the whole filter says they may.
+  const lookupsOf = function (fields: string[]): Lookup[] {
+    return reportIndexedLookups(plan.where, function (field: string):
+        string[] {
+      return fields.indexOf(field) >= 0 ?
+        catalog.indexedFor('credentialHolders', field) : [];
+    }, 0) || [];
+  };
+  const groups = lookupsOf(['memberOf']);
+  // THE PERSON NAMED (rcbj, 2026-10-27: `username equals rcbj` was refused
+  // as too large, because the reader knew only mechanism and memberOf and
+  // read every mechanism's holders). A username, mail or entryUuid lookup
+  // names the entries through the users source's doors
+  // (`reportCandidates()`), and every mechanism of those people is read.
+  const people = lookupsOf(['username', 'mail', 'entryUuid']);
+  const mechanisms = lookupsOf(['mechanism']);
+  const wantedIds: string[] = [];
+  mechanisms.forEach(function (one: Lookup): void {
+    one.values.forEach(function (id: string): void {
+      if (wantedIds.indexOf(id) < 0) {
+        wantedIds.push(id);
+      }
+    });
+  });
+  let table = wantedIds.length ? MECHANISM_TABLE.filter(function (m: any):
+      boolean {
+    return wantedIds.indexOf(m.id) >= 0;
+  }) : MECHANISM_TABLE;
+  // THE PASSWORD'S CENSUS IS ITS COUNTER (#1040). `docs/reporting.md` said
+  // since #1019 that a count by mechanism reads the password's count from
+  // the realm's counter, and nothing did: on 8081 `count` of `mechanism
+  // equals password` counted a million holders against the cap and was
+  // refused. A count grouped by mechanism alone, filtered on nothing but
+  // mechanisms and naming no person or group, takes the password's row
+  // from the counter (one row read, one row per holder) and reads the
+  // other mechanisms as before.
+  if (plan.aggregate === 'count' && Array.isArray(plan.groupBy) &&
+      plan.groupBy.length === 1 && plan.groupBy[0] === 'mechanism' &&
+      !people.length && !groups.length &&
+      reportOnlyMechanisms(plan.where) &&
+      table.some(function (m: any): boolean {
+        return m.id === 'password';
+      }) && typeof rows.takeCounted === 'function') {
+    const holding = await ldap.holderCountAsync('person', 'userPassword', 0);
+    if (typeof holding === 'number') {
+      rows.takeCounted({ mechanism: 'password' }, holding);
+      table = table.filter(function (m: any): boolean {
+        return m.id !== 'password';
+      });
+      if (!table.length) {
+        log.debug("Leaving reportReadCredentialHolders(). Counted.");
+        return;
+      }
+    }
+  }
+  if (!groups.length && !mechanisms.length && !people.length && control &&
+      control.execution === 'sync' && ldap.directoryIsWindowed()) {
+    control.unbounded = reportUnboundedFilter(catalog, 'credentialHolders');
+    log.debug("Leaving reportReadCredentialHolders(). Unbounded.");
+    return;
+  }
+  const limits = new Limits();
+  const execution = control && control.execution === 'async' ? 'async' :
+    'sync';
+  const cap = execution === 'sync' ? limits.syncMaxRows() :
+    limits.asyncMaxRows();
+  let entries: any[] = [];
+  const seen = new Set<string>();
+  const take = function (entry: any): void {
+    const key = String((entry && entry.dn) || '').toLowerCase();
+    if (key && !seen.has(key)) {
+      seen.add(key);
+      entries.push(entry);
+    }
+  };
+  // The register's rows, read once when a wallet-credential mechanism is
+  // asked for (#1021): the row builder reads a person's credentials off
+  // them, and the holders read lists their subjects' entries.
+  const wantsRegister = table.some(function (m: any): boolean {
+    return !!m.register;
+  });
+  const context = { issuedBySubject: wantsRegister
+    ? reportIssuedRows().bySubject : new Map<string, any[]>() };
+  // The people named come first: the narrowest read there is. A lookup the
+  // store could not answer whole (a substring on a memory directory, an
+  // answer that filled the candidate cap) is null, and the read goes on to
+  // the group or the mechanisms, or is refused as unbounded when it has
+  // neither to go on to.
+  const named = people.length ? await reportCandidates(people, ldap) : null;
+  if (people.length && named === null && !groups.length &&
+      !mechanisms.length) {
+    control.unbounded = reportUnboundedFilter(catalog, 'credentialHolders');
+    log.debug("Leaving reportReadCredentialHolders(). Not whole.");
+    return;
+  }
+  if (named) {
+    if (named.length > cap) {
+      control.unbounded = reportTooManyHolders(named.length, cap, execution,
+        'people');
+      log.debug("Leaving reportReadCredentialHolders(). Too many people.");
+      return;
+    }
+    named.forEach(take);
+  } else if (groups.length) {
+    // The community first: its members by name, counted against the cap
+    // before any is read, then each one's mechanisms.
+    let names: string[] = [];
+    groups.forEach(function (one: Lookup): void {
+      one.values.forEach(function (selector: string): void {
+        reportGroupMemberNames(selector, ldap).forEach(
+          function (name: string): void {
+            if (names.indexOf(name) < 0) {
+              names.push(name);
+            }
+          });
+      });
+    });
+    if (names.length > cap) {
+      control.unbounded = reportTooManyHolders(names.length, cap, execution,
+        'group members');
+      log.debug("Leaving reportReadCredentialHolders(). Too many members.");
+      return;
+    }
+    const found = names.length ? await ldap.existingUserEntriesAsync(names) :
+      [];
+    (found || []).forEach(function (entry: any): void {
+      if (entry) {
+        take(entry);
+      }
+    });
+  } else {
+    // The holders, counted first where the store can count (a windowed
+    // directory; in memory the answer is null and the walk is the count),
+    // each mechanism no further than one past the cap.
+    let holders = 0;
+    let counted = false;
+    for (let m = 0; m < table.length && holders <= cap; m++) {
+      if (table[m].register) {
+        // The register's subjects are its holders: counted in hand.
+        counted = true;
+        holders += context.issuedBySubject.size;
+        continue;
+      }
+      const n = await ldap.holderCountAsync('person', table[m].attribute,
+        cap + 1);
+      if (typeof n === 'number') {
+        counted = true;
+        holders += n;
+      }
+    }
+    if (counted && holders > cap) {
+      control.unbounded = reportTooManyHolders(holders, cap, execution,
+        'credential holders');
+      log.debug("Leaving reportReadCredentialHolders(). Too many holders.");
+      return;
+    }
+    const stop = reportHoldersStop(control);
+    try {
+      for (let m = 0; m < table.length; m++) {
+        if (table[m].register) {
+          // The register's subjects, named and fetched as a group's
+          // members are (#1021).
+          const names: string[] = [];
+          context.issuedBySubject.forEach(function (rows: any[],
+                                                    subject: string): void {
+            const name = reportNameForSubject(subject);
+            if (name && names.indexOf(name) < 0) {
+              names.push(name);
+            }
+          });
+          const found = names.length
+            ? await ldap.existingUserEntriesAsync(names) : [];
+          (found || []).forEach(function (entry: any): void {
+            if (entry) {
+              take(entry);
+            }
+          });
+          continue;
+        }
+        (await reportMechanismHolders(table[m], ldap, stop)).forEach(take);
+      }
+    } catch (e: any) {
+      if (!(e && e.stopped)) {
+        log.debug("Caught in reportReadCredentialHolders(): " +
+          ((e && e.message) || e));
+        throw e;
+      }
+      // The budget (or a cancellation) ended the store's paging; the
+      // caller reads the budget off `control` as it does for a row-by-row
+      // read that ran out of time.
+      log.debug("Caught in reportReadCredentialHolders(): " + e.message);
+      if (stop() === 'budget') {
+        control.timedOut = true;
+      }
+      log.debug("Leaving reportReadCredentialHolders(). Stopped.");
+      return;
+    }
+  }
+  for (let i = 0; i < entries.length; i++) {
+    for (let m = 0; m < table.length; m++) {
+      const made = reportHolderRows(entries[i], table[m], ldap, context);
+      for (let r = 0; r < made.length; r++) {
+        const keep = await reportOffer(made[r], rows, control);
+        if (keep === false) {
+          log.debug("Leaving reportReadCredentialHolders(). Stopped.");
+          return;
+        }
+      }
+    }
+    if (i % PAGE === PAGE - 1) {
+      await Promise.resolve();
+    }
+  }
+  log.debug("Leaving reportReadCredentialHolders().");
+}
+
 async function reportReadGroups(rows: any, control: any): Promise<void> {
   log.debug("Entering reportReadGroups().");
+  // A GROUP NAMED IS ONE READ (rcbj, 2026-10-27, "every index available on
+  // every source"): `name equals` or `in` reads each group by its DN and
+  // offers it, without listing the realm's groups.
+  const plan = (rows && rows.plan) || {};
+  const catalog = new Catalog();
+  const lookups = reportIndexedLookups(plan.where, function (field: string):
+      string[] {
+    return catalog.indexedFor('groups', field);
+  }, 0) || [];
+  if (lookups.length) {
+    const ldap = reportLdap();
+    const seen: string[] = [];
+    for (let l = 0; l < lookups.length; l++) {
+      for (let v = 0; v < lookups[l].values.length; v++) {
+        const wanted = String(lookups[l].values[v] || '').trim();
+        if (!wanted || seen.indexOf(wanted.toLowerCase()) >= 0) {
+          continue;
+        }
+        seen.push(wanted.toLowerCase());
+        const dn = ldap.groupDnFor(wanted);
+        const group = dn ? ldap.readGroupEntry(dn) : null;
+        if (!group) {
+          continue;
+        }
+        const members = reportGroupMemberNames(wanted, ldap);
+        const keep = await reportOffer({
+          name: wanted,
+          description: reportAttr(group, 'description'),
+          memberCount: members.length,
+          members: members.join(', ')
+        }, rows, control);
+        if (keep === false) {
+          log.debug("Leaving reportReadGroups(). Stopped.");
+          return;
+        }
+      }
+    }
+    log.debug("Leaving reportReadGroups(). " + seen.length + ' named.');
+    return;
+  }
   const index = await reportGroupIndex();
   for (let i = 0; i < index.groups.length; i++) {
     const group = index.groups[i];
@@ -830,11 +2508,7 @@ function reportActivityRows(events: any[]): any[] {
 
 async function reportReadActivity(rows: any, control: any): Promise<void> {
   log.debug("Entering reportReadActivity().");
-  const audit = require('../common/audit');
-  const config = require('../common/config');
-  const cap = Number(config.value('audit.maxEvents'));
-  const limit = Number.isFinite(cap) && cap > 0 ? cap : 5000;
-  const flat = reportActivityRows(audit.list().slice(0, limit));
+  const flat = reportActivityRows(await reportAuditEvents());
   for (let i = 0; i < flat.length; i++) {
     const keep = await reportOffer(flat[i], rows, control);
     if (keep === false) {
@@ -898,13 +2572,28 @@ async function reportReadAttributeSources(rows: any, control: any):
   log.debug("Leaving reportReadAttributeSources().");
 }
 
-async function reportReadAudit(rows: any, control: any): Promise<void> {
-  log.debug("Entering reportReadAudit().");
+// THE WHOLE SERVICE'S AUDIT RING, NOT THIS PROCESS'S (#1040). Every
+// process keeps its own ring, and another process's rows are noted rather
+// than held until `audit.fresh()` reads them (#820) — the wait the console's
+// audit operations make. Without it a report on 8081's nine processes
+// answered from whichever one served the request: `authActivity` returned
+// nothing while the next request's `auditEvents` held six sign-ins. A fresh()
+// that fails fails the read, as it fails the console's.
+async function reportAuditEvents(): Promise<any[]> {
+  log.debug("Entering reportAuditEvents().");
   const audit = require('../common/audit');
   const config = require('../common/config');
+  await audit.fresh();
   const cap = Number(config.value('audit.maxEvents'));
   const limit = Number.isFinite(cap) && cap > 0 ? cap : 5000;
   const events = audit.list().slice(0, limit);
+  log.debug("Leaving reportAuditEvents(). " + events.length + '.');
+  return events;
+}
+
+async function reportReadAudit(rows: any, control: any): Promise<void> {
+  log.debug("Entering reportReadAudit().");
+  const events = await reportAuditEvents();
   for (let i = 0; i < events.length; i++) {
     const event = events[i] || {};
     const keep = await reportOffer({
@@ -1016,12 +2705,67 @@ async function reportReadSource(plan: any, rows: any, control: any):
     await reportReadJobRows(rows, control);
   } else if (source === 'attributeSources') {
     await reportReadAttributeSources(rows, control);
+  } else if (source === 'credentialHolders') {
+    await reportReadCredentialHolders(rows, control);
   }
   log.debug("Leaving reportReadSource().");
 }
 
+// THE ANCHOR RULE (rcbj, 2026-10-27: "if there aren't indexes of fields we
+// could search on … these shouldn't be exposed as valid search parameters
+// because the queries will never work given the constraints we've
+// defined"). On a directory held in a database, a filter on `users` or
+// `credentialHolders` that names no indexed field would read every person:
+// synchronously that was `result_too_large` after a long wait, as a job it
+// ran into the time cap. It is now refused at acceptance, in every mode,
+// as `invalid_query` with the indexed fields named — the same planner
+// (`reportIndexedLookups()`) decides, so what it refuses is exactly what the
+// reader could not have narrowed. A memory directory is small by
+// construction and is not held to it; a query with no filter still stops at
+// its limit. The page offers only the indexed fields in a first filter row.
+function reportAnchorRefusal(plan: any): any {
+  log.debug("Entering reportAnchorRefusal().");
+  const catalog = new Catalog();
+  const src = plan && plan.source ? catalog.source(plan.source) : null;
+  if (!src || !src.anchored || !plan.where) {
+    log.debug("Leaving reportAnchorRefusal(). Not anchored, or no filter.");
+    return null;
+  }
+  const ldap = reportLdap();
+  if (!ldap.directoryIsWindowed()) {
+    log.debug("Leaving reportAnchorRefusal(). In memory.");
+    return null;
+  }
+  const lookups = reportIndexedLookups(plan.where, function (field: string):
+      string[] {
+    return catalog.indexedFor(String(plan.source), field);
+  }, 0);
+  if (lookups && lookups.length) {
+    log.debug("Leaving reportAnchorRefusal(). Anchored.");
+    return null;
+  }
+  const named = catalog.indexedPhrases(String(plan.source));
+  log.warn(errorCodes.tag('STS-REPORT-0040') +
+    'report: a ' + plan.source + ' filter names no indexed field; refused ' +
+    'rather than read person by person.');
+  log.debug("Leaving reportAnchorRefusal(). Refused.");
+  return {
+    ok: false,
+    code: 'STS-REPORT-0040',
+    error: 'invalid_query',
+    description: 'A filter on ' + plan.source + ' has to name an indexed ' +
+      'field, as a condition of an "and" or in every arm of an "or": ' +
+      named.join(', ') + '. The other fields narrow that read.'
+  };
+}
+
 async function reportReadWork(plan: any, control: any): Promise<any> {
   log.debug("Entering reportReadWork().");
+  const anchor = reportAnchorRefusal(plan);
+  if (anchor) {
+    log.debug("Leaving reportReadWork(). Not anchored.");
+    return anchor;
+  }
   const rows = new Rows(plan, reportTypes(plan));
   const held = control || {};
   if (reportReader) {
@@ -1030,6 +2774,10 @@ async function reportReadWork(plan: any, control: any): Promise<any> {
     }, held);
   } else {
     await reportReadSource(plan, rows, held);
+  }
+  if (held.unbounded) {
+    log.debug("Leaving reportReadWork(). Unbounded.");
+    return held.unbounded;
   }
   if (reportOverBudget(held)) {
     if (held.execution === 'async') {
@@ -1084,21 +2832,199 @@ function reportNotice(job: any, username: string): any {
   return request;
 }
 
+// ---------------------------------------------------------------------------
+// THE GROUPS A RESULT IS SENT TO (#989). A definition's share list — the
+// groups whose members may run it and read its result — is also who is
+// emailed when a job of it completes with Notify on, at each group's OWN
+// `mail` attribute (set on the group page, `POST /admin-api/groups/set-mail`,
+// or at its create). `reportGroupRecipients()` splits the list into the
+// groups with an address and the groups without: the first are sent the
+// notice through the mail channel's group recipient (`groupDn`, so the
+// address is the directory's and never a request's); each of the second is
+// an error of its own, STS-REPORT-0037, logged and written on the audit
+// row, and the other recipients are still sent to. The owner's notice is
+// unchanged. The group search the definition page draws its pane from
+// (`reportGroupSearch()`) reads the same resident groups, five a page.
+// ---------------------------------------------------------------------------
+const GROUP_PAGE = 5;
+
+function reportGroupRows(ldap: any): any[] {
+  log.debug("Entering reportGroupRows().");
+  const list = typeof ldap.allGroupEntries === 'function' ?
+    (ldap.allGroupEntries() || []) : [];
+  const rows = list.map(function (group: any): any {
+    const cn = reportAttr(group, 'cn');
+    return {
+      dn: String(group.dn || ''),
+      name: cn || String(group.dn || ''),
+      mail: reportAttr(group, 'mail')
+    };
+  }).filter(function (row: any): boolean {
+    return !!row.dn;
+  });
+  log.debug("Leaving reportGroupRows(). " + rows.length + '.');
+  return rows;
+}
+
+function reportGroupSearch(q: any, page: any): any {
+  log.debug("Entering reportGroupSearch().");
+  const ldap = reportLdap();
+  const needle = String(q == null ? '' : q).trim().toLowerCase();
+  const all = reportGroupRows(ldap).filter(function (row: any): boolean {
+    return !needle || row.name.toLowerCase().indexOf(needle) >= 0 ||
+      row.dn.toLowerCase().indexOf(needle) >= 0;
+  });
+  all.sort(function (a: any, b: any): number {
+    return a.name.toLowerCase() < b.name.toLowerCase() ? -1 :
+      (a.name.toLowerCase() > b.name.toLowerCase() ? 1 : 0);
+  });
+  const pages = Math.max(1, Math.ceil(all.length / GROUP_PAGE));
+  const asked = Math.floor(Number(page) || 1);
+  const at = Math.min(pages, Math.max(1, asked));
+  const out = {
+    q: needle,
+    page: at,
+    pages: pages,
+    per: GROUP_PAGE,
+    total: all.length,
+    groups: all.slice((at - 1) * GROUP_PAGE, at * GROUP_PAGE)
+  };
+  log.debug("Leaving reportGroupSearch(). " + out.total + ' matched.');
+  return out;
+}
+
+function reportGroupRecipients(groups: any, ldap: any): any {
+  log.debug("Entering reportGroupRecipients().");
+  const known = reportGroupRows(ldap);
+  const byDn: Record<string, any> = {};
+  known.forEach(function (row: any): void {
+    byDn[row.dn.toLowerCase()] = row;
+  });
+  const addressed: any[] = [];
+  const missing: any[] = [];
+  (Array.isArray(groups) ? groups : []).forEach(function (dn: any): void {
+    const key = String(dn || '').trim().toLowerCase();
+    if (!key) {
+      return;
+    }
+    const row = byDn[key] || { dn: String(dn), name: String(dn), mail: '' };
+    if (row.mail) {
+      addressed.push(row);
+    } else {
+      missing.push(row);
+    }
+  });
+  log.debug("Leaving reportGroupRecipients(). " + addressed.length +
+    ' addressed, ' + missing.length + ' without an address.');
+  return { addressed: addressed, missing: missing };
+}
+
+function reportGroupNotice(job: any, group: any): any {
+  log.debug("Entering reportGroupNotice().");
+  const request = {
+    groupDn: group.dn,
+    template: 'report-ready',
+    values: {
+      username: group.name,
+      definition: job.definitionName || job.definitionId || '',
+      status: job.status
+    },
+    links: { report: '/report/jobs/' + job.id },
+    dedupKey: 'report-ready:' + job.id + ':' + group.dn,
+    actor: reportActor(job)
+  };
+  log.debug("Leaving reportGroupNotice().");
+  return request;
+}
+
+function reportNotifyGroups(job: any): void {
+  log.debug("Entering reportNotifyGroups().");
+  const def = stores.getDefinition(job.definitionId);
+  const groups = def && Array.isArray(def.groups) ? def.groups : [];
+  if (!groups.length) {
+    log.debug("Leaving reportNotifyGroups(). None.");
+    return;
+  }
+  const split = reportGroupRecipients(groups, reportLdap());
+  split.missing.forEach(function (group: any): void {
+    log.error(errorCodes.tag('STS-REPORT-0037') + 'report: job ' + job.id +
+      ' finished with Notify on, and the group ' + group.dn +
+      ' it is shared with has no mail attribute, so that group was not ' +
+      'sent the notice.');
+    reportAudit({
+      category: 'admin',
+      action: 'report.notify',
+      outcome: 'error',
+      errorCode: 'STS-REPORT-0037',
+      actor: reportActor(job),
+      summary: 'report job ' + job.id + ': the group ' + group.dn +
+        ' has no mail attribute',
+      detail: Object.assign({ group: group.dn }, reportDetail(job))
+    });
+  });
+  if (!split.addressed.length) {
+    log.debug("Leaving reportNotifyGroups(). Nobody addressed.");
+    return;
+  }
+  const mail = require('../common/mail');
+  split.addressed.forEach(function (group: any): void {
+    let sent: any = null;
+    try {
+      sent = mail.send(reportGroupNotice(job, group));
+    } catch (e) {
+      log.debug("Caught in reportNotifyGroups(): " +
+        ((e && e.message) || e));
+      log.warn(errorCodes.tag('STS-REPORT-0027') +
+        'report: the job finished and the notice to ' + group.dn +
+        ' was not sent.');
+      reportNotifyAudit(job, true);
+      return;
+    }
+    const why = sent && sent.error ? String(sent.error) : '';
+    const skipped = why.indexOf('no mail transport') >= 0 ||
+      why.indexOf('publicBaseUrl') >= 0;
+    if (sent && sent.ok) {
+      reportNotifyAudit(job, false);
+    } else if (!skipped) {
+      log.warn(errorCodes.tag('STS-REPORT-0027') +
+        'report: the job finished and the notice to ' + group.dn +
+        ' was not sent.');
+      reportNotifyAudit(job, true);
+    }
+  });
+  log.debug("Leaving reportNotifyGroups().");
+}
+
 function reportNotify(job: any): void {
   log.debug("Entering reportNotify().");
   if (!job || !job.notify || !job.definitionId) {
     log.debug("Leaving reportNotify(). Not asked.");
     return;
   }
+  // The shared groups first (#989); a throw there is caught per group, so
+  // the owner's notice below is never lost to a group's.
+  reportNotifyGroups(job);
   const username = reportActor(job);
   if (!username || username === job.owner) {
     log.debug("Leaving reportNotify(). No account name.");
     return;
   }
   const mail = require('../common/mail');
+  const rights = require('./rights');
+  const realms = require('../common/realms');
   let sent: any = null;
   try {
-    sent = mail.send(reportNotice(job, username));
+    // AN OWNER FROM ANOTHER REALM (#1038) is mailed from THEIR realm, where
+    // their entry and address are, with a link back to this realm's job.
+    const ownerRealm = String(job.ownerRealm || '');
+    const notice = reportNotice(job, username);
+    if (ownerRealm && ownerRealm !== realms.currentId()) {
+      notice.links.report = String(realms.currentPrefix() || '') +
+        notice.links.report;
+    }
+    sent = rights.inOwnerRealm(ownerRealm, function (): any {
+      return mail.send(notice);
+    });
   } catch (e) {
     log.debug("Caught in reportNotify(): " + ((e && e.message) || e));
     log.warn(errorCodes.tag('STS-REPORT-0027') +
@@ -1214,6 +3140,13 @@ async function reportRunOne(job: any, ctx: any): Promise<void> {
     summary: 'report job ' + job.id + ' started',
     detail: reportDetail(job)
   });
+  // A job queued before its owner was disabled does not run after (#1042).
+  if (await reportOwnerDisabled(String(job.ownerKind || 'user'),
+      String(job.ownerRealm || ''), reportActor(job))) {
+    reportFailJob(job, 'forbidden', 'STS-REPORT-0048');
+    log.debug("Leaving reportRunOne(). The owner is disabled.");
+    return;
+  }
   const validated = query.validate(job.document, job.parameters || null);
   if (!validated.ok) {
     reportFailJob(job, validated.error, validated.code);
@@ -1256,7 +3189,11 @@ async function reportRunOne(job: any, ctx: any): Promise<void> {
   }
   const realms = require('../common/realms');
   const current = realms.current();
-  const finished = executor.finish(plan, read.rows, limits, {
+  // BUILT ON DISK, STORED IN PIECES, AND THE FILE REMOVED HOWEVER IT ENDS
+  // (#1045): the render goes to a build file in the staging directory,
+  // the store reads it back a piece at a time, and the `finally` removes
+  // it whether the job completed, was refused or threw.
+  const finished = await executor.finishToFile(plan, read.rows, limits, {
     realm: current && current.name ? current.name : realms.currentId(),
     when: new Date().toISOString()
   });
@@ -1266,13 +3203,39 @@ async function reportRunOne(job: any, ctx: any): Promise<void> {
     log.debug("Leaving reportRunOne(). Format refused.");
     return;
   }
-  const crypto = require('../common/crypto');
-  const sha = crypto.digest('sha256', finished.body, 'hex');
-  await stores.putArtifact(stored.id, finished.body, sha, finished.media);
+  const sha = finished.sha256;
+  try {
+    await stores.putArtifactFile(stored.id, finished.file, sha,
+      finished.media);
+  } catch (e: any) {
+    // NOT STORED UNSEALED (#1033): a report that could not be sealed is a
+    // failed job, said with the store's code, never a clear-text row. A
+    // build file that could not be read back is the staging directory's
+    // failure (STS-REPORT-0050), and a database that would not take the
+    // pieces is its own (STS-REPORT-0053, #1045) — until then every
+    // failure here read as "could not be sealed".
+    log.debug("Caught in reportRunOne(): " + ((e && e.message) || e));
+    const code = e && typeof e.code === 'string' &&
+      e.code.indexOf('STS-') === 0 ? e.code : (e && e.syscall ?
+        'STS-REPORT-0050' : 'STS-REPORT-0053');
+    if (code === 'STS-REPORT-0050') {
+      log.error(errorCodes.tag('STS-REPORT-0050') + 'report: a build ' +
+        'file could not be read back to be stored: ' +
+        ((e && e.message) || e));
+    } else if (code === 'STS-REPORT-0053') {
+      log.error(errorCodes.tag('STS-REPORT-0053') + 'report: the store ' +
+        'would not take a finished report: ' + ((e && e.message) || e));
+    }
+    reportFailJob(stored, 'unavailable', code);
+    log.debug("Leaving reportRunOne(). Not stored.");
+    return;
+  } finally {
+    await finished.file.remove();
+  }
   stored.status = 'completed';
   stored.error = null;
   stored.completedAt = Date.now();
-  stored.byteSize = finished.body.length;
+  stored.byteSize = finished.bytes;
   stored.sha256 = sha;
   stored.mediaType = finished.media;
   reportFences.delete(stored.id);
@@ -1430,13 +3393,25 @@ async function reportScheduleWork(ctx: any): Promise<any> {
       stores.putDefinition(def);
       continue;
     }
-    const rightsOf = rights.mayUse(def.owner, 'report:use');
+    // THE OWNER'S OWN QUESTION, TO THE POLICY (#1030): the roles the owner
+    // holds now, and `run` on this definition.
+    const rightsOf = rights.ownerMayRun(def);
     if (!rightsOf.ok) {
       def.lastSlot = slot;
       reportNoteFailure(def, 'The owner can no longer run reports.');
       stores.putDefinition(def);
       log.warn(errorCodes.tag('STS-REPORT-0028') +
         'report: a schedule was skipped because its owner lost report:use.');
+      continue;
+    }
+    if (await reportOwnerDisabled(String(def.ownerKind || 'user'),
+        String(def.ownerRealm || ''), String(rightsOf.username || ''))) {
+      def.lastSlot = slot;
+      reportNoteFailure(def, 'The owner\'s account is disabled.');
+      stores.putDefinition(def);
+      log.warn(errorCodes.tag('STS-REPORT-0048') +
+        'report: a schedule was skipped because its owner\'s account is ' +
+        'disabled.');
       continue;
     }
     const names = jobsApi.parameterNames(def.document);
@@ -1470,11 +3445,14 @@ async function reportScheduleWork(ctx: any): Promise<any> {
     }
     const submitted = jobsApi.submit({
       owner: def.owner,
+      ownerKind: def.ownerKind,
+      ownerRealm: String(def.ownerRealm || ''),
       document: def.document,
       parameters: names.length ? bag : null,
       definitionId: def.id,
       definitionName: def.name,
       notify: !!def.notify,
+      because: 'schedule',
       plan: validated.plan
     });
     if (submitted.ok) {
@@ -1568,6 +3546,23 @@ function reportPastTheGate(kind: string, a?: any, b?: any): any {
 export = {
   reportGateOne: reportGateOne,
   installReader: reportInstallReader,
+  installDirectory: reportInstallDirectory,
+  // The issued-credential register a test installs (#1021).
+  installIssuedRegister: reportInstallIssuedRegister,
+  // The mechanism ids, for the test that holds the catalog's enumeration
+  // (#1007) equal to the table (the catalog cannot require this module).
+  mechanismIds: function (): string[] {
+    log.debug("Entering mechanismIds().");
+    const ids = MECHANISM_TABLE.map(function (m: any): string {
+      return String(m.id);
+    });
+    log.debug("Leaving mechanismIds().");
+    return ids;
+  },
+  indexedLookups: reportIndexedLookups,
+  groupSearch: reportGroupSearch,
+  groupRecipients: reportGroupRecipients,
+  notify: reportNotify,
   abandonFences: reportAbandonFences,
   processToken: reportProcessToken,
   fenceGone: reportFenceGone,
@@ -1578,6 +3573,10 @@ export = {
   metricRows: reportMetricRows,
   mechanismRows: reportMechanismRows,
   activityRows: reportActivityRows,
+  personMail: reportPersonMail,
+  // One job run as the drain runs it, for the test that a disabled owner's
+  // queued job fails (#1042); the drain's own gate needs a scheduler.
+  runOne: reportRunOne,
   attributeSourceRows: reportAttributeSourceRows,
   notice: reportNotice,
   read: reportReadWork

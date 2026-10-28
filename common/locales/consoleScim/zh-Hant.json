@@ -53,6 +53,7 @@
   "on": "開啟",
   "whatItsScopesSay": "其範圍所允許的",
   "everything": "全部",
+  "applicationDeclares": "應用程式的：其宣告的；個人的：全部",
   "rowAnonymous": "無（開放的探索呼叫，或驗證已關閉）",
   "rowRefused": "在任何處理常式執行前被拒絕",
   "authentication": "驗證",

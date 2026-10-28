@@ -30,6 +30,7 @@
   "off": "off",
   "scopes": "scopes",
   "everything": "everything",
+  "applicationDeclares": "an application's: what it declares; a person's: everything",
   "scopesText": "The two OAuth scopes are <code>{read}</code> and <code>{write}</code>, published in <code>scopes_supported</code> in both discovery documents. Digest offers {algorithms}. HOBA keys are registered at <code>{hoba}</code>.",
   "policy": "The access control policy",
   "endpoints": "Endpoints",

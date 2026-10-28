@@ -4232,7 +4232,8 @@ const SETTINGS = [
   { key: 'workers.batch', group: 'Global',
     label: 'Batch traffic paths',
     env: 'STS_WORKERS_BATCH', type: 'string',
-    dflt: '/scim,/admin/signals/receive,/portal/signals/receive',
+    dflt: '/scim,/admin/signals/receive,/portal/signals/receive,' +
+          '/report/signals/receive',
     runtime: true, perProcess: true,
     description: 'A comma-separated list of path prefixes whose requests are ' +
                  'BATCH traffic: routed only to a share of each pool\'s ' +
@@ -9786,6 +9787,27 @@ const SETTINGS = [
     'the certificate chain of the key that signed it. A SAML assertion ' +
     'carries its certificate in its own XML Signature and is not affected.'),
 
+  // THE REQUESTER'S TLS CLIENT CERTIFICATE (#1046, from #520): the fourth
+  // credential beside a UsernameToken, an assertion and a JWT, on by default
+  // as `scim.authClientCert` is. ws-trust/CLAUDE.md argues it.
+  { key: 'wstrust.acceptClientCertificate', group: 'WS-Trust',
+    label: 'Accept the TLS client certificate as the requester\'s credential',
+    env: 'STS_WSTRUST_ACCEPT_CLIENT_CERTIFICATE', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'Whether a request to /sts whose wsse:Security header ' +
+                 'carries no credential authenticates its requester by the ' +
+                 'TLS client certificate on the connection. Only a ' +
+                 'certificate that verified at the handshake and that this ' +
+                 'realm issued to a person or an application (a TLS client ' +
+                 'certificate from the user portal or the application\'s ' +
+                 'Credentials, or one enrolled over ACME, EST or SCEP) is a ' +
+                 'credential, in both modes; a revoked one, one from another ' +
+                 'realm and one its holder no longer holds are refused with ' +
+                 'wst:FailedAuthentication. The issued token says a ' +
+                 'certificate was used: TLSClient in a SAML 2.0 assertion, ' +
+                 'urn:ietf:rfc:2246 in a SAML 1.1 one, amr swk in a JWT. ' +
+                 'Off, the certificate is ignored here.' },
+
   // WHO MAY START A SIGN-IN (#426, #710), the WS-Federation pair. A
   // wsignin1.0 at /wsfed is the relying party's (WS-Federation 1.2 section
   // 13.2.1); /wsfed/initiate/{rp} is this identity provider's, posting to the
@@ -10215,8 +10237,9 @@ const SETTINGS = [
                  'client holding one is a surprise. Off asks every ' +
                  'connection for a certificate and requires none; a ' +
                  'certificate presented is verified against the client ' +
-                 'truststore but does not bind anybody (there is no SASL ' +
-                 'EXTERNAL here).' },
+                 'truststore, and a connection carrying one this service ' +
+                 'issued to a person may bind as that person with SASL ' +
+                 'EXTERNAL.' },
   { key: 'ldap.ldapsRequireClientCertificate',
     group: 'Listener: LDAPS',
     label: 'LDAPS: require a client certificate',
@@ -10225,8 +10248,9 @@ const SETTINGS = [
     description: 'LDAPS refuses, at the handshake, every connection that ' +
                  'does not present a client certificate chaining to the ' +
                  'client truststore — a second gate in front of the bind, ' +
-                 'which still decides who the connection is. Wins over the ' +
-                 'toggle above. Off by default.' },
+                 'which still decides who the connection is: a password, ' +
+                 'or SASL EXTERNAL with a certificate this service issued ' +
+                 'to a person. Wins over the toggle above. Off by default.' },
   { key: 'debugger.disableOptionalClientCertificate',
     group: 'Listener: Protocol debugger',
     label: 'Debugger: do not ask for a client certificate',
@@ -12732,9 +12756,15 @@ const SETTINGS = [
                  'certificate that VERIFIED against the client truststore ' +
                  '(/admin/tls/trust), so only when global.https is on. It was the ' +
                  'first place in this service where a client certificate ' +
-                 'was a CREDENTIAL rather than an observation; here it ' +
-                 'authenticates somebody who may then write to the ' +
-                 'directory.' },
+                 'was a CREDENTIAL rather than an observation. A ' +
+                 'certificate this realm issued to an APPLICATION may do ' +
+                 'only what that application\'s oauthAllowedScope ' +
+                 'declares: the read scope to read and the write scope to ' +
+                 'write, asked on every request (STS-SCIM-0083). A ' +
+                 'person\'s certificate — one this realm issued, or one ' +
+                 'from an outside certificate authority stored in ' +
+                 'userCertificate on that person\'s entry (#1061) — may ' +
+                 'read and write the directory.' },
 
   // ---------------------------------------------------------------------
   // THE OUTBOUND SCIM CLIENT (#552): how pushes to a remote SCIM service
@@ -13472,6 +13502,26 @@ const SETTINGS = [
                  'wants ssf.read and ssf.manage enforced for every caller ' +
                  'turns this off.' },
 
+  // A RECEIVER AUTHENTICATED BY ITS TLS CLIENT CERTIFICATE (#1049, part of
+  // #520). On by default, as `ssf.authBasic` is, because rcbj's decision on
+  // #520 was that these endpoints accept it, and because what it accepts is
+  // narrow: a certificate this realm's own authority issued to an
+  // application, still held by it, held to that application's declared
+  // scopes and its SSF roles. `ssf/ssf_auth.ts` argues it.
+  { key: 'ssf.authClientCert', group: 'SSF',
+    label: 'Offer TLS client certificates',
+    env: 'STS_SSF_AUTH_CLIENT_CERT', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'Whether the SSF endpoints accept a receiver authenticated ' +
+                 'by the TLS client certificate on its connection, with no ' +
+                 'Authorization header, and publish urn:ietf:rfc:8705 in ' +
+                 'authorization_schemes. Only a certificate this realm ' +
+                 'issued to an application, which the application still ' +
+                 'holds, is taken; the receiver is that application and ' +
+                 'owns the streams it creates, and it holds the Shared ' +
+                 'Signals scopes its oauthAllowedScope declares and its ' +
+                 'SSF_READ and SSF_MANAGE roles authorize.' },
+
   // -------------------------------------------------------------------------
   // THIS SERVICE'S OWN TWO SURFACES AS RECEIVERS (2026-09-10).
   //
@@ -13485,19 +13535,21 @@ const SETTINGS = [
   // setting names.
   // -------------------------------------------------------------------------
   { key: 'ssf.internalReceivers', group: 'SSF',
-    label: 'Register the console and the portal as receivers',
+    label: 'Register the console, the portal and reports as receivers',
     env: 'STS_SSF_INTERNAL_RECEIVERS', type: 'bool', dflt: true,
     runtime: false,
-    restartReason: 'the two streams are seeded as ssf/ssf.ts is required and ' +
+    restartReason: 'the three streams are seeded as ssf/ssf.ts is required ' +
+                   'and ' +
                    'again as each realm is built, so turning this off in ' +
                    'place would leave the streams that already exist and ' +
                    'turning it on would create none',
     description: 'Whether this service seeds a Shared Signals stream for its ' +
-                 'OWN admin console and user portal, so that each takes ' +
-                 'delivery of every CAEP and RISC event — collecting them ' +
-                 'over RFC 8936 poll from this service\'s own /ssf/poll ' +
-                 'every ssf.internalPollMs (#771) — and draws what arrived ' +
-                 'at /admin/signals and /portal/signals. They are ORDINARY ' +
+                 'OWN admin console, user portal and reports application ' +
+                 '(#1042), so that each takes delivery of every CAEP and ' +
+                 'RISC event — collecting them over RFC 8936 poll from this ' +
+                 'service\'s own /ssf/poll every ssf.internalPollMs (#771) — ' +
+                 'and draws what arrived at /admin/signals, /portal/signals ' +
+                 'and /report/signals. They are ORDINARY ' +
                  'streams — pause one, narrow it or delete it at /admin/ssf ' +
                  'and it stays that way until a restart.' },
 
@@ -13611,8 +13663,9 @@ const SETTINGS = [
     env: 'STS_SSF_MAX_RECEIVED_EVENTS', type: 'int', dflt: 200, min: 1,
     max: 10000, runtime: true,
     description: 'How many delivered SETs each of this service\'s own ' +
-                 'receivers (the console\'s and the portal\'s) keeps in its ' +
-                 'inbox, per realm; the oldest are dropped past this.' },
+                 'receivers (the console\'s, the portal\'s and the reports ' +
+                 'application\'s) keeps in its inbox, per realm; the oldest ' +
+                 'are dropped past this.' },
 
   { key: 'ssf.maxStreamLogEntries', group: 'SSF', label: 'Log lines per stream',
     env: 'STS_SSF_MAX_STREAM_LOG_ENTRIES', type: 'int', dflt: 200, min: 1,
@@ -13700,13 +13753,17 @@ const SETTINGS = [
                  'management, a poll — may take.' },
 
   { key: 'ssf.actOnSignalsInDevelopment', group: 'SSF',
-    label: 'The console and portal act on received signals in development',
+    label: 'This service\'s own applications act on received signals in ' +
+           'development',
     env: 'STS_SSF_ACT_ON_SIGNALS_IN_DEVELOPMENT', type: 'bool', dflt: false,
     runtime: true,
     description: 'Product mode always does what the signal-response policy ' +
-                 'permits with a verified event this service\'s own console ' +
-                 'or portal receives — ends that surface\'s own sessions for ' +
-                 'the person it names (#62) — or a federation partner ' +
+                 'permits with a verified event this service\'s own console, ' +
+                 'portal or reports application receives — revokes the ' +
+                 'tokens that application\'s own client holds for the ' +
+                 'person it names (#1042; it ended relying-party sessions ' +
+                 'until the applications stopped making them, #62) — or a ' +
+                 'federation partner ' +
                  'sends (#373, #374). Development records what it would ' +
                  'have done and does nothing, unless this is on. An ' +
                  'unverified event is never acted on, whatever this says.' },
@@ -13923,14 +13980,16 @@ const SETTINGS = [
     label: 'Dataset upload directory', env: 'STS_RISK_UPLOAD_DIRECTORY',
     type: 'string', dflt: './data/risk-uploads', runtime: true,
     description: 'Where an uploaded dataset file is written while it is ' +
-                 'imported, and deleted from when the import ends however ' +
-                 'it ends. A relative path is resolved against this ' +
-                 'package root, as persistence.dataDir is. Give it a ' +
-                 'volume of its own with room for the largest file you ' +
-                 'will upload — compressed; nothing expanded is written — ' +
-                 'since an upload is refused when the directory\'s free ' +
-                 'space cannot hold it. Every stack this repository ships ' +
-                 'mounts one here.' },
+                 'imported, and where a report job is built before it is ' +
+                 'stored; each file is deleted when its import or job ' +
+                 'ends, however it ends. A relative path is resolved ' +
+                 'against this package root, as persistence.dataDir is. ' +
+                 'Give it a volume of its own with room for the largest ' +
+                 'file you will upload — compressed; nothing expanded is ' +
+                 'written — and for report.asyncMaxBytes per report job ' +
+                 'running at once, since an upload or a job is refused ' +
+                 'when the directory\'s free space cannot hold it. Every ' +
+                 'stack this repository ships mounts one here.' },
 
   { key: 'risk.uploadMaxBytes', group: 'Risk',
     label: 'Largest dataset upload (bytes)', env: 'STS_RISK_UPLOAD_MAX_BYTES',
@@ -13977,9 +14036,11 @@ const SETTINGS = [
     env: 'STS_RISK_UPLOAD_SWEEP_S', type: 'int', dflt: 60, min: 10,
     max: 3600, runtime: true,
     description: 'How often every process keeps the upload files it is ' +
-                 'importing fresh and deletes the leftovers of a process ' +
-                 'that stopped (risk.upload-cleanup), and how often the ' +
-                 'risk.stalled-imports job looks for an abandoned version. ' +
+                 'importing and the reports it is building fresh, and ' +
+                 'deletes the leftovers of a process that stopped ' +
+                 '(risk.upload-cleanup, report.build-cleanup), and how ' +
+                 'often the risk.stalled-imports job looks for an ' +
+                 'abandoned version. ' +
                  'Keep it well under risk.importStallMinutes.' },
 
   { key: 'risk.datasetShrinkLimitPercent', group: 'Risk',
@@ -18097,14 +18158,11 @@ const SETTINGS = [
     env: 'REPORT_JOB_RETENTION_S', type: 'int', dflt: 604800,
     min: 60, max: 31536000, runtime: true,
     description: 'How long a finished report job\'s row stays in the list. ' +
-                 'A job that is still running is not removed.' },
-  { key: 'report.usersGroup', group: 'Reporting',
-    label: 'Who may be issued report:use',
-    env: 'REPORT_USERS_GROUP', type: 'string', dflt: '',
-    runtime: true,
-    description: 'The directory group whose members may be issued ' +
-                 'report:use. Empty means only this realm\'s administrators ' +
-                 'may. report:admin is issued only to those administrators.' }
+                 'A job that is still running is not removed.' }
+  // `report.usersGroup` was here until #1030 (2026-10-27): who may be
+  // issued `report:use` is the native role REPORT_USE now, held through
+  // the seeded group `report-users` or as a member (`common/roles.js`),
+  // and `report:admin` is REPORT_ADMIN's, through `report-admins`.
 ];
 
 // ---------------------------------------------------------------------------

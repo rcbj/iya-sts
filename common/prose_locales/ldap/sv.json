@@ -67,17 +67,29 @@
     "en": "55b2bbab540dbbb4",
     "text": "inga förtroendesfärer är definierade, så det finns en kontext ({{root}}) och en subtree-sökning från den svarar om hela lagret"
   },
-  "ldap.service.sentences.clientCertificates": {
-    "en": "18c68f9d37420f1c",
-    "text": "begärs aldrig. Den här lyssnaren bevisar SERVERN för klienten och inget mer; ett klientcertifikat som erbjuds till den efterfrågas inte och skulle inte vara en inloggning om det vore det. Huvudporten ({{port}}) är där klientcertifikat efterfrågas och läses."
+  "ldap.service.sentences.clientCertificatesNone": {
+    "en": "e871e2b9901509f2",
+    "text": "begärs inte: `ldap.ldapsDisableOptionalClientCertificate` är på, så LDAPS skickar ingen CertificateRequest och en certifikatbindning (SASL EXTERNAL) avvisas i brist på certifikat. Stäng av den inställningen för att be varje anslutning om ett (valfritt), eller slå på `ldap.ldapsRequireClientCertificate` för att kräva ett; båda gör SASL EXTERNAL tillgängligt. Huvudporten ({{port}}) begär klientcertifikat enligt sina egna inställningar."
+  },
+  "ldap.service.sentences.clientCertificatesOptional": {
+    "en": "872d11f2c2ff8a31",
+    "text": "begärs men krävs inte (valfritt: `ldap.ldapsDisableOptionalClientCertificate` är av). En anslutning som visar upp ett som verifieras mot klientens förtroendelager kan binda med SASL EXTERNAL; en utan binder med lösenord som förut."
+  },
+  "ldap.service.sentences.clientCertificatesRequired": {
+    "en": "d4476c20b14dd318",
+    "text": "krävs (`ldap.ldapsRequireClientCertificate` är på): en anslutning utan ett certifikat som verifieras mot klientens förtroendelager avvisas vid handskakningen. En anslutning kan sedan binda med SASL EXTERNAL, eller med lösenord som förut."
+  },
+  "ldap.service.sentences.certificateBindRule": {
+    "en": "c26bf08affa27730",
+    "text": "SASL EXTERNAL binder anslutningen som den personpost certifikatet tillhör: ett som den här tjänsten utfärdat till en person som har en post i den sfären, eller ett från en extern certifikatutfärdare betrodd genom /admin/tls/trust som är lagrat, byte för byte, i userCertificate på exakt en personpost i den sfären. Ett återkallat certifikat, en annan sfärs, ett programs, eller ett externt som är lagrat på ingen post eller på fler än en nekas, och inget läses ur ett vanligt namn eller ett subjekt. En auktoriseringsidentitet godtas bara när den namnger samma post."
   },
   "ldap.service.sentences.certificateSource": {
     "en": "a969a038097605ed",
     "text": "samma certifikat och nyckel som huvudporten ({{port}}) använder. Det är {{provenance}}: GET /tls/server-certificate lämnar ut det i PEM. Ett ankare för båda socketarna är varför de delar det."
   },
   "ldap.service.sentences.autoCreateRule": {
-    "en": "7e10a7e3ec45179d",
-    "text": "en post uid=<name>,{{usersDn}} dyker upp första gången <name> autentiserar sig mot den här tjänsten genom VILKET protokoll som helst. En LDAP-bind skapar ingen (den presenterar ett DN, inte ett användarnamn) och det gör inte heller en OAuth-klient. Ett verifierat TLS-KLIENTCERTIFIKAT är den enda identitet som redan är ett DN: dess post behåller subjektets egen lövnivå-RDN — cn=alice,{{usersDn}} för CN=alice,O=Example — eller hela subjektet där det redan ligger under {{baseDn}}, och hela subjektet, utfärdaren, serienumret och giltigheten finns på posten som x509*-attribut, vilka är den här tjänstens egna namn och inte schema. En DECENTRALISERAD IDENTIFIERARE är den tredje formen och är varken ett namn eller ett DN: ett utfärdat intygs did:jwk-subjekt, vilken DID som än presenterar för OID4VP-verifieraren. Dess post hamnar på uid=did-<12 hex av SHA-256 för DID:en>,{{usersDn}} — en did:jwk utskriven i sin helhet är ett DN på flera hundra tecken, det mesta nyckelmaterial — med själva identifieraren bevarad hel på posten som didSubject, och dess metod som didMethod. Sök efter personen via didSubject, inte via uid: på de posterna är uid ett sammandrag och didSubject är identiteten."
+    "en": "6ddfd5c3a5e8025c",
+    "text": "en post uid=<name>,{{usersDn}} dyker upp första gången <name> autentiserar sig mot den här tjänsten genom VILKET protokoll som helst. En LDAP-bind skapar ingen (den presenterar ett DN, inte ett användarnamn) och det gör inte heller en OAuth-klient. Ett verifierat TLS-KLIENTCERTIFIKAT skapar ingenting: ett som den här tjänsten utfärdat namnger en person som redan har en post, och ett från en extern certifikatutfärdare är posten det är lagrat på i userCertificate, eller ingen — dess vanliga namn och subjekt läses aldrig som ett namn. En DECENTRALISERAD IDENTIFIERARE är en annan form och är varken ett namn eller ett DN: ett utfärdat intygs did:jwk-subjekt, vilken DID som än presenterar för OID4VP-verifieraren. Dess post hamnar på uid=did-<12 hex av SHA-256 för DID:en>,{{usersDn}} — en did:jwk utskriven i sin helhet är ett DN på flera hundra tecken, det mesta nyckelmaterial — med själva identifieraren bevarad hel på posten som didSubject, och dess metod som didMethod. Sök efter personen via didSubject, inte via uid: på de posterna är uid ett sammandrag och didSubject är identiteten."
   },
   "ldap.spiffe.sourceOfTruth": {
     "en": "b1ca8ee3d774cf2d",

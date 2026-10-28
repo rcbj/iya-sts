@@ -137,6 +137,13 @@ const EXEMPT = {
     'held in memory; a windowed process asks the store one indexed ' +
     'statement first (`uidContains`, the trigram index) for an ' +
     'over-fetch of 51 rows, asynchronously' },
+  'ldap/ldap_server.js|certificateHolders|eachEntryInRealm': { memory:
+    'the stored-certificate index (#1061) built over every entry held in ' +
+    'memory, and only when its clock moved (a write to a holder, or an ' +
+    'unnamed write); a windowed process walks directoryWindow.eachResident() ' +
+    'instead — the resident containers, never ou=users or ou=devices, whose ' +
+    'holders the store\'s usercertificatesha256 index answers through ' +
+    'windowedFind(\'byAttribute\')' },
   'ldap/ldap_server.js|peopleMissing|eachEntryInRealm': { memory:
     'the attribute policy\'s count of people lacking a required ' +
     'attribute (#396, /admin-api/policies?missing=count), held in memory; ' +

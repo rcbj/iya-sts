@@ -368,8 +368,8 @@
     "text": "TLS-klientcertifikat — som första faktor"
   },
   "authn.FIELDS.certificatePrimary.what": {
-    "en": "458b5463993c8ba4",
-    "text": "GET /tls/sign-in med ett verifierat klientcertifikat."
+    "en": "bbf7d091b1854474",
+    "text": "Ett verifierat TLS-klientcertifikat: GET /tls/sign-in, eller Fortsätt med ditt certifikat på inloggningssidan."
   },
   "authn.FIELDS.kerberosPrimary.label": {
     "en": "f2f6ed9dd0454fdc",
@@ -524,8 +524,8 @@
     "text": "En engångslänk som skickas till personens VERIFIERADE adress och som slutför inloggningen bara i den webbläsare som startade den. NIST SP 800-63B-4 avsnitt 3.1.3.1: ”Email SHALL NOT be used for out-of-band authentication”, eftersom en brevlåda kan nås med enbart ett lösenord, och e-post kan läsas under överföring eller omdirigeras. Avstängd som standard av det skälet; slå på den bara där det är en accepterad risk."
   },
   "authn.SCHEMA.attributes.stsAuthnCertificatePrimary.what": {
-    "en": "458b5463993c8ba4",
-    "text": "GET /tls/sign-in med ett verifierat klientcertifikat."
+    "en": "bbf7d091b1854474",
+    "text": "Ett verifierat TLS-klientcertifikat: GET /tls/sign-in, eller Fortsätt med ditt certifikat på inloggningssidan."
   },
   "authn.SCHEMA.attributes.stsAuthnKerberosPrimary.what": {
     "en": "da71a0338fe2a8df",
@@ -640,8 +640,8 @@
     "text": "TLS-klientcertifikat"
   },
   "authn.MECHANISMS.certificate.what": {
-    "en": "458b5463993c8ba4",
-    "text": "GET /tls/sign-in med ett verifierat klientcertifikat."
+    "en": "bbf7d091b1854474",
+    "text": "Ett verifierat TLS-klientcertifikat: GET /tls/sign-in, eller Fortsätt med ditt certifikat på inloggningssidan."
   },
   "authn.MECHANISMS.kerberos.label": {
     "en": "a8316dcb1a42420f",

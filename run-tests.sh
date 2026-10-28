@@ -146,6 +146,12 @@ set -u -o pipefail
 CURRENT_DIR="$(cd "$(dirname "$(realpath "$0")")" && pwd)"
 cd "${CURRENT_DIR}" || exit 1
 
+# Linux, or Windows under Cygwin (#512): hostPath() for every host path a
+# native docker.exe is handed, HOST_USER_ARGS for `--user`, and the shims
+# that take the CR off what docker prints. See its header.
+# shellcheck source=tests/tools/host-platform.sh
+. "${CURRENT_DIR}/tests/tools/host-platform.sh"
+
 # The mode matrix. See tests/tools/modes.sh's header.
 # shellcheck source=tests/tools/modes.sh
 . "${CURRENT_DIR}/tests/tools/modes.sh"
@@ -655,6 +661,11 @@ preflight()
     echo "to: without docker there is nothing to run. Either the daemon is" >&2
     echo "not running, or this user cannot reach it and sudo would need a" >&2
     echo "password (this script never prompts for one)." >&2
+    if [ "${HOST_WINDOWS}" = "1" ];
+    then
+      echo "On Windows that is Docker Desktop: start it, and check that" >&2
+      echo "\`docker.exe info\` answers from this shell." >&2
+    fi
     return 1
   fi
 
@@ -934,7 +945,9 @@ COMPOSE_ENV=(
   # certificate — mintThePepCredential() below makes one between bringing the
   # service up and starting the PEP, which is the only window: pep.js reads the
   # files at process start and never again.
-  "XACML_PEP_CERT_DIR=${XACML_PEP_CERT_DIR}"
+  # As compose.exe reads a path on Windows (#512); this script's own
+  # `rm` and `mkdir` of it keep the shell's form.
+  "XACML_PEP_CERT_DIR=$(hostPath "${XACML_PEP_CERT_DIR}")"
   "XACML_PEP_TLS_CERT=/certs/pep.crt"
   "XACML_PEP_TLS_KEY=/certs/pep.key"
   # THE REGISTERED NAME IS THE CERTIFICATE'S COMMON NAME. `xacml.js` files a
@@ -1248,7 +1261,7 @@ schedulerTakeover()
     return 1
   fi
   local tool=(docker run --rm --network "${COMPOSE_PROJECT}_default"
-              -v "${CURRENT_DIR}:/repo:ro"
+              -v "$(hostPath "${CURRENT_DIR}"):/repo:ro"
               -e "STS_ADMIN_API_TOKEN=${STS_ADMIN_API_TOKEN:-}"
               -e NODE_PATH=/usr/src/sts/node_modules
               -w /usr/src/sts "${STS_IMAGE}"
@@ -1473,7 +1486,7 @@ mintAdminApiToken()
   for attempt in $(seq 1 12); do
     if token="$(docker run --rm \
          --network "${COMPOSE_PROJECT}_default" \
-         -v "${CURRENT_DIR}:/repo:ro" \
+         -v "$(hostPath "${CURRENT_DIR}"):/repo:ro" \
          -e "STS_ADMIN_API_CLIENT_SECRET=${ADMIN_API_CLIENT_SECRET}" \
          -e NODE_PATH=/usr/src/sts/node_modules \
          -w /usr/src/sts \
@@ -1540,6 +1553,10 @@ mintAdminApiToken()
 # one job asserts what an unauthenticated PEP cannot do, and the rest of the
 # suite has no opinion about this certificate at all.
 # ---------------------------------------------------------------------------
+# THE LEAF IS NOT STORED ON AN ENTRY HERE (#1061): an outside certificate is
+# an identity only once it is stored in userCertificate on its entry, and the
+# PEP's entry is in the realm sts_xacml_remote_pep creates later. That job
+# reads pep.crt beside XACML_PEP_SERVER_CERT_DIR and stores it itself.
 mintThePepCredential()
 {
   rm -rf "${XACML_PEP_CERT_DIR}"
@@ -1563,11 +1580,12 @@ mintThePepCredential()
   # would leave files this launcher's own `rm` cannot delete on the next run
   # (a root-owned crl/ from 2026-09-28 did exactly that), so the one-shot
   # runs as whoever runs the launcher: the files are theirs, and the PEP
-  # container reads them as it always did.
-  if ! docker run --rm --user "$(id -u):$(id -g)" \
+  # container reads them as it always did. On Windows there is no owner to
+  # match and HOST_USER_ARGS is empty (tests/tools/host-platform.sh).
+  if ! docker run --rm ${HOST_USER_ARGS[@]+"${HOST_USER_ARGS[@]}"} \
        --network "${COMPOSE_PROJECT}_default" \
-       -v "${CURRENT_DIR}:/repo:ro" \
-       -v "${XACML_PEP_CERT_DIR}:/out" \
+       -v "$(hostPath "${CURRENT_DIR}"):/repo:ro" \
+       -v "$(hostPath "${XACML_PEP_CERT_DIR}"):/out" \
        -e MOCK_STS_DIR=/usr/src/sts \
        -e NODE_PATH=/usr/src/sts/node_modules \
        -e "STS_ADMIN_API_TOKEN=${STS_ADMIN_API_TOKEN:-}" \
