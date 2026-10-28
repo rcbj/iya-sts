@@ -459,8 +459,7 @@ async function signIn(driver, withKey) {
 async function enrol(driver, kind, label) {
   log.debug("Entering enrol(). kind=" + kind);
   await openPage(driver, "/portal/keys");
-  const before = (await driver.findElements(
-    By.css("form[action$='/rename-key']"))).length;
+  const before = await credentialIdsOn(driver);
   const buttons = await driver.findElements(
     By.css("button[name='kind'][value='" + kind + "']"));
   assert.ok(buttons.length === 1,
@@ -473,24 +472,29 @@ async function enrol(driver, kind, label) {
   // before the armed page is drawn at all.
   await waitFor(driver, async function () {
     return !(await present(driver, "#wa-data")) &&
-      (await driver.findElements(
-        By.css("form[action$='/rename-key']"))).length > before;
+      (await credentialIdsOn(driver)).length > before.length;
   }, "the " + kind + " ceremony never finished: the page never came back " +
      "with one more passkey row");
-  // THE ROW'S RENAME, folded: open the LAST row's fold (the new key is
-  // listed after the ones registered before it) and name it there.
-  const folds = await driver.findElements(By.xpath(
-    "//details[.//form[contains(@action,'/rename-key')]]/summary"));
-  assert.ok(folds.length >= 1,
-    "no Rename fold on any row after the " + kind + " was registered: " +
+  // THE ROW'S RENAME, folded: the new key's row is the one whose id was not
+  // on the page before the ceremony — NOT the last row, because the page
+  // groups the keys (security keys after the device's own), so a roaming
+  // key registered earlier can sit below a platform key registered now.
+  const fresh = (await credentialIdsOn(driver)).filter(function (id) {
+    return before.indexOf(id) < 0;
+  });
+  assert.strictEqual(fresh.length, 1,
+    "after the " + kind + " ceremony the page should list exactly one " +
+    "passkey it did not list before; it lists " + fresh.length + ": " +
     (await bodyText(driver)).slice(0, 400));
-  await folds[folds.length - 1].click();
-  const nickname = await driver.findElements(
-    By.css("form[action$='/rename-key'] input[name='label']"));
-  await nickname[nickname.length - 1].clear();
-  await nickname[nickname.length - 1].sendKeys(label);
-  await driver.findElement(By.xpath(
-    "(//form[contains(@action,'/rename-key')])[last()]//button")).click();
+  const row = "//form[contains(@action,'/rename-key')]" +
+    "[.//input[@name='credentialId' and @value='" + fresh[0] + "']]";
+  await driver.findElement(By.xpath(row + "/ancestor::details[1]/summary"))
+    .click();
+  const nickname = await driver.findElement(By.xpath(
+    row + "//input[@name='label']"));
+  await nickname.clear();
+  await nickname.sendKeys(label);
+  await driver.findElement(By.xpath(row + "//button")).click();
   await waitFor(driver, async function () {
     return /Renamed to/.test(await bodyText(driver));
   }, "the nickname was not saved");
@@ -503,6 +507,20 @@ async function enrol(driver, kind, label) {
     (await bodyText(driver)).slice(0, 400));
   log.debug("Leaving enrol().");
   return key;
+}
+
+// The passkeys the drawn /portal/keys lists, by the id each row's Rename
+// form carries.
+async function credentialIdsOn(driver) {
+  log.debug("Entering credentialIdsOn().");
+  const inputs = await driver.findElements(
+    By.css("form[action$='/rename-key'] input[name='credentialId']"));
+  const ids = [];
+  for (const one of inputs) {
+    ids.push(String(await one.getAttribute("value")));
+  }
+  log.debug("Leaving credentialIdsOn().");
+  return ids;
 }
 
 // THE POLICY THE PORTAL IS SERVED UNDER, read from the server: WebDriver

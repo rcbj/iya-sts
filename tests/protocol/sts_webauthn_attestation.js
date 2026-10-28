@@ -360,6 +360,20 @@ function attr(html, name) {
   return m ? m[1] : "";
 }
 
+// The passkeys a drawn /portal/keys lists, by the id each row's Rename form
+// carries.
+function credentialIdsOn(text) {
+  log.debug("Entering credentialIdsOn().");
+  const ids = [];
+  const re = /name="credentialId" value="([^"]+)"/g;
+  let m;
+  while ((m = re.exec(String(text))) !== null) {
+    ids.push(m[1]);
+  }
+  log.debug("Leaving credentialIdsOn().");
+  return ids;
+}
+
 function csrfOf(text) {
   log.debug("Entering csrfOf().");
   log.debug("Leaving csrfOf().");
@@ -517,6 +531,9 @@ async function portalSignIn(who, path) {
 async function enrol(b, key, how, label) {
   log.debug("Entering enrol(). " + how);
   let page = await b.go("GET", R + "/portal/keys");
+  // The plain page's rows, read before the ceremony is armed: the armed
+  // page draws the ceremony in their place.
+  const listedBefore = credentialIdsOn(page.text);
   const begun = await b.go("POST", R + "/portal/keys",
     form({ action: "begin", role: "mfa", kind: "security-key",
            csrf_token: csrfOf(page.text) }));
@@ -531,15 +548,21 @@ async function enrol(b, key, how, label) {
            credential: JSON.stringify(key.register(challenge, how)),
            csrf_token: csrfOf(page.text) }));
   if (done.status === 200 && label) {
-    // THE NICKNAME (#470): there is no name before the ceremony; the
-    // answer names the new passkey and the page renames it.
-    const named = decodeURIComponent((String(done.location)
-      .match(/[?&]named=([^&]*)/) || [])[1] || "");
-    const prompt = await b.go("GET", R + "/portal/keys?named=" +
-                              encodeURIComponent(named));
+    // THE NAME: there is none before the ceremony, and since 2026-10-28 the
+    // answer names nothing either (#470's `?named=` prompt is gone) — the new
+    // key sits on the plain page under its default name, and is renamed
+    // through its own row's form. Which row is new is the one whose id was
+    // not on the page before the finish.
+    const after = await b.go("GET", R + "/portal/keys");
+    const fresh = credentialIdsOn(after.text).filter(function (id) {
+      return listedBefore.indexOf(id) < 0;
+    });
+    assert.strictEqual(fresh.length, 1, "after the finish the page should " +
+      "list exactly one passkey it did not list before; it lists " +
+      fresh.length + ": " + String(after.text).slice(0, 300));
     const renamed = await b.go("POST", R + "/portal/rename-key",
-      form({ credentialId: named, label: label,
-             csrf_token: csrfOf(prompt.text) }));
+      form({ credentialId: fresh[0], label: label,
+             csrf_token: csrfOf(after.text) }));
     assert.strictEqual(renamed.status, 200, "naming the passkey answered " +
       renamed.status + " " + String(renamed.text).slice(0, 300));
   }
