@@ -127,6 +127,54 @@ whether it already has. Its page offers three predefined queries — progress
 by activity, the people past their grace period, and the people who skipped
 most. See [Reports](reporting.md#postloginprogress) for every field.
 
+## Mail campaigns
+
+The activity is asked only when a person signs in, so somebody who rarely
+signs in may not be asked before a deadline. A **mail campaign** reminds them
+by mail. Open **Directory → Post-login campaigns** (`/admin/post-login-campaigns`)
+and start one:
+
+| Field | What it means |
+|---|---|
+| Activity | The post-login activity: `pqc-passkey-migration`. |
+| Group | Optional. A group's name or DN: only its members are mailed. Empty is everybody in the realm. |
+| Days between reminders | No person is mailed twice within this many days (1–365, default 7), whichever campaign sent the last mail. |
+| Most mails per person | The most this campaign sends one person (1–20, default 3). |
+| People read per run | How many people one run reads (1–20000, default 1000). |
+
+A scheduler job, `post-login.campaign-mail`, runs about every ten minutes in a
+realm with a campaign running (Run now on **Monitoring → Scheduler** starts it
+at once). Each run reads the next slice of the campaign's people and mails
+those the activity is due for: the post-login policy reaches them, the realm
+can make the passkey, and they have not done it. When it reaches the end of
+the people it starts again from the beginning; that next pass sends the
+reminders.
+
+- **The mail only sends the person to sign in.** Its one link opens the
+  sign-in page. It carries no code or token and nothing about the person. The
+  activity is asked at the sign-in, as always.
+- **It goes to the address on the person's entry**, never one from a request.
+  Somebody with no address, or who declined notifications on `/portal/email`,
+  is not mailed. A realm with no mail transport mails nobody, and the page
+  says so.
+- **A mail is not an invitation.** The allotted time still starts at the first
+  time the person is asked at a sign-in.
+- **Pause** stops mailing and keeps the campaign's place. **Resume** carries on
+  from there. **End** stops it for good. Only one campaign at a time may run
+  for the same activity and the same people.
+
+The same controls are on the management API:
+`GET /admin-api/post-login-campaigns`, and
+`POST /admin-api/post-login-campaigns/start`, `/pause`, `/resume` and `/end`
+(the bodies are in `GET /admin-api/openapi.json`). Starting, pausing and ending
+need Admin Write.
+
+**Who was mailed, and when, is a report.** Each mail is recorded on the
+person's progress row (the campaign, how many mails it sent them, the first and
+the last), and the `postLoginProgress` source in the
+[reports application](reporting.md#postloginprogress) reads it. The console
+page shows only each campaign's own counts.
+
 ## Sign-ins that don't use the sign-in screen
 
 A federated sign-in, a wallet, Kerberos (SPNEGO) or a client certificate can
@@ -150,6 +198,8 @@ Programs signing in with a key (SCIM, the SPIRE Server API) are never asked.
 | `authn.post-login.unsupported` | The person's device did not complete the passkey ceremony; the error name, the browser and the platform. |
 | `webauthn.key.possibly-replaced` | A new passkey under the same user handle and AAGUID may have replaced an older one on its authenticator ([Passkeys](passkeys.md#a-passkey-that-may-have-been-replaced-on-its-authenticator)). |
 | `admin.post-login-policy.change` | A profile was saved or reset. |
+| `admin.post-login-campaign.change` | A mail campaign was started, paused, resumed or ended; the row says which. |
+| `authn.post-login.campaign-run` | One run of a campaign's job: how many people were read, mailed, not due, held back by the interval or the maximum, and refused by the mail channel. One row per campaign per run, never per person. |
 
 ## Error codes you will meet
 
@@ -160,6 +210,10 @@ Programs signing in with a key (SCIM, the SPIRE Server API) are never asked.
 | STS-AUTHN-0474 | Skip was refused because the allotted time has passed. |
 | STS-AUTHN-0475 | The realm could no longer make an ML-DSA passkey, so the held session started without one. |
 | STS-AUTHN-0450 – 0458 | An upgrade ceremony did not complete; the classical passkey is unchanged. |
+| STS-AUTHN-0477, 0478, 0479 | A campaign was not started or changed: bad values, no such campaign or the wrong state, or one already running for the same people. |
+| STS-AUTHN-0480 | A campaign's run could not read its people; its place did not move. |
+| STS-AUTHN-0481 | The mail channel refused some reminders (no address, declined, a ceiling). |
+| STS-AUTHN-0482 | A campaign is running in a realm with no mail transport. |
 
 See [error codes](error-codes.md) for the full list.
 

@@ -2733,7 +2733,7 @@ function reportPostLoginRow(entry: any, postLogin: any,
   const done = Number(row.doneAt) > 0;
   const progress = done ? 'done'
     : grace.ended ? 'past-grace'
-    : Number(row.snoozedUntil) > Date.now() ? 'snoozed'
+    : grace.snoozed ? 'snoozed'
     : Number(row.invitedAt) > 0 ? 'asked'
     : Number(row.mails) > 0 ? 'mailed' : 'asked';
   const out = {

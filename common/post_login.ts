@@ -540,6 +540,13 @@ class PostLogin {
     log.debug("Entering PostLogin.noteMailed().");
     const row = this.stateOf(username, due.activity);
     const at = now();
+    // THE COUNTS ARE THE NAMED CAMPAIGN'S: a later campaign mailing the same
+    // person starts its own count, so its maximum is its own. `lastMailedAt`
+    // is still the last mail of any campaign — the interval is the person's.
+    if (String(row.campaign || '') !== String(campaign || '')) {
+      row.mails = 0;
+      row.firstMailedAt = 0;
+    }
     row.campaign = String(campaign || '');
     row.mails = (Number(row.mails) || 0) + 1;
     if (!row.firstMailedAt) {
@@ -600,10 +607,11 @@ class PostLogin {
    * @param row - a progress row
    * @param graceDays - the allotted time to use where the row recorded none
    *   (a row written before #1110)
-   * @returns `{ deadline, ended }`, the deadline in milliseconds
+   * @returns `{ deadline, ended, snoozed }`, the deadline in milliseconds
+   *   and `snoozed` whether a Skip still puts it off, on this module's clock
    */
   graceOf(row: Record<string, any>, graceDays?: number):
-      { deadline: number; ended: boolean } {
+      { deadline: number; ended: boolean; snoozed: boolean } {
     const { log, now } = this.deps;
     log.debug("Entering PostLogin.graceOf().");
     const days = row && row.graceDays != null ? Number(row.graceDays) || 0
@@ -612,8 +620,9 @@ class PostLogin {
     const deadline = days > 0 && invited ? invited + days * DAY_MS : 0;
     const ended = deadline > 0 && !(Number(row && row.doneAt) > 0) &&
                   now() >= deadline;
+    const snoozed = Number(row && row.snoozedUntil) > now();
     log.debug("Leaving PostLogin.graceOf(). " + ended);
-    return { deadline: deadline, ended: ended };
+    return { deadline: deadline, ended: ended, snoozed: snoozed };
   }
 
   /**

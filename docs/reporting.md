@@ -652,8 +652,8 @@ without the directory being asked again for every row.
 | `deadline` | timestamp | When the allotted time ends, or null where there is none. | yes | yes | no |
 | `graceEnded` | boolean | The allotted time has ended and the activity is not done: Skip is gone and the next sign-in is held. | yes | yes | yes |
 | `campaign` | string | The mail campaign that last mailed the person. | yes | yes | yes |
-| `mails` | number | How many campaign mails the person was sent. | yes | yes | no |
-| `firstMailedAt` | timestamp | When the first campaign mail went. | yes | yes | no |
+| `mails` | number | How many mails the campaign named in `campaign` sent the person. | yes | yes | no |
+| `firstMailedAt` | timestamp | When that campaign's first mail went. | yes | yes | no |
 | `lastMailedAt` | timestamp | When the last campaign mail went. | yes | yes | no |
 
 Three **predefined queries** come with it. The source's page lists them; each

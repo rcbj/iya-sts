@@ -75,6 +75,11 @@
       "text": "El informe {{definition}} para {{username}} está {{status}}.\n\nÁbralo:\n\n{{report}}\n",
       "html": "<p>El informe <strong>{{definition}}</strong> para {{username}} está {{status}}.</p><p><a href=\"{{report}}\">Ábralo</a>.</p>"
     },
+    "post-login-reminder": {
+      "subject": "Registre una llave de acceso poscuántica para {{service}}",
+      "text": "{{service}} pide a {{username}} que registre una nueva llave de acceso que usa criptografía poscuántica (ML-DSA).\n\nInicie sesión aquí y se le pedirá que la registre justo después de iniciar sesión:\n\n{{signin}}\n\nEl enlace solo abre la página de inicio de sesión. No inicia su sesión ni lleva nada sobre su cuenta. Si no esperaba este mensaje, ignórelo o consulte a quien administra su cuenta.\n",
+      "html": "<p>{{service}} pide a <strong>{{username}}</strong> que registre una nueva llave de acceso que usa criptografía poscuántica (ML-DSA).</p><p><a href=\"{{signin}}\">Inicie sesión</a> y se le pedirá que la registre justo después de iniciar sesión.</p><p>El enlace solo abre la página de inicio de sesión. No inicia su sesión ni lleva nada sobre su cuenta. Si no esperaba este mensaje, ignórelo o consulte a quien administra su cuenta.</p>"
+    },
     "reset-refused-attempt": {
       "subject": "Alguien intentó restablecer su contraseña de {{service}}",
       "text": "El {{when}} alguien pidió restablecer la contraseña de la cuenta {{username}}, indicó esta dirección y dio un código de recuperación que no es uno de los suyos. No se cambió nada y no se envió ningún enlace de restablecimiento.\n\nSi fue usted, vuelva a intentarlo con un código de recuperación sin usar. Si no, alguien conoce el nombre de su cuenta y su dirección; comuníquese con quien administra su cuenta.\n",

@@ -7037,6 +7037,37 @@ const CODES = [
       '`clear-passkey-client`. Logged once per realm per process; the ' +
       'registrations themselves are unchanged.',
     spec: 'none (service log)' },
+  { code: 'STS-AUTHN-0477',
+    summary: 'A post-login mail campaign was not started: an unknown ' +
+      'activity, a number out of its bounds (intervalDays, maxMails, ' +
+      'perRun), or a group this realm does not have (#1111).',
+    spec: 'none (HTTP 400 from /admin-api/post-login-campaigns/start)' },
+  { code: 'STS-AUTHN-0478',
+    summary: 'A post-login mail campaign act was refused: an unknown ' +
+      'action, no such campaign in this realm, or a campaign whose state ' +
+      'the act does not move (pause needs running, resume paused, end ' +
+      'either) (#1111).',
+    spec: 'none (HTTP 400 from /admin-api/post-login-campaigns/:action)' },
+  { code: 'STS-AUTHN-0479',
+    summary: 'A post-login mail campaign was not started: one for the same ' +
+      'activity and the same people (the realm, or the same group) is ' +
+      'already running or paused. End it first (#1111).',
+    spec: 'none (HTTP 400 from /admin-api/post-login-campaigns/start)' },
+  { code: 'STS-AUTHN-0480',
+    summary: 'A post-login mail campaign\'s run could not read its ' +
+      'population (the directory refused, or its group is gone); nobody ' +
+      'was mailed by it this run and its cursor did not move (#1111).',
+    spec: 'none (logged; the scheduler run row)' },
+  { code: 'STS-AUTHN-0481',
+    summary: 'The mail channel refused a post-login campaign\'s reminder ' +
+      'to some people this run: no address on the entry, the ' +
+      'notification declined, or a ceiling. Counted on the campaign and ' +
+      'the run\'s audit row; Monitoring → Mail names each (#1111).',
+    spec: 'none (audit row authn.post-login.campaign-run)' },
+  { code: 'STS-AUTHN-0482',
+    summary: 'A post-login mail campaign is running in a realm with no ' +
+      'mail transport: its run mailed nobody and moved no cursor (#1111).',
+    spec: 'none (logged; the scheduler run row)' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',

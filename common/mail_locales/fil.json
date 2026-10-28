@@ -75,6 +75,11 @@
       "text": "Ang ulat na {{definition}} para kay {{username}} ay {{status}}.\n\nBuksan ito:\n\n{{report}}\n",
       "html": "<p>Ang ulat na <strong>{{definition}}</strong> para kay {{username}} ay {{status}}.</p><p><a href=\"{{report}}\">Buksan ito</a>.</p>"
     },
+    "post-login-reminder": {
+      "subject": "Magrehistro ng post-quantum na passkey para sa {{service}}",
+      "text": "Hinihiling ng {{service}} kay {{username}} na magrehistro ng bagong passkey na gumagamit ng post-quantum cryptography (ML-DSA).\n\nMag-sign in dito, at hihilingin sa iyong irehistro ito kaagad pagkatapos mong mag-sign in:\n\n{{signin}}\n\nBinubuksan lamang ng link ang pahina ng pag-sign in. Hindi ka nito isina-sign in at wala itong dalang anuman tungkol sa iyong account. Kung hindi mo inaasahan ang mensaheng ito, huwag itong pansinin, o magtanong sa namamahala ng iyong account.\n",
+      "html": "<p>Hinihiling ng {{service}} kay <strong>{{username}}</strong> na magrehistro ng bagong passkey na gumagamit ng post-quantum cryptography (ML-DSA).</p><p><a href=\"{{signin}}\">Mag-sign in</a>, at hihilingin sa iyong irehistro ito kaagad pagkatapos mong mag-sign in.</p><p>Binubuksan lamang ng link ang pahina ng pag-sign in. Hindi ka nito isina-sign in at wala itong dalang anuman tungkol sa iyong account. Kung hindi mo inaasahan ang mensaheng ito, huwag itong pansinin, o magtanong sa namamahala ng iyong account.</p>"
+    },
     "reset-refused-attempt": {
       "subject": "May sumubok na i-reset ang iyong password sa {{service}}",
       "text": "Noong {{when}}, may humiling na i-reset ang password ng account na {{username}}, inilagay ang address na ito, at nagbigay ng recovery code na hindi sa iyo. Walang binago at walang ipinadalang reset link.\n\nKung ikaw ito, subukang muli gamit ang recovery code na hindi pa nagagamit. Kung hindi, may nakakaalam ng pangalan ng iyong account at ng iyong address; makipag-ugnayan sa namamahala ng iyong account.\n",

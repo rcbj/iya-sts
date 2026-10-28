@@ -274,9 +274,10 @@ function postLoginProgressSource(): SourceSpec {
      field('campaign', 'string',
        'The mail campaign that last mailed the person (#1111), or empty.'),
      field('mails', 'number',
-       'How many campaign mails the person was sent about the activity.'),
+       'How many mails the campaign named in campaign sent the person ' +
+       'about the activity.'),
      field('firstMailedAt', 'timestamp',
-       'When the first campaign mail went, or null.'),
+       'When that campaign\'s first mail went, or null.'),
      field('lastMailedAt', 'timestamp',
        'When the last campaign mail went, or null.')], false,
     // Each document is one the New Query form can draw — one filter leaf,

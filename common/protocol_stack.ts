@@ -1331,6 +1331,14 @@ class ProtocolStack {
     // and reach its facades only at a ceremony, never while loading.
     this.build('common/passkey_clients', require('./passkey_clients'),
                'PasskeyClients');
+    // 18j-vi. POST-LOGIN MAIL CAMPAIGNS (#1111): a library that registers
+    // its scheduler job when built, and no route — so here, with the
+    // scheduler in hand, beside the passkey report. It reaches the
+    // directory, the mail uses and the post-login module LAZILY, at run
+    // time; requiring `ldap/ldap_server` (21) from here would drag its
+    // routes forward.
+    this.build('common/post_login_campaigns',
+               require('./post_login_campaigns'), 'PostLoginCampaigns');
     this.build('risk/risk_engine', require('../risk/risk_engine'),
                'RiskEngine');
     require('../admin-ui/risk_admin');
@@ -1533,6 +1541,11 @@ class ProtocolStack {
     this.build('mgmt-api/passkey_report_api',
                require('../mgmt-api/passkey_report_api'),
                'PasskeyReportApi');
+    // #1111: the post-login mail campaigns' operations, spread by
+    // `mgmt-api/admin_api` into its table as the passkey report's are.
+    this.build('mgmt-api/post_login_campaigns_api',
+               require('../mgmt-api/post_login_campaigns_api'),
+               'PostLoginCampaignsApi');
     // #552: the outbound SCIM clients' operations; the client itself is built
     // at 22, beside the SCIM server, and reached from here lazily.
     this.build('mgmt-api/scim_clients_api',

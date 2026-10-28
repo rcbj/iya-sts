@@ -137,5 +137,6 @@
   "title.tls": "TLS / TLS mutuel",
   "title.vc-verifier-config": "Requête du vérificateur",
   "title.worker-pools": "Pools de workers",
-  "title.broadcast": "Diffuser une annonce"
+  "title.broadcast": "Diffuser une annonce",
+  "title.post-login-campaigns": "Campagnes après connexion"
 }

@@ -75,6 +75,11 @@
       "text": "Le rapport {{definition}} pour {{username}} est {{status}}.\n\nOuvrez-le :\n\n{{report}}\n",
       "html": "<p>Le rapport <strong>{{definition}}</strong> pour {{username}} est {{status}}.</p><p><a href=\"{{report}}\">Ouvrez-le</a>.</p>"
     },
+    "post-login-reminder": {
+      "subject": "Enregistrez une clé d’accès post-quantique pour {{service}}",
+      "text": "{{service}} demande à {{username}} d’enregistrer une nouvelle clé d’accès qui utilise la cryptographie post-quantique (ML-DSA).\n\nConnectez-vous ici, et il vous sera demandé de l’enregistrer juste après la connexion :\n\n{{signin}}\n\nLe lien ouvre seulement la page de connexion. Il ne vous connecte pas et ne contient rien sur votre compte. Si vous n’attendiez pas ce message, ignorez-le ou adressez-vous à la personne qui gère votre compte.\n",
+      "html": "<p>{{service}} demande à <strong>{{username}}</strong> d’enregistrer une nouvelle clé d’accès qui utilise la cryptographie post-quantique (ML-DSA).</p><p><a href=\"{{signin}}\">Connectez-vous</a>, et il vous sera demandé de l’enregistrer juste après la connexion.</p><p>Le lien ouvre seulement la page de connexion. Il ne vous connecte pas et ne contient rien sur votre compte. Si vous n’attendiez pas ce message, ignorez-le ou adressez-vous à la personne qui gère votre compte.</p>"
+    },
     "reset-refused-attempt": {
       "subject": "Quelqu’un a tenté de réinitialiser votre mot de passe {{service}}",
       "text": "Le {{when}}, quelqu’un a demandé la réinitialisation du mot de passe du compte {{username}}, a indiqué cette adresse et a fourni un code de récupération qui n’est pas l’un des vôtres. Rien n’a été modifié et aucun lien de réinitialisation n’a été envoyé.\n\nSi c’était vous, réessayez avec un code de récupération inutilisé. Sinon, quelqu’un connaît le nom de votre compte et votre adresse ; contactez la personne qui gère votre compte.\n",

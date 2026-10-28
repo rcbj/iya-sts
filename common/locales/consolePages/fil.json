@@ -137,5 +137,6 @@
   "title.tls": "TLS / mutual TLS",
   "title.vc-verifier-config": "Request ng verifier",
   "title.worker-pools": "Mga worker pool",
-  "title.broadcast": "Mag-broadcast ng Anunsyo"
+  "title.broadcast": "Mag-broadcast ng Anunsyo",
+  "title.post-login-campaigns": "Mga kampanya pagkatapos mag-sign in"
 }
