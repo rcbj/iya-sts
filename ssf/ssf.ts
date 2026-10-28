@@ -3747,12 +3747,25 @@ class SharedSignals {
       for (const realm of targets) {
         await realms.run(realm, async () => {
           const here: Json = { realm: realms.currentId(), sent: 0,
-                               streams: 0 };
-          const candidates = streams.listStreams().filter((record: Json) => {
-            return !!record.internalSurface &&
-                   chosen.indexOf(String(record.internalSurface)) >= 0 &&
-                   record.status !== 'disabled' &&
-                   streams.deliversEvent(record, uri);
+                               streams: 0, skipped: [] };
+          // EACH SURFACE'S STREAM BY `streamFor()`, NEVER BY THE MARKER
+          // ALONE (#1088): `internalSurface` is not an SSF member and is the
+          // half of a record a persisted round trip can lose, which is why
+          // `streamFor()` asks for the derived id first. Selecting on the
+          // marker sent nothing on 8081, whose records came from the store.
+          const candidates: Json[] = [];
+          chosen.forEach((surfaceId: string) => {
+            const record = receivers.streamFor(surfaceId);
+            const why = !record ? 'has no receiver stream in this realm'
+              : (record.status === 'disabled' ? 'its stream is disabled'
+                : (!streams.deliversEvent(record, uri)
+                  ? 'its stream does not take the announcement event'
+                  : ''));
+            if (why) {
+              here.skipped.push(surfaceId + ' ' + why);
+            } else if (candidates.indexOf(record) < 0) {
+              candidates.push(record);
+            }
           });
           here.streams = candidates.length;
           if (candidates.length) {
@@ -3785,8 +3798,15 @@ class SharedSignals {
         });
       }
       if (!outcome.sent) {
-        outcome.why = 'No receiver stream of the chosen applications takes ' +
-          'the announcement event; see /admin/ssf.';
+        const reasons = [].concat(...outcome.realms.map((one: Json) => {
+          return (one.skipped || []).map((what: string) => {
+            return what + (outcome.realms.length > 1
+              ? ' (realm ' + one.realm + ')' : '');
+          });
+        }));
+        outcome.why = (reasons.length ? reasons.join('; ')
+          : 'no receiver stream of the chosen applications took it') +
+          '. See /admin/ssf.';
       }
     }
     if (!outcome.sent) {
