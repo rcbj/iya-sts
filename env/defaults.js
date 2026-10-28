@@ -314,23 +314,23 @@ var config = {
 
   // --- Global ----------------------------------------------------------
   workers: {
-    startTimeoutMs: 60000,                                         // Request worker start limit (ms); restart to apply
-    giveUpRetryMs: 300000,                                         // Give-up retry wait (ms)
-    requestCount: 1,                                               // Request worker threads; restart to apply
-    heapLimitMb: 0,                                                // Heap limit per process (MiB); restart to apply
-    startConcurrency: 0,                                           // Request workers starting at once; restart to apply
-    dispatch: "*",                                                 // Handled in a request worker; restart to apply
-    fanout: "/scim,/xacml,/admin-api,/account-api",                // Dispatched paths with no session affinity; restart to apply
-    surfaceCount: 0,                                               // Hosted-surface worker processes; restart to apply
-    surfaces: "/admin,/portal",                                    // Paths handled by the hosted-surface workers; restart to apply
+    startTimeoutMs: 60000,                                                                 // Request worker start limit (ms); restart to apply
+    giveUpRetryMs: 300000,                                                                 // Give-up retry wait (ms)
+    requestCount: 1,                                                                       // Request worker threads; restart to apply
+    heapLimitMb: 0,                                                                        // Heap limit per process (MiB); restart to apply
+    startConcurrency: 0,                                                                   // Request workers starting at once; restart to apply
+    dispatch: "*",                                                                         // Handled in a request worker; restart to apply
+    fanout: "/scim,/xacml,/admin-api,/account-api",                                        // Dispatched paths with no session affinity; restart to apply
+    surfaceCount: 0,                                                                       // Hosted-surface worker processes; restart to apply
+    surfaces: "/admin,/portal",                                                            // Paths handled by the hosted-surface workers; restart to apply
     batch: "/scim,/admin/signals/receive,/portal/signals/receive,/report/signals/receive", // Batch traffic paths
-    batchWorkerShare: 50,                                          // Share of workers batch traffic may use (%)
-    batchConcurrency: 8,                                           // Batch requests in flight per lane worker
-    batchQueueLimit: 5000,                                         // Batch requests waiting
-    batchQueueTimeoutS: 60,                                        // Longest a batch request waits (seconds)
-    maxSockets: 64,                                                // Connections per request worker; restart to apply
-    readYourWrite: "session",                                      // Read-your-write across request workers
-    socketDir: ""                                                  // Request worker socket directory; restart to apply
+    batchWorkerShare: 50,                                                                  // Share of workers batch traffic may use (%)
+    batchConcurrency: 8,                                                                   // Batch requests in flight per lane worker
+    batchQueueLimit: 5000,                                                                 // Batch requests waiting
+    batchQueueTimeoutS: 60,                                                                // Longest a batch request waits (seconds)
+    maxSockets: 64,                                                                        // Connections per request worker; restart to apply
+    readYourWrite: "session",                                                              // Read-your-write across request workers
+    socketDir: ""                                                                          // Request worker socket directory; restart to apply
   },
 
   // --- Trust realms ----------------------------------------------------
@@ -1046,7 +1046,7 @@ var config = {
     deadLetterSweepS: 60,                                                                                                                                 // Dead-letter sweep interval (seconds)
     authBasic: true,                                                                                                                                      // Offer HTTP Basic
     authClientCert: true,                                                                                                                                 // Offer TLS client certificates
-    internalReceivers: true,                                                                                                                              // Register the console and the portal as receivers; restart to apply
+    internalReceivers: true,                                                                                                                              // Register the console, the portal and reports as receivers; restart to apply
     internalPollMs: 1000,                                                                                                                                 // Console and portal poll interval (milliseconds)
     maxStreams: 25,                                                                                                                                       // Streams per receiver
     inactivityTimeoutS: 0,                                                                                                                                // Stream inactivity timeout (s)
@@ -1066,7 +1066,7 @@ var config = {
     foreignPollMaxRounds: 5,                                                                                                                              // Partner poll rounds
     foreignInboxMax: 500,                                                                                                                                 // Partner SETs kept
     foreignTimeoutMs: 10000,                                                                                                                              // Partner signals timeout (ms)
-    actOnSignalsInDevelopment: false,                                                                                                                     // The console and portal act on received signals in development
+    actOnSignalsInDevelopment: false,                                                                                                                     // This service's own applications act on received signals in development
     signalsRevokeGrants: true,                                                                                                                            // A federation partner's signals revoke the person's grants and tokens
     legacySubClaim: false,                                                                                                                                // Also emit the deprecated `sub` claim (development only)
     breakSetSignature: false                                                                                                                              // Sign every SET badly (development only)
