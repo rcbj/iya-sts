@@ -3756,6 +3756,13 @@ class SharedSignals {
           const candidates: Json[] = [];
           chosen.forEach((surfaceId: string) => {
             const record = receivers.streamFor(surfaceId);
+            // A STREAM THE STORE CARRIED OVER asks for the event here, once,
+            // before it is judged (#1091): seeding's own ask ran before the
+            // store's record arrived, and `pollAll()` may not have run yet.
+            if (record) {
+              receivers.askForAnnouncements(receivers.surfaceOf(surfaceId),
+                                            record);
+            }
             const why = !record ? 'has no receiver stream in this realm'
               : (record.status === 'disabled' ? 'its stream is disabled'
                 : (!streams.deliversEvent(record, uri)

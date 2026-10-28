@@ -126,6 +126,33 @@ function childMain() {
          'portal\'s streams, and not on reports\', which was not chosen',
          JSON.stringify({ sent: sent, before: before, after: after }));
 
+    // --- C1b. a stored record without the type (#1091) ----------------------
+    // What 8081 held: seeding asked for the event before the store's copy of
+    // the stream was read, and the stored record — without it in either
+    // list — was the one kept. The sender asks again before it selects.
+    const stale = receivers.streamFor('admin-console');
+    stale.events_requested = stale.events_requested.filter(function (one) {
+      return one !== uri;
+    });
+    stale.events_delivered = stale.events_delivered.filter(function (one) {
+      return one !== uri;
+    });
+    const consoleBefore = queued('admin-console');
+    const fromStale = await ssf.broadcastAnnouncement({ message: 'Stale.',
+      surfaces: ['admin-console'], by: 'a test' });
+    note(fromStale.ok && fromStale.sent === 1 &&
+         queued('admin-console') === consoleBefore + 1 &&
+         stale.events_delivered.indexOf(uri) >= 0,
+         'C1b. a stream carried over from the store without the event is ' +
+         'made to take it and is sent to (#1091)', JSON.stringify(fromStale));
+    stale.events_delivered = stale.events_delivered.filter(function (one) {
+      return one !== uri;
+    });
+    receivers.askForAnnouncements(receivers.surfaceOf('admin-console'), stale);
+    note(stale.events_delivered.indexOf(uri) >= 0,
+         'C1c. a stream that requests the event but is not agreed it is ' +
+         'agreed it (#1091)', JSON.stringify(stale.events_delivered));
+
     // --- C2. the marker lost (#1088) ----------------------------------------
     // `internalSurface` is the half of a record a persisted round trip can
     // lose; on 8081 the sender found nothing by it. The stream is found by
