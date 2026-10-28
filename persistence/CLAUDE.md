@@ -2212,7 +2212,10 @@ memory mode, development, and every in-process test.
   index instead (`revokeWhere()`'s `candidates`). A walk a request waits on is
   `scanAsync()`, which gives the event loop back between pages: /admin-api's
   revoke-all, by kind and by user (`revokeWhereAsync()`, which also yields
-  every 500 revocations), so the process answers others meanwhile.
+  every 500 revocations), so the process answers others meanwhile. A
+  callback answering `false` ends `scanAsync()`'s walk (#1110): the reports
+  application's `postLoginProgress` source stops at its limit or its time
+  budget without paging the rest of the store.
 
 **A PER-ORIGIN STORE ON DEMAND (#1001, 2026-10-27).** `admin_stats.users`
 is the first store that is both `merge: 'own'` and `onDemand`, and the reader

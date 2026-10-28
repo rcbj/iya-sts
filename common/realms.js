@@ -3111,7 +3111,8 @@ class IndexedMap extends Map {
  *   lookupEntries: (indexKey: string) =>
  *     { key: any, origin: string, own: boolean, value: any }[],
  *   scan: (fn: (value: any, key: any) => void) => void,
- *   scanAsync: (fn: (value: any, key: any) => void) => Promise<void>,
+ *   scanAsync: (fn: (value: any, key: any) => void | boolean) =>
+ *     Promise<void>,
  *   warm: (keys: any[]) => Promise<void>, peek: (k: any) => any,
  *   lookupEntriesAsync: (indexKey: string) =>
  *     Promise<{ key: any, origin?: string, own?: boolean, value: any }[]>,
@@ -3681,43 +3682,56 @@ function map(options) {
     // revoke-all through /admin-api — so the other requests the process is
     // serving are answered between pages instead of after the whole walk.
     // The realm is fixed when it is called. A promise; not on demand, the
-    // held rows and then resolved.
+    // held rows and then resolved. A `fn` that answers `false` ENDS the walk
+    // (#1110): a report reading a store stops at its limit, its time budget
+    // or a cancellation, and must not page the rest of the store to get
+    // there. Any other answer, `undefined` included, goes on.
     scanAsync: async function (fn) {
       log.debug("Entering scanAsync().");
       const target = per();
       if (!demandOn() || typeof onDemandReader.page !== 'function') {
-        target.forEach(function (value, key) {
-          fn(value, key);
-        });
+        for (const entry of Array.from(target.entries())) {
+          if (fn(entry[1], entry[0]) === false) {
+            log.debug("Leaving scanAsync(). Held whole; stopped.");
+            return;
+          }
+        }
         log.debug("Leaving scanAsync(). Held whole.");
         return;
       }
       const realmId = partitionId(currentId());
       const seen = new Set();
-      Array.from(target.entries()).forEach(function (entry) {
+      for (const entry of Array.from(target.entries())) {
         seen.add(entry[0]);
-        fn(entry[1], entry[0]);
-      });
+        if (fn(entry[1], entry[0]) === false) {
+          log.debug("Leaving scanAsync(). Stopped among the held rows.");
+          return;
+        }
+      }
       let after = '';
       let pages = 0;
+      let stopped = false;
       do {
         await new Promise(function (resolve) {
           setImmediate(resolve);
         });
         const page = onDemandReader.page(handleName, realmId, after);
         pages++;
-        (page.rows || []).forEach(function (row) {
+        for (const row of (page.rows || [])) {
           if (seen.has(row.key) ||
               onDemandReader.journalled(handleName, realmId, row.key)) {
-            return;
+            continue;
           }
           seen.add(row.key);
-          fn(row.value, row.key);
-        });
-        after = page.next || '';
+          if (fn(row.value, row.key) === false) {
+            stopped = true;
+            break;
+          }
+        }
+        after = stopped ? '' : (page.next || '');
       } while (after);
       log.debug("Leaving scanAsync(). " + seen.size + " row(s) in " + pages +
-                " page(s).");
+                " page(s)" + (stopped ? ", stopped." : "."));
     },
     // -----------------------------------------------------------------------
     // THREE CONSOLE QUESTIONS ASKED WITHOUT HOLDING THE EVENT LOOP

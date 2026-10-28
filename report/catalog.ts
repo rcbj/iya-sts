@@ -53,7 +53,9 @@ const CREDENTIALS = ['userPassword', 'unicodePwd', 'ntPassword', 'krb5Key',
 const GROUPABLE = ['status', 'enabled', 'type', 'protocol', 'category',
   'action', 'outcome', 'format', 'family', 'application', 'day',
   'mechanism', 'dialect', 'mode', 'onFailure', 'role', 'algorithm',
-  'lane', 'factors', 'hasPassword', 'channel', 'format'];
+  'lane', 'factors', 'hasPassword', 'channel', 'format',
+  // The post-login progress source (#1110, #1111).
+  'activity', 'profile', 'done', 'graceEnded', 'campaign', 'progress'];
 
 // Scalars a filter may name and a sort may not. `members` is not in this
 // list because it cannot be filtered either.
@@ -137,6 +139,18 @@ const HOLDER_INDEXED: Record<string, string[]> = {
   entryUuid: INDEXED.entryUuid
 };
 
+// A PREDEFINED QUERY (#1110): a name and a document the page offers as a
+// starting point on the source's own page and in New Query. It is DATA, not
+// a stored definition: nobody owns it, it runs nothing by itself, and the
+// person who starts from it saves their own copy if they want one. Each
+// document validates (`tests/report_query.js`), so a catalog change that
+// breaks one fails the suite rather than the page.
+interface PresetSpec {
+  id: string;
+  name: string;
+  document: Record<string, any>;
+}
+
 interface SourceSpec {
   id: string;
   bounded: boolean;
@@ -151,6 +165,7 @@ interface SourceSpec {
   paging: string;
   relationships: string[];
   fields: FieldSpec[];
+  presets?: PresetSpec[];
 }
 
 function field(id: string, type: string, meaning: string,
@@ -177,7 +192,8 @@ function field(id: string, type: string, meaning: string,
 }
 
 function source(id: string, retention: string,
-                fields: FieldSpec[], anchored?: boolean): SourceSpec {
+                fields: FieldSpec[], anchored?: boolean,
+                presets?: PresetSpec[]): SourceSpec {
   log.debug("Entering source().");
   const spec: SourceSpec = {
     id: id,
@@ -190,7 +206,105 @@ function source(id: string, retention: string,
   if (anchored) {
     spec.anchored = true;
   }
+  if (presets && presets.length) {
+    spec.presets = presets.map(function (one: PresetSpec): PresetSpec {
+      return { id: one.id, name: one.name,
+               document: JSON.parse(JSON.stringify(one.document)) };
+    });
+  }
   log.debug("Leaving source().");
+  return spec;
+}
+
+// THE POST-LOGIN PROGRESS SOURCE (#1110): `post_login.progress` read back,
+// one row per person and activity the realm has asked or mailed — the
+// post-quantum passkey migration's progress (#1096), and since #1111 what a
+// mail campaign did for each person. Read from the store, not the
+// directory, so it is neither anchored nor indexed: an unordered read stops
+// at its limit, and an ordered read or a count walks the rows a page at a
+// time under the usual time caps.
+const POST_LOGIN_ACTIVITIES = ['pqc-passkey-migration'];
+const POST_LOGIN_ROLES = ['primary', 'mfa'];
+// Where a person stands, ONE word (the page groups by one field): done; past
+// the allotted time and not done; put off by Skip; asked and not done;
+// mailed by a campaign and never asked at a sign-in.
+const POST_LOGIN_PROGRESS = ['done', 'past-grace', 'snoozed', 'asked',
+  'mailed'];
+
+function postLoginProgressSource(): SourceSpec {
+  log.debug("Entering postLoginProgressSource().");
+  const spec = source('postLoginProgress',
+    'One row per person and post-login activity this realm has asked at a ' +
+    'sign-in or mailed in a campaign, as the post-login progress store ' +
+    'holds it now (#1110). Somebody never asked and never mailed has no ' +
+    'row. The profile, role and allotted time are the ones that applied ' +
+    'when the row was last written.',
+    [field('username', 'string', 'The directory uid of the person.'),
+     field('activity', 'string',
+       'The post-login activity: pqc-passkey-migration, a post-quantum ' +
+       '(ML-DSA) passkey where the person holds a classical one or none.',
+       undefined, POST_LOGIN_ACTIVITIES),
+     field('profile', 'string',
+       'The post-login profile that reached the person when the row was ' +
+       'last written (default, or a named profile chosen by group).'),
+     field('role', 'string',
+       'The role the passkey is asked for: primary (passwordless sign-in) ' +
+       'or mfa (a second factor).', undefined, POST_LOGIN_ROLES),
+     field('progress', 'string',
+       'Where the person stands, in one word, the first that holds: done; ' +
+       'past-grace (the allotted time ended and it is not done); snoozed ' +
+       '(Skip put it off and the time has not run out); asked (at a ' +
+       'sign-in, not done); mailed (by a campaign, never asked at a ' +
+       'sign-in).', undefined, POST_LOGIN_PROGRESS),
+     field('invitedAt', 'timestamp',
+       'When the person was first asked at a sign-in; the allotted time ' +
+       'counts from here. Null when they were only mailed.'),
+     field('snoozedUntil', 'timestamp',
+       'Until when Skip put the activity off, or null.'),
+     field('asks', 'number', 'How many sign-ins asked the person.'),
+     field('skips', 'number', 'How many times the person chose Skip.'),
+     field('done', 'boolean', 'Whether the person did the activity.'),
+     field('doneAt', 'timestamp', 'When the person did it, or null.'),
+     field('deadline', 'timestamp',
+       'When the allotted time (graceDays from the first invitation) ends, ' +
+       'or null where there is none.'),
+     field('graceEnded', 'boolean',
+       'Whether the allotted time has ended and the activity is not done: ' +
+       'Skip is gone and the next sign-in is held until it is.'),
+     field('campaign', 'string',
+       'The mail campaign that last mailed the person (#1111), or empty.'),
+     field('mails', 'number',
+       'How many campaign mails the person was sent about the activity.'),
+     field('firstMailedAt', 'timestamp',
+       'When the first campaign mail went, or null.'),
+     field('lastMailedAt', 'timestamp',
+       'When the last campaign mail went, or null.')], false,
+    // Each document is one the New Query form can draw — one filter leaf,
+    // one order, one group — so starting from it and saving it keeps it.
+    [{ id: 'progress-by-activity', name: 'Progress by activity',
+       document: { source: 'postLoginProgress',
+                   select: ['progress'],
+                   where: { op: 'eq', field: 'activity',
+                            value: 'pqc-passkey-migration' },
+                   aggregate: 'count', groupBy: ['progress'],
+                   orderBy: [{ field: 'progress', dir: 'asc' }],
+                   limit: 100, format: 'json', mode: 'auto' } },
+     { id: 'past-grace-period', name: 'People past their grace period',
+       document: { source: 'postLoginProgress',
+                   select: ['username', 'activity', 'profile', 'role',
+                            'invitedAt', 'deadline', 'asks', 'skips',
+                            'mails', 'lastMailedAt'],
+                   where: { op: 'eq', field: 'graceEnded', value: true },
+                   orderBy: [{ field: 'deadline', dir: 'asc' }],
+                   limit: 1000, format: 'json', mode: 'auto' } },
+     { id: 'skipped-most', name: 'People who skipped most',
+       document: { source: 'postLoginProgress',
+                   select: ['username', 'activity', 'profile', 'skips',
+                            'asks', 'done', 'snoozedUntil', 'deadline'],
+                   where: { op: 'gt', field: 'skips', value: 0 },
+                   orderBy: [{ field: 'skips', dir: 'desc' }],
+                   limit: 100, format: 'json', mode: 'auto' } }]);
+  log.debug("Leaving postLoginProgressSource().");
   return spec;
 }
 
@@ -412,7 +526,8 @@ function standardSources(): SourceSpec[] {
        field('onFailure', 'string',
          'keep or refuse, as the source is configured.', undefined,
          ['keep', 'refuse']),
-       field('enabled', 'boolean', 'Whether the source is enabled.')])
+       field('enabled', 'boolean', 'Whether the source is enabled.')]),
+    postLoginProgressSource()
   ];
   log.debug("Leaving standardSources().");
   return sources;
@@ -526,6 +641,26 @@ class Catalog {
     }
     log.debug("Leaving Catalog.source().");
     return found;
+  }
+
+  /**
+   * One predefined query of a source (#1110).
+   *
+   * @param sourceId - the source name
+   * @param presetId - the preset's id
+   * @returns a copy of the preset, or null
+   */
+  preset(sourceId: string, presetId: string): PresetSpec | null {
+    log.debug("Entering Catalog.preset().");
+    const src = this.source(sourceId);
+    const found = (src && src.presets ? src.presets : [])
+      .filter(function (one: PresetSpec): boolean {
+        return one.id === presetId;
+      })[0] || null;
+    log.debug("Leaving Catalog.preset(). " + (found ? 'Found.' : 'None.'));
+    return found ? { id: found.id, name: found.name,
+                     document: JSON.parse(JSON.stringify(found.document)) }
+                 : null;
   }
 
   /**

@@ -143,5 +143,8 @@
   "perPage.rows": "{n} row",
   "tipPerPage": "Ilang row ang ipinapakita ng isang pahina. Ang pagbabago nito ay nagsisimula sa unang pahina.",
   "announcement.heading": "Anunsyo",
-  "announcement.close": "Isara"
+  "announcement.close": "Isara",
+  "presets": "Mga paunang-natukoy na query",
+  "presetsNote": "Binubuksan ng bawat isa ang Bagong query na napunan na ang query nito. Walang tatakbo hangga't hindi mo pinipindot ang Patakbuhin, at ang pag-save nito ay gagawa ng sarili mong definition.",
+  "presetFrom": "Nagsimula mula sa paunang-natukoy na query na {name}."
 }

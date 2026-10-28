@@ -143,5 +143,8 @@
   "perPage.rows": "{n} filas",
   "tipPerPage": "Cuántas filas muestra una página. Cambiarlo vuelve a la primera página.",
   "announcement.heading": "Anuncio",
-  "announcement.close": "Cerrar"
+  "announcement.close": "Cerrar",
+  "presets": "Consultas predefinidas",
+  "presetsNote": "Cada una abre Nueva consulta con su consulta ya rellenada. No se ejecuta nada hasta que pulse Ejecutar, y al guardarla se crea una definición propia.",
+  "presetFrom": "Iniciada a partir de la consulta predefinida {name}."
 }

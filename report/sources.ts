@@ -512,26 +512,36 @@ function reportFlag(value: any): boolean {
 async function reportOffer(row: any, rows: any, control: any):
     Promise<boolean> {
   log.debug("Entering reportOffer().");
+  const keep = reportOfferNow(row, rows, control);
+  log.debug("Leaving reportOffer().");
+  return keep;
+}
+
+// `reportOffer()` for a walk whose callback cannot await (#1110): a store's
+// `scanAsync()` hands each row to a synchronous function, and its answer —
+// false — is what ends the walk. The same three stops, in the same order.
+function reportOfferNow(row: any, rows: any, control: any): boolean {
+  log.debug("Entering reportOfferNow().");
   if (control && typeof control.cancelled === 'function' &&
       control.cancelled()) {
     control.stopped = true;
-    log.debug("Leaving reportOffer(). Cancelled.");
+    log.debug("Leaving reportOfferNow(). Cancelled.");
     return false;
   }
   if (control && typeof control.stillOwner === 'function' &&
       control.stillOwner() === false) {
     control.lost = true;
-    log.debug("Leaving reportOffer(). Lost.");
+    log.debug("Leaving reportOfferNow(). Lost.");
     return false;
   }
   if (control && control.budgetMs > 0 && control.startedMs &&
       Date.now() - control.startedMs > control.budgetMs) {
     control.timedOut = true;
-    log.debug("Leaving reportOffer(). Timed out.");
+    log.debug("Leaving reportOfferNow(). Timed out.");
     return false;
   }
   const keep = rows.take(row);
-  log.debug("Leaving reportOffer().");
+  log.debug("Leaving reportOfferNow().");
   return keep;
 }
 
@@ -2681,6 +2691,105 @@ async function reportReadJobRows(rows: any, control: any): Promise<void> {
   log.debug("Leaving reportReadJobRows().");
 }
 
+// THE POST-LOGIN PROGRESS SOURCE (#1110): one row per person and activity
+// in `post_login.progress`, through `common/post_login.ts`'s walk — the
+// rows this process holds, then the store a page at a time, stopping when
+// a row is refused (the limit, the time budget, a cancellation). The
+// profile, role and allotted time are the row's own (written with it since
+// #1110); a row written before carries none, and only then is the profile
+// that reaches the person now asked of the post-login policy, once per
+// person. The module is reached here, lazily, like every source's.
+let reportPostLoginModule: any = null;
+
+function reportInstallPostLogin(module: any): void {
+  log.debug("Entering reportInstallPostLogin().");
+  reportPostLoginModule = module || null;
+  log.debug("Leaving reportInstallPostLogin().");
+}
+
+function reportPostLogin(): any {
+  log.debug("Entering reportPostLogin().");
+  const out = reportPostLoginModule || require('../common/post_login');
+  log.debug("Leaving reportPostLogin().");
+  return out;
+}
+
+/**
+ * One report row of the post-login progress source.
+ *
+ * @param entry - `{ username, activity, row }`, as the walk hands it out
+ * @param postLogin - `common/post_login.ts`, for the allotted time
+ * @param profileOf - the profile that reaches a person now, for a row that
+ *   recorded none: `{ name, graceDays }`
+ * @returns the catalog row
+ */
+function reportPostLoginRow(entry: any, postLogin: any,
+                            profileOf: (username: string) => any): any {
+  log.debug("Entering reportPostLoginRow().");
+  const row = entry && entry.row ? entry.row : {};
+  const recorded = typeof row.profile === 'string' && row.profile !== '';
+  const profile = recorded ? null : profileOf(String(entry.username));
+  const grace = postLogin.graceOf(row, profile ? profile.graceDays : 0);
+  const done = Number(row.doneAt) > 0;
+  const progress = done ? 'done'
+    : grace.ended ? 'past-grace'
+    : Number(row.snoozedUntil) > Date.now() ? 'snoozed'
+    : Number(row.invitedAt) > 0 ? 'asked'
+    : Number(row.mails) > 0 ? 'mailed' : 'asked';
+  const out = {
+    username: String(entry.username || ''),
+    activity: String(entry.activity || ''),
+    profile: recorded ? row.profile : String((profile && profile.name) || ''),
+    role: String(row.role || ''),
+    progress: progress,
+    invitedAt: reportIso(row.invitedAt || null),
+    snoozedUntil: reportIso(row.snoozedUntil || null),
+    asks: Number(row.asks) || 0,
+    skips: Number(row.skips) || 0,
+    done: done,
+    doneAt: reportIso(row.doneAt || null),
+    deadline: reportIso(grace.deadline || null),
+    graceEnded: grace.ended === true,
+    campaign: String(row.campaign || ''),
+    mails: Number(row.mails) || 0,
+    firstMailedAt: reportIso(row.firstMailedAt || null),
+    lastMailedAt: reportIso(row.lastMailedAt || null)
+  };
+  log.debug("Leaving reportPostLoginRow().");
+  return out;
+}
+
+async function reportReadPostLogin(rows: any, control: any): Promise<void> {
+  log.debug("Entering reportReadPostLogin().");
+  const postLogin = reportPostLogin();
+  const policy = require('../common/post_login_policy');
+  const profiles = new Map<string, any>();
+  const profileOf = function (username: string): any {
+    if (!profiles.has(username)) {
+      let found: any = { name: '', graceDays: 0 };
+      try {
+        const rules = policy.forPerson(username);
+        found = { name: String(rules.name || ''),
+                  graceDays: Number(rules.graceDays) || 0 };
+      } catch (e) {
+        // A profile that cannot be read leaves the column empty and the
+        // allotted time unknown; the row is still reported.
+        log.debug("Caught in reportReadPostLogin(): " +
+                  ((e && e.message) || e));
+      }
+      profiles.set(username, found);
+    }
+    return profiles.get(username);
+  };
+  let offered = 0;
+  await postLogin.eachProgressAsync(function (entry: any): boolean {
+    offered += 1;
+    return reportOfferNow(reportPostLoginRow(entry, postLogin, profileOf),
+                          rows, control);
+  });
+  log.debug("Leaving reportReadPostLogin(). " + offered + " row(s).");
+}
+
 async function reportReadSource(plan: any, rows: any, control: any):
     Promise<void> {
   log.debug("Entering reportReadSource().");
@@ -2707,6 +2816,8 @@ async function reportReadSource(plan: any, rows: any, control: any):
     await reportReadAttributeSources(rows, control);
   } else if (source === 'credentialHolders') {
     await reportReadCredentialHolders(rows, control);
+  } else if (source === 'postLoginProgress') {
+    await reportReadPostLogin(rows, control);
   }
   log.debug("Leaving reportReadSource().");
 }
@@ -3549,6 +3660,10 @@ export = {
   installDirectory: reportInstallDirectory,
   // The issued-credential register a test installs (#1021).
   installIssuedRegister: reportInstallIssuedRegister,
+  // The post-login module a test installs (#1110); `null` puts back the
+  // service's own.
+  installPostLogin: reportInstallPostLogin,
+  postLoginRow: reportPostLoginRow,
   // The mechanism ids, for the test that holds the catalog's enumeration
   // (#1007) equal to the table (the catalog cannot require this module).
   mechanismIds: function (): string[] {

@@ -245,6 +245,11 @@ holding the population. Each source says `paging: "limit"` and
 `relationships: []`. There is no second page key and no join. An `offset`,
 a `sources` key, or `source` sent as an array, is `invalid_query`.
 
+A source may also carry `presets`: predefined queries, each a name and a
+whole query document, which the source's page lists and New Query opens
+filled in. They are not saved definitions; nobody owns them, and nothing
+runs until somebody presses Run.
+
 A field has an id, a type (`string`, `number`, `timestamp` or `boolean`),
 an English meaning, and whether it can be filtered, sorted or grouped. A
 field that can hold only certain values lists them as `values`, and the
@@ -614,6 +619,64 @@ How many passkeys there are, by role and algorithm:
   "where": { "op": "eq", "field": "mechanism", "value": "passkey" },
   "aggregate": "count",
   "groupBy": ["role", "algorithm"]
+}
+```
+
+### `postLoginProgress`
+
+Where each person stands on a [post-login activity](post-login-activities.md):
+one row per person and activity that this realm has asked at a sign-in or
+mailed in a [campaign](post-login-activities.md#mail-campaigns). Somebody who
+was never asked and never mailed has no row. The rows come from the
+post-login progress store, not from the directory, so a filter on any field
+is allowed; an unordered query stops at its limit, and a sorted or counted
+one reads the rows a page at a time under the usual time limits.
+
+The profile, role and allotted time on a row are the ones that applied when
+the row was last written, so a report shows which profile asked a person
+without the directory being asked again for every row.
+
+| Field | Type | Meaning | Filter | Sort | Group |
+|---|---|---|---|---|---|
+| `username` | string | The person's uid. | yes | yes | no |
+| `activity` | string | The post-login activity: `pqc-passkey-migration`. | yes | yes | yes |
+| `profile` | string | The post-login profile that reached the person (`default`, or a named profile). | yes | yes | yes |
+| `role` | string | The role the passkey is asked for: `primary` or `mfa`. | yes | yes | yes |
+| `progress` | string | Where the person stands, the first that holds: `done`, `past-grace`, `snoozed`, `asked`, `mailed`. | yes | yes | yes |
+| `invitedAt` | timestamp | When the person was first asked at a sign-in; the allotted time counts from here. Null when they were only mailed. | yes | yes | no |
+| `snoozedUntil` | timestamp | Until when Skip put the activity off. | yes | yes | no |
+| `asks` | number | How many sign-ins asked the person. | yes | yes | no |
+| `skips` | number | How many times the person chose Skip. | yes | yes | no |
+| `done` | boolean | Whether the person did the activity. | yes | yes | yes |
+| `doneAt` | timestamp | When they did it. | yes | yes | no |
+| `deadline` | timestamp | When the allotted time ends, or null where there is none. | yes | yes | no |
+| `graceEnded` | boolean | The allotted time has ended and the activity is not done: Skip is gone and the next sign-in is held. | yes | yes | yes |
+| `campaign` | string | The mail campaign that last mailed the person. | yes | yes | yes |
+| `mails` | number | How many campaign mails the person was sent. | yes | yes | no |
+| `firstMailedAt` | timestamp | When the first campaign mail went. | yes | yes | no |
+| `lastMailedAt` | timestamp | When the last campaign mail went. | yes | yes | no |
+
+Three **predefined queries** come with it. The source's page lists them; each
+opens New Query with its query filled in, and nothing runs until you press
+Run. Save it to keep your own copy as a definition.
+
+| Predefined query | What it asks |
+|---|---|
+| Progress by activity | How many people of the post-quantum passkey migration are at each `progress`. |
+| People past their grace period | Everybody whose `graceEnded` is true, the earliest deadline first. |
+| People who skipped most | Everybody who skipped at least once, the most skips first. |
+
+On the API the catalog carries them as `presets`, each an `id`, a `name` and
+the whole query `document`, ready to post to `/report-api/queries`:
+
+```json
+{
+  "source": "postLoginProgress",
+  "select": ["progress"],
+  "where": { "op": "eq", "field": "activity", "value": "pqc-passkey-migration" },
+  "aggregate": "count",
+  "groupBy": ["progress"],
+  "orderBy": [{ "field": "progress", "dir": "asc" }]
 }
 ```
 

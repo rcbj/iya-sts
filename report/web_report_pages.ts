@@ -2010,9 +2010,21 @@ class ReportRuntime extends SpaClient {
       esc(src.retention) + '</p>' : '';
     const indexedNote = anyIndexed ? '<p class="sub">' +
       esc(t.text('report.indexedNote')) + '</p>' : '';
+    // PREDEFINED QUERIES (#1110): each a link to New Query with its
+    // document filled in, which runs nothing until somebody presses Run.
+    const presets = Array.isArray(src.presets) ? src.presets : [];
+    const presetList = presets.length ? '<h3>' +
+      esc(t.text('report.presets')) + '</h3><p class="sub">' +
+      esc(t.text('report.presetsNote')) + '</p><ul class="presets">' +
+      presets.map(function (one: any): string {
+        return '<li><a href="' + esc(BASE + '/query?source=' +
+          encodeURIComponent(src.id) + '&preset=' +
+          encodeURIComponent(String(one.id))) + '">' +
+          esc(String(one.name)) + '</a></li>';
+      }).join('') + '</ul>' : '';
     this.paint('<p><a href="' + esc(BASE + '/query?source=' + src.id) +
       '">' + esc(this.t.text('report.newQuery')) + '</a></p>' +
-      '<h2>' + esc(src.id) + '</h2>' + kept + indexedNote +
+      '<h2>' + esc(src.id) + '</h2>' + kept + indexedNote + presetList +
       tableHtml([
         esc(this.t.text('report.fields')),
         esc(this.t.text('report.type')),
@@ -2030,7 +2042,7 @@ class ReportRuntime extends SpaClient {
    * @param sourceId - the source, when the address names one
    * @returns nothing
    */
-  async drawQuery(sourceId: string): Promise<void> {
+  async drawQuery(sourceId: string, presetId?: string): Promise<void> {
     const answer = await this.call('GET', API + '/catalog');
     if (!answer || !answer.json || !answer.json.sources) {
       this.paint(problemHtml(this.t, answer && answer.json &&
@@ -2040,9 +2052,20 @@ class ReportRuntime extends SpaClient {
     const sources = answer.json.sources;
     this.catalogSources = sources;
     const self = this;
+    // A PREDEFINED QUERY (#1110) fills the form and the name a save would
+    // take; one the source does not offer leaves the form empty.
+    const preset = presetId ? ((sources.filter(function (src: any): boolean {
+      return src.id === sourceId;
+    })[0] || {}).presets || []).filter(function (one: any): boolean {
+      return one.id === presetId;
+    })[0] : null;
+    const start = preset && preset.document ? preset.document
+                                            : { source: sourceId || '' };
     this.paint('<form class="query-form" data-form="query">' +
+      (preset ? '<p class="sub">' + esc(self.t.text('report.presetFrom',
+        { name: String(preset.name) })) + '</p>' : '') +
       '<div data-query-block>' +
-      queryFormHtml(self.t, sources, { source: sourceId || '' }) +
+      queryFormHtml(self.t, sources, start) +
       '</div>' +
       // Save query (#986): the Name field and the Save button appear only
       // once the box is ticked; unticked, the form runs and saves nothing.
@@ -2052,7 +2075,8 @@ class ReportRuntime extends SpaClient {
       '<div class="field save-only" hidden><label' +
       tip(self.t, 'report.tipName') + '>' +
       esc(self.t.text('report.name')) +
-      '</label><input name="definitionName"></div>' +
+      '</label><input name="definitionName"' + (preset ? ' value="' +
+        esc(String(preset.name)) + '"' : '') + '></div>' +
       actionsHtml(self.t) + '</form>');
   }
 
@@ -2790,7 +2814,8 @@ class ReportRuntime extends SpaClient {
       return;
     }
     if (path === BASE + '/query') {
-      await this.drawQuery(String(query.source || ''));
+      await this.drawQuery(String(query.source || ''),
+        String(query.preset || ''));
       return;
     }
     if (path === BASE + '/definitions') {

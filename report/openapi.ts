@@ -642,7 +642,19 @@ class OpenApi {
               relationships: { type: 'array', maxItems: 0,
                 items: { type: 'string' } },
               fields: { type: 'array',
-                items: { $ref: '#/components/schemas/Field' } }
+                items: { $ref: '#/components/schemas/Field' } },
+              presets: { type: 'array',
+                description: 'Predefined queries (#1110): a name and a ' +
+                  'whole query document the page offers as a starting ' +
+                  'point. Data, not a stored definition: nobody owns one ' +
+                  'and nothing runs it until somebody does.',
+                items: { type: 'object',
+                  properties: {
+                    id: { type: 'string' },
+                    name: { type: 'string' },
+                    document: { type: 'object',
+                                additionalProperties: true }
+                  } } }
             }
           },
           Catalog: {

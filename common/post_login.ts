@@ -49,6 +49,17 @@
 // is cell-tier (`persistence/tiers.js`), and ON DEMAND (#820): it grows with
 // the people asked, and a start must not read it whole.
 //
+// WHAT A ROW SAYS (#1110, #1111): the first invitation, the snooze, how many
+// times the person was asked and skipped, and when they did it — and, since
+// the reports application reads it back (`report/sources.ts`, the
+// `postLoginProgress` source), the profile, the role and the allotted time
+// that applied when it was last written, so a report says which profile
+// asked a person without asking the directory again for every row. A
+// campaign's mail (`common/post_login_campaigns.ts`) adds the campaign,
+// how many mails went and when the first and the last did. A mail is NOT an
+// invitation: the allotted time still starts at the first time the person
+// is asked at a sign-in, because that is the first time they can act on it.
+//
 // A LIBRARY (rule 3): it registers no route. It requires the credential
 // store, the WebAuthn and passkey policies and the post-login policy, none of
 // which requires it, so it closes no cycle.
@@ -78,7 +89,8 @@ const ROLES = ['primary', 'mfa'];
 
 // ---------------------------------------------------------------------------
 // THE STORE: `<username>|<activity>` → `{ invitedAt, snoozedUntil, asks,
-// skips, doneAt }`, times in milliseconds. Declared here, per realm, and
+// skips, doneAt, profile, role, graceDays, campaign, mails, firstMailedAt,
+// lastMailedAt }`, times in milliseconds. Declared here, per realm, and
 // nowhere else (rule: a store becomes per realm at its declaration).
 // ---------------------------------------------------------------------------
 const progress = realms.map({ persist: 'post_login.progress',
@@ -115,6 +127,16 @@ interface Due {
   invitedAt: number;
   deadline: number;
   profile: string;
+}
+
+/**
+ * One person's progress on one activity, as the store's walk hands it out
+ * (#1110): the row, with the person and the activity split out of its key.
+ */
+interface ProgressEntry {
+  username: string;
+  activity: string;
+  row: Record<string, any>;
 }
 
 interface PostLoginDeps {
@@ -182,17 +204,30 @@ class PostLogin {
    * @param activity - the activity; the PQC migration when omitted
    * @returns the row, or an empty one
    */
-  stateOf(username: string, activity?: string): Record<string, number> {
+  stateOf(username: string, activity?: string): Record<string, any> {
     const { log, progress } = this.deps;
     log.debug("Entering PostLogin.stateOf().");
     const row = progress.get(this.keyOf(username, activity || PQC_MIGRATION));
     log.debug("Leaving PostLogin.stateOf(). " + (row ? 'Held.' : 'None.'));
     return Object.assign({ invitedAt: 0, snoozedUntil: 0, asks: 0, skips: 0,
-                           doneAt: 0 }, row || {});
+                           doneAt: 0, mails: 0, firstMailedAt: 0,
+                           lastMailedAt: 0 }, row || {});
+  }
+
+  // WHAT APPLIED WHEN THE ROW WAS WRITTEN (#1110): the profile, the role and
+  // the allotted time of the due that wrote it, kept beside the counts so
+  // the report reads them off the row.
+  private stamp(row: Record<string, any>, due: Due): void {
+    const { log } = this.deps;
+    log.debug("Entering PostLogin.stamp().");
+    row.profile = String(due.profile || '');
+    row.role = String(due.role || '');
+    row.graceDays = due.enforceable ? Number(due.graceDays) || 0 : 0;
+    log.debug("Leaving PostLogin.stamp().");
   }
 
   private write(username: string, activity: string,
-                row: Record<string, number>): void {
+                row: Record<string, any>): void {
     const { log, progress } = this.deps;
     log.debug("Entering PostLogin.write().");
     progress.set(this.keyOf(username, activity), row);
@@ -426,7 +461,7 @@ class PostLogin {
    * @param due - what they were asked
    * @returns the row now held
    */
-  noteAsked(username: string, due: Due): Record<string, number> {
+  noteAsked(username: string, due: Due): Record<string, any> {
     const { log, now } = this.deps;
     log.debug("Entering PostLogin.noteAsked().");
     const row = this.stateOf(username, due.activity);
@@ -434,6 +469,7 @@ class PostLogin {
       row.invitedAt = now();
     }
     row.asks = (Number(row.asks) || 0) + 1;
+    this.stamp(row, due);
     this.write(username, due.activity, row);
     log.debug("Leaving PostLogin.noteAsked().");
     return row;
@@ -461,6 +497,7 @@ class PostLogin {
     }
     row.skips = (Number(row.skips) || 0) + 1;
     row.snoozedUntil = now() + (Number(due.snoozeDays) || 1) * DAY_MS;
+    this.stamp(row, due);
     this.write(username, due.activity, row);
     log.debug("Leaving PostLogin.noteSkipped().");
     return { ok: true, snoozedUntil: row.snoozedUntil };
@@ -475,15 +512,108 @@ class PostLogin {
    * @param due - what they did
    * @returns the row now held
    */
-  noteDone(username: string, due: Due): Record<string, number> {
+  noteDone(username: string, due: Due): Record<string, any> {
     const { log, now } = this.deps;
     log.debug("Entering PostLogin.noteDone().");
     const row = this.stateOf(username, due.activity);
     row.doneAt = now();
     row.snoozedUntil = 0;
+    this.stamp(row, due);
     this.write(username, due.activity, row);
     log.debug("Leaving PostLogin.noteDone().");
     return row;
+  }
+
+  /**
+   * Records that a campaign mailed a person about an activity (#1111): the
+   * campaign, how many mails went, and when the first and the last did. It
+   * is not an invitation — the allotted time starts at a sign-in.
+   *
+   * @param username - the person
+   * @param due - what they are due, as `dueFor()` answered
+   * @param campaign - the campaign's id
+   * @returns the row now held
+   */
+  noteMailed(username: string, due: Due, campaign: string):
+      Record<string, any> {
+    const { log, now } = this.deps;
+    log.debug("Entering PostLogin.noteMailed().");
+    const row = this.stateOf(username, due.activity);
+    const at = now();
+    row.campaign = String(campaign || '');
+    row.mails = (Number(row.mails) || 0) + 1;
+    if (!row.firstMailedAt) {
+      row.firstMailedAt = at;
+    }
+    row.lastMailedAt = at;
+    this.stamp(row, due);
+    this.write(username, due.activity, row);
+    log.debug("Leaving PostLogin.noteMailed(). " + row.mails + '.');
+    return row;
+  }
+
+  /**
+   * Walks the ambient realm's progress rows (#1110), every person and
+   * activity once, in no promised order: the rows this process holds, then
+   * the store a page at a time, the event loop given back between pages
+   * (`realms.map()`'s `scanAsync()`). `fn` answering `false` ends the walk,
+   * which is how a report stops at its limit or its time budget.
+   *
+   * @param fn - called with each row, the person and the activity split out
+   *   of its key
+   * @returns a promise settled when the walk ends
+   */
+  async eachProgressAsync(fn: (entry: ProgressEntry) => boolean | void):
+      Promise<void> {
+    const { log, progress } = this.deps;
+    log.debug("Entering PostLogin.eachProgressAsync().");
+    let seen = 0;
+    const walk = function (value: any, key: any): boolean | void {
+      const text = String(key || '');
+      const bar = text.lastIndexOf('|');
+      if (bar <= 0 || !value || typeof value !== 'object') {
+        return true;
+      }
+      seen += 1;
+      return fn({ username: text.slice(0, bar),
+                  activity: text.slice(bar + 1), row: value });
+    };
+    if (typeof progress.scanAsync === 'function') {
+      await progress.scanAsync(walk);
+    } else {
+      // A plain Map (a test's): walked here, stopping the same way.
+      for (const entry of Array.from(progress.entries()) as any[]) {
+        if (walk(entry[1], entry[0]) === false) {
+          break;
+        }
+      }
+    }
+    log.debug("Leaving PostLogin.eachProgressAsync(). " + seen + " row(s).");
+  }
+
+  /**
+   * When a row's allotted time ends, and whether it has (#1110): its
+   * recorded `graceDays` counted from the first invitation, 0 where there is
+   * no deadline — no allotted time, never invited, or nothing that can be
+   * required. Done is never past its grace.
+   *
+   * @param row - a progress row
+   * @param graceDays - the allotted time to use where the row recorded none
+   *   (a row written before #1110)
+   * @returns `{ deadline, ended }`, the deadline in milliseconds
+   */
+  graceOf(row: Record<string, any>, graceDays?: number):
+      { deadline: number; ended: boolean } {
+    const { log, now } = this.deps;
+    log.debug("Entering PostLogin.graceOf().");
+    const days = row && row.graceDays != null ? Number(row.graceDays) || 0
+                                               : Number(graceDays) || 0;
+    const invited = Number(row && row.invitedAt) || 0;
+    const deadline = days > 0 && invited ? invited + days * DAY_MS : 0;
+    const ended = deadline > 0 && !(Number(row && row.doneAt) > 0) &&
+                  now() >= deadline;
+    log.debug("Leaving PostLogin.graceOf(). " + ended);
+    return { deadline: deadline, ended: ended };
   }
 
   /**
@@ -539,5 +669,8 @@ export = {
   noteAsked: slot.forward('noteAsked'),
   noteSkipped: slot.forward('noteSkipped'),
   noteDone: slot.forward('noteDone'),
+  noteMailed: slot.forward('noteMailed'),
+  eachProgressAsync: slot.forward('eachProgressAsync'),
+  graceOf: slot.forward('graceOf'),
   forget: slot.forward('forget')
 };

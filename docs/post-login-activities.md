@@ -117,6 +117,16 @@ keeps the `amr` and `acr` of the sign-in the person had already completed.
   sign-in is held until the passkey is registered.
 - `noPasskey: invite` is never required.
 
+## Following the migration
+
+Where each person stands is a report, not a console page. Open the reports
+application (`/report`) and choose the `postLoginProgress` source: one row
+per person and activity, with when they were first asked, how often they
+were asked and skipped, whether they did it, when the allotted time ends, and
+whether it already has. Its page offers three predefined queries — progress
+by activity, the people past their grace period, and the people who skipped
+most. See [Reports](reporting.md#postloginprogress) for every field.
+
 ## Sign-ins that don't use the sign-in screen
 
 A federated sign-in, a wallet, Kerberos (SPNEGO) or a client certificate can

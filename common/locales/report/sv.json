@@ -143,5 +143,8 @@
   "perPage.rows": "{n} rader",
   "tipPerPage": "Hur många rader en sida visar. Att ändra det börjar om från första sidan.",
   "announcement.heading": "Meddelande",
-  "announcement.close": "Stäng"
+  "announcement.close": "Stäng",
+  "presets": "Fördefinierade frågor",
+  "presetsNote": "Var och en öppnar Ny fråga med frågan ifylld. Ingenting körs förrän du trycker på Kör, och om du sparar den blir den en egen definition.",
+  "presetFrom": "Utgår från den fördefinierade frågan {name}."
 }

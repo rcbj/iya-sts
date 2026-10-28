@@ -13675,6 +13675,12 @@ default, and done inside the sign-in flow.
   sign-in is never held for something that cannot be done.
 * **The hold is in `authn.startSessionHere()`, last of the refusals** —
   `authn/CLAUDE.md` argues it.
+* **Progress is REPORTED in `/report`, never on a console page** (#1110,
+  rcbj): the `postLoginProgress` source reads the store through
+  `eachProgressAsync()`. Each write stamps the profile, role and
+  `graceDays` that applied (`stamp()`), and `graceOf()` is the one
+  computation of the deadline the report shows. `report/CLAUDE.md` argues
+  the source.
 
 ### 3ct, continued: the migration's method, and what replaced the portal's Upgrade button (#1100–#1105, 2026-10-28)
 

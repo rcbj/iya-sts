@@ -143,5 +143,8 @@
   "perPage.rows": "{n} lignes",
   "tipPerPage": "Combien de lignes une page affiche. Le changer repart de la première page.",
   "announcement.heading": "Annonce",
-  "announcement.close": "Fermer"
+  "announcement.close": "Fermer",
+  "presets": "Requêtes prédéfinies",
+  "presetsNote": "Chacune ouvre Nouvelle requête avec sa requête déjà remplie. Rien n’est exécuté avant que vous appuyiez sur Exécuter, et l’enregistrer crée votre propre définition.",
+  "presetFrom": "Partie de la requête prédéfinie {name}."
 }
