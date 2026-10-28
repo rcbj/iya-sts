@@ -90,7 +90,12 @@ three (`model: ip ×… · ua ×… · user ×…` on Monitoring → Risk, and
   have signed in, over this person's share of the realm's sign-ins
   (`signals[0].terms`). It is 1 for a person who signs in as often as the
   average, above 1 for one who signs in less, and the same whatever address
-  or browser they use.
+  or browser they use. The number of people is counted once and kept for
+  `risk.populationUsersCacheS` seconds (60). When it is due, the sign-in
+  that finds it so is scored with the kept number while it is counted again
+  in the background, so no sign-in waits for the count except a realm's
+  very first. A realm of fewer than 1,000 people is counted at every
+  sign-in.
 
 **When a lookup finds nothing.** A private, loopback or container-bridge
 address is in no dataset, and without the ASN and geolocation datasets (or
