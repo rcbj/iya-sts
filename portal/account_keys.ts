@@ -303,7 +303,9 @@ class AccountKeys {
             pending.classicalOnly === true),
           classical: pending.classicalOnly !== true &&
                      webauthnPolicy.classicalFallbackOffered(lane),
-          retrying: pending.classicalOnly === true }
+          // A client rule's narrowing (#1112) is not a retry.
+          retrying: pending.classicalOnly === true &&
+            !(pending.clientRule && pending.clientRule.narrowed) }
       };
     }
     if (policy.mfaAllowed) {

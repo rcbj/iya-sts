@@ -170,6 +170,10 @@ import webauthnAttestation = require('../authn/webauthn_attestation');
 // /portal/keys and an activation link verify a registration. A library over
 // the audit log and the passkey policy; it requires nothing back here.
 import webauthnCeremonies = require('../authn/webauthn_ceremonies');
+// THE CLIENTS A REGISTRATION OFFERS NO ML-DSA (#1112), asked where an
+// enrolment is armed. A library over the passkey policy and its own store,
+// requiring nothing that requires this module.
+import passkeyClients = require('./passkey_clients');
 // THE ERROR CODES (2026-09-12). A LEAF that requires nothing, so it cannot
 // close a cycle from here — which is why it is this and not `audit.js`, which
 // this file must not reach. Every refusal below RETURNS a verdict to a caller
@@ -9371,6 +9375,20 @@ class Credentials {
       }
       lane = webauthnPolicy.classicalRetryLane(lane);
     }
+    // A CLIENT KNOWN NOT TO MAKE AN ML-DSA PASSKEY (#1112): the person's
+    // profile's `clientRules`, or a client this realm learned, arms the
+    // enrolment as the classical retry from the start — never where a
+    // classical passkey is not allowed (`offerFor()` asks the retry's own
+    // refusal) nor in the post-quantum lane. Carried on the pending record
+    // with what the ceremony row records.
+    let clientRule: { narrowed: boolean; record: string } | null = null;
+    if (!classicalOnly) {
+      const decided = passkeyClients.offerFor({ lane: lane });
+      clientRule = decided.record
+        ? { narrowed: decided.narrowed, record: decided.record } : null;
+    }
+    const offerClassical = classicalOnly ||
+                           !!(clientRule && clientRule.narrowed);
     const laneAllowed = webauthnPolicy.laneRefusal(lane);
     if (!laneAllowed.ok) {
       log.debug('Leaving Credentials.beginKeyEnrolment(). The lane is not ' +
@@ -9424,13 +9442,15 @@ class Credentials {
       role: role,
       kind: kind,
       lane: lane,
-      // The classical retry (#944): the algorithms less ML-DSA.
-      classicalOnly: classicalOnly,
+      // The classical retry (#944): the algorithms less ML-DSA — asked for,
+      // or armed by a client rule (#1112).
+      classicalOnly: offerClassical,
+      clientRule: clientRule,
       // WHAT THIS CEREMONY OFFERS (#940), under the person's passkey
       // profile as selected above: the finish holds the credential to it as
       // well as to what is offered then (`heldToOffer()`), so neither a
       // client nor a profile changed in between widens it.
-      offered: webauthnPolicy.algorithmIds(lane, classicalOnly),
+      offered: webauthnPolicy.algorithmIds(lane, offerClassical),
       // NO LABEL (#470): the key takes its provider's or its group's name, and
       // the page asks for a nickname once it is registered.
       label: '',
@@ -9464,6 +9484,8 @@ class Credentials {
               'and held.');
     return { ok: true, enrolmentId: record.id, challenge: record.challenge,
              role: role, kind: kind, lane: lane, classicalOnly: classicalOnly,
+             // What a client rule did to the offer (#1112), or null.
+             clientRule: clientRule,
              exclude: record.exclude.slice(),
              userHandle: record.userHandle,
              expiresAt: new Date(record.expires).toISOString() };
@@ -9542,10 +9564,16 @@ class Credentials {
         errorCode: answer && answer.ok ? ''
           : String(this.deps.errorCodes.codeOf(answer) ||
                    (threw ? 'STS-AUTHN-0027' : '')),
-        offered: this.deps.webauthnPolicy.algorithmIds(
-          (held && held.lane) || 'classical'),
+        // THE OFFER AS IT WAS ARMED (#940's `offered`), so a retry's or a
+        // client rule's narrower list (#1112) is the one recorded.
+        offered: held && Array.isArray(held.offered) && held.offered.length
+          ? held.offered
+          : this.deps.webauthnPolicy.algorithmIds(
+            (held && held.lane) || 'classical'),
         algorithm: key ? Credentials.keyAlgorithm(key).name : '',
-        posted: credential, attestation: key ? key.attestation : null });
+        posted: credential, attestation: key ? key.attestation : null,
+        narrowed: held && held.clientRule
+          ? String(held.clientRule.record || '') : '' });
       log.debug("Leaving confirmKeyEnrolment() note().");
     };
     log.debug("Leaving Credentials.confirmKeyEnrolment().");

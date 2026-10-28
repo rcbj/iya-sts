@@ -463,6 +463,7 @@ described under [the passkey policy](authentication.md#the-passkey-policy):
 | `attestationAlgorithms` | See [Requiring a post-quantum attestation](#requiring-a-post-quantum-attestation). |
 | `postQuantumAllowCredentials` | While a post-quantum passkey is required: name only the post-quantum passkeys at sign-in, or name them all and refuse a classical one with a page saying why. See [Narrow, or list and refuse](#narrow-or-list-and-refuse). |
 | `registrationAlgorithms`, `registrationMode` | Which algorithms a registration for this profile's people offers, and whether ML-DSA comes first, alone, or not at all. `realm` follows the realm's WebAuthn settings. |
+| `clientRules` | Empty by default. The browsers and systems whose registrations offer no ML-DSA. See [Clients that cannot make an ML-DSA passkey](#clients-that-cannot-make-an-ml-dsa-passkey). |
 | `adminEnrolment` | Off by default. On, an administrator may enrol a passkey for a person this profile applies to. See [An administrator enrols a passkey](#an-administrator-enrols-a-passkey). |
 | `deviceBoundRequired` | Off by default. On, an issuance to an application this profile covers waits for a device-bound session. See [Sessions](sessions.md#binding-the-cookie-to-the-browser-device-bound-session-credentials). |
 
@@ -613,6 +614,113 @@ asks for ML-DSA (`asksPostQuantum`), whether the retry may be offered
 `/portal/keys` (**Details**), in the **Algorithm** column on the person's
 console page (marked *post-quantum* or *insecure*), and on the audit log's
 `session.start` row of every sign-in it made (`credentialAlgorithm`).
+
+### Clients that cannot make an ML-DSA passkey
+
+The retry above helps after the failure. Where you already know a client
+fails, you can stop the failure happening: a registration from that client
+is offered the list **less ML-DSA** from the start (ES256 and RS256 where that
+leaves nothing), exactly as if the person had pressed the retry. There are
+two ways to name such a client, and both can be used together.
+
+A **client** is a browser and an operating system, by family and major
+version only, written the way the passkey ceremony rows write it:
+`Chrome 141 on macOS 15`, `Firefox 144 on Linux`. It is read from the
+browser's User-Agent and nothing else. Look at the `client` field of the
+`webauthn.ceremony` rows in the audit log
+([below](#watching-the-move-to-post-quantum-passkeys-the-ceremony-audit-rows))
+to see what your people's browsers are called.
+
+**Configured rules.** The passkey policy's **`clientRules`** row, on the
+default profile and on each named profile, empty by default. It holds up to
+20 rules separated by `;`. Each rule is `<browser> on <system>`. Each side
+is a family, or `*` for any, and may be followed by a major-version range:
+`141`, `130-140`, `130-` (130 and later) or `-140` (140 and earlier).
+Families are matched without regard to case.
+
+```text
+Firefox 140- on Linux; * on Android 13
+```
+
+A range needs a version to match, so `Chrome 130- on *` does not match a
+client whose version could not be read. Set the row on
+**Directory → Policies → Passkey policy**, or include it in
+`POST /admin-api/policies/save-passkey-policy`:
+
+```bash
+curl -s -X POST "$STS/admin-api/policies/save-passkey-policy" \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"profile":"default", ... ,"clientRules":"Firefox 140- on Linux"}'
+```
+
+A save is refused (`STS-AUTHN-0309`) with the first rule it could not read.
+
+#### Learned clients
+
+The realm can also learn which clients fail. Turn on
+**`webauthn.clientLearning`** (per realm, **off** by default) on
+**Protocols → WebAuthn** or with `POST /admin-api/config/set`. While it is
+on:
+
+* A registration that asked for ML-DSA and failed in the browser with
+  `NotSupportedError` is counted against its client. Other failures
+  (`NotAllowedError`, which is also a cancel or a timeout, and the rest)
+  are not counted, because they say nothing about the algorithm.
+* Each person counts **once** however often they try, so one account cannot
+  stop ML-DSA being offered to everybody else on the same browser.
+* When **`webauthn.clientLearningFailures`** (default 3) different people
+  have failed this way from one client within
+  **`webauthn.clientLearningWindowHours`** (default 168, one week), and no
+  registration from it has succeeded, the client is **learned**: its
+  registrations offer no ML-DSA from then on. The audit log gets one
+  `webauthn.client.learned` row.
+* A registration from a learned client that asked for ML-DSA and succeeded
+  (where no rule applied, for example under `registrationMode: pq-only`)
+  removes the entry, and so does clearing it.
+* Turning the switch off stops counting and stops applying what was
+  learned. The entries are kept, and apply again if it is turned back on.
+
+The learned clients are listed on **Directory → Policies → Passkey policy →
+Learned clients**, learned ones first, with the clients still being counted
+after them. Each has a **Clear** button, and **Clear every learned client**
+clears them all. Over the API:
+
+| Operation | What it does |
+|---|---|
+| `GET /admin-api/policies?clientsPage=1&clientsPer=25` | `passkey.clients`: whether learning is on, the two settings, and a page of `rows` (`client`, `learned`, `learnedAt`, `learnedFailures`, `failures` in the window, `firstAt`, `lastAt`) with `paging` |
+| `POST /admin-api/policies/clear-passkey-client` | `{"client":"Chrome 141 on macOS 15"}`: clear one entry. One that is not listed is refused (`STS-AUTHN-0477`). |
+| `POST /admin-api/policies/clear-passkey-clients` | `{}`: clear every entry |
+
+The scheduler job **`passkeys.client-learning-sweep`** runs hourly in each
+realm and removes the entries that were never learned and whose failures
+have all aged out of the window. A realm keeps at most 500 entries. When it
+is full of learned clients, a new client is not counted until one is
+cleared (`STS-AUTHN-0478` in the service log).
+
+#### Where neither kind applies
+
+The offer is never narrowed where a classical passkey is not allowed — the
+same cases that refuse the retry (the table above): `registrationMode:
+pq-only`, `webauthn.pqcOnly`, `postQuantumRequired:
+registration-and-sign-in`, and at the passkey step at sign-in
+`postQuantumRequired: sign-in`. It is not narrowed in the post-quantum lane
+either (with [both lanes](#a-classical-and-a-post-quantum-passkey-side-by-side)
+on, the person chose an ML-DSA passkey), nor for the
+[upgrade](#upgrading-a-classical-passkey) or the post-login migration, whose
+point is ML-DSA. An administrator's enrolment on a person's behalf is not
+narrowed. Failures at all of these still count towards learning.
+
+#### What the ceremony row says
+
+The `offered` field of the `webauthn.ceremony` row lists the algorithms the
+registration actually offered. Where a rule named the client, a `|` and what
+the rule did follow:
+
+| `offered` ends with | Meaning |
+|---|---|
+| `\|configured: Firefox 140- on Linux` | the configured rule left ML-DSA out |
+| `\|learned: Firefox 144 on Linux` | the learned client left ML-DSA out |
+| `\|not applied (webauthn.pqcOnly): configured: ...` | a rule named the client and was not applied, and why |
 
 ## A classical and a post-quantum passkey side by side
 
@@ -1343,6 +1451,9 @@ description of each is in [Configuration → WebAuthn](configuration.md#webauthn
 | `webauthn.pqcOnly` | `STS_WEBAUTHN_PQC_ONLY` | `false` |
 | `webauthn.pqcAlongsideClassical` | `STS_WEBAUTHN_PQC_ALONGSIDE_CLASSICAL` | `false` |
 | `webauthn.postQuantumAllowCredentials` | `STS_WEBAUTHN_POST_QUANTUM_ALLOW_CREDENTIALS` | `narrow` |
+| `webauthn.clientLearning` | `STS_WEBAUTHN_CLIENT_LEARNING` | `false` |
+| `webauthn.clientLearningFailures` | `STS_WEBAUTHN_CLIENT_LEARNING_FAILURES` | `3` |
+| `webauthn.clientLearningWindowHours` | `STS_WEBAUTHN_CLIENT_LEARNING_WINDOW_HOURS` | `168` |
 | `webauthn.userVerification` | `STS_WEBAUTHN_USER_VERIFICATION` | `required` |
 | `webauthn.attestation` | `STS_WEBAUTHN_ATTESTATION` | `direct` |
 | `webauthn.attestationPolicy` | `STS_WEBAUTHN_ATTESTATION_POLICY` | `by-mode` |
@@ -1412,6 +1523,7 @@ Every console control has an API operation. The request bodies are in
 | `POST /admin-api/users/issue-activation` | a single-use activation link (`user`, optional `deliver: "mail"`) |
 | `GET /admin-api/policies` | the passkey and authentication policies, with every field's current value |
 | `POST /admin-api/policies/save-passkey-policy`, `reset-passkey-policy` | save a passkey policy (optionally named with `profile`), or remove it |
+| `POST /admin-api/policies/clear-passkey-client`, `clear-passkey-clients` | clear one learned client (`client`), or all of them |
 | `POST /admin-api/policies/save-authn-policy`, `reset-authn-policy` | save the authentication policy, or go back to inheriting |
 | `POST /admin-api/config/set`, `/config/reset` | change or reset a setting |
 

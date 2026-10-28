@@ -349,7 +349,7 @@ interface PolicyField {
   key: string;
   attribute: string;
   type: 'bool' | 'enum' | 'int' | 'list' | 'attribute' | 'attributes' |
-        'text';
+        'text' | 'clientRules';
   dflt: boolean | string | number;
   values?: string[];
   min?: number;
@@ -426,7 +426,42 @@ interface PasskeyPolicyDeps {
   // `webauthn_policy.ts`'s `registrationAlgorithmsAllowed()` answers it.
   // Reached lazily, for the same reason.
   registrationAlgorithmsAllowed(rows: RegistrationRows): string[];
+  // The learned clients (#1112), `common/passkey_clients.ts`, whose clears
+  // are this kind's acts. It requires this module, so the default reaches
+  // it lazily.
+  clients(): { act(action: string, body: Record<string, any>):
+                 Record<string, any> };
 }
+
+// One side of a client rule (#1112): a family or `*`, and a major-version
+// range where one was written (`low`/`high` null for an open end).
+interface ClientRuleSide {
+  family: string;
+  low: number | null;
+  high: number | null;
+  ranged: boolean;
+  text: string;
+}
+
+// A client rule (#1112): a browser side and a system side.
+interface ClientRule {
+  browser: ClientRuleSide;
+  system: ClientRuleSide;
+  text: string;
+}
+
+// A ceremony row's client name in its parts (#1112).
+interface ClientParts {
+  browser: string;
+  browserMajor: number | null;
+  system: string;
+  systemMajor: number | null;
+}
+
+/**
+ * The most client rules one profile holds (#1112).
+ */
+const MAX_CLIENT_RULES = 20;
 
 // The rows a registration's algorithms are resolved from (#940), handed to
 // `webauthn_policy.ts` where they are not the selected profile's own.
@@ -531,7 +566,10 @@ const SENTENCES: Readonly<Record<string, string>> = Object.freeze({
   lanesOne: 'a person holds their passkeys in one lane, whatever the ' +
     'realm\'s webauthn.pqcAlongsideClassical says',
   adminEnrolment: 'an administrator may enrol a passkey for a person, in ' +
-    'the administrator\'s own browser, verified as the person\'s own is'
+    'the administrator\'s own browser, verified as the person\'s own is',
+  // #1112: said only while the row names a client.
+  clientRules: 'a passkey registration from {{rules}} offers no ML-DSA, ' +
+    'where a classical passkey is allowed'
 });
 
 const SELECTORS = [
@@ -877,6 +915,30 @@ const FIELDS: PolicyField[] = [
           'one lane wherever it is on. webauthn.pqcOnly still means one ' +
           'lane. Refused as `both` with registrationMode classical-only. ' +
           'Left out of a save, `realm` is kept.' },
+  // THE CLIENTS NOT OFFERED ML-DSA (#1112): a registration from a browser
+  // and system a rule names offers the list less ML-DSA, so a platform that
+  // fails the whole ceremony when offered an algorithm it cannot do is not
+  // offered it. Matched against the ceremony row's own client name
+  // (`clientRuleFor()`); never applied where a classical passkey is not
+  // allowed (`common/passkey_clients.ts`).
+  { key: 'clientRules', attribute: 'stsPasskeyClientRules',
+    type: 'clientRules', dflt: '', optional: true,
+    label: 'Clients a registration offers no ML-DSA',
+    what: 'EMPTY BY DEFAULT: every client is offered the list as it ' +
+          'stands. Otherwise up to 20 rules separated by `;`, each ' +
+          '`<browser> on <system>`, where either side is a family as the ' +
+          'passkey ceremony rows name it (`Chrome`, `Firefox`, `macOS`, ' +
+          '`Android`) or `*` for any, optionally followed by a ' +
+          'major-version range (`141`, `130-140`, `130-`, `-140`): ' +
+          '`Firefox 140- on Linux; * on Android 13`. A passkey ' +
+          'registration from a matching client offers the list less ' +
+          'ML-DSA (ES256 and RS256 where that leaves none). Not applied ' +
+          'where a classical passkey is not allowed — registrationMode ' +
+          'pq-only, webauthn.pqcOnly, postQuantumRequired ' +
+          'registration-and-sign-in, or at the sign-in step under ' +
+          'postQuantumRequired sign-in — nor to the post-quantum lane, ' +
+          'and the ceremony row says it was not. Left out of a save, ' +
+          'empty is kept.' },
   { key: 'passkeyHints', attribute: 'stsPasskeyHintsPasskey', type: 'list',
     values: HINTS.slice(), dflt: 'client-device,hybrid',
     label: 'Hints "Create a passkey" sends',
@@ -1162,6 +1224,13 @@ class PasskeyPolicy {
                  .registrationAlgorithmsAllowed(rows);
                log.debug("Leaving registrationAlgorithmsAllowed().");
                return Array.isArray(out) ? out.map(String) : [];
+             },
+             // LAZILY (#1112), for #718's reason: the learned clients
+             // require this module.
+             clients: function () {
+               log.debug("Entering clients().");
+               log.debug("Leaving clients().");
+               return require('./passkey_clients');
              } };
   }
 
@@ -1254,6 +1323,17 @@ class PasskeyPolicy {
       return { value: items.map(function (group) {
         return group.join(' ');
       }).join(', ') };
+    }
+    if (field.type === 'clientRules') {
+      // THE CLIENT RULES (#1112), written back in the one canonical form
+      // `parseClientRules()` gives, so the console shows what is matched.
+      const rules = PasskeyPolicy.parseClientRules(text);
+      if (rules.problem) {
+        log.debug("Leaving PasskeyPolicy.parseField(). Not client rules.");
+        return { problem: field.label + ': ' + rules.problem };
+      }
+      log.debug("Leaving PasskeyPolicy.parseField().");
+      return { value: rules.text };
     }
     if (field.type === 'text') {
       // A LABEL (#533): what displaySafe() keeps, at most 60 characters.
@@ -1978,6 +2058,182 @@ class PasskeyPolicy {
     };
     log.debug("Leaving PasskeyPolicy.registrationRows(). " +
               out.registrationMode);
+    return out;
+  }
+
+  // -------------------------------------------------------------------------
+  // THE CLIENT RULES (#1112): which browsers and systems a registration
+  // offers no ML-DSA.
+  //
+  // **NO SECOND USER-AGENT PARSER.** A rule is matched against the CLIENT
+  // NAME the ceremony row records — `Chrome 141 on macOS 15`, which
+  // `authn/webauthn_ceremonies.ts`'s `clientOf()` makes from the
+  // User-Agent, family and major version and nothing more — read back into
+  // its four parts by `clientParts()`. So an operator writes a rule from
+  // what the rows show, and the configured rule, the learned one and the
+  // row can never disagree about which client a request came from: there is
+  // one reading of the header. This module is a leaf and cannot require the
+  // ceremonies module (which requires it), so the caller hands the name in.
+  //
+  // A rule is `<browser> on <system>`, each side a family or `*`, each
+  // optionally followed by a major-version range; rules are separated by
+  // `;`, at most twenty. A family is compared without regard to case. A
+  // range needs a major version to match, so `Chrome 130- on *` does not
+  // match a client whose version could not be read, and `*` matches a
+  // family that could not be read (`a browser`, `another system`).
+  // -------------------------------------------------------------------------
+  /**
+   * Parses the client rules row (#1112) into its rules and its canonical
+   * text.
+   *
+   * @param raw - the row as typed or stored
+   * @returns `{ rules, text }`, or `{ problem }` naming the first bad rule
+   */
+  static parseClientRules(raw: unknown): {
+      rules?: ClientRule[]; text?: string; problem?: string } {
+    log.debug("Entering PasskeyPolicy.parseClientRules().");
+    const items = String(raw === undefined || raw === null ? '' : raw)
+      .split(';').map(function (one) {
+        return one.trim().replace(/\s+/g, ' ');
+      }).filter(Boolean);
+    if (items.length > MAX_CLIENT_RULES) {
+      log.debug("Leaving PasskeyPolicy.parseClientRules(). Too many.");
+      return { problem: 'at most ' + MAX_CLIENT_RULES + ' rules, and ' +
+                        'there are ' + items.length + '.' };
+    }
+    const rules: ClientRule[] = [];
+    for (const item of items) {
+      const sides = /^(.+?) on (.+)$/i.exec(item);
+      const browser = sides ? PasskeyPolicy.clientSide(sides[1]) : null;
+      const system = sides ? PasskeyPolicy.clientSide(sides[2]) : null;
+      if (!browser || !system) {
+        log.debug("Leaving PasskeyPolicy.parseClientRules(). Not a rule.");
+        return { problem: '"' + item.slice(0, 60) + '" is not ' +
+                          '`<browser> on <system>`, each a family or `*` ' +
+                          'and an optional major-version range such as ' +
+                          '`130-140`.' };
+      }
+      rules.push({ browser: browser, system: system,
+                   text: browser.text + ' on ' + system.text });
+    }
+    log.debug("Leaving PasskeyPolicy.parseClientRules(). " + rules.length);
+    return { rules: rules, text: rules.map(function (one) {
+      return one.text;
+    }).join('; ') };
+  }
+
+  // One side of a client rule: a family (or `*`) and an optional range.
+  private static clientSide(raw: string): ClientRuleSide | null {
+    log.debug("Entering PasskeyPolicy.clientSide().");
+    const text = String(raw || '').trim();
+    const ranged = /^(.*?) (\d{1,4})?(?:(-)(\d{1,4})?)?$/.exec(text);
+    const hasRange = !!ranged && (ranged[2] !== undefined ||
+                                  ranged[4] !== undefined);
+    const family = hasRange ? ranged[1].trim() : text;
+    if (!(family === '*' ||
+          /^[A-Za-z][A-Za-z0-9 .-]{0,31}$/.test(family))) {
+      log.debug("Leaving PasskeyPolicy.clientSide(). Not a family.");
+      return null;
+    }
+    const low = hasRange && ranged[2] !== undefined ? Number(ranged[2])
+                                                    : null;
+    const high = hasRange
+      ? (ranged[3] ? (ranged[4] !== undefined ? Number(ranged[4]) : null)
+                   : low)
+      : null;
+    if (low !== null && high !== null && low > high) {
+      log.debug("Leaving PasskeyPolicy.clientSide(). An empty range.");
+      return null;
+    }
+    const range = !hasRange ? ''
+      : (low !== null && high !== null && low === high && !ranged[3]
+        ? String(low)
+        : (low === null ? '' : String(low)) + '-' +
+          (high === null ? '' : String(high)));
+    log.debug("Leaving PasskeyPolicy.clientSide().");
+    return { family: family, low: low, high: high, ranged: hasRange,
+             text: family + (range ? ' ' + range : '') };
+  }
+
+  /**
+   * Reads a ceremony row's client name (`Chrome 141 on macOS 15`, from
+   * `webauthn_ceremonies.clientOf()`) back into its four parts (#1112). A
+   * family that could not be read (`a browser`, `another system`) is ''.
+   *
+   * @param client - the client name
+   * @returns `{ browser, browserMajor, system, systemMajor }`, a major
+   *   null where none was read; null for no name at all
+   */
+  static clientParts(client: unknown): ClientParts | null {
+    log.debug("Entering PasskeyPolicy.clientParts().");
+    const m = /^(.*?)(?: (\d{1,4}))? on (.*?)(?: (\d{1,4}))?$/
+      .exec(String(client || ''));
+    if (!m) {
+      log.debug("Leaving PasskeyPolicy.clientParts(). None.");
+      return null;
+    }
+    const out = {
+      browser: m[1] === 'a browser' ? '' : m[1],
+      browserMajor: m[2] !== undefined ? Number(m[2]) : null,
+      system: m[3] === 'another system' ? '' : m[3],
+      systemMajor: m[4] !== undefined ? Number(m[4]) : null };
+    log.debug("Leaving PasskeyPolicy.clientParts().");
+    return out;
+  }
+
+  // Whether one side of a rule matches a family and its major version.
+  private static sideMatches(side: ClientRuleSide, family: string,
+                             major: number | null): boolean {
+    log.debug("Entering PasskeyPolicy.sideMatches().");
+    const named = side.family === '*' ||
+      side.family.toLowerCase() === String(family || '').toLowerCase();
+    const inRange = !side.ranged ||
+      (major !== null && (side.low === null || major >= side.low) &&
+       (side.high === null || major <= side.high));
+    log.debug("Leaving PasskeyPolicy.sideMatches().");
+    return named && inRange;
+  }
+
+  /**
+   * The first of a profile's client rules (#1112) that names a client, in
+   * its canonical text, or '' where none does.
+   *
+   * @param client - the ceremony row's client name for the request
+   * @param profile - a profile already read; the selected one when omitted
+   * @returns the rule's text, or ''
+   */
+  clientRuleFor(client: unknown, profile?: PasskeyProfile | null): string {
+    const { log } = this.deps;
+    log.debug("Entering PasskeyPolicy.clientRuleFor().");
+    const parts = PasskeyPolicy.clientParts(client);
+    const rules = parts ? (PasskeyPolicy.parseClientRules(
+      (profile || this.read()).clientRules).rules || []) : [];
+    const found = rules.filter(function (rule) {
+      return PasskeyPolicy.sideMatches(rule.browser, parts.browser,
+                                       parts.browserMajor) &&
+             PasskeyPolicy.sideMatches(rule.system, parts.system,
+                                       parts.systemMajor);
+    })[0];
+    log.debug("Leaving PasskeyPolicy.clientRuleFor(). " +
+              (found ? 'Matched.' : 'None.'));
+    return found ? found.text : '';
+  }
+
+  /**
+   * The passkey policy's acts beside save and reset (#1112): clearing the
+   * learned clients, which `common/passkey_clients.ts` keeps and answers.
+   * Directory → Policies posts them, and `POST /admin-api/policies/{action}`
+   * is the same call (`admin-core/policy_kinds.ts`'s `extraActions`).
+   *
+   * @param action - `clear-passkey-client` or `clear-passkey-clients`
+   * @param body - `{ client }` for the first
+   * @returns what was done, or a refusal carrying its code
+   */
+  act(action: string, body: Record<string, any>): Record<string, any> {
+    const { log } = this.deps;
+    log.debug("Entering PasskeyPolicy.act(). " + action);
+    const out = this.deps.clients().act(action, body || {});
+    log.debug("Leaving PasskeyPolicy.act(). ok=" + !!(out && out.ok));
     return out;
   }
 
@@ -2945,7 +3201,12 @@ class PasskeyPolicy {
       ...this.registrationSentences(rules),
       // #945: said only while it is on, so a profile with it off is
       // described as it was.
-      ...(this.adminEnrolmentAllowed(rules) ? [SENTENCES.adminEnrolment] : [])
+      ...(this.adminEnrolmentAllowed(rules) ? [SENTENCES.adminEnrolment] : []),
+      // #1112: said only while a rule is set, so a profile without one is
+      // described as it was.
+      ...(rules.clientRules
+        ? [fill(SENTENCES.clientRules, { rules: String(rules.clientRules) })]
+        : [])
     ];
     log.debug("Leaving PasskeyPolicy.describe().");
     return out;
@@ -3498,6 +3759,12 @@ export = {
   registrationMode: slot.forward('registrationMode'),
   registrationRows: slot.forward('registrationRows'),
   registrationAlgorithmsFrom: slot.forward('registrationAlgorithmsFrom'),
+  // #1112: the client rules.
+  MAX_CLIENT_RULES: MAX_CLIENT_RULES,
+  parseClientRules: PasskeyPolicy.parseClientRules,
+  clientParts: PasskeyPolicy.clientParts,
+  clientRuleFor: slot.forward('clientRuleFor'),
+  act: slot.forward('act'),
   hintsFor: slot.forward('hintsFor'),
   select: slot.forward('select'),
   selectionFor: slot.forward('selectionFor'),

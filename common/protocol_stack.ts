@@ -1324,6 +1324,13 @@ class ProtocolStack {
     // would build a default instance the root could then not install.
     this.build('common/passkey_report', require('./passkey_report'),
                'PasskeyReport');
+    // 18j-v. THE CLIENTS A PASSKEY REGISTRATION OFFERS NO ML-DSA (#1112):
+    // a library that registers its sweep job when built, and no route —
+    // here for the same reason as the report above. The ceremony module
+    // (built near the top) and the credential store require it at load,
+    // and reach its facades only at a ceremony, never while loading.
+    this.build('common/passkey_clients', require('./passkey_clients'),
+               'PasskeyClients');
     this.build('risk/risk_engine', require('../risk/risk_engine'),
                'RiskEngine');
     require('../admin-ui/risk_admin');

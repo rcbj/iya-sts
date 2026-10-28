@@ -12751,6 +12751,61 @@ resolves it and `question()` sends it resolved as a policy fact no built-in
 rule reads. It decides nothing: `authn/CLAUDE.md` (*List and refuse*) says
 what the passkey step does with it.
 
+**#1112 ADDED `clientRules` AND THE LEARNED CLIENTS (2026-10-28)**: a
+registration from a client known not to make an ML-DSA passkey is offered
+the list less ML-DSA — #944's classical retry, armed from the start. rcbj's
+decision: both halves, configured and learned.
+
+* **Configured**: `clientRules` (`stsPasskeyClientRules`, a new row type,
+  empty, optional on a save), on the default and named profiles: up to 20
+  rules `<browser> on <system>`, each side a family or `*` with an optional
+  major-version range. `parseClientRules()` writes one canonical text and
+  `clientRuleFor()` answers the first rule naming a client.
+* **ONE READING OF THE USER-AGENT.** A rule is matched against the CLIENT
+  NAME the ceremony row records (`webauthn_ceremonies.clientOf()`, `Chrome
+  141 on macOS 15`), read back into its four parts by `clientParts()` —
+  never a second parse of the header. The learned entries are keyed by the
+  same name, so the row, the rule and the register cannot disagree about a
+  client. This leaf cannot require the ceremonies module, so the caller
+  hands the name in.
+* **Learned**: `common/passkey_clients.ts`, per realm, behind
+  `webauthn.clientLearning` (off), `webauthn.clientLearningFailures` (3)
+  and `webauthn.clientLearningWindowHours` (168). Its store,
+  `passkey_clients.learned`, is cell-tier: an observation of the cell's own
+  traffic, keyed with a digest of each person who failed.
+* **COUNTED WHERE THE ROW IS WRITTEN, NOT BY READING ROWS.**
+  `webauthn_ceremonies.record()` hands `observe()` the ceremony, outcome,
+  error name, offer and client as it writes the row: one get and one set of
+  a bounded entry, only while the switch is on and only for a registration
+  that asked for ML-DSA. A scan of audit rows per request was ruled out (the
+  log is per process and capped), and so was a scheduler job over the rows:
+  it would see one process's rows, learn late by its period, and still be a
+  scan. The module header argues it.
+* **PEOPLE, NOT ATTEMPTS.** One person counts once in the window, so one
+  account cannot teach a realm to stop offering ML-DSA to everybody on that
+  browser. A success that asked for ML-DSA removes the entry, which is how
+  "none succeeded" holds and the way back. The entry is a new object at
+  every write (#999).
+* **The periodic half is a scheduler job**, `passkeys.client-learning-sweep`
+  (cluster, per realm, hourly), removing entries never learned whose
+  failures aged out; the window is applied at every count as well, which is
+  the correctness half. The store is bounded (500 a realm): a full one
+  displaces the oldest entry not yet learned, and with every entry learned a
+  new client is not counted (`STS-AUTHN-0478`, once per realm per process).
+* **NEVER WHERE A CLASSICAL KEY IS NOT ALLOWED.** `offerFor()` asks
+  `webauthn_policy.classicalRetryRefusal(at)`, the one statement of that,
+  whose refusals now carry a short `reason`; and not in the post-quantum lane
+  with both lanes on. The decision's `record` is what the ceremony row
+  carries, applied or `not applied (<reason>)`.
+* **The register's console and API.** The passkey kind gained two acts of
+  its own (`policy_kinds.ts`'s `extraActions`, #396's arrangement):
+  `clear-passkey-client` (`STS-AUTHN-0477` for one not listed) and
+  `clear-passkey-clients`, answered by `act()` here, which reaches the
+  register lazily. `policiesView()` carries `passkey.clients`, paged by
+  `clientsPage`/`clientsPer` apart from the profiles. The doors that arm a
+  registration are `authn/CLAUDE.md`'s (*Clients that cannot make an ML-DSA
+  passkey*).
+
 **`web_webauthn.ts` (#944)** holds what both static surfaces do when a
 registration that asked for ML-DSA fails on the device: `failureKind()`,
 `capabilities()` (`getClientCapabilities()`, feature-detected),

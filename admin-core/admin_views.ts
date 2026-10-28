@@ -2756,6 +2756,12 @@ class AdminViews {
         Object.assign(member, this.authnPolicyExtras(member));
       } else if (kind.id === 'attributes') {
         Object.assign(member, this.attributePolicyExtras(q));
+      } else if (kind.id === 'passkey') {
+        // THE LEARNED CLIENTS (#1112): a page of the realm's register,
+        // `clientsPage` and `clientsPer` its own paging, and the switch and
+        // thresholds it is read under. Lazily: the register is a library
+        // the composition root builds after this module.
+        member.clients = require('../common/passkey_clients').view(q);
       }
       out[kind.id] = member;
       const profiles = kind.module.list();

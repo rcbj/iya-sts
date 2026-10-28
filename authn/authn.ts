@@ -680,6 +680,9 @@ import webauthnAttestation = require('./webauthn_attestation');
 // EVERY CEREMONY'S AUDIT ROW, AND THE ALGORITHM MISMATCH (#943). Rule 3: a
 // library over the audit log and the passkey policy, requiring nothing here.
 import webauthnCeremonies = require('./webauthn_ceremonies');
+// THE CLIENTS A REGISTRATION OFFERS NO ML-DSA (#1112). Rule 3: a library
+// over the passkey policy and its own store, requiring nothing here.
+import passkeyClients = require('../common/passkey_clients');
 // THE USERNAMELESS SIGN-IN'S CEREMONY IN HAND (#943), by the response it
 // will answer: `passkeySignIn()` learns the credential, the owner and the
 // key as it goes, and its one refusal funnel, `passkeyRefused()`, writes
@@ -1221,6 +1224,7 @@ interface AuthnDeps {
   postLogin: typeof postLogin;
   webauthnAttestation: typeof webauthnAttestation;
   webauthnCeremonies: typeof webauthnCeremonies;
+  passkeyClients: typeof passkeyClients;
   totp: typeof totp;
 }
 
@@ -1323,6 +1327,7 @@ class Authn {
       postLogin: postLogin,
       webauthnAttestation: webauthnAttestation,
       webauthnCeremonies: webauthnCeremonies,
+      passkeyClients: passkeyClients,
       totp: totp
     };
   }
@@ -7031,7 +7036,12 @@ class Authn {
                            : (own ? credentials.keyLane(own) : ''),
         outcome: refusedWith ? 'refused' : 'success',
         errorCode: refusedWith,
-        offered: registration ? webauthnPolicy.algorithmIds(lane)
+        // A REGISTRATION'S OFFER AS IT WAS ARMED (#940's `step.offered`),
+        // so a classical retry's or a client rule's narrower list (#1112)
+        // is the one recorded; the lane's list where none was armed.
+        offered: registration ? (Array.isArray(step.offered) &&
+                                 step.offered.length
+          ? step.offered : webauthnPolicy.algorithmIds(lane))
           : keys.filter(function (one) {
             return one.role === role;
           }).map(function (one) {
@@ -7041,6 +7051,9 @@ class Authn {
                           (own ? credentials.keyAlgorithm(own).name : '')),
         posted: posted,
         attestation: registration && own ? own.attestation : null,
+        // WHAT A CLIENT RULE DID TO THE OFFER (#1112), armed on the step.
+        narrowed: registration && step.clientRule
+          ? String(step.clientRule.record || '') : '',
         req: req });
     } catch (e) {
       // Evidence, never the ceremony.
@@ -15817,7 +15830,10 @@ class Authn {
                                                       !!step.classicalOnly),
       classical: !step.classicalOnly &&
         webauthnPolicy.classicalFallbackOffered(stepLane, 'sign-in'),
-      retrying: !!step.classicalOnly } : null;
+      // A CLIENT RULE'S NARROWING (#1112) is not a retry: the page has no
+      // retry's words to say, and nothing to offer after a failure.
+      retrying: !!step.classicalOnly &&
+        !(step.clientRule && step.clientRule.narrowed) } : null;
     const out = {
       mode: mode, passwordless: passwordless,
       choices: choosing ? offered.map(function (one) {
@@ -18215,8 +18231,32 @@ class Authn {
       stepLane = webauthnPolicy.classicalRetryLane(
         stepLane || String(found.step.lane || ''));
     }
-    if (!!found.step.classicalOnly !== retry) {
-      found.step.classicalOnly = retry;
+    // A CLIENT KNOWN NOT TO MAKE AN ML-DSA PASSKEY (#1112): a configured
+    // `clientRules` row of the person's passkey profile, or a client this
+    // realm learned, arms the registration as #944's classical retry from
+    // the start — never where a classical passkey is not allowed, which
+    // `offerFor()` asks of the retry's own refusal (`at: 'sign-in'`). Not
+    // for a post-login step or an upgrade, whose point is ML-DSA. Carried on
+    // the step like the retry, with what the ceremony row records. An
+    // assertion step is asked too and ignores it: its mode is decided by
+    // `webauthnFacts()` on what the person holds.
+    let clientRule: any = null;
+    if (!retry && !found.step.postLogin && !found.step.upgradeId) {
+      this.deps.passkeyPolicy.select(String(found.step.username || ''),
+        found.step.authn && found.step.authn.application);
+      const decided = this.deps.passkeyClients.offerFor({
+        at: 'sign-in', req: req,
+        lane: webauthnPolicy.enrolmentLane(stepLane ||
+                                           String(found.step.lane || '')) });
+      clientRule = decided.record
+        ? { narrowed: decided.narrowed, record: decided.record } : null;
+    }
+    const classicalOnly = retry || !!(clientRule && clientRule.narrowed);
+    if (!!found.step.classicalOnly !== classicalOnly ||
+        JSON.stringify(found.step.clientRule || null) !==
+          JSON.stringify(clientRule)) {
+      found.step.classicalOnly = classicalOnly;
+      found.step.clientRule = clientRule;
       pendingMfa.set(mfaId, found.step);
     }
     const facts = this.webauthnFacts(baseUrlOf(req), mfaId, found.step, key,

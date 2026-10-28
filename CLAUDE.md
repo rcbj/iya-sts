@@ -527,6 +527,7 @@ preference; this table says what the constraint is and the named file says why.
 | 18j | `risk/risk_store`, `risk_datasets`, `risk_failures`, `risk_upload`, `risk_engine`, then `admin-ui/risk_admin` | 18a's placement and reason (#62): libraries, then the page, after the scheduler. **Nothing requires the libraries earlier** — they are reached lazily. | `risk/CLAUDE.md` |
 | 18j-iii | `common/attestation_revocation` | Inside 18j, after `risk/risk_datasets` (#256). A library: registers scheduler jobs, no route; reached lazily. | `common/CLAUDE.md` (3cf) |
 | 18j-iv | `common/passkey_report` | After 18j-iii, before `ldap/ldap_server` (21), whose require fills its directory slot and whose key-writing doors note there (#942). A library: a scheduler job, no route. | `common/CLAUDE.md` (3cs) |
+| 18j-v | `common/passkey_clients` | After the report (18j-iv), for its reason (#1112): a library whose build registers a scheduler job. The ceremony module and the credential store require it at load and reach its facades only at a ceremony. | `common/CLAUDE.md` 3ch |
 | 18j-ii | `admin-ui/geo_map`, then `admin-ui/geolocation_admin` | 18a's placement and reason (#255), after the risk libraries whose assessments it counts. | `admin-ui/CLAUDE.md` |
 | 18k | `admin-ui/mode_admin` | 18a's placement and 18a's reason (#181). | `admin-ui/CLAUDE.md` |
 | 18k-iii | `admin-ui/listeners_admin` | 18a's placement and reason (#423); `tls/tls_server` (20) and `tls/listeners` are reached lazily. Its paths are in `NEVER_DISPATCHED`. | `tls/CLAUDE.md` |

@@ -2899,6 +2899,38 @@ with the classical algorithms only. What holds it together:
 
 **Tests**: `tests/passkey_post_quantum_fallback.js` sections A-C and E.
 
+## CLIENTS THAT CANNOT MAKE AN ML-DSA PASSKEY (#1112, 2026-10-28)
+
+The passkey policy's `clientRules` and the learned register
+(`common/CLAUDE.md` 3ch, `common/passkey_clients.ts`) name clients whose
+registrations are offered the list less ML-DSA. What the doors do:
+
+* **AN AUTOMATIC CLASSICAL RETRY.** `passkeyClients.offerFor()` is asked
+  where a registration is armed, after the person's profile is selected:
+  `mfaWebauthnOptions()` (`at: 'sign-in'`) and
+  `credentials.beginKeyEnrolment()` (`/portal/keys`, an activation link).
+  Narrowed, the step's or the pending enrolment's `classicalOnly` is set as
+  #944's retry sets it, so the offer, section 7.1's offered-algorithm check
+  and the lane follow with nothing new; `clientRule` (`{ narrowed, record
+  }`) rides beside it. A request that IS the retry is not asked. Not a
+  post-login step or an upgrade (their point is ML-DSA), and not an
+  administrator's enrolment, which offers its own list.
+* **NOT A RETRY ON THE PAGE**: the facts' `fallback.retrying` is false for a
+  narrowing, so no retry's words are drawn and nothing is offered after a
+  failure.
+* **THE ROW SAYS IT.** `webauthn_ceremonies.record()` takes `narrowed`, the
+  decision's `record`, and folds it into `offered` after a `|` (the row is
+  at `audit.js`'s twelve fields). `noteStepCeremony()` and
+  `confirmKeyEnrolment()` now record the offer AS ARMED (`step.offered`,
+  the pending record's `offered`), so a retry's or a rule's narrower list is
+  the one on the row, where both recorded the lane's list before.
+* **THE COUNT** is made in `record()` (`passkeyClients.observe()`), so every
+  registration door feeds it — the upgrade and the post-login migration
+  included — without a line at any of them.
+
+**Tests**: `tests/passkey_client_rules.js` (in process, a fake User-Agent
+per client).
+
 ## LIST AND REFUSE WHERE A POST-QUANTUM PASSKEY IS REQUIRED (#946, 2026-10-23)
 
 `passkeyPolicy.postQuantumAllowCredentials()` — the profile's row, or the
