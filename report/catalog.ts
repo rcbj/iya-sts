@@ -664,10 +664,180 @@ function standardSources(): SourceSpec[] {
          ['keep', 'refuse']),
        field('enabled', 'boolean', 'Whether the source is enabled.')]),
     postLoginProgressSource(),
-    passkeyHistorySource()
+    passkeyHistorySource(),
+    passkeyCeremonySource()
   ];
   log.debug("Leaving standardSources().");
   return sources;
+}
+
+// ---------------------------------------------------------------------------
+// PASSKEY CEREMONIES (#1107): every `webauthn.ceremony` and
+// `webauthn.algorithm-mismatch` row still in the audit ring, one row each —
+// what an operator moving a realm to ML-DSA passkeys reads to see where
+// registrations and sign-ins with post-quantum keys fail, and for which
+// clients. The row shape is `authn/webauthn_ceremonies.ts`'s (#943, folded
+// by #1108); `report/passkey_ceremonies.ts` projects it. The ring is a list
+// in memory capped by `audit.maxEvents` and the audit store indexes no
+// detail field, so no field here declares an index, and none is needed:
+// the read is bounded by the ring, as `authActivity`'s is.
+//
+// In a block of its own so a source added beside it merges cleanly.
+// ---------------------------------------------------------------------------
+// The doors a ceremony row may name: `webauthn_ceremonies.ts`'s `DOORS`,
+// which `tests/report_passkey_ceremonies.js` holds the door field's meaning
+// to naming every one of. The catalog cannot require that module, which
+// the web bundle would then carry.
+const CEREMONY_DOORS = ['sign-in-step', 'usernameless', 'portal',
+  'activation', 'upgrade', 'admin-enrolment', 'device-link'];
+// Fields of this source a count may group by, beyond `GROUPABLE`'s.
+const CEREMONY_GROUPABLE = ['kind', 'ceremony', 'door', 'client',
+  'clientError', 'attachment', 'offeredFirst', 'postQuantum',
+  'postQuantumOffered', 'errorCode', 'held', 'offerRule'];
+
+function passkeyCeremonySource(): SourceSpec {
+  log.debug("Entering passkeyCeremonySource().");
+  const fields = [
+    field('timestamp', 'timestamp', 'When the ceremony\'s row was recorded.'),
+    field('day', 'string',
+      'The UTC calendar day of timestamp, yyyy-mm-dd, so a count can ' +
+      'group ceremonies per day.'),
+    field('kind', 'string',
+      'ceremony for a webauthn.ceremony row (one registration or sign-in, ' +
+      'completed or not); algorithm-mismatch for a sign-in with a ' +
+      'classical passkey by a person who holds an ML-DSA one, where ' +
+      'post-quantum was not required. Filter on it before counting, so a ' +
+      'mismatch is not counted twice with its ceremony.', undefined,
+      ['ceremony', 'algorithm-mismatch']),
+    field('ceremony', 'string',
+      'registration or assertion (a sign-in); empty on a mismatch row.',
+      undefined, ['registration', 'assertion']),
+    field('door', 'string',
+      'Where it ran: ' + CEREMONY_DOORS.slice(0, -1).join(', ') + ' or ' +
+      CEREMONY_DOORS[CEREMONY_DOORS.length - 1] + ' (portal is ' +
+      '/portal/keys); on a mismatch row, the sign-in\'s own name for its ' +
+      'way in.'),
+    field('outcome', 'string', 'success or refused.', undefined,
+      ['success', 'refused']),
+    field('errorCode', 'string',
+      'The error code a refused ceremony was recorded under ' +
+      '(STS-AUTHN-0022 where the browser gave up); empty on success.'),
+    field('actor', 'string',
+      'The person, where known; empty before a usernameless passkey ' +
+      'names anybody.'),
+    field('application', 'string',
+      'The application the sign-in was for, its client or relying-party ' +
+      'id; empty at /portal/keys, an activation link, a device link and ' +
+      'an administrator\'s enrolment, and on rows written before #1108.'),
+    field('role', 'string', 'primary or mfa; empty where none applied.',
+      undefined, ['primary', 'mfa']),
+    field('lane', 'string', 'classical or pqc (#643).', undefined,
+      ['classical', 'pqc']),
+    field('offered', 'string',
+      'The algorithms offered, in order, comma-separated: a ' +
+      'registration\'s list as the browser was given it; for a sign-in, ' +
+      'the algorithms of the person\'s passkeys the ceremony could use.'),
+    field('offerRule', 'string',
+      'The client rule that narrowed this registration\'s offer, or ' +
+      'would have, where one applied (#1112): configured: <rule>, ' +
+      'learned: <client>, or not applied (<why>): ...; empty otherwise.'),
+    field('offeredFirst', 'string',
+      'The first algorithm offered: the one a client honouring the order ' +
+      'makes when it can.'),
+    field('postQuantumOffered', 'boolean',
+      'Whether an ML-DSA algorithm was among those offered.'),
+    field('algorithm', 'string',
+      'The algorithm used: the new passkey\'s, or the signing one\'s. ' +
+      'Empty where the ceremony reached none. On a mismatch row, the ' +
+      'classical algorithm that signed.'),
+    field('postQuantum', 'boolean',
+      'Whether the algorithm used is an ML-DSA algorithm.'),
+    field('held', 'string',
+      'On a mismatch row, the ML-DSA algorithms of the person\'s ' +
+      'passkeys; empty otherwise.'),
+    field('client', 'string',
+      'The browser and operating system by name and major version only ' +
+      '(Chrome 141 on macOS 15), from the User-Agent.'),
+    field('clientError', 'string',
+      'For a ceremony the browser did not complete, the error name its ' +
+      'script reported (NotAllowedError, NotSupportedError, ' +
+      'InvalidStateError, ...), or other; never its message.'),
+    field('capabilities', 'string',
+      'The client capabilities the browser reported as available, ' +
+      'comma-separated, from a fixed list.'),
+    field('attachment', 'string',
+      'platform or cross-platform, as the browser reported it.', undefined,
+      ['platform', 'cross-platform']),
+    field('transports', 'string',
+      'The transports the browser reported, comma-separated (internal, ' +
+      'hybrid, usb, nfc, ble).'),
+    field('attestation', 'string',
+      'For a registration, what its attestation was signed with, leaf to ' +
+      'anchor, and (PQ) where all of it is post-quantum.'),
+    field('durationMs', 'number',
+      'Milliseconds from the ceremony\'s options being issued to its ' +
+      'response, measured by the service (#1108). It includes the ' +
+      'person\'s time at the prompt; compare many rows. Null on rows ' +
+      'written before #1108 and where no options were issued.')
+  ];
+  fields.forEach(function (spec: FieldSpec): void {
+    if (CEREMONY_GROUPABLE.indexOf(spec.id) >= 0) {
+      spec.group = true;
+    }
+  });
+  // THE PREDEFINED QUERIES (#1107), in #1110's `presets` shape: what an
+  // operator moving a realm to ML-DSA passkeys asks first. Their longer
+  // descriptions are in `docs/reporting.md`.
+  const presets: PresetSpec[] = [{
+    // Registrations that offered ML-DSA and did not complete, per client;
+    // group by clientError instead to see how they failed.
+    id: 'ml-dsa-registrations-failed-by-client',
+    name: 'ML-DSA registrations that failed, by client',
+    document: {
+      source: 'passkeyCeremonies',
+      where: { op: 'and', args: [
+        { op: 'eq', field: 'kind', value: 'ceremony' },
+        { op: 'eq', field: 'ceremony', value: 'registration' },
+        { op: 'eq', field: 'postQuantumOffered', value: true },
+        { op: 'eq', field: 'outcome', value: 'refused' }] },
+      aggregate: 'count', groupBy: ['client'], limit: 100
+    }
+  }, {
+    // Completed registrations that offered ML-DSA and produced a classical
+    // passkey: clients that cannot make ML-DSA yet, or do not honour the
+    // offered order.
+    id: 'ml-dsa-asked-classical-made-by-client',
+    name: 'Registrations that asked for ML-DSA and made a classical ' +
+      'passkey, by client',
+    document: {
+      source: 'passkeyCeremonies',
+      where: { op: 'and', args: [
+        { op: 'eq', field: 'kind', value: 'ceremony' },
+        { op: 'eq', field: 'ceremony', value: 'registration' },
+        { op: 'eq', field: 'outcome', value: 'success' },
+        { op: 'eq', field: 'postQuantumOffered', value: true },
+        { op: 'eq', field: 'postQuantum', value: false }] },
+      aggregate: 'count', groupBy: ['client'], limit: 100
+    }
+  }, {
+    // Sign-ins with a classical passkey by people who hold an ML-DSA one:
+    // who requiring post-quantum at sign-in would refuse today.
+    id: 'classical-sign-ins-by-ml-dsa-holders',
+    name: 'Classical sign-ins by people who hold an ML-DSA passkey',
+    document: {
+      source: 'passkeyCeremonies',
+      where: { op: 'eq', field: 'kind', value: 'algorithm-mismatch' },
+      aggregate: 'count', groupBy: ['client'], limit: 100
+    }
+  }];
+  const spec = source('passkeyCeremonies',
+    'Passkey registrations and sign-ins still in the same audit ring as ' +
+    'auditEvents (webauthn.ceremony and webauthn.algorithm-mismatch rows, ' +
+    '#943), capped by audit.maxEvents. Not a warehouse of ceremonies: run ' +
+    'it on a schedule to keep a history. Nothing here is indexed; the ' +
+    'read is bounded by the ring.', fields, false, presets);
+  log.debug("Leaving passkeyCeremonySource().");
+  return spec;
 }
 
 /**

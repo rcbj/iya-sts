@@ -744,6 +744,76 @@ rows.
 }
 ```
 
+### `passkeyCeremonies`
+
+Every passkey registration and sign-in still in the same audit ring as
+`auditEvents`: one row per `webauthn.ceremony` audit row, and one per
+`webauthn.algorithm-mismatch` row
+([#1107](https://github.com/rcbj/iya-sts/issues/1107)). The same cap
+applies, and the read waits for the other processes' rows as
+`auditEvents` does. It is the source to read while moving a realm to
+ML-DSA passkeys: which clients make one when asked, which fail and how,
+and who still signs in with a classical passkey after making an ML-DSA
+one. [Passkeys](passkeys.md#watching-the-move-to-post-quantum-passkeys-the-ceremony-audit-rows)
+describes the audit rows themselves. Nothing here is indexed: the ring is
+a list in memory, and the read is bounded by its cap. To keep a history
+longer than the ring, schedule a definition and keep its reports.
+
+| Field | Type | Meaning | Filter | Sort | Group |
+|---|---|---|---|---|---|
+| `timestamp` | timestamp | When the row was recorded. | yes | yes | no |
+| `day` | string | The UTC calendar day, `yyyy-mm-dd`. | yes | yes | yes |
+| `kind` | string | `ceremony`, or `algorithm-mismatch` for a classical sign-in by a person who holds an ML-DSA passkey. Filter on it before counting, so a mismatch is not counted beside its ceremony. | yes | yes | yes |
+| `ceremony` | string | `registration` or `assertion` (a sign-in); empty on a mismatch row. | yes | yes | yes |
+| `door` | string | `sign-in-step`, `usernameless`, `portal`, `activation`, `upgrade`, `admin-enrolment` or `device-link`. | yes | yes | yes |
+| `outcome` | string | `success` or `refused`. | yes | yes | yes |
+| `errorCode` | string | The code a refused ceremony was recorded under. | yes | yes | yes |
+| `actor` | string | The person, where known. | yes | yes | no |
+| `application` | string | The application the sign-in was for; empty where none was in play. | yes | yes | yes |
+| `role`, `lane` | string | `primary` or `mfa`; `classical` or `pqc`. | yes | yes | yes |
+| `offered` | string | The algorithms offered, in order. | yes | yes | no |
+| `offerRule` | string | The client rule that narrowed the offer, or would have, where one applied ([#1112](https://github.com/rcbj/iya-sts/issues/1112)); empty otherwise. | yes | yes | yes |
+| `offeredFirst` | string | The first algorithm offered. | yes | yes | yes |
+| `postQuantumOffered` | boolean | Whether an ML-DSA algorithm was offered. | yes | yes | yes |
+| `algorithm` | string | The algorithm used; on a mismatch row, the classical one that signed. | yes | yes | yes |
+| `postQuantum` | boolean | Whether the algorithm used is ML-DSA. | yes | yes | yes |
+| `held` | string | On a mismatch row, the person's ML-DSA algorithms. | yes | yes | yes |
+| `client` | string | The browser and operating system, by name and major version. | yes | yes | yes |
+| `clientError` | string | The error name the browser reported for a ceremony it did not complete. | yes | yes | yes |
+| `capabilities` | string | The client capabilities the browser reported. | yes | yes | no |
+| `attachment` | string | `platform` or `cross-platform`. | yes | yes | yes |
+| `transports` | string | The transports the browser reported. | yes | yes | no |
+| `attestation` | string | What a registration's attestation was signed with. | yes | yes | no |
+| `durationMs` | number | Milliseconds from the options being issued to the response, measured by the service; null on rows written before the field existed. It includes the person's time at the prompt, so compare many rows. | yes | yes | no |
+
+**Predefined queries.** The source carries three, listed on its page in
+`/report` and as `presets` on `GET /report-api/catalog/passkeyCeremonies`.
+Opening one fills the query form; run it as it is, or change it and save
+it as your own definition:
+
+* **ML-DSA registrations that failed, by client**: `kind` is `ceremony`,
+  `ceremony` is `registration`, `postQuantumOffered` is true and
+  `outcome` is `refused`, counted by `client`. Group by `clientError`
+  instead to see how they failed.
+* **Registrations that asked for ML-DSA and made a classical passkey, by
+  client**: the same, with `outcome` `success` and `postQuantum` false.
+* **Classical sign-ins by people who hold an ML-DSA passkey**: `kind` is
+  `algorithm-mismatch`, counted by `client`.
+
+How long ML-DSA ceremonies take, against classical ones, by client:
+
+```json
+{
+  "source": "passkeyCeremonies",
+  "select": ["client", "algorithm", "ceremony", "durationMs"],
+  "where": { "op": "and", "args": [
+    { "op": "eq", "field": "kind", "value": "ceremony" },
+    { "op": "eq", "field": "outcome", "value": "success" } ] },
+  "orderBy": [{ "field": "durationMs", "dir": "desc" }],
+  "limit": 500
+}
+```
+
 ## The query document
 
 The keys are `source`, `select`, `where`, `orderBy`, `limit`, `format`,

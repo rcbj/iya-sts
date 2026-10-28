@@ -38,7 +38,8 @@ and `docs/configuration.md`.
 | `report_app.ts` | The shell, the script and the stylesheet. A non-GET is 404 with `STS-REPORT-0033`. |
 | `report_api.ts` | `/report-api`. Every route, including the catalog and the OpenAPI document, takes the token below. |
 | `web_report.ts`, `web_report_pages.ts` | The browser runtime and the four pages (catalog, query, definitions, jobs). |
-| `catalog.ts` | The thirteen sources and their fields, which operators the store indexes (`indexed`, #985), and a source's predefined queries (`presets`, #1110). Credential attribute ids are absent, so they cannot be named. |
+| `catalog.ts` | The fourteen sources and their fields, which operators the store indexes (`indexed`, #985), and a source's predefined queries (`presets`, #1110). Credential attribute ids are absent, so they cannot be named. |
+| `passkey_ceremonies.ts` | The `passkeyCeremonies` source's projection of the ceremony audit rows (#1107). A library; reaches `authn/webauthn_ceremonies` lazily. |
 | `openapi.ts` | `GET /report-api/openapi.json`. Every released route, built from the catalog that is loaded. |
 | `query.ts` | Validates one JSON document and decides sync or async. It sends no HTTP response. |
 | `limits.ts` | The caps, read when asked. `Limits.fixed` is what a test passes. |
@@ -1111,6 +1112,41 @@ in-process map is never written anywhere and stays plain.
 Audit detail is the source, the field ids and the job id. The query
 document is not written on the row.
 
+## Passkey ceremonies, and their predefined queries (#1107, 2026-10-28)
+
+**`passkeyCeremonies` reads the audit ring as `authActivity` does**:
+`reportAuditEvents()` (the `fresh()` wait, the `audit.maxEvents` cap),
+then `passkey_ceremonies.ts`'s `rowsOf()` keeps the `webauthn.ceremony`
+and `webauthn.algorithm-mismatch` rows and projects them, and
+`reportOffer()` takes them into the bounded collector. No index: the ring
+is a list in memory and the audit store indexes no detail field, so
+nothing is declared and nothing scans a store. The row shape is
+`authn/webauthn_ceremonies.ts`'s header; the folded `authenticator`
+(#1108) is read back with its `unfold()`, which reads a pre-#1108 row
+too, and `postQuantum` / `postQuantumOffered` are
+`passkey_policy.isPostQuantum()` of the names. A mismatch row's
+`ceremony` is empty so a count by ceremony does not count it twice. A
+ceremony row's `offered` may carry, after its first `|`, the client rule
+that narrowed the offer or would have (#1112); the source splits there and
+publishes it as `offerRule`, and reads the algorithm names before it.
+The doors are listed in the catalog (`CEREMONY_DOORS`) rather than read
+from the ceremony module, which the browser bundle would then carry;
+`tests/report_passkey_ceremonies.js` holds the door field to naming every
+door the module writes. The
+source's extra groupable fields are its own list (`CEREMONY_GROUPABLE`),
+not `GROUPABLE`, which applies to every source's field of that id.
+
+**ITS PREDEFINED QUERIES ARE #1110's `presets`** (`{ id, name, document }`
+on the source; `PresetSpec`, `source()`'s fifth argument). #1107 asked for
+predefined definitions and was built beside #1110, which brought the
+mechanism — data, not stored definitions, published by
+`reportPublicSource()` and the OpenAPI `Source`, listed on the source page,
+`/report/query?source=…&preset=…` filling the form — so this branch carries
+#1110's hunks for it verbatim rather than a second mechanism. The form
+draws a flat `and` of comparisons, so a preset is written that way, and
+`whereLeaves()` now takes a boolean value (a saved or preset filter on a
+boolean field drew no rows before).
+
 ## What the tests hold
 
 `tests/report_query.js` holds the document, the three formats, the fixed
@@ -1122,13 +1158,18 @@ lookups against a directory double (#985). It does not open a listener. A
 refusal's HTTP status, the DPoP gate and a scheduled run against a
 directory are not asserted here; issuance and the policy's every case are
 `tests/report_access_policy.js`'s (#1030).
+`tests/report_passkey_ceremonies.js` holds the `passkeyCeremonies` source
+(#1107): its fields, the projection over both row shapes, the three
+predefined queries run against a known ring, rows the ceremony module
+writes reaching it, and the definitions published and filling the form.
 
 ## The sources
 
-The thirteen sources are `users`, `groups`, `applications`, `federation`,
+The fourteen sources are `users`, `groups`, `applications`, `federation`,
 `authMechanisms`, `auditEvents`, `authActivity`, `serviceMetrics`,
 `reportJobs`, `attributeSources`, `credentialHolders`,
-`postLoginProgress` and `passkeyHistory`. `authMechanisms` is the realm policy
+`postLoginProgress`, `passkeyHistory` and `passkeyCeremonies` (above,
+#1107). `authMechanisms` is the realm policy
 (application `realm`) plus one row per value an application lists in
 `appAuthnMechanism` or `appMfaMechanism`. An empty list inherits the
 realm policy and adds no row. `authActivity` is the four attempt actions
