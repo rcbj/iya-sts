@@ -3114,6 +3114,18 @@ const SETTINGS = [
     description: 'Digest used by new RFC 4998 records. Raising this from ' +
       'sha256 triggers RFC 4998 hash-tree renewal on the daily passkey ' +
       'report recount, into a new ArchiveTimeStampChain.' },
+  { key: 'webauthn.passkeyHistoryDays', group: 'WebAuthn',
+    label: 'Passkey history kept (days)',
+    path: 'webauthn.passkeyHistoryDays',
+    env: 'STS_WEBAUTHN_PASSKEY_HISTORY_DAYS', type: 'int', dflt: 400,
+    min: 1, max: 3660, runtime: true,
+    description: 'How many days of passkey history a realm keeps (#1109): ' +
+      'the daily passkey report recount writes one row per realm per day ' +
+      '(people by kind, passkeys by algorithm, lane and attestation ' +
+      'algorithm, and each named passkey profile\'s population), which ' +
+      'the reports application reads as the passkeyHistory source. The ' +
+      'same recount removes the rows older than this. Lowering it removes ' +
+      'the older rows at the next recount.' },
 
   { key: 'webauthn.attestationAllowedAaguids', group: 'WebAuthn',
     label: 'Allowed authenticator models (AAGUIDs)',

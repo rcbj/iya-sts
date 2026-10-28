@@ -309,6 +309,139 @@ function postLoginProgressSource(): SourceSpec {
   return spec;
 }
 
+// ---------------------------------------------------------------------------
+// PASSKEY HISTORY (#1109): `passkey_report.history`, one stored row per realm
+// per UTC day written by the passkey report's daily recount, projected by
+// `report/passkey_history.ts` into several rows told apart by `scope` — the
+// realm's people and passkeys, each named profile's population, and the
+// passkeys by algorithm, by lane and by attestation algorithm. The read is
+// the store held in memory, at most `webauthn.passkeyHistoryDays` days, so
+// nothing is indexed and nothing needs to be: the source is bounded by its
+// retention. In a block of its own so a source added beside it merges
+// cleanly.
+// ---------------------------------------------------------------------------
+const HISTORY_SCOPES = ['realm', 'profile', 'algorithm', 'lane',
+  'attestation'];
+// Fields of this source a count may group by, beyond `GROUPABLE`'s.
+const HISTORY_GROUPABLE = ['scope', 'name', 'postQuantum',
+  'postQuantumRequired', 'complete', 'counted'];
+
+function passkeyHistorySource(): SourceSpec {
+  log.debug("Entering passkeyHistorySource().");
+  const people = 'On a realm or profile row; null on the others.';
+  const fields = [
+    field('day', 'string',
+      'The UTC calendar day the row counts, yyyy-mm-dd. A later recount ' +
+      'the same day replaced the day\'s rows.'),
+    field('countedAt', 'timestamp',
+      'When the recount that wrote the day finished.'),
+    field('scope', 'string',
+      'What the row counts: realm (the realm\'s people and passkeys, one ' +
+      'a day), profile (a named passkey profile\'s population), algorithm ' +
+      '(passkeys of one algorithm in one lane), lane (passkeys in one ' +
+      'lane) or attestation (passkeys whose attestation certificate one ' +
+      'algorithm signed). Filter on it: the scopes count the same ' +
+      'passkeys more than once.', undefined, HISTORY_SCOPES),
+    field('name', 'string',
+      'The profile, algorithm (JOSE name), lane or attestation ' +
+      'certificate algorithm the row is for; empty on a realm row.'),
+    field('coseAlg', 'number',
+      'The COSE algorithm identifier of an algorithm row, or of an ' +
+      'attestation row\'s algorithm where it has one; null otherwise.'),
+    field('lane', 'string',
+      'classical or pqc (#643) on an algorithm or lane row; empty ' +
+      'otherwise.', undefined, ['classical', 'pqc']),
+    field('postQuantum', 'boolean',
+      'Whether an algorithm or attestation row\'s algorithm is ML-DSA; ' +
+      'null on the other scopes. The kind is the algorithm, never the ' +
+      'lane.'),
+    field('count', 'number',
+      'Passkeys counted in the row: all of them on a realm or profile ' +
+      'row, those of the row\'s algorithm, lane or attestation algorithm ' +
+      'otherwise.'),
+    field('people', 'number',
+      'People in the realm, or in the profile\'s population as far as it ' +
+      'was read. ' + people),
+    field('holding', 'number',
+      'People holding at least one passkey. ' + people),
+    field('postQuantumOnly', 'number',
+      'People whose passkeys are all ML-DSA. ' + people),
+    field('classicalOnly', 'number',
+      'People whose passkeys are all classical. ' + people),
+    field('both', 'number',
+      'People holding an ML-DSA and a classical passkey. ' + people),
+    field('none', 'number',
+      'People holding no passkey; null where the realm\'s count of its ' +
+      'people could not be read. ' + people),
+    field('withPostQuantum', 'number',
+      'People holding at least one ML-DSA passkey (postQuantumOnly plus ' +
+      'both). ' + people),
+    field('postQuantumShare', 'number',
+      'withPostQuantum as a percentage of holding, to one decimal: the ' +
+      'adoption figure. Null where nobody holds a passkey. ' + people),
+    field('postQuantumKeys', 'number',
+      'ML-DSA passkeys among count. ' + people),
+    field('postQuantumRequired', 'string',
+      'A profile row\'s postQuantumRequired setting on the day (#718); ' +
+      'empty otherwise.'),
+    field('members', 'number',
+      'A profile row\'s members, as the profile\'s groups list them; ' +
+      'null otherwise.'),
+    field('complete', 'boolean',
+      'Whether a profile row read every member: false where the ' +
+      'population was larger than the passkey report reads for a filter, ' +
+      'and the numbers cover the members read. Null otherwise.'),
+    field('counted', 'boolean',
+      'False on a profile row the day did not count: past the profiles a ' +
+      'day counts, or a population that could not be read. True ' +
+      'otherwise.')
+  ];
+  fields.forEach(function (spec: FieldSpec): void {
+    if (HISTORY_GROUPABLE.indexOf(spec.id) >= 0) {
+      spec.group = true;
+    }
+  });
+  // THE PREDEFINED QUERIES (#1109), in #1110's `presets` shape: each one
+  // filter leaf on `scope`, one order on `day`, so the form draws it and
+  // a save keeps it. Their longer descriptions are in `docs/reporting.md`.
+  const presets: PresetSpec[] = [{
+    id: 'post-quantum-adoption-by-day',
+    name: 'Post-quantum adoption by day',
+    document: { source: 'passkeyHistory',
+      select: ['day', 'people', 'holding', 'withPostQuantum',
+               'postQuantumShare', 'postQuantumOnly', 'both',
+               'classicalOnly', 'none', 'postQuantumKeys', 'count'],
+      where: { op: 'eq', field: 'scope', value: 'realm' },
+      orderBy: [{ field: 'day', dir: 'asc' }],
+      limit: 1000, format: 'json', mode: 'auto' }
+  }, {
+    id: 'passkeys-by-algorithm-by-day',
+    name: 'Passkeys by algorithm by day',
+    document: { source: 'passkeyHistory',
+      select: ['day', 'name', 'coseAlg', 'lane', 'postQuantum', 'count'],
+      where: { op: 'eq', field: 'scope', value: 'algorithm' },
+      orderBy: [{ field: 'day', dir: 'asc' }],
+      limit: 1000, format: 'json', mode: 'auto' }
+  }, {
+    id: 'profile-adoption-by-day',
+    name: 'Post-quantum adoption by passkey profile by day',
+    document: { source: 'passkeyHistory',
+      select: ['day', 'name', 'postQuantumRequired', 'members', 'complete',
+               'holding', 'withPostQuantum', 'postQuantumShare', 'counted'],
+      where: { op: 'eq', field: 'scope', value: 'profile' },
+      orderBy: [{ field: 'day', dir: 'asc' }],
+      limit: 1000, format: 'json', mode: 'auto' }
+  }];
+  const spec = source('passkeyHistory',
+    'One stored row per realm per UTC day, written by the passkey ' +
+    'report\'s daily recount (#1109) and kept for ' +
+    'webauthn.passkeyHistoryDays days; each day is read as several rows, ' +
+    'one per scope. A day the recount did not run has no rows. Read from ' +
+    'the history store, never the directory.', fields, false, presets);
+  log.debug("Leaving passkeyHistorySource().");
+  return spec;
+}
+
 function standardSources(): SourceSpec[] {
   log.debug("Entering standardSources().");
   const sources = [
@@ -528,7 +661,8 @@ function standardSources(): SourceSpec[] {
          'keep or refuse, as the source is configured.', undefined,
          ['keep', 'refuse']),
        field('enabled', 'boolean', 'Whether the source is enabled.')]),
-    postLoginProgressSource()
+    postLoginProgressSource(),
+    passkeyHistorySource()
   ];
   log.debug("Leaving standardSources().");
   return sources;

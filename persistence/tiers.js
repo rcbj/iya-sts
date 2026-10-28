@@ -401,6 +401,11 @@ const CELL_MINTED = [
   // OBSERVATION of this cell's own traffic, as `attribute_sources.status`
   // is, and keyed by people, so it stays in the cell.
   'passkey_clients.learned',
+  // The passkey history (#1109): a realm's counts per day — people by kind,
+  // passkeys by algorithm, each named profile's population. Counted from
+  // this cell's people, as the passkey report's baseline is, so it stays
+  // with them.
+  'passkey_report.history',
   // A post-login mail campaign (#1111) and what its runs did: the campaign
   // names the administrator who started it, and its run row holds a key
   // cursor that is a person's DN — and a campaign walks this cell's people.

@@ -262,6 +262,7 @@ var config = {
     attestationEvidenceTsaUrl: "",                                                                                                                     // Passkey evidence timestamp authority URL
     attestationEvidenceTsaTrustAnchors: "",                                                                                                            // Passkey evidence TSA trust anchors (PEM)
     attestationEvidenceHashAlgorithm: "sha256",                                                                                                        // Passkey evidence hash-tree algorithm
+    passkeyHistoryDays: 400,                                                                                                                           // Passkey history kept (days)
     attestationAllowedAaguids: "",                                                                                                                     // Allowed authenticator models (AAGUIDs)
     attestationMinCertificationLevel: "none",                                                                                                          // Least FIDO certification level
     attestationRequireFips: false,                                                                                                                     // Require a FIPS 140 certified model

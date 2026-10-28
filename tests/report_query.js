@@ -386,7 +386,7 @@ function projections(t) {
   const OpenApi = require('../report/openapi');
   const catalog = new Catalog();
   const listed = catalog.list();
-  t.equal(listed.length, 12, 'the catalog has twelve sources');
+  t.equal(listed.length, 13, 'the catalog has thirteen sources');
   const ids = listed.map(function (src) {
     return src.id;
   });
